@@ -143,6 +143,7 @@ export function ModelOptimizer({ onBack }: { onBack: () => void }) {
         {(before || after) && <div className="optimizer-statistics"><Stat label="文件大小" before={before ? formatBytes(before.bytes) : "—"} after={after ? formatBytes(after.bytes) : undefined} /><Stat label="三角面" before={before?.triangles.toLocaleString("zh-CN") ?? "—"} after={after?.triangles.toLocaleString("zh-CN")} /><Stat label="顶点" before={before?.vertices.toLocaleString("zh-CN") ?? "—"} after={after?.vertices.toLocaleString("zh-CN")} /><Stat label="节点 / 材质" before={before ? `${before.nodes} / ${before.materials}` : "—"} after={after ? `${after.nodes} / ${after.materials}` : undefined} /></div>}
       </section>
     </main>
+    <div className="app-copyright">Copyright © 张文鹏 Charlie</div>
     <input ref={inputRef} hidden type="file" accept=".glb,.gltf" onChange={(event) => void importFile(event.target.files?.[0])} />
   </div>;
 }

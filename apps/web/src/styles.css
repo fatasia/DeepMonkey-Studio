@@ -29,7 +29,9 @@ button { color: inherit; }
 .viewer-shell .left-panel, .viewer-shell .right-panel { display: none; }
 
 .topbar { grid-area: top; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--line); background: rgba(24, 28, 31, .96); z-index: 10; }
-.brand-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: #18130a; background: var(--accent); }
+.brand-mark { display: grid; place-items: center; width: 34px; height: 34px; overflow: hidden; border-radius: 9px; background: transparent; }
+.brand-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.app-copyright { position: fixed; left: 50%; bottom: 8px; z-index: 6; color: rgba(176,184,190,.34); font-size: 8px; letter-spacing: .025em; white-space: nowrap; pointer-events: none; user-select: none; transform: translateX(-50%); }
 .brand-copy { display: flex; flex-direction: column; min-width: 140px; }
 .brand-copy strong { font-size: 14px; letter-spacing: .03em; }
 .brand-copy span { margin-top: 2px; color: var(--muted); font-size: 10px; }
@@ -395,7 +397,8 @@ button { color: inherit; }
 .scene-manager-page { width: 100%; height: 100%; overflow: auto; color: #edf0f2; background: #111416; }
 .manager-header { position: sticky; top: 0; z-index: 8; display: flex; align-items: center; justify-content: space-between; height: 68px; padding: 0 max(28px, calc((100vw - 1240px) / 2)); border-bottom: 1px solid var(--line); background: rgba(20, 24, 26, .92); backdrop-filter: blur(16px); }
 .manager-brand { display: flex; align-items: center; gap: 11px; }
-.manager-brand > span { display: grid; place-items: center; width: 38px; height: 38px; color: #1d170c; border-radius: 10px; background: var(--accent); }
+.manager-brand > span { display: grid; place-items: center; width: 38px; height: 38px; overflow: hidden; border-radius: 10px; background: transparent; }
+.manager-brand > span img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .manager-brand > div { display: flex; flex-direction: column; }
 .manager-brand strong { font-size: 14px; letter-spacing: .03em; }
 .manager-brand small { margin-top: 3px; color: #778188; font-size: 9px; }

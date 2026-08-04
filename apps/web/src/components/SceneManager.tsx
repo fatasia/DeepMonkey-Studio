@@ -88,7 +88,7 @@ export function SceneManager({
     <main className="scene-manager-page">
       <header className="manager-header">
         <div className="manager-brand">
-          <span><Layers3 size={22} /></span>
+          <span><img src={`${import.meta.env.BASE_URL}brand/logo-transparent.png`} alt="BIM Studio" /></span>
           <div><strong>BIM Studio</strong><small>场景管理中心</small></div>
         </div>
         <div className="manager-actions">
@@ -153,6 +153,8 @@ export function SceneManager({
           </div>
         )}
       </section>
+
+      <div className="app-copyright">Copyright © 张文鹏 Charlie</div>
 
       {dialogMode && (
         <div className="dialog-backdrop" onMouseDown={() => setDialogMode(undefined)}>

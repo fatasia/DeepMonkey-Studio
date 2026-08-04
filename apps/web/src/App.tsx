@@ -1179,7 +1179,7 @@ export function App() {
       )}
     <div className={`app-shell ${route.view === "view" || route.view === "published" ? "viewer-shell" : ""} ${route.view === "studio" || route.view === "view" || route.view === "published" ? "" : "app-shell-hidden"}`}>
       <header className="topbar">
-        <div className="brand-mark"><Layers3 size={20} /></div>
+        <div className="brand-mark"><img src={`${import.meta.env.BASE_URL}brand/logo-transparent.png`} alt="BIM Studio" /></div>
         <div className="brand-copy"><strong>BIM Studio</strong><span>{route.view === "studio" ? "空间编排工作台" : "场景浏览"}</span></div>
         <div className="topbar-divider" />
         {route.view === "studio" ? <>
@@ -1655,6 +1655,7 @@ export function App() {
         )}
       </aside>
 
+      <div className="app-copyright">Copyright © 张文鹏 Charlie</div>
     </div>
     <input ref={uploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadModels(event.target.files ?? undefined)} />
     <input ref={importRef} hidden type="file" accept=".json,.bimscene" onChange={(event) => void importScene(event.target.files?.[0])} />
