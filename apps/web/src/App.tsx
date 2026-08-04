@@ -173,6 +173,7 @@ export function App() {
   const [cameraInfo, setCameraInfo] = useState<CameraState>();
   const [pointerInfo, setPointerInfo] = useState<PointerInfo>();
   const [infoEnabled, setInfoEnabled] = useState(false);
+  const [frameRate, setFrameRate] = useState(0);
   const [weather, setWeather] = useState<WeatherMode>("sunny");
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [lighting, setLighting] = useState<GlobalLightingState>(DEFAULT_LIGHTING);
@@ -319,6 +320,17 @@ export function App() {
       delete engine.onCameraChange;
       delete engine.onPointerInfoChange;
     };
+  }, [engine, infoEnabled]);
+
+  useEffect(() => {
+    if (!engine || !infoEnabled) {
+      setFrameRate(0);
+      return;
+    }
+    const updateFrameRate = () => setFrameRate(Math.round(engine.getFrameRate()));
+    updateFrameRate();
+    const timer = window.setInterval(updateFrameRate, 500);
+    return () => window.clearInterval(timer);
   }, [engine, infoEnabled]);
 
   useEffect(() => {
@@ -1612,6 +1624,7 @@ export function App() {
             <div><strong>{numberFormat.format(sceneStatistics.componentCount)}</strong><span>构件</span></div>
             <div><strong>{numberFormat.format(sceneStatistics.triangleCount)}</strong><span>三角面</span></div>
             <div><strong>{numberFormat.format(sceneStatistics.vertexCount)}</strong><span>顶点</span></div>
+            <div><strong>{frameRate || "—"}</strong><span>FPS</span></div>
           </div>
         </section>}
         {infoEnabled && <section className="runtime-info-panel" aria-label="相机和鼠标信息">

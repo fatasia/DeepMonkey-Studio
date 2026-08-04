@@ -253,6 +253,9 @@ export class ViewerEngine {
   private resizeObserver: ResizeObserver;
   private animationFrame = 0;
   private lastFrameTime = performance.now();
+  private frameSampleStartedAt = performance.now();
+  private frameSampleCount = 0;
+  private frameRate = 0;
   private selectedId: string | undefined;
   private inspectedObject: THREE.Object3D | undefined;
   private navigationMode: NavigationMode = "orbit";
@@ -503,6 +506,10 @@ export class ViewerEngine {
       triangleCount: Math.round(triangleCount),
       vertexCount
     };
+  }
+
+  getFrameRate(): number {
+    return this.frameRate;
   }
 
   hasAnimation(id: string): boolean {
@@ -2484,6 +2491,13 @@ export class ViewerEngine {
   private animate = (): void => {
     this.animationFrame = requestAnimationFrame(this.animate);
     const now = performance.now();
+    this.frameSampleCount += 1;
+    const frameSampleElapsed = now - this.frameSampleStartedAt;
+    if (frameSampleElapsed >= 500) {
+      this.frameRate = this.frameSampleCount * 1000 / frameSampleElapsed;
+      this.frameSampleCount = 0;
+      this.frameSampleStartedAt = now;
+    }
     const delta = Math.min((now - this.lastFrameTime) / 1000, 0.05);
     this.lastFrameTime = now;
     this.mixers.forEach((mixer) => mixer.update(delta));
