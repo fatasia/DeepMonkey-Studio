@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PublishedSceneRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { afterEach, describe, expect, it } from "vitest";
-import { JsonStore } from "./store.js";
+import { JsonStore, runProcess } from "./store.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -62,5 +62,19 @@ describe("JsonStore scene management", () => {
     expect(store.getPublication(source.id)?.snapshot.name).toBe("测试场景");
     await store.removeScene(source.projectId, source.id);
     expect(store.getPublication(source.id)).toBeUndefined();
+  });
+});
+
+describe("process input", () => {
+  it("streams large content through stdin instead of command arguments", async () => {
+    const largeInput = "scene-state-".repeat(20_000);
+    const output = await runProcess(
+      process.execPath,
+      ["-e", "process.stdin.pipe(process.stdout)"],
+      {},
+      largeInput
+    );
+
+    expect(output).toBe(largeInput);
   });
 });

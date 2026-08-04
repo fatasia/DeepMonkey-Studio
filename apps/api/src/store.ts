@@ -251,10 +251,11 @@ export class PostgresStore extends JsonStore {
       "-p", String(this.postgres.port),
       "-U", this.postgres.user,
       "-d", database,
-      ...(tuplesOnly ? ["-t", "-A"] : []),
-      "-c", statement
+      ...(tuplesOnly ? ["-t", "-A"] : [])
     ];
-    return runProcess(this.postgres.psqlPath, args, { PGPASSWORD: this.postgres.password });
+    // Windows limits process command lines to roughly 32K characters. Scene state can
+    // be much larger, so send SQL through stdin instead of passing it to `psql -c`.
+    return runProcess(this.postgres.psqlPath, args, { PGPASSWORD: this.postgres.password }, statement);
   }
 }
 
@@ -280,7 +281,7 @@ function defaultDocument(): DatabaseDocument {
   };
 }
 
-function runProcess(command: string, args: string[], extraEnvironment: NodeJS.ProcessEnv): Promise<string> {
+export function runProcess(command: string, args: string[], extraEnvironment: NodeJS.ProcessEnv, input?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       windowsHide: true,
@@ -293,5 +294,6 @@ function runProcess(command: string, args: string[], extraEnvironment: NodeJS.Pr
     child.stderr.on("data", (chunk: Buffer) => stderr += chunk.toString());
     child.on("error", reject);
     child.on("exit", (code) => code === 0 ? resolve(stdout) : reject(new Error(stderr.trim() || `进程退出码 ${String(code)}`)));
+    child.stdin.end(input);
   });
 }
