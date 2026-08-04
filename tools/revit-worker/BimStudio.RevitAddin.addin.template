@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>BIM Studio Revit Worker</Name>
+    <Assembly>{{ASSEMBLY_PATH}}</Assembly>
+    <AddInId>1F820CD3-198A-4C5E-8B11-341AB5C2C941</AddInId>
+    <FullClassName>BimStudio.RevitAddin.App</FullClassName>
+    <VendorId>BIMS</VendorId>
+    <VendorDescription>BIM Studio persistent RVT conversion worker</VendorDescription>
+  </AddIn>
+</RevitAddIns>

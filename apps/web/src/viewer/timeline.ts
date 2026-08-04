@@ -1,0 +1,104 @@
+import type {
+  CameraKeyframe,
+  CameraState,
+  ModelKeyframe,
+  ModelTransform,
+  Vector3Value
+} from "@bim-studio/contracts";
+
+function clampProgress(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function smoothStep(value: number): number {
+  const clamped = clampProgress(value);
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+type CameraInterpolation = "linear" | "smooth" | "spline";
+
+function interpolateVector(start: Vector3Value, end: Vector3Value, progress: number, smooth = true): Vector3Value {
+  const amount = smooth ? smoothStep(progress) : clampProgress(progress);
+  return {
+    x: start.x + (end.x - start.x) * amount,
+    y: start.y + (end.y - start.y) * amount,
+    z: start.z + (end.z - start.z) * amount
+  };
+}
+
+function catmullRomVector(p0: Vector3Value, p1: Vector3Value, p2: Vector3Value, p3: Vector3Value, progress: number): Vector3Value {
+  const amount = clampProgress(progress);
+  const amount2 = amount * amount;
+  const amount3 = amount2 * amount;
+  const component = (a: number, b: number, c: number, d: number) => 0.5 * (
+    2 * b + (-a + c) * amount + (2 * a - 5 * b + 4 * c - d) * amount2 + (-a + 3 * b - 3 * c + d) * amount3
+  );
+  return {
+    x: component(p0.x, p1.x, p2.x, p3.x),
+    y: component(p0.y, p1.y, p2.y, p3.y),
+    z: component(p0.z, p1.z, p2.z, p3.z)
+  };
+}
+
+function interpolateAngle(start: number, end: number, progress: number): number {
+  const delta = Math.atan2(Math.sin(end - start), Math.cos(end - start));
+  return start + delta * smoothStep(progress);
+}
+
+function surroundingFrames<T extends { time: number }>(frames: T[], time: number): [T, T, number] | undefined {
+  if (frames.length === 0) return undefined;
+  const sorted = [...frames].sort((a, b) => a.time - b.time);
+  if (time <= sorted[0]!.time) return [sorted[0]!, sorted[0]!, 0];
+  if (time >= sorted.at(-1)!.time) return [sorted.at(-1)!, sorted.at(-1)!, 0];
+  for (let index = 0; index < sorted.length - 1; index += 1) {
+    const start = sorted[index]!;
+    const end = sorted[index + 1]!;
+    if (time < start.time || time > end.time) continue;
+    const duration = Math.max(end.time - start.time, 0.0001);
+    return [start, end, (time - start.time) / duration];
+  }
+  return undefined;
+}
+
+export function sampleCameraKeyframes(
+  frames: CameraKeyframe[],
+  time: number,
+  interpolation: CameraInterpolation = "smooth"
+): CameraState | undefined {
+  const sample = surroundingFrames(frames, time);
+  if (!sample) return undefined;
+  const [start, end, progress] = sample;
+  const sorted = [...frames].sort((a, b) => a.time - b.time);
+  const startIndex = Math.max(sorted.findIndex((frame) => frame.id === start.id), 0);
+  const p0 = sorted[Math.max(0, startIndex - 1)] ?? start;
+  const p3 = sorted[Math.min(sorted.length - 1, startIndex + 2)] ?? end;
+  const position = interpolation === "spline" && start !== end
+    ? catmullRomVector(p0.camera.position, start.camera.position, end.camera.position, p3.camera.position, progress)
+    : interpolateVector(start.camera.position, end.camera.position, progress, interpolation !== "linear");
+  const target = interpolation === "spline" && start !== end
+    ? catmullRomVector(p0.camera.target, start.camera.target, end.camera.target, p3.camera.target, progress)
+    : interpolateVector(start.camera.target, end.camera.target, progress, interpolation !== "linear");
+  return {
+    position,
+    target,
+    mode: progress < 0.5 ? start.camera.mode : end.camera.mode,
+    ...((progress < 0.5 ? start.camera.avatarVisible : end.camera.avatarVisible) === undefined ? {} : {
+      avatarVisible: progress < 0.5 ? start.camera.avatarVisible : end.camera.avatarVisible
+    })
+  };
+}
+
+export function sampleModelKeyframes(frames: ModelKeyframe[], time: number): ModelTransform | undefined {
+  const sample = surroundingFrames(frames, time);
+  if (!sample) return undefined;
+  const [start, end, progress] = sample;
+  return {
+    position: interpolateVector(start.transform.position, end.transform.position, progress),
+    rotation: {
+      x: interpolateAngle(start.transform.rotation.x, end.transform.rotation.x, progress),
+      y: interpolateAngle(start.transform.rotation.y, end.transform.rotation.y, progress),
+      z: interpolateAngle(start.transform.rotation.z, end.transform.rotation.z, progress)
+    },
+    scale: interpolateVector(start.transform.scale, end.transform.scale, progress)
+  };
+}
