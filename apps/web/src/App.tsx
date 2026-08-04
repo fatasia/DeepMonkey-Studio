@@ -1175,6 +1175,9 @@ export function App() {
           onExportGlb={exportGlbScene}
           onDelete={deleteScene}
           onOptimizer={() => navigate({ view: "optimizer" })}
+          onUploadModels={uploadModels}
+          onDeleteModel={deleteModel}
+          onRefreshModels={refreshProject}
         />
       )}
     <div className={`app-shell ${route.view === "view" || route.view === "published" ? "viewer-shell" : ""} ${route.view === "studio" || route.view === "view" || route.view === "published" ? "" : "app-shell-hidden"}`}>
