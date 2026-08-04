@@ -3,6 +3,7 @@ import * as FRAGS from "@thatopen/fragments";
 import workerUrl from "@thatopen/fragments/worker?url";
 import DxfParser from "dxf-parser";
 import * as THREE from "three";
+import type { ClippingGroup, WebGPURenderer } from "three/webgpu";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
@@ -48,6 +49,8 @@ export type NavigationMode = CameraState["mode"];
 export type MeasureMode = NonNullable<MeasurementState["kind"]>;
 export type StandardView = "top" | "bottom" | "left" | "right" | "front" | "back";
 export type SelectionScope = "model" | "component";
+export type RendererBackend = "webgl" | "webgpu";
+type RendererInstance = THREE.WebGLRenderer | WebGPURenderer;
 
 export interface SceneStatistics {
   modelCount: number;
@@ -190,7 +193,7 @@ const toValue = (vector: THREE.Vector3 | THREE.Euler): Vector3Value => ({
 export class ViewerEngine {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.05, 100_000);
-  readonly renderer: THREE.WebGLRenderer;
+  readonly renderer: RendererInstance;
   readonly orbit: OrbitControls;
   readonly pointer: PointerLockControls;
   readonly transform: TransformControls;
@@ -208,6 +211,7 @@ export class ViewerEngine {
   onAnimationChange?: (time: number, playing: boolean) => void;
 
   private readonly raycaster = new THREE.Raycaster();
+  private readonly modelRoot: THREE.Group | ClippingGroup;
   private readonly pointerPosition = new THREE.Vector2();
   private readonly models = new Map<string, LoadedSceneModel>();
   private readonly components = new OBC.Components();
@@ -297,16 +301,47 @@ export class ViewerEngine {
   private lastAnimationNotify = 0;
   private lastCameraSignature = "";
 
-  constructor(private readonly container: HTMLElement) {
+  static async create(container: HTMLElement, requestedBackend: RendererBackend = "webgl"): Promise<ViewerEngine> {
+    if (requestedBackend === "webgpu") {
+      if (!("gpu" in navigator)) throw new Error("当前浏览器或显卡不支持 WebGPU");
+      const { ClippingGroup, WebGPURenderer } = await import("three/webgpu");
+      const renderer = new WebGPURenderer({ antialias: true, powerPreference: "high-performance" });
+      try {
+        await renderer.init();
+        if (!(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) {
+          throw new Error("WebGPU 初始化失败，已回退 WebGL");
+        }
+        return new ViewerEngine(container, renderer, "webgpu", new ClippingGroup());
+      } catch (error) {
+        renderer.dispose();
+        throw error;
+      }
+    }
+    return new ViewerEngine(
+      container,
+      new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" }),
+      "webgl",
+      new THREE.Group()
+    );
+  }
+
+  private constructor(
+    private readonly container: HTMLElement,
+    renderer: RendererInstance,
+    private readonly rendererBackend: RendererBackend,
+    modelRoot: THREE.Group | ClippingGroup
+  ) {
     this.scene.background = new THREE.Color(0x171a1d);
     this.camera.position.set(12, 8, 12);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    this.renderer = renderer;
+    this.modelRoot = modelRoot;
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.renderer.localClippingEnabled = true;
+    if (this.renderer instanceof THREE.WebGLRenderer) this.renderer.localClippingEnabled = true;
     this.container.append(this.renderer.domElement);
+    this.scene.add(this.modelRoot);
 
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
     this.orbit.enableDamping = true;
@@ -362,6 +397,10 @@ export class ViewerEngine {
     this.resizeObserver.observe(container);
     this.resize();
     this.animate();
+  }
+
+  getRendererBackend(): RendererBackend {
+    return this.rendererBackend;
   }
 
   listModels(): LoadedSceneModel[] {
@@ -1268,12 +1307,14 @@ export class ViewerEngine {
       const fragmentsBytes = await this.importer.process({ bytes: new Uint8Array(await response.arrayBuffer()) });
       const model = await this.fragments.core.load(fragmentsBytes, { modelId: manifest.modelId });
       model.useCamera(this.camera);
+      if (this.rendererBackend === "webgpu") await model.setLodMode(FRAGS.LodMode.ALL_GEOMETRY);
       fragmentsModel = model;
       object = model.object;
     } else if (manifest.viewerKind === "fragments") {
       const response = await fetch(manifest.geometryUrl);
       const model = await this.fragments.core.load(await response.arrayBuffer(), { modelId: manifest.modelId });
       model.useCamera(this.camera);
+      if (this.rendererBackend === "webgpu") await model.setLodMode(FRAGS.LodMode.ALL_GEOMETRY);
       fragmentsModel = model;
       object = model.object;
     } else {
@@ -1310,7 +1351,7 @@ export class ViewerEngine {
     this.setExplosion(id, 0);
     if (this.selectedId === id) this.select(undefined);
     this.setCollisionHighlight(model, false);
-    this.scene.remove(model.object);
+    model.object.removeFromParent();
     const mixer = this.mixers.get(id);
     if (mixer) {
       mixer.stopAllAction();
@@ -1531,7 +1572,7 @@ export class ViewerEngine {
     this.clippingState = structuredClone({ ...state, mode });
     this.disposeClippingHelper();
     if (!state.enabled) {
-      this.renderer.clippingPlanes = [];
+      this.setRendererClippingPlanes([]);
       this.updateToolCursor();
       return;
     }
@@ -1539,14 +1580,14 @@ export class ViewerEngine {
       const bounds = state.box ?? this.getClippingBounds();
       const min = new THREE.Vector3(bounds.min.x, bounds.min.y, bounds.min.z);
       const max = new THREE.Vector3(bounds.max.x, bounds.max.y, bounds.max.z);
-      this.renderer.clippingPlanes = [
+      this.setRendererClippingPlanes([
         new THREE.Plane(new THREE.Vector3(1, 0, 0), -min.x),
         new THREE.Plane(new THREE.Vector3(-1, 0, 0), max.x),
         new THREE.Plane(new THREE.Vector3(0, 1, 0), -min.y),
         new THREE.Plane(new THREE.Vector3(0, -1, 0), max.y),
         new THREE.Plane(new THREE.Vector3(0, 0, 1), -min.z),
         new THREE.Plane(new THREE.Vector3(0, 0, -1), max.z)
-      ];
+      ]);
       if (state.showHelper !== false) {
         this.clippingHelper = new THREE.Box3Helper(new THREE.Box3(min, max), 0xf6c453);
         this.clippingHelper.name = "helper:clipping-box";
@@ -1558,14 +1599,14 @@ export class ViewerEngine {
     }
     if (mode === "face") {
       if (!state.face) {
-        this.renderer.clippingPlanes = [];
+        this.setRendererClippingPlanes([]);
         this.updateToolCursor();
         return;
       }
       const direction = state.inverted ? -1 : 1;
       const normal = new THREE.Vector3(state.face.normal.x, state.face.normal.y, state.face.normal.z).normalize().multiplyScalar(direction);
       const point = new THREE.Vector3(state.face.point.x, state.face.point.y, state.face.point.z);
-      this.renderer.clippingPlanes = [new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point)];
+      this.setRendererClippingPlanes([new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point)]);
       this.updateToolCursor();
       return;
     }
@@ -1575,8 +1616,18 @@ export class ViewerEngine {
       state.axis === "y" ? direction : 0,
       state.axis === "z" ? direction : 0
     );
-    this.renderer.clippingPlanes = [new THREE.Plane(normal, -state.offset * direction)];
+    this.setRendererClippingPlanes([new THREE.Plane(normal, -state.offset * direction)]);
     this.updateToolCursor();
+  }
+
+  private setRendererClippingPlanes(planes: THREE.Plane[]): void {
+    if (this.rendererBackend === "webgpu") {
+      const clippingRoot = this.modelRoot as ClippingGroup;
+      clippingRoot.clippingPlanes = planes;
+      clippingRoot.enabled = planes.length > 0;
+      return;
+    }
+    (this.renderer as THREE.WebGLRenderer).clippingPlanes = planes;
   }
 
   private visibleSceneBox(): THREE.Box3 {
@@ -1827,6 +1878,7 @@ export class ViewerEngine {
     this.pointer.disconnect();
     this.transform.dispose();
     this.dracoLoader.dispose();
+    this.clearSceneModels();
     this.collisionMaterial.dispose();
     this.disposeWeatherEffect();
     this.skyboxTextures.forEach((texture) => texture.dispose());
@@ -1933,7 +1985,7 @@ export class ViewerEngine {
       child.children.forEach((nested, index) => indexObject(nested, `${nodeId}/${index}`));
     };
     indexObject(object, "root");
-    this.scene.add(object);
+    this.modelRoot.add(object);
     const loaded = { id, name, object, kind, visible: true, opacity: 1 } satisfies LoadedSceneModel;
     this.models.set(id, loaded);
     this.layerObjects.set(id, objects);

@@ -4,6 +4,7 @@ import {
   Box,
   Camera,
   CloudRain,
+  Cpu,
   ChevronDown,
   ChevronRight,
   DoorOpen,
@@ -75,12 +76,14 @@ import {
   type MeasureMode,
   type NavigationMode,
   type PointerInfo,
+  type RendererBackend,
   type SelectionScope,
   type StandardView,
   type TransformMode
 } from "./viewer/ViewerEngine";
 
 const ACCEPTED_MODELS = ".rvt,.ifc,.step,.stp,.dwg,.dxf,.gltf,.glb,.fbx";
+const RENDERER_BACKEND_STORAGE_KEY = "bim-studio.renderer-backend";
 const numberFormat = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 const DEFAULT_LIGHTING: GlobalLightingState = { enabled: true, intensity: 1 };
 const DEFAULT_ENVIRONMENT: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none" };
@@ -137,7 +140,12 @@ export function App() {
   const uploadRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const sceneNameCommitRef = useRef<Promise<boolean> | undefined>(undefined);
+  const rendererSnapshotRef = useRef<{ scene: SceneSnapshot; readOnly: boolean } | undefined>(undefined);
   const [engine, setEngine] = useState<ViewerEngine>();
+  const [rendererBackend, setRendererBackend] = useState<RendererBackend>(() =>
+    window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY) === "webgpu" ? "webgpu" : "webgl"
+  );
+  const [rendererSwitching, setRendererSwitching] = useState(false);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [project, setProject] = useState<ProjectRecord>();
   const [scenes, setScenes] = useState<SceneSnapshot[]>([]);
@@ -197,9 +205,24 @@ export function App() {
     setRoute(next);
   }
 
+  function changeRendererBackend(next: RendererBackend) {
+    if (next === rendererBackend || rendererSwitching || !engine) return;
+    if (next === "webgpu" && (!("gpu" in navigator) || !window.isSecureContext)) {
+      showError(new Error("当前浏览器、显卡或访问地址不支持 WebGPU，请使用新版 Chrome/Edge 和 HTTPS"));
+      return;
+    }
+    const snapshot = makeSnapshot();
+    if (snapshot) rendererSnapshotRef.current = { scene: snapshot, readOnly: route.view !== "studio" };
+    window.localStorage.setItem(RENDERER_BACKEND_STORAGE_KEY, next);
+    setRendererBackend(next);
+    setRendererSwitching(true);
+    setMessage(`正在切换到 ${next === "webgpu" ? "WebGPU（实验）" : "WebGL"}`);
+  }
+
   useEffect(() => {
     if (!viewportRef.current) return;
-    const viewer = new ViewerEngine(viewportRef.current);
+    let viewer: ViewerEngine | undefined;
+    let cancelled = false;
     let revisionFrame: number | undefined;
     const requestRevision = () => {
       if (revisionFrame !== undefined) return;
@@ -208,47 +231,77 @@ export function App() {
         setRevision((value) => value + 1);
       });
     };
-    viewer.onSelectionChange = (model) => {
-      setSelected(model);
-      setSelectedSpace(undefined);
-      setRevision((value) => value + 1);
-    };
-    viewer.onModelChange = requestRevision;
-    viewer.onCollisionChange = requestRevision;
-    viewer.onAnimationChange = (time, playing) => {
-      setAnimationTime(time);
-      setAnimationPlaying(playing);
-    };
-    viewer.onMeasurement = (measurement) => {
-      setMeasurements((items) => [...items, measurement]);
-      setRevision((value) => value + 1);
-    };
-    viewer.onMeasurementDraftChange = (hasStart, pointCount = 0, requiredPoints = 2) => {
-      if (hasStart) setMessage(`已拾取 ${pointCount}/${requiredPoints} 个点，继续点击 · Esc 取消`);
-      else if (viewer.getNavigationMode() === "orbit") setMessage("测量工具就绪");
-    };
-    viewer.onAnnotationPlaced = (annotation) => {
-      setAnnotations((items) => [...items.filter((item) => item.id !== annotation.id), annotation]);
-      setSelectedAnnotationId(annotation.id);
-      setMessage(`已添加“${annotation.name}”，可在右侧编辑内容和位置`);
-      setRevision((value) => value + 1);
-    };
-    viewer.onAnnotationSelectionChange = (annotationId) => {
-      setSelectedAnnotationId(annotationId);
-      if (annotationId) setSelectedSpace(undefined);
-      setRevision((value) => value + 1);
-    };
-    viewer.onClippingFacePicked = (state) => {
-      setClippingState(state);
-      setMessage("已按拾取面建立剖切面，可反向或重新拾取");
-    };
-    setEngine(viewer);
+    setRendererSwitching(true);
+    void ViewerEngine.create(viewportRef.current, rendererBackend).then((created) => {
+      if (cancelled) {
+        created.dispose();
+        return;
+      }
+      viewer = created;
+      viewer.onSelectionChange = (model) => {
+        setSelected(model);
+        setSelectedSpace(undefined);
+        setRevision((value) => value + 1);
+      };
+      viewer.onModelChange = requestRevision;
+      viewer.onCollisionChange = requestRevision;
+      viewer.onAnimationChange = (time, playing) => {
+        setAnimationTime(time);
+        setAnimationPlaying(playing);
+      };
+      viewer.onMeasurement = (measurement) => {
+        setMeasurements((items) => [...items, measurement]);
+        setRevision((value) => value + 1);
+      };
+      viewer.onMeasurementDraftChange = (hasStart, pointCount = 0, requiredPoints = 2) => {
+        if (hasStart) setMessage(`已拾取 ${pointCount}/${requiredPoints} 个点，继续点击 · Esc 取消`);
+        else if (viewer?.getNavigationMode() === "orbit") setMessage("测量工具就绪");
+      };
+      viewer.onAnnotationPlaced = (annotation) => {
+        setAnnotations((items) => [...items.filter((item) => item.id !== annotation.id), annotation]);
+        setSelectedAnnotationId(annotation.id);
+        setMessage(`已添加“${annotation.name}”，可在右侧编辑内容和位置`);
+        setRevision((value) => value + 1);
+      };
+      viewer.onAnnotationSelectionChange = (annotationId) => {
+        setSelectedAnnotationId(annotationId);
+        if (annotationId) setSelectedSpace(undefined);
+        setRevision((value) => value + 1);
+      };
+      viewer.onClippingFacePicked = (state) => {
+        setClippingState(state);
+        setMessage("已按拾取面建立剖切面，可反向或重新拾取");
+      };
+      setEngine(viewer);
+      setRendererSwitching(false);
+      setMessage(`${viewer.getRendererBackend() === "webgpu" ? "WebGPU（实验）" : "WebGL"} 已启用`);
+    }).catch((reason) => {
+      if (cancelled) return;
+      if (rendererBackend === "webgpu") {
+        window.localStorage.setItem(RENDERER_BACKEND_STORAGE_KEY, "webgl");
+        setRendererBackend("webgl");
+        setMessage("WebGPU 不可用，正在恢复 WebGL");
+      } else {
+        setRendererSwitching(false);
+      }
+      showError(reason);
+    });
     return () => {
+      cancelled = true;
       if (revisionFrame !== undefined) window.cancelAnimationFrame(revisionFrame);
-      viewer.dispose();
-      setEngine(undefined);
+      viewer?.dispose();
+      setEngine((current) => current === viewer ? undefined : current);
     };
-  }, []);
+  }, [rendererBackend, showError]);
+
+  useEffect(() => {
+    const pending = rendererSnapshotRef.current;
+    if (!engine || !pending || !project) return;
+    rendererSnapshotRef.current = undefined;
+    void applyScene(pending.scene, false, project, pending.readOnly).then(() => {
+      setMessage(`已切换到 ${engine.getRendererBackend() === "webgpu" ? "WebGPU（实验）" : "WebGL"}，场景状态已恢复`);
+    });
+  }, [engine]);
 
   useEffect(() => {
     if (!engine) return;
@@ -1212,6 +1265,11 @@ export function App() {
           />
         </div>
         <div className="topbar-actions">
+          <div className="renderer-switch" aria-label="渲染模式" title="WebGPU 仍处于实验阶段；切换时会自动恢复当前场景">
+            {rendererSwitching ? <LoaderCircle className="spin" size={14} /> : <Cpu size={14} />}
+            <button className={rendererBackend === "webgl" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgl")}>WebGL</button>
+            <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>实验</small></button>
+          </div>
           <button className="button ghost" onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={16} />场景管理</button>
           <button className="button ghost" onClick={() => importRef.current?.click()}><Import size={16} />导入</button>
           <SceneExportMenu disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} />
@@ -1391,6 +1449,7 @@ export function App() {
 
       <main className="workspace">
         <div className="viewport" ref={viewportRef} />
+        {rendererSwitching && <div className="renderer-loading"><LoaderCircle className="spin" size={18} /><span>正在初始化 {rendererBackend === "webgpu" ? "WebGPU" : "WebGL"}</span></div>}
         <div className="tool-dock" role="toolbar" aria-label="查看编辑工具">
           {route.view === "view" || route.view === "published" ? <>
             <ToolButton title="适应全部（回到模型）" active={false} onClick={() => engine?.fitAll()} icon={<Focus size={19} />} />

@@ -46,6 +46,13 @@ button { color: inherit; }
 .scene-title-wrap input { width: 180px; padding: 7px 5px; color: #f1f3f5; border: 0; border-bottom: 1px solid transparent; outline: none; background: transparent; font-weight: 600; }
 .scene-title-wrap input:focus { border-bottom-color: var(--accent); }
 .topbar-actions { display: flex; gap: 7px; margin-left: auto; }
+.renderer-switch { display: flex; align-items: center; gap: 3px; height: 34px; padding: 3px 4px 3px 7px; color: #778188; border: 1px solid var(--line); border-radius: 7px; background: #191e21; }
+.renderer-switch > svg { margin-right: 2px; }
+.renderer-switch button { display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 7px; color: #7e898f; border: 0; border-radius: 5px; background: transparent; font-size: 8px; font-weight: 750; cursor: pointer; }
+.renderer-switch button small { padding: 2px 3px; color: #9d8248; border-radius: 3px; background: rgba(217,170,77,.1); font-size: 6px; }
+.renderer-switch button.active { color: #1c170d; background: var(--accent); }
+.renderer-switch button.active small { color: #3a2c12; background: rgba(41,31,12,.12); }
+.renderer-switch button:disabled { opacity: .48; cursor: wait; }
 .viewer-scene-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .viewer-scene-title strong { overflow: hidden; max-width: 420px; color: #e9edef; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .viewer-mode-badge { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; color: #e6c77f; border: 1px solid rgba(217,170,77,.3); border-radius: 999px; background: rgba(217,170,77,.09); font-size: 8px; font-weight: 750; }
@@ -189,6 +196,7 @@ button { color: inherit; }
 .workspace { grid-area: main; position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #15191b; }
 .viewport { position: absolute; inset: 0; }
 .viewport canvas { display: block; outline: none; }
+.renderer-loading { position: absolute; left: 50%; top: 50%; z-index: 12; display: flex; align-items: center; gap: 8px; padding: 10px 13px; color: #c5cdd2; border: 1px solid #3b444a; border-radius: 8px; background: rgba(24,29,32,.92); box-shadow: 0 12px 36px rgba(0,0,0,.28); font-size: 9px; pointer-events: none; transform: translate(-50%,-50%); }
 .tool-dock { position: absolute; top: 17px; left: 50%; display: flex; align-items: center; gap: 2px; max-width: calc(100% - 30px); padding: 5px; border: 1px solid rgba(69, 77, 83, .8); border-radius: 9px; background: rgba(29, 34, 37, .9); box-shadow: 0 10px 30px rgba(0, 0, 0, .28); backdrop-filter: blur(12px); transform: translateX(-50%); }
 .tool-button { display: grid; place-items: center; position: relative; width: 36px; height: 34px; color: #a4adb3; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
 .tool-button:hover { color: #f0f2f3; background: #2b3135; }
@@ -535,6 +543,7 @@ button { color: inherit; }
   .scene-title-wrap { min-width: 150px; }
   .scene-title-wrap input { width: 145px; }
   .button.ghost { width: 34px; padding: 0; font-size: 0; }
+  .renderer-switch > svg { display: none; }
 }
 
 @media (max-width: 850px) {
