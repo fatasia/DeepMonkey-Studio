@@ -3,7 +3,10 @@ packages:
   - packages/*
 
 allowBuilds:
+  bufferutil: false
   core-js: true
+  es5-ext: false
   esbuild: true
   node-red-contrib-bacnet: true
   oracledb: true
+  utf-8-validate: false

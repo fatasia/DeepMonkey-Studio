@@ -12,7 +12,7 @@ const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: "device-status", title: "设备状态", key: "status", type: "status", unit: "" }
 ];
 
-export function SceneDashboardOverlay({ locale, sceneId, onClose }: { locale: AppLocale; sceneId: string; onClose: () => void }) {
+export function SceneDashboardOverlay({ locale, sceneId, readOnly = false, onClose }: { locale: AppLocale; sceneId: string; readOnly?: boolean; onClose: () => void }) {
   const [side, setSide] = useState<DashboardSide>(() => window.localStorage.getItem("bim-studio.dashboard-side") === "left" ? "left" : "right");
   const [width, setWidth] = useState(() => Math.min(560, Math.max(300, Number(window.localStorage.getItem("bim-studio.dashboard-width")) || 380)));
   const storageKey = `bim-studio.dashboard-widgets.${sceneId}`;
@@ -24,6 +24,7 @@ export function SceneDashboardOverlay({ locale, sceneId, onClose }: { locale: Ap
 
   useEffect(() => setWidgets(readWidgets(storageKey)), [storageKey]);
   useEffect(() => window.localStorage.setItem(storageKey, JSON.stringify(widgets)), [storageKey, widgets]);
+  useEffect(() => { if (readOnly) setEditing(false); }, [readOnly]);
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${protocol}//${window.location.host}/iot/ws/scene`);
@@ -72,21 +73,21 @@ export function SceneDashboardOverlay({ locale, sceneId, onClose }: { locale: Ap
     setDraggingId(undefined);
   }
 
-  return <section className={`scene-dashboard-overlay ${side}`} style={{ width }} aria-label={tr(locale, "场景二维看板", "Scene dashboard")}>
+  return <section className={`scene-dashboard-overlay ${side} ${readOnly ? "read-only" : ""}`} style={{ width }} aria-label={tr(locale, "场景二维看板", "Scene dashboard")}>
     <header>
       <div><strong>{tr(locale, "场景数据看板", "Scene dashboard")}</strong><small className={connected ? "online" : ""}>{connected ? tr(locale, "实时连接", "Live") : tr(locale, "等待数据", "Waiting")}</small></div>
       <nav>
-        <button className={editing ? "active" : ""} title={tr(locale, "编辑看板", "Edit dashboard")} onClick={() => setEditing((value) => !value)}><Settings2 size={14} /></button>
+        {!readOnly && <button className={editing ? "active" : ""} title={tr(locale, "编辑看板", "Edit dashboard")} onClick={() => setEditing((value) => !value)}><Settings2 size={14} /></button>}
         <button className={side === "left" ? "active" : ""} title={tr(locale, "固定到左侧", "Dock left")} onClick={() => changeSide("left")}><PanelLeft size={14} /></button>
         <button className={side === "right" ? "active" : ""} title={tr(locale, "固定到右侧", "Dock right")} onClick={() => changeSide("right")}><PanelRight size={14} /></button>
-        <a href="/node-red" target="_blank" rel="noreferrer" title={tr(locale, "编辑数据流程", "Edit data flows")}><ExternalLink size={14} /></a>
-        <button title={tr(locale, "关闭", "Close")} onClick={onClose}><X size={15} /></button>
+        {!readOnly && <a href="/node-red" target="_blank" rel="noreferrer" title={tr(locale, "编辑数据流程", "Edit data flows")}><ExternalLink size={14} /></a>}
+        {!readOnly && <button title={tr(locale, "关闭", "Close")} onClick={onClose}><X size={15} /></button>}
       </nav>
     </header>
     <div className="dashboard-canvas">
       {editing && <button className="dashboard-add-widget" onClick={addWidget}><Plus size={14} />{tr(locale, "添加指标", "Add metric")}</button>}
       <div className="dashboard-widget-grid">
-        {resolvedWidgets.map((widget) => <article key={widget.id} draggable={editing} onDragStart={() => setDraggingId(widget.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => dropWidget(widget.id)}>
+        {resolvedWidgets.map((widget) => <article key={widget.id} draggable={!readOnly && editing} onDragStart={() => setDraggingId(widget.id)} onDragOver={(event) => event.preventDefault()} onDrop={() => dropWidget(widget.id)}>
           {editing && <GripVertical className="dashboard-grip" size={14} />}
           {editing ? <div className="dashboard-widget-form">
             <input value={widget.title} onChange={(event) => updateWidget(widget.id, { title: event.target.value })} aria-label={tr(locale, "指标名称", "Metric name")} />
@@ -99,7 +100,7 @@ export function SceneDashboardOverlay({ locale, sceneId, onClose }: { locale: Ap
       </div>
       {resolvedWidgets.length === 0 && <div className="dashboard-empty"><Activity size={24} /><strong>{tr(locale, "添加第一个指标", "Add your first metric")}</strong><span>{tr(locale, "Node-RED 负责接入与整理数据，这里负责拖拽排版和场景展示。", "Node-RED connects and shapes data; this panel handles lightweight layout and scene display.")}</span></div>}
     </div>
-    <label className="dashboard-width"><span>{tr(locale, "宽度", "Width")}</span><input type="range" min="300" max="560" step="10" value={width} onChange={(event) => changeWidth(Number(event.target.value))} /><output>{width}px</output></label>
+    {!readOnly && <label className="dashboard-width"><span>{tr(locale, "宽度", "Width")}</span><input type="range" min="300" max="560" step="10" value={width} onChange={(event) => changeWidth(Number(event.target.value))} /><output>{width}px</output></label>}
   </section>;
 }
 

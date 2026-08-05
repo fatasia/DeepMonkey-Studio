@@ -24,7 +24,9 @@ module.exports = {
     customCss: path.join(__dirname, "theme", "bim-studio.css")
   },
   telemetry: { enabled: false, updateNotification: false },
-  functionGlobalContext: {},
+  functionGlobalContext: {
+    tdengine: require("@tdengine/websocket")
+  },
   logging: { console: { level: "info", metrics: false, audit: false } },
   exportGlobalContextKeys: false,
   externalModules: { autoInstall: false }

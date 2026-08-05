@@ -31,6 +31,16 @@ const oracleCredentials = databaseCredentials["example-oracle-server"];
 if (oracleCredentials?.user !== "$(ORACLE_USER)" || oracleCredentials?.password !== "$(ORACLE_PASSWORD)") {
   throw new Error("Oracle example credentials must use environment variables");
 }
+const tdengineQuery = byId.get("example-td-request");
+if (tdengineQuery.outputs !== 2 || !tdengineQuery.func.includes("tdengine.sqlConnect") || !tdengineQuery.func.includes("TDENGINE_WS_URL")) {
+  throw new Error("TDengine example must prefer the official WebSocket connector and provide a REST fallback");
+}
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+new AsyncFunction("msg", "context", "global", "env", "node", "Buffer", tdengineQuery.func);
+new AsyncFunction("context", tdengineQuery.finalize);
+if (!byId.get("example-td-normalize").func.includes("body.code")) {
+  throw new Error("TDengine example must handle TDengine 3.x REST error responses");
+}
 
 if (byId.get("scene-http-in").url !== "/scene") throw new Error("Scene HTTP route must remain /iot/scene");
 if (byId.get("scene-ws-listener").path !== "/ws/scene") throw new Error("Scene WebSocket route must remain /iot/ws/scene");
@@ -49,5 +59,9 @@ for (const type of ["oracledb", "oracle-server", "http request", "ui-gauge"]) {
 }
 for (const id of ["example-td-normalize", "example-oracle-normalize"]) {
   if (!databaseExamples.some((node) => node.id === id)) throw new Error(`Database example is missing node: ${id}`);
+}
+const exportedTdengineQuery = databaseExamples.find((node) => node.id === "example-td-request");
+if (exportedTdengineQuery?.func !== tdengineQuery.func || exportedTdengineQuery?.finalize !== tdengineQuery.finalize) {
+  throw new Error("Exported TDengine example must match the built-in WebSocket flow");
 }
 console.log(`Validated ${databaseExamples.length} TDengine/Oracle example nodes`);

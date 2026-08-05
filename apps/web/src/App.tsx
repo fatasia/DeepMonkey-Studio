@@ -172,6 +172,16 @@ function readRoute(): AppRoute {
   return { view: "manager" };
 }
 
+function routePath(route: AppRoute): string {
+  return route.view === "manager" || route.view === "optimizer"
+    ? `/${route.view}`
+    : `/${route.view}/${encodeURIComponent(route.sceneId ?? "new")}`;
+}
+
+function openBrowseRoute(view: "view" | "published", sceneId: string): void {
+  window.open(routePath({ view, sceneId }), "_blank", "noopener,noreferrer");
+}
+
 function sortScenesByTime(items: SceneSnapshot[]): SceneSnapshot[] {
   return [...items].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
 }
@@ -241,6 +251,7 @@ export function App() {
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [digitalTwinOpen, setDigitalTwinOpen] = useState(false);
   const [sceneDashboardOpen, setSceneDashboardOpen] = useState(false);
+  const [viewerToolsOpen, setViewerToolsOpen] = useState(false);
   const [xrPanelOpen, setXrPanelOpen] = useState(false);
   const [xrActiveMode, setXrActiveMode] = useState<"immersive-vr" | "immersive-ar">();
   const [xrCapabilities, setXrCapabilities] = useState<{ checking: boolean; secure: boolean; webxr: boolean; vr: boolean; ar: boolean }>({ checking: false, secure: window.isSecureContext, webxr: Boolean(navigator.xr), vr: false, ar: false });
@@ -273,10 +284,7 @@ export function App() {
   useEffect(() => storeLocale(locale), [locale]);
 
   function navigate(next: AppRoute, replace = false) {
-    const path = next.view === "manager" || next.view === "optimizer"
-      ? `/${next.view}`
-      : `/${next.view}/${encodeURIComponent(next.sceneId ?? "new")}`;
-    window.history[replace ? "replaceState" : "pushState"]({}, "", path);
+    window.history[replace ? "replaceState" : "pushState"]({}, "", routePath(next));
     setRoute(next);
   }
 
@@ -438,6 +446,12 @@ export function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    const browse = route.view === "view" || route.view === "published";
+    setViewerToolsOpen(false);
+    if (browse) setSceneDashboardOpen(true);
+  }, [route.view, route.sceneId]);
 
   useEffect(() => {
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();
@@ -1132,8 +1146,22 @@ export function App() {
   }
 
   async function browseActiveScene() {
+    const browseWindow = window.open("about:blank", "_blank");
+    if (browseWindow) {
+      browseWindow.opener = null;
+      browseWindow.document.title = tr(locale, "正在打开场景…", "Opening scene…");
+    }
     const saved = await saveScene();
-    if (saved) navigate({ view: "view", sceneId: saved.id });
+    if (!saved) {
+      browseWindow?.close();
+      return;
+    }
+    const path = routePath({ view: "view", sceneId: saved.id });
+    if (browseWindow && !browseWindow.closed) browseWindow.location.replace(path);
+    else {
+      const fallback = window.open(path, "_blank", "noopener,noreferrer");
+      if (!fallback) showError(new Error(tr(locale, "浏览器阻止了新窗口，请允许本站弹出窗口", "The browser blocked the viewer window; allow pop-ups for this site")));
+    }
   }
 
   async function publishActiveScene() {
@@ -1525,8 +1553,8 @@ export function App() {
           onRename={renameScene}
           onPublish={publishScene}
           onUnpublish={unpublishScene}
-          onBrowse={(scene) => navigate({ view: "view", sceneId: scene.id })}
-          onBrowsePublished={(scene) => navigate({ view: "published", sceneId: scene.id })}
+          onBrowse={(scene) => openBrowseRoute("view", scene.id)}
+          onBrowsePublished={(scene) => openBrowseRoute("published", scene.id)}
           onImport={() => importRef.current?.click()}
           onExportLoose={exportSceneConfig}
           onExportSingle={exportSingleFileScene}
@@ -1788,8 +1816,9 @@ export function App() {
       <main className="workspace">
         <div className="viewport" ref={viewportRef} />
         {rendererSwitching && <div className="renderer-loading"><LoaderCircle className="spin" size={18} /><span>{tr(locale, "正在初始化", "Initializing")} {rendererBackend === "webgpu" ? "WebGPU" : "WebGL"}</span></div>}
-        <div className="tool-dock" role="toolbar" aria-label={tr(locale, "查看编辑工具", "View and edit tools")}>
-          {route.view === "view" || route.view === "published" ? <>
+        {route.view === "view" || route.view === "published" ? <div className={`tool-dock viewer-tool-dock ${viewerToolsOpen ? "open" : "collapsed"}`} role="toolbar" aria-label={tr(locale, "浏览工具", "Viewer tools")}>
+          <button className="viewer-tool-toggle" type="button" aria-expanded={viewerToolsOpen} title={viewerToolsOpen ? tr(locale, "收起浏览工具", "Collapse viewer tools") : tr(locale, "展开浏览工具", "Expand viewer tools")} onClick={() => setViewerToolsOpen((value) => !value)}><ChevronRight size={18} /></button>
+          <div className="viewer-tool-items" aria-hidden={!viewerToolsOpen}>
             <ToolButton title={tr(locale, "适应全部（回到模型）", "Fit all")} active={false} onClick={() => engine?.fitAll()} icon={<Focus size={19} />} />
             <ToolButton title={tr(locale, "轨道浏览（围绕模型旋转）", "Orbit around model")} active={navigationMode === "orbit"} onClick={() => changeNavigation("orbit")} icon={<Orbit size={19} />} />
             <ToolButton title={tr(locale, "第一人称（地面行走）", "First person walk")} active={navigationMode === "firstPerson"} onClick={() => changeNavigation("firstPerson")} icon={<Footprints size={19} />} />
@@ -1798,7 +1827,8 @@ export function App() {
             <ToolButton title={tr(locale, "场景信息", "Scene information")} active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
             <ToolButton title={tr(locale, "进入 VR（需头显与 HTTPS）", "Enter VR (headset and HTTPS required)")} active={false} onClick={() => void startXR("immersive-vr")} icon={<span className="xr-tool-label">VR</span>} />
             <ToolButton title={tr(locale, "进入 AR（需兼容移动设备与 HTTPS）", "Enter AR (compatible mobile device and HTTPS required)")} active={false} onClick={() => void startXR("immersive-ar")} icon={<span className="xr-tool-label">AR</span>} />
-          </> : <>
+          </div>
+        </div> : <div className="tool-dock" role="toolbar" aria-label={tr(locale, "查看编辑工具", "View and edit tools")}>
           <ToolButton title={tr(locale, "适应全部（回到模型）", "Fit all")} active={false} onClick={() => engine?.fitAll()} icon={<Focus size={19} />} />
           <span className="dock-separator" />
           <ToolButton title={tr(locale, "选择", "Select")} active={!measureEnabled && !annotationEnabled && navigationMode === "orbit"} onClick={() => changeNavigation("orbit")} icon={<MousePointer2 size={19} />} />
@@ -1840,9 +1870,8 @@ export function App() {
           <ToolButton title={tr(locale, "二维数据看板", "2D data dashboard")} active={sceneDashboardOpen} onClick={() => setSceneDashboardOpen((value) => !value)} icon={<Gauge size={19} />} />
           <ToolButton title={tr(locale, "物理系统", "Physics")} active={physicsOpen} onClick={() => { setPhysicsOpen((value) => !value); setEnvironmentOpen(false); }} icon={<Atom size={19} />} />
           <ToolButton className="xr-entry" title={tr(locale, "AR / VR 沉浸体验", "AR / VR immersive experience")} active={xrPanelOpen} onClick={() => setXrPanelOpen((value) => !value)} icon={<span className="xr-tool-label">AR/VR</span>} />
-          </>}
-        </div>
-        <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />
+        </div>}
+        {route.view === "studio" && <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />}
         {route.view === "studio" && cameraViewsOpen && <section className="camera-views-panel">
           <header><div><strong>{tr(locale, "相机视角", "Camera views")}</strong><small>{tr(locale, "可设为场景进入视角", "Set the scene entry view")}</small></div><button onClick={() => setCameraViewsOpen(false)}><X size={14} /></button></header>
           <button className="camera-view-add" onClick={addCameraView}><Plus size={14} />{tr(locale, "保存当前视角", "Save current view")}</button>
@@ -1979,7 +2008,17 @@ export function App() {
           {!xrCapabilities.checking && (!xrCapabilities.vr || !xrCapabilities.ar) && <p>{tr(locale, "桌面浏览器通常只能检测 VR 头显；AR 需支持 WebXR 的 Android 设备。自签名证书必须先在设备上信任。", "Desktop browsers usually require a connected VR headset; AR requires a WebXR-capable Android device. Trust the self-signed certificate on the device first.")}</p>}
         </div>}
         {route.view === "studio" && xrActiveMode && <div className="xr-session-hud"><div><strong>{xrActiveMode === "immersive-vr" ? "VR" : "AR"} {tr(locale, "运行中", "active")}</strong><small>{xrActiveMode === "immersive-vr" ? tr(locale, "左摇杆移动 · 右摇杆转向 · B/Y 退出", "Left stick move · right stick turn · B/Y exit") : tr(locale, "点击退出返回编辑器", "Exit to return to the editor")}</small></div><button onClick={() => void engine?.endXR()}>{tr(locale, "退出", "Exit")}</button></div>}
-        {route.view === "studio" && sceneDashboardOpen && <SceneDashboardOverlay locale={locale} sceneId={activeScene?.id ?? route.sceneId ?? "new"} onClose={() => setSceneDashboardOpen(false)} />}
+        {(route.view === "studio" || route.view === "view" || route.view === "published") && sceneDashboardOpen && <SceneDashboardOverlay locale={locale} sceneId={activeScene?.id ?? route.sceneId ?? "new"} readOnly={route.view !== "studio"} onClose={() => setSceneDashboardOpen(false)} />}
+        {(route.view === "view" || route.view === "published") && infoEnabled && <section className="viewer-info-card" aria-label={tr(locale, "场景信息", "Scene information")}>
+          <header><strong>{tr(locale, "场景信息", "Scene information")}</strong><button title={tr(locale, "关闭", "Close")} onClick={() => setInfoEnabled(false)}><X size={14} /></button></header>
+          <div className="scene-info-grid">
+            <div><strong>{numberFormat.format(sceneStatistics.modelCount)}</strong><span>{tr(locale, "模型", "Models")}</span></div>
+            <div><strong>{numberFormat.format(sceneStatistics.componentCount)}</strong><span>{tr(locale, "构件", "Components")}</span></div>
+            <div><strong>{numberFormat.format(sceneStatistics.triangleCount)}</strong><span>{tr(locale, "三角面", "Triangles")}</span></div>
+            <div><strong>{numberFormat.format(sceneStatistics.vertexCount)}</strong><span>{tr(locale, "顶点", "Vertices")}</span></div>
+            <div><strong>{frameRate || "—"}</strong><span>FPS</span></div>
+          </div>
+        </section>}
         {route.view === "studio" && measureEnabled && (
           <div className="measure-mode-bar" aria-label={tr(locale, "测量模式", "Measurement mode")}>
             <span>{tr(locale, "测量", "Measure")}</span>
@@ -2054,8 +2093,8 @@ export function App() {
             </div>
           </div>
         )}
-        <div className="viewport-status"><span className={busy ? "status-dot working" : "status-dot"} />{message}</div>
-        {navigationMode !== "orbit" && <div className="navigation-hint">{tr(locale, "W A S D 移动 · Shift 加速", "W A S D move · Shift boost")}{navigationMode === "firstPerson" ? tr(locale, " · 空格跳跃 · 双击画面锁定视角 · Esc 释放鼠标", " · Space jump · Double-click to capture pointer · Esc to release") : tr(locale, " · 空中漫游 · Space 上升 · Ctrl 下降 · 鼠标旋转视角", " · Fly mode · Space up · Ctrl down · Mouse to look")}</div>}
+        {route.view === "studio" && <div className="viewport-status"><span className={busy ? "status-dot working" : "status-dot"} />{message}</div>}
+        {route.view === "studio" && navigationMode !== "orbit" && <div className="navigation-hint">{tr(locale, "W A S D 移动 · Shift 加速", "W A S D move · Shift boost")}{navigationMode === "firstPerson" ? tr(locale, " · 空格跳跃 · 双击画面锁定视角 · Esc 释放鼠标", " · Space jump · Double-click to capture pointer · Esc to release") : tr(locale, " · 空中漫游 · Space 上升 · Ctrl 下降 · 鼠标旋转视角", " · Fly mode · Space up · Ctrl down · Mouse to look")}</div>}
         {busy && <div className="loading-overlay"><LoaderCircle className="spin" size={24} /><span>{tr(locale, "正在处理模型", "Processing model")}</span></div>}
       </main>
 

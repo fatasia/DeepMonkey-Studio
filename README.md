@@ -26,7 +26,7 @@
 - 场景动画编辑器支持相机轨道与整个模型/立方体的关键帧，提供线性/平滑/曲线插值、播放速度、循环、往返、路径显示和关键帧删除，状态随场景保存
 - 模型和内部图层支持锁定；原生 RVT 元数据可提取房间/MEP Space，并按模型和楼层展开空间树、稳定定位、单项/楼层批量显隐空间体，右侧按类别结构化显示 BIM 属性
 - 标签标记可拾取模型表面或地面放置，支持名称、说明、颜色、尺寸、XYZ、显隐、锁定、定位和删除，并随场景保存、导入与导出
-- 场景管理中心提供 `/optimizer` 模型优化页，可在浏览器本地进行模型减面、Draco、贴图压缩、原点调整、重复点焊接、无用数据清理和 GLB 导出
+- 场景管理中心提供 `/optimizer` 模型优化页，可在浏览器本地进行模型减面、Draco、贴图压缩、轻量顶点光照烘焙、原点调整、重复点焊接、无用数据清理和 GLB 导出
 - 环境控制支持晴天、下雨、下雪、网格显隐、可配置纯色背景、晴空/黄昏/夜空天空盒，以及全局灯光开关和强度调节，状态随场景保存
 - 灯光系统默认只保留一个主方向光，仍可按需添加环境光、半球光、点光源、聚光灯和矩形区域光；可移动的灯光代理与目标点直接显示在三维场景中；阴影、反射和近似全局光照默认关闭
 - WebGL 后处理支持 SMAA、FXAA、SSAO、GTAO、Bloom、选中轮廓、景深、暗角、胶片颗粒和残像，所有效果默认关闭并随场景保存；HDR/EXR 环境贴图和 PBR 材质参数也随场景保存
@@ -67,7 +67,7 @@ Windows 也可以使用根目录服务脚本统一管理全部服务，或只操
 
 `pnpm dev` 仍只启动 Web 和 API；需要数字孪生流程时使用 `pnpm dev:all`，或通过脚本单独执行 `./bim-studio.ps1 start node-red`。Node-RED 不运行不会影响模型浏览、编辑和场景保存。HTTP 场景桥为 `POST /iot/scene`，浏览器订阅 `/iot/ws/scene`。生产部署应设置随机 `NODE_RED_CREDENTIAL_SECRET`，并通过 Node-RED credential store 保存数据库与设备密码。
 
-TDengine 与 Oracle 的最小可用示例流位于 `apps/node-red/examples/tdengine-oracle-dashboard.json`，并默认内置在 `flows.json` 中但保持禁用。连接参数由仓库根目录 `.env` 注入；Oracle 的用户名和密码通过被 Git 忽略的 `apps/node-red/flows_cred.json` 引用环境变量，也可以在 Node-RED 中双击“Oracle 示例连接”覆盖并加密保存。重启 Node-RED 后启用对应流程即可手动测试。TDengine 示例走 REST API；Oracle 示例使用 `node-red-contrib-oracledb-mod`，Oracle 12.1+ 保持默认 Thin 模式即可，Oracle 11g 或需要 Thick 特性时使用已安装到 `D:\Documents\bim\oracle\instantclient_19_31` 的 Instant Client。两个示例都直接输出到现有 `/iot/dashboard/` 看板。
+TDengine 与 Oracle 的最小可用示例流位于 `apps/node-red/examples/tdengine-oracle-dashboard.json`，并默认内置在 `flows.json` 中但保持禁用。连接参数由仓库根目录 `.env` 注入；Oracle 的用户名和密码通过被 Git 忽略的 `apps/node-red/flows_cred.json` 引用环境变量，也可以在 Node-RED 中双击“Oracle 示例连接”覆盖并加密保存。重启 Node-RED 后启用对应流程即可手动测试。TDengine 示例默认使用官方 `@tdengine/websocket` 连接 taosAdapter，查询失败会自动回退 `/rest/sql`；Oracle 示例使用 `node-red-contrib-oracledb-mod`，Oracle 12.1+ 保持默认 Thin 模式即可，Oracle 11g 或需要 Thick 特性时使用已安装到 `D:\Documents\bim\oracle\instantclient_19_31` 的 Instant Client。两个示例都直接输出到现有 `/iot/dashboard/` 看板。
 
 ## PostgreSQL 与 MinIO
 

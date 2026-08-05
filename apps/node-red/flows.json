@@ -269,14 +269,14 @@
     "type": "tab",
     "label": "示例 · TDengine",
     "disabled": true,
-    "info": "启用前在 .env 配置 TDENGINE_REST_URL、TDENGINE_DATABASE、TDENGINE_USER、TDENGINE_PASSWORD。"
+    "info": "启用前在 .env 配置 TDENGINE_WS_URL、TDENGINE_DATABASE、TDENGINE_USER、TDENGINE_PASSWORD。WebSocket 查询失败时自动回退 REST。"
   },
   {
     "id": "example-td-note",
     "type": "comment",
     "z": "example-td-tab",
     "name": "1. 配置 .env  2. 双击 SQL 改表名  3. 启用流程",
-    "info": "默认每 10 秒通过 TDengine REST API 查询一次。示例流程导入时处于禁用状态，避免未配置时反复报错。",
+    "info": "默认每 10 秒通过 TDengine 官方 Node.js WebSocket 驱动查询一次，失败时自动回退 REST。示例流程导入时处于禁用状态，避免未配置时反复报错。",
     "x": 310,
     "y": 80,
     "wires": []
@@ -308,17 +308,20 @@
     "id": "example-td-request",
     "type": "function",
     "z": "example-td-tab",
-    "name": "TDengine REST + SQL",
-    "func": "const base = env.get('TDENGINE_REST_URL') || 'http://127.0.0.1:6041';\nconst database = env.get('TDENGINE_DATABASE') || 'test';\nconst user = env.get('TDENGINE_USER') || 'root';\nconst password = env.get('TDENGINE_PASSWORD') || 'taosdata';\nmsg.method = 'POST';\nmsg.url = `${base.replace(/\\/$/, '')}/rest/sql/${encodeURIComponent(database)}`;\nmsg.headers = {\n  'content-type': 'text/plain; charset=utf-8',\n  authorization: `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`\n};\n// 改成你的超级表、表和字段。\nmsg.payload = 'SELECT LAST(ts) AS ts, LAST(current) AS value FROM meters';\nreturn msg;",
-    "outputs": 1,
+    "name": "TDengine WebSocket + SQL",
+    "func": "const tdengine = global.get('tdengine');\nconst database = env.get('TDENGINE_DATABASE') || 'test';\nconst user = env.get('TDENGINE_USER') || 'root';\nconst password = env.get('TDENGINE_PASSWORD') || 'taosdata';\nconst restBase = env.get('TDENGINE_REST_URL') || 'http://127.0.0.1:6041';\nconst wsUrl = env.get('TDENGINE_WS_URL') || restBase.replace(/^http/i, 'ws');\n// 改成你的超级表、表和字段。\nconst sql = 'SELECT LAST(ts) AS ts, LAST(current) AS value FROM meters';\nlet connection = context.get('tdengineWsConnection');\nlet rows;\ntry {\n  if (!tdengine) throw new Error('未加载 @tdengine/websocket');\n  if (!connection) {\n    const config = new tdengine.WSConfig(wsUrl);\n    config.setUser(user);\n    config.setPwd(password);\n    config.setDb(database);\n    config.setTimeOut(10000);\n    connection = await tdengine.sqlConnect(config);\n    context.set('tdengineWsConnection', connection);\n  }\n  rows = await connection.query(sql);\n  const meta = rows.getMeta() || [];\n  const data = [];\n  while (await rows.next()) data.push(...(rows.getData() || []));\n  await rows.close();\n  msg.payload = { code: 0, column_meta: meta.map((column) => [column.name, column.type, column.length]), data };\n  node.status({ fill: 'green', shape: 'dot', text: 'WebSocket' });\n  return [msg, null];\n} catch (error) {\n  try { await rows?.close(); } catch {}\n  try { await connection?.close(); } catch {}\n  context.set('tdengineWsConnection', undefined);\n  node.status({ fill: 'yellow', shape: 'ring', text: 'REST fallback' });\n  node.warn(`TDengine WebSocket 查询失败，回退 REST：${error.message || error}`);\n  msg.method = 'POST';\n  msg.url = `${restBase.replace(/\\/$/, '')}/rest/sql/${encodeURIComponent(database)}`;\n  msg.headers = { 'content-type': 'text/plain; charset=utf-8', authorization: `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}` };\n  msg.payload = sql;\n  return [null, msg];\n}",
+    "outputs": 2,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
-    "finalize": "",
+    "finalize": "const connection = context.get('tdengineWsConnection');\nif (connection) await connection.close();\ncontext.set('tdengineWsConnection', undefined);",
     "libs": [],
     "x": 330,
     "y": 140,
     "wires": [
+      [
+        "example-td-normalize"
+      ],
       [
         "example-td-http"
       ]
@@ -328,7 +331,7 @@
     "id": "example-td-http",
     "type": "http request",
     "z": "example-td-tab",
-    "name": "执行 TDengine 查询",
+    "name": "REST 兼容回退",
     "method": "use",
     "ret": "obj",
     "paytoqs": "ignore",
@@ -350,7 +353,7 @@
     "type": "function",
     "z": "example-td-tab",
     "name": "取最新数值",
-    "func": "const body = msg.payload || {};\nif (body.status && body.status !== 'succ') { throw new Error(body.desc || 'TDengine 查询失败'); }\nconst row = Array.isArray(body.data) ? body.data[0] : undefined;\nconst value = Array.isArray(row) ? row[row.length - 1] : row?.value;\nmsg.payload = Number(value ?? 0);\nmsg.topic = 'TDengine';\nreturn msg;",
+    "func": "const body = msg.payload || {};\nif (body.status && body.status !== 'succ') { throw new Error(body.desc || 'TDengine 2.x 查询失败'); }\nif (typeof body.code === 'number' && body.code !== 0) { throw new Error(body.desc || body.message || `TDengine 3.x 查询失败 (${body.code})`); }\nconst row = Array.isArray(body.data) ? body.data[0] : undefined;\nconst value = Array.isArray(row) ? row[row.length - 1] : row?.value;\nmsg.payload = Number(value ?? 0);\nmsg.topic = 'TDengine';\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,

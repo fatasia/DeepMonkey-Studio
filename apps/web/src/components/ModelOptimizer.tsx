@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Box, Crosshair, Download, Gauge, Image, LoaderCircle, Sparkles, Trash2, Triangle, Upload } from "lucide-react";
+import { ArrowLeft, Box, Crosshair, Download, Gauge, Image, Lightbulb, LoaderCircle, Sparkles, Trash2, Triangle, Upload } from "lucide-react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
@@ -20,6 +20,8 @@ const DEFAULT_OPTIONS: ModelOptimizationOptions = {
   textureEnabled: true,
   textureSize: 2048,
   textureFormat: "webp",
+  bakeEnabled: false,
+  bakeStrength: 0.35,
   origin: "ground",
   removeUnused: true
 };
@@ -128,6 +130,10 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
         <OptionSection icon={<Sparkles size={15} />} title={tr(locale, "Draco 压缩", "Draco compression")} enabled={options.dracoEnabled} onToggle={(enabled) => setOptions({ ...options, dracoEnabled: enabled })}><p>{tr(locale, "压缩顶点、法线和索引；Viewer 已内置 Draco 解码器。", "Compresses vertices, normals and indices; the viewer includes a Draco decoder.")}</p></OptionSection>
         <OptionSection icon={<Image size={15} />} title={tr(locale, "压缩贴图", "Texture compression")} enabled={options.textureEnabled} onToggle={(enabled) => setOptions({ ...options, textureEnabled: enabled })}>
           <div className="optimizer-selects"><label><span>{tr(locale, "最大尺寸", "Maximum size")}</span><select value={options.textureSize} onChange={(event) => setOptions({ ...options, textureSize: Number(event.target.value) })}><option value="512">512</option><option value="1024">1024</option><option value="2048">2048</option><option value="4096">4096</option></select></label><label><span>{tr(locale, "输出格式", "Output format")}</span><select value={options.textureFormat} onChange={(event) => setOptions({ ...options, textureFormat: event.target.value as ModelOptimizationOptions["textureFormat"] })}><option value="webp">WebP</option><option value="jpeg">JPEG</option><option value="original">{tr(locale, "保持原格式", "Keep original")}</option></select></label></div>
+        </OptionSection>
+        <OptionSection icon={<Lightbulb size={15} />} title={tr(locale, "轻量光照烘焙", "Lightweight light baking")} enabled={options.bakeEnabled} onToggle={(enabled) => setOptions({ ...options, bakeEnabled: enabled })}>
+          <label><span>{tr(locale, "烘焙强度", "Bake strength")}</span><output>{Math.round(options.bakeStrength * 100)}%</output><input type="range" min="0.05" max="0.8" step="0.05" value={options.bakeStrength} onChange={(event) => setOptions({ ...options, bakeStrength: Number(event.target.value) })} /></label>
+          <p>{tr(locale, "将固定半球光与主光写入顶点色，导出后无需实时阴影；不生成光照贴图，适合快速预览和轻量发布。", "Bakes a fixed hemisphere and key light into vertex colors, avoiding realtime shadows. It does not generate lightmap textures and is intended for fast previews and lightweight publishing.")}</p>
         </OptionSection>
         <OptionSection icon={<Crosshair size={15} />} title={tr(locale, "设置原点", "Set origin")}>
           <div className="origin-options">{([['keep',tr(locale, '保持', 'Keep')],['center',tr(locale, '模型中心', 'Model center')],['ground',tr(locale, '底部中心', 'Bottom center')]] as const).map(([value, label]) => <button key={value} className={options.origin === value ? "active" : ""} onClick={() => setOptions({ ...options, origin: value })}>{label}</button>)}</div>
@@ -242,6 +248,8 @@ function localizeOptimizerMessage(locale: AppLocale, message: string) {
     "正在分析模型": "Analyzing model",
     "模型已载入，可调整参数后开始优化": "Model loaded; adjust options and start optimization",
     "模型解析失败": "Model parsing failed",
+    "正在烘焙顶点光照": "Baking vertex lighting",
+    "正在执行 Draco 压缩": "Applying Draco compression",
     "优化失败，原始文件未修改": "Optimization failed; the source file was not modified"
   };
   return messages[message] ?? message;
