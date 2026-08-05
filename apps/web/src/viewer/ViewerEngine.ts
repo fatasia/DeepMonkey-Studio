@@ -61,6 +61,7 @@ import {
 } from "./analysis";
 import { sampleCameraKeyframes, sampleModelKeyframes } from "./timeline";
 import { constrainMeasurementEnd, elevationSegment, measurementAngle, projectRayToVerticalAxis } from "./measurement";
+import { ModelLoadCoordinator } from "./modelLoadCoordinator";
 
 export type { CollisionRecord, ComponentFacets, ComponentFilter, ComponentRecord } from "./analysis";
 
@@ -71,6 +72,13 @@ export type StandardView = "top" | "bottom" | "left" | "right" | "front" | "back
 export type SelectionScope = "model" | "component";
 export type RendererBackend = "webgl" | "webgpu";
 type RendererInstance = THREE.WebGLRenderer | WebGPURenderer;
+
+export class ModelLoadSupersededError extends Error {
+  constructor() {
+    super("模型加载已被新的场景恢复任务替代");
+    this.name = "ModelLoadSupersededError";
+  }
+}
 
 const DEFAULT_SCENE_LIGHTS: SceneLightState[] = [
   { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
@@ -249,6 +257,7 @@ export class ViewerEngine {
   private readonly modelRoot: THREE.Group | ClippingGroup;
   private readonly pointerPosition = new THREE.Vector2();
   private readonly models = new Map<string, LoadedSceneModel>();
+  private readonly modelLoads = new ModelLoadCoordinator<LoadedSceneModel>();
   private readonly components = new OBC.Components();
   private readonly fragments = this.components.get(OBC.FragmentsManager);
   private readonly importer = new FRAGS.IfcImporter();
@@ -1681,6 +1690,11 @@ export class ViewerEngine {
   async loadManifest(manifest: ModelManifest): Promise<LoadedSceneModel> {
     const existing = this.models.get(manifest.modelId);
     if (existing) return existing;
+    const epoch = this.modelLoads.currentEpoch;
+    return this.modelLoads.run(manifest.modelId, epoch, () => this.loadManifestOnce(manifest, epoch));
+  }
+
+  private async loadManifestOnce(manifest: ModelManifest, epoch: number): Promise<LoadedSceneModel> {
     if (!manifest.geometryUrl || !manifest.viewerKind) throw new Error("模型清单缺少几何数据");
     let object: THREE.Object3D;
     let animations: THREE.AnimationClip[] = [];
@@ -1714,6 +1728,11 @@ export class ViewerEngine {
       object = model.object;
     } else {
       object = await this.loadDxf(manifest.geometryUrl);
+    }
+    if (!this.modelLoads.isCurrent(epoch)) {
+      if (fragmentsModel) await fragmentsModel.dispose();
+      else this.disposeObject(object);
+      throw new ModelLoadSupersededError();
     }
     const loaded = this.registerObject(manifest.modelId, manifest.sourceName, object, "model");
     if (fragmentsModel) await this.registerFragmentsModel(manifest.modelId, fragmentsModel, manifest.sourceName);
@@ -1798,7 +1817,12 @@ export class ViewerEngine {
   }
 
   clearSceneModels(): void {
+    this.modelLoads.invalidate();
     for (const id of [...this.models.keys()]) this.removeModel(id);
+    for (const orphan of [...this.modelRoot.children]) {
+      orphan.removeFromParent();
+      this.disposeObject(orphan);
+    }
     this.clearMeasurements();
     this.clearAnnotations();
     this.measurementPoints.length = 0;

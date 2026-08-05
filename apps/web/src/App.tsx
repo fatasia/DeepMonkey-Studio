@@ -81,6 +81,7 @@ import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n
 import { exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
 import {
   ViewerEngine,
+  ModelLoadSupersededError,
   type BimPropertyEntry,
   type BimSpaceRecord,
   type ComponentRecord,
@@ -187,6 +188,7 @@ export function App() {
   const importRef = useRef<HTMLInputElement>(null);
   const environmentMapRef = useRef<HTMLInputElement>(null);
   const sceneNameCommitRef = useRef<Promise<boolean> | undefined>(undefined);
+  const sceneApplyVersionRef = useRef(0);
   const rendererSnapshotRef = useRef<{ scene: SceneSnapshot; readOnly: boolean } | undefined>(undefined);
   const [engine, setEngine] = useState<ViewerEngine>();
   const [rendererBackend, setRendererBackend] = useState<RendererBackend>(() =>
@@ -432,6 +434,7 @@ export function App() {
 
   function switchProject(next: ProjectRecord) {
     if (next.id === project?.id) return;
+    sceneApplyVersionRef.current += 1;
     engine?.clearSceneModels();
     setProject(next);
     setActiveScene(undefined);
@@ -492,6 +495,7 @@ export function App() {
       await api.deleteProject(project.id);
       const remaining = projects.filter((item) => item.id !== project.id);
       setProjects(remaining);
+      sceneApplyVersionRef.current += 1;
       engine?.clearSceneModels();
       setActiveScene(undefined);
       setScenes([]);
@@ -619,6 +623,7 @@ export function App() {
       setMessage(`${model.name} 已加载`);
       return loaded;
     } catch (reason) {
+      if (reason instanceof ModelLoadSupersededError) return;
       showError(reason);
     } finally {
       setBusy(false);
@@ -1086,6 +1091,7 @@ export function App() {
 
   async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false) {
     if (!engine || !sceneProject) return;
+    const applyVersion = ++sceneApplyVersionRef.current;
     setBusy(true);
     if (updateRoute) navigate({ view: "studio", sceneId: scene.id });
     try {
@@ -1100,6 +1106,7 @@ export function App() {
       for (const item of scene.models) {
         const record = sceneProject.models.find((model) => model.id === item.modelId);
         if (record) await loadModel(record);
+        if (applyVersion !== sceneApplyVersionRef.current) return;
         engine.applyModelState(item.modelId, item);
         engine.rename(item.modelId, item.name);
       }
@@ -1148,14 +1155,16 @@ export function App() {
       setMessage(`场景“${scene.name}”已恢复`);
       setRevision((value) => value + 1);
     } catch (reason) {
+      if (reason instanceof ModelLoadSupersededError) return;
       showError(reason);
     } finally {
-      setBusy(false);
+      if (applyVersion === sceneApplyVersionRef.current) setBusy(false);
     }
   }
 
   async function createScene(name: string) {
     if (!engine || !project) return;
+    sceneApplyVersionRef.current += 1;
     engine.clearSceneModels();
     engine.setClipping(DEFAULT_CLIPPING);
     engine.setWeather("sunny");
@@ -1720,7 +1729,7 @@ export function App() {
           <ToolButton title={tr(locale, "环境设置", "Environment")} active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
           <ToolButton title={tr(locale, "动画编辑", "Animation editor")} active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
           <ToolButton title={tr(locale, "二维数据看板", "2D data dashboard")} active={sceneDashboardOpen} onClick={() => setSceneDashboardOpen((value) => !value)} icon={<Gauge size={19} />} />
-          <ToolButton title={tr(locale, "VR / AR", "VR / AR")} active={xrPanelOpen} onClick={() => setXrPanelOpen((value) => !value)} icon={<span className="xr-tool-label">XR</span>} />
+          <ToolButton className="xr-entry" title={tr(locale, "AR / VR 沉浸体验", "AR / VR immersive experience")} active={xrPanelOpen} onClick={() => setXrPanelOpen((value) => !value)} icon={<span className="xr-tool-label">AR/VR</span>} />
           </>}
         </div>
         <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />
@@ -2054,8 +2063,8 @@ export function App() {
   );
 }
 
-function ToolButton({ title, active, onClick, icon }: { title: string; active: boolean; onClick: () => void; icon: React.ReactNode }) {
-  return <button className={`tool-button ${active ? "active" : ""}`} title={title} onClick={onClick}>{icon}<span>{title}</span></button>;
+function ToolButton({ title, active, onClick, icon, className = "" }: { title: string; active: boolean; onClick: () => void; icon: React.ReactNode; className?: string }) {
+  return <button className={`tool-button ${active ? "active" : ""} ${className}`.trim()} title={title} onClick={onClick}>{icon}<span>{title}</span></button>;
 }
 
 function ViewControl({ locale, onSelect }: { locale: AppLocale; onSelect: (view: StandardView) => void }) {
