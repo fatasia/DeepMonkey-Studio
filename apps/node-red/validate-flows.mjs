@@ -22,7 +22,17 @@ for (const id of [
 ]) {
   if (!byId.has(id)) throw new Error(`Missing required Node-RED node: ${id}`);
 }
-if (byId.get("example-td-tab").disabled !== true || byId.get("example-oracle-tab").disabled !== true) throw new Error("Database examples must remain disabled until credentials are configured");
+if (byId.get("example-td-tab").disabled || byId.get("example-oracle-tab").disabled) {
+  throw new Error("Database example workspaces must remain editable");
+}
+if (byId.get("example-td-inject").d !== true || byId.get("example-oracle-inject").d !== true) {
+  throw new Error("Database example trigger nodes must remain disabled until credentials are configured");
+}
+for (const node of flows.filter((candidate) => candidate.z)) {
+  if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+    throw new Error(`Flow node ${node.id} is missing a canvas position`);
+  }
+}
 const oracleServer = byId.get("example-oracle-server");
 if (oracleServer.host !== "$(ORACLE_HOST)" || oracleServer.port !== "$(ORACLE_PORT)" || oracleServer.db !== "$(ORACLE_DATABASE)") {
   throw new Error("Oracle example connection must use environment variables");
@@ -63,5 +73,15 @@ for (const id of ["example-td-normalize", "example-oracle-normalize"]) {
 const exportedTdengineQuery = databaseExamples.find((node) => node.id === "example-td-request");
 if (exportedTdengineQuery?.func !== tdengineQuery.func || exportedTdengineQuery?.finalize !== tdengineQuery.finalize) {
   throw new Error("Exported TDengine example must match the built-in WebSocket flow");
+}
+for (const node of databaseExamples.filter((candidate) => candidate.z)) {
+  if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+    throw new Error(`Exported flow node ${node.id} is missing a canvas position`);
+  }
+}
+for (const id of ["example-td-inject", "example-oracle-inject"]) {
+  if (databaseExamples.find((node) => node.id === id)?.d !== true) {
+    throw new Error(`Exported trigger node ${id} must remain disabled by default`);
+  }
 }
 console.log(`Validated ${databaseExamples.length} TDengine/Oracle example nodes`);

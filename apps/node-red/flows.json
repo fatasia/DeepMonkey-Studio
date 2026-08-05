@@ -15,8 +15,8 @@
     "method": "post",
     "upload": false,
     "swaggerDoc": "",
-    "x": 150,
-    "y": 120,
+    "x": 550,
+    "y": 520,
     "wires": [
       [
         "normalize-scene-message"
@@ -35,8 +35,8 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 370,
-    "y": 120,
+    "x": 770,
+    "y": 520,
     "wires": [
       [
         "scene-ws-out",
@@ -62,8 +62,8 @@
     "name": "广播到三维场景",
     "server": "scene-ws-listener",
     "client": "",
-    "x": 650,
-    "y": 90,
+    "x": 1050,
+    "y": 490,
     "wires": []
   },
   {
@@ -73,8 +73,8 @@
     "name": "202 Accepted",
     "statusCode": "",
     "headers": {},
-    "x": 650,
-    "y": 150,
+    "x": 1050,
+    "y": 550,
     "wires": []
   },
   {
@@ -90,8 +90,8 @@
     "targetType": "msg",
     "statusVal": "",
     "statusType": "auto",
-    "x": 640,
-    "y": 210,
+    "x": 1040,
+    "y": 610,
     "wires": []
   },
   {
@@ -193,7 +193,10 @@
     "width": 6,
     "height": 0,
     "content": "## BIM Studio 数字孪生\n通过 HTTP、WebSocket、数据库或 IoT 节点接入实时数据，再映射到场景对象的颜色、显隐、位置与标签。",
-    "className": ""
+    "className": "",
+    "x": 770,
+    "y": 730,
+    "wires": []
   },
   {
     "id": "scene-dashboard-value",
@@ -215,6 +218,8 @@
     "className": "",
     "value": "payload",
     "valueType": "msg",
+    "x": 1050,
+    "y": 670,
     "wires": []
   },
   {
@@ -262,23 +267,25 @@
     "styleRounded": true,
     "styleGlow": false,
     "className": "",
+    "x": 1050,
+    "y": 730,
     "wires": []
   },
   {
     "id": "example-td-tab",
     "type": "tab",
     "label": "示例 · TDengine",
-    "disabled": true,
-    "info": "启用前在 .env 配置 TDENGINE_WS_URL、TDENGINE_DATABASE、TDENGINE_USER、TDENGINE_PASSWORD。WebSocket 查询失败时自动回退 REST。"
+    "disabled": false,
+    "info": "定时触发节点默认禁用。先在 .env 配置 TDENGINE_WS_URL、TDENGINE_DATABASE、TDENGINE_USER、TDENGINE_PASSWORD，再启用触发节点；WebSocket 查询失败时自动回退 REST。"
   },
   {
     "id": "example-td-note",
     "type": "comment",
     "z": "example-td-tab",
-    "name": "1. 配置 .env  2. 双击 SQL 改表名  3. 启用流程",
-    "info": "默认每 10 秒通过 TDengine 官方 Node.js WebSocket 驱动查询一次，失败时自动回退 REST。示例流程导入时处于禁用状态，避免未配置时反复报错。",
-    "x": 310,
-    "y": 80,
+    "name": "1. 配置 .env  2. 双击 SQL 改表名  3. 启用触发节点",
+    "info": "触发节点启用后，每 10 秒通过 TDengine 官方 Node.js WebSocket 驱动查询一次，失败时自动回退 REST。触发节点默认禁用，避免未配置时反复报错。",
+    "x": 710,
+    "y": 480,
     "wires": []
   },
   {
@@ -294,10 +301,11 @@
     "repeat": "10",
     "once": true,
     "onceDelay": 1,
+    "d": true,
     "payload": "",
     "payloadType": "date",
-    "x": 120,
-    "y": 140,
+    "x": 520,
+    "y": 540,
     "wires": [
       [
         "example-td-request"
@@ -316,8 +324,8 @@
     "initialize": "",
     "finalize": "const connection = context.get('tdengineWsConnection');\nif (connection) await connection.close();\ncontext.set('tdengineWsConnection', undefined);",
     "libs": [],
-    "x": 330,
-    "y": 140,
+    "x": 730,
+    "y": 540,
     "wires": [
       [
         "example-td-normalize"
@@ -340,8 +348,8 @@
     "authType": "",
     "senderr": false,
     "headers": [],
-    "x": 560,
-    "y": 140,
+    "x": 960,
+    "y": 540,
     "wires": [
       [
         "example-td-normalize"
@@ -360,8 +368,8 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 770,
-    "y": 140,
+    "x": 1170,
+    "y": 540,
     "wires": [
       [
         "example-td-gauge",
@@ -403,6 +411,8 @@
     "min": 0,
     "max": 100,
     "className": "",
+    "x": 1410,
+    "y": 540,
     "wires": []
   },
   {
@@ -414,25 +424,25 @@
     "tosidebar": true,
     "complete": "payload",
     "targetType": "msg",
-    "x": 1010,
-    "y": 180,
+    "x": 1410,
+    "y": 580,
     "wires": []
   },
   {
     "id": "example-oracle-tab",
     "type": "tab",
     "label": "示例 · Oracle",
-    "disabled": true,
-    "info": "连接参数默认读取 .env 的 ORACLE_HOST、ORACLE_PORT、ORACLE_DATABASE、ORACLE_USER、ORACLE_PASSWORD；Oracle 12.1+ 建议保持 Thin，11g 再切 Thick。"
+    "disabled": false,
+    "info": "触发节点默认禁用。连接参数读取 .env 的 ORACLE_HOST、ORACLE_PORT、ORACLE_DATABASE、ORACLE_USER、ORACLE_PASSWORD；Oracle 12.1+ 建议保持 Thin，11g 再切 Thick。"
   },
   {
     "id": "example-oracle-note",
     "type": "comment",
     "z": "example-oracle-tab",
-    "name": "1. 检查 Oracle 连接  2. 启用流程  3. 手动触发查询",
+    "name": "1. 检查 Oracle 连接  2. 启用触发节点  3. 手动查询",
     "info": "示例 SQL 使用 DUAL，因此连接成功后无需准备业务表即可看到数值 42。",
-    "x": 310,
-    "y": 80,
+    "x": 710,
+    "y": 480,
     "wires": []
   },
   {
@@ -447,10 +457,11 @@
     ],
     "once": true,
     "onceDelay": 1,
+    "d": true,
     "payload": "",
     "payloadType": "date",
-    "x": 120,
-    "y": 140,
+    "x": 520,
+    "y": 540,
     "wires": [
       [
         "example-oracle-query"
@@ -469,8 +480,8 @@
     "mappings": "[]",
     "resultaction": "single",
     "resultlimit": "10",
-    "x": 330,
-    "y": 140,
+    "x": 730,
+    "y": 540,
     "wires": [
       [
         "example-oracle-normalize"
@@ -489,8 +500,8 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 520,
-    "y": 140,
+    "x": 920,
+    "y": 540,
     "wires": [
       [
         "example-oracle-gauge",
@@ -532,6 +543,8 @@
     "min": 0,
     "max": 100,
     "className": "",
+    "x": 1170,
+    "y": 540,
     "wires": []
   },
   {
@@ -543,8 +556,8 @@
     "tosidebar": true,
     "complete": "payload",
     "targetType": "msg",
-    "x": 760,
-    "y": 180,
+    "x": 1160,
+    "y": 580,
     "wires": []
   },
   {
@@ -581,8 +594,8 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 1010,
-    "y": 130,
+    "x": 1410,
+    "y": 500,
     "wires": [
       [
         "scene-ws-out"
@@ -604,8 +617,8 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 770,
-    "y": 130,
+    "x": 1170,
+    "y": 500,
     "wires": [
       [
         "scene-ws-out"

@@ -17,6 +17,25 @@
 .red-ui-workspace-chart { background-color: var(--bim-bg) !important; }
 .red-ui-deploy-button { background: var(--bim-accent) !important; color: #17130b !important; border: 0 !important; }
 #red-ui-workspace,
-#red-ui-workspace-chart { min-width: 0 !important; overflow: hidden !important; }
+#red-ui-workspace-chart { min-width: 0 !important; }
 #red-ui-workspace-chart .red-ui-flow-node { pointer-events: auto !important; }
 #red-ui-workspace-chart:focus { outline: none !important; }
+#red-ui-workspace-chart .red-ui-workspace-chart-grid { cursor: grab; }
+#red-ui-workspace-chart.bim-canvas-panning,
+#red-ui-workspace-chart.bim-canvas-panning * { cursor: grabbing !important; }
+
+.bim-canvas-pan-hint {
+  align-items: center;
+  color: #91a0a8;
+  display: inline-flex;
+  font-size: 11px;
+  gap: 5px;
+  margin-left: 8px;
+  padding: 0 6px;
+  user-select: none;
+}
+
+.bim-canvas-pan-hint::before {
+  color: var(--bim-accent);
+  content: "↔";
+}
