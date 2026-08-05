@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 
 const flows = JSON.parse(await readFile(new URL("./flows.json", import.meta.url), "utf8"));
 const databaseExamples = JSON.parse(await readFile(new URL("./examples/tdengine-oracle-dashboard.json", import.meta.url), "utf8"));
+const databaseCredentials = JSON.parse(await readFile(new URL("./flows_cred.example.json", import.meta.url), "utf8"));
 const byId = new Map(flows.map((node) => [node.id, node]));
 
 for (const id of [
@@ -22,6 +23,14 @@ for (const id of [
   if (!byId.has(id)) throw new Error(`Missing required Node-RED node: ${id}`);
 }
 if (byId.get("example-td-tab").disabled !== true || byId.get("example-oracle-tab").disabled !== true) throw new Error("Database examples must remain disabled until credentials are configured");
+const oracleServer = byId.get("example-oracle-server");
+if (oracleServer.host !== "$(ORACLE_HOST)" || oracleServer.port !== "$(ORACLE_PORT)" || oracleServer.db !== "$(ORACLE_DATABASE)") {
+  throw new Error("Oracle example connection must use environment variables");
+}
+const oracleCredentials = databaseCredentials["example-oracle-server"];
+if (oracleCredentials?.user !== "$(ORACLE_USER)" || oracleCredentials?.password !== "$(ORACLE_PASSWORD)") {
+  throw new Error("Oracle example credentials must use environment variables");
+}
 
 if (byId.get("scene-http-in").url !== "/scene") throw new Error("Scene HTTP route must remain /iot/scene");
 if (byId.get("scene-ws-listener").path !== "/ws/scene") throw new Error("Scene WebSocket route must remain /iot/ws/scene");

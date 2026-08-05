@@ -48,6 +48,15 @@ function Get-DotEnvValue([string]$Name) {
     return ($match -split "=", 2)[1].Trim().Trim('"').Trim("'")
 }
 
+function Import-DotEnvVariables([string[]]$Names) {
+    foreach ($name in $Names) {
+        $configuredValue = Get-DotEnvValue $name
+        if ($null -ne $configuredValue) {
+            Set-Item -Path "Env:$name" -Value $configuredValue
+        }
+    }
+}
+
 function Ensure-RuntimeDirectories {
     New-Item -ItemType Directory -Path $RuntimeDirectory -Force | Out-Null
     New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
@@ -290,6 +299,17 @@ function Start-Web {
 }
 
 function Start-NodeRed {
+    Import-DotEnvVariables @(
+        "NODE_RED_HOST", "NODE_RED_PORT", "NODE_RED_CREDENTIAL_SECRET",
+        "TDENGINE_REST_URL", "TDENGINE_DATABASE", "TDENGINE_USER", "TDENGINE_PASSWORD",
+        "ORACLE_HOST", "ORACLE_PORT", "ORACLE_DATABASE", "ORACLE_USER", "ORACLE_PASSWORD",
+        "BIM_MODEL_ID"
+    )
+    $nodeRedCredentials = Join-Path $ProjectRoot "apps\node-red\flows_cred.json"
+    $nodeRedCredentialsTemplate = Join-Path $ProjectRoot "apps\node-red\flows_cred.example.json"
+    if (-not (Test-Path -LiteralPath $nodeRedCredentials)) {
+        Copy-Item -LiteralPath $nodeRedCredentialsTemplate -Destination $nodeRedCredentials
+    }
     $oracleClientDirectory = if ($env:ORACLE_INSTANT_CLIENT_DIR) {
         $env:ORACLE_INSTANT_CLIENT_DIR
     } else {

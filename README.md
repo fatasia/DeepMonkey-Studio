@@ -67,7 +67,7 @@ Windows 也可以使用根目录服务脚本统一管理全部服务，或只操
 
 `pnpm dev` 仍只启动 Web 和 API；需要数字孪生流程时使用 `pnpm dev:all`，或通过脚本单独执行 `./bim-studio.ps1 start node-red`。Node-RED 不运行不会影响模型浏览、编辑和场景保存。HTTP 场景桥为 `POST /iot/scene`，浏览器订阅 `/iot/ws/scene`。生产部署应设置随机 `NODE_RED_CREDENTIAL_SECRET`，并通过 Node-RED credential store 保存数据库与设备密码。
 
-TDengine 与 Oracle 的最小可用示例流位于 `apps/node-red/examples/tdengine-oracle-dashboard.json`：在 Node-RED 中选择“导入 → 剪贴板/文件”，导入后按注释配置连接，再启用对应流程。TDengine 示例走 REST API；Oracle 示例使用 `node-red-contrib-oracledb-mod`，Oracle 12.1+ 保持默认 Thin 模式即可，Oracle 11g 或需要 Thick 特性时使用已安装到 `D:\Documents\bim\oracle\instantclient_19_31` 的 Instant Client。两个示例都直接输出到现有 `/iot/dashboard/` 看板。
+TDengine 与 Oracle 的最小可用示例流位于 `apps/node-red/examples/tdengine-oracle-dashboard.json`，并默认内置在 `flows.json` 中但保持禁用。连接参数由仓库根目录 `.env` 注入；Oracle 的用户名和密码通过被 Git 忽略的 `apps/node-red/flows_cred.json` 引用环境变量，也可以在 Node-RED 中双击“Oracle 示例连接”覆盖并加密保存。重启 Node-RED 后启用对应流程即可手动测试。TDengine 示例走 REST API；Oracle 示例使用 `node-red-contrib-oracledb-mod`，Oracle 12.1+ 保持默认 Thin 模式即可，Oracle 11g 或需要 Thick 特性时使用已安装到 `D:\Documents\bim\oracle\instantclient_19_31` 的 Instant Client。两个示例都直接输出到现有 `/iot/dashboard/` 看板。
 
 ## PostgreSQL 与 MinIO
 

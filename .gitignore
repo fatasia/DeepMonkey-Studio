@@ -12,6 +12,7 @@ apps/web/public/wasm/
 apps/web/public/draco/
 apps/web/public/brand/logo.webp
 apps/node-red/.data/
+apps/node-red/flows_cred.json
 https/*
 !https/README.md
 **/bin/
