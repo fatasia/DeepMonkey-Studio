@@ -73,7 +73,23 @@ export interface SceneModelState {
   explosionMode?: ExplosionMode;
   animationEnabled?: boolean;
   material?: SceneMaterialState;
+  physics?: ScenePhysicsBodyState;
   layers?: SceneLayerState[];
+}
+
+export type PhysicsBodyType = "none" | "fixed" | "dynamic";
+
+export interface ScenePhysicsBodyState {
+  type: PhysicsBodyType;
+  mass: number;
+  friction: number;
+  restitution: number;
+}
+
+export interface ScenePhysicsState {
+  enabled: boolean;
+  playing: boolean;
+  gravity: Vector3Value;
 }
 
 export type ExplosionMode = "radial" | "vertical" | "x" | "y" | "z";
@@ -279,6 +295,7 @@ export interface SceneSnapshot {
   environment?: SceneEnvironmentState;
   floors?: SceneFloorState[];
   postProcessing?: ScenePostProcessingState;
+  physics?: ScenePhysicsState;
   animation?: SceneAnimationState;
   selectedModelId?: string;
   selectedLayerId?: string;

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Atom,
   Box,
   Camera,
   CloudRain,
@@ -65,6 +66,8 @@ import type {
   SceneLightState,
   SceneMaterialState,
   ScenePostProcessingState,
+  ScenePhysicsBodyState,
+  ScenePhysicsState,
   SceneSnapshot,
   SkyboxPreset,
   WeatherMode
@@ -134,6 +137,7 @@ const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   afterimage: false,
   afterimageDamp: 0.9
 };
+const DEFAULT_PHYSICS: ScenePhysicsState = { enabled: false, playing: false, gravity: { x: 0, y: -9.81, z: 0 } };
 const SKYBOX_OPTIONS: Array<{ value: SkyboxPreset; label: string }> = [
   { value: "none", label: "纯色" },
   { value: "clear", label: "晴空" },
@@ -228,6 +232,8 @@ export function App() {
   const [lighting, setLighting] = useState<GlobalLightingState>(DEFAULT_LIGHTING);
   const [sceneEnvironment, setSceneEnvironment] = useState<SceneEnvironmentState>(DEFAULT_ENVIRONMENT);
   const [postProcessing, setPostProcessing] = useState<ScenePostProcessingState>(DEFAULT_POST_PROCESSING);
+  const [physics, setPhysics] = useState<ScenePhysicsState>(DEFAULT_PHYSICS);
+  const [physicsOpen, setPhysicsOpen] = useState(false);
   const [selectedLightId, setSelectedLightId] = useState("sun-default");
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [digitalTwinOpen, setDigitalTwinOpen] = useState(false);
@@ -582,6 +588,7 @@ export function App() {
   const selectionOpacity = selected && engine ? engine.getSelectionOpacity() : 1;
   const selectionColor = selected && engine ? engine.getSelectionColor() : "#d4a84f";
   const selectionMaterial = useMemo(() => selected && engine ? engine.getSelectionMaterial() : {}, [engine, selected, revision]);
+  const selectedPhysics = useMemo(() => selected && engine ? engine.getPhysicsBodyState(selected.id) : undefined, [engine, selected, revision]);
   const selectionProperties = useMemo(() => engine?.getSelectionProperties() ?? {}, [engine, selected, revision]);
   const selectedLayerId = engine?.getSelectedLayerId();
   const selectedComponent = engine?.getSelectedComponentRecord();
@@ -864,6 +871,19 @@ export function App() {
     engine?.setPostProcessing(next);
   }
 
+  function changePhysics(next: ScenePhysicsState) {
+    setPhysics(next);
+    engine?.setPhysicsState(next);
+  }
+
+  function changeSelectedPhysics(patch: Partial<ScenePhysicsBodyState>) {
+    if (!engine || !selected || !selectedPhysics) return;
+    void engine.setPhysicsBodyState(selected.id, { ...selectedPhysics, ...patch }).then(() => {
+      setRevision((value) => value + 1);
+      setMessage(patch.type === "dynamic" ? "已设为动态刚体" : patch.type === "fixed" ? "已设为静态碰撞体" : patch.type === "none" ? "已关闭对象物理" : "物理参数已更新");
+    }).catch(showError);
+  }
+
   async function uploadEnvironmentMap(file?: File) {
     if (!file || !project) return;
     setBusy(true);
@@ -936,6 +956,7 @@ export function App() {
     try {
       await engine?.startXR(mode);
       setXrActiveMode(mode);
+      setXrPanelOpen(false);
       setMessage(mode === "immersive-vr" ? "已进入 VR" : "已进入 AR");
     } catch (reason) {
       showError(reason);
@@ -1009,6 +1030,7 @@ export function App() {
           opacity: item.opacity,
           ...(colorOverride ? { colorOverride } : {}),
           ...(material ? { material } : {}),
+          physics: engine.getPhysicsBodyState(item.id),
           transform,
           collisionEnabled: engine.isCollisionEnabled(item.id),
           explosionFactor: engine.getExplosionFactor(item.id),
@@ -1029,6 +1051,7 @@ export function App() {
       environment: engine.getSceneEnvironment(),
       floors: engine.getFloorStates(),
       postProcessing: engine.getPostProcessing(),
+      physics: engine.getPhysicsState(),
       animation: engine.getSceneAnimation(),
       ...(selected ? { selectedModelId: selected.id } : {}),
       ...(selectedLayerId ? { selectedLayerId } : {}),
@@ -1128,11 +1151,13 @@ export function App() {
       const nextEnvironment: SceneEnvironmentState = { ...DEFAULT_ENVIRONMENT, ...scene.environment };
       const nextAnimation = scene.animation ?? DEFAULT_ANIMATION;
       const nextPostProcessing = { ...DEFAULT_POST_PROCESSING, ...scene.postProcessing };
+      const nextPhysics = { ...DEFAULT_PHYSICS, ...scene.physics, gravity: { ...DEFAULT_PHYSICS.gravity, ...scene.physics?.gravity } };
       engine.setWeather(nextWeather);
       engine.setGlobalLighting(nextLighting);
       engine.setSceneEnvironment(nextEnvironment);
       engine.applyFloorStates(scene.floors);
       engine.setPostProcessing(nextPostProcessing);
+      engine.setPhysicsState(nextPhysics);
       engine.setSceneAnimation(nextAnimation);
       engine.seekSceneAnimation(0);
       setWeather(nextWeather);
@@ -1140,6 +1165,7 @@ export function App() {
       setSceneEnvironment(nextEnvironment);
       setSceneAnimation(nextAnimation);
       setPostProcessing(nextPostProcessing);
+      setPhysics(nextPhysics);
       setAnimationTime(0);
       setAnimationPlaying(false);
       const nextClipping = scene.clipping ?? DEFAULT_CLIPPING;
@@ -1171,6 +1197,7 @@ export function App() {
     engine.setGlobalLighting(DEFAULT_LIGHTING);
     engine.setSceneEnvironment(DEFAULT_ENVIRONMENT);
     engine.setPostProcessing(DEFAULT_POST_PROCESSING);
+    engine.setPhysicsState(DEFAULT_PHYSICS);
     engine.setSceneAnimation(DEFAULT_ANIMATION);
     engine.seekSceneAnimation(0);
     setClippingState(DEFAULT_CLIPPING);
@@ -1198,6 +1225,7 @@ export function App() {
       lighting: DEFAULT_LIGHTING,
       environment: DEFAULT_ENVIRONMENT,
       postProcessing: DEFAULT_POST_PROCESSING,
+      physics: DEFAULT_PHYSICS,
       animation: DEFAULT_ANIMATION,
       createdAt: now,
       updatedAt: now
@@ -1213,6 +1241,7 @@ export function App() {
     setLighting(DEFAULT_LIGHTING);
     setSceneEnvironment(DEFAULT_ENVIRONMENT);
     setPostProcessing(DEFAULT_POST_PROCESSING);
+    setPhysics(DEFAULT_PHYSICS);
     setSceneAnimation(DEFAULT_ANIMATION);
     setAnimationTime(0);
     setAnimationPlaying(false);
@@ -1729,6 +1758,7 @@ export function App() {
           <ToolButton title={tr(locale, "环境设置", "Environment")} active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
           <ToolButton title={tr(locale, "动画编辑", "Animation editor")} active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
           <ToolButton title={tr(locale, "二维数据看板", "2D data dashboard")} active={sceneDashboardOpen} onClick={() => setSceneDashboardOpen((value) => !value)} icon={<Gauge size={19} />} />
+          <ToolButton title={tr(locale, "物理系统", "Physics")} active={physicsOpen} onClick={() => { setPhysicsOpen((value) => !value); setEnvironmentOpen(false); }} icon={<Atom size={19} />} />
           <ToolButton className="xr-entry" title={tr(locale, "AR / VR 沉浸体验", "AR / VR immersive experience")} active={xrPanelOpen} onClick={() => setXrPanelOpen((value) => !value)} icon={<span className="xr-tool-label">AR/VR</span>} />
           </>}
         </div>
@@ -1823,8 +1853,26 @@ export function App() {
             </div>}
           </div>
         </div>}
+        {route.view === "studio" && physicsOpen && <div className="physics-panel" aria-label={tr(locale, "物理系统", "Physics system")}>
+          <header><div><strong>{tr(locale, "物理系统", "Physics")}</strong><small>Rapier · WebAssembly</small></div><button onClick={() => setPhysicsOpen(false)}><X size={14} /></button></header>
+          <div className="physics-global">
+            <button className={physics.enabled ? "active" : ""} onClick={() => changePhysics({ ...physics, enabled: !physics.enabled, playing: !physics.enabled ? physics.playing : false })}>{physics.enabled ? tr(locale, "已启用", "Enabled") : tr(locale, "已关闭", "Disabled")}</button>
+            <button disabled={!physics.enabled} className={physics.playing ? "active" : ""} onClick={() => changePhysics({ ...physics, playing: !physics.playing })}>{physics.playing ? tr(locale, "暂停", "Pause") : tr(locale, "播放", "Play")}</button>
+            <button disabled={!physics.enabled} onClick={() => { engine?.resetPhysics(); setRevision((value) => value + 1); }}>{tr(locale, "重置", "Reset")}</button>
+          </div>
+          <label className="physics-gravity"><span>{tr(locale, "重力 Y", "Gravity Y")}</span><input type="range" min="-30" max="10" step="0.1" value={physics.gravity.y} onChange={(event) => changePhysics({ ...physics, gravity: { ...physics.gravity, y: Number(event.target.value) } })} /><output>{physics.gravity.y.toFixed(1)}</output></label>
+          <section className="physics-object">
+            <div><strong>{selected?.name ?? tr(locale, "未选择对象", "No object selected")}</strong><small>{tr(locale, "使用包围盒碰撞体，BIM 默认关闭", "Bounding-box collider; BIM is off by default")}</small></div>
+            {selected && selectedPhysics && <>
+              <label><span>{tr(locale, "刚体类型", "Body type")}</span><select value={selectedPhysics.type} onChange={(event) => changeSelectedPhysics({ type: event.target.value as ScenePhysicsBodyState["type"] })}><option value="none">{tr(locale, "关闭", "Off")}</option><option value="fixed">{tr(locale, "静态", "Fixed")}</option><option value="dynamic">{tr(locale, "动态", "Dynamic")}</option></select></label>
+              <label><span>{tr(locale, "质量", "Mass")}</span><input disabled={selectedPhysics.type !== "dynamic"} type="number" min="0.01" step="0.5" value={selectedPhysics.mass} onChange={(event) => changeSelectedPhysics({ mass: Number(event.target.value) })} /></label>
+              <label><span>{tr(locale, "摩擦", "Friction")}</span><input type="range" min="0" max="2" step="0.05" value={selectedPhysics.friction} onChange={(event) => changeSelectedPhysics({ friction: Number(event.target.value) })} /><output>{selectedPhysics.friction.toFixed(2)}</output></label>
+              <label><span>{tr(locale, "弹性", "Bounce")}</span><input type="range" min="0" max="1" step="0.05" value={selectedPhysics.restitution} onChange={(event) => changeSelectedPhysics({ restitution: Number(event.target.value) })} /><output>{selectedPhysics.restitution.toFixed(2)}</output></label>
+            </>}
+          </section>
+        </div>}
         {route.view === "studio" && xrPanelOpen && <div className="xr-panel" aria-label={tr(locale, "沉浸式体验", "Immersive experience")}>
-          <header><div><strong>{tr(locale, "VR / AR", "VR / AR")}</strong><small>{tr(locale, "WebXR 设备能力", "WebXR device capabilities")}</small></div><button onClick={() => setXrPanelOpen(false)}><X size={14} /></button></header>
+          <header><div><strong>{tr(locale, "VR / AR", "VR / AR")}</strong><small>{tr(locale, "WebXR 设备能力", "WebXR device capabilities")}</small></div><button onClick={() => xrActiveMode ? void engine?.endXR() : setXrPanelOpen(false)}><X size={14} /></button></header>
           <div className="xr-requirements">
             <span className={xrCapabilities.secure ? "ok" : "bad"}>{xrCapabilities.secure ? "✓" : "!"} HTTPS</span>
             <span className={xrCapabilities.webxr ? "ok" : "bad"}>{xrCapabilities.webxr ? "✓" : "!"} WebXR</span>
@@ -1837,6 +1885,7 @@ export function App() {
           {xrActiveMode && <button className="xr-exit" onClick={() => void engine?.endXR()}>{tr(locale, "退出当前 XR 会话", "Exit current XR session")}</button>}
           {!xrCapabilities.checking && (!xrCapabilities.vr || !xrCapabilities.ar) && <p>{tr(locale, "桌面浏览器通常只能检测 VR 头显；AR 需支持 WebXR 的 Android 设备。自签名证书必须先在设备上信任。", "Desktop browsers usually require a connected VR headset; AR requires a WebXR-capable Android device. Trust the self-signed certificate on the device first.")}</p>}
         </div>}
+        {route.view === "studio" && xrActiveMode && <div className="xr-session-hud"><div><strong>{xrActiveMode === "immersive-vr" ? "VR" : "AR"} {tr(locale, "运行中", "active")}</strong><small>{xrActiveMode === "immersive-vr" ? tr(locale, "左摇杆移动 · 右摇杆转向 · B/Y 退出", "Left stick move · right stick turn · B/Y exit") : tr(locale, "点击退出返回编辑器", "Exit to return to the editor")}</small></div><button onClick={() => void engine?.endXR()}>{tr(locale, "退出", "Exit")}</button></div>}
         {route.view === "studio" && sceneDashboardOpen && <SceneDashboardOverlay locale={locale} onClose={() => setSceneDashboardOpen(false)} />}
         {route.view === "studio" && measureEnabled && (
           <div className="measure-mode-bar" aria-label={tr(locale, "测量模式", "Measurement mode")}>

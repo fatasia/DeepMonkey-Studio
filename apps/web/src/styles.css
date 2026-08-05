@@ -199,12 +199,12 @@ button { color: inherit; }
 .viewport { position: absolute; inset: 0; }
 .viewport canvas { display: block; outline: none; }
 .renderer-loading { position: absolute; left: 50%; top: 50%; z-index: 12; display: flex; align-items: center; gap: 8px; padding: 10px 13px; color: #c5cdd2; border: 1px solid #3b444a; border-radius: 8px; background: rgba(24,29,32,.92); box-shadow: 0 12px 36px rgba(0,0,0,.28); font-size: 9px; pointer-events: none; transform: translate(-50%,-50%); }
-.tool-dock { position: absolute; top: 17px; left: 50%; display: flex; align-items: center; gap: 2px; max-width: calc(100% - 30px); padding: 5px; border: 1px solid rgba(69, 77, 83, .8); border-radius: 9px; background: rgba(29, 34, 37, .9); box-shadow: 0 10px 30px rgba(0, 0, 0, .28); backdrop-filter: blur(12px); transform: translateX(-50%); }
-.tool-button { display: grid; place-items: center; position: relative; width: 36px; height: 34px; color: #a4adb3; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.tool-dock { position: absolute; top: 17px; left: 50%; display: flex; align-items: center; gap: 1px; max-width: calc(100% - 30px); padding: 5px; border: 1px solid rgba(69, 77, 83, .8); border-radius: 9px; background: rgba(29, 34, 37, .9); box-shadow: 0 10px 30px rgba(0, 0, 0, .28); backdrop-filter: blur(12px); transform: translateX(-50%); }
+.tool-button { display: grid; place-items: center; position: relative; width: 34px; height: 34px; color: #a4adb3; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
 .tool-button:hover { color: #f0f2f3; background: #2b3135; }
 .tool-button.active { color: #17120a; background: var(--accent); }
 .tool-button span { display: none; }
-.tool-button.xr-entry { width: 48px; color: #e2bd69; }
+.tool-button.xr-entry { width: 44px; color: #e2bd69; }
 .tool-button .xr-tool-label { display: inline-grid; place-items: center; font-size: 8px; font-weight: 900; letter-spacing: -.04em; }
 .tool-button.xr-entry.active { color: #17120a; }
 .view-control { position: absolute; top: 70px; right: 16px; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px; border: 1px solid rgba(69,77,83,.8); border-radius: 9px; background: rgba(29,34,37,.9); box-shadow: 0 10px 30px rgba(0,0,0,.25); backdrop-filter: blur(12px); }
@@ -748,6 +748,30 @@ button { color: inherit; }
 .xr-mode-grid button:disabled { color: #5d686f; border-color: #303a40; background: #20272b; cursor: default; }
 .xr-exit { display: block; width: calc(100% - 26px); height: 30px; margin: 0 13px 9px; color: #f0b0ab; border: 1px solid rgba(211,91,82,.35); border-radius: 6px; background: rgba(211,91,82,.08); cursor: pointer; }
 .xr-panel > p { margin: 0; padding: 0 13px 13px; color: #69757c; font-size: 7px; line-height: 1.65; }
+.xr-session-hud { position: absolute; left: 50%; bottom: 24px; z-index: 30; display: flex; align-items: center; gap: 18px; min-width: 310px; padding: 10px 11px 10px 14px; border: 1px solid rgba(212,168,79,.55); border-radius: 9px; background: rgba(17,23,27,.96); box-shadow: 0 16px 48px rgba(0,0,0,.42); transform: translateX(-50%); }
+.xr-session-hud > div { display: flex; flex: 1; flex-direction: column; gap: 3px; }
+.xr-session-hud strong { color: #e5bd63; font-size: 10px; }
+.xr-session-hud small { color: #7d8990; font-size: 7px; }
+.xr-session-hud button { height: 29px; padding: 0 13px; color: #ffd2cf; border: 1px solid rgba(212,91,82,.45); border-radius: 6px; background: rgba(212,91,82,.12); cursor: pointer; }
+.physics-panel { position: absolute; top: 70px; left: 16px; z-index: 20; width: 300px; color: #89949b; border: 1px solid #3a464d; border-radius: 11px; background: rgba(20,27,31,.98); box-shadow: 0 18px 55px rgba(0,0,0,.42); backdrop-filter: blur(14px); }
+.physics-panel header { display: flex; align-items: center; justify-content: space-between; height: 47px; padding: 0 11px 0 14px; border-bottom: 1px solid #303a40; }
+.physics-panel header > div { display: flex; flex-direction: column; gap: 2px; }
+.physics-panel header strong { color: #e3e7e9; font-size: 11px; }
+.physics-panel header small { color: #66727a; font-size: 7px; }
+.physics-panel header button { display: grid; place-items: center; width: 28px; height: 28px; color: #7f8a91; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+.physics-global { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; padding: 11px 12px 8px; }
+.physics-global button,.physics-object select { height: 29px; color: #89949a; border: 1px solid #364149; border-radius: 6px; background: #20272b; font-size: 8px; cursor: pointer; }
+.physics-global button.active { color: #20190d; border-color: var(--accent); background: var(--accent); font-weight: 800; }
+.physics-global button:disabled { opacity: .35; cursor: default; }
+.physics-gravity { display: grid; grid-template-columns: 48px 1fr 34px; align-items: center; gap: 7px; padding: 0 12px 10px; color: #78848a; font-size: 8px; }
+.physics-gravity input,.physics-object input[type="range"] { width: 100%; accent-color: var(--accent); }
+.physics-gravity output,.physics-object output { color: #b6bec2; font-size: 8px; text-align: right; }
+.physics-object { display: grid; gap: 7px; padding: 10px 12px 12px; border-top: 1px solid #303a40; }
+.physics-object > div { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.physics-object > div strong { overflow: hidden; color: #d1d7da; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.physics-object > div small { color: #67737a; font-size: 7px; }
+.physics-object label { display: grid; grid-template-columns: 54px minmax(0,1fr) 34px; align-items: center; gap: 7px; color: #7c878d; font-size: 8px; }
+.physics-object label select,.physics-object label input[type="number"] { grid-column: 2 / 4; min-width: 0; width: 100%; height: 28px; padding: 0 7px; color: #c5ccd0; border: 1px solid #354047; border-radius: 5px; background: #20272b; font-size: 8px; }
 
 @media (max-width: 760px) {
   .environment-control { top: 66px; right: 8px; width: min(388px,calc(100% - 16px)); max-height: calc(100% - 92px); }

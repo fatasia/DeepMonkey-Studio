@@ -4,6 +4,7 @@ import workerUrl from "@thatopen/fragments/worker?url";
 import DxfParser from "dxf-parser";
 import * as THREE from "three";
 import type { ClippingGroup, WebGPURenderer } from "three/webgpu";
+import type { RigidBody as RapierRigidBody, World as RapierWorld } from "@dimforge/rapier3d-compat";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
@@ -43,11 +44,14 @@ import type {
   SceneLayerState,
   SceneLightState,
   SceneMaterialState,
+  ScenePhysicsBodyState,
+  ScenePhysicsState,
   ScenePostProcessingState,
   SkyboxPreset,
   Vector3Value,
   WeatherMode
 } from "@bim-studio/contracts";
+import { readXRThumbstick } from "./xrInput";
 import {
   buildComponentRecords,
   closestPointsBetweenObjects,
@@ -225,6 +229,11 @@ interface NavigationViewState {
   target: THREE.Vector3;
 }
 
+interface PhysicsBodyRuntime {
+  body: RapierRigidBody;
+  initialTransform: ModelTransform;
+}
+
 const toValue = (vector: THREE.Vector3 | THREE.Euler): Vector3Value => ({
   x: vector.x,
   y: vector.y,
@@ -258,6 +267,14 @@ export class ViewerEngine {
   private readonly pointerPosition = new THREE.Vector2();
   private readonly models = new Map<string, LoadedSceneModel>();
   private readonly modelLoads = new ModelLoadCoordinator<LoadedSceneModel>();
+  private rapier: (typeof import("@dimforge/rapier3d-compat"))["default"] | undefined;
+  private physicsWorld: RapierWorld | undefined;
+  private physicsInit: Promise<void> | undefined;
+  private physicsAccumulator = 0;
+  private lastPhysicsUiUpdate = 0;
+  private physicsState: ScenePhysicsState = { enabled: false, playing: false, gravity: { x: 0, y: -9.81, z: 0 } };
+  private readonly physicsBodyStates = new Map<string, ScenePhysicsBodyState>();
+  private readonly physicsBodies = new Map<string, PhysicsBodyRuntime>();
   private readonly components = new OBC.Components();
   private readonly fragments = this.components.get(OBC.FragmentsManager);
   private readonly importer = new FRAGS.IfcImporter();
@@ -371,7 +388,14 @@ export class ViewerEngine {
     afterimageDamp: 0.9
   };
   private xrActive = false;
+  private xrSession: XRSession | undefined;
+  private xrMode: "immersive-vr" | "immersive-ar" | undefined;
   private xrBackground?: THREE.Color | THREE.Texture | null;
+  private readonly xrRig = new THREE.Group();
+  private readonly xrControllers: THREE.Group[] = [];
+  private xrSavedCamera: { position: THREE.Vector3; quaternion: THREE.Quaternion } | undefined;
+  private xrSnapTurnReady = true;
+  private xrExitPressed = false;
   private floorStates = new Map<string, SceneFloorState>();
   private weatherEffect: THREE.Points | THREE.LineSegments | undefined;
   private sceneAnimation: SceneAnimationState = {
@@ -432,6 +456,8 @@ export class ViewerEngine {
     if (this.renderer instanceof THREE.WebGLRenderer) this.renderer.localClippingEnabled = true;
     this.container.append(this.renderer.domElement);
     this.scene.add(this.modelRoot);
+    this.scene.add(this.xrRig);
+    this.xrRig.add(this.camera);
 
     if (this.renderer instanceof THREE.WebGLRenderer) {
       this.composer = new EffectComposer(this.renderer);
@@ -481,6 +507,7 @@ export class ViewerEngine {
       this.orbit.enabled = !event.value && this.navigationMode !== "firstPerson";
       const selected = this.getSelected();
       if (selected && this.fragmentModels.has(selected.id)) this.syncFragmentsTransformState(selected.id, Boolean(event.value));
+      if (selected && !event.value && this.inspectedObject === selected.object) this.rebuildPhysicsBody(selected.id);
     });
     this.transform.addEventListener("objectChange", () => {
       if (this.selectedSceneLight) {
@@ -949,28 +976,251 @@ export class ViewerEngine {
   async startXR(mode: "immersive-vr" | "immersive-ar"): Promise<void> {
     if (!(this.renderer instanceof THREE.WebGLRenderer) || !navigator.xr) throw new Error("XR 仅支持 WebGL 和具备 WebXR 的浏览器");
     if (!await navigator.xr.isSessionSupported(mode)) throw new Error(mode === "immersive-vr" ? "当前设备不支持 VR" : "当前设备不支持 AR");
+    if (this.xrSession) await this.xrSession.end();
     const session = await navigator.xr.requestSession(mode, mode === "immersive-ar" ? { requiredFeatures: ["local"], optionalFeatures: ["hit-test", "dom-overlay"], domOverlay: { root: document.body } } : { optionalFeatures: ["local-floor", "bounded-floor"] });
     this.xrActive = true;
+    this.xrSession = session;
+    this.xrMode = mode;
     this.xrBackground = this.scene.background;
     if (mode === "immersive-ar") this.scene.background = null;
+    this.xrSavedCamera = { position: this.camera.position.clone(), quaternion: this.camera.quaternion.clone() };
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    this.xrRig.position.set(this.camera.position.x, this.camera.position.y - this.eyeHeight, this.camera.position.z);
+    this.xrRig.rotation.set(0, Math.atan2(-forward.x, -forward.z), 0);
+    this.camera.position.set(0, 0, 0);
+    this.camera.quaternion.identity();
     cancelAnimationFrame(this.animationFrame);
     this.renderer.xr.enabled = true;
+    this.renderer.xr.setReferenceSpaceType(mode === "immersive-vr" ? "local-floor" : "local");
+    this.setupXRControllers();
     this.renderer.setAnimationLoop(this.animate);
     await this.renderer.xr.setSession(session);
     this.onXRSessionChange?.(mode);
-    session.addEventListener("end", () => {
-      this.renderer.setAnimationLoop(null);
-      this.renderer.xr.enabled = false;
-      this.xrActive = false;
-      this.scene.background = this.xrBackground ?? null;
-      this.onXRSessionChange?.(undefined);
-      this.animate();
-    }, { once: true });
+    session.addEventListener("end", this.handleXRSessionEnd, { once: true });
   }
 
   async endXR(): Promise<void> {
     if (!(this.renderer instanceof THREE.WebGLRenderer)) return;
-    await this.renderer.xr.getSession()?.end();
+    await (this.xrSession ?? this.renderer.xr.getSession())?.end();
+  }
+
+  private setupXRControllers(): void {
+    if (!(this.renderer instanceof THREE.WebGLRenderer) || this.xrControllers.length > 0) return;
+    for (let index = 0; index < 2; index += 1) {
+      const controller = this.renderer.xr.getController(index);
+      controller.name = `helper:xr-controller-${index}`;
+      const ray = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -3)]),
+        new THREE.LineBasicMaterial({ color: index === 0 ? 0x64b5ff : 0xf0bd58, transparent: true, opacity: 0.82 })
+      );
+      ray.name = "helper:xr-ray";
+      controller.add(ray);
+      controller.addEventListener("connected", (event) => { controller.userData.inputSource = (event as unknown as { data: XRInputSource }).data; });
+      controller.addEventListener("disconnected", () => { delete controller.userData.inputSource; });
+      this.xrRig.add(controller);
+      this.xrControllers.push(controller);
+    }
+  }
+
+  private updateXRLocomotion(delta: number): void {
+    if (!this.xrActive || this.xrMode !== "immersive-vr" || !(this.renderer instanceof THREE.WebGLRenderer)) return;
+    let exitPressed = false;
+    for (const controller of this.xrControllers) {
+      const source = controller.userData.inputSource as XRInputSource | undefined;
+      const gamepad = source?.gamepad;
+      if (!source || !gamepad) continue;
+      const { x, y, exitPressed: controllerExitPressed } = readXRThumbstick(gamepad.axes, gamepad.buttons);
+      if (source.handedness === "left" && Math.hypot(x, y) > 0.16) {
+        const xrCamera = this.renderer.xr.getCamera();
+        const forward = xrCamera.getWorldDirection(new THREE.Vector3());
+        forward.y = 0;
+        if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+        forward.normalize();
+        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+        this.xrRig.position.addScaledVector(forward, -y * delta * 3).addScaledVector(right, x * delta * 3);
+      }
+      if (source.handedness === "right") {
+        if (Math.abs(x) > 0.72 && this.xrSnapTurnReady) {
+          const head = this.renderer.xr.getCamera().getWorldPosition(new THREE.Vector3());
+          const angle = -Math.sign(x) * Math.PI / 6;
+          this.xrRig.position.sub(head).applyAxisAngle(new THREE.Vector3(0, 1, 0), angle).add(head);
+          this.xrRig.rotateY(angle);
+          this.xrSnapTurnReady = false;
+        } else if (Math.abs(x) < 0.25) this.xrSnapTurnReady = true;
+      }
+      exitPressed ||= controllerExitPressed;
+    }
+    if (exitPressed && !this.xrExitPressed) void this.endXR();
+    this.xrExitPressed = exitPressed;
+  }
+
+  private handleXRSessionEnd = (): void => {
+    if (!(this.renderer instanceof THREE.WebGLRenderer)) return;
+    this.renderer.setAnimationLoop(null);
+    this.renderer.xr.enabled = false;
+    this.xrActive = false;
+    this.xrSession = undefined;
+    this.xrMode = undefined;
+    this.scene.background = this.xrBackground ?? null;
+    for (const controller of this.xrControllers.splice(0)) this.disposeObject(controller);
+    this.xrRig.position.set(0, 0, 0);
+    this.xrRig.rotation.set(0, 0, 0);
+    if (this.xrSavedCamera) {
+      this.camera.position.copy(this.xrSavedCamera.position);
+      this.camera.quaternion.copy(this.xrSavedCamera.quaternion);
+    }
+    this.xrSavedCamera = undefined;
+    this.xrSnapTurnReady = true;
+    this.xrExitPressed = false;
+    this.onXRSessionChange?.(undefined);
+    this.animate();
+  };
+
+  getPhysicsState(): ScenePhysicsState {
+    return structuredClone(this.physicsState);
+  }
+
+  setPhysicsState(state: ScenePhysicsState): void {
+    this.physicsState = {
+      enabled: state.enabled,
+      playing: state.enabled && state.playing,
+      gravity: { ...state.gravity }
+    };
+    if (state.enabled) void this.ensurePhysicsWorld().then(() => {
+      if (this.physicsWorld) this.physicsWorld.gravity = { ...this.physicsState.gravity };
+    });
+  }
+
+  getPhysicsBodyState(id: string): ScenePhysicsBodyState {
+    return structuredClone(this.physicsBodyStates.get(id) ?? { type: "none", mass: 1, friction: 0.7, restitution: 0.15 });
+  }
+
+  async setPhysicsBodyState(id: string, state: ScenePhysicsBodyState): Promise<void> {
+    const normalized: ScenePhysicsBodyState = {
+      type: state.type,
+      mass: THREE.MathUtils.clamp(state.mass, 0.01, 100_000),
+      friction: THREE.MathUtils.clamp(state.friction, 0, 2),
+      restitution: THREE.MathUtils.clamp(state.restitution, 0, 1)
+    };
+    this.physicsBodyStates.set(id, normalized);
+    this.removePhysicsBody(id);
+    if (normalized.type === "none" || !this.models.has(id)) return;
+    await this.ensurePhysicsWorld();
+    this.createPhysicsBody(id, normalized);
+  }
+
+  resetPhysics(): void {
+    for (const [id, runtime] of this.physicsBodies) {
+      const object = this.models.get(id)?.object;
+      if (!object) continue;
+      applyTransform(object, runtime.initialTransform);
+      object.updateWorldMatrix(true, true);
+      const position = object.getWorldPosition(new THREE.Vector3());
+      const rotation = object.getWorldQuaternion(new THREE.Quaternion());
+      runtime.body.setTranslation(position, true);
+      runtime.body.setRotation(rotation, true);
+      runtime.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      runtime.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    }
+    this.physicsAccumulator = 0;
+  }
+
+  private async ensurePhysicsWorld(): Promise<void> {
+    if (this.physicsWorld) return;
+    if (this.physicsInit) return this.physicsInit;
+    this.physicsInit = (async () => {
+      const module = await import("@dimforge/rapier3d-compat");
+      const rapier = module.default;
+      // The compat build embeds its WASM but currently calls wasm-bindgen's legacy
+      // initializer signature. Hide only that known upstream deprecation warning.
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        if (args[0] !== "using deprecated parameters for the initialization function; pass a single object instead") originalWarn(...args);
+      };
+      try {
+        await rapier.init();
+      } finally {
+        console.warn = originalWarn;
+      }
+      this.rapier = rapier;
+      this.physicsWorld = new rapier.World({ ...this.physicsState.gravity });
+      const ground = rapier.ColliderDesc.cuboid(5_000, 0.05, 5_000).setTranslation(0, -0.05, 0).setFriction(0.9);
+      this.physicsWorld.createCollider(ground);
+      for (const [id, state] of this.physicsBodyStates) if (state.type !== "none" && !this.physicsBodies.has(id)) this.createPhysicsBody(id, state);
+    })().finally(() => { this.physicsInit = undefined; });
+    return this.physicsInit;
+  }
+
+  private createPhysicsBody(id: string, state: ScenePhysicsBodyState): void {
+    const object = this.models.get(id)?.object;
+    const world = this.physicsWorld;
+    const rapier = this.rapier;
+    if (!object || !world || !rapier || state.type === "none") return;
+    object.updateWorldMatrix(true, true);
+    const worldBox = new THREE.Box3().setFromObject(object);
+    if (worldBox.isEmpty()) return;
+    const inverse = object.matrixWorld.clone().invert();
+    const localBox = worldBox.clone().applyMatrix4(inverse);
+    const localCenter = localBox.getCenter(new THREE.Vector3());
+    const localSize = localBox.getSize(new THREE.Vector3());
+    const worldPosition = object.getWorldPosition(new THREE.Vector3());
+    const worldRotation = object.getWorldQuaternion(new THREE.Quaternion());
+    const worldScale = object.getWorldScale(new THREE.Vector3());
+    const descriptor = state.type === "dynamic" ? rapier.RigidBodyDesc.dynamic() : rapier.RigidBodyDesc.fixed();
+    descriptor.setTranslation(worldPosition.x, worldPosition.y, worldPosition.z).setRotation(worldRotation);
+    if (state.type === "dynamic") descriptor.setCcdEnabled(true).setLinearDamping(0.08).setAngularDamping(0.12);
+    const body = world.createRigidBody(descriptor);
+    const half = localSize.multiply(worldScale).multiplyScalar(0.5);
+    const offset = localCenter.multiply(worldScale);
+    const collider = rapier.ColliderDesc.cuboid(
+      Math.max(Math.abs(half.x), 0.01),
+      Math.max(Math.abs(half.y), 0.01),
+      Math.max(Math.abs(half.z), 0.01)
+    ).setTranslation(offset.x, offset.y, offset.z).setFriction(state.friction).setRestitution(state.restitution);
+    if (state.type === "dynamic") collider.setMass(state.mass);
+    world.createCollider(collider, body);
+    this.physicsBodies.set(id, { body, initialTransform: objectTransform(object) });
+  }
+
+  private removePhysicsBody(id: string): void {
+    const runtime = this.physicsBodies.get(id);
+    if (runtime && this.physicsWorld) this.physicsWorld.removeRigidBody(runtime.body);
+    this.physicsBodies.delete(id);
+  }
+
+  private rebuildPhysicsBody(id: string): void {
+    const state = this.physicsBodyStates.get(id);
+    if (!state || state.type === "none" || !this.physicsWorld) return;
+    this.removePhysicsBody(id);
+    this.createPhysicsBody(id, state);
+  }
+
+  private updatePhysics(delta: number): void {
+    const world = this.physicsWorld;
+    if (!world || !this.physicsState.enabled || !this.physicsState.playing) return;
+    this.physicsAccumulator = Math.min(this.physicsAccumulator + delta, 0.2);
+    const fixedStep = 1 / 60;
+    while (this.physicsAccumulator >= fixedStep) {
+      world.timestep = fixedStep;
+      world.step();
+      this.physicsAccumulator -= fixedStep;
+    }
+    for (const [id, runtime] of this.physicsBodies) {
+      if (this.physicsBodyStates.get(id)?.type !== "dynamic") continue;
+      const object = this.models.get(id)?.object;
+      if (!object) continue;
+      const translation = runtime.body.translation();
+      const rotation = runtime.body.rotation();
+      object.position.set(translation.x, translation.y, translation.z);
+      object.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+      object.updateWorldMatrix(true, true);
+    }
+    const now = performance.now();
+    if (this.selectedId && now - this.lastPhysicsUiUpdate >= 160) {
+      const selected = this.models.get(this.selectedId);
+      if (selected && this.physicsBodyStates.get(selected.id)?.type === "dynamic") this.onModelChange?.(selected);
+      this.lastPhysicsUiUpdate = now;
+    }
   }
 
   getSceneAnimation(): SceneAnimationState {
@@ -1655,6 +1905,7 @@ export class ViewerEngine {
     }
     this.updateCollisions(true);
     this.syncFragmentsTransformState(model.id);
+    if (object === model.object) this.rebuildPhysicsBody(model.id);
     this.onModelChange?.(model);
   }
 
@@ -1761,6 +2012,8 @@ export class ViewerEngine {
   removeModel(id: string): void {
     const model = this.models.get(id);
     if (!model) return;
+    this.removePhysicsBody(id);
+    this.physicsBodyStates.delete(id);
     this.clearIsolation();
     this.setExplosion(id, 0);
     if (this.selectedId === id) this.select(undefined);
@@ -2228,7 +2481,7 @@ export class ViewerEngine {
     return objectTransform(object);
   }
 
-  applyModelState(id: string, state: { visible: boolean; locked?: boolean; opacity: number; color?: string; colorOverride?: string; material?: SceneMaterialState; transform: ModelTransform; collisionEnabled?: boolean; explosionFactor?: number; explosionMode?: ExplosionMode; animationEnabled?: boolean; layers?: SceneLayerState[] }): void {
+  applyModelState(id: string, state: { visible: boolean; locked?: boolean; opacity: number; color?: string; colorOverride?: string; material?: SceneMaterialState; physics?: ScenePhysicsBodyState; transform: ModelTransform; collisionEnabled?: boolean; explosionFactor?: number; explosionMode?: ExplosionMode; animationEnabled?: boolean; layers?: SceneLayerState[] }): void {
     const model = this.models.get(id);
     if (!model) return;
     model.object.position.set(state.transform.position.x, state.transform.position.y, state.transform.position.z);
@@ -2253,6 +2506,7 @@ export class ViewerEngine {
     if (this.hasAnimation(id)) this.setAnimationEnabled(id, state.animationEnabled ?? true);
     model.object.updateWorldMatrix(true, true);
     this.syncFragmentsTransformState(id);
+    if (state.physics) void this.setPhysicsBodyState(id, state.physics);
   }
 
   primitiveState(id: string, color: string): PrimitiveState | undefined {
@@ -2270,7 +2524,8 @@ export class ViewerEngine {
       transform,
       collisionEnabled: this.isCollisionEnabled(id),
       explosionFactor: this.getExplosionFactor(id)
-      ,material: this.getMaterialState(model.object)
+      ,material: this.getMaterialState(model.object),
+      physics: this.getPhysicsBodyState(id)
     };
   }
 
@@ -2327,6 +2582,9 @@ export class ViewerEngine {
     for (const visual of this.spaceVisuals.values()) this.disposeObject(visual.object);
     this.spaceVisuals.clear();
     this.disposeSceneLightProxies();
+    this.physicsWorld?.free();
+    this.physicsWorld = undefined;
+    this.rapier = undefined;
     this.composer?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -3178,6 +3436,8 @@ export class ViewerEngine {
     } else {
       this.updateNavigation(delta);
     }
+    this.updateXRLocomotion(delta);
+    this.updatePhysics(delta);
     this.updateWeather(delta);
     this.updateCollisions(false, now);
     this.syncSpaceVisuals();
@@ -4035,6 +4295,10 @@ export class ViewerEngine {
   private handleKeyDown = (event: KeyboardEvent): void => {
     this.keys.add(event.code);
     if (event.code === "Escape") {
+      if (this.xrActive) {
+        void this.endXR();
+        return;
+      }
       if (this.measurementPoints.length > 0) {
         this.measurementPoints.length = 0;
         this.measurementTargets.length = 0;
