@@ -50,6 +50,9 @@ importers:
       fastify:
         specifier: ^5.7.4
         version: 5.11.0
+      meshoptimizer:
+        specifier: 1.0.1
+        version: 1.0.1
       occt-import-js:
         specifier: 0.0.23
         version: 0.0.23

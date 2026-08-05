@@ -51,12 +51,14 @@ import {
 } from "lucide-react";
 import type {
   CameraState,
+  CameraViewState,
   ClippingState,
   ExplosionMode,
   GlobalLightingState,
   MeasurementState,
   ModelRecord,
   ModelTransform,
+  PrimitiveKind,
   ProjectRecord,
   RvtConversionMode,
   SceneAnnotationState,
@@ -65,6 +67,7 @@ import type {
   SceneFloorState,
   SceneLightState,
   SceneMaterialState,
+  SceneModelEffectsState,
   ScenePostProcessingState,
   ScenePhysicsBodyState,
   ScenePhysicsState,
@@ -243,6 +246,10 @@ export function App() {
   const [xrCapabilities, setXrCapabilities] = useState<{ checking: boolean; secure: boolean; webxr: boolean; vr: boolean; ar: boolean }>({ checking: false, secure: window.isSecureContext, webxr: Boolean(navigator.xr), vr: false, ar: false });
   const [locale, setLocale] = useState<AppLocale>(() => readLocale());
   const [sceneAnimation, setSceneAnimation] = useState<SceneAnimationState>(DEFAULT_ANIMATION);
+  const [cameraViews, setCameraViews] = useState<CameraViewState[]>([]);
+  const [defaultCameraViewId, setDefaultCameraViewId] = useState<string>();
+  const [cameraViewsOpen, setCameraViewsOpen] = useState(false);
+  const [primitiveMenuOpen, setPrimitiveMenuOpen] = useState(false);
   const [animationTime, setAnimationTime] = useState(0);
   const [animationPlaying, setAnimationPlaying] = useState(false);
   const [animationOpen, setAnimationOpen] = useState(false);
@@ -318,6 +325,13 @@ export function App() {
       };
       viewer.onXRSessionChange = (mode) => setXrActiveMode(mode);
       viewer.onCollisionChange = requestRevision;
+      viewer.onPrimitivePlaced = (model, _kind, color) => {
+        primitiveColors.current.set(model.id, color);
+        setSelected(model);
+        setPrimitiveMenuOpen(false);
+        setMessage(`${model.name} 已放置，可继续移动、旋转或缩放`);
+        requestRevision();
+      };
       viewer.onAnimationChange = (time, playing) => {
         setAnimationTime(time);
         setAnimationPlaying(playing);
@@ -588,6 +602,7 @@ export function App() {
   const selectionOpacity = selected && engine ? engine.getSelectionOpacity() : 1;
   const selectionColor = selected && engine ? engine.getSelectionColor() : "#d4a84f";
   const selectionMaterial = useMemo(() => selected && engine ? engine.getSelectionMaterial() : {}, [engine, selected, revision]);
+  const selectedEffects = useMemo(() => selected && engine ? engine.getModelEffects(selected.id) : undefined, [engine, selected, revision]);
   const selectedPhysics = useMemo(() => selected && engine ? engine.getPhysicsBodyState(selected.id) : undefined, [engine, selected, revision]);
   const selectionProperties = useMemo(() => engine?.getSelectionProperties() ?? {}, [engine, selected, revision]);
   const selectedLayerId = engine?.getSelectedLayerId();
@@ -668,20 +683,18 @@ export function App() {
     }
   }
 
-  function addBox() {
+  function beginPrimitivePlacement(kind: PrimitiveKind) {
     if (!engine) return;
-    const id = crypto.randomUUID();
-    const color = "#d4a84f";
-    primitiveColors.current.set(id, color);
-    engine.createBox(id, `立方体 ${loadedModels.filter((item) => item.kind === "primitive").length + 1}`, color);
-    setRevision((value) => value + 1);
+    engine.startPrimitivePlacement(kind);
+    setPrimitiveMenuOpen(false);
+    setMessage(`请在模型表面或地面点击，放置${primitiveKindLabel(kind, locale)}`);
   }
 
   function deletePrimitive(id: string) {
     engine?.removeModel(id);
     primitiveColors.current.delete(id);
     setRevision((value) => value + 1);
-    setMessage("正方体已从场景删除");
+    setMessage("几何体已从场景删除");
   }
 
   function deleteMeasurement(id: string) {
@@ -930,6 +943,41 @@ export function App() {
     setRevision((value) => value + 1);
   }
 
+  function updateSelectedEffects(patch: Partial<SceneModelEffectsState>) {
+    if (!engine || !selected || !selectedEffects) return;
+    engine.setModelEffects(selected.id, { ...selectedEffects, ...patch });
+    setRevision((value) => value + 1);
+  }
+
+  function addCameraView() {
+    if (!engine) return;
+    const createdAt = new Date().toISOString();
+    const next: CameraViewState = {
+      id: crypto.randomUUID(),
+      name: `${tr(locale, "视角", "View")} ${cameraViews.length + 1}`,
+      camera: engine.getCameraState(),
+      createdAt
+    };
+    setCameraViews((items) => [...items, next]);
+    setDefaultCameraViewId((current) => current ?? next.id);
+    setMessage(`已保存相机视角“${next.name}”`);
+  }
+
+  function updateCameraViewName(id: string, name: string) {
+    setCameraViews((items) => items.map((item) => item.id === id ? { ...item, name: name.trim() || item.name } : item));
+  }
+
+  function replaceCameraView(id: string) {
+    if (!engine) return;
+    setCameraViews((items) => items.map((item) => item.id === id ? { ...item, camera: engine.getCameraState() } : item));
+    setMessage(tr(locale, "相机视角已更新", "Camera view updated"));
+  }
+
+  function removeCameraView(id: string) {
+    setCameraViews((items) => items.filter((item) => item.id !== id));
+    setDefaultCameraViewId((current) => current === id ? undefined : current);
+  }
+
   function updateFloor(state: SceneFloorState) {
     engine?.setFloorState(state.modelId, state.level, state.visible, state.expansion);
     setRevision((value) => value + 1);
@@ -1016,6 +1064,8 @@ export function App() {
       projectId: project.id,
       name: sceneName.trim() || "未命名场景",
       camera: engine.getCameraState(),
+      cameraViews,
+      ...(defaultCameraViewId ? { defaultCameraViewId } : {}),
       models: currentModels.filter((item) => item.kind === "model").flatMap((item) => {
         const transform = engine.getModelTransform(item.id);
         const source = project.models.find((model) => model.id === item.id);
@@ -1030,6 +1080,7 @@ export function App() {
           opacity: item.opacity,
           ...(colorOverride ? { colorOverride } : {}),
           ...(material ? { material } : {}),
+          effects: engine.getModelEffects(item.id),
           physics: engine.getPhysicsBodyState(item.id),
           transform,
           collisionEnabled: engine.isCollisionEnabled(item.id),
@@ -1062,7 +1113,7 @@ export function App() {
     };
   }
 
-  async function saveScene() {
+  async function saveScene(): Promise<SceneSnapshot | undefined> {
     const snapshot = makeSnapshot();
     if (!snapshot) return;
     setBusy(true);
@@ -1072,11 +1123,22 @@ export function App() {
       setSceneName(saved.name);
       setScenes((items) => sortScenesByTime([saved, ...items.filter((item) => item.id !== saved.id)]));
       setMessage(`场景“${saved.name}”已保存`);
+      return saved;
     } catch (reason) {
       showError(reason);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function browseActiveScene() {
+    const saved = await saveScene();
+    if (saved) navigate({ view: "view", sceneId: saved.id });
+  }
+
+  async function publishActiveScene() {
+    const saved = await saveScene();
+    if (saved) await publishScene(saved);
   }
 
   async function commitSceneName(): Promise<boolean> {
@@ -1136,7 +1198,7 @@ export function App() {
       for (const item of engine.listModels().filter((model) => model.kind === "primitive")) engine.removeModel(item.id);
       for (const primitive of scene.primitives) {
         primitiveColors.current.set(primitive.modelId, primitive.color);
-        engine.createBox(primitive.modelId, primitive.name, primitive.color);
+        engine.createPrimitive(primitive.modelId, primitive.name, primitive.kind ?? "box", primitive.color);
         engine.applyModelState(primitive.modelId, primitive);
       }
       engine.clearMeasurements();
@@ -1144,7 +1206,11 @@ export function App() {
       setMeasurements(scene.measurements);
       for (const annotation of scene.annotations ?? []) engine.addAnnotation(annotation);
       setAnnotations(engine.listAnnotations());
-      engine.applyCamera(scene.camera);
+      const nextCameraViews = scene.cameraViews ?? [];
+      const entryCamera = nextCameraViews.find((item) => item.id === scene.defaultCameraViewId)?.camera ?? scene.camera;
+      engine.applyCamera(entryCamera);
+      setCameraViews(nextCameraViews);
+      setDefaultCameraViewId(scene.defaultCameraViewId);
       const nextWeather = scene.weather ?? "sunny";
       const savedLights = scene.lighting?.lights?.filter((light) => !["ambient-default", "hemisphere-default"].includes(light.id));
       const nextLighting: GlobalLightingState = { ...DEFAULT_LIGHTING, ...scene.lighting, lights: savedLights?.length ? savedLights : (DEFAULT_LIGHTING.lights ?? []) };
@@ -1174,8 +1240,8 @@ export function App() {
       if (scene.selectedAnnotationId) engine.selectAnnotation(scene.selectedAnnotationId);
       else if (scene.selectedModelId && scene.selectedLayerId) engine.selectLayer(scene.selectedModelId, scene.selectedLayerId);
       else engine.select(scene.selectedModelId);
-      setNavigationMode(scene.camera.mode);
-      setAvatarVisible(scene.camera.avatarVisible ?? false);
+      setNavigationMode(entryCamera.mode);
+      setAvatarVisible(entryCamera.avatarVisible ?? false);
       setActiveScene(scene);
       setSceneName(scene.name);
       setMessage(`场景“${scene.name}”已恢复`);
@@ -1206,6 +1272,8 @@ export function App() {
     setAnnotations([]);
     setSelectedAnnotationId(undefined);
     setSelected(undefined);
+    setCameraViews([]);
+    setDefaultCameraViewId(undefined);
     const now = new Date().toISOString();
     const scene: SceneSnapshot = {
       schemaVersion: 1,
@@ -1217,6 +1285,7 @@ export function App() {
         target: { x: 0, y: 1, z: 0 },
         mode: "orbit"
       },
+      cameraViews: [],
       models: [],
       primitives: [],
       measurements: [],
@@ -1243,6 +1312,8 @@ export function App() {
     setPostProcessing(DEFAULT_POST_PROCESSING);
     setPhysics(DEFAULT_PHYSICS);
     setSceneAnimation(DEFAULT_ANIMATION);
+    setCameraViews([]);
+    setDefaultCameraViewId(undefined);
     setAnimationTime(0);
     setAnimationPlaying(false);
     navigate({ view: "studio", sceneId: saved.id });
@@ -1508,6 +1579,8 @@ export function App() {
           <button className="button ghost" onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={16} />{tr(locale, "场景管理", "Scenes")}</button>
           <button className="button ghost" onClick={() => importRef.current?.click()}><Import size={16} />{tr(locale, "导入", "Import")}</button>
           <SceneExportMenu locale={locale} disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} />
+          <button className="button ghost" onClick={() => void browseActiveScene()} disabled={busy}><Eye size={16} />{tr(locale, "浏览", "View")}</button>
+          <button className="button ghost" onClick={() => void publishActiveScene()} disabled={busy}><Rocket size={16} />{activeScene?.publishedAt ? tr(locale, "重新发布", "Republish") : tr(locale, "发布", "Publish")}</button>
           <button className="button primary" onClick={() => void saveScene()} disabled={busy}><Save size={16} />{tr(locale, "保存场景", "Save scene")}</button>
         </div>
         </> : <>
@@ -1735,7 +1808,13 @@ export function App() {
           <ToolButton title={tr(locale, "构件选择", "Component selection")} active={selectionScope === "component"} onClick={() => { const next = selectionScope === "model" ? "component" : "model"; setSelectionScope(next); engine?.setSelectionScope(next); setMessage(next === "component" ? "构件选择已开启：画布点击可深入选择构件" : "模型选择已开启：画布点击只选择整个模型"); }} icon={<MousePointer2 size={19} />} />
           <span className="dock-separator" />
           <ToolButton title={tr(locale, "测量工具", "Measurement tools")} active={measureEnabled} onClick={toggleMeasurement} icon={<Ruler size={19} />} />
-          <ToolButton title={tr(locale, "添加立方体", "Add cube")} active={false} onClick={addBox} icon={<Box size={19} />} />
+          <div className="primitive-tool">
+            <ToolButton title={tr(locale, "插入几何体", "Insert geometry")} active={primitiveMenuOpen} onClick={() => setPrimitiveMenuOpen((value) => !value)} icon={<Box size={19} />} />
+            {primitiveMenuOpen && <div className="primitive-menu">
+              {(["box", "sphere", "cylinder", "cone", "torus", "plane", "capsule"] as PrimitiveKind[]).map((kind) => <button key={kind} onClick={() => beginPrimitivePlacement(kind)}><Box size={13} /><span>{primitiveKindLabel(kind, locale)}</span></button>)}
+              <small>{tr(locale, "选择后点击画布放置", "Choose one, then click the viewport")}</small>
+            </div>}
+          </div>
           <ToolButton title={tr(locale, "标签标记", "Annotations")} active={annotationEnabled} onClick={toggleAnnotationPlacement} icon={<MapPin size={19} />} />
           <ToolButton title={tr(locale, "剖切模型", "Section model")} active={clipping.enabled} onClick={toggleClipping} icon={<ScanLine size={19} />} />
           <ToolButton title={tr(locale, "模型爆炸", "Explode model")} active={explosionFactor > 0} onClick={() => updateExplosion(explosionFactor > 0 ? 0 : 0.55)} icon={<Layers3 size={19} />} />
@@ -1757,12 +1836,26 @@ export function App() {
           <ToolButton title={tr(locale, "场景信息", "Scene information")} active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
           <ToolButton title={tr(locale, "环境设置", "Environment")} active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
           <ToolButton title={tr(locale, "动画编辑", "Animation editor")} active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
+          <ToolButton title={tr(locale, "相机视角", "Camera views")} active={cameraViewsOpen} onClick={() => setCameraViewsOpen((value) => !value)} icon={<Camera size={19} />} />
           <ToolButton title={tr(locale, "二维数据看板", "2D data dashboard")} active={sceneDashboardOpen} onClick={() => setSceneDashboardOpen((value) => !value)} icon={<Gauge size={19} />} />
           <ToolButton title={tr(locale, "物理系统", "Physics")} active={physicsOpen} onClick={() => { setPhysicsOpen((value) => !value); setEnvironmentOpen(false); }} icon={<Atom size={19} />} />
           <ToolButton className="xr-entry" title={tr(locale, "AR / VR 沉浸体验", "AR / VR immersive experience")} active={xrPanelOpen} onClick={() => setXrPanelOpen((value) => !value)} icon={<span className="xr-tool-label">AR/VR</span>} />
           </>}
         </div>
         <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />
+        {route.view === "studio" && cameraViewsOpen && <section className="camera-views-panel">
+          <header><div><strong>{tr(locale, "相机视角", "Camera views")}</strong><small>{tr(locale, "可设为场景进入视角", "Set the scene entry view")}</small></div><button onClick={() => setCameraViewsOpen(false)}><X size={14} /></button></header>
+          <button className="camera-view-add" onClick={addCameraView}><Plus size={14} />{tr(locale, "保存当前视角", "Save current view")}</button>
+          <div className="camera-view-list">
+            {cameraViews.map((view) => <article key={view.id} className={view.id === defaultCameraViewId ? "default" : ""}>
+              <div className="camera-view-main"><button title={tr(locale, "切换到此视角", "Go to this view")} onClick={() => engine?.applyCamera(view.camera)}><Camera size={14} /></button><input value={view.name} onChange={(event) => updateCameraViewName(view.id, event.target.value)} onBlur={(event) => updateCameraViewName(view.id, event.target.value)} /></div>
+              <button className={view.id === defaultCameraViewId ? "active" : ""} title={tr(locale, "设为进入场景的默认视角", "Set as the default scene entry view")} onClick={() => setDefaultCameraViewId(view.id)}>{tr(locale, "默认", "Default")}</button>
+              <button title={tr(locale, "用当前相机覆盖", "Replace with current camera")} onClick={() => replaceCameraView(view.id)}><Save size={13} /></button>
+              <button title={tr(locale, "删除视角", "Delete view")} onClick={() => removeCameraView(view.id)}><Trash2 size={13} /></button>
+            </article>)}
+            {cameraViews.length === 0 && <p>{tr(locale, "暂无视角。调整相机后保存当前视角。", "No views yet. Move the camera, then save the current view.")}</p>}
+          </div>
+        </section>}
         {route.view === "studio" && environmentOpen && <div className="environment-control" aria-label={tr(locale, "环境与全局灯光", "Environment and global lighting")}>
           <div className="environment-heading"><strong>{tr(locale, "场景环境", "Scene environment")}</strong><small>{tr(locale, "随场景保存", "Saved with scene")}</small></div>
           <div className="environment-row">
@@ -1886,7 +1979,7 @@ export function App() {
           {!xrCapabilities.checking && (!xrCapabilities.vr || !xrCapabilities.ar) && <p>{tr(locale, "桌面浏览器通常只能检测 VR 头显；AR 需支持 WebXR 的 Android 设备。自签名证书必须先在设备上信任。", "Desktop browsers usually require a connected VR headset; AR requires a WebXR-capable Android device. Trust the self-signed certificate on the device first.")}</p>}
         </div>}
         {route.view === "studio" && xrActiveMode && <div className="xr-session-hud"><div><strong>{xrActiveMode === "immersive-vr" ? "VR" : "AR"} {tr(locale, "运行中", "active")}</strong><small>{xrActiveMode === "immersive-vr" ? tr(locale, "左摇杆移动 · 右摇杆转向 · B/Y 退出", "Left stick move · right stick turn · B/Y exit") : tr(locale, "点击退出返回编辑器", "Exit to return to the editor")}</small></div><button onClick={() => void engine?.endXR()}>{tr(locale, "退出", "Exit")}</button></div>}
-        {route.view === "studio" && sceneDashboardOpen && <SceneDashboardOverlay locale={locale} onClose={() => setSceneDashboardOpen(false)} />}
+        {route.view === "studio" && sceneDashboardOpen && <SceneDashboardOverlay locale={locale} sceneId={activeScene?.id ?? route.sceneId ?? "new"} onClose={() => setSceneDashboardOpen(false)} />}
         {route.view === "studio" && measureEnabled && (
           <div className="measure-mode-bar" aria-label={tr(locale, "测量模式", "Measurement mode")}>
             <span>{tr(locale, "测量", "Measure")}</span>
@@ -1962,7 +2055,7 @@ export function App() {
           </div>
         )}
         <div className="viewport-status"><span className={busy ? "status-dot working" : "status-dot"} />{message}</div>
-        {navigationMode !== "orbit" && <div className="navigation-hint">{tr(locale, "W A S D 移动 · Shift 加速", "W A S D move · Shift boost")}{navigationMode === "firstPerson" ? tr(locale, " · 地面行走 · 双击画面锁定视角 · Esc 释放鼠标", " · Ground walk · Double-click to capture pointer · Esc to release") : tr(locale, " · 空中漫游 · Space 上升 · Ctrl 下降 · 鼠标旋转视角", " · Fly mode · Space up · Ctrl down · Mouse to look")}</div>}
+        {navigationMode !== "orbit" && <div className="navigation-hint">{tr(locale, "W A S D 移动 · Shift 加速", "W A S D move · Shift boost")}{navigationMode === "firstPerson" ? tr(locale, " · 空格跳跃 · 双击画面锁定视角 · Esc 释放鼠标", " · Space jump · Double-click to capture pointer · Esc to release") : tr(locale, " · 空中漫游 · Space 上升 · Ctrl 下降 · 鼠标旋转视角", " · Fly mode · Space up · Ctrl down · Mouse to look")}</div>}
         {busy && <div className="loading-overlay"><LoaderCircle className="spin" size={24} /><span>{tr(locale, "正在处理模型", "Processing model")}</span></div>}
       </main>
 
@@ -2040,6 +2133,18 @@ export function App() {
               <label className="material-emissive"><span>{tr(locale, "自发光", "Emissive")}</span><input disabled={selectionLocked || selectionMaterial.emissive === undefined} type="color" value={selectionMaterial.emissive ?? "#000000"} onChange={(event) => updateSelectionMaterial({ emissive: event.target.value })} /><input disabled={selectionLocked || selectionMaterial.emissiveIntensity === undefined} type="range" min="0" max="5" step="0.05" value={selectionMaterial.emissiveIntensity ?? 0} onChange={(event) => updateSelectionMaterial({ emissiveIntensity: Number(event.target.value) })} /></label>
               <div className="material-toggles"><button disabled={selectionLocked} className={selectionMaterial.wireframe ? "active" : ""} onClick={() => updateSelectionMaterial({ wireframe: !selectionMaterial.wireframe })}>{tr(locale, "线框", "Wireframe")}</button><button disabled={selectionLocked} className={selectionMaterial.doubleSided ? "active" : ""} onClick={() => updateSelectionMaterial({ doubleSided: !selectionMaterial.doubleSided })}>{tr(locale, "双面", "Double-sided")}</button></div>
             </div>
+            {selectedEffects && <div className="model-effects-editor">
+              <div className="section-label"><span>{tr(locale, "模型特效", "Model effects")}</span><small>{rendererBackend === "webgpu" ? tr(locale, "WebGPU 兼容模式", "WebGPU compatible") : "GPU"}</small></div>
+              <div className="effect-toggles">
+                {([
+                  ["outline", tr(locale, "轮廓", "Outline")], ["glow", tr(locale, "辉光", "Glow")], ["xray", "X-Ray"],
+                  ["scanline", tr(locale, "扫描线", "Scanline")], ["heatmap", tr(locale, "热力图", "Heatmap")], ["edgeLight", tr(locale, "边缘光", "Rim light")]
+                ] as Array<[keyof SceneModelEffectsState, string]>).map(([key, label]) => <button disabled={selectionLocked} key={key} className={selectedEffects[key] ? "active" : ""} onClick={() => updateSelectedEffects({ [key]: !selectedEffects[key] })}>{label}</button>)}
+              </div>
+              <label><span>{tr(locale, "特效颜色", "Effect color")}</span><input disabled={selectionLocked} type="color" value={selectedEffects.color} onChange={(event) => updateSelectedEffects({ color: event.target.value })} /></label>
+              <label><span>{tr(locale, "强度", "Intensity")}</span><input disabled={selectionLocked} type="range" min="0.1" max="4" step="0.1" value={selectedEffects.intensity} onChange={(event) => updateSelectedEffects({ intensity: Number(event.target.value) })} /><output>{selectedEffects.intensity.toFixed(1)}</output></label>
+              <label><span>{tr(locale, "溶解", "Dissolve")}</span><input disabled={selectionLocked} type="range" min="0" max="0.95" step="0.01" value={selectedEffects.dissolve} onChange={(event) => updateSelectedEffects({ dissolve: Number(event.target.value) })} /><output>{Math.round(selectedEffects.dissolve * 100)}%</output></label>
+            </div>}
             {selected.kind === "model" && (
               <div className="field explosion-field">
                 <span>{tr(locale, "模型爆炸", "Model explosion")}</span><output>{Math.round(explosionFactor * 100)}%</output>
@@ -2114,6 +2219,14 @@ export function App() {
 
 function ToolButton({ title, active, onClick, icon, className = "" }: { title: string; active: boolean; onClick: () => void; icon: React.ReactNode; className?: string }) {
   return <button className={`tool-button ${active ? "active" : ""} ${className}`.trim()} title={title} onClick={onClick}>{icon}<span>{title}</span></button>;
+}
+
+function primitiveKindLabel(kind: PrimitiveKind, locale: AppLocale): string {
+  const labels: Record<PrimitiveKind, [string, string]> = {
+    box: ["立方体", "Box"], sphere: ["球体", "Sphere"], cylinder: ["圆柱体", "Cylinder"],
+    cone: ["圆锥体", "Cone"], torus: ["圆环", "Torus"], plane: ["平面", "Plane"], capsule: ["胶囊体", "Capsule"]
+  };
+  return tr(locale, labels[kind][0], labels[kind][1]);
 }
 
 function ViewControl({ locale, onSelect }: { locale: AppLocale; onSelect: (view: StandardView) => void }) {

@@ -21,7 +21,11 @@
     "type": "inject",
     "z": "example-td-tab",
     "name": "每 10 秒查询",
-    "props": [{ "p": "payload" }],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
     "repeat": "10",
     "once": true,
     "onceDelay": 1,
@@ -29,7 +33,11 @@
     "payloadType": "date",
     "x": 120,
     "y": 140,
-    "wires": [["example-td-request"]]
+    "wires": [
+      [
+        "example-td-request"
+      ]
+    ]
   },
   {
     "id": "example-td-request",
@@ -45,7 +53,11 @@
     "libs": [],
     "x": 330,
     "y": 140,
-    "wires": [["example-td-http"]]
+    "wires": [
+      [
+        "example-td-http"
+      ]
+    ]
   },
   {
     "id": "example-td-http",
@@ -62,7 +74,11 @@
     "headers": [],
     "x": 560,
     "y": 140,
-    "wires": [["example-td-normalize"]]
+    "wires": [
+      [
+        "example-td-normalize"
+      ]
+    ]
   },
   {
     "id": "example-td-normalize",
@@ -78,7 +94,13 @@
     "libs": [],
     "x": 770,
     "y": 140,
-    "wires": [["example-td-gauge", "example-td-debug"]]
+    "wires": [
+      [
+        "example-td-gauge",
+        "example-td-debug",
+        "example-td-scene"
+      ]
+    ]
   },
   {
     "id": "example-td-gauge",
@@ -96,7 +118,20 @@
     "title": "TDengine",
     "alwaysShowTitle": true,
     "units": "",
-    "segments": [{ "from": "0", "color": "#4d9fff" }, { "from": "70", "color": "#d4a84f" }, { "from": "90", "color": "#ff5268" }],
+    "segments": [
+      {
+        "from": "0",
+        "color": "#4d9fff"
+      },
+      {
+        "from": "70",
+        "color": "#d4a84f"
+      },
+      {
+        "from": "90",
+        "color": "#ff5268"
+      }
+    ],
     "min": 0,
     "max": 100,
     "className": "",
@@ -137,14 +172,22 @@
     "type": "inject",
     "z": "example-oracle-tab",
     "name": "查询 Oracle",
-    "props": [{ "p": "payload" }],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
     "once": true,
     "onceDelay": 1,
     "payload": "",
     "payloadType": "date",
     "x": 120,
     "y": 140,
-    "wires": [["example-oracle-query"]]
+    "wires": [
+      [
+        "example-oracle-query"
+      ]
+    ]
   },
   {
     "id": "example-oracle-query",
@@ -160,7 +203,11 @@
     "resultlimit": "10",
     "x": 330,
     "y": 140,
-    "wires": [["example-oracle-normalize"]]
+    "wires": [
+      [
+        "example-oracle-normalize"
+      ]
+    ]
   },
   {
     "id": "example-oracle-normalize",
@@ -176,7 +223,13 @@
     "libs": [],
     "x": 520,
     "y": 140,
-    "wires": [["example-oracle-gauge", "example-oracle-debug"]]
+    "wires": [
+      [
+        "example-oracle-gauge",
+        "example-oracle-debug",
+        "example-oracle-scene"
+      ]
+    ]
   },
   {
     "id": "example-oracle-gauge",
@@ -194,7 +247,20 @@
     "title": "Oracle",
     "alwaysShowTitle": true,
     "units": "",
-    "segments": [{ "from": "0", "color": "#4d9fff" }, { "from": "70", "color": "#d4a84f" }, { "from": "90", "color": "#ff5268" }],
+    "segments": [
+      {
+        "from": "0",
+        "color": "#4d9fff"
+      },
+      {
+        "from": "70",
+        "color": "#d4a84f"
+      },
+      {
+        "from": "90",
+        "color": "#ff5268"
+      }
+    ],
     "min": 0,
     "max": 100,
     "className": "",
@@ -234,5 +300,51 @@
     "stmtcachesize": 30,
     "maxretries": 3,
     "retrydelay": 1000
+  },
+  {
+    "id": "example-td-scene",
+    "type": "function",
+    "z": "example-td-tab",
+    "name": "同步到场景与二维看板",
+    "func": "const value = Number(msg.payload ?? 0);\nconst modelId = env.get('BIM_MODEL_ID') || '';\nconst base = { source: 'tdengine', key: 'value', value, timestamp: new Date().toISOString() };\nconst data = { ...msg, payload: base };\nconst scene = modelId ? { ...msg, payload: { ...base, key: 'alarmColor', value: value >= 80 ? '#ff4057' : value >= 60 ? '#d4a84f' : '#48b8ff', target: { modelId }, action: 'color' } } : null;\nreturn [data, scene];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1010,
+    "y": 130,
+    "wires": [
+      [
+        "scene-ws-out"
+      ],
+      [
+        "scene-ws-out"
+      ]
+    ]
+  },
+  {
+    "id": "example-oracle-scene",
+    "type": "function",
+    "z": "example-oracle-tab",
+    "name": "同步到场景与二维看板",
+    "func": "const value = Number(msg.payload ?? 0);\nconst modelId = env.get('BIM_MODEL_ID') || '';\nconst base = { source: 'oracle', key: 'value', value, timestamp: new Date().toISOString() };\nconst data = { ...msg, payload: base };\nconst scene = modelId ? { ...msg, payload: { ...base, key: 'alarmColor', value: value >= 80 ? '#ff4057' : value >= 60 ? '#d4a84f' : '#48b8ff', target: { modelId }, action: 'color' } } : null;\nreturn [data, scene];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 770,
+    "y": 130,
+    "wires": [
+      [
+        "scene-ws-out"
+      ],
+      [
+        "scene-ws-out"
+      ]
+    ]
   }
 ]

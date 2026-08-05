@@ -26,7 +26,14 @@ export interface ModelManifest {
   geometryUrl?: string;
   hierarchyUrl?: string;
   propertiesUrl?: string;
+  lods?: ModelLodResource[];
   createdAt: string;
+}
+
+export interface ModelLodResource {
+  url: string;
+  ratio: number;
+  level: "medium" | "low";
 }
 
 export interface ModelRecord {
@@ -73,6 +80,7 @@ export interface SceneModelState {
   explosionMode?: ExplosionMode;
   animationEnabled?: boolean;
   material?: SceneMaterialState;
+  effects?: SceneModelEffectsState;
   physics?: ScenePhysicsBodyState;
   layers?: SceneLayerState[];
 }
@@ -139,8 +147,22 @@ export interface SceneMaterialState {
   doubleSided?: boolean;
 }
 
+export interface SceneModelEffectsState {
+  outline: boolean;
+  glow: boolean;
+  xray: boolean;
+  scanline: boolean;
+  heatmap: boolean;
+  dissolve: number;
+  edgeLight: boolean;
+  color: string;
+  intensity: number;
+}
+
+export type PrimitiveKind = "box" | "sphere" | "cylinder" | "cone" | "torus" | "plane" | "capsule";
+
 export interface PrimitiveState extends SceneModelState {
-  kind: "box";
+  kind: PrimitiveKind;
   color: string;
 }
 
@@ -261,6 +283,13 @@ export interface CameraKeyframe {
   camera: CameraState;
 }
 
+export interface CameraViewState {
+  id: string;
+  name: string;
+  camera: CameraState;
+  createdAt: string;
+}
+
 export interface ModelKeyframe {
   id: string;
   time: number;
@@ -285,6 +314,8 @@ export interface SceneSnapshot {
   projectId: string;
   name: string;
   camera: CameraState;
+  cameraViews?: CameraViewState[];
+  defaultCameraViewId?: string;
   models: SceneModelState[];
   primitives: PrimitiveState[];
   measurements: MeasurementState[];

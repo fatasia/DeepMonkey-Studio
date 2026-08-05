@@ -13,10 +13,15 @@ for (const id of [
   "bim-dashboard-base",
   "bim-dashboard-page",
   "scene-dashboard-value",
-  "scene-dashboard-gauge"
+  "scene-dashboard-gauge",
+  "example-td-tab",
+  "example-oracle-tab",
+  "example-td-scene",
+  "example-oracle-scene"
 ]) {
   if (!byId.has(id)) throw new Error(`Missing required Node-RED node: ${id}`);
 }
+if (byId.get("example-td-tab").disabled !== true || byId.get("example-oracle-tab").disabled !== true) throw new Error("Database examples must remain disabled until credentials are configured");
 
 if (byId.get("scene-http-in").url !== "/scene") throw new Error("Scene HTTP route must remain /iot/scene");
 if (byId.get("scene-ws-listener").path !== "/ws/scene") throw new Error("Scene WebSocket route must remain /iot/ws/scene");

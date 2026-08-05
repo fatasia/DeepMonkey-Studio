@@ -17,7 +17,11 @@
     "swaggerDoc": "",
     "x": 150,
     "y": 120,
-    "wires": [["normalize-scene-message"]]
+    "wires": [
+      [
+        "normalize-scene-message"
+      ]
+    ]
   },
   {
     "id": "normalize-scene-message",
@@ -33,7 +37,17 @@
     "libs": [],
     "x": 370,
     "y": 120,
-    "wires": [["scene-ws-out", "scene-debug", "scene-dashboard-value", "scene-dashboard-gauge"], ["scene-http-response"]]
+    "wires": [
+      [
+        "scene-ws-out",
+        "scene-debug",
+        "scene-dashboard-value",
+        "scene-dashboard-gauge"
+      ],
+      [
+        "scene-http-response"
+      ]
+    ]
   },
   {
     "id": "scene-ws-listener",
@@ -87,7 +101,10 @@
     "path": "/dashboard",
     "appIcon": "",
     "includeClientData": true,
-    "acceptsClientConfig": ["ui-notification", "ui-control"],
+    "acceptsClientConfig": [
+      "ui-notification",
+      "ui-control"
+    ],
     "showPathInSidebar": false,
     "headerContent": "page",
     "navigationStyle": "default",
@@ -126,10 +143,26 @@
     "layout": "grid",
     "theme": "bim-dashboard-theme",
     "breakpoints": [
-      { "name": "Default", "px": 0, "cols": 3 },
-      { "name": "Tablet", "px": 576, "cols": 6 },
-      { "name": "Small Desktop", "px": 768, "cols": 9 },
-      { "name": "Desktop", "px": 1024, "cols": 12 }
+      {
+        "name": "Default",
+        "px": 0,
+        "cols": 3
+      },
+      {
+        "name": "Tablet",
+        "px": 576,
+        "cols": 6
+      },
+      {
+        "name": "Small Desktop",
+        "px": 768,
+        "cols": 9
+      },
+      {
+        "name": "Desktop",
+        "px": 1024,
+        "cols": 12
+      }
     ],
     "order": 1,
     "className": "",
@@ -205,9 +238,21 @@
     "prefix": "",
     "suffix": "",
     "segments": [
-      { "from": "0", "color": "#4d9fff", "text": "正常" },
-      { "from": "70", "color": "#d4a84f", "text": "注意" },
-      { "from": "90", "color": "#ff5268", "text": "告警" }
+      {
+        "from": "0",
+        "color": "#4d9fff",
+        "text": "正常"
+      },
+      {
+        "from": "70",
+        "color": "#d4a84f",
+        "text": "注意"
+      },
+      {
+        "from": "90",
+        "color": "#ff5268",
+        "text": "告警"
+      }
     ],
     "min": 0,
     "max": 100,
@@ -218,5 +263,353 @@
     "styleGlow": false,
     "className": "",
     "wires": []
+  },
+  {
+    "id": "example-td-tab",
+    "type": "tab",
+    "label": "示例 · TDengine",
+    "disabled": true,
+    "info": "启用前在 .env 配置 TDENGINE_REST_URL、TDENGINE_DATABASE、TDENGINE_USER、TDENGINE_PASSWORD。"
+  },
+  {
+    "id": "example-td-note",
+    "type": "comment",
+    "z": "example-td-tab",
+    "name": "1. 配置 .env  2. 双击 SQL 改表名  3. 启用流程",
+    "info": "默认每 10 秒通过 TDengine REST API 查询一次。示例流程导入时处于禁用状态，避免未配置时反复报错。",
+    "x": 310,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "example-td-inject",
+    "type": "inject",
+    "z": "example-td-tab",
+    "name": "每 10 秒查询",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "10",
+    "once": true,
+    "onceDelay": 1,
+    "payload": "",
+    "payloadType": "date",
+    "x": 120,
+    "y": 140,
+    "wires": [
+      [
+        "example-td-request"
+      ]
+    ]
+  },
+  {
+    "id": "example-td-request",
+    "type": "function",
+    "z": "example-td-tab",
+    "name": "TDengine REST + SQL",
+    "func": "const base = env.get('TDENGINE_REST_URL') || 'http://127.0.0.1:6041';\nconst database = env.get('TDENGINE_DATABASE') || 'test';\nconst user = env.get('TDENGINE_USER') || 'root';\nconst password = env.get('TDENGINE_PASSWORD') || 'taosdata';\nmsg.method = 'POST';\nmsg.url = `${base.replace(/\\/$/, '')}/rest/sql/${encodeURIComponent(database)}`;\nmsg.headers = {\n  'content-type': 'text/plain; charset=utf-8',\n  authorization: `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`\n};\n// 改成你的超级表、表和字段。\nmsg.payload = 'SELECT LAST(ts) AS ts, LAST(current) AS value FROM meters';\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 330,
+    "y": 140,
+    "wires": [
+      [
+        "example-td-http"
+      ]
+    ]
+  },
+  {
+    "id": "example-td-http",
+    "type": "http request",
+    "z": "example-td-tab",
+    "name": "执行 TDengine 查询",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "persist": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 560,
+    "y": 140,
+    "wires": [
+      [
+        "example-td-normalize"
+      ]
+    ]
+  },
+  {
+    "id": "example-td-normalize",
+    "type": "function",
+    "z": "example-td-tab",
+    "name": "取最新数值",
+    "func": "const body = msg.payload || {};\nif (body.status && body.status !== 'succ') { throw new Error(body.desc || 'TDengine 查询失败'); }\nconst row = Array.isArray(body.data) ? body.data[0] : undefined;\nconst value = Array.isArray(row) ? row[row.length - 1] : row?.value;\nmsg.payload = Number(value ?? 0);\nmsg.topic = 'TDengine';\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 770,
+    "y": 140,
+    "wires": [
+      [
+        "example-td-gauge",
+        "example-td-debug",
+        "example-td-scene"
+      ]
+    ]
+  },
+  {
+    "id": "example-td-gauge",
+    "type": "ui-gauge",
+    "z": "example-td-tab",
+    "name": "TDengine 实时值",
+    "group": "bim-dashboard-group",
+    "order": 10,
+    "value": "payload",
+    "valueType": "msg",
+    "width": 3,
+    "height": 3,
+    "gtype": "gauge-half",
+    "gstyle": "needle",
+    "title": "TDengine",
+    "alwaysShowTitle": true,
+    "units": "",
+    "segments": [
+      {
+        "from": "0",
+        "color": "#4d9fff"
+      },
+      {
+        "from": "70",
+        "color": "#d4a84f"
+      },
+      {
+        "from": "90",
+        "color": "#ff5268"
+      }
+    ],
+    "min": 0,
+    "max": 100,
+    "className": "",
+    "wires": []
+  },
+  {
+    "id": "example-td-debug",
+    "type": "debug",
+    "z": "example-td-tab",
+    "name": "TDengine 结果",
+    "active": true,
+    "tosidebar": true,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 1010,
+    "y": 180,
+    "wires": []
+  },
+  {
+    "id": "example-oracle-tab",
+    "type": "tab",
+    "label": "示例 · Oracle",
+    "disabled": true,
+    "info": "双击 Oracle 连接，填写用户名和密码；Oracle 12.1+ 建议保持 Thin，11g 再切 Thick。"
+  },
+  {
+    "id": "example-oracle-note",
+    "type": "comment",
+    "z": "example-oracle-tab",
+    "name": "1. 编辑 Oracle 连接  2. 测试连接  3. 启用流程",
+    "info": "示例 SQL 使用 DUAL，因此连接成功后无需准备业务表即可看到数值 42。",
+    "x": 310,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "example-oracle-inject",
+    "type": "inject",
+    "z": "example-oracle-tab",
+    "name": "查询 Oracle",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "once": true,
+    "onceDelay": 1,
+    "payload": "",
+    "payloadType": "date",
+    "x": 120,
+    "y": 140,
+    "wires": [
+      [
+        "example-oracle-query"
+      ]
+    ]
+  },
+  {
+    "id": "example-oracle-query",
+    "type": "oracledb",
+    "z": "example-oracle-tab",
+    "server": "example-oracle-server",
+    "name": "Oracle 查询",
+    "usequery": true,
+    "query": "SELECT SYSTIMESTAMP AS TS, 42 AS VALUE FROM DUAL",
+    "usemappings": false,
+    "mappings": "[]",
+    "resultaction": "single",
+    "resultlimit": "10",
+    "x": 330,
+    "y": 140,
+    "wires": [
+      [
+        "example-oracle-normalize"
+      ]
+    ]
+  },
+  {
+    "id": "example-oracle-normalize",
+    "type": "function",
+    "z": "example-oracle-tab",
+    "name": "取 VALUE",
+    "func": "const row = Array.isArray(msg.payload) ? msg.payload[0] : msg.payload;\nmsg.payload = Number(row?.VALUE ?? row?.value ?? 0);\nmsg.topic = 'Oracle';\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 520,
+    "y": 140,
+    "wires": [
+      [
+        "example-oracle-gauge",
+        "example-oracle-debug",
+        "example-oracle-scene"
+      ]
+    ]
+  },
+  {
+    "id": "example-oracle-gauge",
+    "type": "ui-gauge",
+    "z": "example-oracle-tab",
+    "name": "Oracle 实时值",
+    "group": "bim-dashboard-group",
+    "order": 11,
+    "value": "payload",
+    "valueType": "msg",
+    "width": 3,
+    "height": 3,
+    "gtype": "gauge-half",
+    "gstyle": "needle",
+    "title": "Oracle",
+    "alwaysShowTitle": true,
+    "units": "",
+    "segments": [
+      {
+        "from": "0",
+        "color": "#4d9fff"
+      },
+      {
+        "from": "70",
+        "color": "#d4a84f"
+      },
+      {
+        "from": "90",
+        "color": "#ff5268"
+      }
+    ],
+    "min": 0,
+    "max": 100,
+    "className": "",
+    "wires": []
+  },
+  {
+    "id": "example-oracle-debug",
+    "type": "debug",
+    "z": "example-oracle-tab",
+    "name": "Oracle 结果",
+    "active": true,
+    "tosidebar": true,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 760,
+    "y": 180,
+    "wires": []
+  },
+  {
+    "id": "example-oracle-server",
+    "type": "oracle-server",
+    "connectionname": "Oracle 示例连接（请编辑）",
+    "tnsname": "",
+    "connectiontype": "Classic",
+    "usethickmode": false,
+    "instantclientpath": "D:\\Documents\\bim\\oracle\\instantclient_19_31",
+    "configdir": "D:\\Documents\\bim\\oracle\\instantclient_19_31\\network\\admin",
+    "walletlocation": "",
+    "host": "127.0.0.1",
+    "port": 1521,
+    "db": "ORCL",
+    "poolmin": 0,
+    "poolmax": 4,
+    "poolincrement": 1,
+    "pooltimeout": 60,
+    "queuetimeout": 60000,
+    "stmtcachesize": 30,
+    "maxretries": 3,
+    "retrydelay": 1000
+  },
+  {
+    "id": "example-td-scene",
+    "type": "function",
+    "z": "example-td-tab",
+    "name": "同步到场景与二维看板",
+    "func": "const value = Number(msg.payload ?? 0);\nconst modelId = env.get('BIM_MODEL_ID') || '';\nconst base = { source: 'tdengine', key: 'value', value, timestamp: new Date().toISOString() };\nconst data = { ...msg, payload: base };\nconst scene = modelId ? { ...msg, payload: { ...base, key: 'alarmColor', value: value >= 80 ? '#ff4057' : value >= 60 ? '#d4a84f' : '#48b8ff', target: { modelId }, action: 'color' } } : null;\nreturn [data, scene];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1010,
+    "y": 130,
+    "wires": [
+      [
+        "scene-ws-out"
+      ],
+      [
+        "scene-ws-out"
+      ]
+    ]
+  },
+  {
+    "id": "example-oracle-scene",
+    "type": "function",
+    "z": "example-oracle-tab",
+    "name": "同步到场景与二维看板",
+    "func": "const value = Number(msg.payload ?? 0);\nconst modelId = env.get('BIM_MODEL_ID') || '';\nconst base = { source: 'oracle', key: 'value', value, timestamp: new Date().toISOString() };\nconst data = { ...msg, payload: base };\nconst scene = modelId ? { ...msg, payload: { ...base, key: 'alarmColor', value: value >= 80 ? '#ff4057' : value >= 60 ? '#d4a84f' : '#48b8ff', target: { modelId }, action: 'color' } } : null;\nreturn [data, scene];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 770,
+    "y": 130,
+    "wires": [
+      [
+        "scene-ws-out"
+      ],
+      [
+        "scene-ws-out"
+      ]
+    ]
   }
 ]

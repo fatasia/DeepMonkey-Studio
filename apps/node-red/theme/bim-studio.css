@@ -16,3 +16,7 @@
 .red-ui-palette-node:hover { border-color: var(--bim-accent) !important; }
 .red-ui-workspace-chart { background-color: var(--bim-bg) !important; }
 .red-ui-deploy-button { background: var(--bim-accent) !important; color: #17130b !important; border: 0 !important; }
+#red-ui-workspace,
+#red-ui-workspace-chart { min-width: 0 !important; overflow: hidden !important; }
+#red-ui-workspace-chart .red-ui-flow-node { pointer-events: auto !important; }
+#red-ui-workspace-chart:focus { outline: none !important; }

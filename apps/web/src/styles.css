@@ -660,10 +660,68 @@ button { color: inherit; }
 .scene-dashboard-overlay > header > div { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .scene-dashboard-overlay > header strong { color: #eef2f4; font-size: 12px; }
 .scene-dashboard-overlay > header small { color: #748189; font-size: 8px; }
+.scene-dashboard-overlay > header small.online { color: #68d99a; }
 .scene-dashboard-overlay nav { display: flex; align-items: center; gap: 3px; }
 .scene-dashboard-overlay nav button,.scene-dashboard-overlay nav a { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; color: #8d999f; border: 1px solid transparent; border-radius: 5px; background: transparent; cursor: pointer; }
 .scene-dashboard-overlay nav button:hover,.scene-dashboard-overlay nav button.active,.scene-dashboard-overlay nav a:hover { color: var(--accent); border-color: rgba(212,168,79,.34); background: rgba(212,168,79,.08); }
 .scene-dashboard-overlay iframe { width: 100%; height: 100%; border: 0; background: #11171b; }
+.dashboard-canvas { min-height: 0; padding: 10px; overflow: auto; background: #11171b; }
+.dashboard-add-widget { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-height: 31px; margin-bottom: 8px; color: var(--accent); border: 1px dashed rgba(212,168,79,.45); border-radius: 6px; background: rgba(212,168,79,.05); cursor: pointer; }
+.dashboard-widget-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+.dashboard-widget-grid > article { position: relative; min-width: 0; min-height: 92px; padding: 11px; overflow: hidden; border: 1px solid #2c383e; border-radius: 8px; background: #182126; }
+.dashboard-widget-grid > article[draggable=true] { cursor: grab; border-style: dashed; }
+.dashboard-grip { position: absolute; top: 5px; right: 4px; color: #66737a; }
+.dashboard-widget-form { display: grid; grid-template-columns: 1fr 74px 26px; gap: 5px; }
+.dashboard-widget-form input,.dashboard-widget-form select { min-width: 0; height: 27px; padding: 0 6px; color: #cbd3d7; border: 1px solid #35434a; border-radius: 4px; background: #101619; font-size: 10px; }
+.dashboard-widget-form input:nth-child(2) { grid-column: 1 / -1; }
+.dashboard-widget-form button { display: grid; place-items: center; color: #b16a6a; border: 1px solid #493338; border-radius: 4px; background: transparent; cursor: pointer; }
+.dashboard-value,.dashboard-gauge { display: grid; height: 100%; align-content: space-between; }
+.dashboard-value > span,.dashboard-gauge > span { color: #7f8c92; font-size: 10px; }
+.dashboard-value > strong { color: #f2f4f5; font-size: 27px; font-weight: 600; }
+.dashboard-value strong small { margin-left: 4px; color: #8a969c; font-size: 10px; font-weight: 400; }
+.dashboard-gauge > div { display: grid; place-items: center; width: 64px; height: 64px; margin: 3px auto 0; border-radius: 50%; background: conic-gradient(var(--accent) var(--gauge-value), #2b363c 0); box-shadow: inset 0 0 0 8px #182126; }
+.dashboard-gauge strong { color: #f0f3f4; font-size: 14px; }
+.dashboard-gauge small { margin-top: -16px; color: #87939a; font-size: 8px; }
+.dashboard-status { display: flex; align-items: center; gap: 9px; height: 100%; }
+.dashboard-status > i { width: 10px; height: 10px; border-radius: 50%; background: #7a858a; box-shadow: 0 0 0 4px rgba(122,133,138,.12); }
+.dashboard-status.ok > i { background: #62d493; box-shadow: 0 0 0 4px rgba(98,212,147,.12); }
+.dashboard-status span { display: grid; gap: 4px; min-width: 0; }
+.dashboard-status small { color: #7d8a91; font-size: 9px; }
+.dashboard-status strong { overflow: hidden; color: #e2e7e9; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-empty { display: grid; justify-items: center; gap: 7px; padding: 45px 18px; color: #69767c; text-align: center; }
+.dashboard-empty strong { color: #aeb8bd; font-size: 12px; }
+.dashboard-empty span { max-width: 260px; font-size: 9px; line-height: 1.6; }
+.dashboard-width { display: grid; grid-template-columns: 32px 1fr 42px; align-items: center; gap: 6px; padding: 0 9px; color: #78858b; border-top: 1px solid #273238; font-size: 8px; }
+.dashboard-width input { min-width: 0; }
+
+.primitive-tool { position: relative; display: inline-flex; }
+.primitive-menu { position: absolute; left: 50%; bottom: 51px; z-index: 24; display: grid; grid-template-columns: repeat(2, minmax(92px, 1fr)); gap: 4px; width: 214px; padding: 8px; border: 1px solid #39474e; border-radius: 9px; background: rgba(20,27,31,.98); box-shadow: 0 16px 42px rgba(0,0,0,.42); transform: translateX(-50%); }
+.primitive-menu button { display: flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 8px; color: #c3cbd0; border: 1px solid transparent; border-radius: 5px; background: #202a2f; cursor: pointer; }
+.primitive-menu button:hover { color: var(--accent); border-color: rgba(212,168,79,.42); }
+.primitive-menu small { grid-column: 1 / -1; padding: 3px 4px 0; color: #758087; font-size: 9px; text-align: center; }
+.camera-views-panel { position: absolute; top: 70px; right: 14px; z-index: 17; width: 340px; overflow: hidden; color: #c8d0d4; border: 1px solid #3b494f; border-radius: 10px; background: rgba(18,24,28,.97); box-shadow: 0 18px 50px rgba(0,0,0,.4); }
+.camera-views-panel > header { display: flex; align-items: center; justify-content: space-between; min-height: 45px; padding: 0 10px 0 13px; border-bottom: 1px solid #2d383e; }
+.camera-views-panel > header div { display: grid; gap: 2px; }
+.camera-views-panel > header strong { color: #eef2f4; font-size: 12px; }
+.camera-views-panel > header small { color: #78858c; font-size: 9px; }
+.camera-views-panel > header button,.camera-view-list article > button { color: #8f9aa0; border: 0; background: transparent; cursor: pointer; }
+.camera-view-add { display: flex; align-items: center; justify-content: center; gap: 6px; width: calc(100% - 20px); min-height: 32px; margin: 10px; color: #17130b; border: 0; border-radius: 6px; background: var(--accent); cursor: pointer; }
+.camera-view-list { display: grid; gap: 5px; max-height: 330px; padding: 0 10px 10px; overflow: auto; }
+.camera-view-list article { display: grid; grid-template-columns: minmax(0,1fr) auto auto auto; align-items: center; min-height: 38px; border: 1px solid #303c42; border-radius: 6px; background: #1a2328; }
+.camera-view-list article.default { border-color: rgba(212,168,79,.5); }
+.camera-view-main { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 0 8px; color: #aeb8bd; border: 0; background: transparent; cursor: pointer; }
+.camera-view-main > button { display: grid; place-items: center; padding: 0; color: #9ca8ae; border: 0; background: transparent; cursor: pointer; }
+.camera-view-main input { min-width: 0; width: 100%; padding: 4px 5px; color: #d8dee1; border: 1px solid transparent; background: transparent; }
+.camera-view-main input:focus { outline: none; border-color: #51636c; border-radius: 4px; background: #11171b; }
+.camera-view-list article > button { min-height: 32px; padding: 0 6px; font-size: 9px; }
+.camera-view-list article > button:hover,.camera-view-list article > button.active { color: var(--accent); }
+.camera-view-list > p { margin: 8px; color: #77848a; font-size: 10px; text-align: center; }
+.model-effects-editor { display: grid; gap: 8px; padding: 10px 0; border-top: 1px solid #2a353a; }
+.effect-toggles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.effect-toggles button { min-height: 28px; padding: 0 4px; color: #929da3; border: 1px solid #344148; border-radius: 5px; background: #1a2328; cursor: pointer; }
+.effect-toggles button.active { color: var(--accent); border-color: rgba(212,168,79,.55); background: rgba(212,168,79,.08); }
+.model-effects-editor > label { display: grid; grid-template-columns: 70px minmax(0,1fr) auto; align-items: center; gap: 7px; color: #89959b; font-size: 10px; }
+.model-effects-editor input[type=color] { width: 30px; height: 24px; padding: 1px; border: 1px solid #3a474d; background: transparent; }
 .dashboard-width { display: grid; grid-template-columns: 36px minmax(0,1fr) 42px; align-items: center; gap: 7px; padding: 0 10px; color: #758189; border-top: 1px solid #2b373d; font-size: 8px; }
 .dashboard-width input { width: 100%; accent-color: var(--accent); }
 .dashboard-width output { color: #9aa5ab; text-align: right; }

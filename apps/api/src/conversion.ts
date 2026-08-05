@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ModelFormat, ModelManifest, ModelRecord, ViewerKind } from "@bim-studio/contracts";
 import type { AppConfig, CommandProviderConfig } from "./config.js";
 import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
-import { optimizeNativeGlb } from "./glbOptimizer.js";
+import { generateGlbLods, optimizeNativeGlb } from "./glbOptimizer.js";
 import { convertStepToGlb } from "./stepConverter.js";
 
 interface ConversionContext {
@@ -97,13 +97,17 @@ class StepProvider implements ConversionProvider {
       message: "正在解析 STEP 并生成轻量化 GLB"
     });
     const result = await convertStepToGlb(sourcePath, outputDir);
+    const geometryPath = path.join(outputDir, "geometry.glb");
+    await optimizeNativeGlb(geometryPath);
+    const lods = await createLodResources(geometryPath, model);
     const geometryUrl = assetUrl(model.projectId, model.id, "output/geometry.glb");
     const manifest = createManifest(
       model,
       "gltf",
       geometryUrl,
       assetUrl(model.projectId, model.id, "output/hierarchy.json"),
-      assetUrl(model.projectId, model.id, "output/properties.json")
+      assetUrl(model.projectId, model.id, "output/properties.json"),
+      lods
     );
     await writeManifest(modelDir, manifest);
     await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
@@ -124,13 +128,25 @@ class DirectProvider implements ConversionProvider {
     private readonly viewerKind: ViewerKind
   ) {}
 
-  async convert({ model, modelDir }: ConversionContext): Promise<void> {
+  async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
     await this.store.updateModel(model.projectId, model.id, {
       status: "processing",
       progress: 40,
       message: "正在生成模型清单"
     });
-    const manifest = createManifest(model, this.viewerKind, model.sourceUrl);
+    let geometryUrl = model.sourceUrl;
+    let lods: ModelManifest["lods"];
+    if (model.format === "glb") {
+      const outputDir = path.join(modelDir, "output");
+      await mkdir(outputDir, { recursive: true });
+      const geometryPath = path.join(outputDir, "geometry.glb");
+      await copyFile(sourcePath, geometryPath);
+      await optimizeNativeGlb(geometryPath);
+      lods = await createLodResources(geometryPath, model);
+      geometryUrl = assetUrl(model.projectId, model.id, "output/geometry.glb");
+      await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    }
+    const manifest = createManifest(model, this.viewerKind, geometryUrl, undefined, undefined, lods);
     await writeManifest(modelDir, manifest);
     await this.objects.putFile(assetKey(model.projectId, model.id, "manifest.json"), path.join(modelDir, "manifest.json"));
     await this.store.updateModel(model.projectId, model.id, {
@@ -185,6 +201,7 @@ class CommandProvider implements ConversionProvider {
     );
     await runCommand(this.provider.command, args, this.provider.cwd);
     let compressionMessage = "";
+    let lods: ModelManifest["lods"];
     if (model.format === "rvt" && model.rvtConversionMode !== "ifc") {
       const glbPath = path.join(outputDir, "geometry.glb");
       try {
@@ -193,6 +210,7 @@ class CommandProvider implements ConversionProvider {
           const ratio = Math.round((1 - result.optimizedBytes / result.originalBytes) * 100);
           compressionMessage = `，GLB 已压缩 ${ratio}%`;
         }
+        lods = await createLodResources(glbPath, model);
       } catch (error) {
         console.warn("原生 GLB Draco 压缩失败，保留未压缩模型", error);
         compressionMessage = "，Draco 压缩失败并已保留兼容模型";
@@ -209,7 +227,7 @@ class CommandProvider implements ConversionProvider {
     const propertiesPath = path.join(outputDir, "properties.json");
     const hierarchyUrl = await optionalAsset(hierarchyPath, assetUrl(model.projectId, model.id, "output/hierarchy.json"));
     const propertiesUrl = await optionalAsset(propertiesPath, assetUrl(model.projectId, model.id, "output/properties.json"));
-    const manifest = createManifest(model, result.viewerKind, geometryUrl, hierarchyUrl, propertiesUrl);
+    const manifest = createManifest(model, result.viewerKind, geometryUrl, hierarchyUrl, propertiesUrl, lods);
     await writeManifest(modelDir, manifest);
     await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
     await this.store.updateModel(model.projectId, model.id, {
@@ -243,7 +261,8 @@ function createManifest(
   viewerKind: ViewerKind,
   geometryUrl: string,
   hierarchyUrl?: string,
-  propertiesUrl?: string
+  propertiesUrl?: string,
+  lods?: ModelManifest["lods"]
 ): ModelManifest {
   return {
     schemaVersion: 1,
@@ -254,8 +273,23 @@ function createManifest(
     geometryUrl,
     ...(hierarchyUrl ? { hierarchyUrl } : {}),
     ...(propertiesUrl ? { propertiesUrl } : {}),
+    ...(lods?.length ? { lods } : {}),
     createdAt: new Date().toISOString()
   };
+}
+
+async function createLodResources(filePath: string, model: ModelRecord): Promise<ModelManifest["lods"]> {
+  try {
+    const generated = await generateGlbLods(filePath);
+    return generated.map(({ fileName, level, ratio }) => ({
+      level,
+      ratio,
+      url: assetUrl(model.projectId, model.id, `output/${fileName}`)
+    }));
+  } catch (error) {
+    console.warn("LOD 生成失败，保留完整精度模型", error);
+    return [];
+  }
 }
 
 async function optionalAsset(filePath: string, url: string): Promise<string | undefined> {

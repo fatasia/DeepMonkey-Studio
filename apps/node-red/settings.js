@@ -17,7 +17,7 @@ module.exports = {
   } } : {}),
   editorTheme: {
     theme: "dark-modern",
-    page: { title: "BIM Studio · 流程与看板", favicon: false },
+    page: { title: "BIM Studio · 流程与看板", favicon: false, scripts: [path.join(__dirname, "theme", "bim-studio.js")] },
     header: { title: "BIM Studio · 数字孪生流程", image: null },
     projects: { enabled: false },
     tours: false,

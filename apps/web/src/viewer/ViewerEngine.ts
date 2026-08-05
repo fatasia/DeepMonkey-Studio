@@ -36,6 +36,7 @@ import type {
   MeasurementState,
   ModelManifest,
   ModelTransform,
+  PrimitiveKind,
   PrimitiveState,
   SceneAnnotationState,
   SceneAnimationState,
@@ -44,6 +45,7 @@ import type {
   SceneLayerState,
   SceneLightState,
   SceneMaterialState,
+  SceneModelEffectsState,
   ScenePhysicsBodyState,
   ScenePhysicsState,
   ScenePostProcessingState,
@@ -109,7 +111,7 @@ export interface SceneDataMessage {
   value: unknown;
   timestamp: string;
   target?: { modelId?: string; layerId?: string; annotationId?: string };
-  action?: "color" | "visibility" | "position" | "label";
+  action?: "color" | "visibility" | "position" | "label" | "opacity" | "focus" | "animation" | "effects";
 }
 
 export interface BimSpaceRecord {
@@ -234,6 +236,25 @@ interface PhysicsBodyRuntime {
   initialTransform: ModelTransform;
 }
 
+interface ModelEffectRuntime {
+  originals: Map<THREE.Mesh, THREE.Material | THREE.Material[]>;
+  generated: THREE.Material[];
+  helper?: THREE.Group;
+  scan?: { mesh: THREE.Mesh; minY: number; maxY: number; phase: number };
+}
+
+const DEFAULT_MODEL_EFFECTS: SceneModelEffectsState = {
+  outline: false,
+  glow: false,
+  xray: false,
+  scanline: false,
+  heatmap: false,
+  dissolve: 0,
+  edgeLight: false,
+  color: "#36a3ff",
+  intensity: 1
+};
+
 const toValue = (vector: THREE.Vector3 | THREE.Euler): Vector3Value => ({
   x: vector.x,
   y: vector.y,
@@ -261,6 +282,7 @@ export class ViewerEngine {
   onAnimationChange?: (time: number, playing: boolean) => void;
   onLightingChange?: (lighting: GlobalLightingState) => void;
   onXRSessionChange?: (mode: "immersive-vr" | "immersive-ar" | undefined) => void;
+  onPrimitivePlaced?: (model: LoadedSceneModel, kind: PrimitiveKind, color: string) => void;
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly modelRoot: THREE.Group | ClippingGroup;
@@ -290,6 +312,8 @@ export class ViewerEngine {
   private readonly spaceVisuals = new Map<string, { modelId: string; object: THREE.Group }>();
   private readonly modelColorOverrides = new Map<string, string>();
   private readonly modelMaterialOverrides = new Map<string, SceneMaterialState>();
+  private readonly modelEffects = new Map<string, SceneModelEffectsState>();
+  private readonly modelEffectRuntimes = new Map<string, ModelEffectRuntime>();
   private readonly layerObjects = new Map<string, Map<string, THREE.Object3D>>();
   private readonly layerStates = new Map<string, Map<string, SceneLayerState>>();
   private readonly fragmentModels = new Map<string, FRAGS.FragmentsModel>();
@@ -333,6 +357,9 @@ export class ViewerEngine {
   private readonly navigationViewStates = new Map<NavigationMode, NavigationViewState>();
   private readOnlyMode = false;
   private readonly firstPersonVelocity = new THREE.Vector3();
+  private firstPersonGrounded = false;
+  private firstPersonJumpRequested = false;
+  private primitivePlacementKind: PrimitiveKind | undefined;
   private readonly eyeHeight = 1.68;
   private lastCollisionCheck = 0;
   private clippingState: ClippingState = { enabled: false, mode: "axis", axis: "x", offset: 0, inverted: false };
@@ -507,7 +534,10 @@ export class ViewerEngine {
       this.orbit.enabled = !event.value && this.navigationMode !== "firstPerson";
       const selected = this.getSelected();
       if (selected && this.fragmentModels.has(selected.id)) this.syncFragmentsTransformState(selected.id, Boolean(event.value));
-      if (selected && !event.value && this.inspectedObject === selected.object) this.rebuildPhysicsBody(selected.id);
+      if (selected && !event.value && this.inspectedObject === selected.object) {
+        this.rebuildPhysicsBody(selected.id);
+        this.rebuildModelEffects(selected.id);
+      }
     });
     this.transform.addEventListener("objectChange", () => {
       if (this.selectedSceneLight) {
@@ -708,6 +738,27 @@ export class ViewerEngine {
       model.object.updateWorldMatrix(true, true);
       return true;
     }
+    if (message.action === "opacity" && target.modelId && typeof message.value === "number") {
+      const model = this.models.get(target.modelId);
+      if (!model) return false;
+      this.setObjectOpacity(model.object, THREE.MathUtils.clamp(message.value, 0, 1));
+      model.opacity = THREE.MathUtils.clamp(message.value, 0, 1);
+      return true;
+    }
+    if (message.action === "focus" && target.modelId) {
+      const model = this.models.get(target.modelId);
+      if (!model) return false;
+      this.focusObject(target.layerId ? this.layerObjects.get(target.modelId)?.get(target.layerId) ?? model.object : model.object);
+      return true;
+    }
+    if (message.action === "animation" && target.modelId) {
+      this.setAnimationEnabled(target.modelId, Boolean(message.value));
+      return true;
+    }
+    if (message.action === "effects" && target.modelId && message.value && typeof message.value === "object") {
+      this.setModelEffects(target.modelId, { ...this.getModelEffects(target.modelId), ...(message.value as Partial<SceneModelEffectsState>) });
+      return true;
+    }
     if (message.action === "label" && target.annotationId) {
       const value = typeof message.value === "string" ? message.value : JSON.stringify(message.value);
       return Boolean(this.updateAnnotation(target.annotationId, { description: value }));
@@ -825,16 +876,42 @@ export class ViewerEngine {
       this.updateLayerState(selected.id, this.selectedFragmentNodeId, { material: patch });
       return;
     }
+    this.restoreModelEffectMaterials(selected.id);
     this.applyMaterialState(object, patch);
     if (object !== selected.object) this.updateLayerState(selected.id, String(object.userData.layerNodeId), { material: patch });
     else this.modelMaterialOverrides.set(selected.id, { ...this.modelMaterialOverrides.get(selected.id), ...structuredClone(patch) });
     selected.object.updateWorldMatrix(true, true);
+    this.rebuildModelEffects(selected.id);
     this.onModelChange?.(selected);
   }
 
   getModelMaterialOverride(id: string): SceneMaterialState | undefined {
     const state = this.modelMaterialOverrides.get(id);
     return state ? structuredClone(state) : undefined;
+  }
+
+  getModelEffects(id: string): SceneModelEffectsState {
+    return structuredClone(this.modelEffects.get(id) ?? DEFAULT_MODEL_EFFECTS);
+  }
+
+  setModelEffects(id: string, state: SceneModelEffectsState): void {
+    if (!this.models.has(id)) return;
+    const normalized: SceneModelEffectsState = {
+      outline: Boolean(state.outline),
+      glow: Boolean(state.glow),
+      xray: Boolean(state.xray),
+      scanline: Boolean(state.scanline),
+      heatmap: Boolean(state.heatmap),
+      dissolve: THREE.MathUtils.clamp(state.dissolve, 0, 0.98),
+      edgeLight: Boolean(state.edgeLight),
+      color: /^#[0-9a-f]{6}$/i.test(state.color) ? state.color : DEFAULT_MODEL_EFFECTS.color,
+      intensity: THREE.MathUtils.clamp(state.intensity, 0, 5)
+    };
+    this.modelEffects.set(id, normalized);
+    this.rebuildModelEffects(id);
+    this.updatePostProcessingSelection();
+    const model = this.models.get(id);
+    if (model) this.onModelChange?.(model);
   }
 
   getPostProcessing(): ScenePostProcessingState {
@@ -882,9 +959,10 @@ export class ViewerEngine {
       this.gtaoPass.blendIntensity = this.postProcessingState.gtaoIntensity ?? 1;
     }
     if (this.outlinePass) {
-      this.outlinePass.enabled = state.enabled && Boolean(this.postProcessingState.outline);
+      this.outlinePass.enabled = state.enabled && Boolean(this.postProcessingState.outline)
+        || [...this.modelEffects.values()].some((effects) => effects.outline);
       this.outlinePass.edgeStrength = this.postProcessingState.outlineStrength ?? 2.5;
-      this.outlinePass.selectedObjects = this.inspectedObject ? [this.inspectedObject] : [];
+      this.updatePostProcessingSelection();
     }
     if (this.bokehPass) {
       this.bokehPass.enabled = state.enabled && Boolean(this.postProcessingState.depthOfField);
@@ -1950,12 +2028,24 @@ export class ViewerEngine {
     let object: THREE.Object3D;
     let animations: THREE.AnimationClip[] = [];
     let fragmentsModel: FRAGS.FragmentsModel | undefined;
+    let progressiveGltf: { levels: Array<{ url: string; name: string }>; metadata?: NativeBimPropertiesFile } | undefined;
     if (manifest.viewerKind === "gltf") {
+      const lowLod = manifest.lods?.find((item) => item.level === "low");
       const [gltf, bimMetadata] = await Promise.all([
-        this.gltfLoader.loadAsync(manifest.geometryUrl),
+        this.gltfLoader.loadAsync(lowLod?.url ?? manifest.geometryUrl),
         manifest.propertiesUrl ? loadNativeBimMetadata(manifest.propertiesUrl) : Promise.resolve(undefined)
       ]);
-      object = gltf.scene;
+      if (lowLod) {
+        const group = new THREE.Group();
+        gltf.scene.name ||= "低精度预览";
+        group.add(gltf.scene);
+        object = group;
+        const medium = manifest.lods?.find((item) => item.level === "medium");
+        progressiveGltf = {
+          levels: [...(medium ? [{ url: medium.url, name: "中精度" }] : []), { url: manifest.geometryUrl, name: "完整精度" }],
+          ...(bimMetadata ? { metadata: bimMetadata } : {})
+        };
+      } else object = gltf.scene;
       animations = gltf.animations;
       if (bimMetadata) hydrateNativeBimMetadata(object, bimMetadata);
     } else if (manifest.viewerKind === "fbx") {
@@ -1967,14 +2057,14 @@ export class ViewerEngine {
       const fragmentsBytes = await this.importer.process({ bytes: new Uint8Array(await response.arrayBuffer()) });
       const model = await this.fragments.core.load(fragmentsBytes, { modelId: manifest.modelId });
       model.useCamera(this.camera);
-      if (this.rendererBackend === "webgpu") await model.setLodMode(FRAGS.LodMode.ALL_GEOMETRY);
+      await model.setLodMode(FRAGS.LodMode.DEFAULT);
       fragmentsModel = model;
       object = model.object;
     } else if (manifest.viewerKind === "fragments") {
       const response = await fetch(manifest.geometryUrl);
       const model = await this.fragments.core.load(await response.arrayBuffer(), { modelId: manifest.modelId });
       model.useCamera(this.camera);
-      if (this.rendererBackend === "webgpu") await model.setLodMode(FRAGS.LodMode.ALL_GEOMETRY);
+      await model.setLodMode(FRAGS.LodMode.DEFAULT);
       fragmentsModel = model;
       object = model.object;
     } else {
@@ -1993,20 +2083,78 @@ export class ViewerEngine {
       this.mixers.set(manifest.modelId, mixer);
       this.animationEnabledIds.add(manifest.modelId);
     }
+    if (progressiveGltf) void this.streamGltfLevels(manifest.modelId, object, progressiveGltf, epoch);
     this.fitAll();
     return loaded;
   }
 
-  createBox(id: string, name: string, color = "#d9a441"): LoadedSceneModel {
-    const geometry = new THREE.BoxGeometry(2, 2, 2);
+  private async streamGltfLevels(modelId: string, container: THREE.Object3D, stream: { levels: Array<{ url: string; name: string }>; metadata?: NativeBimPropertiesFile }, epoch: number): Promise<void> {
+    for (const level of stream.levels) {
+      try {
+        const gltf = await this.gltfLoader.loadAsync(level.url);
+        if (!this.modelLoads.isCurrent(epoch) || this.models.get(modelId)?.object !== container) {
+          this.disposeObject(gltf.scene);
+          return;
+        }
+        if (stream.metadata) hydrateNativeBimMetadata(gltf.scene, stream.metadata);
+        gltf.scene.name ||= level.name;
+        this.restoreModelEffectMaterials(modelId);
+        this.modelEffectRuntimes.delete(modelId);
+        const previous = container.children[0];
+        if (previous) {
+          container.remove(previous);
+          this.disposeObject(previous);
+        }
+        container.add(gltf.scene);
+        const savedStates = this.getLayerStates(modelId);
+        this.layerObjects.set(modelId, this.indexModelObject(modelId, container));
+        this.rebuildComponentIndex(modelId);
+        this.applyLayerStates(modelId, savedStates);
+        this.rebuildModelEffects(modelId);
+        const previousMixer = this.mixers.get(modelId);
+        if (previousMixer) previousMixer.stopAllAction();
+        if (gltf.animations.length > 0) {
+          const mixer = new THREE.AnimationMixer(container);
+          gltf.animations.forEach((clip) => mixer.clipAction(clip).play());
+          this.mixers.set(modelId, mixer);
+          this.animationEnabledIds.add(modelId);
+        }
+        const model = this.models.get(modelId);
+        if (model) this.onModelChange?.(model);
+      } catch (error) {
+        console.warn(`渐进加载 ${level.name} 失败，保留当前精度`, error);
+        return;
+      }
+    }
+  }
+
+  createPrimitive(id: string, name: string, kind: PrimitiveKind = "box", color = "#d9a441", position?: THREE.Vector3): LoadedSceneModel {
+    const geometry = primitiveGeometry(kind);
     const material = new THREE.MeshStandardMaterial({ color, roughness: 0.72, metalness: 0.05 });
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.y = 1;
+    mesh.position.copy(position ?? new THREE.Vector3(0, primitiveGroundOffset(kind), 0));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    mesh.userData.primitiveKind = kind;
     const loaded = this.registerObject(id, name, mesh, "primitive");
     this.select(id);
     return loaded;
+  }
+
+  createBox(id: string, name: string, color = "#d9a441"): LoadedSceneModel {
+    return this.createPrimitive(id, name, "box", color);
+  }
+
+  startPrimitivePlacement(kind: PrimitiveKind): void {
+    this.primitivePlacementKind = kind;
+    this.setMeasureEnabled(false);
+    this.setAnnotationPlacementEnabled(false);
+    this.updateToolCursor();
+  }
+
+  cancelPrimitivePlacement(): void {
+    this.primitivePlacementKind = undefined;
+    this.updateToolCursor();
   }
 
   removeModel(id: string): void {
@@ -2014,6 +2162,9 @@ export class ViewerEngine {
     if (!model) return;
     this.removePhysicsBody(id);
     this.physicsBodyStates.delete(id);
+    this.restoreModelEffectMaterials(id);
+    this.modelEffectRuntimes.delete(id);
+    this.modelEffects.delete(id);
     this.clearIsolation();
     this.setExplosion(id, 0);
     if (this.selectedId === id) this.select(undefined);
@@ -2111,6 +2262,8 @@ export class ViewerEngine {
     if (!model) return;
     model.visible = visible;
     model.object.visible = visible;
+    const effectRuntime = this.modelEffectRuntimes.get(id);
+    if (effectRuntime?.helper) effectRuntime.helper.visible = visible;
     const fragmentEntry = this.fragmentLayers.get(id)?.get("root");
     const fragmentModel = this.fragmentModels.get(id);
     if (fragmentEntry && fragmentModel) {
@@ -2328,7 +2481,7 @@ export class ViewerEngine {
 
   private updateToolCursor(): void {
     const pickingFace = this.clippingState.enabled && this.clippingState.mode === "face" && !this.clippingState.face;
-    this.renderer.domElement.style.cursor = this.measureEnabled || this.annotationPlacementEnabled || pickingFace ? "crosshair" : "default";
+    this.renderer.domElement.style.cursor = this.measureEnabled || this.annotationPlacementEnabled || this.primitivePlacementKind || pickingFace ? "crosshair" : "default";
   }
 
   getExplosionFactor(modelId: string): number {
@@ -2481,7 +2634,7 @@ export class ViewerEngine {
     return objectTransform(object);
   }
 
-  applyModelState(id: string, state: { visible: boolean; locked?: boolean; opacity: number; color?: string; colorOverride?: string; material?: SceneMaterialState; physics?: ScenePhysicsBodyState; transform: ModelTransform; collisionEnabled?: boolean; explosionFactor?: number; explosionMode?: ExplosionMode; animationEnabled?: boolean; layers?: SceneLayerState[] }): void {
+  applyModelState(id: string, state: { visible: boolean; locked?: boolean; opacity: number; color?: string; colorOverride?: string; material?: SceneMaterialState; effects?: SceneModelEffectsState; physics?: ScenePhysicsBodyState; transform: ModelTransform; collisionEnabled?: boolean; explosionFactor?: number; explosionMode?: ExplosionMode; animationEnabled?: boolean; layers?: SceneLayerState[] }): void {
     const model = this.models.get(id);
     if (!model) return;
     model.object.position.set(state.transform.position.x, state.transform.position.y, state.transform.position.z);
@@ -2507,6 +2660,7 @@ export class ViewerEngine {
     model.object.updateWorldMatrix(true, true);
     this.syncFragmentsTransformState(id);
     if (state.physics) void this.setPhysicsBodyState(id, state.physics);
+    if (state.effects) this.setModelEffects(id, state.effects);
   }
 
   primitiveState(id: string, color: string): PrimitiveState | undefined {
@@ -2516,15 +2670,16 @@ export class ViewerEngine {
     return {
       modelId: id,
       name: model.name,
-      kind: "box",
+      kind: (model.object.userData.primitiveKind as PrimitiveKind | undefined) ?? "box",
       color: this.getModelColor(id) || color,
       visible: model.visible,
       locked: this.isModelLocked(id),
       opacity: model.opacity,
       transform,
       collisionEnabled: this.isCollisionEnabled(id),
-      explosionFactor: this.getExplosionFactor(id)
-      ,material: this.getMaterialState(model.object),
+      explosionFactor: this.getExplosionFactor(id),
+      material: this.getMaterialState(model.object),
+      effects: this.getModelEffects(id),
       physics: this.getPhysicsBodyState(id)
     };
   }
@@ -2659,8 +2814,122 @@ export class ViewerEngine {
 
   private updatePostProcessingSelection(): void {
     if (!this.outlinePass) return;
-    const selected = this.inspectedObject;
-    this.outlinePass.selectedObjects = selected && selected.visible ? [selected] : [];
+    const outlined = [...this.modelEffects]
+      .filter(([, effects]) => effects.outline)
+      .map(([id]) => this.models.get(id)?.object)
+      .filter((object): object is THREE.Object3D => Boolean(object?.visible));
+    const selected = this.postProcessingState.enabled && this.postProcessingState.outline && this.inspectedObject?.visible
+      ? [this.inspectedObject]
+      : [];
+    this.outlinePass.selectedObjects = [...new Set([...outlined, ...selected])];
+    this.outlinePass.enabled = this.outlinePass.selectedObjects.length > 0;
+  }
+
+  private restoreModelEffectMaterials(id: string): void {
+    const runtime = this.modelEffectRuntimes.get(id);
+    if (!runtime) return;
+    for (const [mesh, material] of runtime.originals) if (mesh.parent) mesh.material = material;
+    runtime.generated.forEach((material) => material.dispose());
+    runtime.generated.length = 0;
+    if (runtime.helper) {
+      this.disposeObject(runtime.helper);
+      delete runtime.helper;
+      delete runtime.scan;
+    }
+  }
+
+  private rebuildModelEffects(id: string): void {
+    const model = this.models.get(id);
+    const state = this.modelEffects.get(id);
+    let runtime = this.modelEffectRuntimes.get(id);
+    if (runtime) this.restoreModelEffectMaterials(id);
+    const enabled = state && (state.outline || state.glow || state.xray || state.scanline || state.heatmap || state.dissolve > 0 || state.edgeLight);
+    if (!model || !state || !enabled) {
+      if (runtime) this.modelEffectRuntimes.delete(id);
+      this.updatePostProcessingSelection();
+      return;
+    }
+    if (!runtime) {
+      runtime = { originals: new Map(), generated: [] };
+      model.object.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.isMesh && mesh.material && !child.name.startsWith("helper:")) runtime!.originals.set(mesh, mesh.material);
+      });
+      this.modelEffectRuntimes.set(id, runtime);
+    }
+    const modelBox = new THREE.Box3().setFromObject(model.object);
+    const minY = modelBox.min.y;
+    const height = Math.max(modelBox.max.y - minY, 0.001);
+    for (const [mesh, original] of runtime.originals) {
+      if (!mesh.parent) continue;
+      const sources = Array.isArray(original) ? original : [original];
+      const meshCenter = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
+      const heat = THREE.MathUtils.clamp((meshCenter.y - minY) / height, 0, 1);
+      const clones = sources.map((source) => {
+        const material = source.clone() as THREE.Material & {
+          color?: THREE.Color;
+          emissive?: THREE.Color;
+          emissiveIntensity?: number;
+          opacity: number;
+          alphaHash?: boolean;
+        };
+        if (state.heatmap && material.color?.isColor) material.color.copy(heatMapColor(heat));
+        if ((state.glow || state.edgeLight) && material.emissive?.isColor) {
+          material.emissive.set(state.color);
+          material.emissiveIntensity = state.intensity * (state.edgeLight ? 1.4 : 0.8);
+        }
+        if (state.xray) {
+          if (material.color?.isColor) material.color.set(state.color);
+          material.transparent = true;
+          material.opacity = 0.24;
+          material.depthTest = false;
+          material.depthWrite = false;
+          material.side = THREE.DoubleSide;
+        } else if (state.dissolve > 0) {
+          material.alphaHash = true;
+          material.transparent = false;
+          material.opacity = Math.max(0.02, 1 - state.dissolve);
+          material.depthWrite = true;
+        }
+        material.needsUpdate = true;
+        runtime!.generated.push(material);
+        return material;
+      });
+      mesh.material = Array.isArray(original) ? clones : clones[0]!;
+    }
+
+    const helper = new THREE.Group();
+    helper.name = `helper:model-effects:${id}`;
+    helper.userData.effectHelper = true;
+    if (state.scanline && !modelBox.isEmpty()) {
+      const size = modelBox.getSize(new THREE.Vector3());
+      const center = modelBox.getCenter(new THREE.Vector3());
+      const material = new THREE.MeshBasicMaterial({ color: state.color, transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const scan = new THREE.Mesh(new THREE.BoxGeometry(Math.max(size.x, 0.2), Math.max(size.y * 0.008, 0.015), Math.max(size.z, 0.2)), material);
+      scan.position.set(center.x, modelBox.min.y, center.z);
+      scan.renderOrder = 28;
+      helper.add(scan);
+      runtime.scan = { mesh: scan, minY: modelBox.min.y, maxY: modelBox.max.y, phase: 0 };
+    }
+    if (state.outline && this.rendererBackend === "webgpu" && !modelBox.isEmpty()) {
+      const box = new THREE.Box3Helper(modelBox.clone(), new THREE.Color(state.color));
+      box.renderOrder = 30;
+      (box.material as THREE.LineBasicMaterial).depthTest = false;
+      helper.add(box);
+    }
+    if (helper.children.length > 0) {
+      runtime.helper = helper;
+      this.scene.add(helper);
+    }
+    this.updatePostProcessingSelection();
+  }
+
+  private updateModelEffects(delta: number): void {
+    for (const runtime of this.modelEffectRuntimes.values()) {
+      if (!runtime.scan) continue;
+      runtime.scan.phase = (runtime.scan.phase + delta * 0.32) % 1;
+      runtime.scan.mesh.position.y = THREE.MathUtils.lerp(runtime.scan.minY, runtime.scan.maxY, runtime.scan.phase);
+    }
   }
 
   private removeSelectionHelper(): void {
@@ -2683,6 +2952,17 @@ export class ViewerEngine {
   private registerObject(id: string, name: string, object: THREE.Object3D, kind: LoadedSceneModel["kind"]): LoadedSceneModel {
     object.name = name;
     object.userData.modelId = id;
+    const objects = this.indexModelObject(id, object);
+    this.modelRoot.add(object);
+    const loaded = { id, name, object, kind, visible: true, opacity: 1 } satisfies LoadedSceneModel;
+    this.models.set(id, loaded);
+    this.layerObjects.set(id, objects);
+    this.layerStates.set(id, new Map());
+    this.rebuildComponentIndex(id);
+    return loaded;
+  }
+
+  private indexModelObject(id: string, object: THREE.Object3D): Map<string, THREE.Object3D> {
     const objects = new Map<string, THREE.Object3D>();
     const indexObject = (child: THREE.Object3D, nodeId: string): void => {
       child.userData.modelId = id;
@@ -2699,13 +2979,7 @@ export class ViewerEngine {
       child.children.forEach((nested, index) => indexObject(nested, `${nodeId}/${index}`));
     };
     indexObject(object, "root");
-    this.modelRoot.add(object);
-    const loaded = { id, name, object, kind, visible: true, opacity: 1 } satisfies LoadedSceneModel;
-    this.models.set(id, loaded);
-    this.layerObjects.set(id, objects);
-    this.layerStates.set(id, new Map());
-    this.rebuildComponentIndex(id);
-    return loaded;
+    return objects;
   }
 
   private async registerFragmentsModel(modelId: string, fragmentsModel: FRAGS.FragmentsModel, sourceName: string): Promise<void> {
@@ -3438,13 +3712,15 @@ export class ViewerEngine {
     }
     this.updateXRLocomotion(delta);
     this.updatePhysics(delta);
+    this.updateModelEffects(delta);
     this.updateWeather(delta);
     this.updateCollisions(false, now);
     this.syncSpaceVisuals();
     this.updateSceneLightProxies();
     if (this.navigationMode !== "firstPerson") this.orbit.update();
     this.emitCameraChange();
-    if (!this.xrActive && this.postProcessingState.enabled && this.composer) this.composer.render(delta);
+    const modelOutlineEnabled = [...this.modelEffects.values()].some((effects) => effects.outline);
+    if (!this.xrActive && (this.postProcessingState.enabled || modelOutlineEnabled) && this.composer) this.composer.render(delta);
     else this.renderer.render(this.scene, this.camera);
   };
 
@@ -3469,9 +3745,25 @@ export class ViewerEngine {
       const floor = this.findFloorHeight(this.camera.position);
       if (floor !== undefined) {
         const targetY = floor + this.eyeHeight;
-        this.firstPersonVelocity.y += (targetY - this.camera.position.y) * Math.min(delta * 14, 1);
-        this.firstPersonVelocity.y *= Math.max(0, 1 - delta * 12);
-        this.camera.position.y += (targetY - this.camera.position.y) * Math.min(delta * 10, 1);
+        this.firstPersonGrounded = this.camera.position.y <= targetY + 0.08 && this.firstPersonVelocity.y <= 0;
+        if (this.firstPersonJumpRequested && this.firstPersonGrounded) {
+          this.firstPersonVelocity.y = 5.4;
+          this.firstPersonGrounded = false;
+        }
+        this.firstPersonJumpRequested = false;
+        if (!this.firstPersonGrounded || this.firstPersonVelocity.y > 0) {
+          this.firstPersonVelocity.y -= 12 * delta;
+          this.camera.position.y += this.firstPersonVelocity.y * delta;
+          if (this.camera.position.y <= targetY) {
+            this.camera.position.y = targetY;
+            this.firstPersonVelocity.y = 0;
+            this.firstPersonGrounded = true;
+          }
+        } else {
+          this.camera.position.y += (targetY - this.camera.position.y) * Math.min(delta * 10, 1);
+        }
+      } else {
+        this.firstPersonJumpRequested = false;
       }
       return;
     }
@@ -3586,6 +3878,9 @@ export class ViewerEngine {
     const start = anchor.clone();
     const floor = this.findFloorHeight(start.clone().add(new THREE.Vector3(0, 10, 0))) ?? 0;
     start.y = floor + this.eyeHeight;
+    this.firstPersonVelocity.set(0, 0, 0);
+    this.firstPersonGrounded = true;
+    this.firstPersonJumpRequested = false;
     this.camera.position.copy(start);
     this.orbit.target.copy(start).add(forward.multiplyScalar(5));
     this.camera.lookAt(this.orbit.target);
@@ -4131,7 +4426,7 @@ export class ViewerEngine {
         ...(fragmentNodeId ? { fragmentNodeId } : {})
       };
     }
-    if (!best && (this.measureEnabled || this.annotationPlacementEnabled)) {
+    if (!best && (this.measureEnabled || this.annotationPlacementEnabled || this.primitivePlacementKind)) {
       const point = this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
       if (point) best = { point, distance: this.camera.position.distanceTo(point), objectName: "地面" };
     }
@@ -4139,6 +4434,7 @@ export class ViewerEngine {
   }
 
   private handlePointerMove = async (event: PointerEvent): Promise<void> => {
+    if (this.transform.dragging) return;
     if (!this.onPointerInfoChange && !(this.measureEnabled && this.measurementPoints.length > 0)) return;
     const hit = await this.scenePointerHit(event);
     const rect = this.renderer.domElement.getBoundingClientRect();
@@ -4164,11 +4460,24 @@ export class ViewerEngine {
   private handlePointerDown = async (event: PointerEvent): Promise<void> => {
     if (this.navigationMode === "firstPerson") return;
     if (event.button !== 0) return;
+    if (this.transform.dragging || this.transform.axis) return;
     if (!this.measureEnabled && !this.annotationPlacementEnabled && !(this.clippingState.enabled && this.clippingState.mode === "face")) {
       const lightHit = this.lightProxyPointerHit(event);
       if (lightHit && this.selectSceneLight(lightHit.id, lightHit.handle)) return;
     }
     const hit = await this.scenePointerHit(event);
+    if (this.primitivePlacementKind) {
+      if (!hit) return;
+      const kind = this.primitivePlacementKind;
+      const color = "#d4a84f";
+      const position = hit.point.clone();
+      position.y += primitiveGroundOffset(kind);
+      const index = [...this.models.values()].filter((item) => item.kind === "primitive").length + 1;
+      const model = this.createPrimitive(crypto.randomUUID(), `${primitiveKindName(kind)} ${index}`, kind, color, position);
+      this.cancelPrimitivePlacement();
+      this.onPrimitivePlaced?.(model, kind, color);
+      return;
+    }
     if (this.annotationPlacementEnabled) {
       if (!hit) return;
       const annotation: SceneAnnotationState = {
@@ -4299,6 +4608,10 @@ export class ViewerEngine {
         void this.endXR();
         return;
       }
+      if (this.primitivePlacementKind) {
+        this.cancelPrimitivePlacement();
+        return;
+      }
       if (this.measurementPoints.length > 0) {
         this.measurementPoints.length = 0;
         this.measurementTargets.length = 0;
@@ -4308,11 +4621,49 @@ export class ViewerEngine {
         this.select(undefined);
       }
     }
+    if (event.code === "Space" && this.navigationMode === "firstPerson" && !event.repeat) {
+      this.firstPersonJumpRequested = true;
+      event.preventDefault();
+    }
   };
 
   private handleKeyUp = (event: KeyboardEvent): void => {
     this.keys.delete(event.code);
   };
+}
+
+function primitiveGeometry(kind: PrimitiveKind): THREE.BufferGeometry {
+  switch (kind) {
+    case "sphere": return new THREE.SphereGeometry(1, 32, 20);
+    case "cylinder": return new THREE.CylinderGeometry(1, 1, 2, 32);
+    case "cone": return new THREE.ConeGeometry(1, 2, 32);
+    case "torus": return new THREE.TorusGeometry(1, 0.32, 18, 48);
+    case "plane": {
+      const geometry = new THREE.PlaneGeometry(3, 3);
+      geometry.rotateX(-Math.PI / 2);
+      return geometry;
+    }
+    case "capsule": return new THREE.CapsuleGeometry(0.65, 1.4, 8, 16);
+    default: return new THREE.BoxGeometry(2, 2, 2);
+  }
+}
+
+function primitiveGroundOffset(kind: PrimitiveKind): number {
+  if (kind === "plane") return 0.01;
+  if (kind === "torus") return 0.35;
+  if (kind === "capsule") return 1.35;
+  return 1;
+}
+
+function primitiveKindName(kind: PrimitiveKind): string {
+  return ({ box: "立方体", sphere: "球体", cylinder: "圆柱体", cone: "圆锥体", torus: "圆环", plane: "平面", capsule: "胶囊体" })[kind];
+}
+
+function heatMapColor(value: number): THREE.Color {
+  const cold = new THREE.Color(0x2563eb);
+  const middle = new THREE.Color(0xfacc15);
+  const hot = new THREE.Color(0xef4444);
+  return value < 0.5 ? cold.lerp(middle, value * 2) : middle.lerp(hot, (value - 0.5) * 2);
 }
 
 function collectSpatialLocalIds(item: FRAGS.SpatialTreeItem, output = new Set<number>()): Set<number> {
