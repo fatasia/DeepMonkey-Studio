@@ -105,7 +105,6 @@ const DEFAULT_LIGHTING: GlobalLightingState = {
   globalIlluminationEnabled: false,
   globalIlluminationIntensity: 0.45,
   lights: [
-    { id: "hemisphere-default", name: "半球光", type: "hemisphere", enabled: true, color: "#e8f0ff", groundColor: "#3b4249", intensity: 1.4 },
     { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
   ]
 };
@@ -1117,7 +1116,7 @@ export function App() {
       setAnnotations(engine.listAnnotations());
       engine.applyCamera(scene.camera);
       const nextWeather = scene.weather ?? "sunny";
-      const savedLights = scene.lighting?.lights?.filter((light) => light.id !== "ambient-default");
+      const savedLights = scene.lighting?.lights?.filter((light) => !["ambient-default", "hemisphere-default"].includes(light.id));
       const nextLighting: GlobalLightingState = { ...DEFAULT_LIGHTING, ...scene.lighting, lights: savedLights?.length ? savedLights : (DEFAULT_LIGHTING.lights ?? []) };
       const nextEnvironment: SceneEnvironmentState = { ...DEFAULT_ENVIRONMENT, ...scene.environment };
       const nextAnimation = scene.animation ?? DEFAULT_ANIMATION;

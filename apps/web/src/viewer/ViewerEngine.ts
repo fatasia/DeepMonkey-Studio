@@ -73,7 +73,6 @@ export type RendererBackend = "webgl" | "webgpu";
 type RendererInstance = THREE.WebGLRenderer | WebGPURenderer;
 
 const DEFAULT_SCENE_LIGHTS: SceneLightState[] = [
-  { id: "hemisphere-default", name: "半球光", type: "hemisphere", enabled: true, color: "#e8f0ff", groundColor: "#3b4249", intensity: 1.4 },
   { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
 ];
 
