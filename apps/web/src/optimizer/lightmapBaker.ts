@@ -103,7 +103,7 @@ export async function bakeWebLightmap(
       .setType("VEC2")
       .setArray(atlasUvs)
       .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("BIM Studio lightmap")));
-    coveredTexels += rasterizePrimitive(target, atlasUvs, occlusionPixels, lightingPixels, covered, resolution, options, acceleration);
+    coveredTexels += await rasterizePrimitive(target, atlasUvs, occlusionPixels, lightingPixels, covered, resolution, options, acceleration);
     if (targetIndex % 12 === 0) {
       onProgress?.(`正在烘焙光照贴图 ${targetIndex + 1}/${targets.length}`);
       await yieldToBrowser();
@@ -132,7 +132,7 @@ export async function bakeWebLightmap(
     material!.getEmissiveTextureInfo()!.setTexCoord(1);
     material!.setExtras({
       ...material!.getExtras(),
-      bimStudioLightmap: { mode: "occlusion+emissive", texCoord: 1, resolution, shadows: options.shadows, softShadowSamples: options.shadowSamples, indirectSamples: options.indirectSamples, ambientOcclusion: options.ambientOcclusion, denoise: options.denoise, colored: true, uvAtlas: hasUnwrappedAtlas ? "watlas" : "projected-fallback" }
+      bimStudioLightmap: { mode: "occlusion+chroma-emissive", texCoord: 1, resolution, shadows: options.shadows, softShadowSamples: options.shadowSamples, indirectSamples: options.indirectSamples, ambientOcclusion: options.ambientOcclusion, denoise: options.denoise, colored: true, preservesBaseColor: true, uvAtlas: hasUnwrappedAtlas ? "watlas" : "projected-fallback" }
     });
   }
   acceleration.geometry?.dispose();
@@ -236,7 +236,7 @@ function placeUvsInAtlas(local: Float32Array, targetIndex: number, gridSize: num
   return output;
 }
 
-function rasterizePrimitive(
+async function rasterizePrimitive(
   target: PrimitiveBakeTarget,
   uvs: Float32Array,
   occlusionPixels: Uint8ClampedArray,
@@ -245,7 +245,7 @@ function rasterizePrimitive(
   resolution: number,
   options: WebLightmapOptions,
   acceleration: SceneAcceleration
-): number {
+): Promise<number> {
   const indices = triangleIndices(target);
   const positions = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
   const normals = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
@@ -259,6 +259,7 @@ function rasterizePrimitive(
   };
   const value: number[] = [];
   let added = 0;
+  let lastYield = nowMilliseconds();
   for (let offset = 0; offset + 2 < indices.length; offset += 3) {
     const vertexIndices = [indices[offset]!, indices[offset + 1]!, indices[offset + 2]!];
     const uv = vertexIndices.map((index) => new THREE.Vector2(uvs[index * 2]! * (resolution - 1), (1 - uvs[index * 2 + 1]!) * (resolution - 1)));
@@ -282,18 +283,28 @@ function rasterizePrimitive(
       if (w0 < -0.0001 || w1 < -0.0001 || w2 < -0.0001) continue;
       worldPosition.copy(positions[0]!).multiplyScalar(w0).addScaledVector(positions[1]!, w1).addScaledVector(positions[2]!, w2);
       worldNormal.copy(normals[0]!).multiplyScalar(w0).addScaledVector(normals[1]!, w1).addScaledVector(normals[2]!, w2).normalize();
-      const occlusion = evaluateLighting(worldPosition, worldNormal, options, acceleration, scratch);
-      const finalOcclusion = THREE.MathUtils.clamp(1 - options.strength * (1 - occlusion), 0, 1);
-      const occlusionByte = Math.round(linearToSrgb(finalOcclusion) * 255);
+      evaluateLighting(worldPosition, worldNormal, options, acceleration, scratch);
+      const lightLevel = THREE.MathUtils.clamp(
+        scratch.lighting.x * 0.2126 + scratch.lighting.y * 0.7152 + scratch.lighting.z * 0.0722,
+        0,
+        1
+      );
+      const finalOcclusion = THREE.MathUtils.clamp(1 - options.strength * (1 - lightLevel), 0, 1);
+      const occlusionByte = Math.round(finalOcclusion * 255);
       const pixelIndex = y * resolution + x;
       const channel = pixelIndex * 4;
       occlusionPixels[channel] = occlusionPixels[channel + 1] = occlusionPixels[channel + 2] = occlusionByte;
       occlusionPixels[channel + 3] = 255;
-      lightingPixels[channel] = Math.round(linearToSrgb(THREE.MathUtils.clamp(scratch.lighting.x * options.strength, 0, 1)) * 255);
-      lightingPixels[channel + 1] = Math.round(linearToSrgb(THREE.MathUtils.clamp(scratch.lighting.y * options.strength, 0, 1)) * 255);
-      lightingPixels[channel + 2] = Math.round(linearToSrgb(THREE.MathUtils.clamp(scratch.lighting.z * options.strength, 0, 1)) * 255);
+      const neutralLight = Math.min(scratch.lighting.x, scratch.lighting.y, scratch.lighting.z);
+      lightingPixels[channel] = encodeChromaEmission(scratch.lighting.x, neutralLight, options.strength);
+      lightingPixels[channel + 1] = encodeChromaEmission(scratch.lighting.y, neutralLight, options.strength);
+      lightingPixels[channel + 2] = encodeChromaEmission(scratch.lighting.z, neutralLight, options.strength);
       lightingPixels[channel + 3] = 255;
       if (!covered[pixelIndex]) { covered[pixelIndex] = 1; added += 1; }
+    }
+    if (nowMilliseconds() - lastYield >= 12) {
+      await yieldToBrowser();
+      lastYield = nowMilliseconds();
     }
   }
   return added;
@@ -508,5 +519,11 @@ function linearToSrgb(value: number): number {
   return value <= 0.0031308 ? value * 12.92 : 1.055 * Math.pow(value, 1 / 2.4) - 0.055;
 }
 
+function encodeChromaEmission(channel: number, neutralLight: number, strength: number): number {
+  const chroma = THREE.MathUtils.clamp((channel - neutralLight) * strength * 0.65, 0, 1);
+  return Math.round(linearToSrgb(chroma) * 255);
+}
+
 function clampInt(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
 function yieldToBrowser(): Promise<void> { return new Promise((resolve) => setTimeout(resolve, 0)); }
+function nowMilliseconds(): number { return globalThis.performance?.now() ?? Date.now(); }

@@ -444,7 +444,7 @@ function syncOptimizerPreviewLights(runtime: OptimizerPreviewRuntime, props: { b
   for (let index = 0; index < runtime.defaultLights.length; index += 1) {
     const light = runtime.defaultLights[index]!;
     light.visible = !props.bakeEnabled;
-    light.intensity = props.bakedOutput ? (index === 0 ? 0.45 : 0.3) : (index === 0 ? 2 : 2.2);
+    light.intensity = props.bakedOutput ? (index === 0 ? 1.25 : 1.1) : (index === 0 ? 2 : 2.2);
   }
   runtime.ambient.visible = props.bakeEnabled;
   runtime.ambient.intensity = props.ambient * 2.2;

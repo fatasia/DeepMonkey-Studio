@@ -18,7 +18,7 @@ describe("bakeWebLightmap", () => {
       0, 1, 0,
       0, 1, 0
     ]));
-    const material = document.createMaterial("Lightmapped material");
+    const material = document.createMaterial("Lightmapped material").setBaseColorFactor([0.2, 0.6, 0.1, 1]);
     const primitive = document.createPrimitive().setAttribute("POSITION", position).setAttribute("NORMAL", normal).setMaterial(material);
     const mesh = document.createMesh().addPrimitive(primitive);
     document.createScene().addChild(document.createNode().setMesh(mesh));
@@ -53,13 +53,55 @@ describe("bakeWebLightmap", () => {
     expect(exportedMaterial.getOcclusionTextureInfo()?.getTexCoord()).toBe(1);
     expect(exportedMaterial.getEmissiveTexture()?.getMimeType()).toBe("image/png");
     expect(exportedMaterial.getEmissiveTextureInfo()?.getTexCoord()).toBe(1);
+    expect(exportedMaterial.getBaseColorFactor()).toEqual([0.2, 0.6, 0.1, 1]);
     expect(encodedImages).toHaveLength(2);
     const coloredPixel = findColoredPixel(encodedImages[1]!);
     expect(coloredPixel[0]).toBeGreaterThan(coloredPixel[1]);
     expect(coloredPixel[0]).toBeGreaterThan(coloredPixel[2]);
-    expect(exportedMaterial.getExtras().bimStudioLightmap).toMatchObject({ mode: "occlusion+emissive", colored: true, texCoord: 1, resolution: 256 });
+    expect(exportedMaterial.getExtras().bimStudioLightmap).toMatchObject({ mode: "occlusion+chroma-emissive", colored: true, preservesBaseColor: true, texCoord: 1, resolution: 256 });
+  });
+
+  it("keeps neutral white lighting out of the additive emissive map", async () => {
+    const document = createSingleTriangleDocument();
+    const encodedImages: Uint8ClampedArray[] = [];
+    await bakeWebLightmap(document, {
+      resolution: 256,
+      strength: 0.5,
+      ambient: 1,
+      ambientColor: "#ffffff",
+      lights: [],
+      ambientOcclusion: false,
+      aoSamples: 4,
+      shadows: false,
+      shadowSamples: 1,
+      indirectSamples: 0,
+      denoise: false
+    }, undefined, async (pixels) => {
+      encodedImages.push(pixels.slice());
+      return ONE_PIXEL_PNG;
+    });
+
+    expect(encodedImages[1]!.some((value, index) => index % 4 !== 3 && value !== 0)).toBe(false);
   });
 });
+
+function createSingleTriangleDocument(): Document {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const position = document.createAccessor().setType("VEC3").setBuffer(buffer).setArray(new Float32Array([
+    -1, 0, -1,
+    1, 0, -1,
+    0, 0, 1
+  ]));
+  const normal = document.createAccessor().setType("VEC3").setBuffer(buffer).setArray(new Float32Array([
+    0, 1, 0,
+    0, 1, 0,
+    0, 1, 0
+  ]));
+  const primitive = document.createPrimitive().setAttribute("POSITION", position).setAttribute("NORMAL", normal).setMaterial(document.createMaterial());
+  document.createScene().addChild(document.createNode().setMesh(document.createMesh().addPrimitive(primitive)));
+  return document;
+}
 
 function findColoredPixel(pixels: Uint8ClampedArray): [number, number, number] {
   for (let index = 0; index < pixels.length; index += 4) {
