@@ -100,15 +100,40 @@ const numberFormat = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }
 const DEFAULT_LIGHTING: GlobalLightingState = {
   enabled: true,
   intensity: 1,
-  shadowsEnabled: true,
+  shadowsEnabled: false,
   reflectionsEnabled: false,
+  globalIlluminationEnabled: false,
+  globalIlluminationIntensity: 0.45,
   lights: [
     { id: "hemisphere-default", name: "半球光", type: "hemisphere", enabled: true, color: "#e8f0ff", groundColor: "#3b4249", intensity: 1.4 },
     { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
   ]
 };
 const DEFAULT_ENVIRONMENT: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none", environmentAsBackground: false, environmentIntensity: 1 };
-const DEFAULT_POST_PROCESSING: ScenePostProcessingState = { enabled: false, smaa: false, ssao: false, ssaoIntensity: 1, bloom: false, bloomStrength: 0.35, bloomThreshold: 0.9 };
+const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
+  enabled: false,
+  smaa: false,
+  fxaa: false,
+  ssao: false,
+  ssaoIntensity: 1,
+  gtao: false,
+  gtaoIntensity: 1,
+  bloom: false,
+  bloomStrength: 0.35,
+  bloomThreshold: 0.9,
+  outline: false,
+  outlineStrength: 2.5,
+  depthOfField: false,
+  focusDistance: 10,
+  aperture: 0.00002,
+  maxBlur: 0.006,
+  vignette: false,
+  vignetteDarkness: 1.2,
+  filmGrain: false,
+  filmGrainIntensity: 0.18,
+  afterimage: false,
+  afterimageDamp: 0.9
+};
 const SKYBOX_OPTIONS: Array<{ value: SkyboxPreset; label: string }> = [
   { value: "none", label: "纯色" },
   { value: "clear", label: "晴空" },
@@ -206,6 +231,9 @@ export function App() {
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [digitalTwinOpen, setDigitalTwinOpen] = useState(false);
   const [sceneDashboardOpen, setSceneDashboardOpen] = useState(false);
+  const [xrPanelOpen, setXrPanelOpen] = useState(false);
+  const [xrActiveMode, setXrActiveMode] = useState<"immersive-vr" | "immersive-ar">();
+  const [xrCapabilities, setXrCapabilities] = useState<{ checking: boolean; secure: boolean; webxr: boolean; vr: boolean; ar: boolean }>({ checking: false, secure: window.isSecureContext, webxr: Boolean(navigator.xr), vr: false, ar: false });
   const [locale, setLocale] = useState<AppLocale>(() => readLocale());
   const [sceneAnimation, setSceneAnimation] = useState<SceneAnimationState>(DEFAULT_ANIMATION);
   const [animationTime, setAnimationTime] = useState(0);
@@ -281,6 +309,7 @@ export function App() {
         setLighting(nextLighting);
         requestRevision();
       };
+      viewer.onXRSessionChange = (mode) => setXrActiveMode(mode);
       viewer.onCollisionChange = requestRevision;
       viewer.onAnimationChange = (time, playing) => {
         setAnimationTime(time);
@@ -357,6 +386,16 @@ export function App() {
       delete engine.onPointerInfoChange;
     };
   }, [engine, infoEnabled]);
+
+  useEffect(() => {
+    if (!xrPanelOpen || !engine) return;
+    let cancelled = false;
+    setXrCapabilities((current) => ({ ...current, checking: true, secure: window.isSecureContext, webxr: Boolean(navigator.xr) }));
+    void Promise.all([engine.isXRSupported("immersive-vr"), engine.isXRSupported("immersive-ar")]).then(([vr, ar]) => {
+      if (!cancelled) setXrCapabilities({ checking: false, secure: window.isSecureContext, webxr: Boolean(navigator.xr), vr, ar });
+    });
+    return () => { cancelled = true; };
+  }, [engine, xrPanelOpen]);
 
   useEffect(() => {
     if (!engine || !infoEnabled) {
@@ -892,6 +931,7 @@ export function App() {
   async function startXR(mode: "immersive-vr" | "immersive-ar") {
     try {
       await engine?.startXR(mode);
+      setXrActiveMode(mode);
       setMessage(mode === "immersive-vr" ? "已进入 VR" : "已进入 AR");
     } catch (reason) {
       showError(reason);
@@ -1681,8 +1721,7 @@ export function App() {
           <ToolButton title={tr(locale, "环境设置", "Environment")} active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
           <ToolButton title={tr(locale, "动画编辑", "Animation editor")} active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
           <ToolButton title={tr(locale, "二维数据看板", "2D data dashboard")} active={sceneDashboardOpen} onClick={() => setSceneDashboardOpen((value) => !value)} icon={<Gauge size={19} />} />
-          <ToolButton title={tr(locale, "进入 VR（需头显与 HTTPS）", "Enter VR (headset and HTTPS required)")} active={false} onClick={() => void startXR("immersive-vr")} icon={<span className="xr-tool-label">VR</span>} />
-          <ToolButton title={tr(locale, "进入 AR（需兼容移动设备与 HTTPS）", "Enter AR (compatible mobile device and HTTPS required)")} active={false} onClick={() => void startXR("immersive-ar")} icon={<span className="xr-tool-label">AR</span>} />
+          <ToolButton title={tr(locale, "VR / AR", "VR / AR")} active={xrPanelOpen} onClick={() => setXrPanelOpen((value) => !value)} icon={<span className="xr-tool-label">XR</span>} />
           </>}
         </div>
         <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />
@@ -1721,16 +1760,37 @@ export function App() {
             <button className={lighting.shadowsEnabled ? "active" : ""} onClick={() => changeLighting({ ...lighting, shadowsEnabled: !lighting.shadowsEnabled })}>{tr(locale, "阴影", "Shadows")}</button>
             <button className={lighting.reflectionsEnabled ? "active" : ""} onClick={() => changeLighting({ ...lighting, reflectionsEnabled: !lighting.reflectionsEnabled })}>{tr(locale, "反射", "Reflections")}</button>
           </div>
+          <div className="environment-row environment-gi-row">
+            <span>{tr(locale, "全局光照", "Global illumination")}</span>
+            <button className={lighting.globalIlluminationEnabled ? "active" : ""} onClick={() => changeLighting({ ...lighting, globalIlluminationEnabled: !lighting.globalIlluminationEnabled })}>{lighting.globalIlluminationEnabled ? tr(locale, "已开启", "On") : tr(locale, "已关闭", "Off")}</button>
+            <input type="range" min="0" max="2" step="0.05" value={lighting.globalIlluminationIntensity ?? 0.45} disabled={!lighting.globalIlluminationEnabled} onChange={(event) => changeLighting({ ...lighting, globalIlluminationIntensity: Number(event.target.value) })} />
+            <output>{(lighting.globalIlluminationIntensity ?? 0.45).toFixed(2)}</output>
+            <small>{tr(locale, "环境漫反射近似，默认关闭", "Environment diffuse approximation, off by default")}</small>
+          </div>
           <div className="post-processing-control">
             <div className="light-system-head"><span>{tr(locale, "后处理", "Post-processing")}</span><button disabled={rendererBackend !== "webgl"} className={postProcessing.enabled ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, enabled: !postProcessing.enabled })}>{postProcessing.enabled ? tr(locale, "已启用", "Enabled") : tr(locale, "已关闭", "Disabled")}</button></div>
             {rendererBackend !== "webgl" && <small>{tr(locale, "实时后处理当前使用 WebGL 管线", "Real-time post-processing currently uses the WebGL pipeline")}</small>}
-            <div className="material-toggles">
+            <div className="post-effect-grid">
               <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.smaa ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, smaa: !postProcessing.smaa })}>SMAA</button>
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.fxaa ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, fxaa: !postProcessing.fxaa })}>FXAA</button>
               <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.ssao ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, ssao: !postProcessing.ssao })}>SSAO</button>
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.gtao ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, gtao: !postProcessing.gtao })}>GTAO</button>
               <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.bloom ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, bloom: !postProcessing.bloom })}>Bloom</button>
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.outline ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, outline: !postProcessing.outline })}>{tr(locale, "轮廓", "Outline")}</button>
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.depthOfField ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, depthOfField: !postProcessing.depthOfField })}>DOF</button>
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.vignette ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, vignette: !postProcessing.vignette })}>{tr(locale, "暗角", "Vignette")}</button>
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.filmGrain ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, filmGrain: !postProcessing.filmGrain })}>{tr(locale, "胶片", "Film")}</button>
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.afterimage ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, afterimage: !postProcessing.afterimage })}>{tr(locale, "残像", "Trail")}</button>
             </div>
             {postProcessing.ssao && <label className="light-parameter"><span>{tr(locale, "遮蔽强度", "AO strength")}</span><input disabled={!postProcessing.enabled} type="range" min="0.1" max="4" step="0.1" value={postProcessing.ssaoIntensity} onChange={(event) => changePostProcessing({ ...postProcessing, ssaoIntensity: Number(event.target.value) })} /><output>{postProcessing.ssaoIntensity.toFixed(1)}</output></label>}
+            {postProcessing.gtao && <label className="light-parameter"><span>GTAO</span><input disabled={!postProcessing.enabled} type="range" min="0.1" max="4" step="0.1" value={postProcessing.gtaoIntensity ?? 1} onChange={(event) => changePostProcessing({ ...postProcessing, gtaoIntensity: Number(event.target.value) })} /><output>{(postProcessing.gtaoIntensity ?? 1).toFixed(1)}</output></label>}
             {postProcessing.bloom && <><label className="light-parameter"><span>{tr(locale, "辉光强度", "Bloom strength")}</span><input disabled={!postProcessing.enabled} type="range" min="0" max="3" step="0.05" value={postProcessing.bloomStrength} onChange={(event) => changePostProcessing({ ...postProcessing, bloomStrength: Number(event.target.value) })} /><output>{postProcessing.bloomStrength.toFixed(2)}</output></label><label className="light-parameter"><span>{tr(locale, "辉光阈值", "Bloom threshold")}</span><input disabled={!postProcessing.enabled} type="range" min="0" max="1" step="0.01" value={postProcessing.bloomThreshold} onChange={(event) => changePostProcessing({ ...postProcessing, bloomThreshold: Number(event.target.value) })} /><output>{postProcessing.bloomThreshold.toFixed(2)}</output></label></>}
+            {postProcessing.outline && <label className="light-parameter"><span>{tr(locale, "轮廓强度", "Outline")}</span><input disabled={!postProcessing.enabled} type="range" min="0" max="10" step="0.1" value={postProcessing.outlineStrength ?? 2.5} onChange={(event) => changePostProcessing({ ...postProcessing, outlineStrength: Number(event.target.value) })} /><output>{(postProcessing.outlineStrength ?? 2.5).toFixed(1)}</output></label>}
+            {postProcessing.depthOfField && <><label className="light-parameter"><span>{tr(locale, "焦距", "Focus")}</span><input disabled={!postProcessing.enabled} type="range" min="0.1" max="200" step="0.5" value={postProcessing.focusDistance ?? 10} onChange={(event) => changePostProcessing({ ...postProcessing, focusDistance: Number(event.target.value) })} /><output>{(postProcessing.focusDistance ?? 10).toFixed(1)}</output></label><label className="light-parameter"><span>{tr(locale, "虚化", "Blur")}</span><input disabled={!postProcessing.enabled} type="range" min="0" max="0.03" step="0.001" value={postProcessing.maxBlur ?? 0.006} onChange={(event) => changePostProcessing({ ...postProcessing, maxBlur: Number(event.target.value) })} /><output>{(postProcessing.maxBlur ?? 0.006).toFixed(3)}</output></label></>}
+            {postProcessing.vignette && <label className="light-parameter"><span>{tr(locale, "暗角强度", "Vignette")}</span><input disabled={!postProcessing.enabled} type="range" min="0" max="3" step="0.05" value={postProcessing.vignetteDarkness ?? 1.2} onChange={(event) => changePostProcessing({ ...postProcessing, vignetteDarkness: Number(event.target.value) })} /><output>{(postProcessing.vignetteDarkness ?? 1.2).toFixed(2)}</output></label>}
+            {postProcessing.filmGrain && <label className="light-parameter"><span>{tr(locale, "颗粒强度", "Grain")}</span><input disabled={!postProcessing.enabled} type="range" min="0" max="1" step="0.01" value={postProcessing.filmGrainIntensity ?? 0.18} onChange={(event) => changePostProcessing({ ...postProcessing, filmGrainIntensity: Number(event.target.value) })} /><output>{(postProcessing.filmGrainIntensity ?? 0.18).toFixed(2)}</output></label>}
+            {postProcessing.afterimage && <label className="light-parameter"><span>{tr(locale, "残像衰减", "Trail damp")}</span><input disabled={!postProcessing.enabled} type="range" min="0" max="0.99" step="0.01" value={postProcessing.afterimageDamp ?? 0.9} onChange={(event) => changePostProcessing({ ...postProcessing, afterimageDamp: Number(event.target.value) })} /><output>{(postProcessing.afterimageDamp ?? 0.9).toFixed(2)}</output></label>}
+            <small>{tr(locale, "GTAO、景深和残像开销较高；SMAA 与 FXAA 建议二选一", "GTAO, DOF and trails are costly; use either SMAA or FXAA")}</small>
           </div>
           <div className="environment-map-row">
             <div><span>{tr(locale, "环境贴图", "Environment map")}</span><small title={sceneEnvironment.environmentMapName}>{sceneEnvironment.environmentMapName ?? tr(locale, "未选择 HDR / EXR", "No HDR / EXR selected")}</small></div>
@@ -1754,6 +1814,20 @@ export function App() {
               <button className="danger" title={tr(locale, "删除光源", "Delete light")} onClick={() => removeLight(selectedLight.id)}><Trash2 size={13} /></button>
             </div>}
           </div>
+        </div>}
+        {route.view === "studio" && xrPanelOpen && <div className="xr-panel" aria-label={tr(locale, "沉浸式体验", "Immersive experience")}>
+          <header><div><strong>{tr(locale, "VR / AR", "VR / AR")}</strong><small>{tr(locale, "WebXR 设备能力", "WebXR device capabilities")}</small></div><button onClick={() => setXrPanelOpen(false)}><X size={14} /></button></header>
+          <div className="xr-requirements">
+            <span className={xrCapabilities.secure ? "ok" : "bad"}>{xrCapabilities.secure ? "✓" : "!"} HTTPS</span>
+            <span className={xrCapabilities.webxr ? "ok" : "bad"}>{xrCapabilities.webxr ? "✓" : "!"} WebXR</span>
+            <span>{rendererBackend === "webgl" ? "✓ WebGL" : "! WebGPU"}</span>
+          </div>
+          <div className="xr-mode-grid">
+            <article><span className="xr-mode-icon">VR</span><div><strong>{tr(locale, "虚拟现实", "Virtual reality")}</strong><small>{tr(locale, "头显 · 空间漫游", "Headset · immersive walkthrough")}</small></div><button disabled={xrCapabilities.checking || !xrCapabilities.vr || Boolean(xrActiveMode)} onClick={() => void startXR("immersive-vr")}>{xrCapabilities.checking ? "…" : xrCapabilities.vr ? tr(locale, "进入", "Enter") : tr(locale, "不支持", "Unavailable")}</button></article>
+            <article><span className="xr-mode-icon">AR</span><div><strong>{tr(locale, "增强现实", "Augmented reality")}</strong><small>{tr(locale, "Android 移动设备 · 现实叠加", "Android mobile · world overlay")}</small></div><button disabled={xrCapabilities.checking || !xrCapabilities.ar || Boolean(xrActiveMode)} onClick={() => void startXR("immersive-ar")}>{xrCapabilities.checking ? "…" : xrCapabilities.ar ? tr(locale, "进入", "Enter") : tr(locale, "不支持", "Unavailable")}</button></article>
+          </div>
+          {xrActiveMode && <button className="xr-exit" onClick={() => void engine?.endXR()}>{tr(locale, "退出当前 XR 会话", "Exit current XR session")}</button>}
+          {!xrCapabilities.checking && (!xrCapabilities.vr || !xrCapabilities.ar) && <p>{tr(locale, "桌面浏览器通常只能检测 VR 头显；AR 需支持 WebXR 的 Android 设备。自签名证书必须先在设备上信任。", "Desktop browsers usually require a connected VR headset; AR requires a WebXR-capable Android device. Trust the self-signed certificate on the device first.")}</p>}
         </div>}
         {route.view === "studio" && sceneDashboardOpen && <SceneDashboardOverlay locale={locale} onClose={() => setSceneDashboardOpen(false)} />}
         {route.view === "studio" && measureEnabled && (

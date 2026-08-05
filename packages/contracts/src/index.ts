@@ -168,6 +168,9 @@ export interface GlobalLightingState {
   intensity: number;
   shadowsEnabled?: boolean;
   reflectionsEnabled?: boolean;
+  /** Lightweight environment/hemisphere indirect-light approximation. */
+  globalIlluminationEnabled?: boolean;
+  globalIlluminationIntensity?: number;
   lights?: SceneLightState[];
 }
 
@@ -214,11 +217,26 @@ export interface SceneFloorState {
 export interface ScenePostProcessingState {
   enabled: boolean;
   smaa: boolean;
+  fxaa?: boolean;
   ssao: boolean;
   ssaoIntensity: number;
+  gtao?: boolean;
+  gtaoIntensity?: number;
   bloom: boolean;
   bloomStrength: number;
   bloomThreshold: number;
+  outline?: boolean;
+  outlineStrength?: number;
+  depthOfField?: boolean;
+  focusDistance?: number;
+  aperture?: number;
+  maxBlur?: number;
+  vignette?: boolean;
+  vignetteDarkness?: number;
+  filmGrain?: boolean;
+  filmGrainIntensity?: number;
+  afterimage?: boolean;
+  afterimageDamp?: number;
 }
 
 export interface CameraKeyframe {

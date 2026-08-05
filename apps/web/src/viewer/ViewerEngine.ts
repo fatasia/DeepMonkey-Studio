@@ -14,11 +14,19 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { AfterimagePass } from "three/examples/jsm/postprocessing/AfterimagePass.js";
+import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
+import { FilmPass } from "three/examples/jsm/postprocessing/FilmPass.js";
+import { FXAAPass } from "three/examples/jsm/postprocessing/FXAAPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { VignetteShader } from "three/examples/jsm/shaders/VignetteShader.js";
 import type {
   CameraState,
   ClippingState,
@@ -236,6 +244,7 @@ export class ViewerEngine {
   onPointerInfoChange?: (info: PointerInfo | undefined) => void;
   onAnimationChange?: (time: number, playing: boolean) => void;
   onLightingChange?: (lighting: GlobalLightingState) => void;
+  onXRSessionChange?: (mode: "immersive-vr" | "immersive-ar" | undefined) => void;
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly modelRoot: THREE.Group | ClippingGroup;
@@ -309,9 +318,11 @@ export class ViewerEngine {
   private fragmentSelectionVersion = 0;
   private readonly sceneLights = new Map<string, THREE.Light>();
   private readonly sceneLightTargets = new Map<string, THREE.Object3D>();
+  private readonly sceneLightProxies = new Map<string, { position: THREE.Group; target?: THREE.Group; line?: THREE.Line }>();
   private selectedSceneLight: { id: string; handle: "position" | "target" } | undefined;
   private weatherMode: WeatherMode = "sunny";
-  private lightingState: GlobalLightingState = { enabled: true, intensity: 1, shadowsEnabled: true, reflectionsEnabled: false, lights: structuredClone(DEFAULT_SCENE_LIGHTS) };
+  private lightingState: GlobalLightingState = { enabled: true, intensity: 1, shadowsEnabled: false, reflectionsEnabled: false, globalIlluminationEnabled: false, globalIlluminationIntensity: 0.45, lights: structuredClone(DEFAULT_SCENE_LIGHTS) };
+  private readonly globalIlluminationLight = new THREE.HemisphereLight(0xbddcff, 0x75634d, 0);
   private environmentState: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none" };
   private gridHelper?: THREE.GridHelper;
   private readonly skyboxTextures = new Map<Exclude<SkyboxPreset, "none">, THREE.CanvasTexture>();
@@ -320,14 +331,36 @@ export class ViewerEngine {
   private ssaoPass: SSAOPass | undefined;
   private bloomPass: UnrealBloomPass | undefined;
   private smaaPass: SMAAPass | undefined;
+  private fxaaPass: FXAAPass | undefined;
+  private gtaoPass: GTAOPass | undefined;
+  private outlinePass: OutlinePass | undefined;
+  private bokehPass: BokehPass | undefined;
+  private vignettePass: ShaderPass | undefined;
+  private filmPass: FilmPass | undefined;
+  private afterimagePass: AfterimagePass | undefined;
   private postProcessingState: ScenePostProcessingState = {
     enabled: false,
     smaa: false,
+    fxaa: false,
     ssao: false,
     ssaoIntensity: 1,
+    gtao: false,
+    gtaoIntensity: 1,
     bloom: false,
     bloomStrength: 0.35,
-    bloomThreshold: 0.9
+    bloomThreshold: 0.9,
+    outline: false,
+    outlineStrength: 2.5,
+    depthOfField: false,
+    focusDistance: 10,
+    aperture: 0.00002,
+    maxBlur: 0.006,
+    vignette: false,
+    vignetteDarkness: 1.2,
+    filmGrain: false,
+    filmGrainIntensity: 0.18,
+    afterimage: false,
+    afterimageDamp: 0.9
   };
   private xrActive = false;
   private xrBackground?: THREE.Color | THREE.Texture | null;
@@ -398,12 +431,35 @@ export class ViewerEngine {
       this.ssaoPass = new SSAOPass(this.scene, this.camera, 1, 1);
       this.ssaoPass.enabled = false;
       this.composer.addPass(this.ssaoPass);
+      this.gtaoPass = new GTAOPass(this.scene, this.camera, 1, 1);
+      this.gtaoPass.enabled = false;
+      this.composer.addPass(this.gtaoPass);
+      this.outlinePass = new OutlinePass(new THREE.Vector2(1, 1), this.scene, this.camera);
+      this.outlinePass.enabled = false;
+      this.outlinePass.visibleEdgeColor.set(0x4d9fff);
+      this.outlinePass.hiddenEdgeColor.set(0x234a71);
+      this.composer.addPass(this.outlinePass);
       this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.35, 0.25, 0.9);
       this.bloomPass.enabled = false;
       this.composer.addPass(this.bloomPass);
+      this.bokehPass = new BokehPass(this.scene, this.camera, { focus: 10, aperture: 0.00002, maxblur: 0.006 });
+      this.bokehPass.enabled = false;
+      this.composer.addPass(this.bokehPass);
+      this.afterimagePass = new AfterimagePass(0.9);
+      this.afterimagePass.enabled = false;
+      this.composer.addPass(this.afterimagePass);
+      this.filmPass = new FilmPass(0.18, false);
+      this.filmPass.enabled = false;
+      this.composer.addPass(this.filmPass);
+      this.vignettePass = new ShaderPass(VignetteShader);
+      this.vignettePass.enabled = false;
+      this.composer.addPass(this.vignettePass);
       this.smaaPass = new SMAAPass();
       this.smaaPass.enabled = false;
       this.composer.addPass(this.smaaPass);
+      this.fxaaPass = new FXAAPass();
+      this.fxaaPass.enabled = false;
+      this.composer.addPass(this.fxaaPass);
       this.composer.addPass(new OutputPass());
     }
 
@@ -692,8 +748,10 @@ export class ViewerEngine {
     this.lightingState = {
       enabled: state.enabled,
       intensity: THREE.MathUtils.clamp(state.intensity, 0, 2.5),
-      shadowsEnabled: state.shadowsEnabled ?? true,
+      shadowsEnabled: state.shadowsEnabled ?? false,
       reflectionsEnabled: state.reflectionsEnabled ?? false,
+      globalIlluminationEnabled: state.globalIlluminationEnabled ?? false,
+      globalIlluminationIntensity: THREE.MathUtils.clamp(state.globalIlluminationIntensity ?? 0.45, 0, 2),
       lights: structuredClone(state.lights?.length ? state.lights : DEFAULT_SCENE_LIGHTS)
     };
     this.syncSceneLights();
@@ -751,12 +809,27 @@ export class ViewerEngine {
   setPostProcessing(state: ScenePostProcessingState): void {
     this.postProcessingState = {
       enabled: state.enabled,
-      smaa: state.smaa,
-      ssao: state.ssao,
-      ssaoIntensity: THREE.MathUtils.clamp(state.ssaoIntensity, 0, 4),
-      bloom: state.bloom,
-      bloomStrength: THREE.MathUtils.clamp(state.bloomStrength, 0, 3),
-      bloomThreshold: THREE.MathUtils.clamp(state.bloomThreshold, 0, 1)
+      smaa: state.smaa ?? false,
+      fxaa: state.fxaa ?? false,
+      ssao: state.ssao ?? false,
+      ssaoIntensity: THREE.MathUtils.clamp(state.ssaoIntensity ?? 1, 0, 4),
+      gtao: state.gtao ?? false,
+      gtaoIntensity: THREE.MathUtils.clamp(state.gtaoIntensity ?? 1, 0, 4),
+      bloom: state.bloom ?? false,
+      bloomStrength: THREE.MathUtils.clamp(state.bloomStrength ?? 0.35, 0, 3),
+      bloomThreshold: THREE.MathUtils.clamp(state.bloomThreshold ?? 0.9, 0, 1),
+      outline: state.outline ?? false,
+      outlineStrength: THREE.MathUtils.clamp(state.outlineStrength ?? 2.5, 0, 10),
+      depthOfField: state.depthOfField ?? false,
+      focusDistance: THREE.MathUtils.clamp(state.focusDistance ?? 10, 0.1, 500),
+      aperture: THREE.MathUtils.clamp(state.aperture ?? 0.00002, 0, 0.001),
+      maxBlur: THREE.MathUtils.clamp(state.maxBlur ?? 0.006, 0, 0.05),
+      vignette: state.vignette ?? false,
+      vignetteDarkness: THREE.MathUtils.clamp(state.vignetteDarkness ?? 1.2, 0, 3),
+      filmGrain: state.filmGrain ?? false,
+      filmGrainIntensity: THREE.MathUtils.clamp(state.filmGrainIntensity ?? 0.18, 0, 1),
+      afterimage: state.afterimage ?? false,
+      afterimageDamp: THREE.MathUtils.clamp(state.afterimageDamp ?? 0.9, 0, 0.99)
     };
     if (this.ssaoPass) {
       this.ssaoPass.enabled = state.enabled && state.ssao;
@@ -769,7 +842,38 @@ export class ViewerEngine {
       this.bloomPass.strength = this.postProcessingState.bloomStrength;
       this.bloomPass.threshold = this.postProcessingState.bloomThreshold;
     }
+    if (this.gtaoPass) {
+      this.gtaoPass.enabled = state.enabled && Boolean(this.postProcessingState.gtao);
+      this.gtaoPass.blendIntensity = this.postProcessingState.gtaoIntensity ?? 1;
+    }
+    if (this.outlinePass) {
+      this.outlinePass.enabled = state.enabled && Boolean(this.postProcessingState.outline);
+      this.outlinePass.edgeStrength = this.postProcessingState.outlineStrength ?? 2.5;
+      this.outlinePass.selectedObjects = this.inspectedObject ? [this.inspectedObject] : [];
+    }
+    if (this.bokehPass) {
+      this.bokehPass.enabled = state.enabled && Boolean(this.postProcessingState.depthOfField);
+      const uniforms = this.bokehPass.uniforms as Record<string, THREE.IUniform>;
+      uniforms["focus"]!.value = this.postProcessingState.focusDistance ?? 10;
+      uniforms["aperture"]!.value = this.postProcessingState.aperture ?? 0.00002;
+      uniforms["maxblur"]!.value = this.postProcessingState.maxBlur ?? 0.006;
+    }
+    if (this.vignettePass) {
+      this.vignettePass.enabled = state.enabled && Boolean(this.postProcessingState.vignette);
+      const uniforms = this.vignettePass.uniforms as Record<string, THREE.IUniform>;
+      uniforms["darkness"]!.value = this.postProcessingState.vignetteDarkness ?? 1.2;
+    }
+    if (this.filmPass) {
+      this.filmPass.enabled = state.enabled && Boolean(this.postProcessingState.filmGrain);
+      const uniforms = this.filmPass.uniforms as Record<string, THREE.IUniform>;
+      uniforms["intensity"]!.value = this.postProcessingState.filmGrainIntensity ?? 0.18;
+    }
+    if (this.afterimagePass) {
+      this.afterimagePass.enabled = state.enabled && Boolean(this.postProcessingState.afterimage);
+      this.afterimagePass.damp = this.postProcessingState.afterimageDamp ?? 0.9;
+    }
     if (this.smaaPass) this.smaaPass.enabled = state.enabled && state.smaa;
+    if (this.fxaaPass) this.fxaaPass.enabled = state.enabled && Boolean(this.postProcessingState.fxaa);
   }
 
   getFloorStates(modelId?: string): SceneFloorState[] {
@@ -845,13 +949,20 @@ export class ViewerEngine {
     this.renderer.xr.enabled = true;
     this.renderer.setAnimationLoop(this.animate);
     await this.renderer.xr.setSession(session);
+    this.onXRSessionChange?.(mode);
     session.addEventListener("end", () => {
       this.renderer.setAnimationLoop(null);
       this.renderer.xr.enabled = false;
       this.xrActive = false;
       this.scene.background = this.xrBackground ?? null;
+      this.onXRSessionChange?.(undefined);
       this.animate();
     }, { once: true });
+  }
+
+  async endXR(): Promise<void> {
+    if (!(this.renderer instanceof THREE.WebGLRenderer)) return;
+    await this.renderer.xr.getSession()?.end();
   }
 
   getSceneAnimation(): SceneAnimationState {
@@ -1381,6 +1492,7 @@ export class ViewerEngine {
       this.selectedId = modelId;
       this.selectedFragmentNodeId = nodeId;
       this.inspectedObject = model.object;
+      this.updatePostProcessingSelection();
       this.transform.detach();
       void this.highlightFragmentSelection(fragmentModel, fragmentEntry);
       this.onSelectionChange?.(model);
@@ -1391,6 +1503,7 @@ export class ViewerEngine {
     this.selectedId = modelId;
     this.selectedFragmentNodeId = undefined;
     this.inspectedObject = object;
+    this.updatePostProcessingSelection();
     this.updateTransformAccess();
     this.updateSelectionHelper();
     this.onSelectionChange?.(model);
@@ -1709,6 +1822,7 @@ export class ViewerEngine {
     this.selectedId = id;
     this.selectedFragmentNodeId = undefined;
     this.inspectedObject = id ? this.models.get(id)?.object : undefined;
+    this.updatePostProcessingSelection();
     const model = id ? this.models.get(id) : undefined;
     if (!model) this.transform.detach();
     this.updateTransformAccess();
@@ -1725,8 +1839,17 @@ export class ViewerEngine {
     const fragmentModel = this.fragmentModels.get(id);
     if (fragmentEntry && fragmentModel) {
       setTreeVisibility(fragmentEntry.node, visible);
+      if (!visible) {
+        this.fragmentSelectionVersion += 1;
+        void fragmentModel.resetHighlight();
+      }
       void fragmentModel.setVisible(fragmentEntry.localIds, visible).then(() => this.fragments.core.update(true));
     }
+    if (!visible && this.selectedId === id) {
+      this.removeSelectionHelper();
+      this.updatePostProcessingSelection();
+    } else this.updateSelectionHelper();
+    this.syncSpaceVisuals();
     this.updateCollisions(true);
     this.onModelChange?.(model);
   }
@@ -2180,6 +2303,7 @@ export class ViewerEngine {
     this.clearAnnotations(false);
     for (const visual of this.spaceVisuals.values()) this.disposeObject(visual.object);
     this.spaceVisuals.clear();
+    this.disposeSceneLightProxies();
     this.composer?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -2250,6 +2374,12 @@ export class ViewerEngine {
     material.transparent = true;
     material.opacity = 0.95;
     this.scene.add(this.selectionHelper);
+  }
+
+  private updatePostProcessingSelection(): void {
+    if (!this.outlinePass) return;
+    const selected = this.inspectedObject;
+    this.outlinePass.selectedObjects = selected && selected.visible ? [selected] : [];
   }
 
   private removeSelectionHelper(): void {
@@ -2458,8 +2588,8 @@ export class ViewerEngine {
       const model = this.models.get(visual.modelId);
       if (!model) continue;
       model.object.updateWorldMatrix(true, false);
-      visual.object.matrix.copy(model.object.matrixWorld);
-      visual.object.matrixWorldNeedsUpdate = true;
+      model.object.matrixWorld.decompose(visual.object.position, visual.object.quaternion, visual.object.scale);
+      visual.object.updateMatrixWorld(true);
       visual.object.visible = model.visible && model.object.visible;
     }
   }
@@ -2525,6 +2655,8 @@ export class ViewerEngine {
 
   private setupEnvironment(): void {
     this.syncSceneLights();
+    this.globalIlluminationLight.name = "scene-light:global-illumination";
+    this.scene.add(this.globalIlluminationLight);
     this.gridHelper = new THREE.GridHelper(200, 200, 0xa8b2b9, 0x7b858d);
     this.gridHelper.name = "helper:grid";
     const gridMaterials = Array.isArray(this.gridHelper.material) ? this.gridHelper.material : [this.gridHelper.material];
@@ -2647,6 +2779,10 @@ export class ViewerEngine {
       light.intensity = state.intensity * weatherFactor * intensity;
       if ("castShadow" in light) light.castShadow = Boolean(this.lightingState.shadowsEnabled && state.castShadow);
     }
+    this.globalIlluminationLight.visible = Boolean(this.lightingState.enabled && this.lightingState.globalIlluminationEnabled);
+    this.globalIlluminationLight.intensity = this.globalIlluminationLight.visible
+      ? (this.lightingState.globalIlluminationIntensity ?? 0.45) * weatherFactor * intensity
+      : 0;
     if ("shadowMap" in this.renderer) this.renderer.shadowMap.enabled = Boolean(this.lightingState.shadowsEnabled);
     this.renderer.toneMappingExposure = this.lightingState.enabled
       ? THREE.MathUtils.clamp(0.72 + intensity * weatherFactor * 0.33, 0.55, 1.55)
@@ -2654,6 +2790,7 @@ export class ViewerEngine {
   }
 
   private syncSceneLights(): void {
+    this.disposeSceneLightProxies();
     for (const light of this.sceneLights.values()) {
       if (light.parent) light.parent.remove(light);
     }
@@ -2699,6 +2836,7 @@ export class ViewerEngine {
       if ("castShadow" in light) light.castShadow = Boolean(state.castShadow);
       this.sceneLights.set(state.id, light);
       this.scene.add(light);
+      if (!["ambient", "hemisphere"].includes(state.type)) this.createSceneLightProxy(state);
     }
     if (this.selectedSceneLight) {
       const selection = this.selectedSceneLight;
@@ -2706,6 +2844,117 @@ export class ViewerEngine {
       if (object) this.transform.attach(object);
       else this.clearSceneLightSelection();
     }
+  }
+
+  private createSceneLightProxy(state: SceneLightState): void {
+    const position = new THREE.Group();
+    position.name = `helper:scene-light-proxy:${state.id}:position`;
+    const color = new THREE.Color(state.color);
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity: state.enabled ? 0.95 : 0.42 });
+    const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffcf66, wireframe: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.78 });
+    const body = state.type === "rectArea"
+      ? new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.72, 0.08), bodyMaterial)
+      : state.type === "spot"
+        ? new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.72, 16, 1, true), bodyMaterial)
+        : new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), bodyMaterial);
+    body.renderOrder = 1001;
+    position.add(body);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.035, 6, 28), ringMaterial);
+    ring.renderOrder = 1001;
+    position.add(ring);
+    position.traverse((object) => {
+      object.userData.sceneLightId = state.id;
+      object.userData.sceneLightHandle = "position";
+    });
+    this.scene.add(position);
+
+    let target: THREE.Group | undefined;
+    let line: THREE.Line | undefined;
+    if (["directional", "spot", "rectArea"].includes(state.type)) {
+      target = new THREE.Group();
+      target.name = `helper:scene-light-proxy:${state.id}:target`;
+      const targetMaterial = new THREE.MeshBasicMaterial({ color: 0x4d9fff, depthTest: false, depthWrite: false, transparent: true, opacity: 0.92 });
+      const targetRing = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.035, 6, 24), targetMaterial);
+      targetRing.renderOrder = 1001;
+      target.add(targetRing);
+      const cross = new THREE.LineSegments(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(-0.5, 0, 0), new THREE.Vector3(0.5, 0, 0),
+          new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 0.5, 0),
+          new THREE.Vector3(0, 0, -0.5), new THREE.Vector3(0, 0, 0.5)
+        ]),
+        new THREE.LineBasicMaterial({ color: 0x4d9fff, depthTest: false, depthWrite: false, transparent: true, opacity: 0.92 })
+      );
+      cross.renderOrder = 1001;
+      target.add(cross);
+      target.traverse((object) => {
+        object.userData.sceneLightId = state.id;
+        object.userData.sceneLightHandle = "target";
+      });
+      this.scene.add(target);
+      line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+        new THREE.LineDashedMaterial({ color: 0x76afff, dashSize: 0.35, gapSize: 0.22, depthTest: false, depthWrite: false, transparent: true, opacity: 0.55 })
+      );
+      line.name = `helper:scene-light-direction:${state.id}`;
+      line.renderOrder = 1000;
+      this.scene.add(line);
+    }
+    this.sceneLightProxies.set(state.id, { position, ...(target ? { target } : {}), ...(line ? { line } : {}) });
+    this.updateSceneLightProxies();
+  }
+
+  private disposeSceneLightProxies(): void {
+    for (const proxy of this.sceneLightProxies.values()) {
+      this.disposeObject(proxy.position);
+      if (proxy.target) this.disposeObject(proxy.target);
+      if (proxy.line) this.disposeObject(proxy.line);
+    }
+    this.sceneLightProxies.clear();
+  }
+
+  private updateSceneLightProxies(): void {
+    for (const [id, proxy] of this.sceneLightProxies) {
+      const light = this.sceneLights.get(id);
+      if (!light) continue;
+      proxy.position.position.copy(light.position);
+      const positionScale = THREE.MathUtils.clamp(this.camera.position.distanceTo(light.position) * 0.035, 0.45, 3.5);
+      proxy.position.scale.setScalar(positionScale);
+      proxy.position.quaternion.copy(this.camera.quaternion);
+      const targetObject = this.sceneLightTargets.get(id);
+      if (proxy.target && targetObject) {
+        proxy.target.position.copy(targetObject.position);
+        const targetScale = THREE.MathUtils.clamp(this.camera.position.distanceTo(targetObject.position) * 0.03, 0.4, 3);
+        proxy.target.scale.setScalar(targetScale);
+        proxy.target.quaternion.copy(this.camera.quaternion);
+      }
+      if (proxy.line && targetObject) {
+        const position = proxy.line.geometry.getAttribute("position") as THREE.BufferAttribute;
+        position.setXYZ(0, light.position.x, light.position.y, light.position.z);
+        position.setXYZ(1, targetObject.position.x, targetObject.position.y, targetObject.position.z);
+        position.needsUpdate = true;
+        proxy.line.computeLineDistances();
+      }
+    }
+  }
+
+  private lightProxyPointerHit(event: PointerEvent): { id: string; handle: "position" | "target" } | undefined {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pointerPosition.set(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    this.raycaster.setFromCamera(this.pointerPosition, this.camera);
+    const roots = [...this.sceneLightProxies.values()].flatMap((proxy) => proxy.target ? [proxy.position, proxy.target] : [proxy.position]);
+    const hit = this.raycaster.intersectObjects(roots, true)[0]?.object;
+    let current: THREE.Object3D | null | undefined = hit;
+    while (current) {
+      const id = current.userData.sceneLightId as string | undefined;
+      const handle = current.userData.sceneLightHandle as "position" | "target" | undefined;
+      if (id && handle) return { id, handle };
+      current = current.parent;
+    }
+    return undefined;
   }
 
   private floorStateKey(modelId: string, level: string): string {
@@ -2909,6 +3158,7 @@ export class ViewerEngine {
     this.updateWeather(delta);
     this.updateCollisions(false, now);
     this.syncSpaceVisuals();
+    this.updateSceneLightProxies();
     if (this.navigationMode !== "firstPerson") this.orbit.update();
     this.emitCameraChange();
     if (!this.xrActive && this.postProcessingState.enabled && this.composer) this.composer.render(delta);
@@ -3631,6 +3881,10 @@ export class ViewerEngine {
   private handlePointerDown = async (event: PointerEvent): Promise<void> => {
     if (this.navigationMode === "firstPerson") return;
     if (event.button !== 0) return;
+    if (!this.measureEnabled && !this.annotationPlacementEnabled && !(this.clippingState.enabled && this.clippingState.mode === "face")) {
+      const lightHit = this.lightProxyPointerHit(event);
+      if (lightHit && this.selectSceneLight(lightHit.id, lightHit.handle)) return;
+    }
     const hit = await this.scenePointerHit(event);
     if (this.annotationPlacementEnabled) {
       if (!hit) return;
@@ -3748,6 +4002,7 @@ export class ViewerEngine {
     this.selectedFragmentNodeId = undefined;
     const model = id ? this.models.get(id) : undefined;
     this.inspectedObject = nearestBimElement(hit.object, model?.object) ?? hit.object;
+    this.updatePostProcessingSelection();
     if (!model || !this.inspectedObject) this.transform.detach();
     this.updateTransformAccess();
     this.updateSelectionHelper();

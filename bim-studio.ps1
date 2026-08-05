@@ -290,6 +290,23 @@ function Start-Web {
 }
 
 function Start-NodeRed {
+    $oracleClientDirectory = if ($env:ORACLE_INSTANT_CLIENT_DIR) {
+        $env:ORACLE_INSTANT_CLIENT_DIR
+    } else {
+        $configuredOracleDirectory = Get-DotEnvValue "ORACLE_INSTANT_CLIENT_DIR"
+        if ($configuredOracleDirectory) { $configuredOracleDirectory } else { "D:\Documents\bim\oracle\instantclient_19_31" }
+    }
+    if (Test-Path -LiteralPath (Join-Path $oracleClientDirectory "oci.dll")) {
+        $pathEntries = $env:Path -split ";"
+        if ($pathEntries -notcontains $oracleClientDirectory) {
+            $env:Path = "$oracleClientDirectory;$env:Path"
+        }
+        $env:ORACLE_INSTANT_CLIENT_DIR = $oracleClientDirectory
+        if (-not $env:TNS_ADMIN) {
+            $configuredTnsAdmin = Get-DotEnvValue "TNS_ADMIN"
+            $env:TNS_ADMIN = if ($configuredTnsAdmin) { $configuredTnsAdmin } else { Join-Path $oracleClientDirectory "network\admin" }
+        }
+    }
     Start-BackgroundService "node-red" (Get-PnpmExecutable) @("--filter", "@bim-studio/node-red", "dev") 1880
 }
 

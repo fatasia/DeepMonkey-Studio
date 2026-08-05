@@ -28,7 +28,8 @@
 - 标签标记可拾取模型表面或地面放置，支持名称、说明、颜色、尺寸、XYZ、显隐、锁定、定位和删除，并随场景保存、导入与导出
 - 场景管理中心提供 `/optimizer` 模型优化页，可在浏览器本地进行模型减面、Draco、贴图压缩、原点调整、重复点焊接、无用数据清理和 GLB 导出
 - 环境控制支持晴天、下雨、下雪、网格显隐、可配置纯色背景、晴空/黄昏/夜空天空盒，以及全局灯光开关和强度调节，状态随场景保存
-- 灯光系统支持环境光、半球光、方向光、点光源、聚光灯和矩形区域光，可独立调整颜色、强度和位置；阴影、环境反射、HDR/EXR 环境贴图和 PBR 材质参数随场景保存
+- 灯光系统支持环境光、半球光、方向光、点光源、聚光灯和矩形区域光，可独立调整颜色、强度和位置；可移动的灯光代理与目标点直接显示在三维场景中；阴影、反射和近似全局光照默认关闭
+- WebGL 后处理支持 SMAA、FXAA、SSAO、GTAO、Bloom、选中轮廓、景深、暗角、胶片颗粒和残像，所有效果默认关闭并随场景保存；HDR/EXR 环境贴图和 PBR 材质参数也随场景保存
 - 构件可按 BIM 楼层整层显隐，并通过“向上展开”形成楼层分解视图；IFC Fragments 当前保证楼层显隐，逐层位移主要用于原生 GLB/RVT 模型
 - WebGL 模式支持 WebXR 的 VR/AR 会话入口；实际进入需要兼容设备以及 localhost 或 HTTPS 安全上下文
 - 中英文可在各主页面切换；开源致谢窗口列出核心项目、许可证和源码链接
@@ -65,6 +66,8 @@ Windows 也可以使用根目录服务脚本统一管理全部服务，或只操
 - 健康检查: http://localhost:4100/health
 
 `pnpm dev` 仍只启动 Web 和 API；需要数字孪生流程时使用 `pnpm dev:all`，或通过脚本单独执行 `./bim-studio.ps1 start node-red`。Node-RED 不运行不会影响模型浏览、编辑和场景保存。HTTP 场景桥为 `POST /iot/scene`，浏览器订阅 `/iot/ws/scene`。生产部署应设置随机 `NODE_RED_CREDENTIAL_SECRET`，并通过 Node-RED credential store 保存数据库与设备密码。
+
+TDengine 与 Oracle 的最小可用示例流位于 `apps/node-red/examples/tdengine-oracle-dashboard.json`：在 Node-RED 中选择“导入 → 剪贴板/文件”，导入后按注释配置连接，再启用对应流程。TDengine 示例走 REST API；Oracle 示例使用 `node-red-contrib-oracledb-mod`，Oracle 12.1+ 保持默认 Thin 模式即可，Oracle 11g 或需要 Thick 特性时使用已安装到 `D:\Documents\bim\oracle\instantclient_19_31` 的 Instant Client。两个示例都直接输出到现有 `/iot/dashboard/` 看板。
 
 ## PostgreSQL 与 MinIO
 

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 const flows = JSON.parse(await readFile(new URL("./flows.json", import.meta.url), "utf8"));
+const databaseExamples = JSON.parse(await readFile(new URL("./examples/tdengine-oracle-dashboard.json", import.meta.url), "utf8"));
 const byId = new Map(flows.map((node) => [node.id, node]));
 
 for (const id of [
@@ -27,3 +28,12 @@ for (const target of ["scene-ws-out", "scene-http-response", "scene-dashboard-va
 }
 
 console.log(`Validated ${flows.length} Node-RED nodes`);
+
+const exampleTypes = new Set(databaseExamples.map((node) => node.type));
+for (const type of ["oracledb", "oracle-server", "http request", "ui-gauge"]) {
+  if (!exampleTypes.has(type)) throw new Error(`Database example is missing node type: ${type}`);
+}
+for (const id of ["example-td-normalize", "example-oracle-normalize"]) {
+  if (!databaseExamples.some((node) => node.id === id)) throw new Error(`Database example is missing node: ${id}`);
+}
+console.log(`Validated ${databaseExamples.length} TDengine/Oracle example nodes`);
