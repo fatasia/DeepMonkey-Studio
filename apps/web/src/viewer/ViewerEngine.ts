@@ -1051,11 +1051,12 @@ export class ViewerEngine {
     return this.renderer instanceof THREE.WebGLRenderer && Boolean(navigator.xr && await navigator.xr.isSessionSupported(mode));
   }
 
-  async startXR(mode: "immersive-vr" | "immersive-ar"): Promise<void> {
+  async startXR(mode: "immersive-vr" | "immersive-ar"): Promise<boolean> {
     if (!(this.renderer instanceof THREE.WebGLRenderer) || !navigator.xr) throw new Error("XR 仅支持 WebGL 和具备 WebXR 的浏览器");
     if (!await navigator.xr.isSessionSupported(mode)) throw new Error(mode === "immersive-vr" ? "当前设备不支持 VR" : "当前设备不支持 AR");
     if (this.xrSession) await this.xrSession.end();
     const session = await navigator.xr.requestSession(mode, mode === "immersive-ar" ? { requiredFeatures: ["local"], optionalFeatures: ["hit-test", "dom-overlay"], domOverlay: { root: document.body } } : { optionalFeatures: ["local-floor", "bounded-floor"] });
+    session.addEventListener("end", this.handleXRSessionEnd, { once: true });
     this.xrActive = true;
     this.xrSession = session;
     this.xrMode = mode;
@@ -1073,13 +1074,26 @@ export class ViewerEngine {
     this.setupXRControllers();
     this.renderer.setAnimationLoop(this.animate);
     await this.renderer.xr.setSession(session);
+    if (!this.xrActive || this.xrSession !== session) return false;
     this.onXRSessionChange?.(mode);
-    session.addEventListener("end", this.handleXRSessionEnd, { once: true });
+    return true;
   }
 
   async endXR(): Promise<void> {
     if (!(this.renderer instanceof THREE.WebGLRenderer)) return;
-    await (this.xrSession ?? this.renderer.xr.getSession())?.end();
+    const session = this.xrSession ?? this.renderer.xr.getSession();
+    if (!session) {
+      this.finishXRSession();
+      return;
+    }
+    try {
+      await session.end();
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== "InvalidStateError") throw error;
+    } finally {
+      if (this.renderer.xr.getSession() === session) await this.renderer.xr.setSession(null);
+      this.finishXRSession(session);
+    }
   }
 
   private setupXRControllers(): void {
@@ -1132,8 +1146,15 @@ export class ViewerEngine {
     this.xrExitPressed = exitPressed;
   }
 
-  private handleXRSessionEnd = (): void => {
+  private handleXRSessionEnd = (event: Event): void => {
+    const session = event.currentTarget as unknown as XRSession | null;
+    this.finishXRSession(session ?? undefined);
+  };
+
+  private finishXRSession(session?: XRSession): void {
     if (!(this.renderer instanceof THREE.WebGLRenderer)) return;
+    if (session && this.xrSession && session !== this.xrSession) return;
+    if (!this.xrActive && !this.xrSession && !this.xrMode) return;
     this.renderer.setAnimationLoop(null);
     this.renderer.xr.enabled = false;
     this.xrActive = false;
@@ -1152,7 +1173,7 @@ export class ViewerEngine {
     this.xrExitPressed = false;
     this.onXRSessionChange?.(undefined);
     this.animate();
-  };
+  }
 
   getPhysicsState(): ScenePhysicsState {
     return structuredClone(this.physicsState);

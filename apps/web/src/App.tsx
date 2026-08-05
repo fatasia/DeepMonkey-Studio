@@ -1002,8 +1002,8 @@ export function App() {
 
   async function startXR(mode: "immersive-vr" | "immersive-ar") {
     try {
-      await engine?.startXR(mode);
-      setXrActiveMode(mode);
+      const started = await engine?.startXR(mode);
+      if (!started) return;
       setXrPanelOpen(false);
       setMessage(mode === "immersive-vr" ? "已进入 VR" : "已进入 AR");
     } catch (reason) {
