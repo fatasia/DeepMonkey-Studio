@@ -72,6 +72,7 @@ export interface SceneModelState {
   explosionFactor?: number;
   explosionMode?: ExplosionMode;
   animationEnabled?: boolean;
+  material?: SceneMaterialState;
   layers?: SceneLayerState[];
 }
 
@@ -107,8 +108,19 @@ export interface SceneLayerState {
   name?: string;
   opacity?: number;
   color?: string;
+  material?: SceneMaterialState;
   transform?: ModelTransform;
   deleted?: boolean;
+}
+
+export interface SceneMaterialState {
+  color?: string;
+  roughness?: number;
+  metalness?: number;
+  emissive?: string;
+  emissiveIntensity?: number;
+  wireframe?: boolean;
+  doubleSided?: boolean;
 }
 
 export interface PrimitiveState extends SceneModelState {
@@ -154,6 +166,30 @@ export type WeatherMode = "sunny" | "rain" | "snow";
 export interface GlobalLightingState {
   enabled: boolean;
   intensity: number;
+  shadowsEnabled?: boolean;
+  reflectionsEnabled?: boolean;
+  lights?: SceneLightState[];
+}
+
+export type SceneLightType = "ambient" | "hemisphere" | "directional" | "point" | "spot" | "rectArea";
+
+export interface SceneLightState {
+  id: string;
+  name: string;
+  type: SceneLightType;
+  enabled: boolean;
+  color: string;
+  intensity: number;
+  position?: Vector3Value;
+  target?: Vector3Value;
+  groundColor?: string;
+  distance?: number;
+  decay?: number;
+  angle?: number;
+  penumbra?: number;
+  width?: number;
+  height?: number;
+  castShadow?: boolean;
 }
 
 export type SkyboxPreset = "none" | "clear" | "sunset" | "night";
@@ -162,6 +198,16 @@ export interface SceneEnvironmentState {
   gridVisible: boolean;
   backgroundColor: string;
   skybox: SkyboxPreset;
+  environmentMapUrl?: string;
+  environmentMapName?: string;
+  environmentAsBackground?: boolean;
+  environmentIntensity?: number;
+}
+
+export interface SceneFloorState {
+  level: string;
+  visible: boolean;
+  expansion: number;
 }
 
 export interface CameraKeyframe {
@@ -202,6 +248,7 @@ export interface SceneSnapshot {
   weather?: WeatherMode;
   lighting?: GlobalLightingState;
   environment?: SceneEnvironmentState;
+  floors?: SceneFloorState[];
   animation?: SceneAnimationState;
   selectedModelId?: string;
   selectedLayerId?: string;

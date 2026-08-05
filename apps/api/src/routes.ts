@@ -124,6 +124,27 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     return reply.code(202).send(model);
   });
 
+  app.post<{ Params: { projectId: string } }>("/api/projects/:projectId/environment-maps", async (request, reply) => {
+    const project = store.getProject(request.params.projectId);
+    if (!project) return reply.code(404).send({ message: "项目不存在" });
+    const part = await request.file();
+    if (!part) return reply.code(400).send({ message: "请选择环境贴图" });
+    const extension = path.extname(part.filename).toLowerCase();
+    if (![".hdr", ".exr", ".jpg", ".jpeg", ".png", ".webp"].includes(extension)) {
+      part.file.resume();
+      return reply.code(415).send({ message: "环境贴图仅支持 HDR、EXR、JPG、PNG、WEBP" });
+    }
+    const id = randomUUID();
+    const safeName = cleanFileName(part.filename);
+    const directory = path.join(dataDir, "projects", project.id, "environment-maps", id);
+    const filePath = path.join(directory, safeName);
+    await mkdir(directory, { recursive: true });
+    await pipeline(part.file, createWriteStream(filePath, { flags: "wx" }));
+    const key = `projects/${project.id}/environment-maps/${id}/${safeName}`;
+    await objects.putFile(key, filePath);
+    return reply.code(201).send({ name: safeName, url: `/assets/${key}` });
+  });
+
   app.delete<{ Params: { projectId: string; modelId: string } }>(
     "/api/projects/:projectId/models/:modelId",
     async (request, reply) => {

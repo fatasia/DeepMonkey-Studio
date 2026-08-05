@@ -3,4 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  core-js: true
   esbuild: true
+  node-red-contrib-bacnet: true
+  oracledb: true

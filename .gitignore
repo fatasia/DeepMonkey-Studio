@@ -11,6 +11,7 @@ test-model/
 apps/web/public/wasm/
 apps/web/public/draco/
 apps/web/public/brand/logo.webp
+apps/node-red/.data/
 **/bin/
 **/obj/
 tools/libredwg/

@@ -1,0 +1,18 @@
+:root {
+  --bim-bg: #11171b;
+  --bim-panel: #182126;
+  --bim-line: #2b3940;
+  --bim-accent: #d4a84f;
+  --bim-text: #e7ecef;
+}
+
+.red-ui-header-logo,
+.red-ui-header-logo img,
+.red-ui-header-logo span { display: none !important; }
+.red-ui-header { background: var(--bim-panel) !important; border-bottom: 1px solid var(--bim-line) !important; }
+.red-ui-header-button:hover,
+.red-ui-header-button:focus { background: #223038 !important; }
+.red-ui-tab-button.active,
+.red-ui-palette-node:hover { border-color: var(--bim-accent) !important; }
+.red-ui-workspace-chart { background-color: var(--bim-bg) !important; }
+.red-ui-deploy-button { background: var(--bim-accent) !important; color: #17130b !important; border: 0 !important; }

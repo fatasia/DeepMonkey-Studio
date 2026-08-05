@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,green \"pnpm --filter @bim-studio/api dev\" \"pnpm --filter @bim-studio/web dev\"",
+    "dev:all": "concurrently -n api,web,node-red -c cyan,green,yellow \"pnpm --filter @bim-studio/api dev\" \"pnpm --filter @bim-studio/web dev\" \"pnpm --filter @bim-studio/node-red dev\"",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",

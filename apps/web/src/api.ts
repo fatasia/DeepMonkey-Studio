@@ -29,6 +29,11 @@ export const api = {
     data.append("file", file);
     return request<ModelRecord>(`/api/projects/${projectId}/models?rvtConversionMode=${encodeURIComponent(rvtConversionMode)}`, { method: "POST", body: data });
   },
+  uploadEnvironmentMap: async (projectId: string, file: File) => {
+    const data = new FormData();
+    data.append("file", file);
+    return request<{ name: string; url: string }>(`/api/projects/${projectId}/environment-maps`, { method: "POST", body: data });
+  },
   deleteModel: (projectId: string, modelId: string) =>
     request<void>(`/api/projects/${projectId}/models/${modelId}`, { method: "DELETE" }),
   listScenes: (projectId: string) => request<SceneSnapshot[]>(`/api/projects/${projectId}/scenes`),

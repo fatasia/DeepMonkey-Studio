@@ -8,6 +8,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
@@ -23,7 +25,10 @@ import type {
   SceneAnnotationState,
   SceneAnimationState,
   SceneEnvironmentState,
+  SceneFloorState,
   SceneLayerState,
+  SceneLightState,
+  SceneMaterialState,
   SkyboxPreset,
   Vector3Value,
   WeatherMode
@@ -52,6 +57,12 @@ export type SelectionScope = "model" | "component";
 export type RendererBackend = "webgl" | "webgpu";
 type RendererInstance = THREE.WebGLRenderer | WebGPURenderer;
 
+const DEFAULT_SCENE_LIGHTS: SceneLightState[] = [
+  { id: "ambient-default", name: "环境光", type: "ambient", enabled: true, color: "#dce8ff", intensity: 0.35 },
+  { id: "hemisphere-default", name: "半球光", type: "hemisphere", enabled: true, color: "#e8f0ff", groundColor: "#3b4249", intensity: 1.4 },
+  { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
+];
+
 export interface SceneStatistics {
   modelCount: number;
   primitiveCount: number;
@@ -65,6 +76,15 @@ export interface PointerInfo {
   screenY: number;
   world?: Vector3Value;
   objectName?: string;
+}
+
+export interface SceneDataMessage {
+  source: string;
+  key: string;
+  value: unknown;
+  timestamp: string;
+  target?: { modelId?: string; layerId?: string; annotationId?: string };
+  action?: "color" | "visibility" | "position" | "label";
 }
 
 export interface BimSpaceRecord {
@@ -228,6 +248,7 @@ export class ViewerEngine {
   private readonly annotations = new Map<string, { state: SceneAnnotationState; object: THREE.Group }>();
   private readonly spaceVisuals = new Map<string, { modelId: string; object: THREE.Group }>();
   private readonly modelColorOverrides = new Map<string, string>();
+  private readonly modelMaterialOverrides = new Map<string, SceneMaterialState>();
   private readonly layerObjects = new Map<string, Map<string, THREE.Object3D>>();
   private readonly layerStates = new Map<string, Map<string, SceneLayerState>>();
   private readonly fragmentModels = new Map<string, FRAGS.FragmentsModel>();
@@ -279,13 +300,16 @@ export class ViewerEngine {
   private focusedSpaceKey: string | undefined;
   private selectedFragmentNodeId: string | undefined;
   private fragmentSelectionVersion = 0;
-  private hemisphereLight?: THREE.HemisphereLight;
-  private sunLight?: THREE.DirectionalLight;
+  private readonly sceneLights = new Map<string, THREE.Light>();
   private weatherMode: WeatherMode = "sunny";
-  private lightingState: GlobalLightingState = { enabled: true, intensity: 1 };
+  private lightingState: GlobalLightingState = { enabled: true, intensity: 1, shadowsEnabled: true, reflectionsEnabled: true, lights: structuredClone(DEFAULT_SCENE_LIGHTS) };
   private environmentState: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none" };
   private gridHelper?: THREE.GridHelper;
   private readonly skyboxTextures = new Map<Exclude<SkyboxPreset, "none">, THREE.CanvasTexture>();
+  private externalEnvironmentTexture?: THREE.Texture;
+  private xrActive = false;
+  private xrBackground?: THREE.Color | THREE.Texture | null;
+  private floorStates = new Map<string, SceneFloorState>();
   private weatherEffect: THREE.Points | THREE.LineSegments | undefined;
   private sceneAnimation: SceneAnimationState = {
     duration: 10,
@@ -322,7 +346,7 @@ export class ViewerEngine {
     }
     return new ViewerEngine(
       container,
-      new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" }),
+      new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" }),
       "webgl",
       new THREE.Group()
     );
@@ -512,6 +536,44 @@ export class ViewerEngine {
     return this.frameRate;
   }
 
+  applySceneDataMessage(message: SceneDataMessage): boolean {
+    const target = message.target;
+    if (!target || !message.action) return false;
+    if (message.action === "visibility" && target.modelId) {
+      const visible = Boolean(message.value);
+      if (target.layerId) this.setLayerVisible(target.modelId, target.layerId, visible);
+      else this.setVisible(target.modelId, visible);
+      return true;
+    }
+    if (message.action === "color" && target.modelId && typeof message.value === "string" && /^#[0-9a-f]{6}$/i.test(message.value)) {
+      if (target.layerId) {
+        const entry = this.fragmentLayers.get(target.modelId)?.get(target.layerId);
+        const fragmentModel = this.fragmentModels.get(target.modelId);
+        if (entry && fragmentModel) void fragmentModel.setColor(entry.localIds, new THREE.Color(message.value));
+        else {
+          const object = this.layerObjects.get(target.modelId)?.get(target.layerId);
+          if (object) this.setObjectColor(object, message.value);
+        }
+      } else {
+        const model = this.models.get(target.modelId);
+        if (model) this.setObjectColor(model.object, message.value);
+      }
+      return true;
+    }
+    if (message.action === "position" && target.modelId && isVectorValue(message.value)) {
+      const model = this.models.get(target.modelId);
+      if (!model) return false;
+      model.object.position.set(message.value.x, message.value.y, message.value.z);
+      model.object.updateWorldMatrix(true, true);
+      return true;
+    }
+    if (message.action === "label" && target.annotationId) {
+      const value = typeof message.value === "string" ? message.value : JSON.stringify(message.value);
+      return Boolean(this.updateAnnotation(target.annotationId, { description: value }));
+    }
+    return false;
+  }
+
   hasAnimation(id: string): boolean {
     return this.mixers.has(id);
   }
@@ -562,10 +624,14 @@ export class ViewerEngine {
     this.environmentState = {
       gridVisible: state.gridVisible,
       backgroundColor,
-      skybox: ["none", "clear", "sunset", "night"].includes(state.skybox) ? state.skybox : "none"
+      skybox: ["none", "clear", "sunset", "night"].includes(state.skybox) ? state.skybox : "none",
+      ...(state.environmentMapUrl ? { environmentMapUrl: state.environmentMapUrl } : {}),
+      ...(state.environmentMapName ? { environmentMapName: state.environmentMapName } : {}),
+      environmentAsBackground: state.environmentAsBackground ?? false,
+      environmentIntensity: THREE.MathUtils.clamp(state.environmentIntensity ?? 1, 0, 3)
     };
     if (this.gridHelper) this.gridHelper.visible = this.environmentState.gridVisible;
-    this.applyEnvironmentBackground();
+    void this.applyEnvironment();
   }
 
   getGlobalLighting(): GlobalLightingState {
@@ -575,9 +641,108 @@ export class ViewerEngine {
   setGlobalLighting(state: GlobalLightingState): void {
     this.lightingState = {
       enabled: state.enabled,
-      intensity: THREE.MathUtils.clamp(state.intensity, 0, 2.5)
+      intensity: THREE.MathUtils.clamp(state.intensity, 0, 2.5),
+      shadowsEnabled: state.shadowsEnabled ?? true,
+      reflectionsEnabled: state.reflectionsEnabled ?? true,
+      lights: structuredClone(state.lights?.length ? state.lights : DEFAULT_SCENE_LIGHTS)
     };
+    this.syncSceneLights();
     this.applyLighting();
+    void this.applyEnvironment();
+  }
+
+  getSelectionMaterial(): SceneMaterialState {
+    const selected = this.getSelected();
+    const object = this.inspectedObject ?? selected?.object;
+    if (!object) return {};
+    let result: SceneMaterialState = {};
+    object.traverse((child) => {
+      if (Object.keys(result).length > 0) return;
+      const material = this.materialsForMesh(child as THREE.Mesh)[0];
+      if (!material) return;
+      const standard = material as THREE.MeshStandardMaterial;
+      result = {
+        ...(standard.color ? { color: `#${standard.color.getHexString()}` } : {}),
+        ...(typeof standard.roughness === "number" ? { roughness: standard.roughness } : {}),
+        ...(typeof standard.metalness === "number" ? { metalness: standard.metalness } : {}),
+        ...(standard.emissive ? { emissive: `#${standard.emissive.getHexString()}`, emissiveIntensity: standard.emissiveIntensity } : {}),
+        ...(typeof standard.wireframe === "boolean" ? { wireframe: standard.wireframe } : {}),
+        doubleSided: standard.side === THREE.DoubleSide
+      };
+    });
+    return result;
+  }
+
+  setSelectionMaterial(patch: SceneMaterialState): void {
+    const selected = this.getSelected();
+    const object = this.inspectedObject ?? selected?.object;
+    if (!selected || !object || this.isSelectionLocked()) return;
+    if (this.selectedFragmentNodeId) {
+      if (patch.color) this.setSelectionColor(patch.color);
+      this.updateLayerState(selected.id, this.selectedFragmentNodeId, { material: patch });
+      return;
+    }
+    this.applyMaterialState(object, patch);
+    if (object !== selected.object) this.updateLayerState(selected.id, String(object.userData.layerNodeId), { material: patch });
+    else this.modelMaterialOverrides.set(selected.id, { ...this.modelMaterialOverrides.get(selected.id), ...structuredClone(patch) });
+    selected.object.updateWorldMatrix(true, true);
+    this.onModelChange?.(selected);
+  }
+
+  getModelMaterialOverride(id: string): SceneMaterialState | undefined {
+    const state = this.modelMaterialOverrides.get(id);
+    return state ? structuredClone(state) : undefined;
+  }
+
+  getFloorStates(): SceneFloorState[] {
+    return this.getComponentFacets().levels.map((level) => structuredClone(this.floorStates.get(level) ?? { level, visible: true, expansion: 0 }));
+  }
+
+  applyFloorStates(states: SceneFloorState[] | undefined): void {
+    this.floorStates.clear();
+    for (const state of states ?? []) this.setFloorState(state.level, state.visible, state.expansion);
+  }
+
+  setFloorState(level: string, visible: boolean, expansion = 0): void {
+    this.floorStates.set(level, { level, visible, expansion });
+    const records = [...this.componentRecords.values()].flat().filter((record) => record.level === level);
+    for (const record of records) {
+      const fragment = this.fragmentLayers.get(record.modelId)?.get(record.id);
+      const fragmentModel = this.fragmentModels.get(record.modelId);
+      if (fragment && fragmentModel) {
+        void fragmentModel.setVisible(fragment.localIds, visible).then(() => this.fragments.core.update(true));
+        continue;
+      }
+      const object = this.layerObjects.get(record.modelId)?.get(record.id);
+      if (!object) continue;
+      object.visible = visible;
+      if (object.userData.floorBaseY === undefined) object.userData.floorBaseY = object.position.y;
+      object.position.y = Number(object.userData.floorBaseY) + expansion;
+    }
+  }
+
+  async isXRSupported(mode: "immersive-vr" | "immersive-ar"): Promise<boolean> {
+    return this.renderer instanceof THREE.WebGLRenderer && Boolean(navigator.xr && await navigator.xr.isSessionSupported(mode));
+  }
+
+  async startXR(mode: "immersive-vr" | "immersive-ar"): Promise<void> {
+    if (!(this.renderer instanceof THREE.WebGLRenderer) || !navigator.xr) throw new Error("XR 仅支持 WebGL 和具备 WebXR 的浏览器");
+    if (!await navigator.xr.isSessionSupported(mode)) throw new Error(mode === "immersive-vr" ? "当前设备不支持 VR" : "当前设备不支持 AR");
+    const session = await navigator.xr.requestSession(mode, mode === "immersive-ar" ? { requiredFeatures: ["local"], optionalFeatures: ["hit-test", "dom-overlay"], domOverlay: { root: document.body } } : { optionalFeatures: ["local-floor", "bounded-floor"] });
+    this.xrActive = true;
+    this.xrBackground = this.scene.background;
+    if (mode === "immersive-ar") this.scene.background = null;
+    cancelAnimationFrame(this.animationFrame);
+    this.renderer.xr.enabled = true;
+    this.renderer.setAnimationLoop(this.animate);
+    await this.renderer.xr.setSession(session);
+    session.addEventListener("end", () => {
+      this.renderer.setAnimationLoop(null);
+      this.renderer.xr.enabled = false;
+      this.xrActive = false;
+      this.scene.background = this.xrBackground ?? null;
+      this.animate();
+    }, { once: true });
   }
 
   getSceneAnimation(): SceneAnimationState {
@@ -1157,7 +1322,8 @@ export class ViewerEngine {
       if (fragmentEntry && fragmentModel) {
         if (state.name !== undefined) fragmentEntry.node.name = state.name;
         if (state.locked !== undefined) setTreeLock(fragmentEntry.node, state.locked);
-        if (state.color !== undefined) void fragmentModel.setColor(fragmentEntry.localIds, new THREE.Color(state.color));
+        const fragmentColor = state.material?.color ?? state.color;
+        if (fragmentColor !== undefined) void fragmentModel.setColor(fragmentEntry.localIds, new THREE.Color(fragmentColor));
         if (state.opacity !== undefined) void fragmentModel.setOpacity(fragmentEntry.localIds, state.opacity);
         const visible = state.deleted ? false : state.visible;
         if (visible !== undefined) {
@@ -1174,6 +1340,7 @@ export class ViewerEngine {
       if (state.transform) applyTransform(object, state.transform);
       if (state.opacity !== undefined) this.setObjectOpacity(object, state.opacity);
       if (state.color !== undefined) this.setObjectColor(object, state.color);
+      if (state.material !== undefined) this.applyMaterialState(object, state.material);
       if (state.deleted) {
         object.userData.layerDeleted = true;
         object.visible = false;
@@ -1385,6 +1552,7 @@ export class ViewerEngine {
     this.layerStates.delete(id);
     this.componentRecords.delete(id);
     this.modelColorOverrides.delete(id);
+    this.modelMaterialOverrides.delete(id);
     for (const [key, visual] of this.spaceVisuals) {
       if (visual.modelId !== id) continue;
       this.disposeObject(visual.object);
@@ -1804,7 +1972,7 @@ export class ViewerEngine {
     return objectTransform(object);
   }
 
-  applyModelState(id: string, state: { visible: boolean; locked?: boolean; opacity: number; color?: string; colorOverride?: string; transform: ModelTransform; collisionEnabled?: boolean; explosionFactor?: number; explosionMode?: ExplosionMode; animationEnabled?: boolean; layers?: SceneLayerState[] }): void {
+  applyModelState(id: string, state: { visible: boolean; locked?: boolean; opacity: number; color?: string; colorOverride?: string; material?: SceneMaterialState; transform: ModelTransform; collisionEnabled?: boolean; explosionFactor?: number; explosionMode?: ExplosionMode; animationEnabled?: boolean; layers?: SceneLayerState[] }): void {
     const model = this.models.get(id);
     if (!model) return;
     model.object.position.set(state.transform.position.x, state.transform.position.y, state.transform.position.z);
@@ -1817,6 +1985,10 @@ export class ViewerEngine {
     if (state.colorOverride) {
       this.setObjectColor(model.object, state.colorOverride);
       this.modelColorOverrides.set(id, state.colorOverride);
+    }
+    if (state.material) {
+      this.applyMaterialState(model.object, state.material);
+      this.modelMaterialOverrides.set(id, structuredClone(state.material));
     }
     this.applyLayerStates(id, state.layers);
     this.setModelLocked(id, state.locked ?? false);
@@ -1842,6 +2014,7 @@ export class ViewerEngine {
       transform,
       collisionEnabled: this.isCollisionEnabled(id),
       explosionFactor: this.getExplosionFactor(id)
+      ,material: this.getMaterialState(model.object)
     };
   }
 
@@ -1890,6 +2063,7 @@ export class ViewerEngine {
     this.disposeWeatherEffect();
     this.skyboxTextures.forEach((texture) => texture.dispose());
     this.skyboxTextures.clear();
+    this.externalEnvironmentTexture?.dispose();
     this.disposeClippingHelper();
     if (this.cameraPathHelper) this.disposeObject(this.cameraPathHelper);
     this.removeSelectionHelper();
@@ -2228,13 +2402,7 @@ export class ViewerEngine {
   }
 
   private setupEnvironment(): void {
-    this.hemisphereLight = new THREE.HemisphereLight(0xe8f0ff, 0x3b4249, 1.4);
-    this.scene.add(this.hemisphereLight);
-    this.sunLight = new THREE.DirectionalLight(0xffffff, 2.2);
-    this.sunLight.position.set(18, 28, 12);
-    this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.set(2048, 2048);
-    this.scene.add(this.sunLight);
+    this.syncSceneLights();
     this.gridHelper = new THREE.GridHelper(200, 200, 0xa8b2b9, 0x7b858d);
     this.gridHelper.name = "helper:grid";
     const gridMaterials = Array.isArray(this.gridHelper.material) ? this.gridHelper.material : [this.gridHelper.material];
@@ -2256,11 +2424,37 @@ export class ViewerEngine {
     this.setWeather("sunny");
   }
 
-  private applyEnvironmentBackground(): void {
+  private async applyEnvironment(): Promise<void> {
     const preset = this.environmentState.skybox;
-    this.scene.background = preset === "none"
-      ? new THREE.Color(this.environmentState.backgroundColor)
-      : this.getSkyboxTexture(preset);
+    let environment: THREE.Texture | undefined;
+    if (this.environmentState.environmentMapUrl) {
+      try {
+        environment = await this.loadEnvironmentTexture(this.environmentState.environmentMapUrl);
+        if (this.externalEnvironmentTexture && this.externalEnvironmentTexture !== environment) this.externalEnvironmentTexture.dispose();
+        this.externalEnvironmentTexture = environment;
+      } catch {
+        environment = undefined;
+      }
+    }
+    const sky = preset === "none" ? undefined : this.getSkyboxTexture(preset);
+    this.scene.environment = this.lightingState.reflectionsEnabled === false ? null : environment ?? sky ?? null;
+    this.scene.environmentIntensity = this.environmentState.environmentIntensity ?? 1;
+    this.scene.background = this.environmentState.environmentAsBackground && environment
+      ? environment
+      : sky ?? new THREE.Color(this.environmentState.backgroundColor);
+  }
+
+  private async loadEnvironmentTexture(url: string): Promise<THREE.Texture> {
+    const path = url.split(/[?#]/)[0]?.toLowerCase() ?? "";
+    const texture = path.endsWith(".hdr")
+      ? await new RGBELoader().loadAsync(url)
+      : path.endsWith(".exr")
+        ? await new EXRLoader().loadAsync(url)
+        : await new THREE.TextureLoader().loadAsync(url);
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    if (!path.endsWith(".hdr") && !path.endsWith(".exr")) texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
   }
 
   private getSkyboxTexture(preset: Exclude<SkyboxPreset, "none">): THREE.CanvasTexture {
@@ -2324,11 +2518,58 @@ export class ViewerEngine {
   private applyLighting(): void {
     const weatherFactor = this.weatherMode === "sunny" ? 1 : this.weatherMode === "rain" ? 0.58 : 0.78;
     const intensity = this.lightingState.enabled ? this.lightingState.intensity : 0;
-    if (this.hemisphereLight) this.hemisphereLight.intensity = 1.4 * weatherFactor * intensity;
-    if (this.sunLight) this.sunLight.intensity = 2.2 * weatherFactor * intensity;
+    for (const state of this.lightingState.lights ?? DEFAULT_SCENE_LIGHTS) {
+      const light = this.sceneLights.get(state.id);
+      if (!light) continue;
+      light.visible = this.lightingState.enabled && state.enabled;
+      light.intensity = state.intensity * weatherFactor * intensity;
+      if ("castShadow" in light) light.castShadow = Boolean(this.lightingState.shadowsEnabled && state.castShadow);
+    }
+    if ("shadowMap" in this.renderer) this.renderer.shadowMap.enabled = Boolean(this.lightingState.shadowsEnabled);
     this.renderer.toneMappingExposure = this.lightingState.enabled
       ? THREE.MathUtils.clamp(0.72 + intensity * weatherFactor * 0.33, 0.55, 1.55)
       : 0.55;
+  }
+
+  private syncSceneLights(): void {
+    for (const light of this.sceneLights.values()) {
+      if (light.parent) light.parent.remove(light);
+    }
+    for (const target of this.scene.children.filter((child) => child.name.startsWith("scene-light-target:"))) this.scene.remove(target);
+    this.sceneLights.clear();
+    for (const state of this.lightingState.lights ?? DEFAULT_SCENE_LIGHTS) {
+      const color = new THREE.Color(state.color);
+      let light: THREE.Light;
+      if (state.type === "ambient") light = new THREE.AmbientLight(color, state.intensity);
+      else if (state.type === "hemisphere") light = new THREE.HemisphereLight(color, new THREE.Color(state.groundColor ?? "#3b4249"), state.intensity);
+      else if (state.type === "point") light = new THREE.PointLight(color, state.intensity, state.distance ?? 0, state.decay ?? 2);
+      else if (state.type === "spot") {
+        const spot = new THREE.SpotLight(color, state.intensity, state.distance ?? 0, state.angle ?? Math.PI / 6, state.penumbra ?? 0.25, state.decay ?? 2);
+        spot.target.name = `scene-light-target:${state.id}`;
+        spot.target.position.set(state.target?.x ?? 0, state.target?.y ?? 0, state.target?.z ?? 0);
+        this.scene.add(spot.target);
+        light = spot;
+      } else if (state.type === "rectArea") {
+        const area = new THREE.RectAreaLight(color, state.intensity, state.width ?? 6, state.height ?? 4);
+        light = area;
+      } else {
+        const directional = new THREE.DirectionalLight(color, state.intensity);
+        directional.target.name = `scene-light-target:${state.id}`;
+        directional.target.position.set(state.target?.x ?? 0, state.target?.y ?? 0, state.target?.z ?? 0);
+        directional.shadow.mapSize.set(2048, 2048);
+        directional.shadow.camera.near = 0.1;
+        directional.shadow.camera.far = 300;
+        this.scene.add(directional.target);
+        light = directional;
+      }
+      light.name = `scene-light:${state.id}`;
+      light.position.set(state.position?.x ?? 0, state.position?.y ?? 6, state.position?.z ?? 0);
+      if (state.type === "rectArea") light.lookAt(state.target?.x ?? 0, state.target?.y ?? 0, state.target?.z ?? 0);
+      light.visible = state.enabled;
+      if ("castShadow" in light) light.castShadow = Boolean(state.castShadow);
+      this.sceneLights.set(state.id, light);
+      this.scene.add(light);
+    }
   }
 
   private createRainEffect(): THREE.LineSegments {
@@ -2489,7 +2730,7 @@ export class ViewerEngine {
   }
 
   private animate = (): void => {
-    this.animationFrame = requestAnimationFrame(this.animate);
+    if (!this.xrActive) this.animationFrame = requestAnimationFrame(this.animate);
     const now = performance.now();
     this.frameSampleCount += 1;
     const frameSampleElapsed = now - this.frameSampleStartedAt;
@@ -2824,6 +3065,40 @@ export class ViewerEngine {
         const material = source as THREE.Material & { color?: THREE.Color };
         if (!material.color?.isColor) continue;
         material.color.set(color);
+        material.needsUpdate = true;
+      }
+    });
+  }
+
+  private getMaterialState(object: THREE.Object3D): SceneMaterialState {
+    let result: SceneMaterialState = {};
+    object.traverse((child) => {
+      if (Object.keys(result).length) return;
+      const material = this.materialsForMesh(child as THREE.Mesh)[0] as THREE.MeshStandardMaterial | undefined;
+      if (!material) return;
+      result = {
+        ...(material.color?.isColor ? { color: `#${material.color.getHexString()}` } : {}),
+        ...(typeof material.roughness === "number" ? { roughness: material.roughness } : {}),
+        ...(typeof material.metalness === "number" ? { metalness: material.metalness } : {}),
+        ...(material.emissive?.isColor ? { emissive: `#${material.emissive.getHexString()}`, emissiveIntensity: material.emissiveIntensity } : {}),
+        ...(typeof material.wireframe === "boolean" ? { wireframe: material.wireframe } : {}),
+        doubleSided: material.side === THREE.DoubleSide
+      };
+    });
+    return result;
+  }
+
+  private applyMaterialState(object: THREE.Object3D, state: SceneMaterialState): void {
+    object.traverse((child) => {
+      for (const source of this.materialsForMesh(child as THREE.Mesh)) {
+        const material = source as THREE.MeshStandardMaterial;
+        if (state.color && material.color?.isColor) material.color.set(state.color);
+        if (state.emissive && material.emissive?.isColor) material.emissive.set(state.emissive);
+        if (state.roughness !== undefined && typeof material.roughness === "number") material.roughness = THREE.MathUtils.clamp(state.roughness, 0, 1);
+        if (state.metalness !== undefined && typeof material.metalness === "number") material.metalness = THREE.MathUtils.clamp(state.metalness, 0, 1);
+        if (state.emissiveIntensity !== undefined && typeof material.emissiveIntensity === "number") material.emissiveIntensity = THREE.MathUtils.clamp(state.emissiveIntensity, 0, 10);
+        if (state.wireframe !== undefined && typeof material.wireframe === "boolean") material.wireframe = state.wireframe;
+        if (state.doubleSided !== undefined) material.side = state.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
         material.needsUpdate = true;
       }
     });
@@ -3670,6 +3945,12 @@ function nearestBimElement(object: THREE.Object3D, boundary?: THREE.Object3D): T
     current = current.parent;
   }
   return undefined;
+}
+
+function isVectorValue(value: unknown): value is Vector3Value {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<Vector3Value>;
+  return Number.isFinite(candidate.x) && Number.isFinite(candidate.y) && Number.isFinite(candidate.z);
 }
 
 function dxfPoints(entity: DxfEntity): THREE.Vector3[] {

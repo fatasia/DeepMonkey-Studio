@@ -13,12 +13,14 @@ import {
   Footprints,
   Focus,
   Film,
+  HeartHandshake,
   Import,
   Info,
   Layers3,
   LayoutGrid,
   LoaderCircle,
   Lightbulb,
+  Languages,
   Lock,
   LocateFixed,
   MapPin,
@@ -37,6 +39,7 @@ import {
   Scaling,
   Search,
   Snowflake,
+  Radio,
   Sun,
   Trash2,
   Upload,
@@ -57,6 +60,9 @@ import type {
   SceneAnnotationState,
   SceneAnimationState,
   SceneEnvironmentState,
+  SceneFloorState,
+  SceneLightState,
+  SceneMaterialState,
   SceneSnapshot,
   SkyboxPreset,
   WeatherMode
@@ -66,6 +72,9 @@ import { LayerTree } from "./components/LayerTree";
 import { SceneManager } from "./components/SceneManager";
 import { SceneExportMenu } from "./components/SceneExportMenu";
 import { SpaceTree } from "./components/SpaceTree";
+import { CreditsModal } from "./components/CreditsModal";
+import { DigitalTwinPanel } from "./components/DigitalTwinPanel";
+import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
 import { exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
 import {
   ViewerEngine,
@@ -85,8 +94,18 @@ import {
 const ACCEPTED_MODELS = ".rvt,.ifc,.step,.stp,.dwg,.dxf,.gltf,.glb,.fbx";
 const RENDERER_BACKEND_STORAGE_KEY = "bim-studio.renderer-backend";
 const numberFormat = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
-const DEFAULT_LIGHTING: GlobalLightingState = { enabled: true, intensity: 1 };
-const DEFAULT_ENVIRONMENT: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none" };
+const DEFAULT_LIGHTING: GlobalLightingState = {
+  enabled: true,
+  intensity: 1,
+  shadowsEnabled: true,
+  reflectionsEnabled: true,
+  lights: [
+    { id: "ambient-default", name: "环境光", type: "ambient", enabled: true, color: "#dce8ff", intensity: 0.35 },
+    { id: "hemisphere-default", name: "半球光", type: "hemisphere", enabled: true, color: "#e8f0ff", groundColor: "#3b4249", intensity: 1.4 },
+    { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
+  ]
+};
+const DEFAULT_ENVIRONMENT: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none", environmentAsBackground: false, environmentIntensity: 1 };
 const SKYBOX_OPTIONS: Array<{ value: SkyboxPreset; label: string }> = [
   { value: "none", label: "纯色" },
   { value: "clear", label: "晴空" },
@@ -139,6 +158,7 @@ export function App() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const environmentMapRef = useRef<HTMLInputElement>(null);
   const sceneNameCommitRef = useRef<Promise<boolean> | undefined>(undefined);
   const rendererSnapshotRef = useRef<{ scene: SceneSnapshot; readOnly: boolean } | undefined>(undefined);
   const [engine, setEngine] = useState<ViewerEngine>();
@@ -178,6 +198,10 @@ export function App() {
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [lighting, setLighting] = useState<GlobalLightingState>(DEFAULT_LIGHTING);
   const [sceneEnvironment, setSceneEnvironment] = useState<SceneEnvironmentState>(DEFAULT_ENVIRONMENT);
+  const [selectedLightId, setSelectedLightId] = useState("sun-default");
+  const [creditsOpen, setCreditsOpen] = useState(false);
+  const [digitalTwinOpen, setDigitalTwinOpen] = useState(false);
+  const [locale, setLocale] = useState<AppLocale>(() => readLocale());
   const [sceneAnimation, setSceneAnimation] = useState<SceneAnimationState>(DEFAULT_ANIMATION);
   const [animationTime, setAnimationTime] = useState(0);
   const [animationPlaying, setAnimationPlaying] = useState(false);
@@ -185,6 +209,7 @@ export function App() {
   const [componentQuery, setComponentQuery] = useState("");
   const [componentLevel, setComponentLevel] = useState("");
   const [componentCategory, setComponentCategory] = useState("");
+  const [floorExpansion, setFloorExpansion] = useState(0);
   const [clipping, setClippingState] = useState<ClippingState>(DEFAULT_CLIPPING);
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
   const [directoryMode, setDirectoryMode] = useState<"components" | "spaces">("components");
@@ -197,6 +222,8 @@ export function App() {
     setError(reason instanceof Error ? reason.message : "操作失败");
     window.setTimeout(() => setError(undefined), 5000);
   }, []);
+
+  useEffect(() => storeLocale(locale), [locale]);
 
   function navigate(next: AppRoute, replace = false) {
     const path = next.view === "manager" || next.view === "optimizer"
@@ -503,11 +530,14 @@ export function App() {
   const selectionVisible = selected && engine ? engine.getSelectionVisible() : false;
   const selectionOpacity = selected && engine ? engine.getSelectionOpacity() : 1;
   const selectionColor = selected && engine ? engine.getSelectionColor() : "#d4a84f";
+  const selectionMaterial = useMemo(() => selected && engine ? engine.getSelectionMaterial() : {}, [engine, selected, revision]);
   const selectionProperties = useMemo(() => engine?.getSelectionProperties() ?? {}, [engine, selected, revision]);
   const selectedLayerId = engine?.getSelectedLayerId();
   const selectedComponent = engine?.getSelectedComponentRecord();
   const selectionLocked = engine?.isSelectionLocked() ?? false;
   const componentFacets = useMemo(() => engine?.getComponentFacets() ?? { levels: [], categories: [], specialties: [] }, [engine, revision]);
+  const floorStates = useMemo(() => engine?.getFloorStates() ?? [], [engine, revision]);
+  const selectedLight = lighting.lights?.find((light) => light.id === selectedLightId) ?? lighting.lights?.[0];
   const componentResults = useMemo(() => engine?.searchComponents({ query: componentQuery, level: componentLevel, category: componentCategory }, 80) ?? [], [engine, revision, componentQuery, componentLevel, componentCategory]);
   const componentSearchActive = Boolean(componentQuery.trim() || componentLevel || componentCategory);
   const collisions = useMemo(() => engine?.getCollisionRecords() ?? [], [engine, revision]);
@@ -772,6 +802,72 @@ export function App() {
     engine?.setSceneEnvironment(next);
   }
 
+  async function uploadEnvironmentMap(file?: File) {
+    if (!file || !project) return;
+    setBusy(true);
+    try {
+      const uploaded = await api.uploadEnvironmentMap(project.id, file);
+      changeSceneEnvironment({ ...sceneEnvironment, environmentMapUrl: uploaded.url, environmentMapName: uploaded.name });
+      setMessage(`环境贴图“${uploaded.name}”已应用`);
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+      if (environmentMapRef.current) environmentMapRef.current.value = "";
+    }
+  }
+
+  function updateLight(id: string, patch: Partial<SceneLightState>) {
+    changeLighting({ ...lighting, lights: (lighting.lights ?? []).map((light) => light.id === id ? { ...light, ...patch } : light) });
+  }
+
+  function addLight(type: SceneLightState["type"]) {
+    const id = crypto.randomUUID();
+    const light: SceneLightState = {
+      id,
+      name: `${lightTypeName(type)} ${(lighting.lights?.length ?? 0) + 1}`,
+      type,
+      enabled: true,
+      color: "#ffffff",
+      intensity: type === "ambient" ? 0.3 : 1,
+      position: { x: 4, y: 6, z: 4 },
+      target: { x: 0, y: 0, z: 0 },
+      castShadow: ["directional", "point", "spot"].includes(type)
+    };
+    changeLighting({ ...lighting, lights: [...(lighting.lights ?? []), light] });
+    setSelectedLightId(id);
+  }
+
+  function removeLight(id: string) {
+    changeLighting({ ...lighting, lights: (lighting.lights ?? []).filter((light) => light.id !== id) });
+    setSelectedLightId(lighting.lights?.find((light) => light.id !== id)?.id ?? "");
+  }
+
+  function updateSelectionMaterial(patch: SceneMaterialState) {
+    engine?.setSelectionMaterial(patch);
+    setRevision((value) => value + 1);
+  }
+
+  function updateFloor(state: SceneFloorState) {
+    engine?.setFloorState(state.level, state.visible, state.expansion);
+    setRevision((value) => value + 1);
+  }
+
+  function expandFloors(value: number) {
+    setFloorExpansion(value);
+    floorStates.forEach((state, index) => engine?.setFloorState(state.level, state.visible, index * value));
+    setRevision((item) => item + 1);
+  }
+
+  async function startXR(mode: "immersive-vr" | "immersive-ar") {
+    try {
+      await engine?.startXR(mode);
+      setMessage(mode === "immersive-vr" ? "已进入 VR" : "已进入 AR");
+    } catch (reason) {
+      showError(reason);
+    }
+  }
+
   function updateSceneAnimation(next: SceneAnimationState) {
     setSceneAnimation(next);
     engine?.setSceneAnimation(next);
@@ -829,6 +925,7 @@ export function App() {
         const transform = engine.getModelTransform(item.id);
         const source = project.models.find((model) => model.id === item.id);
         const colorOverride = engine.getModelColorOverride(item.id);
+        const material = engine.getModelMaterialOverride(item.id);
         return transform ? [{
           modelId: item.id,
           name: item.name,
@@ -837,6 +934,7 @@ export function App() {
           locked: engine.isModelLocked(item.id),
           opacity: item.opacity,
           ...(colorOverride ? { colorOverride } : {}),
+          ...(material ? { material } : {}),
           transform,
           collisionEnabled: engine.isCollisionEnabled(item.id),
           explosionFactor: engine.getExplosionFactor(item.id),
@@ -855,6 +953,7 @@ export function App() {
       weather: engine.getWeather(),
       lighting: engine.getGlobalLighting(),
       environment: engine.getSceneEnvironment(),
+      floors: engine.getFloorStates(),
       animation: engine.getSceneAnimation(),
       ...(selected ? { selectedModelId: selected.id } : {}),
       ...(selectedLayerId ? { selectedLayerId } : {}),
@@ -947,12 +1046,13 @@ export function App() {
       setAnnotations(engine.listAnnotations());
       engine.applyCamera(scene.camera);
       const nextWeather = scene.weather ?? "sunny";
-      const nextLighting = scene.lighting ?? DEFAULT_LIGHTING;
-      const nextEnvironment = scene.environment ?? DEFAULT_ENVIRONMENT;
+      const nextLighting: GlobalLightingState = { ...DEFAULT_LIGHTING, ...scene.lighting, lights: scene.lighting?.lights?.length ? scene.lighting.lights : (DEFAULT_LIGHTING.lights ?? []) };
+      const nextEnvironment: SceneEnvironmentState = { ...DEFAULT_ENVIRONMENT, ...scene.environment };
       const nextAnimation = scene.animation ?? DEFAULT_ANIMATION;
       engine.setWeather(nextWeather);
       engine.setGlobalLighting(nextLighting);
       engine.setSceneEnvironment(nextEnvironment);
+      engine.applyFloorStates(scene.floors);
       engine.setSceneAnimation(nextAnimation);
       engine.seekSceneAnimation(0);
       setWeather(nextWeather);
@@ -1219,6 +1319,7 @@ export function App() {
       {route.view === "optimizer" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />正在加载模型优化器</div>}><ModelOptimizer onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "manager" && (
         <SceneManager
+          locale={locale}
           projects={projects}
           project={project}
           scenes={scenes}
@@ -1248,7 +1349,7 @@ export function App() {
     <div className={`app-shell ${route.view === "view" || route.view === "published" ? "viewer-shell" : ""} ${route.view === "studio" || route.view === "view" || route.view === "published" ? "" : "app-shell-hidden"}`}>
       <header className="topbar">
         <div className="brand-mark"><img src={`${import.meta.env.BASE_URL}brand/logo-transparent.png`} alt="BIM Studio" /></div>
-        <div className="brand-copy"><strong>BIM Studio</strong><span>{route.view === "studio" ? "空间编排工作台" : "场景浏览"}</span></div>
+        <div className="brand-copy"><strong>BIM Studio</strong><span>{route.view === "studio" ? tr(locale, "空间编排工作台", "Spatial composition studio") : tr(locale, "场景浏览", "Scene viewer")}</span></div>
         <div className="topbar-divider" />
         {route.view === "studio" ? <>
         <select
@@ -1261,7 +1362,7 @@ export function App() {
         </select>
         <button className="project-add-button" title="新建项目" onClick={() => openProjectDialog("create")}><Plus size={15} /></button>
         <div className="scene-title-wrap">
-          <span>场景</span>
+          <span>{tr(locale, "场景", "Scene")}</span>
           <input
             value={sceneName}
             onChange={(event) => setSceneName(event.target.value)}
@@ -1282,20 +1383,23 @@ export function App() {
             <button className={rendererBackend === "webgl" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgl")}>WebGL</button>
             <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>实验</small></button>
           </div>
-          <button className="button ghost" onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={16} />场景管理</button>
-          <button className="button ghost" onClick={() => importRef.current?.click()}><Import size={16} />导入</button>
+          <button className="button ghost compact-action" title={tr(locale, "切换中英文", "Switch language")} onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={16} />{locale === "zh-CN" ? "EN" : "中文"}</button>
+          <button className={`button ghost compact-action ${digitalTwinOpen ? "active" : ""}`} title={tr(locale, "数字孪生流程与看板", "Digital twin flows and dashboards")} onClick={() => { setDigitalTwinOpen((value) => !value); setEnvironmentOpen(false); }}><Radio size={16} />{tr(locale, "数据", "Data")}</button>
+          <button className="button ghost compact-action" title={tr(locale, "开源项目致谢", "Open-source credits")} onClick={() => setCreditsOpen(true)}><HeartHandshake size={16} />{tr(locale, "致谢", "Credits")}</button>
+          <button className="button ghost" onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={16} />{tr(locale, "场景管理", "Scenes")}</button>
+          <button className="button ghost" onClick={() => importRef.current?.click()}><Import size={16} />{tr(locale, "导入", "Import")}</button>
           <SceneExportMenu disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} />
-          <button className="button primary" onClick={() => void saveScene()} disabled={busy}><Save size={16} />保存场景</button>
+          <button className="button primary" onClick={() => void saveScene()} disabled={busy}><Save size={16} />{tr(locale, "保存场景", "Save scene")}</button>
         </div>
         </> : <>
           <div className="viewer-scene-title"><span className="viewer-mode-badge"><Rocket size={13} />{route.view === "published" ? "已发布版本" : "当前保存版本"}</span><strong>{sceneName}</strong></div>
-          <div className="topbar-actions"><button className="button ghost" onClick={() => navigate({ view: "manager" })}><ArrowLeft size={16} />返回场景管理</button></div>
+          <div className="topbar-actions"><button className="button ghost compact-action" onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={16} />{locale === "zh-CN" ? "EN" : "中文"}</button><button className="button ghost compact-action" onClick={() => setCreditsOpen(true)}><HeartHandshake size={16} />{tr(locale, "致谢", "Credits")}</button><button className="button ghost" onClick={() => navigate({ view: "manager" })}><ArrowLeft size={16} />{tr(locale, "返回场景管理", "Back to scenes")}</button></div>
         </>}
       </header>
 
       <aside className="left-panel">
         <div className="panel-heading">
-          <div><span className="eyebrow">PROJECT DIRECTORY</span><h2>目录树</h2></div>
+          <div><span className="eyebrow">PROJECT DIRECTORY</span><h2>{tr(locale, "目录树", "Directory")}</h2></div>
           <button className="icon-button" title="上传模型" onClick={() => uploadRef.current?.click()} disabled={uploading}>
             {uploading ? <LoaderCircle className="spin" size={18} /> : <Plus size={18} />}
           </button>
@@ -1309,8 +1413,8 @@ export function App() {
           <Upload size={20} /><span>上传模型</span><small>RVT · IFC · STEP · DWG · GLB · FBX · DXF</small>
         </button>
         <div className="directory-tabs" role="tablist" aria-label="目录类型">
-          <button className={directoryMode === "components" ? "active" : ""} onClick={() => setDirectoryMode("components")}>构件</button>
-          <button className={directoryMode === "spaces" ? "active" : ""} onClick={() => setDirectoryMode("spaces")}>空间 <small>{spaces.length}</small></button>
+          <button className={directoryMode === "components" ? "active" : ""} onClick={() => setDirectoryMode("components")}>{tr(locale, "构件", "Components")}</button>
+          <button className={directoryMode === "spaces" ? "active" : ""} onClick={() => setDirectoryMode("spaces")}>{tr(locale, "空间", "Spaces")} <small>{spaces.length}</small></button>
         </div>
         {directoryMode === "components" && <section className="component-search" aria-label="构件查询">
           <div className="component-search-input"><Search size={15} /><input value={componentQuery} onChange={(event) => setComponentQuery(event.target.value)} placeholder="搜索名称、ID、属性" aria-label="搜索构件" />{componentQuery && <button title="清空搜索" onClick={() => setComponentQuery("")}><X size={13} /></button>}</div>
@@ -1329,6 +1433,10 @@ export function App() {
               </div>
             </div>
           )}
+        </section>}
+        {directoryMode === "components" && floorStates.length > 0 && <section className="floor-control" aria-label={tr(locale, "楼层控制", "Floor controls")}>
+          <div className="floor-control-head"><span>{tr(locale, "楼层", "Floors")}</span><small>{floorStates.length}</small><label><span>{tr(locale, "向上展开", "Expand upward")}</span><input type="range" min="0" max="12" step="0.25" value={floorExpansion} onChange={(event) => expandFloors(Number(event.target.value))} /><output>{floorExpansion.toFixed(1)}m</output></label></div>
+          <div className="floor-list">{floorStates.map((floor) => <button key={floor.level} className={floor.visible ? "active" : ""} title={floor.visible ? tr(locale, "隐藏该楼层", "Hide floor") : tr(locale, "显示该楼层", "Show floor")} onClick={() => updateFloor({ ...floor, visible: !floor.visible })}>{floor.visible ? <Eye size={13} /> : <EyeOff size={13} />}<span>{floor.level}</span></button>)}</div>
         </section>}
         <div className="asset-list">
           {directoryMode === "spaces" ? <SpaceTree
@@ -1470,6 +1578,8 @@ export function App() {
             <ToolButton title="第三人称（空中漫游）" active={navigationMode === "thirdPerson"} onClick={() => changeNavigation("thirdPerson")} icon={<UserRound size={19} />} />
             <ToolButton title={avatarVisible ? "隐藏人物" : "显示人物"} active={avatarVisible} onClick={() => { const next = !avatarVisible; setAvatarVisible(next); engine?.setAvatarVisible(next); }} icon={avatarVisible ? <Eye size={19} /> : <EyeOff size={19} />} />
             <ToolButton title="场景信息" active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
+            <ToolButton title="进入 VR（需头显与 HTTPS）" active={false} onClick={() => void startXR("immersive-vr")} icon={<span className="xr-tool-label">VR</span>} />
+            <ToolButton title="进入 AR（需兼容移动设备与 HTTPS）" active={false} onClick={() => void startXR("immersive-ar")} icon={<span className="xr-tool-label">AR</span>} />
           </> : <>
           <ToolButton title="适应全部（回到模型）" active={false} onClick={() => engine?.fitAll()} icon={<Focus size={19} />} />
           <span className="dock-separator" />
@@ -1500,8 +1610,10 @@ export function App() {
           />
           <span className="dock-separator" />
           <ToolButton title="场景信息" active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
-          <ToolButton title="环境设置" active={environmentOpen} onClick={() => setEnvironmentOpen((value) => !value)} icon={<Sun size={19} />} />
+          <ToolButton title="环境设置" active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
           <ToolButton title="动画编辑" active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
+          <ToolButton title="进入 VR（需头显与 HTTPS）" active={false} onClick={() => void startXR("immersive-vr")} icon={<span className="xr-tool-label">VR</span>} />
+          <ToolButton title="进入 AR（需兼容移动设备与 HTTPS）" active={false} onClick={() => void startXR("immersive-ar")} icon={<span className="xr-tool-label">AR</span>} />
           </>}
         </div>
         <ViewControl onSelect={(view) => engine?.setStandardView(view)} />
@@ -1534,6 +1646,32 @@ export function App() {
             <button className={`lighting-toggle ${lighting.enabled ? "active" : ""}`} title={lighting.enabled ? "关闭全局灯光" : "开启全局灯光"} onClick={() => changeLighting({ ...lighting, enabled: !lighting.enabled })}><Lightbulb size={15} /></button>
             <input type="range" min="0" max="2.5" step="0.05" value={lighting.intensity} disabled={!lighting.enabled} onChange={(event) => changeLighting({ ...lighting, intensity: Number(event.target.value) })} aria-label="全局灯光强度" />
             <output>{Math.round(lighting.intensity * 100)}%</output>
+          </div>
+          <div className="environment-row environment-switches">
+            <span>{tr(locale, "渲染", "Rendering")}</span>
+            <button className={lighting.shadowsEnabled ? "active" : ""} onClick={() => changeLighting({ ...lighting, shadowsEnabled: !lighting.shadowsEnabled })}>{tr(locale, "阴影", "Shadows")}</button>
+            <button className={lighting.reflectionsEnabled ? "active" : ""} onClick={() => changeLighting({ ...lighting, reflectionsEnabled: !lighting.reflectionsEnabled })}>{tr(locale, "反射", "Reflections")}</button>
+          </div>
+          <div className="environment-map-row">
+            <div><span>{tr(locale, "环境贴图", "Environment map")}</span><small title={sceneEnvironment.environmentMapName}>{sceneEnvironment.environmentMapName ?? tr(locale, "未选择 HDR / EXR", "No HDR / EXR selected")}</small></div>
+            <button onClick={() => environmentMapRef.current?.click()}>{tr(locale, "上传", "Upload")}</button>
+            {sceneEnvironment.environmentMapUrl && <button onClick={() => { const next = { ...sceneEnvironment }; delete next.environmentMapUrl; delete next.environmentMapName; changeSceneEnvironment(next); }}>{tr(locale, "清除", "Clear")}</button>}
+            <label><input type="checkbox" checked={sceneEnvironment.environmentAsBackground ?? false} onChange={(event) => changeSceneEnvironment({ ...sceneEnvironment, environmentAsBackground: event.target.checked })} />{tr(locale, "作为背景", "Use as background")}</label>
+          </div>
+          <div className="light-system">
+            <div className="light-system-head"><span>{tr(locale, "光源", "Lights")}</span><select value="" onChange={(event) => { if (event.target.value) addLight(event.target.value as SceneLightState["type"]); }}><option value="">+ {tr(locale, "添加光源", "Add light")}</option><option value="ambient">{tr(locale, "环境光", "Ambient")}</option><option value="hemisphere">{tr(locale, "半球光", "Hemisphere")}</option><option value="directional">{tr(locale, "方向光", "Directional")}</option><option value="point">{tr(locale, "点光源", "Point")}</option><option value="spot">{tr(locale, "聚光灯", "Spot")}</option><option value="rectArea">{tr(locale, "矩形区域光", "Rect area")}</option></select></div>
+            <div className="light-tabs">{(lighting.lights ?? []).map((light) => <button key={light.id} className={selectedLight?.id === light.id ? "active" : ""} onClick={() => setSelectedLightId(light.id)}><i style={{ background: light.color }} />{light.name}</button>)}</div>
+            {selectedLight && <div className="light-editor">
+              <label><span>{tr(locale, "名称", "Name")}</span><input value={selectedLight.name} onChange={(event) => updateLight(selectedLight.id, { name: event.target.value })} /></label>
+              <label><span>{tr(locale, "颜色", "Color")}</span><input type="color" value={selectedLight.color} onChange={(event) => updateLight(selectedLight.id, { color: event.target.value })} /></label>
+              <label className="light-intensity"><span>{tr(locale, "强度", "Intensity")}</span><input type="range" min="0" max="20" step="0.05" value={selectedLight.intensity} onChange={(event) => updateLight(selectedLight.id, { intensity: Number(event.target.value) })} /><output>{selectedLight.intensity.toFixed(2)}</output></label>
+              {selectedLight.position && <div className="light-vector"><span>{tr(locale, "位置", "Position")}</span>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><i>{axis.toUpperCase()}</i><input type="number" step="0.5" value={selectedLight.position?.[axis] ?? 0} onChange={(event) => updateLight(selectedLight.id, { position: { ...selectedLight.position!, [axis]: Number(event.target.value) } })} /></label>)}</div>}
+              {selectedLight.type === "spot" && <label className="light-parameter"><span>{tr(locale, "锥角", "Cone")}</span><input type="range" min="5" max="90" step="1" value={(selectedLight.angle ?? Math.PI / 6) * 180 / Math.PI} onChange={(event) => updateLight(selectedLight.id, { angle: Number(event.target.value) * Math.PI / 180 })} /><output>{Math.round((selectedLight.angle ?? Math.PI / 6) * 180 / Math.PI)}°</output></label>}
+              {selectedLight.type === "rectArea" && <div className="light-size"><label><span>{tr(locale, "宽", "Width")}</span><input type="number" min="0.1" step="0.5" value={selectedLight.width ?? 6} onChange={(event) => updateLight(selectedLight.id, { width: Number(event.target.value) })} /></label><label><span>{tr(locale, "高", "Height")}</span><input type="number" min="0.1" step="0.5" value={selectedLight.height ?? 4} onChange={(event) => updateLight(selectedLight.id, { height: Number(event.target.value) })} /></label></div>}
+              <button className={selectedLight.enabled ? "active" : ""} onClick={() => updateLight(selectedLight.id, { enabled: !selectedLight.enabled })}>{selectedLight.enabled ? tr(locale, "已启用", "Enabled") : tr(locale, "已关闭", "Disabled")}</button>
+              {["directional", "point", "spot"].includes(selectedLight.type) && <button className={selectedLight.castShadow ? "active" : ""} onClick={() => updateLight(selectedLight.id, { castShadow: !selectedLight.castShadow })}>{tr(locale, "投射阴影", "Cast shadow")}</button>}
+              <button className="danger" title={tr(locale, "删除光源", "Delete light")} onClick={() => removeLight(selectedLight.id)}><Trash2 size={13} /></button>
+            </div>}
           </div>
         </div>}
         {route.view === "studio" && measureEnabled && (
@@ -1616,7 +1754,7 @@ export function App() {
       </main>
 
       <aside className="right-panel">
-        <div className="panel-heading inspector-heading"><div><span className="eyebrow">INSPECTOR</span><h2>属性检查器</h2></div></div>
+        <div className="panel-heading inspector-heading"><div><span className="eyebrow">INSPECTOR</span><h2>{tr(locale, "属性检查器", "Inspector")}</h2></div></div>
         {infoEnabled && <section className="scene-info-panel" aria-label="场景信息">
           <div className="section-label"><span>场景信息</span><small>{sceneStatistics.modelCount + sceneStatistics.primitiveCount} 对象</small></div>
           <div className="scene-info-grid">
@@ -1681,6 +1819,13 @@ export function App() {
             </div>
             <label className="field compact-opacity"><span>透明度</span><output>{Math.round(selectionOpacity * 100)}%</output></label>
             <input disabled={selectionLocked} className="range" type="range" min="0" max="1" step="0.01" value={selectionOpacity} onChange={(event) => engine?.setSelectionOpacity(Number(event.target.value))} />
+            <div className="material-editor">
+              <div className="section-label"><span>{tr(locale, "材质", "Material")}</span><small>PBR</small></div>
+              <label><span>{tr(locale, "粗糙度", "Roughness")}</span><input disabled={selectionLocked || selectionMaterial.roughness === undefined} type="range" min="0" max="1" step="0.01" value={selectionMaterial.roughness ?? 0.5} onChange={(event) => updateSelectionMaterial({ roughness: Number(event.target.value) })} /><output>{selectionMaterial.roughness?.toFixed(2) ?? "—"}</output></label>
+              <label><span>{tr(locale, "金属度", "Metalness")}</span><input disabled={selectionLocked || selectionMaterial.metalness === undefined} type="range" min="0" max="1" step="0.01" value={selectionMaterial.metalness ?? 0} onChange={(event) => updateSelectionMaterial({ metalness: Number(event.target.value) })} /><output>{selectionMaterial.metalness?.toFixed(2) ?? "—"}</output></label>
+              <label className="material-emissive"><span>{tr(locale, "自发光", "Emissive")}</span><input disabled={selectionLocked || selectionMaterial.emissive === undefined} type="color" value={selectionMaterial.emissive ?? "#000000"} onChange={(event) => updateSelectionMaterial({ emissive: event.target.value })} /><input disabled={selectionLocked || selectionMaterial.emissiveIntensity === undefined} type="range" min="0" max="5" step="0.05" value={selectionMaterial.emissiveIntensity ?? 0} onChange={(event) => updateSelectionMaterial({ emissiveIntensity: Number(event.target.value) })} /></label>
+              <div className="material-toggles"><button disabled={selectionLocked} className={selectionMaterial.wireframe ? "active" : ""} onClick={() => updateSelectionMaterial({ wireframe: !selectionMaterial.wireframe })}>{tr(locale, "线框", "Wireframe")}</button><button disabled={selectionLocked} className={selectionMaterial.doubleSided ? "active" : ""} onClick={() => updateSelectionMaterial({ doubleSided: !selectionMaterial.doubleSided })}>{tr(locale, "双面", "Double-sided")}</button></div>
+            </div>
             {selected.kind === "model" && (
               <div className="field explosion-field">
                 <span>模型爆炸</span><output>{Math.round(explosionFactor * 100)}%</output>
@@ -1708,7 +1853,7 @@ export function App() {
             }}><Trash2 size={16} />{selectedLayerId && selectedLayerId !== "root" ? "删除当前图层" : "从场景移除"}</button>
           </div>
         ) : (
-          <div className="empty-inspector"><MousePointer2 size={30} /><strong>选择一个模型或构件</strong><span>点击画布中的对象查看属性并进行编辑</span></div>
+          <div className="empty-inspector"><MousePointer2 size={30} /><strong>{tr(locale, "选择一个模型或构件", "Select a model or component")}</strong><span>{tr(locale, "点击画布中的对象查看属性并进行编辑", "Click an object in the viewport to inspect and edit it")}</span></div>
         )}
         {measurements.length > 0 && (
           <div className="measurement-list">
@@ -1734,6 +1879,7 @@ export function App() {
     </div>
     <input ref={uploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadModels(event.target.files ?? undefined)} />
     <input ref={importRef} hidden type="file" accept=".json,.bimscene" onChange={(event) => void importScene(event.target.files?.[0])} />
+    <input ref={environmentMapRef} hidden type="file" accept=".hdr,.exr,.jpg,.jpeg,.png,.webp" onChange={(event) => void uploadEnvironmentMap(event.target.files?.[0])} />
     {projectDialogMode && <div className="dialog-backdrop" onMouseDown={() => !busy && setProjectDialogMode(undefined)}>
       <form className="dialog" onSubmit={(event) => { event.preventDefault(); void submitProjectDialog(); }} onMouseDown={(event) => event.stopPropagation()}>
         <span className="eyebrow">{projectDialogMode === "rename" ? "EDIT PROJECT" : "NEW PROJECT"}</span>
@@ -1744,6 +1890,9 @@ export function App() {
         <div className="dialog-actions"><button type="button" className="button" disabled={busy} onClick={() => setProjectDialogMode(undefined)}>取消</button><button className="button primary" disabled={!newProjectName.trim() || busy}>{busy ? "保存中…" : projectDialogMode === "rename" ? "保存修改" : "创建并切换"}</button></div>
       </form>
     </div>}
+    {(route.view === "manager" || route.view === "optimizer") && <div className="global-utility"><button onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={15} />{locale === "zh-CN" ? "EN" : "中文"}</button><button onClick={() => setDigitalTwinOpen((value) => !value)}><Radio size={15} />{tr(locale, "数据", "Data")}</button><button onClick={() => setCreditsOpen(true)}><HeartHandshake size={15} />{tr(locale, "致谢", "Credits")}</button></div>}
+    {digitalTwinOpen && <DigitalTwinPanel locale={locale} onClose={() => setDigitalTwinOpen(false)} onMessage={(data) => { if (engine?.applySceneDataMessage(data)) { setMessage(`数据 ${data.source}/${data.key} 已映射到场景`); setRevision((value) => value + 1); } }} />}
+    {creditsOpen && <CreditsModal locale={locale} onClose={() => setCreditsOpen(false)} />}
     {error && <div className="toast error">{error}</div>}
     </>
   );
@@ -1869,6 +2018,15 @@ function explosionModeName(mode: ExplosionMode): string {
   if (mode === "y") return "Y 轴";
   if (mode === "z") return "Z 轴";
   return "径向";
+}
+
+function lightTypeName(type: SceneLightState["type"]): string {
+  if (type === "ambient") return "环境光";
+  if (type === "hemisphere") return "半球光";
+  if (type === "directional") return "方向光";
+  if (type === "point") return "点光源";
+  if (type === "spot") return "聚光灯";
+  return "矩形区域光";
 }
 
 function formatVector(vector: { x: number; y: number; z: number }): string {

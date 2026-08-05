@@ -28,6 +28,11 @@
 - 标签标记可拾取模型表面或地面放置，支持名称、说明、颜色、尺寸、XYZ、显隐、锁定、定位和删除，并随场景保存、导入与导出
 - 场景管理中心提供 `/optimizer` 模型优化页，可在浏览器本地进行模型减面、Draco、贴图压缩、原点调整、重复点焊接、无用数据清理和 GLB 导出
 - 环境控制支持晴天、下雨、下雪、网格显隐、可配置纯色背景、晴空/黄昏/夜空天空盒，以及全局灯光开关和强度调节，状态随场景保存
+- 灯光系统支持环境光、半球光、方向光、点光源、聚光灯和矩形区域光，可独立调整颜色、强度和位置；阴影、环境反射、HDR/EXR 环境贴图和 PBR 材质参数随场景保存
+- 构件可按 BIM 楼层整层显隐，并通过“向上展开”形成楼层分解视图；IFC Fragments 当前保证楼层显隐，逐层位移主要用于原生 GLB/RVT 模型
+- WebGL 模式支持 WebXR 的 VR/AR 会话入口；实际进入需要兼容设备以及 localhost 或 HTTPS 安全上下文
+- 中英文可在各主页面切换；开源致谢窗口列出核心项目、许可证和源码链接
+- 可选 Node-RED 服务提供 HTTP、WebSocket、MQTT、MySQL、PostgreSQL、Oracle、TDengine、OPC UA、Modbus TCP、BACnet 和 FlowFuse Dashboard；统一场景消息只允许映射显隐、颜色、位置和标签
 - 场景信息开关按需统计模型、构件、三角面和顶点，并显示相机位置、观察目标及鼠标拾取坐标；默认关闭以减少持续拾取和统计开销
 - 提供上、下、左、右、前、后六个标准视角；当前模型或内部图层以蓝色包围框标识选中状态
 - 编辑页禁用浏览器默认右键菜单，右键保留给三维交互扩展
@@ -52,7 +57,11 @@ Windows 也可以使用根目录服务脚本统一管理全部服务，或只操
 
 - Web: http://localhost:5173
 - API: http://localhost:4100
+- Node-RED 流程编辑器: http://localhost:5173/node-red/
+- Node-RED Dashboard: http://localhost:5173/iot/dashboard/
 - 健康检查: http://localhost:4100/health
+
+`pnpm dev` 仍只启动 Web 和 API；需要数字孪生流程时使用 `pnpm dev:all`，或通过脚本单独执行 `./bim-studio.ps1 start node-red`。Node-RED 不运行不会影响模型浏览、编辑和场景保存。HTTP 场景桥为 `POST /iot/scene`，浏览器订阅 `/iot/ws/scene`。生产部署应设置随机 `NODE_RED_CREDENTIAL_SECRET`，并通过 Node-RED credential store 保存数据库与设备密码。
 
 ## PostgreSQL 与 MinIO
 

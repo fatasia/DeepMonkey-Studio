@@ -5,7 +5,7 @@ param(
     [string]$Action = "status",
 
     [Parameter(Position = 1)]
-    [ValidateSet("all", "app", "api", "web", "minio", "postgres")]
+    [ValidateSet("all", "app", "api", "web", "node-red", "minio", "postgres")]
     [string]$Target = "all"
 )
 
@@ -284,6 +284,10 @@ function Start-Web {
     Start-BackgroundService "web" (Get-PnpmExecutable) @("--filter", "@bim-studio/web", "dev") 5173
 }
 
+function Start-NodeRed {
+    Start-BackgroundService "node-red" (Get-PnpmExecutable) @("--filter", "@bim-studio/node-red", "dev") 1880
+}
+
 function Start-Minio {
     $executable = Get-MinioExecutable
     $dataDirectory = Get-MinioDataDirectory
@@ -341,6 +345,7 @@ function Start-One([string]$Name) {
         "minio" { Start-Minio }
         "api" { Start-Api }
         "web" { Start-Web }
+        "node-red" { Start-NodeRed }
         default { throw "未知服务：$Name" }
     }
 }
@@ -348,6 +353,7 @@ function Start-One([string]$Name) {
 function Stop-One([string]$Name) {
     switch ($Name) {
         "web" { Stop-BackgroundService "web" @(5173) }
+        "node-red" { Stop-BackgroundService "node-red" @(1880) }
         "api" { Stop-BackgroundService "api" @(4100) }
         "minio" { Stop-BackgroundService "minio" @(9000, 9001) }
         "postgres" { Stop-Postgres }
@@ -357,8 +363,8 @@ function Stop-One([string]$Name) {
 
 function Get-TargetServices([string]$Name, [bool]$Reverse = $false) {
     [string[]]$services = switch ($Name) {
-        "all" { @("postgres", "minio", "api", "web") }
-        "app" { @("api", "web") }
+        "all" { @("postgres", "minio", "node-red", "api", "web") }
+        "app" { @("node-red", "api", "web") }
         default { @($Name) }
     }
 
@@ -386,6 +392,7 @@ function Show-Status([string[]]$Names) {
         switch ($name) {
             "api" { Get-ServiceStatusRow "api" @(4100) }
             "web" { Get-ServiceStatusRow "web" @(5173) }
+            "node-red" { Get-ServiceStatusRow "node-red" @(1880) }
             "minio" { Get-ServiceStatusRow "minio" @(9000, 9001) }
             "postgres" {
                 $serviceName = Get-PostgresServiceName
@@ -410,7 +417,7 @@ function Show-Help {
 BIM Studio 服务管理
 
 用法：
-  .\bim-studio.ps1 <start|stop|restart|status> <all|app|api|web|minio|postgres>
+  .\bim-studio.ps1 <start|stop|restart|status> <all|app|api|web|node-red|minio|postgres>
 
 示例：
   .\bim-studio.ps1 start all        启动全部服务
@@ -419,7 +426,7 @@ BIM Studio 服务管理
   .\bim-studio.ps1 status all       查看全部状态
 
 端口：
-  Web 5173 | API 4100 | MinIO 9000/9001 | PostgreSQL 5432
+  Web 5173 | API 4100 | Node-RED 1880 | MinIO 9000/9001 | PostgreSQL 5432
 
 日志：
   $LogDirectory

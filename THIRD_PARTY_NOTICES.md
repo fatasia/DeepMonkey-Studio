@@ -25,6 +25,9 @@ Key runtime dependencies:
 | `jszip` | 3.10.1 | MIT OR GPL-3.0-or-later | https://github.com/Stuk/jszip |
 | `react` / `react-dom` | 19.2.8 | MIT | https://github.com/facebook/react |
 | `lucide-react` | 0.468.0 | ISC | https://github.com/lucide-icons/lucide |
+| `node-red` | 5.0.4 | Apache-2.0 | https://github.com/node-red/node-red |
+| `@flowfuse/node-red-dashboard` | 1.30.2 | Apache-2.0 | https://github.com/FlowFuse/node-red-dashboard |
+| Node-RED database and IoT nodes | see lockfile | Apache-2.0 / MIT / BSD-3-Clause / ISC | https://flows.nodered.org/ |
 
 ## MPL-2.0 note
 

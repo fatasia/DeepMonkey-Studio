@@ -2,10 +2,13 @@ import { useMemo, useRef, useState } from "react";
 import { Box, CalendarDays, Copy, Eye, ExternalLink, FileUp, Gauge, Layers3, Pencil, Plus, RefreshCw, Rocket, Trash2, Undo2, X } from "lucide-react";
 import type { ConversionStatus, ModelRecord, ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { SceneExportMenu } from "./SceneExportMenu";
+import type { AppLocale } from "../i18n";
+import { translate as tr } from "../i18n";
 
 const ACCEPTED_MODELS = ".rvt,.ifc,.step,.stp,.dwg,.dxf,.gltf,.glb,.fbx";
 
 interface SceneManagerProps {
+  locale: AppLocale;
   projects: ProjectRecord[];
   project: ProjectRecord | undefined;
   scenes: SceneSnapshot[];
@@ -33,6 +36,7 @@ interface SceneManagerProps {
 }
 
 export function SceneManager({
+  locale,
   projects,
   project,
   scenes,
@@ -130,27 +134,27 @@ export function SceneManager({
       <header className="manager-header">
         <div className="manager-brand">
           <span><img src={`${import.meta.env.BASE_URL}brand/logo-transparent.png`} alt="BIM Studio" /></span>
-          <div><strong>BIM Studio</strong><small>场景管理中心</small></div>
+          <div><strong>BIM Studio</strong><small>{tr(locale, "场景管理中心", "Scene management")}</small></div>
         </div>
         <div className="manager-actions">
           <select value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label="项目">
             {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <button className="button" onClick={onCreateProject}><Plus size={16} />新建项目</button>
+          <button className="button" onClick={onCreateProject}><Plus size={16} />{tr(locale, "新建项目", "New project")}</button>
           <button className="manager-icon-button" title="重命名项目" disabled={!project} onClick={onRenameProject}><Pencil size={15} /></button>
           <button className="manager-icon-button danger" title="删除项目" disabled={!project} onClick={onDeleteProject}><Trash2 size={15} /></button>
-          <button className="button" disabled={!project} onClick={() => setModelLibraryOpen(true)}><Layers3 size={16} />模型资源库</button>
-          <button className="button" onClick={onOptimizer}><Gauge size={16} />模型优化</button>
-          <button className="button" onClick={onImport}><FileUp size={16} />导入场景</button>
-          <button className="button primary" onClick={openCreateDialog}><Plus size={17} />新建场景</button>
+          <button className="button" disabled={!project} onClick={() => setModelLibraryOpen(true)}><Layers3 size={16} />{tr(locale, "模型资源库", "Model library")}</button>
+          <button className="button" onClick={onOptimizer}><Gauge size={16} />{tr(locale, "模型优化", "Optimize")}</button>
+          <button className="button" onClick={onImport}><FileUp size={16} />{tr(locale, "导入场景", "Import scene")}</button>
+          <button className="button primary" onClick={openCreateDialog}><Plus size={17} />{tr(locale, "新建场景", "New scene")}</button>
         </div>
       </header>
 
       <section className="manager-content">
         <div className="manager-hero">
-          <div><span className="eyebrow">SCENE LIBRARY</span><h1>场景</h1><p>一个场景可以组合多个 BIM、CAD 与通用三维模型，并独立保存视图和图层状态。</p></div>
+          <div><span className="eyebrow">SCENE LIBRARY</span><h1>{tr(locale, "场景", "Scenes")}</h1><p>{tr(locale, "一个场景可以组合多个 BIM、CAD 与通用三维模型，并独立保存视图和图层状态。", "A scene can combine multiple BIM, CAD and general 3D models while preserving view and layer state.")}</p></div>
           <div className="manager-stats">
-            <div><strong>{scenes.length}</strong><span>场景</span></div>
+            <div><strong>{scenes.length}</strong><span>{tr(locale, "场景", "Scenes")}</span></div>
           </div>
         </div>
 
@@ -188,9 +192,9 @@ export function SceneManager({
         ) : (
           <div className="manager-empty">
             <Box size={42} />
-            <h2>还没有场景</h2>
-            <p>新建场景后，可以加载多个模型、调整图层并保存当前视图。</p>
-            <button className="button primary" onClick={openCreateDialog}><Plus size={17} />新建第一个场景</button>
+            <h2>{tr(locale, "还没有场景", "No scenes yet")}</h2>
+            <p>{tr(locale, "新建场景后，可以加载多个模型、调整图层并保存当前视图。", "Create a scene to load models, adjust layers and save the current view.")}</p>
+            <button className="button primary" onClick={openCreateDialog}><Plus size={17} />{tr(locale, "新建第一个场景", "Create first scene")}</button>
           </div>
         )}
       </section>

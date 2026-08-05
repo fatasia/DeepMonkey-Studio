@@ -8,7 +8,9 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:4100",
       "/assets": "http://localhost:4100",
-      "/health": "http://localhost:4100"
+      "/health": "http://localhost:4100",
+      "/node-red": "http://localhost:1880",
+      "/iot": { target: "http://localhost:1880", ws: true }
     }
   }
 });
