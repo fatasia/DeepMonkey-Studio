@@ -5,7 +5,9 @@ export const DEFAULT_DASHBOARD_STATE: SceneDashboardState = {
   width: 410,
   widgets: [
     { id: "realtime-value", title: "实时数值", key: "value", type: "value", unit: "", x: 0, y: 0, w: 1, h: 1, color: "#d4a84f" },
-    { id: "device-status", title: "设备状态", key: "status", type: "status", unit: "", x: 1, y: 0, w: 1, h: 1, color: "#65d89a" }
+    { id: "device-gauge", title: "设备负载", key: "value", type: "gauge", unit: "%", x: 1, y: 0, w: 1, h: 2, min: 0, max: 100, color: "#d4a84f" },
+    { id: "realtime-trend", title: "实时趋势", key: "value", type: "line", unit: "", x: 0, y: 1, w: 1, h: 2, color: "#63a8e8" },
+    { id: "device-status", title: "设备状态", key: "status", type: "status", unit: "", x: 0, y: 3, w: 1, h: 1, color: "#65d89a" }
   ]
 };
 

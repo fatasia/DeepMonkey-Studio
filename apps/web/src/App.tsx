@@ -1632,7 +1632,7 @@ export function App() {
             <button className={rendererBackend === "webgl" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgl")}>WebGL</button>
             <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>{tr(locale, "实验", "Experimental")}</small></button>
           </div>
-          <button className={`button ghost compact-action ${digitalTwinOpen ? "active" : ""}`} title={tr(locale, "数字孪生流程与看板", "Digital twin flows and dashboards")} onClick={() => { setDigitalTwinOpen((value) => !value); setEnvironmentOpen(false); }}><Radio size={15} /><span className="action-label">{tr(locale, "数据", "Data")}</span></button>
+          <button className={`button ghost compact-action ${sceneDashboardOpen ? "active" : ""}`} title={tr(locale, "场景数据看板", "Scene dashboard")} onClick={() => { setSceneDashboardOpen((value) => !value); setDigitalTwinOpen(false); setEnvironmentOpen(false); }}><Gauge size={15} /><span className="action-label">{tr(locale, "数据看板", "Dashboard")}</span></button>
           <button className="button ghost" title={tr(locale, "场景管理", "Scenes")} onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={15} /><span className="action-label">{tr(locale, "场景管理", "Scenes")}</span></button>
           <button className="button ghost" title={tr(locale, "导入场景", "Import scene")} onClick={() => importRef.current?.click()}><Import size={15} /><span className="action-label">{tr(locale, "导入", "Import")}</span></button>
           <SceneExportMenu locale={locale} disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} />
@@ -1896,7 +1896,6 @@ export function App() {
           <ToolButton title={tr(locale, "环境设置", "Environment")} active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
           <ToolButton title={tr(locale, "动画编辑", "Animation editor")} active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
           <ToolButton title={tr(locale, "相机视角", "Camera views")} active={cameraViewsOpen} onClick={() => setCameraViewsOpen((value) => !value)} icon={<Camera size={19} />} />
-          <ToolButton title={tr(locale, "二维数据看板", "2D data dashboard")} active={sceneDashboardOpen} onClick={() => setSceneDashboardOpen((value) => !value)} icon={<Gauge size={19} />} />
           <ToolButton title={tr(locale, "物理系统", "Physics")} active={physicsOpen} onClick={() => { setPhysicsOpen((value) => !value); setEnvironmentOpen(false); }} icon={<Atom size={19} />} />
           <ToolButton className="xr-entry" title={tr(locale, "AR / VR 沉浸体验", "AR / VR immersive experience")} active={xrPanelOpen} onClick={() => setXrPanelOpen((value) => !value)} icon={<span className="xr-tool-label">AR/VR</span>} />
         </div>}

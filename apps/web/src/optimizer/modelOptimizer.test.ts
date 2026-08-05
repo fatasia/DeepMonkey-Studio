@@ -21,7 +21,7 @@ describe("bakeVertexLighting", () => {
       .setAttribute("NORMAL", normals);
     document.createMesh().addPrimitive(primitive);
 
-    bakeVertexLighting(document, { strength: 0.5, ambient: 0.25, lights: DEFAULT_BAKE_LIGHTS });
+    bakeVertexLighting(document, { strength: 0.5, ambient: 0.25, ambientColor: "#ffffff", lights: DEFAULT_BAKE_LIGHTS });
 
     const colors = primitive.getAttribute("COLOR_0");
     expect(colors?.getCount()).toBe(3);
@@ -40,7 +40,7 @@ describe("bakeVertexLighting", () => {
     const primitive = document.createPrimitive().setAttribute("POSITION", positions);
     document.createMesh().addPrimitive(primitive);
 
-    bakeVertexLighting(document, { strength: 0.5, ambient: 0.25, lights: DEFAULT_BAKE_LIGHTS });
+    bakeVertexLighting(document, { strength: 0.5, ambient: 0.25, ambientColor: "#ffffff", lights: DEFAULT_BAKE_LIGHTS });
 
     expect(primitive.getAttribute("COLOR_0")).toBeNull();
   });
@@ -62,6 +62,7 @@ describe("bakeVertexLighting", () => {
     bakeVertexLighting(document, {
       strength: 1,
       ambient: 0.05,
+      ambientColor: "#ffffff",
       lights: [{
         id: "point",
         name: "Point",
@@ -97,7 +98,7 @@ describe("bakeVertexLighting", () => {
     const node = document.createNode().setMesh(mesh);
     document.createScene().addChild(node);
 
-    bakeVertexLighting(document, { strength: 0.7, ambient: 0.15, lights: DEFAULT_BAKE_LIGHTS });
+    bakeVertexLighting(document, { strength: 0.7, ambient: 0.15, ambientColor: "#ffffff", lights: DEFAULT_BAKE_LIGHTS });
     const io = new WebIO();
     const binary = await io.writeBinary(document);
     const exported = await io.readBinary(binary);

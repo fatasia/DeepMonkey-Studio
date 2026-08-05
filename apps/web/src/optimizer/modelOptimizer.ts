@@ -1,6 +1,6 @@
 import { WebIO, type Document, type JSONDocument } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { center, dedup, draco, prune, simplify, textureCompress, weld } from "@gltf-transform/functions";
+import { center, dedup, draco, prune, simplify, textureCompress, unwrap, weld } from "@gltf-transform/functions";
 import draco3d from "draco3dgltf";
 import { MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
 import { bakeWebLightmap, type WebLightmapResult } from "./lightmapBaker";
@@ -17,11 +17,15 @@ export interface ModelOptimizationOptions {
   bakeMode: "vertex" | "lightmap";
   bakeStrength: number;
   bakeAmbient: number;
+  bakeAmbientColor: string;
   bakeLights: BakeLightState[];
   lightmapResolution: 256 | 512 | 1024;
   lightmapAmbientOcclusion: boolean;
   lightmapAoSamples: 4 | 8;
   lightmapShadows: boolean;
+  lightmapShadowSamples: 1 | 4 | 8;
+  lightmapIndirectSamples: 0 | 2 | 4;
+  lightmapDenoise: boolean;
   origin: "keep" | "center" | "ground";
   removeUnused: boolean;
 }
@@ -43,6 +47,7 @@ export interface BakeLightState {
 export interface BakeLightingOptions {
   strength: number;
   ambient: number;
+  ambientColor: string;
   lights: BakeLightState[];
 }
 
@@ -113,16 +118,27 @@ export async function optimizeModelFile(
   let lightmap: WebLightmapResult | undefined;
   if (options.bakeEnabled && options.bakeMode === "vertex") {
     onProgress?.("正在烘焙顶点光照");
-    bakeVertexLighting(document, { strength: options.bakeStrength, ambient: options.bakeAmbient, lights: options.bakeLights });
+    bakeVertexLighting(document, { strength: options.bakeStrength, ambient: options.bakeAmbient, ambientColor: options.bakeAmbientColor, lights: options.bakeLights });
   } else if (options.bakeEnabled) {
+    onProgress?.("正在自动展开 UV2 光照图集");
+    try {
+      await unwrapLightmapUvs(document);
+    } catch (reason) {
+      console.warn("UV2 atlas unwrap failed; using browser projection fallback.", reason);
+      onProgress?.("UV2 自动展开不可用，正在使用兼容图集");
+    }
     lightmap = await bakeWebLightmap(document, {
       resolution: options.lightmapResolution,
       strength: options.bakeStrength,
       ambient: options.bakeAmbient,
+      ambientColor: options.bakeAmbientColor,
       lights: options.bakeLights,
       ambientOcclusion: options.lightmapAmbientOcclusion,
       aoSamples: options.lightmapAoSamples,
-      shadows: options.lightmapShadows
+      shadows: options.lightmapShadows,
+      shadowSamples: options.lightmapShadowSamples,
+      indirectSamples: options.lightmapIndirectSamples,
+      denoise: options.lightmapDenoise
     }, onProgress);
   }
   if (options.dracoEnabled) {
@@ -145,6 +161,17 @@ export async function optimizeModelFile(
   return { binary, before, after: statistics(validation, binary.byteLength), ...(lightmap ? { lightmap } : {}) };
 }
 
+let watlasPromise: Promise<typeof import("watlas")> | undefined;
+
+async function unwrapLightmapUvs(document: Document): Promise<void> {
+  watlasPromise ??= import("watlas").then(async (watlas) => {
+    await watlas.Initialize();
+    return watlas;
+  });
+  const watlas = await watlasPromise;
+  await document.transform(unwrap({ watlas, texcoord: 1, overwrite: true, groupBy: "scene" }));
+}
+
 export async function inspectModelFile(file: File): Promise<ModelFileStatistics> {
   const io = await optimizerIO();
   return statistics(await readDocument(io, file), file.size);
@@ -161,6 +188,7 @@ export function bakeVertexLighting(document: Document, options: BakeLightingOpti
   const amount = clamp01(options.strength);
   if (amount <= 0) return;
   const ambient = clamp01(options.ambient);
+  const ambientColor = hexToLinear(options.ambientColor);
   const lights = options.lights.filter((light) => light.enabled && light.intensity > 0).map((light) => ({
     ...light,
     colorLinear: hexToLinear(light.color),
@@ -183,7 +211,7 @@ export function bakeVertexLighting(document: Document, options: BakeLightingOpti
         normal.getElement(index, normalValue);
         position.getElement(index, positionValue);
         const normalDirection = normalize3([normalValue[0] ?? 0, normalValue[1] ?? 0, normalValue[2] ?? 0]);
-        const lighting: [number, number, number] = [ambient, ambient, ambient];
+        const lighting: [number, number, number] = [ambient * ambientColor[0], ambient * ambientColor[1], ambient * ambientColor[2]];
         for (const light of lights) {
           let lightDirection = light.directionNormalized;
           let attenuation = 1;

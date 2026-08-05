@@ -162,6 +162,9 @@ importers:
       three-mesh-bvh:
         specifier: ^0.9.14
         version: 0.9.14(three@0.184.0)
+      watlas:
+        specifier: 1.0.1
+        version: 1.0.1
       web-ifc:
         specifier: 0.0.77
         version: 0.0.77
@@ -3877,6 +3880,9 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  watlas@1.0.1:
+    resolution: {integrity: sha512-TmB++BFqEQY19cPNby5iszACZd8t6uauB7YdObkqhWarhed79OMPS8wufoDSo0p85A/8QW/aqZwEJf+nD4emSw==}
 
   web-ifc@0.0.77:
     resolution: {integrity: sha512-VzQ0W/Iiqbidxn1ECUvz6qJ6p2sXBVNcOsUOBCETzy77psAH6yFLKQm74aXabkx3JH4OvFVHe8k1qS6+Z2zl1w==}
@@ -8391,6 +8397,8 @@ snapshots:
       '@vue/shared': 3.5.40
     optionalDependencies:
       typescript: 5.9.3
+
+  watlas@1.0.1: {}
 
   web-ifc@0.0.77: {}
 

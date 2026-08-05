@@ -5,7 +5,7 @@ import { bakeWebLightmap } from "./lightmapBaker";
 const ONE_PIXEL_PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nXsAAAAASUVORK5CYII="), (character) => character.charCodeAt(0));
 
 describe("bakeWebLightmap", () => {
-  it("exports TEXCOORD_1 and a standard occlusion texture in GLB", async () => {
+  it("exports TEXCOORD_1 with standard occlusion and colored emissive textures in GLB", async () => {
     const document = new Document();
     const buffer = document.createBuffer();
     const position = document.createAccessor().setType("VEC3").setBuffer(buffer).setArray(new Float32Array([
@@ -23,15 +23,23 @@ describe("bakeWebLightmap", () => {
     const mesh = document.createMesh().addPrimitive(primitive);
     document.createScene().addChild(document.createNode().setMesh(mesh));
 
+    const encodedImages: Uint8ClampedArray[] = [];
     const result = await bakeWebLightmap(document, {
       resolution: 256,
       strength: 0.5,
-      ambient: 0.3,
+      ambient: 1,
+      ambientColor: "#ff0000",
       lights: [],
       ambientOcclusion: false,
       aoSamples: 4,
-      shadows: false
-    }, undefined, async () => ONE_PIXEL_PNG);
+      shadows: false,
+      shadowSamples: 1,
+      indirectSamples: 0,
+      denoise: false
+    }, undefined, async (pixels) => {
+      encodedImages.push(pixels.slice());
+      return ONE_PIXEL_PNG;
+    });
     const binary = await new WebIO().writeBinary(document);
     const exported = await new WebIO().readBinary(binary);
     const exportedPrimitive = exported.getRoot().listMeshes()[0]!.listPrimitives()[0]!;
@@ -43,6 +51,19 @@ describe("bakeWebLightmap", () => {
     expect(exportedPrimitive.getAttribute("TEXCOORD_1")?.getCount()).toBe(3);
     expect(exportedMaterial.getOcclusionTexture()?.getMimeType()).toBe("image/png");
     expect(exportedMaterial.getOcclusionTextureInfo()?.getTexCoord()).toBe(1);
-    expect(exportedMaterial.getExtras().bimStudioLightmap).toMatchObject({ mode: "occlusion", texCoord: 1, resolution: 256 });
+    expect(exportedMaterial.getEmissiveTexture()?.getMimeType()).toBe("image/png");
+    expect(exportedMaterial.getEmissiveTextureInfo()?.getTexCoord()).toBe(1);
+    expect(encodedImages).toHaveLength(2);
+    const coloredPixel = findColoredPixel(encodedImages[1]!);
+    expect(coloredPixel[0]).toBeGreaterThan(coloredPixel[1]);
+    expect(coloredPixel[0]).toBeGreaterThan(coloredPixel[2]);
+    expect(exportedMaterial.getExtras().bimStudioLightmap).toMatchObject({ mode: "occlusion+emissive", colored: true, texCoord: 1, resolution: 256 });
   });
 });
+
+function findColoredPixel(pixels: Uint8ClampedArray): [number, number, number] {
+  for (let index = 0; index < pixels.length; index += 4) {
+    if (pixels[index] || pixels[index + 1] || pixels[index + 2]) return [pixels[index]!, pixels[index + 1]!, pixels[index + 2]!];
+  }
+  return [0, 0, 0];
+}
