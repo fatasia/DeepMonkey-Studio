@@ -308,6 +308,30 @@ export interface SceneAnimationState {
   models: ModelKeyframe[];
 }
 
+export type SceneDashboardSide = "left" | "right";
+export type SceneDashboardWidgetType = "value" | "gauge" | "status" | "line" | "bar";
+
+export interface SceneDashboardWidgetState {
+  id: string;
+  title: string;
+  key: string;
+  type: SceneDashboardWidgetType;
+  unit: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  min?: number;
+  max?: number;
+  color?: string;
+}
+
+export interface SceneDashboardState {
+  side: SceneDashboardSide;
+  width: number;
+  widgets: SceneDashboardWidgetState[];
+}
+
 export interface SceneSnapshot {
   schemaVersion: 1;
   id: string;
@@ -328,6 +352,7 @@ export interface SceneSnapshot {
   postProcessing?: ScenePostProcessingState;
   physics?: ScenePhysicsState;
   animation?: SceneAnimationState;
+  dashboard?: SceneDashboardState;
   selectedModelId?: string;
   selectedLayerId?: string;
   selectedAnnotationId?: string;

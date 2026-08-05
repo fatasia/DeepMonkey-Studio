@@ -15,6 +15,8 @@ const projects = [
   ["OCCT Import JS", "LGPL-2.1", "https://github.com/kovacsv/occt-import-js"],
   ["Node-RED", "Apache-2.0", "https://github.com/node-red/node-red"],
   ["FlowFuse Dashboard", "Apache-2.0", "https://github.com/FlowFuse/node-red-dashboard"],
+  ["Apache ECharts", "Apache-2.0", "https://github.com/apache/echarts"],
+  ["GridStack", "MIT", "https://github.com/gridstack/gridstack.js"],
   ["TDengine Node.js Connector", "MIT", "https://github.com/taosdata/taos-connector-node"],
   ["React", "MIT", "https://github.com/facebook/react"],
   ["Lucide", "ISC", "https://github.com/lucide-icons/lucide"]

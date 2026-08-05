@@ -90,6 +90,10 @@ const DEFAULT_SCENE_LIGHTS: SceneLightState[] = [
   { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
 ];
 
+export function shouldRenderSceneLightProxy(readOnly: boolean, type: SceneLightState["type"]): boolean {
+  return !readOnly && type !== "ambient" && type !== "hemisphere";
+}
+
 export interface SceneStatistics {
   modelCount: number;
   primitiveCount: number;
@@ -110,6 +114,7 @@ export interface SceneDataMessage {
   key: string;
   value: unknown;
   timestamp: string;
+  sceneId?: string;
   target?: { modelId?: string; layerId?: string; annotationId?: string };
   action?: "color" | "visibility" | "position" | "label" | "opacity" | "focus" | "animation" | "effects";
 }
@@ -2265,10 +2270,17 @@ export class ViewerEngine {
   }
 
   setReadOnly(readOnly: boolean): void {
+    const changed = this.readOnlyMode !== readOnly;
     this.readOnlyMode = readOnly;
     if (readOnly) {
       this.setMeasureEnabled(false);
       this.setAnnotationPlacementEnabled(false);
+      if (this.selectedSceneLight) this.clearSceneLightSelection();
+      this.disposeSceneLightProxies();
+    } else if (changed) {
+      for (const state of this.lightingState.lights ?? DEFAULT_SCENE_LIGHTS) {
+        if (shouldRenderSceneLightProxy(false, state.type) && this.sceneLights.has(state.id)) this.createSceneLightProxy(state);
+      }
     }
     this.updateTransformAccess();
   }
@@ -3444,7 +3456,7 @@ export class ViewerEngine {
       if ("castShadow" in light) light.castShadow = Boolean(state.castShadow);
       this.sceneLights.set(state.id, light);
       this.scene.add(light);
-      if (!["ambient", "hemisphere"].includes(state.type)) this.createSceneLightProxy(state);
+      if (shouldRenderSceneLightProxy(this.readOnlyMode, state.type)) this.createSceneLightProxy(state);
     }
     if (this.selectedSceneLight) {
       const selection = this.selectedSceneLight;
@@ -3547,6 +3559,7 @@ export class ViewerEngine {
   }
 
   private lightProxyPointerHit(event: PointerEvent): { id: string; handle: "position" | "target" } | undefined {
+    if (this.readOnlyMode) return undefined;
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.pointerPosition.set(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,

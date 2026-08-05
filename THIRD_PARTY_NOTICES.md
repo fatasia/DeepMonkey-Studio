@@ -27,6 +27,8 @@ Key runtime dependencies:
 | `lucide-react` | 0.468.0 | ISC | https://github.com/lucide-icons/lucide |
 | `node-red` | 5.0.4 | Apache-2.0 | https://github.com/node-red/node-red |
 | `@flowfuse/node-red-dashboard` | 1.30.2 | Apache-2.0 | https://github.com/FlowFuse/node-red-dashboard |
+| `echarts` | 6.1.0 | Apache-2.0 | https://github.com/apache/echarts |
+| `gridstack` | 13.0.2 | MIT | https://github.com/gridstack/gridstack.js |
 | `@tdengine/websocket` | 3.5.0 | MIT | https://github.com/taosdata/taos-connector-node |
 | Node-RED database and IoT nodes | see lockfile | Apache-2.0 / MIT / BSD-3-Clause / ISC | https://flows.nodered.org/ |
 

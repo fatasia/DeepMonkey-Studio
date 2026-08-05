@@ -21,6 +21,8 @@
     "@thatopen/fragments": "3.4.5",
     "draco3dgltf": "1.5.7",
     "dxf-parser": "^1.1.2",
+    "echarts": "^6.1.0",
+    "gridstack": "^13.0.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.468.0",
     "meshoptimizer": "1.0.1",

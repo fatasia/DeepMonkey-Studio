@@ -2,7 +2,8 @@ import { WebIO, type Document, type JSONDocument } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { center, dedup, draco, prune, simplify, textureCompress, weld } from "@gltf-transform/functions";
 import draco3d from "draco3dgltf";
-import { MeshoptSimplifier } from "meshoptimizer";
+import { MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
+import { bakeWebLightmap, type WebLightmapResult } from "./lightmapBaker";
 
 export interface ModelOptimizationOptions {
   simplifyEnabled: boolean;
@@ -13,10 +14,49 @@ export interface ModelOptimizationOptions {
   textureSize: number;
   textureFormat: "webp" | "jpeg" | "original";
   bakeEnabled: boolean;
+  bakeMode: "vertex" | "lightmap";
   bakeStrength: number;
+  bakeAmbient: number;
+  bakeLights: BakeLightState[];
+  lightmapResolution: 256 | 512 | 1024;
+  lightmapAmbientOcclusion: boolean;
+  lightmapAoSamples: 4 | 8;
+  lightmapShadows: boolean;
   origin: "keep" | "center" | "ground";
   removeUnused: boolean;
 }
+
+export type BakeLightType = "directional" | "point";
+
+export interface BakeLightState {
+  id: string;
+  name: string;
+  type: BakeLightType;
+  enabled: boolean;
+  color: string;
+  intensity: number;
+  direction: [number, number, number];
+  position: [number, number, number];
+  range: number;
+}
+
+export interface BakeLightingOptions {
+  strength: number;
+  ambient: number;
+  lights: BakeLightState[];
+}
+
+export const DEFAULT_BAKE_LIGHTS: BakeLightState[] = [{
+  id: "bake-key",
+  name: "主方向光",
+  type: "directional",
+  enabled: true,
+  color: "#ffffff",
+  intensity: 0.9,
+  direction: [0.35, 0.82, 0.45],
+  position: [4, 8, 4],
+  range: 20
+}];
 
 export interface ModelFileStatistics {
   bytes: number;
@@ -33,6 +73,7 @@ export interface ModelOptimizationResult {
   binary: Uint8Array<ArrayBuffer>;
   before: ModelFileStatistics;
   after: ModelFileStatistics;
+  lightmap?: WebLightmapResult;
 }
 
 let ioPromise: Promise<WebIO> | undefined;
@@ -69,9 +110,20 @@ export async function optimizeModelFile(
     onProgress?.("正在执行几何与贴图优化");
     await document.transform(...transforms);
   }
-  if (options.bakeEnabled) {
+  let lightmap: WebLightmapResult | undefined;
+  if (options.bakeEnabled && options.bakeMode === "vertex") {
     onProgress?.("正在烘焙顶点光照");
-    bakeVertexLighting(document, options.bakeStrength);
+    bakeVertexLighting(document, { strength: options.bakeStrength, ambient: options.bakeAmbient, lights: options.bakeLights });
+  } else if (options.bakeEnabled) {
+    lightmap = await bakeWebLightmap(document, {
+      resolution: options.lightmapResolution,
+      strength: options.bakeStrength,
+      ambient: options.bakeAmbient,
+      lights: options.bakeLights,
+      ambientOcclusion: options.lightmapAmbientOcclusion,
+      aoSamples: options.lightmapAoSamples,
+      shadows: options.lightmapShadows
+    }, onProgress);
   }
   if (options.dracoEnabled) {
     onProgress?.("正在执行 Draco 压缩");
@@ -90,7 +142,7 @@ export async function optimizeModelFile(
   onProgress?.("正在生成 GLB");
   const binary = await io.writeBinary(document);
   const validation = await io.readBinary(binary);
-  return { binary, before, after: statistics(validation, binary.byteLength) };
+  return { binary, before, after: statistics(validation, binary.byteLength), ...(lightmap ? { lightmap } : {}) };
 }
 
 export async function inspectModelFile(file: File): Promise<ModelFileStatistics> {
@@ -99,16 +151,24 @@ export async function inspectModelFile(file: File): Promise<ModelFileStatistics>
 }
 
 /**
- * Bakes a lightweight, view-independent hemisphere/key light into COLOR_0.
+ * Bakes lightweight, view-independent diffuse lighting into COLOR_0.
  * This intentionally avoids UV unwrapping and texture atlases, keeping the
  * operation fast enough for local browser use while preserving the result in GLB.
+ * Point lights use mesh-local coordinates so the operation stays deterministic
+ * for browser-side optimization without flattening or duplicating scene nodes.
  */
-export function bakeVertexLighting(document: Document, strength: number): void {
-  const amount = Math.max(0, Math.min(1, strength));
+export function bakeVertexLighting(document: Document, options: BakeLightingOptions): void {
+  const amount = clamp01(options.strength);
   if (amount <= 0) return;
+  const ambient = clamp01(options.ambient);
+  const lights = options.lights.filter((light) => light.enabled && light.intensity > 0).map((light) => ({
+    ...light,
+    colorLinear: hexToLinear(light.color),
+    directionNormalized: normalize3(light.direction)
+  }));
   const buffer = document.getRoot().listBuffers()[0] ?? document.createBuffer("Baked vertex lighting");
-  const light = normalize3([0.35, 0.82, 0.45]);
   const normalValue: number[] = [];
+  const positionValue: number[] = [];
   const colorValue: number[] = [];
 
   for (const mesh of document.getRoot().listMeshes()) {
@@ -121,17 +181,34 @@ export function bakeVertexLighting(document: Document, strength: number): void {
       const colors = new Float32Array(position.getCount() * colorSize);
       for (let index = 0; index < position.getCount(); index += 1) {
         normal.getElement(index, normalValue);
-        const nx = normalValue[0] ?? 0;
-        const ny = normalValue[1] ?? 0;
-        const nz = normalValue[2] ?? 0;
-        const key = Math.max(0, nx * light[0] + ny * light[1] + nz * light[2]);
-        const sky = 0.65 + 0.35 * Math.max(0, ny);
-        const baked = 1 - amount + amount * Math.min(1, 0.32 + 0.68 * key * sky);
+        position.getElement(index, positionValue);
+        const normalDirection = normalize3([normalValue[0] ?? 0, normalValue[1] ?? 0, normalValue[2] ?? 0]);
+        const lighting: [number, number, number] = [ambient, ambient, ambient];
+        for (const light of lights) {
+          let lightDirection = light.directionNormalized;
+          let attenuation = 1;
+          if (light.type === "point") {
+            const delta: [number, number, number] = [
+              light.position[0] - (positionValue[0] ?? 0),
+              light.position[1] - (positionValue[1] ?? 0),
+              light.position[2] - (positionValue[2] ?? 0)
+            ];
+            const distance = Math.hypot(...delta);
+            lightDirection = normalize3(delta);
+            const range = Math.max(0.001, light.range);
+            attenuation = Math.pow(Math.max(0, 1 - distance / range), 2);
+          }
+          const diffuse = Math.max(0, dot3(normalDirection, lightDirection)) * light.intensity * attenuation;
+          lighting[0] += light.colorLinear[0] * diffuse;
+          lighting[1] += light.colorLinear[1] * diffuse;
+          lighting[2] += light.colorLinear[2] * diffuse;
+        }
         if (sourceColor) sourceColor.getElement(index, colorValue);
         else colorValue.splice(0, colorValue.length, 1, 1, 1);
-        colors[index * colorSize] = clamp01((colorValue[0] ?? 1) * baked);
-        colors[index * colorSize + 1] = clamp01((colorValue[1] ?? 1) * baked);
-        colors[index * colorSize + 2] = clamp01((colorValue[2] ?? 1) * baked);
+        for (let channel = 0; channel < 3; channel += 1) {
+          const baked = 1 - amount + amount * clamp01(lighting[channel] ?? ambient);
+          colors[index * colorSize + channel] = clamp01((colorValue[channel] ?? 1) * baked);
+        }
         if (colorSize === 4) colors[index * colorSize + 3] = clamp01(colorValue[3] ?? 1);
       }
       primitive.setAttribute("COLOR_0", document.createAccessor("Baked vertex lighting")
@@ -140,6 +217,20 @@ export function bakeVertexLighting(document: Document, strength: number): void {
         .setBuffer(buffer));
     }
   }
+}
+
+function dot3(left: [number, number, number], right: [number, number, number]): number {
+  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+}
+
+function hexToLinear(value: string): [number, number, number] {
+  const match = /^#([0-9a-f]{6})$/i.exec(value);
+  const hex = match?.[1] ?? "ffffff";
+  return [0, 2, 4].map((offset) => srgbToLinear(Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)) as [number, number, number];
+}
+
+function srgbToLinear(value: number): number {
+  return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
 }
 
 function normalize3(value: [number, number, number]): [number, number, number] {
@@ -154,7 +245,8 @@ function clamp01(value: number): number {
 async function optimizerIO(): Promise<WebIO> {
   ioPromise ??= Promise.all([
     loadWasm("draco_encoder.wasm"),
-    loadWasm("draco_decoder_gltf.wasm")
+    loadWasm("draco_decoder_gltf.wasm"),
+    MeshoptDecoder.ready
   ]).then(async ([encoderWasm, decoderWasm]) => {
     const [encoder, decoder] = await Promise.all([
       draco3d.createEncoderModule({ wasmBinary: encoderWasm }),
@@ -162,7 +254,7 @@ async function optimizerIO(): Promise<WebIO> {
     ]);
     return new WebIO()
       .registerExtensions(ALL_EXTENSIONS)
-      .registerDependencies({ "draco3d.encoder": encoder, "draco3d.decoder": decoder });
+      .registerDependencies({ "draco3d.encoder": encoder, "draco3d.decoder": decoder, "meshopt.decoder": MeshoptDecoder });
   });
   return await ioPromise;
 }
@@ -175,7 +267,11 @@ async function loadWasm(name: string): Promise<Uint8Array> {
 
 async function readDocument(io: WebIO, file: File): Promise<Document> {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (file.name.toLocaleLowerCase().endsWith(".glb")) return await io.readBinary(bytes);
+  if (file.name.toLocaleLowerCase().endsWith(".glb")) {
+    const jsonDocument = await io.binaryToJSON(bytes);
+    repairInvalidSparseAccessors(jsonDocument.json);
+    return await io.readJSON(jsonDocument);
+  }
   const text = new TextDecoder().decode(bytes);
   const json = JSON.parse(text) as JSONDocument["json"];
   const externalResources = [
@@ -186,6 +282,22 @@ async function readDocument(io: WebIO, file: File): Promise<Document> {
     throw new Error(`该 glTF 依赖 ${externalResources.length} 个外部 .bin/贴图文件，请先转换为单文件 GLB`);
   }
   return await io.readJSON({ json, resources: {} });
+}
+
+/**
+ * Some CAD/Revit conversion pipelines leave placeholder sparse declarations on
+ * Draco accessors (count 0/-1 or greater than the accessor itself). They contain
+ * no usable data and make strict glTF tooling crash before Draco is decoded.
+ */
+function repairInvalidSparseAccessors(json: JSONDocument["json"]): void {
+  for (const accessor of json.accessors ?? []) {
+    const sparse = accessor.sparse;
+    if (!sparse) continue;
+    const indexTypeValid = [5121, 5123, 5125].includes(sparse.indices.componentType);
+    const indexBufferValid = Number.isInteger(sparse.indices.bufferView) && sparse.indices.bufferView >= 0 && sparse.indices.bufferView < (json.bufferViews?.length ?? 0);
+    const valueBufferValid = Number.isInteger(sparse.values.bufferView) && sparse.values.bufferView >= 0 && sparse.values.bufferView < (json.bufferViews?.length ?? 0);
+    if (!Number.isInteger(sparse.count) || sparse.count <= 0 || sparse.count > accessor.count || !indexTypeValid || !indexBufferValid || !valueBufferValid) delete accessor.sparse;
+  }
 }
 
 function statistics(document: Document, bytes: number): ModelFileStatistics {

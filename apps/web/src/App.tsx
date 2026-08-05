@@ -63,6 +63,7 @@ import type {
   RvtConversionMode,
   SceneAnnotationState,
   SceneAnimationState,
+  SceneDashboardState,
   SceneEnvironmentState,
   SceneFloorState,
   SceneLightState,
@@ -82,12 +83,11 @@ import { SceneExportMenu } from "./components/SceneExportMenu";
 import { SpaceTree } from "./components/SpaceTree";
 import { CreditsModal } from "./components/CreditsModal";
 import { DigitalTwinPanel } from "./components/DigitalTwinPanel";
-import { SceneDashboardOverlay } from "./components/SceneDashboardOverlay";
+import { DEFAULT_DASHBOARD_STATE, normalizeDashboardState } from "./components/dashboardState";
 import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
+import { subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
 import { exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
 import {
-  ViewerEngine,
-  ModelLoadSupersededError,
   type BimPropertyEntry,
   type BimSpaceRecord,
   type ComponentRecord,
@@ -98,7 +98,8 @@ import {
   type RendererBackend,
   type SelectionScope,
   type StandardView,
-  type TransformMode
+  type TransformMode,
+  type ViewerEngine
 } from "./viewer/ViewerEngine";
 
 const ACCEPTED_MODELS = ".rvt,.ifc,.step,.stp,.dwg,.dxf,.gltf,.glb,.fbx";
@@ -159,6 +160,7 @@ const DEFAULT_ANIMATION: SceneAnimationState = {
 };
 const DEFAULT_CLIPPING: ClippingState = { enabled: false, mode: "axis", axis: "x", offset: 0, inverted: false };
 const ModelOptimizer = lazy(() => import("./components/ModelOptimizer").then((module) => ({ default: module.ModelOptimizer })));
+const SceneDashboardOverlay = lazy(() => import("./components/SceneDashboardOverlay").then((module) => ({ default: module.SceneDashboardOverlay })));
 
 interface AppRoute {
   view: "manager" | "studio" | "optimizer" | "view" | "published";
@@ -184,6 +186,10 @@ function openBrowseRoute(view: "view" | "published", sceneId: string): void {
 
 function sortScenesByTime(items: SceneSnapshot[]): SceneSnapshot[] {
   return [...items].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+}
+
+function isModelLoadSuperseded(reason: unknown): boolean {
+  return reason instanceof Error && reason.name === "ModelLoadSupersededError";
 }
 
 async function waitForModelReady(projectId: string, modelId: string): Promise<ProjectRecord> {
@@ -235,6 +241,7 @@ export function App() {
   const [navigationMode, setNavigationMode] = useState<NavigationMode>("orbit");
   const [measureMode, setMeasureMode] = useState<MeasureMode>("distance");
   const [route, setRoute] = useState<AppRoute>(() => readRoute());
+  const viewerRouteActive = route.view === "studio" || route.view === "view" || route.view === "published";
   const [avatarVisible, setAvatarVisible] = useState(false);
   const [cameraInfo, setCameraInfo] = useState<CameraState>();
   const [pointerInfo, setPointerInfo] = useState<PointerInfo>();
@@ -250,7 +257,10 @@ export function App() {
   const [selectedLightId, setSelectedLightId] = useState("sun-default");
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [digitalTwinOpen, setDigitalTwinOpen] = useState(false);
+  const [sceneDataStatus, setSceneDataStatus] = useState<SceneDataBridgeStatus>("offline");
+  const [sceneDataReceived, setSceneDataReceived] = useState(0);
   const [sceneDashboardOpen, setSceneDashboardOpen] = useState(false);
+  const [sceneDashboard, setSceneDashboard] = useState<SceneDashboardState>(() => structuredClone(DEFAULT_DASHBOARD_STATE));
   const [viewerToolsOpen, setViewerToolsOpen] = useState(false);
   const [xrPanelOpen, setXrPanelOpen] = useState(false);
   const [xrActiveMode, setXrActiveMode] = useState<"immersive-vr" | "immersive-ar">();
@@ -303,7 +313,7 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!viewportRef.current) return;
+    if (!viewerRouteActive || !viewportRef.current) return;
     let viewer: ViewerEngine | undefined;
     let cancelled = false;
     let revisionFrame: number | undefined;
@@ -315,7 +325,7 @@ export function App() {
       });
     };
     setRendererSwitching(true);
-    void ViewerEngine.create(viewportRef.current, rendererBackend).then((created) => {
+    void import("./viewer/ViewerEngine").then(({ ViewerEngine }) => ViewerEngine.create(viewportRef.current!, rendererBackend)).then((created) => {
       if (cancelled) {
         created.dispose();
         return;
@@ -387,7 +397,7 @@ export function App() {
       viewer?.dispose();
       setEngine((current) => current === viewer ? undefined : current);
     };
-  }, [rendererBackend, showError]);
+  }, [rendererBackend, viewerRouteActive, showError]);
 
   useEffect(() => {
     const pending = rendererSnapshotRef.current;
@@ -452,6 +462,18 @@ export function App() {
     setViewerToolsOpen(false);
     if (browse) setSceneDashboardOpen(true);
   }, [route.view, route.sceneId]);
+
+  useEffect(() => {
+    if (!engine || !["studio", "view", "published"].includes(route.view)) return;
+    return subscribeSceneData((data) => {
+      if (data.sceneId && data.sceneId !== route.sceneId) return;
+      setSceneDataReceived((value) => value + 1);
+      if (engine.applySceneDataMessage(data)) {
+        setMessage(`数据 ${data.source}/${data.key} 已映射到场景`);
+        setRevision((value) => value + 1);
+      }
+    }, setSceneDataStatus);
+  }, [engine, route.sceneId, route.view]);
 
   useEffect(() => {
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();
@@ -659,7 +681,7 @@ export function App() {
       setMessage(`${model.name} 已加载`);
       return loaded;
     } catch (reason) {
-      if (reason instanceof ModelLoadSupersededError) return;
+      if (isModelLoadSuperseded(reason)) return;
       showError(reason);
     } finally {
       setBusy(false);
@@ -1118,6 +1140,7 @@ export function App() {
       postProcessing: engine.getPostProcessing(),
       physics: engine.getPhysicsState(),
       animation: engine.getSceneAnimation(),
+      dashboard: sceneDashboard,
       ...(selected ? { selectedModelId: selected.id } : {}),
       ...(selectedLayerId ? { selectedLayerId } : {}),
       ...(selectedAnnotationId ? { selectedAnnotationId } : {}),
@@ -1246,6 +1269,7 @@ export function App() {
       const nextAnimation = scene.animation ?? DEFAULT_ANIMATION;
       const nextPostProcessing = { ...DEFAULT_POST_PROCESSING, ...scene.postProcessing };
       const nextPhysics = { ...DEFAULT_PHYSICS, ...scene.physics, gravity: { ...DEFAULT_PHYSICS.gravity, ...scene.physics?.gravity } };
+      const nextDashboard = normalizeDashboardState(scene.dashboard);
       engine.setWeather(nextWeather);
       engine.setGlobalLighting(nextLighting);
       engine.setSceneEnvironment(nextEnvironment);
@@ -1260,6 +1284,7 @@ export function App() {
       setSceneAnimation(nextAnimation);
       setPostProcessing(nextPostProcessing);
       setPhysics(nextPhysics);
+      setSceneDashboard(nextDashboard);
       setAnimationTime(0);
       setAnimationPlaying(false);
       const nextClipping = scene.clipping ?? DEFAULT_CLIPPING;
@@ -1275,7 +1300,7 @@ export function App() {
       setMessage(`场景“${scene.name}”已恢复`);
       setRevision((value) => value + 1);
     } catch (reason) {
-      if (reason instanceof ModelLoadSupersededError) return;
+      if (isModelLoadSuperseded(reason)) return;
       showError(reason);
     } finally {
       if (applyVersion === sceneApplyVersionRef.current) setBusy(false);
@@ -1283,17 +1308,19 @@ export function App() {
   }
 
   async function createScene(name: string) {
-    if (!engine || !project) return;
+    if (!project) return;
     sceneApplyVersionRef.current += 1;
-    engine.clearSceneModels();
-    engine.setClipping(DEFAULT_CLIPPING);
-    engine.setWeather("sunny");
-    engine.setGlobalLighting(DEFAULT_LIGHTING);
-    engine.setSceneEnvironment(DEFAULT_ENVIRONMENT);
-    engine.setPostProcessing(DEFAULT_POST_PROCESSING);
-    engine.setPhysicsState(DEFAULT_PHYSICS);
-    engine.setSceneAnimation(DEFAULT_ANIMATION);
-    engine.seekSceneAnimation(0);
+    if (engine) {
+      engine.clearSceneModels();
+      engine.setClipping(DEFAULT_CLIPPING);
+      engine.setWeather("sunny");
+      engine.setGlobalLighting(DEFAULT_LIGHTING);
+      engine.setSceneEnvironment(DEFAULT_ENVIRONMENT);
+      engine.setPostProcessing(DEFAULT_POST_PROCESSING);
+      engine.setPhysicsState(DEFAULT_PHYSICS);
+      engine.setSceneAnimation(DEFAULT_ANIMATION);
+      engine.seekSceneAnimation(0);
+    }
     setClippingState(DEFAULT_CLIPPING);
     primitiveColors.current.clear();
     setMeasurements([]);
@@ -1324,11 +1351,12 @@ export function App() {
       postProcessing: DEFAULT_POST_PROCESSING,
       physics: DEFAULT_PHYSICS,
       animation: DEFAULT_ANIMATION,
+      dashboard: structuredClone(DEFAULT_DASHBOARD_STATE),
       createdAt: now,
       updatedAt: now
     };
     const saved = await api.saveScene(scene);
-    engine.applyCamera(saved.camera);
+    engine?.applyCamera(saved.camera);
     setActiveScene(saved);
     setSceneName(saved.name);
     setScenes((items) => sortScenesByTime([saved, ...items]));
@@ -1336,6 +1364,7 @@ export function App() {
     setAvatarVisible(false);
     setWeather("sunny");
     setLighting(DEFAULT_LIGHTING);
+    setSceneDashboard(structuredClone(DEFAULT_DASHBOARD_STATE));
     setSceneEnvironment(DEFAULT_ENVIRONMENT);
     setPostProcessing(DEFAULT_POST_PROCESSING);
     setPhysics(DEFAULT_PHYSICS);
@@ -1548,7 +1577,7 @@ export function App() {
           onRenameProject={() => openProjectDialog("rename")}
           onDeleteProject={() => void deleteCurrentProject()}
           onCreate={async (name) => { try { await createScene(name); } catch (reason) { showError(reason); } }}
-          onOpen={applyScene}
+          onOpen={async (scene) => { setActiveScene(undefined); navigate({ view: "studio", sceneId: scene.id }); }}
           onCopy={copyScene}
           onRename={renameScene}
           onPublish={publishScene}
@@ -1603,13 +1632,13 @@ export function App() {
             <button className={rendererBackend === "webgl" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgl")}>WebGL</button>
             <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>{tr(locale, "实验", "Experimental")}</small></button>
           </div>
-          <button className={`button ghost compact-action ${digitalTwinOpen ? "active" : ""}`} title={tr(locale, "数字孪生流程与看板", "Digital twin flows and dashboards")} onClick={() => { setDigitalTwinOpen((value) => !value); setEnvironmentOpen(false); }}><Radio size={16} />{tr(locale, "数据", "Data")}</button>
-          <button className="button ghost" onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={16} />{tr(locale, "场景管理", "Scenes")}</button>
-          <button className="button ghost" onClick={() => importRef.current?.click()}><Import size={16} />{tr(locale, "导入", "Import")}</button>
+          <button className={`button ghost compact-action ${digitalTwinOpen ? "active" : ""}`} title={tr(locale, "数字孪生流程与看板", "Digital twin flows and dashboards")} onClick={() => { setDigitalTwinOpen((value) => !value); setEnvironmentOpen(false); }}><Radio size={15} /><span className="action-label">{tr(locale, "数据", "Data")}</span></button>
+          <button className="button ghost" title={tr(locale, "场景管理", "Scenes")} onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={15} /><span className="action-label">{tr(locale, "场景管理", "Scenes")}</span></button>
+          <button className="button ghost" title={tr(locale, "导入场景", "Import scene")} onClick={() => importRef.current?.click()}><Import size={15} /><span className="action-label">{tr(locale, "导入", "Import")}</span></button>
           <SceneExportMenu locale={locale} disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} />
-          <button className="button ghost" onClick={() => void browseActiveScene()} disabled={busy}><Eye size={16} />{tr(locale, "浏览", "View")}</button>
-          <button className="button ghost" onClick={() => void publishActiveScene()} disabled={busy}><Rocket size={16} />{activeScene?.publishedAt ? tr(locale, "重新发布", "Republish") : tr(locale, "发布", "Publish")}</button>
-          <button className="button primary" onClick={() => void saveScene()} disabled={busy}><Save size={16} />{tr(locale, "保存场景", "Save scene")}</button>
+          <button className="button ghost" title={tr(locale, "浏览场景", "View scene")} onClick={() => void browseActiveScene()} disabled={busy}><Eye size={15} /><span className="action-label">{tr(locale, "浏览", "View")}</span></button>
+          <button className="button ghost" title={activeScene?.publishedAt ? tr(locale, "重新发布场景", "Republish scene") : tr(locale, "发布场景", "Publish scene")} onClick={() => void publishActiveScene()} disabled={busy}><Rocket size={15} /><span className="action-label">{activeScene?.publishedAt ? tr(locale, "重新发布", "Republish") : tr(locale, "发布", "Publish")}</span></button>
+          <button className="button primary" title={tr(locale, "保存场景", "Save scene")} onClick={() => void saveScene()} disabled={busy}><Save size={15} /><span className="action-label">{tr(locale, "保存场景", "Save scene")}</span></button>
         </div>
         </> : <>
           <div className="viewer-scene-title"><span className="viewer-mode-badge"><Rocket size={13} />{route.view === "published" ? tr(locale, "已发布版本", "Published version") : tr(locale, "当前保存版本", "Saved version")}</span><strong>{sceneName}</strong></div>
@@ -2008,7 +2037,7 @@ export function App() {
           {!xrCapabilities.checking && (!xrCapabilities.vr || !xrCapabilities.ar) && <p>{tr(locale, "桌面浏览器通常只能检测 VR 头显；AR 需支持 WebXR 的 Android 设备。自签名证书必须先在设备上信任。", "Desktop browsers usually require a connected VR headset; AR requires a WebXR-capable Android device. Trust the self-signed certificate on the device first.")}</p>}
         </div>}
         {route.view === "studio" && xrActiveMode && <div className="xr-session-hud"><div><strong>{xrActiveMode === "immersive-vr" ? "VR" : "AR"} {tr(locale, "运行中", "active")}</strong><small>{xrActiveMode === "immersive-vr" ? tr(locale, "左摇杆移动 · 右摇杆转向 · B/Y 退出", "Left stick move · right stick turn · B/Y exit") : tr(locale, "点击退出返回编辑器", "Exit to return to the editor")}</small></div><button onClick={() => void engine?.endXR()}>{tr(locale, "退出", "Exit")}</button></div>}
-        {(route.view === "studio" || route.view === "view" || route.view === "published") && sceneDashboardOpen && <SceneDashboardOverlay locale={locale} sceneId={activeScene?.id ?? route.sceneId ?? "new"} readOnly={route.view !== "studio"} onClose={() => setSceneDashboardOpen(false)} />}
+        {(route.view === "studio" || route.view === "view" || route.view === "published") && sceneDashboardOpen && <Suspense fallback={null}><SceneDashboardOverlay locale={locale} sceneId={activeScene?.id ?? route.sceneId ?? "new"} state={sceneDashboard} readOnly={route.view !== "studio"} onChange={setSceneDashboard} onClose={() => setSceneDashboardOpen(false)} /></Suspense>}
         {(route.view === "view" || route.view === "published") && infoEnabled && <section className="viewer-info-card" aria-label={tr(locale, "场景信息", "Scene information")}>
           <header><strong>{tr(locale, "场景信息", "Scene information")}</strong><button title={tr(locale, "关闭", "Close")} onClick={() => setInfoEnabled(false)}><X size={14} /></button></header>
           <div className="scene-info-grid">
@@ -2249,7 +2278,7 @@ export function App() {
       </form>
     </div>}
     {(route.view === "manager" || route.view === "optimizer") && <div className="global-utility"><button onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={15} />{locale === "zh-CN" ? "EN" : "中文"}</button><button onClick={() => setDigitalTwinOpen((value) => !value)}><Radio size={15} />{tr(locale, "数据", "Data")}</button><button onClick={() => setCreditsOpen(true)}><HeartHandshake size={15} />{tr(locale, "致谢", "Credits")}</button></div>}
-    {digitalTwinOpen && <DigitalTwinPanel locale={locale} onClose={() => setDigitalTwinOpen(false)} onMessage={(data) => { if (engine?.applySceneDataMessage(data)) { setMessage(`数据 ${data.source}/${data.key} 已映射到场景`); setRevision((value) => value + 1); } }} />}
+    {digitalTwinOpen && <DigitalTwinPanel locale={locale} onClose={() => setDigitalTwinOpen(false)} status={sceneDataStatus} received={sceneDataReceived} />}
     {(route.view === "manager" || route.view === "optimizer") && creditsOpen && <CreditsModal locale={locale} onClose={() => setCreditsOpen(false)} />}
     {error && <div className="toast error">{error}</div>}
     </>
