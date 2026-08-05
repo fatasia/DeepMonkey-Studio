@@ -420,7 +420,17 @@ export class ViewerEngine {
   private xrBackground?: THREE.Color | THREE.Texture | null;
   private readonly xrRig = new THREE.Group();
   private readonly xrControllers: THREE.Group[] = [];
-  private xrSavedCamera: { position: THREE.Vector3; quaternion: THREE.Quaternion } | undefined;
+  private xrSavedCamera: {
+    position: THREE.Vector3;
+    quaternion: THREE.Quaternion;
+    scale: THREE.Vector3;
+    up: THREE.Vector3;
+    target: THREE.Vector3;
+    fov: number;
+    zoom: number;
+    near: number;
+    far: number;
+  } | undefined;
   private xrSnapTurnReady = true;
   private xrExitPressed = false;
   private floorStates = new Map<string, SceneFloorState>();
@@ -1062,7 +1072,17 @@ export class ViewerEngine {
     this.xrMode = mode;
     this.xrBackground = this.scene.background;
     if (mode === "immersive-ar") this.scene.background = null;
-    this.xrSavedCamera = { position: this.camera.position.clone(), quaternion: this.camera.quaternion.clone() };
+    this.xrSavedCamera = {
+      position: this.camera.position.clone(),
+      quaternion: this.camera.quaternion.clone(),
+      scale: this.camera.scale.clone(),
+      up: this.camera.up.clone(),
+      target: this.orbit.target.clone(),
+      fov: this.camera.fov,
+      zoom: this.camera.zoom,
+      near: this.camera.near,
+      far: this.camera.far
+    };
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
     this.xrRig.position.set(this.camera.position.x, this.camera.position.y - this.eyeHeight, this.camera.position.z);
     this.xrRig.rotation.set(0, Math.atan2(-forward.x, -forward.z), 0);
@@ -1148,7 +1168,9 @@ export class ViewerEngine {
 
   private handleXRSessionEnd = (event: Event): void => {
     const session = event.currentTarget as unknown as XRSession | null;
-    this.finishXRSession(session ?? undefined);
+    // The WebXRManager listener restores its framebuffer after session `end`
+    // listeners run. Defer our editor restore until that browser event finishes.
+    queueMicrotask(() => this.finishXRSession(session ?? undefined));
   };
 
   private finishXRSession(session?: XRSession): void {
@@ -1167,8 +1189,18 @@ export class ViewerEngine {
     if (this.xrSavedCamera) {
       this.camera.position.copy(this.xrSavedCamera.position);
       this.camera.quaternion.copy(this.xrSavedCamera.quaternion);
+      this.camera.scale.copy(this.xrSavedCamera.scale);
+      this.camera.up.copy(this.xrSavedCamera.up);
+      this.camera.fov = this.xrSavedCamera.fov;
+      this.camera.zoom = this.xrSavedCamera.zoom;
+      this.camera.near = this.xrSavedCamera.near;
+      this.camera.far = this.xrSavedCamera.far;
+      this.orbit.target.copy(this.xrSavedCamera.target);
+      this.camera.updateMatrix();
+      this.camera.updateMatrixWorld(true);
     }
     this.xrSavedCamera = undefined;
+    this.resize();
     this.xrSnapTurnReady = true;
     this.xrExitPressed = false;
     this.onXRSessionChange?.(undefined);
