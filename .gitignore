@@ -12,6 +12,8 @@ apps/web/public/wasm/
 apps/web/public/draco/
 apps/web/public/brand/logo.webp
 apps/node-red/.data/
+https/*
+!https/README.md
 **/bin/
 **/obj/
 tools/libredwg/

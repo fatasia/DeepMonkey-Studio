@@ -10,6 +10,7 @@ import {
   type ModelFileStatistics,
   type ModelOptimizationOptions
 } from "../optimizer/modelOptimizer";
+import { translate as tr, type AppLocale } from "../i18n";
 
 const DEFAULT_OPTIONS: ModelOptimizationOptions = {
   simplifyEnabled: true,
@@ -23,7 +24,7 @@ const DEFAULT_OPTIONS: ModelOptimizationOptions = {
   removeUnused: true
 };
 
-export function ModelOptimizer({ onBack }: { onBack: () => void }) {
+export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const sourceUrlRef = useRef<string | undefined>(undefined);
   const optimizedUrlRef = useRef<string | undefined>(undefined);
@@ -64,7 +65,7 @@ export function ModelOptimizer({ onBack }: { onBack: () => void }) {
       setBefore(await inspectModelFile(next));
       setMessage("模型已载入，可调整参数后开始优化");
     } catch (reason) {
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, locale));
       setMessage("模型解析失败");
     } finally {
       setBusy(false);
@@ -88,7 +89,7 @@ export function ModelOptimizer({ onBack }: { onBack: () => void }) {
       setShowOptimized(true);
       setMessage(`优化完成，体积减少 ${reduction(result.before.bytes, result.after.bytes)}%`);
     } catch (reason) {
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, locale));
       setMessage("优化失败，原始文件未修改");
     } finally {
       setBusy(false);
@@ -105,42 +106,43 @@ export function ModelOptimizer({ onBack }: { onBack: () => void }) {
   }
 
   const previewUrl = showOptimized && optimizedUrl ? optimizedUrl : sourceUrl;
+  const displayMessage = localizeOptimizerMessage(locale, message);
   return <div className="optimizer-page">
     <header className="optimizer-header">
-      <button className="optimizer-back" onClick={onBack}><ArrowLeft size={17} />返回场景管理</button>
-      <div><span className="eyebrow">LOCAL GLB PIPELINE</span><h1>模型压缩优化</h1></div>
+      <button className="optimizer-back" onClick={onBack}><ArrowLeft size={17} />{tr(locale, "返回场景管理", "Back to scenes")}</button>
+      <div><span className="eyebrow">LOCAL GLB PIPELINE</span><h1>{tr(locale, "模型压缩优化", "Model optimization")}</h1></div>
       <div className="optimizer-header-actions">
-        <button onClick={() => inputRef.current?.click()}><Upload size={15} />导入模型</button>
-        <button className="primary" disabled={!output} onClick={exportGlb}><Download size={15} />导出 GLB</button>
+        <button onClick={() => inputRef.current?.click()}><Upload size={15} />{tr(locale, "导入模型", "Import model")}</button>
+        <button className="primary" disabled={!output} onClick={exportGlb}><Download size={15} />{tr(locale, "导出 GLB", "Export GLB")}</button>
       </div>
     </header>
     <main className="optimizer-layout">
       <aside className="optimizer-settings">
         <div className="optimizer-file">
-          <Box size={18} /><div><strong>{file?.name ?? "尚未导入模型"}</strong><span>{before ? `${formatBytes(before.bytes)} · ${before.triangles.toLocaleString("zh-CN")} 面` : "支持 GLB / glTF"}</span></div>
+          <Box size={18} /><div><strong>{file?.name ?? tr(locale, "尚未导入模型", "No model imported")}</strong><span>{before ? `${formatBytes(before.bytes)} · ${before.triangles.toLocaleString(locale)} ${tr(locale, "面", "triangles")}` : tr(locale, "支持 GLB / glTF", "Supports GLB / glTF")}</span></div>
         </div>
-        <OptionSection icon={<Triangle size={15} />} title="模型减面" enabled={options.simplifyEnabled} onToggle={(enabled) => setOptions({ ...options, simplifyEnabled: enabled })}>
-          <label><span>目标保留比例</span><output>{Math.round(options.simplifyRatio * 100)}%</output><input type="range" min="0.05" max="1" step="0.01" value={options.simplifyRatio} onChange={(event) => setOptions({ ...options, simplifyRatio: Number(event.target.value) })} /></label>
-          <label><span>最大误差</span><output>{(options.simplifyError * 100).toFixed(2)}%</output><input type="range" min="0.0001" max="0.02" step="0.0001" value={options.simplifyError} onChange={(event) => setOptions({ ...options, simplifyError: Number(event.target.value) })} /></label>
+        <OptionSection icon={<Triangle size={15} />} title={tr(locale, "模型减面", "Mesh simplification")} enabled={options.simplifyEnabled} onToggle={(enabled) => setOptions({ ...options, simplifyEnabled: enabled })}>
+          <label><span>{tr(locale, "目标保留比例", "Target ratio")}</span><output>{Math.round(options.simplifyRatio * 100)}%</output><input type="range" min="0.05" max="1" step="0.01" value={options.simplifyRatio} onChange={(event) => setOptions({ ...options, simplifyRatio: Number(event.target.value) })} /></label>
+          <label><span>{tr(locale, "最大误差", "Maximum error")}</span><output>{(options.simplifyError * 100).toFixed(2)}%</output><input type="range" min="0.0001" max="0.02" step="0.0001" value={options.simplifyError} onChange={(event) => setOptions({ ...options, simplifyError: Number(event.target.value) })} /></label>
         </OptionSection>
-        <OptionSection icon={<Sparkles size={15} />} title="Draco 压缩" enabled={options.dracoEnabled} onToggle={(enabled) => setOptions({ ...options, dracoEnabled: enabled })}><p>压缩顶点、法线和索引；Viewer 已内置 Draco 解码器。</p></OptionSection>
-        <OptionSection icon={<Image size={15} />} title="压缩贴图" enabled={options.textureEnabled} onToggle={(enabled) => setOptions({ ...options, textureEnabled: enabled })}>
-          <div className="optimizer-selects"><label><span>最大尺寸</span><select value={options.textureSize} onChange={(event) => setOptions({ ...options, textureSize: Number(event.target.value) })}><option value="512">512</option><option value="1024">1024</option><option value="2048">2048</option><option value="4096">4096</option></select></label><label><span>输出格式</span><select value={options.textureFormat} onChange={(event) => setOptions({ ...options, textureFormat: event.target.value as ModelOptimizationOptions["textureFormat"] })}><option value="webp">WebP</option><option value="jpeg">JPEG</option><option value="original">保持原格式</option></select></label></div>
+        <OptionSection icon={<Sparkles size={15} />} title={tr(locale, "Draco 压缩", "Draco compression")} enabled={options.dracoEnabled} onToggle={(enabled) => setOptions({ ...options, dracoEnabled: enabled })}><p>{tr(locale, "压缩顶点、法线和索引；Viewer 已内置 Draco 解码器。", "Compresses vertices, normals and indices; the viewer includes a Draco decoder.")}</p></OptionSection>
+        <OptionSection icon={<Image size={15} />} title={tr(locale, "压缩贴图", "Texture compression")} enabled={options.textureEnabled} onToggle={(enabled) => setOptions({ ...options, textureEnabled: enabled })}>
+          <div className="optimizer-selects"><label><span>{tr(locale, "最大尺寸", "Maximum size")}</span><select value={options.textureSize} onChange={(event) => setOptions({ ...options, textureSize: Number(event.target.value) })}><option value="512">512</option><option value="1024">1024</option><option value="2048">2048</option><option value="4096">4096</option></select></label><label><span>{tr(locale, "输出格式", "Output format")}</span><select value={options.textureFormat} onChange={(event) => setOptions({ ...options, textureFormat: event.target.value as ModelOptimizationOptions["textureFormat"] })}><option value="webp">WebP</option><option value="jpeg">JPEG</option><option value="original">{tr(locale, "保持原格式", "Keep original")}</option></select></label></div>
         </OptionSection>
-        <OptionSection icon={<Crosshair size={15} />} title="设置原点">
-          <div className="origin-options">{([['keep','保持'],['center','模型中心'],['ground','底部中心']] as const).map(([value, label]) => <button key={value} className={options.origin === value ? "active" : ""} onClick={() => setOptions({ ...options, origin: value })}>{label}</button>)}</div>
+        <OptionSection icon={<Crosshair size={15} />} title={tr(locale, "设置原点", "Set origin")}>
+          <div className="origin-options">{([['keep',tr(locale, '保持', 'Keep')],['center',tr(locale, '模型中心', 'Model center')],['ground',tr(locale, '底部中心', 'Bottom center')]] as const).map(([value, label]) => <button key={value} className={options.origin === value ? "active" : ""} onClick={() => setOptions({ ...options, origin: value })}>{label}</button>)}</div>
         </OptionSection>
-        <OptionSection icon={<Trash2 size={15} />} title="删除无用数据" enabled={options.removeUnused} onToggle={(enabled) => setOptions({ ...options, removeUnused: enabled })}><p>合并重复数据、焊接重复点，并清理未引用节点、材质和访问器。</p></OptionSection>
-        <button className="optimizer-run" disabled={!file || busy} onClick={() => void runOptimization()}>{busy ? <LoaderCircle className="spin" size={16} /> : <Gauge size={16} />}{busy ? message : "开始优化"}</button>
+        <OptionSection icon={<Trash2 size={15} />} title={tr(locale, "删除无用数据", "Remove unused data")} enabled={options.removeUnused} onToggle={(enabled) => setOptions({ ...options, removeUnused: enabled })}><p>{tr(locale, "合并重复数据、焊接重复点，并清理未引用节点、材质和访问器。", "Deduplicates data, welds vertices and removes unused nodes, materials and accessors.")}</p></OptionSection>
+        <button className="optimizer-run" disabled={!file || busy} onClick={() => void runOptimization()}>{busy ? <LoaderCircle className="spin" size={16} /> : <Gauge size={16} />}{busy ? displayMessage : tr(locale, "开始优化", "Start optimization")}</button>
       </aside>
       <section className="optimizer-preview">
         <div className="optimizer-preview-toolbar">
-          <div>{optimizedUrl && <><button className={!showOptimized ? "active" : ""} onClick={() => setShowOptimized(false)}>原始模型</button><button className={showOptimized ? "active" : ""} onClick={() => setShowOptimized(true)}>优化结果</button></>}</div>
-          <span>{message}</span>
+          <div>{optimizedUrl && <><button className={!showOptimized ? "active" : ""} onClick={() => setShowOptimized(false)}>{tr(locale, "原始模型", "Original")}</button><button className={showOptimized ? "active" : ""} onClick={() => setShowOptimized(true)}>{tr(locale, "优化结果", "Optimized")}</button></>}</div>
+          <span>{displayMessage}</span>
         </div>
-        {previewUrl ? <OptimizerPreview url={previewUrl} /> : <button className="optimizer-drop" onClick={() => inputRef.current?.click()}><Upload size={32} /><strong>导入模型开始</strong><span>所有处理均在当前浏览器本地完成</span></button>}
+        {previewUrl ? <OptimizerPreview url={previewUrl} /> : <button className="optimizer-drop" onClick={() => inputRef.current?.click()}><Upload size={32} /><strong>{tr(locale, "导入模型开始", "Import a model to begin")}</strong><span>{tr(locale, "所有处理均在当前浏览器本地完成", "All processing runs locally in this browser")}</span></button>}
         {error && <div className="optimizer-error">{error}</div>}
-        {(before || after) && <div className="optimizer-statistics"><Stat label="文件大小" before={before ? formatBytes(before.bytes) : "—"} after={after ? formatBytes(after.bytes) : undefined} /><Stat label="三角面" before={before?.triangles.toLocaleString("zh-CN") ?? "—"} after={after?.triangles.toLocaleString("zh-CN")} /><Stat label="顶点" before={before?.vertices.toLocaleString("zh-CN") ?? "—"} after={after?.vertices.toLocaleString("zh-CN")} /><Stat label="节点 / 材质" before={before ? `${before.nodes} / ${before.materials}` : "—"} after={after ? `${after.nodes} / ${after.materials}` : undefined} /></div>}
+        {(before || after) && <div className="optimizer-statistics"><Stat locale={locale} label={tr(locale, "文件大小", "File size")} before={before ? formatBytes(before.bytes) : "—"} after={after ? formatBytes(after.bytes) : undefined} /><Stat locale={locale} label={tr(locale, "三角面", "Triangles")} before={before?.triangles.toLocaleString(locale) ?? "—"} after={after?.triangles.toLocaleString(locale)} /><Stat locale={locale} label={tr(locale, "顶点", "Vertices")} before={before?.vertices.toLocaleString(locale) ?? "—"} after={after?.vertices.toLocaleString(locale)} /><Stat locale={locale} label={tr(locale, "节点 / 材质", "Nodes / materials")} before={before ? `${before.nodes} / ${before.materials}` : "—"} after={after ? `${after.nodes} / ${after.materials}` : undefined} /></div>}
       </section>
     </main>
     <div className="app-copyright">Copyright © 张文鹏 Charlie</div>
@@ -152,8 +154,8 @@ function OptionSection({ icon, title, enabled, onToggle, children }: { icon: Rea
   return <section className={`optimizer-option ${enabled === false ? "disabled" : ""}`}><div className="optimizer-option-head">{icon}<strong>{title}</strong>{onToggle && <button className={`toggle ${enabled ? "on" : ""}`} onClick={() => onToggle(!enabled)}><i /></button>}</div><div className="optimizer-option-body">{children}</div></section>;
 }
 
-function Stat({ label, before, after }: { label: string; before: string; after: string | undefined }) {
-  return <div><span>{label}</span><strong>{after ?? before}</strong>{after && <small>原始 {before}</small>}</div>;
+function Stat({ locale, label, before, after }: { locale: AppLocale; label: string; before: string; after: string | undefined }) {
+  return <div><span>{label}</span><strong>{after ?? before}</strong>{after && <small>{tr(locale, "原始", "Original")} {before}</small>}</div>;
 }
 
 function OptimizerPreview({ url }: { url: string }) {
@@ -231,4 +233,16 @@ function disposeModel(root: THREE.Object3D) {
 
 function reduction(before: number, after: number) { return Math.max(0, Math.round((1 - after / before) * 100)); }
 function formatBytes(bytes: number) { return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(2)} MB`; }
-function errorMessage(reason: unknown) { return reason instanceof Error ? reason.message : "模型处理失败"; }
+function errorMessage(reason: unknown, locale: AppLocale) { return reason instanceof Error ? reason.message : tr(locale, "模型处理失败", "Model processing failed"); }
+function localizeOptimizerMessage(locale: AppLocale, message: string) {
+  if (locale === "zh-CN") return message;
+  if (message.startsWith("优化完成，体积减少 ")) return message.replace("优化完成，体积减少 ", "Optimization complete; size reduced by ");
+  const messages: Record<string, string> = {
+    "导入 GLB 或内嵌资源的 glTF 开始优化": "Import a GLB or embedded glTF to begin",
+    "正在分析模型": "Analyzing model",
+    "模型已载入，可调整参数后开始优化": "Model loaded; adjust options and start optimization",
+    "模型解析失败": "Model parsing failed",
+    "优化失败，原始文件未修改": "Optimization failed; the source file was not modified"
+  };
+  return messages[message] ?? message;
+}

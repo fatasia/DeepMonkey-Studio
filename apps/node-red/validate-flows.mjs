@@ -11,7 +11,8 @@ for (const id of [
   "scene-http-response",
   "bim-dashboard-base",
   "bim-dashboard-page",
-  "scene-dashboard-value"
+  "scene-dashboard-value",
+  "scene-dashboard-gauge"
 ]) {
   if (!byId.has(id)) throw new Error(`Missing required Node-RED node: ${id}`);
 }
@@ -21,7 +22,7 @@ if (byId.get("scene-ws-listener").path !== "/ws/scene") throw new Error("Scene W
 if (byId.get("bim-dashboard-base").path !== "/dashboard") throw new Error("Dashboard must remain under /iot/dashboard");
 
 const outputs = byId.get("normalize-scene-message").wires?.flat() ?? [];
-for (const target of ["scene-ws-out", "scene-http-response", "scene-dashboard-value"]) {
+for (const target of ["scene-ws-out", "scene-http-response", "scene-dashboard-value", "scene-dashboard-gauge"]) {
   if (!outputs.includes(target)) throw new Error(`Normalized scene messages are not wired to ${target}`);
 }
 

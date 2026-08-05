@@ -111,7 +111,7 @@ export function SceneManager({
   }
 
   async function deleteLibraryModel(model: ModelRecord) {
-    if (!window.confirm(`确定删除模型“${model.name}”吗？引用它的场景将无法再次加载该模型。`)) return;
+    if (!window.confirm(tr(locale, `确定删除模型“${model.name}”吗？引用它的场景将无法再次加载该模型。`, `Delete model “${model.name}”? Scenes that reference it will no longer be able to load it.`))) return;
     setModelLibraryBusy(true);
     try {
       await onDeleteModel(model);
@@ -137,12 +137,12 @@ export function SceneManager({
           <div><strong>BIM Studio</strong><small>{tr(locale, "场景管理中心", "Scene management")}</small></div>
         </div>
         <div className="manager-actions">
-          <select value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label="项目">
+          <select value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label={tr(locale, "项目", "Project")}>
             {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
           <button className="button" onClick={onCreateProject}><Plus size={16} />{tr(locale, "新建项目", "New project")}</button>
-          <button className="manager-icon-button" title="重命名项目" disabled={!project} onClick={onRenameProject}><Pencil size={15} /></button>
-          <button className="manager-icon-button danger" title="删除项目" disabled={!project} onClick={onDeleteProject}><Trash2 size={15} /></button>
+          <button className="manager-icon-button" title={tr(locale, "重命名项目", "Rename project")} disabled={!project} onClick={onRenameProject}><Pencil size={15} /></button>
+          <button className="manager-icon-button danger" title={tr(locale, "删除项目", "Delete project")} disabled={!project} onClick={onDeleteProject}><Trash2 size={15} /></button>
           <button className="button" disabled={!project} onClick={() => setModelLibraryOpen(true)}><Layers3 size={16} />{tr(locale, "模型资源库", "Model library")}</button>
           <button className="button" onClick={onOptimizer}><Gauge size={16} />{tr(locale, "模型优化", "Optimize")}</button>
           <button className="button" onClick={onImport}><FileUp size={16} />{tr(locale, "导入场景", "Import scene")}</button>
@@ -163,26 +163,26 @@ export function SceneManager({
             {sortedScenes.map((scene) => (
               <article className="scene-card" key={scene.id}>
                 <button className="scene-card-preview" onClick={() => void onOpen(scene)}>
-                  {scene.publishedAt && <span className="scene-published-badge"><Rocket size={11} />已发布</span>}
+                  {scene.publishedAt && <span className="scene-published-badge"><Rocket size={11} />{tr(locale, "已发布", "Published")}</span>}
                   <span className="scene-card-orbit" />
                   <Layers3 size={34} />
-                  <small>{scene.models.length + scene.primitives.length + scene.measurements.length + (scene.annotations?.length ?? 0)} 个对象</small>
+                  <small>{scene.models.length + scene.primitives.length + scene.measurements.length + (scene.annotations?.length ?? 0)} {tr(locale, "个对象", "objects")}</small>
                 </button>
                 <div className="scene-card-body">
                   <button className="scene-card-title" onClick={() => void onOpen(scene)}>{scene.name}</button>
-                  <div className="scene-card-meta"><CalendarDays size={12} />更新于 {new Date(scene.updatedAt).toLocaleString("zh-CN", { dateStyle: "medium", timeStyle: "short" })}</div>
-                  {scene.publishedAt && <div className="scene-card-publish-time"><Rocket size={11} />发布于 {new Date(scene.publishedAt).toLocaleString("zh-CN", { dateStyle: "medium", timeStyle: "short" })}</div>}
+                  <div className="scene-card-meta"><CalendarDays size={12} />{tr(locale, "更新于", "Updated")} {new Date(scene.updatedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}</div>
+                  {scene.publishedAt && <div className="scene-card-publish-time"><Rocket size={11} />{tr(locale, "发布于", "Published")} {new Date(scene.publishedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}</div>}
                   <div className="scene-card-footer">
-                    <span>{scene.measurements.length} 条测量 · {scene.annotations?.length ?? 0} 个标签</span>
+                    <span>{scene.measurements.length} {tr(locale, "条测量", "measurements")} · {scene.annotations?.length ?? 0} {tr(locale, "个标签", "annotations")}</span>
                     <div>
-                      <button title="复制场景" onClick={() => void onCopy(scene)}><Copy size={14} /></button>
-                      <button title="重命名场景" onClick={() => openRenameDialog(scene)}><Pencil size={14} /></button>
-                      <button title="浏览当前保存版" onClick={() => onBrowse(scene)}><Eye size={14} /></button>
-                      <button title={scene.publishedAt ? "重新发布当前版本" : "发布场景"} onClick={() => void onPublish(scene)}><Rocket size={14} /></button>
-                      {scene.publishedAt && <button title="浏览已发布版本" onClick={() => onBrowsePublished(scene)}><ExternalLink size={14} /></button>}
-                      {scene.publishedAt && <button title="撤回发布" className="danger" onClick={() => void onUnpublish(scene)}><Undo2 size={14} /></button>}
-                      <SceneExportMenu compact onExportLoose={() => onExportLoose(scene)} onExportSingle={() => void onExportSingle(scene)} onExportGlb={() => void onExportGlb(scene)} />
-                      <button title="删除场景" className="danger" onClick={() => void onDelete(scene)}><Trash2 size={15} /></button>
+                      <button title={tr(locale, "复制场景", "Copy scene")} onClick={() => void onCopy(scene)}><Copy size={14} /></button>
+                      <button title={tr(locale, "重命名场景", "Rename scene")} onClick={() => openRenameDialog(scene)}><Pencil size={14} /></button>
+                      <button title={tr(locale, "浏览当前保存版", "View saved version")} onClick={() => onBrowse(scene)}><Eye size={14} /></button>
+                      <button title={scene.publishedAt ? tr(locale, "重新发布当前版本", "Republish current version") : tr(locale, "发布场景", "Publish scene")} onClick={() => void onPublish(scene)}><Rocket size={14} /></button>
+                      {scene.publishedAt && <button title={tr(locale, "浏览已发布版本", "View published version")} onClick={() => onBrowsePublished(scene)}><ExternalLink size={14} /></button>}
+                      {scene.publishedAt && <button title={tr(locale, "撤回发布", "Unpublish")} className="danger" onClick={() => void onUnpublish(scene)}><Undo2 size={14} /></button>}
+                      <SceneExportMenu locale={locale} compact onExportLoose={() => onExportLoose(scene)} onExportSingle={() => void onExportSingle(scene)} onExportGlb={() => void onExportGlb(scene)} />
+                      <button title={tr(locale, "删除场景", "Delete scene")} className="danger" onClick={() => void onDelete(scene)}><Trash2 size={15} /></button>
                     </div>
                   </div>
                 </div>
@@ -203,19 +203,19 @@ export function SceneManager({
 
       {modelLibraryOpen && (
         <div className="dialog-backdrop" onMouseDown={() => setModelLibraryOpen(false)}>
-          <section className="model-library-dialog" aria-label="模型资源库" onMouseDown={(event) => event.stopPropagation()}>
+          <section className="model-library-dialog" aria-label={tr(locale, "模型资源库", "Model library")} onMouseDown={(event) => event.stopPropagation()}>
             <header className="model-library-head">
               <div>
                 <span className="eyebrow">MODEL LIBRARY</span>
-                <h2>模型资源库</h2>
-                <p>{project?.name ?? "当前项目"}中的源模型与转换状态。</p>
+                <h2>{tr(locale, "模型资源库", "Model library")}</h2>
+                <p>{project?.name ?? tr(locale, "当前项目", "Current project")} {tr(locale, "中的源模型与转换状态。", "source models and conversion status.")}</p>
               </div>
-              <button className="manager-icon-button" title="关闭" onClick={() => setModelLibraryOpen(false)}><X size={16} /></button>
+              <button className="manager-icon-button" title={tr(locale, "关闭", "Close")} onClick={() => setModelLibraryOpen(false)}><X size={16} /></button>
             </header>
             <div className="model-library-toolbar">
-              <button className="button primary" disabled={modelLibraryBusy} onClick={() => modelUploadRef.current?.click()}><FileUp size={16} />上传模型</button>
-              <button className="button" disabled={modelLibraryBusy} onClick={() => void refreshLibraryModels()}><RefreshCw className={modelLibraryBusy ? "spin" : ""} size={15} />刷新状态</button>
-              <span>支持 RVT、IFC、STEP、DWG、DXF、GLTF、GLB、FBX</span>
+              <button className="button primary" disabled={modelLibraryBusy} onClick={() => modelUploadRef.current?.click()}><FileUp size={16} />{tr(locale, "上传模型", "Upload models")}</button>
+              <button className="button" disabled={modelLibraryBusy} onClick={() => void refreshLibraryModels()}><RefreshCw className={modelLibraryBusy ? "spin" : ""} size={15} />{tr(locale, "刷新状态", "Refresh")}</button>
+              <span>{tr(locale, "支持", "Supports")} RVT、IFC、STEP、DWG、DXF、GLTF、GLB、FBX</span>
               <input ref={modelUploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadLibraryModels(event.target.files)} />
             </div>
             <div className="model-library-list">
@@ -224,17 +224,17 @@ export function SceneManager({
                   <div className="model-library-format">{model.format.toUpperCase()}</div>
                   <div className="model-library-info">
                     <strong title={model.name}>{model.name}</strong>
-                    <span>{formatBytes(model.size)} · {new Date(model.updatedAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</span>
+                    <span>{formatBytes(model.size)} · {new Date(model.updatedAt).toLocaleString(locale, { dateStyle: "short", timeStyle: "short" })}</span>
                     {model.status !== "ready" && <small title={model.message}>{model.message}</small>}
                   </div>
                   <div className="model-library-state">
-                    <span className={`model-status model-status-${model.status}`}>{statusLabel(model.status)}</span>
-                    {model.status === "processing" && <progress max={100} value={model.progress} aria-label={`转换进度 ${model.progress}%`} />}
+                    <span className={`model-status model-status-${model.status}`}>{statusLabel(model.status, locale)}</span>
+                    {model.status === "processing" && <progress max={100} value={model.progress} aria-label={`${tr(locale, "转换进度", "Conversion progress")} ${model.progress}%`} />}
                   </div>
-                  <button className="manager-icon-button danger" title="删除模型" disabled={modelLibraryBusy} onClick={() => void deleteLibraryModel(model)}><Trash2 size={15} /></button>
+                  <button className="manager-icon-button danger" title={tr(locale, "删除模型", "Delete model")} disabled={modelLibraryBusy} onClick={() => void deleteLibraryModel(model)}><Trash2 size={15} /></button>
                 </article>
               )) : (
-                <div className="model-library-empty"><Box size={34} /><strong>还没有模型</strong><span>上传模型后，可在场景编辑器中加载使用。</span></div>
+                <div className="model-library-empty"><Box size={34} /><strong>{tr(locale, "还没有模型", "No models yet")}</strong><span>{tr(locale, "上传模型后，可在场景编辑器中加载使用。", "Upload models to load them in the scene editor.")}</span></div>
               )}
             </div>
           </section>
@@ -245,10 +245,10 @@ export function SceneManager({
         <div className="dialog-backdrop" onMouseDown={() => setDialogMode(undefined)}>
           <form className="dialog" onSubmit={(event) => { event.preventDefault(); void submitSceneDialog(); }} onMouseDown={(event) => event.stopPropagation()}>
             <span className="eyebrow">{dialogMode === "rename" ? "RENAME SCENE" : "NEW SCENE"}</span>
-            <h2>{dialogMode === "rename" ? "重命名场景" : "新建场景"}</h2>
-            <p>{dialogMode === "rename" ? "修改场景在管理中心和编辑器中显示的名称。" : "新场景从空画布开始，之后可以连续加载多个模型。"}</p>
-            <label><span>场景名称</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：1 号楼施工总览" /></label>
-            <div className="dialog-actions"><button type="button" className="button" onClick={() => setDialogMode(undefined)}>取消</button><button className="button primary" disabled={!name.trim() || busy}>{dialogMode === "rename" ? "保存名称" : "创建并进入"}</button></div>
+            <h2>{dialogMode === "rename" ? tr(locale, "重命名场景", "Rename scene") : tr(locale, "新建场景", "New scene")}</h2>
+            <p>{dialogMode === "rename" ? tr(locale, "修改场景在管理中心和编辑器中显示的名称。", "Change the scene name shown in management and the editor.") : tr(locale, "新场景从空画布开始，之后可以连续加载多个模型。", "A new scene starts empty and can load multiple models.")}</p>
+            <label><span>{tr(locale, "场景名称", "Scene name")}</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder={tr(locale, "例如：1 号楼施工总览", "For example: Building 1 overview")} /></label>
+            <div className="dialog-actions"><button type="button" className="button" onClick={() => setDialogMode(undefined)}>{tr(locale, "取消", "Cancel")}</button><button className="button primary" disabled={!name.trim() || busy}>{dialogMode === "rename" ? tr(locale, "保存名称", "Save name") : tr(locale, "创建并进入", "Create and open")}</button></div>
           </form>
         </div>
       )}
@@ -263,6 +263,8 @@ function formatBytes(size: number): string {
   return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-function statusLabel(status: ConversionStatus): string {
-  return ({ queued: "排队中", processing: "转换中", ready: "可使用", waiting_converter: "等待转换器", failed: "失败" })[status];
+function statusLabel(status: ConversionStatus, locale: AppLocale): string {
+  const zh = ({ queued: "排队中", processing: "转换中", ready: "可使用", waiting_converter: "等待转换器", failed: "失败" })[status];
+  const en = ({ queued: "Queued", processing: "Converting", ready: "Ready", waiting_converter: "Waiting for converter", failed: "Failed" })[status];
+  return tr(locale, zh, en);
 }

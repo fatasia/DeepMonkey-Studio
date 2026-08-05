@@ -205,9 +205,20 @@ export interface SceneEnvironmentState {
 }
 
 export interface SceneFloorState {
+  modelId: string;
   level: string;
   visible: boolean;
   expansion: number;
+}
+
+export interface ScenePostProcessingState {
+  enabled: boolean;
+  smaa: boolean;
+  ssao: boolean;
+  ssaoIntensity: number;
+  bloom: boolean;
+  bloomStrength: number;
+  bloomThreshold: number;
 }
 
 export interface CameraKeyframe {
@@ -249,6 +260,7 @@ export interface SceneSnapshot {
   lighting?: GlobalLightingState;
   environment?: SceneEnvironmentState;
   floors?: SceneFloorState[];
+  postProcessing?: ScenePostProcessingState;
   animation?: SceneAnimationState;
   selectedModelId?: string;
   selectedLayerId?: string;

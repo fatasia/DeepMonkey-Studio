@@ -6,7 +6,9 @@ param(
 
     [Parameter(Position = 1)]
     [ValidateSet("all", "app", "api", "web", "node-red", "minio", "postgres")]
-    [string]$Target = "all"
+    [string]$Target = "all",
+
+    [switch]$Https
 )
 
 Set-StrictMode -Version Latest
@@ -281,6 +283,9 @@ function Start-Api {
 }
 
 function Start-Web {
+    if ($Https) {
+        $env:BIM_STUDIO_HTTPS = "true"
+    }
     Start-BackgroundService "web" (Get-PnpmExecutable) @("--filter", "@bim-studio/web", "dev") 5173
 }
 
@@ -417,7 +422,7 @@ function Show-Help {
 BIM Studio 服务管理
 
 用法：
-  .\bim-studio.ps1 <start|stop|restart|status> <all|app|api|web|node-red|minio|postgres>
+  .\bim-studio.ps1 <start|stop|restart|status> <all|app|api|web|node-red|minio|postgres> [-Https]
 
 示例：
   .\bim-studio.ps1 start all        启动全部服务

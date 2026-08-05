@@ -13,6 +13,12 @@ import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
+import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import type {
   CameraState,
   ClippingState,
@@ -29,6 +35,7 @@ import type {
   SceneLayerState,
   SceneLightState,
   SceneMaterialState,
+  ScenePostProcessingState,
   SkyboxPreset,
   Vector3Value,
   WeatherMode
@@ -58,7 +65,6 @@ export type RendererBackend = "webgl" | "webgpu";
 type RendererInstance = THREE.WebGLRenderer | WebGPURenderer;
 
 const DEFAULT_SCENE_LIGHTS: SceneLightState[] = [
-  { id: "ambient-default", name: "环境光", type: "ambient", enabled: true, color: "#dce8ff", intensity: 0.35 },
   { id: "hemisphere-default", name: "半球光", type: "hemisphere", enabled: true, color: "#e8f0ff", groundColor: "#3b4249", intensity: 1.4 },
   { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
 ];
@@ -229,6 +235,7 @@ export class ViewerEngine {
   onCameraChange?: (state: CameraState) => void;
   onPointerInfoChange?: (info: PointerInfo | undefined) => void;
   onAnimationChange?: (time: number, playing: boolean) => void;
+  onLightingChange?: (lighting: GlobalLightingState) => void;
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly modelRoot: THREE.Group | ClippingGroup;
@@ -301,12 +308,27 @@ export class ViewerEngine {
   private selectedFragmentNodeId: string | undefined;
   private fragmentSelectionVersion = 0;
   private readonly sceneLights = new Map<string, THREE.Light>();
+  private readonly sceneLightTargets = new Map<string, THREE.Object3D>();
+  private selectedSceneLight: { id: string; handle: "position" | "target" } | undefined;
   private weatherMode: WeatherMode = "sunny";
-  private lightingState: GlobalLightingState = { enabled: true, intensity: 1, shadowsEnabled: true, reflectionsEnabled: true, lights: structuredClone(DEFAULT_SCENE_LIGHTS) };
+  private lightingState: GlobalLightingState = { enabled: true, intensity: 1, shadowsEnabled: true, reflectionsEnabled: false, lights: structuredClone(DEFAULT_SCENE_LIGHTS) };
   private environmentState: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none" };
   private gridHelper?: THREE.GridHelper;
   private readonly skyboxTextures = new Map<Exclude<SkyboxPreset, "none">, THREE.CanvasTexture>();
   private externalEnvironmentTexture?: THREE.Texture;
+  private composer: EffectComposer | undefined;
+  private ssaoPass: SSAOPass | undefined;
+  private bloomPass: UnrealBloomPass | undefined;
+  private smaaPass: SMAAPass | undefined;
+  private postProcessingState: ScenePostProcessingState = {
+    enabled: false,
+    smaa: false,
+    ssao: false,
+    ssaoIntensity: 1,
+    bloom: false,
+    bloomStrength: 0.35,
+    bloomThreshold: 0.9
+  };
   private xrActive = false;
   private xrBackground?: THREE.Color | THREE.Texture | null;
   private floorStates = new Map<string, SceneFloorState>();
@@ -370,6 +392,21 @@ export class ViewerEngine {
     this.container.append(this.renderer.domElement);
     this.scene.add(this.modelRoot);
 
+    if (this.renderer instanceof THREE.WebGLRenderer) {
+      this.composer = new EffectComposer(this.renderer);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.ssaoPass = new SSAOPass(this.scene, this.camera, 1, 1);
+      this.ssaoPass.enabled = false;
+      this.composer.addPass(this.ssaoPass);
+      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.35, 0.25, 0.9);
+      this.bloomPass.enabled = false;
+      this.composer.addPass(this.bloomPass);
+      this.smaaPass = new SMAAPass();
+      this.smaaPass.enabled = false;
+      this.composer.addPass(this.smaaPass);
+      this.composer.addPass(new OutputPass());
+    }
+
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
     this.orbit.enableDamping = true;
     this.orbit.target.set(0, 1, 0);
@@ -382,6 +419,19 @@ export class ViewerEngine {
       if (selected && this.fragmentModels.has(selected.id)) this.syncFragmentsTransformState(selected.id, Boolean(event.value));
     });
     this.transform.addEventListener("objectChange", () => {
+      if (this.selectedSceneLight) {
+        const selected = this.selectedSceneLight;
+        const state = this.lightingState.lights?.find((item) => item.id === selected.id);
+        const light = this.sceneLights.get(selected.id);
+        const target = this.sceneLightTargets.get(selected.id);
+        if (state && light) {
+          if (selected.handle === "position") state.position = toValue(light.position);
+          else if (target) state.target = toValue(target.position);
+          if (state.type === "rectArea") light.lookAt(state.target?.x ?? 0, state.target?.y ?? 0, state.target?.z ?? 0);
+          this.onLightingChange?.(this.getGlobalLighting());
+        }
+        return;
+      }
       const selected = this.getSelected();
       if (selected) {
         const object = this.inspectedObject;
@@ -643,7 +693,7 @@ export class ViewerEngine {
       enabled: state.enabled,
       intensity: THREE.MathUtils.clamp(state.intensity, 0, 2.5),
       shadowsEnabled: state.shadowsEnabled ?? true,
-      reflectionsEnabled: state.reflectionsEnabled ?? true,
+      reflectionsEnabled: state.reflectionsEnabled ?? false,
       lights: structuredClone(state.lights?.length ? state.lights : DEFAULT_SCENE_LIGHTS)
     };
     this.syncSceneLights();
@@ -694,18 +744,57 @@ export class ViewerEngine {
     return state ? structuredClone(state) : undefined;
   }
 
-  getFloorStates(): SceneFloorState[] {
-    return this.getComponentFacets().levels.map((level) => structuredClone(this.floorStates.get(level) ?? { level, visible: true, expansion: 0 }));
+  getPostProcessing(): ScenePostProcessingState {
+    return structuredClone(this.postProcessingState);
+  }
+
+  setPostProcessing(state: ScenePostProcessingState): void {
+    this.postProcessingState = {
+      enabled: state.enabled,
+      smaa: state.smaa,
+      ssao: state.ssao,
+      ssaoIntensity: THREE.MathUtils.clamp(state.ssaoIntensity, 0, 4),
+      bloom: state.bloom,
+      bloomStrength: THREE.MathUtils.clamp(state.bloomStrength, 0, 3),
+      bloomThreshold: THREE.MathUtils.clamp(state.bloomThreshold, 0, 1)
+    };
+    if (this.ssaoPass) {
+      this.ssaoPass.enabled = state.enabled && state.ssao;
+      this.ssaoPass.kernelRadius = 8 * this.postProcessingState.ssaoIntensity;
+      this.ssaoPass.minDistance = 0.002;
+      this.ssaoPass.maxDistance = 0.12;
+    }
+    if (this.bloomPass) {
+      this.bloomPass.enabled = state.enabled && state.bloom;
+      this.bloomPass.strength = this.postProcessingState.bloomStrength;
+      this.bloomPass.threshold = this.postProcessingState.bloomThreshold;
+    }
+    if (this.smaaPass) this.smaaPass.enabled = state.enabled && state.smaa;
+  }
+
+  getFloorStates(modelId?: string): SceneFloorState[] {
+    const modelEntries = modelId
+      ? [[modelId, this.componentRecords.get(modelId) ?? []] as const]
+      : [...this.componentRecords.entries()];
+    return modelEntries.flatMap(([currentModelId, records]) => componentFacets(records).levels.map((level) => {
+      const key = this.floorStateKey(currentModelId, level);
+      return structuredClone(this.floorStates.get(key) ?? { modelId: currentModelId, level, visible: true, expansion: 0 });
+    }));
   }
 
   applyFloorStates(states: SceneFloorState[] | undefined): void {
     this.floorStates.clear();
-    for (const state of states ?? []) this.setFloorState(state.level, state.visible, state.expansion);
+    for (const state of states ?? []) {
+      if (state.modelId) this.setFloorState(state.modelId, state.level, state.visible, state.expansion);
+      else {
+        for (const currentModelId of this.componentRecords.keys()) this.setFloorState(currentModelId, state.level, state.visible, state.expansion);
+      }
+    }
   }
 
-  setFloorState(level: string, visible: boolean, expansion = 0): void {
-    this.floorStates.set(level, { level, visible, expansion });
-    const records = [...this.componentRecords.values()].flat().filter((record) => record.level === level);
+  setFloorState(modelId: string, level: string, visible: boolean, expansion = 0): void {
+    this.floorStates.set(this.floorStateKey(modelId, level), { modelId, level, visible, expansion });
+    const records = (this.componentRecords.get(modelId) ?? []).filter((record) => record.level === level);
     for (const record of records) {
       const fragment = this.fragmentLayers.get(record.modelId)?.get(record.id);
       const fragmentModel = this.fragmentModels.get(record.modelId);
@@ -719,6 +808,26 @@ export class ViewerEngine {
       if (object.userData.floorBaseY === undefined) object.userData.floorBaseY = object.position.y;
       object.position.y = Number(object.userData.floorBaseY) + expansion;
     }
+  }
+
+  selectSceneLight(id: string, handle: "position" | "target" = "position"): boolean {
+    const state = this.lightingState.lights?.find((item) => item.id === id);
+    const object = handle === "position" ? this.sceneLights.get(id) : this.sceneLightTargets.get(id);
+    if (!state || !object || this.readOnlyMode || this.navigationMode !== "orbit") return false;
+    if (handle === "position" && ["ambient", "hemisphere"].includes(state.type)) return false;
+    this.select(undefined);
+    this.selectedSceneLight = { id, handle };
+    this.transform.setMode("translate");
+    this.transform.enabled = true;
+    this.transform.attach(object);
+    this.transform.getHelper().visible = true;
+    return true;
+  }
+
+  clearSceneLightSelection(): void {
+    this.selectedSceneLight = undefined;
+    this.transform.detach();
+    this.updateTransformAccess();
   }
 
   async isXRSupported(mode: "immersive-vr" | "immersive-ar"): Promise<boolean> {
@@ -1586,6 +1695,7 @@ export class ViewerEngine {
   }
 
   select(id: string | undefined): void {
+    this.selectedSceneLight = undefined;
     this.focusedSpaceKey = undefined;
     if (this.selectedAnnotationId) {
       const previous = this.selectedAnnotationId;
@@ -2070,6 +2180,7 @@ export class ViewerEngine {
     this.clearAnnotations(false);
     for (const visual of this.spaceVisuals.values()) this.disposeObject(visual.object);
     this.spaceVisuals.clear();
+    this.composer?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -2081,6 +2192,17 @@ export class ViewerEngine {
   }
 
   private updateTransformAccess(): void {
+    if (this.selectedSceneLight) {
+      const object = this.selectedSceneLight.handle === "position"
+        ? this.sceneLights.get(this.selectedSceneLight.id)
+        : this.sceneLightTargets.get(this.selectedSceneLight.id);
+      const editable = Boolean(object && !this.readOnlyMode && this.navigationMode === "orbit" && !this.sceneAnimationPlaying);
+      this.transform.enabled = editable;
+      if (editable && object) this.transform.attach(object);
+      else this.transform.detach();
+      this.transform.getHelper().visible = editable;
+      return;
+    }
     const object = this.inspectedObject;
     const editable = Boolean(
       object
@@ -2535,8 +2657,9 @@ export class ViewerEngine {
     for (const light of this.sceneLights.values()) {
       if (light.parent) light.parent.remove(light);
     }
-    for (const target of this.scene.children.filter((child) => child.name.startsWith("scene-light-target:"))) this.scene.remove(target);
+    for (const target of this.sceneLightTargets.values()) if (target.parent) target.parent.remove(target);
     this.sceneLights.clear();
+    this.sceneLightTargets.clear();
     for (const state of this.lightingState.lights ?? DEFAULT_SCENE_LIGHTS) {
       const color = new THREE.Color(state.color);
       let light: THREE.Light;
@@ -2548,18 +2671,25 @@ export class ViewerEngine {
         spot.target.name = `scene-light-target:${state.id}`;
         spot.target.position.set(state.target?.x ?? 0, state.target?.y ?? 0, state.target?.z ?? 0);
         this.scene.add(spot.target);
+        this.sceneLightTargets.set(state.id, spot.target);
         light = spot;
       } else if (state.type === "rectArea") {
         const area = new THREE.RectAreaLight(color, state.intensity, state.width ?? 6, state.height ?? 4);
+        const target = new THREE.Object3D();
+        target.name = `scene-light-target:${state.id}`;
+        target.position.set(state.target?.x ?? 0, state.target?.y ?? 0, state.target?.z ?? 0);
+        this.scene.add(target);
+        this.sceneLightTargets.set(state.id, target);
         light = area;
       } else {
         const directional = new THREE.DirectionalLight(color, state.intensity);
         directional.target.name = `scene-light-target:${state.id}`;
         directional.target.position.set(state.target?.x ?? 0, state.target?.y ?? 0, state.target?.z ?? 0);
-        directional.shadow.mapSize.set(2048, 2048);
+        directional.shadow.mapSize.set(1024, 1024);
         directional.shadow.camera.near = 0.1;
         directional.shadow.camera.far = 300;
         this.scene.add(directional.target);
+        this.sceneLightTargets.set(state.id, directional.target);
         light = directional;
       }
       light.name = `scene-light:${state.id}`;
@@ -2570,6 +2700,16 @@ export class ViewerEngine {
       this.sceneLights.set(state.id, light);
       this.scene.add(light);
     }
+    if (this.selectedSceneLight) {
+      const selection = this.selectedSceneLight;
+      const object = selection.handle === "position" ? this.sceneLights.get(selection.id) : this.sceneLightTargets.get(selection.id);
+      if (object) this.transform.attach(object);
+      else this.clearSceneLightSelection();
+    }
+  }
+
+  private floorStateKey(modelId: string, level: string): string {
+    return `${modelId}\u0000${level}`;
   }
 
   private createRainEffect(): THREE.LineSegments {
@@ -2727,6 +2867,7 @@ export class ViewerEngine {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
+    this.composer?.setSize(width, height);
   }
 
   private animate = (): void => {
@@ -2770,7 +2911,8 @@ export class ViewerEngine {
     this.syncSpaceVisuals();
     if (this.navigationMode !== "firstPerson") this.orbit.update();
     this.emitCameraChange();
-    this.renderer.render(this.scene, this.camera);
+    if (!this.xrActive && this.postProcessingState.enabled && this.composer) this.composer.render(delta);
+    else this.renderer.render(this.scene, this.camera);
   };
 
   private updateNavigation(delta: number): void {

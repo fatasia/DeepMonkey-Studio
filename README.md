@@ -51,11 +51,14 @@ Windows 也可以使用根目录服务脚本统一管理全部服务，或只操
 .\bim-studio.ps1 restart api
 .\bim-studio.ps1 stop web
 .\bim-studio.ps1 status all
+# 使用 https/private.key 与 https/self-sign.cert 启动局域网 HTTPS
+.\bim-studio.ps1 restart all -Https
 ```
 
 服务脚本会把项目临时文件写入仓库内的 `.cache` 目录；Revit Worker 可通过 `BIM_STUDIO_WORKER_ROOT` 指定数据盘缓存位置。`.cache`、`data`、日志、模型测试文件和构建产物均不会提交到 Git。
 
-- Web: http://localhost:5173
+- Web: http://localhost:5173（默认监听 `0.0.0.0`，也可通过本机局域网 IP 访问）
+- HTTPS Web: https://localhost:5173（设置 `BIM_STUDIO_HTTPS=true` 或使用脚本的 `-Https`）
 - API: http://localhost:4100
 - Node-RED 流程编辑器: http://localhost:5173/node-red/
 - Node-RED Dashboard: http://localhost:5173/iot/dashboard/

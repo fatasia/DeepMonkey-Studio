@@ -13,6 +13,7 @@ import {
   Footprints,
   Focus,
   Film,
+  Gauge,
   HeartHandshake,
   Import,
   Info,
@@ -63,6 +64,7 @@ import type {
   SceneFloorState,
   SceneLightState,
   SceneMaterialState,
+  ScenePostProcessingState,
   SceneSnapshot,
   SkyboxPreset,
   WeatherMode
@@ -74,6 +76,7 @@ import { SceneExportMenu } from "./components/SceneExportMenu";
 import { SpaceTree } from "./components/SpaceTree";
 import { CreditsModal } from "./components/CreditsModal";
 import { DigitalTwinPanel } from "./components/DigitalTwinPanel";
+import { SceneDashboardOverlay } from "./components/SceneDashboardOverlay";
 import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
 import { exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
 import {
@@ -98,14 +101,14 @@ const DEFAULT_LIGHTING: GlobalLightingState = {
   enabled: true,
   intensity: 1,
   shadowsEnabled: true,
-  reflectionsEnabled: true,
+  reflectionsEnabled: false,
   lights: [
-    { id: "ambient-default", name: "环境光", type: "ambient", enabled: true, color: "#dce8ff", intensity: 0.35 },
     { id: "hemisphere-default", name: "半球光", type: "hemisphere", enabled: true, color: "#e8f0ff", groundColor: "#3b4249", intensity: 1.4 },
     { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
   ]
 };
 const DEFAULT_ENVIRONMENT: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none", environmentAsBackground: false, environmentIntensity: 1 };
+const DEFAULT_POST_PROCESSING: ScenePostProcessingState = { enabled: false, smaa: false, ssao: false, ssaoIntensity: 1, bloom: false, bloomStrength: 0.35, bloomThreshold: 0.9 };
 const SKYBOX_OPTIONS: Array<{ value: SkyboxPreset; label: string }> = [
   { value: "none", label: "纯色" },
   { value: "clear", label: "晴空" },
@@ -198,9 +201,11 @@ export function App() {
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [lighting, setLighting] = useState<GlobalLightingState>(DEFAULT_LIGHTING);
   const [sceneEnvironment, setSceneEnvironment] = useState<SceneEnvironmentState>(DEFAULT_ENVIRONMENT);
+  const [postProcessing, setPostProcessing] = useState<ScenePostProcessingState>(DEFAULT_POST_PROCESSING);
   const [selectedLightId, setSelectedLightId] = useState("sun-default");
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [digitalTwinOpen, setDigitalTwinOpen] = useState(false);
+  const [sceneDashboardOpen, setSceneDashboardOpen] = useState(false);
   const [locale, setLocale] = useState<AppLocale>(() => readLocale());
   const [sceneAnimation, setSceneAnimation] = useState<SceneAnimationState>(DEFAULT_ANIMATION);
   const [animationTime, setAnimationTime] = useState(0);
@@ -209,7 +214,7 @@ export function App() {
   const [componentQuery, setComponentQuery] = useState("");
   const [componentLevel, setComponentLevel] = useState("");
   const [componentCategory, setComponentCategory] = useState("");
-  const [floorExpansion, setFloorExpansion] = useState(0);
+  const [floorExpansionByModel, setFloorExpansionByModel] = useState<Record<string, number>>({});
   const [clipping, setClippingState] = useState<ClippingState>(DEFAULT_CLIPPING);
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
   const [directoryMode, setDirectoryMode] = useState<"components" | "spaces">("components");
@@ -272,6 +277,10 @@ export function App() {
         setRevision((value) => value + 1);
       };
       viewer.onModelChange = requestRevision;
+      viewer.onLightingChange = (nextLighting) => {
+        setLighting(nextLighting);
+        requestRevision();
+      };
       viewer.onCollisionChange = requestRevision;
       viewer.onAnimationChange = (time, playing) => {
         setAnimationTime(time);
@@ -537,6 +546,11 @@ export function App() {
   const selectionLocked = engine?.isSelectionLocked() ?? false;
   const componentFacets = useMemo(() => engine?.getComponentFacets() ?? { levels: [], categories: [], specialties: [] }, [engine, revision]);
   const floorStates = useMemo(() => engine?.getFloorStates() ?? [], [engine, revision]);
+  const floorStatesByModel = useMemo(() => {
+    const grouped = new Map<string, SceneFloorState[]>();
+    for (const floor of floorStates) grouped.set(floor.modelId, [...(grouped.get(floor.modelId) ?? []), floor]);
+    return grouped;
+  }, [floorStates]);
   const selectedLight = lighting.lights?.find((light) => light.id === selectedLightId) ?? lighting.lights?.[0];
   const componentResults = useMemo(() => engine?.searchComponents({ query: componentQuery, level: componentLevel, category: componentCategory }, 80) ?? [], [engine, revision, componentQuery, componentLevel, componentCategory]);
   const componentSearchActive = Boolean(componentQuery.trim() || componentLevel || componentCategory);
@@ -766,7 +780,7 @@ export function App() {
     if (!engine || !selected || selected.kind !== "model") return;
     engine.setExplosion(selected.id, factor, mode);
     setRevision((value) => value + 1);
-    setMessage(factor > 0 ? `模型爆炸 ${Math.round(factor * 100)}% · ${explosionModeName(mode)}` : "已恢复模型组合");
+    setMessage(factor > 0 ? `${tr(locale, "模型爆炸", "Model explosion")} ${Math.round(factor * 100)}% · ${explosionModeName(mode, locale)}` : tr(locale, "已恢复模型组合", "Model restored"));
   }
 
   function updateSelectedTransform(group: keyof ModelTransform, axis: "x" | "y" | "z", rawValue: string) {
@@ -800,6 +814,11 @@ export function App() {
   function changeSceneEnvironment(next: SceneEnvironmentState) {
     setSceneEnvironment(next);
     engine?.setSceneEnvironment(next);
+  }
+
+  function changePostProcessing(next: ScenePostProcessingState) {
+    setPostProcessing(next);
+    engine?.setPostProcessing(next);
   }
 
   async function uploadEnvironmentMap(file?: File) {
@@ -849,14 +868,25 @@ export function App() {
   }
 
   function updateFloor(state: SceneFloorState) {
-    engine?.setFloorState(state.level, state.visible, state.expansion);
+    engine?.setFloorState(state.modelId, state.level, state.visible, state.expansion);
     setRevision((value) => value + 1);
   }
 
-  function expandFloors(value: number) {
-    setFloorExpansion(value);
-    floorStates.forEach((state, index) => engine?.setFloorState(state.level, state.visible, index * value));
+  function expandFloors(modelId: string, value: number) {
+    setFloorExpansionByModel((current) => ({ ...current, [modelId]: value }));
+    (floorStatesByModel.get(modelId) ?? []).forEach((state, index) => engine?.setFloorState(modelId, state.level, state.visible, index * value));
     setRevision((item) => item + 1);
+  }
+
+  function selectLightForTransform(light: SceneLightState, handle: "position" | "target") {
+    setSelectedLightId(light.id);
+    setEnvironmentOpen(true);
+    setSelected(undefined);
+    const selectedHandle = engine?.selectSceneLight(light.id, handle) ?? false;
+    if (selectedHandle) {
+      setTransformMode("translate");
+      setMessage(handle === "position" ? tr(locale, "拖动坐标轴移动光源", "Drag the gizmo to move the light") : tr(locale, "拖动目标点改变光照方向", "Drag the target to change light direction"));
+    }
   }
 
   async function startXR(mode: "immersive-vr" | "immersive-ar") {
@@ -954,6 +984,7 @@ export function App() {
       lighting: engine.getGlobalLighting(),
       environment: engine.getSceneEnvironment(),
       floors: engine.getFloorStates(),
+      postProcessing: engine.getPostProcessing(),
       animation: engine.getSceneAnimation(),
       ...(selected ? { selectedModelId: selected.id } : {}),
       ...(selectedLayerId ? { selectedLayerId } : {}),
@@ -1046,19 +1077,23 @@ export function App() {
       setAnnotations(engine.listAnnotations());
       engine.applyCamera(scene.camera);
       const nextWeather = scene.weather ?? "sunny";
-      const nextLighting: GlobalLightingState = { ...DEFAULT_LIGHTING, ...scene.lighting, lights: scene.lighting?.lights?.length ? scene.lighting.lights : (DEFAULT_LIGHTING.lights ?? []) };
+      const savedLights = scene.lighting?.lights?.filter((light) => light.id !== "ambient-default");
+      const nextLighting: GlobalLightingState = { ...DEFAULT_LIGHTING, ...scene.lighting, lights: savedLights?.length ? savedLights : (DEFAULT_LIGHTING.lights ?? []) };
       const nextEnvironment: SceneEnvironmentState = { ...DEFAULT_ENVIRONMENT, ...scene.environment };
       const nextAnimation = scene.animation ?? DEFAULT_ANIMATION;
+      const nextPostProcessing = { ...DEFAULT_POST_PROCESSING, ...scene.postProcessing };
       engine.setWeather(nextWeather);
       engine.setGlobalLighting(nextLighting);
       engine.setSceneEnvironment(nextEnvironment);
       engine.applyFloorStates(scene.floors);
+      engine.setPostProcessing(nextPostProcessing);
       engine.setSceneAnimation(nextAnimation);
       engine.seekSceneAnimation(0);
       setWeather(nextWeather);
       setLighting(nextLighting);
       setSceneEnvironment(nextEnvironment);
       setSceneAnimation(nextAnimation);
+      setPostProcessing(nextPostProcessing);
       setAnimationTime(0);
       setAnimationPlaying(false);
       const nextClipping = scene.clipping ?? DEFAULT_CLIPPING;
@@ -1087,6 +1122,7 @@ export function App() {
     engine.setWeather("sunny");
     engine.setGlobalLighting(DEFAULT_LIGHTING);
     engine.setSceneEnvironment(DEFAULT_ENVIRONMENT);
+    engine.setPostProcessing(DEFAULT_POST_PROCESSING);
     engine.setSceneAnimation(DEFAULT_ANIMATION);
     engine.seekSceneAnimation(0);
     setClippingState(DEFAULT_CLIPPING);
@@ -1113,6 +1149,7 @@ export function App() {
       weather: "sunny",
       lighting: DEFAULT_LIGHTING,
       environment: DEFAULT_ENVIRONMENT,
+      postProcessing: DEFAULT_POST_PROCESSING,
       animation: DEFAULT_ANIMATION,
       createdAt: now,
       updatedAt: now
@@ -1127,6 +1164,7 @@ export function App() {
     setWeather("sunny");
     setLighting(DEFAULT_LIGHTING);
     setSceneEnvironment(DEFAULT_ENVIRONMENT);
+    setPostProcessing(DEFAULT_POST_PROCESSING);
     setSceneAnimation(DEFAULT_ANIMATION);
     setAnimationTime(0);
     setAnimationPlaying(false);
@@ -1218,6 +1256,12 @@ export function App() {
           annotations: parsed.annotations.map((annotation) => ({
             ...annotation,
             ...(annotation.modelId ? { modelId: modelIdMap.get(annotation.modelId) ?? annotation.modelId } : {})
+          }))
+        } : {}),
+        ...(parsed.floors ? {
+          floors: parsed.floors.map((floor) => ({
+            ...floor,
+            modelId: modelIdMap.get(floor.modelId) ?? floor.modelId
           }))
         } : {}),
         ...(parsed.selectedModelId ? { selectedModelId: modelIdMap.get(parsed.selectedModelId) ?? parsed.selectedModelId } : {})
@@ -1316,7 +1360,7 @@ export function App() {
 
   return (
     <>
-      {route.view === "optimizer" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />正在加载模型优化器</div>}><ModelOptimizer onBack={() => navigate({ view: "manager" })} /></Suspense>}
+      {route.view === "optimizer" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载模型优化器", "Loading model optimizer")}</div>}><ModelOptimizer locale={locale} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "manager" && (
         <SceneManager
           locale={locale}
@@ -1356,11 +1400,11 @@ export function App() {
           className="project-select"
           value={project?.id ?? ""}
           onChange={(event) => switchProjectById(event.target.value)}
-          aria-label="当前项目"
+          aria-label={tr(locale, "当前项目", "Current project")}
         >
           {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
-        <button className="project-add-button" title="新建项目" onClick={() => openProjectDialog("create")}><Plus size={15} /></button>
+        <button className="project-add-button" title={tr(locale, "新建项目", "New project")} onClick={() => openProjectDialog("create")}><Plus size={15} /></button>
         <div className="scene-title-wrap">
           <span>{tr(locale, "场景", "Scene")}</span>
           <input
@@ -1374,72 +1418,67 @@ export function App() {
                 event.currentTarget.blur();
               }
             }}
-            aria-label="场景名称"
+            aria-label={tr(locale, "场景名称", "Scene name")}
           />
         </div>
         <div className="topbar-actions">
-          <div className="renderer-switch" aria-label="渲染模式" title="WebGPU 仍处于实验阶段；切换时会自动恢复当前场景">
+          <div className="renderer-switch" aria-label={tr(locale, "渲染模式", "Renderer")} title={tr(locale, "WebGPU 仍处于实验阶段；切换时会自动恢复当前场景", "WebGPU is experimental; switching restores the current scene")}>
             {rendererSwitching ? <LoaderCircle className="spin" size={14} /> : <Cpu size={14} />}
             <button className={rendererBackend === "webgl" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgl")}>WebGL</button>
-            <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>实验</small></button>
+            <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>{tr(locale, "实验", "Experimental")}</small></button>
           </div>
-          <button className="button ghost compact-action" title={tr(locale, "切换中英文", "Switch language")} onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={16} />{locale === "zh-CN" ? "EN" : "中文"}</button>
           <button className={`button ghost compact-action ${digitalTwinOpen ? "active" : ""}`} title={tr(locale, "数字孪生流程与看板", "Digital twin flows and dashboards")} onClick={() => { setDigitalTwinOpen((value) => !value); setEnvironmentOpen(false); }}><Radio size={16} />{tr(locale, "数据", "Data")}</button>
-          <button className="button ghost compact-action" title={tr(locale, "开源项目致谢", "Open-source credits")} onClick={() => setCreditsOpen(true)}><HeartHandshake size={16} />{tr(locale, "致谢", "Credits")}</button>
           <button className="button ghost" onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={16} />{tr(locale, "场景管理", "Scenes")}</button>
           <button className="button ghost" onClick={() => importRef.current?.click()}><Import size={16} />{tr(locale, "导入", "Import")}</button>
-          <SceneExportMenu disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} />
+          <SceneExportMenu locale={locale} disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} />
           <button className="button primary" onClick={() => void saveScene()} disabled={busy}><Save size={16} />{tr(locale, "保存场景", "Save scene")}</button>
         </div>
         </> : <>
-          <div className="viewer-scene-title"><span className="viewer-mode-badge"><Rocket size={13} />{route.view === "published" ? "已发布版本" : "当前保存版本"}</span><strong>{sceneName}</strong></div>
-          <div className="topbar-actions"><button className="button ghost compact-action" onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={16} />{locale === "zh-CN" ? "EN" : "中文"}</button><button className="button ghost compact-action" onClick={() => setCreditsOpen(true)}><HeartHandshake size={16} />{tr(locale, "致谢", "Credits")}</button><button className="button ghost" onClick={() => navigate({ view: "manager" })}><ArrowLeft size={16} />{tr(locale, "返回场景管理", "Back to scenes")}</button></div>
+          <div className="viewer-scene-title"><span className="viewer-mode-badge"><Rocket size={13} />{route.view === "published" ? tr(locale, "已发布版本", "Published version") : tr(locale, "当前保存版本", "Saved version")}</span><strong>{sceneName}</strong></div>
+          <div className="topbar-actions"><button className="button ghost" onClick={() => navigate({ view: "manager" })}><ArrowLeft size={16} />{tr(locale, "返回场景管理", "Back to scenes")}</button></div>
         </>}
       </header>
 
       <aside className="left-panel">
         <div className="panel-heading">
           <div><span className="eyebrow">PROJECT DIRECTORY</span><h2>{tr(locale, "目录树", "Directory")}</h2></div>
-          <button className="icon-button" title="上传模型" onClick={() => uploadRef.current?.click()} disabled={uploading}>
+          <button className="icon-button" title={tr(locale, "上传模型", "Upload model")} onClick={() => uploadRef.current?.click()} disabled={uploading}>
             {uploading ? <LoaderCircle className="spin" size={18} /> : <Plus size={18} />}
           </button>
         </div>
-        <div className="rvt-route-switch" aria-label="RVT 转换链路">
-          <span>RVT 转换</span>
-          <button className={rvtConversionMode === "native-glb" ? "active" : ""} onClick={() => setRvtConversionMode("native-glb")}><strong>原生 GLB</strong><small>快速 · 推荐</small></button>
-          <button className={rvtConversionMode === "ifc" ? "active" : ""} onClick={() => setRvtConversionMode("ifc")}><strong>IFC</strong><small>兼容备用</small></button>
+        <div className="rvt-route-switch" aria-label={tr(locale, "RVT 转换链路", "RVT conversion route")}>
+          <span>{tr(locale, "RVT 转换", "RVT conversion")}</span>
+          <button className={rvtConversionMode === "native-glb" ? "active" : ""} onClick={() => setRvtConversionMode("native-glb")}><strong>{tr(locale, "原生 GLB", "Native GLB")}</strong><small>{tr(locale, "快速 · 推荐", "Fast · Recommended")}</small></button>
+          <button className={rvtConversionMode === "ifc" ? "active" : ""} onClick={() => setRvtConversionMode("ifc")}><strong>IFC</strong><small>{tr(locale, "兼容备用", "Compatibility fallback")}</small></button>
         </div>
         <button className="upload-zone" onClick={() => uploadRef.current?.click()}>
-          <Upload size={20} /><span>上传模型</span><small>RVT · IFC · STEP · DWG · GLB · FBX · DXF</small>
+          <Upload size={20} /><span>{tr(locale, "上传模型", "Upload model")}</span><small>RVT · IFC · STEP · DWG · GLB · FBX · DXF</small>
         </button>
-        <div className="directory-tabs" role="tablist" aria-label="目录类型">
+        <div className="directory-tabs" role="tablist" aria-label={tr(locale, "目录类型", "Directory type")}>
           <button className={directoryMode === "components" ? "active" : ""} onClick={() => setDirectoryMode("components")}>{tr(locale, "构件", "Components")}</button>
           <button className={directoryMode === "spaces" ? "active" : ""} onClick={() => setDirectoryMode("spaces")}>{tr(locale, "空间", "Spaces")} <small>{spaces.length}</small></button>
         </div>
-        {directoryMode === "components" && <section className="component-search" aria-label="构件查询">
-          <div className="component-search-input"><Search size={15} /><input value={componentQuery} onChange={(event) => setComponentQuery(event.target.value)} placeholder="搜索名称、ID、属性" aria-label="搜索构件" />{componentQuery && <button title="清空搜索" onClick={() => setComponentQuery("")}><X size={13} /></button>}</div>
+        {directoryMode === "components" && <section className="component-search" aria-label={tr(locale, "构件查询", "Component search")}>
+          <div className="component-search-input"><Search size={15} /><input value={componentQuery} onChange={(event) => setComponentQuery(event.target.value)} placeholder={tr(locale, "搜索名称、ID、属性", "Search name, ID or property")} aria-label={tr(locale, "搜索构件", "Search components")} />{componentQuery && <button title={tr(locale, "清空搜索", "Clear search")} onClick={() => setComponentQuery("")}><X size={13} /></button>}</div>
           {(componentFacets.levels.length > 0 || componentFacets.categories.length > 0) && (
             <div className="component-filters">
-              <select value={componentLevel} onChange={(event) => setComponentLevel(event.target.value)} aria-label="按楼层筛选"><option value="">全部楼层</option>{componentFacets.levels.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-              <select value={componentCategory} onChange={(event) => setComponentCategory(event.target.value)} aria-label="按类别筛选"><option value="">全部类别</option>{componentFacets.categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+              <select value={componentLevel} onChange={(event) => setComponentLevel(event.target.value)} aria-label={tr(locale, "按楼层筛选", "Filter by floor")}><option value="">{tr(locale, "全部楼层", "All floors")}</option>{componentFacets.levels.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+              <select value={componentCategory} onChange={(event) => setComponentCategory(event.target.value)} aria-label={tr(locale, "按类别筛选", "Filter by category")}><option value="">{tr(locale, "全部类别", "All categories")}</option>{componentFacets.categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
             </div>
           )}
           {componentSearchActive && (
             <div className="component-results">
-              <div className="component-results-head"><span>{componentResults.length} 个结果</span><div><button disabled={componentResults.length === 0} onClick={() => { engine?.isolateComponents(componentResults); setRevision((value) => value + 1); }}>隔离结果</button>{engine?.isIsolationActive() && <button onClick={() => { engine.clearIsolation(); setRevision((value) => value + 1); }}>恢复</button>}</div></div>
+              <div className="component-results-head"><span>{componentResults.length} {tr(locale, "个结果", "results")}</span><div><button disabled={componentResults.length === 0} onClick={() => { engine?.isolateComponents(componentResults); setRevision((value) => value + 1); }}>{tr(locale, "隔离结果", "Isolate")}</button>{engine?.isIsolationActive() && <button onClick={() => { engine.clearIsolation(); setRevision((value) => value + 1); }}>{tr(locale, "恢复", "Restore")}</button>}</div></div>
               <div className="component-result-list">
                 {componentResults.map((record) => <button key={record.stableId} className={selectedComponent?.stableId === record.stableId ? "selected" : ""} onClick={() => focusComponent(record)}><strong title={record.name}>{record.name}</strong><small>{[record.level, record.category, record.type].filter(Boolean).join(" · ")}</small></button>)}
-                {componentResults.length === 0 && <span className="component-no-result">没有匹配构件</span>}
+                {componentResults.length === 0 && <span className="component-no-result">{tr(locale, "没有匹配构件", "No matching components")}</span>}
               </div>
             </div>
           )}
         </section>}
-        {directoryMode === "components" && floorStates.length > 0 && <section className="floor-control" aria-label={tr(locale, "楼层控制", "Floor controls")}>
-          <div className="floor-control-head"><span>{tr(locale, "楼层", "Floors")}</span><small>{floorStates.length}</small><label><span>{tr(locale, "向上展开", "Expand upward")}</span><input type="range" min="0" max="12" step="0.25" value={floorExpansion} onChange={(event) => expandFloors(Number(event.target.value))} /><output>{floorExpansion.toFixed(1)}m</output></label></div>
-          <div className="floor-list">{floorStates.map((floor) => <button key={floor.level} className={floor.visible ? "active" : ""} title={floor.visible ? tr(locale, "隐藏该楼层", "Hide floor") : tr(locale, "显示该楼层", "Show floor")} onClick={() => updateFloor({ ...floor, visible: !floor.visible })}>{floor.visible ? <Eye size={13} /> : <EyeOff size={13} />}<span>{floor.level}</span></button>)}</div>
-        </section>}
         <div className="asset-list">
           {directoryMode === "spaces" ? <SpaceTree
+            locale={locale}
             spaces={spaces}
             isVisible={(space) => engine?.isSpaceVisible(space) ?? false}
             onFocus={(space) => {
@@ -1467,22 +1506,24 @@ export function App() {
             const loaded = loadedModels.find((item) => item.id === model.id);
             const tree = loaded ? engine?.getLayerTree(model.id) : undefined;
             const expanded = expandedModels.has(model.id);
+            const modelFloors = floorStatesByModel.get(model.id) ?? [];
+            const floorExpansion = floorExpansionByModel[model.id] ?? 0;
             return (
               <div className="model-tree-item" key={model.id}>
                 <div className={`asset-row ${selected?.id === model.id ? "selected" : ""}`}>
-                  <button className="model-expander" disabled={!loaded} title={expanded ? "收起模型结构" : "展开模型结构"} onClick={() => loaded && toggleModelTree(model.id)}>
+                  <button className="model-expander" disabled={!loaded} title={expanded ? tr(locale, "收起模型结构", "Collapse model structure") : tr(locale, "展开模型结构", "Expand model structure")} onClick={() => loaded && toggleModelTree(model.id)}>
                     {loaded ? expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} /> : <span />}
                   </button>
                   <button className="asset-main" onClick={() => loaded ? engine?.select(model.id) : void loadModel(model)}>
                     <span className={`format-badge format-${model.format}`}>{model.format.toUpperCase()}</span>
-                    <span className="asset-copy"><strong title={model.name}>{model.name}</strong><small>{statusText(model, Boolean(loaded))}</small></span>
+                    <span className="asset-copy"><strong title={model.name}>{model.name}</strong><small>{statusText(model, Boolean(loaded), locale)}</small></span>
                   </button>
-                  {loaded && <button className="mini-button" title={loaded.visible ? "隐藏" : "显示"} onClick={() => engine?.setVisible(model.id, !loaded.visible)}>{loaded.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>}
-                  {loaded && <button className={`mini-button ${engine?.isModelLocked(model.id) ? "active" : ""}`} title={engine?.isModelLocked(model.id) ? "解锁模型" : "锁定模型"} onClick={() => { engine?.setModelLocked(model.id, !engine.isModelLocked(model.id)); setRevision((value) => value + 1); }}>{engine?.isModelLocked(model.id) ? <Lock size={14} /> : <Unlock size={14} />}</button>}
+                  {loaded && <button className="mini-button" title={loaded.visible ? tr(locale, "隐藏", "Hide") : tr(locale, "显示", "Show")} onClick={() => engine?.setVisible(model.id, !loaded.visible)}>{loaded.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>}
+                  {loaded && <button className={`mini-button ${engine?.isModelLocked(model.id) ? "active" : ""}`} title={engine?.isModelLocked(model.id) ? tr(locale, "解锁模型", "Unlock model") : tr(locale, "锁定模型", "Lock model")} onClick={() => { engine?.setModelLocked(model.id, !engine.isModelLocked(model.id)); setRevision((value) => value + 1); }}>{engine?.isModelLocked(model.id) ? <Lock size={14} /> : <Unlock size={14} />}</button>}
                   {loaded && (
                     <button
                       className={`mini-button collision-toggle ${engine?.isCollisionEnabled(model.id) ? "active" : ""} ${engine?.isColliding(model.id) ? "colliding" : ""}`}
-                      title={engine?.isCollisionEnabled(model.id) ? "关闭碰撞检测" : "开启碰撞检测"}
+                      title={engine?.isCollisionEnabled(model.id) ? tr(locale, "关闭碰撞检测", "Disable collision detection") : tr(locale, "开启碰撞检测", "Enable collision detection")}
                       onClick={() => engine?.setCollisionEnabled(model.id, !engine.isCollisionEnabled(model.id))}
                     >
                       <ScanLine size={15} />
@@ -1491,16 +1532,23 @@ export function App() {
                   {loaded && engine?.hasAnimation(model.id) && (
                     <button
                       className={`mini-button ${engine.isAnimationEnabled(model.id) ? "active" : ""}`}
-                      title={engine.isAnimationEnabled(model.id) ? "暂停模型动画" : "播放模型动画"}
+                      title={engine.isAnimationEnabled(model.id) ? tr(locale, "暂停模型动画", "Pause model animation") : tr(locale, "播放模型动画", "Play model animation")}
                       onClick={() => { engine.setAnimationEnabled(model.id, !engine.isAnimationEnabled(model.id)); setRevision((value) => value + 1); }}
                     >
                       {engine.isAnimationEnabled(model.id) ? <Pause size={14} /> : <Play size={14} />}
                     </button>
                   )}
-                  <button className="mini-button danger" disabled={Boolean(loaded && engine?.isModelLocked(model.id))} title={loaded && engine?.isModelLocked(model.id) ? "请先解锁模型" : "删除模型"} onClick={() => void deleteModel(model)}><Trash2 size={15} /></button>
+                  <button className="mini-button danger" disabled={Boolean(loaded && engine?.isModelLocked(model.id))} title={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : tr(locale, "删除模型", "Delete model")} onClick={() => void deleteModel(model)}><Trash2 size={15} /></button>
                 </div>
+                {expanded && modelFloors.length > 0 && (
+                  <section className="floor-control model-floor-control" aria-label={`${model.name} ${tr(locale, "楼层控制", "floor controls")}`}>
+                    <div className="floor-control-head"><span>{tr(locale, "楼层", "Floors")}</span><small>{modelFloors.length}</small><label><span>{tr(locale, "向上展开", "Expand upward")}</span><input type="range" min="0" max="12" step="0.25" value={floorExpansion} onChange={(event) => expandFloors(model.id, Number(event.target.value))} /><output>{floorExpansion.toFixed(1)}m</output></label></div>
+                    <div className="floor-list">{modelFloors.map((floor) => <button key={`${floor.modelId}:${floor.level}`} className={floor.visible ? "active" : ""} title={floor.visible ? tr(locale, "隐藏该楼层", "Hide floor") : tr(locale, "显示该楼层", "Show floor")} onClick={() => updateFloor({ ...floor, visible: !floor.visible })}>{floor.visible ? <Eye size={13} /> : <EyeOff size={13} />}<span>{floor.level}</span></button>)}</div>
+                  </section>
+                )}
                 {expanded && tree && (
                   <LayerTree
+                    locale={locale}
                     root={tree}
                     selectedNodeId={selected?.id === model.id ? selectedLayerId : undefined}
                     onSelect={(node) => { engine?.selectLayer(model.id, node.id); setRevision((value) => value + 1); }}
@@ -1516,27 +1564,47 @@ export function App() {
                 )}
               </div>
             );
-          }) : scenePrimitives.length === 0 && measurements.length === 0 && annotations.length === 0 ? <div className="empty-state"><Layers3 size={28} /><strong>还没有模型</strong><span>上传文件或插入正方体开始构建场景</span></div> : null}
+          }) : scenePrimitives.length === 0 && measurements.length === 0 && annotations.length === 0 ? <div className="empty-state"><Layers3 size={28} /><strong>{tr(locale, "还没有模型", "No models yet")}</strong><span>{tr(locale, "上传文件或插入正方体开始构建场景", "Upload a file or insert a cube to begin")}</span></div> : null}
+          {route.view === "studio" && (lighting.lights?.length ?? 0) > 0 && (
+            <section className="scene-light-layers" aria-label={tr(locale, "灯光图层", "Light layers")}>
+              <div className="scene-object-heading"><span>{tr(locale, "灯光", "Lights")}</span><small>{lighting.lights?.length ?? 0}</small></div>
+              {(lighting.lights ?? []).map((light) => {
+                const canMove = !["ambient", "hemisphere"].includes(light.type);
+                const canAim = ["directional", "spot", "rectArea"].includes(light.type);
+                return <div className={`asset-row scene-object-row ${selectedLightId === light.id ? "selected" : ""}`} key={light.id}>
+                  <span className="model-expander" />
+                  <button className="asset-main" onClick={() => { setSelectedLightId(light.id); setEnvironmentOpen(true); }}>
+                    <span className="scene-object-badge light-layer-badge" style={{ color: light.color }}><Lightbulb size={15} /></span>
+                    <span className="asset-copy"><strong>{light.name}</strong><small>{tr(locale, lightTypeName(light.type), lightTypeEnglishName(light.type))}</small></span>
+                  </button>
+                  <button className="mini-button" title={light.enabled ? tr(locale, "关闭光源", "Disable light") : tr(locale, "开启光源", "Enable light")} onClick={() => updateLight(light.id, { enabled: !light.enabled })}>{light.enabled ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+                  {canMove && <button className="mini-button" title={tr(locale, "移动光源", "Move light")} onClick={() => selectLightForTransform(light, "position")}><Move size={14} /></button>}
+                  {canAim && <button className="mini-button" title={tr(locale, "改变光照方向", "Change light direction")} onClick={() => selectLightForTransform(light, "target")}><LocateFixed size={14} /></button>}
+                  <button className="mini-button danger" title={tr(locale, "删除光源", "Delete light")} onClick={() => removeLight(light.id)}><Trash2 size={15} /></button>
+                </div>;
+              })}
+            </section>
+          )}
           {(scenePrimitives.length > 0 || measurements.length > 0 || annotations.length > 0) && (
-            <section className="scene-object-layers" aria-label="场景对象图层">
-              <div className="scene-object-heading"><span>场景对象</span><small>{scenePrimitives.length + measurements.length + annotations.length}</small></div>
+            <section className="scene-object-layers" aria-label={tr(locale, "场景对象图层", "Scene object layers")}>
+              <div className="scene-object-heading"><span>{tr(locale, "场景对象", "Scene objects")}</span><small>{scenePrimitives.length + measurements.length + annotations.length}</small></div>
               {scenePrimitives.map((primitive) => (
                 <div className={`asset-row scene-object-row ${selected?.id === primitive.id ? "selected" : ""}`} key={primitive.id}>
                   <span className="model-expander" />
                   <button className="asset-main" onClick={() => engine?.select(primitive.id)}>
                     <span className="scene-object-badge"><Box size={15} /></span>
-                    <span className="asset-copy"><strong>{primitive.name}</strong><small>基础元素 · 可编辑</small></span>
+                    <span className="asset-copy"><strong>{primitive.name}</strong><small>{tr(locale, "基础元素 · 可编辑", "Primitive · Editable")}</small></span>
                   </button>
-                  <button className="mini-button" title={primitive.visible ? "隐藏正方体" : "显示正方体"} onClick={() => engine?.setVisible(primitive.id, !primitive.visible)}>{primitive.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
-                  <button className={`mini-button ${engine?.isModelLocked(primitive.id) ? "active" : ""}`} title={engine?.isModelLocked(primitive.id) ? "解锁正方体" : "锁定正方体"} onClick={() => { engine?.setModelLocked(primitive.id, !engine.isModelLocked(primitive.id)); setRevision((value) => value + 1); }}>{engine?.isModelLocked(primitive.id) ? <Lock size={14} /> : <Unlock size={14} />}</button>
+                  <button className="mini-button" title={primitive.visible ? tr(locale, "隐藏正方体", "Hide cube") : tr(locale, "显示正方体", "Show cube")} onClick={() => engine?.setVisible(primitive.id, !primitive.visible)}>{primitive.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+                  <button className={`mini-button ${engine?.isModelLocked(primitive.id) ? "active" : ""}`} title={engine?.isModelLocked(primitive.id) ? tr(locale, "解锁正方体", "Unlock cube") : tr(locale, "锁定正方体", "Lock cube")} onClick={() => { engine?.setModelLocked(primitive.id, !engine.isModelLocked(primitive.id)); setRevision((value) => value + 1); }}>{engine?.isModelLocked(primitive.id) ? <Lock size={14} /> : <Unlock size={14} />}</button>
                   <button
                     className={`mini-button collision-toggle ${engine?.isCollisionEnabled(primitive.id) ? "active" : ""} ${engine?.isColliding(primitive.id) ? "colliding" : ""}`}
-                    title={engine?.isCollisionEnabled(primitive.id) ? "关闭正方体碰撞检测" : "开启正方体碰撞检测"}
+                    title={engine?.isCollisionEnabled(primitive.id) ? tr(locale, "关闭正方体碰撞检测", "Disable cube collision detection") : tr(locale, "开启正方体碰撞检测", "Enable cube collision detection")}
                     onClick={() => engine?.setCollisionEnabled(primitive.id, !engine.isCollisionEnabled(primitive.id))}
                   >
                     <ScanLine size={15} />
                   </button>
-                  <button className="mini-button danger" disabled={engine?.isModelLocked(primitive.id)} title={engine?.isModelLocked(primitive.id) ? "请先解锁正方体" : "删除正方体"} onClick={() => deletePrimitive(primitive.id)}><Trash2 size={15} /></button>
+                  <button className="mini-button danger" disabled={engine?.isModelLocked(primitive.id)} title={engine?.isModelLocked(primitive.id) ? tr(locale, "请先解锁正方体", "Unlock the cube first") : tr(locale, "删除正方体", "Delete cube")} onClick={() => deletePrimitive(primitive.id)}><Trash2 size={15} /></button>
                 </div>
               ))}
               {measurements.map((measurement, index) => (
@@ -1544,9 +1612,9 @@ export function App() {
                   <span className="model-expander" />
                   <button className="asset-main" onClick={() => engine?.focusMeasurement(measurement)}>
                     <span className="scene-object-badge"><Ruler size={15} /></span>
-                    <span className="asset-copy"><strong>测量 {index + 1}</strong><small>{measureModeName(measurement.kind ?? "distance")} · {formatMeasurementValue(measurement)}</small></span>
+                    <span className="asset-copy"><strong>{tr(locale, "测量", "Measurement")} {index + 1}</strong><small>{measureModeName(measurement.kind ?? "distance", locale)} · {formatMeasurementValue(measurement)}</small></span>
                   </button>
-                  <button className="mini-button danger" title={`删除标尺 ${index + 1}`} onClick={() => deleteMeasurement(measurement.id)}><Trash2 size={15} /></button>
+                  <button className="mini-button danger" title={`${tr(locale, "删除标尺", "Delete measurement")} ${index + 1}`} onClick={() => deleteMeasurement(measurement.id)}><Trash2 size={15} /></button>
                 </div>
               ))}
               {annotations.map((annotation) => (
@@ -1554,11 +1622,11 @@ export function App() {
                   <span className="model-expander" />
                   <button className="asset-main" onClick={() => engine?.focusAnnotation(annotation.id)}>
                     <span className="scene-object-badge annotation-badge" style={{ color: annotation.color }}><MapPin size={15} /></span>
-                    <span className="asset-copy"><strong>{annotation.name}</strong><small>{annotation.anchorName || "场景标签"}</small></span>
+                    <span className="asset-copy"><strong>{annotation.name}</strong><small>{annotation.anchorName || tr(locale, "场景标签", "Scene annotation")}</small></span>
                   </button>
-                  <button className="mini-button" title={annotation.visible ? "隐藏标签" : "显示标签"} onClick={() => updateAnnotation(annotation.id, { visible: !annotation.visible })}>{annotation.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
-                  <button className={`mini-button ${annotation.locked ? "active" : ""}`} title={annotation.locked ? "解锁标签" : "锁定标签"} onClick={() => updateAnnotation(annotation.id, { locked: !annotation.locked })}>{annotation.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
-                  <button className="mini-button danger" disabled={annotation.locked} title={annotation.locked ? "请先解锁标签" : "删除标签"} onClick={() => deleteAnnotation(annotation.id)}><Trash2 size={15} /></button>
+                  <button className="mini-button" title={annotation.visible ? tr(locale, "隐藏标签", "Hide annotation") : tr(locale, "显示标签", "Show annotation")} onClick={() => updateAnnotation(annotation.id, { visible: !annotation.visible })}>{annotation.visible ? <Eye size={15} /> : <EyeOff size={15} />}</button>
+                  <button className={`mini-button ${annotation.locked ? "active" : ""}`} title={annotation.locked ? tr(locale, "解锁标签", "Unlock annotation") : tr(locale, "锁定标签", "Lock annotation")} onClick={() => updateAnnotation(annotation.id, { locked: !annotation.locked })}>{annotation.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
+                  <button className="mini-button danger" disabled={annotation.locked} title={annotation.locked ? tr(locale, "请先解锁标签", "Unlock the annotation first") : tr(locale, "删除标签", "Delete annotation")} onClick={() => deleteAnnotation(annotation.id)}><Trash2 size={15} /></button>
                 </div>
               ))}
             </section>
@@ -1569,37 +1637,37 @@ export function App() {
 
       <main className="workspace">
         <div className="viewport" ref={viewportRef} />
-        {rendererSwitching && <div className="renderer-loading"><LoaderCircle className="spin" size={18} /><span>正在初始化 {rendererBackend === "webgpu" ? "WebGPU" : "WebGL"}</span></div>}
-        <div className="tool-dock" role="toolbar" aria-label="查看编辑工具">
+        {rendererSwitching && <div className="renderer-loading"><LoaderCircle className="spin" size={18} /><span>{tr(locale, "正在初始化", "Initializing")} {rendererBackend === "webgpu" ? "WebGPU" : "WebGL"}</span></div>}
+        <div className="tool-dock" role="toolbar" aria-label={tr(locale, "查看编辑工具", "View and edit tools")}>
           {route.view === "view" || route.view === "published" ? <>
-            <ToolButton title="适应全部（回到模型）" active={false} onClick={() => engine?.fitAll()} icon={<Focus size={19} />} />
-            <ToolButton title="轨道浏览（围绕模型旋转）" active={navigationMode === "orbit"} onClick={() => changeNavigation("orbit")} icon={<Orbit size={19} />} />
-            <ToolButton title="第一人称（地面行走）" active={navigationMode === "firstPerson"} onClick={() => changeNavigation("firstPerson")} icon={<Footprints size={19} />} />
-            <ToolButton title="第三人称（空中漫游）" active={navigationMode === "thirdPerson"} onClick={() => changeNavigation("thirdPerson")} icon={<UserRound size={19} />} />
-            <ToolButton title={avatarVisible ? "隐藏人物" : "显示人物"} active={avatarVisible} onClick={() => { const next = !avatarVisible; setAvatarVisible(next); engine?.setAvatarVisible(next); }} icon={avatarVisible ? <Eye size={19} /> : <EyeOff size={19} />} />
-            <ToolButton title="场景信息" active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
-            <ToolButton title="进入 VR（需头显与 HTTPS）" active={false} onClick={() => void startXR("immersive-vr")} icon={<span className="xr-tool-label">VR</span>} />
-            <ToolButton title="进入 AR（需兼容移动设备与 HTTPS）" active={false} onClick={() => void startXR("immersive-ar")} icon={<span className="xr-tool-label">AR</span>} />
+            <ToolButton title={tr(locale, "适应全部（回到模型）", "Fit all")} active={false} onClick={() => engine?.fitAll()} icon={<Focus size={19} />} />
+            <ToolButton title={tr(locale, "轨道浏览（围绕模型旋转）", "Orbit around model")} active={navigationMode === "orbit"} onClick={() => changeNavigation("orbit")} icon={<Orbit size={19} />} />
+            <ToolButton title={tr(locale, "第一人称（地面行走）", "First person walk")} active={navigationMode === "firstPerson"} onClick={() => changeNavigation("firstPerson")} icon={<Footprints size={19} />} />
+            <ToolButton title={tr(locale, "第三人称（空中漫游）", "Third person fly")} active={navigationMode === "thirdPerson"} onClick={() => changeNavigation("thirdPerson")} icon={<UserRound size={19} />} />
+            <ToolButton title={avatarVisible ? tr(locale, "隐藏人物", "Hide avatar") : tr(locale, "显示人物", "Show avatar")} active={avatarVisible} onClick={() => { const next = !avatarVisible; setAvatarVisible(next); engine?.setAvatarVisible(next); }} icon={avatarVisible ? <Eye size={19} /> : <EyeOff size={19} />} />
+            <ToolButton title={tr(locale, "场景信息", "Scene information")} active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
+            <ToolButton title={tr(locale, "进入 VR（需头显与 HTTPS）", "Enter VR (headset and HTTPS required)")} active={false} onClick={() => void startXR("immersive-vr")} icon={<span className="xr-tool-label">VR</span>} />
+            <ToolButton title={tr(locale, "进入 AR（需兼容移动设备与 HTTPS）", "Enter AR (compatible mobile device and HTTPS required)")} active={false} onClick={() => void startXR("immersive-ar")} icon={<span className="xr-tool-label">AR</span>} />
           </> : <>
-          <ToolButton title="适应全部（回到模型）" active={false} onClick={() => engine?.fitAll()} icon={<Focus size={19} />} />
+          <ToolButton title={tr(locale, "适应全部（回到模型）", "Fit all")} active={false} onClick={() => engine?.fitAll()} icon={<Focus size={19} />} />
           <span className="dock-separator" />
-          <ToolButton title="选择" active={!measureEnabled && !annotationEnabled && navigationMode === "orbit"} onClick={() => changeNavigation("orbit")} icon={<MousePointer2 size={19} />} />
-          <ToolButton title="移动模型" active={transformMode === "translate"} onClick={() => changeTransform("translate")} icon={<Move size={19} />} />
-          <ToolButton title="旋转模型" active={transformMode === "rotate"} onClick={() => changeTransform("rotate")} icon={<RotateCw size={19} />} />
-          <ToolButton title="缩放模型" active={transformMode === "scale"} onClick={() => changeTransform("scale")} icon={<Scaling size={19} />} />
-          <ToolButton title="构件选择" active={selectionScope === "component"} onClick={() => { const next = selectionScope === "model" ? "component" : "model"; setSelectionScope(next); engine?.setSelectionScope(next); setMessage(next === "component" ? "构件选择已开启：画布点击可深入选择构件" : "模型选择已开启：画布点击只选择整个模型"); }} icon={<MousePointer2 size={19} />} />
+          <ToolButton title={tr(locale, "选择", "Select")} active={!measureEnabled && !annotationEnabled && navigationMode === "orbit"} onClick={() => changeNavigation("orbit")} icon={<MousePointer2 size={19} />} />
+          <ToolButton title={tr(locale, "移动模型", "Move object")} active={transformMode === "translate"} onClick={() => changeTransform("translate")} icon={<Move size={19} />} />
+          <ToolButton title={tr(locale, "旋转模型", "Rotate object")} active={transformMode === "rotate"} onClick={() => changeTransform("rotate")} icon={<RotateCw size={19} />} />
+          <ToolButton title={tr(locale, "缩放模型", "Scale object")} active={transformMode === "scale"} onClick={() => changeTransform("scale")} icon={<Scaling size={19} />} />
+          <ToolButton title={tr(locale, "构件选择", "Component selection")} active={selectionScope === "component"} onClick={() => { const next = selectionScope === "model" ? "component" : "model"; setSelectionScope(next); engine?.setSelectionScope(next); setMessage(next === "component" ? "构件选择已开启：画布点击可深入选择构件" : "模型选择已开启：画布点击只选择整个模型"); }} icon={<MousePointer2 size={19} />} />
           <span className="dock-separator" />
-          <ToolButton title="测量工具" active={measureEnabled} onClick={toggleMeasurement} icon={<Ruler size={19} />} />
-          <ToolButton title="添加立方体" active={false} onClick={addBox} icon={<Box size={19} />} />
-          <ToolButton title="标签标记" active={annotationEnabled} onClick={toggleAnnotationPlacement} icon={<MapPin size={19} />} />
-          <ToolButton title="剖切模型" active={clipping.enabled} onClick={toggleClipping} icon={<ScanLine size={19} />} />
-          <ToolButton title="模型爆炸" active={explosionFactor > 0} onClick={() => updateExplosion(explosionFactor > 0 ? 0 : 0.55)} icon={<Layers3 size={19} />} />
+          <ToolButton title={tr(locale, "测量工具", "Measurement tools")} active={measureEnabled} onClick={toggleMeasurement} icon={<Ruler size={19} />} />
+          <ToolButton title={tr(locale, "添加立方体", "Add cube")} active={false} onClick={addBox} icon={<Box size={19} />} />
+          <ToolButton title={tr(locale, "标签标记", "Annotations")} active={annotationEnabled} onClick={toggleAnnotationPlacement} icon={<MapPin size={19} />} />
+          <ToolButton title={tr(locale, "剖切模型", "Section model")} active={clipping.enabled} onClick={toggleClipping} icon={<ScanLine size={19} />} />
+          <ToolButton title={tr(locale, "模型爆炸", "Explode model")} active={explosionFactor > 0} onClick={() => updateExplosion(explosionFactor > 0 ? 0 : 0.55)} icon={<Layers3 size={19} />} />
           <span className="dock-separator" />
-          <ToolButton title="轨道浏览（围绕模型旋转）" active={navigationMode === "orbit"} onClick={() => changeNavigation("orbit")} icon={<Orbit size={19} />} />
-          <ToolButton title="第一人称（地面行走）" active={navigationMode === "firstPerson"} onClick={() => changeNavigation("firstPerson")} icon={<Footprints size={19} />} />
-          <ToolButton title="第三人称（空中漫游）" active={navigationMode === "thirdPerson"} onClick={() => changeNavigation("thirdPerson")} icon={<UserRound size={19} />} />
+          <ToolButton title={tr(locale, "轨道浏览（围绕模型旋转）", "Orbit around model")} active={navigationMode === "orbit"} onClick={() => changeNavigation("orbit")} icon={<Orbit size={19} />} />
+          <ToolButton title={tr(locale, "第一人称（地面行走）", "First person walk")} active={navigationMode === "firstPerson"} onClick={() => changeNavigation("firstPerson")} icon={<Footprints size={19} />} />
+          <ToolButton title={tr(locale, "第三人称（空中漫游）", "Third person fly")} active={navigationMode === "thirdPerson"} onClick={() => changeNavigation("thirdPerson")} icon={<UserRound size={19} />} />
           <ToolButton
-            title={avatarVisible ? "隐藏人物" : "显示人物"}
+            title={avatarVisible ? tr(locale, "隐藏人物", "Hide avatar") : tr(locale, "显示人物", "Show avatar")}
             active={avatarVisible}
             onClick={() => {
               const next = !avatarVisible;
@@ -1609,48 +1677,60 @@ export function App() {
             icon={avatarVisible ? <Eye size={19} /> : <EyeOff size={19} />}
           />
           <span className="dock-separator" />
-          <ToolButton title="场景信息" active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
-          <ToolButton title="环境设置" active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
-          <ToolButton title="动画编辑" active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
-          <ToolButton title="进入 VR（需头显与 HTTPS）" active={false} onClick={() => void startXR("immersive-vr")} icon={<span className="xr-tool-label">VR</span>} />
-          <ToolButton title="进入 AR（需兼容移动设备与 HTTPS）" active={false} onClick={() => void startXR("immersive-ar")} icon={<span className="xr-tool-label">AR</span>} />
+          <ToolButton title={tr(locale, "场景信息", "Scene information")} active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
+          <ToolButton title={tr(locale, "环境设置", "Environment")} active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
+          <ToolButton title={tr(locale, "动画编辑", "Animation editor")} active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
+          <ToolButton title={tr(locale, "二维数据看板", "2D data dashboard")} active={sceneDashboardOpen} onClick={() => setSceneDashboardOpen((value) => !value)} icon={<Gauge size={19} />} />
+          <ToolButton title={tr(locale, "进入 VR（需头显与 HTTPS）", "Enter VR (headset and HTTPS required)")} active={false} onClick={() => void startXR("immersive-vr")} icon={<span className="xr-tool-label">VR</span>} />
+          <ToolButton title={tr(locale, "进入 AR（需兼容移动设备与 HTTPS）", "Enter AR (compatible mobile device and HTTPS required)")} active={false} onClick={() => void startXR("immersive-ar")} icon={<span className="xr-tool-label">AR</span>} />
           </>}
         </div>
-        <ViewControl onSelect={(view) => engine?.setStandardView(view)} />
-        {route.view === "studio" && environmentOpen && <div className="environment-control" aria-label="环境与全局灯光">
-          <div className="environment-heading"><strong>场景环境</strong><small>随场景保存</small></div>
+        <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />
+        {route.view === "studio" && environmentOpen && <div className="environment-control" aria-label={tr(locale, "环境与全局灯光", "Environment and global lighting")}>
+          <div className="environment-heading"><strong>{tr(locale, "场景环境", "Scene environment")}</strong><small>{tr(locale, "随场景保存", "Saved with scene")}</small></div>
           <div className="environment-row">
-            <span>天气</span>
+            <span>{tr(locale, "天气", "Weather")}</span>
             <div className="environment-weather">
-              <button className={weather === "sunny" ? "active" : ""} title="晴天" onClick={() => changeWeather("sunny")}><Sun size={15} /></button>
-              <button className={weather === "rain" ? "active" : ""} title="下雨" onClick={() => changeWeather("rain")}><CloudRain size={15} /></button>
-              <button className={weather === "snow" ? "active" : ""} title="下雪" onClick={() => changeWeather("snow")}><Snowflake size={15} /></button>
+              <button className={weather === "sunny" ? "active" : ""} title={tr(locale, "晴天", "Sunny")} onClick={() => changeWeather("sunny")}><Sun size={15} /></button>
+              <button className={weather === "rain" ? "active" : ""} title={tr(locale, "下雨", "Rain")} onClick={() => changeWeather("rain")}><CloudRain size={15} /></button>
+              <button className={weather === "snow" ? "active" : ""} title={tr(locale, "下雪", "Snow")} onClick={() => changeWeather("snow")}><Snowflake size={15} /></button>
             </div>
           </div>
           <div className="environment-row">
-            <span>天空</span>
+            <span>{tr(locale, "天空", "Sky")}</span>
             <div className="skybox-presets">
-              {SKYBOX_OPTIONS.map((option) => <button key={option.value} className={sceneEnvironment.skybox === option.value ? `active skybox-${option.value}` : `skybox-${option.value}`} onClick={() => changeSceneEnvironment({ ...sceneEnvironment, skybox: option.value })}>{option.label}</button>)}
+              {SKYBOX_OPTIONS.map((option) => <button key={option.value} className={sceneEnvironment.skybox === option.value ? `active skybox-${option.value}` : `skybox-${option.value}`} onClick={() => changeSceneEnvironment({ ...sceneEnvironment, skybox: option.value })}>{tr(locale, option.label, skyboxEnglishLabel(option.value))}</button>)}
             </div>
           </div>
           <div className="environment-row environment-compact-row">
-            <span>背景</span>
-            <label className={sceneEnvironment.skybox === "none" ? "environment-color" : "environment-color disabled"} title={sceneEnvironment.skybox === "none" ? "设置纯色背景" : "选择纯色天空后可设置背景颜色"}>
-              <input type="color" value={sceneEnvironment.backgroundColor} disabled={sceneEnvironment.skybox !== "none"} onChange={(event) => changeSceneEnvironment({ ...sceneEnvironment, backgroundColor: event.target.value })} aria-label="场景背景颜色" />
+            <span>{tr(locale, "背景", "Background")}</span>
+            <label className={sceneEnvironment.skybox === "none" ? "environment-color" : "environment-color disabled"} title={sceneEnvironment.skybox === "none" ? tr(locale, "设置纯色背景", "Set solid background") : tr(locale, "选择纯色天空后可设置背景颜色", "Choose solid sky to set the background color")}>
+              <input type="color" value={sceneEnvironment.backgroundColor} disabled={sceneEnvironment.skybox !== "none"} onChange={(event) => changeSceneEnvironment({ ...sceneEnvironment, backgroundColor: event.target.value })} aria-label={tr(locale, "场景背景颜色", "Scene background color")} />
               <output>{sceneEnvironment.backgroundColor.toUpperCase()}</output>
             </label>
-            <button className={`grid-toggle ${sceneEnvironment.gridVisible ? "active" : ""}`} title={sceneEnvironment.gridVisible ? "隐藏网格" : "显示网格"} onClick={() => changeSceneEnvironment({ ...sceneEnvironment, gridVisible: !sceneEnvironment.gridVisible })}>{sceneEnvironment.gridVisible ? <Eye size={14} /> : <EyeOff size={14} />}网格</button>
+            <button className={`grid-toggle ${sceneEnvironment.gridVisible ? "active" : ""}`} title={sceneEnvironment.gridVisible ? tr(locale, "隐藏网格", "Hide grid") : tr(locale, "显示网格", "Show grid")} onClick={() => changeSceneEnvironment({ ...sceneEnvironment, gridVisible: !sceneEnvironment.gridVisible })}>{sceneEnvironment.gridVisible ? <Eye size={14} /> : <EyeOff size={14} />}{tr(locale, "网格", "Grid")}</button>
           </div>
           <div className="environment-row environment-light-row">
-            <span>灯光</span>
-            <button className={`lighting-toggle ${lighting.enabled ? "active" : ""}`} title={lighting.enabled ? "关闭全局灯光" : "开启全局灯光"} onClick={() => changeLighting({ ...lighting, enabled: !lighting.enabled })}><Lightbulb size={15} /></button>
-            <input type="range" min="0" max="2.5" step="0.05" value={lighting.intensity} disabled={!lighting.enabled} onChange={(event) => changeLighting({ ...lighting, intensity: Number(event.target.value) })} aria-label="全局灯光强度" />
+            <span>{tr(locale, "灯光", "Lighting")}</span>
+            <button className={`lighting-toggle ${lighting.enabled ? "active" : ""}`} title={lighting.enabled ? tr(locale, "关闭全局灯光", "Disable global lighting") : tr(locale, "开启全局灯光", "Enable global lighting")} onClick={() => changeLighting({ ...lighting, enabled: !lighting.enabled })}><Lightbulb size={15} /></button>
+            <input type="range" min="0" max="2.5" step="0.05" value={lighting.intensity} disabled={!lighting.enabled} onChange={(event) => changeLighting({ ...lighting, intensity: Number(event.target.value) })} aria-label={tr(locale, "全局灯光强度", "Global lighting intensity")} />
             <output>{Math.round(lighting.intensity * 100)}%</output>
           </div>
           <div className="environment-row environment-switches">
             <span>{tr(locale, "渲染", "Rendering")}</span>
             <button className={lighting.shadowsEnabled ? "active" : ""} onClick={() => changeLighting({ ...lighting, shadowsEnabled: !lighting.shadowsEnabled })}>{tr(locale, "阴影", "Shadows")}</button>
             <button className={lighting.reflectionsEnabled ? "active" : ""} onClick={() => changeLighting({ ...lighting, reflectionsEnabled: !lighting.reflectionsEnabled })}>{tr(locale, "反射", "Reflections")}</button>
+          </div>
+          <div className="post-processing-control">
+            <div className="light-system-head"><span>{tr(locale, "后处理", "Post-processing")}</span><button disabled={rendererBackend !== "webgl"} className={postProcessing.enabled ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, enabled: !postProcessing.enabled })}>{postProcessing.enabled ? tr(locale, "已启用", "Enabled") : tr(locale, "已关闭", "Disabled")}</button></div>
+            {rendererBackend !== "webgl" && <small>{tr(locale, "实时后处理当前使用 WebGL 管线", "Real-time post-processing currently uses the WebGL pipeline")}</small>}
+            <div className="material-toggles">
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.smaa ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, smaa: !postProcessing.smaa })}>SMAA</button>
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.ssao ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, ssao: !postProcessing.ssao })}>SSAO</button>
+              <button disabled={!postProcessing.enabled || rendererBackend !== "webgl"} className={postProcessing.bloom ? "active" : ""} onClick={() => changePostProcessing({ ...postProcessing, bloom: !postProcessing.bloom })}>Bloom</button>
+            </div>
+            {postProcessing.ssao && <label className="light-parameter"><span>{tr(locale, "遮蔽强度", "AO strength")}</span><input disabled={!postProcessing.enabled} type="range" min="0.1" max="4" step="0.1" value={postProcessing.ssaoIntensity} onChange={(event) => changePostProcessing({ ...postProcessing, ssaoIntensity: Number(event.target.value) })} /><output>{postProcessing.ssaoIntensity.toFixed(1)}</output></label>}
+            {postProcessing.bloom && <><label className="light-parameter"><span>{tr(locale, "辉光强度", "Bloom strength")}</span><input disabled={!postProcessing.enabled} type="range" min="0" max="3" step="0.05" value={postProcessing.bloomStrength} onChange={(event) => changePostProcessing({ ...postProcessing, bloomStrength: Number(event.target.value) })} /><output>{postProcessing.bloomStrength.toFixed(2)}</output></label><label className="light-parameter"><span>{tr(locale, "辉光阈值", "Bloom threshold")}</span><input disabled={!postProcessing.enabled} type="range" min="0" max="1" step="0.01" value={postProcessing.bloomThreshold} onChange={(event) => changePostProcessing({ ...postProcessing, bloomThreshold: Number(event.target.value) })} /><output>{postProcessing.bloomThreshold.toFixed(2)}</output></label></>}
           </div>
           <div className="environment-map-row">
             <div><span>{tr(locale, "环境贴图", "Environment map")}</span><small title={sceneEnvironment.environmentMapName}>{sceneEnvironment.environmentMapName ?? tr(locale, "未选择 HDR / EXR", "No HDR / EXR selected")}</small></div>
@@ -1666,6 +1746,7 @@ export function App() {
               <label><span>{tr(locale, "颜色", "Color")}</span><input type="color" value={selectedLight.color} onChange={(event) => updateLight(selectedLight.id, { color: event.target.value })} /></label>
               <label className="light-intensity"><span>{tr(locale, "强度", "Intensity")}</span><input type="range" min="0" max="20" step="0.05" value={selectedLight.intensity} onChange={(event) => updateLight(selectedLight.id, { intensity: Number(event.target.value) })} /><output>{selectedLight.intensity.toFixed(2)}</output></label>
               {selectedLight.position && <div className="light-vector"><span>{tr(locale, "位置", "Position")}</span>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><i>{axis.toUpperCase()}</i><input type="number" step="0.5" value={selectedLight.position?.[axis] ?? 0} onChange={(event) => updateLight(selectedLight.id, { position: { ...selectedLight.position!, [axis]: Number(event.target.value) } })} /></label>)}</div>}
+              {["directional", "spot", "rectArea"].includes(selectedLight.type) && selectedLight.target && <div className="light-vector"><span>{tr(locale, "照射目标", "Target")}</span>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><i>{axis.toUpperCase()}</i><input type="number" step="0.5" value={selectedLight.target?.[axis] ?? 0} onChange={(event) => updateLight(selectedLight.id, { target: { ...selectedLight.target!, [axis]: Number(event.target.value) } })} /></label>)}</div>}
               {selectedLight.type === "spot" && <label className="light-parameter"><span>{tr(locale, "锥角", "Cone")}</span><input type="range" min="5" max="90" step="1" value={(selectedLight.angle ?? Math.PI / 6) * 180 / Math.PI} onChange={(event) => updateLight(selectedLight.id, { angle: Number(event.target.value) * Math.PI / 180 })} /><output>{Math.round((selectedLight.angle ?? Math.PI / 6) * 180 / Math.PI)}°</output></label>}
               {selectedLight.type === "rectArea" && <div className="light-size"><label><span>{tr(locale, "宽", "Width")}</span><input type="number" min="0.1" step="0.5" value={selectedLight.width ?? 6} onChange={(event) => updateLight(selectedLight.id, { width: Number(event.target.value) })} /></label><label><span>{tr(locale, "高", "Height")}</span><input type="number" min="0.1" step="0.5" value={selectedLight.height ?? 4} onChange={(event) => updateLight(selectedLight.id, { height: Number(event.target.value) })} /></label></div>}
               <button className={selectedLight.enabled ? "active" : ""} onClick={() => updateLight(selectedLight.id, { enabled: !selectedLight.enabled })}>{selectedLight.enabled ? tr(locale, "已启用", "Enabled") : tr(locale, "已关闭", "Disabled")}</button>
@@ -1674,150 +1755,152 @@ export function App() {
             </div>}
           </div>
         </div>}
+        {route.view === "studio" && sceneDashboardOpen && <SceneDashboardOverlay locale={locale} onClose={() => setSceneDashboardOpen(false)} />}
         {route.view === "studio" && measureEnabled && (
-          <div className="measure-mode-bar" aria-label="测量模式">
-            <span>测量</span>
-            <button className={measureMode === "distance" ? "active" : ""} onClick={() => changeMeasureMode("distance")}>距离</button>
-            <button className={measureMode === "minimum" ? "active" : ""} onClick={() => changeMeasureMode("minimum")}>最小距离</button>
-            <button className={measureMode === "angle" ? "active" : ""} onClick={() => changeMeasureMode("angle")}>角度</button>
-            <button className={measureMode === "elevation" ? "active" : ""} onClick={() => changeMeasureMode("elevation")}>标高</button>
-            <small>Esc 取消当前起点</small>
+          <div className="measure-mode-bar" aria-label={tr(locale, "测量模式", "Measurement mode")}>
+            <span>{tr(locale, "测量", "Measure")}</span>
+            <button className={measureMode === "distance" ? "active" : ""} onClick={() => changeMeasureMode("distance")}>{tr(locale, "距离", "Distance")}</button>
+            <button className={measureMode === "minimum" ? "active" : ""} onClick={() => changeMeasureMode("minimum")}>{tr(locale, "最小距离", "Minimum")}</button>
+            <button className={measureMode === "angle" ? "active" : ""} onClick={() => changeMeasureMode("angle")}>{tr(locale, "角度", "Angle")}</button>
+            <button className={measureMode === "elevation" ? "active" : ""} onClick={() => changeMeasureMode("elevation")}>{tr(locale, "标高", "Elevation")}</button>
+            <small>{tr(locale, "Esc 取消当前起点", "Esc cancels the current start point")}</small>
           </div>
         )}
         {route.view === "studio" && annotationEnabled && (
-          <div className="annotation-placement-bar" aria-label="标签放置模式">
-            <MapPin size={15} /><strong>标签标记</strong><span>点击模型表面或地面连续放置标签</span><small>放置后在右侧编辑</small><button title="退出标签放置" onClick={toggleAnnotationPlacement}><X size={14} /></button>
+          <div className="annotation-placement-bar" aria-label={tr(locale, "标签放置模式", "Annotation placement mode")}>
+            <MapPin size={15} /><strong>{tr(locale, "标签标记", "Annotation")}</strong><span>{tr(locale, "点击模型表面或地面连续放置标签", "Click a model surface or ground to place annotations")}</span><small>{tr(locale, "放置后在右侧编辑", "Edit on the right after placement")}</small><button title={tr(locale, "退出标签放置", "Exit annotation placement")} onClick={toggleAnnotationPlacement}><X size={14} /></button>
           </div>
         )}
         {route.view === "studio" && clipping.enabled && (
-          <div className={`clipping-bar clipping-${clipping.mode ?? "axis"}`} aria-label="剖切设置">
+          <div className={`clipping-bar clipping-${clipping.mode ?? "axis"}`} aria-label={tr(locale, "剖切设置", "Section settings")}>
             <div className="clipping-tabs">
-              <span>剖切</span>
-              <button className={(clipping.mode ?? "axis") === "box" ? "active" : ""} onClick={() => changeClippingMode("box")}>剖切盒</button>
-              <button className={(clipping.mode ?? "axis") === "axis" ? "active" : ""} onClick={() => changeClippingMode("axis")}>轴向剖切</button>
-              <button className={clipping.mode === "face" ? "active" : ""} onClick={() => changeClippingMode("face")}>拾取面</button>
-              <button title="关闭剖切" onClick={toggleClipping}><X size={14} /></button>
+              <span>{tr(locale, "剖切", "Section")}</span>
+              <button className={(clipping.mode ?? "axis") === "box" ? "active" : ""} onClick={() => changeClippingMode("box")}>{tr(locale, "剖切盒", "Section box")}</button>
+              <button className={(clipping.mode ?? "axis") === "axis" ? "active" : ""} onClick={() => changeClippingMode("axis")}>{tr(locale, "轴向剖切", "Axis section")}</button>
+              <button className={clipping.mode === "face" ? "active" : ""} onClick={() => changeClippingMode("face")}>{tr(locale, "拾取面", "Pick face")}</button>
+              <button title={tr(locale, "关闭剖切", "Close section tool")} onClick={toggleClipping}><X size={14} /></button>
             </div>
             {(clipping.mode ?? "axis") === "axis" && <div className="clipping-axis-controls">
               {(["x", "y", "z"] as const).map((axis) => <button key={axis} className={clipping.axis === axis ? "active" : ""} onClick={() => updateClipping({ axis })}>{axis.toUpperCase()}</button>)}
-              <input type="range" min={clippingRange.min} max={clippingRange.max} step={Math.max((clippingRange.max - clippingRange.min) / 200, 0.001)} value={clipping.offset} onChange={(event) => updateClipping({ offset: Number(event.target.value) })} aria-label="剖切位置" />
+              <input type="range" min={clippingRange.min} max={clippingRange.max} step={Math.max((clippingRange.max - clippingRange.min) / 200, 0.001)} value={clipping.offset} onChange={(event) => updateClipping({ offset: Number(event.target.value) })} aria-label={tr(locale, "剖切位置", "Section position")} />
               <output>{clipping.offset.toFixed(2)} m</output>
-              <button className={clipping.inverted ? "active" : ""} onClick={() => updateClipping({ inverted: !clipping.inverted })}>反向</button>
+              <button className={clipping.inverted ? "active" : ""} onClick={() => updateClipping({ inverted: !clipping.inverted })}>{tr(locale, "反向", "Invert")}</button>
             </div>}
             {clipping.mode === "box" && <div className="clipping-box-controls">
               {(["x", "y", "z"] as const).map((axis) => <div className="clipping-bound-row" key={axis}>
-                <strong>{axis.toUpperCase()}</strong><span>最小</span>
+                <strong>{axis.toUpperCase()}</strong><span>{tr(locale, "最小", "Min")}</span>
                 <input type="range" min={clippingSceneBounds.min[axis]} max={clippingSceneBounds.max[axis]} step={Math.max((clippingSceneBounds.max[axis] - clippingSceneBounds.min[axis]) / 200, 0.001)} value={(clipping.box ?? clippingSceneBounds).min[axis]} onChange={(event) => updateClippingBox(axis, "min", Number(event.target.value))} />
-                <span>最大</span>
+                <span>{tr(locale, "最大", "Max")}</span>
                 <input type="range" min={clippingSceneBounds.min[axis]} max={clippingSceneBounds.max[axis]} step={Math.max((clippingSceneBounds.max[axis] - clippingSceneBounds.min[axis]) / 200, 0.001)} value={(clipping.box ?? clippingSceneBounds).max[axis]} onChange={(event) => updateClippingBox(axis, "max", Number(event.target.value))} />
               </div>)}
-              <button onClick={() => { if (engine) updateClipping({ box: engine.getClippingBounds(), showHelper: true }); }}>重置边界</button>
-              <button className={clipping.showHelper === false ? "" : "active"} onClick={() => updateClipping({ showHelper: clipping.showHelper === false })}>显示边框</button>
+              <button onClick={() => { if (engine) updateClipping({ box: engine.getClippingBounds(), showHelper: true }); }}>{tr(locale, "重置边界", "Reset bounds")}</button>
+              <button className={clipping.showHelper === false ? "" : "active"} onClick={() => updateClipping({ showHelper: clipping.showHelper === false })}>{tr(locale, "显示边框", "Show outline")}</button>
             </div>}
             {clipping.mode === "face" && <div className="clipping-face-controls">
-              <span>{clipping.face ? "剖切面已建立" : "请在模型上点击一个面"}</span>
-              <button onClick={() => changeClippingMode("face")}>重新拾取</button>
-              <button className={clipping.inverted ? "active" : ""} disabled={!clipping.face} onClick={() => updateClipping({ inverted: !clipping.inverted })}>反向</button>
+              <span>{clipping.face ? tr(locale, "剖切面已建立", "Section plane created") : tr(locale, "请在模型上点击一个面", "Click a face on the model")}</span>
+              <button onClick={() => changeClippingMode("face")}>{tr(locale, "重新拾取", "Pick again")}</button>
+              <button className={clipping.inverted ? "active" : ""} disabled={!clipping.face} onClick={() => updateClipping({ inverted: !clipping.inverted })}>{tr(locale, "反向", "Invert")}</button>
             </div>}
           </div>
         )}
         {animationOpen && (
-          <div className="timeline-panel" aria-label="场景动画编辑器">
+          <div className="timeline-panel" aria-label={tr(locale, "场景动画编辑器", "Scene animation editor")}>
             <div className="timeline-main">
-              <button className="timeline-jump" title="回到开始" onClick={() => engine?.seekSceneAnimation(0)}>0</button>
-              <button className="timeline-play" title={animationPlaying ? "暂停" : "播放"} onClick={toggleSceneAnimation}>{animationPlaying ? <Pause size={16} /> : <Play size={16} />}</button>
+              <button className="timeline-jump" title={tr(locale, "回到开始", "Go to start")} onClick={() => engine?.seekSceneAnimation(0)}>0</button>
+              <button className="timeline-play" title={animationPlaying ? tr(locale, "暂停", "Pause") : tr(locale, "播放", "Play")} onClick={toggleSceneAnimation}>{animationPlaying ? <Pause size={16} /> : <Play size={16} />}</button>
               <span className="timeline-time">{animationTime.toFixed(1)}s</span>
-              <input className="timeline-range" type="range" min="0" max={sceneAnimation.duration} step="0.05" value={animationTime} onChange={(event) => engine?.seekSceneAnimation(Number(event.target.value))} aria-label="动画时间" />
-              <label className="timeline-duration"><span>时长</span><input type="number" min="0.1" step="0.5" value={sceneAnimation.duration} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, duration: Math.max(Number(event.target.value) || 0.1, 0.1) })} /><i>s</i></label>
-              <label className="timeline-loop"><input type="checkbox" checked={sceneAnimation.loop} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, loop: event.target.checked })} />循环</label>
-              <label className="timeline-loop"><input type="checkbox" checked={sceneAnimation.pingPong ?? false} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, pingPong: event.target.checked })} />往返</label>
+              <input className="timeline-range" type="range" min="0" max={sceneAnimation.duration} step="0.05" value={animationTime} onChange={(event) => engine?.seekSceneAnimation(Number(event.target.value))} aria-label={tr(locale, "动画时间", "Animation time")} />
+              <label className="timeline-duration"><span>{tr(locale, "时长", "Duration")}</span><input type="number" min="0.1" step="0.5" value={sceneAnimation.duration} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, duration: Math.max(Number(event.target.value) || 0.1, 0.1) })} /><i>s</i></label>
+              <label className="timeline-loop"><input type="checkbox" checked={sceneAnimation.loop} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, loop: event.target.checked })} />{tr(locale, "循环", "Loop")}</label>
+              <label className="timeline-loop"><input type="checkbox" checked={sceneAnimation.pingPong ?? false} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, pingPong: event.target.checked })} />{tr(locale, "往返", "Ping-pong")}</label>
             </div>
             <div className="timeline-options">
-              <label><span>相机插值</span><select value={sceneAnimation.cameraInterpolation ?? "smooth"} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, cameraInterpolation: event.target.value as NonNullable<SceneAnimationState["cameraInterpolation"]> })}><option value="linear">线性</option><option value="smooth">平滑</option><option value="spline">曲线路径</option></select></label>
-              <label><span>播放速度</span><select value={sceneAnimation.playbackSpeed ?? 1} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, playbackSpeed: Number(event.target.value) })}><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="4">4×</option></select></label>
-              <label className="timeline-path"><input type="checkbox" checked={sceneAnimation.showCameraPath ?? true} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, showCameraPath: event.target.checked })} />显示相机轨迹</label>
-              <small>关键帧点击定位，双击删除</small>
+              <label><span>{tr(locale, "相机插值", "Camera interpolation")}</span><select value={sceneAnimation.cameraInterpolation ?? "smooth"} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, cameraInterpolation: event.target.value as NonNullable<SceneAnimationState["cameraInterpolation"]> })}><option value="linear">{tr(locale, "线性", "Linear")}</option><option value="smooth">{tr(locale, "平滑", "Smooth")}</option><option value="spline">{tr(locale, "曲线路径", "Spline")}</option></select></label>
+              <label><span>{tr(locale, "播放速度", "Playback speed")}</span><select value={sceneAnimation.playbackSpeed ?? 1} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, playbackSpeed: Number(event.target.value) })}><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+              <label className="timeline-path"><input type="checkbox" checked={sceneAnimation.showCameraPath ?? true} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, showCameraPath: event.target.checked })} />{tr(locale, "显示相机轨迹", "Show camera path")}</label>
+              <small>{tr(locale, "关键帧点击定位，双击删除", "Click a keyframe to seek; double-click to delete")}</small>
             </div>
             <div className="timeline-actions">
-              <button onClick={addCameraKeyframe}><Camera size={14} />记录/更新相机</button>
-              <button onClick={addModelKeyframe} disabled={!selected || selectionLocked}><Box size={14} />记录选中对象</button>
-              <span>{sceneAnimation.camera.length} 相机帧 · {sceneAnimation.models.length} 对象帧</span>
+              <button onClick={addCameraKeyframe}><Camera size={14} />{tr(locale, "记录/更新相机", "Record/update camera")}</button>
+              <button onClick={addModelKeyframe} disabled={!selected || selectionLocked}><Box size={14} />{tr(locale, "记录选中对象", "Record selected object")}</button>
+              <span>{sceneAnimation.camera.length} {tr(locale, "相机帧", "camera frames")} · {sceneAnimation.models.length} {tr(locale, "对象帧", "object frames")}</span>
               {[...sceneAnimation.camera, ...sceneAnimation.models].sort((a, b) => a.time - b.time).map((frame) => (
-                <button className="keyframe-chip" key={frame.id} title="点击定位，双击删除" onClick={() => engine?.seekSceneAnimation(frame.time)} onDoubleClick={() => deleteKeyframe(frame.id)}>{"camera" in frame ? "相机" : "对象"} {frame.time.toFixed(1)}s</button>
+                <button className="keyframe-chip" key={frame.id} title={tr(locale, "点击定位，双击删除", "Click to seek; double-click to delete")} onClick={() => engine?.seekSceneAnimation(frame.time)} onDoubleClick={() => deleteKeyframe(frame.id)}>{"camera" in frame ? tr(locale, "相机", "Camera") : tr(locale, "对象", "Object")} {frame.time.toFixed(1)}s</button>
               ))}
             </div>
           </div>
         )}
         <div className="viewport-status"><span className={busy ? "status-dot working" : "status-dot"} />{message}</div>
-        {navigationMode !== "orbit" && <div className="navigation-hint">W A S D 移动 · Shift 加速{navigationMode === "firstPerson" ? " · 地面行走 · 双击画面锁定视角 · Esc 释放鼠标" : " · 空中漫游 · Space 上升 · Ctrl 下降 · 鼠标旋转视角"}</div>}
-        {busy && <div className="loading-overlay"><LoaderCircle className="spin" size={24} /><span>正在处理模型</span></div>}
+        {navigationMode !== "orbit" && <div className="navigation-hint">{tr(locale, "W A S D 移动 · Shift 加速", "W A S D move · Shift boost")}{navigationMode === "firstPerson" ? tr(locale, " · 地面行走 · 双击画面锁定视角 · Esc 释放鼠标", " · Ground walk · Double-click to capture pointer · Esc to release") : tr(locale, " · 空中漫游 · Space 上升 · Ctrl 下降 · 鼠标旋转视角", " · Fly mode · Space up · Ctrl down · Mouse to look")}</div>}
+        {busy && <div className="loading-overlay"><LoaderCircle className="spin" size={24} /><span>{tr(locale, "正在处理模型", "Processing model")}</span></div>}
       </main>
 
       <aside className="right-panel">
         <div className="panel-heading inspector-heading"><div><span className="eyebrow">INSPECTOR</span><h2>{tr(locale, "属性检查器", "Inspector")}</h2></div></div>
-        {infoEnabled && <section className="scene-info-panel" aria-label="场景信息">
-          <div className="section-label"><span>场景信息</span><small>{sceneStatistics.modelCount + sceneStatistics.primitiveCount} 对象</small></div>
+        {infoEnabled && <section className="scene-info-panel" aria-label={tr(locale, "场景信息", "Scene information")}>
+          <div className="section-label"><span>{tr(locale, "场景信息", "Scene information")}</span><small>{sceneStatistics.modelCount + sceneStatistics.primitiveCount} {tr(locale, "对象", "objects")}</small></div>
           <div className="scene-info-grid">
-            <div><strong>{numberFormat.format(sceneStatistics.modelCount)}</strong><span>模型</span></div>
-            <div><strong>{numberFormat.format(sceneStatistics.componentCount)}</strong><span>构件</span></div>
-            <div><strong>{numberFormat.format(sceneStatistics.triangleCount)}</strong><span>三角面</span></div>
-            <div><strong>{numberFormat.format(sceneStatistics.vertexCount)}</strong><span>顶点</span></div>
+            <div><strong>{numberFormat.format(sceneStatistics.modelCount)}</strong><span>{tr(locale, "模型", "Models")}</span></div>
+            <div><strong>{numberFormat.format(sceneStatistics.componentCount)}</strong><span>{tr(locale, "构件", "Components")}</span></div>
+            <div><strong>{numberFormat.format(sceneStatistics.triangleCount)}</strong><span>{tr(locale, "三角面", "Triangles")}</span></div>
+            <div><strong>{numberFormat.format(sceneStatistics.vertexCount)}</strong><span>{tr(locale, "顶点", "Vertices")}</span></div>
             <div><strong>{frameRate || "—"}</strong><span>FPS</span></div>
           </div>
         </section>}
-        {infoEnabled && <section className="runtime-info-panel" aria-label="相机和鼠标信息">
-          <div className="runtime-info-row"><Camera size={13} /><span>相机</span><code>{cameraInfo ? formatVector(cameraInfo.position) : "—"}</code></div>
-          <div className="runtime-info-row runtime-target"><span>◎</span><span>目标</span><code>{cameraInfo ? formatVector(cameraInfo.target) : "—"}</code></div>
-          <div className="runtime-info-row"><MousePointer2 size={13} /><span>鼠标</span><code>{pointerInfo?.world ? formatVector(pointerInfo.world) : pointerInfo ? `${pointerInfo.screenX}, ${pointerInfo.screenY}` : "—"}</code></div>
+        {infoEnabled && <section className="runtime-info-panel" aria-label={tr(locale, "相机和鼠标信息", "Camera and pointer information")}>
+          <div className="runtime-info-row"><Camera size={13} /><span>{tr(locale, "相机", "Camera")}</span><code>{cameraInfo ? formatVector(cameraInfo.position) : "—"}</code></div>
+          <div className="runtime-info-row runtime-target"><span>◎</span><span>{tr(locale, "目标", "Target")}</span><code>{cameraInfo ? formatVector(cameraInfo.target) : "—"}</code></div>
+          <div className="runtime-info-row"><MousePointer2 size={13} /><span>{tr(locale, "鼠标", "Pointer")}</span><code>{pointerInfo?.world ? formatVector(pointerInfo.world) : pointerInfo ? `${pointerInfo.screenX}, ${pointerInfo.screenY}` : "—"}</code></div>
           {pointerInfo?.objectName && <div className="runtime-object-name" title={pointerInfo.objectName}>{pointerInfo.objectName}</div>}
         </section>}
         {selectedAnnotation ? (
           <div className="inspector-content annotation-inspector">
-            <div className="annotation-inspector-title"><span style={{ background: selectedAnnotation.color }}><MapPin size={15} /></span><div><strong>标签标记</strong><small>{selectedAnnotation.anchorName || "场景坐标"}</small></div><button title="定位标签" onClick={() => engine?.focusAnnotation(selectedAnnotation.id)}><Maximize size={14} /></button></div>
-            <label className="field"><span>标签名称</span><input disabled={selectedAnnotation.locked} value={selectedAnnotation.name} onChange={(event) => updateAnnotation(selectedAnnotation.id, { name: event.target.value })} /></label>
-            <label className="field"><span>说明内容</span><textarea disabled={selectedAnnotation.locked} rows={4} value={selectedAnnotation.description ?? ""} onChange={(event) => updateAnnotation(selectedAnnotation.id, { description: event.target.value })} placeholder="填写巡检事项、设备状态或问题说明" /></label>
-            <label className="field color-field"><span>标签颜色</span><div><input disabled={selectedAnnotation.locked} type="color" value={selectedAnnotation.color} onChange={(event) => updateAnnotation(selectedAnnotation.id, { color: event.target.value })} /><output>{selectedAnnotation.color.toUpperCase()}</output></div></label>
+            <div className="annotation-inspector-title"><span style={{ background: selectedAnnotation.color }}><MapPin size={15} /></span><div><strong>{tr(locale, "标签标记", "Annotation")}</strong><small>{selectedAnnotation.anchorName || tr(locale, "场景坐标", "Scene coordinates")}</small></div><button title={tr(locale, "定位标签", "Focus annotation")} onClick={() => engine?.focusAnnotation(selectedAnnotation.id)}><Maximize size={14} /></button></div>
+            <label className="field"><span>{tr(locale, "标签名称", "Annotation name")}</span><input disabled={selectedAnnotation.locked} value={selectedAnnotation.name} onChange={(event) => updateAnnotation(selectedAnnotation.id, { name: event.target.value })} /></label>
+            <label className="field"><span>{tr(locale, "说明内容", "Description")}</span><textarea disabled={selectedAnnotation.locked} rows={4} value={selectedAnnotation.description ?? ""} onChange={(event) => updateAnnotation(selectedAnnotation.id, { description: event.target.value })} placeholder={tr(locale, "填写巡检事项、设备状态或问题说明", "Describe an inspection item, device status, or issue")} /></label>
+            <label className="field color-field"><span>{tr(locale, "标签颜色", "Annotation color")}</span><div><input disabled={selectedAnnotation.locked} type="color" value={selectedAnnotation.color} onChange={(event) => updateAnnotation(selectedAnnotation.id, { color: event.target.value })} /><output>{selectedAnnotation.color.toUpperCase()}</output></div></label>
             <div className="two-column">
-              <label className="field"><span>可见性</span><button className={`toggle ${selectedAnnotation.visible ? "on" : ""}`} onClick={() => updateAnnotation(selectedAnnotation.id, { visible: !selectedAnnotation.visible })}><i />{selectedAnnotation.visible ? "显示" : "隐藏"}</button></label>
-              <label className="field"><span>锁定</span><button className={`toggle ${selectedAnnotation.locked ? "on" : ""}`} onClick={() => updateAnnotation(selectedAnnotation.id, { locked: !selectedAnnotation.locked })}><i />{selectedAnnotation.locked ? "已锁定" : "未锁定"}</button></label>
+              <label className="field"><span>{tr(locale, "可见性", "Visibility")}</span><button className={`toggle ${selectedAnnotation.visible ? "on" : ""}`} onClick={() => updateAnnotation(selectedAnnotation.id, { visible: !selectedAnnotation.visible })}><i />{selectedAnnotation.visible ? tr(locale, "显示", "Visible") : tr(locale, "隐藏", "Hidden")}</button></label>
+              <label className="field"><span>{tr(locale, "锁定", "Lock")}</span><button className={`toggle ${selectedAnnotation.locked ? "on" : ""}`} onClick={() => updateAnnotation(selectedAnnotation.id, { locked: !selectedAnnotation.locked })}><i />{selectedAnnotation.locked ? tr(locale, "已锁定", "Locked") : tr(locale, "未锁定", "Unlocked")}</button></label>
             </div>
-            <label className="field compact-opacity"><span>标签尺寸</span><output>{Math.round((selectedAnnotation.size ?? 1) * 100)}%</output></label>
+            <label className="field compact-opacity"><span>{tr(locale, "标签尺寸", "Annotation size")}</span><output>{Math.round((selectedAnnotation.size ?? 1) * 100)}%</output></label>
             <input disabled={selectedAnnotation.locked} className="range" type="range" min="0.35" max="3" step="0.05" value={selectedAnnotation.size ?? 1} onChange={(event) => updateAnnotation(selectedAnnotation.id, { size: Number(event.target.value) })} />
-            <TransformFields disabled={selectedAnnotation.locked} title="锚点位置" transform={selectedAnnotation.position} onChange={(axis, value) => updateAnnotationPosition(selectedAnnotation, axis, value)} />
+            <TransformFields disabled={selectedAnnotation.locked} title={tr(locale, "锚点位置", "Anchor position")} transform={selectedAnnotation.position} onChange={(axis, value) => updateAnnotationPosition(selectedAnnotation, axis, value)} />
             <div className="annotation-binding">
-              <span>绑定对象</span>
-              <strong>{selectedAnnotation.anchorName || "未绑定构件"}</strong>
-              {selectedAnnotation.modelId && <small>模型 {selectedAnnotation.modelId}{selectedAnnotation.layerId ? ` · 图层 ${selectedAnnotation.layerId}` : ""}</small>}
+              <span>{tr(locale, "绑定对象", "Bound object")}</span>
+              <strong>{selectedAnnotation.anchorName || tr(locale, "未绑定构件", "No component bound")}</strong>
+              {selectedAnnotation.modelId && <small>{tr(locale, "模型", "Model")} {selectedAnnotation.modelId}{selectedAnnotation.layerId ? ` · ${tr(locale, "图层", "Layer")} ${selectedAnnotation.layerId}` : ""}</small>}
             </div>
-            <button className="button remove-scene" disabled={selectedAnnotation.locked} onClick={() => deleteAnnotation(selectedAnnotation.id)}><Trash2 size={16} />删除标签</button>
+            <button className="button remove-scene" disabled={selectedAnnotation.locked} onClick={() => deleteAnnotation(selectedAnnotation.id)}><Trash2 size={16} />{tr(locale, "删除标签", "Delete annotation")}</button>
           </div>
         ) : selectedSpace ? (
           <div className="inspector-content space-inspector">
-            <div className="space-inspector-title"><span><DoorOpen size={16} /></span><div><strong>{selectedSpace.number ? `${selectedSpace.number} ${selectedSpace.name}` : selectedSpace.name}</strong><small>{selectedSpace.modelName} · {selectedSpace.level}</small></div><button title="关闭空间属性" onClick={() => setSelectedSpace(undefined)}><X size={14} /></button></div>
+            <div className="space-inspector-title"><span><DoorOpen size={16} /></span><div><strong>{selectedSpace.number ? `${selectedSpace.number} ${selectedSpace.name}` : selectedSpace.name}</strong><small>{selectedSpace.modelName} · {selectedSpace.level}</small></div><button title={tr(locale, "关闭空间属性", "Close space properties")} onClick={() => setSelectedSpace(undefined)}><X size={14} /></button></div>
             <div className="space-summary-grid">
-              <div><span>面积</span><strong>{selectedSpace.areaSquareMetres === undefined ? "—" : `${numberFormat.format(selectedSpace.areaSquareMetres)} m²`}</strong></div>
-              <div><span>体积</span><strong>{selectedSpace.volumeCubicMetres === undefined ? "—" : `${numberFormat.format(selectedSpace.volumeCubicMetres)} m³`}</strong></div>
-              <div><span>楼层</span><strong title={selectedSpace.level}>{selectedSpace.level}</strong></div>
-              <div><span>类型</span><strong>{selectedSpace.kind}</strong></div>
+              <div><span>{tr(locale, "面积", "Area")}</span><strong>{selectedSpace.areaSquareMetres === undefined ? "—" : `${numberFormat.format(selectedSpace.areaSquareMetres)} m²`}</strong></div>
+              <div><span>{tr(locale, "体积", "Volume")}</span><strong>{selectedSpace.volumeCubicMetres === undefined ? "—" : `${numberFormat.format(selectedSpace.volumeCubicMetres)} m³`}</strong></div>
+              <div><span>{tr(locale, "楼层", "Floor")}</span><strong title={selectedSpace.level}>{selectedSpace.level}</strong></div>
+              <div><span>{tr(locale, "类型", "Type")}</span><strong>{selectedSpace.kind}</strong></div>
             </div>
             <div className="space-inspector-actions">
-              <button onClick={() => { engine?.focusSpace(selectedSpace); setNavigationMode("orbit"); }}><LocateFixed size={13} />定位</button>
-              <button className={engine?.isSpaceVisible(selectedSpace) ? "active" : ""} onClick={() => { if (!engine) return; engine.setSpaceVisible(selectedSpace, !engine.isSpaceVisible(selectedSpace)); setRevision((value) => value + 1); }}>{engine?.isSpaceVisible(selectedSpace) ? <EyeOff size={13} /> : <Eye size={13} />}{engine?.isSpaceVisible(selectedSpace) ? "隐藏空间体" : "显示空间体"}</button>
+              <button onClick={() => { engine?.focusSpace(selectedSpace); setNavigationMode("orbit"); }}><LocateFixed size={13} />{tr(locale, "定位", "Focus")}</button>
+              <button className={engine?.isSpaceVisible(selectedSpace) ? "active" : ""} onClick={() => { if (!engine) return; engine.setSpaceVisible(selectedSpace, !engine.isSpaceVisible(selectedSpace)); setRevision((value) => value + 1); }}>{engine?.isSpaceVisible(selectedSpace) ? <EyeOff size={13} /> : <Eye size={13} />}{engine?.isSpaceVisible(selectedSpace) ? tr(locale, "隐藏空间体", "Hide space") : tr(locale, "显示空间体", "Show space")}</button>
             </div>
             <StructuredProperties
-              entries={spacePropertyEntries(selectedSpace)}
-              emptyText="该空间没有更多 BIM 参数"
+              locale={locale}
+              entries={spacePropertyEntries(selectedSpace, locale)}
+              emptyText={tr(locale, "该空间没有更多 BIM 参数", "This space has no additional BIM parameters")}
             />
           </div>
         ) : selected && selectedTransform ? (
           <div className="inspector-content">
-            <label className="field"><span>{selectedLayerId && selectedLayerId !== "root" ? "图层名称" : "名称"}</span><input disabled={selectionLocked} value={selectionName} onChange={(event) => { engine?.renameSelection(event.target.value); setRevision((value) => value + 1); }} /></label>
-            <label className="field color-field"><span>图层颜色</span><div><input disabled={selectionLocked} type="color" value={selectionColor} onChange={(event) => { engine?.setSelectionColor(event.target.value); setRevision((value) => value + 1); }} /><output>{selectionColor.toUpperCase()}</output></div></label>
+            <label className="field"><span>{selectedLayerId && selectedLayerId !== "root" ? tr(locale, "图层名称", "Layer name") : tr(locale, "名称", "Name")}</span><input disabled={selectionLocked} value={selectionName} onChange={(event) => { engine?.renameSelection(event.target.value); setRevision((value) => value + 1); }} /></label>
+            <label className="field color-field"><span>{tr(locale, "图层颜色", "Layer color")}</span><div><input disabled={selectionLocked} type="color" value={selectionColor} onChange={(event) => { engine?.setSelectionColor(event.target.value); setRevision((value) => value + 1); }} /><output>{selectionColor.toUpperCase()}</output></div></label>
             <div className="two-column">
-              <label className="field"><span>可见性</span><button className={`toggle ${selectionVisible ? "on" : ""}`} onClick={() => engine?.setSelectionVisible(!selectionVisible)}><i />{selectionVisible ? "显示" : "隐藏"}</button></label>
-              <label className="field"><span>锁定</span><button className={`toggle ${selectionLocked ? "on" : ""}`} onClick={() => { if (!engine || !selected) return; if (selectedLayerId && selectedLayerId !== "root") engine.setLayerLocked(selected.id, selectedLayerId, !selectionLocked); else engine.setModelLocked(selected.id, !selectionLocked); setRevision((value) => value + 1); }}><i />{selectionLocked ? "已锁定" : "未锁定"}</button></label>
+              <label className="field"><span>{tr(locale, "可见性", "Visibility")}</span><button className={`toggle ${selectionVisible ? "on" : ""}`} onClick={() => engine?.setSelectionVisible(!selectionVisible)}><i />{selectionVisible ? tr(locale, "显示", "Visible") : tr(locale, "隐藏", "Hidden")}</button></label>
+              <label className="field"><span>{tr(locale, "锁定", "Lock")}</span><button className={`toggle ${selectionLocked ? "on" : ""}`} onClick={() => { if (!engine || !selected) return; if (selectedLayerId && selectedLayerId !== "root") engine.setLayerLocked(selected.id, selectedLayerId, !selectionLocked); else engine.setModelLocked(selected.id, !selectionLocked); setRevision((value) => value + 1); }}><i />{selectionLocked ? tr(locale, "已锁定", "Locked") : tr(locale, "未锁定", "Unlocked")}</button></label>
             </div>
-            <label className="field compact-opacity"><span>透明度</span><output>{Math.round(selectionOpacity * 100)}%</output></label>
+            <label className="field compact-opacity"><span>{tr(locale, "透明度", "Opacity")}</span><output>{Math.round(selectionOpacity * 100)}%</output></label>
             <input disabled={selectionLocked} className="range" type="range" min="0" max="1" step="0.01" value={selectionOpacity} onChange={(event) => engine?.setSelectionOpacity(Number(event.target.value))} />
             <div className="material-editor">
               <div className="section-label"><span>{tr(locale, "材质", "Material")}</span><small>PBR</small></div>
@@ -1828,49 +1911,49 @@ export function App() {
             </div>
             {selected.kind === "model" && (
               <div className="field explosion-field">
-                <span>模型爆炸</span><output>{Math.round(explosionFactor * 100)}%</output>
+                <span>{tr(locale, "模型爆炸", "Model explosion")}</span><output>{Math.round(explosionFactor * 100)}%</output>
                 <input disabled={selectionLocked} className="range" type="range" min="0" max="2" step="0.01" value={explosionFactor} onChange={(event) => updateExplosion(Number(event.target.value))} />
                 <div className="explosion-modes">
-                  {(["radial", "vertical", "x", "y", "z"] as const).map((mode) => <button disabled={selectionLocked} key={mode} className={explosionMode === mode ? "active" : ""} onClick={() => updateExplosion(Math.max(explosionFactor, 0.55), mode)}>{explosionModeName(mode)}</button>)}
-                  <button disabled={selectionLocked} onClick={() => updateExplosion(0)}>复位</button>
+                  {(["radial", "vertical", "x", "y", "z"] as const).map((mode) => <button disabled={selectionLocked} key={mode} className={explosionMode === mode ? "active" : ""} onClick={() => updateExplosion(Math.max(explosionFactor, 0.55), mode)}>{explosionModeName(mode, locale)}</button>)}
+                  <button disabled={selectionLocked} onClick={() => updateExplosion(0)}>{tr(locale, "复位", "Reset")}</button>
                 </div>
               </div>
             )}
             {engine?.hasAnimation(selected.id) && (
-              <div className="animation-control"><span>模型动画</span><button onClick={() => { engine.setAnimationEnabled(selected.id, !engine.isAnimationEnabled(selected.id)); setRevision((value) => value + 1); }}>{engine.isAnimationEnabled(selected.id) ? <><Pause size={14} />暂停</> : <><Play size={14} />播放</>}</button></div>
+              <div className="animation-control"><span>{tr(locale, "模型动画", "Model animation")}</span><button onClick={() => { engine.setAnimationEnabled(selected.id, !engine.isAnimationEnabled(selected.id)); setRevision((value) => value + 1); }}>{engine.isAnimationEnabled(selected.id) ? <><Pause size={14} />{tr(locale, "暂停", "Pause")}</> : <><Play size={14} />{tr(locale, "播放", "Play")}</>}</button></div>
             )}
             {selectedComponent && (
-              <div className="component-actions"><button onClick={() => focusComponent(selectedComponent)}>定位</button><button onClick={() => { engine?.isolateComponents([selectedComponent]); setRevision((value) => value + 1); }}>隔离当前</button>{engine?.isIsolationActive() && <button onClick={() => { engine.clearIsolation(); setRevision((value) => value + 1); }}>恢复全部</button>}</div>
+              <div className="component-actions"><button onClick={() => focusComponent(selectedComponent)}>{tr(locale, "定位", "Focus")}</button><button onClick={() => { engine?.isolateComponents([selectedComponent]); setRevision((value) => value + 1); }}>{tr(locale, "隔离当前", "Isolate")}</button>{engine?.isIsolationActive() && <button onClick={() => { engine.clearIsolation(); setRevision((value) => value + 1); }}>{tr(locale, "恢复全部", "Restore all")}</button>}</div>
             )}
-            <TransformFields disabled={selectionLocked} title="位置" transform={selectedTransform.position} onChange={(axis, value) => updateSelectedTransform("position", axis, value)} />
-            <TransformFields disabled={selectionLocked} title="旋转" transform={{ x: selectedTransform.rotation.x * 180 / Math.PI, y: selectedTransform.rotation.y * 180 / Math.PI, z: selectedTransform.rotation.z * 180 / Math.PI }} suffix="°" onChange={(axis, value) => updateSelectedTransform("rotation", axis, value)} />
-            <TransformFields disabled={selectionLocked} title="缩放" transform={selectedTransform.scale} onChange={(axis, value) => updateSelectedTransform("scale", axis, value)} />
-            <StructuredProperties entries={Object.entries(selectionProperties).map(([name, value]) => ({ name, value }))} emptyText="该对象没有 BIM 属性" />
+            <TransformFields disabled={selectionLocked} title={tr(locale, "位置", "Position")} transform={selectedTransform.position} onChange={(axis, value) => updateSelectedTransform("position", axis, value)} />
+            <TransformFields disabled={selectionLocked} title={tr(locale, "旋转", "Rotation")} transform={{ x: selectedTransform.rotation.x * 180 / Math.PI, y: selectedTransform.rotation.y * 180 / Math.PI, z: selectedTransform.rotation.z * 180 / Math.PI }} suffix="°" onChange={(axis, value) => updateSelectedTransform("rotation", axis, value)} />
+            <TransformFields disabled={selectionLocked} title={tr(locale, "缩放", "Scale")} transform={selectedTransform.scale} onChange={(axis, value) => updateSelectedTransform("scale", axis, value)} />
+            <StructuredProperties locale={locale} entries={Object.entries(selectionProperties).map(([name, value]) => ({ name, value }))} emptyText={tr(locale, "该对象没有 BIM 属性", "This object has no BIM properties")} />
             <button className="button remove-scene" disabled={selectionLocked} onClick={() => {
               if (selectedLayerId && selectedLayerId !== "root") engine?.deleteSelectedLayer();
               else engine?.removeModel(selected.id);
               setRevision((value) => value + 1);
-            }}><Trash2 size={16} />{selectedLayerId && selectedLayerId !== "root" ? "删除当前图层" : "从场景移除"}</button>
+            }}><Trash2 size={16} />{selectedLayerId && selectedLayerId !== "root" ? tr(locale, "删除当前图层", "Delete layer") : tr(locale, "从场景移除", "Remove from scene")}</button>
           </div>
         ) : (
           <div className="empty-inspector"><MousePointer2 size={30} /><strong>{tr(locale, "选择一个模型或构件", "Select a model or component")}</strong><span>{tr(locale, "点击画布中的对象查看属性并进行编辑", "Click an object in the viewport to inspect and edit it")}</span></div>
         )}
         {measurements.length > 0 && (
           <div className="measurement-list">
-            <div className="section-label"><span>测量结果</span><button onClick={() => { engine?.clearMeasurements(); setMeasurements([]); }}>清空</button></div>
+            <div className="section-label"><span>{tr(locale, "测量结果", "Measurements")}</span><button onClick={() => { engine?.clearMeasurements(); setMeasurements([]); }}>{tr(locale, "清空", "Clear")}</button></div>
             {measurements.map((item, index) => (
               <div className="measurement-row" key={item.id}>
                 <Ruler size={14} />
-                <button onClick={() => engine?.focusMeasurement(item)}><span>{measureModeName(item.kind ?? "distance")} {index + 1}</span><strong>{formatMeasurementValue(item)}</strong></button>
-                <button className="measurement-delete" title="删除该测量" onClick={() => deleteMeasurement(item.id)}><X size={13} /></button>
+                <button onClick={() => engine?.focusMeasurement(item)}><span>{measureModeName(item.kind ?? "distance", locale)} {index + 1}</span><strong>{formatMeasurementValue(item)}</strong></button>
+                <button className="measurement-delete" title={tr(locale, "删除该测量", "Delete measurement")} onClick={() => deleteMeasurement(item.id)}><X size={13} /></button>
               </div>
             ))}
           </div>
         )}
         {collisions.length > 0 && (
           <div className="collision-list">
-            <div className="section-label"><span>碰撞结果</span><small>{collisions.length}</small></div>
-            {collisions.map((item) => <button key={item.id} onClick={() => engine?.focusCollision(item)}><ScanLine size={14} /><span><strong>{item.sourceName}</strong><small>与 {item.targetName} 相交</small></span></button>)}
+            <div className="section-label"><span>{tr(locale, "碰撞结果", "Collisions")}</span><small>{collisions.length}</small></div>
+            {collisions.map((item) => <button key={item.id} onClick={() => engine?.focusCollision(item)}><ScanLine size={14} /><span><strong>{item.sourceName}</strong><small>{tr(locale, `与 ${item.targetName} 相交`, `Intersects ${item.targetName}`)}</small></span></button>)}
           </div>
         )}
       </aside>
@@ -1883,16 +1966,16 @@ export function App() {
     {projectDialogMode && <div className="dialog-backdrop" onMouseDown={() => !busy && setProjectDialogMode(undefined)}>
       <form className="dialog" onSubmit={(event) => { event.preventDefault(); void submitProjectDialog(); }} onMouseDown={(event) => event.stopPropagation()}>
         <span className="eyebrow">{projectDialogMode === "rename" ? "EDIT PROJECT" : "NEW PROJECT"}</span>
-        <h2>{projectDialogMode === "rename" ? "编辑项目" : "新建项目"}</h2>
-        <p>{projectDialogMode === "rename" ? "修改项目名称和说明，不影响已有模型与场景。" : "项目用于隔离模型资产和场景，可随时从顶部切换。"}</p>
-        <label><span>项目名称</span><input autoFocus value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} placeholder="例如：研发中心一期" /></label>
-        <label><span>项目说明</span><textarea value={newProjectDescription} onChange={(event) => setNewProjectDescription(event.target.value)} placeholder="可选" rows={3} /></label>
-        <div className="dialog-actions"><button type="button" className="button" disabled={busy} onClick={() => setProjectDialogMode(undefined)}>取消</button><button className="button primary" disabled={!newProjectName.trim() || busy}>{busy ? "保存中…" : projectDialogMode === "rename" ? "保存修改" : "创建并切换"}</button></div>
+        <h2>{projectDialogMode === "rename" ? tr(locale, "编辑项目", "Edit project") : tr(locale, "新建项目", "New project")}</h2>
+        <p>{projectDialogMode === "rename" ? tr(locale, "修改项目名称和说明，不影响已有模型与场景。", "Change the project name and description without affecting existing models or scenes.") : tr(locale, "项目用于隔离模型资产和场景，可随时从顶部切换。", "Projects separate model assets and scenes and can be switched from the top bar.")}</p>
+        <label><span>{tr(locale, "项目名称", "Project name")}</span><input autoFocus value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} placeholder={tr(locale, "例如：研发中心一期", "For example: R&D Center Phase 1")} /></label>
+        <label><span>{tr(locale, "项目说明", "Project description")}</span><textarea value={newProjectDescription} onChange={(event) => setNewProjectDescription(event.target.value)} placeholder={tr(locale, "可选", "Optional")} rows={3} /></label>
+        <div className="dialog-actions"><button type="button" className="button" disabled={busy} onClick={() => setProjectDialogMode(undefined)}>{tr(locale, "取消", "Cancel")}</button><button className="button primary" disabled={!newProjectName.trim() || busy}>{busy ? tr(locale, "保存中…", "Saving…") : projectDialogMode === "rename" ? tr(locale, "保存修改", "Save changes") : tr(locale, "创建并切换", "Create and switch")}</button></div>
       </form>
     </div>}
     {(route.view === "manager" || route.view === "optimizer") && <div className="global-utility"><button onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={15} />{locale === "zh-CN" ? "EN" : "中文"}</button><button onClick={() => setDigitalTwinOpen((value) => !value)}><Radio size={15} />{tr(locale, "数据", "Data")}</button><button onClick={() => setCreditsOpen(true)}><HeartHandshake size={15} />{tr(locale, "致谢", "Credits")}</button></div>}
     {digitalTwinOpen && <DigitalTwinPanel locale={locale} onClose={() => setDigitalTwinOpen(false)} onMessage={(data) => { if (engine?.applySceneDataMessage(data)) { setMessage(`数据 ${data.source}/${data.key} 已映射到场景`); setRevision((value) => value + 1); } }} />}
-    {creditsOpen && <CreditsModal locale={locale} onClose={() => setCreditsOpen(false)} />}
+    {(route.view === "manager" || route.view === "optimizer") && creditsOpen && <CreditsModal locale={locale} onClose={() => setCreditsOpen(false)} />}
     {error && <div className="toast error">{error}</div>}
     </>
   );
@@ -1902,41 +1985,41 @@ function ToolButton({ title, active, onClick, icon }: { title: string; active: b
   return <button className={`tool-button ${active ? "active" : ""}`} title={title} onClick={onClick}>{icon}<span>{title}</span></button>;
 }
 
-function ViewControl({ onSelect }: { onSelect: (view: StandardView) => void }) {
+function ViewControl({ locale, onSelect }: { locale: AppLocale; onSelect: (view: StandardView) => void }) {
   return (
-    <div className="view-control" aria-label="标准视图">
-      <button onClick={() => onSelect("top")}>上</button>
-      <div><button onClick={() => onSelect("left")}>左</button><button onClick={() => onSelect("front")}>前</button><button onClick={() => onSelect("right")}>右</button></div>
-      <div><button onClick={() => onSelect("back")}>后</button><button onClick={() => onSelect("bottom")}>下</button></div>
+    <div className="view-control" aria-label={tr(locale, "标准视图", "Standard views")}>
+      <button onClick={() => onSelect("top")}>{tr(locale, "上", "Top")}</button>
+      <div><button onClick={() => onSelect("left")}>{tr(locale, "左", "Left")}</button><button onClick={() => onSelect("front")}>{tr(locale, "前", "Front")}</button><button onClick={() => onSelect("right")}>{tr(locale, "右", "Right")}</button></div>
+      <div><button onClick={() => onSelect("back")}>{tr(locale, "后", "Back")}</button><button onClick={() => onSelect("bottom")}>{tr(locale, "下", "Bottom")}</button></div>
     </div>
   );
 }
 
-function StructuredProperties({ entries, emptyText }: { entries: BimPropertyEntry[]; emptyText: string }) {
+function StructuredProperties({ locale, entries, emptyText }: { locale: AppLocale; entries: BimPropertyEntry[]; emptyText: string }) {
   const groups = groupPropertyEntries(entries);
   if (groups.length === 0) return <div className="property-empty">{emptyText}</div>;
   return <div className="structured-properties">
-    <div className="section-label property-label"><span>BIM 属性</span><small>{entries.length}</small></div>
+    <div className="section-label property-label"><span>{tr(locale, "BIM 属性", "BIM properties")}</span><small>{entries.length}</small></div>
     {groups.map((group, index) => <details key={group.name} open={index < 2}>
-      <summary><span>{group.name}</span><small>{group.entries.length}</small><ChevronRight size={12} /></summary>
+      <summary><span>{tr(locale, group.name, propertyGroupEnglishName(group.name))}</span><small>{group.entries.length}</small><ChevronRight size={12} /></summary>
       <dl className="property-list">{group.entries.map((entry, entryIndex) => <div key={`${entry.name}:${entryIndex}`}><dt title={entry.name}>{entry.name}</dt><dd title={entry.value}>{entry.value}</dd></div>)}</dl>
     </details>)}
   </div>;
 }
 
-function spacePropertyEntries(space: BimSpaceRecord): BimPropertyEntry[] {
+function spacePropertyEntries(space: BimSpaceRecord, locale: AppLocale): BimPropertyEntry[] {
   const base: BimPropertyEntry[] = [
-    { name: "空间 ID", value: space.id, group: "identity" },
-    { name: "名称", value: space.name, group: "identity" },
-    ...(space.number ? [{ name: "编号", value: space.number, group: "identity" }] : []),
-    { name: "楼层", value: space.level, group: "constraints" },
-    { name: "类型", value: space.kind, group: "identity" },
-    ...(space.department ? [{ name: "部门", value: space.department, group: "identity" }] : []),
-    ...(space.areaSquareMetres === undefined ? [] : [{ name: "面积", value: `${numberFormat.format(space.areaSquareMetres)} m²`, group: "dimensions" }]),
-    ...(space.volumeCubicMetres === undefined ? [] : [{ name: "体积", value: `${numberFormat.format(space.volumeCubicMetres)} m³`, group: "dimensions" }]),
+    { name: tr(locale, "空间 ID", "Space ID"), value: space.id, group: "identity" },
+    { name: tr(locale, "名称", "Name"), value: space.name, group: "identity" },
+    ...(space.number ? [{ name: tr(locale, "编号", "Number"), value: space.number, group: "identity" }] : []),
+    { name: tr(locale, "楼层", "Floor"), value: space.level, group: "constraints" },
+    { name: tr(locale, "类型", "Type"), value: space.kind, group: "identity" },
+    ...(space.department ? [{ name: tr(locale, "部门", "Department"), value: space.department, group: "identity" }] : []),
+    ...(space.areaSquareMetres === undefined ? [] : [{ name: tr(locale, "面积", "Area"), value: `${numberFormat.format(space.areaSquareMetres)} m²`, group: "dimensions" }]),
+    ...(space.volumeCubicMetres === undefined ? [] : [{ name: tr(locale, "体积", "Volume"), value: `${numberFormat.format(space.volumeCubicMetres)} m³`, group: "dimensions" }]),
     ...(space.bounds ? [
-      { name: "边界最小点", value: formatVector(space.bounds.min), group: "dimensions" },
-      { name: "边界最大点", value: formatVector(space.bounds.max), group: "dimensions" }
+      { name: tr(locale, "边界最小点", "Bounds minimum"), value: formatVector(space.bounds.min), group: "dimensions" },
+      { name: tr(locale, "边界最大点", "Bounds maximum"), value: formatVector(space.bounds.max), group: "dimensions" }
     ] : [])
   ];
   return [...base, ...(space.parameters ?? [])];
@@ -1963,6 +2046,17 @@ function groupPropertyEntries(entries: BimPropertyEntry[]) {
   });
 }
 
+function propertyGroupEnglishName(name: string): string {
+  if (name === "基本信息") return "General";
+  if (name === "标识与分类") return "Identity and classification";
+  if (name === "位置与尺寸") return "Location and dimensions";
+  if (name === "材质") return "Materials";
+  if (name === "约束") return "Constraints";
+  if (name === "能耗与负荷") return "Energy and loads";
+  if (name === "阶段与 IFC") return "Phasing and IFC";
+  return "Other parameters";
+}
+
 function TransformFields({ title, transform, suffix, disabled = false, onChange }: {
   title: string;
   transform: { x: number; y: number; z: number };
@@ -1978,12 +2072,12 @@ function TransformFields({ title, transform, suffix, disabled = false, onChange 
   );
 }
 
-function statusText(model: ModelRecord, loaded: boolean): string {
-  if (loaded) return "已载入场景";
-  if (model.status === "ready") return `${formatBytes(model.size)} · 点击加载`;
+function statusText(model: ModelRecord, loaded: boolean, locale: AppLocale): string {
+  if (loaded) return tr(locale, "已载入场景", "Loaded in scene");
+  if (model.status === "ready") return `${formatBytes(model.size)} · ${tr(locale, "点击加载", "Click to load")}`;
   if (model.status === "processing") return `${model.progress}% · ${model.message}`;
-  if (model.status === "waiting_converter") return "等待 Revit 转换机";
-  if (model.status === "failed") return `失败 · ${model.message}`;
+  if (model.status === "waiting_converter") return tr(locale, "等待 Revit 转换机", "Waiting for Revit converter");
+  if (model.status === "failed") return `${tr(locale, "失败", "Failed")} · ${model.message}`;
   return model.message;
 }
 
@@ -1992,13 +2086,13 @@ function formatBytes(size: number): string {
   return `${numberFormat.format(size / 1024 / 1024)} MB`;
 }
 
-function measureModeName(mode: MeasureMode): string {
-  if (mode === "minimum") return "最小距离";
-  if (mode === "angle") return "角度测量";
-  if (mode === "elevation") return "标高测量";
-  if (mode === "horizontal") return "水平距离";
-  if (mode === "vertical") return "垂直高度";
-  return "距离测量";
+function measureModeName(mode: MeasureMode, locale: AppLocale): string {
+  if (mode === "minimum") return tr(locale, "最小距离", "Minimum distance");
+  if (mode === "angle") return tr(locale, "角度测量", "Angle");
+  if (mode === "elevation") return tr(locale, "标高测量", "Elevation");
+  if (mode === "horizontal") return tr(locale, "水平距离", "Horizontal distance");
+  if (mode === "vertical") return tr(locale, "垂直高度", "Vertical height");
+  return tr(locale, "距离测量", "Distance");
 }
 
 function formatMeasurementValue(measurement: MeasurementState): string {
@@ -2012,12 +2106,19 @@ function formatMeasurementValue(measurement: MeasurementState): string {
   return `${numberFormat.format(distance)} m`;
 }
 
-function explosionModeName(mode: ExplosionMode): string {
-  if (mode === "vertical") return "楼层";
-  if (mode === "x") return "X 轴";
-  if (mode === "y") return "Y 轴";
-  if (mode === "z") return "Z 轴";
-  return "径向";
+function explosionModeName(mode: ExplosionMode, locale: AppLocale): string {
+  if (mode === "vertical") return tr(locale, "楼层", "Floors");
+  if (mode === "x") return tr(locale, "X 轴", "X axis");
+  if (mode === "y") return tr(locale, "Y 轴", "Y axis");
+  if (mode === "z") return tr(locale, "Z 轴", "Z axis");
+  return tr(locale, "径向", "Radial");
+}
+
+function skyboxEnglishLabel(preset: SkyboxPreset): string {
+  if (preset === "none") return "Solid";
+  if (preset === "clear") return "Clear sky";
+  if (preset === "sunset") return "Sunset";
+  return "Night";
 }
 
 function lightTypeName(type: SceneLightState["type"]): string {
@@ -2027,6 +2128,15 @@ function lightTypeName(type: SceneLightState["type"]): string {
   if (type === "point") return "点光源";
   if (type === "spot") return "聚光灯";
   return "矩形区域光";
+}
+
+function lightTypeEnglishName(type: SceneLightState["type"]): string {
+  if (type === "ambient") return "Ambient";
+  if (type === "hemisphere") return "Hemisphere";
+  if (type === "directional") return "Directional";
+  if (type === "point") return "Point";
+  if (type === "spot") return "Spot";
+  return "Rect area";
 }
 
 function formatVector(vector: { x: number; y: number; z: number }): string {

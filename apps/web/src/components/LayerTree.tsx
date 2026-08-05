@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Group, Lock, Trash2, Unlock } from "lucide-react";
 import type { LayerTreeNode } from "../viewer/ViewerEngine";
+import { translate as tr, type AppLocale } from "../i18n";
 
 interface LayerTreeProps {
   root: LayerTreeNode;
+  locale: AppLocale;
   selectedNodeId: string | undefined;
   onSelect: (node: LayerTreeNode) => void;
   onVisibilityChange: (node: LayerTreeNode, visible: boolean) => void;
@@ -11,7 +13,7 @@ interface LayerTreeProps {
   onDelete: (node: LayerTreeNode) => void;
 }
 
-export function LayerTree({ root, selectedNodeId, onSelect, onVisibilityChange, onLockChange, onDelete }: LayerTreeProps) {
+export function LayerTree({ root, locale, selectedNodeId, onSelect, onVisibilityChange, onLockChange, onDelete }: LayerTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([root.id]));
 
   useEffect(() => {
@@ -31,6 +33,7 @@ export function LayerTree({ root, selectedNodeId, onSelect, onVisibilityChange, 
     <div className="layer-tree">
       <LayerNode
         node={root}
+        locale={locale}
         depth={0}
         expanded={expanded}
         selectedNodeId={selectedNodeId}
@@ -46,6 +49,7 @@ export function LayerTree({ root, selectedNodeId, onSelect, onVisibilityChange, 
 
 interface LayerNodeProps {
   node: LayerTreeNode;
+  locale: AppLocale;
   depth: number;
   expanded: Set<string>;
   selectedNodeId: string | undefined;
@@ -58,6 +62,7 @@ interface LayerNodeProps {
 
 function LayerNode({
   node,
+  locale,
   depth,
   expanded,
   selectedNodeId,
@@ -77,7 +82,7 @@ function LayerNode({
       >
         <button
           className="tree-expander"
-          aria-label={isExpanded ? "收起" : "展开"}
+          aria-label={isExpanded ? tr(locale, "收起", "Collapse") : tr(locale, "展开", "Expand")}
           disabled={!hasChildren}
           onClick={() => hasChildren && onToggle(node.id)}
         >
@@ -90,16 +95,16 @@ function LayerNode({
         </button>
         <button
           className="tree-visibility"
-          title={node.visible ? "隐藏该层" : "显示该层"}
+          title={node.visible ? tr(locale, "隐藏该层", "Hide layer") : tr(locale, "显示该层", "Show layer")}
           onClick={() => onVisibilityChange(node, !node.visible)}
         >
           {node.visible ? <Eye size={13} /> : <EyeOff size={13} />}
         </button>
-        <button className={`tree-lock ${node.locked ? "active" : ""}`} title={node.locked ? "解锁该层" : "锁定该层"} onClick={() => onLockChange(node, !node.locked)}>
+        <button className={`tree-lock ${node.locked ? "active" : ""}`} title={node.locked ? tr(locale, "解锁该层", "Unlock layer") : tr(locale, "锁定该层", "Lock layer")} onClick={() => onLockChange(node, !node.locked)}>
           {node.locked ? <Lock size={12} /> : <Unlock size={12} />}
         </button>
         {depth > 0 && (
-          <button className="tree-delete" disabled={node.locked} title={node.locked ? "请先解锁该层" : "从当前场景删除该层"} onClick={() => onDelete(node)}>
+          <button className="tree-delete" disabled={node.locked} title={node.locked ? tr(locale, "请先解锁该层", "Unlock the layer first") : tr(locale, "从当前场景删除该层", "Delete layer from scene")} onClick={() => onDelete(node)}>
             <Trash2 size={12} />
           </button>
         )}
@@ -108,6 +113,7 @@ function LayerNode({
         <LayerNode
           key={child.id}
           node={child}
+          locale={locale}
           depth={depth + 1}
           expanded={expanded}
           selectedNodeId={selectedNodeId}

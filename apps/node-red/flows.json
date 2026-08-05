@@ -33,7 +33,7 @@
     "libs": [],
     "x": 370,
     "y": 120,
-    "wires": [["scene-ws-out", "scene-debug", "scene-dashboard-value"], ["scene-http-response"]]
+    "wires": [["scene-ws-out", "scene-debug", "scene-dashboard-value", "scene-dashboard-gauge"], ["scene-http-response"]]
   },
   {
     "id": "scene-ws-listener",
@@ -182,6 +182,41 @@
     "className": "",
     "value": "payload",
     "valueType": "msg",
+    "wires": []
+  },
+  {
+    "id": "scene-dashboard-gauge",
+    "type": "ui-gauge",
+    "z": "bim-studio-flow",
+    "name": "实时数值",
+    "group": "bim-dashboard-group",
+    "order": 3,
+    "value": "payload.value",
+    "valueType": "msg",
+    "width": 3,
+    "height": 3,
+    "gtype": "gauge-half",
+    "gstyle": "needle",
+    "title": "实时数值",
+    "alwaysShowTitle": true,
+    "floatingTitlePosition": "top-left",
+    "units": "",
+    "icon": "",
+    "prefix": "",
+    "suffix": "",
+    "segments": [
+      { "from": "0", "color": "#4d9fff", "text": "正常" },
+      { "from": "70", "color": "#d4a84f", "text": "注意" },
+      { "from": "90", "color": "#ff5268", "text": "告警" }
+    ],
+    "min": 0,
+    "max": 100,
+    "sizeThickness": 16,
+    "sizeGap": 4,
+    "sizeKeyThickness": 8,
+    "styleRounded": true,
+    "styleGlow": false,
+    "className": "",
     "wires": []
   }
 ]
