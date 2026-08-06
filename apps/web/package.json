@@ -8,6 +8,7 @@
     "dev": "vite",
     "prebuild": "node scripts/copy-wasm.mjs",
     "build": "tsc --noEmit && vite build",
+    "bake:fixture": "node scripts/create-bake-validation-model.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },

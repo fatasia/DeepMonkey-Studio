@@ -50,6 +50,7 @@ import {
   X
 } from "lucide-react";
 import type {
+  CameraConstraintsState,
   CameraState,
   CameraViewState,
   ClippingState,
@@ -142,6 +143,16 @@ const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   afterimageDamp: 0.9
 };
 const DEFAULT_PHYSICS: ScenePhysicsState = { enabled: false, playing: false, gravity: { x: 0, y: -9.81, z: 0 } };
+const DEFAULT_CAMERA_CONSTRAINTS: CameraConstraintsState = {
+  minDistance: 0.5,
+  maxDistance: 10_000,
+  minPolarAngle: 1,
+  maxPolarAngle: 179,
+  nearClip: 0.05,
+  farClip: 100_000,
+  collisionEnabled: true,
+  collisionRadius: 0.32
+};
 const SKYBOX_OPTIONS: Array<{ value: SkyboxPreset; label: string }> = [
   { value: "none", label: "纯色" },
   { value: "clear", label: "晴空" },
@@ -186,6 +197,26 @@ function openBrowseRoute(view: "view" | "published", sceneId: string): void {
 
 function sortScenesByTime(items: SceneSnapshot[]): SceneSnapshot[] {
   return [...items].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+}
+
+function normalizeCameraConstraints(state: CameraConstraintsState): CameraConstraintsState {
+  const minDistance = Math.max(0.01, finiteNumber(state.minDistance, DEFAULT_CAMERA_CONSTRAINTS.minDistance));
+  const nearClip = Math.max(0.001, finiteNumber(state.nearClip, DEFAULT_CAMERA_CONSTRAINTS.nearClip));
+  const minPolarAngle = Math.min(179, Math.max(0, finiteNumber(state.minPolarAngle, DEFAULT_CAMERA_CONSTRAINTS.minPolarAngle)));
+  return {
+    minDistance,
+    maxDistance: Math.max(minDistance + 0.01, finiteNumber(state.maxDistance, DEFAULT_CAMERA_CONSTRAINTS.maxDistance)),
+    minPolarAngle,
+    maxPolarAngle: Math.min(180, Math.max(minPolarAngle + 0.1, finiteNumber(state.maxPolarAngle, DEFAULT_CAMERA_CONSTRAINTS.maxPolarAngle))),
+    nearClip,
+    farClip: Math.max(nearClip + 0.1, finiteNumber(state.farClip, DEFAULT_CAMERA_CONSTRAINTS.farClip)),
+    collisionEnabled: Boolean(state.collisionEnabled),
+    collisionRadius: Math.max(0.02, finiteNumber(state.collisionRadius, DEFAULT_CAMERA_CONSTRAINTS.collisionRadius))
+  };
+}
+
+function finiteNumber(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function isModelLoadSuperseded(reason: unknown): boolean {
@@ -268,6 +299,7 @@ export function App() {
   const [locale, setLocale] = useState<AppLocale>(() => readLocale());
   const [sceneAnimation, setSceneAnimation] = useState<SceneAnimationState>(DEFAULT_ANIMATION);
   const [cameraViews, setCameraViews] = useState<CameraViewState[]>([]);
+  const [cameraConstraints, setCameraConstraints] = useState<CameraConstraintsState>(DEFAULT_CAMERA_CONSTRAINTS);
   const [defaultCameraViewId, setDefaultCameraViewId] = useState<string>();
   const [cameraViewsOpen, setCameraViewsOpen] = useState(false);
   const [primitiveMenuOpen, setPrimitiveMenuOpen] = useState(false);
@@ -999,6 +1031,12 @@ export function App() {
     setMessage(`已保存相机视角“${next.name}”`);
   }
 
+  function changeCameraConstraints(patch: Partial<CameraConstraintsState>) {
+    const next = normalizeCameraConstraints({ ...cameraConstraints, ...patch });
+    setCameraConstraints(next);
+    engine?.setCameraConstraints(next);
+  }
+
   function updateCameraViewName(id: string, name: string) {
     setCameraViews((items) => items.map((item) => item.id === id ? { ...item, name: name.trim() || item.name } : item));
   }
@@ -1100,6 +1138,7 @@ export function App() {
       projectId: project.id,
       name: sceneName.trim() || "未命名场景",
       camera: engine.getCameraState(),
+      cameraConstraints: engine.getCameraConstraints(),
       cameraViews,
       ...(defaultCameraViewId ? { defaultCameraViewId } : {}),
       models: currentModels.filter((item) => item.kind === "model").flatMap((item) => {
@@ -1259,7 +1298,10 @@ export function App() {
       setAnnotations(engine.listAnnotations());
       const nextCameraViews = scene.cameraViews ?? [];
       const entryCamera = nextCameraViews.find((item) => item.id === scene.defaultCameraViewId)?.camera ?? scene.camera;
+      const nextCameraConstraints = normalizeCameraConstraints({ ...DEFAULT_CAMERA_CONSTRAINTS, ...scene.cameraConstraints });
+      engine.setCameraConstraints(nextCameraConstraints);
       engine.applyCamera(entryCamera);
+      setCameraConstraints(nextCameraConstraints);
       setCameraViews(nextCameraViews);
       setDefaultCameraViewId(scene.defaultCameraViewId);
       const nextWeather = scene.weather ?? "sunny";
@@ -1319,6 +1361,7 @@ export function App() {
       engine.setPostProcessing(DEFAULT_POST_PROCESSING);
       engine.setPhysicsState(DEFAULT_PHYSICS);
       engine.setSceneAnimation(DEFAULT_ANIMATION);
+      engine.setCameraConstraints(DEFAULT_CAMERA_CONSTRAINTS);
       engine.seekSceneAnimation(0);
     }
     setClippingState(DEFAULT_CLIPPING);
@@ -1328,6 +1371,7 @@ export function App() {
     setSelectedAnnotationId(undefined);
     setSelected(undefined);
     setCameraViews([]);
+    setCameraConstraints(DEFAULT_CAMERA_CONSTRAINTS);
     setDefaultCameraViewId(undefined);
     const now = new Date().toISOString();
     const scene: SceneSnapshot = {
@@ -1340,6 +1384,7 @@ export function App() {
         target: { x: 0, y: 1, z: 0 },
         mode: "orbit"
       },
+      cameraConstraints: DEFAULT_CAMERA_CONSTRAINTS,
       cameraViews: [],
       models: [],
       primitives: [],
@@ -1903,6 +1948,20 @@ export function App() {
         {route.view === "studio" && cameraViewsOpen && <section className="camera-views-panel">
           <header><div><strong>{tr(locale, "相机视角", "Camera views")}</strong><small>{tr(locale, "可设为场景进入视角", "Set the scene entry view")}</small></div><button onClick={() => setCameraViewsOpen(false)}><X size={14} /></button></header>
           <button className="camera-view-add" onClick={addCameraView}><Plus size={14} />{tr(locale, "保存当前视角", "Save current view")}</button>
+          <div className="camera-constraint-settings">
+            <div className="camera-constraint-heading"><strong>{tr(locale, "相机约束", "Camera constraints")}</strong><small>{tr(locale, "随场景保存", "Saved with scene")}</small></div>
+            <div className="camera-constraint-grid">
+              <label><span>{tr(locale, "最近距离", "Minimum distance")}</span><DeferredNumberInput min={0.01} step={0.1} value={cameraConstraints.minDistance} onCommit={(value) => changeCameraConstraints({ minDistance: value })} /></label>
+              <label><span>{tr(locale, "最远距离", "Maximum distance")}</span><DeferredNumberInput min={0.02} step={10} value={cameraConstraints.maxDistance} onCommit={(value) => changeCameraConstraints({ maxDistance: value })} /></label>
+              <label><span>{tr(locale, "垂直最小角", "Minimum vertical angle")}</span><div><DeferredNumberInput min={0} max={179} step={1} value={cameraConstraints.minPolarAngle} onCommit={(value) => changeCameraConstraints({ minPolarAngle: value })} /><i>°</i></div></label>
+              <label><span>{tr(locale, "垂直最大角", "Maximum vertical angle")}</span><div><DeferredNumberInput min={0.1} max={180} step={1} value={cameraConstraints.maxPolarAngle} onCommit={(value) => changeCameraConstraints({ maxPolarAngle: value })} /><i>°</i></div></label>
+              <label><span>{tr(locale, "近裁剪面", "Near clipping")}</span><DeferredNumberInput min={0.001} step={0.01} value={cameraConstraints.nearClip} onCommit={(value) => changeCameraConstraints({ nearClip: value })} /></label>
+              <label><span>{tr(locale, "远裁剪面", "Far clipping")}</span><DeferredNumberInput min={0.1} step={100} value={cameraConstraints.farClip} onCommit={(value) => changeCameraConstraints({ farClip: value })} /></label>
+            </div>
+            <div className="camera-collision-row"><span><strong>{tr(locale, "防穿模", "Camera collision")}</strong><small>{tr(locale, "轨道、第一和第三人称共用", "Shared by orbit, first and third person")}</small></span><button className={cameraConstraints.collisionEnabled ? "active" : ""} onClick={() => changeCameraConstraints({ collisionEnabled: !cameraConstraints.collisionEnabled })}>{cameraConstraints.collisionEnabled ? tr(locale, "开启", "On") : tr(locale, "关闭", "Off")}</button></div>
+            <label className="camera-collision-radius"><span>{tr(locale, "碰撞半径", "Collision radius")}</span><DeferredNumberInput min={0.02} step={0.05} disabled={!cameraConstraints.collisionEnabled} value={cameraConstraints.collisionRadius} onCommit={(value) => changeCameraConstraints({ collisionRadius: value })} /></label>
+            <p>{tr(locale, "距离和角度限制轨道相机；裁剪面控制可见深度，碰撞半径负责阻止相机进入模型。", "Distance and angle constrain the orbit camera; clipping controls visible depth, while collision radius keeps the camera out of geometry.")}</p>
+          </div>
           <div className="camera-view-list">
             {cameraViews.map((view) => <article key={view.id} className={view.id === defaultCameraViewId ? "default" : ""}>
               <div className="camera-view-main"><button title={tr(locale, "切换到此视角", "Go to this view")} onClick={() => engine?.applyCamera(view.camera)}><Camera size={14} /></button><input value={view.name} onChange={(event) => updateCameraViewName(view.id, event.target.value)} onBlur={(event) => updateCameraViewName(view.id, event.target.value)} /></div>
@@ -1993,10 +2052,10 @@ export function App() {
               <label><span>{tr(locale, "名称", "Name")}</span><input value={selectedLight.name} onChange={(event) => updateLight(selectedLight.id, { name: event.target.value })} /></label>
               <label><span>{tr(locale, "颜色", "Color")}</span><input type="color" value={selectedLight.color} onChange={(event) => updateLight(selectedLight.id, { color: event.target.value })} /></label>
               <label className="light-intensity"><span>{tr(locale, "强度", "Intensity")}</span><input type="range" min="0" max="20" step="0.05" value={selectedLight.intensity} onChange={(event) => updateLight(selectedLight.id, { intensity: Number(event.target.value) })} /><output>{selectedLight.intensity.toFixed(2)}</output></label>
-              {selectedLight.position && <div className="light-vector"><span>{tr(locale, "位置", "Position")}</span>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><i>{axis.toUpperCase()}</i><input type="number" step="0.5" value={selectedLight.position?.[axis] ?? 0} onChange={(event) => updateLight(selectedLight.id, { position: { ...selectedLight.position!, [axis]: Number(event.target.value) } })} /></label>)}</div>}
-              {["directional", "spot", "rectArea"].includes(selectedLight.type) && selectedLight.target && <div className="light-vector"><span>{tr(locale, "照射目标", "Target")}</span>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><i>{axis.toUpperCase()}</i><input type="number" step="0.5" value={selectedLight.target?.[axis] ?? 0} onChange={(event) => updateLight(selectedLight.id, { target: { ...selectedLight.target!, [axis]: Number(event.target.value) } })} /></label>)}</div>}
+              {selectedLight.position && <div className="light-vector"><span>{tr(locale, "位置", "Position")}</span>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><i>{axis.toUpperCase()}</i><DeferredNumberInput step={0.5} value={selectedLight.position?.[axis] ?? 0} onCommit={(value) => updateLight(selectedLight.id, { position: { ...selectedLight.position!, [axis]: value } })} /></label>)}</div>}
+              {["directional", "spot", "rectArea"].includes(selectedLight.type) && selectedLight.target && <div className="light-vector"><span>{tr(locale, "照射目标", "Target")}</span>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><i>{axis.toUpperCase()}</i><DeferredNumberInput step={0.5} value={selectedLight.target?.[axis] ?? 0} onCommit={(value) => updateLight(selectedLight.id, { target: { ...selectedLight.target!, [axis]: value } })} /></label>)}</div>}
               {selectedLight.type === "spot" && <label className="light-parameter"><span>{tr(locale, "锥角", "Cone")}</span><input type="range" min="5" max="90" step="1" value={(selectedLight.angle ?? Math.PI / 6) * 180 / Math.PI} onChange={(event) => updateLight(selectedLight.id, { angle: Number(event.target.value) * Math.PI / 180 })} /><output>{Math.round((selectedLight.angle ?? Math.PI / 6) * 180 / Math.PI)}°</output></label>}
-              {selectedLight.type === "rectArea" && <div className="light-size"><label><span>{tr(locale, "宽", "Width")}</span><input type="number" min="0.1" step="0.5" value={selectedLight.width ?? 6} onChange={(event) => updateLight(selectedLight.id, { width: Number(event.target.value) })} /></label><label><span>{tr(locale, "高", "Height")}</span><input type="number" min="0.1" step="0.5" value={selectedLight.height ?? 4} onChange={(event) => updateLight(selectedLight.id, { height: Number(event.target.value) })} /></label></div>}
+              {selectedLight.type === "rectArea" && <div className="light-size"><label><span>{tr(locale, "宽", "Width")}</span><DeferredNumberInput min={0.1} step={0.5} value={selectedLight.width ?? 6} onCommit={(value) => updateLight(selectedLight.id, { width: value })} /></label><label><span>{tr(locale, "高", "Height")}</span><DeferredNumberInput min={0.1} step={0.5} value={selectedLight.height ?? 4} onCommit={(value) => updateLight(selectedLight.id, { height: value })} /></label></div>}
               <button className={selectedLight.enabled ? "active" : ""} onClick={() => updateLight(selectedLight.id, { enabled: !selectedLight.enabled })}>{selectedLight.enabled ? tr(locale, "已启用", "Enabled") : tr(locale, "已关闭", "Disabled")}</button>
               {["directional", "point", "spot"].includes(selectedLight.type) && <button className={selectedLight.castShadow ? "active" : ""} onClick={() => updateLight(selectedLight.id, { castShadow: !selectedLight.castShadow })}>{tr(locale, "投射阴影", "Cast shadow")}</button>}
               <button className="danger" title={tr(locale, "删除光源", "Delete light")} onClick={() => removeLight(selectedLight.id)}><Trash2 size={13} /></button>
@@ -2015,7 +2074,7 @@ export function App() {
             <div><strong>{selected?.name ?? tr(locale, "未选择对象", "No object selected")}</strong><small>{tr(locale, "使用包围盒碰撞体，BIM 默认关闭", "Bounding-box collider; BIM is off by default")}</small></div>
             {selected && selectedPhysics && <>
               <label><span>{tr(locale, "刚体类型", "Body type")}</span><select value={selectedPhysics.type} onChange={(event) => changeSelectedPhysics({ type: event.target.value as ScenePhysicsBodyState["type"] })}><option value="none">{tr(locale, "关闭", "Off")}</option><option value="fixed">{tr(locale, "静态", "Fixed")}</option><option value="dynamic">{tr(locale, "动态", "Dynamic")}</option></select></label>
-              <label><span>{tr(locale, "质量", "Mass")}</span><input disabled={selectedPhysics.type !== "dynamic"} type="number" min="0.01" step="0.5" value={selectedPhysics.mass} onChange={(event) => changeSelectedPhysics({ mass: Number(event.target.value) })} /></label>
+              <label><span>{tr(locale, "质量", "Mass")}</span><DeferredNumberInput disabled={selectedPhysics.type !== "dynamic"} min={0.01} step={0.5} value={selectedPhysics.mass} onCommit={(value) => changeSelectedPhysics({ mass: value })} /></label>
               <label><span>{tr(locale, "摩擦", "Friction")}</span><input type="range" min="0" max="2" step="0.05" value={selectedPhysics.friction} onChange={(event) => changeSelectedPhysics({ friction: Number(event.target.value) })} /><output>{selectedPhysics.friction.toFixed(2)}</output></label>
               <label><span>{tr(locale, "弹性", "Bounce")}</span><input type="range" min="0" max="1" step="0.05" value={selectedPhysics.restitution} onChange={(event) => changeSelectedPhysics({ restitution: Number(event.target.value) })} /><output>{selectedPhysics.restitution.toFixed(2)}</output></label>
             </>}
@@ -2101,7 +2160,7 @@ export function App() {
               <button className="timeline-play" title={animationPlaying ? tr(locale, "暂停", "Pause") : tr(locale, "播放", "Play")} onClick={toggleSceneAnimation}>{animationPlaying ? <Pause size={16} /> : <Play size={16} />}</button>
               <span className="timeline-time">{animationTime.toFixed(1)}s</span>
               <input className="timeline-range" type="range" min="0" max={sceneAnimation.duration} step="0.05" value={animationTime} onChange={(event) => engine?.seekSceneAnimation(Number(event.target.value))} aria-label={tr(locale, "动画时间", "Animation time")} />
-              <label className="timeline-duration"><span>{tr(locale, "时长", "Duration")}</span><input type="number" min="0.1" step="0.5" value={sceneAnimation.duration} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, duration: Math.max(Number(event.target.value) || 0.1, 0.1) })} /><i>s</i></label>
+              <label className="timeline-duration"><span>{tr(locale, "时长", "Duration")}</span><DeferredNumberInput min={0.1} step={0.5} value={sceneAnimation.duration} onCommit={(value) => updateSceneAnimation({ ...sceneAnimation, duration: value })} /><i>s</i></label>
               <label className="timeline-loop"><input type="checkbox" checked={sceneAnimation.loop} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, loop: event.target.checked })} />{tr(locale, "循环", "Loop")}</label>
               <label className="timeline-loop"><input type="checkbox" checked={sceneAnimation.pingPong ?? false} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, pingPong: event.target.checked })} />{tr(locale, "往返", "Ping-pong")}</label>
             </div>
@@ -2368,6 +2427,67 @@ function propertyGroupEnglishName(name: string): string {
   return "Other parameters";
 }
 
+function DeferredNumberInput({ value, onCommit, min, max, step, disabled, className, ariaLabel }: {
+  value: number;
+  onCommit: (value: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  disabled?: boolean;
+  className?: string;
+  ariaLabel?: string;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(String(value));
+  }, [value]);
+
+  function commit() {
+    focused.current = false;
+    const parsed = Number(draft);
+    if (draft.trim() === "" || !Number.isFinite(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+    const next = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, parsed));
+    setDraft(String(next));
+    if (next !== value) onCommit(next);
+  }
+
+  function updateDraft(next: string) {
+    focused.current = true;
+    setDraft(next);
+  }
+
+  return <input
+    className={className}
+    aria-label={ariaLabel}
+    disabled={disabled}
+    type="text"
+    inputMode="decimal"
+    data-min={min}
+    data-max={max}
+    data-step={step}
+    value={draft}
+    onFocus={() => { focused.current = true; }}
+    onInput={(event) => {
+      // Keep an empty or partial value as a draft. Validation happens only
+      // when the user commits, avoiding the old 0.01-style snap-back.
+      updateDraft(event.currentTarget.value);
+    }}
+    onChange={(event) => updateDraft(event.currentTarget.value)}
+    onBlur={commit}
+    onKeyDown={(event) => {
+      if (event.key === "Enter") event.currentTarget.blur();
+      if (event.key === "Escape") {
+        setDraft(String(value));
+        event.currentTarget.blur();
+      }
+    }}
+  />;
+}
+
 function TransformFields({ title, transform, suffix, disabled = false, onChange }: {
   title: string;
   transform: { x: number; y: number; z: number };
@@ -2378,7 +2498,7 @@ function TransformFields({ title, transform, suffix, disabled = false, onChange 
   return (
     <fieldset className="transform-fields">
       <legend>{title}</legend>
-      <div>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span><input disabled={disabled} type="number" step="0.1" value={Number(transform[axis].toFixed(3))} onChange={(event) => onChange(axis, event.target.value)} />{suffix && <i>{suffix}</i>}</label>)}</div>
+      <div>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span><DeferredNumberInput disabled={disabled} step={0.1} value={Number(transform[axis].toFixed(3))} onCommit={(value) => onChange(axis, String(value))} />{suffix && <i>{suffix}</i>}</label>)}</div>
     </fieldset>
   );
 }

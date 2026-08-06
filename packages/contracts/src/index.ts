@@ -199,6 +199,17 @@ export interface CameraState {
   avatarVisible?: boolean;
 }
 
+export interface CameraConstraintsState {
+  minDistance: number;
+  maxDistance: number;
+  minPolarAngle: number;
+  maxPolarAngle: number;
+  nearClip: number;
+  farClip: number;
+  collisionEnabled: boolean;
+  collisionRadius: number;
+}
+
 export type WeatherMode = "sunny" | "rain" | "snow";
 
 export interface GlobalLightingState {
@@ -338,6 +349,7 @@ export interface SceneSnapshot {
   projectId: string;
   name: string;
   camera: CameraState;
+  cameraConstraints?: CameraConstraintsState;
   cameraViews?: CameraViewState[];
   defaultCameraViewId?: string;
   models: SceneModelState[];

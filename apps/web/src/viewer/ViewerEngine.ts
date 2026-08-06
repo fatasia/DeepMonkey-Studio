@@ -29,6 +29,7 @@ import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { VignetteShader } from "three/examples/jsm/shaders/VignetteShader.js";
 import type {
+  CameraConstraintsState,
   CameraState,
   ClippingState,
   ExplosionMode,
@@ -89,6 +90,17 @@ export class ModelLoadSupersededError extends Error {
 const DEFAULT_SCENE_LIGHTS: SceneLightState[] = [
   { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
 ];
+
+const DEFAULT_CAMERA_CONSTRAINTS: CameraConstraintsState = {
+  minDistance: 0.5,
+  maxDistance: 10_000,
+  minPolarAngle: 1,
+  maxPolarAngle: 179,
+  nearClip: 0.05,
+  farClip: 100_000,
+  collisionEnabled: true,
+  collisionRadius: 0.32
+};
 
 export function shouldRenderSceneLightProxy(readOnly: boolean, type: SceneLightState["type"]): boolean {
   return !readOnly && type !== "ambient" && type !== "hemisphere";
@@ -266,6 +278,8 @@ const toValue = (vector: THREE.Vector3 | THREE.Euler): Vector3Value => ({
   z: vector.z
 });
 
+const finiteCameraNumber = (value: number, fallback: number): number => Number.isFinite(value) ? value : fallback;
+
 export class ViewerEngine {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.05, 100_000);
@@ -360,6 +374,10 @@ export class ViewerEngine {
   private avatarVisible = false;
   private readonly avatarHeading = new THREE.Vector3(0, 0, 1);
   private readonly navigationViewStates = new Map<NavigationMode, NavigationViewState>();
+  private cameraConstraints: CameraConstraintsState = structuredClone(DEFAULT_CAMERA_CONSTRAINTS);
+  private readonly cameraCollisionAnchor = new THREE.Vector3();
+  private cameraCollisionDirty = false;
+  private lastCameraCollisionCheck = 0;
   private readOnlyMode = false;
   private readonly firstPersonVelocity = new THREE.Vector3();
   private firstPersonGrounded = false;
@@ -542,6 +560,8 @@ export class ViewerEngine {
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
     this.orbit.enableDamping = true;
     this.orbit.target.set(0, 1, 0);
+    this.cameraCollisionAnchor.copy(this.camera.position);
+    this.orbit.addEventListener("change", () => { this.cameraCollisionDirty = true; });
     this.pointer = new PointerLockControls(this.camera, this.renderer.domElement);
     this.transform = new TransformControls(this.camera, this.renderer.domElement);
     this.scene.add(this.transform.getHelper());
@@ -2407,6 +2427,29 @@ export class ViewerEngine {
     return this.navigationMode;
   }
 
+  getCameraConstraints(): CameraConstraintsState {
+    return structuredClone(this.cameraConstraints);
+  }
+
+  setCameraConstraints(state: CameraConstraintsState): void {
+    const minDistance = Math.max(0.01, finiteCameraNumber(state.minDistance, DEFAULT_CAMERA_CONSTRAINTS.minDistance));
+    const nearClip = Math.max(0.001, finiteCameraNumber(state.nearClip, DEFAULT_CAMERA_CONSTRAINTS.nearClip));
+    const minPolarAngle = THREE.MathUtils.clamp(finiteCameraNumber(state.minPolarAngle, DEFAULT_CAMERA_CONSTRAINTS.minPolarAngle), 0, 179);
+    this.cameraConstraints = {
+      minDistance,
+      maxDistance: Math.max(minDistance + 0.01, finiteCameraNumber(state.maxDistance, DEFAULT_CAMERA_CONSTRAINTS.maxDistance)),
+      minPolarAngle,
+      maxPolarAngle: THREE.MathUtils.clamp(Math.max(minPolarAngle + 0.1, finiteCameraNumber(state.maxPolarAngle, DEFAULT_CAMERA_CONSTRAINTS.maxPolarAngle)), 0.1, 180),
+      nearClip,
+      farClip: Math.max(nearClip + 0.1, finiteCameraNumber(state.farClip, DEFAULT_CAMERA_CONSTRAINTS.farClip)),
+      collisionEnabled: Boolean(state.collisionEnabled),
+      collisionRadius: Math.max(0.02, finiteCameraNumber(state.collisionRadius, DEFAULT_CAMERA_CONSTRAINTS.collisionRadius))
+    };
+    this.configureNavigationControls(this.navigationMode);
+    this.applyCameraClippingRange();
+    this.resetCameraCollisionAnchor();
+  }
+
   setSelectionScope(scope: SelectionScope): void {
     this.selectionScope = scope;
     if (scope === "model" && this.selectedId) this.select(this.selectedId);
@@ -2634,8 +2677,10 @@ export class ViewerEngine {
     this.camera.position.copy(center).add(new THREE.Vector3(0.8, 0.55, 0.8).normalize().multiplyScalar(size));
     this.camera.near = Math.max(size / 10_000, 0.01);
     this.camera.far = Math.max(size * 100, 10_000);
+    this.applyCameraClippingRange();
     this.camera.updateProjectionMatrix();
     this.orbit.update();
+    this.resetCameraCollisionAnchor();
   }
 
   getCameraState(): CameraState {
@@ -2664,6 +2709,7 @@ export class ViewerEngine {
     if (!this.isNavigationStateUsable(this.captureNavigationState(state.mode))) this.recoverNavigationMode(state.mode);
     this.orbit.update();
     this.rememberNavigationState(state.mode);
+    this.resetCameraCollisionAnchor();
     this.emitCameraChange(true);
   }
 
@@ -2689,6 +2735,7 @@ export class ViewerEngine {
     this.orbit.target.copy(center);
     this.camera.position.copy(center).addScaledVector(directions[view], distance);
     this.orbit.update();
+    this.resetCameraCollisionAnchor();
     this.rememberNavigationState("orbit");
     this.emitCameraChange(true);
   }
@@ -3188,8 +3235,10 @@ export class ViewerEngine {
     this.camera.position.copy(center).add(new THREE.Vector3(1, 0.72, 1).normalize().multiplyScalar(distance));
     this.camera.near = Math.max(radius / 10_000, 0.01);
     this.camera.far = Math.max(distance + radius * 100, 10_000);
+    this.applyCameraClippingRange();
     this.camera.updateProjectionMatrix();
     this.orbit.update();
+    this.resetCameraCollisionAnchor();
     this.emitCameraChange(true);
     return true;
   }
@@ -3198,9 +3247,7 @@ export class ViewerEngine {
     if (this.sceneAnimationPlaying) this.pauseSceneAnimation();
     if (this.navigationMode !== "orbit") this.setNavigationMode("orbit");
     this.camera.up.set(0, 1, 0);
-    this.orbit.minDistance = 0;
-    this.orbit.maxDistance = Infinity;
-    this.orbit.maxPolarAngle = Math.PI;
+    this.configureNavigationControls("orbit");
   }
 
   private syncSpaceVisuals(): void {
@@ -3783,7 +3830,10 @@ export class ViewerEngine {
     this.updateCollisions(false, now);
     this.syncSpaceVisuals();
     this.updateSceneLightProxies();
-    if (this.navigationMode !== "firstPerson") this.orbit.update();
+    if (this.navigationMode !== "firstPerson") {
+      this.orbit.update();
+      this.enforceCameraCollision(now);
+    }
     this.emitCameraChange();
     const modelOutlineEnabled = [...this.modelEffects.values()].some((effects) => effects.outline);
     if (!this.xrActive && (this.postProcessingState.enabled || modelOutlineEnabled) && this.composer) this.composer.render(delta);
@@ -3866,14 +3916,17 @@ export class ViewerEngine {
     this.camera.up.set(0, 1, 0);
     this.orbit.enabled = mode !== "firstPerson";
     if (mode === "thirdPerson") {
-      this.orbit.minDistance = 2.2;
-      this.orbit.maxDistance = 12;
-      this.orbit.maxPolarAngle = Math.PI * 0.48;
+      this.orbit.minDistance = Math.max(2.2, this.cameraConstraints.minDistance);
+      this.orbit.maxDistance = Math.max(this.orbit.minDistance, Math.min(12, this.cameraConstraints.maxDistance));
+      this.orbit.minPolarAngle = THREE.MathUtils.degToRad(this.cameraConstraints.minPolarAngle);
+      this.orbit.maxPolarAngle = Math.min(Math.PI * 0.48, THREE.MathUtils.degToRad(this.cameraConstraints.maxPolarAngle));
     } else {
-      this.orbit.minDistance = 0;
-      this.orbit.maxDistance = Infinity;
-      this.orbit.maxPolarAngle = Math.PI;
+      this.orbit.minDistance = this.cameraConstraints.minDistance;
+      this.orbit.maxDistance = this.cameraConstraints.maxDistance;
+      this.orbit.minPolarAngle = THREE.MathUtils.degToRad(this.cameraConstraints.minPolarAngle);
+      this.orbit.maxPolarAngle = THREE.MathUtils.degToRad(this.cameraConstraints.maxPolarAngle);
     }
+    this.applyCameraClippingRange();
     this.updateTransformAccess();
   }
 
@@ -3962,10 +4015,8 @@ export class ViewerEngine {
     if (direction.lengthSq() === 0) direction.set(0, 0, 1);
     this.orbit.target.copy(target);
     this.camera.position.copy(target).add(direction.multiplyScalar(5)).add(new THREE.Vector3(0, 2.4, 0));
-    this.orbit.minDistance = 2.2;
-    this.orbit.maxDistance = 12;
-    this.orbit.maxPolarAngle = Math.PI * 0.48;
     this.orbit.update();
+    this.resetCameraCollisionAnchor();
   }
 
   private ensureAvatar(): void {
@@ -4011,11 +4062,53 @@ export class ViewerEngine {
     return hit?.point.y ?? (position.y >= -2 && position.y <= 12 ? 0 : undefined);
   }
 
+  private applyCameraClippingRange(): void {
+    this.camera.near = this.cameraConstraints.nearClip;
+    this.camera.far = this.cameraConstraints.farClip;
+    this.camera.updateProjectionMatrix();
+  }
+
+  private resetCameraCollisionAnchor(): void {
+    this.cameraCollisionAnchor.copy(this.camera.position);
+    this.cameraCollisionDirty = false;
+  }
+
+  private enforceCameraCollision(now: number): void {
+    if (!this.cameraConstraints.collisionEnabled) {
+      this.resetCameraCollisionAnchor();
+      return;
+    }
+    if (!this.cameraCollisionDirty || now - this.lastCameraCollisionCheck < 80) return;
+    this.lastCameraCollisionCheck = now;
+    const movement = this.camera.position.clone().sub(this.cameraCollisionAnchor);
+    const distance = movement.length();
+    if (distance < 0.0001) {
+      this.cameraCollisionDirty = false;
+      return;
+    }
+    const direction = movement.multiplyScalar(1 / distance);
+    this.raycaster.set(this.cameraCollisionAnchor, direction);
+    this.raycaster.near = 0.01;
+    this.raycaster.far = distance + this.cameraConstraints.collisionRadius;
+    const hit = this.raycaster.intersectObjects(this.visibleModelObjects(), true)
+      .find((item) => item.distance <= distance + this.cameraConstraints.collisionRadius);
+    this.raycaster.near = 0;
+    this.raycaster.far = Infinity;
+    if (hit) {
+      const allowedDistance = Math.max(0, hit.distance - this.cameraConstraints.collisionRadius);
+      this.camera.position.copy(this.cameraCollisionAnchor).addScaledVector(direction, allowedDistance);
+      this.orbit.update();
+    }
+    this.cameraCollisionAnchor.copy(this.camera.position);
+    this.cameraCollisionDirty = false;
+  }
+
   private isMovementBlocked(movement: THREE.Vector3, origin = this.camera.position): boolean {
+    if (!this.cameraConstraints.collisionEnabled) return false;
     if (movement.lengthSq() === 0) return false;
     this.raycaster.set(origin, movement.clone().normalize());
     this.raycaster.near = 0.05;
-    this.raycaster.far = movement.length() + 0.28;
+    this.raycaster.far = movement.length() + this.cameraConstraints.collisionRadius;
     const blocked = this.raycaster.intersectObjects(this.visibleModelObjects(), true).length > 0;
     this.raycaster.near = 0;
     this.raycaster.far = Infinity;

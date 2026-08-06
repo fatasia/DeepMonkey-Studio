@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Box, Crosshair, Download, Gauge, Image, Lightbulb, LoaderCircle, Move3D, Plus, Rotate3D, Sparkles, Square, Trash2, Triangle, Upload } from "lucide-react";
+import { ArrowLeft, Box, Crosshair, Download, Eye, Gauge, Image, Lightbulb, LoaderCircle, Move3D, Plus, Rotate3D, Sparkles, Square, Trash2, Triangle, Upload } from "lucide-react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import {
   DEFAULT_BAKE_LIGHTS,
   type BakeLightState,
@@ -64,6 +65,8 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
   const [error, setError] = useState<string>();
   const [selectedBakeLightId, setSelectedBakeLightId] = useState(DEFAULT_BAKE_LIGHTS[0]?.id);
   const [bakeTransformMode, setBakeTransformMode] = useState<BakeTransformMode>("translate");
+  const [previewShadows, setPreviewShadows] = useState(false);
+  const [previewReflections, setPreviewReflections] = useState(false);
 
   function addBakeLight(type: BakeLightType) {
     const index = options.bakeLights.length + 1;
@@ -207,6 +210,7 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
     if (resultOutdated) setShowOptimized(false);
   }, [resultOutdated]);
   const previewUrl = showOptimized && optimizedUrl && !resultOutdated ? optimizedUrl : sourceUrl;
+  const comparisonMode = Boolean(optimizedUrl && !resultOutdated);
   const displayMessage = localizeOptimizerMessage(locale, message);
   return <div className="optimizer-page">
     <header className="optimizer-header">
@@ -249,10 +253,17 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
           {selectedBakeLightId && <div className="optimizer-bake-transform"><span>{tr(locale, "场景操控", "Gizmo")}</span><button className={bakeTransformMode === "translate" ? "active" : ""} onClick={() => setBakeTransformMode("translate")}><Move3D size={11} />{tr(locale, "移动", "Move")}</button><button className={bakeTransformMode === "rotate" ? "active" : ""} disabled={options.bakeLights.find((light) => light.id === selectedBakeLightId)?.type !== "directional"} onClick={() => setBakeTransformMode("rotate")}><Rotate3D size={11} />{tr(locale, "旋转", "Rotate")}</button></div>}
           <div className="optimizer-bake-list">{options.bakeLights.map((light) => <article key={light.id} className={`${!light.enabled ? "disabled" : ""} ${selectedBakeLightId === light.id ? "selected" : ""}`} onClick={() => setSelectedBakeLightId(light.id)}>
             <header><button className={`optimizer-bake-enable ${light.enabled ? "active" : ""}`} onClick={() => updateBakeLight(light.id, { enabled: !light.enabled })}><i /></button><input value={light.name} onChange={(event) => updateBakeLight(light.id, { name: event.target.value })} /><span>{light.type === "directional" ? tr(locale, "方向", "DIR") : tr(locale, "点光", "POINT")}</span><button className="danger" onClick={(event) => { event.stopPropagation(); setOptions((current) => ({ ...current, bakeLights: current.bakeLights.filter((item) => item.id !== light.id) })); if (selectedBakeLightId === light.id) setSelectedBakeLightId(undefined); }}><Trash2 size={11} /></button></header>
-            <div className="optimizer-bake-main"><input type="color" value={light.color} onChange={(event) => updateBakeLight(light.id, { color: event.target.value })} /><label><span>{tr(locale, "强度", "Intensity")}</span><input type="number" min="0" max="8" step="0.05" value={light.intensity} onChange={(event) => updateBakeLight(light.id, { intensity: Number(event.target.value) })} /></label>{light.type === "point" && <label><span>{tr(locale, "范围", "Range")}</span><input type="number" min="0.1" step="0.5" value={light.range} onChange={(event) => updateBakeLight(light.id, { range: Number(event.target.value) })} /></label>}</div>
+            <div className="optimizer-bake-main"><input type="color" value={light.color} onChange={(event) => updateBakeLight(light.id, { color: event.target.value })} /><input className="optimizer-light-color-value" aria-label={`${light.name} ${tr(locale, "颜色", "color")}`} value={light.color} onChange={(event) => { if (/^#[0-9a-f]{6}$/i.test(event.target.value)) updateBakeLight(light.id, { color: event.target.value }); }} /><label><span>{tr(locale, "强度", "Intensity")}</span><input type="number" min="0" max="8" step="0.05" value={light.intensity} onChange={(event) => updateBakeLight(light.id, { intensity: Number(event.target.value) })} /></label>{light.type === "point" && <label><span>{tr(locale, "范围", "Range")}</span><input type="number" min="0.1" step="0.5" value={light.range} onChange={(event) => updateBakeLight(light.id, { range: Number(event.target.value) })} /></label>}</div>
             <BakeVector locale={locale} label={light.type === "directional" ? tr(locale, "照射方向", "Direction") : tr(locale, "模型坐标", "Model position")} value={light.type === "directional" ? light.direction : light.position} onChange={(value) => updateBakeLight(light.id, light.type === "directional" ? { direction: value } : { position: value })} />
           </article>)}</div>
           <p>{options.bakeMode === "vertex" ? tr(locale, "把环境光、方向光和点光漫反射写入顶点色，速度快、文件增量小。", "Writes diffuse lighting into vertex colors for fast, compact output.") : tr(locale, "自动展开 UV2，生成彩色直接光、软阴影、AO 与一次间接反弹；双贴图按标准 glTF 写入 GLB。", "Automatically unwraps UV2 and bakes colored direct light, soft shadows, AO, and one indirect bounce into standard glTF textures.")}</p>
+        </OptionSection>
+        <OptionSection icon={<Eye size={15} />} title={tr(locale, "预览渲染", "Preview rendering")}>
+          <div className="optimizer-render-settings">
+            <label><span>{tr(locale, "实时阴影", "Real-time shadows")}<small>{tr(locale, "高质量大模型会增加 GPU 负载", "Adds GPU load on large models")}</small></span><button className={previewShadows ? "active" : ""} onClick={() => setPreviewShadows((value) => !value)}>{previewShadows ? tr(locale, "开启", "On") : tr(locale, "关闭", "Off")}</button></label>
+            <label><span>{tr(locale, "环境反射", "Environment reflections")}<small>{tr(locale, "仅作用于 PBR 金属和光滑材质", "Affects PBR metallic and glossy materials")}</small></span><button className={previewReflections ? "active" : ""} onClick={() => setPreviewReflections((value) => !value)}>{previewReflections ? tr(locale, "开启", "On") : tr(locale, "关闭", "Off")}</button></label>
+          </div>
+          <p>{comparisonMode ? tr(locale, "原始与优化结果正使用同一套相机、曝光和中性光照，阴影与反射开关会同步作用于两边。", "Original and optimized results use the same camera, exposure and neutral lighting; shadow and reflection toggles affect both.") : tr(locale, "这些开关只影响优化页预览，不会写入导出的 GLB；烘焙阴影请使用上方静态阴影设置。", "These toggles affect only this preview and are not written to the exported GLB; use Static shadows above for baking.")}</p>
         </OptionSection>
         <OptionSection icon={<Crosshair size={15} />} title={tr(locale, "设置原点", "Set origin")}>
           <div className="origin-options">{([['keep',tr(locale, '保持', 'Keep')],['center',tr(locale, '模型中心', 'Model center')],['ground',tr(locale, '底部中心', 'Bottom center')]] as const).map(([value, label]) => <button key={value} className={options.origin === value ? "active" : ""} onClick={() => setOptions({ ...options, origin: value })}>{label}</button>)}</div>
@@ -266,7 +277,7 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
           <div>{optimizedUrl && <><button className={!showOptimized ? "active" : ""} onClick={() => setShowOptimized(false)}>{tr(locale, "原始模型", "Original")}</button><button className={showOptimized ? "active" : ""} disabled={resultOutdated} onClick={() => setShowOptimized(true)}>{tr(locale, "优化结果", "Optimized")}</button></>}</div>
           <span>{resultOutdated ? tr(locale, "参数已变化，请重新优化生成结果", "Options changed; run optimization again") : displayMessage}</span>
         </div>
-        {previewUrl ? <OptimizerPreview url={previewUrl} bakeEnabled={options.bakeEnabled && !showOptimized} bakedOutput={Boolean(options.bakeEnabled && showOptimized)} ambient={options.bakeAmbient} ambientColor={options.bakeAmbientColor} lights={options.bakeLights} selectedLightId={selectedBakeLightId} transformMode={bakeTransformMode} onSelectLight={(id) => { setSelectedBakeLightId(id); const selected = options.bakeLights.find((light) => light.id === id); if (selected?.type === "point") setBakeTransformMode("translate"); }} onUpdateLight={updateBakeLight} /> : <button className="optimizer-drop" onClick={() => inputRef.current?.click()}><Upload size={32} /><strong>{tr(locale, "导入模型开始", "Import a model to begin")}</strong><span>{tr(locale, "所有处理均在当前浏览器本地完成", "All processing runs locally in this browser")}</span></button>}
+        {previewUrl ? <OptimizerPreview url={previewUrl} bakeEnabled={options.bakeEnabled && !showOptimized} comparisonMode={comparisonMode} shadows={previewShadows} reflections={previewReflections} ambient={options.bakeAmbient} ambientColor={options.bakeAmbientColor} lights={options.bakeLights} selectedLightId={selectedBakeLightId} transformMode={bakeTransformMode} onSelectLight={(id) => { setSelectedBakeLightId(id); const selected = options.bakeLights.find((light) => light.id === id); if (selected?.type === "point") setBakeTransformMode("translate"); }} onUpdateLight={updateBakeLight} /> : <button className="optimizer-drop" onClick={() => inputRef.current?.click()}><Upload size={32} /><strong>{tr(locale, "导入模型开始", "Import a model to begin")}</strong><span>{tr(locale, "所有处理均在当前浏览器本地完成", "All processing runs locally in this browser")}</span></button>}
         {error && <div className="optimizer-error">{error}</div>}
         {lightmapResult && !resultOutdated && <div className="optimizer-bake-result"><span><strong>UV2</strong>{lightmapResult.uvAtlas === "watlas" ? "watlas" : tr(locale, "兼容图集", "fallback atlas")}</span><span><strong>{lightmapResult.resolution}²</strong>{tr(locale, "双贴图", "dual maps")}</span><span><strong>{lightmapResult.shadowSamples}</strong>{tr(locale, "软阴影采样", "shadow samples")}</span><span><strong>{lightmapResult.indirectSamples || "—"}</strong>{tr(locale, "间接采样", "bounce samples")}</span><span><strong>{formatBytes(lightmapResult.textureBytes)}</strong>{tr(locale, "贴图体积", "texture size")}</span></div>}
         {(before || after) && <div className="optimizer-statistics"><Stat locale={locale} label={tr(locale, "文件大小", "File size")} before={before ? formatBytes(before.bytes) : "—"} after={after ? formatBytes(after.bytes) : undefined} /><Stat locale={locale} label={tr(locale, "三角面", "Triangles")} before={before?.triangles.toLocaleString(locale) ?? "—"} after={after?.triangles.toLocaleString(locale)} /><Stat locale={locale} label={tr(locale, "顶点", "Vertices")} before={before?.vertices.toLocaleString(locale) ?? "—"} after={after?.vertices.toLocaleString(locale)} /><Stat locale={locale} label={tr(locale, "节点 / 材质", "Nodes / materials")} before={before ? `${before.nodes} / ${before.materials}` : "—"} after={after ? `${after.nodes} / ${after.materials}` : undefined} /></div>}
@@ -291,6 +302,7 @@ function Stat({ locale, label, before, after }: { locale: AppLocale; label: stri
 
 interface OptimizerPreviewRuntime {
   scene: THREE.Scene;
+  renderer: THREE.WebGLRenderer;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
   transform: TransformControls;
@@ -299,13 +311,17 @@ interface OptimizerPreviewRuntime {
   lights: Map<string, { state: BakeLightState; light: THREE.Light; proxy: THREE.Group }>;
   center: THREE.Vector3;
   radius: number;
+  model?: THREE.Object3D;
+  environment?: THREE.Texture;
   modelBounds?: THREE.Box3;
 }
 
-function OptimizerPreview({ url, bakeEnabled, bakedOutput, ambient, ambientColor, lights, selectedLightId, transformMode, onSelectLight, onUpdateLight }: {
+interface OptimizerPreviewProps {
   url: string;
   bakeEnabled: boolean;
-  bakedOutput: boolean;
+  comparisonMode: boolean;
+  shadows: boolean;
+  reflections: boolean;
   ambient: number;
   ambientColor: string;
   lights: BakeLightState[];
@@ -313,12 +329,14 @@ function OptimizerPreview({ url, bakeEnabled, bakedOutput, ambient, ambientColor
   transformMode: BakeTransformMode;
   onSelectLight: (id: string | undefined) => void;
   onUpdateLight: (id: string, patch: Partial<BakeLightState>) => void;
-}) {
+}
+
+function OptimizerPreview({ url, bakeEnabled, comparisonMode, shadows, reflections, ambient, ambientColor, lights, selectedLightId, transformMode, onSelectLight, onUpdateLight }: OptimizerPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<OptimizerPreviewRuntime | undefined>(undefined);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
-  const propsRef = useRef({ bakeEnabled, bakedOutput, ambient, ambientColor, lights, selectedLightId, transformMode, onSelectLight, onUpdateLight });
-  propsRef.current = { bakeEnabled, bakedOutput, ambient, ambientColor, lights, selectedLightId, transformMode, onSelectLight, onUpdateLight };
+  const propsRef = useRef({ bakeEnabled, comparisonMode, shadows, reflections, ambient, ambientColor, lights, selectedLightId, transformMode, onSelectLight, onUpdateLight });
+  propsRef.current = { bakeEnabled, comparisonMode, shadows, reflections, ambient, ambientColor, lights, selectedLightId, transformMode, onSelectLight, onUpdateLight };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -329,7 +347,7 @@ function OptimizerPreview({ url, bakeEnabled, bakedOutput, ambient, ambientColor
     const hemisphere = new THREE.HemisphereLight(0xe8f2ff, 0x36404a, 2);
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
     keyLight.position.set(5, 10, 7);
-    scene.add(hemisphere, keyLight);
+    scene.add(hemisphere, keyLight, keyLight.target);
     const camera = new THREE.PerspectiveCamera(48, 1, 0.01, 100_000);
     camera.position.set(5, 4, 5);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -345,7 +363,7 @@ function OptimizerPreview({ url, bakeEnabled, bakedOutput, ambient, ambientColor
     scene.add(transform.getHelper());
     const ambientLight = new THREE.AmbientLight(0xffffff, 0);
     scene.add(ambientLight);
-    const runtime: OptimizerPreviewRuntime = { scene, camera, controls, transform, defaultLights: [hemisphere, keyLight], ambient: ambientLight, lights: new Map(), center: new THREE.Vector3(), radius: 5 };
+    const runtime: OptimizerPreviewRuntime = { scene, renderer, camera, controls, transform, defaultLights: [hemisphere, keyLight], ambient: ambientLight, lights: new Map(), center: new THREE.Vector3(), radius: 5 };
     runtimeRef.current = runtime;
     transform.addEventListener("dragging-changed", (event) => { controls.enabled = !event.value; });
     transform.addEventListener("objectChange", () => updateDraggedBakeLight(runtime));
@@ -360,6 +378,7 @@ function OptimizerPreview({ url, bakeEnabled, bakedOutput, ambient, ambientColor
     void loader.loadAsync(url).then((gltf) => {
       if (disposed) return;
       model = gltf.scene;
+      runtime.model = model;
       scene.add(model);
       const box = new THREE.Box3().setFromObject(model);
       const center = box.getCenter(new THREE.Vector3());
@@ -403,6 +422,7 @@ function OptimizerPreview({ url, bakeEnabled, bakedOutput, ambient, ambientColor
       dracoLoader.dispose();
       renderer.domElement.removeEventListener("pointerdown", selectLight);
       clearOptimizerPreviewLights(runtime);
+      runtime.environment?.dispose();
       if (model) disposeModel(model);
       renderer.dispose();
       renderer.domElement.remove();
@@ -412,8 +432,8 @@ function OptimizerPreview({ url, bakeEnabled, bakedOutput, ambient, ambientColor
 
   useEffect(() => {
     const runtime = runtimeRef.current;
-    if (runtime) syncOptimizerPreviewLights(runtime, { bakeEnabled, bakedOutput, ambient, ambientColor, lights, selectedLightId, transformMode });
-  }, [ambient, ambientColor, bakedOutput, bakeEnabled, lights, selectedLightId, transformMode]);
+    if (runtime) syncOptimizerPreviewLights(runtime, { bakeEnabled, comparisonMode, shadows, reflections, ambient, ambientColor, lights, selectedLightId, transformMode });
+  }, [ambient, ambientColor, bakeEnabled, comparisonMode, lights, reflections, selectedLightId, shadows, transformMode]);
   return <div className="optimizer-canvas" ref={containerRef}><button className="optimizer-fit-view" title="适应窗口" onClick={() => { const runtime = runtimeRef.current; if (runtime) frameOptimizerCamera(runtime); }}><Crosshair size={13} />适应窗口</button>{loadState !== "ready" && <div className={`optimizer-preview-state ${loadState}`}><LoaderCircle className={loadState === "loading" ? "spin" : ""} size={18} />{loadState === "loading" ? "正在载入预览" : "预览载入失败，请检查导出的 GLB"}</div>}</div>;
 }
 
@@ -438,18 +458,23 @@ function frameOptimizerCamera(runtime: OptimizerPreviewRuntime) {
   runtime.controls.update();
 }
 
-function syncOptimizerPreviewLights(runtime: OptimizerPreviewRuntime, props: { bakeEnabled: boolean; bakedOutput: boolean; ambient: number; ambientColor: string; lights: BakeLightState[]; selectedLightId: string | undefined; transformMode: BakeTransformMode }) {
+function syncOptimizerPreviewLights(runtime: OptimizerPreviewRuntime, props: Pick<OptimizerPreviewProps, "bakeEnabled" | "comparisonMode" | "shadows" | "reflections" | "ambient" | "ambientColor" | "lights" | "selectedLightId" | "transformMode">) {
   runtime.transform.detach();
   clearOptimizerPreviewLights(runtime);
+  syncOptimizerPreviewEffects(runtime, props.shadows, props.reflections);
+  const useNeutralComparisonRig = props.comparisonMode;
+  const useDefaultRig = useNeutralComparisonRig || !props.bakeEnabled;
   for (let index = 0; index < runtime.defaultLights.length; index += 1) {
     const light = runtime.defaultLights[index]!;
-    light.visible = !props.bakeEnabled;
-    light.intensity = props.bakedOutput ? (index === 0 ? 1.25 : 1.1) : (index === 0 ? 2 : 2.2);
+    light.visible = useDefaultRig;
+    light.intensity = useNeutralComparisonRig ? (index === 0 ? 1.7 : 1.55) : (index === 0 ? 2 : 2.2);
+    light.castShadow = props.shadows && light instanceof THREE.DirectionalLight;
+    if (light instanceof THREE.DirectionalLight) configureDirectionalShadow(light, runtime);
   }
-  runtime.ambient.visible = props.bakeEnabled;
+  runtime.ambient.visible = props.bakeEnabled && !useNeutralComparisonRig;
   runtime.ambient.intensity = props.ambient * 2.2;
   runtime.ambient.color.set(props.ambientColor);
-  if (!props.bakeEnabled) return;
+  if (!props.bakeEnabled || useNeutralComparisonRig) return;
   for (const state of props.lights) {
     const color = new THREE.Color(state.color);
     let light: THREE.Light;
@@ -468,6 +493,9 @@ function syncOptimizerPreviewLights(runtime: OptimizerPreviewRuntime, props: { b
     }
     light.position.copy(proxyPosition);
     light.visible = state.enabled;
+    light.castShadow = props.shadows && state.enabled;
+    if (light instanceof THREE.DirectionalLight) configureDirectionalShadow(light, runtime);
+    if (light instanceof THREE.PointLight) configurePointShadow(light, runtime);
     runtime.scene.add(light);
     const proxy = createBakeLightProxy(state, proxyPosition, runtime.radius);
     if (state.type === "directional") orientDirectionalProxy(proxy, new THREE.Vector3().fromArray(state.direction));
@@ -480,6 +508,51 @@ function syncOptimizerPreviewLights(runtime: OptimizerPreviewRuntime, props: { b
     runtime.transform.setMode(selected.state.type === "directional" ? props.transformMode : "translate");
     runtime.transform.attach(selected.proxy);
   }
+}
+
+function syncOptimizerPreviewEffects(runtime: OptimizerPreviewRuntime, shadows: boolean, reflections: boolean) {
+  runtime.renderer.shadowMap.enabled = shadows;
+  runtime.renderer.shadowMap.type = THREE.PCFShadowMap;
+  if (reflections && !runtime.environment) {
+    const pmrem = new THREE.PMREMGenerator(runtime.renderer);
+    const room = new RoomEnvironment();
+    runtime.environment = pmrem.fromScene(room, 0.04).texture;
+    room.dispose();
+    pmrem.dispose();
+  }
+  runtime.scene.environment = reflections ? runtime.environment ?? null : null;
+  runtime.scene.environmentIntensity = reflections ? 0.65 : 1;
+  runtime.model?.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.castShadow = shadows;
+    object.receiveShadow = shadows;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) material.needsUpdate = true;
+  });
+}
+
+function configureDirectionalShadow(light: THREE.DirectionalLight, runtime: OptimizerPreviewRuntime) {
+  const extent = Math.max(runtime.radius * 1.15, 1);
+  light.target.position.copy(runtime.center);
+  if (runtime.defaultLights.includes(light)) light.position.copy(runtime.center).add(new THREE.Vector3(0.45, 0.85, 0.55).normalize().multiplyScalar(runtime.radius * 2));
+  light.shadow.mapSize.set(1024, 1024);
+  light.shadow.camera.left = -extent;
+  light.shadow.camera.right = extent;
+  light.shadow.camera.top = extent;
+  light.shadow.camera.bottom = -extent;
+  light.shadow.camera.near = Math.max(runtime.radius * 0.02, 0.01);
+  light.shadow.camera.far = Math.max(runtime.radius * 5, 10);
+  light.shadow.bias = -0.0001;
+  light.shadow.normalBias = Math.max(runtime.radius * 0.00015, 0.0001);
+  light.shadow.camera.updateProjectionMatrix();
+}
+
+function configurePointShadow(light: THREE.PointLight, runtime: OptimizerPreviewRuntime) {
+  light.shadow.mapSize.set(512, 512);
+  light.shadow.camera.near = Math.max(runtime.radius * 0.01, 0.01);
+  light.shadow.camera.far = Math.max(light.distance, runtime.radius * 3, 10);
+  light.shadow.bias = -0.0001;
+  light.shadow.normalBias = Math.max(runtime.radius * 0.00015, 0.0001);
 }
 
 function createBakeLightProxy(state: BakeLightState, position: THREE.Vector3, radius: number): THREE.Group {
