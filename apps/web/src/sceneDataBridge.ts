@@ -1,83 +1,97 @@
-import type { SceneDataMessage } from "./viewer/ViewerEngine";
+import type { DataMessage } from "@bim-studio/contracts";
 import { parseDashboardMessages } from "./components/dashboardMessages";
 import { connectSceneDataSocket, type SceneDataSocket } from "./adapters/sceneDataSocket";
+import { getAuthToken } from "./api";
 
 export type SceneDataBridgeStatus = "connecting" | "online" | "offline";
-type MessageListener = (message: SceneDataMessage) => void;
+type MessageListener = (message: DataMessage) => void;
 type StatusListener = (status: SceneDataBridgeStatus) => void;
 
-const messageListeners = new Set<MessageListener>();
-const statusListeners = new Set<StatusListener>();
-let socket: SceneDataSocket | undefined;
-let reconnectTimer: number | undefined;
-let retry = 0;
-let status: SceneDataBridgeStatus = "offline";
-let stopped = true;
+interface ProjectChannel {
+  messageListeners: Set<MessageListener>;
+  statusListeners: Set<StatusListener>;
+  socket?: SceneDataSocket;
+  reconnectTimer?: number;
+  retry: number;
+  status: SceneDataBridgeStatus;
+  stopped: boolean;
+}
 
-export function subscribeSceneData(listener: MessageListener, onStatus?: StatusListener): () => void {
-  messageListeners.add(listener);
+const channels = new Map<string, ProjectChannel>();
+
+export function subscribeSceneData(projectId: string, listener: MessageListener, onStatus?: StatusListener): () => void {
+  const channel = channels.get(projectId) ?? { messageListeners: new Set(), statusListeners: new Set(), retry: 0, status: "offline", stopped: true };
+  channels.set(projectId, channel);
+  channel.messageListeners.add(listener);
   if (onStatus) {
-    statusListeners.add(onStatus);
-    onStatus(status);
+    channel.statusListeners.add(onStatus);
+    onStatus(channel.status);
   }
-  if (messageListeners.size === 1) start();
+  if (channel.messageListeners.size === 1) start(projectId, channel);
   return () => {
-    messageListeners.delete(listener);
-    if (onStatus) statusListeners.delete(onStatus);
-    if (messageListeners.size === 0) stop();
+    channel.messageListeners.delete(listener);
+    if (onStatus) channel.statusListeners.delete(onStatus);
+    if (channel.messageListeners.size === 0) {
+      stop(channel);
+      channels.delete(projectId);
+    }
   };
 }
 
-export function publishLocalSceneData(message: SceneDataMessage): void {
-  for (const listener of messageListeners) listener(message);
+export function publishLocalSceneData(message: DataMessage): void {
+  const delivered = new Set<MessageListener>();
+  for (const channel of channels.values()) for (const listener of channel.messageListeners) {
+    if (!delivered.has(listener)) listener(message);
+    delivered.add(listener);
+  }
 }
 
-function start() {
-  stopped = false;
-  connect();
+function start(projectId: string, channel: ProjectChannel) {
+  channel.stopped = false;
+  connect(projectId, channel);
 }
 
-function connect() {
-  if (stopped || socket) return;
-  updateStatus("connecting");
-  const next = connectSceneDataSocket({
+function connect(projectId: string, channel: ProjectChannel) {
+  if (channel.stopped || channel.socket) return;
+  updateStatus(channel, "connecting");
+  const next = connectSceneDataSocket(projectId, getAuthToken(), {
     onOpen: () => {
-      if (socket !== next) return;
-      retry = 0;
-      updateStatus("online");
+      if (channel.socket !== next) return;
+      channel.retry = 0;
+      updateStatus(channel, "online");
     },
     onMessage: (data) => {
       for (const message of parseDashboardMessages(data)) {
-        for (const listener of messageListeners) listener(message);
+        for (const listener of channel.messageListeners) listener(message);
       }
     },
     onError: () => {
-      updateStatus("offline");
+      updateStatus(channel, "offline");
       next.close();
     },
     onClose: () => {
-      if (socket !== next) return;
-      socket = undefined;
-      updateStatus("offline");
-      if (!stopped && messageListeners.size > 0) reconnectTimer = window.setTimeout(connect, Math.min(10_000, 800 * 2 ** retry++));
+      if (channel.socket !== next) return;
+      delete channel.socket;
+      updateStatus(channel, "offline");
+      if (!channel.stopped && channel.messageListeners.size > 0) channel.reconnectTimer = window.setTimeout(() => connect(projectId, channel), Math.min(10_000, 800 * 2 ** channel.retry++));
     }
   });
-  socket = next;
+  channel.socket = next;
 }
 
-function stop() {
-  stopped = true;
-  retry = 0;
-  if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
-  reconnectTimer = undefined;
-  const current = socket;
-  socket = undefined;
+function stop(channel: ProjectChannel) {
+  channel.stopped = true;
+  channel.retry = 0;
+  if (channel.reconnectTimer !== undefined) window.clearTimeout(channel.reconnectTimer);
+  delete channel.reconnectTimer;
+  const current = channel.socket;
+  delete channel.socket;
   current?.close();
-  updateStatus("offline");
+  updateStatus(channel, "offline");
 }
 
-function updateStatus(next: SceneDataBridgeStatus) {
-  if (status === next) return;
-  status = next;
-  for (const listener of statusListeners) listener(status);
+function updateStatus(channel: ProjectChannel, next: SceneDataBridgeStatus) {
+  if (channel.status === next) return;
+  channel.status = next;
+  for (const listener of channel.statusListeners) listener(channel.status);
 }

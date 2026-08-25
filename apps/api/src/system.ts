@@ -25,7 +25,7 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
     const pathname = request.url.split("?", 1)[0] ?? request.url;
     if (pathname === "/health" || pathname === "/api/meta" || pathname === "/api/auth/login" || pathname.startsWith("/api/public/") || pathname.startsWith("/assets/")) return;
     if (!pathname.startsWith("/api/")) return;
-    const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+    const token = authToken(request);
     const session = token ? resolveSession(token) : undefined;
     if (!session || session.expiresAt <= Date.now()) {
       if (token) sessions.delete(token);
@@ -101,7 +101,7 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
   app.get<{ Querystring: { limit?: string } }>("/api/admin/audit", async (request) => store.listAuditLogs(Math.min(500, Number(request.query.limit ?? 200))));
   app.get("/api/admin/logs", async () => readServiceLogs(path.join(dataDir, "logs")));
   app.get("/api/admin/health", async () => Promise.all([
-    healthyApi(), healthyVision(), checkTcp("web", "Web 前端", 5173, "https://localhost:5173"), checkTcp("node-red", "流程服务", 1880, "/node-red/"),
+    healthyApi(), healthyVision(), checkTcp("web", "Web 前端", 5173, "https://localhost:5173"),
     checkTcp("media", "实时视频", 9997, "HLS :8888 · WebRTC :8889"), checkTcp("postgres", "PostgreSQL", 5432, "127.0.0.1:5432"), checkTcp("minio", "对象存储", 9000, "127.0.0.1:9000")
   ]));
 
@@ -174,6 +174,14 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
       return reply.code(502).send({ message });
     }
   });
+}
+
+function authToken(request: FastifyRequest): string | undefined {
+  const bearer = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (bearer) return bearer;
+  const rawProtocols = request.headers["sec-websocket-protocol"];
+  const protocols = (Array.isArray(rawProtocols) ? rawProtocols.join(",") : rawProtocols ?? "").split(",").map((value) => value.trim());
+  return protocols.find((value) => value.startsWith("bim-studio-auth."))?.slice("bim-studio-auth.".length);
 }
 
 const DEFAULT_BRANDING: SystemBrandingSettings = {

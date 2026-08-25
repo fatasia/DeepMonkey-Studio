@@ -21,11 +21,9 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       ...(httpsEnabled ? { https: { key: readFileSync(keyPath), cert: readFileSync(certificatePath) } } : {}),
       proxy: {
-        "/api": "http://localhost:4100",
+        "/api": { target: "http://localhost:4100", ws: true },
         "/assets": "http://localhost:4100",
-        "/health": "http://localhost:4100",
-        "/node-red": "http://localhost:1880",
-        "/iot": { target: "http://localhost:1880", ws: true }
+        "/health": "http://localhost:4100"
       }
     }
   };

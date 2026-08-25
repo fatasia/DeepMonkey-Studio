@@ -34,10 +34,10 @@ export function useDashboardMetrics(projectId: string, widgets: readonly Dashboa
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [datasets, projectId, widgets]);
 
-  useEffect(() => subscribeSceneData((message) => {
+  useEffect(() => subscribeSceneData(projectId, (message) => {
     if (sceneId && message.sceneId && message.sceneId !== sceneId) return;
     setMetrics((current) => updateMetricMap(current, message.source, message.key || "value", message.value, Date.parse(message.timestamp) || Date.now()));
-  }, (status) => setConnected(status === "online")), [sceneId]);
+  }, (status) => setConnected(status === "online")), [projectId, sceneId]);
 
   return { metrics, datasets, connected } as const;
 }

@@ -1,5 +1,6 @@
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
+import websocket from "@fastify/websocket";
 import { loadConfig } from "./config.js";
 import { ConversionQueue } from "./conversion.js";
 import { registerRoutes } from "./routes.js";
@@ -7,6 +8,7 @@ import { registerApplicationRoutes } from "./applicationRoutes.js";
 import { createObjectStore, migrateLocalObjects } from "./objects.js";
 import { createMetadataStore } from "./store.js";
 import { ensureDemoMetrics } from "./dataIntegration.js";
+import { registerDataEventRoutes } from "./dataEvents.js";
 import { loadOrCreateServerInstanceId, registerServerMetaRoute } from "./serverMeta.js";
 import { registerSystemRoutes } from "./system.js";
 import { registerVisionRoutes, VisionEngine } from "./vision.js";
@@ -24,6 +26,7 @@ export async function buildApp() {
   if (migratedObjects > 0) app.log.info({ migratedObjects }, "local model files migrated to object storage");
   const queue = new ConversionQueue(store, config, objects);
 
+  await app.register(websocket, { options: { maxPayload: 256 * 1024, perMessageDeflate: false } });
   await app.register(cors, { origin: config.webOrigin });
   await app.register(multipart, {
     limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 1 }
@@ -31,6 +34,7 @@ export async function buildApp() {
   const serverInstanceId = await loadOrCreateServerInstanceId(config.dataDir);
   await registerServerMetaRoute(app, serverInstanceId);
   await registerSystemRoutes(app, store, config.dataDir);
+  await registerDataEventRoutes(app, store);
   await registerRoutes(app, { store, queue, objects, dataDir: config.dataDir, config });
   await registerApplicationRoutes(app, store);
   const vision = new VisionEngine({ store, objects, dataDir: config.dataDir });

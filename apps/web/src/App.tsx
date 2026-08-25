@@ -670,8 +670,8 @@ export function App() {
   }, [route.view, route.sceneId]);
 
   useEffect(() => {
-    if (!engine || !["studio", "view", "published"].includes(route.view)) return;
-    return subscribeSceneData((data) => {
+    if (!engine || !project || !["studio", "view", "published"].includes(route.view)) return;
+    return subscribeSceneData(project.id, (data) => {
       if (data.sceneId && data.sceneId !== route.sceneId) return;
       setSceneDataReceived((value) => value + 1);
       if (engine.applySceneDataMessage(data)) {
@@ -679,7 +679,7 @@ export function App() {
         setRevision((value) => value + 1);
       }
     }, setSceneDataStatus);
-  }, [engine, route.sceneId, route.view]);
+  }, [engine, project, route.sceneId, route.view]);
 
   useEffect(() => {
     if (!engine || !project || !route.sceneId || !["studio", "view", "published"].includes(route.view)) return;

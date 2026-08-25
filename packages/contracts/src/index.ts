@@ -256,7 +256,7 @@ export interface VisionInferenceResponse {
   imageHeight: number;
 }
 
-export type DataConnectionType = "postgresql" | "mysql" | "oracle" | "tdengine" | "http" | "websocket" | "node-red" | "mqtt" | "opcua" | "modbus" | "bacnet" | "tcp" | "udp" | "serial" | "s7" | "ethernet-ip" | "snmp" | "amqp" | "kafka" | "coap";
+export type DataConnectionType = "postgresql" | "mysql" | "oracle" | "tdengine" | "http" | "websocket" | "mqtt" | "opcua" | "modbus" | "bacnet" | "tcp" | "udp" | "serial" | "s7" | "ethernet-ip" | "snmp" | "amqp" | "kafka" | "coap";
 
 export interface DataConnectionRecord {
   id: string;
@@ -271,6 +271,29 @@ export interface DataConnectionRecord {
 }
 
 export type DataFieldType = "string" | "number" | "boolean" | "datetime" | "json";
+
+export type DataEventAction = "color" | "visibility" | "position" | "label" | "opacity" | "focus" | "animation" | "effects";
+
+export interface DataEventTarget {
+  modelId?: string;
+  layerId?: string;
+  annotationId?: string;
+}
+
+export interface DataMessage {
+  source: string;
+  key: string;
+  value: unknown;
+  timestamp: string;
+  sceneId?: string;
+  target?: DataEventTarget;
+  action?: DataEventAction;
+}
+
+export interface DataEvent extends DataMessage {
+  id: string;
+  projectId: string;
+}
 
 export interface DataDatasetField {
   key: string;
@@ -744,7 +767,7 @@ export interface AiProviderSettings {
 }
 
 export interface ServiceHealthRecord {
-  id: "api" | "web" | "node-red" | "media" | "vision" | "postgres" | "minio";
+  id: "api" | "web" | "media" | "vision" | "postgres" | "minio";
   name: string;
   status: "healthy" | "degraded" | "offline";
   endpoint: string;

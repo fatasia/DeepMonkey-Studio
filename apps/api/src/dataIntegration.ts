@@ -34,7 +34,7 @@ export async function previewDataset(config: AppConfig, connection: DataConnecti
   else if (connection.type === "oracle") rows = await previewOracle(connection, dataset);
   else if (connection.type === "tdengine") rows = await previewTdengine(connection, dataset);
   else if (connection.type === "http") rows = await previewHttp(config, connection, dataset);
-  else throw new Error(`当前预览器暂不支持 ${connection.type}；实时协议请通过 Node-RED 桥接后预览`);
+  else throw new Error(`当前预览器暂不支持 ${connection.type}；请安装对应连接器插件`);
   rows = applyComputedFields(rows, dataset);
   const sourceFields = dataset.fields.length > 0 ? dataset.fields : inferFields(rows);
   const computedFields = (dataset.computedFields ?? []).map(({ key, label, type }) => ({ key, label, type }));

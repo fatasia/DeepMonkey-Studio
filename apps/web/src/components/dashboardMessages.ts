@@ -1,6 +1,6 @@
-import type { SceneDataMessage } from "../viewer/ViewerEngine";
+import type { DataMessage } from "@bim-studio/contracts";
 
-export function parseDashboardMessages(raw: unknown): Array<SceneDataMessage & { sceneId?: string }> {
+export function parseDashboardMessages(raw: unknown): DataMessage[] {
   try {
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
     const values = Array.isArray(parsed) ? parsed : [parsed];
@@ -8,10 +8,10 @@ export function parseDashboardMessages(raw: unknown): Array<SceneDataMessage & {
       if (!value || typeof value !== "object") return [];
       const wrapped = value as { payload?: unknown };
       const candidate = wrapped.payload && typeof wrapped.payload === "object" ? wrapped.payload : value;
-      const message = candidate as Partial<SceneDataMessage>;
+      const message = candidate as Partial<DataMessage>;
       if (!message.key || !("value" in message)) return [];
       return [{
-        source: message.source ?? "node-red",
+        source: message.source ?? "data-hub",
         key: message.key,
         value: message.value,
         timestamp: message.timestamp ?? new Date().toISOString(),

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseDashboardMessages } from "./dashboardMessages";
 
 describe("parseDashboardMessages", () => {
-  it("accepts the normalized Node-RED scene message", () => {
+  it("accepts the normalized data hub scene message", () => {
     expect(parseDashboardMessages(JSON.stringify({
       source: "tdengine.meters",
       key: "current",
@@ -18,7 +18,7 @@ describe("parseDashboardMessages", () => {
     }]);
   });
 
-  it("accepts Node-RED payload wrappers and rejects heartbeats", () => {
+  it("accepts payload wrappers and rejects heartbeats", () => {
     expect(parseDashboardMessages({ payload: { source: "oracle", key: "status", value: true } })[0]).toMatchObject({ source: "oracle", key: "status", value: true });
     expect(parseDashboardMessages("ping")).toEqual([]);
   });

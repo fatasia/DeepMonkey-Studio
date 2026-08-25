@@ -33,6 +33,7 @@ import type {
   CameraConstraintsState,
   CameraState,
   ClippingState,
+  DataMessage,
   ExplosionMode,
   GlobalLightingState,
   MeasurementState,
@@ -133,16 +134,6 @@ export interface PointerInfo {
   screenY: number;
   world?: Vector3Value;
   objectName?: string;
-}
-
-export interface SceneDataMessage {
-  source: string;
-  key: string;
-  value: unknown;
-  timestamp: string;
-  sceneId?: string;
-  target?: { modelId?: string; layerId?: string; annotationId?: string };
-  action?: "color" | "visibility" | "position" | "label" | "opacity" | "focus" | "animation" | "effects";
 }
 
 export interface BimSpaceRecord {
@@ -921,7 +912,7 @@ export class ViewerEngine {
     return this.frameRate;
   }
 
-  applySceneDataMessage(message: SceneDataMessage): boolean {
+  applySceneDataMessage(message: DataMessage): boolean {
     const target = message.target;
     if (!target || !message.action) return false;
     if (message.action === "visibility" && target.modelId) {
