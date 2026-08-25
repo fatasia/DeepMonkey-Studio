@@ -100,6 +100,7 @@ import { normalizeInteractionScripts } from "./interactionState";
 import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
 import { exportFbxFile, exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
+import { LegacyApplicationSession } from "./studio/legacyApplicationSession";
 import {
   type BimPropertyEntry,
   type BimSpaceRecord,
@@ -269,6 +270,8 @@ export function App() {
   const sceneNameCommitRef = useRef<Promise<boolean> | undefined>(undefined);
   const sceneApplyVersionRef = useRef(0);
   const rendererSnapshotRef = useRef<{ scene: SceneSnapshot; readOnly: boolean } | undefined>(undefined);
+  const applicationSessionRef = useRef<LegacyApplicationSession>(null!);
+  applicationSessionRef.current ??= new LegacyApplicationSession();
   const visionEventCursorRef = useRef<{ scope: string; id: string }>({ scope: "", id: "" });
   const [engine, setEngine] = useState<ViewerEngine>();
   const [currentUser, setCurrentUser] = useState<SystemUserRecord>();
@@ -1304,7 +1307,7 @@ export function App() {
     if (!engine || !project) return;
     const now = new Date().toISOString();
     const currentModels = engine.listModels();
-    return {
+    const snapshot: SceneSnapshot = {
       schemaVersion: 1,
       id: activeScene?.id ?? crypto.randomUUID(),
       projectId: project.id,
@@ -1360,6 +1363,7 @@ export function App() {
       createdAt: activeScene?.createdAt ?? now,
       updatedAt: now
     };
+    return applicationSessionRef.current.capture(snapshot);
   }
 
   async function saveScene(): Promise<SceneSnapshot | undefined> {
@@ -1439,6 +1443,7 @@ export function App() {
 
   async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false) {
     if (!engine || !sceneProject) return;
+    applicationSessionRef.current.open(scene);
     const applyVersion = ++sceneApplyVersionRef.current;
     setBusy(true);
     if (updateRoute) navigate({ view: "studio", sceneId: scene.id });

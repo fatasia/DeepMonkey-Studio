@@ -129,6 +129,9 @@ importers:
       '@bim-studio/server-sdk':
         specifier: workspace:*
         version: link:../../packages/server-sdk
+      '@bim-studio/studio-core':
+        specifier: workspace:*
+        version: link:../../packages/studio-core
       '@dimforge/rapier3d-compat':
         specifier: 0.19.3
         version: 0.19.3
