@@ -37,7 +37,7 @@ describe("StudioCommand", () => {
     expect(containsFunction(command)).toBe(false);
   });
 
-  it("returns a renamed document without mutating its recursively frozen reducer input", () => {
+  it("returns a renamed document without mutating its input", () => {
     const source = document();
     const originalName = source.metadata.name;
     const command = createRenameApplicationCommand("新名称");
@@ -47,7 +47,8 @@ describe("StudioCommand", () => {
     expect(result).not.toBe(source);
     expect(result.metadata.name).toBe("新名称");
     expect(source.metadata.name).toBe(originalName);
-    expect(source.pages).not.toBe(result.pages);
+    expect(source.pages).toBe(result.pages);
+    expect(source.scenes).toBe(result.scenes);
   });
 
   it("renames dashboard pages and updates node frames through serializable commands", () => {
@@ -62,6 +63,8 @@ describe("StudioCommand", () => {
     expect(moved.pages[0]?.nodes[0]?.frame).toEqual(frame);
     expect(source.pages[0]?.name).not.toBe("生产总览");
     expect(source.pages[0]?.nodes[0]?.frame).not.toEqual(frame);
+    expect(renamed.scenes).toBe(source.scenes);
+    expect(moved.scenes).toBe(source.scenes);
   });
 
   it("rejects dashboard commands that target missing pages or nodes", () => {
@@ -101,13 +104,20 @@ describe("ApplicationStore", () => {
     const store = new ApplicationStore(document());
     const listener = vi.fn();
     const unsubscribe = store.subscribe(listener);
+    const initial = store.getState();
+
+    expect(store.getState()).toBe(initial);
 
     store.setSelection([{ kind: "scene", id: "scene-pure-3d" }]);
 
+    const selected = store.getState();
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(() => (store.getState().selection as unknown[]).push({})).toThrow();
+    expect(selected).not.toBe(initial);
+    expect(selected.document).toBe(initial.document);
+    expect(store.getState()).toBe(selected);
+    expect(() => (selected.selection as unknown[]).push({})).toThrow();
     expect(() => {
-      store.getState().document!.metadata.name = "篡改名称";
+      selected.document!.metadata.name = "篡改名称";
     }).toThrow();
     unsubscribe();
   });

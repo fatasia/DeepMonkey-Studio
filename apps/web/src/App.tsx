@@ -2049,10 +2049,12 @@ export function App() {
 
   return (
     <>
-      {route.view === "dashboard" && activeApplication && activeDashboardPage && <DashboardWorkspace
+      {route.view === "dashboard" && activeApplication && activeDashboardPage && project && <DashboardWorkspace
         locale={locale}
         application={activeApplication}
+        project={project}
         page={activeDashboardPage}
+        rendererBackend={rendererBackend}
         {...(route.dashboardView ? { initialView: route.dashboardView } : {})}
         dirty={applicationState.dirty}
         canUndo={applicationState.canUndo}
@@ -2083,7 +2085,7 @@ export function App() {
         }}
         onViewStateChange={replaceDashboardView}
       />}
-      {route.view === "dashboard" && (!activeApplication || !activeDashboardPage) && <div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载二维工作区", "Loading 2D workspace")}</div>}
+      {route.view === "dashboard" && (!activeApplication || !activeDashboardPage || !project) && <div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载二维工作区", "Loading 2D workspace")}</div>}
       {route.view === "optimizer" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载模型优化器", "Loading model optimizer")}</div>}><ModelOptimizer locale={locale} copyright={branding.copyright} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "data" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载数据中心", "Loading data center")}</div>}><DataCenter locale={locale} project={project} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "vision" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载视觉中心", "Loading vision center")}</div>}><VisionCenter locale={locale} project={project} scenes={scenes} onBack={() => navigate({ view: "manager" })} /></Suspense>}

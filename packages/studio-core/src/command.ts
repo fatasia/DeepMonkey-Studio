@@ -73,29 +73,33 @@ export function createUpdateDashboardNodeFrameCommand(
 }
 
 export function applyStudioCommand(document: ApplicationDocument, command: StudioCommand): ApplicationDocument {
-  const reducerInput = freezeRecursively(structuredClone(document));
-
   switch (command.type) {
-    case "application.rename": {
-      const renamed = structuredClone(reducerInput);
+    case "application.rename":
+      return { ...document, metadata: { ...document.metadata, name: command.payload.name } };
+    case "dashboard.page.rename": {
+      requirePage(document, command.payload.pageId);
       return {
-        ...renamed,
-        metadata: { ...renamed.metadata, name: command.payload.name }
+        ...document,
+        pages: document.pages.map((page) => page.id === command.payload.pageId
+          ? { ...page, name: command.payload.name }
+          : page)
       };
     }
-    case "dashboard.page.rename": {
-      const renamed = structuredClone(reducerInput);
-      const page = requirePage(renamed, command.payload.pageId);
-      page.name = command.payload.name;
-      return renamed;
-    }
     case "dashboard.node.frame.update": {
-      const updated = structuredClone(reducerInput);
-      const page = requirePage(updated, command.payload.pageId);
+      const page = requirePage(document, command.payload.pageId);
       const node = page.nodes.find((candidate) => candidate.id === command.payload.nodeId);
       if (!node) throw new Error(`页面 ${page.id} 中不存在组件 ${command.payload.nodeId}`);
-      node.frame = structuredClone(command.payload.frame);
-      return updated;
+      return {
+        ...document,
+        pages: document.pages.map((candidate) => candidate.id === page.id
+          ? {
+              ...candidate,
+              nodes: candidate.nodes.map((item) => item.id === command.payload.nodeId
+                ? { ...item, frame: { ...command.payload.frame } }
+                : item)
+            }
+          : candidate)
+      };
     }
   }
 }
@@ -104,14 +108,4 @@ function requirePage(document: ApplicationDocument, pageId: string) {
   const page = document.pages.find((candidate) => candidate.id === pageId);
   if (!page) throw new Error(`应用中不存在页面 ${pageId}`);
   return page;
-}
-
-function freezeRecursively<T>(value: T): T {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const nestedValue of Object.values(value)) {
-      freezeRecursively(nestedValue);
-    }
-    Object.freeze(value);
-  }
-  return value;
 }

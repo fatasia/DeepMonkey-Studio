@@ -47,6 +47,7 @@ export class ApplicationStore {
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
   private listeners = new Set<Listener>();
+  private stateSnapshot: ApplicationState | undefined;
 
   constructor(document?: ApplicationDocument) {
     if (document) {
@@ -55,8 +56,8 @@ export class ApplicationStore {
   }
 
   getState(): ApplicationState {
-    return Object.freeze({
-      ...(this.document ? { document: immutableClone(this.document) } : {}),
+    this.stateSnapshot ??= Object.freeze({
+      ...(this.document ? { document: this.document } : {}),
       selection: immutableClone(this.selection),
       variables: immutableClone(this.variables),
       filters: immutableClone(this.filters),
@@ -64,6 +65,7 @@ export class ApplicationStore {
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0
     });
+    return this.stateSnapshot;
   }
 
   subscribe(listener: Listener): () => void {
@@ -72,7 +74,7 @@ export class ApplicationStore {
   }
 
   load(document: ApplicationDocument): void {
-    this.document = structuredClone(document);
+    this.document = immutableClone(document);
     this.selection = [];
     this.variables = Object.fromEntries(document.data.variables.map((variable) => [variable.id, structuredClone(variable.value)]));
     this.filters = {};
@@ -86,11 +88,11 @@ export class ApplicationStore {
       throw new Error("没有已打开的应用文档");
     }
 
-    const before = structuredClone(this.document);
-    const after = applyStudioCommand(before, command);
+    const before = this.document;
+    const after = immutableClone(applyStudioCommand(before, command));
 
-    this.document = structuredClone(after);
-    this.undoStack.push({ command, before, after: structuredClone(after) });
+    this.document = after;
+    this.undoStack.push({ command, before, after });
     this.redoStack = [];
     this.emit();
   }
@@ -101,7 +103,7 @@ export class ApplicationStore {
       return false;
     }
 
-    this.document = structuredClone(entry.before);
+    this.document = entry.before;
     this.redoStack.push(entry);
     this.emit();
     return true;
@@ -113,7 +115,7 @@ export class ApplicationStore {
       return false;
     }
 
-    this.document = structuredClone(entry.after);
+    this.document = entry.after;
     this.undoStack.push(entry);
     this.emit();
     return true;
@@ -145,6 +147,7 @@ export class ApplicationStore {
   }
 
   private emit(): void {
+    this.stateSnapshot = undefined;
     for (const listener of this.listeners) {
       listener();
     }
