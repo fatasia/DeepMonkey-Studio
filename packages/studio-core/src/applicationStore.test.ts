@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import pureFixture from "../../contracts/src/__fixtures__/scene-v1-pure-3d.json";
+import pureFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
 import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
 import { ApplicationStore, applyStudioCommand, createRenameApplicationCommand } from "./index.js";
 

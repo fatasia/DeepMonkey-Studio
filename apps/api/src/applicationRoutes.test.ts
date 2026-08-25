@@ -1,12 +1,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
-import pureFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-pure-3d.json";
+import pureFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
 import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
 import { registerApplicationRoutes } from "./applicationRoutes.js";
 import { JsonStore } from "./store.js";
+import { createApiServer } from "./serverOptions.js";
 
 const directories: string[] = [];
 afterEach(async () => Promise.all(directories.splice(0).map((item) => rm(item, { recursive: true, force: true }))));
@@ -16,12 +16,36 @@ async function harness() {
   directories.push(directory);
   const store = new JsonStore(directory);
   await store.init();
-  const app = Fastify({ routerOptions: { maxParamLength: 256 } });
+  const app = createApiServer();
   await registerApplicationRoutes(app, store);
   return { app, store };
 }
 
 describe("application routes", () => {
+  it("accepts application IDs through 128 characters and rejects 129", async () => {
+    const { app } = await harness();
+    for (const length of [100, 101, 128]) {
+      const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+      document.metadata.projectId = "default";
+      document.metadata.id = "a".repeat(length);
+      expect((await app.inject({
+        method: "POST",
+        url: "/api/projects/default/applications",
+        payload: document
+      })).statusCode).toBe(201);
+      expect((await app.inject({
+        method: "GET",
+        url: `/api/projects/default/applications/${document.metadata.id}`
+      })).statusCode).toBe(200);
+    }
+
+    expect((await app.inject({
+      method: "GET",
+      url: `/api/projects/default/applications/${"a".repeat(129)}`
+    })).statusCode).toBe(400);
+    await app.close();
+  });
+
   it("creates, reads, revisions, and deletes an application", async () => {
     const { app } = await harness();
     const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);

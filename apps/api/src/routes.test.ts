@@ -1,13 +1,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import Fastify from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
-import pureFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-pure-3d.json";
+import pureFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { loadConfig } from "./config.js";
 import { registerRoutes } from "./routes.js";
 import { JsonStore } from "./store.js";
+import { createApiServer } from "./serverOptions.js";
 
 const directories: string[] = [];
 
@@ -19,7 +19,7 @@ describe("legacy scene routes", () => {
     directories.push(dataDir);
     const store = new JsonStore(dataDir);
     await store.init();
-    const app = Fastify({ routerOptions: { maxParamLength: 256 } });
+    const app = createApiServer();
     await registerRoutes(app, {
       store,
       queue: undefined as never,
@@ -47,9 +47,10 @@ describe("legacy scene routes", () => {
     expect((await app.inject({ method: "GET", url: "/api/public/scenes/scene-pure-3d" })).json().snapshot.name).toBe("纯三维");
     expect((await app.inject({ method: "GET", url: "/api/scenes/scene-pure-3d/browse" })).json().scene.schemaVersion).toBe(1);
 
-    const oversizedProjectId = "a".repeat(129);
-    const invalidProject = await app.inject({ method: "GET", url: `/api/projects/${oversizedProjectId}` });
-    expect(invalidProject.statusCode).toBe(400);
+    for (const length of [100, 101, 128]) {
+      expect((await app.inject({ method: "GET", url: `/api/projects/${"a".repeat(length)}` })).statusCode).toBe(404);
+    }
+    expect((await app.inject({ method: "GET", url: `/api/projects/${"a".repeat(129)}` })).statusCode).toBe(400);
 
     await app.close();
   });

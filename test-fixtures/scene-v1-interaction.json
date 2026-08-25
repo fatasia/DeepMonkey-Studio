@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-interaction",
+  "projectId": "project-golden",
+  "name": "带事件",
+  "camera": { "position": { "x": 10, "y": 8, "z": 10 }, "target": { "x": 0, "y": 0, "z": 0 }, "mode": "orbit" },
+  "models": [],
+  "primitives": [],
+  "measurements": [],
+  "interactions": [{
+    "id": "flow-1",
+    "name": "点击聚焦",
+    "target": { "kind": "object", "modelId": "pump-1", "layerId": "impeller" },
+    "trigger": "click",
+    "enabled": true,
+    "actions": [{ "id": "action-1", "type": "focus", "enabled": true, "target": { "kind": "object", "modelId": "pump-1", "layerId": "impeller" } }],
+    "code": "console.info('legacy trusted script')"
+  }],
+  "createdAt": "2026-08-20T01:00:00.000Z",
+  "updatedAt": "2026-08-20T02:00:00.000Z"
+}

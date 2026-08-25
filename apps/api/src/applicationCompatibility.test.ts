@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import pureFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-pure-3d.json";
+import pureFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
 import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { JsonStore } from "./store.js";

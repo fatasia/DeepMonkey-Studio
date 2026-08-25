@@ -27,7 +27,7 @@ export function moduleSpecifiers(source: string, fileName = "source.ts"): string
       values.push(node.moduleSpecifier.text);
     } else if (ts.isCallExpression(node)
       && node.expression.kind === ts.SyntaxKind.ImportKeyword
-      && node.arguments.length === 1
+      && node.arguments.length >= 1
       && ts.isStringLiteralLike(node.arguments[0]!)) {
       values.push(node.arguments[0]!.text);
     } else if (ts.isImportEqualsDeclaration(node)
@@ -42,6 +42,104 @@ export function moduleSpecifiers(source: string, fileName = "source.ts"): string
     }
   });
   return values;
+}
+
+const publicPackageDeepImport = /^@bim-studio\/(?:contracts|server-sdk|studio-core|scene-sdk)\/.+/;
+
+export function isWorkspacePackageSourceDeepImport(
+  specifier: string,
+  importer: string,
+  workspaceRoot: string
+): boolean {
+  if (publicPackageDeepImport.test(specifier)) return true;
+  if (!specifier.startsWith(".") && !path.isAbsolute(specifier)) return false;
+
+  const packagesRoot = path.resolve(workspaceRoot, "packages");
+  const target = path.resolve(path.dirname(importer), specifier);
+  const targetParts = path.relative(packagesRoot, target).split(path.sep);
+  if (targetParts[0] === ".." || targetParts.length < 3 || targetParts[1] !== "src") return false;
+
+  const importerParts = path.relative(packagesRoot, path.resolve(importer)).split(path.sep);
+  const importerIsInSamePackageSource = importerParts[0] !== ".."
+    && importerParts[0] === targetParts[0]
+    && importerParts[1] === "src";
+  return !importerIsInSamePackageSource;
+}
+
+const rawNetworkCapabilities = new Set(["fetch", "XMLHttpRequest", "WebSocket", "EventSource"]);
+
+export function forbiddenNetworkCapabilities(source: string, fileName = "source.ts"): string[] {
+  const sourceFile = parseSource(source, fileName);
+  const aliases = new Map<string, string>();
+  const hostAliases = new Set(["globalThis", "window", "self"]);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    visit(sourceFile, (node) => {
+      if (!ts.isVariableDeclaration(node) || !node.initializer) return;
+      if (ts.isIdentifier(node.name)) {
+        if (isHostReference(node.initializer, hostAliases) && !hostAliases.has(node.name.text)) {
+          hostAliases.add(node.name.text);
+          changed = true;
+        }
+        const capability = networkCapabilityReference(node.initializer, aliases, hostAliases);
+        if (capability && aliases.get(node.name.text) !== capability) {
+          aliases.set(node.name.text, capability);
+          changed = true;
+        }
+        return;
+      }
+      if (ts.isObjectBindingPattern(node.name) && isHostReference(node.initializer, hostAliases)) {
+        for (const element of node.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue;
+          const property = element.propertyName ?? element.name;
+          if (!ts.isIdentifier(property) && !ts.isStringLiteralLike(property)) continue;
+          const capability = property.text;
+          if (rawNetworkCapabilities.has(capability) && aliases.get(element.name.text) !== capability) {
+            aliases.set(element.name.text, capability);
+            changed = true;
+          }
+        }
+      }
+    });
+  }
+
+  const found = new Set<string>();
+  visit(sourceFile, (node) => {
+    if (!ts.isCallExpression(node) && !ts.isNewExpression(node)) return;
+    const capability = networkCapabilityReference(node.expression, aliases, hostAliases);
+    if (capability) found.add(capability);
+  });
+  return [...found].sort();
+}
+
+function networkCapabilityReference(
+  expression: ts.Expression,
+  aliases: ReadonlyMap<string, string>,
+  hostAliases: ReadonlySet<string>
+): string | undefined {
+  if (ts.isIdentifier(expression)) {
+    if (rawNetworkCapabilities.has(expression.text)) return expression.text;
+    return aliases.get(expression.text);
+  }
+  if (ts.isPropertyAccessExpression(expression)
+    && isHostReference(expression.expression, hostAliases)
+    && rawNetworkCapabilities.has(expression.name.text)) {
+    return expression.name.text;
+  }
+  if (ts.isElementAccessExpression(expression)
+    && isHostReference(expression.expression, hostAliases)
+    && expression.argumentExpression
+    && ts.isStringLiteralLike(expression.argumentExpression)
+    && rawNetworkCapabilities.has(expression.argumentExpression.text)) {
+    return expression.argumentExpression.text;
+  }
+  return undefined;
+}
+
+function isHostReference(expression: ts.Expression, hostAliases: ReadonlySet<string>): boolean {
+  return ts.isIdentifier(expression) && hostAliases.has(expression.text);
 }
 
 export function hasCallToIdentifier(source: string, identifier: string, fileName = "source.ts"): boolean {

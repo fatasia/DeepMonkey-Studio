@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import dashboardFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-dashboard.json";
-import interactionFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-interaction.json";
-import pure3dFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-pure-3d.json";
+import dashboardFixture from "../../../test-fixtures/scene-v1-dashboard.json";
+import interactionFixture from "../../../test-fixtures/scene-v1-interaction.json";
+import pure3dFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
 import { parseScene } from "./sceneFiles.js";
 
 const fixtures = [pure3dFixture, dashboardFixture, interactionFixture];

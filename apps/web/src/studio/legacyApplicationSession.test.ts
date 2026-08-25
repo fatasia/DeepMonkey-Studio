@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import dashboardFixture from "../../../../packages/contracts/src/__fixtures__/scene-v1-dashboard.json";
+import dashboardFixture from "../../../../test-fixtures/scene-v1-dashboard.json";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { LegacyApplicationSession } from "./legacyApplicationSession.js";
 

@@ -1,8 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import pureFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-pure-3d.json";
-import { migrateSceneSnapshotV1, type DatabaseDocument, type PublishedSceneRecord, type SceneSnapshot } from "@bim-studio/contracts";
+import pureFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
+import { migrateSceneSnapshotV1, type DatabaseDocument, type PublishedSceneRecord, type SceneSnapshot, type StoredSystemUserRecord } from "@bim-studio/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { JsonStore, runProcess } from "./store.js";
 
@@ -184,6 +184,76 @@ describe("JsonStore application management", () => {
     expect(store.getApplicationPublicationPointer(projectDelete.metadata.id)).toBeUndefined();
     expect(store.listApplicationPublications(projectDelete.metadata.id)).toHaveLength(1);
   });
+
+  it("serializes publish with scene, user, and project document writers", async () => {
+    const cases = [
+      {
+        name: "scene",
+        mutate: (store: JsonStore) => store.saveScene(scene("race-scene", "并发场景", "2026-08-20T04:00:00.000Z")),
+        assert: (store: JsonStore) => expect(store.getScene("default", "race-scene")?.name).toBe("并发场景")
+      },
+      {
+        name: "user",
+        mutate: (store: JsonStore) => store.saveUser(storedUser("race-user")),
+        assert: (store: JsonStore) => expect(store.getUser("race-user")?.username).toBe("race-user")
+      },
+      {
+        name: "project",
+        mutate: (store: JsonStore) => store.updateProject("default", { name: "并发项目更新" }),
+        assert: (store: JsonStore) => expect(store.getProject("default")?.name).toBe("并发项目更新")
+      }
+    ] as const;
+
+    for (const testCase of cases) {
+      const directory = await mkdtemp(path.join(tmpdir(), `bim-studio-store-${testCase.name}-race-`));
+      temporaryDirectories.push(directory);
+      const store = new PausingJsonStore(directory);
+      await store.init();
+      const application = migratedApplication(`race-${testCase.name}`, "default");
+      await store.createApplicationDraft("default", application, "2026-08-20T01:00:00.000Z");
+      const barrier = store.pauseNextPersistence();
+
+      const publish = store.publishApplication(
+        "default",
+        application.metadata.id,
+        `publication-${testCase.name}`,
+        "2026-08-20T03:00:00.000Z"
+      );
+      await barrier.entered;
+      const mutation = testCase.mutate(store);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(store.persistenceAttempts).toBe(1);
+      barrier.release();
+      await Promise.all([publish, mutation]);
+
+      const restarted = new JsonStore(directory);
+      await restarted.init();
+      for (const current of [store, restarted]) {
+        expect(current.getPublishedApplication(`publication-${testCase.name}`)).toBeDefined();
+        expect(current.getApplicationPublicationPointer(application.metadata.id)?.activePublicationId)
+          .toBe(`publication-${testCase.name}`);
+        testCase.assert(current);
+      }
+    }
+  });
+
+  it("rolls back legacy document mutations when persistence fails", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-studio-store-legacy-failure-"));
+    temporaryDirectories.push(directory);
+    const store = new FaultInjectingJsonStore(directory);
+    await store.init();
+    store.failPersistence = true;
+
+    await expect(store.saveScene(scene("failed-scene", "不得泄漏", "2026-08-20T04:00:00.000Z")))
+      .rejects.toThrow("injected persistence failure");
+
+    expect(store.getScene("default", "failed-scene")).toBeUndefined();
+    const restarted = new JsonStore(directory);
+    await restarted.init();
+    expect(restarted.getScene("default", "failed-scene")).toBeUndefined();
+  });
 });
 
 class FaultInjectingJsonStore extends JsonStore {
@@ -195,11 +265,51 @@ class FaultInjectingJsonStore extends JsonStore {
   }
 }
 
+class PausingJsonStore extends JsonStore {
+  persistenceAttempts = 0;
+  private barrier?: { entered: () => void; released: Promise<void> };
+
+  pauseNextPersistence(): { entered: Promise<void>; release: () => void } {
+    let markEntered!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    this.persistenceAttempts = 0;
+    this.barrier = { entered: markEntered, released };
+    return { entered, release };
+  }
+
+  protected override async persistDocument(document: DatabaseDocument): Promise<void> {
+    this.persistenceAttempts += 1;
+    const barrier = this.barrier;
+    if (barrier) {
+      this.barrier = undefined;
+      barrier.entered();
+      await barrier.released;
+    }
+    await super.persistDocument(document);
+  }
+}
+
 function migratedApplication(id: string, projectId: string) {
   const application = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
   application.metadata.id = id;
   application.metadata.projectId = projectId;
   return application;
+}
+
+function storedUser(id: string): StoredSystemUserRecord {
+  return {
+    id,
+    username: id,
+    displayName: id,
+    role: "editor",
+    projectIds: ["default"],
+    enabled: true,
+    passwordHash: "test-hash",
+    createdAt: "2026-08-20T01:00:00.000Z",
+    updatedAt: "2026-08-20T01:00:00.000Z"
+  };
 }
 
 function assertActivePointerHasLivePath(store: JsonStore, applicationId: string): void {

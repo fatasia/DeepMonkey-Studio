@@ -111,7 +111,7 @@ export class JsonStore implements MetadataStore {
     applicationPublicationPointers: []
   };
   private writeChain = Promise.resolve();
-  private applicationLifecycleChain = Promise.resolve();
+  private documentMutationChain = Promise.resolve();
 
   constructor(private readonly dataDir: string) {
     this.databasePath = path.join(dataDir, "database.json");
@@ -145,33 +145,35 @@ export class JsonStore implements MetadataStore {
   }
 
   async createProject(name: string, description = ""): Promise<ProjectRecord> {
-    const now = new Date().toISOString();
-    const project: ProjectRecord = {
-      id: randomUUID(),
-      name,
-      description,
-      models: [],
-      assets: [],
-      createdAt: now,
-      updatedAt: now
-    };
-    this.document.projects.push(project);
-    await this.persist();
-    return structuredClone(project);
+    return this.runDocumentMutation((candidate) => {
+      const now = new Date().toISOString();
+      const project: ProjectRecord = {
+        id: randomUUID(),
+        name,
+        description,
+        models: [],
+        assets: [],
+        createdAt: now,
+        updatedAt: now
+      };
+      candidate.projects.push(project);
+      return changed(structuredClone(project));
+    });
   }
 
   async updateProject(projectId: string, updates: Pick<Partial<ProjectRecord>, "name" | "description">): Promise<ProjectRecord> {
-    const project = this.requireProject(projectId);
-    if (updates.name !== undefined) project.name = updates.name;
-    if (updates.description !== undefined) project.description = updates.description;
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return structuredClone(project);
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      if (updates.name !== undefined) project.name = updates.name;
+      if (updates.description !== undefined) project.description = updates.description;
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(project));
+    });
   }
 
   async removeProject(projectId: string): Promise<boolean> {
     assertPathSafeResourceId(projectId, "projectId");
-    return this.runApplicationLifecycleMutation<boolean>((candidate) => {
+    return this.runDocumentMutation<boolean>((candidate) => {
       const originalLength = candidate.projects.length;
       candidate.projects = candidate.projects.filter((item) => item.id !== projectId);
       if (candidate.projects.length === originalLength) return unchanged(false);
@@ -185,30 +187,34 @@ export class JsonStore implements MetadataStore {
   }
 
   async addModel(projectId: string, model: ModelRecord): Promise<void> {
-    const project = this.requireProject(projectId);
-    project.models.push(model);
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      project.models.push(structuredClone(model));
+      project.updatedAt = new Date().toISOString();
+      return changed(undefined);
+    });
   }
 
   async updateModel(projectId: string, modelId: string, updates: Partial<ModelRecord>): Promise<ModelRecord> {
-    const project = this.requireProject(projectId);
-    const model = project.models.find((item) => item.id === modelId);
-    if (!model) throw new Error(`Model not found: ${modelId}`);
-    Object.assign(model, updates, { updatedAt: new Date().toISOString() });
-    project.updatedAt = model.updatedAt;
-    await this.persist();
-    return structuredClone(model);
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const model = project.models.find((item) => item.id === modelId);
+      if (!model) throw new Error(`Model not found: ${modelId}`);
+      Object.assign(model, structuredClone(updates), { updatedAt: new Date().toISOString() });
+      project.updatedAt = model.updatedAt;
+      return changed(structuredClone(model));
+    });
   }
 
   async removeModel(projectId: string, modelId: string): Promise<boolean> {
-    const project = this.requireProject(projectId);
-    const originalLength = project.models.length;
-    project.models = project.models.filter((item) => item.id !== modelId);
-    if (project.models.length === originalLength) return false;
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const originalLength = project.models.length;
+      project.models = project.models.filter((item) => item.id !== modelId);
+      if (project.models.length === originalLength) return unchanged(false);
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
   }
 
   listAssets(projectId: string): ProjectAssetRecord[] {
@@ -216,24 +222,26 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveAsset(projectId: string, asset: ProjectAssetRecord): Promise<ProjectAssetRecord> {
-    const project = this.requireProject(projectId);
-    project.assets ??= [];
-    const index = project.assets.findIndex((item) => item.id === asset.id);
-    if (index >= 0) project.assets[index] = structuredClone(asset);
-    else project.assets.push(structuredClone(asset));
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return structuredClone(asset);
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      project.assets ??= [];
+      const index = project.assets.findIndex((item) => item.id === asset.id);
+      if (index >= 0) project.assets[index] = structuredClone(asset);
+      else project.assets.push(structuredClone(asset));
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(asset));
+    });
   }
 
   async removeAsset(projectId: string, assetId: string): Promise<boolean> {
-    const project = this.requireProject(projectId);
-    const originalLength = project.assets?.length ?? 0;
-    project.assets = (project.assets ?? []).filter((item) => item.id !== assetId);
-    if (project.assets.length === originalLength) return false;
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const originalLength = project.assets?.length ?? 0;
+      project.assets = (project.assets ?? []).filter((item) => item.id !== assetId);
+      if (project.assets.length === originalLength) return unchanged(false);
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
   }
 
   listDataConnections(projectId: string): DataConnectionRecord[] {
@@ -241,25 +249,27 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveDataConnection(projectId: string, connection: DataConnectionRecord): Promise<DataConnectionRecord> {
-    const project = this.requireProject(projectId);
-    project.dataConnections ??= [];
-    const index = project.dataConnections.findIndex((item) => item.id === connection.id);
-    if (index >= 0) project.dataConnections[index] = structuredClone(connection);
-    else project.dataConnections.push(structuredClone(connection));
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return structuredClone(connection);
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      project.dataConnections ??= [];
+      const index = project.dataConnections.findIndex((item) => item.id === connection.id);
+      if (index >= 0) project.dataConnections[index] = structuredClone(connection);
+      else project.dataConnections.push(structuredClone(connection));
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(connection));
+    });
   }
 
   async removeDataConnection(projectId: string, connectionId: string): Promise<boolean> {
-    const project = this.requireProject(projectId);
-    const originalLength = project.dataConnections?.length ?? 0;
-    project.dataConnections = (project.dataConnections ?? []).filter((item) => item.id !== connectionId);
-    if (project.dataConnections.length === originalLength) return false;
-    project.datasets = (project.datasets ?? []).filter((item) => item.connectionId !== connectionId);
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const originalLength = project.dataConnections?.length ?? 0;
+      project.dataConnections = (project.dataConnections ?? []).filter((item) => item.id !== connectionId);
+      if (project.dataConnections.length === originalLength) return unchanged(false);
+      project.datasets = (project.datasets ?? []).filter((item) => item.connectionId !== connectionId);
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
   }
 
   listDatasets(projectId: string): DataDatasetRecord[] {
@@ -267,25 +277,27 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveDataset(projectId: string, dataset: DataDatasetRecord): Promise<DataDatasetRecord> {
-    const project = this.requireProject(projectId);
-    if (!(project.dataConnections ?? []).some((item) => item.id === dataset.connectionId)) throw new Error(`Data connection not found: ${dataset.connectionId}`);
-    project.datasets ??= [];
-    const index = project.datasets.findIndex((item) => item.id === dataset.id);
-    if (index >= 0) project.datasets[index] = structuredClone(dataset);
-    else project.datasets.push(structuredClone(dataset));
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return structuredClone(dataset);
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      if (!(project.dataConnections ?? []).some((item) => item.id === dataset.connectionId)) throw new Error(`Data connection not found: ${dataset.connectionId}`);
+      project.datasets ??= [];
+      const index = project.datasets.findIndex((item) => item.id === dataset.id);
+      if (index >= 0) project.datasets[index] = structuredClone(dataset);
+      else project.datasets.push(structuredClone(dataset));
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(dataset));
+    });
   }
 
   async removeDataset(projectId: string, datasetId: string): Promise<boolean> {
-    const project = this.requireProject(projectId);
-    const originalLength = project.datasets?.length ?? 0;
-    project.datasets = (project.datasets ?? []).filter((item) => item.id !== datasetId);
-    if (project.datasets.length === originalLength) return false;
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const originalLength = project.datasets?.length ?? 0;
+      project.datasets = (project.datasets ?? []).filter((item) => item.id !== datasetId);
+      if (project.datasets.length === originalLength) return unchanged(false);
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
   }
 
   listVisionSources(projectId: string): VisionSourceRecord[] {
@@ -293,23 +305,25 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveVisionSource(projectId: string, source: VisionSourceRecord): Promise<VisionSourceRecord> {
-    const project = this.requireProject(projectId);
-    project.visionSources ??= [];
-    upsert(project.visionSources, source);
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return structuredClone(source);
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      project.visionSources ??= [];
+      upsert(project.visionSources, source);
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(source));
+    });
   }
 
   async removeVisionSource(projectId: string, sourceId: string): Promise<boolean> {
-    const project = this.requireProject(projectId);
-    const original = project.visionSources?.length ?? 0;
-    project.visionSources = (project.visionSources ?? []).filter((item) => item.id !== sourceId);
-    if (project.visionSources.length === original) return false;
-    for (const task of project.visionTasks ?? []) if (task.sourceId === sourceId) Object.assign(task, { enabled: false, status: "stopped", message: "视觉源已删除" });
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const original = project.visionSources?.length ?? 0;
+      project.visionSources = (project.visionSources ?? []).filter((item) => item.id !== sourceId);
+      if (project.visionSources.length === original) return unchanged(false);
+      for (const task of project.visionTasks ?? []) if (task.sourceId === sourceId) Object.assign(task, { enabled: false, status: "stopped", message: "视觉源已删除" });
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
   }
 
   listVisionModels(projectId: string): VisionModelRecord[] {
@@ -322,23 +336,25 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveVisionModel(projectId: string, model: VisionModelRecord): Promise<VisionModelRecord> {
-    const project = this.requireProject(projectId);
-    project.visionModels ??= [];
-    upsert(project.visionModels, model);
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return structuredClone(model);
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      project.visionModels ??= [];
+      upsert(project.visionModels, model);
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(model));
+    });
   }
 
   async removeVisionModel(projectId: string, modelId: string): Promise<boolean> {
-    const project = this.requireProject(projectId);
-    const original = project.visionModels?.length ?? 0;
-    project.visionModels = (project.visionModels ?? []).filter((item) => item.id !== modelId);
-    if (project.visionModels.length === original) return false;
-    for (const task of project.visionTasks ?? []) if (task.modelId === modelId) Object.assign(task, { enabled: false, status: "stopped", message: "AI 模型已删除" });
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const original = project.visionModels?.length ?? 0;
+      project.visionModels = (project.visionModels ?? []).filter((item) => item.id !== modelId);
+      if (project.visionModels.length === original) return unchanged(false);
+      for (const task of project.visionTasks ?? []) if (task.modelId === modelId) Object.assign(task, { enabled: false, status: "stopped", message: "AI 模型已删除" });
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
   }
 
   listVisionTasks(projectId: string): VisionTaskRecord[] {
@@ -351,22 +367,24 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveVisionTask(projectId: string, task: VisionTaskRecord): Promise<VisionTaskRecord> {
-    const project = this.requireProject(projectId);
-    project.visionTasks ??= [];
-    upsert(project.visionTasks, task);
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return structuredClone(task);
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      project.visionTasks ??= [];
+      upsert(project.visionTasks, task);
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(task));
+    });
   }
 
   async removeVisionTask(projectId: string, taskId: string): Promise<boolean> {
-    const project = this.requireProject(projectId);
-    const original = project.visionTasks?.length ?? 0;
-    project.visionTasks = (project.visionTasks ?? []).filter((item) => item.id !== taskId);
-    if (project.visionTasks.length === original) return false;
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const original = project.visionTasks?.length ?? 0;
+      project.visionTasks = (project.visionTasks ?? []).filter((item) => item.id !== taskId);
+      if (project.visionTasks.length === original) return unchanged(false);
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
   }
 
   listVisionEvents(projectId: string, limit = 200): VisionEventRecord[] {
@@ -379,13 +397,14 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveVisionEvent(projectId: string, event: VisionEventRecord): Promise<VisionEventRecord> {
-    const project = this.requireProject(projectId);
-    project.visionEvents ??= [];
-    upsert(project.visionEvents, event);
-    if (project.visionEvents.length > 2_000) project.visionEvents.splice(0, project.visionEvents.length - 2_000);
-    project.updatedAt = new Date().toISOString();
-    await this.persist();
-    return structuredClone(event);
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      project.visionEvents ??= [];
+      upsert(project.visionEvents, event);
+      if (project.visionEvents.length > 2_000) project.visionEvents.splice(0, project.visionEvents.length - 2_000);
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(event));
+    });
   }
 
   listScenes(projectId: string): SceneSnapshot[] {
@@ -405,22 +424,24 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveScene(scene: SceneSnapshot): Promise<SceneSnapshot> {
-    const index = this.document.scenes.findIndex((item) => item.projectId === scene.projectId && item.id === scene.id);
-    if (index >= 0) this.document.scenes[index] = structuredClone(scene);
-    else this.document.scenes.push(structuredClone(scene));
-    await this.persist();
-    return structuredClone(scene);
+    return this.runDocumentMutation((candidate) => {
+      const index = candidate.scenes.findIndex((item) => item.projectId === scene.projectId && item.id === scene.id);
+      if (index >= 0) candidate.scenes[index] = structuredClone(scene);
+      else candidate.scenes.push(structuredClone(scene));
+      return changed(structuredClone(scene));
+    });
   }
 
   async removeScene(projectId: string, sceneId: string): Promise<boolean> {
-    const originalLength = this.document.scenes.length;
-    this.document.scenes = this.document.scenes.filter(
-      (item) => item.projectId !== projectId || item.id !== sceneId
-    );
-    if (this.document.scenes.length === originalLength) return false;
-    this.document.publishedScenes = (this.document.publishedScenes ?? []).filter((item) => item.sceneId !== sceneId);
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const originalLength = candidate.scenes.length;
+      candidate.scenes = candidate.scenes.filter(
+        (item) => item.projectId !== projectId || item.id !== sceneId
+      );
+      if (candidate.scenes.length === originalLength) return unchanged(false);
+      candidate.publishedScenes = (candidate.publishedScenes ?? []).filter((item) => item.sceneId !== sceneId);
+      return changed(true);
+    });
   }
 
   getPublication(sceneId: string): PublishedSceneRecord | undefined {
@@ -429,23 +450,25 @@ export class JsonStore implements MetadataStore {
   }
 
   async savePublication(publication: PublishedSceneRecord): Promise<PublishedSceneRecord> {
-    this.document.publishedScenes ??= [];
-    const index = this.document.publishedScenes.findIndex((item) => item.sceneId === publication.sceneId);
-    if (index >= 0) this.document.publishedScenes[index] = structuredClone(publication);
-    else this.document.publishedScenes.push(structuredClone(publication));
-    await this.persist();
-    return structuredClone(publication);
+    return this.runDocumentMutation((candidate) => {
+      candidate.publishedScenes ??= [];
+      const index = candidate.publishedScenes.findIndex((item) => item.sceneId === publication.sceneId);
+      if (index >= 0) candidate.publishedScenes[index] = structuredClone(publication);
+      else candidate.publishedScenes.push(structuredClone(publication));
+      return changed(structuredClone(publication));
+    });
   }
 
   async removePublication(sceneId: string): Promise<boolean> {
-    const publications = this.document.publishedScenes ?? [];
-    const originalLength = publications.length;
-    this.document.publishedScenes = publications.filter((item) => item.sceneId !== sceneId);
-    if (this.document.publishedScenes.length === originalLength) return false;
-    const scene = this.document.scenes.find((item) => item.id === sceneId);
-    if (scene) delete scene.publishedAt;
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const publications = candidate.publishedScenes ?? [];
+      const originalLength = publications.length;
+      candidate.publishedScenes = publications.filter((item) => item.sceneId !== sceneId);
+      if (candidate.publishedScenes.length === originalLength) return unchanged(false);
+      const scene = candidate.scenes.find((item) => item.id === sceneId);
+      if (scene) delete scene.publishedAt;
+      return changed(true);
+    });
   }
 
   listApplications(projectId: string): ApplicationDocument[] {
@@ -472,7 +495,7 @@ export class JsonStore implements MetadataStore {
   async createApplicationDraft(projectId: string, application: ApplicationDocument, now: string): Promise<CreateApplicationDraftResult> {
     assertPathSafeResourceId(projectId, "projectId");
     assertApplicationDocument(application);
-    return this.runApplicationLifecycleMutation<CreateApplicationDraftResult>((candidate) => {
+    return this.runDocumentMutation<CreateApplicationDraftResult>((candidate) => {
       if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
       const reservation = applicationIdReservation(candidate, application.metadata.id);
       if (reservation) return unchanged({ status: "conflict", reservation });
@@ -496,7 +519,7 @@ export class JsonStore implements MetadataStore {
     assertPathSafeResourceId(projectId, "projectId");
     assertPathSafeResourceId(applicationId, "applicationId");
     assertApplicationDocument(application);
-    return this.runApplicationLifecycleMutation<UpdateApplicationDraftResult>((candidate) => {
+    return this.runDocumentMutation<UpdateApplicationDraftResult>((candidate) => {
       if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
       const index = (candidate.applications ?? []).findIndex((item) =>
         item.metadata.projectId === projectId && item.metadata.id === applicationId);
@@ -524,7 +547,7 @@ export class JsonStore implements MetadataStore {
   async deleteApplicationDraft(projectId: string, applicationId: string): Promise<DeleteApplicationDraftResult> {
     assertPathSafeResourceId(projectId, "projectId");
     assertPathSafeResourceId(applicationId, "applicationId");
-    return this.runApplicationLifecycleMutation<DeleteApplicationDraftResult>((candidate) => {
+    return this.runDocumentMutation<DeleteApplicationDraftResult>((candidate) => {
       if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
       const index = (candidate.applications ?? []).findIndex((item) =>
         item.metadata.projectId === projectId && item.metadata.id === applicationId);
@@ -540,7 +563,7 @@ export class JsonStore implements MetadataStore {
   async publishApplication(projectId: string, applicationId: string, publicationId: string, publishedAt: string): Promise<PublishApplicationResult> {
     assertPathSafeResourceId(projectId, "projectId");
     assertPathSafeResourceId(applicationId, "applicationId");
-    return this.runApplicationLifecycleMutation<PublishApplicationResult>((candidate) => {
+    return this.runDocumentMutation<PublishApplicationResult>((candidate) => {
       if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
       const application = (candidate.applications ?? []).find((item) =>
         item.metadata.projectId === projectId && item.metadata.id === applicationId);
@@ -575,7 +598,7 @@ export class JsonStore implements MetadataStore {
   async unpublishApplication(projectId: string, applicationId: string): Promise<UnpublishApplicationResult> {
     assertPathSafeResourceId(projectId, "projectId");
     assertPathSafeResourceId(applicationId, "applicationId");
-    return this.runApplicationLifecycleMutation<UnpublishApplicationResult>((candidate) => {
+    return this.runDocumentMutation<UnpublishApplicationResult>((candidate) => {
       if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
       const application = (candidate.applications ?? []).find((item) =>
         item.metadata.projectId === projectId && item.metadata.id === applicationId);
@@ -618,20 +641,22 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveUser(user: StoredSystemUserRecord): Promise<StoredSystemUserRecord> {
-    this.document.users ??= [];
-    const index = this.document.users.findIndex((item) => item.id === user.id);
-    if (index >= 0) this.document.users[index] = structuredClone(user);
-    else this.document.users.push(structuredClone(user));
-    await this.persist();
-    return structuredClone(user);
+    return this.runDocumentMutation((candidate) => {
+      candidate.users ??= [];
+      const index = candidate.users.findIndex((item) => item.id === user.id);
+      if (index >= 0) candidate.users[index] = structuredClone(user);
+      else candidate.users.push(structuredClone(user));
+      return changed(structuredClone(user));
+    });
   }
 
   async removeUser(userId: string): Promise<boolean> {
-    const original = this.document.users?.length ?? 0;
-    this.document.users = (this.document.users ?? []).filter((item) => item.id !== userId);
-    if (this.document.users.length === original) return false;
-    await this.persist();
-    return true;
+    return this.runDocumentMutation((candidate) => {
+      const original = candidate.users?.length ?? 0;
+      candidate.users = (candidate.users ?? []).filter((item) => item.id !== userId);
+      if (candidate.users.length === original) return unchanged(false);
+      return changed(true);
+    });
   }
 
   listAuditLogs(limit = 200): AuditLogRecord[] {
@@ -639,10 +664,12 @@ export class JsonStore implements MetadataStore {
   }
 
   async addAuditLog(record: AuditLogRecord): Promise<void> {
-    this.document.auditLogs ??= [];
-    this.document.auditLogs.push(structuredClone(record));
-    if (this.document.auditLogs.length > 2_000) this.document.auditLogs.splice(0, this.document.auditLogs.length - 2_000);
-    await this.persist();
+    return this.runDocumentMutation((candidate) => {
+      candidate.auditLogs ??= [];
+      candidate.auditLogs.push(structuredClone(record));
+      if (candidate.auditLogs.length > 2_000) candidate.auditLogs.splice(0, candidate.auditLogs.length - 2_000);
+      return changed(undefined);
+    });
   }
 
   getAiSettings(): DatabaseDocument["aiSettings"] {
@@ -650,10 +677,11 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveAiSettings(settings: NonNullable<DatabaseDocument["aiSettings"]>): Promise<AiProviderSettings> {
-    this.document.aiSettings = structuredClone(settings);
-    await this.persist();
     const { apiKey: _apiKey, ...safe } = structuredClone(settings);
-    return { ...safe, apiKeyConfigured: Boolean(settings.apiKey) };
+    return this.runDocumentMutation((candidate) => {
+      candidate.aiSettings = structuredClone(settings);
+      return changed({ ...safe, apiKeyConfigured: Boolean(settings.apiKey) });
+    });
   }
 
   getBrandingSettings(): SystemBrandingSettings | undefined {
@@ -661,9 +689,10 @@ export class JsonStore implements MetadataStore {
   }
 
   async saveBrandingSettings(settings: SystemBrandingSettings): Promise<SystemBrandingSettings> {
-    this.document.branding = structuredClone(settings);
-    await this.persist();
-    return structuredClone(settings);
+    return this.runDocumentMutation((candidate) => {
+      candidate.branding = structuredClone(settings);
+      return changed(structuredClone(settings));
+    });
   }
 
   private requireProject(projectId: string): ProjectRecord {
@@ -672,8 +701,8 @@ export class JsonStore implements MetadataStore {
     return project;
   }
 
-  protected ensureExampleDataCatalog(): boolean {
-    const project = this.document.projects.find((item) => item.id === "default") ?? this.document.projects[0];
+  protected ensureExampleDataCatalog(document = this.document): boolean {
+    const project = document.projects.find((item) => item.id === "default") ?? document.projects[0];
     if (!project) return false;
     project.dataConnections ??= [];
     project.datasets ??= [];
@@ -698,7 +727,7 @@ export class JsonStore implements MetadataStore {
     return changed;
   }
 
-  protected sanitizeLegacyBranding(): boolean {
+  protected sanitizeLegacyBranding(document = this.document): boolean {
     let changed = false;
     const clean = (value: string) => {
       const legacyName = ["BIM", "FACE"].join("");
@@ -706,21 +735,23 @@ export class JsonStore implements MetadataStore {
       if (next !== value) changed = true;
       return next;
     };
-    for (const project of this.document.projects) {
+    for (const project of document.projects) {
       for (const model of project.models) { model.name = clean(model.name); model.sourceUrl = clean(model.sourceUrl); if (model.manifest) model.manifest.sourceName = clean(model.manifest.sourceName); }
       for (const asset of project.assets ?? []) { asset.name = clean(asset.name); asset.fileName = clean(asset.fileName); asset.url = clean(asset.url); }
     }
-    for (const scene of this.document.scenes) for (const model of scene.models) if (model.sourceName) model.sourceName = clean(model.sourceName);
-    for (const publication of this.document.publishedScenes ?? []) for (const model of publication.snapshot.models) if (model.sourceName) model.sourceName = clean(model.sourceName);
+    for (const scene of document.scenes) for (const model of scene.models) if (model.sourceName) model.sourceName = clean(model.sourceName);
+    for (const publication of document.publishedScenes ?? []) for (const model of publication.snapshot.models) if (model.sourceName) model.sourceName = clean(model.sourceName);
     return changed;
   }
 
   /**
-   * Application and project lifecycle mutations are serialized within one store
-   * instance. Deployments must currently use a single API writer; this is not a
-   * cross-process compare-and-swap protocol.
+   * Every document mutation is serialized within one store instance. A mutation
+   * persists an isolated candidate before exposing it as live state, so failed
+   * writes roll back cleanly and whole-document writers cannot overwrite each
+   * other with stale snapshots. Deployments must currently use a single API
+   * writer; this is not a cross-process compare-and-swap protocol.
    */
-  private runApplicationLifecycleMutation<T>(mutation: (candidate: DatabaseDocument) => DocumentMutation<T>): Promise<T> {
+  private runDocumentMutation<T>(mutation: (candidate: DatabaseDocument) => DocumentMutation<T>): Promise<T> {
     const execute = async () => {
       const candidate = structuredClone(this.document);
       const result = mutation(candidate);
@@ -729,8 +760,8 @@ export class JsonStore implements MetadataStore {
       this.document = candidate;
       return result.value;
     };
-    const operation = this.applicationLifecycleChain.then(execute, execute);
-    this.applicationLifecycleChain = operation.then(() => undefined, () => undefined);
+    const operation = this.documentMutationChain.then(execute, execute);
+    this.documentMutationChain = operation.then(() => undefined, () => undefined);
     return operation;
   }
 
@@ -868,6 +899,12 @@ function changed<T>(value: T): DocumentMutation<T> {
 
 function unchanged<T>(value: T): DocumentMutation<T> {
   return { changed: false, value };
+}
+
+function requireProject(document: DatabaseDocument, projectId: string): ProjectRecord {
+  const project = document.projects.find((item) => item.id === projectId);
+  if (!project) throw new Error(`Project not found: ${projectId}`);
+  return project;
 }
 
 function applicationIdReservation(document: DatabaseDocument, applicationId: string): ApplicationIdReservation | undefined {

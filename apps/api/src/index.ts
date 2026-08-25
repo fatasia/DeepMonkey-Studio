@@ -1,6 +1,5 @@
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
-import Fastify from "fastify";
 import { loadConfig } from "./config.js";
 import { ConversionQueue } from "./conversion.js";
 import { registerRoutes } from "./routes.js";
@@ -11,10 +10,11 @@ import { ensureDemoMetrics } from "./dataIntegration.js";
 import { loadOrCreateServerInstanceId, registerServerMetaRoute } from "./serverMeta.js";
 import { registerSystemRoutes } from "./system.js";
 import { registerVisionRoutes, VisionEngine } from "./vision.js";
+import { createApiServer } from "./serverOptions.js";
 
 export async function buildApp() {
   const config = loadConfig();
-  const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
+  const app = createApiServer({ logger: true, bodyLimit: 32 * 1024 * 1024 });
   const store = createMetadataStore(config);
   await store.init();
   await ensureDemoMetrics(config);
