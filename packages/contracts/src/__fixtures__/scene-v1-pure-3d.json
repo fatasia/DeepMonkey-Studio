@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-pure-3d",
+  "projectId": "project-golden",
+  "name": "纯三维",
+  "camera": { "position": { "x": 5, "y": 4, "z": 3 }, "target": { "x": 0, "y": 0, "z": 0 }, "mode": "orbit" },
+  "models": [],
+  "primitives": [],
+  "measurements": [],
+  "createdAt": "2026-08-20T01:00:00.000Z",
+  "updatedAt": "2026-08-20T02:00:00.000Z"
+}
