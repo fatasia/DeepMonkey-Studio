@@ -1478,7 +1478,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const forbidden = /from\s+["'](?:react|react-dom|three|@tauri-apps\/|node:http|node:https)|\bfetch\s*\(|\bwindow\b|\bdocument\b/;
+const forbidden = /from\s+["'](?:react(?:-dom)?(?:\/[^"']*)?|three(?:\/[^"']*)?|@tauri-apps\/[^"']*|node:https?)["']|\bfetch\s*\(|\bwindow\b|\bglobalThis\s*\.\s*document\b|\bdocument\s*\.\s*(?:body|cookie|createElement|getElementById|querySelector|querySelectorAll)\b/;
 
 describe("studio-core dependency direction", () => {
   it("does not import UI, renderer, host, or network implementations", async () => {

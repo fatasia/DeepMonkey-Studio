@@ -124,7 +124,7 @@ export async function readSceneFile(file: File): Promise<ImportedSceneFile> {
   return { scene, assets, mode: "package" };
 }
 
-function parseScene(text: string): SceneSnapshot {
+export function parseScene(text: string): SceneSnapshot {
   const scene = JSON.parse(text) as SceneSnapshot;
   if (scene.schemaVersion !== 1) throw new Error("不支持的场景文件版本");
   if (!Array.isArray(scene.models) || !Array.isArray(scene.primitives) || !Array.isArray(scene.measurements) || !scene.camera) {
