@@ -1,0 +1,60 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import Fastify from "fastify";
+import { afterEach, describe, expect, it } from "vitest";
+import pureFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-pure-3d.json";
+import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
+import { registerApplicationRoutes } from "./applicationRoutes.js";
+import { JsonStore } from "./store.js";
+
+const directories: string[] = [];
+afterEach(async () => Promise.all(directories.splice(0).map((item) => rm(item, { recursive: true, force: true }))));
+
+async function harness() {
+  const directory = await mkdtemp(path.join(tmpdir(), "bim-app-routes-"));
+  directories.push(directory);
+  const store = new JsonStore(directory);
+  await store.init();
+  const app = Fastify();
+  await registerApplicationRoutes(app, store);
+  return { app, store };
+}
+
+describe("application routes", () => {
+  it("creates, reads, revisions, and deletes an application", async () => {
+    const { app } = await harness();
+    const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+    document.metadata.projectId = "default";
+    expect((await app.inject({ method: "POST", url: "/api/projects/default/applications", payload: document })).statusCode).toBe(201);
+    const loaded = await app.inject({ method: "GET", url: `/api/projects/default/applications/${document.metadata.id}` });
+    expect(loaded.json().metadata.revision).toBe(1);
+    document.metadata.name = "并发修改";
+    const updated = await app.inject({ method: "PUT", url: `/api/projects/default/applications/${document.metadata.id}`, payload: document });
+    expect(updated.json().metadata.revision).toBe(2);
+    const stale = await app.inject({ method: "PUT", url: `/api/projects/default/applications/${document.metadata.id}`, payload: document });
+    expect(stale.statusCode).toBe(409);
+    expect((await app.inject({ method: "DELETE", url: `/api/projects/default/applications/${document.metadata.id}` })).statusCode).toBe(204);
+    await app.close();
+  });
+
+  it("creates immutable publication records and only moves the active pointer", async () => {
+    const { app, store } = await harness();
+    const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+    document.metadata.projectId = "default";
+    await app.inject({ method: "POST", url: "/api/projects/default/applications", payload: document });
+    const first = await app.inject({ method: "POST", url: `/api/projects/default/applications/${document.metadata.id}/publish` });
+    document.metadata.name = "第二版";
+    const saved = await app.inject({ method: "PUT", url: `/api/projects/default/applications/${document.metadata.id}`, payload: document });
+    const second = await app.inject({ method: "POST", url: `/api/projects/default/applications/${document.metadata.id}/publish` });
+    expect(first.json().id).not.toBe(second.json().id);
+    expect(store.getPublishedApplication(first.json().id)?.document.metadata.name).toBe("纯三维");
+    expect(saved.json().metadata.revision).toBe(2);
+    expect((await app.inject({ method: "GET", url: `/api/public/applications/${document.metadata.id}` })).json().id).toBe(second.json().id);
+    expect((await app.inject({ method: "DELETE", url: `/api/projects/default/applications/${document.metadata.id}/publish` })).statusCode).toBe(204);
+    expect(store.getPublishedApplication(first.json().id)).toBeDefined();
+    expect(store.getPublishedApplication(second.json().id)).toBeDefined();
+    expect((await app.inject({ method: "GET", url: `/api/public/applications/${document.metadata.id}` })).statusCode).toBe(404);
+    await app.close();
+  });
+});

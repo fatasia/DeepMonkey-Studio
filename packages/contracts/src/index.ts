@@ -1,3 +1,5 @@
+import type { ApplicationDocument, ApplicationPublicationPointer, PublishedApplicationRecord } from "./application.js";
+
 export const supportedExtensions = ["rvt", "ifc", "step", "stp", "dwg", "dxf", "gltf", "glb", "fbx"] as const;
 
 export type ModelFormat = (typeof supportedExtensions)[number];
@@ -765,6 +767,9 @@ export interface DatabaseDocument {
   projects: ProjectRecord[];
   scenes: SceneSnapshot[];
   publishedScenes?: PublishedSceneRecord[];
+  applications?: ApplicationDocument[];
+  publishedApplications?: PublishedApplicationRecord[];
+  applicationPublicationPointers?: ApplicationPublicationPointer[];
   users?: StoredSystemUserRecord[];
   auditLogs?: AuditLogRecord[];
   aiSettings?: Omit<AiProviderSettings, "apiKeyConfigured"> & { apiKey?: string };

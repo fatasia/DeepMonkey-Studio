@@ -4,6 +4,7 @@ import Fastify from "fastify";
 import { loadConfig } from "./config.js";
 import { ConversionQueue } from "./conversion.js";
 import { registerRoutes } from "./routes.js";
+import { registerApplicationRoutes } from "./applicationRoutes.js";
 import { createObjectStore, migrateLocalObjects } from "./objects.js";
 import { createMetadataStore } from "./store.js";
 import { ensureDemoMetrics } from "./dataIntegration.js";
@@ -28,6 +29,7 @@ export async function buildApp() {
   });
   await registerSystemRoutes(app, store, config.dataDir);
   await registerRoutes(app, { store, queue, objects, dataDir: config.dataDir, config });
+  await registerApplicationRoutes(app, store);
   const vision = new VisionEngine({ store, objects, dataDir: config.dataDir });
   await registerVisionRoutes(app, vision, { store, objects, dataDir: config.dataDir });
   vision.start();

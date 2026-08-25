@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AiProviderSettings, AuditLogRecord, DataConnectionRecord, DataDatasetRecord, DatabaseDocument, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, SceneSnapshot, StoredSystemUserRecord, SystemBrandingSettings, VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
+import type { AiProviderSettings, ApplicationDocument, ApplicationPublicationPointer, AuditLogRecord, DataConnectionRecord, DataDatasetRecord, DatabaseDocument, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedApplicationRecord, PublishedSceneRecord, SceneSnapshot, StoredSystemUserRecord, SystemBrandingSettings, VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
 import type { AppConfig } from "./config.js";
 
 export interface MetadataStore {
@@ -46,6 +46,16 @@ export interface MetadataStore {
   getPublication(sceneId: string): PublishedSceneRecord | undefined;
   savePublication(publication: PublishedSceneRecord): Promise<PublishedSceneRecord>;
   removePublication(sceneId: string): Promise<boolean>;
+  listApplications(projectId: string): ApplicationDocument[];
+  getApplication(projectId: string, applicationId: string): ApplicationDocument | undefined;
+  saveApplication(application: ApplicationDocument): Promise<ApplicationDocument>;
+  removeApplication(projectId: string, applicationId: string): Promise<boolean>;
+  getPublishedApplication(publicationId: string): PublishedApplicationRecord | undefined;
+  listApplicationPublications(applicationId: string): PublishedApplicationRecord[];
+  savePublishedApplication(record: PublishedApplicationRecord): Promise<PublishedApplicationRecord>;
+  getApplicationPublicationPointer(applicationId: string): ApplicationPublicationPointer | undefined;
+  saveApplicationPublicationPointer(pointer: ApplicationPublicationPointer): Promise<ApplicationPublicationPointer>;
+  removeApplicationPublicationPointer(applicationId: string): Promise<boolean>;
   listUsers(): StoredSystemUserRecord[];
   getUser(userId: string): StoredSystemUserRecord | undefined;
   findUserByUsername(username: string): StoredSystemUserRecord | undefined;
@@ -61,7 +71,13 @@ export interface MetadataStore {
 
 export class JsonStore implements MetadataStore {
   protected readonly databasePath: string;
-  protected document: DatabaseDocument = { projects: [], scenes: [] };
+  protected document: DatabaseDocument = {
+    projects: [],
+    scenes: [],
+    applications: [],
+    publishedApplications: [],
+    applicationPublicationPointers: []
+  };
   private writeChain = Promise.resolve();
 
   constructor(private readonly dataDir: string) {
@@ -78,6 +94,9 @@ export class JsonStore implements MetadataStore {
       await this.persist();
     }
     this.document.publishedScenes ??= [];
+    this.document.applications ??= [];
+    this.document.publishedApplications ??= [];
+    this.document.applicationPublicationPointers ??= [];
     this.document.users ??= [];
     this.document.auditLogs ??= [];
     if (this.ensureExampleDataCatalog() || this.sanitizeLegacyBranding()) await this.persist();
@@ -391,6 +410,77 @@ export class JsonStore implements MetadataStore {
     return true;
   }
 
+  listApplications(projectId: string): ApplicationDocument[] {
+    return structuredClone((this.document.applications ?? [])
+      .filter((item) => item.metadata.projectId === projectId)
+      .sort((left, right) => Date.parse(right.metadata.updatedAt) - Date.parse(left.metadata.updatedAt)));
+  }
+
+  getApplication(projectId: string, applicationId: string): ApplicationDocument | undefined {
+    const item = (this.document.applications ?? []).find((candidate) =>
+      candidate.metadata.projectId === projectId && candidate.metadata.id === applicationId);
+    return item ? structuredClone(item) : undefined;
+  }
+
+  async saveApplication(application: ApplicationDocument): Promise<ApplicationDocument> {
+    this.document.applications ??= [];
+    const index = this.document.applications.findIndex((item) =>
+      item.metadata.projectId === application.metadata.projectId && item.metadata.id === application.metadata.id);
+    if (index >= 0) this.document.applications[index] = structuredClone(application);
+    else this.document.applications.push(structuredClone(application));
+    await this.persist();
+    return structuredClone(application);
+  }
+
+  async removeApplication(projectId: string, applicationId: string): Promise<boolean> {
+    const items = this.document.applications ?? [];
+    const next = items.filter((item) => item.metadata.projectId !== projectId || item.metadata.id !== applicationId);
+    if (next.length === items.length) return false;
+    this.document.applications = next;
+    await this.persist();
+    return true;
+  }
+
+  getPublishedApplication(publicationId: string): PublishedApplicationRecord | undefined {
+    const item = (this.document.publishedApplications ?? []).find((candidate) => candidate.id === publicationId);
+    return item ? structuredClone(item) : undefined;
+  }
+
+  listApplicationPublications(applicationId: string): PublishedApplicationRecord[] {
+    return structuredClone((this.document.publishedApplications ?? []).filter((item) => item.applicationId === applicationId));
+  }
+
+  async savePublishedApplication(record: PublishedApplicationRecord): Promise<PublishedApplicationRecord> {
+    this.document.publishedApplications ??= [];
+    if (this.document.publishedApplications.some((item) => item.id === record.id)) throw new Error(`发布版本 ${record.id} 已存在`);
+    this.document.publishedApplications.push(structuredClone(record));
+    await this.persist();
+    return structuredClone(record);
+  }
+
+  getApplicationPublicationPointer(applicationId: string): ApplicationPublicationPointer | undefined {
+    const item = (this.document.applicationPublicationPointers ?? []).find((candidate) => candidate.applicationId === applicationId);
+    return item ? structuredClone(item) : undefined;
+  }
+
+  async saveApplicationPublicationPointer(pointer: ApplicationPublicationPointer): Promise<ApplicationPublicationPointer> {
+    this.document.applicationPublicationPointers ??= [];
+    const index = this.document.applicationPublicationPointers.findIndex((item) => item.applicationId === pointer.applicationId);
+    if (index >= 0) this.document.applicationPublicationPointers[index] = structuredClone(pointer);
+    else this.document.applicationPublicationPointers.push(structuredClone(pointer));
+    await this.persist();
+    return structuredClone(pointer);
+  }
+
+  async removeApplicationPublicationPointer(applicationId: string): Promise<boolean> {
+    const pointers = this.document.applicationPublicationPointers ?? [];
+    const next = pointers.filter((item) => item.applicationId !== applicationId);
+    if (next.length === pointers.length) return false;
+    this.document.applicationPublicationPointers = next;
+    await this.persist();
+    return true;
+  }
+
   listUsers(): StoredSystemUserRecord[] {
     return structuredClone(this.document.users ?? []);
   }
@@ -535,6 +625,9 @@ export class PostgresStore extends JsonStore {
     if (encoded) {
       this.document = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as DatabaseDocument;
       this.document.publishedScenes ??= [];
+      this.document.applications ??= [];
+      this.document.publishedApplications ??= [];
+      this.document.applicationPublicationPointers ??= [];
       this.document.users ??= [];
       this.document.auditLogs ??= [];
       if (this.ensureExampleDataCatalog() || this.sanitizeLegacyBranding()) await this.persist();
@@ -547,6 +640,9 @@ export class PostgresStore extends JsonStore {
       this.document = defaultDocument();
     }
     this.document.publishedScenes ??= [];
+    this.document.applications ??= [];
+    this.document.publishedApplications ??= [];
+    this.document.applicationPublicationPointers ??= [];
     this.document.users ??= [];
     this.document.auditLogs ??= [];
     this.ensureExampleDataCatalog();
@@ -608,7 +704,10 @@ function defaultDocument(): DatabaseDocument {
       updatedAt: now
     }],
     scenes: [],
-    publishedScenes: []
+    publishedScenes: [],
+    applications: [],
+    publishedApplications: [],
+    applicationPublicationPointers: []
   };
 }
 
