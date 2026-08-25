@@ -6,6 +6,8 @@ import {
   applyStudioCommand,
   createRenameApplicationCommand,
   createRenameDashboardPageCommand,
+  createInsertDashboardPageCommand,
+  createDeleteDashboardPageCommand,
   createDeleteInteractionFlowCommand,
   createDeleteDashboardNodeCommand,
   createDeleteDashboardNodesCommand,
@@ -74,6 +76,21 @@ describe("StudioCommand", () => {
     expect(source.pages[0]?.nodes[0]?.frame).not.toEqual(frame);
     expect(renamed.scenes).toBe(source.scenes);
     expect(moved.scenes).toBe(source.scenes);
+  });
+
+  it("adds and deletes complete dashboard pages with their interactions", () => {
+    const source = document();
+    const original = source.pages[0]!;
+    const page = { ...structuredClone(original), id: "page:copy", name: "复制页面", nodes: original.nodes.map((node) => ({ ...structuredClone(node), id: `copy:${node.id}` })) };
+    const flow = { id: "flow:copy", name: "复制联动", source: { kind: "page" as const, id: page.id }, trigger: "click" as const, enabled: true, actions: [] };
+    const inserted = applyStudioCommand(source, createInsertDashboardPageCommand(page, [flow]));
+    const deleted = applyStudioCommand(inserted, createDeleteDashboardPageCommand(page.id));
+
+    expect(inserted.pages.at(-1)).toEqual(page);
+    expect(inserted.interactions.at(-1)).toEqual(flow);
+    expect(deleted.pages).toEqual(source.pages);
+    expect(deleted.interactions).toEqual(source.interactions);
+    expect(() => applyStudioCommand(source, createDeleteDashboardPageCommand(original.id))).toThrow("至少需要保留一个");
   });
 
   it("moves multiple dashboard nodes as one undoable command", () => {

@@ -1,4 +1,4 @@
-import type { ApplicationDocument, DashboardDataWidgetConfig, InteractionFlow, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
+import type { ApplicationDocument, DashboardDataWidgetConfig, DashboardPageDocument, InteractionFlow, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 
 let nextCommandId = 1;
 
@@ -23,6 +23,20 @@ export interface RenameDashboardPageCommand {
     readonly pageId: string;
     readonly name: string;
   };
+}
+
+export interface InsertDashboardPageCommand {
+  readonly id: string;
+  readonly type: "dashboard.page.insert";
+  readonly label: string;
+  readonly payload: { readonly page: DashboardPageDocument; readonly interactions: readonly InteractionFlow[] };
+}
+
+export interface DeleteDashboardPageCommand {
+  readonly id: string;
+  readonly type: "dashboard.page.delete";
+  readonly label: string;
+  readonly payload: { readonly pageId: string };
 }
 
 export interface UpdateDashboardNodeFrameCommand {
@@ -109,6 +123,8 @@ export interface DeleteDashboardNodeCommand {
 export type StudioCommand =
   | RenameApplicationCommand
   | RenameDashboardPageCommand
+  | InsertDashboardPageCommand
+  | DeleteDashboardPageCommand
   | UpdateDashboardNodeFrameCommand
   | UpdateDashboardNodeFramesCommand
   | UpsertInteractionFlowCommand
@@ -136,6 +152,19 @@ export function createRenameDashboardPageCommand(pageId: string, name: string): 
     label: `重命名页面为“${name}”`,
     payload: { pageId, name }
   };
+}
+
+export function createInsertDashboardPageCommand(page: DashboardPageDocument, interactions: readonly InteractionFlow[] = []): InsertDashboardPageCommand {
+  return {
+    id: commandId(),
+    type: "dashboard.page.insert",
+    label: `添加二维页面“${page.name}”`,
+    payload: { page: structuredClone(page), interactions: structuredClone(interactions) }
+  };
+}
+
+export function createDeleteDashboardPageCommand(pageId: string): DeleteDashboardPageCommand {
+  return { id: commandId(), type: "dashboard.page.delete", label: "删除二维页面", payload: { pageId } };
 }
 
 export function createUpdateDashboardNodeFrameCommand(
@@ -250,6 +279,30 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
         pages: document.pages.map((page) => page.id === command.payload.pageId
           ? { ...page, name: command.payload.name }
           : page)
+      };
+    }
+    case "dashboard.page.insert": {
+      if (document.pages.some((page) => page.id === command.payload.page.id)) throw new Error(`应用中已存在页面 ${command.payload.page.id}`);
+      const flowIds = new Set(command.payload.interactions.map((flow) => flow.id));
+      if (flowIds.size !== command.payload.interactions.length || document.interactions.some((flow) => flowIds.has(flow.id))) {
+        throw new Error("待插入页面包含重复的联动 ID");
+      }
+      return {
+        ...document,
+        pages: [...document.pages, structuredClone(command.payload.page)],
+        interactions: [...document.interactions, ...structuredClone(command.payload.interactions)]
+      };
+    }
+    case "dashboard.page.delete": {
+      const page = requirePage(document, command.payload.pageId);
+      if (document.pages.length === 1) throw new Error("应用至少需要保留一个二维页面");
+      const nodeIds = new Set(page.nodes.map((node) => node.id));
+      return {
+        ...document,
+        pages: document.pages.filter((candidate) => candidate.id !== page.id),
+        interactions: document.interactions.filter((flow) => flow.source.kind === "page"
+          ? flow.source.id !== page.id
+          : !(flow.source.kind === "widget" && nodeIds.has(flow.source.id)))
       };
     }
     case "dashboard.node.frame.update": {

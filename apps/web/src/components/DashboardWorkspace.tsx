@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import {
   ArrowLeft,
   Box,
+  Copy,
   Database,
   Eye,
   EyeOff,
@@ -15,6 +16,7 @@ import {
   Rocket,
   Save,
   Scaling,
+  Trash2,
   Undo2,
   Unlock,
   Workflow,
@@ -23,8 +25,10 @@ import {
 import type { ApplicationDocument, ApplicationObjectRef, DashboardDataWidgetConfig, DashboardPageDocument, JsonValue, ProjectRecord, SceneDashboardWidgetType, SceneInteractionTarget, SceneInteractionTrigger, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 import {
   createDeleteDashboardNodesCommand,
+  createDeleteDashboardPageCommand,
   createInsertDashboardNodeCommand,
   createInsertDashboardNodesCommand,
+  createInsertDashboardPageCommand,
   createRenameDashboardPageCommand,
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
@@ -406,6 +410,51 @@ export function DashboardWorkspace({
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [page, selectedNodeIds, runtimePreview, busy, canUndo, canRedo, onSelectionChange, onCommand, onSave, onUndo, onRedo]);
 
+  function openInsertedPage(nextPage: DashboardPageDocument) {
+    onCommand(createInsertDashboardPageCommand(nextPage));
+    onSelectPage(nextPage.id, { zoom, scrollLeft: 0, scrollTop: 0, selectedNodeIds: [] });
+  }
+
+  function addDashboardPage() {
+    const nextPage: DashboardPageDocument = {
+      id: `page:${crypto.randomUUID()}`,
+      name: tr(locale, `页面 ${application.pages.length + 1}`, `Page ${application.pages.length + 1}`),
+      width: 1920,
+      height: 1080,
+      appearance: structuredClone(page.appearance ?? {}),
+      nodes: []
+    };
+    openInsertedPage(nextPage);
+  }
+
+  function duplicateDashboardPage() {
+    const pageId = `page:${crypto.randomUUID()}`;
+    const nodeIds = new Map(page.nodes.map((node) => [node.id, `${node.kind}:${crypto.randomUUID()}`]));
+    const nextPage: DashboardPageDocument = {
+      ...structuredClone(page),
+      id: pageId,
+      name: tr(locale, `${page.name} 副本`, `${page.name} copy`),
+      nodes: page.nodes.map((node) => ({ ...structuredClone(node), id: nodeIds.get(node.id)! }))
+    };
+    const interactions = application.interactions.flatMap((flow) => {
+      const source = flow.source.kind === "page" && flow.source.id === page.id
+        ? { kind: "page" as const, id: pageId }
+        : flow.source.kind === "widget" && nodeIds.has(flow.source.id)
+          ? { kind: "widget" as const, id: nodeIds.get(flow.source.id)! }
+          : undefined;
+      return source ? [{ ...structuredClone(flow), id: `flow:${crypto.randomUUID()}`, name: tr(locale, `${flow.name} 副本`, `${flow.name} copy`), source }] : [];
+    });
+    onCommand(createInsertDashboardPageCommand(nextPage, interactions));
+    onSelectPage(nextPage.id, { zoom, scrollLeft: 0, scrollTop: 0, selectedNodeIds: [] });
+  }
+
+  function deleteDashboardPage(pageId: string) {
+    if (application.pages.length <= 1 || busy) return;
+    const fallback = application.pages.find((candidate) => candidate.id !== pageId)!;
+    onCommand(createDeleteDashboardPageCommand(pageId));
+    if (page.id === pageId) onSelectPage(fallback.id, { zoom, scrollLeft: 0, scrollTop: 0, selectedNodeIds: [] });
+  }
+
   function commitPageName(value: string) {
     const name = value.trim();
     if (!name || name === pageNameCommitRef.current) return;
@@ -458,8 +507,11 @@ export function DashboardWorkspace({
     <aside className="dashboard-pages-panel">
       <header><span className="eyebrow">APPLICATION</span><strong>{tr(locale, "页面与图层", "Pages & layers")}</strong></header>
       <section>
-        <div className="dashboard-panel-label"><span>{tr(locale, "页面", "Pages")}</span><small>{application.pages.length}</small></div>
-        {application.pages.map((candidate) => <button key={candidate.id} className={candidate.id === page.id ? "active" : ""} onClick={() => onSelectPage(candidate.id, currentView())}><LayoutDashboard size={14} /><span>{candidate.name}</span><small>{candidate.nodes.length}</small></button>)}
+        <div className="dashboard-panel-label"><span>{tr(locale, "页面", "Pages")}<small>{application.pages.length}</small></span><span className="dashboard-page-actions"><button title={tr(locale, "复制当前页面", "Duplicate current page")} onClick={duplicateDashboardPage}><Copy size={12} /></button><button title={tr(locale, "新增空白页面", "Add blank page")} onClick={addDashboardPage}><Plus size={12} /></button></span></div>
+        {application.pages.map((candidate) => <div className={`dashboard-page-row ${candidate.id === page.id ? "active" : ""}`} key={candidate.id}>
+          <button className="dashboard-page-select" onClick={() => onSelectPage(candidate.id, currentView())}><LayoutDashboard size={14} /><span>{candidate.name}</span><small>{candidate.nodes.length}</small></button>
+          <button className="dashboard-page-delete" disabled={application.pages.length <= 1} title={tr(locale, "删除页面", "Delete page")} onClick={() => deleteDashboardPage(candidate.id)}><Trash2 size={12} /></button>
+        </div>)}
       </section>
       <section className="dashboard-component-library">
         <div className="dashboard-panel-label"><span>{tr(locale, "组件", "Components")}</span><small>{connected ? tr(locale, "实时", "Live") : tr(locale, "离线", "Offline")}</small></div>

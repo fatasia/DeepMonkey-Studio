@@ -870,6 +870,10 @@ export function App() {
     const projectId = route.projectId;
     const applicationId = route.applicationId;
     const pageId = route.pageId;
+    const openedApplication = applicationSessionRef.current.store.getState().document;
+    if (openedApplication?.metadata.projectId === projectId
+      && openedApplication.metadata.id === applicationId
+      && openedApplication.pages.some((page) => page.id === pageId)) return;
     let cancelled = false;
     void Promise.all([api.getProject(projectId), api.getApplication(projectId, applicationId)])
       .then(([nextProject, application]) => {

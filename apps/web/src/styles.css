@@ -50,6 +50,20 @@ button { color: inherit; }
 .dashboard-pages-panel > header strong,.dashboard-inspector-panel > header strong { font-size: 12px; }
 .dashboard-pages-panel > section { padding: 10px 8px; border-bottom: 1px solid #283136; }
 .dashboard-panel-label { display: flex; align-items: center; justify-content: space-between; padding: 0 5px 7px; color: #6f7c83; font-size: 8px; }
+.dashboard-panel-label > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.dashboard-panel-label small { color: #4f5c62; font-size: 7px; }
+.dashboard-page-actions { display: flex; gap: 3px; }
+.dashboard-page-actions button { display: grid; width: 23px; height: 21px; padding: 0; place-items: center; color: #748188; border: 1px solid #303a3f; border-radius: 4px; background: #171d20; cursor: pointer; }
+.dashboard-page-actions button:hover { color: #e1b85c; border-color: #6f592b; }
+.dashboard-page-row { display: grid; min-width: 0; align-items: center; border-radius: 5px; grid-template-columns: minmax(0,1fr) 27px; }
+.dashboard-page-row:hover,.dashboard-page-row.active { background: #222b2f; }
+.dashboard-page-row.active { box-shadow: inset 2px 0 #d4aa4f; }
+.dashboard-page-select { display: grid; min-width: 0; height: 32px; align-items: center; gap: 7px; padding: 0 7px; color: #849198; border: 0; background: transparent; grid-template-columns: 15px minmax(0,1fr) auto; text-align: left; cursor: pointer; }
+.dashboard-page-select span { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-page-select small { color: #68757b; font-size: 7px; }
+.dashboard-page-delete { display: grid; width: 23px; height: 23px; padding: 0; place-items: center; color: #657178; border: 0; border-radius: 4px; background: transparent; cursor: pointer; }
+.dashboard-page-delete:hover:not(:disabled) { color: #e77c71; background: rgba(196,72,61,.1); }
+.dashboard-page-delete:disabled { opacity: .22; cursor: not-allowed; }
 .dashboard-pages-panel section > button { display: grid; width: 100%; height: 32px; align-items: center; gap: 7px; padding: 0 7px; color: #849198; border: 0; border-radius: 5px; background: transparent; grid-template-columns: 15px minmax(0,1fr) auto; text-align: left; cursor: pointer; }
 .dashboard-pages-panel section > button:hover,.dashboard-pages-panel section > button.active { color: #e2e7e9; background: #222b2f; }
 .dashboard-pages-panel section > button.active { box-shadow: inset 2px 0 #d4aa4f; }
