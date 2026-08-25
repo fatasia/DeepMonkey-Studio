@@ -1,6 +1,7 @@
 import type {
   ModelFormat,
   SceneDashboardState,
+  SceneDashboardWidgetState,
   SceneInteractionActionState,
   SceneInteractionScriptState,
   SceneInteractionTrigger,
@@ -51,7 +52,21 @@ export interface LegacyDashboardPanelWidgetNode {
   state: SceneDashboardState;
 }
 
-export type WidgetNode = SceneViewportWidgetNode | LegacyDashboardPanelWidgetNode;
+export type DashboardDataWidgetConfig = Omit<SceneDashboardWidgetState, "id" | "x" | "y" | "w" | "h">;
+
+/**
+ * A first-class 2D data component. Layout belongs to the page frame while the
+ * component config stays independent of any scene overlay or grid library.
+ */
+export interface DashboardDataWidgetNode {
+  id: string;
+  kind: "data-widget";
+  frame: WidgetFrame;
+  zIndex: number;
+  widget: DashboardDataWidgetConfig;
+}
+
+export type WidgetNode = SceneViewportWidgetNode | DashboardDataWidgetNode | LegacyDashboardPanelWidgetNode;
 
 export interface DashboardPageDocument {
   id: string;

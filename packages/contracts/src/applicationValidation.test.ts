@@ -30,6 +30,15 @@ const malformedCases: MalformedCase[] = [
     const node = value.pages[0]!.nodes[1]!;
     if (node.kind === "legacy-dashboard-panel") node.state.side = "center" as never;
   })],
+  ["native data widget", () => altered(pureApplication, (value) => {
+    value.pages[0]!.nodes.push({
+      id: "widget:invalid",
+      kind: "data-widget",
+      frame: { x: 0, y: 0, width: 320, height: 180 },
+      zIndex: 1,
+      widget: { title: "无效", key: "value", type: "dial" as never, unit: "" }
+    });
+  })],
   ["topology", () => altered(pureApplication, (value) => {
     value.topologies = [{ id: "topology-1", name: 7 as never, nodes: [], edges: [] }];
   })],
@@ -136,6 +145,19 @@ describe("assertApplicationDocument", () => {
     };
     application.assets = [{ id: "asset-1", kind: "model", projectId: "project-golden", sourceName: "plant.ifc", sourceFormat: "ifc", contentHash: "sha256:example" }];
     application.timelines = [{ id: "timeline-1", name: "施工进度", duration: 120, trackIds: ["track-1"] }];
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("accepts a first-class native data widget", () => {
+    const application = structuredClone(pureApplication);
+    application.pages[0]!.nodes.push({
+      id: "widget:temperature",
+      kind: "data-widget",
+      frame: { x: 40, y: 40, width: 360, height: 200 },
+      zIndex: 2,
+      widget: { title: "温度趋势", key: "device.temperature", type: "line", unit: "℃", color: "#e1ad4e" }
+    });
 
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });

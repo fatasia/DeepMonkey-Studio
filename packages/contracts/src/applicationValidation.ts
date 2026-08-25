@@ -76,6 +76,10 @@ function validateWidgetNode(value: unknown, path: string): void {
     required(object, "state", validateDashboard, path);
     return;
   }
+  if (object.kind === "data-widget") {
+    required(object, "widget", validateDashboardWidgetConfig, path);
+    return;
+  }
   invalid(`${path}.kind`, "必须是受支持的组件类型");
 }
 
@@ -94,10 +98,16 @@ function validateDashboard(value: unknown, path: string): void {
 }
 
 function validateDashboardWidget(value: unknown, path: string): void {
+  validateDashboardWidgetConfig(value, path);
   const object = expectObject(value, path);
-  for (const key of ["id", "title", "key", "unit"] as const) required(object, key, expectString, path);
-  requiredLiteral(object, "type", ["value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"], path);
+  required(object, "id", expectString, path);
   for (const key of ["x", "y", "w", "h"] as const) required(object, key, expectNumber, path);
+}
+
+function validateDashboardWidgetConfig(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of ["title", "key", "unit"] as const) required(object, key, expectString, path);
+  requiredLiteral(object, "type", ["value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"], path);
   for (const key of ["min", "max", "backgroundOpacity"] as const) optional(object, key, expectNumber, path);
   for (const key of ["color", "backgroundColor", "textColor", "datasetId", "field", "url", "imageUrl", "assetId", "videoUrl", "monitorSourceUrl"] as const) {
     optional(object, key, expectString, path);

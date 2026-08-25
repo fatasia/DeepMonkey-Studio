@@ -7,7 +7,10 @@ import {
   createRenameApplicationCommand,
   createRenameDashboardPageCommand,
   createDeleteInteractionFlowCommand,
+  createDeleteDashboardNodeCommand,
+  createInsertDashboardNodeCommand,
   createUpsertInteractionFlowCommand,
+  createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand
 } from "./index.js";
 
@@ -95,6 +98,29 @@ describe("StudioCommand", () => {
     expect(added.interactions).toContainEqual(flow);
     expect(renamed.interactions).toHaveLength(1);
     expect(renamed.interactions[0]?.name).toBe("定位设备");
+    expect(removed.interactions).toHaveLength(0);
+    expect(added.scenes).toBe(source.scenes);
+  });
+
+  it("creates, updates, and deletes a native data widget atomically", () => {
+    const source = document();
+    const pageId = source.pages[0]!.id;
+    const node = {
+      id: "widget:throughput",
+      kind: "data-widget" as const,
+      frame: { x: 48, y: 64, width: 320, height: 180 },
+      zIndex: 2,
+      widget: { title: "产量", key: "line.output", type: "value" as const, unit: "件" }
+    };
+
+    const added = applyStudioCommand(source, createInsertDashboardNodeCommand(pageId, node));
+    const updated = applyStudioCommand(added, createUpdateDashboardDataWidgetCommand(pageId, node.id, { ...node.widget, type: "gauge", min: 0, max: 120 }));
+    const withFlow = { ...updated, interactions: [{ id: "flow:widget", name: "联动", source: { kind: "widget" as const, id: node.id }, trigger: "click" as const, enabled: true, actions: [] }] };
+    const removed = applyStudioCommand(withFlow, createDeleteDashboardNodeCommand(pageId, node.id));
+
+    expect(added.pages[0]!.nodes.at(-1)).toEqual(node);
+    expect(updated.pages[0]!.nodes.at(-1)).toMatchObject({ kind: "data-widget", widget: { type: "gauge", max: 120 } });
+    expect(removed.pages[0]!.nodes.some((candidate) => candidate.id === node.id)).toBe(false);
     expect(removed.interactions).toHaveLength(0);
     expect(added.scenes).toBe(source.scenes);
   });

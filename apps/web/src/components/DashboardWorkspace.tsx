@@ -14,9 +14,12 @@ import {
   Undo2,
   Workflow
 } from "lucide-react";
-import type { ApplicationDocument, ApplicationObjectRef, DashboardPageDocument, ProjectRecord, SceneInteractionTarget, SceneInteractionTrigger, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
+import type { ApplicationDocument, ApplicationObjectRef, DashboardDataWidgetConfig, DashboardPageDocument, ProjectRecord, SceneDashboardWidgetType, SceneInteractionTarget, SceneInteractionTrigger, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 import {
+  createDeleteDashboardNodeCommand,
+  createInsertDashboardNodeCommand,
   createRenameDashboardPageCommand,
+  createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
   type StudioCommand
 } from "@bim-studio/studio-core";
@@ -24,7 +27,10 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { normalizeDashboardViewState, type DashboardViewState } from "../studio/workspaceRoute";
 import { SceneViewportPreview } from "./SceneViewportPreview";
 import { InteractionFlowInspector } from "./InteractionFlowInspector";
+import { DashboardWidgetView, useDashboardMetrics, widgetBackground, type DashboardMetric } from "./DashboardWidgetRuntime";
 import type { RendererBackend } from "../viewer/ViewerEngine";
+
+const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"];
 
 export interface DashboardWorkspaceProps {
   locale: AppLocale;
@@ -87,6 +93,8 @@ export function DashboardWorkspace({
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
+  const dataWidgetConfigs = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
+  const { metrics, connected } = useDashboardMetrics(project.id, dataWidgetConfigs);
 
   useEffect(() => {
     const widgetIds = selection.filter((item) => item.kind === "widget").map((item) => item.id);
@@ -149,6 +157,27 @@ export function DashboardWorkspace({
     onCommand(createRenameDashboardPageCommand(page.id, name));
   }
 
+  function addDataWidget(type: SceneDashboardWidgetType) {
+    const id = `widget:${crypto.randomUUID()}`;
+    const index = page.nodes.filter((node) => node.kind === "data-widget").length;
+    const wide = ["line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"].includes(type);
+    const node: WidgetNode = {
+      id,
+      kind: "data-widget",
+      frame: { x: 48 + index % 4 * 28, y: 48 + index % 4 * 28, width: wide ? 420 : 260, height: wide || type === "gauge" ? 240 : 140 },
+      zIndex: Math.max(0, ...page.nodes.map((item) => item.zIndex)) + 1,
+      widget: defaultDataWidget(locale, type)
+    };
+    onCommand(createInsertDashboardNodeCommand(page.id, node));
+    setSelectedNodeIds([id]);
+    onSelectionChange([{ kind: "widget", id }]);
+  }
+
+  function updateDataWidget(patch: Partial<DashboardDataWidgetConfig>) {
+    if (!selectedNode || selectedNode.kind !== "data-widget") return;
+    onCommand(createUpdateDashboardDataWidgetCommand(page.id, selectedNode.id, { ...selectedNode.widget, ...patch }));
+  }
+
   return <main className="dashboard-workspace">
     <header className="dashboard-workspace-topbar">
       <button className="dashboard-back" onClick={onBack}><ArrowLeft size={16} />{tr(locale, "项目", "Project")}</button>
@@ -174,6 +203,10 @@ export function DashboardWorkspace({
         <div className="dashboard-panel-label"><span>{tr(locale, "页面", "Pages")}</span><small>{application.pages.length}</small></div>
         {application.pages.map((candidate) => <button key={candidate.id} className={candidate.id === page.id ? "active" : ""} onClick={() => onSelectPage(candidate.id, currentView())}><LayoutDashboard size={14} /><span>{candidate.name}</span><small>{candidate.nodes.length}</small></button>)}
       </section>
+      <section className="dashboard-component-library">
+        <div className="dashboard-panel-label"><span>{tr(locale, "组件", "Components")}</span><small>{connected ? tr(locale, "实时", "Live") : tr(locale, "离线", "Offline")}</small></div>
+        <div>{DATA_WIDGET_TYPES.map((type) => <button key={type} onClick={() => addDataWidget(type)}><Plus size={11} /><span>{dataWidgetTypeLabel(locale, type)}</span></button>)}</div>
+      </section>
       <section>
         <div className="dashboard-panel-label"><span>{tr(locale, "图层", "Layers")}</span><small>{page.nodes.length}</small></div>
         {[...page.nodes].sort((left, right) => right.zIndex - left.zIndex).map((node) => <button key={node.id} className={selectedNodeIds.includes(node.id) ? "active" : ""} onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey)}>{node.kind === "scene-viewport" ? <Box size={14} /> : <Layers3 size={14} />}<span>{nodeLabel(node)}</span><small>{node.zIndex}</small></button>)}
@@ -188,7 +221,7 @@ export function DashboardWorkspace({
       <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
         <div className="dashboard-artboard-stage" style={{ width: page.width * zoom, height: page.height * zoom }}>
           <div className="dashboard-artboard" style={{ width: page.width, height: page.height, transform: `scale(${zoom})` }}>
-            {page.nodes.map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} />)}
+            {page.nodes.map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} />)}
           </div>
         </div>
       </div>
@@ -205,25 +238,40 @@ export function DashboardWorkspace({
           <div className="dashboard-frame-grid">{(["x", "y", "width", "height"] as const).map((field) => <label key={field}><span>{field.toUpperCase()}</span><input type="number" value={selectedNode.frame[field]} onChange={(event) => updateSelectedFrame(field, Number(event.target.value))} /></label>)}</div>
         </section>
         {selectedNode.kind === "scene-viewport" && <section className="dashboard-inspector-section"><div className="dashboard-readonly-property"><span>{tr(locale, "三维场景", "3D scene")}</span><strong>{sceneName(application, selectedNode.sceneId)}</strong></div><div className="dashboard-readonly-property"><span>{tr(locale, "渲染方式", "Render mode")}</span><strong>{selectedNode.renderMode}</strong></div><button className="dashboard-enter-scene" onClick={() => onEnterScene(selectedNode.sceneId, currentView())}><Box size={15} />{tr(locale, "进入三维编辑", "Open 3D editor")}</button></section>}
+        {selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
+          <label><span>{tr(locale, "类型", "Type")}</span><select value={selectedNode.widget.type} onChange={(event) => updateDataWidget({ type: event.target.value as SceneDashboardWidgetType })}>{DATA_WIDGET_TYPES.map((type) => <option key={type} value={type}>{dataWidgetTypeLabel(locale, type)}</option>)}</select></label>
+          <label><span>{tr(locale, "标题", "Title")}</span><input defaultValue={selectedNode.widget.title} key={`${selectedNode.id}:title:${selectedNode.widget.title}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.title) updateDataWidget({ title: event.currentTarget.value }); }} /></label>
+          <label><span>{tr(locale, "数据键", "Data key")}</span><input defaultValue={selectedNode.widget.key} key={`${selectedNode.id}:key:${selectedNode.widget.key}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.key) updateDataWidget({ key: event.currentTarget.value }); }} /></label>
+          <label><span>{tr(locale, "单位", "Unit")}</span><input defaultValue={selectedNode.widget.unit} key={`${selectedNode.id}:unit:${selectedNode.widget.unit}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.unit) updateDataWidget({ unit: event.currentTarget.value }); }} /></label>
+          <label><span>{tr(locale, "强调色", "Accent")}</span><input type="color" value={selectedNode.widget.color ?? "#d4a84f"} onChange={(event) => updateDataWidget({ color: event.target.value })} /></label>
+          <button className="dashboard-delete-node" onClick={() => { onCommand(createDeleteDashboardNodeCommand(page.id, selectedNode.id)); setSelectedNodeIds([]); onSelectionChange([]); }}><Minus size={13} />{tr(locale, "删除组件", "Delete component")}</button>
+        </section>}
         <InteractionFlowInspector locale={locale} application={application} source={{ kind: "widget", id: selectedNode.id }} onCommand={onCommand} onTest={(trigger) => onNodeInteraction(selectedNode.id, trigger)} />
       </> : <div className="dashboard-no-selection"><Layers3 size={24} /><span>{tr(locale, "选择页面中的组件以编辑属性", "Select a component on the page to edit its properties")}</span></div>}
     </aside>
   </main>;
 }
 
-function DashboardNode({ application, project, node, selected, locale, rendererBackend, onSelectionChange, onObjectInteraction, onSelect, onEnterScene }: {
+function DashboardNode({ application, project, node, metric, selected, locale, rendererBackend, onSelectionChange, onObjectInteraction, onInteraction, onSelect, onEnterScene }: {
   application: ApplicationDocument;
   project: ProjectRecord;
   node: WidgetNode;
+  metric: DashboardMetric | undefined;
   selected: boolean;
   locale: AppLocale;
   rendererBackend: RendererBackend;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
+  onInteraction: (trigger: SceneInteractionTrigger) => void;
   onSelect: (additive: boolean) => void;
   onEnterScene: (sceneId: string) => void;
 }) {
   const style = { left: node.frame.x, top: node.frame.y, width: node.frame.width, height: node.frame.height, zIndex: node.zIndex };
+  useEffect(() => {
+    if (node.kind !== "data-widget") return;
+    const task = window.setTimeout(() => onInteraction("load"), 0);
+    return () => window.clearTimeout(task);
+  }, [node.id]);
   if (node.kind === "scene-viewport") {
     const scene = application.scenes.find((candidate) => candidate.id === node.sceneId);
     return <article className={`dashboard-node dashboard-scene-viewport ${selected ? "selected" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); onSelect(event.ctrlKey || event.metaKey); }} onDoubleClick={() => onEnterScene(node.sceneId)}>
@@ -234,6 +282,10 @@ function DashboardNode({ application, project, node, selected, locale, rendererB
       <div className="dashboard-node-badge">3D · {node.renderMode}</div>
     </article>;
   }
+  if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4" }} onClick={(event) => { event.stopPropagation(); onSelect(event.ctrlKey || event.metaKey); }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")}>
+    <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />
+    <div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div>
+  </article>;
   return <article className={`dashboard-node dashboard-legacy-panel ${selected ? "selected" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); onSelect(event.ctrlKey || event.metaKey); }}>
     <header><LayoutDashboard size={24} /><div><strong>{tr(locale, "数据看板", "Data dashboard")}</strong><small>{node.state.widgets.length} {tr(locale, "个组件", "widgets")}</small></div></header>
     <div className="dashboard-legacy-widget-grid">{node.state.widgets.slice(0, 8).map((widget) => <div key={widget.id}><small>{widget.type}</small><strong>{widget.title}</strong></div>)}</div>
@@ -241,9 +293,36 @@ function DashboardNode({ application, project, node, selected, locale, rendererB
 }
 
 function nodeLabel(node: WidgetNode): string {
-  return node.kind === "scene-viewport" ? `3D · ${node.sceneId}` : "数据看板";
+  if (node.kind === "scene-viewport") return `3D · ${node.sceneId}`;
+  if (node.kind === "data-widget") return node.widget.title;
+  return "数据看板";
 }
 
 function sceneName(application: ApplicationDocument, sceneId: string): string {
   return application.scenes.find((scene) => scene.id === sceneId)?.name ?? sceneId;
+}
+
+function defaultDataWidget(locale: AppLocale, type: SceneDashboardWidgetType): DashboardDataWidgetConfig {
+  const media = type === "image" || type === "video" || type === "monitor" || type === "url";
+  return {
+    title: dataWidgetTypeLabel(locale, type),
+    key: media ? "" : "value",
+    type,
+    unit: "",
+    color: "#d4a84f",
+    backgroundColor: "#172126",
+    backgroundOpacity: 0.86,
+    ...(type === "gauge" ? { min: 0, max: 100 } : {}),
+    ...(type === "image" ? { imageFit: "cover" as const } : {}),
+    ...(type === "video" ? { videoFit: "contain" as const, videoAutoplay: true, videoMuted: true } : {}),
+    ...(type === "monitor" ? { monitorProtocol: "hls" as const, videoFit: "cover" as const, videoAutoplay: true, videoMuted: true } : {}),
+    ...(type === "url" ? { url: "https://example.com" } : {})
+  };
+}
+
+function dataWidgetTypeLabel(locale: AppLocale, type: SceneDashboardWidgetType): string {
+  const labels: Record<SceneDashboardWidgetType, [string, string]> = {
+    value: ["数值", "Value"], gauge: ["仪表", "Gauge"], status: ["状态", "Status"], line: ["折线", "Line"], area: ["面积", "Area"], bar: ["柱图", "Bar"], pie: ["饼图", "Pie"], table: ["表格", "Table"], image: ["图片", "Image"], video: ["视频", "Video"], monitor: ["监控", "Monitor"], url: ["网页", "Web page"]
+  };
+  return tr(locale, ...labels[type]);
 }

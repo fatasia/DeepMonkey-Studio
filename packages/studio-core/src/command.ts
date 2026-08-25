@@ -1,4 +1,4 @@
-import type { ApplicationDocument, InteractionFlow, WidgetFrame } from "@bim-studio/contracts";
+import type { ApplicationDocument, DashboardDataWidgetConfig, InteractionFlow, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 
 let nextCommandId = 1;
 
@@ -50,12 +50,36 @@ export interface DeleteInteractionFlowCommand {
   readonly payload: { readonly flowId: string };
 }
 
+export interface InsertDashboardNodeCommand {
+  readonly id: string;
+  readonly type: "dashboard.node.insert";
+  readonly label: string;
+  readonly payload: { readonly pageId: string; readonly node: WidgetNode };
+}
+
+export interface UpdateDashboardDataWidgetCommand {
+  readonly id: string;
+  readonly type: "dashboard.data-widget.update";
+  readonly label: string;
+  readonly payload: { readonly pageId: string; readonly nodeId: string; readonly widget: DashboardDataWidgetConfig };
+}
+
+export interface DeleteDashboardNodeCommand {
+  readonly id: string;
+  readonly type: "dashboard.node.delete";
+  readonly label: string;
+  readonly payload: { readonly pageId: string; readonly nodeId: string };
+}
+
 export type StudioCommand =
   | RenameApplicationCommand
   | RenameDashboardPageCommand
   | UpdateDashboardNodeFrameCommand
   | UpsertInteractionFlowCommand
-  | DeleteInteractionFlowCommand;
+  | DeleteInteractionFlowCommand
+  | InsertDashboardNodeCommand
+  | UpdateDashboardDataWidgetCommand
+  | DeleteDashboardNodeCommand;
 
 export function createRenameApplicationCommand(name: string): RenameApplicationCommand {
   return {
@@ -106,6 +130,33 @@ export function createDeleteInteractionFlowCommand(flowId: string): DeleteIntera
   };
 }
 
+export function createInsertDashboardNodeCommand(pageId: string, node: WidgetNode): InsertDashboardNodeCommand {
+  return {
+    id: commandId(),
+    type: "dashboard.node.insert",
+    label: "添加二维组件",
+    payload: { pageId, node: structuredClone(node) }
+  };
+}
+
+export function createUpdateDashboardDataWidgetCommand(pageId: string, nodeId: string, widget: DashboardDataWidgetConfig): UpdateDashboardDataWidgetCommand {
+  return {
+    id: commandId(),
+    type: "dashboard.data-widget.update",
+    label: `更新组件“${widget.title}”`,
+    payload: { pageId, nodeId, widget: structuredClone(widget) }
+  };
+}
+
+export function createDeleteDashboardNodeCommand(pageId: string, nodeId: string): DeleteDashboardNodeCommand {
+  return {
+    id: commandId(),
+    type: "dashboard.node.delete",
+    label: "删除二维组件",
+    payload: { pageId, nodeId }
+  };
+}
+
 export function applyStudioCommand(document: ApplicationDocument, command: StudioCommand): ApplicationDocument {
   switch (command.type) {
     case "application.rename":
@@ -150,7 +201,49 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
         ...document,
         interactions: document.interactions.filter((flow) => flow.id !== command.payload.flowId)
       };
+    case "dashboard.node.insert": {
+      const page = requirePage(document, command.payload.pageId);
+      if (page.nodes.some((node) => node.id === command.payload.node.id)) {
+        throw new Error(`页面 ${page.id} 中已存在组件 ${command.payload.node.id}`);
+      }
+      return updatePage(document, page.id, (candidate) => ({
+        ...candidate,
+        nodes: [...candidate.nodes, structuredClone(command.payload.node)]
+      }));
+    }
+    case "dashboard.data-widget.update": {
+      const page = requirePage(document, command.payload.pageId);
+      const node = page.nodes.find((candidate) => candidate.id === command.payload.nodeId);
+      if (!node) throw new Error(`页面 ${page.id} 中不存在组件 ${command.payload.nodeId}`);
+      if (node.kind !== "data-widget") throw new Error(`组件 ${node.id} 不是数据组件`);
+      return updatePage(document, page.id, (candidate) => ({
+        ...candidate,
+        nodes: candidate.nodes.map((item) => item.id === node.id
+          ? { ...item, widget: structuredClone(command.payload.widget) }
+          : item)
+      }));
+    }
+    case "dashboard.node.delete": {
+      const page = requirePage(document, command.payload.pageId);
+      if (!page.nodes.some((node) => node.id === command.payload.nodeId)) {
+        throw new Error(`页面 ${page.id} 中不存在组件 ${command.payload.nodeId}`);
+      }
+      return {
+        ...updatePage(document, page.id, (candidate) => ({
+          ...candidate,
+          nodes: candidate.nodes.filter((node) => node.id !== command.payload.nodeId)
+        })),
+        interactions: document.interactions.filter((flow) => !(flow.source.kind === "widget" && flow.source.id === command.payload.nodeId))
+      };
+    }
   }
+}
+
+function updatePage(document: ApplicationDocument, pageId: string, update: (page: ApplicationDocument["pages"][number]) => ApplicationDocument["pages"][number]): ApplicationDocument {
+  return {
+    ...document,
+    pages: document.pages.map((page) => page.id === pageId ? update(page) : page)
+  };
 }
 
 function requirePage(document: ApplicationDocument, pageId: string) {
