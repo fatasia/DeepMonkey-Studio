@@ -472,7 +472,7 @@ function validateInteractionAction(value: unknown, path: string): void {
   optional(object, "value", expectStringNumberOrBoolean, path);
   optional(object, "url", expectString, path);
   optional(object, "newTab", expectBoolean, path);
-  optional(object, "target", validateObjectInteractionTarget, path);
+  optionalAllowUndefined(object, "target", validateObjectInteractionTarget, path);
   for (const key of ["sceneId", "cameraViewId", "message", "dataKey"] as const) optional(object, key, expectString, path);
 }
 
@@ -521,7 +521,8 @@ function validatePublicationProfile(value: unknown, path: string): void {
 
 function validateJsonObject(value: unknown, path: string): void {
   const object = expectObject(value, path);
-  for (const [key, child] of Object.entries(object)) validateJsonValue(child, `${path}.${key}`);
+  const ancestors = new WeakSet<object>([object]);
+  validateJsonObjectProperties(object, path, ancestors);
 }
 
 function validateJsonValue(value: unknown, path: string, ancestors = new WeakSet<object>()): void {
@@ -534,12 +535,40 @@ function validateJsonValue(value: unknown, path: string, ancestors = new WeakSet
   if (ancestors.has(value)) invalid(path, "不能包含循环引用");
   ancestors.add(value);
   if (Array.isArray(value)) {
-    value.forEach((child, index) => validateJsonValue(child, `${path}[${index}]`, ancestors));
+    validateJsonArray(value, path, ancestors);
   } else {
     const object = expectObject(value, path);
-    for (const [key, child] of Object.entries(object)) validateJsonValue(child, `${path}.${key}`, ancestors);
+    validateJsonObjectProperties(object, path, ancestors);
   }
   ancestors.delete(value);
+}
+
+function validateJsonObjectProperties(object: JsonObject, path: string, ancestors: WeakSet<object>): void {
+  rejectJsonSymbolProperties(object, path);
+  for (const key of Object.getOwnPropertyNames(object)) {
+    validateJsonValue(object[key], `${path}.${key}`, ancestors);
+  }
+}
+
+function validateJsonArray(array: unknown[], path: string, ancestors: WeakSet<object>): void {
+  rejectJsonSymbolProperties(array, path);
+  for (const key of Object.getOwnPropertyNames(array)) {
+    if (key === "length") continue;
+    if (!isArrayIndex(key, array.length)) invalid(`${path}.${key}`, "不是有效的 JSON 数组索引");
+  }
+  for (let index = 0; index < array.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(array, index)) invalid(`${path}[${index}]`, "不能是稀疏数组项");
+    validateJsonValue(array[index], `${path}[${index}]`, ancestors);
+  }
+}
+
+function rejectJsonSymbolProperties(object: object, path: string): void {
+  if (Object.getOwnPropertySymbols(object).length > 0) invalid(path, "不能包含 Symbol 属性");
+}
+
+function isArrayIndex(key: string, length: number): boolean {
+  const index = Number(key);
+  return Number.isInteger(index) && index >= 0 && index < length && String(index) === key;
 }
 
 function validateArrayProperty(object: JsonObject, key: string, validator: Validator): void {
@@ -590,6 +619,10 @@ function required(object: JsonObject, key: string, validator: Validator, path: s
 
 function optional(object: JsonObject, key: string, validator: Validator, path: string): void {
   if (hasOwn(object, key)) validator(object[key], `${path}.${key}`);
+}
+
+function optionalAllowUndefined(object: JsonObject, key: string, validator: Validator, path: string): void {
+  if (hasOwn(object, key) && object[key] !== undefined) validator(object[key], `${path}.${key}`);
 }
 
 function requiredLiteral(object: JsonObject, key: string, values: readonly unknown[], path: string): void {

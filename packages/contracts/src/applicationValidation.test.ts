@@ -36,6 +36,11 @@ const malformedCases: MalformedCase[] = [
   ["topology node", () => altered(pureApplication, (value) => {
     value.topologies = [{ id: "topology-1", name: "拓扑", nodes: [{ id: "node-1", kind: "pump", x: 0, y: 0, properties: { nested: undefined as never } }], edges: [] }];
   })],
+  ["topology non-enumerable JSON property", () => altered(pureApplication, (value) => {
+    const properties: Record<string, unknown> = {};
+    Object.defineProperty(properties, "hidden", { value: undefined, enumerable: false });
+    value.topologies = [{ id: "topology-1", name: "拓扑", nodes: [{ id: "node-1", kind: "pump", x: 0, y: 0, properties: properties as never }], edges: [] }];
+  })],
   ["topology edge", () => altered(pureApplication, (value) => {
     value.topologies = [{ id: "topology-1", name: "拓扑", nodes: [], edges: [{ id: "edge-1", sourceNodeId: "a", targetNodeId: 3 as never, properties: {} }] }];
   })],
@@ -53,6 +58,21 @@ const malformedCases: MalformedCase[] = [
   })],
   ["data non-JSON object variable", () => altered(pureApplication, (value) => {
     value.data.variables = [{ id: "variable-1", value: new Date("2026-08-20T00:00:00.000Z") as never }];
+  })],
+  ["data non-enumerable JSON property", () => altered(pureApplication, (value) => {
+    const payload: Record<string, unknown> = {};
+    Object.defineProperty(payload, "hidden", { value: () => "invalid", enumerable: false });
+    value.data.variables = [{ id: "variable-1", value: payload as never }];
+  })],
+  ["data JSON symbol property", () => altered(pureApplication, (value) => {
+    const payload = { valid: true } as Record<PropertyKey, unknown>;
+    Object.defineProperty(payload, Symbol("invalid"), { value: undefined, enumerable: true });
+    value.data.variables = [{ id: "variable-1", value: payload as never }];
+  })],
+  ["data JSON array symbol property", () => altered(pureApplication, (value) => {
+    const payload = [true] as unknown[] & Record<PropertyKey, unknown>;
+    Object.defineProperty(payload, Symbol("invalid"), { value: () => "invalid", enumerable: true });
+    value.data.variables = [{ id: "variable-1", value: payload as never }];
   })],
   ["interaction", () => altered(interactionApplication, (value) => { value.interactions[0]!.trigger = "doubleClick" as never; })],
   ["interaction object reference", () => altered(interactionApplication, (value) => {
@@ -104,6 +124,14 @@ describe("assertApplicationDocument", () => {
     };
     application.assets = [{ id: "asset-1", kind: "model", projectId: "project-golden", sourceName: "plant.ifc", sourceFormat: "ifc", contentHash: "sha256:example" }];
     application.timelines = [{ id: "timeline-1", name: "施工进度", duration: 120, trackIds: ["track-1"] }];
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("accepts an explicit undefined SceneInteractionActionState target", () => {
+    const application = structuredClone(interactionApplication);
+    application.interactions[0]!.actions[0]!.target = undefined;
+    application.interactions[0]!.legacyScript!.script.actions![0]!.target = undefined;
 
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });
