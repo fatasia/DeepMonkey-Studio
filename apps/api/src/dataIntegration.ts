@@ -1,5 +1,6 @@
 import type { DataConnectionRecord, DataDatasetField, DataDatasetPreview, DataDatasetRecord } from "@bim-studio/contracts";
 import { compileFormula, evaluateFormula } from "@bim-studio/data-runtime";
+import { executeRowScript } from "@bim-studio/data-runtime/script";
 import mysql from "mysql2/promise";
 import oracledb from "oracledb";
 import type { AppConfig } from "./config.js";
@@ -35,7 +36,7 @@ export async function previewDataset(config: AppConfig, connection: DataConnecti
   else if (connection.type === "tdengine") rows = await previewTdengine(connection, dataset);
   else if (connection.type === "http") rows = await previewHttp(config, connection, dataset);
   else throw new Error(`当前预览器暂不支持 ${connection.type}；请安装对应连接器插件`);
-  rows = applyComputedFields(rows, dataset);
+  rows = await applyComputedFields(rows, dataset);
   const sourceFields = dataset.fields.length > 0 ? dataset.fields : inferFields(rows);
   const computedFields = (dataset.computedFields ?? []).map(({ key, label, type }) => ({ key, label, type }));
   const fields = [...sourceFields.filter((field) => !computedFields.some((computed) => computed.key === field.key)), ...computedFields];
@@ -158,14 +159,18 @@ function inferFields(rows: Array<Record<string, unknown>>): DataDatasetField[] {
   return Object.entries(sample).map(([key, value]) => ({ key, label: key, type: inferFieldType(value) }));
 }
 
-export function applyComputedFields(rows: Array<Record<string, unknown>>, dataset: DataDatasetRecord): Array<Record<string, unknown>> {
-  const formulas = (dataset.computedFields ?? []).map((field) => ({ field, compiled: compileFormula(field.formula) }));
-  if (formulas.length === 0) return rows;
-  return rows.map((row) => {
-    const next = { ...row };
-    for (const { field, compiled } of formulas) next[field.key] = evaluateFormula(compiled, next);
-    return next;
-  });
+export async function applyComputedFields(rows: Array<Record<string, unknown>>, dataset: DataDatasetRecord): Promise<Array<Record<string, unknown>>> {
+  let nextRows = rows.map((row) => ({ ...row }));
+  for (const field of dataset.computedFields ?? []) {
+    if (field.mode === "script") {
+      const result = await executeRowScript(field.formula, nextRows, {}, { timeoutMs: 150, memoryLimitBytes: 8 * 1024 * 1024 });
+      nextRows = nextRows.map((row, index) => ({ ...row, [field.key]: result.output[index] ?? null }));
+    } else {
+      const compiled = compileFormula(field.formula);
+      nextRows = nextRows.map((row) => ({ ...row, [field.key]: evaluateFormula(compiled, row) }));
+    }
+  }
+  return nextRows;
 }
 
 export function inferFieldType(value: unknown): DataDatasetField["type"] {

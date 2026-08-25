@@ -17,6 +17,7 @@ import {
   type SceneSnapshot
 } from "@bim-studio/contracts";
 import { compileFormula } from "@bim-studio/data-runtime";
+import { executeRowScript } from "@bim-studio/data-runtime/script";
 import type { AppConfig } from "./config.js";
 import { demoSensorRows, previewDataset } from "./dataIntegration.js";
 import type { ConversionQueue } from "./conversion.js";
@@ -148,7 +149,10 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     const computedKeys = computedFields.map((field) => field.key.trim());
     if (computedKeys.some((key) => !key) || new Set(computedKeys).size !== computedKeys.length) return reply.code(400).send({ message: "计算字段名不能为空或重复" });
     try {
-      for (const field of computedFields) compileFormula(field.formula);
+      for (const field of computedFields) {
+        if (field.mode === "script") await executeRowScript(field.formula, []);
+        else compileFormula(field.formula);
+      }
     } catch (reason) {
       return reply.code(400).send({ message: reason instanceof Error ? reason.message : "计算字段公式无效" });
     }

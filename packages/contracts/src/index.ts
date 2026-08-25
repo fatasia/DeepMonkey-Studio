@@ -307,6 +307,7 @@ export interface DataComputedField {
   key: string;
   label: string;
   type: DataFieldType;
+  mode?: "formula" | "script";
   formula: string;
 }
 
