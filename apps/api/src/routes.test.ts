@@ -127,10 +127,21 @@ describe("legacy scene routes", () => {
       }
     });
     const list = await app.inject({ method: "GET", url: "/api/projects/default/data-pipelines" });
+    const endpoint = await app.inject({ method: "POST", url: "/api/projects/default/data-endpoints", payload: { id: "endpoint-1", name: "设备告警 API", kind: "rest", slug: "device-alerts", pipelineId: "pipeline-1", method: "GET", requestsPerMinute: 30 } });
+    const endpointUpdate = await app.inject({ method: "POST", url: "/api/projects/default/data-endpoints", payload: { id: "endpoint-1", name: "设备告警 API", kind: "rest", slug: "device-alerts", pipelineId: "pipeline-1", method: "GET", requestsPerMinute: 30 } });
+    const endpointList = await app.inject({ method: "GET", url: "/api/projects/default/data-endpoints" });
+    const blockedPipelineDelete = await app.inject({ method: "DELETE", url: "/api/projects/default/data-pipelines/pipeline-1" });
     const blockedDelete = await app.inject({ method: "DELETE", url: "/api/projects/default/datasets/dataset-1" });
 
     expect(saved.statusCode).toBe(201);
     expect(list.json()).toHaveLength(1);
+    expect(endpoint.statusCode).toBe(201);
+    expect(endpoint.json().apiKey).toMatch(/^bsp_/);
+    expect(endpointUpdate.statusCode).toBe(200);
+    expect(endpointUpdate.json()).not.toHaveProperty("apiKey");
+    expect(endpointList.json()[0].apiKeyHint).toMatch(/^••••/);
+    expect(endpointList.body).not.toContain(endpoint.json().apiKey);
+    expect(blockedPipelineDelete.statusCode).toBe(409);
     expect(blockedDelete.statusCode).toBe(409);
     expect(blockedDelete.json().message).toContain("设备告警流");
 

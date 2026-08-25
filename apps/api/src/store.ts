@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { assertApplicationDocument, assertPathSafeResourceId } from "@bim-studio/contracts";
-import type { AiProviderSettings, ApplicationDocument, ApplicationPublicationPointer, AuditLogRecord, DataConnectionRecord, DataDatasetRecord, DataPipelineDefinition, DatabaseDocument, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedApplicationRecord, PublishedSceneRecord, SceneSnapshot, StoredSystemUserRecord, SystemBrandingSettings, VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
+import type { AiProviderSettings, ApplicationDocument, ApplicationPublicationPointer, AuditLogRecord, DataConnectionRecord, DataDatasetRecord, DataEndpointDefinition, DataPipelineDefinition, DatabaseDocument, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedApplicationRecord, PublishedSceneRecord, SceneSnapshot, StoredSystemUserRecord, SystemBrandingSettings, VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
 import type { AppConfig } from "./config.js";
 
 export interface ApplicationIdReservation {
@@ -57,6 +57,10 @@ export interface MetadataStore {
   listDataPipelines(projectId: string): DataPipelineDefinition[];
   saveDataPipeline(projectId: string, pipeline: DataPipelineDefinition): Promise<DataPipelineDefinition>;
   removeDataPipeline(projectId: string, pipelineId: string): Promise<boolean>;
+  listDataEndpoints(projectId: string): DataEndpointDefinition[];
+  saveDataEndpoint(projectId: string, endpoint: DataEndpointDefinition, secretHash?: string): Promise<DataEndpointDefinition>;
+  getDataEndpointSecretHash(endpointId: string): string | undefined;
+  removeDataEndpoint(projectId: string, endpointId: string): Promise<boolean>;
   listVisionSources(projectId: string): VisionSourceRecord[];
   saveVisionSource(projectId: string, source: VisionSourceRecord): Promise<VisionSourceRecord>;
   removeVisionSource(projectId: string, sourceId: string): Promise<boolean>;
@@ -135,6 +139,7 @@ export class JsonStore implements MetadataStore {
     this.document.applicationPublicationPointers ??= [];
     this.document.users ??= [];
     this.document.auditLogs ??= [];
+    this.document.dataEndpointSecrets ??= {};
     if (this.ensureExampleDataCatalog() || this.sanitizeLegacyBranding()) await this.persist();
   }
 
@@ -178,6 +183,7 @@ export class JsonStore implements MetadataStore {
     assertPathSafeResourceId(projectId, "projectId");
     return this.runDocumentMutation<boolean>((candidate) => {
       const originalLength = candidate.projects.length;
+      const endpointIds = new Set((candidate.projects.find((project) => project.id === projectId)?.dataEndpoints ?? []).map((endpoint) => endpoint.id));
       candidate.projects = candidate.projects.filter((item) => item.id !== projectId);
       if (candidate.projects.length === originalLength) return unchanged(false);
       candidate.scenes = candidate.scenes.filter((scene) => scene.projectId !== projectId);
@@ -185,6 +191,7 @@ export class JsonStore implements MetadataStore {
       candidate.applications = (candidate.applications ?? []).filter((application) => application.metadata.projectId !== projectId);
       candidate.applicationPublicationPointers = (candidate.applicationPublicationPointers ?? [])
         .filter((pointer) => pointer.projectId !== projectId);
+      for (const endpointId of endpointIds) delete candidate.dataEndpointSecrets?.[endpointId];
       return changed(true);
     });
   }
@@ -329,6 +336,43 @@ export class JsonStore implements MetadataStore {
       const originalLength = project.dataPipelines?.length ?? 0;
       project.dataPipelines = (project.dataPipelines ?? []).filter((item) => item.id !== pipelineId);
       if (project.dataPipelines.length === originalLength) return unchanged(false);
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
+  }
+
+  listDataEndpoints(projectId: string): DataEndpointDefinition[] {
+    return structuredClone(this.requireProject(projectId).dataEndpoints ?? []);
+  }
+
+  async saveDataEndpoint(projectId: string, endpoint: DataEndpointDefinition, secretHash?: string): Promise<DataEndpointDefinition> {
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      if (!(project.dataPipelines ?? []).some((pipeline) => pipeline.id === endpoint.pipelineId)) throw new Error(`Data pipeline not found: ${endpoint.pipelineId}`);
+      project.dataEndpoints ??= [];
+      const index = project.dataEndpoints.findIndex((item) => item.id === endpoint.id);
+      if (index >= 0) project.dataEndpoints[index] = structuredClone(endpoint);
+      else project.dataEndpoints.push(structuredClone(endpoint));
+      if (secretHash) {
+        candidate.dataEndpointSecrets ??= {};
+        candidate.dataEndpointSecrets[endpoint.id] = secretHash;
+      }
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(endpoint));
+    });
+  }
+
+  getDataEndpointSecretHash(endpointId: string): string | undefined {
+    return this.document.dataEndpointSecrets?.[endpointId];
+  }
+
+  async removeDataEndpoint(projectId: string, endpointId: string): Promise<boolean> {
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const originalLength = project.dataEndpoints?.length ?? 0;
+      project.dataEndpoints = (project.dataEndpoints ?? []).filter((item) => item.id !== endpointId);
+      if (project.dataEndpoints.length === originalLength) return unchanged(false);
+      delete candidate.dataEndpointSecrets?.[endpointId];
       project.updatedAt = new Date().toISOString();
       return changed(true);
     });

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Activity, ArrowLeft, Bot, Braces, CheckCircle2, Database, GitBranch, Globe2, LoaderCircle, Pencil, Plus, Radio, RefreshCw, Send, Table2, Trash2, X } from "lucide-react";
+import { Activity, ArrowLeft, Bot, Braces, CheckCircle2, Database, GitBranch, Globe2, LoaderCircle, Pencil, Plus, Radio, RefreshCw, Send, ServerCog, Table2, Trash2, X } from "lucide-react";
 import type { DataComputedField, DataConnectionRecord, DataConnectionType, DataDatasetPreview, DataDatasetRecord, ProjectRecord } from "@bim-studio/contracts";
 import { compileFormula } from "@bim-studio/data-runtime";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { DataPipelineStudio } from "./DataPipelineStudio";
+import { DataEndpointStudio } from "./DataEndpointStudio";
 
 const SQL_CONNECTIONS = new Set<DataConnectionType>(["postgresql", "mysql", "oracle", "tdengine"]);
 
@@ -22,7 +23,7 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
   const [sqlQuestion, setSqlQuestion] = useState("");
   const [sqlAnswer, setSqlAnswer] = useState("");
   const [sqlBusy, setSqlBusy] = useState(false);
-  const [section, setSection] = useState<"data" | "pipeline">("data");
+  const [section, setSection] = useState<"data" | "pipeline" | "endpoint">("data");
 
   async function load(preferredConnectionId?: string, preferredDatasetId?: string) {
     setBusy(true);
@@ -96,8 +97,8 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
     <header className="data-center-header secondary-page-header"><button className="data-back secondary-page-back" onClick={onBack}><ArrowLeft size={17} />{tr(locale, "返回场景管理", "Back to scenes")}</button><div className="secondary-page-heading-row"><div className="data-center-title secondary-page-title"><small>PROJECT DATA HUB</small><h1>{tr(locale, "数据中心", "Data center")}</h1><p>{project.name} · {tr(locale, "连接、查询、预览，然后在 Studio 里直接绑定", "Connect, query, preview, then bind directly in Studio")}</p></div></div></header>
     <section className="data-center-flow"><FlowStep icon={<Database />} index="1" title={tr(locale, "数据连接", "Connections")} caption={tr(locale, "数据库、接口、实时协议", "Databases, APIs and live protocols")} /><i /><FlowStep icon={<Table2 />} index="2" title={tr(locale, "数据集", "Datasets")} caption={tr(locale, "查询、字段和刷新策略", "Queries, fields and refresh")} /><i /><FlowStep icon={<Activity />} index="3" title={tr(locale, "场景绑定", "Scene binding")} caption={tr(locale, "进入 Studio 选择数据集", "Select a dataset in Studio")} /></section>
     {error && <div className="data-center-error"><span>{error}</span><button onClick={() => setError(undefined)}><X size={14} /></button></div>}
-    <nav className="data-hub-tabs"><button className={section === "data" ? "active" : ""} onClick={() => setSection("data")}><Database size={14} /><span><strong>{tr(locale, "数据准备", "Data preparation")}</strong><small>{tr(locale, "连接、查询、字段", "Connections, queries, fields")}</small></span></button><button className={section === "pipeline" ? "active" : ""} onClick={() => setSection("pipeline")}><GitBranch size={14} /><span><strong>{tr(locale, "逻辑编排", "Logic pipeline")}</strong><small>{tr(locale, "节点、脚本、逐步诊断", "Nodes, scripts, diagnostics")}</small></span></button></nav>
-    {section === "pipeline" ? <DataPipelineStudio locale={locale} projectId={project.id} datasets={datasets} onError={(message) => setError(message || undefined)} /> : <div className="data-center-columns">
+    <nav className="data-hub-tabs"><button className={section === "data" ? "active" : ""} onClick={() => setSection("data")}><Database size={14} /><span><strong>{tr(locale, "数据准备", "Data preparation")}</strong><small>{tr(locale, "连接、查询、字段", "Connections, queries, fields")}</small></span></button><button className={section === "pipeline" ? "active" : ""} onClick={() => setSection("pipeline")}><GitBranch size={14} /><span><strong>{tr(locale, "逻辑编排", "Logic pipeline")}</strong><small>{tr(locale, "节点、脚本、逐步诊断", "Nodes, scripts, diagnostics")}</small></span></button><button className={section === "endpoint" ? "active" : ""} onClick={() => setSection("endpoint")}><ServerCog size={14} /><span><strong>{tr(locale, "接口服务", "Endpoint services")}</strong><small>REST / WebSocket · API Key</small></span></button></nav>
+    {section === "pipeline" ? <DataPipelineStudio locale={locale} projectId={project.id} datasets={datasets} onError={(message) => setError(message || undefined)} /> : section === "endpoint" ? <DataEndpointStudio locale={locale} projectId={project.id} onError={(message) => setError(message || undefined)} /> : <div className="data-center-columns">
       <section className="data-center-pane"><header><div><strong>{tr(locale, "数据连接", "Connections")}</strong><span>{connections.length} {tr(locale, "个连接", "connections")}</span></div><button onClick={() => setConnectionEditor("new")}><Plus size={14} />{tr(locale, "新建", "New")}</button></header>
         {connectionEditor && <ConnectionForm locale={locale} projectId={project.id} {...(connectionEditor === "new" ? {} : { initial: connectionEditor })} onCancel={() => setConnectionEditor(undefined)} onError={setError} onSaved={(saved) => { setConnectionEditor(undefined); void load(saved.id); }} />}
         <div className="data-card-list">{connections.map((connection) => <article key={connection.id} className={`data-resource-card ${selectedConnectionId === connection.id ? "active" : ""}`}><button className="data-card-main" onClick={() => { setSelectedConnectionId(connection.id); setSelectedDatasetId(datasets.find((item) => item.connectionId === connection.id)?.id); setPreview(undefined); }}><ConnectionIcon type={connection.type} /><span><strong>{connection.name}</strong><small>{connectionLabel(connection.type)} · {connectionSummary(connection)}</small></span><i className={connection.enabled ? "online" : ""} /></button><div className="data-card-actions"><button title={tr(locale, "重命名或编辑", "Rename or edit")} onClick={() => setConnectionEditor(connection)}><Pencil size={13} /></button><button className="danger" title={tr(locale, "删除", "Delete")} onClick={() => void deleteConnection(connection)}><Trash2 size={13} /></button></div></article>)}</div>

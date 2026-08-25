@@ -9,6 +9,7 @@ import { createObjectStore, migrateLocalObjects } from "./objects.js";
 import { createMetadataStore } from "./store.js";
 import { ensureDemoMetrics } from "./dataIntegration.js";
 import { registerDataEventRoutes } from "./dataEvents.js";
+import { registerDataEndpointRuntime } from "./dataEndpointRuntime.js";
 import { loadOrCreateServerInstanceId, registerServerMetaRoute } from "./serverMeta.js";
 import { registerSystemRoutes } from "./system.js";
 import { registerVisionRoutes, VisionEngine } from "./vision.js";
@@ -36,6 +37,7 @@ export async function buildApp() {
   await registerSystemRoutes(app, store, config.dataDir);
   await registerDataEventRoutes(app, store);
   await registerRoutes(app, { store, queue, objects, dataDir: config.dataDir, config });
+  await registerDataEndpointRuntime(app, store, config);
   await registerApplicationRoutes(app, store);
   const vision = new VisionEngine({ store, objects, dataDir: config.dataDir });
   await registerVisionRoutes(app, vision, { store, objects, dataDir: config.dataDir });

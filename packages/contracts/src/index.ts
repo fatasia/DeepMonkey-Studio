@@ -94,6 +94,7 @@ export interface ProjectRecord {
   dataConnections?: DataConnectionRecord[];
   datasets?: DataDatasetRecord[];
   dataPipelines?: DataPipelineDefinition[];
+  dataEndpoints?: DataEndpointDefinition[];
   visionSources?: VisionSourceRecord[];
   visionModels?: VisionModelRecord[];
   visionTasks?: VisionTaskRecord[];
@@ -378,6 +379,40 @@ export interface DataPipelinePreview {
   diagnostics: DataPipelineNodeDiagnostic[];
   failedNodeId?: string;
   error?: string;
+}
+
+export type DataEndpointKind = "rest" | "websocket";
+
+export interface DataEndpointDefinition {
+  id: string;
+  projectId: string;
+  name: string;
+  kind: DataEndpointKind;
+  slug: string;
+  pipelineId: string;
+  enabled: boolean;
+  apiKeyHint: string;
+  method?: "GET" | "POST";
+  channel?: string;
+  intervalMs?: number;
+  requestsPerMinute: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DataEndpointSaveResult {
+  endpoint: DataEndpointDefinition;
+  /** 仅在首次创建或主动轮换时返回，服务器不会再次提供明文。 */
+  apiKey?: string;
+}
+
+export interface DataStreamEnvelope<T = unknown> {
+  type: "data" | "heartbeat" | "error";
+  channel: string;
+  messageId: string;
+  timestamp: string;
+  schemaVersion: "1";
+  payload: T;
 }
 
 export interface SceneModelState {
@@ -866,6 +901,8 @@ export interface DatabaseDocument {
   auditLogs?: AuditLogRecord[];
   aiSettings?: Omit<AiProviderSettings, "apiKeyConfigured"> & { apiKey?: string };
   branding?: SystemBrandingSettings;
+  /** endpointId -> SHA-256(API key)，不会包含在 ProjectRecord API 响应中。 */
+  dataEndpointSecrets?: Record<string, string>;
 }
 
 export function createDefaultTransform(): ModelTransform {

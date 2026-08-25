@@ -9,6 +9,8 @@ import {
   supportedExtensions,
   type DataConnectionRecord,
   type DataDatasetRecord,
+  type DataEndpointDefinition,
+  type DataEndpointSaveResult,
   type DataPipelineDefinition,
   type ModelFormat,
   type ModelRecord,
@@ -18,10 +20,12 @@ import {
   type SceneSnapshot
 } from "@bim-studio/contracts";
 import { compileFormula } from "@bim-studio/data-runtime";
-import { DataPipelineError, executeDataPipeline, validateDataPipeline } from "@bim-studio/data-runtime/pipeline";
+import { validateDataPipeline } from "@bim-studio/data-runtime/pipeline";
 import { executeRowScript } from "@bim-studio/data-runtime/script";
 import type { AppConfig } from "./config.js";
+import { createDataApiKey, dataApiKeyHint, hashDataApiKey } from "./dataEndpointAuth.js";
 import { demoSensorRows, previewDataset } from "./dataIntegration.js";
+import { previewPipeline } from "./dataPipelineService.js";
 import type { ConversionQueue } from "./conversion.js";
 import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
@@ -206,20 +210,59 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     const definition = store.listDataPipelines(request.params.projectId).find((item) => item.id === request.params.pipelineId);
     if (!definition) return reply.code(404).send({ message: "流水线不存在" });
     try {
-      return await executeDataPipeline(definition, async (datasetId) => {
-        const dataset = store.listDatasets(request.params.projectId).find((item) => item.id === datasetId);
-        if (!dataset) throw new Error("数据集不存在或已删除");
-        const connection = store.listDataConnections(request.params.projectId).find((item) => item.id === dataset.connectionId);
-        if (!connection) throw new Error("数据连接不存在或已删除");
-        return (await previewDataset(config, connection, dataset)).rows;
-      });
+      return await previewPipeline(config, store, definition);
     } catch (reason) {
-      if (reason instanceof DataPipelineError) return { pipeline: definition, status: "error", fields: [], rows: [], durationMs: reason.diagnostics.reduce((sum, item) => sum + item.durationMs, 0), diagnostics: reason.diagnostics, ...(reason.nodeId ? { failedNodeId: reason.nodeId } : {}), error: reason.message };
       return reply.code(400).send({ message: reason instanceof Error ? reason.message : "流水线运行失败" });
     }
   });
   app.delete<{ Params: { projectId: string; pipelineId: string } }>("/api/projects/:projectId/data-pipelines/:pipelineId", async (request, reply) => {
+    const dependentEndpoint = store.listDataEndpoints(request.params.projectId).find((endpoint) => endpoint.pipelineId === request.params.pipelineId);
+    if (dependentEndpoint) return reply.code(409).send({ message: `流水线仍被接口“${dependentEndpoint.name}”使用` });
     return await store.removeDataPipeline(request.params.projectId, request.params.pipelineId) ? reply.code(204).send() : reply.code(404).send({ message: "流水线不存在" });
+  });
+
+  app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/data-endpoints", async (request, reply) => {
+    if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+    return store.listDataEndpoints(request.params.projectId);
+  });
+  app.post<{ Params: { projectId: string }; Body: Partial<DataEndpointDefinition> & { rotateKey?: boolean } }>("/api/projects/:projectId/data-endpoints", async (request, reply) => {
+    if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+    const name = request.body.name?.trim();
+    const slug = request.body.slug?.trim().toLowerCase();
+    if (!name || !slug || !request.body.kind || !request.body.pipelineId) return reply.code(400).send({ message: "接口名称、类型、路径和流水线不能为空" });
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) return reply.code(400).send({ message: "接口路径仅支持小写字母、数字、短横线和下划线，最长 64 位" });
+    if (!store.listDataPipelines(request.params.projectId).some((pipeline) => pipeline.id === request.body.pipelineId)) return reply.code(400).send({ message: "接口引用的流水线不存在" });
+    const id = request.body.id || randomUUID();
+    const existing = store.listDataEndpoints(request.params.projectId).find((endpoint) => endpoint.id === id);
+    if (store.listDataEndpoints(request.params.projectId).some((endpoint) => endpoint.id !== id && endpoint.kind === request.body.kind && endpoint.slug === slug)) return reply.code(409).send({ message: "同类型接口路径不能重复" });
+    const createKey = !existing || request.body.rotateKey === true || !store.getDataEndpointSecretHash(id);
+    const apiKey = createKey ? createDataApiKey() : undefined;
+    const now = new Date().toISOString();
+    const endpoint: DataEndpointDefinition = {
+      id, projectId: request.params.projectId, name, kind: request.body.kind, slug, pipelineId: request.body.pipelineId,
+      enabled: request.body.enabled !== false, apiKeyHint: apiKey ? dataApiKeyHint(apiKey) : existing?.apiKeyHint ?? "••••••",
+      ...(request.body.kind === "rest" ? { method: request.body.method === "POST" ? "POST" : "GET" } : { channel: request.body.channel?.trim() || slug, intervalMs: Math.max(1_000, Math.min(60_000, Number(request.body.intervalMs ?? 5_000))) }),
+      requestsPerMinute: Math.max(1, Math.min(600, Math.floor(Number(request.body.requestsPerMinute ?? 60)))),
+      createdAt: existing?.createdAt ?? request.body.createdAt ?? now, updatedAt: now
+    };
+    try {
+      const saved = await store.saveDataEndpoint(request.params.projectId, endpoint, apiKey ? hashDataApiKey(apiKey) : undefined);
+      const result: DataEndpointSaveResult = { endpoint: saved, ...(apiKey ? { apiKey } : {}) };
+      return reply.code(existing ? 200 : 201).send(result);
+    } catch (reason) {
+      return reply.code(400).send({ message: reason instanceof Error ? reason.message : "接口保存失败" });
+    }
+  });
+  app.post<{ Params: { projectId: string; endpointId: string } }>("/api/projects/:projectId/data-endpoints/:endpointId/test", async (request, reply) => {
+    const endpoint = store.listDataEndpoints(request.params.projectId).find((item) => item.id === request.params.endpointId);
+    if (!endpoint) return reply.code(404).send({ message: "接口不存在" });
+    const definition = store.listDataPipelines(request.params.projectId).find((pipeline) => pipeline.id === endpoint.pipelineId);
+    if (!definition) return reply.code(409).send({ message: "接口引用的流水线不存在" });
+    try { return await previewPipeline(config, store, definition); }
+    catch (reason) { return reply.code(400).send({ message: reason instanceof Error ? reason.message : "接口测试失败" }); }
+  });
+  app.delete<{ Params: { projectId: string; endpointId: string } }>("/api/projects/:projectId/data-endpoints/:endpointId", async (request, reply) => {
+    return await store.removeDataEndpoint(request.params.projectId, request.params.endpointId) ? reply.code(204).send() : reply.code(404).send({ message: "接口不存在" });
   });
 
   app.post<{ Params: { projectId: string }; Querystring: { rvtConversionMode?: string; rvtRevitVersion?: string } }>("/api/projects/:projectId/models", async (request, reply) => {
