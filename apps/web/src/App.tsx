@@ -103,6 +103,7 @@ import { DashboardWorkspace } from "./components/DashboardWorkspace";
 import { InteractionEditor, type InteractionTargetOption } from "./components/InteractionEditor";
 import { SceneDataBindingEditor, type SceneDataBindingRuntimeState } from "./components/SceneDataBindingEditor";
 import { CameraNavigationPanel } from "./components/CameraNavigationPanel";
+import { SceneTimelinePanel } from "./components/SceneTimelinePanel";
 import { RendererDiagnosticsPanel } from "./components/RendererDiagnosticsPanel";
 import { AiAssistantPanel } from "./components/AiAssistantPanel";
 import { LoginPage } from "./components/LoginPage";
@@ -1044,6 +1045,7 @@ export function App() {
   }, [route.view, route.sceneId, engine]);
 
   const loadedModels = useMemo(() => engine?.listModels() ?? [], [engine, revision]);
+  const loadedModelNames = useMemo(() => new Map(loadedModels.map((model) => [model.id, model.name])), [loadedModels]);
   useEffect(() => {
     if (engine) setNavigationDiagnostics(engine.getNavigationCollisionDiagnostics());
   }, [engine, revision]);
@@ -2822,31 +2824,22 @@ export function App() {
           </div>
         )}
         {animationOpen && (
-          <div className="timeline-panel" aria-label={tr(locale, "场景动画编辑器", "Scene animation editor")}>
-            <div className="timeline-main">
-              <button className="timeline-jump" title={tr(locale, "回到开始", "Go to start")} onClick={() => engine?.seekSceneAnimation(0)}>0</button>
-              <button className="timeline-play" title={animationPlaying ? tr(locale, "暂停", "Pause") : tr(locale, "播放", "Play")} onClick={toggleSceneAnimation}>{animationPlaying ? <Pause size={16} /> : <Play size={16} />}</button>
-              <span className="timeline-time">{animationTime.toFixed(1)}s</span>
-              <input className="timeline-range" type="range" min="0" max={sceneAnimation.duration} step="0.05" value={animationTime} onChange={(event) => engine?.seekSceneAnimation(Number(event.target.value))} aria-label={tr(locale, "动画时间", "Animation time")} />
-              <label className="timeline-duration"><span>{tr(locale, "时长", "Duration")}</span><DeferredNumberInput min={0.1} step={0.5} value={sceneAnimation.duration} onCommit={(value) => updateSceneAnimation({ ...sceneAnimation, duration: value })} /><i>s</i></label>
-              <label className="timeline-loop"><input type="checkbox" checked={sceneAnimation.loop} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, loop: event.target.checked })} />{tr(locale, "循环", "Loop")}</label>
-              <label className="timeline-loop"><input type="checkbox" checked={sceneAnimation.pingPong ?? false} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, pingPong: event.target.checked })} />{tr(locale, "往返", "Ping-pong")}</label>
-            </div>
-            <div className="timeline-options">
-              <label><span>{tr(locale, "相机插值", "Camera interpolation")}</span><select value={sceneAnimation.cameraInterpolation ?? "smooth"} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, cameraInterpolation: event.target.value as NonNullable<SceneAnimationState["cameraInterpolation"]> })}><option value="linear">{tr(locale, "线性", "Linear")}</option><option value="smooth">{tr(locale, "平滑", "Smooth")}</option><option value="spline">{tr(locale, "曲线路径", "Spline")}</option></select></label>
-              <label><span>{tr(locale, "播放速度", "Playback speed")}</span><select value={sceneAnimation.playbackSpeed ?? 1} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, playbackSpeed: Number(event.target.value) })}><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="4">4×</option></select></label>
-              <label className="timeline-path"><input type="checkbox" checked={sceneAnimation.showCameraPath ?? true} onChange={(event) => updateSceneAnimation({ ...sceneAnimation, showCameraPath: event.target.checked })} />{tr(locale, "显示相机轨迹", "Show camera path")}</label>
-              <small>{tr(locale, "关键帧点击定位，双击删除", "Click a keyframe to seek; double-click to delete")}</small>
-            </div>
-            <div className="timeline-actions">
-              <button onClick={addCameraKeyframe}><Camera size={14} />{tr(locale, "记录/更新相机", "Record/update camera")}</button>
-              <button onClick={addModelKeyframe} disabled={!selected || selectionLocked}><Box size={14} />{tr(locale, "记录选中对象", "Record selected object")}</button>
-              <span>{sceneAnimation.camera.length} {tr(locale, "相机帧", "camera frames")} · {sceneAnimation.models.length} {tr(locale, "对象帧", "object frames")}</span>
-              {[...sceneAnimation.camera, ...sceneAnimation.models].sort((a, b) => a.time - b.time).map((frame) => (
-                <button className="keyframe-chip" key={frame.id} title={tr(locale, "点击定位，双击删除", "Click to seek; double-click to delete")} onClick={() => engine?.seekSceneAnimation(frame.time)} onDoubleClick={() => deleteKeyframe(frame.id)}>{"camera" in frame ? tr(locale, "相机", "Camera") : tr(locale, "对象", "Object")} {frame.time.toFixed(1)}s</button>
-              ))}
-            </div>
-          </div>
+          <SceneTimelinePanel
+            locale={locale}
+            animation={sceneAnimation}
+            currentTime={animationTime}
+            playing={animationPlaying}
+            selectedObjectName={selected ? selectionName || selected.name : undefined}
+            selectedObjectLocked={selectionLocked}
+            modelNames={loadedModelNames}
+            onClose={() => setAnimationOpen(false)}
+            onPlayPause={toggleSceneAnimation}
+            onSeek={(time) => engine?.seekSceneAnimation(time)}
+            onChange={updateSceneAnimation}
+            onRecordCamera={addCameraKeyframe}
+            onRecordObject={addModelKeyframe}
+            onDeleteFrame={deleteKeyframe}
+          />
         )}
         {route.view === "studio" && <div className="viewport-status"><span className={busy ? "status-dot working" : "status-dot"} />{message}</div>}
         {route.view === "studio" && navigationMode !== "orbit" && <div className="navigation-hint">
