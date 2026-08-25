@@ -20,6 +20,7 @@ import {
   Info,
   Layers3,
   LayoutGrid,
+  ListChecks,
   LoaderCircle,
   Lightbulb,
   Languages,
@@ -82,6 +83,7 @@ import type {
   SceneMaterialState,
   SceneModelEffectsState,
   ScenePostProcessingState,
+  SceneSelectionSetState,
   ScenePhysicsBodyState,
   ScenePhysicsState,
   SceneSnapshot,
@@ -104,6 +106,7 @@ import { InteractionEditor, type InteractionTargetOption } from "./components/In
 import { SceneDataBindingEditor, type SceneDataBindingRuntimeState } from "./components/SceneDataBindingEditor";
 import { CameraNavigationPanel } from "./components/CameraNavigationPanel";
 import { SceneTimelinePanel } from "./components/SceneTimelinePanel";
+import { SceneOrganizationPanel, type SceneOrganizationObject } from "./components/SceneOrganizationPanel";
 import { RendererDiagnosticsPanel } from "./components/RendererDiagnosticsPanel";
 import { AiAssistantPanel } from "./components/AiAssistantPanel";
 import { LoginPage } from "./components/LoginPage";
@@ -422,6 +425,10 @@ export function App() {
   const [clipping, setClippingState] = useState<ClippingState>(DEFAULT_CLIPPING);
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
   const [directoryMode, setDirectoryMode] = useState<"components" | "spaces">("components");
+  const [sceneOrganizationOpen, setSceneOrganizationOpen] = useState(false);
+  const [sceneOrganizationSelection, setSceneOrganizationSelection] = useState<Set<string>>(new Set());
+  const [selectionSets, setSelectionSets] = useState<SceneSelectionSetState[]>([]);
+  const [lastDeletedSelectionSet, setLastDeletedSelectionSet] = useState<SceneSelectionSetState>();
   const [projectDialogMode, setProjectDialogMode] = useState<"create" | "rename">();
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectDescription, setNewProjectDescription] = useState("");
@@ -1046,6 +1053,13 @@ export function App() {
 
   const loadedModels = useMemo(() => engine?.listModels() ?? [], [engine, revision]);
   const loadedModelNames = useMemo(() => new Map(loadedModels.map((model) => [model.id, model.name])), [loadedModels]);
+  const sceneOrganizationObjects = useMemo<SceneOrganizationObject[]>(() => loadedModels.map((model) => ({
+    id: model.id,
+    name: model.name,
+    kind: model.kind,
+    visible: model.visible,
+    locked: engine?.isModelLocked(model.id) ?? false
+  })), [engine, loadedModels]);
   useEffect(() => {
     if (engine) setNavigationDiagnostics(engine.getNavigationCollisionDiagnostics());
   }, [engine, revision]);
@@ -1471,6 +1485,84 @@ export function App() {
     setRevision((item) => item + 1);
   }
 
+  function replaceSceneOrganizationSelection(ids: string[]) {
+    const available = new Set(sceneOrganizationObjects.map((item) => item.id));
+    setSceneOrganizationSelection(new Set(ids.filter((id) => available.has(id))));
+  }
+
+  function toggleSceneOrganizationObject(id: string) {
+    setSceneOrganizationSelection((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function setSceneObjectsVisible(ids: string[], visible: boolean) {
+    if (!engine) return;
+    for (const id of ids) engine.setVisible(id, visible);
+    setMessage(tr(locale, `${visible ? "显示" : "隐藏"}了 ${ids.length} 个场景对象`, `${visible ? "Showed" : "Hid"} ${ids.length} scene objects`));
+    setRevision((value) => value + 1);
+  }
+
+  function setSceneObjectsLocked(ids: string[], locked: boolean) {
+    if (!engine) return;
+    for (const id of ids) engine.setModelLocked(id, locked);
+    setMessage(tr(locale, `${locked ? "锁定" : "解锁"}了 ${ids.length} 个场景对象`, `${locked ? "Locked" : "Unlocked"} ${ids.length} scene objects`));
+    setRevision((value) => value + 1);
+  }
+
+  function isolateSceneObjects(ids: string[]) {
+    engine?.isolateModels(ids);
+    setMessage(tr(locale, `已隔离 ${ids.length} 个场景对象`, `Isolated ${ids.length} scene objects`));
+    setRevision((value) => value + 1);
+  }
+
+  function restoreSceneObjectIsolation() {
+    engine?.clearIsolation();
+    setMessage(tr(locale, "已恢复隔离前的可见状态", "Restored visibility from before isolation"));
+    setRevision((value) => value + 1);
+  }
+
+  function createSceneSelectionSet(name: string) {
+    const objectIds = sceneOrganizationObjects.filter((item) => sceneOrganizationSelection.has(item.id)).map((item) => item.id);
+    if (objectIds.length === 0) return;
+    const next: SceneSelectionSetState = { id: crypto.randomUUID(), name: name || tr(locale, `选择集 ${selectionSets.length + 1}`, `Selection set ${selectionSets.length + 1}`), objectIds };
+    setSelectionSets((items) => [...items, next]);
+    setMessage(tr(locale, `已保存选择集“${next.name}”`, `Saved selection set “${next.name}”`));
+  }
+
+  function updateSceneSelectionSet(id: string) {
+    const objectIds = sceneOrganizationObjects.filter((item) => sceneOrganizationSelection.has(item.id)).map((item) => item.id);
+    if (objectIds.length === 0) return;
+    const current = selectionSets.find((item) => item.id === id);
+    setSelectionSets((items) => items.map((item) => item.id === id ? { ...item, objectIds } : item));
+    if (current) setMessage(tr(locale, `已更新选择集“${current.name}”`, `Updated selection set “${current.name}”`));
+  }
+
+  function applySceneSelectionSet(id: string) {
+    const current = selectionSets.find((item) => item.id === id);
+    if (!current) return;
+    replaceSceneOrganizationSelection(current.objectIds);
+    const available = current.objectIds.filter((objectId) => sceneOrganizationObjects.some((item) => item.id === objectId)).length;
+    setMessage(tr(locale, `已载入“${current.name}”，选择 ${available} 个对象`, `Loaded “${current.name}” with ${available} objects`));
+  }
+
+  function deleteSceneSelectionSet(id: string) {
+    const current = selectionSets.find((item) => item.id === id);
+    if (current) setLastDeletedSelectionSet(current);
+    setSelectionSets((items) => items.filter((item) => item.id !== id));
+    if (current) setMessage(tr(locale, `已删除选择集“${current.name}”`, `Deleted selection set “${current.name}”`));
+  }
+
+  function restoreDeletedSceneSelectionSet() {
+    if (!lastDeletedSelectionSet) return;
+    setSelectionSets((items) => [...items, lastDeletedSelectionSet]);
+    setMessage(tr(locale, `已恢复选择集“${lastDeletedSelectionSet.name}”`, `Restored selection set “${lastDeletedSelectionSet.name}”`));
+    setLastDeletedSelectionSet(undefined);
+  }
+
   function selectLightForTransform(light: SceneLightState, handle: "position" | "target") {
     setSelectedLightId(light.id);
     setEnvironmentOpen(true);
@@ -1591,6 +1683,7 @@ export function App() {
       dashboard: sceneDashboard,
       dataBindings: sceneDataBindings,
       interactions: sceneInteractions,
+      selectionSets,
       ...(selected ? { selectedModelId: selected.id } : {}),
       ...(selectedLayerId ? { selectedLayerId } : {}),
       ...(selectedAnnotationId ? { selectedAnnotationId } : {}),
@@ -1701,6 +1794,9 @@ export function App() {
       setAnnotations([]);
       setSelectedAnnotationId(undefined);
       setSelectedSpace(undefined);
+      setSceneOrganizationSelection(new Set());
+      setSelectionSets(structuredClone(scene.selectionSets ?? []));
+      setLastDeletedSelectionSet(undefined);
       for (const item of scene.models) {
         const record = sceneProject.models.find((model) => model.id === item.modelId);
         if (record) await loadModel(record);
@@ -1836,6 +1932,9 @@ export function App() {
     setAnnotations([]);
     setSelectedAnnotationId(undefined);
     setSelected(undefined);
+    setSceneOrganizationSelection(new Set());
+    setSelectionSets([]);
+    setLastDeletedSelectionSet(undefined);
     setCameraViews([]);
     setCameraConstraints(DEFAULT_CAMERA_CONSTRAINTS);
     setNavigationSettings(DEFAULT_NAVIGATION_SETTINGS);
@@ -1867,6 +1966,7 @@ export function App() {
       dashboard: structuredClone(DEFAULT_DASHBOARD_STATE),
       dataBindings: [],
       interactions: [],
+      selectionSets: [],
       createdAt: now,
       updatedAt: now
     };
@@ -1883,6 +1983,7 @@ export function App() {
     setSceneDataBindings([]);
     setSceneDataBindingRuntime({});
     setSceneInteractions([]);
+    setSelectionSets([]);
     setSceneEnvironment(configuredDefaultEnvironment);
     setPostProcessing(DEFAULT_POST_PROCESSING);
     setPhysics(DEFAULT_PHYSICS);
@@ -2000,6 +2101,12 @@ export function App() {
           floors: parsed.floors.map((floor) => ({
             ...floor,
             modelId: modelIdMap.get(floor.modelId) ?? floor.modelId
+          }))
+        } : {}),
+        ...(parsed.selectionSets ? {
+          selectionSets: parsed.selectionSets.map((set) => ({
+            ...set,
+            objectIds: set.objectIds.map((id) => modelIdMap.get(id) ?? id)
           }))
         } : {}),
         ...(parsed.selectedModelId ? { selectedModelId: modelIdMap.get(parsed.selectedModelId) ?? parsed.selectedModelId } : {})
@@ -2342,10 +2449,14 @@ export function App() {
       <aside className="left-panel">
         <div className="panel-heading">
           <div><span className="eyebrow">PROJECT DIRECTORY</span><h2>{tr(locale, "目录树", "Directory")}</h2></div>
-          <button className="icon-button" title={tr(locale, "上传模型", "Upload model")} onClick={() => uploadRef.current?.click()} disabled={uploading}>
-            {uploading ? <LoaderCircle className="spin" size={18} /> : <Plus size={18} />}
-          </button>
+          <div className="panel-heading-actions">
+            <button className={`icon-button ${sceneOrganizationOpen ? "active" : ""}`} title={tr(locale, "批量管理与选择集", "Batch management and selection sets")} aria-label={tr(locale, "场景组织", "Scene organization")} onClick={() => setSceneOrganizationOpen((value) => !value)}><ListChecks size={17} /></button>
+            <button className="icon-button" title={tr(locale, "上传模型", "Upload model")} onClick={() => uploadRef.current?.click()} disabled={uploading}>
+              {uploading ? <LoaderCircle className="spin" size={18} /> : <Plus size={18} />}
+            </button>
+          </div>
         </div>
+        {!sceneOrganizationOpen && <>
         <div className="rvt-route-switch" aria-label={tr(locale, "RVT 转换链路", "RVT conversion route")}>
           <span>{tr(locale, "RVT 转换", "RVT conversion")}</span>
           <button className={rvtConversionMode === "native-glb" ? "active" : ""} onClick={() => setRvtConversionMode("native-glb")}><strong>{tr(locale, "原生 GLB", "Native GLB")}</strong><small>{tr(locale, "快速 · 推荐", "Fast · Recommended")}</small></button>
@@ -2384,8 +2495,28 @@ export function App() {
             </div>
           )}
         </section>}
-        <div className="asset-list">
-          {directoryMode === "spaces" ? <SpaceTree
+        </>}
+        <div className={`asset-list ${sceneOrganizationOpen ? "organization-mode" : ""}`}>
+          {sceneOrganizationOpen ? <SceneOrganizationPanel
+            locale={locale}
+            objects={sceneOrganizationObjects}
+            selectedIds={sceneOrganizationSelection}
+            selectionSets={selectionSets}
+            lastDeletedSelectionSet={lastDeletedSelectionSet}
+            isolationActive={engine?.isIsolationActive() ?? false}
+            onClose={() => setSceneOrganizationOpen(false)}
+            onToggle={toggleSceneOrganizationObject}
+            onSelect={replaceSceneOrganizationSelection}
+            onShow={setSceneObjectsVisible}
+            onLock={setSceneObjectsLocked}
+            onIsolate={isolateSceneObjects}
+            onRestoreIsolation={restoreSceneObjectIsolation}
+            onCreateSelectionSet={createSceneSelectionSet}
+            onUpdateSelectionSet={updateSceneSelectionSet}
+            onApplySelectionSet={applySceneSelectionSet}
+            onDeleteSelectionSet={deleteSceneSelectionSet}
+            onRestoreDeletedSelectionSet={restoreDeletedSceneSelectionSet}
+          /> : directoryMode === "spaces" ? <SpaceTree
             locale={locale}
             spaces={spaces}
             isVisible={(space) => engine?.isSpaceVisible(space) ?? false}

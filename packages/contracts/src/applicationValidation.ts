@@ -163,7 +163,15 @@ function validateScene(value: unknown, path: string): void {
   optional(object, "physics", validateScenePhysics, path);
   optional(object, "animation", validateAnimation, path);
   optional(object, "dataBindings", (bindings, bindingsPath) => expectArray(bindings, bindingsPath, validateSceneDataBinding), path);
+  optional(object, "selectionSets", (sets, setsPath) => expectArray(sets, setsPath, validateSceneSelectionSet), path);
   for (const key of ["selectedModelId", "selectedLayerId", "selectedAnnotationId"] as const) optional(object, key, expectString, path);
+}
+
+function validateSceneSelectionSet(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "id", expectString, path);
+  required(object, "name", expectString, path);
+  required(object, "objectIds", validateStringArray, path);
 }
 
 function validateSceneDataBinding(value: unknown, path: string): void {

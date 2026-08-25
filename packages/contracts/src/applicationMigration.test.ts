@@ -78,4 +78,13 @@ describe("scene bridge to native ApplicationDocument", () => {
     expect(application.scenes[0]?.navigationSettings).toEqual(input.navigationSettings);
     expect(applicationToSceneSnapshotV1(application).navigationSettings).toEqual(input.navigationSettings);
   });
+
+  it("keeps reusable scene selection sets independent from renderer objects", () => {
+    const input = structuredClone(pure3dFixture) as unknown as SceneSnapshot;
+    input.selectionSets = [{ id: "selection-line-a", name: "一号产线", objectIds: ["robot-1", "conveyor-2"] }];
+
+    const application = migrateSceneSnapshotV1(input);
+    expect(application.scenes[0]?.selectionSets).toEqual(input.selectionSets);
+    expect(applicationToSceneSnapshotV1(application).selectionSets).toEqual(input.selectionSets);
+  });
 });

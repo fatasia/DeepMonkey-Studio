@@ -1922,11 +1922,23 @@ export class ViewerEngine {
   }
 
   isolateComponents(records: ComponentRecord[]): void {
-    this.clearIsolation();
     const targets = records.flatMap((record) => {
       const object = this.layerObjects.get(record.modelId)?.get(record.id);
       return object ? [object] : [];
     });
+    this.isolateObjects(targets);
+  }
+
+  isolateModels(modelIds: string[]): void {
+    const targets = [...new Set(modelIds)].flatMap((id) => {
+      const object = this.models.get(id)?.object;
+      return object ? [object] : [];
+    });
+    this.isolateObjects(targets);
+  }
+
+  private isolateObjects(targets: THREE.Object3D[]): void {
+    this.clearIsolation();
     if (targets.length === 0) return;
     for (const model of this.models.values()) {
       model.object.traverse((object) => {

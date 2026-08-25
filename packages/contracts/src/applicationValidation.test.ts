@@ -50,6 +50,9 @@ const malformedCases: MalformedCase[] = [
     value.topologies = [{ id: "topology-1", name: "拓扑", nodes: [], edges: [{ id: "edge-1", sourceNodeId: "a", targetNodeId: 3 as never, properties: {} }] }];
   })],
   ["scene", () => altered(pureApplication, (value) => { value.scenes[0]!.camera.mode = "fly" as never; })],
+  ["scene selection set", () => altered(pureApplication, (value) => {
+    value.scenes[0]!.selectionSets = [{ id: "selection-1", name: "产线", objectIds: [1 as never] }];
+  })],
   ["geo root", () => altered(pureApplication, (value) => { value.geo = true as never; })],
   ["geo layer", () => altered(pureApplication, (value) => {
     value.geo.layers = [{ id: "layer-1", providerId: "provider-1", visible: "yes" as never }];
@@ -154,6 +157,13 @@ describe("assertApplicationDocument", () => {
       zIndex: 2,
       widget: { title: "温度趋势", key: "device.temperature", type: "line", unit: "℃", color: "#e1ad4e" }
     });
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("accepts renderer-independent scene selection sets", () => {
+    const application = structuredClone(pureApplication);
+    application.scenes[0]!.selectionSets = [{ id: "selection-1", name: "一号产线", objectIds: ["robot-1", "conveyor-2"] }];
 
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });

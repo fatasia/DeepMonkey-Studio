@@ -577,6 +577,13 @@ export interface CameraConstraintsState {
   collisionRadius: number;
 }
 
+/** 可复用的场景对象集合；仅保存稳定 ID，不耦合具体渲染引擎对象。 */
+export interface SceneSelectionSetState {
+  id: string;
+  name: string;
+  objectIds: string[];
+}
+
 /** 可序列化的漫游手感配置；渲染/物理引擎实现细节不进入场景协议。 */
 export interface NavigationSettingsState {
   walkSpeed: number;
@@ -822,6 +829,7 @@ export interface SceneSnapshot {
   dashboard?: SceneDashboardState;
   dataBindings?: SceneDataBindingState[];
   interactions?: SceneInteractionScriptState[];
+  selectionSets?: SceneSelectionSetState[];
   selectedModelId?: string;
   selectedLayerId?: string;
   selectedAnnotationId?: string;
