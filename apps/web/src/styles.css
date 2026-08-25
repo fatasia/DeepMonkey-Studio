@@ -271,13 +271,45 @@ button { color: inherit; }
 .scene-title-wrap input:focus { border-bottom-color: var(--accent); }
 .topbar-actions { display: flex; flex: 0 0 auto; gap: 5px; margin-left: auto; }
 .topbar-actions > .button,.topbar-actions > .export-menu > .button { height: 32px; padding: 0 9px; gap: 5px; font-size: 10px; line-height: 1; white-space: nowrap; }
-.renderer-switch { display: flex; align-items: center; gap: 3px; height: 34px; padding: 3px 4px 3px 7px; color: #778188; border: 1px solid var(--line); border-radius: 7px; background: #191e21; }
-.renderer-switch > svg { margin-right: 2px; }
+.renderer-switch-wrap { position: relative; }
+.renderer-switch { display: flex; align-items: center; gap: 3px; height: 34px; padding: 3px 4px; color: #778188; border: 1px solid var(--line); border-radius: 7px; background: #191e21; }
 .renderer-switch button { display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 7px; color: #7e898f; border: 0; border-radius: 5px; background: transparent; font-size: 8px; font-weight: 750; cursor: pointer; }
+.renderer-switch .renderer-diagnostics-trigger { display: grid; place-items: center; width: 27px; padding: 0; color: #839096; border-right: 1px solid #30383d; border-radius: 4px 0 0 4px; }
+.renderer-switch .renderer-diagnostics-trigger:hover,.renderer-switch .renderer-diagnostics-trigger.open { color: var(--accent); background: rgba(212,168,79,.08); }
 .renderer-switch button small { padding: 2px 3px; color: #9d8248; border-radius: 3px; background: rgba(217,170,77,.1); font-size: 6px; }
 .renderer-switch button.active { color: #1c170d; background: var(--accent); }
 .renderer-switch button.active small { color: #3a2c12; background: rgba(41,31,12,.12); }
 .renderer-switch button:disabled { opacity: .48; cursor: wait; }
+.renderer-diagnostics-panel { position: absolute; top: 41px; right: 0; z-index: 80; width: 380px; overflow: hidden; color: #c8d0d4; border: 1px solid #3b494f; border-radius: 10px; background: rgba(18,24,28,.985); box-shadow: 0 20px 55px rgba(0,0,0,.48); }
+.renderer-diagnostics-panel > header { display: flex; align-items: center; justify-content: space-between; min-height: 47px; padding: 0 9px 0 12px; border-bottom: 1px solid #2d383e; }
+.renderer-diagnostics-panel > header > span { display: grid; gap: 2px; }
+.renderer-diagnostics-panel > header strong { color: #edf1f3; font-size: 11px; }
+.renderer-diagnostics-panel > header small { color: #75838a; font-size: 8px; }
+.renderer-diagnostics-panel > header button,.renderer-device-card > button { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; color: #849198; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+.renderer-diagnostics-panel > header button:hover,.renderer-device-card > button:hover { color: var(--accent); background: rgba(212,168,79,.08); }
+.renderer-diagnostics-loading { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 150px; color: #8f9ba1; font-size: 9px; }
+.renderer-device-card { display: grid; grid-template-columns: 25px minmax(0,1fr) 26px; align-items: center; gap: 7px; margin: 9px; padding: 8px; border-radius: 7px; background: #20292e; }
+.renderer-device-card > svg { color: var(--accent); }
+.renderer-device-card > span { display: grid; min-width: 0; gap: 2px; }
+.renderer-device-card strong,.renderer-device-card small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.renderer-device-card strong { color: #dce2e5; font-size: 9px; }
+.renderer-device-card small { color: #6e7c83; font-size: 8px; }
+.renderer-option-list { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 0 9px 9px; }
+.renderer-option-list article { display: grid; align-content: start; min-height: 190px; padding: 9px; border: 1px solid #344148; border-radius: 8px; background: #171f23; }
+.renderer-option-list article.current { border-color: rgba(212,168,79,.58); box-shadow: inset 0 0 0 1px rgba(212,168,79,.07); }
+.renderer-option-title { display: flex; align-items: center; justify-content: space-between; }
+.renderer-option-title > span { display: flex; align-items: center; gap: 5px; }
+.renderer-option-title strong { color: #e3e8ea; font-size: 10px; }
+.renderer-option-title small { padding: 2px 5px; color: var(--accent); border-radius: 8px; background: rgba(212,168,79,.1); font-size: 7px; }
+.renderer-option-list article.ready .renderer-option-title svg { color: #65d092; }
+.renderer-option-list article.limited .renderer-option-title svg { color: #e5a758; }
+.renderer-option-list article.unavailable .renderer-option-title svg { color: #d36c76; }
+.renderer-option-list p { min-height: 27px; margin: 7px 0; color: #99a5ab; font-size: 8px; line-height: 1.45; }
+.renderer-option-list ul { display: grid; align-content: start; gap: 4px; min-height: 64px; margin: 0; padding: 0 0 0 12px; color: #6f7d84; font-size: 7px; line-height: 1.45; }
+.renderer-option-list article > button { align-self: end; width: 100%; min-height: 28px; margin-top: 8px; color: #17130b; border: 0; border-radius: 5px; background: var(--accent); font-size: 8px; font-weight: 750; cursor: pointer; }
+.renderer-option-list article > button:disabled { color: #68757b; background: #252e33; cursor: default; }
+.renderer-diagnostics-panel > footer { display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; color: #78868d; border-top: 1px solid #2d383e; background: #151d21; font-size: 8px; line-height: 1.45; }
+.renderer-diagnostics-panel > footer svg { flex: 0 0 auto; color: #6fd297; }
 .viewer-scene-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .viewer-scene-title strong { overflow: hidden; max-width: 420px; color: #e9edef; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .viewer-mode-badge { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; color: #e6c77f; border: 1px solid rgba(217,170,77,.3); border-radius: 999px; background: rgba(217,170,77,.09); font-size: 8px; font-weight: 750; }
@@ -1261,6 +1293,7 @@ button { color: inherit; }
 @media (max-width: 760px) {
   .environment-control { top: 66px; right: 8px; width: min(388px,calc(100% - 16px)); max-height: calc(100% - 92px); }
   .xr-mode-grid { grid-template-columns: 1fr; }
+  .renderer-diagnostics-panel { position: fixed; top: 58px; right: 8px; width: calc(100% - 16px); max-height: calc(100vh - 66px); overflow: auto; }
   .camera-navigation-panel { top: 66px; right: 8px; width: calc(100% - 16px); max-height: calc(100% - 92px); }
   .navigation-mode-grid { grid-template-columns: 1fr; }
   .navigation-mode-grid > button { min-height: 44px; }

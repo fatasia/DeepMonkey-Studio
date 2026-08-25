@@ -103,11 +103,13 @@ import { DashboardWorkspace } from "./components/DashboardWorkspace";
 import { InteractionEditor, type InteractionTargetOption } from "./components/InteractionEditor";
 import { SceneDataBindingEditor, type SceneDataBindingRuntimeState } from "./components/SceneDataBindingEditor";
 import { CameraNavigationPanel } from "./components/CameraNavigationPanel";
+import { RendererDiagnosticsPanel } from "./components/RendererDiagnosticsPanel";
 import { AiAssistantPanel } from "./components/AiAssistantPanel";
 import { LoginPage } from "./components/LoginPage";
 import { DEFAULT_DASHBOARD_STATE, normalizeDashboardState } from "./components/dashboardState";
 import { normalizeInteractionScripts } from "./interactionState";
 import { DEFAULT_NAVIGATION_SETTINGS, normalizeNavigationSettings } from "./navigationSettings";
+import { probeRendererCapabilities, rendererReadiness, type RendererCapabilityProbe } from "./rendererCapabilities";
 import { dataBindingProduct, normalizeSceneDataBindings, sceneDataBindingMessage } from "./sceneDataBindings";
 import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
@@ -335,6 +337,10 @@ export function App() {
     window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY) === "webgpu" ? "webgpu" : "webgl"
   );
   const [rendererSwitching, setRendererSwitching] = useState(false);
+  const [rendererDiagnosticsOpen, setRendererDiagnosticsOpen] = useState(false);
+  const [rendererProbe, setRendererProbe] = useState<RendererCapabilityProbe>();
+  const [rendererProbeRevision, setRendererProbeRevision] = useState(0);
+  const [rendererProbeChecking, setRendererProbeChecking] = useState(false);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [project, setProject] = useState<ProjectRecord>();
   const [scenes, setScenes] = useState<SceneSnapshot[]>([]);
@@ -484,6 +490,17 @@ export function App() {
   }, []);
 
   useEffect(() => storeLocale(locale), [locale]);
+
+  useEffect(() => {
+    if (!rendererDiagnosticsOpen) return;
+    let cancelled = false;
+    setRendererProbeChecking(true);
+    void probeRendererCapabilities()
+      .then((probe) => { if (!cancelled) setRendererProbe(probe); })
+      .catch((reason) => { if (!cancelled) showError(reason); })
+      .finally(() => { if (!cancelled) setRendererProbeChecking(false); });
+    return () => { cancelled = true; };
+  }, [rendererDiagnosticsOpen, rendererProbeRevision, showError]);
 
   useEffect(() => {
     if (authReady && currentUser && route.view === "branding" && currentUser.role !== "admin") navigate({ view: "manager" }, true);
@@ -1022,6 +1039,7 @@ export function App() {
   }, [route.view, route.sceneId, engine]);
 
   const loadedModels = useMemo(() => engine?.listModels() ?? [], [engine, revision]);
+  const rendererOptions = useMemo(() => rendererProbe ? rendererReadiness(rendererProbe, { postProcessingEnabled: postProcessing.enabled }) : [], [rendererProbe, postProcessing.enabled]);
   const scenePrimitives = loadedModels.filter((item) => item.kind === "primitive");
   const selectedTransform = selected && engine ? engine.getSelectionTransform() : undefined;
   const selectionName = selected && engine ? engine.getSelectionName() : "";
@@ -2279,10 +2297,23 @@ export function App() {
           />
         </div>
         <div className="topbar-actions">
-          <div className="renderer-switch" aria-label={tr(locale, "渲染模式", "Renderer")} title={tr(locale, "WebGPU 仍处于实验阶段；切换时会自动恢复当前场景", "WebGPU is experimental; switching restores the current scene")}>
-            {rendererSwitching ? <LoaderCircle className="spin" size={14} /> : <Cpu size={14} />}
-            <button className={rendererBackend === "webgl" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgl")}>WebGL</button>
-            <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>{tr(locale, "实验", "Experimental")}</small></button>
+          <div className="renderer-switch-wrap">
+            <div className="renderer-switch" aria-label={tr(locale, "渲染模式", "Renderer")} title={tr(locale, "打开能力诊断或直接切换渲染后端", "Open diagnostics or switch renderer backend")}>
+              <button className={`renderer-diagnostics-trigger ${rendererDiagnosticsOpen ? "open" : ""}`} aria-label={tr(locale, "渲染能力诊断", "Renderer diagnostics")} onClick={() => setRendererDiagnosticsOpen((value) => !value)}>{rendererSwitching ? <LoaderCircle className="spin" size={14} /> : <Cpu size={14} />}</button>
+              <button className={rendererBackend === "webgl" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgl")}>WebGL</button>
+              <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>{tr(locale, "实验", "Experimental")}</small></button>
+            </div>
+            {rendererDiagnosticsOpen && <RendererDiagnosticsPanel
+              locale={locale}
+              current={rendererBackend}
+              switching={rendererSwitching}
+              checking={rendererProbeChecking}
+              probe={rendererProbe}
+              readiness={rendererOptions}
+              onClose={() => setRendererDiagnosticsOpen(false)}
+              onRefresh={() => setRendererProbeRevision((value) => value + 1)}
+              onSwitch={changeRendererBackend}
+            />}
           </div>
           <button className={`button ghost compact-action ${aiAssistantOpen ? "active" : ""}`} title="AI 场景助手" onClick={() => setAiAssistantOpen((value) => !value)}><Bot size={15} /><span className="action-label">AI 助手</span></button>
           <button className="button ghost" title={route.dashboardReturn ? tr(locale, "返回二维设计", "Back to 2D design") : tr(locale, "场景管理", "Scenes")} onClick={() => void commitSceneName().then((committed) => committed && returnFromSceneEditor())}><ArrowLeft size={15} /><span className="action-label">{route.dashboardReturn ? tr(locale, "返回二维", "Back to 2D") : tr(locale, "场景管理", "Scenes")}</span></button>
