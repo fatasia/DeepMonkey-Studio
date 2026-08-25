@@ -22,7 +22,7 @@ Dev Studio 需要支持自定义脚本、相机操作、第一/第三人称、ne
 - 运动和物流仿真使用单一 simulation clock、fixed timestep、带时间戳遥测缓冲、插值、有限外推、暂停、倍速、记录和回放。
 - 设备拆解、AGV、机器人和物流节拍作为公开 API 的参考实现与测试夹具，不进入引擎核心特例。
 - 每个脚本和扩展声明能力权限；发布包记录 SDK/Extension API 版本和权限清单。
-- 不建设 GIS、3D Tiles、倾斜摄影、云渲染或完整 Unity 兼容层。
+- 保留轻量 GIS，并将云渲染放在最终阶段；不建设 3D Tiles、倾斜摄影、海量地形/点云或完整 Unity 兼容层。
 
 ## Non-Functional Requirements
 

@@ -13,7 +13,7 @@ BIM Studio 当前大量路由、项目状态、场景运行时和 UI 集中在 `
 ## Decision
 
 - 保持模块化单体和单仓库部署，不拆分业务微服务。
-- 以 Studio Shell、Dashboard、Scene、Data、Interaction、Publish 为 feature 边界；每个 feature 只从公开 `index.ts` 暴露类型和用例。
+- 以 Studio Shell、Dashboard、Topology、Map/Geo、Scene、Data、Interaction、Publish 为 feature 边界；每个 feature 只从公开 `index.ts` 暴露类型和用例。
 - Studio Core 只包含文档、命令、撤销、选择、引用和事件契约，不依赖 React、Three.js、Tauri、HTTP 或具体存储。
 - Three.js、Browser、Tauri 和 Server 都作为指向 Core/Runtime ports 的 adapters。
 - 跨 feature 协作使用稳定 ID、typed command/query 和少量领域事件；feature 内部优先直接、类型化调用，不使用全局万能 EventBus。
