@@ -74,3 +74,41 @@ export interface SceneExtensionManifest {
   renderers: SceneRendererKind[];
   lifecycle: SceneScriptLifecycle[];
 }
+
+export interface SceneBehaviorModule {
+  id: string;
+  name: string;
+  apiVersion: SceneApiVersion;
+  code: string;
+  lifecycle: SceneScriptLifecycle[];
+  capabilities: SceneCapability[];
+  permissions: ScenePermission[];
+}
+
+export interface SceneBehaviorRuntimeSettings {
+  fixedStepMs: number;
+  maxFixedStepsPerFrame: number;
+  timeScale: number;
+  updateEnabled: boolean;
+}
+
+export interface SceneBehaviorTick {
+  sequence: number;
+  lifecycle: "onUpdate" | "onFixedUpdate";
+  deltaMs: number;
+  elapsedMs: number;
+  frame: number;
+}
+
+export type SceneBehaviorLogLevel = "debug" | "info" | "warn" | "error";
+
+export type SceneBehaviorWorkerRequest =
+  | { type: "behavior.initialize"; module: SceneBehaviorModule; sceneId: string }
+  | { type: "behavior.invoke"; invocationId: string; lifecycle: SceneScriptLifecycle; elapsedMs: number; deltaMs?: number; event?: SceneEvent; data?: JsonValue }
+  | { type: "behavior.dispose"; invocationId: string };
+
+export type SceneBehaviorWorkerResponse =
+  | { type: "behavior.ready"; moduleId: string; lifecycle: SceneScriptLifecycle[] }
+  | { type: "behavior.result"; invocationId: string; durationMs: number; commands: SceneCommand[] }
+  | { type: "behavior.log"; level: SceneBehaviorLogLevel; message: string; data?: JsonValue }
+  | { type: "behavior.error"; invocationId?: string; message: string; stack?: string };

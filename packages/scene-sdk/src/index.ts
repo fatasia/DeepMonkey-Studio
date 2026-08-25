@@ -1,2 +1,4 @@
 export * from "./compatibility.js";
+export * from "./behaviorScheduler.js";
+export * from "./commandValidation.js";
 export * from "./protocol.js";

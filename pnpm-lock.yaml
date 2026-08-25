@@ -138,6 +138,9 @@ importers:
       '@bim-studio/data-runtime':
         specifier: workspace:*
         version: link:../../packages/data-runtime
+      '@bim-studio/scene-sdk':
+        specifier: workspace:*
+        version: link:../../packages/scene-sdk
       '@bim-studio/server-sdk':
         specifier: workspace:*
         version: link:../../packages/server-sdk
