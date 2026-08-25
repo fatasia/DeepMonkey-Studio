@@ -11,7 +11,8 @@ import {
   createInsertDashboardNodeCommand,
   createUpsertInteractionFlowCommand,
   createUpdateDashboardDataWidgetCommand,
-  createUpdateDashboardNodeFrameCommand
+  createUpdateDashboardNodeFrameCommand,
+  createUpdateDashboardNodeFramesCommand
 } from "./index.js";
 
 function document() {
@@ -70,6 +71,24 @@ describe("StudioCommand", () => {
     expect(source.pages[0]?.nodes[0]?.frame).not.toEqual(frame);
     expect(renamed.scenes).toBe(source.scenes);
     expect(moved.scenes).toBe(source.scenes);
+  });
+
+  it("moves multiple dashboard nodes as one undoable command", () => {
+    const source = document();
+    const page = source.pages[0]!;
+    const first = page.nodes[0]!;
+    const second = { ...structuredClone(first), id: "second-node", frame: { x: 20, y: 30, width: 200, height: 100 } };
+    page.nodes.push(second);
+    const store = new ApplicationStore(source);
+
+    store.dispatch(createUpdateDashboardNodeFramesCommand(page.id, [
+      { nodeId: first.id, frame: { ...first.frame, x: 100 } },
+      { nodeId: second.id, frame: { ...second.frame, x: 120 } }
+    ]));
+
+    expect(store.getState().document?.pages[0]?.nodes.map((node) => node.frame.x)).toEqual([100, 120]);
+    expect(store.undo()).toBe(true);
+    expect(store.getState().document?.pages[0]?.nodes.map((node) => node.frame.x)).toEqual([first.frame.x, 20]);
   });
 
   it("rejects dashboard commands that target missing pages or nodes", () => {

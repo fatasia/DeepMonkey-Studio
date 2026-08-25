@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowLeft,
   Box,
   Database,
   Eye,
+  GripVertical,
   Layers3,
   LayoutDashboard,
   Minus,
@@ -11,6 +12,7 @@ import {
   Redo2,
   Rocket,
   Save,
+  Scaling,
   Undo2,
   Workflow,
   X
@@ -22,6 +24,7 @@ import {
   createRenameDashboardPageCommand,
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
+  createUpdateDashboardNodeFramesCommand,
   type ApplicationInteractionResult,
   type StudioCommand
 } from "@bim-studio/studio-core";
@@ -93,6 +96,7 @@ export function DashboardWorkspace({
   const [zoom, setZoom] = useState(normalizedInitialView.zoom);
   const [selectedNodeIds, setSelectedNodeIds] = useState(normalizedInitialView.selectedNodeIds);
   const [runtimePreview, setRuntimePreview] = useState(false);
+  const [draftFrames, setDraftFrames] = useState<Record<string, WidgetFrame>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
@@ -114,6 +118,7 @@ export function DashboardWorkspace({
   useEffect(() => {
     setZoom(normalizedInitialView.zoom);
     setSelectedNodeIds(normalizedInitialView.selectedNodeIds.filter((id) => page.nodes.some((node) => node.id === id)));
+    setDraftFrames({});
     pageNameCommitRef.current = page.name;
     const frame = window.requestAnimationFrame(() => {
       if (!scrollRef.current) return;
@@ -165,6 +170,60 @@ export function DashboardWorkspace({
       [field]: field === "width" || field === "height" ? Math.max(1, Math.round(value)) : Math.round(value)
     };
     onCommand(createUpdateDashboardNodeFrameCommand(page.id, selectedNode.id, next));
+  }
+
+  function beginNodeTransform(event: ReactPointerEvent<HTMLButtonElement>, node: WidgetNode, mode: "move" | "resize") {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const nodeIds = mode === "move" && selectedNodeIds.includes(node.id) ? selectedNodeIds : [node.id];
+    const initial = new Map(page.nodes.filter((candidate) => nodeIds.includes(candidate.id)).map((candidate) => [candidate.id, structuredClone(candidate.frame)]));
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const pointerId = event.pointerId;
+    const framesAt = (clientX: number, clientY: number): Record<string, WidgetFrame> => {
+      const dx = Math.round((clientX - startX) / zoom);
+      const dy = Math.round((clientY - startY) / zoom);
+      return Object.fromEntries([...initial].map(([nodeId, frame]) => {
+        if (mode === "resize") return [nodeId, {
+          ...frame,
+          width: Math.max(40, Math.min(page.width - frame.x, frame.width + dx)),
+          height: Math.max(40, Math.min(page.height - frame.y, frame.height + dy))
+        }];
+        return [nodeId, {
+          ...frame,
+          x: Math.max(0, Math.min(page.width - frame.width, frame.x + dx)),
+          y: Math.max(0, Math.min(page.height - frame.height, frame.y + dy))
+        }];
+      }));
+    };
+    const move = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      setDraftFrames(framesAt(pointer.clientX, pointer.clientY));
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+    };
+    const finish = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      cleanup();
+      const finalFrames = framesAt(pointer.clientX, pointer.clientY);
+      setDraftFrames({});
+      const changes = Object.entries(finalFrames)
+        .filter(([nodeId, frame]) => JSON.stringify(frame) !== JSON.stringify(initial.get(nodeId)))
+        .map(([nodeId, frame]) => ({ nodeId, frame }));
+      if (changes.length > 0) onCommand(createUpdateDashboardNodeFramesCommand(page.id, changes));
+    };
+    const cancel = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      cleanup();
+      setDraftFrames({});
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
   }
 
   function commitPageName(value: string) {
@@ -240,7 +299,7 @@ export function DashboardWorkspace({
       <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
         <div className="dashboard-artboard-stage" style={{ width: page.width * zoom, height: page.height * zoom }}>
           <div className="dashboard-artboard" style={{ width: page.width, height: page.height, transform: `scale(${zoom})` }}>
-            {page.nodes.map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} metric={node.kind === "data-widget" ? runtimeMetrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} />)}
+            {page.nodes.map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} frame={draftFrames[node.id] ?? node.frame} metric={node.kind === "data-widget" ? runtimeMetrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} onTransformStart={(event, mode) => beginNodeTransform(event, node, mode)} />)}
           </div>
         </div>
       </div>
@@ -297,14 +356,15 @@ function DashboardRuntimePreview({ locale, application, project, page, rendererB
   }, [page.width, page.height]);
   return <main className="dashboard-runtime-preview">
     <header><div><Eye size={16} /><span><strong>{application.metadata.name}</strong><small>{page.name} · {connected ? tr(locale, "实时数据", "Live data") : tr(locale, "离线预览", "Offline preview")}</small></span></div><div><span>{Math.round(scale * 100)}%</span><button onClick={onClose}><X size={15} />{tr(locale, "退出预览", "Exit preview")}</button></div></header>
-    <section ref={surfaceRef}><div className="dashboard-runtime-stage" style={{ width: page.width * scale, height: page.height * scale }}><div className="dashboard-artboard dashboard-runtime-artboard" style={{ width: page.width, height: page.height, transform: `scale(${scale})` }}>{page.nodes.map((node) => <DashboardNode key={node.id} runtime application={application} project={project} node={node} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={false} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={() => undefined} onEnterScene={() => undefined} />)}</div></div></section>
+    <section ref={surfaceRef}><div className="dashboard-runtime-stage" style={{ width: page.width * scale, height: page.height * scale }}><div className="dashboard-artboard dashboard-runtime-artboard" style={{ width: page.width, height: page.height, transform: `scale(${scale})` }}>{page.nodes.map((node) => <DashboardNode key={node.id} runtime application={application} project={project} node={node} frame={node.frame} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={false} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={() => undefined} onEnterScene={() => undefined} onTransformStart={() => undefined} />)}</div></div></section>
   </main>;
 }
 
-function DashboardNode({ application, project, node, metric, selected, locale, rendererBackend, runtime = false, onSelectionChange, onObjectInteraction, onInteraction, onSelect, onEnterScene }: {
+function DashboardNode({ application, project, node, frame, metric, selected, locale, rendererBackend, runtime = false, onSelectionChange, onObjectInteraction, onInteraction, onSelect, onEnterScene, onTransformStart }: {
   application: ApplicationDocument;
   project: ProjectRecord;
   node: WidgetNode;
+  frame: WidgetFrame;
   metric: DashboardMetric | undefined;
   selected: boolean;
   locale: AppLocale;
@@ -315,8 +375,9 @@ function DashboardNode({ application, project, node, metric, selected, locale, r
   onInteraction: (trigger: SceneInteractionTrigger) => void;
   onSelect: (additive: boolean) => void;
   onEnterScene: (sceneId: string) => void;
+  onTransformStart: (event: ReactPointerEvent<HTMLButtonElement>, mode: "move" | "resize") => void;
 }) {
-  const style = { left: node.frame.x, top: node.frame.y, width: node.frame.width, height: node.frame.height, zIndex: node.zIndex };
+  const style = { left: frame.x, top: frame.y, width: frame.width, height: frame.height, zIndex: node.zIndex };
   useEffect(() => {
     if (node.kind !== "data-widget") return;
     const task = window.setTimeout(() => onInteraction("load"), 0);
@@ -328,14 +389,19 @@ function DashboardNode({ application, project, node, metric, selected, locale, r
       {scene && node.renderMode !== "static-placeholder"
         ? <SceneViewportPreview locale={locale} node={node} scene={scene} project={project} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={(trigger, target) => onObjectInteraction(scene.id, trigger, target)} />
         : <div className="dashboard-scene-grid" />}
-      {!runtime && <><div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small><button onClick={(event) => { event.stopPropagation(); onEnterScene(node.sceneId); }}>{tr(locale, "进入三维编辑", "Open 3D editor")}</button></div><div className="dashboard-node-badge">3D · {node.renderMode}</div></>}
+      {!runtime && <><div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small><button onClick={(event) => { event.stopPropagation(); onEnterScene(node.sceneId); }}>{tr(locale, "进入三维编辑", "Open 3D editor")}</button></div><div className="dashboard-node-badge">3D · {node.renderMode}</div><NodeTransformHandles selected={selected} onTransformStart={onTransformStart} /></>}
     </article>;
   }
   if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? "runtime" : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4" }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")}>
     <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />
-    {!runtime && <div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div>}
+    {!runtime && <><div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div><NodeTransformHandles selected={selected} onTransformStart={onTransformStart} /></>}
   </article>;
   return null;
+}
+
+function NodeTransformHandles({ selected, onTransformStart }: { selected: boolean; onTransformStart: (event: ReactPointerEvent<HTMLButtonElement>, mode: "move" | "resize") => void }) {
+  if (!selected) return null;
+  return <><button className="dashboard-node-move-handle" aria-label="移动组件" onPointerDown={(event) => onTransformStart(event, "move")}><GripVertical size={13} /></button><button className="dashboard-node-resize-handle" aria-label="缩放组件" onPointerDown={(event) => onTransformStart(event, "resize")}><Scaling size={12} /></button></>;
 }
 
 function nodeLabel(node: WidgetNode): string {

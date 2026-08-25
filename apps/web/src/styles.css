@@ -69,6 +69,10 @@ button { color: inherit; }
 .dashboard-artboard { position: absolute; top: 0; left: 0; overflow: hidden; background: #12191d; transform-origin: top left; }
 .dashboard-node { position: absolute; box-sizing: border-box; overflow: hidden; border: 2px solid transparent; user-select: none; }
 .dashboard-node.selected { border-color: #d7ad51; box-shadow: 0 0 0 2px rgba(215,173,81,.22); }
+.dashboard-node-move-handle,.dashboard-node-resize-handle { position: absolute; z-index: 8; display: grid; width: 24px; height: 24px; padding: 0; place-items: center; color: #f1cf7b; border: 1px solid rgba(215,173,81,.7); border-radius: 5px; background: rgba(20,25,27,.92); box-shadow: 0 4px 12px rgba(0,0,0,.28); touch-action: none; cursor: grab; }
+.dashboard-node-move-handle { top: 5px; left: 5px; }
+.dashboard-node-resize-handle { right: 5px; bottom: 5px; cursor: nwse-resize; }
+.dashboard-node-move-handle:active { cursor: grabbing; }
 .dashboard-scene-viewport { background: radial-gradient(circle at 48% 36%,rgba(53,75,84,.44),rgba(11,17,20,.98) 62%); }
 .dashboard-scene-grid { position: absolute; inset: 0; opacity: .36; background-image: linear-gradient(rgba(109,137,148,.18) 1px,transparent 1px),linear-gradient(90deg,rgba(109,137,148,.18) 1px,transparent 1px); background-size: 80px 80px; transform: perspective(800px) rotateX(58deg) scale(1.4); transform-origin: 50% 90%; }
 .scene-viewport-preview { position: absolute; inset: 0; overflow: hidden; background: #111719; }

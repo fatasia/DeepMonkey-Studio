@@ -36,6 +36,16 @@ export interface UpdateDashboardNodeFrameCommand {
   };
 }
 
+export interface UpdateDashboardNodeFramesCommand {
+  readonly id: string;
+  readonly type: "dashboard.node.frames.update";
+  readonly label: string;
+  readonly payload: {
+    readonly pageId: string;
+    readonly frames: ReadonlyArray<{ readonly nodeId: string; readonly frame: WidgetFrame }>;
+  };
+}
+
 export interface UpsertInteractionFlowCommand {
   readonly id: string;
   readonly type: "interaction.flow.upsert";
@@ -75,6 +85,7 @@ export type StudioCommand =
   | RenameApplicationCommand
   | RenameDashboardPageCommand
   | UpdateDashboardNodeFrameCommand
+  | UpdateDashboardNodeFramesCommand
   | UpsertInteractionFlowCommand
   | DeleteInteractionFlowCommand
   | InsertDashboardNodeCommand
@@ -109,6 +120,18 @@ export function createUpdateDashboardNodeFrameCommand(
     type: "dashboard.node.frame.update",
     label: "调整二维组件位置与尺寸",
     payload: { pageId, nodeId, frame: structuredClone(frame) }
+  };
+}
+
+export function createUpdateDashboardNodeFramesCommand(
+  pageId: string,
+  frames: ReadonlyArray<{ nodeId: string; frame: WidgetFrame }>
+): UpdateDashboardNodeFramesCommand {
+  return {
+    id: commandId(),
+    type: "dashboard.node.frames.update",
+    label: frames.length > 1 ? `移动 ${frames.length} 个二维组件` : "调整二维组件位置与尺寸",
+    payload: { pageId, frames: structuredClone(frames) }
   };
 }
 
@@ -185,6 +208,20 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
             }
           : candidate)
       };
+    }
+    case "dashboard.node.frames.update": {
+      const page = requirePage(document, command.payload.pageId);
+      const frames = new Map(command.payload.frames.map((entry) => [entry.nodeId, entry.frame]));
+      for (const nodeId of frames.keys()) {
+        if (!page.nodes.some((node) => node.id === nodeId)) throw new Error(`页面 ${page.id} 中不存在组件 ${nodeId}`);
+      }
+      return updatePage(document, page.id, (candidate) => ({
+        ...candidate,
+        nodes: candidate.nodes.map((node) => {
+          const frame = frames.get(node.id);
+          return frame ? { ...node, frame: { ...frame } } : node;
+        })
+      }));
     }
     case "interaction.flow.upsert": {
       const flow = structuredClone(command.payload.flow);
