@@ -34,6 +34,18 @@ describe("scene bridge to native ApplicationDocument", () => {
     const application = migrateSceneSnapshotV1(interactionFixture as SceneSnapshot);
     expect(application.interactions[0]?.legacyScript?.runtime).toBe("legacy-trusted-main-thread");
     expect(application.interactions[0]?.legacyScript?.script).toEqual(interactionFixture.interactions?.[0]);
+    expect(application.scripts[0]).toEqual({
+      id: "script:flow-1",
+      name: "点击聚焦",
+      enabled: true,
+      apiVersion: "1.0",
+      entrypoint: "behavior",
+      runtime: "legacy-trusted-main-thread",
+      code: "console.info('legacy trusted script')",
+      lifecycle: [],
+      capabilities: ["legacy.viewer", "legacy.three", "legacy.browser"],
+      permissions: []
+    });
   });
 
   it("does not mutate the input snapshot", () => {

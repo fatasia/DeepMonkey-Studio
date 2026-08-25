@@ -9,11 +9,13 @@ import {
   createInsertDashboardPageCommand,
   createDeleteDashboardPageCommand,
   createDeleteInteractionFlowCommand,
+  createDeleteScriptModuleCommand,
   createDeleteDashboardNodeCommand,
   createDeleteDashboardNodesCommand,
   createInsertDashboardNodeCommand,
   createInsertDashboardNodesCommand,
   createUpsertInteractionFlowCommand,
+  createUpsertScriptModuleCommand,
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
@@ -176,6 +178,22 @@ describe("StudioCommand", () => {
     expect(renamed.interactions[0]?.name).toBe("定位设备");
     expect(removed.interactions).toHaveLength(0);
     expect(added.scenes).toBe(source.scenes);
+  });
+
+  it("creates, updates, deletes, and restores behavior scripts through undoable commands", () => {
+    const source = document();
+    const template = source.scripts[0]!;
+    const script = { ...structuredClone(template), id: "script:agv", name: "AGV 实时运动", code: "function onUpdate(ctx) {}" };
+    const store = new ApplicationStore({ ...source, scripts: [] });
+
+    store.dispatch(createUpsertScriptModuleCommand(script));
+    store.dispatch(createUpsertScriptModuleCommand({ ...script, name: "AGV 运动" }));
+    expect(store.getState().document?.scripts).toEqual([{ ...script, name: "AGV 运动" }]);
+
+    store.dispatch(createDeleteScriptModuleCommand(script.id));
+    expect(store.getState().document?.scripts).toEqual([]);
+    expect(store.undo()).toBe(true);
+    expect(store.getState().document?.scripts).toEqual([{ ...script, name: "AGV 运动" }]);
   });
 
   it("creates, updates, and deletes a native data widget atomically", () => {

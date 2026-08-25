@@ -67,11 +67,14 @@ export function migrateSceneSnapshotV1(snapshot: SceneSnapshot): ApplicationDocu
     scripts: migratedInteractions.map((flow) => ({
       id: `script:${flow.id}`,
       name: flow.name,
+      enabled: flow.enabled,
       apiVersion: "1.0",
       entrypoint: "behavior",
       runtime: "legacy-trusted-main-thread",
       code: flow.legacyScript?.script.code ?? "",
-      capabilities: ["legacy.viewer", "legacy.three", "legacy.browser"]
+      lifecycle: [],
+      capabilities: ["legacy.viewer", "legacy.three", "legacy.browser"],
+      permissions: []
     })),
     assets: [...modelAssets.values()].map((model) => ({
       id: model.modelId,

@@ -108,14 +108,38 @@ export interface InteractionFlow {
   };
 }
 
+/** Lifecycle hooks exposed by the application behavior-script contract. */
+export type ApplicationScriptLifecycle =
+  | "onStart"
+  | "onUpdate"
+  | "onFixedUpdate"
+  | "onData"
+  | "onEvent"
+  | "onStop"
+  | "onDispose";
+
+/** Permissions that a sandboxed behavior script may request from its host. */
+export type ApplicationScriptPermission =
+  | "scene.read"
+  | "scene.write"
+  | "data.read"
+  | "data.write"
+  | "network.connect"
+  | "renderer.extend"
+  | "editor.extend";
+
 export interface ScriptModule {
   id: string;
   name: string;
+  enabled: boolean;
   apiVersion: "1.0";
   entrypoint: "behavior";
+  /** Legacy trusted modules are migration records and must never be loaded into the worker sandbox implicitly. */
   runtime: "worker-sandbox" | "legacy-trusted-main-thread";
   code: string;
+  lifecycle: ApplicationScriptLifecycle[];
   capabilities: string[];
+  permissions: ApplicationScriptPermission[];
 }
 export interface AssetEntry { id: string; kind: "model" | "image" | "video" | "environment"; projectId: string; sourceName?: string; sourceFormat?: ModelFormat; contentHash?: string; }
 export interface TimelineDocument { id: string; name: string; duration: number; trackIds: string[]; }

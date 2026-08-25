@@ -25,8 +25,11 @@ const send = (message: SceneBehaviorWorkerResponse) => workerScope.postMessage(m
 const scriptState: Record<string, unknown> = {};
 let activeSceneId = "";
 let handlers: Partial<Record<SceneScriptLifecycle, LifecycleHandler>> = {};
+let requestQueue = Promise.resolve();
 
-workerScope.onmessage = (event: MessageEvent<SceneBehaviorWorkerRequest>) => { void handleRequest(event.data); };
+workerScope.onmessage = (event: MessageEvent<SceneBehaviorWorkerRequest>) => {
+  requestQueue = requestQueue.then(() => handleRequest(event.data));
+};
 
 async function handleRequest(request: SceneBehaviorWorkerRequest): Promise<void> {
   try {

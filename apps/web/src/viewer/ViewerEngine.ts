@@ -4554,6 +4554,48 @@ export class ViewerEngine {
     return resolved;
   }
 
+  setModelTransform(id: string, transform: { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] }): boolean {
+    const model = this.models.get(id);
+    if (!model) return false;
+    if (transform.position) model.object.position.fromArray(transform.position);
+    if (transform.rotation) model.object.rotation.fromArray([...transform.rotation, model.object.rotation.order]);
+    if (transform.scale) model.object.scale.fromArray(transform.scale);
+    model.object.updateWorldMatrix(true, true);
+    this.syncFragmentsTransformState(id);
+    this.updateSelectionHelper();
+    this.updateCollisions(true);
+    this.onModelChange?.(model);
+    return true;
+  }
+
+  setCameraPose(state: { position: [number, number, number]; target: [number, number, number]; near?: number; far?: number; fov?: number }): void {
+    const current = this.getCameraState();
+    this.applyCamera({
+      ...current,
+      position: { x: state.position[0], y: state.position[1], z: state.position[2] },
+      target: { x: state.target[0], y: state.target[1], z: state.target[2] }
+    });
+    if (state.near !== undefined || state.far !== undefined) {
+      this.setCameraConstraints({
+        ...this.cameraConstraints,
+        nearClip: state.near ?? this.cameraConstraints.nearClip,
+        farClip: state.far ?? this.cameraConstraints.farClip
+      });
+    }
+    if (state.fov !== undefined) {
+      this.camera.fov = state.fov;
+      this.camera.updateProjectionMatrix();
+      this.emitCameraChange(true);
+    }
+  }
+
+  focusModel(id: string, layerId?: string): boolean {
+    const model = this.models.get(id);
+    if (!model) return false;
+    this.focusObject(layerId ? this.layerObjects.get(id)?.get(layerId) ?? model.object : model.object);
+    return true;
+  }
+
   private recoverCharacterSpawn(start: THREE.Vector3, height: number): THREE.Vector3 {
     if (!this.characterOverlapsScene(start, height)) return start;
     const stride = Math.max(this.cameraConstraints.collisionRadius * 2.5, 0.6);

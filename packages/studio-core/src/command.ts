@@ -1,4 +1,4 @@
-import type { ApplicationDocument, DashboardDataWidgetConfig, DashboardPageDocument, InteractionFlow, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
+import type { ApplicationDocument, DashboardDataWidgetConfig, DashboardPageDocument, InteractionFlow, ScriptModule, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 
 let nextCommandId = 1;
 
@@ -81,6 +81,20 @@ export interface DeleteInteractionFlowCommand {
   readonly payload: { readonly flowId: string };
 }
 
+export interface UpsertScriptModuleCommand {
+  readonly id: string;
+  readonly type: "script.module.upsert";
+  readonly label: string;
+  readonly payload: { readonly script: ScriptModule };
+}
+
+export interface DeleteScriptModuleCommand {
+  readonly id: string;
+  readonly type: "script.module.delete";
+  readonly label: string;
+  readonly payload: { readonly scriptId: string };
+}
+
 export interface InsertDashboardNodeCommand {
   readonly id: string;
   readonly type: "dashboard.node.insert";
@@ -154,6 +168,8 @@ export type StudioCommand =
   | UpdateDashboardNodeOrderCommand
   | UpsertInteractionFlowCommand
   | DeleteInteractionFlowCommand
+  | UpsertScriptModuleCommand
+  | DeleteScriptModuleCommand
   | InsertDashboardNodeCommand
   | InsertDashboardNodesCommand
   | DeleteDashboardNodesCommand
@@ -238,6 +254,19 @@ export function createDeleteInteractionFlowCommand(flowId: string): DeleteIntera
     label: "删除联动",
     payload: { flowId }
   };
+}
+
+export function createUpsertScriptModuleCommand(script: ScriptModule): UpsertScriptModuleCommand {
+  return {
+    id: commandId(),
+    type: "script.module.upsert",
+    label: `更新行为脚本“${script.name}”`,
+    payload: { script: structuredClone(script) }
+  };
+}
+
+export function createDeleteScriptModuleCommand(scriptId: string): DeleteScriptModuleCommand {
+  return { id: commandId(), type: "script.module.delete", label: "删除行为脚本", payload: { scriptId } };
 }
 
 export function createInsertDashboardNodeCommand(pageId: string, node: WidgetNode): InsertDashboardNodeCommand {
@@ -402,6 +431,21 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
       return {
         ...document,
         interactions: document.interactions.filter((flow) => flow.id !== command.payload.flowId)
+      };
+    case "script.module.upsert": {
+      const script = structuredClone(command.payload.script);
+      const exists = document.scripts.some((candidate) => candidate.id === script.id);
+      return {
+        ...document,
+        scripts: exists
+          ? document.scripts.map((candidate) => candidate.id === script.id ? script : candidate)
+          : [...document.scripts, script]
+      };
+    }
+    case "script.module.delete":
+      return {
+        ...document,
+        scripts: document.scripts.filter((script) => script.id !== command.payload.scriptId)
       };
     case "dashboard.node.insert": {
       const page = requirePage(document, command.payload.pageId);

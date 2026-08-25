@@ -53,8 +53,11 @@ export function syncSceneIntoApplication(
       apiVersion: "1.0" as const,
       entrypoint: "behavior" as const,
       runtime: "legacy-trusted-main-thread" as const,
+      enabled: flow.enabled,
       code: flow.legacyScript?.script.code ?? "",
-      capabilities: ["legacy.viewer", "legacy.three", "legacy.browser"]
+      capabilities: ["legacy.viewer", "legacy.three", "legacy.browser"],
+      lifecycle: [],
+      permissions: []
     }))
   ];
   synced.assets = mergeAssets(synced.assets, snapshot.models.map((model) => ({

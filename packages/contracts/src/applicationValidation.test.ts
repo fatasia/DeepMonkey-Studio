@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import dashboardFixture from "../../../test-fixtures/scene-v1-dashboard.json";
 import interactionFixture from "../../../test-fixtures/scene-v1-interaction.json";
 import pure3dFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
+import behaviorApplicationFixture from "../fixtures/application-v2-worker-behavior.json";
 import { assertApplicationDocument, type ApplicationDocument } from "./application.js";
 import { migrateSceneSnapshotV1 } from "./applicationMigration.js";
 import type { SceneSnapshot } from "./index.js";
@@ -96,6 +97,12 @@ const malformedCases: MalformedCase[] = [
     value.interactions[0]!.legacyScript!.script.code = 42 as never;
   })],
   ["script", () => altered(interactionApplication, (value) => { value.scripts[0]!.capabilities = [false as never]; })],
+  ["script enabled", () => altered(interactionApplication, (value) => { value.scripts[0]!.enabled = "yes" as never; })],
+  ["script enabled missing", () => altered(interactionApplication, (value) => { Reflect.deleteProperty(value.scripts[0]!, "enabled"); })],
+  ["script lifecycle", () => altered(interactionApplication, (value) => { value.scripts[0]!.lifecycle = ["beforeRender" as never]; })],
+  ["script lifecycle missing", () => altered(interactionApplication, (value) => { Reflect.deleteProperty(value.scripts[0]!, "lifecycle"); })],
+  ["script permissions", () => altered(interactionApplication, (value) => { value.scripts[0]!.permissions = ["filesystem.write" as never]; })],
+  ["script permissions missing", () => altered(interactionApplication, (value) => { Reflect.deleteProperty(value.scripts[0]!, "permissions"); })],
   ["script api version missing", () => altered(interactionApplication, (value) => {
     Reflect.deleteProperty(value.scripts[0]!, "apiVersion");
   })],
@@ -125,6 +132,18 @@ const malformedCases: MalformedCase[] = [
 describe("assertApplicationDocument", () => {
   it.each([pureApplication, dashboardApplication, interactionApplication])("accepts a migrated ApplicationDocument v2", (application) => {
     expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("accepts a complete sandboxed worker behavior module", () => {
+    const application = structuredClone(behaviorApplicationFixture) as unknown as ApplicationDocument;
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+    expect(application.scripts[0]).toMatchObject({
+      enabled: true,
+      runtime: "worker-sandbox",
+      lifecycle: ["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"],
+      permissions: ["scene.read", "scene.write", "data.read"]
+    });
   });
 
   it("accepts valid non-empty topology, geo, data, asset, and timeline families", () => {

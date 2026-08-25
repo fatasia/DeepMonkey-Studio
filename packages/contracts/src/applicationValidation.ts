@@ -7,6 +7,8 @@ type Validator = (value: unknown, path: string) => void;
 const MODEL_FORMATS = ["rvt", "ifc", "step", "stp", "dwg", "dxf", "gltf", "glb", "fbx"] as const;
 const INTERACTION_TRIGGERS = ["load", "click", "pointerEnter", "pointerLeave", "animationStart", "animationEnd"] as const;
 const INTERACTION_ACTION_TYPES = ["visibility", "color", "opacity", "focus", "animation", "openUrl", "navigateScene", "cameraView", "message", "dashboard", "setData"] as const;
+const SCRIPT_LIFECYCLES = ["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"] as const;
+const SCRIPT_PERMISSIONS = ["scene.read", "scene.write", "data.read", "data.write", "network.connect", "renderer.extend", "editor.extend"] as const;
 
 export function validateApplicationDocument(value: unknown): asserts value is ApplicationDocument {
   const application = expectObject(value, "应用文档必须是对象");
@@ -529,11 +531,14 @@ function validateScript(value: unknown, path: string): void {
   const object = expectObject(value, path);
   required(object, "id", expectString, path);
   required(object, "name", expectString, path);
+  required(object, "enabled", expectBoolean, path);
   requiredLiteral(object, "apiVersion", ["1.0"], path);
   requiredLiteral(object, "entrypoint", ["behavior"], path);
   requiredLiteral(object, "runtime", ["worker-sandbox", "legacy-trusted-main-thread"], path);
   required(object, "code", expectString, path);
+  required(object, "lifecycle", (lifecycle, lifecyclePath) => validateLiteralArray(lifecycle, lifecyclePath, SCRIPT_LIFECYCLES), path);
   required(object, "capabilities", validateStringArray, path);
+  required(object, "permissions", (permissions, permissionsPath) => validateLiteralArray(permissions, permissionsPath, SCRIPT_PERMISSIONS), path);
 }
 
 function validateAsset(value: unknown, path: string): void {
@@ -621,6 +626,10 @@ function validateArrayProperty(object: JsonObject, key: string, validator: Valid
 
 function validateStringArray(value: unknown, path: string): void {
   expectArray(value, path, expectString);
+}
+
+function validateLiteralArray(value: unknown, path: string, values: readonly string[]): void {
+  expectArray(value, path, (item, itemPath) => expectLiteral(item, values, itemPath));
 }
 
 function expectArray(value: unknown, path: string, validator: Validator): void {

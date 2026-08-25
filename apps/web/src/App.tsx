@@ -4,6 +4,7 @@ import {
   Atom,
   Bot,
   Box,
+  Braces,
   Camera,
   CloudRain,
   Cpu,
@@ -84,6 +85,7 @@ import type {
   SceneModelEffectsState,
   ScenePostProcessingState,
   SceneSelectionSetState,
+  ScriptModule,
   ScenePhysicsBodyState,
   ScenePhysicsState,
   SceneSnapshot,
@@ -93,7 +95,12 @@ import type {
   WeatherMode
 } from "@bim-studio/contracts";
 import { migrateSceneSnapshotV1 } from "@bim-studio/contracts";
-import type { ApplicationInteractionResult, StudioCommand } from "@bim-studio/studio-core";
+import {
+  createDeleteScriptModuleCommand,
+  createUpsertScriptModuleCommand,
+  type ApplicationInteractionResult,
+  type StudioCommand
+} from "@bim-studio/studio-core";
 import { api, getAuthToken, setAuthToken } from "./api";
 import { LayerTree } from "./components/LayerTree";
 import { SceneManager } from "./components/SceneManager";
@@ -107,6 +114,7 @@ import { SceneDataBindingEditor, type SceneDataBindingRuntimeState } from "./com
 import { CameraNavigationPanel } from "./components/CameraNavigationPanel";
 import { SceneTimelinePanel } from "./components/SceneTimelinePanel";
 import { SceneOrganizationPanel, type SceneOrganizationObject } from "./components/SceneOrganizationPanel";
+import { SceneBehaviorPanel, type SceneBehaviorLogEntry } from "./components/SceneBehaviorPanel";
 import { RendererDiagnosticsPanel } from "./components/RendererDiagnosticsPanel";
 import { AiAssistantPanel } from "./components/AiAssistantPanel";
 import { LoginPage } from "./components/LoginPage";
@@ -119,6 +127,11 @@ import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
 import { exportFbxFile, exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
 import { ApplicationSession } from "./studio/applicationSession";
+import { SceneBehaviorManager, type SceneBehaviorManagerEntry } from "./behavior/SceneBehaviorManager";
+import { SceneCommandExecutor } from "./behavior/SceneCommandExecutor";
+import { ViewerSceneCommandPort } from "./behavior/ViewerSceneCommandPort";
+import { resolveSceneBehaviorModule } from "./behavior/scriptModuleAdapter";
+import { authorizeSceneCommands } from "./behavior/sceneCommandPolicy";
 import { applicationForScene, syncSceneIntoApplication } from "./studio/sceneApplicationSync";
 import { publishApplicationInteractionEffects, subscribeApplicationInteractionEffects } from "./studio/applicationInteractionHost";
 import {
@@ -334,6 +347,8 @@ export function App() {
   applicationSessionRef.current ??= new ApplicationSession();
   const activeSceneIdRef = useRef<string | undefined>(undefined);
   const visionEventCursorRef = useRef<{ scope: string; id: string }>({ scope: "", id: "" });
+  const behaviorManagerRef = useRef<SceneBehaviorManager | undefined>(undefined);
+  const behaviorCommandQueueRef = useRef(Promise.resolve());
   const [engine, setEngine] = useState<ViewerEngine>();
   const [currentUser, setCurrentUser] = useState<SystemUserRecord>();
   const [branding, setBranding] = useState<SystemBrandingSettings>(DEFAULT_BRANDING);
@@ -426,6 +441,11 @@ export function App() {
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
   const [directoryMode, setDirectoryMode] = useState<"components" | "spaces">("components");
   const [sceneOrganizationOpen, setSceneOrganizationOpen] = useState(false);
+  const [sceneBehaviorOpen, setSceneBehaviorOpen] = useState(false);
+  const [sceneBehaviorActive, setSceneBehaviorActive] = useState(false);
+  const [sceneBehaviorPaused, setSceneBehaviorPaused] = useState(false);
+  const [sceneBehaviorEntries, setSceneBehaviorEntries] = useState<SceneBehaviorManagerEntry[]>([]);
+  const [sceneBehaviorLogs, setSceneBehaviorLogs] = useState<SceneBehaviorLogEntry[]>([]);
   const [sceneOrganizationSelection, setSceneOrganizationSelection] = useState<Set<string>>(new Set());
   const [selectionSets, setSelectionSets] = useState<SceneSelectionSetState[]>([]);
   const [lastDeletedSelectionSet, setLastDeletedSelectionSet] = useState<SceneSelectionSetState>();
@@ -673,6 +693,31 @@ export function App() {
   useEffect(() => {
     engine?.setInteractionScripts(sceneInteractions);
   }, [engine, sceneInteractions]);
+
+  useEffect(() => {
+    if (!sceneBehaviorActive || sceneBehaviorPaused) return;
+    let frame: number | undefined;
+    let previous = performance.now();
+    const advance = (now: number) => {
+      behaviorManagerRef.current?.advance(now - previous);
+      previous = now;
+      frame = window.requestAnimationFrame(advance);
+    };
+    frame = window.requestAnimationFrame(advance);
+    return () => { if (frame !== undefined) window.cancelAnimationFrame(frame); };
+  }, [sceneBehaviorActive, sceneBehaviorPaused]);
+
+  useEffect(() => {
+    behaviorManagerRef.current?.dispose();
+    behaviorManagerRef.current = undefined;
+    setSceneBehaviorEntries([]);
+    setSceneBehaviorActive(false);
+    setSceneBehaviorPaused(false);
+    return () => {
+      behaviorManagerRef.current?.dispose();
+      behaviorManagerRef.current = undefined;
+    };
+  }, [engine, activeScene?.id]);
 
   useEffect(() => {
     if (!xrPanelOpen || !engine) return;
@@ -2211,6 +2256,95 @@ export function App() {
     }
   }
 
+  function upsertBehaviorScript(script: ScriptModule) {
+    dispatchApplicationCommand(createUpsertScriptModuleCommand(script));
+  }
+
+  function deleteBehaviorScript(scriptId: string) {
+    if (sceneBehaviorEntries.some((entry) => entry.module.id === scriptId)) stopSceneBehaviors();
+    dispatchApplicationCommand(createDeleteScriptModuleCommand(scriptId));
+  }
+
+  function appendBehaviorLog(moduleId: string, level: SceneBehaviorLogEntry["level"], text: string) {
+    setSceneBehaviorLogs((current) => [...current.slice(-499), {
+      id: crypto.randomUUID(),
+      moduleId,
+      level,
+      message: text,
+      timestamp: new Date().toISOString()
+    }]);
+  }
+
+  function runSceneBehaviors() {
+    if (!engine || !activeScene || !activeApplication) {
+      showError(new Error(tr(locale, "请先打开可编辑的三维场景", "Open an editable 3D scene first")));
+      return;
+    }
+    behaviorManagerRef.current?.dispose();
+    const resolved = activeApplication.scripts.map((script) => ({ script, resolution: resolveSceneBehaviorModule(script) }));
+    const modules = resolved.flatMap(({ resolution }) => resolution.status === "ready" ? [resolution.module] : []);
+    for (const { script, resolution } of resolved) {
+      if (resolution.status === "rejected") appendBehaviorLog(script.id, "error", resolution.message);
+    }
+    if (modules.length === 0) {
+      setSceneBehaviorEntries([]);
+      setSceneBehaviorActive(false);
+      showError(new Error(tr(locale, "没有可运行的 Worker 行为脚本，请先新建并启用脚本", "No runnable Worker behavior scripts. Create and enable one first.")));
+      return;
+    }
+    const manager = new SceneBehaviorManager();
+    const executor = new SceneCommandExecutor(activeScene.id, new ViewerSceneCommandPort(engine));
+    const moduleById = new Map(modules.map((module) => [module.id, module]));
+    let diagnosticsFrame: number | undefined;
+    manager.onChange = (entries) => {
+      if (diagnosticsFrame !== undefined) return;
+      diagnosticsFrame = window.requestAnimationFrame(() => {
+        diagnosticsFrame = undefined;
+        setSceneBehaviorEntries(entries);
+      });
+    };
+    manager.onLog = (moduleId, entry) => appendBehaviorLog(moduleId, entry.level, entry.message);
+    manager.onCommands = (moduleId, commands) => {
+      const module = moduleById.get(moduleId);
+      behaviorCommandQueueRef.current = behaviorCommandQueueRef.current.then(async () => {
+        if (!module) {
+          appendBehaviorLog(moduleId, "error", tr(locale, "命令被拒绝：脚本模块不存在", "Command rejected: behavior module not found"));
+          return;
+        }
+        const authorization = authorizeSceneCommands(module, commands);
+        for (const rejection of authorization.rejected) appendBehaviorLog(moduleId, "error", `${rejection.command.id}: ${rejection.message}`);
+        const results = await executor.execute(authorization.allowed);
+        for (const result of results) {
+          if (!result.success) appendBehaviorLog(moduleId, result.code === "unsupported" ? "warn" : "error", `${result.id}: ${result.message}`);
+        }
+        if (results.some((result) => result.success)) setRevision((value) => value + 1);
+      }).catch((reason) => appendBehaviorLog(moduleId, "error", reason instanceof Error ? reason.message : String(reason)));
+    };
+    behaviorManagerRef.current = manager;
+    setSceneBehaviorLogs([]);
+    setSceneBehaviorPaused(false);
+    setSceneBehaviorActive(true);
+    manager.start(modules, activeScene.id);
+    setSceneBehaviorEntries(manager.entries());
+    setMessage(tr(locale, `正在启动 ${modules.length} 个场景行为`, `Starting ${modules.length} scene behaviors`));
+  }
+
+  function pauseResumeSceneBehaviors() {
+    if (!behaviorManagerRef.current) return;
+    if (sceneBehaviorPaused) behaviorManagerRef.current.resume();
+    else behaviorManagerRef.current.pause();
+    setSceneBehaviorPaused((value) => !value);
+  }
+
+  function stopSceneBehaviors() {
+    behaviorManagerRef.current?.dispose();
+    behaviorManagerRef.current = undefined;
+    setSceneBehaviorEntries([]);
+    setSceneBehaviorActive(false);
+    setSceneBehaviorPaused(false);
+    setMessage(tr(locale, "场景行为已停止", "Scene behaviors stopped"));
+  }
+
   function dispatchApplicationInteraction(source: ApplicationObjectRef, trigger: SceneInteractionTrigger, selectSource = true) {
     try {
       const result = applicationSessionRef.current.store.dispatchInteraction({
@@ -2728,6 +2862,7 @@ export function App() {
           <ToolButton title={tr(locale, "场景信息", "Scene information")} active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
           <ToolButton title={tr(locale, "环境设置", "Environment")} active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
           <ToolButton title={tr(locale, "动画编辑", "Animation editor")} active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
+          <ToolButton title={tr(locale, "行为脚本", "Behavior scripts")} active={sceneBehaviorOpen} onClick={() => setSceneBehaviorOpen((value) => !value)} icon={<Braces size={19} />} />
           <ToolButton title={tr(locale, "相机与漫游", "Camera & navigation")} active={cameraViewsOpen} onClick={() => setCameraViewsOpen((value) => !value)} icon={<Camera size={19} />} />
           <ToolButton title={tr(locale, "物理系统", "Physics")} active={physicsOpen} onClick={() => { setPhysicsOpen((value) => !value); setEnvironmentOpen(false); }} icon={<Atom size={19} />} />
           <ToolButton className="xr-entry" title={tr(locale, "AR / VR 沉浸体验", "AR / VR immersive experience")} active={xrPanelOpen} onClick={() => setXrPanelOpen((value) => !value)} icon={<span className="xr-tool-label">AR/VR</span>} />
@@ -2954,6 +3089,20 @@ export function App() {
             </div>}
           </div>
         )}
+        {route.view === "studio" && sceneBehaviorOpen && activeApplication && <SceneBehaviorPanel
+          locale={locale}
+          scripts={activeApplication.scripts}
+          runtimeEntries={sceneBehaviorEntries}
+          logs={sceneBehaviorLogs}
+          paused={sceneBehaviorPaused}
+          onUpsert={upsertBehaviorScript}
+          onDelete={deleteBehaviorScript}
+          onRun={runSceneBehaviors}
+          onPauseResume={pauseResumeSceneBehaviors}
+          onStop={stopSceneBehaviors}
+          onClearLogs={() => setSceneBehaviorLogs([])}
+          onClose={() => setSceneBehaviorOpen(false)}
+        />}
         {animationOpen && (
           <SceneTimelinePanel
             locale={locale}
