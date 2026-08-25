@@ -119,6 +119,8 @@ describe("ApplicationStore", () => {
     expect(() => {
       selected.document!.metadata.name = "篡改名称";
     }).toThrow();
+    store.setSelection([{ kind: "scene", id: "scene-pure-3d" }]);
+    expect(listener).toHaveBeenCalledTimes(1);
     unsubscribe();
   });
 

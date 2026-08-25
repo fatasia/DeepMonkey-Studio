@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import type { ApplicationObjectRef, ProjectRecord, SceneDocument, SceneViewportWidgetNode } from "@bim-studio/contracts";
+import type { ApplicationObjectRef, ProjectRecord, SceneDocument, SceneInteractionTarget, SceneViewportWidgetNode } from "@bim-studio/contracts";
 import { LoaderCircle, TriangleAlert } from "lucide-react";
 import type { RendererBackend, ViewerEngine } from "../viewer/ViewerEngine";
 import { translate as tr, type AppLocale } from "../i18n";
+import { subscribeApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 
-export function SceneViewportPreview({ locale, node, scene, project, rendererBackend, onSelectionChange }: {
+const OBJECT_ACTION_TYPES = new Set(["focus", "visibility", "color", "opacity", "animation"]);
+
+export function SceneViewportPreview({ locale, node, scene, project, rendererBackend, onSelectionChange, onObjectInteraction }: {
   locale: AppLocale;
   node: SceneViewportWidgetNode;
   scene: SceneDocument;
   project: ProjectRecord;
   rendererBackend: RendererBackend;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
+  onObjectInteraction: (trigger: "load" | "click" | "pointerEnter" | "pointerLeave" | "animationStart" | "animationEnd", target: SceneInteractionTarget) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -43,6 +47,7 @@ export function SceneViewportPreview({ locale, node, scene, project, rendererBac
     if (!container || !visible || !activated || node.renderMode === "static-placeholder") return;
     let cancelled = false;
     let runtime: ViewerEngine | undefined;
+    let unsubscribeEffects: (() => void) | undefined;
     setStatus("loading");
     setError("");
     void import("../viewer/ViewerEngine").then(async ({ ViewerEngine }) => {
@@ -63,6 +68,22 @@ export function SceneViewportPreview({ locale, node, scene, project, rendererBac
       engine.onSelectionChange = (model) => onSelectionChange(model
         ? [{ kind: "object", sceneId: scene.id, modelId: model.id }]
         : []);
+      engine.onInteractionTrigger = onObjectInteraction;
+      unsubscribeEffects = subscribeApplicationInteractionEffects((effect) => {
+        const action = effect.action;
+        if (action.sceneId && action.sceneId !== scene.id) return;
+        if (action.type === "cameraView" && action.cameraViewId) {
+          const camera = scene.cameraViews?.find((item) => item.id === action.cameraViewId)?.camera;
+          if (camera) engine.applyCamera(camera);
+          return;
+        }
+        if (!OBJECT_ACTION_TYPES.has(action.type)) return;
+        const target = action.target ?? (effect.source.kind === "object" && effect.source.sceneId === scene.id
+          ? { kind: "object" as const, modelId: effect.source.modelId, ...(effect.source.layerId ? { layerId: effect.source.layerId } : {}) }
+          : undefined);
+        if (!target || !engine.listModels().some((model) => model.id === target.modelId)) return;
+        void engine.executeInteractionAction(target, action).catch((reason) => console.error("二维到三维联动执行失败", reason));
+      });
 
       for (const item of scene.models) {
         const record = project.models.find((candidate) => candidate.id === item.modelId);
@@ -99,6 +120,7 @@ export function SceneViewportPreview({ locale, node, scene, project, rendererBac
     });
     return () => {
       cancelled = true;
+      unsubscribeEffects?.();
       runtime?.dispose();
     };
   }, [visible, activated, rendererBackend, node.id, node.sceneId, node.cameraViewId, node.interactionPolicy, node.renderMode, scene, resourceRevision]);

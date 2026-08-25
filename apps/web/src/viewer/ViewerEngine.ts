@@ -333,6 +333,7 @@ export class ViewerEngine {
   onXRSessionChange?: (mode: "immersive-vr" | "immersive-ar" | undefined) => void;
   onPrimitivePlaced?: (model: LoadedSceneModel, kind: PrimitiveKind, color: string) => void;
   onInteractionScriptResult?: (result: InteractionScriptResult) => void;
+  onInteractionTrigger?: (trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly modelRoot: THREE.Group | ClippingGroup;
@@ -692,6 +693,7 @@ export class ViewerEngine {
   }
 
   private dispatchExactInteraction(trigger: SceneInteractionTrigger, target: SceneInteractionTarget, detail: InteractionEventDetail = {}): void {
+    this.onInteractionTrigger?.(trigger, structuredClone(target));
     for (const script of this.interactionScripts) {
       if (!script.enabled || script.trigger !== trigger || !sameRuntimeInteractionTarget(script.target, target)) continue;
       void this.runInteractionScript(script, detail);
@@ -749,6 +751,10 @@ export class ViewerEngine {
       console.error(`场景事件“${script.name}”执行失败`, error);
       this.onInteractionScriptResult?.({ script, status: "error", durationMs: performance.now() - startedAt, error, ...(detail.test ? { test: true } : {}) });
     }
+  }
+
+  executeInteractionAction(target: SceneInteractionTarget, action: SceneInteractionActionState): Promise<void> {
+    return this.runInteractionAction(target, action);
   }
 
   private async runInteractionAction(target: SceneInteractionTarget, action: SceneInteractionActionState): Promise<void> {

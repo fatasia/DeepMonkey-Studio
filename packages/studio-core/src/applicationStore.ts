@@ -2,6 +2,7 @@ import type { ApplicationDocument, ApplicationObjectRef, JsonValue } from "@bim-
 import { applyStudioCommand, type StudioCommand } from "./command.js";
 import {
   evaluateApplicationInteraction,
+  sameObjectRef,
   type ApplicationInteractionEffect,
   type ApplicationInteractionEvent
 } from "./interactionRuntime.js";
@@ -122,6 +123,7 @@ export class ApplicationStore {
   }
 
   setSelection(selection: readonly ApplicationObjectRef[]): void {
+    if (sameSelection(this.selection, selection)) return;
     this.selection = structuredClone([...selection]);
     this.emit();
   }
@@ -140,9 +142,10 @@ export class ApplicationStore {
   dispatchInteraction(event: ApplicationInteractionEvent): readonly ApplicationInteractionEffect[] {
     if (!this.document) throw new Error("没有已打开的应用文档");
     const result = evaluateApplicationInteraction(this.document, event);
-    if (result.selection) this.selection = structuredClone([...result.selection]);
+    const selectionChanged = Boolean(result.selection && !sameSelection(this.selection, result.selection));
+    if (selectionChanged && result.selection) this.selection = structuredClone([...result.selection]);
     for (const [id, value] of Object.entries(result.variableUpdates)) this.variables[id] = structuredClone(value);
-    if (result.selection || Object.keys(result.variableUpdates).length > 0) this.emit();
+    if (selectionChanged || Object.keys(result.variableUpdates).length > 0) this.emit();
     return immutableClone(result.effects);
   }
 
@@ -152,4 +155,11 @@ export class ApplicationStore {
       listener();
     }
   }
+}
+
+function sameSelection(left: readonly ApplicationObjectRef[], right: readonly ApplicationObjectRef[]): boolean {
+  return left.length === right.length && left.every((item, index) => {
+    const candidate = right[index];
+    return Boolean(candidate && sameObjectRef(item, candidate));
+  });
 }

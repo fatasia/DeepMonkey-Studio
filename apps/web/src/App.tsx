@@ -75,6 +75,8 @@ import type {
   SceneFloorState,
   SceneInteractionScriptState,
   SceneInteractionActionState,
+  SceneInteractionTarget,
+  SceneInteractionTrigger,
   SceneLightState,
   SceneMaterialState,
   SceneModelEffectsState,
@@ -107,6 +109,7 @@ import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus }
 import { exportFbxFile, exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
 import { ApplicationSession } from "./studio/applicationSession";
 import { applicationForScene, syncSceneIntoApplication } from "./studio/sceneApplicationSync";
+import { publishApplicationInteractionEffects, subscribeApplicationInteractionEffects } from "./studio/applicationInteractionHost";
 import {
   DEFAULT_DASHBOARD_VIEW,
   parseStudioWorkspacePath,
@@ -317,6 +320,7 @@ export function App() {
   const rendererSnapshotRef = useRef<{ scene: SceneSnapshot; readOnly: boolean } | undefined>(undefined);
   const applicationSessionRef = useRef<ApplicationSession>(null!);
   applicationSessionRef.current ??= new ApplicationSession();
+  const activeSceneIdRef = useRef<string | undefined>(undefined);
   const visionEventCursorRef = useRef<{ scope: string; id: string }>({ scope: "", id: "" });
   const [engine, setEngine] = useState<ViewerEngine>();
   const [currentUser, setCurrentUser] = useState<SystemUserRecord>();
@@ -355,6 +359,7 @@ export function App() {
   const viewerRouteActive = route.view === "studio" || route.view === "view" || route.view === "published";
   const applicationState = useMemo(() => applicationSessionRef.current.store.getState(), [applicationRevision]);
   const activeApplication = applicationState.document;
+  activeSceneIdRef.current = route.view === "studio" && route.applicationId ? activeScene?.id : undefined;
   const activeDashboardPage = route.view === "dashboard" && activeApplication && activeApplication.metadata.id === route.applicationId
     ? activeApplication.pages.find((page) => page.id === route.pageId)
     : undefined;
@@ -552,6 +557,10 @@ export function App() {
           setMessage(`事件“${result.script.name}”运行成功 · ${result.durationMs.toFixed(1)}ms`);
         }
       };
+      viewer.onInteractionTrigger = (trigger, target) => {
+        const sceneId = activeSceneIdRef.current;
+        if (sceneId && target.kind === "object") dispatchApplicationInteraction({ kind: "object", sceneId, modelId: target.modelId, ...(target.layerId ? { layerId: target.layerId } : {}) }, trigger);
+      };
       viewer.onMeasurement = (measurement) => {
         setMeasurements((items) => [...items, measurement]);
         setRevision((value) => value + 1);
@@ -711,8 +720,7 @@ export function App() {
   }, [engine, project?.id, route.sceneId, route.view]);
 
   useEffect(() => {
-    const handleInteractionAction = (event: Event) => {
-      const action = (event as CustomEvent<SceneInteractionActionState>).detail;
+    const handleInteractionAction = (action: SceneInteractionActionState) => {
       if (!action) return;
       if (action.type === "navigateScene" && action.sceneId) {
         const view = route.view === "studio" ? "studio" : "view";
@@ -730,11 +738,21 @@ export function App() {
         setSceneDashboardOpen((current) => action.value === "show" ? true : action.value === "hide" ? false : !current);
       } else if (action.type === "setData") {
         publishLocalSceneData({ source: "interaction", key: action.dataKey?.trim() || "value", value: action.value, timestamp: new Date().toISOString(), ...(route.sceneId ? { sceneId: route.sceneId } : {}) });
+      } else if (action.type === "openUrl") {
+        const url = action.url?.trim();
+        if (!url || !/^(https?:\/\/|\/)/i.test(url)) return showError(new Error("网页地址必须以 http://、https:// 或 / 开头"));
+        if (action.newTab !== false) window.open(url, "_blank", "noopener,noreferrer");
+        else window.location.assign(url);
       }
     };
-    window.addEventListener("bim-studio:interaction-action", handleInteractionAction);
-    return () => window.removeEventListener("bim-studio:interaction-action", handleInteractionAction);
-  }, [cameraViews, engine, route.sceneId, route.view]);
+    const handleLegacyInteractionAction = (event: Event) => handleInteractionAction((event as CustomEvent<SceneInteractionActionState>).detail);
+    const unsubscribe = subscribeApplicationInteractionEffects((effect) => handleInteractionAction(effect.action));
+    window.addEventListener("bim-studio:interaction-action", handleLegacyInteractionAction);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("bim-studio:interaction-action", handleLegacyInteractionAction);
+    };
+  }, [cameraViews, engine, route.sceneId, route.view, showError]);
 
   useEffect(() => {
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();
@@ -1962,20 +1980,27 @@ export function App() {
     }
   }
 
-  function dispatchDashboardNodeInteraction(nodeId: string) {
+  function dispatchApplicationInteraction(source: ApplicationObjectRef, trigger: SceneInteractionTrigger, selectSource = true) {
     try {
       const effects = applicationSessionRef.current.store.dispatchInteraction({
-        source: { kind: "widget", id: nodeId },
-        trigger: "click",
+        source,
+        trigger,
         timestamp: new Date().toISOString(),
-        selectSource: false
+        selectSource
       });
-      for (const effect of effects) {
-        window.dispatchEvent(new CustomEvent("bim-studio:interaction-action", { detail: effect.action }));
-      }
+      publishApplicationInteractionEffects(effects);
     } catch (reason) {
       showError(reason);
     }
+  }
+
+  function dispatchDashboardNodeInteraction(nodeId: string) {
+    dispatchApplicationInteraction({ kind: "widget", id: nodeId }, "click", false);
+  }
+
+  function dispatchSceneObjectInteraction(sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) {
+    if (target.kind !== "object") return;
+    dispatchApplicationInteraction({ kind: "object", sceneId, modelId: target.modelId, ...(target.layerId ? { layerId: target.layerId } : {}) }, trigger);
   }
 
   async function saveActiveApplication(): Promise<ApplicationDocument | undefined> {
@@ -2072,6 +2097,7 @@ export function App() {
         onEnterScene={enterSceneFromDashboard}
         onOpenData={() => navigate({ view: "data" })}
         onSelectionChange={(selection) => applicationSessionRef.current.store.setSelection(selection)}
+        onObjectInteraction={dispatchSceneObjectInteraction}
         onNodeInteraction={dispatchDashboardNodeInteraction}
         onCommand={dispatchApplicationCommand}
         onUndo={() => applicationSessionRef.current.store.undo()}

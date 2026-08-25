@@ -14,7 +14,7 @@ import {
   Undo2,
   Workflow
 } from "lucide-react";
-import type { ApplicationDocument, ApplicationObjectRef, DashboardPageDocument, ProjectRecord, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
+import type { ApplicationDocument, ApplicationObjectRef, DashboardPageDocument, ProjectRecord, SceneInteractionTarget, SceneInteractionTrigger, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 import {
   createRenameDashboardPageCommand,
   createUpdateDashboardNodeFrameCommand,
@@ -42,6 +42,7 @@ export interface DashboardWorkspaceProps {
   onEnterScene: (sceneId: string, view: DashboardViewState) => void;
   onOpenData: () => void;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
+  onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
   onNodeInteraction: (nodeId: string) => void;
   onCommand: (command: StudioCommand) => void;
   onUndo: () => void;
@@ -69,6 +70,7 @@ export function DashboardWorkspace({
   onEnterScene,
   onOpenData,
   onSelectionChange,
+  onObjectInteraction,
   onNodeInteraction,
   onCommand,
   onUndo,
@@ -185,7 +187,7 @@ export function DashboardWorkspace({
       <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
         <div className="dashboard-artboard-stage" style={{ width: page.width * zoom, height: page.height * zoom }}>
           <div className="dashboard-artboard" style={{ width: page.width, height: page.height, transform: `scale(${zoom})` }}>
-            {page.nodes.map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} />)}
+            {page.nodes.map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} />)}
           </div>
         </div>
       </div>
@@ -207,7 +209,7 @@ export function DashboardWorkspace({
   </main>;
 }
 
-function DashboardNode({ application, project, node, selected, locale, rendererBackend, onSelectionChange, onSelect, onEnterScene }: {
+function DashboardNode({ application, project, node, selected, locale, rendererBackend, onSelectionChange, onObjectInteraction, onSelect, onEnterScene }: {
   application: ApplicationDocument;
   project: ProjectRecord;
   node: WidgetNode;
@@ -215,6 +217,7 @@ function DashboardNode({ application, project, node, selected, locale, rendererB
   locale: AppLocale;
   rendererBackend: RendererBackend;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
+  onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
   onSelect: (additive: boolean) => void;
   onEnterScene: (sceneId: string) => void;
 }) {
@@ -223,7 +226,7 @@ function DashboardNode({ application, project, node, selected, locale, rendererB
     const scene = application.scenes.find((candidate) => candidate.id === node.sceneId);
     return <article className={`dashboard-node dashboard-scene-viewport ${selected ? "selected" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); onSelect(event.ctrlKey || event.metaKey); }} onDoubleClick={() => onEnterScene(node.sceneId)}>
       {scene && node.renderMode !== "static-placeholder"
-        ? <SceneViewportPreview locale={locale} node={node} scene={scene} project={project} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} />
+        ? <SceneViewportPreview locale={locale} node={node} scene={scene} project={project} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={(trigger, target) => onObjectInteraction(scene.id, trigger, target)} />
         : <div className="dashboard-scene-grid" />}
       <div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small><button onClick={(event) => { event.stopPropagation(); onEnterScene(node.sceneId); }}>{tr(locale, "进入三维编辑", "Open 3D editor")}</button></div>
       <div className="dashboard-node-badge">3D · {node.renderMode}</div>
