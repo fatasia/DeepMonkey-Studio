@@ -6,6 +6,7 @@ import type {
   SceneInteractionTrigger,
   SceneSnapshot
 } from "./index.js";
+import { validateApplicationDocument } from "./applicationValidation.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -134,17 +135,5 @@ export interface ServerMetaResponse {
 }
 
 export function assertApplicationDocument(value: unknown): asserts value is ApplicationDocument {
-  if (!value || typeof value !== "object") throw new Error("应用文档必须是对象");
-  const candidate = value as Partial<ApplicationDocument>;
-  if (candidate.schemaVersion !== 2) throw new Error("仅支持 ApplicationDocument schemaVersion 2");
-  if (!candidate.metadata || typeof candidate.metadata.id !== "string" || typeof candidate.metadata.projectId !== "string") {
-    throw new Error("应用 metadata.id 和 metadata.projectId 必须是字符串");
-  }
-  if (!Number.isInteger(candidate.metadata.revision) || (candidate.metadata.revision ?? 0) < 1) {
-    throw new Error("应用 metadata.revision 必须是大于等于 1 的整数");
-  }
-  for (const key of ["pages", "topologies", "scenes", "interactions", "scripts", "assets", "timelines", "publicationProfiles"] as const) {
-    if (!Array.isArray(candidate[key])) throw new Error(`应用 ${key} 必须是数组`);
-  }
-  if (!candidate.geo || !candidate.data) throw new Error("应用 geo 和 data 不能为空");
+  validateApplicationDocument(value);
 }
