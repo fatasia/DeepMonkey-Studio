@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Camera, Footprints, Orbit, Plus, Save, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
+import { Camera, Footprints, Orbit, Plus, Save, ScanLine, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
 import type { CameraConstraintsState, CameraState, CameraViewState, NavigationSettingsState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
+import type { NavigationCollisionDiagnostics } from "../viewer/ViewerEngine";
 
 type NavigationMode = CameraState["mode"];
 
@@ -12,6 +13,7 @@ interface Props {
   avatarVisible: boolean;
   constraints: CameraConstraintsState;
   navigation: NavigationSettingsState;
+  diagnostics: NavigationCollisionDiagnostics;
   views: CameraViewState[];
   defaultViewId: string | undefined;
   onClose: () => void;
@@ -19,6 +21,7 @@ interface Props {
   onAvatarVisibleChange: (visible: boolean) => void;
   onConstraintsChange: (patch: Partial<CameraConstraintsState>) => void;
   onNavigationChange: (patch: Partial<NavigationSettingsState>) => void;
+  onDebugVisibleChange: (visible: boolean) => void;
   onResetNavigation: () => void;
   onAddView: () => void;
   onApplyView: (view: CameraViewState) => void;
@@ -74,6 +77,18 @@ export function CameraNavigationPanel(props: Props) {
           ? tr(props.locale, "W A S D 移动 · Shift 加速 · Space 上升 · Ctrl 下降 · 鼠标旋转", "W A S D move · Shift boost · Space up · Ctrl down · Mouse to look")
           : tr(props.locale, "左键旋转 · 右键平移 · 滚轮缩放；编辑对象前保持轨道模式", "Left drag rotates · right drag pans · wheel zooms; stay in Orbit to edit")}</p>
       {props.mode === "thirdPerson" && <button className={props.avatarVisible ? "active" : ""} onClick={() => props.onAvatarVisibleChange(!props.avatarVisible)}>{props.avatarVisible ? tr(props.locale, "隐藏人物", "Hide avatar") : tr(props.locale, "显示人物", "Show avatar")}</button>}
+    </div>
+
+    <div className={`navigation-diagnostics ${props.diagnostics.lastSweepMs > 4 ? "warning" : ""}`}>
+      <div className="camera-constraint-heading"><span><ScanLine size={14} /><strong>{tr(props.locale, "碰撞诊断", "Collision diagnostics")}</strong></span><button className={props.diagnostics.debugVisible ? "active" : ""} onClick={() => props.onDebugVisibleChange(!props.diagnostics.debugVisible)}>{props.diagnostics.debugVisible ? tr(props.locale, "隐藏代理", "Hide proxies") : tr(props.locale, "显示代理", "Show proxies")}</button></div>
+      <div className="navigation-diagnostic-metrics">
+        <span><small>{tr(props.locale, "阻挡对象", "Blockers")}</small><strong>{props.diagnostics.blockingObjectCount}</strong></span>
+        <span><small>{tr(props.locale, "扫描采样", "Ray samples")}</small><strong>{props.diagnostics.raySamples || "—"}</strong></span>
+        <span><small>{tr(props.locale, "最近耗时", "Last sweep")}</small><strong>{props.diagnostics.lastSweepMs ? `${props.diagnostics.lastSweepMs.toFixed(2)} ms` : "—"}</strong></span>
+      </div>
+      <p>{props.diagnostics.lastSweepMs > 4
+        ? tr(props.locale, "单次扫描超过 4 ms；建议使用简化碰撞代理或减少参与阻挡的复杂模型。", "A sweep exceeded 4 ms. Use simplified collision proxies or reduce complex blocking models.")
+        : tr(props.locale, "蓝色边界表示阻挡对象，黄色胶囊表示角色碰撞体；调试显示仅用于编辑器。", "Blue bounds are blockers and the yellow capsule is the character collider. Debug visuals are editor-only.")}</p>
     </div>
 
     <div className="navigation-motion-settings">

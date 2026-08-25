@@ -134,6 +134,7 @@ import {
   type LayerTreeNode,
   type MeasureMode,
   type NavigationMode,
+  type NavigationCollisionDiagnostics,
   type PointerInfo,
   type RendererBackend,
   type SelectionScope,
@@ -365,6 +366,7 @@ export function App() {
   const [transformMode, setTransformMode] = useState<TransformMode>("translate");
   const [selectionScope, setSelectionScope] = useState<SelectionScope>("model");
   const [navigationMode, setNavigationMode] = useState<NavigationMode>("orbit");
+  const [navigationDiagnostics, setNavigationDiagnostics] = useState<NavigationCollisionDiagnostics>({ debugVisible: false, blockingObjectCount: 0, raySamples: 0, lastSweepMs: 0 });
   const [measureMode, setMeasureMode] = useState<MeasureMode>("distance");
   const [route, setRoute] = useState<AppRoute>(() => readRoute());
   const viewerRouteActive = route.view === "studio" || route.view === "view" || route.view === "published";
@@ -563,6 +565,8 @@ export function App() {
       viewer.onXRSessionChange = (mode) => setXrActiveMode(mode);
       viewer.onCollisionChange = requestRevision;
       viewer.onNavigationRecovery = () => queueMicrotask(() => setMessage(tr(locale, "出生点与模型重叠，已自动移动到最近安全位置", "The spawn overlapped geometry and was moved to the nearest safe position")));
+      viewer.onNavigationDiagnosticsChange = setNavigationDiagnostics;
+      setNavigationDiagnostics(viewer.getNavigationCollisionDiagnostics());
       viewer.onPrimitivePlaced = (model, _kind, color) => {
         primitiveColors.current.set(model.id, color);
         setSelected(model);
@@ -1040,6 +1044,9 @@ export function App() {
   }, [route.view, route.sceneId, engine]);
 
   const loadedModels = useMemo(() => engine?.listModels() ?? [], [engine, revision]);
+  useEffect(() => {
+    if (engine) setNavigationDiagnostics(engine.getNavigationCollisionDiagnostics());
+  }, [engine, revision]);
   const rendererOptions = useMemo(() => rendererProbe ? rendererReadiness(rendererProbe, { postProcessingEnabled: postProcessing.enabled }) : [], [rendererProbe, postProcessing.enabled]);
   const scenePrimitives = loadedModels.filter((item) => item.kind === "primitive");
   const selectedTransform = selected && engine ? engine.getSelectionTransform() : undefined;
@@ -2600,6 +2607,7 @@ export function App() {
           avatarVisible={avatarVisible}
           constraints={cameraConstraints}
           navigation={navigationSettings}
+          diagnostics={navigationDiagnostics}
           views={cameraViews}
           defaultViewId={defaultCameraViewId}
           onClose={() => setCameraViewsOpen(false)}
@@ -2607,6 +2615,7 @@ export function App() {
           onAvatarVisibleChange={(visible) => { setAvatarVisible(visible); engine?.setAvatarVisible(visible); }}
           onConstraintsChange={changeCameraConstraints}
           onNavigationChange={changeNavigationSettings}
+          onDebugVisibleChange={(visible) => engine?.setNavigationCollisionDebugVisible(visible)}
           onResetNavigation={() => changeNavigationSettings(DEFAULT_NAVIGATION_SETTINGS)}
           onAddView={addCameraView}
           onApplyView={(view) => engine?.applyCamera(view.camera)}

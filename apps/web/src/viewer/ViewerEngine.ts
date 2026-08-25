@@ -132,6 +132,13 @@ export interface SceneStatistics {
   vertexCount: number;
 }
 
+export interface NavigationCollisionDiagnostics {
+  debugVisible: boolean;
+  blockingObjectCount: number;
+  raySamples: number;
+  lastSweepMs: number;
+}
+
 export interface PointerInfo {
   screenX: number;
   screenY: number;
@@ -321,6 +328,7 @@ export class ViewerEngine {
   onClippingFacePicked?: (state: ClippingState) => void;
   onCollisionChange?: () => void;
   onNavigationRecovery?: () => void;
+  onNavigationDiagnosticsChange?: (diagnostics: NavigationCollisionDiagnostics) => void;
   onCameraChange?: (state: CameraState) => void;
   onPointerInfoChange?: (info: PointerInfo | undefined) => void;
   onAnimationChange?: (time: number, playing: boolean) => void;
@@ -407,6 +415,13 @@ export class ViewerEngine {
   private readonly cameraCollisionAnchor = new THREE.Vector3();
   private cameraCollisionDirty = false;
   private lastCameraCollisionCheck = 0;
+  private readonly navigationCollisionDebugGroup = new THREE.Group();
+  private navigationCollisionDebugVisible = false;
+  private navigationDebugCapsule: THREE.Mesh | undefined;
+  private lastNavigationDebugRefresh = 0;
+  private navigationRaySamples = 0;
+  private lastNavigationSweepMs = 0;
+  private lastNavigationDiagnosticsNotify = 0;
   private readOnlyMode = false;
   private readonly firstPersonVelocity = new THREE.Vector3();
   private firstPersonGrounded = false;
@@ -548,6 +563,9 @@ export class ViewerEngine {
     if (this.renderer instanceof THREE.WebGLRenderer) this.renderer.localClippingEnabled = true;
     this.container.append(this.renderer.domElement);
     this.scene.add(this.modelRoot);
+    this.navigationCollisionDebugGroup.name = "navigation-collision-debug";
+    this.navigationCollisionDebugGroup.visible = false;
+    this.scene.add(this.navigationCollisionDebugGroup);
     this.scene.add(this.xrRig);
     this.xrRig.add(this.camera);
 
@@ -2797,6 +2815,24 @@ export class ViewerEngine {
 
   setNavigationSettings(state: NavigationSettingsState): void {
     this.navigationSettings = normalizeNavigationSettings(state);
+    this.lastNavigationDebugRefresh = 0;
+  }
+
+  getNavigationCollisionDiagnostics(): NavigationCollisionDiagnostics {
+    return {
+      debugVisible: this.navigationCollisionDebugVisible,
+      blockingObjectCount: this.visibleModelObjects().length,
+      raySamples: this.navigationRaySamples,
+      lastSweepMs: this.lastNavigationSweepMs
+    };
+  }
+
+  setNavigationCollisionDebugVisible(visible: boolean): void {
+    this.navigationCollisionDebugVisible = visible;
+    this.navigationCollisionDebugGroup.visible = visible;
+    this.lastNavigationDebugRefresh = 0;
+    if (visible) this.updateNavigationCollisionDebug(performance.now(), true);
+    this.onNavigationDiagnosticsChange?.(this.getNavigationCollisionDiagnostics());
   }
 
   setSelectionScope(scope: SelectionScope): void {
@@ -3192,6 +3228,8 @@ export class ViewerEngine {
     this.skyboxTextures.clear();
     this.externalEnvironmentTexture?.dispose();
     this.disposeClippingHelper();
+    this.clearNavigationCollisionDebug();
+    this.navigationCollisionDebugGroup.removeFromParent();
     if (this.cameraPathHelper) this.disposeObject(this.cameraPathHelper);
     this.removeSelectionHelper();
     this.clearAnnotations(false);
@@ -4177,6 +4215,7 @@ export class ViewerEngine {
     this.updateModelEffects(delta);
     this.updateWeather(delta);
     this.updateCollisions(false, now);
+    this.updateNavigationCollisionDebug(now);
     this.syncSpaceVisuals();
     this.updateSceneLightProxies();
     if (this.navigationMode !== "firstPerson") {
@@ -4462,6 +4501,8 @@ export class ViewerEngine {
 
   private resolveCharacterMovement(movement: THREE.Vector3, topOrigin: THREE.Vector3, height: number): THREE.Vector3 {
     if (!this.cameraConstraints.collisionEnabled || movement.lengthSq() === 0) return movement.clone();
+    const sweepStartedAt = performance.now();
+    this.navigationRaySamples = 0;
     const resolved = new THREE.Vector3();
     const currentOrigin = topOrigin.clone();
     let remaining = movement.clone();
@@ -4491,6 +4532,12 @@ export class ViewerEngine {
       const unconsumed = remaining.clone().sub(advance);
       const normal = hit.face?.normal.clone().transformDirection(hit.object.matrixWorld) ?? direction.clone().negate();
       remaining = slideAgainstSurface(unconsumed, normal).multiplyScalar(0.98);
+    }
+    this.lastNavigationSweepMs = performance.now() - sweepStartedAt;
+    const now = performance.now();
+    if (now - this.lastNavigationDiagnosticsNotify >= 250) {
+      this.lastNavigationDiagnosticsNotify = now;
+      this.onNavigationDiagnosticsChange?.(this.getNavigationCollisionDiagnostics());
     }
     return resolved;
   }
@@ -4543,6 +4590,7 @@ export class ViewerEngine {
       for (const sideOffset of sideOffsets) {
         const origin = topOrigin.clone().addScaledVector(this.camera.up, verticalOffset).addScaledVector(side, sideOffset);
         this.raycaster.set(origin, direction);
+        this.navigationRaySamples += 1;
         this.raycaster.near = 0.01;
         this.raycaster.far = distance + radius;
         const hit = this.raycaster.intersectObjects(objects, true)[0];
@@ -4552,6 +4600,47 @@ export class ViewerEngine {
     this.raycaster.near = 0;
     this.raycaster.far = Infinity;
     return nearest;
+  }
+
+  private updateNavigationCollisionDebug(now: number, force = false): void {
+    if (!this.navigationCollisionDebugVisible) return;
+    if (force || now - this.lastNavigationDebugRefresh >= 500) {
+      this.lastNavigationDebugRefresh = now;
+      this.clearNavigationCollisionDebug();
+      for (const model of this.models.values()) {
+        if (!model.visible || !model.object.visible) continue;
+        const box = visibleObjectBox(model.object);
+        if (box.isEmpty()) continue;
+        const helper = new THREE.Box3Helper(box, 0x49c7ff);
+        helper.name = `navigation-collider:${model.id}`;
+        helper.renderOrder = 10_000;
+        const material = helper.material as THREE.LineBasicMaterial;
+        material.transparent = true;
+        material.opacity = 0.72;
+        material.depthTest = false;
+        this.navigationCollisionDebugGroup.add(helper);
+      }
+      const radius = this.cameraConstraints.collisionRadius;
+      const height = this.navigationMode === "thirdPerson" ? 1.75 : this.navigationSettings.eyeHeight;
+      const geometry = new THREE.CapsuleGeometry(radius, Math.max(0.01, height - radius * 2), 4, 8);
+      const material = new THREE.MeshBasicMaterial({ color: 0xf5c65c, wireframe: true, transparent: true, opacity: 0.88, depthTest: false });
+      this.navigationDebugCapsule = new THREE.Mesh(geometry, material);
+      this.navigationDebugCapsule.name = "navigation-character-capsule";
+      this.navigationDebugCapsule.renderOrder = 10_001;
+      this.navigationCollisionDebugGroup.add(this.navigationDebugCapsule);
+    }
+    if (!this.navigationDebugCapsule) return;
+    const height = this.navigationMode === "thirdPerson" ? 1.75 : this.navigationSettings.eyeHeight;
+    const top = this.navigationMode === "thirdPerson" && this.avatar
+      ? this.avatar.position.clone().add(new THREE.Vector3(0, height, 0))
+      : this.camera.position.clone();
+    this.navigationDebugCapsule.position.copy(top).addScaledVector(this.camera.up, -height / 2);
+    this.navigationDebugCapsule.visible = this.navigationMode !== "orbit";
+  }
+
+  private clearNavigationCollisionDebug(): void {
+    for (const child of [...this.navigationCollisionDebugGroup.children]) this.disposeObject(child);
+    this.navigationDebugCapsule = undefined;
   }
 
   private rebuildComponentIndex(modelId: string): void {

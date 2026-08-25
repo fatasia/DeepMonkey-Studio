@@ -1112,6 +1112,18 @@ button { color: inherit; }
 .navigation-active-summary p { max-width: 310px; margin: 0; color: #8d989e; font-size: 8px; line-height: 1.45; }
 .navigation-active-summary > button { position: absolute; top: 8px; right: 8px; height: 24px; padding: 0 7px; color: #9ba6ac; border: 1px solid #39464c; border-radius: 5px; background: #192126; font-size: 8px; cursor: pointer; }
 .navigation-active-summary > button.active { color: var(--accent); border-color: rgba(212,168,79,.48); }
+.navigation-diagnostics { margin: 0 10px 8px; padding: 9px; border: 1px solid #303c42; border-radius: 7px; background: #171f23; }
+.navigation-diagnostics.warning { border-color: rgba(229,167,88,.52); background: rgba(90,58,24,.14); }
+.navigation-diagnostics .camera-constraint-heading > span { display: flex; align-items: center; gap: 5px; }
+.navigation-diagnostics .camera-constraint-heading svg { color: #49c7ff; }
+.navigation-diagnostics .camera-constraint-heading button { min-width: 64px; height: 24px; padding: 0 7px; color: #8b989e; border: 1px solid #37444a; border-radius: 5px; background: #20292e; font-size: 8px; cursor: pointer; }
+.navigation-diagnostics .camera-constraint-heading button.active { color: #1a1510; border-color: var(--accent); background: var(--accent); }
+.navigation-diagnostic-metrics { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; }
+.navigation-diagnostic-metrics > span { display: grid; gap: 3px; padding: 7px; border-radius: 5px; background: #20292e; }
+.navigation-diagnostic-metrics small { color: #6f7d84; font-size: 7px; }
+.navigation-diagnostic-metrics strong { color: #dce2e5; font-family: "Cascadia Mono",Consolas,monospace; font-size: 9px; }
+.navigation-diagnostics > p { margin: 7px 1px 0; color: #68777e; font-size: 7px; line-height: 1.45; }
+.navigation-diagnostics.warning > p { color: #d5a66c; }
 .navigation-motion-settings { margin: 0 10px 8px; padding: 9px; border: 1px solid #303c42; border-radius: 7px; background: #171f23; }
 .navigation-motion-settings .camera-constraint-heading button { padding: 0; color: #7f8c93; border: 0; background: transparent; font-size: 8px; cursor: pointer; }
 .navigation-motion-settings .camera-constraint-heading button:hover { color: var(--accent); }
