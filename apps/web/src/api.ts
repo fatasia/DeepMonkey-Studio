@@ -1,37 +1,28 @@
-import type { AiAssistantResponse, AiProviderSettings, AuditLogRecord, DataConnectionRecord, DataDatasetPreview, DataDatasetRecord, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, RevitRuntimeInfo, RvtConversionMode, SceneSnapshot, ServiceHealthRecord, ServiceLogRecord, SystemBrandingSettings, SystemUserRecord, VisionEventRecord, VisionInferenceResponse, VisionModelManifest, VisionModelPreset, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
+import type { AiAssistantResponse, AiProviderSettings, ApplicationDocument, AuditLogRecord, DataConnectionRecord, DataDatasetPreview, DataDatasetRecord, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, RevitRuntimeInfo, RvtConversionMode, SceneSnapshot, ServiceHealthRecord, ServiceLogRecord, SystemBrandingSettings, SystemUserRecord, VisionEventRecord, VisionInferenceResponse, VisionModelManifest, VisionModelPreset, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
+import { ServerClient } from "@bim-studio/server-sdk";
+import { BrowserHostAdapter } from "./adapters/browserHostAdapter.js";
 
-const AUTH_TOKEN_KEY = "bim-studio-auth-token";
-export function getAuthToken() { return window.localStorage.getItem(AUTH_TOKEN_KEY) ?? window.sessionStorage.getItem(AUTH_TOKEN_KEY) ?? ""; }
+const browserHost = new BrowserHostAdapter(window);
+const serverClient = new ServerClient({
+  profile: browserHost.getServerProfile(),
+  authStore: browserHost,
+  onUnauthorized: () => browserHost.notifyUnauthorized()
+});
+
+export function getAuthToken() { return browserHost.getAccessToken(); }
 export function setAuthToken(token?: string, remember = true) {
-  window.localStorage.removeItem(AUTH_TOKEN_KEY);
-  window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
-  if (token) (remember ? window.localStorage : window.sessionStorage).setItem(AUTH_TOKEN_KEY, token);
+  if (token) browserHost.setAccessToken(token, remember);
+  else browserHost.clearAccessToken();
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
-  const token = getAuthToken();
-  if (token) headers.set("authorization", `Bearer ${token}`);
-  const response = await fetch(url, { ...init, headers });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({ message: response.statusText }))) as { message?: string };
-    if (response.status === 401) window.dispatchEvent(new CustomEvent("bim-studio-auth-required"));
-    throw new Error(body.message ?? `请求失败：${response.status}`);
-  }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
-}
+const request = <T>(url: string, init?: RequestInit) => serverClient.request<T>(url, init);
 
 async function streamAssistant(mode: "bim" | "scene" | "component" | "dashboard" | "sql", question: string, context: unknown, onDelta: (delta: string) => void): Promise<AiAssistantResponse> {
-  const headers = new Headers({ "content-type": "application/json", accept: "text/event-stream" });
-  const token = getAuthToken();
-  if (token) headers.set("authorization", `Bearer ${token}`);
-  const response = await fetch("/api/ai/assistant/stream", { method: "POST", headers, body: JSON.stringify({ mode, question, context }) });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ message: response.statusText })) as { message?: string };
-    if (response.status === 401) window.dispatchEvent(new CustomEvent("bim-studio-auth-required"));
-    throw new Error(body.message ?? `请求失败：${response.status}`);
-  }
+  const response = await serverClient.open("/api/ai/assistant/stream", {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "text/event-stream" },
+    body: JSON.stringify({ mode, question, context })
+  });
   if (!response.body) throw new Error("浏览器不支持流式响应");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -56,6 +47,14 @@ async function streamAssistant(mode: "bim" | "scene" | "component" | "dashboard"
 }
 
 export const api = {
+  getMeta: () => serverClient.getMeta(),
+  listApplications: (projectId: string) => serverClient.listApplications(projectId),
+  getApplication: (projectId: string, applicationId: string) => serverClient.getApplication(projectId, applicationId),
+  createApplication: (document: ApplicationDocument) => serverClient.createApplication(document),
+  saveApplication: (document: ApplicationDocument) => serverClient.saveApplication(document),
+  deleteApplication: (projectId: string, applicationId: string) => serverClient.deleteApplication(projectId, applicationId),
+  publishApplication: (projectId: string, applicationId: string) => serverClient.publishApplication(projectId, applicationId),
+  unpublishApplication: (projectId: string, applicationId: string) => serverClient.unpublishApplication(projectId, applicationId),
   getBranding: () => request<SystemBrandingSettings>("/api/public/branding"),
   saveBranding: (settings: Partial<SystemBrandingSettings>) => request<SystemBrandingSettings>("/api/admin/branding", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) }),
   uploadBrandingAsset: (kind: "logo" | "icon", file: File) => { const body = new FormData(); body.append("file", file); return request<{ url: string; settings: SystemBrandingSettings }>(`/api/admin/branding/upload?kind=${kind}`, { method: "POST", body }); },

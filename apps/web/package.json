@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@bim-studio/contracts": "workspace:*",
+    "@bim-studio/server-sdk": "workspace:*",
     "@dimforge/rapier3d-compat": "0.19.3",
     "@gltf-transform/core": "4.4.2",
     "@gltf-transform/extensions": "4.4.2",
