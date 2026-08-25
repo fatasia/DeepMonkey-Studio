@@ -15,7 +15,6 @@ import {
   Footprints,
   Focus,
   Film,
-  Gauge,
   HeartHandshake,
   Import,
   Info,
@@ -734,7 +733,7 @@ export function App() {
         if (cameraView) engine?.applyCamera(cameraView.camera);
       } else if (action.type === "message") {
         setMessage(action.message?.trim() || "事件已触发");
-      } else if (action.type === "dashboard") {
+      } else if (action.type === "dashboard" && (route.view === "view" || route.view === "published")) {
         setSceneDashboardOpen((current) => action.value === "show" ? true : action.value === "hide" ? false : !current);
       } else if (action.type === "setData") {
         publishLocalSceneData({ source: "interaction", key: action.dataKey?.trim() || "value", value: action.value, timestamp: new Date().toISOString(), ...(route.sceneId ? { sceneId: route.sceneId } : {}) });
@@ -2187,7 +2186,6 @@ export function App() {
             <button className={rendererBackend === "webgl" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgl")}>WebGL</button>
             <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>{tr(locale, "实验", "Experimental")}</small></button>
           </div>
-          <button className={`button ghost compact-action ${sceneDashboardOpen ? "active" : ""}`} title={tr(locale, "场景数据看板", "Scene dashboard")} onClick={() => { setSceneDashboardOpen((value) => !value); setDigitalTwinOpen(false); setEnvironmentOpen(false); }}><Gauge size={15} /><span className="action-label">{tr(locale, "数据看板", "Dashboard")}</span></button>
           <button className={`button ghost compact-action ${aiAssistantOpen ? "active" : ""}`} title="AI 场景助手" onClick={() => setAiAssistantOpen((value) => !value)}><Bot size={15} /><span className="action-label">AI 助手</span></button>
           <button className="button ghost" title={route.dashboardReturn ? tr(locale, "返回二维设计", "Back to 2D design") : tr(locale, "场景管理", "Scenes")} onClick={() => void commitSceneName().then((committed) => committed && returnFromSceneEditor())}><ArrowLeft size={15} /><span className="action-label">{route.dashboardReturn ? tr(locale, "返回二维", "Back to 2D") : tr(locale, "场景管理", "Scenes")}</span></button>
           <button className="button ghost" title={tr(locale, "导入场景", "Import scene")} onClick={() => importRef.current?.click()}><Import size={15} /><span className="action-label">{tr(locale, "导入", "Import")}</span></button>
@@ -2615,7 +2613,7 @@ export function App() {
           {!xrCapabilities.checking && (!xrCapabilities.vr || !xrCapabilities.ar) && <p>{tr(locale, "桌面浏览器通常只能检测 VR 头显；AR 需支持 WebXR 的 Android 设备。自签名证书必须先在设备上信任。", "Desktop browsers usually require a connected VR headset; AR requires a WebXR-capable Android device. Trust the self-signed certificate on the device first.")}</p>}
         </div>}
         {route.view === "studio" && xrActiveMode && <div className="xr-session-hud"><div><strong>{xrActiveMode === "immersive-vr" ? "VR" : "AR"} {tr(locale, "运行中", "active")}</strong><small>{xrActiveMode === "immersive-vr" ? tr(locale, "左摇杆移动 · 右摇杆转向 · B/Y 退出", "Left stick move · right stick turn · B/Y exit") : tr(locale, "点击退出返回编辑器", "Exit to return to the editor")}</small></div><button onClick={() => void engine?.endXR()}>{tr(locale, "退出", "Exit")}</button></div>}
-        {(route.view === "studio" || route.view === "view" || route.view === "published") && sceneDashboardOpen && <Suspense fallback={null}><SceneDashboardOverlay
+        {(route.view === "view" || route.view === "published") && sceneDashboardOpen && <Suspense fallback={null}><SceneDashboardOverlay
           locale={locale}
           projectId={project?.id ?? activeScene?.projectId ?? "default"}
           sceneId={activeScene?.id ?? route.sceneId ?? "new"}
@@ -2624,7 +2622,7 @@ export function App() {
           targetOptions={interactionTargetOptions}
           sceneOptions={scenes.map((scene) => ({ id: scene.id, name: scene.name }))}
           cameraViewOptions={cameraViews.map((view) => ({ id: view.id, name: view.name }))}
-          readOnly={route.view !== "studio"}
+          readOnly
           onChange={setSceneDashboard}
           onInteractionsChange={setSceneInteractions}
           onWidgetInteraction={(trigger, widget, originalEvent) => engine?.dispatchInteraction(trigger, { kind: "widget", widgetId: widget.id }, { ...(originalEvent ? { originalEvent } : {}), payload: widget })}
@@ -2645,7 +2643,7 @@ export function App() {
             setMessage(applied ? tr(locale, "已执行 BIM 问答操作", "BIM assistant action applied") : tr(locale, "当前证据不足，无法执行该操作", "Insufficient evidence for this action"));
             setRevision((value) => value + 1);
           }}
-          onApplyDashboard={(dashboard) => { setSceneDashboard(normalizeDashboardState({ ...dashboard, enabled: true })); setSceneDashboardOpen(true); setMessage("AI 看板方案已应用，保存场景后持久化"); }}
+          onApplyDashboard={(dashboard) => { setSceneDashboard(normalizeDashboardState({ ...dashboard, enabled: true })); setMessage("AI 看板方案已写入二维设计，保存场景后可在二维工作区继续编辑"); }}
           onClose={() => setAiAssistantOpen(false)}
         />}
         {(route.view === "view" || route.view === "published") && infoEnabled && <section className="viewer-info-card" aria-label={tr(locale, "场景信息", "Scene information")}>
