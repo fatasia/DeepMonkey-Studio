@@ -42,4 +42,22 @@ describe("scene bridge to native ApplicationDocument", () => {
     migrateSceneSnapshotV1(input);
     expect(input).toEqual(before);
   });
+
+  it("keeps shared 3D data bindings through the application bridge", () => {
+    const input = structuredClone(pure3dFixture) as unknown as SceneSnapshot;
+    input.dataBindings = [{
+      id: "binding-1",
+      name: "机器人状态",
+      enabled: true,
+      pipelineId: "pipeline-robots",
+      field: "online",
+      target: { modelId: "robot-1" },
+      action: "visibility",
+      refreshSeconds: 5
+    }];
+
+    const application = migrateSceneSnapshotV1(input);
+    expect(application.scenes[0]?.dataBindings).toEqual(input.dataBindings);
+    expect(applicationToSceneSnapshotV1(application).dataBindings).toEqual(input.dataBindings);
+  });
 });

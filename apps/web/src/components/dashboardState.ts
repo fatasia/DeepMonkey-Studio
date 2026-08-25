@@ -39,6 +39,7 @@ export function normalizeDashboardState(value: unknown): SceneDashboardState {
         ...(typeof item.backgroundOpacity === "number" ? { backgroundOpacity: Math.max(0, Math.min(1, item.backgroundOpacity)) } : {}),
         ...(typeof item.textColor === "string" && /^#[0-9a-f]{6}$/i.test(item.textColor) ? { textColor: item.textColor } : {}),
         ...(typeof item.datasetId === "string" ? { datasetId: item.datasetId } : {}),
+        ...(typeof item.pipelineId === "string" ? { pipelineId: item.pipelineId } : {}),
         ...(typeof item.field === "string" ? { field: item.field } : {}),
         ...(typeof item.url === "string" ? { url: item.url.slice(0, 2_048) } : {}),
         ...(typeof item.imageUrl === "string" ? { imageUrl: item.imageUrl.slice(0, 2_048) } : {}),

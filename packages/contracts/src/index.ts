@@ -292,6 +292,20 @@ export interface DataMessage {
   action?: DataEventAction;
 }
 
+/** A declarative bridge from one shared data product field to a 3D target. */
+export interface SceneDataBindingState {
+  id: string;
+  name: string;
+  enabled: boolean;
+  datasetId?: string;
+  pipelineId?: string;
+  field: string;
+  rowIndex?: number;
+  target: DataEventTarget;
+  action: DataEventAction;
+  refreshSeconds: number;
+}
+
 export interface DataEvent extends DataMessage {
   id: string;
   projectId: string;
@@ -692,6 +706,7 @@ export interface SceneDashboardWidgetState {
   backgroundOpacity?: number;
   textColor?: string;
   datasetId?: string;
+  pipelineId?: string;
   field?: string;
   url?: string;
   imageUrl?: string;
@@ -792,6 +807,7 @@ export interface SceneSnapshot {
   physics?: ScenePhysicsState;
   animation?: SceneAnimationState;
   dashboard?: SceneDashboardState;
+  dataBindings?: SceneDataBindingState[];
   interactions?: SceneInteractionScriptState[];
   selectedModelId?: string;
   selectedLayerId?: string;

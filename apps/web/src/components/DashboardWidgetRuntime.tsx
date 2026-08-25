@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Ban, Cctv, DatabaseZap, Globe2, Image as ImageIcon, LoaderCircle, Video } from "lucide-react";
 import type { EChartsType } from "echarts/core";
-import type { DashboardDataWidgetConfig, DataDatasetPreview, DataDatasetRecord } from "@bim-studio/contracts";
+import type { DashboardDataWidgetConfig, DataDatasetField, DataPipelineDefinition, DataDatasetRecord } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { subscribeSceneData } from "../sceneDataBridge";
+import { mergeProductMetrics } from "./dashboardMetrics";
 
 interface MetricSample { time: number; value: number; }
 export interface DashboardMetric { value: unknown; samples: MetricSample[]; rows?: Array<Record<string, unknown>>; }
@@ -12,24 +13,64 @@ export interface DashboardMetric { value: unknown; samples: MetricSample[]; rows
 export function useDashboardMetrics(projectId: string, widgets: readonly DashboardDataWidgetConfig[], sceneId?: string) {
   const [metrics, setMetrics] = useState<Record<string, DashboardMetric>>({});
   const [datasets, setDatasets] = useState<DataDatasetRecord[]>([]);
+  const [pipelines, setPipelines] = useState<DataPipelineDefinition[]>([]);
+  const [fieldsByProduct, setFieldsByProduct] = useState<Record<string, DataDatasetField[]>>({});
+  const [statusByProduct, setStatusByProduct] = useState<Record<string, "loading" | "ready" | "error">>({});
+  const [catalogError, setCatalogError] = useState(false);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void api.listDatasets(projectId).then((items) => { if (!cancelled) setDatasets(items); }).catch(() => undefined);
+    setCatalogError(false);
+    void Promise.all([api.listDatasets(projectId), api.listDataPipelines(projectId)])
+      .then(([nextDatasets, nextPipelines]) => {
+        if (cancelled) return;
+        setDatasets(nextDatasets);
+        setPipelines(nextPipelines);
+        setFieldsByProduct((current) => ({
+          ...current,
+          ...Object.fromEntries(nextDatasets.map((dataset) => [`dataset:${dataset.id}`, dataset.fields]))
+        }));
+      })
+      .catch(() => { if (!cancelled) setCatalogError(true); });
     return () => { cancelled = true; };
   }, [projectId]);
 
   useEffect(() => {
-    const ids = [...new Set(widgets.map((widget) => widget.datasetId).filter((id): id is string => Boolean(id)))];
-    if (ids.length === 0) return;
+    const datasetIds = [...new Set(widgets.map((widget) => widget.datasetId).filter((id): id is string => Boolean(id)))];
+    const pipelineIds = [...new Set(widgets.map((widget) => widget.pipelineId).filter((id): id is string => Boolean(id)))];
+    const productIds = [...datasetIds, ...pipelineIds];
+    const productKeys = [...datasetIds.map((id) => `dataset:${id}`), ...pipelineIds.map((id) => `pipeline:${id}`)];
+    if (productIds.length === 0) return;
     let cancelled = false;
     const refresh = async () => {
-      const previews = await Promise.all(ids.map((id) => api.previewDataset(projectId, id).catch(() => undefined)));
-      if (!cancelled) setMetrics((current) => previews.reduce((next, preview) => preview ? mergeDatasetMetrics(next, preview) : next, current));
+      setStatusByProduct((current) => ({ ...current, ...Object.fromEntries(productKeys.map((key) => [key, "loading"])) }));
+      const previews = await Promise.all([
+        ...datasetIds.map(async (id) => {
+          try {
+            const preview = await api.previewDataset(projectId, id);
+            return { id, kind: "dataset" as const, fields: preview.fields, rows: preview.rows } as const;
+          } catch { return { id, kind: "dataset" as const, error: true } as const; }
+        }),
+        ...pipelineIds.map(async (id) => {
+          try {
+            const preview = await api.previewDataPipeline(projectId, id);
+            if (preview.status === "error") return { id, kind: "pipeline" as const, error: true } as const;
+            return { id, kind: "pipeline" as const, fields: preview.fields, rows: preview.rows } as const;
+          } catch { return { id, kind: "pipeline" as const, error: true } as const; }
+        })
+      ]);
+      if (cancelled) return;
+      const successes = previews.filter((preview): preview is Extract<typeof preview, { fields: DataDatasetField[] }> => "fields" in preview);
+      setFieldsByProduct((current) => ({ ...current, ...Object.fromEntries(successes.map((preview) => [`${preview.kind}:${preview.id}`, preview.fields])) }));
+      setStatusByProduct((current) => ({ ...current, ...Object.fromEntries(previews.map((preview) => [`${preview.kind}:${preview.id}`, "error" in preview ? "error" : "ready"])) }));
+      setMetrics((current) => successes.reduce((next, preview) => mergeProductMetrics(next, preview.id, preview.fields, preview.rows), current));
     };
     void refresh();
-    const seconds = Math.max(2, Math.min(...ids.map((id) => datasets.find((item) => item.id === id)?.refreshSeconds || 5)));
+    const seconds = Math.max(2, Math.min(
+      ...datasetIds.map((id) => datasets.find((item) => item.id === id)?.refreshSeconds || 5),
+      ...(pipelineIds.length > 0 ? [5] : [])
+    ));
     const timer = window.setInterval(() => void refresh(), seconds * 1_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [datasets, projectId, widgets]);
@@ -39,7 +80,7 @@ export function useDashboardMetrics(projectId: string, widgets: readonly Dashboa
     setMetrics((current) => updateMetricMap(current, message.source, message.key || "value", message.value, Date.parse(message.timestamp) || Date.now()));
   }, (status) => setConnected(status === "online")), [projectId, sceneId]);
 
-  return { metrics, datasets, connected } as const;
+  return { metrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } as const;
 }
 
 export function DashboardWidgetView({ locale, widget, metric, compact, onAnimationStart, onAnimationEnd }: {
@@ -164,21 +205,6 @@ function updateMetricMap(current: Record<string, DashboardMetric>, source: strin
     const numeric = toFiniteNumber(value);
     const previous = current[metricKey];
     next[metricKey] = { value, samples: numeric === undefined ? previous?.samples ?? [] : [...(previous?.samples ?? []), { time, value: numeric }].slice(-60) };
-  }
-  return next;
-}
-
-function mergeDatasetMetrics(current: Record<string, DashboardMetric>, preview: DataDatasetPreview): Record<string, DashboardMetric> {
-  const next = { ...current };
-  for (const field of preview.fields) {
-    const numericRows = [...preview.rows].reverse().flatMap((row, index) => {
-      const value = toFiniteNumber(row[field.key]);
-      if (value === undefined) return [];
-      const rawTime = row.recorded_at ?? row.time ?? row.timestamp;
-      const time = typeof rawTime === "string" || typeof rawTime === "number" ? Date.parse(String(rawTime)) : Number.NaN;
-      return [{ time: Number.isFinite(time) ? time : Date.now() - (preview.rows.length - index) * 1_000, value }];
-    });
-    next[`${preview.dataset.id}.${field.key}`] = { value: preview.rows[0]?.[field.key], samples: numericRows.slice(-60), rows: preview.rows };
   }
   return next;
 }

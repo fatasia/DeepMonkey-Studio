@@ -100,7 +100,7 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   for (const key of ["title", "key", "unit"] as const) required(object, key, expectString, path);
   requiredLiteral(object, "type", ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"], path);
   for (const key of ["min", "max", "backgroundOpacity", "borderWidth", "fontSize", "fontWeight"] as const) optional(object, key, expectNumber, path);
-  for (const key of ["color", "backgroundColor", "textColor", "datasetId", "field", "url", "imageUrl", "assetId", "videoUrl", "monitorSourceUrl", "content", "borderColor"] as const) {
+  for (const key of ["color", "backgroundColor", "textColor", "datasetId", "pipelineId", "field", "url", "imageUrl", "assetId", "videoUrl", "monitorSourceUrl", "content", "borderColor"] as const) {
     optional(object, key, expectString, path);
   }
   optionalLiteral(object, "imageFit", ["cover", "contain", "fill"], path);
@@ -161,7 +161,26 @@ function validateScene(value: unknown, path: string): void {
   optional(object, "postProcessing", validatePostProcessing, path);
   optional(object, "physics", validateScenePhysics, path);
   optional(object, "animation", validateAnimation, path);
+  optional(object, "dataBindings", (bindings, bindingsPath) => expectArray(bindings, bindingsPath, validateSceneDataBinding), path);
   for (const key of ["selectedModelId", "selectedLayerId", "selectedAnnotationId"] as const) optional(object, key, expectString, path);
+}
+
+function validateSceneDataBinding(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of ["id", "name", "field"] as const) required(object, key, expectString, path);
+  required(object, "enabled", expectBoolean, path);
+  optional(object, "datasetId", expectString, path);
+  optional(object, "pipelineId", expectString, path);
+  optional(object, "rowIndex", expectNumber, path);
+  required(object, "refreshSeconds", expectNumber, path);
+  requiredLiteral(object, "action", ["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects"], path);
+  required(object, "target", (target, targetPath) => {
+    const targetObject = expectObject(target, targetPath);
+    for (const key of ["modelId", "layerId", "annotationId"] as const) optional(targetObject, key, expectString, targetPath);
+    if (!["modelId", "annotationId"].some((key) => typeof targetObject[key] === "string" && targetObject[key])) invalid(targetPath, "至少需要 modelId 或 annotationId");
+  }, path);
+  const products = [object.datasetId, object.pipelineId].filter((item) => typeof item === "string" && item.length > 0);
+  if (products.length !== 1) invalid(path, "必须且只能绑定一个数据集或数据管道");
 }
 
 function validateSceneModel(value: unknown, path: string): void {

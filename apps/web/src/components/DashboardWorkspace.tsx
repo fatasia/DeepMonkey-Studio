@@ -126,7 +126,7 @@ export function DashboardWorkspace({
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
   const layoutSelectionCount = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.visible !== false && node.locked !== true).length;
   const dataWidgetConfigs = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
-  const { metrics, datasets, connected } = useDashboardMetrics(project.id, dataWidgetConfigs);
+  const { metrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } = useDashboardMetrics(project.id, dataWidgetConfigs);
   const runtimeMetrics = useMemo<Record<string, DashboardMetric>>(() => ({
     ...metrics,
     ...Object.fromEntries(Object.entries(variables).map(([key, value]) => [key, {
@@ -546,6 +546,37 @@ export function DashboardWorkspace({
     onCommand(createUpdateDashboardDataWidgetCommand(page.id, selectedNode.id, { ...selectedNode.widget, ...patch }));
   }
 
+  function selectDataProduct(value: string) {
+    if (!selectedNode || selectedNode.kind !== "data-widget") return;
+    const next = { ...selectedNode.widget };
+    delete next.datasetId;
+    delete next.pipelineId;
+    delete next.field;
+    if (value) {
+      const separator = value.indexOf(":");
+      const kind = value.slice(0, separator);
+      const id = value.slice(separator + 1);
+      if (kind === "dataset") next.datasetId = id;
+      if (kind === "pipeline") next.pipelineId = id;
+      const firstField = fieldsByProduct[value]?.[0];
+      if (firstField) {
+        next.field = firstField.key;
+        next.key = `${id}.${firstField.key}`;
+        if (!next.unit && firstField.unit) next.unit = firstField.unit;
+      }
+    }
+    onCommand(createUpdateDashboardDataWidgetCommand(page.id, selectedNode.id, next));
+  }
+
+  function selectDataField(fieldKey: string) {
+    if (!selectedNode || selectedNode.kind !== "data-widget") return;
+    const productId = selectedNode.widget.pipelineId ?? selectedNode.widget.datasetId;
+    const productKey = selectedNode.widget.pipelineId ? `pipeline:${selectedNode.widget.pipelineId}` : selectedNode.widget.datasetId ? `dataset:${selectedNode.widget.datasetId}` : undefined;
+    if (!productId || !productKey) return;
+    const field = fieldsByProduct[productKey]?.find((candidate) => candidate.key === fieldKey);
+    updateDataWidget({ field: fieldKey, key: `${productId}.${fieldKey}`, ...(!selectedNode.widget.unit && field?.unit ? { unit: field.unit } : {}) });
+  }
+
   if (runtimePreview) return <DashboardRuntimePreview locale={locale} application={application} project={project} page={page} rendererBackend={rendererBackend} metrics={runtimeMetrics} connected={connected} onClose={() => setRuntimePreview(false)} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onNodeInteraction={onNodeInteraction} />;
 
   return <main className="dashboard-workspace">
@@ -650,9 +681,19 @@ export function DashboardWorkspace({
         </>}
 
         {inspectorTab === "data" && selectedNode.kind === "data-widget" && !["text", "shape"].includes(selectedNode.widget.type) && <section className="dashboard-inspector-section dashboard-data-widget-properties">
-          <label><span>{tr(locale, "数据集", "Dataset")}</span><select value={selectedNode.widget.datasetId ?? ""} onChange={(event) => updateDataWidget({ datasetId: event.target.value })}><option value="">{tr(locale, "实时变量 / 未绑定", "Live variable / Unbound")}</option>{datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></label>
-          <label><span>{tr(locale, "数据键", "Data key")}</span><input defaultValue={selectedNode.widget.key} key={`${selectedNode.id}:key:${selectedNode.widget.key}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.key) updateDataWidget({ key: event.currentTarget.value }); }} /></label>
-          <label><span>{tr(locale, "字段", "Field")}</span><input defaultValue={selectedNode.widget.field ?? ""} onBlur={(event) => updateDataWidget({ field: event.currentTarget.value })} /></label>
+          <label><span>{tr(locale, "数据产品", "Data product")}</span><select value={selectedNode.widget.pipelineId ? `pipeline:${selectedNode.widget.pipelineId}` : selectedNode.widget.datasetId ? `dataset:${selectedNode.widget.datasetId}` : ""} onChange={(event) => selectDataProduct(event.target.value)}><option value="">{tr(locale, "实时变量 / 未绑定", "Live variable / Unbound")}</option>{pipelines.length > 0 && <optgroup label={tr(locale, "数据管道（推荐）", "Data pipelines (recommended)")}>{pipelines.map((pipeline) => <option key={pipeline.id} value={`pipeline:${pipeline.id}`}>{pipeline.name}</option>)}</optgroup>}{datasets.length > 0 && <optgroup label={tr(locale, "原始数据集", "Raw datasets")}>{datasets.map((dataset) => <option key={dataset.id} value={`dataset:${dataset.id}`}>{dataset.name}</option>)}</optgroup>}</select></label>
+          {(() => {
+            const productId = selectedNode.widget.pipelineId ?? selectedNode.widget.datasetId;
+            const productKey = selectedNode.widget.pipelineId ? `pipeline:${selectedNode.widget.pipelineId}` : selectedNode.widget.datasetId ? `dataset:${selectedNode.widget.datasetId}` : undefined;
+            const status = productKey ? statusByProduct[productKey] : undefined;
+            const fields = productKey ? fieldsByProduct[productKey] ?? [] : [];
+            if (!productId) return <label><span>{tr(locale, "数据键", "Data key")}</span><input defaultValue={selectedNode.widget.key} key={`${selectedNode.id}:key:${selectedNode.widget.key}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.key) updateDataWidget({ key: event.currentTarget.value }); }} /></label>;
+            if (status === "loading" && fields.length === 0) return <div className="dashboard-data-binding-state">{tr(locale, "正在读取字段…", "Loading fields…")}</div>;
+            if (status === "error") return <div className="dashboard-data-binding-state error">{tr(locale, "数据产品运行失败，请到数据中心检查节点诊断。", "The data product failed. Open Data Center for node diagnostics.")}</div>;
+            return <label><span>{tr(locale, "字段", "Field")}</span><select value={selectedNode.widget.field ?? ""} onChange={(event) => selectDataField(event.target.value)}><option value="">{tr(locale, "选择输出字段", "Choose an output field")}</option>{fields.map((field) => <option key={field.key} value={field.key}>{field.label}{field.unit ? ` · ${field.unit}` : ""}</option>)}</select></label>;
+          })()}
+          {catalogError && <div className="dashboard-data-binding-state error">{tr(locale, "数据目录暂不可用，请稍后重试。", "The data catalog is temporarily unavailable.")}</div>}
+          <small className="dashboard-inspector-hint">{tr(locale, "同一数据产品可同时驱动二维组件、三维对象和对外接口。选择字段后会自动生成绑定键。", "The same data product can drive 2D widgets, 3D objects, and external endpoints. Choosing a field creates the binding key automatically.")}</small>
           <label><span>{tr(locale, "单位", "Unit")}</span><input defaultValue={selectedNode.widget.unit} key={`${selectedNode.id}:unit:${selectedNode.widget.unit}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.unit) updateDataWidget({ unit: event.currentTarget.value }); }} /></label>
           <label><span>{tr(locale, "设计数据状态", "Design data state")}</span><select value={selectedNode.widget.designState ?? "auto"} onChange={(event) => updateDataWidget({ designState: event.target.value as NonNullable<DashboardDataWidgetConfig["designState"]> })}><option value="auto">{tr(locale, "自动 / 实时", "Auto / Live")}</option><option value="empty">{tr(locale, "空数据", "Empty")}</option><option value="loading">{tr(locale, "加载中", "Loading")}</option><option value="partial">{tr(locale, "部分数据", "Partial")}</option><option value="error">{tr(locale, "错误", "Error")}</option><option value="forbidden">{tr(locale, "无权限", "No permission")}</option></select></label>
           {selectedNode.widget.type === "gauge" && <div className="dashboard-frame-grid"><label><span>MIN</span><input type="number" value={selectedNode.widget.min ?? 0} onChange={(event) => updateDataWidget({ min: Number(event.target.value) })} /></label><label><span>MAX</span><input type="number" value={selectedNode.widget.max ?? 100} onChange={(event) => updateDataWidget({ max: Number(event.target.value) })} /></label></div>}

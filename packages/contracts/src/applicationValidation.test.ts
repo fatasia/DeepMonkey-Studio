@@ -158,6 +158,42 @@ describe("assertApplicationDocument", () => {
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });
 
+  it("accepts a dashboard widget bound to a visual data pipeline", () => {
+    const application = structuredClone(pureApplication);
+    application.pages[0]!.nodes.push({
+      id: "widget:throughput",
+      kind: "data-widget",
+      frame: { x: 40, y: 40, width: 360, height: 200 },
+      zIndex: 2,
+      widget: {
+        title: "产线节拍",
+        key: "pipeline-cycle.cycle_time",
+        type: "value",
+        unit: "s",
+        pipelineId: "pipeline-cycle",
+        field: "cycle_time"
+      }
+    });
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("accepts one shared data product binding on a 3D scene object", () => {
+    const application = structuredClone(pureApplication);
+    application.scenes[0]!.dataBindings = [{
+      id: "binding-robot",
+      name: "机器人在线状态",
+      enabled: true,
+      pipelineId: "pipeline-robots",
+      field: "online",
+      target: { modelId: "robot-1" },
+      action: "visibility",
+      refreshSeconds: 5
+    }];
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
   it("accepts an explicit undefined SceneInteractionActionState target", () => {
     const application = structuredClone(interactionApplication);
     application.interactions[0]!.actions[0]!.target = undefined;

@@ -70,6 +70,7 @@ import type {
   SceneAnnotationState,
   SceneAnimationState,
   SceneDashboardState,
+  SceneDataBindingState,
   SceneEnvironmentState,
   SceneFloorState,
   SceneInteractionScriptState,
@@ -99,10 +100,12 @@ import { CreditsModal } from "./components/CreditsModal";
 import { DigitalTwinPanel } from "./components/DigitalTwinPanel";
 import { DashboardWorkspace } from "./components/DashboardWorkspace";
 import { InteractionEditor, type InteractionTargetOption } from "./components/InteractionEditor";
+import { SceneDataBindingEditor, type SceneDataBindingRuntimeState } from "./components/SceneDataBindingEditor";
 import { AiAssistantPanel } from "./components/AiAssistantPanel";
 import { LoginPage } from "./components/LoginPage";
 import { DEFAULT_DASHBOARD_STATE, normalizeDashboardState } from "./components/dashboardState";
 import { normalizeInteractionScripts } from "./interactionState";
+import { dataBindingProduct, normalizeSceneDataBindings, sceneDataBindingMessage } from "./sceneDataBindings";
 import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
 import { exportFbxFile, exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
@@ -315,6 +318,7 @@ export function App() {
   const environmentMapRef = useRef<HTMLInputElement>(null);
   const sceneNameCommitRef = useRef<Promise<boolean> | undefined>(undefined);
   const sceneApplyVersionRef = useRef(0);
+  const sceneWorkspaceLoadRef = useRef<string | undefined>(undefined);
   const rendererSnapshotRef = useRef<{ scene: SceneSnapshot; readOnly: boolean } | undefined>(undefined);
   const applicationSessionRef = useRef<ApplicationSession>(null!);
   applicationSessionRef.current ??= new ApplicationSession();
@@ -381,6 +385,8 @@ export function App() {
   const [sceneDataReceived, setSceneDataReceived] = useState(0);
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
   const [sceneDashboard, setSceneDashboard] = useState<SceneDashboardState>(() => structuredClone(DEFAULT_DASHBOARD_STATE));
+  const [sceneDataBindings, setSceneDataBindings] = useState<SceneDataBindingState[]>([]);
+  const [sceneDataBindingRuntime, setSceneDataBindingRuntime] = useState<Record<string, SceneDataBindingRuntimeState>>({});
   const [sceneInteractions, setSceneInteractions] = useState<SceneInteractionScriptState[]>([]);
   const [viewerToolsOpen, setViewerToolsOpen] = useState(false);
   const [xrPanelOpen, setXrPanelOpen] = useState(false);
@@ -505,7 +511,7 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!viewerRouteActive || !viewportRef.current) return;
+    if (!authReady || !currentUser || !viewerRouteActive || !viewportRef.current) return;
     let viewer: ViewerEngine | undefined;
     let cancelled = false;
     let revisionFrame: number | undefined;
@@ -601,7 +607,7 @@ export function App() {
       viewer?.dispose();
       setEngine((current) => current === viewer ? undefined : current);
     };
-  }, [rendererBackend, viewerRouteActive, showError]);
+  }, [authReady, currentUser?.id, rendererBackend, viewerRouteActive, showError]);
 
   useEffect(() => {
     const pending = rendererSnapshotRef.current;
@@ -675,11 +681,63 @@ export function App() {
       if (data.sceneId && data.sceneId !== route.sceneId) return;
       setSceneDataReceived((value) => value + 1);
       if (engine.applySceneDataMessage(data)) {
-        setMessage(`数据 ${data.source}/${data.key} 已映射到场景`);
+        if (!data.source.startsWith("pipeline:") && !data.source.startsWith("dataset:")) setMessage(`数据 ${data.source}/${data.key} 已映射到场景`);
         setRevision((value) => value + 1);
       }
     }, setSceneDataStatus);
   }, [engine, project, route.sceneId, route.view]);
+
+  useEffect(() => {
+    if (!project || !route.sceneId || !["studio", "view", "published"].includes(route.view)) return;
+    const enabled = sceneDataBindings.filter((binding) => binding.enabled);
+    if (enabled.length === 0) {
+      setSceneDataBindingRuntime({});
+      return;
+    }
+    let cancelled = false;
+    const timers: number[] = [];
+    const groups = new Map<string, { bindings: SceneDataBindingState[]; kind: "dataset" | "pipeline"; productId: string; seconds: number }>();
+    for (const binding of enabled) {
+      const product = dataBindingProduct(binding);
+      const key = `${product.kind}:${product.id}:${binding.refreshSeconds}`;
+      const group = groups.get(key) ?? { bindings: [], kind: product.kind, productId: product.id, seconds: binding.refreshSeconds };
+      group.bindings.push(binding);
+      groups.set(key, group);
+    }
+    const updateBindings = (bindings: readonly SceneDataBindingState[], state: SceneDataBindingRuntimeState | ((binding: SceneDataBindingState) => SceneDataBindingRuntimeState)) => {
+      if (cancelled) return;
+      setSceneDataBindingRuntime((current) => ({ ...current, ...Object.fromEntries(bindings.map((binding) => [binding.id, typeof state === "function" ? state(binding) : state])) }));
+    };
+    for (const group of groups.values()) {
+      const poll = async () => {
+        if (!cancelled) setSceneDataBindingRuntime((current) => ({
+          ...current,
+          ...Object.fromEntries(group.bindings.map((binding) => [binding.id, current[binding.id] ?? { status: "loading" }]))
+        }));
+        try {
+          const preview = group.kind === "dataset"
+            ? await api.previewDataset(project.id, group.productId)
+            : await api.previewDataPipeline(project.id, group.productId);
+          if ("status" in preview && preview.status === "error") throw new Error(preview.error || "数据管道运行失败");
+          const messages = new Map<string, ReturnType<typeof sceneDataBindingMessage>>();
+          for (const binding of group.bindings) {
+            const message = sceneDataBindingMessage(binding, preview, route.sceneId!);
+            messages.set(binding.id, message);
+            publishLocalSceneData(message);
+          }
+          updateBindings(group.bindings, (binding) => {
+            const message = messages.get(binding.id)!;
+            return { status: "ready", value: message.value, updatedAt: message.timestamp };
+          });
+        } catch (reason) {
+          updateBindings(group.bindings, { status: "error", error: reason instanceof Error ? reason.message : "数据绑定刷新失败" });
+        }
+      };
+      void poll();
+      timers.push(window.setInterval(() => void poll(), Math.max(2, group.seconds) * 1_000));
+    }
+    return () => { cancelled = true; for (const timer of timers) window.clearInterval(timer); };
+  }, [project?.id, route.sceneId, route.view, sceneDataBindings]);
 
   useEffect(() => {
     if (!engine || !project || !route.sceneId || !["studio", "view", "published"].includes(route.view)) return;
@@ -898,24 +956,39 @@ export function App() {
   }, [route.view, route.projectId, route.applicationId, route.pageId]);
 
   useEffect(() => {
-    if (route.view !== "studio" || !route.sceneId || !engine || activeScene?.id === route.sceneId) return;
+    if (route.view !== "studio" || !route.sceneId || !engine) return;
     const sceneId = route.sceneId;
+    const workspaceKey = `${route.projectId ?? "browse"}:${route.applicationId ?? "scene"}:${sceneId}`;
+    const applicationMatches = !route.applicationId || activeApplication?.metadata.id === route.applicationId;
+    if (activeScene?.id === sceneId && applicationMatches) return;
+    if (sceneWorkspaceLoadRef.current === workspaceKey) return;
+    sceneWorkspaceLoadRef.current = workspaceKey;
     let cancelled = false;
     void (async () => {
       try {
-        const result = await api.getSceneForBrowse(sceneId);
+        const [result, application] = await Promise.all([
+          api.getSceneForBrowse(sceneId),
+          route.projectId && route.applicationId ? api.getApplication(route.projectId, route.applicationId) : Promise.resolve(undefined)
+        ]);
         if (cancelled) return;
         setProject(result.project);
         setProjects((items) => items.some((item) => item.id === result.project.id)
           ? items.map((item) => item.id === result.project.id ? result.project : item)
           : [...items, result.project]);
+        if (application) applicationSessionRef.current.openDocument(application);
         await applyScene(result.scene, false, result.project, false);
       } catch (reason) {
-        if (!cancelled) showError(reason);
+        if (!cancelled) {
+          sceneWorkspaceLoadRef.current = undefined;
+          showError(reason);
+        }
       }
     })();
-    return () => { cancelled = true; };
-  }, [route.view, route.sceneId, engine, activeScene?.id, showError]);
+    return () => {
+      cancelled = true;
+      if (activeScene?.id !== sceneId && sceneWorkspaceLoadRef.current === workspaceKey) sceneWorkspaceLoadRef.current = undefined;
+    };
+  }, [route.view, route.projectId, route.applicationId, route.sceneId, engine, activeScene?.id, showError]);
 
   useEffect(() => {
     if ((route.view !== "view" && route.view !== "published") || !route.sceneId || !engine) return;
@@ -1053,6 +1126,8 @@ export function App() {
     setSceneInteractions((items) => items.filter((script) => script.target.kind !== "object"
       || script.target.modelId !== modelId
       || (layerId !== undefined && script.target.layerId !== layerId)));
+    setSceneDataBindings((items) => items.filter((binding) => binding.target.modelId !== modelId
+      || (layerId !== undefined && binding.target.layerId !== layerId)));
   }
 
   function deleteMeasurement(id: string) {
@@ -1470,6 +1545,7 @@ export function App() {
       physics: engine.getPhysicsState(),
       animation: engine.getSceneAnimation(),
       dashboard: sceneDashboard,
+      dataBindings: sceneDataBindings,
       interactions: sceneInteractions,
       ...(selected ? { selectedModelId: selected.id } : {}),
       ...(selectedLayerId ? { selectedLayerId } : {}),
@@ -1570,8 +1646,11 @@ export function App() {
       engine.setReadOnly(readOnly);
       engine.clearSceneModels();
       const nextInteractions = normalizeInteractionScripts(scene.interactions);
+      const nextDataBindings = normalizeSceneDataBindings(scene.dataBindings);
       engine.setInteractionScripts(nextInteractions);
       setSceneInteractions(nextInteractions);
+      setSceneDataBindings(nextDataBindings);
+      setSceneDataBindingRuntime({});
       primitiveColors.current.clear();
       setSelected(undefined);
       setMeasurements([]);
@@ -1736,6 +1815,7 @@ export function App() {
       physics: DEFAULT_PHYSICS,
       animation: DEFAULT_ANIMATION,
       dashboard: structuredClone(DEFAULT_DASHBOARD_STATE),
+      dataBindings: [],
       interactions: [],
       createdAt: now,
       updatedAt: now
@@ -1750,6 +1830,8 @@ export function App() {
     setWeather("sunny");
     setLighting(DEFAULT_LIGHTING);
     setSceneDashboard(structuredClone(DEFAULT_DASHBOARD_STATE));
+    setSceneDataBindings([]);
+    setSceneDataBindingRuntime({});
     setSceneInteractions([]);
     setSceneEnvironment(configuredDefaultEnvironment);
     setPostProcessing(DEFAULT_POST_PROCESSING);
@@ -2780,6 +2862,23 @@ export function App() {
             </div>
             <label className="field compact-opacity"><span>{tr(locale, "透明度", "Opacity")}</span><output>{Math.round(selectionOpacity * 100)}%</output></label>
             <input disabled={selectionLocked} className="range" type="range" min="0" max="1" step="0.01" value={selectionOpacity} onChange={(event) => engine?.setSelectionOpacity(Number(event.target.value))} />
+            {project && activeScene && <SceneDataBindingEditor
+              locale={locale}
+              projectId={project.id}
+              sceneId={activeScene.id}
+              target={{ modelId: selected.id, ...(selectedLayerId && selectedLayerId !== "root" ? { layerId: selectedLayerId } : {}) }}
+              targetName={selectionName || selected.name}
+              bindings={sceneDataBindings}
+              runtimeStates={sceneDataBindingRuntime}
+              disabled={selectionLocked}
+              onChange={setSceneDataBindings}
+              onTest={(bindingId, message) => {
+                publishLocalSceneData(message);
+                setSceneDataBindingRuntime((current) => ({ ...current, [bindingId]: { status: "ready", value: message.value, updatedAt: message.timestamp } }));
+                setMessage(tr(locale, "绑定测试已应用到当前对象", "The binding test was applied to the current object"));
+              }}
+              onOpenData={() => navigate({ view: "data" })}
+            />}
             <div className="material-editor">
               <div className="section-label"><span>{tr(locale, "材质", "Material")}</span><small>PBR</small></div>
               <label><span>{tr(locale, "粗糙度", "Roughness")}</span><input disabled={selectionLocked || selectionMaterial.roughness === undefined} type="range" min="0" max="1" step="0.01" value={selectionMaterial.roughness ?? 0.5} onChange={(event) => updateSelectionMaterial({ roughness: Number(event.target.value) })} /><output>{selectionMaterial.roughness?.toFixed(2) ?? "—"}</output></label>

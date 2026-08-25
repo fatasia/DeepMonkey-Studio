@@ -37,4 +37,21 @@ describe("normalizeDashboardState", () => {
     expect(state.widgets[0]).toMatchObject({ type: "video", videoUrl: "/assets/demo.mp4", videoFit: "cover", videoAutoplay: true, videoMuted: false, h: 3 });
     expect(state.widgets[1]).toMatchObject({ type: "monitor", monitorSourceUrl: "rtsp://camera/live", monitorProtocol: "hls", h: 3 });
   });
+
+  it("preserves a pipeline field as a first-class dashboard binding", () => {
+    const state = normalizeDashboardState({ widgets: [{
+      id: "throughput",
+      title: "节拍",
+      type: "value",
+      key: "pipeline-cycle.cycle_time",
+      pipelineId: "pipeline-cycle",
+      field: "cycle_time"
+    }] });
+
+    expect(state.widgets[0]).toMatchObject({
+      pipelineId: "pipeline-cycle",
+      field: "cycle_time",
+      key: "pipeline-cycle.cycle_time"
+    });
+  });
 });
