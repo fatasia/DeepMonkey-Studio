@@ -587,6 +587,9 @@ export interface SceneDashboardWidgetState {
   videoMuted?: boolean;
   monitorProtocol?: "hls" | "webrtc";
   monitorSourceUrl?: string;
+  animation?: "none" | "fade" | "slide-up" | "scale" | "pulse";
+  animationDuration?: number;
+  animationDelay?: number;
 }
 
 export interface SceneDashboardState {

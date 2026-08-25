@@ -51,6 +51,7 @@ import type { RendererBackend } from "../viewer/ViewerEngine";
 
 const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"];
 interface SelectionRect { x: number; y: number; width: number; height: number; }
+type InspectorTab = "content" | "data" | "style" | "animation" | "interaction";
 
 export interface DashboardWorkspaceProps {
   locale: AppLocale;
@@ -115,13 +116,14 @@ export function DashboardWorkspace({
   const [selectionRect, setSelectionRect] = useState<SelectionRect>();
   const [marqueeMode, setMarqueeMode] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("content");
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
   const clipboardRef = useRef<WidgetNode[]>([]);
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
   const layoutSelectionCount = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.visible !== false && node.locked !== true).length;
   const dataWidgetConfigs = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
-  const { metrics, connected } = useDashboardMetrics(project.id, dataWidgetConfigs);
+  const { metrics, datasets, connected } = useDashboardMetrics(project.id, dataWidgetConfigs);
   const runtimeMetrics = useMemo<Record<string, DashboardMetric>>(() => ({
     ...metrics,
     ...Object.fromEntries(Object.entries(variables).map(([key, value]) => [key, {
@@ -141,6 +143,7 @@ export function DashboardWorkspace({
     setDraftFrames({});
     setSelectionRect(undefined);
     setMarqueeMode(false);
+    setInspectorTab("content");
     pageNameCommitRef.current = page.name;
     const frame = window.requestAnimationFrame(() => {
       if (!scrollRef.current) return;
@@ -593,20 +596,50 @@ export function DashboardWorkspace({
         <label><span>{tr(locale, "页面名称", "Page name")}</span><input defaultValue={page.name} key={page.id} onBlur={(event) => commitPageName(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
       </section>
       {selectedNode ? <>
-        <section className="dashboard-inspector-section">
-          <div className="dashboard-selection-heading"><span>{selectedNode.kind === "scene-viewport" ? <Box size={15} /> : <Layers3 size={15} />}</span><div><strong>{nodeLabel(selectedNode)}</strong><small>{selectedNode.id}</small></div></div>
-          <div className="dashboard-frame-grid">{(["x", "y", "width", "height"] as const).map((field) => <label key={field}><span>{field.toUpperCase()}</span><input type="number" disabled={selectedNode.locked === true} value={selectedNode.frame[field]} onChange={(event) => updateSelectedFrame(field, Number(event.target.value))} /></label>)}</div>
-        </section>
-        {selectedNode.kind === "scene-viewport" && <section className="dashboard-inspector-section"><div className="dashboard-readonly-property"><span>{tr(locale, "三维场景", "3D scene")}</span><strong>{sceneName(application, selectedNode.sceneId)}</strong></div><div className="dashboard-readonly-property"><span>{tr(locale, "渲染方式", "Render mode")}</span><strong>{selectedNode.renderMode}</strong></div><button className="dashboard-enter-scene" onClick={() => onEnterScene(selectedNode.sceneId, currentView())}><Box size={15} />{tr(locale, "进入三维编辑", "Open 3D editor")}</button></section>}
-        {selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
-          <label><span>{tr(locale, "类型", "Type")}</span><select value={selectedNode.widget.type} onChange={(event) => updateDataWidget({ type: event.target.value as SceneDashboardWidgetType })}>{DATA_WIDGET_TYPES.map((type) => <option key={type} value={type}>{dataWidgetTypeLabel(locale, type)}</option>)}</select></label>
-          <label><span>{tr(locale, "标题", "Title")}</span><input defaultValue={selectedNode.widget.title} key={`${selectedNode.id}:title:${selectedNode.widget.title}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.title) updateDataWidget({ title: event.currentTarget.value }); }} /></label>
+        <div className="dashboard-selection-heading dashboard-selection-summary"><span>{selectedNode.kind === "scene-viewport" ? <Box size={15} /> : <Layers3 size={15} />}</span><div><strong>{nodeLabel(selectedNode)}</strong><small>{selectedNode.id}</small></div></div>
+        <nav className="dashboard-inspector-tabs" aria-label={tr(locale, "属性分类", "Property categories")}>{([
+          ["content", tr(locale, "内容", "Content")], ["data", tr(locale, "数据", "Data")], ["style", tr(locale, "样式", "Style")], ["animation", tr(locale, "动画", "Animation")], ["interaction", tr(locale, "交互", "Interaction")]
+        ] as Array<[InspectorTab, string]>).map(([tab, label]) => <button key={tab} className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)}>{label}</button>)}</nav>
+
+        {inspectorTab === "content" && <>
+          <section className="dashboard-inspector-section">
+            <div className="dashboard-frame-grid">{(["x", "y", "width", "height"] as const).map((field) => <label key={field}><span>{field.toUpperCase()}</span><input type="number" disabled={selectedNode.locked === true} value={selectedNode.frame[field]} onChange={(event) => updateSelectedFrame(field, Number(event.target.value))} /></label>)}</div>
+          </section>
+          {selectedNode.kind === "scene-viewport" && <section className="dashboard-inspector-section"><div className="dashboard-readonly-property"><span>{tr(locale, "三维场景", "3D scene")}</span><strong>{sceneName(application, selectedNode.sceneId)}</strong></div><div className="dashboard-readonly-property"><span>{tr(locale, "渲染方式", "Render mode")}</span><strong>{selectedNode.renderMode}</strong></div><button className="dashboard-enter-scene" onClick={() => onEnterScene(selectedNode.sceneId, currentView())}><Box size={15} />{tr(locale, "进入三维编辑", "Open 3D editor")}</button></section>}
+          {selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
+            <label><span>{tr(locale, "类型", "Type")}</span><select value={selectedNode.widget.type} onChange={(event) => updateDataWidget({ type: event.target.value as SceneDashboardWidgetType })}>{DATA_WIDGET_TYPES.map((type) => <option key={type} value={type}>{dataWidgetTypeLabel(locale, type)}</option>)}</select></label>
+            <label><span>{tr(locale, "标题", "Title")}</span><input defaultValue={selectedNode.widget.title} key={`${selectedNode.id}:title:${selectedNode.widget.title}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.title) updateDataWidget({ title: event.currentTarget.value }); }} /></label>
+            {selectedNode.widget.type === "image" && <label><span>{tr(locale, "图片地址", "Image URL")}</span><input defaultValue={selectedNode.widget.imageUrl ?? ""} onBlur={(event) => updateDataWidget({ imageUrl: event.currentTarget.value })} /></label>}
+            {(selectedNode.widget.type === "video" || selectedNode.widget.type === "monitor") && <label><span>{tr(locale, "视频/监控地址", "Video/monitor URL")}</span><input defaultValue={selectedNode.widget.videoUrl ?? ""} onBlur={(event) => updateDataWidget({ videoUrl: event.currentTarget.value })} /></label>}
+            {selectedNode.widget.type === "url" && <label><span>{tr(locale, "网页地址", "Web page URL")}</span><input defaultValue={selectedNode.widget.url ?? ""} onBlur={(event) => updateDataWidget({ url: event.currentTarget.value })} /></label>}
+          </section>}
+        </>}
+
+        {inspectorTab === "data" && selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
+          <label><span>{tr(locale, "数据集", "Dataset")}</span><select value={selectedNode.widget.datasetId ?? ""} onChange={(event) => updateDataWidget({ datasetId: event.target.value })}><option value="">{tr(locale, "实时变量 / 未绑定", "Live variable / Unbound")}</option>{datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></label>
           <label><span>{tr(locale, "数据键", "Data key")}</span><input defaultValue={selectedNode.widget.key} key={`${selectedNode.id}:key:${selectedNode.widget.key}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.key) updateDataWidget({ key: event.currentTarget.value }); }} /></label>
+          <label><span>{tr(locale, "字段", "Field")}</span><input defaultValue={selectedNode.widget.field ?? ""} onBlur={(event) => updateDataWidget({ field: event.currentTarget.value })} /></label>
           <label><span>{tr(locale, "单位", "Unit")}</span><input defaultValue={selectedNode.widget.unit} key={`${selectedNode.id}:unit:${selectedNode.widget.unit}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.unit) updateDataWidget({ unit: event.currentTarget.value }); }} /></label>
-          <label><span>{tr(locale, "强调色", "Accent")}</span><input type="color" value={selectedNode.widget.color ?? "#d4a84f"} onChange={(event) => updateDataWidget({ color: event.target.value })} /></label>
+          {selectedNode.widget.type === "gauge" && <div className="dashboard-frame-grid"><label><span>MIN</span><input type="number" value={selectedNode.widget.min ?? 0} onChange={(event) => updateDataWidget({ min: Number(event.target.value) })} /></label><label><span>MAX</span><input type="number" value={selectedNode.widget.max ?? 100} onChange={(event) => updateDataWidget({ max: Number(event.target.value) })} /></label></div>}
         </section>}
+
+        {inspectorTab === "style" && selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
+          <label><span>{tr(locale, "强调色", "Accent")}</span><input type="color" value={selectedNode.widget.color ?? "#d4a84f"} onChange={(event) => updateDataWidget({ color: event.target.value })} /></label>
+          <label><span>{tr(locale, "背景色", "Background")}</span><input type="color" value={selectedNode.widget.backgroundColor ?? "#172126"} onChange={(event) => updateDataWidget({ backgroundColor: event.target.value })} /></label>
+          <label><span>{tr(locale, "文字色", "Text color")}</span><input type="color" value={selectedNode.widget.textColor ?? "#eef2f4"} onChange={(event) => updateDataWidget({ textColor: event.target.value })} /></label>
+          <label><span>{tr(locale, "背景透明度", "Background opacity")}</span><input type="range" min="0" max="1" step="0.05" value={selectedNode.widget.backgroundOpacity ?? 0.86} onChange={(event) => updateDataWidget({ backgroundOpacity: Number(event.target.value) })} /></label>
+        </section>}
+
+        {inspectorTab === "animation" && selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
+          <label><span>{tr(locale, "进入动画", "Enter animation")}</span><select value={selectedNode.widget.animation ?? "none"} onChange={(event) => updateDataWidget({ animation: event.target.value as NonNullable<DashboardDataWidgetConfig["animation"]> })}><option value="none">{tr(locale, "无", "None")}</option><option value="fade">Fade</option><option value="slide-up">Slide up</option><option value="scale">Scale</option><option value="pulse">Pulse</option></select></label>
+          <label><span>{tr(locale, "时长（秒）", "Duration (s)")}</span><input type="number" min="0.1" step="0.1" value={selectedNode.widget.animationDuration ?? 0.6} onChange={(event) => updateDataWidget({ animationDuration: Math.max(0.1, Number(event.target.value)) })} /></label>
+          <label><span>{tr(locale, "延迟（秒）", "Delay (s)")}</span><input type="number" min="0" step="0.1" value={selectedNode.widget.animationDelay ?? 0} onChange={(event) => updateDataWidget({ animationDelay: Math.max(0, Number(event.target.value)) })} /></label>
+          <small className="dashboard-inspector-hint">{tr(locale, "动画只在预览运行态播放，不污染设计状态。", "Animations play only in runtime preview and never mutate design state.")}</small>
+        </section>}
+
+        {((inspectorTab === "data" || inspectorTab === "style" || inspectorTab === "animation") && selectedNode.kind === "scene-viewport") && <div className="dashboard-inspector-empty">{tr(locale, "三维组件的该类属性请进入三维编辑器配置。", "Configure this property category in the 3D editor.")}</div>}
+        {inspectorTab === "interaction" && <InteractionFlowInspector locale={locale} application={application} source={{ kind: "widget", id: selectedNode.id }} onCommand={onCommand} onTest={(trigger) => onNodeInteraction(selectedNode.id, trigger)} />}
         <section className="dashboard-inspector-section"><button className="dashboard-delete-node" disabled={!page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.locked !== true)} onClick={deleteSelectedNodes}><Minus size={13} />{selectedNodeIds.length > 1 ? tr(locale, "删除未锁定的所选组件", "Delete unlocked selection") : selectedNode.locked ? tr(locale, "图层已锁定", "Layer locked") : tr(locale, "删除组件", "Delete component")}</button></section>
-        <InteractionFlowInspector locale={locale} application={application} source={{ kind: "widget", id: selectedNode.id }} onCommand={onCommand} onTest={(trigger) => onNodeInteraction(selectedNode.id, trigger)} />
       </> : <div className="dashboard-no-selection"><Layers3 size={24} /><span>{tr(locale, "选择页面中的组件以编辑属性", "Select a component on the page to edit its properties")}</span></div>}
     </aside>
   </main>;
@@ -674,7 +707,7 @@ function DashboardNode({ application, project, node, frame, metric, selected, lo
       {!runtime && <><div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small><button onClick={(event) => { event.stopPropagation(); onEnterScene(node.sceneId); }}>{tr(locale, "进入三维编辑", "Open 3D editor")}</button></div><div className="dashboard-node-badge">3D · {node.renderMode}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
     </article>;
   }
-  if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? "runtime" : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4" }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")}>
+  if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? `runtime animation-${node.widget.animation ?? "none"}` : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4", animationDuration: `${node.widget.animationDuration ?? 0.6}s`, animationDelay: `${node.widget.animationDelay ?? 0}s` }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")} onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")}>
     <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />
     {!runtime && <><div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
   </article>;

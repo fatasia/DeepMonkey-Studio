@@ -108,6 +108,8 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   optional(object, "videoAutoplay", expectBoolean, path);
   optional(object, "videoMuted", expectBoolean, path);
   optionalLiteral(object, "monitorProtocol", ["hls", "webrtc"], path);
+  optionalLiteral(object, "animation", ["none", "fade", "slide-up", "scale", "pulse"], path);
+  for (const key of ["animationDuration", "animationDelay"] as const) optional(object, key, expectNumber, path);
 }
 
 function validateTopology(value: unknown, path: string): void {

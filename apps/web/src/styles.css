@@ -132,6 +132,12 @@ button { color: inherit; }
 .dashboard-inspector-section input,.dashboard-inspector-section select { min-width: 0; width: 100%; height: 30px; box-sizing: border-box; padding: 0 8px; color: #dce2e5; border: 1px solid #354148; border-radius: 5px; outline: 0; background: #0f1518; font-size: 9px; }
 .dashboard-inspector-section input:focus,.dashboard-inspector-section select:focus { border-color: #806629; }
 .dashboard-data-widget-properties input[type="color"] { padding: 3px; }
+.dashboard-selection-summary { padding: 12px; border-bottom: 1px solid #293338; }
+.dashboard-inspector-tabs { display: grid; padding: 5px; border-bottom: 1px solid #293338; background: #111719; grid-template-columns: repeat(5,1fr); }
+.dashboard-inspector-tabs button { min-width: 0; height: 27px; padding: 0 2px; color: #69767c; border: 0; border-radius: 4px; background: transparent; font-size: 7px; cursor: pointer; }
+.dashboard-inspector-tabs button:hover,.dashboard-inspector-tabs button.active { color: #e7c66f; background: rgba(215,173,81,.1); }
+.dashboard-inspector-empty { margin: 12px; padding: 18px 12px; color: #66747b; border: 1px dashed #334047; border-radius: 6px; text-align: center; font-size: 8px; line-height: 1.6; }
+.dashboard-inspector-hint { color: #657279; font-size: 7px; line-height: 1.6; }
 .dashboard-delete-node { display: inline-flex; height: 30px; align-items: center; justify-content: center; gap: 6px; color: #d58d94; border: 1px solid #56383d; border-radius: 5px; background: #1d1618; font-size: 8px; cursor: pointer; }
 .interaction-flow-inspector { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid #293338; }
 .interaction-flow-inspector > header { display: flex; align-items: center; justify-content: space-between; color: #8e9ba1; font-size: 9px; }
@@ -167,6 +173,15 @@ button { color: inherit; }
 .dashboard-runtime-stage { position: relative; flex: none; box-shadow: 0 18px 55px rgba(0,0,0,.45); }
 .dashboard-runtime-artboard { transform-origin: 0 0; overflow: hidden; }
 .dashboard-node.runtime { cursor: default; }
+.dashboard-node.runtime.animation-fade { animation-name: dashboard-widget-fade; animation-fill-mode: both; }
+.dashboard-node.runtime.animation-slide-up { animation-name: dashboard-widget-slide-up; animation-fill-mode: both; }
+.dashboard-node.runtime.animation-scale { animation-name: dashboard-widget-scale; animation-fill-mode: both; }
+.dashboard-node.runtime.animation-pulse { animation-name: dashboard-widget-pulse; animation-iteration-count: infinite; animation-direction: alternate; }
+@keyframes dashboard-widget-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dashboard-widget-slide-up { from { opacity: 0; translate: 0 28px; } to { opacity: 1; translate: 0 0; } }
+@keyframes dashboard-widget-scale { from { opacity: 0; scale: .92; } to { opacity: 1; scale: 1; } }
+@keyframes dashboard-widget-pulse { from { filter: brightness(.88); } to { filter: brightness(1.18); } }
+@media (prefers-reduced-motion: reduce) { .dashboard-node.runtime { animation: none !important; } }
 .dashboard-selection-heading { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .dashboard-selection-heading > span { display: grid; width: 30px; height: 30px; place-items: center; color: #d4aa4f; border-radius: 6px; background: rgba(212,170,79,.1); }
 .dashboard-selection-heading > div { display: grid; min-width: 0; gap: 3px; }
