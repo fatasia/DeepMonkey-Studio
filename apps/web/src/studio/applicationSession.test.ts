@@ -36,14 +36,4 @@ describe("ApplicationSession", () => {
     expect(session.getDocument()?.metadata.name).toBe("第二应用");
     expect(session.store.getState()).toMatchObject({ dirty: false, canUndo: false, canRedo: false });
   });
-
-  it("keeps the current scene editor functional during the application-first transition", () => {
-    const session = new ApplicationSession();
-    const snapshot = structuredClone(dashboardFixture) as unknown as SceneSnapshot;
-    const before = structuredClone(snapshot);
-
-    expect(session.loadSceneDraft(snapshot).schemaVersion).toBe(2);
-    expect(session.captureSceneDraft(snapshot)).toEqual(snapshot);
-    expect(snapshot).toEqual(before);
-  });
 });

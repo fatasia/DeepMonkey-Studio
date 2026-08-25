@@ -1474,9 +1474,7 @@ export function App() {
       createdAt: activeScene?.createdAt ?? now,
       updatedAt: now
     };
-    return route.applicationId && activeApplication?.metadata.id === route.applicationId
-      ? structuredClone(snapshot)
-      : applicationSessionRef.current.captureSceneDraft(snapshot);
+    return snapshot;
   }
 
   async function saveScene(): Promise<SceneSnapshot | undefined> {
@@ -1559,9 +1557,6 @@ export function App() {
 
   async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false) {
     if (!engine || !sceneProject) return;
-    if (!route.applicationId || activeApplication?.metadata.id !== route.applicationId) {
-      applicationSessionRef.current.loadSceneDraft(scene);
-    }
     const applyVersion = ++sceneApplyVersionRef.current;
     setBusy(true);
     if (updateRoute) navigate(route.applicationId
