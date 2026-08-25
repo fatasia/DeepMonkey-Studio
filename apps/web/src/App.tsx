@@ -63,6 +63,7 @@ import type {
   MeasurementState,
   ModelRecord,
   ModelTransform,
+  NavigationSettingsState,
   PrimitiveKind,
   ProjectRecord,
   RevitRuntimeInfo,
@@ -101,10 +102,12 @@ import { DigitalTwinPanel } from "./components/DigitalTwinPanel";
 import { DashboardWorkspace } from "./components/DashboardWorkspace";
 import { InteractionEditor, type InteractionTargetOption } from "./components/InteractionEditor";
 import { SceneDataBindingEditor, type SceneDataBindingRuntimeState } from "./components/SceneDataBindingEditor";
+import { CameraNavigationPanel } from "./components/CameraNavigationPanel";
 import { AiAssistantPanel } from "./components/AiAssistantPanel";
 import { LoginPage } from "./components/LoginPage";
 import { DEFAULT_DASHBOARD_STATE, normalizeDashboardState } from "./components/dashboardState";
 import { normalizeInteractionScripts } from "./interactionState";
+import { DEFAULT_NAVIGATION_SETTINGS, normalizeNavigationSettings } from "./navigationSettings";
 import { dataBindingProduct, normalizeSceneDataBindings, sceneDataBindingMessage } from "./sceneDataBindings";
 import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
@@ -396,6 +399,7 @@ export function App() {
   const [sceneAnimation, setSceneAnimation] = useState<SceneAnimationState>(DEFAULT_ANIMATION);
   const [cameraViews, setCameraViews] = useState<CameraViewState[]>([]);
   const [cameraConstraints, setCameraConstraints] = useState<CameraConstraintsState>(DEFAULT_CAMERA_CONSTRAINTS);
+  const [navigationSettings, setNavigationSettings] = useState<NavigationSettingsState>(DEFAULT_NAVIGATION_SETTINGS);
   const [defaultCameraViewId, setDefaultCameraViewId] = useState<string>();
   const [cameraViewsOpen, setCameraViewsOpen] = useState(false);
   const [primitiveMenuOpen, setPrimitiveMenuOpen] = useState(false);
@@ -1179,6 +1183,11 @@ export function App() {
     engine?.setMeasureEnabled(false);
     setAnnotationEnabled(false);
     engine?.setAnnotationPlacementEnabled(false);
+    setMessage(mode === "orbit"
+      ? tr(locale, "已回到轨道浏览，可继续选择和编辑对象", "Orbit mode restored; object editing is available")
+      : mode === "firstPerson"
+        ? tr(locale, cameraConstraints.collisionEnabled ? "第一人称已开启，双击画面开始行走" : "第一人称已开启；防穿模当前关闭", cameraConstraints.collisionEnabled ? "First person ready; double-click the viewport to walk" : "First person ready; collision protection is off")
+        : tr(locale, "第三人称已开启，可自由巡检场景", "Third person ready for free-flight inspection"));
   }
 
   function changeTransform(mode: TransformMode) {
@@ -1402,6 +1411,12 @@ export function App() {
     engine?.setCameraConstraints(next);
   }
 
+  function changeNavigationSettings(patch: Partial<NavigationSettingsState>) {
+    const next = normalizeNavigationSettings({ ...navigationSettings, ...patch });
+    setNavigationSettings(next);
+    engine?.setNavigationSettings(next);
+  }
+
   function updateCameraViewName(id: string, name: string) {
     setCameraViews((items) => items.map((item) => item.id === id ? { ...item, name: name.trim() || item.name } : item));
   }
@@ -1504,6 +1519,7 @@ export function App() {
       name: sceneName.trim() || "未命名场景",
       camera: engine.getCameraState(),
       cameraConstraints: engine.getCameraConstraints(),
+      navigationSettings: engine.getNavigationSettings(),
       cameraViews,
       ...(defaultCameraViewId ? { defaultCameraViewId } : {}),
       models: currentModels.filter((item) => item.kind === "model").flatMap((item) => {
@@ -1678,9 +1694,12 @@ export function App() {
       const nextCameraViews = scene.cameraViews ?? [];
       const entryCamera = nextCameraViews.find((item) => item.id === scene.defaultCameraViewId)?.camera ?? scene.camera;
       const nextCameraConstraints = normalizeCameraConstraints({ ...DEFAULT_CAMERA_CONSTRAINTS, ...scene.cameraConstraints });
+      const nextNavigationSettings = normalizeNavigationSettings(scene.navigationSettings);
       engine.setCameraConstraints(nextCameraConstraints);
+      engine.setNavigationSettings(nextNavigationSettings);
       engine.applyCamera(entryCamera);
       setCameraConstraints(nextCameraConstraints);
+      setNavigationSettings(nextNavigationSettings);
       setCameraViews(nextCameraViews);
       setDefaultCameraViewId(scene.defaultCameraViewId);
       const nextWeather = scene.weather ?? "sunny";
@@ -1780,6 +1799,7 @@ export function App() {
       engine.setSceneAnimation(DEFAULT_ANIMATION);
       engine.setInteractionScripts([]);
       engine.setCameraConstraints(DEFAULT_CAMERA_CONSTRAINTS);
+      engine.setNavigationSettings(DEFAULT_NAVIGATION_SETTINGS);
       engine.seekSceneAnimation(0);
     }
     setClippingState(DEFAULT_CLIPPING);
@@ -1790,6 +1810,7 @@ export function App() {
     setSelected(undefined);
     setCameraViews([]);
     setCameraConstraints(DEFAULT_CAMERA_CONSTRAINTS);
+    setNavigationSettings(DEFAULT_NAVIGATION_SETTINGS);
     setDefaultCameraViewId(undefined);
     const now = new Date().toISOString();
     const scene: SceneSnapshot = {
@@ -1803,6 +1824,7 @@ export function App() {
         mode: "orbit"
       },
       cameraConstraints: DEFAULT_CAMERA_CONSTRAINTS,
+      navigationSettings: DEFAULT_NAVIGATION_SETTINGS,
       cameraViews: [],
       models: [],
       primitives: [],
@@ -2534,38 +2556,33 @@ export function App() {
           <ToolButton title={tr(locale, "场景信息", "Scene information")} active={infoEnabled} onClick={() => setInfoEnabled((value) => !value)} icon={<Info size={19} />} />
           <ToolButton title={tr(locale, "环境设置", "Environment")} active={environmentOpen} onClick={() => { setEnvironmentOpen((value) => !value); setDigitalTwinOpen(false); }} icon={<Sun size={19} />} />
           <ToolButton title={tr(locale, "动画编辑", "Animation editor")} active={animationOpen} onClick={() => setAnimationOpen((value) => !value)} icon={<Film size={19} />} />
-          <ToolButton title={tr(locale, "相机视角", "Camera views")} active={cameraViewsOpen} onClick={() => setCameraViewsOpen((value) => !value)} icon={<Camera size={19} />} />
+          <ToolButton title={tr(locale, "相机与漫游", "Camera & navigation")} active={cameraViewsOpen} onClick={() => setCameraViewsOpen((value) => !value)} icon={<Camera size={19} />} />
           <ToolButton title={tr(locale, "物理系统", "Physics")} active={physicsOpen} onClick={() => { setPhysicsOpen((value) => !value); setEnvironmentOpen(false); }} icon={<Atom size={19} />} />
           <ToolButton className="xr-entry" title={tr(locale, "AR / VR 沉浸体验", "AR / VR immersive experience")} active={xrPanelOpen} onClick={() => setXrPanelOpen((value) => !value)} icon={<span className="xr-tool-label">AR/VR</span>} />
         </div>}
         {route.view === "studio" && <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />}
-        {route.view === "studio" && cameraViewsOpen && <section className="camera-views-panel">
-          <header><div><strong>{tr(locale, "相机视角", "Camera views")}</strong><small>{tr(locale, "可设为场景进入视角", "Set the scene entry view")}</small></div><button onClick={() => setCameraViewsOpen(false)}><X size={14} /></button></header>
-          <button className="camera-view-add" onClick={addCameraView}><Plus size={14} />{tr(locale, "保存当前视角", "Save current view")}</button>
-          <div className="camera-constraint-settings">
-            <div className="camera-constraint-heading"><strong>{tr(locale, "相机约束", "Camera constraints")}</strong><small>{tr(locale, "随场景保存", "Saved with scene")}</small></div>
-            <div className="camera-constraint-grid">
-              <label><span>{tr(locale, "最近距离", "Minimum distance")}</span><DeferredNumberInput min={0.01} step={0.1} value={cameraConstraints.minDistance} onCommit={(value) => changeCameraConstraints({ minDistance: value })} /></label>
-              <label><span>{tr(locale, "最远距离", "Maximum distance")}</span><DeferredNumberInput min={0.02} step={10} value={cameraConstraints.maxDistance} onCommit={(value) => changeCameraConstraints({ maxDistance: value })} /></label>
-              <label><span>{tr(locale, "垂直最小角", "Minimum vertical angle")}</span><div><DeferredNumberInput min={0} max={179} step={1} value={cameraConstraints.minPolarAngle} onCommit={(value) => changeCameraConstraints({ minPolarAngle: value })} /><i>°</i></div></label>
-              <label><span>{tr(locale, "垂直最大角", "Maximum vertical angle")}</span><div><DeferredNumberInput min={0.1} max={180} step={1} value={cameraConstraints.maxPolarAngle} onCommit={(value) => changeCameraConstraints({ maxPolarAngle: value })} /><i>°</i></div></label>
-              <label><span>{tr(locale, "近裁剪面", "Near clipping")}</span><DeferredNumberInput min={0.001} step={0.01} value={cameraConstraints.nearClip} onCommit={(value) => changeCameraConstraints({ nearClip: value })} /></label>
-              <label><span>{tr(locale, "远裁剪面", "Far clipping")}</span><DeferredNumberInput min={0.1} step={100} value={cameraConstraints.farClip} onCommit={(value) => changeCameraConstraints({ farClip: value })} /></label>
-            </div>
-            <div className="camera-collision-row"><span><strong>{tr(locale, "防穿模", "Camera collision")}</strong><small>{tr(locale, "轨道、第一和第三人称共用", "Shared by orbit, first and third person")}</small></span><button className={cameraConstraints.collisionEnabled ? "active" : ""} onClick={() => changeCameraConstraints({ collisionEnabled: !cameraConstraints.collisionEnabled })}>{cameraConstraints.collisionEnabled ? tr(locale, "开启", "On") : tr(locale, "关闭", "Off")}</button></div>
-            <label className="camera-collision-radius"><span>{tr(locale, "碰撞半径", "Collision radius")}</span><DeferredNumberInput min={0.02} step={0.05} disabled={!cameraConstraints.collisionEnabled} value={cameraConstraints.collisionRadius} onCommit={(value) => changeCameraConstraints({ collisionRadius: value })} /></label>
-            <p>{tr(locale, "距离和角度限制轨道相机；裁剪面控制可见深度，碰撞半径负责阻止相机进入模型。", "Distance and angle constrain the orbit camera; clipping controls visible depth, while collision radius keeps the camera out of geometry.")}</p>
-          </div>
-          <div className="camera-view-list">
-            {cameraViews.map((view) => <article key={view.id} className={view.id === defaultCameraViewId ? "default" : ""}>
-              <div className="camera-view-main"><button title={tr(locale, "切换到此视角", "Go to this view")} onClick={() => engine?.applyCamera(view.camera)}><Camera size={14} /></button><input value={view.name} onChange={(event) => updateCameraViewName(view.id, event.target.value)} onBlur={(event) => updateCameraViewName(view.id, event.target.value)} /></div>
-              <button className={view.id === defaultCameraViewId ? "active" : ""} title={tr(locale, "设为进入场景的默认视角", "Set as the default scene entry view")} onClick={() => setDefaultCameraViewId(view.id)}>{tr(locale, "默认", "Default")}</button>
-              <button title={tr(locale, "用当前相机覆盖", "Replace with current camera")} onClick={() => replaceCameraView(view.id)}><Save size={13} /></button>
-              <button title={tr(locale, "删除视角", "Delete view")} onClick={() => removeCameraView(view.id)}><Trash2 size={13} /></button>
-            </article>)}
-            {cameraViews.length === 0 && <p>{tr(locale, "暂无视角。调整相机后保存当前视角。", "No views yet. Move the camera, then save the current view.")}</p>}
-          </div>
-        </section>}
+        {route.view === "studio" && cameraViewsOpen && <CameraNavigationPanel
+          locale={locale}
+          mode={navigationMode}
+          modelCount={loadedModels.filter((item) => item.visible).length}
+          avatarVisible={avatarVisible}
+          constraints={cameraConstraints}
+          navigation={navigationSettings}
+          views={cameraViews}
+          defaultViewId={defaultCameraViewId}
+          onClose={() => setCameraViewsOpen(false)}
+          onModeChange={changeNavigation}
+          onAvatarVisibleChange={(visible) => { setAvatarVisible(visible); engine?.setAvatarVisible(visible); }}
+          onConstraintsChange={changeCameraConstraints}
+          onNavigationChange={changeNavigationSettings}
+          onResetNavigation={() => changeNavigationSettings(DEFAULT_NAVIGATION_SETTINGS)}
+          onAddView={addCameraView}
+          onApplyView={(view) => engine?.applyCamera(view.camera)}
+          onRenameView={updateCameraViewName}
+          onReplaceView={replaceCameraView}
+          onRemoveView={removeCameraView}
+          onDefaultViewChange={setDefaultCameraViewId}
+        />}
         {route.view === "studio" && environmentOpen && <div className="environment-control" aria-label={tr(locale, "环境与全局灯光", "Environment and global lighting")}>
           <div className="environment-heading"><strong>{tr(locale, "场景环境", "Scene environment")}</strong><small>{tr(locale, "随场景保存", "Saved with scene")}</small></div>
           <div className="environment-row">
@@ -2791,7 +2808,13 @@ export function App() {
           </div>
         )}
         {route.view === "studio" && <div className="viewport-status"><span className={busy ? "status-dot working" : "status-dot"} />{message}</div>}
-        {route.view === "studio" && navigationMode !== "orbit" && <div className="navigation-hint">{tr(locale, "W A S D 移动 · Shift 加速", "W A S D move · Shift boost")}{navigationMode === "firstPerson" ? tr(locale, " · 空格跳跃 · 双击画面锁定视角 · Esc 释放鼠标", " · Space jump · Double-click to capture pointer · Esc to release") : tr(locale, " · 空中漫游 · Space 上升 · Ctrl 下降 · 鼠标旋转视角", " · Fly mode · Space up · Ctrl down · Mouse to look")}</div>}
+        {route.view === "studio" && navigationMode !== "orbit" && <div className="navigation-hint">
+          <span className={`navigation-hint-status ${cameraConstraints.collisionEnabled ? "ready" : "warning"}`}><ShieldCheck size={13} />{cameraConstraints.collisionEnabled ? tr(locale, "防穿模开启", "Collision on") : tr(locale, "防穿模关闭", "Collision off")}</span>
+          <strong>{navigationMode === "firstPerson" ? tr(locale, "第一人称", "First person") : tr(locale, "第三人称", "Third person")}</strong>
+          <span>{tr(locale, "W A S D 移动 · Shift 加速", "W A S D move · Shift boost")}{navigationMode === "firstPerson" ? tr(locale, " · 空格跳跃 · 双击锁定", " · Space jump · Double-click to capture") : tr(locale, " · Space / Ctrl 升降", " · Space / Ctrl altitude")}</span>
+          <button onClick={() => setCameraViewsOpen(true)}>{tr(locale, "设置", "Settings")}</button>
+          <button onClick={() => changeNavigation("orbit")}>{tr(locale, "退出", "Exit")}</button>
+        </div>}
         {busy && <div className="loading-overlay"><LoaderCircle className="spin" size={24} /><span>{tr(locale, "正在处理模型", "Processing model")}</span></div>}
       </main>
 

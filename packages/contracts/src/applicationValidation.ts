@@ -150,6 +150,7 @@ function validateScene(value: unknown, path: string): void {
   required(object, "primitives", (primitives, primitivesPath) => expectArray(primitives, primitivesPath, validatePrimitive), path);
   required(object, "measurements", (measurements, measurementsPath) => expectArray(measurements, measurementsPath, validateMeasurement), path);
   optional(object, "cameraConstraints", validateCameraConstraints, path);
+  optional(object, "navigationSettings", validateNavigationSettings, path);
   optional(object, "cameraViews", (views, viewsPath) => expectArray(views, viewsPath, validateCameraView), path);
   optional(object, "defaultCameraViewId", expectString, path);
   optional(object, "annotations", (annotations, annotationsPath) => expectArray(annotations, annotationsPath, validateAnnotation), path);
@@ -282,6 +283,13 @@ function validateCameraConstraints(value: unknown, path: string): void {
     required(object, key, expectNumber, path);
   }
   required(object, "collisionEnabled", expectBoolean, path);
+}
+
+function validateNavigationSettings(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of ["walkSpeed", "flySpeed", "sprintMultiplier", "eyeHeight", "gravity", "jumpSpeed"] as const) {
+    required(object, key, expectNumber, path);
+  }
 }
 
 function validateCameraView(value: unknown, path: string): void {

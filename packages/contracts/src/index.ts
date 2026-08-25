@@ -577,6 +577,16 @@ export interface CameraConstraintsState {
   collisionRadius: number;
 }
 
+/** 可序列化的漫游手感配置；渲染/物理引擎实现细节不进入场景协议。 */
+export interface NavigationSettingsState {
+  walkSpeed: number;
+  flySpeed: number;
+  sprintMultiplier: number;
+  eyeHeight: number;
+  gravity: number;
+  jumpSpeed: number;
+}
+
 export type WeatherMode = "sunny" | "rain" | "snow";
 
 export interface GlobalLightingState {
@@ -792,6 +802,7 @@ export interface SceneSnapshot {
   name: string;
   camera: CameraState;
   cameraConstraints?: CameraConstraintsState;
+  navigationSettings?: NavigationSettingsState;
   cameraViews?: CameraViewState[];
   defaultCameraViewId?: string;
   models: SceneModelState[];

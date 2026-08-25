@@ -60,4 +60,20 @@ describe("scene bridge to native ApplicationDocument", () => {
     expect(application.scenes[0]?.dataBindings).toEqual(input.dataBindings);
     expect(applicationToSceneSnapshotV1(application).dataBindings).toEqual(input.dataBindings);
   });
+
+  it("keeps scene-level navigation tuning through the application bridge", () => {
+    const input = structuredClone(pure3dFixture) as unknown as SceneSnapshot;
+    input.navigationSettings = {
+      walkSpeed: 3.5,
+      flySpeed: 8,
+      sprintMultiplier: 2.5,
+      eyeHeight: 1.72,
+      gravity: 9.81,
+      jumpSpeed: 4.8
+    };
+
+    const application = migrateSceneSnapshotV1(input);
+    expect(application.scenes[0]?.navigationSettings).toEqual(input.navigationSettings);
+    expect(applicationToSceneSnapshotV1(application).navigationSettings).toEqual(input.navigationSettings);
+  });
 });

@@ -39,6 +39,7 @@ import type {
   MeasurementState,
   ModelManifest,
   ModelTransform,
+  NavigationSettingsState,
   PrimitiveKind,
   PrimitiveState,
   SceneAnnotationState,
@@ -60,6 +61,7 @@ import type {
   Vector3Value,
   WeatherMode
 } from "@bim-studio/contracts";
+import { DEFAULT_NAVIGATION_SETTINGS, normalizeNavigationSettings } from "../navigationSettings";
 import { readXRThumbstick } from "./xrInput";
 import {
   buildComponentRecords,
@@ -399,6 +401,7 @@ export class ViewerEngine {
   private readonly avatarHeading = new THREE.Vector3(0, 0, 1);
   private readonly navigationViewStates = new Map<NavigationMode, NavigationViewState>();
   private cameraConstraints: CameraConstraintsState = structuredClone(DEFAULT_CAMERA_CONSTRAINTS);
+  private navigationSettings: NavigationSettingsState = structuredClone(DEFAULT_NAVIGATION_SETTINGS);
   private readonly cameraCollisionAnchor = new THREE.Vector3();
   private cameraCollisionDirty = false;
   private lastCameraCollisionCheck = 0;
@@ -407,7 +410,6 @@ export class ViewerEngine {
   private firstPersonGrounded = false;
   private firstPersonJumpRequested = false;
   private primitivePlacementKind: PrimitiveKind | undefined;
-  private readonly eyeHeight = 1.68;
   private lastCollisionCheck = 0;
   private clippingState: ClippingState = { enabled: false, mode: "axis", axis: "x", offset: 0, inverted: false };
   private clippingHelper: THREE.Box3Helper | undefined;
@@ -1281,7 +1283,7 @@ export class ViewerEngine {
       far: this.camera.far
     };
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    this.xrRig.position.set(this.camera.position.x, this.camera.position.y - this.eyeHeight, this.camera.position.z);
+    this.xrRig.position.set(this.camera.position.x, this.camera.position.y - this.navigationSettings.eyeHeight, this.camera.position.z);
     this.xrRig.rotation.set(0, Math.atan2(-forward.x, -forward.z), 0);
     this.camera.position.set(0, 0, 0);
     this.camera.quaternion.identity();
@@ -2787,6 +2789,14 @@ export class ViewerEngine {
     this.resetCameraCollisionAnchor();
   }
 
+  getNavigationSettings(): NavigationSettingsState {
+    return structuredClone(this.navigationSettings);
+  }
+
+  setNavigationSettings(state: NavigationSettingsState): void {
+    this.navigationSettings = normalizeNavigationSettings(state);
+  }
+
   setSelectionScope(scope: SelectionScope): void {
     this.selectionScope = scope;
     if (scope === "model" && this.selectedId) this.select(this.selectedId);
@@ -4180,7 +4190,7 @@ export class ViewerEngine {
   private updateNavigation(delta: number): void {
     if (this.navigationMode === "firstPerson" && this.pointer.isLocked) {
       const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
-      const speed = (sprint ? 8 : 4) * delta;
+      const speed = this.navigationSettings.walkSpeed * (sprint ? this.navigationSettings.sprintMultiplier : 1) * delta;
       const input = new THREE.Vector2(
         Number(this.keys.has("KeyD")) - Number(this.keys.has("KeyA")),
         Number(this.keys.has("KeyW")) - Number(this.keys.has("KeyS"))
@@ -4197,15 +4207,15 @@ export class ViewerEngine {
       }
       const floor = this.findFloorHeight(this.camera.position);
       if (floor !== undefined) {
-        const targetY = floor + this.eyeHeight;
+        const targetY = floor + this.navigationSettings.eyeHeight;
         this.firstPersonGrounded = this.camera.position.y <= targetY + 0.08 && this.firstPersonVelocity.y <= 0;
         if (this.firstPersonJumpRequested && this.firstPersonGrounded) {
-          this.firstPersonVelocity.y = 5.4;
+          this.firstPersonVelocity.y = this.navigationSettings.jumpSpeed;
           this.firstPersonGrounded = false;
         }
         this.firstPersonJumpRequested = false;
         if (!this.firstPersonGrounded || this.firstPersonVelocity.y > 0) {
-          this.firstPersonVelocity.y -= 12 * delta;
+          this.firstPersonVelocity.y -= this.navigationSettings.gravity * delta;
           this.camera.position.y += this.firstPersonVelocity.y * delta;
           if (this.camera.position.y <= targetY) {
             this.camera.position.y = targetY;
@@ -4230,7 +4240,7 @@ export class ViewerEngine {
     this.orbit.target.lerp(target, Math.min(delta * 12, 1));
     if (input.lengthSq() === 0) return;
     const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
-    input.normalize().multiplyScalar((sprint ? 10 : 5) * delta);
+    input.normalize().multiplyScalar(this.navigationSettings.flySpeed * (sprint ? this.navigationSettings.sprintMultiplier : 1) * delta);
     const forward = new THREE.Vector3();
     this.camera.getWorldDirection(forward);
     forward.y = 0;
@@ -4333,7 +4343,7 @@ export class ViewerEngine {
     forward.normalize();
     const start = anchor.clone();
     const floor = this.findFloorHeight(start.clone().add(new THREE.Vector3(0, 10, 0))) ?? 0;
-    start.y = floor + this.eyeHeight;
+    start.y = floor + this.navigationSettings.eyeHeight;
     this.firstPersonVelocity.set(0, 0, 0);
     this.firstPersonGrounded = true;
     this.firstPersonJumpRequested = false;

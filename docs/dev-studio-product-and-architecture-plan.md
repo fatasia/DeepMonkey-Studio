@@ -123,10 +123,12 @@ Three WebGPU/WebGL / Browser / Tauri / Server adapters
 - [ThingJS 官方指南](https://www.thingjs.com/guide/)
 - [ThingStudio 数字孪生工具链](https://www.thingjs.com/guide/studio/)
 - [ThingJS 2D/3D 界面](https://docs.thingjs.com/cn/App_dev/Tutorial/Content/UI.html)
+- [ThingJS 摄像机与第一人称控件](https://www.thingjs.com/guide/?m=sample)
 - [飞渡 DTS 产品架构](https://www.freedoonline.com/dts.html)
 - [飞渡 DTS 官方文档](https://doc.freedo3d.com/)
 - [Unity Hierarchy 窗口](https://docs.unity3d.com/cn/6000.0/Manual/hierarchy-reference.html)
 - [Unity Game View 与 Play Mode](https://docs.unity3d.com/kr/current/Manual/GameView.html)
+- [Unity Character Controller](https://docs.unity3d.com/cn/2018.4/Manual/CharacterControllers.html)
 - [Unity Timeline](https://docs.unity3d.com/ja/6000.0/Manual/com.unity.timeline.html)
 - [Unity Build Profiles](https://docs.unity3d.com/jp/current/Manual/build-profiles-reference.html)
 - [Three.js WebGPURenderer](https://threejs.org/manual/en/webgpurenderer)
@@ -645,6 +647,8 @@ B/S 直接使用服务器 HTTPS 回调。Tauri 使用系统浏览器发起登录
 
 ### M4：三维编辑器与 WebGPU 运行时，10 周
 
+- **产品交互是硬门槛而非收尾美化**：M4 及后续里程碑按山海鲸、帆软、ThingJS 等成熟编辑器的任务流标准验收。每项能力必须同时具备清晰入口、上下文连续、即时反馈、空/加载/局部失败/错误状态、撤销或安全退出、快捷键提示、首次引导和窄窗口检查；禁止以图标堆叠、参数散落或仅“接口可调用”判定完成。
+- 相机、轨道/第一/第三人称、移动手感、碰撞安全、near/far 与常用视角统一为一个渐进披露工作台；模式切换保留各自视角，视口持续显示当前模式、防穿模状态、核心快捷键及一键退出，专业参数随场景保存。
 - 场景树批量操作、可见/可选取/锁定、选择集、规则着色、视角、多轨时间线、交互蓝图。
 - 建立 Renderer Port 与三阶段开关：重构期 WebGL 2 默认/WebGPU 实验；能力对齐后 Auto 默认；稳定期新渲染能力 WebGPU/TSL 优先。Auto 运行时探测 WebGPU 并回退 WebGL 2，始终保留强制 WebGL 兼容模式。
 - 新材质和后处理使用 TSL/Node Material 与 WebGPU RenderPipeline；旧 ShaderMaterial/onBeforeCompile/EffectComposer 由 WebGL 兼容路径承载并显示迁移诊断。
@@ -659,7 +663,7 @@ B/S 直接使用服务器 HTTPS 回调。Tauri 使用系统浏览器发起登录
 - 模型结构索引、实例化/合批、按需加载、GPU/内存预算和后台 Worker；不引入 3D Tiles、倾斜摄影与重型 GIS 引擎。
 - BIM 版本对比、问题/视点、碰撞报告和空间关系继续深化。
 
-验收：四个工业示例只通过公开 Scene API 实现；WebGPU 能力矩阵达到发布门槛后才将 Auto 设为默认，不可用或项目不兼容时可无损回退 WebGL 2；脚本可操作相机、对象、Mesh、材质和动画；第一人称以跑步速度和低帧率压力穿越薄墙/门洞/台阶基准时不穿模、不持续抖动、不陷入地面，并能从非法出生点恢复；固定基准集持续测双后端首屏、帧率、显存、脚本预算、视觉差异和发布包大小。
+验收：除功能和性能指标外，每个主任务流必须用真实浏览器完成首用、熟练使用、错误恢复、保存刷新、跨 2D/3D 返回和窄窗口验收，控制台不得出现新增错误；四个工业示例只通过公开 Scene API 实现；WebGPU 能力矩阵达到发布门槛后才将 Auto 设为默认，不可用或项目不兼容时可无损回退 WebGL 2；脚本可操作相机、对象、Mesh、材质和动画；第一人称以跑步速度和低帧率压力穿越薄墙/门洞/台阶基准时不穿模、不持续抖动、不陷入地面，并能从非法出生点恢复；固定基准集持续测双后端首屏、帧率、显存、脚本预算、视觉差异和发布包大小。
 
 ### M5：转换、轻量 GIS 与拓扑，8 周
 
