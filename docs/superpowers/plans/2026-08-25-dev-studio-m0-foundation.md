@@ -19,7 +19,7 @@
 - 浏览器 JSON/SSE 业务 API 访问统一经可注入 `ServerClient`；`apps/web/src/api.ts` 继续暴露现有 facade 签名，现有调用方不批量改写。Three.js 模型/几何加载与 Draco 等静态运行时资源仍由现有 loader 直接下载，不在 M0 改写。
 - 只允许对 `apps/web/src/App.tsx` 做最小接线；禁止整体重写或拆分 `App.tsx`，禁止修改 `apps/web/src/viewer/ViewerEngine.ts`。
 - 不开始 M1 UI：不新增 DashboardEditor、项目级路由、二维画布、SceneViewportWidget 渲染器或三维独立编辑页。
-- 不在本计划实现 IdentityProvider、外部身份映射、Tauri、Scene/Renderer Port、WebGPU 切换或云渲染。
+- 不在本计划实现 IdentityProvider、外部身份映射、Tauri、Renderer Adapter、WebGPU 切换或云渲染。为满足 ThingJS 级可编程性的前置要求，M0 必须定义纯 TypeScript 的 `SceneCapabilitySDK 1.0` 命令/查询/事件/lifecycle/扩展 manifest 与兼容协商，但不把现有 `ViewerEngine` 迁入 SDK。
 - 每个任务严格红—绿—重构；先运行精确测试，再运行所属 workspace 的 `test` 与 `typecheck`。
 - 每个任务单独提交；不得把生成的 `dist/`、`node_modules/`、运行期 `data/` 或测试临时目录加入提交。
 
@@ -38,6 +38,7 @@
 | `apps/api/src/serverMeta.ts` | 持久化服务器实例 ID 与能力元数据生成。 |
 | `packages/studio-core/src/*` | 纯应用状态、命令、撤销/重做、选择及 public API。 |
 | `packages/server-sdk/src/*` | 可注入 HTTP transport、认证存储 port、meta 与应用客户端。 |
+| `packages/scene-sdk/src/*` | 不依赖引擎实现的公开 Scene API 协议、能力权限、生命周期和扩展兼容协商。 |
 | `apps/web/src/adapters/browserHostAdapter.ts` | `localStorage`/`sessionStorage`、同源服务器 profile、401 浏览器事件。 |
 | `apps/web/src/studio/legacyApplicationSession.ts` | 旧场景编辑流与 v2 `ApplicationStore` 的唯一过渡接缝。 |
 | `apps/web/src/api.ts` | 保持旧 facade，对 transport 做委托。 |
@@ -1615,6 +1616,152 @@ git add packages/studio-core/src/architecture.test.ts packages/studio-core/packa
 git commit -m "test(m0): enforce architecture and v1 compatibility"
 ```
 
+### Task 8: SceneCapabilitySDK 1.0 programmability and extension contract
+
+**Files:**
+- Create: `packages/scene-sdk/package.json`
+- Create: `packages/scene-sdk/tsconfig.json`
+- Create: `packages/scene-sdk/src/protocol.ts`
+- Create: `packages/scene-sdk/src/compatibility.ts`
+- Create: `packages/scene-sdk/src/compatibility.test.ts`
+- Create: `packages/scene-sdk/src/architecture.test.ts`
+- Create: `packages/scene-sdk/src/index.ts`
+- Modify: `packages/contracts/src/application.ts`
+- Modify: `packages/contracts/src/applicationMigration.ts`
+- Modify: `packages/contracts/src/applicationValidation.ts`
+- Modify: `packages/contracts/src/applicationValidation.test.ts`
+- Modify: `pnpm-lock.yaml`
+
+**Interfaces:**
+- Produces `SCENE_API_VERSION = "1.0"`, `SceneCapability`, `ScenePermission`, `SceneObjectRef`, `SceneCommand`, `SceneQuery`, `SceneEvent`, `SceneScriptLifecycle`, `SceneExtensionManifest`, `SceneHostCapabilities`, `SceneExtensionCompatibility`, and `resolveSceneExtensionCompatibility(...)` from package public API `@bim-studio/scene-sdk`.
+- Extends `ScriptModule` with required `apiVersion: "1.0"` and `entrypoint: "behavior"`; the v1 migration must populate both fields and round-trip behavior must remain unchanged.
+- Establishes protocol only. It must not import or expose React, Three.js, `ViewerEngine`, DOM, HTTP, Tauri, WebGPU objects, or executable plugin loading.
+
+- [ ] **Step 1: Add package metadata and failing compatibility tests**
+
+Create package metadata matching `packages/studio-core`, with package name `@bim-studio/scene-sdk`, dependency only on `@bim-studio/contracts`, and Vitest/TypeScript dev dependencies.
+
+In `compatibility.test.ts`, first assert these cases against the missing implementation:
+
+1. A worker behavior extension requesting `studio.scene`, `studio.object`, `studio.camera`, and `scene.read` is compatible with API `1.0`, browser host, and both render backends.
+2. API major mismatch (`2.0` extension against `1.0` host) returns incompatible with reason code `api-major-mismatch`.
+3. Missing capability and missing permission are both reported deterministically and sorted.
+4. A trusted main-thread extension is rejected when the host does not allow trusted extensions.
+5. A WebGPU-only extension is rejected on a WebGL 2 host with `renderer-unsupported`.
+6. Every command/query/event fixture survives `structuredClone` and `JSON.stringify` without functions, class instances, or engine objects.
+
+Run: `pnpm --filter @bim-studio/scene-sdk test`
+
+Expected: FAIL because the package implementation does not exist.
+
+- [ ] **Step 2: Define the exact public protocol**
+
+`protocol.ts` must export:
+
+```ts
+export const SCENE_API_VERSION = "1.0" as const;
+export type SceneApiVersion = typeof SCENE_API_VERSION;
+
+export const SCENE_CAPABILITIES = [
+  "studio.scene", "studio.object", "studio.mesh", "studio.material",
+  "studio.camera", "studio.controls", "studio.animation", "studio.timeline",
+  "studio.input", "studio.data", "studio.runtime"
+] as const;
+export type SceneCapability = typeof SCENE_CAPABILITIES[number];
+
+export const SCENE_PERMISSIONS = [
+  "scene.read", "scene.write", "data.read", "data.write",
+  "network.connect", "renderer.extend", "editor.extend"
+] as const;
+export type ScenePermission = typeof SCENE_PERMISSIONS[number];
+
+export type SceneObjectRef =
+  | { kind: "scene"; sceneId: string }
+  | { kind: "object"; sceneId: string; objectId: string }
+  | { kind: "mesh"; sceneId: string; objectId: string; meshId: string };
+
+export type SceneCommand =
+  | { id: string; type: "object.set-visibility"; target: SceneObjectRef; visible: boolean }
+  | { id: string; type: "object.set-transform"; target: SceneObjectRef; position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] }
+  | { id: string; type: "selection.set"; targets: SceneObjectRef[] }
+  | { id: string; type: "camera.set"; sceneId: string; position: [number, number, number]; target: [number, number, number]; near?: number; far?: number; fov?: number }
+  | { id: string; type: "camera.fly-to"; sceneId: string; target: SceneObjectRef | { position: [number, number, number] }; durationMs: number }
+  | { id: string; type: "animation.control"; target: SceneObjectRef; action: "play" | "pause" | "stop" | "seek"; clipId?: string; time?: number }
+  | { id: string; type: "data.apply"; target: SceneObjectRef; values: Record<string, import("@bim-studio/contracts").JsonValue>; timestamp: string };
+
+export type SceneQuery =
+  | { id: string; type: "object.get"; target: SceneObjectRef }
+  | { id: string; type: "object.search"; sceneId: string; text?: string; tags?: string[] }
+  | { id: string; type: "camera.get"; sceneId: string }
+  | { id: string; type: "capabilities.get" };
+
+export type SceneEvent =
+  | { type: "scene.ready" | "scene.disposed"; sceneId: string; timestamp: string }
+  | { type: "selection.changed"; sceneId: string; targets: SceneObjectRef[]; timestamp: string }
+  | { type: "object.event"; name: string; target: SceneObjectRef; timestamp: string; data?: import("@bim-studio/contracts").JsonValue }
+  | { type: "data.received"; sceneId: string; timestamp: string; data: import("@bim-studio/contracts").JsonValue };
+
+export type SceneScriptLifecycle = "onStart" | "onUpdate" | "onFixedUpdate" | "onData" | "onEvent" | "onStop" | "onDispose";
+export type SceneExtensionExecution = "worker-sandbox" | "trusted-main-thread";
+export type SceneHostKind = "browser" | "tauri" | "cloud";
+export type SceneRendererKind = "webgl2" | "webgpu";
+
+export interface SceneExtensionManifest {
+  id: string;
+  name: string;
+  version: string;
+  /** External manifests may target a newer SDK; compatibility negotiation validates this string before loading. */
+  apiVersion: string;
+  entry: string;
+  execution: SceneExtensionExecution;
+  capabilities: SceneCapability[];
+  permissions: ScenePermission[];
+  hosts: SceneHostKind[];
+  renderers: SceneRendererKind[];
+  lifecycle: SceneScriptLifecycle[];
+}
+```
+
+All protocol members must use serializable data and stable IDs; no callable function belongs in the protocol.
+
+- [ ] **Step 3: Implement deterministic compatibility negotiation**
+
+`compatibility.ts` must define `SceneHostCapabilities` with API version, host, renderer, supported capability/permission arrays, and `allowTrustedExtensions`. `resolveSceneExtensionCompatibility` returns `{ compatible: boolean; reasons: Array<{ code; detail }> }`. It must validate a strict `major.minor` API form, require equal major and host minor greater than or equal to extension minor, and report reason codes in this fixed order: `invalid-api-version`, `api-major-mismatch`, `api-minor-unsupported`, `host-unsupported`, `renderer-unsupported`, `trusted-extension-disabled`, `capability-unsupported`, `permission-denied`. Missing capabilities/permissions use sorted comma-separated detail so output is deterministic.
+
+- [ ] **Step 4: Version ApplicationDocument scripts and preserve v1 migration**
+
+Add required fields to `ScriptModule`:
+
+```ts
+apiVersion: "1.0";
+entrypoint: "behavior";
+```
+
+Populate them in `migrateSceneSnapshotV1`, validate their exact literals in `applicationValidation.ts`, update valid builders and malformed tests, and keep all three v1 → v2 → v1 golden tests green.
+
+- [ ] **Step 5: Add architecture boundary tests**
+
+`architecture.test.ts` recursively reads non-test `.ts` files in this package and fails on imports/references to `react`, `react-dom`, `three`, `ViewerEngine`, `@tauri-apps/`, `window`, `document`, `fetch`, `node:http`, or `node:https`. It also scans exported protocol fixtures recursively and asserts no value is a function and every value survives `structuredClone` plus JSON round-trip.
+
+- [ ] **Step 6: Run package and repository contract checks**
+
+Run: `pnpm install --lockfile-only`
+
+Run: `pnpm --filter @bim-studio/scene-sdk test && pnpm --filter @bim-studio/scene-sdk typecheck`
+
+Expected: compatibility and architecture tests pass; typecheck has no diagnostics.
+
+Run: `pnpm --filter @bim-studio/contracts test && pnpm --filter @bim-studio/contracts typecheck`
+
+Expected: all contract validation and golden migration tests remain green.
+
+- [ ] **Step 7: Commit the programmability contract**
+
+```bash
+git add packages/scene-sdk packages/contracts/src/application.ts packages/contracts/src/applicationMigration.ts packages/contracts/src/applicationValidation.ts packages/contracts/src/applicationValidation.test.ts pnpm-lock.yaml
+git commit -m "feat(sdk): define scene programmability contract"
+```
+
 ## Final Acceptance Checklist
 
 - [ ] `SceneSnapshot` is still declared once with `schemaVersion: 1`, and existing scene file/API responses are unchanged.
@@ -1627,6 +1774,8 @@ git commit -m "test(m0): enforce architecture and v1 compatibility"
 - [ ] An old scene opened in `App.tsx` seeds an `ApplicationStore`, and saving still uses the old scene endpoint.
 - [ ] Architecture tests reject Core dependencies on React/Three/Tauri/HTTP/DOM and reject package deep imports.
 - [ ] `App.tsx` only has minimal session wiring; `ViewerEngine.ts` is untouched; no M1 UI exists.
+- [ ] `SceneCapabilitySDK 1.0` exposes versioned serializable commands, queries, events, lifecycle, capabilities, permissions and extension compatibility without React/Three/DOM/host dependencies.
+- [ ] Every `ScriptModule` records API version and entrypoint; incompatible extension API/host/renderer/capability/permission requirements are rejected before execution.
 - [ ] `pnpm test`, `pnpm typecheck`, and `pnpm build` all pass before merge.
 
 ## Execution Handoff

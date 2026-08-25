@@ -22,6 +22,9 @@ Dev Studio 需要支持自定义脚本、相机操作、第一/第三人称、ne
 - 运动和物流仿真使用单一 simulation clock、fixed timestep、带时间戳遥测缓冲、插值、有限外推、暂停、倍速、记录和回放。
 - 设备拆解、AGV、机器人和物流节拍作为公开 API 的参考实现与测试夹具，不进入引擎核心特例。
 - 每个脚本和扩展声明能力权限；发布包记录 SDK/Extension API 版本和权限清单。
+- 将“达到 ThingJS 级可编程性”作为 M0-M6 的持续架构门禁：公开 SDK 必须覆盖应用/对象、事件、相机与控制器、Mesh/材质、动画/时间线、数据和组件扩展，不以暴露 `ViewerEngine` 或 Three.js 私有对象充数。
+- M0 固化 `SceneCapabilitySDK 1.0` 的纯协议、命令/查询/事件、生命周期、插件 manifest 与兼容性协商；M3 实现 Worker 行为 SDK 和调试工具；M4 接通三维运行时与双渲染后端；M5 开放转换/地图/拓扑扩展；M6 发布稳定 SDK、文档、模板与第三方插件门禁。
+- `SceneExtensionManifest` 必须声明扩展 ID、语义版本、SDK API 版本、入口、执行级别、能力/权限、宿主和渲染后端兼容范围；加载前完成确定性兼容检查。
 - 保留轻量 GIS，并将云渲染放在最终阶段；不建设 3D Tiles、倾斜摄影、海量地形/点云或完整 Unity 兼容层。
 
 ## Non-Functional Requirements
@@ -32,6 +35,9 @@ Dev Studio 需要支持自定义脚本、相机操作、第一/第三人称、ne
 - 遥测短时抖动或断流时运动连续；超过外推上限后明确进入 stale/offline 状态。
 - B/S 与 Tauri 使用同一 Scene Runtime 和脚本语义。
 - Scene Capability API 采用语义版本；破坏性变化必须提供迁移器或兼容适配层。
+- TypeScript 类型、自动补全、API 参考、最小示例、日志和兼容诊断与 SDK 同版本交付。
+- 设备拆解、AGV、机器人、物流节拍四个参考应用只能导入公开 SDK；架构测试禁止其深层导入 Scene Adapter 或 `ViewerEngine`。
+- 第三方示例插件无需修改核心代码即可安装、禁用和卸载；插件异常可被独立熔断且不损坏项目文档。
 
 ## Consequences
 
@@ -76,5 +82,8 @@ Dev Studio 需要支持自定义脚本、相机操作、第一/第三人称、ne
 
 - [Dev Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
 - [ThingJS 官方指南](https://www.thingjs.com/guide/)
+- [ThingJS API 索引](https://docs.thingjs.com/cn/apidocs/)
+- [ThingJS App API](https://docs.thingjs.com/cn/apidocs/THING.App.html)
+- [ThingJS 摄像机教程](https://docs.thingjs.com/cn/App_dev/Tutorial/Content/camera.html)
 - [Unity Game View 与 Play Mode](https://docs.unity3d.com/kr/current/Manual/GameView.html)
 - [Unity Timeline](https://docs.unity3d.com/ja/6000.0/Manual/com.unity.timeline.html)
