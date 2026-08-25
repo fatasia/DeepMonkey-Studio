@@ -5,6 +5,11 @@ import path from "node:path";
 import type { AiProviderSettings, ApplicationDocument, ApplicationPublicationPointer, AuditLogRecord, DataConnectionRecord, DataDatasetRecord, DatabaseDocument, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedApplicationRecord, PublishedSceneRecord, SceneSnapshot, StoredSystemUserRecord, SystemBrandingSettings, VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
 import type { AppConfig } from "./config.js";
 
+export interface ApplicationIdReservation {
+  projectId: string;
+  currentRevision: number;
+}
+
 export interface MetadataStore {
   init(): Promise<void>;
   listProjects(): ProjectRecord[];
@@ -49,6 +54,7 @@ export interface MetadataStore {
   listApplications(projectId: string): ApplicationDocument[];
   getApplication(projectId: string, applicationId: string): ApplicationDocument | undefined;
   getApplicationById(applicationId: string): ApplicationDocument | undefined;
+  getApplicationIdReservation(applicationId: string): ApplicationIdReservation | undefined;
   saveApplication(application: ApplicationDocument): Promise<ApplicationDocument>;
   removeApplication(projectId: string, applicationId: string): Promise<boolean>;
   getPublishedApplication(publicationId: string): PublishedApplicationRecord | undefined;
@@ -428,11 +434,32 @@ export class JsonStore implements MetadataStore {
     return item ? structuredClone(item) : undefined;
   }
 
+  getApplicationIdReservation(applicationId: string): ApplicationIdReservation | undefined {
+    const application = (this.document.applications ?? []).find((candidate) => candidate.metadata.id === applicationId);
+    if (application) {
+      return {
+        projectId: application.metadata.projectId,
+        currentRevision: application.metadata.revision
+      };
+    }
+    const publication = (this.document.publishedApplications ?? [])
+      .filter((candidate) => candidate.applicationId === applicationId)
+      .reduce<PublishedApplicationRecord | undefined>((latest, candidate) =>
+        !latest || candidate.applicationRevision > latest.applicationRevision ? candidate : latest, undefined);
+    return publication ? { projectId: publication.projectId, currentRevision: publication.applicationRevision } : undefined;
+  }
+
   async saveApplication(application: ApplicationDocument): Promise<ApplicationDocument> {
     this.document.applications ??= [];
     const existing = this.getApplicationById(application.metadata.id);
     if (existing && existing.metadata.projectId !== application.metadata.projectId) {
       throw new Error(`应用 ID ${application.metadata.id} 已存在于项目 ${existing.metadata.projectId}`);
+    }
+    if (!existing) {
+      const reservation = this.getApplicationIdReservation(application.metadata.id);
+      if (reservation) {
+        throw new Error(`应用 ID ${application.metadata.id} 已由项目 ${reservation.projectId} 的发布历史保留`);
+      }
     }
     const index = this.document.applications.findIndex((item) =>
       item.metadata.projectId === application.metadata.projectId && item.metadata.id === application.metadata.id);

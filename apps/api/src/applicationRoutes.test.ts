@@ -86,6 +86,44 @@ describe("application routes", () => {
     await app.close();
   });
 
+  it("permanently reserves an application ID after its draft is deleted", async () => {
+    const { app, store } = await harness();
+    const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+    document.metadata.projectId = "default";
+    expect((await app.inject({ method: "POST", url: "/api/projects/default/applications", payload: document })).statusCode).toBe(201);
+    const publication = await app.inject({
+      method: "POST",
+      url: `/api/projects/default/applications/${document.metadata.id}/publish`
+    });
+    const publicationId = publication.json().id as string;
+    expect((await app.inject({ method: "DELETE", url: `/api/projects/default/applications/${document.metadata.id}/publish` })).statusCode).toBe(204);
+    expect((await app.inject({ method: "DELETE", url: `/api/projects/default/applications/${document.metadata.id}` })).statusCode).toBe(204);
+    expect(store.getApplicationById(document.metadata.id)).toBeUndefined();
+    const secondProject = await store.createProject("历史冲突项目");
+    const replacement = structuredClone(document);
+    replacement.metadata.projectId = secondProject.id;
+    replacement.metadata.name = "不应继承历史";
+
+    const conflict = await app.inject({
+      method: "POST",
+      url: `/api/projects/${secondProject.id}/applications`,
+      payload: replacement
+    });
+
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toEqual({ message: "应用 ID 已存在", currentRevision: 1 });
+    expect(store.getApplication(secondProject.id, document.metadata.id)).toBeUndefined();
+    expect((await app.inject({ method: "GET", url: `/api/public/applications/${document.metadata.id}` })).statusCode).toBe(404);
+    const historical = await app.inject({
+      method: "GET",
+      url: `/api/public/applications/${document.metadata.id}/revisions/${publicationId}`
+    });
+    expect(historical.statusCode).toBe(200);
+    expect(historical.json().projectId).toBe("default");
+    expect(historical.json().document.metadata.name).toBe("纯三维");
+    await app.close();
+  });
+
   it("creates immutable publication records and only moves the active pointer", async () => {
     const { app, store } = await harness();
     const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);

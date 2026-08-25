@@ -38,9 +38,9 @@ export async function registerApplicationRoutes(app: FastifyInstance, store: Met
     if (!requireProject(store, request.params.projectId, reply)) return reply;
     const body = validateDocument(request.body, reply);
     if (!body) return reply;
-    const existing = store.getApplicationById(body.metadata.id);
-    if (existing) {
-      return reply.code(409).send({ message: "应用 ID 已存在", currentRevision: existing.metadata.revision });
+    const reservation = store.getApplicationIdReservation(body.metadata.id);
+    if (reservation) {
+      return reply.code(409).send({ message: "应用 ID 已存在", currentRevision: reservation.currentRevision });
     }
     const now = new Date().toISOString();
     const application: ApplicationDocument = {
