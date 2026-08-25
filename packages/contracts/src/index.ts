@@ -557,7 +557,7 @@ export interface SceneAnimationState {
 }
 
 export type SceneDashboardSide = "left" | "right";
-export type SceneDashboardWidgetType = "value" | "gauge" | "status" | "line" | "area" | "bar" | "pie" | "table" | "image" | "video" | "monitor" | "url";
+export type SceneDashboardWidgetType = "text" | "shape" | "value" | "gauge" | "status" | "line" | "area" | "bar" | "pie" | "table" | "image" | "video" | "monitor" | "url";
 
 export interface SceneDashboardWidgetState {
   id: string;
@@ -587,6 +587,14 @@ export interface SceneDashboardWidgetState {
   videoMuted?: boolean;
   monitorProtocol?: "hls" | "webrtc";
   monitorSourceUrl?: string;
+  content?: string;
+  shape?: "rectangle" | "rounded" | "ellipse" | "line";
+  borderColor?: string;
+  borderWidth?: number;
+  fontSize?: number;
+  fontWeight?: number;
+  textAlign?: "left" | "center" | "right";
+  designState?: "auto" | "empty" | "loading" | "partial" | "error" | "forbidden";
   animation?: "none" | "fade" | "slide-up" | "scale" | "pulse";
   animationDuration?: number;
   animationDelay?: number;

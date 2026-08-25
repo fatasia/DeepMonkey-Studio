@@ -49,7 +49,7 @@ import { InteractionFlowInspector } from "./InteractionFlowInspector";
 import { DashboardWidgetView, useDashboardMetrics, widgetBackground, type DashboardMetric } from "./DashboardWidgetRuntime";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 
-const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"];
+const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"];
 interface SelectionRect { x: number; y: number; width: number; height: number; }
 type InspectorTab = "content" | "data" | "style" | "animation" | "interaction";
 
@@ -609,17 +609,20 @@ export function DashboardWorkspace({
           {selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
             <label><span>{tr(locale, "类型", "Type")}</span><select value={selectedNode.widget.type} onChange={(event) => updateDataWidget({ type: event.target.value as SceneDashboardWidgetType })}>{DATA_WIDGET_TYPES.map((type) => <option key={type} value={type}>{dataWidgetTypeLabel(locale, type)}</option>)}</select></label>
             <label><span>{tr(locale, "标题", "Title")}</span><input defaultValue={selectedNode.widget.title} key={`${selectedNode.id}:title:${selectedNode.widget.title}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.title) updateDataWidget({ title: event.currentTarget.value }); }} /></label>
+            {(selectedNode.widget.type === "text" || selectedNode.widget.type === "shape") && <label><span>{tr(locale, "内容", "Content")}</span><input defaultValue={selectedNode.widget.content ?? ""} onBlur={(event) => updateDataWidget({ content: event.currentTarget.value })} /></label>}
+            {selectedNode.widget.type === "shape" && <label><span>{tr(locale, "形状", "Shape")}</span><select value={selectedNode.widget.shape ?? "rounded"} onChange={(event) => updateDataWidget({ shape: event.target.value as NonNullable<DashboardDataWidgetConfig["shape"]> })}><option value="rectangle">{tr(locale, "矩形", "Rectangle")}</option><option value="rounded">{tr(locale, "圆角矩形", "Rounded")}</option><option value="ellipse">{tr(locale, "椭圆", "Ellipse")}</option><option value="line">{tr(locale, "线", "Line")}</option></select></label>}
             {selectedNode.widget.type === "image" && <label><span>{tr(locale, "图片地址", "Image URL")}</span><input defaultValue={selectedNode.widget.imageUrl ?? ""} onBlur={(event) => updateDataWidget({ imageUrl: event.currentTarget.value })} /></label>}
             {(selectedNode.widget.type === "video" || selectedNode.widget.type === "monitor") && <label><span>{tr(locale, "视频/监控地址", "Video/monitor URL")}</span><input defaultValue={selectedNode.widget.videoUrl ?? ""} onBlur={(event) => updateDataWidget({ videoUrl: event.currentTarget.value })} /></label>}
             {selectedNode.widget.type === "url" && <label><span>{tr(locale, "网页地址", "Web page URL")}</span><input defaultValue={selectedNode.widget.url ?? ""} onBlur={(event) => updateDataWidget({ url: event.currentTarget.value })} /></label>}
           </section>}
         </>}
 
-        {inspectorTab === "data" && selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
+        {inspectorTab === "data" && selectedNode.kind === "data-widget" && !["text", "shape"].includes(selectedNode.widget.type) && <section className="dashboard-inspector-section dashboard-data-widget-properties">
           <label><span>{tr(locale, "数据集", "Dataset")}</span><select value={selectedNode.widget.datasetId ?? ""} onChange={(event) => updateDataWidget({ datasetId: event.target.value })}><option value="">{tr(locale, "实时变量 / 未绑定", "Live variable / Unbound")}</option>{datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></label>
           <label><span>{tr(locale, "数据键", "Data key")}</span><input defaultValue={selectedNode.widget.key} key={`${selectedNode.id}:key:${selectedNode.widget.key}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.key) updateDataWidget({ key: event.currentTarget.value }); }} /></label>
           <label><span>{tr(locale, "字段", "Field")}</span><input defaultValue={selectedNode.widget.field ?? ""} onBlur={(event) => updateDataWidget({ field: event.currentTarget.value })} /></label>
           <label><span>{tr(locale, "单位", "Unit")}</span><input defaultValue={selectedNode.widget.unit} key={`${selectedNode.id}:unit:${selectedNode.widget.unit}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.unit) updateDataWidget({ unit: event.currentTarget.value }); }} /></label>
+          <label><span>{tr(locale, "设计数据状态", "Design data state")}</span><select value={selectedNode.widget.designState ?? "auto"} onChange={(event) => updateDataWidget({ designState: event.target.value as NonNullable<DashboardDataWidgetConfig["designState"]> })}><option value="auto">{tr(locale, "自动 / 实时", "Auto / Live")}</option><option value="empty">{tr(locale, "空数据", "Empty")}</option><option value="loading">{tr(locale, "加载中", "Loading")}</option><option value="partial">{tr(locale, "部分数据", "Partial")}</option><option value="error">{tr(locale, "错误", "Error")}</option><option value="forbidden">{tr(locale, "无权限", "No permission")}</option></select></label>
           {selectedNode.widget.type === "gauge" && <div className="dashboard-frame-grid"><label><span>MIN</span><input type="number" value={selectedNode.widget.min ?? 0} onChange={(event) => updateDataWidget({ min: Number(event.target.value) })} /></label><label><span>MAX</span><input type="number" value={selectedNode.widget.max ?? 100} onChange={(event) => updateDataWidget({ max: Number(event.target.value) })} /></label></div>}
         </section>}
 
@@ -627,8 +630,12 @@ export function DashboardWorkspace({
           <label><span>{tr(locale, "强调色", "Accent")}</span><input type="color" value={selectedNode.widget.color ?? "#d4a84f"} onChange={(event) => updateDataWidget({ color: event.target.value })} /></label>
           <label><span>{tr(locale, "背景色", "Background")}</span><input type="color" value={selectedNode.widget.backgroundColor ?? "#172126"} onChange={(event) => updateDataWidget({ backgroundColor: event.target.value })} /></label>
           <label><span>{tr(locale, "文字色", "Text color")}</span><input type="color" value={selectedNode.widget.textColor ?? "#eef2f4"} onChange={(event) => updateDataWidget({ textColor: event.target.value })} /></label>
+          {selectedNode.widget.type === "text" && <><label><span>{tr(locale, "字号", "Font size")}</span><input type="number" min="8" max="240" value={selectedNode.widget.fontSize ?? 28} onChange={(event) => updateDataWidget({ fontSize: Number(event.target.value) })} /></label><label><span>{tr(locale, "对齐", "Alignment")}</span><select value={selectedNode.widget.textAlign ?? "left"} onChange={(event) => updateDataWidget({ textAlign: event.target.value as NonNullable<DashboardDataWidgetConfig["textAlign"]> })}><option value="left">{tr(locale, "左", "Left")}</option><option value="center">{tr(locale, "中", "Center")}</option><option value="right">{tr(locale, "右", "Right")}</option></select></label></>}
+          {selectedNode.widget.type === "shape" && <><label><span>{tr(locale, "边框色", "Border color")}</span><input type="color" value={selectedNode.widget.borderColor ?? "#f0cd78"} onChange={(event) => updateDataWidget({ borderColor: event.target.value })} /></label><label><span>{tr(locale, "边框宽度", "Border width")}</span><input type="number" min="0" max="24" value={selectedNode.widget.borderWidth ?? 1} onChange={(event) => updateDataWidget({ borderWidth: Number(event.target.value) })} /></label></>}
           <label><span>{tr(locale, "背景透明度", "Background opacity")}</span><input type="range" min="0" max="1" step="0.05" value={selectedNode.widget.backgroundOpacity ?? 0.86} onChange={(event) => updateDataWidget({ backgroundOpacity: Number(event.target.value) })} /></label>
         </section>}
+
+        {inspectorTab === "data" && selectedNode.kind === "data-widget" && ["text", "shape"].includes(selectedNode.widget.type) && <div className="dashboard-inspector-empty">{tr(locale, "静态组件不需要数据绑定。", "Static components do not require data binding.")}</div>}
 
         {inspectorTab === "animation" && selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
           <label><span>{tr(locale, "进入动画", "Enter animation")}</span><select value={selectedNode.widget.animation ?? "none"} onChange={(event) => updateDataWidget({ animation: event.target.value as NonNullable<DashboardDataWidgetConfig["animation"]> })}><option value="none">{tr(locale, "无", "None")}</option><option value="fade">Fade</option><option value="slide-up">Slide up</option><option value="scale">Scale</option><option value="pulse">Pulse</option></select></label>
@@ -730,14 +737,17 @@ function sceneName(application: ApplicationDocument, sceneId: string): string {
 
 function defaultDataWidget(locale: AppLocale, type: SceneDashboardWidgetType): DashboardDataWidgetConfig {
   const media = type === "image" || type === "video" || type === "monitor" || type === "url";
+  const staticWidget = type === "text" || type === "shape";
   return {
     title: dataWidgetTypeLabel(locale, type),
-    key: media ? "" : "value",
+    key: media || staticWidget ? "" : "value",
     type,
     unit: "",
     color: "#d4a84f",
     backgroundColor: "#172126",
     backgroundOpacity: 0.86,
+    ...(type === "text" ? { content: tr(locale, "文本内容", "Text content"), fontSize: 28, fontWeight: 600, textAlign: "left" as const, backgroundOpacity: 0 } : {}),
+    ...(type === "shape" ? { shape: "rounded" as const, content: "", color: "#d4a84f", borderColor: "#f0cd78", borderWidth: 1, backgroundOpacity: 0 } : {}),
     ...(type === "gauge" ? { min: 0, max: 100 } : {}),
     ...(type === "image" ? { imageFit: "cover" as const } : {}),
     ...(type === "video" ? { videoFit: "contain" as const, videoAutoplay: true, videoMuted: true } : {}),
@@ -748,7 +758,7 @@ function defaultDataWidget(locale: AppLocale, type: SceneDashboardWidgetType): D
 
 function dataWidgetTypeLabel(locale: AppLocale, type: SceneDashboardWidgetType): string {
   const labels: Record<SceneDashboardWidgetType, [string, string]> = {
-    value: ["数值", "Value"], gauge: ["仪表", "Gauge"], status: ["状态", "Status"], line: ["折线", "Line"], area: ["面积", "Area"], bar: ["柱图", "Bar"], pie: ["饼图", "Pie"], table: ["表格", "Table"], image: ["图片", "Image"], video: ["视频", "Video"], monitor: ["监控", "Monitor"], url: ["网页", "Web page"]
+    text: ["文本", "Text"], shape: ["形状", "Shape"], value: ["数值", "Value"], gauge: ["仪表", "Gauge"], status: ["状态", "Status"], line: ["折线", "Line"], area: ["面积", "Area"], bar: ["柱图", "Bar"], pie: ["饼图", "Pie"], table: ["表格", "Table"], image: ["图片", "Image"], video: ["视频", "Video"], monitor: ["监控", "Monitor"], url: ["网页", "Web page"]
   };
   return tr(locale, ...labels[type]);
 }

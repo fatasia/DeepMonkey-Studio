@@ -98,9 +98,9 @@ function validateWidgetFrame(value: unknown, path: string): void {
 function validateDashboardWidgetConfig(value: unknown, path: string): void {
   const object = expectObject(value, path);
   for (const key of ["title", "key", "unit"] as const) required(object, key, expectString, path);
-  requiredLiteral(object, "type", ["value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"], path);
-  for (const key of ["min", "max", "backgroundOpacity"] as const) optional(object, key, expectNumber, path);
-  for (const key of ["color", "backgroundColor", "textColor", "datasetId", "field", "url", "imageUrl", "assetId", "videoUrl", "monitorSourceUrl"] as const) {
+  requiredLiteral(object, "type", ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"], path);
+  for (const key of ["min", "max", "backgroundOpacity", "borderWidth", "fontSize", "fontWeight"] as const) optional(object, key, expectNumber, path);
+  for (const key of ["color", "backgroundColor", "textColor", "datasetId", "field", "url", "imageUrl", "assetId", "videoUrl", "monitorSourceUrl", "content", "borderColor"] as const) {
     optional(object, key, expectString, path);
   }
   optionalLiteral(object, "imageFit", ["cover", "contain", "fill"], path);
@@ -108,6 +108,9 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   optional(object, "videoAutoplay", expectBoolean, path);
   optional(object, "videoMuted", expectBoolean, path);
   optionalLiteral(object, "monitorProtocol", ["hls", "webrtc"], path);
+  optionalLiteral(object, "shape", ["rectangle", "rounded", "ellipse", "line"], path);
+  optionalLiteral(object, "textAlign", ["left", "center", "right"], path);
+  optionalLiteral(object, "designState", ["auto", "empty", "loading", "partial", "error", "forbidden"], path);
   optionalLiteral(object, "animation", ["none", "fade", "slide-up", "scale", "pulse"], path);
   for (const key of ["animationDuration", "animationDelay"] as const) optional(object, key, expectNumber, path);
 }

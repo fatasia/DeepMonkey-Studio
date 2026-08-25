@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Cctv, Globe2, Image as ImageIcon, Video } from "lucide-react";
+import { AlertTriangle, Ban, Cctv, DatabaseZap, Globe2, Image as ImageIcon, LoaderCircle, Video } from "lucide-react";
 import type { EChartsType } from "echarts/core";
 import type { DashboardDataWidgetConfig, DataDatasetPreview, DataDatasetRecord } from "@bim-studio/contracts";
 import { api } from "../api";
@@ -51,6 +51,9 @@ export function DashboardWidgetView({ locale, widget, metric, compact, onAnimati
   onAnimationEnd: () => void;
 }) {
   const display = metric?.value === undefined ? "—" : typeof metric.value === "object" ? JSON.stringify(metric.value) : String(metric.value);
+  if (widget.type === "text") return <div className="dashboard-text-widget" style={{ color: widget.textColor, fontSize: widget.fontSize, fontWeight: widget.fontWeight, textAlign: widget.textAlign }}>{widget.content || widget.title}</div>;
+  if (widget.type === "shape") return <div className={`dashboard-shape-widget ${widget.shape ?? "rectangle"}`} style={{ background: widget.color, borderColor: widget.borderColor, borderWidth: widget.borderWidth }}><span>{widget.content}</span></div>;
+  if (compact && widget.designState && widget.designState !== "auto") return <DashboardDesignState locale={locale} state={widget.designState} />;
   if (widget.type === "image") return <div className="dashboard-image-widget">{widget.imageUrl ? <img src={widget.imageUrl} alt={widget.title} style={{ objectFit: widget.imageFit ?? "cover" }} /> : <div><ImageIcon size={22} /><span>{tr(locale, "从资源库选择图片", "Choose an image from assets")}</span></div>}</div>;
   if (widget.type === "video") return <div className="dashboard-video-widget">{widget.videoUrl ? <StreamVideo src={widget.videoUrl} fit={widget.videoFit ?? "contain"} autoplay={widget.videoAutoplay !== false} muted={widget.videoMuted !== false} controls /> : <div><Video size={23} /><span>{tr(locale, "从资源库选择本地视频", "Choose a local video from assets")}</span></div>}</div>;
   if (widget.type === "monitor") {
@@ -65,6 +68,17 @@ export function DashboardWidgetView({ locale, widget, metric, compact, onAnimati
   if (widget.type === "table") return <div className="dashboard-mini-table"><strong>{widget.title}</strong><table><tbody>{(metric?.rows ?? []).slice(0, 8).map((row, index) => <tr key={index}><td>{String(row.recorded_at ?? row.time ?? index + 1)}</td><td>{String(widget.field ? row[widget.field] ?? "—" : Object.values(row)[0] ?? "—")}</td></tr>)}</tbody></table></div>;
   if (widget.type === "status") return <div className={`dashboard-status ${Boolean(metric?.value) ? "ok" : ""}`}><i /><span><small>{widget.title}</small><strong>{display === "—" ? tr(locale, "未知", "Unknown") : display}</strong></span></div>;
   return <div className="dashboard-value"><span>{widget.title}</span><strong>{display}<small>{widget.unit}</small></strong></div>;
+}
+
+function DashboardDesignState({ locale, state }: { locale: AppLocale; state: Exclude<NonNullable<DashboardDataWidgetConfig["designState"]>, "auto"> }) {
+  const content = {
+    empty: [<DatabaseZap size={20} />, tr(locale, "暂无数据", "No data")],
+    loading: [<LoaderCircle className="spin" size={20} />, tr(locale, "数据加载中", "Loading data")],
+    partial: [<AlertTriangle size={20} />, tr(locale, "部分数据可用", "Partial data")],
+    error: [<AlertTriangle size={20} />, tr(locale, "数据错误", "Data error")],
+    forbidden: [<Ban size={20} />, tr(locale, "无权查看", "No permission")]
+  }[state];
+  return content ? <div className={`dashboard-design-state ${state}`}>{content[0]}<span>{content[1]}</span></div> : null;
 }
 
 export function widgetBackground(widget: DashboardDataWidgetConfig): string {
