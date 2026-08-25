@@ -1,5 +1,5 @@
 import type { ApplicationDocument, ApplicationObjectRef } from "@bim-studio/contracts";
-import type { StudioCommand } from "./command.js";
+import { applyStudioCommand, type StudioCommand } from "./command.js";
 
 export interface ApplicationState {
   readonly document?: ApplicationDocument;
@@ -74,7 +74,7 @@ export class ApplicationStore {
     }
 
     const before = structuredClone(this.document);
-    const after = command.execute(structuredClone(before));
+    const after = applyStudioCommand(before, command);
 
     this.document = structuredClone(after);
     this.undoStack.push({ command, before, after: structuredClone(after) });

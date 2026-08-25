@@ -970,22 +970,32 @@ Create `packages/studio-core/src/command.ts`:
 ```ts
 import type { ApplicationDocument } from "@bim-studio/contracts";
 
-export interface StudioCommand {
+export interface RenameApplicationCommand {
   readonly id: string;
-  readonly type: string;
+  readonly type: "application.rename";
   readonly label: string;
-  execute(document: ApplicationDocument): ApplicationDocument;
+  readonly payload: { readonly name: string };
 }
 
-export function createRenameApplicationCommand(name: string): StudioCommand {
+export type StudioCommand = RenameApplicationCommand;
+
+export function createRenameApplicationCommand(name: string): RenameApplicationCommand {
   return {
-    id: crypto.randomUUID(),
+    id: commandId(),
     type: "application.rename",
     label: `重命名应用为“${name}”`,
-    execute(document) {
-      return { ...structuredClone(document), metadata: { ...document.metadata, name } };
-    }
+    payload: { name }
   };
+}
+
+export function applyStudioCommand(document: ApplicationDocument, command: StudioCommand): ApplicationDocument {
+  const reducerInput = freezeRecursively(structuredClone(document));
+  switch (command.type) {
+    case "application.rename": {
+      const renamed = structuredClone(reducerInput);
+      return { ...renamed, metadata: { ...renamed.metadata, name: command.payload.name } };
+    }
+  }
 }
 ```
 
@@ -1002,7 +1012,7 @@ Create `packages/studio-core/src/applicationStore.ts`:
 
 ```ts
 import type { ApplicationDocument, ApplicationObjectRef } from "@bim-studio/contracts";
-import type { StudioCommand } from "./command.js";
+import { applyStudioCommand, type StudioCommand } from "./command.js";
 
 export interface ApplicationState {
   readonly document?: ApplicationDocument;
@@ -1050,7 +1060,7 @@ export class ApplicationStore {
   dispatch(command: StudioCommand): void {
     if (!this.document) throw new Error("没有已打开的应用文档");
     const before = structuredClone(this.document);
-    const after = command.execute(structuredClone(before));
+    const after = applyStudioCommand(before, command);
     this.document = structuredClone(after);
     this.undoStack.push({ command, before, after: structuredClone(after) });
     this.redoStack = [];

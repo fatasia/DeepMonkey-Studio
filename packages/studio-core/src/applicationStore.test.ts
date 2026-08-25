@@ -1,11 +1,49 @@
 import { describe, expect, it, vi } from "vitest";
 import pureFixture from "../../contracts/src/__fixtures__/scene-v1-pure-3d.json";
 import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
-import { ApplicationStore, createRenameApplicationCommand } from "./index.js";
+import { ApplicationStore, applyStudioCommand, createRenameApplicationCommand } from "./index.js";
 
 function document() {
   return migrateSceneSnapshotV1(pureFixture as SceneSnapshot);
 }
+
+function containsFunction(value: unknown): boolean {
+  if (typeof value === "function") {
+    return true;
+  }
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  return Object.values(value).some(containsFunction);
+}
+
+describe("StudioCommand", () => {
+  it("is pure serializable data", () => {
+    const command = createRenameApplicationCommand("新名称");
+
+    expect(structuredClone(command)).toEqual(command);
+    expect(JSON.parse(JSON.stringify(command))).toEqual(command);
+    expect(command).toMatchObject({
+      type: "application.rename",
+      label: "重命名应用为“新名称”",
+      payload: { name: "新名称" }
+    });
+    expect(containsFunction(command)).toBe(false);
+  });
+
+  it("returns a renamed document without mutating its recursively frozen reducer input", () => {
+    const source = document();
+    const originalName = source.metadata.name;
+    const command = createRenameApplicationCommand("新名称");
+
+    const result = applyStudioCommand(source, command);
+
+    expect(result).not.toBe(source);
+    expect(result.metadata.name).toBe("新名称");
+    expect(source.metadata.name).toBe(originalName);
+    expect(source.pages).not.toBe(result.pages);
+  });
+});
 
 describe("ApplicationStore", () => {
   it("dispatches, undoes, and redoes a serializable command", () => {
