@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Box, CalendarDays, Copy, Database, Eye, ExternalLink, FileImage, FileUp, FileVideo, Gauge, Image as ImageIcon, Layers3, Pencil, Plus, RefreshCw, Rocket, ScanSearch, Search, Trash2, Undo2, Video, X } from "lucide-react";
+import { Box, CalendarDays, Copy, Database, Eye, ExternalLink, FileImage, FileUp, FileVideo, Gauge, Image as ImageIcon, Layers3, Network, Pencil, Plus, RefreshCw, Rocket, ScanSearch, Search, Trash2, Undo2, Video, X } from "lucide-react";
 import type { ConversionStatus, ModelRecord, ProjectAssetRecord, ProjectRecord, SceneSnapshot, SystemBrandingSettings } from "@bim-studio/contracts";
 import { SceneExportMenu } from "./SceneExportMenu";
 import type { AppLocale } from "../i18n";
@@ -36,6 +36,7 @@ interface SceneManagerProps {
   onDelete: (scene: SceneSnapshot) => Promise<void>;
   onOptimizer: () => void;
   onDataCenter: () => void;
+  onTopology: () => void;
   onVisionCenter: () => void;
   onUploadModels: (files: FileList) => Promise<void>;
   onDeleteModel: (model: ModelRecord) => Promise<void>;
@@ -68,6 +69,7 @@ export function SceneManager({
   onDelete,
   onOptimizer,
   onDataCenter,
+  onTopology,
   onVisionCenter,
   onUploadModels,
   onDeleteModel,
@@ -223,6 +225,7 @@ export function SceneManager({
           <button className="manager-icon-button danger" title={tr(locale, "删除项目", "Delete project")} disabled={!project} onClick={onDeleteProject}><Trash2 size={15} /></button>
           <button className="button" disabled={!project} onClick={() => setModelLibraryOpen(true)}><Layers3 size={16} />{tr(locale, "资源库", "Assets")}</button>
           <button className="button" disabled={!project} onClick={onDataCenter}><Database size={16} />{tr(locale, "数据中心", "Data center")}</button>
+          <button className="button" disabled={!project} onClick={onTopology}><Network size={16} />{tr(locale, "拓扑", "Topology")}</button>
           <button className="button" disabled={!project} onClick={onVisionCenter}><ScanSearch size={16} />{tr(locale, "视觉中心", "Vision")}</button>
           <button className="button" onClick={onOptimizer}><Gauge size={16} />{tr(locale, "模型优化", "Optimize")}</button>
           <button className="button" onClick={onImport}><FileUp size={16} />{tr(locale, "导入场景", "Import scene")}</button>

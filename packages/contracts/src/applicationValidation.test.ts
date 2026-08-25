@@ -22,7 +22,8 @@ function altered(source: ApplicationDocument, mutate: (value: ApplicationDocumen
 const malformedCases: MalformedCase[] = [
   ["metadata", () => altered(pureApplication, (value) => Reflect.deleteProperty(value.metadata, "name"))],
   ["metadata source", () => altered(pureApplication, (value) => { value.metadata.source!.kind = "import" as never; })],
-  ["page", () => altered(pureApplication, (value) => { value.pages[0]!.width = 1080 as never; })],
+  ["page", () => altered(pureApplication, (value) => { value.pages[0]!.width = 319; })],
+  ["page viewport fit", () => altered(pureApplication, (value) => { value.pages[0]!.viewportFit = "tile" as never; })],
   ["scene viewport widget", () => altered(pureApplication, (value) => {
     const node = value.pages[0]!.nodes[0]!;
     node.kind = "unknown" as never;
@@ -144,6 +145,13 @@ describe("assertApplicationDocument", () => {
       lifecycle: ["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"],
       permissions: ["scene.read", "scene.write", "data.read"]
     });
+  });
+
+  it("accepts a custom ultra-wide dashboard resolution", () => {
+    const application = structuredClone(pureApplication);
+    Object.assign(application.pages[0]!, { width: 3840, height: 1080, viewportFit: "contain" as const });
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
   });
 
   it("accepts valid non-empty topology, geo, data, asset, and timeline families", () => {

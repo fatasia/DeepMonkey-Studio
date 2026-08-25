@@ -22,7 +22,7 @@ import {
   Workflow,
   X
 } from "lucide-react";
-import type { ApplicationDocument, ApplicationObjectRef, DashboardDataWidgetConfig, DashboardPageDocument, JsonValue, ProjectRecord, SceneDashboardWidgetType, SceneInteractionTarget, SceneInteractionTrigger, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
+import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type ApplicationObjectRef, type DashboardDataWidgetConfig, type DashboardPageDocument, type DashboardViewportFit, type JsonValue, type ProjectRecord, type SceneDashboardWidgetType, type SceneInteractionTarget, type SceneInteractionTrigger, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
 import {
   createDeleteDashboardNodesCommand,
   createDeleteDashboardPageCommand,
@@ -36,6 +36,7 @@ import {
   createUpdateDashboardNodeOrderCommand,
   createUpdateDashboardNodeStateCommand,
   createUpdateDashboardNodeStatesCommand,
+  createUpdateDashboardPageViewportCommand,
   alignDashboardFrames,
   distributeDashboardFrames,
   type DashboardAlignment,
@@ -51,8 +52,41 @@ import { DashboardWidgetView, useDashboardMetrics, widgetBackground, type Dashbo
 import type { RendererBackend } from "../viewer/ViewerEngine";
 
 const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"];
+const DASHBOARD_RESOLUTION_PRESETS = [
+  { id: "fhd", width: 1920, height: 1080, label: "Full HD · 1920 × 1080" },
+  { id: "ultrawide", width: 3840, height: 1080, label: "双联大屏 · 3840 × 1080" },
+  { id: "4k", width: 3840, height: 2160, label: "4K · 3840 × 2160" }
+] as const;
 interface SelectionRect { x: number; y: number; width: number; height: number; }
 type InspectorTab = "content" | "data" | "style" | "animation" | "interaction";
+
+export interface DashboardRuntimeViewport {
+  scaleX: number;
+  scaleY: number;
+  stageWidth: number;
+  stageHeight: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export function calculateDashboardRuntimeViewport(page: Pick<DashboardPageDocument, "width" | "height" | "viewportFit">, surfaceWidth: number, surfaceHeight: number): DashboardRuntimeViewport {
+  const availableWidth = Math.max(1, surfaceWidth - (page.viewportFit === "fixed" ? 0 : 32));
+  const availableHeight = Math.max(1, surfaceHeight - (page.viewportFit === "fixed" ? 0 : 32));
+  const widthScale = availableWidth / page.width;
+  const heightScale = availableHeight / page.height;
+  if (page.viewportFit === "stretch") {
+    return { scaleX: widthScale, scaleY: heightScale, stageWidth: availableWidth, stageHeight: availableHeight, offsetX: 0, offsetY: 0 };
+  }
+  if (page.viewportFit === "fixed") {
+    return { scaleX: 1, scaleY: 1, stageWidth: page.width, stageHeight: page.height, offsetX: 0, offsetY: 0 };
+  }
+  const scale = Math.max(0.01, page.viewportFit === "cover" ? Math.max(widthScale, heightScale) : Math.min(widthScale, heightScale));
+  const scaledWidth = page.width * scale;
+  const scaledHeight = page.height * scale;
+  return page.viewportFit === "cover"
+    ? { scaleX: scale, scaleY: scale, stageWidth: availableWidth, stageHeight: availableHeight, offsetX: (availableWidth - scaledWidth) / 2, offsetY: (availableHeight - scaledHeight) / 2 }
+    : { scaleX: scale, scaleY: scale, stageWidth: scaledWidth, stageHeight: scaledHeight, offsetX: 0, offsetY: 0 };
+}
 
 export interface DashboardWorkspaceProps {
   locale: AppLocale;
@@ -124,6 +158,7 @@ export function DashboardWorkspace({
   const clipboardRef = useRef<WidgetNode[]>([]);
   const componentSearchRef = useRef<HTMLInputElement>(null);
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
+  const overflowNodeIds = useMemo(() => page.nodes.filter((node) => node.frame.x < 0 || node.frame.y < 0 || node.frame.x + node.frame.width > page.width || node.frame.y + node.frame.height > page.height).map((node) => node.id), [page.nodes, page.width, page.height]);
   const layoutSelectionCount = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.visible !== false && node.locked !== true).length;
   const dataWidgetConfigs = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
   const { metrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } = useDashboardMetrics(project.id, dataWidgetConfigs);
@@ -481,8 +516,9 @@ export function DashboardWorkspace({
     const nextPage: DashboardPageDocument = {
       id: `page:${crypto.randomUUID()}`,
       name: tr(locale, `页面 ${application.pages.length + 1}`, `Page ${application.pages.length + 1}`),
-      width: 1920,
-      height: 1080,
+      width: page.width,
+      height: page.height,
+      viewportFit: page.viewportFit,
       appearance: structuredClone(page.appearance ?? {}),
       nodes: []
     };
@@ -523,6 +559,19 @@ export function DashboardWorkspace({
     if (!name || name === pageNameCommitRef.current) return;
     pageNameCommitRef.current = name;
     onCommand(createRenameDashboardPageCommand(page.id, name));
+  }
+
+  function commitPageViewport(viewport: { width?: number; height?: number; viewportFit?: DashboardViewportFit }) {
+    const width = normalizeDashboardSize(viewport.width ?? page.width, page.width);
+    const height = normalizeDashboardSize(viewport.height ?? page.height, page.height);
+    const viewportFit = viewport.viewportFit ?? page.viewportFit;
+    if (width === page.width && height === page.height && viewportFit === page.viewportFit) return;
+    onCommand(createUpdateDashboardPageViewportCommand(page.id, { width, height, viewportFit }));
+  }
+
+  function selectOverflowNodes() {
+    setSelectedNodeIds(overflowNodeIds);
+    onSelectionChange(overflowNodeIds.map((id) => ({ kind: "widget", id })));
   }
 
   function addDataWidget(type: SceneDashboardWidgetType) {
@@ -606,6 +655,7 @@ export function DashboardWorkspace({
           <button className="dashboard-page-select" onClick={() => onSelectPage(candidate.id, currentView())}><LayoutDashboard size={14} /><span>{candidate.name}</span><small>{candidate.nodes.length}</small></button>
           <button className="dashboard-page-delete" disabled={application.pages.length <= 1} title={tr(locale, "删除页面", "Delete page")} onClick={() => deleteDashboardPage(candidate.id)}><Trash2 size={12} /></button>
         </div>)}
+        <details className="dashboard-compact-page-settings"><summary>{tr(locale, "画布尺寸与适配", "Canvas size & fit")}<small>{page.width} × {page.height}</small></summary><DashboardPageViewportEditor locale={locale} page={page} onChange={commitPageViewport} compact /></details>
       </section>
       <section className="dashboard-component-library">
         <div className="dashboard-panel-label"><span>{tr(locale, "组件", "Components")}</span><small>{connected ? tr(locale, "实时", "Live") : tr(locale, "离线", "Offline")}</small></div>
@@ -625,7 +675,7 @@ export function DashboardWorkspace({
 
     <section className="dashboard-design-surface">
       <div className="dashboard-canvas-toolbar">
-        <span>{page.width} × {page.height}<small>{tr(locale, "Shift 拖动框选 · 方向键微调 · Shift 10px · Ctrl/Cmd+C/V/D", "Shift-drag selects · Arrows nudge · Shift 10px · Ctrl/Cmd+C/V/D")}</small></span>
+        <span>{page.width} × {page.height}<small>{tr(locale, "Shift 拖动框选 · 方向键微调 · Shift 10px · Ctrl/Cmd+C/V/D", "Shift-drag selects · Arrows nudge · Shift 10px · Ctrl/Cmd+C/V/D")}</small>{overflowNodeIds.length > 0 && <button className="dashboard-overflow-warning" title={tr(locale, "选择所有超出页面边界的组件", "Select all components outside the page bounds")} onClick={selectOverflowNodes}>{tr(locale, `${overflowNodeIds.length} 个组件越界`, `${overflowNodeIds.length} out of bounds`)}</button>}</span>
         <div className="dashboard-layout-tools">
           <button className={marqueeMode ? "active" : ""} title={tr(locale, "框选组件（也可按住 Shift 拖动）", "Box select (or hold Shift while dragging)")} onClick={() => setMarqueeMode((active) => !active)}>框</button>
           <button className={snapEnabled ? "active" : ""} title={tr(locale, "8px 网格吸附", "Snap to 8px grid")} onClick={() => setSnapEnabled((enabled) => !enabled)}>吸</button>
@@ -656,6 +706,7 @@ export function DashboardWorkspace({
       <header><span className="eyebrow">INSPECTOR</span><strong>{tr(locale, "属性", "Properties")}</strong></header>
       <section className="dashboard-inspector-section">
         <label><span>{tr(locale, "页面名称", "Page name")}</span><input defaultValue={page.name} key={page.id} onBlur={(event) => commitPageName(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
+        <DashboardPageViewportEditor locale={locale} page={page} onChange={commitPageViewport} />
       </section>
       {selectedNode ? <>
         <div className="dashboard-selection-heading dashboard-selection-summary"><span>{selectedNode.kind === "scene-viewport" ? <Box size={15} /> : <Layers3 size={15} />}</span><div><strong>{nodeLabel(selectedNode)}</strong><small>{selectedNode.id}</small></div></div>
@@ -725,6 +776,23 @@ export function DashboardWorkspace({
   </main>;
 }
 
+function DashboardPageViewportEditor({ locale, page, onChange, compact = false }: {
+  locale: AppLocale;
+  page: DashboardPageDocument;
+  onChange: (viewport: { width?: number; height?: number; viewportFit?: DashboardViewportFit }) => void;
+  compact?: boolean;
+}) {
+  return <div className={`dashboard-page-viewport-editor ${compact ? "compact" : ""}`}>
+    <label><span>{tr(locale, "逻辑分辨率", "Logical resolution")}</span><select value={dashboardResolutionPreset(page)} onChange={(event) => { const preset = DASHBOARD_RESOLUTION_PRESETS.find((candidate) => candidate.id === event.target.value); if (preset) onChange({ width: preset.width, height: preset.height }); }}><option value="custom">{tr(locale, "自定义", "Custom")}</option>{DASHBOARD_RESOLUTION_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
+    <div className="dashboard-frame-grid dashboard-resolution-grid">
+      <label><span>W</span><input key={`${page.id}:width:${page.width}`} aria-label={tr(locale, "页面宽度", "Page width")} type="number" min={DASHBOARD_PAGE_MIN_SIZE} max={DASHBOARD_PAGE_MAX_SIZE} defaultValue={page.width} onBlur={(event) => onChange({ width: Number(event.currentTarget.value) })} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
+      <label><span>H</span><input key={`${page.id}:height:${page.height}`} aria-label={tr(locale, "页面高度", "Page height")} type="number" min={DASHBOARD_PAGE_MIN_SIZE} max={DASHBOARD_PAGE_MAX_SIZE} defaultValue={page.height} onBlur={(event) => onChange({ height: Number(event.currentTarget.value) })} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>
+    </div>
+    <label><span>{tr(locale, "屏幕适配", "Display fit")}</span><select value={page.viewportFit} onChange={(event) => onChange({ viewportFit: event.target.value as DashboardViewportFit })}><option value="contain">{tr(locale, "完整显示（推荐）", "Contain (recommended)")}</option><option value="cover">{tr(locale, "铺满并裁切", "Cover and crop")}</option><option value="stretch">{tr(locale, "拉伸铺满", "Stretch to fill")}</option><option value="fixed">{tr(locale, "原始像素 / 滚动", "Fixed pixels / scroll")}</option></select></label>
+    {!compact && <small className="dashboard-inspector-hint">{tr(locale, `支持 ${DASHBOARD_PAGE_MIN_SIZE}–${DASHBOARD_PAGE_MAX_SIZE}px；修改尺寸不会自动缩放已有组件，越界组件会在画布工具栏提示。`, `Supports ${DASHBOARD_PAGE_MIN_SIZE}–${DASHBOARD_PAGE_MAX_SIZE}px. Existing widgets are not resized automatically; out-of-bounds widgets are reported in the canvas toolbar.`)}</small>}
+  </div>;
+}
+
 function DashboardRuntimePreview({ locale, application, project, page, rendererBackend, metrics, connected, onClose, onSelectionChange, onObjectInteraction, onNodeInteraction }: {
   locale: AppLocale;
   application: ApplicationDocument;
@@ -738,20 +806,25 @@ function DashboardRuntimePreview({ locale, application, project, page, rendererB
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
   onNodeInteraction: (nodeId: string, trigger?: SceneInteractionTrigger) => ApplicationInteractionResult | undefined;
 }) {
-  const [scale, setScale] = useState(0.5);
+  const [viewport, setViewport] = useState<DashboardRuntimeViewport>(() => calculateDashboardRuntimeViewport(page, page.width * 0.5 + 32, page.height * 0.5 + 32));
   const surfaceRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return;
-    const resize = () => setScale(Math.max(0.1, Math.min((surface.clientWidth - 32) / page.width, (surface.clientHeight - 32) / page.height)));
+    const resize = () => {
+      setViewport(calculateDashboardRuntimeViewport(page, surface.clientWidth, surface.clientHeight));
+    };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(surface);
     return () => observer.disconnect();
-  }, [page.width, page.height]);
+  }, [page.width, page.height, page.viewportFit]);
+  const scaleLabel = Math.abs(viewport.scaleX - viewport.scaleY) < 0.001
+    ? `${Math.round(viewport.scaleX * 100)}%`
+    : `${Math.round(viewport.scaleX * 100)}% × ${Math.round(viewport.scaleY * 100)}%`;
   return <main className="dashboard-runtime-preview">
-    <header><div><Eye size={16} /><span><strong>{application.metadata.name}</strong><small>{page.name} · {connected ? tr(locale, "实时数据", "Live data") : tr(locale, "离线预览", "Offline preview")}</small></span></div><div><span>{Math.round(scale * 100)}%</span><button onClick={onClose}><X size={15} />{tr(locale, "退出预览", "Exit preview")}</button></div></header>
-    <section ref={surfaceRef}><div className="dashboard-runtime-stage" style={{ width: page.width * scale, height: page.height * scale }}><div className="dashboard-artboard dashboard-runtime-artboard" style={{ width: page.width, height: page.height, transform: `scale(${scale})` }}>{page.nodes.filter((node) => node.visible !== false).map((node) => <DashboardNode key={node.id} runtime application={application} project={project} node={node} frame={node.frame} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={false} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={() => undefined} onEnterScene={() => undefined} onTransformStart={() => undefined} />)}</div></div></section>
+    <header><div><Eye size={16} /><span><strong>{application.metadata.name}</strong><small>{page.name} · {page.width} × {page.height} · {connected ? tr(locale, "实时数据", "Live data") : tr(locale, "离线预览", "Offline preview")}</small></span></div><div><span>{scaleLabel}</span><button onClick={onClose}><X size={15} />{tr(locale, "退出预览", "Exit preview")}</button></div></header>
+    <section ref={surfaceRef} className={`dashboard-runtime-surface fit-${page.viewportFit}`}><div className="dashboard-runtime-stage" style={{ width: viewport.stageWidth, height: viewport.stageHeight }}><div className="dashboard-artboard dashboard-runtime-artboard" style={{ width: page.width, height: page.height, left: viewport.offsetX, top: viewport.offsetY, transform: `scale(${viewport.scaleX}, ${viewport.scaleY})` }}>{page.nodes.filter((node) => node.visible !== false).map((node) => <DashboardNode key={node.id} runtime application={application} project={project} node={node} frame={node.frame} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={false} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={() => undefined} onEnterScene={() => undefined} onTransformStart={() => undefined} />)}</div></div></section>
   </main>;
 }
 
@@ -802,6 +875,15 @@ function NodeTransformHandles({ selected, onTransformStart }: { selected: boolea
 function nodeLabel(node: WidgetNode): string {
   if (node.kind === "scene-viewport") return `3D · ${node.sceneId}`;
   return node.widget.title;
+}
+
+function dashboardResolutionPreset(page: DashboardPageDocument): string {
+  return DASHBOARD_RESOLUTION_PRESETS.find((preset) => preset.width === page.width && preset.height === page.height)?.id ?? "custom";
+}
+
+function normalizeDashboardSize(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(DASHBOARD_PAGE_MAX_SIZE, Math.max(DASHBOARD_PAGE_MIN_SIZE, Math.round(value)));
 }
 
 function sceneName(application: ApplicationDocument, sceneId: string): string {

@@ -14,6 +14,9 @@ import { loadOrCreateServerInstanceId, registerServerMetaRoute } from "./serverM
 import { registerSystemRoutes } from "./system.js";
 import { registerVisionRoutes, VisionEngine } from "./vision.js";
 import { createApiServer } from "./serverOptions.js";
+import { externalCadConverterRegistrations } from "./converterCatalog.js";
+import { registerConversionTaskRoutes } from "./conversionTaskRoutes.js";
+import { ConversionTaskService } from "./conversionTasks.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -37,6 +40,8 @@ export async function buildApp() {
   await registerSystemRoutes(app, store, config.dataDir);
   await registerDataEventRoutes(app, store);
   await registerRoutes(app, { store, queue, objects, dataDir: config.dataDir, config });
+  const conversionTasks = new ConversionTaskService(await externalCadConverterRegistrations());
+  await registerConversionTaskRoutes(app, { service: conversionTasks, projectExists: (projectId) => Boolean(store.getProject(projectId)) });
   await registerDataEndpointRuntime(app, store, config);
   await registerApplicationRoutes(app, store);
   const vision = new VisionEngine({ store, objects, dataDir: config.dataDir });

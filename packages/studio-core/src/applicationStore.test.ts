@@ -16,12 +16,14 @@ import {
   createInsertDashboardNodesCommand,
   createUpsertInteractionFlowCommand,
   createUpsertScriptModuleCommand,
+  createUpsertTopologyCommand,
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
   createUpdateDashboardNodeOrderCommand,
   createUpdateDashboardNodeStateCommand,
-  createUpdateDashboardNodeStatesCommand
+  createUpdateDashboardNodeStatesCommand,
+  createUpdateDashboardPageViewportCommand
 } from "./index.js";
 
 function document() {
@@ -80,6 +82,19 @@ describe("StudioCommand", () => {
     expect(source.pages[0]?.nodes[0]?.frame).not.toEqual(frame);
     expect(renamed.scenes).toBe(source.scenes);
     expect(moved.scenes).toBe(source.scenes);
+  });
+
+  it("updates a dashboard logical resolution and restores it through undo", () => {
+    const source = document();
+    const page = source.pages[0]!;
+    const store = new ApplicationStore(source);
+
+    store.dispatch(createUpdateDashboardPageViewportCommand(page.id, { width: 3840, height: 1080, viewportFit: "cover" }));
+
+    expect(store.getState().document?.pages[0]).toMatchObject({ width: 3840, height: 1080, viewportFit: "cover" });
+    expect(store.undo()).toBe(true);
+    expect(store.getState().document?.pages[0]).toMatchObject({ width: 1920, height: 1080, viewportFit: "contain" });
+    expect(() => createUpdateDashboardPageViewportCommand(page.id, { width: 100, height: 1080, viewportFit: "contain" })).toThrow("页面宽度");
   });
 
   it("adds and deletes complete dashboard pages with their interactions", () => {
@@ -194,6 +209,19 @@ describe("StudioCommand", () => {
     expect(store.getState().document?.scripts).toEqual([]);
     expect(store.undo()).toBe(true);
     expect(store.getState().document?.scripts).toEqual([{ ...script, name: "AGV 运动" }]);
+  });
+
+  it("creates and updates topology documents through undoable commands", () => {
+    const source = { ...document(), topologies: [] };
+    const store = new ApplicationStore(source);
+    const topology = { id: "topology:line", name: "产线拓扑", nodes: [], edges: [] };
+
+    store.dispatch(createUpsertTopologyCommand(topology));
+    store.dispatch(createUpsertTopologyCommand({ ...topology, name: "装配线拓扑" }));
+
+    expect(store.getState().document?.topologies).toEqual([{ ...topology, name: "装配线拓扑" }]);
+    expect(store.undo()).toBe(true);
+    expect(store.getState().document?.topologies).toEqual([topology]);
   });
 
   it("creates, updates, and deletes a native data widget atomically", () => {

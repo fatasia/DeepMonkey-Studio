@@ -1,4 +1,4 @@
-import type { ApplicationDocument } from "./application.js";
+import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument } from "./application.js";
 import { assertPathSafeResourceId } from "./resourceId.js";
 
 type JsonObject = Record<string, unknown>;
@@ -56,10 +56,17 @@ function validatePage(value: unknown, path: string): void {
   const object = expectObject(value, path);
   required(object, "id", expectString, path);
   required(object, "name", expectString, path);
-  requiredLiteral(object, "width", [1920], path);
-  requiredLiteral(object, "height", [1080], path);
+  required(object, "width", expectDashboardPageSize, path);
+  required(object, "height", expectDashboardPageSize, path);
+  requiredLiteral(object, "viewportFit", ["contain", "cover", "stretch", "fixed"], path);
   optional(object, "appearance", validateDashboardPageAppearance, path);
   required(object, "nodes", (nodes, nodesPath) => expectArray(nodes, nodesPath, validateWidgetNode), path);
+}
+
+function expectDashboardPageSize(value: unknown, path: string): void {
+  if (!Number.isInteger(value) || (value as number) < DASHBOARD_PAGE_MIN_SIZE || (value as number) > DASHBOARD_PAGE_MAX_SIZE) {
+    invalid(path, `必须是 ${DASHBOARD_PAGE_MIN_SIZE} 到 ${DASHBOARD_PAGE_MAX_SIZE} 之间的整数`);
+  }
 }
 
 function validateDashboardPageAppearance(value: unknown, path: string): void {

@@ -22,6 +22,25 @@ describe("ServerClient", () => {
     expect(fetch).toHaveBeenCalledWith(new URL("https://bim.example.test/api/meta"), expect.any(Object));
   });
 
+  it("resolves a fresh asynchronous profile for every request", async () => {
+    let baseUrl = "https://old.example.test";
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ ok: true }));
+    const client = new ServerClient({
+      profile: async () => ({ baseUrl }),
+      authStore: emptyAuthStore,
+      fetch
+    });
+
+    await client.request("/api/meta");
+    baseUrl = "https://new.example.test:8443";
+    await client.request("/api/meta");
+
+    expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://old.example.test/api/meta",
+      "https://new.example.test:8443/api/meta"
+    ]);
+  });
+
   it.each([
     ["synchronous", (): string => "token-1"],
     ["asynchronous", async (): Promise<string> => "token-1"]

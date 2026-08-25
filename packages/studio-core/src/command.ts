@@ -1,4 +1,4 @@
-import type { ApplicationDocument, DashboardDataWidgetConfig, DashboardPageDocument, InteractionFlow, ScriptModule, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
+import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type DashboardDataWidgetConfig, type DashboardPageDocument, type DashboardViewportFit, type InteractionFlow, type ScriptModule, type TopologyDocument, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
 
 let nextCommandId = 1;
 
@@ -22,6 +22,18 @@ export interface RenameDashboardPageCommand {
   readonly payload: {
     readonly pageId: string;
     readonly name: string;
+  };
+}
+
+export interface UpdateDashboardPageViewportCommand {
+  readonly id: string;
+  readonly type: "dashboard.page.viewport.update";
+  readonly label: string;
+  readonly payload: {
+    readonly pageId: string;
+    readonly width: number;
+    readonly height: number;
+    readonly viewportFit: DashboardViewportFit;
   };
 }
 
@@ -95,6 +107,13 @@ export interface DeleteScriptModuleCommand {
   readonly payload: { readonly scriptId: string };
 }
 
+export interface UpsertTopologyCommand {
+  readonly id: string;
+  readonly type: "topology.upsert";
+  readonly label: string;
+  readonly payload: { readonly topology: TopologyDocument };
+}
+
 export interface InsertDashboardNodeCommand {
   readonly id: string;
   readonly type: "dashboard.node.insert";
@@ -161,6 +180,7 @@ export interface DeleteDashboardNodeCommand {
 export type StudioCommand =
   | RenameApplicationCommand
   | RenameDashboardPageCommand
+  | UpdateDashboardPageViewportCommand
   | InsertDashboardPageCommand
   | DeleteDashboardPageCommand
   | UpdateDashboardNodeFrameCommand
@@ -170,6 +190,7 @@ export type StudioCommand =
   | DeleteInteractionFlowCommand
   | UpsertScriptModuleCommand
   | DeleteScriptModuleCommand
+  | UpsertTopologyCommand
   | InsertDashboardNodeCommand
   | InsertDashboardNodesCommand
   | DeleteDashboardNodesCommand
@@ -193,6 +214,20 @@ export function createRenameDashboardPageCommand(pageId: string, name: string): 
     type: "dashboard.page.rename",
     label: `重命名页面为“${name}”`,
     payload: { pageId, name }
+  };
+}
+
+export function createUpdateDashboardPageViewportCommand(
+  pageId: string,
+  viewport: { width: number; height: number; viewportFit: DashboardViewportFit }
+): UpdateDashboardPageViewportCommand {
+  assertDashboardPageSize(viewport.width, "宽度");
+  assertDashboardPageSize(viewport.height, "高度");
+  return {
+    id: commandId(),
+    type: "dashboard.page.viewport.update",
+    label: `设置页面分辨率为 ${viewport.width} × ${viewport.height}`,
+    payload: { pageId, ...viewport }
   };
 }
 
@@ -267,6 +302,15 @@ export function createUpsertScriptModuleCommand(script: ScriptModule): UpsertScr
 
 export function createDeleteScriptModuleCommand(scriptId: string): DeleteScriptModuleCommand {
   return { id: commandId(), type: "script.module.delete", label: "删除行为脚本", payload: { scriptId } };
+}
+
+export function createUpsertTopologyCommand(topology: TopologyDocument): UpsertTopologyCommand {
+  return {
+    id: commandId(),
+    type: "topology.upsert",
+    label: `更新拓扑“${topology.name}”`,
+    payload: { topology: structuredClone(topology) }
+  };
 }
 
 export function createInsertDashboardNodeCommand(pageId: string, node: WidgetNode): InsertDashboardNodeCommand {
@@ -351,6 +395,15 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
           ? { ...page, name: command.payload.name }
           : page)
       };
+    }
+    case "dashboard.page.viewport.update": {
+      requirePage(document, command.payload.pageId);
+      return updatePage(document, command.payload.pageId, (page) => ({
+        ...page,
+        width: command.payload.width,
+        height: command.payload.height,
+        viewportFit: command.payload.viewportFit
+      }));
     }
     case "dashboard.page.insert": {
       if (document.pages.some((page) => page.id === command.payload.page.id)) throw new Error(`应用中已存在页面 ${command.payload.page.id}`);
@@ -447,6 +500,16 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
         ...document,
         scripts: document.scripts.filter((script) => script.id !== command.payload.scriptId)
       };
+    case "topology.upsert": {
+      const topology = structuredClone(command.payload.topology);
+      const exists = document.topologies.some((candidate) => candidate.id === topology.id);
+      return {
+        ...document,
+        topologies: exists
+          ? document.topologies.map((candidate) => candidate.id === topology.id ? topology : candidate)
+          : [...document.topologies, topology]
+      };
+    }
     case "dashboard.node.insert": {
       const page = requirePage(document, command.payload.pageId);
       if (page.nodes.some((node) => node.id === command.payload.node.id)) {
@@ -549,4 +612,10 @@ function applyNodeState(node: WidgetNode, state: DashboardNodeStatePatch): Widge
   const next = { ...node, ...state };
   if (state.groupId === null) delete next.groupId;
   return next as WidgetNode;
+}
+
+function assertDashboardPageSize(value: number, label: string): void {
+  if (!Number.isInteger(value) || value < DASHBOARD_PAGE_MIN_SIZE || value > DASHBOARD_PAGE_MAX_SIZE) {
+    throw new Error(`页面${label}必须是 ${DASHBOARD_PAGE_MIN_SIZE} 到 ${DASHBOARD_PAGE_MAX_SIZE} 之间的整数`);
+  }
 }

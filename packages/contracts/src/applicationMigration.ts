@@ -16,6 +16,7 @@ export function migrateSceneSnapshotV1(snapshot: SceneSnapshot): ApplicationDocu
     name: `${source.name} 看板`,
     width: PAGE_WIDTH,
     height: PAGE_HEIGHT,
+    viewportFit: "contain",
     ...(dashboard ? { appearance: dashboardAppearance(dashboard) } : {}),
     nodes: [{
       id: `widget:scene:${source.id}`,

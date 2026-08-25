@@ -97,6 +97,7 @@ import type {
 import { migrateSceneSnapshotV1 } from "@bim-studio/contracts";
 import {
   createDeleteScriptModuleCommand,
+  createUpsertTopologyCommand,
   createUpsertScriptModuleCommand,
   type ApplicationInteractionResult,
   type StudioCommand
@@ -115,6 +116,7 @@ import { CameraNavigationPanel } from "./components/CameraNavigationPanel";
 import { SceneTimelinePanel } from "./components/SceneTimelinePanel";
 import { SceneOrganizationPanel, type SceneOrganizationObject } from "./components/SceneOrganizationPanel";
 import { SceneBehaviorPanel, type SceneBehaviorLogEntry } from "./components/SceneBehaviorPanel";
+import { TopologyEditorPanel, type TopologyDataProductOption } from "./components/TopologyEditorPanel";
 import { RendererDiagnosticsPanel } from "./components/RendererDiagnosticsPanel";
 import { AiAssistantPanel } from "./components/AiAssistantPanel";
 import { LoginPage } from "./components/LoginPage";
@@ -236,11 +238,12 @@ const BrandingSettingsPage = lazy(() => import("./components/BrandingSettingsPag
 const VisionCenter = lazy(() => import("./components/VisionCenter").then((module) => ({ default: module.VisionCenter })));
 
 interface AppRoute {
-  view: "manager" | "dashboard" | "studio" | "optimizer" | "data" | "vision" | "system" | "branding" | "view" | "published";
+  view: "manager" | "dashboard" | "studio" | "topology" | "optimizer" | "data" | "vision" | "system" | "branding" | "view" | "published";
   sceneId?: string;
   projectId?: string;
   applicationId?: string;
   pageId?: string;
+  topologyId?: string;
   dashboardView?: DashboardViewState;
   dashboardReturn?: DashboardReturnContext;
 }
@@ -263,6 +266,13 @@ function readRoute(): AppRoute {
   if (window.location.pathname === "/vision") return { view: "vision" };
   if (window.location.pathname === "/system") return { view: "system" };
   if (window.location.pathname === "/branding") return { view: "branding" };
+  const topologyMatch = window.location.pathname.match(/^\/projects\/([^/]+)\/applications\/([^/]+)\/topologies\/([^/]+)$/);
+  if (topologyMatch?.[1] && topologyMatch[2] && topologyMatch[3]) return {
+    view: "topology",
+    projectId: decodeURIComponent(topologyMatch[1]),
+    applicationId: decodeURIComponent(topologyMatch[2]),
+    topologyId: decodeURIComponent(topologyMatch[3])
+  };
   const match = window.location.pathname.match(/^\/(studio|view|published)\/([^/]+)$/);
   if (match?.[1] && match[2]) return { view: match[1] as "studio" | "view" | "published", sceneId: decodeURIComponent(match[2]) };
   return { view: "manager" };
@@ -274,6 +284,9 @@ function routePath(route: AppRoute): string {
   }
   if (route.view === "studio" && route.projectId && route.applicationId && route.sceneId) {
     return studioWorkspacePath({ kind: "scene", projectId: route.projectId, applicationId: route.applicationId, sceneId: route.sceneId });
+  }
+  if (route.view === "topology" && route.projectId && route.applicationId && route.topologyId) {
+    return `/projects/${encodeURIComponent(route.projectId)}/applications/${encodeURIComponent(route.applicationId)}/topologies/${encodeURIComponent(route.topologyId)}`;
   }
   return route.view === "manager" || route.view === "optimizer" || route.view === "data" || route.view === "vision" || route.view === "system" || route.view === "branding"
     ? `/${route.view}`
@@ -395,6 +408,10 @@ export function App() {
   const activeDashboardPage = route.view === "dashboard" && activeApplication && activeApplication.metadata.id === route.applicationId
     ? activeApplication.pages.find((page) => page.id === route.pageId)
     : undefined;
+  const activeTopology = route.view === "topology" && activeApplication && activeApplication.metadata.id === route.applicationId
+    ? activeApplication.topologies.find((topology) => topology.id === route.topologyId)
+    : undefined;
+  const [topologyDataProducts, setTopologyDataProducts] = useState<TopologyDataProductOption[]>([]);
   const [avatarVisible, setAvatarVisible] = useState(false);
   const [cameraInfo, setCameraInfo] = useState<CameraState>();
   const [pointerInfo, setPointerInfo] = useState<PointerInfo>();
@@ -1033,6 +1050,37 @@ export function App() {
       .catch((reason) => { if (!cancelled) showError(reason); });
     return () => { cancelled = true; };
   }, [route.view, route.projectId, route.applicationId, route.pageId]);
+
+  useEffect(() => {
+    if (route.view !== "topology" || !route.projectId || !route.applicationId || !route.topologyId) return;
+    const { projectId, applicationId, topologyId } = route;
+    const opened = applicationSessionRef.current.store.getState().document;
+    let cancelled = false;
+    const loadDocument = opened?.metadata.projectId === projectId && opened.metadata.id === applicationId
+      ? Promise.resolve(opened)
+      : api.getApplication(projectId, applicationId);
+    void Promise.all([
+      api.getProject(projectId),
+      loadDocument,
+      api.listDatasets(projectId),
+      api.listDataPipelines(projectId)
+    ]).then(([nextProject, application, datasets, pipelines]) => {
+      if (cancelled) return;
+      const topology = application.topologies.find((candidate) => candidate.id === topologyId) ?? application.topologies[0];
+      if (!topology) throw new Error("应用没有可编辑的拓扑文档");
+      setProject(nextProject);
+      setProjects((items) => items.some((item) => item.id === nextProject.id)
+        ? items.map((item) => item.id === nextProject.id ? nextProject : item)
+        : [...items, nextProject]);
+      if (applicationSessionRef.current.store.getState().document !== application) applicationSessionRef.current.openDocument(application);
+      setTopologyDataProducts([
+        ...datasets.map((dataset) => ({ id: dataset.id, type: "dataset" as const, name: dataset.name, fields: dataset.fields.map((field) => field.key) })),
+        ...pipelines.map((pipeline) => ({ id: pipeline.id, type: "pipeline" as const, name: pipeline.name }))
+      ]);
+      if (topology.id !== topologyId) navigate({ view: "topology", projectId, applicationId, topologyId: topology.id }, true);
+    }).catch((reason) => { if (!cancelled) showError(reason); });
+    return () => { cancelled = true; };
+  }, [route.view, route.projectId, route.applicationId, route.topologyId]);
 
   useEffect(() => {
     if (route.view !== "studio" || !route.sceneId || !engine) return;
@@ -1947,6 +1995,28 @@ export function App() {
     }
   }
 
+  async function openTopologyEditor(): Promise<void> {
+    if (!project) return;
+    setBusy(true);
+    try {
+      const applications = await api.listApplications(project.id);
+      const application = applications[0] ?? (scenes[0] ? await ensureApplicationForScene(scenes[0]) : undefined);
+      if (!application) throw new Error("请先创建一个场景，使项目拥有可保存的应用文档");
+      applicationSessionRef.current.openDocument(application);
+      let topology = application.topologies[0];
+      if (!topology) {
+        topology = { id: crypto.randomUUID(), name: `${project.name}拓扑`, nodes: [], edges: [] };
+        dispatchApplicationCommand(createUpsertTopologyCommand(topology));
+      }
+      navigate({ view: "topology", projectId: project.id, applicationId: application.metadata.id, topologyId: topology.id });
+      setMessage(`已打开“${topology.name}”拓扑编辑`);
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveSceneIntoApplication(application: ApplicationDocument, scene: SceneSnapshot): Promise<ApplicationDocument> {
     const merged = syncSceneIntoApplication(application, scene);
     const saved = await api.saveApplication(merged);
@@ -2478,6 +2548,15 @@ export function App() {
         onViewStateChange={replaceDashboardView}
       />}
       {route.view === "dashboard" && (!activeApplication || !activeDashboardPage || !project) && <div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载二维工作区", "Loading 2D workspace")}</div>}
+      {route.view === "topology" && activeTopology && <TopologyEditorPanel
+        locale={locale}
+        document={activeTopology}
+        dataProducts={topologyDataProducts}
+        onChange={(topology) => dispatchApplicationCommand(createUpsertTopologyCommand(topology))}
+        onClose={() => void saveActiveApplication().finally(() => navigate({ view: "manager" }))}
+        onError={(message) => showError(new Error(message))}
+      />}
+      {route.view === "topology" && !activeTopology && <div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载拓扑编辑器", "Loading topology editor")}</div>}
       {route.view === "optimizer" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载模型优化器", "Loading model optimizer")}</div>}><ModelOptimizer locale={locale} copyright={branding.copyright} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "data" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载数据中心", "Loading data center")}</div>}><DataCenter locale={locale} project={project} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "vision" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载视觉中心", "Loading vision center")}</div>}><VisionCenter locale={locale} project={project} scenes={scenes} onBack={() => navigate({ view: "manager" })} /></Suspense>}
@@ -2510,6 +2589,7 @@ export function App() {
           onDelete={deleteScene}
           onOptimizer={() => navigate({ view: "optimizer" })}
           onDataCenter={() => navigate({ view: "data" })}
+          onTopology={() => void openTopologyEditor()}
           onVisionCenter={() => navigate({ view: "vision" })}
           onUploadModels={uploadModels}
           onDeleteModel={deleteModel}

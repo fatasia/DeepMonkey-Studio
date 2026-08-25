@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-main",
+  "description": "Minimum privileges for the bundled Dev Studio main window.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-get-server-profile",
+    "allow-set-server-profile",
+    "allow-clear-server-profile"
+  ]
+}

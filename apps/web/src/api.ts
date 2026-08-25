@@ -1,18 +1,17 @@
 import type { AiAssistantResponse, AiProviderSettings, ApplicationDocument, AuditLogRecord, DataConnectionRecord, DataDatasetPreview, DataDatasetRecord, DataEndpointDefinition, DataEndpointSaveResult, DataPipelineDefinition, DataPipelinePreview, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, RevitRuntimeInfo, RvtConversionMode, SceneSnapshot, ServiceHealthRecord, ServiceLogRecord, SystemBrandingSettings, SystemUserRecord, VisionEventRecord, VisionInferenceResponse, VisionModelManifest, VisionModelPreset, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
 import { ServerClient } from "@bim-studio/server-sdk";
-import { BrowserHostAdapter } from "./adapters/browserHostAdapter.js";
+import { runtimeHost } from "./adapters/runtimeHost.js";
 
-const browserHost = new BrowserHostAdapter(window);
 const serverClient = new ServerClient({
-  profile: browserHost.getServerProfile(),
-  authStore: browserHost,
-  onUnauthorized: () => browserHost.notifyUnauthorized()
+  profile: () => runtimeHost.getServerProfile(),
+  authStore: runtimeHost,
+  onUnauthorized: () => runtimeHost.notifyUnauthorized()
 });
 
-export function getAuthToken() { return browserHost.getAccessToken(); }
+export function getAuthToken() { return runtimeHost.getAccessToken(); }
 export function setAuthToken(token?: string, remember = true) {
-  if (token) browserHost.setAccessToken(token, remember);
-  else browserHost.clearAccessToken();
+  if (token) runtimeHost.setAccessToken(token, remember);
+  else runtimeHost.clearAccessToken();
 }
 
 const request = <T>(url: string, init?: RequestInit) => serverClient.request<T>(url, init);

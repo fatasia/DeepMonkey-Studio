@@ -74,11 +74,18 @@ export interface DashboardPageAppearance {
   borderRadius?: number;
 }
 
+export const DASHBOARD_PAGE_MIN_SIZE = 320;
+export const DASHBOARD_PAGE_MAX_SIZE = 16_384;
+export type DashboardViewportFit = "contain" | "cover" | "stretch" | "fixed";
+
 export interface DashboardPageDocument {
   id: string;
   name: string;
-  width: 1920;
-  height: 1080;
+  /** Logical design resolution, independent from the editor viewport size. */
+  width: number;
+  height: number;
+  /** How the published page adapts its logical resolution to the display. */
+  viewportFit: DashboardViewportFit;
   appearance?: DashboardPageAppearance;
   nodes: WidgetNode[];
 }

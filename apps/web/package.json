@@ -18,6 +18,7 @@
     "@bim-studio/scene-sdk": "workspace:*",
     "@bim-studio/server-sdk": "workspace:*",
     "@bim-studio/studio-core": "workspace:*",
+    "@tauri-apps/api": "2.11.1",
     "@dimforge/rapier3d-compat": "0.19.3",
     "@gltf-transform/core": "4.4.2",
     "@gltf-transform/extensions": "4.4.2",

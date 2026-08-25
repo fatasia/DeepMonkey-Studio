@@ -13,6 +13,7 @@
     "name": "主页面",
     "width": 1920,
     "height": 1080,
+    "viewportFit": "contain",
     "nodes": [{
       "id": "widget-scene-main",
       "kind": "scene-viewport",

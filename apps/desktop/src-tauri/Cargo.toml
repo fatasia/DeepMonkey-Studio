@@ -1,0 +1,19 @@
+[package]
+name = "bim-studio-desktop"
+version = "0.1.0"
+description = "Thin Tauri host for Dev Studio"
+authors = ["BIM Studio"]
+edition = "2024"
+
+[lib]
+name = "bim_studio_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.11.5", features = [] }
+url = "2"

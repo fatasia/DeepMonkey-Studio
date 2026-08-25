@@ -18,7 +18,7 @@ export interface AuthStore {
 }
 
 export interface ServerClientOptions {
-  profile: ServerProfile;
+  profile: ServerProfile | (() => Awaitable<ServerProfile>);
   authStore: AuthStore;
   fetch?: typeof globalThis.fetch;
   onUnauthorized?: () => void;
@@ -32,7 +32,10 @@ export class ServerClient {
   }
 
   async open(path: string, init?: RequestInit): Promise<Response> {
-    const url = resolveApiUrl(path, this.options.profile.baseUrl);
+    const profile = typeof this.options.profile === "function"
+      ? await this.options.profile()
+      : this.options.profile;
+    const url = resolveApiUrl(path, profile.baseUrl);
     const headers = new Headers(init?.headers);
     const token = await this.options.authStore.getAccessToken();
     if (token) headers.set("authorization", `Bearer ${token}`);
