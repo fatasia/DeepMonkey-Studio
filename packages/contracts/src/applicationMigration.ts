@@ -75,6 +75,8 @@ export function migrateSceneSnapshotV1(snapshot: SceneSnapshot): ApplicationDocu
     scripts: migratedInteractions.map((flow) => ({
       id: `script:${flow.id}`,
       name: flow.name,
+      apiVersion: "1.0",
+      entrypoint: "behavior",
       runtime: "legacy-trusted-main-thread",
       code: flow.legacyScript?.script.code ?? "",
       capabilities: ["legacy.viewer", "legacy.three", "legacy.browser"]

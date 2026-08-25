@@ -88,6 +88,18 @@ const malformedCases: MalformedCase[] = [
     value.interactions[0]!.legacyScript!.script.code = 42 as never;
   })],
   ["script", () => altered(interactionApplication, (value) => { value.scripts[0]!.capabilities = [false as never]; })],
+  ["script api version missing", () => altered(interactionApplication, (value) => {
+    Reflect.deleteProperty(value.scripts[0]!, "apiVersion");
+  })],
+  ["script api version", () => altered(interactionApplication, (value) => {
+    Reflect.set(value.scripts[0]!, "apiVersion", "1.1");
+  })],
+  ["script entrypoint missing", () => altered(interactionApplication, (value) => {
+    Reflect.deleteProperty(value.scripts[0]!, "entrypoint");
+  })],
+  ["script entrypoint", () => altered(interactionApplication, (value) => {
+    Reflect.set(value.scripts[0]!, "entrypoint", "module");
+  })],
   ["asset", () => altered(pureApplication, (value) => {
     value.assets = [{ id: "asset-1", kind: "model", projectId: "project-golden", sourceFormat: "obj" as never }];
   })],

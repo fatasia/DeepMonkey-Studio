@@ -86,7 +86,15 @@ export interface InteractionFlow {
   };
 }
 
-export interface ScriptModule { id: string; name: string; runtime: "worker-sandbox" | "legacy-trusted-main-thread"; code: string; capabilities: string[]; }
+export interface ScriptModule {
+  id: string;
+  name: string;
+  apiVersion: "1.0";
+  entrypoint: "behavior";
+  runtime: "worker-sandbox" | "legacy-trusted-main-thread";
+  code: string;
+  capabilities: string[];
+}
 export interface AssetEntry { id: string; kind: "model" | "image" | "video" | "environment"; projectId: string; sourceName?: string; sourceFormat?: ModelFormat; contentHash?: string; }
 export interface TimelineDocument { id: string; name: string; duration: number; trackIds: string[]; }
 export interface PublicationProfile { id: string; name: string; target: "browser-preview" | "server-web"; entryPageId: string; renderer: "webgl2" | "auto"; }

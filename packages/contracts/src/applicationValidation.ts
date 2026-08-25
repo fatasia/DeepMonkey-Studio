@@ -487,6 +487,8 @@ function validateScript(value: unknown, path: string): void {
   const object = expectObject(value, path);
   required(object, "id", expectString, path);
   required(object, "name", expectString, path);
+  requiredLiteral(object, "apiVersion", ["1.0"], path);
+  requiredLiteral(object, "entrypoint", ["behavior"], path);
   requiredLiteral(object, "runtime", ["worker-sandbox", "legacy-trusted-main-thread"], path);
   required(object, "code", expectString, path);
   required(object, "capabilities", validateStringArray, path);
