@@ -1,4 +1,4 @@
-import type { ApplicationDocument, WidgetFrame } from "@bim-studio/contracts";
+import type { ApplicationDocument, InteractionFlow, WidgetFrame } from "@bim-studio/contracts";
 
 let nextCommandId = 1;
 
@@ -36,10 +36,26 @@ export interface UpdateDashboardNodeFrameCommand {
   };
 }
 
+export interface UpsertInteractionFlowCommand {
+  readonly id: string;
+  readonly type: "interaction.flow.upsert";
+  readonly label: string;
+  readonly payload: { readonly flow: InteractionFlow };
+}
+
+export interface DeleteInteractionFlowCommand {
+  readonly id: string;
+  readonly type: "interaction.flow.delete";
+  readonly label: string;
+  readonly payload: { readonly flowId: string };
+}
+
 export type StudioCommand =
   | RenameApplicationCommand
   | RenameDashboardPageCommand
-  | UpdateDashboardNodeFrameCommand;
+  | UpdateDashboardNodeFrameCommand
+  | UpsertInteractionFlowCommand
+  | DeleteInteractionFlowCommand;
 
 export function createRenameApplicationCommand(name: string): RenameApplicationCommand {
   return {
@@ -72,6 +88,24 @@ export function createUpdateDashboardNodeFrameCommand(
   };
 }
 
+export function createUpsertInteractionFlowCommand(flow: InteractionFlow): UpsertInteractionFlowCommand {
+  return {
+    id: commandId(),
+    type: "interaction.flow.upsert",
+    label: `更新联动“${flow.name}”`,
+    payload: { flow: structuredClone(flow) }
+  };
+}
+
+export function createDeleteInteractionFlowCommand(flowId: string): DeleteInteractionFlowCommand {
+  return {
+    id: commandId(),
+    type: "interaction.flow.delete",
+    label: "删除联动",
+    payload: { flowId }
+  };
+}
+
 export function applyStudioCommand(document: ApplicationDocument, command: StudioCommand): ApplicationDocument {
   switch (command.type) {
     case "application.rename":
@@ -101,6 +135,21 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
           : candidate)
       };
     }
+    case "interaction.flow.upsert": {
+      const flow = structuredClone(command.payload.flow);
+      const exists = document.interactions.some((candidate) => candidate.id === flow.id);
+      return {
+        ...document,
+        interactions: exists
+          ? document.interactions.map((candidate) => candidate.id === flow.id ? flow : candidate)
+          : [...document.interactions, flow]
+      };
+    }
+    case "interaction.flow.delete":
+      return {
+        ...document,
+        interactions: document.interactions.filter((flow) => flow.id !== command.payload.flowId)
+      };
   }
 }
 

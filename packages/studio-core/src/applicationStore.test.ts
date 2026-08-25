@@ -6,6 +6,8 @@ import {
   applyStudioCommand,
   createRenameApplicationCommand,
   createRenameDashboardPageCommand,
+  createDeleteInteractionFlowCommand,
+  createUpsertInteractionFlowCommand,
   createUpdateDashboardNodeFrameCommand
 } from "./index.js";
 
@@ -73,6 +75,28 @@ describe("StudioCommand", () => {
 
     expect(() => applyStudioCommand(source, createRenameDashboardPageCommand("missing", "名称"))).toThrow("应用中不存在页面");
     expect(() => applyStudioCommand(source, createUpdateDashboardNodeFrameCommand(page.id, "missing", { x: 0, y: 0, width: 10, height: 10 }))).toThrow("不存在组件");
+  });
+
+  it("upserts and removes interaction flows without cloning unrelated scene state", () => {
+    const source = document();
+    const flow = {
+      id: "flow:line-focus",
+      name: "产线定位",
+      source: { kind: "widget", id: source.pages[0]!.nodes[0]!.id } as const,
+      trigger: "click" as const,
+      enabled: true,
+      actions: [{ id: "focus", type: "focus" as const, enabled: true, target: { kind: "object" as const, modelId: "machine:1" } }]
+    };
+
+    const added = applyStudioCommand(source, createUpsertInteractionFlowCommand(flow));
+    const renamed = applyStudioCommand(added, createUpsertInteractionFlowCommand({ ...flow, name: "定位设备" }));
+    const removed = applyStudioCommand(renamed, createDeleteInteractionFlowCommand(flow.id));
+
+    expect(added.interactions).toContainEqual(flow);
+    expect(renamed.interactions).toHaveLength(1);
+    expect(renamed.interactions[0]?.name).toBe("定位设备");
+    expect(removed.interactions).toHaveLength(0);
+    expect(added.scenes).toBe(source.scenes);
   });
 });
 

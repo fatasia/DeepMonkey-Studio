@@ -23,6 +23,7 @@ import {
 import { translate as tr, type AppLocale } from "../i18n";
 import { normalizeDashboardViewState, type DashboardViewState } from "../studio/workspaceRoute";
 import { SceneViewportPreview } from "./SceneViewportPreview";
+import { InteractionFlowInspector } from "./InteractionFlowInspector";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 
 export interface DashboardWorkspaceProps {
@@ -43,7 +44,7 @@ export interface DashboardWorkspaceProps {
   onOpenData: () => void;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
-  onNodeInteraction: (nodeId: string) => void;
+  onNodeInteraction: (nodeId: string, trigger?: SceneInteractionTrigger) => void;
   onCommand: (command: StudioCommand) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -204,6 +205,7 @@ export function DashboardWorkspace({
           <div className="dashboard-frame-grid">{(["x", "y", "width", "height"] as const).map((field) => <label key={field}><span>{field.toUpperCase()}</span><input type="number" value={selectedNode.frame[field]} onChange={(event) => updateSelectedFrame(field, Number(event.target.value))} /></label>)}</div>
         </section>
         {selectedNode.kind === "scene-viewport" && <section className="dashboard-inspector-section"><div className="dashboard-readonly-property"><span>{tr(locale, "三维场景", "3D scene")}</span><strong>{sceneName(application, selectedNode.sceneId)}</strong></div><div className="dashboard-readonly-property"><span>{tr(locale, "渲染方式", "Render mode")}</span><strong>{selectedNode.renderMode}</strong></div><button className="dashboard-enter-scene" onClick={() => onEnterScene(selectedNode.sceneId, currentView())}><Box size={15} />{tr(locale, "进入三维编辑", "Open 3D editor")}</button></section>}
+        <InteractionFlowInspector locale={locale} application={application} source={{ kind: "widget", id: selectedNode.id }} onCommand={onCommand} onTest={(trigger) => onNodeInteraction(selectedNode.id, trigger)} />
       </> : <div className="dashboard-no-selection"><Layers3 size={24} /><span>{tr(locale, "选择页面中的组件以编辑属性", "Select a component on the page to edit its properties")}</span></div>}
     </aside>
   </main>;

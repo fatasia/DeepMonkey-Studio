@@ -1994,8 +1994,8 @@ export function App() {
     }
   }
 
-  function dispatchDashboardNodeInteraction(nodeId: string) {
-    dispatchApplicationInteraction({ kind: "widget", id: nodeId }, "click", false);
+  function dispatchDashboardNodeInteraction(nodeId: string, trigger: SceneInteractionTrigger = "click") {
+    dispatchApplicationInteraction({ kind: "widget", id: nodeId }, trigger, false);
   }
 
   function dispatchSceneObjectInteraction(sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) {
