@@ -30,3 +30,4 @@ tools/revit-worker/build/
 tools/revit-worker/publish/
 *.log
 .DS_Store
+.superpowers/
