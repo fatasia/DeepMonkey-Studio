@@ -15,6 +15,7 @@
   "dependencies": {
     "@bim-studio/contracts": "workspace:*",
     "@bim-studio/data-runtime": "workspace:*",
+    "@bim-studio/docs-runtime": "workspace:*",
     "@bim-studio/scene-sdk": "workspace:*",
     "@bim-studio/server-sdk": "workspace:*",
     "@bim-studio/studio-core": "workspace:*",

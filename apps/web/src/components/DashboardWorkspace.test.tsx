@@ -54,6 +54,7 @@ describe("DashboardWorkspace", () => {
       onBack={() => undefined}
       onSelectPage={() => undefined}
       onEnterScene={() => undefined}
+      onOpenTopology={() => undefined}
       onOpenData={() => undefined}
       onSelectionChange={() => undefined}
       onObjectInteraction={() => undefined}

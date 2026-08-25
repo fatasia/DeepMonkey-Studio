@@ -104,6 +104,7 @@ export interface DashboardWorkspaceProps {
   onBack: () => void;
   onSelectPage: (pageId: string, view: DashboardViewState) => void;
   onEnterScene: (sceneId: string, view: DashboardViewState) => void;
+  onOpenTopology: () => void;
   onOpenData: () => void;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
@@ -132,6 +133,7 @@ export function DashboardWorkspace({
   onBack,
   onSelectPage,
   onEnterScene,
+  onOpenTopology,
   onOpenData,
   onSelectionChange,
   onObjectInteraction,
@@ -634,7 +636,7 @@ export function DashboardWorkspace({
       <div className="dashboard-workspace-title"><LayoutDashboard size={17} /><div><strong>{application.metadata.name}</strong><span>{dirty ? tr(locale, "有未保存修改", "Unsaved changes") : tr(locale, "所有修改已保存", "All changes saved")}</span></div></div>
       <nav className="workspace-mode-switch" aria-label={tr(locale, "编辑模式", "Editor mode")}>
         <button className="active"><LayoutDashboard size={14} />{tr(locale, "二维设计", "2D design")}</button>
-        <button disabled title={tr(locale, "M5 提供独立拓扑编辑器", "The topology editor arrives in M5")}><Workflow size={14} />{tr(locale, "拓扑", "Topology")}</button>
+        <button onClick={onOpenTopology}><Workflow size={14} />{tr(locale, "拓扑", "Topology")}</button>
         <button onClick={() => application.scenes[0] && onEnterScene(application.scenes[0].id, currentView())}><Box size={14} />{tr(locale, "三维场景", "3D scenes")}</button>
         <button onClick={onOpenData}><Database size={14} />{tr(locale, "数据", "Data")}</button>
         <button onClick={() => setRuntimePreview(true)}><Eye size={14} />{tr(locale, "预览", "Preview")}</button>

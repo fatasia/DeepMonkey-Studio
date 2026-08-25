@@ -50,6 +50,7 @@ export default function DashboardVisualQa() {
     onBack={() => undefined}
     onSelectPage={() => undefined}
     onEnterScene={() => undefined}
+    onOpenTopology={() => undefined}
     onOpenData={() => undefined}
     onSelectionChange={setSelection}
     onObjectInteraction={() => undefined}

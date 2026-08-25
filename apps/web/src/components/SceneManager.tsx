@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Box, CalendarDays, Copy, Database, Eye, ExternalLink, FileImage, FileUp, FileVideo, Gauge, Image as ImageIcon, Layers3, Network, Pencil, Plus, RefreshCw, Rocket, ScanSearch, Search, Trash2, Undo2, Video, X } from "lucide-react";
+import { BookOpen, Box, CalendarDays, Copy, Database, Eye, ExternalLink, FileImage, FileUp, FileVideo, Gauge, Image as ImageIcon, Layers3, Network, Pencil, Plus, RefreshCw, Rocket, ScanSearch, Search, Trash2, Undo2, Video, X } from "lucide-react";
 import type { ConversionStatus, ModelRecord, ProjectAssetRecord, ProjectRecord, SceneSnapshot, SystemBrandingSettings } from "@bim-studio/contracts";
 import { SceneExportMenu } from "./SceneExportMenu";
 import type { AppLocale } from "../i18n";
@@ -38,6 +38,7 @@ interface SceneManagerProps {
   onDataCenter: () => void;
   onTopology: () => void;
   onVisionCenter: () => void;
+  onDocs: () => void;
   onUploadModels: (files: FileList) => Promise<void>;
   onDeleteModel: (model: ModelRecord) => Promise<void>;
   onRefreshModels: () => Promise<void>;
@@ -71,6 +72,7 @@ export function SceneManager({
   onDataCenter,
   onTopology,
   onVisionCenter,
+  onDocs,
   onUploadModels,
   onDeleteModel,
   onRefreshModels
@@ -227,6 +229,7 @@ export function SceneManager({
           <button className="button" disabled={!project} onClick={onDataCenter}><Database size={16} />{tr(locale, "数据中心", "Data center")}</button>
           <button className="button" disabled={!project} onClick={onTopology}><Network size={16} />{tr(locale, "拓扑", "Topology")}</button>
           <button className="button" disabled={!project} onClick={onVisionCenter}><ScanSearch size={16} />{tr(locale, "视觉中心", "Vision")}</button>
+          <button className="button" onClick={onDocs}><BookOpen size={16} />{tr(locale, "文档", "Docs")}</button>
           <button className="button" onClick={onOptimizer}><Gauge size={16} />{tr(locale, "模型优化", "Optimize")}</button>
           <button className="button" onClick={onImport}><FileUp size={16} />{tr(locale, "导入场景", "Import scene")}</button>
           <button className="button primary" onClick={openCreateDialog}><Plus size={17} />{tr(locale, "新建场景", "New scene")}</button>

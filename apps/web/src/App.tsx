@@ -103,6 +103,7 @@ import {
   type StudioCommand
 } from "@bim-studio/studio-core";
 import { api, getAuthToken, setAuthToken } from "./api";
+import { isDesktopRuntime } from "./adapters/runtimeHost";
 import { LayerTree } from "./components/LayerTree";
 import { SceneManager } from "./components/SceneManager";
 import { SceneExportMenu } from "./components/SceneExportMenu";
@@ -145,6 +146,7 @@ import {
   type DashboardReturnContext,
   type DashboardViewState
 } from "./studio/workspaceRoute";
+import { docsPath, parseDocsPath } from "./docs/docsRoute";
 import {
   type BimPropertyEntry,
   type BimSpaceRecord,
@@ -236,14 +238,16 @@ const DataCenter = lazy(() => import("./components/DataCenter").then((module) =>
 const SystemCenter = lazy(() => import("./components/SystemCenter").then((module) => ({ default: module.SystemCenter })));
 const BrandingSettingsPage = lazy(() => import("./components/BrandingSettingsPage").then((module) => ({ default: module.BrandingSettingsPage })));
 const VisionCenter = lazy(() => import("./components/VisionCenter").then((module) => ({ default: module.VisionCenter })));
+const DocsCenter = lazy(() => import("./components/DocsCenter").then((module) => ({ default: module.DocsCenter })));
 
 interface AppRoute {
-  view: "manager" | "dashboard" | "studio" | "topology" | "optimizer" | "data" | "vision" | "system" | "branding" | "view" | "published";
+  view: "manager" | "dashboard" | "studio" | "topology" | "optimizer" | "data" | "vision" | "docs" | "system" | "branding" | "view" | "published";
   sceneId?: string;
   projectId?: string;
   applicationId?: string;
   pageId?: string;
   topologyId?: string;
+  documentId?: string;
   dashboardView?: DashboardViewState;
   dashboardReturn?: DashboardReturnContext;
 }
@@ -261,6 +265,8 @@ function readRoute(): AppRoute {
     ...workspace,
     ...(historyState.dashboardReturn ? { dashboardReturn: historyState.dashboardReturn } : {})
   };
+  const docsLocation = parseDocsPath(window.location.pathname);
+  if (docsLocation) return { view: "docs", ...docsLocation };
   if (window.location.pathname === "/optimizer") return { view: "optimizer" };
   if (window.location.pathname === "/data") return { view: "data" };
   if (window.location.pathname === "/vision") return { view: "vision" };
@@ -279,6 +285,7 @@ function readRoute(): AppRoute {
 }
 
 function routePath(route: AppRoute): string {
+  if (route.view === "docs") return docsPath(route.documentId);
   if (route.view === "dashboard" && route.projectId && route.applicationId && route.pageId) {
     return studioWorkspacePath({ kind: "dashboard", projectId: route.projectId, applicationId: route.applicationId, pageId: route.pageId });
   }
@@ -558,6 +565,20 @@ export function App() {
     setRoute(next);
   }
 
+  function openDocs(documentId?: string, sectionId?: string) {
+    const next: AppRoute = { view: "docs", ...(documentId ? { documentId } : {}) };
+    window.history.pushState(routeHistoryState(next), "", docsPath(documentId, sectionId));
+    setRoute(next);
+  }
+
+  function closeDocs() {
+    if (isDesktopRuntime()) {
+      window.location.assign("/manager");
+      return;
+    }
+    navigate({ view: "manager" });
+  }
+
   function replaceDashboardView(view: DashboardViewState) {
     if (route.view !== "dashboard") return;
     const next = { ...route, dashboardView: view };
@@ -758,7 +779,11 @@ export function App() {
   }, [engine, infoEnabled]);
 
   useEffect(() => {
-    if (window.location.pathname !== "/manager" && window.location.pathname !== "/optimizer" && window.location.pathname !== "/data" && window.location.pathname !== "/vision" && window.location.pathname !== "/system" && window.location.pathname !== "/branding" && !/^\/(studio|view|published)\//.test(window.location.pathname)) {
+    const pathname = window.location.pathname;
+    const recognizedWorkspace = Boolean(parseStudioWorkspacePath(pathname));
+    const recognizedTopology = /^\/projects\/[^/]+\/applications\/[^/]+\/topologies\/[^/]+$/.test(pathname);
+    const recognizedDocs = Boolean(parseDocsPath(pathname));
+    if (pathname !== "/manager" && pathname !== "/optimizer" && pathname !== "/data" && pathname !== "/vision" && pathname !== "/system" && pathname !== "/branding" && !/^\/(studio|view|published)\//.test(pathname) && !recognizedWorkspace && !recognizedTopology && !recognizedDocs) {
       window.history.replaceState({}, "", "/manager");
       setRoute({ view: "manager" });
     }
@@ -1995,19 +2020,21 @@ export function App() {
     }
   }
 
-  async function openTopologyEditor(): Promise<void> {
+  async function openTopologyEditor(preferredApplication?: ApplicationDocument): Promise<void> {
     if (!project) return;
     setBusy(true);
     try {
-      const applications = await api.listApplications(project.id);
-      const application = applications[0] ?? (scenes[0] ? await ensureApplicationForScene(scenes[0]) : undefined);
+      const applications = preferredApplication ? [] : await api.listApplications(project.id);
+      const application = preferredApplication ?? applications[0] ?? (scenes[0] ? await ensureApplicationForScene(scenes[0]) : undefined);
       if (!application) throw new Error("请先创建一个场景，使项目拥有可保存的应用文档");
-      applicationSessionRef.current.openDocument(application);
-      let topology = application.topologies[0];
+      const current = applicationSessionRef.current.store.getState().document;
+      if (!current || current.metadata.id !== application.metadata.id) applicationSessionRef.current.openDocument(application);
+      let topology = applicationSessionRef.current.store.getState().document?.topologies[0];
       if (!topology) {
         topology = { id: crypto.randomUUID(), name: `${project.name}拓扑`, nodes: [], edges: [] };
         dispatchApplicationCommand(createUpsertTopologyCommand(topology));
       }
+      if (applicationSessionRef.current.store.getState().dirty && !await saveActiveApplication()) return;
       navigate({ view: "topology", projectId: project.id, applicationId: application.metadata.id, topologyId: topology.id });
       setMessage(`已打开“${topology.name}”拓扑编辑`);
     } catch (reason) {
@@ -2509,6 +2536,7 @@ export function App() {
     }
   }
 
+  if (route.view === "docs") return <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />正在加载使用文档</div>}><DocsCenter {...(route.documentId ? { documentId: route.documentId } : {})} onNavigate={openDocs} onClose={closeDocs} /></Suspense>;
   if (!authReady) return <div className="app-auth-loading"><LoaderCircle className="spin" size={24} />正在验证本地会话</div>;
   if (!currentUser) return <LoginPage branding={branding} locale={locale} onLogin={setCurrentUser} />;
 
@@ -2536,6 +2564,7 @@ export function App() {
           dashboardView: { ...view, selectedNodeIds: [] }
         })}
         onEnterScene={enterSceneFromDashboard}
+        onOpenTopology={() => void openTopologyEditor(activeApplication)}
         onOpenData={() => navigate({ view: "data" })}
         onSelectionChange={(selection) => applicationSessionRef.current.store.setSelection(selection)}
         onObjectInteraction={dispatchSceneObjectInteraction}
@@ -2553,7 +2582,7 @@ export function App() {
         document={activeTopology}
         dataProducts={topologyDataProducts}
         onChange={(topology) => dispatchApplicationCommand(createUpsertTopologyCommand(topology))}
-        onClose={() => void saveActiveApplication().finally(() => navigate({ view: "manager" }))}
+        onClose={() => void saveActiveApplication().then((saved) => { if (saved) navigate({ view: "manager" }); })}
         onError={(message) => showError(new Error(message))}
       />}
       {route.view === "topology" && !activeTopology && <div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载拓扑编辑器", "Loading topology editor")}</div>}
@@ -2591,6 +2620,7 @@ export function App() {
           onDataCenter={() => navigate({ view: "data" })}
           onTopology={() => void openTopologyEditor()}
           onVisionCenter={() => navigate({ view: "vision" })}
+          onDocs={() => openDocs()}
           onUploadModels={uploadModels}
           onDeleteModel={deleteModel}
           onRefreshModels={refreshProject}
