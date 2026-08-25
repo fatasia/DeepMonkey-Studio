@@ -4,9 +4,11 @@ import {
   Box,
   Database,
   Eye,
+  EyeOff,
   GripVertical,
   Layers3,
   LayoutDashboard,
+  Lock,
   Minus,
   Plus,
   Redo2,
@@ -14,17 +16,20 @@ import {
   Save,
   Scaling,
   Undo2,
+  Unlock,
   Workflow,
   X
 } from "lucide-react";
 import type { ApplicationDocument, ApplicationObjectRef, DashboardDataWidgetConfig, DashboardPageDocument, JsonValue, ProjectRecord, SceneDashboardWidgetType, SceneInteractionTarget, SceneInteractionTrigger, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 import {
-  createDeleteDashboardNodeCommand,
+  createDeleteDashboardNodesCommand,
   createInsertDashboardNodeCommand,
+  createInsertDashboardNodesCommand,
   createRenameDashboardPageCommand,
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
+  createUpdateDashboardNodeStateCommand,
   type ApplicationInteractionResult,
   type StudioCommand
 } from "@bim-studio/studio-core";
@@ -99,6 +104,7 @@ export function DashboardWorkspace({
   const [draftFrames, setDraftFrames] = useState<Record<string, WidgetFrame>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
+  const clipboardRef = useRef<WidgetNode[]>([]);
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
   const dataWidgetConfigs = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
   const { metrics, connected } = useDashboardMetrics(project.id, dataWidgetConfigs);
@@ -164,7 +170,7 @@ export function DashboardWorkspace({
   }
 
   function updateSelectedFrame(field: keyof WidgetFrame, value: number) {
-    if (!selectedNode || !Number.isFinite(value)) return;
+    if (!selectedNode || selectedNode.locked || !Number.isFinite(value)) return;
     const next = {
       ...selectedNode.frame,
       [field]: field === "width" || field === "height" ? Math.max(1, Math.round(value)) : Math.round(value)
@@ -173,10 +179,12 @@ export function DashboardWorkspace({
   }
 
   function beginNodeTransform(event: ReactPointerEvent<HTMLButtonElement>, node: WidgetNode, mode: "move" | "resize") {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || node.locked) return;
     event.preventDefault();
     event.stopPropagation();
-    const nodeIds = mode === "move" && selectedNodeIds.includes(node.id) ? selectedNodeIds : [node.id];
+    const nodeIds = mode === "move" && selectedNodeIds.includes(node.id)
+      ? page.nodes.filter((candidate) => selectedNodeIds.includes(candidate.id) && candidate.locked !== true).map((candidate) => candidate.id)
+      : [node.id];
     const initial = new Map(page.nodes.filter((candidate) => nodeIds.includes(candidate.id)).map((candidate) => [candidate.id, structuredClone(candidate.frame)]));
     const startX = event.clientX;
     const startY = event.clientY;
@@ -225,6 +233,101 @@ export function DashboardWorkspace({
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", cancel);
   }
+
+  function copySelectedNodes() {
+    clipboardRef.current = page.nodes.filter((node) => selectedNodeIds.includes(node.id)).map((node) => structuredClone(node));
+  }
+
+  function pasteCopiedNodes() {
+    if (clipboardRef.current.length === 0 || busy) return;
+    const topZIndex = Math.max(0, ...page.nodes.map((node) => node.zIndex));
+    const nodes = clipboardRef.current.map((source, index): WidgetNode => ({
+      ...structuredClone(source),
+      id: `${source.kind}:${crypto.randomUUID()}`,
+      frame: {
+        ...source.frame,
+        x: Math.min(page.width - source.frame.width, Math.max(0, source.frame.x + 24)),
+        y: Math.min(page.height - source.frame.height, Math.max(0, source.frame.y + 24))
+      },
+      zIndex: topZIndex + index + 1,
+      visible: true,
+      locked: false
+    }));
+    clipboardRef.current = nodes.map((node) => structuredClone(node));
+    onCommand(createInsertDashboardNodesCommand(page.id, nodes));
+    const ids = nodes.map((node) => node.id);
+    setSelectedNodeIds(ids);
+    onSelectionChange(ids.map((id) => ({ kind: "widget", id })));
+  }
+
+  function deleteSelectedNodes() {
+    if (busy) return;
+    const nodeIds = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.locked !== true).map((node) => node.id);
+    if (nodeIds.length === 0) return;
+    onCommand(createDeleteDashboardNodesCommand(page.id, nodeIds));
+    const remaining = selectedNodeIds.filter((id) => !nodeIds.includes(id));
+    setSelectedNodeIds(remaining);
+    onSelectionChange(remaining.map((id) => ({ kind: "widget", id })));
+  }
+
+  function nudgeSelectedNodes(dx: number, dy: number) {
+    if (busy) return;
+    const frames = page.nodes
+      .filter((node) => selectedNodeIds.includes(node.id) && node.locked !== true)
+      .map((node) => ({
+        nodeId: node.id,
+        frame: {
+          ...node.frame,
+          x: Math.max(0, Math.min(page.width - node.frame.width, node.frame.x + dx)),
+          y: Math.max(0, Math.min(page.height - node.frame.height, node.frame.y + dy))
+        }
+      }))
+      .filter(({ nodeId, frame }) => {
+        const original = page.nodes.find((node) => node.id === nodeId)!.frame;
+        return frame.x !== original.x || frame.y !== original.y;
+      });
+    if (frames.length > 0) onCommand(createUpdateDashboardNodeFramesCommand(page.id, frames));
+  }
+
+  useEffect(() => {
+    if (runtimePreview) return;
+    const handleShortcut = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+      const key = event.key.toLowerCase();
+      const commandKey = event.ctrlKey || event.metaKey;
+      if (commandKey && key === "a") {
+        event.preventDefault();
+        const ids = page.nodes.filter((node) => node.visible !== false).map((node) => node.id);
+        setSelectedNodeIds(ids);
+        onSelectionChange(ids.map((id) => ({ kind: "widget", id })));
+        return;
+      }
+      if (commandKey && key === "c") { event.preventDefault(); copySelectedNodes(); return; }
+      if (commandKey && key === "v") { event.preventDefault(); pasteCopiedNodes(); return; }
+      if (commandKey && key === "d") { event.preventDefault(); copySelectedNodes(); pasteCopiedNodes(); return; }
+      if (commandKey && key === "s") { event.preventDefault(); if (!busy) onSave(); return; }
+      if (commandKey && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey ? canRedo : canUndo) (event.shiftKey ? onRedo : onUndo)();
+        return;
+      }
+      if (commandKey && key === "y") { event.preventDefault(); if (canRedo) onRedo(); return; }
+      if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); deleteSelectedNodes(); return; }
+      if (event.key === "Escape") {
+        setSelectedNodeIds([]);
+        onSelectionChange([]);
+        return;
+      }
+      const step = event.shiftKey ? 10 : 1;
+      if (event.key === "ArrowLeft") { event.preventDefault(); nudgeSelectedNodes(-step, 0); }
+      if (event.key === "ArrowRight") { event.preventDefault(); nudgeSelectedNodes(step, 0); }
+      if (event.key === "ArrowUp") { event.preventDefault(); nudgeSelectedNodes(0, -step); }
+      if (event.key === "ArrowDown") { event.preventDefault(); nudgeSelectedNodes(0, step); }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [page, selectedNodeIds, runtimePreview, busy, canUndo, canRedo, onSelectionChange, onCommand, onSave, onUndo, onRedo]);
 
   function commitPageName(value: string) {
     const name = value.trim();
@@ -287,19 +390,23 @@ export function DashboardWorkspace({
       </section>
       <section>
         <div className="dashboard-panel-label"><span>{tr(locale, "图层", "Layers")}</span><small>{page.nodes.length}</small></div>
-        {[...page.nodes].sort((left, right) => right.zIndex - left.zIndex).map((node) => <button key={node.id} className={selectedNodeIds.includes(node.id) ? "active" : ""} onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey)}>{node.kind === "scene-viewport" ? <Box size={14} /> : <Layers3 size={14} />}<span>{nodeLabel(node)}</span><small>{node.zIndex}</small></button>)}
+        {[...page.nodes].sort((left, right) => right.zIndex - left.zIndex).map((node) => <div className={`dashboard-layer-row ${selectedNodeIds.includes(node.id) ? "active" : ""} ${node.visible === false ? "hidden" : ""}`} key={node.id}>
+          <button className="dashboard-layer-select" onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey)}>{node.kind === "scene-viewport" ? <Box size={14} /> : <Layers3 size={14} />}<span>{nodeLabel(node)}</span><small>{node.zIndex}</small></button>
+          <button className="dashboard-layer-action" title={node.visible === false ? tr(locale, "显示图层", "Show layer") : tr(locale, "隐藏图层", "Hide layer")} onClick={() => onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { visible: node.visible === false }))}>{node.visible === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+          <button className={`dashboard-layer-action ${node.locked ? "active" : ""}`} title={node.locked ? tr(locale, "解锁图层", "Unlock layer") : tr(locale, "锁定图层", "Lock layer")} onClick={() => onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { locked: !node.locked }))}>{node.locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
+        </div>)}
       </section>
     </aside>
 
     <section className="dashboard-design-surface">
       <div className="dashboard-canvas-toolbar">
-        <span>{page.width} × {page.height}</span>
+        <span>{page.width} × {page.height}<small>{tr(locale, "方向键微调 · Shift 10px · Ctrl/Cmd+C/V/D", "Arrows nudge · Shift 10px · Ctrl/Cmd+C/V/D")}</small></span>
         <div><button onClick={() => setZoom((value) => Math.max(0.1, Number((value - 0.1).toFixed(2))))}><Minus size={13} /></button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => Math.min(2, Number((value + 0.1).toFixed(2))))}><Plus size={13} /></button></div>
       </div>
       <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
         <div className="dashboard-artboard-stage" style={{ width: page.width * zoom, height: page.height * zoom }}>
           <div className="dashboard-artboard" style={{ width: page.width, height: page.height, transform: `scale(${zoom})` }}>
-            {page.nodes.map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} frame={draftFrames[node.id] ?? node.frame} metric={node.kind === "data-widget" ? runtimeMetrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} onTransformStart={(event, mode) => beginNodeTransform(event, node, mode)} />)}
+            {page.nodes.filter((node) => node.visible !== false).map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} frame={draftFrames[node.id] ?? node.frame} metric={node.kind === "data-widget" ? runtimeMetrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} onTransformStart={(event, mode) => beginNodeTransform(event, node, mode)} />)}
           </div>
         </div>
       </div>
@@ -313,7 +420,7 @@ export function DashboardWorkspace({
       {selectedNode ? <>
         <section className="dashboard-inspector-section">
           <div className="dashboard-selection-heading"><span>{selectedNode.kind === "scene-viewport" ? <Box size={15} /> : <Layers3 size={15} />}</span><div><strong>{nodeLabel(selectedNode)}</strong><small>{selectedNode.id}</small></div></div>
-          <div className="dashboard-frame-grid">{(["x", "y", "width", "height"] as const).map((field) => <label key={field}><span>{field.toUpperCase()}</span><input type="number" value={selectedNode.frame[field]} onChange={(event) => updateSelectedFrame(field, Number(event.target.value))} /></label>)}</div>
+          <div className="dashboard-frame-grid">{(["x", "y", "width", "height"] as const).map((field) => <label key={field}><span>{field.toUpperCase()}</span><input type="number" disabled={selectedNode.locked === true} value={selectedNode.frame[field]} onChange={(event) => updateSelectedFrame(field, Number(event.target.value))} /></label>)}</div>
         </section>
         {selectedNode.kind === "scene-viewport" && <section className="dashboard-inspector-section"><div className="dashboard-readonly-property"><span>{tr(locale, "三维场景", "3D scene")}</span><strong>{sceneName(application, selectedNode.sceneId)}</strong></div><div className="dashboard-readonly-property"><span>{tr(locale, "渲染方式", "Render mode")}</span><strong>{selectedNode.renderMode}</strong></div><button className="dashboard-enter-scene" onClick={() => onEnterScene(selectedNode.sceneId, currentView())}><Box size={15} />{tr(locale, "进入三维编辑", "Open 3D editor")}</button></section>}
         {selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
@@ -322,8 +429,8 @@ export function DashboardWorkspace({
           <label><span>{tr(locale, "数据键", "Data key")}</span><input defaultValue={selectedNode.widget.key} key={`${selectedNode.id}:key:${selectedNode.widget.key}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.key) updateDataWidget({ key: event.currentTarget.value }); }} /></label>
           <label><span>{tr(locale, "单位", "Unit")}</span><input defaultValue={selectedNode.widget.unit} key={`${selectedNode.id}:unit:${selectedNode.widget.unit}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.unit) updateDataWidget({ unit: event.currentTarget.value }); }} /></label>
           <label><span>{tr(locale, "强调色", "Accent")}</span><input type="color" value={selectedNode.widget.color ?? "#d4a84f"} onChange={(event) => updateDataWidget({ color: event.target.value })} /></label>
-          <button className="dashboard-delete-node" onClick={() => { onCommand(createDeleteDashboardNodeCommand(page.id, selectedNode.id)); setSelectedNodeIds([]); onSelectionChange([]); }}><Minus size={13} />{tr(locale, "删除组件", "Delete component")}</button>
         </section>}
+        <section className="dashboard-inspector-section"><button className="dashboard-delete-node" disabled={!page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.locked !== true)} onClick={deleteSelectedNodes}><Minus size={13} />{selectedNodeIds.length > 1 ? tr(locale, "删除未锁定的所选组件", "Delete unlocked selection") : selectedNode.locked ? tr(locale, "图层已锁定", "Layer locked") : tr(locale, "删除组件", "Delete component")}</button></section>
         <InteractionFlowInspector locale={locale} application={application} source={{ kind: "widget", id: selectedNode.id }} onCommand={onCommand} onTest={(trigger) => onNodeInteraction(selectedNode.id, trigger)} />
       </> : <div className="dashboard-no-selection"><Layers3 size={24} /><span>{tr(locale, "选择页面中的组件以编辑属性", "Select a component on the page to edit its properties")}</span></div>}
     </aside>
@@ -356,7 +463,7 @@ function DashboardRuntimePreview({ locale, application, project, page, rendererB
   }, [page.width, page.height]);
   return <main className="dashboard-runtime-preview">
     <header><div><Eye size={16} /><span><strong>{application.metadata.name}</strong><small>{page.name} · {connected ? tr(locale, "实时数据", "Live data") : tr(locale, "离线预览", "Offline preview")}</small></span></div><div><span>{Math.round(scale * 100)}%</span><button onClick={onClose}><X size={15} />{tr(locale, "退出预览", "Exit preview")}</button></div></header>
-    <section ref={surfaceRef}><div className="dashboard-runtime-stage" style={{ width: page.width * scale, height: page.height * scale }}><div className="dashboard-artboard dashboard-runtime-artboard" style={{ width: page.width, height: page.height, transform: `scale(${scale})` }}>{page.nodes.map((node) => <DashboardNode key={node.id} runtime application={application} project={project} node={node} frame={node.frame} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={false} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={() => undefined} onEnterScene={() => undefined} onTransformStart={() => undefined} />)}</div></div></section>
+    <section ref={surfaceRef}><div className="dashboard-runtime-stage" style={{ width: page.width * scale, height: page.height * scale }}><div className="dashboard-artboard dashboard-runtime-artboard" style={{ width: page.width, height: page.height, transform: `scale(${scale})` }}>{page.nodes.filter((node) => node.visible !== false).map((node) => <DashboardNode key={node.id} runtime application={application} project={project} node={node} frame={node.frame} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={false} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={() => undefined} onEnterScene={() => undefined} onTransformStart={() => undefined} />)}</div></div></section>
   </main>;
 }
 
@@ -389,12 +496,12 @@ function DashboardNode({ application, project, node, frame, metric, selected, lo
       {scene && node.renderMode !== "static-placeholder"
         ? <SceneViewportPreview locale={locale} node={node} scene={scene} project={project} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={(trigger, target) => onObjectInteraction(scene.id, trigger, target)} />
         : <div className="dashboard-scene-grid" />}
-      {!runtime && <><div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small><button onClick={(event) => { event.stopPropagation(); onEnterScene(node.sceneId); }}>{tr(locale, "进入三维编辑", "Open 3D editor")}</button></div><div className="dashboard-node-badge">3D · {node.renderMode}</div><NodeTransformHandles selected={selected} onTransformStart={onTransformStart} /></>}
+      {!runtime && <><div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small><button onClick={(event) => { event.stopPropagation(); onEnterScene(node.sceneId); }}>{tr(locale, "进入三维编辑", "Open 3D editor")}</button></div><div className="dashboard-node-badge">3D · {node.renderMode}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
     </article>;
   }
   if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? "runtime" : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4" }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")}>
     <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />
-    {!runtime && <><div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div><NodeTransformHandles selected={selected} onTransformStart={onTransformStart} /></>}
+    {!runtime && <><div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
   </article>;
   return null;
 }

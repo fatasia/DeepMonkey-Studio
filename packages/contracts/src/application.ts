@@ -36,6 +36,8 @@ export interface SceneViewportWidgetNode {
   kind: "scene-viewport";
   frame: WidgetFrame;
   zIndex: number;
+  visible?: boolean;
+  locked?: boolean;
   sceneId: string;
   cameraViewId?: string;
   renderMode: "realtime" | "load-on-interaction" | "static-placeholder";
@@ -54,6 +56,8 @@ export interface DashboardDataWidgetNode {
   kind: "data-widget";
   frame: WidgetFrame;
   zIndex: number;
+  visible?: boolean;
+  locked?: boolean;
   widget: DashboardDataWidgetConfig;
 }
 

@@ -67,6 +67,31 @@ export interface InsertDashboardNodeCommand {
   readonly payload: { readonly pageId: string; readonly node: WidgetNode };
 }
 
+export interface InsertDashboardNodesCommand {
+  readonly id: string;
+  readonly type: "dashboard.nodes.insert";
+  readonly label: string;
+  readonly payload: { readonly pageId: string; readonly nodes: readonly WidgetNode[] };
+}
+
+export interface DeleteDashboardNodesCommand {
+  readonly id: string;
+  readonly type: "dashboard.nodes.delete";
+  readonly label: string;
+  readonly payload: { readonly pageId: string; readonly nodeIds: readonly string[] };
+}
+
+export interface UpdateDashboardNodeStateCommand {
+  readonly id: string;
+  readonly type: "dashboard.node.state.update";
+  readonly label: string;
+  readonly payload: {
+    readonly pageId: string;
+    readonly nodeId: string;
+    readonly state: { readonly visible?: boolean; readonly locked?: boolean };
+  };
+}
+
 export interface UpdateDashboardDataWidgetCommand {
   readonly id: string;
   readonly type: "dashboard.data-widget.update";
@@ -89,6 +114,9 @@ export type StudioCommand =
   | UpsertInteractionFlowCommand
   | DeleteInteractionFlowCommand
   | InsertDashboardNodeCommand
+  | InsertDashboardNodesCommand
+  | DeleteDashboardNodesCommand
+  | UpdateDashboardNodeStateCommand
   | UpdateDashboardDataWidgetCommand
   | DeleteDashboardNodeCommand;
 
@@ -159,6 +187,37 @@ export function createInsertDashboardNodeCommand(pageId: string, node: WidgetNod
     type: "dashboard.node.insert",
     label: "添加二维组件",
     payload: { pageId, node: structuredClone(node) }
+  };
+}
+
+export function createInsertDashboardNodesCommand(pageId: string, nodes: readonly WidgetNode[]): InsertDashboardNodesCommand {
+  return {
+    id: commandId(),
+    type: "dashboard.nodes.insert",
+    label: `粘贴 ${nodes.length} 个二维组件`,
+    payload: { pageId, nodes: structuredClone(nodes) }
+  };
+}
+
+export function createDeleteDashboardNodesCommand(pageId: string, nodeIds: readonly string[]): DeleteDashboardNodesCommand {
+  return {
+    id: commandId(),
+    type: "dashboard.nodes.delete",
+    label: `删除 ${nodeIds.length} 个二维组件`,
+    payload: { pageId, nodeIds: [...nodeIds] }
+  };
+}
+
+export function createUpdateDashboardNodeStateCommand(
+  pageId: string,
+  nodeId: string,
+  state: { visible?: boolean; locked?: boolean }
+): UpdateDashboardNodeStateCommand {
+  return {
+    id: commandId(),
+    type: "dashboard.node.state.update",
+    label: state.locked === true ? "锁定二维组件" : state.locked === false ? "解锁二维组件" : state.visible === false ? "隐藏二维组件" : "显示二维组件",
+    payload: { pageId, nodeId, state: { ...state } }
   };
 }
 
@@ -246,6 +305,42 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
       return updatePage(document, page.id, (candidate) => ({
         ...candidate,
         nodes: [...candidate.nodes, structuredClone(command.payload.node)]
+      }));
+    }
+    case "dashboard.nodes.insert": {
+      const page = requirePage(document, command.payload.pageId);
+      const nodeIds = new Set(command.payload.nodes.map((node) => node.id));
+      if (nodeIds.size !== command.payload.nodes.length) throw new Error("待插入的二维组件 ID 重复");
+      for (const nodeId of nodeIds) {
+        if (page.nodes.some((node) => node.id === nodeId)) throw new Error(`页面 ${page.id} 中已存在组件 ${nodeId}`);
+      }
+      return updatePage(document, page.id, (candidate) => ({
+        ...candidate,
+        nodes: [...candidate.nodes, ...structuredClone(command.payload.nodes)]
+      }));
+    }
+    case "dashboard.nodes.delete": {
+      const page = requirePage(document, command.payload.pageId);
+      const nodeIds = new Set(command.payload.nodeIds);
+      for (const nodeId of nodeIds) {
+        if (!page.nodes.some((node) => node.id === nodeId)) throw new Error(`页面 ${page.id} 中不存在组件 ${nodeId}`);
+      }
+      return {
+        ...updatePage(document, page.id, (candidate) => ({
+          ...candidate,
+          nodes: candidate.nodes.filter((node) => !nodeIds.has(node.id))
+        })),
+        interactions: document.interactions.filter((flow) => !(flow.source.kind === "widget" && nodeIds.has(flow.source.id)))
+      };
+    }
+    case "dashboard.node.state.update": {
+      const page = requirePage(document, command.payload.pageId);
+      if (!page.nodes.some((node) => node.id === command.payload.nodeId)) {
+        throw new Error(`页面 ${page.id} 中不存在组件 ${command.payload.nodeId}`);
+      }
+      return updatePage(document, page.id, (candidate) => ({
+        ...candidate,
+        nodes: candidate.nodes.map((node) => node.id === command.payload.nodeId ? { ...node, ...command.payload.state } : node)
       }));
     }
     case "dashboard.data-widget.update": {

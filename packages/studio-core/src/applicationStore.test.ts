@@ -8,11 +8,14 @@ import {
   createRenameDashboardPageCommand,
   createDeleteInteractionFlowCommand,
   createDeleteDashboardNodeCommand,
+  createDeleteDashboardNodesCommand,
   createInsertDashboardNodeCommand,
+  createInsertDashboardNodesCommand,
   createUpsertInteractionFlowCommand,
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
-  createUpdateDashboardNodeFramesCommand
+  createUpdateDashboardNodeFramesCommand,
+  createUpdateDashboardNodeStateCommand
 } from "./index.js";
 
 function document() {
@@ -89,6 +92,27 @@ describe("StudioCommand", () => {
     expect(store.getState().document?.pages[0]?.nodes.map((node) => node.frame.x)).toEqual([100, 120]);
     expect(store.undo()).toBe(true);
     expect(store.getState().document?.pages[0]?.nodes.map((node) => node.frame.x)).toEqual([first.frame.x, 20]);
+  });
+
+  it("pastes, locks, hides, and deletes dashboard nodes with undoable commands", () => {
+    const source = document();
+    const page = source.pages[0]!;
+    const originals = page.nodes.length;
+    const copies = [
+      { ...structuredClone(page.nodes[0]!), id: "copy:1", locked: false },
+      { ...structuredClone(page.nodes[0]!), id: "copy:2", visible: true }
+    ];
+    const store = new ApplicationStore(source);
+
+    store.dispatch(createInsertDashboardNodesCommand(page.id, copies));
+    store.dispatch(createUpdateDashboardNodeStateCommand(page.id, copies[0]!.id, { locked: true, visible: false }));
+    expect(store.getState().document?.pages[0]?.nodes).toHaveLength(originals + 2);
+    expect(store.getState().document?.pages[0]?.nodes.find((node) => node.id === copies[0]!.id)).toMatchObject({ locked: true, visible: false });
+
+    store.dispatch(createDeleteDashboardNodesCommand(page.id, copies.map((node) => node.id)));
+    expect(store.getState().document?.pages[0]?.nodes).toHaveLength(originals);
+    expect(store.undo()).toBe(true);
+    expect(store.getState().document?.pages[0]?.nodes).toHaveLength(originals + 2);
   });
 
   it("rejects dashboard commands that target missing pages or nodes", () => {
