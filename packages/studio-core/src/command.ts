@@ -60,6 +60,13 @@ export interface UpdateDashboardNodeFramesCommand {
   };
 }
 
+export interface UpdateDashboardNodeOrderCommand {
+  readonly id: string;
+  readonly type: "dashboard.node.order.update";
+  readonly label: string;
+  readonly payload: { readonly pageId: string; readonly order: ReadonlyArray<{ readonly nodeId: string; readonly zIndex: number }> };
+}
+
 export interface UpsertInteractionFlowCommand {
   readonly id: string;
   readonly type: "interaction.flow.upsert";
@@ -144,6 +151,7 @@ export type StudioCommand =
   | DeleteDashboardPageCommand
   | UpdateDashboardNodeFrameCommand
   | UpdateDashboardNodeFramesCommand
+  | UpdateDashboardNodeOrderCommand
   | UpsertInteractionFlowCommand
   | DeleteInteractionFlowCommand
   | InsertDashboardNodeCommand
@@ -208,6 +216,10 @@ export function createUpdateDashboardNodeFramesCommand(
     label: frames.length > 1 ? `移动 ${frames.length} 个二维组件` : "调整二维组件位置与尺寸",
     payload: { pageId, frames: structuredClone(frames) }
   };
+}
+
+export function createUpdateDashboardNodeOrderCommand(pageId: string, order: ReadonlyArray<{ nodeId: string; zIndex: number }>): UpdateDashboardNodeOrderCommand {
+  return { id: commandId(), type: "dashboard.node.order.update", label: "调整二维图层顺序", payload: { pageId, order: structuredClone(order) } };
 }
 
 export function createUpsertInteractionFlowCommand(flow: InteractionFlow): UpsertInteractionFlowCommand {
@@ -363,6 +375,17 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
           const frame = frames.get(node.id);
           return frame ? { ...node, frame: { ...frame } } : node;
         })
+      }));
+    }
+    case "dashboard.node.order.update": {
+      const page = requirePage(document, command.payload.pageId);
+      const order = new Map(command.payload.order.map((entry) => [entry.nodeId, entry.zIndex]));
+      for (const nodeId of order.keys()) {
+        if (!page.nodes.some((node) => node.id === nodeId)) throw new Error(`页面 ${page.id} 中不存在组件 ${nodeId}`);
+      }
+      return updatePage(document, page.id, (candidate) => ({
+        ...candidate,
+        nodes: candidate.nodes.map((node) => order.has(node.id) ? { ...node, zIndex: order.get(node.id)! } : node)
       }));
     }
     case "interaction.flow.upsert": {

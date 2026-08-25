@@ -17,6 +17,7 @@ import {
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
+  createUpdateDashboardNodeOrderCommand,
   createUpdateDashboardNodeStateCommand,
   createUpdateDashboardNodeStatesCommand
 } from "./index.js";
@@ -110,6 +111,19 @@ describe("StudioCommand", () => {
     expect(store.getState().document?.pages[0]?.nodes.map((node) => node.frame.x)).toEqual([100, 120]);
     expect(store.undo()).toBe(true);
     expect(store.getState().document?.pages[0]?.nodes.map((node) => node.frame.x)).toEqual([first.frame.x, 20]);
+  });
+
+  it("reorders dashboard layers as one undoable command", () => {
+    const source = document();
+    const page = source.pages[0]!;
+    const first = page.nodes[0]!;
+    const second = { ...structuredClone(first), id: "second-layer", zIndex: 1 };
+    page.nodes.push(second);
+    const store = new ApplicationStore(source);
+    store.dispatch(createUpdateDashboardNodeOrderCommand(page.id, [{ nodeId: first.id, zIndex: 1 }, { nodeId: second.id, zIndex: 0 }]));
+    expect(store.getState().document?.pages[0]?.nodes.map((node) => node.zIndex)).toEqual([1, 0]);
+    expect(store.undo()).toBe(true);
+    expect(store.getState().document?.pages[0]?.nodes.map((node) => node.zIndex)).toEqual([first.zIndex, 1]);
   });
 
   it("pastes, locks, hides, and deletes dashboard nodes with undoable commands", () => {

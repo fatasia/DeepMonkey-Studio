@@ -33,6 +33,7 @@ import {
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
+  createUpdateDashboardNodeOrderCommand,
   createUpdateDashboardNodeStateCommand,
   createUpdateDashboardNodeStatesCommand,
   alignDashboardFrames,
@@ -117,9 +118,11 @@ export function DashboardWorkspace({
   const [marqueeMode, setMarqueeMode] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("content");
+  const [componentSearch, setComponentSearch] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
   const clipboardRef = useRef<WidgetNode[]>([]);
+  const componentSearchRef = useRef<HTMLInputElement>(null);
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
   const layoutSelectionCount = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.visible !== false && node.locked !== true).length;
   const dataWidgetConfigs = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
@@ -349,6 +352,27 @@ export function DashboardWorkspace({
     onCommand(createUpdateDashboardNodeStatesCommand(page.id, nodes.map((node) => ({ nodeId: node.id, state: { groupId: null } })), `解组 ${nodes.length} 个二维组件`));
   }
 
+  function reorderSelectedNodes(direction: "front" | "forward" | "backward" | "back") {
+    const selected = new Set(page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.locked !== true).map((node) => node.id));
+    if (selected.size === 0) return;
+    const ordered = [...page.nodes].sort((left, right) => left.zIndex - right.zIndex);
+    if (direction === "front" || direction === "back") {
+      const picked = ordered.filter((node) => selected.has(node.id));
+      const rest = ordered.filter((node) => !selected.has(node.id));
+      ordered.splice(0, ordered.length, ...(direction === "front" ? [...rest, ...picked] : [...picked, ...rest]));
+    } else if (direction === "forward") {
+      for (let index = ordered.length - 2; index >= 0; index -= 1) {
+        if (selected.has(ordered[index]!.id) && !selected.has(ordered[index + 1]!.id)) [ordered[index], ordered[index + 1]] = [ordered[index + 1]!, ordered[index]!];
+      }
+    } else {
+      for (let index = 1; index < ordered.length; index += 1) {
+        if (selected.has(ordered[index]!.id) && !selected.has(ordered[index - 1]!.id)) [ordered[index - 1], ordered[index]] = [ordered[index]!, ordered[index - 1]!];
+      }
+    }
+    const order = ordered.map((node, zIndex) => ({ nodeId: node.id, zIndex })).filter(({ nodeId, zIndex }) => page.nodes.find((node) => node.id === nodeId)!.zIndex !== zIndex);
+    if (order.length > 0) onCommand(createUpdateDashboardNodeOrderCommand(page.id, order));
+  }
+
   function beginMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || (!marqueeMode && !event.shiftKey && event.target !== event.currentTarget)) return;
     event.preventDefault();
@@ -408,6 +432,12 @@ export function DashboardWorkspace({
       if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
       const key = event.key.toLowerCase();
       const commandKey = event.ctrlKey || event.metaKey;
+      if (commandKey && key === "f") { event.preventDefault(); componentSearchRef.current?.focus(); return; }
+      if (commandKey && (key === "]" || key === "[")) {
+        event.preventDefault();
+        reorderSelectedNodes(key === "]" ? event.shiftKey ? "front" : "forward" : event.shiftKey ? "back" : "backward");
+        return;
+      }
       if (commandKey && key === "a") {
         event.preventDefault();
         const ids = page.nodes.filter((node) => node.visible !== false && node.selectable !== false).map((node) => node.id);
@@ -548,7 +578,8 @@ export function DashboardWorkspace({
       </section>
       <section className="dashboard-component-library">
         <div className="dashboard-panel-label"><span>{tr(locale, "组件", "Components")}</span><small>{connected ? tr(locale, "实时", "Live") : tr(locale, "离线", "Offline")}</small></div>
-        <div>{DATA_WIDGET_TYPES.map((type) => <button key={type} onClick={() => addDataWidget(type)}><Plus size={11} /><span>{dataWidgetTypeLabel(locale, type)}</span></button>)}</div>
+        <input ref={componentSearchRef} className="dashboard-component-search" aria-label={tr(locale, "搜索组件", "Search components")} value={componentSearch} onChange={(event) => setComponentSearch(event.target.value)} placeholder={tr(locale, "搜索组件 · Ctrl+F", "Search · Ctrl+F")} />
+        <div>{DATA_WIDGET_TYPES.filter((type) => dataWidgetTypeLabel(locale, type).toLocaleLowerCase().includes(componentSearch.trim().toLocaleLowerCase())).map((type) => <button key={type} onClick={() => addDataWidget(type)}><Plus size={11} /><span>{dataWidgetTypeLabel(locale, type)}</span></button>)}</div>
       </section>
       <section>
         <div className="dashboard-panel-label"><span>{tr(locale, "图层", "Layers")}</span><small>{page.nodes.length}</small></div>
@@ -604,6 +635,7 @@ export function DashboardWorkspace({
         {inspectorTab === "content" && <>
           <section className="dashboard-inspector-section">
             <div className="dashboard-frame-grid">{(["x", "y", "width", "height"] as const).map((field) => <label key={field}><span>{field.toUpperCase()}</span><input type="number" disabled={selectedNode.locked === true} value={selectedNode.frame[field]} onChange={(event) => updateSelectedFrame(field, Number(event.target.value))} /></label>)}</div>
+            <div className="dashboard-layer-order-actions"><button disabled={selectedNode.locked === true} onClick={() => reorderSelectedNodes("back")}>{tr(locale, "置底", "To back")}</button><button disabled={selectedNode.locked === true} onClick={() => reorderSelectedNodes("backward")}>{tr(locale, "下移", "Backward")}</button><button disabled={selectedNode.locked === true} onClick={() => reorderSelectedNodes("forward")}>{tr(locale, "上移", "Forward")}</button><button disabled={selectedNode.locked === true} onClick={() => reorderSelectedNodes("front")}>{tr(locale, "置顶", "To front")}</button></div>
           </section>
           {selectedNode.kind === "scene-viewport" && <section className="dashboard-inspector-section"><div className="dashboard-readonly-property"><span>{tr(locale, "三维场景", "3D scene")}</span><strong>{sceneName(application, selectedNode.sceneId)}</strong></div><div className="dashboard-readonly-property"><span>{tr(locale, "渲染方式", "Render mode")}</span><strong>{selectedNode.renderMode}</strong></div><button className="dashboard-enter-scene" onClick={() => onEnterScene(selectedNode.sceneId, currentView())}><Box size={15} />{tr(locale, "进入三维编辑", "Open 3D editor")}</button></section>}
           {selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
