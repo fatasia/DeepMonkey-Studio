@@ -1,9 +1,16 @@
-import type { ApplicationDocument, ApplicationObjectRef } from "@bim-studio/contracts";
+import type { ApplicationDocument, ApplicationObjectRef, JsonValue } from "@bim-studio/contracts";
 import { applyStudioCommand, type StudioCommand } from "./command.js";
+import {
+  evaluateApplicationInteraction,
+  type ApplicationInteractionEffect,
+  type ApplicationInteractionEvent
+} from "./interactionRuntime.js";
 
 export interface ApplicationState {
   readonly document?: ApplicationDocument;
   readonly selection: readonly ApplicationObjectRef[];
+  readonly variables: Readonly<Record<string, JsonValue>>;
+  readonly filters: Readonly<Record<string, JsonValue>>;
   readonly dirty: boolean;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
@@ -35,6 +42,8 @@ function freezeRecursively<T>(value: T): T {
 export class ApplicationStore {
   private document?: ApplicationDocument;
   private selection: ApplicationObjectRef[] = [];
+  private variables: Record<string, JsonValue> = {};
+  private filters: Record<string, JsonValue> = {};
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
   private listeners = new Set<Listener>();
@@ -49,6 +58,8 @@ export class ApplicationStore {
     return Object.freeze({
       ...(this.document ? { document: immutableClone(this.document) } : {}),
       selection: immutableClone(this.selection),
+      variables: immutableClone(this.variables),
+      filters: immutableClone(this.filters),
       dirty: this.undoStack.length > 0,
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0
@@ -63,6 +74,8 @@ export class ApplicationStore {
   load(document: ApplicationDocument): void {
     this.document = structuredClone(document);
     this.selection = [];
+    this.variables = Object.fromEntries(document.data.variables.map((variable) => [variable.id, structuredClone(variable.value)]));
+    this.filters = {};
     this.undoStack = [];
     this.redoStack = [];
     this.emit();
@@ -109,6 +122,26 @@ export class ApplicationStore {
   setSelection(selection: readonly ApplicationObjectRef[]): void {
     this.selection = structuredClone([...selection]);
     this.emit();
+  }
+
+  setVariable(id: string, value: JsonValue): void {
+    this.variables[id] = structuredClone(value);
+    this.emit();
+  }
+
+  setFilter(id: string, value: JsonValue | undefined): void {
+    if (value === undefined) delete this.filters[id];
+    else this.filters[id] = structuredClone(value);
+    this.emit();
+  }
+
+  dispatchInteraction(event: ApplicationInteractionEvent): readonly ApplicationInteractionEffect[] {
+    if (!this.document) throw new Error("没有已打开的应用文档");
+    const result = evaluateApplicationInteraction(this.document, event);
+    if (result.selection) this.selection = structuredClone([...result.selection]);
+    for (const [id, value] of Object.entries(result.variableUpdates)) this.variables[id] = structuredClone(value);
+    if (result.selection || Object.keys(result.variableUpdates).length > 0) this.emit();
+    return immutableClone(result.effects);
   }
 
   private emit(): void {

@@ -112,6 +112,48 @@ describe("ApplicationStore", () => {
     unsubscribe();
   });
 
+  it("shares transient selection, variables, and filters without dirtying the document", () => {
+    const source = document();
+    source.data.variables = [{ id: "temperature", value: 21 }];
+    const store = new ApplicationStore(source);
+
+    store.setSelection([{ kind: "widget", id: source.pages[0]!.nodes[0]!.id }]);
+    store.setVariable("temperature", 24);
+    store.setFilter("line", "A");
+
+    expect(store.getState()).toMatchObject({
+      dirty: false,
+      variables: { temperature: 24 },
+      filters: { line: "A" }
+    });
+    expect(() => { store.getState().variables.temperature = 30; }).toThrow();
+    expect(store.getState().document?.data.variables[0]?.value).toBe(21);
+  });
+
+  it("dispatches interaction data into shared runtime state and returns immutable host effects", () => {
+    const source = document();
+    const widget = { kind: "widget", id: source.pages[0]!.nodes[0]!.id } as const;
+    source.interactions = [{
+      id: "flow:one",
+      name: "二维控制三维",
+      source: widget,
+      trigger: "click",
+      enabled: true,
+      actions: [
+        { id: "data", type: "setData", enabled: true, dataKey: "selectedLine", value: "A" },
+        { id: "focus", type: "focus", enabled: true }
+      ]
+    }];
+    const store = new ApplicationStore(source);
+
+    const effects = store.dispatchInteraction({ source: widget, trigger: "click", timestamp: "2026-08-25T00:00:00.000Z" });
+
+    expect(store.getState().selection).toEqual([widget]);
+    expect(store.getState().variables).toMatchObject({ selectedLine: "A" });
+    expect(effects).toEqual([expect.objectContaining({ action: expect.objectContaining({ type: "focus" }) })]);
+    expect(() => (effects as unknown[]).push({})).toThrow();
+  });
+
   it("clears redo history when dispatching after an undo", () => {
     const store = new ApplicationStore(document());
 

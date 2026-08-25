@@ -14,7 +14,7 @@ import {
   Undo2,
   Workflow
 } from "lucide-react";
-import type { ApplicationDocument, DashboardPageDocument, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
+import type { ApplicationDocument, ApplicationObjectRef, DashboardPageDocument, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 import {
   createRenameDashboardPageCommand,
   createUpdateDashboardNodeFrameCommand,
@@ -32,10 +32,13 @@ export interface DashboardWorkspaceProps {
   canUndo: boolean;
   canRedo: boolean;
   busy: boolean;
+  selection: readonly ApplicationObjectRef[];
   onBack: () => void;
   onSelectPage: (pageId: string, view: DashboardViewState) => void;
   onEnterScene: (sceneId: string, view: DashboardViewState) => void;
   onOpenData: () => void;
+  onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
+  onNodeInteraction: (nodeId: string) => void;
   onCommand: (command: StudioCommand) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -54,10 +57,13 @@ export function DashboardWorkspace({
   canUndo,
   canRedo,
   busy,
+  selection,
   onBack,
   onSelectPage,
   onEnterScene,
   onOpenData,
+  onSelectionChange,
+  onNodeInteraction,
   onCommand,
   onUndo,
   onRedo,
@@ -72,6 +78,11 @@ export function DashboardWorkspace({
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
+
+  useEffect(() => {
+    const widgetIds = selection.filter((item) => item.kind === "widget").map((item) => item.id);
+    if (widgetIds.length > 0) setSelectedNodeIds(widgetIds.filter((id) => page.nodes.some((node) => node.id === id)));
+  }, [selection, page.id]);
 
   useEffect(() => {
     setZoom(normalizedInitialView.zoom);
@@ -103,9 +114,14 @@ export function DashboardWorkspace({
   }
 
   function selectNode(node: WidgetNode, additive: boolean) {
-    setSelectedNodeIds((current) => additive
-      ? current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id]
-      : [node.id]);
+    setSelectedNodeIds((current) => {
+      const next = additive
+        ? current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id]
+        : [node.id];
+      onSelectionChange(next.map((id) => ({ kind: "widget", id })));
+      onNodeInteraction(node.id);
+      return next;
+    });
   }
 
   function updateSelectedFrame(field: keyof WidgetFrame, value: number) {
@@ -160,7 +176,7 @@ export function DashboardWorkspace({
         <span>{page.width} × {page.height}</span>
         <div><button onClick={() => setZoom((value) => Math.max(0.1, Number((value - 0.1).toFixed(2))))}><Minus size={13} /></button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => Math.min(2, Number((value + 0.1).toFixed(2))))}><Plus size={13} /></button></div>
       </div>
-      <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) setSelectedNodeIds([]); }}>
+      <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
         <div className="dashboard-artboard-stage" style={{ width: page.width * zoom, height: page.height * zoom }}>
           <div className="dashboard-artboard" style={{ width: page.width, height: page.height, transform: `scale(${zoom})` }}>
             {page.nodes.map((node) => <DashboardNode key={node.id} application={application} node={node} selected={selectedNodeIds.includes(node.id)} locale={locale} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} />)}

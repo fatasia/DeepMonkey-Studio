@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import type {
   ApplicationDocument,
+  ApplicationObjectRef,
   CameraConstraintsState,
   CameraState,
   CameraViewState,
@@ -424,6 +425,14 @@ export function App() {
   useEffect(() => applicationSessionRef.current.store.subscribe(() => {
     setApplicationRevision((value) => value + 1);
   }), []);
+
+  useEffect(() => {
+    if (route.view !== "studio" || !route.applicationId || !activeScene) return;
+    const selection: ApplicationObjectRef[] = selected
+      ? [{ kind: "object", sceneId: activeScene.id, modelId: selected.id }]
+      : [];
+    applicationSessionRef.current.store.setSelection(selection);
+  }, [route.view, route.applicationId, activeScene?.id, selected?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1953,6 +1962,22 @@ export function App() {
     }
   }
 
+  function dispatchDashboardNodeInteraction(nodeId: string) {
+    try {
+      const effects = applicationSessionRef.current.store.dispatchInteraction({
+        source: { kind: "widget", id: nodeId },
+        trigger: "click",
+        timestamp: new Date().toISOString(),
+        selectSource: false
+      });
+      for (const effect of effects) {
+        window.dispatchEvent(new CustomEvent("bim-studio:interaction-action", { detail: effect.action }));
+      }
+    } catch (reason) {
+      showError(reason);
+    }
+  }
+
   async function saveActiveApplication(): Promise<ApplicationDocument | undefined> {
     const document = applicationSessionRef.current.store.getState().document;
     if (!document) return;
@@ -2033,6 +2058,7 @@ export function App() {
         canUndo={applicationState.canUndo}
         canRedo={applicationState.canRedo}
         busy={busy}
+        selection={applicationState.selection}
         onBack={() => navigate({ view: "manager" })}
         onSelectPage={(pageId, view) => navigate({
           view: "dashboard",
@@ -2043,6 +2069,8 @@ export function App() {
         })}
         onEnterScene={enterSceneFromDashboard}
         onOpenData={() => navigate({ view: "data" })}
+        onSelectionChange={(selection) => applicationSessionRef.current.store.setSelection(selection)}
+        onNodeInteraction={dispatchDashboardNodeInteraction}
         onCommand={dispatchApplicationCommand}
         onUndo={() => applicationSessionRef.current.store.undo()}
         onRedo={() => applicationSessionRef.current.store.redo()}
