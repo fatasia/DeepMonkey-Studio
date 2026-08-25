@@ -26,10 +26,6 @@ const malformedCases: MalformedCase[] = [
     const node = value.pages[0]!.nodes[0]!;
     node.kind = "unknown" as never;
   })],
-  ["legacy dashboard widget", () => altered(dashboardApplication, (value) => {
-    const node = value.pages[0]!.nodes[1]!;
-    if (node.kind === "legacy-dashboard-panel") node.state.side = "center" as never;
-  })],
   ["native data widget", () => altered(pureApplication, (value) => {
     value.pages[0]!.nodes.push({
       id: "widget:invalid",

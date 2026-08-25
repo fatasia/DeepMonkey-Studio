@@ -1,8 +1,10 @@
-import type { ApplicationDocument, ApplicationObjectRef, DashboardPageDocument, InteractionFlow, SceneDocument } from "./application.js";
-import type { SceneInteractionTarget, SceneSnapshot } from "./index.js";
+import type { ApplicationDocument, ApplicationObjectRef, DashboardDataWidgetNode, DashboardPageDocument, InteractionFlow, SceneDocument } from "./application.js";
+import type { SceneDashboardState, SceneDashboardWidgetState, SceneInteractionTarget, SceneSnapshot } from "./index.js";
 
 const PAGE_WIDTH = 1920 as const;
 const PAGE_HEIGHT = 1080 as const;
+const DASHBOARD_ROW_HEIGHT = 90;
+const DASHBOARD_MARGIN = 6;
 
 export function migrateSceneSnapshotV1(snapshot: SceneSnapshot): ApplicationDocument {
   const source = structuredClone(snapshot);
@@ -14,6 +16,7 @@ export function migrateSceneSnapshotV1(snapshot: SceneSnapshot): ApplicationDocu
     name: `${source.name} 看板`,
     width: PAGE_WIDTH,
     height: PAGE_HEIGHT,
+    ...(dashboard ? { appearance: dashboardAppearance(dashboard) } : {}),
     nodes: [{
       id: `widget:scene:${source.id}`,
       kind: "scene-viewport",
@@ -27,18 +30,7 @@ export function migrateSceneSnapshotV1(snapshot: SceneSnapshot): ApplicationDocu
     }]
   };
   if (dashboard) {
-    page.nodes.push({
-      id: `widget:legacy-dashboard:${source.id}`,
-      kind: "legacy-dashboard-panel",
-      frame: {
-        x: dashboard.side === "left" ? 0 : PAGE_WIDTH - dashboard.width,
-        y: 0,
-        width: dashboard.width,
-        height: PAGE_HEIGHT
-      },
-      zIndex: 1,
-      state: dashboard
-    });
+    page.nodes.push(...dashboardWidgetsToNodes(dashboard));
   }
   const migratedInteractions: InteractionFlow[] = (interactions ?? []).map((script) => ({
     id: script.id,
@@ -101,7 +93,7 @@ export function applicationToSceneSnapshotV1(application: ApplicationDocument, s
   const scene = application.scenes.find((item) => item.id === sceneId);
   if (!scene) throw new Error(`应用中不存在场景 ${sceneId}`);
   const page = application.pages.find((item) => item.nodes.some((node) => node.kind === "scene-viewport" && node.sceneId === sceneId));
-  const dashboard = page?.nodes.find((node) => node.kind === "legacy-dashboard-panel")?.state;
+  const dashboard = page ? pageToSceneDashboard(page) : undefined;
   const legacyInteractions = application.interactions
     .filter((flow) => flow.legacyScript?.script)
     .map((flow) => structuredClone(flow.legacyScript!.script));
@@ -114,6 +106,60 @@ export function applicationToSceneSnapshotV1(application: ApplicationDocument, s
     ...(application.metadata.source?.publishedAt ? { publishedAt: application.metadata.source.publishedAt } : {}),
     createdAt: application.metadata.createdAt,
     updatedAt: application.metadata.updatedAt
+  };
+}
+
+function dashboardWidgetsToNodes(dashboard: SceneDashboardState): DashboardDataWidgetNode[] {
+  const panelX = dashboard.side === "left" ? 0 : PAGE_WIDTH - dashboard.width;
+  const columnWidth = dashboard.width / 2;
+  return dashboard.widgets.map((widget, index) => {
+    const { id, x, y, w, h, ...config } = widget;
+    return {
+      id,
+      kind: "data-widget",
+      frame: {
+        x: Math.round(panelX + x * columnWidth + DASHBOARD_MARGIN),
+        y: Math.round(y * DASHBOARD_ROW_HEIGHT + DASHBOARD_MARGIN),
+        width: Math.max(40, Math.round(w * columnWidth - DASHBOARD_MARGIN * 2)),
+        height: Math.max(40, Math.round(h * DASHBOARD_ROW_HEIGHT - DASHBOARD_MARGIN * 2))
+      },
+      zIndex: index + 1,
+      widget: config
+    };
+  });
+}
+
+function pageToSceneDashboard(page: DashboardPageDocument): SceneDashboardState | undefined {
+  const nodes = page.nodes.filter((node): node is DashboardDataWidgetNode => node.kind === "data-widget");
+  if (nodes.length === 0) return undefined;
+  const minimumX = Math.min(...nodes.map((node) => node.frame.x));
+  const maximumX = Math.max(...nodes.map((node) => node.frame.x + node.frame.width));
+  const side = minimumX < PAGE_WIDTH / 2 ? "left" as const : "right" as const;
+  const width = Math.max(320, Math.min(720, Math.round(side === "left" ? maximumX + DASHBOARD_MARGIN : PAGE_WIDTH - minimumX + DASHBOARD_MARGIN)));
+  const panelX = side === "left" ? 0 : PAGE_WIDTH - width;
+  const columnWidth = width / 2;
+  const widgets: SceneDashboardWidgetState[] = nodes.map((node) => ({
+    id: node.id,
+    ...structuredClone(node.widget),
+    x: Math.max(0, Math.min(1, Math.round((node.frame.x - panelX - DASHBOARD_MARGIN) / columnWidth))),
+    y: Math.max(0, Math.round((node.frame.y - DASHBOARD_MARGIN) / DASHBOARD_ROW_HEIGHT)),
+    w: Math.max(1, Math.round((node.frame.width + DASHBOARD_MARGIN * 2) / columnWidth)),
+    h: Math.max(1, Math.round((node.frame.height + DASHBOARD_MARGIN * 2) / DASHBOARD_ROW_HEIGHT))
+  }));
+  return {
+    side,
+    width,
+    ...structuredClone(page.appearance ?? {}),
+    widgets
+  };
+}
+
+function dashboardAppearance(dashboard: SceneDashboardState): NonNullable<DashboardPageDocument["appearance"]> {
+  return {
+    ...(dashboard.backgroundColor ? { backgroundColor: dashboard.backgroundColor } : {}),
+    ...(dashboard.backgroundOpacity === undefined ? {} : { backgroundOpacity: dashboard.backgroundOpacity }),
+    ...(dashboard.blur === undefined ? {} : { blur: dashboard.blur }),
+    ...(dashboard.borderRadius === undefined ? {} : { borderRadius: dashboard.borderRadius })
   };
 }
 

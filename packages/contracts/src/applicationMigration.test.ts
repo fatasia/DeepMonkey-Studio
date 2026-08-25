@@ -7,7 +7,7 @@ import { applicationToSceneSnapshotV1, migrateSceneSnapshotV1 } from "./applicat
 
 const fixtures = [pure3dFixture, dashboardFixture, interactionFixture] as unknown as SceneSnapshot[];
 
-describe("SceneSnapshot v1 compatibility", () => {
+describe("scene bridge to native ApplicationDocument", () => {
   it.each(fixtures.map((fixture) => [fixture.id, fixture] as const))
     ("round-trips %s through ApplicationDocument v2", (_id, snapshot) => {
       const application = migrateSceneSnapshotV1(snapshot);
@@ -15,13 +15,18 @@ describe("SceneSnapshot v1 compatibility", () => {
       expect(applicationToSceneSnapshotV1(application)).toEqual(snapshot);
     });
 
-  it("moves dashboard ownership to a page with a scene viewport", () => {
+  it("promotes dashboard widgets to first-class page nodes", () => {
     const application = migrateSceneSnapshotV1(dashboardFixture as SceneSnapshot);
     expect(application.pages).toHaveLength(1);
     expect(application.pages[0]?.nodes.map((node) => node.kind)).toEqual([
       "scene-viewport",
-      "legacy-dashboard-panel"
+      "data-widget"
     ]);
+    expect(application.pages[0]?.nodes[1]).toMatchObject({
+      id: "temperature",
+      kind: "data-widget",
+      widget: { title: "温度", type: "value", key: "temperature" }
+    });
     expect(application.scenes[0]).not.toHaveProperty("dashboard");
   });
 

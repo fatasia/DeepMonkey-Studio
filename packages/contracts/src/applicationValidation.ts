@@ -56,7 +56,14 @@ function validatePage(value: unknown, path: string): void {
   required(object, "name", expectString, path);
   requiredLiteral(object, "width", [1920], path);
   requiredLiteral(object, "height", [1080], path);
+  optional(object, "appearance", validateDashboardPageAppearance, path);
   required(object, "nodes", (nodes, nodesPath) => expectArray(nodes, nodesPath, validateWidgetNode), path);
+}
+
+function validateDashboardPageAppearance(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  optional(object, "backgroundColor", expectString, path);
+  for (const key of ["backgroundOpacity", "blur", "borderRadius"] as const) optional(object, key, expectNumber, path);
 }
 
 function validateWidgetNode(value: unknown, path: string): void {
@@ -72,10 +79,6 @@ function validateWidgetNode(value: unknown, path: string): void {
     requiredLiteral(object, "overlaySlot", ["page"], path);
     return;
   }
-  if (object.kind === "legacy-dashboard-panel") {
-    required(object, "state", validateDashboard, path);
-    return;
-  }
   if (object.kind === "data-widget") {
     required(object, "widget", validateDashboardWidgetConfig, path);
     return;
@@ -86,22 +89,6 @@ function validateWidgetNode(value: unknown, path: string): void {
 function validateWidgetFrame(value: unknown, path: string): void {
   const object = expectObject(value, path);
   for (const key of ["x", "y", "width", "height"] as const) required(object, key, expectNumber, path);
-}
-
-function validateDashboard(value: unknown, path: string): void {
-  const object = expectObject(value, path);
-  requiredLiteral(object, "side", ["left", "right"], path);
-  required(object, "width", expectNumber, path);
-  for (const key of ["backgroundColor"] as const) optional(object, key, expectString, path);
-  for (const key of ["backgroundOpacity", "blur", "borderRadius"] as const) optional(object, key, expectNumber, path);
-  required(object, "widgets", (widgets, widgetsPath) => expectArray(widgets, widgetsPath, validateDashboardWidget), path);
-}
-
-function validateDashboardWidget(value: unknown, path: string): void {
-  validateDashboardWidgetConfig(value, path);
-  const object = expectObject(value, path);
-  required(object, "id", expectString, path);
-  for (const key of ["x", "y", "w", "h"] as const) required(object, key, expectNumber, path);
 }
 
 function validateDashboardWidgetConfig(value: unknown, path: string): void {

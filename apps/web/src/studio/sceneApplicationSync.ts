@@ -24,13 +24,21 @@ export function syncSceneIntoApplication(
   if (sceneIndex >= 0) synced.scenes[sceneIndex] = sceneDocument;
   else synced.scenes.push(sceneDocument);
 
-  const dashboardState = sceneDraft.pages[0]?.nodes.find((node) => node.kind === "legacy-dashboard-panel");
-  if (dashboardState?.kind === "legacy-dashboard-panel") {
+  const dashboardWidgets = sceneDraft.pages[0]?.nodes.filter((node) => node.kind === "data-widget") ?? [];
+  if (dashboardWidgets.length > 0) {
+    const replacements = new Map(dashboardWidgets.map((node) => [node.id, node]));
     for (const page of synced.pages) {
       if (!page.nodes.some((node) => node.kind === "scene-viewport" && node.sceneId === snapshot.id)) continue;
-      for (const node of page.nodes) {
-        if (node.kind === "legacy-dashboard-panel") node.state = structuredClone(dashboardState.state);
-      }
+      const existingIds = new Set(page.nodes.map((node) => node.id));
+      page.nodes = [
+        ...page.nodes.map((node) => {
+          const replacement = replacements.get(node.id);
+          return replacement && node.kind === "data-widget"
+            ? { ...node, widget: structuredClone(replacement.widget) }
+            : node;
+        }),
+        ...dashboardWidgets.filter((node) => !existingIds.has(node.id)).map((node) => structuredClone(node))
+      ];
     }
   }
 

@@ -1,6 +1,5 @@
 import type {
   ModelFormat,
-  SceneDashboardState,
   SceneDashboardWidgetState,
   SceneInteractionActionState,
   SceneInteractionScriptState,
@@ -44,14 +43,6 @@ export interface SceneViewportWidgetNode {
   overlaySlot: "page";
 }
 
-export interface LegacyDashboardPanelWidgetNode {
-  id: string;
-  kind: "legacy-dashboard-panel";
-  frame: WidgetFrame;
-  zIndex: number;
-  state: SceneDashboardState;
-}
-
 export type DashboardDataWidgetConfig = Omit<SceneDashboardWidgetState, "id" | "x" | "y" | "w" | "h">;
 
 /**
@@ -66,13 +57,21 @@ export interface DashboardDataWidgetNode {
   widget: DashboardDataWidgetConfig;
 }
 
-export type WidgetNode = SceneViewportWidgetNode | DashboardDataWidgetNode | LegacyDashboardPanelWidgetNode;
+export type WidgetNode = SceneViewportWidgetNode | DashboardDataWidgetNode;
+
+export interface DashboardPageAppearance {
+  backgroundColor?: string;
+  backgroundOpacity?: number;
+  blur?: number;
+  borderRadius?: number;
+}
 
 export interface DashboardPageDocument {
   id: string;
   name: string;
   width: 1920;
   height: 1080;
+  appearance?: DashboardPageAppearance;
   nodes: WidgetNode[];
 }
 

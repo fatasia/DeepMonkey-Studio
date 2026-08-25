@@ -286,16 +286,12 @@ function DashboardNode({ application, project, node, metric, selected, locale, r
     <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />
     <div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div>
   </article>;
-  return <article className={`dashboard-node dashboard-legacy-panel ${selected ? "selected" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); onSelect(event.ctrlKey || event.metaKey); }}>
-    <header><LayoutDashboard size={24} /><div><strong>{tr(locale, "数据看板", "Data dashboard")}</strong><small>{node.state.widgets.length} {tr(locale, "个组件", "widgets")}</small></div></header>
-    <div className="dashboard-legacy-widget-grid">{node.state.widgets.slice(0, 8).map((widget) => <div key={widget.id}><small>{widget.type}</small><strong>{widget.title}</strong></div>)}</div>
-  </article>;
+  return null;
 }
 
 function nodeLabel(node: WidgetNode): string {
   if (node.kind === "scene-viewport") return `3D · ${node.sceneId}`;
-  if (node.kind === "data-widget") return node.widget.title;
-  return "数据看板";
+  return node.widget.title;
 }
 
 function sceneName(application: ApplicationDocument, sceneId: string): string {

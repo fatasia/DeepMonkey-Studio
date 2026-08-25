@@ -18,15 +18,23 @@ describe("scene and application synchronization", () => {
     const page = source.pages[0]!;
     page.name = "定制生产总览";
     page.nodes[0]!.frame = { x: 80, y: 40, width: 1280, height: 720 };
+    const dataWidget = page.nodes.find((node) => node.kind === "data-widget")!;
+    dataWidget.frame = { x: 1440, y: 60, width: 360, height: 160 };
     source.assets.push({ id: "hero", kind: "image", projectId: source.metadata.projectId, sourceName: "hero.png" });
     const update = structuredClone(dashboardFixture) as unknown as SceneSnapshot;
     update.name = "更新后的三维场景";
+    update.dashboard!.widgets[0]!.title = "最新温度";
 
     const synced = syncSceneIntoApplication(source, update);
 
     expect(synced.pages[0]?.name).toBe("定制生产总览");
     expect(synced.pages[0]?.nodes[0]?.frame).toEqual({ x: 80, y: 40, width: 1280, height: 720 });
     expect(synced.scenes[0]?.name).toBe("更新后的三维场景");
+    expect(synced.pages[0]?.nodes.find((node) => node.id === dataWidget.id)).toMatchObject({
+      kind: "data-widget",
+      frame: { x: 1440, y: 60, width: 360, height: 160 },
+      widget: { title: "最新温度" }
+    });
     expect(synced.assets).toContainEqual(expect.objectContaining({ id: "hero", kind: "image" }));
     expect(source.scenes[0]?.name).not.toBe("更新后的三维场景");
   });
