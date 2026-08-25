@@ -63,6 +63,7 @@ import type {
 } from "@bim-studio/contracts";
 import { DEFAULT_NAVIGATION_SETTINGS, normalizeNavigationSettings } from "../navigationSettings";
 import { readXRThumbstick } from "./xrInput";
+import { slideAgainstSurface } from "./characterMotion";
 import {
   buildComponentRecords,
   closestPointsBetweenObjects,
@@ -4203,7 +4204,7 @@ export class ViewerEngine {
         forward.normalize();
         const right = new THREE.Vector3().crossVectors(forward, this.camera.up).normalize();
         const movement = forward.multiplyScalar(input.y).add(right.multiplyScalar(input.x)).multiplyScalar(speed);
-        if (!this.isMovementBlocked(movement)) this.camera.position.add(movement);
+        this.camera.position.add(this.resolveCharacterMovement(movement, this.camera.position, this.navigationSettings.eyeHeight));
       }
       const floor = this.findFloorHeight(this.camera.position);
       if (floor !== undefined) {
@@ -4249,12 +4250,13 @@ export class ViewerEngine {
     const movement = right.multiplyScalar(input.x)
       .add(forward.multiplyScalar(-input.z))
       .add(new THREE.Vector3(0, input.y, 0));
-    if (this.isMovementBlocked(movement, this.avatar.position.clone().add(new THREE.Vector3(0, 0.9, 0)))) return;
-    this.avatar.position.add(movement);
-    this.camera.position.add(movement);
-    this.orbit.target.add(movement);
-    if (movement.lengthSq() > 0) {
-      this.avatarHeading.lerp(movement.clone().normalize(), Math.min(delta * 12, 1)).normalize();
+    const resolvedMovement = this.resolveCharacterMovement(movement, this.avatar.position.clone().add(new THREE.Vector3(0, 1.75, 0)), 1.75);
+    if (resolvedMovement.lengthSq() === 0) return;
+    this.avatar.position.add(resolvedMovement);
+    this.camera.position.add(resolvedMovement);
+    this.orbit.target.add(resolvedMovement);
+    if (resolvedMovement.lengthSq() > 0) {
+      this.avatarHeading.lerp(resolvedMovement.clone().normalize(), Math.min(delta * 12, 1)).normalize();
       this.avatar.rotation.y = Math.atan2(this.avatarHeading.x, this.avatarHeading.z);
     }
   }
@@ -4450,16 +4452,55 @@ export class ViewerEngine {
     this.cameraCollisionDirty = false;
   }
 
-  private isMovementBlocked(movement: THREE.Vector3, origin = this.camera.position): boolean {
-    if (!this.cameraConstraints.collisionEnabled) return false;
-    if (movement.lengthSq() === 0) return false;
-    this.raycaster.set(origin, movement.clone().normalize());
-    this.raycaster.near = 0.05;
-    this.raycaster.far = movement.length() + this.cameraConstraints.collisionRadius;
-    const blocked = this.raycaster.intersectObjects(this.visibleModelObjects(), true).length > 0;
+  private resolveCharacterMovement(movement: THREE.Vector3, topOrigin: THREE.Vector3, height: number): THREE.Vector3 {
+    if (!this.cameraConstraints.collisionEnabled || movement.lengthSq() === 0) return movement.clone();
+    const resolved = new THREE.Vector3();
+    const currentOrigin = topOrigin.clone();
+    let remaining = movement.clone();
+    for (let pass = 0; pass < 3 && remaining.lengthSq() > 1e-10; pass += 1) {
+      const hit = this.firstCharacterCollision(currentOrigin, remaining, height);
+      if (!hit) {
+        resolved.add(remaining);
+        break;
+      }
+      const distance = remaining.length();
+      const direction = remaining.clone().multiplyScalar(1 / distance);
+      const advanceDistance = Math.min(distance, Math.max(0, hit.distance - this.cameraConstraints.collisionRadius));
+      const advance = direction.multiplyScalar(advanceDistance);
+      resolved.add(advance);
+      currentOrigin.add(advance);
+      const unconsumed = remaining.clone().sub(advance);
+      const normal = hit.face?.normal.clone().transformDirection(hit.object.matrixWorld) ?? direction.clone().negate();
+      remaining = slideAgainstSurface(unconsumed, normal).multiplyScalar(0.98);
+    }
+    return resolved;
+  }
+
+  private firstCharacterCollision(topOrigin: THREE.Vector3, movement: THREE.Vector3, height: number): THREE.Intersection<THREE.Object3D> | undefined {
+    const distance = movement.length();
+    if (distance <= 1e-8) return;
+    const direction = movement.clone().multiplyScalar(1 / distance);
+    const radius = this.cameraConstraints.collisionRadius;
+    const side = new THREE.Vector3().crossVectors(direction, this.camera.up);
+    if (side.lengthSq() < 1e-8) side.set(1, 0, 0);
+    else side.normalize();
+    const sideOffsets = [0, radius * 0.7, -radius * 0.7];
+    const verticalOffsets = [0, -Math.max(radius, height * 0.48), -Math.max(radius, height - radius)];
+    let nearest: THREE.Intersection<THREE.Object3D> | undefined;
+    const objects = this.visibleModelObjects();
+    for (const verticalOffset of verticalOffsets) {
+      for (const sideOffset of sideOffsets) {
+        const origin = topOrigin.clone().addScaledVector(this.camera.up, verticalOffset).addScaledVector(side, sideOffset);
+        this.raycaster.set(origin, direction);
+        this.raycaster.near = 0.01;
+        this.raycaster.far = distance + radius;
+        const hit = this.raycaster.intersectObjects(objects, true)[0];
+        if (hit && (!nearest || hit.distance < nearest.distance)) nearest = hit;
+      }
+    }
     this.raycaster.near = 0;
     this.raycaster.far = Infinity;
-    return blocked;
+    return nearest;
   }
 
   private rebuildComponentIndex(modelId: string): void {
