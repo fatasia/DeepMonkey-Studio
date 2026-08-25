@@ -21,6 +21,7 @@ import {
   createRenameDashboardPageCommand,
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
+  type ApplicationInteractionResult,
   type StudioCommand
 } from "@bim-studio/studio-core";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -50,7 +51,7 @@ export interface DashboardWorkspaceProps {
   onOpenData: () => void;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
-  onNodeInteraction: (nodeId: string, trigger?: SceneInteractionTrigger) => void;
+  onNodeInteraction: (nodeId: string, trigger?: SceneInteractionTrigger) => ApplicationInteractionResult | undefined;
   onCommand: (command: StudioCommand) => void;
   onUndo: () => void;
   onRedo: () => void;

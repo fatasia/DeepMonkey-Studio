@@ -208,12 +208,13 @@ describe("ApplicationStore", () => {
     }];
     const store = new ApplicationStore(source);
 
-    const effects = store.dispatchInteraction({ source: widget, trigger: "click", timestamp: "2026-08-25T00:00:00.000Z" });
+    const result = store.dispatchInteraction({ source: widget, trigger: "click", timestamp: "2026-08-25T00:00:00.000Z" });
 
     expect(store.getState().selection).toEqual([widget]);
     expect(store.getState().variables).toMatchObject({ selectedLine: "A" });
-    expect(effects).toEqual([expect.objectContaining({ action: expect.objectContaining({ type: "focus" }) })]);
-    expect(() => (effects as unknown[]).push({})).toThrow();
+    expect(result.matchedFlowIds).toEqual(["flow:one"]);
+    expect(result.effects).toEqual([expect.objectContaining({ action: expect.objectContaining({ type: "focus" }) })]);
+    expect(() => (result.effects as unknown[]).push({})).toThrow();
   });
 
   it("clears redo history when dispatching after an undo", () => {

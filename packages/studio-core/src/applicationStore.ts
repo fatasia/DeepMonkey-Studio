@@ -3,8 +3,8 @@ import { applyStudioCommand, type StudioCommand } from "./command.js";
 import {
   evaluateApplicationInteraction,
   sameObjectRef,
-  type ApplicationInteractionEffect,
-  type ApplicationInteractionEvent
+  type ApplicationInteractionEvent,
+  type ApplicationInteractionResult
 } from "./interactionRuntime.js";
 
 export interface ApplicationState {
@@ -139,14 +139,14 @@ export class ApplicationStore {
     this.emit();
   }
 
-  dispatchInteraction(event: ApplicationInteractionEvent): readonly ApplicationInteractionEffect[] {
+  dispatchInteraction(event: ApplicationInteractionEvent): ApplicationInteractionResult {
     if (!this.document) throw new Error("没有已打开的应用文档");
     const result = evaluateApplicationInteraction(this.document, event);
     const selectionChanged = Boolean(result.selection && !sameSelection(this.selection, result.selection));
     if (selectionChanged && result.selection) this.selection = structuredClone([...result.selection]);
     for (const [id, value] of Object.entries(result.variableUpdates)) this.variables[id] = structuredClone(value);
     if (selectionChanged || Object.keys(result.variableUpdates).length > 0) this.emit();
-    return immutableClone(result.effects);
+    return immutableClone(result);
   }
 
   private emit(): void {

@@ -11,8 +11,10 @@ import {
   createDeleteInteractionFlowCommand,
   createUpsertInteractionFlowCommand,
   sameObjectRef,
+  type ApplicationInteractionResult,
   type StudioCommand
 } from "@bim-studio/studio-core";
+import { useEffect, useState } from "react";
 import { translate as tr, type AppLocale } from "../i18n";
 
 const TRIGGERS: SceneInteractionTrigger[] = ["click", "pointerEnter", "pointerLeave", "load", "animationStart", "animationEnd"];
@@ -24,11 +26,15 @@ export function InteractionFlowInspector({ locale, application, source, onComman
   application: ApplicationDocument;
   source: ApplicationObjectRef;
   onCommand: (command: StudioCommand) => void;
-  onTest: (trigger: SceneInteractionTrigger) => void;
+  onTest: (trigger: SceneInteractionTrigger) => ApplicationInteractionResult | undefined;
 }) {
   const flows = application.interactions.filter((flow) => sameObjectRef(flow.source, source));
   const firstScene = application.scenes[0];
   const firstObject = firstScene ? [...firstScene.models, ...firstScene.primitives][0] : undefined;
+  const [lastTest, setLastTest] = useState<ApplicationInteractionResult>();
+  const sourceKey = source.kind === "object" ? `${source.sceneId}:${source.modelId}:${source.layerId ?? ""}` : `${source.kind}:${source.id}`;
+
+  useEffect(() => setLastTest(undefined), [sourceKey]);
 
   function save(flow: InteractionFlow) {
     onCommand(createUpsertInteractionFlowCommand(flow));
@@ -58,8 +64,9 @@ export function InteractionFlowInspector({ locale, application, source, onComman
       <div className="interaction-flow-actions">
         {flow.actions.map((action) => <InteractionActionEditor key={action.id} locale={locale} application={application} action={action} onChange={(next) => save({ ...flow, actions: flow.actions.map((candidate) => candidate.id === action.id ? next : candidate) })} onDelete={() => save({ ...flow, actions: flow.actions.filter((candidate) => candidate.id !== action.id) })} />)}
       </div>
-      <footer><button onClick={() => save({ ...flow, actions: [...flow.actions, defaultAction(locale, firstObject ? "focus" : "message", application, firstScene?.id)] })}><Plus size={12} />{tr(locale, "添加动作", "Add action")}</button><button onClick={() => onTest(flow.trigger)}><Play size={12} />{tr(locale, "运行测试", "Run test")}</button></footer>
+      <footer><button onClick={() => save({ ...flow, actions: [...flow.actions, defaultAction(locale, firstObject ? "focus" : "message", application, firstScene?.id)] })}><Plus size={12} />{tr(locale, "添加动作", "Add action")}</button><button onClick={() => setLastTest(onTest(flow.trigger))}><Play size={12} />{tr(locale, "运行测试", "Run test")}</button></footer>
     </article>)}
+    {lastTest && <div className={`interaction-flow-test-result ${lastTest.matchedFlowIds.length ? "matched" : "empty"}`}><strong>{lastTest.matchedFlowIds.length ? tr(locale, "联动已执行", "Interaction executed") : tr(locale, "没有命中流程", "No flow matched")}</strong><span>{tr(locale, `${lastTest.matchedFlowIds.length} 条流程 · ${Object.keys(lastTest.variableUpdates).length} 个变量 · ${lastTest.effects.length} 个动作`, `${lastTest.matchedFlowIds.length} flows · ${Object.keys(lastTest.variableUpdates).length} variables · ${lastTest.effects.length} effects`)}</span></div>}
     {flows.length === 0 && <div className="interaction-flow-empty"><Workflow size={18} /><span>{tr(locale, "为当前组件添加二维与三维联动", "Add a 2D/3D interaction for this component")}</span></div>}
     <button className="interaction-flow-add" onClick={addFlow}><Plus size={13} />{tr(locale, "新建联动", "New interaction")}</button>
   </section>;

@@ -89,7 +89,7 @@ import type {
   WeatherMode
 } from "@bim-studio/contracts";
 import { migrateSceneSnapshotV1 } from "@bim-studio/contracts";
-import type { StudioCommand } from "@bim-studio/studio-core";
+import type { ApplicationInteractionResult, StudioCommand } from "@bim-studio/studio-core";
 import { api, getAuthToken, setAuthToken } from "./api";
 import { LayerTree } from "./components/LayerTree";
 import { SceneManager } from "./components/SceneManager";
@@ -1981,20 +1981,25 @@ export function App() {
 
   function dispatchApplicationInteraction(source: ApplicationObjectRef, trigger: SceneInteractionTrigger, selectSource = true) {
     try {
-      const effects = applicationSessionRef.current.store.dispatchInteraction({
+      const result = applicationSessionRef.current.store.dispatchInteraction({
         source,
         trigger,
         timestamp: new Date().toISOString(),
         selectSource
       });
-      publishApplicationInteractionEffects(effects);
+      publishApplicationInteractionEffects(result.effects);
+      if (result.matchedFlowIds.length > 0) {
+        setMessage(`联动调试：命中 ${result.matchedFlowIds.length} 条流程 · ${Object.keys(result.variableUpdates).length} 个变量 · ${result.effects.length} 个动作`);
+      }
+      return result;
     } catch (reason) {
       showError(reason);
+      return undefined;
     }
   }
 
-  function dispatchDashboardNodeInteraction(nodeId: string, trigger: SceneInteractionTrigger = "click") {
-    dispatchApplicationInteraction({ kind: "widget", id: nodeId }, trigger, false);
+  function dispatchDashboardNodeInteraction(nodeId: string, trigger: SceneInteractionTrigger = "click"): ApplicationInteractionResult | undefined {
+    return dispatchApplicationInteraction({ kind: "widget", id: nodeId }, trigger, false);
   }
 
   function dispatchSceneObjectInteraction(sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) {

@@ -114,6 +114,10 @@ button { color: inherit; }
 .interaction-flow-card > footer button:last-child { color: #e0bb67; border-color: #675329; }
 .interaction-flow-empty { display: grid; min-height: 62px; place-content: center; justify-items: center; gap: 6px; color: #68767c; text-align: center; font-size: 8px; }
 .interaction-flow-add { width: 100%; color: #d8b560; border-color: #5d4b27; background: rgba(211,169,78,.07); }
+.interaction-flow-test-result { display: grid; gap: 3px; padding: 8px 9px; border: 1px solid #425058; border-radius: 6px; color: #8d999e; background: #10181b; font-size: 8px; }
+.interaction-flow-test-result strong { color: #c9d1d4; font-size: 9px; }
+.interaction-flow-test-result.matched { border-color: #4b6d58; background: rgba(62,121,82,.1); }
+.interaction-flow-test-result.matched strong { color: #77c38f; }
 .dashboard-selection-heading { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .dashboard-selection-heading > span { display: grid; width: 30px; height: 30px; place-items: center; color: #d4aa4f; border-radius: 6px; background: rgba(212,170,79,.1); }
 .dashboard-selection-heading > div { display: grid; min-width: 0; gap: 3px; }

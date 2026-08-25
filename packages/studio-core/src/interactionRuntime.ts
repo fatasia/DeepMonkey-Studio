@@ -23,6 +23,7 @@ export interface ApplicationInteractionEffect {
 
 export interface ApplicationInteractionResult {
   readonly selection?: readonly ApplicationObjectRef[];
+  readonly matchedFlowIds: readonly string[];
   readonly variableUpdates: Readonly<Record<string, JsonValue>>;
   readonly effects: readonly ApplicationInteractionEffect[];
 }
@@ -33,9 +34,11 @@ export function evaluateApplicationInteraction(
 ): ApplicationInteractionResult {
   const variableUpdates: Record<string, JsonValue> = {};
   const effects: ApplicationInteractionEffect[] = [];
+  const matchedFlowIds: string[] = [];
 
   for (const flow of document.interactions) {
     if (!flow.enabled || flow.trigger !== event.trigger || !sameObjectRef(flow.source, event.source)) continue;
+    matchedFlowIds.push(flow.id);
     for (const action of flow.actions) {
       if (!action.enabled) continue;
       if (action.type === "setData" && action.dataKey && action.value !== undefined) {
@@ -53,6 +56,7 @@ export function evaluateApplicationInteraction(
 
   return {
     ...(event.trigger === "click" && event.selectSource !== false ? { selection: [structuredClone(event.source)] } : {}),
+    matchedFlowIds,
     variableUpdates,
     effects
   };

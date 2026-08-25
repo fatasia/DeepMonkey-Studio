@@ -30,6 +30,7 @@ describe("application interaction runtime", () => {
     });
 
     expect(result.selection).toEqual([source]);
+    expect(result.matchedFlowIds).toEqual(["flow:widget-to-scene"]);
     expect(result.variableUpdates).toEqual({ "line.selected": "A" });
     expect(result.effects).toEqual([expect.objectContaining({
       flowId: "flow:widget-to-scene",
@@ -55,6 +56,7 @@ describe("application interaction runtime", () => {
     });
 
     expect(result.effects).toEqual([]);
+    expect(result.matchedFlowIds).toEqual([]);
     expect(result.variableUpdates).toEqual({});
   });
 
