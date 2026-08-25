@@ -23,7 +23,7 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
 
   app.addHook("preHandler", async (request, reply) => {
     const pathname = request.url.split("?", 1)[0] ?? request.url;
-    if (pathname === "/health" || pathname === "/api/auth/login" || pathname.startsWith("/api/public/") || pathname.startsWith("/assets/")) return;
+    if (pathname === "/health" || pathname === "/api/meta" || pathname === "/api/auth/login" || pathname.startsWith("/api/public/") || pathname.startsWith("/assets/")) return;
     if (!pathname.startsWith("/api/")) return;
     const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
     const session = token ? resolveSession(token) : undefined;

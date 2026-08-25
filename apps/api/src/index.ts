@@ -8,6 +8,7 @@ import { registerApplicationRoutes } from "./applicationRoutes.js";
 import { createObjectStore, migrateLocalObjects } from "./objects.js";
 import { createMetadataStore } from "./store.js";
 import { ensureDemoMetrics } from "./dataIntegration.js";
+import { loadOrCreateServerInstanceId, registerServerMetaRoute } from "./serverMeta.js";
 import { registerSystemRoutes } from "./system.js";
 import { registerVisionRoutes, VisionEngine } from "./vision.js";
 
@@ -27,6 +28,8 @@ export async function buildApp() {
   await app.register(multipart, {
     limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 1 }
   });
+  const serverInstanceId = await loadOrCreateServerInstanceId(config.dataDir);
+  await registerServerMetaRoute(app, serverInstanceId);
   await registerSystemRoutes(app, store, config.dataDir);
   await registerRoutes(app, { store, queue, objects, dataDir: config.dataDir, config });
   await registerApplicationRoutes(app, store);
