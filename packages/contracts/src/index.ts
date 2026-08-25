@@ -786,3 +786,4 @@ export function createDefaultTransform(): ModelTransform {
 
 export * from "./application.js";
 export * from "./applicationMigration.js";
+export * from "./resourceId.js";

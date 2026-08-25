@@ -21,34 +21,38 @@ describe("v1 and application persistence compatibility", () => {
     const v1 = { ...(pureFixture as unknown as SceneSnapshot), projectId: "default" };
     await firstStore.saveScene(v1);
     const v2 = migrateSceneSnapshotV1(v1);
-    await firstStore.saveApplication(v2);
-    const publication = await firstStore.savePublishedApplication({
-      id: "publication-golden",
-      applicationId: v2.metadata.id,
-      projectId: v2.metadata.projectId,
-      applicationRevision: v2.metadata.revision,
-      document: structuredClone(v2),
-      publishedAt: "2026-08-25T00:00:00.000Z"
-    });
-    await firstStore.saveApplicationPublicationPointer({
-      applicationId: v2.metadata.id,
-      projectId: v2.metadata.projectId,
-      activePublicationId: publication.id,
-      updatedAt: publication.publishedAt
-    });
+    const created = await firstStore.createApplicationDraft("default", v2, v2.metadata.createdAt);
+    expect(created.status).toBe("created");
+    if (created.status !== "created") throw new Error("application setup failed");
+    const storedApplication = created.application;
+    const publishResult = await firstStore.publishApplication(
+      "default",
+      storedApplication.metadata.id,
+      "publication-golden",
+      "2026-08-25T00:00:00.000Z"
+    );
+    expect(publishResult.status).toBe("published");
+    if (publishResult.status !== "published") throw new Error("publication setup failed");
+    const publication = publishResult.publication;
 
     const restartedStore = new JsonStore(directory);
     await restartedStore.init();
     expect(restartedStore.getScene("default", v1.id)).toEqual(v1);
-    expect(restartedStore.getApplication("default", v2.metadata.id)).toEqual(v2);
+    expect(restartedStore.getApplication("default", storedApplication.metadata.id)).toEqual(storedApplication);
     expect(restartedStore.getPublishedApplication(publication.id)).toEqual(publication);
-    expect(restartedStore.getApplicationPublicationPointer(v2.metadata.id)?.activePublicationId).toBe(publication.id);
+    expect(restartedStore.getApplicationPublicationPointer(storedApplication.metadata.id)?.activePublicationId).toBe(publication.id);
 
-    const reloadedDraft = restartedStore.getApplication("default", v2.metadata.id);
+    const reloadedDraft = restartedStore.getApplication("default", storedApplication.metadata.id);
     expect(reloadedDraft).toBeDefined();
     reloadedDraft!.metadata.name = "重启后的草稿";
-    await restartedStore.saveApplication(reloadedDraft!);
-    expect(restartedStore.getApplication("default", v2.metadata.id)?.metadata.name).toBe("重启后的草稿");
+    const update = await restartedStore.updateApplicationDraft(
+      "default",
+      storedApplication.metadata.id,
+      reloadedDraft!,
+      "2026-08-25T01:00:00.000Z"
+    );
+    expect(update.status).toBe("updated");
+    expect(restartedStore.getApplication("default", storedApplication.metadata.id)?.metadata.name).toBe("重启后的草稿");
     expect(restartedStore.getPublishedApplication(publication.id)?.document.metadata.name).toBe("纯三维");
   });
 });

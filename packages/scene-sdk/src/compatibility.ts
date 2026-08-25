@@ -21,6 +21,7 @@ export const SCENE_EXTENSION_COMPATIBILITY_REASON_CODES = [
   "api-minor-unsupported",
   "host-unsupported",
   "renderer-unsupported",
+  "invalid-execution",
   "trusted-extension-disabled",
   "capability-unsupported",
   "permission-denied"
@@ -89,7 +90,10 @@ export function resolveSceneExtensionCompatibility(
 
   const execution = readProperty(manifest, "execution");
   const allowTrustedExtensions = readProperty(hostCapabilities, "allowTrustedExtensions");
-  if (execution === ("trusted-main-thread" satisfies SceneExtensionExecution) && allowTrustedExtensions !== true) {
+  if (execution !== ("worker-sandbox" satisfies SceneExtensionExecution)
+    && execution !== ("trusted-main-thread" satisfies SceneExtensionExecution)) {
+    reasons.push({ code: "invalid-execution", detail: formatExternalValue(execution) });
+  } else if (execution === "trusted-main-thread" && allowTrustedExtensions !== true) {
     reasons.push({
       code: "trusted-extension-disabled",
       detail: "host does not allow trusted-main-thread extensions"

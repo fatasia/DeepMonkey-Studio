@@ -19,7 +19,7 @@ describe("legacy scene routes", () => {
     directories.push(dataDir);
     const store = new JsonStore(dataDir);
     await store.init();
-    const app = Fastify();
+    const app = Fastify({ routerOptions: { maxParamLength: 256 } });
     await registerRoutes(app, {
       store,
       queue: undefined as never,
@@ -46,6 +46,10 @@ describe("legacy scene routes", () => {
     expect(publication.json().snapshot.schemaVersion).toBe(1);
     expect((await app.inject({ method: "GET", url: "/api/public/scenes/scene-pure-3d" })).json().snapshot.name).toBe("纯三维");
     expect((await app.inject({ method: "GET", url: "/api/scenes/scene-pure-3d/browse" })).json().scene.schemaVersion).toBe(1);
+
+    const oversizedProjectId = "a".repeat(129);
+    const invalidProject = await app.inject({ method: "GET", url: `/api/projects/${oversizedProjectId}` });
+    expect(invalidProject.statusCode).toBe(400);
 
     await app.close();
   });

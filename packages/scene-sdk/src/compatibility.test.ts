@@ -84,6 +84,19 @@ describe("resolveSceneExtensionCompatibility", () => {
     expect(result.reasons.map(({ code }) => code)).toContain("trusted-extension-disabled");
   });
 
+  it.each([
+    ["missing", undefined],
+    ["unknown", "iframe-sandbox"]
+  ])("rejects %s extension execution before trusted-extension evaluation", (_name, execution) => {
+    const manifest = { ...extension } as Record<string, unknown>;
+    if (execution === undefined) Reflect.deleteProperty(manifest, "execution");
+    else manifest.execution = execution;
+
+    const result = resolveSceneExtensionCompatibility(manifest, host);
+
+    expect(result.reasons.map(({ code }) => code)).toEqual(["invalid-execution"]);
+  });
+
   it("rejects a WebGPU-only extension on a WebGL 2 host", () => {
     const result = resolveSceneExtensionCompatibility({ ...extension, renderers: ["webgpu"] }, host);
 

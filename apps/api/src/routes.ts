@@ -5,6 +5,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import {
+  assertPathSafeResourceId,
   supportedExtensions,
   type DataConnectionRecord,
   type DataDatasetRecord,
@@ -42,6 +43,16 @@ function modelFormat(fileName: string): ModelFormat | undefined {
 
 export async function registerRoutes(app: FastifyInstance, dependencies: RouteDependencies): Promise<void> {
   const { store, queue, objects, dataDir, config } = dependencies;
+
+  app.addHook("preValidation", async (request, reply) => {
+    const params = request.params;
+    if (!params || typeof params !== "object" || !("projectId" in params)) return;
+    try {
+      assertPathSafeResourceId((params as { projectId?: unknown }).projectId, "projectId");
+    } catch (error) {
+      return reply.code(400).send({ message: error instanceof Error ? error.message : "projectId 无效" });
+    }
+  });
 
   app.get("/health", async () => ({ status: "ok", service: "bim-studio-api" }));
   app.get("/api/revit/installations", async () => getRevitRuntimeInfo());

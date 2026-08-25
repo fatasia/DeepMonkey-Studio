@@ -1,31 +1,32 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  containsIdentifier,
+  hasCallToIdentifier,
+  hasDomHostReference,
+  moduleSpecifiers,
+  typescriptSourceFiles
+} from "../../../scripts/architectureAnalysis.js";
 import { SCENE_CAPABILITIES, SCENE_PERMISSIONS } from "./protocol.js";
 
-const sourceDirectory = dirname(fileURLToPath(import.meta.url));
-const forbiddenReferences = [
-  /["']react(?:\/[^"']*)?["']/,
-  /["']react-dom(?:\/[^"']*)?["']/,
-  /["']three(?:\/[^"']*)?["']/,
-  /\bViewerEngine\b/,
-  /@tauri-apps\//,
-  /\bwindow\b/,
-  /\bdocument\b/,
-  /\bfetch\b/,
-  /["']node:http["']/,
-  /["']node:https["']/
-] as const;
+const forbiddenModule = /^(?:react(?:-dom)?(?:\/|$)|three(?:\/|$)|@tauri-apps\/|node:https?$)/;
 
 describe("scene-sdk architecture boundary", () => {
-  it("keeps production TypeScript independent from UI, renderer, host, and network runtimes", () => {
-    for (const file of productionTypeScriptFiles(sourceDirectory)) {
+  it("recursively keeps production TypeScript independent from UI, renderer, host, and network runtimes", () => {
+    const sourceDirectory = path.resolve(import.meta.dirname);
+    const violations: string[] = [];
+    for (const file of typescriptSourceFiles(sourceDirectory)) {
       const source = readFileSync(file, "utf8");
-      for (const forbidden of forbiddenReferences) {
-        expect(source, `${file} contains forbidden reference ${forbidden}`).not.toMatch(forbidden);
+      const forbiddenImports = moduleSpecifiers(source, file).filter((specifier) => forbiddenModule.test(specifier));
+      if (forbiddenImports.length > 0
+        || hasCallToIdentifier(source, "fetch", file)
+        || hasDomHostReference(source, file)
+        || containsIdentifier(source, "ViewerEngine", file)) {
+        violations.push(path.relative(sourceDirectory, file));
       }
     }
+    expect(violations).toEqual([]);
   });
 
   it("keeps runtime protocol fixtures pure serializable data", () => {
@@ -58,21 +59,12 @@ describe("scene-sdk architecture boundary", () => {
   });
 });
 
-function productionTypeScriptFiles(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) return productionTypeScriptFiles(path);
-    if (extname(entry.name) !== ".ts" || entry.name.endsWith(".test.ts")) return [];
-    return [path];
-  });
-}
-
-function findExecutableValue(value: unknown, path = "$", seen = new WeakSet<object>()): string | undefined {
-  if (typeof value === "function") return path;
+function findExecutableValue(value: unknown, valuePath = "$", seen = new WeakSet<object>()): string | undefined {
+  if (typeof value === "function") return valuePath;
   if (value === null || typeof value !== "object" || seen.has(value)) return undefined;
   seen.add(value);
   for (const key of Reflect.ownKeys(value)) {
-    const found = findExecutableValue(Reflect.get(value, key), `${path}.${String(key)}`, seen);
+    const found = findExecutableValue(Reflect.get(value, key), `${valuePath}.${String(key)}`, seen);
     if (found) return found;
   }
   return undefined;

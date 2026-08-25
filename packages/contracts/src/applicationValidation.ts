@@ -1,4 +1,5 @@
 import type { ApplicationDocument } from "./application.js";
+import { assertPathSafeResourceId } from "./resourceId.js";
 
 type JsonObject = Record<string, unknown>;
 type Validator = (value: unknown, path: string) => void;
@@ -34,8 +35,8 @@ export function validateApplicationDocument(value: unknown): asserts value is Ap
 
 function validateMetadata(value: unknown, path: string): void {
   const object = expectObject(value, path);
-  required(object, "id", expectString, path);
-  required(object, "projectId", expectString, path);
+  required(object, "id", expectPathSafeResourceId, path);
+  required(object, "projectId", expectPathSafeResourceId, path);
   required(object, "name", expectString, path);
   required(object, "revision", expectPositiveInteger, path);
   required(object, "createdAt", expectString, path);
@@ -583,7 +584,15 @@ function validateStringArray(value: unknown, path: string): void {
 
 function expectArray(value: unknown, path: string, validator: Validator): void {
   if (!Array.isArray(value)) invalid(path, "必须是数组");
-  value.forEach((item, index) => validator(item, `${path}[${index}]`));
+  rejectJsonSymbolProperties(value, path);
+  for (const key of Object.getOwnPropertyNames(value)) {
+    if (key === "length") continue;
+    if (!isArrayIndex(key, value.length)) invalid(`${path}.${key}`, "不是有效的数组索引");
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.prototype.hasOwnProperty.call(value, index)) invalid(`${path}[${index}]`, "不能是稀疏数组项");
+    validator(value[index], `${path}[${index}]`);
+  }
 }
 
 function expectObject(value: unknown, path: string): JsonObject {
@@ -595,6 +604,14 @@ function expectObject(value: unknown, path: string): JsonObject {
 
 function expectString(value: unknown, path: string): void {
   if (typeof value !== "string") invalid(path, "必须是字符串");
+}
+
+function expectPathSafeResourceId(value: unknown, path: string): void {
+  try {
+    assertPathSafeResourceId(value, path);
+  } catch (error) {
+    invalid(path, error instanceof Error ? error.message.replace(`${path} `, "") : "必须是路径安全 ID");
+  }
 }
 
 function expectBoolean(value: unknown, path: string): void {

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import pureFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-pure-3d.json";
-import { migrateSceneSnapshotV1, type PublishedApplicationRecord, type PublishedSceneRecord, type SceneSnapshot } from "@bim-studio/contracts";
+import { migrateSceneSnapshotV1, type DatabaseDocument, type PublishedSceneRecord, type SceneSnapshot } from "@bim-studio/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { JsonStore, runProcess } from "./store.js";
 
@@ -74,14 +74,15 @@ describe("JsonStore application management", () => {
     await store.init();
     const original = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
     original.metadata.projectId = "default";
-    await store.saveApplication(original);
+    expect((await store.createApplicationDraft("default", original, "2026-08-20T01:00:00.000Z")).status).toBe("created");
     const secondProject = await store.createProject("第二项目");
     const duplicate = structuredClone(original);
     duplicate.metadata.projectId = secondProject.id;
 
-    await expect(store.saveApplication(duplicate)).rejects.toThrow(
-      `应用 ID ${original.metadata.id} 已存在于项目 default`
-    );
+    expect(await store.createApplicationDraft(secondProject.id, duplicate, "2026-08-20T01:01:00.000Z")).toMatchObject({
+      status: "conflict",
+      reservation: { projectId: "default", currentRevision: 1 }
+    });
     expect(store.getApplicationById(original.metadata.id)?.metadata.projectId).toBe("default");
     expect(store.getApplication(secondProject.id, original.metadata.id)).toBeUndefined();
   });
@@ -93,34 +94,26 @@ describe("JsonStore application management", () => {
     await store.init();
     const original = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
     original.metadata.projectId = "default";
-    await store.saveApplication(original);
-    const firstPublication: PublishedApplicationRecord = {
-      id: "publication-1",
-      applicationId: original.metadata.id,
-      projectId: original.metadata.projectId,
-      applicationRevision: 1,
-      document: structuredClone(original),
-      publishedAt: "2026-08-20T03:00:00.000Z"
-    };
-    await store.savePublishedApplication(firstPublication);
-    original.metadata.revision = 2;
+    await store.createApplicationDraft("default", original, "2026-08-20T01:00:00.000Z");
+    await store.publishApplication("default", original.metadata.id, "publication-1", "2026-08-20T03:00:00.000Z");
     original.metadata.name = "第二版";
-    await store.saveApplication(original);
-    await store.savePublishedApplication({
-      ...firstPublication,
-      id: "publication-2",
-      applicationRevision: 2,
-      document: structuredClone(original),
-      publishedAt: "2026-08-20T04:00:00.000Z"
-    });
-    await store.removeApplication("default", original.metadata.id);
-    const expectedError = `应用 ID ${original.metadata.id} 已由项目 default 的发布历史保留`;
+    const update = await store.updateApplicationDraft("default", original.metadata.id, original, "2026-08-20T03:30:00.000Z");
+    expect(update).toMatchObject({ status: "updated", application: { metadata: { revision: 2 } } });
+    await store.publishApplication("default", original.metadata.id, "publication-2", "2026-08-20T04:00:00.000Z");
+    await store.unpublishApplication("default", original.metadata.id);
+    await store.deleteApplicationDraft("default", original.metadata.id);
 
-    await expect(store.saveApplication(structuredClone(original))).rejects.toThrow(expectedError);
+    expect(await store.createApplicationDraft("default", original, "2026-08-20T05:00:00.000Z")).toMatchObject({
+      status: "conflict",
+      reservation: { projectId: "default", currentRevision: 2 }
+    });
     const secondProject = await store.createProject("历史冲突项目");
     const crossProjectAttempt = structuredClone(original);
     crossProjectAttempt.metadata.projectId = secondProject.id;
-    await expect(store.saveApplication(crossProjectAttempt)).rejects.toThrow(expectedError);
+    expect(await store.createApplicationDraft(secondProject.id, crossProjectAttempt, "2026-08-20T05:00:00.000Z")).toMatchObject({
+      status: "conflict",
+      reservation: { projectId: "default", currentRevision: 2 }
+    });
 
     expect(store.getApplicationIdReservation(original.metadata.id)).toEqual({
       projectId: "default",
@@ -132,7 +125,90 @@ describe("JsonStore application management", () => {
       "publication-2"
     ]);
   });
+
+  it("does not expose candidate lifecycle state when persistence fails", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-studio-store-failure-"));
+    temporaryDirectories.push(directory);
+    const store = new FaultInjectingJsonStore(directory);
+    await store.init();
+    const application = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+    application.metadata.projectId = "default";
+    await store.createApplicationDraft("default", application, "2026-08-20T01:00:00.000Z");
+    store.failPersistence = true;
+
+    await expect(store.publishApplication(
+      "default",
+      application.metadata.id,
+      "publication-failed",
+      "2026-08-20T03:00:00.000Z"
+    )).rejects.toThrow("injected persistence failure");
+
+    expect(store.getApplication("default", application.metadata.id)?.metadata.revision).toBe(1);
+    expect(store.getPublishedApplication("publication-failed")).toBeUndefined();
+    expect(store.getApplicationPublicationPointer(application.metadata.id)).toBeUndefined();
+  });
+
+  it("serializes publish against draft deletion, unpublish, and project deletion", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-studio-store-race-"));
+    temporaryDirectories.push(directory);
+    const store = new JsonStore(directory);
+    await store.init();
+
+    const draftDelete = migratedApplication("race-delete", "default");
+    await store.createApplicationDraft("default", draftDelete, "2026-08-20T01:00:00.000Z");
+    await Promise.all([
+      store.publishApplication("default", draftDelete.metadata.id, "publication-race-delete", "2026-08-20T03:00:00.000Z"),
+      store.deleteApplicationDraft("default", draftDelete.metadata.id)
+    ]);
+    assertActivePointerHasLivePath(store, draftDelete.metadata.id);
+
+    const unpublish = migratedApplication("race-unpublish", "default");
+    await store.createApplicationDraft("default", unpublish, "2026-08-20T01:00:00.000Z");
+    await store.publishApplication("default", unpublish.metadata.id, "publication-before-race", "2026-08-20T02:00:00.000Z");
+    await Promise.all([
+      store.publishApplication("default", unpublish.metadata.id, "publication-race-unpublish", "2026-08-20T03:00:00.000Z"),
+      store.unpublishApplication("default", unpublish.metadata.id)
+    ]);
+    assertActivePointerHasLivePath(store, unpublish.metadata.id);
+
+    const project = await store.createProject("并发删除项目");
+    const projectDelete = migratedApplication("race-project-delete", project.id);
+    await store.createApplicationDraft(project.id, projectDelete, "2026-08-20T01:00:00.000Z");
+    await Promise.all([
+      store.publishApplication(project.id, projectDelete.metadata.id, "publication-race-project", "2026-08-20T03:00:00.000Z"),
+      store.removeProject(project.id)
+    ]);
+
+    expect(store.getProject(project.id)).toBeUndefined();
+    expect(store.getApplication(project.id, projectDelete.metadata.id)).toBeUndefined();
+    expect(store.getApplicationPublicationPointer(projectDelete.metadata.id)).toBeUndefined();
+    expect(store.listApplicationPublications(projectDelete.metadata.id)).toHaveLength(1);
+  });
 });
+
+class FaultInjectingJsonStore extends JsonStore {
+  failPersistence = false;
+
+  protected override async persistDocument(document: DatabaseDocument): Promise<void> {
+    if (this.failPersistence) throw new Error("injected persistence failure");
+    await super.persistDocument(document);
+  }
+}
+
+function migratedApplication(id: string, projectId: string) {
+  const application = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+  application.metadata.id = id;
+  application.metadata.projectId = projectId;
+  return application;
+}
+
+function assertActivePointerHasLivePath(store: JsonStore, applicationId: string): void {
+  const pointer = store.getApplicationPublicationPointer(applicationId);
+  if (!pointer) return;
+  expect(store.getProject(pointer.projectId)).toBeDefined();
+  expect(store.getApplication(pointer.projectId, applicationId)).toBeDefined();
+  expect(store.getPublishedApplication(pointer.activePublicationId)).toBeDefined();
+}
 
 describe("process input", () => {
   it("streams large content through stdin instead of command arguments", async () => {

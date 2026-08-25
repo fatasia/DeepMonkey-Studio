@@ -1,33 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile } from "node:fs/promises";
+import { link, mkdir, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { ServerMetaResponse } from "@bim-studio/contracts";
 
 const INSTANCE_FILE = "server-instance-id";
+const INSTANCE_ANCHOR_FILE = ".server-instance-id.value";
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function loadOrCreateServerInstanceId(dataDir: string): Promise<string> {
   await mkdir(dataDir, { recursive: true });
   const filePath = path.join(dataDir, INSTANCE_FILE);
   const current = await readServerInstanceId(filePath);
-  if (current) return current;
+  if (current.kind === "valid") return current.value;
 
-  const generated = randomUUID();
-  try {
-    const handle = await open(filePath, "wx");
-    try {
-      await handle.writeFile(`${generated}\n`, "utf8");
-    } finally {
-      await handle.close();
-    }
-    return generated;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const existing = await waitForServerInstanceId(filePath);
-    if (!existing) throw new Error("server-instance-id 文件为空");
-    return existing;
-  }
+  const anchorPath = path.join(dataDir, INSTANCE_ANCHOR_FILE);
+  const anchor = await loadOrPublishAnchor(anchorPath, dataDir);
+  await publishFinalIdentity(anchorPath, filePath, anchor);
+  return anchor;
 }
 
 export function createServerMeta(serverInstanceId: string, now = () => new Date()): ServerMetaResponse {
@@ -48,23 +38,79 @@ export async function registerServerMetaRoute(app: FastifyInstance, serverInstan
   app.get("/api/meta", async () => createServerMeta(serverInstanceId, now));
 }
 
-async function readServerInstanceId(filePath: string): Promise<string | undefined> {
+type IdentityFileState =
+  | { kind: "missing" | "empty" }
+  | { kind: "valid"; value: string };
+
+async function readServerInstanceId(filePath: string): Promise<IdentityFileState> {
   try {
     const current = (await readFile(filePath, "utf8")).trim();
-    if (!current) return undefined;
+    if (!current) return { kind: "empty" };
     if (!UUID_V4.test(current)) throw new Error("server-instance-id 文件无效");
-    return current.toLowerCase();
+    return { kind: "valid", value: current.toLowerCase() };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
     throw error;
   }
 }
 
-async function waitForServerInstanceId(filePath: string): Promise<string | undefined> {
+async function loadOrPublishAnchor(anchorPath: string, dataDir: string): Promise<string> {
+  const existing = await readServerInstanceId(anchorPath);
+  if (existing.kind === "valid") return existing.value;
+  if (existing.kind === "empty") throw new Error("server-instance-id 锚点文件无效");
+
+  const generated = randomUUID();
+  const temporaryPath = path.join(dataDir, `.${INSTANCE_FILE}.${process.pid}.${randomUUID()}.tmp`);
+  const handle = await open(temporaryPath, "wx");
+  try {
+    await handle.writeFile(`${generated}\n`, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+
+  try {
+    await link(temporaryPath, anchorPath);
+    return generated;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const winner = await readServerInstanceId(anchorPath);
+    if (winner.kind !== "valid") throw new Error("server-instance-id 锚点文件无效");
+    return winner.value;
+  } finally {
+    await unlink(temporaryPath).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
+}
+
+async function publishFinalIdentity(anchorPath: string, filePath: string, anchor: string): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const current = await readServerInstanceId(filePath);
-    if (current) return current;
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    if (current.kind === "valid") {
+      if (current.value !== anchor) throw new Error("server-instance-id 文件与恢复锚点冲突");
+      return;
+    }
+    if (current.kind === "empty") {
+      try {
+        await unlink(filePath);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "EPERM" && code !== "EBUSY") throw error;
+        if (code === "EPERM" || code === "EBUSY") {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          continue;
+        }
+      }
+    }
+    try {
+      await link(anchorPath, filePath);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST" && code !== "EPERM" && code !== "EBUSY") throw error;
+      if (code === "EPERM" || code === "EBUSY") await new Promise((resolve) => setTimeout(resolve, 1));
+    }
   }
-  return undefined;
+  throw new Error("server-instance-id 文件发布失败");
 }

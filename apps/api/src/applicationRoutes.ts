@@ -2,9 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   assertApplicationDocument,
-  type ApplicationDocument,
-  type ApplicationPublicationPointer,
-  type PublishedApplicationRecord
+  assertPathSafeResourceId,
+  type ApplicationDocument
 } from "@bim-studio/contracts";
 import type { MetadataStore } from "./store.js";
 
@@ -13,9 +12,20 @@ type ApplicationParams = ProjectParams & { applicationId: string };
 type PublicationParams = ApplicationParams & { publicationId: string };
 
 function requireProject(store: MetadataStore, projectId: string, reply: FastifyReply): boolean {
+  if (!validateResourceId(projectId, "projectId", reply)) return false;
   if (store.getProject(projectId)) return true;
   void reply.code(404).send({ message: "项目不存在" });
   return false;
+}
+
+function validateResourceId(value: string, label: string, reply: FastifyReply): boolean {
+  try {
+    assertPathSafeResourceId(value, label);
+    return true;
+  } catch (error) {
+    void reply.code(400).send({ message: error instanceof Error ? error.message : `${label} 无效` });
+    return false;
+  }
 }
 
 function validateDocument(value: unknown, reply: FastifyReply): ApplicationDocument | undefined {
@@ -38,113 +48,97 @@ export async function registerApplicationRoutes(app: FastifyInstance, store: Met
     if (!requireProject(store, request.params.projectId, reply)) return reply;
     const body = validateDocument(request.body, reply);
     if (!body) return reply;
-    const reservation = store.getApplicationIdReservation(body.metadata.id);
-    if (reservation) {
-      return reply.code(409).send({ message: "应用 ID 已存在", currentRevision: reservation.currentRevision });
+    const result = await store.createApplicationDraft(request.params.projectId, body, new Date().toISOString());
+    if (result.status === "project-not-found") return reply.code(404).send({ message: "项目不存在" });
+    if (result.status === "conflict") {
+      return reply.code(409).send({ message: "应用 ID 已存在", currentRevision: result.reservation.currentRevision });
     }
-    const now = new Date().toISOString();
-    const application: ApplicationDocument = {
-      ...structuredClone(body),
-      metadata: {
-        ...structuredClone(body.metadata),
-        projectId: request.params.projectId,
-        revision: 1,
-        createdAt: now,
-        updatedAt: now
-      }
-    };
-    return reply.code(201).send(await store.saveApplication(application));
+    return reply.code(201).send(result.application);
   });
 
   app.get<{ Params: ApplicationParams }>("/api/projects/:projectId/applications/:applicationId", async (request, reply) => {
     if (!requireProject(store, request.params.projectId, reply)) return reply;
+    if (!validateResourceId(request.params.applicationId, "applicationId", reply)) return reply;
     const application = store.getApplication(request.params.projectId, request.params.applicationId);
     return application ?? reply.code(404).send({ message: "应用不存在" });
   });
 
   app.put<{ Params: ApplicationParams; Body: unknown }>("/api/projects/:projectId/applications/:applicationId", async (request, reply) => {
     if (!requireProject(store, request.params.projectId, reply)) return reply;
-    const current = store.getApplication(request.params.projectId, request.params.applicationId);
-    if (!current) return reply.code(404).send({ message: "应用不存在" });
+    if (!validateResourceId(request.params.applicationId, "applicationId", reply)) return reply;
     const body = validateDocument(request.body, reply);
     if (!body) return reply;
-    if (body.metadata.revision !== current.metadata.revision) {
-      return reply.code(409).send({ message: "应用已被其他修改更新", currentRevision: current.metadata.revision });
+    const result = await store.updateApplicationDraft(
+      request.params.projectId,
+      request.params.applicationId,
+      body,
+      new Date().toISOString()
+    );
+    if (result.status === "project-not-found") return reply.code(404).send({ message: "项目不存在" });
+    if (result.status === "application-not-found") return reply.code(404).send({ message: "应用不存在" });
+    if (result.status === "revision-conflict") {
+      return reply.code(409).send({ message: "应用已被其他修改更新", currentRevision: result.currentRevision });
     }
-    const application: ApplicationDocument = {
-      ...structuredClone(body),
-      metadata: {
-        ...structuredClone(body.metadata),
-        id: request.params.applicationId,
-        projectId: request.params.projectId,
-        revision: current.metadata.revision + 1,
-        createdAt: current.metadata.createdAt,
-        updatedAt: new Date().toISOString()
-      }
-    };
-    return store.saveApplication(application);
+    return result.application;
   });
 
   app.delete<{ Params: ApplicationParams }>("/api/projects/:projectId/applications/:applicationId", async (request, reply) => {
     if (!requireProject(store, request.params.projectId, reply)) return reply;
-    const current = store.getApplication(request.params.projectId, request.params.applicationId);
-    if (!current) return reply.code(404).send({ message: "应用不存在" });
-    if (store.getApplicationPublicationPointer(request.params.applicationId)) {
-      return reply.code(409).send({ message: "请先撤回应用发布版本" });
-    }
-    await store.removeApplication(request.params.projectId, request.params.applicationId);
+    if (!validateResourceId(request.params.applicationId, "applicationId", reply)) return reply;
+    const result = await store.deleteApplicationDraft(request.params.projectId, request.params.applicationId);
+    if (result.status === "project-not-found") return reply.code(404).send({ message: "项目不存在" });
+    if (result.status === "application-not-found") return reply.code(404).send({ message: "应用不存在" });
+    if (result.status === "active-publication") return reply.code(409).send({ message: "请先撤回应用发布版本" });
     return reply.code(204).send();
   });
 
   app.post<{ Params: ApplicationParams }>("/api/projects/:projectId/applications/:applicationId/publish", async (request, reply) => {
     if (!requireProject(store, request.params.projectId, reply)) return reply;
-    const current = store.getApplication(request.params.projectId, request.params.applicationId);
-    if (!current) return reply.code(404).send({ message: "应用不存在" });
+    if (!validateResourceId(request.params.applicationId, "applicationId", reply)) return reply;
     const publishedAt = new Date().toISOString();
-    const record: PublishedApplicationRecord = {
-      id: randomUUID(),
-      applicationId: current.metadata.id,
-      projectId: current.metadata.projectId,
-      applicationRevision: current.metadata.revision,
-      document: structuredClone(current),
+    const result = await store.publishApplication(
+      request.params.projectId,
+      request.params.applicationId,
+      randomUUID(),
       publishedAt
-    };
-    const saved = await store.savePublishedApplication(record);
-    const pointer: ApplicationPublicationPointer = {
-      applicationId: current.metadata.id,
-      projectId: current.metadata.projectId,
-      activePublicationId: saved.id,
-      updatedAt: publishedAt
-    };
-    await store.saveApplicationPublicationPointer(pointer);
-    return reply.code(201).send(saved);
+    );
+    if (result.status === "project-not-found") return reply.code(404).send({ message: "项目不存在" });
+    if (result.status === "application-not-found") return reply.code(404).send({ message: "应用不存在" });
+    return reply.code(201).send(result.publication);
   });
 
   app.delete<{ Params: ApplicationParams }>("/api/projects/:projectId/applications/:applicationId/publish", async (request, reply) => {
     if (!requireProject(store, request.params.projectId, reply)) return reply;
-    const current = store.getApplication(request.params.projectId, request.params.applicationId);
-    if (!current) return reply.code(404).send({ message: "应用不存在" });
-    const pointer = store.getApplicationPublicationPointer(request.params.applicationId);
-    if (!pointer || pointer.projectId !== request.params.projectId) {
-      return reply.code(404).send({ message: "应用尚未发布" });
-    }
-    await store.removeApplicationPublicationPointer(request.params.applicationId);
+    if (!validateResourceId(request.params.applicationId, "applicationId", reply)) return reply;
+    const result = await store.unpublishApplication(request.params.projectId, request.params.applicationId);
+    if (result.status === "project-not-found") return reply.code(404).send({ message: "项目不存在" });
+    if (result.status === "application-not-found") return reply.code(404).send({ message: "应用不存在" });
+    if (result.status === "not-published") return reply.code(404).send({ message: "应用尚未发布" });
     return reply.code(204).send();
   });
 
   app.get<{ Params: { applicationId: string } }>("/api/public/applications/:applicationId", async (request, reply) => {
+    if (!validateResourceId(request.params.applicationId, "applicationId", reply)) return reply;
     const pointer = store.getApplicationPublicationPointer(request.params.applicationId);
     if (!pointer) return reply.code(404).send({ message: "应用尚未发布或已撤回" });
     const record = store.getPublishedApplication(pointer.activePublicationId);
-    if (!record || record.applicationId !== request.params.applicationId) {
+    if (!store.getProject(pointer.projectId)
+      || !store.getApplication(pointer.projectId, request.params.applicationId)
+      || !record
+      || record.applicationId !== request.params.applicationId
+      || record.projectId !== pointer.projectId) {
       return reply.code(404).send({ message: "应用尚未发布或已撤回" });
     }
     return record;
   });
 
   app.get<{ Params: PublicationParams }>("/api/public/applications/:applicationId/revisions/:publicationId", async (request, reply) => {
+    if (!validateResourceId(request.params.applicationId, "applicationId", reply)) return reply;
     const record = store.getPublishedApplication(request.params.publicationId);
-    if (!record || record.applicationId !== request.params.applicationId || record.id !== request.params.publicationId) {
+    if (!record
+      || !store.getProject(record.projectId)
+      || record.applicationId !== request.params.applicationId
+      || record.id !== request.params.publicationId) {
       return reply.code(404).send({ message: "应用发布版本不存在" });
     }
     return record;

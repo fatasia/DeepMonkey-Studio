@@ -1,23 +1,31 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  hasCallToIdentifier,
+  hasDomHostReference,
+  moduleSpecifiers,
+  typescriptSourceFiles
+} from "../../../scripts/architectureAnalysis.js";
 
-const forbidden = /from\s+["'](?:react(?:-dom)?(?:\/[^"']*)?|three(?:\/[^"']*)?|@tauri-apps\/[^"']*|node:https?)["']|\bfetch\s*\(|\bwindow\b|\bglobalThis\s*\.\s*document\b|\bdocument\s*\.\s*(?:body|cookie|createElement|getElementById|querySelector|querySelectorAll)\b/;
+const forbiddenModule = /^(?:react(?:-dom)?(?:\/|$)|three(?:\/|$)|@tauri-apps\/|node:https?$)/;
 
 describe("studio-core dependency direction", () => {
   it("detects DOM globals without rejecting application document variables", () => {
-    expect(forbidden.test("const document = loadApplicationDocument();")).toBe(false);
-    expect(forbidden.test("document.createElement('canvas');")).toBe(true);
-    expect(forbidden.test("globalThis.document.body.append(node);")).toBe(true);
+    expect(hasDomHostReference("const document = loadApplicationDocument();")).toBe(false);
+    expect(hasDomHostReference("document.createElement('canvas');")).toBe(true);
+    expect(hasDomHostReference("globalThis.document.body.append(node);")).toBe(true);
   });
 
-  it("does not import UI, renderer, host, or network implementations", async () => {
+  it("recursively rejects UI, renderer, host, and network dependencies through every import form", async () => {
     const directory = path.resolve(import.meta.dirname);
-    const files = (await readdir(directory)).filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"));
     const violations: string[] = [];
-    for (const file of files) {
-      const source = await readFile(path.join(directory, file), "utf8");
-      if (forbidden.test(source)) violations.push(file);
+    for (const file of typescriptSourceFiles(directory)) {
+      const source = await readFile(file, "utf8");
+      const forbiddenImports = moduleSpecifiers(source, file).filter((specifier) => forbiddenModule.test(specifier));
+      if (forbiddenImports.length > 0 || hasCallToIdentifier(source, "fetch", file) || hasDomHostReference(source, file)) {
+        violations.push(path.relative(directory, file));
+      }
     }
     expect(violations).toEqual([]);
   });

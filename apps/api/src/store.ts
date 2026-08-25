@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { assertApplicationDocument, assertPathSafeResourceId } from "@bim-studio/contracts";
 import type { AiProviderSettings, ApplicationDocument, ApplicationPublicationPointer, AuditLogRecord, DataConnectionRecord, DataDatasetRecord, DatabaseDocument, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedApplicationRecord, PublishedSceneRecord, SceneSnapshot, StoredSystemUserRecord, SystemBrandingSettings, VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
 import type { AppConfig } from "./config.js";
 
@@ -9,6 +10,30 @@ export interface ApplicationIdReservation {
   projectId: string;
   currentRevision: number;
 }
+
+export type CreateApplicationDraftResult =
+  | { status: "created"; application: ApplicationDocument }
+  | { status: "project-not-found" }
+  | { status: "conflict"; reservation: ApplicationIdReservation };
+
+export type UpdateApplicationDraftResult =
+  | { status: "updated"; application: ApplicationDocument }
+  | { status: "project-not-found" }
+  | { status: "application-not-found" }
+  | { status: "revision-conflict"; currentRevision: number };
+
+export type DeleteApplicationDraftResult = {
+  status: "deleted" | "project-not-found" | "application-not-found" | "active-publication";
+};
+
+export type PublishApplicationResult =
+  | { status: "published"; publication: PublishedApplicationRecord }
+  | { status: "project-not-found" }
+  | { status: "application-not-found" };
+
+export type UnpublishApplicationResult = {
+  status: "unpublished" | "project-not-found" | "application-not-found" | "not-published";
+};
 
 export interface MetadataStore {
   init(): Promise<void>;
@@ -55,14 +80,14 @@ export interface MetadataStore {
   getApplication(projectId: string, applicationId: string): ApplicationDocument | undefined;
   getApplicationById(applicationId: string): ApplicationDocument | undefined;
   getApplicationIdReservation(applicationId: string): ApplicationIdReservation | undefined;
-  saveApplication(application: ApplicationDocument): Promise<ApplicationDocument>;
-  removeApplication(projectId: string, applicationId: string): Promise<boolean>;
+  createApplicationDraft(projectId: string, application: ApplicationDocument, now: string): Promise<CreateApplicationDraftResult>;
+  updateApplicationDraft(projectId: string, applicationId: string, application: ApplicationDocument, now: string): Promise<UpdateApplicationDraftResult>;
+  deleteApplicationDraft(projectId: string, applicationId: string): Promise<DeleteApplicationDraftResult>;
+  publishApplication(projectId: string, applicationId: string, publicationId: string, publishedAt: string): Promise<PublishApplicationResult>;
+  unpublishApplication(projectId: string, applicationId: string): Promise<UnpublishApplicationResult>;
   getPublishedApplication(publicationId: string): PublishedApplicationRecord | undefined;
   listApplicationPublications(applicationId: string): PublishedApplicationRecord[];
-  savePublishedApplication(record: PublishedApplicationRecord): Promise<PublishedApplicationRecord>;
   getApplicationPublicationPointer(applicationId: string): ApplicationPublicationPointer | undefined;
-  saveApplicationPublicationPointer(pointer: ApplicationPublicationPointer): Promise<ApplicationPublicationPointer>;
-  removeApplicationPublicationPointer(applicationId: string): Promise<boolean>;
   listUsers(): StoredSystemUserRecord[];
   getUser(userId: string): StoredSystemUserRecord | undefined;
   findUserByUsername(username: string): StoredSystemUserRecord | undefined;
@@ -86,6 +111,7 @@ export class JsonStore implements MetadataStore {
     applicationPublicationPointers: []
   };
   private writeChain = Promise.resolve();
+  private applicationLifecycleChain = Promise.resolve();
 
   constructor(private readonly dataDir: string) {
     this.databasePath = path.join(dataDir, "database.json");
@@ -144,13 +170,18 @@ export class JsonStore implements MetadataStore {
   }
 
   async removeProject(projectId: string): Promise<boolean> {
-    const originalLength = this.document.projects.length;
-    this.document.projects = this.document.projects.filter((item) => item.id !== projectId);
-    if (this.document.projects.length === originalLength) return false;
-    this.document.scenes = this.document.scenes.filter((scene) => scene.projectId !== projectId);
-    this.document.publishedScenes = (this.document.publishedScenes ?? []).filter((scene) => scene.projectId !== projectId);
-    await this.persist();
-    return true;
+    assertPathSafeResourceId(projectId, "projectId");
+    return this.runApplicationLifecycleMutation<boolean>((candidate) => {
+      const originalLength = candidate.projects.length;
+      candidate.projects = candidate.projects.filter((item) => item.id !== projectId);
+      if (candidate.projects.length === originalLength) return unchanged(false);
+      candidate.scenes = candidate.scenes.filter((scene) => scene.projectId !== projectId);
+      candidate.publishedScenes = (candidate.publishedScenes ?? []).filter((scene) => scene.projectId !== projectId);
+      candidate.applications = (candidate.applications ?? []).filter((application) => application.metadata.projectId !== projectId);
+      candidate.applicationPublicationPointers = (candidate.applicationPublicationPointers ?? [])
+        .filter((pointer) => pointer.projectId !== projectId);
+      return changed(true);
+    });
   }
 
   async addModel(projectId: string, model: ModelRecord): Promise<void> {
@@ -435,47 +466,126 @@ export class JsonStore implements MetadataStore {
   }
 
   getApplicationIdReservation(applicationId: string): ApplicationIdReservation | undefined {
-    const application = (this.document.applications ?? []).find((candidate) => candidate.metadata.id === applicationId);
-    if (application) {
-      return {
-        projectId: application.metadata.projectId,
-        currentRevision: application.metadata.revision
+    return applicationIdReservation(this.document, applicationId);
+  }
+
+  async createApplicationDraft(projectId: string, application: ApplicationDocument, now: string): Promise<CreateApplicationDraftResult> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertApplicationDocument(application);
+    return this.runApplicationLifecycleMutation<CreateApplicationDraftResult>((candidate) => {
+      if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
+      const reservation = applicationIdReservation(candidate, application.metadata.id);
+      if (reservation) return unchanged({ status: "conflict", reservation });
+      const saved: ApplicationDocument = {
+        ...structuredClone(application),
+        metadata: {
+          ...structuredClone(application.metadata),
+          projectId,
+          revision: 1,
+          createdAt: now,
+          updatedAt: now
+        }
       };
-    }
-    const publication = (this.document.publishedApplications ?? [])
-      .filter((candidate) => candidate.applicationId === applicationId)
-      .reduce<PublishedApplicationRecord | undefined>((latest, candidate) =>
-        !latest || candidate.applicationRevision > latest.applicationRevision ? candidate : latest, undefined);
-    return publication ? { projectId: publication.projectId, currentRevision: publication.applicationRevision } : undefined;
+      candidate.applications ??= [];
+      candidate.applications.push(saved);
+      return changed({ status: "created", application: structuredClone(saved) });
+    });
   }
 
-  async saveApplication(application: ApplicationDocument): Promise<ApplicationDocument> {
-    this.document.applications ??= [];
-    const existing = this.getApplicationById(application.metadata.id);
-    if (existing && existing.metadata.projectId !== application.metadata.projectId) {
-      throw new Error(`应用 ID ${application.metadata.id} 已存在于项目 ${existing.metadata.projectId}`);
-    }
-    if (!existing) {
-      const reservation = this.getApplicationIdReservation(application.metadata.id);
-      if (reservation) {
-        throw new Error(`应用 ID ${application.metadata.id} 已由项目 ${reservation.projectId} 的发布历史保留`);
+  async updateApplicationDraft(projectId: string, applicationId: string, application: ApplicationDocument, now: string): Promise<UpdateApplicationDraftResult> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(applicationId, "applicationId");
+    assertApplicationDocument(application);
+    return this.runApplicationLifecycleMutation<UpdateApplicationDraftResult>((candidate) => {
+      if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
+      const index = (candidate.applications ?? []).findIndex((item) =>
+        item.metadata.projectId === projectId && item.metadata.id === applicationId);
+      if (index < 0) return unchanged({ status: "application-not-found" });
+      const current = candidate.applications![index]!;
+      if (application.metadata.revision !== current.metadata.revision) {
+        return unchanged({ status: "revision-conflict", currentRevision: current.metadata.revision });
       }
-    }
-    const index = this.document.applications.findIndex((item) =>
-      item.metadata.projectId === application.metadata.projectId && item.metadata.id === application.metadata.id);
-    if (index >= 0) this.document.applications[index] = structuredClone(application);
-    else this.document.applications.push(structuredClone(application));
-    await this.persist();
-    return structuredClone(application);
+      const saved: ApplicationDocument = {
+        ...structuredClone(application),
+        metadata: {
+          ...structuredClone(application.metadata),
+          id: applicationId,
+          projectId,
+          revision: current.metadata.revision + 1,
+          createdAt: current.metadata.createdAt,
+          updatedAt: now
+        }
+      };
+      candidate.applications![index] = saved;
+      return changed({ status: "updated", application: structuredClone(saved) });
+    });
   }
 
-  async removeApplication(projectId: string, applicationId: string): Promise<boolean> {
-    const items = this.document.applications ?? [];
-    const next = items.filter((item) => item.metadata.projectId !== projectId || item.metadata.id !== applicationId);
-    if (next.length === items.length) return false;
-    this.document.applications = next;
-    await this.persist();
-    return true;
+  async deleteApplicationDraft(projectId: string, applicationId: string): Promise<DeleteApplicationDraftResult> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(applicationId, "applicationId");
+    return this.runApplicationLifecycleMutation<DeleteApplicationDraftResult>((candidate) => {
+      if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
+      const index = (candidate.applications ?? []).findIndex((item) =>
+        item.metadata.projectId === projectId && item.metadata.id === applicationId);
+      if (index < 0) return unchanged({ status: "application-not-found" });
+      if ((candidate.applicationPublicationPointers ?? []).some((pointer) => pointer.applicationId === applicationId)) {
+        return unchanged({ status: "active-publication" });
+      }
+      candidate.applications!.splice(index, 1);
+      return changed({ status: "deleted" });
+    });
+  }
+
+  async publishApplication(projectId: string, applicationId: string, publicationId: string, publishedAt: string): Promise<PublishApplicationResult> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(applicationId, "applicationId");
+    return this.runApplicationLifecycleMutation<PublishApplicationResult>((candidate) => {
+      if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
+      const application = (candidate.applications ?? []).find((item) =>
+        item.metadata.projectId === projectId && item.metadata.id === applicationId);
+      if (!application) return unchanged({ status: "application-not-found" });
+      candidate.publishedApplications ??= [];
+      if (candidate.publishedApplications.some((publication) => publication.id === publicationId)) {
+        throw new Error(`发布版本 ${publicationId} 已存在`);
+      }
+      const publication: PublishedApplicationRecord = {
+        id: publicationId,
+        applicationId,
+        projectId,
+        applicationRevision: application.metadata.revision,
+        document: structuredClone(application),
+        publishedAt
+      };
+      candidate.publishedApplications.push(publication);
+      const pointer: ApplicationPublicationPointer = {
+        applicationId,
+        projectId,
+        activePublicationId: publicationId,
+        updatedAt: publishedAt
+      };
+      candidate.applicationPublicationPointers ??= [];
+      const pointerIndex = candidate.applicationPublicationPointers.findIndex((item) => item.applicationId === applicationId);
+      if (pointerIndex >= 0) candidate.applicationPublicationPointers[pointerIndex] = pointer;
+      else candidate.applicationPublicationPointers.push(pointer);
+      return changed({ status: "published", publication: structuredClone(publication) });
+    });
+  }
+
+  async unpublishApplication(projectId: string, applicationId: string): Promise<UnpublishApplicationResult> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(applicationId, "applicationId");
+    return this.runApplicationLifecycleMutation<UnpublishApplicationResult>((candidate) => {
+      if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
+      const application = (candidate.applications ?? []).find((item) =>
+        item.metadata.projectId === projectId && item.metadata.id === applicationId);
+      if (!application) return unchanged({ status: "application-not-found" });
+      const pointerIndex = (candidate.applicationPublicationPointers ?? []).findIndex((pointer) =>
+        pointer.applicationId === applicationId && pointer.projectId === projectId);
+      if (pointerIndex < 0) return unchanged({ status: "not-published" });
+      candidate.applicationPublicationPointers!.splice(pointerIndex, 1);
+      return changed({ status: "unpublished" });
+    });
   }
 
   getPublishedApplication(publicationId: string): PublishedApplicationRecord | undefined {
@@ -487,35 +597,9 @@ export class JsonStore implements MetadataStore {
     return structuredClone((this.document.publishedApplications ?? []).filter((item) => item.applicationId === applicationId));
   }
 
-  async savePublishedApplication(record: PublishedApplicationRecord): Promise<PublishedApplicationRecord> {
-    this.document.publishedApplications ??= [];
-    if (this.document.publishedApplications.some((item) => item.id === record.id)) throw new Error(`发布版本 ${record.id} 已存在`);
-    this.document.publishedApplications.push(structuredClone(record));
-    await this.persist();
-    return structuredClone(record);
-  }
-
   getApplicationPublicationPointer(applicationId: string): ApplicationPublicationPointer | undefined {
     const item = (this.document.applicationPublicationPointers ?? []).find((candidate) => candidate.applicationId === applicationId);
     return item ? structuredClone(item) : undefined;
-  }
-
-  async saveApplicationPublicationPointer(pointer: ApplicationPublicationPointer): Promise<ApplicationPublicationPointer> {
-    this.document.applicationPublicationPointers ??= [];
-    const index = this.document.applicationPublicationPointers.findIndex((item) => item.applicationId === pointer.applicationId);
-    if (index >= 0) this.document.applicationPublicationPointers[index] = structuredClone(pointer);
-    else this.document.applicationPublicationPointers.push(structuredClone(pointer));
-    await this.persist();
-    return structuredClone(pointer);
-  }
-
-  async removeApplicationPublicationPointer(applicationId: string): Promise<boolean> {
-    const pointers = this.document.applicationPublicationPointers ?? [];
-    const next = pointers.filter((item) => item.applicationId !== applicationId);
-    if (next.length === pointers.length) return false;
-    this.document.applicationPublicationPointers = next;
-    await this.persist();
-    return true;
   }
 
   listUsers(): StoredSystemUserRecord[] {
@@ -631,12 +715,36 @@ export class JsonStore implements MetadataStore {
     return changed;
   }
 
+  /**
+   * Application and project lifecycle mutations are serialized within one store
+   * instance. Deployments must currently use a single API writer; this is not a
+   * cross-process compare-and-swap protocol.
+   */
+  private runApplicationLifecycleMutation<T>(mutation: (candidate: DatabaseDocument) => DocumentMutation<T>): Promise<T> {
+    const execute = async () => {
+      const candidate = structuredClone(this.document);
+      const result = mutation(candidate);
+      if (!result.changed) return result.value;
+      await this.persistDocument(candidate);
+      this.document = candidate;
+      return result.value;
+    };
+    const operation = this.applicationLifecycleChain.then(execute, execute);
+    this.applicationLifecycleChain = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
   protected async persist(): Promise<void> {
-    this.writeChain = this.writeChain.then(async () => {
+    await this.persistDocument(structuredClone(this.document));
+  }
+
+  protected async persistDocument(document: DatabaseDocument): Promise<void> {
+    const write = async () => {
       const temporaryPath = `${this.databasePath}.tmp`;
-      await writeFile(temporaryPath, JSON.stringify(this.document, null, 2), "utf8");
+      await writeFile(temporaryPath, JSON.stringify(document, null, 2), "utf8");
       await rename(temporaryPath, this.databasePath);
-    });
+    };
+    this.writeChain = this.writeChain.then(write, write);
     await this.writeChain;
   }
 }
@@ -687,13 +795,14 @@ export class PostgresStore extends JsonStore {
     await this.persist();
   }
 
-  protected override async persist(): Promise<void> {
-    const encoded = Buffer.from(JSON.stringify(this.document), "utf8").toString("base64");
-    this.postgresWriteChain = this.postgresWriteChain.then(async () => {
+  protected override async persistDocument(document: DatabaseDocument): Promise<void> {
+    const encoded = Buffer.from(JSON.stringify(document), "utf8").toString("base64");
+    const write = async () => {
       await this.sql(`INSERT INTO bim_studio_state (id, document, updated_at)
         VALUES (1, convert_from(decode('${encoded}', 'base64'), 'UTF8')::jsonb, NOW())
         ON CONFLICT (id) DO UPDATE SET document = EXCLUDED.document, updated_at = NOW()`);
-    });
+    };
+    this.postgresWriteChain = this.postgresWriteChain.then(write, write);
     await this.postgresWriteChain;
   }
 
@@ -746,6 +855,34 @@ function defaultDocument(): DatabaseDocument {
     publishedApplications: [],
     applicationPublicationPointers: []
   };
+}
+
+interface DocumentMutation<T> {
+  changed: boolean;
+  value: T;
+}
+
+function changed<T>(value: T): DocumentMutation<T> {
+  return { changed: true, value };
+}
+
+function unchanged<T>(value: T): DocumentMutation<T> {
+  return { changed: false, value };
+}
+
+function applicationIdReservation(document: DatabaseDocument, applicationId: string): ApplicationIdReservation | undefined {
+  const application = (document.applications ?? []).find((candidate) => candidate.metadata.id === applicationId);
+  if (application) {
+    return {
+      projectId: application.metadata.projectId,
+      currentRevision: application.metadata.revision
+    };
+  }
+  const publication = (document.publishedApplications ?? [])
+    .filter((candidate) => candidate.applicationId === applicationId)
+    .reduce<PublishedApplicationRecord | undefined>((latest, candidate) =>
+      !latest || candidate.applicationRevision > latest.applicationRevision ? candidate : latest, undefined);
+  return publication ? { projectId: publication.projectId, currentRevision: publication.applicationRevision } : undefined;
 }
 
 function exampleMetricFields() {

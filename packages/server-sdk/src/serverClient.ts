@@ -3,6 +3,7 @@ import type {
   PublishedApplicationRecord,
   ServerMetaResponse
 } from "@bim-studio/contracts";
+import { assertPathSafeResourceId } from "@bim-studio/contracts";
 
 export type Awaitable<T> = T | Promise<T>;
 
@@ -31,11 +32,12 @@ export class ServerClient {
   }
 
   async open(path: string, init?: RequestInit): Promise<Response> {
+    const url = resolveApiUrl(path, this.options.profile.baseUrl);
     const headers = new Headers(init?.headers);
     const token = await this.options.authStore.getAccessToken();
     if (token) headers.set("authorization", `Bearer ${token}`);
     const response = await this.fetchImpl(
-      new URL(path, normalizedBase(this.options.profile.baseUrl)),
+      url,
       { ...init, headers }
     );
     if (!response.ok) {
@@ -57,14 +59,19 @@ export class ServerClient {
   }
 
   listApplications(projectId: string): Promise<ApplicationDocument[]> {
+    assertPathSafeResourceId(projectId, "projectId");
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/applications`);
   }
 
   getApplication(projectId: string, applicationId: string): Promise<ApplicationDocument> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(applicationId, "applicationId");
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}`);
   }
 
   createApplication(document: ApplicationDocument): Promise<ApplicationDocument> {
+    assertPathSafeResourceId(document.metadata.projectId, "projectId");
+    assertPathSafeResourceId(document.metadata.id, "applicationId");
     return this.request(
       `/api/projects/${encodeURIComponent(document.metadata.projectId)}/applications`,
       json("POST", document)
@@ -72,6 +79,8 @@ export class ServerClient {
   }
 
   saveApplication(document: ApplicationDocument): Promise<ApplicationDocument> {
+    assertPathSafeResourceId(document.metadata.projectId, "projectId");
+    assertPathSafeResourceId(document.metadata.id, "applicationId");
     return this.request(
       `/api/projects/${encodeURIComponent(document.metadata.projectId)}/applications/${encodeURIComponent(document.metadata.id)}`,
       json("PUT", document)
@@ -79,6 +88,8 @@ export class ServerClient {
   }
 
   deleteApplication(projectId: string, applicationId: string): Promise<void> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(applicationId, "applicationId");
     return this.request(
       `/api/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}`,
       { method: "DELETE" }
@@ -86,6 +97,8 @@ export class ServerClient {
   }
 
   publishApplication(projectId: string, applicationId: string): Promise<PublishedApplicationRecord> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(applicationId, "applicationId");
     return this.request(
       `/api/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/publish`,
       { method: "POST" }
@@ -93,6 +106,8 @@ export class ServerClient {
   }
 
   unpublishApplication(projectId: string, applicationId: string): Promise<void> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(applicationId, "applicationId");
     return this.request(
       `/api/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/publish`,
       { method: "DELETE" }
@@ -100,8 +115,35 @@ export class ServerClient {
   }
 }
 
-function normalizedBase(baseUrl: string): string {
-  return `${baseUrl.replace(/\/$/, "")}/`;
+function resolveApiUrl(path: string, baseUrl: string): URL {
+  if (!path.startsWith("/api")
+    || (path.length > 4 && path[4] !== "/" && path[4] !== "?")
+    || path.startsWith("//")
+    || path.includes("\\")
+    || path.includes("#")
+    || /%(?:2f|5c)/i.test(path)) {
+    throw new TypeError("ServerClient accepts only a root-relative same-origin API path");
+  }
+
+  let configured: URL;
+  try {
+    configured = new URL(baseUrl);
+  } catch {
+    throw new TypeError("ServerClient profile baseUrl must be an absolute HTTP(S) URL");
+  }
+  if ((configured.protocol !== "http:" && configured.protocol !== "https:")
+    || configured.username
+    || configured.password) {
+    throw new TypeError("ServerClient profile baseUrl must be an absolute HTTP(S) URL");
+  }
+
+  const origin = new URL("/", configured);
+  const resolved = new URL(path, origin);
+  if (resolved.origin !== origin.origin
+    || (resolved.pathname !== "/api" && !resolved.pathname.startsWith("/api/"))) {
+    throw new TypeError("ServerClient accepts only a root-relative same-origin API path");
+  }
+  return resolved;
 }
 
 function json(method: "POST" | "PUT", body: unknown): RequestInit {

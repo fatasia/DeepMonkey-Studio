@@ -148,6 +148,36 @@ describe("assertApplicationDocument", () => {
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });
 
+  it.each(["", ".", "..", "bad/id", "bad\\id", "bad?query", "bad#fragment", "a".repeat(129)])
+    ("rejects path-unsafe application ID %j", (id) => {
+      const application = altered(pureApplication, (value) => { value.metadata.id = id; });
+      expect(() => assertApplicationDocument(application)).toThrow("应用.metadata.id");
+    });
+
+  it.each(["", ".", "..", "bad/id", "bad\\id", "bad?query", "bad#fragment", "a".repeat(129)])
+    ("rejects path-unsafe project ID %j", (projectId) => {
+      const application = altered(pureApplication, (value) => { value.metadata.projectId = projectId; });
+      expect(() => assertApplicationDocument(application)).toThrow("应用.metadata.projectId");
+    });
+
+  it.each([
+    ["sparse", (array: unknown[]) => { array.length = 2; array[1] = pureApplication.pages[0]; }],
+    ["custom string property", (array: unknown[]) => { array.push(pureApplication.pages[0]); Reflect.set(array, "extra", true); }],
+    ["symbol property", (array: unknown[]) => { array.push(pureApplication.pages[0]); Reflect.set(array, Symbol("extra"), true); }]
+  ] as const)("rejects a %s on structural arrays", (_name, corrupt) => {
+    const application = structuredClone(pureApplication);
+    const pages: unknown[] = [];
+    corrupt(pages);
+    Reflect.set(application, "pages", pages);
+    expect(() => assertApplicationDocument(application)).toThrow("应用.pages");
+  });
+
+  it("rejects custom properties on nested structural arrays", () => {
+    const application = structuredClone(pureApplication);
+    Reflect.set(application.pages[0]!.nodes, "extra", true);
+    expect(() => assertApplicationDocument(application)).toThrow("应用.pages[0].nodes");
+  });
+
   it.each(malformedCases)("rejects malformed %s", (_name, valueFactory) => {
     expect(() => assertApplicationDocument(valueFactory())).toThrow();
   });

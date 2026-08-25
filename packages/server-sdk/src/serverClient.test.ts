@@ -103,6 +103,44 @@ describe("ServerClient", () => {
     await expect(client.request("/api/projects")).rejects.toThrow("登录失效");
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    "https://evil.example/api/meta",
+    "//evil.example/api/meta",
+    "///evil.example/api/meta",
+    "api/meta",
+    "/\\evil.example/api/meta",
+    "/api\\meta",
+    "/assets/model.glb",
+    "/api/meta#fragment"
+  ])("rejects unsafe API path %j before reading auth or fetching", async (path) => {
+    const getAccessToken = vi.fn(() => "token-1");
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = new ServerClient({
+      profile: { baseUrl: "https://bim.example.test/base/" },
+      authStore: { ...emptyAuthStore, getAccessToken },
+      fetch
+    });
+
+    await expect(client.request(path)).rejects.toThrow("root-relative same-origin API path");
+    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["", ".", "..", "bad/id", "bad\\id", "bad?query", "bad#fragment", "a".repeat(129)])
+    ("rejects unsafe typed-client resource ID %j before reading auth or fetching", async (id) => {
+      const getAccessToken = vi.fn(() => "token-1");
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      const client = new ServerClient({
+        profile: { baseUrl: "https://bim.example.test" },
+        authStore: { ...emptyAuthStore, getAccessToken },
+        fetch
+      });
+
+      expect(() => client.getApplication("default", id)).toThrow("applicationId");
+      expect(getAccessToken).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    });
 });
 
 function jsonResponse(body: unknown): Response {

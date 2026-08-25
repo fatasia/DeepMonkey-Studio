@@ -1736,7 +1736,7 @@ All protocol members must use serializable data and stable IDs; no callable func
 
 - [ ] **Step 3: Implement deterministic compatibility negotiation**
 
-`compatibility.ts` must define `SceneHostCapabilities` with API version, host, renderer, supported capability/permission arrays, and `allowTrustedExtensions`. `resolveSceneExtensionCompatibility` returns `{ compatible: boolean; reasons: Array<{ code; detail }> }`. It must validate a strict `major.minor` API form, require equal major and host minor greater than or equal to extension minor, and report reason codes in this fixed order: `invalid-api-version`, `api-major-mismatch`, `api-minor-unsupported`, `host-unsupported`, `renderer-unsupported`, `trusted-extension-disabled`, `capability-unsupported`, `permission-denied`. Missing capabilities/permissions use sorted comma-separated detail so output is deterministic.
+`compatibility.ts` must define `SceneHostCapabilities` with API version, host, renderer, supported capability/permission arrays, and `allowTrustedExtensions`. `resolveSceneExtensionCompatibility` returns `{ compatible: boolean; reasons: Array<{ code; detail }> }`. It must validate a strict `major.minor` API form, require equal major and host minor greater than or equal to extension minor, and report reason codes in this fixed order: `invalid-api-version`, `api-major-mismatch`, `api-minor-unsupported`, `host-unsupported`, `renderer-unsupported`, `invalid-execution`, `trusted-extension-disabled`, `capability-unsupported`, `permission-denied`. Missing capabilities/permissions use sorted comma-separated detail so output is deterministic.
 
 - [ ] **Step 4: Version ApplicationDocument scripts and preserve v1 migration**
 

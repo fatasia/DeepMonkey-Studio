@@ -4,10 +4,17 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "node ../../scripts/clean-dir.mjs dist && tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },

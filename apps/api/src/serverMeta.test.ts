@@ -49,12 +49,24 @@ describe("server metadata", () => {
     await expect(loadOrCreateServerInstanceId(directory)).resolves.toBe("3d3ae7ab-2a96-43c3-8354-2ba4d56cf8aa");
   });
 
-  it("rejects an empty persisted serverInstanceId file", async () => {
+  it("recovers an empty persisted serverInstanceId file", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "bim-meta-empty-"));
     directories.push(directory);
     await writeFile(path.join(directory, "server-instance-id"), "\n", "utf8");
 
-    await expect(loadOrCreateServerInstanceId(directory)).rejects.toThrow("server-instance-id 文件为空");
+    const recovered = await loadOrCreateServerInstanceId(directory);
+    expect(recovered).toMatch(/^[0-9a-f-]{36}$/);
+    await expect(loadOrCreateServerInstanceId(directory)).resolves.toBe(recovered);
+  });
+
+  it("recovers one ID from an empty file during concurrent publication", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-meta-empty-race-"));
+    directories.push(directory);
+    await writeFile(path.join(directory, "server-instance-id"), "", "utf8");
+
+    const instanceIds = await Promise.all(Array.from({ length: 16 }, () => loadOrCreateServerInstanceId(directory)));
+
+    expect([...new Set(instanceIds)]).toHaveLength(1);
   });
 
   it("returns the public capability contract", async () => {

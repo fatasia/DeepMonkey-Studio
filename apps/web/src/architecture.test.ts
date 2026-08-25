@@ -1,33 +1,36 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  findDependencyCycles,
+  hasCallToIdentifier,
+  moduleSpecifiers,
+  typescriptSourceFiles,
+  workspaceDependencyCycles
+} from "../../../scripts/architectureAnalysis.js";
 
-const excludedDirectories = new Set(["dist", "generated", "node_modules"]);
-
-async function sourceFiles(directory: string): Promise<string[]> {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const nested = await Promise.all(entries.map((entry) => {
-    if (entry.isDirectory()) {
-      return excludedDirectories.has(entry.name)
-        ? Promise.resolve([])
-        : sourceFiles(path.join(directory, entry.name));
-    }
-    return Promise.resolve(entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")
-      ? [path.join(directory, entry.name)]
-      : []);
-  }));
-  return nested.flat();
-}
+const publicPackageDeepImport = /^@bim-studio\/(?:contracts|server-sdk|studio-core|scene-sdk)\/.+/;
 
 describe("web architecture boundary", () => {
-  it("uses package public APIs instead of package source deep imports", async () => {
-    const root = path.resolve(import.meta.dirname);
-    const files = await sourceFiles(root);
+  it("parses static, side-effect, export-from, and dynamic string imports with the TypeScript AST", () => {
+    expect(moduleSpecifiers(`
+      import value from "static-package";
+      import "side-effect-package";
+      export { value } from "export-package";
+      void import("dynamic-package");
+      type External = import("type-package").External;
+    `)).toEqual(["static-package", "side-effect-package", "export-package", "dynamic-package", "type-package"]);
+  });
+
+  it("recursively uses public package APIs, including scene-sdk", async () => {
+    const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
     const violations: string[] = [];
-    for (const file of files) {
-      const source = await readFile(file, "utf8");
-      if (/from\s+["']@bim-studio\/(?:studio-core|server-sdk)\//.test(source)) {
-        violations.push(path.relative(root, file));
+    for (const sourceRoot of [path.join(workspaceRoot, "apps"), path.join(workspaceRoot, "packages")]) {
+      for (const file of typescriptSourceFiles(sourceRoot, true)) {
+        const source = await readFile(file, "utf8");
+        if (moduleSpecifiers(source, file).some((specifier) => publicPackageDeepImport.test(specifier))) {
+          violations.push(path.relative(workspaceRoot, file));
+        }
       }
     }
     expect(violations).toEqual([]);
@@ -41,17 +44,22 @@ describe("web architecture boundary", () => {
       path.join("viewer", "ViewerEngine.ts"),
       path.join("optimizer", "modelOptimizer.ts")
     ]);
-    const files = (await sourceFiles(root)).filter((file) => {
-      const relative = path.relative(root, file);
-      return !exceptions.has(relative)
-        && !relative.startsWith(`adapters${path.sep}`)
-        && !relative.endsWith(".test.ts")
-        && !relative.endsWith(".test.tsx");
-    });
     const violations: string[] = [];
-    for (const file of files) {
-      if (/\bfetch\s*\(/.test(await readFile(file, "utf8"))) violations.push(path.relative(root, file));
+    for (const file of typescriptSourceFiles(root)) {
+      const relative = path.relative(root, file);
+      if (exceptions.has(relative) || relative.startsWith(`adapters${path.sep}`)) continue;
+      if (hasCallToIdentifier(await readFile(file, "utf8"), "fetch", file)) violations.push(relative);
     }
     expect(violations).toEqual([]);
+  });
+
+  it("keeps workspace package dependencies acyclic", () => {
+    const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
+    expect(workspaceDependencyCycles(workspaceRoot)).toEqual([]);
+    expect(findDependencyCycles(new Map([
+      ["a", ["b"]],
+      ["b", ["c"]],
+      ["c", ["a"]]
+    ]))).toEqual([["a", "b", "c", "a"]]);
   });
 });

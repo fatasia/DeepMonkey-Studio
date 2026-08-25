@@ -16,7 +16,7 @@ async function harness() {
   directories.push(directory);
   const store = new JsonStore(directory);
   await store.init();
-  const app = Fastify();
+  const app = Fastify({ routerOptions: { maxParamLength: 256 } });
   await registerApplicationRoutes(app, store);
   return { app, store };
 }
@@ -141,6 +141,42 @@ describe("application routes", () => {
     expect(store.getPublishedApplication(first.json().id)).toBeDefined();
     expect(store.getPublishedApplication(second.json().id)).toBeDefined();
     expect((await app.inject({ method: "GET", url: `/api/public/applications/${document.metadata.id}` })).statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("removes project drafts and active pointers while retaining hidden immutable history", async () => {
+    const { app, store } = await harness();
+    const project = await store.createProject("待删除项目");
+    const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+    document.metadata.projectId = project.id;
+    document.metadata.id = "project-delete-history";
+    expect((await app.inject({ method: "POST", url: `/api/projects/${project.id}/applications`, payload: document })).statusCode).toBe(201);
+    const publication = await app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/applications/${document.metadata.id}/publish`
+    });
+    const publicationId = publication.json().id as string;
+
+    expect(await store.removeProject(project.id)).toBe(true);
+
+    expect(store.getApplication(project.id, document.metadata.id)).toBeUndefined();
+    expect(store.getApplicationPublicationPointer(document.metadata.id)).toBeUndefined();
+    expect(store.getPublishedApplication(publicationId)).toBeDefined();
+    expect(store.getApplicationIdReservation(document.metadata.id)?.projectId).toBe(project.id);
+    expect((await app.inject({ method: "GET", url: `/api/public/applications/${document.metadata.id}` })).statusCode).toBe(404);
+    expect((await app.inject({
+      method: "GET",
+      url: `/api/public/applications/${document.metadata.id}/revisions/${publicationId}`
+    })).statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("rejects unsafe project and application path IDs", async () => {
+    const { app } = await harness();
+    const oversized = "a".repeat(129);
+
+    expect((await app.inject({ method: "GET", url: `/api/projects/${oversized}/applications` })).statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: `/api/projects/default/applications/${oversized}` })).statusCode).toBe(400);
     await app.close();
   });
 });
