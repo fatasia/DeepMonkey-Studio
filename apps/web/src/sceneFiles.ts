@@ -43,6 +43,10 @@ export function exportGlbFile(data: ArrayBuffer, sceneName: string): void {
   downloadBlob(new Blob([data], { type: "model/gltf-binary" }), `${safeFileStem(sceneName)}.glb`);
 }
 
+export function exportFbxFile(data: string, sceneName: string): void {
+  downloadBlob(new Blob([data], { type: "application/octet-stream" }), `${safeFileStem(sceneName)}.fbx`);
+}
+
 export async function exportScenePackage(scene: SceneSnapshot, models: ModelRecord[]): Promise<void> {
   const zip = new JSZip();
   const assets: ScenePackageAsset[] = [];

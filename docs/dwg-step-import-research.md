@@ -30,10 +30,10 @@ DWG
 ## DWG 能力与边界
 
 - 当前定位是基础 CAD 浏览：LibreDWG 保留并转换常见 DWG 图层和实体，现有查看器主要显示 LINE、LWPOLYLINE、ARC、CIRCLE 等可转为线段的实体。
-- 本地 `BIMFACE示例图纸.dwg` 已验证能转换为约 10.9 MB DXF；`dxf-parser` 读到 6,889 个实体、44 个图层，包含 LINE、LWPOLYLINE、ARC、CIRCLE、TEXT、MTEXT、INSERT、DIMENSION 等类型。当前基础渲染器在模型空间中生成 5,951 个可管理对象和 32 个非空图层。
+- 本地 `商业 BIM 平台示例图纸.dwg` 已验证能转换为约 10.9 MB DXF；`dxf-parser` 读到 6,889 个实体、44 个图层，包含 LINE、LWPOLYLINE、ARC、CIRCLE、TEXT、MTEXT、INSERT、DIMENSION 等类型。当前基础渲染器在模型空间中生成 5,951 个可管理对象和 32 个非空图层。
 - 加载器读取 `$INSUNITS` 并换算为米，使用 `$EXTMIN/$EXTMAX` 选择模型空间，自动保存原始中心并将显示几何归中；这避免绝对测绘坐标和纸空间图框把相机推到数千万坐标。
 - 当前查看器不会完整还原 INSERT 块、DIMENSION 标注、HATCH 填充、复杂文字字体、动态块、布局视口以及 AEC/Civil 代理对象。LibreDWG 对部分高级 R2010+ 对象也会输出警告或跳过。
-- 因此页面应表述为“DWG 基础导入”，不能宣传与 AutoCAD/BIMFACE 相同的高保真 DWG 能力。高保真需求仍应切换到 Autodesk RealDWG、ODA Drawings SDK 或 Autodesk APS。
+- 因此页面应表述为“DWG 基础导入”，不能宣传与 AutoCAD/商业 BIM 平台 相同的高保真 DWG 能力。高保真需求仍应切换到 Autodesk RealDWG、ODA Drawings SDK 或 Autodesk APS。
 
 ## 许可证
 

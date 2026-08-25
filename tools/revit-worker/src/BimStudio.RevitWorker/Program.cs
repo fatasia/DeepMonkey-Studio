@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.Json;
 
 namespace BimStudio.RevitWorker;
@@ -12,6 +14,11 @@ internal static class Program
         try
         {
             var options = Arguments.Parse(args);
+            if (options.Value("inspect") is { } inspectPath)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(RevitFileInspector.Inspect(inspectPath), JsonOptions));
+                return 0;
+            }
             Run(options);
             return 0;
         }
@@ -58,7 +65,7 @@ internal static class Program
         var timeoutSeconds = options.IntValue("timeout-seconds", 1800);
         if (!File.Exists(input)) throw new FileNotFoundException("RVT 文件不存在", input);
         if (mode is not ("ifc" or "native-glb")) throw new ArgumentException("--mode 必须是 ifc 或 native-glb");
-        if (!int.TryParse(version, out var numericVersion) || numericVersion < 2023 || numericVersion > 2099)
+        if (!int.TryParse(version, out var numericVersion) || numericVersion < 2019 || numericVersion > 2099)
             throw new ArgumentException("--revit-version 必须是四位 Revit 版本号");
 
         Directory.CreateDirectory(output);
@@ -146,6 +153,26 @@ internal sealed record WorkerReady(int ProcessId, string RevitVersion, DateTimeO
 
 internal static class WorkerPaths
 {
+    public static IReadOnlyList<(string Version, string Executable)> InstalledRevits()
+    {
+        var found = new Dictionary<string, string>();
+        foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        {
+            var name = entry.Key?.ToString() ?? "";
+            var match = System.Text.RegularExpressions.Regex.Match(name, @"^REVIT_(20\d{2})_PATH$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var executable = entry.Value?.ToString();
+            if (match.Success && !string.IsNullOrWhiteSpace(executable) && File.Exists(executable)) found[match.Groups[1].Value] = Path.GetFullPath(executable);
+        }
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        for (var year = 2019; year <= DateTime.Now.Year + 2; year++)
+        {
+            var version = year.ToString();
+            var executable = Path.Combine(programFiles, "Autodesk", $"Revit {version}", "Revit.exe");
+            if (!found.ContainsKey(version) && File.Exists(executable)) found[version] = executable;
+        }
+        return found.OrderByDescending(item => int.Parse(item.Key)).Select(item => (item.Key, item.Value)).ToArray();
+    }
+
     public static string VersionRoot(string version)
     {
         var configured = Environment.GetEnvironmentVariable("BIM_STUDIO_WORKER_ROOT");
@@ -164,6 +191,40 @@ internal static class WorkerPaths
         var configured = Environment.GetEnvironmentVariable($"REVIT_{version}_PATH");
         if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured);
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Autodesk", $"Revit {version}", "Revit.exe");
+    }
+}
+
+internal sealed record RevitFileInspection(string? SourceVersion);
+
+internal static class RevitFileInspector
+{
+    public static RevitFileInspection Inspect(string input)
+    {
+        var sourcePath = Path.GetFullPath(input);
+        if (!File.Exists(sourcePath)) throw new FileNotFoundException("RVT 文件不存在", sourcePath);
+        var installation = WorkerPaths.InstalledRevits().FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(installation.Executable)) throw new InvalidOperationException("没有检测到可用于读取 RVT 信息的 Revit");
+        var revitDirectory = Path.GetDirectoryName(installation.Executable)!;
+        AssemblyLoadContext.Default.Resolving += (_, name) =>
+        {
+            var dependency = Path.Combine(revitDirectory, $"{name.Name}.dll");
+            return File.Exists(dependency) ? AssemblyLoadContext.Default.LoadFromAssemblyPath(dependency) : null;
+        };
+        var api = AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(revitDirectory, "RevitAPI.dll"));
+        var basicFileInfo = api.GetType("Autodesk.Revit.DB.BasicFileInfo", throwOnError: true)!;
+        var extract = basicFileInfo.GetMethod("Extract", BindingFlags.Public | BindingFlags.Static, [typeof(string)])
+            ?? throw new MissingMethodException("Revit API 缺少 BasicFileInfo.Extract");
+        var info = extract.Invoke(null, [sourcePath]) ?? throw new InvalidDataException("无法读取 RVT 基本信息");
+        try
+        {
+            var format = basicFileInfo.GetProperty("Format")?.GetValue(info)?.ToString();
+            var match = System.Text.RegularExpressions.Regex.Match(format ?? "", @"20\d{2}");
+            return new RevitFileInspection(match.Success ? match.Value : null);
+        }
+        finally
+        {
+            if (info is IDisposable disposable) disposable.Dispose();
+        }
     }
 }
 

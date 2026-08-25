@@ -266,7 +266,7 @@ internal sealed class ExportElement
 
     private static string ElementIdText(ElementId id)
     {
-#if REVIT2023
+#if REVITLEGACY
         return id.IntegerValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
 #else
         return id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);

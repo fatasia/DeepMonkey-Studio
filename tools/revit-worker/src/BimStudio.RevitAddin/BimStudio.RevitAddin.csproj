@@ -1,20 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <RevitVersion Condition="'$(RevitVersion)' == ''">2026</RevitVersion>
-    <TargetFramework Condition="'$(RevitVersion)' == '2023'">net48</TargetFramework>
-    <TargetFramework Condition="'$(RevitVersion)' != '2023'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="$([MSBuild]::VersionLessThan('$(RevitVersion)', '2025'))">net48</TargetFramework>
+    <TargetFramework Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(RevitVersion)', '2025'))">net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <AssemblyName>BimStudio.RevitAddin</AssemblyName>
     <RootNamespace>BimStudio.RevitAddin</RootNamespace>
-    <DefineConstants Condition="'$(RevitVersion)' == '2023'">$(DefineConstants);REVIT2023</DefineConstants>
+    <DefineConstants Condition="$([MSBuild]::VersionLessThan('$(RevitVersion)', '2025'))">$(DefineConstants);REVITLEGACY</DefineConstants>
+    <DefineConstants Condition="$([MSBuild]::VersionLessThan('$(RevitVersion)', '2021'))">$(DefineConstants);REVIT_PRE_FORGE_TYPES</DefineConstants>
     <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitInstallDir>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="RevitAPI" HintPath="$(RevitInstallDir)\RevitAPI.dll" Private="false" />
     <Reference Include="RevitAPIUI" HintPath="$(RevitInstallDir)\RevitAPIUI.dll" Private="false" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" Condition="'$(RevitVersion)' == '2023'" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" Condition="$([MSBuild]::VersionLessThan('$(RevitVersion)', '2025'))" />
   </ItemGroup>
 </Project>

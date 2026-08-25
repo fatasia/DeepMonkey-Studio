@@ -1,16 +1,79 @@
-import type { ModelRecord, ProjectRecord, PublishedSceneRecord, RvtConversionMode, SceneSnapshot } from "@bim-studio/contracts";
+import type { AiAssistantResponse, AiProviderSettings, AuditLogRecord, DataConnectionRecord, DataDatasetPreview, DataDatasetRecord, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, RevitRuntimeInfo, RvtConversionMode, SceneSnapshot, ServiceHealthRecord, ServiceLogRecord, SystemBrandingSettings, SystemUserRecord, VisionEventRecord, VisionInferenceResponse, VisionModelManifest, VisionModelPreset, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
+
+const AUTH_TOKEN_KEY = "bim-studio-auth-token";
+export function getAuthToken() { return window.localStorage.getItem(AUTH_TOKEN_KEY) ?? window.sessionStorage.getItem(AUTH_TOKEN_KEY) ?? ""; }
+export function setAuthToken(token?: string, remember = true) {
+  window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  if (token) (remember ? window.localStorage : window.sessionStorage).setItem(AUTH_TOKEN_KEY, token);
+}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  const headers = new Headers(init?.headers);
+  const token = getAuthToken();
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  const response = await fetch(url, { ...init, headers });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({ message: response.statusText }))) as { message?: string };
+    if (response.status === 401) window.dispatchEvent(new CustomEvent("bim-studio-auth-required"));
     throw new Error(body.message ?? `请求失败：${response.status}`);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
+async function streamAssistant(mode: "bim" | "scene" | "component" | "dashboard" | "sql", question: string, context: unknown, onDelta: (delta: string) => void): Promise<AiAssistantResponse> {
+  const headers = new Headers({ "content-type": "application/json", accept: "text/event-stream" });
+  const token = getAuthToken();
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  const response = await fetch("/api/ai/assistant/stream", { method: "POST", headers, body: JSON.stringify({ mode, question, context }) });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ message: response.statusText })) as { message?: string };
+    if (response.status === 401) window.dispatchEvent(new CustomEvent("bim-studio-auth-required"));
+    throw new Error(body.message ?? `请求失败：${response.status}`);
+  }
+  if (!response.body) throw new Error("浏览器不支持流式响应");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop() ?? "";
+    for (const block of events) {
+      const event = block.split(/\r?\n/).find((line) => line.startsWith("event:"))?.slice(6).trim();
+      const data = block.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+      if (!data) continue;
+      const payload = JSON.parse(data) as { delta?: string; message?: string } | AiAssistantResponse;
+      if (event === "delta" && "delta" in payload && payload.delta) onDelta(payload.delta);
+      if (event === "error") throw new Error("message" in payload ? payload.message : "AI 流式请求失败");
+      if (event === "done") return payload as AiAssistantResponse;
+    }
+    if (done) break;
+  }
+  throw new Error("AI 流式响应意外结束");
+}
+
 export const api = {
+  getBranding: () => request<SystemBrandingSettings>("/api/public/branding"),
+  saveBranding: (settings: Partial<SystemBrandingSettings>) => request<SystemBrandingSettings>("/api/admin/branding", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) }),
+  uploadBrandingAsset: (kind: "logo" | "icon", file: File) => { const body = new FormData(); body.append("file", file); return request<{ url: string; settings: SystemBrandingSettings }>(`/api/admin/branding/upload?kind=${kind}`, { method: "POST", body }); },
+  login: (username: string, password: string, remember: boolean) => request<{ token: string; user: SystemUserRecord }>("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password, remember }) }),
+  me: () => request<SystemUserRecord>("/api/auth/me"),
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+  listUsers: () => request<SystemUserRecord[]>("/api/admin/users"),
+  createUser: (user: Partial<SystemUserRecord> & { password: string }) => request<SystemUserRecord>("/api/admin/users", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(user) }),
+  updateUser: (userId: string, patch: Partial<SystemUserRecord> & { password?: string }) => request<SystemUserRecord>(`/api/admin/users/${userId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }),
+  deleteUser: (userId: string) => request<void>(`/api/admin/users/${userId}`, { method: "DELETE" }),
+  listAuditLogs: () => request<AuditLogRecord[]>("/api/admin/audit?limit=300"),
+  listServiceLogs: () => request<ServiceLogRecord[]>("/api/admin/logs"),
+  getSystemHealth: () => request<ServiceHealthRecord[]>("/api/admin/health"),
+  getAiSettings: () => request<AiProviderSettings>("/api/admin/ai-settings"),
+  saveAiSettings: (settings: Partial<AiProviderSettings>) => request<AiProviderSettings>("/api/admin/ai-settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) }),
+  testAiSettings: () => request<{ ok: boolean; model: string }>("/api/admin/ai-settings/test", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
+  askAssistant: (mode: "bim" | "scene" | "component" | "dashboard" | "sql", question: string, context: unknown) => request<AiAssistantResponse>("/api/ai/assistant", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode, question, context }) }),
+  streamAssistant,
   listProjects: () => request<ProjectRecord[]>("/api/projects"),
   createProject: (name: string, description = "") => request<ProjectRecord>("/api/projects", {
     method: "POST",
@@ -24,11 +87,49 @@ export const api = {
   }),
   deleteProject: (projectId: string) => request<void>(`/api/projects/${projectId}`, { method: "DELETE" }),
   getProject: (projectId: string) => request<ProjectRecord>(`/api/projects/${projectId}`),
-  uploadModel: async (projectId: string, file: File, rvtConversionMode: RvtConversionMode = "native-glb") => {
+  listDataConnections: (projectId: string) => request<DataConnectionRecord[]>(`/api/projects/${projectId}/data-connections`),
+  createDataConnection: (projectId: string, connection: Partial<DataConnectionRecord>) => request<DataConnectionRecord>(`/api/projects/${projectId}/data-connections`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(connection) }),
+  deleteDataConnection: (projectId: string, connectionId: string) => request<void>(`/api/projects/${projectId}/data-connections/${connectionId}`, { method: "DELETE" }),
+  listDatasets: (projectId: string) => request<DataDatasetRecord[]>(`/api/projects/${projectId}/datasets`),
+  createDataset: (projectId: string, dataset: Partial<DataDatasetRecord>) => request<DataDatasetRecord>(`/api/projects/${projectId}/datasets`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(dataset) }),
+  previewDataset: (projectId: string, datasetId: string) => request<DataDatasetPreview>(`/api/projects/${projectId}/datasets/${datasetId}/preview`),
+  deleteDataset: (projectId: string, datasetId: string) => request<void>(`/api/projects/${projectId}/datasets/${datasetId}`, { method: "DELETE" }),
+  resolveLiveMonitor: (sourceUrl: string, playback: "hls" | "webrtc") => request<{ path: string; hlsUrl: string; webRtcUrl: string }>("/api/live-monitor/resolve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceUrl, playback }) }),
+  listVisionPresets: () => request<VisionModelPreset[]>("/api/vision/presets"),
+  listVisionSources: (projectId: string) => request<VisionSourceRecord[]>(`/api/projects/${projectId}/vision/sources`),
+  createVisionSource: (projectId: string, source: Partial<VisionSourceRecord>) => request<VisionSourceRecord>(`/api/projects/${projectId}/vision/sources`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(source) }),
+  deleteVisionSource: (projectId: string, sourceId: string) => request<void>(`/api/projects/${projectId}/vision/sources/${sourceId}`, { method: "DELETE" }),
+  listVisionModels: (projectId: string) => request<VisionModelRecord[]>(`/api/projects/${projectId}/vision/models`),
+  uploadVisionModel: (projectId: string, model: File, manifest: VisionModelManifest) => { const body = new FormData(); body.append("manifest", JSON.stringify(manifest)); body.append("model", model); return request<VisionModelRecord>(`/api/projects/${projectId}/vision/models`, { method: "POST", body }); },
+  installVisionPreset: (projectId: string, presetId: string) => request<VisionModelRecord>(`/api/projects/${projectId}/vision/models/install-preset`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ presetId }) }),
+  deleteVisionModel: (projectId: string, modelId: string) => request<void>(`/api/projects/${projectId}/vision/models/${modelId}`, { method: "DELETE" }),
+  listVisionTasks: (projectId: string) => request<VisionTaskRecord[]>(`/api/projects/${projectId}/vision/tasks`),
+  createVisionTask: (projectId: string, task: Partial<VisionTaskRecord>) => request<VisionTaskRecord>(`/api/projects/${projectId}/vision/tasks`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(task) }),
+  updateVisionTask: (projectId: string, taskId: string, patch: Partial<VisionTaskRecord>) => request<VisionTaskRecord>(`/api/projects/${projectId}/vision/tasks/${taskId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }),
+  deleteVisionTask: (projectId: string, taskId: string) => request<void>(`/api/projects/${projectId}/vision/tasks/${taskId}`, { method: "DELETE" }),
+  inferVisionImage: (projectId: string, taskId: string, file: File) => { const body = new FormData(); body.append("file", file); return request<VisionInferenceResponse>(`/api/projects/${projectId}/vision/tasks/${taskId}/infer-image`, { method: "POST", body }); },
+  listVisionEvents: (projectId: string, limit = 200) => request<VisionEventRecord[]>(`/api/projects/${projectId}/vision/events?limit=${limit}`),
+  updateVisionEvent: (projectId: string, eventId: string, patch: Pick<Partial<VisionEventRecord>, "status" | "note">) => request<VisionEventRecord>(`/api/projects/${projectId}/vision/events/${eventId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }),
+  listRevitInstallations: () => request<RevitRuntimeInfo>("/api/revit/installations"),
+  uploadModel: async (projectId: string, file: File, rvtConversionMode: RvtConversionMode = "native-glb", rvtRevitVersion = "auto") => {
     const data = new FormData();
     data.append("file", file);
-    return request<ModelRecord>(`/api/projects/${projectId}/models?rvtConversionMode=${encodeURIComponent(rvtConversionMode)}`, { method: "POST", body: data });
+    return request<ModelRecord>(`/api/projects/${projectId}/models?rvtConversionMode=${encodeURIComponent(rvtConversionMode)}&rvtRevitVersion=${encodeURIComponent(rvtRevitVersion)}`, { method: "POST", body: data });
   },
+  renameModel: (projectId: string, modelId: string, name: string) => request<ModelRecord>(`/api/projects/${projectId}/models/${modelId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) }),
+  listAssets: (projectId: string) => request<ProjectAssetRecord[]>(`/api/projects/${projectId}/assets`),
+  uploadImageAsset: async (projectId: string, file: File) => {
+    const data = new FormData();
+    data.append("file", file);
+    return request<ProjectAssetRecord>(`/api/projects/${projectId}/assets/images`, { method: "POST", body: data });
+  },
+  uploadVideoAsset: async (projectId: string, file: File) => {
+    const data = new FormData();
+    data.append("file", file);
+    return request<ProjectAssetRecord>(`/api/projects/${projectId}/assets/videos`, { method: "POST", body: data });
+  },
+  renameAsset: (projectId: string, assetId: string, name: string) => request<ProjectAssetRecord>(`/api/projects/${projectId}/assets/${assetId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) }),
+  deleteAsset: (projectId: string, assetId: string) => request<void>(`/api/projects/${projectId}/assets/${assetId}`, { method: "DELETE" }),
   uploadEnvironmentMap: async (projectId: string, file: File) => {
     const data = new FormData();
     data.append("file", file);

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   ArrowLeft,
   Atom,
+  Bot,
   Box,
   Camera,
   CloudRain,
@@ -24,6 +25,7 @@ import {
   Lightbulb,
   Languages,
   Lock,
+  LogOut,
   LocateFixed,
   MapPin,
   Maximize,
@@ -40,6 +42,7 @@ import {
   ScanLine,
   Scaling,
   Search,
+  ShieldCheck,
   Snowflake,
   Radio,
   Sun,
@@ -61,12 +64,15 @@ import type {
   ModelTransform,
   PrimitiveKind,
   ProjectRecord,
+  RevitRuntimeInfo,
   RvtConversionMode,
   SceneAnnotationState,
   SceneAnimationState,
   SceneDashboardState,
   SceneEnvironmentState,
   SceneFloorState,
+  SceneInteractionScriptState,
+  SceneInteractionActionState,
   SceneLightState,
   SceneMaterialState,
   SceneModelEffectsState,
@@ -75,24 +81,31 @@ import type {
   ScenePhysicsState,
   SceneSnapshot,
   SkyboxPreset,
+  SystemBrandingSettings,
+  SystemUserRecord,
   WeatherMode
 } from "@bim-studio/contracts";
-import { api } from "./api";
+import { api, getAuthToken, setAuthToken } from "./api";
 import { LayerTree } from "./components/LayerTree";
 import { SceneManager } from "./components/SceneManager";
 import { SceneExportMenu } from "./components/SceneExportMenu";
 import { SpaceTree } from "./components/SpaceTree";
 import { CreditsModal } from "./components/CreditsModal";
 import { DigitalTwinPanel } from "./components/DigitalTwinPanel";
+import { InteractionEditor, type InteractionTargetOption } from "./components/InteractionEditor";
+import { AiAssistantPanel } from "./components/AiAssistantPanel";
+import { LoginPage } from "./components/LoginPage";
 import { DEFAULT_DASHBOARD_STATE, normalizeDashboardState } from "./components/dashboardState";
+import { normalizeInteractionScripts } from "./interactionState";
 import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
-import { subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
-import { exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
+import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
+import { exportFbxFile, exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
 import {
   type BimPropertyEntry,
   type BimSpaceRecord,
   type ComponentRecord,
   type LoadedSceneModel,
+  type LayerTreeNode,
   type MeasureMode,
   type NavigationMode,
   type PointerInfo,
@@ -105,6 +118,7 @@ import {
 
 const ACCEPTED_MODELS = ".rvt,.ifc,.step,.stp,.dwg,.dxf,.gltf,.glb,.fbx";
 const RENDERER_BACKEND_STORAGE_KEY = "bim-studio.renderer-backend";
+const REVIT_VERSION_STORAGE_KEY = "bim-studio.revit-version";
 const numberFormat = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 const DEFAULT_LIGHTING: GlobalLightingState = {
   enabled: true,
@@ -118,6 +132,7 @@ const DEFAULT_LIGHTING: GlobalLightingState = {
   ]
 };
 const DEFAULT_ENVIRONMENT: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none", environmentAsBackground: false, environmentIntensity: 1 };
+const DEFAULT_BRANDING: SystemBrandingSettings = { systemName: "BIM Studio", browserTitle: "BIM Studio", loginSubtitle: "数字孪生场景平台", copyright: "Copyright © 张文鹏 Charlie", logoUrl: "/brand/logo-transparent.png", iconUrl: "/brand/app-icon.png", primaryColor: "#d6aa4d", defaultLocale: "zh-CN", defaultEntry: "manager", defaultSceneBackground: "#202a31", defaultGridVisible: true, maintenanceEnabled: false, maintenanceMessage: "系统维护中，请稍后再试" };
 const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   enabled: false,
   smaa: false,
@@ -171,22 +186,30 @@ const DEFAULT_ANIMATION: SceneAnimationState = {
 };
 const DEFAULT_CLIPPING: ClippingState = { enabled: false, mode: "axis", axis: "x", offset: 0, inverted: false };
 const ModelOptimizer = lazy(() => import("./components/ModelOptimizer").then((module) => ({ default: module.ModelOptimizer })));
+const DataCenter = lazy(() => import("./components/DataCenter").then((module) => ({ default: module.DataCenter })));
+const SystemCenter = lazy(() => import("./components/SystemCenter").then((module) => ({ default: module.SystemCenter })));
+const BrandingSettingsPage = lazy(() => import("./components/BrandingSettingsPage").then((module) => ({ default: module.BrandingSettingsPage })));
 const SceneDashboardOverlay = lazy(() => import("./components/SceneDashboardOverlay").then((module) => ({ default: module.SceneDashboardOverlay })));
+const VisionCenter = lazy(() => import("./components/VisionCenter").then((module) => ({ default: module.VisionCenter })));
 
 interface AppRoute {
-  view: "manager" | "studio" | "optimizer" | "view" | "published";
+  view: "manager" | "studio" | "optimizer" | "data" | "vision" | "system" | "branding" | "view" | "published";
   sceneId?: string;
 }
 
 function readRoute(): AppRoute {
   if (window.location.pathname === "/optimizer") return { view: "optimizer" };
+  if (window.location.pathname === "/data") return { view: "data" };
+  if (window.location.pathname === "/vision") return { view: "vision" };
+  if (window.location.pathname === "/system") return { view: "system" };
+  if (window.location.pathname === "/branding") return { view: "branding" };
   const match = window.location.pathname.match(/^\/(studio|view|published)\/([^/]+)$/);
   if (match?.[1] && match[2]) return { view: match[1] as "studio" | "view" | "published", sceneId: decodeURIComponent(match[2]) };
   return { view: "manager" };
 }
 
 function routePath(route: AppRoute): string {
-  return route.view === "manager" || route.view === "optimizer"
+  return route.view === "manager" || route.view === "optimizer" || route.view === "data" || route.view === "vision" || route.view === "system" || route.view === "branding"
     ? `/${route.view}`
     : `/${route.view}/${encodeURIComponent(route.sceneId ?? "new")}`;
 }
@@ -237,6 +260,8 @@ async function waitForModelReady(projectId: string, modelId: string): Promise<Pr
 }
 
 export function App() {
+  const initialPathRef = useRef(window.location.pathname);
+  const defaultEntryAppliedRef = useRef(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -244,7 +269,11 @@ export function App() {
   const sceneNameCommitRef = useRef<Promise<boolean> | undefined>(undefined);
   const sceneApplyVersionRef = useRef(0);
   const rendererSnapshotRef = useRef<{ scene: SceneSnapshot; readOnly: boolean } | undefined>(undefined);
+  const visionEventCursorRef = useRef<{ scope: string; id: string }>({ scope: "", id: "" });
   const [engine, setEngine] = useState<ViewerEngine>();
+  const [currentUser, setCurrentUser] = useState<SystemUserRecord>();
+  const [branding, setBranding] = useState<SystemBrandingSettings>(DEFAULT_BRANDING);
+  const [authReady, setAuthReady] = useState(false);
   const [rendererBackend, setRendererBackend] = useState<RendererBackend>(() =>
     window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY) === "webgpu" ? "webgpu" : "webgl"
   );
@@ -259,6 +288,8 @@ export function App() {
   const [revision, setRevision] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [rvtConversionMode, setRvtConversionMode] = useState<RvtConversionMode>("native-glb");
+  const [revitRuntime, setRevitRuntime] = useState<RevitRuntimeInfo>({ installations: [], defaultVersion: "auto" });
+  const [rvtRevitVersion, setRvtRevitVersion] = useState(() => window.localStorage.getItem(REVIT_VERSION_STORAGE_KEY) ?? "auto");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("就绪");
   const [error, setError] = useState<string>();
@@ -282,6 +313,7 @@ export function App() {
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [lighting, setLighting] = useState<GlobalLightingState>(DEFAULT_LIGHTING);
   const [sceneEnvironment, setSceneEnvironment] = useState<SceneEnvironmentState>(DEFAULT_ENVIRONMENT);
+  const configuredDefaultEnvironment = useMemo<SceneEnvironmentState>(() => ({ ...DEFAULT_ENVIRONMENT, backgroundColor: branding.defaultSceneBackground, gridVisible: branding.defaultGridVisible }), [branding.defaultGridVisible, branding.defaultSceneBackground]);
   const [postProcessing, setPostProcessing] = useState<ScenePostProcessingState>(DEFAULT_POST_PROCESSING);
   const [physics, setPhysics] = useState<ScenePhysicsState>(DEFAULT_PHYSICS);
   const [physicsOpen, setPhysicsOpen] = useState(false);
@@ -291,7 +323,9 @@ export function App() {
   const [sceneDataStatus, setSceneDataStatus] = useState<SceneDataBridgeStatus>("offline");
   const [sceneDataReceived, setSceneDataReceived] = useState(0);
   const [sceneDashboardOpen, setSceneDashboardOpen] = useState(false);
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
   const [sceneDashboard, setSceneDashboard] = useState<SceneDashboardState>(() => structuredClone(DEFAULT_DASHBOARD_STATE));
+  const [sceneInteractions, setSceneInteractions] = useState<SceneInteractionScriptState[]>([]);
   const [viewerToolsOpen, setViewerToolsOpen] = useState(false);
   const [xrPanelOpen, setXrPanelOpen] = useState(false);
   const [xrActiveMode, setXrActiveMode] = useState<"immersive-vr" | "immersive-ar">();
@@ -317,13 +351,65 @@ export function App() {
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectDescription, setNewProjectDescription] = useState("");
   const primitiveColors = useRef(new Map<string, string>());
+  const interactionTargetOptions = useMemo<InteractionTargetOption[]>(() => {
+    if (!engine) return [];
+    const options: InteractionTargetOption[] = [];
+    for (const model of engine.listModels()) {
+      options.push({ label: model.name, target: { kind: "object", modelId: model.id } });
+      const tree = engine.getLayerTree(model.id);
+      if (tree) appendInteractionLayerOptions(options, tree, model.name, 0, 2_500);
+      if (options.length >= 2_500) break;
+    }
+    return options;
+  }, [engine, revision]);
 
   const showError = useCallback((reason: unknown) => {
     setError(reason instanceof Error ? reason.message : "操作失败");
     window.setTimeout(() => setError(undefined), 5000);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void api.getBranding().then((settings) => { if (!cancelled) { setBranding(settings); if (!window.localStorage.getItem("bim-studio.locale")) setLocale(settings.defaultLocale); } }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    void api.listRevitInstallations().then((runtime) => {
+      if (cancelled) return;
+      setRevitRuntime(runtime);
+      if (rvtRevitVersion !== "auto" && !runtime.installations.some((item) => item.version === rvtRevitVersion)) {
+        setRvtRevitVersion("auto");
+        window.localStorage.setItem(REVIT_VERSION_STORAGE_KEY, "auto");
+      }
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    document.title = branding.browserTitle;
+    document.documentElement.style.setProperty("--accent", branding.primaryColor);
+    let icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!icon) { icon = document.createElement("link"); icon.rel = "icon"; document.head.append(icon); }
+    icon.href = branding.iconUrl;
+  }, [branding]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const requireLogin = () => { setAuthToken(); setCurrentUser(undefined); setAuthReady(true); };
+    window.addEventListener("bim-studio-auth-required", requireLogin);
+    if (!getAuthToken()) setAuthReady(true);
+    else void api.me().then((user) => { if (!cancelled) setCurrentUser(user); }).catch(() => { if (!cancelled) requireLogin(); }).finally(() => { if (!cancelled) setAuthReady(true); });
+    return () => { cancelled = true; window.removeEventListener("bim-studio-auth-required", requireLogin); };
+  }, []);
+
   useEffect(() => storeLocale(locale), [locale]);
+
+  useEffect(() => {
+    if (authReady && currentUser && route.view === "branding" && currentUser.role !== "admin") navigate({ view: "manager" }, true);
+  }, [authReady, currentUser?.id, currentUser?.role, route.view]);
 
   function navigate(next: AppRoute, replace = false) {
     window.history[replace ? "replaceState" : "pushState"]({}, "", routePath(next));
@@ -385,6 +471,14 @@ export function App() {
       viewer.onAnimationChange = (time, playing) => {
         setAnimationTime(time);
         setAnimationPlaying(playing);
+      };
+      viewer.onInteractionScriptResult = (result) => {
+        if (result.status === "error") {
+          const detail = result.error instanceof Error ? result.error.message : String(result.error ?? "未知错误");
+          showError(new Error(`事件“${result.script.name}”执行失败：${detail}`));
+        } else if (result.test) {
+          setMessage(`事件“${result.script.name}”运行成功 · ${result.durationMs.toFixed(1)}ms`);
+        }
       };
       viewer.onMeasurement = (measurement) => {
         setMeasurements((items) => [...items, measurement]);
@@ -459,6 +553,10 @@ export function App() {
   }, [engine, infoEnabled]);
 
   useEffect(() => {
+    engine?.setInteractionScripts(sceneInteractions);
+  }, [engine, sceneInteractions]);
+
+  useEffect(() => {
     if (!xrPanelOpen || !engine) return;
     let cancelled = false;
     setXrCapabilities((current) => ({ ...current, checking: true, secure: window.isSecureContext, webxr: Boolean(navigator.xr) }));
@@ -480,7 +578,7 @@ export function App() {
   }, [engine, infoEnabled]);
 
   useEffect(() => {
-    if (window.location.pathname !== "/manager" && window.location.pathname !== "/optimizer" && !/^\/(studio|view|published)\//.test(window.location.pathname)) {
+    if (window.location.pathname !== "/manager" && window.location.pathname !== "/optimizer" && window.location.pathname !== "/data" && window.location.pathname !== "/vision" && window.location.pathname !== "/system" && window.location.pathname !== "/branding" && !/^\/(studio|view|published)\//.test(window.location.pathname)) {
       window.history.replaceState({}, "", "/manager");
       setRoute({ view: "manager" });
     }
@@ -508,17 +606,74 @@ export function App() {
   }, [engine, route.sceneId, route.view]);
 
   useEffect(() => {
+    if (!engine || !project || !route.sceneId || !["studio", "view", "published"].includes(route.view)) return;
+    let cancelled = false;
+    const sceneId = route.sceneId;
+    const scope = `${project.id}:${sceneId}`;
+    const poll = async () => {
+      const events = (await api.listVisionEvents(project.id, 30)).filter((event) => event.sceneId === sceneId);
+      if (cancelled) return;
+      const cursor = visionEventCursorRef.current;
+      if (cursor.scope !== scope) {
+        visionEventCursorRef.current = { scope, id: events[0]?.id ?? "" };
+        return;
+      }
+      if (!events.length || events[0]?.id === cursor.id) return;
+      const previousIndex = cursor.id ? events.findIndex((event) => event.id === cursor.id) : -1;
+      const fresh = events.slice(0, previousIndex >= 0 ? previousIndex : 1).reverse();
+      visionEventCursorRef.current = { scope, id: events[0]?.id ?? "" };
+      for (const event of fresh) {
+        for (const [index, objectId] of event.objectIds.entries()) {
+          const [modelId, ...layerParts] = objectId.split("/");
+          if (!modelId) continue;
+          const target = { modelId, ...(layerParts.length ? { layerId: layerParts.join("/") } : {}) };
+          publishLocalSceneData({ source: "vision", key: event.id, value: { outline: true, glow: true, color: "#ff3b30", intensity: 1.35 }, timestamp: event.createdAt, sceneId, target, action: "effects" });
+          if (index === 0) publishLocalSceneData({ source: "vision", key: `${event.id}:focus`, value: true, timestamp: event.createdAt, sceneId, target, action: "focus" });
+        }
+        setMessage(`视觉告警：${event.detections.slice(0, 3).map((item) => item.label).join("、") || "检测到异常"}`);
+      }
+    };
+    void poll().catch(() => undefined);
+    const timer = window.setInterval(() => void poll().catch(() => undefined), 2_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [engine, project?.id, route.sceneId, route.view]);
+
+  useEffect(() => {
+    const handleInteractionAction = (event: Event) => {
+      const action = (event as CustomEvent<SceneInteractionActionState>).detail;
+      if (!action) return;
+      if (action.type === "navigateScene" && action.sceneId) {
+        const view = route.view === "studio" ? "studio" : "view";
+        if (action.newTab) window.open(routePath({ view, sceneId: action.sceneId }), "_blank", "noopener,noreferrer");
+        else navigate({ view, sceneId: action.sceneId });
+      } else if (action.type === "cameraView" && action.cameraViewId) {
+        const cameraView = cameraViews.find((item) => item.id === action.cameraViewId);
+        if (cameraView) engine?.applyCamera(cameraView.camera);
+      } else if (action.type === "message") {
+        setMessage(action.message?.trim() || "事件已触发");
+      } else if (action.type === "dashboard") {
+        setSceneDashboardOpen((current) => action.value === "show" ? true : action.value === "hide" ? false : !current);
+      } else if (action.type === "setData") {
+        publishLocalSceneData({ source: "interaction", key: action.dataKey?.trim() || "value", value: action.value, timestamp: new Date().toISOString(), ...(route.sceneId ? { sceneId: route.sceneId } : {}) });
+      }
+    };
+    window.addEventListener("bim-studio:interaction-action", handleInteractionAction);
+    return () => window.removeEventListener("bim-studio:interaction-action", handleInteractionAction);
+  }, [cameraViews, engine, route.sceneId, route.view]);
+
+  useEffect(() => {
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();
     document.addEventListener("contextmenu", preventContextMenu);
     return () => document.removeEventListener("contextmenu", preventContextMenu);
   }, []);
 
   useEffect(() => {
+    if (!currentUser) return;
     void api.listProjects().then((items) => {
       setProjects(items);
       setProject((current) => current ?? items[0]);
     }).catch(showError);
-  }, [showError]);
+  }, [currentUser?.id, showError]);
 
   function switchProject(next: ProjectRecord) {
     if (next.id === project?.id) return;
@@ -614,6 +769,15 @@ export function App() {
     const timer = window.setInterval(() => void refreshProject().catch(showError), 2500);
     return () => window.clearInterval(timer);
   }, [project?.id, refreshProject, showError]);
+
+  useEffect(() => {
+    if (defaultEntryAppliedRef.current || !currentUser || !project || initialPathRef.current !== "/") return;
+    if (branding.defaultEntry === "studio" && scenes[0]) navigate({ view: "studio", sceneId: scenes[0].id }, true);
+    else if (branding.defaultEntry === "data") navigate({ view: "data" }, true);
+    else if (branding.defaultEntry === "manager") navigate({ view: "manager" }, true);
+    else return;
+    defaultEntryAppliedRef.current = true;
+  }, [branding.defaultEntry, currentUser?.id, project?.id, scenes]);
 
   useEffect(() => {
     if (route.view !== "studio" || !route.sceneId || !engine || activeScene?.id === route.sceneId) return;
@@ -726,7 +890,7 @@ export function App() {
     try {
       for (const [index, file] of [...files].entries()) {
         setMessage(`正在上传 ${file.name}（${index + 1}/${files.length}）`);
-        await api.uploadModel(project.id, file, rvtConversionMode);
+        await api.uploadModel(project.id, file, rvtConversionMode, rvtRevitVersion);
       }
       setMessage(`${files.length} 个模型上传完成，等待处理`);
       await refreshProject();
@@ -741,6 +905,7 @@ export function App() {
   async function deleteModel(model: ModelRecord) {
     if (!project) return;
     engine?.removeModel(model.id);
+    removeObjectInteractions(model.id);
     try {
       await api.deleteModel(project.id, model.id);
       await refreshProject();
@@ -760,9 +925,16 @@ export function App() {
 
   function deletePrimitive(id: string) {
     engine?.removeModel(id);
+    removeObjectInteractions(id);
     primitiveColors.current.delete(id);
     setRevision((value) => value + 1);
     setMessage("几何体已从场景删除");
+  }
+
+  function removeObjectInteractions(modelId: string, layerId?: string) {
+    setSceneInteractions((items) => items.filter((script) => script.target.kind !== "object"
+      || script.target.modelId !== modelId
+      || (layerId !== undefined && script.target.layerId !== layerId)));
   }
 
   function deleteMeasurement(id: string) {
@@ -1180,6 +1352,7 @@ export function App() {
       physics: engine.getPhysicsState(),
       animation: engine.getSceneAnimation(),
       dashboard: sceneDashboard,
+      interactions: sceneInteractions,
       ...(selected ? { selectedModelId: selected.id } : {}),
       ...(selectedLayerId ? { selectedLayerId } : {}),
       ...(selectedAnnotationId ? { selectedAnnotationId } : {}),
@@ -1272,6 +1445,9 @@ export function App() {
     try {
       engine.setReadOnly(readOnly);
       engine.clearSceneModels();
+      const nextInteractions = normalizeInteractionScripts(scene.interactions);
+      engine.setInteractionScripts(nextInteractions);
+      setSceneInteractions(nextInteractions);
       primitiveColors.current.clear();
       setSelected(undefined);
       setMeasurements([]);
@@ -1307,7 +1483,7 @@ export function App() {
       const nextWeather = scene.weather ?? "sunny";
       const savedLights = scene.lighting?.lights?.filter((light) => !["ambient-default", "hemisphere-default"].includes(light.id));
       const nextLighting: GlobalLightingState = { ...DEFAULT_LIGHTING, ...scene.lighting, lights: savedLights?.length ? savedLights : (DEFAULT_LIGHTING.lights ?? []) };
-      const nextEnvironment: SceneEnvironmentState = { ...DEFAULT_ENVIRONMENT, ...scene.environment };
+      const nextEnvironment: SceneEnvironmentState = { ...configuredDefaultEnvironment, ...scene.environment };
       const nextAnimation = scene.animation ?? DEFAULT_ANIMATION;
       const nextPostProcessing = { ...DEFAULT_POST_PROCESSING, ...scene.postProcessing };
       const nextPhysics = { ...DEFAULT_PHYSICS, ...scene.physics, gravity: { ...DEFAULT_PHYSICS.gravity, ...scene.physics?.gravity } };
@@ -1357,10 +1533,11 @@ export function App() {
       engine.setClipping(DEFAULT_CLIPPING);
       engine.setWeather("sunny");
       engine.setGlobalLighting(DEFAULT_LIGHTING);
-      engine.setSceneEnvironment(DEFAULT_ENVIRONMENT);
+      engine.setSceneEnvironment(configuredDefaultEnvironment);
       engine.setPostProcessing(DEFAULT_POST_PROCESSING);
       engine.setPhysicsState(DEFAULT_PHYSICS);
       engine.setSceneAnimation(DEFAULT_ANIMATION);
+      engine.setInteractionScripts([]);
       engine.setCameraConstraints(DEFAULT_CAMERA_CONSTRAINTS);
       engine.seekSceneAnimation(0);
     }
@@ -1392,11 +1569,12 @@ export function App() {
       annotations: [],
       weather: "sunny",
       lighting: DEFAULT_LIGHTING,
-      environment: DEFAULT_ENVIRONMENT,
+      environment: configuredDefaultEnvironment,
       postProcessing: DEFAULT_POST_PROCESSING,
       physics: DEFAULT_PHYSICS,
       animation: DEFAULT_ANIMATION,
       dashboard: structuredClone(DEFAULT_DASHBOARD_STATE),
+      interactions: [],
       createdAt: now,
       updatedAt: now
     };
@@ -1410,7 +1588,8 @@ export function App() {
     setWeather("sunny");
     setLighting(DEFAULT_LIGHTING);
     setSceneDashboard(structuredClone(DEFAULT_DASHBOARD_STATE));
-    setSceneEnvironment(DEFAULT_ENVIRONMENT);
+    setSceneInteractions([]);
+    setSceneEnvironment(configuredDefaultEnvironment);
     setPostProcessing(DEFAULT_POST_PROCESSING);
     setPhysics(DEFAULT_PHYSICS);
     setSceneAnimation(DEFAULT_ANIMATION);
@@ -1452,6 +1631,21 @@ export function App() {
       const data = await engine.exportSceneGlb();
       exportGlbFile(data, scene?.name ?? sceneName);
       setMessage("已导出 GLB 单文件（当前可见模型与基础元素已合并）");
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportFbxScene(scene?: SceneSnapshot) {
+    if (!engine) return;
+    setBusy(true);
+    try {
+      if (scene && activeScene?.id !== scene.id) await applyScene(scene, false);
+      const data = await engine.exportSceneFbx();
+      exportFbxFile(data, scene?.name ?? sceneName);
+      setMessage("已导出 FBX（当前可见网格、变换与基础材质）");
     } catch (reason) {
       showError(reason);
     } finally {
@@ -1608,12 +1802,20 @@ export function App() {
     });
   }
 
+  if (!authReady) return <div className="app-auth-loading"><LoaderCircle className="spin" size={24} />正在验证本地会话</div>;
+  if (!currentUser) return <LoginPage branding={branding} locale={locale} onLogin={setCurrentUser} />;
+
   return (
     <>
-      {route.view === "optimizer" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载模型优化器", "Loading model optimizer")}</div>}><ModelOptimizer locale={locale} onBack={() => navigate({ view: "manager" })} /></Suspense>}
+      {route.view === "optimizer" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载模型优化器", "Loading model optimizer")}</div>}><ModelOptimizer locale={locale} copyright={branding.copyright} onBack={() => navigate({ view: "manager" })} /></Suspense>}
+      {route.view === "data" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载数据中心", "Loading data center")}</div>}><DataCenter locale={locale} project={project} onBack={() => navigate({ view: "manager" })} /></Suspense>}
+      {route.view === "vision" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载视觉中心", "Loading vision center")}</div>}><VisionCenter locale={locale} project={project} scenes={scenes} onBack={() => navigate({ view: "manager" })} /></Suspense>}
+      {route.view === "system" && currentUser.role === "admin" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />正在加载系统管理</div>}><SystemCenter locale={locale} currentUser={currentUser} projects={projects} onBack={() => navigate({ view: "manager" })} /></Suspense>}
+      {route.view === "branding" && currentUser.role === "admin" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载全局设置", "Loading global settings")}</div>}><BrandingSettingsPage locale={locale} value={branding} onChange={setBranding} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "manager" && (
         <SceneManager
           locale={locale}
+          branding={branding}
           projects={projects}
           project={project}
           scenes={scenes}
@@ -1633,8 +1835,11 @@ export function App() {
           onExportLoose={exportSceneConfig}
           onExportSingle={exportSingleFileScene}
           onExportGlb={exportGlbScene}
+          onExportFbx={exportFbxScene}
           onDelete={deleteScene}
           onOptimizer={() => navigate({ view: "optimizer" })}
+          onDataCenter={() => navigate({ view: "data" })}
+          onVisionCenter={() => navigate({ view: "vision" })}
           onUploadModels={uploadModels}
           onDeleteModel={deleteModel}
           onRefreshModels={refreshProject}
@@ -1642,8 +1847,8 @@ export function App() {
       )}
     <div className={`app-shell ${route.view === "view" || route.view === "published" ? "viewer-shell" : ""} ${route.view === "studio" || route.view === "view" || route.view === "published" ? "" : "app-shell-hidden"}`}>
       <header className="topbar">
-        <div className="brand-mark"><img src={`${import.meta.env.BASE_URL}brand/logo-transparent.png`} alt="BIM Studio" /></div>
-        <div className="brand-copy"><strong>BIM Studio</strong><span>{route.view === "studio" ? tr(locale, "空间编排工作台", "Spatial composition studio") : tr(locale, "场景浏览", "Scene viewer")}</span></div>
+        <div className="brand-mark"><img src={branding.logoUrl} alt={branding.systemName} /></div>
+        <div className="brand-copy"><strong>{branding.systemName}</strong><span>{route.view === "studio" ? tr(locale, "空间编排工作台", "Spatial composition studio") : tr(locale, "场景浏览", "Scene viewer")}</span></div>
         <div className="topbar-divider" />
         {route.view === "studio" ? <>
         <select
@@ -1678,9 +1883,10 @@ export function App() {
             <button className={rendererBackend === "webgpu" ? "active" : ""} disabled={rendererSwitching || busy} onClick={() => changeRendererBackend("webgpu")}>WebGPU<small>{tr(locale, "实验", "Experimental")}</small></button>
           </div>
           <button className={`button ghost compact-action ${sceneDashboardOpen ? "active" : ""}`} title={tr(locale, "场景数据看板", "Scene dashboard")} onClick={() => { setSceneDashboardOpen((value) => !value); setDigitalTwinOpen(false); setEnvironmentOpen(false); }}><Gauge size={15} /><span className="action-label">{tr(locale, "数据看板", "Dashboard")}</span></button>
+          <button className={`button ghost compact-action ${aiAssistantOpen ? "active" : ""}`} title="AI 场景助手" onClick={() => setAiAssistantOpen((value) => !value)}><Bot size={15} /><span className="action-label">AI 助手</span></button>
           <button className="button ghost" title={tr(locale, "场景管理", "Scenes")} onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={15} /><span className="action-label">{tr(locale, "场景管理", "Scenes")}</span></button>
           <button className="button ghost" title={tr(locale, "导入场景", "Import scene")} onClick={() => importRef.current?.click()}><Import size={15} /><span className="action-label">{tr(locale, "导入", "Import")}</span></button>
-          <SceneExportMenu locale={locale} disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} />
+          <SceneExportMenu locale={locale} disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} onExportFbx={() => void exportFbxScene()} />
           <button className="button ghost" title={tr(locale, "浏览场景", "View scene")} onClick={() => void browseActiveScene()} disabled={busy}><Eye size={15} /><span className="action-label">{tr(locale, "浏览", "View")}</span></button>
           <button className="button ghost" title={activeScene?.publishedAt ? tr(locale, "重新发布场景", "Republish scene") : tr(locale, "发布场景", "Publish scene")} onClick={() => void publishActiveScene()} disabled={busy}><Rocket size={15} /><span className="action-label">{activeScene?.publishedAt ? tr(locale, "重新发布", "Republish") : tr(locale, "发布", "Publish")}</span></button>
           <button className="button primary" title={tr(locale, "保存场景", "Save scene")} onClick={() => void saveScene()} disabled={busy}><Save size={15} /><span className="action-label">{tr(locale, "保存场景", "Save scene")}</span></button>
@@ -1703,6 +1909,14 @@ export function App() {
           <button className={rvtConversionMode === "native-glb" ? "active" : ""} onClick={() => setRvtConversionMode("native-glb")}><strong>{tr(locale, "原生 GLB", "Native GLB")}</strong><small>{tr(locale, "快速 · 推荐", "Fast · Recommended")}</small></button>
           <button className={rvtConversionMode === "ifc" ? "active" : ""} onClick={() => setRvtConversionMode("ifc")}><strong>IFC</strong><small>{tr(locale, "兼容备用", "Compatibility fallback")}</small></button>
         </div>
+        <label className="revit-version-select">
+          <span>{tr(locale, "Revit 版本", "Revit version")}</span>
+          <select value={rvtRevitVersion} onChange={(event) => { setRvtRevitVersion(event.target.value); window.localStorage.setItem(REVIT_VERSION_STORAGE_KEY, event.target.value); }}>
+            <option value="auto">{tr(locale, "自动匹配（推荐）", "Auto match (recommended)")}</option>
+            {revitRuntime.installations.map((item) => <option key={item.version} value={item.version}>Revit {item.version}{item.addinInstalled ? " · Ready" : ` · ${tr(locale, "需安装插件", "Add-in required")}`}</option>)}
+          </select>
+          <small>{revitRuntime.installations.length > 0 ? tr(locale, `检测到 ${revitRuntime.installations.length} 个本机版本`, `${revitRuntime.installations.length} local versions detected`) : tr(locale, "未检测到本机 Revit", "No local Revit detected")}</small>
+        </label>
         <button className="upload-zone" onClick={() => uploadRef.current?.click()}>
           <Upload size={20} /><span>{tr(locale, "上传模型", "Upload model")}</span><small>RVT · IFC · STEP · DWG · GLB · FBX · DXF</small>
         </button>
@@ -1810,6 +2024,7 @@ export function App() {
                       if (!window.confirm(`从当前场景删除图层“${node.name}”吗？`)) return;
                       engine?.selectLayer(model.id, node.id);
                       engine?.deleteSelectedLayer();
+                      removeObjectInteractions(model.id, node.id);
                       setRevision((value) => value + 1);
                     }}
                   />
@@ -2095,7 +2310,39 @@ export function App() {
           {!xrCapabilities.checking && (!xrCapabilities.vr || !xrCapabilities.ar) && <p>{tr(locale, "桌面浏览器通常只能检测 VR 头显；AR 需支持 WebXR 的 Android 设备。自签名证书必须先在设备上信任。", "Desktop browsers usually require a connected VR headset; AR requires a WebXR-capable Android device. Trust the self-signed certificate on the device first.")}</p>}
         </div>}
         {route.view === "studio" && xrActiveMode && <div className="xr-session-hud"><div><strong>{xrActiveMode === "immersive-vr" ? "VR" : "AR"} {tr(locale, "运行中", "active")}</strong><small>{xrActiveMode === "immersive-vr" ? tr(locale, "左摇杆移动 · 右摇杆转向 · B/Y 退出", "Left stick move · right stick turn · B/Y exit") : tr(locale, "点击退出返回编辑器", "Exit to return to the editor")}</small></div><button onClick={() => void engine?.endXR()}>{tr(locale, "退出", "Exit")}</button></div>}
-        {(route.view === "studio" || route.view === "view" || route.view === "published") && sceneDashboardOpen && <Suspense fallback={null}><SceneDashboardOverlay locale={locale} sceneId={activeScene?.id ?? route.sceneId ?? "new"} state={sceneDashboard} readOnly={route.view !== "studio"} onChange={setSceneDashboard} onClose={() => setSceneDashboardOpen(false)} /></Suspense>}
+        {(route.view === "studio" || route.view === "view" || route.view === "published") && sceneDashboardOpen && <Suspense fallback={null}><SceneDashboardOverlay
+          locale={locale}
+          projectId={project?.id ?? activeScene?.projectId ?? "default"}
+          sceneId={activeScene?.id ?? route.sceneId ?? "new"}
+          state={sceneDashboard}
+          interactions={sceneInteractions}
+          targetOptions={interactionTargetOptions}
+          sceneOptions={scenes.map((scene) => ({ id: scene.id, name: scene.name }))}
+          cameraViewOptions={cameraViews.map((view) => ({ id: view.id, name: view.name }))}
+          readOnly={route.view !== "studio"}
+          onChange={setSceneDashboard}
+          onInteractionsChange={setSceneInteractions}
+          onWidgetInteraction={(trigger, widget, originalEvent) => engine?.dispatchInteraction(trigger, { kind: "widget", widgetId: widget.id }, { ...(originalEvent ? { originalEvent } : {}), payload: widget })}
+          onTestInteraction={(script, widget) => void engine?.runInteractionScript(script, { test: true, payload: widget })}
+          onClose={() => setSceneDashboardOpen(false)}
+        /></Suspense>}
+        {route.view === "studio" && aiAssistantOpen && <AiAssistantPanel
+          locale={locale}
+          projectId={project?.id}
+          context={{ project: project ? { id: project.id, name: project.name } : undefined, scene: { id: activeScene?.id, name: sceneName, modelCount: activeScene?.models.length ?? 0 }, selected: selected ? { id: selected.id, name: selected.name, kind: selected.kind } : undefined, dashboard: sceneDashboard }}
+          componentSelected={Boolean(selected)}
+          onPrepareBimContext={async (question) => {
+            if (!engine) throw new Error(tr(locale, "三维场景尚未就绪", "The 3D scene is not ready"));
+            return engine.prepareBimAssistantContext(question);
+          }}
+          onBimAction={(action, prepared, componentId) => {
+            const applied = engine?.applyBimAssistantAction(action, prepared, componentId);
+            setMessage(applied ? tr(locale, "已执行 BIM 问答操作", "BIM assistant action applied") : tr(locale, "当前证据不足，无法执行该操作", "Insufficient evidence for this action"));
+            setRevision((value) => value + 1);
+          }}
+          onApplyDashboard={(dashboard) => { setSceneDashboard(normalizeDashboardState({ ...dashboard, enabled: true })); setSceneDashboardOpen(true); setMessage("AI 看板方案已应用，保存场景后持久化"); }}
+          onClose={() => setAiAssistantOpen(false)}
+        />}
         {(route.view === "view" || route.view === "published") && infoEnabled && <section className="viewer-info-card" aria-label={tr(locale, "场景信息", "Scene information")}>
           <header><strong>{tr(locale, "场景信息", "Scene information")}</strong><button title={tr(locale, "关闭", "Close")} onClick={() => setInfoEnabled(false)}><X size={14} /></button></header>
           <div className="scene-info-grid">
@@ -2290,10 +2537,26 @@ export function App() {
             <TransformFields disabled={selectionLocked} title={tr(locale, "位置", "Position")} transform={selectedTransform.position} onChange={(axis, value) => updateSelectedTransform("position", axis, value)} />
             <TransformFields disabled={selectionLocked} title={tr(locale, "旋转", "Rotation")} transform={{ x: selectedTransform.rotation.x * 180 / Math.PI, y: selectedTransform.rotation.y * 180 / Math.PI, z: selectedTransform.rotation.z * 180 / Math.PI }} suffix="°" onChange={(axis, value) => updateSelectedTransform("rotation", axis, value)} />
             <TransformFields disabled={selectionLocked} title={tr(locale, "缩放", "Scale")} transform={selectedTransform.scale} onChange={(axis, value) => updateSelectedTransform("scale", axis, value)} />
+            <InteractionEditor
+              locale={locale}
+              target={{ kind: "object", modelId: selected.id, ...(selectedLayerId && selectedLayerId !== "root" ? { layerId: selectedLayerId } : {}) }}
+              targetName={selectionName || selected.name}
+              interactions={sceneInteractions}
+              targetOptions={interactionTargetOptions}
+              sceneOptions={scenes.map((scene) => ({ id: scene.id, name: scene.name }))}
+              cameraViewOptions={cameraViews.map((view) => ({ id: view.id, name: view.name }))}
+              onChange={setSceneInteractions}
+              onTest={(script) => void engine?.runInteractionScript(script, { test: true })}
+            />
             <StructuredProperties locale={locale} entries={Object.entries(selectionProperties).map(([name, value]) => ({ name, value }))} emptyText={tr(locale, "该对象没有 BIM 属性", "This object has no BIM properties")} />
             <button className="button remove-scene" disabled={selectionLocked} onClick={() => {
-              if (selectedLayerId && selectedLayerId !== "root") engine?.deleteSelectedLayer();
-              else engine?.removeModel(selected.id);
+              if (selectedLayerId && selectedLayerId !== "root") {
+                engine?.deleteSelectedLayer();
+                removeObjectInteractions(selected.id, selectedLayerId);
+              } else {
+                engine?.removeModel(selected.id);
+                removeObjectInteractions(selected.id);
+              }
               setRevision((value) => value + 1);
             }}><Trash2 size={16} />{selectedLayerId && selectedLayerId !== "root" ? tr(locale, "删除当前图层", "Delete layer") : tr(locale, "从场景移除", "Remove from scene")}</button>
           </div>
@@ -2320,7 +2583,7 @@ export function App() {
         )}
       </aside>
 
-      <div className="app-copyright">Copyright © 张文鹏 Charlie</div>
+      <div className="app-copyright">{branding.copyright}</div>
     </div>
     <input ref={uploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadModels(event.target.files ?? undefined)} />
     <input ref={importRef} hidden type="file" accept=".json,.bimscene" onChange={(event) => void importScene(event.target.files?.[0])} />
@@ -2335,9 +2598,9 @@ export function App() {
         <div className="dialog-actions"><button type="button" className="button" disabled={busy} onClick={() => setProjectDialogMode(undefined)}>{tr(locale, "取消", "Cancel")}</button><button className="button primary" disabled={!newProjectName.trim() || busy}>{busy ? tr(locale, "保存中…", "Saving…") : projectDialogMode === "rename" ? tr(locale, "保存修改", "Save changes") : tr(locale, "创建并切换", "Create and switch")}</button></div>
       </form>
     </div>}
-    {(route.view === "manager" || route.view === "optimizer") && <div className="global-utility"><button onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={15} />{locale === "zh-CN" ? "EN" : "中文"}</button><button onClick={() => setDigitalTwinOpen((value) => !value)}><Radio size={15} />{tr(locale, "数据", "Data")}</button><button onClick={() => setCreditsOpen(true)}><HeartHandshake size={15} />{tr(locale, "致谢", "Credits")}</button></div>}
+    {(route.view === "manager" || route.view === "optimizer" || route.view === "data" || route.view === "vision" || route.view === "system") && <div className="global-utility">{currentUser.role === "admin" && <button onClick={() => navigate({ view: "system" })}><ShieldCheck size={15} />系统</button>}<button onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={15} />{locale === "zh-CN" ? "EN" : "中文"}</button><button onClick={() => setDigitalTwinOpen((value) => !value)}><Radio size={15} />{tr(locale, "数据", "Data")}</button><button onClick={() => setCreditsOpen(true)}><HeartHandshake size={15} />{tr(locale, "致谢", "Credits")}</button><button title={`${currentUser.displayName} · ${currentUser.role}`} onClick={() => void api.logout().finally(() => { setAuthToken(); setCurrentUser(undefined); setProjects([]); setProject(undefined); })}><LogOut size={15} />退出</button></div>}
     {digitalTwinOpen && <DigitalTwinPanel locale={locale} onClose={() => setDigitalTwinOpen(false)} status={sceneDataStatus} received={sceneDataReceived} />}
-    {(route.view === "manager" || route.view === "optimizer") && creditsOpen && <CreditsModal locale={locale} onClose={() => setCreditsOpen(false)} />}
+    {(route.view === "manager" || route.view === "optimizer" || route.view === "data" || route.view === "vision" || route.view === "system") && creditsOpen && <CreditsModal locale={locale} onClose={() => setCreditsOpen(false)} />}
     {error && <div className="toast error">{error}</div>}
     </>
   );
@@ -2510,6 +2773,15 @@ function statusText(model: ModelRecord, loaded: boolean, locale: AppLocale): str
   if (model.status === "waiting_converter") return tr(locale, "等待 Revit 转换机", "Waiting for Revit converter");
   if (model.status === "failed") return `${tr(locale, "失败", "Failed")} · ${model.message}`;
   return model.message;
+}
+
+function appendInteractionLayerOptions(options: InteractionTargetOption[], node: LayerTreeNode, modelName: string, depth: number, limit: number): void {
+  if (options.length >= limit) return;
+  if (node.id !== "root") options.push({ label: `${modelName} / ${"· ".repeat(Math.min(depth, 3))}${node.name}`, target: { kind: "object", modelId: node.modelId, layerId: node.id } });
+  for (const child of node.children) {
+    appendInteractionLayerOptions(options, child, modelName, depth + 1, limit);
+    if (options.length >= limit) return;
+  }
 }
 
 function formatBytes(size: number): string {

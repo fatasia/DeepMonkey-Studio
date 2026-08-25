@@ -5,7 +5,7 @@ param(
     [string]$Action = "status",
 
     [Parameter(Position = 1)]
-    [ValidateSet("all", "app", "api", "web", "node-red", "minio", "postgres")]
+    [ValidateSet("all", "app", "api", "web", "node-red", "media", "minio", "postgres")]
     [string]$Target = "all",
 
     [switch]$Https
@@ -126,6 +126,11 @@ function Test-ProjectProcess([int]$ProcessIdValue, [string]$Name) {
         $expectedPath = Get-MinioExecutable
         return $process.ExecutablePath -and
             ([string]::Equals($process.ExecutablePath, $expectedPath, [System.StringComparison]::OrdinalIgnoreCase))
+    }
+
+    if ($Name -eq "media") {
+        $expectedPath = Join-Path $ProjectRoot "tools\mediamtx\mediamtx.exe"
+        return $process.ExecutablePath -and ([string]::Equals($process.ExecutablePath, $expectedPath, [System.StringComparison]::OrdinalIgnoreCase))
     }
 
     if ($process.CommandLine -and
@@ -293,6 +298,11 @@ function Start-Api {
 
 function Start-Web {
     if ($Https) {
+        $certificateKey = Join-Path $ProjectRoot "https\private.key"
+        $certificate = Join-Path $ProjectRoot "https\self-sign.cert"
+        if (-not (Test-Path -LiteralPath $certificateKey) -or -not (Test-Path -LiteralPath $certificate)) {
+            throw "HTTPS 证书不存在。请先按 https\README.md 生成 https\private.key 和 https\self-sign.cert。"
+        }
         $env:BIM_STUDIO_HTTPS = "true"
     }
     Start-BackgroundService "web" (Get-PnpmExecutable) @("--filter", "@bim-studio/web", "dev") 5173
@@ -328,6 +338,15 @@ function Start-NodeRed {
         }
     }
     Start-BackgroundService "node-red" (Get-PnpmExecutable) @("--filter", "@bim-studio/node-red", "dev") 1880
+}
+
+function Start-Media {
+    $executable = Join-Path $ProjectRoot "tools\mediamtx\mediamtx.exe"
+    $configuration = Join-Path $ProjectRoot "tools\mediamtx\mediamtx.yml"
+    if (-not (Test-Path -LiteralPath $executable)) {
+        throw "实时监控服务程序不存在：$executable"
+    }
+    Start-BackgroundService "media" $executable @($configuration) 9997
 }
 
 function Start-Minio {
@@ -388,6 +407,7 @@ function Start-One([string]$Name) {
         "api" { Start-Api }
         "web" { Start-Web }
         "node-red" { Start-NodeRed }
+        "media" { Start-Media }
         default { throw "未知服务：$Name" }
     }
 }
@@ -396,6 +416,7 @@ function Stop-One([string]$Name) {
     switch ($Name) {
         "web" { Stop-BackgroundService "web" @(5173) }
         "node-red" { Stop-BackgroundService "node-red" @(1880) }
+        "media" { Stop-BackgroundService "media" @(9997, 8888, 8889) }
         "api" { Stop-BackgroundService "api" @(4100) }
         "minio" { Stop-BackgroundService "minio" @(9000, 9001) }
         "postgres" { Stop-Postgres }
@@ -405,8 +426,8 @@ function Stop-One([string]$Name) {
 
 function Get-TargetServices([string]$Name, [bool]$Reverse = $false) {
     [string[]]$services = switch ($Name) {
-        "all" { @("postgres", "minio", "node-red", "api", "web") }
-        "app" { @("node-red", "api", "web") }
+        "all" { @("postgres", "minio", "node-red", "media", "api", "web") }
+        "app" { @("node-red", "media", "api", "web") }
         default { @($Name) }
     }
 
@@ -435,6 +456,7 @@ function Show-Status([string[]]$Names) {
             "api" { Get-ServiceStatusRow "api" @(4100) }
             "web" { Get-ServiceStatusRow "web" @(5173) }
             "node-red" { Get-ServiceStatusRow "node-red" @(1880) }
+            "media" { Get-ServiceStatusRow "media" @(9997, 8888, 8889) }
             "minio" { Get-ServiceStatusRow "minio" @(9000, 9001) }
             "postgres" {
                 $serviceName = Get-PostgresServiceName
@@ -459,21 +481,25 @@ function Show-Help {
 BIM Studio 服务管理
 
 用法：
-  .\bim-studio.ps1 <start|stop|restart|status> <all|app|api|web|node-red|minio|postgres> [-Https]
+  .\bim-studio.ps1 <start|stop|restart|status> <all|app|api|web|node-red|media|minio|postgres> [-Https]
 
 示例：
   .\bim-studio.ps1 start all        启动全部服务
-  .\bim-studio.ps1 stop app         只关闭 API 和 Web
+  .\bim-studio.ps1 stop app         关闭流程、实时视频、API 和 Web，不动数据库
   .\bim-studio.ps1 restart api      只重启 API
+  .\bim-studio.ps1 restart app -Https  使用 HTTPS 重启应用层
   .\bim-studio.ps1 status all       查看全部状态
 
 端口：
-  Web 5173 | API 4100 | Node-RED 1880 | MinIO 9000/9001 | PostgreSQL 5432
+  Web 5173 | API 4100 | Node-RED 1880 | Media 8888/8889/9997 | MinIO 9000/9001 | PostgreSQL 5432
 
 日志：
   $LogDirectory
 
 说明：
+  all = postgres + minio + node-red + media + api + web
+  app = node-red + media + api + web
+  PID 位于 data\runtime，日志位于 data\logs，缓存位于 .cache。
   PostgreSQL 是 Windows 服务，启动或关闭它可能需要管理员权限。
   如果 PowerShell 禁止执行脚本，可使用：
   powershell -ExecutionPolicy Bypass -File .\bim-studio.ps1 status all

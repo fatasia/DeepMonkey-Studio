@@ -1,4 +1,4 @@
-#if REVIT2023
+#if REVITLEGACY
 namespace System.Runtime.CompilerServices;
 
 internal static class IsExternalInit

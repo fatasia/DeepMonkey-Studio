@@ -6,12 +6,16 @@ import { ConversionQueue } from "./conversion.js";
 import { registerRoutes } from "./routes.js";
 import { createObjectStore, migrateLocalObjects } from "./objects.js";
 import { createMetadataStore } from "./store.js";
+import { ensureDemoMetrics } from "./dataIntegration.js";
+import { registerSystemRoutes } from "./system.js";
+import { registerVisionRoutes, VisionEngine } from "./vision.js";
 
 export async function buildApp() {
   const config = loadConfig();
   const app = Fastify({ logger: true, bodyLimit: 32 * 1024 * 1024 });
   const store = createMetadataStore(config);
   await store.init();
+  await ensureDemoMetrics(config);
   const objects = createObjectStore(config);
   await objects.init();
   const migratedObjects = await migrateLocalObjects(objects, config.dataDir);
@@ -22,7 +26,12 @@ export async function buildApp() {
   await app.register(multipart, {
     limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 1 }
   });
-  await registerRoutes(app, { store, queue, objects, dataDir: config.dataDir });
+  await registerSystemRoutes(app, store, config.dataDir);
+  await registerRoutes(app, { store, queue, objects, dataDir: config.dataDir, config });
+  const vision = new VisionEngine({ store, objects, dataDir: config.dataDir });
+  await registerVisionRoutes(app, vision, { store, objects, dataDir: config.dataDir });
+  vision.start();
+  app.addHook("onClose", async () => vision.stop());
   return { app, config };
 }
 

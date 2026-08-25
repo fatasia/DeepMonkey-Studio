@@ -1,6 +1,6 @@
-# BIMFACE 功能差距分析
+# 商业 BIM 平台 功能差距分析
 
-更新时间：2026-08-03。比较对象是 BIMFACE 当前公开的模型浏览、模型服务、图纸与场景能力；BIM Studio 当前定位仍是内网轻量场景编辑器，不追求一次性复制完整商业平台。
+更新时间：2026-08-03。比较对象是 商业 BIM 平台 当前公开的模型浏览、模型服务、图纸与场景能力；BIM Studio 当前定位仍是内网轻量场景编辑器，不追求一次性复制完整商业平台。
 
 ## 已具备的基础能力
 
@@ -17,7 +17,7 @@
 
 ## 核心差距与优先级
 
-| 优先级 | BIMFACE 能力 | BIM Studio 当前差距 | 建议实现 |
+| 优先级 | 商业 BIM 平台 能力 | BIM Studio 当前差距 | 建议实现 |
 | --- | --- | --- | --- |
 | P0 | 云端转换、轻量化、超大模型流式加载 | 格式少；RVT 依赖外部 Agent；GLB 多为整文件加载，没有分块、LOD、按需加载 | 建立转换 Worker、Draco/Meshopt、空间分块、LOD 与缓存清单 |
 | P0 | 结构化构件数据、构件树、属性 REST 查询 | 已有客户端稳定 ID、扁平属性和检索索引；仍缺转换阶段统一属性文件、服务端 REST 索引 | 转换阶段输出 `hierarchy.json`、`properties.json`，服务端建立属性索引 |
@@ -47,12 +47,12 @@
 
 ## 参考
 
-- [BIMFACE 功能概述](https://bimface.com/intro)
-- [BIMFACE 支持格式](https://bimface.com/docs/model-viewer/v1/developers-guide/supported-translations.html)
-- [构件状态编辑](https://bimface.com/docs/model-viewer/v1/developers-guide/edit-components.html)
-- [模型测量](https://bimface.com/intro/430)
-- [模型集成配置](https://bimface.com/docs/model-viewer/v1/developers-guide/integration-config.html)
-- [发起碰撞检测](https://bimface.com/docs/model-data-service/v2/api-reference/createClashDetectiveUsingPOST.html)
-- [文件对比](https://bimface.com/docs/model-derivative/v1/developers-guide/file-compare.html)
-- [图纸概念与捕捉](https://bimface.com/docs/model-viewer/v1/developers-guide/drawing-introduction.html)
-- [场景效果编辑](https://bimface.com/docs/model-viewer/v1/developers-guide/edit-effects.html)
+- [商业 BIM 平台 功能概述](https://商业 BIM 平台.com/intro)
+- [商业 BIM 平台 支持格式](https://商业 BIM 平台.com/docs/model-viewer/v1/developers-guide/supported-translations.html)
+- [构件状态编辑](https://商业 BIM 平台.com/docs/model-viewer/v1/developers-guide/edit-components.html)
+- [模型测量](https://商业 BIM 平台.com/intro/430)
+- [模型集成配置](https://商业 BIM 平台.com/docs/model-viewer/v1/developers-guide/integration-config.html)
+- [发起碰撞检测](https://商业 BIM 平台.com/docs/model-data-service/v2/api-reference/createClashDetectiveUsingPOST.html)
+- [文件对比](https://商业 BIM 平台.com/docs/model-derivative/v1/developers-guide/file-compare.html)
+- [图纸概念与捕捉](https://商业 BIM 平台.com/docs/model-viewer/v1/developers-guide/drawing-introduction.html)
+- [场景效果编辑](https://商业 BIM 平台.com/docs/model-viewer/v1/developers-guide/edit-effects.html)

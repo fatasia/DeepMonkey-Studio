@@ -5,6 +5,19 @@ export type ConversionStatus = "queued" | "processing" | "ready" | "waiting_conv
 export type ViewerKind = "ifc" | "fragments" | "gltf" | "fbx" | "dxf";
 export type RvtConversionMode = "ifc" | "native-glb";
 
+export interface RevitInstallationRecord {
+  version: string;
+  path: string;
+  source: "environment" | "registry" | "standard";
+  addinInstalled: boolean;
+  workerReady: boolean;
+}
+
+export interface RevitRuntimeInfo {
+  installations: RevitInstallationRecord[];
+  defaultVersion: string;
+}
+
 export interface Vector3Value {
   x: number;
   y: number;
@@ -42,6 +55,8 @@ export interface ModelRecord {
   name: string;
   format: ModelFormat;
   rvtConversionMode?: RvtConversionMode;
+  rvtSourceVersion?: string;
+  rvtRevitVersion?: string;
   size: number;
   status: ConversionStatus;
   progress: number;
@@ -53,13 +68,233 @@ export interface ModelRecord {
   updatedAt: string;
 }
 
+export type ProjectAssetKind = "image" | "video";
+
+export interface ProjectAssetRecord {
+  id: string;
+  projectId: string;
+  kind: ProjectAssetKind;
+  name: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ProjectRecord {
   id: string;
   name: string;
   description: string;
   models: ModelRecord[];
+  assets?: ProjectAssetRecord[];
+  dataConnections?: DataConnectionRecord[];
+  datasets?: DataDatasetRecord[];
+  visionSources?: VisionSourceRecord[];
+  visionModels?: VisionModelRecord[];
+  visionTasks?: VisionTaskRecord[];
+  visionEvents?: VisionEventRecord[];
   createdAt: string;
   updatedAt: string;
+}
+
+export type VisionSourceKind = "image" | "video";
+export type VisionSourceStatus = "online" | "offline" | "unknown";
+
+export interface VisionSourceRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  kind: VisionSourceKind;
+  sourceUrl: string;
+  assetId?: string;
+  playbackUrl?: string;
+  status: VisionSourceStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type VisionModelTask = "detection" | "classification";
+export type VisionTensorLayout = "NCHW" | "NHWC";
+export type VisionColorSpace = "RGB" | "BGR" | "GRAY";
+export type VisionResizeMode = "stretch" | "letterbox" | "center-crop";
+export type VisionOutputFormat = "classification-logits" | "ssd" | "yolo" | "yolo-nms" | "yolox" | "boxes-scores-labels";
+
+export interface VisionModelManifest {
+  schemaVersion: 1;
+  name: string;
+  version: string;
+  task: VisionModelTask;
+  input: {
+    width: number;
+    height: number;
+    channels: 1 | 3;
+    layout: VisionTensorLayout;
+    color: VisionColorSpace;
+    resize: VisionResizeMode;
+    letterboxPosition?: "center" | "top-left";
+    padding?: number[];
+    dataType?: "float32" | "uint8";
+    scale: number;
+    mean?: number[];
+    std?: number[];
+    inputName?: string;
+  };
+  output: {
+    format: VisionOutputFormat;
+    outputNames?: string[];
+    coordinates?: "normalized" | "input-pixels";
+    nmsIncluded?: boolean;
+  };
+  labels: string[];
+  threshold: number;
+  iouThreshold?: number;
+  license?: string;
+  sourceUrl?: string;
+}
+
+export interface VisionModelRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  version: string;
+  task: VisionModelTask;
+  manifest: VisionModelManifest;
+  modelKey: string;
+  size: number;
+  status: "validating" | "ready" | "failed";
+  message: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VisionModelPreset {
+  id: string;
+  name: string;
+  description: string;
+  category: "general" | "safety" | "quality";
+  downloadUrl?: string;
+  manifest: VisionModelManifest;
+  readyToDownload: boolean;
+}
+
+export interface VisionPoint { x: number; y: number; }
+
+export interface VisionTaskBinding {
+  sceneId?: string;
+  objectIds: string[];
+  cameraViewId?: string;
+  actions: Array<"highlight" | "focus" | "annotation" | "dashboard" | "message">;
+}
+
+export type VisionExecutionProvider = "auto" | "directml" | "cpu";
+export type VisionActiveExecutionProvider = "directml" | "cpu";
+
+export interface VisionTaskRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  mode: VisionSourceKind;
+  sourceId?: string;
+  modelId: string;
+  enabled: boolean;
+  inferenceFps: number;
+  threshold: number;
+  iouThreshold: number;
+  executionProvider: VisionExecutionProvider;
+  deviceId: number;
+  activeExecutionProvider?: VisionActiveExecutionProvider;
+  executionFallbackReason?: string;
+  lastInferenceMs?: number;
+  actualInferenceFps?: number;
+  durationMs: number;
+  cooldownMs: number;
+  alertLabels?: string[];
+  roi?: VisionPoint[];
+  binding: VisionTaskBinding;
+  status: "stopped" | "running" | "error";
+  message: string;
+  lastRunAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VisionDetection {
+  label: string;
+  classId: number;
+  confidence: number;
+  bbox?: [number, number, number, number];
+}
+
+export interface VisionEventRecord {
+  id: string;
+  projectId: string;
+  taskId: string;
+  sourceType: VisionSourceKind;
+  sourceId?: string;
+  modelId: string;
+  result: "ok" | "ng" | "detected";
+  detections: VisionDetection[];
+  imageUrl: string;
+  sceneId?: string;
+  objectIds: string[];
+  status: "pending" | "confirmed" | "closed";
+  note?: string;
+  inferenceMs: number;
+  executionProvider?: VisionActiveExecutionProvider;
+  executionFallbackReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VisionInferenceResponse {
+  event: VisionEventRecord;
+  imageWidth: number;
+  imageHeight: number;
+}
+
+export type DataConnectionType = "postgresql" | "mysql" | "oracle" | "tdengine" | "http" | "websocket" | "node-red" | "mqtt" | "opcua" | "modbus" | "bacnet" | "tcp" | "udp" | "serial" | "s7" | "ethernet-ip" | "snmp" | "amqp" | "kafka" | "coap";
+
+export interface DataConnectionRecord {
+  id: string;
+  projectId: string;
+  name: string;
+  type: DataConnectionType;
+  enabled: boolean;
+  /** 连接参数不保存明文密码；密码通过 passwordEnv 指向服务端环境变量。 */
+  config: Record<string, string | number | boolean>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DataFieldType = "string" | "number" | "boolean" | "datetime" | "json";
+
+export interface DataDatasetField {
+  key: string;
+  label: string;
+  type: DataFieldType;
+  unit?: string;
+}
+
+export interface DataDatasetRecord {
+  id: string;
+  projectId: string;
+  connectionId: string;
+  name: string;
+  query?: string;
+  sourceKey?: string;
+  refreshSeconds: number;
+  fields: DataDatasetField[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DataDatasetPreview {
+  dataset: DataDatasetRecord;
+  fields: DataDatasetField[];
+  rows: Array<Record<string, unknown>>;
+  durationMs: number;
 }
 
 export interface SceneModelState {
@@ -320,7 +555,7 @@ export interface SceneAnimationState {
 }
 
 export type SceneDashboardSide = "left" | "right";
-export type SceneDashboardWidgetType = "value" | "gauge" | "status" | "line" | "bar";
+export type SceneDashboardWidgetType = "value" | "gauge" | "status" | "line" | "area" | "bar" | "pie" | "table" | "image" | "video" | "monitor" | "url";
 
 export interface SceneDashboardWidgetState {
   id: string;
@@ -335,12 +570,75 @@ export interface SceneDashboardWidgetState {
   min?: number;
   max?: number;
   color?: string;
+  backgroundColor?: string;
+  backgroundOpacity?: number;
+  textColor?: string;
+  datasetId?: string;
+  field?: string;
+  url?: string;
+  imageUrl?: string;
+  assetId?: string;
+  imageFit?: "cover" | "contain" | "fill";
+  videoUrl?: string;
+  videoFit?: "cover" | "contain" | "fill";
+  videoAutoplay?: boolean;
+  videoMuted?: boolean;
+  monitorProtocol?: "hls" | "webrtc";
+  monitorSourceUrl?: string;
 }
 
 export interface SceneDashboardState {
   side: SceneDashboardSide;
   width: number;
+  backgroundColor?: string;
+  backgroundOpacity?: number;
+  blur?: number;
+  borderRadius?: number;
   widgets: SceneDashboardWidgetState[];
+}
+
+export type SceneInteractionTrigger = "load" | "click" | "pointerEnter" | "pointerLeave" | "animationStart" | "animationEnd";
+
+export type SceneInteractionTarget = {
+  kind: "object";
+  modelId: string;
+  layerId?: string;
+} | {
+  kind: "widget";
+  widgetId: string;
+};
+
+export type SceneInteractionActionType = "visibility" | "color" | "opacity" | "focus" | "animation" | "openUrl" | "navigateScene" | "cameraView" | "message" | "dashboard" | "setData";
+
+export interface SceneInteractionActionState {
+  id: string;
+  type: SceneInteractionActionType;
+  enabled: boolean;
+  /** visibility: show/hide/toggle; animation: play/stop/toggle; color: #rrggbb; opacity: 0..1 */
+  value?: string | number | boolean;
+  /** openUrl 使用。 */
+  url?: string;
+  newTab?: boolean;
+  /** 三维对象动作的显式目标；为空时使用触发事件的对象。 */
+  target?: { kind: "object"; modelId: string; layerId?: string } | undefined;
+  sceneId?: string;
+  cameraViewId?: string;
+  message?: string;
+  dataKey?: string;
+}
+
+/**
+ * 可信场景脚本直接运行在浏览器主线程，并可访问 ViewerEngine、Three.js 场景和浏览器全局对象。
+ * 仅应允许可信场景编辑者修改代码。
+ */
+export interface SceneInteractionScriptState {
+  id: string;
+  name: string;
+  target: SceneInteractionTarget;
+  trigger: SceneInteractionTrigger;
+  enabled: boolean;
+  actions?: SceneInteractionActionState[];
+  code: string;
 }
 
 export interface SceneSnapshot {
@@ -365,6 +663,7 @@ export interface SceneSnapshot {
   physics?: ScenePhysicsState;
   animation?: SceneAnimationState;
   dashboard?: SceneDashboardState;
+  interactions?: SceneInteractionScriptState[];
   selectedModelId?: string;
   selectedLayerId?: string;
   selectedAnnotationId?: string;
@@ -382,10 +681,94 @@ export interface PublishedSceneRecord {
   publishedAt: string;
 }
 
+export type SystemUserRole = "admin" | "editor" | "viewer";
+
+export interface SystemUserRecord {
+  id: string;
+  username: string;
+  displayName: string;
+  role: SystemUserRole;
+  projectIds: string[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StoredSystemUserRecord extends SystemUserRecord {
+  passwordHash: string;
+}
+
+export interface AuditLogRecord {
+  id: string;
+  userId?: string;
+  username?: string;
+  action: string;
+  resource: string;
+  method: string;
+  statusCode: number;
+  ip?: string;
+  detail?: string;
+  createdAt: string;
+}
+
+export interface AiProviderSettings {
+  baseUrl: string;
+  model: string;
+  protocol: "auto" | "responses" | "chat-completions";
+  apiKeyConfigured: boolean;
+  apiKey?: string;
+  temperature: number;
+  updatedAt?: string;
+}
+
+export interface ServiceHealthRecord {
+  id: "api" | "web" | "node-red" | "media" | "vision" | "postgres" | "minio";
+  name: string;
+  status: "healthy" | "degraded" | "offline";
+  endpoint: string;
+  latencyMs?: number;
+  message?: string;
+  checkedAt: string;
+}
+
+export interface ServiceLogRecord {
+  service: string;
+  file: string;
+  lines: string[];
+  updatedAt?: string;
+}
+
+export interface AiAssistantResponse {
+  text: string;
+  dashboard?: SceneDashboardState;
+  model: string;
+}
+
+export interface SystemBrandingSettings {
+  systemName: string;
+  browserTitle: string;
+  loginSubtitle: string;
+  copyright: string;
+  logoUrl: string;
+  iconUrl: string;
+  primaryColor: string;
+  defaultLocale: "zh-CN" | "en-US";
+  defaultEntry: "manager" | "studio" | "data";
+  defaultSceneBackground: string;
+  defaultGridVisible: boolean;
+  maintenanceEnabled: boolean;
+  maintenanceMessage: string;
+  updatedAt?: string;
+}
+
 export interface DatabaseDocument {
   projects: ProjectRecord[];
   scenes: SceneSnapshot[];
   publishedScenes?: PublishedSceneRecord[];
+  users?: StoredSystemUserRecord[];
+  auditLogs?: AuditLogRecord[];
+  aiSettings?: Omit<AiProviderSettings, "apiKeyConfigured"> & { apiKey?: string };
+  branding?: SystemBrandingSettings;
 }
 
 export function createDefaultTransform(): ModelTransform {

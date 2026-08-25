@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { DatabaseDocument, ModelRecord, ProjectRecord, PublishedSceneRecord, SceneSnapshot } from "@bim-studio/contracts";
+import type { AiProviderSettings, AuditLogRecord, DataConnectionRecord, DataDatasetRecord, DatabaseDocument, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, SceneSnapshot, StoredSystemUserRecord, SystemBrandingSettings, VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
 import type { AppConfig } from "./config.js";
 
 export interface MetadataStore {
@@ -15,6 +15,29 @@ export interface MetadataStore {
   addModel(projectId: string, model: ModelRecord): Promise<void>;
   updateModel(projectId: string, modelId: string, updates: Partial<ModelRecord>): Promise<ModelRecord>;
   removeModel(projectId: string, modelId: string): Promise<boolean>;
+  listAssets(projectId: string): ProjectAssetRecord[];
+  saveAsset(projectId: string, asset: ProjectAssetRecord): Promise<ProjectAssetRecord>;
+  removeAsset(projectId: string, assetId: string): Promise<boolean>;
+  listDataConnections(projectId: string): DataConnectionRecord[];
+  saveDataConnection(projectId: string, connection: DataConnectionRecord): Promise<DataConnectionRecord>;
+  removeDataConnection(projectId: string, connectionId: string): Promise<boolean>;
+  listDatasets(projectId: string): DataDatasetRecord[];
+  saveDataset(projectId: string, dataset: DataDatasetRecord): Promise<DataDatasetRecord>;
+  removeDataset(projectId: string, datasetId: string): Promise<boolean>;
+  listVisionSources(projectId: string): VisionSourceRecord[];
+  saveVisionSource(projectId: string, source: VisionSourceRecord): Promise<VisionSourceRecord>;
+  removeVisionSource(projectId: string, sourceId: string): Promise<boolean>;
+  listVisionModels(projectId: string): VisionModelRecord[];
+  getVisionModel(projectId: string, modelId: string): VisionModelRecord | undefined;
+  saveVisionModel(projectId: string, model: VisionModelRecord): Promise<VisionModelRecord>;
+  removeVisionModel(projectId: string, modelId: string): Promise<boolean>;
+  listVisionTasks(projectId: string): VisionTaskRecord[];
+  getVisionTask(projectId: string, taskId: string): VisionTaskRecord | undefined;
+  saveVisionTask(projectId: string, task: VisionTaskRecord): Promise<VisionTaskRecord>;
+  removeVisionTask(projectId: string, taskId: string): Promise<boolean>;
+  listVisionEvents(projectId: string, limit?: number): VisionEventRecord[];
+  getVisionEvent(projectId: string, eventId: string): VisionEventRecord | undefined;
+  saveVisionEvent(projectId: string, event: VisionEventRecord): Promise<VisionEventRecord>;
   listScenes(projectId: string): SceneSnapshot[];
   getScene(projectId: string, sceneId: string): SceneSnapshot | undefined;
   getSceneById(sceneId: string): SceneSnapshot | undefined;
@@ -23,6 +46,17 @@ export interface MetadataStore {
   getPublication(sceneId: string): PublishedSceneRecord | undefined;
   savePublication(publication: PublishedSceneRecord): Promise<PublishedSceneRecord>;
   removePublication(sceneId: string): Promise<boolean>;
+  listUsers(): StoredSystemUserRecord[];
+  getUser(userId: string): StoredSystemUserRecord | undefined;
+  findUserByUsername(username: string): StoredSystemUserRecord | undefined;
+  saveUser(user: StoredSystemUserRecord): Promise<StoredSystemUserRecord>;
+  removeUser(userId: string): Promise<boolean>;
+  listAuditLogs(limit?: number): AuditLogRecord[];
+  addAuditLog(record: AuditLogRecord): Promise<void>;
+  getAiSettings(): DatabaseDocument["aiSettings"];
+  saveAiSettings(settings: NonNullable<DatabaseDocument["aiSettings"]>): Promise<AiProviderSettings>;
+  getBrandingSettings(): SystemBrandingSettings | undefined;
+  saveBrandingSettings(settings: SystemBrandingSettings): Promise<SystemBrandingSettings>;
 }
 
 export class JsonStore implements MetadataStore {
@@ -44,6 +78,9 @@ export class JsonStore implements MetadataStore {
       await this.persist();
     }
     this.document.publishedScenes ??= [];
+    this.document.users ??= [];
+    this.document.auditLogs ??= [];
+    if (this.ensureExampleDataCatalog() || this.sanitizeLegacyBranding()) await this.persist();
   }
 
   listProjects(): ProjectRecord[] {
@@ -62,6 +99,7 @@ export class JsonStore implements MetadataStore {
       name,
       description,
       models: [],
+      assets: [],
       createdAt: now,
       updatedAt: now
     };
@@ -114,6 +152,183 @@ export class JsonStore implements MetadataStore {
     project.updatedAt = new Date().toISOString();
     await this.persist();
     return true;
+  }
+
+  listAssets(projectId: string): ProjectAssetRecord[] {
+    return structuredClone(this.requireProject(projectId).assets ?? []);
+  }
+
+  async saveAsset(projectId: string, asset: ProjectAssetRecord): Promise<ProjectAssetRecord> {
+    const project = this.requireProject(projectId);
+    project.assets ??= [];
+    const index = project.assets.findIndex((item) => item.id === asset.id);
+    if (index >= 0) project.assets[index] = structuredClone(asset);
+    else project.assets.push(structuredClone(asset));
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return structuredClone(asset);
+  }
+
+  async removeAsset(projectId: string, assetId: string): Promise<boolean> {
+    const project = this.requireProject(projectId);
+    const originalLength = project.assets?.length ?? 0;
+    project.assets = (project.assets ?? []).filter((item) => item.id !== assetId);
+    if (project.assets.length === originalLength) return false;
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return true;
+  }
+
+  listDataConnections(projectId: string): DataConnectionRecord[] {
+    return structuredClone(this.requireProject(projectId).dataConnections ?? []);
+  }
+
+  async saveDataConnection(projectId: string, connection: DataConnectionRecord): Promise<DataConnectionRecord> {
+    const project = this.requireProject(projectId);
+    project.dataConnections ??= [];
+    const index = project.dataConnections.findIndex((item) => item.id === connection.id);
+    if (index >= 0) project.dataConnections[index] = structuredClone(connection);
+    else project.dataConnections.push(structuredClone(connection));
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return structuredClone(connection);
+  }
+
+  async removeDataConnection(projectId: string, connectionId: string): Promise<boolean> {
+    const project = this.requireProject(projectId);
+    const originalLength = project.dataConnections?.length ?? 0;
+    project.dataConnections = (project.dataConnections ?? []).filter((item) => item.id !== connectionId);
+    if (project.dataConnections.length === originalLength) return false;
+    project.datasets = (project.datasets ?? []).filter((item) => item.connectionId !== connectionId);
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return true;
+  }
+
+  listDatasets(projectId: string): DataDatasetRecord[] {
+    return structuredClone(this.requireProject(projectId).datasets ?? []);
+  }
+
+  async saveDataset(projectId: string, dataset: DataDatasetRecord): Promise<DataDatasetRecord> {
+    const project = this.requireProject(projectId);
+    if (!(project.dataConnections ?? []).some((item) => item.id === dataset.connectionId)) throw new Error(`Data connection not found: ${dataset.connectionId}`);
+    project.datasets ??= [];
+    const index = project.datasets.findIndex((item) => item.id === dataset.id);
+    if (index >= 0) project.datasets[index] = structuredClone(dataset);
+    else project.datasets.push(structuredClone(dataset));
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return structuredClone(dataset);
+  }
+
+  async removeDataset(projectId: string, datasetId: string): Promise<boolean> {
+    const project = this.requireProject(projectId);
+    const originalLength = project.datasets?.length ?? 0;
+    project.datasets = (project.datasets ?? []).filter((item) => item.id !== datasetId);
+    if (project.datasets.length === originalLength) return false;
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return true;
+  }
+
+  listVisionSources(projectId: string): VisionSourceRecord[] {
+    return structuredClone(this.requireProject(projectId).visionSources ?? []);
+  }
+
+  async saveVisionSource(projectId: string, source: VisionSourceRecord): Promise<VisionSourceRecord> {
+    const project = this.requireProject(projectId);
+    project.visionSources ??= [];
+    upsert(project.visionSources, source);
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return structuredClone(source);
+  }
+
+  async removeVisionSource(projectId: string, sourceId: string): Promise<boolean> {
+    const project = this.requireProject(projectId);
+    const original = project.visionSources?.length ?? 0;
+    project.visionSources = (project.visionSources ?? []).filter((item) => item.id !== sourceId);
+    if (project.visionSources.length === original) return false;
+    for (const task of project.visionTasks ?? []) if (task.sourceId === sourceId) Object.assign(task, { enabled: false, status: "stopped", message: "视觉源已删除" });
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return true;
+  }
+
+  listVisionModels(projectId: string): VisionModelRecord[] {
+    return structuredClone(this.requireProject(projectId).visionModels ?? []);
+  }
+
+  getVisionModel(projectId: string, modelId: string): VisionModelRecord | undefined {
+    const model = (this.requireProject(projectId).visionModels ?? []).find((item) => item.id === modelId);
+    return model ? structuredClone(model) : undefined;
+  }
+
+  async saveVisionModel(projectId: string, model: VisionModelRecord): Promise<VisionModelRecord> {
+    const project = this.requireProject(projectId);
+    project.visionModels ??= [];
+    upsert(project.visionModels, model);
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return structuredClone(model);
+  }
+
+  async removeVisionModel(projectId: string, modelId: string): Promise<boolean> {
+    const project = this.requireProject(projectId);
+    const original = project.visionModels?.length ?? 0;
+    project.visionModels = (project.visionModels ?? []).filter((item) => item.id !== modelId);
+    if (project.visionModels.length === original) return false;
+    for (const task of project.visionTasks ?? []) if (task.modelId === modelId) Object.assign(task, { enabled: false, status: "stopped", message: "AI 模型已删除" });
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return true;
+  }
+
+  listVisionTasks(projectId: string): VisionTaskRecord[] {
+    return structuredClone(this.requireProject(projectId).visionTasks ?? []);
+  }
+
+  getVisionTask(projectId: string, taskId: string): VisionTaskRecord | undefined {
+    const task = (this.requireProject(projectId).visionTasks ?? []).find((item) => item.id === taskId);
+    return task ? structuredClone(task) : undefined;
+  }
+
+  async saveVisionTask(projectId: string, task: VisionTaskRecord): Promise<VisionTaskRecord> {
+    const project = this.requireProject(projectId);
+    project.visionTasks ??= [];
+    upsert(project.visionTasks, task);
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return structuredClone(task);
+  }
+
+  async removeVisionTask(projectId: string, taskId: string): Promise<boolean> {
+    const project = this.requireProject(projectId);
+    const original = project.visionTasks?.length ?? 0;
+    project.visionTasks = (project.visionTasks ?? []).filter((item) => item.id !== taskId);
+    if (project.visionTasks.length === original) return false;
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return true;
+  }
+
+  listVisionEvents(projectId: string, limit = 200): VisionEventRecord[] {
+    return structuredClone((this.requireProject(projectId).visionEvents ?? []).slice(-Math.max(1, limit)).reverse());
+  }
+
+  getVisionEvent(projectId: string, eventId: string): VisionEventRecord | undefined {
+    const event = (this.requireProject(projectId).visionEvents ?? []).find((item) => item.id === eventId);
+    return event ? structuredClone(event) : undefined;
+  }
+
+  async saveVisionEvent(projectId: string, event: VisionEventRecord): Promise<VisionEventRecord> {
+    const project = this.requireProject(projectId);
+    project.visionEvents ??= [];
+    upsert(project.visionEvents, event);
+    if (project.visionEvents.length > 2_000) project.visionEvents.splice(0, project.visionEvents.length - 2_000);
+    project.updatedAt = new Date().toISOString();
+    await this.persist();
+    return structuredClone(event);
   }
 
   listScenes(projectId: string): SceneSnapshot[] {
@@ -176,10 +391,117 @@ export class JsonStore implements MetadataStore {
     return true;
   }
 
+  listUsers(): StoredSystemUserRecord[] {
+    return structuredClone(this.document.users ?? []);
+  }
+
+  getUser(userId: string): StoredSystemUserRecord | undefined {
+    const user = (this.document.users ?? []).find((item) => item.id === userId);
+    return user ? structuredClone(user) : undefined;
+  }
+
+  findUserByUsername(username: string): StoredSystemUserRecord | undefined {
+    const normalized = username.trim().toLocaleLowerCase("en-US");
+    const user = (this.document.users ?? []).find((item) => item.username.toLocaleLowerCase("en-US") === normalized);
+    return user ? structuredClone(user) : undefined;
+  }
+
+  async saveUser(user: StoredSystemUserRecord): Promise<StoredSystemUserRecord> {
+    this.document.users ??= [];
+    const index = this.document.users.findIndex((item) => item.id === user.id);
+    if (index >= 0) this.document.users[index] = structuredClone(user);
+    else this.document.users.push(structuredClone(user));
+    await this.persist();
+    return structuredClone(user);
+  }
+
+  async removeUser(userId: string): Promise<boolean> {
+    const original = this.document.users?.length ?? 0;
+    this.document.users = (this.document.users ?? []).filter((item) => item.id !== userId);
+    if (this.document.users.length === original) return false;
+    await this.persist();
+    return true;
+  }
+
+  listAuditLogs(limit = 200): AuditLogRecord[] {
+    return structuredClone((this.document.auditLogs ?? []).slice(-Math.max(1, limit)).reverse());
+  }
+
+  async addAuditLog(record: AuditLogRecord): Promise<void> {
+    this.document.auditLogs ??= [];
+    this.document.auditLogs.push(structuredClone(record));
+    if (this.document.auditLogs.length > 2_000) this.document.auditLogs.splice(0, this.document.auditLogs.length - 2_000);
+    await this.persist();
+  }
+
+  getAiSettings(): DatabaseDocument["aiSettings"] {
+    return this.document.aiSettings ? structuredClone(this.document.aiSettings) : undefined;
+  }
+
+  async saveAiSettings(settings: NonNullable<DatabaseDocument["aiSettings"]>): Promise<AiProviderSettings> {
+    this.document.aiSettings = structuredClone(settings);
+    await this.persist();
+    const { apiKey: _apiKey, ...safe } = structuredClone(settings);
+    return { ...safe, apiKeyConfigured: Boolean(settings.apiKey) };
+  }
+
+  getBrandingSettings(): SystemBrandingSettings | undefined {
+    return this.document.branding ? structuredClone(this.document.branding) : undefined;
+  }
+
+  async saveBrandingSettings(settings: SystemBrandingSettings): Promise<SystemBrandingSettings> {
+    this.document.branding = structuredClone(settings);
+    await this.persist();
+    return structuredClone(settings);
+  }
+
   private requireProject(projectId: string): ProjectRecord {
     const project = this.document.projects.find((item) => item.id === projectId);
     if (!project) throw new Error(`Project not found: ${projectId}`);
     return project;
+  }
+
+  protected ensureExampleDataCatalog(): boolean {
+    const project = this.document.projects.find((item) => item.id === "default") ?? this.document.projects[0];
+    if (!project) return false;
+    project.dataConnections ??= [];
+    project.datasets ??= [];
+    let changed = false;
+    const now = new Date().toISOString();
+    if (!project.dataConnections.some((item) => item.id === "example-postgresql")) {
+      project.dataConnections.push({ id: "example-postgresql", projectId: project.id, name: "本机 PostgreSQL 示例", type: "postgresql", enabled: true, config: { host: "127.0.0.1", port: 5432, database: "bim_studio", user: "postgres", passwordEnv: "POSTGRES_PASSWORD" }, createdAt: now, updatedAt: now });
+      changed = true;
+    }
+    if (!project.dataConnections.some((item) => item.id === "example-http")) {
+      project.dataConnections.push({ id: "example-http", projectId: project.id, name: "HTTP 设备接口示例", type: "http", enabled: true, config: { method: "GET", url: "/api/demo/sensors" }, createdAt: now, updatedAt: now });
+      changed = true;
+    }
+    if (!project.datasets.some((item) => item.id === "example-postgresql-metrics")) {
+      project.datasets.push({ id: "example-postgresql-metrics", projectId: project.id, connectionId: "example-postgresql", name: "PostgreSQL · 设备运行趋势", query: "SELECT recorded_at, device_id, temperature, pressure, running FROM bim_studio_demo_metrics ORDER BY recorded_at DESC LIMIT 60", refreshSeconds: 5, fields: exampleMetricFields(), createdAt: now, updatedAt: now });
+      changed = true;
+    }
+    if (!project.datasets.some((item) => item.id === "example-http-metrics")) {
+      project.datasets.push({ id: "example-http-metrics", projectId: project.id, connectionId: "example-http", name: "HTTP · 实时设备状态", sourceKey: "items", refreshSeconds: 3, fields: exampleMetricFields(), createdAt: now, updatedAt: now });
+      changed = true;
+    }
+    return changed;
+  }
+
+  protected sanitizeLegacyBranding(): boolean {
+    let changed = false;
+    const clean = (value: string) => {
+      const legacyName = ["BIM", "FACE"].join("");
+      const next = value.replace(new RegExp(legacyName, "gi"), "");
+      if (next !== value) changed = true;
+      return next;
+    };
+    for (const project of this.document.projects) {
+      for (const model of project.models) { model.name = clean(model.name); model.sourceUrl = clean(model.sourceUrl); if (model.manifest) model.manifest.sourceName = clean(model.manifest.sourceName); }
+      for (const asset of project.assets ?? []) { asset.name = clean(asset.name); asset.fileName = clean(asset.fileName); asset.url = clean(asset.url); }
+    }
+    for (const scene of this.document.scenes) for (const model of scene.models) if (model.sourceName) model.sourceName = clean(model.sourceName);
+    for (const publication of this.document.publishedScenes ?? []) for (const model of publication.snapshot.models) if (model.sourceName) model.sourceName = clean(model.sourceName);
+    return changed;
   }
 
   protected async persist(): Promise<void> {
@@ -213,6 +535,9 @@ export class PostgresStore extends JsonStore {
     if (encoded) {
       this.document = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as DatabaseDocument;
       this.document.publishedScenes ??= [];
+      this.document.users ??= [];
+      this.document.auditLogs ??= [];
+      if (this.ensureExampleDataCatalog() || this.sanitizeLegacyBranding()) await this.persist();
       return;
     }
     try {
@@ -221,6 +546,11 @@ export class PostgresStore extends JsonStore {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       this.document = defaultDocument();
     }
+    this.document.publishedScenes ??= [];
+    this.document.users ??= [];
+    this.document.auditLogs ??= [];
+    this.ensureExampleDataCatalog();
+    this.sanitizeLegacyBranding();
     await this.persist();
   }
 
@@ -273,12 +603,29 @@ function defaultDocument(): DatabaseDocument {
       name: "示例项目",
       description: "上传 IFC、GLTF、GLB、FBX、DXF，或配置 RVT 转换器",
       models: [],
+      assets: [],
       createdAt: now,
       updatedAt: now
     }],
     scenes: [],
     publishedScenes: []
   };
+}
+
+function exampleMetricFields() {
+  return [
+    { key: "recorded_at", label: "时间", type: "datetime" as const },
+    { key: "device_id", label: "设备", type: "string" as const },
+    { key: "temperature", label: "温度", type: "number" as const, unit: "℃" },
+    { key: "pressure", label: "压力", type: "number" as const, unit: "kPa" },
+    { key: "running", label: "运行状态", type: "boolean" as const }
+  ];
+}
+
+function upsert<T extends { id: string }>(items: T[], value: T): void {
+  const index = items.findIndex((item) => item.id === value.id);
+  if (index >= 0) items[index] = structuredClone(value);
+  else items.push(structuredClone(value));
 }
 
 export function runProcess(command: string, args: string[], extraEnvironment: NodeJS.ProcessEnv, input?: string): Promise<string> {

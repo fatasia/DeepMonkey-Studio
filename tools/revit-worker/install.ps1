@@ -1,6 +1,5 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("2023", "2026", "all")]
     [string]$Version = "all"
 )
 
@@ -36,6 +35,22 @@ function Get-RevitDirectory([string]$TargetVersion) {
     throw "找不到 Revit $TargetVersion。请在 .env 配置 REVIT_${TargetVersion}_PATH。"
 }
 
+function Get-InstalledRevitVersions {
+    $found = [System.Collections.Generic.HashSet[string]]::new()
+    if (Test-Path -LiteralPath $EnvFile) {
+        foreach ($line in Get-Content -LiteralPath $EnvFile) {
+            if ($line -match '^REVIT_(20\d{2})_PATH=(.+)$') {
+                $candidate = $Matches[2].Trim().Trim('"').Trim("'")
+                if (([int]$Matches[1]) -ge 2019 -and (Test-Path -LiteralPath $candidate)) { [void]$found.Add($Matches[1]) }
+            }
+        }
+    }
+    Get-ChildItem -LiteralPath (Join-Path $env:ProgramFiles "Autodesk") -Directory -Filter "Revit 20??" -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($_.Name -match '^Revit (20\d{2})$' -and ([int]$Matches[1]) -ge 2019 -and (Test-Path -LiteralPath (Join-Path $_.FullName "Revit.exe"))) { [void]$found.Add($Matches[1]) }
+    }
+    return @($found | Sort-Object)
+}
+
 function Get-BimStudioSigningCertificate {
     $subject = "CN=BIM Studio Internal"
     $certificate = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
@@ -66,7 +81,8 @@ dotnet publish $WorkerProject -c Release -o $PublishDirectory --nologo
 if ($LASTEXITCODE -ne 0) { throw "Revit Worker 发布失败" }
 
 $signingCertificate = Get-BimStudioSigningCertificate
-$versions = if ($Version -eq "all") { @("2023", "2026") } else { @($Version) }
+$versions = [string[]]$(if ($Version -eq "all") { Get-InstalledRevitVersions } else { $Version })
+if ($versions.Count -eq 0) { throw "没有检测到 Revit。可在 .env 中配置 REVIT_年份_PATH 后重试。" }
 foreach ($targetVersion in $versions) {
     $revitDirectory = Get-RevitDirectory $targetVersion
     $outputDirectory = Join-Path $BuildDirectory $targetVersion

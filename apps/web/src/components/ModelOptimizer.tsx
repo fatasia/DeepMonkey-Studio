@@ -44,7 +44,7 @@ const DEFAULT_OPTIONS: ModelOptimizationOptions = {
 
 type BakeTransformMode = "translate" | "rotate";
 
-export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: () => void }) {
+export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocale; copyright: string; onBack: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const sourceUrlRef = useRef<string | undefined>(undefined);
   const optimizedUrlRef = useRef<string | undefined>(undefined);
@@ -283,7 +283,7 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
         {(before || after) && <div className="optimizer-statistics"><Stat locale={locale} label={tr(locale, "文件大小", "File size")} before={before ? formatBytes(before.bytes) : "—"} after={after ? formatBytes(after.bytes) : undefined} /><Stat locale={locale} label={tr(locale, "三角面", "Triangles")} before={before?.triangles.toLocaleString(locale) ?? "—"} after={after?.triangles.toLocaleString(locale)} /><Stat locale={locale} label={tr(locale, "顶点", "Vertices")} before={before?.vertices.toLocaleString(locale) ?? "—"} after={after?.vertices.toLocaleString(locale)} /><Stat locale={locale} label={tr(locale, "节点 / 材质", "Nodes / materials")} before={before ? `${before.nodes} / ${before.materials}` : "—"} after={after ? `${after.nodes} / ${after.materials}` : undefined} /></div>}
       </section>
     </main>
-    <div className="app-copyright">Copyright © 张文鹏 Charlie</div>
+    <div className="app-copyright">{copyright}</div>
     <input ref={inputRef} hidden type="file" accept=".glb,.gltf" onChange={(event) => void importFile(event.target.files?.[0])} />
   </div>;
 }

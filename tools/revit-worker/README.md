@@ -7,7 +7,7 @@
 
 ## 安装
 
-先在仓库根目录的 `.env` 配置 `REVIT_2023_PATH`、`REVIT_2026_PATH`，然后执行：
+标准目录安装的 Revit 会被自动发现；非标准目录可在仓库根目录的 `.env` 按年份配置，例如 `REVIT_2023_PATH`、`REVIT_2026_PATH`。然后执行：
 
 ```powershell
 pnpm revit:install
@@ -16,7 +16,7 @@ pnpm revit:install
 脚本会：
 
 1. 将 Worker 发布到 `tools/revit-worker/publish`。
-2. 针对 Revit 2023 和 2026 编译 Add-in。
+2. 自动扫描并针对本机已安装的 Revit 2019 及以上版本分别编译 Add-in。
 3. 把 Add-in 安装到 `%APPDATA%\Autodesk\Revit\Addins\<版本>`。
 4. 创建或复用当前用户的 `BIM Studio Internal` 代码签名证书，签署 Add-in，并将证书加入当前用户的受信任根与受信任发布者，避免无人值守启动停在插件安全确认框。
 
@@ -25,6 +25,8 @@ pnpm revit:install
 ## 工作方式
 
 API 调用 Worker 时传入 `--mode native-glb` 或 `--mode ifc`。如果指定版本的 Revit 尚未就绪，Worker 会启动它并等待 Add-in 心跳；之后任务通过以下目录交换：
+
+上传界面可以选择具体 Revit 版本，也可以使用“自动匹配”。自动匹配先通过 Revit API 读取 RVT 的保存版本，再选择能够打开它的最低已安装版本。例如 Revit 2019 文件在已安装 2023 与 2026 时会选择 2023；较新版本的文件不会被分配给较旧的 Revit。选择结果随模型任务保存，不受后续全局配置变化影响。
 
 ```text
 %LOCALAPPDATA%\BimStudio\RevitWorker\<版本>\

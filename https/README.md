@@ -1,14 +1,18 @@
-# Local HTTPS certificates
+# 本地 HTTPS 证书
 
-Place the local TLS key and certificate here. The defaults are:
+开发服务器默认读取：
 
-- `private.key`
-- `self-sign.cert`
+- `https/private.key`
+- `https/self-sign.cert`
 
-Certificate material is ignored by Git. Enable HTTPS with
-`BIM_STUDIO_HTTPS=true` or `bim-studio.ps1 ... -Https`.
+当前证书为自签名开发证书，包含 `localhost`、`127.0.0.1`、本机名称和生成时检测到的局域网 IPv4。证书与私钥已被 `.gitignore` 排除，不会提交到仓库。
 
-For LAN access, the certificate must contain the actual IP address or host name
-in its Subject Alternative Name (SAN). A Common Name containing an IP and port
-is not sufficient for current browsers, and an untrusted certificate can keep
-WebXR/AR/VR APIs unavailable even though the HTTPS page itself opens.
+启动 HTTPS：
+
+```powershell
+.\bim-studio.ps1 restart all -Https
+```
+
+访问：`https://localhost:5173` 或 `https://<本机局域网 IP>:5173`。第一次访问需要在测试设备上信任 `self-sign.cert`。局域网 IP 改变后，应重新生成包含新 IP 的证书。
+
+实时监控的 HLS 与 WebRTC 握手也复用这套证书，避免 HTTPS 页面加载 HTTP 视频时被浏览器拦截。

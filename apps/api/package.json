@@ -22,10 +22,15 @@
     "draco3dgltf": "^1.5.7",
     "fastify": "^5.7.4",
     "meshoptimizer": "1.0.1",
-    "occt-import-js": "0.0.23"
+    "mysql2": "^3.23.2",
+    "occt-import-js": "0.0.23",
+    "onnxruntime-node": "^1.23.2",
+    "oracledb": "^7.0.1",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "@types/oracledb": "^7.0.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"

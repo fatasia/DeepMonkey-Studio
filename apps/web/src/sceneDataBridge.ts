@@ -27,6 +27,10 @@ export function subscribeSceneData(listener: MessageListener, onStatus?: StatusL
   };
 }
 
+export function publishLocalSceneData(message: SceneDataMessage): void {
+  for (const listener of messageListeners) listener(message);
+}
+
 function start() {
   stopped = false;
   connect();

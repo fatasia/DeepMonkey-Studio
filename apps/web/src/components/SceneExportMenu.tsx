@@ -7,11 +7,12 @@ interface SceneExportMenuProps {
   locale: AppLocale;
   onExportSingle: () => void;
   onExportGlb: () => void;
+  onExportFbx: () => void;
   compact?: boolean;
   disabled?: boolean;
 }
 
-export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExportGlb, compact = false, disabled = false }: SceneExportMenuProps) {
+export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExportGlb, onExportFbx, compact = false, disabled = false }: SceneExportMenuProps) {
   const [open, setOpen] = useState(false);
 
   function run(action: () => void) {
@@ -46,6 +47,9 @@ export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExpor
           </button>
           <button role="menuitem" onClick={() => run(onExportGlb)}>
             <Box size={16} /><span><strong>{tr(locale, "GLB 单文件", "Single GLB")}</strong><small>{tr(locale, "合并当前可见三维对象", "Merges currently visible 3D objects")}</small></span>
+          </button>
+          <button role="menuitem" onClick={() => run(onExportFbx)}>
+            <Box size={16} /><span><strong>{tr(locale, "FBX 文件", "FBX file")}</strong><small>{tr(locale, "可见网格、变换与基础材质", "Visible meshes, transforms and basic materials")}</small></span>
           </button>
         </div>
       )}

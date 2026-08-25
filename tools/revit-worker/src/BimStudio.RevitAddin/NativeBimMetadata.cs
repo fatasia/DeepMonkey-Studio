@@ -312,8 +312,13 @@ internal static class NativeBimMetadataExtractor
                 RawValue = raw,
                 StorageType = parameter.StorageType.ToString(),
                 ParameterId = ElementIdText(parameter.Id),
+#if REVIT_PRE_FORGE_TYPES
+                DataTypeId = parameter.Definition.ParameterType.ToString(),
+                GroupTypeId = parameter.Definition.ParameterGroup.ToString(),
+#else
                 DataTypeId = TypeId(parameter.Definition.GetDataType()),
                 GroupTypeId = TypeId(parameter.Definition.GetGroupTypeId()),
+#endif
                 IsReadOnly = parameter.IsReadOnly,
                 IsShared = parameter.IsShared,
                 SharedGuid = sharedGuid
@@ -407,7 +412,7 @@ internal static class NativeBimMetadataExtractor
 
     private static string ElementIdText(ElementId id)
     {
-#if REVIT2023
+#if REVITLEGACY
         return id.IntegerValue.ToString(CultureInfo.InvariantCulture);
 #else
         return id.Value.ToString(CultureInfo.InvariantCulture);
@@ -423,7 +428,9 @@ internal static class NativeBimMetadataExtractor
         _ => null
     };
 
+#if !REVIT_PRE_FORGE_TYPES
     private static string? TypeId(ForgeTypeId? id) => id is null || id.Empty() ? null : id.TypeId;
+#endif
 
     private static void Add(Dictionary<string, string> properties, string key, string? value)
     {

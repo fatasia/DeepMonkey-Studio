@@ -191,14 +191,16 @@ class CommandProvider implements ConversionProvider {
       progress: 10,
       message: model.format === "dwg"
         ? "LibreDWG 正在转换为 DXF"
-        : model.rvtConversionMode === "ifc" ? "Revit 正在导出 IFC" : "Revit 正在生成原生 GLB"
+        : model.rvtConversionMode === "ifc" ? `Revit ${model.rvtRevitVersion ?? ""} 正在导出 IFC`.replace("  ", " ") : `Revit ${model.rvtRevitVersion ?? ""} 正在生成原生 GLB`.replace("  ", " ")
     });
     const args = this.provider.args.map((argument) =>
       argument
         .replaceAll("{input}", sourcePath)
         .replaceAll("{output}", outputDir)
         .replaceAll("{mode}", model.rvtConversionMode ?? "native-glb")
+        .replaceAll("{revitVersion}", model.rvtRevitVersion ?? "")
     );
+    if (model.format === "rvt" && model.rvtRevitVersion && !args.includes("--revit-version")) args.push("--revit-version", model.rvtRevitVersion);
     await runCommand(this.provider.command, args, this.provider.cwd);
     let compressionMessage = "";
     let lods: ModelManifest["lods"];
