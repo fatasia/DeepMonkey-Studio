@@ -16,7 +16,7 @@ BIM Studio 需要同时扩展实时渲染能力、工业数据接入和低代码
 - Node-RED 负责 HTTP、WebSocket、MQTT、OPC UA、Modbus、BACnet 和数据库连接；浏览器仅消费统一的场景消息，不直接保存数据库凭据。
 - 场景消息使用稳定的轻量信封：`source`、`key`、`value`、`timestamp`、可选 `target` 与 `action`。动作只允许更新显隐、颜色、位置和标签等显式白名单属性。
 - Node-RED 编辑器与 Dashboard 独立加载，使用与 BIM Studio 一致的深色主题；主应用仅提供入口、连接状态和场景数据桥。
-- Three.js 灯光、环境和材质状态进入场景快照，并保持旧快照缺省值兼容。
+- Three.js 灯光、环境和材质状态进入原生 `SceneDocument`；不为旧场景快照保留缺省兼容逻辑。
 - WebXR 仅在 WebGL + HTTPS/localhost 环境启用；不支持时功能降级为普通查看器。
 
 ## Non-Functional Requirements
@@ -25,7 +25,7 @@ BIM Studio 需要同时扩展实时渲染能力、工业数据接入和低代码
 - 实时消息处理不得阻塞渲染循环；单帧只应用最近值，异常消息丢弃并记录连接状态。
 - 外部连接凭据只保存在 Node-RED credential store，生产环境必须配置 `credentialSecret` 与访问认证。
 - 默认单机部署面向公司内网，API/查看器 p95 交互不因未启用 IoT 而增加网络请求。
-- 新功能保持场景 JSON 向后兼容，不提升现有 `schemaVersion`。
+- 场景 schema 允许随新版应用模型调整；所有破坏性变化必须更新验证器、黄金样本和当前版本读写测试，但不提供旧文件导入保证。
 
 ## Consequences
 

@@ -6,22 +6,27 @@ import {
 } from "@bim-studio/contracts";
 import { ApplicationStore } from "@bim-studio/studio-core";
 
-export class LegacyApplicationSession {
+export class ApplicationSession {
   readonly store = new ApplicationStore();
 
-  open(snapshot: SceneSnapshot): ApplicationDocument {
+  openDocument(application: ApplicationDocument): ApplicationDocument {
+    this.store.load(application);
+    return this.store.getState().document!;
+  }
+
+  loadSceneDraft(snapshot: SceneSnapshot): ApplicationDocument {
     const application = migrateSceneSnapshotV1(snapshot);
     this.store.load(application);
     return application;
   }
 
-  capture(snapshot: SceneSnapshot): SceneSnapshot {
+  captureSceneDraft(snapshot: SceneSnapshot): SceneSnapshot {
     const application = migrateSceneSnapshotV1(snapshot);
     this.store.load(application);
     return applicationToSceneSnapshotV1(application, snapshot.id);
   }
 
-  getApplication(): ApplicationDocument | undefined {
+  getDocument(): ApplicationDocument | undefined {
     return this.store.getState().document;
   }
 }

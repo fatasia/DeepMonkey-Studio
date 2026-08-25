@@ -320,7 +320,7 @@ ApplicationDocument
 
 `SceneDocument` 保存对象树、相机、控制器、环境、动画、行为和数据绑定；复杂逻辑由 `ScriptModule`、`InteractionFlow` 和 `Timeline` 引用稳定对象 ID。`TopologyDocument` 与 `GeoConfiguration` 只保存业务内容和 Provider 引用，不保存地图密钥。`AssetEntry` 保存资产 ID、类型、内容哈希、转换器版本、位置和必要元数据；页面、拓扑、地图、场景和脚本不得写易变的绝对路径。
 
-当前 `SceneSnapshot.dashboard` 需要迁移为一个页面和一个 `SceneViewportWidget`，原三维场景本身保持不变。v1 文件继续可导入，保存后升级到 v2；旧发布链接在迁移期继续工作。
+新版只保存原生 `ApplicationDocument`：二维页面通过 `SceneViewportWidget` 引用独立三维场景。旧 `SceneSnapshot`、旧项目文件和旧发布链接不属于产品兼容范围；重构期间存在的转换代码只是短期内部脚手架，原生应用流程接通后立即删除。
 
 ## 6. 数据、公式与脚本
 
@@ -585,14 +585,14 @@ B/S 直接使用服务器 HTTPS 回调。Tauri 使用系统浏览器发起登录
 | 现状 | 问题 | 迁移方向 |
 | --- | --- | --- |
 | `apps/web/src/App.tsx` 同时承担路由、项目、场景、运行时和大量 UI | 继续扩展会让二维/三维拆分困难 | 先抽出 application store、command bus、host adapter，再拆二维与三维路由 |
-| `SceneDashboardOverlay.tsx` 是三维视口内侧边浮层 | 无法成为独立专业看板编辑器 | 保留为 v1 兼容渲染器，新建全画布 DashboardEditor |
+| `SceneDashboardOverlay.tsx` 是三维视口内侧边浮层 | 无法成为独立专业看板编辑器 | 用全画布 DashboardEditor 替代；能力对齐后删除旧 overlay，不保留 v1 渲染器 |
 | `SceneSnapshot.dashboard` 与三维场景同寿命 | 页面无法复用多个场景，发布边界错误 | 升级为 ApplicationDocument，页面和场景独立引用 |
 | `SceneDashboardWidgetState` 只有 12 种简单组件 | 缺容器、控件、地图、文本、形状、复杂图表和扩展机制 | 建立组件注册表、属性 schema、渲染器和数据角色定义 |
 | 事件脚本直接使用 AsyncFunction 主线程运行 | 可阻塞、可越权、无法安全发布 | 公式优先、沙箱脚本、capability SDK、超时和审计 |
 | `api.ts` 使用单一相对地址和浏览器存储 token | 无法适配 Tauri 可变服务器地址与安全存储 | ServerClient + ServerProfile + AuthStore adapter |
 | 发布对象只有 PublishedSceneRecord | 不能原子发布二维、三维和交互应用 | PublishedApplicationRecord + immutable revision |
 
-采用渐进迁移，不做一次性重写。每个阶段都要能读取已有项目、预览并回滚。
+采用垂直切片重构，不要求读取旧项目或旧场景。每个切片必须通过“现有能力清单”回归后才能替换旧实现，并能回滚代码版本；功能能力不允许下降，但交互、路由和数据模型可以重做。
 
 ## 11. 分阶段路线图
 
@@ -600,22 +600,22 @@ B/S 直接使用服务器 HTTPS 回调。Tauri 使用系统浏览器发起登录
 
 ### M0：架构地基，3 周
 
-- 建立 schema v2、迁移器、Application Store、Command/Undo 系统。
+- 建立原生 ApplicationDocument schema、Application Store、Command/Undo 系统。
 - 建立模块 public API 与依赖规则，从 `App.tsx` 抽出 Studio Shell、Server SDK 和 Host Adapter。
 - 定义 Scene Port、最小 Three.js Adapter 与架构测试，禁止 Core 反向依赖 UI/Three/Tauri。
 - 定义 `SceneCapabilitySDK 1.0` 的命令、查询、事件、生命周期、能力权限和扩展 manifest；M0 只固化纯协议与兼容检查，不在此阶段迁移全部 ViewerEngine 实现。
 - 增加 `/api/meta`、服务器实例 ID 和能力握手。
 - 建立 IdentityProvider 接口、外部身份映射和登录入口发现协议，先保持本地账号实现。
-- 为现有 v1 项目和发布链接建立回归夹具。
+- 建立现有功能能力清单与回归夹具，覆盖模型、场景、看板、交互、数据、发布和权限，不覆盖旧文件格式。
 
-验收：旧项目无损打开；任一编辑命令可撤销/重做；浏览器 Host 不依赖 Tauri；SDK 合同不暴露 React、Three.js、DOM、HTTP 或宿主实现，脚本/扩展版本与能力请求可在运行前判定兼容性。
+验收：原有功能能力无下降；任一编辑命令可撤销/重做；浏览器 Host 不依赖 Tauri；SDK 合同不暴露 React、Three.js、DOM、HTTP 或宿主实现，脚本/扩展版本与能力请求可在运行前判定兼容性。
 
 ### M1：二维/三维编辑分离但运行统一，6 周
 
 - 新建项目级路由、二维默认入口、三维独立入口。
 - 新建 DashboardPage 和 SceneViewportWidget。
 - 返回上下文、跨编辑器定位、统一变量和事件总线。
-- 将当前侧边看板自动迁移为页面。
+- 用原生页面组件覆盖当前侧边看板能力，完成后删除旧看板实现。
 
 验收：用户从二维进入三维、修改并返回，二维组件状态不丢；四类二维到三维、三维到二维联动可配置并调试。
 
@@ -664,12 +664,13 @@ B/S 直接使用服务器 HTTPS 回调。Tauri 使用系统浏览器发起登录
 ### M5：转换、轻量 GIS 与拓扑，8 周
 
 - 建立 ConverterPlugin 协议、服务器隔离执行器、任务中心、进度/取消/日志/缓存；将现有必要模型转换迁入插件执行器。
+- 首批工业 CAD 插件覆盖 Parasolid `.x_t/.x_b` 与 JT `.jt`：Parasolid 保留装配/零件树并输出优化 GLB 与属性侧车；JT 优先复用源 LOD，并保留装配、PMI 与属性。转换依赖未安装时进入“等待转换器”，不得宣称可用或退化为无语义网格导入。
 - 轻量资产清单、内容哈希与服务器 Web 发布配置；支持大资源缓存、内容去重和缺失资源诊断。
 - 完成 MapProvider、城市底图、在线/离线瓦片、GeoJSON 点线面、轨迹、区域、缓存与版权配置。
 - 增加三维底图层、GeoAnchor、局部坐标/经纬度转换，以及地图、三维对象和轨迹的双向定位。
 - 完成独立 TopologyEditor：节点/端口/边/分组、折线与曲线、对齐、自动布局、数据绑定、二维/三维联动和 SVG/PNG 导出。
 
-验收：转换任务异常不影响编辑器且产物可复用；底图离线可降级；坐标黄金样本双向定位一致；1000 节点、2000 边的拓扑基准满足质量预算。
+验收：转换任务异常不影响编辑器且产物可复用；使用固定 `.x_t/.x_b/.jt` 黄金样本验证单位、坐标、装配树、零件选择、属性与 JT LOD，允许按许可证选择具体转换 SDK，但不得把源文件格式冒充为已支持；底图离线可降级；坐标黄金样本双向定位一致；1000 节点、2000 边的拓扑基准满足质量预算。
 
 ### M6：生态与企业化，持续 8 至 12 周
 
@@ -718,7 +719,7 @@ M8 参考 Siemens Tecnomatix Plant Simulation 的离散事件物料流主线，�
 - 普通画布拖拽、缩放、选择 p95 响应低于 100 ms。
 - 不含网络查询时，二维/三维联动动作 p95 低于 100 ms。
 - 发布必须原子化，失败时线上版本零变化；任一已发布版本可回滚。
-- schema 迁移必须有黄金文件测试，v1 导入覆盖现有示例和真实脱敏项目。
+- ApplicationDocument 当前 schema 必须有黄金文件、验证器和读写回归；不为旧项目或旧场景格式提供导入兼容。
 - 公式和脚本均有确定的超时、内存和输出上限。
 - 浏览器和 Tauri 对同一发布包使用相同运行时，交互结果一致。
 - 发布前必须发现缺失资源、绝对本地路径、不兼容脚本/扩展，并定位到具体对象。
@@ -739,7 +740,7 @@ M8 参考 Siemens Tecnomatix Plant Simulation 的离散事件物料流主线，�
 
 ## 13. 第一批开发 Epic
 
-1. `EPIC-001` ApplicationDocument schema v2 与 v1 迁移。
+1. `EPIC-001` 原生 ApplicationDocument schema、验证器与持久化；删除 v1 数据兼容路径。
 2. `EPIC-002` Studio Core：命令、撤销、选择、剪贴板、自动保存。
 3. `EPIC-003` 二维 DashboardEditor 框架与 SceneViewportWidget。
 4. `EPIC-004` 三维 SceneEditor 路由与返回上下文。
@@ -763,13 +764,11 @@ M8 参考 Siemens Tecnomatix Plant Simulation 的离散事件物料流主线，�
 
 ## 14. 立即执行的下一步
 
-先完成 M0 的技术设计，不直接大改 UI：
+M0 已完成架构边界基线，当前立即执行 M1：
 
-1. 定稿 `ApplicationDocument`、对象 ID、Scene Port、脚本能力、资产引用、迁移和发布边界。
-2. 为现有项目保存三个 v1 黄金样本，覆盖纯三维、带看板、带事件。
-3. 实现 `/api/meta` 与 `ServerClient`，同时让现有 B/S 行为不变。
-4. 制作二维编辑器交互原型，完成画布、图层、属性面板和进入三维四条主路径的可用性测试。
-5. 用公开 Scene API 制作一个最小“相机切换 + 设备拆解 + AGV 路径运动”技术样例，验证能力边界后再扩展 API。
-6. 建立 WebGPU/WebGL 兼容尖峰：同一场景验证基础材质、拾取、动画、后处理、能力探测和回退，再定 Renderer Port 最小接口。
-
-完成以上六项后再进入 M1，可以避免在 UI 已经铺开后反复修改数据模型和发布协议。
+1. 默认进入二维应用/页面路由，三维使用独立场景路由，并保存可靠的返回上下文。
+2. 让 DashboardEditor 直接读写原生 ApplicationDocument，删除 `SceneSnapshot` 迁移、旧 overlay 和旧简单路由。
+3. 建立 2D/3D 共用的选择、变量、过滤与 InteractionFlow 运行时，完成四类双向联动调试。
+4. 以现有功能清单而不是旧数据文件做回归门禁；新旧能力对齐后删除旧实现，避免长期双轨。
+5. 用公开 Scene API 制作“相机切换 + 设备拆解 + AGV 路径运动”最小技术样例，持续验证 ThingJS 级可编程边界。
+6. 保持 WebGPU/WebGL 尖峰与能力矩阵同步推进，但在 M4 达到门槛前不切换生产默认。

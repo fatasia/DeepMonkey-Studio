@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import pureFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
 import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
-import { ApplicationStore, applyStudioCommand, createRenameApplicationCommand } from "./index.js";
+import {
+  ApplicationStore,
+  applyStudioCommand,
+  createRenameApplicationCommand,
+  createRenameDashboardPageCommand,
+  createUpdateDashboardNodeFrameCommand
+} from "./index.js";
 
 function document() {
   return migrateSceneSnapshotV1(pureFixture as SceneSnapshot);
@@ -42,6 +48,28 @@ describe("StudioCommand", () => {
     expect(result.metadata.name).toBe("新名称");
     expect(source.metadata.name).toBe(originalName);
     expect(source.pages).not.toBe(result.pages);
+  });
+
+  it("renames dashboard pages and updates node frames through serializable commands", () => {
+    const source = document();
+    const page = source.pages[0]!;
+    const node = page.nodes[0]!;
+    const renamed = applyStudioCommand(source, createRenameDashboardPageCommand(page.id, "生产总览"));
+    const frame = { x: 120, y: 80, width: 1280, height: 720 };
+    const moved = applyStudioCommand(renamed, createUpdateDashboardNodeFrameCommand(page.id, node.id, frame));
+
+    expect(renamed.pages[0]?.name).toBe("生产总览");
+    expect(moved.pages[0]?.nodes[0]?.frame).toEqual(frame);
+    expect(source.pages[0]?.name).not.toBe("生产总览");
+    expect(source.pages[0]?.nodes[0]?.frame).not.toEqual(frame);
+  });
+
+  it("rejects dashboard commands that target missing pages or nodes", () => {
+    const source = document();
+    const page = source.pages[0]!;
+
+    expect(() => applyStudioCommand(source, createRenameDashboardPageCommand("missing", "名称"))).toThrow("应用中不存在页面");
+    expect(() => applyStudioCommand(source, createUpdateDashboardNodeFrameCommand(page.id, "missing", { x: 0, y: 0, width: 10, height: 10 }))).toThrow("不存在组件");
   });
 });
 

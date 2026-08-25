@@ -1,0 +1,49 @@
+import { describe, expect, it } from "vitest";
+import dashboardFixture from "../../../../test-fixtures/scene-v1-dashboard.json";
+import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
+import { ApplicationSession } from "./applicationSession.js";
+
+describe("ApplicationSession", () => {
+  it("opens a native application document without changing its revision", () => {
+    const session = new ApplicationSession();
+    const application = migrateSceneSnapshotV1(dashboardFixture as unknown as SceneSnapshot);
+    application.metadata.revision = 7;
+
+    const opened = session.openDocument(application);
+
+    expect(opened.metadata.revision).toBe(7);
+    expect(opened).toEqual(application);
+    expect(opened).not.toBe(application);
+  });
+
+  it("resets command history when another document is opened", () => {
+    const session = new ApplicationSession();
+    const first = migrateSceneSnapshotV1(dashboardFixture as unknown as SceneSnapshot);
+    const second = structuredClone(first);
+    second.metadata.id = "second-application";
+    second.metadata.name = "第二应用";
+    session.openDocument(first);
+    session.store.dispatch({
+      id: "temporary-rename",
+      type: "application.rename",
+      label: "临时重命名",
+      payload: { name: "临时名称" }
+    });
+
+    session.openDocument(second);
+
+    expect(session.getDocument()?.metadata.id).toBe("second-application");
+    expect(session.getDocument()?.metadata.name).toBe("第二应用");
+    expect(session.store.getState()).toMatchObject({ dirty: false, canUndo: false, canRedo: false });
+  });
+
+  it("keeps the current scene editor functional during the application-first transition", () => {
+    const session = new ApplicationSession();
+    const snapshot = structuredClone(dashboardFixture) as unknown as SceneSnapshot;
+    const before = structuredClone(snapshot);
+
+    expect(session.loadSceneDraft(snapshot).schemaVersion).toBe(2);
+    expect(session.captureSceneDraft(snapshot)).toEqual(snapshot);
+    expect(snapshot).toEqual(before);
+  });
+});

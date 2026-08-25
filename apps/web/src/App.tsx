@@ -53,6 +53,7 @@ import {
   X
 } from "lucide-react";
 import type {
+  ApplicationDocument,
   CameraConstraintsState,
   CameraState,
   CameraViewState,
@@ -85,6 +86,8 @@ import type {
   SystemUserRecord,
   WeatherMode
 } from "@bim-studio/contracts";
+import { migrateSceneSnapshotV1 } from "@bim-studio/contracts";
+import type { StudioCommand } from "@bim-studio/studio-core";
 import { api, getAuthToken, setAuthToken } from "./api";
 import { LayerTree } from "./components/LayerTree";
 import { SceneManager } from "./components/SceneManager";
@@ -92,6 +95,7 @@ import { SceneExportMenu } from "./components/SceneExportMenu";
 import { SpaceTree } from "./components/SpaceTree";
 import { CreditsModal } from "./components/CreditsModal";
 import { DigitalTwinPanel } from "./components/DigitalTwinPanel";
+import { DashboardWorkspace } from "./components/DashboardWorkspace";
 import { InteractionEditor, type InteractionTargetOption } from "./components/InteractionEditor";
 import { AiAssistantPanel } from "./components/AiAssistantPanel";
 import { LoginPage } from "./components/LoginPage";
@@ -100,7 +104,17 @@ import { normalizeInteractionScripts } from "./interactionState";
 import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
 import { exportFbxFile, exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
-import { LegacyApplicationSession } from "./studio/legacyApplicationSession";
+import { ApplicationSession } from "./studio/applicationSession";
+import { applicationForScene, syncSceneIntoApplication } from "./studio/sceneApplicationSync";
+import {
+  DEFAULT_DASHBOARD_VIEW,
+  parseStudioWorkspacePath,
+  readWorkspaceHistoryState,
+  studioWorkspacePath,
+  workspaceHistoryState,
+  type DashboardReturnContext,
+  type DashboardViewState
+} from "./studio/workspaceRoute";
 import {
   type BimPropertyEntry,
   type BimSpaceRecord,
@@ -194,11 +208,28 @@ const SceneDashboardOverlay = lazy(() => import("./components/SceneDashboardOver
 const VisionCenter = lazy(() => import("./components/VisionCenter").then((module) => ({ default: module.VisionCenter })));
 
 interface AppRoute {
-  view: "manager" | "studio" | "optimizer" | "data" | "vision" | "system" | "branding" | "view" | "published";
+  view: "manager" | "dashboard" | "studio" | "optimizer" | "data" | "vision" | "system" | "branding" | "view" | "published";
   sceneId?: string;
+  projectId?: string;
+  applicationId?: string;
+  pageId?: string;
+  dashboardView?: DashboardViewState;
+  dashboardReturn?: DashboardReturnContext;
 }
 
 function readRoute(): AppRoute {
+  const workspace = parseStudioWorkspacePath(window.location.pathname);
+  const historyState = readWorkspaceHistoryState(window.history.state);
+  if (workspace?.kind === "dashboard") return {
+    view: "dashboard",
+    ...workspace,
+    ...(historyState.dashboardView ? { dashboardView: historyState.dashboardView } : {})
+  };
+  if (workspace?.kind === "scene") return {
+    view: "studio",
+    ...workspace,
+    ...(historyState.dashboardReturn ? { dashboardReturn: historyState.dashboardReturn } : {})
+  };
   if (window.location.pathname === "/optimizer") return { view: "optimizer" };
   if (window.location.pathname === "/data") return { view: "data" };
   if (window.location.pathname === "/vision") return { view: "vision" };
@@ -210,9 +241,22 @@ function readRoute(): AppRoute {
 }
 
 function routePath(route: AppRoute): string {
+  if (route.view === "dashboard" && route.projectId && route.applicationId && route.pageId) {
+    return studioWorkspacePath({ kind: "dashboard", projectId: route.projectId, applicationId: route.applicationId, pageId: route.pageId });
+  }
+  if (route.view === "studio" && route.projectId && route.applicationId && route.sceneId) {
+    return studioWorkspacePath({ kind: "scene", projectId: route.projectId, applicationId: route.applicationId, sceneId: route.sceneId });
+  }
   return route.view === "manager" || route.view === "optimizer" || route.view === "data" || route.view === "vision" || route.view === "system" || route.view === "branding"
     ? `/${route.view}`
     : `/${route.view}/${encodeURIComponent(route.sceneId ?? "new")}`;
+}
+
+function routeHistoryState(route: AppRoute): Record<string, unknown> {
+  return workspaceHistoryState({
+    ...(route.dashboardView ? { dashboardView: route.dashboardView } : {}),
+    ...(route.dashboardReturn ? { dashboardReturn: route.dashboardReturn } : {})
+  });
 }
 
 function openBrowseRoute(view: "view" | "published", sceneId: string): void {
@@ -270,8 +314,8 @@ export function App() {
   const sceneNameCommitRef = useRef<Promise<boolean> | undefined>(undefined);
   const sceneApplyVersionRef = useRef(0);
   const rendererSnapshotRef = useRef<{ scene: SceneSnapshot; readOnly: boolean } | undefined>(undefined);
-  const applicationSessionRef = useRef<LegacyApplicationSession>(null!);
-  applicationSessionRef.current ??= new LegacyApplicationSession();
+  const applicationSessionRef = useRef<ApplicationSession>(null!);
+  applicationSessionRef.current ??= new ApplicationSession();
   const visionEventCursorRef = useRef<{ scope: string; id: string }>({ scope: "", id: "" });
   const [engine, setEngine] = useState<ViewerEngine>();
   const [currentUser, setCurrentUser] = useState<SystemUserRecord>();
@@ -285,6 +329,7 @@ export function App() {
   const [project, setProject] = useState<ProjectRecord>();
   const [scenes, setScenes] = useState<SceneSnapshot[]>([]);
   const [activeScene, setActiveScene] = useState<SceneSnapshot>();
+  const [applicationRevision, setApplicationRevision] = useState(0);
   const [sceneName, setSceneName] = useState("未命名场景");
   const [selected, setSelected] = useState<LoadedSceneModel>();
   const [measurements, setMeasurements] = useState<MeasurementState[]>([]);
@@ -307,6 +352,11 @@ export function App() {
   const [measureMode, setMeasureMode] = useState<MeasureMode>("distance");
   const [route, setRoute] = useState<AppRoute>(() => readRoute());
   const viewerRouteActive = route.view === "studio" || route.view === "view" || route.view === "published";
+  const applicationState = useMemo(() => applicationSessionRef.current.store.getState(), [applicationRevision]);
+  const activeApplication = applicationState.document;
+  const activeDashboardPage = route.view === "dashboard" && activeApplication && activeApplication.metadata.id === route.applicationId
+    ? activeApplication.pages.find((page) => page.id === route.pageId)
+    : undefined;
   const [avatarVisible, setAvatarVisible] = useState(false);
   const [cameraInfo, setCameraInfo] = useState<CameraState>();
   const [pointerInfo, setPointerInfo] = useState<PointerInfo>();
@@ -371,6 +421,10 @@ export function App() {
     window.setTimeout(() => setError(undefined), 5000);
   }, []);
 
+  useEffect(() => applicationSessionRef.current.store.subscribe(() => {
+    setApplicationRevision((value) => value + 1);
+  }), []);
+
   useEffect(() => {
     let cancelled = false;
     void api.getBranding().then((settings) => { if (!cancelled) { setBranding(settings); if (!window.localStorage.getItem("bim-studio.locale")) setLocale(settings.defaultLocale); } }).catch(() => undefined);
@@ -415,8 +469,14 @@ export function App() {
   }, [authReady, currentUser?.id, currentUser?.role, route.view]);
 
   function navigate(next: AppRoute, replace = false) {
-    window.history[replace ? "replaceState" : "pushState"]({}, "", routePath(next));
+    window.history[replace ? "replaceState" : "pushState"](routeHistoryState(next), "", routePath(next));
     setRoute(next);
+  }
+
+  function replaceDashboardView(view: DashboardViewState) {
+    if (route.view !== "dashboard") return;
+    const next = { ...route, dashboardView: view };
+    window.history.replaceState(routeHistoryState(next), "", routePath(next));
   }
 
   function changeRendererBackend(next: RendererBackend) {
@@ -647,8 +707,11 @@ export function App() {
       if (!action) return;
       if (action.type === "navigateScene" && action.sceneId) {
         const view = route.view === "studio" ? "studio" : "view";
-        if (action.newTab) window.open(routePath({ view, sceneId: action.sceneId }), "_blank", "noopener,noreferrer");
-        else navigate({ view, sceneId: action.sceneId });
+        const destination: AppRoute = view === "studio"
+          ? { ...route, view, sceneId: action.sceneId }
+          : { view, sceneId: action.sceneId };
+        if (action.newTab) window.open(routePath(destination), "_blank", "noopener,noreferrer");
+        else navigate(destination);
       } else if (action.type === "cameraView" && action.cameraViewId) {
         const cameraView = cameraViews.find((item) => item.id === action.cameraViewId);
         if (cameraView) engine?.applyCamera(cameraView.camera);
@@ -775,12 +838,40 @@ export function App() {
 
   useEffect(() => {
     if (defaultEntryAppliedRef.current || !currentUser || !project || initialPathRef.current !== "/") return;
-    if (branding.defaultEntry === "studio" && scenes[0]) navigate({ view: "studio", sceneId: scenes[0].id }, true);
+    if (branding.defaultEntry === "studio" && scenes[0]) void openSceneDashboard(scenes[0], true);
     else if (branding.defaultEntry === "data") navigate({ view: "data" }, true);
     else if (branding.defaultEntry === "manager") navigate({ view: "manager" }, true);
     else return;
     defaultEntryAppliedRef.current = true;
   }, [branding.defaultEntry, currentUser?.id, project?.id, scenes]);
+
+  useEffect(() => {
+    if (route.view !== "dashboard" || !route.projectId || !route.applicationId || !route.pageId) return;
+    const projectId = route.projectId;
+    const applicationId = route.applicationId;
+    const pageId = route.pageId;
+    let cancelled = false;
+    void Promise.all([api.getProject(projectId), api.getApplication(projectId, applicationId)])
+      .then(([nextProject, application]) => {
+        if (cancelled) return;
+        const page = application.pages.find((candidate) => candidate.id === pageId) ?? application.pages[0];
+        if (!page) throw new Error("应用没有可编辑的二维页面");
+        setProject(nextProject);
+        setProjects((items) => items.some((item) => item.id === nextProject.id)
+          ? items.map((item) => item.id === nextProject.id ? nextProject : item)
+          : [...items, nextProject]);
+        applicationSessionRef.current.openDocument(application);
+        if (page.id !== pageId) navigate({
+          view: "dashboard",
+          projectId,
+          applicationId,
+          pageId: page.id,
+          ...(route.dashboardView ? { dashboardView: route.dashboardView } : {})
+        }, true);
+      })
+      .catch((reason) => { if (!cancelled) showError(reason); });
+    return () => { cancelled = true; };
+  }, [route.view, route.projectId, route.applicationId, route.pageId]);
 
   useEffect(() => {
     if (route.view !== "studio" || !route.sceneId || !engine || activeScene?.id === route.sceneId) return;
@@ -1363,7 +1454,9 @@ export function App() {
       createdAt: activeScene?.createdAt ?? now,
       updatedAt: now
     };
-    return applicationSessionRef.current.capture(snapshot);
+    return route.applicationId && activeApplication?.metadata.id === route.applicationId
+      ? structuredClone(snapshot)
+      : applicationSessionRef.current.captureSceneDraft(snapshot);
   }
 
   async function saveScene(): Promise<SceneSnapshot | undefined> {
@@ -1375,6 +1468,9 @@ export function App() {
       setActiveScene(saved);
       setSceneName(saved.name);
       setScenes((items) => sortScenesByTime([saved, ...items.filter((item) => item.id !== saved.id)]));
+      if (route.applicationId && activeApplication?.metadata.id === route.applicationId) {
+        await saveSceneIntoApplication(activeApplication, saved);
+      }
       setMessage(`场景“${saved.name}”已保存`);
       return saved;
     } catch (reason) {
@@ -1443,10 +1539,14 @@ export function App() {
 
   async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false) {
     if (!engine || !sceneProject) return;
-    applicationSessionRef.current.open(scene);
+    if (!route.applicationId || activeApplication?.metadata.id !== route.applicationId) {
+      applicationSessionRef.current.loadSceneDraft(scene);
+    }
     const applyVersion = ++sceneApplyVersionRef.current;
     setBusy(true);
-    if (updateRoute) navigate({ view: "studio", sceneId: scene.id });
+    if (updateRoute) navigate(route.applicationId
+      ? { ...route, view: "studio", sceneId: scene.id }
+      : { view: "studio", sceneId: scene.id });
     try {
       engine.setReadOnly(readOnly);
       engine.clearSceneModels();
@@ -1530,6 +1630,44 @@ export function App() {
     }
   }
 
+  async function ensureApplicationForScene(scene: SceneSnapshot): Promise<ApplicationDocument> {
+    const applications = await api.listApplications(scene.projectId);
+    const existing = applicationForScene(applications, scene.id);
+    const application = existing ?? await api.createApplication(migrateSceneSnapshotV1(scene));
+    applicationSessionRef.current.openDocument(application);
+    return application;
+  }
+
+  async function openSceneDashboard(scene: SceneSnapshot, replace = false): Promise<void> {
+    setBusy(true);
+    try {
+      const application = await ensureApplicationForScene(scene);
+      const page = application.pages.find((candidate) => candidate.nodes.some((node) => node.kind === "scene-viewport" && node.sceneId === scene.id))
+        ?? application.pages[0];
+      if (!page) throw new Error("应用没有可编辑的二维页面");
+      setActiveScene(scene);
+      navigate({
+        view: "dashboard",
+        projectId: scene.projectId,
+        applicationId: application.metadata.id,
+        pageId: page.id,
+        dashboardView: DEFAULT_DASHBOARD_VIEW
+      }, replace);
+      setMessage(`已打开“${page.name}”二维设计`);
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveSceneIntoApplication(application: ApplicationDocument, scene: SceneSnapshot): Promise<ApplicationDocument> {
+    const merged = syncSceneIntoApplication(application, scene);
+    const saved = await api.saveApplication(merged);
+    applicationSessionRef.current.openDocument(saved);
+    return saved;
+  }
+
   async function createScene(name: string) {
     if (!project) return;
     sceneApplyVersionRef.current += 1;
@@ -1602,8 +1740,8 @@ export function App() {
     setDefaultCameraViewId(undefined);
     setAnimationTime(0);
     setAnimationPlaying(false);
-    navigate({ view: "studio", sceneId: saved.id });
-    setMessage(`场景“${saved.name}”已创建，可加载多个模型`);
+    await openSceneDashboard(saved);
+    setMessage(`应用“${saved.name}”已创建，默认进入二维设计`);
     setRevision((value) => value + 1);
   }
 
@@ -1807,11 +1945,117 @@ export function App() {
     });
   }
 
+  function dispatchApplicationCommand(command: StudioCommand) {
+    try {
+      applicationSessionRef.current.store.dispatch(command);
+    } catch (reason) {
+      showError(reason);
+    }
+  }
+
+  async function saveActiveApplication(): Promise<ApplicationDocument | undefined> {
+    const document = applicationSessionRef.current.store.getState().document;
+    if (!document) return;
+    setBusy(true);
+    try {
+      const saved = await api.saveApplication(document);
+      applicationSessionRef.current.openDocument(saved);
+      setMessage(`应用“${saved.metadata.name}”已保存`);
+      return saved;
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function publishActiveApplication() {
+    const current = applicationSessionRef.current.store.getState();
+    const saved = current.dirty ? await saveActiveApplication() : current.document;
+    if (!saved) return;
+    setBusy(true);
+    try {
+      await api.publishApplication(saved.metadata.projectId, saved.metadata.id);
+      setMessage(`应用“${saved.metadata.name}”已发布`);
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function enterSceneFromDashboard(sceneId: string, view: DashboardViewState) {
+    if (!route.projectId || !route.applicationId || !route.pageId) return;
+    const dashboardReturn: DashboardReturnContext = {
+      kind: "dashboard",
+      projectId: route.projectId,
+      applicationId: route.applicationId,
+      pageId: route.pageId,
+      view
+    };
+    setActiveScene(undefined);
+    navigate({
+      view: "studio",
+      projectId: route.projectId,
+      applicationId: route.applicationId,
+      pageId: route.pageId,
+      sceneId,
+      dashboardReturn
+    });
+  }
+
+  function returnFromSceneEditor() {
+    const target = route.dashboardReturn;
+    if (target) {
+      navigate({
+        view: "dashboard",
+        projectId: target.projectId,
+        applicationId: target.applicationId,
+        pageId: target.pageId,
+        dashboardView: target.view
+      });
+    } else {
+      navigate({ view: "manager" });
+    }
+  }
+
   if (!authReady) return <div className="app-auth-loading"><LoaderCircle className="spin" size={24} />正在验证本地会话</div>;
   if (!currentUser) return <LoginPage branding={branding} locale={locale} onLogin={setCurrentUser} />;
 
   return (
     <>
+      {route.view === "dashboard" && activeApplication && activeDashboardPage && <DashboardWorkspace
+        locale={locale}
+        application={activeApplication}
+        page={activeDashboardPage}
+        {...(route.dashboardView ? { initialView: route.dashboardView } : {})}
+        dirty={applicationState.dirty}
+        canUndo={applicationState.canUndo}
+        canRedo={applicationState.canRedo}
+        busy={busy}
+        onBack={() => navigate({ view: "manager" })}
+        onSelectPage={(pageId, view) => navigate({
+          view: "dashboard",
+          projectId: activeApplication.metadata.projectId,
+          applicationId: activeApplication.metadata.id,
+          pageId,
+          dashboardView: { ...view, selectedNodeIds: [] }
+        })}
+        onEnterScene={enterSceneFromDashboard}
+        onOpenData={() => navigate({ view: "data" })}
+        onCommand={dispatchApplicationCommand}
+        onUndo={() => applicationSessionRef.current.store.undo()}
+        onRedo={() => applicationSessionRef.current.store.redo()}
+        onSave={() => void saveActiveApplication()}
+        onPublish={() => void publishActiveApplication()}
+        onPreview={() => {
+          const viewport = activeDashboardPage.nodes.find((node) => node.kind === "scene-viewport");
+          if (viewport?.kind === "scene-viewport") openBrowseRoute("view", viewport.sceneId);
+          else showError(new Error(tr(locale, "当前页面没有可预览的三维场景", "This page has no 3D scene to preview")));
+        }}
+        onViewStateChange={replaceDashboardView}
+      />}
+      {route.view === "dashboard" && (!activeApplication || !activeDashboardPage) && <div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载二维工作区", "Loading 2D workspace")}</div>}
       {route.view === "optimizer" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载模型优化器", "Loading model optimizer")}</div>}><ModelOptimizer locale={locale} copyright={branding.copyright} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "data" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载数据中心", "Loading data center")}</div>}><DataCenter locale={locale} project={project} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "vision" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载视觉中心", "Loading vision center")}</div>}><VisionCenter locale={locale} project={project} scenes={scenes} onBack={() => navigate({ view: "manager" })} /></Suspense>}
@@ -1829,7 +2073,7 @@ export function App() {
           onRenameProject={() => openProjectDialog("rename")}
           onDeleteProject={() => void deleteCurrentProject()}
           onCreate={async (name) => { try { await createScene(name); } catch (reason) { showError(reason); } }}
-          onOpen={async (scene) => { setActiveScene(undefined); navigate({ view: "studio", sceneId: scene.id }); }}
+          onOpen={async (scene) => { setActiveScene(undefined); await openSceneDashboard(scene); }}
           onCopy={copyScene}
           onRename={renameScene}
           onPublish={publishScene}
@@ -1853,7 +2097,7 @@ export function App() {
     <div className={`app-shell ${route.view === "view" || route.view === "published" ? "viewer-shell" : ""} ${route.view === "studio" || route.view === "view" || route.view === "published" ? "" : "app-shell-hidden"}`}>
       <header className="topbar">
         <div className="brand-mark"><img src={branding.logoUrl} alt={branding.systemName} /></div>
-        <div className="brand-copy"><strong>{branding.systemName}</strong><span>{route.view === "studio" ? tr(locale, "空间编排工作台", "Spatial composition studio") : tr(locale, "场景浏览", "Scene viewer")}</span></div>
+        <div className="brand-copy"><strong>{branding.systemName}</strong><span>{route.view === "studio" ? tr(locale, "三维场景编辑", "3D scene editor") : tr(locale, "场景浏览", "Scene viewer")}</span></div>
         <div className="topbar-divider" />
         {route.view === "studio" ? <>
         <select
@@ -1889,7 +2133,7 @@ export function App() {
           </div>
           <button className={`button ghost compact-action ${sceneDashboardOpen ? "active" : ""}`} title={tr(locale, "场景数据看板", "Scene dashboard")} onClick={() => { setSceneDashboardOpen((value) => !value); setDigitalTwinOpen(false); setEnvironmentOpen(false); }}><Gauge size={15} /><span className="action-label">{tr(locale, "数据看板", "Dashboard")}</span></button>
           <button className={`button ghost compact-action ${aiAssistantOpen ? "active" : ""}`} title="AI 场景助手" onClick={() => setAiAssistantOpen((value) => !value)}><Bot size={15} /><span className="action-label">AI 助手</span></button>
-          <button className="button ghost" title={tr(locale, "场景管理", "Scenes")} onClick={() => void commitSceneName().then((committed) => committed && navigate({ view: "manager" }))}><LayoutGrid size={15} /><span className="action-label">{tr(locale, "场景管理", "Scenes")}</span></button>
+          <button className="button ghost" title={route.dashboardReturn ? tr(locale, "返回二维设计", "Back to 2D design") : tr(locale, "场景管理", "Scenes")} onClick={() => void commitSceneName().then((committed) => committed && returnFromSceneEditor())}><ArrowLeft size={15} /><span className="action-label">{route.dashboardReturn ? tr(locale, "返回二维", "Back to 2D") : tr(locale, "场景管理", "Scenes")}</span></button>
           <button className="button ghost" title={tr(locale, "导入场景", "Import scene")} onClick={() => importRef.current?.click()}><Import size={15} /><span className="action-label">{tr(locale, "导入", "Import")}</span></button>
           <SceneExportMenu locale={locale} disabled={busy} onExportLoose={() => exportSceneConfig()} onExportSingle={() => void exportSingleFileScene()} onExportGlb={() => void exportGlbScene()} onExportFbx={() => void exportFbxScene()} />
           <button className="button ghost" title={tr(locale, "浏览场景", "View scene")} onClick={() => void browseActiveScene()} disabled={busy}><Eye size={15} /><span className="action-label">{tr(locale, "浏览", "View")}</span></button>
