@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify from "fastify";
@@ -31,6 +31,30 @@ describe("server metadata", () => {
     const second = await mkdtemp(path.join(tmpdir(), "bim-meta-second-"));
     directories.push(first, second);
     expect(await loadOrCreateServerInstanceId(first)).not.toBe(await loadOrCreateServerInstanceId(second));
+  });
+
+  it("rejects malformed persisted serverInstanceId content", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-meta-invalid-"));
+    directories.push(directory);
+    await writeFile(path.join(directory, "server-instance-id"), "not-an-id\n", "utf8");
+
+    await expect(loadOrCreateServerInstanceId(directory)).rejects.toThrow("server-instance-id 文件无效");
+  });
+
+  it("accepts and normalizes uppercase persisted UUID text", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-meta-uppercase-"));
+    directories.push(directory);
+    await writeFile(path.join(directory, "server-instance-id"), "3D3AE7AB-2A96-43C3-8354-2BA4D56CF8AA\n", "utf8");
+
+    await expect(loadOrCreateServerInstanceId(directory)).resolves.toBe("3d3ae7ab-2a96-43c3-8354-2ba4d56cf8aa");
+  });
+
+  it("rejects an empty persisted serverInstanceId file", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-meta-empty-"));
+    directories.push(directory);
+    await writeFile(path.join(directory, "server-instance-id"), "\n", "utf8");
+
+    await expect(loadOrCreateServerInstanceId(directory)).rejects.toThrow("server-instance-id 文件为空");
   });
 
   it("returns the public capability contract", async () => {

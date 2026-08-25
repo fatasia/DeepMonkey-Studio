@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import type { ServerMetaResponse } from "@bim-studio/contracts";
 
 const INSTANCE_FILE = "server-instance-id";
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function loadOrCreateServerInstanceId(dataDir: string): Promise<string> {
   await mkdir(dataDir, { recursive: true });
@@ -49,7 +50,10 @@ export async function registerServerMetaRoute(app: FastifyInstance, serverInstan
 
 async function readServerInstanceId(filePath: string): Promise<string | undefined> {
   try {
-    return (await readFile(filePath, "utf8")).trim() || undefined;
+    const current = (await readFile(filePath, "utf8")).trim();
+    if (!current) return undefined;
+    if (!UUID_V4.test(current)) throw new Error("server-instance-id 文件无效");
+    return current.toLowerCase();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
