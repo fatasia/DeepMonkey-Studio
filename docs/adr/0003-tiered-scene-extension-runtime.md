@@ -21,6 +21,8 @@ Dev Studio 需要支持自定义脚本、相机操作、第一/第三人称、ne
 - 行为脚本使用 `onStart`、`onUpdate`、`onFixedUpdate`、`onData`、`onEvent`、`onStop`、`onDispose` 生命周期。
 - 运动和物流仿真使用单一 simulation clock、fixed timestep、带时间戳遥测缓冲、插值、有限外推、暂停、倍速、记录和回放。
 - 设备拆解、AGV、机器人和物流节拍作为公开 API 的参考实现与测试夹具，不进入引擎核心特例。
+- 第一/第三人称控制器通过 `studio.collision` capability 使用稳定的碰撞层、角色胶囊、扫描移动和接触结果；Rapier、`three-mesh-bvh` 或其他实现只存在于 Scene Adapter/插件，项目脚本不持有物理世界或 BVH 私有对象。
+- 第一人称碰撞按项目启用，包含重力、地面吸附、台阶、最大坡度、滑墙、连续扫描防高速穿透和非法出生点脱困；编辑器提供碰撞代理、接触点和忽略层的调试视图。
 - 每个脚本和扩展声明能力权限；发布包记录 SDK/Extension API 版本和权限清单。
 - 将“达到 ThingJS 级可编程性”作为 M0-M6 的持续架构门禁：公开 SDK 必须覆盖应用/对象、事件、相机与控制器、Mesh/材质、动画/时间线、数据和组件扩展，不以暴露 `ViewerEngine` 或 Three.js 私有对象充数。
 - M0 固化 `SceneCapabilitySDK 1.0` 的纯协议、命令/查询/事件、生命周期、插件 manifest 与兼容性协商；M3 实现 Worker 行为 SDK 和调试工具；M4 接通三维运行时与双渲染后端；M5 开放转换/地图/拓扑扩展；M6 发布稳定 SDK、文档、模板与第三方插件门禁。
@@ -33,6 +35,7 @@ Dev Studio 需要支持自定义脚本、相机操作、第一/第三人称、ne
 - `onUpdate`/`onFixedUpdate` 的 CPU 时间、消息数量和场景命令数量可观测并有预算。
 - 相同初始状态、固定步长和输入事件应得到可重复的仿真结果。
 - 遥测短时抖动或断流时运动连续；超过外推上限后明确进入 stale/offline 状态。
+- 第一人称控制器在低帧率、高速移动、薄墙、台阶、斜坡和初始重叠黄金场景中不得穿模、持续抖动或永久卡死；关闭碰撞时不加载可选物理插件。
 - B/S 与 Tauri 使用同一 Scene Runtime 和脚本语义。
 - Scene Capability API 采用语义版本；破坏性变化必须提供迁移器或兼容适配层。
 - TypeScript 类型、自动补全、API 参考、最小示例、日志和兼容诊断与 SDK 同版本交付。
