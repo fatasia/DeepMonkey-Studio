@@ -1,5 +1,6 @@
 import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument } from "./application.js";
 import { assertPathSafeResourceId } from "./resourceId.js";
+import { assertDirectBindingSpec } from "./directBinding.js";
 
 type JsonObject = Record<string, unknown>;
 type Validator = (value: unknown, path: string) => void;
@@ -33,6 +34,62 @@ export function validateApplicationDocument(value: unknown): asserts value is Ap
   validateArrayProperty(application, "assets", validateAsset);
   validateArrayProperty(application, "timelines", validateTimeline);
   validateArrayProperty(application, "publicationProfiles", validatePublicationProfile);
+  optional(application, "spatialNavigation", validateSpatialNavigation, "应用");
+}
+
+function validateSpatialNavigation(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "rootNodeIds", validateStringArray, path);
+  required(object, "cacheLimit", expectNonNegativeInteger, path);
+  required(object, "nodes", (nodes, nodesPath) => {
+    expectArray(nodes, nodesPath, validateSpatialNavigationNode);
+    const nodeList = nodes as JsonObject[];
+    const ids = new Set<string>();
+    for (let index = 0; index < nodeList.length; index += 1) {
+      const id = nodeList[index]?.id;
+      if (typeof id !== "string") continue;
+      if (ids.has(id)) invalid(`${nodesPath}[${index}].id`, "不能重复");
+      ids.add(id);
+    }
+    const roots = object.rootNodeIds as unknown[];
+    const rootIds = new Set(roots.filter((rootId): rootId is string => typeof rootId === "string"));
+    if (rootIds.size !== roots.length) invalid(`${path}.rootNodeIds`, "不能重复");
+    roots.forEach((rootId, index) => {
+      if (typeof rootId === "string" && !ids.has(rootId)) invalid(`${path}.rootNodeIds[${index}]`, "必须引用存在的节点");
+    });
+    const byId = new Map(nodeList.flatMap((node) => typeof node.id === "string" ? [[node.id, node] as const] : []));
+    nodeList.forEach((node, index) => {
+      const parentId = node.parentId;
+      if (typeof parentId === "string" && !ids.has(parentId)) invalid(`${nodesPath}[${index}].parentId`, "必须引用存在的节点");
+      if (typeof parentId === "string" && parentId === node.id) invalid(`${nodesPath}[${index}].parentId`, "不能引用自身");
+      if (rootIds.has(node.id as string) && typeof parentId === "string") invalid(`${nodesPath}[${index}].parentId`, "根节点不能有父节点");
+      if (!rootIds.has(node.id as string) && typeof parentId !== "string") invalid(`${nodesPath}[${index}]`, "无父节点时必须声明为根节点");
+      const visited = new Set<string>();
+      let cursor: JsonObject | undefined = node;
+      while (typeof cursor?.id === "string") {
+        if (visited.has(cursor.id)) invalid(`${nodesPath}[${index}].parentId`, "不能形成循环");
+        visited.add(cursor.id);
+        cursor = typeof cursor.parentId === "string" ? byId.get(cursor.parentId) : undefined;
+      }
+    });
+  }, path);
+}
+
+function validateSpatialNavigationNode(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "id", expectString, path);
+  required(object, "name", expectString, path);
+  required(object, "kind", expectString, path);
+  optional(object, "parentId", expectString, path);
+  optional(object, "sceneId", expectString, path);
+  optional(object, "dashboardPageId", expectString, path);
+  optional(object, "entryCameraViewId", expectString, path);
+  requiredLiteral(object, "loadPolicy", ["focus", "replace", "additive"], path);
+  optional(object, "target", (target, targetPath) => {
+    const targetObject = expectObject(target, targetPath);
+    required(targetObject, "modelId", expectString, targetPath);
+    optional(targetObject, "layerId", expectString, targetPath);
+  }, path);
 }
 
 function validateMetadata(value: unknown, path: string): void {
@@ -109,6 +166,7 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   for (const key of ["title", "key", "unit"] as const) required(object, key, expectString, path);
   requiredLiteral(object, "type", ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"], path);
   for (const key of ["min", "max", "backgroundOpacity", "borderWidth", "fontSize", "fontWeight"] as const) optional(object, key, expectNumber, path);
+  optional(object, "directBinding", (binding, bindingPath) => assertDirectBindingSpec(binding, bindingPath), path);
   for (const key of ["color", "backgroundColor", "textColor", "datasetId", "pipelineId", "field", "url", "imageUrl", "assetId", "videoUrl", "monitorSourceUrl", "content", "borderColor"] as const) {
     optional(object, key, expectString, path);
   }
@@ -122,6 +180,10 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   optionalLiteral(object, "designState", ["auto", "empty", "loading", "partial", "error", "forbidden"], path);
   optionalLiteral(object, "animation", ["none", "fade", "slide-up", "scale", "pulse"], path);
   for (const key of ["animationDuration", "animationDelay"] as const) optional(object, key, expectNumber, path);
+  const products = [object.datasetId, object.pipelineId, object.directBinding].filter((item) =>
+    (typeof item === "string" && item.length > 0) || (typeof item === "object" && item !== null)
+  );
+  if (products.length > 1) invalid(path, "数据集、数据管道和直接数据源最多只能选择一个");
 }
 
 function validateTopology(value: unknown, path: string): void {
@@ -189,6 +251,7 @@ function validateSceneDataBinding(value: unknown, path: string): void {
   required(object, "enabled", expectBoolean, path);
   optional(object, "datasetId", expectString, path);
   optional(object, "pipelineId", expectString, path);
+  optional(object, "directBinding", (binding, bindingPath) => assertDirectBindingSpec(binding, bindingPath), path);
   optional(object, "rowIndex", expectNumber, path);
   required(object, "refreshSeconds", expectNumber, path);
   requiredLiteral(object, "action", ["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects"], path);
@@ -197,8 +260,10 @@ function validateSceneDataBinding(value: unknown, path: string): void {
     for (const key of ["modelId", "layerId", "annotationId"] as const) optional(targetObject, key, expectString, targetPath);
     if (!["modelId", "annotationId"].some((key) => typeof targetObject[key] === "string" && targetObject[key])) invalid(targetPath, "至少需要 modelId 或 annotationId");
   }, path);
-  const products = [object.datasetId, object.pipelineId].filter((item) => typeof item === "string" && item.length > 0);
-  if (products.length !== 1) invalid(path, "必须且只能绑定一个数据集或数据管道");
+  const products = [object.datasetId, object.pipelineId, object.directBinding].filter((item) =>
+    (typeof item === "string" && item.length > 0) || (typeof item === "object" && item !== null)
+  );
+  if (products.length !== 1) invalid(path, "必须且只能绑定一个数据集、数据管道或直接数据源");
 }
 
 function validateSceneModel(value: unknown, path: string): void {
@@ -681,6 +746,10 @@ function expectNumber(value: unknown, path: string): void {
 
 function expectPositiveInteger(value: unknown, path: string): void {
   if (!Number.isInteger(value) || (value as number) < 1) invalid(path, "必须是大于等于 1 的整数");
+}
+
+function expectNonNegativeInteger(value: unknown, path: string): void {
+  if (!Number.isInteger(value) || (value as number) < 0) invalid(path, "必须是大于等于 0 的整数");
 }
 
 function expectStringNumberOrBoolean(value: unknown, path: string): void {

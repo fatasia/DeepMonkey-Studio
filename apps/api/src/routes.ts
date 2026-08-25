@@ -37,6 +37,7 @@ interface RouteDependencies {
   objects: ObjectStore;
   dataDir: string;
   config: AppConfig;
+  beforeDiscardPublication?: (publication: PublishedSceneRecord) => Promise<void>;
 }
 
 function cleanFileName(fileName: string): string {
@@ -50,7 +51,7 @@ function modelFormat(fileName: string): ModelFormat | undefined {
 }
 
 export async function registerRoutes(app: FastifyInstance, dependencies: RouteDependencies): Promise<void> {
-  const { store, queue, objects, dataDir, config } = dependencies;
+  const { store, queue, objects, dataDir, config, beforeDiscardPublication } = dependencies;
 
   app.addHook("preValidation", async (request, reply) => {
     const params = request.params;
@@ -513,6 +514,11 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     async (request, reply) => {
       const source = store.getScene(request.params.projectId, request.params.sceneId);
       if (!source) return reply.code(404).send({ message: "场景不存在" });
+      const currentPublication = store.getPublication(source.id);
+      if (currentPublication && beforeDiscardPublication) {
+        try { await beforeDiscardPublication(currentPublication); }
+        catch (reason) { return reply.code(502).send({ message: reason instanceof Error ? reason.message : "无法停止旧云渲染会话" }); }
+      }
       const publishedAt = new Date().toISOString();
       const publishedScene: SceneSnapshot = { ...source, publishedAt, updatedAt: publishedAt };
       await store.saveScene(publishedScene);
@@ -535,6 +541,12 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     async (request, reply) => {
       const source = store.getScene(request.params.projectId, request.params.sceneId);
       if (!source) return reply.code(404).send({ message: "场景不存在" });
+      const publication = store.getPublication(source.id);
+      if (!publication) return reply.code(404).send({ message: "场景尚未发布" });
+      if (beforeDiscardPublication) {
+        try { await beforeDiscardPublication(publication); }
+        catch (reason) { return reply.code(502).send({ message: reason instanceof Error ? reason.message : "无法停止云渲染会话" }); }
+      }
       const removed = await store.removePublication(source.id);
       if (!removed) return reply.code(404).send({ message: "场景尚未发布" });
       return reply.code(204).send();
@@ -550,6 +562,11 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   app.delete<{ Params: { projectId: string; sceneId: string } }>(
     "/api/projects/:projectId/scenes/:sceneId",
     async (request, reply) => {
+      const publication = store.getPublication(request.params.sceneId);
+      if (publication && beforeDiscardPublication) {
+        try { await beforeDiscardPublication(publication); }
+        catch (reason) { return reply.code(502).send({ message: reason instanceof Error ? reason.message : "无法停止云渲染会话" }); }
+      }
       const removed = await store.removeScene(request.params.projectId, request.params.sceneId);
       if (!removed) return reply.code(404).send({ message: "场景不存在" });
       return reply.code(204).send();

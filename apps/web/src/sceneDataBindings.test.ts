@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSceneDataBindings, sceneDataBindingMessage } from "./sceneDataBindings";
+import { directSceneDataBindingMessage, normalizeSceneDataBindings, sceneDataBindingMessage } from "./sceneDataBindings";
 
 describe("scene data bindings", () => {
   it("normalizes one shared pipeline binding and clamps its polling budget", () => {
@@ -41,5 +41,18 @@ describe("scene data bindings", () => {
 
   it("rejects ambiguous bindings that select both product kinds", () => {
     expect(normalizeSceneDataBindings([{ id: "bad", enabled: true, datasetId: "a", pipelineId: "b", field: "x", target: { modelId: "m" }, action: "color", refreshSeconds: 5 }])).toEqual([]);
+  });
+
+  it("normalizes a direct binding and turns its value into the same 3D data event chain", () => {
+    const binding = normalizeSceneDataBindings([{
+      id: "direct-1", name: "设备显隐", enabled: true, field: "online",
+      directBinding: { version: 1, gateway: "server", transport: "http", endpoint: "https://api.example/status", http: { method: "GET", refresh: { intervalMs: 5_000 } } },
+      target: { modelId: "robot-1" }, action: "visibility", refreshSeconds: 5
+    }])[0]!;
+
+    expect(binding.directBinding?.gateway).toBe("server");
+    expect(directSceneDataBindingMessage(binding, "false", "scene-1", "2026-08-25T00:00:00.000Z")).toMatchObject({
+      source: "direct:direct-1", key: "online", value: false, sceneId: "scene-1", target: { modelId: "robot-1" }, action: "visibility"
+    });
   });
 });

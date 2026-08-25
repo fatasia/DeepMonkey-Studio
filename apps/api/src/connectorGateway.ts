@@ -1,0 +1,549 @@
+import { lookup as dnsLookup } from "node:dns/promises";
+import http from "node:http";
+import https from "node:https";
+import { isIP } from "node:net";
+import type { LookupFunction } from "node:net";
+import { createHash } from "node:crypto";
+import type { FastifyInstance } from "fastify";
+import { WebSocket as NodeWebSocket, type ClientOptions as WebSocketClientOptions, type RawData } from "ws";
+import {
+  assertDirectBindingSpec,
+  type DirectBindingSpec,
+  type DirectBindingTemplateValue
+} from "@bim-studio/contracts";
+
+export type DirectBindingVariables = Record<string, DirectBindingTemplateValue>;
+
+export interface ResolvedDirectCredential {
+  /** Injected only by the server; persisted binding documents never contain secret values. */
+  headers: Record<string, string>;
+}
+
+export interface DirectCredentialResolver {
+  resolve(credentialRef: string): Promise<ResolvedDirectCredential | undefined>;
+}
+
+export interface DirectBindingOutboundPolicy {
+  allowedPorts?: readonly number[];
+  allowPrivateNetwork?: boolean;
+  allowedHostnames?: readonly string[];
+}
+
+export interface DirectBindingGatewayOptions {
+  credentialResolver?: DirectCredentialResolver;
+  outboundPolicy?: DirectBindingOutboundPolicy;
+  timeoutMs?: number;
+  maxResponseBytes?: number;
+  resolveHost?: (hostname: string) => Promise<readonly ResolvedAddress[]>;
+}
+
+export interface DirectHttpGatewayResponse {
+  ok: true;
+  status: number;
+  contentType?: string;
+  data: unknown;
+  value: unknown;
+}
+
+export type DirectBindingErrorCode =
+  | "INVALID_BINDING"
+  | "OUTBOUND_DENIED"
+  | "CREDENTIAL_NOT_FOUND"
+  | "UPSTREAM_TIMEOUT"
+  | "UPSTREAM_TOO_LARGE"
+  | "UPSTREAM_UNAVAILABLE"
+  | "UPSTREAM_ERROR";
+
+export class DirectBindingGatewayError extends Error {
+  constructor(
+    readonly code: DirectBindingErrorCode,
+    message: string,
+    readonly statusCode: number,
+    readonly retryable: boolean,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = "DirectBindingGatewayError";
+  }
+}
+
+interface ResolvedAddress { address: string; family: 4 | 6 }
+interface PreparedTarget { url: URL; address: ResolvedAddress; headers: Record<string, string> }
+
+const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_ALLOWED_PORTS = [80, 443] as const;
+
+export class DirectHttpConnectorGateway {
+  constructor(private readonly options: DirectBindingGatewayOptions = {}) {}
+
+  async execute(binding: DirectBindingSpec, variables: DirectBindingVariables = {}): Promise<DirectHttpGatewayResponse> {
+    validateBinding(binding);
+    if (binding.transport !== "http" || !binding.http) {
+      throw new DirectBindingGatewayError("INVALID_BINDING", "该网关请求必须使用 HTTP 直接绑定", 400, false);
+    }
+    const target = await prepareTarget(binding, ["http:", "https:"], this.options);
+    for (const [name, template] of Object.entries(binding.http.params ?? {})) {
+      target.url.searchParams.set(name, String(renderTemplate(template, variables) ?? ""));
+    }
+    const bodyValue = binding.http.bodyTemplate === undefined ? undefined : renderTemplate(binding.http.bodyTemplate, variables);
+    const body = bodyValue === undefined ? undefined : Buffer.from(
+      typeof bodyValue === "string" ? bodyValue : JSON.stringify(bodyValue),
+      "utf8"
+    );
+    const headers: Record<string, string> = { accept: "application/json, text/plain;q=0.9, */*;q=0.1", ...target.headers };
+    if (body) {
+      headers["content-type"] ??= typeof bodyValue === "string" ? "text/plain; charset=utf-8" : "application/json; charset=utf-8";
+      headers["content-length"] = String(body.byteLength);
+    }
+    const upstream = await requestPinned(target, binding.http.method, headers, body, {
+      timeoutMs: this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      maxResponseBytes: this.options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES
+    });
+    const data = decodeResponse(upstream.body, upstream.contentType);
+    if (upstream.status < 200 || upstream.status >= 300) {
+      throw new DirectBindingGatewayError(
+        "UPSTREAM_ERROR",
+        `上游接口返回 HTTP ${upstream.status}`,
+        502,
+        upstream.status >= 500
+      );
+    }
+    return {
+      ok: true,
+      status: upstream.status,
+      ...(upstream.contentType ? { contentType: upstream.contentType } : {}),
+      data,
+      value: selectDirectBindingValue(data, binding)
+    };
+  }
+}
+
+interface HttpResponseBytes { status: number; contentType?: string; body: Buffer }
+
+function requestPinned(
+  target: PreparedTarget,
+  method: string,
+  headers: Record<string, string>,
+  body: Buffer | undefined,
+  limits: { timeoutMs: number; maxResponseBytes: number }
+): Promise<HttpResponseBytes> {
+  return new Promise((resolve, reject) => {
+    const transport = target.url.protocol === "https:" ? https : http;
+    const request = transport.request(target.url, {
+      method,
+      headers,
+      lookup: pinnedLookup(target.address),
+      ...(target.url.protocol === "https:" ? { servername: target.url.hostname } : {})
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      response.on("data", (chunk: Buffer) => {
+        size += chunk.byteLength;
+        if (size > limits.maxResponseBytes) {
+          response.destroy(new DirectBindingGatewayError("UPSTREAM_TOO_LARGE", "上游响应超过大小限制", 502, false));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.once("end", () => resolve({
+        status: response.statusCode ?? 502,
+        ...(typeof response.headers["content-type"] === "string" ? { contentType: response.headers["content-type"] } : {}),
+        body: Buffer.concat(chunks)
+      }));
+      response.once("error", reject);
+    });
+    request.setTimeout(limits.timeoutMs, () => request.destroy(
+      new DirectBindingGatewayError("UPSTREAM_TIMEOUT", "上游接口请求超时", 504, true)
+    ));
+    request.once("error", (reason) => reject(normalizeUpstreamError(reason)));
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+function pinnedLookup(address: ResolvedAddress): LookupFunction {
+  return (_hostname, options, callback) => {
+    if (typeof options === "object" && options.all) {
+      callback(null, [{ address: address.address, family: address.family }]);
+      return;
+    }
+    callback(null, address.address, address.family);
+  };
+}
+
+function decodeResponse(body: Buffer, contentType?: string): unknown {
+  const text = body.toString("utf8");
+  if (contentType?.toLowerCase().includes("json")) {
+    try { return JSON.parse(text) as unknown; }
+    catch (reason) { throw new DirectBindingGatewayError("UPSTREAM_ERROR", "上游返回了无效 JSON", 502, false, { cause: reason }); }
+  }
+  return text;
+}
+
+function validateBinding(binding: DirectBindingSpec): void {
+  try { assertDirectBindingSpec(binding); }
+  catch (reason) {
+    throw new DirectBindingGatewayError("INVALID_BINDING", reason instanceof Error ? reason.message : "直接绑定格式无效", 400, false, { cause: reason });
+  }
+  if ((binding.access ?? "read-only") !== "read-only") {
+    throw new DirectBindingGatewayError("INVALID_BINDING", "直接绑定仅支持只读访问", 400, false);
+  }
+}
+
+async function prepareTarget(
+  binding: DirectBindingSpec,
+  protocols: readonly string[],
+  options: DirectBindingGatewayOptions
+): Promise<PreparedTarget> {
+  let url: URL;
+  try { url = new URL(binding.endpoint); }
+  catch (reason) { throw new DirectBindingGatewayError("INVALID_BINDING", "直接绑定 endpoint 不是有效 URL", 400, false, { cause: reason }); }
+  if (!protocols.includes(url.protocol)) denied(`不允许 ${url.protocol} 协议`);
+  if (url.username || url.password) denied("URL 中不能包含凭据");
+  if (url.hash) denied("URL 中不能包含片段");
+
+  const policy = options.outboundPolicy ?? {};
+  const allowedPorts = new Set(policy.allowedPorts ?? DEFAULT_ALLOWED_PORTS);
+  const port = Number(url.port || (url.protocol === "http:" || url.protocol === "ws:" ? 80 : 443));
+  if (!allowedPorts.has(port)) denied(`不允许访问端口 ${port}`);
+  if (policy.allowedHostnames?.length && !policy.allowedHostnames.some((allowed) => hostnameMatches(url.hostname, allowed))) {
+    denied("目标主机不在出站白名单中");
+  }
+
+  const addresses = await resolveAddresses(url.hostname, options.resolveHost);
+  if (addresses.length === 0) denied("目标主机没有可用地址");
+  if (addresses.some((item) => !isPublicAddress(item.address))) {
+    if (!policy.allowPrivateNetwork) denied("目标主机解析到内网、环回或保留地址");
+    if (!policy.allowedHostnames?.length) denied("访问私网目标时必须同时配置主机白名单");
+  }
+  const headers = binding.credentialRef
+    ? await resolveCredential(binding.credentialRef, options.credentialResolver)
+    : {};
+  return { url, address: addresses[0]!, headers };
+}
+
+async function resolveAddresses(hostname: string, resolver?: DirectBindingGatewayOptions["resolveHost"]): Promise<readonly ResolvedAddress[]> {
+  const literalFamily = isIP(hostname);
+  if (literalFamily === 4 || literalFamily === 6) return [{ address: hostname, family: literalFamily }];
+  try {
+    if (resolver) return resolver(hostname);
+    const records = await dnsLookup(hostname, { all: true, verbatim: true });
+    return records.flatMap((record) => record.family === 4 || record.family === 6
+      ? [{ address: record.address, family: record.family }]
+      : []);
+  } catch (reason) {
+    throw new DirectBindingGatewayError("UPSTREAM_UNAVAILABLE", "无法解析上游主机", 502, true, { cause: reason });
+  }
+}
+
+async function resolveCredential(reference: string, resolver?: DirectCredentialResolver): Promise<Record<string, string>> {
+  const credential = await resolver?.resolve(reference);
+  if (!credential) throw new DirectBindingGatewayError("CREDENTIAL_NOT_FOUND", "找不到直接绑定所引用的服务端凭据", 424, false);
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(credential.headers)) {
+    const normalized = name.toLowerCase();
+    if (["host", "connection", "content-length", "transfer-encoding", "upgrade"].includes(normalized)) {
+      throw new DirectBindingGatewayError("INVALID_BINDING", `凭据不能注入 ${name} 请求头`, 500, false);
+    }
+    headers[normalized] = value;
+  }
+  return headers;
+}
+
+function hostnameMatches(hostname: string, allowed: string): boolean {
+  const normalized = hostname.toLowerCase();
+  const rule = allowed.toLowerCase();
+  return rule.startsWith("*.")
+    ? normalized.endsWith(rule.slice(1)) && normalized !== rule.slice(2)
+    : normalized === rule;
+}
+
+function isPublicAddress(address: string): boolean {
+  const family = isIP(address);
+  if (family === 4) {
+    const bytes = address.split(".").map(Number);
+    const [a = 0, b = 0, c = 0] = bytes;
+    return !(
+      a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+      (a === 192 && b === 88 && c === 99) ||
+      (a === 198 && (b === 18 || b === 19)) || (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113)
+    );
+  }
+  if (family === 6) {
+    const normalized = address.toLowerCase();
+    if (normalized.startsWith("::ffff:")) return isPublicAddress(normalized.slice(7));
+    return !(normalized === "::" || normalized === "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") ||
+      /^fe[89ab]/.test(normalized) || normalized.startsWith("ff") || normalized.startsWith("2001:db8:"));
+  }
+  return false;
+}
+
+function denied(message: string): never {
+  throw new DirectBindingGatewayError("OUTBOUND_DENIED", message, 403, false);
+}
+
+function normalizeUpstreamError(reason: unknown): DirectBindingGatewayError {
+  if (reason instanceof DirectBindingGatewayError) return reason;
+  return new DirectBindingGatewayError("UPSTREAM_UNAVAILABLE", "无法连接上游接口", 502, true, { cause: reason });
+}
+
+export function renderTemplate(value: DirectBindingTemplateValue, variables: DirectBindingVariables): DirectBindingTemplateValue {
+  if (Array.isArray(value)) return value.map((item) => renderTemplate(item, variables));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, renderTemplate(item, variables)]));
+  }
+  if (typeof value !== "string") return value;
+  const exact = /^\{\{\s*([\w.-]+)\s*\}\}$/.exec(value);
+  if (exact) return variables[exact[1]!] ?? value;
+  return value.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_match, name: string) => String(variables[name] ?? ""));
+}
+
+export function selectDirectBindingValue(data: unknown, binding: Pick<DirectBindingSpec, "selection">): unknown {
+  let selected = data;
+  if (binding.selection?.jsonPath) selected = evaluateJsonPath(selected, binding.selection.jsonPath);
+  if (binding.selection?.field) {
+    if (!selected || typeof selected !== "object") return undefined;
+    selected = (selected as Record<string, unknown>)[binding.selection.field];
+  }
+  return selected;
+}
+
+function evaluateJsonPath(value: unknown, path: string): unknown {
+  if (path === "$") return value;
+  if (!path.startsWith("$")) throw new DirectBindingGatewayError("INVALID_BINDING", "jsonPath 必须以 $ 开头", 400, false);
+  const tokens = path.slice(1).match(/\.([A-Za-z_$][\w$-]*)|\[(\d+)\]|\["([^"\\]+)"\]|\['([^'\\]+)'\]/g);
+  if (!tokens || tokens.join("") !== path.slice(1)) {
+    throw new DirectBindingGatewayError("INVALID_BINDING", "jsonPath 仅支持属性和数组下标", 400, false);
+  }
+  let current = value;
+  for (const token of tokens) {
+    const match = /^\.([A-Za-z_$][\w$-]*)$|^\[(\d+)\]$|^\["([^"\\]+)"\]$|^\['([^'\\]+)'\]$/.exec(token)!;
+    const key = match[1] ?? match[2] ?? match[3] ?? match[4]!;
+    if (!current || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+export type DirectWebSocketState = "connecting" | "open" | "reconnecting" | "closed" | "error";
+
+interface UpstreamSocket {
+  readonly readyState: number;
+  send(data: string): void;
+  close(): void;
+  once(event: "open" | "close" | "error", listener: (reason?: unknown) => void): this;
+  on(event: "message", listener: (data: RawData | string) => void): this;
+}
+
+export interface DirectWebSocketFactoryContext {
+  url: string;
+  protocols: string[];
+  headers: Record<string, string>;
+  lookup: LookupFunction;
+  servername?: string;
+}
+
+export type DirectWebSocketFactory = (context: DirectWebSocketFactoryContext) => UpstreamSocket;
+
+interface WebSocketSubscriber {
+  onMessage(data: unknown): void;
+  onState?(state: DirectWebSocketState): void;
+}
+
+interface SharedUpstream {
+  binding: DirectBindingSpec;
+  variables: DirectBindingVariables;
+  subscribers: Set<WebSocketSubscriber>;
+  socket: UpstreamSocket | undefined;
+  attempt: number;
+  timer?: NodeJS.Timeout;
+  stopped: boolean;
+}
+
+export class DirectWebSocketMultiplexer {
+  private readonly upstreams = new Map<string, SharedUpstream>();
+  private readonly factory: DirectWebSocketFactory;
+
+  constructor(private readonly options: DirectBindingGatewayOptions = {}, factory?: DirectWebSocketFactory) {
+    this.factory = factory ?? defaultWebSocketFactory;
+  }
+
+  subscribe(binding: DirectBindingSpec, variables: DirectBindingVariables, subscriber: WebSocketSubscriber): () => void {
+    validateBinding(binding);
+    if (binding.transport !== "websocket" || !binding.websocket) {
+      throw new DirectBindingGatewayError("INVALID_BINDING", "该订阅必须使用 WebSocket 直接绑定", 400, false);
+    }
+    const key = websocketKey(binding, variables);
+    let upstream = this.upstreams.get(key);
+    if (!upstream) {
+      upstream = { binding, variables, subscribers: new Set(), socket: undefined, attempt: 0, stopped: false };
+      upstream.subscribers.add(subscriber);
+      this.upstreams.set(key, upstream);
+      void this.connect(key, upstream);
+    } else {
+      upstream.subscribers.add(subscriber);
+    }
+    subscriber.onState?.(upstream.socket?.readyState === NodeWebSocket.OPEN ? "open" : "connecting");
+    return () => {
+      upstream!.subscribers.delete(subscriber);
+      if (upstream!.subscribers.size === 0) this.stop(key, upstream!);
+    };
+  }
+
+  close(): void {
+    for (const [key, upstream] of this.upstreams) this.stop(key, upstream);
+  }
+
+  get upstreamCount(): number { return this.upstreams.size; }
+
+  private async connect(key: string, upstream: SharedUpstream): Promise<void> {
+    if (upstream.stopped || upstream.subscribers.size === 0) return;
+    notifyState(upstream, upstream.attempt === 0 ? "connecting" : "reconnecting");
+    try {
+      const target = await prepareTarget(upstream.binding, ["ws:", "wss:"], this.options);
+      if (upstream.stopped || upstream.subscribers.size === 0) return;
+      const socket = this.factory({
+        url: target.url.toString(),
+        protocols: upstream.binding.websocket?.protocols ?? [],
+        headers: target.headers,
+        lookup: pinnedLookup(target.address),
+        ...(target.url.protocol === "wss:" ? { servername: target.url.hostname } : {})
+      });
+      upstream.socket = socket;
+      socket.once("open", () => {
+        upstream.attempt = 0;
+        notifyState(upstream, "open");
+        const message = upstream.binding.websocket?.subscribeMessageTemplate;
+        if (message !== undefined) socket.send(JSON.stringify(renderTemplate(message, upstream.variables)));
+      });
+      socket.on("message", (raw) => {
+        const data = parseWebSocketMessage(raw);
+        for (const subscriber of upstream.subscribers) subscriber.onMessage(data);
+      });
+      socket.once("error", () => notifyState(upstream, "error"));
+      socket.once("close", () => this.reconnectOrStop(key, upstream));
+    } catch {
+      notifyState(upstream, "error");
+      this.reconnectOrStop(key, upstream);
+    }
+  }
+
+  private reconnectOrStop(key: string, upstream: SharedUpstream): void {
+    upstream.socket = undefined;
+    const reconnect = upstream.binding.websocket?.reconnect;
+    if (upstream.stopped) return;
+    if (upstream.subscribers.size === 0 || !reconnect?.enabled) return this.stop(key, upstream);
+    const delay = Math.min(reconnect.maxDelayMs, reconnect.initialDelayMs * reconnect.multiplier ** upstream.attempt);
+    upstream.attempt += 1;
+    notifyState(upstream, "reconnecting");
+    upstream.timer = setTimeout(() => void this.connect(key, upstream), delay);
+  }
+
+  private stop(key: string, upstream: SharedUpstream): void {
+    upstream.stopped = true;
+    if (upstream.timer) clearTimeout(upstream.timer);
+    upstream.socket?.close();
+    notifyState(upstream, "closed");
+    this.upstreams.delete(key);
+  }
+}
+
+/** A simple production wiring adapter; the gateway still depends only on the resolver port above. */
+export class StaticDirectCredentialResolver implements DirectCredentialResolver {
+  constructor(private readonly credentials: Readonly<Record<string, Readonly<Record<string, string>>>>) {}
+
+  async resolve(credentialRef: string): Promise<ResolvedDirectCredential | undefined> {
+    const headers = Object.prototype.hasOwnProperty.call(this.credentials, credentialRef) ? this.credentials[credentialRef] : undefined;
+    return headers ? { headers: { ...headers } } : undefined;
+  }
+}
+
+function defaultWebSocketFactory(context: DirectWebSocketFactoryContext): UpstreamSocket {
+  const options: WebSocketClientOptions & { lookup: LookupFunction } = {
+    headers: context.headers,
+    lookup: context.lookup,
+    ...(context.servername ? { servername: context.servername } : {})
+  };
+  return new NodeWebSocket(context.url, context.protocols, options);
+}
+
+function websocketKey(binding: DirectBindingSpec, variables: DirectBindingVariables): string {
+  const shared = {
+    endpoint: binding.endpoint,
+    credentialRef: binding.credentialRef,
+    protocols: binding.websocket?.protocols,
+    subscribeMessage: binding.websocket?.subscribeMessageTemplate === undefined
+      ? undefined
+      : renderTemplate(binding.websocket.subscribeMessageTemplate, variables)
+  };
+  return createHash("sha256").update(JSON.stringify(shared)).digest("hex");
+}
+
+function parseWebSocketMessage(raw: RawData | string): unknown {
+  const text = typeof raw === "string" ? raw : Buffer.isBuffer(raw) ? raw.toString("utf8") : Buffer.from(raw as ArrayBuffer).toString("utf8");
+  try { return JSON.parse(text) as unknown; }
+  catch { return text; }
+}
+
+function notifyState(upstream: SharedUpstream, state: DirectWebSocketState): void {
+  for (const subscriber of upstream.subscribers) subscriber.onState?.(state);
+}
+
+export interface DirectBindingRouteDependencies {
+  httpGateway: DirectHttpConnectorGateway;
+  webSockets: DirectWebSocketMultiplexer;
+}
+
+export async function registerDirectBindingRoutes(app: FastifyInstance, dependencies: DirectBindingRouteDependencies): Promise<void> {
+  app.post<{ Body: { binding?: DirectBindingSpec; variables?: DirectBindingVariables } }>(
+    "/api/direct-bindings/http",
+    async (request, reply) => {
+      try {
+        return await dependencies.httpGateway.execute(request.body?.binding as DirectBindingSpec, request.body?.variables ?? {});
+      } catch (reason) {
+        const error = normalizeRouteError(reason);
+        return reply.code(error.statusCode).send({ error: { code: error.code, message: error.message, retryable: error.retryable } });
+      }
+    }
+  );
+
+  app.get("/api/direct-bindings/ws", { websocket: true }, (socket) => {
+    let unsubscribe: (() => void) | undefined;
+    socket.on("message", (raw) => {
+      try {
+        const message = JSON.parse(raw.toString()) as { type?: string; requestId?: string; binding?: DirectBindingSpec; variables?: DirectBindingVariables };
+        if (message.type !== "subscribe" || !message.binding) throw new DirectBindingGatewayError("INVALID_BINDING", "需要 subscribe 消息和 binding", 400, false);
+        unsubscribe?.();
+        unsubscribe = dependencies.webSockets.subscribe(message.binding, message.variables ?? {}, {
+          onMessage: (data) => sendClient(socket, {
+            type: "data", requestId: message.requestId,
+            data, value: selectDirectBindingValue(data, message.binding!)
+          }),
+          onState: (state) => sendClient(socket, { type: "state", requestId: message.requestId, state })
+        });
+        sendClient(socket, { type: "subscribed", requestId: message.requestId });
+      } catch (reason) {
+        const error = normalizeRouteError(reason);
+        sendClient(socket, { type: "error", error: { code: error.code, message: error.message, retryable: error.retryable } });
+      }
+    });
+    socket.once("close", () => unsubscribe?.());
+    socket.once("error", () => unsubscribe?.());
+  });
+
+  app.addHook("onClose", async () => dependencies.webSockets.close());
+}
+
+function sendClient(socket: { readyState: number; OPEN: number; send(data: string): void }, message: unknown): void {
+  if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
+}
+
+function normalizeRouteError(reason: unknown): DirectBindingGatewayError {
+  if (reason instanceof DirectBindingGatewayError) return reason;
+  return new DirectBindingGatewayError("INVALID_BINDING", reason instanceof Error ? reason.message : "直接绑定请求无效", 400, false, { cause: reason });
+}

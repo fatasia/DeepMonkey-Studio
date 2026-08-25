@@ -44,9 +44,9 @@ export class ServerClient {
       { ...init, headers }
     );
     if (!response.ok) {
-      const body = await response.clone().json().catch(() => ({ message: response.statusText })) as { message?: string };
+      const body = await response.clone().json().catch(() => ({ message: response.statusText })) as { message?: string; error?: { message?: string } };
       if (response.status === 401) this.options.onUnauthorized?.();
-      throw new Error(body.message ?? `请求失败：${response.status}`);
+      throw new Error(body.message ?? body.error?.message ?? `请求失败：${response.status}`);
     }
     return response;
   }

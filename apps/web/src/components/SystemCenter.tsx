@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, ArrowLeft, Bot, CheckCircle2, FileClock, KeyRound, Pencil, Plus, Save, Trash2, Users, XCircle } from "lucide-react";
+import { Activity, ArrowLeft, Bot, CheckCircle2, CloudCog, FileClock, KeyRound, Pencil, Plus, Save, Trash2, Users, XCircle } from "lucide-react";
 import type { AiProviderSettings, AuditLogRecord, ProjectRecord, ServiceHealthRecord, ServiceLogRecord, SystemUserRecord, SystemUserRole } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
+import { CloudRenderControl } from "./CloudRenderControl";
 
-type Tab = "users" | "health" | "audit" | "ai";
+type Tab = "users" | "health" | "audit" | "ai" | "cloud-render";
 type Translate = (zh: string, en: string) => string;
 
 export function SystemCenter({ locale, currentUser, projects, onBack }: { locale: AppLocale; currentUser: SystemUserRecord; projects: ProjectRecord[]; onBack: () => void }) {
@@ -30,18 +31,20 @@ export function SystemCenter({ locale, currentUser, projects, onBack }: { locale
   return <main className="system-center-page">
     <header className="secondary-page-header">
       <button className="secondary-page-back" onClick={onBack}><ArrowLeft size={16} />{t("返回场景管理", "Back to scenes")}</button>
-      <div className="secondary-page-heading-row"><div className="secondary-page-title"><small>SYSTEM CONTROL</small><h1>{t("系统管理", "System management")}</h1><p>{t("用户授权、服务健康、操作审计与 AI 配置", "Users, service health, audit logs and AI settings")}</p></div></div>
+      <div className="secondary-page-heading-row"><div className="secondary-page-title"><small>SYSTEM CONTROL</small><h1>{t("系统管理", "System management")}</h1><p>{t("用户授权、服务健康、云渲染、操作审计与 AI 配置", "Users, service health, cloud rendering, audit logs and AI settings")}</p></div></div>
     </header>
     {error && <div className="system-error">{error}</div>}
     <nav className="system-tabs">
       <TabButton active={tab === "users"} onClick={() => setTab("users")} icon={<Users />} label={t("用户与权限", "Users & access")} />
       <TabButton active={tab === "health"} onClick={() => setTab("health")} icon={<Activity />} label={t("服务健康", "Service health")} />
+      <TabButton active={tab === "cloud-render"} onClick={() => setTab("cloud-render")} icon={<CloudCog />} label={t("云渲染", "Cloud rendering")} />
       <TabButton active={tab === "audit"} onClick={() => setTab("audit")} icon={<FileClock />} label={t("审计与日志", "Audit & logs")} />
       <TabButton active={tab === "ai"} onClick={() => setTab("ai")} icon={<Bot />} label={t("AI 大模型", "AI model")} />
     </nav>
     <section className="system-content">
       {tab === "users" && <UserPanel t={t} users={users} projects={projects} currentUser={currentUser} editing={editing} setEditing={setEditing} onReload={load} onError={setError} />}
       {tab === "health" && <HealthPanel t={t} health={health} />}
+      {tab === "cloud-render" && <CloudRenderControl locale={locale} />}
       {tab === "audit" && <AuditPanel t={t} logs={logs} serviceLogs={serviceLogs} />}
       {tab === "ai" && ai && <AiSettingsPanel t={t} initial={ai} onSaved={setAi} onError={setError} />}
     </section>

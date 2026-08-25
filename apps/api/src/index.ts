@@ -17,6 +17,15 @@ import { createApiServer } from "./serverOptions.js";
 import { externalCadConverterRegistrations } from "./converterCatalog.js";
 import { registerConversionTaskRoutes } from "./conversionTaskRoutes.js";
 import { ConversionTaskService } from "./conversionTasks.js";
+import { HttpCloudRenderWorkerClient } from "@bim-studio/server-sdk";
+import { CloudRenderControlPlane, JsonCloudRenderRegistry } from "./cloudRenderControl.js";
+import { registerCloudRenderRoutes } from "./cloudRenderRoutes.js";
+import {
+  DirectHttpConnectorGateway,
+  DirectWebSocketMultiplexer,
+  registerDirectBindingRoutes,
+  StaticDirectCredentialResolver
+} from "./connectorGateway.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -29,6 +38,20 @@ export async function buildApp() {
   const migratedObjects = await migrateLocalObjects(objects, config.dataDir);
   if (migratedObjects > 0) app.log.info({ migratedObjects }, "local model files migrated to object storage");
   const queue = new ConversionQueue(store, config, objects);
+  const cloudWorker = config.cloudRender.workerUrl && config.cloudRender.workerToken
+    ? new HttpCloudRenderWorkerClient({
+      baseUrl: config.cloudRender.workerUrl,
+      token: config.cloudRender.workerToken,
+      timeoutMs: config.cloudRender.requestTimeoutMs
+    })
+    : undefined;
+  const cloudRender = new CloudRenderControlPlane(new JsonCloudRenderRegistry(config.dataDir), {
+    ...(cloudWorker ? { worker: cloudWorker } : {}),
+    ...(config.cloudRender.publicOrigin ? { publicOrigin: config.cloudRender.publicOrigin } : {}),
+    healthMaxAgeMs: config.cloudRender.healthMaxAgeMs,
+    mediaEvidenceMaxAgeMs: config.cloudRender.mediaEvidenceMaxAgeMs
+  });
+  await cloudRender.init();
 
   await app.register(websocket, { options: { maxPayload: 256 * 1024, perMessageDeflate: false } });
   await app.register(cors, { origin: config.webOrigin });
@@ -39,11 +62,34 @@ export async function buildApp() {
   await registerServerMetaRoute(app, serverInstanceId);
   await registerSystemRoutes(app, store, config.dataDir);
   await registerDataEventRoutes(app, store);
-  await registerRoutes(app, { store, queue, objects, dataDir: config.dataDir, config });
+  await registerRoutes(app, {
+    store,
+    queue,
+    objects,
+    dataDir: config.dataDir,
+    config,
+    beforeDiscardPublication: (publication) => cloudRender.setEnabled(publication, false).then(() => undefined)
+  });
   const conversionTasks = new ConversionTaskService(await externalCadConverterRegistrations());
   await registerConversionTaskRoutes(app, { service: conversionTasks, projectExists: (projectId) => Boolean(store.getProject(projectId)) });
   await registerDataEndpointRuntime(app, store, config);
   await registerApplicationRoutes(app, store);
+  await registerCloudRenderRoutes(app, { store, control: cloudRender });
+  const directCredentialResolver = new StaticDirectCredentialResolver(config.directBindings.credentials);
+  const directBindingOptions = {
+    credentialResolver: directCredentialResolver,
+    outboundPolicy: {
+      allowPrivateNetwork: config.directBindings.allowPrivateNetwork,
+      allowedPorts: config.directBindings.allowedPorts,
+      allowedHostnames: config.directBindings.allowedHostnames
+    },
+    timeoutMs: config.directBindings.requestTimeoutMs,
+    maxResponseBytes: config.directBindings.maxResponseBytes
+  };
+  await registerDirectBindingRoutes(app, {
+    httpGateway: new DirectHttpConnectorGateway(directBindingOptions),
+    webSockets: new DirectWebSocketMultiplexer(directBindingOptions)
+  });
   const vision = new VisionEngine({ store, objects, dataDir: config.dataDir });
   await registerVisionRoutes(app, vision, { store, objects, dataDir: config.dataDir });
   vision.start();

@@ -22,7 +22,7 @@ import {
   Workflow,
   X
 } from "lucide-react";
-import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type ApplicationObjectRef, type DashboardDataWidgetConfig, type DashboardPageDocument, type DashboardViewportFit, type JsonValue, type ProjectRecord, type SceneDashboardWidgetType, type SceneInteractionTarget, type SceneInteractionTrigger, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
+import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type ApplicationObjectRef, type DashboardDataWidgetConfig, type DashboardPageDocument, type DashboardViewportFit, type DirectBindingSpec, type JsonValue, type ProjectRecord, type SceneDashboardWidgetType, type SceneInteractionTarget, type SceneInteractionTrigger, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
 import {
   createDeleteDashboardNodesCommand,
   createDeleteDashboardPageCommand,
@@ -49,6 +49,8 @@ import { normalizeDashboardViewState, type DashboardViewState } from "../studio/
 import { SceneViewportPreview } from "./SceneViewportPreview";
 import { InteractionFlowInspector } from "./InteractionFlowInspector";
 import { DashboardWidgetView, useDashboardMetrics, widgetBackground, type DashboardMetric } from "./DashboardWidgetRuntime";
+import { DashboardMediaInspector } from "./DashboardMediaInspector";
+import { createDefaultDirectBinding, DirectBindingEditor } from "./DirectBindingEditor";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 
 const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"];
@@ -602,6 +604,7 @@ export function DashboardWorkspace({
     const next = { ...selectedNode.widget };
     delete next.datasetId;
     delete next.pipelineId;
+    delete next.directBinding;
     delete next.field;
     if (value) {
       const separator = value.indexOf(":");
@@ -727,15 +730,25 @@ export function DashboardWorkspace({
             <label><span>{tr(locale, "标题", "Title")}</span><input defaultValue={selectedNode.widget.title} key={`${selectedNode.id}:title:${selectedNode.widget.title}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.title) updateDataWidget({ title: event.currentTarget.value }); }} /></label>
             {(selectedNode.widget.type === "text" || selectedNode.widget.type === "shape") && <label><span>{tr(locale, "内容", "Content")}</span><input defaultValue={selectedNode.widget.content ?? ""} onBlur={(event) => updateDataWidget({ content: event.currentTarget.value })} /></label>}
             {selectedNode.widget.type === "shape" && <label><span>{tr(locale, "形状", "Shape")}</span><select value={selectedNode.widget.shape ?? "rounded"} onChange={(event) => updateDataWidget({ shape: event.target.value as NonNullable<DashboardDataWidgetConfig["shape"]> })}><option value="rectangle">{tr(locale, "矩形", "Rectangle")}</option><option value="rounded">{tr(locale, "圆角矩形", "Rounded")}</option><option value="ellipse">{tr(locale, "椭圆", "Ellipse")}</option><option value="line">{tr(locale, "线", "Line")}</option></select></label>}
-            {selectedNode.widget.type === "image" && <label><span>{tr(locale, "图片地址", "Image URL")}</span><input defaultValue={selectedNode.widget.imageUrl ?? ""} onBlur={(event) => updateDataWidget({ imageUrl: event.currentTarget.value })} /></label>}
-            {(selectedNode.widget.type === "video" || selectedNode.widget.type === "monitor") && <label><span>{tr(locale, "视频/监控地址", "Video/monitor URL")}</span><input defaultValue={selectedNode.widget.videoUrl ?? ""} onBlur={(event) => updateDataWidget({ videoUrl: event.currentTarget.value })} /></label>}
+            {(selectedNode.widget.type === "image" || selectedNode.widget.type === "video" || selectedNode.widget.type === "monitor") && <DashboardMediaInspector locale={locale} projectId={project.id} widget={selectedNode.widget} onChange={updateDataWidget} />}
             {selectedNode.widget.type === "url" && <label><span>{tr(locale, "网页地址", "Web page URL")}</span><input defaultValue={selectedNode.widget.url ?? ""} onBlur={(event) => updateDataWidget({ url: event.currentTarget.value })} /></label>}
           </section>}
         </>}
 
         {inspectorTab === "data" && selectedNode.kind === "data-widget" && !["text", "shape"].includes(selectedNode.widget.type) && <section className="dashboard-inspector-section dashboard-data-widget-properties">
-          <label><span>{tr(locale, "数据产品", "Data product")}</span><select value={selectedNode.widget.pipelineId ? `pipeline:${selectedNode.widget.pipelineId}` : selectedNode.widget.datasetId ? `dataset:${selectedNode.widget.datasetId}` : ""} onChange={(event) => selectDataProduct(event.target.value)}><option value="">{tr(locale, "实时变量 / 未绑定", "Live variable / Unbound")}</option>{pipelines.length > 0 && <optgroup label={tr(locale, "数据管道（推荐）", "Data pipelines (recommended)")}>{pipelines.map((pipeline) => <option key={pipeline.id} value={`pipeline:${pipeline.id}`}>{pipeline.name}</option>)}</optgroup>}{datasets.length > 0 && <optgroup label={tr(locale, "原始数据集", "Raw datasets")}>{datasets.map((dataset) => <option key={dataset.id} value={`dataset:${dataset.id}`}>{dataset.name}</option>)}</optgroup>}</select></label>
+          <label><span>{tr(locale, "数据来源", "Data source")}</span><select value={selectedNode.widget.directBinding ? "direct" : selectedNode.widget.pipelineId || selectedNode.widget.datasetId ? "platform" : "unbound"} onChange={(event) => {
+            const mode = event.target.value;
+            if (mode === "direct") {
+              const next = { ...selectedNode.widget, directBinding: createDefaultDirectBinding() };
+              delete next.datasetId; delete next.pipelineId;
+              onCommand(createUpdateDashboardDataWidgetCommand(page.id, selectedNode.id, next));
+            } else if (mode === "platform") selectDataProduct(pipelines[0] ? `pipeline:${pipelines[0].id}` : datasets[0] ? `dataset:${datasets[0].id}` : "");
+            else selectDataProduct("");
+          }}><option value="unbound">{tr(locale, "实时变量 / 未绑定", "Live variable / Unbound")}</option><option value="platform">{tr(locale, "数据中台", "Data platform")}</option><option value="direct">{tr(locale, "直接 HTTP / WebSocket", "Direct HTTP / WebSocket")}</option></select></label>
+          {!selectedNode.widget.directBinding && (selectedNode.widget.pipelineId || selectedNode.widget.datasetId) && <label><span>{tr(locale, "数据产品", "Data product")}</span><select value={selectedNode.widget.pipelineId ? `pipeline:${selectedNode.widget.pipelineId}` : selectedNode.widget.datasetId ? `dataset:${selectedNode.widget.datasetId}` : ""} onChange={(event) => selectDataProduct(event.target.value)}>{pipelines.length > 0 && <optgroup label={tr(locale, "数据管道（推荐）", "Data pipelines (recommended)")}>{pipelines.map((pipeline) => <option key={pipeline.id} value={`pipeline:${pipeline.id}`}>{pipeline.name}</option>)}</optgroup>}{datasets.length > 0 && <optgroup label={tr(locale, "原始数据集", "Raw datasets")}>{datasets.map((dataset) => <option key={dataset.id} value={`dataset:${dataset.id}`}>{dataset.name}</option>)}</optgroup>}</select></label>}
+          {selectedNode.widget.directBinding && <DirectBindingEditor locale={locale} value={selectedNode.widget.directBinding} onChange={(directBinding: DirectBindingSpec) => updateDataWidget({ directBinding, key: selectedNode.widget.key || directBinding.selection?.field || "value" })} />}
           {(() => {
+            if (selectedNode.widget.directBinding) return <label><span>{tr(locale, "组件数据键", "Widget data key")}</span><input value={selectedNode.widget.key} onChange={(event) => updateDataWidget({ key: event.target.value })} /></label>;
             const productId = selectedNode.widget.pipelineId ?? selectedNode.widget.datasetId;
             const productKey = selectedNode.widget.pipelineId ? `pipeline:${selectedNode.widget.pipelineId}` : selectedNode.widget.datasetId ? `dataset:${selectedNode.widget.datasetId}` : undefined;
             const status = productKey ? statusByProduct[productKey] : undefined;
@@ -863,7 +876,7 @@ function DashboardNode({ application, project, node, frame, metric, selected, lo
     </article>;
   }
   if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? `runtime animation-${node.widget.animation ?? "none"}` : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4", animationDuration: `${node.widget.animationDuration ?? 0.6}s`, animationDelay: `${node.widget.animationDelay ?? 0}s` }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")} onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")}>
-    <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />
+    <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact={!runtime} onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />
     {!runtime && <><div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
   </article>;
   return null;

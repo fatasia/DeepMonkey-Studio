@@ -1,4 +1,4 @@
-import type { DataEventAction, DataMessage, DataPipelinePreview, DataDatasetPreview, SceneDataBindingState } from "@bim-studio/contracts";
+import { assertDirectBindingSpec, type DataEventAction, type DataMessage, type DataPipelinePreview, type DataDatasetPreview, type SceneDataBindingState } from "@bim-studio/contracts";
 
 export type DataProductPreview = Pick<DataDatasetPreview, "fields" | "rows"> | Pick<DataPipelinePreview, "fields" | "rows">;
 
@@ -17,7 +17,12 @@ export function normalizeSceneDataBindings(value: unknown): SceneDataBindingStat
     if (!modelId && !annotationId) return [];
     const datasetId = typeof item.datasetId === "string" && item.datasetId.trim() ? item.datasetId.trim() : undefined;
     const pipelineId = typeof item.pipelineId === "string" && item.pipelineId.trim() ? item.pipelineId.trim() : undefined;
-    if (Boolean(datasetId) === Boolean(pipelineId)) return [];
+    let directBinding = item.directBinding;
+    if (directBinding) {
+      try { assertDirectBindingSpec(directBinding); }
+      catch { directBinding = undefined; }
+    }
+    if ([datasetId, pipelineId, directBinding].filter(Boolean).length !== 1) return [];
     if (typeof item.field !== "string" || !item.field.trim() || !ACTIONS.includes(item.action as DataEventAction)) return [];
     let id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : `data-binding-${index}`;
     while (ids.has(id)) id = `${id}-${index}`;
@@ -26,7 +31,7 @@ export function normalizeSceneDataBindings(value: unknown): SceneDataBindingStat
       id,
       name: typeof item.name === "string" && item.name.trim() ? item.name.trim().slice(0, 120) : item.field.trim(),
       enabled: item.enabled !== false,
-      ...(datasetId ? { datasetId } : { pipelineId: pipelineId! }),
+      ...(datasetId ? { datasetId } : pipelineId ? { pipelineId } : { directBinding: structuredClone(directBinding!) }),
       field: item.field.trim(),
       rowIndex: clampInteger(item.rowIndex, 0, 999, 0),
       target: {
@@ -38,6 +43,19 @@ export function normalizeSceneDataBindings(value: unknown): SceneDataBindingStat
       refreshSeconds: clampInteger(item.refreshSeconds, 2, 3_600, 5)
     }];
   }).slice(0, 500);
+}
+
+export function directSceneDataBindingMessage(binding: SceneDataBindingState, value: unknown, sceneId: string, timestamp = new Date().toISOString()): DataMessage {
+  if (!binding.directBinding) throw new Error("数据绑定缺少直接接口");
+  return {
+    source: `direct:${binding.id}`,
+    key: binding.field,
+    value: normalizeActionValue(binding.action, value),
+    timestamp,
+    sceneId,
+    target: { ...binding.target },
+    action: binding.action
+  };
 }
 
 export function dataBindingProduct(binding: SceneDataBindingState): { kind: "dataset" | "pipeline"; id: string } {

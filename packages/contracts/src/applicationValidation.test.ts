@@ -37,6 +37,18 @@ const malformedCases: MalformedCase[] = [
       widget: { title: "无效", key: "value", type: "dial" as never, unit: "" }
     });
   })],
+  ["native data widget direct binding", () => altered(pureApplication, (value) => {
+    value.pages[0]!.nodes.push({
+      id: "widget:invalid-direct",
+      kind: "data-widget",
+      frame: { x: 0, y: 0, width: 320, height: 180 },
+      zIndex: 1,
+      widget: {
+        title: "无效绑定", key: "value", type: "value", unit: "",
+        directBinding: { version: 1, gateway: "server", transport: "http", endpoint: "https://example.com" } as never
+      }
+    });
+  })],
   ["topology", () => altered(pureApplication, (value) => {
     value.topologies = [{ id: "topology-1", name: 7 as never, nodes: [], edges: [] }];
   })],
@@ -127,6 +139,24 @@ const malformedCases: MalformedCase[] = [
   })],
   ["publication profile", () => altered(pureApplication, (value) => {
     value.publicationProfiles[0]!.renderer = "canvas" as never;
+  })],
+  ["spatial navigation duplicate node", () => altered(pureApplication, (value) => {
+    value.spatialNavigation = {
+      rootNodeIds: ["campus"], cacheLimit: 2,
+      nodes: [
+        { id: "campus", name: "园区", kind: "campus", loadPolicy: "replace" },
+        { id: "campus", name: "重复园区", kind: "campus", loadPolicy: "replace" }
+      ]
+    };
+  })],
+  ["spatial navigation missing parent", () => altered(pureApplication, (value) => {
+    value.spatialNavigation = {
+      rootNodeIds: ["campus"], cacheLimit: 2,
+      nodes: [
+        { id: "campus", name: "园区", kind: "campus", loadPolicy: "replace" },
+        { id: "line", name: "产线", kind: "line", parentId: "missing", loadPolicy: "additive" }
+      ]
+    };
   })]
 ];
 
@@ -195,6 +225,30 @@ describe("assertApplicationDocument", () => {
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });
 
+  it("accepts one spatial hierarchy shared by 2D pages and 3D scenes", () => {
+    const application = structuredClone(pureApplication);
+    application.spatialNavigation = {
+      rootNodeIds: ["campus"],
+      cacheLimit: 3,
+      nodes: [
+        {
+          id: "campus", name: "智造园区", kind: "campus",
+          sceneId: application.scenes[0]!.id,
+          dashboardPageId: application.pages[0]!.id,
+          loadPolicy: "replace"
+        },
+        {
+          id: "robot", name: "机器人 A", kind: "equipment", parentId: "campus",
+          sceneId: application.scenes[0]!.id,
+          target: { modelId: "robot-a" },
+          loadPolicy: "focus"
+        }
+      ]
+    };
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
   it("accepts a dashboard widget bound to a visual data pipeline", () => {
     const application = structuredClone(pureApplication);
     application.pages[0]!.nodes.push({
@@ -225,6 +279,37 @@ describe("assertApplicationDocument", () => {
       field: "online",
       target: { modelId: "robot-1" },
       action: "visibility",
+      refreshSeconds: 5
+    }];
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("accepts one reusable direct HTTP binding on 2D and 3D components", () => {
+    const application = structuredClone(pureApplication);
+    const directBinding = {
+      version: 1 as const,
+      gateway: "server" as const,
+      transport: "http" as const,
+      endpoint: "https://telemetry.example.com/current",
+      selection: { jsonPath: "$.data", field: "temperature" },
+      http: { method: "GET" as const, params: { device: "{{deviceId}}" }, refresh: { intervalMs: 5_000 } }
+    };
+    application.pages[0]!.nodes.push({
+      id: "widget:direct-temperature",
+      kind: "data-widget",
+      frame: { x: 40, y: 40, width: 360, height: 200 },
+      zIndex: 2,
+      widget: { title: "设备温度", key: "temperature", type: "value", unit: "℃", directBinding }
+    });
+    application.scenes[0]!.dataBindings = [{
+      id: "binding-direct-temperature",
+      name: "设备温度显色",
+      enabled: true,
+      directBinding,
+      field: "temperature",
+      target: { modelId: "robot-1" },
+      action: "color",
       refreshSeconds: 5
     }];
 

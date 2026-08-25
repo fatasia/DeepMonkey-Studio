@@ -16,6 +16,26 @@ export function mergeProductMetrics(current: Record<string, DashboardMetric>, pr
   return next;
 }
 
+export function mergeDirectBindingMetric(current: Record<string, DashboardMetric>, key: string, value: unknown, data: unknown, time: number): Record<string, DashboardMetric> {
+  const previous = current[key];
+  const numeric = toFiniteNumber(value);
+  const rows = recordRows(value) ?? recordRows(data) ?? previous?.rows;
+  return {
+    ...current,
+    [key]: {
+      value,
+      samples: numeric === undefined ? previous?.samples ?? [] : [...(previous?.samples ?? []), { time, value: numeric }].slice(-60),
+      ...(rows ? { rows } : {})
+    }
+  };
+}
+
+function recordRows(value: unknown): Array<Record<string, unknown>> | undefined {
+  return Array.isArray(value) && value.every((item) => item && typeof item === "object" && !Array.isArray(item))
+    ? value as Array<Record<string, unknown>>
+    : undefined;
+}
+
 function toFiniteNumber(value: unknown): number | undefined {
   const number = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
   return Number.isFinite(number) ? number : undefined;

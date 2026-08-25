@@ -125,7 +125,8 @@ import { DEFAULT_DASHBOARD_STATE, normalizeDashboardState } from "./components/d
 import { normalizeInteractionScripts } from "./interactionState";
 import { DEFAULT_NAVIGATION_SETTINGS, normalizeNavigationSettings } from "./navigationSettings";
 import { probeRendererCapabilities, rendererReadiness, type RendererCapabilityProbe } from "./rendererCapabilities";
-import { dataBindingProduct, normalizeSceneDataBindings, sceneDataBindingMessage } from "./sceneDataBindings";
+import { dataBindingProduct, directSceneDataBindingMessage, normalizeSceneDataBindings, sceneDataBindingMessage } from "./sceneDataBindings";
+import { DirectBindingRuntime } from "./directBindingRuntime";
 import { readLocale, storeLocale, translate as tr, type AppLocale } from "./i18n";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "./sceneDataBridge";
 import { exportFbxFile, exportGlbFile, exportLooseScene, exportScenePackage, readSceneFile } from "./sceneFiles";
@@ -817,8 +818,10 @@ export function App() {
     }
     let cancelled = false;
     const timers: number[] = [];
+    const directStops: Array<() => void> = [];
     const groups = new Map<string, { bindings: SceneDataBindingState[]; kind: "dataset" | "pipeline"; productId: string; seconds: number }>();
     for (const binding of enabled) {
+      if (binding.directBinding) continue;
       const product = dataBindingProduct(binding);
       const key = `${product.kind}:${product.id}:${binding.refreshSeconds}`;
       const group = groups.get(key) ?? { bindings: [], kind: product.kind, productId: product.id, seconds: binding.refreshSeconds };
@@ -829,6 +832,22 @@ export function App() {
       if (cancelled) return;
       setSceneDataBindingRuntime((current) => ({ ...current, ...Object.fromEntries(bindings.map((binding) => [binding.id, typeof state === "function" ? state(binding) : state])) }));
     };
+    for (const binding of enabled.filter((candidate) => candidate.directBinding)) {
+      const stop = new DirectBindingRuntime(binding.directBinding!, {}, {
+        onValue: (value) => {
+          const message = directSceneDataBindingMessage(binding, value, route.sceneId!);
+          publishLocalSceneData(message);
+          updateBindings([binding], { status: "ready", value: message.value, updatedAt: message.timestamp });
+        },
+        onStatus: (status) => {
+          if (["loading", "connecting", "reconnecting"].includes(status)) {
+            setSceneDataBindingRuntime((current) => ({ ...current, [binding.id]: current[binding.id] ?? { status: "loading" } }));
+          }
+        },
+        onError: (error) => updateBindings([binding], { status: "error", error })
+      }).start();
+      directStops.push(stop);
+    }
     for (const group of groups.values()) {
       const poll = async () => {
         if (!cancelled) setSceneDataBindingRuntime((current) => ({
@@ -857,7 +876,7 @@ export function App() {
       void poll();
       timers.push(window.setInterval(() => void poll(), Math.max(2, group.seconds) * 1_000));
     }
-    return () => { cancelled = true; for (const timer of timers) window.clearInterval(timer); };
+    return () => { cancelled = true; for (const timer of timers) window.clearInterval(timer); for (const stop of directStops) stop(); };
   }, [project?.id, route.sceneId, route.view, sceneDataBindings]);
 
   useEffect(() => {

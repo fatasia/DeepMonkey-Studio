@@ -100,6 +100,16 @@ describe("ServerClient", () => {
     await expect(client.request("/api/projects")).rejects.toThrow("保存失败");
   });
 
+  it("surfaces a unified gateway error envelope", async () => {
+    const client = new ServerClient({
+      profile: { baseUrl: "https://bim.example.test" },
+      authStore: emptyAuthStore,
+      fetch: async () => new Response(JSON.stringify({ error: { code: "OUTBOUND_DENIED", message: "目标主机不在出站白名单中" } }), { status: 403 })
+    });
+
+    await expect(client.request("/api/direct-bindings/http")).rejects.toThrow("目标主机不在出站白名单中");
+  });
+
   it("falls back to status text for a non-JSON error", async () => {
     const client = new ServerClient({
       profile: { baseUrl: "https://bim.example.test" },

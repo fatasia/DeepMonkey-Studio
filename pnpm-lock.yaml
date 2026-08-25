@@ -26,6 +26,9 @@ importers:
       '@bim-studio/data-runtime':
         specifier: workspace:*
         version: link:../../packages/data-runtime
+      '@bim-studio/server-sdk':
+        specifier: workspace:*
+        version: link:../../packages/server-sdk
       '@fastify/cors':
         specifier: ^11.2.0
         version: 11.3.0
@@ -74,6 +77,9 @@ importers:
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@24.13.3)
+      ws:
+        specifier: ^8.21.2
+        version: 8.21.2(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     devDependencies:
       '@types/node':
         specifier: ^24.10.0
@@ -84,6 +90,31 @@ importers:
       '@types/ws':
         specifier: ^8.5.10
         version: 8.18.1
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1))
+
+  apps/cloud-render-worker:
+    dependencies:
+      '@bim-studio/server-sdk':
+        specifier: workspace:*
+        version: link:../../packages/server-sdk
+      fastify:
+        specifier: ^5.7.4
+        version: 5.11.0
+      playwright-core:
+        specifier: ^1.62.1
+        version: 1.62.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.0
+        version: 24.13.3
       tsx:
         specifier: ^4.21.0
         version: 4.23.1
@@ -3507,6 +3538,11 @@ packages:
 
   pino@10.3.1:
     resolution: {integrity: sha512-r34yH/GlQpKZbU1BvFFqOjhISRo1MNx1tWYsYvmj6KIRHSPMT2+yHOEb1SG6NMvRoHRF0a07kCOox/9yakl1vg==}
+    hasBin: true
+
+  playwright-core@1.62.1:
+    resolution: {integrity: sha512-wPYSwEBJY9GHraISXqyqtx0na0LpO3XEX7jNDhntbex7tzUS7kLnZsOlFruFJB4Hi/rhDMjXGqHewDZ68nYZVw==}
+    engines: {node: '>=20'}
     hasBin: true
 
   possible-typed-array-names@1.1.0:
@@ -8220,6 +8256,8 @@ snapshots:
       safe-stable-stringify: 2.5.0
       sonic-boom: 4.2.1
       thread-stream: 4.2.0
+
+  playwright-core@1.62.1: {}
 
   possible-typed-array-names@1.1.0: {}
 

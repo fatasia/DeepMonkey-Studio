@@ -1,9 +1,11 @@
 import { Database, LoaderCircle, Play, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { DataDatasetField, DataEventAction, DataEventTarget, DataMessage, DataPipelineDefinition, DataDatasetRecord, SceneDataBindingState } from "@bim-studio/contracts";
+import type { DataDatasetField, DataEventAction, DataEventTarget, DataMessage, DataPipelineDefinition, DataDatasetRecord, DirectBindingSpec, SceneDataBindingState } from "@bim-studio/contracts";
 import { api } from "../api";
-import { dataBindingProduct, sameDataBindingTarget, sceneDataBindingMessage, type DataProductPreview } from "../sceneDataBindings";
+import { dataBindingProduct, directSceneDataBindingMessage, sameDataBindingTarget, sceneDataBindingMessage, type DataProductPreview } from "../sceneDataBindings";
 import { translate as tr, type AppLocale } from "../i18n";
+import { testDirectBinding } from "../directBindingRuntime";
+import { createDefaultDirectBinding, DirectBindingEditor } from "./DirectBindingEditor";
 
 export interface SceneDataBindingRuntimeState {
   status: "loading" | "ready" | "error";
@@ -61,7 +63,7 @@ export function SceneDataBindingEditor({ locale, projectId, sceneId, target, tar
 
   useEffect(() => {
     let cancelled = false;
-    const referenced = [...new Map(targetBindings.map((binding) => {
+    const referenced = [...new Map(targetBindings.filter((binding) => !binding.directBinding).map((binding) => {
       const product = dataBindingProduct(binding);
       return [productKey(product.kind, product.id), product] as const;
     })).values()].filter((product) => !previews[productKey(product.kind, product.id)]);
@@ -102,8 +104,22 @@ export function SceneDataBindingEditor({ locale, projectId, sceneId, target, tar
     onChange([...bindings, binding]);
   }
 
+  function addDirectBinding() {
+    onChange([...bindings, {
+      id: crypto.randomUUID(), name: `${targetName} · ${tr(locale, "直接接口", "Direct interface")}`,
+      enabled: true, directBinding: createDefaultDirectBinding(), field: "value", target: { ...target }, action: "visibility", refreshSeconds: 5
+    }]);
+  }
+
   function updateBinding(id: string, patch: Partial<SceneDataBindingState>) {
     onChange(bindings.map((binding) => binding.id === id ? { ...binding, ...patch } : binding));
+  }
+
+  function switchToDirect(binding: SceneDataBindingState) {
+    const next = { ...binding, directBinding: createDefaultDirectBinding(), field: "value" };
+    delete next.datasetId;
+    delete next.pipelineId;
+    onChange(bindings.map((candidate) => candidate.id === binding.id ? next : candidate));
   }
 
   async function selectProduct(binding: SceneDataBindingState, value: string) {
@@ -113,6 +129,7 @@ export function SceneDataBindingEditor({ locale, projectId, sceneId, target, tar
     const next = { ...binding };
     delete next.datasetId;
     delete next.pipelineId;
+    delete next.directBinding;
     if (kind === "pipeline") next.pipelineId = id;
     else next.datasetId = id;
     if (field) {
@@ -137,12 +154,17 @@ export function SceneDataBindingEditor({ locale, projectId, sceneId, target, tar
   async function testBinding(binding: SceneDataBindingState) {
     setTestingId(binding.id);
     try {
+      if (binding.directBinding) {
+        const value = await testDirectBinding(binding.directBinding);
+        onTest(binding.id, directSceneDataBindingMessage(binding, value, sceneId));
+        return;
+      }
       const product = dataBindingProduct(binding);
       const preview = await ensurePreview(product.kind, product.id);
       onTest(binding.id, sceneDataBindingMessage(binding, preview, sceneId));
     } catch (reason) {
-      const product = dataBindingProduct(binding);
-      setPreviewErrors((current) => ({ ...current, [productKey(product.kind, product.id)]: errorMessage(reason) }));
+      const key = binding.directBinding ? `direct:${binding.id}` : (() => { const product = dataBindingProduct(binding); return productKey(product.kind, product.id); })();
+      setPreviewErrors((current) => ({ ...current, [key]: errorMessage(reason) }));
     } finally {
       setTestingId(undefined);
     }
@@ -153,18 +175,24 @@ export function SceneDataBindingEditor({ locale, projectId, sceneId, target, tar
     <div className="scene-data-binding-body">
       <header><div><strong>{targetName}</strong><small>{tr(locale, "数据产品直接驱动当前对象", "Data products directly drive this object")}</small></div><button onClick={onOpenData}><Database size={12} />{tr(locale, "数据中心", "Data Center")}</button></header>
       {catalogStatus === "loading" && <div className="scene-data-binding-empty"><LoaderCircle className="spin" size={15} />{tr(locale, "正在读取数据产品…", "Loading data products…")}</div>}
-      {catalogStatus === "error" && <div className="scene-data-binding-empty error">{tr(locale, "数据目录读取失败，请进入数据中心检查服务。", "Could not load the data catalog. Check the service in Data Center.")}</div>}
+      {catalogStatus === "error" && <div className="scene-data-binding-empty error">{tr(locale, "数据中台暂不可用，直接 HTTP / WebSocket 仍可使用。", "The data platform is unavailable; direct HTTP / WebSocket remains available.")}</div>}
       {catalogStatus === "ready" && products.length === 0 && <div className="scene-data-binding-empty"><span>{tr(locale, "还没有可绑定的数据产品", "No data products are available")}</span><button onClick={onOpenData}>{tr(locale, "创建数据管道", "Create a data pipeline")}</button></div>}
       {targetBindings.map((binding) => {
-        const product = dataBindingProduct(binding);
-        const key = productKey(product.kind, product.id);
+        const product = binding.directBinding ? undefined : dataBindingProduct(binding);
+        const key = product ? productKey(product.kind, product.id) : `direct:${binding.id}`;
         const fields = fieldsByProduct[key] ?? [];
         const runtime = runtimeStates[binding.id];
         const error = previewErrors[key] ?? runtime?.error;
         return <article className="scene-data-binding-card" key={binding.id}>
           <header><label><input disabled={disabled} type="checkbox" checked={binding.enabled} onChange={(event) => updateBinding(binding.id, { enabled: event.target.checked })} /><input disabled={disabled} value={binding.name} aria-label={tr(locale, "绑定名称", "Binding name")} onChange={(event) => updateBinding(binding.id, { name: event.target.value })} /></label><button disabled={disabled} className="danger" title={tr(locale, "删除绑定", "Delete binding")} onClick={() => onChange(bindings.filter((candidate) => candidate.id !== binding.id))}><Trash2 size={12} /></button></header>
-          <label><span>{tr(locale, "数据产品", "Data product")}</span><select disabled={disabled} value={`${product.kind}:${product.id}`} onChange={(event) => void selectProduct(binding, event.target.value)}>{pipelines.length > 0 && <optgroup label={tr(locale, "数据管道（推荐）", "Data pipelines (recommended)")}>{pipelines.map((pipeline) => <option key={pipeline.id} value={`pipeline:${pipeline.id}`}>{pipeline.name}</option>)}</optgroup>}{datasets.length > 0 && <optgroup label={tr(locale, "原始数据集", "Raw datasets")}>{datasets.map((dataset) => <option key={dataset.id} value={`dataset:${dataset.id}`}>{dataset.name}</option>)}</optgroup>}</select></label>
-          <div className="scene-data-binding-grid"><label><span>{tr(locale, "字段", "Field")}</span><select disabled={disabled} value={binding.field} onChange={(event) => {
+          <label><span>{tr(locale, "数据来源", "Data source")}</span><select disabled={disabled} value={binding.directBinding ? "direct" : "platform"} onChange={(event) => {
+            if (event.target.value === "direct") switchToDirect(binding);
+            else if (products[0]) void selectProduct(binding, `${products[0].kind}:${products[0].id}`);
+          }}><option value="platform">{tr(locale, "数据中台", "Data platform")}</option><option value="direct">{tr(locale, "直接 HTTP / WebSocket", "Direct HTTP / WebSocket")}</option></select></label>
+          {binding.directBinding ? <DirectBindingEditor locale={locale} value={binding.directBinding} disabled={disabled} onChange={(directBinding: DirectBindingSpec) => updateBinding(binding.id, { directBinding })} /> : <>
+          <label><span>{tr(locale, "数据产品", "Data product")}</span><select disabled={disabled} value={`${product!.kind}:${product!.id}`} onChange={(event) => void selectProduct(binding, event.target.value)}>{pipelines.length > 0 && <optgroup label={tr(locale, "数据管道（推荐）", "Data pipelines (recommended)")}>{pipelines.map((pipeline) => <option key={pipeline.id} value={`pipeline:${pipeline.id}`}>{pipeline.name}</option>)}</optgroup>}{datasets.length > 0 && <optgroup label={tr(locale, "原始数据集", "Raw datasets")}>{datasets.map((dataset) => <option key={dataset.id} value={`dataset:${dataset.id}`}>{dataset.name}</option>)}</optgroup>}</select></label>
+          </>}
+          <div className="scene-data-binding-grid"><label><span>{tr(locale, "字段", "Field")}</span>{binding.directBinding ? <input disabled={disabled} value={binding.field} onChange={(event) => updateBinding(binding.id, { field: event.target.value })} /> : <select disabled={disabled} value={binding.field} onChange={(event) => {
             const field = fields.find((candidate) => candidate.key === event.target.value);
             const previous = fields.find((candidate) => candidate.key === binding.field);
             const autoNamed = binding.name === `${targetName} · ${previous?.label ?? binding.field}`;
@@ -173,13 +201,13 @@ export function SceneDataBindingEditor({ locale, projectId, sceneId, target, tar
               ...(field ? { action: suggestedAction(field) } : {}),
               ...(field && autoNamed ? { name: `${targetName} · ${field.label}` } : {})
             });
-          }}>{fields.length === 0 && <option value={binding.field}>{binding.field}</option>}{fields.map((field) => <option key={field.key} value={field.key}>{field.label}{field.unit ? ` · ${field.unit}` : ""}</option>)}</select></label><label><span>{tr(locale, "驱动动作", "Action")}</span><select disabled={disabled} value={binding.action} onChange={(event) => updateBinding(binding.id, { action: event.target.value as DataEventAction })}>{ACTIONS.map((action) => <option key={action} value={action}>{actionLabel(action, locale)}</option>)}</select></label></div>
+          }}>{fields.length === 0 && <option value={binding.field}>{binding.field}</option>}{fields.map((field) => <option key={field.key} value={field.key}>{field.label}{field.unit ? ` · ${field.unit}` : ""}</option>)}</select>}</label><label><span>{tr(locale, "驱动动作", "Action")}</span><select disabled={disabled} value={binding.action} onChange={(event) => updateBinding(binding.id, { action: event.target.value as DataEventAction })}>{ACTIONS.map((action) => <option key={action} value={action}>{actionLabel(action, locale)}</option>)}</select></label></div>
           <small className="scene-data-binding-action-hint">{actionHint(binding.action, locale)}</small>
-          <label><span>{tr(locale, "刷新周期", "Refresh")}</span><div className="scene-data-binding-refresh"><input disabled={disabled} type="range" min="2" max="60" step="1" value={binding.refreshSeconds} onChange={(event) => updateBinding(binding.id, { refreshSeconds: Number(event.target.value) })} /><output>{binding.refreshSeconds}s</output></div></label>
+          {!binding.directBinding && <label><span>{tr(locale, "刷新周期", "Refresh")}</span><div className="scene-data-binding-refresh"><input disabled={disabled} type="range" min="2" max="60" step="1" value={binding.refreshSeconds} onChange={(event) => updateBinding(binding.id, { refreshSeconds: Number(event.target.value) })} /><output>{binding.refreshSeconds}s</output></div></label>}
           <footer><div className={`scene-data-binding-status ${runtime?.status ?? "idle"}`}><i /><span>{error ? error : runtime?.status === "ready" ? `${tr(locale, "当前值", "Current")}: ${formatValue(runtime.value)}` : tr(locale, "等待数据", "Waiting for data")}</span></div><button disabled={disabled || testingId === binding.id} onClick={() => void testBinding(binding)}>{testingId === binding.id ? <LoaderCircle className="spin" size={12} /> : <Play size={12} />}{tr(locale, "测试", "Test")}</button></footer>
         </article>;
       })}
-      {products.length > 0 && <button className="scene-data-binding-add" disabled={disabled || catalogStatus !== "ready"} onClick={() => void addBinding()}><Plus size={13} />{tr(locale, "添加数据绑定", "Add data binding")}</button>}
+      <div><button className="scene-data-binding-add" disabled={disabled || products.length === 0 || catalogStatus !== "ready"} onClick={() => void addBinding()}><Plus size={13} />{tr(locale, "添加中台绑定", "Add platform binding")}</button><button className="scene-data-binding-add" disabled={disabled} onClick={addDirectBinding}><Plus size={13} />{tr(locale, "添加直接接口", "Add direct interface")}</button></div>
       <p>{tr(locale, "数据管道也可绑定二维组件并发布为 REST / WebSocket；这里只配置数据如何作用于三维对象。", "The same pipeline can bind 2D widgets and publish REST/WebSocket endpoints; this panel only defines how its data affects the 3D object.")}</p>
     </div>
   </details>;

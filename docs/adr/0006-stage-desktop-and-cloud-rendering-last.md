@@ -16,6 +16,8 @@ Accepted
 - 云渲染通过 `RemoteRenderSession` Adapter 接入 GPU Worker、WebRTC 和输入 DataChannel，不修改页面、脚本和 InteractionFlow 语义。
 - 本地 WebGPU/WebGL、Tauri 和云渲染使用同一不可变发布包，并锁定 Scene Runtime 与插件版本。
 - 云渲染是可选 Publication Profile；失败时不影响 Web/Tauri 编辑和其他已发布版本。
+- 云渲染开关绑定具体不可变发布版本，而不是项目草稿。管理员在发布详情中一键启用或停用；启用必须完成 Worker 健康/容量检查、内容哈希校验、编码器启动和 WebRTC 首帧探测，不能用数据库状态或模拟计时器代替真实可用性。
+- 停用先拒绝新会话，再按可配置宽限期排空并回收现有会话；新发布版本是否继承云渲染由 Publication Profile 明确配置，禁止静默继承错误版本。
 
 ## Non-Functional Requirements
 
@@ -23,6 +25,7 @@ Accepted
 - 云渲染会话彼此隔离，GPU Worker 失败只终止所属会话并回收资源。
 - 固定内网基准中，云渲染输入到画面 p95 低于 150 ms，并记录编码、网络和渲染分段延迟。
 - 云渲染鉴权绑定用户、项目、发布版本和会话；输入通道不能越权控制其他会话。
+- 每个会话使用短期票据完成信令，只有客户端收到与当前发布内容哈希一致的首个可解码视频帧后才进入 `running`；Worker、编码器、ICE/TURN 和首帧超时必须分别可诊断。
 - 服务器地址变化但实例 ID 相同时，Tauri 可重新连接并保留本地草稿。
 
 ## Consequences

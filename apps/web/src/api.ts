@@ -1,5 +1,5 @@
-import type { AiAssistantResponse, AiProviderSettings, ApplicationDocument, AuditLogRecord, DataConnectionRecord, DataDatasetPreview, DataDatasetRecord, DataEndpointDefinition, DataEndpointSaveResult, DataPipelineDefinition, DataPipelinePreview, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, RevitRuntimeInfo, RvtConversionMode, SceneSnapshot, ServiceHealthRecord, ServiceLogRecord, SystemBrandingSettings, SystemUserRecord, VisionEventRecord, VisionInferenceResponse, VisionModelManifest, VisionModelPreset, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
-import { ServerClient } from "@bim-studio/server-sdk";
+import type { AiAssistantResponse, AiProviderSettings, ApplicationDocument, AuditLogRecord, DataConnectionRecord, DataDatasetPreview, DataDatasetRecord, DataEndpointDefinition, DataEndpointSaveResult, DataPipelineDefinition, DataPipelinePreview, DirectBindingSpec, DirectBindingTemplateValue, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, RevitRuntimeInfo, RvtConversionMode, SceneSnapshot, ServiceHealthRecord, ServiceLogRecord, SystemBrandingSettings, SystemUserRecord, VisionEventRecord, VisionInferenceResponse, VisionModelManifest, VisionModelPreset, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
+import { ServerClient, type CloudRenderControlOverview, type CloudRenderScenePolicy, type RemoteRenderSessionSnapshot } from "@bim-studio/server-sdk";
 import { runtimeHost } from "./adapters/runtimeHost.js";
 
 const serverClient = new ServerClient({
@@ -12,6 +12,13 @@ export function getAuthToken() { return runtimeHost.getAccessToken(); }
 export function setAuthToken(token?: string, remember = true) {
   if (token) runtimeHost.setAccessToken(token, remember);
   else runtimeHost.clearAccessToken();
+}
+
+export function openDirectBindingWebSocket(): WebSocket {
+  const url = new URL("/api/direct-bindings/ws", runtimeHost.getServerProfile().baseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  const token = getAuthToken();
+  return new WebSocket(url, token ? [`bim-studio-auth.${token}`] : []);
 }
 
 const request = <T>(url: string, init?: RequestInit) => serverClient.request<T>(url, init);
@@ -70,6 +77,12 @@ export const api = {
   getAiSettings: () => request<AiProviderSettings>("/api/admin/ai-settings"),
   saveAiSettings: (settings: Partial<AiProviderSettings>) => request<AiProviderSettings>("/api/admin/ai-settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) }),
   testAiSettings: () => request<{ ok: boolean; model: string }>("/api/admin/ai-settings/test", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
+  getCloudRenderOverview: () => request<CloudRenderControlOverview>("/api/admin/cloud-render"),
+  setCloudRenderEnabled: (sceneId: string, enabled: boolean) => request<CloudRenderScenePolicy>(`/api/admin/cloud-render/scenes/${encodeURIComponent(sceneId)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled }) }),
+  startCloudRenderSession: (sceneId: string) => request<RemoteRenderSessionSnapshot>(`/api/admin/cloud-render/scenes/${encodeURIComponent(sceneId)}/sessions`, { method: "POST" }),
+  refreshCloudRenderSession: (sceneId: string) => request<RemoteRenderSessionSnapshot>(`/api/admin/cloud-render/scenes/${encodeURIComponent(sceneId)}/sessions/current`),
+  stopCloudRenderSession: (sceneId: string) => request<void>(`/api/admin/cloud-render/scenes/${encodeURIComponent(sceneId)}/sessions/current`, { method: "DELETE" }),
+  executeDirectBinding: (binding: DirectBindingSpec, variables: Record<string, DirectBindingTemplateValue> = {}) => request<{ ok: true; status: number; data: unknown; value: unknown }>("/api/direct-bindings/http", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ binding, variables }) }),
   askAssistant: (mode: "bim" | "scene" | "component" | "dashboard" | "sql", question: string, context: unknown) => request<AiAssistantResponse>("/api/ai/assistant", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode, question, context }) }),
   streamAssistant,
   listProjects: () => request<ProjectRecord[]>("/api/projects"),

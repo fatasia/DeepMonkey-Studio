@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Ban, Cctv, DatabaseZap, Globe2, Image as ImageIcon, LoaderCircle, Video } from "lucide-react";
+import { AlertTriangle, Ban, DatabaseZap, Globe2, LoaderCircle } from "lucide-react";
 import type { EChartsType } from "echarts/core";
 import type { DashboardDataWidgetConfig, DataDatasetField, DataPipelineDefinition, DataDatasetRecord } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { subscribeSceneData } from "../sceneDataBridge";
-import { mergeProductMetrics } from "./dashboardMetrics";
+import { mergeDirectBindingMetric, mergeProductMetrics } from "./dashboardMetrics";
+import { DashboardImage, DashboardMonitor, DashboardVideo } from "./DashboardMediaPlayer";
+import { DirectBindingRuntime } from "../directBindingRuntime";
 
 interface MetricSample { time: number; value: number; }
 export interface DashboardMetric { value: unknown; samples: MetricSample[]; rows?: Array<Record<string, unknown>>; }
@@ -20,6 +22,10 @@ export function useDashboardMetrics(projectId: string, widgets: readonly Dashboa
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
+    if (!widgets.some((widget) => widget.datasetId || widget.pipelineId)) {
+      setCatalogError(false);
+      return;
+    }
     let cancelled = false;
     setCatalogError(false);
     void Promise.all([api.listDatasets(projectId), api.listDataPipelines(projectId)])
@@ -34,7 +40,21 @@ export function useDashboardMetrics(projectId: string, widgets: readonly Dashboa
       })
       .catch(() => { if (!cancelled) setCatalogError(true); });
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId, widgets]);
+
+  useEffect(() => {
+    const directWidgets = widgets.filter((widget) => widget.directBinding);
+    if (directWidgets.length === 0) return;
+    const stops = directWidgets.map((widget) => {
+      const binding = widget.directBinding!;
+      const statusKey = `direct:${widget.key}`;
+      return new DirectBindingRuntime(binding, {}, {
+        onValue: (value, data) => setMetrics((current) => mergeDirectBindingMetric(current, widget.key, value, data, Date.now())),
+        onStatus: (status) => setStatusByProduct((current) => ({ ...current, [statusKey]: status === "online" ? "ready" : status === "error" ? "error" : "loading" }))
+      }).start();
+    });
+    return () => stops.forEach((stop) => stop());
+  }, [widgets]);
 
   useEffect(() => {
     const datasetIds = [...new Set(widgets.map((widget) => widget.datasetId).filter((id): id is string => Boolean(id)))];
@@ -95,12 +115,9 @@ export function DashboardWidgetView({ locale, widget, metric, compact, onAnimati
   if (widget.type === "text") return <div className="dashboard-text-widget" style={{ color: widget.textColor, fontSize: widget.fontSize, fontWeight: widget.fontWeight, textAlign: widget.textAlign }}>{widget.content || widget.title}</div>;
   if (widget.type === "shape") return <div className={`dashboard-shape-widget ${widget.shape ?? "rectangle"}`} style={{ background: widget.color, borderColor: widget.borderColor, borderWidth: widget.borderWidth }}><span>{widget.content}</span></div>;
   if (compact && widget.designState && widget.designState !== "auto") return <DashboardDesignState locale={locale} state={widget.designState} />;
-  if (widget.type === "image") return <div className="dashboard-image-widget">{widget.imageUrl ? <img src={widget.imageUrl} alt={widget.title} style={{ objectFit: widget.imageFit ?? "cover" }} /> : <div><ImageIcon size={22} /><span>{tr(locale, "从资源库选择图片", "Choose an image from assets")}</span></div>}</div>;
-  if (widget.type === "video") return <div className="dashboard-video-widget">{widget.videoUrl ? <StreamVideo src={widget.videoUrl} fit={widget.videoFit ?? "contain"} autoplay={widget.videoAutoplay !== false} muted={widget.videoMuted !== false} controls /> : <div><Video size={23} /><span>{tr(locale, "从资源库选择本地视频", "Choose a local video from assets")}</span></div>}</div>;
-  if (widget.type === "monitor") {
-    if (widget.monitorProtocol === "webrtc") return <div className={`dashboard-monitor-widget ${compact ? "editing" : ""}`}>{widget.videoUrl ? <iframe src={embeddableUrl(widget.videoUrl)} title={widget.title} allow="autoplay; fullscreen" /> : <div><Cctv size={23} /><span>{tr(locale, "填写监控地址并应用", "Enter a monitor source and apply")}</span></div>}{compact && <i>{tr(locale, "编辑时已暂停画面交互", "Interaction paused while editing")}</i>}</div>;
-    return <div className="dashboard-monitor-widget">{widget.videoUrl ? <StreamVideo src={widget.videoUrl} fit={widget.videoFit ?? "cover"} autoplay={widget.videoAutoplay !== false} muted={widget.videoMuted !== false} controls={!compact} /> : <div><Cctv size={23} /><span>{tr(locale, "填写监控地址并应用", "Enter a monitor source and apply")}</span></div>}</div>;
-  }
+  if (widget.type === "image") return <div className="dashboard-image-widget"><DashboardImage widget={widget} locale={locale} /></div>;
+  if (widget.type === "video") return <div className="dashboard-video-widget"><DashboardVideo widget={widget} locale={locale} compact={compact} /></div>;
+  if (widget.type === "monitor") return <div className={`dashboard-monitor-widget ${compact ? "editing" : ""}`}><DashboardMonitor widget={widget} locale={locale} compact={compact} /></div>;
   if (widget.type === "url") {
     const url = embeddableUrl(widget.url);
     return <div className={`dashboard-webpage ${compact ? "editing" : ""}`}>{url ? <iframe src={url} title={widget.title || tr(locale, "嵌入网页", "Embedded web page")} loading="lazy" allow="fullscreen; autoplay; clipboard-read; clipboard-write" /> : <div><Globe2 size={22} /><strong>{widget.title}</strong><span>{tr(locale, "编辑组件并填写 HTTP(S) 或站内网页地址", "Edit the widget and enter an HTTP(S) or local URL")}</span></div>}{compact && <i>{tr(locale, "编辑模式下网页交互已暂停", "Web page interaction is paused while editing")}</i>}</div>;
@@ -124,29 +141,6 @@ function DashboardDesignState({ locale, state }: { locale: AppLocale; state: Exc
 
 export function widgetBackground(widget: DashboardDataWidgetConfig): string {
   return colorWithOpacity(widget.backgroundColor ?? "#172126", widget.backgroundOpacity ?? 0.86);
-}
-
-function StreamVideo({ src, fit, autoplay, muted, controls }: { src: string; fit: "cover" | "contain" | "fill"; autoplay: boolean; muted: boolean; controls: boolean }) {
-  const ref = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    const video = ref.current;
-    if (!video) return;
-    if (/\.m3u8(?:$|\?)/i.test(src)) {
-      let disposed = false;
-      let player: { destroy: () => void } | undefined;
-      void import("hls.js").then(({ default: Hls }) => {
-        if (disposed || !Hls.isSupported()) return;
-        const hls = new Hls({ lowLatencyMode: true, backBufferLength: 30, maxBufferLength: 12 });
-        player = hls;
-        hls.loadSource(src);
-        hls.attachMedia(video);
-      });
-      return () => { disposed = true; player?.destroy(); };
-    }
-    video.src = src;
-    return () => { video.removeAttribute("src"); video.load(); };
-  }, [src]);
-  return <video ref={ref} style={{ objectFit: fit }} autoPlay={autoplay} muted={muted} controls={controls} playsInline preload="metadata" />;
 }
 
 function DashboardChart({ widget, metric, compact, onAnimationStart, onAnimationEnd }: { widget: DashboardDataWidgetConfig; metric: DashboardMetric | undefined; compact: boolean; onAnimationStart: () => void; onAnimationEnd: () => void }) {

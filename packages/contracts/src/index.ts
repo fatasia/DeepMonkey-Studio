@@ -1,4 +1,6 @@
 import type { ApplicationDocument, ApplicationPublicationPointer, PublishedApplicationRecord } from "./application.js";
+import type { DirectBindingSpec } from "./directBinding.js";
+export * from "./directBinding.js";
 
 export const supportedExtensions = ["rvt", "ifc", "step", "stp", "dwg", "dxf", "gltf", "glb", "fbx"] as const;
 
@@ -299,6 +301,7 @@ export interface SceneDataBindingState {
   enabled: boolean;
   datasetId?: string;
   pipelineId?: string;
+  directBinding?: DirectBindingSpec;
   field: string;
   rowIndex?: number;
   target: DataEventTarget;
@@ -726,6 +729,7 @@ export interface SceneDashboardWidgetState {
   textColor?: string;
   datasetId?: string;
   pipelineId?: string;
+  directBinding?: DirectBindingSpec;
   field?: string;
   url?: string;
   imageUrl?: string;

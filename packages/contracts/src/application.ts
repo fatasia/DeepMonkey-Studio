@@ -152,6 +152,32 @@ export interface AssetEntry { id: string; kind: "model" | "image" | "video" | "e
 export interface TimelineDocument { id: string; name: string; duration: number; trackIds: string[]; }
 export interface PublicationProfile { id: string; name: string; target: "browser-preview" | "server-web"; entryPageId: string; renderer: "webgl2" | "auto"; }
 
+/** A business-space level shared by the 2D dashboard and 3D scene editors. */
+export type SpatialNodeLoadPolicy = "focus" | "replace" | "additive";
+
+export interface SpatialNavigationNode {
+  id: string;
+  name: string;
+  /** Project-defined semantic type, for example campus, floor, ward, gallery or subsystem. */
+  kind: string;
+  parentId?: string;
+  /** 3D content shown at this level. A node may inherit its parent's scene. */
+  sceneId?: string;
+  /** 2D page opened without losing the current spatial context. */
+  dashboardPageId?: string;
+  /** Equipment and other leaf nodes normally focus an object instead of loading another scene. */
+  target?: { modelId: string; layerId?: string };
+  entryCameraViewId?: string;
+  loadPolicy: SpatialNodeLoadPolicy;
+}
+
+export interface SpatialNavigationDocument {
+  rootNodeIds: string[];
+  nodes: SpatialNavigationNode[];
+  /** Number of inactive scene levels the host may retain for fast back navigation. */
+  cacheLimit: number;
+}
+
 export interface ApplicationDocument {
   schemaVersion: 2;
   metadata: ApplicationMetadata;
@@ -165,6 +191,8 @@ export interface ApplicationDocument {
   assets: AssetEntry[];
   timelines: TimelineDocument[];
   publicationProfiles: PublicationProfile[];
+  /** Optional while the authoring UI is being rolled out; new hierarchical applications should provide it. */
+  spatialNavigation?: SpatialNavigationDocument;
 }
 
 export interface PublishedApplicationRecord {
