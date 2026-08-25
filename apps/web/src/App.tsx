@@ -2084,6 +2084,7 @@ export function App() {
         canRedo={applicationState.canRedo}
         busy={busy}
         selection={applicationState.selection}
+        variables={applicationState.variables}
         onBack={() => navigate({ view: "manager" })}
         onSelectPage={(pageId, view) => navigate({
           view: "dashboard",

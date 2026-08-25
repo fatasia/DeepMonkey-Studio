@@ -15,7 +15,7 @@ import {
   Workflow,
   X
 } from "lucide-react";
-import type { ApplicationDocument, ApplicationObjectRef, DashboardDataWidgetConfig, DashboardPageDocument, ProjectRecord, SceneDashboardWidgetType, SceneInteractionTarget, SceneInteractionTrigger, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
+import type { ApplicationDocument, ApplicationObjectRef, DashboardDataWidgetConfig, DashboardPageDocument, JsonValue, ProjectRecord, SceneDashboardWidgetType, SceneInteractionTarget, SceneInteractionTrigger, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 import {
   createDeleteDashboardNodeCommand,
   createInsertDashboardNodeCommand,
@@ -46,6 +46,7 @@ export interface DashboardWorkspaceProps {
   canRedo: boolean;
   busy: boolean;
   selection: readonly ApplicationObjectRef[];
+  variables: Readonly<Record<string, JsonValue>>;
   onBack: () => void;
   onSelectPage: (pageId: string, view: DashboardViewState) => void;
   onEnterScene: (sceneId: string, view: DashboardViewState) => void;
@@ -73,6 +74,7 @@ export function DashboardWorkspace({
   canRedo,
   busy,
   selection,
+  variables,
   onBack,
   onSelectPage,
   onEnterScene,
@@ -96,6 +98,13 @@ export function DashboardWorkspace({
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
   const dataWidgetConfigs = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
   const { metrics, connected } = useDashboardMetrics(project.id, dataWidgetConfigs);
+  const runtimeMetrics = useMemo<Record<string, DashboardMetric>>(() => ({
+    ...metrics,
+    ...Object.fromEntries(Object.entries(variables).map(([key, value]) => [key, {
+      value,
+      samples: typeof value === "number" && Number.isFinite(value) ? [{ time: Date.now(), value }] : []
+    }]))
+  }), [metrics, variables]);
 
   useEffect(() => {
     const widgetIds = selection.filter((item) => item.kind === "widget").map((item) => item.id);
@@ -186,7 +195,7 @@ export function DashboardWorkspace({
     onCommand(createUpdateDashboardDataWidgetCommand(page.id, selectedNode.id, { ...selectedNode.widget, ...patch }));
   }
 
-  if (runtimePreview) return <DashboardRuntimePreview locale={locale} application={application} project={project} page={page} rendererBackend={rendererBackend} metrics={metrics} connected={connected} onClose={() => setRuntimePreview(false)} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onNodeInteraction={onNodeInteraction} />;
+  if (runtimePreview) return <DashboardRuntimePreview locale={locale} application={application} project={project} page={page} rendererBackend={rendererBackend} metrics={runtimeMetrics} connected={connected} onClose={() => setRuntimePreview(false)} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onNodeInteraction={onNodeInteraction} />;
 
   return <main className="dashboard-workspace">
     <header className="dashboard-workspace-topbar">
@@ -231,7 +240,7 @@ export function DashboardWorkspace({
       <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
         <div className="dashboard-artboard-stage" style={{ width: page.width * zoom, height: page.height * zoom }}>
           <div className="dashboard-artboard" style={{ width: page.width, height: page.height, transform: `scale(${zoom})` }}>
-            {page.nodes.map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} />)}
+            {page.nodes.map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} metric={node.kind === "data-widget" ? runtimeMetrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} />)}
           </div>
         </div>
       </div>
