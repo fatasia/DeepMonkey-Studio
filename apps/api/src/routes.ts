@@ -16,6 +16,7 @@ import {
   type PublishedSceneRecord,
   type SceneSnapshot
 } from "@bim-studio/contracts";
+import { compileFormula } from "@bim-studio/data-runtime";
 import type { AppConfig } from "./config.js";
 import { demoSensorRows, previewDataset } from "./dataIntegration.js";
 import type { ConversionQueue } from "./conversion.js";
@@ -143,8 +144,16 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   app.post<{ Params: { projectId: string }; Body: Partial<DataDatasetRecord> }>("/api/projects/:projectId/datasets", async (request, reply) => {
     const name = request.body.name?.trim();
     if (!name || !request.body.connectionId) return reply.code(400).send({ message: "数据集名称和连接不能为空" });
+    const computedFields = request.body.computedFields ?? [];
+    const computedKeys = computedFields.map((field) => field.key.trim());
+    if (computedKeys.some((key) => !key) || new Set(computedKeys).size !== computedKeys.length) return reply.code(400).send({ message: "计算字段名不能为空或重复" });
+    try {
+      for (const field of computedFields) compileFormula(field.formula);
+    } catch (reason) {
+      return reply.code(400).send({ message: reason instanceof Error ? reason.message : "计算字段公式无效" });
+    }
     const now = new Date().toISOString();
-    const dataset: DataDatasetRecord = { id: request.body.id || randomUUID(), projectId: request.params.projectId, connectionId: request.body.connectionId, name, ...(request.body.query !== undefined ? { query: request.body.query } : {}), ...(request.body.sourceKey !== undefined ? { sourceKey: request.body.sourceKey } : {}), refreshSeconds: Math.max(0, Number(request.body.refreshSeconds ?? 10)), fields: request.body.fields ?? [], createdAt: request.body.createdAt ?? now, updatedAt: now };
+    const dataset: DataDatasetRecord = { id: request.body.id || randomUUID(), projectId: request.params.projectId, connectionId: request.body.connectionId, name, ...(request.body.query !== undefined ? { query: request.body.query } : {}), ...(request.body.sourceKey !== undefined ? { sourceKey: request.body.sourceKey } : {}), refreshSeconds: Math.max(0, Number(request.body.refreshSeconds ?? 10)), fields: request.body.fields ?? [], ...(computedFields.length ? { computedFields: computedFields.map((field) => ({ ...field, key: field.key.trim(), label: field.label.trim() || field.key.trim(), formula: field.formula.trim() })) } : {}), createdAt: request.body.createdAt ?? now, updatedAt: now };
     return reply.code(201).send(await store.saveDataset(request.params.projectId, dataset));
   });
   app.get<{ Params: { projectId: string; datasetId: string } }>("/api/projects/:projectId/datasets/:datasetId/preview", async (request, reply) => {

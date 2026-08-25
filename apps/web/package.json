@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@bim-studio/contracts": "workspace:*",
+    "@bim-studio/data-runtime": "workspace:*",
     "@bim-studio/server-sdk": "workspace:*",
     "@bim-studio/studio-core": "workspace:*",
     "@dimforge/rapier3d-compat": "0.19.3",

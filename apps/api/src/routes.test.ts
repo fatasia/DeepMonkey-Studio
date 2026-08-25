@@ -54,4 +54,42 @@ describe("legacy scene routes", () => {
 
     await app.close();
   });
+
+  it("rejects unsafe dataset formulas before persistence", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "bim-data-routes-"));
+    directories.push(dataDir);
+    const store = new JsonStore(dataDir);
+    await store.init();
+    const app = createApiServer();
+    await registerRoutes(app, {
+      store,
+      queue: undefined as never,
+      objects: undefined as never,
+      dataDir,
+      config: loadConfig()
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/projects/default/data-connections",
+      payload: { id: "connection-1", name: "测试接口", type: "http", config: { url: "http://localhost/test" } }
+    });
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/projects/default/datasets",
+      payload: { name: "告警指标", connectionId: "connection-1", computedFields: [{ id: "field-1", key: "risk", label: "风险", type: "number", formula: "process.exit()" }] }
+    });
+    const valid = await app.inject({
+      method: "POST",
+      url: "/api/projects/default/datasets",
+      payload: { name: "温度指标", connectionId: "connection-1", computedFields: [{ id: "field-2", key: "fahrenheit", label: "华氏温度", type: "number", formula: "ROUND(temperature * 1.8 + 32, 1)" }] }
+    });
+
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().message).toContain("位置");
+    expect(valid.statusCode).toBe(201);
+    expect(valid.json().computedFields[0].formula).toBe("ROUND(temperature * 1.8 + 32, 1)");
+
+    await app.close();
+  });
 });

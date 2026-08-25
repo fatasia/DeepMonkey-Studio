@@ -279,6 +279,14 @@ export interface DataDatasetField {
   unit?: string;
 }
 
+export interface DataComputedField {
+  id: string;
+  key: string;
+  label: string;
+  type: DataFieldType;
+  formula: string;
+}
+
 export interface DataDatasetRecord {
   id: string;
   projectId: string;
@@ -288,6 +296,7 @@ export interface DataDatasetRecord {
   sourceKey?: string;
   refreshSeconds: number;
   fields: DataDatasetField[];
+  computedFields?: DataComputedField[];
   createdAt: string;
   updatedAt: string;
 }

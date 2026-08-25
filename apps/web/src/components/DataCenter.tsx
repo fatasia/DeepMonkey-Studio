@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Activity, ArrowLeft, Bot, Braces, CheckCircle2, Database, Globe2, LoaderCircle, Pencil, Plus, Radio, RefreshCw, Send, Table2, Trash2, X } from "lucide-react";
-import type { DataConnectionRecord, DataConnectionType, DataDatasetPreview, DataDatasetRecord, ProjectRecord } from "@bim-studio/contracts";
+import type { DataComputedField, DataConnectionRecord, DataConnectionType, DataDatasetPreview, DataDatasetRecord, ProjectRecord } from "@bim-studio/contracts";
+import { compileFormula } from "@bim-studio/data-runtime";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 
@@ -139,16 +140,64 @@ function DatasetForm({ locale, projectId, connection, initial, onSaved, onCancel
   const [query, setQuery] = useState(initial?.query ?? "SELECT * FROM your_table LIMIT 100");
   const [sourceKey, setSourceKey] = useState(initial?.sourceKey ?? "items");
   const [refreshSeconds, setRefreshSeconds] = useState(initial?.refreshSeconds ?? 5);
+  const [computedFields, setComputedFields] = useState<DataComputedField[]>(initial?.computedFields ?? []);
   const sql = SQL_CONNECTIONS.has(connection.type);
-  async function save() {
+  const formulaResults = useMemo(() => computedFields.map((field) => {
     try {
-      const saved = await api.createDataset(projectId, { ...(initial ?? {}), name: name.trim(), connectionId: connection.id, ...(sql ? { query } : { sourceKey }), refreshSeconds, fields: initial?.fields ?? [] });
+      const compiled = compileFormula(field.formula);
+      return { dependencies: compiled.dependencies, error: "" };
+    } catch (reason) {
+      return { dependencies: [] as readonly string[], error: reason instanceof Error ? reason.message : String(reason) };
+    }
+  }), [computedFields]);
+  const duplicateKeys = useMemo(() => {
+    const keys = computedFields.map((field) => field.key.trim()).filter(Boolean);
+    return new Set(keys.filter((key, index) => keys.indexOf(key) !== index));
+  }, [computedFields]);
+  const invalid = computedFields.some((field, index) => !field.key.trim() || !field.formula.trim() || Boolean(formulaResults[index]?.error) || duplicateKeys.has(field.key.trim()));
+
+  function updateComputedField(index: number, patch: Partial<DataComputedField>) {
+    setComputedFields((current) => current.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field));
+  }
+
+  function addComputedField() {
+    setComputedFields((current) => [...current, { id: crypto.randomUUID(), key: `field_${current.length + 1}`, label: tr(locale, "计算字段", "Computed field"), type: "number", formula: "ROUND(value, 2)" }]);
+  }
+
+  async function save() {
+    if (invalid) {
+      onError(tr(locale, "请先修正计算字段公式或字段名。", "Fix computed-field formulas or keys before saving."));
+      return;
+    }
+    try {
+      const saved = await api.createDataset(projectId, { ...(initial ?? {}), name: name.trim(), connectionId: connection.id, ...(sql ? { query } : { sourceKey }), refreshSeconds, fields: initial?.fields ?? [], computedFields: computedFields.map((field) => ({ ...field, key: field.key.trim(), label: field.label.trim() || field.key.trim(), formula: field.formula.trim() })) });
       onSaved(saved);
     } catch (reason) {
       onError(reason instanceof Error ? reason.message : String(reason));
     }
   }
-  return <div className="data-inline-form"><div className="data-form-heading"><strong>{initial ? tr(locale, "编辑数据集", "Edit dataset") : tr(locale, "新建数据集", "New dataset")}</strong><button onClick={onCancel}><X size={13} /></button></div><label><span>{tr(locale, "名称", "Name")}</span><input value={name} onChange={(event) => setName(event.target.value)} /></label>{sql ? <label><span>SQL</span><textarea value={query} onChange={(event) => setQuery(event.target.value)} /></label> : <label><span>{tr(locale, "数据路径", "Data path")}</span><input value={sourceKey} onChange={(event) => setSourceKey(event.target.value)} placeholder="items" /></label>}<label><span>{tr(locale, "刷新秒数", "Refresh seconds")}</span><input type="number" min="0" value={refreshSeconds} onChange={(event) => setRefreshSeconds(Math.max(0, Number(event.target.value)))} /></label><div className="data-form-actions"><button onClick={onCancel}>{tr(locale, "取消", "Cancel")}</button><button className="primary" disabled={!name.trim()} onClick={() => void save()}>{tr(locale, "保存数据集", "Save")}</button></div></div>;
+  return <div className="data-inline-form">
+    <div className="data-form-heading"><strong>{initial ? tr(locale, "编辑数据集", "Edit dataset") : tr(locale, "新建数据集", "New dataset")}</strong><button onClick={onCancel}><X size={13} /></button></div>
+    <label><span>{tr(locale, "名称", "Name")}</span><input value={name} onChange={(event) => setName(event.target.value)} /></label>
+    {sql ? <label><span>SQL</span><textarea value={query} onChange={(event) => setQuery(event.target.value)} /></label> : <label><span>{tr(locale, "数据路径", "Data path")}</span><input value={sourceKey} onChange={(event) => setSourceKey(event.target.value)} placeholder="items" /></label>}
+    <label><span>{tr(locale, "刷新秒数", "Refresh seconds")}</span><input type="number" min="0" value={refreshSeconds} onChange={(event) => setRefreshSeconds(Math.max(0, Number(event.target.value)))} /></label>
+    <section className="data-computed-fields">
+      <header><span><strong>{tr(locale, "计算字段", "Computed fields")}</strong><small>{tr(locale, "受限公式 · 无 eval · 自动追踪依赖", "Safe formulas · no eval · tracked dependencies")}</small></span><button type="button" onClick={addComputedField}><Plus size={12} />{tr(locale, "添加", "Add")}</button></header>
+      {computedFields.length === 0 ? <p>{tr(locale, "按需添加派生指标，原始数据保持不变。", "Add derived metrics without changing source data.")}</p> : null}
+      {computedFields.map((field, index) => {
+        const result = formulaResults[index];
+        const keyError = !field.key.trim() ? tr(locale, "字段名不能为空", "Key is required") : duplicateKeys.has(field.key.trim()) ? tr(locale, "字段名不能重复", "Key must be unique") : "";
+        return <article className={keyError || result?.error ? "invalid" : ""} key={field.id}>
+          <div className="data-computed-field-heading"><strong>{field.label || field.key || tr(locale, "未命名字段", "Untitled field")}</strong><button type="button" title={tr(locale, "删除字段", "Delete field")} onClick={() => setComputedFields((current) => current.filter((_, fieldIndex) => fieldIndex !== index))}><Trash2 size={12} /></button></div>
+          <div className="data-form-pair"><label><span>Key</span><input value={field.key} onChange={(event) => updateComputedField(index, { key: event.target.value })} /></label><label><span>{tr(locale, "类型", "Type")}</span><select value={field.type} onChange={(event) => updateComputedField(index, { type: event.target.value as DataComputedField["type"] })}><option value="number">Number</option><option value="string">String</option><option value="boolean">Boolean</option><option value="datetime">Datetime</option><option value="json">JSON</option></select></label></div>
+          <label><span>{tr(locale, "显示名", "Label")}</span><input value={field.label} onChange={(event) => updateComputedField(index, { label: event.target.value })} /></label>
+          <label><span>{tr(locale, "公式", "Formula")}</span><textarea spellCheck={false} value={field.formula} onChange={(event) => updateComputedField(index, { formula: event.target.value })} placeholder='IF(status == "alarm", temperature * 1.8 + 32, 0)' /></label>
+          {keyError || result?.error ? <em>{keyError || result?.error}</em> : <small>{result?.dependencies.length ? `${tr(locale, "依赖", "Dependencies")}: ${result.dependencies.join(", ")}` : tr(locale, "常量公式，无字段依赖", "Constant formula")}</small>}
+        </article>;
+      })}
+    </section>
+    <div className="data-form-actions"><button onClick={onCancel}>{tr(locale, "取消", "Cancel")}</button><button className="primary" disabled={!name.trim() || invalid} onClick={() => void save()}>{tr(locale, "保存数据集", "Save")}</button></div>
+  </div>;
 }
 
 function DatasetPreview({ locale, preview }: { locale: AppLocale; preview?: DataDatasetPreview }) {

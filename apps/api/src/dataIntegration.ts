@@ -1,4 +1,5 @@
 import type { DataConnectionRecord, DataDatasetField, DataDatasetPreview, DataDatasetRecord } from "@bim-studio/contracts";
+import { compileFormula, evaluateFormula } from "@bim-studio/data-runtime";
 import mysql from "mysql2/promise";
 import oracledb from "oracledb";
 import type { AppConfig } from "./config.js";
@@ -34,7 +35,10 @@ export async function previewDataset(config: AppConfig, connection: DataConnecti
   else if (connection.type === "tdengine") rows = await previewTdengine(connection, dataset);
   else if (connection.type === "http") rows = await previewHttp(config, connection, dataset);
   else throw new Error(`当前预览器暂不支持 ${connection.type}；实时协议请通过 Node-RED 桥接后预览`);
-  const fields = dataset.fields.length > 0 ? dataset.fields : inferFields(rows);
+  rows = applyComputedFields(rows, dataset);
+  const sourceFields = dataset.fields.length > 0 ? dataset.fields : inferFields(rows);
+  const computedFields = (dataset.computedFields ?? []).map(({ key, label, type }) => ({ key, label, type }));
+  const fields = [...sourceFields.filter((field) => !computedFields.some((computed) => computed.key === field.key)), ...computedFields];
   return { dataset: { ...dataset, fields }, fields, rows: rows.slice(0, 100), durationMs: performance.now() - startedAt };
 }
 
@@ -108,11 +112,16 @@ async function previewTdengine(connection: DataConnectionRecord, dataset: DataDa
 async function previewHttp(config: AppConfig, connection: DataConnectionRecord, dataset: DataDatasetRecord): Promise<Array<Record<string, unknown>>> {
   const configuredUrl = String(connection.config.url || "").trim();
   if (!configuredUrl) throw new Error("HTTP 连接缺少 URL");
+  if (configuredUrl === "/api/demo/sensors") return selectHttpRows({ items: await demoSensorRows(config) }, dataset.sourceKey);
   const url = configuredUrl.startsWith("/") ? `http://127.0.0.1:${config.port}${configuredUrl}` : configuredUrl;
   const response = await fetch(url, { method: String(connection.config.method || "GET"), signal: AbortSignal.timeout(8_000) });
   if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
-  let value: unknown = await response.json();
-  for (const segment of dataset.sourceKey?.split(".").filter(Boolean) ?? []) value = value && typeof value === "object" ? (value as Record<string, unknown>)[segment] : undefined;
+  return selectHttpRows(await response.json(), dataset.sourceKey);
+}
+
+function selectHttpRows(payload: unknown, sourceKey?: string): Array<Record<string, unknown>> {
+  let value = payload;
+  for (const segment of sourceKey?.split(".").filter(Boolean) ?? []) value = value && typeof value === "object" ? (value as Record<string, unknown>)[segment] : undefined;
   if (Array.isArray(value)) return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item));
   if (value && typeof value === "object") return [value as Record<string, unknown>];
   return [{ value }];
@@ -149,10 +158,20 @@ function inferFields(rows: Array<Record<string, unknown>>): DataDatasetField[] {
   return Object.entries(sample).map(([key, value]) => ({ key, label: key, type: inferFieldType(value) }));
 }
 
-function inferFieldType(value: unknown): DataDatasetField["type"] {
+export function applyComputedFields(rows: Array<Record<string, unknown>>, dataset: DataDatasetRecord): Array<Record<string, unknown>> {
+  const formulas = (dataset.computedFields ?? []).map((field) => ({ field, compiled: compileFormula(field.formula) }));
+  if (formulas.length === 0) return rows;
+  return rows.map((row) => {
+    const next = { ...row };
+    for (const { field, compiled } of formulas) next[field.key] = evaluateFormula(compiled, next);
+    return next;
+  });
+}
+
+export function inferFieldType(value: unknown): DataDatasetField["type"] {
   if (typeof value === "number") return "number";
   if (typeof value === "boolean") return "boolean";
-  if (typeof value === "string" && !Number.isNaN(Date.parse(value))) return "datetime";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(value) && !Number.isNaN(Date.parse(value))) return "datetime";
   if (typeof value === "object" && value !== null) return "json";
   return "string";
 }
