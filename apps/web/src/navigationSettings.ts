@@ -6,7 +6,9 @@ export const DEFAULT_NAVIGATION_SETTINGS: NavigationSettingsState = {
   sprintMultiplier: 2,
   eyeHeight: 1.68,
   gravity: 12,
-  jumpSpeed: 5.4
+  jumpSpeed: 5.4,
+  stepHeight: 0.3,
+  maxSlopeAngle: 50
 };
 
 export function normalizeNavigationSettings(value?: Partial<NavigationSettingsState>): NavigationSettingsState {
@@ -16,7 +18,9 @@ export function normalizeNavigationSettings(value?: Partial<NavigationSettingsSt
     sprintMultiplier: bounded(value?.sprintMultiplier, DEFAULT_NAVIGATION_SETTINGS.sprintMultiplier, 1, 6),
     eyeHeight: bounded(value?.eyeHeight, DEFAULT_NAVIGATION_SETTINGS.eyeHeight, 0.3, 4),
     gravity: bounded(value?.gravity, DEFAULT_NAVIGATION_SETTINGS.gravity, 0, 80),
-    jumpSpeed: bounded(value?.jumpSpeed, DEFAULT_NAVIGATION_SETTINGS.jumpSpeed, 0, 30)
+    jumpSpeed: bounded(value?.jumpSpeed, DEFAULT_NAVIGATION_SETTINGS.jumpSpeed, 0, 30),
+    stepHeight: bounded(value?.stepHeight, DEFAULT_NAVIGATION_SETTINGS.stepHeight, 0, 1.2),
+    maxSlopeAngle: bounded(value?.maxSlopeAngle, DEFAULT_NAVIGATION_SETTINGS.maxSlopeAngle, 0, 89)
   };
 }
 

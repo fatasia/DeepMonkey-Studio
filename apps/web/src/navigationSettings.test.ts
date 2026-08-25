@@ -13,14 +13,18 @@ describe("navigation settings", () => {
       sprintMultiplier: 0,
       eyeHeight: 9,
       gravity: -10,
-      jumpSpeed: 999
+      jumpSpeed: 999,
+      stepHeight: 9,
+      maxSlopeAngle: 100
     })).toEqual({
       walkSpeed: 0.1,
       flySpeed: 100,
       sprintMultiplier: 1,
       eyeHeight: 4,
       gravity: 0,
-      jumpSpeed: 30
+      jumpSpeed: 30,
+      stepHeight: 1.2,
+      maxSlopeAngle: 89
     });
   });
 });

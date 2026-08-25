@@ -6,3 +6,8 @@ export function slideAgainstSurface(movement: THREE.Vector3, surfaceNormal: THRE
   const inward = movement.dot(normal);
   return inward < 0 ? movement.clone().addScaledVector(normal, -inward) : movement.clone();
 }
+
+export function isWalkableSurface(surfaceNormal: THREE.Vector3, up: THREE.Vector3, maximumSlopeAngle: number): boolean {
+  const alignment = Math.abs(surfaceNormal.clone().normalize().dot(up.clone().normalize()));
+  return alignment >= Math.cos(THREE.MathUtils.degToRad(maximumSlopeAngle));
+}

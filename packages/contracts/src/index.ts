@@ -585,6 +585,8 @@ export interface NavigationSettingsState {
   eyeHeight: number;
   gravity: number;
   jumpSpeed: number;
+  stepHeight: number;
+  maxSlopeAngle: number;
 }
 
 export type WeatherMode = "sunny" | "rain" | "snow";

@@ -69,7 +69,9 @@ describe("scene bridge to native ApplicationDocument", () => {
       sprintMultiplier: 2.5,
       eyeHeight: 1.72,
       gravity: 9.81,
-      jumpSpeed: 4.8
+      jumpSpeed: 4.8,
+      stepHeight: 0.28,
+      maxSlopeAngle: 48
     };
 
     const application = migrateSceneSnapshotV1(input);

@@ -287,7 +287,7 @@ function validateCameraConstraints(value: unknown, path: string): void {
 
 function validateNavigationSettings(value: unknown, path: string): void {
   const object = expectObject(value, path);
-  for (const key of ["walkSpeed", "flySpeed", "sprintMultiplier", "eyeHeight", "gravity", "jumpSpeed"] as const) {
+  for (const key of ["walkSpeed", "flySpeed", "sprintMultiplier", "eyeHeight", "gravity", "jumpSpeed", "stepHeight", "maxSlopeAngle"] as const) {
     required(object, key, expectNumber, path);
   }
 }

@@ -63,7 +63,7 @@ import type {
 } from "@bim-studio/contracts";
 import { DEFAULT_NAVIGATION_SETTINGS, normalizeNavigationSettings } from "../navigationSettings";
 import { readXRThumbstick } from "./xrInput";
-import { slideAgainstSurface } from "./characterMotion";
+import { isWalkableSurface, slideAgainstSurface } from "./characterMotion";
 import {
   buildComponentRecords,
   closestPointsBetweenObjects,
@@ -320,6 +320,7 @@ export class ViewerEngine {
   onAnnotationSelectionChange?: (annotationId: string | undefined) => void;
   onClippingFacePicked?: (state: ClippingState) => void;
   onCollisionChange?: () => void;
+  onNavigationRecovery?: () => void;
   onCameraChange?: (state: CameraState) => void;
   onPointerInfoChange?: (info: PointerInfo | undefined) => void;
   onAnimationChange?: (time: number, playing: boolean) => void;
@@ -4346,11 +4347,13 @@ export class ViewerEngine {
     const start = anchor.clone();
     const floor = this.findFloorHeight(start.clone().add(new THREE.Vector3(0, 10, 0))) ?? 0;
     start.y = floor + this.navigationSettings.eyeHeight;
+    const recoveredStart = this.recoverCharacterSpawn(start, this.navigationSettings.eyeHeight);
+    if (!recoveredStart.equals(start)) this.onNavigationRecovery?.();
     this.firstPersonVelocity.set(0, 0, 0);
     this.firstPersonGrounded = true;
     this.firstPersonJumpRequested = false;
-    this.camera.position.copy(start);
-    this.orbit.target.copy(start).add(forward.multiplyScalar(5));
+    this.camera.position.copy(recoveredStart);
+    this.orbit.target.copy(recoveredStart).add(forward.multiplyScalar(5));
     this.camera.lookAt(this.orbit.target);
   }
 
@@ -4406,7 +4409,12 @@ export class ViewerEngine {
     this.raycaster.near = 0;
     this.raycaster.far = 20;
     const hit = this.raycaster.intersectObjects(this.visibleModelObjects(), true)
-      .find((item) => item.point.y <= position.y + 2.05);
+      .find((item) => {
+        if (item.point.y > position.y + 2.05) return false;
+        if (!item.face) return true;
+        const normal = item.face.normal.clone().transformDirection(item.object.matrixWorld);
+        return isWalkableSurface(normal, this.camera.up, this.navigationSettings.maxSlopeAngle);
+      });
     this.raycaster.far = Infinity;
     return hit?.point.y ?? (position.y >= -2 && position.y <= 12 ? 0 : undefined);
   }
@@ -4457,11 +4465,22 @@ export class ViewerEngine {
     const resolved = new THREE.Vector3();
     const currentOrigin = topOrigin.clone();
     let remaining = movement.clone();
+    let stepped = false;
     for (let pass = 0; pass < 3 && remaining.lengthSq() > 1e-10; pass += 1) {
       const hit = this.firstCharacterCollision(currentOrigin, remaining, height);
       if (!hit) {
         resolved.add(remaining);
         break;
+      }
+      const horizontalMovement = Math.abs(remaining.clone().normalize().dot(this.camera.up)) < 0.2;
+      if (!stepped && horizontalMovement && this.navigationSettings.stepHeight > 0) {
+        const raisedOrigin = currentOrigin.clone().addScaledVector(this.camera.up, this.navigationSettings.stepHeight);
+        if (!this.firstCharacterCollision(raisedOrigin, remaining, height)) {
+          resolved.addScaledVector(this.camera.up, this.navigationSettings.stepHeight);
+          currentOrigin.copy(raisedOrigin);
+          stepped = true;
+          continue;
+        }
       }
       const distance = remaining.length();
       const direction = remaining.clone().multiplyScalar(1 / distance);
@@ -4474,6 +4493,38 @@ export class ViewerEngine {
       remaining = slideAgainstSurface(unconsumed, normal).multiplyScalar(0.98);
     }
     return resolved;
+  }
+
+  private recoverCharacterSpawn(start: THREE.Vector3, height: number): THREE.Vector3 {
+    if (!this.characterOverlapsScene(start, height)) return start;
+    const stride = Math.max(this.cameraConstraints.collisionRadius * 2.5, 0.6);
+    for (let ring = 1; ring <= 10; ring += 1) {
+      for (let index = 0; index < 12; index += 1) {
+        const angle = index / 12 * Math.PI * 2;
+        const candidate = start.clone().add(new THREE.Vector3(Math.cos(angle) * stride * ring, 0, Math.sin(angle) * stride * ring));
+        const floor = this.findFloorHeight(candidate.clone().add(new THREE.Vector3(0, 4, 0)));
+        if (floor !== undefined) candidate.y = floor + height;
+        if (!this.characterOverlapsScene(candidate, height)) return candidate;
+      }
+    }
+    const bounds = this.sceneContentBox();
+    return bounds.isEmpty() ? start : new THREE.Vector3(start.x, bounds.max.y + height + this.cameraConstraints.collisionRadius, start.z);
+  }
+
+  private characterOverlapsScene(top: THREE.Vector3, height: number): boolean {
+    const samples = [top, top.clone().addScaledVector(this.camera.up, -Math.max(this.cameraConstraints.collisionRadius, height * 0.5))];
+    for (const root of this.visibleModelObjects()) {
+      let overlaps = false;
+      root.traverse((object) => {
+        if (overlaps || !object.visible) return;
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry?.attributes.position) return;
+        const box = new THREE.Box3().setFromObject(mesh).expandByScalar(this.cameraConstraints.collisionRadius * 0.7);
+        if (samples.some((sample) => box.containsPoint(sample))) overlaps = true;
+      });
+      if (overlaps) return true;
+    }
+    return false;
   }
 
   private firstCharacterCollision(topOrigin: THREE.Vector3, movement: THREE.Vector3, height: number): THREE.Intersection<THREE.Object3D> | undefined {

@@ -85,6 +85,8 @@ export function CameraNavigationPanel(props: Props) {
         <NumberField label={tr(props.locale, "视点高度", "Eye height")} value={props.navigation.eyeHeight} min={0.3} max={4} step={0.05} suffix="m" onCommit={(eyeHeight) => props.onNavigationChange({ eyeHeight })} />
         <NumberField label={tr(props.locale, "重力", "Gravity")} value={props.navigation.gravity} min={0} max={80} step={0.5} suffix="m/s²" onCommit={(gravity) => props.onNavigationChange({ gravity })} />
         <NumberField label={tr(props.locale, "跳跃速度", "Jump speed")} value={props.navigation.jumpSpeed} min={0} max={30} step={0.5} suffix="m/s" onCommit={(jumpSpeed) => props.onNavigationChange({ jumpSpeed })} />
+        <NumberField label={tr(props.locale, "台阶高度", "Step height")} value={props.navigation.stepHeight} min={0} max={1.2} step={0.05} suffix="m" onCommit={(stepHeight) => props.onNavigationChange({ stepHeight })} />
+        <NumberField label={tr(props.locale, "最大坡度", "Maximum slope")} value={props.navigation.maxSlopeAngle} min={0} max={89} step={1} suffix="°" onCommit={(maxSlopeAngle) => props.onNavigationChange({ maxSlopeAngle })} />
       </div>
     </div>
 

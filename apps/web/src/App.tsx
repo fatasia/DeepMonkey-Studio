@@ -562,6 +562,7 @@ export function App() {
       };
       viewer.onXRSessionChange = (mode) => setXrActiveMode(mode);
       viewer.onCollisionChange = requestRevision;
+      viewer.onNavigationRecovery = () => queueMicrotask(() => setMessage(tr(locale, "出生点与模型重叠，已自动移动到最近安全位置", "The spawn overlapped geometry and was moved to the nearest safe position")));
       viewer.onPrimitivePlaced = (model, _kind, color) => {
         primitiveColors.current.set(model.id, color);
         setSelected(model);
