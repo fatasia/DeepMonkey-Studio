@@ -21,7 +21,6 @@ const projects = [
   ["Node-RED", "Apache-2.0", "https://github.com/node-red/node-red"],
   ["FlowFuse Dashboard", "Apache-2.0", "https://github.com/FlowFuse/node-red-dashboard"],
   ["Apache ECharts", "Apache-2.0", "https://github.com/apache/echarts"],
-  ["GridStack", "MIT", "https://github.com/gridstack/gridstack.js"],
   ["TDengine Node.js Connector", "MIT", "https://github.com/taosdata/taos-connector-node"],
   ["Fastify", "MIT", "https://github.com/fastify/fastify"],
   ["node-oracledb", "Apache-2.0 OR UPL-1.0", "https://github.com/oracle/node-oracledb"],

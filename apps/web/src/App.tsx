@@ -207,7 +207,6 @@ const ModelOptimizer = lazy(() => import("./components/ModelOptimizer").then((mo
 const DataCenter = lazy(() => import("./components/DataCenter").then((module) => ({ default: module.DataCenter })));
 const SystemCenter = lazy(() => import("./components/SystemCenter").then((module) => ({ default: module.SystemCenter })));
 const BrandingSettingsPage = lazy(() => import("./components/BrandingSettingsPage").then((module) => ({ default: module.BrandingSettingsPage })));
-const SceneDashboardOverlay = lazy(() => import("./components/SceneDashboardOverlay").then((module) => ({ default: module.SceneDashboardOverlay })));
 const VisionCenter = lazy(() => import("./components/VisionCenter").then((module) => ({ default: module.VisionCenter })));
 
 interface AppRoute {
@@ -380,7 +379,6 @@ export function App() {
   const [digitalTwinOpen, setDigitalTwinOpen] = useState(false);
   const [sceneDataStatus, setSceneDataStatus] = useState<SceneDataBridgeStatus>("offline");
   const [sceneDataReceived, setSceneDataReceived] = useState(0);
-  const [sceneDashboardOpen, setSceneDashboardOpen] = useState(false);
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
   const [sceneDashboard, setSceneDashboard] = useState<SceneDashboardState>(() => structuredClone(DEFAULT_DASHBOARD_STATE));
   const [sceneInteractions, setSceneInteractions] = useState<SceneInteractionScriptState[]>([]);
@@ -668,9 +666,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const browse = route.view === "view" || route.view === "published";
     setViewerToolsOpen(false);
-    if (browse) setSceneDashboardOpen(true);
   }, [route.view, route.sceneId]);
 
   useEffect(() => {
@@ -733,8 +729,6 @@ export function App() {
         if (cameraView) engine?.applyCamera(cameraView.camera);
       } else if (action.type === "message") {
         setMessage(action.message?.trim() || "事件已触发");
-      } else if (action.type === "dashboard" && (route.view === "view" || route.view === "published")) {
-        setSceneDashboardOpen((current) => action.value === "show" ? true : action.value === "hide" ? false : !current);
       } else if (action.type === "setData") {
         publishLocalSceneData({ source: "interaction", key: action.dataKey?.trim() || "value", value: action.value, timestamp: new Date().toISOString(), ...(route.sceneId ? { sceneId: route.sceneId } : {}) });
       } else if (action.type === "openUrl") {
@@ -2613,22 +2607,6 @@ export function App() {
           {!xrCapabilities.checking && (!xrCapabilities.vr || !xrCapabilities.ar) && <p>{tr(locale, "桌面浏览器通常只能检测 VR 头显；AR 需支持 WebXR 的 Android 设备。自签名证书必须先在设备上信任。", "Desktop browsers usually require a connected VR headset; AR requires a WebXR-capable Android device. Trust the self-signed certificate on the device first.")}</p>}
         </div>}
         {route.view === "studio" && xrActiveMode && <div className="xr-session-hud"><div><strong>{xrActiveMode === "immersive-vr" ? "VR" : "AR"} {tr(locale, "运行中", "active")}</strong><small>{xrActiveMode === "immersive-vr" ? tr(locale, "左摇杆移动 · 右摇杆转向 · B/Y 退出", "Left stick move · right stick turn · B/Y exit") : tr(locale, "点击退出返回编辑器", "Exit to return to the editor")}</small></div><button onClick={() => void engine?.endXR()}>{tr(locale, "退出", "Exit")}</button></div>}
-        {(route.view === "view" || route.view === "published") && sceneDashboardOpen && <Suspense fallback={null}><SceneDashboardOverlay
-          locale={locale}
-          projectId={project?.id ?? activeScene?.projectId ?? "default"}
-          sceneId={activeScene?.id ?? route.sceneId ?? "new"}
-          state={sceneDashboard}
-          interactions={sceneInteractions}
-          targetOptions={interactionTargetOptions}
-          sceneOptions={scenes.map((scene) => ({ id: scene.id, name: scene.name }))}
-          cameraViewOptions={cameraViews.map((view) => ({ id: view.id, name: view.name }))}
-          readOnly
-          onChange={setSceneDashboard}
-          onInteractionsChange={setSceneInteractions}
-          onWidgetInteraction={(trigger, widget, originalEvent) => engine?.dispatchInteraction(trigger, { kind: "widget", widgetId: widget.id }, { ...(originalEvent ? { originalEvent } : {}), payload: widget })}
-          onTestInteraction={(script, widget) => void engine?.runInteractionScript(script, { test: true, payload: widget })}
-          onClose={() => setSceneDashboardOpen(false)}
-        /></Suspense>}
         {route.view === "studio" && aiAssistantOpen && <AiAssistantPanel
           locale={locale}
           projectId={project?.id}
