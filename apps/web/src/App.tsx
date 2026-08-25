@@ -2108,11 +2108,6 @@ export function App() {
         onRedo={() => applicationSessionRef.current.store.redo()}
         onSave={() => void saveActiveApplication()}
         onPublish={() => void publishActiveApplication()}
-        onPreview={() => {
-          const viewport = activeDashboardPage.nodes.find((node) => node.kind === "scene-viewport");
-          if (viewport?.kind === "scene-viewport") openBrowseRoute("view", viewport.sceneId);
-          else showError(new Error(tr(locale, "当前页面没有可预览的三维场景", "This page has no 3D scene to preview")));
-        }}
         onViewStateChange={replaceDashboardView}
       />}
       {route.view === "dashboard" && (!activeApplication || !activeDashboardPage || !project) && <div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载二维工作区", "Loading 2D workspace")}</div>}

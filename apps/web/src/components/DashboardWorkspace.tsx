@@ -12,7 +12,8 @@ import {
   Rocket,
   Save,
   Undo2,
-  Workflow
+  Workflow,
+  X
 } from "lucide-react";
 import type { ApplicationDocument, ApplicationObjectRef, DashboardDataWidgetConfig, DashboardPageDocument, ProjectRecord, SceneDashboardWidgetType, SceneInteractionTarget, SceneInteractionTrigger, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 import {
@@ -57,7 +58,6 @@ export interface DashboardWorkspaceProps {
   onRedo: () => void;
   onSave: () => void;
   onPublish: () => void;
-  onPreview: () => void;
   onViewStateChange: (view: DashboardViewState) => void;
 }
 
@@ -85,12 +85,12 @@ export function DashboardWorkspace({
   onRedo,
   onSave,
   onPublish,
-  onPreview,
   onViewStateChange
 }: DashboardWorkspaceProps) {
   const normalizedInitialView = useMemo(() => normalizeDashboardViewState(initialView), [page.id]);
   const [zoom, setZoom] = useState(normalizedInitialView.zoom);
   const [selectedNodeIds, setSelectedNodeIds] = useState(normalizedInitialView.selectedNodeIds);
+  const [runtimePreview, setRuntimePreview] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
@@ -117,6 +117,13 @@ export function DashboardWorkspace({
   useEffect(() => {
     emitViewState();
   }, [zoom, selectedNodeIds]);
+
+  useEffect(() => {
+    if (!runtimePreview) return;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setRuntimePreview(false); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [runtimePreview]);
 
   function currentView(): DashboardViewState {
     return {
@@ -179,6 +186,8 @@ export function DashboardWorkspace({
     onCommand(createUpdateDashboardDataWidgetCommand(page.id, selectedNode.id, { ...selectedNode.widget, ...patch }));
   }
 
+  if (runtimePreview) return <DashboardRuntimePreview locale={locale} application={application} project={project} page={page} rendererBackend={rendererBackend} metrics={metrics} connected={connected} onClose={() => setRuntimePreview(false)} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onNodeInteraction={onNodeInteraction} />;
+
   return <main className="dashboard-workspace">
     <header className="dashboard-workspace-topbar">
       <button className="dashboard-back" onClick={onBack}><ArrowLeft size={16} />{tr(locale, "项目", "Project")}</button>
@@ -188,7 +197,7 @@ export function DashboardWorkspace({
         <button disabled title={tr(locale, "M5 提供独立拓扑编辑器", "The topology editor arrives in M5")}><Workflow size={14} />{tr(locale, "拓扑", "Topology")}</button>
         <button onClick={() => application.scenes[0] && onEnterScene(application.scenes[0].id, currentView())}><Box size={14} />{tr(locale, "三维场景", "3D scenes")}</button>
         <button onClick={onOpenData}><Database size={14} />{tr(locale, "数据", "Data")}</button>
-        <button onClick={onPreview}><Eye size={14} />{tr(locale, "预览", "Preview")}</button>
+        <button onClick={() => setRuntimePreview(true)}><Eye size={14} />{tr(locale, "预览", "Preview")}</button>
       </nav>
       <div className="dashboard-workspace-actions">
         <button disabled={!canUndo || busy} title={tr(locale, "撤销", "Undo")} onClick={onUndo}><Undo2 size={15} /></button>
@@ -253,7 +262,37 @@ export function DashboardWorkspace({
   </main>;
 }
 
-function DashboardNode({ application, project, node, metric, selected, locale, rendererBackend, onSelectionChange, onObjectInteraction, onInteraction, onSelect, onEnterScene }: {
+function DashboardRuntimePreview({ locale, application, project, page, rendererBackend, metrics, connected, onClose, onSelectionChange, onObjectInteraction, onNodeInteraction }: {
+  locale: AppLocale;
+  application: ApplicationDocument;
+  project: ProjectRecord;
+  page: DashboardPageDocument;
+  rendererBackend: RendererBackend;
+  metrics: Record<string, DashboardMetric>;
+  connected: boolean;
+  onClose: () => void;
+  onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
+  onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
+  onNodeInteraction: (nodeId: string, trigger?: SceneInteractionTrigger) => ApplicationInteractionResult | undefined;
+}) {
+  const [scale, setScale] = useState(0.5);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const resize = () => setScale(Math.max(0.1, Math.min((surface.clientWidth - 32) / page.width, (surface.clientHeight - 32) / page.height)));
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, [page.width, page.height]);
+  return <main className="dashboard-runtime-preview">
+    <header><div><Eye size={16} /><span><strong>{application.metadata.name}</strong><small>{page.name} · {connected ? tr(locale, "实时数据", "Live data") : tr(locale, "离线预览", "Offline preview")}</small></span></div><div><span>{Math.round(scale * 100)}%</span><button onClick={onClose}><X size={15} />{tr(locale, "退出预览", "Exit preview")}</button></div></header>
+    <section ref={surfaceRef}><div className="dashboard-runtime-stage" style={{ width: page.width * scale, height: page.height * scale }}><div className="dashboard-artboard dashboard-runtime-artboard" style={{ width: page.width, height: page.height, transform: `scale(${scale})` }}>{page.nodes.map((node) => <DashboardNode key={node.id} runtime application={application} project={project} node={node} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={false} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={() => undefined} onEnterScene={() => undefined} />)}</div></div></section>
+  </main>;
+}
+
+function DashboardNode({ application, project, node, metric, selected, locale, rendererBackend, runtime = false, onSelectionChange, onObjectInteraction, onInteraction, onSelect, onEnterScene }: {
   application: ApplicationDocument;
   project: ProjectRecord;
   node: WidgetNode;
@@ -261,6 +300,7 @@ function DashboardNode({ application, project, node, metric, selected, locale, r
   selected: boolean;
   locale: AppLocale;
   rendererBackend: RendererBackend;
+  runtime?: boolean;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
   onInteraction: (trigger: SceneInteractionTrigger) => void;
@@ -275,17 +315,16 @@ function DashboardNode({ application, project, node, metric, selected, locale, r
   }, [node.id]);
   if (node.kind === "scene-viewport") {
     const scene = application.scenes.find((candidate) => candidate.id === node.sceneId);
-    return <article className={`dashboard-node dashboard-scene-viewport ${selected ? "selected" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); onSelect(event.ctrlKey || event.metaKey); }} onDoubleClick={() => onEnterScene(node.sceneId)}>
+    return <article className={`dashboard-node dashboard-scene-viewport ${selected ? "selected" : ""} ${runtime ? "runtime" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); if (!runtime) onSelect(event.ctrlKey || event.metaKey); }} onDoubleClick={() => { if (!runtime) onEnterScene(node.sceneId); }}>
       {scene && node.renderMode !== "static-placeholder"
         ? <SceneViewportPreview locale={locale} node={node} scene={scene} project={project} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={(trigger, target) => onObjectInteraction(scene.id, trigger, target)} />
         : <div className="dashboard-scene-grid" />}
-      <div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small><button onClick={(event) => { event.stopPropagation(); onEnterScene(node.sceneId); }}>{tr(locale, "进入三维编辑", "Open 3D editor")}</button></div>
-      <div className="dashboard-node-badge">3D · {node.renderMode}</div>
+      {!runtime && <><div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small><button onClick={(event) => { event.stopPropagation(); onEnterScene(node.sceneId); }}>{tr(locale, "进入三维编辑", "Open 3D editor")}</button></div><div className="dashboard-node-badge">3D · {node.renderMode}</div></>}
     </article>;
   }
-  if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4" }} onClick={(event) => { event.stopPropagation(); onSelect(event.ctrlKey || event.metaKey); }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")}>
+  if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? "runtime" : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4" }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")}>
     <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />
-    <div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div>
+    {!runtime && <div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div>}
   </article>;
   return null;
 }
