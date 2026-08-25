@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { assertApplicationDocument, assertPathSafeResourceId } from "@bim-studio/contracts";
-import type { AiProviderSettings, ApplicationDocument, ApplicationPublicationPointer, AuditLogRecord, DataConnectionRecord, DataDatasetRecord, DatabaseDocument, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedApplicationRecord, PublishedSceneRecord, SceneSnapshot, StoredSystemUserRecord, SystemBrandingSettings, VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
+import type { AiProviderSettings, ApplicationDocument, ApplicationPublicationPointer, AuditLogRecord, DataConnectionRecord, DataDatasetRecord, DataPipelineDefinition, DatabaseDocument, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedApplicationRecord, PublishedSceneRecord, SceneSnapshot, StoredSystemUserRecord, SystemBrandingSettings, VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
 import type { AppConfig } from "./config.js";
 
 export interface ApplicationIdReservation {
@@ -54,6 +54,9 @@ export interface MetadataStore {
   listDatasets(projectId: string): DataDatasetRecord[];
   saveDataset(projectId: string, dataset: DataDatasetRecord): Promise<DataDatasetRecord>;
   removeDataset(projectId: string, datasetId: string): Promise<boolean>;
+  listDataPipelines(projectId: string): DataPipelineDefinition[];
+  saveDataPipeline(projectId: string, pipeline: DataPipelineDefinition): Promise<DataPipelineDefinition>;
+  removeDataPipeline(projectId: string, pipelineId: string): Promise<boolean>;
   listVisionSources(projectId: string): VisionSourceRecord[];
   saveVisionSource(projectId: string, source: VisionSourceRecord): Promise<VisionSourceRecord>;
   removeVisionSource(projectId: string, sourceId: string): Promise<boolean>;
@@ -295,6 +298,37 @@ export class JsonStore implements MetadataStore {
       const originalLength = project.datasets?.length ?? 0;
       project.datasets = (project.datasets ?? []).filter((item) => item.id !== datasetId);
       if (project.datasets.length === originalLength) return unchanged(false);
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
+  }
+
+  listDataPipelines(projectId: string): DataPipelineDefinition[] {
+    return structuredClone(this.requireProject(projectId).dataPipelines ?? []);
+  }
+
+  async saveDataPipeline(projectId: string, pipeline: DataPipelineDefinition): Promise<DataPipelineDefinition> {
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const datasetIds = new Set((project.datasets ?? []).map((dataset) => dataset.id));
+      for (const node of pipeline.nodes) {
+        if (node.type === "source" && !datasetIds.has(node.datasetId)) throw new Error(`Data dataset not found: ${node.datasetId}`);
+      }
+      project.dataPipelines ??= [];
+      const index = project.dataPipelines.findIndex((item) => item.id === pipeline.id);
+      if (index >= 0) project.dataPipelines[index] = structuredClone(pipeline);
+      else project.dataPipelines.push(structuredClone(pipeline));
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(pipeline));
+    });
+  }
+
+  async removeDataPipeline(projectId: string, pipelineId: string): Promise<boolean> {
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const originalLength = project.dataPipelines?.length ?? 0;
+      project.dataPipelines = (project.dataPipelines ?? []).filter((item) => item.id !== pipelineId);
+      if (project.dataPipelines.length === originalLength) return unchanged(false);
       project.updatedAt = new Date().toISOString();
       return changed(true);
     });

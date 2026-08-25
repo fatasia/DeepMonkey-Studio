@@ -1,4 +1,4 @@
-import type { AiAssistantResponse, AiProviderSettings, ApplicationDocument, AuditLogRecord, DataConnectionRecord, DataDatasetPreview, DataDatasetRecord, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, RevitRuntimeInfo, RvtConversionMode, SceneSnapshot, ServiceHealthRecord, ServiceLogRecord, SystemBrandingSettings, SystemUserRecord, VisionEventRecord, VisionInferenceResponse, VisionModelManifest, VisionModelPreset, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
+import type { AiAssistantResponse, AiProviderSettings, ApplicationDocument, AuditLogRecord, DataConnectionRecord, DataDatasetPreview, DataDatasetRecord, DataPipelineDefinition, DataPipelinePreview, ModelRecord, ProjectAssetRecord, ProjectRecord, PublishedSceneRecord, RevitRuntimeInfo, RvtConversionMode, SceneSnapshot, ServiceHealthRecord, ServiceLogRecord, SystemBrandingSettings, SystemUserRecord, VisionEventRecord, VisionInferenceResponse, VisionModelManifest, VisionModelPreset, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "@bim-studio/contracts";
 import { ServerClient } from "@bim-studio/server-sdk";
 import { BrowserHostAdapter } from "./adapters/browserHostAdapter.js";
 
@@ -93,6 +93,10 @@ export const api = {
   createDataset: (projectId: string, dataset: Partial<DataDatasetRecord>) => request<DataDatasetRecord>(`/api/projects/${projectId}/datasets`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(dataset) }),
   previewDataset: (projectId: string, datasetId: string) => request<DataDatasetPreview>(`/api/projects/${projectId}/datasets/${datasetId}/preview`),
   deleteDataset: (projectId: string, datasetId: string) => request<void>(`/api/projects/${projectId}/datasets/${datasetId}`, { method: "DELETE" }),
+  listDataPipelines: (projectId: string) => request<DataPipelineDefinition[]>(`/api/projects/${projectId}/data-pipelines`),
+  saveDataPipeline: (projectId: string, pipeline: Partial<DataPipelineDefinition>) => request<DataPipelineDefinition>(`/api/projects/${projectId}/data-pipelines`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(pipeline) }),
+  previewDataPipeline: (projectId: string, pipelineId: string) => request<DataPipelinePreview>(`/api/projects/${projectId}/data-pipelines/${pipelineId}/preview`),
+  deleteDataPipeline: (projectId: string, pipelineId: string) => request<void>(`/api/projects/${projectId}/data-pipelines/${pipelineId}`, { method: "DELETE" }),
   resolveLiveMonitor: (sourceUrl: string, playback: "hls" | "webrtc") => request<{ path: string; hlsUrl: string; webRtcUrl: string }>("/api/live-monitor/resolve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceUrl, playback }) }),
   listVisionPresets: () => request<VisionModelPreset[]>("/api/vision/presets"),
   listVisionSources: (projectId: string) => request<VisionSourceRecord[]>(`/api/projects/${projectId}/vision/sources`),

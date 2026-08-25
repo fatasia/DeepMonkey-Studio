@@ -9,6 +9,7 @@ import {
   supportedExtensions,
   type DataConnectionRecord,
   type DataDatasetRecord,
+  type DataPipelineDefinition,
   type ModelFormat,
   type ModelRecord,
   type ProjectAssetRecord,
@@ -17,6 +18,7 @@ import {
   type SceneSnapshot
 } from "@bim-studio/contracts";
 import { compileFormula } from "@bim-studio/data-runtime";
+import { DataPipelineError, executeDataPipeline, validateDataPipeline } from "@bim-studio/data-runtime/pipeline";
 import { executeRowScript } from "@bim-studio/data-runtime/script";
 import type { AppConfig } from "./config.js";
 import { demoSensorRows, previewDataset } from "./dataIntegration.js";
@@ -136,6 +138,9 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     return reply.code(201).send(await store.saveDataConnection(request.params.projectId, connection));
   });
   app.delete<{ Params: { projectId: string; connectionId: string } }>("/api/projects/:projectId/data-connections/:connectionId", async (request, reply) => {
+    const datasetIds = new Set(store.listDatasets(request.params.projectId).filter((dataset) => dataset.connectionId === request.params.connectionId).map((dataset) => dataset.id));
+    const dependentPipeline = store.listDataPipelines(request.params.projectId).find((pipeline) => pipeline.nodes.some((node) => node.type === "source" && datasetIds.has(node.datasetId)));
+    if (dependentPipeline) return reply.code(409).send({ message: `连接仍被流水线“${dependentPipeline.name}”使用` });
     return await store.removeDataConnection(request.params.projectId, request.params.connectionId) ? reply.code(204).send() : reply.code(404).send({ message: "数据连接不存在" });
   });
   app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/datasets", async (request, reply) => {
@@ -168,7 +173,53 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     return previewDataset(config, connection, dataset);
   });
   app.delete<{ Params: { projectId: string; datasetId: string } }>("/api/projects/:projectId/datasets/:datasetId", async (request, reply) => {
+    const dependentPipeline = store.listDataPipelines(request.params.projectId).find((pipeline) => pipeline.nodes.some((node) => node.type === "source" && node.datasetId === request.params.datasetId));
+    if (dependentPipeline) return reply.code(409).send({ message: `数据集仍被流水线“${dependentPipeline.name}”使用` });
     return await store.removeDataset(request.params.projectId, request.params.datasetId) ? reply.code(204).send() : reply.code(404).send({ message: "数据集不存在" });
+  });
+
+  app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/data-pipelines", async (request, reply) => {
+    if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+    return store.listDataPipelines(request.params.projectId);
+  });
+  app.post<{ Params: { projectId: string }; Body: Partial<DataPipelineDefinition> }>("/api/projects/:projectId/data-pipelines", async (request, reply) => {
+    if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+    const name = request.body.name?.trim();
+    if (!name) return reply.code(400).send({ message: "流水线名称不能为空" });
+    const nodes = request.body.nodes ?? [];
+    const edges = request.body.edges ?? [];
+    try {
+      validateDataPipeline({ nodes, edges });
+      for (const node of nodes) if (node.type === "script") await executeRowScript(node.source, []);
+    } catch (reason) {
+      return reply.code(400).send({ message: reason instanceof Error ? reason.message : "流水线无效" });
+    }
+    const now = new Date().toISOString();
+    const definition: DataPipelineDefinition = { id: request.body.id || randomUUID(), projectId: request.params.projectId, name, nodes, edges, createdAt: request.body.createdAt ?? now, updatedAt: now };
+    try {
+      return reply.code(201).send(await store.saveDataPipeline(request.params.projectId, definition));
+    } catch (reason) {
+      return reply.code(400).send({ message: reason instanceof Error ? reason.message : "流水线保存失败" });
+    }
+  });
+  app.get<{ Params: { projectId: string; pipelineId: string } }>("/api/projects/:projectId/data-pipelines/:pipelineId/preview", async (request, reply) => {
+    const definition = store.listDataPipelines(request.params.projectId).find((item) => item.id === request.params.pipelineId);
+    if (!definition) return reply.code(404).send({ message: "流水线不存在" });
+    try {
+      return await executeDataPipeline(definition, async (datasetId) => {
+        const dataset = store.listDatasets(request.params.projectId).find((item) => item.id === datasetId);
+        if (!dataset) throw new Error("数据集不存在或已删除");
+        const connection = store.listDataConnections(request.params.projectId).find((item) => item.id === dataset.connectionId);
+        if (!connection) throw new Error("数据连接不存在或已删除");
+        return (await previewDataset(config, connection, dataset)).rows;
+      });
+    } catch (reason) {
+      if (reason instanceof DataPipelineError) return { pipeline: definition, status: "error", fields: [], rows: [], durationMs: reason.diagnostics.reduce((sum, item) => sum + item.durationMs, 0), diagnostics: reason.diagnostics, ...(reason.nodeId ? { failedNodeId: reason.nodeId } : {}), error: reason.message };
+      return reply.code(400).send({ message: reason instanceof Error ? reason.message : "流水线运行失败" });
+    }
+  });
+  app.delete<{ Params: { projectId: string; pipelineId: string } }>("/api/projects/:projectId/data-pipelines/:pipelineId", async (request, reply) => {
+    return await store.removeDataPipeline(request.params.projectId, request.params.pipelineId) ? reply.code(204).send() : reply.code(404).send({ message: "流水线不存在" });
   });
 
   app.post<{ Params: { projectId: string }; Querystring: { rvtConversionMode?: string; rvtRevitVersion?: string } }>("/api/projects/:projectId/models", async (request, reply) => {

@@ -93,6 +93,7 @@ export interface ProjectRecord {
   assets?: ProjectAssetRecord[];
   dataConnections?: DataConnectionRecord[];
   datasets?: DataDatasetRecord[];
+  dataPipelines?: DataPipelineDefinition[];
   visionSources?: VisionSourceRecord[];
   visionModels?: VisionModelRecord[];
   visionTasks?: VisionTaskRecord[];
@@ -330,6 +331,53 @@ export interface DataDatasetPreview {
   fields: DataDatasetField[];
   rows: Array<Record<string, unknown>>;
   durationMs: number;
+}
+
+export type DataPipelineNode =
+  | { id: string; type: "source"; name: string; datasetId: string; position: { x: number; y: number } }
+  | { id: string; type: "filter"; name: string; formula: string; position: { x: number; y: number } }
+  | { id: string; type: "formula"; name: string; key: string; label: string; fieldType: DataFieldType; formula: string; position: { x: number; y: number } }
+  | { id: string; type: "script"; name: string; key: string; label: string; fieldType: DataFieldType; source: string; position: { x: number; y: number } }
+  | { id: string; type: "sort"; name: string; field: string; direction: "asc" | "desc"; position: { x: number; y: number } }
+  | { id: string; type: "limit"; name: string; count: number; position: { x: number; y: number } }
+  | { id: string; type: "merge"; name: string; position: { x: number; y: number } }
+  | { id: string; type: "output"; name: string; position: { x: number; y: number } };
+
+export interface DataPipelineEdge {
+  id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+}
+
+export interface DataPipelineDefinition {
+  id: string;
+  projectId: string;
+  name: string;
+  nodes: DataPipelineNode[];
+  edges: DataPipelineEdge[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DataPipelineNodeDiagnostic {
+  nodeId: string;
+  status: "success" | "error";
+  inputRows: number;
+  outputRows: number;
+  durationMs: number;
+  sample: Array<Record<string, unknown>>;
+  error?: string;
+}
+
+export interface DataPipelinePreview {
+  pipeline: DataPipelineDefinition;
+  status: "success" | "error";
+  fields: DataDatasetField[];
+  rows: Array<Record<string, unknown>>;
+  durationMs: number;
+  diagnostics: DataPipelineNodeDiagnostic[];
+  failedNodeId?: string;
+  error?: string;
 }
 
 export interface SceneModelState {

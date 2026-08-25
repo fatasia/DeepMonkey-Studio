@@ -13,6 +13,11 @@
       "development": { "types": "./src/script.ts", "default": "./src/script.ts" },
       "types": "./dist/script.d.ts",
       "default": "./dist/script.js"
+    },
+    "./pipeline": {
+      "development": { "types": "./src/pipeline.ts", "default": "./src/pipeline.ts" },
+      "types": "./dist/pipeline.d.ts",
+      "default": "./dist/pipeline.js"
     }
   },
   "scripts": {
@@ -20,6 +25,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": { "quickjs-emscripten": "^0.32.0" },
+  "dependencies": {
+    "@bim-studio/contracts": "workspace:*",
+    "quickjs-emscripten": "^0.32.0"
+  },
   "devDependencies": { "@types/node": "^24.10.0", "typescript": "^5.9.3", "vitest": "^4.1.0" }
 }
