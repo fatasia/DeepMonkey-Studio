@@ -62,7 +62,7 @@ describe("web architecture boundary", () => {
     const violations: string[] = [];
     for (const file of typescriptSourceFiles(root)) {
       const relative = path.relative(root, file);
-      if (exceptions.has(relative) || relative.startsWith(`adapters${path.sep}`)) continue;
+      if (exceptions.has(relative) || relative === path.join("adapters", "sceneDataSocket.ts")) continue;
       if (forbiddenNetworkCapabilities(await readFile(file, "utf8"), file).length > 0) violations.push(relative);
     }
     expect(violations).toEqual([]);
@@ -70,10 +70,23 @@ describe("web architecture boundary", () => {
 
   it("detects hosted transports and obvious aliases or destructuring", () => {
     expect(forbiddenNetworkCapabilities(`
+      const request = globalThis.fetch.bind(globalThis);
+      const alias = request;
+      let assigned;
+      assigned = alias;
+      assigned("/api/bound-only");
+    `)).toEqual(["fetch"]);
+    expect(forbiddenNetworkCapabilities(`
       globalThis.fetch("/api/direct");
       window.fetch("/api/window");
       const request = globalThis.fetch;
       request("/api/alias");
+      const boundRequest = globalThis.fetch.bind(globalThis);
+      const chainedRequest = boundRequest;
+      chainedRequest("/api/bound-chain");
+      let assignedRequest;
+      assignedRequest = window.fetch.bind(window);
+      assignedRequest("/api/assigned");
       const { fetch: destructuredRequest } = globalThis;
       destructuredRequest("/api/destructured");
       const Socket = WebSocket;

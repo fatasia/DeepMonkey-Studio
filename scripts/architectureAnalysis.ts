@@ -44,6 +44,15 @@ export function moduleSpecifiers(source: string, fileName = "source.ts"): string
   return values;
 }
 
+export function isAllowedPurePackageImport(
+  specifier: string,
+  allowedExternalModules: ReadonlySet<string>
+): boolean {
+  return specifier.startsWith("./")
+    || specifier.startsWith("../")
+    || allowedExternalModules.has(specifier);
+}
+
 const publicPackageDeepImport = /^@bim-studio\/(?:contracts|server-sdk|studio-core|scene-sdk)\/.+/;
 
 export function isWorkspacePackageSourceDeepImport(
@@ -77,28 +86,30 @@ export function forbiddenNetworkCapabilities(source: string, fileName = "source.
   while (changed) {
     changed = false;
     visit(sourceFile, (node) => {
-      if (!ts.isVariableDeclaration(node) || !node.initializer) return;
-      if (ts.isIdentifier(node.name)) {
-        if (isHostReference(node.initializer, hostAliases) && !hostAliases.has(node.name.text)) {
-          hostAliases.add(node.name.text);
-          changed = true;
+      if (ts.isVariableDeclaration(node) && node.initializer) {
+        if (ts.isIdentifier(node.name)) {
+          changed = recordNetworkAlias(node.name.text, node.initializer, aliases, hostAliases) || changed;
+        } else if (ts.isObjectBindingPattern(node.name) && isHostReference(node.initializer, hostAliases)) {
+          for (const element of node.name.elements) {
+            if (!ts.isIdentifier(element.name)) continue;
+            const property = element.propertyName ?? element.name;
+            if (!ts.isIdentifier(property) && !ts.isStringLiteralLike(property)) continue;
+            changed = recordCapabilityAlias(element.name.text, property.text, aliases) || changed;
+          }
         }
-        const capability = networkCapabilityReference(node.initializer, aliases, hostAliases);
-        if (capability && aliases.get(node.name.text) !== capability) {
-          aliases.set(node.name.text, capability);
-          changed = true;
-        }
-        return;
       }
-      if (ts.isObjectBindingPattern(node.name) && isHostReference(node.initializer, hostAliases)) {
-        for (const element of node.name.elements) {
-          if (!ts.isIdentifier(element.name)) continue;
-          const property = element.propertyName ?? element.name;
-          if (!ts.isIdentifier(property) && !ts.isStringLiteralLike(property)) continue;
-          const capability = property.text;
-          if (rawNetworkCapabilities.has(capability) && aliases.get(element.name.text) !== capability) {
-            aliases.set(element.name.text, capability);
-            changed = true;
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        const left = unwrapExpression(node.left);
+        if (ts.isIdentifier(left)) {
+          changed = recordNetworkAlias(left.text, node.right, aliases, hostAliases) || changed;
+        } else if (ts.isObjectLiteralExpression(left) && isHostReference(node.right, hostAliases)) {
+          for (const property of left.properties) {
+            if (ts.isShorthandPropertyAssignment(property)) {
+              changed = recordCapabilityAlias(property.name.text, property.name.text, aliases) || changed;
+            } else if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.initializer)) {
+              const propertyName = propertyNameText(property.name);
+              if (propertyName) changed = recordCapabilityAlias(property.initializer.text, propertyName, aliases) || changed;
+            }
           }
         }
       }
@@ -119,6 +130,7 @@ function networkCapabilityReference(
   aliases: ReadonlyMap<string, string>,
   hostAliases: ReadonlySet<string>
 ): string | undefined {
+  expression = unwrapExpression(expression);
   if (ts.isIdentifier(expression)) {
     if (rawNetworkCapabilities.has(expression.text)) return expression.text;
     return aliases.get(expression.text);
@@ -135,19 +147,72 @@ function networkCapabilityReference(
     && rawNetworkCapabilities.has(expression.argumentExpression.text)) {
     return expression.argumentExpression.text;
   }
+  if (ts.isCallExpression(expression)) {
+    const callee = unwrapExpression(expression.expression);
+    if (ts.isPropertyAccessExpression(callee) && callee.name.text === "bind") {
+      return networkCapabilityReference(callee.expression, aliases, hostAliases);
+    }
+    if (ts.isElementAccessExpression(callee)
+      && callee.argumentExpression
+      && ts.isStringLiteralLike(callee.argumentExpression)
+      && callee.argumentExpression.text === "bind") {
+      return networkCapabilityReference(callee.expression, aliases, hostAliases);
+    }
+  }
+  if (ts.isPropertyAccessExpression(expression) && expression.name.text === "bind") {
+    return networkCapabilityReference(expression.expression, aliases, hostAliases);
+  }
+  if (ts.isElementAccessExpression(expression)
+    && expression.argumentExpression
+    && ts.isStringLiteralLike(expression.argumentExpression)
+    && expression.argumentExpression.text === "bind") {
+    return networkCapabilityReference(expression.expression, aliases, hostAliases);
+  }
   return undefined;
+}
+
+function recordNetworkAlias(
+  name: string,
+  initializer: ts.Expression,
+  aliases: Map<string, string>,
+  hostAliases: Set<string>
+): boolean {
+  let changed = false;
+  if (isHostReference(initializer, hostAliases) && !hostAliases.has(name)) {
+    hostAliases.add(name);
+    changed = true;
+  }
+  const capability = networkCapabilityReference(initializer, aliases, hostAliases);
+  if (capability && !aliases.has(name)) {
+    aliases.set(name, capability);
+    changed = true;
+  }
+  return changed;
+}
+
+function recordCapabilityAlias(name: string, capability: string, aliases: Map<string, string>): boolean {
+  if (!rawNetworkCapabilities.has(capability) || aliases.get(name) === capability) return false;
+  aliases.set(name, capability);
+  return true;
+}
+
+function propertyNameText(name: ts.PropertyName): string | undefined {
+  return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name) ? name.text : undefined;
+}
+
+function unwrapExpression(expression: ts.Expression): ts.Expression {
+  while (ts.isParenthesizedExpression(expression)
+    || ts.isAsExpression(expression)
+    || ts.isTypeAssertionExpression(expression)
+    || ts.isNonNullExpression(expression)
+    || ts.isSatisfiesExpression(expression)) {
+    expression = expression.expression;
+  }
+  return expression;
 }
 
 function isHostReference(expression: ts.Expression, hostAliases: ReadonlySet<string>): boolean {
   return ts.isIdentifier(expression) && hostAliases.has(expression.text);
-}
-
-export function hasCallToIdentifier(source: string, identifier: string, fileName = "source.ts"): boolean {
-  let found = false;
-  visit(parseSource(source, fileName), (node) => {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === identifier) found = true;
-  });
-  return found;
 }
 
 export function containsIdentifier(source: string, identifier: string, fileName = "source.ts"): boolean {

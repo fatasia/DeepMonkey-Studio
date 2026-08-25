@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import dashboardFixture from "./__fixtures__/scene-v1-dashboard.json";
-import interactionFixture from "./__fixtures__/scene-v1-interaction.json";
-import pure3dFixture from "./__fixtures__/scene-v1-pure-3d.json";
+import dashboardFixture from "../../../test-fixtures/scene-v1-dashboard.json";
+import interactionFixture from "../../../test-fixtures/scene-v1-interaction.json";
+import pure3dFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
 import { assertApplicationDocument, type ApplicationDocument } from "./application.js";
 import { migrateSceneSnapshotV1 } from "./applicationMigration.js";
 import type { SceneSnapshot } from "./index.js";
