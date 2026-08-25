@@ -30,6 +30,10 @@ import {
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
   createUpdateDashboardNodeStateCommand,
+  alignDashboardFrames,
+  distributeDashboardFrames,
+  type DashboardAlignment,
+  type DashboardDistribution,
   type ApplicationInteractionResult,
   type StudioCommand
 } from "@bim-studio/studio-core";
@@ -41,6 +45,7 @@ import { DashboardWidgetView, useDashboardMetrics, widgetBackground, type Dashbo
 import type { RendererBackend } from "../viewer/ViewerEngine";
 
 const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"];
+interface SelectionRect { x: number; y: number; width: number; height: number; }
 
 export interface DashboardWorkspaceProps {
   locale: AppLocale;
@@ -102,10 +107,13 @@ export function DashboardWorkspace({
   const [selectedNodeIds, setSelectedNodeIds] = useState(normalizedInitialView.selectedNodeIds);
   const [runtimePreview, setRuntimePreview] = useState(false);
   const [draftFrames, setDraftFrames] = useState<Record<string, WidgetFrame>>({});
+  const [selectionRect, setSelectionRect] = useState<SelectionRect>();
+  const [marqueeMode, setMarqueeMode] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
   const clipboardRef = useRef<WidgetNode[]>([]);
   const selectedNode = page.nodes.find((node) => selectedNodeIds.includes(node.id));
+  const layoutSelectionCount = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.visible !== false && node.locked !== true).length;
   const dataWidgetConfigs = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
   const { metrics, connected } = useDashboardMetrics(project.id, dataWidgetConfigs);
   const runtimeMetrics = useMemo<Record<string, DashboardMetric>>(() => ({
@@ -125,6 +133,8 @@ export function DashboardWorkspace({
     setZoom(normalizedInitialView.zoom);
     setSelectedNodeIds(normalizedInitialView.selectedNodeIds.filter((id) => page.nodes.some((node) => node.id === id)));
     setDraftFrames({});
+    setSelectionRect(undefined);
+    setMarqueeMode(false);
     pageNameCommitRef.current = page.name;
     const frame = window.requestAnimationFrame(() => {
       if (!scrollRef.current) return;
@@ -289,6 +299,72 @@ export function DashboardWorkspace({
     if (frames.length > 0) onCommand(createUpdateDashboardNodeFramesCommand(page.id, frames));
   }
 
+  function layoutSelectedNodes(mode: DashboardAlignment | DashboardDistribution) {
+    const entries = page.nodes
+      .filter((node) => selectedNodeIds.includes(node.id) && node.visible !== false && node.locked !== true)
+      .map((node) => ({ nodeId: node.id, frame: node.frame }));
+    const next = mode === "horizontal" || mode === "vertical"
+      ? distributeDashboardFrames(entries, mode)
+      : alignDashboardFrames(entries, mode);
+    const changed = next.filter(({ nodeId, frame }) => {
+      const original = page.nodes.find((node) => node.id === nodeId)!.frame;
+      return frame.x !== original.x || frame.y !== original.y;
+    });
+    if (changed.length > 0) onCommand(createUpdateDashboardNodeFramesCommand(page.id, changed));
+  }
+
+  function beginMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || (!marqueeMode && !event.shiftKey && event.target !== event.currentTarget)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const pointerId = event.pointerId;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const additive = event.ctrlKey || event.metaKey;
+    const pointAt = (clientX: number, clientY: number) => ({
+      x: Math.max(0, Math.min(page.width, (clientX - bounds.left) / zoom)),
+      y: Math.max(0, Math.min(page.height, (clientY - bounds.top) / zoom))
+    });
+    const start = pointAt(event.clientX, event.clientY);
+    const rectangleAt = (clientX: number, clientY: number): SelectionRect => {
+      const end = pointAt(clientX, clientY);
+      return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) };
+    };
+    const move = (pointer: PointerEvent) => {
+      if (pointer.pointerId === pointerId) setSelectionRect(rectangleAt(pointer.clientX, pointer.clientY));
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+    };
+    const finish = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      cleanup();
+      const rectangle = rectangleAt(pointer.clientX, pointer.clientY);
+      setSelectionRect(undefined);
+      const hits = rectangle.width < 3 && rectangle.height < 3 ? [] : page.nodes
+        .filter((node) => node.visible !== false
+          && node.frame.x >= rectangle.x
+          && node.frame.y >= rectangle.y
+          && node.frame.x + node.frame.width <= rectangle.x + rectangle.width
+          && node.frame.y + node.frame.height <= rectangle.y + rectangle.height)
+        .map((node) => node.id);
+      const ids = additive ? [...new Set([...selectedNodeIds, ...hits])] : hits;
+      setSelectedNodeIds(ids);
+      onSelectionChange(ids.map((id) => ({ kind: "widget", id })));
+      setMarqueeMode(false);
+    };
+    const cancel = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      cleanup();
+      setSelectionRect(undefined);
+    };
+    setSelectionRect({ x: start.x, y: start.y, width: 0, height: 0 });
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
+  }
+
   useEffect(() => {
     if (runtimePreview) return;
     const handleShortcut = (event: KeyboardEvent) => {
@@ -316,6 +392,7 @@ export function DashboardWorkspace({
       if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); deleteSelectedNodes(); return; }
       if (event.key === "Escape") {
         setSelectedNodeIds([]);
+        setMarqueeMode(false);
         onSelectionChange([]);
         return;
       }
@@ -400,13 +477,25 @@ export function DashboardWorkspace({
 
     <section className="dashboard-design-surface">
       <div className="dashboard-canvas-toolbar">
-        <span>{page.width} × {page.height}<small>{tr(locale, "方向键微调 · Shift 10px · Ctrl/Cmd+C/V/D", "Arrows nudge · Shift 10px · Ctrl/Cmd+C/V/D")}</small></span>
+        <span>{page.width} × {page.height}<small>{tr(locale, "Shift 拖动框选 · 方向键微调 · Shift 10px · Ctrl/Cmd+C/V/D", "Shift-drag selects · Arrows nudge · Shift 10px · Ctrl/Cmd+C/V/D")}</small></span>
+        <div className="dashboard-layout-tools">
+          <button className={marqueeMode ? "active" : ""} title={tr(locale, "框选组件（也可按住 Shift 拖动）", "Box select (or hold Shift while dragging)")} onClick={() => setMarqueeMode((active) => !active)}>框</button>
+          <button disabled={layoutSelectionCount < 2} title={tr(locale, "左对齐", "Align left")} onClick={() => layoutSelectedNodes("left")}>左</button>
+          <button disabled={layoutSelectionCount < 2} title={tr(locale, "水平居中", "Center horizontally")} onClick={() => layoutSelectedNodes("horizontal-center")}>中</button>
+          <button disabled={layoutSelectionCount < 2} title={tr(locale, "右对齐", "Align right")} onClick={() => layoutSelectedNodes("right")}>右</button>
+          <button disabled={layoutSelectionCount < 2} title={tr(locale, "顶对齐", "Align top")} onClick={() => layoutSelectedNodes("top")}>上</button>
+          <button disabled={layoutSelectionCount < 2} title={tr(locale, "垂直居中", "Center vertically")} onClick={() => layoutSelectedNodes("vertical-center")}>中</button>
+          <button disabled={layoutSelectionCount < 2} title={tr(locale, "底对齐", "Align bottom")} onClick={() => layoutSelectedNodes("bottom")}>下</button>
+          <button disabled={layoutSelectionCount < 3} title={tr(locale, "水平等距", "Distribute horizontally")} onClick={() => layoutSelectedNodes("horizontal")}>横均</button>
+          <button disabled={layoutSelectionCount < 3} title={tr(locale, "垂直等距", "Distribute vertically")} onClick={() => layoutSelectedNodes("vertical")}>纵均</button>
+        </div>
         <div><button onClick={() => setZoom((value) => Math.max(0.1, Number((value - 0.1).toFixed(2))))}><Minus size={13} /></button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => Math.min(2, Number((value + 0.1).toFixed(2))))}><Plus size={13} /></button></div>
       </div>
       <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
         <div className="dashboard-artboard-stage" style={{ width: page.width * zoom, height: page.height * zoom }}>
-          <div className="dashboard-artboard" style={{ width: page.width, height: page.height, transform: `scale(${zoom})` }}>
+          <div className={`dashboard-artboard ${marqueeMode ? "marquee-mode" : ""}`} style={{ width: page.width, height: page.height, transform: `scale(${zoom})` }} onPointerDownCapture={beginMarqueeSelection}>
             {page.nodes.filter((node) => node.visible !== false).map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} frame={draftFrames[node.id] ?? node.frame} metric={node.kind === "data-widget" ? runtimeMetrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} onTransformStart={(event, mode) => beginNodeTransform(event, node, mode)} />)}
+            {selectionRect && <div className="dashboard-selection-rect" style={{ left: selectionRect.x, top: selectionRect.y, width: selectionRect.width, height: selectionRect.height }} />}
           </div>
         </div>
       </div>
