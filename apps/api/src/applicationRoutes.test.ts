@@ -38,6 +38,54 @@ describe("application routes", () => {
     await app.close();
   });
 
+  it("rejects repeated creation without overwriting the original draft", async () => {
+    const { app, store } = await harness();
+    const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+    document.metadata.projectId = "default";
+    expect((await app.inject({ method: "POST", url: "/api/projects/default/applications", payload: document })).statusCode).toBe(201);
+
+    document.metadata.name = "不应覆盖原稿";
+    const duplicate = await app.inject({ method: "POST", url: "/api/projects/default/applications", payload: document });
+
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toEqual({ message: "应用 ID 已存在", currentRevision: 1 });
+    expect(store.getApplication("default", document.metadata.id)?.metadata.name).toBe("纯三维");
+    await app.close();
+  });
+
+  it("rejects a cross-project duplicate and keeps public lookup and history unambiguous", async () => {
+    const { app, store } = await harness();
+    const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+    document.metadata.projectId = "default";
+    expect((await app.inject({ method: "POST", url: "/api/projects/default/applications", payload: document })).statusCode).toBe(201);
+    const secondProject = await store.createProject("第二项目");
+    const duplicate = structuredClone(document);
+    duplicate.metadata.projectId = secondProject.id;
+    duplicate.metadata.name = "跨项目冲突稿";
+
+    const conflict = await app.inject({
+      method: "POST",
+      url: `/api/projects/${secondProject.id}/applications`,
+      payload: duplicate
+    });
+
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toEqual({ message: "应用 ID 已存在", currentRevision: 1 });
+    expect(store.getApplication(secondProject.id, document.metadata.id)).toBeUndefined();
+    expect(store.getApplication("default", document.metadata.id)?.metadata.name).toBe("纯三维");
+
+    const publication = await app.inject({
+      method: "POST",
+      url: `/api/projects/default/applications/${document.metadata.id}/publish`
+    });
+    expect(publication.statusCode).toBe(201);
+    const publicationId = publication.json().id as string;
+    expect((await app.inject({ method: "GET", url: `/api/public/applications/${document.metadata.id}` })).json().id).toBe(publicationId);
+    expect((await app.inject({ method: "GET", url: `/api/public/applications/${document.metadata.id}/revisions/${publicationId}` })).json().id).toBe(publicationId);
+    expect(store.listApplicationPublications(document.metadata.id).map((item) => item.id)).toEqual([publicationId]);
+    await app.close();
+  });
+
   it("creates immutable publication records and only moves the active pointer", async () => {
     const { app, store } = await harness();
     const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);

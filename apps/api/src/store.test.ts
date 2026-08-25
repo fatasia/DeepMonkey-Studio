@@ -1,7 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { PublishedSceneRecord, SceneSnapshot } from "@bim-studio/contracts";
+import pureFixture from "../../../packages/contracts/src/__fixtures__/scene-v1-pure-3d.json";
+import { migrateSceneSnapshotV1, type PublishedSceneRecord, type SceneSnapshot } from "@bim-studio/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { JsonStore, runProcess } from "./store.js";
 
@@ -62,6 +63,27 @@ describe("JsonStore scene management", () => {
     expect(store.getPublication(source.id)?.snapshot.name).toBe("测试场景");
     await store.removeScene(source.projectId, source.id);
     expect(store.getPublication(source.id)).toBeUndefined();
+  });
+});
+
+describe("JsonStore application management", () => {
+  it("rejects a cross-project duplicate application ID", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-studio-store-"));
+    temporaryDirectories.push(directory);
+    const store = new JsonStore(directory);
+    await store.init();
+    const original = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+    original.metadata.projectId = "default";
+    await store.saveApplication(original);
+    const secondProject = await store.createProject("第二项目");
+    const duplicate = structuredClone(original);
+    duplicate.metadata.projectId = secondProject.id;
+
+    await expect(store.saveApplication(duplicate)).rejects.toThrow(
+      `应用 ID ${original.metadata.id} 已存在于项目 default`
+    );
+    expect(store.getApplicationById(original.metadata.id)?.metadata.projectId).toBe("default");
+    expect(store.getApplication(secondProject.id, original.metadata.id)).toBeUndefined();
   });
 });
 

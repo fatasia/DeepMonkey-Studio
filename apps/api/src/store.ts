@@ -48,6 +48,7 @@ export interface MetadataStore {
   removePublication(sceneId: string): Promise<boolean>;
   listApplications(projectId: string): ApplicationDocument[];
   getApplication(projectId: string, applicationId: string): ApplicationDocument | undefined;
+  getApplicationById(applicationId: string): ApplicationDocument | undefined;
   saveApplication(application: ApplicationDocument): Promise<ApplicationDocument>;
   removeApplication(projectId: string, applicationId: string): Promise<boolean>;
   getPublishedApplication(publicationId: string): PublishedApplicationRecord | undefined;
@@ -422,8 +423,17 @@ export class JsonStore implements MetadataStore {
     return item ? structuredClone(item) : undefined;
   }
 
+  getApplicationById(applicationId: string): ApplicationDocument | undefined {
+    const item = (this.document.applications ?? []).find((candidate) => candidate.metadata.id === applicationId);
+    return item ? structuredClone(item) : undefined;
+  }
+
   async saveApplication(application: ApplicationDocument): Promise<ApplicationDocument> {
     this.document.applications ??= [];
+    const existing = this.getApplicationById(application.metadata.id);
+    if (existing && existing.metadata.projectId !== application.metadata.projectId) {
+      throw new Error(`应用 ID ${application.metadata.id} 已存在于项目 ${existing.metadata.projectId}`);
+    }
     const index = this.document.applications.findIndex((item) =>
       item.metadata.projectId === application.metadata.projectId && item.metadata.id === application.metadata.id);
     if (index >= 0) this.document.applications[index] = structuredClone(application);
