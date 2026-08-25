@@ -102,8 +102,25 @@ export interface UpdateDashboardNodeStateCommand {
   readonly payload: {
     readonly pageId: string;
     readonly nodeId: string;
-    readonly state: { readonly visible?: boolean; readonly locked?: boolean };
+    readonly state: DashboardNodeStatePatch;
   };
+}
+
+export interface UpdateDashboardNodeStatesCommand {
+  readonly id: string;
+  readonly type: "dashboard.node.states.update";
+  readonly label: string;
+  readonly payload: {
+    readonly pageId: string;
+    readonly states: ReadonlyArray<{ readonly nodeId: string; readonly state: DashboardNodeStatePatch }>;
+  };
+}
+
+export interface DashboardNodeStatePatch {
+  readonly visible?: boolean;
+  readonly selectable?: boolean;
+  readonly locked?: boolean;
+  readonly groupId?: string | null;
 }
 
 export interface UpdateDashboardDataWidgetCommand {
@@ -133,6 +150,7 @@ export type StudioCommand =
   | InsertDashboardNodesCommand
   | DeleteDashboardNodesCommand
   | UpdateDashboardNodeStateCommand
+  | UpdateDashboardNodeStatesCommand
   | UpdateDashboardDataWidgetCommand
   | DeleteDashboardNodeCommand;
 
@@ -240,14 +258,26 @@ export function createDeleteDashboardNodesCommand(pageId: string, nodeIds: reado
 export function createUpdateDashboardNodeStateCommand(
   pageId: string,
   nodeId: string,
-  state: { visible?: boolean; locked?: boolean }
+  state: DashboardNodeStatePatch
 ): UpdateDashboardNodeStateCommand {
   return {
     id: commandId(),
     type: "dashboard.node.state.update",
-    label: state.locked === true ? "锁定二维组件" : state.locked === false ? "解锁二维组件" : state.visible === false ? "隐藏二维组件" : "显示二维组件",
+    label: state.locked === true ? "锁定二维组件"
+      : state.locked === false ? "解锁二维组件"
+        : state.selectable === false ? "禁止画布选取二维组件"
+          : state.selectable === true ? "允许画布选取二维组件"
+            : state.visible === false ? "隐藏二维组件" : "显示二维组件",
     payload: { pageId, nodeId, state: { ...state } }
   };
+}
+
+export function createUpdateDashboardNodeStatesCommand(
+  pageId: string,
+  states: ReadonlyArray<{ nodeId: string; state: DashboardNodeStatePatch }>,
+  label = "批量更新二维组件状态"
+): UpdateDashboardNodeStatesCommand {
+  return { id: commandId(), type: "dashboard.node.states.update", label, payload: { pageId, states: structuredClone(states) } };
 }
 
 export function createUpdateDashboardDataWidgetCommand(pageId: string, nodeId: string, widget: DashboardDataWidgetConfig): UpdateDashboardDataWidgetCommand {
@@ -393,7 +423,18 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
       }
       return updatePage(document, page.id, (candidate) => ({
         ...candidate,
-        nodes: candidate.nodes.map((node) => node.id === command.payload.nodeId ? { ...node, ...command.payload.state } : node)
+        nodes: candidate.nodes.map((node) => node.id === command.payload.nodeId ? applyNodeState(node, command.payload.state) : node)
+      }));
+    }
+    case "dashboard.node.states.update": {
+      const page = requirePage(document, command.payload.pageId);
+      const states = new Map(command.payload.states.map((entry) => [entry.nodeId, entry.state]));
+      for (const nodeId of states.keys()) {
+        if (!page.nodes.some((node) => node.id === nodeId)) throw new Error(`页面 ${page.id} 中不存在组件 ${nodeId}`);
+      }
+      return updatePage(document, page.id, (candidate) => ({
+        ...candidate,
+        nodes: candidate.nodes.map((node) => states.has(node.id) ? applyNodeState(node, states.get(node.id)!) : node)
       }));
     }
     case "dashboard.data-widget.update": {
@@ -435,4 +476,10 @@ function requirePage(document: ApplicationDocument, pageId: string) {
   const page = document.pages.find((candidate) => candidate.id === pageId);
   if (!page) throw new Error(`应用中不存在页面 ${pageId}`);
   return page;
+}
+
+function applyNodeState(node: WidgetNode, state: DashboardNodeStatePatch): WidgetNode {
+  const next = { ...node, ...state };
+  if (state.groupId === null) delete next.groupId;
+  return next as WidgetNode;
 }

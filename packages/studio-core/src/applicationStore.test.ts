@@ -17,7 +17,8 @@ import {
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
-  createUpdateDashboardNodeStateCommand
+  createUpdateDashboardNodeStateCommand,
+  createUpdateDashboardNodeStatesCommand
 } from "./index.js";
 
 function document() {
@@ -123,8 +124,9 @@ describe("StudioCommand", () => {
 
     store.dispatch(createInsertDashboardNodesCommand(page.id, copies));
     store.dispatch(createUpdateDashboardNodeStateCommand(page.id, copies[0]!.id, { locked: true, visible: false }));
+    store.dispatch(createUpdateDashboardNodeStatesCommand(page.id, copies.map((node) => ({ nodeId: node.id, state: { selectable: false, groupId: "group:1" } })), "编组"));
     expect(store.getState().document?.pages[0]?.nodes).toHaveLength(originals + 2);
-    expect(store.getState().document?.pages[0]?.nodes.find((node) => node.id === copies[0]!.id)).toMatchObject({ locked: true, visible: false });
+    expect(store.getState().document?.pages[0]?.nodes.find((node) => node.id === copies[0]!.id)).toMatchObject({ locked: true, visible: false, selectable: false, groupId: "group:1" });
 
     store.dispatch(createDeleteDashboardNodesCommand(page.id, copies.map((node) => node.id)));
     expect(store.getState().document?.pages[0]?.nodes).toHaveLength(originals);

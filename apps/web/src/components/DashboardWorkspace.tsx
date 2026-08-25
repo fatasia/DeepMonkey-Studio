@@ -34,6 +34,7 @@ import {
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
   createUpdateDashboardNodeStateCommand,
+  createUpdateDashboardNodeStatesCommand,
   alignDashboardFrames,
   distributeDashboardFrames,
   type DashboardAlignment,
@@ -113,6 +114,7 @@ export function DashboardWorkspace({
   const [draftFrames, setDraftFrames] = useState<Record<string, WidgetFrame>>({});
   const [selectionRect, setSelectionRect] = useState<SelectionRect>();
   const [marqueeMode, setMarqueeMode] = useState(false);
+  const [snapEnabled, setSnapEnabled] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
   const clipboardRef = useRef<WidgetNode[]>([]);
@@ -172,15 +174,17 @@ export function DashboardWorkspace({
     onViewStateChange(currentView());
   }
 
-  function selectNode(node: WidgetNode, additive: boolean) {
-    setSelectedNodeIds((current) => {
-      const next = additive
-        ? current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id]
-        : [node.id];
-      onSelectionChange(next.map((id) => ({ kind: "widget", id })));
-      onNodeInteraction(node.id);
-      return next;
-    });
+  function selectNode(node: WidgetNode, additive: boolean, force = false) {
+    if (!force && node.selectable === false) return;
+    const groupIds = !additive && node.groupId
+      ? page.nodes.filter((candidate) => candidate.groupId === node.groupId && candidate.visible !== false).map((candidate) => candidate.id)
+      : undefined;
+    const next = groupIds ?? (additive
+      ? selectedNodeIds.includes(node.id) ? selectedNodeIds.filter((id) => id !== node.id) : [...selectedNodeIds, node.id]
+      : [node.id]);
+    setSelectedNodeIds(next);
+    onSelectionChange(next.map((id) => ({ kind: "widget", id })));
+    onNodeInteraction(node.id);
   }
 
   function updateSelectedFrame(field: keyof WidgetFrame, value: number) {
@@ -204,8 +208,18 @@ export function DashboardWorkspace({
     const startY = event.clientY;
     const pointerId = event.pointerId;
     const framesAt = (clientX: number, clientY: number): Record<string, WidgetFrame> => {
-      const dx = Math.round((clientX - startX) / zoom);
-      const dy = Math.round((clientY - startY) / zoom);
+      let dx = Math.round((clientX - startX) / zoom);
+      let dy = Math.round((clientY - startY) / zoom);
+      if (snapEnabled) {
+        const anchor = initial.get(node.id)!;
+        if (mode === "move") {
+          dx = Math.round((anchor.x + dx) / 8) * 8 - anchor.x;
+          dy = Math.round((anchor.y + dy) / 8) * 8 - anchor.y;
+        } else {
+          dx = Math.round((anchor.width + dx) / 8) * 8 - anchor.width;
+          dy = Math.round((anchor.height + dy) / 8) * 8 - anchor.height;
+        }
+      }
       return Object.fromEntries([...initial].map(([nodeId, frame]) => {
         if (mode === "resize") return [nodeId, {
           ...frame,
@@ -255,6 +269,7 @@ export function DashboardWorkspace({
   function pasteCopiedNodes() {
     if (clipboardRef.current.length === 0 || busy) return;
     const topZIndex = Math.max(0, ...page.nodes.map((node) => node.zIndex));
+    const groupIds = new Map([...new Set(clipboardRef.current.flatMap((node) => node.groupId ? [node.groupId] : []))].map((groupId) => [groupId, `group:${crypto.randomUUID()}`]));
     const nodes = clipboardRef.current.map((source, index): WidgetNode => ({
       ...structuredClone(source),
       id: `${source.kind}:${crypto.randomUUID()}`,
@@ -265,7 +280,8 @@ export function DashboardWorkspace({
       },
       zIndex: topZIndex + index + 1,
       visible: true,
-      locked: false
+      locked: false,
+      ...(source.groupId ? { groupId: groupIds.get(source.groupId)! } : {})
     }));
     clipboardRef.current = nodes.map((node) => structuredClone(node));
     onCommand(createInsertDashboardNodesCommand(page.id, nodes));
@@ -317,6 +333,19 @@ export function DashboardWorkspace({
     if (changed.length > 0) onCommand(createUpdateDashboardNodeFramesCommand(page.id, changed));
   }
 
+  function groupSelectedNodes() {
+    const nodes = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.locked !== true);
+    if (nodes.length < 2) return;
+    const groupId = `group:${crypto.randomUUID()}`;
+    onCommand(createUpdateDashboardNodeStatesCommand(page.id, nodes.map((node) => ({ nodeId: node.id, state: { groupId } })), `编组 ${nodes.length} 个二维组件`));
+  }
+
+  function ungroupSelectedNodes() {
+    const nodes = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.groupId && node.locked !== true);
+    if (nodes.length === 0) return;
+    onCommand(createUpdateDashboardNodeStatesCommand(page.id, nodes.map((node) => ({ nodeId: node.id, state: { groupId: null } })), `解组 ${nodes.length} 个二维组件`));
+  }
+
   function beginMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || (!marqueeMode && !event.shiftKey && event.target !== event.currentTarget)) return;
     event.preventDefault();
@@ -347,7 +376,7 @@ export function DashboardWorkspace({
       const rectangle = rectangleAt(pointer.clientX, pointer.clientY);
       setSelectionRect(undefined);
       const hits = rectangle.width < 3 && rectangle.height < 3 ? [] : page.nodes
-        .filter((node) => node.visible !== false
+        .filter((node) => node.visible !== false && node.selectable !== false
           && node.frame.x >= rectangle.x
           && node.frame.y >= rectangle.y
           && node.frame.x + node.frame.width <= rectangle.x + rectangle.width
@@ -378,7 +407,7 @@ export function DashboardWorkspace({
       const commandKey = event.ctrlKey || event.metaKey;
       if (commandKey && key === "a") {
         event.preventDefault();
-        const ids = page.nodes.filter((node) => node.visible !== false).map((node) => node.id);
+        const ids = page.nodes.filter((node) => node.visible !== false && node.selectable !== false).map((node) => node.id);
         setSelectedNodeIds(ids);
         onSelectionChange(ids.map((id) => ({ kind: "widget", id })));
         return;
@@ -430,11 +459,12 @@ export function DashboardWorkspace({
   function duplicateDashboardPage() {
     const pageId = `page:${crypto.randomUUID()}`;
     const nodeIds = new Map(page.nodes.map((node) => [node.id, `${node.kind}:${crypto.randomUUID()}`]));
+    const groupIds = new Map([...new Set(page.nodes.flatMap((node) => node.groupId ? [node.groupId] : []))].map((groupId) => [groupId, `group:${crypto.randomUUID()}`]));
     const nextPage: DashboardPageDocument = {
       ...structuredClone(page),
       id: pageId,
       name: tr(locale, `${page.name} 副本`, `${page.name} copy`),
-      nodes: page.nodes.map((node) => ({ ...structuredClone(node), id: nodeIds.get(node.id)! }))
+      nodes: page.nodes.map((node) => ({ ...structuredClone(node), id: nodeIds.get(node.id)!, ...(node.groupId ? { groupId: groupIds.get(node.groupId)! } : {}) }))
     };
     const interactions = application.interactions.flatMap((flow) => {
       const source = flow.source.kind === "page" && flow.source.id === page.id
@@ -520,8 +550,9 @@ export function DashboardWorkspace({
       <section>
         <div className="dashboard-panel-label"><span>{tr(locale, "图层", "Layers")}</span><small>{page.nodes.length}</small></div>
         {[...page.nodes].sort((left, right) => right.zIndex - left.zIndex).map((node) => <div className={`dashboard-layer-row ${selectedNodeIds.includes(node.id) ? "active" : ""} ${node.visible === false ? "hidden" : ""}`} key={node.id}>
-          <button className="dashboard-layer-select" onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey)}>{node.kind === "scene-viewport" ? <Box size={14} /> : <Layers3 size={14} />}<span>{nodeLabel(node)}</span><small>{node.zIndex}</small></button>
+          <button className="dashboard-layer-select" onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey, true)}>{node.kind === "scene-viewport" ? <Box size={14} /> : <Layers3 size={14} />}<span>{nodeLabel(node)}</span><small>{node.zIndex}</small></button>
           <button className="dashboard-layer-action" title={node.visible === false ? tr(locale, "显示图层", "Show layer") : tr(locale, "隐藏图层", "Hide layer")} onClick={() => onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { visible: node.visible === false }))}>{node.visible === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+          <button className={`dashboard-layer-action dashboard-layer-selectable ${node.selectable === false ? "off" : ""}`} title={node.selectable === false ? tr(locale, "允许画布选取", "Allow canvas selection") : tr(locale, "禁止画布选取", "Prevent canvas selection")} onClick={() => onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { selectable: node.selectable === false }))}>{node.selectable === false ? "禁" : "选"}</button>
           <button className={`dashboard-layer-action ${node.locked ? "active" : ""}`} title={node.locked ? tr(locale, "解锁图层", "Unlock layer") : tr(locale, "锁定图层", "Lock layer")} onClick={() => onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { locked: !node.locked }))}>{node.locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
         </div>)}
       </section>
@@ -532,6 +563,9 @@ export function DashboardWorkspace({
         <span>{page.width} × {page.height}<small>{tr(locale, "Shift 拖动框选 · 方向键微调 · Shift 10px · Ctrl/Cmd+C/V/D", "Shift-drag selects · Arrows nudge · Shift 10px · Ctrl/Cmd+C/V/D")}</small></span>
         <div className="dashboard-layout-tools">
           <button className={marqueeMode ? "active" : ""} title={tr(locale, "框选组件（也可按住 Shift 拖动）", "Box select (or hold Shift while dragging)")} onClick={() => setMarqueeMode((active) => !active)}>框</button>
+          <button className={snapEnabled ? "active" : ""} title={tr(locale, "8px 网格吸附", "Snap to 8px grid")} onClick={() => setSnapEnabled((enabled) => !enabled)}>吸</button>
+          <button disabled={selectedNodeIds.filter((id) => page.nodes.some((node) => node.id === id && node.locked !== true)).length < 2} title={tr(locale, "编组", "Group")} onClick={groupSelectedNodes}>组</button>
+          <button disabled={!page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.groupId && node.locked !== true)} title={tr(locale, "解组", "Ungroup")} onClick={ungroupSelectedNodes}>解</button>
           <button disabled={layoutSelectionCount < 2} title={tr(locale, "左对齐", "Align left")} onClick={() => layoutSelectedNodes("left")}>左</button>
           <button disabled={layoutSelectionCount < 2} title={tr(locale, "水平居中", "Center horizontally")} onClick={() => layoutSelectedNodes("horizontal-center")}>中</button>
           <button disabled={layoutSelectionCount < 2} title={tr(locale, "右对齐", "Align right")} onClick={() => layoutSelectedNodes("right")}>右</button>
@@ -625,7 +659,7 @@ function DashboardNode({ application, project, node, frame, metric, selected, lo
   onEnterScene: (sceneId: string) => void;
   onTransformStart: (event: ReactPointerEvent<HTMLButtonElement>, mode: "move" | "resize") => void;
 }) {
-  const style = { left: frame.x, top: frame.y, width: frame.width, height: frame.height, zIndex: node.zIndex };
+  const style = { left: frame.x, top: frame.y, width: frame.width, height: frame.height, zIndex: node.zIndex, ...(!runtime && node.selectable === false ? { pointerEvents: "none" as const } : {}) };
   useEffect(() => {
     if (node.kind !== "data-widget") return;
     const task = window.setTimeout(() => onInteraction("load"), 0);

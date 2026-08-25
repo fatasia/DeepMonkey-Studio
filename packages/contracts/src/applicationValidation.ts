@@ -72,7 +72,9 @@ function validateWidgetNode(value: unknown, path: string): void {
   required(object, "frame", validateWidgetFrame, path);
   required(object, "zIndex", expectNumber, path);
   optional(object, "visible", expectBoolean, path);
+  optional(object, "selectable", expectBoolean, path);
   optional(object, "locked", expectBoolean, path);
+  optional(object, "groupId", expectString, path);
   if (object.kind === "scene-viewport") {
     required(object, "sceneId", expectString, path);
     optional(object, "cameraViewId", expectString, path);

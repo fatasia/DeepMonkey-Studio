@@ -69,7 +69,7 @@ button { color: inherit; }
 .dashboard-pages-panel section > button.active { box-shadow: inset 2px 0 #d4aa4f; }
 .dashboard-pages-panel section > button span { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-pages-panel section > button small { color: #68757b; font-size: 7px; }
-.dashboard-layer-row { display: grid; min-width: 0; align-items: center; border-radius: 5px; grid-template-columns: minmax(0,1fr) 25px 25px; }
+.dashboard-layer-row { display: grid; min-width: 0; align-items: center; border-radius: 5px; grid-template-columns: minmax(0,1fr) 25px 25px 25px; }
 .dashboard-layer-row:hover,.dashboard-layer-row.active { background: #222b2f; }
 .dashboard-layer-row.active { box-shadow: inset 2px 0 #d4aa4f; }
 .dashboard-layer-row.hidden .dashboard-layer-select { opacity: .48; }
@@ -78,6 +78,8 @@ button { color: inherit; }
 .dashboard-layer-select small { color: #68757b; font-size: 7px; }
 .dashboard-layer-action { display: grid; width: 23px; height: 23px; padding: 0; place-items: center; color: #66747b; border: 0; border-radius: 4px; background: transparent; cursor: pointer; }
 .dashboard-layer-action:hover,.dashboard-layer-action.active { color: #e3bd65; background: rgba(215,173,81,.1); }
+.dashboard-layer-selectable { font-size: 7px; }
+.dashboard-layer-selectable.off { color: #c46b62; }
 .dashboard-component-library > div:last-child { display: grid; gap: 5px; grid-template-columns: 1fr 1fr; }
 .dashboard-component-library > div:last-child button { display: inline-flex; min-width: 0; height: 28px; align-items: center; gap: 5px; padding: 0 7px; color: #849198; border: 1px solid #303b40; border-radius: 5px; background: #131a1d; font-size: 8px; cursor: pointer; }
 .dashboard-component-library > div:last-child button:hover { color: #e0b85c; border-color: #675329; background: rgba(212,170,79,.07); }
