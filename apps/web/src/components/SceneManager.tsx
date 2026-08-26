@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { BookOpen, Box, CalendarDays, Copy, Database, Eye, ExternalLink, FileImage, FileUp, FileVideo, Gauge, Image as ImageIcon, Layers3, Network, Pencil, Plus, RefreshCw, Rocket, ScanSearch, Search, Trash2, Undo2, Video, X } from "lucide-react";
+import { BookOpen, Box, CalendarDays, Copy, Database, Eye, ExternalLink, Factory, FileImage, FileUp, FileVideo, Gauge, Image as ImageIcon, Layers3, Network, Pencil, Plus, RefreshCw, Rocket, ScanSearch, Search, Trash2, Undo2, Video, X } from "lucide-react";
 import type { ConversionStatus, ModelRecord, ProjectAssetRecord, ProjectRecord, SceneSnapshot, SystemBrandingSettings } from "@bim-studio/contracts";
 import { SceneExportMenu } from "./SceneExportMenu";
 import type { AppLocale } from "../i18n";
@@ -21,6 +21,7 @@ interface SceneManagerProps {
   onRenameProject: () => void;
   onDeleteProject: () => void;
   onCreate: (name: string) => Promise<void>;
+  onCreateShowcase: () => Promise<void>;
   onOpen: (scene: SceneSnapshot) => Promise<void>;
   onCopy: (scene: SceneSnapshot) => Promise<void>;
   onRename: (scene: SceneSnapshot, name: string) => Promise<void>;
@@ -55,6 +56,7 @@ export function SceneManager({
   onRenameProject,
   onDeleteProject,
   onCreate,
+  onCreateShowcase,
   onOpen,
   onCopy,
   onRename,
@@ -83,6 +85,7 @@ export function SceneManager({
   const [busy, setBusy] = useState(false);
   const [modelLibraryOpen, setModelLibraryOpen] = useState(false);
   const [modelLibraryBusy, setModelLibraryBusy] = useState(false);
+  const [showcaseBusy, setShowcaseBusy] = useState(false);
   const [assetTab, setAssetTab] = useState<"all" | "model" | "image" | "video">("all");
   const [assetSearch, setAssetSearch] = useState("");
   const modelUploadRef = useRef<HTMLInputElement>(null);
@@ -115,6 +118,15 @@ export function SceneManager({
       setDialogMode(undefined);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function createShowcase() {
+    setShowcaseBusy(true);
+    try {
+      await onCreateShowcase();
+    } finally {
+      setShowcaseBusy(false);
     }
   }
 
@@ -243,6 +255,17 @@ export function SceneManager({
             <div><strong>{scenes.length}</strong><span>{tr(locale, "场景", "Scenes")}</span></div>
           </div>
         </div>
+
+        <section className="manager-showcase" aria-label={tr(locale, "内置综合案例", "Built-in showcase")}>
+          <div className="manager-showcase-icon"><Factory size={25} /></div>
+          <div className="manager-showcase-copy">
+            <span className="eyebrow">EDITABLE SHOWCASE</span>
+            <strong>{tr(locale, "智造园区综合案例", "Smart industrial campus")}</strong>
+            <p>{tr(locale, "一键创建 4K 看板、四级 2D/3D 场景、楼层与部件拆解、巡检视角、AGV、图片/视频/实时监控，以及直连 HTTP/WebSocket 数据。", "Create an editable 4K dashboard, four connected 2D/3D levels, floor and component decomposition, inspection cameras, AGVs, media, monitoring, and direct HTTP/WebSocket data.")}</p>
+          </div>
+          <div className="manager-showcase-tags"><span>4K 2D</span><span>LIVE 3D</span><span>AGV</span><span>HTTP / WS</span></div>
+          <button className="button primary manager-showcase-action" disabled={!project || showcaseBusy} onClick={() => void createShowcase()}>{showcaseBusy ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />}{showcaseBusy ? tr(locale, "正在创建…", "Creating…") : tr(locale, "创建可编辑案例", "Create editable showcase")}</button>
+        </section>
 
         {scenes.length > 0 ? (
           <div className="scene-card-grid">

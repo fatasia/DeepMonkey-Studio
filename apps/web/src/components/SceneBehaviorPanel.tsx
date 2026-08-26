@@ -5,6 +5,7 @@ import { AlertTriangle, Braces, CircleStop, Pause, Play, Plus, RotateCcw, Save, 
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
+import { ProfessionalCodeEditor } from "./ProfessionalCodeEditor";
 
 export interface SceneBehaviorLogEntry {
   id: string;
@@ -95,7 +96,7 @@ export function SceneBehaviorPanel(props: {
             <button disabled={!dirty} onClick={() => setDraft(structuredClone(selected!))}><RotateCcw size={13} />{tr(props.locale, "还原", "Revert")}</button>
             <button className="danger" onClick={() => { if (window.confirm(tr(props.locale, `删除“${draft.name}”吗？`, `Delete “${draft.name}”?`))) props.onDelete(draft.id); }}><Trash2 size={13} /></button>
           </div>
-          <textarea className="behavior-code" spellCheck={false} value={draft.code} onChange={(event) => setDraft({ ...draft, code: event.target.value })} aria-label={tr(props.locale, "行为脚本代码", "Behavior script code")} />
+          <ProfessionalCodeEditor locale={props.locale} path={`bim-studio://behavior/${draft.id}.js`} value={draft.code} onChange={(code) => setDraft({ ...draft, code })} onSave={() => { if (dirty && draft.name.trim()) props.onUpsert(draft); }} onRun={props.onRun} />
           <footer><span>JavaScript · Scene SDK 1.0</span><span>{draft.code.split("\n").length} {tr(props.locale, "行", "lines")}</span>{dirty && <em>{tr(props.locale, "有未应用的修改", "Unapplied changes")}</em>}</footer>
         </main>
         <aside className="behavior-inspector">

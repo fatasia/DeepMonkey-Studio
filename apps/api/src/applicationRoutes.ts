@@ -3,7 +3,8 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   assertApplicationDocument,
   assertPathSafeResourceId,
-  type ApplicationDocument
+  type ApplicationDocument,
+  type SceneSnapshot
 } from "@bim-studio/contracts";
 import type { MetadataStore } from "./store.js";
 
@@ -80,6 +81,28 @@ export async function registerApplicationRoutes(app: FastifyInstance, store: Met
       return reply.code(409).send({ message: "应用已被其他修改更新", currentRevision: result.currentRevision });
     }
     return result.application;
+  });
+
+  app.put<{ Params: ApplicationParams; Body: { application?: unknown; scene?: SceneSnapshot } }>("/api/projects/:projectId/applications/:applicationId/workspace", async (request, reply) => {
+    if (!requireProject(store, request.params.projectId, reply)) return reply;
+    if (!validateResourceId(request.params.applicationId, "applicationId", reply)) return reply;
+    const application = validateDocument(request.body?.application, reply);
+    if (!application) return reply;
+    const requestedScene = request.body?.scene;
+    if (!requestedScene || requestedScene.schemaVersion !== 1) return reply.code(400).send({ message: "场景格式无效" });
+    const existingScene = store.getScene(request.params.projectId, requestedScene.id);
+    const now = new Date().toISOString();
+    const scene: SceneSnapshot = {
+      ...requestedScene,
+      projectId: request.params.projectId,
+      createdAt: existingScene?.createdAt ?? requestedScene.createdAt ?? now,
+      updatedAt: now
+    };
+    const result = await store.saveApplicationWorkspace(request.params.projectId, request.params.applicationId, application, scene, now);
+    if (result.status === "project-not-found") return reply.code(404).send({ message: "项目不存在" });
+    if (result.status === "application-not-found") return reply.code(404).send({ message: "应用不存在" });
+    if (result.status === "revision-conflict") return reply.code(409).send({ message: "应用已被其他修改更新", currentRevision: result.currentRevision });
+    return { application: result.application, scene: result.scene };
   });
 
   app.delete<{ Params: ApplicationParams }>("/api/projects/:projectId/applications/:applicationId", async (request, reply) => {

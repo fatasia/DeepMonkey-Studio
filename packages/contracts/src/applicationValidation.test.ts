@@ -37,6 +37,11 @@ const malformedCases: MalformedCase[] = [
       widget: { title: "无效", key: "value", type: "dial" as never, unit: "" }
     });
   })],
+  ["duplicate dashboard component name", () => altered(pureApplication, (value) => {
+    const source = value.pages[0]!.nodes[0]!;
+    source.name = "Main View";
+    value.pages[0]!.nodes.push({ ...structuredClone(source), id: "widget:duplicate-name", name: " main view " });
+  })],
   ["native data widget direct binding", () => altered(pureApplication, (value) => {
     value.pages[0]!.nodes.push({
       id: "widget:invalid-direct",
@@ -96,7 +101,7 @@ const malformedCases: MalformedCase[] = [
     Object.defineProperty(payload, Symbol("invalid"), { value: () => "invalid", enumerable: true });
     value.data.variables = [{ id: "variable-1", value: payload as never }];
   })],
-  ["interaction", () => altered(interactionApplication, (value) => { value.interactions[0]!.trigger = "doubleClick" as never; })],
+  ["interaction", () => altered(interactionApplication, (value) => { value.interactions[0]!.trigger = "tripleClick" as never; })],
   ["interaction object reference", () => altered(interactionApplication, (value) => {
     value.interactions[0]!.source = { kind: "object", sceneId: "scene-interaction", modelId: 1 } as never;
   })],

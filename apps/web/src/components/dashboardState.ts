@@ -7,12 +7,7 @@ export const DEFAULT_DASHBOARD_STATE: SceneDashboardState = {
   backgroundOpacity: 0.94,
   blur: 14,
   borderRadius: 10,
-  widgets: [
-    { id: "realtime-value", title: "实时数值", key: "value", type: "value", unit: "", x: 0, y: 0, w: 1, h: 1, color: "#d4a84f" },
-    { id: "device-gauge", title: "设备负载", key: "value", type: "gauge", unit: "%", x: 1, y: 0, w: 1, h: 2, min: 0, max: 100, color: "#d4a84f" },
-    { id: "realtime-trend", title: "实时趋势", key: "value", type: "line", unit: "", x: 0, y: 1, w: 1, h: 2, color: "#63a8e8" },
-    { id: "device-status", title: "设备状态", key: "status", type: "status", unit: "", x: 0, y: 3, w: 1, h: 1, color: "#65d89a" }
-  ]
+  widgets: []
 };
 
 export function normalizeDashboardState(value: unknown): SceneDashboardState {
@@ -21,7 +16,7 @@ export function normalizeDashboardState(value: unknown): SceneDashboardState {
   const widgets = Array.isArray(candidate.widgets)
     ? candidate.widgets.filter((widget) => widget && typeof widget === "object").slice(0, 100).map((widget, index) => {
       const item = widget as Partial<SceneDashboardState["widgets"][number]>;
-      const type = ["value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"].includes(String(item.type)) ? item.type! : "value";
+      const type = ["value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url", "topology"].includes(String(item.type)) ? item.type! : "value";
       return {
         id: typeof item.id === "string" && item.id ? item.id : `widget-${index}`,
         title: typeof item.title === "string" ? item.title : `指标 ${index + 1}`,
@@ -50,10 +45,11 @@ export function normalizeDashboardState(value: unknown): SceneDashboardState {
         ...(typeof item.videoAutoplay === "boolean" ? { videoAutoplay: item.videoAutoplay } : {}),
         ...(typeof item.videoMuted === "boolean" ? { videoMuted: item.videoMuted } : {}),
         ...(type === "monitor" ? { monitorProtocol: item.monitorProtocol === "webrtc" ? "webrtc" as const : "hls" as const } : {}),
-        ...(typeof item.monitorSourceUrl === "string" ? { monitorSourceUrl: item.monitorSourceUrl.slice(0, 2_048) } : {})
+        ...(typeof item.monitorSourceUrl === "string" ? { monitorSourceUrl: item.monitorSourceUrl.slice(0, 2_048) } : {}),
+        ...(typeof item.topologyId === "string" ? { topologyId: item.topologyId } : {})
       };
     })
-    : structuredClone(DEFAULT_DASHBOARD_STATE.widgets);
+    : [];
   return {
     side: candidate.side === "left" ? "left" : "right",
     width: clampInteger(candidate.width, 320, 720, DEFAULT_DASHBOARD_STATE.width),

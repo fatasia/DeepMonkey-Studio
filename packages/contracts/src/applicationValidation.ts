@@ -6,7 +6,7 @@ type JsonObject = Record<string, unknown>;
 type Validator = (value: unknown, path: string) => void;
 
 const MODEL_FORMATS = ["rvt", "ifc", "step", "stp", "dwg", "dxf", "gltf", "glb", "fbx"] as const;
-const INTERACTION_TRIGGERS = ["load", "click", "pointerEnter", "pointerLeave", "animationStart", "animationEnd"] as const;
+const INTERACTION_TRIGGERS = ["load", "click", "doubleClick", "contextMenu", "pointerEnter", "pointerLeave", "animationStart", "animationEnd"] as const;
 const INTERACTION_ACTION_TYPES = ["visibility", "color", "opacity", "focus", "animation", "openUrl", "navigateScene", "cameraView", "message", "dashboard", "setData"] as const;
 const SCRIPT_LIFECYCLES = ["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"] as const;
 const SCRIPT_PERMISSIONS = ["scene.read", "scene.write", "data.read", "data.write", "network.connect", "renderer.extend", "editor.extend"] as const;
@@ -117,7 +117,17 @@ function validatePage(value: unknown, path: string): void {
   required(object, "height", expectDashboardPageSize, path);
   requiredLiteral(object, "viewportFit", ["contain", "cover", "stretch", "fixed"], path);
   optional(object, "appearance", validateDashboardPageAppearance, path);
-  required(object, "nodes", (nodes, nodesPath) => expectArray(nodes, nodesPath, validateWidgetNode), path);
+  required(object, "nodes", (nodes, nodesPath) => {
+    expectArray(nodes, nodesPath, validateWidgetNode);
+    const names = new Set<string>();
+    (nodes as JsonObject[]).forEach((node, index) => {
+      if (typeof node.name !== "string") return;
+      const normalized = node.name.trim().toLocaleLowerCase();
+      if (!normalized) invalid(`${nodesPath}[${index}].name`, "不能为空");
+      if (names.has(normalized)) invalid(`${nodesPath}[${index}].name`, "在当前页面中必须唯一");
+      names.add(normalized);
+    });
+  }, path);
 }
 
 function expectDashboardPageSize(value: unknown, path: string): void {
@@ -135,6 +145,7 @@ function validateDashboardPageAppearance(value: unknown, path: string): void {
 function validateWidgetNode(value: unknown, path: string): void {
   const object = expectObject(value, path);
   required(object, "id", expectString, path);
+  optional(object, "name", expectString, path);
   required(object, "frame", validateWidgetFrame, path);
   required(object, "zIndex", expectNumber, path);
   optional(object, "visible", expectBoolean, path);
@@ -164,10 +175,10 @@ function validateWidgetFrame(value: unknown, path: string): void {
 function validateDashboardWidgetConfig(value: unknown, path: string): void {
   const object = expectObject(value, path);
   for (const key of ["title", "key", "unit"] as const) required(object, key, expectString, path);
-  requiredLiteral(object, "type", ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"], path);
+  requiredLiteral(object, "type", ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url", "topology"], path);
   for (const key of ["min", "max", "backgroundOpacity", "borderWidth", "fontSize", "fontWeight"] as const) optional(object, key, expectNumber, path);
   optional(object, "directBinding", (binding, bindingPath) => assertDirectBindingSpec(binding, bindingPath), path);
-  for (const key of ["color", "backgroundColor", "textColor", "datasetId", "pipelineId", "field", "url", "imageUrl", "assetId", "videoUrl", "monitorSourceUrl", "content", "borderColor"] as const) {
+  for (const key of ["color", "backgroundColor", "textColor", "datasetId", "pipelineId", "field", "url", "imageUrl", "assetId", "videoUrl", "monitorSourceUrl", "topologyId", "content", "borderColor"] as const) {
     optional(object, key, expectString, path);
   }
   optionalLiteral(object, "imageFit", ["cover", "contain", "fill"], path);
@@ -589,7 +600,7 @@ function validateInteractionAction(value: unknown, path: string): void {
   optional(object, "url", expectString, path);
   optional(object, "newTab", expectBoolean, path);
   optionalAllowUndefined(object, "target", validateObjectInteractionTarget, path);
-  for (const key of ["sceneId", "cameraViewId", "message", "dataKey"] as const) optional(object, key, expectString, path);
+  for (const key of ["sceneId", "dashboardPageId", "cameraViewId", "message", "dataKey"] as const) optional(object, key, expectString, path);
 }
 
 function validateObjectInteractionTarget(value: unknown, path: string): void {

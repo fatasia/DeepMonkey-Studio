@@ -26,6 +26,7 @@ import {
   registerDirectBindingRoutes,
   StaticDirectCredentialResolver
 } from "./connectorGateway.js";
+import { registerIndustrialDemoRoutes } from "./industrialDemo.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -75,9 +76,11 @@ export async function buildApp() {
   await registerDataEndpointRuntime(app, store, config);
   await registerApplicationRoutes(app, store);
   await registerCloudRenderRoutes(app, { store, control: cloudRender });
+  await registerIndustrialDemoRoutes(app);
   const directCredentialResolver = new StaticDirectCredentialResolver(config.directBindings.credentials);
   const directBindingOptions = {
     credentialResolver: directCredentialResolver,
+    internalOrigin: `http://127.0.0.1:${config.port}`,
     outboundPolicy: {
       allowPrivateNetwork: config.directBindings.allowPrivateNetwork,
       allowedPorts: config.directBindings.allowedPorts,

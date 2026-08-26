@@ -236,11 +236,13 @@ describe("StudioCommand", () => {
     };
 
     const added = applyStudioCommand(source, createInsertDashboardNodeCommand(pageId, node));
-    const updated = applyStudioCommand(added, createUpdateDashboardDataWidgetCommand(pageId, node.id, { ...node.widget, type: "gauge", min: 0, max: 120 }));
+    const renamed = applyStudioCommand(added, createUpdateDashboardNodeStateCommand(pageId, node.id, { name: "产量指标" }));
+    const updated = applyStudioCommand(renamed, createUpdateDashboardDataWidgetCommand(pageId, node.id, { ...node.widget, type: "gauge", min: 0, max: 120 }));
     const withFlow = { ...updated, interactions: [{ id: "flow:widget", name: "联动", source: { kind: "widget" as const, id: node.id }, trigger: "click" as const, enabled: true, actions: [] }] };
     const removed = applyStudioCommand(withFlow, createDeleteDashboardNodeCommand(pageId, node.id));
 
     expect(added.pages[0]!.nodes.at(-1)).toEqual(node);
+    expect(renamed.pages[0]!.nodes.at(-1)).toMatchObject({ name: "产量指标" });
     expect(updated.pages[0]!.nodes.at(-1)).toMatchObject({ kind: "data-widget", widget: { type: "gauge", max: 120 } });
     expect(removed.pages[0]!.nodes.some((candidate) => candidate.id === node.id)).toBe(false);
     expect(removed.interactions).toHaveLength(0);
@@ -270,6 +272,29 @@ describe("ApplicationStore", () => {
     store.load(document());
 
     expect(store.getState()).toMatchObject({ dirty: false, canUndo: false, canRedo: false });
+  });
+
+  it("acknowledges an autosave without resetting selection or undo history", () => {
+    const store = new ApplicationStore(document());
+    const selected = { kind: "widget" as const, id: document().pages[0]!.nodes[0]!.id };
+    store.setSelection([selected]);
+    store.dispatch(createRenameApplicationCommand("已保存名称"));
+    const requestDocument = structuredClone(store.getState().document!);
+    const saved = { ...requestDocument, metadata: { ...requestDocument.metadata, revision: requestDocument.metadata.revision + 1, updatedAt: "2026-08-26T12:00:00.000Z" } };
+
+    store.acknowledgeSave(saved);
+
+    expect(store.getState()).toMatchObject({ dirty: false, canUndo: true, selection: [selected] });
+    expect(store.getState().document?.metadata.revision).toBe(saved.metadata.revision);
+    expect(store.undo()).toBe(true);
+    expect(store.getState()).toMatchObject({ dirty: true, canRedo: true, selection: [selected] });
+    expect(store.redo()).toBe(true);
+    expect(store.getState()).toMatchObject({ dirty: false, selection: [selected] });
+
+    store.dispatch(createRenameApplicationCommand("请求期间的新修改"));
+    store.acknowledgeSave(saved);
+    expect(store.getState().document?.metadata.name).toBe("请求期间的新修改");
+    expect(store.getState()).toMatchObject({ dirty: true, selection: [selected] });
   });
 
   it("publishes one immutable snapshot per subscriber notification", () => {

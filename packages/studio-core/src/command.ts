@@ -1,4 +1,4 @@
-import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type DashboardDataWidgetConfig, type DashboardPageDocument, type DashboardViewportFit, type InteractionFlow, type ScriptModule, type TopologyDocument, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
+import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type DashboardDataWidgetConfig, type DashboardPageDocument, type DashboardViewportFit, type InteractionFlow, type SceneViewportWidgetNode, type ScriptModule, type TopologyDocument, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
 
 let nextCommandId = 1;
 
@@ -157,6 +157,7 @@ export interface UpdateDashboardNodeStatesCommand {
 }
 
 export interface DashboardNodeStatePatch {
+  readonly name?: string;
   readonly visible?: boolean;
   readonly selectable?: boolean;
   readonly locked?: boolean;
@@ -168,6 +169,17 @@ export interface UpdateDashboardDataWidgetCommand {
   readonly type: "dashboard.data-widget.update";
   readonly label: string;
   readonly payload: { readonly pageId: string; readonly nodeId: string; readonly widget: DashboardDataWidgetConfig };
+}
+
+export interface UpdateDashboardSceneViewportCommand {
+  readonly id: string;
+  readonly type: "dashboard.scene-viewport.update";
+  readonly label: string;
+  readonly payload: {
+    readonly pageId: string;
+    readonly nodeId: string;
+    readonly viewport: Pick<SceneViewportWidgetNode, "sceneId" | "renderMode" | "interactionPolicy"> & { readonly cameraViewId?: string };
+  };
 }
 
 export interface DeleteDashboardNodeCommand {
@@ -197,6 +209,7 @@ export type StudioCommand =
   | UpdateDashboardNodeStateCommand
   | UpdateDashboardNodeStatesCommand
   | UpdateDashboardDataWidgetCommand
+  | UpdateDashboardSceneViewportCommand
   | DeleteDashboardNodeCommand;
 
 export function createRenameApplicationCommand(name: string): RenameApplicationCommand {
@@ -372,6 +385,14 @@ export function createUpdateDashboardDataWidgetCommand(pageId: string, nodeId: s
     label: `更新组件“${widget.title}”`,
     payload: { pageId, nodeId, widget: structuredClone(widget) }
   };
+}
+
+export function createUpdateDashboardSceneViewportCommand(
+  pageId: string,
+  nodeId: string,
+  viewport: UpdateDashboardSceneViewportCommand["payload"]["viewport"]
+): UpdateDashboardSceneViewportCommand {
+  return { id: commandId(), type: "dashboard.scene-viewport.update", label: "更新三维组件", payload: { pageId, nodeId, viewport: structuredClone(viewport) } };
 }
 
 export function createDeleteDashboardNodeCommand(pageId: string, nodeId: string): DeleteDashboardNodeCommand {
@@ -577,6 +598,16 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
         nodes: candidate.nodes.map((item) => item.id === node.id
           ? { ...item, widget: structuredClone(command.payload.widget) }
           : item)
+      }));
+    }
+    case "dashboard.scene-viewport.update": {
+      const page = requirePage(document, command.payload.pageId);
+      const node = page.nodes.find((candidate) => candidate.id === command.payload.nodeId);
+      if (!node) throw new Error(`页面 ${page.id} 中不存在组件 ${command.payload.nodeId}`);
+      if (node.kind !== "scene-viewport") throw new Error(`组件 ${node.id} 不是三维组件`);
+      return updatePage(document, page.id, (candidate) => ({
+        ...candidate,
+        nodes: candidate.nodes.map((item) => item.id === node.id ? { ...item, ...structuredClone(command.payload.viewport) } : item)
       }));
     }
     case "dashboard.node.delete": {

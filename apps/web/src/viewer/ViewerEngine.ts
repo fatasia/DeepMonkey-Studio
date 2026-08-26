@@ -78,6 +78,7 @@ import {
 import { sampleCameraKeyframes, sampleModelKeyframes } from "./timeline";
 import { constrainMeasurementEnd, elevationSegment, measurementAngle, projectRayToVerticalAxis } from "./measurement";
 import { ModelLoadCoordinator } from "./modelLoadCoordinator";
+import { createStudioViewerAPI } from "../studio/studioApi";
 import {
   associateSpace,
   evaluatePlacement,
@@ -670,10 +671,8 @@ export class ViewerEngine {
     this.renderer.domElement.addEventListener("pointerdown", this.handlePointerDown);
     this.renderer.domElement.addEventListener("pointermove", this.handlePointerMove);
     this.renderer.domElement.addEventListener("pointerleave", this.handlePointerLeave);
-    this.renderer.domElement.addEventListener("contextmenu", this.preventContextMenu);
-    this.renderer.domElement.addEventListener("dblclick", () => {
-      if (this.navigationMode === "firstPerson" && !this.pointer.isLocked) this.pointer.lock();
-    });
+    this.renderer.domElement.addEventListener("contextmenu", this.handleContextMenu);
+    this.renderer.domElement.addEventListener("dblclick", this.handleDoubleClick);
     window.addEventListener("keydown", this.handleKeyDown);
     window.addEventListener("keyup", this.handleKeyUp);
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -688,6 +687,23 @@ export class ViewerEngine {
 
   listModels(): LoadedSceneModel[] {
     return [...this.models.values()];
+  }
+
+  /** Trusted script escape hatches. Prefer the stable studio API for ordinary work. */
+  getRawObject(modelId: string): THREE.Object3D | undefined {
+    return this.models.get(modelId)?.object;
+  }
+
+  getRawScene(): THREE.Scene {
+    return this.scene;
+  }
+
+  getRawCamera(): THREE.PerspectiveCamera {
+    return this.camera;
+  }
+
+  getRawRenderer(): RendererInstance {
+    return this.renderer;
   }
 
   setInteractionScripts(scripts: SceneInteractionScriptState[]): void {
@@ -757,8 +773,14 @@ export class ViewerEngine {
         if (action.enabled) await this.runInteractionAction(script.target, action);
       }
       const AsyncFunction = Object.getPrototypeOf(async function () { /* trusted scene script */ }).constructor as new (...arguments_: string[]) => (...values: unknown[]) => Promise<unknown>;
-      const execute = new AsyncFunction("ctx", "THREE", "engine", `"use strict";\n${script.code}\n//# sourceURL=bim-studio-event-${script.id}.js`);
-      await execute(context, THREE, this);
+      const studio = createStudioViewerAPI(this, {
+        emitAction: (action) => {
+          const normalized = { ...action, id: crypto.randomUUID(), enabled: true } as SceneInteractionActionState;
+          void this.runInteractionAction(script.target, normalized);
+        }
+      });
+      const execute = new AsyncFunction("ctx", "studio", "THREE", "engine", `"use strict";\n${script.code}\n//# sourceURL=bim-studio-event-${script.id}.js`);
+      await execute(context, studio, THREE, this);
       this.onInteractionScriptResult?.({ script, status: "success", durationMs: performance.now() - startedAt, ...(detail.test ? { test: true } : {}) });
     } catch (error) {
       console.error(`场景事件“${script.name}”执行失败`, error);
@@ -2821,6 +2843,14 @@ export class ViewerEngine {
     this.resetCameraCollisionAnchor();
   }
 
+  setColor(id: string, color: string): void {
+    const model = this.models.get(id);
+    if (!model) return;
+    this.setObjectColor(model.object, color);
+    this.modelColorOverrides.set(id, color);
+    this.onModelChange?.(model);
+  }
+
   getNavigationSettings(): NavigationSettingsState {
     return structuredClone(this.navigationSettings);
   }
@@ -3228,7 +3258,8 @@ export class ViewerEngine {
     this.renderer.domElement.removeEventListener("pointerdown", this.handlePointerDown);
     this.renderer.domElement.removeEventListener("pointermove", this.handlePointerMove);
     this.renderer.domElement.removeEventListener("pointerleave", this.handlePointerLeave);
-    this.renderer.domElement.removeEventListener("contextmenu", this.preventContextMenu);
+    this.renderer.domElement.removeEventListener("contextmenu", this.handleContextMenu);
+    this.renderer.domElement.removeEventListener("dblclick", this.handleDoubleClick);
     this.orbit.dispose();
     this.pointer.disconnect();
     this.transform.dispose();
@@ -3253,6 +3284,7 @@ export class ViewerEngine {
     this.rapier = undefined;
     this.composer?.dispose();
     this.renderer.dispose();
+    if (this.rendererBackend === "webgl") (this.renderer as THREE.WebGLRenderer).forceContextLoss();
     this.renderer.domElement.remove();
   }
 
@@ -5232,9 +5264,22 @@ export class ViewerEngine {
     this.onPointerInfoChange?.(undefined);
   };
 
-  private preventContextMenu = (event: MouseEvent): void => {
+  private handleContextMenu = (event: MouseEvent): void => {
     event.preventDefault();
+    void this.dispatchPointerInteraction("contextMenu", event);
   };
+
+  private handleDoubleClick = (event: MouseEvent): void => {
+    if (this.navigationMode === "firstPerson" && !this.pointer.isLocked) this.pointer.lock();
+    void this.dispatchPointerInteraction("doubleClick", event);
+  };
+
+  private async dispatchPointerInteraction(trigger: "doubleClick" | "contextMenu", event: MouseEvent): Promise<void> {
+    const hit = await this.scenePointerHit(event as PointerEvent);
+    const target = this.interactionTargetFromHit(hit);
+    if (!target) return;
+    this.dispatchInteraction(trigger, target, { originalEvent: event, ...(hit ? { point: hit.point, ...(hit.object ? { object: hit.object } : {}) } : {}) });
+  }
 
   private handlePointerDown = async (event: PointerEvent): Promise<void> => {
     if (this.navigationMode === "firstPerson") return;

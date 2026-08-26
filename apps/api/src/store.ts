@@ -22,6 +22,12 @@ export type UpdateApplicationDraftResult =
   | { status: "application-not-found" }
   | { status: "revision-conflict"; currentRevision: number };
 
+export type SaveApplicationWorkspaceResult =
+  | { status: "updated"; application: ApplicationDocument; scene: SceneSnapshot }
+  | { status: "project-not-found" }
+  | { status: "application-not-found" }
+  | { status: "revision-conflict"; currentRevision: number };
+
 export type DeleteApplicationDraftResult = {
   status: "deleted" | "project-not-found" | "application-not-found" | "active-publication";
 };
@@ -89,6 +95,7 @@ export interface MetadataStore {
   getApplicationIdReservation(applicationId: string): ApplicationIdReservation | undefined;
   createApplicationDraft(projectId: string, application: ApplicationDocument, now: string): Promise<CreateApplicationDraftResult>;
   updateApplicationDraft(projectId: string, applicationId: string, application: ApplicationDocument, now: string): Promise<UpdateApplicationDraftResult>;
+  saveApplicationWorkspace(projectId: string, applicationId: string, application: ApplicationDocument, scene: SceneSnapshot, now: string): Promise<SaveApplicationWorkspaceResult>;
   deleteApplicationDraft(projectId: string, applicationId: string): Promise<DeleteApplicationDraftResult>;
   publishApplication(projectId: string, applicationId: string, publicationId: string, publishedAt: string): Promise<PublishApplicationResult>;
   unpublishApplication(projectId: string, applicationId: string): Promise<UnpublishApplicationResult>;
@@ -619,6 +626,31 @@ export class JsonStore implements MetadataStore {
       };
       candidate.applications![index] = saved;
       return changed({ status: "updated", application: structuredClone(saved) });
+    });
+  }
+
+  async saveApplicationWorkspace(projectId: string, applicationId: string, application: ApplicationDocument, scene: SceneSnapshot, now: string): Promise<SaveApplicationWorkspaceResult> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(applicationId, "applicationId");
+    assertApplicationDocument(application);
+    if (scene.schemaVersion !== 1 || scene.projectId !== projectId) throw new Error("场景格式或项目归属无效");
+    return this.runDocumentMutation<SaveApplicationWorkspaceResult>((candidate) => {
+      if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
+      const applicationIndex = (candidate.applications ?? []).findIndex((item) => item.metadata.projectId === projectId && item.metadata.id === applicationId);
+      if (applicationIndex < 0) return unchanged({ status: "application-not-found" });
+      const current = candidate.applications![applicationIndex]!;
+      if (application.metadata.revision !== current.metadata.revision) return unchanged({ status: "revision-conflict", currentRevision: current.metadata.revision });
+      const savedApplication: ApplicationDocument = {
+        ...structuredClone(application),
+        metadata: { ...structuredClone(application.metadata), id: applicationId, projectId, revision: current.metadata.revision + 1, createdAt: current.metadata.createdAt, updatedAt: now }
+      };
+      const existingScene = candidate.scenes.find((item) => item.projectId === projectId && item.id === scene.id);
+      const savedScene: SceneSnapshot = { ...structuredClone(scene), projectId, createdAt: existingScene?.createdAt ?? scene.createdAt ?? now, updatedAt: now };
+      candidate.applications![applicationIndex] = savedApplication;
+      const sceneIndex = candidate.scenes.findIndex((item) => item.projectId === projectId && item.id === scene.id);
+      if (sceneIndex >= 0) candidate.scenes[sceneIndex] = savedScene;
+      else candidate.scenes.push(savedScene);
+      return changed({ status: "updated", application: structuredClone(savedApplication), scene: structuredClone(savedScene) });
     });
   }
 

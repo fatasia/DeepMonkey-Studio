@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>智造园区模拟实时监控</title>
+  <style>
+    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#071014;color:#dce7ea;font:12px/1.4 "Segoe UI",sans-serif}canvas{display:block;width:100%;height:100%}.hud{position:fixed;inset:0;pointer-events:none;border:1px solid #5b747d66;box-sizing:border-box}.top{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:linear-gradient(#081317e8,#08131700)}.title{display:grid;gap:3px}.title strong{font-size:13px;letter-spacing:.05em}.title small{color:#72909a;font:9px/1.2 Consolas,monospace}.live{display:flex;align-items:center;gap:7px;color:#74dfac;font:10px/1 Consolas,monospace}.live:before{content:"";width:7px;height:7px;border-radius:50%;background:#54d69a;box-shadow:0 0 0 4px #54d69a22}.bottom{position:absolute;right:14px;bottom:12px;left:14px;display:flex;justify-content:space-between;color:#789097;font:9px/1.2 Consolas,monospace}.scan{position:absolute;inset:0;opacity:.12;background:repeating-linear-gradient(0deg,transparent 0 3px,#b6e8ff 4px);mix-blend-mode:screen}
+  </style>
+</head>
+<body>
+  <canvas id="feed" aria-label="模拟实时工业摄像机画面"></canvas>
+  <div class="hud"><div class="top"><div class="title"><strong id="camera">CAM-01 · 一号车间</strong><small>SIMULATED LIVE MONITOR · ORIGINAL ASSET</small></div><div class="live">LIVE</div></div><div class="scan"></div><div class="bottom"><span>1080P / 25FPS / LOCAL</span><time id="clock"></time></div></div>
+  <script>
+    const canvas=document.querySelector('#feed'),ctx=canvas.getContext('2d'),clock=document.querySelector('#clock');
+    const camera=new URLSearchParams(location.search).get('camera');if(camera)document.querySelector('#camera').textContent=`CAM-02 · ${camera.toUpperCase()}`;
+    function resize(){const d=Math.min(devicePixelRatio||1,2);canvas.width=Math.max(480,innerWidth*d);canvas.height=Math.max(270,innerHeight*d)}addEventListener('resize',resize);resize();
+    function path(t,w,h){const p=(t%1+1)%1,points=[[.15,.72],[.82,.72],[.72,.43],[.28,.43],[.15,.72]],s=p*4,i=Math.min(3,Math.floor(s)),u=s-i,a=points[i],b=points[i+1];return[a[0]*w+(b[0]-a[0])*w*u,a[1]*h+(b[1]-a[1])*h*u]}
+    function draw(now){const w=canvas.width,h=canvas.height,g=ctx.createLinearGradient(0,0,0,h);g.addColorStop(0,'#183039');g.addColorStop(.54,'#111f24');g.addColorStop(1,'#081114');ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+      ctx.save();ctx.translate(w*.5,h*.62);ctx.transform(1,0,-.32,.48,0,0);ctx.fillStyle='#1b2a2f';ctx.fillRect(-w*.58,-h*.42,w*1.16,h*.84);ctx.strokeStyle='#38515a';ctx.lineWidth=3;for(let x=-w*.55;x<w*.6;x+=w*.1){ctx.beginPath();ctx.moveTo(x,-h*.4);ctx.lineTo(x,h*.4);ctx.stroke()}for(let y=-h*.4;y<h*.45;y+=h*.1){ctx.beginPath();ctx.moveTo(-w*.58,y);ctx.lineTo(w*.58,y);ctx.stroke()}ctx.restore();
+      const machines=[[-.34,.41,'#c0924b'],[-.08,.41,'#6c8792'],[.19,.41,'#c0924b'],[.43,.41,'#5c826d']];for(const [x,y,c] of machines){const px=(x+.5)*w,py=y*h;ctx.fillStyle='#0a1114aa';ctx.fillRect(px-w*.07,py+h*.035,w*.14,h*.2);ctx.fillStyle=c;ctx.fillRect(px-w*.065,py,w*.13,h*.18);ctx.fillStyle='#d9edf2aa';ctx.fillRect(px-w*.045,py+h*.028,w*.09,h*.035)}
+      ctx.strokeStyle='#d4aa5577';ctx.lineWidth=Math.max(2,w*.004);ctx.setLineDash([w*.025,w*.018]);ctx.beginPath();ctx.moveTo(w*.15,h*.72);ctx.lineTo(w*.82,h*.72);ctx.lineTo(w*.72,h*.43);ctx.lineTo(w*.28,h*.43);ctx.closePath();ctx.stroke();ctx.setLineDash([]);
+      const [x,z]=path(now/18000,w,h);ctx.fillStyle='#061012cc';ctx.fillRect(x-w*.045,z-h*.01,w*.1,h*.075);ctx.fillStyle='#54d69a';ctx.fillRect(x-w*.05,z-h*.025,w*.1,h*.065);ctx.fillStyle='#dff8ec';ctx.font=`${Math.max(10,w*.018)}px Consolas`;ctx.fillText('AGV-01',x-w*.04,z+h*.018);ctx.fillStyle='#111';ctx.beginPath();ctx.arc(x-w*.03,z+h*.04,w*.012,0,Math.PI*2);ctx.arc(x+w*.03,z+h*.04,w*.012,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#ffffff0c';for(let i=0;i<30;i++){const n=Math.sin(now*.001+i*91.7)*.5+.5;ctx.fillRect(n*w,(i*97%h),1,1)}clock.textContent=new Date().toLocaleString('zh-CN',{hour12:false});requestAnimationFrame(draw)}requestAnimationFrame(draw);
+  </script>
+</body>
+</html>

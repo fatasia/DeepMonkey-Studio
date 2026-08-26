@@ -36,6 +36,7 @@ import {
   createUpdateDashboardNodeOrderCommand,
   createUpdateDashboardNodeStateCommand,
   createUpdateDashboardNodeStatesCommand,
+  createUpdateDashboardSceneViewportCommand,
   createUpdateDashboardPageViewportCommand,
   alignDashboardFrames,
   distributeDashboardFrames,
@@ -53,7 +54,7 @@ import { DashboardMediaInspector } from "./DashboardMediaInspector";
 import { createDefaultDirectBinding, DirectBindingEditor } from "./DirectBindingEditor";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 
-const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"];
+const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url", "topology"];
 const DASHBOARD_RESOLUTION_PRESETS = [
   { id: "fhd", width: 1920, height: 1080, label: "Full HD · 1920 × 1080" },
   { id: "ultrawide", width: 3840, height: 1080, label: "双联大屏 · 3840 × 1080" },
@@ -90,6 +91,12 @@ export function calculateDashboardRuntimeViewport(page: Pick<DashboardPageDocume
     : { scaleX: scale, scaleY: scale, stageWidth: scaledWidth, stageHeight: scaledHeight, offsetX: 0, offsetY: 0 };
 }
 
+export function calculateDashboardEditorZoom(page: Pick<DashboardPageDocument, "width" | "height">, surfaceWidth: number, surfaceHeight: number): number {
+  const availableWidth = Math.max(120, surfaceWidth - 84);
+  const availableHeight = Math.max(120, surfaceHeight - 84);
+  return Math.max(0.1, Math.min(2, Number(Math.min(availableWidth / page.width, availableHeight / page.height).toFixed(3))));
+}
+
 export interface DashboardWorkspaceProps {
   locale: AppLocale;
   application: ApplicationDocument;
@@ -101,6 +108,7 @@ export interface DashboardWorkspaceProps {
   canUndo: boolean;
   canRedo: boolean;
   busy: boolean;
+  autoSaveEnabled?: boolean;
   selection: readonly ApplicationObjectRef[];
   variables: Readonly<Record<string, JsonValue>>;
   onBack: () => void;
@@ -115,6 +123,7 @@ export interface DashboardWorkspaceProps {
   onUndo: () => void;
   onRedo: () => void;
   onSave: () => void;
+  onAutoSaveChange?: (enabled: boolean) => void;
   onPublish: () => void;
   onViewStateChange: (view: DashboardViewState) => void;
 }
@@ -130,6 +139,7 @@ export function DashboardWorkspace({
   canUndo,
   canRedo,
   busy,
+  autoSaveEnabled = false,
   selection,
   variables,
   onBack,
@@ -144,6 +154,7 @@ export function DashboardWorkspace({
   onUndo,
   onRedo,
   onSave,
+  onAutoSaveChange,
   onPublish,
   onViewStateChange
 }: DashboardWorkspaceProps) {
@@ -157,6 +168,7 @@ export function DashboardWorkspace({
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("content");
   const [componentSearch, setComponentSearch] = useState("");
+  const [nodeNameError, setNodeNameError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageNameCommitRef = useRef(page.name);
   const clipboardRef = useRef<WidgetNode[]>([]);
@@ -189,8 +201,15 @@ export function DashboardWorkspace({
     pageNameCommitRef.current = page.name;
     const frame = window.requestAnimationFrame(() => {
       if (!scrollRef.current) return;
-      scrollRef.current.scrollLeft = normalizedInitialView.scrollLeft;
-      scrollRef.current.scrollTop = normalizedInitialView.scrollTop;
+      const isDefaultEntry = normalizedInitialView.zoom === 0.5
+        && normalizedInitialView.scrollLeft === 0
+        && normalizedInitialView.scrollTop === 0
+        && normalizedInitialView.selectedNodeIds.length === 0;
+      if (isDefaultEntry) fitCanvasToViewport();
+      else {
+        scrollRef.current.scrollLeft = normalizedInitialView.scrollLeft;
+        scrollRef.current.scrollTop = normalizedInitialView.scrollTop;
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, [page.id]);
@@ -217,6 +236,18 @@ export function DashboardWorkspace({
 
   function emitViewState() {
     onViewStateChange(currentView());
+  }
+
+  function fitCanvasToViewport() {
+    const surface = scrollRef.current;
+    if (!surface) return;
+    const nextZoom = calculateDashboardEditorZoom(page, surface.clientWidth, surface.clientHeight);
+    setZoom(nextZoom);
+    window.requestAnimationFrame(() => {
+      surface.scrollLeft = Math.max(0, (page.width * nextZoom - surface.clientWidth) / 2 + 42);
+      surface.scrollTop = Math.max(0, (page.height * nextZoom - surface.clientHeight) / 2 + 42);
+      onViewStateChange({ zoom: nextZoom, scrollLeft: surface.scrollLeft, scrollTop: surface.scrollTop, selectedNodeIds });
+    });
   }
 
   function selectNode(node: WidgetNode, additive: boolean, force = false) {
@@ -315,19 +346,25 @@ export function DashboardWorkspace({
     if (clipboardRef.current.length === 0 || busy) return;
     const topZIndex = Math.max(0, ...page.nodes.map((node) => node.zIndex));
     const groupIds = new Map([...new Set(clipboardRef.current.flatMap((node) => node.groupId ? [node.groupId] : []))].map((groupId) => [groupId, `group:${crypto.randomUUID()}`]));
-    const nodes = clipboardRef.current.map((source, index): WidgetNode => ({
-      ...structuredClone(source),
-      id: `${source.kind}:${crypto.randomUUID()}`,
-      frame: {
-        ...source.frame,
-        x: Math.min(page.width - source.frame.width, Math.max(0, source.frame.x + 24)),
-        y: Math.min(page.height - source.frame.height, Math.max(0, source.frame.y + 24))
-      },
-      zIndex: topZIndex + index + 1,
-      visible: true,
-      locked: false,
-      ...(source.groupId ? { groupId: groupIds.get(source.groupId)! } : {})
-    }));
+    const usedNames = new Set(page.nodes.map((node) => nodeIdentity(node).toLocaleLowerCase()));
+    const nodes = clipboardRef.current.map((source, index): WidgetNode => {
+      const name = uniqueNodeName(`${nodeIdentity(source)} ${tr(locale, "副本", "copy")}`, usedNames);
+      usedNames.add(name.toLocaleLowerCase());
+      return {
+        ...structuredClone(source),
+        id: `${source.kind}:${crypto.randomUUID()}`,
+        name,
+        frame: {
+          ...source.frame,
+          x: Math.min(page.width - source.frame.width, Math.max(0, source.frame.x + 24)),
+          y: Math.min(page.height - source.frame.height, Math.max(0, source.frame.y + 24))
+        },
+        zIndex: topZIndex + index + 1,
+        visible: true,
+        locked: false,
+        ...(source.groupId ? { groupId: groupIds.get(source.groupId)! } : {})
+      };
+    });
     clipboardRef.current = nodes.map((node) => structuredClone(node));
     onCommand(createInsertDashboardNodesCommand(page.id, nodes));
     const ids = nodes.map((node) => node.id);
@@ -581,17 +618,61 @@ export function DashboardWorkspace({
   function addDataWidget(type: SceneDashboardWidgetType) {
     const id = `widget:${crypto.randomUUID()}`;
     const index = page.nodes.filter((node) => node.kind === "data-widget").length;
-    const wide = ["line", "area", "bar", "pie", "table", "image", "video", "monitor", "url"].includes(type);
+    const wide = ["line", "area", "bar", "pie", "table", "image", "video", "monitor", "url", "topology"].includes(type);
     const node: WidgetNode = {
       id,
+      name: uniqueNodeName(dataWidgetTypeLabel(locale, type), new Set(page.nodes.map((item) => nodeIdentity(item).toLocaleLowerCase()))),
       kind: "data-widget",
       frame: { x: 48 + index % 4 * 28, y: 48 + index % 4 * 28, width: wide ? 420 : 260, height: wide || type === "gauge" ? 240 : 140 },
       zIndex: Math.max(0, ...page.nodes.map((item) => item.zIndex)) + 1,
-      widget: defaultDataWidget(locale, type)
+      widget: { ...defaultDataWidget(locale, type), ...(type === "topology" && application.topologies[0] ? { topologyId: application.topologies[0].id } : {}) }
     };
     onCommand(createInsertDashboardNodeCommand(page.id, node));
     setSelectedNodeIds([id]);
     onSelectionChange([{ kind: "widget", id }]);
+  }
+
+  function addSceneViewport() {
+    const scene = application.scenes[0];
+    if (!scene) return;
+    const id = `scene-viewport:${crypto.randomUUID()}`;
+    const name = uniqueNodeName(scene.name || tr(locale, "三维场景", "3D scene"), new Set(page.nodes.map((item) => nodeIdentity(item).toLocaleLowerCase())));
+    onCommand(createInsertDashboardNodeCommand(page.id, {
+      id,
+      name,
+      kind: "scene-viewport",
+      frame: { x: 48, y: 48, width: Math.min(960, Math.max(420, page.width - 96)), height: Math.min(600, Math.max(260, page.height - 96)) },
+      zIndex: Math.max(0, ...page.nodes.map((item) => item.zIndex)) + 1,
+      sceneId: scene.id,
+      renderMode: "realtime",
+      interactionPolicy: "full-navigation",
+      overlaySlot: "page"
+    }));
+    setSelectedNodeIds([id]);
+    onSelectionChange([{ kind: "widget", id }]);
+  }
+
+  function updateSceneViewport(patch: Partial<Pick<Extract<WidgetNode, { kind: "scene-viewport" }>, "sceneId" | "cameraViewId" | "renderMode" | "interactionPolicy">>) {
+    if (!selectedNode || selectedNode.kind !== "scene-viewport") return;
+    const next = { sceneId: selectedNode.sceneId, renderMode: selectedNode.renderMode, interactionPolicy: selectedNode.interactionPolicy, ...(selectedNode.cameraViewId ? { cameraViewId: selectedNode.cameraViewId } : {}), ...patch };
+    if (!next.cameraViewId) delete next.cameraViewId;
+    onCommand(createUpdateDashboardSceneViewportCommand(page.id, selectedNode.id, next));
+  }
+
+  function commitNodeName(value: string) {
+    if (!selectedNode) return;
+    const name = value.trim();
+    if (!name) {
+      setNodeNameError(tr(locale, "组件名称不能为空", "Component name is required"));
+      return;
+    }
+    const duplicated = page.nodes.some((node) => node.id !== selectedNode.id && nodeIdentity(node).toLocaleLowerCase() === name.toLocaleLowerCase());
+    if (duplicated) {
+      setNodeNameError(tr(locale, "当前页面已有同名组件", "This page already contains that component name"));
+      return;
+    }
+    setNodeNameError("");
+    if (selectedNode.name !== name) onCommand(createUpdateDashboardNodeStateCommand(page.id, selectedNode.id, { name }));
   }
 
   function updateDataWidget(patch: Partial<DashboardDataWidgetConfig>) {
@@ -631,20 +712,19 @@ export function DashboardWorkspace({
     updateDataWidget({ field: fieldKey, key: `${productId}.${fieldKey}`, ...(!selectedNode.widget.unit && field?.unit ? { unit: field.unit } : {}) });
   }
 
-  if (runtimePreview) return <DashboardRuntimePreview locale={locale} application={application} project={project} page={page} rendererBackend={rendererBackend} metrics={runtimeMetrics} connected={connected} onClose={() => setRuntimePreview(false)} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onNodeInteraction={onNodeInteraction} />;
+  if (runtimePreview) return <DashboardRuntimePreview locale={locale} application={application} project={project} page={page} rendererBackend={rendererBackend} metrics={runtimeMetrics} connected={connected} onSelectPage={(pageId) => onSelectPage(pageId, currentView())} onClose={() => setRuntimePreview(false)} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onNodeInteraction={onNodeInteraction} />;
 
   return <main className="dashboard-workspace">
     <header className="dashboard-workspace-topbar">
       <button className="dashboard-back" onClick={onBack}><ArrowLeft size={16} />{tr(locale, "项目", "Project")}</button>
       <div className="dashboard-workspace-title"><LayoutDashboard size={17} /><div><strong>{application.metadata.name}</strong><span>{dirty ? tr(locale, "有未保存修改", "Unsaved changes") : tr(locale, "所有修改已保存", "All changes saved")}</span></div></div>
       <nav className="workspace-mode-switch" aria-label={tr(locale, "编辑模式", "Editor mode")}>
-        <button className="active"><LayoutDashboard size={14} />{tr(locale, "二维设计", "2D design")}</button>
-        <button onClick={onOpenTopology}><Workflow size={14} />{tr(locale, "拓扑", "Topology")}</button>
-        <button onClick={() => application.scenes[0] && onEnterScene(application.scenes[0].id, currentView())}><Box size={14} />{tr(locale, "三维场景", "3D scenes")}</button>
+        <span className="workspace-context"><LayoutDashboard size={14} />{tr(locale, "二维页面", "2D page")} · {page.name}</span>
         <button onClick={onOpenData}><Database size={14} />{tr(locale, "数据", "Data")}</button>
-        <button onClick={() => setRuntimePreview(true)}><Eye size={14} />{tr(locale, "预览", "Preview")}</button>
+        <button onClick={() => setRuntimePreview(true)}><Eye size={14} />{tr(locale, "预览应用", "Preview app")}</button>
       </nav>
       <div className="dashboard-workspace-actions">
+        {onAutoSaveChange && <label className="dashboard-auto-save" title={tr(locale, "修改后自动保存项目", "Automatically save project changes")}><input type="checkbox" checked={autoSaveEnabled} onChange={(event) => onAutoSaveChange(event.target.checked)} />{tr(locale, "自动保存", "Auto save")}</label>}
         <button disabled={!canUndo || busy} title={tr(locale, "撤销", "Undo")} onClick={onUndo}><Undo2 size={15} /></button>
         <button disabled={!canRedo || busy} title={tr(locale, "重做", "Redo")} onClick={onRedo}><Redo2 size={15} /></button>
         <button disabled={!dirty || busy} onClick={onSave}><Save size={15} />{tr(locale, "保存", "Save")}</button>
@@ -665,7 +745,7 @@ export function DashboardWorkspace({
       <section className="dashboard-component-library">
         <div className="dashboard-panel-label"><span>{tr(locale, "组件", "Components")}</span><small>{connected ? tr(locale, "实时", "Live") : tr(locale, "离线", "Offline")}</small></div>
         <input ref={componentSearchRef} className="dashboard-component-search" aria-label={tr(locale, "搜索组件", "Search components")} value={componentSearch} onChange={(event) => setComponentSearch(event.target.value)} placeholder={tr(locale, "搜索组件 · Ctrl+F", "Search · Ctrl+F")} />
-        <div>{DATA_WIDGET_TYPES.filter((type) => dataWidgetTypeLabel(locale, type).toLocaleLowerCase().includes(componentSearch.trim().toLocaleLowerCase())).map((type) => <button key={type} onClick={() => addDataWidget(type)}><Plus size={11} /><span>{dataWidgetTypeLabel(locale, type)}</span></button>)}</div>
+        <div>{tr(locale, "三维场景", "3D scene").toLocaleLowerCase().includes(componentSearch.trim().toLocaleLowerCase()) && <button disabled={application.scenes.length === 0} title={application.scenes.length === 0 ? tr(locale, "请先创建三维场景", "Create a 3D scene first") : undefined} onClick={addSceneViewport}><Plus size={11} /><span>{tr(locale, "三维场景", "3D scene")}</span></button>}{DATA_WIDGET_TYPES.filter((type) => dataWidgetTypeLabel(locale, type).toLocaleLowerCase().includes(componentSearch.trim().toLocaleLowerCase())).map((type) => <button key={type} onClick={() => addDataWidget(type)}><Plus size={11} /><span>{dataWidgetTypeLabel(locale, type)}</span></button>)}</div>
       </section>
       <section>
         <div className="dashboard-panel-label"><span>{tr(locale, "图层", "Layers")}</span><small>{page.nodes.length}</small></div>
@@ -695,7 +775,7 @@ export function DashboardWorkspace({
           <button disabled={layoutSelectionCount < 3} title={tr(locale, "水平等距", "Distribute horizontally")} onClick={() => layoutSelectedNodes("horizontal")}>横均</button>
           <button disabled={layoutSelectionCount < 3} title={tr(locale, "垂直等距", "Distribute vertically")} onClick={() => layoutSelectedNodes("vertical")}>纵均</button>
         </div>
-        <div><button onClick={() => setZoom((value) => Math.max(0.1, Number((value - 0.1).toFixed(2))))}><Minus size={13} /></button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => Math.min(2, Number((value + 0.1).toFixed(2))))}><Plus size={13} /></button></div>
+        <div><button title={tr(locale, "完整显示看板", "Fit dashboard")} onClick={fitCanvasToViewport}><Scaling size={13} /></button><button onClick={() => setZoom((value) => Math.max(0.1, Number((value - 0.1).toFixed(2))))}><Minus size={13} /></button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => Math.min(2, Number((value + 0.1).toFixed(2))))}><Plus size={13} /></button></div>
       </div>
       <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
         <div className="dashboard-artboard-stage" style={{ width: page.width * zoom, height: page.height * zoom }}>
@@ -721,10 +801,16 @@ export function DashboardWorkspace({
 
         {inspectorTab === "content" && <>
           <section className="dashboard-inspector-section">
+            <label><span>{tr(locale, "组件名称（页面内唯一）", "Component name (unique on page)")}</span><input key={`${selectedNode.id}:name:${selectedNode.name ?? ""}`} defaultValue={nodeIdentity(selectedNode)} onFocus={() => setNodeNameError("")} onBlur={(event) => commitNodeName(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />{nodeNameError && <small className="dashboard-field-error">{nodeNameError}</small>}</label>
             <div className="dashboard-frame-grid">{(["x", "y", "width", "height"] as const).map((field) => <label key={field}><span>{field.toUpperCase()}</span><input type="number" disabled={selectedNode.locked === true} value={selectedNode.frame[field]} onChange={(event) => updateSelectedFrame(field, Number(event.target.value))} /></label>)}</div>
             <div className="dashboard-layer-order-actions"><button disabled={selectedNode.locked === true} onClick={() => reorderSelectedNodes("back")}>{tr(locale, "置底", "To back")}</button><button disabled={selectedNode.locked === true} onClick={() => reorderSelectedNodes("backward")}>{tr(locale, "下移", "Backward")}</button><button disabled={selectedNode.locked === true} onClick={() => reorderSelectedNodes("forward")}>{tr(locale, "上移", "Forward")}</button><button disabled={selectedNode.locked === true} onClick={() => reorderSelectedNodes("front")}>{tr(locale, "置顶", "To front")}</button></div>
           </section>
-          {selectedNode.kind === "scene-viewport" && <section className="dashboard-inspector-section"><div className="dashboard-readonly-property"><span>{tr(locale, "三维场景", "3D scene")}</span><strong>{sceneName(application, selectedNode.sceneId)}</strong></div><div className="dashboard-readonly-property"><span>{tr(locale, "渲染方式", "Render mode")}</span><strong>{selectedNode.renderMode}</strong></div><button className="dashboard-enter-scene" onClick={() => onEnterScene(selectedNode.sceneId, currentView())}><Box size={15} />{tr(locale, "进入三维编辑", "Open 3D editor")}</button></section>}
+          {selectedNode.kind === "scene-viewport" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
+            <label><span>{tr(locale, "三维场景", "3D scene")}</span><select value={selectedNode.sceneId} onChange={(event) => updateSceneViewport({ sceneId: event.target.value })}>{application.scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.name}</option>)}</select></label>
+            <label><span>{tr(locale, "渲染方式", "Render mode")}</span><select value={selectedNode.renderMode} onChange={(event) => updateSceneViewport({ renderMode: event.target.value as typeof selectedNode.renderMode })}><option value="realtime">{tr(locale, "实时渲染", "Realtime")}</option><option value="load-on-interaction">{tr(locale, "交互时加载", "Load on interaction")}</option><option value="static-placeholder">{tr(locale, "静态占位", "Static placeholder")}</option></select></label>
+            <label><span>{tr(locale, "交互权限", "Interaction")}</span><select value={selectedNode.interactionPolicy} onChange={(event) => updateSceneViewport({ interactionPolicy: event.target.value as typeof selectedNode.interactionPolicy })}><option value="full-navigation">{tr(locale, "完整漫游", "Full navigation")}</option><option value="click-select">{tr(locale, "仅点击选取", "Click select")}</option><option value="display-only">{tr(locale, "仅展示", "Display only")}</option></select></label>
+            <button className="dashboard-enter-scene" onClick={() => onEnterScene(selectedNode.sceneId, currentView())}><Box size={15} />{tr(locale, "进入三维编辑", "Open 3D editor")}</button>
+          </section>}
           {selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
             <label><span>{tr(locale, "类型", "Type")}</span><select value={selectedNode.widget.type} onChange={(event) => updateDataWidget({ type: event.target.value as SceneDashboardWidgetType })}>{DATA_WIDGET_TYPES.map((type) => <option key={type} value={type}>{dataWidgetTypeLabel(locale, type)}</option>)}</select></label>
             <label><span>{tr(locale, "标题", "Title")}</span><input defaultValue={selectedNode.widget.title} key={`${selectedNode.id}:title:${selectedNode.widget.title}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.title) updateDataWidget({ title: event.currentTarget.value }); }} /></label>
@@ -732,10 +818,11 @@ export function DashboardWorkspace({
             {selectedNode.widget.type === "shape" && <label><span>{tr(locale, "形状", "Shape")}</span><select value={selectedNode.widget.shape ?? "rounded"} onChange={(event) => updateDataWidget({ shape: event.target.value as NonNullable<DashboardDataWidgetConfig["shape"]> })}><option value="rectangle">{tr(locale, "矩形", "Rectangle")}</option><option value="rounded">{tr(locale, "圆角矩形", "Rounded")}</option><option value="ellipse">{tr(locale, "椭圆", "Ellipse")}</option><option value="line">{tr(locale, "线", "Line")}</option></select></label>}
             {(selectedNode.widget.type === "image" || selectedNode.widget.type === "video" || selectedNode.widget.type === "monitor") && <DashboardMediaInspector locale={locale} projectId={project.id} widget={selectedNode.widget} onChange={updateDataWidget} />}
             {selectedNode.widget.type === "url" && <label><span>{tr(locale, "网页地址", "Web page URL")}</span><input defaultValue={selectedNode.widget.url ?? ""} onBlur={(event) => updateDataWidget({ url: event.currentTarget.value })} /></label>}
+            {selectedNode.widget.type === "topology" && <><label><span>{tr(locale, "拓扑文档", "Topology document")}</span><select value={selectedNode.widget.topologyId ?? ""} onChange={(event) => updateDataWidget({ topologyId: event.target.value })}><option value="">{tr(locale, "选择拓扑", "Choose topology")}</option>{application.topologies.map((topology) => <option key={topology.id} value={topology.id}>{topology.name}</option>)}</select></label><button className="dashboard-enter-scene" disabled={!selectedNode.widget.topologyId} onClick={onOpenTopology}><Workflow size={15} />{tr(locale, "编辑当前拓扑", "Edit topology")}</button></>}
           </section>}
         </>}
 
-        {inspectorTab === "data" && selectedNode.kind === "data-widget" && !["text", "shape"].includes(selectedNode.widget.type) && <section className="dashboard-inspector-section dashboard-data-widget-properties">
+        {inspectorTab === "data" && selectedNode.kind === "data-widget" && !["text", "shape", "topology"].includes(selectedNode.widget.type) && <section className="dashboard-inspector-section dashboard-data-widget-properties">
           <label><span>{tr(locale, "数据来源", "Data source")}</span><select value={selectedNode.widget.directBinding ? "direct" : selectedNode.widget.pipelineId || selectedNode.widget.datasetId ? "platform" : "unbound"} onChange={(event) => {
             const mode = event.target.value;
             if (mode === "direct") {
@@ -808,7 +895,7 @@ function DashboardPageViewportEditor({ locale, page, onChange, compact = false }
   </div>;
 }
 
-function DashboardRuntimePreview({ locale, application, project, page, rendererBackend, metrics, connected, onClose, onSelectionChange, onObjectInteraction, onNodeInteraction }: {
+function DashboardRuntimePreview({ locale, application, project, page, rendererBackend, metrics, connected, onSelectPage, onClose, onSelectionChange, onObjectInteraction, onNodeInteraction }: {
   locale: AppLocale;
   application: ApplicationDocument;
   project: ProjectRecord;
@@ -816,6 +903,7 @@ function DashboardRuntimePreview({ locale, application, project, page, rendererB
   rendererBackend: RendererBackend;
   metrics: Record<string, DashboardMetric>;
   connected: boolean;
+  onSelectPage: (pageId: string) => void;
   onClose: () => void;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
@@ -838,7 +926,7 @@ function DashboardRuntimePreview({ locale, application, project, page, rendererB
     ? `${Math.round(viewport.scaleX * 100)}%`
     : `${Math.round(viewport.scaleX * 100)}% × ${Math.round(viewport.scaleY * 100)}%`;
   return <main className="dashboard-runtime-preview">
-    <header><div><Eye size={16} /><span><strong>{application.metadata.name}</strong><small>{page.name} · {page.width} × {page.height} · {connected ? tr(locale, "实时数据", "Live data") : tr(locale, "离线预览", "Offline preview")}</small></span></div><div><span>{scaleLabel}</span><button onClick={onClose}><X size={15} />{tr(locale, "退出预览", "Exit preview")}</button></div></header>
+    <header><div><Eye size={16} /><span><strong>{application.metadata.name}</strong><small>{page.name} · {page.width} × {page.height} · {connected ? tr(locale, "实时数据", "Live data") : tr(locale, "离线预览", "Offline preview")}</small></span></div><nav className="dashboard-runtime-pages" aria-label={tr(locale, "场景页面", "Scene pages")}>{application.pages.map((candidate, index) => <button className={candidate.id === page.id ? "active" : ""} key={candidate.id} onClick={() => onSelectPage(candidate.id)}><small>{String(index + 1).padStart(2, "0")}</small>{candidate.name.replace(/^\d+\s*·\s*/, "")}</button>)}</nav><div><span>{scaleLabel}</span><button onClick={onClose}><X size={15} />{tr(locale, "退出预览", "Exit preview")}</button></div></header>
     <section ref={surfaceRef} className={`dashboard-runtime-surface fit-${page.viewportFit}`}><div className="dashboard-runtime-stage" style={{ width: viewport.stageWidth, height: viewport.stageHeight }}><div className="dashboard-artboard dashboard-runtime-artboard" style={{ width: page.width, height: page.height, left: viewport.offsetX, top: viewport.offsetY, transform: `scale(${viewport.scaleX}, ${viewport.scaleY})` }}>{page.nodes.filter((node) => node.visible !== false).map((node) => <DashboardNode key={node.id} runtime application={application} project={project} node={node} frame={node.frame} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={false} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={() => undefined} onEnterScene={() => undefined} onTransformStart={() => undefined} />)}</div></div></section>
   </main>;
 }
@@ -868,15 +956,15 @@ function DashboardNode({ application, project, node, frame, metric, selected, lo
   }, [node.id]);
   if (node.kind === "scene-viewport") {
     const scene = application.scenes.find((candidate) => candidate.id === node.sceneId);
-    return <article className={`dashboard-node dashboard-scene-viewport ${selected ? "selected" : ""} ${runtime ? "runtime" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); if (!runtime) onSelect(event.ctrlKey || event.metaKey); }} onDoubleClick={() => { if (!runtime) onEnterScene(node.sceneId); }}>
+    return <article className={`dashboard-node dashboard-scene-viewport ${selected ? "selected" : ""} ${runtime ? "runtime" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); if (!runtime) onSelect(event.ctrlKey || event.metaKey); }}>
       {scene && node.renderMode !== "static-placeholder"
-        ? <SceneViewportPreview locale={locale} node={node} scene={scene} project={project} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={(trigger, target) => onObjectInteraction(scene.id, trigger, target)} />
+        ? <SceneViewportPreview locale={locale} node={node} scene={scene} project={project} rendererBackend={rendererBackend} runtime={runtime} onSelectionChange={onSelectionChange} onObjectInteraction={(trigger, target) => onObjectInteraction(scene.id, trigger, target)} />
         : <div className="dashboard-scene-grid" />}
-      {!runtime && <><div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small><button onClick={(event) => { event.stopPropagation(); onEnterScene(node.sceneId); }}>{tr(locale, "进入三维编辑", "Open 3D editor")}</button></div><div className="dashboard-node-badge">3D · {node.renderMode}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
+      {!runtime && <><div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small></div><div className="dashboard-node-badge">3D · {node.renderMode}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
     </article>;
   }
-  if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? `runtime animation-${node.widget.animation ?? "none"}` : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4", animationDuration: `${node.widget.animationDuration ?? 0.6}s`, animationDelay: `${node.widget.animationDelay ?? 0}s` }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")} onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")}>
-    <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact={!runtime} onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />
+  if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? `runtime animation-${node.widget.animation ?? "none"}` : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4", animationDuration: `${node.widget.animationDuration ?? 0.6}s`, animationDelay: `${node.widget.animationDelay ?? 0}s` }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onDoubleClick={(event) => { if (runtime) { event.stopPropagation(); onInteraction("doubleClick"); } }} onContextMenu={(event) => { if (runtime) { event.preventDefault(); event.stopPropagation(); onInteraction("contextMenu"); } }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")} onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")}>
+    {node.widget.type === "topology" ? <DashboardTopologyView application={application} {...(node.widget.topologyId ? { topologyId: node.widget.topologyId } : {})} /> : <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact={!runtime} onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />}
     {!runtime && <><div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
   </article>;
   return null;
@@ -887,9 +975,33 @@ function NodeTransformHandles({ selected, onTransformStart }: { selected: boolea
   return <><button className="dashboard-node-move-handle" aria-label="移动组件" onPointerDown={(event) => onTransformStart(event, "move")}><GripVertical size={13} /></button><button className="dashboard-node-resize-handle" aria-label="缩放组件" onPointerDown={(event) => onTransformStart(event, "resize")}><Scaling size={12} /></button></>;
 }
 
+function DashboardTopologyView({ application, topologyId }: { application: ApplicationDocument; topologyId?: string }) {
+  const topology = application.topologies.find((candidate) => candidate.id === topologyId);
+  if (!topology) return <div className="dashboard-topology-empty"><Workflow size={24} /><span>选择拓扑文档</span></div>;
+  const bounds = topology.nodes.reduce((result, node) => ({ minX: Math.min(result.minX, node.x), minY: Math.min(result.minY, node.y), maxX: Math.max(result.maxX, node.x + 164), maxY: Math.max(result.maxY, node.y + 68) }), { minX: 0, minY: 0, maxX: 640, maxY: 360 });
+  const width = Math.max(320, bounds.maxX - bounds.minX + 80);
+  const height = Math.max(180, bounds.maxY - bounds.minY + 80);
+  return <div className="dashboard-topology-widget"><header><Workflow size={14} /><strong>{topology.name}</strong><span>{topology.nodes.length} nodes · {topology.edges.length} links</span></header><svg viewBox={`${bounds.minX - 40} ${bounds.minY - 40} ${width} ${height}`} preserveAspectRatio="xMidYMid meet">{topology.edges.map((edge) => { const source = topology.nodes.find((node) => node.id === edge.sourceNodeId); const target = topology.nodes.find((node) => node.id === edge.targetNodeId); return source && target ? <line key={edge.id} x1={source.x + 82} y1={source.y + 34} x2={target.x + 82} y2={target.y + 34} /> : null; })}{topology.nodes.map((node) => <g key={node.id} transform={`translate(${node.x} ${node.y})`}><rect width="164" height="68" rx="10" /><circle cx="20" cy="34" r="6" className={topologyNodeHasBinding(node) ? "bound" : ""} /><text x="34" y="31">{String(node.properties.label ?? node.kind)}</text><text x="34" y="46" className="kind">{node.kind}</text></g>)}</svg></div>;
+}
+
+function topologyNodeHasBinding(node: ApplicationDocument["topologies"][number]["nodes"][number]): boolean {
+  return Boolean(node.properties.dataBinding && typeof node.properties.dataBinding === "object");
+}
+
 function nodeLabel(node: WidgetNode): string {
-  if (node.kind === "scene-viewport") return `3D · ${node.sceneId}`;
-  return node.widget.title;
+  return node.name ?? (node.kind === "scene-viewport" ? `3D · ${node.sceneId}` : node.widget.title);
+}
+
+function nodeIdentity(node: WidgetNode): string {
+  return node.name?.trim() || (node.kind === "scene-viewport" ? `3D · ${node.sceneId}` : node.widget.title.trim()) || node.id;
+}
+
+function uniqueNodeName(base: string, usedNames: ReadonlySet<string>): string {
+  const normalizedBase = base.trim() || "Component";
+  if (!usedNames.has(normalizedBase.toLocaleLowerCase())) return normalizedBase;
+  let suffix = 2;
+  while (usedNames.has(`${normalizedBase} ${suffix}`.toLocaleLowerCase())) suffix += 1;
+  return `${normalizedBase} ${suffix}`;
 }
 
 function dashboardResolutionPreset(page: DashboardPageDocument): string {
@@ -910,7 +1022,7 @@ function defaultDataWidget(locale: AppLocale, type: SceneDashboardWidgetType): D
   const staticWidget = type === "text" || type === "shape";
   return {
     title: dataWidgetTypeLabel(locale, type),
-    key: media || staticWidget ? "" : "value",
+    key: media || staticWidget || type === "topology" ? "" : "value",
     type,
     unit: "",
     color: "#d4a84f",
@@ -928,7 +1040,7 @@ function defaultDataWidget(locale: AppLocale, type: SceneDashboardWidgetType): D
 
 function dataWidgetTypeLabel(locale: AppLocale, type: SceneDashboardWidgetType): string {
   const labels: Record<SceneDashboardWidgetType, [string, string]> = {
-    text: ["文本", "Text"], shape: ["形状", "Shape"], value: ["数值", "Value"], gauge: ["仪表", "Gauge"], status: ["状态", "Status"], line: ["折线", "Line"], area: ["面积", "Area"], bar: ["柱图", "Bar"], pie: ["饼图", "Pie"], table: ["表格", "Table"], image: ["图片", "Image"], video: ["视频", "Video"], monitor: ["监控", "Monitor"], url: ["网页", "Web page"]
+    text: ["文本", "Text"], shape: ["形状", "Shape"], value: ["数值", "Value"], gauge: ["仪表", "Gauge"], status: ["状态", "Status"], line: ["折线", "Line"], area: ["面积", "Area"], bar: ["柱图", "Bar"], pie: ["饼图", "Pie"], table: ["表格", "Table"], image: ["图片", "Image"], video: ["视频", "Video"], monitor: ["监控", "Monitor"], url: ["网页", "Web page"], topology: ["拓扑", "Topology"]
   };
   return tr(locale, ...labels[type]);
 }

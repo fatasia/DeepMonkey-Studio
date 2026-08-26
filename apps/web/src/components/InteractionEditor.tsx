@@ -19,6 +19,7 @@ import {
   triggerLabel,
   WIDGET_INTERACTION_ACTIONS
 } from "../interactionState";
+import { ProfessionalCodeEditor } from "./ProfessionalCodeEditor";
 
 export interface InteractionTargetOption {
   label: string;
@@ -27,13 +28,14 @@ export interface InteractionTargetOption {
 
 export interface InteractionChoiceOption { id: string; name: string; }
 
-export function InteractionEditor({ locale, target, targetName, interactions, targetOptions = [], sceneOptions = [], cameraViewOptions = [], onChange, onTest }: {
+export function InteractionEditor({ locale, target, targetName, interactions, targetOptions = [], sceneOptions = [], pageOptions = [], cameraViewOptions = [], onChange, onTest }: {
   locale: AppLocale;
   target: SceneInteractionTarget;
   targetName: string;
   interactions: SceneInteractionScriptState[];
   targetOptions?: InteractionTargetOption[];
   sceneOptions?: InteractionChoiceOption[];
+  pageOptions?: InteractionChoiceOption[];
   cameraViewOptions?: InteractionChoiceOption[];
   onChange: (interactions: SceneInteractionScriptState[]) => void;
   onTest: (script: SceneInteractionScriptState) => void;
@@ -66,7 +68,9 @@ export function InteractionEditor({ locale, target, targetName, interactions, ta
 
   function addAction() {
     if (!selected) return;
-    updateSelected({ actions: [...(selected.actions ?? []), createInteractionAction(newActionType)] });
+    const action = createInteractionAction(newActionType);
+    if (newActionType === "dashboard" && pageOptions[0]) action.dashboardPageId = pageOptions[0].id;
+    updateSelected({ actions: [...(selected.actions ?? []), action] });
   }
 
   function updateAction(id: string, patch: Partial<SceneInteractionActionState>) {
@@ -90,22 +94,22 @@ export function InteractionEditor({ locale, target, targetName, interactions, ta
         })}
       </div>
       {selected && <div className="interaction-code-editor">
-        <header><label><input type="checkbox" checked={selected.enabled} onChange={(event) => updateSelected({ enabled: event.target.checked })} />{tr(locale, "启用", "Enabled")}</label><span>{triggerLabel(selected.trigger, locale)}</span></header>
-        <section className="interaction-actions"><div className="interaction-action-add"><select value={newActionType} onChange={(event) => setNewActionType(event.target.value as SceneInteractionActionType)}>{actionTypes.map((type) => <option key={type} value={type}>{interactionActionLabel(type, locale)}</option>)}</select><button onClick={addAction}><Plus size={12} />{tr(locale, "添加动作", "Add action")}</button></div>{(selected.actions ?? []).length === 0 && <p>{tr(locale, "还没有动作。选择上方动作后点击添加。", "No actions yet. Select an action above and add it.")}</p>}{(selected.actions ?? []).map((action) => <InteractionActionRow key={action.id} locale={locale} action={action} targetOptions={targetOptions} sceneOptions={sceneOptions} cameraViewOptions={cameraViewOptions} onChange={(patch) => updateAction(action.id, patch)} onDelete={() => removeAction(action.id)} />)}</section>
-        <details className="interaction-advanced"><summary>{tr(locale, "高级 JavaScript", "Advanced JavaScript")}</summary><textarea spellCheck={false} value={selected.code} onChange={(event) => updateSelected({ code: event.target.value })} aria-label={tr(locale, "事件 JavaScript", "Event JavaScript")} /><small>{tr(locale, "代码直接在页面主线程运行，可访问 window、THREE、engine 和全部场景对象。", "Code runs directly on the page main thread with access to window, THREE, engine, and all scene objects.")}</small></details>
+        <header><label><input type="checkbox" checked={selected.enabled} onChange={(event) => updateSelected({ enabled: event.target.checked })} />{tr(locale, "启用", "Enabled")}</label><input className="interaction-event-name" aria-label={tr(locale, "事件名称", "Event name")} value={selected.name} onChange={(event) => updateSelected({ name: event.target.value || tr(locale, "默认事件", "Default event") })} /><span>{triggerLabel(selected.trigger, locale)}</span></header>
+        <section className="interaction-actions"><div className="interaction-action-add"><select value={newActionType} onChange={(event) => setNewActionType(event.target.value as SceneInteractionActionType)}>{actionTypes.map((type) => <option key={type} value={type}>{interactionActionLabel(type, locale)}</option>)}</select><button onClick={addAction}><Plus size={12} />{tr(locale, "添加动作", "Add action")}</button></div>{(selected.actions ?? []).length === 0 && <p>{tr(locale, "还没有动作。选择上方动作后点击添加。", "No actions yet. Select an action above and add it.")}</p>}{(selected.actions ?? []).map((action) => <InteractionActionRow key={action.id} locale={locale} action={action} targetOptions={targetOptions} sceneOptions={sceneOptions} pageOptions={pageOptions} cameraViewOptions={cameraViewOptions} onChange={(patch) => updateAction(action.id, patch)} onDelete={() => removeAction(action.id)} />)}</section>
+        <details className="interaction-advanced"><summary>{tr(locale, "高级 JavaScript", "Advanced JavaScript")}</summary><ProfessionalCodeEditor compact locale={locale} path={`bim-studio://interaction/${selected.id}.js`} height={220} value={selected.code} onChange={(code) => updateSelected({ code })} onRun={() => onTest(selected)} /><small>{tr(locale, "支持语法高亮、智能提示、类型检查和完整场景 API；Ctrl+Enter 测试事件。", "Syntax highlighting, IntelliSense, diagnostics and full scene APIs; Ctrl+Enter tests the event.")}</small></details>
         <footer><span>{tr(locale, `已配置 ${(selected.actions ?? []).length} 个内置动作`, `${(selected.actions ?? []).length} built-in actions`)}</span><div><button title={tr(locale, "恢复默认注释", "Restore default comments")} onClick={() => updateSelected({ code: defaultInteractionCode(selected.trigger, target.kind) })}><RotateCcw size={12} /></button><button title={tr(locale, "测试事件", "Test event")} onClick={() => onTest(selected)}><Play size={12} />{tr(locale, "测试", "Test")}</button><button className="danger" title={tr(locale, "删除事件", "Delete event")} onClick={removeSelected}><Trash2 size={12} /></button></div></footer>
       </div>}
     </div>
   </details>;
 }
 
-function InteractionActionRow({ locale, action, targetOptions, sceneOptions, cameraViewOptions, onChange, onDelete }: { locale: AppLocale; action: SceneInteractionActionState; targetOptions: InteractionTargetOption[]; sceneOptions: InteractionChoiceOption[]; cameraViewOptions: InteractionChoiceOption[]; onChange: (patch: Partial<SceneInteractionActionState>) => void; onDelete: () => void }) {
+function InteractionActionRow({ locale, action, targetOptions, sceneOptions, pageOptions, cameraViewOptions, onChange, onDelete }: { locale: AppLocale; action: SceneInteractionActionState; targetOptions: InteractionTargetOption[]; sceneOptions: InteractionChoiceOption[]; pageOptions: InteractionChoiceOption[]; cameraViewOptions: InteractionChoiceOption[]; onChange: (patch: Partial<SceneInteractionActionState>) => void; onDelete: () => void }) {
   const needsObject = ["visibility", "color", "opacity", "focus", "animation"].includes(action.type);
   const targetValue = action.target ? `${action.target.modelId}::${action.target.layerId ?? ""}` : "";
-  return <article className="interaction-action-row"><label className="interaction-action-title"><input type="checkbox" checked={action.enabled} onChange={(event) => onChange({ enabled: event.target.checked })} /><span>{interactionActionLabel(action.type, locale)}</span></label><button className="danger" title={tr(locale, "删除动作", "Delete action")} onClick={onDelete}><Trash2 size={12} /></button>{needsObject && <select className="interaction-action-target" value={targetValue} onChange={(event) => { const option = targetOptions.find((item) => `${item.target.modelId}::${item.target.layerId ?? ""}` === event.target.value); onChange(option ? { target: option.target } : { target: undefined }); }}><option value="">{tr(locale, "触发对象", "Trigger object")}</option>{targetOptions.map((option) => <option key={`${option.target.modelId}:${option.target.layerId ?? "root"}`} value={`${option.target.modelId}::${option.target.layerId ?? ""}`}>{option.label}</option>)}</select>}<div className="interaction-action-value"><InteractionActionValue locale={locale} action={action} sceneOptions={sceneOptions} cameraViewOptions={cameraViewOptions} onChange={onChange} /></div></article>;
+  return <article className="interaction-action-row"><label className="interaction-action-title"><input type="checkbox" checked={action.enabled} onChange={(event) => onChange({ enabled: event.target.checked })} /><span>{interactionActionLabel(action.type, locale)}</span></label><button className="danger" title={tr(locale, "删除动作", "Delete action")} onClick={onDelete}><Trash2 size={12} /></button>{needsObject && <select className="interaction-action-target" value={targetValue} onChange={(event) => { const option = targetOptions.find((item) => `${item.target.modelId}::${item.target.layerId ?? ""}` === event.target.value); onChange(option ? { target: option.target } : { target: undefined }); }}><option value="">{tr(locale, "触发对象", "Trigger object")}</option>{targetOptions.map((option) => <option key={`${option.target.modelId}:${option.target.layerId ?? "root"}`} value={`${option.target.modelId}::${option.target.layerId ?? ""}`}>{option.label}</option>)}</select>}<div className="interaction-action-value"><InteractionActionValue locale={locale} action={action} sceneOptions={sceneOptions} pageOptions={pageOptions} cameraViewOptions={cameraViewOptions} onChange={onChange} /></div></article>;
 }
 
-function InteractionActionValue({ locale, action, sceneOptions, cameraViewOptions, onChange }: { locale: AppLocale; action: SceneInteractionActionState; sceneOptions: InteractionChoiceOption[]; cameraViewOptions: InteractionChoiceOption[]; onChange: (patch: Partial<SceneInteractionActionState>) => void }) {
+function InteractionActionValue({ locale, action, sceneOptions, pageOptions, cameraViewOptions, onChange }: { locale: AppLocale; action: SceneInteractionActionState; sceneOptions: InteractionChoiceOption[]; pageOptions: InteractionChoiceOption[]; cameraViewOptions: InteractionChoiceOption[]; onChange: (patch: Partial<SceneInteractionActionState>) => void }) {
   if (action.type === "visibility") return <select value={String(action.value ?? "toggle")} onChange={(event) => onChange({ value: event.target.value })}><option value="toggle">{tr(locale, "切换", "Toggle")}</option><option value="show">{tr(locale, "显示", "Show")}</option><option value="hide">{tr(locale, "隐藏", "Hide")}</option></select>;
   if (action.type === "animation") return <select value={String(action.value ?? "toggle")} onChange={(event) => onChange({ value: event.target.value })}><option value="toggle">{tr(locale, "播放 / 停止", "Play / stop")}</option><option value="play">{tr(locale, "播放", "Play")}</option><option value="stop">{tr(locale, "停止", "Stop")}</option></select>;
   if (action.type === "color") return <label className="interaction-action-color"><input type="color" value={String(action.value ?? "#ff4057")} onChange={(event) => onChange({ value: event.target.value })} /><code>{String(action.value ?? "#ff4057").toUpperCase()}</code></label>;
@@ -114,7 +118,7 @@ function InteractionActionValue({ locale, action, sceneOptions, cameraViewOption
   if (action.type === "navigateScene") return <div className="interaction-action-scene"><select value={action.sceneId ?? ""} onChange={(event) => onChange({ sceneId: event.target.value })}><option value="">{tr(locale, "选择场景", "Choose scene")}</option>{sceneOptions.map((scene) => <option key={scene.id} value={scene.id}>{scene.name}</option>)}</select><label><input type="checkbox" checked={action.newTab === true} onChange={(event) => onChange({ newTab: event.target.checked })} />{tr(locale, "新窗口", "New tab")}</label></div>;
   if (action.type === "cameraView") return <select value={action.cameraViewId ?? ""} onChange={(event) => onChange({ cameraViewId: event.target.value })}><option value="">{tr(locale, "选择相机视角", "Choose camera view")}</option>{cameraViewOptions.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}</select>;
   if (action.type === "message") return <input value={action.message ?? ""} placeholder={tr(locale, "输入提示文字", "Message text")} onChange={(event) => onChange({ message: event.target.value })} />;
-  if (action.type === "dashboard") return <select value={String(action.value ?? "toggle")} onChange={(event) => onChange({ value: event.target.value })}><option value="toggle">{tr(locale, "切换开关", "Toggle")}</option><option value="show">{tr(locale, "打开看板", "Open dashboard")}</option><option value="hide">{tr(locale, "收起看板", "Collapse dashboard")}</option></select>;
+  if (action.type === "dashboard") return <select value={action.dashboardPageId ?? ""} onChange={(event) => onChange({ dashboardPageId: event.target.value })}><option value="">{tr(locale, "选择二维页面", "Choose 2D page")}</option>{pageOptions.map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}</select>;
   if (action.type === "setData") return <div className="interaction-action-data"><input value={action.dataKey ?? "value"} placeholder={tr(locale, "数据键", "Data key")} onChange={(event) => onChange({ dataKey: event.target.value })} /><input value={String(action.value ?? "")} placeholder={tr(locale, "值", "Value")} onChange={(event) => onChange({ value: parseActionValue(event.target.value) })} /></div>;
   return <span>{tr(locale, "无需参数", "No parameters")}</span>;
 }

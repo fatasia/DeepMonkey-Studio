@@ -16,6 +16,12 @@ export default defineConfig(({ mode }) => {
   }
   return {
     plugins: [react()],
+    resolve: {
+      alias: {
+        "monaco-editor/esm/vs/editor/editor.worker.js": resolve(projectRoot, "apps/web/node_modules/monaco-editor/esm/vs/editor/editor.worker.js"),
+        "monaco-editor/esm/vs/language/typescript/ts.worker.js": resolve(projectRoot, "apps/web/node_modules/monaco-editor/esm/vs/language/typescript/ts.worker.js")
+      }
+    },
     server: {
       host: value("BIM_STUDIO_WEB_HOST", "0.0.0.0"),
       port: 5173,

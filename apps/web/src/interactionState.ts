@@ -9,6 +9,8 @@ import type {
 export const INTERACTION_TRIGGERS: SceneInteractionTrigger[] = [
   "load",
   "click",
+  "doubleClick",
+  "contextMenu",
   "pointerEnter",
   "pointerLeave",
   "animationStart",
@@ -24,7 +26,6 @@ export function createInteractionAction(type: SceneInteractionActionType): Scene
     color: { value: "#ff4057" },
     opacity: { value: 0.5 },
     animation: { value: "toggle" },
-    dashboard: { value: "toggle" },
     message: { message: "操作完成" },
     setData: { dataKey: "value", value: 0 },
     openUrl: { url: "https://example.com", newTab: true }
@@ -35,7 +36,7 @@ export function createInteractionAction(type: SceneInteractionActionType): Scene
 export function createInteractionScript(target: SceneInteractionTarget, trigger: SceneInteractionTrigger): SceneInteractionScriptState {
   return {
     id: crypto.randomUUID(),
-    name: triggerLabel(trigger, "zh-CN"),
+    name: "默认事件",
     target: { ...target },
     trigger,
     enabled: true,
@@ -63,7 +64,7 @@ export function normalizeInteractionScripts(value: unknown): SceneInteractionScr
       : { kind: "object", modelId: target.modelId, ...(typeof target.layerId === "string" && target.layerId ? { layerId: target.layerId } : {}) };
     return [{
       id,
-      name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : triggerLabel(item.trigger!, "zh-CN"),
+      name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : "默认事件",
       target: normalizedTarget,
       trigger: item.trigger!,
       enabled: item.enabled !== false,
@@ -88,6 +89,7 @@ export function normalizeInteractionActions(value: unknown, targetKind: SceneInt
     if (typeof item.newTab === "boolean") action.newTab = item.newTab;
     if (item.target?.kind === "object" && typeof item.target.modelId === "string" && item.target.modelId) action.target = { kind: "object", modelId: item.target.modelId, ...(typeof item.target.layerId === "string" && item.target.layerId ? { layerId: item.target.layerId } : {}) };
     if (typeof item.sceneId === "string") action.sceneId = item.sceneId;
+    if (typeof item.dashboardPageId === "string") action.dashboardPageId = item.dashboardPageId;
     if (typeof item.cameraViewId === "string") action.cameraViewId = item.cameraViewId;
     if (typeof item.message === "string") action.message = item.message.slice(0, 500);
     if (typeof item.dataKey === "string") action.dataKey = item.dataKey.slice(0, 200);
@@ -106,7 +108,7 @@ export function interactionActionLabel(type: SceneInteractionActionType, locale:
     navigateScene: ["跳转场景", "Navigate scene"],
     cameraView: ["切换相机视角", "Switch camera view"],
     message: ["显示提示", "Show message"],
-    dashboard: ["控制数据看板", "Control dashboard"],
+    dashboard: ["打开二维页面", "Open dashboard page"],
     setData: ["设置数据值", "Set data value"]
   };
   return labels[type][locale === "zh-CN" ? 0 : 1];
@@ -134,6 +136,8 @@ export function triggerLabel(trigger: SceneInteractionTrigger, locale: "zh-CN" |
   const labels: Record<SceneInteractionTrigger, [string, string]> = {
     load: ["加载完成", "Loaded"],
     click: ["点击", "Click"],
+    doubleClick: ["双击", "Double click"],
+    contextMenu: ["右键", "Context menu"],
     pointerEnter: ["鼠标进入", "Pointer enter"],
     pointerLeave: ["鼠标离开", "Pointer leave"],
     animationStart: ["动画开始", "Animation start"],

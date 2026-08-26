@@ -7,6 +7,7 @@ describe("local documentation catalog", () => {
       "dashboard-scene",
       "media-widgets",
       "behavior-script",
+      "studio-api",
       "server-publish",
       "agv-runtime-simulation"
     ]);

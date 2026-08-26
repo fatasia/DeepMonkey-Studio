@@ -58,6 +58,7 @@ export const api = {
   getApplication: (projectId: string, applicationId: string) => serverClient.getApplication(projectId, applicationId),
   createApplication: (document: ApplicationDocument) => serverClient.createApplication(document),
   saveApplication: (document: ApplicationDocument) => serverClient.saveApplication(document),
+  saveApplicationWorkspace: (document: ApplicationDocument, scene: SceneSnapshot) => serverClient.saveApplicationWorkspace(document, scene),
   deleteApplication: (projectId: string, applicationId: string) => serverClient.deleteApplication(projectId, applicationId),
   publishApplication: (projectId: string, applicationId: string) => serverClient.publishApplication(projectId, applicationId),
   unpublishApplication: (projectId: string, applicationId: string) => serverClient.unpublishApplication(projectId, applicationId),

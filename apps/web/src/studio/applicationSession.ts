@@ -9,6 +9,11 @@ export class ApplicationSession {
     return this.store.getState().document!;
   }
 
+  acknowledgeSave(application: ApplicationDocument): ApplicationDocument {
+    this.store.acknowledgeSave(application);
+    return this.store.getState().document!;
+  }
+
   getDocument(): ApplicationDocument | undefined {
     return this.store.getState().document;
   }

@@ -183,7 +183,7 @@ function Get-PnpmExecutable {
         $command = Get-Command "pnpm" -ErrorAction SilentlyContinue
     }
     if (-not $command) {
-        throw "找不到 pnpm。请先安装 pnpm，并确保它在 PATH 中。"
+        throw "pnpm was not found. Install pnpm and make sure it is available on PATH."
     }
     return $command.Source
 }
@@ -219,7 +219,7 @@ function Get-PostgresServiceName {
         Sort-Object Name -Descending |
         Select-Object -First 1
     if (-not $service) {
-        throw "未找到 PostgreSQL Windows 服务。可通过 BIM_STUDIO_POSTGRES_SERVICE 指定服务名。"
+        throw "No PostgreSQL Windows service was found. Set BIM_STUDIO_POSTGRES_SERVICE to override it."
     }
     return $service.Name
 }
@@ -232,7 +232,7 @@ function Start-BackgroundService(
 ) {
     $existingId = Get-ListeningProcessId @($Port)
     if ($existingId) {
-        Write-WarningMessage "$Name 已在运行（PID $existingId，端口 $Port）。"
+        Write-WarningMessage "$Name is already running (PID $existingId, port $Port)."
         return
     }
 
@@ -257,12 +257,12 @@ function Start-BackgroundService(
         $errorTail = if (Test-Path -LiteralPath $stderr) {
             (Get-Content -LiteralPath $stderr -Tail 30) -join [Environment]::NewLine
         } else {
-            "没有错误日志"
+            "No error log was produced."
         }
-        throw "$Name 启动超时，日志：$stderr`n$errorTail"
+        throw "$Name startup timed out. Log: $stderr`n$errorTail"
     }
 
-    Write-Success "$Name 已启动（管理 PID $($process.Id)，端口 $Port）。"
+    Write-Success "$Name started (managed PID $($process.Id), port $Port)."
 }
 
 function Stop-BackgroundService([string]$Name, [int[]]$Ports) {
@@ -273,23 +273,23 @@ function Stop-BackgroundService([string]$Name, [int[]]$Ports) {
         foreach ($port in $Ports) {
             [void](Wait-ForPort $port $false 15)
         }
-        Write-Success "$Name 已关闭。"
+        Write-Success "$Name stopped."
         return
     }
 
     Remove-ManagedProcessId $Name
     $listenerId = Get-ListeningProcessId $Ports
     if (-not $listenerId) {
-        Write-Info "$Name 未运行。"
+        Write-Info "$Name is not running."
         return
     }
 
     if (-not (Test-ProjectProcess $listenerId $Name)) {
-        throw "端口 $($Ports -join '/') 被非 BIM Studio 进程 PID $listenerId 占用，已拒绝关闭。"
+        throw "Port $($Ports -join '/') is owned by non-BIM-Studio PID $listenerId; refusing to stop it."
     }
 
     Stop-ProcessTree $listenerId
-    Write-WarningMessage "$Name 不是由本脚本启动，已关闭其监听进程 PID $listenerId；如果原终端有 watch 进程，请同时在原终端按 Ctrl+C。"
+    Write-WarningMessage "$Name was not started by this script. Its verified BIM Studio listener PID $listenerId was stopped."
 }
 
 function Start-Api {
@@ -301,7 +301,7 @@ function Start-Web {
         $certificateKey = Join-Path $ProjectRoot "https\private.key"
         $certificate = Join-Path $ProjectRoot "https\self-sign.cert"
         if (-not (Test-Path -LiteralPath $certificateKey) -or -not (Test-Path -LiteralPath $certificate)) {
-            throw "HTTPS 证书不存在。请先按 https\README.md 生成 https\private.key 和 https\self-sign.cert。"
+            throw "HTTPS certificate files are missing. Follow https\README.md first."
         }
         $env:BIM_STUDIO_HTTPS = "true"
     }
@@ -344,7 +344,7 @@ function Start-Media {
     $executable = Join-Path $ProjectRoot "tools\mediamtx\mediamtx.exe"
     $configuration = Join-Path $ProjectRoot "tools\mediamtx\mediamtx.yml"
     if (-not (Test-Path -LiteralPath $executable)) {
-        throw "实时监控服务程序不存在：$executable"
+        throw "Media service executable does not exist: $executable"
     }
     Start-BackgroundService "media" $executable @($configuration) 9997
 }
@@ -353,7 +353,7 @@ function Start-Minio {
     $executable = Get-MinioExecutable
     $dataDirectory = Get-MinioDataDirectory
     if (-not (Test-Path -LiteralPath $executable)) {
-        throw "MinIO 程序不存在：$executable"
+        throw "MinIO executable does not exist: $executable"
     }
     if (-not (Test-Path -LiteralPath $dataDirectory)) {
         New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
@@ -370,16 +370,16 @@ function Start-Postgres {
     $serviceName = Get-PostgresServiceName
     $service = Get-Service -Name $serviceName
     if ($service.Status -eq "Running") {
-        Write-WarningMessage "postgres 已在运行（Windows 服务 $serviceName）。"
+        Write-WarningMessage "postgres is already running (Windows service $serviceName)."
         return
     }
 
     try {
         Start-Service -Name $serviceName
         (Get-Service -Name $serviceName).WaitForStatus("Running", [TimeSpan]::FromSeconds(30))
-        Write-Success "postgres 已启动（Windows 服务 $serviceName）。"
+        Write-Success "postgres started (Windows service $serviceName)."
     } catch {
-        throw "PostgreSQL 启动失败。请以管理员身份运行 PowerShell。原始错误：$($_.Exception.Message)"
+        throw "PostgreSQL failed to start. Run PowerShell as administrator. $($_.Exception.Message)"
     }
 }
 
@@ -387,16 +387,16 @@ function Stop-Postgres {
     $serviceName = Get-PostgresServiceName
     $service = Get-Service -Name $serviceName
     if ($service.Status -eq "Stopped") {
-        Write-Info "postgres 未运行。"
+        Write-Info "postgres is not running."
         return
     }
 
     try {
         Stop-Service -Name $serviceName
         (Get-Service -Name $serviceName).WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
-        Write-Success "postgres 已关闭（Windows 服务 $serviceName）。"
+        Write-Success "postgres stopped (Windows service $serviceName)."
     } catch {
-        throw "PostgreSQL 关闭失败。请以管理员身份运行 PowerShell。原始错误：$($_.Exception.Message)"
+        throw "PostgreSQL failed to stop. Run PowerShell as administrator. $($_.Exception.Message)"
     }
 }
 
@@ -408,7 +408,7 @@ function Start-One([string]$Name) {
         "web" { Start-Web }
         "node-red" { Start-NodeRed }
         "media" { Start-Media }
-        default { throw "未知服务：$Name" }
+        default { throw "Unknown service: $Name" }
     }
 }
 
@@ -420,7 +420,7 @@ function Stop-One([string]$Name) {
         "api" { Stop-BackgroundService "api" @(4100) }
         "minio" { Stop-BackgroundService "minio" @(9000, 9001) }
         "postgres" { Stop-Postgres }
-        default { throw "未知服务：$Name" }
+        default { throw "Unknown service: $Name" }
     }
 }
 
@@ -478,30 +478,30 @@ function Show-Status([string[]]$Names) {
 
 function Show-Help {
     Write-Host @"
-BIM Studio 服务管理
+BIM Studio service manager
 
-用法：
+Usage:
   .\bim-studio.ps1 <start|stop|restart|status> <all|app|api|web|node-red|media|minio|postgres> [-Https]
 
-示例：
-  .\bim-studio.ps1 start all        启动全部服务
-  .\bim-studio.ps1 stop app         关闭流程、实时视频、API 和 Web，不动数据库
-  .\bim-studio.ps1 restart api      只重启 API
-  .\bim-studio.ps1 restart app -Https  使用 HTTPS 重启应用层
-  .\bim-studio.ps1 status all       查看全部状态
+Examples:
+  .\bim-studio.ps1 start all
+  .\bim-studio.ps1 stop app
+  .\bim-studio.ps1 restart api
+  .\bim-studio.ps1 restart app -Https
+  .\bim-studio.ps1 status all
 
-端口：
+Ports:
   Web 5173 | API 4100 | Node-RED 1880 | Media 8888/8889/9997 | MinIO 9000/9001 | PostgreSQL 5432
 
-日志：
+Logs:
   $LogDirectory
 
-说明：
+Notes:
   all = postgres + minio + node-red + media + api + web
   app = node-red + media + api + web
-  PID 位于 data\runtime，日志位于 data\logs，缓存位于 .cache。
-  PostgreSQL 是 Windows 服务，启动或关闭它可能需要管理员权限。
-  如果 PowerShell 禁止执行脚本，可使用：
+  PID files are in data\runtime, logs are in data\logs, and cache files are in .cache.
+  PostgreSQL is a Windows service and may require administrator privileges.
+  If script execution is disabled, use:
   powershell -ExecutionPolicy Bypass -File .\bim-studio.ps1 status all
 "@
 }
@@ -533,6 +533,6 @@ try {
         }
     }
 } catch {
-    Write-Host "[BIM Studio] 失败：$($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[BIM Studio] Failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }

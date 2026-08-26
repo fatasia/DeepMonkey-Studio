@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title description">
+  <title id="title">智造园区原创平面示意</title>
+  <desc id="description">园区、物流车间、总装产线和机器人单元的四级下钻路径。</desc>
+  <rect width="1200" height="800" fill="#0d171c"/>
+  <g stroke="#26383f" stroke-width="2" opacity=".72">
+    <path d="M0 100h1200M0 200h1200M0 300h1200M0 400h1200M0 500h1200M0 600h1200M0 700h1200"/>
+    <path d="M100 0v800M200 0v800M300 0v800M400 0v800M500 0v800M600 0v800M700 0v800M800 0v800M900 0v800M1000 0v800M1100 0v800"/>
+  </g>
+  <g fill="none" stroke-linecap="round">
+    <path d="M90 640H1110" stroke="#40545c" stroke-width="54"/>
+    <path d="M230 92V710" stroke="#40545c" stroke-width="42"/>
+    <path d="M95 640H1110" stroke="#d4aa55" stroke-width="3" stroke-dasharray="18 20"/>
+    <path d="M230 92V710" stroke="#d4aa55" stroke-width="3" stroke-dasharray="18 20"/>
+  </g>
+  <g font-family="Inter,Segoe UI,sans-serif">
+    <g transform="translate(330 100)">
+      <rect width="720" height="420" rx="22" fill="#19303a" stroke="#5a8798" stroke-width="4"/>
+      <path d="M36 95H684M36 190H684M36 285H684" stroke="#31515d" stroke-width="2"/>
+      <text x="38" y="62" fill="#e6eef1" font-size="34" font-weight="700">一号物流车间</text>
+      <text x="38" y="88" fill="#86a2ad" font-size="17">WORKSHOP 01 · 3 FLOORS</text>
+      <g transform="translate(66 128)">
+        <rect width="560" height="210" rx="16" fill="#172329" stroke="#a68142" stroke-width="3"/>
+        <path d="M62 106H498" stroke="#d2a84f" stroke-width="14" stroke-linecap="round"/>
+        <g fill="#d2a84f"><circle cx="62" cy="106" r="24"/><circle cx="206" cy="106" r="24"/><circle cx="354" cy="106" r="24"/><circle cx="498" cy="106" r="24"/></g>
+        <text x="28" y="42" fill="#e9d49f" font-size="25" font-weight="700">总装产线</text>
+        <text x="28" y="184" fill="#7f9198" font-size="16">SOURCE → PROCESS → BUFFER → SINK</text>
+      </g>
+    </g>
+    <g transform="translate(58 122)">
+      <rect width="150" height="220" rx="18" fill="#22382f" stroke="#547563" stroke-width="3"/>
+      <text x="24" y="58" fill="#dce8e1" font-size="24" font-weight="700">智能仓库</text>
+      <text x="24" y="88" fill="#86a090" font-size="15">WAREHOUSE</text>
+      <path d="M28 128h94M28 158h94M28 188h94" stroke="#5d7f6d" stroke-width="10"/>
+    </g>
+    <g transform="translate(882 562)">
+      <rect width="214" height="118" rx="20" fill="#282217" stroke="#c49a48" stroke-width="3"/>
+      <circle cx="52" cy="59" r="28" fill="#d5a84e"/>
+      <path d="M52 39v40M32 59h40" stroke="#2a2419" stroke-width="7" stroke-linecap="round"/>
+      <text x="92" y="52" fill="#f1dfb4" font-size="22" font-weight="700">机器人 A</text>
+      <text x="92" y="80" fill="#a88f5d" font-size="14">ROBOT CELL</text>
+    </g>
+    <g transform="translate(370 590)">
+      <rect width="118" height="62" rx="14" fill="#1d4b3a" stroke="#61d7a2" stroke-width="3"/>
+      <circle cx="29" cy="62" r="10" fill="#0b1214"/><circle cx="89" cy="62" r="10" fill="#0b1214"/>
+      <text x="21" y="39" fill="#dff9ed" font-size="20" font-weight="700">AGV-01</text>
+    </g>
+    <text x="56" y="56" fill="#f1f5f6" font-size="32" font-weight="700">智造园区 · 空间导航</text>
+    <text x="56" y="84" fill="#788b93" font-size="16">CAMPUS / WORKSHOP / LINE / EQUIPMENT</text>
+    <text x="56" y="758" fill="#71838a" font-size="15">BIM Studio built-in original asset · industrial-v1 · offline reproducible</text>
+  </g>
+</svg>

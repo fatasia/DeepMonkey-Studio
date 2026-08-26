@@ -47,6 +47,7 @@ export class ApplicationStore {
   private filters: Record<string, JsonValue> = {};
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
+  private savedFingerprint = "";
   private listeners = new Set<Listener>();
   private stateSnapshot: ApplicationState | undefined;
 
@@ -62,7 +63,7 @@ export class ApplicationStore {
       selection: immutableClone(this.selection),
       variables: immutableClone(this.variables),
       filters: immutableClone(this.filters),
-      dirty: this.undoStack.length > 0,
+      dirty: this.document ? documentFingerprint(this.document) !== this.savedFingerprint : false,
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0
     });
@@ -76,11 +77,39 @@ export class ApplicationStore {
 
   load(document: ApplicationDocument): void {
     this.document = immutableClone(document);
+    this.savedFingerprint = documentFingerprint(document);
     this.selection = [];
     this.variables = Object.fromEntries(document.data.variables.map((variable) => [variable.id, structuredClone(variable.value)]));
     this.filters = {};
     this.undoStack = [];
     this.redoStack = [];
+    this.emit();
+  }
+
+  /** Accept a saved revision without resetting selection, variables or history. */
+  acknowledgeSave(saved: ApplicationDocument): void {
+    if (!this.document) {
+      this.load(saved);
+      return;
+    }
+    const savedFingerprint = documentFingerprint(saved);
+    const withServerMetadata = (document: ApplicationDocument): ApplicationDocument => immutableClone({
+      ...document,
+      metadata: {
+        ...document.metadata,
+        id: saved.metadata.id,
+        projectId: saved.metadata.projectId,
+        revision: saved.metadata.revision,
+        createdAt: saved.metadata.createdAt,
+        updatedAt: saved.metadata.updatedAt
+      }
+    });
+    this.document = documentFingerprint(this.document) === savedFingerprint
+      ? immutableClone(saved)
+      : withServerMetadata(this.document);
+    this.undoStack = this.undoStack.map((entry) => ({ ...entry, before: withServerMetadata(entry.before), after: withServerMetadata(entry.after) }));
+    this.redoStack = this.redoStack.map((entry) => ({ ...entry, before: withServerMetadata(entry.before), after: withServerMetadata(entry.after) }));
+    this.savedFingerprint = savedFingerprint;
     this.emit();
   }
 
@@ -155,6 +184,10 @@ export class ApplicationStore {
       listener();
     }
   }
+}
+
+function documentFingerprint(document: ApplicationDocument): string {
+  return JSON.stringify({ ...document, metadata: { ...document.metadata, revision: 0, updatedAt: "" } });
 }
 
 function sameSelection(left: readonly ApplicationObjectRef[], right: readonly ApplicationObjectRef[]): boolean {

@@ -178,7 +178,7 @@ export function closestPointsBetweenObjects(rootA: THREE.Object3D, rootB: THREE.
 function geometryBvh(geometry: THREE.BufferGeometry): MeshBVH {
   let bvh = bvhCache.get(geometry);
   if (!bvh) {
-    bvh = new MeshBVH(geometry, { indirect: true, maxLeafSize: 20, verbose: false });
+    bvh = new MeshBVH(geometry, { indirect: true, targetLeafSize: 20, verbose: false });
     bvhCache.set(geometry, bvh);
   }
   return bvh;

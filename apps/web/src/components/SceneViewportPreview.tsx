@@ -1,26 +1,37 @@
-import { useEffect, useRef, useState } from "react";
-import type { ApplicationObjectRef, ProjectRecord, SceneDocument, SceneInteractionTarget, SceneViewportWidgetNode } from "@bim-studio/contracts";
-import { LoaderCircle, TriangleAlert } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ApplicationObjectRef, ProjectRecord, SceneDocument, SceneInteractionTarget, SceneInteractionTrigger, SceneViewportWidgetNode } from "@bim-studio/contracts";
+import { LoaderCircle, Pause, Play, RotateCcw, TriangleAlert } from "lucide-react";
 import type { RendererBackend, ViewerEngine } from "../viewer/ViewerEngine";
 import { translate as tr, type AppLocale } from "../i18n";
 import { subscribeApplicationInteractionEffects } from "../studio/applicationInteractionHost";
+import { directSceneDataBindingMessage } from "../sceneDataBindings";
+import { DirectBindingRuntime } from "../directBindingRuntime";
+import { sceneViewportRevision } from "./sceneViewportRevision";
+import { registerStudioSceneRuntime } from "../studio/studioSceneRuntimeRegistry";
 
 const OBJECT_ACTION_TYPES = new Set(["focus", "visibility", "color", "opacity", "animation"]);
 
-export function SceneViewportPreview({ locale, node, scene, project, rendererBackend, onSelectionChange, onObjectInteraction }: {
+export function SceneViewportPreview({ locale, node, scene, project, rendererBackend, runtime: runtimeMode = false, onSelectionChange, onObjectInteraction }: {
   locale: AppLocale;
   node: SceneViewportWidgetNode;
   scene: SceneDocument;
   project: ProjectRecord;
   rendererBackend: RendererBackend;
+  runtime?: boolean;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
-  onObjectInteraction: (trigger: "load" | "click" | "pointerEnter" | "pointerLeave" | "animationStart" | "animationEnd", target: SceneInteractionTarget) => void;
+  onObjectInteraction: (trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<ViewerEngine | undefined>(undefined);
   const [visible, setVisible] = useState(false);
   const [activated, setActivated] = useState(node.renderMode === "realtime");
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [error, setError] = useState("");
+  const [animationPlaying, setAnimationPlaying] = useState(false);
+  // Application commands create a new application object even when only a 2D
+  // node changed. Key the expensive viewer lifecycle to semantic 3D content so
+  // editing a title, frame or chart never tears down the live canvas.
+  const sceneRevision = useMemo(() => sceneViewportRevision(scene), [scene]);
   const resourceRevision = scene.models.map(({ modelId }) => {
     const record = project.models.find((candidate) => candidate.id === modelId);
     return record ? `${record.id}:${record.status}:${record.updatedAt}:${record.manifest?.createdAt ?? ""}` : `${modelId}:missing`;
@@ -48,6 +59,8 @@ export function SceneViewportPreview({ locale, node, scene, project, rendererBac
     let cancelled = false;
     let runtime: ViewerEngine | undefined;
     let unsubscribeEffects: (() => void) | undefined;
+    let unregisterRuntime: (() => void) | undefined;
+    const stopBindings: Array<() => void> = [];
     setStatus("loading");
     setError("");
     void import("../viewer/ViewerEngine").then(async ({ ViewerEngine }) => {
@@ -63,6 +76,8 @@ export function SceneViewportPreview({ locale, node, scene, project, rendererBac
         return;
       }
       runtime = engine;
+      engineRef.current = engine;
+      unregisterRuntime = registerStudioSceneRuntime(scene.id, engine);
       engine.setReadOnly(true);
       engine.setInteractionScripts([]);
       engine.onSelectionChange = (model) => onSelectionChange(model
@@ -107,10 +122,24 @@ export function SceneViewportPreview({ locale, node, scene, project, rendererBac
       if (scene.animation) {
         engine.setSceneAnimation(scene.animation);
         engine.seekSceneAnimation(0);
+        if (runtimeMode && scene.animation.models.length + scene.animation.camera.length > 0) {
+          engine.playSceneAnimation();
+          setAnimationPlaying(true);
+        }
       }
       if (scene.clipping) engine.setClipping(scene.clipping);
       const camera = scene.cameraViews?.find((item) => item.id === node.cameraViewId)?.camera ?? scene.camera;
       engine.applyCamera(camera);
+      for (const binding of scene.dataBindings ?? []) {
+        if (!binding.enabled || !binding.directBinding) continue;
+        stopBindings.push(new DirectBindingRuntime(binding.directBinding, {}, {
+          onValue: (value) => {
+            try { engine.applySceneDataMessage(directSceneDataBindingMessage(binding, value, scene.id)); }
+            catch (reason) { console.warn(`三维直接绑定 ${binding.name} 数据无效`, reason); }
+          },
+          onError: (message) => console.warn(`三维直接绑定 ${binding.name} 失败：${message}`)
+        }).start());
+      }
       if (node.interactionPolicy !== "display-only") engine.select(scene.selectedModelId);
       if (!cancelled) setStatus("ready");
     }).catch((reason) => {
@@ -120,10 +149,14 @@ export function SceneViewportPreview({ locale, node, scene, project, rendererBac
     });
     return () => {
       cancelled = true;
+      stopBindings.forEach((stop) => stop());
       unsubscribeEffects?.();
+      unregisterRuntime?.();
+      if (engineRef.current === runtime) engineRef.current = undefined;
       runtime?.dispose();
+      setAnimationPlaying(false);
     };
-  }, [visible, activated, rendererBackend, node.id, node.sceneId, node.cameraViewId, node.interactionPolicy, node.renderMode, scene, resourceRevision]);
+  }, [visible, activated, rendererBackend, node.id, node.sceneId, node.cameraViewId, node.interactionPolicy, node.renderMode, runtimeMode, sceneRevision, resourceRevision]);
 
   const waitingForInteraction = node.renderMode === "load-on-interaction" && !activated;
   return <div
@@ -134,5 +167,15 @@ export function SceneViewportPreview({ locale, node, scene, project, rendererBac
     {waitingForInteraction && <div className="scene-viewport-preview-state"><button onClick={() => setActivated(true)}>{tr(locale, "载入实时三维", "Load live 3D")}</button></div>}
     {!waitingForInteraction && node.renderMode !== "static-placeholder" && (status === "idle" || status === "loading") && <div className="scene-viewport-preview-state"><LoaderCircle className="spin" size={22} /><span>{tr(locale, "正在载入三维预览", "Loading 3D preview")}</span></div>}
     {status === "error" && <div className="scene-viewport-preview-state error"><TriangleAlert size={22} /><span>{tr(locale, "三维预览载入失败", "3D preview failed")}</span><small>{error}</small></div>}
+    {runtimeMode && status === "ready" && (scene.animation?.models.length || scene.animation?.camera.length) ? <div className="scene-viewport-animation-controls" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+      <button title={animationPlaying ? tr(locale, "暂停拆解动画", "Pause animation") : tr(locale, "播放拆解动画", "Play animation")} onClick={() => {
+        const engine = engineRef.current;
+        if (!engine) return;
+        if (engine.isSceneAnimationPlaying()) engine.pauseSceneAnimation();
+        else engine.playSceneAnimation();
+        setAnimationPlaying(engine.isSceneAnimationPlaying());
+      }}>{animationPlaying ? <Pause size={14} /> : <Play size={14} />}</button>
+      <button title={tr(locale, "复位拆解动画", "Reset animation")} onClick={() => { const engine = engineRef.current; if (!engine) return; engine.pauseSceneAnimation(); engine.seekSceneAnimation(0); setAnimationPlaying(false); }}><RotateCcw size={14} /></button>
+    </div> : null}
   </div>;
 }

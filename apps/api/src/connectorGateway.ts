@@ -32,6 +32,8 @@ export interface DirectBindingOutboundPolicy {
 export interface DirectBindingGatewayOptions {
   credentialResolver?: DirectCredentialResolver;
   outboundPolicy?: DirectBindingOutboundPolicy;
+  /** Same-process origin used only when a persisted binding starts with `/`. */
+  internalOrigin?: string;
   timeoutMs?: number;
   maxResponseBytes?: number;
   resolveHost?: (hostname: string) => Promise<readonly ResolvedAddress[]>;
@@ -197,7 +199,18 @@ async function prepareTarget(
   options: DirectBindingGatewayOptions
 ): Promise<PreparedTarget> {
   let url: URL;
-  try { url = new URL(binding.endpoint); }
+  const internal = binding.endpoint.startsWith("/") && !binding.endpoint.startsWith("//");
+  try {
+    if (!internal) url = new URL(binding.endpoint);
+    else {
+      if (!options.internalOrigin) throw new Error("服务器没有配置内部接口 origin");
+      const origin = new URL(options.internalOrigin);
+      if (protocols.includes("ws:") && (origin.protocol === "http:" || origin.protocol === "https:")) {
+        origin.protocol = origin.protocol === "https:" ? "wss:" : "ws:";
+      }
+      url = new URL(binding.endpoint, origin);
+    }
+  }
   catch (reason) { throw new DirectBindingGatewayError("INVALID_BINDING", "直接绑定 endpoint 不是有效 URL", 400, false, { cause: reason }); }
   if (!protocols.includes(url.protocol)) denied(`不允许 ${url.protocol} 协议`);
   if (url.username || url.password) denied("URL 中不能包含凭据");
@@ -206,14 +219,14 @@ async function prepareTarget(
   const policy = options.outboundPolicy ?? {};
   const allowedPorts = new Set(policy.allowedPorts ?? DEFAULT_ALLOWED_PORTS);
   const port = Number(url.port || (url.protocol === "http:" || url.protocol === "ws:" ? 80 : 443));
-  if (!allowedPorts.has(port)) denied(`不允许访问端口 ${port}`);
-  if (policy.allowedHostnames?.length && !policy.allowedHostnames.some((allowed) => hostnameMatches(url.hostname, allowed))) {
+  if (!internal && !allowedPorts.has(port)) denied(`不允许访问端口 ${port}`);
+  if (!internal && policy.allowedHostnames?.length && !policy.allowedHostnames.some((allowed) => hostnameMatches(url.hostname, allowed))) {
     denied("目标主机不在出站白名单中");
   }
 
   const addresses = await resolveAddresses(url.hostname, options.resolveHost);
   if (addresses.length === 0) denied("目标主机没有可用地址");
-  if (addresses.some((item) => !isPublicAddress(item.address))) {
+  if (!internal && addresses.some((item) => !isPublicAddress(item.address))) {
     if (!policy.allowPrivateNetwork) denied("目标主机解析到内网、环回或保留地址");
     if (!policy.allowedHostnames?.length) denied("访问私网目标时必须同时配置主机白名单");
   }

@@ -33,6 +33,8 @@ export interface WidgetFrame { x: number; y: number; width: number; height: numb
 
 export interface SceneViewportWidgetNode {
   id: string;
+  /** Page-local, user-editable unique identity. The immutable id remains the persistence key. */
+  name?: string;
   kind: "scene-viewport";
   frame: WidgetFrame;
   zIndex: number;
@@ -55,6 +57,8 @@ export type DashboardDataWidgetConfig = Omit<SceneDashboardWidgetState, "id" | "
  */
 export interface DashboardDataWidgetNode {
   id: string;
+  /** Page-local, user-editable unique identity. The immutable id remains the persistence key. */
+  name?: string;
   kind: "data-widget";
   frame: WidgetFrame;
   zIndex: number;

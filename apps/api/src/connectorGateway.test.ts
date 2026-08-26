@@ -47,6 +47,21 @@ async function localHttpServer(handler: Parameters<typeof createServer>[0]): Pro
 }
 
 describe("DirectHttpConnectorGateway", () => {
+  it("resolves a relative endpoint only against the configured same-process origin", async () => {
+    const upstream = await localHttpServer((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ data: { temperature: 24.5 } }));
+    });
+    const gateway = new DirectHttpConnectorGateway({
+      internalOrigin: upstream.origin.replace("localhost", "127.0.0.1"),
+      credentialResolver: new StaticDirectCredentialResolver({ "plant-readonly": { "x-demo": "internal" } })
+    });
+
+    const result = await gateway.execute(httpBinding("/telemetry"), {});
+
+    expect(result.value).toBe(24.5);
+  });
+
   it("forwards templates and server-side credentials through a DNS-pinned request", async () => {
     const upstream = await localHttpServer((request, response) => {
       const chunks: Buffer[] = [];
@@ -152,6 +167,18 @@ function websocketBinding(): DirectBindingSpec {
 }
 
 describe("DirectWebSocketMultiplexer", () => {
+  it("maps a relative endpoint to the same-process WebSocket origin", async () => {
+    const factory = vi.fn((_context: DirectWebSocketFactoryContext) => new MockUpstreamSocket());
+    const multiplexer = new DirectWebSocketMultiplexer({ internalOrigin: "http://127.0.0.1:4100" }, factory);
+    const binding = { ...websocketBinding(), endpoint: "/api/public/demo/industrial/ws" };
+
+    const unsubscribe = multiplexer.subscribe(binding, {}, { onMessage: () => undefined });
+    await vi.waitFor(() => expect(factory).toHaveBeenCalledTimes(1));
+
+    expect(factory.mock.calls[0]?.[0].url).toBe("ws://127.0.0.1:4100/api/public/demo/industrial/ws");
+    unsubscribe();
+  });
+
   it("shares one upstream subscription across consumers and closes it after the last unsubscribe", async () => {
     const sockets: MockUpstreamSocket[] = [];
     const factory = vi.fn((_context: DirectWebSocketFactoryContext) => {

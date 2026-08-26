@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { Box, Cable, Check, CircleDot, Cpu, Database, Gauge, Link2, MousePointer2, Plus, Redo2, Trash2, Undo2, Workflow, X } from "lucide-react";
+import { Box, Cable, Check, CircleDot, CloudUpload, Cpu, Database, Gauge, LayoutDashboard, Link2, MousePointer2, Plus, Redo2, Save, Trash2, Undo2, Workflow, X } from "lucide-react";
 import type { TopologyDocument, TopologyNode } from "@bim-studio/contracts";
 import {
   applyTopologyEditorAction,
@@ -30,6 +30,13 @@ export interface TopologyEditorPanelProps {
   readonly document: TopologyDocument;
   readonly dataProducts?: readonly TopologyDataProductOption[];
   readonly onChange: (document: TopologyDocument) => void;
+  readonly dirty?: boolean;
+  readonly busy?: boolean;
+  readonly autoSaveEnabled?: boolean;
+  readonly onAutoSaveChange?: (enabled: boolean) => void;
+  readonly onSave?: () => void;
+  readonly onPublish?: () => void;
+  readonly onInsertDashboard?: () => void;
   readonly onClose?: () => void;
   readonly onError?: (message: string) => void;
 }
@@ -50,7 +57,7 @@ const NODE_PRESETS: readonly NodePreset[] = [
   { kind: "gateway", labelZh: "边缘网关", labelEn: "Gateway", icon: Cable }
 ];
 
-export function TopologyEditorPanel({ locale, document, dataProducts = [], onChange, onClose, onError }: TopologyEditorPanelProps) {
+export function TopologyEditorPanel({ locale, document, dataProducts = [], onChange, dirty = false, busy = false, autoSaveEnabled = false, onAutoSaveChange, onSave, onPublish, onInsertDashboard, onClose, onError }: TopologyEditorPanelProps) {
   const [editor, setEditor] = useState<TopologyEditorState>(() => createTopologyEditorState(document));
   const editorRef = useRef(editor);
   const [tool, setTool] = useState<Tool>("select");
@@ -213,7 +220,13 @@ export function TopologyEditorPanel({ locale, document, dataProducts = [], onCha
         <button disabled={!canRedoTopologyEdit(editor)} onClick={() => dispatch({ type: "history.redo" })} title={tr(locale, "重做 Ctrl+Y", "Redo Ctrl+Y")}><Redo2 size={15} /></button>
         <button disabled={!selection} onClick={removeSelection} title={tr(locale, "删除", "Delete")}><Trash2 size={15} /></button>
       </div>
-      <div className="topology-editor__sync"><Check size={13} />{tr(locale, "更改已同步", "Changes synced")}</div>
+      <div className="topology-editor__actions">
+        {onAutoSaveChange && <label><input type="checkbox" checked={autoSaveEnabled} onChange={(event) => onAutoSaveChange(event.target.checked)} />{tr(locale, "自动保存", "Auto save")}</label>}
+        {onInsertDashboard && <button onClick={onInsertDashboard}><LayoutDashboard size={14} />{tr(locale, "插入看板", "Insert into dashboard")}</button>}
+        {onSave && <button disabled={!dirty || busy} onClick={onSave}><Save size={14} />{tr(locale, "保存", "Save")}</button>}
+        {onPublish && <button className="primary" disabled={busy} onClick={onPublish}><CloudUpload size={14} />{tr(locale, "发布", "Publish")}</button>}
+      </div>
+      <div className={`topology-editor__sync ${dirty ? "dirty" : ""}`}><Check size={13} />{dirty ? tr(locale, "有未保存修改", "Unsaved changes") : tr(locale, "所有修改已保存", "All changes saved")}</div>
       {onClose && <button className="topology-editor__close" onClick={onClose} aria-label={tr(locale, "关闭", "Close")}><X size={17} /></button>}
     </header>
 

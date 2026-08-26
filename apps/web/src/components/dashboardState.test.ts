@@ -4,6 +4,15 @@ import { DEFAULT_DASHBOARD_STATE, normalizeDashboardState } from "./dashboardSta
 describe("normalizeDashboardState", () => {
   it("uses a safe default for legacy scenes", () => {
     expect(normalizeDashboardState(undefined)).toEqual(DEFAULT_DASHBOARD_STATE);
+    expect(normalizeDashboardState(undefined).widgets).toEqual([]);
+    expect(normalizeDashboardState({ side: "right" }).widgets).toEqual([]);
+  });
+
+  it("preserves an embedded topology reference", () => {
+    expect(normalizeDashboardState({ widgets: [{ id: "topology", title: "产线拓扑", type: "topology", topologyId: "topology:line" }] }).widgets[0]).toMatchObject({
+      type: "topology",
+      topologyId: "topology:line"
+    });
   });
 
   it("clamps imported layouts and repairs incomplete widgets", () => {

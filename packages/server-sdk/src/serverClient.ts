@@ -1,6 +1,7 @@
 import type {
   ApplicationDocument,
   PublishedApplicationRecord,
+  SceneSnapshot,
   ServerMetaResponse
 } from "@bim-studio/contracts";
 import { assertPathSafeResourceId } from "@bim-studio/contracts";
@@ -87,6 +88,15 @@ export class ServerClient {
     return this.request(
       `/api/projects/${encodeURIComponent(document.metadata.projectId)}/applications/${encodeURIComponent(document.metadata.id)}`,
       json("PUT", document)
+    );
+  }
+
+  saveApplicationWorkspace(document: ApplicationDocument, scene: SceneSnapshot): Promise<{ application: ApplicationDocument; scene: SceneSnapshot }> {
+    assertPathSafeResourceId(document.metadata.projectId, "projectId");
+    assertPathSafeResourceId(document.metadata.id, "applicationId");
+    return this.request(
+      `/api/projects/${encodeURIComponent(document.metadata.projectId)}/applications/${encodeURIComponent(document.metadata.id)}/workspace`,
+      json("PUT", { application: document, scene })
     );
   }
 

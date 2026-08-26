@@ -709,7 +709,7 @@ export interface SceneAnimationState {
 }
 
 export type SceneDashboardSide = "left" | "right";
-export type SceneDashboardWidgetType = "text" | "shape" | "value" | "gauge" | "status" | "line" | "area" | "bar" | "pie" | "table" | "image" | "video" | "monitor" | "url";
+export type SceneDashboardWidgetType = "text" | "shape" | "value" | "gauge" | "status" | "line" | "area" | "bar" | "pie" | "table" | "image" | "video" | "monitor" | "url" | "topology";
 
 export interface SceneDashboardWidgetState {
   id: string;
@@ -741,6 +741,7 @@ export interface SceneDashboardWidgetState {
   videoMuted?: boolean;
   monitorProtocol?: "hls" | "webrtc";
   monitorSourceUrl?: string;
+  topologyId?: string;
   content?: string;
   shape?: "rectangle" | "rounded" | "ellipse" | "line";
   borderColor?: string;
@@ -764,7 +765,7 @@ export interface SceneDashboardState {
   widgets: SceneDashboardWidgetState[];
 }
 
-export type SceneInteractionTrigger = "load" | "click" | "pointerEnter" | "pointerLeave" | "animationStart" | "animationEnd";
+export type SceneInteractionTrigger = "load" | "click" | "doubleClick" | "contextMenu" | "pointerEnter" | "pointerLeave" | "animationStart" | "animationEnd";
 
 export type SceneInteractionTarget = {
   kind: "object";
@@ -789,6 +790,8 @@ export interface SceneInteractionActionState {
   /** 三维对象动作的显式目标；为空时使用触发事件的对象。 */
   target?: { kind: "object"; modelId: string; layerId?: string } | undefined;
   sceneId?: string;
+  /** dashboard 动作打开的二维页面。 */
+  dashboardPageId?: string;
   cameraViewId?: string;
   message?: string;
   dataKey?: string;

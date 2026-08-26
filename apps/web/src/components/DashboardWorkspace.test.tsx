@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import pureFixture from "../../../../test-fixtures/scene-v1-pure-3d.json";
 import { migrateSceneSnapshotV1, type ProjectRecord, type SceneSnapshot } from "@bim-studio/contracts";
-import { calculateDashboardRuntimeViewport, DashboardWorkspace } from "./DashboardWorkspace";
+import { calculateDashboardEditorZoom, calculateDashboardRuntimeViewport, DashboardWorkspace } from "./DashboardWorkspace";
 
 vi.mock("./DashboardWidgetRuntime", () => ({
   DashboardWidgetView: () => null,
@@ -11,6 +11,8 @@ vi.mock("./DashboardWidgetRuntime", () => ({
 }));
 
 vi.mock("./SceneViewportPreview", () => ({ SceneViewportPreview: () => null }));
+
+vi.mock("./ProfessionalCodeEditor", () => ({ ProfessionalCodeEditor: () => null }));
 
 const application = migrateSceneSnapshotV1(pureFixture as SceneSnapshot);
 const project: ProjectRecord = {
@@ -23,6 +25,11 @@ const project: ProjectRecord = {
 };
 
 describe("DashboardWorkspace", () => {
+  it("fits the entire logical dashboard into the editor viewport", () => {
+    expect(calculateDashboardEditorZoom({ width: 3840, height: 2160 }, 1280, 720)).toBe(0.294);
+    expect(calculateDashboardEditorZoom({ width: 320, height: 320 }, 1920, 1080)).toBe(2);
+  });
+
   it("calculates contain, cover, stretch, and fixed large-screen fit modes", () => {
     const page = { width: 3840, height: 1080 };
 
