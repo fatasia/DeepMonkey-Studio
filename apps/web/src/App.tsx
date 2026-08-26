@@ -96,6 +96,7 @@ import type {
   WeatherMode
 } from "@bim-studio/contracts";
 import { migrateSceneSnapshotV1 } from "@bim-studio/contracts";
+import type { SceneCommand } from "@bim-studio/scene-sdk";
 import {
   createDeleteScriptModuleCommand,
   createInsertDashboardNodeCommand,
@@ -122,7 +123,7 @@ import { SceneDataBindingEditor, type SceneDataBindingRuntimeState } from "./com
 import { CameraNavigationPanel } from "./components/CameraNavigationPanel";
 import { SceneTimelinePanel } from "./components/SceneTimelinePanel";
 import { SceneOrganizationPanel, type SceneOrganizationObject } from "./components/SceneOrganizationPanel";
-import { SceneBehaviorPanel, type SceneBehaviorLogEntry } from "./components/SceneBehaviorPanel";
+import { SceneBehaviorPanel, type BehaviorCodeTarget, type SceneBehaviorLogEntry } from "./components/SceneBehaviorPanel";
 import { TopologyEditorPanel, type TopologyDataProductOption } from "./components/TopologyEditorPanel";
 import { RendererDiagnosticsPanel } from "./components/RendererDiagnosticsPanel";
 import { AiAssistantPanel } from "./components/AiAssistantPanel";
@@ -190,7 +191,7 @@ const DEFAULT_LIGHTING: GlobalLightingState = {
   ]
 };
 const DEFAULT_ENVIRONMENT: SceneEnvironmentState = { gridVisible: true, backgroundColor: "#202a31", skybox: "none", environmentAsBackground: false, environmentIntensity: 1 };
-const DEFAULT_BRANDING: SystemBrandingSettings = { systemName: "BIM Studio", browserTitle: "BIM Studio", loginSubtitle: "数字孪生场景平台", copyright: "Copyright © 张文鹏 Charlie", logoUrl: "/brand/logo-transparent.png", iconUrl: "/brand/app-icon.png", primaryColor: "#d6aa4d", defaultLocale: "zh-CN", defaultEntry: "manager", defaultSceneBackground: "#202a31", defaultGridVisible: true, maintenanceEnabled: false, maintenanceMessage: "系统维护中，请稍后再试" };
+const DEFAULT_BRANDING: SystemBrandingSettings = { systemName: "iTwin Studio", browserTitle: "iTwin Studio", loginSubtitle: "数字孪生场景平台", copyright: "Copyright © 张文鹏 Charlie", logoUrl: "/brand/logo-transparent.png", iconUrl: "/brand/app-icon.png", primaryColor: "#d6aa4d", defaultLocale: "zh-CN", defaultEntry: "manager", defaultSceneBackground: "#202a31", defaultGridVisible: true, maintenanceEnabled: false, maintenanceMessage: "系统维护中，请稍后再试" };
 const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   enabled: false,
   smaa: false,
@@ -394,6 +395,7 @@ export function App() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [project, setProject] = useState<ProjectRecord>();
   const [scenes, setScenes] = useState<SceneSnapshot[]>([]);
+  const [managerApplications, setManagerApplications] = useState<ApplicationDocument[]>([]);
   const [activeScene, setActiveScene] = useState<SceneSnapshot>();
   const [applicationRevision, setApplicationRevision] = useState(0);
   const [sceneName, setSceneName] = useState("未命名场景");
@@ -421,6 +423,7 @@ export function App() {
   const [navigationDiagnostics, setNavigationDiagnostics] = useState<NavigationCollisionDiagnostics>({ debugVisible: false, blockingObjectCount: 0, raySamples: 0, lastSweepMs: 0 });
   const [measureMode, setMeasureMode] = useState<MeasureMode>("distance");
   const [route, setRoute] = useState<AppRoute>(() => readRoute());
+  const dataReturnRouteRef = useRef<AppRoute | undefined>(undefined);
   const viewerRouteActive = route.view === "studio" || route.view === "view" || route.view === "published";
   const applicationState = useMemo(() => applicationSessionRef.current.store.getState(), [applicationRevision]);
   const activeApplication = applicationState.document;
@@ -596,6 +599,17 @@ export function App() {
   function navigate(next: AppRoute, replace = false) {
     window.history[replace ? "replaceState" : "pushState"](routeHistoryState(next), "", routePath(next));
     setRoute(next);
+  }
+
+  function openDataCenter() {
+    if (route.view !== "data") dataReturnRouteRef.current = structuredClone(route);
+    navigate({ view: "data" });
+  }
+
+  function closeDataCenter() {
+    const destination = dataReturnRouteRef.current;
+    dataReturnRouteRef.current = undefined;
+    navigate(destination ?? { view: "manager" });
   }
 
   function openDocs(documentId?: string, sectionId?: string) {
@@ -958,6 +972,9 @@ export function App() {
           dashboardView: DEFAULT_DASHBOARD_VIEW
         });
       } else if (action.type === "navigateScene" && action.sceneId) {
+        const targetScene = activeApplication?.scenes.find((candidate) => candidate.id === action.sceneId);
+        if (activeApplication && !targetScene) return showError(new Error("目标三维场景不存在，已阻止跳转"));
+        if (!activeApplication && !scenes.some((candidate) => candidate.id === action.sceneId)) return showError(new Error("目标三维场景不存在，已阻止跳转"));
         const view = route.view === "studio" ? "studio" : "view";
         const destination: AppRoute = view === "studio"
           ? { ...route, view, sceneId: action.sceneId }
@@ -985,7 +1002,7 @@ export function App() {
       unsubscribe();
       window.removeEventListener("bim-studio:interaction-action", handleLegacyInteractionAction);
     };
-  }, [activeApplication, activeScene?.id, cameraViews, engine, route.sceneId, route.view, showError]);
+  }, [activeApplication, activeScene?.id, cameraViews, engine, route.sceneId, route.view, scenes, showError]);
 
   useEffect(() => {
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();
@@ -1095,6 +1112,15 @@ export function App() {
     const timer = window.setInterval(() => void refreshProject().catch(showError), 2500);
     return () => window.clearInterval(timer);
   }, [project?.id, refreshProject, showError]);
+
+  useEffect(() => {
+    if (route.view !== "manager" || !project) return;
+    let cancelled = false;
+    void api.listApplications(project.id)
+      .then((items) => { if (!cancelled) setManagerApplications(items); })
+      .catch((reason) => { if (!cancelled) showError(reason); });
+    return () => { cancelled = true; };
+  }, [route.view, project?.id, scenes.length, showError]);
 
   useEffect(() => {
     if (defaultEntryAppliedRef.current || !currentUser || !project || initialPathRef.current !== "/") return;
@@ -1242,6 +1268,22 @@ export function App() {
   useEffect(() => {
     if (engine) setNavigationDiagnostics(engine.getNavigationCollisionDiagnostics());
   }, [engine, revision]);
+  const behaviorCodeTargets = useMemo<BehaviorCodeTarget[]>(() => {
+    if (!activeApplication) return [];
+    const targets: BehaviorCodeTarget[] = [];
+    for (const sceneDocument of activeApplication.scenes) {
+      for (const model of [...sceneDocument.models, ...sceneDocument.primitives]) {
+        targets.push({ id: model.modelId, name: model.name, kind: "object", context: sceneDocument.name });
+      }
+    }
+    for (const page of activeApplication.pages) {
+      for (const node of page.nodes) {
+        const fallbackName = node.kind === "data-widget" ? node.widget.title : tr(locale, "三维视口", "3D viewport");
+        targets.push({ id: node.id, name: node.name ?? fallbackName ?? node.id, kind: "component", context: page.name });
+      }
+    }
+    return targets;
+  }, [activeApplication, locale]);
   const rendererOptions = useMemo(() => rendererProbe ? rendererReadiness(rendererProbe, { postProcessingEnabled: postProcessing.enabled }) : [], [rendererProbe, postProcessing.enabled]);
   const scenePrimitives = loadedModels.filter((item) => item.kind === "primitive");
   const selectedTransform = selected && engine ? engine.getSelectionTransform() : undefined;
@@ -2108,7 +2150,7 @@ export function App() {
     }
   }
 
-  async function openTopologyEditor(preferredApplication?: ApplicationDocument): Promise<void> {
+  async function openTopologyEditor(preferredApplication?: ApplicationDocument, preferredTopologyId?: string, createNew = false): Promise<void> {
     if (!project) return;
     setBusy(true);
     try {
@@ -2117,9 +2159,11 @@ export function App() {
       if (!application) throw new Error("请先创建一个场景，使项目拥有可保存的应用文档");
       const current = applicationSessionRef.current.store.getState().document;
       if (!current || current.metadata.id !== application.metadata.id) applicationSessionRef.current.openDocument(application);
-      let topology = applicationSessionRef.current.store.getState().document?.topologies[0];
+      let topology = createNew ? undefined : applicationSessionRef.current.store.getState().document?.topologies.find((candidate) => candidate.id === preferredTopologyId)
+        ?? applicationSessionRef.current.store.getState().document?.topologies[0];
       if (!topology) {
-        topology = { id: crypto.randomUUID(), name: `${project.name}拓扑`, nodes: [], edges: [] };
+        const existingCount = applicationSessionRef.current.store.getState().document?.topologies.length ?? 0;
+        topology = { id: crypto.randomUUID(), name: existingCount ? `${project.name}拓扑 ${existingCount + 1}` : `${project.name}拓扑`, nodes: [], edges: [] };
         dispatchApplicationCommand(createUpsertTopologyCommand(topology));
       }
       if (applicationSessionRef.current.store.getState().dirty && !await saveActiveApplication()) return;
@@ -2497,8 +2541,8 @@ export function App() {
   }
 
   function runSceneBehaviors() {
-    if (!engine || !activeScene || !activeApplication) {
-      showError(new Error(tr(locale, "请先打开可编辑的三维场景", "Open an editable 3D scene first")));
+    if (!activeApplication) {
+      showError(new Error(tr(locale, "请先打开可编辑项目", "Open an editable project first")));
       return;
     }
     behaviorManagerRef.current?.dispose();
@@ -2513,8 +2557,21 @@ export function App() {
       showError(new Error(tr(locale, "没有可运行的 Worker 行为脚本，请先新建并启用脚本", "No runnable Worker behavior scripts. Create and enable one first.")));
       return;
     }
-    const manager = new SceneBehaviorManager();
-    const executor = new SceneCommandExecutor(activeScene.id, new ViewerSceneCommandPort(engine));
+    const behaviorSceneId = activeScene?.id ?? activeApplication.scenes[0]?.id ?? `application:${activeApplication.metadata.id}`;
+    const manager = new SceneBehaviorManager({
+      hostOptions: {
+        executeNetworkRequest: async ({ binding, variables }) => {
+          const response = await api.executeDirectBinding(binding, variables);
+          return {
+            ok: true,
+            status: response.status,
+            data: response.data as import("@bim-studio/contracts").JsonValue,
+            value: response.value as import("@bim-studio/contracts").JsonValue
+          };
+        }
+      }
+    });
+    const executor = engine && activeScene ? new SceneCommandExecutor(activeScene.id, new ViewerSceneCommandPort(engine, updateComponentFromScript)) : undefined;
     const moduleById = new Map(modules.map((module) => [module.id, module]));
     let diagnosticsFrame: number | undefined;
     manager.onChange = (entries) => {
@@ -2534,7 +2591,18 @@ export function App() {
         }
         const authorization = authorizeSceneCommands(module, commands);
         for (const rejection of authorization.rejected) appendBehaviorLog(moduleId, "error", `${rejection.command.id}: ${rejection.message}`);
-        const results = await executor.execute(authorization.allowed);
+        for (const command of authorization.allowed.filter((candidate): candidate is Extract<SceneCommand, { type: "component.update" }> => candidate.type === "component.update")) {
+          try {
+            updateComponentFromScript(command.componentId, command.patch);
+          } catch (reason) {
+            appendBehaviorLog(moduleId, "error", `${command.id}: ${reason instanceof Error ? reason.message : String(reason)}`);
+          }
+        }
+        const sceneCommands = authorization.allowed.filter((candidate): candidate is Exclude<SceneCommand, { type: "component.update" }> => candidate.type !== "component.update");
+        if (!executor && sceneCommands.length > 0) {
+          for (const command of sceneCommands) appendBehaviorLog(moduleId, "warn", `${command.id}: 当前在二维页面，三维命令将在进入关联场景后执行`);
+        }
+        const results = executor ? await executor.execute(sceneCommands) : [];
         for (const result of results) {
           if (!result.success) appendBehaviorLog(moduleId, result.code === "unsupported" ? "warn" : "error", `${result.id}: ${result.message}`);
         }
@@ -2545,9 +2613,9 @@ export function App() {
     setSceneBehaviorLogs([]);
     setSceneBehaviorPaused(false);
     setSceneBehaviorActive(true);
-    manager.start(modules, activeScene.id);
+    manager.start(modules, behaviorSceneId);
     setSceneBehaviorEntries(manager.entries());
-    setMessage(tr(locale, `正在启动 ${modules.length} 个场景行为`, `Starting ${modules.length} scene behaviors`));
+    setMessage(tr(locale, `正在启动 ${modules.length} 个应用行为`, `Starting ${modules.length} application behaviors`));
   }
 
   function pauseResumeSceneBehaviors() {
@@ -2765,7 +2833,8 @@ export function App() {
         })}
         onEnterScene={enterSceneFromDashboard}
         onOpenTopology={() => void openTopologyEditor(activeApplication)}
-        onOpenData={() => navigate({ view: "data" })}
+        onOpenData={openDataCenter}
+        onOpenScripts={() => setSceneBehaviorOpen(true)}
         onSelectionChange={(selection) => applicationSessionRef.current.store.setSelection(selection)}
         onObjectInteraction={dispatchSceneObjectInteraction}
         onNodeInteraction={dispatchDashboardNodeInteraction}
@@ -2795,7 +2864,7 @@ export function App() {
       />}
       {route.view === "topology" && !activeTopology && <div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载拓扑编辑器", "Loading topology editor")}</div>}
       {route.view === "optimizer" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载模型优化器", "Loading model optimizer")}</div>}><ModelOptimizer locale={locale} copyright={branding.copyright} onBack={() => navigate({ view: "manager" })} /></Suspense>}
-      {route.view === "data" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载数据中心", "Loading data center")}</div>}><DataCenter locale={locale} project={project} onBack={() => navigate({ view: "manager" })} /></Suspense>}
+      {route.view === "data" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载数据中心", "Loading data center")}</div>}><DataCenter locale={locale} project={project} onBack={closeDataCenter} /></Suspense>}
       {route.view === "vision" && project && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载视觉中心", "Loading vision center")}</div>}><VisionCenter locale={locale} project={project} scenes={scenes} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "system" && currentUser.role === "admin" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />正在加载系统管理</div>}><SystemCenter locale={locale} currentUser={currentUser} projects={projects} onBack={() => navigate({ view: "manager" })} /></Suspense>}
       {route.view === "branding" && currentUser.role === "admin" && <Suspense fallback={<div className="optimizer-loading"><LoaderCircle className="spin" size={25} />{tr(locale, "正在加载全局设置", "Loading global settings")}</div>}><BrandingSettingsPage locale={locale} value={branding} onChange={setBranding} onBack={() => navigate({ view: "manager" })} /></Suspense>}
@@ -2806,6 +2875,9 @@ export function App() {
           projects={projects}
           project={project}
           scenes={scenes}
+          topologies={managerApplications.flatMap((application) => application.topologies.map((topology) => ({ applicationId: application.metadata.id, applicationName: application.metadata.name, topology })))}
+          userName={currentUser.displayName}
+          isAdmin={currentUser.role === "admin"}
           onProjectChange={switchProjectById}
           onCreateProject={() => openProjectDialog("create")}
           onRenameProject={() => openProjectDialog("rename")}
@@ -2826,10 +2898,19 @@ export function App() {
           onExportFbx={exportFbxScene}
           onDelete={deleteScene}
           onOptimizer={() => navigate({ view: "optimizer" })}
-          onDataCenter={() => navigate({ view: "data" })}
-          onTopology={() => void openTopologyEditor()}
+          onDataCenter={openDataCenter}
+          onCreateTopology={() => void openTopologyEditor(managerApplications[0], undefined, true)}
+          onOpenTopology={(applicationId, topologyId) => {
+            const application = managerApplications.find((candidate) => candidate.metadata.id === applicationId);
+            void openTopologyEditor(application, topologyId);
+          }}
           onVisionCenter={() => navigate({ view: "vision" })}
           onDocs={() => openDocs()}
+          onSystem={() => navigate({ view: "system" })}
+          onLocaleToggle={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}
+          onConnectionStatus={() => setDigitalTwinOpen((value) => !value)}
+          onCredits={() => setCreditsOpen(true)}
+          onLogout={() => void api.logout().finally(() => { setAuthToken(); setCurrentUser(undefined); setProjects([]); setProject(undefined); })}
           onUploadModels={uploadModels}
           onDeleteModel={deleteModel}
           onRefreshModels={refreshProject}
@@ -2927,7 +3008,7 @@ export function App() {
           <small>{revitRuntime.installations.length > 0 ? tr(locale, `检测到 ${revitRuntime.installations.length} 个本机版本`, `${revitRuntime.installations.length} local versions detected`) : tr(locale, "未检测到本机 Revit", "No local Revit detected")}</small>
         </label>
         <button className="upload-zone" onClick={() => uploadRef.current?.click()}>
-          <Upload size={20} /><span>{tr(locale, "上传模型", "Upload model")}</span><small>RVT · IFC · STEP · DWG · GLB · FBX · DXF</small>
+          <Upload size={20} /><span>{tr(locale, "上传模型", "Upload model")}</span><small>{tr(locale, "直接：GLB / glTF / FBX / DXF · 转换：RVT / IFC / STEP / STP / DWG", "Direct: GLB / glTF / FBX / DXF · Convert: RVT / IFC / STEP / STP / DWG")}</small>
         </button>
         </details>
         <div className="directory-tabs" role="tablist" aria-label={tr(locale, "目录类型", "Directory type")}>
@@ -3412,20 +3493,6 @@ export function App() {
             </div>}
           </div>
         )}
-        {route.view === "studio" && sceneBehaviorOpen && activeApplication && <SceneBehaviorPanel
-          locale={locale}
-          scripts={activeApplication.scripts}
-          runtimeEntries={sceneBehaviorEntries}
-          logs={sceneBehaviorLogs}
-          paused={sceneBehaviorPaused}
-          onUpsert={upsertBehaviorScript}
-          onDelete={deleteBehaviorScript}
-          onRun={runSceneBehaviors}
-          onPauseResume={pauseResumeSceneBehaviors}
-          onStop={stopSceneBehaviors}
-          onClearLogs={() => setSceneBehaviorLogs([])}
-          onClose={() => setSceneBehaviorOpen(false)}
-        />}
         {animationOpen && (
           <SceneTimelinePanel
             locale={locale}
@@ -3538,7 +3605,7 @@ export function App() {
                 setSceneDataBindingRuntime((current) => ({ ...current, [bindingId]: { status: "ready", value: message.value, updatedAt: message.timestamp } }));
                 setMessage(tr(locale, "绑定测试已应用到当前对象", "The binding test was applied to the current object"));
               }}
-              onOpenData={() => navigate({ view: "data" })}
+              onOpenData={openDataCenter}
             />}
             <div className="material-editor">
               <div className="section-label"><span>{tr(locale, "材质", "Material")}</span><small>PBR</small></div>
@@ -3630,6 +3697,21 @@ export function App() {
     <input ref={uploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadModels(event.target.files ?? undefined)} />
     <input ref={importRef} hidden type="file" accept=".json,.bimscene" onChange={(event) => void importScene(event.target.files?.[0])} />
     <input ref={environmentMapRef} hidden type="file" accept=".hdr,.exr,.jpg,.jpeg,.png,.webp" onChange={(event) => void uploadEnvironmentMap(event.target.files?.[0])} />
+    {sceneBehaviorOpen && activeApplication && (route.view === "studio" || route.view === "dashboard") && <SceneBehaviorPanel
+      locale={locale}
+      scripts={activeApplication.scripts}
+      codeTargets={behaviorCodeTargets}
+      runtimeEntries={sceneBehaviorEntries}
+      logs={sceneBehaviorLogs}
+      paused={sceneBehaviorPaused}
+      onUpsert={upsertBehaviorScript}
+      onDelete={deleteBehaviorScript}
+      onRun={runSceneBehaviors}
+      onPauseResume={pauseResumeSceneBehaviors}
+      onStop={stopSceneBehaviors}
+      onClearLogs={() => setSceneBehaviorLogs([])}
+      onClose={() => setSceneBehaviorOpen(false)}
+    />}
     {projectDialogMode && <div className="dialog-backdrop" onMouseDown={() => !busy && setProjectDialogMode(undefined)}>
       <form className="dialog" onSubmit={(event) => { event.preventDefault(); void submitProjectDialog(); }} onMouseDown={(event) => event.stopPropagation()}>
         <span className="eyebrow">{projectDialogMode === "rename" ? "EDIT PROJECT" : "NEW PROJECT"}</span>
@@ -3640,7 +3722,7 @@ export function App() {
         <div className="dialog-actions"><button type="button" className="button" disabled={busy} onClick={() => setProjectDialogMode(undefined)}>{tr(locale, "取消", "Cancel")}</button><button className="button primary" disabled={!newProjectName.trim() || busy}>{busy ? tr(locale, "保存中…", "Saving…") : projectDialogMode === "rename" ? tr(locale, "保存修改", "Save changes") : tr(locale, "创建并切换", "Create and switch")}</button></div>
       </form>
     </div>}
-    {(route.view === "manager" || route.view === "optimizer" || route.view === "data" || route.view === "vision" || route.view === "system") && <div className="global-utility">{currentUser.role === "admin" && <button onClick={() => navigate({ view: "system" })}><ShieldCheck size={15} />系统</button>}<button onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={15} />{locale === "zh-CN" ? "EN" : "中文"}</button><button onClick={() => setDigitalTwinOpen((value) => !value)}><Radio size={15} />{tr(locale, "数据", "Data")}</button><button onClick={() => setCreditsOpen(true)}><HeartHandshake size={15} />{tr(locale, "致谢", "Credits")}</button><button title={`${currentUser.displayName} · ${currentUser.role}`} onClick={() => void api.logout().finally(() => { setAuthToken(); setCurrentUser(undefined); setProjects([]); setProject(undefined); })}><LogOut size={15} />退出</button></div>}
+    {(route.view === "optimizer" || route.view === "data" || route.view === "vision" || route.view === "system") && <div className="global-utility">{currentUser.role === "admin" && <button onClick={() => navigate({ view: "system" })}><ShieldCheck size={15} />系统</button>}<button onClick={() => { const next = locale === "zh-CN" ? "en-US" : "zh-CN"; setLocale(next); storeLocale(next); }}><Languages size={15} />{locale === "zh-CN" ? "EN" : "中文"}</button><button onClick={() => setDigitalTwinOpen((value) => !value)}><Radio size={15} />{tr(locale, "数据", "Data")}</button><button onClick={() => setCreditsOpen(true)}><HeartHandshake size={15} />{tr(locale, "致谢", "Credits")}</button><button title={`${currentUser.displayName} · ${currentUser.role}`} onClick={() => void api.logout().finally(() => { setAuthToken(); setCurrentUser(undefined); setProjects([]); setProject(undefined); })}><LogOut size={15} />退出</button></div>}
     {digitalTwinOpen && <DigitalTwinPanel locale={locale} onClose={() => setDigitalTwinOpen(false)} status={sceneDataStatus} received={sceneDataReceived} />}
     {(route.view === "manager" || route.view === "optimizer" || route.view === "data" || route.view === "vision" || route.view === "system") && creditsOpen && <CreditsModal locale={locale} onClose={() => setCreditsOpen(false)} />}
     {error && <div className="toast error">{error}</div>}

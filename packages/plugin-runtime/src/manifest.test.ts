@@ -28,7 +28,7 @@ describe("validatePluginManifest", () => {
     const input = pluginManifest();
     const converter = input.extensionPoints[2];
     if (converter?.kind !== "converter.plugin") throw new Error("fixture mismatch");
-    converter.inputExtensions = ["jt", "jt"];
+    converter.inputExtensions = ["obj", "obj"];
     converter.limits.timeoutMs = 0;
     const result = validatePluginManifest(input);
     expectIssue(result, "$.extensionPoints[2].inputExtensions[1]");

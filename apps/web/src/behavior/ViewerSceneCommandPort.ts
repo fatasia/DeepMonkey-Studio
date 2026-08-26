@@ -7,7 +7,7 @@ const unsupported = (message: string): SceneCommandPortOutcome => ({ status: "un
 const DATA_ACTIONS = new Set<DataEventAction>(["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects"]);
 
 export class ViewerSceneCommandPort implements SceneCommandPort {
-  constructor(private readonly viewer: ViewerEngine) {}
+  constructor(private readonly viewer: ViewerEngine, private readonly componentUpdater?: (componentId: string, patch: Record<string, unknown>) => void) {}
 
   setObjectVisibility(target: SceneObjectRef, visible: boolean): SceneCommandPortOutcome {
     if (target.kind === "scene") {
@@ -95,6 +95,12 @@ export class ViewerSceneCommandPort implements SceneCommandPort {
       })) applied += 1;
     }
     return applied > 0 ? SCENE_COMMAND_APPLIED : unsupported("数据字段没有匹配可执行的场景动作。");
+  }
+
+  updateComponent(componentId: string, patch: Record<string, JsonValue>): SceneCommandPortOutcome {
+    if (!this.componentUpdater) return unsupported("当前宿主未连接二维组件更新端口。");
+    this.componentUpdater(componentId, patch);
+    return SCENE_COMMAND_APPLIED;
   }
 
   private hasModel(modelId: string): boolean {

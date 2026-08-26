@@ -23,6 +23,7 @@ export function authorizeSceneCommands(module: SceneBehaviorModule, commands: re
 }
 
 function requiredCapability(type: SceneCommand["type"]): SceneCapability[] {
+  if (type === "component.update") return ["studio.component"];
   if (type === "camera.set" || type === "camera.fly-to") return ["studio.camera"];
   if (type === "animation.control") return ["studio.animation"];
   if (type === "data.apply") return ["studio.data", "studio.object"];

@@ -57,7 +57,8 @@ const COMMAND_TYPES = [
   "camera.set",
   "camera.fly-to",
   "animation.control",
-  "data.apply"
+  "data.apply",
+  "component.update"
 ] as const;
 
 const ANIMATION_ACTIONS = ["play", "pause", "stop", "seek"] as const;
@@ -204,6 +205,12 @@ function parseCommandByType(
       const values = parseJsonObject(readRequired(record, "values", "$", context), "$.values", context, 0);
       const timestamp = parseRequiredIdentifier(record, "timestamp", "$", context);
       return target && values && timestamp ? { id, type, target, values, timestamp } : undefined;
+    }
+    case "component.update": {
+      rejectUnknownProperties(record, ["id", "type", "componentId", "patch"], "$", context);
+      const componentId = parseRequiredIdentifier(record, "componentId", "$", context);
+      const patch = parseJsonObject(readRequired(record, "patch", "$", context), "$.patch", context, 0);
+      return componentId && patch ? { id, type, componentId, patch } : undefined;
     }
   }
 }

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-BIM Studio 需要同时扩展实时渲染能力、工业数据接入和低代码看板。把 Node-RED 运行时、数据库驱动和流程编辑器直接打进 React/Three.js 前端会显著增加首屏体积、权限暴露和故障耦合；把每种协议直接写入查看器又会让场景代码无法维护。
+iTwin Studio 需要同时扩展实时渲染能力、工业数据接入和低代码看板。把 Node-RED 运行时、数据库驱动和流程编辑器直接打进 React/Three.js 前端会显著增加首屏体积、权限暴露和故障耦合；把每种协议直接写入查看器又会让场景代码无法维护。
 
 目标是：普通场景编辑不依赖 Node-RED 也能工作；接入服务故障时只丢失实时数据，不影响模型浏览和场景保存；单个浏览器只订阅当前场景需要的数据。
 
@@ -15,7 +15,7 @@ BIM Studio 需要同时扩展实时渲染能力、工业数据接入和低代码
 - 保持现有 Web + API 模块化单体，增加独立的 Node-RED 进程（默认端口 1880），由根目录脚本统一启停。
 - Node-RED 负责 HTTP、WebSocket、MQTT、OPC UA、Modbus、BACnet 和数据库连接；浏览器仅消费统一的场景消息，不直接保存数据库凭据。
 - 场景消息使用稳定的轻量信封：`source`、`key`、`value`、`timestamp`、可选 `target` 与 `action`。动作只允许更新显隐、颜色、位置和标签等显式白名单属性。
-- Node-RED 编辑器与 Dashboard 独立加载，使用与 BIM Studio 一致的深色主题；主应用仅提供入口、连接状态和场景数据桥。
+- Node-RED 编辑器与 Dashboard 独立加载，使用与 iTwin Studio 一致的深色主题；主应用仅提供入口、连接状态和场景数据桥。
 - Three.js 灯光、环境和材质状态进入原生 `SceneDocument`；不为旧场景快照保留缺省兼容逻辑。
 - WebXR 仅在 WebGL + HTTPS/localhost 环境启用；不支持时功能降级为普通查看器。
 

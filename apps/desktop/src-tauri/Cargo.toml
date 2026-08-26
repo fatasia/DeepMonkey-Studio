@@ -1,8 +1,8 @@
 [package]
 name = "bim-studio-desktop"
 version = "0.1.0"
-description = "Thin Tauri host for Dev Studio"
-authors = ["BIM Studio"]
+description = "Thin Tauri host for iTwin Studio"
+authors = ["iTwin Studio"]
 edition = "2024"
 
 [lib]

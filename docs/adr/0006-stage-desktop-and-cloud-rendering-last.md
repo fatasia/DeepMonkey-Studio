@@ -66,6 +66,6 @@ Accepted
 
 ## References
 
-- [Dev Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
+- [iTwin Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
 - [ADR-0002 模块化编辑器内核](./0002-modular-editor-core.md)
 - [ADR-0005 WebGPU 优先渲染](./0005-webgpu-first-rendering.md)

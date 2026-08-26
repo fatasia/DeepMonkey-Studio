@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Dev Studio 需要长期支持复杂材质、工业特效、粒子、实例化和 GPU 计算，同时必须兼容现有 Three.js/WebGL 场景和不同浏览器、WebView、GPU 与驱动。
+iTwin Studio 需要长期支持复杂材质、工业特效、粒子、实例化和 GPU 计算，同时必须兼容现有 Three.js/WebGL 场景和不同浏览器、WebView、GPU 与驱动。
 
 Three.js `WebGPURenderer` 优先使用 WebGPU，并可以回退 WebGL 2；其新材质与后处理体系采用 TSL/Node Material。但是当前官方仍将 WebGPU renderer 标为实验状态，旧 `ShaderMaterial`、`RawShaderMaterial`、`onBeforeCompile` 和 `EffectComposer` 不能直接迁移。
 
@@ -72,4 +72,4 @@ Three.js `WebGPURenderer` 优先使用 WebGPU，并可以回退 WebGL 2；其新
 - [Three.js WebGPURenderer 文档](https://threejs.org/docs/pages/WebGPURenderer.html)
 - [Three.js WebGPURenderer 迁移指南](https://threejs.org/manual/en/webgpurenderer)
 - [Three.js WebGPU 后处理](https://threejs.org/manual/en/webgpu-postprocessing.html)
-- [Dev Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
+- [iTwin Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)

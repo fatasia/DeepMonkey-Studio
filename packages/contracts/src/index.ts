@@ -709,7 +709,7 @@ export interface SceneAnimationState {
 }
 
 export type SceneDashboardSide = "left" | "right";
-export type SceneDashboardWidgetType = "text" | "shape" | "value" | "gauge" | "status" | "line" | "area" | "bar" | "pie" | "table" | "image" | "video" | "monitor" | "url" | "topology";
+export type SceneDashboardWidgetType = "text" | "shape" | "decoration" | "value" | "progress" | "status" | "gauge" | "line" | "area" | "bar" | "pie" | "scatter" | "radar" | "funnel" | "rank" | "table" | "filter" | "image" | "video" | "monitor" | "url" | "topology";
 
 export interface SceneDashboardWidgetState {
   id: string;
@@ -744,6 +744,8 @@ export interface SceneDashboardWidgetState {
   topologyId?: string;
   content?: string;
   shape?: "rectangle" | "rounded" | "ellipse" | "line";
+  decorationStyle?: "title" | "border" | "divider" | "corner";
+  options?: string[];
   borderColor?: string;
   borderWidth?: number;
   fontSize?: number;

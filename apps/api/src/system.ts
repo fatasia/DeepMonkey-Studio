@@ -29,7 +29,7 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
     const session = token ? resolveSession(token) : undefined;
     if (!session || session.expiresAt <= Date.now()) {
       if (token) sessions.delete(token);
-      return reply.code(401).send({ message: "请先登录 BIM Studio" });
+      return reply.code(401).send({ message: "请先登录 iTwin Studio" });
     }
     const stored = store.getUser(session.userId);
     if (!stored?.enabled) return reply.code(401).send({ message: "用户已停用，请重新登录" });
@@ -185,8 +185,8 @@ function authToken(request: FastifyRequest): string | undefined {
 }
 
 const DEFAULT_BRANDING: SystemBrandingSettings = {
-  systemName: "BIM Studio",
-  browserTitle: "BIM Studio",
+  systemName: "iTwin Studio",
+  browserTitle: "iTwin Studio",
   loginSubtitle: "数字孪生场景平台",
   copyright: "Copyright © 张文鹏 Charlie",
   logoUrl: "/brand/logo-transparent.png",
@@ -201,7 +201,15 @@ const DEFAULT_BRANDING: SystemBrandingSettings = {
 };
 
 function resolveBrandingSettings(store: MetadataStore): SystemBrandingSettings {
-  return normalizeBrandingSettings({ ...DEFAULT_BRANDING, ...store.getBrandingSettings() });
+  const stored = store.getBrandingSettings();
+  const migrated = stored
+    ? {
+        ...stored,
+        systemName: stored.systemName === "BIM Studio" || stored.systemName === "Dev Studio" ? DEFAULT_BRANDING.systemName : stored.systemName,
+        browserTitle: stored.browserTitle === "BIM Studio" || stored.browserTitle === "Dev Studio" ? DEFAULT_BRANDING.browserTitle : stored.browserTitle
+      }
+    : undefined;
+  return normalizeBrandingSettings({ ...DEFAULT_BRANDING, ...migrated });
 }
 function normalizeBrandingSettings(settings: SystemBrandingSettings): SystemBrandingSettings {
   const color = /^#[0-9a-f]{6}$/i.test(settings.primaryColor) ? settings.primaryColor : DEFAULT_BRANDING.primaryColor;
@@ -240,7 +248,7 @@ function assistantPrompts(mode: "bim" | "scene" | "component" | "dashboard" | "s
     : mode === "sql"
       ? "你是 SQL 助手。根据上下文中的数据库类型、数据连接和数据集字段生成 SQL。默认只生成 SELECT/CTE/EXPLAIN 等只读语句，禁止 INSERT、UPDATE、DELETE、DROP、ALTER、TRUNCATE。回答先给可直接复制的 SQL 代码块，再简要解释字段、参数和性能注意事项；信息不足时明确列出需要补充的表或字段。不要虚构不存在的表和字段。"
       : "用中文简洁回答，并优先给出可执行操作建议。";
-  const systemPrompt = `你是 BIM Studio 数字孪生助手。当前模式：${mode}。${modeInstruction}`;
+  const systemPrompt = `你是 iTwin Studio 数字孪生助手。当前模式：${mode}。${modeInstruction}`;
   const userPrompt = `${question}\n\n当前上下文：${JSON.stringify(context).slice(0, 80_000)}`;
   return { systemPrompt, userPrompt };
 }

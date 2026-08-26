@@ -1,12 +1,12 @@
-# Dev Studio 与 Unity 渲染性能基准
+# iTwin Studio 与 Unity 渲染性能基准
 
 ## 目标与结论口径
 
 目标不是证明某一方“总是更快”，而是回答三个可复现的问题：
 
-1. 相同浏览器场景下，Dev Studio WebGPU 相对 WebGL 2 的收益、退化和兼容性是什么。
-2. 相同资产、相机、分辨率和画质下，Dev Studio 本地渲染与 Unity Release Player 的性能差异是什么。
-3. 相同 GPU、编码器、码率和网络条件下，Dev Studio 云渲染与 Unity Render Streaming 的端到端差异是什么。
+1. 相同浏览器场景下，iTwin Studio WebGPU 相对 WebGL 2 的收益、退化和兼容性是什么。
+2. 相同资产、相机、分辨率和画质下，iTwin Studio 本地渲染与 Unity Release Player 的性能差异是什么。
+3. 相同 GPU、编码器、码率和网络条件下，iTwin Studio 云渲染与 Unity Render Streaming 的端到端差异是什么。
 
 不生成单一综合分。每个工作负载分别报告帧时间、资源消耗、延迟和画质，结论必须带硬件、驱动、
 浏览器/Unity/代码版本、场景哈希、配置与原始结果。
@@ -16,7 +16,7 @@
 - Windows 11，Intel Core i9-12900HX，31.8 GB RAM。
 - NVIDIA GeForce RTX 4060 Laptop GPU，8188 MiB，驱动 595.79。
 - Unity Hub 3.12.1 已安装，但本机当前未发现 Unity Editor；Unity 对照组尚不能构建。
-- Dev Studio 已能在同一场景内切换 WebGPU 实验后端并回退 WebGL 2。
+- iTwin Studio 已能在同一场景内切换 WebGPU 实验后端并回退 WebGL 2。
 - 云渲染当前只有 `RemoteRenderSession` 协议与状态机，没有 GPU Worker、编码器、WebRTC 媒体和输入链路，
   因而当前不存在可测试的云渲染结果，也不得宣称优于 Unity。
 
@@ -33,7 +33,7 @@
 | 相机 | 同一位置、目标、FOV、near/far 和 120 秒确定性轨迹 |
 | 分辨率 | 1920×1080、2560×1440、3840×2160，渲染比例 100% |
 | 画质 | 阴影、AA、环境、后处理、纹理过滤、LOD 和遮挡逐项映射并截图核对 |
-| 运行形态 | Dev Studio 生产构建；Unity Windows x64 Release Player，不测 Unity Editor |
+| 运行形态 | iTwin Studio 生产构建；Unity Windows x64 Release Player，不测 Unity Editor |
 | 系统 | 同一机器、同一显示模式、接通电源、固定性能档、关闭覆盖层和无关后台任务 |
 | 采样 | 30 秒预热、120 秒采样、每项 5 次；报告中位数及最差一次，不挑最好结果 |
 
@@ -66,7 +66,7 @@ timestamp query；Unity 使用 `FrameTimingManager`/ProfilerRecorder 的 CPU/GPU
 
 ## 云渲染对照
 
-Dev Studio 和 Unity 都必须在相同 RTX 4060/同级云 GPU、同一场景与相机轨迹下运行，并固定：
+iTwin Studio 和 Unity 都必须在相同 RTX 4060/同级云 GPU、同一场景与相机轨迹下运行，并固定：
 
 - H.264 硬件编码器、1080p60 / 1440p60 / 4K30、相同码率、GOP 和色彩格式。
 - 相同浏览器、同一台客户端、同一 LAN；再分别注入 20/50/100 ms RTT、0/1/3% 丢包和带宽限制。
@@ -80,7 +80,7 @@ Dev Studio 和 Unity 都必须在相同 RTX 4060/同级云 GPU、同一场景与
 - 每 GPU 并发会话、显存/编码器占用、单会话成本和故障回收时间。
 
 Unity Render Streaming 官方资料说明分辨率、码率、网络状态和硬件/软件编码器会显著影响结果，因此这些变量
-必须固定；只有完整 GPU Worker 与 WebRTC 链路通过故障隔离后，Dev Studio 才能进入这组对比。
+必须固定；只有完整 GPU Worker 与 WebRTC 链路通过故障隔离后，iTwin Studio 才能进入这组对比。
 
 ## 判定门槛
 

@@ -43,8 +43,8 @@ const manifest: PluginManifestV1 = {
     {
       kind: "converter.plugin",
       id: "acme.xt-converter",
-      inputExtensions: ["x_t", "x_b"],
-      inputMediaTypes: ["model/vnd.parasolid.transmit.text"],
+      inputExtensions: ["obj", "dae"],
+      inputMediaTypes: ["model/obj", "model/vnd.collada+xml"],
       outputFormat: "glb",
       outputMediaType: "model/gltf-binary",
       execution: "server-worker",

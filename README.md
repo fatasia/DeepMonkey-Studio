@@ -1,4 +1,4 @@
-# BIM Studio
+# iTwin Studio
 
 面向内网部署的轻量 BIM/CAD 场景编辑器。项目采用可插拔转换器架构，浏览器不会假装直接解析 RVT 或 DWG。
 

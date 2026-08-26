@@ -114,6 +114,7 @@ export function DashboardWidgetView({ locale, widget, metric, compact, onAnimati
   const display = metric?.value === undefined ? "—" : typeof metric.value === "object" ? JSON.stringify(metric.value) : String(metric.value);
   if (widget.type === "text") return <div className="dashboard-text-widget" style={{ color: widget.textColor, fontSize: widget.fontSize, fontWeight: widget.fontWeight, textAlign: widget.textAlign }}>{widget.content || widget.title}</div>;
   if (widget.type === "shape") return <div className={`dashboard-shape-widget ${widget.shape ?? "rectangle"}`} style={{ background: widget.color, borderColor: widget.borderColor, borderWidth: widget.borderWidth }}><span>{widget.content}</span></div>;
+  if (widget.type === "decoration") return <div className={`dashboard-decoration-widget ${widget.decorationStyle ?? "title"}`} style={{ color: widget.color }}><i /><strong>{widget.content || widget.title}</strong><i /></div>;
   if (compact && widget.designState && widget.designState !== "auto") return <DashboardDesignState locale={locale} state={widget.designState} />;
   if (widget.type === "image") return <div className="dashboard-image-widget"><DashboardImage widget={widget} locale={locale} /></div>;
   if (widget.type === "video") return <div className="dashboard-video-widget"><DashboardVideo widget={widget} locale={locale} compact={compact} /></div>;
@@ -122,7 +123,10 @@ export function DashboardWidgetView({ locale, widget, metric, compact, onAnimati
     const url = embeddableUrl(widget.url);
     return <div className={`dashboard-webpage ${compact ? "editing" : ""}`}>{url ? <iframe src={url} title={widget.title || tr(locale, "嵌入网页", "Embedded web page")} loading="lazy" allow="fullscreen; autoplay; clipboard-read; clipboard-write" /> : <div><Globe2 size={22} /><strong>{widget.title}</strong><span>{tr(locale, "编辑组件并填写 HTTP(S) 或站内网页地址", "Edit the widget and enter an HTTP(S) or local URL")}</span></div>}{compact && <i>{tr(locale, "编辑模式下网页交互已暂停", "Web page interaction is paused while editing")}</i>}</div>;
   }
-  if (["line", "area", "bar", "pie", "gauge"].includes(widget.type)) return <DashboardChart widget={widget} metric={metric} compact={compact} onAnimationStart={onAnimationStart} onAnimationEnd={onAnimationEnd} />;
+  if (["line", "area", "bar", "pie", "scatter", "radar", "funnel", "gauge"].includes(widget.type)) return <DashboardChart widget={widget} metric={metric} compact={compact} onAnimationStart={onAnimationStart} onAnimationEnd={onAnimationEnd} />;
+  if (widget.type === "progress") { const value = Math.max(widget.min ?? 0, Math.min(widget.max ?? 100, toFiniteNumber(metric?.value) ?? 0)); const ratio = (value - (widget.min ?? 0)) / Math.max(1, (widget.max ?? 100) - (widget.min ?? 0)); return <div className="dashboard-progress-widget"><header><span>{widget.title}</span><strong>{value}{widget.unit}</strong></header><div><i style={{ width: `${ratio * 100}%`, background: widget.color }} /></div></div>; }
+  if (widget.type === "filter") return <label className="dashboard-filter-widget"><span>{widget.title}</span><select disabled={compact} defaultValue={(widget.options ?? [])[0]}>{(widget.options ?? []).map((option) => <option key={option}>{option}</option>)}</select></label>;
+  if (widget.type === "rank") return <div className="dashboard-rank-widget"><strong>{widget.title}</strong>{(metric?.rows ?? []).slice(0, 6).map((row, index) => { const value = widget.field ? row[widget.field] : Object.values(row)[0]; return <div key={index}><em>{index + 1}</em><span>{String(row.name ?? row.label ?? row.device ?? `#${index + 1}`)}</span><b>{String(value ?? "—")}</b></div>; })}</div>;
   if (widget.type === "table") return <div className="dashboard-mini-table"><strong>{widget.title}</strong><table><tbody>{(metric?.rows ?? []).slice(0, 8).map((row, index) => <tr key={index}><td>{String(row.recorded_at ?? row.time ?? index + 1)}</td><td>{String(widget.field ? row[widget.field] ?? "—" : Object.values(row)[0] ?? "—")}</td></tr>)}</tbody></table></div>;
   if (widget.type === "status") return <div className={`dashboard-status ${Boolean(metric?.value) ? "ok" : ""}`}><i /><span><small>{widget.title}</small><strong>{display === "—" ? tr(locale, "未知", "Unknown") : display}</strong></span></div>;
   return <div className="dashboard-value"><span>{widget.title}</span><strong>{display}<small>{widget.unit}</small></strong></div>;
@@ -159,7 +163,7 @@ function DashboardChart({ widget, metric, compact, onAnimationStart, onAnimation
       import("echarts/renderers")
     ]).then(([echarts, charts, components, renderers]) => {
       if (disposed) return;
-      echarts.use([charts.BarChart, charts.GaugeChart, charts.LineChart, charts.PieChart, components.GridComponent, components.TooltipComponent, renderers.CanvasRenderer]);
+      echarts.use([charts.BarChart, charts.GaugeChart, charts.LineChart, charts.PieChart, charts.ScatterChart, charts.RadarChart, charts.FunnelChart, components.GridComponent, components.RadarComponent, components.TooltipComponent, renderers.CanvasRenderer]);
       const chart = echarts.init(element, undefined, { renderer: "canvas" });
       chartRef.current = chart;
       resize = new ResizeObserver(() => chart.resize());
@@ -185,6 +189,19 @@ function DashboardChart({ widget, metric, compact, onAnimationStart, onAnimation
     }
     if (widget.type === "pie") {
       chart.setOption({ animation: !compact, tooltip: { trigger: "item" }, series: [{ type: "pie", radius: ["48%", "72%"], label: { show: false }, data: samples.slice(-8).map((sample, index) => ({ name: String(index + 1), value: sample.value })), itemStyle: { borderColor: "#172126", borderWidth: 2 } }] }, true);
+      return;
+    }
+    if (widget.type === "radar") {
+      const values = samples.slice(-6).map((sample) => sample.value);
+      chart.setOption({ animation: !compact, tooltip: {}, radar: { indicator: values.map((_, index) => ({ name: String(index + 1), max: Math.max(100, ...values) })), splitLine: { lineStyle: { color: "#344149" } }, splitArea: { areaStyle: { color: ["transparent", "rgba(52,65,73,.18)"] } }, axisName: { color: "#7d8b91", fontSize: 8 } }, series: [{ type: "radar", data: [{ value: values }], lineStyle: { color }, itemStyle: { color }, areaStyle: { color, opacity: .22 } }] }, true);
+      return;
+    }
+    if (widget.type === "funnel") {
+      chart.setOption({ animation: !compact, tooltip: { trigger: "item" }, series: [{ type: "funnel", left: "12%", width: "76%", top: 12, bottom: 8, label: { color: "#a9b5ba", fontSize: 8 }, data: samples.slice(-6).map((sample, index) => ({ name: String(index + 1), value: sample.value })) }] }, true);
+      return;
+    }
+    if (widget.type === "scatter") {
+      chart.setOption({ animation: !compact, grid: { top: 12, right: 12, bottom: 20, left: 34 }, tooltip: { trigger: "item" }, xAxis: { axisLabel: { color: "#657279", fontSize: 7 }, splitLine: { lineStyle: { color: "#252e33" } } }, yAxis: { axisLabel: { color: "#657279", fontSize: 7 }, splitLine: { lineStyle: { color: "#252e33" } } }, series: [{ type: "scatter", symbolSize: 8, itemStyle: { color }, data: samples.map((sample, index) => [index, sample.value]) }] }, true);
       return;
     }
     const seriesType = widget.type === "area" ? "line" : widget.type;

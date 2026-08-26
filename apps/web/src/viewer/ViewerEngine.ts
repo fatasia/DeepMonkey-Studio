@@ -1992,7 +1992,7 @@ export class ViewerEngine {
   async exportSceneGlb(): Promise<ArrayBuffer> {
     for (const model of this.models.values()) this.setCollisionHighlight(model, false);
     const exportRoot = new THREE.Group();
-    exportRoot.name = "BIM Studio Scene";
+    exportRoot.name = "iTwin Studio Scene";
     let meshCount = 0;
     const generatedFragmentRoots: THREE.Group[] = [];
     try {
@@ -2036,7 +2036,7 @@ export class ViewerEngine {
   async exportSceneFbx(): Promise<string> {
     for (const model of this.models.values()) this.setCollisionHighlight(model, false);
     const exportRoot = new THREE.Group();
-    exportRoot.name = "BIM Studio Scene";
+    exportRoot.name = "iTwin Studio Scene";
     const generatedFragmentRoots: THREE.Group[] = [];
     let meshCount = 0;
     try {

@@ -211,6 +211,7 @@ interface StudioAPI {
   scene: { open(sceneId: string, newTab?: boolean): void; statistics(): unknown; rendererBackend(): "webgl" | "webgpu" | undefined; getWeather(): "sunny" | "rain" | "snow" | undefined; setWeather(mode: "sunny" | "rain" | "snow"): void; getEnvironment(): unknown; setEnvironment(state: Record<string, unknown>): void; getPostProcessing(): unknown; setPostProcessing(state: Record<string, unknown>): void; getPhysics(): unknown; setPhysics(state: Record<string, unknown>): void };
   animation: { play(): void; pause(): void; seek(seconds: number): void; isPlaying(): boolean };
   selection: { get(): StudioObjectHandle | undefined; clear(): void };
+  net: StudioNetworkAPI;
   action(action: Record<string, unknown> & { type: string }): void; getData(key: string): JsonValue | undefined; setData(key: string, value: JsonValue): void; log(message: string, detail?: unknown): void;
 }
 `;

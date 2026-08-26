@@ -1,12 +1,21 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import {
   ArrowLeft,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignStartHorizontal,
+  AlignStartVertical,
   Box,
+  Braces,
   Copy,
   Database,
   Eye,
   EyeOff,
+  ExternalLink,
   GripVertical,
+  Group,
   Layers3,
   LayoutDashboard,
   Lock,
@@ -15,14 +24,17 @@ import {
   Redo2,
   Rocket,
   Save,
+  Search,
   Scaling,
+  ScanSearch,
   Trash2,
   Undo2,
+  Ungroup,
   Unlock,
   Workflow,
   X
 } from "lucide-react";
-import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type ApplicationObjectRef, type DashboardDataWidgetConfig, type DashboardPageDocument, type DashboardViewportFit, type DirectBindingSpec, type JsonValue, type ProjectRecord, type SceneDashboardWidgetType, type SceneInteractionTarget, type SceneInteractionTrigger, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
+import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type ApplicationObjectRef, type DashboardDataWidgetConfig, type DashboardGuide, type DashboardPageDocument, type DashboardViewportFit, type DirectBindingSpec, type JsonValue, type ProjectRecord, type SceneDashboardWidgetType, type SceneInteractionTarget, type SceneInteractionTrigger, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
 import {
   createDeleteDashboardNodesCommand,
   createDeleteDashboardPageCommand,
@@ -38,6 +50,7 @@ import {
   createUpdateDashboardNodeStatesCommand,
   createUpdateDashboardSceneViewportCommand,
   createUpdateDashboardPageViewportCommand,
+  createUpdateDashboardPageGuidesCommand,
   alignDashboardFrames,
   distributeDashboardFrames,
   type DashboardAlignment,
@@ -54,14 +67,30 @@ import { DashboardMediaInspector } from "./DashboardMediaInspector";
 import { createDefaultDirectBinding, DirectBindingEditor } from "./DirectBindingEditor";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 
-const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url", "topology"];
+const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = ["text", "shape", "decoration", "value", "progress", "status", "gauge", "line", "area", "bar", "pie", "scatter", "radar", "funnel", "rank", "table", "filter", "image", "video", "monitor", "url", "topology"];
+const DATA_WIDGET_CATEGORIES: Array<{ id: string; zh: string; en: string; types: SceneDashboardWidgetType[] }> = [
+  { id: "analysis", zh: "图表", en: "Charts", types: ["line", "area", "bar", "pie", "scatter", "radar", "funnel", "gauge"] },
+  { id: "indicator", zh: "指标与表格", en: "Metrics & tables", types: ["value", "progress", "status", "rank", "table"] },
+  { id: "control", zh: "筛选与内容", en: "Controls & content", types: ["filter", "text", "shape", "decoration"] },
+  { id: "media", zh: "媒体与扩展", en: "Media & extensions", types: ["image", "video", "monitor", "url", "topology"] }
+];
+const DASHBOARD_TEMPLATES: Array<{ id: "operations" | "production" | "energy"; zh: string; en: string; categoryZh: string; categoryEn: string; descriptionZh: string; descriptionEn: string }> = [
+  { id: "operations", zh: "经营驾驶舱", en: "Operations cockpit", categoryZh: "经营分析", categoryEn: "Operations", descriptionZh: "指标卡、趋势、结构分析与明细表", descriptionEn: "KPIs, trends, breakdown and detail table" },
+  { id: "production", zh: "生产运行监控", en: "Production monitoring", categoryZh: "工业生产", categoryEn: "Manufacturing", descriptionZh: "产量、OEE、良率、告警和产线趋势", descriptionEn: "Output, OEE, yield, alarms and line trends" },
+  { id: "energy", zh: "能源效率分析", en: "Energy efficiency", categoryZh: "能源管理", categoryEn: "Energy", descriptionZh: "综合能耗、单位能耗、负荷和节能分析", descriptionEn: "Consumption, intensity, load and savings" }
+];
 const DASHBOARD_RESOLUTION_PRESETS = [
   { id: "fhd", width: 1920, height: 1080, label: "Full HD · 1920 × 1080" },
   { id: "ultrawide", width: 3840, height: 1080, label: "双联大屏 · 3840 × 1080" },
   { id: "4k", width: 3840, height: 2160, label: "4K · 3840 × 2160" }
 ] as const;
 interface SelectionRect { x: number; y: number; width: number; height: number; }
+interface ActiveSnapLines { x: number[]; y: number[]; }
+interface DashboardContextMenuState { x: number; y: number; nodeId: string; }
 type InspectorTab = "content" | "data" | "style" | "animation" | "interaction";
+const RULER_SIZE = 14;
+const CANVAS_MARGIN = 72;
+const SNAP_THRESHOLD_PX = 6;
 
 export interface DashboardRuntimeViewport {
   scaleX: number;
@@ -73,8 +102,8 @@ export interface DashboardRuntimeViewport {
 }
 
 export function calculateDashboardRuntimeViewport(page: Pick<DashboardPageDocument, "width" | "height" | "viewportFit">, surfaceWidth: number, surfaceHeight: number): DashboardRuntimeViewport {
-  const availableWidth = Math.max(1, surfaceWidth - (page.viewportFit === "fixed" ? 0 : 32));
-  const availableHeight = Math.max(1, surfaceHeight - (page.viewportFit === "fixed" ? 0 : 32));
+  const availableWidth = Math.max(1, surfaceWidth);
+  const availableHeight = Math.max(1, surfaceHeight);
   const widthScale = availableWidth / page.width;
   const heightScale = availableHeight / page.height;
   if (page.viewportFit === "stretch") {
@@ -97,6 +126,28 @@ export function calculateDashboardEditorZoom(page: Pick<DashboardPageDocument, "
   return Math.max(0.1, Math.min(2, Number(Math.min(availableWidth / page.width, availableHeight / page.height).toFixed(3))));
 }
 
+export function snapDashboardFrame(frame: WidgetFrame, mode: "move" | "resize", xCandidates: readonly number[], yCandidates: readonly number[], threshold: number): { frame: WidgetFrame; lines: ActiveSnapLines } {
+  const xAnchors = mode === "move" ? [frame.x, frame.x + frame.width / 2, frame.x + frame.width] : [frame.x + frame.width];
+  const yAnchors = mode === "move" ? [frame.y, frame.y + frame.height / 2, frame.y + frame.height] : [frame.y + frame.height];
+  const xSnap = nearestSnap(xAnchors, xCandidates, threshold);
+  const ySnap = nearestSnap(yAnchors, yCandidates, threshold);
+  return {
+    frame: mode === "move"
+      ? { ...frame, x: frame.x + (xSnap?.delta ?? 0), y: frame.y + (ySnap?.delta ?? 0) }
+      : { ...frame, width: Math.max(40, frame.width + (xSnap?.delta ?? 0)), height: Math.max(40, frame.height + (ySnap?.delta ?? 0)) },
+    lines: { x: xSnap ? [xSnap.candidate] : [], y: ySnap ? [ySnap.candidate] : [] }
+  };
+}
+
+function nearestSnap(anchors: readonly number[], candidates: readonly number[], threshold: number): { delta: number; candidate: number } | undefined {
+  let result: { delta: number; candidate: number } | undefined;
+  for (const anchor of anchors) for (const candidate of candidates) {
+    const delta = candidate - anchor;
+    if (Math.abs(delta) <= threshold && (!result || Math.abs(delta) < Math.abs(result.delta))) result = { delta, candidate };
+  }
+  return result;
+}
+
 export interface DashboardWorkspaceProps {
   locale: AppLocale;
   application: ApplicationDocument;
@@ -116,6 +167,7 @@ export interface DashboardWorkspaceProps {
   onEnterScene: (sceneId: string, view: DashboardViewState) => void;
   onOpenTopology: () => void;
   onOpenData: () => void;
+  onOpenScripts?: () => void;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
   onNodeInteraction: (nodeId: string, trigger?: SceneInteractionTrigger) => ApplicationInteractionResult | undefined;
@@ -147,6 +199,7 @@ export function DashboardWorkspace({
   onEnterScene,
   onOpenTopology,
   onOpenData,
+  onOpenScripts,
   onSelectionChange,
   onObjectInteraction,
   onNodeInteraction,
@@ -166,10 +219,23 @@ export function DashboardWorkspace({
   const [selectionRect, setSelectionRect] = useState<SelectionRect>();
   const [marqueeMode, setMarqueeMode] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [guidesVisible, setGuidesVisible] = useState(true);
+  const [draftGuides, setDraftGuides] = useState<DashboardGuide[]>();
+  const [activeSnapLines, setActiveSnapLines] = useState<ActiveSnapLines>({ x: [], y: [] });
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("content");
   const [componentSearch, setComponentSearch] = useState("");
   const [nodeNameError, setNodeNameError] = useState("");
+  const [templateLibraryOpen, setTemplateLibraryOpen] = useState(false);
+  const [templateQuery, setTemplateQuery] = useState("");
+  const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
+  const [viewportScroll, setViewportScroll] = useState({ left: 0, top: 0 });
+  const [panning, setPanning] = useState(false);
+  const [contextMenu, setContextMenu] = useState<DashboardContextMenuState>();
+  const [draggedLayerId, setDraggedLayerId] = useState<string>();
+  const [layerDropTargetId, setLayerDropTargetId] = useState<string>();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const artboardRef = useRef<HTMLDivElement>(null);
+  const spacePressedRef = useRef(false);
   const pageNameCommitRef = useRef(page.name);
   const clipboardRef = useRef<WidgetNode[]>([]);
   const componentSearchRef = useRef<HTMLInputElement>(null);
@@ -185,6 +251,47 @@ export function DashboardWorkspace({
       samples: typeof value === "number" && Number.isFinite(value) ? [{ time: Date.now(), value }] : []
     }]))
   }), [metrics, variables]);
+  const stageWidth = Math.max(surfaceSize.width, page.width * zoom + CANVAS_MARGIN * 2);
+  const stageHeight = Math.max(surfaceSize.height, page.height * zoom + CANVAS_MARGIN * 2);
+  const artboardOffsetX = Math.max(CANVAS_MARGIN, (stageWidth - page.width * zoom) / 2);
+  const artboardOffsetY = Math.max(CANVAS_MARGIN, (stageHeight - page.height * zoom) / 2);
+
+  useEffect(() => {
+    const surface = scrollRef.current;
+    if (!surface) return;
+    const update = () => setSurfaceSize({ width: surface.clientWidth, height: surface.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(undefined);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextMenu]);
+
+  useEffect(() => {
+    const keyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.code === "Space" && !target?.matches("input,textarea,select,[contenteditable=true]")) {
+        spacePressedRef.current = true;
+        event.preventDefault();
+      }
+    };
+    const keyUp = (event: KeyboardEvent) => { if (event.code === "Space") spacePressedRef.current = false; };
+    window.addEventListener("keydown", keyDown);
+    window.addEventListener("keyup", keyUp);
+    return () => { window.removeEventListener("keydown", keyDown); window.removeEventListener("keyup", keyUp); };
+  }, []);
 
   useEffect(() => {
     const widgetIds = selection.filter((item) => item.kind === "widget").map((item) => item.id);
@@ -238,20 +345,85 @@ export function DashboardWorkspace({
     onViewStateChange(currentView());
   }
 
+  function handleCanvasScroll() {
+    const surface = scrollRef.current;
+    if (surface) setViewportScroll({ left: surface.scrollLeft, top: surface.scrollTop });
+    emitViewState();
+  }
+
   function fitCanvasToViewport() {
     const surface = scrollRef.current;
     if (!surface) return;
     const nextZoom = calculateDashboardEditorZoom(page, surface.clientWidth, surface.clientHeight);
     setZoom(nextZoom);
     window.requestAnimationFrame(() => {
-      surface.scrollLeft = Math.max(0, (page.width * nextZoom - surface.clientWidth) / 2 + 42);
-      surface.scrollTop = Math.max(0, (page.height * nextZoom - surface.clientHeight) / 2 + 42);
+      const nextStageWidth = Math.max(surface.clientWidth, page.width * nextZoom + CANVAS_MARGIN * 2);
+      const nextStageHeight = Math.max(surface.clientHeight, page.height * nextZoom + CANVAS_MARGIN * 2);
+      surface.scrollLeft = Math.max(0, (nextStageWidth - surface.clientWidth) / 2);
+      surface.scrollTop = Math.max(0, (nextStageHeight - surface.clientHeight) / 2);
       onViewStateChange({ zoom: nextZoom, scrollLeft: surface.scrollLeft, scrollTop: surface.scrollTop, selectedNodeIds });
     });
   }
 
+  function changeZoom(nextZoom: number, clientX?: number, clientY?: number) {
+    const surface = scrollRef.current;
+    const clamped = Math.max(0.1, Math.min(2, Number(nextZoom.toFixed(3))));
+    if (!surface || clamped === zoom) return setZoom(clamped);
+    const bounds = surface.getBoundingClientRect();
+    const localX = clientX === undefined ? surface.clientWidth / 2 : clientX - bounds.left;
+    const localY = clientY === undefined ? surface.clientHeight / 2 : clientY - bounds.top;
+    const logicalX = (surface.scrollLeft + localX - artboardOffsetX) / zoom;
+    const logicalY = (surface.scrollTop + localY - artboardOffsetY) / zoom;
+    const nextStageWidth = Math.max(surface.clientWidth, page.width * clamped + CANVAS_MARGIN * 2);
+    const nextStageHeight = Math.max(surface.clientHeight, page.height * clamped + CANVAS_MARGIN * 2);
+    const nextOffsetX = Math.max(CANVAS_MARGIN, (nextStageWidth - page.width * clamped) / 2);
+    const nextOffsetY = Math.max(CANVAS_MARGIN, (nextStageHeight - page.height * clamped) / 2);
+    setZoom(clamped);
+    window.requestAnimationFrame(() => {
+      surface.scrollLeft = Math.max(0, nextOffsetX + logicalX * clamped - localX);
+      surface.scrollTop = Math.max(0, nextOffsetY + logicalY * clamped - localY);
+      onViewStateChange({ zoom: clamped, scrollLeft: surface.scrollLeft, scrollTop: surface.scrollTop, selectedNodeIds });
+    });
+  }
+
+  function zoomCanvas(event: ReactWheelEvent<HTMLDivElement>) {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    changeZoom(zoom * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY);
+  }
+
+  function beginCanvasPan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 1 && !(event.button === 0 && spacePressedRef.current)) return;
+    const surface = scrollRef.current;
+    if (!surface) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startLeft = surface.scrollLeft;
+    const startTop = surface.scrollTop;
+    const pointerId = event.pointerId;
+    setPanning(true);
+    const move = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      surface.scrollLeft = startLeft - (pointer.clientX - startX);
+      surface.scrollTop = startTop - (pointer.clientY - startY);
+    };
+    const finish = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      setPanning(false);
+      emitViewState();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  }
+
   function selectNode(node: WidgetNode, additive: boolean, force = false) {
-    if (!force && node.selectable === false) return;
+    if (node.locked || (!force && node.selectable === false)) return;
     const groupIds = !additive && node.groupId
       ? page.nodes.filter((candidate) => candidate.groupId === node.groupId && candidate.visible !== false).map((candidate) => candidate.id)
       : undefined;
@@ -283,9 +455,13 @@ export function DashboardWorkspace({
     const startX = event.clientX;
     const startY = event.clientY;
     const pointerId = event.pointerId;
-    const framesAt = (clientX: number, clientY: number): Record<string, WidgetFrame> => {
+    const otherNodes = page.nodes.filter((candidate) => !nodeIds.includes(candidate.id) && candidate.visible !== false);
+    const xCandidates = [0, page.width / 2, page.width, ...(guidesVisible ? (page.guides ?? []).filter((guide) => guide.orientation === "vertical").map((guide) => guide.position) : []), ...otherNodes.flatMap((candidate) => [candidate.frame.x, candidate.frame.x + candidate.frame.width / 2, candidate.frame.x + candidate.frame.width])];
+    const yCandidates = [0, page.height / 2, page.height, ...(guidesVisible ? (page.guides ?? []).filter((guide) => guide.orientation === "horizontal").map((guide) => guide.position) : []), ...otherNodes.flatMap((candidate) => [candidate.frame.y, candidate.frame.y + candidate.frame.height / 2, candidate.frame.y + candidate.frame.height])];
+    const framesAt = (clientX: number, clientY: number): { frames: Record<string, WidgetFrame>; lines: ActiveSnapLines } => {
       let dx = Math.round((clientX - startX) / zoom);
       let dy = Math.round((clientY - startY) / zoom);
+      let lines: ActiveSnapLines = { x: [], y: [] };
       if (snapEnabled) {
         const anchor = initial.get(node.id)!;
         if (mode === "move") {
@@ -295,8 +471,15 @@ export function DashboardWorkspace({
           dx = Math.round((anchor.width + dx) / 8) * 8 - anchor.width;
           dy = Math.round((anchor.height + dy) / 8) * 8 - anchor.height;
         }
+        const proposed = mode === "move"
+          ? { ...anchor, x: anchor.x + dx, y: anchor.y + dy }
+          : { ...anchor, width: anchor.width + dx, height: anchor.height + dy };
+        const snapped = snapDashboardFrame(proposed, mode, xCandidates, yCandidates, SNAP_THRESHOLD_PX / zoom);
+        lines = snapped.lines;
+        if (mode === "move") { dx += snapped.frame.x - proposed.x; dy += snapped.frame.y - proposed.y; }
+        else { dx += snapped.frame.width - proposed.width; dy += snapped.frame.height - proposed.height; }
       }
-      return Object.fromEntries([...initial].map(([nodeId, frame]) => {
+      const frames = Object.fromEntries([...initial].map(([nodeId, frame]) => {
         if (mode === "resize") return [nodeId, {
           ...frame,
           width: Math.max(40, Math.min(page.width - frame.x, frame.width + dx)),
@@ -308,10 +491,13 @@ export function DashboardWorkspace({
           y: Math.max(0, Math.min(page.height - frame.height, frame.y + dy))
         }];
       }));
+      return { frames, lines };
     };
     const move = (pointer: PointerEvent) => {
       if (pointer.pointerId !== pointerId) return;
-      setDraftFrames(framesAt(pointer.clientX, pointer.clientY));
+      const next = framesAt(pointer.clientX, pointer.clientY);
+      setDraftFrames(next.frames);
+      setActiveSnapLines(next.lines);
     };
     const cleanup = () => {
       window.removeEventListener("pointermove", move);
@@ -321,8 +507,9 @@ export function DashboardWorkspace({
     const finish = (pointer: PointerEvent) => {
       if (pointer.pointerId !== pointerId) return;
       cleanup();
-      const finalFrames = framesAt(pointer.clientX, pointer.clientY);
+      const finalFrames = framesAt(pointer.clientX, pointer.clientY).frames;
       setDraftFrames({});
+      setActiveSnapLines({ x: [], y: [] });
       const changes = Object.entries(finalFrames)
         .filter(([nodeId, frame]) => JSON.stringify(frame) !== JSON.stringify(initial.get(nodeId)))
         .map(([nodeId, frame]) => ({ nodeId, frame }));
@@ -332,7 +519,52 @@ export function DashboardWorkspace({
       if (pointer.pointerId !== pointerId) return;
       cleanup();
       setDraftFrames({});
+      setActiveSnapLines({ x: [], y: [] });
     };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
+  }
+
+  function addGuide(orientation: DashboardGuide["orientation"], event: ReactPointerEvent<HTMLElement>) {
+    const artboard = artboardRef.current;
+    if (!artboard || event.button !== 0) return;
+    const bounds = artboard.getBoundingClientRect();
+    const raw = orientation === "vertical" ? (event.clientX - bounds.left) / zoom : (event.clientY - bounds.top) / zoom;
+    const limit = orientation === "vertical" ? page.width : page.height;
+    const position = Math.max(0, Math.min(limit, Math.round(raw)));
+    onCommand(createUpdateDashboardPageGuidesCommand(page.id, [...(page.guides ?? []), { id: `guide:${crypto.randomUUID()}`, orientation, position }]));
+  }
+
+  function beginGuideDrag(event: ReactPointerEvent<HTMLButtonElement>, guide: DashboardGuide) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const pointerId = event.pointerId;
+    const currentGuides = structuredClone(page.guides ?? []);
+    const positionAt = (pointer: PointerEvent) => {
+      const bounds = artboardRef.current?.getBoundingClientRect();
+      if (!bounds) return guide.position;
+      return Math.round((guide.orientation === "vertical" ? pointer.clientX - bounds.left : pointer.clientY - bounds.top) / zoom);
+    };
+    const move = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      const position = positionAt(pointer);
+      setDraftGuides(currentGuides.map((item) => item.id === guide.id ? { ...item, position } : item));
+    };
+    const finish = (pointer: PointerEvent) => {
+      if (pointer.pointerId !== pointerId) return;
+      cleanup();
+      const limit = guide.orientation === "vertical" ? page.width : page.height;
+      const position = positionAt(pointer);
+      const next = position < 0 || position > limit
+        ? currentGuides.filter((item) => item.id !== guide.id)
+        : currentGuides.map((item) => item.id === guide.id ? { ...item, position: Math.max(0, Math.min(limit, position)) } : item);
+      setDraftGuides(undefined);
+      onCommand(createUpdateDashboardPageGuidesCommand(page.id, next));
+    };
+    const cancel = () => { cleanup(); setDraftGuides(undefined); };
+    const cleanup = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", finish); window.removeEventListener("pointercancel", cancel); };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", cancel);
@@ -378,6 +610,24 @@ export function DashboardWorkspace({
     if (nodeIds.length === 0) return;
     onCommand(createDeleteDashboardNodesCommand(page.id, nodeIds));
     const remaining = selectedNodeIds.filter((id) => !nodeIds.includes(id));
+    setSelectedNodeIds(remaining);
+    onSelectionChange(remaining.map((id) => ({ kind: "widget", id })));
+  }
+
+  function deleteLayerNode(node: WidgetNode) {
+    if (busy || node.locked) return;
+    if (!window.confirm(tr(locale, `确定删除组件“${nodeLabel(node)}”吗？删除后仍可通过撤销恢复。`, `Delete “${nodeLabel(node)}”? You can still restore it with Undo.`))) return;
+    onCommand(createDeleteDashboardNodesCommand(page.id, [node.id]));
+    const remaining = selectedNodeIds.filter((id) => id !== node.id);
+    setSelectedNodeIds(remaining);
+    onSelectionChange(remaining.map((id) => ({ kind: "widget", id })));
+  }
+
+  function toggleLayerLock(node: WidgetNode) {
+    const locked = !node.locked;
+    onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { locked, selectable: !locked }));
+    if (!locked || !selectedNodeIds.includes(node.id)) return;
+    const remaining = selectedNodeIds.filter((id) => id !== node.id);
     setSelectedNodeIds(remaining);
     onSelectionChange(remaining.map((id) => ({ kind: "widget", id })));
   }
@@ -429,7 +679,11 @@ export function DashboardWorkspace({
   }
 
   function reorderSelectedNodes(direction: "front" | "forward" | "backward" | "back") {
-    const selected = new Set(page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.locked !== true).map((node) => node.id));
+    reorderNodeIds(selectedNodeIds, direction);
+  }
+
+  function reorderNodeIds(nodeIds: readonly string[], direction: "front" | "forward" | "backward" | "back") {
+    const selected = new Set(page.nodes.filter((node) => nodeIds.includes(node.id) && node.locked !== true).map((node) => node.id));
     if (selected.size === 0) return;
     const ordered = [...page.nodes].sort((left, right) => left.zIndex - right.zIndex);
     if (direction === "front" || direction === "back") {
@@ -447,6 +701,65 @@ export function DashboardWorkspace({
     }
     const order = ordered.map((node, zIndex) => ({ nodeId: node.id, zIndex })).filter(({ nodeId, zIndex }) => page.nodes.find((node) => node.id === nodeId)!.zIndex !== zIndex);
     if (order.length > 0) onCommand(createUpdateDashboardNodeOrderCommand(page.id, order));
+  }
+
+  function reorderLayerByDrop(sourceId: string, targetId: string) {
+    if (sourceId === targetId) return;
+    const displayed = [...page.nodes].sort((left, right) => right.zIndex - left.zIndex);
+    const source = displayed.find((node) => node.id === sourceId);
+    const targetIndex = displayed.findIndex((node) => node.id === targetId);
+    if (!source || source.locked || targetIndex < 0) return;
+    const withoutSource = displayed.filter((node) => node.id !== sourceId);
+    const insertionIndex = withoutSource.findIndex((node) => node.id === targetId);
+    withoutSource.splice(Math.max(0, insertionIndex), 0, source);
+    const order = [...withoutSource].reverse().map((node, zIndex) => ({ nodeId: node.id, zIndex }));
+    onCommand(createUpdateDashboardNodeOrderCommand(page.id, order));
+  }
+
+  function contextNodeIds(): string[] {
+    if (!contextMenu) return [];
+    return selectedNodeIds.includes(contextMenu.nodeId) ? selectedNodeIds : [contextMenu.nodeId];
+  }
+
+  function openNodeContextMenu(event: ReactMouseEvent, node: WidgetNode) {
+    if (node.locked) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!selectedNodeIds.includes(node.id)) {
+      setSelectedNodeIds([node.id]);
+      onSelectionChange([{ kind: "widget", id: node.id }]);
+    }
+    const menuWidth = 190;
+    const menuHeight = 310;
+    setContextMenu({ x: Math.min(event.clientX, window.innerWidth - menuWidth - 8), y: Math.min(event.clientY, window.innerHeight - menuHeight - 8), nodeId: node.id });
+  }
+
+  function copyContextNodes(duplicate = false) {
+    const ids = contextNodeIds();
+    clipboardRef.current = page.nodes.filter((node) => ids.includes(node.id)).map((node) => structuredClone(node));
+    if (duplicate) pasteCopiedNodes();
+    setContextMenu(undefined);
+  }
+
+  function updateContextNodes(state: Parameters<typeof createUpdateDashboardNodeStatesCommand>[1][number]["state"], label: string) {
+    const ids = contextNodeIds();
+    if (!ids.length) return;
+    onCommand(createUpdateDashboardNodeStatesCommand(page.id, ids.map((nodeId) => ({ nodeId, state })), label));
+    if (state.locked === true) {
+      setSelectedNodeIds([]);
+      onSelectionChange([]);
+    }
+    setContextMenu(undefined);
+  }
+
+  function deleteContextNodes() {
+    const ids = contextNodeIds();
+    const nodes = page.nodes.filter((node) => ids.includes(node.id) && !node.locked);
+    if (!nodes.length || !window.confirm(tr(locale, `确定删除 ${nodes.length} 个组件吗？删除后仍可通过撤销恢复。`, `Delete ${nodes.length} component(s)? You can still restore them with Undo.`))) return;
+    onCommand(createDeleteDashboardNodesCommand(page.id, nodes.map((node) => node.id)));
+    setSelectedNodeIds([]);
+    onSelectionChange([]);
+    setContextMenu(undefined);
   }
 
   function beginMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
@@ -618,12 +931,12 @@ export function DashboardWorkspace({
   function addDataWidget(type: SceneDashboardWidgetType) {
     const id = `widget:${crypto.randomUUID()}`;
     const index = page.nodes.filter((node) => node.kind === "data-widget").length;
-    const wide = ["line", "area", "bar", "pie", "table", "image", "video", "monitor", "url", "topology"].includes(type);
+    const wide = ["line", "area", "bar", "pie", "scatter", "radar", "funnel", "rank", "table", "filter", "image", "video", "monitor", "url", "topology", "decoration"].includes(type);
     const node: WidgetNode = {
       id,
       name: uniqueNodeName(dataWidgetTypeLabel(locale, type), new Set(page.nodes.map((item) => nodeIdentity(item).toLocaleLowerCase()))),
       kind: "data-widget",
-      frame: { x: 48 + index % 4 * 28, y: 48 + index % 4 * 28, width: wide ? 420 : 260, height: wide || type === "gauge" ? 240 : 140 },
+      frame: { x: 48 + index % 4 * 28, y: 48 + index % 4 * 28, width: wide ? 420 : 260, height: type === "decoration" ? 72 : wide || type === "gauge" ? 240 : 140 },
       zIndex: Math.max(0, ...page.nodes.map((item) => item.zIndex)) + 1,
       widget: { ...defaultDataWidget(locale, type), ...(type === "topology" && application.topologies[0] ? { topologyId: application.topologies[0].id } : {}) }
     };
@@ -650,6 +963,14 @@ export function DashboardWorkspace({
     }));
     setSelectedNodeIds([id]);
     onSelectionChange([{ kind: "widget", id }]);
+  }
+
+  function insertDashboardTemplate(kind: "operations" | "production" | "energy") {
+    if (busy) return;
+    const nodes = createDashboardTemplateNodes(locale, page, kind, Math.max(0, ...page.nodes.map((node) => node.zIndex)) + 1);
+    onCommand(createInsertDashboardNodesCommand(page.id, nodes));
+    setSelectedNodeIds(nodes.map((node) => node.id));
+    onSelectionChange(nodes.map((node) => ({ kind: "widget", id: node.id })));
   }
 
   function updateSceneViewport(patch: Partial<Pick<Extract<WidgetNode, { kind: "scene-viewport" }>, "sceneId" | "cameraViewId" | "renderMode" | "interactionPolicy">>) {
@@ -712,7 +1033,7 @@ export function DashboardWorkspace({
     updateDataWidget({ field: fieldKey, key: `${productId}.${fieldKey}`, ...(!selectedNode.widget.unit && field?.unit ? { unit: field.unit } : {}) });
   }
 
-  if (runtimePreview) return <DashboardRuntimePreview locale={locale} application={application} project={project} page={page} rendererBackend={rendererBackend} metrics={runtimeMetrics} connected={connected} onSelectPage={(pageId) => onSelectPage(pageId, currentView())} onClose={() => setRuntimePreview(false)} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onNodeInteraction={onNodeInteraction} />;
+  if (runtimePreview) return <DashboardRuntimePreview locale={locale} application={application} project={project} page={page} rendererBackend={rendererBackend} metrics={runtimeMetrics} connected={connected} onSelectPage={(pageId) => onSelectPage(pageId, currentView())} onClose={() => setRuntimePreview(false)} onPublish={onPublish} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onNodeInteraction={onNodeInteraction} />;
 
   return <main className="dashboard-workspace">
     <header className="dashboard-workspace-topbar">
@@ -721,13 +1042,14 @@ export function DashboardWorkspace({
       <nav className="workspace-mode-switch" aria-label={tr(locale, "编辑模式", "Editor mode")}>
         <span className="workspace-context"><LayoutDashboard size={14} />{tr(locale, "二维页面", "2D page")} · {page.name}</span>
         <button onClick={onOpenData}><Database size={14} />{tr(locale, "数据", "Data")}</button>
-        <button onClick={() => setRuntimePreview(true)}><Eye size={14} />{tr(locale, "预览应用", "Preview app")}</button>
+        <button onClick={() => onOpenScripts?.()}><Braces size={14} />{tr(locale, "脚本", "Scripts")}</button>
       </nav>
       <div className="dashboard-workspace-actions">
         {onAutoSaveChange && <label className="dashboard-auto-save" title={tr(locale, "修改后自动保存项目", "Automatically save project changes")}><input type="checkbox" checked={autoSaveEnabled} onChange={(event) => onAutoSaveChange(event.target.checked)} />{tr(locale, "自动保存", "Auto save")}</label>}
         <button disabled={!canUndo || busy} title={tr(locale, "撤销", "Undo")} onClick={onUndo}><Undo2 size={15} /></button>
         <button disabled={!canRedo || busy} title={tr(locale, "重做", "Redo")} onClick={onRedo}><Redo2 size={15} /></button>
         <button disabled={!dirty || busy} onClick={onSave}><Save size={15} />{tr(locale, "保存", "Save")}</button>
+        <button onClick={() => setRuntimePreview(true)}><Eye size={15} />{tr(locale, "浏览", "Browse")}</button>
         <button className="primary" disabled={busy} onClick={onPublish}><Rocket size={15} />{tr(locale, "发布", "Publish")}</button>
       </div>
     </header>
@@ -743,44 +1065,49 @@ export function DashboardWorkspace({
         <details className="dashboard-compact-page-settings"><summary>{tr(locale, "画布尺寸与适配", "Canvas size & fit")}<small>{page.width} × {page.height}</small></summary><DashboardPageViewportEditor locale={locale} page={page} onChange={commitPageViewport} compact /></details>
       </section>
       <section className="dashboard-component-library">
+        <button className="dashboard-template-library-trigger" onClick={() => setTemplateLibraryOpen(true)}><LayoutDashboard size={14} /><span><strong>{tr(locale, "模板库", "Template library")}</strong><small>{tr(locale, "行业模板与可编辑布局", "Industry templates and editable layouts")}</small></span><em>{DASHBOARD_TEMPLATES.length}</em></button>
         <div className="dashboard-panel-label"><span>{tr(locale, "组件", "Components")}</span><small>{connected ? tr(locale, "实时", "Live") : tr(locale, "离线", "Offline")}</small></div>
         <input ref={componentSearchRef} className="dashboard-component-search" aria-label={tr(locale, "搜索组件", "Search components")} value={componentSearch} onChange={(event) => setComponentSearch(event.target.value)} placeholder={tr(locale, "搜索组件 · Ctrl+F", "Search · Ctrl+F")} />
-        <div>{tr(locale, "三维场景", "3D scene").toLocaleLowerCase().includes(componentSearch.trim().toLocaleLowerCase()) && <button disabled={application.scenes.length === 0} title={application.scenes.length === 0 ? tr(locale, "请先创建三维场景", "Create a 3D scene first") : undefined} onClick={addSceneViewport}><Plus size={11} /><span>{tr(locale, "三维场景", "3D scene")}</span></button>}{DATA_WIDGET_TYPES.filter((type) => dataWidgetTypeLabel(locale, type).toLocaleLowerCase().includes(componentSearch.trim().toLocaleLowerCase())).map((type) => <button key={type} onClick={() => addDataWidget(type)}><Plus size={11} /><span>{dataWidgetTypeLabel(locale, type)}</span></button>)}</div>
+        <div className="dashboard-component-groups">
+          {tr(locale, "三维场景", "3D scene").toLocaleLowerCase().includes(componentSearch.trim().toLocaleLowerCase()) && <button disabled={application.scenes.length === 0} title={application.scenes.length === 0 ? tr(locale, "请先创建三维场景", "Create a 3D scene first") : undefined} onClick={addSceneViewport}><Plus size={11} /><span>{tr(locale, "三维场景", "3D scene")}</span></button>}
+          {DATA_WIDGET_CATEGORIES.map((category) => {
+            const types = category.types.filter((type) => dataWidgetTypeLabel(locale, type).toLocaleLowerCase().includes(componentSearch.trim().toLocaleLowerCase()));
+            return types.length > 0 ? <details key={category.id}><summary>{tr(locale, category.zh, category.en)}<small>{types.length}</small></summary><div>{types.map((type) => <button key={type} onClick={() => addDataWidget(type)}><Plus size={11} /><span>{dataWidgetTypeLabel(locale, type)}</span></button>)}</div></details> : null;
+          })}
+        </div>
       </section>
       <section>
         <div className="dashboard-panel-label"><span>{tr(locale, "图层", "Layers")}</span><small>{page.nodes.length}</small></div>
-        {[...page.nodes].sort((left, right) => right.zIndex - left.zIndex).map((node) => <div className={`dashboard-layer-row ${selectedNodeIds.includes(node.id) ? "active" : ""} ${node.visible === false ? "hidden" : ""}`} key={node.id}>
-          <button className="dashboard-layer-select" onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey, true)}>{node.kind === "scene-viewport" ? <Box size={14} /> : <Layers3 size={14} />}<span>{nodeLabel(node)}</span><small>{node.zIndex}</small></button>
+        {[...page.nodes].sort((left, right) => right.zIndex - left.zIndex).map((node) => <div draggable={!node.locked} className={`dashboard-layer-row ${selectedNodeIds.includes(node.id) ? "active" : ""} ${node.visible === false ? "hidden" : ""} ${node.locked ? "locked" : ""} ${draggedLayerId === node.id ? "dragging" : ""} ${layerDropTargetId === node.id ? "drop-target" : ""}`} key={node.id} onDragStart={(event) => { setDraggedLayerId(node.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", node.id); }} onDragOver={(event) => { if (!draggedLayerId || draggedLayerId === node.id) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setLayerDropTargetId(node.id); }} onDrop={(event) => { event.preventDefault(); const sourceId = draggedLayerId ?? event.dataTransfer.getData("text/plain"); if (sourceId) reorderLayerByDrop(sourceId, node.id); setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }} onDragEnd={() => { setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}>
+          <button className="dashboard-layer-select" disabled={node.locked} title={node.locked ? tr(locale, "图层已锁定，解锁后可选取", "Layer is locked; unlock it to select") : nodeLabel(node)} onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey, true)}>{node.kind === "scene-viewport" ? <Box size={14} /> : <Layers3 size={14} />}<span>{nodeLabel(node)}</span></button>
           <button className="dashboard-layer-action" title={node.visible === false ? tr(locale, "显示图层", "Show layer") : tr(locale, "隐藏图层", "Hide layer")} onClick={() => onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { visible: node.visible === false }))}>{node.visible === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>
-          <button className={`dashboard-layer-action dashboard-layer-selectable ${node.selectable === false ? "off" : ""}`} title={node.selectable === false ? tr(locale, "允许画布选取", "Allow canvas selection") : tr(locale, "禁止画布选取", "Prevent canvas selection")} onClick={() => onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { selectable: node.selectable === false }))}>{node.selectable === false ? "禁" : "选"}</button>
-          <button className={`dashboard-layer-action ${node.locked ? "active" : ""}`} title={node.locked ? tr(locale, "解锁图层", "Unlock layer") : tr(locale, "锁定图层", "Lock layer")} onClick={() => onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { locked: !node.locked }))}>{node.locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
+          <button className={`dashboard-layer-action ${node.locked ? "active" : ""}`} title={node.locked ? tr(locale, "解锁图层", "Unlock layer") : tr(locale, "锁定图层（同时禁止选取）", "Lock layer and prevent selection")} onClick={() => toggleLayerLock(node)}>{node.locked ? <Lock size={13} /> : <Unlock size={13} />}</button>
+          <button className="dashboard-layer-action danger" disabled={node.locked} title={node.locked ? tr(locale, "请先解锁再删除", "Unlock before deleting") : tr(locale, "删除组件", "Delete component")} onClick={() => deleteLayerNode(node)}><Trash2 size={13} /></button>
         </div>)}
       </section>
     </aside>
 
     <section className="dashboard-design-surface">
       <div className="dashboard-canvas-toolbar">
-        <span>{page.width} × {page.height}<small>{tr(locale, "Shift 拖动框选 · 方向键微调 · Shift 10px · Ctrl/Cmd+C/V/D", "Shift-drag selects · Arrows nudge · Shift 10px · Ctrl/Cmd+C/V/D")}</small>{overflowNodeIds.length > 0 && <button className="dashboard-overflow-warning" title={tr(locale, "选择所有超出页面边界的组件", "Select all components outside the page bounds")} onClick={selectOverflowNodes}>{tr(locale, `${overflowNodeIds.length} 个组件越界`, `${overflowNodeIds.length} out of bounds`)}</button>}</span>
-        <div className="dashboard-layout-tools">
-          <button className={marqueeMode ? "active" : ""} title={tr(locale, "框选组件（也可按住 Shift 拖动）", "Box select (or hold Shift while dragging)")} onClick={() => setMarqueeMode((active) => !active)}>框</button>
-          <button className={snapEnabled ? "active" : ""} title={tr(locale, "8px 网格吸附", "Snap to 8px grid")} onClick={() => setSnapEnabled((enabled) => !enabled)}>吸</button>
-          <button disabled={selectedNodeIds.filter((id) => page.nodes.some((node) => node.id === id && node.locked !== true)).length < 2} title={tr(locale, "编组", "Group")} onClick={groupSelectedNodes}>组</button>
-          <button disabled={!page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.groupId && node.locked !== true)} title={tr(locale, "解组", "Ungroup")} onClick={ungroupSelectedNodes}>解</button>
-          <button disabled={layoutSelectionCount < 2} title={tr(locale, "左对齐", "Align left")} onClick={() => layoutSelectedNodes("left")}>左</button>
-          <button disabled={layoutSelectionCount < 2} title={tr(locale, "水平居中", "Center horizontally")} onClick={() => layoutSelectedNodes("horizontal-center")}>中</button>
-          <button disabled={layoutSelectionCount < 2} title={tr(locale, "右对齐", "Align right")} onClick={() => layoutSelectedNodes("right")}>右</button>
-          <button disabled={layoutSelectionCount < 2} title={tr(locale, "顶对齐", "Align top")} onClick={() => layoutSelectedNodes("top")}>上</button>
-          <button disabled={layoutSelectionCount < 2} title={tr(locale, "垂直居中", "Center vertically")} onClick={() => layoutSelectedNodes("vertical-center")}>中</button>
-          <button disabled={layoutSelectionCount < 2} title={tr(locale, "底对齐", "Align bottom")} onClick={() => layoutSelectedNodes("bottom")}>下</button>
-          <button disabled={layoutSelectionCount < 3} title={tr(locale, "水平等距", "Distribute horizontally")} onClick={() => layoutSelectedNodes("horizontal")}>横均</button>
-          <button disabled={layoutSelectionCount < 3} title={tr(locale, "垂直等距", "Distribute vertically")} onClick={() => layoutSelectedNodes("vertical")}>纵均</button>
+        <span>{page.width} × {page.height}<small>{tr(locale, "空格/中键平移 · Ctrl/Cmd+滚轮缩放 · Shift 框选 · 方向键微调", "Space/middle-button pan · Ctrl/Cmd+wheel zoom · Shift box-select · Arrows nudge")}</small>{overflowNodeIds.length > 0 && <button className="dashboard-overflow-warning" title={tr(locale, "选择所有超出页面边界的组件", "Select all components outside the page bounds")} onClick={selectOverflowNodes}>{tr(locale, `${overflowNodeIds.length} 个组件越界`, `${overflowNodeIds.length} out of bounds`)}</button>}</span>
+        <div className="dashboard-layout-tools" aria-label={tr(locale, "排版工具", "Layout tools")}>
+          <div className="dashboard-tool-group"><button className={marqueeMode ? "active" : ""} title={tr(locale, "框选组件（Shift+拖动）", "Box select (Shift-drag)")} onClick={() => setMarqueeMode((active) => !active)}><ScanSearch size={13} /></button><button className={snapEnabled ? "active" : ""} title={tr(locale, "智能吸附：网格、参考线和组件边缘", "Smart snap: grid, guides and component edges")} onClick={() => setSnapEnabled((enabled) => !enabled)}>{tr(locale, "吸附", "Snap")}</button><button className={guidesVisible ? "active" : ""} title={tr(locale, "显示或隐藏参考线", "Show or hide guides")} onClick={() => setGuidesVisible((visible) => !visible)}>{tr(locale, "参考线", "Guides")}</button></div>
+          <div className="dashboard-tool-group"><button disabled={selectedNodeIds.filter((id) => page.nodes.some((node) => node.id === id && node.locked !== true)).length < 2} title={tr(locale, "编组", "Group")} onClick={groupSelectedNodes}><Group size={13} /></button><button disabled={!page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.groupId && node.locked !== true)} title={tr(locale, "解组", "Ungroup")} onClick={ungroupSelectedNodes}><Ungroup size={13} /></button></div>
+          <div className="dashboard-tool-group"><button disabled={layoutSelectionCount < 2} title={tr(locale, "左对齐", "Align left")} onClick={() => layoutSelectedNodes("left")}><AlignStartVertical size={13} /></button><button disabled={layoutSelectionCount < 2} title={tr(locale, "水平居中", "Center horizontally")} onClick={() => layoutSelectedNodes("horizontal-center")}><AlignCenterVertical size={13} /></button><button disabled={layoutSelectionCount < 2} title={tr(locale, "右对齐", "Align right")} onClick={() => layoutSelectedNodes("right")}><AlignEndVertical size={13} /></button><button disabled={layoutSelectionCount < 2} title={tr(locale, "顶对齐", "Align top")} onClick={() => layoutSelectedNodes("top")}><AlignStartHorizontal size={13} /></button><button disabled={layoutSelectionCount < 2} title={tr(locale, "垂直居中", "Center vertically")} onClick={() => layoutSelectedNodes("vertical-center")}><AlignCenterHorizontal size={13} /></button><button disabled={layoutSelectionCount < 2} title={tr(locale, "底对齐", "Align bottom")} onClick={() => layoutSelectedNodes("bottom")}><AlignEndHorizontal size={13} /></button></div>
+          <div className="dashboard-tool-group"><button className="wide" disabled={layoutSelectionCount < 3} title={tr(locale, "水平等距分布", "Distribute horizontally")} onClick={() => layoutSelectedNodes("horizontal")}>{tr(locale, "横向等距", "H distribute")}</button><button className="wide" disabled={layoutSelectionCount < 3} title={tr(locale, "垂直等距分布", "Distribute vertically")} onClick={() => layoutSelectedNodes("vertical")}>{tr(locale, "纵向等距", "V distribute")}</button></div>
         </div>
-        <div><button title={tr(locale, "完整显示看板", "Fit dashboard")} onClick={fitCanvasToViewport}><Scaling size={13} /></button><button onClick={() => setZoom((value) => Math.max(0.1, Number((value - 0.1).toFixed(2))))}><Minus size={13} /></button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => Math.min(2, Number((value + 0.1).toFixed(2))))}><Plus size={13} /></button></div>
+        <div><button title={tr(locale, "完整显示看板", "Fit dashboard")} onClick={fitCanvasToViewport}><Scaling size={13} /></button><button title={tr(locale, "缩小（以视口中心缩放）", "Zoom out around viewport center")} onClick={() => changeZoom(zoom - 0.1)}><Minus size={13} /></button><output>{Math.round(zoom * 100)}%</output><button title={tr(locale, "放大（以视口中心缩放）", "Zoom in around viewport center")} onClick={() => changeZoom(zoom + 0.1)}><Plus size={13} /></button></div>
       </div>
-      <div className="dashboard-canvas-scroll" ref={scrollRef} onScroll={emitViewState} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
-        <div className="dashboard-artboard-stage" style={{ width: page.width * zoom, height: page.height * zoom }}>
-          <div className={`dashboard-artboard ${marqueeMode ? "marquee-mode" : ""}`} style={{ width: page.width, height: page.height, transform: `scale(${zoom})` }} onPointerDownCapture={beginMarqueeSelection}>
-            {page.nodes.filter((node) => node.visible !== false).map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} frame={draftFrames[node.id] ?? node.frame} metric={node.kind === "data-widget" ? runtimeMetrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} onTransformStart={(event, mode) => beginNodeTransform(event, node, mode)} />)}
+      <div className={`dashboard-canvas-scroll ${panning ? "panning" : ""}`} ref={scrollRef} onScroll={handleCanvasScroll} onWheel={zoomCanvas} onPointerDownCapture={beginCanvasPan} onClick={(event) => { if (event.target === event.currentTarget) { setSelectedNodeIds([]); onSelectionChange([]); } }}>
+        <div className="dashboard-artboard-stage" style={{ width: stageWidth, height: stageHeight }}>
+          <button className="dashboard-ruler-corner" title={tr(locale, "清空参考线", "Clear guides")} disabled={(page.guides?.length ?? 0) === 0} onClick={() => onCommand(createUpdateDashboardPageGuidesCommand(page.id, []))} />
+          <DashboardRuler orientation="horizontal" length={page.width} viewportLength={surfaceSize.width} zoom={zoom} offset={artboardOffsetX - viewportScroll.left} onPointerDown={(event) => addGuide("vertical", event)} />
+          <DashboardRuler orientation="vertical" length={page.height} viewportLength={surfaceSize.height} zoom={zoom} offset={artboardOffsetY - viewportScroll.top} onPointerDown={(event) => addGuide("horizontal", event)} />
+          <div ref={artboardRef} className={`dashboard-artboard ${marqueeMode ? "marquee-mode" : ""}`} style={{ width: page.width, height: page.height, left: artboardOffsetX, top: artboardOffsetY, transform: `scale(${zoom})` }} onPointerDownCapture={beginMarqueeSelection}>
+            {page.nodes.filter((node) => node.visible !== false).map((node) => <DashboardNode key={node.id} application={application} project={project} node={node} frame={draftFrames[node.id] ?? node.frame} metric={node.kind === "data-widget" ? runtimeMetrics[node.widget.key] : undefined} selected={selectedNodeIds.includes(node.id)} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={(additive) => selectNode(node, additive)} onContextMenu={(event) => openNodeContextMenu(event, node)} onEnterScene={(sceneId) => onEnterScene(sceneId, currentView())} onTransformStart={(event, mode) => beginNodeTransform(event, node, mode)} />)}
+            {guidesVisible && (draftGuides ?? page.guides ?? []).map((guide) => <button key={guide.id} className={`dashboard-guide ${guide.orientation}`} style={guide.orientation === "vertical" ? { left: guide.position } : { top: guide.position }} title={tr(locale, "拖动调整，拖出画布删除", "Drag to move; drag outside to delete")} onPointerDown={(event) => beginGuideDrag(event, guide)} />)}
+            {activeSnapLines.x.map((position) => <div key={`x:${position}`} className="dashboard-smart-guide vertical" style={{ left: position }} />)}
+            {activeSnapLines.y.map((position) => <div key={`y:${position}`} className="dashboard-smart-guide horizontal" style={{ top: position }} />)}
             {selectionRect && <div className="dashboard-selection-rect" style={{ left: selectionRect.x, top: selectionRect.y, width: selectionRect.width, height: selectionRect.height }} />}
           </div>
         </div>
@@ -814,15 +1141,17 @@ export function DashboardWorkspace({
           {selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
             <label><span>{tr(locale, "类型", "Type")}</span><select value={selectedNode.widget.type} onChange={(event) => updateDataWidget({ type: event.target.value as SceneDashboardWidgetType })}>{DATA_WIDGET_TYPES.map((type) => <option key={type} value={type}>{dataWidgetTypeLabel(locale, type)}</option>)}</select></label>
             <label><span>{tr(locale, "标题", "Title")}</span><input defaultValue={selectedNode.widget.title} key={`${selectedNode.id}:title:${selectedNode.widget.title}`} onBlur={(event) => { if (event.currentTarget.value !== selectedNode.widget.title) updateDataWidget({ title: event.currentTarget.value }); }} /></label>
-            {(selectedNode.widget.type === "text" || selectedNode.widget.type === "shape") && <label><span>{tr(locale, "内容", "Content")}</span><input defaultValue={selectedNode.widget.content ?? ""} onBlur={(event) => updateDataWidget({ content: event.currentTarget.value })} /></label>}
+            {(selectedNode.widget.type === "text" || selectedNode.widget.type === "shape" || selectedNode.widget.type === "decoration") && <label><span>{tr(locale, "内容", "Content")}</span><input defaultValue={selectedNode.widget.content ?? ""} onBlur={(event) => updateDataWidget({ content: event.currentTarget.value })} /></label>}
             {selectedNode.widget.type === "shape" && <label><span>{tr(locale, "形状", "Shape")}</span><select value={selectedNode.widget.shape ?? "rounded"} onChange={(event) => updateDataWidget({ shape: event.target.value as NonNullable<DashboardDataWidgetConfig["shape"]> })}><option value="rectangle">{tr(locale, "矩形", "Rectangle")}</option><option value="rounded">{tr(locale, "圆角矩形", "Rounded")}</option><option value="ellipse">{tr(locale, "椭圆", "Ellipse")}</option><option value="line">{tr(locale, "线", "Line")}</option></select></label>}
+            {selectedNode.widget.type === "decoration" && <label><span>{tr(locale, "装饰样式", "Decoration style")}</span><select value={selectedNode.widget.decorationStyle ?? "title"} onChange={(event) => updateDataWidget({ decorationStyle: event.target.value as NonNullable<DashboardDataWidgetConfig["decorationStyle"]> })}><option value="title">{tr(locale, "标题栏", "Title bar")}</option><option value="border">{tr(locale, "科技边框", "Tech border")}</option><option value="divider">{tr(locale, "分割线", "Divider")}</option><option value="corner">{tr(locale, "角标", "Corner")}</option></select></label>}
+            {selectedNode.widget.type === "filter" && <label><span>{tr(locale, "选项（逗号分隔）", "Options (comma separated)")}</span><input defaultValue={(selectedNode.widget.options ?? []).join(", ")} onBlur={(event) => updateDataWidget({ options: event.currentTarget.value.split(/[,，]/).map((item) => item.trim()).filter(Boolean) })} /></label>}
             {(selectedNode.widget.type === "image" || selectedNode.widget.type === "video" || selectedNode.widget.type === "monitor") && <DashboardMediaInspector locale={locale} projectId={project.id} widget={selectedNode.widget} onChange={updateDataWidget} />}
             {selectedNode.widget.type === "url" && <label><span>{tr(locale, "网页地址", "Web page URL")}</span><input defaultValue={selectedNode.widget.url ?? ""} onBlur={(event) => updateDataWidget({ url: event.currentTarget.value })} /></label>}
             {selectedNode.widget.type === "topology" && <><label><span>{tr(locale, "拓扑文档", "Topology document")}</span><select value={selectedNode.widget.topologyId ?? ""} onChange={(event) => updateDataWidget({ topologyId: event.target.value })}><option value="">{tr(locale, "选择拓扑", "Choose topology")}</option>{application.topologies.map((topology) => <option key={topology.id} value={topology.id}>{topology.name}</option>)}</select></label><button className="dashboard-enter-scene" disabled={!selectedNode.widget.topologyId} onClick={onOpenTopology}><Workflow size={15} />{tr(locale, "编辑当前拓扑", "Edit topology")}</button></>}
           </section>}
         </>}
 
-        {inspectorTab === "data" && selectedNode.kind === "data-widget" && !["text", "shape", "topology"].includes(selectedNode.widget.type) && <section className="dashboard-inspector-section dashboard-data-widget-properties">
+        {inspectorTab === "data" && selectedNode.kind === "data-widget" && !["text", "shape", "decoration", "topology"].includes(selectedNode.widget.type) && <section className="dashboard-inspector-section dashboard-data-widget-properties">
           <label><span>{tr(locale, "数据来源", "Data source")}</span><select value={selectedNode.widget.directBinding ? "direct" : selectedNode.widget.pipelineId || selectedNode.widget.datasetId ? "platform" : "unbound"} onChange={(event) => {
             const mode = event.target.value;
             if (mode === "direct") {
@@ -861,7 +1190,7 @@ export function DashboardWorkspace({
           <label><span>{tr(locale, "背景透明度", "Background opacity")}</span><input type="range" min="0" max="1" step="0.05" value={selectedNode.widget.backgroundOpacity ?? 0.86} onChange={(event) => updateDataWidget({ backgroundOpacity: Number(event.target.value) })} /></label>
         </section>}
 
-        {inspectorTab === "data" && selectedNode.kind === "data-widget" && ["text", "shape"].includes(selectedNode.widget.type) && <div className="dashboard-inspector-empty">{tr(locale, "静态组件不需要数据绑定。", "Static components do not require data binding.")}</div>}
+        {inspectorTab === "data" && selectedNode.kind === "data-widget" && ["text", "shape", "decoration"].includes(selectedNode.widget.type) && <div className="dashboard-inspector-empty">{tr(locale, "静态组件不需要数据绑定。", "Static components do not require data binding.")}</div>}
 
         {inspectorTab === "animation" && selectedNode.kind === "data-widget" && <section className="dashboard-inspector-section dashboard-data-widget-properties">
           <label><span>{tr(locale, "进入动画", "Enter animation")}</span><select value={selectedNode.widget.animation ?? "none"} onChange={(event) => updateDataWidget({ animation: event.target.value as NonNullable<DashboardDataWidgetConfig["animation"]> })}><option value="none">{tr(locale, "无", "None")}</option><option value="fade">Fade</option><option value="slide-up">Slide up</option><option value="scale">Scale</option><option value="pulse">Pulse</option></select></label>
@@ -875,6 +1204,45 @@ export function DashboardWorkspace({
         <section className="dashboard-inspector-section"><button className="dashboard-delete-node" disabled={!page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.locked !== true)} onClick={deleteSelectedNodes}><Minus size={13} />{selectedNodeIds.length > 1 ? tr(locale, "删除未锁定的所选组件", "Delete unlocked selection") : selectedNode.locked ? tr(locale, "图层已锁定", "Layer locked") : tr(locale, "删除组件", "Delete component")}</button></section>
       </> : <div className="dashboard-no-selection"><Layers3 size={24} /><span>{tr(locale, "选择页面中的组件以编辑属性", "Select a component on the page to edit its properties")}</span></div>}
     </aside>
+    {templateLibraryOpen && <div className="dashboard-template-library-backdrop" onMouseDown={() => setTemplateLibraryOpen(false)}>
+      <section className="dashboard-template-library-panel" onMouseDown={(event) => event.stopPropagation()}>
+        <header><div><span className="eyebrow">TEMPLATE LIBRARY</span><strong>{tr(locale, "看板模板库", "Dashboard template library")}</strong><small>{tr(locale, "模板插入当前页面后可完全编辑，不覆盖已有组件。", "Templates remain fully editable and never replace existing components.")}</small></div><button title={tr(locale, "关闭", "Close")} onClick={() => setTemplateLibraryOpen(false)}><X size={15} /></button></header>
+        <label className="dashboard-template-search"><Search size={14} /><input autoFocus value={templateQuery} onChange={(event) => setTemplateQuery(event.target.value)} placeholder={tr(locale, "搜索模板或行业", "Search templates or industries")} /></label>
+        <div className="dashboard-template-grid">{DASHBOARD_TEMPLATES.filter((template) => {
+          const query = templateQuery.trim().toLocaleLowerCase();
+          return !query || `${template.zh} ${template.en} ${template.categoryZh} ${template.categoryEn}`.toLocaleLowerCase().includes(query);
+        }).map((template) => <article key={template.id}>
+          <div className={`dashboard-template-preview template-${template.id}`}><span /><i /><i /><b /><b /><b /></div>
+          <div><small>{tr(locale, template.categoryZh, template.categoryEn)}</small><strong>{tr(locale, template.zh, template.en)}</strong><p>{tr(locale, template.descriptionZh, template.descriptionEn)}</p></div>
+          <button onClick={() => { insertDashboardTemplate(template.id); setTemplateLibraryOpen(false); }}>{tr(locale, "插入当前页面", "Insert into page")}</button>
+        </article>)}</div>
+      </section>
+    </div>}
+    {contextMenu && (() => {
+      const target = page.nodes.find((node) => node.id === contextMenu.nodeId);
+      if (!target) return null;
+      const ids = contextNodeIds();
+      const targets = page.nodes.filter((node) => ids.includes(node.id));
+      const allHidden = targets.every((node) => node.visible === false);
+      const grouped = targets.some((node) => node.groupId);
+      return <div className="dashboard-context-menu" role="menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
+        <header><span>{nodeLabel(target)}</span><small>{targets.length > 1 ? tr(locale, `${targets.length} 个组件`, `${targets.length} components`) : target.kind === "scene-viewport" ? "3D" : dataWidgetTypeLabel(locale, target.widget.type)}</small></header>
+        <button onClick={() => copyContextNodes()}><Copy size={13} />{tr(locale, "复制", "Copy")}<kbd>Ctrl C</kbd></button>
+        <button onClick={() => copyContextNodes(true)}><Plus size={13} />{tr(locale, "创建副本", "Duplicate")}<kbd>Ctrl D</kbd></button>
+        <div />
+        <button onClick={() => { reorderNodeIds(ids, "front"); setContextMenu(undefined); }}><Layers3 size={13} />{tr(locale, "置于顶层", "Bring to front")}<kbd>⇧ ]</kbd></button>
+        <button onClick={() => { reorderNodeIds(ids, "forward"); setContextMenu(undefined); }}><Layers3 size={13} />{tr(locale, "上移一层", "Move forward")}<kbd>]</kbd></button>
+        <button onClick={() => { reorderNodeIds(ids, "backward"); setContextMenu(undefined); }}><Layers3 size={13} />{tr(locale, "下移一层", "Move backward")}<kbd>[</kbd></button>
+        <button onClick={() => { reorderNodeIds(ids, "back"); setContextMenu(undefined); }}><Layers3 size={13} />{tr(locale, "置于底层", "Send to back")}<kbd>⇧ [</kbd></button>
+        <div />
+        <button onClick={() => updateContextNodes({ visible: allHidden }, allHidden ? "显示二维组件" : "隐藏二维组件")}>{allHidden ? <Eye size={13} /> : <EyeOff size={13} />}{allHidden ? tr(locale, "显示", "Show") : tr(locale, "隐藏", "Hide")}</button>
+        <button onClick={() => updateContextNodes({ locked: true, selectable: false }, "锁定二维组件")}><Lock size={13} />{tr(locale, "锁定并取消选取", "Lock and deselect")}</button>
+        {targets.length > 1 && <button onClick={() => { grouped ? ungroupSelectedNodes() : groupSelectedNodes(); setContextMenu(undefined); }}>{grouped ? <Ungroup size={13} /> : <Group size={13} />}{grouped ? tr(locale, "解组", "Ungroup") : tr(locale, "编组", "Group")}</button>}
+        {target.kind === "scene-viewport" && <button onClick={() => { setContextMenu(undefined); onEnterScene(target.sceneId, currentView()); }}><Box size={13} />{tr(locale, "进入三维编辑", "Open 3D editor")}</button>}
+        <div />
+        <button className="danger" onClick={deleteContextNodes}><Trash2 size={13} />{tr(locale, "删除", "Delete")}<kbd>Del</kbd></button>
+      </div>;
+    })()}
   </main>;
 }
 
@@ -895,7 +1263,7 @@ function DashboardPageViewportEditor({ locale, page, onChange, compact = false }
   </div>;
 }
 
-function DashboardRuntimePreview({ locale, application, project, page, rendererBackend, metrics, connected, onSelectPage, onClose, onSelectionChange, onObjectInteraction, onNodeInteraction }: {
+function DashboardRuntimePreview({ locale, application, project, page, rendererBackend, metrics, connected, onSelectPage, onClose, onPublish, onSelectionChange, onObjectInteraction, onNodeInteraction }: {
   locale: AppLocale;
   application: ApplicationDocument;
   project: ProjectRecord;
@@ -905,10 +1273,12 @@ function DashboardRuntimePreview({ locale, application, project, page, rendererB
   connected: boolean;
   onSelectPage: (pageId: string) => void;
   onClose: () => void;
+  onPublish: () => void;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
   onNodeInteraction: (nodeId: string, trigger?: SceneInteractionTrigger) => ApplicationInteractionResult | undefined;
 }) {
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [viewport, setViewport] = useState<DashboardRuntimeViewport>(() => calculateDashboardRuntimeViewport(page, page.width * 0.5 + 32, page.height * 0.5 + 32));
   const surfaceRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -922,16 +1292,35 @@ function DashboardRuntimePreview({ locale, application, project, page, rendererB
     observer.observe(surface);
     return () => observer.disconnect();
   }, [page.width, page.height, page.viewportFit]);
-  const scaleLabel = Math.abs(viewport.scaleX - viewport.scaleY) < 0.001
-    ? `${Math.round(viewport.scaleX * 100)}%`
-    : `${Math.round(viewport.scaleX * 100)}% × ${Math.round(viewport.scaleY * 100)}%`;
   return <main className="dashboard-runtime-preview">
-    <header><div><Eye size={16} /><span><strong>{application.metadata.name}</strong><small>{page.name} · {page.width} × {page.height} · {connected ? tr(locale, "实时数据", "Live data") : tr(locale, "离线预览", "Offline preview")}</small></span></div><nav className="dashboard-runtime-pages" aria-label={tr(locale, "场景页面", "Scene pages")}>{application.pages.map((candidate, index) => <button className={candidate.id === page.id ? "active" : ""} key={candidate.id} onClick={() => onSelectPage(candidate.id)}><small>{String(index + 1).padStart(2, "0")}</small>{candidate.name.replace(/^\d+\s*·\s*/, "")}</button>)}</nav><div><span>{scaleLabel}</span><button onClick={onClose}><X size={15} />{tr(locale, "退出预览", "Exit preview")}</button></div></header>
     <section ref={surfaceRef} className={`dashboard-runtime-surface fit-${page.viewportFit}`}><div className="dashboard-runtime-stage" style={{ width: viewport.stageWidth, height: viewport.stageHeight }}><div className="dashboard-artboard dashboard-runtime-artboard" style={{ width: page.width, height: page.height, left: viewport.offsetX, top: viewport.offsetY, transform: `scale(${viewport.scaleX}, ${viewport.scaleY})` }}>{page.nodes.filter((node) => node.visible !== false).map((node) => <DashboardNode key={node.id} runtime application={application} project={project} node={node} frame={node.frame} metric={node.kind === "data-widget" ? metrics[node.widget.key] : undefined} selected={false} locale={locale} rendererBackend={rendererBackend} onSelectionChange={onSelectionChange} onObjectInteraction={onObjectInteraction} onInteraction={(trigger) => onNodeInteraction(node.id, trigger)} onSelect={() => undefined} onEnterScene={() => undefined} onTransformStart={() => undefined} />)}</div></div></section>
+    <div className={`dashboard-runtime-controller ${controlsOpen ? "open" : ""}`}>
+      <button className="dashboard-runtime-controller-trigger" title={tr(locale, "项目控制", "Project controls")} onClick={() => setControlsOpen((open) => !open)}><ExternalLink size={15} /><span>{application.metadata.name}</span></button>
+      {controlsOpen && <div className="dashboard-runtime-controller-panel">
+        <header><strong>{application.metadata.name}</strong><small>{page.name} · {connected ? tr(locale, "实时数据", "Live data") : tr(locale, "离线数据", "Offline data")}</small></header>
+        {application.pages.length > 1 && <nav aria-label={tr(locale, "页面", "Pages")}>{application.pages.map((candidate) => <button className={candidate.id === page.id ? "active" : ""} key={candidate.id} onClick={() => onSelectPage(candidate.id)}>{candidate.name}</button>)}</nav>}
+        <div><button onClick={onPublish}><Rocket size={13} />{tr(locale, "发布更新", "Publish update")}</button><button onClick={() => void navigator.clipboard.writeText(`${window.location.origin}/apps/${encodeURIComponent(application.metadata.id)}`)}><Copy size={13} />{tr(locale, "复制发布链接", "Copy published URL")}</button><button onClick={onClose}><X size={13} />{tr(locale, "返回编辑", "Back to editor")}</button></div>
+      </div>}
+    </div>
   </main>;
 }
 
-function DashboardNode({ application, project, node, frame, metric, selected, locale, rendererBackend, runtime = false, onSelectionChange, onObjectInteraction, onInteraction, onSelect, onEnterScene, onTransformStart }: {
+function DashboardRuler({ orientation, length, viewportLength, zoom, offset, onPointerDown }: {
+  orientation: "horizontal" | "vertical";
+  length: number;
+  viewportLength: number;
+  zoom: number;
+  offset: number;
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+}) {
+  const majorStep = zoom >= 0.75 ? 100 : zoom >= 0.35 ? 200 : 500;
+  const ticks = Array.from({ length: Math.floor(length / majorStep) + 1 }, (_, index) => index * majorStep);
+  return <div className={`dashboard-ruler ${orientation}`} style={orientation === "horizontal" ? { width: viewportLength } : { height: viewportLength }} onPointerDown={onPointerDown}>
+    {ticks.map((position) => <span key={position} style={orientation === "horizontal" ? { left: offset + position * zoom } : { top: offset + position * zoom }}><i />{position}</span>)}
+  </div>;
+}
+
+function DashboardNode({ application, project, node, frame, metric, selected, locale, rendererBackend, runtime = false, onSelectionChange, onObjectInteraction, onInteraction, onSelect, onContextMenu, onEnterScene, onTransformStart }: {
   application: ApplicationDocument;
   project: ProjectRecord;
   node: WidgetNode;
@@ -945,25 +1334,27 @@ function DashboardNode({ application, project, node, frame, metric, selected, lo
   onObjectInteraction: (sceneId: string, trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
   onInteraction: (trigger: SceneInteractionTrigger) => void;
   onSelect: (additive: boolean) => void;
+  onContextMenu?: (event: ReactMouseEvent) => void;
   onEnterScene: (sceneId: string) => void;
   onTransformStart: (event: ReactPointerEvent<HTMLButtonElement>, mode: "move" | "resize") => void;
 }) {
   const style = { left: frame.x, top: frame.y, width: frame.width, height: frame.height, zIndex: node.zIndex, ...(!runtime && node.selectable === false ? { pointerEvents: "none" as const } : {}) };
   useEffect(() => {
-    if (node.kind !== "data-widget") return;
+    if (!runtime || node.kind !== "data-widget") return;
     const task = window.setTimeout(() => onInteraction("load"), 0);
     return () => window.clearTimeout(task);
-  }, [node.id]);
+  }, [node.id, runtime]);
   if (node.kind === "scene-viewport") {
     const scene = application.scenes.find((candidate) => candidate.id === node.sceneId);
-    return <article className={`dashboard-node dashboard-scene-viewport ${selected ? "selected" : ""} ${runtime ? "runtime" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); if (!runtime) onSelect(event.ctrlKey || event.metaKey); }}>
+    return <article className={`dashboard-node dashboard-scene-viewport ${selected ? "selected" : ""} ${runtime ? "runtime" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); if (!runtime) onSelect(event.ctrlKey || event.metaKey); }} onContextMenu={(event) => { if (!runtime) onContextMenu?.(event); }}>
       {scene && node.renderMode !== "static-placeholder"
-        ? <SceneViewportPreview locale={locale} node={node} scene={scene} project={project} rendererBackend={rendererBackend} runtime={runtime} onSelectionChange={onSelectionChange} onObjectInteraction={(trigger, target) => onObjectInteraction(scene.id, trigger, target)} />
+        ? <SceneViewportPreview locale={locale} node={node} scene={scene} project={project} rendererBackend={rendererBackend} runtime={runtime} onSelectionChange={onSelectionChange} onObjectInteraction={(trigger, target) => { if (runtime) onObjectInteraction(scene.id, trigger, target); }} />
         : <div className="dashboard-scene-grid" />}
+      {!runtime && <button className="dashboard-scene-edit-hit-target" aria-label={tr(locale, "选择三维组件", "Select 3D component")} onClick={(event) => { event.stopPropagation(); onSelect(event.ctrlKey || event.metaKey); }} />}
       {!runtime && <><div className="dashboard-scene-summary"><span><Box size={36} /></span><strong>{scene?.name ?? node.sceneId}</strong><small>{scene ? `${scene.models.length + scene.primitives.length} ${tr(locale, "个场景对象", "scene objects")}` : tr(locale, "场景引用缺失", "Missing scene reference")}</small></div><div className="dashboard-node-badge">3D · {node.renderMode}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
     </article>;
   }
-  if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? `runtime animation-${node.widget.animation ?? "none"}` : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4", animationDuration: `${node.widget.animationDuration ?? 0.6}s`, animationDelay: `${node.widget.animationDelay ?? 0}s` }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onDoubleClick={(event) => { if (runtime) { event.stopPropagation(); onInteraction("doubleClick"); } }} onContextMenu={(event) => { if (runtime) { event.preventDefault(); event.stopPropagation(); onInteraction("contextMenu"); } }} onPointerEnter={() => onInteraction("pointerEnter")} onPointerLeave={() => onInteraction("pointerLeave")} onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")}>
+  if (node.kind === "data-widget") return <article className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${runtime ? `runtime animation-${node.widget.animation ?? "none"}` : ""}`} style={{ ...style, background: widgetBackground(node.widget), color: node.widget.textColor ?? "#eef2f4", animationDuration: `${node.widget.animationDuration ?? 0.6}s`, animationDelay: `${node.widget.animationDelay ?? 0}s` }} onClick={(event) => { event.stopPropagation(); runtime ? onInteraction("click") : onSelect(event.ctrlKey || event.metaKey); }} onDoubleClick={(event) => { if (runtime) { event.stopPropagation(); onInteraction("doubleClick"); } }} onContextMenu={(event) => { if (runtime) { event.preventDefault(); event.stopPropagation(); onInteraction("contextMenu"); } else onContextMenu?.(event); }} onPointerEnter={() => { if (runtime) onInteraction("pointerEnter"); }} onPointerLeave={() => { if (runtime) onInteraction("pointerLeave"); }} onAnimationStart={() => { if (runtime) onInteraction("animationStart"); }} onAnimationEnd={() => { if (runtime) onInteraction("animationEnd"); }}>
     {node.widget.type === "topology" ? <DashboardTopologyView application={application} {...(node.widget.topologyId ? { topologyId: node.widget.topologyId } : {})} /> : <DashboardWidgetView locale={locale} widget={node.widget} metric={metric} compact={!runtime} onAnimationStart={() => onInteraction("animationStart")} onAnimationEnd={() => onInteraction("animationEnd")} />}
     {!runtime && <><div className="dashboard-node-badge">{dataWidgetTypeLabel(locale, node.widget.type)}</div><NodeTransformHandles selected={selected && node.locked !== true} onTransformStart={onTransformStart} /></>}
   </article>;
@@ -1019,7 +1410,7 @@ function sceneName(application: ApplicationDocument, sceneId: string): string {
 
 function defaultDataWidget(locale: AppLocale, type: SceneDashboardWidgetType): DashboardDataWidgetConfig {
   const media = type === "image" || type === "video" || type === "monitor" || type === "url";
-  const staticWidget = type === "text" || type === "shape";
+  const staticWidget = type === "text" || type === "shape" || type === "decoration";
   return {
     title: dataWidgetTypeLabel(locale, type),
     key: media || staticWidget || type === "topology" ? "" : "value",
@@ -1030,6 +1421,8 @@ function defaultDataWidget(locale: AppLocale, type: SceneDashboardWidgetType): D
     backgroundOpacity: 0.86,
     ...(type === "text" ? { content: tr(locale, "文本内容", "Text content"), fontSize: 28, fontWeight: 600, textAlign: "left" as const, backgroundOpacity: 0 } : {}),
     ...(type === "shape" ? { shape: "rounded" as const, content: "", color: "#d4a84f", borderColor: "#f0cd78", borderWidth: 1, backgroundOpacity: 0 } : {}),
+    ...(type === "decoration" ? { decorationStyle: "title" as const, content: tr(locale, "看板标题", "Dashboard title"), backgroundOpacity: 0 } : {}),
+    ...(type === "filter" ? { options: [tr(locale, "全部", "All"), tr(locale, "正常", "Normal"), tr(locale, "告警", "Alarm")] } : {}),
     ...(type === "gauge" ? { min: 0, max: 100 } : {}),
     ...(type === "image" ? { imageFit: "cover" as const } : {}),
     ...(type === "video" ? { videoFit: "contain" as const, videoAutoplay: true, videoMuted: true } : {}),
@@ -1040,7 +1433,33 @@ function defaultDataWidget(locale: AppLocale, type: SceneDashboardWidgetType): D
 
 function dataWidgetTypeLabel(locale: AppLocale, type: SceneDashboardWidgetType): string {
   const labels: Record<SceneDashboardWidgetType, [string, string]> = {
-    text: ["文本", "Text"], shape: ["形状", "Shape"], value: ["数值", "Value"], gauge: ["仪表", "Gauge"], status: ["状态", "Status"], line: ["折线", "Line"], area: ["面积", "Area"], bar: ["柱图", "Bar"], pie: ["饼图", "Pie"], table: ["表格", "Table"], image: ["图片", "Image"], video: ["视频", "Video"], monitor: ["监控", "Monitor"], url: ["网页", "Web page"], topology: ["拓扑", "Topology"]
+    text: ["文本", "Text"], shape: ["形状", "Shape"], decoration: ["装饰", "Decoration"], value: ["指标卡", "Metric"], progress: ["进度条", "Progress"], gauge: ["仪表盘", "Gauge"], status: ["状态卡", "Status"], line: ["折线图", "Line"], area: ["面积图", "Area"], bar: ["柱状图", "Bar"], pie: ["饼/环图", "Pie / donut"], scatter: ["散点图", "Scatter"], radar: ["雷达图", "Radar"], funnel: ["漏斗图", "Funnel"], rank: ["排行列表", "Ranking"], table: ["明细表", "Table"], filter: ["筛选器", "Filter"], image: ["图片", "Image"], video: ["视频", "Video"], monitor: ["实时监控", "Monitor"], url: ["网页", "Web page"], topology: ["拓扑", "Topology"]
   };
   return tr(locale, ...labels[type]);
+}
+
+function createDashboardTemplateNodes(locale: AppLocale, page: DashboardPageDocument, kind: "operations" | "production" | "energy", startZ: number): WidgetNode[] {
+  const gap = 24;
+  const margin = 40;
+  const width = Math.max(260, page.width - margin * 2);
+  const title = kind === "operations" ? tr(locale, "经营驾驶舱", "Operations cockpit") : kind === "production" ? tr(locale, "生产运行监控", "Production monitoring") : tr(locale, "能源效率分析", "Energy efficiency");
+  const metricTitles = kind === "operations" ? ["营收", "订单", "交付率", "客户"] : kind === "production" ? ["产量", "OEE", "良率", "告警"] : ["综合能耗", "单位能耗", "峰值负荷", "节能率"];
+  const make = (type: SceneDashboardWidgetType, name: string, frame: WidgetFrame, index: number, patch: Partial<DashboardDataWidgetConfig> = {}): WidgetNode => ({
+    id: `widget:${crypto.randomUUID()}`,
+    name: `${name} ${Date.now().toString(36).slice(-4)}-${index + 1}`,
+    kind: "data-widget",
+    frame,
+    zIndex: startZ + index,
+    widget: { ...defaultDataWidget(locale, type), title: name, ...patch }
+  });
+  const metricWidth = (width - gap * 3) / 4;
+  const chartTop = 230;
+  const chartHeight = Math.max(220, Math.min(360, page.height * .36));
+  const nodes: WidgetNode[] = [make("decoration", title, { x: margin, y: 28, width, height: 64 }, 0, { content: title })];
+  metricTitles.forEach((name, index) => nodes.push(make(index === 3 ? "progress" : "value", name, { x: margin + index * (metricWidth + gap), y: 112, width: metricWidth, height: 94 }, nodes.length, { key: `${kind}.${index + 1}` })));
+  nodes.push(make("line", tr(locale, "趋势分析", "Trend analysis"), { x: margin, y: chartTop, width: width * .62 - gap / 2, height: chartHeight }, nodes.length, { key: `${kind}.trend` }));
+  nodes.push(make(kind === "energy" ? "radar" : "bar", tr(locale, "结构分析", "Breakdown"), { x: margin + width * .62 + gap / 2, y: chartTop, width: width * .38 - gap / 2, height: chartHeight }, nodes.length, { key: `${kind}.breakdown` }));
+  const bottom = chartTop + chartHeight + gap;
+  if (bottom + 180 < page.height) nodes.push(make("table", tr(locale, "明细数据", "Details"), { x: margin, y: bottom, width, height: page.height - bottom - margin }, nodes.length, { key: `${kind}.details` }));
+  return nodes;
 }

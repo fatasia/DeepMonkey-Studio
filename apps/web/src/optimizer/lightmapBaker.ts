@@ -67,7 +67,7 @@ interface LightingScratch {
  * Browser-only, single-atlas static lightmap baker.
  *
  * The generated texture is attached as the standard glTF occlusion texture on
- * TEXCOORD_1, so it survives GLB export and remains usable outside BIM Studio.
+ * TEXCOORD_1, so it survives GLB export and remains usable outside iTwin Studio.
  * It preserves existing base-color textures and intentionally avoids offline
  * path tracing, UV chart optimization, and multi-bounce GI.
  */
@@ -99,10 +99,10 @@ export async function bakeWebLightmap(
     const localUvs = hasUnwrappedAtlas ? readUvs(target.lightmapUv!) : generateProjectedUvs(target);
     if (!hasUnwrappedAtlas) generatedUvs += 1;
     const atlasUvs = hasUnwrappedAtlas ? localUvs : placeUvsInAtlas(localUvs, targetIndex, gridSize, cellSize, resolution);
-    target.primitive.setAttribute("TEXCOORD_1", document.createAccessor("BIM Studio lightmap UV")
+    target.primitive.setAttribute("TEXCOORD_1", document.createAccessor("iTwin Studio lightmap UV")
       .setType("VEC2")
       .setArray(atlasUvs)
-      .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("BIM Studio lightmap")));
+      .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("iTwin Studio lightmap")));
     coveredTexels += await rasterizePrimitive(target, atlasUvs, occlusionPixels, lightingPixels, covered, resolution, options, acceleration);
     if (targetIndex % 12 === 0) {
       onProgress?.(`正在烘焙光照贴图 ${targetIndex + 1}/${targets.length}`);
@@ -122,8 +122,8 @@ export async function bakeWebLightmap(
     encodeTexture(occlusionPixels, resolution),
     encodeTexture(lightingPixels, resolution)
   ]);
-  const occlusionTexture = document.createTexture("BIM Studio Occlusion Lightmap").setMimeType("image/png").setImage(occlusionPng);
-  const lightingTexture = document.createTexture("BIM Studio Colored Lightmap").setMimeType("image/png").setImage(lightingPng);
+  const occlusionTexture = document.createTexture("iTwin Studio Occlusion Lightmap").setMimeType("image/png").setImage(occlusionPng);
+  const lightingTexture = document.createTexture("iTwin Studio Colored Lightmap").setMimeType("image/png").setImage(lightingPng);
   const materials = new Set(targets.map((target) => target.primitive.getMaterial()).filter((material) => material !== null));
   for (const material of materials) {
     material!.setOcclusionTexture(occlusionTexture).setOcclusionStrength(1);
@@ -141,7 +141,7 @@ export async function bakeWebLightmap(
 
 function collectTargets(document: Document): PrimitiveBakeTarget[] {
   const firstMatrixByMesh = new Map<Mesh, THREE.Matrix4>();
-  let fallbackMaterial = document.getRoot().listMaterials().find((material) => material.getName() === "BIM Studio lightmap default");
+  let fallbackMaterial = document.getRoot().listMaterials().find((material) => material.getName() === "iTwin Studio lightmap default");
   for (const node of document.getRoot().listNodes()) {
     const mesh = node.getMesh();
     if (mesh && !firstMatrixByMesh.has(mesh)) firstMatrixByMesh.set(mesh, new THREE.Matrix4().fromArray(node.getWorldMatrix()));
@@ -155,7 +155,7 @@ function collectTargets(document: Document): PrimitiveBakeTarget[] {
       const normal = primitive.getAttribute("NORMAL");
       if (primitive.getMode() !== 4 || !position || !normal || position.getCount() !== normal.getCount()) continue;
       if (!primitive.getMaterial()) {
-        fallbackMaterial ??= document.createMaterial("BIM Studio lightmap default");
+        fallbackMaterial ??= document.createMaterial("iTwin Studio lightmap default");
         primitive.setMaterial(fallbackMaterial);
       }
       targets.push({ primitive, mesh, matrix, normalMatrix, position, normal, lightmapUv: primitive.getAttribute("TEXCOORD_1") ?? undefined, indices: primitive.getIndices() ?? undefined });

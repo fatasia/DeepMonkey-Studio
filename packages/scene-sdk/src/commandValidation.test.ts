@@ -40,7 +40,8 @@ const validCommands: SceneCommand[] = [
     target: objectTarget,
     values: { temperature: 21, enabled: true, metadata: [null, "online", { quality: 0.98 }] },
     timestamp: "2026-08-25T00:00:00.000Z"
-  }
+  },
+  { id: "component", type: "component.update", componentId: "widget:1", patch: { visible: true, frame: { x: 12, y: 20 } } }
 ];
 
 describe("validateSceneCommand", () => {

@@ -23,7 +23,8 @@ import {
   createUpdateDashboardNodeOrderCommand,
   createUpdateDashboardNodeStateCommand,
   createUpdateDashboardNodeStatesCommand,
-  createUpdateDashboardPageViewportCommand
+  createUpdateDashboardPageViewportCommand,
+  createUpdateDashboardPageGuidesCommand
 } from "./index.js";
 
 function document() {
@@ -95,6 +96,22 @@ describe("StudioCommand", () => {
     expect(store.undo()).toBe(true);
     expect(store.getState().document?.pages[0]).toMatchObject({ width: 1920, height: 1080, viewportFit: "contain" });
     expect(() => createUpdateDashboardPageViewportCommand(page.id, { width: 100, height: 1080, viewportFit: "contain" })).toThrow("页面宽度");
+  });
+
+  it("persists dashboard guides as one undoable page command", () => {
+    const source = document();
+    const page = source.pages[0]!;
+    const store = new ApplicationStore(source);
+    store.dispatch(createUpdateDashboardPageGuidesCommand(page.id, [
+      { id: "guide:x", orientation: "vertical", position: 320 },
+      { id: "guide:y", orientation: "horizontal", position: 180 }
+    ]));
+    expect(store.getState().document?.pages[0]?.guides).toEqual([
+      { id: "guide:x", orientation: "vertical", position: 320 },
+      { id: "guide:y", orientation: "horizontal", position: 180 }
+    ]);
+    expect(store.undo()).toBe(true);
+    expect(store.getState().document?.pages[0]?.guides).toBeUndefined();
   });
 
   it("adds and deletes complete dashboard pages with their interactions", () => {

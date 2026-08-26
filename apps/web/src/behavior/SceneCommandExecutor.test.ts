@@ -8,7 +8,7 @@ import {
 } from "./SceneCommandExecutor";
 
 describe("SceneCommandExecutor", () => {
-  it("maps all seven command types to the port in deterministic order", async () => {
+  it("maps all command types to the port in deterministic order", async () => {
     const calls: string[] = [];
     const port = createPort(calls);
     const executor = new SceneCommandExecutor("scene-1", port);
@@ -19,16 +19,18 @@ describe("SceneCommandExecutor", () => {
       { id: "camera", type: "camera.set", sceneId: "scene-1", position: [1, 2, 3], target: [0, 0, 0], far: 5_000 },
       { id: "fly", type: "camera.fly-to", sceneId: "scene-1", target: { position: [4, 5, 6] }, durationMs: 800 },
       { id: "animation", type: "animation.control", target: objectRef(), action: "seek", clipId: "clip-1", time: 2.5 },
-      { id: "data", type: "data.apply", target: objectRef(), values: { temperature: 42 }, timestamp: "2026-08-25T12:00:00Z" }
+      { id: "data", type: "data.apply", target: objectRef(), values: { temperature: 42 }, timestamp: "2026-08-25T12:00:00Z" },
+      { id: "component", type: "component.update", componentId: "widget-1", patch: { visible: true } }
     ];
 
     const results = await executor.execute(commands);
 
-    expect(calls).toEqual(["visibility", "transform", "selection", "camera", "fly", "animation", "data"]);
+    expect(calls).toEqual(["visibility", "transform", "selection", "camera", "fly", "animation", "data", "component"]);
     expect(results).toEqual(commands.map((command, index) => ({ index, id: command.id, type: command.type, success: true })));
     expect(port.setObjectTransform).toHaveBeenCalledWith(objectRef(), { position: [1, 2, 3] });
     expect(port.setCamera).toHaveBeenCalledWith("scene-1", { position: [1, 2, 3], target: [0, 0, 0], far: 5_000 });
     expect(port.controlAnimation).toHaveBeenCalledWith(objectRef(), { action: "seek", clipId: "clip-1", time: 2.5 });
+    expect(port.updateComponent).toHaveBeenCalledWith("widget-1", { visible: true });
   });
 
   it("rejects cross-scene command and selection targets before touching the port", async () => {
@@ -118,6 +120,7 @@ function createPort(calls: string[] = []): SceneCommandPort & Record<keyof Scene
     setCamera: method("camera"),
     flyCamera: method("fly"),
     controlAnimation: method("animation"),
-    applyData: method("data")
+    applyData: method("data"),
+    updateComponent: method("component")
   };
 }

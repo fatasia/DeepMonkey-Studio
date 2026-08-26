@@ -82,6 +82,13 @@ export const DASHBOARD_PAGE_MIN_SIZE = 320;
 export const DASHBOARD_PAGE_MAX_SIZE = 16_384;
 export type DashboardViewportFit = "contain" | "cover" | "stretch" | "fixed";
 
+export interface DashboardGuide {
+  id: string;
+  orientation: "horizontal" | "vertical";
+  /** Logical canvas coordinate in pixels. */
+  position: number;
+}
+
 export interface DashboardPageDocument {
   id: string;
   name: string;
@@ -91,6 +98,8 @@ export interface DashboardPageDocument {
   /** How the published page adapts its logical resolution to the display. */
   viewportFit: DashboardViewportFit;
   appearance?: DashboardPageAppearance;
+  /** Editor-only layout guides. They are saved with the page and hidden at runtime. */
+  guides?: DashboardGuide[];
   nodes: WidgetNode[];
 }
 

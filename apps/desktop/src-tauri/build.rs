@@ -8,5 +8,5 @@ fn main() {
             ]),
         ),
     )
-    .expect("failed to build Dev Studio desktop host");
+    .expect("failed to build iTwin Studio desktop host");
 }

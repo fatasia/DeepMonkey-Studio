@@ -33,9 +33,9 @@ export function pluginManifest(overrides: Partial<PluginManifestV1> = {}): Plugi
       },
       {
         kind: "converter.plugin",
-        id: "acme.xt-converter",
-        inputExtensions: ["x_t", "x_b"],
-        inputMediaTypes: ["model/vnd.parasolid.transmit.text", "application/octet-stream"],
+        id: "acme-model-converter",
+        inputExtensions: ["obj", "dae"],
+        inputMediaTypes: ["model/obj", "model/vnd.collada+xml"],
         outputFormat: "glb",
         outputMediaType: "model/gltf-binary",
         execution: "server-worker",

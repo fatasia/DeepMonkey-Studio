@@ -1,4 +1,4 @@
-import type { JsonValue } from "@bim-studio/contracts";
+import type { DirectBindingSpec, DirectBindingTemplateValue, JsonValue } from "@bim-studio/contracts";
 
 export const SCENE_API_VERSION = "1.0" as const;
 export type SceneApiVersion = typeof SCENE_API_VERSION;
@@ -6,6 +6,7 @@ export type SceneApiVersion = typeof SCENE_API_VERSION;
 export const SCENE_CAPABILITIES = [
   "studio.scene",
   "studio.object",
+  "studio.component",
   "studio.mesh",
   "studio.material",
   "studio.camera",
@@ -41,7 +42,8 @@ export type SceneCommand =
   | { id: string; type: "camera.set"; sceneId: string; position: [number, number, number]; target: [number, number, number]; near?: number; far?: number; fov?: number }
   | { id: string; type: "camera.fly-to"; sceneId: string; target: SceneObjectRef | { position: [number, number, number] }; durationMs: number }
   | { id: string; type: "animation.control"; target: SceneObjectRef; action: "play" | "pause" | "stop" | "seek"; clipId?: string; time?: number }
-  | { id: string; type: "data.apply"; target: SceneObjectRef; values: Record<string, JsonValue>; timestamp: string };
+  | { id: string; type: "data.apply"; target: SceneObjectRef; values: Record<string, JsonValue>; timestamp: string }
+  | { id: string; type: "component.update"; componentId: string; patch: Record<string, JsonValue> };
 
 export type SceneQuery =
   | { id: string; type: "object.get"; target: SceneObjectRef }
@@ -100,15 +102,31 @@ export interface SceneBehaviorTick {
   frame: number;
 }
 
+export interface SceneBehaviorNetworkRequest {
+  requestId: string;
+  invocationId: string;
+  binding: DirectBindingSpec;
+  variables: Record<string, DirectBindingTemplateValue>;
+}
+
+export interface SceneBehaviorNetworkResult {
+  ok: true;
+  status: number;
+  data: JsonValue;
+  value: JsonValue;
+}
+
 export type SceneBehaviorLogLevel = "debug" | "info" | "warn" | "error";
 
 export type SceneBehaviorWorkerRequest =
   | { type: "behavior.initialize"; module: SceneBehaviorModule; sceneId: string }
   | { type: "behavior.invoke"; invocationId: string; lifecycle: SceneScriptLifecycle; elapsedMs: number; deltaMs?: number; event?: SceneEvent; data?: JsonValue }
-  | { type: "behavior.dispose"; invocationId: string };
+  | { type: "behavior.dispose"; invocationId: string }
+  | { type: "behavior.network.result"; requestId: string; result?: SceneBehaviorNetworkResult; error?: string };
 
 export type SceneBehaviorWorkerResponse =
   | { type: "behavior.ready"; moduleId: string; lifecycle: SceneScriptLifecycle[] }
   | { type: "behavior.result"; invocationId: string; durationMs: number; commands: SceneCommand[] }
+  | ({ type: "behavior.network.request" } & SceneBehaviorNetworkRequest)
   | { type: "behavior.log"; level: SceneBehaviorLogLevel; message: string; data?: JsonValue }
   | { type: "behavior.error"; invocationId?: string; message: string; stack?: string };

@@ -1,4 +1,4 @@
-import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type DashboardDataWidgetConfig, type DashboardPageDocument, type DashboardViewportFit, type InteractionFlow, type SceneViewportWidgetNode, type ScriptModule, type TopologyDocument, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
+import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument, type DashboardDataWidgetConfig, type DashboardGuide, type DashboardPageDocument, type DashboardViewportFit, type InteractionFlow, type SceneViewportWidgetNode, type ScriptModule, type TopologyDocument, type WidgetFrame, type WidgetNode } from "@bim-studio/contracts";
 
 let nextCommandId = 1;
 
@@ -42,6 +42,13 @@ export interface InsertDashboardPageCommand {
   readonly type: "dashboard.page.insert";
   readonly label: string;
   readonly payload: { readonly page: DashboardPageDocument; readonly interactions: readonly InteractionFlow[] };
+}
+
+export interface UpdateDashboardPageGuidesCommand {
+  readonly id: string;
+  readonly type: "dashboard.page.guides.update";
+  readonly label: string;
+  readonly payload: { readonly pageId: string; readonly guides: readonly DashboardGuide[] };
 }
 
 export interface DeleteDashboardPageCommand {
@@ -193,6 +200,7 @@ export type StudioCommand =
   | RenameApplicationCommand
   | RenameDashboardPageCommand
   | UpdateDashboardPageViewportCommand
+  | UpdateDashboardPageGuidesCommand
   | InsertDashboardPageCommand
   | DeleteDashboardPageCommand
   | UpdateDashboardNodeFrameCommand
@@ -250,6 +258,15 @@ export function createInsertDashboardPageCommand(page: DashboardPageDocument, in
     type: "dashboard.page.insert",
     label: `添加二维页面“${page.name}”`,
     payload: { page: structuredClone(page), interactions: structuredClone(interactions) }
+  };
+}
+
+export function createUpdateDashboardPageGuidesCommand(pageId: string, guides: readonly DashboardGuide[]): UpdateDashboardPageGuidesCommand {
+  return {
+    id: commandId(),
+    type: "dashboard.page.guides.update",
+    label: guides.length === 0 ? "清空页面参考线" : "更新页面参考线",
+    payload: { pageId, guides: structuredClone(guides) }
   };
 }
 
@@ -424,6 +441,13 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
         width: command.payload.width,
         height: command.payload.height,
         viewportFit: command.payload.viewportFit
+      }));
+    }
+    case "dashboard.page.guides.update": {
+      requirePage(document, command.payload.pageId);
+      return updatePage(document, command.payload.pageId, (page) => ({
+        ...page,
+        guides: [...structuredClone(command.payload.guides)]
       }));
     }
     case "dashboard.page.insert": {

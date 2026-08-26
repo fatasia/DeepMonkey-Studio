@@ -18,8 +18,6 @@
 | STEP / STP | `occt-import-js` 解析与三角化 | GLB + hierarchy.json + properties.json | 可用 |
 | DWG | 外部 LibreDWG 命令 | DXF | 配置转换器后可用，否则 `waiting_converter` |
 | RVT | Windows Revit Agent / Revit Add-in | IFC 或原生 GLB，可带层级与属性 | 配置转换器且存在兼容 Revit 后可用 |
-| Parasolid x_t / x_b | 已选 CAD Exchanger Batch 单服务器 Provider，并有启动探针 | 目标为 GLB + 层级 + 属性 | **采购/安装许可前为 actionable `waiting_converter`** |
-| JT | 仅保留可选外部插件合同 | 目标为 GLB + 层级 + 属性，可选 PMI 与源 LOD | **M5 可放弃/延后，不作为发布门槛** |
 
 因此不能表述为“所有格式都会转为 GLB”。直接查看格式继续保留源格式；需要三角化或原生宿主导出的格式才优先生成 GLB。
 
@@ -40,12 +38,9 @@ queued -> running -> succeeded
    \-> waiting_converter -> cancelled
 ```
 
-未安装已授权的 Parasolid/JT 执行器时，提交仍会创建任务并明确进入 `waiting_converter`，不会伪造空 GLB、静默丢失装配/属性/PMI，也不会把许可证缺失误报为源文件损坏。
-
-Parasolid 的选型、许可、Worker/sidecar 协议、版本探测与黄金样本见 [Parasolid x_t/x_b 可落地接入方案](./parasolid-xt-integration.md)。
+Parasolid x_t/x_b 与 JT 已按产品范围决策移除，不进入格式目录、上传入口或转换任务状态机。
 
 ## 当前纵向切片边界
 
 - 已完成合同、插件目录、受控状态迁移、提交/列表/查询/取消 API、AbortSignal 取消、进度与产物约束测试。
 - 新任务目前保存在 API 进程内存中；持久化、重试、超时执行器、内容哈希缓存、日志对象和失败产物清理仍属于 M5 后续实现。
-- x_t/x_b/JT 必须接入合法授权且版本固定的外部 SDK，并通过单位、坐标、装配稳定 ID、属性、PMI/LOD 黄金样本后才能标记为可用。

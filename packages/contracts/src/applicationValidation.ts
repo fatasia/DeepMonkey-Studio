@@ -117,6 +117,7 @@ function validatePage(value: unknown, path: string): void {
   required(object, "height", expectDashboardPageSize, path);
   requiredLiteral(object, "viewportFit", ["contain", "cover", "stretch", "fixed"], path);
   optional(object, "appearance", validateDashboardPageAppearance, path);
+  optional(object, "guides", (guides, guidesPath) => expectArray(guides, guidesPath, validateDashboardGuide), path);
   required(object, "nodes", (nodes, nodesPath) => {
     expectArray(nodes, nodesPath, validateWidgetNode);
     const names = new Set<string>();
@@ -128,6 +129,13 @@ function validatePage(value: unknown, path: string): void {
       names.add(normalized);
     });
   }, path);
+}
+
+function validateDashboardGuide(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "id", expectString, path);
+  requiredLiteral(object, "orientation", ["horizontal", "vertical"], path);
+  required(object, "position", expectNumber, path);
 }
 
 function expectDashboardPageSize(value: unknown, path: string): void {
@@ -175,7 +183,7 @@ function validateWidgetFrame(value: unknown, path: string): void {
 function validateDashboardWidgetConfig(value: unknown, path: string): void {
   const object = expectObject(value, path);
   for (const key of ["title", "key", "unit"] as const) required(object, key, expectString, path);
-  requiredLiteral(object, "type", ["text", "shape", "value", "gauge", "status", "line", "area", "bar", "pie", "table", "image", "video", "monitor", "url", "topology"], path);
+  requiredLiteral(object, "type", ["text", "shape", "decoration", "value", "progress", "status", "gauge", "line", "area", "bar", "pie", "scatter", "radar", "funnel", "rank", "table", "filter", "image", "video", "monitor", "url", "topology"], path);
   for (const key of ["min", "max", "backgroundOpacity", "borderWidth", "fontSize", "fontWeight"] as const) optional(object, key, expectNumber, path);
   optional(object, "directBinding", (binding, bindingPath) => assertDirectBindingSpec(binding, bindingPath), path);
   for (const key of ["color", "backgroundColor", "textColor", "datasetId", "pipelineId", "field", "url", "imageUrl", "assetId", "videoUrl", "monitorSourceUrl", "topologyId", "content", "borderColor"] as const) {
@@ -187,6 +195,8 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   optional(object, "videoMuted", expectBoolean, path);
   optionalLiteral(object, "monitorProtocol", ["hls", "webrtc"], path);
   optionalLiteral(object, "shape", ["rectangle", "rounded", "ellipse", "line"], path);
+  optionalLiteral(object, "decorationStyle", ["title", "border", "divider", "corner"], path);
+  optional(object, "options", validateStringArray, path);
   optionalLiteral(object, "textAlign", ["left", "center", "right"], path);
   optionalLiteral(object, "designState", ["auto", "empty", "loading", "partial", "error", "forbidden"], path);
   optionalLiteral(object, "animation", ["none", "fade", "slide-up", "scale", "pulse"], path);

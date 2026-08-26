@@ -1,7 +1,7 @@
 import Editor, { loader, type BeforeMount, type OnMount } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import { Braces, CheckCircle2, Command, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import { STUDIO_API_DECLARATIONS } from "../studio/studioApi";
@@ -45,6 +45,8 @@ ${STUDIO_API_DECLARATIONS}
 interface SceneCommand { id?: string; type: string; [key: string]: JsonValue | undefined; }
 interface BehaviorContext {
   readonly sceneId: string;
+  readonly deltaMs: number;
+  readonly elapsedMs: number;
   readonly deltaTime: number;
   readonly elapsedTime: number;
   object(id: string): SceneObjectHandle | undefined;
@@ -53,7 +55,23 @@ interface BehaviorContext {
   getData(key: string): JsonValue | undefined;
   setData(key: string, value: JsonValue): void;
   emit(name: string, payload?: JsonValue): void;
+  readonly THREE: typeof import("three");
+  readonly studio: StudioAPI;
+  readonly net: StudioNetworkAPI;
   log(message: string, detail?: unknown): void;
+}
+interface StudioNetworkResult<T = JsonValue> { readonly ok: true; readonly status: number; readonly data: T; readonly value: JsonValue; }
+interface StudioNetworkFetchOptions {
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  params?: Record<string, string | number | boolean | null>;
+  body?: JsonValue;
+  credentialRef?: string;
+  variables?: Record<string, JsonValue>;
+  select?: { jsonPath?: string; field?: string };
+}
+interface StudioNetworkAPI {
+  fetch<T = JsonValue>(endpoint: string, options?: StudioNetworkFetchOptions): Promise<StudioNetworkResult<T>>;
+  request<T = JsonValue>(binding: Record<string, unknown>, variables?: Record<string, JsonValue>): Promise<StudioNetworkResult<T>>;
 }
 interface InteractionContext {
   readonly engine: unknown;
@@ -69,7 +87,9 @@ declare const ctx: BehaviorContext & InteractionContext;
 declare const studio: StudioAPI;
 declare const app: unknown;
 declare const engine: unknown;
-declare const THREE: any;
+declare const THREE: typeof import("three");
+declare const net: StudioNetworkAPI;
+declare function fetch<T = JsonValue>(endpoint: string, options?: StudioNetworkFetchOptions): Promise<StudioNetworkResult<T>>;
 declare function onStart(ctx: BehaviorContext): void | Promise<void>;
 declare function onUpdate(ctx: BehaviorContext): void | Promise<void>;
 declare function onFixedUpdate(ctx: BehaviorContext): void | Promise<void>;
@@ -81,17 +101,38 @@ declare function onDispose(ctx: BehaviorContext): void | Promise<void>;
 
 let configured = false;
 
-export function ProfessionalCodeEditor({ locale, value, path, height = "100%", compact = false, onChange, onSave, onRun }: {
+export interface CodeInsertRequest {
+  id: number;
+  text: string;
+}
+
+export function ProfessionalCodeEditor({ locale, value, path, height = "100%", compact = false, insertRequest, onChange, onSave, onRun }: {
   locale: AppLocale;
   value: string;
   path: string;
   height?: string | number;
   compact?: boolean;
+  insertRequest?: CodeInsertRequest;
   onChange: (value: string) => void;
   onSave?: () => void;
   onRun?: () => void;
 }) {
   const [problems, setProblems] = useState(0);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
+  const lastInsertRequestRef = useRef(0);
+
+  useEffect(() => {
+    if (!insertRequest || insertRequest.id <= lastInsertRequestRef.current) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    lastInsertRequestRef.current = insertRequest.id;
+    const selection = editor.getSelection();
+    const range = selection ?? new monaco.Range(1, 1, 1, 1);
+    const prefix = range.startColumn > 1 && !insertRequest.text.startsWith("\n") ? "\n" : "";
+    editor.executeEdits("studio-library-insert", [{ range, text: `${prefix}${insertRequest.text}`, forceMoveMarkers: true }]);
+    editor.pushUndoStop();
+    editor.focus();
+  }, [insertRequest]);
 
   const beforeMount: BeforeMount = (api) => {
     if (configured) return;
@@ -116,12 +157,15 @@ export function ProfessionalCodeEditor({ locale, value, path, height = "100%", c
           snippet(api, "studio object", "统一 API：操作二维或三维中的场景对象", "const agv = studio.object(\"AGV-01\");\nagv?.setPosition(12, 0, 6);\nagv?.setCollision(true);\nagv?.focus();", range),
           snippet(api, "studio camera", "统一 API：相机与漫游", "studio.camera.setPose([12, 6, 12], [0, 1, 0], { near: 0.05, far: 100000 });\nstudio.camera.setMode(\"firstPerson\");\nstudio.camera.setCollision(true, 0.32);", range),
           snippet(api, "studio scene", "统一 API：场景环境和播放", "studio.scene.setWeather(\"sunny\");\nstudio.animation.play();", range)
+          ,snippet(api, "gateway fetch", "通过服务器代理访问 HTTP 接口", "const response = await studio.net.fetch(\"https://api.example.com/telemetry\", {\n\tmethod: \"GET\",\n\tcredentialRef: \"factory-api\"\n});\nstudio.log(\"telemetry\", response.value);", range)
+          ,snippet(api, "Three.js math", "使用完整 Three.js 命名空间进行计算", "const direction = new THREE.Vector3(1, 0, 1).normalize();\nconst next = direction.multiplyScalar(ctx.deltaTime * 2);", range)
         ] };
       }
     });
   };
 
   const onMount: OnMount = (editor, api) => {
+    editorRef.current = editor;
     if (onSave) editor.addCommand(api.KeyMod.CtrlCmd | api.KeyCode.KeyS, onSave);
     if (onRun) editor.addCommand(api.KeyMod.CtrlCmd | api.KeyCode.Enter, onRun);
     editor.focus();

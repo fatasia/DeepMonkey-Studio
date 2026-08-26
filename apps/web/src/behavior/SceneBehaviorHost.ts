@@ -2,6 +2,8 @@ import {
   SceneBehaviorScheduler,
   validateSceneCommand,
   type SceneBehaviorModule,
+  type SceneBehaviorNetworkRequest,
+  type SceneBehaviorNetworkResult,
   type SceneBehaviorRuntimeSettings,
   type SceneBehaviorSchedulerDiagnostics,
   type SceneBehaviorWorkerRequest,
@@ -25,6 +27,8 @@ export interface SceneBehaviorHostOptions {
   initializationTimeoutMs?: number;
   maxPendingInvocations?: number;
   maxCommandsPerInvocation?: number;
+  networkTimeoutMs?: number;
+  executeNetworkRequest?: (request: Omit<SceneBehaviorNetworkRequest, "requestId" | "invocationId">) => Promise<SceneBehaviorNetworkResult>;
   now?: () => number;
 }
 
@@ -61,6 +65,8 @@ export class SceneBehaviorHost {
   private readonly initializationTimeoutMs: number;
   private readonly maxPendingInvocations: number;
   private readonly maxCommandsPerInvocation: number;
+  private readonly networkTimeoutMs: number;
+  private readonly executeNetworkRequest: SceneBehaviorHostOptions["executeNetworkRequest"];
   private readonly now: () => number;
   private readonly pending = new Map<string, PendingInvocation>();
   private status: SceneBehaviorHostDiagnostics["status"] = "idle";
@@ -82,6 +88,8 @@ export class SceneBehaviorHost {
     this.initializationTimeoutMs = finiteOption(options.initializationTimeoutMs, 10, 60_000, 2_000);
     this.maxPendingInvocations = Math.round(finiteOption(options.maxPendingInvocations, 1, 256, 8));
     this.maxCommandsPerInvocation = Math.round(finiteOption(options.maxCommandsPerInvocation, 1, 10_000, 256));
+    this.networkTimeoutMs = finiteOption(options.networkTimeoutMs, 100, 120_000, 15_000);
+    this.executeNetworkRequest = options.executeNetworkRequest;
     this.now = options.now ?? (() => performance.now());
     worker.onmessage = (event) => this.handleMessage(event.data);
     worker.onerror = (event) => this.fail(`行为 Worker 异常：${event.message || "unknown error"}`);
@@ -218,6 +226,10 @@ export class SceneBehaviorHost {
       this.onLog?.(value);
       return;
     }
+    if (value.type === "behavior.network.request") {
+      void this.handleNetworkRequest(value);
+      return;
+    }
     if (value.type === "behavior.error") {
       this.fail(value.message);
       return;
@@ -242,6 +254,23 @@ export class SceneBehaviorHost {
     if (commands.length > 0) this.onCommands?.(commands);
     if (pending.lifecycle === "onDispose") this.finishDispose();
     else this.emitDiagnostics();
+  }
+
+  private async handleNetworkRequest(request: SceneBehaviorNetworkRequest): Promise<void> {
+    const pending = this.pending.get(request.invocationId);
+    if (!pending || !this.module) return;
+    if (!this.module.permissions.includes("network.connect") || !this.executeNetworkRequest) {
+      this.worker.postMessage({ type: "behavior.network.result", requestId: request.requestId, error: "脚本未获 network.connect 权限或网络网关不可用" });
+      return;
+    }
+    globalThis.clearTimeout(pending.timeoutId);
+    pending.timeoutId = globalThis.setTimeout(() => this.fail(`行为“${this.module?.name ?? "unknown"}”的网络请求超过 ${this.networkTimeoutMs} ms`), this.networkTimeoutMs);
+    try {
+      const result = await this.executeNetworkRequest({ binding: request.binding, variables: request.variables });
+      this.worker.postMessage({ type: "behavior.network.result", requestId: request.requestId, result });
+    } catch (reason) {
+      this.worker.postMessage({ type: "behavior.network.result", requestId: request.requestId, error: reason instanceof Error ? reason.message : String(reason) });
+    }
   }
 
   private fail(message: string): void {
@@ -295,6 +324,12 @@ function isWorkerResponse(value: unknown): value is SceneBehaviorWorkerResponse 
   }
   if (message.type === "behavior.result") {
     return typeof message.invocationId === "string" && typeof message.durationMs === "number" && Number.isFinite(message.durationMs) && message.durationMs >= 0 && Array.isArray(message.commands);
+  }
+  if (message.type === "behavior.network.request") {
+    return typeof message.requestId === "string"
+      && typeof message.invocationId === "string"
+      && Boolean(message.binding && typeof message.binding === "object")
+      && Boolean(message.variables && typeof message.variables === "object");
   }
   if (message.type === "behavior.log") return typeof message.level === "string" && LOG_LEVELS.has(message.level) && typeof message.message === "string";
   if (message.type === "behavior.error") return typeof message.message === "string" && (message.invocationId === undefined || typeof message.invocationId === "string");

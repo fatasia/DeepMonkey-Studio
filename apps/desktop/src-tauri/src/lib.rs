@@ -112,7 +112,7 @@ pub fn run() {
             clear_server_profile
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Dev Studio desktop host");
+        .expect("failed to run iTwin Studio desktop host");
 }
 
 #[cfg(test)]

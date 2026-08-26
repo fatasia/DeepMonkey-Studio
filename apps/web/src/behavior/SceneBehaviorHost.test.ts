@@ -112,6 +112,23 @@ describe("SceneBehaviorHost", () => {
     expect(worker.port.terminate).toHaveBeenCalledOnce();
   });
 
+  it("routes authorized script HTTP through the host gateway without exposing credentials to the worker", async () => {
+    const port = new FakeWorker();
+    const executeNetworkRequest = vi.fn().mockResolvedValue({ ok: true, status: 200, data: { temperature: 26 }, value: 26 });
+    const host = new SceneBehaviorHost(port, { executeNetworkRequest });
+    const module = { ...behaviorModule(["onStart"]), permissions: ["scene.read", "network.connect"] as SceneBehaviorModule["permissions"] };
+    host.start(module, "scene-1");
+    port.emit({ type: "behavior.ready", moduleId: module.id, lifecycle: module.lifecycle });
+    const invocation = port.messages("behavior.invoke")[0]!;
+    const binding = { version: 1 as const, gateway: "server" as const, transport: "http" as const, endpoint: "https://api.example/data", http: { method: "GET" as const, refresh: { intervalMs: 60_000 } } };
+
+    port.emit({ type: "behavior.network.request", requestId: "net-1", invocationId: invocation.invocationId, binding, variables: {} });
+    await vi.waitFor(() => expect(port.messages("behavior.network.result")).toHaveLength(1));
+
+    expect(executeNetworkRequest).toHaveBeenCalledWith({ binding, variables: {} });
+    expect(port.messages("behavior.network.result")[0]).toEqual({ type: "behavior.network.result", requestId: "net-1", result: { ok: true, status: 200, data: { temperature: 26 }, value: 26 } });
+  });
+
   it("sends dispose, accepts its completion, and terminates exactly once", () => {
     vi.useFakeTimers();
     const worker = readyHostWorker([]);

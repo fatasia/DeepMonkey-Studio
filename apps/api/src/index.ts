@@ -14,7 +14,6 @@ import { loadOrCreateServerInstanceId, registerServerMetaRoute } from "./serverM
 import { registerSystemRoutes } from "./system.js";
 import { registerVisionRoutes, VisionEngine } from "./vision.js";
 import { createApiServer } from "./serverOptions.js";
-import { externalCadConverterRegistrations } from "./converterCatalog.js";
 import { registerConversionTaskRoutes } from "./conversionTaskRoutes.js";
 import { ConversionTaskService } from "./conversionTasks.js";
 import { HttpCloudRenderWorkerClient } from "@bim-studio/server-sdk";
@@ -71,7 +70,7 @@ export async function buildApp() {
     config,
     beforeDiscardPublication: (publication) => cloudRender.setEnabled(publication, false).then(() => undefined)
   });
-  const conversionTasks = new ConversionTaskService(await externalCadConverterRegistrations());
+  const conversionTasks = new ConversionTaskService([]);
   await registerConversionTaskRoutes(app, { service: conversionTasks, projectExists: (projectId) => Boolean(store.getProject(projectId)) });
   await registerDataEndpointRuntime(app, store, config);
   await registerApplicationRoutes(app, store);

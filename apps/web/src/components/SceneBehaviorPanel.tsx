@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ApplicationScriptLifecycle, ApplicationScriptPermission, ScriptModule } from "@bim-studio/contracts";
 import type { SceneCapability } from "@bim-studio/scene-sdk";
-import { AlertTriangle, Braces, CircleStop, Pause, Play, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, Box, Braces, ChevronDown, ChevronUp, CircleStop, Code2, LayoutPanelTop, Pause, Play, Plus, RotateCcw, Save, Search, Trash2, X } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
-import { ProfessionalCodeEditor } from "./ProfessionalCodeEditor";
+import { ProfessionalCodeEditor, type CodeInsertRequest } from "./ProfessionalCodeEditor";
 
 export interface SceneBehaviorLogEntry {
   id: string;
@@ -15,15 +15,23 @@ export interface SceneBehaviorLogEntry {
   timestamp: string;
 }
 
+export interface BehaviorCodeTarget {
+  id: string;
+  name: string;
+  kind: "object" | "component";
+  context: string;
+}
+
 const lifecycleOptions: ApplicationScriptLifecycle[] = ["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"];
-const permissionOptions: ApplicationScriptPermission[] = ["scene.read", "scene.write", "data.read", "data.write", "network.connect"];
-const capabilityOptions: SceneCapability[] = ["studio.scene", "studio.object", "studio.mesh", "studio.material", "studio.camera", "studio.animation", "studio.data", "studio.runtime"];
+const permissionOptions: ApplicationScriptPermission[] = ["scene.read", "scene.write", "data.read", "data.write", "network.connect", "renderer.extend", "editor.extend"];
+const capabilityOptions: SceneCapability[] = ["studio.scene", "studio.object", "studio.component", "studio.mesh", "studio.material", "studio.camera", "studio.controls", "studio.animation", "studio.timeline", "studio.input", "studio.data", "studio.runtime"];
 
 export function SceneBehaviorPanel(props: {
   locale: AppLocale;
   scripts: readonly ScriptModule[];
   runtimeEntries: readonly SceneBehaviorManagerEntry[];
   logs: readonly SceneBehaviorLogEntry[];
+  codeTargets: readonly BehaviorCodeTarget[];
   paused: boolean;
   onUpsert: (script: ScriptModule) => void;
   onDelete: (scriptId: string) => void;
@@ -43,6 +51,28 @@ export function SceneBehaviorPanel(props: {
   const dirty = Boolean(selected && draft && JSON.stringify(selected) !== JSON.stringify(draft));
   const runtime = selected ? props.runtimeEntries.find((entry) => entry.module.id === selected.id) : undefined;
   const selectedLogs = useMemo(() => selected ? props.logs.filter((entry) => entry.moduleId === selected.id) : props.logs, [props.logs, selected?.id]);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [libraryQuery, setLibraryQuery] = useState("");
+  const [insertedTargets, setInsertedTargets] = useState<Set<string>>(new Set());
+  const [insertRequest, setInsertRequest] = useState<CodeInsertRequest>();
+  const visibleTargets = useMemo(() => {
+    const query = libraryQuery.trim().toLocaleLowerCase();
+    return props.codeTargets.filter((target) => !query || `${target.name} ${target.id} ${target.context}`.toLocaleLowerCase().includes(query)).slice(0, 120);
+  }, [libraryQuery, props.codeTargets]);
+
+  function insertCode(text: string) {
+    setInsertRequest({ id: Date.now() + Math.random(), text: text.endsWith("\n") ? text : `${text}\n` });
+  }
+
+  function insertTarget(target: BehaviorCodeTarget) {
+    const variable = safeIdentifier(target.name, target.kind === "object" ? "object" : "component");
+    insertCode(target.kind === "object"
+      ? `const ${variable} = studio.object(${JSON.stringify(target.id)});\n${variable}?.focus();`
+      : `const ${variable} = studio.component(${JSON.stringify(target.id)});\n${variable}?.update({});`);
+    setInsertedTargets((current) => new Set(current).add(`${target.kind}:${target.id}`));
+    const requiredCapability: SceneCapability = target.kind === "object" ? "studio.object" : "studio.component";
+    setDraft((current) => current && !current.capabilities.includes(requiredCapability) ? { ...current, capabilities: [...current.capabilities, requiredCapability] } : current);
+  }
 
   function addScript() {
     const id = `behavior:${crypto.randomUUID()}`;
@@ -68,9 +98,9 @@ export function SceneBehaviorPanel(props: {
     setDraft({ ...draft, [key]: current.includes(value) ? current.filter((item) => item !== value) : [...current, value] });
   }
 
-  return <section className="behavior-panel" aria-label={tr(props.locale, "场景行为脚本", "Scene behavior scripts")}>
+  return <section className={`behavior-panel ${logsOpen ? "logs-open" : "logs-collapsed"}`} aria-label={tr(props.locale, "场景行为脚本", "Scene behavior scripts")}>
     <header className="behavior-panel-header">
-      <div><span><Braces size={16} /></span><div><strong>{tr(props.locale, "行为脚本", "Behavior scripts")}</strong><small>{tr(props.locale, "Worker 隔离 · Scene SDK 命令 · 固定时间步", "Worker isolation · Scene SDK commands · fixed timestep")}</small></div></div>
+      <div><span><Braces size={16} /></span><div><strong>{tr(props.locale, "行为脚本", "Behavior scripts")}</strong><small>{tr(props.locale, "Three.js · Studio SDK · 网关网络 · 固定时间步", "Three.js · Studio SDK · gateway network · fixed timestep")}</small></div></div>
       <nav>
         <button onClick={props.onRun}><Play size={13} />{props.runtimeEntries.length ? tr(props.locale, "重新运行", "Restart") : tr(props.locale, "运行已启用", "Run enabled")}</button>
         <button disabled={!props.runtimeEntries.length} onClick={props.onPauseResume}>{props.paused ? <Play size={13} /> : <Pause size={13} />}{props.paused ? tr(props.locale, "继续", "Resume") : tr(props.locale, "暂停", "Pause")}</button>
@@ -96,19 +126,51 @@ export function SceneBehaviorPanel(props: {
             <button disabled={!dirty} onClick={() => setDraft(structuredClone(selected!))}><RotateCcw size={13} />{tr(props.locale, "还原", "Revert")}</button>
             <button className="danger" onClick={() => { if (window.confirm(tr(props.locale, `删除“${draft.name}”吗？`, `Delete “${draft.name}”?`))) props.onDelete(draft.id); }}><Trash2 size={13} /></button>
           </div>
-          <ProfessionalCodeEditor locale={props.locale} path={`bim-studio://behavior/${draft.id}.js`} value={draft.code} onChange={(code) => setDraft({ ...draft, code })} onSave={() => { if (dirty && draft.name.trim()) props.onUpsert(draft); }} onRun={props.onRun} />
+          <ProfessionalCodeEditor locale={props.locale} path={`bim-studio://behavior/${draft.id}.js`} value={draft.code} {...(insertRequest ? { insertRequest } : {})} onChange={(code) => setDraft({ ...draft, code })} onSave={() => { if (dirty && draft.name.trim()) props.onUpsert(draft); }} onRun={props.onRun} />
           <footer><span>JavaScript · Scene SDK 1.0</span><span>{draft.code.split("\n").length} {tr(props.locale, "行", "lines")}</span>{dirty && <em>{tr(props.locale, "有未应用的修改", "Unapplied changes")}</em>}</footer>
         </main>
         <aside className="behavior-inspector">
+          <section className="behavior-code-library"><header><strong>{tr(props.locale, "对象与组件", "Objects & components")}</strong><small>{tr(props.locale, "勾选即插入光标处", "Check to insert at cursor")}</small></header><label className="behavior-library-search"><Search size={11} /><input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder={tr(props.locale, "搜索名称或 ID", "Search name or ID")} /></label><div className="behavior-target-list">{visibleTargets.map((target) => {
+            const key = `${target.kind}:${target.id}`;
+            return <label key={key} title={`${target.context} · ${target.id}`}><input type="checkbox" checked={insertedTargets.has(key)} onChange={() => insertTarget(target)} />{target.kind === "object" ? <Box size={11} /> : <LayoutPanelTop size={11} />}<span><b>{target.name}</b><small>{target.context}</small></span></label>;
+          })}{!visibleTargets.length && <p>{tr(props.locale, "没有匹配的对象或组件", "No matching objects or components")}</p>}</div></section>
           <section><strong>{tr(props.locale, "生命周期", "Lifecycle")}</strong><div className="behavior-option-grid">{lifecycleOptions.map((item) => <label key={item}><input type="checkbox" checked={draft.lifecycle.includes(item)} onChange={() => toggleListValue("lifecycle", item)} /><code>{item}</code></label>)}</div></section>
-          <section><strong>{tr(props.locale, "场景能力", "Scene capabilities")}</strong><div className="behavior-option-grid compact">{capabilityOptions.map((item) => <label key={item}><input type="checkbox" checked={draft.capabilities.includes(item)} onChange={() => toggleListValue("capabilities", item)} /><code>{item.replace("studio.", "")}</code></label>)}</div></section>
-          <section><strong>{tr(props.locale, "权限", "Permissions")}</strong><div className="behavior-option-grid compact">{permissionOptions.map((item) => <label key={item}><input type="checkbox" checked={draft.permissions.includes(item)} onChange={() => toggleListValue("permissions", item)} /><code>{item}</code></label>)}</div>{draft.permissions.includes("network.connect") && <p className="behavior-warning"><AlertTriangle size={12} />{tr(props.locale, "发布前需审核网络域名与数据出域。", "Review network domains and data egress before publishing.")}</p>}</section>
+          <section><header className="behavior-section-heading"><strong>{tr(props.locale, "API 能力", "API capabilities")}</strong><small>{tr(props.locale, "启用并插入示例", "Enable and insert example")}</small></header><div className="behavior-option-grid compact">{capabilityOptions.map((item) => <label key={item}><input type="checkbox" checked={draft.capabilities.includes(item)} onChange={() => {
+            const enabling = !draft.capabilities.includes(item);
+            toggleListValue("capabilities", item);
+            if (enabling) insertCode(capabilitySnippet(item));
+          }} /><Code2 size={10} /><code>{item}</code></label>)}</div></section>
+          <section><strong>{tr(props.locale, "权限", "Permissions")}</strong><div className="behavior-option-grid compact">{permissionOptions.map((item) => <label key={item}><input type="checkbox" checked={draft.permissions.includes(item)} onChange={() => { const enabling = !draft.permissions.includes(item); toggleListValue("permissions", item); if (enabling && item === "network.connect") insertCode("const response = await studio.net.fetch(\"https://api.example.com/data\", { credentialRef: \"api-credential\" });\nstudio.log(\"gateway response\", response.value);"); }} /><code>{item}</code></label>)}</div>{draft.permissions.includes("network.connect") && <p className="behavior-warning"><AlertTriangle size={12} />{tr(props.locale, "HTTP 经服务器代理并执行域名、端口、凭据与响应大小策略；WebSocket 数据通过 onData 接收。", "HTTP runs through the server gateway policy; receive WebSocket binding updates through onData.")}</p>}</section>
           <section className="behavior-runtime-summary"><strong>{tr(props.locale, "运行诊断", "Runtime diagnostics")}</strong>{runtime ? <dl><div><dt>{tr(props.locale, "状态", "Status")}</dt><dd>{runtimeStatus(runtime.diagnostics.status, props.locale)}</dd></div><div><dt>{tr(props.locale, "待处理", "Pending")}</dt><dd>{runtime.diagnostics.pendingInvocations}</dd></div><div><dt>{tr(props.locale, "平均耗时", "Average")}</dt><dd>{runtime.diagnostics.averageExecutionMs.toFixed(2)} ms</dd></div><div><dt>{tr(props.locale, "丢弃调用", "Dropped")}</dt><dd>{runtime.diagnostics.droppedInvocations}</dd></div></dl> : <small>{tr(props.locale, "点击“运行已启用”开始预览。", "Select Run enabled to start the preview.")}</small>}</section>
         </aside>
       </> : <div className="behavior-editor-placeholder"><Braces size={28} /><strong>{tr(props.locale, "选择或创建行为脚本", "Select or create a behavior script")}</strong></div>}
     </div>
-    <footer className="behavior-console"><header><strong>{tr(props.locale, "运行日志", "Runtime log")}</strong><span>{selectedLogs.length}</span><button onClick={props.onClearLogs}>{tr(props.locale, "清空", "Clear")}</button></header><div>{selectedLogs.length ? selectedLogs.slice(-80).map((entry) => <p key={entry.id} className={entry.level}><time>{new Date(entry.timestamp).toLocaleTimeString()}</time><span>{entry.message}</span></p>) : <small>{tr(props.locale, "运行、错误和权限诊断会显示在这里。", "Runtime, error and permission diagnostics appear here.")}</small>}</div></footer>
+    <footer className="behavior-console"><header><button className="behavior-console-toggle" onClick={() => setLogsOpen((open) => !open)}>{logsOpen ? <ChevronDown size={12} /> : <ChevronUp size={12} />}<strong>{tr(props.locale, "运行日志", "Runtime log")}</strong><span>{selectedLogs.length}</span></button><button onClick={props.onClearLogs}>{tr(props.locale, "清空", "Clear")}</button></header>{logsOpen && <div>{selectedLogs.length ? selectedLogs.slice(-80).map((entry) => <p key={entry.id} className={entry.level}><time>{new Date(entry.timestamp).toLocaleTimeString()}</time><span>{entry.message}</span></p>) : <small>{tr(props.locale, "运行、错误和权限诊断会显示在这里。", "Runtime, error and permission diagnostics appear here.")}</small>}</div>}</footer>
   </section>;
+}
+
+function safeIdentifier(name: string, fallback: string): string {
+  const normalized = name.trim().replace(/[^A-Za-z0-9_$]+/g, "_").replace(/^_+|_+$/g, "").replace(/_+/g, "_");
+  if (!normalized) return fallback;
+  return /^[A-Za-z_$]/.test(normalized) ? normalized : `_${normalized}`;
+}
+
+function capabilitySnippet(capability: SceneCapability): string {
+  const snippets: Record<SceneCapability, string> = {
+    "studio.scene": "const sceneState = studio.scene.statistics();",
+    "studio.object": "const selectedObject = studio.selection.get();\nselectedObject?.focus();",
+    "studio.component": "const component = studio.component(\"component-id\");\ncomponent?.update({ visible: true });",
+    "studio.mesh": "const mesh = studio.raw.scene?.getObjectByName(\"mesh-name\");",
+    "studio.material": "const materialOwner = studio.object(\"object-id\");\nmaterialOwner?.setColor(\"#35a7ff\");",
+    "studio.camera": "studio.camera.setMode(\"orbit\");\nstudio.camera.setClip(0.05, 100000);",
+    "studio.controls": "studio.camera.setMode(\"firstPerson\");\nstudio.camera.setCollision(true, 0.32);",
+    "studio.animation": "studio.animation.play();",
+    "studio.timeline": "studio.animation.seek(0);\nstudio.animation.play();",
+    "studio.input": "// Handle input through onEvent(ctx) and inspect ctx.event.",
+    "studio.data": "const value = studio.getData(\"data.key\");\nstudio.log(\"data.key\", value);",
+    "studio.runtime": "studio.log(\"Runtime ready\", { version: studio.version });"
+  };
+  return snippets[capability];
 }
 
 function runtimeStatus(status: SceneBehaviorManagerEntry["diagnostics"]["status"], locale: AppLocale): string {
@@ -123,7 +185,8 @@ function defaultBehaviorCode(): string {
 }
 
 function onUpdate(ctx) {
-  // Use ctx.command({ id, type, ...payload }) to change the scene.
+  // ThingJS-style handles + Unity-style lifecycle; THREE is also available.
+  // studio.object("AGV-01").setPosition(0, 0, ctx.elapsedTime);
 }
 
 function onDispose(ctx) {

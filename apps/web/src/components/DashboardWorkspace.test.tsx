@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import pureFixture from "../../../../test-fixtures/scene-v1-pure-3d.json";
 import { migrateSceneSnapshotV1, type ProjectRecord, type SceneSnapshot } from "@bim-studio/contracts";
-import { calculateDashboardEditorZoom, calculateDashboardRuntimeViewport, DashboardWorkspace } from "./DashboardWorkspace";
+import { calculateDashboardEditorZoom, calculateDashboardRuntimeViewport, DashboardWorkspace, snapDashboardFrame } from "./DashboardWorkspace";
 
 vi.mock("./DashboardWidgetRuntime", () => ({
   DashboardWidgetView: () => null,
@@ -33,10 +33,19 @@ describe("DashboardWorkspace", () => {
   it("calculates contain, cover, stretch, and fixed large-screen fit modes", () => {
     const page = { width: 3840, height: 1080 };
 
-    expect(calculateDashboardRuntimeViewport({ ...page, viewportFit: "contain" }, 1952, 1112)).toMatchObject({ scaleX: 0.5, scaleY: 0.5, stageWidth: 1920, stageHeight: 540, offsetX: 0 });
-    expect(calculateDashboardRuntimeViewport({ ...page, viewportFit: "cover" }, 1952, 1112)).toMatchObject({ scaleX: 1, scaleY: 1, stageWidth: 1920, stageHeight: 1080, offsetX: -960 });
-    expect(calculateDashboardRuntimeViewport({ ...page, viewportFit: "stretch" }, 1952, 1112)).toMatchObject({ scaleX: 0.5, scaleY: 1, stageWidth: 1920, stageHeight: 1080 });
+    expect(calculateDashboardRuntimeViewport({ ...page, viewportFit: "contain" }, 1952, 1112)).toMatchObject({ scaleX: 1952 / 3840, scaleY: 1952 / 3840, stageWidth: 1952, stageHeight: 549, offsetX: 0 });
+    const cover = calculateDashboardRuntimeViewport({ ...page, viewportFit: "cover" }, 1952, 1112);
+    expect(cover.scaleX).toBeCloseTo(1112 / 1080);
+    expect(cover.stageWidth).toBe(1952);
+    expect(cover.stageHeight).toBe(1112);
+    expect(cover.offsetX).toBeCloseTo((1952 - 3840 * (1112 / 1080)) / 2);
+    expect(calculateDashboardRuntimeViewport({ ...page, viewportFit: "stretch" }, 1952, 1112)).toMatchObject({ scaleX: 1952 / 3840, scaleY: 1112 / 1080, stageWidth: 1952, stageHeight: 1112 });
     expect(calculateDashboardRuntimeViewport({ ...page, viewportFit: "fixed" }, 1952, 1112)).toMatchObject({ scaleX: 1, scaleY: 1, stageWidth: 3840, stageHeight: 1080 });
+  });
+
+  it("snaps move and resize frames to guides and component edges", () => {
+    expect(snapDashboardFrame({ x: 96, y: 194, width: 100, height: 80 }, "move", [200], [200], 6)).toEqual({ frame: { x: 100, y: 200, width: 100, height: 80 }, lines: { x: [200], y: [200] } });
+    expect(snapDashboardFrame({ x: 20, y: 30, width: 176, height: 166 }, "resize", [200], [200], 6)).toEqual({ frame: { x: 20, y: 30, width: 180, height: 170 }, lines: { x: [200], y: [200] } });
   });
 
   it("renders user-defined large-screen resolution controls and overflow diagnostics", () => {

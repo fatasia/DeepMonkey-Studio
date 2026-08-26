@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
-import { BookOpen, Box, CalendarDays, Copy, Database, Eye, ExternalLink, Factory, FileImage, FileUp, FileVideo, Gauge, Image as ImageIcon, Layers3, Network, Pencil, Plus, RefreshCw, Rocket, ScanSearch, Search, Trash2, Undo2, Video, X } from "lucide-react";
-import type { ConversionStatus, ModelRecord, ProjectAssetRecord, ProjectRecord, SceneSnapshot, SystemBrandingSettings } from "@bim-studio/contracts";
+import { BookOpen, Box, CalendarDays, Copy, Database, Eye, Factory, FileImage, FileUp, FileVideo, Gauge, HeartHandshake, Image as ImageIcon, Languages, Layers3, LogOut, Network, Pencil, Plus, Radio, RefreshCw, Rocket, ScanSearch, Search, ShieldCheck, Trash2, Video } from "lucide-react";
+import type { ConversionStatus, ModelRecord, ProjectAssetRecord, ProjectRecord, SceneSnapshot, SystemBrandingSettings, TopologyDocument } from "@bim-studio/contracts";
 import { SceneExportMenu } from "./SceneExportMenu";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
@@ -16,6 +16,9 @@ interface SceneManagerProps {
   projects: ProjectRecord[];
   project: ProjectRecord | undefined;
   scenes: SceneSnapshot[];
+  topologies: Array<{ applicationId: string; applicationName: string; topology: TopologyDocument }>;
+  userName: string;
+  isAdmin: boolean;
   onProjectChange: (projectId: string) => void;
   onCreateProject: () => void;
   onRenameProject: () => void;
@@ -37,9 +40,15 @@ interface SceneManagerProps {
   onDelete: (scene: SceneSnapshot) => Promise<void>;
   onOptimizer: () => void;
   onDataCenter: () => void;
-  onTopology: () => void;
+  onCreateTopology: () => void;
+  onOpenTopology: (applicationId: string, topologyId: string) => void;
   onVisionCenter: () => void;
   onDocs: () => void;
+  onSystem: () => void;
+  onLocaleToggle: () => void;
+  onConnectionStatus: () => void;
+  onCredits: () => void;
+  onLogout: () => void;
   onUploadModels: (files: FileList) => Promise<void>;
   onDeleteModel: (model: ModelRecord) => Promise<void>;
   onRefreshModels: () => Promise<void>;
@@ -51,6 +60,9 @@ export function SceneManager({
   projects,
   project,
   scenes,
+  topologies,
+  userName,
+  isAdmin,
   onProjectChange,
   onCreateProject,
   onRenameProject,
@@ -72,18 +84,24 @@ export function SceneManager({
   onDelete,
   onOptimizer,
   onDataCenter,
-  onTopology,
+  onCreateTopology,
+  onOpenTopology,
   onVisionCenter,
   onDocs,
+  onSystem,
+  onLocaleToggle,
+  onConnectionStatus,
+  onCredits,
+  onLogout,
   onUploadModels,
   onDeleteModel,
   onRefreshModels
 }: SceneManagerProps) {
   const [dialogMode, setDialogMode] = useState<"create" | "rename">();
+  const [managerTab, setManagerTab] = useState<"scenes" | "assets" | "topology" | "examples">("scenes");
   const [targetScene, setTargetScene] = useState<SceneSnapshot>();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [modelLibraryOpen, setModelLibraryOpen] = useState(false);
   const [modelLibraryBusy, setModelLibraryBusy] = useState(false);
   const [showcaseBusy, setShowcaseBusy] = useState(false);
   const [assetTab, setAssetTab] = useState<"all" | "model" | "image" | "video">("all");
@@ -228,44 +246,22 @@ export function SceneManager({
       <header className="manager-header">
         <div className="manager-brand">
           <span><img src={branding.logoUrl} alt={branding.systemName} /></span>
-          <div><strong>{branding.systemName}</strong><small>{tr(locale, "场景管理中心", "Scene management")}</small></div>
+          <div><strong>{branding.systemName}</strong><small>{tr(locale, "项目工作台", "Project workspace")}</small></div>
         </div>
-        <div className="manager-actions">
-          <select value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label={tr(locale, "项目", "Project")}>
-            {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-          <button className="button" onClick={onCreateProject}><Plus size={16} />{tr(locale, "新建项目", "New project")}</button>
-          <button className="manager-icon-button" title={tr(locale, "重命名项目", "Rename project")} disabled={!project} onClick={onRenameProject}><Pencil size={15} /></button>
-          <button className="manager-icon-button danger" title={tr(locale, "删除项目", "Delete project")} disabled={!project} onClick={onDeleteProject}><Trash2 size={15} /></button>
-          <button className="button" disabled={!project} onClick={() => setModelLibraryOpen(true)}><Layers3 size={16} />{tr(locale, "资源库", "Assets")}</button>
-          <button className="button" disabled={!project} onClick={onDataCenter}><Database size={16} />{tr(locale, "数据中心", "Data center")}</button>
-          <button className="button" disabled={!project} onClick={onTopology}><Network size={16} />{tr(locale, "拓扑", "Topology")}</button>
-          <button className="button" disabled={!project} onClick={onVisionCenter}><ScanSearch size={16} />{tr(locale, "视觉中心", "Vision")}</button>
-          <button className="button" onClick={onDocs}><BookOpen size={16} />{tr(locale, "文档", "Docs")}</button>
-          <button className="button" onClick={onOptimizer}><Gauge size={16} />{tr(locale, "模型优化", "Optimize")}</button>
-          <button className="button" onClick={onImport}><FileUp size={16} />{tr(locale, "导入场景", "Import scene")}</button>
-          <button className="button primary" onClick={openCreateDialog}><Plus size={17} />{tr(locale, "新建场景", "New scene")}</button>
-        </div>
+        <nav className="manager-primary-nav" aria-label={tr(locale, "一级工作区", "Primary workspaces")}>
+          <button className={managerTab === "scenes" ? "active" : ""} onClick={() => setManagerTab("scenes")}><Layers3 size={16} />{tr(locale, "项目场景", "Project scenes")}</button>
+          <button className={managerTab === "assets" ? "active" : ""} disabled={!project} onClick={() => setManagerTab("assets")}><Box size={16} />{tr(locale, "资源库", "Assets")}</button>
+          <button className={managerTab === "topology" ? "active" : ""} disabled={!project} onClick={() => setManagerTab("topology")}><Network size={16} />{tr(locale, "拓扑", "Topology")}</button>
+          <button className={managerTab === "examples" ? "active" : ""} onClick={() => setManagerTab("examples")}><Factory size={16} />{tr(locale, "示例场景", "Example scenes")}</button>
+        </nav>
+        <nav className="manager-capability-nav" aria-label={tr(locale, "平台能力", "Platform capabilities")}><button disabled={!project} onClick={onDataCenter}><Database size={14} />{tr(locale, "数据", "Data")}</button><button disabled={!project} onClick={onVisionCenter}><ScanSearch size={14} />{tr(locale, "视觉", "Vision")}</button><button onClick={onOptimizer}><Gauge size={14} />{tr(locale, "优化", "Optimize")}</button><button onClick={onDocs}><BookOpen size={14} />{tr(locale, "文档", "Docs")}</button></nav>
+        <nav className="manager-utility-nav" aria-label={tr(locale, "系统操作", "System actions")}>{isAdmin && <button title={tr(locale, "系统管理", "System administration")} onClick={onSystem}><ShieldCheck size={14} /></button>}<button title={tr(locale, "切换语言", "Switch language")} onClick={onLocaleToggle}><Languages size={14} /></button><button title={tr(locale, "连接与实时数据", "Connections and live data")} onClick={onConnectionStatus}><Radio size={14} /></button><button title={tr(locale, "致谢", "Credits")} onClick={onCredits}><HeartHandshake size={14} /></button><button title={`${tr(locale, "退出", "Sign out")} · ${userName}`} onClick={onLogout}><LogOut size={14} /></button></nav>
       </header>
 
       <section className="manager-content">
-        <div className="manager-hero">
-          <div><span className="eyebrow">SCENE LIBRARY</span><h1>{tr(locale, "场景", "Scenes")}</h1><p>{tr(locale, "一个场景可以组合多个 BIM、CAD 与通用三维模型，并独立保存视图和图层状态。", "A scene can combine multiple BIM, CAD and general 3D models while preserving view and layer state.")}</p></div>
-          <div className="manager-stats">
-            <div><strong>{scenes.length}</strong><span>{tr(locale, "场景", "Scenes")}</span></div>
-          </div>
-        </div>
+        <div className="manager-project-bar"><select value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label={tr(locale, "项目", "Project")}>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="button" onClick={onCreateProject}><Plus size={15} />{tr(locale, "新建项目", "New project")}</button><button className="button" disabled={!project} onClick={onRenameProject}><Pencil size={14} />{tr(locale, "重命名", "Rename")}</button><button className="button danger" disabled={!project} onClick={onDeleteProject}><Trash2 size={14} />{tr(locale, "删除", "Delete")}</button><span />{managerTab === "scenes" && <><button className="button" onClick={onImport}><FileUp size={15} />{tr(locale, "导入", "Import")}</button><button className="button primary" onClick={openCreateDialog}><Plus size={16} />{tr(locale, "新建场景", "New scene")}</button></>}{managerTab === "topology" && <button className="button primary" onClick={onCreateTopology}><Plus size={16} />{tr(locale, "新建拓扑", "New topology")}</button>}</div>
 
-        <section className="manager-showcase" aria-label={tr(locale, "内置综合案例", "Built-in showcase")}>
-          <div className="manager-showcase-icon"><Factory size={25} /></div>
-          <div className="manager-showcase-copy">
-            <span className="eyebrow">EDITABLE SHOWCASE</span>
-            <strong>{tr(locale, "智造园区综合案例", "Smart industrial campus")}</strong>
-            <p>{tr(locale, "一键创建 4K 看板、四级 2D/3D 场景、楼层与部件拆解、巡检视角、AGV、图片/视频/实时监控，以及直连 HTTP/WebSocket 数据。", "Create an editable 4K dashboard, four connected 2D/3D levels, floor and component decomposition, inspection cameras, AGVs, media, monitoring, and direct HTTP/WebSocket data.")}</p>
-          </div>
-          <div className="manager-showcase-tags"><span>4K 2D</span><span>LIVE 3D</span><span>AGV</span><span>HTTP / WS</span></div>
-          <button className="button primary manager-showcase-action" disabled={!project || showcaseBusy} onClick={() => void createShowcase()}>{showcaseBusy ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />}{showcaseBusy ? tr(locale, "正在创建…", "Creating…") : tr(locale, "创建可编辑案例", "Create editable showcase")}</button>
-        </section>
+        {managerTab === "scenes" && <>
 
         {scenes.length > 0 ? (
           <div className="scene-card-grid">
@@ -281,45 +277,33 @@ export function SceneManager({
                   <button className="scene-card-title" onClick={() => void onOpen(scene)}>{scene.name}</button>
                   <div className="scene-card-meta"><CalendarDays size={12} />{tr(locale, "更新于", "Updated")} {new Date(scene.updatedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}</div>
                   {scene.publishedAt && <div className="scene-card-publish-time"><Rocket size={11} />{tr(locale, "发布于", "Published")} {new Date(scene.publishedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}</div>}
-                  <div className="scene-card-footer">
-                    <span>{scene.measurements.length} {tr(locale, "条测量", "measurements")} · {scene.annotations?.length ?? 0} {tr(locale, "个标签", "annotations")}</span>
-                    <div>
-                      <button title={tr(locale, "复制场景", "Copy scene")} onClick={() => void onCopy(scene)}><Copy size={14} /></button>
-                      <button title={tr(locale, "重命名场景", "Rename scene")} onClick={() => openRenameDialog(scene)}><Pencil size={14} /></button>
-                      <button title={tr(locale, "浏览当前保存版", "View saved version")} onClick={() => onBrowse(scene)}><Eye size={14} /></button>
-                      <button title={scene.publishedAt ? tr(locale, "重新发布当前版本", "Republish current version") : tr(locale, "发布场景", "Publish scene")} onClick={() => void onPublish(scene)}><Rocket size={14} /></button>
-                      {scene.publishedAt && <button title={tr(locale, "浏览已发布版本", "View published version")} onClick={() => onBrowsePublished(scene)}><ExternalLink size={14} /></button>}
-                      {scene.publishedAt && <button title={tr(locale, "撤回发布", "Unpublish")} className="danger" onClick={() => void onUnpublish(scene)}><Undo2 size={14} /></button>}
-                      <SceneExportMenu locale={locale} compact onExportLoose={() => onExportLoose(scene)} onExportSingle={() => void onExportSingle(scene)} onExportGlb={() => void onExportGlb(scene)} onExportFbx={() => void onExportFbx(scene)} />
-                      <button title={tr(locale, "删除场景", "Delete scene")} className="danger" onClick={() => void onDelete(scene)}><Trash2 size={15} /></button>
-                    </div>
-                  </div>
+                  <div className="scene-card-footer"><span>{scene.measurements.length} {tr(locale, "条测量", "measurements")} · {scene.annotations?.length ?? 0} {tr(locale, "个标签", "annotations")}</span><div><button title={tr(locale, "复制场景", "Copy scene")} onClick={() => void onCopy(scene)}><Copy size={14} /></button><button title={tr(locale, "重命名场景", "Rename scene")} onClick={() => openRenameDialog(scene)}><Pencil size={14} /></button><button title={tr(locale, "打开项目", "Open project")} onClick={() => void onOpen(scene)}><Eye size={14} /></button><SceneExportMenu locale={locale} compact onExportLoose={() => onExportLoose(scene)} onExportSingle={() => void onExportSingle(scene)} onExportGlb={() => void onExportGlb(scene)} onExportFbx={() => void onExportFbx(scene)} /><button title={tr(locale, "删除场景", "Delete scene")} className="danger" onClick={() => void onDelete(scene)}><Trash2 size={15} /></button></div></div>
                 </div>
               </article>
             ))}
           </div>
-        ) : (
-          <div className="manager-empty">
-            <Box size={42} />
-            <h2>{tr(locale, "还没有场景", "No scenes yet")}</h2>
-            <p>{tr(locale, "新建场景后，可以加载多个模型、调整图层并保存当前视图。", "Create a scene to load models, adjust layers and save the current view.")}</p>
-            <button className="button primary" onClick={openCreateDialog}><Plus size={17} />{tr(locale, "新建第一个场景", "Create first scene")}</button>
+        ) : <div className="manager-empty"><Box size={42} /><h2>{tr(locale, "还没有场景", "No scenes yet")}</h2><p>{tr(locale, "新建项目内容，默认从空白二维页面开始。", "Create project content starting from a blank 2D page.")}</p><button className="button primary" onClick={openCreateDialog}><Plus size={17} />{tr(locale, "新建第一个场景", "Create first scene")}</button></div>}
+        </>}
+
+        {managerTab === "examples" && <section className="manager-showcase" aria-label={tr(locale, "内置综合案例", "Built-in showcase")}>
+          <div className="manager-showcase-icon"><Factory size={25} /></div>
+          <div className="manager-showcase-copy">
+            <span className="eyebrow">EDITABLE SHOWCASE</span>
+            <strong>{tr(locale, "智造园区综合案例", "Smart industrial campus")}</strong>
+            <p>{tr(locale, "一键创建 4K 看板、四级 2D/3D 场景、楼层与部件拆解、巡检视角、AGV、图片/视频/实时监控，以及直连 HTTP/WebSocket 数据。", "Create an editable 4K dashboard, four connected 2D/3D levels, floor and component decomposition, inspection cameras, AGVs, media, monitoring, and direct HTTP/WebSocket data.")}</p>
           </div>
-        )}
-      </section>
+          <div className="manager-showcase-tags"><span>4K 2D</span><span>LIVE 3D</span><span>AGV</span><span>HTTP / WS</span></div>
+          <button className="button primary manager-showcase-action" disabled={!project || showcaseBusy} onClick={() => void createShowcase()}>{showcaseBusy ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />}{showcaseBusy ? tr(locale, "正在创建…", "Creating…") : tr(locale, "创建可编辑案例", "Create editable showcase")}</button>
+        </section>}
 
-      <div className="app-copyright">{branding.copyright}</div>
-
-      {modelLibraryOpen && (
-        <div className="dialog-backdrop" onMouseDown={() => setModelLibraryOpen(false)}>
-          <section className="model-library-dialog asset-library-dialog" aria-label={tr(locale, "项目资源库", "Project assets")} onMouseDown={(event) => event.stopPropagation()}>
+      {managerTab === "assets" && (
+          <section className="manager-page-panel asset-library-page" aria-label={tr(locale, "项目资源库", "Project assets")}>
             <header className="model-library-head">
               <div>
                 <span className="eyebrow">PROJECT ASSETS</span>
                 <h2>{tr(locale, "项目资源库", "Project assets")}</h2>
                 <p>{tr(locale, "模型、图片和视频上传一次，即可被多个场景直接引用。", "Upload models, images and videos once, then reuse them across scenes.")}</p>
               </div>
-              <button className="manager-icon-button" title={tr(locale, "关闭", "Close")} onClick={() => setModelLibraryOpen(false)}><X size={16} /></button>
             </header>
             <div className="model-library-toolbar">
               <button className="button primary" disabled={modelLibraryBusy} onClick={() => modelUploadRef.current?.click()}><FileUp size={16} />{tr(locale, "上传模型", "Upload models")}</button>
@@ -353,8 +337,18 @@ export function SceneManager({
               {visibleModels.length === 0 && visibleImages.length === 0 && visibleVideos.length === 0 && <div className="model-library-empty">{assetTab === "image" ? <ImageIcon size={34} /> : assetTab === "video" ? <Video size={34} /> : <Box size={34} />}<strong>{normalizedSearch ? tr(locale, "没有匹配的资源", "No matching assets") : tr(locale, "还没有资源", "No assets yet")}</strong><span>{tr(locale, "上传模型、图片或视频后，可在场景编辑器中直接引用。", "Upload a model, image or video to reuse it in Studio.")}</span></div>}
             </div>
           </section>
-        </div>
       )}
+
+      {managerTab === "topology" && <section className="manager-page-panel manager-topology-page">
+        {topologies.length ? <div className="manager-topology-grid">{topologies.map(({ applicationId, applicationName, topology }) => <article key={`${applicationId}:${topology.id}`}>
+          <button className="manager-topology-preview" onClick={() => onOpenTopology(applicationId, topology.id)}><Network size={26} /><span>{topology.nodes.length}</span><i /><i /><i /></button>
+          <div><strong>{topology.name}</strong><small>{applicationName} · {topology.nodes.length} {tr(locale, "个节点", "nodes")} · {topology.edges.length} {tr(locale, "条连线", "edges")}</small></div>
+          <button className="button" onClick={() => onOpenTopology(applicationId, topology.id)}><Pencil size={13} />{tr(locale, "打开编辑", "Open editor")}</button>
+        </article>)}</div> : <div className="manager-empty"><Network size={42} /><h2>{tr(locale, "还没有拓扑", "No topologies yet")}</h2><p>{tr(locale, "拓扑是项目级可复用资源，可在二维页面中插入并绑定数据。", "Topologies are reusable project resources that can be inserted into 2D pages and bound to data.")}</p><button className="button primary" onClick={onCreateTopology}><Plus size={17} />{tr(locale, "新建第一个拓扑", "Create first topology")}</button></div>}
+      </section>}
+      </section>
+
+      <div className="app-copyright">{branding.copyright}</div>
 
       {dialogMode && (
         <div className="dialog-backdrop" onMouseDown={() => setDialogMode(undefined)}>

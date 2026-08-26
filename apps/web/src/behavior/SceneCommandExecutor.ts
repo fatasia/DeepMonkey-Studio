@@ -31,6 +31,7 @@ export interface SceneCommandPort {
     target: SceneObjectRef,
     data: Pick<CommandOf<"data.apply">, "values" | "timestamp">
   ): MaybePromise<SceneCommandPortOutcome>;
+  updateComponent(componentId: string, patch: Record<string, import("@bim-studio/contracts").JsonValue>): MaybePromise<SceneCommandPortOutcome>;
 }
 
 export type SceneCommandExecutionErrorCode = "scene-mismatch" | "unsupported" | "port-error";
@@ -100,6 +101,8 @@ async function dispatchCommand(port: SceneCommandPort, command: SceneCommand): P
       return port.controlAnimation(command.target, optionalFields(command, ["action", "clipId", "time"]));
     case "data.apply":
       return port.applyData(command.target, { values: command.values, timestamp: command.timestamp });
+    case "component.update":
+      return port.updateComponent(command.componentId, command.patch);
   }
 }
 
@@ -131,6 +134,7 @@ function commandTargets(command: SceneCommand): readonly SceneObjectRef[] {
     case "camera.fly-to":
       return "kind" in command.target ? [command.target] : [];
     case "camera.set":
+    case "component.update":
       return [];
   }
 }
