@@ -1,0 +1,76 @@
+import { Download, History, RotateCcw, Trash2 } from "lucide-react";
+import type { AppLocale } from "../i18n";
+import { translate as tr } from "../i18n";
+import type { WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
+
+interface WorkspaceRecoveryDialogProps {
+  locale: AppLocale;
+  draft: WorkspaceRecoveryDraft;
+  serverRevision?: number;
+  busy: boolean;
+  onRestore: () => void;
+  onExport: () => void;
+  onDiscard: () => void;
+}
+
+export function WorkspaceRecoveryDialog(props: WorkspaceRecoveryDialogProps) {
+  const t = (zh: string, en: string) => tr(props.locale, zh, en);
+  const serverIsNewer = props.serverRevision !== undefined && props.draft.baseRevision !== undefined && props.serverRevision > props.draft.baseRevision;
+  return (
+    <div className="dialog-backdrop workspace-recovery-backdrop">
+      <section className="dialog workspace-recovery-dialog" role="dialog" aria-modal="true" aria-label={t("恢复未保存工作", "Recover unsaved work")}>
+        <span className="eyebrow">LOCAL RECOVERY</span>
+        <header>
+          <i>
+            <History size={21} />
+          </i>
+          <span>
+            <h2>{t("发现未完成的本地修改", "Unsaved local changes found")}</h2>
+            <p>
+              {props.draft.scene.name} · {new Date(props.draft.savedAt).toLocaleString(props.locale)}
+            </p>
+          </span>
+        </header>
+        <div className={serverIsNewer ? "workspace-recovery-warning" : "workspace-recovery-safe"}>
+          <strong>{serverIsNewer ? t("服务器已有更新版本", "A newer server version exists") : t("服务器尚未接收这次修改", "These changes are not on the server")}</strong>
+          <small>
+            {serverIsNewer
+              ? t(
+                  `本地基于 v${props.draft.baseRevision}，服务器为 v${props.serverRevision}。建议先导出副本，再恢复查看。`,
+                  `Local changes use v${props.draft.baseRevision}; the server is v${props.serverRevision}. Export before restoring.`,
+                )
+              : t("可以直接恢复到当前页面，确认无误后重新保存。", "Restore into this tab, review, and save again.")}
+          </small>
+        </div>
+        <div className="workspace-recovery-summary">
+          <span>
+            <small>{t("三维对象", "3D objects")}</small>
+            <strong>{props.draft.scene.models.length + props.draft.scene.primitives.length}</strong>
+          </span>
+          <span>
+            <small>{t("数据绑定", "Bindings")}</small>
+            <strong>{props.draft.scene.dataBindings?.length ?? 0}</strong>
+          </span>
+          <span>
+            <small>{t("标签", "Labels")}</small>
+            <strong>{props.draft.scene.annotations?.length ?? 0}</strong>
+          </span>
+        </div>
+        <div className="dialog-actions workspace-recovery-actions">
+          <button className="button danger" disabled={props.busy} onClick={props.onDiscard}>
+            <Trash2 size={13} />
+            {t("丢弃副本", "Discard")}
+          </button>
+          <button className="button" disabled={props.busy} onClick={props.onExport}>
+            <Download size={13} />
+            {t("导出副本", "Export copy")}
+          </button>
+          <button className="button primary" disabled={props.busy} onClick={props.onRestore}>
+            <RotateCcw size={13} />
+            {t("恢复到当前页", "Restore here")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}

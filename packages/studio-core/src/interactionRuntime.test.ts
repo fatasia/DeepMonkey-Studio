@@ -60,6 +60,14 @@ describe("application interaction runtime", () => {
     expect(result.variableUpdates).toEqual({});
   });
 
+  it("maps a clicked data-point payload into a drill-down parameter", () => {
+    const source = document();
+    source.interactions = [{ id: "drill", name: "钻取", enabled: true, source: { kind: "widget", id: "chart-1" }, trigger: "click", actions: [{ id: "open", type: "dashboard", enabled: true, dashboardPageId: source.pages[0]?.id, dataKey: "selected.device", value: "$event.data.id" }] }];
+    const result = evaluateApplicationInteraction(source, { source: { kind: "widget", id: "chart-1" }, trigger: "click", timestamp: "2026-08-26T00:00:00.000Z", payload: { data: { id: "M-01" } } });
+    expect(result.variableUpdates["selected.device"]).toBe("M-01");
+    expect(result.effects[0]?.action.type).toBe("dashboard");
+  });
+
   it("compares page/widget/scene and object references without cross-kind matches", () => {
     expect(sameObjectRef({ kind: "widget", id: "one" }, { kind: "widget", id: "one" })).toBe(true);
     expect(sameObjectRef({ kind: "widget", id: "one" }, { kind: "scene", id: "one" })).toBe(false);

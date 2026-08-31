@@ -1,10 +1,22 @@
 import type {
   CameraKeyframe,
   CameraState,
+  ModelAnimationKeyframeState,
   ModelKeyframe,
   ModelTransform,
   Vector3Value
 } from "@bim-studio/contracts";
+
+export function normalizeAnimationFrameRate(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 30;
+  return Math.max(1, Math.min(120, Math.round(value!)));
+}
+
+export function snapAnimationTime(time: number, frameRate: number | undefined, enabled = true): number {
+  if (!enabled) return time;
+  const fps = normalizeAnimationFrameRate(frameRate);
+  return Math.round(time * fps) / fps;
+}
 
 function clampProgress(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -88,17 +100,33 @@ export function sampleCameraKeyframes(
   };
 }
 
-export function sampleModelKeyframes(frames: ModelKeyframe[], time: number): ModelTransform | undefined {
+export function sampleModelKeyframes(frames: ModelKeyframe[], time: number, interpolation: "linear" | "smooth" = "smooth"): ModelTransform | undefined {
   const sample = surroundingFrames(frames, time);
   if (!sample) return undefined;
   const [start, end, progress] = sample;
   return {
-    position: interpolateVector(start.transform.position, end.transform.position, progress),
+    position: interpolateVector(start.transform.position, end.transform.position, progress, interpolation === "smooth"),
     rotation: {
       x: interpolateAngle(start.transform.rotation.x, end.transform.rotation.x, progress),
       y: interpolateAngle(start.transform.rotation.y, end.transform.rotation.y, progress),
       z: interpolateAngle(start.transform.rotation.z, end.transform.rotation.z, progress)
     },
-    scale: interpolateVector(start.transform.scale, end.transform.scale, progress)
+    scale: interpolateVector(start.transform.scale, end.transform.scale, progress, interpolation === "smooth")
+  };
+}
+
+export function sampleModelAnimationKeyframes(frames: ModelKeyframe[], time: number): ModelAnimationKeyframeState | undefined {
+  const animated = frames.filter((frame) => frame.animation);
+  const sample = surroundingFrames(animated, time);
+  if (!sample) return undefined;
+  const [start, end, progress] = sample;
+  const startAnimation = start.animation!;
+  const endAnimation = end.animation!;
+  if (start === end || startAnimation.clipId !== endAnimation.clipId) {
+    return structuredClone(progress < 1 ? startAnimation : endAnimation);
+  }
+  return {
+    ...(startAnimation.clipId ? { clipId: startAnimation.clipId } : {}),
+    time: startAnimation.time + (endAnimation.time - startAnimation.time) * clampProgress(progress)
   };
 }

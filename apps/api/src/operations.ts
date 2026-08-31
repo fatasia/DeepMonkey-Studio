@@ -1,0 +1,542 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
+import * as ort from "onnxruntime-node";
+import type {
+  DataSourceEvidence,
+  EnergyInsightRecord,
+  EnergyObservation,
+  IndustrialStudyRecord,
+  IndustrialValidationStudyRecord,
+  LogisticsExperimentRequest,
+  LogisticsExperimentResult,
+  MaintenanceAssessmentRecord,
+  MaintenanceDeploymentRecord,
+  MaintenanceModelPackage,
+  MaintenanceShadowEvaluation,
+  OperationalCaseRecord,
+  PlantLiteStudyRecord,
+  PlantLiteStudyRequest,
+  SaveIndustrialValidationStudyInput
+} from "@bim-studio/contracts";
+import type { WhatIfStudyRecord, WhatIfStudyRequest } from "@bim-studio/studio-core";
+import { adaptIotNbModel, DEFAULT_MAINTENANCE_GATES, resolveIotNbProjectPath, type IotNbProjectDocument } from "./iotNbModelAdapter.js";
+import {
+  analyzeEnergy,
+  buildMaintenanceAssessment,
+  evaluateMaintenanceShadow,
+  evidenceFingerprint,
+  prepareMaintenanceWindow,
+  runLogisticsExperiment,
+  scoreNativeArtifact
+} from "./operationsEngine.js";
+import { buildValidationStudyRecord } from "./validationStudy.js";
+import { reproduceWhatIfStudy, runWhatIfStudy } from "./whatIfStudy.js";
+import { plantLiteRequestFromRecord } from "./plantLiteStudy.js";
+import { PlantLiteWorkerExecutor, type PlantLiteStudyExecutor } from "./plantLiteWorkerExecutor.js";
+import { buildOperationsStudyIndex } from "./operationsStudyIndex.js";
+
+interface OperationsProjectState {
+  models: MaintenanceModelPackage[];
+  deployments: MaintenanceDeploymentRecord[];
+  assessments: MaintenanceAssessmentRecord[];
+  shadowEvaluations: MaintenanceShadowEvaluation[];
+  cases: OperationalCaseRecord[];
+  logisticsExperiments: LogisticsExperimentResult[];
+  plantLiteStudies: PlantLiteStudyRecord[];
+  energyInsights: EnergyInsightRecord[];
+  validationStudies: IndustrialValidationStudyRecord[];
+  whatIfStudies: WhatIfStudyRecord[];
+}
+
+interface OperationsDocument {
+  schemaVersion: 1;
+  projects: Record<string, OperationsProjectState>;
+}
+
+export interface IotNbSyncResult {
+  sourceProjectId: string;
+  sourceProjectName: string;
+  sourceUpdatedAt?: string;
+  imported: number;
+  updated: number;
+  removedSamples: number;
+  models: MaintenanceModelPackage[];
+}
+
+export interface IotNbAssessmentResult {
+  deployment: MaintenanceDeploymentRecord;
+  assessment: MaintenanceAssessmentRecord;
+  source: { projectName: string; datasetId: string; datasetName: string; rowCount: number; benchmarkOnly: boolean };
+}
+
+export class OperationsService {
+  private readonly filePath: string;
+  private document: OperationsDocument = { schemaVersion: 1, projects: {} };
+  private writeChain = Promise.resolve();
+  private readonly onnxSessions = new Map<string, Promise<ort.InferenceSession>>();
+
+  private readonly plantLiteExecutor: PlantLiteStudyExecutor;
+
+  constructor(private readonly dataDir: string, private readonly options: { iotNbProjectPath?: string; plantLiteExecutor?: PlantLiteStudyExecutor } = {}) {
+    this.filePath = path.join(dataDir, "operations.json");
+    this.plantLiteExecutor = options.plantLiteExecutor ?? new PlantLiteWorkerExecutor();
+  }
+
+  async init(): Promise<void> {
+    await mkdir(this.dataDir, { recursive: true });
+    try {
+      const parsed = JSON.parse(await readFile(this.filePath, "utf8")) as Partial<OperationsDocument>;
+      this.document = { schemaVersion: 1, projects: parsed.projects ?? {} };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await this.persist();
+    }
+  }
+
+  snapshot(projectId: string): OperationsProjectState & { studies: IndustrialStudyRecord[] } {
+    const state = this.project(projectId);
+    return structuredClone({ ...state, studies: buildOperationsStudyIndex(state) });
+  }
+
+  async syncIotNbModels(projectId: string): Promise<IotNbSyncResult> {
+    const sourcePath = await resolveIotNbProjectPath(this.options.iotNbProjectPath);
+    const document = JSON.parse(await readFile(sourcePath, "utf8")) as IotNbProjectDocument;
+    const upstream = document.payload?.maintenanceModels ?? [];
+    if (!upstream.length) throw new Error("Iot-nb 当前工程没有维护模型");
+    const packages = upstream.map((model) => adaptIotNbModel(projectId, model));
+    return this.mutate(projectId, (state) => {
+      const sampleIds = new Set(state.models.filter((item) => item.version.startsWith("iot-nb-sample-")).map((item) => item.id));
+      const removedSamples = sampleIds.size;
+      if (removedSamples) {
+        state.models = state.models.filter((item) => !sampleIds.has(item.id));
+        const deploymentIds = new Set(state.deployments.filter((item) => sampleIds.has(item.modelId)).map((item) => item.id));
+        state.deployments = state.deployments.filter((item) => !sampleIds.has(item.modelId));
+        state.assessments = state.assessments.filter((item) => !sampleIds.has(item.modelId) && !deploymentIds.has(item.deploymentId));
+      }
+      let imported = 0, updated = 0;
+      const synced: MaintenanceModelPackage[] = [];
+      for (const candidate of packages) {
+        const existing = state.models.find((item) => item.version === candidate.version);
+        if (existing) {
+          const next = { ...candidate, id: existing.id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+          Object.assign(existing, next);
+          synced.push(existing);
+          updated += 1;
+        } else {
+          state.models.push(candidate);
+          synced.push(candidate);
+          imported += 1;
+        }
+      }
+      return {
+        sourceProjectId: document.payload?.projectId ?? "unknown",
+        sourceProjectName: document.payload?.projectName ?? document.name ?? "Iot-nb 当前工程",
+        ...(document.updatedAt ? { sourceUpdatedAt: document.updatedAt } : {}),
+        imported, updated, removedSamples, models: synced
+      };
+    });
+  }
+
+  async assessIotNbModel(projectId: string, modelId: string): Promise<IotNbAssessmentResult> {
+    const model = this.requireModel(projectId, modelId);
+    if (model.source !== "iot-nb") throw new Error("该模型不是从 Iot-nb 同步的模型，请通过现场数据接口执行评估");
+    const sourcePath = await resolveIotNbProjectPath(this.options.iotNbProjectPath);
+    const document = JSON.parse(await readFile(sourcePath, "utf8")) as IotNbProjectDocument;
+    const upstreamModel = (document.payload?.maintenanceModels ?? []).find((item) => item.version === model.version);
+    if (!upstreamModel?.sourceId) throw new Error(`Iot-nb 模型 ${model.version} 没有关联训练数据集`);
+    const dataset = (document.payload?.trainingDatasets ?? []).find((item) => item.id === upstreamModel.sourceId);
+    if (!dataset?.rows?.length) throw new Error(`Iot-nb 数据集 ${upstreamModel.sourceId} 不存在或没有数据`);
+    const rows = dataset.rows.map((row) => Object.fromEntries(Object.entries(row).flatMap(([key, value]) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? [[key, numeric] as [string, number]] : [];
+    })));
+    const usableRows = rows.filter((row) => model.artifact.features.some((feature) => Number.isFinite(row[feature])));
+    if (usableRows.length < model.gates.minimumSamples) throw new Error(`Iot-nb 数据集有效记录不足：需要 ${model.gates.minimumSamples} 条，实际 ${usableRows.length} 条`);
+    const existing = this.project(projectId).deployments.find((item) => item.modelId === modelId && item.sourceId === upstreamModel.sourceId);
+    const deployment = existing ?? await this.saveDeployment(projectId, {
+      name: `${model.name} · Iot-nb 源数据验证`, modelId,
+      equipmentId: "IOT-NB-SOURCE", maintainableUnitId: upstreamModel.sourceId,
+      sourceId: upstreamModel.sourceId, featureMappings: {}, sampleIntervalSec: 60,
+      windowSize: Math.max(model.gates.minimumSamples, Number(model.artifact.window ?? 1)), enabled: true, status: "shadow"
+    });
+    const assessment = await this.assess(projectId, deployment.id, usableRows);
+    return {
+      deployment, assessment,
+      source: {
+        projectName: document.payload?.projectName ?? document.name ?? "Iot-nb 当前工程",
+        datasetId: upstreamModel.sourceId,
+        datasetName: dataset.name?.trim() || upstreamModel.sourceId,
+        rowCount: usableRows.length,
+        benchmarkOnly: dataset.benchmarkOnly === true || model.benchmarkOnly
+      }
+    };
+  }
+
+  async importModel(projectId: string, source: Partial<MaintenanceModelPackage>): Promise<MaintenanceModelPackage> {
+    return this.mutate(projectId, (state) => {
+      const now = new Date().toISOString();
+      const artifact = source.artifact;
+      if (!artifact?.features?.length) throw new Error("模型包必须包含 artifact.features");
+      if (artifact.engine === "native-json" && (!artifact.weights?.length || artifact.weights.length !== artifact.features.length)) {
+        throw new Error("native-json 模型必须提供与 features 对齐的 weights");
+      }
+      const model: MaintenanceModelPackage = {
+        id: source.id ?? randomUUID(), projectId,
+        name: requiredText(source.name, "模型名称"), version: requiredText(source.version, "模型版本"),
+        algorithm: source.algorithm?.trim() || "Imported model", source: source.source ?? "imported",
+        status: artifact.engine === "onnx" ? "awaiting-artifact" : source.status === "validated" ? "validated" : "candidate",
+        benchmarkOnly: source.benchmarkOnly === true, productionEligible: source.productionEligible === true,
+        evaluationProtocol: source.evaluationProtocol?.trim() || "待完成固定数据集回放与影子评测",
+        dataFingerprint: source.dataFingerprint?.trim() || "unverified",
+        trainRows: finiteInteger(source.trainRows, 0), validationRows: finiteInteger(source.validationRows, 0), metrics: source.metrics ?? {},
+        artifact: structuredClone(artifact), gates: { ...DEFAULT_MAINTENANCE_GATES, ...source.gates },
+        ...(source.approvedBy?.trim() ? { approvedBy: source.approvedBy.trim() } : {}), createdAt: now, updatedAt: now
+      };
+      const duplicate = state.models.find((item) => item.version === model.version);
+      if (duplicate) throw new Error(`模型版本 ${model.version} 已存在`);
+      state.models.push(model);
+      return model;
+    });
+  }
+
+  async uploadArtifact(projectId: string, modelId: string, payload: Buffer): Promise<MaintenanceModelPackage> {
+    const model = this.requireModel(projectId, modelId);
+    if (model.artifact.engine !== "onnx") throw new Error("只有 ONNX 模型包可以上传 ONNX 制品");
+    const directory = path.join(this.dataDir, "projects", projectId, "operations", "models", modelId);
+    await mkdir(directory, { recursive: true });
+    const artifactPath = path.join(directory, "model.onnx");
+    await writeFile(artifactPath, payload);
+    try {
+      await ort.InferenceSession.create(artifactPath, { executionProviders: ["cpu"] });
+    } catch (error) {
+      throw new Error(`ONNX 制品校验失败：${compactError(error)}`);
+    }
+    this.onnxSessions.delete(artifactPath);
+    return this.mutate(projectId, (state) => {
+      const current = state.models.find((item) => item.id === modelId);
+      if (!current) throw new Error("维护模型不存在");
+      current.artifactPath = artifactPath;
+      current.status = current.productionEligible ? "validated" : "candidate";
+      current.updatedAt = new Date().toISOString();
+      return current;
+    });
+  }
+
+  async saveDeployment(projectId: string, input: Partial<MaintenanceDeploymentRecord>): Promise<MaintenanceDeploymentRecord> {
+    return this.mutate(projectId, (state) => {
+      const now = new Date().toISOString();
+      const modelId = requiredText(input.modelId, "模型");
+      if (!state.models.some((item) => item.id === modelId)) throw new Error("部署引用的维护模型不存在");
+      const existing = input.id ? state.deployments.find((item) => item.id === input.id) : undefined;
+      const sceneId = input.sceneId ?? existing?.sceneId;
+      const bindingId = input.bindingId?.trim() || existing?.bindingId;
+      const deployment: MaintenanceDeploymentRecord = {
+        id: existing?.id ?? randomUUID(), projectId,
+        name: input.name?.trim() || existing?.name || "未命名维护部署", modelId,
+        equipmentId: requiredText(input.equipmentId ?? existing?.equipmentId, "设备"),
+        maintainableUnitId: requiredText(input.maintainableUnitId ?? existing?.maintainableUnitId, "可维护单元"),
+        ...(sceneId ? { sceneId } : {}),
+        objectIds: input.objectIds ?? existing?.objectIds ?? [], sourceId: input.sourceId?.trim() || existing?.sourceId || "manual-window",
+        ...(bindingId ? { bindingId } : {}),
+        featureMappings: input.featureMappings ?? existing?.featureMappings ?? {},
+        sampleIntervalSec: finiteInteger(input.sampleIntervalSec ?? existing?.sampleIntervalSec, 60),
+        windowSize: finiteInteger(input.windowSize ?? existing?.windowSize, 60), enabled: input.enabled ?? existing?.enabled ?? true,
+        status: input.status ?? existing?.status ?? "shadow", ...(existing?.lastAssessmentId ? { lastAssessmentId: existing.lastAssessmentId } : {}),
+        ...(existing?.lastRunAt ? { lastRunAt: existing.lastRunAt } : {}),
+        ...(existing?.lastError ? { lastError: existing.lastError } : {}),
+        ...(existing?.consecutiveFailures ? { consecutiveFailures: existing.consecutiveFailures } : {}),
+        createdAt: existing?.createdAt ?? now, updatedAt: now
+      };
+      if (existing) Object.assign(existing, deployment); else state.deployments.push(deployment);
+      return deployment;
+    });
+  }
+
+  async assess(
+    projectId: string,
+    deploymentId: string,
+    sourceRows: Array<Record<string, number>>,
+    sourceEvidence?: DataSourceEvidence,
+  ): Promise<MaintenanceAssessmentRecord> {
+    const state = this.project(projectId);
+    const deployment = state.deployments.find((item) => item.id === deploymentId);
+    if (!deployment) throw new Error("维护部署不存在");
+    const model = state.models.find((item) => item.id === deployment.modelId);
+    if (!model) throw new Error("维护模型不存在");
+    if (model.status === "awaiting-artifact") throw new Error("ONNX 模型尚未上传制品");
+    const window = prepareMaintenanceWindow(model, deployment, sourceRows);
+    let score: number | undefined;
+    if (window.rows.length >= model.gates.minimumSamples && window.dataQuality >= model.gates.minimumDataQuality && window.driftScore <= model.gates.maximumDriftSigma) {
+      score = model.artifact.engine === "onnx" ? await this.scoreOnnx(model, window.rows) : scoreNativeArtifact(model.artifact, window.rows.at(-1)!);
+    }
+    const assessment = buildMaintenanceAssessment({ projectId, model, deployment, window, ...(score !== undefined ? { score } : {}) });
+    if (sourceEvidence) assessment.sourceEvidence = structuredClone(sourceEvidence);
+    await this.mutate(projectId, (candidate) => {
+      candidate.assessments.unshift(assessment);
+      candidate.assessments = candidate.assessments.slice(0, 500);
+      const current = candidate.deployments.find((item) => item.id === deploymentId);
+      if (current) {
+        current.lastAssessmentId = assessment.id;
+        current.lastRunAt = assessment.generatedAt;
+        current.consecutiveFailures = 0;
+        delete current.lastError;
+        current.status = assessment.decisionStatus === "drift-blocked" || assessment.decisionStatus === "insufficient-data" ? "degraded" : assessment.decisionStatus === "shadow" ? "shadow" : "running";
+        current.updatedAt = new Date().toISOString();
+      }
+      return assessment;
+    });
+    return assessment;
+  }
+
+  async recordDeploymentFailure(projectId: string, deploymentId: string, error: unknown): Promise<void> {
+    await this.mutate(projectId, (state) => {
+      const deployment = state.deployments.find((item) => item.id === deploymentId);
+      if (!deployment) return;
+      deployment.status = "error";
+      deployment.lastRunAt = new Date().toISOString();
+      deployment.lastError = compactError(error);
+      deployment.consecutiveFailures = (deployment.consecutiveFailures ?? 0) + 1;
+      deployment.updatedAt = deployment.lastRunAt;
+    });
+  }
+
+  async shadowEvaluate(projectId: string, modelId: string, rows: Array<Record<string, number>>, labelColumn: string, threshold?: number, timeColumn?: string): Promise<MaintenanceShadowEvaluation> {
+    const model = this.requireModel(projectId, modelId);
+    if (model.artifact.engine !== "native-json") throw new Error("ONNX 时序模型需在训练侧完成回测；首期 API 支持 native-json 模型影子评测");
+    const scores = rows.map((row) => scoreNativeArtifact(model.artifact, row));
+    const result = evaluateMaintenanceShadow({ projectId, modelId, rows, scores, labelColumn, threshold: threshold ?? model.artifact.decisionThreshold ?? model.gates.warningThreshold, ...(timeColumn ? { timeColumn } : {}) });
+    await this.mutate(projectId, (state) => {
+      state.shadowEvaluations.unshift(result);
+      state.shadowEvaluations = state.shadowEvaluations.slice(0, 100);
+      return result;
+    });
+    return result;
+  }
+
+  async saveCase(projectId: string, input: Partial<OperationalCaseRecord>): Promise<OperationalCaseRecord> {
+    return this.mutate(projectId, (state) => {
+      const now = new Date().toISOString();
+      const existing = input.id ? state.cases.find((item) => item.id === input.id) : undefined;
+      const externalRef = input.externalRef ?? existing?.externalRef;
+      const outcome = input.outcome ?? existing?.outcome;
+      const record: OperationalCaseRecord = {
+        id: existing?.id ?? randomUUID(), projectId, type: input.type ?? existing?.type ?? "maintenance",
+        title: requiredText(input.title ?? existing?.title, "Case 标题"), severity: input.severity ?? existing?.severity ?? "warning",
+        status: input.status ?? existing?.status ?? "triage", owner: input.owner?.trim() || existing?.owner || "待分配",
+        objectRefs: input.objectRefs ?? existing?.objectRefs ?? [], sourceRefs: input.sourceRefs ?? existing?.sourceRefs ?? [],
+        hypothesis: input.hypothesis ?? existing?.hypothesis ?? [], suggestedActions: input.suggestedActions ?? existing?.suggestedActions ?? [],
+        ...(externalRef ? { externalRef } : {}),
+        ...(outcome ? { outcome } : {}),
+        createdAt: existing?.createdAt ?? now, updatedAt: now
+      };
+      if (existing) Object.assign(existing, record); else state.cases.unshift(record);
+      return record;
+    });
+  }
+
+  async saveValidationStudy(
+    projectId: string,
+    input: SaveIndustrialValidationStudyInput,
+  ): Promise<IndustrialValidationStudyRecord> {
+    return this.mutate(projectId, (state) => {
+      const existing = input.id ? state.validationStudies.find((item) => item.id === input.id) : undefined;
+      const nextType = input.studyType ?? existing?.studyType ?? inferredValidationStudyType(input.sourceKind ?? existing?.sourceKind);
+      for (const referenceId of [input.baselineStudyId, input.reproductionOf]) {
+        if (!referenceId) continue;
+        const referenced = state.validationStudies.find((item) => item.id === referenceId);
+        if (!referenced) throw new Error("验证 Study 基线不存在");
+        if (referenced.id === existing?.id) throw new Error("验证 Study 不能引用自身为基线");
+        const referencedType = referenced.studyType ?? inferredValidationStudyType(referenced.sourceKind);
+        if (referencedType !== nextType) throw new Error("验证 Study 只能对比同类型基线");
+      }
+      const record = buildValidationStudyRecord(projectId, input, existing);
+      if (existing) Object.assign(existing, record);
+      else state.validationStudies.unshift(record);
+      state.validationStudies = state.validationStudies.slice(0, 200);
+      return record;
+    });
+  }
+
+  async runLogistics(projectId: string, request: LogisticsExperimentRequest): Promise<LogisticsExperimentResult> {
+    return this.persistLogisticsResult(projectId, runLogisticsExperiment(projectId, request));
+  }
+
+  async reproduceLogistics(projectId: string, experimentId: string): Promise<LogisticsExperimentResult> {
+    const source = this.project(projectId).logisticsExperiments.find((item) => item.id === experimentId);
+    if (!source) throw new Error("待复现的物流仿真记录不存在");
+    const result = runLogisticsExperiment(projectId, logisticsRequestFromResult(source));
+    result.reproductionOf = source.id;
+    return this.persistLogisticsResult(projectId, result);
+  }
+
+  async runPlantLite(projectId: string, request: PlantLiteStudyRequest, signal?: AbortSignal): Promise<PlantLiteStudyRecord> {
+    return this.persistPlantLiteStudy(projectId, await this.plantLiteExecutor.run(projectId, request, signal));
+  }
+
+  async reproducePlantLite(projectId: string, studyId: string, signal?: AbortSignal): Promise<PlantLiteStudyRecord> {
+    const source = this.project(projectId).plantLiteStudies.find((item) => item.id === studyId);
+    if (!source) throw new Error("待复现的 Plant Lite Study 不存在");
+    const result = await this.plantLiteExecutor.run(projectId, plantLiteRequestFromRecord(source), signal);
+    result.reproductionOf = source.id;
+    return this.persistPlantLiteStudy(projectId, result);
+  }
+
+  async runWhatIf(projectId: string, request: WhatIfStudyRequest): Promise<WhatIfStudyRecord> {
+    return this.persistWhatIfResult(projectId, runWhatIfStudy(projectId, request));
+  }
+
+  async reproduceWhatIf(projectId: string, studyId: string): Promise<WhatIfStudyRecord> {
+    const source = this.project(projectId).whatIfStudies.find((item) => item.id === studyId);
+    if (!source) throw new Error("待复现的 What-if 记录不存在");
+    return this.persistWhatIfResult(projectId, reproduceWhatIfStudy(projectId, source));
+  }
+
+  private async persistWhatIfResult(
+    projectId: string,
+    result: WhatIfStudyRecord,
+  ): Promise<WhatIfStudyRecord> {
+    await this.mutate(projectId, (state) => {
+      state.whatIfStudies.unshift(result);
+      state.whatIfStudies = state.whatIfStudies.slice(0, 100);
+      return result;
+    });
+    return result;
+  }
+
+  private async persistLogisticsResult(
+    projectId: string,
+    result: LogisticsExperimentResult,
+  ): Promise<LogisticsExperimentResult> {
+    await this.mutate(projectId, (state) => {
+      state.logisticsExperiments.unshift(result);
+      state.logisticsExperiments = state.logisticsExperiments.slice(0, 100);
+      return result;
+    });
+    return result;
+  }
+
+  private async persistPlantLiteStudy(projectId: string, record: PlantLiteStudyRecord): Promise<PlantLiteStudyRecord> {
+    await this.mutate(projectId, (state) => {
+      state.plantLiteStudies.unshift(record);
+      state.plantLiteStudies = state.plantLiteStudies.slice(0, 100);
+      return record;
+    });
+    return record;
+  }
+
+  async analyzeEnergy(projectId: string, observations: EnergyObservation[]): Promise<EnergyInsightRecord> {
+    const result = analyzeEnergy(projectId, observations);
+    await this.mutate(projectId, (state) => {
+      state.energyInsights.unshift(result);
+      state.energyInsights = state.energyInsights.slice(0, 100);
+      return result;
+    });
+    return result;
+  }
+
+  private requireModel(projectId: string, modelId: string): MaintenanceModelPackage {
+    const model = this.project(projectId).models.find((item) => item.id === modelId);
+    if (!model) throw new Error("维护模型不存在");
+    return structuredClone(model);
+  }
+
+  private async scoreOnnx(model: MaintenanceModelPackage, rows: Array<Record<string, number>>): Promise<number> {
+    if (!model.artifactPath) throw new Error("ONNX 模型制品路径缺失");
+    const window = Math.max(1, Number(model.artifact.window ?? 1));
+    const selected = rows.slice(-window);
+    if (selected.length < window) throw new Error(`模型需要连续 ${window} 条数据`);
+    const means = model.artifact.means ?? model.artifact.featureMeans ?? model.artifact.features.map(() => 0);
+    const stds = model.artifact.stds ?? model.artifact.featureStds ?? model.artifact.features.map(() => 1);
+    const values = selected.flatMap((row) => model.artifact.features.map((feature, index) => {
+      const raw = Number(row[feature]);
+      return model.artifact.inputNormalization ? (raw - Number(means[index] ?? 0)) / (Number(stds[index] ?? 1) || 1) : raw;
+    }));
+    const shape = window > 1 ? [1, window, model.artifact.features.length] : [selected.length, model.artifact.features.length];
+    const session = await this.onnxSession(model.artifactPath);
+    const inputName = model.artifact.inputName ?? session.inputNames[0];
+    if (!inputName) throw new Error("ONNX 模型没有输入节点");
+    const outputs = await session.run({ [inputName]: new ort.Tensor("float32", Float32Array.from(values), shape) });
+    const outputName = model.artifact.outputName ?? session.outputNames[model.artifact.outputIndex ?? 0];
+    if (!outputName) throw new Error("ONNX 模型没有输出节点");
+    const tensor = outputs[outputName];
+    if (!tensor) throw new Error("ONNX 输出节点不存在");
+    const valuesOut = Array.from(tensor.data as Float32Array | Float64Array, Number);
+    const outputIndex = model.artifact.outputTransform === "class1" ? 1 : 0;
+    const raw = valuesOut[outputIndex] ?? valuesOut[0];
+    if (raw === undefined || !Number.isFinite(raw)) throw new Error("ONNX 输出无效");
+    if (model.artifact.outputTransform === "sigmoid") return 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, raw))));
+    return raw;
+  }
+
+  private onnxSession(artifactPath: string): Promise<ort.InferenceSession> {
+    let session = this.onnxSessions.get(artifactPath);
+    if (!session) {
+      session = ort.InferenceSession.create(artifactPath, { executionProviders: ["cpu"], graphOptimizationLevel: "all" });
+      this.onnxSessions.set(artifactPath, session);
+    }
+    return session;
+  }
+
+  private project(projectId: string): OperationsProjectState {
+    const state = this.document.projects[projectId] ??= {
+      models: [], deployments: [], assessments: [], shadowEvaluations: [], cases: [],
+      logisticsExperiments: [], plantLiteStudies: [], energyInsights: [], validationStudies: [], whatIfStudies: []
+    };
+    // schemaVersion 1 允许增量字段；旧项目在首次读取时补齐，不要求迁移整个运营文件。
+    state.validationStudies ??= [];
+    state.logisticsExperiments ??= [];
+    state.plantLiteStudies ??= [];
+    state.whatIfStudies ??= [];
+    return state;
+  }
+
+  private async mutate<T>(projectId: string, action: (state: OperationsProjectState) => T): Promise<T> {
+    let result!: T;
+    const operation = this.writeChain.then(async () => {
+      result = action(this.project(projectId));
+      await this.persist();
+    });
+    // 单次校验或持久化失败必须返回给当前调用者，但不能毒化后续串行写入。
+    this.writeChain = operation.then(() => undefined, () => undefined);
+    await operation;
+    return structuredClone(result);
+  }
+
+  private async persist(): Promise<void> {
+    const temporary = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+    await writeFile(temporary, JSON.stringify(this.document, null, 2));
+    await rename(temporary, this.filePath);
+  }
+}
+
+function requiredText(value: string | undefined, label: string): string {
+  const text = value?.trim();
+  if (!text) throw new Error(`${label}不能为空`);
+  return text;
+}
+
+function finiteInteger(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) ? Math.max(1, Math.round(Number(value))) : fallback;
+}
+
+function compactError(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim().slice(0, 300) || "未知错误";
+}
+
+function logisticsRequestFromResult(result: LogisticsExperimentResult): LogisticsExperimentRequest {
+  return {
+    name: result.name,
+    agvCount: result.agvCount,
+    bufferCapacity: result.bufferCapacity,
+    demandPerHour: result.demandPerHour,
+    cycleTimeSec: result.cycleTimeSec,
+    chargingMinutesPerHour: result.chargingMinutesPerHour,
+    congestionFactor: result.congestionFactor,
+    durationHours: result.durationHours,
+  };
+}
+
+function inferredValidationStudyType(sourceKind: IndustrialValidationStudyRecord["sourceKind"] | undefined) {
+  return sourceKind === "workcell-audit" ? "workcell-audit" : "virtual-commissioning";
+}

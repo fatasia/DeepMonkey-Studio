@@ -44,6 +44,12 @@ export function normalizeDashboardState(value: unknown): SceneDashboardState {
         ...((type === "video" || type === "monitor") ? { videoFit: item.videoFit === "cover" || item.videoFit === "fill" ? item.videoFit : "contain" as const } : {}),
         ...(typeof item.videoAutoplay === "boolean" ? { videoAutoplay: item.videoAutoplay } : {}),
         ...(typeof item.videoMuted === "boolean" ? { videoMuted: item.videoMuted } : {}),
+        ...(typeof item.videoLoop === "boolean" ? { videoLoop: item.videoLoop } : {}),
+        ...(typeof item.animationAutoplay === "boolean" ? { animationAutoplay: item.animationAutoplay } : {}),
+        ...(typeof item.animationLoop === "boolean" ? { animationLoop: item.animationLoop } : {}),
+        ...(typeof item.animationDuration === "number" && Number.isFinite(item.animationDuration) ? { animationDuration: Math.max(0.1, item.animationDuration) } : {}),
+        ...(typeof item.animationDelay === "number" && Number.isFinite(item.animationDelay) ? { animationDelay: Math.max(0, item.animationDelay) } : {}),
+        ...(["none", "fade", "slide-up", "scale", "pulse"].includes(String(item.animation)) ? { animation: item.animation } : {}),
         ...(type === "monitor" ? { monitorProtocol: item.monitorProtocol === "webrtc" ? "webrtc" as const : "hls" as const } : {}),
         ...(typeof item.monitorSourceUrl === "string" ? { monitorSourceUrl: item.monitorSourceUrl.slice(0, 2_048) } : {}),
         ...(typeof item.topologyId === "string" ? { topologyId: item.topologyId } : {})

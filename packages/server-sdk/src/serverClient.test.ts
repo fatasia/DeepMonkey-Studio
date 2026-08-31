@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ServerClient, type AuthStore } from "./serverClient.js";
+import { ServerClient, ServerRequestError, type AuthStore } from "./serverClient.js";
 
 const emptyAuthStore: AuthStore = {
   getAccessToken: () => undefined,
@@ -100,6 +100,18 @@ describe("ServerClient", () => {
     await expect(client.request("/api/projects")).rejects.toThrow("保存失败");
   });
 
+  it("preserves revision-conflict evidence for a recoverable save experience", async () => {
+    const client = new ServerClient({
+      profile: { baseUrl: "https://bim.example.test" },
+      authStore: emptyAuthStore,
+      fetch: async () => new Response(JSON.stringify({ message: "应用已被其他修改更新", currentRevision: 8 }), { status: 409 })
+    });
+
+    const error = await client.request("/api/projects/default/applications/app-1").catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(ServerRequestError);
+    expect(error).toMatchObject({ status: 409, body: { currentRevision: 8 } });
+  });
+
   it("surfaces a unified gateway error envelope", async () => {
     const client = new ServerClient({
       profile: { baseUrl: "https://bim.example.test" },
@@ -131,6 +143,38 @@ describe("ServerClient", () => {
 
     await expect(client.request("/api/projects")).rejects.toThrow("登录失效");
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("submits governed conversion tasks without leaking projectId into the body", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ id: "task-1" }));
+    const client = new ServerClient({
+      profile: { baseUrl: "https://bim.example.test" },
+      authStore: emptyAuthStore,
+      fetch,
+    });
+
+    await client.submitConversion({
+      projectId: "project-1",
+      pluginId: "industrial.jt-exchange",
+      input: {
+        objectKey: "projects/project-1/imports/line.jt",
+        fileName: "line.jt",
+        format: "jt",
+        size: 128,
+      },
+    });
+
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(String(url)).toBe("https://bim.example.test/api/projects/project-1/conversion-tasks");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      pluginId: "industrial.jt-exchange",
+      input: {
+        objectKey: "projects/project-1/imports/line.jt",
+        fileName: "line.jt",
+        format: "jt",
+        size: 128,
+      },
+    });
   });
 
   it.each([

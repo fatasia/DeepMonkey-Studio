@@ -1,0 +1,8 @@
+{
+  "id": "viewer-fixture-project",
+  "name": "只读客户端验收工程",
+  "description": "仅用于发布器合同、打包和安装物验收。",
+  "models": [],
+  "createdAt": "2026-08-31T07:30:00.000Z",
+  "updatedAt": "2026-08-31T08:00:00.000Z"
+}

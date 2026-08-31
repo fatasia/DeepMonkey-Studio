@@ -1,32 +1,21 @@
-import type { JsonValue } from "@bim-studio/contracts";
-import type { SceneCommand, SceneObjectRef } from "./protocol.js";
+import type { SceneCommand, SceneMaterialCommandPatch, SceneObjectRef } from "./protocol.js";
 
-export const SCENE_COMMAND_VALIDATION_LIMITS = {
-  maxIdentifierLength: 1_024,
-  maxDataStringLength: 65_536,
-  maxJsonDepth: 32,
-  maxJsonNodes: 10_000,
-  maxArrayItems: 4_096,
-  maxObjectProperties: 1_024
-} as const;
+import {
+  SCENE_COMMAND_VALIDATION_LIMITS,
+  type InspectedRecord,
+  type NumberBounds,
+  type SceneCommandValidationIssue,
+  type SceneCommandValidationResult,
+  type ValidationContext
+} from "./commandValidationTypes.js";
+import { addIssue, inspectArray, inspectRecord, parseJsonObject, parseJsonValue, propertyPath } from "./commandValidationSafety.js";
 
-export type SceneCommandValidationIssueCode =
-  | "invalid-type"
-  | "invalid-value"
-  | "limit-exceeded"
-  | "missing-property"
-  | "unknown-property"
-  | "unsafe-object";
-
-export interface SceneCommandValidationIssue {
-  path: string;
-  code: SceneCommandValidationIssueCode;
-  message: string;
-}
-
-export type SceneCommandValidationResult =
-  | { valid: true; command: SceneCommand; issues: [] }
-  | { valid: false; issues: SceneCommandValidationIssue[] };
+export { SCENE_COMMAND_VALIDATION_LIMITS } from "./commandValidationTypes.js";
+export type {
+  SceneCommandValidationIssue,
+  SceneCommandValidationIssueCode,
+  SceneCommandValidationResult
+} from "./commandValidationTypes.js";
 
 /** Error thrown by {@link parseSceneCommand} for untrusted command payloads. */
 export class SceneCommandValidationError extends TypeError {
@@ -39,26 +28,19 @@ export class SceneCommandValidationError extends TypeError {
   }
 }
 
-interface ValidationContext {
-  issues: SceneCommandValidationIssue[];
-  jsonNodes: number;
-  jsonAncestors: WeakSet<object>;
-}
-
-interface InspectedRecord {
-  keys: string[];
-  values: Map<string, unknown>;
-}
-
 const COMMAND_TYPES = [
   "object.set-visibility",
   "object.set-transform",
+  "material.set",
   "selection.set",
   "camera.set",
   "camera.fly-to",
   "animation.control",
   "data.apply",
-  "component.update"
+  "component.update",
+  "unity.properties.set",
+  "unity.action.invoke",
+  "unity.scene.switch"
 ] as const;
 
 const ANIMATION_ACTIONS = ["play", "pause", "stop", "seek"] as const;
@@ -142,6 +124,12 @@ function parseCommandByType(
         ...(scale === undefined ? {} : { scale })
       };
     }
+    case "material.set": {
+      rejectUnknownProperties(record, ["id", "type", "target", "patch"], "$", context);
+      const target = parseObjectRef(readRequired(record, "target", "$", context), "$.target", context);
+      const patch = parseMaterialPatch(readRequired(record, "patch", "$", context), "$.patch", context);
+      return target && patch ? { id, type, target, patch } : undefined;
+    }
     case "selection.set": {
       rejectUnknownProperties(record, ["id", "type", "targets"], "$", context);
       const targets = parseObjectRefArray(readRequired(record, "targets", "$", context), "$.targets", context);
@@ -211,6 +199,36 @@ function parseCommandByType(
       const componentId = parseRequiredIdentifier(record, "componentId", "$", context);
       const patch = parseJsonObject(readRequired(record, "patch", "$", context), "$.patch", context, 0);
       return componentId && patch ? { id, type, componentId, patch } : undefined;
+    }
+    case "unity.properties.set": {
+      rejectUnknownProperties(record, ["id", "type", "componentId", "values"], "$", context);
+      const componentId = parseRequiredIdentifier(record, "componentId", "$", context);
+      const values = parseJsonObject(readRequired(record, "values", "$", context), "$.values", context, 0);
+      return componentId && values ? { id, type, componentId, values } : undefined;
+    }
+    case "unity.action.invoke": {
+      rejectUnknownProperties(record, ["id", "type", "componentId", "action", "objectId", "value"], "$", context);
+      const componentId = parseRequiredIdentifier(record, "componentId", "$", context);
+      const action = parseRequiredIdentifier(record, "action", "$", context);
+      const objectId = parseOptionalIdentifier(record, "objectId", "$", context);
+      const value = record.values.has("value")
+        ? parseJsonValue(record.values.get("value"), "$.value", context, 0)
+        : undefined;
+      if (!componentId || !action) return undefined;
+      return {
+        id,
+        type,
+        componentId,
+        action,
+        ...(objectId === undefined ? {} : { objectId }),
+        ...(value === undefined ? {} : { value }),
+      };
+    }
+    case "unity.scene.switch": {
+      rejectUnknownProperties(record, ["id", "type", "componentId", "scene"], "$", context);
+      const componentId = parseRequiredIdentifier(record, "componentId", "$", context);
+      const scene = parseRequiredIdentifier(record, "scene", "$", context);
+      return componentId && scene ? { id, type, componentId, scene } : undefined;
     }
   }
 }
@@ -302,6 +320,81 @@ function parseBoolean(value: unknown, path: string, context: ValidationContext):
   return undefined;
 }
 
+const MATERIAL_NUMBER_KEYS = [
+  "emissiveIntensity",
+  "roughness",
+  "metalness",
+  "normalScale",
+  "textureRepeat",
+  "textureRepeatX",
+  "textureRepeatY",
+  "textureOffsetX",
+  "textureOffsetY",
+  "textureRotation",
+] as const;
+
+function parseMaterialPatch(
+  value: unknown,
+  path: string,
+  context: ValidationContext,
+): SceneMaterialCommandPatch | undefined {
+  const record = inspectRecord(value, path, context);
+  if (!record) return undefined;
+  const allowed = ["color", "emissive", "wireframe", "doubleSided", ...MATERIAL_NUMBER_KEYS] as const;
+  rejectUnknownProperties(record, allowed, path, context);
+  if (record.keys.length === 0) {
+    addIssue(context, path, "invalid-value", "Expected at least one material property.");
+    return undefined;
+  }
+
+  const patch: SceneMaterialCommandPatch = {};
+  for (const key of ["color", "emissive"] as const) {
+    if (!record.values.has(key)) continue;
+    const color = parseMaterialColor(record.values.get(key), propertyPath(path, key), context);
+    if (color !== undefined) patch[key] = color;
+  }
+  for (const key of ["wireframe", "doubleSided"] as const) {
+    if (!record.values.has(key)) continue;
+    const flag = parseBoolean(record.values.get(key), propertyPath(path, key), context);
+    if (flag !== undefined) patch[key] = flag;
+  }
+  for (const key of MATERIAL_NUMBER_KEYS) {
+    const number = parseMaterialNumber(record, key, path, context);
+    if (number !== undefined) patch[key] = number;
+  }
+  return patch;
+}
+
+function parseMaterialColor(value: unknown, path: string, context: ValidationContext): string | undefined {
+  const color = parseIdentifier(value, path, context);
+  if (color && !/^#[0-9a-f]{6}$/i.test(color)) {
+    addIssue(context, path, "invalid-value", "Expected a #RRGGBB color.");
+    return undefined;
+  }
+  return color;
+}
+
+function parseMaterialNumber(
+  record: InspectedRecord,
+  key: typeof MATERIAL_NUMBER_KEYS[number],
+  path: string,
+  context: ValidationContext,
+): number | undefined {
+  const nonNegative = [
+    "emissiveIntensity",
+    "normalScale",
+    "textureRepeat",
+    "textureRepeatX",
+    "textureRepeatY",
+  ].includes(key);
+  const number = parseOptionalNumber(record, key, path, context, nonNegative ? { atLeast: 0 } : {});
+  if (number !== undefined && (key === "roughness" || key === "metalness") && (number < 0 || number > 1)) {
+    addIssue(context, propertyPath(path, key), "invalid-value", "Expected a value from 0 to 1.");
+    return undefined;
+  }
+  return number;
+}
+
 function parseOptionalNumber(
   record: InspectedRecord,
   key: string,
@@ -316,12 +409,6 @@ function parseOptionalNumber(
     return undefined;
   }
   return parseNumber(value, propertyPath(parentPath, key), context, bounds);
-}
-
-interface NumberBounds {
-  atLeast?: number;
-  greaterThan?: number;
-  lessThan?: number;
 }
 
 function parseNumber(
@@ -394,180 +481,6 @@ function parseIdentifier(value: unknown, path: string, context: ValidationContex
   return value;
 }
 
-function parseJsonObject(
-  value: unknown,
-  path: string,
-  context: ValidationContext,
-  depth: number
-): Record<string, JsonValue> | undefined {
-  if (!isPlainRecord(value)) {
-    addIssue(context, path, "invalid-type", "Expected a JSON object.");
-    return undefined;
-  }
-  const parsed = parseJsonValue(value, path, context, depth);
-  return parsed !== undefined && parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-    ? parsed as Record<string, JsonValue>
-    : undefined;
-}
-
-function parseJsonValue(value: unknown, path: string, context: ValidationContext, depth: number): JsonValue | undefined {
-  context.jsonNodes += 1;
-  if (context.jsonNodes > SCENE_COMMAND_VALIDATION_LIMITS.maxJsonNodes) {
-    addIssue(context, path, "limit-exceeded", `JSON payload exceeds ${SCENE_COMMAND_VALIDATION_LIMITS.maxJsonNodes} values.`);
-    return undefined;
-  }
-  if (depth > SCENE_COMMAND_VALIDATION_LIMITS.maxJsonDepth) {
-    addIssue(context, path, "limit-exceeded", `JSON payload exceeds ${SCENE_COMMAND_VALIDATION_LIMITS.maxJsonDepth} levels.`);
-    return undefined;
-  }
-  if (value === null || typeof value === "boolean") return value;
-  if (typeof value === "number") {
-    if (Number.isFinite(value)) return value;
-    addIssue(context, path, "invalid-value", "JSON numbers must be finite.");
-    return undefined;
-  }
-  if (typeof value === "string") {
-    if (value.length <= SCENE_COMMAND_VALIDATION_LIMITS.maxDataStringLength) return value;
-    addIssue(
-      context,
-      path,
-      "limit-exceeded",
-      `JSON strings must not exceed ${SCENE_COMMAND_VALIDATION_LIMITS.maxDataStringLength} characters.`
-    );
-    return undefined;
-  }
-  if (value === null || typeof value !== "object") {
-    addIssue(context, path, "invalid-type", "Expected a JSON value.");
-    return undefined;
-  }
-  if (context.jsonAncestors.has(value)) {
-    addIssue(context, path, "invalid-value", "JSON payload must not contain cycles.");
-    return undefined;
-  }
-  context.jsonAncestors.add(value);
-  try {
-    if (safeIsArray(value)) {
-      const array = inspectArray(value, path, context);
-      if (!array) return undefined;
-      if (array.length > SCENE_COMMAND_VALIDATION_LIMITS.maxArrayItems) {
-        addIssue(context, path, "limit-exceeded", `Expected at most ${SCENE_COMMAND_VALIDATION_LIMITS.maxArrayItems} array items.`);
-        return undefined;
-      }
-      const output: JsonValue[] = [];
-      for (let index = 0; index < array.length; index += 1) {
-        const item = parseJsonValue(array[index], `${path}[${index}]`, context, depth + 1);
-        if (item !== undefined) output.push(item);
-      }
-      return output.length === array.length ? output : undefined;
-    }
-
-    const record = inspectRecord(value, path, context);
-    if (!record) return undefined;
-    if (record.keys.length > SCENE_COMMAND_VALIDATION_LIMITS.maxObjectProperties) {
-      addIssue(
-        context,
-        path,
-        "limit-exceeded",
-        `Expected at most ${SCENE_COMMAND_VALIDATION_LIMITS.maxObjectProperties} object properties.`
-      );
-      return undefined;
-    }
-    const output: Record<string, JsonValue> = {};
-    for (const key of record.keys) {
-      const childPath = propertyPath(path, key);
-      if (UNSAFE_JSON_KEYS.has(key)) {
-        addIssue(context, childPath, "unsafe-object", `Property ${JSON.stringify(key)} is not allowed in JSON command data.`);
-        continue;
-      }
-      if (!record.values.has(key)) continue;
-      const child = parseJsonValue(record.values.get(key), childPath, context, depth + 1);
-      if (child !== undefined) output[key] = child;
-    }
-    return Object.keys(output).length === record.keys.length ? output : undefined;
-  } finally {
-    context.jsonAncestors.delete(value);
-  }
-}
-
-function inspectRecord(value: unknown, path: string, context: ValidationContext): InspectedRecord | undefined {
-  if (!isPlainRecord(value)) {
-    addIssue(context, path, "invalid-type", "Expected a plain object.");
-    return undefined;
-  }
-  const keys = safeOwnKeys(value, path, context);
-  if (!keys) return undefined;
-  const stringKeys: string[] = [];
-  const values = new Map<string, unknown>();
-  for (const key of keys) {
-    if (typeof key !== "string") {
-      addIssue(context, path, "unsafe-object", "Symbol properties are not allowed.");
-      continue;
-    }
-    stringKeys.push(key);
-    let descriptor: PropertyDescriptor | undefined;
-    try {
-      descriptor = Reflect.getOwnPropertyDescriptor(value, key);
-    } catch {
-      addIssue(context, propertyPath(path, key), "unsafe-object", "Unable to inspect property safely.");
-      continue;
-    }
-    if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
-      addIssue(context, propertyPath(path, key), "unsafe-object", "Expected an enumerable data property.");
-      continue;
-    }
-    values.set(key, descriptor.value);
-  }
-  return { keys: stringKeys, values };
-}
-
-function inspectArray(value: unknown, path: string, context: ValidationContext): unknown[] | undefined {
-  if (!safeIsArray(value)) {
-    addIssue(context, path, "invalid-type", "Expected an array.");
-    return undefined;
-  }
-  let length: number;
-  let keys: PropertyKey[];
-  try {
-    const lengthDescriptor = Reflect.getOwnPropertyDescriptor(value, "length");
-    if (!lengthDescriptor || !("value" in lengthDescriptor) || typeof lengthDescriptor.value !== "number") {
-      addIssue(context, path, "unsafe-object", "Unable to inspect array length safely.");
-      return undefined;
-    }
-    length = lengthDescriptor.value;
-    keys = Reflect.ownKeys(value);
-  } catch {
-    addIssue(context, path, "unsafe-object", "Unable to inspect array safely.");
-    return undefined;
-  }
-  if (!Number.isSafeInteger(length) || length < 0 || length > SCENE_COMMAND_VALIDATION_LIMITS.maxArrayItems) {
-    addIssue(context, path, "limit-exceeded", `Expected at most ${SCENE_COMMAND_VALIDATION_LIMITS.maxArrayItems} array items.`);
-    return undefined;
-  }
-  for (const key of keys) {
-    if (key === "length") continue;
-    if (typeof key !== "string" || !/^(0|[1-9]\d*)$/.test(key) || Number(key) >= length) {
-      addIssue(context, path, "unsafe-object", "Array contains unsupported custom properties.");
-      return undefined;
-    }
-  }
-  const output: unknown[] = [];
-  for (let index = 0; index < length; index += 1) {
-    let descriptor: PropertyDescriptor | undefined;
-    try {
-      descriptor = Reflect.getOwnPropertyDescriptor(value, String(index));
-    } catch {
-      addIssue(context, `${path}[${index}]`, "unsafe-object", "Unable to inspect array item safely.");
-      return undefined;
-    }
-    if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
-      addIssue(context, `${path}[${index}]`, "unsafe-object", "Expected a dense array of data values.");
-      return undefined;
-    }
-    output.push(descriptor.value);
-  }
-  return output;
-}
-
 function readRequired(
   record: InspectedRecord,
   key: string,
@@ -599,46 +512,6 @@ function rejectUnknownProperties(
   }
 }
 
-function safeOwnKeys(value: object, path: string, context: ValidationContext): PropertyKey[] | undefined {
-  try {
-    return Reflect.ownKeys(value);
-  } catch {
-    addIssue(context, path, "unsafe-object", "Unable to inspect object properties safely.");
-    return undefined;
-  }
-}
-
-function isPlainRecord(value: unknown): value is object {
-  if (value === null || typeof value !== "object" || safeIsArray(value)) return false;
-  try {
-    const prototype = Reflect.getPrototypeOf(value);
-    return prototype === Object.prototype || prototype === null;
-  } catch {
-    return false;
-  }
-}
-
-function safeIsArray(value: unknown): value is unknown[] {
-  try {
-    return Array.isArray(value);
-  } catch {
-    return false;
-  }
-}
-
 function isOneOf<const T extends readonly string[]>(value: string, values: T): value is T[number] {
   return (values as readonly string[]).includes(value);
-}
-
-function propertyPath(parent: string, key: string): string {
-  return /^[A-Za-z_$][\w$]*$/.test(key) ? `${parent}.${key}` : `${parent}[${JSON.stringify(key)}]`;
-}
-
-function addIssue(
-  context: ValidationContext,
-  path: string,
-  code: SceneCommandValidationIssueCode,
-  message: string
-): void {
-  context.issues.push({ path, code, message });
 }

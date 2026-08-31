@@ -2,12 +2,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import pureFixture from "../../../../test-fixtures/scene-v1-pure-3d.json";
 import { migrateSceneSnapshotV1, type ProjectRecord, type SceneSnapshot } from "@bim-studio/contracts";
-import { calculateDashboardEditorZoom, calculateDashboardRuntimeViewport, DashboardWorkspace, snapDashboardFrame } from "./DashboardWorkspace";
+import { calculateDashboardEditorFocus, calculateDashboardEditorZoom, calculateDashboardRuntimeViewport, dashboardNodeSelection, DashboardWorkspace, snapDashboardFrame, updateDashboardParameterDraft } from "./DashboardWorkspace";
 
 vi.mock("./DashboardWidgetRuntime", () => ({
   DashboardWidgetView: () => null,
   useDashboardMetrics: () => ({ metrics: {}, datasets: [], pipelines: [], fieldsByProduct: {}, statusByProduct: {}, connected: false }),
-  widgetBackground: () => "transparent"
+  widgetBackgroundStyle: () => ({ background: "transparent" })
 }));
 
 vi.mock("./SceneViewportPreview", () => ({ SceneViewportPreview: () => null }));
@@ -30,6 +30,21 @@ describe("DashboardWorkspace", () => {
     expect(calculateDashboardEditorZoom({ width: 320, height: 320 }, 1920, 1080)).toBe(2);
   });
 
+  it("focuses sparse content on ultra-wide pages without losing the explicit page fit", () => {
+    const page = { width: 3840, height: 1080 };
+    const nodes = [
+      { frame: { x: 48, y: 48, width: 720, height: 420 }, visible: true },
+      { frame: { x: 48, y: 500, width: 720, height: 420 }, visible: true },
+      { frame: { x: 3740, y: 920, width: 240, height: 120 }, visible: true },
+    ];
+    const smart = calculateDashboardEditorFocus(page, nodes, 960, 640, "smart");
+
+    expect(smart.target).toBe("content");
+    expect(smart.zoom).toBeGreaterThan(calculateDashboardEditorZoom(page, 960, 640) * 2);
+    expect(smart.centerX).toBeLessThan(600);
+    expect(calculateDashboardEditorFocus(page, nodes, 960, 640, "page").target).toBe("page");
+  });
+
   it("calculates contain, cover, stretch, and fixed large-screen fit modes", () => {
     const page = { width: 3840, height: 1080 };
 
@@ -46,6 +61,28 @@ describe("DashboardWorkspace", () => {
   it("snaps move and resize frames to guides and component edges", () => {
     expect(snapDashboardFrame({ x: 96, y: 194, width: 100, height: 80 }, "move", [200], [200], 6)).toEqual({ frame: { x: 100, y: 200, width: 100, height: 80 }, lines: { x: [200], y: [200] } });
     expect(snapDashboardFrame({ x: 20, y: 30, width: 176, height: 166 }, "resize", [200], [200], 6)).toEqual({ frame: { x: 20, y: 30, width: 180, height: 170 }, lines: { x: [200], y: [200] } });
+  });
+
+  it("clears every dependent parameter when a parent draft changes", () => {
+    const widgets = [
+      { title: "区域", key: "region", type: "filter", unit: "" },
+      { title: "城市", key: "city", type: "filter", unit: "", parentFilterKey: "region" },
+      { title: "站点", key: "site", type: "filter", unit: "", parentFilterKey: "city" }
+    ] as const;
+    expect(updateDashboardParameterDraft({ region: "华东", city: "上海", site: "一厂" }, widgets, "region", "华北")).toEqual({ region: "华北" });
+  });
+
+  it("selects hidden group members for unified control while respecting locks", () => {
+    const nodes = [
+      { id: "a", groupId: "group:1", visible: true, locked: false },
+      { id: "b", groupId: "group:1", visible: false, locked: false },
+      { id: "c", groupId: "group:1", visible: true, locked: true },
+      { id: "d", visible: true, locked: false }
+    ] as unknown as typeof application.pages[0]["nodes"];
+
+    expect(dashboardNodeSelection(nodes, "a", [], false)).toEqual(["a", "b"]);
+    expect(dashboardNodeSelection(nodes, "d", ["a"], false)).toEqual(["d"]);
+    expect(dashboardNodeSelection(nodes, "d", ["a"], true)).toEqual(["a", "d"]);
   });
 
   it("renders user-defined large-screen resolution controls and overflow diagnostics", () => {
@@ -67,12 +104,15 @@ describe("DashboardWorkspace", () => {
       busy={false}
       selection={[]}
       variables={{}}
+      filters={{}}
       onBack={() => undefined}
       onSelectPage={() => undefined}
       onEnterScene={() => undefined}
       onOpenTopology={() => undefined}
       onOpenData={() => undefined}
       onSelectionChange={() => undefined}
+      onFilterChange={() => undefined}
+      onVariableChange={() => undefined}
       onObjectInteraction={() => undefined}
       onNodeInteraction={() => undefined}
       onCommand={() => undefined}
@@ -88,5 +128,8 @@ describe("DashboardWorkspace", () => {
     expect(html).toContain("完整显示（推荐）");
     expect(html).toContain("1 个组件越界");
     expect(html).toContain('aria-label="页面宽度"');
+    expect(html).toContain("实时翻牌指标");
+    expect(html).toContain("液位达成率");
+    expect(html).toContain("告警滚动表");
   });
 });

@@ -1,0 +1,20 @@
+.commissioning-visual-qa {
+  width: 100vw;
+  height: 100vh;
+  overflow: auto;
+  padding: 24px;
+  color: #dce5e7;
+  background: #0a1013;
+}
+
+.commissioning-visual-qa > .commissioning-workbench {
+  width: min(1280px, 100%);
+  min-height: calc(100vh - 48px);
+  margin: 0 auto;
+}
+
+@media (max-width: 1080px) {
+  .commissioning-visual-qa {
+    padding: 14px;
+  }
+}

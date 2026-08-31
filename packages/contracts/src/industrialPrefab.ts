@@ -1,0 +1,108 @@
+import type { Vector3Value } from "./geometry.js";
+
+export type IndustrialPrefabKind =
+  | "conveyor"
+  | "robot-arm"
+  | "person"
+  | "agv"
+  | "vehicle"
+  | "access-control"
+  | "display"
+  | "fence"
+  | "machine"
+  | "utility"
+  | "electrical"
+  | "sensor"
+  | "camera"
+  | "storage";
+
+export type IndustrialPrefabOperatingState = "idle" | "running" | "paused" | "fault" | "maintenance";
+export type IndustrialPrefabParameterValue = string | number | boolean;
+export type IndustrialPrefabRuntimeAction = "dispatch" | "pause" | "resume" | "stop" | "return" | "replay" | "clear-fault";
+
+export interface SceneMotionRoutePoint {
+  id: string;
+  position: Vector3Value;
+  /** 到点停留时间，单位秒。 */
+  waitSeconds?: number;
+  /** 仅覆盖到下一点的速度，未设置时使用路线默认速度。 */
+  speedOverrideMps?: number;
+}
+
+export interface SceneMotionRouteState {
+  enabled: boolean;
+  /** 进入预览或发布浏览后自动开始运行。 */
+  autoplay?: boolean;
+  points: SceneMotionRoutePoint[];
+  speedMps: number;
+  accelerationMps2: number;
+  loopMode: "once" | "loop" | "ping-pong";
+  orientToPath: boolean;
+  startOffsetSeconds: number;
+  /** 同组移动体可在运行时进行轻量占用与间隔协调。 */
+  trafficGroup?: string;
+}
+
+export interface SceneMediaSurfaceState {
+  sourceKind: "dashboard-page" | "image" | "video" | "hls" | "webrtc" | "url";
+  source?: string;
+  autoplay: boolean;
+  muted: boolean;
+  loop: boolean;
+  fit: "contain" | "cover" | "stretch";
+  brightness: number;
+}
+
+/**
+ * GLB 只负责视觉资源；预制体实例保存业务参数、运行状态和行为配置。
+ * 参数键由定义版本约束，便于后续升级、实例覆盖与脚本自动补全。
+ */
+export interface IndustrialPrefabInstanceState {
+  definitionId: string;
+  definitionVersion: string;
+  kind: IndustrialPrefabKind;
+  parameters: Record<string, IndustrialPrefabParameterValue>;
+  operatingState: IndustrialPrefabOperatingState;
+  faultCode?: string;
+  motionRoute?: SceneMotionRouteState;
+  mediaSurface?: SceneMediaSurfaceState;
+}
+
+export type IndustrialPrefabParameterKind = "number" | "boolean" | "text" | "select" | "color";
+
+export interface IndustrialPrefabParameterDefinition {
+  key: string;
+  name: string;
+  englishName: string;
+  kind: IndustrialPrefabParameterKind;
+  defaultValue: IndustrialPrefabParameterValue;
+  unit?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: string[];
+  advanced?: boolean;
+}
+
+export interface IndustrialPrefabActionDefinition {
+  id: string;
+  name: string;
+  englishName: string;
+  /** 写操作由同一命令系统执行，便于撤销、审计和脚本复用。 */
+  changesState: boolean;
+}
+
+export interface IndustrialPrefabDefinition {
+  id: string;
+  version: string;
+  kind: IndustrialPrefabKind;
+  name: string;
+  englishName: string;
+  description: string;
+  englishDescription: string;
+  parameters: IndustrialPrefabParameterDefinition[];
+  actions: IndustrialPrefabActionDefinition[];
+  dataPorts: string[];
+  routeCapable: boolean;
+  rigCapable: boolean;
+}

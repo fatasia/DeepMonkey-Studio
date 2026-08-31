@@ -46,7 +46,7 @@ export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExpor
             <Package size={16} /><span><strong>{tr(locale, "单文件场景", "Single-file scene")}</strong><small>{tr(locale, "包含可浏览模型资源", "Includes viewable model assets")}</small></span>
           </button>
           <button role="menuitem" onClick={() => run(onExportGlb)}>
-            <Box size={16} /><span><strong>{tr(locale, "GLB 单文件", "Single GLB")}</strong><small>{tr(locale, "合并当前可见三维对象", "Merges currently visible 3D objects")}</small></span>
+            <Box size={16} /><span><strong>{tr(locale, "完整场景 GLB", "Complete scene GLB")}</strong><small>{tr(locale, "几何、材质、纹理、层级与兼容动画", "Geometry, materials, textures, hierarchy and compatible animation")}</small></span>
           </button>
           <button role="menuitem" onClick={() => run(onExportFbx)}>
             <Box size={16} /><span><strong>{tr(locale, "FBX 文件", "FBX file")}</strong><small>{tr(locale, "可见网格、变换与基础材质", "Visible meshes, transforms and basic materials")}</small></span>

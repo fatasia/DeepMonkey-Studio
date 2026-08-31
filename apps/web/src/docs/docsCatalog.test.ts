@@ -6,6 +6,7 @@ describe("local documentation catalog", () => {
     expect(docsDocuments.map((document) => document.id)).toEqual([
       "dashboard-scene",
       "media-widgets",
+      "topology-resources",
       "behavior-script",
       "studio-api",
       "server-publish",

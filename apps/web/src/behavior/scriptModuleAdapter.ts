@@ -34,7 +34,8 @@ export function resolveSceneBehaviorModule(script: ScriptModule): ScriptModuleRe
       code: script.code,
       lifecycle: [...script.lifecycle],
       capabilities: [...script.capabilities] as SceneCapability[],
-      permissions: [...script.permissions] as ScenePermission[]
+      permissions: [...script.permissions] as ScenePermission[],
+      ...(script.target ? { target: structuredClone(script.target) } : {})
     }
   };
 }

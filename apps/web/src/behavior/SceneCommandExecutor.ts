@@ -13,6 +13,10 @@ export interface SceneCommandPort {
     target: SceneObjectRef,
     transform: Pick<CommandOf<"object.set-transform">, "position" | "rotation" | "scale">
   ): MaybePromise<SceneCommandPortOutcome>;
+  setObjectMaterial(
+    target: SceneObjectRef,
+    patch: CommandOf<"material.set">["patch"],
+  ): MaybePromise<SceneCommandPortOutcome>;
   setSelection(targets: readonly SceneObjectRef[]): MaybePromise<SceneCommandPortOutcome>;
   setCamera(
     sceneId: string,
@@ -91,6 +95,8 @@ async function dispatchCommand(port: SceneCommandPort, command: SceneCommand): P
       return port.setObjectVisibility(command.target, command.visible);
     case "object.set-transform":
       return port.setObjectTransform(command.target, optionalFields(command, ["position", "rotation", "scale"]));
+    case "material.set":
+      return port.setObjectMaterial(command.target, command.patch);
     case "selection.set":
       return port.setSelection(command.targets);
     case "camera.set":
@@ -103,6 +109,10 @@ async function dispatchCommand(port: SceneCommandPort, command: SceneCommand): P
       return port.applyData(command.target, { values: command.values, timestamp: command.timestamp });
     case "component.update":
       return port.updateComponent(command.componentId, command.patch);
+    case "unity.properties.set":
+    case "unity.action.invoke":
+    case "unity.scene.switch":
+      return { status: "unsupported", message: "Unity 命令应由应用宿主执行，不能直接交给三维渲染端口。" };
   }
 }
 
@@ -128,6 +138,7 @@ function commandTargets(command: SceneCommand): readonly SceneObjectRef[] {
       return command.targets;
     case "object.set-visibility":
     case "object.set-transform":
+    case "material.set":
     case "animation.control":
     case "data.apply":
       return [command.target];
@@ -135,6 +146,9 @@ function commandTargets(command: SceneCommand): readonly SceneObjectRef[] {
       return "kind" in command.target ? [command.target] : [];
     case "camera.set":
     case "component.update":
+    case "unity.properties.set":
+    case "unity.action.invoke":
+    case "unity.scene.switch":
       return [];
   }
 }

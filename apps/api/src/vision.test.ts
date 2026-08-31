@@ -3,7 +3,7 @@ import { gzipSync } from "node:zlib";
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
 import type { VisionModelManifest } from "@bim-studio/contracts";
-import { extractOnnxPayload, parseOutputs, prepareImage, visionSessionOptions } from "./vision.js";
+import { captureFrameArguments, extractOnnxPayload, parseOutputs, prepareImage, visionSessionOptions } from "./vision.js";
 
 function manifest(format: VisionModelManifest["output"]["format"]): VisionModelManifest {
   return {
@@ -106,6 +106,13 @@ describe("vision execution providers", () => {
 
   it("keeps an explicit CPU fallback configuration", () => {
     expect(visionSessionOptions("cpu", 0)).toEqual({ executionProviders: ["cpu"], graphOptimizationLevel: "all" });
+  });
+});
+
+describe("vision frame capture", () => {
+  it("uses RTSP over TCP and seeks uploaded video files", () => {
+    expect(captureFrameArguments("rtsp://camera.local/live").slice(0, 4)).toEqual(["-rtsp_transport", "tcp", "-i", "rtsp://camera.local/live"]);
+    expect(captureFrameArguments("D:\\data\\line.mp4", 1.25).slice(0, 4)).toEqual(["-ss", "1.250", "-i", "D:\\data\\line.mp4"]);
   });
 });
 

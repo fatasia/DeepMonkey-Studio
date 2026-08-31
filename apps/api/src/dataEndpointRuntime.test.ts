@@ -20,11 +20,53 @@ describe("external data endpoint runtime", () => {
     const store = new JsonStore(directory);
     await store.init();
     const now = new Date().toISOString();
-    await store.saveDataConnection("default", { id: "connection", projectId: "default", name: "HTTP", type: "http", enabled: true, config: { url: "/api/demo/sensors" }, createdAt: now, updatedAt: now });
-    await store.saveDataset("default", { id: "dataset", projectId: "default", connectionId: "connection", name: "设备", refreshSeconds: 5, fields: [], createdAt: now, updatedAt: now });
-    const pipeline: DataPipelineDefinition = { id: "pipeline", projectId: "default", name: "设备流", nodes: [{ id: "source", type: "source", name: "源", datasetId: "dataset", position: { x: 0, y: 0 } }, { id: "output", type: "output", name: "输出", position: { x: 220, y: 0 } }], edges: [{ id: "edge", sourceNodeId: "source", targetNodeId: "output" }], createdAt: now, updatedAt: now };
+    await store.saveDataConnection("default", {
+      id: "connection",
+      projectId: "default",
+      name: "HTTP",
+      type: "http",
+      enabled: true,
+      config: { url: "/api/demo/sensors" },
+      createdAt: now,
+      updatedAt: now,
+    });
+    await store.saveDataset("default", {
+      id: "dataset",
+      projectId: "default",
+      connectionId: "connection",
+      name: "设备",
+      refreshSeconds: 5,
+      fields: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+    const pipeline: DataPipelineDefinition = {
+      id: "pipeline",
+      projectId: "default",
+      name: "设备流",
+      nodes: [
+        { id: "source", type: "source", name: "源", datasetId: "dataset", position: { x: 0, y: 0 } },
+        { id: "output", type: "output", name: "输出", position: { x: 220, y: 0 } },
+      ],
+      edges: [{ id: "edge", sourceNodeId: "source", targetNodeId: "output" }],
+      createdAt: now,
+      updatedAt: now,
+    };
     await store.saveDataPipeline("default", pipeline);
-    const endpoint: DataEndpointDefinition = { id: "endpoint", projectId: "default", name: "设备 API", kind: "rest", slug: "devices", pipelineId: "pipeline", enabled: true, apiKeyHint: "••••secret", method: "GET", requestsPerMinute: 1, createdAt: now, updatedAt: now };
+    const endpoint: DataEndpointDefinition = {
+      id: "endpoint",
+      projectId: "default",
+      name: "设备 API",
+      kind: "rest",
+      slug: "devices",
+      pipelineId: "pipeline",
+      enabled: true,
+      apiKeyHint: "••••secret",
+      method: "GET",
+      requestsPerMinute: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
     await store.saveDataEndpoint("default", endpoint, hashDataApiKey("bsp_secret"));
     await store.removeDataPipeline("default", "pipeline");
 

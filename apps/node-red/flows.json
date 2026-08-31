@@ -2,7 +2,7 @@
     {
         "id": "bim-studio-flow",
         "type": "tab",
-        "label": "iTwin Studio 场景数据桥",
+        "label": "Industrial Studio 场景数据桥",
         "disabled": false,
         "info": "HTTP /iot/scene 接收统一场景消息，并广播到 WebSocket /iot/ws/scene。"
     },
@@ -29,7 +29,7 @@
     {
         "id": "bim-dashboard-base",
         "type": "ui-base",
-        "name": "iTwin Studio 看板",
+        "name": "Industrial Studio 看板",
         "path": "/dashboard",
         "appIcon": "",
         "includeClientData": true,
@@ -49,7 +49,7 @@
     {
         "id": "bim-dashboard-theme",
         "type": "ui-theme",
-        "name": "iTwin Studio Dark",
+        "name": "Industrial Studio Dark",
         "colors": {
             "surface": "#182126",
             "primary": "#d4a84f",
@@ -228,7 +228,7 @@
         "order": 1,
         "width": 6,
         "height": 0,
-        "content": "## iTwin Studio 数字孪生\n通过 HTTP、WebSocket、数据库或 IoT 节点接入实时数据，再映射到场景对象的颜色、显隐、位置与标签。",
+        "content": "## Industrial Studio 数字孪生\n通过 HTTP、WebSocket、数据库或 IoT 节点接入实时数据，再映射到场景对象的颜色、显隐、位置与标签。",
         "className": "",
         "x": 770,
         "y": 730,
@@ -400,7 +400,7 @@
         "type": "function",
         "z": "example-td-tab",
         "name": "取最新数值",
-        "func": "console.log(msg);\nreturn;\nconst body = msg.payload || {};\nif (body.status && body.status !== 'succ') { throw new Error(body.desc || 'TDengine 2.x 查询失败'); }\nif (typeof body.code === 'number' && body.code !== 0) { throw new Error(body.desc || body.message || `TDengine 3.x 查询失败 (${body.code})`); }\nconst row = Array.isArray(body.data) ? body.data[0] : undefined;\nconst value = Array.isArray(row) ? row[row.length - 1] : row?.value;\nmsg.payload = Number(value ?? 0);\nmsg.topic = 'TDengine';\nreturn msg;",
+        "func": "const body = msg.payload || {};\nif (body.status && body.status !== 'succ') { throw new Error(body.desc || 'TDengine 2.x 查询失败'); }\nif (typeof body.code === 'number' && body.code !== 0) { throw new Error(body.desc || body.message || `TDengine 3.x 查询失败 (${body.code})`); }\nconst row = Array.isArray(body.data) ? body.data[0] : undefined;\nconst value = Array.isArray(row) ? row[row.length - 1] : row?.value;\nmsg.payload = Number(value ?? 0);\nmsg.topic = 'TDengine';\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -558,7 +558,7 @@
         "y": 540,
         "wires": [
             [
-                "743f68bb687fd2b8"
+                "example-oracle-normalize"
             ]
         ]
     },
@@ -567,7 +567,7 @@
         "type": "function",
         "z": "example-oracle-tab",
         "name": "取 VALUE",
-        "func": "console.log(msg);\nreturn;\nconst row = Array.isArray(msg.payload) ? msg.payload[0] : msg.payload;\nmsg.payload = Number(row?.VALUE ?? row?.value ?? 0);\nmsg.topic = 'Oracle';\nreturn msg;",
+        "func": "const row = Array.isArray(msg.payload) ? msg.payload[0] : msg.payload;\nmsg.payload = Number(row?.VALUE ?? row?.value ?? 0);\nmsg.topic = 'Oracle';\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,

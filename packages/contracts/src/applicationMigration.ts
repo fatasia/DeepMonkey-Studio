@@ -8,7 +8,7 @@ const DASHBOARD_MARGIN = 6;
 
 export function migrateSceneSnapshotV1(snapshot: SceneSnapshot): ApplicationDocument {
   const source = structuredClone(snapshot);
-  const { schemaVersion: _schemaVersion, projectId, dashboard, interactions, publishedAt, createdAt, updatedAt, ...sceneFields } = source;
+  const { schemaVersion: _schemaVersion, projectId, dashboard, interactions, publishedAt, publicationMode: _publicationMode, publicationPerformance: _publicationPerformance, publicationToolbarVisible: _publicationToolbarVisible, createdAt, updatedAt, ...sceneFields } = source;
   const scene = sceneFields as SceneDocument;
   const pageId = `page:${source.id}`;
   const page: DashboardPageDocument = {

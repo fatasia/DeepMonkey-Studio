@@ -85,6 +85,27 @@ describe("SceneBehaviorHost", () => {
     expect(worker.host.diagnostics()).toMatchObject({ pendingInvocations: 0, completedInvocations: 1, rejectedCommands: 1, lastExecutionMs: 3.5, averageExecutionMs: 3.5 });
   });
 
+  it("queues application data until ready and forwards script data updates and events", () => {
+    const port = new FakeWorker();
+    const host = new SceneBehaviorHost(port);
+    const module = { ...behaviorModule(["onData"]), permissions: ["data.read", "data.write"] as SceneBehaviorModule["permissions"] };
+    const onDataUpdates = vi.fn();
+    const onEvent = vi.fn();
+    host.onDataUpdates = onDataUpdates;
+    host.onEvent = onEvent;
+    host.start(module, "scene-1");
+    host.dispatchData({ temperature: 26 });
+    expect(port.messages("behavior.invoke")).toHaveLength(0);
+
+    port.emit({ type: "behavior.ready", moduleId: module.id, lifecycle: module.lifecycle });
+    const invocation = port.messages("behavior.invoke")[0]!;
+    expect(invocation).toMatchObject({ lifecycle: "onData", data: { temperature: 26 } });
+    port.emit({ type: "behavior.result", invocationId: invocation.invocationId, durationMs: 1, commands: [], dataUpdates: { alarm: true }, events: [{ name: "alarm", payload: { level: 2 } }] });
+
+    expect(onDataUpdates).toHaveBeenCalledWith({ alarm: true });
+    expect(onEvent).toHaveBeenCalledWith({ name: "alarm", payload: { level: 2 } });
+  });
+
   it("pauses without accumulating ticks and resumes from the same deterministic clock", () => {
     const worker = readyHostWorker(["onUpdate", "onFixedUpdate"], { fixedStepMs: 10 });
 
@@ -110,6 +131,13 @@ describe("SceneBehaviorHost", () => {
     expect(worker.host.diagnostics()).toMatchObject({ status: "error", pendingInvocations: 0 });
     expect(worker.host.diagnostics().lastError).toContain("onStart 超过 10 ms");
     expect(worker.port.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("maps Worker source locations back to the authored script", () => {
+    const worker = readyHostWorker(["onStart"]);
+    const invocation = worker.port.messages("behavior.invoke")[0]!;
+    worker.port.emit({ type: "behavior.error", invocationId: invocation.invocationId, message: "boom", stack: "Error: boom\n    at onStart (industrial-studio-behavior-behavior.test.js:5:9)" });
+    expect(worker.host.diagnostics()).toMatchObject({ status: "error", lastError: "boom", lastErrorLocation: { line: 2, column: 9 } });
   });
 
   it("routes authorized script HTTP through the host gateway without exposing credentials to the worker", async () => {

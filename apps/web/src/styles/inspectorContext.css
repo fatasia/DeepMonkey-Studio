@@ -1,0 +1,111 @@
+.inspector-selection-context {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  margin: 0 -1px 10px;
+  padding: 10px;
+  border: 1px solid #354148;
+  border-radius: 9px;
+  background: linear-gradient(135deg, rgba(46, 58, 64, 0.82), rgba(28, 36, 40, 0.92));
+}
+
+.inspector-selection-context > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inspector-selection-context strong {
+  overflow: hidden;
+  color: #eef2f3;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-selection-context small {
+  color: #849198;
+  font-size: 10px;
+}
+
+.inspector-selection-context > svg {
+  color: #d6ad51;
+}
+
+.inspector-selection-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: #e2b958;
+  border: 1px solid rgba(226, 185, 88, 0.24);
+  border-radius: 8px;
+  background: rgba(226, 185, 88, 0.09);
+}
+
+.inspector-context-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  margin: 0 0 12px;
+  padding: 3px;
+  border: 1px solid #323d43;
+  border-radius: 8px;
+  background: #171e22;
+}
+
+.inspector-context-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 7px;
+  color: #8f9ca3;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 10px !important;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inspector-context-tabs button:hover,
+.inspector-context-tabs button:focus-visible {
+  color: #eef1f2;
+  background: #293238;
+}
+
+.inspector-context-tabs button.active {
+  color: #19150d;
+  background: var(--accent);
+  box-shadow: 0 3px 10px rgba(224, 183, 85, 0.16);
+}
+
+.inspector-context-tabs small {
+  min-width: 17px;
+  padding: 1px 4px;
+  color: inherit;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 10px !important;
+  text-align: center;
+}
+
+.inspector-context-tabs button.active small {
+  background: rgba(25, 21, 13, 0.13);
+}
+
+.inspector-interaction-settings[open] {
+  margin-top: 0;
+}
+
+.inspector-interaction-settings[open] > summary {
+  display: none;
+}
+
+.inspector-interaction-settings[open] > .inspector-collapsible-body {
+  padding-top: 0;
+}

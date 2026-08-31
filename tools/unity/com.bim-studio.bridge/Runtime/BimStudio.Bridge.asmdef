@@ -1,0 +1,14 @@
+{
+  "name": "BimStudio.Bridge",
+  "rootNamespace": "BimStudio.Bridge",
+  "references": ["UnityEngine.AnimationModule"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

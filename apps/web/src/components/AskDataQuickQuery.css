@@ -1,0 +1,125 @@
+.ask-data-quick {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid #3b494f;
+  border-radius: 8px;
+  background: #121c20;
+}
+.ask-data-quick > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ask-data-quick > header span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #e3b453;
+}
+.ask-data-quick > header small {
+  color: #7f9197;
+  font-size: 10px;
+}
+.ask-data-controls {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: 1fr 1fr;
+}
+.ask-data-controls label {
+  display: grid;
+  gap: 4px;
+  color: #83949a;
+  font-size: 10px;
+}
+.ask-data-controls select {
+  width: 100%;
+  min-height: 32px;
+  color: #dce4e6;
+  border: 1px solid #34444a;
+  border-radius: 5px;
+  background: #0e171a;
+  font-size: 11px;
+}
+.ask-data-controls > button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: #171b1c;
+  border: 0;
+  border-radius: 5px;
+  background: #d8ad54;
+  font-weight: 700;
+  grid-column: 1 / -1;
+}
+.ask-data-controls > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.ask-data-quick > p {
+  margin: 0;
+  color: #8e9da2;
+  font-size: 10px;
+}
+.ask-data-quick > p.error {
+  color: #e6a0a0;
+}
+.ask-data-result {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.ask-data-result > small {
+  color: #82a99f;
+  font-size: 10px;
+}
+.ask-data-result > div {
+  overflow: auto;
+  max-height: 190px;
+  border: 1px solid #2f3d42;
+  border-radius: 5px;
+}
+.ask-data-result table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+.ask-data-result th,
+.ask-data-result td {
+  padding: 7px 8px;
+  text-align: left;
+  border-bottom: 1px solid #29373c;
+  white-space: nowrap;
+}
+.ask-data-result th {
+  position: sticky;
+  top: 0;
+  color: #93a3a8;
+  background: #172226;
+}
+.ask-data-result code {
+  overflow: hidden;
+  color: #5f7178;
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ask-data-quick.empty {
+  display: flex;
+  align-items: center;
+  color: #7f9197;
+}
+.ask-data-quick.empty span {
+  display: grid;
+  gap: 2px;
+}
+.ask-data-quick.empty strong {
+  color: #cbd5d8;
+  font-size: 11px;
+}
+.ask-data-quick.empty small {
+  font-size: 10px;
+}

@@ -15,6 +15,7 @@ describe("SceneCommandExecutor", () => {
     const commands: SceneCommand[] = [
       { id: "visibility", type: "object.set-visibility", target: objectRef(), visible: false },
       { id: "transform", type: "object.set-transform", target: objectRef(), position: [1, 2, 3] },
+      { id: "material", type: "material.set", target: objectRef(), patch: { roughness: 0.4 } },
       { id: "selection", type: "selection.set", targets: [objectRef()] },
       { id: "camera", type: "camera.set", sceneId: "scene-1", position: [1, 2, 3], target: [0, 0, 0], far: 5_000 },
       { id: "fly", type: "camera.fly-to", sceneId: "scene-1", target: { position: [4, 5, 6] }, durationMs: 800 },
@@ -25,9 +26,10 @@ describe("SceneCommandExecutor", () => {
 
     const results = await executor.execute(commands);
 
-    expect(calls).toEqual(["visibility", "transform", "selection", "camera", "fly", "animation", "data", "component"]);
+    expect(calls).toEqual(["visibility", "transform", "material", "selection", "camera", "fly", "animation", "data", "component"]);
     expect(results).toEqual(commands.map((command, index) => ({ index, id: command.id, type: command.type, success: true })));
     expect(port.setObjectTransform).toHaveBeenCalledWith(objectRef(), { position: [1, 2, 3] });
+    expect(port.setObjectMaterial).toHaveBeenCalledWith(objectRef(), { roughness: 0.4 });
     expect(port.setCamera).toHaveBeenCalledWith("scene-1", { position: [1, 2, 3], target: [0, 0, 0], far: 5_000 });
     expect(port.controlAnimation).toHaveBeenCalledWith(objectRef(), { action: "seek", clipId: "clip-1", time: 2.5 });
     expect(port.updateComponent).toHaveBeenCalledWith("widget-1", { visible: true });
@@ -116,6 +118,7 @@ function createPort(calls: string[] = []): SceneCommandPort & Record<keyof Scene
   return {
     setObjectVisibility: method("visibility"),
     setObjectTransform: method("transform"),
+    setObjectMaterial: method("material"),
     setSelection: method("selection"),
     setCamera: method("camera"),
     flyCamera: method("fly"),

@@ -1,4 +1,4 @@
-import type { JsonValue, TopologyDocument, TopologyEdge, TopologyNode } from "@bim-studio/contracts";
+import type { JsonValue, TopologyDocument, TopologyEdge, TopologyNode, TopologyScadaAlarmSeverity, TopologyScadaDataQuality, TopologyScadaRuntimeState } from "@bim-studio/contracts";
 
 export type TopologySelection =
   | { readonly kind: "node"; readonly id: string }
@@ -10,10 +10,52 @@ export interface TopologyDataBindingRef {
   readonly field: string;
 }
 
+export interface TopologyScadaNodeConfig {
+  readonly tag: string;
+  readonly unit: string;
+  readonly lowAlarm?: number;
+  readonly highAlarm?: number;
+  readonly alarmSeverity: TopologyScadaAlarmSeverity;
+}
+
+export const TOPOLOGY_SCADA_NODE_KINDS = [
+  "pump", "valve", "tank", "motor", "fan", "compressor", "heat-exchanger", "boiler",
+  "plc", "meter", "switchgear", "transformer", "inverter", "battery",
+  "conveyor", "robot", "agv", "workstation", "warehouse", "camera", "server", "network",
+] as const;
+export type TopologyScadaNodeKind = (typeof TOPOLOGY_SCADA_NODE_KINDS)[number];
+
+export type TopologyScadaRuntimeFreshness = "missing" | "undated" | "fresh" | "stale" | "invalid";
+
+export interface TopologyScadaRuntimeAssessment {
+  readonly freshness: TopologyScadaRuntimeFreshness;
+  readonly quality: TopologyScadaDataQuality;
+  readonly ageMs?: number;
+  readonly healthy: boolean;
+}
+
+export interface TopologyScadaRuntimeSummary {
+  readonly total: number;
+  readonly healthy: number;
+  readonly missing: number;
+  readonly undated: number;
+  readonly stale: number;
+  readonly invalidTimestamp: number;
+  readonly uncertainQuality: number;
+  readonly badQuality: number;
+  readonly offline: number;
+  readonly activeAlarms: number;
+  readonly unacknowledgedAlarms: number;
+}
+
 export interface TopologyNodePatch {
   readonly kind?: string;
   readonly x?: number;
   readonly y?: number;
+  readonly properties?: Readonly<Record<string, JsonValue>>;
+}
+
+export interface TopologyEdgePatch {
   readonly properties?: Readonly<Record<string, JsonValue>>;
 }
 
@@ -38,7 +80,9 @@ export type TopologyEditorAction =
   | { readonly type: "node.move"; readonly positions: readonly TopologyNodePosition[] }
   | { readonly type: "node.remove"; readonly nodeIds: readonly string[] }
   | { readonly type: "edge.add"; readonly edge: TopologyEdge }
+  | { readonly type: "edge.update"; readonly edgeId: string; readonly patch: TopologyEdgePatch }
   | { readonly type: "edge.remove"; readonly edgeIds: readonly string[] }
+  | { readonly type: "graph.insert"; readonly nodes: readonly TopologyNode[]; readonly edges: readonly TopologyEdge[] }
   | { readonly type: "binding.set"; readonly nodeId: string; readonly binding?: TopologyDataBindingRef }
   | { readonly type: "history.undo" }
   | { readonly type: "history.redo" };
@@ -101,6 +145,101 @@ export function topologyNodeDataBinding(node: TopologyNode): TopologyDataBinding
   const field = value.field;
   if ((productType !== "dataset" && productType !== "pipeline") || typeof productId !== "string" || !productId.trim() || typeof field !== "string") return undefined;
   return { productType, productId, field };
+}
+
+export function isTopologyScadaNode(node: TopologyNode): boolean {
+  return (TOPOLOGY_SCADA_NODE_KINDS as readonly string[]).includes(node.kind) || topologyNodeScadaConfig(node) !== undefined;
+}
+
+export function topologyNodeScadaConfig(node: TopologyNode): TopologyScadaNodeConfig | undefined {
+  const value = node.properties.scada;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const tag = typeof value.tag === "string" ? value.tag : "";
+  const unit = typeof value.unit === "string" ? value.unit : "";
+  const alarmSeverity = value.alarmSeverity === "info" || value.alarmSeverity === "critical" ? value.alarmSeverity : "warning";
+  const lowAlarm = finiteNumber(value.lowAlarm);
+  const highAlarm = finiteNumber(value.highAlarm);
+  return {
+    tag,
+    unit,
+    alarmSeverity,
+    ...(lowAlarm === undefined ? {} : { lowAlarm }),
+    ...(highAlarm === undefined ? {} : { highAlarm })
+  };
+}
+
+export function createTopologyScadaNode(id: string, kind: TopologyScadaNodeKind, x: number, y: number, label: string = kind): TopologyNode {
+  const node = createTopologyNode(id, kind, x, y, label);
+  return {
+    ...node,
+    properties: {
+      ...node.properties,
+      scada: { tag: "", unit: "", alarmSeverity: "warning" }
+    }
+  };
+}
+
+/**
+ * Evaluates telemetry independently from React so adapters, diagnostics and UI
+ * use the same freshness semantics. Missing timestamps stay visible as
+ * "undated" instead of being treated as fresh.
+ */
+export function assessTopologyScadaRuntime(state: TopologyScadaRuntimeState | undefined, nowMs: number, staleAfterMs: number): TopologyScadaRuntimeAssessment {
+  assertRuntimeClock(nowMs, staleAfterMs);
+  if (!state) return { freshness: "missing", quality: "bad", healthy: false };
+
+  const quality = state.quality ?? "good";
+  if (!state.updatedAt) return { freshness: "undated", quality, healthy: false };
+  const timestamp = Date.parse(state.updatedAt);
+  if (!Number.isFinite(timestamp)) return { freshness: "invalid", quality, healthy: false };
+
+  const ageMs = Math.max(0, nowMs - timestamp);
+  const freshness = ageMs > staleAfterMs ? "stale" : "fresh";
+  const alarmHealthy = !state.alarm?.active;
+  const healthy = freshness === "fresh" && quality === "good" && state.state !== "offline" && state.state !== "unknown" && alarmHealthy;
+  return { freshness, quality, ageMs, healthy };
+}
+
+export function summarizeTopologyScadaRuntime(
+  nodes: readonly TopologyNode[],
+  runtimeStates: Readonly<Record<string, TopologyScadaRuntimeState>>,
+  nowMs: number,
+  staleAfterMs: number
+): TopologyScadaRuntimeSummary {
+  const summary = {
+    total: 0,
+    healthy: 0,
+    missing: 0,
+    undated: 0,
+    stale: 0,
+    invalidTimestamp: 0,
+    uncertainQuality: 0,
+    badQuality: 0,
+    offline: 0,
+    activeAlarms: 0,
+    unacknowledgedAlarms: 0
+  };
+
+  for (const node of nodes) {
+    if (!isTopologyScadaNode(node)) continue;
+    summary.total += 1;
+    const state = runtimeStates[node.id];
+    const assessment = assessTopologyScadaRuntime(state, nowMs, staleAfterMs);
+    if (assessment.healthy) summary.healthy += 1;
+    if (assessment.freshness === "missing") summary.missing += 1;
+    if (assessment.freshness === "undated") summary.undated += 1;
+    if (assessment.freshness === "stale") summary.stale += 1;
+    if (assessment.freshness === "invalid") summary.invalidTimestamp += 1;
+    if (state && assessment.quality === "uncertain") summary.uncertainQuality += 1;
+    if (state && assessment.quality === "bad") summary.badQuality += 1;
+    if (state?.state === "offline") summary.offline += 1;
+    if (state?.alarm?.active) {
+      summary.activeAlarms += 1;
+      if (!state.alarm.acknowledged) summary.unacknowledgedAlarms += 1;
+    }
+  }
+
+  return summary;
 }
 
 export function canUndoTopologyEdit(state: TopologyEditorState): boolean {
@@ -168,11 +307,32 @@ function applyDocumentAction(document: TopologyDocument, action: Exclude<Topolog
       }
       return { ...document, edges: [...document.edges, cloneEdge(action.edge)] };
     }
+    case "edge.update": {
+      const current = requireEdge(document, action.edgeId);
+      const next = { ...current, ...(action.patch.properties ? { properties: structuredClone(action.patch.properties) as Record<string, JsonValue> } : {}) };
+      if (JSON.stringify(current.properties) === JSON.stringify(next.properties)) return document;
+      return { ...document, edges: document.edges.map((edge) => edge.id === current.id ? next : edge) };
+    }
     case "edge.remove": {
       if (action.edgeIds.length === 0) return document;
       const edgeIds = new Set(action.edgeIds);
       for (const edgeId of edgeIds) requireEdge(document, edgeId);
       return { ...document, edges: document.edges.filter((edge) => !edgeIds.has(edge.id)) };
+    }
+    case "graph.insert": {
+      if (action.nodes.length === 0) return document;
+      const next = cloneDocument(document);
+      for (const node of action.nodes) {
+        assertTopologyNode(node);
+        if (next.nodes.some((candidate) => candidate.id === node.id)) throw new Error(`拓扑节点 ${node.id} 已存在`);
+        next.nodes.push(cloneNode(node));
+      }
+      for (const edge of action.edges) {
+        assertTopologyEdge(next, edge);
+        if (next.edges.some((candidate) => candidate.id === edge.id)) throw new Error(`拓扑连线 ${edge.id} 已存在`);
+        next.edges.push(cloneEdge(edge));
+      }
+      return next;
     }
     case "binding.set": {
       const node = requireNode(document, action.nodeId);
@@ -295,6 +455,15 @@ function assertNonEmpty(value: string, label: string): void {
 
 function assertFinitePosition(x: number, y: number): void {
   if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("节点坐标必须是有限数字");
+}
+
+function assertRuntimeClock(nowMs: number, staleAfterMs: number): void {
+  if (!Number.isFinite(nowMs)) throw new Error("SCADA 诊断时间必须是有限数字");
+  if (!Number.isFinite(staleAfterMs) || staleAfterMs < 0) throw new Error("SCADA 过期阈值必须是非负有限数字");
+}
+
+function finiteNumber(value: JsonValue | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function nodesEqual(left: TopologyNode, right: TopologyNode): boolean {

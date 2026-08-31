@@ -1,10 +1,13 @@
-import JSZip from "jszip";
 import {
   supportedExtensions,
   type ModelFormat,
   type ModelRecord,
   type SceneSnapshot
 } from "@bim-studio/contracts";
+import type JSZipRuntime from "jszip";
+import { loadViewerAssetBuffer } from "./viewer/viewerAssetTransport.js";
+
+const SCENE_PACKAGE_ASSET_TIMEOUT_MS = 10 * 60_000;
 
 interface ScenePackageAsset {
   originalModelId: string;
@@ -48,6 +51,7 @@ export function exportFbxFile(data: string, sceneName: string): void {
 }
 
 export async function exportScenePackage(scene: SceneSnapshot, models: ModelRecord[]): Promise<void> {
+  const JSZip = await loadArchiveRuntime();
   const zip = new JSZip();
   const assets: ScenePackageAsset[] = [];
   const usedModelIds = new Set<string>();
@@ -64,11 +68,14 @@ export async function exportScenePackage(scene: SceneSnapshot, models: ModelReco
     if (extension === "gltf") {
       throw new Error(`模型“${record.name}”是零散 glTF，请先转为 GLB 后再导出单文件场景`);
     }
-    const response = await fetch(record.manifest.geometryUrl);
-    if (!response.ok) throw new Error(`下载模型“${record.name}”失败：${response.status}`);
+    const content = await loadViewerAssetBuffer(
+      record.manifest.geometryUrl,
+      `模型“${record.name}”`,
+      { timeoutMs: SCENE_PACKAGE_ASSET_TIMEOUT_MS },
+    );
     const fileName = `${safeFileStem(record.name)}.${extension}`;
     const assetPath = `models/${String(assets.length + 1).padStart(3, "0")}-${fileName}`;
-    zip.file(assetPath, await response.arrayBuffer());
+    zip.file(assetPath, content);
     assets.push({
       originalModelId: state.modelId,
       sourceName: state.sourceName ?? record.name,
@@ -95,6 +102,7 @@ export async function readSceneFile(file: File): Promise<ImportedSceneFile> {
     return { scene: parseScene(await file.text()), assets: [], mode: "loose" };
   }
 
+  const JSZip = await loadArchiveRuntime();
   const zip = await JSZip.loadAsync(file);
   const manifestEntry = zip.file("package.json");
   if (!manifestEntry) throw new Error("单文件场景缺少 package.json");
@@ -151,4 +159,9 @@ function downloadBlob(blob: Blob, fileName: string): void {
   anchor.download = fileName;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function loadArchiveRuntime(): Promise<typeof JSZipRuntime> {
+  // 压缩运行时接近 100 KiB，仅在用户真正导入或导出场景包时加载。
+  return (await import("jszip")).default;
 }

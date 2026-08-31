@@ -1,0 +1,204 @@
+import * as THREE from "three";
+import type { SceneAnimationState, ScenePhysicsBodyState, ScenePhysicsState } from "@bim-studio/contracts";
+import { normalizeAnimationFrameRate } from "./timeline";
+import { applyTransform, objectTransform } from "./sceneObjectUtils";
+import { ViewerEngineRig } from "./viewerEngineRig";
+
+/** Simulation 职责层。 */
+export abstract class ViewerEngineSimulation extends ViewerEngineRig {
+  getPhysicsState(): ScenePhysicsState {
+      return structuredClone(this.physicsState);
+    }
+  setPhysicsState(state: ScenePhysicsState): void {
+      this.physicsState = {
+        enabled: state.enabled,
+        playing: state.enabled && state.playing,
+        gravity: { ...state.gravity }
+      };
+      if (state.enabled) void this.ensurePhysicsWorld().then(() => {
+        if (this.physicsWorld) this.physicsWorld.gravity = { ...this.physicsState.gravity };
+      });
+    }
+  getPhysicsBodyState(id: string): ScenePhysicsBodyState {
+      return structuredClone(this.physicsBodyStates.get(id) ?? { type: "none", mass: 1, friction: 0.7, restitution: 0.15 });
+    }
+  async setPhysicsBodyState(id: string, state: ScenePhysicsBodyState): Promise<void> {
+      const normalized: ScenePhysicsBodyState = {
+        type: state.type,
+        mass: THREE.MathUtils.clamp(state.mass, 0.01, 100_000),
+        friction: THREE.MathUtils.clamp(state.friction, 0, 2),
+        restitution: THREE.MathUtils.clamp(state.restitution, 0, 1)
+      };
+      this.physicsBodyStates.set(id, normalized);
+      this.removePhysicsBody(id);
+      if (normalized.type === "none" || !this.models.has(id)) return;
+      await this.ensurePhysicsWorld();
+      this.createPhysicsBody(id, normalized);
+    }
+  resetPhysics(): void {
+      for (const [id, runtime] of this.physicsBodies) {
+        const object = this.models.get(id)?.object;
+        if (!object) continue;
+        applyTransform(object, runtime.initialTransform);
+        object.updateWorldMatrix(true, true);
+        const position = object.getWorldPosition(new THREE.Vector3());
+        const rotation = object.getWorldQuaternion(new THREE.Quaternion());
+        runtime.body.setTranslation(position, true);
+        runtime.body.setRotation(rotation, true);
+        runtime.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        runtime.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
+      this.physicsAccumulator = 0;
+    }
+  protected async ensurePhysicsWorld(): Promise<void> {
+      if (this.physicsWorld) return;
+      if (this.physicsInit) return this.physicsInit;
+      this.physicsInit = (async () => {
+        const module = await import("@dimforge/rapier3d-compat");
+        const rapier = module.default;
+        // The compat build embeds its WASM but currently calls wasm-bindgen's legacy
+        // initializer signature. Hide only that known upstream deprecation warning.
+        const originalWarn = console.warn;
+        console.warn = (...args: unknown[]) => {
+          if (args[0] !== "using deprecated parameters for the initialization function; pass a single object instead") originalWarn(...args);
+        };
+        try {
+          await rapier.init();
+        } finally {
+          console.warn = originalWarn;
+        }
+        this.rapier = rapier;
+        this.physicsWorld = new rapier.World({ ...this.physicsState.gravity });
+        const ground = rapier.ColliderDesc.cuboid(5_000, 0.05, 5_000).setTranslation(0, -0.05, 0).setFriction(0.9);
+        this.physicsWorld.createCollider(ground);
+        for (const [id, state] of this.physicsBodyStates) if (state.type !== "none" && !this.physicsBodies.has(id)) this.createPhysicsBody(id, state);
+      })().finally(() => { this.physicsInit = undefined; });
+      return this.physicsInit;
+    }
+  protected createPhysicsBody(id: string, state: ScenePhysicsBodyState): void {
+      const object = this.models.get(id)?.object;
+      const world = this.physicsWorld;
+      const rapier = this.rapier;
+      if (!object || !world || !rapier || state.type === "none") return;
+      object.updateWorldMatrix(true, true);
+      const worldBox = new THREE.Box3().setFromObject(object);
+      if (worldBox.isEmpty()) return;
+      const inverse = object.matrixWorld.clone().invert();
+      const localBox = worldBox.clone().applyMatrix4(inverse);
+      const localCenter = localBox.getCenter(new THREE.Vector3());
+      const localSize = localBox.getSize(new THREE.Vector3());
+      const worldPosition = object.getWorldPosition(new THREE.Vector3());
+      const worldRotation = object.getWorldQuaternion(new THREE.Quaternion());
+      const worldScale = object.getWorldScale(new THREE.Vector3());
+      const descriptor = state.type === "dynamic" ? rapier.RigidBodyDesc.dynamic() : rapier.RigidBodyDesc.fixed();
+      descriptor.setTranslation(worldPosition.x, worldPosition.y, worldPosition.z).setRotation(worldRotation);
+      if (state.type === "dynamic") descriptor.setCcdEnabled(true).setLinearDamping(0.08).setAngularDamping(0.12);
+      const body = world.createRigidBody(descriptor);
+      const half = localSize.multiply(worldScale).multiplyScalar(0.5);
+      const offset = localCenter.multiply(worldScale);
+      const collider = rapier.ColliderDesc.cuboid(
+        Math.max(Math.abs(half.x), 0.01),
+        Math.max(Math.abs(half.y), 0.01),
+        Math.max(Math.abs(half.z), 0.01)
+      ).setTranslation(offset.x, offset.y, offset.z).setFriction(state.friction).setRestitution(state.restitution);
+      if (state.type === "dynamic") collider.setMass(state.mass);
+      world.createCollider(collider, body);
+      this.physicsBodies.set(id, { body, initialTransform: objectTransform(object) });
+    }
+  protected removePhysicsBody(id: string): void {
+      const runtime = this.physicsBodies.get(id);
+      if (runtime && this.physicsWorld) this.physicsWorld.removeRigidBody(runtime.body);
+      this.physicsBodies.delete(id);
+    }
+  protected rebuildPhysicsBody(id: string): void {
+      const state = this.physicsBodyStates.get(id);
+      if (!state || state.type === "none" || !this.physicsWorld) return;
+      this.removePhysicsBody(id);
+      this.createPhysicsBody(id, state);
+    }
+  protected updatePhysics(delta: number): void {
+      const world = this.physicsWorld;
+      if (!world || !this.physicsState.enabled || !this.physicsState.playing) return;
+      this.physicsAccumulator = Math.min(this.physicsAccumulator + delta, 0.2);
+      const fixedStep = 1 / 60;
+      while (this.physicsAccumulator >= fixedStep) {
+        world.timestep = fixedStep;
+        world.step();
+        this.physicsAccumulator -= fixedStep;
+      }
+      for (const [id, runtime] of this.physicsBodies) {
+        if (this.physicsBodyStates.get(id)?.type !== "dynamic") continue;
+        const object = this.models.get(id)?.object;
+        if (!object) continue;
+        const translation = runtime.body.translation();
+        const rotation = runtime.body.rotation();
+        object.position.set(translation.x, translation.y, translation.z);
+        object.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+        object.updateWorldMatrix(true, true);
+      }
+      const now = performance.now();
+      if (this.selectedId && now - this.lastPhysicsUiUpdate >= 160) {
+        const selected = this.models.get(this.selectedId);
+        if (selected && this.physicsBodyStates.get(selected.id)?.type === "dynamic") this.onModelChange?.(selected);
+        this.lastPhysicsUiUpdate = now;
+      }
+    }
+  getSceneAnimation(): SceneAnimationState {
+      return structuredClone(this.sceneAnimation);
+    }
+  setSceneAnimation(animation: SceneAnimationState): void {
+      this.sceneAnimation = {
+        duration: Math.max(animation.duration, 0.1),
+        loop: animation.loop,
+        pingPong: animation.pingPong ?? false,
+        playbackSpeed: THREE.MathUtils.clamp(animation.playbackSpeed ?? 1, 0.1, 4),
+        frameRate: normalizeAnimationFrameRate(animation.frameRate),
+        snapToFrames: animation.snapToFrames ?? false,
+        cameraInterpolation: animation.cameraInterpolation ?? "smooth",
+        modelInterpolation: animation.modelInterpolation ?? "smooth",
+        showCameraPath: animation.showCameraPath ?? true,
+        camera: [...animation.camera].sort((a, b) => a.time - b.time),
+        models: [...animation.models].sort((a, b) => a.time - b.time)
+      };
+      this.sceneAnimationTime = Math.min(this.sceneAnimationTime, this.sceneAnimation.duration);
+      this.updateCameraPathHelper();
+      this.onAnimationChange?.(this.sceneAnimationTime, this.sceneAnimationPlaying);
+    }
+  seekSceneAnimation(time: number): void {
+      this.sceneAnimationTime = THREE.MathUtils.clamp(time, 0, this.sceneAnimation.duration);
+      this.applySceneAnimationFrame(this.sceneAnimationTime);
+      this.onAnimationChange?.(this.sceneAnimationTime, this.sceneAnimationPlaying);
+    }
+  playSceneAnimation(): void {
+      if (this.sceneAnimation.camera.length === 0 && this.sceneAnimation.models.length === 0) return;
+      if (this.sceneAnimationTime >= this.sceneAnimation.duration) {
+        this.sceneAnimationTime = 0;
+        this.sceneAnimationDirection = 1;
+      }
+      const wasPlaying = this.sceneAnimationPlaying;
+      this.sceneAnimationPlaying = true;
+      this.orbit.enabled = false;
+      this.updateTransformAccess();
+      this.onAnimationChange?.(this.sceneAnimationTime, true);
+      if (!wasPlaying) {
+        for (const modelId of new Set(this.sceneAnimation.models.map((frame) => frame.modelId))) {
+          queueMicrotask(() => this.dispatchObjectLifecycle("animationStart", modelId));
+        }
+      }
+    }
+  pauseSceneAnimation(): void {
+      const wasPlaying = this.sceneAnimationPlaying;
+      this.sceneAnimationPlaying = false;
+      this.orbit.enabled = this.navigationMode !== "firstPerson";
+      this.updateTransformAccess();
+      this.onAnimationChange?.(this.sceneAnimationTime, false);
+      if (wasPlaying) {
+        for (const modelId of new Set(this.sceneAnimation.models.map((frame) => frame.modelId))) {
+          queueMicrotask(() => this.dispatchObjectLifecycle("animationEnd", modelId));
+        }
+      }
+    }
+  isSceneAnimationPlaying(): boolean {
+      return this.sceneAnimationPlaying;
+    }
+}

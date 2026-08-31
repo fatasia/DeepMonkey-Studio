@@ -1,6 +1,7 @@
 import { verifyServerProfile, type NamedServerProfile, type ServerHandshakeResult } from "@bim-studio/server-sdk";
 import { BrowserHostAdapter } from "./browserHostAdapter.js";
 import { isTauriRuntime, TauriHostAdapter } from "./tauriHostAdapter.js";
+import { readDesktopRuntimeMode, storeDesktopRuntimeMode, type DesktopRuntimeMode } from "./desktopRuntimeMode.js";
 
 const desktop = isTauriRuntime(window) ? new TauriHostAdapter(window) : undefined;
 const browser = desktop ? undefined : new BrowserHostAdapter(window);
@@ -9,6 +10,15 @@ export const runtimeHost = desktop ?? browser!;
 
 export function isDesktopRuntime(): boolean {
   return Boolean(desktop);
+}
+
+export function currentDesktopRuntimeMode(): DesktopRuntimeMode | undefined {
+  return desktop ? readDesktopRuntimeMode() : undefined;
+}
+
+export function selectDesktopRuntimeMode(mode: DesktopRuntimeMode): void {
+  if (!desktop) throw new Error("当前不是 Tauri 客户端");
+  storeDesktopRuntimeMode(mode);
 }
 
 export async function hydrateDesktopServer(): Promise<{

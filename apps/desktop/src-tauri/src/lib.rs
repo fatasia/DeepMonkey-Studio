@@ -61,14 +61,22 @@ fn profile_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
 }
 
 fn load_profile(path: &Path) -> Result<Option<ServerProfile>, String> {
-    if !path.exists() {
-        return Ok(None);
+    if path.exists() {
+        return read_profile_file(path).map(Some);
     }
+    // 进程若在旧配置备份后异常退出，启动时仍可恢复最近一次有效配置。
+    let backup = path.with_extension("json.bak");
+    if backup.exists() {
+        return read_profile_file(&backup).map(Some);
+    }
+    Ok(None)
+}
+
+fn read_profile_file(path: &Path) -> Result<ServerProfile, String> {
     let bytes = fs::read(path).map_err(|error| format!("读取服务器配置失败：{error}"))?;
-    let profile = serde_json::from_slice::<ServerProfile>(&bytes)
+    serde_json::from_slice::<ServerProfile>(&bytes)
         .map_err(|error| format!("服务器配置损坏：{error}"))?
-        .validated()?;
-    Ok(Some(profile))
+        .validated()
 }
 
 fn save_profile(path: &Path, profile: &ServerProfile) -> Result<(), String> {
@@ -79,7 +87,23 @@ fn save_profile(path: &Path, profile: &ServerProfile) -> Result<(), String> {
     let mut file = fs::File::create(&temporary).map_err(|error| format!("创建临时配置失败：{error}"))?;
     file.write_all(&bytes).map_err(|error| format!("写入临时配置失败：{error}"))?;
     file.sync_all().map_err(|error| format!("同步临时配置失败：{error}"))?;
-    fs::rename(&temporary, path).map_err(|error| format!("激活服务器配置失败：{error}"))
+    let backup = path.with_extension("json.bak");
+    if backup.exists() {
+        fs::remove_file(&backup).map_err(|error| format!("清理旧配置备份失败：{error}"))?;
+    }
+    if path.exists() {
+        fs::rename(path, &backup).map_err(|error| format!("备份当前服务器配置失败：{error}"))?;
+    }
+    if let Err(error) = fs::rename(&temporary, path) {
+        if backup.exists() && !path.exists() {
+            let _ = fs::rename(&backup, path);
+        }
+        return Err(format!("激活服务器配置失败：{error}"));
+    }
+    if backup.exists() {
+        fs::remove_file(backup).map_err(|error| format!("清理服务器配置备份失败：{error}"))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -97,8 +121,10 @@ fn set_server_profile<R: Runtime>(app: AppHandle<R>, profile: ServerProfile) -> 
 #[tauri::command]
 fn clear_server_profile<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let path = profile_path(&app)?;
-    if path.exists() {
-        fs::remove_file(path).map_err(|error| format!("删除服务器配置失败：{error}"))?;
+    for candidate in [path.clone(), path.with_extension("json.tmp"), path.with_extension("json.bak")] {
+        if candidate.exists() {
+            fs::remove_file(candidate).map_err(|error| format!("删除服务器配置失败：{error}"))?;
+        }
     }
     Ok(())
 }
@@ -112,7 +138,7 @@ pub fn run() {
             clear_server_profile
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run iTwin Studio desktop host");
+        .expect("failed to run Industrial Studio desktop host");
 }
 
 #[cfg(test)]
@@ -157,6 +183,20 @@ mod tests {
 
         save_profile(&path, &expected).expect("profile should save");
         assert_eq!(load_profile(&path).expect("profile should load"), Some(expected));
+
+        let updated = ServerProfile {
+            name: "备用服务器".to_owned(),
+            base_url: "https://backup.example.test".to_owned(),
+            ..profile("http://127.0.0.1:4100")
+        }
+        .validated()
+        .expect("updated profile should validate");
+        save_profile(&path, &updated).expect("existing profile should update on Windows");
+        assert_eq!(load_profile(&path).expect("updated profile should load"), Some(updated.clone()));
+
+        let backup = path.with_extension("json.bak");
+        fs::rename(&path, &backup).expect("interrupted replacement should leave a backup");
+        assert_eq!(load_profile(&path).expect("backup profile should recover"), Some(updated));
 
         fs::remove_dir_all(directory).expect("test directory should be removable");
     }

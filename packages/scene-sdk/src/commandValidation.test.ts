@@ -20,6 +20,12 @@ const validCommands: SceneCommand[] = [
     rotation: [0, Math.PI, 0],
     scale: [-1, 1, 1]
   },
+  {
+    id: "material",
+    type: "material.set",
+    target: objectTarget,
+    patch: { color: "#2f81f7", roughness: 0.35, metalness: 0.8, textureRepeatX: 2, doubleSided: true }
+  },
   { id: "selection", type: "selection.set", targets: [{ kind: "scene", sceneId: "scene:1" }, objectTarget] },
   {
     id: "camera",
@@ -41,7 +47,10 @@ const validCommands: SceneCommand[] = [
     values: { temperature: 21, enabled: true, metadata: [null, "online", { quality: 0.98 }] },
     timestamp: "2026-08-25T00:00:00.000Z"
   },
-  { id: "component", type: "component.update", componentId: "widget:1", patch: { visible: true, frame: { x: 12, y: 20 } } }
+  { id: "component", type: "component.update", componentId: "widget:1", patch: { visible: true, frame: { x: 12, y: 20 } } },
+  { id: "unity-properties", type: "unity.properties.set", componentId: "unity:1", values: { visible: true, lightIntensity: 2.5 } },
+  { id: "unity-action", type: "unity.action.invoke", componentId: "unity:1", action: "play", objectId: "robot:1", value: { speed: 1.2 } },
+  { id: "unity-scene", type: "unity.scene.switch", componentId: "unity:1", scene: "Factory" }
 ];
 
 describe("validateSceneCommand", () => {
@@ -62,6 +71,10 @@ describe("validateSceneCommand", () => {
     [{ id: "x", type: "object.set-visibility", target: objectTarget, visible: "yes" }, "$.visible", "invalid-type"],
     [{ id: "x", type: "object.set-transform", target: objectTarget, position: [0, 1] }, "$.position", "invalid-value"],
     [{ id: "x", type: "object.set-transform", target: objectTarget, rotation: [0, Number.NaN, 0] }, "$.rotation[1]", "invalid-type"],
+    [{ id: "x", type: "material.set", target: objectTarget, patch: {} }, "$.patch", "invalid-value"],
+    [{ id: "x", type: "material.set", target: objectTarget, patch: { color: "red" } }, "$.patch.color", "invalid-value"],
+    [{ id: "x", type: "material.set", target: objectTarget, patch: { roughness: 1.5 } }, "$.patch.roughness", "invalid-value"],
+    [{ id: "x", type: "material.set", target: objectTarget, patch: { baseColorMapUrl: "https://untrusted.test/map.png" } }, "$.patch.baseColorMapUrl", "unknown-property"],
     [{ id: "x", type: "selection.set", targets: [{ kind: "object", sceneId: "scene:1" }] }, "$.targets[0].objectId", "missing-property"],
     [{ id: "x", type: "camera.set", sceneId: "scene:1", position: [0, 0, 0], target: [0, 0, 0], near: 10, far: 1 }, "$.far", "invalid-value"],
     [{ id: "x", type: "camera.set", sceneId: "scene:1", position: [0, 0, 0], target: [0, 0, 0], fov: 180 }, "$.fov", "invalid-value"],
@@ -69,7 +82,10 @@ describe("validateSceneCommand", () => {
     [{ id: "x", type: "animation.control", target: objectTarget, action: "rewind" }, "$.action", "invalid-value"],
     [{ id: "x", type: "animation.control", target: objectTarget, action: "seek", time: -0.1 }, "$.time", "invalid-value"],
     [{ id: "x", type: "selection.set", targets: [], debug: true }, "$.debug", "unknown-property"],
-    [{ id: "x", type: "data.apply", target: objectTarget, values: { bad: Number.POSITIVE_INFINITY }, timestamp: "now" }, "$.values.bad", "invalid-value"]
+    [{ id: "x", type: "data.apply", target: objectTarget, values: { bad: Number.POSITIVE_INFINITY }, timestamp: "now" }, "$.values.bad", "invalid-value"],
+    [{ id: "x", type: "unity.properties.set", componentId: "unity:1", values: { bad: Number.NaN } }, "$.values.bad", "invalid-value"],
+    [{ id: "x", type: "unity.action.invoke", componentId: "unity:1", action: "" }, "$.action", "invalid-value"],
+    [{ id: "x", type: "unity.scene.switch", componentId: "unity:1", scene: 2 }, "$.scene", "invalid-type"]
   ] as const)("rejects malformed command %# with a precise issue", (command, path, code) => {
     const result = validateSceneCommand(command);
 

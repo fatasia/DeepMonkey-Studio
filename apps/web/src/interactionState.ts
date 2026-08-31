@@ -14,21 +14,24 @@ export const INTERACTION_TRIGGERS: SceneInteractionTrigger[] = [
   "pointerEnter",
   "pointerLeave",
   "animationStart",
-  "animationEnd"
+  "animationEnd",
+  "routePointReached"
 ];
 
-export const OBJECT_INTERACTION_ACTIONS: SceneInteractionActionType[] = ["visibility", "color", "opacity", "focus", "animation", "cameraView", "navigateScene", "message", "dashboard", "setData", "openUrl"];
-export const WIDGET_INTERACTION_ACTIONS: SceneInteractionActionType[] = ["navigateScene", "cameraView", "message", "dashboard", "setData", "openUrl"];
+export const OBJECT_INTERACTION_ACTIONS: SceneInteractionActionType[] = ["visibility", "color", "opacity", "focus", "animation", "prefabAction", "cameraView", "navigateScene", "message", "dashboard", "setData", "openUrl"];
+export const WIDGET_INTERACTION_ACTIONS: SceneInteractionActionType[] = ["navigateScene", "cameraView", "message", "dashboard", "setData", "openUrl", "unityAction"];
 
 export function createInteractionAction(type: SceneInteractionActionType): SceneInteractionActionState {
   const defaults: Partial<Record<SceneInteractionActionType, Partial<SceneInteractionActionState>>> = {
-    visibility: { value: "toggle" },
+    visibility: { value: "toggle", transition: { kind: "fade", durationMs: 280, easing: "ease-out" } },
     color: { value: "#ff4057" },
     opacity: { value: 0.5 },
     animation: { value: "toggle" },
+    prefabAction: { prefabAction: "dispatch" },
     message: { message: "操作完成" },
     setData: { dataKey: "value", value: 0 },
-    openUrl: { url: "https://example.com", newTab: true }
+    openUrl: { url: "https://example.com", newTab: true },
+    unityAction: { unityAction: "focus" }
   };
   return { id: crypto.randomUUID(), type, enabled: true, ...defaults[type] };
 }
@@ -87,12 +90,28 @@ export function normalizeInteractionActions(value: unknown, targetKind: SceneInt
     if (typeof item.value === "string" || typeof item.value === "number" || typeof item.value === "boolean") action.value = item.value;
     if (typeof item.url === "string") action.url = item.url.slice(0, 2048);
     if (typeof item.newTab === "boolean") action.newTab = item.newTab;
+    if (item.transition && typeof item.transition === "object") {
+      const transition = item.transition;
+      const kinds = ["none", "fade", "scale", "rise"] as const;
+      const easings = ["linear", "ease-in", "ease-out", "ease-in-out"] as const;
+      if (kinds.includes(transition.kind) && easings.includes(transition.easing) && Number.isFinite(transition.durationMs)) {
+        action.transition = {
+          kind: transition.kind,
+          durationMs: Math.min(5_000, Math.max(0, transition.durationMs)),
+          easing: transition.easing,
+        };
+      }
+    }
     if (item.target?.kind === "object" && typeof item.target.modelId === "string" && item.target.modelId) action.target = { kind: "object", modelId: item.target.modelId, ...(typeof item.target.layerId === "string" && item.target.layerId ? { layerId: item.target.layerId } : {}) };
     if (typeof item.sceneId === "string") action.sceneId = item.sceneId;
     if (typeof item.dashboardPageId === "string") action.dashboardPageId = item.dashboardPageId;
     if (typeof item.cameraViewId === "string") action.cameraViewId = item.cameraViewId;
     if (typeof item.message === "string") action.message = item.message.slice(0, 500);
     if (typeof item.dataKey === "string") action.dataKey = item.dataKey.slice(0, 200);
+    if (typeof item.unityAction === "string") action.unityAction = item.unityAction.slice(0, 200);
+    if (typeof item.unityObjectId === "string") action.unityObjectId = item.unityObjectId.slice(0, 200);
+    const prefabAction = item.prefabAction;
+    if (prefabAction && ["dispatch", "pause", "resume", "stop", "return", "replay", "clear-fault"].includes(prefabAction)) action.prefabAction = prefabAction;
     return [action];
   }).slice(0, 20);
 }
@@ -104,12 +123,14 @@ export function interactionActionLabel(type: SceneInteractionActionType, locale:
     opacity: ["调整透明度", "Set opacity"],
     focus: ["定位对象", "Focus object"],
     animation: ["模型动画", "Model animation"],
+    prefabAction: ["工业设备动作", "Industrial prefab action"],
     openUrl: ["打开网页", "Open web page"],
     navigateScene: ["跳转场景", "Navigate scene"],
     cameraView: ["切换相机视角", "Switch camera view"],
     message: ["显示提示", "Show message"],
     dashboard: ["打开二维页面", "Open dashboard page"],
-    setData: ["设置数据值", "Set data value"]
+    setData: ["设置数据值", "Set data value"],
+    unityAction: ["触发 Unity 动作", "Trigger Unity action"]
   };
   return labels[type][locale === "zh-CN" ? 0 : 1];
 }
@@ -141,7 +162,8 @@ export function triggerLabel(trigger: SceneInteractionTrigger, locale: "zh-CN" |
     pointerEnter: ["鼠标进入", "Pointer enter"],
     pointerLeave: ["鼠标离开", "Pointer leave"],
     animationStart: ["动画开始", "Animation start"],
-    animationEnd: ["动画结束", "Animation end"]
+    animationEnd: ["动画结束", "Animation end"],
+    routePointReached: ["路线到点", "Route point reached"]
   };
   return labels[trigger][locale === "zh-CN" ? 0 : 1];
 }

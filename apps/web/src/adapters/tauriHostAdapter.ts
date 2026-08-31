@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AuthStore, NamedServerProfile } from "@bim-studio/server-sdk";
+import { isLocalDesktopMode, localDesktopApiOrigin } from "./desktopRuntimeMode.js";
 
 export type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -22,6 +23,9 @@ export class TauriHostAdapter implements AuthStore {
   }
 
   getServerProfile(): NamedServerProfile {
+    if (isLocalDesktopMode(this.browserWindow)) {
+      return { id: "desktop-local", name: "本地工作台", baseUrl: localDesktopApiOrigin() };
+    }
     const profile = this.currentServerProfile();
     if (!profile) throw new Error("尚未配置服务器，请先完成连接向导");
     return profile;

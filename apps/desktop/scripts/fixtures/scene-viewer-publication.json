@@ -1,0 +1,77 @@
+{
+  "sceneId": "viewer-fixture-scene",
+  "projectId": "viewer-fixture-project",
+  "name": "只读客户端验收场景",
+  "publishedAt": "2026-08-31T08:00:00.000Z",
+  "version": 1,
+  "snapshot": {
+    "schemaVersion": 1,
+    "id": "viewer-fixture-scene",
+    "projectId": "viewer-fixture-project",
+    "name": "只读客户端验收场景",
+    "camera": {
+      "position": { "x": 8, "y": 6, "z": 10 },
+      "target": { "x": 0, "y": 0.8, "z": 0 },
+      "mode": "orbit"
+    },
+    "models": [],
+    "primitives": [
+      {
+        "modelId": "fixture-machine",
+        "name": "设备机台",
+        "visible": true,
+        "opacity": 1,
+        "kind": "box",
+        "color": "#3e89c7",
+        "transform": {
+          "position": { "x": -1.6, "y": 0.75, "z": 0 },
+          "rotation": { "x": 0, "y": 0, "z": 0 },
+          "scale": { "x": 2.4, "y": 1.5, "z": 1.8 }
+        }
+      },
+      {
+        "modelId": "fixture-buffer",
+        "name": "缓存工位",
+        "visible": true,
+        "opacity": 1,
+        "kind": "cylinder",
+        "color": "#d6aa4d",
+        "transform": {
+          "position": { "x": 1.8, "y": 0.6, "z": 0 },
+          "rotation": { "x": 0, "y": 0, "z": 0 },
+          "scale": { "x": 1.2, "y": 1.2, "z": 1.2 }
+        }
+      }
+    ],
+    "measurements": [],
+    "annotations": [
+      {
+        "id": "fixture-label",
+        "name": "验收设备",
+        "description": "发布器必须保留标签和只读工具栏",
+        "position": { "x": -1.6, "y": 2, "z": 0 },
+        "color": "#f0c86d",
+        "visible": true,
+        "locked": true,
+        "modelId": "fixture-machine"
+      }
+    ],
+    "weather": "sunny",
+    "environment": {
+      "gridVisible": true,
+      "backgroundColor": "#182127",
+      "skybox": "studio",
+      "environmentAsBackground": false,
+      "environmentIntensity": 1
+    },
+    "objects": [],
+    "layers": [],
+    "settings": {},
+    "publicationMode": "webgpu-preferred",
+    "publicationPerformance": "standard",
+    "publicationToolbarVisible": true,
+    "createdAt": "2026-08-31T07:30:00.000Z",
+    "updatedAt": "2026-08-31T08:00:00.000Z",
+    "publishedAt": "2026-08-31T08:00:00.000Z"
+  }
+}

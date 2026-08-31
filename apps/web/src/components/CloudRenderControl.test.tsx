@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CloudRenderControlOverview } from "@bim-studio/server-sdk";
-import { CloudRenderControlView } from "./CloudRenderControl";
+import { CloudRenderConfigurationWizard, CloudRenderControlView } from "./CloudRenderControl";
 
 vi.mock("../api", () => ({ api: {} }));
 
@@ -9,6 +9,17 @@ const t = (zh: string) => zh;
 const noop = () => undefined;
 
 describe("CloudRenderControlView", () => {
+  it("renders an explicit first-class configuration entry without persisting a secret", () => {
+    const html = renderToStaticMarkup(<CloudRenderConfigurationWizard locale="zh-CN" configured={false} />);
+    expect(html).toContain("云渲染设置");
+    expect(html).toContain("Worker 地址");
+    expect(html).toContain("访问令牌");
+    expect(html).toContain("Public Origin");
+    expect(html).toContain("高级部署设置");
+    expect(html).toContain("CLOUD_RENDER_WORKER_TOKEN=&lt;secure-token&gt;");
+    expect(html).toContain("测试连接");
+  });
+
   it("shows verified RTP counters for a genuinely streaming session", () => {
     const html = renderToStaticMarkup(<CloudRenderControlView t={t} overview={overview()} onReload={noop} onEnableAndStart={noop} onStart={noop} onRefresh={noop} onStop={noop} onDisable={noop} />);
     expect(html).toContain("媒体已验证");

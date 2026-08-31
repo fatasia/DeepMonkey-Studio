@@ -1,6 +1,6 @@
 # 云渲染 GPU Worker 对接合同
 
-iTwin Studio 同时提供控制面和可部署的 Reference Worker（`apps/cloud-render-worker`）。Reference Worker 使用 Chromium 打开真实发布页、捕获实际 canvas、由 Chromium WebRTC 栈完成硬件编码，并通过 DataChannel 回传鼠标键盘。控制面不会用延时器、WebSocket 已连接或信令成功冒充媒体可用。
+iTwin Studio 同时提供控制面和可部署的 Reference Worker（`apps/cloud-render-worker`）。Reference Worker 使用 Chromium 打开真实发布页并请求 WebGPU，初始化失败时由发布运行时自动回退 WebGL；Worker 捕获最终实际 canvas，由 Chromium WebRTC 栈完成硬件编码，并通过 DataChannel 回传鼠标键盘。控制面不会用延时器、WebSocket 已连接或信令成功冒充媒体可用。
 
 ## 服务器配置
 
@@ -75,7 +75,7 @@ Content-Type: application/json
     "sceneId": "scene-1",
     "publishedAt": "2026-08-25T12:00:00.000Z",
     "publicationUrl": "https://studio.example.com/api/public/scenes/scene-1",
-    "renderUrl": "https://studio.example.com/published/scene-1"
+    "renderUrl": "https://studio.example.com/published/scene-1?renderer=webgpu"
   },
   "render": {
     "width": 1920,
@@ -161,18 +161,9 @@ Worker 返回 `204`，或明确返回 `404` 表示该会话已不存在，控制
 
 场景重新发布、撤回发布或删除前，API 会先请求停止旧 Worker 会话。无法确认媒体停止时，发布变更会失败，避免产生不可管理的孤儿 GPU 会话。
 
-## Reference Worker 启动
+## Reference Worker 原生启动
 
-Docker（推荐使用 NVIDIA Container Toolkit）：
-
-```bash
-export CLOUD_RENDER_WORKER_TOKEN='replace-with-a-long-random-token'
-export CLOUD_RENDER_WORKER_PUBLIC_ORIGIN='https://gpu-worker.example.com'
-export CLOUD_RENDER_ICE_SERVERS_JSON='[{"urls":"turn:turn.example.com:3478","username":"cloud","credential":"replace-me"}]'
-docker compose -f docker-compose.cloud-render.yml up --build
-```
-
-Windows 本机调试：
+项目统一采用原生进程与系统服务，不使用容器。Windows 本机调试：
 
 ```powershell
 .\tools\cloud-render-worker\start.ps1 -Token 'replace-me' -PublicOrigin 'http://localhost:4200'
@@ -183,8 +174,8 @@ API 侧配置：
 ```dotenv
 CLOUD_RENDER_WORKER_URL=http://127.0.0.1:4200
 CLOUD_RENDER_WORKER_TOKEN=replace-me
-# 必须同时能返回发布 JSON，并能打开 /published/:sceneId 页面；Docker 开发环境通常使用 host.docker.internal。
-CLOUD_RENDER_PUBLIC_ORIGIN=http://host.docker.internal:5173
+# 必须同时能返回发布 JSON，并能打开 /published/:sceneId 页面。
+CLOUD_RENDER_PUBLIC_ORIGIN=http://127.0.0.1:5173
 ```
 
 Worker 创建会话时先读取 `publicationUrl`，严格比较项目、场景和发布时间，再打开 `renderUrl`。观看端打开并提交 WebRTC answer 后，Worker 才可能从发送端 `RTCPeerConnection.getStats()` 获得 `framesEncoded`、`packetsSent`、`bytesSent`。未打开观看端时，会话保持 `starting`。
@@ -199,7 +190,7 @@ CLOUD_RENDER_VERIFIED_HARDWARE_CODECS=h264
 
 ## 唯一外部前置与生产边界
 
-- 必须有宿主机 GPU、正确驱动及容器 GPU runtime。CDP `SystemInfo` 只用于识别 GPU、驱动和 `video_encode` 前置状态；即使 `videoEncoding=[]`，只要真实 WebRTC 回环产生 RTP，且 `webrtc-internals` 证明非软件实现并报告 `powerEfficientEncoder=true`，Worker 仍可为 `ready`。若浏览器不暴露该证明，只接受显式运维 attestation；不会把 SwiftShader、OpenH264、libvpx 或 libaom 软件编码伪装成硬件编码。
+- 必须有宿主机 GPU、正确驱动，以及可被服务账户启动的 Chromium/Chrome。CDP `SystemInfo` 只用于识别 GPU、驱动和 `video_encode` 前置状态；即使 `videoEncoding=[]`，只要真实 WebRTC 回环产生 RTP，且 `webrtc-internals` 证明非软件实现并报告 `powerEfficientEncoder=true`，Worker 仍可为 `ready`。若浏览器不暴露该证明，只接受显式运维 attestation；不会把 SwiftShader、OpenH264、libvpx 或 libaom 软件编码伪装成硬件编码。
 - 跨公网或复杂 NAT 部署必须提供可访问的 STUN/TURN 服务及凭据；同网段直连可以不配置 TURN。
 - HTTPS 页面应使用 HTTPS Worker，避免浏览器混合内容限制。
 

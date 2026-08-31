@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
+  assessUnityApplicationReadiness,
   assertApplicationDocument,
   assertPathSafeResourceId,
   type ApplicationDocument,
@@ -118,6 +119,11 @@ export async function registerApplicationRoutes(app: FastifyInstance, store: Met
   app.post<{ Params: ApplicationParams }>("/api/projects/:projectId/applications/:applicationId/publish", async (request, reply) => {
     if (!requireProject(store, request.params.projectId, reply)) return reply;
     if (!validateResourceId(request.params.applicationId, "applicationId", reply)) return reply;
+    const application = store.getApplication(request.params.projectId, request.params.applicationId);
+    if (!application) return reply.code(404).send({ message: "应用不存在" });
+    const unityIssues = assessUnityApplicationReadiness(application, store.listUnityResources(request.params.projectId));
+    const unityBlockers = unityIssues.filter((issue) => issue.severity === "blocker");
+    if (unityBlockers.length > 0) return reply.code(409).send({ message: `Unity 发布检查未通过（${unityBlockers.length} 项）`, issues: unityIssues });
     const publishedAt = new Date().toISOString();
     const result = await store.publishApplication(
       request.params.projectId,

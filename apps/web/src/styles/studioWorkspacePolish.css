@@ -1,0 +1,125 @@
+/* 三维工作区要支持长时间工程操作，正文与操作标签不以“超高密度”为由压缩到 7–9px。 */
+.app-shell small,
+.app-shell label,
+.app-shell summary,
+.app-shell button,
+.app-shell select,
+.app-shell textarea,
+.app-shell output,
+.app-shell .eyebrow,
+.app-shell .left-panel :is(span, strong, p),
+.app-shell .right-panel :is(span, strong, p),
+.app-shell .tool-dock span {
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.app-shell button,
+.app-shell summary {
+  min-height: 24px;
+}
+
+.app-shell input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),
+.app-shell select,
+.app-shell textarea {
+  min-height: 24px;
+}
+
+.app-shell .asset-row {
+  min-height: 38px;
+}
+
+.app-shell .topbar-auto-save {
+  min-height: 28px;
+  font-size: 10px;
+}
+
+/* 旧样式中组合选择器权重较高，这两项是工作区统一可读性的硬约束。 */
+.app-shell small,
+.app-shell .right-panel button {
+  font-size: 10px !important;
+}
+
+.app-shell .model-expander {
+  min-width: 24px;
+}
+
+/* 目录默认只突出选择、显隐和锁定；删除、碰撞等低频动作在悬停/键盘聚焦时出现。 */
+@media (hover: hover) {
+  .app-shell .scene-row-optional-action:not(.active):not(.colliding) {
+    opacity: 0;
+  }
+  .app-shell :is(.asset-row:hover, .asset-row:focus-within) .scene-row-optional-action {
+    opacity: 1;
+  }
+}
+
+.scene-import-workspace {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  padding: 0 0 12px;
+  overflow: auto;
+}
+
+.scene-import-workspace > header {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-top: 1px solid #2b353a;
+  border-bottom: 1px solid #2b353a;
+  background: #161d21;
+}
+
+.scene-import-workspace > header span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #d5dde0;
+}
+
+.scene-import-workspace > header span svg {
+  color: var(--accent);
+}
+
+.scene-import-workspace > header strong {
+  font-size: 11px;
+}
+
+.scene-import-workspace > header button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  color: #7e8a90;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scene-import-workspace > header button:hover {
+  color: #e6ecee;
+  background: #252e32;
+}
+
+.scene-import-workspace .rvt-route-switch,
+.scene-import-workspace .revit-version-select {
+  margin-right: 10px;
+  margin-left: 10px;
+}
+
+.scene-import-workspace .upload-zone {
+  width: calc(100% - 20px);
+  margin: 0 10px;
+}
+
+.scene-import-workspace .industrial-cad-hint {
+  margin: -4px 12px 0;
+  color: #75838a;
+  font-size: 10px;
+  line-height: 1.45;
+}

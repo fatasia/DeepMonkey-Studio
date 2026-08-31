@@ -2,6 +2,8 @@ node_modules/
 node_modules.failed-install/
 dist/
 .env
+.env.previous
+.env.before-*
 data/
 .cache/
 coverage/
@@ -29,5 +31,16 @@ tools/mediamtx/mediamtx.exe
 tools/revit-worker/build/
 tools/revit-worker/publish/
 *.log
+**/__pycache__/
+*.py[cod]
+tools/unity/**/Library/
+tools/unity/**/Temp/
+tools/unity/**/Logs/
+tools/unity/**/Build/
+tools/unity/**/UserSettings/
+tools/unity/.smoke-runs/
 .DS_Store
 .superpowers/
+.gstack/
+apps/desktop/.scene-viewer-build/
+apps/desktop/src-tauri/scene-viewer.generated.conf.json

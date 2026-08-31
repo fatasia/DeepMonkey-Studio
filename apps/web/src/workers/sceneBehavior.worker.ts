@@ -5,26 +5,33 @@ import type { DirectBindingSpec, DirectBindingTemplateValue, JsonValue } from "@
 import type {
   SceneBehaviorModule,
   SceneBehaviorNetworkResult,
+  SceneBehaviorTarget,
   SceneBehaviorWorkerRequest,
   SceneBehaviorWorkerResponse,
   SceneCommand,
+  SceneMaterialCommandPatch,
   SceneScriptLifecycle
 } from "@bim-studio/scene-sdk";
 
 type LifecycleContext = {
   sceneId: string;
+  target: SceneBehaviorTarget;
+  self?: ReturnType<ReturnType<typeof createStudioApi>["object"]> | ReturnType<ReturnType<typeof createStudioApi>["component"]>;
   elapsedMs: number;
   deltaMs: number;
   elapsedTime: number;
   deltaTime: number;
-  event?: unknown;
   data?: unknown;
+  event?: unknown;
   state: Record<string, unknown>;
   THREE: typeof THREE;
   studio: ReturnType<typeof createStudioApi>;
   net: ReturnType<typeof createNetworkApi>;
   object: ReturnType<typeof createStudioApi>["object"];
   command: (command: SceneCommand) => void;
+  getData: (key: string) => JsonValue | undefined;
+  setData: (key: string, value: JsonValue) => void;
+  emit: (name: string, payload?: JsonValue) => void;
   log: (message: string, data?: unknown) => void;
 };
 type LifecycleHandler = (context: LifecycleContext) => unknown | Promise<unknown>;
@@ -32,9 +39,12 @@ type LifecycleHandler = (context: LifecycleContext) => unknown | Promise<unknown
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 const send = (message: SceneBehaviorWorkerResponse) => workerScope.postMessage(message);
 const scriptState: Record<string, unknown> = {};
+const dataState: Record<string, JsonValue> = {};
 let activeSceneId = "";
 let activeInvocationId = "";
 let activeCommands: SceneCommand[] | undefined;
+let activeDataUpdates: Record<string, JsonValue> | undefined;
+let activeEvents: Array<{ name: string; payload?: JsonValue }> | undefined;
 let activeModule: SceneBehaviorModule | undefined;
 let handlers: Partial<Record<SceneScriptLifecycle, LifecycleHandler>> = {};
 let requestQueue = Promise.resolve();
@@ -55,6 +65,7 @@ async function handleRequest(request: SceneBehaviorWorkerRequest): Promise<void>
       activeSceneId = request.sceneId;
       activeModule = request.module;
       for (const key of Object.keys(scriptState)) delete scriptState[key];
+      for (const key of Object.keys(dataState)) delete dataState[key];
       handlers = await compileBehavior(request.module);
       send({ type: "behavior.ready", moduleId: request.module.id, lifecycle: request.module.lifecycle.filter((name) => typeof handlers[name] === "function") });
       return;
@@ -76,16 +87,25 @@ async function handleRequest(request: SceneBehaviorWorkerRequest): Promise<void>
 
 async function invokeLifecycle(lifecycle: SceneScriptLifecycle, invocationId: string, elapsedMs: number, deltaMs = 0, event?: unknown, data?: unknown): Promise<void> {
   const commands: SceneCommand[] = [];
+  const dataUpdates: Record<string, JsonValue> = {};
+  const events: Array<{ name: string; payload?: JsonValue }> = [];
+  if (isJsonRecord(data)) Object.assign(dataState, structuredClone(data));
   const startedAt = performance.now();
   const handler = handlers[lifecycle];
   if (handler) {
     activeInvocationId = invocationId;
     activeCommands = commands;
+    activeDataUpdates = dataUpdates;
+    activeEvents = events;
     const studio = createStudioApi();
     const net = createNetworkApi();
+    const target = activeModule?.target ?? { kind: "scene" as const };
+    const self = target.kind === "object" ? studio.object(target.id) : target.kind === "component" ? studio.component(target.id) : undefined;
     try {
       await handler(Object.freeze({
         sceneId: activeSceneId,
+        target: Object.freeze(structuredClone(target)),
+        ...(self ? { self } : {}),
         elapsedMs,
         deltaMs,
         elapsedTime: elapsedMs / 1_000,
@@ -98,14 +118,19 @@ async function invokeLifecycle(lifecycle: SceneScriptLifecycle, invocationId: st
         net,
         object: studio.object,
         command: (command: SceneCommand) => commands.push(command),
+        getData: (key: string) => getDataValue(key),
+        setData: (key: string, value: JsonValue) => setDataValue(key, value),
+        emit: (name: string, payload?: JsonValue) => emitEvent(name, payload),
         log
       }));
     } finally {
       activeCommands = undefined;
+      activeDataUpdates = undefined;
+      activeEvents = undefined;
       activeInvocationId = "";
     }
   }
-  send({ type: "behavior.result", invocationId, durationMs: performance.now() - startedAt, commands });
+  send({ type: "behavior.result", invocationId, durationMs: performance.now() - startedAt, commands, ...(Object.keys(dataUpdates).length ? { dataUpdates } : {}), ...(events.length ? { events } : {}) });
 }
 
 async function compileBehavior(module: SceneBehaviorModule): Promise<Partial<Record<SceneScriptLifecycle, LifecycleHandler>>> {
@@ -119,7 +144,7 @@ async function compileBehavior(module: SceneBehaviorModule): Promise<Partial<Rec
   const studio = createStudioApi();
   const net = createNetworkApi();
   const proxyFetch = (endpoint: string, options?: StudioNetworkFetchOptions) => net.fetch(endpoint, options);
-  const factory = new AsyncFunction("THREE", "studio", "net", "fetch", `"use strict";\n${module.code}\nreturn { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };\n//# sourceURL=itwin-studio-behavior-${module.id}.js`);
+  const factory = new AsyncFunction("THREE", "studio", "net", "fetch", `"use strict";\n${module.code}\nreturn { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };\n//# sourceURL=industrial-studio-behavior-${module.id}.js`);
   return await factory(THREE, studio, net, proxyFetch) as Partial<Record<SceneScriptLifecycle, LifecycleHandler>>;
 }
 
@@ -185,8 +210,12 @@ function createStudioApi() {
     setScale: (x: number, y = x, z = x) => emit({ id: commandId("scale"), type: "object.set-transform", target: target(objectId), scale: [x, y, z] }),
     setColor: (color: string) => emit({ id: commandId("color"), type: "data.apply", target: target(objectId), values: { color }, timestamp: new Date().toISOString() }),
     setOpacity: (opacity: number) => emit({ id: commandId("opacity"), type: "data.apply", target: target(objectId), values: { opacity }, timestamp: new Date().toISOString() }),
-    playAnimation: () => emit({ id: commandId("animation"), type: "animation.control", target: target(objectId), action: "play" }),
-    pauseAnimation: () => emit({ id: commandId("animation"), type: "animation.control", target: target(objectId), action: "pause" })
+    setMaterial: (patch: SceneMaterialCommandPatch) =>
+      emit({ id: commandId("material"), type: "material.set", target: target(objectId), patch }),
+    playAnimation: (clipName?: string) => emit({ id: commandId("animation"), type: "animation.control", target: target(objectId), action: "play", ...(clipName ? { clipId: clipName } : {}) }),
+    pauseAnimation: (clipName?: string) => emit({ id: commandId("animation"), type: "animation.control", target: target(objectId), action: "pause", ...(clipName ? { clipId: clipName } : {}) }),
+    stopAnimation: (clipName?: string) => emit({ id: commandId("animation"), type: "animation.control", target: target(objectId), action: "stop", ...(clipName ? { clipId: clipName } : {}) }),
+    seekAnimation: (seconds: number, clipName?: string) => emit({ id: commandId("animation"), type: "animation.control", target: target(objectId), action: "seek", time: seconds, ...(clipName ? { clipId: clipName } : {}) })
   });
   const component = (componentId: string) => Object.freeze({
     id: componentId,
@@ -195,12 +224,26 @@ function createStudioApi() {
     hide: () => emit({ id: commandId("component"), type: "component.update", componentId, patch: { visible: false } }),
     rename: (name: string) => emit({ id: commandId("component"), type: "component.update", componentId, patch: { name } })
   });
+  const unity = (componentId: string) => Object.freeze({
+    id: componentId,
+    setProperty: (key: string, value: JsonValue) => emit({ id: commandId("unity-property"), type: "unity.properties.set", componentId, values: { [key]: value } }),
+    setProperties: (values: Record<string, JsonValue>) => emit({ id: commandId("unity-properties"), type: "unity.properties.set", componentId, values }),
+    invoke: (action: string, objectId?: string, value?: JsonValue) => emit({
+      id: commandId("unity-action"), type: "unity.action.invoke", componentId, action,
+      ...(objectId ? { objectId } : {}), ...(value === undefined ? {} : { value })
+    }),
+    switchScene: (scene: string) => emit({ id: commandId("unity-scene"), type: "unity.scene.switch", componentId, scene })
+  });
   return Object.freeze({
     version: "1.0" as const,
     THREE,
     net: createNetworkApi(),
     object,
     component,
+    unity,
+    getData: (key: string) => getDataValue(key),
+    setData: (key: string, value: JsonValue) => setDataValue(key, value),
+    emit: (name: string, payload?: JsonValue) => emitEvent(name, payload),
     camera: Object.freeze({
       setPose: (position: [number, number, number], targetPosition: [number, number, number], options: { near?: number; far?: number; fov?: number } = {}) => emit({ id: commandId("camera"), type: "camera.set", sceneId: activeSceneId, position, target: targetPosition, ...options }),
       focus: (objectId: string) => object(objectId).focus()
@@ -208,6 +251,26 @@ function createStudioApi() {
     selection: Object.freeze({ clear: () => emit({ id: commandId("selection"), type: "selection.set", targets: [] }) }),
     log
   });
+}
+
+function setDataValue(key: string, value: JsonValue): void {
+  if (!activeModule?.permissions.includes("data.write")) throw new Error("脚本未声明 data.write 权限");
+  if (!activeDataUpdates) throw new Error("setData 只能在行为生命周期函数中调用");
+  const cloned = structuredClone(value);
+  dataState[key] = cloned;
+  activeDataUpdates[key] = cloned;
+}
+
+function getDataValue(key: string): JsonValue | undefined {
+  if (!activeModule?.permissions.includes("data.read")) throw new Error("脚本未声明 data.read 权限");
+  return dataState[key];
+}
+
+function emitEvent(name: string, payload?: JsonValue): void {
+  if (!activeEvents) throw new Error("emit 只能在行为生命周期函数中调用");
+  const normalized = name.trim();
+  if (!normalized) throw new Error("事件名称不能为空");
+  activeEvents.push({ name: normalized, ...(payload === undefined ? {} : { payload: structuredClone(payload) }) });
 }
 
 function log(message: string, payload?: unknown) {
@@ -233,6 +296,10 @@ function isJsonValue(value: unknown, seen = new WeakSet<object>()): value is imp
   seen.add(value);
   if (Array.isArray(value)) return value.every((item) => isJsonValue(item, seen));
   return Object.entries(value).every(([key, item]) => typeof key === "string" && isJsonValue(item, seen));
+}
+
+function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && isJsonValue(value));
 }
 
 export {};

@@ -46,6 +46,10 @@ export async function runTrustedApplicationScript(host: TrustedApplicationScript
     focus: () => emitObjectAction(entry.scene.id, entry.object.modelId, "focus"),
     setColor: (color: string) => emitObjectAction(entry.scene.id, entry.object.modelId, "color", { value: color }),
     setOpacity: (opacity: number) => emitObjectAction(entry.scene.id, entry.object.modelId, "opacity", { value: Math.max(0, Math.min(1, opacity)) }),
+    getMaterial: () => entry.object.material ? structuredClone(entry.object.material) : undefined,
+    setMaterial: () => {
+      throw new Error("目标三维场景尚未加载；请先打开场景再修改材质");
+    },
     playAnimation: () => emitObjectAction(entry.scene.id, entry.object.modelId, "animation", { value: "play" }),
     stopAnimation: () => emitObjectAction(entry.scene.id, entry.object.modelId, "animation", { value: "stop" })
   });

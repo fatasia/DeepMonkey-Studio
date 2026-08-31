@@ -1,89 +1,455 @@
-import { useEffect, useState } from "react";
-import { Bot, Box, Database, Eye, Focus, LayoutDashboard, LoaderCircle, Send, Sparkles, X } from "lucide-react";
-import type { DataConnectionRecord, DataDatasetRecord, SceneDashboardState } from "@bim-studio/contracts";
-import { api } from "../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Activity, AlertTriangle, Bot, Box, Database, Focus, Layers3, LayoutDashboard, LoaderCircle, RotateCcw, ScanSearch, Send, Sparkles, Trash2, X } from "lucide-react";
+import type { AskDataQueryDraftResult, AskDataQueryReadResult, SceneDashboardState } from "@bim-studio/contracts";
+import { api, type AssistantMode } from "../api";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
 import { translate as tr, type AppLocale } from "../i18n";
+import { AiChangeConfirmation } from "./AiChangeConfirmation";
+import { AskDataQuickQuery } from "./AskDataQuickQuery";
+import { AiCapabilityCatalog } from "./AiCapabilityCatalog";
+import type { AiWorkspaceTask } from "../ai/capabilityCatalog";
+import { assistantSuggestions } from "../ai/assistantSuggestions";
+import {
+  assistantReliabilityFromResponse,
+  assistantWorkspaceTarget,
+  queryCapabilityReliability,
+  type AssistantContextSource,
+  type AssistantReliabilitySummary,
+} from "../ai/assistantReliability";
+import { useAiProjectContext } from "../ai/useAiProjectContext";
+import { AiContextDisclosure } from "./AiContextDisclosure";
+import { AiResponseEvidence } from "./AiResponseEvidence";
+import { BimAssistantEvidence, type BimAssistantAction } from "./BimAssistantEvidence";
+import "./AiAssistantReliability.css";
 
-type AssistantMode = "bim" | "scene" | "component" | "dashboard" | "sql";
-type BimAction = "focus" | "isolate" | "show-placement" | "clear-isolation" | "clear-placement";
+type ConversationItem = {
+  id: string;
+  mode: AssistantMode;
+  question: string;
+  answer: string;
+  model?: string;
+  reliability: AssistantReliabilitySummary;
+};
 
 interface AiAssistantPanelProps {
   locale: AppLocale;
   projectId: string | undefined;
   context: unknown;
-  componentSelected: boolean;
-  onPrepareBimContext: (question: string) => Promise<BimAssistantPreparedContext>;
-  onBimAction: (action: BimAction, context: BimAssistantPreparedContext, componentId?: string) => void;
-  onApplyDashboard: (dashboard: SceneDashboardState) => void;
+  surface?: "studio" | "platform";
+  onPrepareBimContext?: (question: string) => Promise<BimAssistantPreparedContext>;
+  onBimAction?: (action: BimAssistantAction, context: BimAssistantPreparedContext, componentId?: string) => void;
+  onApplyDashboard?: (dashboard: SceneDashboardState) => void;
+  onOpenWorkspaceTask?: (task: Extract<AiWorkspaceTask, { workspace: "operations" }>) => void;
   onClose: () => void;
 }
 
-interface AssistantPresetGroup {
-  label: string;
-  questions: string[];
-}
-
-export function AiAssistantPanel({ locale, projectId, context, componentSelected, onPrepareBimContext, onBimAction, onApplyDashboard, onClose }: AiAssistantPanelProps) {
-  const [mode, setMode] = useState<AssistantMode>("bim");
+export function AiAssistantPanel({
+  locale,
+  projectId,
+  context,
+  surface = "platform",
+  onPrepareBimContext,
+  onBimAction,
+  onApplyDashboard,
+  onOpenWorkspaceTask,
+  onClose,
+}: AiAssistantPanelProps) {
+  const [mode, setMode] = useState<AssistantMode>(() => surface === "studio" ? "scene" : "platform");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
+  const [conversation, setConversation] = useState<ConversationItem[]>([]);
   const [dashboard, setDashboard] = useState<SceneDashboardState>();
+  const [confirmDashboard, setConfirmDashboard] = useState(false);
   const [bimEvidence, setBimEvidence] = useState<BimAssistantPreparedContext>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const [sqlContext, setSqlContext] = useState<{ connections: DataConnectionRecord[]; datasets: DataDatasetRecord[] }>({ connections: [], datasets: [] });
+  const [lastPrompt, setLastPrompt] = useState("");
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyError, setApplyError] = useState<string>();
+  const [applyNotice, setApplyNotice] = useState<string>();
+  const requestAbort = useRef<AbortController | undefined>(undefined);
+  const { platformContext, contextSources, datasets, platformLoaded, projectMissing } = useAiProjectContext(projectId, locale);
   const t = (zh: string, en: string) => tr(locale, zh, en);
-  useEffect(() => {
-    if (mode !== "sql" || !projectId) return;
-    void Promise.all([api.listDataConnections(projectId), api.listDatasets(projectId)])
-      .then(([connections, datasets]) => setSqlContext({ connections, datasets }))
-      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
-  }, [mode, projectId]);
+  const workspaceTarget = useMemo(() => assistantWorkspaceTarget(context), [context]);
+  const effectiveSources = useMemo<AssistantContextSource[]>(() => {
+    const workspaceSources: AssistantContextSource[] = [
+      workspaceTarget.scene
+        ? {
+            id: "workspace-scene",
+            label: tr(locale, "当前三维场景快照", "Current 3D scene snapshot"),
+            state: "ready",
+            kind: "snapshot",
+            ...(workspaceTarget.scene.modelCount === undefined ? {} : { count: workspaceTarget.scene.modelCount }),
+          }
+        : undefined,
+      workspaceTarget.selected
+        ? {
+            id: "workspace-selection",
+            label: tr(locale, "当前选中对象", "Current selected object"),
+            state: "ready",
+            kind: "snapshot",
+            count: 1,
+          }
+        : undefined,
+      workspaceTarget.dashboardWidgetCount !== undefined
+        ? {
+            id: "workspace-dashboard",
+            label: tr(locale, "当前二维看板草稿", "Current 2D dashboard draft"),
+            state: "ready",
+            kind: "snapshot",
+            count: workspaceTarget.dashboardWidgetCount,
+        }
+        : undefined,
+      workspaceTarget.script
+        ? {
+            id: "workspace-script",
+            label: tr(locale, "当前脚本快照", "Current script snapshot"),
+            state: "ready",
+            kind: "snapshot",
+            count: 1,
+          }
+        : undefined,
+      workspaceTarget.simulation
+        ? {
+            id: "workspace-simulation",
+            label: tr(locale, "当前仿真任务快照", "Current simulation snapshot"),
+            state: "ready",
+            kind: "snapshot",
+            count: 1,
+          }
+        : undefined,
+    ].filter((source): source is AssistantContextSource => Boolean(source));
+    return [...workspaceSources, ...contextSources];
+  }, [contextSources, locale, workspaceTarget]);
 
-  async function ask() {
-    const prompt = question.trim();
+  useEffect(() => {
+    if (mode === "component" && !workspaceTarget.selected) setMode(surface === "studio" ? "scene" : "platform");
+  }, [mode, surface, workspaceTarget.selected]);
+
+  useEffect(() => () => requestAbort.current?.abort(), []);
+
+  async function ask(retryPrompt?: string) {
+    const prompt = (retryPrompt ?? question).trim();
     if (!prompt) return;
-    setBusy(true); setError(undefined); setDashboard(undefined); setBimEvidence(undefined); setAnswer("");
+    setLastPrompt(prompt);
+    setBusy(true);
+    setError(undefined);
+    setApplyNotice(undefined);
+    setApplyError(undefined);
+    setDashboard(undefined);
+    setConfirmDashboard(false);
+    setBimEvidence(undefined);
+    setAnswer("");
     try {
-      const prepared = mode === "bim" ? await onPrepareBimContext(prompt) : undefined;
+      if (mode === "sql") {
+        if (!projectId) throw new Error(t("请先选择项目", "Select a project first"));
+        const drafted = await api.invokeCapability<AskDataQueryDraftResult>(projectId, "data.query.draft", { prompt });
+        const plan = drafted.output?.planning.plan;
+        if (!plan)
+          throw new Error(
+            drafted.output?.planning.issues[0]?.message ?? drafted.warnings[0] ?? drafted.error?.message ?? t("无法生成受控查询计划", "Unable to create a controlled query plan"),
+          );
+        const read = await api.invokeCapability<AskDataQueryReadResult>(projectId, "data.query.read", { plan });
+        if (!read.output) throw new Error(read.error?.message ?? t("查询没有返回数据", "The query returned no data"));
+        const resultText = formatAskDataResult(read.output, locale);
+        const reliability = queryCapabilityReliability({
+          traceId: read.traceId,
+          evidenceCount: read.evidence.length,
+          warnings: [...drafted.warnings, ...read.warnings],
+          evidenceFingerprint: read.output.evidenceFingerprint,
+          sourceLabel: read.output.datasetName,
+        });
+        setAnswer(resultText);
+        setConversation((current) =>
+          [
+            ...current,
+            {
+              id: `${Date.now()}`,
+              mode,
+              question: prompt,
+              answer: resultText,
+              reliability,
+              ...(drafted.output?.model ? { model: drafted.output.model } : {}),
+            },
+          ].slice(-12),
+        );
+        setQuestion("");
+        return;
+      }
+      const prepared = mode === "bim" && onPrepareBimContext ? await onPrepareBimContext(prompt) : undefined;
       if (prepared) setBimEvidence(prepared);
-      const requestContext = mode === "sql" ? { workspace: context, data: sqlContext } : mode === "bim" ? { workspace: context, bimEvidence: prepared } : context;
-      const result = await api.streamAssistant(mode, prompt, requestContext, (delta) => setAnswer((current) => current + delta));
-      setAnswer(result.text); setDashboard(result.dashboard);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { setBusy(false); }
+      const requestContext = {
+        workspace: context,
+        platform: platformContext,
+        contextTrust: "client-snapshot",
+        ...(prepared ? { bimEvidence: prepared } : {}),
+        recentConversation: conversation
+          .slice(-6)
+          .map(({ mode: itemMode, question: itemQuestion, answer: itemAnswer }) => ({ mode: itemMode, question: itemQuestion, answer: itemAnswer })),
+      };
+      let streamed = "";
+      requestAbort.current?.abort();
+      const controller = new AbortController();
+      requestAbort.current = controller;
+      const result = await api.streamAssistant(mode, prompt, requestContext, (delta) => {
+        streamed += delta;
+        setAnswer(streamed);
+      }, { ...(projectId ? { projectId } : {}), signal: controller.signal });
+      setAnswer(result.text);
+      setDashboard(result.dashboard);
+      const responseSources = prepared
+        ? [
+            ...effectiveSources,
+            {
+              id: "bim-evidence-snapshot",
+              label: t("BIM 构件匹配快照", "BIM component match snapshot"),
+              state: prepared.confidence === "insufficient" ? "partial" as const : "ready" as const,
+              kind: "snapshot" as const,
+              count: prepared.matchCount,
+            },
+          ]
+        : effectiveSources;
+      const reliability = assistantReliabilityFromResponse(result, mode, responseSources, prepared);
+      setConversation((current) => [
+        ...current,
+        { id: `${Date.now()}`, mode, question: prompt, answer: result.text, model: result.model, reliability },
+      ].slice(-12));
+      setQuestion("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      requestAbort.current = undefined;
+      setBusy(false);
+    }
   }
 
-  const emptyTitle = mode === "bim" ? t("询问 BIM 模型", "Ask the BIM model") : mode === "dashboard" ? t("描述你想要的数据看板", "Describe the dashboard you need") : mode === "component" ? t("询问当前选中构件", "Ask about the selected component") : mode === "sql" ? t("用自然语言生成或分析 SQL", "Generate or analyze SQL in natural language") : t("询问或分析当前场景", "Ask about the current scene");
-  const emptyHint = mode === "bim" ? t("构件/系统统计、设备位置、楼层空间、材料参数、尺寸净空，以及设备试放", "Components, systems, equipment location, spaces, materials, dimensions and placement checks") : mode === "dashboard" ? t("例如：生成温度、压力和设备状态看板", "For example: create a temperature, pressure and status dashboard") : mode === "sql" ? t(`已读取 ${sqlContext.connections.length} 个连接、${sqlContext.datasets.length} 个数据集，仅生成只读 SQL`, `${sqlContext.connections.length} connections and ${sqlContext.datasets.length} datasets loaded; read-only SQL only`) : t("助手会读取当前场景与构件上下文", "The assistant reads the current scene and component context");
-  const presetGroups: AssistantPresetGroup[] = mode === "bim" ? [
-    { label: t("模型审查", "Model review"), questions: [t("当前模型有哪些楼层、系统和构件类别？", "What levels, systems and component categories are in this model?"), t("每个楼层分别有多少构件？", "How many components are on each level?")] },
-    { label: t("设备与厂务", "Assets & facilities"), questions: [t("有多少摄像头？分别在哪个楼层和房间？", "How many cameras are there, and which level and room is each in?"), t("当前模型有哪些生产设备、泵、阀门和传感器？", "What production equipment, pumps, valves and sensors are in this model?")] },
-    { label: t("土建与空间", "Civil & spaces"), questions: [t("模型中的墙体使用了哪些材质和厚度？", "What materials and thicknesses are used by the walls?"), t("当前选中构件的尺寸、标高和所在空间是什么？", "What are the selected component's dimensions, elevation and space?")] },
-    { label: t("电气与机电", "Electrical & MEP"), questions: [t("F2 有哪些配电柜和电缆桥架？", "Which switchboards and cable trays are on F2?"), t("当前模型有哪些电气系统和回路？", "What electrical systems and circuits are in this model?")] },
-    { label: t("净空试放", "Clearance"), questions: [t("“A设备”和“B设备”之间能否放下 1.2m × 0.8m × 2m 的设备？", "Can a 1.2m × 0.8m × 2m unit fit between ‘Equipment A’ and ‘Equipment B’?")] }
-  ] : [];
+  async function applyDashboardDraft() {
+    if (!dashboard || !onApplyDashboard) return;
+    setApplyBusy(true);
+    setApplyError(undefined);
+    try {
+      await Promise.resolve(onApplyDashboard(dashboard));
+      setDashboard(undefined);
+      setConfirmDashboard(false);
+      setApplyNotice(t("已写入当前看板草稿，尚未保存或发布。", "Applied to the current dashboard draft; it has not been saved or published."));
+    } catch (reason) {
+      setApplyError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setApplyBusy(false);
+    }
+  }
 
-  return <aside className="ai-assistant-panel">
-    <header><div><Bot size={17} /><span><strong>{t("AI 助手", "AI Assistant")}</strong><small>{t("BIM · 场景 · SQL · 看板", "BIM · Scene · SQL · Dashboard")}</small></span></div><button onClick={onClose}><X size={15} /></button></header>
-    <nav className="ai-assistant-tabs">
-      <button className={mode === "bim" ? "active" : ""} onClick={() => setMode("bim")}><Box size={12} />BIM</button>
-      <button className={mode === "scene" ? "active" : ""} onClick={() => setMode("scene")}><Sparkles size={12} />{t("场景", "Scene")}</button>
-      <button disabled={!componentSelected} className={mode === "component" ? "active" : ""} onClick={() => setMode("component")}><Bot size={12} />{t("构件", "Component")}</button>
-      <button className={mode === "sql" ? "active" : ""} onClick={() => setMode("sql")}><Database size={12} />SQL</button>
-      <button className={mode === "dashboard" ? "active" : ""} onClick={() => setMode("dashboard")}><LayoutDashboard size={12} />{t("看板", "Dashboard")}</button>
-    </nav>
-    <div className="ai-assistant-body">
-      {answer ? <article><small>{t("模型回答", "Model response")}</small>{mode === "sql" ? <pre className="ai-sql-response">{answer}</pre> : <p>{answer}</p>}{dashboard && <button className="primary" onClick={() => onApplyDashboard(dashboard)}><LayoutDashboard size={13} />{t("应用到当前场景", "Apply to scene")}</button>}</article> : <div className="ai-assistant-empty"><Sparkles size={23} /><strong>{emptyTitle}</strong><span>{emptyHint}</span>{presetGroups.length > 0 && <section className="ai-question-presets"><header><span>{t("常用问题", "Suggested questions")}</span><small>{t("点击填入，可继续修改", "Click to fill, then edit if needed")}</small></header>{presetGroups.map((group) => <div className="ai-question-preset-group" key={group.label}><label>{group.label}</label><div>{group.questions.map((preset) => <button key={preset} type="button" onClick={() => setQuestion(preset)}>{preset}</button>)}</div></div>)}</section>}</div>}
-      {bimEvidence && <section className="bim-ai-evidence">
-        <header><strong>{t("模型证据", "Model evidence")}</strong><span>{bimEvidence.matchCount} {t("个匹配", "matches")}</span></header>
-        <div className="bim-ai-summary"><span>{bimEvidence.scene.componentCount} {t("构件", "components")}</span><span>{bimEvidence.scene.spaceCount} {t("空间", "spaces")}</span><span>{bimEvidence.confidence === "exact" ? t("精确匹配", "Exact") : bimEvidence.confidence === "inferred" ? t("推断匹配", "Inferred") : t("信息不足", "Insufficient")}</span></div>
-        {bimEvidence.matches.slice(0, 8).map((item) => <div className="bim-ai-match" key={`${item.modelId}:${item.id}`}><span><strong>{item.name}</strong><small>{[item.level, item.space?.name, item.category || item.type].filter(Boolean).join(" · ")}</small></span><button title={t("定位", "Focus")} onClick={() => onBimAction("focus", bimEvidence, item.id)}><Focus size={12} /></button><button title={t("隔离", "Isolate")} onClick={() => onBimAction("isolate", bimEvidence, item.id)}><Eye size={12} /></button></div>)}
-        {bimEvidence.placement && <div className={`bim-ai-placement ${bimEvidence.placement.status}`}><strong>{bimEvidence.placement.status === "fits" ? t("净空初筛：可放置", "Clearance check: fits") : bimEvidence.placement.status === "blocked" ? t("净空初筛：不可放置", "Clearance check: blocked") : t("净空信息不足", "Insufficient clearance data")}</strong><small>{bimEvidence.placement.note}</small>{bimEvidence.placement.candidateCenter && <button onClick={() => onBimAction("show-placement", bimEvidence)}>{t("显示试放体", "Show placement")}</button>}</div>}
-      </section>}
-      {error && <em>{error}</em>}
-    </div>
-    <footer><textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder={mode === "bim" ? t("例如：有多少个摄像头，分别在哪个楼层和房间？", "For example: How many cameras are there and where are they?") : mode === "dashboard" ? t("生成一个设备运行监控看板……", "Create an equipment monitoring dashboard…") : mode === "sql" ? t("例如：查询最近 24 小时各设备的平均温度", "For example: average temperature per device in the last 24 hours") : t("请输入问题……", "Ask a question…")} /><button aria-label={t("发送", "Send")} disabled={busy || !question.trim()} onClick={() => void ask()}>{busy ? <LoaderCircle className="spin" size={15} /> : <Send size={15} />}</button></footer>
-  </aside>;
+  const tabs = useMemo(() => {
+    if (surface === "studio") {
+      return [
+        { id: "scene" as const, label: t("场景", "Scene"), icon: Box },
+        ...(workspaceTarget.selected ? [{ id: "component" as const, label: t("对象", "Object"), icon: Focus }] : []),
+        { id: "bim" as const, label: "BIM", icon: Layers3 },
+        { id: "operations" as const, label: t("仿真运营", "Simulation"), icon: Activity },
+        ...(onApplyDashboard ? [{ id: "dashboard" as const, label: t("看板", "Dashboard"), icon: LayoutDashboard }] : []),
+        { id: "sql" as const, label: t("问数据", "Ask Data"), icon: Database },
+      ];
+    }
+    return [
+      { id: "platform" as const, label: t("全平台", "Platform"), icon: Sparkles },
+      { id: "operations" as const, label: t("运营", "Operations"), icon: Activity },
+      { id: "vision" as const, label: t("视觉", "Vision"), icon: ScanSearch },
+      { id: "bim" as const, label: "BIM", icon: Box },
+      { id: "sql" as const, label: t("问数据", "Ask Data"), icon: Database },
+    ];
+  }, [locale, onApplyDashboard, surface, workspaceTarget.selected]);
+  const suggestions = assistantSuggestions(mode, locale);
+  const latestReliability = conversation.at(-1)?.reliability;
+
+  return (
+    <aside className={`ai-assistant-panel ai-assistant-${surface}`}>
+      <header>
+        <div>
+          <Bot size={18} />
+          <span>
+            <strong>{t("平台 AI 助手", "Platform AI Assistant")}</strong>
+            <small>
+              {platformLoaded
+                ? t("项目上下文快照已连接", "Project context snapshot connected")
+                : projectMissing
+                  ? t("请先选择或创建项目", "Select or create a project first")
+                  : t("正在读取平台上下文", "Loading platform context")}
+            </small>
+          </span>
+        </div>
+        <div className="ai-assistant-header-actions">
+          {conversation.length > 0 && (
+            <button
+              title={t("清空对话", "Clear conversation")}
+              onClick={() => {
+                setConversation([]);
+                setAnswer("");
+                setError(undefined);
+                setApplyNotice(undefined);
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+          <button aria-label={t("关闭 AI 助手", "Close AI assistant")} onClick={() => { requestAbort.current?.abort(); onClose(); }}>
+            <X size={15} />
+          </button>
+        </div>
+      </header>
+      <nav className="ai-assistant-tabs">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            className={mode === id ? "active" : ""}
+            aria-pressed={mode === id}
+            onClick={() => {
+              setMode(id);
+              setAnswer("");
+              setDashboard(undefined);
+              setConfirmDashboard(false);
+              setError(undefined);
+              setApplyError(undefined);
+            }}
+          >
+            <Icon size={12} />
+            {label}
+          </button>
+        ))}
+      </nav>
+      <div className="ai-assistant-context-bar">
+        <span className={platformLoaded ? "ready" : ""}>{platformLoaded ? "PROJECT SNAPSHOT" : projectMissing ? "NO PROJECT" : "LOADING"}</span>
+        <small>
+          {projectMissing
+            ? t("选择项目后才能读取证据并执行任务", "Select a project to read evidence and run tasks")
+            : t("快照只作为模型输入；Capability 执行结果才是事实证据", "The snapshot is model input; only Capability results are execution evidence")}
+        </small>
+      </div>
+      <div className="ai-assistant-body">
+        <AiContextDisclosure
+          locale={locale}
+          mode={mode}
+          context={context}
+          sources={effectiveSources}
+          loading={!platformLoaded && !projectMissing}
+        />
+        {mode === "sql" && projectId && <AskDataQuickQuery projectId={projectId} datasets={datasets} locale={locale} />}
+        {conversation.length === 0 && !answer && mode !== "sql" && (
+          <div className="ai-assistant-empty">
+            <Sparkles size={23} />
+            <strong>{t("问当前平台，不问空泛知识", "Ask your platform, not generic knowledge")}</strong>
+            <span>
+              {t("项目证据与插件能力会按当前部署动态发现。", "Project evidence and plugin capabilities are discovered from this deployment.")}
+            </span>
+            {(mode === "platform" || mode === "scene") && (
+              <AiCapabilityCatalog
+                locale={locale}
+                canOpenTask={(task) => Boolean(projectId) && (task.workspace === "ask-data" || Boolean(onOpenWorkspaceTask))}
+                onOpenTask={(task) => {
+                  if (task.workspace === "ask-data") {
+                    setMode("sql");
+                    return;
+                  }
+                  onOpenWorkspaceTask?.(task);
+                }}
+              />
+            )}
+            <div className="ai-platform-suggestions">
+              {suggestions.map((item) => (
+                <button key={item} onClick={() => setQuestion(item)}>
+                  {item}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {conversation.map((item) => (
+          <section className="ai-conversation-turn" key={item.id}>
+            <div className="ai-user-message">{item.question}</div>
+            <article>
+              <small>{item.model ?? t("模型回答", "Model response")}</small>
+              <p>{item.answer}</p>
+              <AiResponseEvidence locale={locale} reliability={item.reliability} />
+            </article>
+          </section>
+        ))}
+        {answer && (conversation.at(-1)?.answer !== answer || busy) && (
+          <article className="ai-streaming-answer">
+            <small>{busy ? t("正在基于项目证据分析", "Analyzing project evidence") : t("模型回答", "Model response")}</small>
+            <p>{answer}</p>
+          </article>
+        )}
+        {dashboard && onApplyDashboard && !confirmDashboard && (
+          <button className="primary ai-apply-dashboard" onClick={() => setConfirmDashboard(true)}>
+            <LayoutDashboard size={13} />
+            {t("查看并应用", "Review & apply")}
+          </button>
+        )}
+        {dashboard && onApplyDashboard && confirmDashboard && (
+          <AiChangeConfirmation
+            locale={locale}
+            widgetCount={dashboard.widgets.length}
+            widgetLabels={dashboard.widgets.map((widget) => widget.title || widget.type)}
+            evidenceLabels={latestReliability?.sourceLabels ?? []}
+            busy={applyBusy}
+            {...(applyError ? { error: applyError } : {})}
+            onCancel={() => {
+              setConfirmDashboard(false);
+              setApplyError(undefined);
+            }}
+            onConfirm={() => void applyDashboardDraft()}
+          />
+        )}
+        {applyNotice && <div className="ai-assistant-apply-notice" role="status">{applyNotice}</div>}
+        {bimEvidence && (
+          <BimAssistantEvidence
+            locale={locale}
+            evidence={bimEvidence}
+            {...(onBimAction ? { onAction: onBimAction } : {})}
+          />
+        )}
+        {error && (
+          <section className="ai-assistant-error-state" role="alert">
+            <strong><AlertTriangle size={13} /> {t("本次请求未完成", "Request did not complete")}</strong>
+            <span>{error}</span>
+            <small>{t("没有自动写入任何变更；原问题已保留。", "No changes were applied automatically; the original prompt is preserved.")}</small>
+            <button type="button" disabled={busy || !lastPrompt} onClick={() => void ask(lastPrompt)}>
+              <RotateCcw size={12} /> {t("重试原问题", "Retry original prompt")}
+            </button>
+          </section>
+        )}
+      </div>
+      <footer>
+        <textarea
+          aria-label={t("向 AI 助手提问", "Ask the AI assistant")}
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void ask();
+            }
+          }}
+          placeholder={t("问模型、事件、风险、数据或下一步动作……", "Ask about models, events, risks, data or next actions…")}
+        />
+        <button aria-label={t("发送", "Send")} disabled={busy || !question.trim()} onClick={() => void ask()}>
+          {busy ? <LoaderCircle className="spin" size={15} /> : <Send size={15} />}
+        </button>
+      </footer>
+    </aside>
+  );
+}
+
+function formatAskDataResult(result: AskDataQueryReadResult, locale: AppLocale): string {
+  const columns = result.columns.map((column) => `${column.label}${column.unit ? ` (${column.unit})` : ""}`);
+  const rows = result.rows.slice(0, 12).map((row) => result.columns.map((column) => `${column.label}: ${formatCell(row[column.key])}`).join(" · "));
+  const summary =
+    locale === "zh-CN"
+      ? `数据集：${result.datasetName}\n字段：${columns.join("、")}\n匹配 ${result.matchedRows} 行，返回 ${result.returnedRows} 行${result.truncated ? "（已限量）" : ""}`
+      : `Dataset: ${result.datasetName}\nFields: ${columns.join(", ")}\n${result.matchedRows} matched, ${result.returnedRows} returned${result.truncated ? " (limited)" : ""}`;
+  return `${summary}\n\n${rows.map((row) => `- ${row}`).join("\n")}\n\nEvidence: ${result.evidenceFingerprint}`;
+}
+
+function formatCell(value: unknown): string {
+  if (typeof value === "number") return Number(value.toFixed(4)).toLocaleString();
+  return String(value ?? "—");
 }

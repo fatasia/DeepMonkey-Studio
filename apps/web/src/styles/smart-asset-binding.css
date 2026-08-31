@@ -1,0 +1,168 @@
+.smart-binding-backdrop {
+  position: fixed;
+  z-index: 82;
+  inset: 54px 0 0 292px;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(5 10 12 / 74%);
+  backdrop-filter: blur(3px);
+}
+
+.smart-binding-workbench {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(1080px, calc(100vw - 348px));
+  height: min(760px, calc(100vh - 92px));
+  overflow: hidden;
+  color: #cbd7db;
+  border: 1px solid #384b53;
+  border-radius: 11px;
+  background: #10181b;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 58%);
+}
+
+.smart-binding-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 62px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #29383e;
+  background: #131d21;
+}
+
+.smart-binding-header > div { display: grid; gap: 2px; }
+.smart-binding-header strong { color: #e2eaed; font-size: 13px; }
+.smart-binding-header small { color: #71848b; font-size: 9px; }
+.smart-binding-title-icon { display: grid; width: 34px; height: 34px; place-items: center; color: #77b8d4; border: 1px solid #345261; border-radius: 8px; background: #14262e; }
+.smart-binding-close { display: grid; width: 32px; height: 32px; place-items: center; color: #899ca3; border: 1px solid transparent; border-radius: 6px; background: transparent; }
+.smart-binding-close:hover { color: #e3ecef; border-color: #354951; background: #1a272c; }
+
+.smart-binding-body { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 0; }
+.smart-binding-source { display: flex; min-width: 0; flex-direction: column; gap: 9px; padding: 14px; border-right: 1px solid #29383e; background: #111a1e; }
+.smart-binding-source > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.smart-binding-source > header span { display: flex; align-items: center; gap: 6px; color: #d4dfe2; font-size: 11px; font-weight: 650; }
+.smart-binding-source > header svg { color: #66a5c1; }
+.smart-binding-source > header small,
+.smart-binding-source > small { color: #71848b; font-size: 9px; line-height: 1.45; }
+
+.smart-binding-source-actions { display: grid; grid-template-columns: minmax(0, 1fr) 105px; gap: 7px; }
+.smart-binding-file { position: relative; display: flex; min-height: 34px; align-items: center; justify-content: center; gap: 6px; overflow: hidden; color: #a8bac1; border: 1px dashed #3b535d; border-radius: 6px; background: #101c20; cursor: pointer; font-size: 10px; }
+.smart-binding-file:hover { color: #dbe7ea; border-color: #568095; }
+.smart-binding-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.smart-binding-source-actions > label:not(.smart-binding-file) { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 5px; color: #71848b; font-size: 9px; }
+.smart-binding-source select,
+.smart-binding-source textarea { color: #d7e1e4; border: 1px solid #2b3c43; border-radius: 6px; outline: none; background: #0c1417; }
+.smart-binding-source select { min-width: 0; height: 34px; padding: 0 5px; font-size: 9px; }
+.smart-binding-source textarea { min-height: 190px; flex: 1; resize: none; padding: 9px; font: 10px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.smart-binding-source select:focus,
+.smart-binding-source textarea:focus { border-color: #4d8298; box-shadow: 0 0 0 2px rgb(77 130 152 / 16%); }
+.smart-binding-format-help { color: #71848b; font-size: 9px; }
+.smart-binding-format-help summary { cursor: pointer; }
+.smart-binding-format-help pre { overflow: auto; margin: 6px 0 0; padding: 7px; color: #91a6ad; border: 1px solid #293a41; border-radius: 5px; background: #0c1417; font: 8px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.smart-binding-analyze { width: 100%; justify-content: center; }
+.smart-binding-notice,
+.smart-binding-error { padding: 8px; border-radius: 5px; font-size: 9px; line-height: 1.45; }
+.smart-binding-notice { color: #91a2a8; border: 1px solid #304047; background: #151f23; }
+.smart-binding-error { color: #efb0ad; border: 1px solid #563638; background: #28191b; }
+
+.smart-binding-review { min-width: 0; overflow: auto; padding: 14px; background: #0d1417; }
+.smart-binding-empty { display: grid; min-height: 100%; place-content: center; justify-items: center; gap: 7px; color: #526970; text-align: center; }
+.smart-binding-empty strong { color: #9dadb2; font-size: 11px; }
+.smart-binding-empty small { max-width: 360px; color: #697b82; font-size: 9px; line-height: 1.55; }
+.smart-binding-results { display: grid; gap: 10px; }
+.smart-binding-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.smart-binding-metric { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 9px 10px; border: 1px solid #29383e; border-radius: 6px; background: #121b1e; }
+.smart-binding-metric strong { color: #d7e2e5; font-size: 16px; font-variant-numeric: tabular-nums; }
+.smart-binding-metric span { color: #6f8289; font-size: 9px; }
+.smart-binding-metric.strong { border-color: #2f5146; }
+.smart-binding-metric.strong strong { color: #78c3a1; }
+.smart-binding-metric.review,
+.smart-binding-metric.conflict { border-color: #554b31; }
+.smart-binding-metric.review strong,
+.smart-binding-metric.conflict strong { color: #d8b66e; }
+
+.smart-binding-group { overflow: hidden; border: 1px solid #29383e; border-radius: 7px; background: #11191c; }
+.smart-binding-group > header,
+.smart-binding-group.unmatched > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 46px; padding: 8px 10px; border-bottom: 1px solid #29383e; list-style: none; }
+.smart-binding-group > header > span,
+.smart-binding-group.unmatched > summary > span { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 6px; background: #192329; }
+.smart-binding-group > header > div,
+.smart-binding-group.unmatched > summary > div { display: grid; min-width: 0; gap: 2px; }
+.smart-binding-group > header strong,
+.smart-binding-group.unmatched > summary strong { color: #cedadd; font-size: 10px; }
+.smart-binding-group > header small,
+.smart-binding-group.unmatched > summary small { overflow: hidden; color: #71848b; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.smart-binding-group > header > b,
+.smart-binding-group.unmatched > summary > b { color: #899ba1; font-size: 10px; font-variant-numeric: tabular-nums; }
+.smart-binding-group.strong > header > span { color: #72bc9a; background: #15271f; }
+.smart-binding-group.review > header > span,
+.smart-binding-group.conflict > header > span { color: #d6b36a; background: #282317; }
+.smart-binding-group.unmatched > summary { cursor: pointer; border-bottom: 0; }
+.smart-binding-group.unmatched[open] > summary { border-bottom: 1px solid #29383e; }
+
+.smart-binding-candidate-list { display: grid; gap: 1px; background: #26353b; }
+.smart-binding-candidate { background: #111a1d; }
+.smart-binding-candidate.selected { background: #122019; box-shadow: inset 2px 0 #579c7d; }
+.smart-binding-candidate-main { display: grid; grid-template-columns: 18px minmax(110px, 1fr) auto minmax(110px, 1fr) 44px; align-items: center; gap: 7px; min-height: 48px; padding: 6px 10px; }
+.smart-binding-candidate-main input { accent-color: #62aa88; }
+.smart-binding-pair { display: grid; min-width: 0; gap: 2px; }
+.smart-binding-pair strong,
+.smart-binding-pair small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.smart-binding-pair strong { color: #c9d5d8; font-size: 10px; }
+.smart-binding-pair small { color: #657980; font: 8px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.smart-binding-arrow { color: #52717d; font-size: 11px; }
+.smart-binding-candidate-main > b { color: #8dbda7; text-align: right; font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.smart-binding-evidence { margin: 0 10px 7px 35px; }
+.smart-binding-evidence > summary { display: inline-flex; align-items: center; gap: 3px; color: #71868d; cursor: pointer; font-size: 8px; list-style: none; }
+.smart-binding-evidence[open] > summary svg { transform: rotate(180deg); }
+.smart-binding-evidence > div { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; margin-top: 6px; }
+.smart-binding-evidence > div > span { position: relative; display: grid; min-width: 0; grid-template-columns: 1fr auto; gap: 3px; overflow: hidden; padding: 7px; border: 1px solid #2a3a40; border-radius: 5px; background: #0c1417; }
+.smart-binding-evidence span > i { position: absolute; inset: auto auto 0 0; width: var(--factor-score); height: 2px; background: #579c7d; }
+.smart-binding-evidence span > b { color: #aab9be; font-size: 8px; }
+.smart-binding-evidence span > em { color: #84a998; font-size: 8px; font-style: normal; }
+.smart-binding-evidence span > small { grid-column: 1 / -1; overflow: hidden; color: #62767d; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.smart-binding-evidence span.unavailable { opacity: .58; }
+.smart-binding-evidence span.unavailable > i { background: #59666b; }
+
+.smart-binding-conflict-list { display: grid; gap: 1px; background: #26353b; }
+.smart-binding-conflict-list details { padding: 8px 10px; background: #151c1e; }
+.smart-binding-conflict-list summary { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.smart-binding-conflict-list summary span { color: #d0aa62; font-size: 9px; }
+.smart-binding-conflict-list summary small { overflow: hidden; color: #74868c; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.smart-binding-conflict-list p { margin: 7px 0 0 88px; color: #84969c; font-size: 8px; }
+.smart-binding-unmatched-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: #26353b; }
+.smart-binding-unmatched-list > span { display: grid; min-width: 0; gap: 2px; padding: 7px 9px; background: #11191c; }
+.smart-binding-unmatched-list strong,
+.smart-binding-unmatched-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.smart-binding-unmatched-list strong { color: #aebdc1; font-size: 9px; }
+.smart-binding-unmatched-list small { color: #65787f; font-size: 8px; }
+.smart-binding-unmatched-list > p { grid-column: 1 / -1; margin: 0; padding: 8px; color: #71848b; text-align: center; background: #11191c; font-size: 8px; }
+.smart-binding-empty-line { margin: 0; padding: 14px; color: #65787f; text-align: center; background: #11191c; font-size: 9px; }
+.smart-binding-load-more { width: 100%; min-height: 30px; color: #81959c; border: 0; border-top: 1px solid #29383e; background: #131d20; font-size: 9px; }
+.smart-binding-load-more:hover { color: #c7d4d8; background: #182428; }
+
+.smart-binding-footer { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid #29383e; background: #131d21; }
+.smart-binding-footer > span { color: #84979d; font-size: 9px; }
+.smart-binding-confirmation { display: flex; align-items: center; gap: 7px; }
+.smart-binding-confirmation small { color: #c8ab6e; font-size: 8px; }
+
+@media (max-width: 980px) {
+  .smart-binding-backdrop { inset-inline: 0; padding: 14px; }
+  .smart-binding-workbench { width: min(760px, calc(100vw - 28px)); height: calc(100vh - 82px); }
+  .smart-binding-body { grid-template-columns: 250px minmax(0, 1fr); }
+  .smart-binding-evidence > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .smart-binding-workbench { width: calc(100vw - 20px); }
+  .smart-binding-body { grid-template-columns: 1fr; overflow: auto; }
+  .smart-binding-source { border-right: 0; border-bottom: 1px solid #29383e; }
+  .smart-binding-source textarea { min-height: 130px; flex: none; }
+  .smart-binding-review { overflow: visible; }
+  .smart-binding-candidate-main { grid-template-columns: 18px minmax(0, 1fr) auto minmax(0, 1fr) 40px; }
+  .smart-binding-confirmation small { display: none; }
+}

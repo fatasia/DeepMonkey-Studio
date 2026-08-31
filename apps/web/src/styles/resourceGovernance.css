@@ -1,0 +1,125 @@
+.resource-governance-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px;
+  color: #cdd7db;
+  border: 1px solid #334147;
+  border-radius: 9px;
+  background: #12191c;
+}
+
+.resource-governance-panel > header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.resource-governance-panel > header > span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: #d8b65f;
+  border: 1px solid #51462d;
+  border-radius: 7px;
+  background: #211e16;
+}
+
+.resource-governance-panel > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.resource-governance-panel > header strong { font-size: 12px; }
+.resource-governance-panel > header small { color: #7d8c92; font-size: 10px; }
+
+.resource-governance-metrics {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #2d393e;
+  border-radius: 7px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.resource-governance-metrics > span {
+  display: grid;
+  min-height: 54px;
+  align-items: center;
+  gap: 3px 6px;
+  padding: 8px 10px;
+  color: #87989f;
+  border-right: 1px solid #2d393e;
+  grid-template-columns: auto 1fr;
+}
+
+.resource-governance-metrics > span:last-child { border-right: 0; }
+.resource-governance-metrics > span svg { color: #72868e; }
+.resource-governance-metrics > span small { font-size: 10px; }
+.resource-governance-metrics > span strong { grid-column: 1 / 3; color: #e2e9eb; font: 650 17px/1.1 ui-monospace, monospace; }
+.resource-governance-metrics > span.warning svg,
+.resource-governance-metrics > span.warning strong { color: #d3ad59; }
+
+.resource-governance-warning {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 8px 9px;
+  color: #dfbd72;
+  border: 1px solid #594a2d;
+  border-radius: 6px;
+  background: #211d14;
+  font-size: 10px;
+}
+
+.resource-governance-details {
+  overflow: hidden;
+  border-top: 1px solid #29353a;
+}
+
+.resource-governance-details > summary {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #aebbc0;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.resource-governance-details > summary small { color: #708087; font-size: 10px; }
+.resource-governance-details > div { display: grid; max-height: 260px; overflow: auto; border-top: 1px solid #29353a; }
+.resource-governance-details article { display: grid; align-items: center; gap: 9px; padding: 8px 2px; border-bottom: 1px solid #242f33; grid-template-columns: 86px minmax(0, 1fr); }
+.resource-governance-details article:last-child { border-bottom: 0; }
+.resource-governance-details article > div { display: grid; min-width: 0; gap: 2px; }
+.resource-governance-details article strong,
+.resource-governance-details article small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-governance-details article strong { color: #cdd7db; font-size: 10px; }
+.resource-governance-details article small { color: #708087; font-size: 10px; }
+
+.resource-usage-badge {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 6px;
+  color: #83b69b;
+  border: 1px solid #345645;
+  border-radius: 5px;
+  background: #16271f;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.resource-usage-badge b { font: 650 10px/1 ui-monospace, monospace; }
+.resource-usage-badge.unused { color: #d3ad59; border-color: #5b4b2d; background: #211d14; }
+.resource-usage-badge.broken { color: #d67d77; border-color: #613a38; background: #251719; }
+
+@media (max-width: 760px) {
+  .resource-governance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .resource-governance-metrics > span:nth-child(2) { border-right: 0; }
+  .resource-governance-metrics > span:nth-child(-n+2) { border-bottom: 1px solid #2d393e; }
+}

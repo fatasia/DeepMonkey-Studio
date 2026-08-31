@@ -43,15 +43,24 @@ type IdentityFileState =
   | { kind: "valid"; value: string };
 
 async function readServerInstanceId(filePath: string): Promise<IdentityFileState> {
-  try {
-    const current = (await readFile(filePath, "utf8")).trim();
-    if (!current) return { kind: "empty" };
-    if (!UUID_V4.test(current)) throw new Error("server-instance-id 文件无效");
-    return { kind: "valid", value: current.toLowerCase() };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
-    throw error;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      const current = (await readFile(filePath, "utf8")).trim();
+      if (!current) return { kind: "empty" };
+      if (!UUID_V4.test(current)) throw new Error("server-instance-id 文件无效");
+      return { kind: "valid", value: current.toLowerCase() };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return { kind: "missing" };
+      // Windows 在并发替换硬链接时可能短暂返回 EPERM/EBUSY，短暂退避后重读。
+      if ((code === "EPERM" || code === "EBUSY") && attempt < 19) {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        continue;
+      }
+      throw error;
+    }
   }
+  throw new Error("server-instance-id 文件读取失败");
 }
 
 async function loadOrPublishAnchor(anchorPath: string, dataDir: string): Promise<string> {

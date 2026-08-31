@@ -1,0 +1,251 @@
+import { useCallback, useEffect, type RefObject } from "react";
+import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
+import { api } from "../api";
+import { isDesktopRuntime } from "../adapters/runtimeHost";
+import { docsPath } from "../docs/docsRoute";
+import { RENDERER_BACKEND_STORAGE_KEY, REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
+import { routeHistoryState, routePath, type AppRoute } from "../appRoute";
+import type { RendererBackend } from "../viewer/ViewerEngine";
+import type { DashboardViewState } from "../studio/workspaceRoute";
+import type { AppState } from "./useAppState";
+import { sceneViewerDeliveryRoute } from "../delivery/sceneViewerDelivery";
+
+interface AppNavigationControllerOptions {
+  state: AppState;
+  sceneSnapshotFactoryRef: RefObject<(() => SceneSnapshot | undefined) | undefined>;
+}
+
+/** 管理应用路由、项目生命周期和渲染后端切换，避免入口组件承担导航细节。 */
+export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: AppNavigationControllerOptions) {
+  const {
+    activeScene,
+    authReady,
+    currentUser,
+    dataReturnRouteRef,
+    engine,
+    message,
+    newProjectDescription,
+    newProjectName,
+    project,
+    projectDialogMode,
+    projects,
+    rendererBackend,
+    rendererSnapshotRef,
+    rendererSwitching,
+    route,
+    sceneApplyVersionRef,
+    setActiveScene,
+    setAnnotations,
+    setBusy,
+    setDigitalTwinOpen,
+    setExpandedModels,
+    setMeasurements,
+    setMessage,
+    setNewProjectDescription,
+    setNewProjectName,
+    setProject,
+    setProjectDialogMode,
+    setProjects,
+    setRendererBackend,
+    setRendererSwitching,
+    setRevision,
+    setRoute,
+    setSceneName,
+    setScenes,
+    setSelected,
+    setSelectedAnnotationId,
+    setSelectedSpace,
+    showError,
+  } = state;
+
+  useEffect(() => {
+    if (authReady && currentUser && route.view === "branding" && currentUser.role !== "admin") navigate({ view: "manager" }, true);
+  }, [authReady, currentUser?.id, currentUser?.role, route.view]);
+
+  function navigate(next: AppRoute, replace = false) {
+    const deliveryRoute = sceneViewerDeliveryRoute();
+    if (deliveryRoute) next = deliveryRoute;
+    // 数据桥是当前工作区的临时抽屉；跨路由保留会遮挡目标页面操作。
+    setDigitalTwinOpen(false);
+    window.history[replace ? "replaceState" : "pushState"](routeHistoryState(next), "", routePath(next));
+    setRoute(next);
+  }
+
+  function openDataCenter() {
+    if (route.view !== "data") dataReturnRouteRef.current = structuredClone(route);
+    navigate({ view: "data" });
+  }
+
+  function closeDataCenter() {
+    const destination = dataReturnRouteRef.current;
+    dataReturnRouteRef.current = undefined;
+    navigate(destination ?? { view: "manager" });
+  }
+
+  function openDocs(documentId?: string, sectionId?: string) {
+    if (sceneViewerDeliveryRoute()) {
+      navigate(sceneViewerDeliveryRoute()!, true);
+      return;
+    }
+    const next: AppRoute = { view: "docs", ...(documentId ? { documentId } : {}) };
+    window.history.pushState(routeHistoryState(next), "", docsPath(documentId, sectionId));
+    setRoute(next);
+  }
+
+  function closeDocs() {
+    if (sceneViewerDeliveryRoute()) {
+      navigate(sceneViewerDeliveryRoute()!, true);
+      return;
+    }
+    if (isDesktopRuntime()) {
+      window.location.assign("/manager");
+      return;
+    }
+    navigate({ view: "manager" });
+  }
+
+  function replaceDashboardView(view: DashboardViewState) {
+    if (route.view !== "dashboard") return;
+    const next = { ...route, dashboardView: view };
+    window.history.replaceState(routeHistoryState(next), "", routePath(next));
+  }
+
+  function changeRendererBackend(next: RendererBackend, options: { persistPreference?: boolean; message?: string } = {}) {
+    if (next === rendererBackend || rendererSwitching || !engine) return;
+    if (next === "webgpu" && (!("gpu" in navigator) || !window.isSecureContext)) {
+      showError(new Error("当前浏览器、显卡或访问地址不支持 WebGPU，请使用新版 Chrome/Edge 和 HTTPS"));
+      return;
+    }
+    const snapshot = sceneSnapshotFactoryRef.current?.();
+    if (snapshot)
+      rendererSnapshotRef.current = {
+        scene: snapshot,
+        readOnly: route.view !== "studio",
+        fastRuntime: route.view === "published" && activeScene?.publicationPerformance === "fast",
+        ...(options.message ? { recoveryMessage: options.message } : {}),
+        ...(options.persistPreference === false ? { temporaryBackend: true } : {}),
+      };
+    if (options.persistPreference !== false) window.localStorage.setItem(RENDERER_BACKEND_STORAGE_KEY, next);
+    setRendererBackend(next);
+    setRendererSwitching(true);
+    setMessage(options.message ?? `正在切换到 ${next === "webgpu" ? "WebGPU（实验）" : "WebGL"}`);
+  }
+
+  useEffect(() => {
+    if (!currentUser) return;
+    void api
+      .listProjects()
+      .then((items) => {
+        setProjects(items);
+        setProject((current) => current ?? items[0]);
+      })
+      .catch(showError);
+  }, [currentUser?.id, showError]);
+
+  function switchProject(next: ProjectRecord) {
+    if (next.id === project?.id) return;
+    sceneApplyVersionRef.current += 1;
+    engine?.clearSceneModels();
+    setProject(next);
+    setActiveScene(undefined);
+    setSceneName("未命名场景");
+    setSelected(undefined);
+    setMeasurements([]);
+    setAnnotations([]);
+    setSelectedAnnotationId(undefined);
+    setSelectedSpace(undefined);
+    setExpandedModels(new Set());
+    if (route.view === "studio" || route.view === "view" || route.view === "published") navigate({ view: "manager" });
+    setMessage(`已切换到项目“${next.name}”`);
+    setRevision((value) => value + 1);
+  }
+
+  function switchProjectById(projectId: string) {
+    const next = projects.find((item) => item.id === projectId);
+    if (next) switchProject(next);
+  }
+
+  function openProjectDialog(mode: "create" | "rename") {
+    setProjectDialogMode(mode);
+    setNewProjectName(mode === "rename" ? (project?.name ?? "") : "");
+    setNewProjectDescription(mode === "rename" ? (project?.description ?? "") : "");
+  }
+
+  async function submitProjectDialog() {
+    const name = newProjectName.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      if (projectDialogMode === "rename" && project) {
+        const updated = await api.updateProject(project.id, name, newProjectDescription.trim());
+        setProjects((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+        setProject(updated);
+        setMessage(`项目已重命名为“${updated.name}”`);
+      } else {
+        const created = await api.createProject(name, newProjectDescription.trim());
+        setProjects((items) => [...items, created]);
+        switchProject(created);
+        setMessage(`项目“${created.name}”已创建`);
+      }
+      setNewProjectName("");
+      setNewProjectDescription("");
+      setProjectDialogMode(undefined);
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteCurrentProject() {
+    if (!project || !window.confirm(`确定删除项目“${project.name}”吗？\n项目内的模型文件和场景也会被删除，此操作不可撤销。`)) return;
+    setBusy(true);
+    try {
+      await api.deleteProject(project.id);
+      const remaining = projects.filter((item) => item.id !== project.id);
+      setProjects(remaining);
+      sceneApplyVersionRef.current += 1;
+      engine?.clearSceneModels();
+      setActiveScene(undefined);
+      setScenes([]);
+      setSelected(undefined);
+      setMeasurements([]);
+      setAnnotations([]);
+      setProject(remaining[0]);
+      setSceneName("未命名场景");
+      if (route.view === "studio" || route.view === "view" || route.view === "published") navigate({ view: "manager" });
+      setMessage(`项目“${project.name}”已删除`);
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const refreshProject = useCallback(async () => {
+    if (!project) return;
+    const next = await api.getProject(project.id);
+    setProject(next);
+    setProjects((items) => items.map((item) => (item.id === next.id ? next : item)));
+  }, [project?.id]);
+
+  return {
+    navigate,
+    openDataCenter,
+    closeDataCenter,
+    openDocs,
+    closeDocs,
+    replaceDashboardView,
+    changeRendererBackend,
+    switchProject,
+    switchProjectById,
+    openProjectDialog,
+    submitProjectDialog,
+    deleteCurrentProject,
+    refreshProject,
+  };
+}
+
+function sortScenesByTime(items: SceneSnapshot[]): SceneSnapshot[] {
+  return [...items].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+}

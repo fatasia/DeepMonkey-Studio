@@ -10,15 +10,27 @@ describe("ViewerSceneCommandPort", () => {
     const results = await executor.execute([
       { id: "visible", type: "object.set-visibility", target: objectRef(), visible: false },
       { id: "move", type: "object.set-transform", target: objectRef(), position: [1, 2, 3] },
+      { id: "material", type: "material.set", target: objectRef(), patch: { roughness: 0.25, metalness: 0.75 } },
       { id: "camera", type: "camera.set", sceneId: "scene-1", position: [2, 3, 4], target: [0, 0, 0], near: 0.1, far: 1000 },
-      { id: "data", type: "data.apply", target: objectRef(), values: { color: "#ff0000", ignored: 1 }, timestamp: "2026-08-25T00:00:00.000Z" }
+      {
+        id: "data",
+        type: "data.apply",
+        target: objectRef(),
+        values: { color: "#ff0000", effects: { fire: { enabled: true, intensity: 3.2 } }, ignored: 1 },
+        timestamp: "2026-08-25T00:00:00.000Z",
+      }
     ]);
 
     expect(results.every((result) => result.success)).toBe(true);
     expect(viewer.setVisible).toHaveBeenCalledWith("robot", false);
     expect(viewer.setModelTransform).toHaveBeenCalledWith("robot", { position: [1, 2, 3] });
+    expect(viewer.setModelMaterial).toHaveBeenCalledWith("robot", { roughness: 0.25, metalness: 0.75 });
     expect(viewer.setCameraPose).toHaveBeenCalledWith(expect.objectContaining({ near: 0.1, far: 1000 }));
-    expect(viewer.applySceneDataMessage).toHaveBeenCalledTimes(1);
+    expect(viewer.applySceneDataMessage).toHaveBeenCalledTimes(2);
+    expect(viewer.applySceneDataMessage).toHaveBeenCalledWith(expect.objectContaining({
+      action: "effects",
+      value: { fire: { enabled: true, intensity: 3.2 } },
+    }));
   });
 
   it("reports unsupported precision instead of pretending advanced operations succeeded", async () => {
@@ -33,7 +45,7 @@ describe("ViewerSceneCommandPort", () => {
     expect(results).toEqual([
       expect.objectContaining({ id: "multi", success: false, code: "unsupported" }),
       expect.objectContaining({ id: "fly", success: false, code: "unsupported" }),
-      expect.objectContaining({ id: "seek", success: false, code: "unsupported" })
+      expect.objectContaining({ id: "seek", success: true })
     ]);
   });
 
@@ -68,6 +80,7 @@ function fakeViewer(): ViewerEngine & Record<string, ReturnType<typeof vi.fn>> {
     setVisible: vi.fn(),
     setLayerVisible: vi.fn(),
     setModelTransform: vi.fn(() => true),
+    setModelMaterial: vi.fn(),
     select: vi.fn(),
     selectLayer: vi.fn(),
     setCameraPose: vi.fn(),
@@ -75,6 +88,7 @@ function fakeViewer(): ViewerEngine & Record<string, ReturnType<typeof vi.fn>> {
     fitAll: vi.fn(),
     focusModel: vi.fn(() => true),
     hasAnimation: vi.fn(() => true),
+    controlAnimation: vi.fn(() => true),
     setAnimationEnabled: vi.fn(),
     applySceneDataMessage: vi.fn(() => true)
   } as unknown as ViewerEngine & Record<string, ReturnType<typeof vi.fn>>;

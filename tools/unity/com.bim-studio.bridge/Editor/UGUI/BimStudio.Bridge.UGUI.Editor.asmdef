@@ -1,0 +1,16 @@
+{
+  "name": "BimStudio.Bridge.UGUI.Editor",
+  "rootNamespace": "BimStudio.Bridge.UGUI.Editor",
+  "references": ["BimStudio.Bridge", "BimStudio.Bridge.Editor", "BimStudio.Bridge.UGUI", "Unity.ugui"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": ["BIM_STUDIO_UGUI"],
+  "versionDefines": [
+    { "name": "com.unity.ugui", "expression": "1.0.0", "define": "BIM_STUDIO_UGUI" }
+  ],
+  "noEngineReferences": false
+}

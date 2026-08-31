@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { assertPathSafeResourceId, type PublishedSceneRecord } from "@bim-studio/contracts";
+import { HttpCloudRenderWorkerClient, type CloudRenderWorkerClient, type HttpCloudRenderWorkerClientOptions } from "@bim-studio/server-sdk";
 import type { CloudRenderControlPlane } from "./cloudRenderControl.js";
 import { CloudRenderControlError } from "./cloudRenderControl.js";
 import type { MetadataStore } from "./store.js";
@@ -7,16 +8,33 @@ import type { MetadataStore } from "./store.js";
 interface Dependencies {
   store: MetadataStore;
   control: CloudRenderControlPlane;
+  createWorkerClient?: (options: HttpCloudRenderWorkerClientOptions) => Pick<CloudRenderWorkerClient, "health">;
 }
 
 type SceneParams = { sceneId: string };
 
 export async function registerCloudRenderRoutes(app: FastifyInstance, dependencies: Dependencies): Promise<void> {
   const { store, control } = dependencies;
+  const createWorkerClient = dependencies.createWorkerClient ?? ((options: HttpCloudRenderWorkerClientOptions) => new HttpCloudRenderWorkerClient(options));
 
   app.get("/api/admin/cloud-render", async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
     return control.overview(listPublishedScenes(store));
+  });
+
+  app.post<{ Body: { workerUrl?: unknown; workerToken?: unknown; publicOrigin?: unknown } }>("/api/admin/cloud-render/configuration/test", async (request, reply) => {
+    if (!requireAdmin(request, reply)) return reply;
+    const workerUrl = requiredHttpUrl(request.body?.workerUrl, "Worker URL", reply);
+    const publicOrigin = requiredHttpUrl(request.body?.publicOrigin, "Public Origin", reply, true);
+    const workerToken = typeof request.body?.workerToken === "string" ? request.body.workerToken.trim() : "";
+    if (!workerUrl || !publicOrigin) return reply;
+    if (!workerToken) return reply.code(400).send({ message: "Worker Token 不能为空", code: "invalid_worker_token" });
+    try {
+      const worker = await createWorkerClient({ baseUrl: workerUrl, token: workerToken, timeoutMs: 5_000 }).health();
+      return { ok: worker.status === "ready", worker, publicOrigin };
+    } catch (reason) {
+      return reply.code(502).send({ message: `GPU Worker 连接测试失败：${redactSecret(errorMessage(reason), workerToken)}`, code: "worker_test_failed" });
+    }
   });
 
   app.patch<{ Params: SceneParams; Body: { enabled?: unknown } }>("/api/admin/cloud-render/scenes/:sceneId", async (request, reply) => {
@@ -55,6 +73,29 @@ export async function registerCloudRenderRoutes(app: FastifyInstance, dependenci
       return session ? reply.code(204).send() : reply.code(404).send({ message: "该发布场景没有云渲染会话", code: "session_not_found" });
     } catch (reason) { return sendControlError(reply, reason); }
   });
+}
+
+function requiredHttpUrl(value: unknown, label: string, reply: FastifyReply, originOnly = false): string | undefined {
+  if (typeof value !== "string" || !value.trim()) {
+    void reply.code(400).send({ message: `${label} 不能为空`, code: "invalid_cloud_render_url" });
+    return undefined;
+  }
+  try {
+    const parsed = new URL(value.trim());
+    if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash || (originOnly && (parsed.pathname !== "/" || parsed.search))) throw new Error();
+    return originOnly ? parsed.origin : parsed.toString().replace(/\/$/, "");
+  } catch {
+    void reply.code(400).send({ message: `${label} 必须是无凭据的完整 HTTP(S) 地址${originOnly ? "，且 Public Origin 不能包含路径或查询" : ""}`, code: "invalid_cloud_render_url" });
+    return undefined;
+  }
+}
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+function redactSecret(value: string, secret: string): string {
+  return secret ? value.replaceAll(secret, "[REDACTED]") : value;
 }
 
 function listPublishedScenes(store: MetadataStore): PublishedSceneRecord[] {

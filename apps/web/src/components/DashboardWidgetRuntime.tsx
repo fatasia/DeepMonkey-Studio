@@ -1,18 +1,43 @@
-import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Ban, DatabaseZap, Globe2, LoaderCircle } from "lucide-react";
-import type { EChartsType } from "echarts/core";
-import type { DashboardDataWidgetConfig, DataDatasetField, DataPipelineDefinition, DataDatasetRecord } from "@bim-studio/contracts";
+import { useEffect, useState } from "react";
+import { Globe2 } from "lucide-react";
+import type { DashboardDataWidgetConfig, DataDatasetField, DataPipelineDefinition, DataDatasetRecord, JsonValue } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { subscribeSceneData } from "../sceneDataBridge";
-import { mergeDirectBindingMetric, mergeProductMetrics } from "./dashboardMetrics";
-import { DashboardImage, DashboardMonitor, DashboardVideo } from "./DashboardMediaPlayer";
 import { DirectBindingRuntime } from "../directBindingRuntime";
+import { DashboardDigitalFlip, DashboardLiquidFill, DashboardScrollTable } from "./DashboardIndustrialWidgets";
+import { DashboardImage, DashboardMonitor, DashboardVideo } from "./DashboardMediaPlayer";
+import { analyzeDashboardMetric, conditionalStyle } from "./dashboardAnalytics";
+import { mergeDirectBindingMetric, mergeProductMetrics } from "./dashboardMetrics";
+import { dashboardJsonRecord as jsonRecord, dashboardJsonValue as jsonValue, finiteDashboardNumber as toFiniteNumber } from "./dashboardWidgetValues";
+import { applyDashboardFilters, DashboardDesignState, DashboardDrillChart, DashboardReportTable } from "./DashboardWidgetVisualization";
 
-interface MetricSample { time: number; value: number; }
-export interface DashboardMetric { value: unknown; samples: MetricSample[]; rows?: Array<Record<string, unknown>>; }
+export {
+  applyDashboardFilters,
+  buildDashboardHierarchy,
+  dashboardLinkageValue,
+  filterDashboardDrillRows,
+  widgetBackground,
+  widgetBackgroundStyle,
+} from "./DashboardWidgetVisualization";
 
-export function useDashboardMetrics(projectId: string, widgets: readonly DashboardDataWidgetConfig[], sceneId?: string) {
+interface MetricSample {
+  time: number;
+  value: number;
+}
+export interface DashboardMetric {
+  value: unknown;
+  samples: MetricSample[];
+  rows?: Array<Record<string, unknown>>;
+}
+
+export function useDashboardMetrics(
+  projectId: string,
+  widgets: readonly DashboardDataWidgetConfig[],
+  sceneId?: string,
+  filters: Readonly<Record<string, JsonValue>> = {},
+  liveDataEnabled = true,
+) {
   const [metrics, setMetrics] = useState<Record<string, DashboardMetric>>({});
   const [datasets, setDatasets] = useState<DataDatasetRecord[]>([]);
   const [pipelines, setPipelines] = useState<DataPipelineDefinition[]>([]);
@@ -35,11 +60,15 @@ export function useDashboardMetrics(projectId: string, widgets: readonly Dashboa
         setPipelines(nextPipelines);
         setFieldsByProduct((current) => ({
           ...current,
-          ...Object.fromEntries(nextDatasets.map((dataset) => [`dataset:${dataset.id}`, dataset.fields]))
+          ...Object.fromEntries(nextDatasets.map((dataset) => [`dataset:${dataset.id}`, dataset.fields])),
         }));
       })
-      .catch(() => { if (!cancelled) setCatalogError(true); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) setCatalogError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [projectId, widgets]);
 
   useEffect(() => {
@@ -48,10 +77,14 @@ export function useDashboardMetrics(projectId: string, widgets: readonly Dashboa
     const stops = directWidgets.map((widget) => {
       const binding = widget.directBinding!;
       const statusKey = `direct:${widget.key}`;
-      return new DirectBindingRuntime(binding, {}, {
-        onValue: (value, data) => setMetrics((current) => mergeDirectBindingMetric(current, widget.key, value, data, Date.now())),
-        onStatus: (status) => setStatusByProduct((current) => ({ ...current, [statusKey]: status === "online" ? "ready" : status === "error" ? "error" : "loading" }))
-      }).start();
+      return new DirectBindingRuntime(
+        binding,
+        {},
+        {
+          onValue: (value, data) => setMetrics((current) => mergeDirectBindingMetric(current, widget.key, value, data, Date.now())),
+          onStatus: (status) => setStatusByProduct((current) => ({ ...current, [statusKey]: status === "online" ? "ready" : status === "error" ? "error" : "loading" })),
+        },
+      ).start();
     });
     return () => stops.forEach((stop) => stop());
   }, [widgets]);
@@ -70,144 +103,291 @@ export function useDashboardMetrics(projectId: string, widgets: readonly Dashboa
           try {
             const preview = await api.previewDataset(projectId, id);
             return { id, kind: "dataset" as const, fields: preview.fields, rows: preview.rows } as const;
-          } catch { return { id, kind: "dataset" as const, error: true } as const; }
+          } catch {
+            return { id, kind: "dataset" as const, error: true } as const;
+          }
         }),
         ...pipelineIds.map(async (id) => {
           try {
             const preview = await api.previewDataPipeline(projectId, id);
             if (preview.status === "error") return { id, kind: "pipeline" as const, error: true } as const;
             return { id, kind: "pipeline" as const, fields: preview.fields, rows: preview.rows } as const;
-          } catch { return { id, kind: "pipeline" as const, error: true } as const; }
-        })
+          } catch {
+            return { id, kind: "pipeline" as const, error: true } as const;
+          }
+        }),
       ]);
       if (cancelled) return;
-      const successes = previews.filter((preview): preview is Extract<typeof preview, { fields: DataDatasetField[] }> => "fields" in preview);
+      const successes = previews
+        .filter((preview): preview is Extract<typeof preview, { fields: DataDatasetField[] }> => "fields" in preview)
+        .map((preview) => ({ ...preview, rows: applyDashboardFilters(preview.rows, filters, widgets) }));
       setFieldsByProduct((current) => ({ ...current, ...Object.fromEntries(successes.map((preview) => [`${preview.kind}:${preview.id}`, preview.fields])) }));
-      setStatusByProduct((current) => ({ ...current, ...Object.fromEntries(previews.map((preview) => [`${preview.kind}:${preview.id}`, "error" in preview ? "error" : "ready"])) }));
+      setStatusByProduct((current) => ({
+        ...current,
+        ...Object.fromEntries(previews.map((preview) => [`${preview.kind}:${preview.id}`, "error" in preview ? "error" : "ready"])),
+      }));
       setMetrics((current) => successes.reduce((next, preview) => mergeProductMetrics(next, preview.id, preview.fields, preview.rows), current));
     };
     void refresh();
-    const seconds = Math.max(2, Math.min(
-      ...datasetIds.map((id) => datasets.find((item) => item.id === id)?.refreshSeconds || 5),
-      ...(pipelineIds.length > 0 ? [5] : [])
-    ));
+    const seconds = Math.max(2, Math.min(...datasetIds.map((id) => datasets.find((item) => item.id === id)?.refreshSeconds || 5), ...(pipelineIds.length > 0 ? [5] : [])));
     const timer = window.setInterval(() => void refresh(), seconds * 1_000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [datasets, projectId, widgets]);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [datasets, filters, projectId, widgets]);
 
-  useEffect(() => subscribeSceneData(projectId, (message) => {
-    if (sceneId && message.sceneId && message.sceneId !== sceneId) return;
-    setMetrics((current) => updateMetricMap(current, message.source, message.key || "value", message.value, Date.parse(message.timestamp) || Date.now()));
-  }, (status) => setConnected(status === "online")), [projectId, sceneId]);
+  useEffect(() => {
+    // 确定性视觉验收和离线嵌入场景不应建立会重试的现场数据连接。
+    if (!liveDataEnabled) return;
+    return subscribeSceneData(
+      projectId,
+      (message) => {
+        if (sceneId && message.sceneId && message.sceneId !== sceneId) return;
+        setMetrics((current) => updateMetricMap(current, message.source, message.key || "value", message.value, Date.parse(message.timestamp) || Date.now()));
+      },
+      (status) => setConnected(status === "online"),
+    );
+  }, [liveDataEnabled, projectId, sceneId]);
 
   return { metrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } as const;
 }
 
-export function DashboardWidgetView({ locale, widget, metric, compact, onAnimationStart, onAnimationEnd }: {
+export function DashboardWidgetView({
+  locale,
+  widget,
+  metric,
+  compact,
+  filters = {},
+  filterValue,
+  onFilterChange,
+  onDataInteraction,
+  onAnimationStart,
+  onAnimationEnd,
+}: {
   locale: AppLocale;
   widget: DashboardDataWidgetConfig;
   metric: DashboardMetric | undefined;
   compact: boolean;
+  filters?: Readonly<Record<string, JsonValue>>;
+  filterValue?: JsonValue;
+  onFilterChange?: (key: string, value: JsonValue | undefined) => void;
+  onDataInteraction: (payload: JsonValue) => void;
   onAnimationStart: () => void;
   onAnimationEnd: () => void;
 }) {
-  const display = metric?.value === undefined ? "—" : typeof metric.value === "object" ? JSON.stringify(metric.value) : String(metric.value);
-  if (widget.type === "text") return <div className="dashboard-text-widget" style={{ color: widget.textColor, fontSize: widget.fontSize, fontWeight: widget.fontWeight, textAlign: widget.textAlign }}>{widget.content || widget.title}</div>;
-  if (widget.type === "shape") return <div className={`dashboard-shape-widget ${widget.shape ?? "rectangle"}`} style={{ background: widget.color, borderColor: widget.borderColor, borderWidth: widget.borderWidth }}><span>{widget.content}</span></div>;
-  if (widget.type === "decoration") return <div className={`dashboard-decoration-widget ${widget.decorationStyle ?? "title"}`} style={{ color: widget.color }}><i /><strong>{widget.content || widget.title}</strong><i /></div>;
+  const analysis = analyzeDashboardMetric(widget, metric);
+  const display = analysis.value === undefined ? "—" : typeof analysis.value === "object" ? JSON.stringify(analysis.value) : String(analysis.value);
+  const valueStyle = conditionalStyle(widget.conditionalRules, analysis.rows[0] ?? {}, analysis.value);
+  if (widget.type === "text")
+    return (
+      <div className="dashboard-text-widget" style={{ color: widget.textColor, fontSize: widget.fontSize, fontWeight: widget.fontWeight, textAlign: widget.textAlign }}>
+        {widget.content || widget.title}
+      </div>
+    );
+  if (widget.type === "shape")
+    return (
+      <div
+        className={`dashboard-shape-widget ${widget.shape ?? "rectangle"}`}
+        style={{ background: widget.color, borderColor: widget.borderColor, borderWidth: widget.borderWidth }}
+      >
+        <span>{widget.content}</span>
+      </div>
+    );
+  if (widget.type === "decoration")
+    return (
+      <div className={`dashboard-decoration-widget ${widget.decorationStyle ?? "title"}`} style={{ color: widget.color }}>
+        <i />
+        <strong>{widget.content || widget.title}</strong>
+        <i />
+      </div>
+    );
   if (compact && widget.designState && widget.designState !== "auto") return <DashboardDesignState locale={locale} state={widget.designState} />;
-  if (widget.type === "image") return <div className="dashboard-image-widget"><DashboardImage widget={widget} locale={locale} /></div>;
-  if (widget.type === "video") return <div className="dashboard-video-widget"><DashboardVideo widget={widget} locale={locale} compact={compact} /></div>;
-  if (widget.type === "monitor") return <div className={`dashboard-monitor-widget ${compact ? "editing" : ""}`}><DashboardMonitor widget={widget} locale={locale} compact={compact} /></div>;
+  if (widget.type === "image")
+    return (
+      <div className="dashboard-image-widget">
+        <DashboardImage widget={widget} locale={locale} />
+      </div>
+    );
+  if (widget.type === "video")
+    return (
+      <div className="dashboard-video-widget">
+        <DashboardVideo widget={widget} locale={locale} compact={compact} />
+      </div>
+    );
+  if (widget.type === "monitor")
+    return (
+      <div className={`dashboard-monitor-widget ${compact ? "editing" : ""}`}>
+        <DashboardMonitor widget={widget} locale={locale} compact={compact} />
+      </div>
+    );
   if (widget.type === "url") {
     const url = embeddableUrl(widget.url);
-    return <div className={`dashboard-webpage ${compact ? "editing" : ""}`}>{url ? <iframe src={url} title={widget.title || tr(locale, "嵌入网页", "Embedded web page")} loading="lazy" allow="fullscreen; autoplay; clipboard-read; clipboard-write" /> : <div><Globe2 size={22} /><strong>{widget.title}</strong><span>{tr(locale, "编辑组件并填写 HTTP(S) 或站内网页地址", "Edit the widget and enter an HTTP(S) or local URL")}</span></div>}{compact && <i>{tr(locale, "编辑模式下网页交互已暂停", "Web page interaction is paused while editing")}</i>}</div>;
+    return (
+      <div className={`dashboard-webpage ${compact ? "editing" : ""}`}>
+        {url ? (
+          <iframe src={url} title={widget.title || tr(locale, "嵌入网页", "Embedded web page")} loading="lazy" allow="fullscreen; autoplay; clipboard-read; clipboard-write" />
+        ) : (
+          <div>
+            <Globe2 size={22} />
+            <strong>{widget.title}</strong>
+            <span>{tr(locale, "编辑组件并填写 HTTP(S) 或站内网页地址", "Edit the widget and enter an HTTP(S) or local URL")}</span>
+          </div>
+        )}
+        {compact && <i>{tr(locale, "编辑模式下网页交互已暂停", "Web page interaction is paused while editing")}</i>}
+      </div>
+    );
   }
-  if (["line", "area", "bar", "pie", "scatter", "radar", "funnel", "gauge"].includes(widget.type)) return <DashboardChart widget={widget} metric={metric} compact={compact} onAnimationStart={onAnimationStart} onAnimationEnd={onAnimationEnd} />;
-  if (widget.type === "progress") { const value = Math.max(widget.min ?? 0, Math.min(widget.max ?? 100, toFiniteNumber(metric?.value) ?? 0)); const ratio = (value - (widget.min ?? 0)) / Math.max(1, (widget.max ?? 100) - (widget.min ?? 0)); return <div className="dashboard-progress-widget"><header><span>{widget.title}</span><strong>{value}{widget.unit}</strong></header><div><i style={{ width: `${ratio * 100}%`, background: widget.color }} /></div></div>; }
-  if (widget.type === "filter") return <label className="dashboard-filter-widget"><span>{widget.title}</span><select disabled={compact} defaultValue={(widget.options ?? [])[0]}>{(widget.options ?? []).map((option) => <option key={option}>{option}</option>)}</select></label>;
-  if (widget.type === "rank") return <div className="dashboard-rank-widget"><strong>{widget.title}</strong>{(metric?.rows ?? []).slice(0, 6).map((row, index) => { const value = widget.field ? row[widget.field] : Object.values(row)[0]; return <div key={index}><em>{index + 1}</em><span>{String(row.name ?? row.label ?? row.device ?? `#${index + 1}`)}</span><b>{String(value ?? "—")}</b></div>; })}</div>;
-  if (widget.type === "table") return <div className="dashboard-mini-table"><strong>{widget.title}</strong><table><tbody>{(metric?.rows ?? []).slice(0, 8).map((row, index) => <tr key={index}><td>{String(row.recorded_at ?? row.time ?? index + 1)}</td><td>{String(widget.field ? row[widget.field] ?? "—" : Object.values(row)[0] ?? "—")}</td></tr>)}</tbody></table></div>;
-  if (widget.type === "status") return <div className={`dashboard-status ${Boolean(metric?.value) ? "ok" : ""}`}><i /><span><small>{widget.title}</small><strong>{display === "—" ? tr(locale, "未知", "Unknown") : display}</strong></span></div>;
-  return <div className="dashboard-value"><span>{widget.title}</span><strong>{display}<small>{widget.unit}</small></strong></div>;
-}
-
-function DashboardDesignState({ locale, state }: { locale: AppLocale; state: Exclude<NonNullable<DashboardDataWidgetConfig["designState"]>, "auto"> }) {
-  const content = {
-    empty: [<DatabaseZap size={20} />, tr(locale, "暂无数据", "No data")],
-    loading: [<LoaderCircle className="spin" size={20} />, tr(locale, "数据加载中", "Loading data")],
-    partial: [<AlertTriangle size={20} />, tr(locale, "部分数据可用", "Partial data")],
-    error: [<AlertTriangle size={20} />, tr(locale, "数据错误", "Data error")],
-    forbidden: [<Ban size={20} />, tr(locale, "无权查看", "No permission")]
-  }[state];
-  return content ? <div className={`dashboard-design-state ${state}`}>{content[0]}<span>{content[1]}</span></div> : null;
-}
-
-export function widgetBackground(widget: DashboardDataWidgetConfig): string {
-  return colorWithOpacity(widget.backgroundColor ?? "#172126", widget.backgroundOpacity ?? 0.86);
-}
-
-function DashboardChart({ widget, metric, compact, onAnimationStart, onAnimationEnd }: { widget: DashboardDataWidgetConfig; metric: DashboardMetric | undefined; compact: boolean; onAnimationStart: () => void; onAnimationEnd: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<EChartsType | undefined>(undefined);
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    if (!ref.current) return;
-    const element = ref.current;
-    let disposed = false;
-    let resize: ResizeObserver | undefined;
-    void Promise.all([
-      import("echarts/core"),
-      import("echarts/charts"),
-      import("echarts/components"),
-      import("echarts/renderers")
-    ]).then(([echarts, charts, components, renderers]) => {
-      if (disposed) return;
-      echarts.use([charts.BarChart, charts.GaugeChart, charts.LineChart, charts.PieChart, charts.ScatterChart, charts.RadarChart, charts.FunnelChart, components.GridComponent, components.RadarComponent, components.TooltipComponent, renderers.CanvasRenderer]);
-      const chart = echarts.init(element, undefined, { renderer: "canvas" });
-      chartRef.current = chart;
-      resize = new ResizeObserver(() => chart.resize());
-      resize.observe(element);
-      setReady(true);
-    });
-    return () => { disposed = true; resize?.disconnect(); chartRef.current?.dispose(); chartRef.current = undefined; };
-  }, []);
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-    const color = widget.color ?? "#d4a84f";
-    const samples = metric?.samples ?? [];
-    if (!compact) {
-      onAnimationStart();
-      chart.off("finished");
-      const finish = () => { chart.off("finished", finish); onAnimationEnd(); };
-      chart.on("finished", finish);
-    }
-    if (widget.type === "gauge") {
-      chart.setOption({ animation: !compact, series: [{ type: "gauge", min: widget.min ?? 0, max: widget.max ?? 100, radius: "83%", progress: { show: true, width: 8, itemStyle: { color } }, axisLine: { lineStyle: { width: 8, color: [[1, "#2b353a"]] } }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, pointer: { show: false }, anchor: { show: false }, title: { offsetCenter: [0, "62%"], color: "#77858c", fontSize: 9 }, detail: { valueAnimation: !compact, offsetCenter: [0, "2%"], color: "#eef2f4", fontSize: 19, formatter: `{value}${widget.unit}` }, data: [{ value: toFiniteNumber(metric?.value) ?? 0, name: widget.title }] }] }, true);
-      return;
-    }
-    if (widget.type === "pie") {
-      chart.setOption({ animation: !compact, tooltip: { trigger: "item" }, series: [{ type: "pie", radius: ["48%", "72%"], label: { show: false }, data: samples.slice(-8).map((sample, index) => ({ name: String(index + 1), value: sample.value })), itemStyle: { borderColor: "#172126", borderWidth: 2 } }] }, true);
-      return;
-    }
-    if (widget.type === "radar") {
-      const values = samples.slice(-6).map((sample) => sample.value);
-      chart.setOption({ animation: !compact, tooltip: {}, radar: { indicator: values.map((_, index) => ({ name: String(index + 1), max: Math.max(100, ...values) })), splitLine: { lineStyle: { color: "#344149" } }, splitArea: { areaStyle: { color: ["transparent", "rgba(52,65,73,.18)"] } }, axisName: { color: "#7d8b91", fontSize: 8 } }, series: [{ type: "radar", data: [{ value: values }], lineStyle: { color }, itemStyle: { color }, areaStyle: { color, opacity: .22 } }] }, true);
-      return;
-    }
-    if (widget.type === "funnel") {
-      chart.setOption({ animation: !compact, tooltip: { trigger: "item" }, series: [{ type: "funnel", left: "12%", width: "76%", top: 12, bottom: 8, label: { color: "#a9b5ba", fontSize: 8 }, data: samples.slice(-6).map((sample, index) => ({ name: String(index + 1), value: sample.value })) }] }, true);
-      return;
-    }
-    if (widget.type === "scatter") {
-      chart.setOption({ animation: !compact, grid: { top: 12, right: 12, bottom: 20, left: 34 }, tooltip: { trigger: "item" }, xAxis: { axisLabel: { color: "#657279", fontSize: 7 }, splitLine: { lineStyle: { color: "#252e33" } } }, yAxis: { axisLabel: { color: "#657279", fontSize: 7 }, splitLine: { lineStyle: { color: "#252e33" } } }, series: [{ type: "scatter", symbolSize: 8, itemStyle: { color }, data: samples.map((sample, index) => [index, sample.value]) }] }, true);
-      return;
-    }
-    const seriesType = widget.type === "area" ? "line" : widget.type;
-    chart.setOption({ animation: !compact, grid: { top: 25, right: 8, bottom: 18, left: 36 }, tooltip: { trigger: "axis", backgroundColor: "#171d20", borderColor: "#39464d", textStyle: { color: "#d9dfe2", fontSize: 9 } }, xAxis: { type: "category", data: samples.map((sample) => new Date(sample.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })), axisLabel: { color: "#657279", fontSize: 7, showMaxLabel: true }, axisLine: { lineStyle: { color: "#303b40" } }, axisTick: { show: false } }, yAxis: { type: "value", axisLabel: { color: "#657279", fontSize: 7 }, splitLine: { lineStyle: { color: "#252e33" } } }, series: [{ type: seriesType, data: samples.map((sample) => sample.value), smooth: widget.type === "line" || widget.type === "area", showSymbol: false, itemStyle: { color }, lineStyle: { color, width: 2 }, areaStyle: widget.type === "area" ? { color, opacity: 0.28 } : undefined }] }, true);
-  }, [compact, metric, onAnimationEnd, onAnimationStart, ready, widget]);
-  return <div className="dashboard-chart" ref={ref} />;
+  if (widget.type === "digital-flip")
+    return <DashboardDigitalFlip widget={widget} analysis={analysis} compact={compact} onActivate={() => onDataInteraction({ value: jsonValue(analysis.value) })} />;
+  if (widget.type === "liquid-fill")
+    return <DashboardLiquidFill locale={locale} widget={widget} analysis={analysis} compact={compact} onActivate={() => onDataInteraction({ value: jsonValue(analysis.value) })} />;
+  if (["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map"].includes(widget.type))
+    return (
+      <DashboardDrillChart
+        widget={widget}
+        metric={metric}
+        analysis={analysis}
+        compact={compact}
+        onDataInteraction={onDataInteraction}
+        onAnimationStart={onAnimationStart}
+        onAnimationEnd={onAnimationEnd}
+      />
+    );
+  if (widget.type === "progress") {
+    const value = Math.max(widget.min ?? 0, Math.min(widget.max ?? 100, toFiniteNumber(analysis.value) ?? 0));
+    const ratio = (value - (widget.min ?? 0)) / Math.max(1, (widget.max ?? 100) - (widget.min ?? 0));
+    return (
+      <div
+        className={`dashboard-progress-widget ${valueStyle.animation === "pulse" ? "conditional-pulse" : ""}`}
+        style={valueStyle.visible === false ? { display: "none" } : { color: valueStyle.color, backgroundColor: valueStyle.backgroundColor, fontWeight: valueStyle.fontWeight }}
+      >
+        <header>
+          <span>{widget.title}</span>
+          <strong>
+            {value}
+            {widget.unit}
+          </strong>
+        </header>
+        <div>
+          <i style={{ width: `${ratio * 100}%`, background: valueStyle.color ?? widget.color }} />
+        </div>
+      </div>
+    );
+  }
+  if (widget.type === "filter") {
+    const options = widget.options ?? [];
+    const parentMissing = Boolean(widget.parentFilterKey && filters[widget.parentFilterKey] === undefined);
+    const mode = widget.filterMode ?? "select";
+    const selected = filterValue === undefined ? (options[0] ?? "") : String(filterValue);
+    return (
+      <label className="dashboard-filter-widget">
+        <span>
+          {widget.title}
+          {widget.filterField && <small>{widget.filterField}</small>}
+        </span>
+        {mode === "multi-select" ? (
+          <select
+            multiple
+            disabled={compact || parentMissing}
+            value={Array.isArray(filterValue) ? filterValue.map(String) : []}
+            onChange={(event) => {
+              const values = Array.from(event.currentTarget.selectedOptions)
+                .map((option) => option.value)
+                .filter((value) => !/^(全部|all)$/i.test(value));
+              onFilterChange?.(widget.key, values.length > 0 ? values : undefined);
+            }}
+          >
+            {options.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        ) : mode === "text" || mode === "date" ? (
+          <input
+            type={mode === "date" ? "date" : "text"}
+            disabled={compact || parentMissing}
+            value={filterValue === undefined || filterValue === null ? "" : String(filterValue)}
+            placeholder={mode === "text" ? tr(locale, "输入筛选值", "Enter filter value") : undefined}
+            onChange={(event) => onFilterChange?.(widget.key, event.target.value || undefined)}
+          />
+        ) : (
+          <select
+            disabled={compact || parentMissing}
+            value={selected}
+            onChange={(event) => {
+              const value = event.target.value;
+              onFilterChange?.(widget.key, value === options[0] && /^(全部|all)$/i.test(value) ? undefined : value);
+            }}
+          >
+            {options.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        )}
+        {parentMissing && <em>{tr(locale, "请先选择上级条件", "Select the parent filter first")}</em>}
+      </label>
+    );
+  }
+  if (widget.type === "rank")
+    return (
+      <div className="dashboard-rank-widget">
+        <strong>{widget.title}</strong>
+        {analysis.rows.slice(0, 6).map((row, index) => {
+          const value = widget.field ? row[widget.field] : Object.values(row)[0];
+          const style = conditionalStyle(widget.conditionalRules, row, value);
+          return (
+            <div
+              className={style.animation === "pulse" ? "conditional-pulse" : ""}
+              style={style.visible === false ? { display: "none" } : { color: style.color, backgroundColor: style.backgroundColor, fontWeight: style.fontWeight }}
+              key={index}
+              onClick={() => {
+                if (!compact) onDataInteraction({ data: jsonRecord(row), index });
+              }}
+            >
+              <em>{index + 1}</em>
+              <span>{String(row.name ?? row.label ?? row.device ?? `#${index + 1}`)}</span>
+              <b>{String(value ?? "—")}</b>
+            </div>
+          );
+        })}
+      </div>
+    );
+  if (widget.type === "table") return <DashboardReportTable locale={locale} widget={widget} metric={metric} compact={compact} onDataInteraction={onDataInteraction} />;
+  if (widget.type === "scroll-table")
+    return (
+      <DashboardScrollTable
+        locale={locale}
+        widget={widget}
+        metric={metric}
+        compact={compact}
+        onRowInteraction={(row, index) => onDataInteraction({ data: jsonRecord(row), index })}
+      />
+    );
+  if (widget.type === "status")
+    return (
+      <div
+        className={`dashboard-status ${Boolean(analysis.value) ? "ok" : ""} ${valueStyle.animation === "pulse" ? "conditional-pulse" : ""}`}
+        style={valueStyle.visible === false ? { display: "none" } : { color: valueStyle.color, backgroundColor: valueStyle.backgroundColor, fontWeight: valueStyle.fontWeight }}
+      >
+        <i />
+        <span>
+          <small>{widget.title}</small>
+          <strong>{display === "—" ? tr(locale, "未知", "Unknown") : display}</strong>
+        </span>
+      </div>
+    );
+  return (
+    <div
+      className={`dashboard-value ${valueStyle.animation === "pulse" ? "conditional-pulse" : ""}`}
+      style={valueStyle.visible === false ? { display: "none" } : { color: valueStyle.color, backgroundColor: valueStyle.backgroundColor, fontWeight: valueStyle.fontWeight }}
+    >
+      <span>{widget.title}</span>
+      <strong>
+        {display}
+        <small>{widget.unit}</small>
+      </strong>
+    </div>
+  );
 }
 
 function updateMetricMap(current: Record<string, DashboardMetric>, source: string | undefined, key: string, value: unknown, time: number): Record<string, DashboardMetric> {
@@ -215,16 +395,9 @@ function updateMetricMap(current: Record<string, DashboardMetric>, source: strin
   for (const metricKey of [key, source ? `${source}.${key}` : ""].filter(Boolean)) {
     const numeric = toFiniteNumber(value);
     const previous = current[metricKey];
-    next[metricKey] = { value, samples: numeric === undefined ? previous?.samples ?? [] : [...(previous?.samples ?? []), { time, value: numeric }].slice(-60) };
+    next[metricKey] = { value, samples: numeric === undefined ? (previous?.samples ?? []) : [...(previous?.samples ?? []), { time, value: numeric }].slice(-60) };
   }
   return next;
-}
-
-function colorWithOpacity(color: string, opacity: number): string {
-  const match = /^#([0-9a-f]{6})$/i.exec(color);
-  if (!match) return color;
-  const value = Number.parseInt(match[1]!, 16);
-  return `rgba(${value >> 16},${value >> 8 & 255},${value & 255},${Math.max(0, Math.min(1, opacity))})`;
 }
 
 function embeddableUrl(value: string | undefined): string | undefined {
@@ -237,9 +410,4 @@ function embeddableUrl(value: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function toFiniteNumber(value: unknown): number | undefined {
-  const number = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
-  return Number.isFinite(number) ? number : undefined;
 }

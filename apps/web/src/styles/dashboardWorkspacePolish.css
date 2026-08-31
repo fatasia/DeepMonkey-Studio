@@ -1,0 +1,123 @@
+/*
+ * 二维应用工作台的产品化收口。
+ * 本文件只处理信息密度、可读性和响应式行为，避免继续扩大历史 styles.css。
+ */
+.dashboard-workspace {
+  grid-template: 58px minmax(0, 1fr) / 236px minmax(0, 1fr) 280px;
+  grid-template-areas: "top top top" "pages canvas inspector";
+}
+
+.dashboard-back,
+.dashboard-data-entry,
+.dashboard-workspace-actions button,
+.workspace-mode-switch button {
+  min-height: 34px;
+  font-size: 11px;
+}
+.dashboard-workspace-topbar .dashboard-data-entry { font-size: 11px; }
+
+.dashboard-workspace-title strong { font-size: 13px; }
+.dashboard-workspace-title span,
+.dashboard-auto-save { font-size: 10px; }
+.workspace-mode-switch .workspace-context { font-size: 11px; }
+
+.dashboard-pages-panel > header,
+.dashboard-inspector-panel > header { padding: 15px 13px 12px; }
+.dashboard-pages-panel > header strong,
+.dashboard-inspector-panel > header strong { font-size: 13px; }
+.dashboard-pages-panel .eyebrow,
+.dashboard-inspector-panel .eyebrow { font-size: 10px; }
+
+.dashboard-pages-panel :is(button, input, select, summary, label, small, span),
+.dashboard-inspector-panel :is(button, input, select, summary, label, small, span),
+.dashboard-compact-page-settings :is(button, input, select, summary, label, small, span) { font-size: 10px; }
+
+.dashboard-panel-label,
+.dashboard-panel-label small,
+.dashboard-page-select span,
+.dashboard-page-select small,
+.dashboard-layer-select span,
+.dashboard-layer-select small,
+.dashboard-group-select span,
+.dashboard-group-select small { font-size: 10px; }
+
+.dashboard-page-row { grid-template-columns: minmax(0, 1fr) 32px; }
+.dashboard-page-select { height: 38px; }
+.dashboard-page-actions button,
+.dashboard-page-delete,
+.dashboard-layer-action { min-width: 28px; width: 28px; min-height: 28px; height: 28px; }
+
+.dashboard-component-search { height: 34px; font-size: 11px; }
+.dashboard-template-library-trigger { min-height: 52px; }
+.dashboard-template-library-trigger strong { font-size: 11px; }
+.dashboard-template-library-trigger small,
+.dashboard-template-library-trigger em { font-size: 9px; }
+.dashboard-pages-panel .dashboard-template-library-trigger > span,
+.dashboard-pages-panel .dashboard-template-library-trigger > span > small,
+.dashboard-pages-panel .dashboard-linkage-diagnostics > summary small,
+.dashboard-pages-panel .dashboard-linkage-diagnostics > p { font-size: 10px; }
+.dashboard-component-groups summary { min-height: 32px; font-size: 10px; }
+.dashboard-component-groups button { min-height: 34px; height: 34px; font-size: 10px; }
+.dashboard-linkage-diagnostics > summary { height: 34px; font-size: 10px; }
+.dashboard-linkage-diagnostics > summary small,
+.dashboard-linkage-diagnostics > p,
+.dashboard-linkage-diagnostics > div button { font-size: 9px; }
+
+.dashboard-design-surface { grid-template-rows: 40px minmax(0, 1fr); }
+.dashboard-canvas-toolbar { font-size: 10px; }
+.dashboard-canvas-toolbar > span small { font-size: 9px; }
+.dashboard-canvas-toolbar :is(span, small, button, output) { font-size: 10px; }
+.dashboard-canvas-toolbar > span > small,
+.dashboard-canvas-toolbar .dashboard-overflow-warning { font-size: 10px; }
+.dashboard-canvas-toolbar button { min-width: 28px; min-height: 28px; height: 28px; font-size: 10px; }
+
+.dashboard-inspector-section label,
+.dashboard-compact-page-settings label { font-size: 10px; }
+.dashboard-inspector-section input,
+.dashboard-inspector-section select,
+.dashboard-compact-page-settings input,
+.dashboard-compact-page-settings select { min-height: 34px; height: 34px; font-size: 11px; }
+
+/* 坐标和尺寸标签使用固定短列，避免 WIDTH/HEIGHT 在窄检查器中压住输入框。 */
+.dashboard-frame-grid label { grid-template-columns: 30px minmax(0, 1fr); }
+.dashboard-frame-grid label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dashboard-page-background-editor { display: grid; gap: 10px; }
+.dashboard-page-background-editor > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px; }
+.dashboard-page-background-editor > div > span { color: #78868d; font-size: 10px; }
+.dashboard-page-background-editor > div > button {
+  min-width: 88px;
+  min-height: 32px;
+  padding: 0 10px;
+  overflow: hidden;
+  color: #d9c47f;
+  border: 1px solid #594b2f;
+  border-radius: 5px;
+  background: #211d15;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dashboard-page-background-editor > div > button + button { grid-column: 2; color: #d6928b; border-color: #5b3a38; background: #211718; }
+
+.dashboard-ruler-corner { width: 24px; height: 24px !important; }
+.dashboard-ruler.horizontal { height: 24px; margin-top: -24px; }
+.dashboard-ruler.vertical { width: 24px; margin-top: -24px; }
+.dashboard-ruler span { font-size: 9px; }
+
+.dashboard-runtime-controller-trigger span { font-size: 11px; }
+.dashboard-runtime-controller-panel header strong { font-size: 12px; }
+.dashboard-runtime-controller-panel header small,
+.dashboard-runtime-controller-panel nav button,
+.dashboard-runtime-controller-panel > div > button { font-size: 10px; }
+
+@media (max-width: 1180px) {
+  .dashboard-workspace {
+    grid-template-columns: 218px minmax(0, 1fr);
+    grid-template-areas: "top top" "pages canvas";
+  }
+  .dashboard-inspector-panel { display: none; }
+  .dashboard-compact-page-settings { display: block; }
+  .dashboard-workspace-title { display: none; }
+}

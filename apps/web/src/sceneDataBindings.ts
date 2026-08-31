@@ -1,8 +1,9 @@
 import { assertDirectBindingSpec, type DataEventAction, type DataMessage, type DataPipelinePreview, type DataDatasetPreview, type SceneDataBindingState } from "@bim-studio/contracts";
+import { normalizeMaterialDataPatch } from "./viewer/materialDataPatch";
 
 export type DataProductPreview = Pick<DataDatasetPreview, "fields" | "rows"> | Pick<DataPipelinePreview, "fields" | "rows">;
 
-const ACTIONS: readonly DataEventAction[] = ["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects"];
+const ACTIONS: readonly DataEventAction[] = ["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material"];
 
 export function normalizeSceneDataBindings(value: unknown): SceneDataBindingState[] {
   if (!Array.isArray(value)) return [];
@@ -105,6 +106,7 @@ function normalizeActionValue(action: DataEventAction, value: unknown): unknown 
     return { x, y, z };
   }
   if (action === "effects" && (!value || typeof value !== "object" || Array.isArray(value))) throw new Error("特效字段必须是 JSON 对象");
+  if (action === "material") return normalizeMaterialDataPatch(value);
   if (action === "label") return typeof value === "string" ? value : JSON.stringify(value);
   return value;
 }

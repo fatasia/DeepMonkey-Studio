@@ -10,10 +10,10 @@ import {
   DirectBindingGatewayError,
   DirectHttpConnectorGateway,
   DirectWebSocketMultiplexer,
-  registerDirectBindingRoutes,
-  StaticDirectCredentialResolver,
   type DirectWebSocketFactoryContext
 } from "./connectorGateway.js";
+import { registerDirectBindingRoutes } from "./directBindingRoutes.js";
+import { StaticDirectCredentialResolver } from "./directCredentialResolver.js";
 
 const closers: Array<() => Promise<void>> = [];
 

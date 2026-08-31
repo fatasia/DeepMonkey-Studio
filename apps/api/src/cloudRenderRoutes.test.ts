@@ -14,10 +14,20 @@ afterEach(async () => Promise.all(directories.splice(0).map((item) => rm(item, {
 
 describe("cloud render admin routes", () => {
   it("requires an administrator even when registered without the global auth hook", async () => {
-    const { app } = await harness("editor");
+    const createWorkerClient = vi.fn(() => ({ health: fakeWorker().health }));
+    const { app } = await harness("editor", false, createWorkerClient);
     const response = await app.inject({ method: "GET", url: "/api/admin/cloud-render" });
     expect(response.statusCode).toBe(403);
     expect(response.json()).toMatchObject({ code: "admin_required" });
+
+    const configurationTest = await app.inject({
+      method: "POST",
+      url: "/api/admin/cloud-render/configuration/test",
+      payload: { workerUrl: "https://worker.example.test", workerToken: "token", publicOrigin: "https://studio.example.test" }
+    });
+    expect(configurationTest.statusCode).toBe(403);
+    expect(configurationTest.json()).toMatchObject({ code: "admin_required" });
+    expect(createWorkerClient).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -44,9 +54,87 @@ describe("cloud render admin routes", () => {
     expect(worker.createSession).not.toHaveBeenCalled();
     await app.close();
   });
+
+  it("tests a ready Worker with normalized deployment inputs without persisting the token", async () => {
+    const health = fakeWorker().health;
+    const createWorkerClient = vi.fn(() => ({ health }));
+    const { app } = await harness("admin", false, createWorkerClient);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/cloud-render/configuration/test",
+      payload: {
+        workerUrl: "https://worker.example.test/base/",
+        workerToken: "  test-secret  ",
+        publicOrigin: "https://studio.example.test/"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ ok: true, publicOrigin: "https://studio.example.test", worker: { status: "ready", workerId: "worker-1" } });
+    expect(JSON.stringify(response.json())).not.toContain("test-secret");
+    expect(createWorkerClient).toHaveBeenCalledWith({ baseUrl: "https://worker.example.test/base", token: "test-secret", timeoutMs: 5_000 });
+    expect(health).toHaveBeenCalledOnce();
+    await app.close();
+  });
+
+  it("reports a reachable non-ready Worker without claiming configuration success", async () => {
+    const worker = fakeWorker();
+    worker.health.mockResolvedValue({ ...(await worker.health()), status: "draining" });
+    worker.health.mockClear();
+    const { app } = await harness("admin", false, () => ({ health: worker.health }));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/cloud-render/configuration/test",
+      payload: { workerUrl: "http://127.0.0.1:4200", workerToken: "token", publicOrigin: "https://studio.example.test" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ ok: false, worker: { status: "draining" } });
+    await app.close();
+  });
+
+  it("rejects invalid configuration before creating a Worker client", async () => {
+    const createWorkerClient = vi.fn(() => ({ health: fakeWorker().health }));
+    const { app } = await harness("admin", false, createWorkerClient);
+
+    const invalidOrigin = await app.inject({
+      method: "POST",
+      url: "/api/admin/cloud-render/configuration/test",
+      payload: { workerUrl: "https://worker.example.test", workerToken: "token", publicOrigin: "https://studio.example.test/path" }
+    });
+    expect(invalidOrigin.statusCode).toBe(400);
+    expect(invalidOrigin.json()).toMatchObject({ code: "invalid_cloud_render_url" });
+
+    const missingToken = await app.inject({
+      method: "POST",
+      url: "/api/admin/cloud-render/configuration/test",
+      payload: { workerUrl: "https://worker.example.test", workerToken: " ", publicOrigin: "https://studio.example.test" }
+    });
+    expect(missingToken.statusCode).toBe(400);
+    expect(missingToken.json()).toMatchObject({ code: "invalid_worker_token" });
+    expect(createWorkerClient).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("keeps the Worker token out of connection failure responses", async () => {
+    const token = "do-not-leak";
+    const { app } = await harness("admin", false, () => ({ health: vi.fn().mockRejectedValue(new Error(`authorization ${token} rejected`)) }));
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/cloud-render/configuration/test",
+      payload: { workerUrl: "https://worker.example.test", workerToken: token, publicOrigin: "https://studio.example.test" }
+    });
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({ code: "worker_test_failed" });
+    expect(response.body).not.toContain(token);
+    expect(response.body).toContain("[REDACTED]");
+    await app.close();
+  });
 });
 
-async function harness(role: SystemUserRecord["role"], publish = false) {
+async function harness(role: SystemUserRecord["role"], publish = false, createWorkerClient?: Parameters<typeof registerCloudRenderRoutes>[1]["createWorkerClient"]) {
   const directory = await mkdtemp(path.join(tmpdir(), "bim-cloud-routes-"));
   directories.push(directory);
   const store = new JsonStore(directory);
@@ -68,7 +156,7 @@ async function harness(role: SystemUserRecord["role"], publish = false) {
       createdAt: "2026-08-25T00:00:00.000Z", updatedAt: "2026-08-25T00:00:00.000Z"
     };
   });
-  await registerCloudRenderRoutes(app, { store, control });
+  await registerCloudRenderRoutes(app, { store, control, ...(createWorkerClient ? { createWorkerClient } : {}) });
   return { app, publication, worker };
 }
 

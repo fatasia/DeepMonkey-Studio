@@ -1,35 +1,40 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { pipeline } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import {
   assertPathSafeResourceId,
-  supportedExtensions,
   type DataConnectionRecord,
   type DataDatasetRecord,
   type DataEndpointDefinition,
   type DataEndpointSaveResult,
   type DataPipelineDefinition,
-  type ModelFormat,
-  type ModelRecord,
-  type ProjectAssetRecord,
-  type RvtConversionMode,
   type PublishedSceneRecord,
-  type SceneSnapshot
 } from "@bim-studio/contracts";
 import { compileFormula } from "@bim-studio/data-runtime";
 import { validateDataPipeline } from "@bim-studio/data-runtime/pipeline";
 import { executeRowScript } from "@bim-studio/data-runtime/script";
 import type { AppConfig } from "./config.js";
 import { createDataApiKey, dataApiKeyHint, hashDataApiKey } from "./dataEndpointAuth.js";
-import { demoSensorRows, previewDataset } from "./dataIntegration.js";
+import {
+  demoSensorRows,
+  hasBuiltInDataConnector,
+  hasWritableDataConnector,
+  listConnectorDiagnostics,
+  previewDataset,
+  writeDataPoint,
+  type DataPointWriteRequest,
+} from "./dataIntegration.js";
 import { previewPipeline } from "./dataPipelineService.js";
 import type { ConversionQueue } from "./conversion.js";
 import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
-import { discoverRevitInstallations, getRevitRuntimeInfo, inspectRvtVersion, resolveRevitVersion } from "./revit.js";
+import { getRevitRuntimeInfo } from "./revit.js";
+import { contentType } from "./routeFileTypes.js";
+import { registerModelAssetRoutes } from "./modelAssetRoutes.js";
+import { registerSceneRoutes } from "./sceneRoutes.js";
+import { registerAssetLibraryRoutes } from "./assetLibraryRoutes.js";
 
 interface RouteDependencies {
   store: MetadataStore;
@@ -38,20 +43,11 @@ interface RouteDependencies {
   dataDir: string;
   config: AppConfig;
   beforeDiscardPublication?: (publication: PublishedSceneRecord) => Promise<void>;
-}
-
-function cleanFileName(fileName: string): string {
-  const normalized = path.basename(fileName).normalize("NFKC");
-  return normalized.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").slice(0, 180) || "model";
-}
-
-function modelFormat(fileName: string): ModelFormat | undefined {
-  const extension = path.extname(fileName).slice(1).toLowerCase();
-  return supportedExtensions.find((item) => item === extension);
+  afterPublish?: (publication: PublishedSceneRecord) => Promise<void>;
 }
 
 export async function registerRoutes(app: FastifyInstance, dependencies: RouteDependencies): Promise<void> {
-  const { store, queue, objects, dataDir, config, beforeDiscardPublication } = dependencies;
+  const { store, queue, objects, dataDir, config, beforeDiscardPublication, afterPublish } = dependencies;
 
   app.addHook("preValidation", async (request, reply) => {
     const params = request.params;
@@ -64,6 +60,39 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   });
 
   app.get("/health", async () => ({ status: "ok", service: "bim-studio-api" }));
+  app.get("/api/node-red/health", async () => {
+    const baseUrl = String(process.env.NODE_RED_URL || "http://127.0.0.1:1880").replace(/\/$/, "");
+    const checkedAt = new Date().toISOString();
+    const startedAt = performance.now();
+    const manifest = await nodeRedManifest();
+    try {
+      const response = await fetch(`${baseUrl}/node-red/`, { signal: AbortSignal.timeout(1_500), redirect: "manual" });
+      await response.body?.cancel().catch(() => undefined);
+      const online = response.status >= 200 && response.status < 500;
+      return {
+        online,
+        status: online ? "online" : "offline",
+        statusCode: response.status,
+        latencyMs: Math.round(performance.now() - startedAt),
+        checkedAt,
+        editorPath: "/node-red/",
+        runtimeVersion: manifest.runtimeVersion,
+        declaredNodes: manifest.declaredNodes,
+        ...(online ? {} : { message: `Node-RED 返回 HTTP ${response.status}` }),
+      };
+    } catch (reason) {
+      return {
+        online: false,
+        status: "offline",
+        latencyMs: Math.round(performance.now() - startedAt),
+        checkedAt,
+        editorPath: "/node-red/",
+        runtimeVersion: manifest.runtimeVersion,
+        declaredNodes: manifest.declaredNodes,
+        message: reason instanceof Error ? reason.message : String(reason),
+      };
+    }
+  });
   app.get("/api/revit/installations", async () => getRevitRuntimeInfo());
 
   app.post<{ Body: { sourceUrl?: string; playback?: "hls" | "webrtc" } }>("/api/live-monitor/resolve", async (request, reply) => {
@@ -72,10 +101,22 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     const streamPath = `bim-${createHash("sha256").update(sourceUrl).digest("hex").slice(0, 16)}`;
     const controlBase = (process.env.MEDIA_GATEWAY_CONTROL_URL ?? "http://127.0.0.1:9997").replace(/\/$/, "");
     const addUrl = `${controlBase}/v3/config/paths/add/${encodeURIComponent(streamPath)}`;
-    const response = await fetch(addUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: sourceUrl, sourceOnDemand: true }), signal: AbortSignal.timeout(5_000) }).catch((reason) => { throw new Error(`实时监控服务不可用：${reason instanceof Error ? reason.message : String(reason)}`); });
+    const response = await fetch(addUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: sourceUrl, sourceOnDemand: true }),
+      signal: AbortSignal.timeout(5_000),
+    }).catch((reason) => {
+      throw new Error(`实时监控服务不可用：${reason instanceof Error ? reason.message : String(reason)}`);
+    });
     if (!response.ok && response.status !== 400) throw new Error(`实时监控服务配置失败：HTTP ${response.status}`);
     if (response.status === 400) {
-      const patchResponse = await fetch(`${controlBase}/v3/config/paths/patch/${encodeURIComponent(streamPath)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: sourceUrl, sourceOnDemand: true }), signal: AbortSignal.timeout(5_000) });
+      const patchResponse = await fetch(`${controlBase}/v3/config/paths/patch/${encodeURIComponent(streamPath)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: sourceUrl, sourceOnDemand: true }),
+        signal: AbortSignal.timeout(5_000),
+      });
       if (!patchResponse.ok) throw new Error(`实时监控服务更新失败：HTTP ${patchResponse.status}`);
     }
     const host = request.hostname || "127.0.0.1";
@@ -87,12 +128,12 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
 
   app.get<{ Params: { "*": string } }>("/assets/*", async (request, reply) => {
     const key = decodeURIComponent(request.params["*"]);
-    if (!key || key.split(/[\\/]/).includes("..") || !await objects.stat(key)) {
+    if (!key || key.split(/[\\/]/).includes("..") || !(await objects.stat(key))) {
       return reply.code(404).send({ message: "文件不存在" });
     }
     const acceptsGzip = request.headers["accept-encoding"]?.includes("gzip") ?? false;
     const gzipKey = `${key}.gz`;
-    const useGzip = acceptsGzip && key.toLowerCase().endsWith(".json") && await objects.stat(gzipKey);
+    const useGzip = acceptsGzip && key.toLowerCase().endsWith(".json") && (await objects.stat(gzipKey));
     const result = await objects.read(useGzip ? gzipKey : key);
     void result.completed.catch((error) => request.log.error(error));
     if (useGzip) reply.header("Content-Encoding", "gzip").header("Vary", "Accept-Encoding");
@@ -119,7 +160,7 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     if (request.body?.name !== undefined && !name) return reply.code(400).send({ message: "项目名称不能为空" });
     return store.updateProject(request.params.projectId, {
       ...(name ? { name } : {}),
-      ...(request.body?.description !== undefined ? { description: request.body.description.trim() } : {})
+      ...(request.body?.description !== undefined ? { description: request.body.description.trim() } : {}),
     });
   });
   app.delete<{ Params: { projectId: string } }>("/api/projects/:projectId", async (request, reply) => {
@@ -134,19 +175,105 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
     return store.listDataConnections(request.params.projectId);
   });
+  app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/data-connections/diagnostics", async (request, reply) => {
+    if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+    return listConnectorDiagnostics(request.params.projectId);
+  });
   app.post<{ Params: { projectId: string }; Body: Partial<DataConnectionRecord> }>("/api/projects/:projectId/data-connections", async (request, reply) => {
     if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
     const name = request.body.name?.trim();
     if (!name || !request.body.type) return reply.code(400).send({ message: "连接名称和类型不能为空" });
+    if (!hasBuiltInDataConnector(request.body.type)) return reply.code(501).send({ message: `${request.body.type} 连接器尚未内置；当前版本不能创建或测试该连接` });
     const now = new Date().toISOString();
-    const connection: DataConnectionRecord = { id: request.body.id || randomUUID(), projectId: request.params.projectId, name, type: request.body.type, enabled: request.body.enabled !== false, config: request.body.config ?? {}, createdAt: request.body.createdAt ?? now, updatedAt: now };
+    const connection: DataConnectionRecord = {
+      id: request.body.id || randomUUID(),
+      projectId: request.params.projectId,
+      name,
+      type: request.body.type,
+      enabled: request.body.enabled !== false,
+      config: request.body.config ?? {},
+      createdAt: request.body.createdAt ?? now,
+      updatedAt: now,
+    };
     return reply.code(201).send(await store.saveDataConnection(request.params.projectId, connection));
   });
+  app.post<{ Params: { projectId: string; connectionId: string }; Body: { datasetId?: string } }>(
+    "/api/projects/:projectId/data-connections/:connectionId/test",
+    async (request, reply) => {
+      const connection = store.listDataConnections(request.params.projectId).find((item) => item.id === request.params.connectionId);
+      if (!connection) return reply.code(404).send({ message: "数据连接不存在" });
+      if (!hasBuiltInDataConnector(connection.type)) return reply.code(501).send({ message: `${connection.type} 连接器尚未内置；当前版本不能执行连接测试` });
+      const dataset = request.body?.datasetId
+        ? store.listDatasets(request.params.projectId).find((item) => item.id === request.body?.datasetId && item.connectionId === connection.id)
+        : store.listDatasets(request.params.projectId).find((item) => item.connectionId === connection.id);
+      const probeSourceKey = connection.type === "bacnet" ? "8,1,85" : connection.type === "s7" ? "DB1,REAL0" : connection.type === "ethernet-ip" ? "Tag1" : "";
+      if (!dataset && !["simulation", "bacnet", "s7", "ethernet-ip", "serial"].includes(connection.type))
+        return reply.code(400).send({ message: "请先为该连接创建一个数据集，再执行真实连接测试" });
+      const probe =
+        dataset ??
+        ({
+          id: `probe:${connection.id}`,
+          projectId: request.params.projectId,
+          connectionId: connection.id,
+          name: "连接探针",
+          sourceKey: probeSourceKey,
+          refreshSeconds: 0,
+          fields: [],
+          createdAt: new Date(0).toISOString(),
+          updatedAt: new Date(0).toISOString(),
+        } satisfies DataDatasetRecord);
+      const startedAt = performance.now();
+      try {
+        const preview = await previewDataset(config, connection, probe);
+        return {
+          ok: true,
+          status: "healthy",
+          durationMs: Math.round(preview.durationMs),
+          rowCount: preview.rows.length,
+          fieldCount: preview.fields.length,
+          checkedAt: new Date().toISOString(),
+        };
+      } catch (reason) {
+        return {
+          ok: false,
+          status: "offline",
+          durationMs: Math.round(performance.now() - startedAt),
+          rowCount: 0,
+          fieldCount: 0,
+          checkedAt: new Date().toISOString(),
+          message: reason instanceof Error ? reason.message : String(reason),
+        };
+      }
+    },
+  );
+  app.post<{ Params: { projectId: string; connectionId: string }; Body: DataPointWriteRequest }>(
+    "/api/projects/:projectId/data-connections/:connectionId/write",
+    async (request, reply) => {
+      if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+      const connection = store.listDataConnections(request.params.projectId).find((item) => item.id === request.params.connectionId);
+      if (!connection) return reply.code(404).send({ message: "数据连接不存在" });
+      if (!hasBuiltInDataConnector(connection.type)) return reply.code(501).send({ message: `${connection.type} 连接器尚未内置；当前版本不能写入数据点` });
+      if (!hasWritableDataConnector(connection.type)) return reply.code(405).send({ message: `${connection.type} 连接器当前仅支持读取，不能执行下行写入` });
+      if (!request.body?.address?.trim() || !("value" in (request.body ?? {}))) return reply.code(400).send({ message: "写入请求必须包含 address 和 value" });
+      try {
+        return reply.code(202).send(await writeDataPoint(connection, request.body));
+      } catch (reason) {
+        return reply.code(502).send({ message: reason instanceof Error ? reason.message : String(reason), code: "data_point_write_failed" });
+      }
+    },
+  );
   app.delete<{ Params: { projectId: string; connectionId: string } }>("/api/projects/:projectId/data-connections/:connectionId", async (request, reply) => {
-    const datasetIds = new Set(store.listDatasets(request.params.projectId).filter((dataset) => dataset.connectionId === request.params.connectionId).map((dataset) => dataset.id));
-    const dependentPipeline = store.listDataPipelines(request.params.projectId).find((pipeline) => pipeline.nodes.some((node) => node.type === "source" && datasetIds.has(node.datasetId)));
+    const datasetIds = new Set(
+      store
+        .listDatasets(request.params.projectId)
+        .filter((dataset) => dataset.connectionId === request.params.connectionId)
+        .map((dataset) => dataset.id),
+    );
+    const dependentPipeline = store
+      .listDataPipelines(request.params.projectId)
+      .find((pipeline) => pipeline.nodes.some((node) => node.type === "source" && datasetIds.has(node.datasetId)));
     if (dependentPipeline) return reply.code(409).send({ message: `连接仍被流水线“${dependentPipeline.name}”使用` });
-    return await store.removeDataConnection(request.params.projectId, request.params.connectionId) ? reply.code(204).send() : reply.code(404).send({ message: "数据连接不存在" });
+    return (await store.removeDataConnection(request.params.projectId, request.params.connectionId)) ? reply.code(204).send() : reply.code(404).send({ message: "数据连接不存在" });
   });
   app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/datasets", async (request, reply) => {
     if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
@@ -167,7 +294,21 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
       return reply.code(400).send({ message: reason instanceof Error ? reason.message : "计算字段公式无效" });
     }
     const now = new Date().toISOString();
-    const dataset: DataDatasetRecord = { id: request.body.id || randomUUID(), projectId: request.params.projectId, connectionId: request.body.connectionId, name, ...(request.body.query !== undefined ? { query: request.body.query } : {}), ...(request.body.sourceKey !== undefined ? { sourceKey: request.body.sourceKey } : {}), refreshSeconds: Math.max(0, Number(request.body.refreshSeconds ?? 10)), fields: request.body.fields ?? [], ...(computedFields.length ? { computedFields: computedFields.map((field) => ({ ...field, key: field.key.trim(), label: field.label.trim() || field.key.trim(), formula: field.formula.trim() })) } : {}), createdAt: request.body.createdAt ?? now, updatedAt: now };
+    const dataset: DataDatasetRecord = {
+      id: request.body.id || randomUUID(),
+      projectId: request.params.projectId,
+      connectionId: request.body.connectionId,
+      name,
+      ...(request.body.query !== undefined ? { query: request.body.query } : {}),
+      ...(request.body.sourceKey !== undefined ? { sourceKey: request.body.sourceKey } : {}),
+      refreshSeconds: Math.max(0, Number(request.body.refreshSeconds ?? 10)),
+      fields: request.body.fields ?? [],
+      ...(computedFields.length
+        ? { computedFields: computedFields.map((field) => ({ ...field, key: field.key.trim(), label: field.label.trim() || field.key.trim(), formula: field.formula.trim() })) }
+        : {}),
+      createdAt: request.body.createdAt ?? now,
+      updatedAt: now,
+    };
     return reply.code(201).send(await store.saveDataset(request.params.projectId, dataset));
   });
   app.get<{ Params: { projectId: string; datasetId: string } }>("/api/projects/:projectId/datasets/:datasetId/preview", async (request, reply) => {
@@ -178,9 +319,11 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     return previewDataset(config, connection, dataset);
   });
   app.delete<{ Params: { projectId: string; datasetId: string } }>("/api/projects/:projectId/datasets/:datasetId", async (request, reply) => {
-    const dependentPipeline = store.listDataPipelines(request.params.projectId).find((pipeline) => pipeline.nodes.some((node) => node.type === "source" && node.datasetId === request.params.datasetId));
+    const dependentPipeline = store
+      .listDataPipelines(request.params.projectId)
+      .find((pipeline) => pipeline.nodes.some((node) => node.type === "source" && node.datasetId === request.params.datasetId));
     if (dependentPipeline) return reply.code(409).send({ message: `数据集仍被流水线“${dependentPipeline.name}”使用` });
-    return await store.removeDataset(request.params.projectId, request.params.datasetId) ? reply.code(204).send() : reply.code(404).send({ message: "数据集不存在" });
+    return (await store.removeDataset(request.params.projectId, request.params.datasetId)) ? reply.code(204).send() : reply.code(404).send({ message: "数据集不存在" });
   });
 
   app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/data-pipelines", async (request, reply) => {
@@ -200,7 +343,15 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
       return reply.code(400).send({ message: reason instanceof Error ? reason.message : "流水线无效" });
     }
     const now = new Date().toISOString();
-    const definition: DataPipelineDefinition = { id: request.body.id || randomUUID(), projectId: request.params.projectId, name, nodes, edges, createdAt: request.body.createdAt ?? now, updatedAt: now };
+    const definition: DataPipelineDefinition = {
+      id: request.body.id || randomUUID(),
+      projectId: request.params.projectId,
+      name,
+      nodes,
+      edges,
+      createdAt: request.body.createdAt ?? now,
+      updatedAt: now,
+    };
     try {
       return reply.code(201).send(await store.saveDataPipeline(request.params.projectId, definition));
     } catch (reason) {
@@ -219,386 +370,96 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   app.delete<{ Params: { projectId: string; pipelineId: string } }>("/api/projects/:projectId/data-pipelines/:pipelineId", async (request, reply) => {
     const dependentEndpoint = store.listDataEndpoints(request.params.projectId).find((endpoint) => endpoint.pipelineId === request.params.pipelineId);
     if (dependentEndpoint) return reply.code(409).send({ message: `流水线仍被接口“${dependentEndpoint.name}”使用` });
-    return await store.removeDataPipeline(request.params.projectId, request.params.pipelineId) ? reply.code(204).send() : reply.code(404).send({ message: "流水线不存在" });
+    return (await store.removeDataPipeline(request.params.projectId, request.params.pipelineId)) ? reply.code(204).send() : reply.code(404).send({ message: "流水线不存在" });
   });
 
   app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/data-endpoints", async (request, reply) => {
     if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
     return store.listDataEndpoints(request.params.projectId);
   });
-  app.post<{ Params: { projectId: string }; Body: Partial<DataEndpointDefinition> & { rotateKey?: boolean } }>("/api/projects/:projectId/data-endpoints", async (request, reply) => {
-    if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
-    const name = request.body.name?.trim();
-    const slug = request.body.slug?.trim().toLowerCase();
-    if (!name || !slug || !request.body.kind || !request.body.pipelineId) return reply.code(400).send({ message: "接口名称、类型、路径和流水线不能为空" });
-    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) return reply.code(400).send({ message: "接口路径仅支持小写字母、数字、短横线和下划线，最长 64 位" });
-    if (!store.listDataPipelines(request.params.projectId).some((pipeline) => pipeline.id === request.body.pipelineId)) return reply.code(400).send({ message: "接口引用的流水线不存在" });
-    const id = request.body.id || randomUUID();
-    const existing = store.listDataEndpoints(request.params.projectId).find((endpoint) => endpoint.id === id);
-    if (store.listDataEndpoints(request.params.projectId).some((endpoint) => endpoint.id !== id && endpoint.kind === request.body.kind && endpoint.slug === slug)) return reply.code(409).send({ message: "同类型接口路径不能重复" });
-    const createKey = !existing || request.body.rotateKey === true || !store.getDataEndpointSecretHash(id);
-    const apiKey = createKey ? createDataApiKey() : undefined;
-    const now = new Date().toISOString();
-    const endpoint: DataEndpointDefinition = {
-      id, projectId: request.params.projectId, name, kind: request.body.kind, slug, pipelineId: request.body.pipelineId,
-      enabled: request.body.enabled !== false, apiKeyHint: apiKey ? dataApiKeyHint(apiKey) : existing?.apiKeyHint ?? "••••••",
-      ...(request.body.kind === "rest" ? { method: request.body.method === "POST" ? "POST" : "GET" } : { channel: request.body.channel?.trim() || slug, intervalMs: Math.max(1_000, Math.min(60_000, Number(request.body.intervalMs ?? 5_000))) }),
-      requestsPerMinute: Math.max(1, Math.min(600, Math.floor(Number(request.body.requestsPerMinute ?? 60)))),
-      createdAt: existing?.createdAt ?? request.body.createdAt ?? now, updatedAt: now
-    };
-    try {
-      const saved = await store.saveDataEndpoint(request.params.projectId, endpoint, apiKey ? hashDataApiKey(apiKey) : undefined);
-      const result: DataEndpointSaveResult = { endpoint: saved, ...(apiKey ? { apiKey } : {}) };
-      return reply.code(existing ? 200 : 201).send(result);
-    } catch (reason) {
-      return reply.code(400).send({ message: reason instanceof Error ? reason.message : "接口保存失败" });
-    }
-  });
+  app.post<{ Params: { projectId: string }; Body: Partial<DataEndpointDefinition> & { rotateKey?: boolean } }>(
+    "/api/projects/:projectId/data-endpoints",
+    async (request, reply) => {
+      if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+      const name = request.body.name?.trim();
+      const slug = request.body.slug?.trim().toLowerCase();
+      if (!name || !slug || !request.body.kind || !request.body.pipelineId) return reply.code(400).send({ message: "接口名称、类型、路径和流水线不能为空" });
+      if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) return reply.code(400).send({ message: "接口路径仅支持小写字母、数字、短横线和下划线，最长 64 位" });
+      if (!store.listDataPipelines(request.params.projectId).some((pipeline) => pipeline.id === request.body.pipelineId))
+        return reply.code(400).send({ message: "接口引用的流水线不存在" });
+      const id = request.body.id || randomUUID();
+      const existing = store.listDataEndpoints(request.params.projectId).find((endpoint) => endpoint.id === id);
+      if (store.listDataEndpoints(request.params.projectId).some((endpoint) => endpoint.id !== id && endpoint.kind === request.body.kind && endpoint.slug === slug))
+        return reply.code(409).send({ message: "同类型接口路径不能重复" });
+      const createKey = !existing || request.body.rotateKey === true || !store.getDataEndpointSecretHash(id);
+      const apiKey = createKey ? createDataApiKey() : undefined;
+      const now = new Date().toISOString();
+      const endpoint: DataEndpointDefinition = {
+        id,
+        projectId: request.params.projectId,
+        name,
+        kind: request.body.kind,
+        slug,
+        pipelineId: request.body.pipelineId,
+        enabled: request.body.enabled !== false,
+        apiKeyHint: apiKey ? dataApiKeyHint(apiKey) : (existing?.apiKeyHint ?? "••••••"),
+        ...(request.body.kind === "rest"
+          ? { method: request.body.method === "POST" ? "POST" : "GET" }
+          : { channel: request.body.channel?.trim() || slug, intervalMs: Math.max(1_000, Math.min(60_000, Number(request.body.intervalMs ?? 5_000))) }),
+        requestsPerMinute: Math.max(1, Math.min(600, Math.floor(Number(request.body.requestsPerMinute ?? 60)))),
+        createdAt: existing?.createdAt ?? request.body.createdAt ?? now,
+        updatedAt: now,
+      };
+      try {
+        const saved = await store.saveDataEndpoint(request.params.projectId, endpoint, apiKey ? hashDataApiKey(apiKey) : undefined);
+        const result: DataEndpointSaveResult = { endpoint: saved, ...(apiKey ? { apiKey } : {}) };
+        return reply.code(existing ? 200 : 201).send(result);
+      } catch (reason) {
+        return reply.code(400).send({ message: reason instanceof Error ? reason.message : "接口保存失败" });
+      }
+    },
+  );
   app.post<{ Params: { projectId: string; endpointId: string } }>("/api/projects/:projectId/data-endpoints/:endpointId/test", async (request, reply) => {
     const endpoint = store.listDataEndpoints(request.params.projectId).find((item) => item.id === request.params.endpointId);
     if (!endpoint) return reply.code(404).send({ message: "接口不存在" });
     const definition = store.listDataPipelines(request.params.projectId).find((pipeline) => pipeline.id === endpoint.pipelineId);
     if (!definition) return reply.code(409).send({ message: "接口引用的流水线不存在" });
-    try { return await previewPipeline(config, store, definition); }
-    catch (reason) { return reply.code(400).send({ message: reason instanceof Error ? reason.message : "接口测试失败" }); }
+    try {
+      return await previewPipeline(config, store, definition);
+    } catch (reason) {
+      return reply.code(400).send({ message: reason instanceof Error ? reason.message : "接口测试失败" });
+    }
   });
   app.delete<{ Params: { projectId: string; endpointId: string } }>("/api/projects/:projectId/data-endpoints/:endpointId", async (request, reply) => {
-    return await store.removeDataEndpoint(request.params.projectId, request.params.endpointId) ? reply.code(204).send() : reply.code(404).send({ message: "接口不存在" });
+    return (await store.removeDataEndpoint(request.params.projectId, request.params.endpointId)) ? reply.code(204).send() : reply.code(404).send({ message: "接口不存在" });
   });
 
-  app.post<{ Params: { projectId: string }; Querystring: { rvtConversionMode?: string; rvtRevitVersion?: string } }>("/api/projects/:projectId/models", async (request, reply) => {
-    const project = store.getProject(request.params.projectId);
-    if (!project) return reply.code(404).send({ message: "项目不存在" });
-    const part = await request.file();
-    if (!part) return reply.code(400).send({ message: "请选择模型文件" });
-    const format = modelFormat(part.filename);
-    if (!format) {
-      part.file.resume();
-      return reply.code(415).send({ message: `不支持该格式，仅支持 ${supportedExtensions.join(", ")}` });
-    }
-    const requestedMode = request.query.rvtConversionMode ?? "native-glb";
-    if (format === "rvt" && requestedMode !== "ifc" && requestedMode !== "native-glb") {
-      part.file.resume();
-      return reply.code(400).send({ message: "RVT 转换模式必须是 ifc 或 native-glb" });
-    }
-    const rvtConversionMode = format === "rvt" ? requestedMode as RvtConversionMode : undefined;
-    const modelId = randomUUID();
-    const safeName = cleanFileName(part.filename);
-    const modelDir = path.join(dataDir, "projects", project.id, "models", modelId);
-    const sourceDir = path.join(modelDir, "source");
-    const sourcePath = path.join(sourceDir, safeName);
-    await mkdir(sourceDir, { recursive: true });
-    await pipeline(part.file, createWriteStream(sourcePath, { flags: "wx" }));
-    let rvtSourceVersion: string | undefined;
-    let rvtRevitVersion: string | undefined;
-    if (format === "rvt") {
-      rvtSourceVersion = await inspectRvtVersion(config.rvt, sourcePath);
-      try {
-        rvtRevitVersion = resolveRevitVersion(await discoverRevitInstallations(), request.query.rvtRevitVersion, rvtSourceVersion);
-      } catch (reason) {
-        await rm(modelDir, { recursive: true, force: true });
-        return reply.code(400).send({ message: reason instanceof Error ? reason.message : "无法选择 Revit 版本" });
-      }
-    }
-    await objects.putFile(`projects/${project.id}/models/${modelId}/source/${safeName}`, sourcePath);
-    const now = new Date().toISOString();
-    const model: ModelRecord = {
-      id: modelId,
-      projectId: project.id,
-      name: safeName,
-      format,
-      ...(rvtConversionMode ? { rvtConversionMode } : {}),
-      ...(rvtSourceVersion ? { rvtSourceVersion } : {}),
-      ...(rvtRevitVersion ? { rvtRevitVersion } : {}),
-      size: part.file.bytesRead,
-      status: "queued",
-      progress: 0,
-      message: rvtRevitVersion ? `等待 Revit ${rvtRevitVersion} 转换` : "等待转换",
-      sourceUrl: `/assets/projects/${project.id}/models/${modelId}/source/${encodeURIComponent(safeName)}`,
-      createdAt: now,
-      updatedAt: now
-    };
-    await store.addModel(project.id, model);
-    queue.enqueue({ model, sourcePath, modelDir });
-    return reply.code(202).send(model);
+  await registerModelAssetRoutes(app, { store, queue, objects, dataDir, config });
+  await registerAssetLibraryRoutes(app, { store, queue, objects, dataDir, libraryDir: config.assetLibraryDir });
+  await registerSceneRoutes(app, {
+    store,
+    ...(beforeDiscardPublication ? { beforeDiscardPublication } : {}),
+    ...(afterPublish ? { afterPublish } : {}),
   });
-
-  app.patch<{ Params: { projectId: string; modelId: string }; Body: { name?: string } }>("/api/projects/:projectId/models/:modelId", async (request, reply) => {
-    const name = request.body?.name?.trim();
-    if (!name) return reply.code(400).send({ message: "资源名称不能为空" });
-    const project = store.getProject(request.params.projectId);
-    if (!project?.models.some((item) => item.id === request.params.modelId)) return reply.code(404).send({ message: "模型不存在" });
-    return store.updateModel(request.params.projectId, request.params.modelId, { name: name.slice(0, 180) });
-  });
-
-  app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/assets", async (request, reply) => {
-    if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
-    return store.listAssets(request.params.projectId);
-  });
-
-  app.post<{ Params: { projectId: string } }>("/api/projects/:projectId/assets/images", async (request, reply) => {
-    const project = store.getProject(request.params.projectId);
-    if (!project) return reply.code(404).send({ message: "项目不存在" });
-    const part = await request.file();
-    if (!part) return reply.code(400).send({ message: "请选择图片" });
-    const extension = path.extname(part.filename).toLowerCase();
-    const mimeType = imageContentType(extension);
-    if (!mimeType) {
-      part.file.resume();
-      return reply.code(415).send({ message: "图片仅支持 JPG、PNG、WEBP、GIF、SVG" });
-    }
-    const id = randomUUID();
-    const safeName = cleanFileName(part.filename);
-    const directory = path.join(dataDir, "projects", project.id, "assets", id);
-    const filePath = path.join(directory, safeName);
-    await mkdir(directory, { recursive: true });
-    await pipeline(part.file, createWriteStream(filePath, { flags: "wx" }));
-    const key = `projects/${project.id}/assets/${id}/${safeName}`;
-    await objects.putFile(key, filePath);
-    const now = new Date().toISOString();
-    const asset: ProjectAssetRecord = { id, projectId: project.id, kind: "image", name: safeName, fileName: safeName, mimeType, size: part.file.bytesRead, url: `/assets/${key}`, createdAt: now, updatedAt: now };
-    return reply.code(201).send(await store.saveAsset(project.id, asset));
-  });
-
-  app.post<{ Params: { projectId: string } }>("/api/projects/:projectId/assets/videos", async (request, reply) => {
-    const project = store.getProject(request.params.projectId);
-    if (!project) return reply.code(404).send({ message: "项目不存在" });
-    const part = await request.file();
-    if (!part) return reply.code(400).send({ message: "请选择视频" });
-    const extension = path.extname(part.filename).toLowerCase();
-    const mimeType = videoContentType(extension);
-    if (!mimeType) {
-      part.file.resume();
-      return reply.code(415).send({ message: "视频仅支持 MP4、WEBM、OGV、MOV" });
-    }
-    const id = randomUUID();
-    const safeName = cleanFileName(part.filename);
-    const directory = path.join(dataDir, "projects", project.id, "assets", id);
-    const filePath = path.join(directory, safeName);
-    await mkdir(directory, { recursive: true });
-    await pipeline(part.file, createWriteStream(filePath, { flags: "wx" }));
-    const key = `projects/${project.id}/assets/${id}/${safeName}`;
-    await objects.putFile(key, filePath);
-    const now = new Date().toISOString();
-    const asset: ProjectAssetRecord = { id, projectId: project.id, kind: "video", name: safeName, fileName: safeName, mimeType, size: part.file.bytesRead, url: `/assets/${key}`, createdAt: now, updatedAt: now };
-    return reply.code(201).send(await store.saveAsset(project.id, asset));
-  });
-
-  app.patch<{ Params: { projectId: string; assetId: string }; Body: { name?: string } }>("/api/projects/:projectId/assets/:assetId", async (request, reply) => {
-    const asset = store.listAssets(request.params.projectId).find((item) => item.id === request.params.assetId);
-    if (!asset) return reply.code(404).send({ message: "资源不存在" });
-    const name = request.body?.name?.trim();
-    if (!name) return reply.code(400).send({ message: "资源名称不能为空" });
-    return store.saveAsset(request.params.projectId, { ...asset, name: name.slice(0, 180), updatedAt: new Date().toISOString() });
-  });
-
-  app.delete<{ Params: { projectId: string; assetId: string } }>("/api/projects/:projectId/assets/:assetId", async (request, reply) => {
-    const removed = await store.removeAsset(request.params.projectId, request.params.assetId);
-    if (!removed) return reply.code(404).send({ message: "资源不存在" });
-    await objects.removePrefix(`projects/${request.params.projectId}/assets/${request.params.assetId}`);
-    await rm(path.join(dataDir, "projects", request.params.projectId, "assets", request.params.assetId), { recursive: true, force: true });
-    return reply.code(204).send();
-  });
-
-  app.post<{ Params: { projectId: string } }>("/api/projects/:projectId/environment-maps", async (request, reply) => {
-    const project = store.getProject(request.params.projectId);
-    if (!project) return reply.code(404).send({ message: "项目不存在" });
-    const part = await request.file();
-    if (!part) return reply.code(400).send({ message: "请选择环境贴图" });
-    const extension = path.extname(part.filename).toLowerCase();
-    if (![".hdr", ".exr", ".jpg", ".jpeg", ".png", ".webp"].includes(extension)) {
-      part.file.resume();
-      return reply.code(415).send({ message: "环境贴图仅支持 HDR、EXR、JPG、PNG、WEBP" });
-    }
-    const id = randomUUID();
-    const safeName = cleanFileName(part.filename);
-    const directory = path.join(dataDir, "projects", project.id, "environment-maps", id);
-    const filePath = path.join(directory, safeName);
-    await mkdir(directory, { recursive: true });
-    await pipeline(part.file, createWriteStream(filePath, { flags: "wx" }));
-    const key = `projects/${project.id}/environment-maps/${id}/${safeName}`;
-    await objects.putFile(key, filePath);
-    return reply.code(201).send({ name: safeName, url: `/assets/${key}` });
-  });
-
-  app.delete<{ Params: { projectId: string; modelId: string } }>(
-    "/api/projects/:projectId/models/:modelId",
-    async (request, reply) => {
-      const removed = await store.removeModel(request.params.projectId, request.params.modelId);
-      if (!removed) return reply.code(404).send({ message: "模型不存在" });
-      const modelDir = path.join(dataDir, "projects", request.params.projectId, "models", request.params.modelId);
-      await objects.removePrefix(`projects/${request.params.projectId}/models/${request.params.modelId}`);
-      await rm(modelDir, { recursive: true, force: true });
-      return reply.code(204).send();
-    }
-  );
-
-  app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/scenes", async (request) =>
-    store.listScenes(request.params.projectId)
-  );
-  app.get<{ Params: { projectId: string; sceneId: string } }>(
-    "/api/projects/:projectId/scenes/:sceneId",
-    async (request, reply) => {
-      const scene = store.getScene(request.params.projectId, request.params.sceneId);
-      return scene ?? reply.code(404).send({ message: "场景不存在" });
-    }
-  );
-  app.put<{ Params: { projectId: string; sceneId: string }; Body: SceneSnapshot }>(
-    "/api/projects/:projectId/scenes/:sceneId",
-    async (request, reply) => {
-      if (!request.body || request.body.schemaVersion !== 1) {
-        return reply.code(400).send({ message: "场景格式无效" });
-      }
-      const existing = store.getScene(request.params.projectId, request.params.sceneId);
-      const now = new Date().toISOString();
-      const publishedAt = request.body.publishedAt ?? existing?.publishedAt;
-      const scene: SceneSnapshot = {
-        ...request.body,
-        id: request.params.sceneId,
-        projectId: request.params.projectId,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-        ...(publishedAt ? { publishedAt } : {})
-      };
-      return store.saveScene(scene);
-    }
-  );
-  app.post<{ Params: { projectId: string }; Body: SceneSnapshot }>(
-    "/api/projects/:projectId/scenes/import",
-    async (request, reply) => {
-      if (!request.body || request.body.schemaVersion !== 1) {
-        return reply.code(400).send({ message: "场景格式无效" });
-      }
-      const now = new Date().toISOString();
-      const { publishedAt: _publishedAt, ...importedBody } = request.body;
-      const scene: SceneSnapshot = {
-        ...importedBody,
-        id: randomUUID(),
-        projectId: request.params.projectId,
-        createdAt: now,
-        updatedAt: now
-      };
-      return reply.code(201).send(await store.saveScene(scene));
-    }
-  );
-  app.post<{ Params: { projectId: string; sceneId: string }; Body?: { name?: string } }>(
-    "/api/projects/:projectId/scenes/:sceneId/copy",
-    async (request, reply) => {
-      const source = store.getScene(request.params.projectId, request.params.sceneId);
-      if (!source) return reply.code(404).send({ message: "场景不存在" });
-      const now = new Date().toISOString();
-      const requestedName = request.body?.name?.trim();
-      const { publishedAt: _publishedAt, ...sourceBody } = source;
-      const copy: SceneSnapshot = {
-        ...structuredClone(sourceBody),
-        id: randomUUID(),
-        name: requestedName || `${source.name} - 副本`,
-        createdAt: now,
-        updatedAt: now
-      };
-      return reply.code(201).send(await store.saveScene(copy));
-    }
-  );
-  app.patch<{ Params: { projectId: string; sceneId: string }; Body: { name?: string } }>(
-    "/api/projects/:projectId/scenes/:sceneId",
-    async (request, reply) => {
-      const source = store.getScene(request.params.projectId, request.params.sceneId);
-      if (!source) return reply.code(404).send({ message: "场景不存在" });
-      const name = request.body?.name?.trim();
-      if (!name) return reply.code(400).send({ message: "场景名称不能为空" });
-      return store.saveScene({ ...source, name, updatedAt: new Date().toISOString() });
-    }
-  );
-  app.post<{ Params: { projectId: string; sceneId: string } }>(
-    "/api/projects/:projectId/scenes/:sceneId/publish",
-    async (request, reply) => {
-      const source = store.getScene(request.params.projectId, request.params.sceneId);
-      if (!source) return reply.code(404).send({ message: "场景不存在" });
-      const currentPublication = store.getPublication(source.id);
-      if (currentPublication && beforeDiscardPublication) {
-        try { await beforeDiscardPublication(currentPublication); }
-        catch (reason) { return reply.code(502).send({ message: reason instanceof Error ? reason.message : "无法停止旧云渲染会话" }); }
-      }
-      const publishedAt = new Date().toISOString();
-      const publishedScene: SceneSnapshot = { ...source, publishedAt, updatedAt: publishedAt };
-      await store.saveScene(publishedScene);
-      const publication: PublishedSceneRecord = {
-        sceneId: publishedScene.id,
-        projectId: publishedScene.projectId,
-        name: publishedScene.name,
-        snapshot: structuredClone(publishedScene),
-        publishedAt
-      };
-      return reply.code(201).send(await store.savePublication(publication));
-    }
-  );
-  app.get<{ Params: { sceneId: string } }>("/api/public/scenes/:sceneId", async (request, reply) => {
-    const publication = store.getPublication(request.params.sceneId);
-    return publication ?? reply.code(404).send({ message: "场景尚未发布或已删除" });
-  });
-  app.delete<{ Params: { projectId: string; sceneId: string } }>(
-    "/api/projects/:projectId/scenes/:sceneId/publish",
-    async (request, reply) => {
-      const source = store.getScene(request.params.projectId, request.params.sceneId);
-      if (!source) return reply.code(404).send({ message: "场景不存在" });
-      const publication = store.getPublication(source.id);
-      if (!publication) return reply.code(404).send({ message: "场景尚未发布" });
-      if (beforeDiscardPublication) {
-        try { await beforeDiscardPublication(publication); }
-        catch (reason) { return reply.code(502).send({ message: reason instanceof Error ? reason.message : "无法停止云渲染会话" }); }
-      }
-      const removed = await store.removePublication(source.id);
-      if (!removed) return reply.code(404).send({ message: "场景尚未发布" });
-      return reply.code(204).send();
-    }
-  );
-  app.get<{ Params: { sceneId: string } }>("/api/scenes/:sceneId/browse", async (request, reply) => {
-    const scene = store.getSceneById(request.params.sceneId);
-    if (!scene) return reply.code(404).send({ message: "场景不存在" });
-    const project = store.getProject(scene.projectId);
-    if (!project) return reply.code(404).send({ message: "场景所属项目不存在" });
-    return { scene, project };
-  });
-  app.delete<{ Params: { projectId: string; sceneId: string } }>(
-    "/api/projects/:projectId/scenes/:sceneId",
-    async (request, reply) => {
-      const publication = store.getPublication(request.params.sceneId);
-      if (publication && beforeDiscardPublication) {
-        try { await beforeDiscardPublication(publication); }
-        catch (reason) { return reply.code(502).send({ message: reason instanceof Error ? reason.message : "无法停止云渲染会话" }); }
-      }
-      const removed = await store.removeScene(request.params.projectId, request.params.sceneId);
-      if (!removed) return reply.code(404).send({ message: "场景不存在" });
-      return reply.code(204).send();
-    }
-  );
-}
-
-function contentType(fileName: string): string {
-  const extension = path.extname(fileName).toLowerCase();
-  const imageType = imageContentType(extension);
-  if (imageType) return imageType;
-  const videoType = videoContentType(extension);
-  if (videoType) return videoType;
-  if (extension === ".json" || extension === ".gltf") return "application/json; charset=utf-8";
-  if (extension === ".glb") return "model/gltf-binary";
-  if (extension === ".ifc") return "application/x-step";
-  if (extension === ".fbx") return "application/octet-stream";
-  if (extension === ".dxf") return "application/dxf";
-  if (extension === ".dwg") return "application/acad";
-  if (extension === ".step" || extension === ".stp") return "model/step";
-  if (extension === ".rvt") return "application/octet-stream";
-  return "application/octet-stream";
-}
-
-function imageContentType(extension: string): string | undefined {
-  return ({ ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml" } as Record<string, string>)[extension];
-}
-
-function videoContentType(extension: string): string | undefined {
-  return ({ ".mp4": "video/mp4", ".webm": "video/webm", ".ogv": "video/ogg", ".mov": "video/quicktime" } as Record<string, string>)[extension];
 }
 
 function isSupportedLiveSource(value: string): boolean {
   return /^(rtsps?|rtmps?|srt|wheps?|https?|udp\+mpegts|udp\+rtp):\/\//i.test(value);
+}
+
+async function nodeRedManifest(): Promise<{ runtimeVersion: string; declaredNodes: string[] }> {
+  const routeDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const manifestPath = path.resolve(routeDirectory, "../../node-red/package.json");
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { dependencies?: Record<string, string> };
+    const dependencies = manifest.dependencies ?? {};
+    return {
+      runtimeVersion: dependencies["node-red"] ?? "unknown",
+      declaredNodes: Object.keys(dependencies)
+        .filter((name) => name !== "node-red" && (name.startsWith("node-red-") || name.startsWith("@flowfuse/node-red-")))
+        .sort(),
+    };
+  } catch {
+    return { runtimeVersion: "unknown", declaredNodes: [] };
+  }
 }

@@ -45,6 +45,10 @@ export function evaluateApplicationInteraction(
         variableUpdates[action.dataKey] = structuredClone(action.value);
         continue;
       }
+      if (action.type === "dashboard" && action.dataKey) {
+        const mapped = mapInteractionValue(action.value, event.payload);
+        if (mapped !== undefined) variableUpdates[action.dataKey] = structuredClone(mapped);
+      }
       effects.push({
         flowId: flow.id,
         source: structuredClone(event.source),
@@ -60,6 +64,20 @@ export function evaluateApplicationInteraction(
     variableUpdates,
     effects
   };
+}
+
+function mapInteractionValue(expression: SceneInteractionActionState["value"], payload: JsonValue | undefined): JsonValue | undefined {
+  if (expression === undefined || expression === "$event") return payload;
+  if (typeof expression !== "string" || !expression.startsWith("$event.")) return expression;
+  let current: JsonValue | undefined = payload;
+  for (const segment of expression.slice(7).split(".").filter(Boolean)) {
+    if (Array.isArray(current)) {
+      const index = Number(segment);
+      current = Number.isInteger(index) ? current[index] : undefined;
+    } else if (current && typeof current === "object") current = current[segment];
+    else return undefined;
+  }
+  return current;
 }
 
 export function sameObjectRef(left: ApplicationObjectRef, right: ApplicationObjectRef): boolean {

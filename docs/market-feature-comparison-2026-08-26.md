@@ -1,6 +1,6 @@
 # iTwin Studio 逐功能市场对比矩阵
 
-评估快照：2026-08-26。对照对象为 ThingJS、FineVis/FineBI、山海鲸、51WDP 和 Unity 6。
+评估快照：2026-08-26，2026-08-30 补充图扑软件 HT for Web。对照对象为 ThingJS、FineVis/FineBI、山海鲸、图扑 HT for Web、51WDP 和 Unity 6。
 
 本矩阵只记录本次查到的官方公开资料与当前仓库证据。`●` 表示所列官方资料明确覆盖，`△` 表示只覆盖相邻能力或产品形态不同，`—` 表示本次公开资料抽样未找到足够证据，**不表示竞品一定没有该能力**。商业版、私有版和未公开能力需要单独 PoC，不能从营销页反推。
 
@@ -23,7 +23,11 @@
 | JavaScript/C#/组件二开 | ● | △ | ● | ● | ● | 版本化 API、类型、权限、沙箱、预算、日志和可安装样例 |
 | 本地/私有化交付与系统集成 | ● | ● | ● | ● | ● | 离线资源、身份、发布回滚、升级和故障恢复需端到端证据 |
 | 运行时资源与性能诊断 | △ | — | — | △ | ● | 首帧、帧时间、内存/显存、切换残留、长任务和固定工作负载 |
-| WebGPU 优先、WebGL 兼容 | — | — | — | — | — | 这是 iTwin Studio 自定技术门槛；必须用同场景画质和性能矩阵证明，而非口号 |
+| WebGPU 优先、WebGL 兼容 | — | — | — | — | ●（Unity 6000.6 WebGPU 正式支持并可回退） | WebGPU 已是对 Unity 的正式一级门槛；必须用同场景画质、GPU 帧时、首帧、短时资源稳定和恢复矩阵证明，而非口号 |
+
+### 图扑 HT for Web 的独立门槛
+
+图扑官方指南强调 GraphView（2D）与 Graph3dView（3D）可共享 DataModel，并尽量保持 API 一致；其 2D 侧还覆盖节点、连线、编辑、自动布局和工业图元。这一产品结构不能只用“也有 2D/3D”代替。对本项目的有效门槛是：同一稳定对象模型在 2D、3D、拓扑、Unity 嵌入和脚本中不重复建模；对象状态、选择、显隐和数据更新能跨视图复用；基础 API 扁平、类型化且不要求用户理解内部渲染器层级。当前统一 ApplicationDocument、拓扑数据、2D/3D/脚本上下文和 `studio.unity()` 是纵向切片，尚不能声称全面超过 HT for Web 的成熟图元、布局和行业实施积累。
 
 ## iTwin Studio 当前证据状态
 
@@ -46,17 +50,17 @@
 | WebGPU 优先与 WebGL 回退 | **部分** | 新渲染能力以 WebGPU 路径为目标；本机双向切换保留场景且无新增错误 | R1–R5 尚未过门，故生产默认仍诚实保留 WebGL；后处理/XR、画质、帧时间、显存和设备丢失矩阵未完成 |
 | 场景切换稳定性 | **已验证（短测）** | 修复 WebGL context 释放后，同机会话 20/20 次切换 ready，无新增错误 | 内存/显存残留、崩溃恢复和多应用压力 |
 | Data Hub 与跨组件分析 | **部分** | 连接器、数据集、Pipeline、公式、直接绑定和运行日志已有测试 | FineBI 级模型/语义、自动联动、钻取、级联参数和大数据量证据 |
-| BIM/CAD 转换、地图与拓扑 | **部分** | 常用格式链路、轻量地图与 TopologyEditor 已有纵向切片 | 强化现有 RVT/IFC/STEP/DWG/DXF/GLB/FBX 链路；x_t/x_b 与 JT 已移出产品范围 |
+| BIM/CAD 转换、地图与拓扑 | **部分** | 常用格式链路、轻量地图与 TopologyEditor 已有纵向切片；RVT/XT/JT 已有受控上传、Provider 目录、任务和 MCP/SDK 边界 | 用正式样本与商业 Provider 完成装配/属性/PMI/版本矩阵验收；不承诺无依赖直读 |
 | 插件/SDK 企业生态 | **部分** | scene-sdk、plugin-runtime、示例插件与合同测试存在 | 签名仓库、第三方不改核心迁移任务、兼容升级、安全禁用与市场流程 |
 | Tauri 本地客户端 | **部分** | `apps/desktop` 与基本测试存在 | 安全令牌、OAuth 回调、恢复点、续传、安装签名和自动更新 E2E |
 | 云渲染 | **已验证（单节点）** | 真实 Chromium GPU Worker；RTX 4060 Laptop GPU、H265 硬件编码、1280×720 WebRTC 媒体、输入 DataChannel、RTP 证据和会话资源回收均已通过 | TURN/公网部署、多 Worker 调度、会话隔离、容量保护与同机 Unity 延迟/画质对照 |
 | M8 工厂物流仿真 | **部分** | Factory Flow 插件和单元测试存在；综合案例提供物流可视化 | 首版切源门槛、插件故障全流程、正式实验、校准和压力证据 |
 | M9 文档产品 | **部分** | 内嵌 Markdown 文档中心、搜索与测试存在 | 500 页 p95、版本联动、全章节/断链、离线 Tauri 和示例类型检查 |
-| AI Copilot | **未启动（正确阻断）** | M0–M9 尚未全部过门，不进入 AI 实现 | 先完成 P0 门禁；届时再核对 Fathom/IoT 接口和统一确认闭环 |
+| AI Copilot | **已进入受控插件化建设** | 已有 AI Provider、权限与确认边界；完整评测和主流程证据仍不足 | 继续核对 IoT-NB/电池正式模型接口和统一确认闭环；FATHOM 已明确放弃，不作为集成来源 |
 
 ## 结论
 
-iTwin Studio 本轮已经有一个覆盖 2D、3D、层级、拆解、人物视角、AGV、媒体和直连数据的可编辑案例；这使它从“能力散点”进入“可演示纵向切片”。但它仍不能声称总体超过任一对照产品：FineVis/FineBI 的数据分析与成熟看板工作流、ThingJS/51WDP 的公开 API 与交付生态、山海鲸的低门槛与私有化广度、Unity 的渲染/时间线/性能工具链，均存在当前 iTwin Studio 没有完整证据的维度。
+iTwin Studio 本轮已经有一个覆盖 2D、3D、层级、拆解、人物视角、AGV、媒体和直连数据的可编辑案例；这使它从“能力散点”进入“可演示纵向切片”。但它仍不能声称总体超过任一对照产品：FineVis/FineBI 的数据分析与成熟看板工作流、ThingJS/51WDP 的公开 API 与交付生态、山海鲸的低门槛与私有化广度、图扑 HT for Web 的统一 DataModel/2D-3D 图元与行业实施积累、Unity 的渲染/时间线/性能工具链，均存在当前 iTwin Studio 没有完整证据的维度。
 
 下一轮最高价值不是继续增加入口，而是把现有切片做成可持续门禁：统一应用保存、外部 HTTP/WS 故障注入、R1–R5 双后端性能/画质、Parasolid 实转换，以及云渲染从单节点闭环走向可部署运行。
 
@@ -67,3 +71,4 @@ iTwin Studio 本轮已经有一个覆盖 2D、3D、层级、拆解、人物视�
 - 山海鲸：[开发概述](https://www.shanhaibi.com/docs/v1/dglzot41g9igan51)、[绑定数据到组件](https://www.shanhaibi.com/docs/v1/lu4w0o/)、[系统集成概述](https://www.shanhaibi.com/docs/v1/eeada2g6474zva1u/)、[产品白皮书](https://static.shanhaibi.com/web/docs/%E5%B1%B1%E6%B5%B7%E9%B2%B8%E5%8F%AF%E8%A7%86%E5%8C%96%E4%BA%A7%E5%93%81%E7%99%BD%E7%9A%AE%E4%B9%A6.pdf)。
 - 51WDP：[产品功能与流程](https://wdp.51aes.com/product-service5?loggedIn=false)。
 - Unity 6：[Additive Scene](https://docs.unity3d.com/6000.1/Documentation/ScriptReference/SceneManagement.LoadSceneMode.Additive.html)、[LoadSceneAsync](https://docs.unity3d.com/ja/current/ScriptReference/SceneManagement.SceneManager.LoadSceneAsync.html)、[Timeline](https://docs.unity3d.com/ja/current/Manual/com.unity.timeline.html)、[运行时资产管理](https://docs.unity3d.com/cn/6000.0/Manual/assets-managing-runtime.html)、[Frame Timing Manager](https://docs.unity3d.com/kr/6000.0/Manual/frame-timing-manager.html)。
+- 图扑 HT for Web：[产品页](https://www.hightopo.com/)、[入门与 GraphView/DataModel](https://www.hightopo.com/guide/guide/core/beginners/ht-beginners-guide.html)、[3D 指南](https://www.hightopo.com/guide/guide/core/3d/ht-3d-guide.html)、[自动布局](https://www.hightopo.com/guide/guide/plugin/autolayout/ht-autolayout-guide.html)。

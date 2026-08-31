@@ -18,12 +18,12 @@ module.exports = {
   editorTheme: {
     theme: "dark-modern",
     page: {
-      title: "iTwin Studio · 流程与看板",
+      title: "Industrial Studio · 流程与看板",
       favicon: false,
       css: [path.join(__dirname, "theme", "bim-studio.css")],
       scripts: [path.join(__dirname, "theme", "bim-studio.js")]
     },
-    header: { title: "iTwin Studio · 数字孪生流程", image: null },
+    header: { title: "Industrial Studio · 数字孪生流程", image: null },
     projects: { enabled: false },
     tours: false,
   },

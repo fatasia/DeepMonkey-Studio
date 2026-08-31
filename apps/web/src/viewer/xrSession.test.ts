@@ -63,12 +63,12 @@ describe("XR session lifecycle", () => {
     const savedScale = new THREE.Vector3(1, 1, 1);
     const savedUp = new THREE.Vector3(0, 1, 0);
     const savedTarget = new THREE.Vector3(1, 2, 3);
-    const composer = { setSize: vi.fn() };
+    const postProcessing = { setSize: vi.fn() };
 
     const engine = Object.create(ViewerEngine.prototype) as ViewerEngine & Record<string, unknown>;
     Object.assign(engine, {
       renderer,
-      composer,
+      postProcessing,
       container: { clientWidth: 1200, clientHeight: 600 },
       camera,
       xrSession: session,
@@ -104,6 +104,6 @@ describe("XR session lifecycle", () => {
     expect((engine["orbit"] as { target: THREE.Vector3 }).target).toEqual(savedTarget);
     expect(camera.aspect).toBe(2);
     expect(renderer.setSize).toHaveBeenCalledWith(1200, 600, false);
-    expect(composer.setSize).toHaveBeenCalledWith(1200, 600);
+    expect(postProcessing.setSize).toHaveBeenCalledWith(1200, 600);
   });
 });

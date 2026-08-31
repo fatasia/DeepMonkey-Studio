@@ -1,0 +1,60 @@
+import {
+  expectArray,
+  expectBoolean,
+  expectNumber,
+  expectObject,
+  expectString,
+  expectStringNumberOrBoolean,
+  optional,
+  required,
+  requiredLiteral
+} from "./applicationValidationPrimitives.js";
+
+const PREFAB_KINDS = ["conveyor", "robot-arm", "person", "agv", "vehicle", "access-control", "display", "fence", "machine", "utility", "electrical", "sensor", "camera", "storage"] as const;
+
+export function validateIndustrialPrefabInstance(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of ["definitionId", "definitionVersion"] as const) required(object, key, expectString, path);
+  requiredLiteral(object, "kind", PREFAB_KINDS, path);
+  required(object, "parameters", validateParameterValues, path);
+  requiredLiteral(object, "operatingState", ["idle", "running", "paused", "fault", "maintenance"], path);
+  optional(object, "faultCode", expectString, path);
+  optional(object, "motionRoute", validateMotionRoute, path);
+  optional(object, "mediaSurface", validateMediaSurface, path);
+}
+
+function validateParameterValues(value: unknown, path: string): void {
+  const parameters = expectObject(value, path);
+  for (const [key, parameter] of Object.entries(parameters)) expectStringNumberOrBoolean(parameter, `${path}.${key}`);
+}
+
+function validateMotionRoute(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "enabled", expectBoolean, path);
+  optional(object, "autoplay", expectBoolean, path);
+  required(object, "points", (points, pointsPath) => expectArray(points, pointsPath, validateRoutePoint), path);
+  for (const key of ["speedMps", "accelerationMps2", "startOffsetSeconds"] as const) required(object, key, expectNumber, path);
+  requiredLiteral(object, "loopMode", ["once", "loop", "ping-pong"], path);
+  required(object, "orientToPath", expectBoolean, path);
+  optional(object, "trafficGroup", expectString, path);
+}
+
+function validateRoutePoint(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "id", expectString, path);
+  required(object, "position", (position, positionPath) => {
+    const vector = expectObject(position, positionPath);
+    for (const axis of ["x", "y", "z"] as const) required(vector, axis, expectNumber, positionPath);
+  }, path);
+  optional(object, "waitSeconds", expectNumber, path);
+  optional(object, "speedOverrideMps", expectNumber, path);
+}
+
+function validateMediaSurface(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  requiredLiteral(object, "sourceKind", ["dashboard-page", "image", "video", "hls", "webrtc", "url"], path);
+  optional(object, "source", expectString, path);
+  for (const key of ["autoplay", "muted", "loop"] as const) required(object, key, expectBoolean, path);
+  requiredLiteral(object, "fit", ["contain", "cover", "stretch"], path);
+  required(object, "brightness", expectNumber, path);
+}

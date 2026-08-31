@@ -1,0 +1,14 @@
+{
+  "name": "BimStudio.Bridge.Editor",
+  "rootNamespace": "BimStudio.Bridge.Editor",
+  "references": ["BimStudio.Bridge"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

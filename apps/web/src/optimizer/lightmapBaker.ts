@@ -2,6 +2,7 @@ import { type Document, type Mesh, type Primitive } from "@gltf-transform/core";
 import * as THREE from "three";
 import { MeshBVH } from "three-mesh-bvh";
 import type { BakeLightState } from "./modelOptimizer";
+import { denoiseTexture, dilateTexture, encodeLightmapPng } from "./lightmapTexture";
 
 export interface WebLightmapOptions {
   resolution: 256 | 512 | 1024;
@@ -67,7 +68,7 @@ interface LightingScratch {
  * Browser-only, single-atlas static lightmap baker.
  *
  * The generated texture is attached as the standard glTF occlusion texture on
- * TEXCOORD_1, so it survives GLB export and remains usable outside iTwin Studio.
+ * TEXCOORD_1, so it survives GLB export and remains usable outside Industrial Studio.
  * It preserves existing base-color textures and intentionally avoids offline
  * path tracing, UV chart optimization, and multi-bounce GI.
  */
@@ -75,7 +76,7 @@ export async function bakeWebLightmap(
   document: Document,
   options: WebLightmapOptions,
   onProgress?: (message: string) => void,
-  encodeTexture: (pixels: Uint8ClampedArray, resolution: number) => Promise<Uint8Array> = encodePng
+  encodeTexture: (pixels: Uint8ClampedArray, resolution: number) => Promise<Uint8Array> = encodeLightmapPng,
 ): Promise<WebLightmapResult> {
   const targets = collectTargets(document);
   if (targets.length === 0) throw new Error("模型没有可用于光照贴图的三角面和法线");
@@ -99,10 +100,14 @@ export async function bakeWebLightmap(
     const localUvs = hasUnwrappedAtlas ? readUvs(target.lightmapUv!) : generateProjectedUvs(target);
     if (!hasUnwrappedAtlas) generatedUvs += 1;
     const atlasUvs = hasUnwrappedAtlas ? localUvs : placeUvsInAtlas(localUvs, targetIndex, gridSize, cellSize, resolution);
-    target.primitive.setAttribute("TEXCOORD_1", document.createAccessor("iTwin Studio lightmap UV")
-      .setType("VEC2")
-      .setArray(atlasUvs)
-      .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("iTwin Studio lightmap")));
+    target.primitive.setAttribute(
+      "TEXCOORD_1",
+      document
+        .createAccessor("Industrial Studio lightmap UV")
+        .setType("VEC2")
+        .setArray(atlasUvs)
+        .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("Industrial Studio lightmap")),
+    );
     coveredTexels += await rasterizePrimitive(target, atlasUvs, occlusionPixels, lightingPixels, covered, resolution, options, acceleration);
     if (targetIndex % 12 === 0) {
       onProgress?.(`正在烘焙光照贴图 ${targetIndex + 1}/${targets.length}`);
@@ -118,12 +123,9 @@ export async function bakeWebLightmap(
   onProgress?.("正在填充光照贴图边缘");
   dilateTexture(occlusionPixels, covered.slice(), resolution, 3);
   dilateTexture(lightingPixels, covered.slice(), resolution, 3);
-  const [occlusionPng, lightingPng] = await Promise.all([
-    encodeTexture(occlusionPixels, resolution),
-    encodeTexture(lightingPixels, resolution)
-  ]);
-  const occlusionTexture = document.createTexture("iTwin Studio Occlusion Lightmap").setMimeType("image/png").setImage(occlusionPng);
-  const lightingTexture = document.createTexture("iTwin Studio Colored Lightmap").setMimeType("image/png").setImage(lightingPng);
+  const [occlusionPng, lightingPng] = await Promise.all([encodeTexture(occlusionPixels, resolution), encodeTexture(lightingPixels, resolution)]);
+  const occlusionTexture = document.createTexture("Industrial Studio Occlusion Lightmap").setMimeType("image/png").setImage(occlusionPng);
+  const lightingTexture = document.createTexture("Industrial Studio Colored Lightmap").setMimeType("image/png").setImage(lightingPng);
   const materials = new Set(targets.map((target) => target.primitive.getMaterial()).filter((material) => material !== null));
   for (const material of materials) {
     material!.setOcclusionTexture(occlusionTexture).setOcclusionStrength(1);
@@ -132,16 +134,41 @@ export async function bakeWebLightmap(
     material!.getEmissiveTextureInfo()!.setTexCoord(1);
     material!.setExtras({
       ...material!.getExtras(),
-      bimStudioLightmap: { mode: "occlusion+chroma-emissive", texCoord: 1, resolution, shadows: options.shadows, softShadowSamples: options.shadowSamples, indirectSamples: options.indirectSamples, ambientOcclusion: options.ambientOcclusion, denoise: options.denoise, colored: true, preservesBaseColor: true, uvAtlas: hasUnwrappedAtlas ? "watlas" : "projected-fallback" }
+      bimStudioLightmap: {
+        mode: "occlusion+chroma-emissive",
+        texCoord: 1,
+        resolution,
+        shadows: options.shadows,
+        softShadowSamples: options.shadowSamples,
+        indirectSamples: options.indirectSamples,
+        ambientOcclusion: options.ambientOcclusion,
+        denoise: options.denoise,
+        colored: true,
+        preservesBaseColor: true,
+        uvAtlas: hasUnwrappedAtlas ? "watlas" : "projected-fallback",
+      },
     });
   }
   acceleration.geometry?.dispose();
-  return { resolution, primitives: targets.length, generatedUvs, coveredTexels, textureBytes: occlusionPng.byteLength + lightingPng.byteLength, uvAtlas: hasUnwrappedAtlas ? "watlas" : "projected-fallback", shadowSamples: options.shadowSamples, indirectSamples: options.indirectSamples, denoised: options.denoise };
+  return {
+    resolution,
+    primitives: targets.length,
+    generatedUvs,
+    coveredTexels,
+    textureBytes: occlusionPng.byteLength + lightingPng.byteLength,
+    uvAtlas: hasUnwrappedAtlas ? "watlas" : "projected-fallback",
+    shadowSamples: options.shadowSamples,
+    indirectSamples: options.indirectSamples,
+    denoised: options.denoise,
+  };
 }
 
 function collectTargets(document: Document): PrimitiveBakeTarget[] {
   const firstMatrixByMesh = new Map<Mesh, THREE.Matrix4>();
-  let fallbackMaterial = document.getRoot().listMaterials().find((material) => material.getName() === "iTwin Studio lightmap default");
+  let fallbackMaterial = document
+    .getRoot()
+    .listMaterials()
+    .find((material) => material.getName() === "Industrial Studio lightmap default");
   for (const node of document.getRoot().listNodes()) {
     const mesh = node.getMesh();
     if (mesh && !firstMatrixByMesh.has(mesh)) firstMatrixByMesh.set(mesh, new THREE.Matrix4().fromArray(node.getWorldMatrix()));
@@ -155,10 +182,19 @@ function collectTargets(document: Document): PrimitiveBakeTarget[] {
       const normal = primitive.getAttribute("NORMAL");
       if (primitive.getMode() !== 4 || !position || !normal || position.getCount() !== normal.getCount()) continue;
       if (!primitive.getMaterial()) {
-        fallbackMaterial ??= document.createMaterial("iTwin Studio lightmap default");
+        fallbackMaterial ??= document.createMaterial("Industrial Studio lightmap default");
         primitive.setMaterial(fallbackMaterial);
       }
-      targets.push({ primitive, mesh, matrix, normalMatrix, position, normal, lightmapUv: primitive.getAttribute("TEXCOORD_1") ?? undefined, indices: primitive.getIndices() ?? undefined });
+      targets.push({
+        primitive,
+        mesh,
+        matrix,
+        normalMatrix,
+        position,
+        normal,
+        lightmapUv: primitive.getAttribute("TEXCOORD_1") ?? undefined,
+        indices: primitive.getIndices() ?? undefined,
+      });
     }
   }
   return targets;
@@ -208,7 +244,9 @@ function generateProjectedUvs(target: PrimitiveBakeTarget): Float32Array<ArrayBu
   for (let index = 0; index < count; index += 1) {
     target.position.getElement(index, value);
     target.normal.getElement(index, normal);
-    const ax = Math.abs(normal[0] ?? 0), ay = Math.abs(normal[1] ?? 0), az = Math.abs(normal[2] ?? 0);
+    const ax = Math.abs(normal[0] ?? 0),
+      ay = Math.abs(normal[1] ?? 0),
+      az = Math.abs(normal[2] ?? 0);
     if (ax >= ay && ax >= az) {
       uvs[index * 2] = ((value[2] ?? 0) - minimum.z) / (size.z || 1);
       uvs[index * 2 + 1] = ((value[1] ?? 0) - minimum.y) / (size.y || 1);
@@ -244,7 +282,7 @@ async function rasterizePrimitive(
   covered: Uint8Array,
   resolution: number,
   options: WebLightmapOptions,
-  acceleration: SceneAcceleration
+  acceleration: SceneAcceleration,
 ): Promise<number> {
   const indices = triangleIndices(target);
   const positions = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
@@ -252,10 +290,19 @@ async function rasterizePrimitive(
   const worldPosition = new THREE.Vector3();
   const worldNormal = new THREE.Vector3();
   const scratch: LightingScratch = {
-    direction: new THREE.Vector3(), sampleDirection: new THREE.Vector3(), origin: new THREE.Vector3(), tangent: new THREE.Vector3(),
-    bitangent: new THREE.Vector3(), local: new THREE.Vector3(), ray: new THREE.Ray(), bounceRay: new THREE.Ray(), bounceNormal: new THREE.Vector3(), bounceLighting: new THREE.Vector3(), lighting: new THREE.Vector3(),
+    direction: new THREE.Vector3(),
+    sampleDirection: new THREE.Vector3(),
+    origin: new THREE.Vector3(),
+    tangent: new THREE.Vector3(),
+    bitangent: new THREE.Vector3(),
+    local: new THREE.Vector3(),
+    ray: new THREE.Ray(),
+    bounceRay: new THREE.Ray(),
+    bounceNormal: new THREE.Vector3(),
+    bounceLighting: new THREE.Vector3(),
+    lighting: new THREE.Vector3(),
     ambientColor: new THREE.Color(options.ambientColor),
-    colors: new Map(options.lights.map((light) => [light.id, new THREE.Color(light.color)]))
+    colors: new Map(options.lights.map((light) => [light.id, new THREE.Color(light.color)])),
   };
   const value: number[] = [];
   let added = 0;
@@ -267,7 +314,9 @@ async function rasterizePrimitive(
       target.position.getElement(vertexIndices[corner]!, value);
       positions[corner]!.set(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0).applyMatrix4(target.matrix);
       target.normal.getElement(vertexIndices[corner]!, value);
-      normals[corner]!.set(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0).applyNormalMatrix(target.normalMatrix).normalize();
+      normals[corner]!.set(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0)
+        .applyNormalMatrix(target.normalMatrix)
+        .normalize();
     }
     const minX = clampInt(Math.floor(Math.min(uv[0]!.x, uv[1]!.x, uv[2]!.x)), 0, resolution - 1);
     const maxX = clampInt(Math.ceil(Math.max(uv[0]!.x, uv[1]!.x, uv[2]!.x)), 0, resolution - 1);
@@ -275,33 +324,33 @@ async function rasterizePrimitive(
     const maxY = clampInt(Math.ceil(Math.max(uv[0]!.y, uv[1]!.y, uv[2]!.y)), 0, resolution - 1);
     const denominator = edge(uv[0]!, uv[1]!, uv[2]!);
     if (Math.abs(denominator) < 0.000001) continue;
-    for (let y = minY; y <= maxY; y += 1) for (let x = minX; x <= maxX; x += 1) {
-      const sample = new THREE.Vector2(x + 0.5, y + 0.5);
-      const w0 = edge(uv[1]!, uv[2]!, sample) / denominator;
-      const w1 = edge(uv[2]!, uv[0]!, sample) / denominator;
-      const w2 = 1 - w0 - w1;
-      if (w0 < -0.0001 || w1 < -0.0001 || w2 < -0.0001) continue;
-      worldPosition.copy(positions[0]!).multiplyScalar(w0).addScaledVector(positions[1]!, w1).addScaledVector(positions[2]!, w2);
-      worldNormal.copy(normals[0]!).multiplyScalar(w0).addScaledVector(normals[1]!, w1).addScaledVector(normals[2]!, w2).normalize();
-      evaluateLighting(worldPosition, worldNormal, options, acceleration, scratch);
-      const lightLevel = THREE.MathUtils.clamp(
-        scratch.lighting.x * 0.2126 + scratch.lighting.y * 0.7152 + scratch.lighting.z * 0.0722,
-        0,
-        1
-      );
-      const finalOcclusion = THREE.MathUtils.clamp(1 - options.strength * (1 - lightLevel), 0, 1);
-      const occlusionByte = Math.round(finalOcclusion * 255);
-      const pixelIndex = y * resolution + x;
-      const channel = pixelIndex * 4;
-      occlusionPixels[channel] = occlusionPixels[channel + 1] = occlusionPixels[channel + 2] = occlusionByte;
-      occlusionPixels[channel + 3] = 255;
-      const neutralLight = Math.min(scratch.lighting.x, scratch.lighting.y, scratch.lighting.z);
-      lightingPixels[channel] = encodeChromaEmission(scratch.lighting.x, neutralLight, options.strength);
-      lightingPixels[channel + 1] = encodeChromaEmission(scratch.lighting.y, neutralLight, options.strength);
-      lightingPixels[channel + 2] = encodeChromaEmission(scratch.lighting.z, neutralLight, options.strength);
-      lightingPixels[channel + 3] = 255;
-      if (!covered[pixelIndex]) { covered[pixelIndex] = 1; added += 1; }
-    }
+    for (let y = minY; y <= maxY; y += 1)
+      for (let x = minX; x <= maxX; x += 1) {
+        const sample = new THREE.Vector2(x + 0.5, y + 0.5);
+        const w0 = edge(uv[1]!, uv[2]!, sample) / denominator;
+        const w1 = edge(uv[2]!, uv[0]!, sample) / denominator;
+        const w2 = 1 - w0 - w1;
+        if (w0 < -0.0001 || w1 < -0.0001 || w2 < -0.0001) continue;
+        worldPosition.copy(positions[0]!).multiplyScalar(w0).addScaledVector(positions[1]!, w1).addScaledVector(positions[2]!, w2);
+        worldNormal.copy(normals[0]!).multiplyScalar(w0).addScaledVector(normals[1]!, w1).addScaledVector(normals[2]!, w2).normalize();
+        evaluateLighting(worldPosition, worldNormal, options, acceleration, scratch);
+        const lightLevel = THREE.MathUtils.clamp(scratch.lighting.x * 0.2126 + scratch.lighting.y * 0.7152 + scratch.lighting.z * 0.0722, 0, 1);
+        const finalOcclusion = THREE.MathUtils.clamp(1 - options.strength * (1 - lightLevel), 0, 1);
+        const occlusionByte = Math.round(finalOcclusion * 255);
+        const pixelIndex = y * resolution + x;
+        const channel = pixelIndex * 4;
+        occlusionPixels[channel] = occlusionPixels[channel + 1] = occlusionPixels[channel + 2] = occlusionByte;
+        occlusionPixels[channel + 3] = 255;
+        const neutralLight = Math.min(scratch.lighting.x, scratch.lighting.y, scratch.lighting.z);
+        lightingPixels[channel] = encodeChromaEmission(scratch.lighting.x, neutralLight, options.strength);
+        lightingPixels[channel + 1] = encodeChromaEmission(scratch.lighting.y, neutralLight, options.strength);
+        lightingPixels[channel + 2] = encodeChromaEmission(scratch.lighting.z, neutralLight, options.strength);
+        lightingPixels[channel + 3] = 255;
+        if (!covered[pixelIndex]) {
+          covered[pixelIndex] = 1;
+          added += 1;
+        }
+      }
     if (nowMilliseconds() - lastYield >= 12) {
       await yieldToBrowser();
       lastYield = nowMilliseconds();
@@ -335,9 +384,16 @@ function evaluateLighting(position: THREE.Vector3, normal: THREE.Vector3, option
     if (options.shadows) {
       let visibleSamples = 0;
       for (let sampleIndex = 0; sampleIndex < options.shadowSamples; sampleIndex += 1) {
-        const sampleDirection = options.shadowSamples === 1
-          ? scratch.sampleDirection.copy(direction)
-          : jitterDirection(direction, sampleIndex, options.shadowSamples, light.type === "directional" ? 0.035 : Math.min(0.12, light.range / Math.max(distance, 0.001) * 0.018), scratch);
+        const sampleDirection =
+          options.shadowSamples === 1
+            ? scratch.sampleDirection.copy(direction)
+            : jitterDirection(
+                direction,
+                sampleIndex,
+                options.shadowSamples,
+                light.type === "directional" ? 0.035 : Math.min(0.12, (light.range / Math.max(distance, 0.001)) * 0.018),
+                scratch,
+              );
         if (!isOccluded(position, normal, sampleDirection, light.type === "point" ? distance : Infinity, acceleration, scratch)) visibleSamples += 1;
       }
       visibility = visibleSamples / options.shadowSamples;
@@ -412,7 +468,8 @@ function jitterDirection(direction: THREE.Vector3, index: number, count: number,
   const radius = Math.sqrt((index + 0.5) / count) * spread;
   const tangent = Math.abs(direction.z) < 0.999 ? scratch.tangent.set(0, 0, 1).cross(direction).normalize() : scratch.tangent.set(1, 0, 0);
   const bitangent = scratch.bitangent.copy(direction).cross(tangent);
-  return scratch.sampleDirection.copy(direction)
+  return scratch.sampleDirection
+    .copy(direction)
     .addScaledVector(tangent, Math.cos(angle) * radius)
     .addScaledVector(bitangent, Math.sin(angle) * radius)
     .normalize();
@@ -440,77 +497,6 @@ function localBounds(target: PrimitiveBakeTarget): THREE.Box3 {
   return bounds;
 }
 
-function dilateTexture(pixels: Uint8ClampedArray, covered: Uint8Array, resolution: number, iterations: number) {
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const sourcePixels = pixels.slice();
-    const sourceCovered = covered.slice();
-    for (let y = 1; y < resolution - 1; y += 1) for (let x = 1; x < resolution - 1; x += 1) {
-      const index = y * resolution + x;
-      if (sourceCovered[index]) continue;
-      const neighbor = [index - 1, index + 1, index - resolution, index + resolution].find((candidate) => sourceCovered[candidate]);
-      if (neighbor === undefined) continue;
-      pixels.set(sourcePixels.subarray(neighbor * 4, neighbor * 4 + 4), index * 4);
-      covered[index] = 1;
-    }
-  }
-}
-
-function denoiseTexture(pixels: Uint8ClampedArray, covered: Uint8Array, resolution: number, iterations: number) {
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    const source = pixels.slice();
-    for (let y = 1; y < resolution - 1; y += 1) for (let x = 1; x < resolution - 1; x += 1) {
-      const index = y * resolution + x;
-      if (!covered[index]) continue;
-      const center = index * 4;
-      let weightSum = 0;
-      const sums: [number, number, number] = [0, 0, 0];
-      for (let oy = -1; oy <= 1; oy += 1) for (let ox = -1; ox <= 1; ox += 1) {
-        const sampleIndex = (y + oy) * resolution + x + ox;
-        if (!covered[sampleIndex]) continue;
-        const channel = sampleIndex * 4;
-        const difference = (Math.abs(source[channel]! - source[center]!) + Math.abs(source[channel + 1]! - source[center + 1]!) + Math.abs(source[channel + 2]! - source[center + 2]!)) / 3;
-        const spatialWeight = ox === 0 && oy === 0 ? 4 : ox === 0 || oy === 0 ? 2 : 1;
-        const weight = spatialWeight / (1 + difference * 0.035);
-        sums[0] += source[channel]! * weight;
-        sums[1] += source[channel + 1]! * weight;
-        sums[2] += source[channel + 2]! * weight;
-        weightSum += weight;
-      }
-      if (weightSum > 0) {
-        pixels[center] = Math.round(sums[0]! / weightSum);
-        pixels[center + 1] = Math.round(sums[1]! / weightSum);
-        pixels[center + 2] = Math.round(sums[2]! / weightSum);
-      }
-    }
-  }
-}
-
-async function encodePng(pixels: Uint8ClampedArray, resolution: number): Promise<Uint8Array> {
-  const imagePixels = Uint8ClampedArray.from(pixels);
-  if (typeof OffscreenCanvas !== "undefined") {
-    const canvas = new OffscreenCanvas(resolution, resolution);
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("浏览器不支持光照贴图 Canvas 编码");
-    const imageData = context.createImageData(resolution, resolution);
-    imageData.data.set(imagePixels);
-    context.putImageData(imageData, 0, 0);
-    const blob = await canvas.convertToBlob({ type: "image/png" });
-    return new Uint8Array(await blob.arrayBuffer());
-  }
-  if (typeof document !== "undefined") {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = resolution;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("浏览器不支持光照贴图 Canvas 编码");
-    const imageData = context.createImageData(resolution, resolution);
-    imageData.data.set(imagePixels);
-    context.putImageData(imageData, 0, 0);
-    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("光照贴图 PNG 编码失败")), "image/png"));
-    return new Uint8Array(await blob.arrayBuffer());
-  }
-  throw new Error("光照贴图烘焙仅支持浏览器环境");
-}
-
 function edge(a: THREE.Vector2, b: THREE.Vector2, point: THREE.Vector2): number {
   return (point.x - a.x) * (b.y - a.y) - (point.y - a.y) * (b.x - a.x);
 }
@@ -524,6 +510,12 @@ function encodeChromaEmission(channel: number, neutralLight: number, strength: n
   return Math.round(linearToSrgb(chroma) * 255);
 }
 
-function clampInt(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
-function yieldToBrowser(): Promise<void> { return new Promise((resolve) => setTimeout(resolve, 0)); }
-function nowMilliseconds(): number { return globalThis.performance?.now() ?? Date.now(); }
+function clampInt(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+function nowMilliseconds(): number {
+  return globalThis.performance?.now() ?? Date.now();
+}

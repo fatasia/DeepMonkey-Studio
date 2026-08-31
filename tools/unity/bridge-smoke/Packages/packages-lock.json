@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "com.bim-studio.bridge": {
+      "version": "file:../../com.bim-studio.bridge",
+      "depth": 0,
+      "source": "local",
+      "dependencies": {}
+    }
+  }
+}

@@ -1,0 +1,177 @@
+diff --git a/src/renderers/common/RenderList.js b/src/renderers/common/RenderList.js
+index 2563fc192603602b6f4009b18da746b8548c5e93..3cc85832ed90a3e821466d4f7fd8f9ff4433f0b2 100644
+--- a/src/renderers/common/RenderList.js
++++ b/src/renderers/common/RenderList.js
+@@ -192,6 +192,14 @@ class RenderList {
+ 		 */
+ 		this.occlusionQueryCount = 0;
+ 
++		/**
++		 * The ID of the frame the render list was last used in.
++		 *
++		 * @type {number}
++		 * @default -1
++		 */
++		this.frameId = - 1;
++
+ 		/**
+ 		 * The last object that was counted for occlusion query testing. Used to
+ 		 * avoid counting an object more than once when it produces multiple render
+@@ -420,15 +428,7 @@ class RenderList {
+ 
+ 			if ( renderItem.id === null ) break;
+ 
+-			renderItem.id = null;
+-			renderItem.object = null;
+-			renderItem.geometry = null;
+-			renderItem.material = null;
+-			renderItem.groupOrder = null;
+-			renderItem.renderOrder = null;
+-			renderItem.z = null;
+-			renderItem.group = null;
+-			renderItem.clippingContext = null;
++			resetRenderItem( renderItem );
+ 
+ 		}
+ 
+@@ -436,6 +436,45 @@ class RenderList {
+ 
+ 	}
+ 
++	/**
++	 * This method is called when the render list has become inactive.
++	 */
++	clear() {
++
++		// Clear all references from the render items so scene objects
++		// are not retained when the render list is not used anymore.
++
++		for ( let i = 0, il = this.renderItems.length; i < il; i ++ ) {
++
++			const renderItem = this.renderItems[ i ];
++
++			if ( renderItem.id === null ) break;
++
++			resetRenderItem( renderItem );
++
++		}
++
++		this.opaque.length = 0;
++		this.transparentDoublePass.length = 0;
++		this.transparent.length = 0;
++		this.bundles.length = 0;
++
++	}
++
++}
++
++function resetRenderItem( renderItem ) {
++
++	renderItem.id = null;
++	renderItem.object = null;
++	renderItem.geometry = null;
++	renderItem.material = null;
++	renderItem.groupOrder = null;
++	renderItem.renderOrder = null;
++	renderItem.z = null;
++	renderItem.group = null;
++	renderItem.clippingContext = null;
++
+ }
+ 
+ export default RenderList;
+diff --git a/src/renderers/common/RenderLists.js b/src/renderers/common/RenderLists.js
+index c014cee01b5d9215d1833f15d8fbef9ff3fdf81b..a9d4962def8159b0848774b3f70b8208fc113964 100644
+--- a/src/renderers/common/RenderLists.js
++++ b/src/renderers/common/RenderLists.js
+@@ -32,6 +32,23 @@ class RenderLists {
+ 		 */
+ 		this.lists = new ChainMap();
+ 
++		/**
++		 * The render lists which are currently in use. Lists are removed
++		 * as soon as they become stale.
++		 *
++		 * @private
++		 * @type {Set<RenderList>}
++		 */
++		this._activeLists = new Set();
++
++		/**
++		 * The current frame ID.
++		 *
++		 * @private
++		 * @type {number}
++		 */
++		this._frameId = - 1;
++
+ 	}
+ 
+ 	/**
+@@ -60,10 +77,43 @@ class RenderLists {
+ 		_chainKeys[ 0 ] = null;
+ 		_chainKeys[ 1 ] = null;
+ 
++		//
++
++		list.frameId = this._frameId;
++		this._activeLists.add( list );
++
+ 		return list;
+ 
+ 	}
+ 
++	/**
++	 * Must be called when a new frame begins.
++	 *
++	 * @param {number} frameId - The current frame ID.
++	 */
++	update( frameId ) {
++
++		if ( frameId === this._frameId ) return;
++
++		this._frameId = frameId;
++
++		for ( const list of this._activeLists ) {
++
++			// if a render list has not been used within 10 frames, consider
++			// it as inactive and clear it
++
++			if ( frameId - list.frameId > 10 ) {
++
++				list.clear();
++
++				this._activeLists.delete( list );
++
++			}
++
++		}
++
++	}
++
+ 	/**
+ 	 * Frees all internal resources.
+ 	 */
+@@ -71,6 +121,9 @@ class RenderLists {
+ 
+ 		this.lists = new ChainMap();
+ 
++		this._activeLists.clear();
++		this._frameId = - 1;
++
+ 	}
+ 
+ }
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..cd960571c3a0c92091b07e1de4658dd63321829d 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -1669,6 +1669,8 @@ class Renderer {
+ 
+ 		}
+ 
++		this._renderLists.update( nodeFrame.frameId );
++
+ 		const renderList = this._renderLists.get( scene, camera );
+ 		renderList.begin();
+ 

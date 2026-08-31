@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 
@@ -249,7 +249,9 @@ export function workspaceDependencyCycles(workspaceRoot: string): string[][] {
     const groupDirectory = path.join(workspaceRoot, group);
     return readdirSync(groupDirectory, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(groupDirectory, entry.name, "package.json"));
+      .map((entry) => path.join(groupDirectory, entry.name, "package.json"))
+      // 工作区目录允许包含测试产物或工具缓存，只有真实 package manifest 才进入依赖图。
+      .filter(existsSync);
   });
   const packages = new Map<string, Record<string, unknown>>();
   for (const manifest of manifests) {

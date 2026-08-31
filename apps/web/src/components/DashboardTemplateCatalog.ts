@@ -1,0 +1,103 @@
+import type {
+  DashboardDataWidgetNode,
+  DashboardPageDocument,
+} from "@bim-studio/contracts";
+import type { AppLocale } from "../i18n";
+import { buildDashboardTemplateNodes } from "./dashboardTemplateLayoutBuilder";
+import { DASHBOARD_TEMPLATE_DOMAINS } from "./dashboardTemplateDomainPacks";
+import { DASHBOARD_TEMPLATE_LAYOUTS } from "./dashboardTemplateLayouts";
+import type {
+  DashboardTemplateDefinition,
+  DashboardTemplateDomain,
+  DashboardTemplateLayout,
+  DashboardTemplateMetric,
+  DashboardTemplateView,
+} from "./dashboardTemplateTypes";
+import { DASHBOARD_TEMPLATE_VIEWS } from "./dashboardTemplateViews";
+
+/** 保留 string 兼容性，调用方可保存任意模板 ID 并在缺失时安全回退。 */
+export type DashboardTemplateKind = string;
+
+/**
+ * 模板由行业域、业务视角和布局组成。行业数据键和目标均不同，布局由视角选择，
+ * 因此不会通过换色或改名制造伪差异。
+ */
+export const DASHBOARD_TEMPLATES: readonly DashboardTemplateDefinition[] =
+  DASHBOARD_TEMPLATE_DOMAINS.flatMap((domain) =>
+    DASHBOARD_TEMPLATE_VIEWS.map((view) => createTemplate(domain, view)),
+  );
+
+export function createDashboardTemplateNodes(
+  locale: AppLocale,
+  page: DashboardPageDocument,
+  kind: DashboardTemplateKind,
+  startZ: number,
+): DashboardDataWidgetNode[] {
+  const template = DASHBOARD_TEMPLATES.find((candidate) => candidate.id === kind)
+    ?? DASHBOARD_TEMPLATES[0]!;
+  return buildDashboardTemplateNodes(locale, page, template, startZ);
+}
+
+function createTemplate(
+  domain: DashboardTemplateDomain,
+  view: DashboardTemplateView,
+): DashboardTemplateDefinition {
+  const layout = findLayout(view.layoutId);
+  const metrics = createMetrics(domain, view);
+
+  return {
+    id: view.id === "executive" ? domain.id : `${domain.id}-${view.id}`,
+    domainId: domain.id,
+    viewId: view.id,
+    zh: `${domain.nameZh} · ${view.nameZh}`,
+    en: `${domain.nameEn} · ${view.nameEn}`,
+    categoryZh: domain.categoryZh,
+    categoryEn: domain.categoryEn,
+    descriptionZh: `${view.goalZh} 重点指标：${metrics.map((metric) => metric.zh).join("、")}。`,
+    descriptionEn: `${view.goalEn} Focus metrics: ${metrics.map((metric) => metric.en).join(", ")}.`,
+    goalZh: view.goalZh,
+    goalEn: view.goalEn,
+    metrics,
+    filterField: view.filterField,
+    filterZh: view.filterZh,
+    filterEn: view.filterEn,
+    detailZh: view.detailZh,
+    detailEn: view.detailEn,
+    layout,
+    accent: domain.accent,
+    surface: domain.surface,
+  };
+}
+
+function createMetrics(
+  domain: DashboardTemplateDomain,
+  view: DashboardTemplateView,
+): DashboardTemplateDefinition["metrics"] {
+  const [first, second, third, fourth] = view.metricRoles;
+  return [
+    createMetric(domain, view, first),
+    createMetric(domain, view, second),
+    createMetric(domain, view, third),
+    createMetric(domain, view, fourth),
+  ];
+}
+
+function createMetric(
+  domain: DashboardTemplateDomain,
+  view: DashboardTemplateView,
+  role: DashboardTemplateMetric["role"],
+): DashboardTemplateMetric {
+  return {
+    role,
+    ...domain.metrics[role],
+    dataKey: `${domain.id}.${view.id}.${role}`,
+  };
+}
+
+function findLayout(id: DashboardTemplateView["layoutId"]): DashboardTemplateLayout {
+  const layout = DASHBOARD_TEMPLATE_LAYOUTS.find((candidate) => candidate.id === id);
+  if (!layout) {
+    throw new Error(`缺少仪表板布局: ${id}`);
+  }
+  return layout;
+}

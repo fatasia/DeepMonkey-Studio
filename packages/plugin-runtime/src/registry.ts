@@ -1,5 +1,22 @@
 import { resolvePluginCompatibility, type PluginCompatibilityReason, type PluginHostPolicy } from "./compatibility.js";
+import {
+  CapabilityRegistry,
+  type CapabilityDescriptor,
+  type CapabilityProvider,
+  type CapabilityRegistrationResult,
+  type CapabilityRequest,
+  type CapabilityInvocationResult
+} from "./capability.js";
 import type { PluginManifestV1 } from "./manifest.js";
+import {
+  AiProviderRegistry,
+  type AiProvider,
+  type AiProviderCompletion,
+  type AiProviderDescriptor,
+  type AiProviderRegistrationResult,
+  type AiProviderRequest,
+  type AiProviderStreamEvent
+} from "./aiProvider.js";
 
 export type PluginRuntimeStatus = "registered" | "enabling" | "enabled" | "disabling" | "faulted";
 export type PluginOperationCode = "ok" | "not-found" | "already-registered" | "invalid-state" | "incompatible" | "activation-failed" | "deactivation-failed";
@@ -24,6 +41,10 @@ export interface PluginActivationContext {
   grantedCapabilities: readonly string[];
   grantedPermissions: readonly string[];
   signal: AbortSignal;
+  /** Register only the capabilities declared by this plugin's manifest. */
+  registerCapability(provider: CapabilityProvider): CapabilityRegistrationResult;
+  /** Register only the AI providers declared by this plugin's manifest. */
+  registerAiProvider(provider: AiProvider): AiProviderRegistrationResult;
 }
 
 export interface PluginInstance {
@@ -53,6 +74,8 @@ interface PluginRecord {
 export class PluginRegistry {
   readonly #records = new Map<string, PluginRecord>();
   readonly #hostPolicy: PluginHostPolicy;
+  readonly #capabilityRegistry = new CapabilityRegistry();
+  readonly #aiProviderRegistry = new AiProviderRegistry();
 
   public constructor(hostPolicy: PluginHostPolicy) {
     this.#hostPolicy = cloneHostPolicy(hostPolicy);
@@ -82,6 +105,34 @@ export class PluginRegistry {
     return [...this.#records.values()].map(snapshot).sort((left, right) => left.manifest.id.localeCompare(right.manifest.id));
   }
 
+  public listCapabilities(): CapabilityDescriptor[] {
+    return this.#capabilityRegistry.list();
+  }
+
+  public getCapability(capabilityId: string): CapabilityDescriptor | undefined {
+    return this.#capabilityRegistry.get(capabilityId);
+  }
+
+  public invokeCapability<TOutput = unknown>(capabilityId: string, request: CapabilityRequest, options?: { timeoutMs?: number; traceId?: string }): Promise<CapabilityInvocationResult<TOutput>> {
+    return this.#capabilityRegistry.invoke<TOutput>(capabilityId, request, options);
+  }
+
+  public listAiProviders(): AiProviderDescriptor[] {
+    return this.#aiProviderRegistry.list();
+  }
+
+  public getAiProvider(providerId: string): AiProviderDescriptor | undefined {
+    return this.#aiProviderRegistry.get(providerId);
+  }
+
+  public invokeAiProvider(providerId: string, request: AiProviderRequest): Promise<AiProviderCompletion> {
+    return this.#aiProviderRegistry.complete(providerId, request);
+  }
+
+  public streamAiProvider(providerId: string, request: AiProviderRequest): AsyncIterable<AiProviderStreamEvent> {
+    return this.#aiProviderRegistry.stream(providerId, request);
+  }
+
   public async enable(pluginId: string): Promise<PluginOperationResult> {
     const record = this.#records.get(pluginId);
     if (!record) return notFound(pluginId);
@@ -103,7 +154,19 @@ export class PluginRegistry {
         renderer: this.#hostPolicy.renderer,
         grantedCapabilities: Object.freeze([...record.manifest.capabilities]),
         grantedPermissions: Object.freeze([...record.manifest.permissions]),
-        signal: controller.signal
+        signal: controller.signal,
+        registerCapability: (provider) => {
+          if (!declaresCapability(record.manifest, provider.descriptor.id)) {
+            throw new Error(`插件 ${record.manifest.id} 未在 manifest 声明能力 ${provider.descriptor.id}`);
+          }
+          return this.#capabilityRegistry.register(provider, record.manifest.id, record.manifest.version, record.manifest.permissions);
+        },
+        registerAiProvider: (provider) => {
+          if (!declaresAiProvider(record.manifest, provider.descriptor.id)) {
+            throw new Error(`插件 ${record.manifest.id} 未在 manifest 声明 AI provider ${provider.descriptor.id}`);
+          }
+          return this.#aiProviderRegistry.register(provider, record.manifest.id, record.manifest.version, record.manifest.permissions);
+        }
       });
       if (instance) record.instance = instance;
       else delete record.instance;
@@ -111,6 +174,8 @@ export class PluginRegistry {
       return { ok: true, code: "ok", plugin: snapshot(record) };
     } catch (error) {
       controller.abort();
+      this.#capabilityRegistry.unregisterPlugin(record.manifest.id);
+      this.#aiProviderRegistry.unregisterPlugin(record.manifest.id);
       delete record.controller;
       delete record.instance;
       record.status = "faulted";
@@ -133,11 +198,15 @@ export class PluginRegistry {
     record.controller?.abort();
     try {
       await record.instance?.deactivate?.();
+      this.#capabilityRegistry.unregisterPlugin(record.manifest.id);
+      this.#aiProviderRegistry.unregisterPlugin(record.manifest.id);
       delete record.instance;
       delete record.controller;
       record.status = "registered";
       return { ok: true, code: "ok", plugin: snapshot(record) };
     } catch (error) {
+      this.#capabilityRegistry.unregisterPlugin(record.manifest.id);
+      this.#aiProviderRegistry.unregisterPlugin(record.manifest.id);
       delete record.instance;
       delete record.controller;
       record.status = "faulted";
@@ -159,6 +228,8 @@ export class PluginRegistry {
       } catch (error) {
         warning = appendDiagnostic(record, "uninstall", error);
       }
+      this.#capabilityRegistry.unregisterPlugin(record.manifest.id);
+      this.#aiProviderRegistry.unregisterPlugin(record.manifest.id);
     }
     this.#records.delete(pluginId);
     return warning ? { ok: true, code: "ok", warning } : { ok: true, code: "ok" };
@@ -167,6 +238,14 @@ export class PluginRegistry {
   public async enableAll(): Promise<PluginOperationResult[]> {
     return Promise.all(this.list().map((record) => this.enable(record.manifest.id)));
   }
+}
+
+function declaresCapability(manifest: PluginManifestV1, capabilityId: string): boolean {
+  return manifest.extensionPoints.some((point) => point.kind === "capability.provider" && point.capabilityIds.includes(capabilityId));
+}
+
+function declaresAiProvider(manifest: PluginManifestV1, providerId: string): boolean {
+  return manifest.extensionPoints.some((point) => point.kind === "ai.provider" && point.providerIds.includes(providerId));
 }
 
 function snapshot(record: PluginRecord): PluginRecordSnapshot {

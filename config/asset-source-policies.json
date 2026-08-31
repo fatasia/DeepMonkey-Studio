@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "external-industrial-models-a",
+      "expectedModelCount": 1551,
+      "libraryMode": "unified",
+      "defaultPublicationStatus": "review-required",
+      "requiredMetadata": [
+        "asset-level-provenance",
+        "publication-license-status",
+        "brand-and-metadata-review"
+      ]
+    }
+  ]
+}

@@ -18,8 +18,15 @@
 | STEP / STP | `occt-import-js` 解析与三角化 | GLB + hierarchy.json + properties.json | 可用 |
 | DWG | 外部 LibreDWG 命令 | DXF | 配置转换器后可用，否则 `waiting_converter` |
 | RVT | Windows Revit Agent / Revit Add-in | IFC 或原生 GLB，可带层级与属性 | 配置转换器且存在兼容 Revit 后可用 |
+| Parasolid X_T / X_B | 可替换工业 CAD SDK 适配器 | GLB + 必需层级，可带属性与 PMI | 配置商业 Provider 后可用，否则 `waiting_converter` |
+| JT | 可替换工业 CAD SDK 适配器 | GLB + 必需装配层级，可带属性、多 LOD 与 PMI | 配置商业 Provider 后可用，否则 `waiting_converter` |
+| OpenUSD / USDA / USDC / USDZ | Three.js 0.185.1 官方 USDLoader 按需解析 | 保留并直接查看源文件 | USDA/USDC/USDZ 官方样本已通过；复杂 composition 仍需样本验证 |
 
 因此不能表述为“所有格式都会转为 GLB”。直接查看格式继续保留源格式；需要三角化或原生宿主导出的格式才优先生成 GLB。
+
+转换器输出不会因为文件名为 `geometry.glb` 就被接受。API 会在发布前解析 GLB，确认至少存在一个带 POSITION 顶点的三角网格，并校验已生成的 `hierarchy.json`、`properties.json`、`pmi.json` 为 JSON 对象；JT 与 Parasolid 还必须提供 `hierarchy.json`。审计失败时任务失败且不发布半成品。该门禁只能证明运行缓存结构合法，不能替代源格式几何、装配、属性和 PMI 的正式样本矩阵。
+
+需要规范化的输入不会采用“先预览源格式、后台转换后再切换 GLB”的双几何模式。原文件用于追溯和复转；任务在 `queued`、`processing` 或 `waiting_converter` 阶段不发布可浏览 manifest，转换和审计全部完成后才一次加载 `geometry.glb` 及 sidecar。原生 GLB、完整 glTF，以及 IFC、DXF、OpenUSD 的官方专用浏览管线不受此约束。
 
 ## M5 任务 API
 
@@ -38,9 +45,22 @@ queued -> running -> succeeded
    \-> waiting_converter -> cancelled
 ```
 
-Parasolid x_t/x_b 与 JT 已按产品范围决策移除，不进入格式目录、上传入口或转换任务状态机。
+RVT、Parasolid XT 与 JT 的技术/商业边界见[格式接入决策](./rvt-xt-jt-format-integration-decision-2026-08-30.md)。公开规范不等于生产级开源解析器，页面必须区分“格式已声明”“Provider 已检测”“样本已验证”三种状态。
 
 ## 当前纵向切片边界
 
-- 已完成合同、插件目录、受控状态迁移、提交/列表/查询/取消 API、AbortSignal 取消、进度与产物约束测试。
+- 已完成合同、插件目录、受控状态迁移、提交/列表/查询/取消 API、AbortSignal 取消、进度、GLB 几何审计与 sidecar 产物约束测试。
 - 新任务目前保存在 API 进程内存中；持久化、重试、超时执行器、内容哈希缓存、日志对象和失败产物清理仍属于 M5 后续实现。
+
+## 2026-08-31 本机验收记录
+
+- OpenUSD 使用官方 `Sphere.usda`、`skinnedArm.usda`、`geom.usdc`、`simpleMesh.usdz` 和 Three.js 官方贴图 USDZ 验收；几何、动画、贴图结果与 SHA-256 见 [OpenUSD 原生查看管线](./openusd-asset-pipeline.md)。
+- 本地已有许可与 SHA-256 来源清晰的小型 JT 10.3 与 SolidWorks X_T 证据样本，仅用于结构探测和候选路线审计；它们不是跨版本几何验收语料，也不能证明项目已具备几何转换能力。详见 [JT / X_T 开发前证据审计](./jt-xt-preimplementation-evidence-audit-2026-08-31.md)。
+- 本机未配置 `INDUSTRIAL_CAD_CONVERTER_COMMAND`，因此 JT、X_T/X_B 仍进入 `waiting_converter`，真实格式到 GLB 的验收结论为**未通过**。OpenUSD 不属于该外部 Provider 路径，四种扩展名直接发布给官方浏览器加载器。
+- 合成 Provider 仅用于验证“输入对象→隔离进程→GLB/sidecar→几何审计→对象存储”架构；它生成固定三角形，不能作为任何源格式解析能力的证据。
+
+聚焦回归命令：
+
+```powershell
+pnpm --filter @bim-studio/api exec vitest run src/converterOutputAudit.test.ts src/industrialFormatWaitingAcceptance.test.ts src/externalConverterCatalog.test.ts src/conversionTasks.test.ts src/modelAssetRoutes.formatProbe.test.ts src/industrialFormatProbe.test.ts src/jtStructureProbe.test.ts src/xtStructureProbe.test.ts
+```

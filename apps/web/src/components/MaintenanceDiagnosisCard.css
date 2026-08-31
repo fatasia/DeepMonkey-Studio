@@ -1,0 +1,186 @@
+.maintenance-diagnosis {
+  margin: 14px;
+  padding: 15px;
+  border: 1px solid #34464d;
+  border-radius: 9px;
+  background: #10191d;
+}
+.maintenance-diagnosis.warning {
+  border-color: #5b4b2b;
+  background: #1c1912;
+}
+.maintenance-diagnosis.critical {
+  border-color: #663b40;
+  background: #211719;
+}
+.maintenance-diagnosis > header {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+}
+.maintenance-diagnosis-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: #e0b75d;
+  border-radius: 8px;
+  background: #2a2418;
+}
+.maintenance-diagnosis header small,
+.maintenance-diagnosis header strong {
+  display: block;
+}
+.maintenance-diagnosis header small {
+  margin-bottom: 3px;
+  color: #7d8f96;
+  font-size: 10px;
+}
+.maintenance-diagnosis header strong {
+  color: #e7edef;
+  font-size: 14px;
+}
+.maintenance-diagnosis-status {
+  padding: 4px 7px;
+  color: #cdb36f;
+  border-radius: 99px;
+  background: #2b2518;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.maintenance-diagnosis > p {
+  margin: 13px 0;
+  color: #a5b2b6;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.maintenance-hypotheses {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  border-radius: 7px;
+  background: #0d1518;
+}
+.maintenance-hypotheses > strong {
+  color: #d5dddf;
+  font-size: 11px;
+}
+.maintenance-hypotheses > div {
+  display: grid;
+  align-items: start;
+  gap: 8px;
+  grid-template-columns: 20px 1fr;
+}
+.maintenance-hypotheses > div > span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: #17130b;
+  border-radius: 50%;
+  background: #d3aa53;
+  font-size: 10px;
+  font-weight: 800;
+}
+.maintenance-hypotheses b,
+.maintenance-hypotheses small {
+  display: block;
+}
+.maintenance-hypotheses b {
+  color: #ccd6d9;
+  font-size: 11px;
+}
+.maintenance-hypotheses small {
+  margin-top: 2px;
+  color: #71838a;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.maintenance-diagnosis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.maintenance-diagnosis-actions button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: #aebbc0;
+  border: 1px solid #3a4a50;
+  border-radius: 6px;
+  background: #172226;
+  font-size: 11px;
+  cursor: pointer;
+}
+.maintenance-diagnosis-actions button.primary {
+  color: #18140c;
+  border-color: #d5ab54;
+  background: #d5ab54;
+  font-weight: 750;
+}
+.maintenance-diagnosis-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.maintenance-diagnosis-actions button.primary svg:last-child {
+  margin-left: 3px;
+}
+.maintenance-diagnosis details {
+  margin-top: 12px;
+  border-top: 1px solid #2a393f;
+}
+.maintenance-diagnosis summary {
+  display: flex;
+  min-height: 35px;
+  align-items: center;
+  gap: 6px;
+  color: #87989e;
+  font-size: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.maintenance-diagnosis summary::-webkit-details-marker {
+  display: none;
+}
+.maintenance-diagnosis-evidence {
+  display: grid;
+  gap: 10px;
+  padding: 2px 0 4px;
+  grid-template-columns: 1fr 1fr;
+}
+.maintenance-diagnosis-evidence section {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding: 9px;
+  border-radius: 6px;
+  background: #0d1518;
+}
+.maintenance-diagnosis-evidence strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #b8c4c8;
+  font-size: 10px;
+}
+.maintenance-diagnosis-evidence span {
+  color: #71838a;
+  font-size: 10px;
+  line-height: 1.45;
+}
+@media (max-width: 700px) {
+  .maintenance-diagnosis > header {
+    grid-template-columns: 36px 1fr;
+  }
+  .maintenance-diagnosis-status {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .maintenance-diagnosis-evidence {
+    grid-template-columns: 1fr;
+  }
+}

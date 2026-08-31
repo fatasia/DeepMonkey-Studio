@@ -1,0 +1,55 @@
+import { describe, expect, it } from "vitest";
+import { readRoute, routeHistoryState, routePath } from "./appRoute";
+
+describe("app route", () => {
+  it("keeps dashboard and scene workspace identities in generated paths", () => {
+    expect(routePath({ view: "dashboard", projectId: "project 1", applicationId: "app/1", pageId: "page 1" }))
+      .toBe("/studio/project%201/applications/app%2F1/pages/page%201");
+    expect(routePath({ view: "studio", projectId: "project 1", applicationId: "app/1", sceneId: "scene 1" }))
+      .toBe("/studio/project%201/applications/app%2F1/scenes/scene%201");
+  });
+
+  it("keeps the selected operations task in a shareable route", () => {
+    expect(routePath({ view: "operations", operationsTab: "commissioning" })).toBe(
+      "/operations?task=commissioning",
+    );
+    expect(routePath({ view: "operations", operationsTab: "whatif" })).toBe("/operations?task=whatif");
+  });
+
+  it("restores only known operations tasks from the URL", () => {
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        location: { pathname: "/operations", search: "?task=battery" },
+        history: { state: null },
+      },
+    });
+    try {
+      expect(readRoute()).toEqual({ view: "operations", operationsTab: "battery" });
+      globalThis.window.location.search = "?task=unknown";
+      expect(readRoute()).toEqual({ view: "operations" });
+    } finally {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: originalWindow,
+      });
+    }
+  });
+
+  it("serializes dashboard return context through the shared history contract", () => {
+    const state = routeHistoryState({
+      view: "studio",
+      dashboardReturn: {
+        kind: "dashboard",
+        projectId: "project-1",
+        applicationId: "app-1",
+        pageId: "page-1",
+        view: { zoom: 1, scrollLeft: 10, scrollTop: 20, selectedNodeIds: ["node-1"] }
+      }
+    });
+    expect(state).toMatchObject({
+      bimStudio: { dashboardReturn: { projectId: "project-1", applicationId: "app-1", pageId: "page-1" } }
+    });
+  });
+});

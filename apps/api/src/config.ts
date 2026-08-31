@@ -28,6 +28,8 @@ export interface AppConfig {
   host: string;
   webOrigin: string;
   dataDir: string;
+  /** 可离线部署的统一素材目录，不会打进 Web 静态包。 */
+  assetLibraryDir: string;
   metadata: {
     provider: "json" | "postgres";
     postgres: {
@@ -52,6 +54,7 @@ export interface AppConfig {
   };
   rvt: CommandProviderConfig;
   dwg: CommandProviderConfig;
+  industrialCad: CommandProviderConfig;
   cloudRender: {
     workerUrl?: string;
     workerToken?: string;
@@ -74,10 +77,14 @@ export function loadConfig(): AppConfig {
   const dataDir = process.env.DATA_DIR
     ? path.resolve(process.cwd(), process.env.DATA_DIR)
     : path.join(projectRoot, "data");
+  const assetLibraryDir = process.env.ASSET_LIBRARY_DIR
+    ? path.resolve(process.cwd(), process.env.ASSET_LIBRARY_DIR)
+    : path.join(dataDir, "external-assets", "source-a");
   const rvtCommand = process.env.RVT_CONVERTER_COMMAND?.trim();
   const bundledDwgCommand = path.join(projectRoot, "tools", "libredwg", process.platform === "win32" ? "dwg2dxf.exe" : "dwg2dxf");
   const dwgCommand = process.env.DWG_CONVERTER_COMMAND?.trim()
     || (existsSync(bundledDwgCommand) ? bundledDwgCommand : undefined);
+  const industrialCadCommand = process.env.INDUSTRIAL_CAD_CONVERTER_COMMAND?.trim();
   const cloudRenderWorkerUrl = process.env.CLOUD_RENDER_WORKER_URL?.trim();
   const cloudRenderWorkerToken = process.env.CLOUD_RENDER_WORKER_TOKEN?.trim();
   const cloudRenderPublicOrigin = process.env.CLOUD_RENDER_PUBLIC_ORIGIN?.trim();
@@ -86,6 +93,7 @@ export function loadConfig(): AppConfig {
     host: process.env.API_HOST ?? "0.0.0.0",
     webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:5173",
     dataDir,
+    assetLibraryDir,
     metadata: {
       provider: process.env.METADATA_STORE === "postgres" ? "postgres" : "json",
       postgres: {
@@ -116,6 +124,17 @@ export function loadConfig(): AppConfig {
     dwg: {
       ...(dwgCommand ? { command: dwgCommand } : {}),
       args: parseArgs(process.env.DWG_CONVERTER_ARGS, ["-y", "-o", "{output}/model.dxf", "{input}"]),
+      cwd: projectRoot
+    },
+    industrialCad: {
+      ...(industrialCadCommand ? { command: industrialCadCommand } : {}),
+      args: parseArgs(process.env.INDUSTRIAL_CAD_CONVERTER_ARGS, [
+        "--input", "{input}",
+        "--output", "{output}",
+        "--format", "{format}",
+        "--quality", "{quality}",
+        "--include-pmi", "{includePmi}"
+      ]),
       cwd: projectRoot
     },
     cloudRender: {

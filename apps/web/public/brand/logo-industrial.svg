@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 304 56" role="img" aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">Industrial Studio</title>
+  <desc id="logo-desc">工业数字孪生节点与轨道组成的几何标志</desc>
+  <defs>
+    <linearGradient id="signal" x1="8" y1="8" x2="44" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#76D4FF"/>
+      <stop offset="1" stop-color="#2F83FF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(4 4)">
+    <path d="M24 4v32M8 14l16 9 16-9M8 34l16-11 16 11" fill="none" stroke="#D6AA4D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
+    <path d="M24 4 8 14v20l16 10 16-10V14L24 4Z" fill="none" stroke="url(#signal)" stroke-width="2.4" stroke-linejoin="round"/>
+    <circle cx="24" cy="4" r="4" fill="#76D4FF"/>
+    <circle cx="8" cy="14" r="4" fill="#D6AA4D"/>
+    <circle cx="40" cy="14" r="4" fill="#D6AA4D"/>
+    <circle cx="24" cy="46" r="4" fill="#2F83FF"/>
+  </g>
+  <g transform="translate(68 0)" fill="#E8F0F4">
+    <text x="0" y="31" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="-.6">Industrial</text>
+    <text x="110" y="31" fill="#D6AA4D" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="-.6">Studio</text>
+    <text x="1" y="46" fill="#80939E" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="8.5" font-weight="600" letter-spacing="2.1">INDUSTRIAL DIGITAL TWIN</text>
+  </g>
+</svg>

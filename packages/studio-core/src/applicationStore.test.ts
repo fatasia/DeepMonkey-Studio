@@ -18,6 +18,7 @@ import {
   createUpsertScriptModuleCommand,
   createUpsertTopologyCommand,
   createUpdateDashboardDataWidgetCommand,
+  createUpdateDashboardDataWidgetsCommand,
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
   createUpdateDashboardNodeOrderCommand,
@@ -172,9 +173,9 @@ describe("StudioCommand", () => {
 
     store.dispatch(createInsertDashboardNodesCommand(page.id, copies));
     store.dispatch(createUpdateDashboardNodeStateCommand(page.id, copies[0]!.id, { locked: true, visible: false }));
-    store.dispatch(createUpdateDashboardNodeStatesCommand(page.id, copies.map((node) => ({ nodeId: node.id, state: { selectable: false, groupId: "group:1" } })), "编组"));
+    store.dispatch(createUpdateDashboardNodeStatesCommand(page.id, copies.map((node) => ({ nodeId: node.id, state: { selectable: false, groupId: "group:1", groupName: "泵站指标" } })), "编组"));
     expect(store.getState().document?.pages[0]?.nodes).toHaveLength(originals + 2);
-    expect(store.getState().document?.pages[0]?.nodes.find((node) => node.id === copies[0]!.id)).toMatchObject({ locked: true, visible: false, selectable: false, groupId: "group:1" });
+    expect(store.getState().document?.pages[0]?.nodes.find((node) => node.id === copies[0]!.id)).toMatchObject({ locked: true, visible: false, selectable: false, groupId: "group:1", groupName: "泵站指标" });
 
     store.dispatch(createDeleteDashboardNodesCommand(page.id, copies.map((node) => node.id)));
     expect(store.getState().document?.pages[0]?.nodes).toHaveLength(originals);
@@ -264,6 +265,22 @@ describe("StudioCommand", () => {
     expect(removed.pages[0]!.nodes.some((candidate) => candidate.id === node.id)).toBe(false);
     expect(removed.interactions).toHaveLength(0);
     expect(added.scenes).toBe(source.scenes);
+  });
+
+  it("updates a group of data widgets in one command", () => {
+    const source = document();
+    const pageId = source.pages[0]!.id;
+    const nodes = ["a", "b"].map((id, index) => ({
+      id: `widget:${id}`,
+      kind: "data-widget" as const,
+      frame: { x: index * 200, y: 0, width: 180, height: 120 },
+      zIndex: index,
+      widget: { title: id, key: `old.${id}`, type: "value" as const, unit: "" }
+    }));
+    const added = applyStudioCommand(source, createInsertDashboardNodesCommand(pageId, nodes));
+    const updated = applyStudioCommand(added, createUpdateDashboardDataWidgetsCommand(pageId, nodes.map((node) => ({ nodeId: node.id, widget: { ...node.widget, datasetId: "new" } }))));
+
+    expect(updated.pages[0]!.nodes.filter((node) => nodes.some((candidate) => candidate.id === node.id))).toEqual(nodes.map((node) => ({ ...node, widget: { ...node.widget, datasetId: "new" } })));
   });
 });
 

@@ -55,4 +55,35 @@ describe("scene data bindings", () => {
       source: "direct:direct-1", key: "online", value: false, sceneId: "scene-1", target: { modelId: "robot-1" }, action: "visibility"
     });
   });
+
+  it("preserves a fire patch from pipeline data for the shared effects runtime", () => {
+    const binding = normalizeSceneDataBindings([{
+      id: "fire-binding", name: "火焰告警", enabled: true, pipelineId: "alarm-pipeline",
+      field: "fire", target: { modelId: "tank-1" }, action: "effects", refreshSeconds: 5,
+    }])[0]!;
+    const message = sceneDataBindingMessage(binding, {
+      fields: [{ key: "fire", label: "火焰", type: "json" }],
+      rows: [{ fire: { fire: { enabled: true, intensity: 3.5 } } }],
+    }, "scene-1");
+
+    expect(message.value).toEqual({ fire: { enabled: true, intensity: 3.5 } });
+    expect(message.action).toBe("effects");
+  });
+
+  it("normalizes a safe scalar PBR patch and rejects texture injection", () => {
+    const binding = normalizeSceneDataBindings([{
+      id: "material-binding", name: "温升材质", enabled: true, pipelineId: "thermal-pipeline",
+      field: "material", target: { modelId: "motor-1" }, action: "material", refreshSeconds: 5,
+    }])[0]!;
+    const message = sceneDataBindingMessage(binding, {
+      fields: [{ key: "material", label: "材质", type: "json" }],
+      rows: [{ material: { color: "#ff7a45", roughness: 0.35, emissiveIntensity: 1.4 } }],
+    }, "scene-1");
+
+    expect(message.value).toEqual({ color: "#ff7a45", roughness: 0.35, emissiveIntensity: 1.4 });
+    expect(() => sceneDataBindingMessage(binding, {
+      fields: [{ key: "material", label: "材质", type: "json" }],
+      rows: [{ material: { baseColorMapUrl: "https://untrusted.test/map.png" } }],
+    }, "scene-1")).toThrow("不支持参数");
+  });
 });

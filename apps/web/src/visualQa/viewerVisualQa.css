@@ -1,0 +1,85 @@
+.viewer-visual-qa {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: #e5ebed;
+  background: #11191d;
+}
+.viewer-visual-qa-canvas {
+  position: absolute;
+  inset: 0;
+}
+.viewer-visual-qa-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.viewer-visual-qa > header {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid #354249;
+  border-radius: 8px;
+  background: rgba(14, 20, 23, 0.9);
+  box-shadow: 0 12px 36px #0007;
+  backdrop-filter: blur(12px);
+}
+.viewer-visual-qa > header span {
+  display: grid;
+  gap: 3px;
+}
+.viewer-visual-qa > header small {
+  color: #78888f;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.viewer-visual-qa > header strong {
+  font-size: 14px;
+}
+.viewer-visual-qa > header em {
+  padding: 5px 7px;
+  color: #e9c46a;
+  border-radius: 4px;
+  background: #282217;
+  font-size: 10px;
+  font-style: normal;
+}
+.viewer-visual-qa > output {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.viewer-visual-qa > aside {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  min-width: 170px;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid #354249;
+  border-radius: 8px;
+  text-align: right;
+  background: rgba(14, 20, 23, 0.9);
+  box-shadow: 0 12px 36px #0007;
+  backdrop-filter: blur(12px);
+}
+.viewer-visual-qa > aside strong {
+  color: #e7c46d;
+  font-size: 22px;
+}
+.viewer-visual-qa > aside span {
+  color: #c5ced1;
+  font-size: 11px;
+}
+.viewer-visual-qa > aside small {
+  color: #77878e;
+  font-size: 10px;
+}

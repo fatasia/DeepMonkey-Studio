@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  '@serialport/bindings-cpp': true
   bufferutil: false
   core-js: true
   es5-ext: false
@@ -11,3 +12,6 @@ allowBuilds:
   onnxruntime-node: true
   oracledb: true
   utf-8-validate: false
+
+patchedDependencies:
+  three@0.185.1: patches/three@0.185.1.patch

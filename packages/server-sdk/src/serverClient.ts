@@ -1,8 +1,11 @@
 import type {
   ApplicationDocument,
+  ConversionTaskRecord,
+  ConverterPluginDescriptor,
   PublishedApplicationRecord,
   SceneSnapshot,
-  ServerMetaResponse
+  ServerMetaResponse,
+  SubmitConversionTaskRequest,
 } from "@bim-studio/contracts";
 import { assertPathSafeResourceId } from "@bim-studio/contracts";
 
@@ -23,6 +26,15 @@ export interface ServerClientOptions {
   authStore: AuthStore;
   fetch?: typeof globalThis.fetch;
   onUnauthorized?: () => void;
+}
+
+/** 保留 HTTP 状态和服务端结构化信息，调用方才能区分冲突、权限与暂时离线。 */
+export class ServerRequestError extends Error {
+  readonly name = "ServerRequestError";
+
+  constructor(message: string, readonly status: number, readonly body: unknown) {
+    super(message);
+  }
 }
 
 export class ServerClient {
@@ -47,7 +59,7 @@ export class ServerClient {
     if (!response.ok) {
       const body = await response.clone().json().catch(() => ({ message: response.statusText })) as { message?: string; error?: { message?: string } };
       if (response.status === 401) this.options.onUnauthorized?.();
-      throw new Error(body.message ?? body.error?.message ?? `请求失败：${response.status}`);
+      throw new ServerRequestError(body.message ?? body.error?.message ?? `请求失败：${response.status}`, response.status, body);
     }
     return response;
   }
@@ -124,6 +136,39 @@ export class ServerClient {
     return this.request(
       `/api/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/publish`,
       { method: "DELETE" }
+    );
+  }
+
+  listConverters(): Promise<ConverterPluginDescriptor[]> {
+    return this.request("/api/converters");
+  }
+
+  submitConversion(request: SubmitConversionTaskRequest): Promise<ConversionTaskRecord> {
+    assertPathSafeResourceId(request.projectId, "projectId");
+    const { projectId, ...body } = request;
+    return this.request(
+      `/api/projects/${encodeURIComponent(projectId)}/conversion-tasks`,
+      json("POST", body),
+    );
+  }
+
+  listConversionTasks(projectId: string): Promise<ConversionTaskRecord[]> {
+    assertPathSafeResourceId(projectId, "projectId");
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/conversion-tasks`);
+  }
+
+  getConversionTask(projectId: string, taskId: string): Promise<ConversionTaskRecord> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(taskId, "taskId");
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/conversion-tasks/${encodeURIComponent(taskId)}`);
+  }
+
+  cancelConversionTask(projectId: string, taskId: string): Promise<ConversionTaskRecord> {
+    assertPathSafeResourceId(projectId, "projectId");
+    assertPathSafeResourceId(taskId, "taskId");
+    return this.request(
+      `/api/projects/${encodeURIComponent(projectId)}/conversion-tasks/${encodeURIComponent(taskId)}/cancel`,
+      { method: "POST" },
     );
   }
 }

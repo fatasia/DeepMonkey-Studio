@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "iTwin Studio",
+  "productName": "Industrial Studio",
   "version": "0.1.0",
   "identifier": "com.bimstudio.devstudio",
   "build": {
@@ -17,7 +17,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "iTwin Studio",
+        "title": "Industrial Studio",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
@@ -28,7 +28,21 @@
     ]
   },
   "bundle": {
-    "active": false,
-    "targets": "all"
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "perMachine",
+        "displayLanguageSelector": true,
+        "startMenuFolder": "Industrial Studio"
+      },
+      "wix": {
+        "language": "zh-CN"
+      }
+    }
   }
 }

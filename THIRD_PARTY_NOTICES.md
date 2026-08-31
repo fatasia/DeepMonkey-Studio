@@ -10,10 +10,10 @@ Key runtime dependencies:
 
 | Package | Version | License | Source |
 | --- | ---: | --- | --- |
-| `@thatopen/components` | 3.4.6 | MIT | https://github.com/ThatOpen/engine_components |
 | `@thatopen/fragments` | 3.4.5 | MIT | https://github.com/ThatOpen/engine_fragment |
 | `web-ifc` | 0.0.77 | MPL-2.0 | https://github.com/ThatOpen/engine_web-ifc |
-| `three` | 0.184.0 | MIT | https://github.com/mrdoob/three.js |
+| `three` | 0.185.1 | MIT | https://github.com/mrdoob/three.js |
+| OpenUSD official validation samples | dev snapshots recorded in tests | Tomorrow Open Source Technology License 1.0 | https://github.com/PixarAnimationStudios/OpenUSD |
 | `three-mesh-bvh` | 0.9.14 | MIT | https://github.com/gkjohnson/three-mesh-bvh |
 | `@gltf-transform/core/extensions/functions` | 4.4.2 | MIT | https://github.com/donmccurdy/glTF-Transform |
 | `draco3dgltf` | 1.5.7 | Apache-2.0 | https://github.com/google/draco |
@@ -26,6 +26,8 @@ Key runtime dependencies:
 | `sharp` / platform package (transitive, Node-side optional) | 0.34.x | Apache-2.0; bundled libvips components include LGPL-3.0-or-later | https://github.com/lovell/sharp |
 | `dxf-parser` | 1.1.2 | MIT | https://github.com/gdsestimating/dxf-parser |
 | `occt-import-js` | 0.0.23 | LGPL-2.1 | https://github.com/kovacsv/occt-import-js |
+| `replicad` | 1.0.0 | MIT | https://replicad.xyz |
+| `replicad-opencascadejs` | 1.0.0 | LGPL-2.1-only | https://github.com/sgenoud/replicad |
 | GNU LibreDWG (`dwg2dxf`, optional external converter) | 0.14 | GPL-3.0-or-later | https://github.com/LibreDWG/libredwg |
 | `@dimforge/rapier3d-compat` | 0.19.3 | Apache-2.0 | https://github.com/dimforge/rapier.js |
 | `watlas` | 1.0.1 | MIT | https://github.com/repalash/watlas |
@@ -42,6 +44,10 @@ Key runtime dependencies:
 | `fastify` / official plugins | 5.7.4 | MIT | https://github.com/fastify/fastify |
 | `mysql2` | 3.23.2 | MIT | https://github.com/sidorares/node-mysql2 |
 | `oracledb` | 7.0.1 | Apache-2.0 OR UPL-1.0 | https://github.com/oracle/node-oracledb |
+| `bacstack` | 0.0.1-beta.14 | MIT | https://github.com/fh1ch/node-bacstack |
+| `nodes7` | 0.3.18 | MIT | https://github.com/plcpeople/nodeS7 |
+| `st-ethernet-ip` | 2.7.5 | MIT | https://github.com/SerafinTech/ST-node-ethernet-ip |
+| `serialport` | 13.0.0 | MIT | https://github.com/serialport/node-serialport |
 | PostgreSQL server | installed local version | PostgreSQL License | https://www.postgresql.org/ |
 | MinIO server | installed local version | AGPL-3.0 | https://github.com/minio/minio |
 | Node-RED database and IoT nodes | see lockfile | Apache-2.0 / MIT / BSD-3-Clause / ISC | https://flows.nodered.org/ |
@@ -54,9 +60,15 @@ ONNX Runtime only supplies the inference engine. Every imported ONNX/YOLO weight
 
 This repository does not vendor BIMI/商业 BIM 平台 viewer code or source from Aedifex, Pascal Editor, Massing, or xeokit.
 
+## Dashboard design references
+
+The native React/ECharts dashboard templates and decorations are original BIM Studio implementations. DataV React was reviewed as an MIT-licensed visual-design reference; no DataV source code, package, or image asset is vendored or included at runtime. DataV React source and license: https://github.com/DataV-Team/DataV-React
+
 ## STEP and DWG converter notes
 
 `occt-import-js` runs as a replaceable WASM import boundary in the API and is covered by LGPL-2.1. Retain its license and source offer when distributing the application, and publish modifications made directly to LGPL-covered files under the applicable terms.
+
+`replicad-opencascadejs` runs only in an on-demand browser Worker for parameterized STEP generation. It remains a replaceable WASM boundary; distributions must retain the LGPL-2.1 notice and corresponding source availability. The application does not modify its covered sources.
 
 GNU LibreDWG is an optional GPL-3.0-or-later executable invoked as a separate process to produce DXF. The installer keeps the converter outside the application bundles. Internal use does not distribute the converter; if a deployment package is delivered outside the organization, include the GPL license and corresponding source offer and have the distribution model reviewed before release.
 

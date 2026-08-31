@@ -163,6 +163,11 @@ internal static class WorkerPaths
             var executable = entry.Value?.ToString();
             if (match.Success && !string.IsNullOrWhiteSpace(executable) && File.Exists(executable)) found[match.Groups[1].Value] = Path.GetFullPath(executable);
         }
+        // 企业工作站经常把 Revit 安装到非系统盘；优先读取卸载注册表，避免只按 Program Files 猜路径。
+        foreach (var installation in RegistryRevits())
+        {
+            if (!found.ContainsKey(installation.Version)) found[installation.Version] = installation.Executable;
+        }
         var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
         for (var year = 2019; year <= DateTime.Now.Year + 2; year++)
         {
@@ -190,7 +195,42 @@ internal static class WorkerPaths
     {
         var configured = Environment.GetEnvironmentVariable($"REVIT_{version}_PATH");
         if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured);
+        var discovered = InstalledRevits().FirstOrDefault(item => item.Version == version);
+        if (!string.IsNullOrWhiteSpace(discovered.Executable)) return discovered.Executable;
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Autodesk", $"Revit {version}", "Revit.exe");
+    }
+
+    private static IEnumerable<(string Version, string Executable)> RegistryRevits()
+    {
+        if (!OperatingSystem.IsWindows()) yield break;
+        const string uninstallPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+        foreach (var view in new[] { Microsoft.Win32.RegistryView.Registry64, Microsoft.Win32.RegistryView.Registry32 })
+        {
+            using var machine = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, view);
+            using var uninstall = machine.OpenSubKey(uninstallPath);
+            if (uninstall is null) continue;
+            foreach (var subKeyName in uninstall.GetSubKeyNames())
+            {
+                using var product = uninstall.OpenSubKey(subKeyName);
+                var displayName = product?.GetValue("DisplayName")?.ToString()?.Trim() ?? "";
+                var match = System.Text.RegularExpressions.Regex.Match(displayName, @"^(?:Autodesk )?Revit (20\d{2})$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                var installLocation = product?.GetValue("InstallLocation")?.ToString()?.Trim();
+                if (!match.Success || string.IsNullOrWhiteSpace(installLocation)) continue;
+                var version = match.Groups[1].Value;
+                foreach (var candidate in new[]
+                {
+                    Path.Combine(installLocation, "Revit.exe"),
+                    Path.Combine(installLocation, $"Revit {version}", "Revit.exe")
+                })
+                {
+                    if (File.Exists(candidate))
+                    {
+                        yield return (version, Path.GetFullPath(candidate));
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -1,10 +1,10 @@
 import type { DataEventAction, JsonValue } from "@bim-studio/contracts";
-import type { SceneObjectRef } from "@bim-studio/scene-sdk";
+import type { SceneMaterialCommandPatch, SceneObjectRef } from "@bim-studio/scene-sdk";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { SCENE_COMMAND_APPLIED, type SceneCommandPort, type SceneCommandPortOutcome } from "./SceneCommandExecutor";
 
 const unsupported = (message: string): SceneCommandPortOutcome => ({ status: "unsupported", message });
-const DATA_ACTIONS = new Set<DataEventAction>(["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects"]);
+const DATA_ACTIONS = new Set<DataEventAction>(["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material"]);
 
 export class ViewerSceneCommandPort implements SceneCommandPort {
   constructor(private readonly viewer: ViewerEngine, private readonly componentUpdater?: (componentId: string, patch: Record<string, unknown>) => void) {}
@@ -31,6 +31,13 @@ export class ViewerSceneCommandPort implements SceneCommandPort {
       ...(transform.scale ? { scale: transform.scale } : {})
     });
     return applied ? SCENE_COMMAND_APPLIED : unsupported(`对象 ${target.objectId} 不存在。`);
+  }
+
+  setObjectMaterial(target: SceneObjectRef, patch: SceneMaterialCommandPatch): SceneCommandPortOutcome {
+    if (target.kind !== "object") return unsupported("当前脚本材质接口只修改模型对象；构件材质请在属性面板中编辑。");
+    if (!this.hasModel(target.objectId)) return unsupported(`对象 ${target.objectId} 不存在。`);
+    this.viewer.setModelMaterial(target.objectId, patch);
+    return SCENE_COMMAND_APPLIED;
   }
 
   setSelection(targets: readonly SceneObjectRef[]): SceneCommandPortOutcome {
@@ -73,10 +80,9 @@ export class ViewerSceneCommandPort implements SceneCommandPort {
 
   controlAnimation(target: SceneObjectRef, control: { action: "play" | "pause" | "stop" | "seek"; clipId?: string; time?: number }): SceneCommandPortOutcome {
     if (target.kind !== "object") return unsupported("当前仅支持模型对象动画控制。");
-    if (control.clipId || control.action === "seek" || control.action === "stop") return unsupported("动画 Clip 选择、停止与定位尚未开放到 Viewer 端口。");
     if (!this.viewer.hasAnimation(target.objectId)) return unsupported(`对象 ${target.objectId} 没有可用动画。`);
-    this.viewer.setAnimationEnabled(target.objectId, control.action === "play");
-    return SCENE_COMMAND_APPLIED;
+    const applied = this.viewer.controlAnimation(target.objectId, control);
+    return applied ? SCENE_COMMAND_APPLIED : unsupported("动画 Clip 不存在，或定位时间无效。");
   }
 
   applyData(target: SceneObjectRef, data: { values: Record<string, JsonValue>; timestamp: string }): SceneCommandPortOutcome {

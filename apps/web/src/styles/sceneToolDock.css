@@ -1,0 +1,218 @@
+.scene-tool-dock {
+  z-index: 24;
+  gap: 3px;
+  padding: 6px;
+  border-color: rgba(97, 109, 116, 0.72);
+  border-radius: 12px;
+  background: rgba(20, 27, 31, 0.94);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34);
+}
+
+.scene-dock-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: #aeb8bd;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scene-dock-button:hover,
+.scene-dock-button:focus-visible {
+  color: #f4f6f7;
+  border-color: rgba(113, 128, 136, 0.5);
+  background: #2a3338;
+}
+
+.scene-dock-button.active {
+  color: #19150d;
+  border-color: #e0b755;
+  background: var(--accent);
+  box-shadow: 0 3px 10px rgba(224, 183, 85, 0.2);
+}
+
+.scene-tool-separator {
+  flex: 0 0 1px;
+  width: 1px;
+  height: 22px;
+  margin: 0 3px;
+  background: #3b464c;
+}
+
+.scene-tool-task {
+  position: relative;
+}
+
+.scene-tool-task-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 9px;
+  color: #aeb8bd;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-tool-task-trigger > svg:last-child {
+  color: #77848b;
+  transition: transform 160ms ease;
+}
+
+.scene-tool-task.open .scene-tool-task-trigger > svg:last-child {
+  transform: rotate(180deg);
+}
+
+.scene-tool-task-trigger:hover,
+.scene-tool-task-trigger:focus-visible,
+.scene-tool-task.open .scene-tool-task-trigger {
+  color: #f2f4f5;
+  border-color: rgba(113, 128, 136, 0.5);
+  background: #2a3338;
+}
+
+.scene-tool-task-trigger.active {
+  color: #edc86e;
+  background: rgba(224, 183, 85, 0.1);
+}
+
+.scene-tool-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: 246px;
+  padding: 8px;
+  color: #aab4ba;
+  border: 1px solid #455159;
+  border-radius: 11px;
+  background: rgba(21, 28, 32, 0.98);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(16px);
+}
+
+.scene-tool-task:last-child .scene-tool-menu {
+  right: 0;
+  left: auto;
+}
+
+.scene-tool-menu-heading {
+  display: grid;
+  gap: 3px;
+  padding: 6px 8px 8px;
+}
+
+.scene-tool-menu-heading strong {
+  color: #eef2f3;
+  font-size: 11px;
+}
+
+.scene-tool-menu-heading small {
+  color: #7f8d94;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.scene-tool-menu-action {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: 3px 7px;
+  color: #aeb8bd;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scene-tool-menu-action:hover,
+.scene-tool-menu-action:focus-visible {
+  color: #f3f5f6;
+  background: #2a3439;
+}
+
+.scene-tool-menu-action > span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: #d3ab51;
+  border-radius: 6px;
+  background: rgba(211, 171, 81, 0.09);
+}
+
+.scene-tool-menu-action strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-tool-menu-action > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(224, 183, 85, 0.12);
+}
+
+.scene-tool-menu-action.active {
+  color: #f0cf7a;
+  background: rgba(224, 183, 85, 0.08);
+}
+
+.scene-tool-menu-rule {
+  height: 1px;
+  margin: 7px 5px;
+  background: #344047;
+}
+
+.scene-tool-primitive-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+}
+
+.scene-tool-primitive-grid .scene-tool-menu-action {
+  grid-template-columns: 27px minmax(0, 1fr);
+}
+
+.scene-tool-xr {
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+@media (max-width: 1180px) {
+  .scene-tool-dock {
+    width: auto !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .scene-tool-task-trigger span {
+    display: none;
+  }
+
+  .scene-tool-task-trigger {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .scene-tool-task-trigger > svg:last-child {
+    display: none;
+  }
+}

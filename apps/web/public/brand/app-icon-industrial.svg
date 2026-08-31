@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="icon-title">
+  <title id="icon-title">Industrial Studio</title>
+  <defs>
+    <linearGradient id="icon-signal" x1="10" y1="9" x2="52" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#76D4FF"/>
+      <stop offset="1" stop-color="#2F83FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#101A22"/>
+  <path d="M32 10v35M14 20l18 10 18-10M14 44l18-14 18 14" fill="none" stroke="#D6AA4D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
+  <path d="M32 10 14 20v24l18 10 18-10V20L32 10Z" fill="none" stroke="url(#icon-signal)" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="32" cy="10" r="5" fill="#76D4FF"/>
+  <circle cx="14" cy="20" r="5" fill="#D6AA4D"/>
+  <circle cx="50" cy="20" r="5" fill="#D6AA4D"/>
+  <circle cx="32" cy="54" r="5" fill="#2F83FF"/>
+</svg>

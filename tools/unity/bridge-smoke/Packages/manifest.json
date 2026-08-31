@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "com.bim-studio.bridge": "file:../../com.bim-studio.bridge",
+    "com.unity.ugui": "1.0.0"
+  }
+}

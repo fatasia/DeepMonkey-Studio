@@ -45,14 +45,18 @@ export default function DashboardVisualQa() {
     canUndo={false}
     canRedo={false}
     busy={false}
+    liveDataEnabled={false}
     selection={selection}
     variables={{ throughput: 18640, cycle: 72, status: "warning" }}
+    filters={{}}
     onBack={() => undefined}
     onSelectPage={() => undefined}
     onEnterScene={() => undefined}
     onOpenTopology={() => undefined}
     onOpenData={() => undefined}
     onSelectionChange={setSelection}
+    onFilterChange={() => undefined}
+    onVariableChange={() => undefined}
     onObjectInteraction={() => undefined}
     onNodeInteraction={() => undefined}
     onCommand={dispatch}

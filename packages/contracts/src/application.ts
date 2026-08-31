@@ -12,7 +12,7 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type SceneDocument = Omit<SceneSnapshot,
   "schemaVersion" | "projectId" | "dashboard" | "interactions" |
-  "publishedAt" | "createdAt" | "updatedAt">;
+  "publishedAt" | "publicationMode" | "publicationPerformance" | "publicationToolbarVisible" | "createdAt" | "updatedAt">;
 
 export interface ApplicationMetadata {
   id: string;
@@ -42,6 +42,7 @@ export interface SceneViewportWidgetNode {
   selectable?: boolean;
   locked?: boolean;
   groupId?: string;
+  groupName?: string;
   sceneId: string;
   cameraViewId?: string;
   renderMode: "realtime" | "load-on-interaction" | "static-placeholder";
@@ -66,6 +67,7 @@ export interface DashboardDataWidgetNode {
   selectable?: boolean;
   locked?: boolean;
   groupId?: string;
+  groupName?: string;
   widget: DashboardDataWidgetConfig;
 }
 
@@ -73,6 +75,11 @@ export type WidgetNode = SceneViewportWidgetNode | DashboardDataWidgetNode;
 
 export interface DashboardPageAppearance {
   backgroundColor?: string;
+  backgroundImageUrl?: string;
+  backgroundImageName?: string;
+  backgroundImageFit?: "cover" | "contain" | "stretch" | "original";
+  backgroundImagePosition?: "center" | "top" | "bottom" | "left" | "right";
+  backgroundImageRepeat?: boolean;
   backgroundOpacity?: number;
   blur?: number;
   borderRadius?: number;
@@ -106,6 +113,31 @@ export interface DashboardPageDocument {
 export interface TopologyNode { id: string; kind: string; x: number; y: number; properties: Record<string, JsonValue>; }
 export interface TopologyEdge { id: string; sourceNodeId: string; targetNodeId: string; properties: Record<string, JsonValue>; }
 export interface TopologyDocument { id: string; name: string; nodes: TopologyNode[]; edges: TopologyEdge[]; }
+export type TopologyScadaOperatingState = "unknown" | "offline" | "idle" | "running" | "warning" | "alarm";
+export type TopologyScadaAlarmSeverity = "info" | "warning" | "critical";
+export type TopologyScadaDataQuality = "good" | "uncertain" | "bad";
+export interface TopologyScadaAlarmState {
+  /** Stable adapter-side identity used when acknowledging an alarm. */
+  id?: string;
+  active: boolean;
+  severity: TopologyScadaAlarmSeverity;
+  message: string;
+  acknowledged?: boolean;
+  acknowledgedAt?: string;
+  acknowledgedBy?: string;
+  occurredAt?: string;
+}
+/** Ephemeral state supplied by a SCADA/data runtime. It is intentionally separate from the saved topology document. */
+export interface TopologyScadaRuntimeState {
+  state: TopologyScadaOperatingState;
+  value?: JsonValue;
+  unit?: string;
+  /** Adapter-reported confidence in the current value. Omitted means good for backwards compatibility. */
+  quality?: TopologyScadaDataQuality;
+  alarm?: TopologyScadaAlarmState;
+  /** ISO-8601 source timestamp used to detect stale or invalid telemetry. */
+  updatedAt?: string;
+}
 export interface GeoConfiguration { providerIds: string[]; layers: Array<{ id: string; providerId: string; visible: boolean }>; }
 export interface ApplicationDataDocument { connectionIds: string[]; datasetIds: string[]; transforms: Array<{ id: string; expression: string }>; variables: Array<{ id: string; value: JsonValue }>; }
 
@@ -148,6 +180,11 @@ export type ApplicationScriptPermission =
   | "renderer.extend"
   | "editor.extend";
 
+/** 持久化的脚本挂载目标；旧脚本未声明时按场景级行为处理。 */
+export type ApplicationScriptTarget =
+  | { kind: "scene" }
+  | { kind: "object" | "component"; id: string };
+
 export interface ScriptModule {
   id: string;
   name: string;
@@ -160,6 +197,7 @@ export interface ScriptModule {
   lifecycle: ApplicationScriptLifecycle[];
   capabilities: string[];
   permissions: ApplicationScriptPermission[];
+  target?: ApplicationScriptTarget;
 }
 export interface AssetEntry { id: string; kind: "model" | "image" | "video" | "environment"; projectId: string; sourceName?: string; sourceFormat?: ModelFormat; contentHash?: string; }
 export interface TimelineDocument { id: string; name: string; duration: number; trackIds: string[]; }

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import pureFixture from "../../../test-fixtures/scene-v1-pure-3d.json";
@@ -58,11 +58,15 @@ describe("JsonStore scene management", () => {
       publishedAt: "2026-08-03T10:05:00.000Z"
     };
     await store.savePublication(publication);
+    await store.savePublication({ ...publication, publishedAt: "2026-08-03T10:10:00.000Z" });
     source.name = "编辑后的名称";
 
     expect(store.getPublication(source.id)?.snapshot.name).toBe("测试场景");
+    expect(store.getPublication(source.id)?.version).toBe(2);
+    expect(store.listScenePublications(source.id).map((item) => item.version)).toEqual([2, 1]);
     await store.removeScene(source.projectId, source.id);
     expect(store.getPublication(source.id)).toBeUndefined();
+    expect(store.listScenePublications(source.id)).toEqual([]);
   });
 });
 
@@ -253,6 +257,41 @@ describe("JsonStore application management", () => {
     const restarted = new JsonStore(directory);
     await restarted.init();
     expect(restarted.getScene("default", "failed-scene")).toBeUndefined();
+  });
+
+  it("recovers the previous valid JSON document and preserves a corrupt file for diagnosis", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-studio-store-recovery-"));
+    temporaryDirectories.push(directory);
+    const store = new JsonStore(directory);
+    await store.init();
+    const project = await store.createProject("回滚前版本");
+    await store.updateProject(project.id, { name: "损坏前最新版本" });
+    await writeFile(path.join(directory, "database.json"), "{broken", "utf8");
+
+    const restarted = new JsonStore(directory);
+    await restarted.init();
+
+    expect(restarted.getProject(project.id)?.name).toBe("回滚前版本");
+    expect(JSON.parse(await readFile(path.join(directory, "database.json"), "utf8"))).toMatchObject({ projects: expect.any(Array) });
+    expect((await readdir(directory)).some((name) => name.startsWith("database.json.corrupt-"))).toBe(true);
+  });
+
+  it("recovers when a process exits between moving the current file and installing the next file", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-studio-store-interrupted-"));
+    temporaryDirectories.push(directory);
+    const store = new JsonStore(directory);
+    await store.init();
+    const project = await store.createProject("中断恢复项目");
+    const databasePath = path.join(directory, "database.json");
+    const previousPath = `${databasePath}.previous`;
+    await rm(previousPath, { force: true });
+    await rename(databasePath, previousPath);
+
+    const restarted = new JsonStore(directory);
+    await restarted.init();
+
+    expect(restarted.getProject(project.id)?.name).toBe("中断恢复项目");
+    expect(JSON.parse(await readFile(databasePath, "utf8"))).toMatchObject({ projects: expect.any(Array) });
   });
 });
 

@@ -288,7 +288,9 @@ async function optimizerIO(): Promise<WebIO> {
 }
 
 async function loadWasm(name: string): Promise<Uint8Array> {
-  const response = await fetch(`${import.meta.env.BASE_URL}draco/${name}`);
+  const response = await fetch(`${import.meta.env.BASE_URL}draco/${name}`, {
+    signal: AbortSignal.timeout(30_000),
+  });
   if (!response.ok) throw new Error(`Draco 资源加载失败：${name} (${response.status})`);
   return new Uint8Array(await response.arrayBuffer());
 }

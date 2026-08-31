@@ -40,10 +40,10 @@ describe("normalizeDashboardState", () => {
 
   it("preserves local video and live monitor playback settings", () => {
     const state = normalizeDashboardState({ widgets: [
-      { id: "video", title: "宣传片", type: "video", key: "value", videoUrl: "/assets/demo.mp4", videoFit: "cover", videoAutoplay: true, videoMuted: false },
+      { id: "video", title: "宣传片", type: "video", key: "value", videoUrl: "/assets/demo.mp4", videoFit: "cover", videoAutoplay: true, videoMuted: false, videoLoop: false },
       { id: "monitor", title: "门厅监控", type: "monitor", key: "value", videoUrl: "http://localhost:8888/cam/index.m3u8", monitorSourceUrl: "rtsp://camera/live", monitorProtocol: "hls" }
     ] });
-    expect(state.widgets[0]).toMatchObject({ type: "video", videoUrl: "/assets/demo.mp4", videoFit: "cover", videoAutoplay: true, videoMuted: false, h: 3 });
+    expect(state.widgets[0]).toMatchObject({ type: "video", videoUrl: "/assets/demo.mp4", videoFit: "cover", videoAutoplay: true, videoMuted: false, videoLoop: false, h: 3 });
     expect(state.widgets[1]).toMatchObject({ type: "monitor", monitorSourceUrl: "rtsp://camera/live", monitorProtocol: "hls", h: 3 });
   });
 

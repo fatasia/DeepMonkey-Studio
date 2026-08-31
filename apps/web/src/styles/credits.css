@@ -1,0 +1,15 @@
+.credits-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 20px; background: rgba(5,8,9,.72); backdrop-filter: blur(8px); }
+.credits-modal { width: min(560px, 100%); max-height: min(680px, calc(100vh - 40px)); overflow: hidden; color: #818d94; border: 1px solid #344047; border-radius: 13px; background: #161d21; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
+.credits-modal header { display: grid; grid-template-columns: 38px 1fr 30px; align-items: center; gap: 9px; padding: 15px; border-bottom: 1px solid #2d373d; }
+.credits-modal header > span { display: grid; place-items: center; width: 38px; height: 38px; color: #17130b; border-radius: 9px; background: var(--accent); }
+.credits-modal header div { display: flex; flex-direction: column; gap: 4px; }
+.credits-modal header strong { color: #e0e5e7; font-size: 13px; }
+.credits-modal header small { color: #6c787f; font-size: 8px; }
+.credits-modal header button { color: #7b878e; border: 0; background: transparent; cursor: pointer; }
+.credits-list { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; max-height: 450px; overflow: auto; padding: 1px; background: #2b353a; }
+.credits-list a { display: flex; align-items: center; justify-content: space-between; min-width: 0; padding: 10px 12px; color: #79858c; background: #171e22; text-decoration: none; }
+.credits-list a:hover { color: var(--accent); background: #1b2429; }
+.credits-list a span { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.credits-list strong { overflow: hidden; color: #c6cdd1; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.credits-list small { color: #657179; font-size: 7px; }
+.credits-modal footer { padding: 11px 15px 13px; color: #667279; font-size: 7px; line-height: 1.55; }

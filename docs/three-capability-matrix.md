@@ -80,7 +80,7 @@
 | GEO-02 | 自定义 BufferGeometry、attributes/index/groups、法线/包围体与更新 | Scene Extension | planned | 引擎内部使用 BufferGeometry，但没有稳定可信扩展上下文 | `EX-M4-MESH`、资源释放与非法缓冲诊断待建 |
 | GEO-03 | Mesh/Line/LineSegments/Points/Sprite 的创建、查询与销毁 | Scene SDK + Scene Extension | partial | 内部用于模型、测量、标注和天气效果；没有公开对象构建器 | `CT-GEO-03`、`EX-M4-MESH` 待建 |
 | GEO-04 | 裁剪、剖切、爆炸与对象状态效果 | Editor + Scene SDK | partial | 裁剪、爆炸、轮廓/辉光/XRay/扫描/热力等内部能力存在；公开命令不完整且双后端不齐 | `CT-GEO-04`、`EX-M4-EXPLODE`、`BR-*-GEO-04` 待建 |
-| MAT-01 | 基础/PBR 材质参数、透明度、线框、双面、深度与混合 | Editor + Scene SDK | partial | 材质面板与 MeshStandard/Basic 等内部实现存在；SDK 没有 material 命令/查询 | `CT-MAT-01`、`EX-M4-MESH`、`BR-*-MAT-01` 待建 |
+| MAT-01 | 基础/PBR 材质参数、透明度、线框、双面、深度与混合 | Editor + Scene SDK | partial | 编辑器已有 PBR 面板；可信脚本已提供 `getMaterial/setMaterial`，Worker 已有受控 `material.set`，但 Mesh 构件查询、深度/混合与完整浏览器矩阵仍未签署 | `CT-MAT-01` 已覆盖合同/端口；`EX-M4-MESH`、`BR-*-MAT-01` 待建 |
 | MAT-02 | 纹理加载、色彩空间、UV/重复/偏移/旋转、过滤和资源释放 | Editor + Scene Extension | partial | 环境贴图、HDR/EXR/普通纹理加载存在；通用纹理资产和公开参数路径缺失 | `CT-MAT-02`、`EX-M4-MESH`、纹理释放基准待建 |
 | MAT-03 | 自定义 shader/node material、uniform/node 输入与后端兼容声明 | Scene Extension | planned | 旧内部效果使用常规材质；没有可信自定义材质出口或 TSL 路径 | `EX-M4-FX`、双后端兼容诊断待建 |
 
@@ -121,10 +121,12 @@
 
 | ID | 能力族 | 平台路径 | 当前状态 | 当前证据 | M4 退出证据 |
 | --- | --- | --- | --- | --- | --- |
-| ANI-01 | glTF Clip 播放/暂停/停止/seek、循环、倍速与混合 | Editor + Scene SDK | partial | AnimationMixer、模型动画开关和 `animation.control` 协议存在；clip 选择/混合公开面不足 | `CT-ANI-01`、`EX-M4-ANIM`、`BR-*-ANI-01` 待建 |
+| ANI-01 | glTF Clip 播放/暂停/停止/seek、循环、倍速与混合 | Editor + Scene SDK | partial | `ViewerEngine` 已提供 clip 列表与按名称/UUID 的 play/pause/stop/seek 控制，`studio.object` 与行为脚本 API 已透传；仍缺编辑器 clip 轨道、混合权重和双后端实机证据 | `CT-ANI-01`、`EX-M4-ANIM`、`BR-*-ANI-01` 待建 |
 | ANI-02 | 骨骼、Morph、关节层级和实时关节数据映射 | Scene SDK + Scene Extension | partial | Loader 可保留模型动画，但未见公开骨骼/Morph/关节控制接口 | `EX-M4-ROBOT` 与关节限位/插值合同待建 |
 | ANI-03 | Tween、状态机、对象/相机多轨时间线、动画事件 | Editor + Scene SDK | partial | 已有相机/模型多轨时间线与关键帧采样；状态机、Tween、公开事件不完整 | `CT-ANI-03`、`EX-M4-EXPLODE`、`DX-ANI-03` 待建 |
 | ANI-04 | fixed timestep、timeScale、暂停/恢复、记录/确定性回放和遥测插值 | Scene SDK | partial | `behaviorScheduler`、行为生命周期协议和主线程 Host 测试已存在；尚未完成编辑器/场景命令闭环与回放 | `CT-ANI-04`、`EX-M4-AGV`、`EX-M4-TAKT` 待建 |
+| ANI-05 | 序列帧/Flipbook（贴图帧或离散状态帧） | Editor + Scene SDK | planned | 当前关键帧轨道是相机/对象变换插值，GLB/FBX clip 可播放；没有序列帧资源、帧率和离散采样轨道 | 资源导入、帧率/循环、时间线预览和 WebGL/WebGPU 一致性证据待建 |
+| ANI-06 | IK 逆运动学（CCD/FABRIK、骨骼链、目标、约束/限位） | Scene Extension | planned | 未提供 IK 求解器或骨骼链编辑/运行时 API；机器人样例暂只要求关节数据映射，不把 IK 写入核心 | 独立扩展、关节坐标/限位、失败诊断、性能预算和可撤销编辑证据待建 |
 
 ### 3.8 实例化、渲染目标与后处理
 
@@ -135,8 +137,8 @@
 | INS-01 | InstancedMesh 实例矩阵/颜色/拾取/包围体和动态更新 | Scene SDK + Scene Extension | planned | 仓库未见通用 InstancedMesh 公开能力；Fragments 的内部优化不能替代平台实例化 API | `CT-INS-01`、`EX-M4-INSTANCE`、10k/100k 实例基准待建 |
 | INS-02 | BatchedMesh/合批、拆批、对象 ID 与选择语义保持 | Scene Extension | planned | 路线图有实例化/合批目标，尚无公共运行时证据 | `EX-M4-INSTANCE`、拾取/更新/释放基准待建 |
 | RT-01 | 2D/Cube/Array/MRT 渲染目标、尺寸/附件/读取和释放 | Scene Extension | planned | 现有 EffectComposer 内部使用渲染目标，但没有公开生命周期和读取接口 | `CT-RT-01`、`EX-M4-FX`、显存泄漏基准待建 |
-| FX-01 | WebGL EffectComposer 效果链、启停、排序和参数编辑 | Editor + Scene Extension | partial | WebGL 路径已有 SSAO/GTAO/Outline/Bloom/Bokeh/Afterimage/Film/Vignette/SMAA/FXAA；无可信自定义 pass，WebGPU 不承载此链 | `CT-FX-01`、`BR-WGL-FX-01`、后端限制诊断待建 |
-| FX-02 | WebGPU RenderPipeline、Node 后处理、MRT 与等价降级 | Editor + Scene Extension | planned | 当前 WebGPU 后端没有 RenderPipeline/Node 效果链；官方明确其与 EffectComposer 不兼容 | `EX-M4-FX`、`BR-WGPU-FX-02`、`BR-WGL-FX-02` 待建 |
+| FX-01 | WebGL EffectComposer 效果链、启停、排序和参数编辑 | Editor + Scene Extension | partial | WebGL 路径已有 SSAO/GTAO/Outline/Bloom/Bokeh/Afterimage/Film/Vignette/SMAA/FXAA；WebGPU 不复用 EffectComposer，而由 TSL 管线覆盖核心效果；两端均无可信自定义 pass | `CT-FX-01`、`BR-WGL-FX-01`、自定义 pass 权限与限制诊断待建 |
+| FX-02 | WebGPU RenderPipeline、Node 后处理、MRT 与等价降级 | Editor + Scene Extension | partial | 产品已接入 TSL `RenderPipeline`，覆盖 AO、对象轮廓、Bloom、景深、暗角、胶片颗粒、残影和 SMAA/FXAA；画质等价仍按发布场景签署，自动发布保留 WebGL | `EX-M4-FX`、`BR-WGPU-FX-02`、`BR-WGL-FX-02` 同画质、短时资源回落、设备丢失与恢复证据待持续执行 |
 
 ### 3.9 WebGPU、TSL、Compute 与数学工具
 
@@ -145,7 +147,7 @@
 | ID | 能力族 | 平台路径 | 当前状态 | 当前证据 | M4 退出证据 |
 | --- | --- | --- | --- | --- | --- |
 | GPU-01 | WebGPU 初始化、WebGL 2 回退、显式后端切换与场景状态保持 | Editor + Renderer Port | partial | 已有 WebGPURenderer 实验开关、能力探针、快照切换与回退提示；尚无 Auto 默认、设备丢失与实机矩阵证据 | `CT-GPU-01`、`BR-WGPU-GPU-01`、`BR-WGL-GPU-01` 待建 |
-| GPU-02 | NodeMaterial/TSL 统一材质，后端能力声明与迁移诊断 | Scene Extension | planned | 未见 `three/tsl` 或 NodeMaterial 运行实现 | `EX-M4-FX`、WGSL/GLSL 双后端视觉证据待建 |
+| GPU-02 | NodeMaterial/TSL 统一材质，后端能力声明与迁移诊断 | Scene Extension | planned | 内部 WebGPU 后处理已使用 `three/tsl`，但尚无通用 NodeMaterial 材质编辑和可信 Scene Extension 出口 | `EX-M4-FX`、WGSL/GLSL 双后端视觉证据待建 |
 | GPU-03 | Compute、storage buffer、粒子/数据驱动计算与 CPU 等价回退 | Scene Extension | planned | 未见 Compute 管线；业务仿真仍应保持 CPU/宿主确定性 | M4 只做经过基准证明有收益的样例；`CI-GPU-03` 待建 |
 | GPU-04 | 设备/驱动能力、限制、错误、设备丢失与重建诊断 | Editor + Renderer Port | partial | 已探测 secure context、WebGL2、GPU adapter 与纹理上限；device lost/重建和遥测未完成 | 实机原始探针、恢复 `BR-WGPU-GPU-04` 待建；若环境不支持才可转 `environment-blocked` |
 | MTH-01 | Vector2/3/4、Euler、Quaternion、Matrix3/4、Color 和插值工具 | Scene SDK | partial | 引擎内部大量使用 Vector/Quaternion/Matrix/Color；SDK 仅暴露少量 tuple | `CT-MTH-01`、类型与序列化样例待建 |
@@ -220,4 +222,4 @@
 
 ## 7. 首版结论
 
-当前仓库已经具备相当数量的 Three.js 内部能力，但公开 Scene SDK 仍主要是协议骨架；几何、材质、灯光、射线、层级、实例化、渲染目标、TSL/Compute 和可信扩展上下文均存在明显缺口。因此除纯协议兼容协商 `EXT-01` 外，本矩阵暂不把内部功能直接标成 `implemented`。M4 的首要工作不是继续堆叠私有 `ViewerEngine` 方法，而是用上述迁移样例把已有能力收敛到稳定、简单、可测试的公开路径。
+当前仓库已经具备相当数量的 Three.js 内部能力，WebGPU TSL 核心后处理也已进入产品运行时，但公开 Scene SDK 仍主要是协议骨架；几何、材质、灯光、射线、层级、实例化、渲染目标、Compute 和可信扩展上下文仍存在明显缺口。因此除纯协议兼容协商 `EXT-01` 外，本矩阵不把内部功能直接标成公开能力已 `implemented`。M4 的首要工作不是继续堆叠私有 `ViewerEngine` 方法，而是用上述迁移样例把已有能力收敛到稳定、简单、可测试的公开路径。

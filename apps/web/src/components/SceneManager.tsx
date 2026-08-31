@@ -1,65 +1,20 @@
-import { useMemo, useRef, useState } from "react";
-import { BookOpen, Box, CalendarDays, Copy, Database, Eye, Factory, FileImage, FileUp, FileVideo, Gauge, HeartHandshake, Image as ImageIcon, Languages, Layers3, LogOut, Network, Pencil, Plus, Radio, RefreshCw, Rocket, ScanSearch, Search, ShieldCheck, Trash2, Video } from "lucide-react";
-import type { ConversionStatus, ModelRecord, ProjectAssetRecord, ProjectRecord, SceneSnapshot, SystemBrandingSettings, TopologyDocument } from "@bim-studio/contracts";
-import { SceneExportMenu } from "./SceneExportMenu";
-import type { AppLocale } from "../i18n";
-import { translate as tr } from "../i18n";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ModelRecord, ProjectAssetRecord, PublishedSceneRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
+import { translate as tr } from "../i18n";
+import type { SceneManagerProps } from "./sceneManagerTypes";
+import { SceneManagerView } from "./SceneManagerView";
+import { analyzeProjectResourceGovernance } from "./projectResourceGovernance";
 
-const ACCEPTED_MODELS = ".rvt,.ifc,.step,.stp,.dwg,.dxf,.gltf,.glb,.fbx";
-const ACCEPTED_IMAGES = ".jpg,.jpeg,.png,.webp,.gif,.svg";
-const ACCEPTED_VIDEOS = ".mp4,.webm,.ogv,.mov";
+type ProjectAssetTab = "all" | "model" | "image" | "video" | "environment" | "pbr-material";
 
-interface SceneManagerProps {
-  locale: AppLocale;
-  branding: SystemBrandingSettings;
-  projects: ProjectRecord[];
-  project: ProjectRecord | undefined;
-  scenes: SceneSnapshot[];
-  topologies: Array<{ applicationId: string; applicationName: string; topology: TopologyDocument }>;
-  userName: string;
-  isAdmin: boolean;
-  onProjectChange: (projectId: string) => void;
-  onCreateProject: () => void;
-  onRenameProject: () => void;
-  onDeleteProject: () => void;
-  onCreate: (name: string) => Promise<void>;
-  onCreateShowcase: () => Promise<void>;
-  onOpen: (scene: SceneSnapshot) => Promise<void>;
-  onCopy: (scene: SceneSnapshot) => Promise<void>;
-  onRename: (scene: SceneSnapshot, name: string) => Promise<void>;
-  onPublish: (scene: SceneSnapshot) => Promise<void>;
-  onUnpublish: (scene: SceneSnapshot) => Promise<void>;
-  onBrowse: (scene: SceneSnapshot) => void;
-  onBrowsePublished: (scene: SceneSnapshot) => void;
-  onImport: () => void;
-  onExportLoose: (scene: SceneSnapshot) => void;
-  onExportSingle: (scene: SceneSnapshot) => Promise<void>;
-  onExportGlb: (scene: SceneSnapshot) => Promise<void>;
-  onExportFbx: (scene: SceneSnapshot) => Promise<void>;
-  onDelete: (scene: SceneSnapshot) => Promise<void>;
-  onOptimizer: () => void;
-  onDataCenter: () => void;
-  onCreateTopology: () => void;
-  onOpenTopology: (applicationId: string, topologyId: string) => void;
-  onVisionCenter: () => void;
-  onDocs: () => void;
-  onSystem: () => void;
-  onLocaleToggle: () => void;
-  onConnectionStatus: () => void;
-  onCredits: () => void;
-  onLogout: () => void;
-  onUploadModels: (files: FileList) => Promise<void>;
-  onDeleteModel: (model: ModelRecord) => Promise<void>;
-  onRefreshModels: () => Promise<void>;
-}
-
-export function SceneManager({
+function useSceneManagerController({
   locale,
   branding,
   projects,
   project,
   scenes,
+  applications,
   topologies,
   userName,
   isAdmin,
@@ -69,11 +24,15 @@ export function SceneManager({
   onDeleteProject,
   onCreate,
   onCreateShowcase,
+  showcaseExists,
   onOpen,
+  onOpenBehavior,
+  onOpenSimulation,
   onCopy,
   onRename,
   onPublish,
   onUnpublish,
+  onRestorePublication,
   onBrowse,
   onBrowsePublished,
   onImport,
@@ -87,15 +46,18 @@ export function SceneManager({
   onCreateTopology,
   onOpenTopology,
   onVisionCenter,
+  onOperationsCenter,
+  onAiAssistant,
   onDocs,
   onSystem,
+  onCloudRender,
   onLocaleToggle,
   onConnectionStatus,
   onCredits,
   onLogout,
   onUploadModels,
   onDeleteModel,
-  onRefreshModels
+  onRefreshModels,
 }: SceneManagerProps) {
   const [dialogMode, setDialogMode] = useState<"create" | "rename">();
   const [managerTab, setManagerTab] = useState<"scenes" | "assets" | "topology" | "examples">("scenes");
@@ -104,13 +66,123 @@ export function SceneManager({
   const [busy, setBusy] = useState(false);
   const [modelLibraryBusy, setModelLibraryBusy] = useState(false);
   const [showcaseBusy, setShowcaseBusy] = useState(false);
-  const [assetTab, setAssetTab] = useState<"all" | "model" | "image" | "video">("all");
+  const [assetTab, setAssetTab] = useState<ProjectAssetTab>("all");
   const [assetSearch, setAssetSearch] = useState("");
+  const [deliveryReviewOpen, setDeliveryReviewOpen] = useState(false);
+  const [cloudConfigured, setCloudConfigured] = useState(false);
+  const [cloudScenePolicies, setCloudScenePolicies] = useState<Record<string, boolean>>({});
+  const [cloudBusySceneId, setCloudBusySceneId] = useState<string>();
+  const [cloudSceneLinks, setCloudSceneLinks] = useState<Record<string, string>>({});
+  const [cloudError, setCloudError] = useState<string>();
+  const [projectCloudBusy, setProjectCloudBusy] = useState(false);
+  const [publishTarget, setPublishTarget] = useState<SceneSnapshot>();
+  const [publishMode, setPublishMode] = useState<NonNullable<SceneSnapshot["publicationMode"]>>("webgl");
+  const [publishPerformance, setPublishPerformance] = useState<NonNullable<SceneSnapshot["publicationPerformance"]>>("standard");
+  const [versionTarget, setVersionTarget] = useState<SceneSnapshot>();
+  const [publicationVersions, setPublicationVersions] = useState<PublishedSceneRecord[]>([]);
+  const [versionBusy, setVersionBusy] = useState(false);
+  const [parametricWorkbenchOpen, setParametricWorkbenchOpen] = useState(false);
+  const [parametricSourceModel, setParametricSourceModel] = useState<ModelRecord>();
   const modelUploadRef = useRef<HTMLInputElement>(null);
   const imageUploadRef = useRef<HTMLInputElement>(null);
   const videoUploadRef = useRef<HTMLInputElement>(null);
 
   const sortedScenes = useMemo(() => [...scenes].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)), [scenes]);
+  const resourceGovernance = useMemo(
+    () => analyzeProjectResourceGovernance(project, applications, scenes),
+    [applications, project, scenes],
+  );
+
+  useEffect(() => {
+    if (!isAdmin || !project) return;
+    let cancelled = false;
+    void api
+      .getCloudRenderOverview()
+      .then((overview) => {
+        if (cancelled) return;
+        setCloudConfigured(overview.configured);
+        setCloudScenePolicies(Object.fromEntries(overview.scenes.map((scene) => [scene.sceneId, scene.enabled])));
+        setCloudSceneLinks(Object.fromEntries(overview.scenes.flatMap((scene) => (scene.session?.viewerUrl ? [[scene.sceneId, scene.session.viewerUrl]] : []))));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCloudConfigured(false);
+          setCloudScenePolicies({});
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, project?.id, scenes]);
+
+  async function toggleSceneCloudRender(sceneId: string, enabled: boolean): Promise<boolean> {
+    setCloudBusySceneId(sceneId);
+    setCloudError(undefined);
+    try {
+      const policy = await api.setCloudRenderEnabled(sceneId, enabled);
+      setCloudScenePolicies((current) => ({ ...current, [sceneId]: policy.enabled }));
+      if (enabled) {
+        const session = await api.startCloudRenderSession(sceneId);
+        if (session.viewerUrl) setCloudSceneLinks((current) => ({ ...current, [sceneId]: session.viewerUrl! }));
+      } else
+        setCloudSceneLinks((current) => {
+          const next = { ...current };
+          delete next[sceneId];
+          return next;
+        });
+      return true;
+    } catch (reason) {
+      setCloudError(reason instanceof Error ? reason.message : String(reason));
+      return false;
+    } finally {
+      setCloudBusySceneId(undefined);
+    }
+  }
+
+  async function enableProjectCloudRender() {
+    const published = sortedScenes.filter((scene) => scene.publishedAt);
+    if (!cloudConfigured || published.length === 0) return;
+    setProjectCloudBusy(true);
+    try {
+      for (const scene of published) await toggleSceneCloudRender(scene.id, true);
+    } finally {
+      setProjectCloudBusy(false);
+    }
+  }
+
+  async function copyLink(value: string) {
+    await navigator.clipboard.writeText(value);
+  }
+
+  async function submitPublish(toolbarVisible: boolean) {
+    if (!publishTarget) return;
+    const target = publishTarget;
+    const published = await onPublish(target, publishMode, publishPerformance, toolbarVisible);
+    if (!published) return;
+    setPublishTarget(undefined);
+  }
+
+  async function openVersions(scene: SceneSnapshot) {
+    if (!project) return;
+    setVersionTarget(scene);
+    setVersionBusy(true);
+    try {
+      setPublicationVersions(await api.listScenePublications(project.id, scene.id));
+    } finally {
+      setVersionBusy(false);
+    }
+  }
+
+  async function restoreVersion(publishedAt: string) {
+    if (!versionTarget) return;
+    setVersionBusy(true);
+    try {
+      await onRestorePublication(versionTarget.id, publishedAt);
+      if (project) setPublicationVersions(await api.listScenePublications(project.id, versionTarget.id));
+    } finally {
+      setVersionBusy(false);
+    }
+  }
 
   function openCreateDialog() {
     setTargetScene(undefined);
@@ -160,7 +232,21 @@ export function SceneManager({
   }
 
   async function deleteLibraryModel(model: ModelRecord) {
-    if (!window.confirm(tr(locale, `确定删除模型“${model.name}”吗？引用它的场景将无法再次加载该模型。`, `Delete model “${model.name}”? Scenes that reference it will no longer be able to load it.`))) return;
+    const usage = resourceGovernance.resources.find((resource) => resource.kind === "model" && resource.id === model.id);
+    if (
+      !window.confirm(
+        tr(
+          locale,
+          usage?.instanceCount
+            ? `模型“${model.name}”仍有 ${usage.instanceCount} 个场景实例。继续删除会造成引用断开，建议先移除实例。仍要删除吗？`
+            : `确定删除未引用模型“${model.name}”吗？`,
+          usage?.instanceCount
+            ? `Model “${model.name}” still has ${usage.instanceCount} scene instances. Deleting it breaks those references; remove the instances first. Delete anyway?`
+            : `Delete unused model “${model.name}”?`,
+        ),
+      )
+    )
+      return;
     setModelLibraryBusy(true);
     try {
       await onDeleteModel(model);
@@ -223,8 +309,23 @@ export function SceneManager({
   }
 
   async function deleteLibraryAsset(asset: ProjectAssetRecord) {
-    const kindName = asset.kind === "video" ? tr(locale, "视频", "video") : tr(locale, "图片", "image");
-    if (!project || !window.confirm(tr(locale, `确定删除${kindName}“${asset.name}”吗？`, `Delete ${kindName} “${asset.name}”?`))) return;
+    const kindName = asset.kind === "video"
+      ? tr(locale, "视频", "video")
+      : asset.kind === "environment"
+        ? tr(locale, "环境", "environment")
+        : asset.kind === "pbr-material"
+          ? tr(locale, "材质", "material")
+          : tr(locale, "图片", "image");
+    const usage = resourceGovernance.resources.find((resource) => resource.kind === "media" && resource.id === asset.id);
+    const appearanceAsset = asset.kind === "environment" || asset.kind === "pbr-material";
+    const message = usage?.instanceCount
+      ? tr(
+          locale,
+          `${kindName}“${asset.name}”仍被 ${usage.instanceCount} 个${appearanceAsset ? "场景或对象" : "二维组件"}引用，删除后引用会断开。仍要删除吗？`,
+          `${kindName} “${asset.name}” is referenced by ${usage.instanceCount} ${appearanceAsset ? "scenes or objects" : "dashboard components"}. Delete it and break those references?`,
+        )
+      : tr(locale, `确定删除未引用${kindName}“${asset.name}”吗？`, `Delete unused ${kindName} “${asset.name}”?`);
+    if (!project || !window.confirm(message)) return;
     setModelLibraryBusy(true);
     try {
       await api.deleteAsset(project.id, asset.id);
@@ -237,143 +338,130 @@ export function SceneManager({
   }
 
   const normalizedSearch = assetSearch.trim().toLocaleLowerCase();
-  const visibleModels = (project?.models ?? []).filter((model) => (assetTab === "all" || assetTab === "model") && (!normalizedSearch || model.name.toLocaleLowerCase().includes(normalizedSearch)));
-  const visibleImages = (project?.assets ?? []).filter((asset) => asset.kind === "image" && (assetTab === "all" || assetTab === "image") && (!normalizedSearch || asset.name.toLocaleLowerCase().includes(normalizedSearch)));
-  const visibleVideos = (project?.assets ?? []).filter((asset) => asset.kind === "video" && (assetTab === "all" || assetTab === "video") && (!normalizedSearch || asset.name.toLocaleLowerCase().includes(normalizedSearch)));
-
-  return (
-    <main className="scene-manager-page">
-      <header className="manager-header">
-        <div className="manager-brand">
-          <span><img src={branding.logoUrl} alt={branding.systemName} /></span>
-          <div><strong>{branding.systemName}</strong><small>{tr(locale, "项目工作台", "Project workspace")}</small></div>
-        </div>
-        <nav className="manager-primary-nav" aria-label={tr(locale, "一级工作区", "Primary workspaces")}>
-          <button className={managerTab === "scenes" ? "active" : ""} onClick={() => setManagerTab("scenes")}><Layers3 size={16} />{tr(locale, "项目场景", "Project scenes")}</button>
-          <button className={managerTab === "assets" ? "active" : ""} disabled={!project} onClick={() => setManagerTab("assets")}><Box size={16} />{tr(locale, "资源库", "Assets")}</button>
-          <button className={managerTab === "topology" ? "active" : ""} disabled={!project} onClick={() => setManagerTab("topology")}><Network size={16} />{tr(locale, "拓扑", "Topology")}</button>
-          <button className={managerTab === "examples" ? "active" : ""} onClick={() => setManagerTab("examples")}><Factory size={16} />{tr(locale, "示例场景", "Example scenes")}</button>
-        </nav>
-        <nav className="manager-capability-nav" aria-label={tr(locale, "平台能力", "Platform capabilities")}><button disabled={!project} onClick={onDataCenter}><Database size={14} />{tr(locale, "数据", "Data")}</button><button disabled={!project} onClick={onVisionCenter}><ScanSearch size={14} />{tr(locale, "视觉", "Vision")}</button><button onClick={onOptimizer}><Gauge size={14} />{tr(locale, "优化", "Optimize")}</button><button onClick={onDocs}><BookOpen size={14} />{tr(locale, "文档", "Docs")}</button></nav>
-        <nav className="manager-utility-nav" aria-label={tr(locale, "系统操作", "System actions")}>{isAdmin && <button title={tr(locale, "系统管理", "System administration")} onClick={onSystem}><ShieldCheck size={14} /></button>}<button title={tr(locale, "切换语言", "Switch language")} onClick={onLocaleToggle}><Languages size={14} /></button><button title={tr(locale, "连接与实时数据", "Connections and live data")} onClick={onConnectionStatus}><Radio size={14} /></button><button title={tr(locale, "致谢", "Credits")} onClick={onCredits}><HeartHandshake size={14} /></button><button title={`${tr(locale, "退出", "Sign out")} · ${userName}`} onClick={onLogout}><LogOut size={14} /></button></nav>
-      </header>
-
-      <section className="manager-content">
-        <div className="manager-project-bar"><select value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label={tr(locale, "项目", "Project")}>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="button" onClick={onCreateProject}><Plus size={15} />{tr(locale, "新建项目", "New project")}</button><button className="button" disabled={!project} onClick={onRenameProject}><Pencil size={14} />{tr(locale, "重命名", "Rename")}</button><button className="button danger" disabled={!project} onClick={onDeleteProject}><Trash2 size={14} />{tr(locale, "删除", "Delete")}</button><span />{managerTab === "scenes" && <><button className="button" onClick={onImport}><FileUp size={15} />{tr(locale, "导入", "Import")}</button><button className="button primary" onClick={openCreateDialog}><Plus size={16} />{tr(locale, "新建场景", "New scene")}</button></>}{managerTab === "topology" && <button className="button primary" onClick={onCreateTopology}><Plus size={16} />{tr(locale, "新建拓扑", "New topology")}</button>}</div>
-
-        {managerTab === "scenes" && <>
-
-        {scenes.length > 0 ? (
-          <div className="scene-card-grid">
-            {sortedScenes.map((scene) => (
-              <article className="scene-card" key={scene.id}>
-                <button className="scene-card-preview" onClick={() => void onOpen(scene)}>
-                  {scene.publishedAt && <span className="scene-published-badge"><Rocket size={11} />{tr(locale, "已发布", "Published")}</span>}
-                  <span className="scene-card-orbit" />
-                  <Layers3 size={34} />
-                  <small>{scene.models.length + scene.primitives.length + scene.measurements.length + (scene.annotations?.length ?? 0)} {tr(locale, "个对象", "objects")}</small>
-                </button>
-                <div className="scene-card-body">
-                  <button className="scene-card-title" onClick={() => void onOpen(scene)}>{scene.name}</button>
-                  <div className="scene-card-meta"><CalendarDays size={12} />{tr(locale, "更新于", "Updated")} {new Date(scene.updatedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}</div>
-                  {scene.publishedAt && <div className="scene-card-publish-time"><Rocket size={11} />{tr(locale, "发布于", "Published")} {new Date(scene.publishedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}</div>}
-                  <div className="scene-card-footer"><span>{scene.measurements.length} {tr(locale, "条测量", "measurements")} · {scene.annotations?.length ?? 0} {tr(locale, "个标签", "annotations")}</span><div><button title={tr(locale, "复制场景", "Copy scene")} onClick={() => void onCopy(scene)}><Copy size={14} /></button><button title={tr(locale, "重命名场景", "Rename scene")} onClick={() => openRenameDialog(scene)}><Pencil size={14} /></button><button title={tr(locale, "打开项目", "Open project")} onClick={() => void onOpen(scene)}><Eye size={14} /></button><SceneExportMenu locale={locale} compact onExportLoose={() => onExportLoose(scene)} onExportSingle={() => void onExportSingle(scene)} onExportGlb={() => void onExportGlb(scene)} onExportFbx={() => void onExportFbx(scene)} /><button title={tr(locale, "删除场景", "Delete scene")} className="danger" onClick={() => void onDelete(scene)}><Trash2 size={15} /></button></div></div>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : <div className="manager-empty"><Box size={42} /><h2>{tr(locale, "还没有场景", "No scenes yet")}</h2><p>{tr(locale, "新建项目内容，默认从空白二维页面开始。", "Create project content starting from a blank 2D page.")}</p><button className="button primary" onClick={openCreateDialog}><Plus size={17} />{tr(locale, "新建第一个场景", "Create first scene")}</button></div>}
-        </>}
-
-        {managerTab === "examples" && <section className="manager-showcase" aria-label={tr(locale, "内置综合案例", "Built-in showcase")}>
-          <div className="manager-showcase-icon"><Factory size={25} /></div>
-          <div className="manager-showcase-copy">
-            <span className="eyebrow">EDITABLE SHOWCASE</span>
-            <strong>{tr(locale, "智造园区综合案例", "Smart industrial campus")}</strong>
-            <p>{tr(locale, "一键创建 4K 看板、四级 2D/3D 场景、楼层与部件拆解、巡检视角、AGV、图片/视频/实时监控，以及直连 HTTP/WebSocket 数据。", "Create an editable 4K dashboard, four connected 2D/3D levels, floor and component decomposition, inspection cameras, AGVs, media, monitoring, and direct HTTP/WebSocket data.")}</p>
-          </div>
-          <div className="manager-showcase-tags"><span>4K 2D</span><span>LIVE 3D</span><span>AGV</span><span>HTTP / WS</span></div>
-          <button className="button primary manager-showcase-action" disabled={!project || showcaseBusy} onClick={() => void createShowcase()}>{showcaseBusy ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />}{showcaseBusy ? tr(locale, "正在创建…", "Creating…") : tr(locale, "创建可编辑案例", "Create editable showcase")}</button>
-        </section>}
-
-      {managerTab === "assets" && (
-          <section className="manager-page-panel asset-library-page" aria-label={tr(locale, "项目资源库", "Project assets")}>
-            <header className="model-library-head">
-              <div>
-                <span className="eyebrow">PROJECT ASSETS</span>
-                <h2>{tr(locale, "项目资源库", "Project assets")}</h2>
-                <p>{tr(locale, "模型、图片和视频上传一次，即可被多个场景直接引用。", "Upload models, images and videos once, then reuse them across scenes.")}</p>
-              </div>
-            </header>
-            <div className="model-library-toolbar">
-              <button className="button primary" disabled={modelLibraryBusy} onClick={() => modelUploadRef.current?.click()}><FileUp size={16} />{tr(locale, "上传模型", "Upload models")}</button>
-              <button className="button" disabled={modelLibraryBusy} onClick={() => imageUploadRef.current?.click()}><FileImage size={16} />{tr(locale, "上传图片", "Upload images")}</button>
-              <button className="button" disabled={modelLibraryBusy} onClick={() => videoUploadRef.current?.click()}><FileVideo size={16} />{tr(locale, "上传视频", "Upload videos")}</button>
-              <button className="button" disabled={modelLibraryBusy} onClick={() => void refreshLibraryModels()}><RefreshCw className={modelLibraryBusy ? "spin" : ""} size={15} />{tr(locale, "刷新状态", "Refresh")}</button>
-              <input ref={modelUploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadLibraryModels(event.target.files)} />
-              <input ref={imageUploadRef} hidden multiple type="file" accept={ACCEPTED_IMAGES} onChange={(event) => void uploadLibraryImages(event.target.files)} />
-              <input ref={videoUploadRef} hidden multiple type="file" accept={ACCEPTED_VIDEOS} onChange={(event) => void uploadLibraryVideos(event.target.files)} />
-            </div>
-            <div className="asset-library-filter"><div>{(["all", "model", "image", "video"] as const).map((tab) => <button key={tab} className={assetTab === tab ? "active" : ""} onClick={() => setAssetTab(tab)}>{tab === "all" ? tr(locale, "全部", "All") : tab === "model" ? tr(locale, `模型 ${project?.models.length ?? 0}`, `Models ${project?.models.length ?? 0}`) : tab === "image" ? tr(locale, `图片 ${(project?.assets ?? []).filter((asset) => asset.kind === "image").length}`, `Images ${(project?.assets ?? []).filter((asset) => asset.kind === "image").length}`) : tr(locale, `视频 ${(project?.assets ?? []).filter((asset) => asset.kind === "video").length}`, `Videos ${(project?.assets ?? []).filter((asset) => asset.kind === "video").length}`)}</button>)}</div><label><Search size={14} /><input value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder={tr(locale, "搜索资源", "Search assets")} /></label></div>
-            <div className="model-library-list">
-              {visibleModels.map((model) => (
-                <article className="model-library-item" key={model.id}>
-                  <div className="model-library-format">{model.format.toUpperCase()}</div>
-                  <div className="model-library-info">
-                    <strong title={model.name}>{model.name}</strong>
-                    <span>{formatBytes(model.size)} · {new Date(model.updatedAt).toLocaleString(locale, { dateStyle: "short", timeStyle: "short" })}</span>
-                    {model.status !== "ready" && <small title={model.message}>{model.message}</small>}
-                  </div>
-                  <div className="model-library-state">
-                    <span className={`model-status model-status-${model.status}`}>{statusLabel(model.status, locale)}</span>
-                    {model.status === "processing" && <progress max={100} value={model.progress} aria-label={`${tr(locale, "转换进度", "Conversion progress")} ${model.progress}%`} />}
-                  </div>
-                  <button className="manager-icon-button" title={tr(locale, "重命名", "Rename")} disabled={modelLibraryBusy} onClick={() => void renameLibraryItem(model, "model")}><Pencil size={14} /></button>
-                  <button className="manager-icon-button danger" title={tr(locale, "删除模型", "Delete model")} disabled={modelLibraryBusy} onClick={() => void deleteLibraryModel(model)}><Trash2 size={15} /></button>
-                </article>
-              ))}
-              {visibleImages.map((asset) => <article className="model-library-item asset-image-item" key={asset.id}><div className="asset-image-preview"><img src={asset.url} alt="" loading="lazy" /></div><div className="model-library-info"><strong title={asset.name}>{asset.name}</strong><span>{formatBytes(asset.size)} · {new Date(asset.updatedAt).toLocaleString(locale, { dateStyle: "short", timeStyle: "short" })}</span><small>{tr(locale, "可用于二维看板图片组件", "Ready for dashboard image widgets")}</small></div><div className="model-library-state"><span className="model-status model-status-ready">{tr(locale, "可使用", "Ready")}</span></div><button className="manager-icon-button" title={tr(locale, "重命名", "Rename")} disabled={modelLibraryBusy} onClick={() => void renameLibraryItem(asset, "asset")}><Pencil size={14} /></button><button className="manager-icon-button danger" title={tr(locale, "删除图片", "Delete image")} disabled={modelLibraryBusy} onClick={() => void deleteLibraryAsset(asset)}><Trash2 size={15} /></button></article>)}
-              {visibleVideos.map((asset) => <article className="model-library-item asset-video-item" key={asset.id}><div className="asset-video-preview"><Video size={21} /><span>{asset.fileName.split(".").at(-1)?.toUpperCase()}</span></div><div className="model-library-info"><strong title={asset.name}>{asset.name}</strong><span>{formatBytes(asset.size)} · {new Date(asset.updatedAt).toLocaleString(locale, { dateStyle: "short", timeStyle: "short" })}</span><small>{tr(locale, "可用于二维看板本地视频组件", "Ready for local dashboard video widgets")}</small></div><div className="model-library-state"><span className="model-status model-status-ready">{tr(locale, "可使用", "Ready")}</span></div><button className="manager-icon-button" title={tr(locale, "重命名", "Rename")} disabled={modelLibraryBusy} onClick={() => void renameLibraryItem(asset, "asset")}><Pencil size={14} /></button><button className="manager-icon-button danger" title={tr(locale, "删除视频", "Delete video")} disabled={modelLibraryBusy} onClick={() => void deleteLibraryAsset(asset)}><Trash2 size={15} /></button></article>)}
-              {visibleModels.length === 0 && visibleImages.length === 0 && visibleVideos.length === 0 && <div className="model-library-empty">{assetTab === "image" ? <ImageIcon size={34} /> : assetTab === "video" ? <Video size={34} /> : <Box size={34} />}<strong>{normalizedSearch ? tr(locale, "没有匹配的资源", "No matching assets") : tr(locale, "还没有资源", "No assets yet")}</strong><span>{tr(locale, "上传模型、图片或视频后，可在场景编辑器中直接引用。", "Upload a model, image or video to reuse it in Studio.")}</span></div>}
-            </div>
-          </section>
-      )}
-
-      {managerTab === "topology" && <section className="manager-page-panel manager-topology-page">
-        {topologies.length ? <div className="manager-topology-grid">{topologies.map(({ applicationId, applicationName, topology }) => <article key={`${applicationId}:${topology.id}`}>
-          <button className="manager-topology-preview" onClick={() => onOpenTopology(applicationId, topology.id)}><Network size={26} /><span>{topology.nodes.length}</span><i /><i /><i /></button>
-          <div><strong>{topology.name}</strong><small>{applicationName} · {topology.nodes.length} {tr(locale, "个节点", "nodes")} · {topology.edges.length} {tr(locale, "条连线", "edges")}</small></div>
-          <button className="button" onClick={() => onOpenTopology(applicationId, topology.id)}><Pencil size={13} />{tr(locale, "打开编辑", "Open editor")}</button>
-        </article>)}</div> : <div className="manager-empty"><Network size={42} /><h2>{tr(locale, "还没有拓扑", "No topologies yet")}</h2><p>{tr(locale, "拓扑是项目级可复用资源，可在二维页面中插入并绑定数据。", "Topologies are reusable project resources that can be inserted into 2D pages and bound to data.")}</p><button className="button primary" onClick={onCreateTopology}><Plus size={17} />{tr(locale, "新建第一个拓扑", "Create first topology")}</button></div>}
-      </section>}
-      </section>
-
-      <div className="app-copyright">{branding.copyright}</div>
-
-      {dialogMode && (
-        <div className="dialog-backdrop" onMouseDown={() => setDialogMode(undefined)}>
-          <form className="dialog" onSubmit={(event) => { event.preventDefault(); void submitSceneDialog(); }} onMouseDown={(event) => event.stopPropagation()}>
-            <span className="eyebrow">{dialogMode === "rename" ? "RENAME SCENE" : "NEW SCENE"}</span>
-            <h2>{dialogMode === "rename" ? tr(locale, "重命名场景", "Rename scene") : tr(locale, "新建场景", "New scene")}</h2>
-            <p>{dialogMode === "rename" ? tr(locale, "修改场景在管理中心和编辑器中显示的名称。", "Change the scene name shown in management and the editor.") : tr(locale, "新场景从空画布开始，之后可以连续加载多个模型。", "A new scene starts empty and can load multiple models.")}</p>
-            <label><span>{tr(locale, "场景名称", "Scene name")}</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder={tr(locale, "例如：1 号楼施工总览", "For example: Building 1 overview")} /></label>
-            <div className="dialog-actions"><button type="button" className="button" onClick={() => setDialogMode(undefined)}>{tr(locale, "取消", "Cancel")}</button><button className="button primary" disabled={!name.trim() || busy}>{dialogMode === "rename" ? tr(locale, "保存名称", "Save name") : tr(locale, "创建并进入", "Create and open")}</button></div>
-          </form>
-        </div>
-      )}
-    </main>
+  const visibleModels = (project?.models ?? []).filter(
+    (model) => (assetTab === "all" || assetTab === "model") && (!normalizedSearch || model.name.toLocaleLowerCase().includes(normalizedSearch)),
   );
+  const visibleImages = (project?.assets ?? []).filter(
+    (asset) => asset.kind === "image" && (assetTab === "all" || assetTab === "image") && (!normalizedSearch || asset.name.toLocaleLowerCase().includes(normalizedSearch)),
+  );
+  const visibleVideos = (project?.assets ?? []).filter(
+    (asset) => asset.kind === "video" && (assetTab === "all" || assetTab === "video") && (!normalizedSearch || asset.name.toLocaleLowerCase().includes(normalizedSearch)),
+  );
+  const visibleAppearanceAssets = (project?.assets ?? []).filter(
+    (asset) => (asset.kind === "environment" || asset.kind === "pbr-material")
+      && (assetTab === "all" || assetTab === asset.kind)
+      && (!normalizedSearch || asset.name.toLocaleLowerCase().includes(normalizedSearch)),
+  );
+
+  return {
+    assetSearch,
+    assetTab,
+    branding,
+    busy,
+    cloudBusySceneId,
+    cloudConfigured,
+    cloudError,
+    cloudSceneLinks,
+    cloudScenePolicies,
+    copyLink,
+    createShowcase,
+    deleteLibraryAsset,
+    deleteLibraryModel,
+    deliveryReviewOpen,
+    dialogMode,
+    enableProjectCloudRender,
+    imageUploadRef,
+    isAdmin,
+    locale,
+    managerTab,
+    modelLibraryBusy,
+    modelUploadRef,
+    name,
+    normalizedSearch,
+    onAiAssistant,
+    onCloudRender,
+    onConnectionStatus,
+    onCopy,
+    onCreateProject,
+    onCreateTopology,
+    onCredits,
+    onDataCenter,
+    onDelete,
+    onDeleteProject,
+    onDocs,
+    onExportFbx,
+    onExportGlb,
+    onExportLoose,
+    onExportSingle,
+    onImport,
+    onLocaleToggle,
+    onLogout,
+    onOpen,
+    onOpenBehavior,
+    onOpenSimulation,
+    onOpenTopology,
+    onOperationsCenter,
+    onOptimizer,
+    onProjectChange,
+    onPublish,
+    onRenameProject,
+    onSystem,
+    onUnpublish,
+    onVisionCenter,
+    openCreateDialog,
+    openRenameDialog,
+    openVersions,
+    parametricSourceModel,
+    parametricWorkbenchOpen,
+    project,
+    projectCloudBusy,
+    projects,
+    publicationVersions,
+    resourceGovernance,
+    publishMode,
+    publishPerformance,
+    publishTarget,
+    refreshLibraryModels,
+    renameLibraryItem,
+    restoreVersion,
+    scenes,
+    setAssetSearch,
+    setAssetTab,
+    setCloudError,
+    setDeliveryReviewOpen,
+    setDialogMode,
+    setManagerTab,
+    setName,
+    setParametricSourceModel,
+    setParametricWorkbenchOpen,
+    setPublishMode,
+    setPublishPerformance,
+    setPublishTarget,
+    setVersionTarget,
+    showcaseBusy,
+    showcaseExists,
+    sortedScenes,
+    submitPublish,
+    submitSceneDialog,
+    toggleSceneCloudRender,
+    topologies,
+    uploadLibraryImages,
+    uploadLibraryModels,
+    uploadLibraryVideos,
+    userName,
+    versionBusy,
+    versionTarget,
+    videoUploadRef,
+    visibleImages,
+    visibleAppearanceAssets,
+    visibleModels,
+    visibleVideos,
+  };
 }
 
-function formatBytes(size: number): string {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
-  return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
+export type SceneManagerController = ReturnType<typeof useSceneManagerController>;
 
-function statusLabel(status: ConversionStatus, locale: AppLocale): string {
-  const zh = ({ queued: "排队中", processing: "转换中", ready: "可使用", waiting_converter: "等待转换器", failed: "失败" })[status];
-  const en = ({ queued: "Queued", processing: "Converting", ready: "Ready", waiting_converter: "Waiting for converter", failed: "Failed" })[status];
-  return tr(locale, zh, en);
+export function SceneManager(props: SceneManagerProps) {
+  const controller = useSceneManagerController(props);
+  return <SceneManagerView controller={controller} />;
 }

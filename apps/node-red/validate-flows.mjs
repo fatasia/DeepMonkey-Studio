@@ -69,6 +69,12 @@ for (const type of ["oracledb", "oracle-server", "http request", "ui-gauge"]) {
 }
 for (const id of ["example-td-normalize", "example-oracle-normalize"]) {
   if (!databaseExamples.some((node) => node.id === id)) throw new Error(`Database example is missing node: ${id}`);
+  const builtIn = byId.get(id);
+  const exported = databaseExamples.find((node) => node.id === id);
+  if (builtIn.func !== exported.func) throw new Error(`Built-in database normalizer must match the exported example: ${id}`);
+}
+if (!byId.get("example-oracle-query").wires.flat().includes("example-oracle-normalize")) {
+  throw new Error("Oracle example query must feed the normalization node");
 }
 const exportedTdengineQuery = databaseExamples.find((node) => node.id === "example-td-request");
 if (exportedTdengineQuery?.func !== tdengineQuery.func || exportedTdengineQuery?.finalize !== tdengineQuery.finalize) {

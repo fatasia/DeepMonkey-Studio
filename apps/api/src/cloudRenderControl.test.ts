@@ -21,7 +21,7 @@ describe("CloudRenderControlPlane", () => {
         sceneId: publication.sceneId,
         publishedAt: publication.publishedAt,
         publicationUrl: `https://studio.example.test/api/public/scenes/${publication.sceneId}`,
-        renderUrl: `https://studio.example.test/published/${publication.sceneId}`
+        renderUrl: `https://studio.example.test/published/${publication.sceneId}?renderer=webgpu`
       })
     }));
   });
@@ -34,6 +34,23 @@ describe("CloudRenderControlPlane", () => {
     const started = await control.startSession(publication, "admin-1");
     expect(started.state).toBe("signaling");
     expect(started.mediaEvidence).toBeUndefined();
+  });
+
+  it("starts the cloud page with WebGL when the published effects are not yet WebGPU-equivalent", async () => {
+    const worker = workerClient(session("starting"));
+    const control = await createControl(worker);
+    const publication = publishedScene();
+    publication.snapshot.postProcessing = {
+      enabled: true, smaa: false, fxaa: false, ssao: false, ssaoIntensity: 1,
+      bloom: true, bloomStrength: 0.35, bloomThreshold: 0.9, outline: false,
+      outlineStrength: 2.5
+    };
+    await control.setEnabled(publication, true);
+    await control.startSession(publication, "admin-1");
+
+    expect(worker.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      scope: expect.objectContaining({ renderUrl: `https://studio.example.test/published/${publication.sceneId}?renderer=webgl` })
+    }));
   });
 
   it("fails instead of streaming on stale RTP evidence", async () => {

@@ -1,0 +1,52 @@
+/* 二维左栏按任务切换，避免页面、素材和图层形成一条无尽长列表。 */
+.dashboard-left-tabs {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid #2a3439;
+  background: #12191c;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard-left-tabs button {
+  display: flex;
+  min-width: 0;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 5px;
+  color: #7f8d93;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.dashboard-left-tabs button:hover {
+  color: #d4dcdf;
+  background: #1d2528;
+}
+
+.dashboard-left-tabs button.active {
+  color: #efc96d;
+  border-color: #5b4c2b;
+  background: #29241a;
+}
+
+.dashboard-linkage-section {
+  padding: 10px 10px 0;
+}
+
+.dashboard-linkage-section .dashboard-linkage-diagnostics {
+  margin: 0;
+}
+
+.dashboard-pages-panel > section {
+  min-height: 0;
+}

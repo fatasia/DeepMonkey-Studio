@@ -1,0 +1,548 @@
+import type { DragEvent, ReactNode } from "react";
+import {
+  ArrowDownAZ,
+  ArrowLeft,
+  ArrowRight,
+  Box,
+  Calculator,
+  CheckCircle2,
+  Code2,
+  Database,
+  Filter,
+  Gauge,
+  GitBranch,
+  GripVertical,
+  ListEnd,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+import type {
+  DataDatasetRecord,
+  DataFieldType,
+  DataPipelineDefinition,
+  DataPipelineNode,
+  DataPipelineNodeDiagnostic,
+  DataPipelinePreview,
+} from "@bim-studio/contracts";
+import type { AppLocale } from "../i18n";
+import { translate as tr } from "../i18n";
+
+export type TransformNodeType = "filter" | "formula" | "script" | "sort" | "limit";
+
+export function PipelineNodeCard({
+  node,
+  selected,
+  diagnostic,
+  draggable,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onSelect,
+}: {
+  node: DataPipelineNode;
+  selected: boolean;
+  diagnostic?: DataPipelineNodeDiagnostic | undefined;
+  draggable: boolean;
+  onDragStart: () => void;
+  onDragOver: (event: DragEvent) => void;
+  onDrop: (event: DragEvent) => void;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={`pipeline-node ${selected ? "selected" : ""} ${diagnostic?.status ?? ""}`}
+      onClick={onSelect}
+    >
+      <span className="pipeline-node-icon">
+        {draggable && <GripVertical size={11} />}
+        {nodeIcon(node.type)}
+      </span>
+      <span>
+        <small>{nodeTypeLabel(node.type)}</small>
+        <strong>{node.name}</strong>
+        <em>{nodeSummary(node)}</em>
+      </span>
+      {diagnostic && (
+        <b
+          title={`${diagnostic.inputRows} → ${diagnostic.outputRows} · ${diagnostic.durationMs.toFixed(1)}ms`}
+        >
+          {diagnostic.status === "success" ? (
+            <CheckCircle2 size={14} />
+          ) : (
+            <XCircle size={14} />
+          )}
+        </b>
+      )}
+    </button>
+  );
+}
+
+export function NodeInspector({
+  locale,
+  node,
+  datasets,
+  onChange,
+  onRemove,
+  onMove,
+}: {
+  locale: AppLocale;
+  node?: DataPipelineNode | undefined;
+  datasets: DataDatasetRecord[];
+  onChange: (updater: (node: DataPipelineNode) => DataPipelineNode) => void;
+  onRemove: (id: string) => void;
+  onMove: (id: string, offset: -1 | 1) => void;
+}) {
+  if (!node)
+    return (
+      <section className="pipeline-inspector pipeline-panel-empty">
+        {tr(locale, "选择节点查看配置", "Select a node to inspect")}
+      </section>
+    );
+  const mutate = <T extends DataPipelineNode>(patch: Partial<T>) =>
+    onChange((current) => ({ ...current, ...patch }) as DataPipelineNode);
+  return (
+    <section className="pipeline-inspector">
+      <header>
+        <span>
+          <strong>{tr(locale, "节点配置", "Node settings")}</strong>
+          <small>{nodeTypeLabel(node.type)}</small>
+        </span>
+        <div>
+          {node.type !== "source" && node.type !== "output" && (
+            <>
+              <button
+                title={tr(locale, "向前移动", "Move left")}
+                onClick={() => onMove(node.id, -1)}
+              >
+                <ArrowLeft size={13} />
+              </button>
+              <button
+                title={tr(locale, "向后移动", "Move right")}
+                onClick={() => onMove(node.id, 1)}
+              >
+                <ArrowRight size={13} />
+              </button>
+              <button
+                className="danger"
+                title={tr(locale, "删除节点", "Delete node")}
+                onClick={() => onRemove(node.id)}
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+        </div>
+      </header>
+      <div className="pipeline-inspector-body">
+        <label>
+          <span>{tr(locale, "名称", "Name")}</span>
+          <input
+            value={node.name}
+            onChange={(event) => mutate({ name: event.target.value })}
+          />
+        </label>
+        {node.type === "source" && (
+          <label>
+            <span>{tr(locale, "数据集", "Dataset")}</span>
+            <select
+              value={node.datasetId}
+              onChange={(event) => mutate({ datasetId: event.target.value })}
+            >
+              {datasets.map((dataset) => (
+                <option key={dataset.id} value={dataset.id}>
+                  {dataset.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {node.type === "filter" && (
+          <CodeField
+            locale={locale}
+            label={tr(locale, "保留条件", "Keep condition")}
+            value={node.formula}
+            placeholder="temperature > 30 AND running == TRUE"
+            onChange={(formula) => mutate({ formula })}
+          />
+        )}
+        {node.type === "formula" && (
+          <>
+            <OutputFieldEditor locale={locale} node={node} mutate={mutate} />
+            <CodeField
+              locale={locale}
+              label={tr(locale, "安全公式", "Safe formula")}
+              value={node.formula}
+              placeholder="ROUND(temperature * 1.8 + 32, 1)"
+              onChange={(formula) => mutate({ formula })}
+            />
+          </>
+        )}
+        {node.type === "script" && (
+          <>
+            <OutputFieldEditor locale={locale} node={node} mutate={mutate} />
+            <CodeField
+              locale={locale}
+              label="JavaScript · QuickJS"
+              value={node.source}
+              placeholder="return input.temperature * 1.8 + 32;"
+              onChange={(source) => mutate({ source })}
+            />
+            <small>
+              {tr(
+                locale,
+                "隔离运行，无网络、文件、DOM 与 Node API。",
+                "Runs in isolation without network, files, DOM or Node APIs.",
+              )}
+            </small>
+          </>
+        )}
+        {node.type === "sort" && (
+          <div className="pipeline-field-pair">
+            <label>
+              <span>{tr(locale, "字段", "Field")}</span>
+              <input
+                value={node.field}
+                onChange={(event) => mutate({ field: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>{tr(locale, "方向", "Direction")}</span>
+              <select
+                value={node.direction}
+                onChange={(event) =>
+                  mutate({ direction: event.target.value as "asc" | "desc" })
+                }
+              >
+                <option value="asc">ASC</option>
+                <option value="desc">DESC</option>
+              </select>
+            </label>
+          </div>
+        )}
+        {node.type === "limit" && (
+          <label>
+            <span>{tr(locale, "最多行数", "Maximum rows")}</span>
+            <input
+              type="number"
+              min="1"
+              max="10000"
+              value={node.count}
+              onChange={(event) =>
+                mutate({
+                  count: Math.max(
+                    1,
+                    Math.min(10000, Number(event.target.value)),
+                  ),
+                })
+              }
+            />
+          </label>
+        )}
+        {node.type === "output" && (
+          <small>
+            {tr(
+              locale,
+              "输出会成为可供 2D、3D 和接口共用的数据产品。",
+              "The output becomes a data product shared by 2D, 3D and endpoints.",
+            )}
+          </small>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export function PipelineResult({
+  locale,
+  preview,
+  selectedNodeId,
+}: {
+  locale: AppLocale;
+  preview?: DataPipelinePreview | undefined;
+  selectedNodeId?: string | undefined;
+}) {
+  const diagnostic = preview?.diagnostics.find(
+    (item) => item.nodeId === selectedNodeId,
+  );
+  const rows = diagnostic?.sample ?? preview?.rows ?? [];
+  const fields = rows[0] ? Object.keys(rows[0]) : [];
+  return (
+    <section className="pipeline-result">
+      <header>
+        <span>
+          <strong>
+            {diagnostic
+              ? tr(locale, "节点样例", "Node sample")
+              : tr(locale, "运行结果", "Run result")}
+          </strong>
+          <small>
+            {preview
+              ? `${diagnostic?.outputRows ?? preview.rows.length} ${tr(locale, "行", "rows")} · ${(diagnostic?.durationMs ?? preview.durationMs).toFixed(1)}ms`
+              : tr(
+                  locale,
+                  "保存并运行后显示逐节点诊断",
+                  "Save and run for per-node diagnostics",
+                )}
+          </small>
+        </span>
+        {preview && (
+          <div className="pipeline-health">
+            <Gauge size={13} />
+            {
+              preview.diagnostics.filter((item) => item.status === "success")
+                .length
+            }
+            /{preview.pipeline.nodes.length}
+          </div>
+        )}
+      </header>
+      {diagnostic?.error ? (
+        <div className="pipeline-result-error">
+          <XCircle size={18} />
+          <span>{diagnostic.error}</span>
+        </div>
+      ) : rows.length ? (
+        <div className="pipeline-result-table">
+          <table>
+            <thead>
+              <tr>
+                {fields.map((field) => (
+                  <th key={field}>{field}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 20).map((row, index) => (
+                <tr key={index}>
+                  {fields.map((field) => (
+                    <td key={field}>{formatValue(row[field])}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="pipeline-panel-empty">
+          <Box size={24} />
+          {preview
+            ? tr(locale, "当前节点没有输出数据", "This node has no output")
+            : tr(locale, "尚未运行", "Not run yet")}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OutputFieldEditor<
+  T extends Extract<DataPipelineNode, { type: "formula" | "script" }>,
+>({
+  locale,
+  node,
+  mutate,
+}: {
+  locale: AppLocale;
+  node: T;
+  mutate: (patch: Partial<T>) => void;
+}) {
+  return (
+    <>
+      <div className="pipeline-field-pair">
+        <label>
+          <span>Key</span>
+          <input
+            value={node.key}
+            onChange={(event) =>
+              mutate({ key: event.target.value } as Partial<T>)
+            }
+          />
+        </label>
+        <label>
+          <span>{tr(locale, "类型", "Type")}</span>
+          <select
+            value={node.fieldType}
+            onChange={(event) =>
+              mutate({
+                fieldType: event.target.value as DataFieldType,
+              } as Partial<T>)
+            }
+          >
+            <option value="number">Number</option>
+            <option value="string">String</option>
+            <option value="boolean">Boolean</option>
+            <option value="datetime">Datetime</option>
+            <option value="json">JSON</option>
+          </select>
+        </label>
+      </div>
+      <label>
+        <span>{tr(locale, "显示名", "Label")}</span>
+        <input
+          value={node.label}
+          onChange={(event) =>
+            mutate({ label: event.target.value } as Partial<T>)
+          }
+        />
+      </label>
+    </>
+  );
+}
+
+function CodeField({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  locale: AppLocale;
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label>
+      <span>{label}</span>
+      <textarea
+        spellCheck={false}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+export function NodeAddButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button title={label} onClick={onClick}>
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+export function createTransformNode(
+  type: TransformNodeType,
+  locale: AppLocale,
+): DataPipelineNode {
+  const base = { id: crypto.randomUUID(), position: { x: 0, y: 0 } };
+  if (type === "filter")
+    return {
+      ...base,
+      type,
+      name: tr(locale, "条件过滤", "Filter rows"),
+      formula: "TRUE",
+    };
+  if (type === "formula")
+    return {
+      ...base,
+      type,
+      name: tr(locale, "公式计算", "Formula"),
+      key: "computed_value",
+      label: tr(locale, "计算值", "Computed value"),
+      fieldType: "number",
+      formula: "ROUND(value, 2)",
+    };
+  if (type === "script")
+    return {
+      ...base,
+      type,
+      name: tr(locale, "脚本处理", "Script"),
+      key: "script_value",
+      label: tr(locale, "脚本值", "Script value"),
+      fieldType: "number",
+      source: "return input.value;",
+    };
+  if (type === "sort")
+    return {
+      ...base,
+      type,
+      name: tr(locale, "字段排序", "Sort rows"),
+      field: "value",
+      direction: "desc",
+    };
+  return {
+    ...base,
+    type,
+    name: tr(locale, "限制数量", "Limit rows"),
+    count: 100,
+  };
+}
+
+export function normalizeLinearPipeline(
+  definition: DataPipelineDefinition,
+): DataPipelineDefinition {
+  const nodes = definition.nodes.map((node, index) => ({
+    ...node,
+    position: { x: index * 240, y: 0 },
+  }));
+  return {
+    ...definition,
+    nodes,
+    edges: nodes
+      .slice(1)
+      .map((node, index) => ({
+        id: definition.edges[index]?.id ?? crypto.randomUUID(),
+        sourceNodeId: nodes[index]!.id,
+        targetNodeId: node.id,
+      })),
+  };
+}
+
+function nodeIcon(type: DataPipelineNode["type"]): ReactNode {
+  if (type === "source") return <Database size={17} />;
+  if (type === "filter") return <Filter size={17} />;
+  if (type === "formula") return <Calculator size={17} />;
+  if (type === "script") return <Code2 size={17} />;
+  if (type === "sort") return <ArrowDownAZ size={17} />;
+  if (type === "limit") return <ListEnd size={17} />;
+  if (type === "merge") return <GitBranch size={17} />;
+  return <Box size={17} />;
+}
+
+function nodeTypeLabel(type: DataPipelineNode["type"]): string {
+  return {
+    source: "DATASET",
+    filter: "FILTER",
+    formula: "FORMULA",
+    script: "QUICKJS",
+    sort: "SORT",
+    limit: "LIMIT",
+    merge: "MERGE",
+    output: "OUTPUT",
+  }[type];
+}
+
+function nodeSummary(node: DataPipelineNode): string {
+  if (node.type === "source") return "Dataset";
+  if (node.type === "filter") return node.formula;
+  if (node.type === "formula" || node.type === "script") return `→ ${node.key}`;
+  if (node.type === "sort")
+    return `${node.field} · ${node.direction.toUpperCase()}`;
+  if (node.type === "limit") return `${node.count} rows`;
+  if (node.type === "merge") return "Union";
+  return "Data product";
+}
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+export function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+

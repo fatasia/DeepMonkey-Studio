@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { PublishedSceneRecord } from "@bim-studio/contracts";
+import { preferredPublicationRenderer, type PublishedSceneRecord } from "@bim-studio/contracts";
 import {
   CLOUD_RENDER_WORKER_CONTRACT_VERSION,
   RemoteRenderSession,
@@ -262,12 +262,14 @@ export class CloudRenderControlPlane {
 
   private publicationScope(publication: PublishedSceneRecord): CloudRenderPublishedSceneScope {
     const origin = this.requirePublicOrigin();
+    const renderer = preferredPublicationRenderer(publication.snapshot);
     return {
       projectId: publication.projectId,
       sceneId: publication.sceneId,
       publishedAt: publication.publishedAt,
       publicationUrl: new URL(`/api/public/scenes/${encodeURIComponent(publication.sceneId)}`, origin).toString(),
-      renderUrl: new URL(`/published/${encodeURIComponent(publication.sceneId)}`, origin).toString()
+      // 在 Worker 打开页面前读取权威发布快照，避免初始化错误后端后再回切。
+      renderUrl: new URL(`/published/${encodeURIComponent(publication.sceneId)}?renderer=${renderer}`, origin).toString()
     };
   }
 

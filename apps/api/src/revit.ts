@@ -84,7 +84,7 @@ export async function getRevitRuntimeInfo(): Promise<RevitRuntimeInfo> {
 }
 
 export function resolveRevitVersion(installations: RevitInstallationRecord[], requested: string | undefined, sourceVersion: string | undefined): string {
-  if (installations.length === 0) throw new Error("没有检测到可用的 Revit，请先安装 Revit 和 iTwin Studio Add-in");
+  if (installations.length === 0) throw new Error("没有检测到可用的 Revit，请先安装 Revit 和 Industrial Studio Add-in");
   const installed = installations.map((item) => Number(item.version)).filter(Number.isFinite).sort((a, b) => a - b);
   const source = sourceVersion ? Number(sourceVersion) : undefined;
   if (requested && requested !== "auto") {

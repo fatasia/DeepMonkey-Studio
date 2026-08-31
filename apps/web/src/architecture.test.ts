@@ -56,7 +56,7 @@ describe("web architecture boundary", () => {
     const exceptions = new Set([
       "api.ts",
       "sceneFiles.ts",
-      path.join("viewer", "ViewerEngine.ts"),
+      path.join("viewer", "viewerAssetTransport.ts"),
       path.join("optimizer", "modelOptimizer.ts")
     ]);
     const violations: string[] = [];

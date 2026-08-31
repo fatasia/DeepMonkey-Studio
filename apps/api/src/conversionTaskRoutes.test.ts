@@ -4,7 +4,7 @@ import { ConversionTaskService } from "./conversionTasks.js";
 import { createApiServer } from "./serverOptions.js";
 
 describe("conversion task routes", () => {
-  it("returns an empty catalog and rejects removed external CAD formats", async () => {
+  it("returns the configured catalog and rejects unknown plugins", async () => {
     const app = createApiServer();
     const service = new ConversionTaskService([]);
     await registerConversionTaskRoutes(app, { service, projectExists: (projectId) => projectId === "project-1" });

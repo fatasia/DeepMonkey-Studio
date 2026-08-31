@@ -70,4 +70,84 @@ describe("PluginRegistry", () => {
     copy.diagnostics.push({ operation: "enable", message: "fake", timestamp: "now" });
     expect(registry.get("acme.factory-tools")).toMatchObject({ manifest: { name: "Factory tools" }, diagnostics: [] });
   });
+
+  it("registers manifest-declared capabilities and removes them on disable", async () => {
+    const manifest = pluginManifest({
+      permissions: ["scene.read", "scene.write", "data.read"],
+      extensionPoints: [
+        ...pluginManifest().extensionPoints,
+        {
+          kind: "capability.provider",
+          id: "acme.health-provider",
+          capabilityIds: ["asset.health.score"],
+          execution: "worker",
+          limits: { timeoutMs: 100, maxInputBytes: 1_048_576, memoryMb: 256 }
+        }
+      ]
+    });
+    const registry = new PluginRegistry(hostPolicy({ extensionPoints: [...hostPolicy().extensionPoints, "capability.provider"], permissions: ["scene.read", "scene.write", "data.read"] }));
+    expect(registry.register(manifest, ({ registerCapability }) => {
+      expect(registerCapability({
+        descriptor: {
+          id: "asset.health.score",
+          version: "1.0.0",
+          label: "设备健康评分",
+          kind: "analysis",
+          execution: "worker",
+          permissions: ["data.read"],
+          timeoutMs: 50,
+          inputSchemaVersion: "1.0",
+          outputSchemaVersion: "1.0",
+          inputSchema: { type: "object", additionalProperties: true },
+          outputSchema: { type: "object", additionalProperties: true }
+        },
+        async invoke() {
+          return { status: "completed", decisionStatus: "production", output: { score: 0.95 } };
+        }
+      })).toMatchObject({ ok: true });
+    })).toMatchObject({ ok: true });
+    await registry.enable("acme.factory-tools");
+    await expect(registry.invokeCapability("asset.health.score", {
+      requestId: "req-1",
+      projectId: "project-1",
+      principal: "operator",
+      input: { assetId: "asset-1" }
+    })).resolves.toMatchObject({ status: "completed", output: { score: 0.95 } });
+    await registry.disable("acme.factory-tools");
+    expect(registry.getCapability("asset.health.score")).toBeUndefined();
+  });
+
+  it("registers manifest-declared AI providers and removes them on disable", async () => {
+    const manifest = pluginManifest({
+      capabilities: [...pluginManifest().capabilities, "ai.provider"],
+      permissions: [...pluginManifest().permissions, "ai.invoke"],
+      extensionPoints: [
+        ...pluginManifest().extensionPoints,
+        {
+          kind: "ai.provider",
+          id: "acme.ai-provider",
+          providerIds: ["ai.test-provider"],
+          execution: "in-process",
+          limits: { timeoutMs: 1_000, maxInputBytes: 1_048_576, memoryMb: 128 }
+        }
+      ]
+    });
+    const registry = new PluginRegistry(hostPolicy({
+      capabilities: [...hostPolicy().capabilities, "ai.provider"],
+      permissions: [...hostPolicy().permissions, "ai.invoke"],
+      extensionPoints: [...hostPolicy().extensionPoints, "ai.provider"]
+    }));
+    registry.register(manifest, ({ registerAiProvider }) => {
+      expect(registerAiProvider({
+        descriptor: { id: "ai.test-provider", version: "1.0.0", label: "测试供应商", execution: "in-process", permissions: ["ai.invoke"], streaming: false, timeoutMs: 100 },
+        async complete(request) { return { text: request.input, model: request.model }; }
+      })).toMatchObject({ ok: true });
+    });
+    await registry.enable("acme.factory-tools");
+    await expect(registry.invokeAiProvider("ai.test-provider", {
+      requestId: "ai-1", principal: "operator", model: "model-1", instructions: "", input: "正常", temperature: 0, maxOutputTokens: 10, config: {}
+    })).resolves.toMatchObject({ text: "正常" });
+    await registry.disable("acme.factory-tools");
+    expect(registry.listAiProviders()).toEqual([]);
+  });
 });

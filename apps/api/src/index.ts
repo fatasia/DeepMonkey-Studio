@@ -21,22 +21,66 @@ import { CloudRenderControlPlane, JsonCloudRenderRegistry } from "./cloudRenderC
 import { registerCloudRenderRoutes } from "./cloudRenderRoutes.js";
 import {
   DirectHttpConnectorGateway,
-  DirectWebSocketMultiplexer,
-  registerDirectBindingRoutes,
-  StaticDirectCredentialResolver
+  DirectWebSocketMultiplexer
 } from "./connectorGateway.js";
+import { registerDirectBindingRoutes } from "./directBindingRoutes.js";
+import { StaticDirectCredentialResolver } from "./directCredentialResolver.js";
 import { registerIndustrialDemoRoutes } from "./industrialDemo.js";
+import { OperationsService } from "./operations.js";
+import { registerOperationsRoutes } from "./operationsRoutes.js";
+import { registerUnityResourceRoutes } from "./unityResourceRoutes.js";
+import { createIndustrialCapabilityHost, registerIndustrialCapabilityRoutes } from "./industrialCapabilities.js";
+import { registerMcpCapabilityRoute } from "./mcpCapabilityAdapter.js";
+import { createAssistantService } from "./ai/assistantService.js";
+import { createMetadataAiAuditSink } from "./ai/metadataAiAuditSink.js";
+import { resolveAiSettings } from "./ai/aiRuntimeSettings.js";
+import { createDataQuerySource } from "./dataQuerySource.js";
+import { createExternalConverterRegistrations } from "./externalConverterCatalog.js";
+import { registerProductionWeb } from "./productionWeb.js";
+import { validateProductionConfig } from "./productionConfig.js";
+import { MaintenanceInferenceScheduler } from "./maintenanceInferenceScheduler.js";
+import { registerAiDataBindingRoutes } from "./aiDataBindingRoutes.js";
+import { BatteryInferenceScheduler } from "./batteryInferenceScheduler.js";
+import { PprBopService } from "./pprBopService.js";
+import { registerPprBopRoutes } from "./pprBopRoutes.js";
+import { createServerNotificationRuntime } from "./notificationRuntime.js";
+import { registerNotificationRoutes } from "./notificationRoutes.js";
 
 export async function buildApp() {
   const config = loadConfig();
+  validateProductionConfig(config);
   const app = createApiServer({ logger: true, bodyLimit: 32 * 1024 * 1024 });
   const store = createMetadataStore(config);
   await store.init();
+  const operations = new OperationsService(config.dataDir);
+  await operations.init();
+  const pprBop = new PprBopService(config.dataDir);
+  await pprBop.init();
+  const notifications = await createServerNotificationRuntime(config.dataDir);
   await ensureDemoMetrics(config);
   const objects = createObjectStore(config);
   await objects.init();
   const migratedObjects = await migrateLocalObjects(objects, config.dataDir);
   if (migratedObjects > 0) app.log.info({ migratedObjects }, "local model files migrated to object storage");
+  const conversionTasks = new ConversionTaskService(createExternalConverterRegistrations(config, objects));
+  const dataQuerySource = createDataQuerySource(store, config);
+  const maintenanceScheduler = new MaintenanceInferenceScheduler({
+    store,
+    operations,
+    dataQuerySource,
+    onError: (error, deploymentId) => app.log.warn({ error, deploymentId }, "maintenance inference failed"),
+  });
+  const industrialCapabilities = await createIndustrialCapabilityHost(operations, {
+    aiSettings: () => resolveAiSettings(store),
+    dataQuerySource,
+    conversionTasks,
+  });
+  const batteryScheduler = new BatteryInferenceScheduler({
+    store,
+    host: industrialCapabilities,
+    dataQuerySource,
+    onError: (error, bindingId) => app.log.warn({ error, bindingId }, "battery inference failed"),
+  });
   const queue = new ConversionQueue(store, config, objects);
   const cloudWorker = config.cloudRender.workerUrl && config.cloudRender.workerToken
     ? new HttpCloudRenderWorkerClient({
@@ -60,22 +104,43 @@ export async function buildApp() {
   });
   const serverInstanceId = await loadOrCreateServerInstanceId(config.dataDir);
   await registerServerMetaRoute(app, serverInstanceId);
-  await registerSystemRoutes(app, store, config.dataDir);
+  await registerSystemRoutes(app, store, config.dataDir, {
+    assistant: createAssistantService(industrialCapabilities.registry, {
+      audit: createMetadataAiAuditSink(store),
+    }),
+  });
   await registerDataEventRoutes(app, store);
+  await registerNotificationRoutes(app, notifications);
   await registerRoutes(app, {
     store,
     queue,
     objects,
     dataDir: config.dataDir,
     config,
-    beforeDiscardPublication: (publication) => cloudRender.setEnabled(publication, false).then(() => undefined)
+    beforeDiscardPublication: (publication) => cloudRender.setEnabled(publication, false).then(() => undefined),
+    afterPublish: async (publication) => {
+      await notifications.service.dispatch({
+        id: `scene-published:${publication.sceneId}:${publication.publishedAt}`,
+        type: "scene.published",
+        severity: "info",
+        title: `场景已发布：${publication.name}`,
+        body: `项目 ${publication.projectId} 的场景 ${publication.sceneId} 已生成可浏览版本。`,
+        occurredAt: publication.publishedAt,
+        target: { projectId: publication.projectId, sceneId: publication.sceneId },
+      });
+    },
   });
-  const conversionTasks = new ConversionTaskService([]);
+  await registerUnityResourceRoutes(app, { store, objects, dataDir: config.dataDir });
   await registerConversionTaskRoutes(app, { service: conversionTasks, projectExists: (projectId) => Boolean(store.getProject(projectId)) });
   await registerDataEndpointRuntime(app, store, config);
   await registerApplicationRoutes(app, store);
   await registerCloudRenderRoutes(app, { store, control: cloudRender });
   await registerIndustrialDemoRoutes(app);
+  await registerOperationsRoutes(app, { store, service: operations, dataQuerySource });
+  await registerPprBopRoutes(app, { store, service: pprBop });
+  await registerAiDataBindingRoutes(app, store);
+  await registerIndustrialCapabilityRoutes(app, { store, host: industrialCapabilities, dataQuerySource });
+  await registerMcpCapabilityRoute(app, { store, host: industrialCapabilities });
   const directCredentialResolver = new StaticDirectCredentialResolver(config.directBindings.credentials);
   const directBindingOptions = {
     credentialResolver: directCredentialResolver,
@@ -94,8 +159,15 @@ export async function buildApp() {
   });
   const vision = new VisionEngine({ store, objects, dataDir: config.dataDir });
   await registerVisionRoutes(app, vision, { store, objects, dataDir: config.dataDir });
+  await registerProductionWeb(app);
   vision.start();
-  app.addHook("onClose", async () => vision.stop());
+  maintenanceScheduler.start();
+  batteryScheduler.start();
+  app.addHook("onClose", async () => {
+    batteryScheduler.stop();
+    maintenanceScheduler.stop();
+    vision.stop();
+  });
   return { app, config };
 }
 

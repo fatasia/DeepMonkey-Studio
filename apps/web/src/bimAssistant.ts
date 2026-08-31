@@ -111,10 +111,41 @@ const ALIAS_GROUPS: string[][] = [
   ["支吊架", "支架", "hanger", "support"],
   ["电梯", "elevator", "lift"],
   ["楼梯", "stair", "ifcstair"],
-  ["房间", "空间", "room", "space", "ifcspace"]
+  ["房间", "空间", "room", "space", "ifcspace"],
 ];
 
-const STOP_WORDS = new Set(["请", "帮我", "查询", "查找", "告诉我", "一下", "这个", "那个", "某个", "多少", "有", "哪些", "什么", "哪里", "位置", "位于", "是否", "可以", "能否", "放下", "设备", "构件", "模型", "场景", "属性", "信息", "的", "和", "与", "之间"]);
+const STOP_WORDS = new Set([
+  "请",
+  "帮我",
+  "查询",
+  "查找",
+  "告诉我",
+  "一下",
+  "这个",
+  "那个",
+  "某个",
+  "多少",
+  "有",
+  "哪些",
+  "什么",
+  "哪里",
+  "位置",
+  "位于",
+  "是否",
+  "可以",
+  "能否",
+  "放下",
+  "设备",
+  "构件",
+  "模型",
+  "场景",
+  "属性",
+  "信息",
+  "的",
+  "和",
+  "与",
+  "之间",
+]);
 
 export function planBimQuestion(question: string, records: ComponentRecord[]): BimQuestionPlan {
   const normalized = normalize(question);
@@ -135,13 +166,15 @@ export function planBimQuestion(question: string, records: ComponentRecord[]): B
 }
 
 export function parseRequestedSize(question: string): { length: number; width: number; height: number } | undefined {
-  const match = question.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m|毫米|厘米|米)?\s*[×xX*＊]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m|毫米|厘米|米)?\s*[×xX*＊]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m|毫米|厘米|米)?/i);
+  const match = question.match(
+    /(\d+(?:\.\d+)?)\s*(mm|cm|m|毫米|厘米|米)?\s*[×xX*＊]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m|毫米|厘米|米)?\s*[×xX*＊]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m|毫米|厘米|米)?/i,
+  );
   if (!match) return undefined;
   const sharedUnit = match[6] || match[4] || match[2] || "m";
   return {
     length: toMetres(Number(match[1]), match[2] || sharedUnit),
     width: toMetres(Number(match[3]), match[4] || sharedUnit),
-    height: toMetres(Number(match[5]), match[6] || sharedUnit)
+    height: toMetres(Number(match[5]), match[6] || sharedUnit),
   };
 }
 
@@ -172,7 +205,7 @@ export function evaluatePlacement(size: { length: number; width: number; height:
   const candidateCenter = {
     x: axis === "x" ? (firstBounds.max.x + secondBounds.min.x) / 2 : (source.bounds.center.x + target.bounds.center.x) / 2,
     y: Math.max(source.bounds.min.y, target.bounds.min.y) + size.height / 2,
-    z: axis === "z" ? (firstBounds.max.z + secondBounds.min.z) / 2 : (source.bounds.center.z + target.bounds.center.z) / 2
+    z: axis === "z" ? (firstBounds.max.z + secondBounds.min.z) / 2 : (source.bounds.center.z + target.bounds.center.z) / 2,
   };
   return {
     requestedSizeMetres: size,
@@ -184,16 +217,32 @@ export function evaluatePlacement(size: { length: number; width: number; height:
     clearanceMetres: gap - required,
     axis,
     candidateCenter,
-    note: fits ? "轴对齐包围盒初筛通过；落位前仍需进行精确碰撞检测。" : "轴对齐包围盒初筛未通过，当前净空不足或横向/高度重叠范围不足。"
+    note: fits ? "轴对齐包围盒初筛通过；落位前仍需进行精确碰撞检测。" : "轴对齐包围盒初筛未通过，当前净空不足或横向/高度重叠范围不足。",
   };
 }
 
 export function relevantProperties(properties: Record<string, string>, question: string): Record<string, string> {
   const materialQuestion = /(材质|材料|混凝土|concrete|material)/i.test(question);
   const dimensionQuestion = /(尺寸|长|宽|高|厚|直径|半径|标高|面积|体积|length|width|height|thickness|diameter|area|volume)/i.test(question);
-  const important = /(name|名称|编号|编码|mark|tag|asset|设备位号|type|类型|category|类别|level|楼层|storey|floor|房间|空间|room|zone|区域|material|材质|材料|混凝土|length|width|height|thickness|diameter|radius|area|volume|长|宽|高|厚|直径|半径|面积|体积|坐标|location|system|系统|回路|circuit|voltage|电压|current|电流|power|功率|capacity|容量|flow|流量|pressure|压力|temperature|温度|fire rating|耐火|phase|相位|manufacturer|厂家|型号|model|serial|序列号|installation|安装|maintenance|检修)/i;
-  return Object.fromEntries(Object.entries(properties).filter(([key]) => important.test(key) && (!materialQuestion || /(material|材质|材料|混凝土)/i.test(key) || dimensionQuestion)).slice(0, 40));
+  const important = IMPORTANT_PROPERTY_PATTERN;
+  return Object.fromEntries(
+    Object.entries(properties)
+      .filter(([key]) => important.test(key) && (!materialQuestion || /(material|材质|材料|混凝土)/i.test(key) || dimensionQuestion))
+      .slice(0, 40),
+  );
 }
+
+const IMPORTANT_PROPERTY_PATTERN = new RegExp(
+  [
+    "name|名称|编号|编码|mark|tag|asset|设备位号|type|类型|category|类别",
+    "level|楼层|storey|floor|房间|空间|room|zone|区域",
+    "material|材质|材料|混凝土",
+    "length|width|height|thickness|diameter|radius|area|volume|长|宽|高|厚|直径|半径|面积|体积|坐标|location",
+    "system|系统|回路|circuit|voltage|电压|current|电流|power|功率|capacity|容量|flow|流量|pressure|压力|temperature|温度",
+    "fire rating|耐火|phase|相位|manufacturer|厂家|型号|model|serial|序列号|installation|安装|maintenance|检修",
+  ].join("|"),
+  "i",
+);
 
 function detectIntents(question: string): BimQuestionIntent[] {
   const intents: BimQuestionIntent[] = [];
@@ -207,9 +256,11 @@ function detectIntents(question: string): BimQuestionIntent[] {
 }
 
 function extractExplicitTerms(question: string, records: ComponentRecord[]): string[] {
-  const quoted = [...question.matchAll(/[“”"']([^“”"']{2,40})[“”"']/g)].flatMap((match) => match[1] ? [match[1]] : []);
+  const quoted = [...question.matchAll(/[“”"']([^“”"']{2,40})[“”"']/g)].flatMap((match) => (match[1] ? [match[1]] : []));
   const direct = records.flatMap((record) => {
-    const candidates = [record.name, record.id, record.stableId, record.properties.Mark, record.properties["标记"], record.properties["编号"]].filter((value): value is string => Boolean(value && value.length >= 2));
+    const candidates = [record.name, record.id, record.stableId, record.properties.Mark, record.properties["标记"], record.properties["编号"]].filter((value): value is string =>
+      Boolean(value && value.length >= 2),
+    );
     return candidates.filter((value) => normalize(question).includes(normalize(value)));
   });
   return unique([...quoted, ...direct]);
@@ -221,7 +272,10 @@ function componentScore(record: ComponentRecord, question: string, aliases: stri
   for (const alias of aliases) if (haystack.includes(normalize(alias))) score += alias === record.name ? 12 : 4;
   if (question.includes(normalize(record.name)) && normalize(record.name).length >= 2) score += 15;
   if (question.includes(normalize(record.id)) || question.includes(normalize(record.stableId))) score += 20;
-  const tokens = question.split(/[\s,，。；;：:？?、]+/).map(normalize).filter((token) => token.length >= 2 && !STOP_WORDS.has(token));
+  const tokens = question
+    .split(/[\s,，。；;：:？?、]+/)
+    .map(normalize)
+    .filter((token) => token.length >= 2 && !STOP_WORDS.has(token));
   for (const token of tokens) if (haystack.includes(token)) score += 1;
   return score;
 }
@@ -229,8 +283,18 @@ function componentScore(record: ComponentRecord, question: string, aliases: stri
 function evidenceRef(component: BimAssistantComponentEvidence) {
   return { id: component.id, stableId: component.stableId, modelId: component.modelId, name: component.name };
 }
-function normalize(value: string) { return value.toLocaleLowerCase("zh-CN").replace(/[\s_\-.:：/\\]/g, ""); }
-function unique(values: string[]) { return [...new Set(values.filter(Boolean))]; }
-function toMetres(value: number, unit: string) { return /mm|毫米/i.test(unit) ? value / 1000 : /cm|厘米/i.test(unit) ? value / 100 : value; }
-function containsPoint(bounds: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }, point: { x: number; y: number; z: number }) { return point.x >= bounds.min.x && point.x <= bounds.max.x && point.y >= bounds.min.y && point.y <= bounds.max.y && point.z >= bounds.min.z && point.z <= bounds.max.z; }
-function boundsVolume(bounds: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }) { return Math.max(0, bounds.max.x - bounds.min.x) * Math.max(0, bounds.max.y - bounds.min.y) * Math.max(0, bounds.max.z - bounds.min.z); }
+function normalize(value: string) {
+  return value.toLocaleLowerCase("zh-CN").replace(/[\s_\-.:：/\\]/g, "");
+}
+function unique(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
+}
+function toMetres(value: number, unit: string) {
+  return /mm|毫米/i.test(unit) ? value / 1000 : /cm|厘米/i.test(unit) ? value / 100 : value;
+}
+function containsPoint(bounds: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }, point: { x: number; y: number; z: number }) {
+  return point.x >= bounds.min.x && point.x <= bounds.max.x && point.y >= bounds.min.y && point.y <= bounds.max.y && point.z >= bounds.min.z && point.z <= bounds.max.z;
+}
+function boundsVolume(bounds: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }) {
+  return Math.max(0, bounds.max.x - bounds.min.x) * Math.max(0, bounds.max.y - bounds.min.y) * Math.max(0, bounds.max.z - bounds.min.z);
+}

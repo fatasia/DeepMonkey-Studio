@@ -6,12 +6,15 @@ export const PLUGIN_MANIFEST_SCHEMA_VERSION = 1 as const;
 export const PLUGIN_EXTENSION_POINT_KINDS = [
   "editor.panel",
   "scene.extension",
-  "converter.plugin"
+  "converter.plugin",
+  "capability.provider",
+  "ai.provider"
 ] as const;
 
 export type PluginExtensionPointKind = typeof PLUGIN_EXTENSION_POINT_KINDS[number];
 export type EditorPanelPlacement = "left" | "right" | "bottom" | "modal";
 export type ConverterExecution = "server-worker" | "tauri-sidecar";
+export type CapabilityExecution = "in-process" | "worker";
 
 export interface EditorPanelExtensionPoint {
   kind: "editor.panel";
@@ -42,10 +45,42 @@ export interface ConverterPluginExtensionPoint {
   };
 }
 
+/**
+ * Declares a typed domain capability exposed by a plugin.
+ * The implementation is registered at activation time, so the manifest remains
+ * serializable and never contains executable code.
+ */
+export interface CapabilityProviderExtensionPoint {
+  kind: "capability.provider";
+  id: string;
+  capabilityIds: string[];
+  execution: CapabilityExecution;
+  limits: {
+    timeoutMs: number;
+    maxInputBytes: number;
+    memoryMb: number;
+  };
+}
+
+/** 声明插件可提供的可替换大模型运行时；密钥和地址属于宿主配置，不写入 Manifest。 */
+export interface AiProviderExtensionPoint {
+  kind: "ai.provider";
+  id: string;
+  providerIds: string[];
+  execution: CapabilityExecution;
+  limits: {
+    timeoutMs: number;
+    maxInputBytes: number;
+    memoryMb: number;
+  };
+}
+
 export type PluginExtensionPoint =
   | EditorPanelExtensionPoint
   | SceneExtensionPoint
-  | ConverterPluginExtensionPoint;
+  | ConverterPluginExtensionPoint
+  | CapabilityProviderExtensionPoint
+  | AiProviderExtensionPoint;
 
 /**
  * Serializable metadata for an already-installed plugin bundle.
@@ -92,6 +127,8 @@ const topLevelFields = new Set(["schemaVersion", "id", "name", "version", "apiVe
 const editorPanelFields = new Set(["kind", "id", "title", "placement", "order"]);
 const sceneExtensionFields = new Set(["kind", "id", "manifest"]);
 const converterFields = new Set(["kind", "id", "inputExtensions", "inputMediaTypes", "outputFormat", "outputMediaType", "execution", "limits"]);
+const capabilityProviderFields = new Set(["kind", "id", "capabilityIds", "execution", "limits"]);
+const aiProviderFields = new Set(["kind", "id", "providerIds", "execution", "limits"]);
 const sceneManifestFields = new Set(["id", "name", "version", "apiVersion", "entry", "execution", "capabilities", "permissions", "hosts", "renderers", "lifecycle"]);
 const sceneHosts = new Set<SceneHostKind>(["browser", "tauri", "cloud"]);
 const renderers = new Set<SceneRendererKind>(["webgl2", "webgpu"]);
@@ -158,6 +195,24 @@ function validateExtensionPoint(value: unknown, path: string, issues: PluginMani
     validateConverter(value, path, issues);
     return;
   }
+  if (value.kind === "capability.provider") {
+    rejectUnknownFields(value, capabilityProviderFields, path, issues);
+    validatePatternArray(value.capabilityIds, `${path}.capabilityIds`, identifierPattern, issues);
+    if (value.execution !== "in-process" && value.execution !== "worker") {
+      issues.push(issue(`${path}.execution`, "invalid-value", "unsupported capability execution mode"));
+    }
+    validateLimits(value, path, issues);
+    return;
+  }
+  if (value.kind === "ai.provider") {
+    rejectUnknownFields(value, aiProviderFields, path, issues);
+    validatePatternArray(value.providerIds, `${path}.providerIds`, identifierPattern, issues);
+    if (value.execution !== "in-process" && value.execution !== "worker") {
+      issues.push(issue(`${path}.execution`, "invalid-value", "unsupported AI provider execution mode"));
+    }
+    validateLimits(value, path, issues);
+    return;
+  }
   issues.push(issue(`${path}.kind`, "invalid-value", "unsupported extension point kind"));
 }
 
@@ -186,8 +241,12 @@ function validateConverter(value: Record<string, unknown>, path: string, issues:
   validatePattern(value.outputFormat, `${path}.outputFormat`, extensionPattern, "invalid output format", issues);
   validatePattern(value.outputMediaType, `${path}.outputMediaType`, mediaTypePattern, "invalid output media type", issues);
   if (value.execution !== "server-worker" && value.execution !== "tauri-sidecar") issues.push(issue(`${path}.execution`, "invalid-value", "unsupported converter execution mode"));
+  validateLimits(value, path, issues);
+}
+
+function validateLimits(value: Record<string, unknown>, path: string, issues: PluginManifestIssue[]): void {
   if (!isRecord(value.limits)) {
-    issues.push(issue(`${path}.limits`, "invalid-type", "converter limits must be an object"));
+    issues.push(issue(`${path}.limits`, "invalid-type", "limits must be an object"));
     return;
   }
   rejectUnknownFields(value.limits, new Set(["timeoutMs", "maxInputBytes", "memoryMb"]), `${path}.limits`, issues);

@@ -168,6 +168,18 @@ describe("application routes", () => {
     await app.close();
   });
 
+  it("blocks application publication when a managed Unity resource is missing", async () => {
+    const { app } = await harness();
+    const document = migrateSceneSnapshotV1(pureFixture as unknown as SceneSnapshot);
+    document.metadata.projectId = "default";
+    document.pages[0]!.nodes.push({ id: "unity-widget", name: "Factory", kind: "data-widget", zIndex: 2, frame: { x: 0, y: 0, width: 800, height: 450 }, widget: { title: "Factory", key: "factory", type: "unity", unit: "", unityResourceId: "missing", unityResourceVersionId: "v1" } });
+    expect((await app.inject({ method: "POST", url: "/api/projects/default/applications", payload: document })).statusCode).toBe(201);
+    const publication = await app.inject({ method: "POST", url: `/api/projects/default/applications/${document.metadata.id}/publish` });
+    expect(publication.statusCode).toBe(409);
+    expect(publication.json()).toMatchObject({ message: expect.stringContaining("Unity 发布检查未通过"), issues: [expect.objectContaining({ code: "missing-resource", severity: "blocker" })] });
+    await app.close();
+  });
+
   it("removes project drafts and active pointers while retaining hidden immutable history", async () => {
     const { app, store } = await harness();
     const project = await store.createProject("待删除项目");

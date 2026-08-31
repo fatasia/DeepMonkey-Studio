@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   applyTopologyEditorAction,
+  assessTopologyScadaRuntime,
   canRedoTopologyEdit,
   canUndoTopologyEdit,
   createTopologyDocument,
   createTopologyEdge,
   createTopologyEditorState,
   createTopologyNode,
+  createTopologyScadaNode,
+  isTopologyScadaNode,
+  summarizeTopologyScadaRuntime,
   topologyNodeDataBinding,
-  topologyNodeLabel
+  topologyNodeLabel,
+  topologyNodeScadaConfig
 } from "./topologyEditor";
 
 function populatedState() {
@@ -86,6 +91,56 @@ describe("topology editor", () => {
     expect(topologyNodeDataBinding(state.document.nodes[0]!)).toBeUndefined();
   });
 
+  it("creates lightweight SCADA nodes and parses point and alarm configuration", () => {
+    const node = createTopologyScadaNode("pump-1", "pump", 80, 100, "循环泵");
+    expect(isTopologyScadaNode(node)).toBe(true);
+    expect(topologyNodeScadaConfig(node)).toEqual({ tag: "", unit: "", alarmSeverity: "warning" });
+
+    const configured = {
+      ...node,
+      properties: { ...node.properties, scada: { tag: "P-101.PV", unit: "bar", lowAlarm: 1.2, highAlarm: 6.5, alarmSeverity: "critical" } }
+    };
+    expect(topologyNodeScadaConfig(configured)).toEqual({ tag: "P-101.PV", unit: "bar", lowAlarm: 1.2, highAlarm: 6.5, alarmSeverity: "critical" });
+  });
+
+  it("assesses SCADA timestamp freshness and value quality without mutating runtime snapshots", () => {
+    const now = Date.parse("2026-08-27T10:00:00.000Z");
+    const snapshot = { state: "running", value: 12.5, quality: "uncertain", updatedAt: "2026-08-27T09:59:20.000Z" } as const;
+
+    expect(assessTopologyScadaRuntime(snapshot, now, 60_000)).toEqual({ freshness: "fresh", quality: "uncertain", ageMs: 40_000, healthy: false });
+    expect(assessTopologyScadaRuntime({ ...snapshot, quality: "good", updatedAt: "2026-08-27T09:58:00.000Z" }, now, 60_000)).toEqual({ freshness: "stale", quality: "good", ageMs: 120_000, healthy: false });
+    expect(assessTopologyScadaRuntime({ state: "running", updatedAt: "not-a-date" }, now, 60_000).freshness).toBe("invalid");
+    expect(assessTopologyScadaRuntime(undefined, now, 60_000).freshness).toBe("missing");
+    expect(snapshot).toEqual({ state: "running", value: 12.5, quality: "uncertain", updatedAt: "2026-08-27T09:59:20.000Z" });
+  });
+
+  it("summarizes missing, stale, bad-quality and unacknowledged SCADA nodes", () => {
+    const nodes = [
+      createTopologyScadaNode("pump-1", "pump", 0, 0),
+      createTopologyScadaNode("valve-1", "valve", 100, 0),
+      createTopologyScadaNode("meter-1", "meter", 200, 0),
+      createTopologyNode("note-1", "note", 300, 0)
+    ];
+    const summary = summarizeTopologyScadaRuntime(nodes, {
+      "pump-1": { state: "running", quality: "good", updatedAt: "2026-08-27T09:59:50.000Z" },
+      "valve-1": { state: "alarm", quality: "bad", updatedAt: "2026-08-27T09:58:00.000Z", alarm: { active: true, severity: "critical", message: "卡涩" } }
+    }, Date.parse("2026-08-27T10:00:00.000Z"), 60_000);
+
+    expect(summary).toEqual({
+      total: 3,
+      healthy: 1,
+      missing: 1,
+      undated: 0,
+      stale: 1,
+      invalidTimestamp: 0,
+      uncertainQuality: 0,
+      badQuality: 1,
+      offline: 0,
+      activeAlarms: 1,
+      unacknowledgedAlarms: 1
+    });
+  });
+
   it("rejects dangling, self, and duplicate directed edges", () => {
     let state = populatedState();
     expect(() => applyTopologyEditorAction(state, { type: "edge.add", edge: createTopologyEdge("dangling", "node-a", "missing") })).toThrow("不存在");
@@ -93,6 +148,15 @@ describe("topology editor", () => {
 
     state = applyTopologyEditorAction(state, { type: "edge.add", edge: createTopologyEdge("edge-a-b", "node-a", "node-b") });
     expect(() => applyTopologyEditorAction(state, { type: "edge.add", edge: createTopologyEdge("edge-a-b-2", "node-a", "node-b") })).toThrow("已存在");
+  });
+
+  it("updates SCADA flow properties as one undoable edge edit", () => {
+    let state = populatedState();
+    state = applyTopologyEditorAction(state, { type: "edge.add", edge: createTopologyEdge("edge-a-b", "node-a", "node-b") });
+    state = applyTopologyEditorAction(state, { type: "edge.update", edgeId: "edge-a-b", patch: { properties: { label: "冷却水", medium: "water", animated: true } } });
+    expect(state.document.edges[0]?.properties).toEqual({ label: "冷却水", medium: "water", animated: true });
+    state = applyTopologyEditorAction(state, { type: "history.undo" });
+    expect(state.document.edges[0]?.properties).toEqual({});
   });
 
   it("clears redo history when a new edit branches from an undo", () => {

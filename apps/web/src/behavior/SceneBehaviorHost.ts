@@ -42,6 +42,7 @@ export interface SceneBehaviorHostDiagnostics {
   averageExecutionMs: number;
   lastExecutionMs: number;
   lastError?: string;
+  lastErrorLocation?: { line: number; column: number };
   scheduler: SceneBehaviorSchedulerDiagnostics;
 }
 
@@ -56,6 +57,8 @@ const LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 
 export class SceneBehaviorHost {
   onCommands?: (commands: SceneCommand[]) => void;
+  onDataUpdates?: (updates: Record<string, JsonValue>) => void;
+  onEvent?: (event: { name: string; payload?: JsonValue }) => void;
   onLog?: (entry: Extract<SceneBehaviorWorkerResponse, { type: "behavior.log" }>) => void;
   onDiagnosticsChange?: (diagnostics: SceneBehaviorHostDiagnostics) => void;
 
@@ -80,6 +83,8 @@ export class SceneBehaviorHost {
   private totalExecutionMs = 0;
   private lastExecutionMs = 0;
   private lastError: string | undefined;
+  private lastErrorLocation: { line: number; column: number } | undefined;
+  private latestData: JsonValue | undefined;
 
   constructor(worker: SceneBehaviorWorkerPort, options: SceneBehaviorHostOptions = {}) {
     this.worker = worker;
@@ -102,6 +107,7 @@ export class SceneBehaviorHost {
     this.sceneId = sceneId;
     this.status = "initializing";
     this.lastError = undefined;
+    this.lastErrorLocation = undefined;
     this.scheduler.reset();
     this.worker.postMessage({ type: "behavior.initialize", module: this.module, sceneId });
     this.initTimeoutId = globalThis.setTimeout(() => this.fail(`行为“${module.name}”初始化超过 ${this.initializationTimeoutMs} ms`), this.initializationTimeoutMs);
@@ -120,7 +126,8 @@ export class SceneBehaviorHost {
   }
 
   dispatchData(data: JsonValue): void {
-    if (this.status === "running" && this.module?.lifecycle.includes("onData")) this.invoke("onData", this.scheduler.diagnostics().elapsedMs, { data });
+    this.latestData = structuredClone(data);
+    if (this.status === "running" && this.module?.lifecycle.includes("onData")) this.invoke("onData", this.scheduler.diagnostics().elapsedMs, { data: this.latestData });
   }
 
   pause(): void {
@@ -185,6 +192,7 @@ export class SceneBehaviorHost {
       averageExecutionMs: this.completedInvocations > 0 ? this.totalExecutionMs / this.completedInvocations : 0,
       lastExecutionMs: this.lastExecutionMs,
       ...(this.lastError ? { lastError: this.lastError } : {}),
+      ...(this.lastErrorLocation ? { lastErrorLocation: { ...this.lastErrorLocation } } : {}),
       scheduler: this.scheduler.diagnostics()
     };
   }
@@ -218,7 +226,8 @@ export class SceneBehaviorHost {
       if (this.status !== "initializing" || value.moduleId !== this.module?.id) return;
       this.clearInitializationTimeout();
       this.status = "running";
-      if (this.module.lifecycle.includes("onStart")) this.invoke("onStart", 0);
+      if (this.module.lifecycle.includes("onStart")) this.invoke("onStart", 0, this.latestData === undefined ? {} : { data: this.latestData });
+      if (this.latestData !== undefined && this.module.lifecycle.includes("onData")) this.invoke("onData", 0, { data: this.latestData });
       this.emitDiagnostics();
       return;
     }
@@ -231,7 +240,7 @@ export class SceneBehaviorHost {
       return;
     }
     if (value.type === "behavior.error") {
-      this.fail(value.message);
+      this.fail(value.message, behaviorSourceLocation(value.stack, this.module?.id));
       return;
     }
     const pending = this.pending.get(value.invocationId);
@@ -252,6 +261,8 @@ export class SceneBehaviorHost {
       commands.length = this.maxCommandsPerInvocation;
     }
     if (commands.length > 0) this.onCommands?.(commands);
+    if (value.dataUpdates && Object.keys(value.dataUpdates).length > 0) this.onDataUpdates?.(structuredClone(value.dataUpdates));
+    for (const event of value.events ?? []) this.onEvent?.(structuredClone(event));
     if (pending.lifecycle === "onDispose") this.finishDispose();
     else this.emitDiagnostics();
   }
@@ -273,9 +284,10 @@ export class SceneBehaviorHost {
     }
   }
 
-  private fail(message: string): void {
+  private fail(message: string, location?: { line: number; column: number }): void {
     if (this.status === "disposed") return;
     this.lastError = message;
+    this.lastErrorLocation = location;
     this.status = "error";
     this.scheduler.pause();
     this.clearInitializationTimeout();
@@ -323,7 +335,13 @@ function isWorkerResponse(value: unknown): value is SceneBehaviorWorkerResponse 
     return typeof message.moduleId === "string" && Array.isArray(message.lifecycle) && message.lifecycle.every((item) => LIFECYCLES.has(item as SceneScriptLifecycle));
   }
   if (message.type === "behavior.result") {
-    return typeof message.invocationId === "string" && typeof message.durationMs === "number" && Number.isFinite(message.durationMs) && message.durationMs >= 0 && Array.isArray(message.commands);
+    return typeof message.invocationId === "string"
+      && typeof message.durationMs === "number"
+      && Number.isFinite(message.durationMs)
+      && message.durationMs >= 0
+      && Array.isArray(message.commands)
+      && (message.dataUpdates === undefined || isJsonRecord(message.dataUpdates))
+      && (message.events === undefined || Array.isArray(message.events) && message.events.every(isBehaviorEvent));
   }
   if (message.type === "behavior.network.request") {
     return typeof message.requestId === "string"
@@ -336,6 +354,39 @@ function isWorkerResponse(value: unknown): value is SceneBehaviorWorkerResponse 
   return false;
 }
 
+function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value).every((item) => isJsonValue(item));
+}
+
+function isBehaviorEvent(value: unknown): value is { name: string; payload?: JsonValue } {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Record<string, unknown>;
+  return typeof event.name === "string" && event.name.trim().length > 0 && (event.payload === undefined || isJsonValue(event.payload));
+}
+
+function isJsonValue(value: unknown, seen = new WeakSet<object>()): value is JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (!value || typeof value !== "object" || seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) return value.every((item) => isJsonValue(item, seen));
+  return Object.values(value).every((item) => isJsonValue(item, seen));
+}
+
 function finiteOption(value: number | undefined, min: number, max: number, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+}
+
+function behaviorSourceLocation(stack: string | undefined, moduleId: string | undefined): { line: number; column: number } | undefined {
+  if (!stack || !moduleId) return undefined;
+  const marker = `industrial-studio-behavior-${moduleId}.js:`;
+  const start = stack.indexOf(marker);
+  if (start < 0) return undefined;
+  const match = /^(\d+):(\d+)/.exec(stack.slice(start + marker.length));
+  if (!match) return undefined;
+  const generatedLine = Number(match[1]);
+  const column = Number(match[2]);
+  if (!Number.isInteger(generatedLine) || !Number.isInteger(column)) return undefined;
+  return { line: Math.max(1, generatedLine - 3), column: Math.max(1, column) };
 }

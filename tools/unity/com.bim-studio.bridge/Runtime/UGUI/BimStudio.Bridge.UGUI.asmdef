@@ -1,0 +1,16 @@
+{
+  "name": "BimStudio.Bridge.UGUI",
+  "rootNamespace": "BimStudio.Bridge.UGUI",
+  "references": ["BimStudio.Bridge", "Unity.ugui"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": ["BIM_STUDIO_UGUI"],
+  "versionDefines": [
+    { "name": "com.unity.ugui", "expression": "1.0.0", "define": "BIM_STUDIO_UGUI" }
+  ],
+  "noEngineReferences": false
+}

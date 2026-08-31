@@ -1,0 +1,241 @@
+.ai-script-draft-review {
+  display: grid;
+  gap: 11px;
+  padding: 13px;
+  color: #d7dfe2;
+  border: 1px solid #3a4a50;
+  border-radius: 9px;
+  background: #111b1f;
+}
+
+.ai-script-draft-review > header {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.ai-script-draft-review > header > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.ai-script-draft-review > header small {
+  overflow: hidden;
+  color: #82949a;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-script-draft-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: #dfb252;
+  border-radius: 7px;
+  background: #2c2618;
+}
+
+.ai-script-risk {
+  padding: 4px 6px;
+  color: #a6b3b7;
+  border: 1px solid #415158;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.ai-script-risk.risk-medium {
+  color: #ddbc74;
+  border-color: #6a572d;
+}
+
+.ai-script-risk.risk-high {
+  color: #eda0a6;
+  border-color: #744047;
+}
+
+.ai-script-draft-policy {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px;
+  color: #7ac89b;
+  border-left: 2px solid #4ea978;
+  background: #11221b;
+}
+
+.status-blocked .ai-script-draft-policy,
+.status-needs-input .ai-script-draft-policy {
+  color: #dca766;
+  border-color: #a87335;
+  background: #241d13;
+}
+
+.ai-script-draft-policy > span {
+  display: grid;
+  gap: 2px;
+}
+
+.ai-script-draft-policy small {
+  color: #829b8b;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.ai-script-draft-actions,
+.ai-script-draft-diff > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ai-script-draft-actions > span,
+.ai-script-draft-diff > div > span {
+  padding: 3px 6px;
+  color: #aebcc0;
+  border: 1px solid #35474e;
+  border-radius: 4px;
+  background: #172328;
+  font-size: 10px;
+}
+
+.ai-script-draft-summary {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.ai-script-draft-summary > div {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 7px;
+}
+
+.ai-script-draft-summary dt {
+  color: #7d8e94;
+  font-size: 10px;
+}
+
+.ai-script-draft-summary dd {
+  margin: 0;
+  overflow: hidden;
+  color: #bdc8cc;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-script-draft-diff {
+  border: 1px solid #2e4046;
+  border-radius: 6px;
+  background: #0e171a;
+}
+
+.ai-script-draft-diff > summary {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  cursor: pointer;
+  color: #b4c0c4;
+  font-size: 10px;
+}
+
+.ai-script-draft-diff > p,
+.ai-script-draft-diff > div,
+.ai-script-draft-diff > pre {
+  margin: 0 8px 8px;
+}
+
+.ai-script-draft-diff > p {
+  color: #819299;
+  font-size: 10px;
+}
+
+.ai-script-draft-diff > pre {
+  max-height: 180px;
+  padding: 8px;
+  overflow: auto;
+  color: #8fd6ab;
+  border-radius: 4px;
+  background: #0b1316;
+  font-size: 10px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.ai-script-draft-issues {
+  display: grid;
+  gap: 5px;
+}
+
+.ai-script-draft-issues > p,
+.ai-script-draft-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 0;
+  color: #d2a066;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.ai-script-draft-error {
+  color: #e39aa1;
+}
+
+.ai-script-draft-review > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.ai-script-draft-review > footer button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  color: #aeb9bd;
+  border: 1px solid #3b494e;
+  border-radius: 5px;
+  background: #172126;
+  cursor: pointer;
+}
+
+.ai-script-draft-review > footer button.primary {
+  color: #211b0f;
+  border-color: #d7aa4d;
+  background: #d7aa4d;
+  font-weight: 700;
+}
+
+.ai-script-draft-review > footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (max-width: 420px) {
+  .ai-script-draft-review > header {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .ai-script-risk {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .ai-script-draft-review > footer {
+    flex-direction: column-reverse;
+  }
+
+  .ai-script-draft-review > footer button {
+    justify-content: center;
+  }
+}

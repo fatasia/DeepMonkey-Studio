@@ -7,6 +7,7 @@ import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
 import { generateGlbLods, optimizeNativeGlb } from "./glbOptimizer.js";
 import { convertStepToGlb } from "./stepConverter.js";
+import { auditConverterOutput } from "./converterOutputAudit.js";
 
 interface ConversionContext {
   model: ModelRecord;
@@ -43,6 +44,11 @@ export class ConversionQueue {
       glb: new DirectProvider(store, objects, "gltf"),
       fbx: new DirectProvider(store, objects, "fbx"),
       dxf: new DirectProvider(store, objects, "dxf"),
+      obj: new DirectProvider(store, objects, "obj"),
+      stl: new DirectProvider(store, objects, "stl"),
+      "3mf": new DirectProvider(store, objects, "3mf"),
+      dae: new DirectProvider(store, objects, "dae"),
+      "3ds": new DirectProvider(store, objects, "3ds"),
       step: new StepProvider(store, objects),
       stp: new StepProvider(store, objects),
       dwg: config.dwg.command
@@ -50,7 +56,22 @@ export class ConversionQueue {
         : new MissingProvider(store, "未找到 LibreDWG。请运行 tools/install-libredwg.ps1，或配置 DWG_CONVERTER_COMMAND。"),
       rvt: config.rvt.command
         ? new CommandProvider(store, objects, config.rvt, [])
-        : new MissingProvider(store, "未配置 Revit Agent。请在安装 Revit 的 Windows 转换机上配置批处理程序。")
+        : new MissingProvider(store, "未配置 Revit Agent。请在安装 Revit 的 Windows 转换机上配置批处理程序。"),
+      x_t: config.industrialCad.command
+        ? new CommandProvider(store, objects, config.industrialCad, [{ fileName: "geometry.glb", viewerKind: "gltf" }])
+        : new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_T")),
+      x_b: config.industrialCad.command
+        ? new CommandProvider(store, objects, config.industrialCad, [{ fileName: "geometry.glb", viewerKind: "gltf" }])
+        : new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_B")),
+      jt: config.industrialCad.command
+        ? new CommandProvider(store, objects, config.industrialCad, [{ fileName: "geometry.glb", viewerKind: "gltf" }])
+        : new MissingProvider(store, industrialCadUnavailableMessage("JT")),
+      // Three.js 0.185 的官方 USDLoader 同时解析 USDA、USDC 与 USDZ。
+      // 原文件直接作为唯一运行资产，避免先预览源格式、再切换 GLB 造成对象标识漂移。
+      usd: new DirectProvider(store, objects, "usd"),
+      usda: new DirectProvider(store, objects, "usd"),
+      usdc: new DirectProvider(store, objects, "usd"),
+      usdz: new DirectProvider(store, objects, "usd")
     };
   }
 
@@ -199,6 +220,9 @@ class CommandProvider implements ConversionProvider {
         .replaceAll("{output}", outputDir)
         .replaceAll("{mode}", model.rvtConversionMode ?? "native-glb")
         .replaceAll("{revitVersion}", model.rvtRevitVersion ?? "")
+        .replaceAll("{format}", model.format)
+        .replaceAll("{quality}", "high")
+        .replaceAll("{includePmi}", "true")
     );
     if (model.format === "rvt" && model.rvtRevitVersion && !args.includes("--revit-version")) args.push("--revit-version", model.rvtRevitVersion);
     await runCommand(this.provider.command, args, this.provider.cwd);
@@ -224,22 +248,30 @@ class CommandProvider implements ConversionProvider {
         : [{ fileName: "geometry.glb", viewerKind: "gltf" }]
       : this.candidates;
     const result = await findOutput(outputDir, modeCandidates);
+    const outputAudit = result.fileName.endsWith(".glb")
+      ? await auditConverterOutput(outputDir, model.format === "x_t" || model.format === "x_b" || model.format === "jt")
+      : undefined;
     const geometryUrl = assetUrl(model.projectId, model.id, `output/${result.fileName}`);
     const hierarchyPath = path.join(outputDir, "hierarchy.json");
     const propertiesPath = path.join(outputDir, "properties.json");
     const hierarchyUrl = await optionalAsset(hierarchyPath, assetUrl(model.projectId, model.id, "output/hierarchy.json"));
     const propertiesUrl = await optionalAsset(propertiesPath, assetUrl(model.projectId, model.id, "output/properties.json"));
-    const manifest = createManifest(model, result.viewerKind, geometryUrl, hierarchyUrl, propertiesUrl, lods);
+    const pmiUrl = await optionalAsset(path.join(outputDir, "pmi.json"), assetUrl(model.projectId, model.id, "output/pmi.json"));
+    const manifest = createManifest(model, result.viewerKind, geometryUrl, hierarchyUrl, propertiesUrl, lods, pmiUrl);
     await writeManifest(modelDir, manifest);
     await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
     await this.store.updateModel(model.projectId, model.id, {
       status: "ready",
       progress: 100,
-      message: `${model.format === "dwg" ? "DWG 已转换为 DXF" : "转换完成"}${compressionMessage}`,
+      message: `${model.format === "dwg" ? "DWG 已转换为 DXF" : "转换完成"}${outputAudit ? `：${outputAudit.geometry.meshCount} 个网格，${outputAudit.geometry.triangleCount} 个三角面` : ""}${compressionMessage}`,
       manifest,
       manifestUrl: assetUrl(model.projectId, model.id, "manifest.json")
     });
   }
+}
+
+function industrialCadUnavailableMessage(format: string): string {
+  return `未配置 ${format} 工业转换器。请配置 INDUSTRIAL_CAD_CONVERTER_COMMAND；正式环境建议使用 HOOPS Exchange、CAD Exchanger 或 Siemens 组件。`;
 }
 
 function assetKey(projectId: string, modelId: string, fileName: string): string {
@@ -264,7 +296,8 @@ function createManifest(
   geometryUrl: string,
   hierarchyUrl?: string,
   propertiesUrl?: string,
-  lods?: ModelManifest["lods"]
+  lods?: ModelManifest["lods"],
+  pmiUrl?: string
 ): ModelManifest {
   return {
     schemaVersion: 1,
@@ -275,6 +308,7 @@ function createManifest(
     geometryUrl,
     ...(hierarchyUrl ? { hierarchyUrl } : {}),
     ...(propertiesUrl ? { propertiesUrl } : {}),
+    ...(pmiUrl ? { pmiUrl } : {}),
     ...(lods?.length ? { lods } : {}),
     createdAt: new Date().toISOString()
   };

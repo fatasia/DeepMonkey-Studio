@@ -37,6 +37,21 @@ const malformedCases: MalformedCase[] = [
       widget: { title: "无效", key: "value", type: "dial" as never, unit: "" }
     });
   })],
+  ["native data widget animation autoplay", () => altered(pureApplication, (value) => {
+    value.pages[0]!.nodes.push({
+      id: "widget:invalid-animation",
+      kind: "data-widget",
+      frame: { x: 0, y: 0, width: 320, height: 180 },
+      zIndex: 1,
+      widget: {
+        title: "无效动画",
+        key: "value",
+        type: "value",
+        unit: "",
+        animationAutoplay: "yes" as never,
+      },
+    });
+  })],
   ["duplicate dashboard component name", () => altered(pureApplication, (value) => {
     const source = value.pages[0]!.nodes[0]!;
     source.name = "Main View";
@@ -71,6 +86,12 @@ const malformedCases: MalformedCase[] = [
   ["scene", () => altered(pureApplication, (value) => { value.scenes[0]!.camera.mode = "fly" as never; })],
   ["scene selection set", () => altered(pureApplication, (value) => {
     value.scenes[0]!.selectionSets = [{ id: "selection-1", name: "产线", objectIds: [1 as never] }];
+  })],
+  ["scene asset binding confidence", () => altered(pureApplication, (value) => {
+    value.scenes[0]!.assetBindings = [{
+      id: "binding-1", sceneObjectId: "model-1/pump", objectName: "循环泵", modelId: "model-1",
+      layerId: "pump", deviceId: "P-001", confidence: 1.2, confirmedAt: "2026-08-30T08:00:00.000Z",
+    }];
   })],
   ["geo root", () => altered(pureApplication, (value) => { value.geo = true as never; })],
   ["geo layer", () => altered(pureApplication, (value) => {
@@ -170,6 +191,29 @@ describe("assertApplicationDocument", () => {
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });
 
+  it("accepts explicit dashboard animation playback policy", () => {
+    const application = structuredClone(pureApplication);
+    application.pages[0]!.nodes.push({
+      id: "widget:animation-policy",
+      kind: "data-widget",
+      frame: { x: 0, y: 0, width: 320, height: 180 },
+      zIndex: 1,
+      widget: {
+        title: "运行状态",
+        key: "status",
+        type: "value",
+        unit: "",
+        animation: "fade",
+        animationAutoplay: true,
+        animationLoop: false,
+        animationDuration: 0.6,
+        animationDelay: 0.1,
+      },
+    });
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
   it("accepts a complete sandboxed worker behavior module", () => {
     const application = structuredClone(behaviorApplicationFixture) as unknown as ApplicationDocument;
 
@@ -180,6 +224,14 @@ describe("assertApplicationDocument", () => {
       lifecycle: ["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"],
       permissions: ["scene.read", "scene.write", "data.read"]
     });
+  });
+
+  it("accepts an object-attached behavior target and rejects a missing target id", () => {
+    const application = structuredClone(behaviorApplicationFixture) as unknown as ApplicationDocument;
+    application.scripts[0]!.target = { kind: "object", id: "pump-01" };
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+    application.scripts[0]!.target = { kind: "object" } as never;
+    expect(() => assertApplicationDocument(application)).toThrow(/target.*id/i);
   });
 
   it("accepts a custom ultra-wide dashboard resolution", () => {
@@ -223,9 +275,54 @@ describe("assertApplicationDocument", () => {
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });
 
+  it("validates nested dashboard analysis and multi-measure report settings", () => {
+    const application = structuredClone(pureApplication);
+    application.pages[0]!.nodes.push({
+      id: "widget:report",
+      kind: "data-widget",
+      frame: { x: 40, y: 40, width: 640, height: 320 },
+      zIndex: 2,
+      widget: {
+        title: "区域经营交叉表", key: "sales", type: "table", unit: "元",
+        analysis: { dimensionField: "region", measureField: "sales", aggregation: "sum" },
+        report: { mode: "crosstab", rowField: "region", columnField: "month", valueField: "sales", valueFields: ["sales", "cost"], aggregation: "sum", showSubtotal: true, showGrandTotal: true }
+      }
+    });
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+    const invalid = structuredClone(application);
+    const node = invalid.pages[0]!.nodes.at(-1)!;
+    if (node.kind !== "data-widget") throw new Error("expected data widget");
+    node.widget.report!.valueFields = ["sales", 2 as never];
+    expect(() => assertApplicationDocument(invalid)).toThrow(/valueFields/);
+  });
+
+  it.each(["digital-flip", "liquid-fill", "scroll-table", "combo"] as const)("accepts the native %s dashboard widget", (type) => {
+    const application = structuredClone(pureApplication);
+    application.pages[0]!.nodes.push({
+      id: `widget:${type}`,
+      kind: "data-widget",
+      frame: { x: 40, y: 40, width: 360, height: 200 },
+      zIndex: 2,
+      widget: { title: type, key: "device.value", type, unit: "" }
+    });
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
   it("accepts renderer-independent scene selection sets", () => {
     const application = structuredClone(pureApplication);
-    application.scenes[0]!.selectionSets = [{ id: "selection-1", name: "一号产线", objectIds: ["robot-1", "conveyor-2"] }];
+    application.scenes[0]!.selectionSets = [{ id: "selection-1", name: "一号产线", objectIds: ["robot-1", "conveyor-2"], kind: "group" }];
+
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("accepts persisted human-confirmed scene asset bindings", () => {
+    const application = structuredClone(pureApplication);
+    application.scenes[0]!.assetBindings = [{
+      id: "binding-1", sceneObjectId: "model-1/pump", objectName: "循环泵", modelId: "model-1",
+      layerId: "pump", deviceId: "P-001", confidence: 0.94, confirmedAt: "2026-08-30T08:00:00.000Z",
+    }];
 
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });
@@ -290,6 +387,51 @@ describe("assertApplicationDocument", () => {
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });
 
+  it("accepts the complete PBR texture set and validates numeric texture controls", () => {
+    const application = structuredClone(pureApplication);
+    application.scenes[0]!.models.push({
+      modelId: "pump-1",
+      name: "循环水泵",
+      visible: true,
+      opacity: 1,
+      transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
+      material: {
+        baseColorMapUrl: "/assets/pump/base.webp",
+        normalMapUrl: "/assets/pump/normal.webp",
+        emissiveMapUrl: "/assets/pump/emissive.webp",
+        ambientOcclusionMapUrl: "/assets/pump/ao.webp",
+        roughnessMapUrl: "/assets/pump/roughness.webp",
+        metalnessMapUrl: "/assets/pump/metalness.webp",
+        textureRepeat: 2,
+        textureRotation: 0.5,
+        normalScale: 1.4
+      },
+      rig: {
+        bones: [{ bonePath: "root/Armature/UpperArm", rotation: { x: 0.1, y: 0.2, z: 0 } }],
+        ik: [{ id: "ik-hand", effectorBonePath: "root/Armature/Hand", target: { x: 1.2, y: 0.8, z: -0.3 }, chainLength: 2, iterations: 12, enabled: true }]
+      }
+    });
+    application.scenes[0]!.animation = {
+      duration: 8,
+      loop: false,
+      frameRate: 30,
+      snapToFrames: true,
+      modelInterpolation: "linear",
+      camera: [],
+      models: [{
+        id: "frame-1",
+        time: 2,
+        modelId: "pump-1",
+        transform: structuredClone(application.scenes[0]!.models[0]!.transform),
+        animation: { clipId: "PumpCycle", time: 1.25 }
+      }]
+    };
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+
+    application.scenes[0]!.models[0]!.material!.normalScale = "strong" as never;
+    expect(() => assertApplicationDocument(application)).toThrow("normalScale");
+  });
+
   it("accepts one reusable direct HTTP binding on 2D and 3D components", () => {
     const application = structuredClone(pureApplication);
     const directBinding = {
@@ -327,6 +469,39 @@ describe("assertApplicationDocument", () => {
     application.interactions[0]!.legacyScript!.script.actions![0]!.target = undefined;
 
     expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("accepts a bounded visual transition on interaction actions", () => {
+    const application = structuredClone(interactionApplication);
+    application.interactions[0]!.actions[0]!.transition = {
+      kind: "fade",
+      durationMs: 320,
+      easing: "ease-in-out",
+    };
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("accepts route arrival triggers and prefab runtime actions", () => {
+    const application = structuredClone(interactionApplication);
+    application.interactions[0]!.trigger = "routePointReached";
+    application.interactions[0]!.actions[0] = {
+      id: "action-dispatch-agv",
+      type: "prefabAction",
+      enabled: true,
+      prefabAction: "replay",
+      target: { kind: "object", modelId: "robot-1" },
+    };
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
+  it("rejects an unknown interaction transition", () => {
+    const application = structuredClone(interactionApplication);
+    application.interactions[0]!.actions[0]!.transition = {
+      kind: "explode",
+      durationMs: 320,
+      easing: "ease-out",
+    } as never;
+    expect(() => assertApplicationDocument(application)).toThrow("transition.kind");
   });
 
   it.each(["", ".", "..", "bad/id", "bad\\id", "bad?query", "bad#fragment", "a".repeat(129)])
