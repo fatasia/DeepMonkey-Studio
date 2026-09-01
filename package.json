@@ -47,12 +47,13 @@
     "desktop:verify-bundle": "pnpm --filter @bim-studio/desktop verify:bundle",
     "assets:sync:external-models": "node scripts/sync-external-industrial-models.mjs",
     "assets:audit:external-models": "node scripts/audit-external-industrial-models.mjs",
-    "assets:audit:test": "node --test scripts/lib/glbAudit.test.mjs",
+    "assets:audit:test": "node --test scripts/lib/glbAudit.test.mjs scripts/lib/assetThumbnailAudit.test.mjs scripts/lib/assetQualityAudit.test.mjs scripts/lib/environmentAssetPublication.test.mjs",
     "assets:sync:open-packs": "node scripts/sync-open-asset-packs.mjs",
     "assets:sync:environment-materials": "node scripts/sync-environment-material-library.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
+    "sharp": "^0.35.3",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   }

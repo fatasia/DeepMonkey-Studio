@@ -9,6 +9,16 @@ const catalogPage: AssetLibraryPage = {
     format: "glb", size: 1_024_000, triangleCount: 12_400, meshCount: 8, materialCount: 4, textureCount: 2,
     animated: true, featured: true, qualityTier: "light", thumbnailUrl: "/thumb.png", previewUrl: "/preview.glb", tags: ["机器人"],
     version: "1.0.0", license: "内部许可", publicationStatus: "published", contentHash: "hash",
+  }, {
+    id: "environment-studio", name: "工业棚拍环境", dimension: "environment", category: "环境", style: "棚拍",
+    format: "hdr", size: 8_024_000, triangleCount: 0, meshCount: 0, materialCount: 0, textureCount: 1,
+    animated: false, featured: true, qualityTier: "standard", thumbnailUrl: "/environment.png", previewUrl: "/environment.hdr", tags: ["环境"],
+    version: "1.0.0", license: "CC0-1.0", publicationStatus: "published", contentHash: "environment-hash", mapKinds: ["environment"],
+  }, {
+    id: "material-metal", name: "拉丝金属", dimension: "material", category: "材质", style: "金属",
+    format: "pbr", size: 4_024_000, triangleCount: 0, meshCount: 0, materialCount: 1, textureCount: 4,
+    animated: false, featured: true, qualityTier: "standard", thumbnailUrl: "/material.png", previewUrl: "/material.pbr", tags: ["材质"],
+    version: "1.0.0", license: "CC0-1.0", publicationStatus: "published", contentHash: "material-hash", mapKinds: ["base-color", "normal", "roughness", "metalness"],
   }],
   page: 1, pageSize: 24, total: 300, totalPages: 13,
   categories: [{ id: "工业场景", name: "工业场景", count: 1_551 }],
@@ -47,5 +57,9 @@ describe("AssetLibraryBrowser", () => {
     expect(html).toContain("环境 HDRI");
     expect(html).toContain("PBR 材质");
     expect(html).toContain("内部许可 · v1.0.0");
+    expect(html).toContain("dimension-environment");
+    expect(html).toContain("dimension-material");
+    expect(html).toContain(">HDRI<");
+    expect(html).toContain("4 图 PBR");
   });
 });

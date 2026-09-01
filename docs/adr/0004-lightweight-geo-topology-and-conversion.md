@@ -15,7 +15,7 @@ iTwin Studio 需要城市地图底板、轻量 GIS、工业拓扑和多种资源
 - 同一个 `MapProvider` 适配层服务二维地图组件和三维底图层；地图密钥、版权、离线范围和缓存策略只在服务器配置。
 - `TopologyDocument` 独立保存节点、端口、边、分组、布局和数据绑定；通过 `TopologyViewportWidget` 嵌入二维页面，并可绑定三维对象。
 - `ConverterPlugin` 统一声明输入/输出类型、配置 schema、执行环境、版本和资源上限；任务提供进度、取消、日志、超时、重试、缓存和失败清理。
-- 2026-08-26 曾决定移除 Parasolid `.x_t/.x_b` 与 JT `.jt`；2026-08-30 根据工业装配与 Unity 互操作需求修订：三者以可选商业转换器插件重新进入范围，缺少 Provider 时只显示 `waiting_converter`，不承诺无依赖直读。详见[格式接入决策](../rvt-xt-jt-format-integration-decision-2026-08-30.md)。
+- 2026-08-26 曾决定移除 Parasolid `.x_t/.x_b` 与 JT `.jt`；2026-08-30 根据工业装配与 Unity 互操作需求修订为可选商业转换器。2026-08-31 对 X_T 增加真实样本验证的 V24.1 单体共轴旋转体内部子集，并对 JT 增加 9.5/10 小端 TriStrip/TopoMesh v1 的 LOD0 可视子集；X_B、其他 X_T 拓扑及其他 JT 编码仍不承诺无依赖直读。详见[格式接入决策](../rvt-xt-jt-format-integration-decision-2026-08-30.md)。
 - Tauri 最终阶段使用受限 sidecar 运行本地转换；此前 B/S 使用服务器隔离 Worker。首批只迁移现有真实转换能力，不承诺内置所有格式。
 - 不建设 3D Tiles、倾斜摄影、海量地形/点云、城市级三维流式加载和通用空间分析平台。
 

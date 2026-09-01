@@ -12,6 +12,7 @@ import { registerModelAssetRoutes } from "./modelAssetRoutes.js";
 import { LocalObjectStore } from "./objects.js";
 import { createApiServer } from "./serverOptions.js";
 import { auditGlbGeometry } from "./converterOutputAudit.js";
+import { minimalXtRevolvedSubsetFixture } from "./fixtures/minimalXtRevolvedSubset.js";
 
 const directories: string[] = [];
 
@@ -21,8 +22,6 @@ afterEach(async () => {
 
 describe("industrial format upload acceptance without providers", () => {
   it.each([
-    ["minimal.jt", "Version 10.5 JT\nsynthetic structure-only fixture"],
-    ["minimal.x_t", "**ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz*****************\nPARASOLID text fixture"],
     ["minimal.x_b", "PARASOLID neutral binary fixture"],
   ])("preserves %s and reports waiting_converter without inventing geometry", async (fileName, content) => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "bim-industrial-waiting-"));
@@ -57,7 +56,7 @@ describe("industrial format upload acceptance without providers", () => {
     await app.close();
   });
 
-  it.each(["assembly.jt", "part.x_t", "part.x_b"])(
+  it.each(["part.x_b"])(
     "runs the complete %s plumbing through a synthetic provider and audits its GLB cache",
     async (fileName) => {
       const dataDir = await mkdtemp(path.join(tmpdir(), "bim-industrial-plumbing-"));
@@ -93,6 +92,87 @@ describe("industrial format upload acceptance without providers", () => {
       await app.close();
     },
   );
+
+  it("converts the supported X_T text subset without an external provider", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "bim-xt-internal-"));
+    directories.push(dataDir);
+    const store = new JsonStore(dataDir);
+    await store.init();
+    const objects = new LocalObjectStore(dataDir);
+    const config = loadConfig();
+    config.dataDir = dataDir;
+    config.industrialCad = { args: [], cwd: process.cwd() };
+    const queue = new ConversionQueue(store, config, objects);
+    const app = createApiServer();
+    await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+    await registerModelAssetRoutes(app, { store, queue, objects, dataDir, config });
+
+    const content = new TextDecoder().decode(minimalXtRevolvedSubsetFixture());
+    const response = await upload(app, "rotor.x_t", content);
+    const uploaded = response.json() as ModelRecord;
+    await vi.waitFor(() => {
+      expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("ready");
+    });
+    const model = store.getProject("default")!.models.find((item) => item.id === uploaded.id)!;
+    expect(model.manifest).toMatchObject({
+      sourceFormat: "x_t",
+      viewerKind: "gltf",
+      inspectionUrl: expect.stringContaining("inspection.json"),
+    });
+    expect(model.message).toContain("10 个面");
+    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "output");
+    expect(await auditGlbGeometry(path.join(outputDir, "geometry.glb"))).toMatchObject({
+      meshCount: 10,
+      primitiveCount: 10,
+      triangleCount: 4224,
+    });
+    expect(JSON.parse(await readFile(path.join(outputDir, "hierarchy.json"), "utf8"))).toHaveProperty("root");
+    expect(JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"))).toMatchObject({
+      status: "geometry-supported",
+      geometryParsed: true,
+    });
+    await app.close();
+  });
+
+  it("keeps another X_T schema as structure-read without publishing fallback geometry", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "bim-xt-structure-only-"));
+    directories.push(dataDir);
+    const store = new JsonStore(dataDir);
+    await store.init();
+    const objects = new LocalObjectStore(dataDir);
+    const config = loadConfig();
+    config.dataDir = dataDir;
+    config.industrialCad = { args: [], cwd: process.cwd() };
+    const queue = new ConversionQueue(store, config, objects);
+    const app = createApiServer();
+    await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+    await registerModelAssetRoutes(app, { store, queue, objects, dataDir, config });
+
+    const content = new TextDecoder().decode(minimalXtRevolvedSubsetFixture())
+      .replaceAll("SCH_2401231_20000_1300", "SCH_2500000_20000_1300")
+      .replaceAll("SCH_2401231_20000", "SCH_2500000_20000");
+    const response = await upload(app, "future.x_t", content);
+    const uploaded = response.json() as ModelRecord;
+    await vi.waitFor(() => {
+      expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("waiting_converter");
+    });
+
+    const model = store.getProject("default")!.models.find((item) => item.id === uploaded.id)!;
+    expect(model.message).toContain("SCH_2500000_20000_1300 头部已读取");
+    expect(model.manifest).toMatchObject({
+      sourceFormat: "x_t",
+      inspectionUrl: expect.stringContaining("inspection.json"),
+    });
+    expect(model.manifest?.geometryUrl).toBeUndefined();
+    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "output");
+    expect(JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"))).toMatchObject({
+      status: "structure-read",
+      geometryParsed: false,
+      topology: { bodies: { status: "not-decoded" }, shells: { status: "not-decoded" } },
+    });
+    await expect(readFile(path.join(outputDir, "geometry.glb"))).rejects.toMatchObject({ code: "ENOENT" });
+    await app.close();
+  });
 
   it.each([
     ["scene.usd", "#usda 1.0\n\ndef Sphere \"sphere\" {}\n"],

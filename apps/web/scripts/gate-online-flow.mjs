@@ -9,6 +9,10 @@ import { createProductServer } from "./onlineFlowProductServer.mjs";
 import { verifyUnityRuntimeReliability } from "./onlineFlowUnityRuntime.mjs";
 import { seedAskDataDataset, verifyAskDataBrowser } from "./onlineFlowAskData.mjs";
 import { auditBehaviorWorkbench, behaviorUxFailures } from "./onlineFlowBehaviorUx.mjs";
+import { verifyIndustrialAgentBrowser, verifyScriptAgentEntry } from "./onlineFlowIndustrialAgent.mjs";
+import { auditResponsiveWorkspace } from "./onlineFlowResponsiveUx.mjs";
+import { publishWithViewerToolbar } from "./onlineFlowPublication.mjs";
+import { verifySceneMoveAndAnimation } from "./onlineFlowSceneEditing.mjs";
 import {
   applicationPageUrl,
   auditDeliveryFlow,
@@ -32,7 +36,6 @@ const outputRoot = resolve(repositoryRoot, "test-output/online-flow");
 const dataRoot = resolve(outputRoot, "data");
 const modelFixturePath = resolve(outputRoot, "online-flow-triangle.gltf");
 const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-
 if (!existsSync(webDistRoot) || !existsSync(apiEntry)) throw new Error("缺少生产产物，请先执行 pnpm build");
 if (!existsSync(chromePath)) throw new Error(`Chrome 不存在：${chromePath}`);
 // 清理范围固定在 test-output/online-flow，绝不触碰用户项目数据。
@@ -69,7 +72,6 @@ const api = spawn(process.execPath, [apiEntry], {
 });
 captureProcessOutput(api.stdout, apiLogs);
 captureProcessOutput(api.stderr, apiLogs);
-
 let browser;
 let closeUnityRuntime;
 const report = {
@@ -115,7 +117,6 @@ try {
     if (injectingWorkspaceFailure) report.expectedRequestFailures.push(entry);
     else report.requestFailures.push(entry);
   });
-
   await page.goto(productOrigin, { waitUntil: "networkidle" });
   await page.getByLabel("用户名").fill("admin");
   await page.getByLabel("密码").fill("online-flow-admin");
@@ -125,7 +126,6 @@ try {
   report.pageAudits.push(await auditPage(page, "manager-empty"));
   report.keyboardAudits.push(await auditKeyboardNavigation(page, "manager-empty"));
   await page.screenshot({ path: resolve(outputRoot, "01-manager.png"), fullPage: true });
-
   await page.getByRole("button", { name: "新建项目", exact: true }).click();
   await page.getByLabel("项目名称").fill("在线流程验收项目");
   const projectResponse = page.waitForResponse((response) => response.url().endsWith("/api/projects") && response.request().method() === "POST");
@@ -138,6 +138,7 @@ try {
   // 项目级开发流程必须可见、可导航，并在刷新后恢复用户上下文。
   const deliveryFlow = page.locator(".project-delivery-flow");
   await deliveryFlow.waitFor({ state: "visible", timeout: 30_000 });
+  await deliveryFlow.getByRole("button", { name: "展开开发流程" }).click();
   const deliveryButtons = deliveryFlow.locator("button[data-step-id]");
   await deliveryButtons.nth(7).waitFor({ state: "visible" });
   const deliveryFlowBefore = await auditDeliveryFlow(page, project.id);
@@ -158,13 +159,16 @@ try {
   await deliveryReview.waitFor({ state: "hidden" });
   await deliveryFlow.locator('button[data-step-id="assets"]').click();
   await page.locator(".asset-library-page").waitFor({ state: "visible" });
+  // 资源库是独立工作区，不重复渲染项目流程；导航记忆仍保留在本地存储。
   const deliveryFlowAfterClick = await auditDeliveryFlow(page, project.id);
-  if (deliveryFlowAfterClick.activeStep !== "assets" || deliveryFlowAfterClick.persistedStep !== "assets") {
-    throw new Error(`开发流程导航上下文未持久化：${JSON.stringify(deliveryFlowAfterClick)}`);
+  if (deliveryFlowAfterClick.stepCount !== 0 || deliveryFlowAfterClick.persistedStep !== "assets") {
+    throw new Error(`资源库未正确收起项目流程或导航上下文丢失：${JSON.stringify(deliveryFlowAfterClick)}`);
   }
   await page.reload({ waitUntil: "networkidle" });
   await page.getByLabel("项目").selectOption(project.id);
+  await page.getByRole("button", { name: "项目场景", exact: true }).click();
   await deliveryFlow.waitFor({ state: "visible", timeout: 30_000 });
+  await deliveryFlow.getByRole("button", { name: "展开开发流程" }).click();
   const deliveryFlowAfterReload = await auditDeliveryFlow(page, project.id);
   if (deliveryFlowAfterReload.activeStep !== "assets") {
     throw new Error(`刷新后未恢复开发流程步骤：${JSON.stringify(deliveryFlowAfterReload)}`);
@@ -177,7 +181,6 @@ try {
   });
   await page.getByRole("button", { name: "项目场景", exact: true }).click();
   await page.locator(".scene-manager-page").waitFor({ state: "visible" });
-
   await page.getByRole("button", { name: "新建场景", exact: true }).click();
   await page.getByLabel("场景名称").fill("产线在线验收场景");
   const sceneResponse = page.waitForResponse((response) => response.url().includes(`/api/projects/${project.id}/applications`) && response.request().method() === "POST");
@@ -190,7 +193,6 @@ try {
   recordStep(report, "create-scene-and-open-dashboard", page.url());
   report.pageAudits.push(await auditPage(page, "dashboard-editor"));
   await page.screenshot({ path: resolve(outputRoot, "02-dashboard-editor.png"), fullPage: true });
-
   // 商业编辑器的组件库必须支持“拖到哪里就创建在哪里”，同时保留点击插入的低门槛路径。
   const artboard = page.locator(".dashboard-artboard");
   const componentCard = page.locator(".dashboard-library-card:not(.dashboard-library-scene-card)").first();
@@ -209,8 +211,8 @@ try {
   }
   recordStep(report, "drag-dashboard-component-to-exact-position", { nodeCountBeforeDrag, insertedCenter, expectedCenter });
   await page.screenshot({ path: resolve(outputRoot, "02a-dashboard-library-drag.png"), fullPage: true });
+  await auditResponsiveWorkspace({ page, report, outputRoot, id: "02a-dashboard-editor", scopeSelector: ".dashboard-workspace" });
   closeUnityRuntime = await verifyUnityRuntimeReliability({ page, report, outputRoot });
-
   // 先在二维图层中选中一个组件，脚本入口必须继承这个对象而不是退回整个场景。
   await page.getByRole("button", { name: "图层", exact: true }).click();
   const firstDashboardLayer = page.locator(".dashboard-layer-select").first();
@@ -230,7 +232,6 @@ try {
   const behaviorFailures = behaviorUxFailures(report.behaviorUx);
   if (behaviorFailures.length) throw new Error(`脚本首屏体验验收失败：${behaviorFailures.join("；")}`);
   await page.screenshot({ path: resolve(outputRoot, "02b-behavior-editor.png"), fullPage: true });
-
   // 不只验证“能打开编辑器”：脚本运行错误必须回到问题列表，可定位并修复后重跑。
   const runtimeErrorMessage = "online-flow-script-error";
   const monacoEditor = behaviorPanel.locator(".monaco-editor").first();
@@ -275,6 +276,9 @@ try {
   await behaviorPanel.getByText("修改已应用，正在运行", { exact: true }).waitFor({ state: "visible" });
   recordStep(report, "recover-runtime-script-error", { target: attachedTarget, line: 2 });
   await page.screenshot({ path: resolve(outputRoot, "02bb-behavior-editor-recovered.png"), fullPage: true });
+  await auditResponsiveWorkspace({ page, report, outputRoot, id: "02bb-behavior-editor", scopeSelector: ".behavior-panel" });
+  report.scriptAgentEntry = await verifyScriptAgentEntry({ page, behaviorPanel, outputRoot });
+  recordStep(report, "open-agent-from-script-and-return-with-draft", report.scriptAgentEntry);
   injectingBehaviorWorkerFailure = true;
   try {
     await verifyBehaviorWorkerCrash({ page, behaviorPanel, report });
@@ -461,6 +465,25 @@ try {
   report.pageAudits.push(await auditPage(page, "scene-editor-model-loaded"));
   report.keyboardAudits.push(await auditKeyboardNavigation(page, "scene-editor-model-loaded"));
   await page.screenshot({ path: resolve(outputRoot, "03-scene-editor-model-loaded.png"), fullPage: true });
+  await auditResponsiveWorkspace({ page, report, outputRoot, id: "03-scene-editor", scopeSelector: ".app-shell" });
+  // 资源树与属性检查器应能独立收起，释放三维画布而不改变场景状态。
+  const panelControls = page.locator(".workspace-panel-controls");
+  await panelControls.waitFor({ state: "visible" });
+  const canvasBeforePanels = await page.locator(".workspace").boundingBox();
+  await panelControls.getByRole("button", { name: "收起场景目录" }).click();
+  await panelControls.getByRole("button", { name: "收起属性检查器" }).click();
+  await page.locator(".left-panel").waitFor({ state: "hidden" });
+  await page.locator(".right-panel").waitFor({ state: "hidden" });
+  const canvasAfterPanels = await page.locator(".workspace").boundingBox();
+  if (!canvasBeforePanels || !canvasAfterPanels || canvasAfterPanels.width <= canvasBeforePanels.width + 100) {
+    throw new Error(`收起三维辅助面板后画布未明显扩展：${JSON.stringify({ canvasBeforePanels, canvasAfterPanels })}`);
+  }
+  await panelControls.getByRole("button", { name: "展开场景目录" }).click();
+  await panelControls.getByRole("button", { name: "展开属性检查器" }).click();
+  await page.locator(".left-panel").waitFor({ state: "visible" });
+  await page.locator(".right-panel").waitFor({ state: "visible" });
+  recordStep(report, "collapse-and-restore-3d-side-panels", { canvasBeforePanels, canvasAfterPanels });
+  recordStep(report, "scene-move-and-animation-settings", await verifySceneMoveAndAnimation({ page, outputRoot }));
 
   // AI 普通问答应直接可用；打开面板不能要求用户先进入审批流。
   await page.getByTitle("AI 场景助手").click();
@@ -481,6 +504,8 @@ try {
   }
   report.pageAudits.push(await auditPage(page, "scene-ai-assistant"));
   await page.screenshot({ path: resolve(outputRoot, "03a-ai-assistant.png"), fullPage: true });
+  report.industrialAgent = await verifyIndustrialAgentBrowser({ page, assistantPanel, projectId: project.id, outputRoot });
+  recordStep(report, "industrial-agent-approval-recovery-cancel-evidence", report.industrialAgent);
   await verifyAskDataBrowser({ page, assistantPanel, dataset: askDataDataset, report, screenshotPath: resolve(outputRoot, "03aa-ai-ask-data.png") });
   report.pageAudits.push(await auditPage(page, "scene-ai-ask-data"));
   await assistantPanel.getByRole("button", { name: "关闭 AI 助手" }).click();
@@ -533,6 +558,7 @@ try {
   recordStep(report, "dashboard-runtime", page.url());
   report.pageAudits.push(await auditPage(page, "dashboard-runtime"));
   await page.screenshot({ path: resolve(outputRoot, "04-dashboard-runtime.png"), fullPage: true });
+  await auditResponsiveWorkspace({ page, report, outputRoot, id: "04-dashboard-preview", scopeSelector: ".dashboard-runtime-preview" });
 
   await page.reload({ waitUntil: "networkidle" });
   await page.locator(".dashboard-workspace").waitFor({ state: "visible" });
@@ -602,12 +628,20 @@ try {
     });
     if (!response.ok) throw new Error(`读取验证任务卡失败：HTTP ${response.status}`);
     const snapshot = await response.json();
-    const study = snapshot.validationStudies?.[0];
+    const studies = snapshot.validationStudies ?? [];
+    const study = studies[0];
+    const baseline = studies.find((candidate) => candidate.id === study?.baselineStudyId);
     return study ? {
       status: study.status,
       revision: study.revision,
       studyType: study.studyType,
-      hasLineage: Boolean(study.baselineStudyId && study.reproductionOf),
+      hasLineage: Boolean(
+        baseline
+          && study.baselineStudyId === study.reproductionOf
+          && baseline.sourceKind === "maintenance-diagnosis",
+      ),
+      baselineSourceKind: baseline?.sourceKind,
+      baselineRevision: baseline?.revision,
       objectCount: study.objectIds?.length ?? 0,
       fingerprintLength: study.latestResult?.evidenceFingerprint?.length ?? 0
     } : undefined;
@@ -696,6 +730,7 @@ try {
   report.pageAudits.push(await auditPage(page, "topology-editor-restored"));
   report.keyboardAudits.push(await auditKeyboardNavigation(page, "topology-editor-restored"));
   await page.screenshot({ path: resolve(outputRoot, "04b-topology-editor.png"), fullPage: true });
+  await auditResponsiveWorkspace({ page, report, outputRoot, id: "04b-topology-editor", scopeSelector: ".topology-editor" });
   await topologyEditor.getByRole("button", { name: "插入看板", exact: true }).click();
   const dashboardTopology = page.locator(".dashboard-topology-widget");
   await dashboardTopology.waitFor({ state: "visible" });
@@ -712,14 +747,8 @@ try {
   await page.getByLabel("项目").selectOption(project.id);
   const sceneCard = page.locator(".scene-card").filter({ hasText: "产线在线验收场景" });
   await sceneCard.waitFor({ state: "visible" });
-  await sceneCard.getByTitle("发布").click();
-  const publicationResponse = page.waitForResponse((response) => response.url().endsWith("/publish") && response.request().method() === "POST");
-  await page.locator(".publication-dialog").getByRole("button", { name: "发布", exact: true }).click();
-  const publication = await readJsonResponse(publicationResponse, 201);
-  await sceneCard.getByText("已发布").waitFor({ state: "visible" });
-  const publicResponse = await fetch(`${apiOrigin}/api/public/scenes/${encodeURIComponent(publication.sceneId)}`);
-  if (!publicResponse.ok) throw new Error(`公开场景读取失败：HTTP ${publicResponse.status}`);
-  recordStep(report, "publish-and-read-public-scene", publication.sceneId);
+  const publication = await publishWithViewerToolbar({ page, sceneCard, apiOrigin, outputRoot, readJsonResponse });
+  recordStep(report, "publish-and-read-public-scene", publication);
   report.pageAudits.push(await auditPage(page, "manager-published"));
   await page.screenshot({ path: resolve(outputRoot, "05-published-manager.png"), fullPage: true });
 

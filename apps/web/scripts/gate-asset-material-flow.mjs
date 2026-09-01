@@ -127,7 +127,10 @@ async function loginAndCreateProject(page, origin, report) {
 }
 
 async function openAssetCenter(page, projectId) {
-  await page.locator('.project-delivery-flow button[data-step-id="assets"]').click();
+  // 开发流程默认收起，验收脚本显式展开后再进入资源中心，复现真实用户路径。
+  const deliveryFlow = page.locator(".project-delivery-flow");
+  await deliveryFlow.getByRole("button", { name: "展开开发流程" }).click();
+  await deliveryFlow.locator('button[data-step-id="assets"]').click();
   await page.locator(".asset-library-page").waitFor({ state: "visible" });
   await page.getByLabel("项目").selectOption(projectId);
 }
@@ -158,7 +161,8 @@ async function verifyCatalogAndImport(page, projectId, expected, report, outputR
   } finally {
     injectingHashMismatch = false;
   }
-  await page.screenshot({ path: resolve(outputRoot, "01-asset-center-governance.png"), fullPage: true });
+  await assertPrimaryCardInViewport(page, report, "asset-center-1440");
+  await page.screenshot({ path: resolve(outputRoot, "01-asset-center-governance.png") });
 
   const token = await page.evaluate(() => localStorage.getItem("bim-studio-auth-token"));
   const project = await fetch(`${page.url().split("/").slice(0, 3).join("/")}/api/projects/${projectId}`, { headers: { authorization: `Bearer ${token}` } }).then((response) => response.json());
@@ -263,8 +267,35 @@ async function inspectResponsiveAssetPage(page, origin, projectId, report, outpu
   await page.goto(origin, { waitUntil: "networkidle" });
   await page.getByLabel("项目").selectOption(projectId);
   await openAssetCenter(page, projectId);
+  const filtered = page.waitForResponse((item) => item.url().includes("/api/asset-library?") && item.url().includes("dimension=material"));
   await page.getByRole("tab", { name: "PBR 材质" }).click();
-  await page.locator(".unified-asset-card").first().waitFor({ state: "visible" });
+  await filtered;
+  await page.locator(".unified-assets-grid:not(.is-refreshing)").waitFor({ state: "visible" });
+  await assertPrimaryCardInViewport(page, report, "asset-center-1024");
   report.audits.push({ id: "asset-center-1024", ...await auditPage(page, "asset-center-1024") });
-  await page.screenshot({ path: resolve(outputRoot, "04-asset-center-1024.png"), fullPage: true });
+  await page.screenshot({ path: resolve(outputRoot, "04-asset-center-1024.png") });
+
+  await page.locator(".unified-assets-kinds button").filter({ hasText: "看板模板" }).click();
+  await page.locator(".built-in-asset-card").first().waitFor({ state: "visible" });
+  await assertPrimaryCardInViewport(page, report, "template-center-1024");
+  report.audits.push({ id: "template-center-1024", ...await auditPage(page, "template-center-1024") });
+  await page.screenshot({ path: resolve(outputRoot, "05-template-center-1024.png") });
+}
+
+async function assertPrimaryCardInViewport(page, report, id) {
+  const layouts = await page.locator(".unified-asset-card").evaluateAll((elements) => elements.flatMap((element) => {
+    const action = element.querySelector(".asset-import, .asset-imported");
+    if (!action) return [];
+    const cardRect = element.getBoundingClientRect();
+    const actionRect = action.getBoundingClientRect();
+    if (cardRect.width <= 0 || cardRect.height <= 0 || actionRect.width <= 0 || actionRect.height <= 0) return [];
+    return [{ cardTop: cardRect.top, cardBottom: cardRect.bottom, actionTop: actionRect.top, actionBottom: actionRect.bottom }];
+  }));
+  const layout = layouts[0];
+  const viewport = page.viewportSize();
+  if (!layout || !viewport) throw new Error(`${id} 无法读取首张素材卡片布局`);
+  const hasLayout = layout.cardBottom > layout.cardTop && layout.actionBottom > layout.actionTop;
+  const primaryActionVisible = hasLayout && layout.actionTop >= 0 && layout.actionBottom <= viewport.height;
+  report.steps.push({ id: `${id}-first-viewport`, cardBottom: Math.round(layout.cardBottom), actionBottom: Math.round(layout.actionBottom), viewportHeight: viewport.height, primaryActionVisible });
+  if (!primaryActionVisible) throw new Error(`${id} 首张素材卡片或主操作未完整进入首屏`);
 }

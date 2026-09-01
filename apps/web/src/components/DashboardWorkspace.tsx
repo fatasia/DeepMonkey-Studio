@@ -187,6 +187,9 @@ function useDashboardWorkspaceController({
   const [zoom, setZoom] = useState(normalizedInitialView.zoom);
   const [selectedNodeIds, setSelectedNodeIds] = useState(normalizedInitialView.selectedNodeIds);
   const [runtimePreview, setRuntimePreview] = useState(false);
+  // 左侧资源栏和右侧检查器都是辅助区，允许用户释放画布空间。
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
   const [leftPanelTab, setLeftPanelTab] = useState<"pages" | "components" | "layers">("components");
   const [draftFrames, setDraftFrames] = useState<Record<string, WidgetFrame>>({});
   const [selectionRect, setSelectionRect] = useState<SelectionRect>();
@@ -216,6 +219,7 @@ function useDashboardWorkspaceController({
   const spacePressedRef = useRef(false);
   const pageNameCommitRef = useRef(page.name);
   const clipboardRef = useRef<WidgetNode[]>([]);
+  const previousSurfaceSizeRef = useRef({ width: 0, height: 0 });
   const componentSearchRef = useRef<HTMLInputElement>(null);
   const backgroundImageRef = useRef<HTMLInputElement>(null);
   const componentBackgroundImageRef = useRef<HTMLInputElement>(null);
@@ -303,16 +307,24 @@ function useDashboardWorkspaceController({
   useEffect(() => {
     const surface = scrollRef.current;
     if (!surface) return;
-    const update = () =>
-      setSurfaceSize({
+    const update = () => {
+      const nextSize = {
         width: surface.clientWidth,
         height: surface.clientHeight,
-      });
+      };
+      const previousSize = previousSurfaceSizeRef.current;
+      const resized = previousSize.width > 0 && (previousSize.width !== nextSize.width || previousSize.height !== nextSize.height);
+      const previousFocus = calculateDashboardEditorFocus(page, page.nodes, previousSize.width, previousSize.height, "smart");
+      previousSurfaceSizeRef.current = nextSize;
+      setSurfaceSize(nextSize);
+      // 仅在仍处于自动聚焦倍率时响应布局变化，保留用户手动缩放和平移结果。
+      if (resized && Math.abs(zoom - previousFocus.zoom) < 0.006) window.requestAnimationFrame(() => fitCanvasToViewport("smart"));
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(surface);
     return () => observer.disconnect();
-  }, []);
+  }, [page.id, zoom]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -678,6 +690,8 @@ function useDashboardWorkspaceController({
     layoutSelectedNodes,
     layoutSelectionCount,
     leftPanelTab,
+    leftPanelOpen,
+    inspectorOpen,
     libraryDropActive,
     linkedSceneId,
     locale,
@@ -732,6 +746,8 @@ function useDashboardWorkspaceController({
     setInspectorTab,
     setLayerDropTargetId,
     setLeftPanelTab,
+    setLeftPanelOpen,
+    setInspectorOpen,
     setLibraryDropActive,
     setMarqueeMode,
     setNodeNameError,

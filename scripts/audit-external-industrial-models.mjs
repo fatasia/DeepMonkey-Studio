@@ -1,22 +1,29 @@
 import { readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { assessExternalAssetQuality } from "./lib/assetQualityAudit.mjs";
+import { normalizeAssetThumbnail } from "./lib/assetThumbnailAudit.mjs";
 import { inspectGlbFile } from "./lib/glbAudit.mjs";
 
 const CACHE_DIRECTORY = path.resolve(process.env.BIM_STUDIO_ASSET_CACHE ?? path.join(process.cwd(), "data", "external-assets", "source-a"));
 const POLICY_PATH = path.resolve(process.cwd(), "config", "asset-source-policies.json");
+const VISUAL_REVIEW_PATH = path.resolve(process.cwd(), "config", "asset-visual-quality-overrides.json");
 const REPORT_PATH = path.join(CACHE_DIRECTORY, "audit.json");
 const SOURCE_ID = "external-industrial-models-a";
 const CONCURRENCY = Math.min(6, Math.max(1, numberArgument("--concurrency", 3)));
 
 const policies = await readJson(POLICY_PATH);
+const visualReview = await readJson(VISUAL_REVIEW_PATH);
 const policy = policies?.sources?.find((item) => item.id === SOURCE_ID);
 if (!policy || policy.libraryMode !== "unified") throw new Error("外部素材源缺少统一素材库策略，拒绝扫描");
+if (visualReview?.sourceId !== SOURCE_ID) throw new Error("素材视觉复核清单与当前素材源不匹配");
+const visualReviewById = new Map((visualReview.reviewRequired ?? []).map((item) => [String(item.modelId), item]));
 
 const sourceManifest = await readJson(path.join(CACHE_DIRECTORY, "catalog.json"));
 const sourceFiles = new Map((sourceManifest?.files ?? []).map((item) => [item.relativePath, item]));
 const sourceModels = new Map((sourceManifest?.models ?? []).map((item) => [String(item.id), item]));
 const modelDirectory = path.join(CACHE_DIRECTORY, "models");
 const thumbnailDirectory = path.join(CACHE_DIRECTORY, "thumbnails");
+const normalizedThumbnailDirectory = path.join(CACHE_DIRECTORY, "thumbnails-normalized");
 const modelEntries = (await readdir(modelDirectory, { withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".glb"))
   .sort((left, right) => left.name.localeCompare(right.name));
@@ -46,9 +53,20 @@ await runPool(modelEntries, CONCURRENCY, async (entry) => {
 
 items.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 markDuplicates(items);
-const thumbnails = await auditThumbnails(thumbnailDirectory);
+const thumbnails = await auditThumbnails(sourceManifest?.files ?? []);
+const thumbnailByModelId = new Map(thumbnails.items.map((item) => [item.sourceModelId, item]));
+for (const item of items) {
+  const sourceModel = item.sourceModelId ? sourceModels.get(item.sourceModelId) : undefined;
+  const quality = assessExternalAssetQuality(sourceModel, item, thumbnailByModelId.get(item.sourceModelId));
+  const manualReview = visualReviewById.get(item.sourceModelId);
+  item.thumbnail = thumbnailByModelId.get(item.sourceModelId);
+  item.qualityStatus = manualReview ? "review-required" : quality.status;
+  item.qualityScore = manualReview ? Math.min(69, quality.qualityScore) : quality.qualityScore;
+  item.qualityIssues = [...quality.issues, ...(manualReview ? [`visual-review:${manualReview.reason}`] : [])];
+  item.publicationStatus = item.qualityStatus === "ready" ? "published" : policy.defaultPublicationStatus;
+}
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   sourceId: SOURCE_ID,
   generatedAt: new Date().toISOString(),
   syncState: sourceManifest ? "manifest-ready" : "downloading",
@@ -64,7 +82,7 @@ const report = {
 };
 await writeJsonAtomically(REPORT_PATH, report);
 console.log(`审计报告已写入 ${REPORT_PATH}`);
-console.log(`有效 ${report.statistics.validModels}/${report.statistics.downloadedModels}，重复 ${report.statistics.duplicateModels}，待复核 ${report.statistics.reviewModels}，分片 ${partialFiles.length}`);
+console.log(`有效 ${report.statistics.validModels}/${report.statistics.downloadedModels}，质量达标 ${report.statistics.qualityReadyModels}，重复 ${report.statistics.duplicateModels}，待复核 ${report.statistics.reviewModels}，分片 ${partialFiles.length}`);
 
 function markDuplicates(records) {
   const canonicalByHash = new Map();
@@ -76,31 +94,41 @@ function markDuplicates(records) {
   }
 }
 
-async function auditThumbnails(directory) {
-  const entries = (await readdir(directory, { withFileTypes: true })).filter((entry) => entry.isFile() && !entry.name.endsWith(".part"));
-  let invalid = 0;
+async function auditThumbnails(files) {
+  const thumbnailFiles = files.filter((file) => file.kind === "thumbnail");
+  const items = [];
   let bytes = 0;
-  for (const entry of entries) {
-    const filePath = path.join(directory, entry.name);
-    const file = await stat(filePath);
-    bytes += file.size;
-    const handle = await import("node:fs/promises").then(({ open }) => open(filePath, "r"));
+  await runPool(thumbnailFiles, CONCURRENCY, async (file) => {
+    const sourcePath = resolveCachePath(file.relativePath);
+    const normalizedRelativePath = `thumbnails-normalized/${file.modelId}.png`;
+    const normalizedPath = path.join(normalizedThumbnailDirectory, `${file.modelId}.png`);
     try {
-      const signature = Buffer.alloc(12);
-      const { bytesRead } = await handle.read(signature, 0, signature.length, 0);
-      if (bytesRead < 4 || !isImageSignature(signature)) invalid += 1;
-    } finally {
-      await handle.close();
+      const sourceFile = await stat(sourcePath);
+      bytes += sourceFile.size;
+      const result = await normalizeAssetThumbnail(sourcePath, normalizedPath);
+      items.push({ sourceModelId: String(file.modelId), sourceRelativePath: file.relativePath, normalizedRelativePath, ...result });
+    } catch (error) {
+      items.push({
+        sourceModelId: String(file.modelId),
+        sourceRelativePath: file.relativePath,
+        normalizedRelativePath,
+        valid: false,
+        qualityScore: 0,
+        reason: error instanceof Error ? error.message : String(error),
+      });
     }
-  }
-  return { count: entries.length, invalid, bytes };
-}
-
-function isImageSignature(value) {
-  const png = value.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  const jpeg = value[0] === 0xff && value[1] === 0xd8 && value[2] === 0xff;
-  const webp = value.toString("ascii", 0, 4) === "RIFF" && value.toString("ascii", 8, 12) === "WEBP";
-  return png || jpeg || webp;
+  });
+  items.sort((left, right) => Number(left.sourceModelId) - Number(right.sourceModelId));
+  const valid = items.filter((item) => item.valid);
+  return {
+    count: items.length,
+    valid: valid.length,
+    invalid: items.length - valid.length,
+    normalized: valid.length,
+    bytes,
+    averageQualityScore: valid.length ? Math.round(valid.reduce((sum, item) => sum + item.qualityScore, 0) / valid.length) : 0,
+    items,
+  };
 }
 
 function summarize(records, thumbnails, parts, expectedModels) {
@@ -113,7 +141,9 @@ function summarize(records, thumbnails, parts, expectedModels) {
     validModels: valid.length,
     invalidModels: records.length - valid.length,
     duplicateModels: records.filter((item) => item.duplicateOf).length,
-    reviewModels: records.filter((item) => item.qualityTier === "review" || !item.valid).length,
+    qualityReadyModels: records.filter((item) => item.qualityStatus === "ready").length,
+    reviewModels: records.filter((item) => item.qualityStatus !== "ready").length,
+    averageQualityScore: records.length ? Math.round(records.reduce((sum, item) => sum + (item.qualityScore ?? 0), 0) / records.length) : 0,
     animatedModels: valid.filter((item) => item.animationCount > 0).length,
     totalTriangles: valid.reduce((sum, item) => sum + item.triangleCount, 0),
     totalBytes: records.reduce((sum, item) => sum + item.bytes, 0),
@@ -121,6 +151,12 @@ function summarize(records, thumbnails, parts, expectedModels) {
     thumbnails,
     partialFiles: parts.length,
   };
+}
+
+function resolveCachePath(relativePath) {
+  const resolved = path.resolve(CACHE_DIRECTORY, relativePath);
+  if (!resolved.startsWith(`${CACHE_DIRECTORY}${path.sep}`)) throw new Error("素材清单包含越界路径");
+  return resolved;
 }
 
 async function listParts(directory) {

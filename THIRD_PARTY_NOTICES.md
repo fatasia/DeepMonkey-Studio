@@ -18,6 +18,7 @@ Key runtime dependencies:
 | `@gltf-transform/core/extensions/functions` | 4.4.2 | MIT | https://github.com/donmccurdy/glTF-Transform |
 | `draco3dgltf` | 1.5.7 | Apache-2.0 | https://github.com/google/draco |
 | `meshoptimizer` | 1.0.1 | MIT | https://github.com/zeux/meshoptimizer |
+| `xz-decompress` | 0.2.3 | MIT | https://github.com/httptoolkit/xz-decompress |
 | `onnxruntime-node` | 1.27.0 | MIT | https://github.com/microsoft/onnxruntime |
 | YOLOX-Nano preset weights | 0.1.1rc0 | Apache-2.0 | https://github.com/Megvii-BaseDetection/YOLOX |
 | SSD MobileNet V1 preset weights | ONNX opset 12 | Apache-2.0 | https://huggingface.co/onnxmodelzoo/ssd_mobilenet_v1_12 |

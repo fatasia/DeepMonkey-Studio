@@ -8,6 +8,10 @@ import type { MetadataStore } from "./store.js";
 import { generateGlbLods, optimizeNativeGlb } from "./glbOptimizer.js";
 import { convertStepToGlb } from "./stepConverter.js";
 import { auditConverterOutput } from "./converterOutputAudit.js";
+import { convertXtTextSubsetToGlb } from "./xtTextSubsetConverter.js";
+import { writeJtInspectionArtifacts } from "./jtInspection.js";
+import { convertJtLod0ToGlb } from "./jtGlbConverter.js";
+import { writeXtTextInspectionArtifact } from "./xtTextInspection.js";
 
 interface ConversionContext {
   model: ModelRecord;
@@ -57,15 +61,11 @@ export class ConversionQueue {
       rvt: config.rvt.command
         ? new CommandProvider(store, objects, config.rvt, [])
         : new MissingProvider(store, "未配置 Revit Agent。请在安装 Revit 的 Windows 转换机上配置批处理程序。"),
-      x_t: config.industrialCad.command
-        ? new CommandProvider(store, objects, config.industrialCad, [{ fileName: "geometry.glb", viewerKind: "gltf" }])
-        : new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_T")),
+      x_t: new XtTextSubsetProvider(store, objects),
       x_b: config.industrialCad.command
         ? new CommandProvider(store, objects, config.industrialCad, [{ fileName: "geometry.glb", viewerKind: "gltf" }])
         : new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_B")),
-      jt: config.industrialCad.command
-        ? new CommandProvider(store, objects, config.industrialCad, [{ fileName: "geometry.glb", viewerKind: "gltf" }])
-        : new MissingProvider(store, industrialCadUnavailableMessage("JT")),
+      jt: new JtStructureProvider(store, objects),
       // Three.js 0.185 的官方 USDLoader 同时解析 USDA、USDC 与 USDZ。
       // 原文件直接作为唯一运行资产，避免先预览源格式、再切换 GLB 造成对象标识漂移。
       usd: new DirectProvider(store, objects, "usd"),
@@ -266,6 +266,132 @@ class CommandProvider implements ConversionProvider {
       message: `${model.format === "dwg" ? "DWG 已转换为 DXF" : "转换完成"}${outputAudit ? `：${outputAudit.geometry.meshCount} 个网格，${outputAudit.geometry.triangleCount} 个三角面` : ""}${compressionMessage}`,
       manifest,
       manifestUrl: assetUrl(model.projectId, model.id, "manifest.json")
+    });
+  }
+}
+
+class XtTextSubsetProvider implements ConversionProvider {
+  constructor(
+    private readonly store: MetadataStore,
+    private readonly objects: ObjectStore,
+  ) {}
+
+  async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
+    const outputDir = path.join(modelDir, "output");
+    await this.store.updateModel(model.projectId, model.id, {
+      status: "processing",
+      progress: 10,
+      message: "正在读取 X_T 版本、文件头和可验证几何能力",
+    });
+    const inspection = await writeXtTextInspectionArtifact(sourcePath, outputDir);
+    const inspectionUrl = assetUrl(model.projectId, model.id, "output/inspection.json");
+    if (!inspection.geometryParsed) {
+      const manifest: ModelManifest = {
+        schemaVersion: 1,
+        modelId: model.id,
+        sourceName: model.name,
+        sourceFormat: "x_t",
+        inspectionUrl,
+        createdAt: new Date().toISOString(),
+      };
+      await writeManifest(modelDir, manifest);
+      await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+      const invalid = inspection.status === "invalid";
+      await this.store.updateModel(model.projectId, model.id, {
+        status: invalid ? "failed" : "waiting_converter",
+        progress: invalid ? 100 : 40,
+        message: invalid
+          ? `X_T 文件结构无效：${inspection.geometry.reason}`
+          : `X_T ${inspection.schema ?? "未知 schema"} 头部已读取；未生成几何：${inspection.geometry.reason}`,
+        manifest,
+        manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
+      });
+      return;
+    }
+    const result = await convertXtTextSubsetToGlb(sourcePath, outputDir);
+    const geometryPath = path.join(outputDir, "geometry.glb");
+    await auditConverterOutput(outputDir, true);
+    const lods = await createLodResources(geometryPath, model);
+    const manifest: ModelManifest = {
+      ...createManifest(
+        model,
+        "gltf",
+        assetUrl(model.projectId, model.id, "output/geometry.glb"),
+        assetUrl(model.projectId, model.id, "output/hierarchy.json"),
+        assetUrl(model.projectId, model.id, "output/properties.json"),
+        lods,
+      ),
+      inspectionUrl,
+    };
+    await writeManifest(modelDir, manifest);
+    await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    await this.store.updateModel(model.projectId, model.id, {
+      status: "ready",
+      progress: 100,
+      message: `X_T 旋转体转换完成：${result.faceCount} 个面，${result.triangleCount.toLocaleString("zh-CN")} 个三角面`,
+      manifest,
+      manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
+    });
+  }
+}
+
+class JtStructureProvider implements ConversionProvider {
+  constructor(
+    private readonly store: MetadataStore,
+    private readonly objects: ObjectStore,
+  ) {}
+
+  async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
+    const outputDir = path.join(modelDir, "output");
+    await this.store.updateModel(model.projectId, model.id, {
+      status: "processing",
+      progress: 10,
+      message: "正在读取 JT 目录、装配层级、属性和材质",
+    });
+    const { inspection, document } = await writeJtInspectionArtifacts(sourcePath, outputDir);
+    const inspectionUrl = assetUrl(model.projectId, model.id, "output/inspection.json");
+    const sidecarManifest: ModelManifest = {
+      schemaVersion: 1,
+      modelId: model.id,
+      sourceName: model.name,
+      sourceFormat: "jt",
+      hierarchyUrl: assetUrl(model.projectId, model.id, "output/hierarchy.json"),
+      propertiesUrl: assetUrl(model.projectId, model.id, "output/properties.json"),
+      inspectionUrl,
+      createdAt: new Date().toISOString(),
+    };
+    const result = await convertJtLod0ToGlb(document, outputDir, model.name, inspection.materials);
+    if (!result) {
+      await writeManifest(modelDir, sidecarManifest);
+      await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+      await this.store.updateModel(model.projectId, model.id, {
+        status: "waiting_converter",
+        progress: 40,
+        message: `JT ${inspection.header.majorVersion}.${inspection.header.minorVersion} 结构已读取：${inspection.toc.entryCount} 个段、${inspection.assembly.nodeCount} 个节点；未发现可发布的 LOD0 三角网格`,
+        manifest: sidecarManifest,
+        manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
+      });
+      return;
+    }
+    await auditConverterOutput(outputDir, true);
+    const manifest: ModelManifest = {
+      ...createManifest(
+        model,
+        "gltf",
+        assetUrl(model.projectId, model.id, "output/geometry.glb"),
+        sidecarManifest.hierarchyUrl,
+        sidecarManifest.propertiesUrl,
+      ),
+      inspectionUrl,
+    };
+    await writeManifest(modelDir, manifest);
+    await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    await this.store.updateModel(model.projectId, model.id, {
+      status: "ready",
+      progress: 100,
+      message: `JT LOD0 转换完成：${result.meshCount} 个网格、${result.instanceCount} 个装配实例、${result.triangleCount.toLocaleString("zh-CN")} 个三角面，可查看并选择构件`,
+      manifest,
+      manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
     });
   }
 }

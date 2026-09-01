@@ -25,6 +25,7 @@
     "@bim-studio/contracts": "workspace:*",
     "@bim-studio/data-runtime": "workspace:*",
     "@bim-studio/docs-runtime": "workspace:*",
+    "@bim-studio/industrial-agent-orchestrator": "workspace:*",
     "@bim-studio/parametric-modeling-plugin": "workspace:*",
     "@bim-studio/ppr-lite-engine": "workspace:*",
     "@bim-studio/scene-sdk": "workspace:*",

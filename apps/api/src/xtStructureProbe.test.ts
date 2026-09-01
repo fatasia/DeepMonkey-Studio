@@ -12,7 +12,17 @@ describe("Parasolid XT structure probe", () => {
       probeScope: "structure-only",
       geometryParsed: false,
       version: { raw: "SCH_3100154_31001", modellerVersion: "3100154", schemaNumber: "31001" },
-      header: { application: "Example CAD", format: "text", userFieldSize: 0 },
+      header: {
+        application: "Example CAD",
+        format: "text",
+        declaredSchema: "SCH_3100154_31001",
+        sourceFileName: "sample.x_t",
+        productVersion: "Parasolid Version 31.0",
+        guise: "transmit",
+        key: "sample-key",
+        createdAt: "Tue Sep 01 10:00:00 2026",
+        userFieldSize: 0,
+      },
       issues: [],
     });
     expect(result.evidence.limitations.join(" ")).toContain("B-Rep");
@@ -107,7 +117,8 @@ function header(format: "text" | "binary"): string {
     "**ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz*****************",
     "***********PARASOLID!\"#$%&'()*+,-./:;<=>?@[\\\\]^_`{|}~0123456789*********",
     "*******************PART1;",
-    `MC_MODEL=; APPL=Example CAD; FORMAT=${format};`,
+    `MC_MODEL=; APPL=Example CAD; FRU=Parasolid Version 31.0; FORMAT=${format}; GUISE=transmit;`,
+    "KEY=sample-key; FILE=sample.x_t; DATE=Tue Sep 01 10:00:00 2026;",
     "**PART2;",
     "SCH=SCH_3100154_31001; USFLD_SIZE=0;",
     "**PART3;",

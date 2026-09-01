@@ -87,6 +87,7 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
   return (
     <SceneBehaviorPanel
       locale={locale}
+      projectId={activeApplication.metadata.projectId}
       scripts={activeApplication.scripts}
       codeTargets={derived.behaviorCodeTargets}
       {...(preferredTarget ? { preferredTarget } : {})}

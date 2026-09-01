@@ -117,7 +117,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
   } = controller;
 
   return (
-    <main className="scene-manager-page">
+    <main className={`scene-manager-page ${managerTab === "assets" ? "asset-workspace-active" : ""}`}>
       <header className="manager-header">
         <div className="manager-brand">
           <span>
@@ -241,7 +241,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
             </button>
           )}
         </div>
-        {project && (
+        {project && managerTab === "scenes" && (
           <ProjectDeliveryFlow
             locale={locale}
             project={project}

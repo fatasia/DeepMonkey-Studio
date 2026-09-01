@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertTriangle, Bot, Box, Database, Focus, Layers3, LayoutDashboard, LoaderCircle, RotateCcw, ScanSearch, Send, Sparkles, Trash2, X } from "lucide-react";
+import { Activity, AlertTriangle, Bot, Box, Database, Focus, Layers3, LayoutDashboard, LoaderCircle, MessageSquare, RotateCcw, ScanSearch, Send, Sparkles, Trash2, Workflow, X } from "lucide-react";
 import type { AskDataQueryDraftResult, AskDataQueryReadResult, SceneDashboardState } from "@bim-studio/contracts";
 import { api, type AssistantMode } from "../api";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
@@ -20,6 +20,7 @@ import { useAiProjectContext } from "../ai/useAiProjectContext";
 import { AiContextDisclosure } from "./AiContextDisclosure";
 import { AiResponseEvidence } from "./AiResponseEvidence";
 import { BimAssistantEvidence, type BimAssistantAction } from "./BimAssistantEvidence";
+import { IndustrialAgentWorkspace } from "./IndustrialAgentWorkspace";
 import "./AiAssistantReliability.css";
 
 type ConversationItem = {
@@ -55,6 +56,7 @@ export function AiAssistantPanel({
   onClose,
 }: AiAssistantPanelProps) {
   const [mode, setMode] = useState<AssistantMode>(() => surface === "studio" ? "scene" : "platform");
+  const [experience, setExperience] = useState<"chat" | "agent">("chat");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [conversation, setConversation] = useState<ConversationItem[]>([]);
@@ -262,7 +264,7 @@ export function AiAssistantPanel({
   const latestReliability = conversation.at(-1)?.reliability;
 
   return (
-    <aside className={`ai-assistant-panel ai-assistant-${surface}`}>
+    <aside className={`ai-assistant-panel ai-assistant-${surface} ${experience === "agent" ? "agent-active" : ""}`}>
       <header>
         <div>
           <Bot size={18} />
@@ -297,7 +299,15 @@ export function AiAssistantPanel({
         </div>
       </header>
       <nav className="ai-assistant-tabs">
-        {tabs.map(({ id, label, icon: Icon }) => (
+        <div className="ai-assistant-experience" role="tablist" aria-label={t("AI 使用方式", "AI experience")}>
+          <button role="tab" aria-selected={experience === "chat"} className={experience === "chat" ? "active" : ""} onClick={() => setExperience("chat")}>
+            <MessageSquare size={12} />{t("问答与生成", "Ask & create")}
+          </button>
+          <button role="tab" aria-selected={experience === "agent"} className={experience === "agent" ? "active" : ""} onClick={() => setExperience("agent")}>
+            <Workflow size={12} />{t("执行任务", "Run task")}
+          </button>
+        </div>
+        {experience === "chat" && tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             className={mode === id ? "active" : ""}
@@ -317,15 +327,20 @@ export function AiAssistantPanel({
         ))}
       </nav>
       <div className="ai-assistant-context-bar">
-        <span className={platformLoaded ? "ready" : ""}>{platformLoaded ? "PROJECT SNAPSHOT" : projectMissing ? "NO PROJECT" : "LOADING"}</span>
+        <span className={platformLoaded ? "ready" : ""}>{experience === "agent" ? "CONTROLLED AGENT" : platformLoaded ? "PROJECT SNAPSHOT" : projectMissing ? "NO PROJECT" : "LOADING"}</span>
         <small>
-          {projectMissing
+          {experience === "agent"
+            ? t("能力白名单 · 逐次审批 · checkpoint 恢复 · 证据验收", "Capability allowlist · per-call approval · checkpoint recovery · evidence verification")
+            : projectMissing
             ? t("选择项目后才能读取证据并执行任务", "Select a project to read evidence and run tasks")
             : t("快照只作为模型输入；Capability 执行结果才是事实证据", "The snapshot is model input; only Capability results are execution evidence")}
         </small>
       </div>
       <div className="ai-assistant-body">
-        <AiContextDisclosure
+        {experience === "agent" ? (
+          <IndustrialAgentWorkspace locale={locale} {...(projectId ? { projectId } : {})} context={context} />
+        ) : <>
+          <AiContextDisclosure
           locale={locale}
           mode={mode}
           context={context}
@@ -407,7 +422,7 @@ export function AiAssistantPanel({
             {...(onBimAction ? { onAction: onBimAction } : {})}
           />
         )}
-        {error && (
+          {error && (
           <section className="ai-assistant-error-state" role="alert">
             <strong><AlertTriangle size={13} /> {t("本次请求未完成", "Request did not complete")}</strong>
             <span>{error}</span>
@@ -416,9 +431,10 @@ export function AiAssistantPanel({
               <RotateCcw size={12} /> {t("重试原问题", "Retry original prompt")}
             </button>
           </section>
-        )}
+          )}
+        </>}
       </div>
-      <footer>
+      {experience === "chat" && <footer>
         <textarea
           aria-label={t("向 AI 助手提问", "Ask the AI assistant")}
           value={question}
@@ -434,7 +450,7 @@ export function AiAssistantPanel({
         <button aria-label={t("发送", "Send")} disabled={busy || !question.trim()} onClick={() => void ask()}>
           {busy ? <LoaderCircle className="spin" size={15} /> : <Send size={15} />}
         </button>
-      </footer>
+      </footer>}
     </aside>
   );
 }

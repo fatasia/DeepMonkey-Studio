@@ -165,6 +165,10 @@
 
 @media (max-width: 1100px) {
   .app-shell { grid-template-columns: 240px minmax(420px, 1fr) 270px; }
+  .app-shell.left-panel-collapsed { grid-template-columns: 0 minmax(420px, 1fr) 270px; }
+  .app-shell.right-panel-collapsed { grid-template-columns: 240px minmax(420px, 1fr) 0; }
+  .app-shell.left-panel-collapsed.right-panel-collapsed { grid-template-columns: 0 minmax(420px, 1fr) 0; }
+  .workspace-panel-controls { right: 280px; }
   .tool-dock:not(.viewer-tool-dock) { width: calc(100% - 30px); flex-wrap: wrap; justify-content: center; }
   .tool-dock:not(.viewer-tool-dock) .tool-button { flex: 0 0 34px; }
   .tool-dock:not(.viewer-tool-dock) .tool-button.xr-entry { flex-basis: 44px; }
@@ -177,6 +181,8 @@
 
 @media (max-width: 850px) {
   .app-shell { grid-template: 58px minmax(0, 1fr) / 220px minmax(420px, 1fr); grid-template-areas: "top top" "left main"; }
+  .app-shell.left-panel-collapsed,.app-shell.left-panel-collapsed.right-panel-collapsed { grid-template-columns: 0 minmax(420px, 1fr); }
+  .workspace-panel-controls { right: 12px; }
   .right-panel { display: none; }
   .project-select { width: 130px; }
   .scene-title-wrap { display: none; }

@@ -29,7 +29,8 @@ await main();
 async function main() {
   ensureCommand("pnpm", ["--version"]);
   if (!existsSync(join(repositoryRoot, "node_modules"))) fail("依赖尚未安装，请先运行 pnpm install");
-  if (!skipInfrastructure) await ensureInfrastructure();
+  // --check 只读取当前状态，不能因为一次诊断调用而启动基础设施服务。
+  if (!checkOnly && !skipInfrastructure) await ensureInfrastructure();
 
   const summary = {
     target,
@@ -40,7 +41,8 @@ async function main() {
   };
   if (checkOnly) {
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-    return;
+    // 检查模式不启动任何子进程；显式退出可避免某些 Windows 终端保留 stdout/stderr 句柄。
+    process.exit(0);
   }
 
   installShutdownHandlers();
@@ -188,7 +190,16 @@ async function apiReachable(origin) {
 function canConnect(host, port, timeoutMs = 700) {
   return new Promise((resolveConnection) => {
     const socket = createConnection({ host, port });
-    const finish = (value) => { socket.destroy(); resolveConnection(value); };
+    // 探测连接不是业务长连接，立即 unref 避免 --check 在失败/半开连接上挂住进程。
+    socket.unref();
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      socket.removeAllListeners();
+      socket.destroy();
+      resolveConnection(value);
+    };
     socket.setTimeout(timeoutMs);
     socket.once("connect", () => finish(true));
     socket.once("timeout", () => finish(false));

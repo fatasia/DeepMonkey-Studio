@@ -1,4 +1,4 @@
-import { AlertTriangle, Box, Check, Code2, Database, Layers3, Link2, Rocket, ScanLine } from "lucide-react";
+import { AlertTriangle, Box, Check, ChevronDown, Code2, Database, Layers3, Link2, Rocket, ScanLine } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { ProjectRecord, PublishedSceneRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -154,6 +154,8 @@ interface ProjectDeliveryFlowProps {
   locale: AppLocale;
   project: ProjectRecord;
   scenes: SceneSnapshot[];
+  /** 首屏默认收起；测试和嵌入式工作区可显式打开详情。 */
+  defaultCollapsed?: boolean;
   onData: () => void;
   onAssets: () => void;
   onDesign: () => void;
@@ -170,6 +172,8 @@ export function ProjectDeliveryFlow(props: ProjectDeliveryFlowProps) {
   const initialMemory = readDeliveryWorkflowMemory(props.project.id);
   const [activeStepId, setActiveStepId] = useState<DeliveryStepId | undefined>(() => initialMemory?.activeStep);
   const [previousStepId, setPreviousStepId] = useState<DeliveryStepId | undefined>(() => initialMemory?.previousStep);
+  // 进度面板只在需要时占用空间，用户可以随时展开查看完整步骤。
+  const [collapsed, setCollapsed] = useState(props.defaultCollapsed ?? true);
   useEffect(() => {
     const memory = readDeliveryWorkflowMemory(props.project.id);
     setActiveStepId(memory?.activeStep);
@@ -209,13 +213,23 @@ export function ProjectDeliveryFlow(props: ProjectDeliveryFlowProps) {
     actions[stepId]();
   };
   return (
-    <section className="project-delivery-flow">
+    <section className={`project-delivery-flow${collapsed ? " is-collapsed" : ""}`}>
       <header>
         <span>
           <strong>{tr(props.locale, "开发流程", "Development flow")}</strong>
-          <small>{tr(props.locale, "数据 → 资产 → 设计 → 联动 → 脚本 → 仿真 → 校验 → 发布", "Data → Assets → Design → Link → Script → Simulate → Validate → Publish")}</small>
+          {!collapsed && <small>{tr(props.locale, "数据 → 资产 → 设计 → 联动 → 脚本 → 仿真 → 校验 → 发布", "Data → Assets → Design → Link → Script → Simulate → Validate → Publish")}</small>}
         </span>
         <div className="delivery-flow-actions">
+          <button
+            type="button"
+            className="delivery-collapse-action"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? tr(props.locale, "展开开发流程", "Expand development flow") : tr(props.locale, "收起开发流程", "Collapse development flow")}
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            <ChevronDown size={13} />
+            <span>{collapsed ? tr(props.locale, "展开", "Expand") : tr(props.locale, "收起", "Collapse")}</span>
+          </button>
           {previousStepId && (
             <button type="button" className="delivery-return-action" onClick={() => runStep(previousStepId)}>
               {tr(props.locale, "回到上次工作", "Return to previous work")}
@@ -229,60 +243,62 @@ export function ProjectDeliveryFlow(props: ProjectDeliveryFlowProps) {
           )}
         </div>
       </header>
-      <div
-        className="delivery-progress"
-        aria-label={tr(props.locale, `必需步骤完成 ${requiredReadyCount}/${requiredSteps.length}`, `${requiredReadyCount}/${requiredSteps.length} required steps complete`)}
-      >
-        <span>
-          <i style={{ width: `${progress}%` }} />
-        </span>
-        <small>
-          {requiredReadyCount}/{requiredSteps.length} {tr(props.locale, "必需步骤", "required")}
-        </small>
-      </div>
-      {blockers.length > 0 && (
-        <details className="delivery-blockers">
-          <summary>
-            <AlertTriangle size={12} />
-            {tr(props.locale, `${blockers.length} 项阻断，点击查看`, `${blockers.length} blockers — review`)}
-          </summary>
-          <div>
-            {blockers.map((blocker) => (
-              <button type="button" key={blocker.id} onClick={() => runStep(blocker.stepId)}>
-                <span>
-                  <strong>{blocker.label}</strong>
-                  <small>{blocker.detail}</small>
-                </span>
-                <em>{tr(props.locale, "去处理", "Resolve")}</em>
-              </button>
-            ))}
-          </div>
-        </details>
-      )}
-      <div className="delivery-step-grid">
-        {steps.map((step, index) => (
-          <button
-            type="button"
-            key={step.id}
-            data-step-id={step.id}
-            aria-current={activeStepId === step.id ? "step" : undefined}
-            aria-label={`${index + 1}. ${step.label}：${step.detail}`}
-            className={`${step.ready ? "ready" : step.blocked ? "blocked" : "pending"} ${step.required ? "required" : "optional"} ${activeStepId === step.id ? "active" : ""}`}
-            onClick={() => runStep(step.id)}
-          >
-            <i>{step.ready ? <Check /> : icons[step.id]}</i>
-            <span>
-              <strong>
-                {index + 1}. {step.label}
-              </strong>
-              <small>
-                {step.detail}
-                {!step.required && ` · ${tr(props.locale, "建议", "Recommended")}`}
-              </small>
-            </span>
-          </button>
-        ))}
-      </div>
+      {!collapsed && <div className="delivery-flow-body">
+        <div
+          className="delivery-progress"
+          aria-label={tr(props.locale, `必需步骤完成 ${requiredReadyCount}/${requiredSteps.length}`, `${requiredReadyCount}/${requiredSteps.length} required steps complete`)}
+        >
+          <span>
+            <i style={{ width: `${progress}%` }} />
+          </span>
+          <small>
+            {requiredReadyCount}/{requiredSteps.length} {tr(props.locale, "必需步骤", "required")}
+          </small>
+        </div>
+        {blockers.length > 0 && (
+          <details className="delivery-blockers">
+            <summary>
+              <AlertTriangle size={12} />
+              {tr(props.locale, `${blockers.length} 项阻断，点击查看`, `${blockers.length} blockers — review`)}
+            </summary>
+            <div>
+              {blockers.map((blocker) => (
+                <button type="button" key={blocker.id} onClick={() => runStep(blocker.stepId)}>
+                  <span>
+                    <strong>{blocker.label}</strong>
+                    <small>{blocker.detail}</small>
+                  </span>
+                  <em>{tr(props.locale, "去处理", "Resolve")}</em>
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
+        <div className="delivery-step-grid">
+          {steps.map((step, index) => (
+            <button
+              type="button"
+              key={step.id}
+              data-step-id={step.id}
+              aria-current={activeStepId === step.id ? "step" : undefined}
+              aria-label={`${index + 1}. ${step.label}：${step.detail}`}
+              className={`${step.ready ? "ready" : step.blocked ? "blocked" : "pending"} ${step.required ? "required" : "optional"} ${activeStepId === step.id ? "active" : ""}`}
+              onClick={() => runStep(step.id)}
+            >
+              <i>{step.ready ? <Check /> : icons[step.id]}</i>
+              <span>
+                <strong>
+                  {index + 1}. {step.label}
+                </strong>
+                <small>
+                  {step.detail}
+                  {!step.required && ` · ${tr(props.locale, "建议", "Recommended")}`}
+                </small>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>}
     </section>
   );
 }

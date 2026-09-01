@@ -37,6 +37,12 @@
 .project-delivery-flow>header strong { color:#dfe5e7; font-size:11px; }
 .project-delivery-flow>header small { color:#6f7d82; font-size:9px; }
 .delivery-flow-actions { display:flex;align-items:center;gap:6px; }
+.delivery-collapse-action { display:inline-flex; min-height:28px; align-items:center; gap:4px; padding:0 8px; color:#9eaaae; border:1px solid #344248; border-radius:5px; background:#151e21; font-size:10px; cursor:pointer; }
+.delivery-collapse-action:hover { color:#dce4e7; border-color:#59686e; }
+.delivery-collapse-action svg { transition:transform .16s ease; }
+.project-delivery-flow.is-collapsed .delivery-collapse-action svg { transform:rotate(-90deg); }
+.project-delivery-flow.is-collapsed { padding-bottom:8px; }
+.delivery-flow-body { display:grid; gap:0; }
 .delivery-return-action { min-height:28px;padding:0 9px;color:#9eaaae;border:1px solid #344248;border-radius:5px;background:#151e21;font-size:10px;cursor:pointer; }
 .delivery-return-action:hover { color:#dce4e7;border-color:#59686e; }
 .delivery-progress { display:flex;align-items:center;gap:9px;margin:0 0 8px; }
@@ -73,7 +79,9 @@
 .scene-publication-links { display:flex; gap:5px; margin-top:7px; }
 .scene-publication-links button { display:inline-flex; align-items:center; gap:4px; padding:4px 6px; color:#92a4aa; border:1px solid #303e43; border-radius:4px; background:#131c20; font-size:8px; }
 .scene-publication-links button:hover { color:#d9e2e5; border-color:#526268; }
-.publication-dialog { width:min(900px,calc(100vw - 48px)); max-height:calc(100vh - 48px); overflow:auto; padding:28px 30px; }
+.publication-dialog { display:flex; width:min(900px,calc(100vw - 48px)); max-height:calc(100vh - 48px); flex-direction:column; overflow:hidden; padding:28px 30px; }
+.publication-dialog-scroll { min-height:0; overflow:auto; padding:0 2px 2px 0; scrollbar-color:#4a5358 transparent; }
+.publication-dialog > .dialog-actions { flex:0 0 auto; margin:16px -2px -10px; padding:10px 2px 0; border-top:1px solid #303a3f; background:#1b2023; }
 .publication-dialog-header { display:flex; align-items:flex-start; gap:13px; padding-bottom:20px; border-bottom:1px solid #303a3f; }
 .publication-dialog-header>div { min-width:0; }
 .publication-dialog-header h2 { margin:5px 0 4px; font-size:22px; }

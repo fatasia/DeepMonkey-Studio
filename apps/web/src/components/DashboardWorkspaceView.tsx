@@ -14,6 +14,7 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
     connected,
     currentView,
     filters,
+    leftPanelOpen,
     locale,
     onFilterChange,
     onNodeInteraction,
@@ -27,6 +28,7 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
     rendererBackend,
     runtimeMetrics,
     runtimePreview,
+    inspectorOpen,
     setRuntimePreview,
     variables,
   } = controller;
@@ -57,7 +59,7 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
 
   return (
     <DashboardWorkspaceProvider controller={controller}>
-      <main className="dashboard-workspace">
+      <main className={`dashboard-workspace${leftPanelOpen ? "" : " left-panel-collapsed"}${inspectorOpen ? "" : " inspector-collapsed"}`}>
         <DashboardWorkspaceHeader />
         <DashboardWorkspaceLeftPanel />
         <DashboardWorkspaceCanvas />

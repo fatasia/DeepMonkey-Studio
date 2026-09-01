@@ -76,6 +76,7 @@ describe("saveDiagnosisValidationStudy", () => {
     });
 
     expect(api.saveValidationStudy).toHaveBeenCalledWith("project-1", expect.objectContaining({
+      studyType: "virtual-commissioning",
       sceneId: "deployed-scene",
       objectIds: ["bearing-1"],
     }));

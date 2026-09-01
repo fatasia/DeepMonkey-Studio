@@ -34,6 +34,8 @@ import { registerMcpCapabilityRoute } from "./mcpCapabilityAdapter.js";
 import { createAssistantService } from "./ai/assistantService.js";
 import { createMetadataAiAuditSink } from "./ai/metadataAiAuditSink.js";
 import { resolveAiSettings } from "./ai/aiRuntimeSettings.js";
+import { createIndustrialAgentRuntime } from "./ai/industrialAgentRuntime.js";
+import { registerIndustrialAgentRoutes } from "./ai/industrialAgentRoutes.js";
 import { createDataQuerySource } from "./dataQuerySource.js";
 import { createExternalConverterRegistrations } from "./externalConverterCatalog.js";
 import { registerProductionWeb } from "./productionWeb.js";
@@ -64,6 +66,7 @@ export async function buildApp() {
   if (migratedObjects > 0) app.log.info({ migratedObjects }, "local model files migrated to object storage");
   const conversionTasks = new ConversionTaskService(createExternalConverterRegistrations(config, objects));
   const dataQuerySource = createDataQuerySource(store, config);
+  const aiAudit = createMetadataAiAuditSink(store);
   const maintenanceScheduler = new MaintenanceInferenceScheduler({
     store,
     operations,
@@ -74,6 +77,12 @@ export async function buildApp() {
     aiSettings: () => resolveAiSettings(store),
     dataQuerySource,
     conversionTasks,
+  });
+  const industrialAgent = await createIndustrialAgentRuntime({
+    dataDir: config.dataDir,
+    registry: industrialCapabilities.registry,
+    settings: () => resolveAiSettings(store),
+    audit: aiAudit,
   });
   const batteryScheduler = new BatteryInferenceScheduler({
     store,
@@ -106,7 +115,7 @@ export async function buildApp() {
   await registerServerMetaRoute(app, serverInstanceId);
   await registerSystemRoutes(app, store, config.dataDir, {
     assistant: createAssistantService(industrialCapabilities.registry, {
-      audit: createMetadataAiAuditSink(store),
+      audit: aiAudit,
     }),
   });
   await registerDataEventRoutes(app, store);
@@ -140,6 +149,7 @@ export async function buildApp() {
   await registerPprBopRoutes(app, { store, service: pprBop });
   await registerAiDataBindingRoutes(app, store);
   await registerIndustrialCapabilityRoutes(app, { store, host: industrialCapabilities, dataQuerySource });
+  await registerIndustrialAgentRoutes(app, { store, runtime: industrialAgent });
   await registerMcpCapabilityRoute(app, { store, host: industrialCapabilities });
   const directCredentialResolver = new StaticDirectCredentialResolver(config.directBindings.credentials);
   const directBindingOptions = {

@@ -59,6 +59,8 @@ export interface ModelManifest {
   geometryUrl?: string;
   hierarchyUrl?: string;
   propertiesUrl?: string;
+  /** 原生格式检查证据；可以在尚无几何时单独存在。 */
+  inspectionUrl?: string;
   pmiUrl?: string;
   lods?: ModelLodResource[];
   createdAt: string;

@@ -30,12 +30,19 @@ interface RawCatalogFile {
 interface RawAuditItem {
   sourceModelId: string;
   valid: boolean;
+  duplicateOf?: string;
   triangleCount?: number;
   meshCount?: number;
   materialCount?: number;
   textureCount?: number;
   animationCount?: number;
   qualityTier?: string;
+  qualityStatus?: "ready" | "review-required";
+  qualityScore?: number;
+  thumbnail?: {
+    valid?: boolean;
+    normalizedRelativePath?: string;
+  };
 }
 
 interface CatalogDocument {
@@ -44,6 +51,7 @@ interface CatalogDocument {
 }
 
 interface AuditDocument {
+  schemaVersion?: number;
   items: RawAuditItem[];
 }
 
@@ -120,11 +128,19 @@ async function loadCatalogEntries(libraryRoot: string): Promise<AssetLibraryCata
     readJson<CatalogDocument>(path.join(libraryRoot, "catalog.json")),
     readJson<AuditDocument>(path.join(libraryRoot, "audit.json")),
   ]);
-  const auditById = new Map(audit.items.filter((item) => item.valid).map((item) => [item.sourceModelId, item]));
+  const qualityAuditAvailable = (audit.schemaVersion ?? 1) >= 2;
+  const qualityItems = audit.items.filter((item) => item.valid
+    && !item.duplicateOf
+    && item.qualityTier !== "review"
+    && item.qualityTier !== "invalid"
+    && (!qualityAuditAvailable || item.qualityStatus === "ready"));
+  const auditById = new Map(qualityItems.map((item) => [item.sourceModelId, item]));
   const filesById = groupFiles(catalog.files);
-  const rankedModels = [...catalog.models].sort((left, right) => (right.downloadTotal ?? 0) - (left.downloadTotal ?? 0));
+  const rankedModels = catalog.models
+    .filter((model) => auditById.has(String(model.id)))
+    .sort((left, right) => catalogRank(right, auditById.get(String(right.id))) - catalogRank(left, auditById.get(String(left.id))));
   const featuredIds = new Set(rankedModels.filter((model) => qualityOf(auditById.get(String(model.id))) !== "heavy").slice(0, 300).map((model) => model.id));
-  return catalog.models.flatMap((model) => {
+  return rankedModels.flatMap((model) => {
     const auditItem = auditById.get(String(model.id));
     const files = filesById.get(model.id);
     if (!auditItem || !files?.model || !files.thumbnail) return [];
@@ -153,7 +169,7 @@ async function loadCatalogEntries(libraryRoot: string): Promise<AssetLibraryCata
       previewUrl: `/api/asset-library/items/${id}/preview`,
       tags: unique([category, subcategory, style, animated ? "动画" : undefined]),
       version: "1.0.0",
-      license: "内部许可",
+      license: "内部使用",
       publicationStatus: "published",
       contentHash: files.model.sha256,
     };
@@ -161,7 +177,7 @@ async function loadCatalogEntries(libraryRoot: string): Promise<AssetLibraryCata
       kind: "model" as const,
       publicItem,
       modelPath: resolveCatalogPath(libraryRoot, files.model.relativePath),
-      thumbnailPath: resolveCatalogPath(libraryRoot, files.thumbnail.relativePath),
+      thumbnailPath: resolveCatalogPath(libraryRoot, auditItem.thumbnail?.normalizedRelativePath ?? files.thumbnail.relativePath),
       contentHash: files.model.sha256,
     }];
   });
@@ -185,7 +201,13 @@ function resolveCatalogPath(root: string, relativePath: string): string {
 }
 
 function sanitizeText(value: string | undefined, fallback: string): string {
-  const cleaned = value?.replace(/帆软|FineReport|FineVis|ThingJS|山海鲸|捷码/gi, "").replace(/\s{2,}/g, " ").trim();
+  const cleaned = value
+    ?.replace(/帆软|FineReport|FineVis|ThingJS|山海鲸|捷码/gi, "")
+    .replace(/[_.＿·-]+/g, " ")
+    .replace(/[()（）]/g, " ")
+    .replace(/(\d)\s*[x×]\s*(\d)/gi, "$1×$2")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   return cleaned || fallback;
 }
 
@@ -196,6 +218,14 @@ function sanitizeOptionalText(value: string | undefined): string | undefined {
 
 function qualityOf(item: RawAuditItem | undefined): AssetLibraryQualityTier {
   return item?.qualityTier === "light" || item?.qualityTier === "heavy" ? item.qualityTier : "standard";
+}
+
+function catalogRank(model: RawCatalogModel, audit: RawAuditItem | undefined): number {
+  const quality = audit?.qualityScore ?? 75;
+  const popularity = Math.log10(Math.max(1, model.downloadTotal ?? 0) + 1) * 8;
+  const industrialBonus = model.type?.name === "工业场景" ? 8 : 0;
+  const animationBonus = model.haveAnimation || (audit?.animationCount ?? 0) > 0 ? 4 : 0;
+  return quality + popularity + industrialBonus + animationBonus;
 }
 
 function searchableText(item: AssetLibraryItem): string {

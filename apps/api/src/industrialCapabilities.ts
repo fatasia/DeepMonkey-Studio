@@ -597,6 +597,7 @@ function providers(
               kind: "data",
               label: "能源观测分析",
               source: `project:${request.projectId}`,
+              fingerprint: result.evidenceFingerprint,
             },
           ],
         };

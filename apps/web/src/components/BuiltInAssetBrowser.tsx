@@ -5,6 +5,7 @@ import { translate as tr } from "../i18n";
 import { INDUSTRIAL_PREFAB_CATALOG } from "../prefabs/industrialPrefabCatalog";
 import { DASHBOARD_COMPONENT_PRESETS, dashboardComponentPresetText } from "./DashboardComponentCatalog";
 import { DashboardComponentPreview } from "./DashboardComponentPreview";
+import { DashboardTemplatePreview } from "./DashboardTemplatePreview";
 import { DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
 
 export type BuiltInAssetKind = "2d" | "template" | "prefab";
@@ -55,7 +56,7 @@ export function BuiltInAssetBrowser({ kind, locale, editorAvailable, onOpenEdito
       {visibleItems.length > 0 ? (
         <div className="unified-assets-grid built-in-assets-grid">
           {visibleItems.map((item) => (
-            <article className="unified-asset-card built-in-asset-card" key={item.id}>
+            <article className={`unified-asset-card built-in-asset-card built-in-${kind}`} key={item.id}>
               <div className="unified-asset-preview built-in-asset-preview">
                 {item.preview}
                 <span className="built-in-asset-kind">{item.badge}</span>
@@ -116,7 +117,7 @@ function createItems(kind: BuiltInAssetKind, locale: AppLocale): BuiltInItem[] {
     description: tr(locale, template.descriptionZh, template.descriptionEn),
     badge: tr(locale, template.categoryZh, template.categoryEn),
     meta: tr(locale, `4 项核心指标 · ${template.layout.detailType}`, `4 core metrics · ${template.layout.detailType}`),
-    preview: <div className="built-in-template-preview" style={{ "--template-accent": template.accent, "--template-surface": template.surface } as React.CSSProperties}><span /><i /><i /><b /><b /></div>,
+    preview: <DashboardTemplatePreview locale={locale} template={template} />,
   }));
   return INDUSTRIAL_PREFAB_CATALOG.map((prefab) => item({
     id: prefab.id,

@@ -1,0 +1,247 @@
+.industrial-agent-workspace {
+  --agent-accent: #ddb45e;
+  --agent-line: #304148;
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  color: #dce5e8;
+}
+
+.industrial-agent-heading {
+  display: grid;
+  align-items: center;
+  gap: 9px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.industrial-agent-heading > span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: var(--agent-accent);
+  border: 1px solid #66522c;
+  border-radius: 8px;
+  background: #262116;
+}
+
+.industrial-agent-heading > div,
+.industrial-agent-status > div,
+.industrial-agent-approval header span,
+.industrial-agent-result header span,
+.industrial-agent-error span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.industrial-agent-heading strong { font-size: 13px; }
+.industrial-agent-heading small { color: #7f9299; font-size: 10px; }
+
+.industrial-agent-heading button,
+.industrial-agent-run-actions button,
+.industrial-agent-approval button,
+.industrial-agent-start-actions button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: #bcc8cc;
+  border: 1px solid #3b4c53;
+  border-radius: 6px;
+  background: #172328;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.industrial-agent-workspace button.primary {
+  color: #191b1b;
+  border-color: var(--agent-accent);
+  background: var(--agent-accent);
+}
+
+.industrial-agent-workspace button:hover:not(:disabled) { border-color: #71848b; background: #223137; }
+.industrial-agent-workspace button.primary:hover:not(:disabled) { border-color: #eac572; background: #eac572; }
+.industrial-agent-workspace button:disabled { cursor: not-allowed; opacity: .48; }
+
+.industrial-agent-start,
+.industrial-agent-run {
+  display: grid;
+  gap: 10px;
+}
+
+.industrial-agent-start > label { display: grid; gap: 7px; }
+.industrial-agent-start > label > span { color: #aebdc2; font-size: 11px; font-weight: 650; }
+.industrial-agent-start textarea {
+  min-height: 94px;
+  padding: 10px 11px;
+  resize: vertical;
+  color: #e3e9eb;
+  border: 1px solid #3a4d55;
+  border-radius: 8px;
+  outline: none;
+  background: #0d171b;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.industrial-agent-start textarea:focus { border-color: #9c8149; box-shadow: 0 0 0 2px #8d71352b; }
+.industrial-agent-start textarea::placeholder { color: #61747b; }
+
+.industrial-agent-examples { display: flex; flex-wrap: wrap; gap: 5px; }
+.industrial-agent-examples button {
+  min-height: 27px;
+  padding: 0 8px;
+  color: #87999f;
+  border: 1px solid #304148;
+  border-radius: 999px;
+  background: #121d21;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.industrial-agent-capabilities,
+.industrial-agent-evidence,
+.industrial-agent-history {
+  overflow: hidden;
+  border: 1px solid var(--agent-line);
+  border-radius: 7px;
+  background: #101a1e;
+}
+
+.industrial-agent-capabilities > summary,
+.industrial-agent-evidence > summary,
+.industrial-agent-history > summary {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  cursor: pointer;
+  list-style: none;
+  color: #82949a;
+  font-size: 10px;
+}
+
+.industrial-agent-capabilities summary::-webkit-details-marker,
+.industrial-agent-evidence summary::-webkit-details-marker,
+.industrial-agent-history summary::-webkit-details-marker { display: none; }
+.industrial-agent-capabilities summary > span,
+.industrial-agent-evidence summary > span,
+.industrial-agent-history summary > span { display: flex; align-items: center; gap: 6px; }
+.industrial-agent-capabilities summary strong,
+.industrial-agent-evidence summary strong { color: #becacd; font-size: 10px; }
+.industrial-agent-capabilities[open] summary svg:last-child,
+.industrial-agent-evidence[open] summary svg:last-child,
+.industrial-agent-history[open] summary svg:last-child { transform: rotate(180deg); }
+
+.industrial-agent-capabilities > div { display: grid; gap: 8px; padding: 9px 10px 10px; border-top: 1px solid #29383e; }
+.industrial-agent-capabilities p { display: flex; align-items: flex-start; gap: 6px; margin: 0; color: #83959b; font-size: 10px; line-height: 1.5; }
+.industrial-agent-capabilities p svg { flex: 0 0 auto; color: #6dbd91; }
+.industrial-agent-capabilities ul,
+.industrial-agent-evidence ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.industrial-agent-capabilities li {
+  display: grid;
+  align-items: center;
+  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 7px 8px;
+  border: 1px solid #2b3a40;
+  border-radius: 6px;
+  background: #121e22;
+}
+.industrial-agent-capabilities label { display: grid; align-items: center; gap: 7px; grid-template-columns: auto minmax(0, 1fr); cursor: pointer; }
+.industrial-agent-capabilities label span { display: grid; gap: 2px; min-width: 0; }
+.industrial-agent-capabilities label strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.industrial-agent-capabilities label small { overflow: hidden; color: #6f8188; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.industrial-agent-capabilities em { padding: 3px 5px; color: #79b995; border-radius: 4px; background: #15271f; font-size: 9px; font-style: normal; }
+.industrial-agent-capabilities em.simulate { color: #91add1; background: #172332; }
+.industrial-agent-capabilities em.high { color: #dcaa66; background: #2b2115; }
+
+.industrial-agent-start-actions,
+.industrial-agent-run-actions,
+.industrial-agent-approval > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.industrial-agent-start-actions > span { display: flex; align-items: center; gap: 6px; color: #7f9198; font-size: 9px; line-height: 1.4; }
+.industrial-agent-start-actions > span svg { flex: 0 0 auto; color: #d5aa59; }
+
+.industrial-agent-status {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 10px;
+  border: 1px solid #34464d;
+  border-radius: 8px 8px 3px 3px;
+  background: #142126;
+}
+.industrial-agent-status > span { display: grid; width: 28px; height: 28px; place-items: center; color: #73a8d0; border-radius: 7px; background: #1b2c34; }
+.industrial-agent-status strong { font-size: 12px; }
+.industrial-agent-status small { overflow: hidden; color: #83949a; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.industrial-agent-status em { color: #8fa1a7; font-size: 11px; font-style: normal; font-variant-numeric: tabular-nums; }
+.industrial-agent-status.warning > span { color: #d9ad5b; background: #2a2316; }
+.industrial-agent-status.success > span { color: #65c18b; background: #14281e; }
+.industrial-agent-status.danger > span { color: #db7f84; background: #2b191c; }
+.industrial-agent-status.muted > span { color: #87969b; background: #202a2e; }
+.industrial-agent-progress { height: 3px; overflow: hidden; border-radius: 2px; background: #233137; }
+.industrial-agent-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #9f8247, #e1b860); transition: width .25s ease; }
+
+.industrial-agent-metrics { display: grid; gap: 6px; margin: 0; grid-template-columns: repeat(3, 1fr); }
+.industrial-agent-metrics > div { display: grid; gap: 3px; padding: 8px; border: 1px solid #2d3d43; border-radius: 6px; background: #101a1e; }
+.industrial-agent-metrics dt { color: #71838a; font-size: 9px; }
+.industrial-agent-metrics dd { margin: 0; color: #c3cdd0; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.industrial-agent-notice { display: flex; align-items: center; gap: 6px; margin: 0; color: #84a796; font-size: 9px; }
+.industrial-agent-approval { display: grid; gap: 9px; padding: 10px; border: 1px solid #68532c; border-radius: 8px; background: #211c13; }
+.industrial-agent-approval header,
+.industrial-agent-result header { display: flex; align-items: center; gap: 8px; }
+.industrial-agent-approval header > svg { color: #deb45e; }
+.industrial-agent-approval header strong,
+.industrial-agent-result header strong { font-size: 11px; }
+.industrial-agent-approval header small,
+.industrial-agent-result header small { color: #8e8064; font-size: 9px; }
+.industrial-agent-approval dl { display: grid; gap: 6px; margin: 0; }
+.industrial-agent-approval dl > div { display: grid; gap: 5px; grid-template-columns: 62px minmax(0, 1fr); }
+.industrial-agent-approval dt { color: #917f5e; font-size: 9px; }
+.industrial-agent-approval dd { margin: 0; color: #c8bfae; font-size: 9px; line-height: 1.45; word-break: break-word; }
+.industrial-agent-approval details { border-top: 1px solid #493d26; }
+.industrial-agent-approval summary { display: flex; min-height: 30px; align-items: center; justify-content: space-between; cursor: pointer; color: #a89570; font-size: 9px; }
+.industrial-agent-approval pre { max-height: 150px; margin: 0; padding: 8px; overflow: auto; color: #c9d1d3; border-radius: 5px; background: #101619; font: 9px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+
+.industrial-agent-result { display: grid; gap: 7px; padding: 10px; border: 1px solid #315b48; border-radius: 8px; background: #11231b; }
+.industrial-agent-result header > svg { color: #69c290; }
+.industrial-agent-result header small { color: #72a789; }
+.industrial-agent-result p { margin: 0; color: #b7cfc1; font-size: 10px; line-height: 1.55; white-space: pre-wrap; }
+
+.industrial-agent-error { display: flex; align-items: flex-start; gap: 7px; padding: 9px; color: #dc9b9f; border: 1px solid #633d41; border-radius: 7px; background: #211719; font-size: 10px; line-height: 1.45; }
+.industrial-agent-error svg { flex: 0 0 auto; }
+.industrial-agent-error small { color: #9d7e82; font-size: 9px; }
+
+.industrial-agent-evidence ul { padding: 8px; border-top: 1px solid #29383e; }
+.industrial-agent-evidence li { display: grid; gap: 3px; padding: 7px; border-radius: 5px; background: #132025; }
+.industrial-agent-evidence li > span { display: flex; align-items: center; gap: 5px; color: #6fc291; }
+.industrial-agent-evidence b { color: #b9c6ca; font-size: 10px; }
+.industrial-agent-evidence small { color: #74868d; font-size: 9px; }
+.industrial-agent-evidence code { overflow: hidden; color: #82979f; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+
+.industrial-agent-history ol { display: grid; gap: 5px; margin: 0; padding: 8px; border-top: 1px solid #29383e; list-style: none; }
+.industrial-agent-history li { display: grid; align-items: start; gap: 7px; grid-template-columns: 18px minmax(0, 1fr); color: #899aa0; font-size: 9px; line-height: 1.45; }
+.industrial-agent-history li b { display: grid; width: 18px; height: 18px; place-items: center; color: #c5a45f; border: 1px solid #55472d; border-radius: 50%; }
+.industrial-agent-run-actions { justify-content: flex-end; flex-wrap: wrap; }
+
+.behavior-agent-workspace .industrial-agent-workspace { max-width: 780px; margin: 0 auto; }
+
+@media (max-width: 540px) {
+  .industrial-agent-start-actions { align-items: stretch; flex-direction: column; }
+  .industrial-agent-start-actions button { width: 100%; }
+  .industrial-agent-capabilities li { grid-template-columns: minmax(0, 1fr); }
+  .industrial-agent-capabilities em { justify-self: start; }
+}

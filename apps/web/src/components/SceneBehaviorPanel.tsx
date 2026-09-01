@@ -2,27 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { ApplicationScriptLifecycle, ApplicationScriptPermission, ApplicationScriptTarget, ScriptModule } from "@bim-studio/contracts";
 import type { SceneCapability } from "@bim-studio/scene-sdk";
 import {
-  AlertTriangle,
-  Box,
-  Braces,
-  ChevronDown,
-  ChevronUp,
-  CircleStop,
-  Code2,
-  Database,
-  Focus,
-  LayoutPanelTop,
-  Pause,
-  Play,
-  Plus,
-  Radio,
-  RotateCcw,
-  Save,
-  Search,
-  Settings2,
-  Sparkles,
-  Trash2,
-  X,
+  AlertTriangle, Box, Braces, ChevronDown, ChevronUp, CircleStop, Code2, Database,
+  Focus, LayoutPanelTop, Pause, Play, Plus, Radio, RotateCcw, Save, Search,
+  Settings2, Sparkles, Trash2, Workflow, X,
 } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
@@ -32,6 +14,7 @@ import { SceneBehaviorAiDraftDialog } from "./SceneBehaviorAiDraftDialog";
 import { WorkspaceModeSwitch } from "./WorkspaceModeSwitch";
 import type { SceneScriptIntelligenceContext, SceneScriptTarget } from "../studio/sceneScriptContext";
 import { analyzeSceneScript, applySceneScriptDeclarations } from "../studio/sceneScriptAnalysis";
+import { SceneBehaviorAgentWorkspace } from "./SceneBehaviorAgentWorkspace";
 
 export interface SceneBehaviorLogEntry {
   id: string;
@@ -56,6 +39,7 @@ const capabilityOptions: SceneCapability[] = ["studio.object", "studio.component
 
 export function SceneBehaviorPanel(props: {
   locale: AppLocale;
+  projectId?: string;
   scripts: readonly ScriptModule[];
   runtimeEntries: readonly SceneBehaviorManagerEntry[];
   logs: readonly SceneBehaviorLogEntry[];
@@ -103,6 +87,7 @@ export function SceneBehaviorPanel(props: {
   const [insertedTargets, setInsertedTargets] = useState<Set<string>>(new Set());
   const [insertRequest, setInsertRequest] = useState<CodeInsertRequest>();
   const [aiDraftOpen, setAiDraftOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
   const [aiDraftInserted, setAiDraftInserted] = useState(false);
   const [actionFeedback, setActionFeedback] = useState("");
   const analysis = useMemo(() => (draft ? analyzeSceneScript(draft.code, draft, props.intelligence) : undefined), [draft, props.intelligence]);
@@ -264,7 +249,7 @@ export function SceneBehaviorPanel(props: {
 
   return (
     <section
-      className={`behavior-panel ${logsOpen ? "logs-open" : "logs-collapsed"} ${inspectorOpen ? "inspector-open" : "inspector-collapsed"}`}
+      className={`behavior-panel ${logsOpen ? "logs-open" : "logs-collapsed"} ${inspectorOpen ? "inspector-open" : "inspector-collapsed"} ${agentOpen ? "agent-open" : ""}`}
       aria-label={tr(props.locale, "场景行为脚本", "Scene behavior scripts")}
     >
       <header className="behavior-panel-header">
@@ -289,6 +274,10 @@ export function SceneBehaviorPanel(props: {
           onSelect3D={() => leaveForWorkspace(props.workspaceNavigation.onSelect3D)}
         />
         <nav className="behavior-panel-actions" aria-label={tr(props.locale, "脚本运行操作", "Script runtime actions")}>
+          <button className={agentOpen ? "active" : ""} onClick={() => setAgentOpen((open) => !open)}>
+            <Workflow size={13} />
+            {tr(props.locale, "工业任务", "Agent task")}
+          </button>
           <button disabled={!attachedTarget} onClick={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))}>
             <Focus size={13} />
             {tr(props.locale, "定位目标", "Focus target")}
@@ -657,6 +646,15 @@ export function SceneBehaviorPanel(props: {
           </div>
         )}
       </div>
+      {agentOpen && (
+        <SceneBehaviorAgentWorkspace
+          locale={props.locale}
+          {...(props.projectId ? { projectId: props.projectId } : {})}
+          {...(draft ? { draft } : {})}
+          {...(analysis ? { analysis } : {})}
+          onBack={() => setAgentOpen(false)}
+        />
+      )}
       {aiDraftOpen && draft && aiDraftTarget && aiDraftSceneId && (
         <SceneBehaviorAiDraftDialog
           locale={props.locale}

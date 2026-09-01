@@ -1,4 +1,4 @@
-import { ArrowLeft, Database, Eye, LayoutDashboard, Redo2, Rocket, Save, Undo2 } from "lucide-react";
+import { ArrowLeft, Database, Eye, LayoutDashboard, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Redo2, Rocket, Save, Undo2 } from "lucide-react";
 import { translate as tr } from "../i18n";
 import { WorkspaceModeSwitch } from "./WorkspaceModeSwitch";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
@@ -13,6 +13,7 @@ export function DashboardWorkspaceHeader() {
     currentView,
     dirty,
     linkedSceneId,
+    leftPanelOpen,
     locale,
     onAutoSaveChange,
     onBack,
@@ -25,6 +26,9 @@ export function DashboardWorkspaceHeader() {
     onUndo,
     page,
     setRuntimePreview,
+    setLeftPanelOpen,
+    inspectorOpen,
+    setInspectorOpen,
   } = useDashboardWorkspace();
   return (
     <header className="dashboard-workspace-topbar">
@@ -53,6 +57,26 @@ export function DashboardWorkspaceHeader() {
         <Database size={14} />
         {tr(locale, "数据", "Data")}
       </button>
+      <div className="dashboard-panel-toggles" role="group" aria-label={tr(locale, "工作区面板", "Workspace panels")}>
+        <button
+          type="button"
+          aria-pressed={leftPanelOpen}
+          aria-label={leftPanelOpen ? tr(locale, "收起资源面板", "Collapse resources panel") : tr(locale, "展开资源面板", "Expand resources panel")}
+          title={leftPanelOpen ? tr(locale, "收起资源面板", "Collapse resources panel") : tr(locale, "展开资源面板", "Expand resources panel")}
+          onClick={() => setLeftPanelOpen((value) => !value)}
+        >
+          {leftPanelOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
+        </button>
+        <button
+          type="button"
+          aria-pressed={inspectorOpen}
+          aria-label={inspectorOpen ? tr(locale, "收起属性面板", "Collapse inspector") : tr(locale, "展开属性面板", "Expand inspector")}
+          title={inspectorOpen ? tr(locale, "收起属性面板", "Collapse inspector") : tr(locale, "展开属性面板", "Expand inspector")}
+          onClick={() => setInspectorOpen((value) => !value)}
+        >
+          {inspectorOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+        </button>
+      </div>
       <div className="dashboard-workspace-actions">
         {onAutoSaveChange && (
           <label className="dashboard-auto-save" title={tr(locale, "修改后自动保存项目", "Automatically save project changes")}>

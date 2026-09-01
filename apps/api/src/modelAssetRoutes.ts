@@ -14,6 +14,8 @@ import { assertParametricModelLineage, parseParametricModelGeneration } from "./
 import { discoverRevitInstallations, inspectRvtVersion, resolveRevitVersion } from "./revit.js";
 import { cleanFileName, imageContentType, modelFormat, videoContentType } from "./routeFileTypes.js";
 import { probeIndustrialFileStructure } from "./industrialFormatProbe.js";
+import { inspectJtFile } from "./jtInspection.js";
+import { inspectXtTextFile } from "./xtTextInspection.js";
 import type { MetadataStore } from "./store.js";
 
 interface ModelAssetRouteDependencies {
@@ -117,6 +119,8 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
     }
     try {
       const sourcePath = resolveModelSourcePath(dataDir, model.projectId, model.id, model.sourceUrl);
+      if (model.format === "jt") return await inspectJtFile(sourcePath);
+      if (model.format === "x_t") return await inspectXtTextFile(sourcePath);
       return await probeIndustrialFileStructure(sourcePath, model.format);
     } catch (reason) {
       request.log.warn({ reason, modelId: model.id, format: model.format }, "industrial structure probe failed");

@@ -18,8 +18,9 @@
 | STEP / STP | `occt-import-js` 解析与三角化 | GLB + hierarchy.json + properties.json | 可用 |
 | DWG | 外部 LibreDWG 命令 | DXF | 配置转换器后可用，否则 `waiting_converter` |
 | RVT | Windows Revit Agent / Revit Add-in | IFC 或原生 GLB，可带层级与属性 | 配置转换器且存在兼容 Revit 后可用 |
-| Parasolid X_T / X_B | 可替换工业 CAD SDK 适配器 | GLB + 必需层级，可带属性与 PMI | 配置商业 Provider 后可用，否则 `waiting_converter` |
-| JT | 可替换工业 CAD SDK 适配器 | GLB + 必需装配层级，可带属性、多 LOD 与 PMI | 配置商业 Provider 后可用，否则 `waiting_converter` |
+| Parasolid X_T | TypeScript 内部严格子集；其他结构保留检查证据 | 命中 V24.1 单体共轴旋转件时为 GLB + 层级 + 属性；否则仅 inspection | 单份 MIT 真实样本 L2 通过；不等于通用 X_T |
+| Parasolid X_B | 可替换工业 CAD SDK 适配器 | GLB + 必需层级，可带属性与 PMI | 配置商业 Provider 后可用，否则 `waiting_converter` |
+| JT | TypeScript 内部 JT 9.5/10 TriStrip/TopoMesh 子集 | 最高精度 LOD0 GLB + hierarchy/properties/inspection | JT 9.5 与 10.3 各一份真实样本 L2 通过；不支持的版本或无 LOD0 时 `waiting_converter` |
 | OpenUSD / USDA / USDC / USDZ | Three.js 0.185.1 官方 USDLoader 按需解析 | 保留并直接查看源文件 | USDA/USDC/USDZ 官方样本已通过；复杂 composition 仍需样本验证 |
 
 因此不能表述为“所有格式都会转为 GLB”。直接查看格式继续保留源格式；需要三角化或原生宿主导出的格式才优先生成 GLB。
@@ -55,8 +56,8 @@ RVT、Parasolid XT 与 JT 的技术/商业边界见[格式接入决策](./rvt-xt
 ## 2026-08-31 本机验收记录
 
 - OpenUSD 使用官方 `Sphere.usda`、`skinnedArm.usda`、`geom.usdc`、`simpleMesh.usdz` 和 Three.js 官方贴图 USDZ 验收；几何、动画、贴图结果与 SHA-256 见 [OpenUSD 原生查看管线](./openusd-asset-pipeline.md)。
-- 本地已有许可与 SHA-256 来源清晰的小型 JT 10.3 与 SolidWorks X_T 证据样本，仅用于结构探测和候选路线审计；它们不是跨版本几何验收语料，也不能证明项目已具备几何转换能力。详见 [JT / X_T 开发前证据审计](./jt-xt-preimplementation-evidence-audit-2026-08-31.md)。
-- 本机未配置 `INDUSTRIAL_CAD_CONVERTER_COMMAND`，因此 JT、X_T/X_B 仍进入 `waiting_converter`，真实格式到 GLB 的验收结论为**未通过**。OpenUSD 不属于该外部 Provider 路径，四种扩展名直接发布给官方浏览器加载器。
+- 本地已有许可与 SHA-256 来源清晰的 JT 10.3 小型零件、JT 9.5 多网格装配和 SolidWorks X_T 证据样本。JT 10.3 样本的 LOD0 已输出 8 个源顶点、12 个三角面和 6 个面组图元，包围盒为 `[0,0,0]`–`[100,80,60]`；JT 9.5 样本输出 44 个复用网格、64 个装配实例、23,999 顶点、47,962 三角面，实例采用 reader 的列主序 world transform，44 个网格均映射到 shape node。X_T 仅证明 V24.1 单体共轴旋转件子集。详见 [JT / X_T 开发前证据审计](./jt-xt-preimplementation-evidence-audit-2026-08-31.md)。
+- 本机未配置 `INDUSTRIAL_CAD_CONVERTER_COMMAND`；X_B 和超出内部子集的 X_T 仍等待。JT 只有命中内部 JT 9.5/10 小端 TriStrip/TopoMesh v1 且存在完整 LOD0 时才发布 GLB；没有受支持网格时仅保留层级、属性和检查证据并进入 `waiting_converter`。OpenUSD 不属于该外部 Provider 路径。
 - 合成 Provider 仅用于验证“输入对象→隔离进程→GLB/sidecar→几何审计→对象存储”架构；它生成固定三角形，不能作为任何源格式解析能力的证据。
 
 聚焦回归命令：

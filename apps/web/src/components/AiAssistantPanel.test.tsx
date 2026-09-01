@@ -29,6 +29,7 @@ describe("AiAssistantPanel", () => {
     expect(html).toContain("正在发现插件能力");
     expect(html).toContain("看板");
     expect(html).toContain("问数据");
+    expect(html).toContain("执行任务");
     expect(html).toContain("搬运机器人");
     expect(html).toContain("快照只作为模型输入");
   });

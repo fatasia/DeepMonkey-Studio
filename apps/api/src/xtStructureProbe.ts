@@ -40,6 +40,24 @@ export interface XtProbeEvidence {
   limitations: readonly string[];
 }
 
+export interface XtHeaderMetadata {
+  application?: string;
+  format?: string;
+  declaredSchema?: string;
+  sourceFileName?: string;
+  productVersion?: string;
+  guise?: string;
+  key?: string;
+  createdAt?: string;
+  site?: string;
+  user?: string;
+  machine?: string;
+  machineModel?: string;
+  operatingSystem?: string;
+  operatingSystemRelease?: string;
+  userFieldSize?: number;
+}
+
 export interface XtStructureProbeResult {
   status: XtStructureProbeStatus;
   recognizedFormat: "parasolid-x_t" | "parasolid-x_b" | "unknown";
@@ -47,7 +65,7 @@ export interface XtStructureProbeResult {
   geometryParsed: false;
   encoding?: XtEncoding;
   version?: XtSchemaVersion;
-  header?: { application?: string; format?: string; userFieldSize?: number };
+  header?: XtHeaderMetadata;
   evidence: XtProbeEvidence;
   issues: XtStructureProbeIssue[];
 }
@@ -192,14 +210,31 @@ function parseBinaryIdentification(bytes: Uint8Array, start: number, littleEndia
 }
 
 function parseHeaderFields(header: string): XtHeader {
-  const application = field(header, "APPL");
-  const format = field(header, "FORMAT");
   const userFieldSize = nonNegativeIntegerField(header, "USFLD_SIZE");
   return {
-    ...(application ? { application } : {}),
-    ...(format ? { format } : {}),
+    ...optionalField("application", field(header, "APPL")),
+    ...optionalField("format", field(header, "FORMAT")),
+    ...optionalField("declaredSchema", field(header, "SCH")),
+    ...optionalField("sourceFileName", field(header, "FILE")),
+    ...optionalField("productVersion", field(header, "FRU")),
+    ...optionalField("guise", field(header, "GUISE")),
+    ...optionalField("key", field(header, "KEY")),
+    ...optionalField("createdAt", field(header, "DATE")),
+    ...optionalField("site", field(header, "SITE")),
+    ...optionalField("user", field(header, "USER")),
+    ...optionalField("machine", field(header, "MC")),
+    ...optionalField("machineModel", field(header, "MC_MODEL")),
+    ...optionalField("operatingSystem", field(header, "OS")),
+    ...optionalField("operatingSystemRelease", field(header, "OS_RELEASE")),
     ...(userFieldSize !== undefined ? { userFieldSize } : {}),
   };
+}
+
+function optionalField<Key extends keyof XtHeaderMetadata>(
+  key: Key,
+  value: string | undefined,
+): Partial<Pick<XtHeaderMetadata, Key>> {
+  return value ? { [key]: value } as Partial<Pick<XtHeaderMetadata, Key>> : {};
 }
 
 function field(header: string, name: string): string | undefined {

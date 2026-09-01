@@ -6,7 +6,7 @@
 
 - RVT 的首选正式路径继续使用项目自研 Revit Worker/Add-in，输出原生 GLB 或 IFC、层级和属性；它不增加第三方 SDK 依赖，但转换机必须安装并合法授权 Autodesk Revit。
 - 无 Revit 的服务器或云环境，可选 ODA BimRv 或 Autodesk APS Design Automation。两者都是有许可/服务依赖的正式方案，不能描述为“无依赖直读”。
-- Parasolid `.x_t/.x_b` 与 JT 的正式路径使用可替换的商业 SDK 适配器，优先评估 HOOPS Exchange，其次 CAD Exchanger；已有 Siemens PLM Components 合同的客户可接 Siemens Parasolid/JT Open Toolkit。
+- Parasolid `.x_b` 与 JT 的正式路径使用可替换的商业 SDK 适配器。`.x_t` 另有 2026-08-31 新增的自研 V24.1 单体共轴旋转体子集；超出该严格签名的 X_T 仍需商业 Provider，不能外推为通用直读。
 - 公开格式参考并不等于存在生产级开源解析器。未发现能够同时覆盖版本兼容、装配树、PMI、精确 B-Rep、压缩变体和恶意文件防护的无依赖开源实现，因此不把实验解析器放进主链路。
 - 浏览器只消费 GLB、`hierarchy.json`、`properties.json` 和可选 `pmi.json`；源文件始终保留用于复转、审计和未来更换 Provider。BIM 得到增强，但产品不变成 RVT/Parasolid/JT 编辑器。
 
@@ -38,7 +38,7 @@ Unity 的工业格式能力来自 Pixyz/Asset Transformer，而不是 Unity 运�
 
 ## 已落地的产品边界
 
-- 上传入口接受 `.rvt/.x_t/.x_b/.jt`，缺失 Provider 时进入明确的 `waiting_converter`，不报假失败，也不声称已转换。
+- 上传入口接受 `.rvt/.x_t/.x_b/.jt`。JT 会读取版本、TOC、LSG 层级、属性、材质和可安全译码的 TriStrip/TopoMesh；只有存在完整 LOD0 且生成的 GLB 通过三角几何审计时才进入 `ready`，否则停在 `waiting_converter` 且没有几何 URL。RVT/X_B 缺失 Provider 时等待；X_T 只有命中真实样本签署的 V24.1 子集才生成 GLB，其他有效文本结构保留检查证据并等待。
 - 等待状态按格式明确显示 Revit、Parasolid 或 JT 转换器，不再把 JT/XT 误导为“等待 Revit 转换机”。
 - `/api/converters` 返回版本、输入、结构化产物、资源上限、部署位置、检测状态和修复动作。
 - 转换任务支持提交、查询、取消、AbortSignal、输出路径约束、大小上限和 SHA-256 产物指纹。

@@ -11,6 +11,7 @@ describe("SceneDeliveryWorkflow", () => {
       locale="zh-CN"
       project={project()}
       scenes={[scene()]}
+      defaultCollapsed={false}
       onData={vi.fn()}
       onAssets={vi.fn()}
       onDesign={vi.fn()}
@@ -24,6 +25,25 @@ describe("SceneDeliveryWorkflow", () => {
     expect(html).toContain("1 个场景");
     expect(html).toContain("5. 行为脚本");
     expect(html).toContain("6. 仿真调试");
+  });
+
+  it("默认收起开发流程，仅保留明确的展开入口", () => {
+    const html = renderToStaticMarkup(<ProjectDeliveryFlow
+      locale="zh-CN"
+      project={project()}
+      scenes={[scene()]}
+      onData={vi.fn()}
+      onAssets={vi.fn()}
+      onDesign={vi.fn()}
+      onLinkage={vi.fn()}
+      onValidate={vi.fn()}
+      onPublish={vi.fn()}
+    />);
+
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("展开开发流程");
+    expect(html).not.toContain('data-step-id="data"');
+    expect(html).not.toContain("必需步骤完成");
   });
 
   it("阻止存在必需缺口的发布继续操作", () => {

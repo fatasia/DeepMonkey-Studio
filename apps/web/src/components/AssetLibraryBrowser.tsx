@@ -1,7 +1,8 @@
 import { Box, Check, ChevronLeft, ChevronRight, Download, Film, Mountain, Paintbrush, RefreshCw, Search, Sparkles, X } from "lucide-react";
-import type { AssetLibraryDimension, ModelRecord, ProjectAssetRecord } from "@bim-studio/contracts";
+import type { AssetLibraryDimension, AssetLibraryItem, ModelRecord, ProjectAssetRecord } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
+import { AssetThumbnail } from "./AssetThumbnail";
 import { useAssetLibraryCatalog } from "./useAssetLibraryCatalog";
 
 interface AssetLibraryBrowserProps {
@@ -88,7 +89,7 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
               : tr(locale, "个可用素材", "ready assets")}
         </span>
         <i />
-        <span>{tr(locale, "安全缩略图、版本、许可和一键导入均已就绪", "Safe preview, version, license and one-click import ready")}</span>
+        <span>{tr(locale, "缩略图已标准化，模型结构与文件完整性已校验", "Normalized previews with verified model structure and file integrity")}</span>
       </div>
 
       {catalog.importError && (
@@ -127,11 +128,13 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
             const imported = importedIds.has(item.id);
             const importing = catalog.importingId === item.id;
             const deprecated = item.publicationStatus === "deprecated";
+            const reviewRequired = item.publicationStatus === "review-required";
+            const unavailable = deprecated || reviewRequired;
             return (
-              <article className="unified-asset-card" key={item.id}>
+              <article className={`unified-asset-card dimension-${item.dimension}`} key={item.id}>
                 <div className="unified-asset-preview">
-                  <img src={item.thumbnailUrl} alt="" loading="lazy" />
-                  <span className={`quality-tier ${item.qualityTier}`}>{qualityLabel(item.qualityTier, locale)}</span>
+                  <AssetThumbnail locale={locale} name={item.name} src={item.thumbnailUrl} />
+                  <span className={`quality-tier ${item.qualityTier}`}>{assetQualityLabel(item, locale)}</span>
                   <span className={`asset-publication ${item.publicationStatus}`}>{publicationLabel(item.publicationStatus, locale)}</span>
                   {item.animated && <span className="asset-animation"><Film size={12} />{tr(locale, "动画", "Animated")}</span>}
                 </div>
@@ -141,9 +144,17 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
                   <small>{item.dimension === "3d" ? `${formatTriangles(item.triangleCount, locale)} · ` : `${item.mapKinds?.length ?? item.textureCount} ${tr(locale, "张贴图", "maps")} · `}{formatBytes(item.size)}</small>
                   <small>{item.license} · v{item.version}</small>
                 </div>
-                <button className={imported ? "asset-imported" : "asset-import"} disabled={!projectId || importing || imported || deprecated} onClick={() => void catalog.importItem(item.id)}>
+                <button className={imported ? "asset-imported" : "asset-import"} disabled={!projectId || importing || imported || unavailable} onClick={() => void catalog.importItem(item.id)}>
                   {imported ? <Check size={14} /> : importing ? <RefreshCw className="spin" size={14} /> : <Download size={14} />}
-                  {imported ? tr(locale, "已在项目", "In project") : deprecated ? tr(locale, "已废弃", "Deprecated") : importing ? tr(locale, "导入中", "Importing") : tr(locale, "导入", "Import")}
+                  {imported
+                    ? tr(locale, "已在项目", "In project")
+                    : deprecated
+                      ? tr(locale, "已废弃", "Deprecated")
+                      : reviewRequired
+                        ? tr(locale, "待质量复核", "Quality review")
+                        : importing
+                          ? tr(locale, "导入中", "Importing")
+                          : tr(locale, "导入", "Import")}
                 </button>
               </article>
             );
@@ -164,8 +175,14 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
 
 function qualityLabel(tier: "light" | "standard" | "heavy", locale: AppLocale): string {
   if (tier === "light") return tr(locale, "轻量", "Light");
-  if (tier === "heavy") return tr(locale, "高精", "Detailed");
+  if (tier === "heavy") return tr(locale, "高负载", "High load");
   return tr(locale, "标准", "Standard");
+}
+
+function assetQualityLabel(item: AssetLibraryItem, locale: AppLocale): string {
+  if (item.dimension === "environment") return "HDRI";
+  if (item.dimension === "material") return tr(locale, `${item.mapKinds?.length ?? item.textureCount} 图 PBR`, `${item.mapKinds?.length ?? item.textureCount}-map PBR`);
+  return qualityLabel(item.qualityTier, locale);
 }
 
 function formatTriangles(count: number, locale: AppLocale): string {
@@ -178,7 +195,7 @@ function formatBytes(bytes: number): string {
 }
 
 function publicationLabel(status: "published" | "review-required" | "deprecated", locale: AppLocale): string {
-  if (status === "published") return tr(locale, "已发布", "Published");
+  if (status === "published") return tr(locale, "已校验", "Verified");
   if (status === "deprecated") return tr(locale, "已废弃", "Deprecated");
   return tr(locale, "待审核", "Review required");
 }

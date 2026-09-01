@@ -16,6 +16,8 @@
     "@bim-studio/contracts": "workspace:*",
     "@bim-studio/data-query-plugin": "workspace:*",
     "@bim-studio/data-runtime": "workspace:*",
+    "@bim-studio/industrial-agent-orchestrator": "workspace:*",
+    "@bim-studio/jt-reader": "workspace:*",
     "@bim-studio/parametric-modeling-plugin": "workspace:*",
     "@bim-studio/plant-lite-simulation": "workspace:*",
     "@bim-studio/plugin-runtime": "workspace:*",

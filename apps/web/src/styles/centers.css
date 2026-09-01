@@ -169,6 +169,8 @@
 /* Behavior workbench: compact authoring density with an insertable scene/API library. */
 .behavior-panel.logs-collapsed{grid-template-rows:auto minmax(0,1fr) 32px}
 .behavior-panel.logs-open{grid-template-rows:auto minmax(0,1fr) 126px}
+.behavior-agent-workspace{position:absolute;z-index:4;top:47px;right:0;bottom:0;width:min(460px,46vw);padding:14px;overflow:auto;border-left:1px solid #35464e;background:#0d1519f7;box-shadow:-18px 0 42px #0008}
+@media (max-width:760px){.behavior-agent-workspace{left:0;width:auto}}
 .behavior-panel-header{min-height:46px;padding:6px 10px}
 .behavior-panel-header>div>span{width:26px;height:26px}
 .behavior-panel-header>div strong{font-size:13px}
@@ -214,6 +216,11 @@
 .professional-code-toolbar{font-size:11px}
 .behavior-panel .workspace-mode-switch button{min-height:32px;font-size:11px}
 .behavior-panel .workspace-mode-switch .workspace-context{font-size:11px}
+@media (max-width:1100px){
+  .behavior-panel .professional-code-toolbar{gap:8px}
+  /* 紧凑视口保留问题诊断，健康状态由运行反馈表达，避免不可达的重复控件。 */
+  .behavior-panel .professional-code-problems.healthy{display:none}
+}
 .behavior-console header{padding:0 8px}
 .behavior-console header .behavior-console-toggle{display:flex;align-items:center;gap:5px;margin:0;padding:0;border:0;background:transparent;color:#9baab6}
 .behavior-console header>button:last-child{margin-left:auto}

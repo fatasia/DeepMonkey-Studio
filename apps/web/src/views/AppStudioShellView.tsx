@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ACCEPTED_MODELS } from "../appDefaults";
 import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
 import { ModelTreeItem } from "../components/ModelTreeItem";
@@ -8,8 +9,12 @@ import { mergeConfirmedSceneAssetBindings } from "../studio/sceneAssetBindings";
 import type { AppStudioController } from "./AppStudioShell";
 import { AppStudioInspector } from "./AppStudioInspector";
 import { AppStudioViewport } from "./AppStudioViewport";
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 
 export function AppStudioShellView({ controller }: { controller: AppStudioController }) {
+  // 三维视口是核心工作区，资源树和属性检查器按需收起，避免遮挡模型。
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const {
     activeApplication,
     activeScene,
@@ -236,9 +241,31 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
   return (
     <>
       <div
-        className={`app-shell ${route.view === "view" || route.view === "published" ? "viewer-shell" : ""} ${route.view === "studio" || route.view === "view" || route.view === "published" ? "" : "app-shell-hidden"}`}
+        className={`app-shell ${route.view === "view" || route.view === "published" ? "viewer-shell" : ""} ${route.view === "studio" || route.view === "view" || route.view === "published" ? "" : "app-shell-hidden"}${leftPanelOpen ? "" : " left-panel-collapsed"}${rightPanelOpen ? "" : " right-panel-collapsed"}`}
       >
         <AppWorkspaceTopbar bindings={bindings} />
+        {route.view === "studio" && (
+          <div className="workspace-panel-controls" role="group" aria-label={locale === "zh-CN" ? "三维工作区面板" : "3D workspace panels"}>
+            <button
+              type="button"
+              aria-pressed={leftPanelOpen}
+              aria-label={leftPanelOpen ? "收起场景目录" : "展开场景目录"}
+              title={leftPanelOpen ? "收起场景目录" : "展开场景目录"}
+              onClick={() => setLeftPanelOpen((value) => !value)}
+            >
+              {leftPanelOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
+            </button>
+            <button
+              type="button"
+              aria-pressed={rightPanelOpen}
+              aria-label={rightPanelOpen ? "收起属性检查器" : "展开属性检查器"}
+              title={rightPanelOpen ? "收起属性检查器" : "展开属性检查器"}
+              onClick={() => setRightPanelOpen((value) => !value)}
+            >
+              {rightPanelOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+            </button>
+          </div>
+        )}
 
         <SceneOutlinerPanel
           locale={locale}

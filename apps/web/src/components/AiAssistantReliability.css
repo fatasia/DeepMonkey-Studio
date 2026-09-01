@@ -303,6 +303,38 @@
   cursor: pointer;
 }
 
+.ai-assistant-experience {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid #2c3b41;
+  border-radius: 7px;
+  background: #0f181c;
+}
+
+.ai-assistant-panel > nav .ai-assistant-experience > button {
+  min-height: 29px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 10px;
+}
+
+.ai-assistant-panel > nav .ai-assistant-experience > button.active {
+  color: #d9ba79;
+  border-color: #493d25;
+  background: #242015;
+}
+
+.ai-assistant-panel.agent-active > nav {
+  grid-template-columns: 1fr;
+}
+
+.ai-assistant-panel.agent-active .ai-assistant-body {
+  padding: 14px;
+}
+
 @media (max-width: 420px) {
   .ai-context-targets > span {
     grid-template-columns: 14px minmax(0, 1fr);

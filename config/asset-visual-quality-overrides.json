@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "sourceId": "external-industrial-models-a",
+  "reviewRequired": [
+    { "modelId": "305", "reason": "主功能面不可见，缩略图视角需重制" },
+    { "modelId": "423", "reason": "主体结构分散，缩略图无法清晰表达完整资产" },
+    { "modelId": "513", "reason": "极端仰视导致底面成为视觉主体" },
+    { "modelId": "952", "reason": "主体过于细长，标准卡片中辨识度不足" },
+    { "modelId": "944", "reason": "主体与背景对比不足，轮廓识别度偏低" },
+    { "modelId": "1396", "reason": "主功能面不可见，缩略图层次不足" },
+    { "modelId": "1578", "reason": "低机位暴露底面与碎片结构，需重制缩略图" }
+  ]
+}

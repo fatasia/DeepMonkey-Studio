@@ -35,6 +35,7 @@ export async function saveDiagnosisValidationStudy({
     ...(existing ? { id: existing.id, expectedRevision: existing.revision } : {}),
     title: `验证：${diagnosis.headline}`,
     sourceKind: "maintenance-diagnosis",
+    studyType: "virtual-commissioning",
     sourceRefs: [assessment.id, diagnosis.evidenceFingerprint],
     ...(sceneId ? { sceneId } : {}),
     objectIds: draft.objectId ? [draft.objectId] : fallbackObjectIds,

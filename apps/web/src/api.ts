@@ -46,6 +46,7 @@ import { createPprBopApi } from "./apiClients/pprBopApi.js";
 import { createModelSceneApi } from "./apiClients/modelSceneApi.js";
 import { createVisionApi } from "./apiClients/visionApi.js";
 import { createAssetLibraryApi } from "./apiClients/assetLibraryApi.js";
+import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
 import {
   isSceneViewerDeliveryRuntime,
   sceneViewerDeliveryFetch,
@@ -683,4 +684,5 @@ export const api = {
   ...createPprBopApi(request),
   ...createModelSceneApi(request),
   ...createAssetLibraryApi(request),
+  ...createIndustrialAgentApi(request),
 };

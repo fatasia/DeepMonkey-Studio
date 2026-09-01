@@ -1,6 +1,7 @@
 import { Search, Star, X } from "lucide-react";
 import { translate as tr } from "../i18n";
 import { DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
+import { DashboardTemplatePreview } from "./DashboardTemplatePreview";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 
 export function DashboardWorkspaceTemplateLibrary() {
@@ -77,14 +78,7 @@ export function DashboardWorkspaceTemplateLibrary() {
               .sort((left, right) => Number(favoriteTemplateIds.includes(right.id)) - Number(favoriteTemplateIds.includes(left.id)))
               .map((template) => (
                 <article key={template.id}>
-                  <div className={`dashboard-template-preview template-${template.id}`}>
-                    <span />
-                    <i />
-                    <i />
-                    <b />
-                    <b />
-                    <b />
-                  </div>
+                  <DashboardTemplatePreview locale={locale} template={template} />
                   <div>
                     <small>{tr(locale, template.categoryZh, template.categoryEn)}</small>
                     <strong>{tr(locale, template.zh, template.en)}</strong>

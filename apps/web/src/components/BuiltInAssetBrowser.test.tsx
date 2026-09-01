@@ -15,6 +15,7 @@ describe("BuiltInAssetBrowser", () => {
       <BuiltInAssetBrowser kind={kind} locale="zh-CN" editorAvailable onOpenEditor={() => undefined} />,
     );
     expect(html).toContain(`${count}</strong> ${label}`);
+    expect(html).toContain(`built-in-${kind}`);
     expect(html).toContain("进入编辑器使用");
     expect(html).not.toContain("没有匹配素材");
   });

@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { assessEnvironmentAssetPublication } from "./lib/environmentAssetPublication.mjs";
 
 const OUTPUT = path.resolve(process.env.BIM_STUDIO_ENVIRONMENT_ASSET_CACHE ?? path.join(process.cwd(), "data", "external-assets", "environment-materials"));
 const USER_AGENT = "BimStudioAssetSync/1.0";
@@ -70,6 +71,9 @@ await runPool(tasks, CONCURRENCY, async (task) => {
 for (const asset of assets) {
   asset.files = tasks.filter((task) => task.id === asset.id).map(({ category, id, url, ...file }) => file);
   asset.totalBytes = asset.files.reduce((sum, file) => sum + file.bytes, 0);
+  const publication = assessEnvironmentAssetPublication(asset);
+  asset.publicationStatus = publication.ready ? "published" : "review-required";
+  asset.qualityIssues = publication.issues;
 }
 await writeJsonAtomically(path.join(OUTPUT, "catalog.json"), {
   schemaVersion: 1,
