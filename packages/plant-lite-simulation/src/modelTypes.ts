@@ -1,104 +1,57 @@
-/** Plant Lite 离散事件仿真的稳定输入/输出合同；所有时间单位均为分钟。 */
-export type Distribution =
-  | { kind: "deterministic"; value: number }
-  | { kind: "uniform"; minimum: number; maximum: number }
-  | { kind: "normal"; mean: number; standardDeviation: number; minimum?: number }
-  | { kind: "exponential"; mean: number };
+import type {
+  PlantLiteAvailability,
+  PlantLiteBufferNode,
+  PlantLiteDistribution,
+  PlantLiteEdge,
+  PlantLiteFailureProfile,
+  PlantLiteModel,
+  PlantLiteNode,
+  PlantLiteProductType,
+  PlantLiteProductionOrder,
+  PlantLiteReplicationTrace,
+  PlantLiteResource,
+  PlantLiteShiftWindow,
+  PlantLiteSimulationLimits,
+  PlantLiteSinkNode,
+  PlantLiteSourceNode,
+  PlantLiteStationNode,
+  PlantLiteTraceCaptureOptions,
+  PlantLiteTraceEvent,
+  PlantLiteTraceLimits,
+  PlantLiteTransportNode,
+} from "@bim-studio/contracts";
 
-export interface ShiftWindow {
-  startMinute: number;
-  endMinute: number;
-}
-
-export interface Availability {
-  shifts?: ShiftWindow[];
-}
-
-/** 最小切片按逻辑资源组整体失效建模；逐车/逐台独立可靠性留给后续扩展。 */
-export interface FailureProfile {
-  timeToFailure: Distribution;
-  repairTime: Distribution;
-}
-
-interface NodeBase {
-  id: string;
-  name: string;
-}
-
-export interface SourceNode extends NodeBase {
-  kind: "source";
-  interarrivalTime: Distribution;
-  initialDelay?: number;
-  maxItems?: number;
-}
-
-export interface StationNode extends NodeBase {
-  kind: "station";
-  processingTime: Distribution;
-  capacity?: number;
-  queueCapacity?: number;
-  resourceId?: string;
-  availability?: Availability;
-}
-
-export interface TransportNode extends NodeBase {
-  kind: "transport";
-  travelTime: Distribution;
-  queueCapacity?: number;
-  resourceId: string;
-}
-
-/** queue-buffer 是首选名称；buffer 保留为兼容别名。 */
-export interface BufferNode extends NodeBase {
-  kind: "buffer" | "queue-buffer";
-  capacity: number;
-}
-
-export interface SinkNode extends NodeBase {
-  kind: "sink";
-}
-
-export type PlantLiteNode = SourceNode | StationNode | TransportNode | BufferNode | SinkNode;
-
-export interface PlantLiteEdge {
-  id: string;
-  from: string;
-  to: string;
-  priority?: number;
-}
-
-export interface PlantLiteResource {
-  id: string;
-  name: string;
-  kind: "agv" | "transport";
-  capacity: number;
-  availability?: Availability;
-  failure?: FailureProfile;
-}
-
-export interface PlantLiteModel {
-  id: string;
-  name: string;
-  nodes: PlantLiteNode[];
-  edges: PlantLiteEdge[];
-  resources?: PlantLiteResource[];
-}
-
-export interface SimulationLimits {
-  /** 单次运行的模拟时长上限，默认 480 分钟，最大 52,560 分钟。 */
-  durationMinutes?: number;
-  /** 单次运行处理事件上限，默认 100,000，最大 1,000,000。 */
-  maxEvents?: number;
-  /** 资源对象上限，默认 100，保护浏览器/API 工作线程。 */
-  maxResources?: number;
-}
+export type Distribution = PlantLiteDistribution;
+export type ShiftWindow = PlantLiteShiftWindow;
+export type Availability = PlantLiteAvailability;
+export type FailureProfile = PlantLiteFailureProfile;
+export type SourceNode = PlantLiteSourceNode;
+export type StationNode = PlantLiteStationNode;
+export type TransportNode = PlantLiteTransportNode;
+export type BufferNode = PlantLiteBufferNode;
+export type SinkNode = PlantLiteSinkNode;
+export type SimulationLimits = PlantLiteSimulationLimits;
+export type {
+  PlantLiteEdge,
+  PlantLiteModel,
+  PlantLiteNode,
+  PlantLiteProductType,
+  PlantLiteProductionOrder,
+  PlantLiteReplicationTrace,
+  PlantLiteResource,
+  PlantLiteTraceLimits,
+  PlantLiteTraceEvent,
+};
 
 export interface PlantLiteExperiment {
   model: PlantLiteModel;
   seed: string | number;
   replications?: number;
   limits?: SimulationLimits;
+  trace?: PlantLiteTraceOptions;
 }
+
+export type PlantLiteTraceOptions = PlantLiteTraceCaptureOptions;
 
 export interface PlantLiteRunOptions {
   /** 调用方可在 worker、请求断开或协作调度器让出时返回 true。 */
@@ -113,12 +66,79 @@ export interface NodeRunMetrics {
   averageQueueLength: number;
   blockedMinutes: number;
   starvedMinutes: number;
+  /** 该重复中实际触发的序列相关换型次数。 */
+  changeoverCount: number;
+  /** 该重复中资源被换型占用的实际分钟。 */
+  changeoverMinutes: number;
 }
 
 export interface ResourceRunMetrics {
   resourceId: string;
+  /** 计划产能口径利用率；跨班继续完成的在制任务会计入分母。 */
   utilization: number;
+  /** 故障容量损失，单位为台·分钟；capacity=1 时等于停机分钟。 */
   failedMinutes: number;
+}
+
+export interface ProductTypeRunMetrics {
+  productTypeId: string;
+  completedItems: number;
+  completionShare: number;
+  throughputPerHour: number;
+}
+
+export interface ProductionOrderRunMetrics {
+  orderId: string;
+  plannedItems: number;
+  releasedItems: number;
+  completedItems: number;
+  scrappedItems: number;
+  completedOnTimeItems: number;
+  completionRate: number;
+  /** 准交件数 / 计划数量；未完成件不会被排除。 */
+  onTimeFulfillmentRate: number;
+  fullyCompleted: boolean;
+  completionMinute?: number;
+  /** 完成后按末件完工计算；未完成订单按仿真终点计算当前已观测拖期。 */
+  observedTardinessMinutes: number;
+}
+
+export interface StationQualityRunMetrics {
+  nodeId: string;
+  inspectedItems: number;
+  goodItems: number;
+  scrapItems: number;
+  firstPassYield: number;
+}
+
+export interface QualityRunMetrics {
+  goodOutputItems: number;
+  scrapItems: number;
+  /** 已形成合格产出或报废处置的工件数；仅用于避免把未处置在制品放进良率分母。 */
+  dispositionItems: number;
+  firstPassYield: number;
+  stations: StationQualityRunMetrics[];
+}
+
+export interface EnergyConsumerRunMetrics {
+  consumerId: string;
+  consumerKind: "node" | "resource";
+  activeEnergyKwh: number;
+  idleEnergyKwh: number;
+  totalEnergyKwh: number;
+}
+
+export interface EnergyRunMetrics {
+  activeEnergyKwh: number;
+  idleEnergyKwh: number;
+  totalEnergyKwh: number;
+  energyPerCompletedItemKwh: number;
+  electricityCost: number;
+  electricityCostPerCompletedItem: number;
+  carbonEmissionKg: number;
+  carbonEmissionPerCompletedItemKg: number;
+  peakDemandKw: number;
+  consumers: EnergyConsumerRunMetrics[];
 }
 
 export interface PlantLiteReplication {
@@ -127,6 +147,8 @@ export interface PlantLiteReplication {
   termination: SimulationTermination;
   reason?: "cancelled" | "max-events";
   simulatedMinutes: number;
+  /** 正式统计窗口的实际分钟数；总运行时长减去预热期。 */
+  measurementMinutes: number;
   processedEvents: number;
   completedItems: number;
   throughputPerHour: number;
@@ -135,6 +157,11 @@ export interface PlantLiteReplication {
   bottleneckNodeId?: string;
   nodes: NodeRunMetrics[];
   resources: ResourceRunMetrics[];
+  productTypes: ProductTypeRunMetrics[];
+  productionOrders: ProductionOrderRunMetrics[];
+  /** 只有模型显式配置了工位良率时生成。 */
+  quality?: QualityRunMetrics;
+  energy?: EnergyRunMetrics;
 }
 
 export interface ConfidenceInterval {
@@ -150,6 +177,8 @@ export interface NodeMetricConfidence {
   averageQueueLength: ConfidenceInterval;
   blockedMinutes: ConfidenceInterval;
   starvedMinutes: ConfidenceInterval;
+  changeoverCount: ConfidenceInterval;
+  changeoverMinutes: ConfidenceInterval;
 }
 
 export interface BottleneckFrequency {
@@ -171,7 +200,44 @@ export interface PlantLiteExperimentResult {
   };
   nodeMetrics95: Record<string, NodeMetricConfidence>;
   resourceUtilization95: Record<string, ConfidenceInterval>;
+  resourceFailedMinutes95: Record<string, ConfidenceInterval>;
+  productTypeMetrics95: Record<string, {
+    completedItems: ConfidenceInterval;
+    completionShare: ConfidenceInterval;
+    throughputPerHour: ConfidenceInterval;
+  }>;
+  productionOrderMetrics95: Record<string, {
+    completedItems: ConfidenceInterval;
+    completionRate: ConfidenceInterval;
+    onTimeFulfillmentRate: ConfidenceInterval;
+    fullyCompletedRate: ConfidenceInterval;
+    observedTardinessMinutes: ConfidenceInterval;
+  }>;
+  quality95?: {
+    goodOutputItems: ConfidenceInterval;
+    scrapItems: ConfidenceInterval;
+    firstPassYield: ConfidenceInterval;
+    stationMetrics95: Record<string, {
+      inspectedItems: ConfidenceInterval;
+      goodItems: ConfidenceInterval;
+      scrapItems: ConfidenceInterval;
+      firstPassYield: ConfidenceInterval;
+    }>;
+  };
+  energy95?: {
+    activeEnergyKwh: ConfidenceInterval;
+    idleEnergyKwh: ConfidenceInterval;
+    totalEnergyKwh: ConfidenceInterval;
+    energyPerCompletedItemKwh: ConfidenceInterval;
+    electricityCost: ConfidenceInterval;
+    electricityCostPerCompletedItem: ConfidenceInterval;
+    carbonEmissionKg: ConfidenceInterval;
+    carbonEmissionPerCompletedItemKg: ConfidenceInterval;
+    peakDemandKw: ConfidenceInterval;
+    consumerEnergyKwh: Record<string, ConfidenceInterval>;
+  };
   bottlenecks: BottleneckFrequency[];
+  representativeTrace?: PlantLiteReplicationTrace;
 }
 
 export interface PlantLiteModelIssue {

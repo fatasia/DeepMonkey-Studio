@@ -4,6 +4,7 @@ import type {
   AiAssistantResponse,
   AiProviderSettings,
   ApplicationDocument,
+  ApplicationScriptDependency,
   AuditLogRecord,
   ConverterPluginDescriptor,
   DataConnectorDiagnostics,
@@ -25,8 +26,12 @@ import type {
   NotificationTemplate,
   ProjectRecord,
   SceneSnapshot,
+  ScriptModule,
   ServiceHealthRecord,
+  ServiceLogLevel,
+  ServiceLogQueryResult,
   ServiceLogRecord,
+  SystemDiagnosticSnapshot,
   SystemBrandingSettings,
   SystemUserRecord,
   UnityResourceRecord,
@@ -39,7 +44,7 @@ import {
   type RemoteRenderSessionSnapshot,
 } from "@bim-studio/server-sdk";
 import { runtimeHost } from "./adapters/runtimeHost.js";
-import { desktopLocalApiFetch } from "./adapters/desktopLocalApi.js";
+import { desktopLocalApiFetch, setDesktopLocalExternalModuleFetch } from "./adapters/desktopLocalApi.js";
 import { isLocalDesktopMode } from "./adapters/desktopRuntimeMode.js";
 import { createIndustrialApi } from "./apiClients/industrialApi.js";
 import { createPprBopApi } from "./apiClients/pprBopApi.js";
@@ -47,11 +52,20 @@ import { createModelSceneApi } from "./apiClients/modelSceneApi.js";
 import { createVisionApi } from "./apiClients/visionApi.js";
 import { createAssetLibraryApi } from "./apiClients/assetLibraryApi.js";
 import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
+import type {
+  ScriptGitCommit,
+  ScriptGitCommitResult,
+  ScriptGitPullResult,
+  ScriptGitPushResult,
+  ScriptGitStatus,
+} from "./apiClients/scriptGitTypes.js";
 import {
   isSceneViewerDeliveryRuntime,
   sceneViewerDeliveryFetch,
   sceneViewerDeliveryServerProfile,
 } from "./delivery/sceneViewerDelivery.js";
+
+setDesktopLocalExternalModuleFetch((input, init) => globalThis.fetch(input, init));
 
 const desktopAwareFetch = (input: RequestInfo | URL, init?: RequestInit) =>
   isSceneViewerDeliveryRuntime()
@@ -83,6 +97,13 @@ export type {
   IotNbSyncResult,
   OperationsSnapshot,
 } from "./apiClients/industrialApi.js";
+export type {
+  ScriptGitCommit,
+  ScriptGitCommitResult,
+  ScriptGitPullResult,
+  ScriptGitPushResult,
+  ScriptGitStatus,
+} from "./apiClients/scriptGitTypes.js";
 
 const serverClient = new ServerClient({
   profile: () => sceneViewerDeliveryServerProfile() ?? runtimeHost.getServerProfile(),
@@ -330,6 +351,51 @@ export const api = {
     serverClient.publishApplication(projectId, applicationId),
   unpublishApplication: (projectId: string, applicationId: string) =>
     serverClient.unpublishApplication(projectId, applicationId),
+  installNpmScriptDependency: (projectId: string, packageName: string, version: string, specifier?: string) =>
+    request<ApplicationScriptDependency>(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/npm`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ packageName, version, ...(specifier ? { specifier } : {}) }),
+    }),
+  installExternalScriptDependency: (projectId: string, url: string, specifier: string) =>
+    request<ApplicationScriptDependency>(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/external`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url, specifier }),
+    }),
+  uploadScriptDependency: (projectId: string, specifier: string, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<ApplicationScriptDependency>(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/upload?specifier=${encodeURIComponent(specifier)}`, { method: "POST", body });
+  },
+  readScriptDependency: async (projectId: string, dependencyId: string) =>
+    (await serverClient.open(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/${encodeURIComponent(dependencyId)}/content`)).text(),
+  downloadScriptDependency: async (projectId: string, dependencyId: string) =>
+    (await serverClient.open(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/${encodeURIComponent(dependencyId)}/content?download=1`)).blob(),
+  deleteScriptDependency: (projectId: string, dependencyId: string) =>
+    request<void>(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/${encodeURIComponent(dependencyId)}`, { method: "DELETE" }),
+  getScriptGitStatus: (projectId: string) =>
+    request<ScriptGitStatus>(`/api/projects/${encodeURIComponent(projectId)}/script-git/status`),
+  listScriptGitHistory: (projectId: string, limit = 20) =>
+    request<ScriptGitCommit[]>(`/api/projects/${encodeURIComponent(projectId)}/script-git/history?limit=${limit}`),
+  commitScriptSnapshot: (projectId: string, scripts: readonly ScriptModule[], message: string) =>
+    request<ScriptGitCommitResult>(`/api/projects/${encodeURIComponent(projectId)}/script-git/commits`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scripts, message }),
+    }),
+  configureScriptGitRemote: (projectId: string, url: string, branch: string) =>
+    request<ScriptGitStatus>(`/api/projects/${encodeURIComponent(projectId)}/script-git/remote`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url, branch }),
+    }),
+  removeScriptGitRemote: (projectId: string) =>
+    request<ScriptGitStatus>(`/api/projects/${encodeURIComponent(projectId)}/script-git/remote`, { method: "DELETE" }),
+  pullScriptGit: (projectId: string) =>
+    request<ScriptGitPullResult>(`/api/projects/${encodeURIComponent(projectId)}/script-git/pull`, { method: "POST" }),
+  pushScriptGit: (projectId: string) =>
+    request<ScriptGitPushResult>(`/api/projects/${encodeURIComponent(projectId)}/script-git/push`, { method: "POST" }),
   getBranding: () => request<SystemBrandingSettings>("/api/public/branding"),
   saveBranding: (settings: Partial<SystemBrandingSettings>) =>
     request<SystemBrandingSettings>("/api/admin/branding", {
@@ -373,6 +439,12 @@ export const api = {
     request<void>(`/api/admin/users/${userId}`, { method: "DELETE" }),
   listAuditLogs: () => request<AuditLogRecord[]>("/api/admin/audit?limit=300"),
   listServiceLogs: () => request<ServiceLogRecord[]>("/api/admin/logs"),
+  queryServiceLogs: (filters: { service?: string; level?: ServiceLogLevel; from?: string; to?: string; keyword?: string; limit?: number } = {}) =>
+    request<ServiceLogQueryResult>(`/api/admin/service-logs?${serviceLogQuery(filters)}`),
+  exportServiceLogs: async (filters: { service?: string; level?: ServiceLogLevel; from?: string; to?: string; keyword?: string; limit?: number } = {}) =>
+    (await serverClient.open(`/api/admin/service-logs/export?${serviceLogQuery(filters)}`)).blob(),
+  getSystemDiagnostics: () => request<SystemDiagnosticSnapshot>("/api/admin/diagnostics"),
+  downloadSystemDiagnostics: async () => (await serverClient.open("/api/admin/diagnostics/download")).blob(),
   getNotificationSnapshot: () =>
     request<NotificationConfigurationSnapshot>("/api/admin/notifications/snapshot"),
   listNotificationAudit: () =>
@@ -637,9 +709,9 @@ export const api = {
         body: JSON.stringify(pipeline),
       },
     ),
-  previewDataPipeline: (projectId: string, pipelineId: string) =>
+  previewDataPipeline: (projectId: string, pipelineId: string, throughNodeId?: string) =>
     request<DataPipelinePreview>(
-      `/api/projects/${projectId}/data-pipelines/${pipelineId}/preview`,
+      `/api/projects/${projectId}/data-pipelines/${pipelineId}/preview${throughNodeId ? `?throughNodeId=${encodeURIComponent(throughNodeId)}` : ""}`,
     ),
   deleteDataPipeline: (projectId: string, pipelineId: string) =>
     request<void>(`/api/projects/${projectId}/data-pipelines/${pipelineId}`, {
@@ -686,3 +758,9 @@ export const api = {
   ...createAssetLibraryApi(request),
   ...createIndustrialAgentApi(request),
 };
+
+function serviceLogQuery(filters: { service?: string; level?: ServiceLogLevel; from?: string; to?: string; keyword?: string; limit?: number }): string {
+  const query = new URLSearchParams();
+  for (const [name, value] of Object.entries(filters)) if (value !== undefined && value !== "") query.set(name, String(value));
+  return query.toString();
+}

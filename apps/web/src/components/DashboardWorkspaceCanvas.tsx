@@ -110,6 +110,7 @@ export function DashboardWorkspaceCanvas() {
           <div className="dashboard-tool-group">
             <button
               className={marqueeMode ? "active" : ""}
+              aria-label={tr(locale, "框选组件（Shift+拖动）", "Box select (Shift-drag)")}
               title={tr(locale, "框选组件（Shift+拖动）", "Box select (Shift-drag)")}
               onClick={() => setMarqueeMode((active) => !active)}
             >
@@ -129,6 +130,7 @@ export function DashboardWorkspaceCanvas() {
           <div className="dashboard-tool-group">
             <button
               disabled={selectedNodeIds.filter((id) => page.nodes.some((node) => node.id === id && node.locked !== true)).length < 2}
+              aria-label={tr(locale, "编组", "Group")}
               title={tr(locale, "编组", "Group")}
               onClick={groupSelectedNodes}
             >
@@ -136,6 +138,7 @@ export function DashboardWorkspaceCanvas() {
             </button>
             <button
               disabled={!page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.groupId && node.locked !== true)}
+              aria-label={tr(locale, "解组", "Ungroup")}
               title={tr(locale, "解组", "Ungroup")}
               onClick={ungroupSelectedNodes}
             >
@@ -143,22 +146,22 @@ export function DashboardWorkspaceCanvas() {
             </button>
           </div>
           <div className="dashboard-tool-group">
-            <button disabled={layoutSelectionCount < 2} title={tr(locale, "左对齐", "Align left")} onClick={() => layoutSelectedNodes("left")}>
+            <button disabled={layoutSelectionCount < 2} aria-label={tr(locale, "左对齐", "Align left")} title={tr(locale, "左对齐", "Align left")} onClick={() => layoutSelectedNodes("left")}>
               <AlignStartVertical size={13} />
             </button>
-            <button disabled={layoutSelectionCount < 2} title={tr(locale, "水平居中", "Center horizontally")} onClick={() => layoutSelectedNodes("horizontal-center")}>
+            <button disabled={layoutSelectionCount < 2} aria-label={tr(locale, "水平居中", "Center horizontally")} title={tr(locale, "水平居中", "Center horizontally")} onClick={() => layoutSelectedNodes("horizontal-center")}>
               <AlignCenterVertical size={13} />
             </button>
-            <button disabled={layoutSelectionCount < 2} title={tr(locale, "右对齐", "Align right")} onClick={() => layoutSelectedNodes("right")}>
+            <button disabled={layoutSelectionCount < 2} aria-label={tr(locale, "右对齐", "Align right")} title={tr(locale, "右对齐", "Align right")} onClick={() => layoutSelectedNodes("right")}>
               <AlignEndVertical size={13} />
             </button>
-            <button disabled={layoutSelectionCount < 2} title={tr(locale, "顶对齐", "Align top")} onClick={() => layoutSelectedNodes("top")}>
+            <button disabled={layoutSelectionCount < 2} aria-label={tr(locale, "顶对齐", "Align top")} title={tr(locale, "顶对齐", "Align top")} onClick={() => layoutSelectedNodes("top")}>
               <AlignStartHorizontal size={13} />
             </button>
-            <button disabled={layoutSelectionCount < 2} title={tr(locale, "垂直居中", "Center vertically")} onClick={() => layoutSelectedNodes("vertical-center")}>
+            <button disabled={layoutSelectionCount < 2} aria-label={tr(locale, "垂直居中", "Center vertically")} title={tr(locale, "垂直居中", "Center vertically")} onClick={() => layoutSelectedNodes("vertical-center")}>
               <AlignCenterHorizontal size={13} />
             </button>
-            <button disabled={layoutSelectionCount < 2} title={tr(locale, "底对齐", "Align bottom")} onClick={() => layoutSelectedNodes("bottom")}>
+            <button disabled={layoutSelectionCount < 2} aria-label={tr(locale, "底对齐", "Align bottom")} title={tr(locale, "底对齐", "Align bottom")} onClick={() => layoutSelectedNodes("bottom")}>
               <AlignEndHorizontal size={13} />
             </button>
           </div>
@@ -183,20 +186,21 @@ export function DashboardWorkspaceCanvas() {
         </div>
         <div>
           <button
+            aria-label={tr(locale, "聚焦页面中的可见组件", "Focus visible components")}
             title={tr(locale, "聚焦页面中的可见组件", "Focus visible components")}
             disabled={!page.nodes.some((node) => node.visible !== false)}
             onClick={() => fitCanvasToViewport("content")}
           >
             <Focus size={13} />
           </button>
-          <button title={tr(locale, "完整显示看板", "Fit dashboard")} onClick={() => fitCanvasToViewport("page")}>
+          <button aria-label={tr(locale, "完整显示看板", "Fit dashboard")} title={tr(locale, "完整显示看板", "Fit dashboard")} onClick={() => fitCanvasToViewport("page")}>
             <Scaling size={13} />
           </button>
-          <button title={tr(locale, "缩小（以视口中心缩放）", "Zoom out around viewport center")} onClick={() => changeZoom(zoom - 0.1)}>
+          <button aria-label={tr(locale, "缩小（以视口中心缩放）", "Zoom out around viewport center")} title={tr(locale, "缩小（以视口中心缩放）", "Zoom out around viewport center")} onClick={() => changeZoom(zoom - 0.1)}>
             <Minus size={13} />
           </button>
           <output>{Math.round(zoom * 100)}%</output>
-          <button title={tr(locale, "放大（以视口中心缩放）", "Zoom in around viewport center")} onClick={() => changeZoom(zoom + 0.1)}>
+          <button aria-label={tr(locale, "放大（以视口中心缩放）", "Zoom in around viewport center")} title={tr(locale, "放大（以视口中心缩放）", "Zoom in around viewport center")} onClick={() => changeZoom(zoom + 0.1)}>
             <Plus size={13} />
           </button>
         </div>
@@ -206,7 +210,13 @@ export function DashboardWorkspaceCanvas() {
         ref={scrollRef}
         onScroll={handleCanvasScroll}
         onWheel={zoomCanvas}
-        onPointerDownCapture={beginCanvasPan}
+        onPointerDownCapture={(event) => {
+          beginCanvasPan(event);
+          if (event.button === 0 && event.target === event.currentTarget) {
+            setSelectedNodeIds([]);
+            onSelectionChange([]);
+          }
+        }}
         onClick={(event) => {
           if (event.target === event.currentTarget) {
             setSelectedNodeIds([]);
@@ -214,7 +224,20 @@ export function DashboardWorkspaceCanvas() {
           }
         }}
       >
-        <div className="dashboard-artboard-stage" style={{ width: stageWidth, height: stageHeight }}>
+        <div
+          className="dashboard-artboard-stage"
+          style={{ width: stageWidth, height: stageHeight }}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || event.target !== event.currentTarget) return;
+            setSelectedNodeIds([]);
+            onSelectionChange([]);
+          }}
+          onClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            setSelectedNodeIds([]);
+            onSelectionChange([]);
+          }}
+        >
           <button
             className="dashboard-ruler-corner"
             title={tr(locale, "清空参考线", "Clear guides")}
@@ -254,7 +277,18 @@ export function DashboardWorkspaceCanvas() {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setLibraryDropActive(false);
             }}
             onDrop={dropLibraryItem}
-            onPointerDownCapture={beginMarqueeSelection}
+            onPointerDownCapture={(event) => {
+              beginMarqueeSelection(event);
+              if (event.button === 0 && !event.shiftKey && event.target === event.currentTarget) {
+                setSelectedNodeIds([]);
+                onSelectionChange([]);
+              }
+            }}
+            onClick={(event) => {
+              if (event.target !== event.currentTarget) return;
+              setSelectedNodeIds([]);
+              onSelectionChange([]);
+            }}
           >
             {page.nodes.length === 0 && (
               <EditorEmptyState

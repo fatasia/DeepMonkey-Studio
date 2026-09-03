@@ -1,4 +1,9 @@
 import type { CapabilityProvider } from "@bim-studio/plugin-runtime";
+import {
+  assessBatteryDataContract,
+  batteryContractFailureMessage,
+  normalizeBatteryRecords,
+} from "@bim-studio/contracts";
 import type {
   BatteryModelGateway,
   BatteryPredictionInput,
@@ -12,7 +17,7 @@ import { BATTERY_CAPABILITY_SCHEMAS } from "./batteryCapabilitySchemas.js";
 export function createBatteryCapabilityProviders(gateway: BatteryModelGateway): CapabilityProvider[] {
   return [
     provider("battery.model.predict", "电池 SOC/SOH/RUL 预测", "model", "battery.execute", async (input, signal) => {
-      const request = input as unknown as BatteryPredictionInput;
+      const request = preparePredictionRequest(input as unknown as BatteryPredictionInput);
       const output = await gateway.predict(request, signal);
       return batteryResult(output, "production", request.routingMode
         ? `正式专家路由 ${request.routingMode}`
@@ -44,6 +49,20 @@ export function createBatteryCapabilityProviders(gateway: BatteryModelGateway): 
       return batteryResult(output, "production", "电池模型路由与发布状态");
     })
   ];
+}
+
+function preparePredictionRequest(request: BatteryPredictionInput): BatteryPredictionInput {
+  if (!isFormalModel(request.model) || !Array.isArray(request.records) || request.records.length === 0) return request;
+  const fields = [...new Set(request.records.flatMap((record) => Object.keys(record)))].map((key) => ({ key }));
+  const assessment = assessBatteryDataContract(request.model, fields, {
+    nominalCapacityProvided: request.nominalCapacityAh !== undefined,
+  });
+  if (!assessment.compatible) throw new Error(batteryContractFailureMessage(assessment));
+  return { ...request, records: normalizeBatteryRecords(request.records, assessment) };
+}
+
+function isFormalModel(value: string): value is BatteryPredictionInput["model"] {
+  return value === "socformer" || value === "bmsformer" || value === "batterymformer";
 }
 
 type ProviderKind = "query" | "model" | "simulation" | "action";

@@ -1,6 +1,6 @@
 # 云渲染 GPU Worker 对接合同
 
-iTwin Studio 同时提供控制面和可部署的 Reference Worker（`apps/cloud-render-worker`）。Reference Worker 使用 Chromium 打开真实发布页并请求 WebGPU，初始化失败时由发布运行时自动回退 WebGL；Worker 捕获最终实际 canvas，由 Chromium WebRTC 栈完成硬件编码，并通过 DataChannel 回传鼠标键盘。控制面不会用延时器、WebSocket 已连接或信令成功冒充媒体可用。
+Industrial Studio 同时提供控制面和可部署的 Reference Worker（`apps/cloud-render-worker`）。Reference Worker 使用 Chromium 打开真实发布页并请求 WebGPU，初始化失败时由发布运行时自动回退 WebGL；Worker 捕获最终实际 canvas，由 Chromium WebRTC 栈完成硬件编码，并通过 DataChannel 回传鼠标键盘。控制面不会用延时器、WebSocket 已连接或信令成功冒充媒体可用。
 
 ## 服务器配置
 
@@ -99,7 +99,7 @@ Worker 启动中可以返回：
 }
 ```
 
-此时 iTwin Studio 只显示“等待媒体证据”，不会显示“运行中”。
+此时 Industrial Studio 只显示“等待媒体证据”，不会显示“运行中”。
 
 ## 查询媒体就绪
 

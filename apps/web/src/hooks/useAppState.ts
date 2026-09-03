@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type {
   ApplicationDocument, CameraConstraintsState, CameraState, CameraViewState, ClippingState,
   GlobalLightingState, MeasurementState, NavigationSettingsState, ProjectRecord,
@@ -6,10 +6,10 @@ import type {
   SceneCoordinateSystemState, SceneDashboardState, SceneDataBindingState,
   SceneEnvironmentState, SceneInteractionScriptState, ScenePhysicsState,
   ScenePostProcessingState, SceneSelectionSetState, SceneSnapshot,
-  SystemBrandingSettings, SystemUserRecord, TopologyScadaRuntimeState, WeatherMode
+  ScriptModule, SystemBrandingSettings, SystemUserRecord, TopologyScadaRuntimeState, WeatherMode
 } from "@bim-studio/contracts";
 import {
-  AUTO_SAVE_STORAGE_KEY, DEFAULT_ANIMATION, DEFAULT_BRANDING, DEFAULT_CAMERA_CONSTRAINTS,
+  AUTO_SAVE_STORAGE_KEY, BEHAVIOR_LAYOUT_STORAGE_KEY, DEFAULT_ANIMATION, DEFAULT_BRANDING, DEFAULT_CAMERA_CONSTRAINTS, type BehaviorLayoutMode,
   DEFAULT_CLIPPING, DEFAULT_ENVIRONMENT, DEFAULT_LIGHTING, DEFAULT_PHYSICS,
   DEFAULT_POST_PROCESSING, RENDERER_BACKEND_STORAGE_KEY, REVIT_VERSION_STORAGE_KEY
 } from "../appDefaults";
@@ -51,6 +51,14 @@ export function useAppState() {
   const webGpuSceneReplacementCountRef = useRef(0);
   const applicationSessionRef = useRef<ApplicationSession>(null!);
   applicationSessionRef.current ??= new ApplicationSession();
+  const subscribeToApplication = useCallback(
+    (listener: () => void) => applicationSessionRef.current.store.subscribe(listener),
+    [],
+  );
+  const readApplicationState = useCallback(
+    () => applicationSessionRef.current.store.getState(),
+    [],
+  );
   const activeSceneIdRef = useRef<string | undefined>(undefined);
   // 跨页面定位必须等待三维引擎和场景资源重新就绪，不能捕获已销毁的 ViewerEngine。
   const pendingSceneFocusRef = useRef<{ sceneId: string; objectId: string; label?: string } | undefined>(undefined);
@@ -60,6 +68,8 @@ export function useAppState() {
   });
   const behaviorManagerRef = useRef<SceneBehaviorManager | undefined>(undefined);
   const behaviorCommandQueueRef = useRef(Promise.resolve());
+  // 脚本编辑器的未应用草稿由全局工作区导航在切换前同步入应用文档。
+  const pendingBehaviorDraftRef = useRef<ScriptModule | undefined>(undefined);
   const [engine, setEngine] = useState<ViewerEngine>();
   const [currentUser, setCurrentUser] = useState<SystemUserRecord>();
   const [branding, setBranding] = useState<SystemBrandingSettings>(DEFAULT_BRANDING);
@@ -122,7 +132,8 @@ export function useAppState() {
   const [route, setRoute] = useState<AppRoute>(() => readRoute());
   const dataReturnRouteRef = useRef<AppRoute | undefined>(undefined);
   const viewerRouteActive = route.view === "studio" || route.view === "view" || route.view === "published";
-  const applicationState = useMemo(() => applicationSessionRef.current.store.getState(), [applicationRevision]);
+  // ApplicationSession 是 React 外部 Store；使用一致快照订阅，避免工作区切换时读取到上一帧的选中对象。
+  const applicationState = useSyncExternalStore(subscribeToApplication, readApplicationState, readApplicationState);
   const activeApplication = applicationState.document;
   activeSceneIdRef.current = route.view === "studio" && route.applicationId ? activeScene?.id : undefined;
   const activeDashboardPage = route.view === "dashboard" && activeApplication && activeApplication.metadata.id === route.applicationId ? activeApplication.pages.find((page) => page.id === route.pageId) : undefined;
@@ -189,9 +200,13 @@ export function useAppState() {
   const [floorExpansionByModel, setFloorExpansionByModel] = useState<Record<string, number>>({});
   const [clipping, setClippingState] = useState<ClippingState>(DEFAULT_CLIPPING);
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
-  const [sceneOrganizationOpen, setSceneOrganizationOpen] = useState(false);
+  // 场景目录默认就是可编组树，避免再进入一套脱离目录的“批量管理”页面。
+  const [sceneOrganizationOpen, setSceneOrganizationOpen] = useState(true);
   const [sceneImportOpen, setSceneImportOpen] = useState(false);
   const [sceneBehaviorOpen, setSceneBehaviorOpen] = useState(false);
+  const [sceneBehaviorLayout, setSceneBehaviorLayout] = useState<BehaviorLayoutMode>(() =>
+    window.localStorage.getItem(BEHAVIOR_LAYOUT_STORAGE_KEY) === "float" ? "float" : "split"
+  );
   const [sceneBehaviorActive, setSceneBehaviorActive] = useState(false);
   const [sceneBehaviorPaused, setSceneBehaviorPaused] = useState(false);
   const [sceneBehaviorEntries, setSceneBehaviorEntries] = useState<SceneBehaviorManagerEntry[]>([]);
@@ -231,7 +246,7 @@ export function useAppState() {
     sceneNameCommitRef, sceneApplyVersionRef, sceneWorkspaceLoadRef, rendererSnapshotRef,
     webGpuSceneReplacementCountRef,
     applicationSessionRef, activeSceneIdRef, pendingSceneFocusRef, visionEventCursorRef,
-    behaviorManagerRef, behaviorCommandQueueRef, engine, setEngine,
+    behaviorManagerRef, behaviorCommandQueueRef, pendingBehaviorDraftRef, engine, setEngine,
     currentUser, setCurrentUser, branding, setBranding,
     authReady, setAuthReady, rendererBackend, setRendererBackend,
     rendererSwitching, setRendererSwitching, rendererGeneration, setRendererGeneration,
@@ -279,7 +294,7 @@ export function useAppState() {
     componentCategory, setComponentCategory, floorExpansionByModel, setFloorExpansionByModel,
     clipping, setClippingState, expandedModels, setExpandedModels,
     sceneOrganizationOpen, setSceneOrganizationOpen, sceneImportOpen, setSceneImportOpen,
-    sceneBehaviorOpen, setSceneBehaviorOpen, sceneBehaviorActive, setSceneBehaviorActive,
+    sceneBehaviorOpen, setSceneBehaviorOpen, sceneBehaviorLayout, setSceneBehaviorLayout, sceneBehaviorActive, setSceneBehaviorActive,
     sceneBehaviorPaused, setSceneBehaviorPaused, sceneBehaviorEntries, setSceneBehaviorEntries,
     sceneBehaviorLogs, setSceneBehaviorLogs, inspectorTab, setInspectorTab,
     sceneOrganizationSelection, setSceneOrganizationSelection, selectionSets, setSelectionSets,

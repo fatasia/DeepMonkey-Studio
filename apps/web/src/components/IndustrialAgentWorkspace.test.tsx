@@ -13,7 +13,7 @@ const tools: AgentToolDefinition[] = [{
 }];
 
 describe("IndustrialAgentRunView", () => {
-  it("shows the exact pending scope and post-action verification before approval", () => {
+  it("shows the exact pending scope and post-action verification before confirmation", () => {
     const checkpoint = fixture();
     checkpoint.status = "awaiting-approval";
     checkpoint.pendingTool = {
@@ -28,10 +28,11 @@ describe("IndustrialAgentRunView", () => {
       },
     };
     const html = render(checkpoint);
-    expect(html).toContain("需要你的明确批准");
+    expect(html).toContain("执行前需要你确认");
     expect(html).toContain("object:pump-01");
     expect(html).toContain("完成后必须返回独立验证证据");
-    expect(html).toContain("批准并继续");
+    expect(html).toContain("确认并继续");
+    expect(html).not.toContain("审批");
     expect(html).toContain("取消任务");
   });
 

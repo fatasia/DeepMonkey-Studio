@@ -1,0 +1,115 @@
+/* 默认收起的流程只是一条上下文提示；展开后才呈现完整的交付工具。 */
+.project-delivery-flow {
+  margin: 0 0 20px;
+  padding: 14px;
+  border-color: #29373d;
+  border-radius: 10px;
+  background: #12191d;
+}
+
+.project-delivery-flow > header { min-height: 36px; margin-bottom: 12px; }
+.project-delivery-flow > header > span { gap: 10px; }
+.project-delivery-flow > header strong { color: #dce6e8; font-size: 12px; font-weight: 650; }
+
+.project-delivery-flow > header small {
+  color: #788990;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.project-delivery-flow.is-collapsed {
+  width: max-content;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.delivery-collapsed-trigger {
+  min-height: 32px;
+  padding: 0;
+  color: #88a2aa;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.delivery-collapsed-trigger:hover,
+.delivery-collapsed-trigger:focus-visible {
+  color: #d9f2f5;
+  border-bottom-color: #4b98a5;
+}
+
+.delivery-flow-actions { gap: 7px; }
+
+.delivery-collapse-action,
+.delivery-return-action {
+  min-height: 32px;
+  padding: 0 10px;
+  color: #aab8bd;
+  border-color: #34444b;
+  border-radius: 7px;
+  background: #151e22;
+  font-size: 11px;
+}
+
+.delivery-progress > span { background: #243137; }
+.delivery-progress > span > i { background: #54afbd; }
+
+.delivery-step-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.delivery-step-grid > button {
+  min-height: 54px;
+  padding: 9px 10px;
+  border-color: transparent;
+  border-radius: 7px;
+  background: #172025;
+}
+
+.delivery-step-grid > button:hover { border-color: #42545b; background: #1b272c; }
+
+.delivery-step-grid > button > i {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+  color: #87979d;
+  background: #223037;
+}
+
+.delivery-step-grid > button strong,
+.delivery-step-grid > button small {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.project-delivery-flow .delivery-step-grid > button.ready {
+  border-color: transparent;
+  background: rgba(44, 91, 70, .16);
+}
+
+.project-delivery-flow .delivery-step-grid > button.ready > i {
+  color: #78c99c;
+  background: #1b382a;
+}
+
+.project-delivery-flow .delivery-step-grid > button.blocked {
+  border-color: transparent;
+  background: rgba(105, 69, 39, .18);
+}
+
+.project-delivery-flow .delivery-step-grid > button.active {
+  border-color: #458c99;
+  background: rgba(48, 129, 145, .16);
+  box-shadow: inset 0 0 0 1px rgba(83, 166, 181, .16);
+}
+
+@media (max-width: 760px) {
+  .delivery-flow-actions { width: 100%; }
+  .delivery-step-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

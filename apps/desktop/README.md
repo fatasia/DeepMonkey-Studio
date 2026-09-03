@@ -1,4 +1,4 @@
-# Dev Studio Desktop
+# Industrial Studio Desktop
 
 M7 的 Tauri 2 薄宿主。它打包 `apps/web` 的同一份静态产物，只负责桌面系统边界，不复制编辑器业务逻辑。
 
@@ -48,7 +48,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-windows-insta
 
 ## 单场景只读客户端
 
-只读客户端不是完整编辑器的改名包。它从指定发布版本固化场景与站内资源，使用专用 `SceneViewerRoot` 和只读 Tauri capability；交付目标与 WebGL/WebGPU 渲染模式分别配置。安装后只提供浏览和可选工具栏，不提供项目、场景、脚本或保存入口。
+只读客户端不是完整编辑器的改名包。它从指定发布版本固化场景与站内资源，使用专用 `SceneViewerRoot` 和只读 Tauri capability；交付目标与 WebGL/WebGPU 渲染模式分别配置。安装后只提供浏览和可选工具栏，不提供项目管理、二维/三维编辑、脚本、保存、发布、AI 或数据配置入口。作者行为脚本和实时数据不在该离线包中执行。
+
+默认构建先把 viewer-only Web 产物写入 `.scene-viewer-build/<package-id>/web-dist`，再复制到同一包的 `frontend` 目录。该目录与普通 Web/编辑客户端的 `apps/web/dist` 隔离，发布器不会清理或覆盖后者。Vite 清单必须包含 `SceneViewerRoot` 且不能包含编辑器入口；复制后还会根据冻结快照裁剪不需要的导入器、物理运行时和公共资源。不能把普通 Web `dist` 直接当作只读包产物。
 
 生产 API 模式必须提供精确发布时间，避免用户选择新版本后打包内容悄然变化。令牌建议只通过环境变量传入：
 

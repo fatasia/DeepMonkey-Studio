@@ -18,7 +18,7 @@ const DEFAULT_SCREEN: SceneMaterialScreenState = {
   emissiveIntensity: 1,
 };
 
-/** 只配置模型表面媒体；资源选择和上传仍由统一素材库承担。 */
+/** 只配置模型表面媒体；资源选择和上传仍由统一资源库承担。 */
 export function ModelScreenEditor({ locale, disabled, screen, onChange }: ModelScreenEditorProps) {
   const value = screen ?? DEFAULT_SCREEN;
   const update = (patch: Partial<SceneMaterialScreenState>) => onChange({ screen: { ...value, ...patch } });

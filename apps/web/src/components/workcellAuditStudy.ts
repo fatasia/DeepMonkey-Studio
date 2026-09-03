@@ -9,7 +9,7 @@ import type {
 import { buildIndustrialStudyContext } from "./industrialStudyFingerprints";
 
 const WORKCELL_ENGINE_ID = "manufacturing.workcell.audit";
-const WORKCELL_ENGINE_VERSION = "1.1.0";
+const WORKCELL_ENGINE_VERSION = "1.4.0";
 
 export function buildWorkcellAuditStudyInput({
   scene,

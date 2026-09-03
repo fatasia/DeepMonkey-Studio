@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import pureFixture from "../../../../test-fixtures/scene-v1-pure-3d.json";
 import { migrateSceneSnapshotV1, type ProjectRecord, type SceneSnapshot } from "@bim-studio/contracts";
 import { calculateDashboardEditorFocus, calculateDashboardEditorZoom, calculateDashboardRuntimeViewport, dashboardNodeSelection, DashboardWorkspace, snapDashboardFrame, updateDashboardParameterDraft } from "./DashboardWorkspace";
+import { dashboardInsertedNodeName } from "./dashboardWorkspaceModel";
 
 vi.mock("./DashboardWidgetRuntime", () => ({
   DashboardWidgetView: () => null,
@@ -45,6 +46,25 @@ describe("DashboardWorkspace", () => {
     expect(calculateDashboardEditorFocus(page, nodes, 960, 640, "page").target).toBe("page");
   });
 
+  it("opens a populated ultra-wide dashboard at a readable first business chapter", () => {
+    const page = { width: 3840, height: 1080 };
+    const nodes = [
+      { frame: { x: 80, y: 46, width: 3680, height: 92 }, visible: true },
+      { frame: { x: 80, y: 166, width: 896, height: 246 }, visible: true },
+      { frame: { x: 1008, y: 166, width: 896, height: 246 }, visible: true },
+      { frame: { x: 1936, y: 166, width: 896, height: 246 }, visible: true },
+      { frame: { x: 2864, y: 166, width: 896, height: 246 }, visible: true },
+      { frame: { x: 80, y: 444, width: 2360, height: 526 }, visible: true },
+      { frame: { x: 2472, y: 444, width: 1288, height: 526 }, visible: true },
+    ];
+
+    const smart = calculateDashboardEditorFocus(page, nodes, 960, 640, "smart");
+
+    expect(smart).toMatchObject({ target: "content", zoom: 0.5 });
+    expect(smart.centerX).toBeLessThan(page.width / 2);
+    expect(calculateDashboardEditorFocus(page, nodes, 960, 640, "page").zoom).toBeLessThan(0.5);
+  });
+
   it("calculates contain, cover, stretch, and fixed large-screen fit modes", () => {
     const page = { width: 3840, height: 1080 };
 
@@ -83,6 +103,13 @@ describe("DashboardWorkspace", () => {
     expect(dashboardNodeSelection(nodes, "a", [], false)).toEqual(["a", "b"]);
     expect(dashboardNodeSelection(nodes, "d", ["a"], false)).toEqual(["d"]);
     expect(dashboardNodeSelection(nodes, "d", ["a"], true)).toEqual(["a", "d"]);
+  });
+
+  it("keeps the visible resource name when inserting a catalog component", () => {
+    const nodes = [{ id: "existing", name: "经营指标卡" }] as unknown as typeof application.pages[0]["nodes"];
+
+    expect(dashboardInsertedNodeName("zh-CN", "value", { title: "经营指标" }, "经营指标卡", [])).toBe("经营指标卡");
+    expect(dashboardInsertedNodeName("zh-CN", "value", { title: "经营指标" }, "经营指标卡", nodes)).toBe("经营指标卡 2");
   });
 
   it("renders user-defined large-screen resolution controls and overflow diagnostics", () => {

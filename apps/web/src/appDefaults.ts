@@ -9,11 +9,24 @@ import type {
   SkyboxPreset,
   SystemBrandingSettings
 } from "@bim-studio/contracts";
+import { supportedExtensions } from "@bim-studio/contracts";
 
-export const ACCEPTED_MODELS = ".rvt,.ifc,.step,.stp,.dwg,.dxf,.gltf,.glb,.fbx,.obj,.stl,.3mf,.dae,.3ds,.x_t,.x_b,.jt,.usd,.usda,.usdc,.usdz";
+/** 与 API 上传合同同源，新增或移除格式时不会出现前后端漂移。 */
+export const ACCEPTED_MODELS = supportedExtensions.map((extension) => `.${extension}`).join(",");
 export const RENDERER_BACKEND_STORAGE_KEY = "bim-studio.renderer-backend";
 export const REVIT_VERSION_STORAGE_KEY = "bim-studio.revit-version";
 export const AUTO_SAVE_STORAGE_KEY = "bim-studio.auto-save";
+export const BEHAVIOR_LAYOUT_STORAGE_KEY = "bim-studio.behavior-layout";
+export type BehaviorLayoutMode = "split" | "float" | "window";
+export const BEHAVIOR_SPLIT_WIDTH_STORAGE_KEY = "bim-studio.behavior-split-width";
+export const BEHAVIOR_FLOAT_RECT_STORAGE_KEY = "bim-studio.behavior-float-rect";
+export const BEHAVIOR_SCRIPT_LIST_WIDTH_STORAGE_KEY = "bim-studio.behavior-script-list-width";
+export const BEHAVIOR_SCRIPT_LIST_COLLAPSED_STORAGE_KEY = "bim-studio.behavior-script-list-collapsed";
+export const BEHAVIOR_WINDOW_RECT_STORAGE_KEY = "bim-studio.behavior-window-rect";
+export const DASHBOARD_LEFT_PANEL_STORAGE_KEY = "bim-studio.dashboard-left-panel";
+export const DASHBOARD_INSPECTOR_STORAGE_KEY = "bim-studio.dashboard-inspector";
+export const STUDIO_LEFT_PANEL_STORAGE_KEY = "bim-studio.studio-left-panel";
+export const STUDIO_INSPECTOR_STORAGE_KEY = "bim-studio.studio-inspector";
 export const numberFormat = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 
 export const DEFAULT_LIGHTING: GlobalLightingState = {

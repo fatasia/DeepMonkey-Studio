@@ -151,6 +151,18 @@ export function uniqueDashboardNodeName(base: string, usedNames: ReadonlySet<str
   return `${normalizedBase} ${suffix}`;
 }
 
+/** 插入目录资源后沿用用户刚看到的资源名，避免图层树退化为大量“指标卡/折线图”。 */
+export function dashboardInsertedNodeName(
+  locale: AppLocale,
+  type: SceneDashboardWidgetType,
+  widget: Partial<DashboardDataWidgetConfig>,
+  nameHint: string | undefined,
+  existingNodes: readonly WidgetNode[],
+): string {
+  const base = nameHint?.trim() || widget.title?.trim() || dataWidgetTypeLabel(locale, type);
+  return uniqueDashboardNodeName(base, new Set(existingNodes.map((node) => dashboardNodeIdentity(node).toLocaleLowerCase())));
+}
+
 export function normalizeDashboardSize(value: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.min(DASHBOARD_PAGE_MAX_SIZE, Math.max(DASHBOARD_PAGE_MIN_SIZE, Math.round(value)));
@@ -285,13 +297,31 @@ export function calculateDashboardEditorFocus(
   const contentZoom = Math.min(1.25, calculateDashboardEditorZoom(target, surfaceWidth, surfaceHeight));
   const contentCoverage = (target.width * target.height) / Math.max(1, page.width * page.height);
   const shouldFocusContent = mode === "content" || (contentCoverage < 0.7 && contentZoom >= pageZoom * 1.25);
-  if (!shouldFocusContent) return pageEditorFocus(page, pageZoom);
-  return {
-    zoom: contentZoom,
-    centerX: target.x + target.width / 2,
-    centerY: target.y + target.height / 2,
-    target: "content",
-  };
+  if (shouldFocusContent) {
+    return {
+      zoom: contentZoom,
+      centerX: target.x + target.width / 2,
+      centerY: target.y + target.height / 2,
+      target: "content",
+    };
+  }
+  const ultraWidePage = page.width / Math.max(1, page.height) >= 2.4;
+  // Ultra-wide dashboards are authored as horizontal chapters. Fitting the entire
+  // page on entry turns controls and labels into a thumbnail, even when the page is
+  // already densely populated. Start at a readable chapter and leave full-page fit
+  // as the explicit secondary action in the canvas toolbar.
+  if (mode === "smart" && ultraWidePage && pageZoom < 0.5) {
+    const readableZoom = 0.5;
+    const visibleLogicalWidth = Math.max(1, (surfaceWidth - 84) / readableZoom);
+    const halfViewport = visibleLogicalWidth / 2;
+    return {
+      zoom: readableZoom,
+      centerX: Math.min(page.width - halfViewport, Math.max(halfViewport, target.x + halfViewport)),
+      centerY: target.y + target.height / 2,
+      target: "content",
+    };
+  }
+  return pageEditorFocus(page, pageZoom);
 }
 
 function dominantContentFrames(frames: readonly WidgetFrame[], page: Pick<DashboardPageDocument, "width" | "height">): readonly WidgetFrame[] {

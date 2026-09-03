@@ -9,7 +9,7 @@
   padding: 6px 8px;
   border-bottom: 1px solid #2a3439;
   background: #12191c;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .dashboard-left-tabs button {
@@ -25,6 +25,7 @@
   border-radius: 6px;
   background: transparent;
   font-size: 10px;
+  white-space: nowrap;
   cursor: pointer;
 }
 

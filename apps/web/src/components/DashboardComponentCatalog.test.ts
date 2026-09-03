@@ -40,6 +40,8 @@ describe("DashboardComponentCatalog", () => {
     expect(DASHBOARD_COMPONENT_PRESETS.every((preset) => preset.zh.trim() && preset.descriptionZh.trim())).toBe(true);
     expect(DASHBOARD_COMPONENT_PRESETS.every((preset) => preset.widget.title?.trim())).toBe(true);
     expect(new Set(DASHBOARD_COMPONENT_PRESETS.map((preset) => preset.preview.variant)).size).toBe(DASHBOARD_COMPONENT_PRESETS.length);
+    expect(DASHBOARD_COMPONENT_PRESETS.every((preset) => preset.widget.color === preset.preview.accent)).toBe(true);
+    expect(new Set(functionalPresets.map((preset) => preset.widget.color)).size).toBeGreaterThanOrEqual(5);
 
     for (const preset of DASHBOARD_COMPONENT_PRESETS) {
       const html = renderToStaticMarkup(createElement(DashboardComponentPreview, {
@@ -49,6 +51,7 @@ describe("DashboardComponentCatalog", () => {
       }));
       expect(html).toContain(`data-preview-variant="${preset.id}"`);
       expect(html).toContain("dashboard-library-preview-mark");
+      expect(html).toContain(`--preview-accent:${preset.preview.accent}`);
     }
   });
 

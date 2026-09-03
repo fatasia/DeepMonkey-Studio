@@ -9,6 +9,7 @@ namespace BimStudio.Bridge.Editor
         public int bridgeVersion = 1;
         public string playerUrl = "index.html";
         public string unityVersion = Application.unityVersion;
+        public string bridgePackageVersion = "0.6.1";
         public string[] scenes = Array.Empty<string>();
         public string[] events = Array.Empty<string>();
         public string[] actions = Array.Empty<string>();
@@ -41,7 +42,7 @@ namespace BimStudio.Bridge.Editor
         [InspectorName("可选项") ] public string[] options = Array.Empty<string>();
     }
 
-    [CreateAssetMenu(fileName = "BimStudioManifest", menuName = "BIM Studio/Unity WebGL 集成清单")]
+    [CreateAssetMenu(fileName = "BimStudioManifest", menuName = "Industrial Studio/Unity WebGL 集成清单")]
     public sealed class BimStudioManifestAsset : ScriptableObject
     {
         public string[] events = Array.Empty<string>();

@@ -4,6 +4,7 @@ import type { DataComputedField, DataConnectionRecord, DataConnectionType, DataD
 import { compileFormula } from "@bim-studio/data-runtime";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
+import { DEFAULT_DATA_REFRESH_SECONDS, MIN_DATA_REFRESH_SECONDS } from "./dataRefreshPolicy";
 import {
   CONNECTOR_REQUIRED,
   DATABASE_CONNECTIONS,
@@ -246,33 +247,36 @@ export function ConnectionForm({
           )}
         </>
       )}
-      <div className="data-form-pair">
-        <label>
-          <span>{tr(locale, "失败重试次数", "Retry attempts")}</span>
-          <input type="number" min="0" max="10" step="1" value={retryAttempts} onChange={(event) => setRetryAttempts(Number(event.target.value))} />
-        </label>
-        <label>
-          <span>{tr(locale, "初始间隔（毫秒）", "Initial delay (ms)")}</span>
-          <input type="number" min="100" max="10000" step="50" value={retryDelayMs} onChange={(event) => setRetryDelayMs(Number(event.target.value))} />
-        </label>
-      </div>
-      <div className="data-form-pair">
-        <label>
-          <span>{tr(locale, "最大间隔（毫秒）", "Maximum delay (ms)")}</span>
-          <input type="number" min="100" max="60000" step="500" value={retryMaxDelayMs} onChange={(event) => setRetryMaxDelayMs(Number(event.target.value))} />
-        </label>
-        <label>
-          <span>{tr(locale, "退避倍数", "Backoff multiplier")}</span>
-          <input type="number" min="1" max="5" step="0.25" value={retryMultiplier} onChange={(event) => setRetryMultiplier(Number(event.target.value))} />
-        </label>
-      </div>
-      <small>
-        {tr(
-          locale,
-          "仅对超时、连接重置和 5xx 等瞬态错误重试；查询语法和权限错误不会重复请求。",
-          "Retries only transient timeouts, resets and 5xx errors; syntax and permission errors are not repeated.",
-        )}
-      </small>
+      <details className="data-form-advanced">
+        <summary>{tr(locale, "高级连接策略", "Advanced connection policy")}</summary>
+        <div className="data-form-pair">
+          <label>
+            <span>{tr(locale, "失败重试次数", "Retry attempts")}</span>
+            <input type="number" min="0" max="10" step="1" value={retryAttempts} onChange={(event) => setRetryAttempts(Number(event.target.value))} />
+          </label>
+          <label>
+            <span>{tr(locale, "初始间隔（毫秒）", "Initial delay (ms)")}</span>
+            <input type="number" min="100" max="10000" step="50" value={retryDelayMs} onChange={(event) => setRetryDelayMs(Number(event.target.value))} />
+          </label>
+        </div>
+        <div className="data-form-pair">
+          <label>
+            <span>{tr(locale, "最大间隔（毫秒）", "Maximum delay (ms)")}</span>
+            <input type="number" min="100" max="60000" step="500" value={retryMaxDelayMs} onChange={(event) => setRetryMaxDelayMs(Number(event.target.value))} />
+          </label>
+          <label>
+            <span>{tr(locale, "退避倍数", "Backoff multiplier")}</span>
+            <input type="number" min="1" max="5" step="0.25" value={retryMultiplier} onChange={(event) => setRetryMultiplier(Number(event.target.value))} />
+          </label>
+        </div>
+        <small>
+          {tr(
+            locale,
+            "仅对超时、连接重置和 5xx 等瞬态错误重试；查询语法和权限错误不会重复请求。",
+            "Retries only transient timeouts, resets and 5xx errors; syntax and permission errors are not repeated.",
+          )}
+        </small>
+      </details>
       <div className="data-form-actions">
         <button onClick={onCancel}>{tr(locale, "取消", "Cancel")}</button>
         <button className="primary" disabled={!name.trim() || connectorRequired} onClick={() => void save()}>
@@ -303,7 +307,8 @@ export function DatasetForm({
   const [name, setName] = useState(initial?.name ?? tr(locale, "新数据集", "New dataset"));
   const [query, setQuery] = useState(initial?.query ?? defaultDatasetQuery(connection.type));
   const [sourceKey, setSourceKey] = useState(initial?.sourceKey ?? defaultDatasetSourceKey(connection.type));
-  const [refreshSeconds, setRefreshSeconds] = useState(initial?.refreshSeconds ?? 5);
+  const [refreshSeconds, setRefreshSeconds] = useState(initial?.refreshSeconds ?? DEFAULT_DATA_REFRESH_SECONDS);
+  const [scheduledSeconds, setScheduledSeconds] = useState(initial?.refreshSeconds && initial.refreshSeconds > 0 ? initial.refreshSeconds : DEFAULT_DATA_REFRESH_SECONDS);
   const [computedFields, setComputedFields] = useState<DataComputedField[]>(initial?.computedFields ?? []);
   const sql = SQL_CONNECTIONS.has(connection.type);
   const jsonQuery = JSON_QUERY_CONNECTORS.has(connection.type);
@@ -411,10 +416,41 @@ export function DatasetForm({
           <input value={sourceKey} onChange={(event) => setSourceKey(event.target.value)} placeholder={datasetSourcePlaceholder(connection.type)} />
         </label>
       )}
-      <label>
-        <span>{tr(locale, "刷新秒数", "Refresh seconds")}</span>
-        <input type="number" min="0" value={refreshSeconds} onChange={(event) => setRefreshSeconds(Math.max(0, Number(event.target.value)))} />
-      </label>
+      <div className={`data-form-pair data-refresh-policy${refreshSeconds === 0 ? " manual" : ""}`}>
+        <label>
+          <span>{tr(locale, "更新策略", "Update policy")}</span>
+          <select
+            value={refreshSeconds === 0 ? "manual" : "scheduled"}
+            onChange={(event) => setRefreshSeconds(event.target.value === "manual" ? 0 : scheduledSeconds)}
+          >
+            <option value="scheduled">{tr(locale, "定时更新", "Scheduled")}</option>
+            <option value="manual">{tr(locale, "手动更新", "Manual")}</option>
+          </select>
+        </label>
+        {refreshSeconds > 0 && (
+          <label>
+            <span>{tr(locale, "刷新周期（秒）", "Interval (seconds)")}</span>
+            <input
+              type="number"
+              min={MIN_DATA_REFRESH_SECONDS}
+              max="3600"
+              step="1"
+              value={refreshSeconds}
+              onChange={(event) => {
+                if (!Number.isFinite(event.currentTarget.valueAsNumber)) return;
+                const seconds = Math.max(MIN_DATA_REFRESH_SECONDS, event.currentTarget.valueAsNumber);
+                setScheduledSeconds(seconds);
+                setRefreshSeconds(seconds);
+              }}
+            />
+          </label>
+        )}
+      </div>
+      <small className="data-refresh-policy-hint">
+        {refreshSeconds === 0
+          ? tr(locale, "打开页面时读取一次，之后仅在用户主动运行时更新。", "Loads once when opened, then updates only when run manually.")
+          : tr(locale, "二维组件和拓扑会继承此周期；三维对象可在绑定中单独设置，实时连接仍采用推送。", "2D widgets and topology inherit this interval; 3D objects can override it per binding and live connections continue to use push.")}
+      </small>
       <section className="data-computed-fields">
         <header>
           <span>

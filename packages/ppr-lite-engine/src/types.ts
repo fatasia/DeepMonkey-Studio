@@ -44,6 +44,58 @@ export interface PprResourceConflict {
   availableCapacity: number;
 }
 
+export interface PprStationBalance {
+  resourceId: string;
+  operationIds: string[];
+  assignedMinutes: number;
+  stationUnits: number;
+  loadPerUnitMinutes: number;
+  taktUtilization: number | null;
+  status: "not-configured" | "underloaded" | "balanced" | "overloaded";
+}
+
+export interface PprLineBalance {
+  targetTaktMinutes: number | null;
+  totalWorkContentMinutes: number;
+  configuredStationUnits: number;
+  theoreticalMinimumStationUnits: number | null;
+  balanceEfficiency: number | null;
+  stationLoads: PprStationBalance[];
+  unassignedOperationIds: string[];
+  overloadedResourceIds: string[];
+}
+
+export interface PprVariantEntitySet {
+  componentIds: string[];
+  operationIds: string[];
+  precedenceRelationIds: string[];
+  resourceIds: string[];
+  assignmentIds: string[];
+}
+
+/** Explicit variant filtering only. Free-form conditions remain visible evidence and are never guessed. */
+export interface PprVariantScope {
+  activeVariantId: string | null;
+  availableVariantIds: string[];
+  knownVariant: boolean;
+  included: PprVariantEntitySet;
+  excluded: PprVariantEntitySet;
+  unresolvedConditionIds: string[];
+}
+
+export interface PprQualityControlCoverage {
+  operationCount: number;
+  coveredOperationCount: number;
+  completeOperationCount: number;
+  controlPointCount: number;
+  completeControlPointCount: number;
+  missingOperationIds: string[];
+  incompleteOperationIds: string[];
+  qualityPlanReady: boolean;
+  /** Definition evidence only; this does not claim measurement capture or SPC execution. */
+  evidenceScope: "control-plan-definition-only";
+}
+
 export interface PprAnalysis {
   issues: PprIssue[];
   topologicalOrder: string[];
@@ -51,10 +103,13 @@ export interface PprAnalysis {
   criticalPath: PprCriticalPath;
   resourceLoads: PprResourceLoad[];
   resourceConflicts: PprResourceConflict[];
+  lineBalance: PprLineBalance;
+  variantScope: PprVariantScope;
+  qualityControl: PprQualityControlCoverage;
 }
 
 export type PprChangeType = "added" | "removed" | "modified";
-export type PprChangeEntityType = "component" | "operation" | "precedence" | "resource" | "assignment";
+export type PprChangeEntityType = "plan" | "component" | "operation" | "precedence" | "resource" | "assignment";
 
 export interface PprVersionChange {
   entityType: PprChangeEntityType;
@@ -70,7 +125,7 @@ export interface PprVersionImpact {
 }
 
 export interface PprRegression {
-  code: "critical-path-increased" | "new-validation-error" | "resource-conflict-introduced" | "standard-time-increased";
+  code: "critical-path-increased" | "new-validation-error" | "resource-conflict-introduced" | "standard-time-increased" | "takt-overload-introduced";
   message: string;
   entityIds: string[];
 }

@@ -107,6 +107,12 @@ export function DashboardNode({
           event.stopPropagation();
           if (!runtime) onSelect(event.ctrlKey || event.metaKey);
         }}
+        onDoubleClick={(event) => {
+          if (!runtime && scene) {
+            event.stopPropagation();
+            onEnterScene(scene.id);
+          }
+        }}
         onContextMenu={(event) => {
           if (!runtime) onContextMenu?.(event);
         }}
@@ -130,10 +136,15 @@ export function DashboardNode({
         {!runtime && (
           <button
             className="dashboard-scene-edit-hit-target"
-            aria-label={tr(locale, "选择三维组件", "Select 3D component")}
+            aria-label={tr(locale, "选择三维组件；双击进入三维编辑", "Select 3D component; double-click to edit in 3D")}
+            title={tr(locale, "双击进入三维编辑", "Double-click to edit in 3D")}
             onClick={(event) => {
               event.stopPropagation();
               onSelect(event.ctrlKey || event.metaKey);
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              if (scene) onEnterScene(scene.id);
             }}
           />
         )}

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-iTwin Studio 需要支持自定义脚本、相机操作、第一/第三人称、near/far 截面、模型与 Mesh、材质、动画、设备拆解、AGV 和机器人实时运动、物流节拍等高度定制场景。
+Industrial Studio 需要支持自定义脚本、相机操作、第一/第三人称、near/far 截面、模型与 Mesh、材质、动画、设备拆解、AGV 和机器人实时运动、物流节拍等高度定制场景。
 
 把所有功能硬编码进编辑器会快速扩大核心；直接把 Three.js、DOM、网络和 Tauri 权限暴露给任意项目脚本，又会导致版本耦合、卡死、越权和不可发布。Worker 沙箱适合业务逻辑，但不能直接执行主线程渲染和高频图形扩展。
 
@@ -83,7 +83,7 @@ iTwin Studio 需要支持自定义脚本、相机操作、第一/第三人称、
 
 ## References
 
-- [iTwin Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
+- [Industrial Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
 - [ThingJS 官方指南](https://www.thingjs.com/guide/)
 - [ThingJS API 索引](https://docs.thingjs.com/cn/apidocs/)
 - [ThingJS App API](https://docs.thingjs.com/cn/apidocs/THING.App.html)

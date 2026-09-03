@@ -1,12 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, BellRing, Bot, CheckCircle2, CloudCog, FileClock, KeyRound, Pencil, PlugZap, Plus, Power, Save, Trash2, Users, XCircle } from "lucide-react";
+import { Activity, BellRing, Bot, CloudCog, FileClock, KeyRound, Pencil, PlugZap, Plus, Power, Save, Trash2, Users } from "lucide-react";
 import type {
   AiProviderSettings,
   AuditLogRecord,
   ConverterPluginDescriptor,
   ProjectRecord,
   ServiceHealthRecord,
-  ServiceLogRecord,
   SystemUserRecord,
   SystemUserRole,
 } from "@bim-studio/contracts";
@@ -15,6 +14,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { CloudRenderControl } from "./CloudRenderControl";
 import { SystemNotificationPanel } from "./SystemNotificationPanel";
 import { SecondaryPageBack } from "./SecondaryPageBack";
+import { SystemHealthPanel, SystemLogPanel } from "./SystemObservabilityPanels";
 
 export type SystemCenterTab = "users" | "health" | "audit" | "ai" | "cloud-render" | "notifications";
 type Translate = (zh: string, en: string) => string;
@@ -37,7 +37,6 @@ export function SystemCenter({
   const [users, setUsers] = useState<SystemUserRecord[]>([]);
   const [health, setHealth] = useState<ServiceHealthRecord[]>([]);
   const [logs, setLogs] = useState<AuditLogRecord[]>([]);
-  const [serviceLogs, setServiceLogs] = useState<ServiceLogRecord[]>([]);
   const [ai, setAi] = useState<AiProviderSettings>();
   const [aiProviders, setAiProviders] = useState<AiProviderDescriptor[]>([]);
   const [plugins, setPlugins] = useState<SystemPluginSummary[]>([]);
@@ -48,11 +47,10 @@ export function SystemCenter({
   async function load() {
     setError(undefined);
     try {
-      const [u, h, l, sl, a, p, c, providerCatalog] = await Promise.all([
+      const [u, h, l, a, p, c, providerCatalog] = await Promise.all([
         api.listUsers(),
         api.getSystemHealth(),
         api.listAuditLogs(),
-        api.listServiceLogs(),
         api.getAiSettings(),
         api.listPlugins(),
         api.listConverters(),
@@ -61,7 +59,6 @@ export function SystemCenter({
       setUsers(u);
       setHealth(h);
       setLogs(l);
-      setServiceLogs(sl);
       setAi(a);
       setPlugins(p.plugins);
       setConverters(c);
@@ -80,8 +77,8 @@ export function SystemCenter({
         <SecondaryPageBack locale={locale} onBack={onBack} />
         <div className="secondary-page-heading-row">
           <div className="secondary-page-title">
-            <small>SYSTEM CONTROL</small>
-            <h1>{t("系统管理", "System management")}</h1>
+            <small>SETTINGS</small>
+            <h1>{t("设置", "Settings")}</h1>
             <p>{t("用户授权、服务健康、通知推送、云渲染、操作审计与 AI 配置", "Users, service health, notifications, cloud rendering, audit logs and AI settings")}</p>
           </div>
         </div>
@@ -99,10 +96,10 @@ export function SystemCenter({
         {tab === "users" && (
           <UserPanel t={t} users={users} projects={projects} currentUser={currentUser} editing={editing} setEditing={setEditing} onReload={load} onError={setError} />
         )}
-        {tab === "health" && <HealthPanel t={t} health={health} converters={converters} />}
+        {tab === "health" && <SystemHealthPanel t={t} initialHealth={health} converters={converters} onError={setError} />}
         {tab === "cloud-render" && <CloudRenderControl locale={locale} />}
         {tab === "notifications" && <SystemNotificationPanel locale={locale} projects={projects} t={t} />}
-        {tab === "audit" && <AuditPanel t={t} logs={logs} serviceLogs={serviceLogs} />}
+        {tab === "audit" && <SystemLogPanel t={t} auditLogs={logs} onError={setError} />}
         {tab === "ai" && ai && (
           <div className="system-ai-layout">
             <AiSettingsPanel t={t} initial={ai} providers={aiProviders} onSaved={setAi} onError={setError} />
@@ -286,102 +283,6 @@ function UserForm({
           {t("保存", "Save")}
         </button>
       </footer>
-    </div>
-  );
-}
-
-function HealthPanel({ t, health, converters }: { t: Translate; health: ServiceHealthRecord[]; converters: ConverterPluginDescriptor[] }) {
-  return (
-    <div className="system-health-layout">
-      <div className="system-health-grid">
-        {health.map((service) => (
-          <article key={service.id}>
-            <div className={service.status}>{service.status === "healthy" ? <CheckCircle2 /> : <XCircle />}</div>
-            <span>
-              <strong>{service.name}</strong>
-              <small>{service.endpoint}</small>
-            </span>
-            <em>{service.status === "healthy" ? `${service.latencyMs ?? 0} ms` : (service.message ?? t("离线", "Offline"))}</em>
-          </article>
-        ))}
-      </div>
-      <section className="system-converter-health">
-        <header>
-          <span>
-            <PlugZap size={17} />
-            <strong>{t("工业格式转换器", "Industrial format converters")}</strong>
-          </span>
-          <small>
-            {t("目录可见不代表运行时已安装；状态来自服务端命令探测。", "Catalog presence does not mean the runtime is installed; status comes from server-side probing.")}
-          </small>
-        </header>
-        <div>
-          {converters.map((converter) => (
-            <article key={converter.manifest.id} className={converter.available ? "available" : "unavailable"}>
-              <i>{converter.available ? <CheckCircle2 size={16} /> : <XCircle size={16} />}</i>
-              <span>
-                <strong>{converter.manifest.name}</strong>
-                <small>
-                  {converter.manifest.inputFormats.map((format) => format.toUpperCase()).join(" / ")} · v{converter.manifest.version}
-                </small>
-                <em>{converter.provider?.message ?? converter.unavailableReason}</em>
-              </span>
-              <b>{converter.available ? t("可执行", "Ready") : t("待部署", "Setup required")}</b>
-              {!converter.available && converter.provider?.remediation && <p>{converter.provider.remediation}</p>}
-            </article>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function AuditPanel({ t, logs, serviceLogs }: { t: Translate; logs: AuditLogRecord[]; serviceLogs: ServiceLogRecord[] }) {
-  return (
-    <div className="system-audit-layout">
-      <div className="system-audit">
-        <header>
-          <strong>{t("最近操作", "Recent activity")}</strong>
-          <span>{t("最多保留 2,000 条", "Up to 2,000 records")}</span>
-        </header>
-        <table>
-          <thead>
-            <tr>
-              <th>{t("时间", "Time")}</th>
-              <th>{t("用户", "User")}</th>
-              <th>{t("动作", "Action")}</th>
-              <th>{t("资源", "Resource")}</th>
-              <th>{t("状态", "Status")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((log) => (
-              <tr key={log.id}>
-                <td>{new Date(log.createdAt).toLocaleString()}</td>
-                <td>{log.username ?? t("系统", "System")}</td>
-                <td>{log.action}</td>
-                <td title={log.resource}>{log.resource}</td>
-                <td className={log.statusCode >= 400 ? "error" : "ok"}>{log.statusCode}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <aside className="system-service-logs">
-        <header>
-          <strong>{t("服务错误日志", "Service error logs")}</strong>
-          <span>{t("每个服务最近 100 行", "Latest 100 lines per service")}</span>
-        </header>
-        {serviceLogs.map((log) => (
-          <details key={log.file} open={log.lines.length > 0}>
-            <summary>
-              <span>{log.service}</span>
-              <i>{log.lines.length}</i>
-            </summary>
-            <pre>{log.lines.length ? log.lines.join("\n") : t("无错误", "No errors")}</pre>
-          </details>
-        ))}
-      </aside>
     </div>
   );
 }

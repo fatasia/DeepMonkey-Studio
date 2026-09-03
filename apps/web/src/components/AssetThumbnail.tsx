@@ -9,7 +9,7 @@ interface AssetThumbnailProps {
   src: string;
 }
 
-/** 图片加载失败时保留卡片结构和可理解反馈，避免商业素材库出现空白卡。 */
+/** 图片加载失败时保留卡片结构和可理解反馈，避免商业资源库出现空白卡。 */
 export function AssetThumbnail({ locale, name, src }: AssetThumbnailProps) {
   const [failed, setFailed] = useState(false);
   if (failed) {

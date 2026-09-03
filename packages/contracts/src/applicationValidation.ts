@@ -2,6 +2,7 @@ import { validateScene, validateTopology } from "./sceneValidation.js";
 import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument } from "./application.js";
 import { assertPathSafeResourceId } from "./resourceId.js";
 import { assertDirectBindingSpec } from "./directBinding.js";
+import { supportedExtensions } from "./project.js";
 import {
   expectArray,
   expectBoolean,
@@ -30,7 +31,7 @@ import {
 type JsonObject = Record<string, unknown>;
 type Validator = (value: unknown, path: string) => void;
 
-const MODEL_FORMATS = ["rvt", "ifc", "step", "stp", "dwg", "dxf", "gltf", "glb", "fbx", "x_t", "x_b", "jt", "usd", "usda", "usdc", "usdz"] as const;
+const MODEL_FORMATS = supportedExtensions;
 const INTERACTION_TRIGGERS = ["load", "click", "doubleClick", "contextMenu", "pointerEnter", "pointerLeave", "animationStart", "animationEnd", "routePointReached"] as const;
 const INTERACTION_ACTION_TYPES = [
   "visibility",
@@ -48,7 +49,7 @@ const INTERACTION_ACTION_TYPES = [
   "unityAction",
 ] as const;
 const SCRIPT_LIFECYCLES = ["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"] as const;
-const SCRIPT_PERMISSIONS = ["scene.read", "scene.write", "data.read", "data.write", "network.connect", "renderer.extend", "editor.extend"] as const;
+const SCRIPT_PERMISSIONS = ["scene.read", "scene.write", "data.read", "data.write", "ai.invoke", "network.connect", "renderer.extend", "editor.extend"] as const;
 
 export function validateApplicationDocument(value: unknown): asserts value is ApplicationDocument {
   const application = expectObject(value, "应用文档必须是对象");
@@ -70,6 +71,15 @@ export function validateApplicationDocument(value: unknown): asserts value is Ap
   required(application, "data", validateData, "应用");
   validateArrayProperty(application, "interactions", validateInteraction);
   validateArrayProperty(application, "scripts", validateScript);
+  optional(application, "scriptDependencies", (dependencies, dependenciesPath) => {
+    expectArray(dependencies, dependenciesPath, validateScriptDependency);
+    const specifiers = new Set<string>();
+    for (const [index, dependency] of (dependencies as JsonObject[]).entries()) {
+      if (typeof dependency.specifier !== "string") continue;
+      if (specifiers.has(dependency.specifier)) invalid(`${dependenciesPath}[${index}].specifier`, "不能重复");
+      specifiers.add(dependency.specifier);
+    }
+  }, "应用");
   validateArrayProperty(application, "assets", validateAsset);
   validateArrayProperty(application, "timelines", validateTimeline);
   validateArrayProperty(application, "publicationProfiles", validatePublicationProfile);
@@ -548,6 +558,29 @@ function validateScriptTarget(value: unknown, path: string): void {
   const object = expectObject(value, path);
   requiredLiteral(object, "kind", ["scene", "object", "component"], path);
   if (object.kind === "object" || object.kind === "component") required(object, "id", expectString, path);
+}
+
+function validateScriptDependency(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "id", expectPathSafeResourceId, path);
+  required(object, "specifier", (specifier, specifierPath) => {
+    expectString(specifier, specifierPath);
+    if (!/^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/i.test(String(specifier))) {
+      invalid(specifierPath, "必须是 npm 风格模块名");
+    }
+  }, path);
+  requiredLiteral(object, "source", ["npm", "upload", "external-url"], path);
+  required(object, "requested", expectString, path);
+  optional(object, "resolvedVersion", expectString, path);
+  required(object, "fileName", expectString, path);
+  required(object, "assetUrl", expectString, path);
+  required(object, "integrity", (integrity, integrityPath) => {
+    expectString(integrity, integrityPath);
+    if (!/^sha256-[A-Za-z0-9+/]{43}=$/.test(String(integrity))) invalid(integrityPath, "必须是 SHA-256 SRI");
+  }, path);
+  required(object, "size", expectNonNegativeInteger, path);
+  optional(object, "license", expectString, path);
+  required(object, "installedAt", expectString, path);
 }
 
 function validateAsset(value: unknown, path: string): void {

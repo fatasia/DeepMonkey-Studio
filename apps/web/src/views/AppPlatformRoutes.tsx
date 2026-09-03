@@ -5,6 +5,7 @@ import { api, setAuthToken } from "../api";
 import { openBrowseRoute } from "../appRoute";
 import { storeLocale, translate as tr } from "../i18n";
 import type { AppViewBindings } from "./appViewBindings";
+import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
 
 // 三个完整编辑工作区都不是登录首屏依赖，按路由加载可显著降低初始脚本体积。
 const DashboardWorkspace = lazy(() => import("../components/DashboardWorkspace").then((module) => ({ default: module.DashboardWorkspace })));
@@ -345,6 +346,9 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
     restoreSceneObjectIsolation,
     createSceneSelectionSet,
     createSceneGroup,
+    moveSceneObjectsToGroup,
+    reorderSceneGroup,
+    renameSceneGroup,
     updateSceneSelectionSet,
     applySceneSelectionSet,
     deleteSceneSelectionSet,
@@ -415,6 +419,28 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
     refreshProject,
   } = actions;
   if (!currentUser) return null;
+  const flushBehaviorDraft = () => {
+    const result = flushPendingBehaviorDraft(state.pendingBehaviorDraftRef, upsertBehaviorScript);
+    if (result === "name-required") {
+      state.setError(tr(locale, "请先填写脚本名称，再离开脚本编辑器", "Enter a script name before leaving the script editor"));
+      return false;
+    }
+    return true;
+  };
+  const closeBehaviorEditor = () => {
+    if (!flushBehaviorDraft()) return;
+    setSceneBehaviorOpen(false);
+  };
+  const leaveDashboardAfterDraft = (action: () => void) => {
+    if (!flushBehaviorDraft()) return;
+    setSceneBehaviorOpen(false);
+    globalThis.setTimeout(() => {
+      void (async () => {
+        if (activeApplication && !(await saveActiveApplication())) return;
+        action();
+      })();
+    }, 0);
+  };
   return (
     <>
       {route.view === "dashboard" && activeApplication && activeDashboardPage && project && (
@@ -434,7 +460,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           selection={applicationState.selection}
           variables={applicationState.variables}
           filters={applicationState.filters}
-          onBack={() => navigate({ view: "manager" })}
+          onBack={() => leaveDashboardAfterDraft(() => navigate({ view: "manager" }))}
           onSelectPage={(pageId, view) =>
             navigate({
               view: "dashboard",
@@ -445,10 +471,15 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
             })
           }
           onEnterScene={enterSceneFromDashboard}
-          onOpen3D={enterSceneFromDashboard}
+          onOpen3D={(sceneId, view) => leaveDashboardAfterDraft(() => enterSceneFromDashboard(sceneId, view))}
           onOpenTopology={() => void openTopologyEditor(activeApplication)}
           onOpenData={openDataCenter}
-          onOpenScripts={() => setSceneBehaviorOpen(true)}
+          onOpenScripts={(selection) => {
+            applicationSessionRef.current.store.setSelection(selection);
+            setSceneBehaviorOpen(true);
+          }}
+          scriptOpen={sceneBehaviorOpen}
+          onCloseScripts={closeBehaviorEditor}
           onSelectionChange={(selection) => applicationSessionRef.current.store.setSelection(selection)}
           onFilterChange={(key, value) => applicationSessionRef.current.store.setFilter(key, value)}
           onVariableChange={(key, value) => applicationSessionRef.current.store.setVariable(key, value)}
@@ -517,7 +548,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
             </div>
           }
         >
-          <ModelOptimizer locale={locale} copyright={branding.copyright} onBack={() => navigate({ view: "manager" })} />
+          <ModelOptimizer locale={locale} onBack={() => navigate({ view: "manager" })} />
         </Suspense>
       )}
       {route.view === "data" && project && (
@@ -556,6 +587,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           <OperationsCenter
             project={project}
             scenes={scenes}
+            onOpenDataCenter={() => navigate({ view: "data" })}
             {...(route.operationsTab ? { initialTab: route.operationsTab } : {})}
             onTabChange={(tab) => navigate({ view: "operations", operationsTab: tab }, true)}
             onBack={() => navigate({ view: "manager" })}
@@ -578,7 +610,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           fallback={
             <div className="optimizer-loading">
               {" "}
-              <LoaderCircle className="spin" size={25} /> 正在加载系统管理{" "}
+              <LoaderCircle className="spin" size={25} /> 正在加载设置{" "}
             </div>
           }
         >

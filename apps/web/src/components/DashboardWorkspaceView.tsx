@@ -5,6 +5,7 @@ import { DashboardWorkspaceContextMenu } from "./DashboardWorkspaceContextMenu";
 import { DashboardWorkspaceHeader } from "./DashboardWorkspaceHeader";
 import { DashboardWorkspaceInspector } from "./DashboardWorkspaceInspector";
 import { DashboardWorkspaceLeftPanel } from "./DashboardWorkspaceLeftPanel";
+import { DashboardWorkspacePageBar } from "./DashboardWorkspacePageBar";
 import { DashboardWorkspaceTemplateLibrary } from "./DashboardWorkspaceTemplateLibrary";
 import { DashboardWorkspaceProvider } from "./dashboardWorkspaceContext";
 
@@ -60,10 +61,12 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
   return (
     <DashboardWorkspaceProvider controller={controller}>
       <main className={`dashboard-workspace${leftPanelOpen ? "" : " left-panel-collapsed"}${inspectorOpen ? "" : " inspector-collapsed"}`}>
+        <h1 className="sr-only">{page.name} · {locale === "zh-CN" ? "二维页面编辑" : "2D page editor"}</h1>
         <DashboardWorkspaceHeader />
         <DashboardWorkspaceLeftPanel />
         <DashboardWorkspaceCanvas />
         <DashboardWorkspaceInspector />
+        <DashboardWorkspacePageBar />
         <DashboardWorkspaceTemplateLibrary />
         <DashboardWorkspaceContextMenu />
       </main>

@@ -6,11 +6,11 @@ Accepted
 
 ## Context
 
-iTwin Studio 在 M8 需要参考 Siemens Tecnomatix Plant Simulation（下称 Plant Simulation）的工厂物流仿真主线，支持节拍、时间和分析等基本能力。用户已有 `D:\Documents\ChatGPT\IoT` 原型，其中包含离散事件物料流、预热、重复实验、固定随机种子、吞吐/周期/WIP、利用率、瓶颈、置信区间、多品种、资源池、故障、路由、死锁、AGV 路网和真实数据校准。
+Industrial Studio 在 M8 需要参考 Siemens Tecnomatix Plant Simulation（下称 Plant Simulation）的工厂物流仿真主线，支持节拍、时间和分析等基本能力。用户已有 `D:\Documents\ChatGPT\IoT` 原型，其中包含离散事件物料流、预热、重复实验、固定随机种子、吞吐/周期/WIP、利用率、瓶颈、置信区间、多品种、资源池、故障、路由、死锁、AGV 路网和真实数据校准。
 
 现有原型也混合了 IoT、维护、AI、交通安全、成本能源优化、巨型 Vue Store 和大量 Tauri command。直接合并会让 2D/3D 编辑器失去主体地位，并复制场景、数据、资产和运行时能力。完全重写又会浪费已经验证的算法、测试夹具和产品经验。
 
-Plant Simulation 的范围非常广，包括层级对象、开放接口、大规模模型、实验设计、统计、能耗成本、工厂/仓储物流和各种行业库。M8 的目标不是兼容 SimTalk 或复制完整产品，而是让 iTwin Studio 用户在现有 3D 场景中快速完成可信的生产线物料流研究。
+Plant Simulation 的范围非常广，包括层级对象、开放接口、大规模模型、实验设计、统计、能耗成本、工厂/仓储物流和各种行业库。M8 的目标不是兼容 SimTalk 或复制完整产品，而是让 Industrial Studio 用户在现有 3D 场景中快速完成可信的生产线物料流研究。
 
 ## Requirements
 
@@ -217,7 +217,7 @@ SimulationStudyDocument
 
 ## Alternatives considered
 
-**把旧 IoT 工程整体并入 iTwin Studio**：拒绝。它包含重复编辑器、巨型 Store 和超出物流范围的模块，会破坏当前架构。
+**把旧 IoT 工程整体并入 Industrial Studio**：拒绝。它包含重复编辑器、巨型 Store 和超出物流范围的模块，会破坏当前架构。
 
 **在 Three.js 帧循环中直接模拟物流**：拒绝。结果依赖帧率，无法快速实验、确定性回放或统计验证。
 
@@ -229,7 +229,7 @@ SimulationStudyDocument
 
 ## References
 
-- [iTwin Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
+- [Industrial Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
 - `D:\Documents\ChatGPT\IoT` 旧版原型（当前工作区外部参考，不作为仓库依赖）
 - [Siemens Plant Simulation](https://www.siemens.com/en-us/products/tecnomatix/plant-simulation-software/)
 - [Siemens Plant Simulation X Advanced](https://www.siemens.com/en-us/products/tecnomatix/offerings/plant-simulation-x-advanced/)

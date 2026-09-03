@@ -1,6 +1,7 @@
 import { ArrowLeft, Bot, LayoutDashboard, Plus, Redo2, Rocket, Save, Undo2 } from "lucide-react";
 import { SceneWorkspaceMoreMenu } from "../components/SceneWorkspaceMoreMenu";
 import { WorkspaceModeSwitch } from "../components/WorkspaceModeSwitch";
+import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
 import { translate as tr } from "../i18n";
 import type { AppViewBindings } from "./appViewBindings";
 
@@ -25,6 +26,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
     aiAssistantOpen,
     setAiAssistantOpen,
     importRef,
+    sceneBehaviorOpen,
     setSceneBehaviorOpen,
     setStudioPublishMode,
     setStudioPublishPerformance,
@@ -33,20 +35,65 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
     rendererDiagnostics,
   } = state;
   const { commitSceneName, exportSceneConfig, exportSingleFileScene, exportGlbScene, exportFbxScene, browseActiveScene, saveScene } = scenePersistence;
-  const { returnFromSceneEditor, publishActiveApplication, changeAutoSave } = applicationRuntime;
+  const { returnFromSceneEditor, publishActiveApplication, changeAutoSave, saveActiveApplication, upsertBehaviorScript } = applicationRuntime;
   const { switchProjectById, openProjectDialog, changeRendererBackend, navigate } = actions;
+  const flushBehaviorDraft = () => {
+    const result = flushPendingBehaviorDraft(state.pendingBehaviorDraftRef, upsertBehaviorScript);
+    if (result === "name-required") {
+      state.setError(tr(locale, "请先填写脚本名称，再离开脚本编辑器", "Enter a script name before leaving the script editor"));
+      return false;
+    }
+    return true;
+  };
+  const showThreeDimensionalWorkspace = () => {
+    if (!flushBehaviorDraft()) return;
+    setSceneBehaviorOpen(false);
+  };
+  const leaveThreeDimensionalWorkspace = () => {
+    if (!flushBehaviorDraft()) return;
+    setSceneBehaviorOpen(false);
+    globalThis.setTimeout(() => {
+      void (async () => {
+        if (activeApplication && !(await saveActiveApplication())) return;
+        if (await commitSceneName()) returnFromSceneEditor();
+      })();
+    }, 0);
+  };
 
   return (
     <header className="topbar">
-      <div className="brand-mark">
-        {/* 顶部窄位使用方形应用标识，完整字标由右侧 brand-copy 承载。 */}
-        <img src={branding.iconUrl} alt={branding.systemName} />
-      </div>
-      <div className="brand-copy">
-        <strong>{branding.systemName}</strong>
-        <span>{route.view === "studio" ? tr(locale, "三维场景编辑", "3D scene editor") : tr(locale, "场景浏览", "Scene viewer")}</span>
-      </div>
-      <div className="topbar-divider" />
+      {route.view === "studio" && (
+        <button
+          className="topbar-back"
+          title={route.dashboardReturn ? tr(locale, "返回二维设计", "Back to 2D design") : tr(locale, "返回场景管理", "Back to scenes")}
+          onClick={leaveThreeDimensionalWorkspace}
+        >
+          <ArrowLeft size={15} />
+          <span>{route.dashboardReturn ? tr(locale, "返回二维", "Back to 2D") : tr(locale, "场景管理", "Scenes")}</span>
+        </button>
+      )}
+      {route.view !== "studio" && (
+        <button
+          className="topbar-back"
+          title={tr(locale, "返回场景管理", "Back to scenes")}
+          onClick={() => navigate({ view: "manager" })}
+        >
+          <ArrowLeft size={15} />
+          <span>{tr(locale, "场景管理", "Scenes")}</span>
+        </button>
+      )}
+      {route.view !== "studio" && (
+        <>
+          <div className="brand-mark">
+            <img src={branding.iconUrl} alt={branding.systemName} />
+          </div>
+          <div className="brand-copy">
+            <strong>{branding.systemName}</strong>
+            <span>{tr(locale, "场景浏览", "Scene viewer")}</span>
+          </div>
+          <div className="topbar-divider" />
+        </>
+      )}
       {route.view === "studio" ? (
         <>
           {route.applicationId && activeApplication ? (
@@ -77,9 +124,10 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
           )}
           <WorkspaceModeSwitch
             locale={locale}
-            active="3d"
+            active={sceneBehaviorOpen ? "script" : "3d"}
             contextLabel={`${tr(locale, "三维场景", "3D scene")} · ${sceneName}`}
-            onSelect2D={() => void commitSceneName().then((committed) => committed && returnFromSceneEditor())}
+            onSelect2D={leaveThreeDimensionalWorkspace}
+            onSelect3D={showThreeDimensionalWorkspace}
             onSelectScripts={() => setSceneBehaviorOpen(true)}
           />
           <div className="scene-title-wrap">
@@ -101,6 +149,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
           <div className="scene-history-controls" aria-label={tr(locale, "三维编辑历史", "3D edit history")}>
             <button
               disabled={!sceneHistory.canUndo || busy}
+              aria-label={sceneHistory.undoLabel ? `${tr(locale, "撤销", "Undo")}：${sceneHistory.undoLabel}` : tr(locale, "暂无可撤销操作", "Nothing to undo")}
               title={sceneHistory.undoLabel ? `${tr(locale, "撤销", "Undo")}：${sceneHistory.undoLabel} · Ctrl+Z` : tr(locale, "暂无可撤销操作", "Nothing to undo")}
               onClick={() => void sceneHistory.undo()}
             >
@@ -108,6 +157,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
             </button>
             <button
               disabled={!sceneHistory.canRedo || busy}
+              aria-label={sceneHistory.redoLabel ? `${tr(locale, "重做", "Redo")}：${sceneHistory.redoLabel}` : tr(locale, "暂无可重做操作", "Nothing to redo")}
               title={sceneHistory.redoLabel ? `${tr(locale, "重做", "Redo")}：${sceneHistory.redoLabel} · Ctrl+Y` : tr(locale, "暂无可重做操作", "Nothing to redo")}
               onClick={() => void sceneHistory.redo()}
             >
@@ -117,19 +167,12 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
           <div className="topbar-actions">
             <button
               className={`button ghost compact-action ${aiAssistantOpen ? "active" : ""}`}
+              aria-label={tr(locale, "AI 场景助手", "AI scene assistant")}
               title={tr(locale, "AI 场景助手", "AI scene assistant")}
               onClick={() => setAiAssistantOpen((value) => !value)}
             >
               <Bot size={15} />
               <span className="action-label">{tr(locale, "AI 助手", "AI Assistant")}</span>
-            </button>
-            <button
-              className="button ghost"
-              title={route.dashboardReturn ? tr(locale, "返回二维设计", "Back to 2D design") : tr(locale, "场景管理", "Scenes")}
-              onClick={() => void commitSceneName().then((committed) => committed && returnFromSceneEditor())}
-            >
-              <ArrowLeft size={15} />
-              <span className="action-label">{route.dashboardReturn ? tr(locale, "返回二维", "Back to 2D") : tr(locale, "场景管理", "Scenes")}</span>
             </button>
             <SceneWorkspaceMoreMenu
               locale={locale}
@@ -151,7 +194,8 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
             />
             {activeApplication ? (
               <button
-                className="button ghost"
+                className="button ghost topbar-publish-action"
+                aria-label={tr(locale, "发布应用", "Publish app")}
                 title={tr(locale, "保存并发布整个应用", "Save and publish the whole app")}
                 onClick={() => void saveScene().then((saved) => saved && publishActiveApplication())}
                 disabled={busy}
@@ -161,7 +205,8 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
               </button>
             ) : (
               <button
-                className="button ghost"
+                className="button ghost topbar-publish-action"
+                aria-label={activeScene?.publishedAt ? tr(locale, "重新发布场景", "Republish scene") : tr(locale, "发布场景", "Publish scene")}
                 title={activeScene?.publishedAt ? tr(locale, "重新发布场景", "Republish scene") : tr(locale, "发布场景", "Publish scene")}
                 onClick={() => {
                   setStudioPublishMode(activeScene?.publicationMode ?? "webgl");
@@ -176,30 +221,22 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
             )}
             <label className="topbar-auto-save" title={tr(locale, "修改后自动保存整个项目", "Automatically save project changes")}>
               <input type="checkbox" checked={autoSaveEnabled} onChange={(event) => changeAutoSave(event.target.checked)} />
-              {tr(locale, "自动保存", "Auto save")}
+              <span>{tr(locale, "自动保存", "Auto save")}</span>
             </label>
-            <button className="button primary" title={tr(locale, "保存项目", "Save project")} onClick={() => void saveScene()} disabled={busy}>
+            <button className="button primary topbar-save-action" aria-label={tr(locale, "保存项目", "Save project")} title={tr(locale, "保存项目", "Save project")} onClick={() => void saveScene()} disabled={busy}>
               <Save size={15} />
               <span className="action-label">{tr(locale, "保存项目", "Save project")}</span>
             </button>
           </div>
         </>
       ) : (
-        <>
-          <div className="viewer-scene-title">
-            <span className="viewer-mode-badge">
-              <Rocket size={13} />
-              {route.view === "published" ? tr(locale, "已发布版本", "Published version") : tr(locale, "当前保存版本", "Saved version")}
-            </span>
-            <strong>{sceneName}</strong>
-          </div>
-          <div className="topbar-actions">
-            <button className="button ghost" onClick={() => navigate({ view: "manager" })}>
-              <ArrowLeft size={16} />
-              {tr(locale, "返回场景管理", "Back to scenes")}
-            </button>
-          </div>
-        </>
+        <div className="viewer-scene-title">
+          <span className="viewer-mode-badge">
+            <Rocket size={13} />
+            {route.view === "published" ? tr(locale, "已发布版本", "Published version") : tr(locale, "当前保存版本", "Saved version")}
+          </span>
+          <strong>{sceneName}</strong>
+        </div>
       )}
     </header>
   );

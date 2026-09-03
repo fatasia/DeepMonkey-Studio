@@ -1,6 +1,7 @@
 import {
   DASHBOARD_PAGE_MAX_SIZE,
   DASHBOARD_PAGE_MIN_SIZE,
+  type ApplicationScriptDependency,
   type ApplicationDocument,
   type DashboardDataWidgetConfig,
   type DashboardGuide,
@@ -136,6 +137,20 @@ export interface DeleteScriptModuleCommand {
   readonly payload: { readonly scriptId: string };
 }
 
+export interface ReplaceScriptModulesCommand {
+  readonly id: string;
+  readonly type: "script.modules.replace";
+  readonly label: string;
+  readonly payload: { readonly scripts: readonly ScriptModule[] };
+}
+
+export interface ReplaceScriptDependenciesCommand {
+  readonly id: string;
+  readonly type: "script.dependencies.replace";
+  readonly label: string;
+  readonly payload: { readonly dependencies: readonly ApplicationScriptDependency[] };
+}
+
 export interface UpsertTopologyCommand {
   readonly id: string;
   readonly type: "topology.upsert";
@@ -244,6 +259,8 @@ export type StudioCommand =
   | DeleteInteractionFlowCommand
   | UpsertScriptModuleCommand
   | DeleteScriptModuleCommand
+  | ReplaceScriptModulesCommand
+  | ReplaceScriptDependenciesCommand
   | UpsertTopologyCommand
   | InsertDashboardNodeCommand
   | InsertDashboardNodesCommand
@@ -364,6 +381,26 @@ export function createUpsertScriptModuleCommand(script: ScriptModule): UpsertScr
 
 export function createDeleteScriptModuleCommand(scriptId: string): DeleteScriptModuleCommand {
   return { id: commandId(), type: "script.module.delete", label: "删除行为脚本", payload: { scriptId } };
+}
+
+export function createReplaceScriptModulesCommand(scripts: readonly ScriptModule[]): ReplaceScriptModulesCommand {
+  return {
+    id: commandId(),
+    type: "script.modules.replace",
+    label: "替换全部行为脚本",
+    payload: { scripts: structuredClone(scripts) },
+  };
+}
+
+export function createReplaceScriptDependenciesCommand(
+  dependencies: readonly ApplicationScriptDependency[],
+): ReplaceScriptDependenciesCommand {
+  return {
+    id: commandId(),
+    type: "script.dependencies.replace",
+    label: "更新脚本项目依赖",
+    payload: { dependencies: structuredClone(dependencies) },
+  };
 }
 
 export function createUpsertTopologyCommand(topology: TopologyDocument): UpsertTopologyCommand {

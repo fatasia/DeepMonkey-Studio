@@ -2,12 +2,16 @@ import { resolve } from "node:path";
 
 export async function verifyScriptAgentEntry({ page, behaviorPanel, outputRoot }) {
   const fingerprint = await behaviorPanel.locator(".professional-code-editor").getAttribute("data-content-fingerprint");
-  await behaviorPanel.getByRole("button", { name: "工业任务", exact: true }).click();
-  const workspace = behaviorPanel.locator(".industrial-agent-workspace");
+  await behaviorPanel.getByRole("button", { name: "AI 脚本助手", exact: true }).click();
+  const agentSurface = behaviorPanel.locator(".behavior-agent-workspace");
+  await agentSurface.waitFor({ state: "visible" });
+  // 统一入口默认进入脚本解释；工业任务位于同一工作区的按需能力页。
+  await agentSurface.getByRole("button", { name: "任务", exact: true }).click();
+  const workspace = agentSurface.locator(".industrial-agent-workspace");
   await workspace.waitFor({ state: "visible" });
   await workspace.locator(".industrial-agent-capabilities > summary").getByText(/\d+ 项能力/).waitFor({ state: "visible" });
   await page.screenshot({ path: resolve(outputRoot, "02bbb-behavior-agent.png"), fullPage: true });
-  await workspace.getByRole("button", { name: "返回脚本", exact: true }).click();
+  await agentSurface.getByRole("button", { name: "返回脚本", exact: true }).click();
   await behaviorPanel.locator(`.professional-code-editor[data-content-fingerprint="${fingerprint}"]`).waitFor({ state: "visible" });
   return { enteredFromScript: true, draftFingerprintPreserved: true };
 }
@@ -33,14 +37,14 @@ export async function verifyIndustrialAgentBrowser({ page, assistantPanel, proje
     toolRecords: [], seenToolFingerprints: [], createdAt: now, updatedAt: now, revision: 2,
   });
   const waiting = () => ({
-    ...base("browser-agent-1", "检查设备风险，涉及控制时先审批"), status: "awaiting-approval", revision: 3,
+    ...base("browser-agent-1", "检查设备风险，涉及控制时先确认"), status: "awaiting-approval", revision: 3,
     pendingTool: {
       step: 2, fingerprint: "browser-control-scope", effect: "control", state: "awaiting-approval",
       call: { toolId: tools[1].id, arguments: { target: "pump-01", enabled: false }, resources: [{ kind: "object", id: "pump-01", projectId }] },
     },
   });
   const completed = () => ({
-    ...base("browser-agent-1", "检查设备风险，涉及控制时先审批"), status: "completed", revision: 6,
+    ...base("browser-agent-1", "检查设备风险，涉及控制时先确认"), status: "completed", revision: 6,
     usage: { steps: 3, toolCalls: 2, activeDurationMs: 1_420 },
     completion: { kind: "finish", rationale: "控制反馈已验证", summary: "泵站风险已处理，目标状态与回读信号一致。", decisionStatus: "production", evidenceIds: ["browser-evidence-1"] },
     toolRecords: [{
@@ -89,14 +93,14 @@ export async function verifyIndustrialAgentBrowser({ page, assistantPanel, proje
     }));
     if (initialDisclosure.open || initialDisclosure.overflow) throw new Error(`Agent 渐进披露不合格：${JSON.stringify(initialDisclosure)}`);
 
-    await workspace.getByLabel("用一句话说明要完成的目标").fill("检查设备风险，涉及控制时先审批");
+    await workspace.getByLabel("用一句话说明要完成的目标").fill("检查设备风险，涉及控制时先确认");
     await workspace.locator(".industrial-agent-capabilities > summary").click();
     await page.screenshot({ path: resolve(outputRoot, "03ab-agent-capability-preview.png"), fullPage: true });
     await workspace.getByRole("button", { name: "预览并运行", exact: true }).click();
-    await workspace.getByText("等待审批", { exact: true }).waitFor({ state: "visible", timeout: 8_000 });
+    await workspace.getByText("等待确认", { exact: true }).waitFor({ state: "visible", timeout: 8_000 });
     await workspace.getByText("object:pump-01", { exact: true }).waitFor({ state: "visible" });
-    await page.screenshot({ path: resolve(outputRoot, "03ac-agent-approval.png"), fullPage: true });
-    await workspace.getByRole("button", { name: "批准并继续", exact: true }).click();
+    await page.screenshot({ path: resolve(outputRoot, "03ac-agent-confirmation.png"), fullPage: true });
+    await workspace.getByRole("button", { name: "确认并继续", exact: true }).click();
     await workspace.getByText("证据结论", { exact: true }).waitFor({ state: "visible", timeout: 8_000 });
     await workspace.getByText("泵站状态回读", { exact: true }).waitFor({ state: "visible" });
     await page.screenshot({ path: resolve(outputRoot, "03ad-agent-evidence.png"), fullPage: true });
@@ -109,7 +113,7 @@ export async function verifyIndustrialAgentBrowser({ page, assistantPanel, proje
     const result = {
       toolCount: tools.length,
       defaultDisclosureCollapsed: !initialDisclosure.open,
-      approvalScopeVisible: true,
+      confirmationScopeVisible: true,
       evidenceVisible: true,
       cancellationVisible: true,
     };

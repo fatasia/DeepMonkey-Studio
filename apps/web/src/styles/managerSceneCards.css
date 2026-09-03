@@ -1,0 +1,234 @@
+/* 场景卡强调内容、状态和常用动作；缩略图由场景背景、对象位置和显式颜色组成。 */
+.scene-card-grid {
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 20px;
+}
+
+.scene-card {
+  overflow: visible;
+  border-color: #27353b;
+  border-radius: 12px;
+  background: var(--manager-surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .14);
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.scene-card:hover {
+  border-color: #40525a;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, .24);
+  transform: translateY(-2px);
+}
+
+.scene-card-preview {
+  height: 174px;
+  color: var(--manager-accent);
+  border-bottom-color: #233137;
+  border-radius: 11px 11px 0 0;
+  background-color: #11191d;
+  background-image:
+    linear-gradient(rgba(106, 141, 151, .07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(106, 141, 151, .07) 1px, transparent 1px),
+    radial-gradient(circle at 50% 46%, rgba(67, 125, 140, .16), transparent 42%);
+  background-position: center;
+  background-size: 22px 22px, 22px 22px, auto;
+}
+
+.scene-card-preview::before {
+  content: none;
+}
+
+.scene-card-thumbnail {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(110, 143, 151, .07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(110, 143, 151, .07) 1px, transparent 1px),
+    radial-gradient(circle at 50% 38%, rgba(130, 174, 184, .13), transparent 48%),
+    var(--scene-thumbnail-background, #11191d);
+  background-size: 22px 22px, 22px 22px, auto, auto;
+}
+
+.scene-card-thumbnail::after {
+  position: absolute;
+  right: -12%;
+  bottom: -38%;
+  left: -12%;
+  height: 72%;
+  border-top: 1px solid rgba(142, 178, 186, .14);
+  background: linear-gradient(180deg, rgba(63, 83, 89, .12), rgba(8, 13, 15, .38));
+  transform: perspective(240px) rotateX(58deg);
+  transform-origin: center top;
+  content: "";
+}
+
+.scene-card-thumbnail-item {
+  position: absolute;
+  z-index: 2;
+  width: 30px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--scene-thumbnail-color) 72%, white);
+  border-radius: 3px;
+  background: var(--scene-thumbnail-color);
+  box-shadow: 9px 9px 0 color-mix(in srgb, var(--scene-thumbnail-color) 58%, #081014), 0 12px 20px rgba(0, 0, 0, .28);
+  transform: translate(-50%, -50%) skewY(-8deg);
+}
+
+.scene-card-thumbnail-item.kind-sphere,
+.scene-card-thumbnail-item.kind-torus { border-radius: 50%; }
+.scene-card-thumbnail-item.kind-cylinder,
+.scene-card-thumbnail-item.kind-capsule { border-radius: 12px 12px 5px 5px; }
+.scene-card-thumbnail-item.kind-plane { height: 9px; }
+.scene-card-thumbnail-item.kind-model { width: 38px; height: 28px; }
+.scene-card-thumbnail-empty { position: absolute; z-index: 2; inset: 50% auto auto 50%; color: #76c8d4; transform: translate(-50%, -50%); }
+
+.scene-card-preview small {
+  right: 13px;
+  bottom: 11px;
+  z-index: 3;
+  color: #83939a;
+  font-size: 11px;
+}
+
+.scene-published-badge {
+  top: 12px;
+  left: 12px;
+  padding: 5px 8px;
+  color: #e8c66f;
+  border-color: rgba(217, 170, 77, .3);
+  background: rgba(15, 21, 24, .88);
+  font-size: 10px;
+}
+
+.scene-card-body { padding: 16px; }
+
+.scene-card-title {
+  min-height: 25px;
+  padding: 1px 0;
+  color: #eef5f6;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+
+.scene-card-title:hover { color: #8ad4de; }
+
+.scene-card-meta {
+  margin-top: 7px;
+  color: #829198;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.scene-card-footer {
+  gap: 10px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top-color: #263238;
+}
+
+.scene-card-footer > span { color: #78888f; font-size: 11px; line-height: 1.4; }
+
+.scene-card-footer .scene-card-actions {
+  width: 100%;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 8px;
+  background: #10171a;
+}
+
+.scene-card-footer .scene-card-actions > button,
+.scene-card-more > summary {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  color: #93a3a9;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.scene-card-footer .scene-card-actions > button.primary {
+  color: #e9fbfd;
+  border: 0;
+  background: #226b7a;
+}
+
+.scene-card-footer .scene-card-actions > button:hover:not(:disabled),
+.scene-card-more > summary:hover {
+  color: #f0fafb;
+  border: 0;
+  background: #223037;
+}
+
+.scene-card-footer .scene-card-actions > button.primary:hover { background: #2a8394; }
+.scene-card-more { margin-left: auto; }
+
+.scene-card-more[open] > summary {
+  color: #e6f8fa;
+  border: 0;
+  background: #24353b;
+}
+
+.scene-card-more-menu {
+  bottom: calc(100% + 8px);
+  width: 218px;
+  padding: 7px;
+  border-color: #3b4c53;
+  border-radius: 10px;
+  background: #151f23;
+  box-shadow: 0 22px 52px rgba(0, 0, 0, .54);
+}
+
+.scene-card-footer .scene-card-more-menu > button {
+  height: 35px;
+  padding: 0 9px;
+  color: #b1c0c5;
+  font-size: 11px;
+}
+
+.scene-card-footer .scene-card-more-menu > button:hover { color: #edf8fa; background: #213037; }
+.scene-card-more-export .export-menu > button { min-height: 35px; font-size: 11px; }
+
+.manager-empty {
+  min-height: 390px;
+  color: #64747b;
+  border-color: #29363c;
+  border-radius: 12px;
+  background: rgba(17, 24, 28, .52);
+}
+
+.manager-empty h2 { color: #c7d2d5; font-size: 18px; }
+.manager-empty p { color: #7d8d94; font-size: 12px; }
+
+/* 项目页内嵌资源库不再额外套一层卡片。 */
+.asset-library-page { padding: 0; border: 0; background: transparent; }
+
+.manager-topology-grid {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+}
+
+.manager-topology-grid article {
+  border-color: #29373d;
+  border-radius: 11px;
+  background: #141c20;
+}
+
+.manager-topology-preview {
+  height: 158px;
+  color: #68bfcc;
+  border-bottom-color: #26343a;
+  background: #11191d;
+}
+
+.manager-topology-grid article > div { gap: 5px; padding: 14px; }
+.manager-topology-grid article > div strong { color: #e7eff1; font-size: 13px; }
+.manager-topology-grid article > div small { color: #7b8b92; font-size: 10px; }
+
+@media (max-width: 760px) {
+  .scene-card-grid { grid-template-columns: 1fr; }
+}

@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -8,6 +8,9 @@ import {
   createTauriOverlay,
   fetchPublishedSource,
   injectDeliveryMarker,
+  pruneSceneViewerFrontend,
+  resolveSceneViewerBuildPaths,
+  sceneViewerWebBuildEnvironment,
   sha256,
   writeSceneViewerPayload,
 } from "./scene-viewer-package-core.mjs";
@@ -15,7 +18,6 @@ import {
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const desktopDirectory = path.resolve(scriptDirectory, "..");
 const workspaceDirectory = path.resolve(desktopDirectory, "../..");
-const webDirectory = path.join(workspaceDirectory, "apps", "web");
 const options = parseArguments(process.argv.slice(2));
 
 async function main() {
@@ -23,16 +25,24 @@ async function main() {
   const packageId = options.packageId ?? sha256(`${source.publication.sceneId}:${source.publication.publishedAt}`).slice(0, 16).toLowerCase();
   const productName = options.productName ?? `${safeProductName(source.publication.name)} 浏览器`;
   const identifier = options.identifier ?? `com.industrialstudio.sceneviewer.${packageId}`;
-  const buildRoot = path.join(desktopDirectory, ".scene-viewer-build", packageId);
-  const frontendDirectory = path.join(buildRoot, "frontend");
+  const { buildRoot, frontendDirectory, generatedWebDist, webDist } = resolveSceneViewerBuildPaths(
+    desktopDirectory,
+    packageId,
+    options.webDist,
+  );
 
-  if (!options.webDist) {
-    await run("pnpm", ["--filter", "@bim-studio/web", "build:scene-viewer"], workspaceDirectory, { VITE_SCENE_VIEWER_BUILD: "true" });
-  }
-  const webDist = path.resolve(options.webDist ?? path.join(webDirectory, "dist"));
   await rm(buildRoot, { recursive: true, force: true });
   await mkdir(buildRoot, { recursive: true });
+  if (!options.webDist) {
+    await run(
+      "pnpm",
+      ["--filter", "@bim-studio/web", "build:scene-viewer"],
+      workspaceDirectory,
+      sceneViewerWebBuildEnvironment(generatedWebDist),
+    );
+  }
   await cp(webDist, frontendDirectory, { recursive: true });
+  const frontendBytesBeforePruning = await directoryBytes(frontendDirectory);
   const viteManifest = JSON.parse(await readFile(path.join(frontendDirectory, ".vite", "manifest.json"), "utf8"));
   assertSceneViewerViteManifest(viteManifest);
 
@@ -40,6 +50,9 @@ async function main() {
     ...options,
     packageId,
   });
+  const pruning = await pruneSceneViewerFrontend(frontendDirectory, payload.manifest, viteManifest);
+  await writeFile(path.join(frontendDirectory, ".vite", "manifest.json"), `${JSON.stringify(viteManifest, null, 2)}\n`, "utf8");
+  const frontendBytesAfterPruning = await directoryBytes(frontendDirectory);
   await writeSceneViewerPayload(payload, frontendDirectory);
   const indexPath = path.join(frontendDirectory, "index.html");
   await writeFile(indexPath, injectDeliveryMarker(await readFile(indexPath, "utf8")), "utf8");
@@ -65,6 +78,10 @@ async function main() {
     publicationSha256: payload.manifest.publicationSha256,
     assetCount: payload.manifest.assets.length,
     assetBytes: payload.manifest.assets.reduce((sum, asset) => sum + asset.bytes, 0),
+    pruning,
+    frontendBytesBeforePruning,
+    frontendBytesAfterPruning,
+    frontendBytesRemoved: frontendBytesBeforePruning - frontendBytesAfterPruning,
     frontendDirectory,
     configPath,
   }, null, 2)}\n`, "utf8");
@@ -101,6 +118,15 @@ function toCamelCase(value) {
 
 function safeProductName(value) {
   return value.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 64) || "场景";
+}
+
+async function directoryBytes(directory) {
+  let total = 0;
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const target = path.join(directory, entry.name);
+    total += entry.isDirectory() ? await directoryBytes(target) : (await stat(target)).size;
+  }
+  return total;
 }
 
 function run(command, args, cwd, extraEnvironment = {}) {

@@ -93,6 +93,34 @@ describe("industrial format upload acceptance without providers", () => {
     },
   );
 
+  it("fails a hung industrial converter within its configured time budget", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "bim-industrial-timeout-"));
+    directories.push(dataDir);
+    const store = new JsonStore(dataDir);
+    await store.init();
+    const objects = new LocalObjectStore(dataDir);
+    const config = loadConfig();
+    config.dataDir = dataDir;
+    config.industrialCad = {
+      command: process.execPath,
+      args: ["-e", "setTimeout(() => {}, 10_000)"],
+      cwd: process.cwd(),
+      timeoutMs: 25,
+    };
+    const queue = new ConversionQueue(store, config, objects);
+    const app = createApiServer();
+    await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+    await registerModelAssetRoutes(app, { store, queue, objects, dataDir, config });
+
+    const response = await upload(app, "hung.x_b", "timeout fixture");
+    const uploaded = response.json() as ModelRecord;
+    await vi.waitFor(() => {
+      expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("failed");
+    }, { timeout: 2_000, interval: 25 });
+    expect(store.getProject("default")!.models.find((item) => item.id === uploaded.id)?.message).toContain("运行超时");
+    await app.close();
+  });
+
   it("converts the supported X_T text subset without an external provider", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "bim-xt-internal-"));
     directories.push(dataDir);

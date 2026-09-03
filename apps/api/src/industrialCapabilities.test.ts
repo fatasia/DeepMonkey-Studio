@@ -270,9 +270,12 @@ describe("industrial capability host", () => {
       name: "BMS 历史窗口",
       refreshSeconds: 5,
       fields: [
+        { key: "cycle", label: "循环", type: "number" },
+        { key: "time", label: "时间", type: "number" },
         { key: "voltage", label: "电压", type: "number" },
         { key: "current", label: "电流", type: "number" },
         { key: "temperature", label: "温度", type: "number" },
+        { key: "capacityAh", label: "放电容量", type: "number" },
       ],
       createdAt: "now",
       updatedAt: "now",
@@ -284,8 +287,8 @@ describe("industrial capability host", () => {
         dataset,
         fields: dataset.fields,
         rows: [
-          { voltage: 3.42, current: -1.2, temperature: 27, phase: "discharge" },
-          { voltage: 3.39, current: -1.3, temperature: 27.2, phase: "discharge" },
+          { cycle: 1, time: 1, voltage: 3.42, current: -1.2, temperature: 27, capacityAh: 119, phase: "discharge" },
+          { cycle: 2, time: 2, voltage: 3.39, current: -1.3, temperature: 27.2, capacityAh: 118.8, phase: "discharge" },
         ],
         durationMs: 8.8,
       }),
@@ -302,8 +305,12 @@ describe("industrial capability host", () => {
     };
     const binding: AiDataBinding = {
       id: "battery-binding", projectId: "project-1", name: "SOC 生产绑定", datasetId: dataset.id,
-      capabilityId: "battery.model.predict", status: "active", parameters: { model: "socformer", chemistry: "ncm" },
-      features: [{ modelField: "cellVoltage", sourceField: "voltage", required: true }], window: { rows: 1 },
+      capabilityId: "battery.model.predict", status: "active", parameters: { model: "socformer", chemistry: "ncm", nominalCapacityAh: 120 },
+      features: [
+        { modelField: "time", sourceField: "time", required: true },
+        { modelField: "voltage", sourceField: "voltage", required: true },
+        { modelField: "current", sourceField: "current", required: true },
+      ], window: { rows: 1 },
       trigger: { type: "manual" }, quality: { minimumSamples: 1, maxAgeSeconds: 60, maximumMissingRate: 0 },
       retry: { maxAttempts: 3, backoffSeconds: 5 }, output: { type: "record" }, revision: 1, createdAt: "now", updatedAt: "now",
     };
@@ -338,8 +345,8 @@ describe("industrial capability host", () => {
       chemistry: "lfp",
       nominalCapacityAh: 120,
       records: [
-        { voltage: 3.42, current: -1.2, temperature: 27, phase: "discharge" },
-        { voltage: 3.39, current: -1.3, temperature: 27.2, phase: "discharge" },
+        { cycle: 1, time: 1, voltage: 3.42, current: -1.2, temperature: 27, capacityAh: 119, phase: "discharge" },
+        { cycle: 2, time: 2, voltage: 3.39, current: -1.3, temperature: 27.2, capacityAh: 118.8, phase: "discharge" },
       ],
     });
     expect(response.json()).toMatchObject({
@@ -352,7 +359,7 @@ describe("industrial capability host", () => {
           connectionId: connection.id,
           connectionType: "http",
           rowCount: 2,
-          fieldKeys: ["voltage", "current", "temperature"],
+          fieldKeys: ["cycle", "time", "voltage", "current", "temperature", "capacityAh"],
           durationMs: 9,
         },
       },
@@ -367,7 +374,8 @@ describe("industrial capability host", () => {
     expect(predictionInput).toMatchObject({
       model: "socformer",
       chemistry: "ncm",
-      records: [{ cellVoltage: 3.39 }],
+      nominalCapacityAh: 120,
+      records: [{ time: 2, voltage: 3.39, current: -1.3 }],
     });
   });
 });

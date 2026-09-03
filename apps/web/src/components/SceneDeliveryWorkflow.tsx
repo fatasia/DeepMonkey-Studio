@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { ProjectRecord, PublishedSceneRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { assessProjectPublication, hasPublicationDataProduct } from "./publicationReadiness";
-import { buildDeliveryBlockers, buildDeliverySteps, firstIncompleteRequiredStep, firstIncompleteStep, type DeliveryStepId } from "./deliveryWorkflowModel";
+import { buildDeliveryBlockers, buildDeliverySteps, type DeliveryStepId } from "./deliveryWorkflowModel";
 import { readDeliveryWorkflowMemory, writeDeliveryWorkflowMemory } from "./deliveryWorkflowPersistence";
 import { summarizeScenePublicationDiff, type ScenePublicationDiffMetric, type ScenePublicationDiffSection } from "./scenePublicationDiff";
 
@@ -79,7 +79,7 @@ interface DeliveryReviewDialogProps {
   onOpenData: () => void;
   onOpenAssets: () => void;
   onOpenScenes: () => void;
-  onOpenLinkage: () => void;
+  onOpenLinkage: (sceneId?: string) => void;
 }
 
 type DeliveryReviewAction = "data" | "assets" | "scenes" | "linkage";
@@ -91,14 +91,21 @@ interface DeliveryReviewCheck {
   ready: boolean;
   required: boolean;
   action?: DeliveryReviewAction;
+  actionTargetSceneId?: string;
   actionLabel: string;
-  issues?: Array<{ title: string; remediation: string }>;
+  issues?: Array<{ id: string; title: string; detail: string; remediation: string }>;
+  issueOverflow?: number;
 }
 
 export function DeliveryReviewDialog(props: DeliveryReviewDialogProps) {
   const checks = deliveryChecks(props.locale, props.project, props.scenes);
   const blockers = checks.filter((check) => check.required && !check.ready);
-  const actions = { data: props.onOpenData, assets: props.onOpenAssets, scenes: props.onOpenScenes, linkage: props.onOpenLinkage };
+  const actions: Record<DeliveryReviewAction, (sceneId?: string) => void> = {
+    data: props.onOpenData,
+    assets: props.onOpenAssets,
+    scenes: props.onOpenScenes,
+    linkage: props.onOpenLinkage,
+  };
   return (
     <div className="dialog-backdrop" onMouseDown={props.onClose}>
       <section
@@ -124,13 +131,23 @@ export function DeliveryReviewDialog(props: DeliveryReviewDialogProps) {
                 <small>{check.detail}</small>
                 {check.issues && check.issues.length > 0 && (
                   <ul className="delivery-review-issues">
-                    {check.issues.map((issue) => <li key={`${issue.title}:${issue.remediation}`}><b>{issue.title}</b><i>{issue.remediation}</i></li>)}
+                    {check.issues.map((issue) => <li key={issue.id}>
+                      <span><b>{issue.title}</b><small>{issue.detail}</small></span>
+                      <i>{issue.remediation}</i>
+                    </li>)}
+                    {Boolean(check.issueOverflow) && <li className="delivery-review-issue-overflow">
+                      {tr(props.locale, `另有 ${check.issueOverflow} 项，进入对应工作区逐项处理`, `${check.issueOverflow} more issues; open the workspace to resolve them`)}
+                    </li>}
                   </ul>
                 )}
               </span>
               <em>{check.required ? tr(props.locale, "必需", "Required") : tr(props.locale, "建议", "Recommended")}</em>
               {!check.ready && check.action && (
-                <button type="button" onClick={actions[check.action]}>
+                <button
+                  type="button"
+                  {...(check.actionTargetSceneId ? { "data-target-scene-id": check.actionTargetSceneId } : {})}
+                  onClick={() => actions[check.action!](check.actionTargetSceneId)}
+                >
                   {check.actionLabel}
                 </button>
               )}
@@ -199,7 +216,6 @@ export function ProjectDeliveryFlow(props: ProjectDeliveryFlowProps) {
     validate: <Check />,
     publish: <Rocket />,
   };
-  const nextStep = firstIncompleteRequiredStep(steps) ?? firstIncompleteStep(steps);
   const requiredSteps = steps.filter((step) => step.required);
   const requiredReadyCount = requiredSteps.filter((step) => step.ready).length;
   const progress = Math.round((requiredReadyCount / requiredSteps.length) * 100);
@@ -212,38 +228,49 @@ export function ProjectDeliveryFlow(props: ProjectDeliveryFlowProps) {
     writeDeliveryWorkflowMemory(props.project.id, { activeStep: stepId, ...(previousStep ? { previousStep } : {}), updatedAt: new Date().toISOString() });
     actions[stepId]();
   };
+  // 项目列表的首要任务是找场景和进入编辑器。默认态仅保留文字入口，
+  // 避免流程进度和“继续”动作长期占据首屏、干扰高频工作。
+  if (collapsed) {
+    return (
+      <section className="project-delivery-flow is-collapsed">
+        <button
+          type="button"
+          className="delivery-collapsed-trigger"
+          aria-expanded="false"
+          aria-label={tr(props.locale, "展开开发流程", "Expand development flow")}
+          onClick={() => setCollapsed(false)}
+        >
+          {tr(props.locale, "开发流程", "Development flow")}
+        </button>
+      </section>
+    );
+  }
   return (
-    <section className={`project-delivery-flow${collapsed ? " is-collapsed" : ""}`}>
+    <section className="project-delivery-flow">
       <header>
         <span>
           <strong>{tr(props.locale, "开发流程", "Development flow")}</strong>
-          {!collapsed && <small>{tr(props.locale, "数据 → 资产 → 设计 → 联动 → 脚本 → 仿真 → 校验 → 发布", "Data → Assets → Design → Link → Script → Simulate → Validate → Publish")}</small>}
+          <small>{tr(props.locale, "数据 → 资产 → 设计 → 联动 → 脚本 → 仿真 → 校验 → 发布", "Data → Assets → Design → Link → Script → Simulate → Validate → Publish")}</small>
         </span>
         <div className="delivery-flow-actions">
-          <button
-            type="button"
-            className="delivery-collapse-action"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? tr(props.locale, "展开开发流程", "Expand development flow") : tr(props.locale, "收起开发流程", "Collapse development flow")}
-            onClick={() => setCollapsed((value) => !value)}
-          >
-            <ChevronDown size={13} />
-            <span>{collapsed ? tr(props.locale, "展开", "Expand") : tr(props.locale, "收起", "Collapse")}</span>
-          </button>
           {previousStepId && (
             <button type="button" className="delivery-return-action" onClick={() => runStep(previousStepId)}>
               {tr(props.locale, "回到上次工作", "Return to previous work")}
             </button>
           )}
-          {nextStep && (
-            <button type="button" className="delivery-next-action" onClick={() => runStep(nextStep.id)}>
-              {tr(props.locale, `继续：${nextStep.label}`, `Continue: ${nextStep.label}`)}
-              <Rocket size={11} />
-            </button>
-          )}
+          <button
+            type="button"
+            className="delivery-collapse-action"
+            aria-expanded="true"
+            aria-label={tr(props.locale, "收起开发流程", "Collapse development flow")}
+            onClick={() => setCollapsed(true)}
+          >
+            <ChevronDown size={13} />
+            <span>{tr(props.locale, "收起", "Collapse")}</span>
+          </button>
         </div>
       </header>
-      {!collapsed && <div className="delivery-flow-body">
+      <div className="delivery-flow-body">
         <div
           className="delivery-progress"
           aria-label={tr(props.locale, `必需步骤完成 ${requiredReadyCount}/${requiredSteps.length}`, `${requiredReadyCount}/${requiredSteps.length} required steps complete`)}
@@ -298,7 +325,7 @@ export function ProjectDeliveryFlow(props: ProjectDeliveryFlowProps) {
             </button>
           ))}
         </div>
-      </div>}
+      </div>
     </section>
   );
 }
@@ -309,7 +336,9 @@ function deliveryChecks(locale: AppLocale, project: ProjectRecord, scenes: Scene
   const failedAssets = project.models.filter((model) => model.status === "failed" || model.status === "processing").length;
   const linkage = scenes.reduce((count, scene) => count + (scene.dataBindings?.length ?? 0) + (scene.interactions?.length ?? 0), 0);
   const audit = assessProjectPublication(project, scenes);
-  const firstBlockingCategory = audit.issues.find((issue) => issue.severity === "blocker")?.category;
+  const actionableAuditIssues = audit.issues.filter((issue) => issue.severity !== "recommendation");
+  const firstBlockingIssue = audit.issues.find((issue) => issue.severity === "blocker");
+  const firstBlockingCategory = firstBlockingIssue?.category;
   const auditAction = firstBlockingCategory === "data" ? "data" : firstBlockingCategory === "asset" ? "assets" : firstBlockingCategory ? "linkage" : undefined;
   return [
     {
@@ -373,11 +402,15 @@ function deliveryChecks(locale: AppLocale, project: ProjectRecord, scenes: Scene
       ready: audit.blockers === 0,
       required: true,
       ...(auditAction ? { action: auditAction } : {}),
+      ...(auditAction === "linkage" && firstBlockingIssue?.sceneId ? { actionTargetSceneId: firstBlockingIssue.sceneId } : {}),
       actionLabel: auditAction ? tr(locale, "去处理问题", "Resolve issues") : "",
-      issues: audit.issues.filter((issue) => issue.severity !== "recommendation").slice(0, 4).map((issue) => ({
+      issues: actionableAuditIssues.slice(0, 4).map((issue) => ({
+        id: issue.id,
         title: issue.title,
+        detail: `${scenes.find((scene) => scene.id === issue.sceneId)?.name ?? tr(locale, "项目级检查", "Project check")} · ${issue.detail}`,
         remediation: issue.remediation,
       })),
+      issueOverflow: Math.max(0, actionableAuditIssues.length - 4),
     },
     {
       id: "publication",

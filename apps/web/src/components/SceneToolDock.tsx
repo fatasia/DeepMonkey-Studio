@@ -329,7 +329,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
         />
         <MenuAction
           label={tr(props.locale, "AR / VR 体验", "AR / VR")}
-          icon={<span className="scene-tool-xr">AR/VR</span>}
+          icon={<span className="scene-tool-xr">XR</span>}
           active={props.xrOpen}
           onClick={() => run(props.onXrToggle)}
         />

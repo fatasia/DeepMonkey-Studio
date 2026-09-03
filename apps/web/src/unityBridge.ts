@@ -32,7 +32,7 @@ export interface UnityBridgeHostMessage {
 export interface UnityBridgeEventMessage {
   source: "unity-webgl";
   version: 1;
-  type: "ready" | "event" | "error" | "ack" | "health" | "capabilities";
+  type: "ready" | "event" | "error" | "ack" | "health" | "capabilities" | "load-progress";
   widgetId?: string;
   eventName?: string;
   payload?: JsonValue;
@@ -41,6 +41,7 @@ export interface UnityBridgeEventMessage {
   messageType?: UnityBridgeHostMessage["type"];
   fps?: number;
   scene?: string;
+  progress?: number;
   capabilities?: UnityRuntimeCapability[];
 }
 
@@ -68,7 +69,7 @@ export function readUnityBridgeEvent(value: unknown): UnityBridgeEventMessage | 
   if (
     candidate.source !== "unity-webgl" ||
     candidate.version !== UNITY_BRIDGE_VERSION ||
-    !["ready", "event", "error", "ack", "health", "capabilities"].includes(String(candidate.type))
+    !["ready", "event", "error", "ack", "health", "capabilities", "load-progress"].includes(String(candidate.type))
   )
     return undefined;
   if (candidate.type === "event" && (typeof candidate.eventName !== "string" || !candidate.eventName.trim()))
@@ -76,6 +77,11 @@ export function readUnityBridgeEvent(value: unknown): UnityBridgeEventMessage | 
   if (candidate.type === "ack" && (typeof candidate.messageId !== "string" || !candidate.messageId.trim()))
     return undefined;
   if (candidate.type === "health" && (typeof candidate.fps !== "number" || !Number.isFinite(candidate.fps)))
+    return undefined;
+  if (
+    candidate.type === "load-progress" &&
+    (typeof candidate.progress !== "number" || !Number.isFinite(candidate.progress) || candidate.progress < 0 || candidate.progress > 1)
+  )
     return undefined;
   if (candidate.type === "capabilities" && !Array.isArray(candidate.capabilities)) return undefined;
   if (candidate.widgetId !== undefined && typeof candidate.widgetId !== "string") return undefined;
@@ -257,11 +263,14 @@ export function parseUnityBuildManifest(value: unknown, manifestUrl: string): Un
   const runtimeCapabilities = strings(source.runtimeCapabilities)?.filter((item): item is UnityRuntimeCapability =>
     UNITY_RUNTIME_CAPABILITIES.includes(item as UnityRuntimeCapability),
   );
+  const webBuild = parseWebBuild(source.webBuild);
   return {
     schemaVersion: 1,
     bridgeVersion: 1,
     playerUrl: playerUrl.href,
     ...(typeof source.unityVersion === "string" ? { unityVersion: source.unityVersion } : {}),
+    ...(typeof source.bridgePackageVersion === "string" ? { bridgePackageVersion: source.bridgePackageVersion } : {}),
+    ...(webBuild ? { webBuild } : {}),
     ...(strings(source.scenes) ? { scenes: strings(source.scenes)! } : {}),
     ...(strings(source.events) ? { events: strings(source.events)! } : {}),
     ...(layers ? { dataLayers: layers } : {}),
@@ -270,4 +279,14 @@ export function parseUnityBuildManifest(value: unknown, manifestUrl: string): Un
     ...(properties?.length ? { properties } : {}),
     ...(runtimeCapabilities?.length ? { runtimeCapabilities } : {}),
   };
+}
+
+function parseWebBuild(value: unknown): UnityBuildManifest["webBuild"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  if (!["brotli", "gzip", "decompression-fallback", "uncompressed", "mixed"].includes(String(source.compression))) return undefined;
+  const numericKeys = ["runtimePayloadBytes", "wasmBytes", "dataBytes", "runtimeFileCount"] as const;
+  if (!numericKeys.every((key) => typeof source[key] === "number" && Number.isFinite(source[key]) && Number(source[key]) >= 0)) return undefined;
+  if (typeof source.debugSymbols !== "boolean") return undefined;
+  return source as unknown as NonNullable<UnityBuildManifest["webBuild"]>;
 }

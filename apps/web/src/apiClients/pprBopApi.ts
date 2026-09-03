@@ -13,13 +13,16 @@ export function createPprBopApi(request: ApiRequest) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(draft),
       }),
-    analyzePprBopVersion: (projectId: string, versionId: string) =>
-      request<PprAnalysis>(`/api/projects/${projectId}/ppr/bop-versions/${encodeURIComponent(versionId)}/analysis`),
-    comparePprBopVersions: (projectId: string, beforeVersionId: string, afterVersionId: string) =>
+    analyzePprBopVersion: (projectId: string, versionId: string, activeVariantId?: string) => {
+      const variant = activeVariantId?.trim();
+      const query = variant ? `?variantId=${encodeURIComponent(variant)}` : "";
+      return request<PprAnalysis>(`/api/projects/${projectId}/ppr/bop-versions/${encodeURIComponent(versionId)}/analysis${query}`);
+    },
+    comparePprBopVersions: (projectId: string, beforeVersionId: string, afterVersionId: string, activeVariantId?: string) =>
       request<PprVersionComparison>(`/api/projects/${projectId}/ppr/bop-versions/compare`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ beforeVersionId, afterVersionId }),
+        body: JSON.stringify({ beforeVersionId, afterVersionId, ...(activeVariantId?.trim() ? { activeVariantId: activeVariantId.trim() } : {}) }),
       }),
   };
 }

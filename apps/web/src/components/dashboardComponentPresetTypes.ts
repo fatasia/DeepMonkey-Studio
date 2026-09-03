@@ -35,6 +35,10 @@ export interface DashboardComponentPresetPreview {
   variant: string;
   /** 缩略图短标记用于区分同类型的不同业务用途，不参与运行时数据。 */
   mark: string;
+  /** 来自素材预设自身的主色，缩略图与插入后的组件保持一致。 */
+  accent: string;
+  /** 素材自身的辅助色，不跟随工作台主题色。 */
+  secondary: string;
 }
 
 export interface DashboardComponentPreset {

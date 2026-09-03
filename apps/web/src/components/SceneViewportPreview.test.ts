@@ -1,22 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { SceneDocument } from "@bim-studio/contracts";
-import { sceneViewportRevision } from "./sceneViewportRevision";
+import { sceneViewportSelection } from "./sceneViewportSelection";
 
-const scene = {
-  id: "scene:test",
-  name: "Test",
-  camera: { position: [1, 2, 3], target: [0, 0, 0], mode: "perspective" },
-  models: [],
-  primitives: [],
-  measurements: []
-} as unknown as SceneDocument;
-
-describe("sceneViewportRevision", () => {
-  it("does not change when an application command only recreates the containing objects", () => {
-    expect(sceneViewportRevision(structuredClone(scene))).toBe(sceneViewportRevision(scene));
+describe("sceneViewportSelection", () => {
+  it("maps a selected 3D model to the shared application selection", () => {
+    expect(sceneViewportSelection("scene-1", "model-1", false)).toEqual([
+      { kind: "object", sceneId: "scene-1", modelId: "model-1" },
+    ]);
   });
 
-  it("changes when semantic 3D content changes", () => {
-    expect(sceneViewportRevision({ ...scene, name: "Changed" })).not.toBe(sceneViewportRevision(scene));
+  it("does not clear a 2D layer selection when the editor viewport initializes", () => {
+    expect(sceneViewportSelection("scene-1", undefined, false)).toBeUndefined();
+  });
+
+  it("allows runtime viewers to clear a 3D object selection", () => {
+    expect(sceneViewportSelection("scene-1", undefined, true)).toEqual([]);
   });
 });

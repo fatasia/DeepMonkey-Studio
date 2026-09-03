@@ -1,7 +1,8 @@
-import { createElement, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { ArrowLeft, BookOpen, ChevronRight, FileText, Hash, Search } from "lucide-react";
 import { resolveDocsDestination, searchDocs, type MarkdownBlock, type MarkdownInline } from "@bim-studio/docs-runtime";
 import { DOCS_VERSION, docsCategories, docsDocuments } from "../docs/docsCatalog";
+import { DocsCenterCodeBlock } from "./DocsCenterCodeBlock";
 import "./DocsCenter.css";
 
 export interface DocsCenterProps {
@@ -13,8 +14,13 @@ export interface DocsCenterProps {
 export function DocsCenter({ documentId, onNavigate, onClose }: DocsCenterProps) {
   const [query, setQuery] = useState("");
   const articleRef = useRef<HTMLElement>(null);
+  const activeNavigationRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const activeDocument = docsDocuments.find((document) => document.id === documentId) ?? docsDocuments[0];
   const searchResults = useMemo(() => searchDocs(docsDocuments, query), [query]);
+  const activeDocumentIndex = activeDocument ? docsDocuments.indexOf(activeDocument) : -1;
+  const previousDocument = activeDocumentIndex > 0 ? docsDocuments[activeDocumentIndex - 1] : undefined;
+  const nextDocument = activeDocumentIndex >= 0 ? docsDocuments[activeDocumentIndex + 1] : undefined;
 
   useEffect(() => {
     const hash = decodeHash(window.location.hash);
@@ -25,6 +31,29 @@ export function DocsCenter({ documentId, onNavigate, onClose }: DocsCenterProps)
     return () => window.cancelAnimationFrame(frame);
   }, [activeDocument?.id, documentId]);
 
+  useEffect(() => {
+    if (query.trim()) return;
+    const frame = window.requestAnimationFrame(() => {
+      activeNavigationRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeDocument?.id, query]);
+
+  useEffect(() => {
+    function focusSearch(event: globalThis.KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isEditing = target?.matches("input, textarea, select, [contenteditable='true']") ?? false;
+      const shortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k";
+      if (shortcut || (event.key === "/" && !isEditing)) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    }
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
+
   if (!activeDocument) return null;
 
   function navigateTo(targetDocumentId: string, sectionId?: string) {
@@ -34,26 +63,44 @@ export function DocsCenter({ documentId, onNavigate, onClose }: DocsCenterProps)
     }
   }
 
+  function selectSearchResult(targetDocumentId: string, sectionId?: string) {
+    setQuery("");
+    navigateTo(targetDocumentId, sectionId);
+  }
+
+  function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Escape") return;
+    if (query) setQuery("");
+    else searchInputRef.current?.blur();
+  }
+
   return (
     <main className="docs-center-page">
       <header className="docs-center-header">
-        <div className="docs-center-brand">
-          <span><BookOpen size={19} /></span>
-          <div><strong>使用文档</strong><small>离线产品指南</small></div>
+        <div className="docs-center-leading">
+          <button className="docs-back-button" type="button" onClick={onClose}>
+            <ArrowLeft size={16} />返回
+          </button>
+          <div className="docs-center-brand">
+            <span><BookOpen size={19} /></span>
+            <div><strong>Industrial Studio 文档</strong><small>离线产品指南</small></div>
+          </div>
         </div>
         <label className="docs-search-field">
           <Search size={16} />
           <input
+            ref={searchInputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={handleSearchKeyDown}
             placeholder="搜索功能、操作或错误信息"
             aria-label="搜索使用文档"
+            aria-keyshortcuts="Control+K Meta+K /"
           />
-          {query.trim() && <kbd>{searchResults.length} 条</kbd>}
+          <kbd>{query.trim() ? `${searchResults.length} 条` : "Ctrl K"}</kbd>
         </label>
         <div className="docs-center-actions">
           <span>文档版本 {DOCS_VERSION}</span>
-          <button type="button" onClick={onClose}><ArrowLeft size={15} />返回主页</button>
         </div>
       </header>
 
@@ -61,13 +108,13 @@ export function DocsCenter({ documentId, onNavigate, onClose }: DocsCenterProps)
         <nav className="docs-navigation" aria-label="文档目录">
           {query.trim() ? (
             <section className="docs-search-results">
-              <header><strong>搜索结果</strong><small>{searchResults.length}</small></header>
+              <header><strong>搜索结果</strong><small aria-live="polite">{searchResults.length}</small></header>
               {searchResults.length ? searchResults.map((result) => (
                 <button
                   type="button"
                   key={`${result.document.id}:${result.section?.id ?? "document"}`}
                   className={result.document.id === activeDocument.id ? "active" : ""}
-                  onClick={() => navigateTo(result.document.id, result.section?.id)}
+                  onClick={() => selectSearchResult(result.document.id, result.section?.id)}
                 >
                   <span><FileText size={14} /><strong>{result.document.title}</strong></span>
                   <small>{result.excerpt}</small>
@@ -82,6 +129,8 @@ export function DocsCenter({ documentId, onNavigate, onClose }: DocsCenterProps)
                   type="button"
                   key={document.id}
                   className={document.id === activeDocument.id ? "active" : ""}
+                  aria-current={document.id === activeDocument.id ? "page" : undefined}
+                  {...(document.id === activeDocument.id ? { ref: activeNavigationRef } : {})}
                   onClick={() => navigateTo(document.id)}
                 >
                   <FileText size={14} />
@@ -100,8 +149,11 @@ export function DocsCenter({ documentId, onNavigate, onClose }: DocsCenterProps)
               {activeDocument.blocks.map((block, index) => renderBlock(block, index, activeDocument.id, navigateTo))}
             </div>
             <footer className="docs-article-footer">
-              <span>本文档随客户端离线提供</span>
-              <span>版本 {activeDocument.version}</span>
+              <div><span>本文档随客户端离线提供</span><span>版本 {activeDocument.version}</span></div>
+              <nav className="docs-article-pagination" aria-label="相邻文档">
+                {previousDocument && <button type="button" onClick={() => navigateTo(previousDocument.id)}><ArrowLeft size={12} />{previousDocument.title}</button>}
+                {nextDocument && <button type="button" onClick={() => navigateTo(nextDocument.id)}>{nextDocument.title}<ChevronRight size={12} /></button>}
+              </nav>
             </footer>
           </div>
         </article>
@@ -141,7 +193,7 @@ function renderBlock(
   if (block.type === "paragraph") return <p key={key}>{renderInline(block.content, documentId, onNavigate)}</p>;
   if (block.type === "quote") return <blockquote key={key}>{renderInline(block.content, documentId, onNavigate)}</blockquote>;
   if (block.type === "divider") return <hr key={key} />;
-  if (block.type === "code") return <pre key={key} data-language={block.language || undefined}><code>{block.value}</code></pre>;
+  if (block.type === "code") return <DocsCenterCodeBlock key={key} value={block.value} {...(block.language ? { language: block.language } : {})} />;
   const List = block.ordered ? "ol" : "ul";
   return <List key={key}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, documentId, onNavigate)}</li>)}</List>;
 }

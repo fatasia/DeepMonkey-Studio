@@ -11,9 +11,10 @@ const scene: SceneSnapshot = {
 };
 
 describe("WorkspaceRecoveryDialog", () => {
-  it("offers explicit restore, export, and discard actions", () => {
-    const html = renderToStaticMarkup(<WorkspaceRecoveryDialog locale="zh-CN" draft={createWorkspaceRecoveryDraft("project-1", undefined, scene)} serverRevision={8} busy={false} onRestore={vi.fn()} onExport={vi.fn()} onDiscard={vi.fn()} />);
+  it("offers a non-blocking defer path alongside restore, export, and discard", () => {
+    const html = renderToStaticMarkup(<WorkspaceRecoveryDialog locale="zh-CN" draft={createWorkspaceRecoveryDraft("project-1", undefined, scene)} serverRevision={8} busy={false} onRestore={vi.fn()} onExport={vi.fn()} onDefer={vi.fn()} onDiscard={vi.fn()} />);
     expect(html).toContain("发现未完成的本地修改");
+    expect(html).toContain("稍后处理");
     expect(html).toContain("恢复到当前页");
     expect(html).toContain("导出副本");
     expect(html).toContain("丢弃副本");

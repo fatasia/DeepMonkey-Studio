@@ -38,6 +38,7 @@ export function useVisionCenterController({
   const [error, setError] = useState("");
   const [sourceForm, setSourceForm] = useState(false);
   const [taskForm, setTaskForm] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string>();
   const [modelForm, setModelForm] = useState(false);
   const [sourceDraft, setSourceDraft] = useState({
     mode: "stream" as "stream" | "upload",
@@ -48,22 +49,7 @@ export function useVisionCenterController({
   });
   const [sourceFile, setSourceFile] = useState<File>();
   const [previewSourceId, setPreviewSourceId] = useState("");
-  const [taskDraft, setTaskDraft] = useState({
-    name: "",
-    mode: "video" as "video" | "image",
-    sourceId: "",
-    modelId: "",
-    alertLabels: "",
-    sceneId: "",
-    objectIds: "",
-    stationId: "",
-    productId: "",
-    batchId: "",
-    threshold: 0.6,
-    inferenceFps: 2,
-    executionProvider: "auto" as VisionExecutionProvider,
-    deviceId: 0,
-  });
+  const [taskDraft, setTaskDraft] = useState(emptyTaskDraft);
   const [manifest, setManifest] = useState<VisionModelManifest>();
   const [onnxFile, setOnnxFile] = useState<File>();
   const [selectedImageTaskId, setSelectedImageTaskId] = useState("");
@@ -172,14 +158,40 @@ export function useVisionCenterController({
     });
   }
 
-  async function createTask() {
+  function openNewTask() {
+    setEditingTaskId(undefined);
+    setTaskDraft(emptyTaskDraft());
+    setTaskForm(true);
+  }
+
+  function openTaskEditor(task: VisionTaskRecord) {
+    setEditingTaskId(task.id);
+    setTaskDraft({
+      name: task.name,
+      mode: task.mode,
+      sourceId: task.sourceId ?? "",
+      modelId: task.modelId,
+      alertLabels: task.alertLabels?.join(", ") ?? "",
+      sceneId: task.binding.sceneId ?? "",
+      objectIds: task.binding.objectIds.join(", "),
+      stationId: task.qualityContext?.stationId ?? "",
+      productId: task.qualityContext?.productId ?? "",
+      batchId: task.qualityContext?.batchId ?? "",
+      threshold: task.threshold,
+      inferenceFps: task.inferenceFps,
+      executionProvider: task.executionProvider,
+      deviceId: task.deviceId,
+    });
+    setTaskForm(true);
+  }
+
+  async function saveTask() {
     await run(async () => {
-      await api.createVisionTask(project.id, {
+      const configuration: Partial<VisionTaskRecord> = {
         name: taskDraft.name,
         mode: taskDraft.mode,
         ...(taskDraft.mode === "video" ? { sourceId: taskDraft.sourceId } : {}),
         modelId: taskDraft.modelId,
-        enabled: false,
         inferenceFps: taskDraft.inferenceFps,
         threshold: taskDraft.threshold,
         iouThreshold: 0.45,
@@ -210,25 +222,11 @@ export function useVisionCenterController({
             ? { batchId: taskDraft.batchId.trim() }
             : {}),
         },
-        status: "stopped",
-        message: "已停止",
-      });
-      setTaskDraft({
-        name: "",
-        mode: "video",
-        sourceId: "",
-        modelId: "",
-        alertLabels: "",
-        sceneId: "",
-        objectIds: "",
-        stationId: "",
-        productId: "",
-        batchId: "",
-        threshold: 0.6,
-        inferenceFps: 2,
-        executionProvider: "auto",
-        deviceId: 0,
-      });
+      };
+      if (editingTaskId) await api.updateVisionTask(project.id, editingTaskId, configuration);
+      else await api.createVisionTask(project.id, { ...configuration, enabled: false, status: "stopped", message: "已停止" });
+      setTaskDraft(emptyTaskDraft());
+      setEditingTaskId(undefined);
       setTaskForm(false);
       await load();
     });
@@ -286,6 +284,7 @@ export function useVisionCenterController({
     setSourceForm,
     taskForm,
     setTaskForm,
+    editingTaskId,
     modelForm,
     setModelForm,
     sourceDraft,
@@ -315,7 +314,9 @@ export function useVisionCenterController({
     showError,
     run,
     createSource,
-    createTask,
+    openNewTask,
+    openTaskEditor,
+    saveTask,
     uploadModel,
     inferImage,
     downloadTemplate,
@@ -325,3 +326,22 @@ export function useVisionCenterController({
 export type VisionCenterController = ReturnType<
   typeof useVisionCenterController
 >;
+
+function emptyTaskDraft() {
+  return {
+    name: "",
+    mode: "video" as "video" | "image",
+    sourceId: "",
+    modelId: "",
+    alertLabels: "",
+    sceneId: "",
+    objectIds: "",
+    stationId: "",
+    productId: "",
+    batchId: "",
+    threshold: 0.6,
+    inferenceFps: 2,
+    executionProvider: "auto" as VisionExecutionProvider,
+    deviceId: 0,
+  };
+}

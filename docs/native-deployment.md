@@ -16,9 +16,13 @@ pnpm dev:local:services
 
 # 只检查当前依赖与端口，不改变运行状态。
 pnpm dev:local:check
+
+# 查看严格参数说明；未知参数不会被静默忽略或误触发启动。
+node scripts/start-local.mjs --help
 ```
 
 `--skip-infra` 可跳过 PostgreSQL/MinIO 代启。安装后的 Windows 客户端本地模式不依赖这些服务、Node.js 或 Python。
+`--check` 会验证端口后的服务身份，而不是只判断“有人监听”：API 必须返回 Industrial Studio `/health` 合同，Web 必须返回 Industrial Studio 页面标识。JSON 结果中的 `required` 说明当前目标和存储配置真正依赖哪些服务；任一必需项不健康时命令返回非零退出码，可直接用于交付前检查。
 
 ### 修改开发 API 接口
 
@@ -55,8 +59,12 @@ bash scripts/deploy-cloud.sh --stop
 
 ## 健康与日志
 
-- API/Web 健康入口：`/api/meta`
+- API 基础健康入口：`/health`；管理员综合健康入口：`/api/admin/health`
+- “设置 → 服务健康”实时检查 API、Web、流程服务、实时视频、视觉运行时、PostgreSQL 与对象存储，展示状态、延迟、检查时间和失败原因；未启用的存储明确显示“未配置”，不会伪报健康。
+- “设置 → 审计与日志”可按服务、级别、起止时间和关键词筛选，并导出当前筛选；服务端在返回和导出前统一脱敏。操作审计只供页面核对，不提供审计导出。
+- 诊断包包含运行元数据、综合健康与脱敏错误日志，不包含凭据、审计记录、项目数据、业务数据或模型。
 - Windows 日志：`.runtime-logs/production.out.log` 与 `.runtime-logs/production.err.log`
+- 本地 Windows 服务日志：`data/logs/<服务>.out.log` 与 `data/logs/<服务>.err.log`
 - Linux 日志：`journalctl -u industrial-studio-<id>`
 
 部署预检不输出密码或访问密钥；失败时只报告缺失项、不可达服务或缺少的本地客户端工具。

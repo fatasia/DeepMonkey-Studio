@@ -1,4 +1,6 @@
 import type { Vector3Value } from "./geometry.js";
+import type { WorkcellErgonomicsCheck, WorkcellErgonomicsProfile } from "./ergonomics.js";
+import type { RobotLoadCapabilityState, RobotToolLoadState } from "./robot.js";
 
 export type WorkcellObjectRole = "robot" | "tool" | "target" | "equipment" | "obstacle" | "unknown";
 
@@ -23,6 +25,8 @@ export interface WorkcellRobotChain {
   links: WorkcellRobotLink[];
   toolObjectId?: string;
   targetObjectIds?: string[];
+  loadCapability?: RobotLoadCapabilityState;
+  toolLoad?: RobotToolLoadState;
 }
 
 export interface WorkcellAuditObject {
@@ -34,21 +38,95 @@ export interface WorkcellAuditObject {
   robot?: WorkcellRobotChain;
 }
 
+/**
+ * 场景适配器可提供快速起步值，但它们只有在工程师确认后才能参与“通过”结论。
+ * 数值仍保留在原有字段中；这里记录来源和场景候选轨迹的推导基准，便于持久化追溯。
+ */
+export interface WorkcellPlanningAssumptionState {
+  origin: "starter-values" | "authored" | "imported";
+  status: "unconfirmed" | "engineer-confirmed";
+  generatedTrajectorySpeedMps?: number;
+  generatedTrajectoryTcpRadiusMeters?: number;
+  reference?: string;
+}
+
+export type WorkcellPlanningEvidenceMissingField =
+  | "planning-confirmation"
+  | "clearance-threshold"
+  | "trajectory-time-basis"
+  | "trajectory-tcp-radius"
+  | "trajectory-radius-basis"
+  | "trajectory-radius-mismatch"
+  | "import-reference";
+
+/** 本次确定性审计实际采用的规划基准；旧结果可不含该字段。 */
+export interface WorkcellPlanningEvidence {
+  status: "confirmed" | "needs-data";
+  origin?: WorkcellPlanningAssumptionState["origin"];
+  clearanceThresholdMeters?: number;
+  generatedTrajectorySpeedMps?: number;
+  generatedTrajectoryTcpRadiusMeters?: number;
+  sceneDerivedTrajectoryIds: string[];
+  missingFields: WorkcellPlanningEvidenceMissingField[];
+  evidenceCoverage: number;
+  declaration: string;
+}
+
 export interface WorkcellAuditInput {
   sceneId: string;
   objects: WorkcellAuditObject[];
   clearanceThreshold?: number;
+  /** 旧记录可省略；场景自动生成的起步参数必须携带并显式确认。 */
+  planningAssumptions?: WorkcellPlanningAssumptionState;
   trajectories?: WorkcellRobotTrajectory[];
+  ergonomicsProfiles?: WorkcellErgonomicsProfile[];
 }
 
 export interface WorkcellAuditFinding {
   id: string;
-  category: "collision" | "clearance" | "reachability" | "binding" | "trajectory" | "schedule" | "data";
+  category: "collision" | "clearance" | "reachability" | "binding" | "trajectory" | "schedule" | "load" | "ergonomics" | "data";
   severity: "error" | "warning" | "info";
   title: string;
   detail: string;
   objectIds: string[];
   nextAction: string;
+}
+
+export type WorkcellRobotLoadMissingField =
+  | "tool-binding"
+  | "rated-payload"
+  | "rated-load-center"
+  | "capability-source"
+  | "tool-mass"
+  | "carried-payload"
+  | "tcp-position"
+  | "tcp-orientation"
+  | "combined-center-of-mass"
+  | "tool-load-source";
+
+/**
+ * 仅做规划阶段的额定质量与组合重心包络筛查。
+ * 不计算腕部力矩、惯量、加减速或厂商负载曲线，也不能作为控制器/安全认证结论。
+ */
+export interface WorkcellRobotLoadCheck {
+  robotId: string;
+  toolObjectId?: string;
+  status: "within-planning-envelope" | "exceeds-planning-envelope" | "needs-data";
+  violations: Array<"payload" | "load-center">;
+  missingFields: WorkcellRobotLoadMissingField[];
+  ratedPayloadKg?: number;
+  totalLoadKg?: number;
+  payloadUtilization?: number;
+  maximumLoadCenterDistanceMeters?: number;
+  loadCenterDistanceMeters?: number;
+  loadCenterUtilization?: number;
+  tcpOffsetDistanceMeters?: number;
+  evidenceCoverage: number;
+  capabilitySource?: RobotLoadCapabilityState["source"];
+  capabilityReference?: string;
+  toolLoadSource?: RobotToolLoadState["source"];
+  toolLoadReference?: string;
+  declaration: string;
 }
 
 export interface WorkcellCollisionPair {
@@ -162,6 +240,11 @@ export interface WorkcellAuditResult {
   findings: WorkcellAuditFinding[];
   collisionPairs: WorkcellCollisionPair[];
   reachability: WorkcellReachabilityResult[];
+  loadChecks: WorkcellRobotLoadCheck[];
+  /** 1.4 起提供；用于证明间隙与场景候选轨迹没有依赖隐藏默认值。 */
+  planningEvidence?: WorkcellPlanningEvidence;
+  /** 1.3 起提供；可选以兼容旧能力结果与已保存记录。 */
+  ergonomicsChecks?: WorkcellErgonomicsCheck[];
   trajectoryAnalysis?: WorkcellTrajectoryAnalysis;
   incompleteObjectIds: string[];
   evidenceCoverage: number;

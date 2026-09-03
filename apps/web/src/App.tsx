@@ -473,6 +473,9 @@ export function App() {
     restoreSceneObjectIsolation,
     createSceneSelectionSet,
     createSceneGroup,
+    moveSceneObjectsToGroup,
+    reorderSceneGroup,
+    renameSceneGroup,
     updateSceneSelectionSet,
     applySceneSelectionSet,
     deleteSceneSelectionSet,
@@ -665,7 +668,7 @@ export function App() {
     changeRendererBackend,
   });
 
-  const { undoSceneEdit, redoSceneEdit, restoreRecoveryDraft, discardRecoveryDraft } = useSceneHistoryActions({
+  const { undoSceneEdit, redoSceneEdit, restoreRecoveryDraft, deferRecoveryDraft, discardRecoveryDraft } = useSceneHistoryActions({
     state: appState,
     history: sceneHistoryState,
     applyScene,
@@ -710,6 +713,7 @@ export function App() {
     setRendererSwitching,
     setRevision,
     setSelected,
+    setSceneOrganizationSelection,
     setSelectedSpace,
     setMeasurements,
     setAnnotations,
@@ -763,6 +767,7 @@ export function App() {
       export: () => {
         if (recoveryDraft) downloadWorkspaceRecoveryDraft(recoveryDraft);
       },
+      defer: deferRecoveryDraft,
       discard: discardRecoveryDraft,
     },
     sceneHistory: {

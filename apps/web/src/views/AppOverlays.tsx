@@ -1,7 +1,8 @@
+import { lazy, Suspense } from "react";
 import type { AppViewBindings } from "./appViewBindings";
-import { AppBehaviorOverlay } from "./AppBehaviorOverlay";
-import { AppDialogOverlays } from "./AppDialogOverlays";
-import { AppPlatformOverlays } from "./AppPlatformOverlays";
+
+const AppDialogOverlays = lazy(() => import("./AppDialogOverlays").then((module) => ({ default: module.AppDialogOverlays })));
+const AppPlatformOverlays = lazy(() => import("./AppPlatformOverlays").then((module) => ({ default: module.AppPlatformOverlays })));
 
 /**
  * 应用级浮层入口只负责组合，不再订阅数百个业务字段。
@@ -11,10 +12,9 @@ export function AppOverlays({ bindings }: { bindings: AppViewBindings }) {
   if (!bindings.state.currentUser) return null;
 
   return (
-    <>
-      <AppBehaviorOverlay bindings={bindings} />
+    <Suspense fallback={null}>
       <AppDialogOverlays bindings={bindings} />
       <AppPlatformOverlays bindings={bindings} />
-    </>
+    </Suspense>
   );
 }

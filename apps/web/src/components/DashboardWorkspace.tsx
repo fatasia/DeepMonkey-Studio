@@ -88,6 +88,8 @@ import {
   type StudioCommand,
 } from "@bim-studio/studio-core";
 import { translate as tr, type AppLocale } from "../i18n";
+import { DASHBOARD_INSPECTOR_STORAGE_KEY, DASHBOARD_LEFT_PANEL_STORAGE_KEY } from "../appDefaults";
+import { usePersistedBooleanState } from "../hooks/usePersistedBooleanState";
 import { normalizeDashboardViewState, type DashboardViewState } from "../studio/workspaceRoute";
 import { InteractionFlowInspector } from "./InteractionFlowInspector";
 import { useDashboardMetrics, type DashboardMetric } from "./DashboardWidgetRuntime";
@@ -170,6 +172,8 @@ function useDashboardWorkspaceController({
   onOpenTopology,
   onOpenData,
   onOpenScripts,
+  scriptOpen = false,
+  onCloseScripts,
   onSelectionChange,
   onFilterChange,
   onVariableChange,
@@ -188,8 +192,8 @@ function useDashboardWorkspaceController({
   const [selectedNodeIds, setSelectedNodeIds] = useState(normalizedInitialView.selectedNodeIds);
   const [runtimePreview, setRuntimePreview] = useState(false);
   // 左侧资源栏和右侧检查器都是辅助区，允许用户释放画布空间。
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [leftPanelOpen, setLeftPanelOpen] = usePersistedBooleanState(DASHBOARD_LEFT_PANEL_STORAGE_KEY, true);
+  const [inspectorOpen, setInspectorOpen] = usePersistedBooleanState(DASHBOARD_INSPECTOR_STORAGE_KEY, true);
   const [leftPanelTab, setLeftPanelTab] = useState<"pages" | "components" | "layers">("components");
   const [draftFrames, setDraftFrames] = useState<Record<string, WidgetFrame>>({});
   const [selectionRect, setSelectionRect] = useState<SelectionRect>();
@@ -622,7 +626,7 @@ function useDashboardWorkspaceController({
     if (itemId === "scene") addSceneViewport(placement);
     else {
       const item = resolveDashboardLibraryItem(locale, itemId);
-      if (item) addDataWidget(item.type, item.preset?.widget ?? item.widget, item.preset?.frame, placement);
+      if (item) addDataWidget(item.type, item.preset?.widget ?? item.widget, item.preset?.frame, placement, item.label);
     }
     setLibraryDropActive(false);
   }
@@ -707,6 +711,8 @@ function useDashboardWorkspaceController({
     onOpen3D,
     onOpenData,
     onOpenScripts,
+    scriptOpen,
+    onCloseScripts,
     onOpenTopology,
     onPublish,
     onRedo,

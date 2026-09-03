@@ -1,12 +1,43 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import {
   assertSceneViewerViteManifest,
   createSceneViewerPayload,
   injectDeliveryMarker,
+  pruneSceneViewerFrontend,
+  resolveSceneViewerBuildPaths,
+  sceneViewerWebBuildEnvironment,
   validateSource,
 } from "./scene-viewer-package-core.mjs";
+
+test("isolates generated viewer output from the regular Web dist", () => {
+  const desktop = path.join(tmpdir(), "studio", "apps", "desktop");
+  const paths = resolveSceneViewerBuildPaths(desktop, "scene-release-1");
+  assert.equal(paths.buildRoot, path.join(desktop, ".scene-viewer-build", "scene-release-1"));
+  assert.equal(paths.webDist, path.join(paths.buildRoot, "web-dist"));
+  assert.equal(paths.frontendDirectory, path.join(paths.buildRoot, "frontend"));
+  assert.notEqual(paths.webDist, path.resolve(desktop, "../web/dist"));
+  assert.deepEqual(sceneViewerWebBuildEnvironment(paths.webDist), {
+    VITE_SCENE_VIEWER_BUILD: "true",
+    VITE_SCENE_VIEWER_OUT_DIR: path.resolve(paths.webDist),
+  });
+});
+
+test("preserves an explicit Web dist input and rejects cleanup path traversal", () => {
+  const desktop = path.join(tmpdir(), "studio", "apps", "desktop");
+  const workingDirectory = path.join(tmpdir(), "release-input");
+  const paths = resolveSceneViewerBuildPaths(desktop, "scene-release-2", "prepared-dist", workingDirectory);
+  assert.equal(paths.webDist, path.join(workingDirectory, "prepared-dist"));
+  assert.throws(() => resolveSceneViewerBuildPaths(desktop, "../outside"), /package-id/);
+  assert.throws(
+    () => resolveSceneViewerBuildPaths(desktop, "scene-release-2", paths.generatedWebDist),
+    /不能位于当前只读包的清理目录/,
+  );
+});
 
 test("freezes one publication and rewrites only its required project resources", async () => {
   const server = createServer((request, response) => {
@@ -59,6 +90,96 @@ test("rejects an editor dist before packaging", () => {
     "src/delivery/SceneViewerRoot.tsx": { file: "assets/viewer.js" },
     "src/App.tsx": { file: "assets/editor.js" },
   }), /编辑器入口/);
+});
+
+test("prunes optional runtimes and stale brand files from a primitive-only client", async () => {
+  const frontend = await mkdtemp(path.join(tmpdir(), "bim-studio-scene-viewer-prune-"));
+  const files = {
+    "assets/core.js": "core",
+    "assets/rapier.js": "physics",
+    "assets/fragments.js": "fragments",
+    "brand/app-icon-industrial.svg": "<svg/>",
+    "brand/logo-industrial.svg": "<svg/>",
+    "brand/backups/old.png": "old",
+    "wasm/web-ifc.wasm": "wasm",
+    "draco/decoder.wasm": "draco",
+    "downloads/old.zip": "download",
+    "showcase/old.svg": "showcase",
+  };
+  for (const [name, content] of Object.entries(files)) {
+    const target = path.join(frontend, name);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, content);
+  }
+  const viteManifest = {
+    "src/delivery/SceneViewerRoot.tsx": { file: "assets/core.js", dynamicImports: ["rapier", "fragments"] },
+    rapier: { file: "assets/rapier.js" },
+    fragments: { file: "assets/fragments.js" },
+  };
+  const deliveryManifest = {
+    publication: { snapshot: { models: [], primitives: [{ id: "box", kind: "box" }] } },
+    project: { models: [] },
+    branding: { logoUrl: "/brand/logo-industrial.svg", iconUrl: "/brand/app-icon-industrial.svg" },
+  };
+  try {
+    // Use production manifest identifiers so the optional runtime matcher sees them.
+    viteManifest["../../node_modules/@dimforge+rapier3d-compat/rapier.mjs"] = viteManifest.rapier;
+    viteManifest["../../node_modules/@thatopen/fragments/dist/index.mjs"] = viteManifest.fragments;
+    delete viteManifest.rapier;
+    delete viteManifest.fragments;
+    viteManifest["src/delivery/SceneViewerRoot.tsx"].dynamicImports = Object.keys(viteManifest).slice(1);
+    const result = await pruneSceneViewerFrontend(frontend, deliveryManifest, viteManifest);
+    assert.deepEqual(result.removedPublicRoots.sort(), ["downloads", "draco", "showcase", "wasm"]);
+    assert.equal(await readFile(path.join(frontend, "assets/core.js"), "utf8"), "core");
+    await assert.rejects(() => readFile(path.join(frontend, "assets/rapier.js")), /ENOENT/);
+    await assert.rejects(() => readFile(path.join(frontend, "assets/fragments.js")), /ENOENT/);
+    await assert.rejects(() => readFile(path.join(frontend, "brand/backups/old.png")), /ENOENT/);
+    assert.equal(await readFile(path.join(frontend, "brand/logo-industrial.svg"), "utf8"), "<svg/>");
+    assert.deepEqual(viteManifest["src/delivery/SceneViewerRoot.tsx"].dynamicImports, []);
+  } finally {
+    await rm(frontend, { recursive: true, force: true });
+  }
+});
+
+test("keeps model and physics runtimes required by the frozen publication", async () => {
+  const frontend = await mkdtemp(path.join(tmpdir(), "bim-studio-scene-viewer-keep-"));
+  const files = [
+    "assets/core.js",
+    "assets/rapier.js",
+    "assets/fragments.js",
+    "brand/app-icon-industrial.svg",
+    "brand/logo-industrial.svg",
+    "wasm/web-ifc.wasm",
+    "draco/decoder.wasm",
+  ];
+  for (const name of files) {
+    const target = path.join(frontend, name);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, name);
+  }
+  const rapierKey = "../../node_modules/@dimforge+rapier3d-compat/rapier.mjs";
+  const fragmentsKey = "../../node_modules/@thatopen/fragments/dist/index.mjs";
+  const viteManifest = {
+    "src/delivery/SceneViewerRoot.tsx": { file: "assets/core.js", dynamicImports: [rapierKey, fragmentsKey] },
+    [rapierKey]: { file: "assets/rapier.js" },
+    [fragmentsKey]: { file: "assets/fragments.js" },
+  };
+  const deliveryManifest = {
+    publication: { snapshot: { physics: { enabled: true }, models: [{ modelId: "ifc" }, { modelId: "glb" }], primitives: [] } },
+    project: { models: [{ manifest: { viewerKind: "fragments" } }, { manifest: { viewerKind: "gltf" } }] },
+    branding: { logoUrl: "/brand/logo-industrial.svg", iconUrl: "/brand/app-icon-industrial.svg" },
+  };
+  try {
+    const result = await pruneSceneViewerFrontend(frontend, deliveryManifest, viteManifest);
+    assert.deepEqual(result.removedRuntimeEntries, []);
+    assert.deepEqual(result.removedPublicRoots, ["downloads", "showcase"]);
+    for (const name of ["assets/rapier.js", "assets/fragments.js", "wasm/web-ifc.wasm", "draco/decoder.wasm"]) {
+      assert.equal(await readFile(path.join(frontend, name), "utf8"), name);
+    }
+    assert.deepEqual(viteManifest["src/delivery/SceneViewerRoot.tsx"].dynamicImports, [rapierKey, fragmentsKey]);
+  } finally {
+    await rm(frontend, { recursive: true, force: true });
+  }
 });
 
 test("stops a stalled packaged asset download at the configured deadline", async () => {

@@ -31,6 +31,11 @@ export function SceneLightingEditor(props: SceneLightingEditorProps) {
         <span>{tr(locale, "灯光", "Lighting")}</span>
         <button
           className={`lighting-toggle ${lighting.enabled ? "active" : ""}`}
+          aria-label={
+            lighting.enabled
+              ? tr(locale, "关闭全局灯光", "Disable global lighting")
+              : tr(locale, "开启全局灯光", "Enable global lighting")
+          }
           title={
             lighting.enabled
               ? tr(locale, "关闭全局灯光", "Disable global lighting")
@@ -289,6 +294,7 @@ function LightEditor({
       )}
       <button
         className="danger"
+        aria-label={tr(locale, "删除光源", "Delete light")}
         title={tr(locale, "删除光源", "Delete light")}
         onClick={onRemove}
       >

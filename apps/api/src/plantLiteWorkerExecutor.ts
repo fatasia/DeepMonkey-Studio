@@ -48,22 +48,65 @@ export class PlantLiteWorkerExecutor implements PlantLiteStudyExecutor {
       worker.once("exit", (code) => {
         if (code !== 0) finish(() => reject(new PlantLiteWorkerExecutionError(`Plant Lite Worker 意外退出（${code}）`)));
       });
-      worker.once("message", (message: WorkerMessage) => {
-        if (message.type === "error") finish(() => reject(new PlantLiteWorkerExecutionError(message.message)));
-        else finish(() => resolve(message.record));
+      worker.on("message", (message: unknown) => {
+        // `node --watch` forwards dependency notifications from a TypeScript Worker over
+        // the same message channel before the application result. They are not part of
+        // the Plant Lite protocol and must not settle the simulation request.
+        if (isNodeWatchControlMessage(message)) return;
+        const decoded = decodeWorkerMessage(message);
+        if (!decoded.ok) {
+          const protocolError = decoded.message;
+          finish(() => reject(new PlantLiteWorkerExecutionError(protocolError)));
+          return;
+        }
+        const value = decoded.value;
+        if (value.type === "error") {
+          const workerError = value.message;
+          finish(() => reject(new PlantLiteWorkerExecutionError(workerError)));
+          return;
+        }
+        const record = value.record;
+        finish(() => resolve(record));
       });
       worker.postMessage({ projectId, request });
     });
   }
 }
 
+export function isNodeWatchControlMessage(message: unknown): boolean {
+  if (!message || typeof message !== "object" || Array.isArray(message)) return false;
+  const fields = Object.keys(message);
+  return fields.length === 1 && (fields[0] === "watch:import" || fields[0] === "watch:require");
+}
+
 type WorkerMessage =
   | { type: "result"; record: PlantLiteStudyRecord }
   | { type: "error"; message: string };
 
+export function decodeWorkerMessage(message: unknown):
+  | { ok: true; value: WorkerMessage }
+  | { ok: false; message: string } {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return { ok: false, message: `Plant Lite Worker 协议无效（收到 ${typeof message}）` };
+  }
+  const value = message as Record<string, unknown>;
+  if (value.type === "error" && typeof value.message === "string") {
+    return { ok: true, value: { type: "error", message: compactError(value.message) } };
+  }
+  if (value.type === "result" && value.record && typeof value.record === "object" && !Array.isArray(value.record)) {
+    return { ok: true, value: { type: "result", record: value.record as PlantLiteStudyRecord } };
+  }
+  const fields = Object.keys(value).sort().slice(0, 12).join(", ") || "无字段";
+  return { ok: false, message: `Plant Lite Worker 协议无效（type=${String(value.type ?? "缺失")}；字段：${fields}）` };
+}
+
 function createPlantLiteWorker(): Worker {
   if (import.meta.url.endsWith(".ts")) {
-    return new Worker(new URL("./plantLiteWorker.ts", import.meta.url), { execArgv: ["--import", "tsx"] });
+    // The API development process resolves workspace packages from source. The Worker must
+    // inherit that condition as well; otherwise it silently loads stale dist exports.
+    return new Worker(new URL("./plantLiteWorker.ts", import.meta.url), {
+      execArgv: ["--conditions=development", "--import", "tsx"],
+    });
   }
   return new Worker(new URL("./plantLiteWorker.js", import.meta.url));
 }

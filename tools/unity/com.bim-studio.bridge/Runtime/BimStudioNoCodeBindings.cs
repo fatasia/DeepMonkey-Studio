@@ -71,7 +71,7 @@ namespace BimStudio.Bridge
         private void OnEnable()
         {
             bridge = FindBridge();
-            if (bridge == null) { Debug.LogWarning($"[BIM Studio 绑定] {name} 未找到 BimStudioBridge。", this); return; }
+            if (bridge == null) { Debug.LogWarning($"[Industrial Studio 绑定] {name} 未找到 BimStudioBridge。", this); return; }
             if (source == BimStudioValueSource.DataLayer) bridge.onDataLayer.AddListener(Apply);
             else bridge.onProperty.AddListener(Apply);
         }

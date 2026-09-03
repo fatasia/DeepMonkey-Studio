@@ -13,6 +13,17 @@ describe("resolveSceneBehaviorModule", () => {
     }
   });
 
+  it("copies readonly dependency inputs into a detached mutable SDK array", () => {
+    const dependencies = [{ specifier: "dayjs", code: "export default {};", integrity: "sha256-test" }] as const;
+    const result = resolveSceneBehaviorModule(script(), dependencies);
+
+    expect(result).toMatchObject({ status: "ready", module: { dependencies } });
+    if (result.status === "ready") {
+      expect(result.module.dependencies).not.toBe(dependencies);
+      expect(result.module.dependencies?.[0]).not.toBe(dependencies[0]);
+    }
+  });
+
   it("skips disabled and legacy scripts without silently trusting them", () => {
     expect(resolveSceneBehaviorModule({ ...script(), enabled: false })).toMatchObject({ status: "skipped", message: expect.stringContaining("禁用") });
     expect(resolveSceneBehaviorModule({ ...script(), runtime: "legacy-trusted-main-thread" })).toMatchObject({ status: "skipped", message: expect.stringContaining("不会自动") });

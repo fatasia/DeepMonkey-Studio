@@ -1,0 +1,107 @@
+.plant-flow-dynamics {
+  margin: 0 14px 12px;
+  overflow: hidden;
+  border: 1px solid #2d3d43;
+  border-radius: 8px;
+  background: #0d171a;
+  container-type: inline-size;
+}
+
+.plant-flow-dynamics > summary,
+.plant-flow-dynamics > summary > span,
+.plant-flow-dynamics > summary > span > span {
+  display: flex;
+  align-items: center;
+}
+
+.plant-flow-dynamics > summary {
+  min-height: 42px;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 10px;
+  color: #91a4aa;
+  list-style: none;
+  cursor: pointer;
+}
+
+.plant-flow-dynamics > summary::-webkit-details-marker { display: none; }
+.plant-flow-dynamics > summary > span { min-width: 0; gap: 7px; }
+.plant-flow-dynamics > summary > span > svg { flex: 0 0 auto; color: #62bdb5; }
+.plant-flow-dynamics > summary > span > span { min-width: 0; align-items: flex-start; flex-direction: column; gap: 1px; }
+.plant-flow-dynamics > summary strong { color: #dfe7e9; font-size: 12px; }
+.plant-flow-dynamics > summary small { overflow: hidden; color: #71838a; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.plant-flow-dynamics > summary em { flex: 0 0 auto; color: #c4d0d3; font-size: 11px; font-style: normal; font-variant-numeric: tabular-nums; }
+
+.plant-flow-dynamics-body {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px 10px;
+  border-top: 1px solid #26353a;
+}
+
+.plant-flow-chart-shell {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #24343a;
+  border-radius: 5px;
+  background: #0c1518;
+}
+
+.plant-flow-chart { display: block; width: 100%; height: auto; min-height: 150px; }
+.plant-flow-grid line { stroke: #28383d; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.plant-flow-grid text,
+.plant-flow-time text,
+.plant-flow-axis-label { fill: #64777d; font-size: 9px; font-variant-numeric: tabular-nums; }
+.plant-flow-time line { stroke: #1d2a2e; stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+.plant-flow-axis-label { fill: #75888e; font-size: 9px; letter-spacing: .02em; }
+.plant-flow-line { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.plant-flow-line.wip { stroke: #e1b24f; stroke-width: 2; }
+.plant-flow-line.output { stroke: #78c697; stroke-width: 2; stroke-dasharray: 5 3; }
+.plant-flow-line.node { opacity: .8; stroke-width: 1.2; }
+
+.plant-flow-legend { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 5px 12px; color: #83969c; font-size: 10px; }
+.plant-flow-legend span { display: inline-flex; min-width: 0; align-items: center; gap: 5px; }
+.plant-flow-legend i { width: 13px; height: 3px; flex: 0 0 auto; border-radius: 1px; background: #5fbab2; }
+.plant-flow-legend i.wip { height: 2px; background: #e1b24f; }
+.plant-flow-legend i.output { height: 2px; background: repeating-linear-gradient(90deg, #78c697 0 5px, transparent 5px 8px); }
+.plant-flow-legend small { color: #5f7278; font-size: 9px; }
+
+.plant-flow-evidence {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 0;
+  color: #697d83;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.plant-flow-evidence.warning { color: #d4b16e; }
+.plant-flow-evidence svg { flex: 0 0 auto; margin-top: 1px; }
+
+.plant-flow-dynamics-empty {
+  display: flex;
+  min-height: 82px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: #63767c;
+  border: 1px dashed #2a3b40;
+  border-radius: 5px;
+  background: #0c1518;
+}
+.plant-flow-dynamics-empty > svg { color: #52676d; }
+.plant-flow-dynamics-empty > span { display: flex; max-width: 440px; flex-direction: column; gap: 2px; }
+.plant-flow-dynamics-empty strong { color: #aab9bd; font-size: 11px; }
+.plant-flow-dynamics-empty small { font-size: 10px; line-height: 1.45; }
+
+@container (max-width: 560px) {
+  .plant-flow-dynamics > summary { align-items: flex-start; flex-direction: column; padding-top: 8px; padding-bottom: 8px; }
+  .plant-flow-chart { min-width: 560px; }
+  .plant-flow-chart-shell { overflow-x: auto; }
+}
+
+@media (max-width: 520px) {
+  .plant-flow-dynamics > summary { align-items: flex-start; flex-direction: column; padding-top: 8px; padding-bottom: 8px; }
+  .plant-flow-chart { min-width: 540px; }
+  .plant-flow-chart-shell { overflow-x: auto; }
+}

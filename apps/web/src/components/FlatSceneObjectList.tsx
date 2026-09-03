@@ -157,6 +157,7 @@ function LightRow(
       </button>
       <button
         className="mini-button"
+        aria-label={light.enabled ? tr(locale, "关闭光源", "Disable light") : tr(locale, "开启光源", "Enable light")}
         title={
           light.enabled
             ? tr(locale, "关闭光源", "Disable light")
@@ -171,6 +172,7 @@ function LightRow(
       {canMove && (
         <button
           className="mini-button"
+          aria-label={tr(locale, "移动光源", "Move light")}
           title={tr(locale, "移动光源", "Move light")}
           onClick={() => props.onLightTransform(light, "position")}
         >
@@ -180,6 +182,7 @@ function LightRow(
       {canAim && (
         <button
           className="mini-button"
+          aria-label={tr(locale, "改变光照方向", "Change light direction")}
           title={tr(locale, "改变光照方向", "Change light direction")}
           onClick={() => props.onLightTransform(light, "target")}
         >
@@ -188,6 +191,7 @@ function LightRow(
       )}
       <button
         className="mini-button scene-row-optional-action danger"
+        aria-label={tr(locale, "删除光源", "Delete light")}
         title={tr(locale, "删除光源", "Delete light")}
         onClick={() => props.onLightRemove(light.id)}
       >
@@ -225,6 +229,7 @@ function PrimitiveRow(
       </button>
       <button
         className="mini-button"
+        aria-label={primitive.visible ? tr(locale, "隐藏基础元素", "Hide primitive") : tr(locale, "显示基础元素", "Show primitive")}
         title={
           primitive.visible
             ? tr(locale, "隐藏基础元素", "Hide primitive")
@@ -236,6 +241,7 @@ function PrimitiveRow(
       </button>
       <button
         className={`mini-button ${locked ? "active" : ""}`}
+        aria-label={locked ? tr(locale, "解锁基础元素", "Unlock primitive") : tr(locale, "锁定基础元素", "Lock primitive")}
         title={
           locked
             ? tr(locale, "解锁基础元素", "Unlock primitive")
@@ -250,6 +256,7 @@ function PrimitiveRow(
       </button>
       <button
         className={`mini-button scene-row-optional-action collision-toggle ${engine?.isCollisionEnabled(primitive.id) ? "active" : ""} ${engine?.isColliding(primitive.id) ? "colliding" : ""}`}
+        aria-label={engine?.isCollisionEnabled(primitive.id) ? tr(locale, "关闭碰撞检测", "Disable collision detection") : tr(locale, "开启碰撞检测", "Enable collision detection")}
         title={
           engine?.isCollisionEnabled(primitive.id)
             ? tr(locale, "关闭碰撞检测", "Disable collision detection")
@@ -267,6 +274,7 @@ function PrimitiveRow(
       <button
         className="mini-button scene-row-optional-action danger"
         disabled={locked}
+        aria-label={locked ? tr(locale, "请先解锁基础元素", "Unlock the primitive first") : tr(locale, "删除基础元素", "Delete primitive")}
         title={
           locked
             ? tr(locale, "请先解锁基础元素", "Unlock the primitive first")
@@ -312,6 +320,7 @@ function MeasurementRow({
       </button>
       <button
         className="mini-button scene-row-optional-action danger"
+        aria-label={`${tr(locale, "删除标尺", "Delete measurement")} ${index + 1}`}
         title={`${tr(locale, "删除标尺", "Delete measurement")} ${index + 1}`}
         onClick={onRemove}
       >
@@ -350,6 +359,7 @@ function AnnotationRow(
       </button>
       <button
         className="mini-button"
+        aria-label={annotation.visible ? tr(locale, "隐藏标签", "Hide annotation") : tr(locale, "显示标签", "Show annotation")}
         title={
           annotation.visible
             ? tr(locale, "隐藏标签", "Hide annotation")
@@ -365,6 +375,7 @@ function AnnotationRow(
       </button>
       <button
         className={`mini-button ${annotation.locked ? "active" : ""}`}
+        aria-label={annotation.locked ? tr(locale, "解锁标签", "Unlock annotation") : tr(locale, "锁定标签", "Lock annotation")}
         title={
           annotation.locked
             ? tr(locale, "解锁标签", "Unlock annotation")
@@ -381,6 +392,7 @@ function AnnotationRow(
       <button
         className="mini-button scene-row-optional-action danger"
         disabled={annotation.locked}
+        aria-label={annotation.locked ? tr(locale, "请先解锁标签", "Unlock the annotation first") : tr(locale, "删除标签", "Delete annotation")}
         title={
           annotation.locked
             ? tr(locale, "请先解锁标签", "Unlock the annotation first")

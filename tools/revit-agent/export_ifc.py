@@ -1,4 +1,4 @@
-"""Revit Batch Processor task: export the current RVT document to BIM Studio's model.ifc."""
+"""Revit Batch Processor task: export the current RVT document to Industrial Studio's model.ifc."""
 import clr
 import os
 
@@ -26,7 +26,7 @@ options.AddOption("ExportInternalRevitPropertySets", "true")
 options.AddOption("StoreIFCGUID", "true")
 options.AddOption("UseActiveViewGeometry", "false")
 
-transaction = Transaction(doc, "BIM Studio IFC Export")
+transaction = Transaction(doc, "Industrial Studio IFC Export")
 transaction.Start()
 try:
     success = doc.Export(output_dir, "model.ifc", options)
@@ -35,4 +35,4 @@ try:
 finally:
     transaction.RollBack()
 
-Output("BIM Studio exported IFC to: " + os.path.join(output_dir, "model.ifc"))
+Output("Industrial Studio exported IFC to: " + os.path.join(output_dir, "model.ifc"))

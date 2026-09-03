@@ -26,10 +26,12 @@ import { api } from "../api";
 export function DataEndpointStudio({
   locale,
   projectId,
+  initialPipelineId,
   onError,
 }: {
   locale: AppLocale;
   projectId: string;
+  initialPipelineId?: string | undefined;
   onError: (message: string) => void;
 }) {
   const [endpoints, setEndpoints] = useState<DataEndpointDefinition[]>([]);
@@ -37,11 +39,12 @@ export function DataEndpointStudio({
   const [draft, setDraft] = useState<DataEndpointDefinition>();
   const [apiKey, setApiKey] = useState<string>();
   const [preview, setPreview] = useState<DataPipelinePreview>();
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
   async function load(preferredId?: string) {
-    setBusy(true);
+    setLoading(true);
     try {
       const [next, nextPipelines] = await Promise.all([
         api.listDataEndpoints(projectId),
@@ -49,21 +52,24 @@ export function DataEndpointStudio({
       ]);
       setEndpoints(next);
       setPipelines(nextPipelines);
+      const initialPipeline = nextPipelines.find((item) => item.id === initialPipelineId);
       const selected = next.find((item) => item.id === preferredId) ?? next[0];
-      setDraft(selected ? structuredClone(selected) : undefined);
+      setDraft(initialPipeline
+        ? createEndpointDraft(projectId, initialPipeline.id, "rest")
+        : selected ? structuredClone(selected) : undefined);
       setApiKey(undefined);
       setPreview(undefined);
       onError("");
     } catch (reason) {
       onError(errorMessage(reason));
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
-  }, [projectId]);
+  }, [projectId, initialPipelineId]);
 
   function createEndpoint(kind: DataEndpointKind = "rest") {
     const pipeline = pipelines[0];
@@ -73,24 +79,7 @@ export function DataEndpointStudio({
       );
       return;
     }
-    const now = new Date().toISOString();
-    const id = crypto.randomUUID();
-    setDraft({
-      id,
-      projectId,
-      name: kind === "rest" ? "REST API" : "WebSocket",
-      kind,
-      slug: `data-${id.slice(0, 6)}`,
-      pipelineId: pipeline.id,
-      enabled: true,
-      apiKeyHint: "",
-      ...(kind === "rest"
-        ? { method: "GET" }
-        : { channel: "realtime", intervalMs: 5_000 }),
-      requestsPerMinute: 60,
-      createdAt: now,
-      updatedAt: now,
-    });
+    setDraft(createEndpointDraft(projectId, pipeline.id, kind));
     setApiKey(undefined);
     setPreview(undefined);
     onError("");
@@ -187,9 +176,9 @@ export function DataEndpointStudio({
         <header>
           <span>
             <strong>{tr(locale, "接口服务", "Endpoint services")}</strong>
-            <small>{endpoints.length} REST / WebSocket</small>
+            <small>{loading ? tr(locale, "加载中", "Loading") : `${endpoints.length} REST / WebSocket`}</small>
           </span>
-          <button disabled={!pipelines.length} onClick={() => createEndpoint()}>
+          <button disabled={loading || !pipelines.length} onClick={() => createEndpoint()}>
             <Plus size={14} />
             {tr(locale, "新建", "New")}
           </button>
@@ -253,7 +242,12 @@ export function DataEndpointStudio({
         )}
       </aside>
       <section className="endpoint-workspace">
-        {!draft ? (
+        {!draft && loading ? (
+          <div className="endpoint-blank">
+            <LoaderCircle className="spin" size={28} />
+            <strong>{tr(locale, "正在加载数据产品", "Loading data products")}</strong>
+          </div>
+        ) : !draft ? (
           <div className="endpoint-blank">
             <ServerCog size={34} />
             <strong>
@@ -649,6 +643,31 @@ export function DataEndpointStudio({
       </section>
     </div>
   );
+}
+
+function createEndpointDraft(
+  projectId: string,
+  pipelineId: string,
+  kind: DataEndpointKind,
+): DataEndpointDefinition {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  return {
+    id,
+    projectId,
+    name: kind === "rest" ? "REST API" : "WebSocket",
+    kind,
+    slug: `data-${id.slice(0, 6)}`,
+    pipelineId,
+    enabled: true,
+    apiKeyHint: "",
+    ...(kind === "rest"
+      ? { method: "GET" }
+      : { channel: "realtime", intervalMs: 5_000 }),
+    requestsPerMinute: 60,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 function errorMessage(reason: unknown): string {

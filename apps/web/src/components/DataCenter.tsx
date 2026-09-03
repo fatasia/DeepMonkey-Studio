@@ -6,13 +6,11 @@ import {
   Braces,
   CheckCircle2,
   Database,
-  GitBranch,
   LoaderCircle,
   Pencil,
   Plus,
   RefreshCw,
   Send,
-  ServerCog,
   Table2,
   Trash2,
   Workflow,
@@ -21,18 +19,21 @@ import {
 import type { DataConnectionRecord, DataConnectorDiagnostics, DataDatasetPreview, DataDatasetRecord, ProjectRecord } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
+import "../styles/data-center-workbench.css";
+import "../styles/data-center-pipeline-workbench.css";
+import "../styles/data-center-endpoint-workbench.css";
 import { DataEndpointStudio } from "./DataEndpointStudio";
 import { DataPipelineStudio } from "./DataPipelineStudio";
 import { NodeRedStudio } from "./NodeRedStudio";
 import { SecondaryPageBack } from "./SecondaryPageBack";
 import { ConnectionForm, DatasetForm } from "./DataCenterForms";
+import { datasetSchemaChanged } from "./datasetSchema";
 import {
   CONNECTOR_REQUIRED,
   SQL_CONNECTIONS,
   WRITABLE_CONNECTIONS,
   ConnectionIcon,
   DatasetPreview,
-  FlowStep,
   connectionLabel,
   connectionSummary,
   connectorStatusLabel,
@@ -49,8 +50,10 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
   const [selectedConnectionId, setSelectedConnectionId] = useState<string>();
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>();
   const [preview, setPreview] = useState<DataDatasetPreview>();
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const [connectionEditor, setConnectionEditor] = useState<DataConnectionRecord | "new">();
   const [datasetEditor, setDatasetEditor] = useState<DataDatasetRecord | "new">();
   const [sqlAssistantOpen, setSqlAssistantOpen] = useState(false);
@@ -62,6 +65,7 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
   const [writeValue, setWriteValue] = useState("");
   const [writeBusy, setWriteBusy] = useState(false);
   const [section, setSection] = useState<"data" | "pipeline" | "endpoint" | "node-red">("data");
+  const [endpointPipelineId, setEndpointPipelineId] = useState<string>();
 
   async function load(preferredConnectionId?: string, preferredDatasetId?: string) {
     setBusy(true);
@@ -92,7 +96,8 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
   }
 
   useEffect(() => {
-    void load();
+    setLoading(true);
+    void load().finally(() => setLoading(false));
   }, [project.id]);
   const selectedDataset = datasets.find((item) => item.id === selectedDatasetId);
   const selectedConnection = connections.find((item) => item.id === selectedConnectionId);
@@ -104,9 +109,20 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
     if (!datasetId) return;
     setBusy(true);
     try {
-      setPreview(await api.previewDataset(project.id, datasetId));
+      const result = await api.previewDataset(project.id, datasetId);
+      const current = datasets.find((item) => item.id === datasetId);
+      const discoveredFields = result.fields.length > 0 ? result.fields : current?.fields ?? [];
+      const hydrated = current && result.fields.length > 0 && datasetSchemaChanged(current.fields, discoveredFields)
+        ? await api.createDataset(project.id, { ...result.dataset, fields: discoveredFields })
+        : result.dataset;
+      const effectiveDataset = { ...hydrated, fields: discoveredFields };
+      setDatasets((items) => items.map((item) => item.id === effectiveDataset.id ? effectiveDataset : item));
+      setPreview({ ...result, dataset: effectiveDataset, fields: discoveredFields });
       setSelectedDatasetId(datasetId);
       setError(undefined);
+      setNotice(result.fields.length > 0
+        ? tr(locale, `查询成功 · 已同步 ${result.fields.length} 个字段`, `Query succeeded · ${result.fields.length} fields synchronized`)
+        : tr(locale, `查询成功但没有返回数据 · 保留 ${discoveredFields.length} 个已有字段`, `Query succeeded with no rows · kept ${discoveredFields.length} existing fields`));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -127,11 +143,13 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
 
   async function testConnection(connection: DataConnectionRecord) {
     setTestingConnectionId(connection.id);
+    setNotice(undefined);
     try {
       const datasetId = datasets.find((item) => item.connectionId === connection.id)?.id;
       const result = await api.testDataConnection(project.id, connection.id, datasetId);
       if (!result.ok) throw new Error(result.message || tr(locale, "连接测试失败", "Connection test failed"));
-      setError(tr(locale, `连接正常 · ${result.rowCount} 行样本 · ${result.durationMs}ms`, `Connection healthy · ${result.rowCount} sample rows · ${result.durationMs}ms`));
+      setError(undefined);
+      setNotice(tr(locale, `连接正常 · ${result.rowCount} 行样本 · ${result.durationMs}ms`, `Connection healthy · ${result.rowCount} sample rows · ${result.durationMs}ms`));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -147,10 +165,12 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
   async function writePoint() {
     if (!selectedConnection || !WRITABLE_CONNECTIONS.has(selectedConnection.type) || !writeAddress.trim()) return;
     setWriteBusy(true);
+    setNotice(undefined);
     try {
       const parsed = parseWriteValue(writeValue);
       await api.writeDataPoint(project.id, selectedConnection.id, { address: writeAddress.trim(), value: parsed });
-      setError(tr(locale, `已向 ${writeAddress.trim()} 写入 ${formatCell(parsed)}`, `Wrote ${formatCell(parsed)} to ${writeAddress.trim()}`));
+      setError(undefined);
+      setNotice(tr(locale, `已向 ${writeAddress.trim()} 写入 ${formatCell(parsed)}`, `Wrote ${formatCell(parsed)} to ${writeAddress.trim()}`));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -221,26 +241,13 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
         <SecondaryPageBack locale={locale} onBack={onBack} />
         <div className="secondary-page-heading-row">
           <div className="data-center-title secondary-page-title">
-            <small>PROJECT DATA HUB</small>
             <h1>{tr(locale, "数据中心", "Data center")}</h1>
             <p>
-              {project.name} · {tr(locale, "连接、查询、预览，然后在 Studio 里直接绑定", "Connect, query, preview, then bind directly in Studio")}
+              {project.name} · {tr(locale, "接入、处理并发布可复用的数据接口", "Connect, transform and publish reusable data APIs")}
             </p>
           </div>
         </div>
       </header>
-      <section className="data-center-flow">
-        <FlowStep
-          icon={<Database />}
-          index="1"
-          title={tr(locale, "数据连接", "Connections")}
-          caption={tr(locale, "数据库、接口、实时协议", "Databases, APIs and live protocols")}
-        />
-        <i />
-        <FlowStep icon={<Table2 />} index="2" title={tr(locale, "数据集", "Datasets")} caption={tr(locale, "查询、字段和刷新策略", "Queries, fields and refresh")} />
-        <i />
-        <FlowStep icon={<Activity />} index="3" title={tr(locale, "场景绑定", "Scene binding")} caption={tr(locale, "进入 Studio 选择数据集", "Select a dataset in Studio")} />
-      </section>
       {error && (
         <div className="data-center-error">
           <span>{error}</span>
@@ -249,42 +256,62 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
           </button>
         </div>
       )}
+      {notice && section === "data" && (
+        <div className="data-center-notice success" role="status">
+          <CheckCircle2 size={14} />
+          <span>{notice}</span>
+          <button aria-label={tr(locale, "关闭提示", "Dismiss message")} onClick={() => setNotice(undefined)}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
       <nav className="data-hub-tabs">
         <button className={section === "data" ? "active" : ""} onClick={() => setSection("data")}>
-          <Database size={14} />
-          <span>
-            <strong>{tr(locale, "数据准备", "Data preparation")}</strong>
-            <small>{tr(locale, "连接、查询、字段", "Connections, queries, fields")}</small>
-          </span>
+          <b>1</b>
+          <strong>{tr(locale, "接入数据", "Connect data")}</strong>
         </button>
         <button className={section === "pipeline" ? "active" : ""} onClick={() => setSection("pipeline")}>
-          <GitBranch size={14} />
-          <span>
-            <strong>{tr(locale, "逻辑编排", "Logic pipeline")}</strong>
-            <small>{tr(locale, "节点、脚本、逐步诊断", "Nodes, scripts, diagnostics")}</small>
-          </span>
+          <b>2</b>
+          <strong>{tr(locale, "处理逻辑", "Transform")}</strong>
         </button>
-        <button className={section === "endpoint" ? "active" : ""} onClick={() => setSection("endpoint")}>
-          <ServerCog size={14} />
-          <span>
-            <strong>{tr(locale, "接口服务", "Endpoint services")}</strong>
-            <small>REST / WebSocket · API Key</small>
-          </span>
+        <button className={section === "endpoint" ? "active" : ""} onClick={() => {
+          setEndpointPipelineId(undefined);
+          setSection("endpoint");
+        }}>
+          <b>3</b>
+          <strong>{tr(locale, "发布接口", "Publish API")}</strong>
         </button>
-        <button className={section === "node-red" ? "active" : ""} onClick={() => setSection("node-red")}>
+        <i />
+        <button className={`data-hub-advanced ${section === "node-red" ? "active" : ""}`} onClick={() => setSection("node-red")}>
           <Workflow size={14} />
-          <span>
-            <strong>{tr(locale, "高级编排", "Advanced flows")}</strong>
-            <small>Node-RED · IoT / Event</small>
-          </span>
+          <strong>{tr(locale, "高级接入", "Advanced")}</strong>
         </button>
       </nav>
       {section === "pipeline" ? (
-        <DataPipelineStudio locale={locale} projectId={project.id} datasets={datasets} onError={(message) => setError(message || undefined)} />
+        <DataPipelineStudio
+          locale={locale}
+          projectId={project.id}
+          datasets={datasets}
+          onError={(message) => setError(message || undefined)}
+          onOpenEndpoints={(pipelineId) => {
+            setEndpointPipelineId(pipelineId);
+            setSection("endpoint");
+          }}
+        />
       ) : section === "endpoint" ? (
-        <DataEndpointStudio locale={locale} projectId={project.id} onError={(message) => setError(message || undefined)} />
+        <DataEndpointStudio
+          locale={locale}
+          projectId={project.id}
+          initialPipelineId={endpointPipelineId}
+          onError={(message) => setError(message || undefined)}
+        />
       ) : section === "node-red" ? (
         <NodeRedStudio locale={locale} />
+      ) : loading ? (
+        <div className="pipeline-blank data-center-loading">
+          <LoaderCircle className="spin" size={28} />
+          <strong>{tr(locale, "正在加载数据连接", "Loading data connections")}</strong>
+        </div>
       ) : (
         <div className="data-center-columns">
           <section className="data-center-pane">
@@ -339,11 +366,13 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
                   </button>
                   <div className="data-card-actions">
                     <button
+                      className="data-test-connection"
                       disabled={CONNECTOR_REQUIRED.has(connection.type) || testingConnectionId === connection.id}
                       title={tr(locale, "测试连接", "Test connection")}
                       onClick={() => void testConnection(connection)}
                     >
                       {testingConnectionId === connection.id ? <LoaderCircle className="spin" size={13} /> : <Activity size={13} />}
+                      <span>{tr(locale, "测试", "Test")}</span>
                     </button>
                     <button title={tr(locale, "重命名或编辑", "Rename or edit")} onClick={() => setConnectionEditor(connection)}>
                       <Pencil size={13} />
@@ -354,6 +383,14 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
                   </div>
                 </article>
               ))}
+              {!connections.length && !connectionEditor && (
+                <div className="data-list-empty">
+                  <Database size={24} />
+                  <strong>{tr(locale, "连接第一个数据源", "Connect your first data source")}</strong>
+                  <span>{tr(locale, "从数据库、HTTP、文件或现场协议开始，保存后即可创建数据集。", "Start with a database, HTTP, file or industrial protocol, then create a dataset.")}</span>
+                  <button onClick={() => setConnectionEditor("new")}><Plus size={13} />{tr(locale, "新建连接", "New connection")}</button>
+                </div>
+              )}
             </div>
             {selectedConnection && (
               <section className={`data-connector-health-panel ${selectedDiagnostics?.status ?? "idle"}`}>
@@ -396,8 +433,8 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
                     <small>
                       {tr(
                         locale,
-                        "向当前连接写入一个点位；生产环境请先配置权限和审批策略。",
-                        "Write one point to the selected connection; configure authorization and approval in production.",
+                        "向当前连接写入一个点位；执行前会显示目标和值供你确认。",
+                        "Write one point to the selected connection; review the target and value before execution.",
                       )}
                     </small>
                   </div>
@@ -495,6 +532,20 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
                   </div>
                 </article>
               ))}
+              {!connectionDatasets.length && !datasetEditor && (
+                <div className="data-list-empty">
+                  <Table2 size={24} />
+                  <strong>{selectedConnection ? tr(locale, "定义可复用数据集", "Define a reusable dataset") : tr(locale, "先选择数据连接", "Select a connection first")}</strong>
+                  <span>
+                    {selectedConnection
+                      ? tr(locale, "配置查询、字段和刷新频率，运行后立即预览结果。", "Configure the query, fields and refresh rate, then preview the result.")
+                      : tr(locale, "数据集负责把原始连接整理成编排和场景可直接使用的输入。", "Datasets turn raw connections into inputs ready for pipelines and scenes.")}
+                  </span>
+                  {selectedConnection && !selectedConnectorUnavailable && (
+                    <button onClick={() => setDatasetEditor("new")}><Plus size={13} />{tr(locale, "新建数据集", "New dataset")}</button>
+                  )}
+                </div>
+              )}
             </div>
           </section>
           <section className="data-center-preview">
@@ -569,17 +620,21 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
                   )}
                 </section>
               )}
-              <DatasetPreview locale={locale} {...(preview ? { preview } : {})} />
+              <DatasetPreview locale={locale} {...(preview ? { preview } : {})} {...(selectedDataset ? { datasetName: selectedDataset.name } : {})} />
             </div>
-            {selectedDataset && !selectedConnectorUnavailable && (
+            {selectedDataset && preview?.dataset.id === selectedDataset.id && preview.fields.length > 0 && !selectedConnectorUnavailable && (
               <footer>
                 <div>
                   <CheckCircle2 size={15} />
                   <span>
-                    <strong>{tr(locale, "可用于 Studio", "Ready for Studio")}</strong>
-                    <small>{tr(locale, "数据看板中选择此数据集和字段即可生成组件。", "Select this dataset and a field in the dashboard.")}</small>
+                    <strong>{tr(locale, "字段已同步", "Schema synchronized")}</strong>
+                    <small>{tr(locale, "继续编排处理逻辑，输出可供 2D、3D 与接口复用。", "Continue with transforms; the output can be reused by 2D, 3D and APIs.")}</small>
                   </span>
                 </div>
+                <button className="primary" onClick={() => setSection("pipeline")}>
+                  <Workflow size={14} />
+                  {tr(locale, "用这些字段编排", "Build pipeline with these fields")}
+                </button>
               </footer>
             )}
           </section>

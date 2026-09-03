@@ -13,6 +13,10 @@ const NUMBER_RANGES = {
   textureOffsetX: [-100, 100],
   textureOffsetY: [-100, 100],
   textureRotation: [-Math.PI * 100, Math.PI * 100],
+  hue: [-180, 180],
+  saturation: [-1, 1],
+  brightness: [-1, 1],
+  contrast: [-1, 1],
 } as const;
 
 const ALLOWED_KEYS = new Set<string>([
@@ -22,7 +26,7 @@ const ALLOWED_KEYS = new Set<string>([
 ]);
 
 /**
- * 数据源和 Worker 只能驱动高频标量材质参数。贴图 URL、视频和动画仍由素材库或受信任编辑器管理，
+ * 数据源和 Worker 只能驱动高频标量材质参数。贴图 URL、视频和动画仍由资源库或受信任编辑器管理，
  * 避免实时数据把任意外部资源注入渲染管线。
  */
 export function normalizeMaterialDataPatch(value: unknown): SceneMaterialState {

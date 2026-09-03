@@ -1,6 +1,8 @@
-import type { CSSProperties } from "react";
+import { useState } from "react";
 import {
   AlertTriangle,
+  ArrowLeft,
+  Braces,
   Box,
   Check,
   CircleDot,
@@ -22,9 +24,9 @@ import {
   Undo2,
   WifiOff,
   Workflow,
+  X,
   ZoomIn,
   ZoomOut,
-  X,
 } from "lucide-react";
 import {
   assessTopologyScadaRuntime,
@@ -36,8 +38,10 @@ import {
   topologyNodeScadaConfig,
   type TopologyScadaNodeConfig,
 } from "@bim-studio/studio-core";
-import { translate as tr } from "../i18n";
+import { translate as tr, type AppLocale } from "../i18n";
+import { usePersistedBooleanState } from "../hooks/usePersistedBooleanState";
 import { InspectorNumberField, InspectorOptionalNumberField, InspectorTextField } from "./TopologyInspectorFields";
+import { TOPOLOGY_INSPECTOR_STORAGE_KEY, TOPOLOGY_PALETTE_STORAGE_KEY, TopologyPanelToggles } from "./TopologyPanelToggles";
 import {
   ScadaRuntimeCard,
   formatScadaValue,
@@ -127,30 +131,47 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
     zoomOut,
     resetZoom,
   } = controller;
+  const [extensionKey, setExtensionKey] = useState("");
+  const [extensionValue, setExtensionValue] = useState("");
+  const [inspectorQuery, setInspectorQuery] = useState("");
+  const [paletteOpen, setPaletteOpen] = usePersistedBooleanState(TOPOLOGY_PALETTE_STORAGE_KEY, true);
+  const [inspectorOpen, setInspectorOpen] = usePersistedBooleanState(TOPOLOGY_INSPECTOR_STORAGE_KEY, true);
+  const normalizedInspectorQuery = inspectorQuery.trim().toLowerCase();
 
   return (
-    <section className="topology-editor" tabIndex={0} onKeyDown={handleKeyboard} aria-label={tr(locale, "拓扑编辑器", "Topology editor")}>
+    <section className={`topology-editor${paletteOpen ? "" : " is-palette-collapsed"}${inspectorOpen ? "" : " is-inspector-collapsed"}`} tabIndex={0} onKeyDown={handleKeyboard} aria-label={tr(locale, "拓扑编辑器", "Topology editor")}>
       <header className="topology-editor__header">
         <div className="topology-editor__title">
-          <span className="topology-editor__mark">
-            <Workflow size={18} />
-          </span>
+          {onClose ? (
+            <button
+              className="topology-editor__back"
+              onClick={onClose}
+              aria-label={tr(locale, "返回拓扑列表", "Back to topology list")}
+              title={tr(locale, "返回拓扑列表", "Back to topology list")}
+            >
+              <ArrowLeft size={17} />
+            </button>
+          ) : (
+            <span className="topology-editor__mark">
+              <Workflow size={18} />
+            </span>
+          )}
           <span>
             <strong>{editor.document.name}</strong>
             <small>{tr(locale, "独立拓扑 · 数据驱动", "Topology · Data driven")}</small>
           </span>
         </div>
         <div className="topology-editor__tools" role="toolbar" aria-label={tr(locale, "编辑工具", "Editor tools")}>
-          <button className={tool === "select" ? "is-active" : ""} onClick={() => selectTool("select")} title={tr(locale, "选择 (V)", "Select (V)")}>
+          <button className={tool === "select" ? "is-active" : ""} onClick={() => selectTool("select")} aria-label={tr(locale, "选择 (V)", "Select (V)")} title={tr(locale, "选择 (V)", "Select (V)")}>
             <MousePointer2 size={15} />
           </button>
-          <button className={tool === "connect" ? "is-active" : ""} onClick={() => selectTool("connect")} title={tr(locale, "创建连线", "Connect nodes")}>
+          <button className={tool === "connect" ? "is-active" : ""} onClick={() => selectTool("connect")} aria-label={tr(locale, "创建连线", "Connect nodes")} title={tr(locale, "创建连线", "Connect nodes")}>
             <Link2 size={15} />
           </button>
-          <button onClick={autoLayout} disabled={editor.document.nodes.length < 2} title={tr(locale, "自动分层布局", "Auto layout")}>
+          <button onClick={autoLayout} disabled={editor.document.nodes.length < 2} aria-label={tr(locale, "自动分层布局", "Auto layout")} title={tr(locale, "自动分层布局", "Auto layout")}>
             <LayoutGrid size={15} />
           </button>
-          <button onClick={duplicateSelection} disabled={selectedNodeIds.length === 0} title={tr(locale, "复制所选 Ctrl+D", "Duplicate Ctrl+D")}>
+          <button onClick={duplicateSelection} disabled={selectedNodeIds.length === 0} aria-label={tr(locale, "复制所选 Ctrl+D", "Duplicate Ctrl+D")} title={tr(locale, "复制所选 Ctrl+D", "Duplicate Ctrl+D")}>
             <Copy size={15} />
           </button>
           {selectedNodeIds.length > 1 && (
@@ -167,19 +188,19 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
           <button
             className={`topology-editor__view-25d ${viewMode === "2.5d" ? "is-active" : ""}`}
             onClick={() => setViewMode("2.5d")}
-            title={tr(locale, "2.5D 层级视图", "2.5D layered view")}
+            title={tr(locale, "分层视图（按标高投影）", "Layered view by elevation")}
           >
             <Layers3 size={14} />
-            2.5D
+            {tr(locale, "层级", "Layers")}
           </button>
           <span className="topology-editor__divider" />
-          <button disabled={!canUndoTopologyEdit(editor)} onClick={() => dispatch({ type: "history.undo" })} title={tr(locale, "撤销 Ctrl+Z", "Undo Ctrl+Z")}>
+          <button disabled={!canUndoTopologyEdit(editor)} onClick={() => dispatch({ type: "history.undo" })} aria-label={tr(locale, "撤销 Ctrl+Z", "Undo Ctrl+Z")} title={tr(locale, "撤销 Ctrl+Z", "Undo Ctrl+Z")}>
             <Undo2 size={15} />
           </button>
-          <button disabled={!canRedoTopologyEdit(editor)} onClick={() => dispatch({ type: "history.redo" })} title={tr(locale, "重做 Ctrl+Y", "Redo Ctrl+Y")}>
+          <button disabled={!canRedoTopologyEdit(editor)} onClick={() => dispatch({ type: "history.redo" })} aria-label={tr(locale, "重做 Ctrl+Y", "Redo Ctrl+Y")} title={tr(locale, "重做 Ctrl+Y", "Redo Ctrl+Y")}>
             <Redo2 size={15} />
           </button>
-          <button disabled={!selection} onClick={removeSelection} title={tr(locale, "删除", "Delete")}>
+          <button disabled={!selection} onClick={removeSelection} aria-label={tr(locale, "删除", "Delete")} title={tr(locale, "删除", "Delete")}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -213,20 +234,18 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
           <Check size={13} />
           {dirty ? tr(locale, "有未保存修改", "Unsaved changes") : tr(locale, "所有修改已保存", "All changes saved")}
         </div>
-        {onClose && (
-          <button className="topology-editor__close" onClick={onClose} aria-label={tr(locale, "关闭", "Close")}>
-            <X size={17} />
-          </button>
-        )}
       </header>
 
+      <TopologyPanelToggles locale={locale} paletteOpen={paletteOpen} inspectorOpen={inspectorOpen} onPaletteToggle={() => setPaletteOpen((open) => !open)} onInspectorToggle={() => setInspectorOpen((open) => !open)} />
+
       <aside className="topology-editor__palette">
-        <label className="topology-editor__palette-search">
+        <label className="topology-editor__palette-search" aria-label={tr(locale, "搜索设备或类型", "Search devices or types")} title={tr(locale, "搜索设备或类型", "Search devices or types")}>
           <Search size={14} />
           <input
             value={paletteQuery}
             onChange={(event) => setPaletteQuery(event.target.value)}
             placeholder={tr(locale, "搜索设备或类型", "Search devices or types")}
+            aria-label={tr(locale, "搜索设备或类型", "Search devices or types")}
           />
         </label>
         {presetGroups.map((group) => (
@@ -375,7 +394,7 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
               <button
                 key={node.id}
                 className={nodeClassName}
-                style={{ left: position.x, top: position.y, ...(viewMode === "2.5d" ? ({ "--topology-depth": `${Math.max(6, 10 + elevation * 0.12)}px` } as CSSProperties) : {}) }}
+                style={{ left: position.x, top: position.y }}
                 onClick={(event) => {
                   event.stopPropagation();
                   selectNode(node.id, event.shiftKey || event.ctrlKey || event.metaKey);
@@ -409,6 +428,9 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
                   <span className="topology-editor__binding-dot" title={tr(locale, "已绑定数据", "Data bound")}>
                     <Database size={11} />
                   </span>
+                )}
+                {viewMode === "2.5d" && elevation !== 0 && (
+                  <span className="topology-editor__elevation"><Layers3 size={10} />H {elevation}</span>
                 )}
                 <span className="topology-editor__port topology-editor__port--out" />
               </button>
@@ -448,8 +470,18 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
           <span>{tr(locale, "属性", "Inspector")}</span>
           {selection && <small>{selection.kind === "node" ? tr(locale, "节点", "Node") : tr(locale, "连线", "Edge")}</small>}
         </div>
+        {selection && (
+          <label className="topology-editor__inspector-search" aria-label={tr(locale, "筛选扩展属性", "Filter extension properties")} title={tr(locale, "筛选扩展属性", "Filter extension properties")}>
+            <Search size={13} />
+            <input value={inspectorQuery} aria-label={tr(locale, "筛选扩展属性", "Filter extension properties")} onChange={(event) => setInspectorQuery(event.target.value)} placeholder={tr(locale, "筛选扩展属性", "Filter extension properties")} />
+          </label>
+        )}
         {selectedNode && (
           <div className="topology-editor__form">
+            <label className="topology-editor__identity">
+              <span>{tr(locale, "节点 ID", "Node ID")}</span>
+              <code title={selectedNode.id}>{selectedNode.id}</code>
+            </label>
             <InspectorTextField
               label={tr(locale, "名称", "Name")}
               value={topologyNodeLabel(selectedNode)}
@@ -459,6 +491,18 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
               label={tr(locale, "类型", "Type")}
               value={selectedNode.kind}
               onCommit={(kind) => dispatch({ type: "node.update", nodeId: selectedNode.id, patch: { kind } })}
+            />
+            <InspectorTextField
+              label={tr(locale, "资产编码", "Asset code")}
+              value={typeof selectedNode.properties.assetCode === "string" ? selectedNode.properties.assetCode : ""}
+              placeholder="P-101 / PLC-01"
+              onCommit={(assetCode) => dispatch({ type: "node.update", nodeId: selectedNode.id, patch: { properties: { ...selectedNode.properties, assetCode } } })}
+            />
+            <InspectorTextField
+              label={tr(locale, "描述", "Description")}
+              value={typeof selectedNode.properties.description === "string" ? selectedNode.properties.description : ""}
+              placeholder={tr(locale, "设备职责或工艺说明", "Equipment role or process note")}
+              onCommit={(description) => dispatch({ type: "node.update", nodeId: selectedNode.id, patch: { properties: { ...selectedNode.properties, description } } })}
             />
             <div className="topology-editor__coordinates">
               <InspectorNumberField
@@ -586,10 +630,60 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
                 {tr(locale, "创建数据集或数据管道后，可在这里绑定设备状态。", "Create a dataset or pipeline to bind device state here.")}
               </p>
             )}
+            <div className="topology-editor__form-divider" />
+            <div className="topology-editor__form-heading">
+              <Braces size={14} />
+              <span>{tr(locale, "扩展属性", "Extension properties")}</span>
+              <small>{tr(locale, "可被脚本与集成读取", "Script and integration ready")}</small>
+            </div>
+            <div className="topology-editor__extension-list">
+              {Object.entries(selectedNode.properties)
+                .filter(([key]) => !["label", "elevation", "scada", "assetCode", "description"].includes(key))
+                .filter(([key]) => !normalizedInspectorQuery || key.toLowerCase().includes(normalizedInspectorQuery))
+                .map(([key, value]) => (
+                  <TopologyExtensionField
+                    key={key}
+                    locale={locale}
+                    name={key}
+                    value={value}
+                    onCommit={(next) => dispatch({ type: "node.update", nodeId: selectedNode.id, patch: { properties: { ...selectedNode.properties, [key]: next } } })}
+                    onRemove={() => {
+                      const next = { ...selectedNode.properties };
+                      delete next[key];
+                      dispatch({ type: "node.update", nodeId: selectedNode.id, patch: { properties: next } });
+                    }}
+                  />
+                ))}
+            </div>
+            {!normalizedInspectorQuery && <div className="topology-editor__extension-add">
+              <input value={extensionKey} aria-label={tr(locale, "新扩展属性名称", "New extension property name")} placeholder={tr(locale, "属性名", "Property key")} onChange={(event) => setExtensionKey(event.target.value)} />
+              <input value={extensionValue} aria-label={tr(locale, "新扩展属性值", "New extension property value")} placeholder={tr(locale, "值", "Value")} onChange={(event) => setExtensionValue(event.target.value)} />
+              <button
+                type="button"
+                disabled={!extensionKey.trim() || ["label", "elevation", "scada"].includes(extensionKey.trim())}
+                onClick={() => {
+                  const key = extensionKey.trim();
+                  const raw = extensionValue.trim();
+                  let value: import("@bim-studio/contracts").JsonValue = raw;
+                  if (raw === "true" || raw === "false") value = raw === "true";
+                  else if (raw !== "" && Number.isFinite(Number(raw))) value = Number(raw);
+                  dispatch({ type: "node.update", nodeId: selectedNode.id, patch: { properties: { ...selectedNode.properties, [key]: value } } });
+                  setExtensionKey("");
+                  setExtensionValue("");
+                }}
+              >
+                <Plus size={13} />
+                {tr(locale, "添加", "Add")}
+              </button>
+            </div>}
           </div>
         )}
         {selectedEdge && (
           <div className="topology-editor__form topology-editor__edge-form">
+            <label className="topology-editor__identity">
+              <span>{tr(locale, "连线 ID", "Edge ID")}</span>
+              <code title={selectedEdge.id}>{selectedEdge.id}</code>
+            </label>
             <div className="topology-editor__edge-card">
               <span>
                 <Link2 size={16} />
@@ -621,6 +715,13 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
               <input type="checkbox" checked={topologyEdgeAnimated(selectedEdge)} onChange={(event) => updateEdgeProperties({ animated: event.target.checked })} />
               <span>{tr(locale, "显示流向动画", "Animate flow direction")}</span>
             </label>
+            <div className="topology-editor__form-divider" />
+            <div className="topology-editor__form-heading"><Braces size={14} /><span>{tr(locale, "扩展属性", "Extension properties")}</span></div>
+            {Object.entries(selectedEdge.properties)
+              .filter(([key]) => !["label", "medium", "animated"].includes(key))
+              .filter(([key]) => !normalizedInspectorQuery || key.toLowerCase().includes(normalizedInspectorQuery))
+              .map(([key, value]) => <TopologyExtensionField key={key} locale={locale} name={key} value={value} onCommit={(next) => updateEdgeProperties({ [key]: next })} onRemove={() => { const next = { ...selectedEdge.properties }; delete next[key]; updateEdgeProperties(next); }} />)}
+            {!normalizedInspectorQuery && <div className="topology-editor__extension-add"><input value={extensionKey} aria-label={tr(locale, "新扩展属性名称", "New extension property name")} placeholder={tr(locale, "属性名", "Property key")} onChange={(event) => setExtensionKey(event.target.value)} /><input value={extensionValue} aria-label={tr(locale, "新扩展属性值", "New extension property value")} placeholder={tr(locale, "值", "Value")} onChange={(event) => setExtensionValue(event.target.value)} /><button type="button" disabled={!extensionKey.trim() || ["label", "medium", "animated"].includes(extensionKey.trim())} onClick={() => { const key = extensionKey.trim(); const raw = extensionValue.trim(); let value: import("@bim-studio/contracts").JsonValue = raw; if (raw === "true" || raw === "false") value = raw === "true"; else if (raw !== "" && Number.isFinite(Number(raw))) value = Number(raw); updateEdgeProperties({ ...selectedEdge.properties, [key]: value }); setExtensionKey(""); setExtensionValue(""); }}><Plus size={13} />{tr(locale, "添加", "Add")}</button></div>}
           </div>
         )}
         {!selection && (
@@ -644,7 +745,7 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
         </span>
         <span className="topology-editor__footer-spacer" />
         <span>
-          {tr(locale, "视图", "View")} {viewMode}
+          {tr(locale, "视图", "View")} {viewMode === "2.5d" ? tr(locale, "层级", "Layers") : "2D"}
         </span>
         <span>
           {tr(locale, "网格", "Grid")} {GRID_SIZE}px
@@ -653,4 +754,30 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
       </footer>
     </section>
   );
+}
+
+export function TopologyExtensionField({ locale, name, value, onCommit, onRemove }: { locale: AppLocale; name: string; value: import("@bim-studio/contracts").JsonValue; onCommit: (value: import("@bim-studio/contracts").JsonValue) => void; onRemove: () => void }) {
+  const [draft, setDraft] = useState(formatExtensionValue(value));
+  return (
+    <div className="topology-editor__extension-row">
+      <code title={name}>{name}</code>
+      <input
+        aria-label={tr(locale, `扩展属性“${name}”的值`, `Value of extension property “${name}”`)}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          const raw = draft.trim();
+          let next: import("@bim-studio/contracts").JsonValue = raw;
+          if (raw === "true" || raw === "false") next = raw === "true";
+          else if (raw !== "" && Number.isFinite(Number(raw))) next = Number(raw);
+          if (next !== value) onCommit(next);
+        }}
+      />
+      <button type="button" className="danger" title={tr(locale, "删除扩展属性", "Delete extension property")} aria-label={tr(locale, `删除扩展属性“${name}”`, `Delete extension property “${name}”`)} onClick={onRemove}><Trash2 size={12} /></button>
+    </div>
+  );
+}
+
+function formatExtensionValue(value: import("@bim-studio/contracts").JsonValue): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
 }

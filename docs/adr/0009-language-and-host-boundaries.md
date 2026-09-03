@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-iTwin Studio 同时包含 Web 编辑器、Node.js 服务器、Tauri 客户端、Revit 接入、插件、模型转换和可选仿真。若为每类能力随意引入语言和常驻服务，跨语言 Schema、错误协议、构建、部署、调试和升级成本会快速增加。项目要求高内聚、低耦合、代码可读并尽量减少代码量。
+Industrial Studio 同时包含 Web 编辑器、Node.js 服务器、Tauri 客户端、Revit 接入、插件、模型转换和可选仿真。若为每类能力随意引入语言和常驻服务，跨语言 Schema、错误协议、构建、部署、调试和升级成本会快速增加。项目要求高内聚、低耦合、代码可读并尽量减少代码量。
 
 当前主应用已经使用 TypeScript/React/Vite、Three.js 和 Node.js/Fastify；Revit Worker/Add-in 已使用 C#/.NET；另有两个 Python Revit 导出脚本作为旧式/辅助路径。M7 采用 Tauri 2，原生宿主天然需要少量 Rust。M8 旧原型包含 Rust 离散事件实现，但轻量仿真不应因此强制所有部署安装另一套业务后端。
 

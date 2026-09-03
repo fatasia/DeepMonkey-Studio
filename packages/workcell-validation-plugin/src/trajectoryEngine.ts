@@ -20,8 +20,6 @@ import {
   trajectoryIssue,
 } from "./trajectoryConstraints.js";
 
-const DEFAULT_TCP_RADIUS_METERS = 0.1;
-
 export interface WorkcellTrajectoryAudit {
   analysis: WorkcellTrajectoryAnalysis;
   findings: WorkcellAuditFinding[];
@@ -35,7 +33,8 @@ export function analyzeWorkcellTrajectories(input: WorkcellAuditInput): Workcell
   const trajectories = uniqueTrajectories(input.trajectories ?? []);
   if (!trajectories.length) return undefined;
   const objects = new Map(input.objects.map((item) => [item.id, item]));
-  const clearance = finiteNonNegative(input.clearanceThreshold, 0.25);
+  // 未声明间隙时只检查 TCP 包围球本身；上层证据评估会保持 needs-data，不得据此通过。
+  const clearance = finiteNonNegative(input.clearanceThreshold, 0);
   const findings: WorkcellAuditFinding[] = [];
   const segments: PreparedTrajectorySegment[] = [];
   const jointChecks: WorkcellJointConstraintCheck[] = [];
@@ -52,7 +51,17 @@ export function analyzeWorkcellTrajectories(input: WorkcellAuditInput): Workcell
       continue;
     }
     jointChecks.push(...checkJointConstraints(trajectory, robot));
-    prepareSegments(trajectory, segments);
+    const tcpRadius = finitePositive(trajectory.tcpRadius);
+    if (tcpRadius === undefined) findings.push(finding(
+      `trajectory-tcp-radius-${trajectory.id}`,
+      "data",
+      "info",
+      "轨迹 TCP 包络半径未声明",
+      `${trajectory.name} 不再自动采用 0.1 m；当前只保留关节与时序证据，不输出连续空间广相位结论。`,
+      [trajectory.robotId],
+      "填写并确认工具、工件与定位误差对应的 TCP 包络半径",
+    ));
+    else prepareSegments(trajectory, segments, tcpRadius);
     if (trajectory.precision?.positionToleranceMeters === undefined) findings.push(finding(
       `trajectory-precision-${trajectory.id}`,
       "data",
@@ -85,8 +94,7 @@ export function analyzeWorkcellTrajectories(input: WorkcellAuditInput): Workcell
   };
 }
 
-function prepareSegments(trajectory: WorkcellRobotTrajectory, target: PreparedTrajectorySegment[]): void {
-  const radius = finitePositive(trajectory.tcpRadius, DEFAULT_TCP_RADIUS_METERS);
+function prepareSegments(trajectory: WorkcellRobotTrajectory, target: PreparedTrajectorySegment[], radius: number): void {
   const tolerance = finiteNonNegative(trajectory.precision?.positionToleranceMeters, 0);
   const timeTolerance = finiteNonNegative(trajectory.precision?.timeToleranceSeconds, 0);
   for (let index = 1; index < trajectory.waypoints.length; index += 1) target.push({
@@ -112,6 +120,6 @@ function validBounds(object: WorkcellAuditObject): boolean {
     && object.bounds.min.z <= object.bounds.max.z);
 }
 function uniqueTrajectories(values: WorkcellRobotTrajectory[]): WorkcellRobotTrajectory[] { return [...new Map(values.slice(0, 20).map((item) => [item.id, item])).values()]; }
-function finitePositive(value: number | undefined, fallback: number): number { return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback; }
+function finitePositive(value: number | undefined): number | undefined { return value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined; }
 function finiteNonNegative(value: number | undefined, fallback: number): number { return value !== undefined && Number.isFinite(value) && value >= 0 ? value : fallback; }
 function finiteVector(value: { x: number; y: number; z: number }): boolean { return Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.z); }

@@ -4,6 +4,7 @@ import type {
   ClippingState,
   ExplosionMode,
   GlobalLightingState,
+  IndustrialPrefabDefinition,
   MeasurementState,
   ModelRecord,
   ModelTransform,
@@ -38,6 +39,8 @@ import type { SceneEditorControllerContext } from "./sceneEditorControllerContex
 import { createSceneAnimationCommands } from "./sceneAnimationCommands";
 import { createSceneAppearanceCommands } from "./sceneAppearanceCommands";
 import { createSceneOrganizationCommands } from "./sceneOrganizationCommands";
+import { layoutSceneSelection, type SceneSelectionLayoutAxis, type SceneSelectionLayoutMode } from "./sceneSelectionLayout";
+import { createIndustrialPrefabInstance, industrialPrefabPrimitiveVisual } from "../prefabs/industrialPrefabInstance";
 
 function isModelLoadSuperseded(reason: unknown): boolean {
   return reason instanceof Error && reason.name === "ModelLoadSupersededError";
@@ -105,6 +108,7 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     setNavigationSettings,
     setFloorExpansionByModel,
     setExpandedModels,
+    setSceneOrganizationSelection,
     setXrPanelOpen,
     recordSceneEdit,
   } = context;
@@ -125,7 +129,10 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     }
     try {
       const loaded = await engine.loadManifest(model.manifest);
-      if (!silent) engine.select(model.id);
+      if (!silent) {
+        engine.select(model.id);
+        setSceneOrganizationSelection(new Set([model.id]));
+      }
       setRevision((value) => value + 1);
       if (!silent) setMessage(`${model.name} 已加载`);
       return loaded;
@@ -175,6 +182,30 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     setMessage(`请在模型表面或地面点击，放置${primitiveKindLabel(kind, locale)}`);
   }
 
+  function insertIndustrialPrefab(definition: IndustrialPrefabDefinition) {
+    if (!engine) return;
+    const usedIds = new Set(engine.listModels().map((model) => model.id));
+    const modelId = uniqueSceneObjectId(`prefab:${definition.id}`, usedIds);
+    const name = tr(locale, definition.name, definition.englishName);
+    const visual = industrialPrefabPrimitiveVisual(definition.kind);
+    const target = engine.getCameraState().target;
+    const start = { x: target.x, y: target.y, z: target.z };
+    engine.createPrimitive(modelId, name, visual.primitive, visual.color);
+    engine.setModelTransform(modelId, {
+      position: [start.x, start.y + visual.centerHeight, start.z],
+      rotation: visual.rotation ?? [0, 0, 0],
+      scale: visual.scale,
+    });
+    engine.setIndustrialPrefabState(modelId, createIndustrialPrefabInstance(definition, start));
+    primitiveColors.current.set(modelId, visual.color);
+    engine.select(modelId);
+    setSceneOrganizationSelection(new Set([modelId]));
+    engine.focusModel(modelId);
+    setRevision((value) => value + 1);
+    recordSceneEdit(tr(locale, `插入资源“${name}”`, `Inserted resource “${name}”`));
+    setMessage(tr(locale, `已插入“${name}”，可在右侧配置参数、动作与数据口`, `Inserted “${name}”; configure parameters, actions and data ports in the inspector`));
+  }
+
   async function createDeviceLayout(devices: DeviceBoxDraft[], createLabels: boolean) {
     if (!engine || devices.length === 0) return;
     const usedIds = new Set(engine.listModels().map((model) => model.id));
@@ -213,7 +244,10 @@ export function createSceneEditorController(context: SceneEditorControllerContex
       }
     }
     if (newAnnotations.length > 0) setAnnotations((items) => [...items, ...newAnnotations]);
-    if (lastModelId) engine.select(lastModelId);
+    if (lastModelId) {
+      engine.select(lastModelId);
+      setSceneOrganizationSelection(new Set([lastModelId]));
+    }
     engine.fitAll();
     setRevision((value) => value + 1);
     recordSceneEdit(tr(locale, `批量创建设备 ${devices.length} 台`, `Created ${devices.length} devices`));
@@ -456,6 +490,44 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     setRevision((item) => item + 1);
   }
 
+  function layoutSelectedObjects(mode: SceneSelectionLayoutMode, axis: SceneSelectionLayoutAxis) {
+    if (!engine || sceneOrganizationSelection.size < (mode === "distribute" ? 3 : 2)) return;
+    const selectedItems = [...sceneOrganizationSelection]
+      .filter((id) => !engine.isModelLocked(id))
+      .flatMap((id) => {
+        const transform = engine.getModelTransform(id);
+        if (!transform) return [];
+        return [{
+          id,
+          transform: {
+            ...transform,
+            position: worldToProject(transform.position, sceneCoordinates),
+          },
+        }];
+      });
+    if (selectedItems.length < (mode === "distribute" ? 3 : 2)) {
+      setMessage(tr(locale, "可编辑对象数量不足；已锁定对象不会移动", "Not enough editable objects; locked objects are not moved"));
+      return;
+    }
+    const next = layoutSceneSelection(selectedItems, mode, axis, selected?.id);
+    for (const item of next) {
+      const world = projectToWorld(item.transform.position, sceneCoordinates);
+      engine.setModelTransform(item.id, {
+        position: [world.x, world.y, world.z],
+        rotation: [item.transform.rotation.x, item.transform.rotation.y, item.transform.rotation.z],
+        scale: [item.transform.scale.x, item.transform.scale.y, item.transform.scale.z],
+      });
+    }
+    const operation = mode === "align" ? "对齐" : "等距分布";
+    setRevision((value) => value + 1);
+    recordSceneEdit(`${operation} ${axis.toUpperCase()} 轴对象`);
+    setMessage(tr(
+      locale,
+      `已将 ${next.length} 个对象沿 ${axis.toUpperCase()} 轴${operation}${next.length < sceneOrganizationSelection.size ? "；已跳过锁定对象" : ""}`,
+      `${operation === "对齐" ? "Aligned" : "Distributed"} ${next.length} objects on ${axis.toUpperCase()}${next.length < sceneOrganizationSelection.size ? "; locked objects were skipped" : ""}`,
+    ));
+  }
+
   function addCameraView() {
     if (!engine) return;
     const createdAt = new Date().toISOString();
@@ -539,6 +611,7 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     uploadModels,
     deleteModel,
     beginPrimitivePlacement,
+    insertIndustrialPrefab,
     createDeviceLayout,
     deletePrimitive,
     removeObjectInteractions,
@@ -558,6 +631,7 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     toggleClipping,
     updateExplosion,
     updateSelectedTransform,
+    layoutSelectedObjects,
     ...appearanceCommands,
     addCameraView,
     changeCameraConstraints,

@@ -6,6 +6,7 @@ import JSZip from "jszip";
 import type { UnityBuildManifestRecord, UnityResourceRecord, UnityResourceVersionRecord, UnityRuntimeCapability } from "@bim-studio/contracts";
 import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
+import { inspectUnityWebBuild, unityBuildDiagnostics, type UnityBuildFileEvidence } from "./unityBuildInspection.js";
 
 const MAX_COMPRESSED_BYTES = 512 * 1024 * 1024;
 const MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024;
@@ -125,6 +126,7 @@ export async function extractUnityZip(
   await mkdir(target, { recursive: true });
   let uncompressedBytes = 0;
   const outputPaths: string[] = [];
+  const extractedFiles: UnityBuildFileEvidence[] = [];
   for (const item of normalized) {
     const relative = commonRoot && item.path.startsWith(`${commonRoot}/`) ? item.path.slice(commonRoot.length + 1) : item.path;
     const data = await item.entry.async("nodebuffer");
@@ -137,10 +139,13 @@ export async function extractUnityZip(
     await mkdir(path.dirname(output), { recursive: true });
     await writeFile(output, data, { flag: "wx" });
     outputPaths.push(relative);
+    extractedFiles.push({ path: relative, size: data.byteLength });
   }
   const playerPath = choosePlayer(outputPaths);
-  const manifestPath = chooseManifest(outputPaths);
   const diagnostics: string[] = [];
+  const webBuild = inspectUnityWebBuild(extractedFiles);
+  diagnostics.push(...unityBuildDiagnostics(webBuild));
+  const manifestPath = chooseManifest(outputPaths);
   let source: unknown;
   if (manifestPath) {
     try {
@@ -149,10 +154,10 @@ export async function extractUnityZip(
       diagnostics.push("构建清单无法解析，已根据播放器入口生成基础清单");
     }
   } else diagnostics.push("未发现构建清单，场景、事件和数据层需要在 Unity Editor Package 中导出");
-  return { playerPath, manifest: normalizeManifest(source, playerPath, diagnostics), diagnostics, fileCount: files.length };
+  return { playerPath, manifest: normalizeManifest(source, playerPath, diagnostics, webBuild), diagnostics, fileCount: files.length };
 }
 
-function normalizeManifest(value: unknown, playerPath: string, diagnostics: string[]): UnityBuildManifestRecord {
+function normalizeManifest(value: unknown, playerPath: string, diagnostics: string[], webBuild: UnityBuildManifestRecord["webBuild"]): UnityBuildManifestRecord {
   const source = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   if (source.bridgeVersion !== undefined && source.bridgeVersion !== 1) throw new Error("Unity Bridge 协议版本不受支持");
   const strings = (candidate: unknown) => (Array.isArray(candidate) ? candidate.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : undefined);
@@ -213,6 +218,8 @@ function normalizeManifest(value: unknown, playerPath: string, diagnostics: stri
     bridgeVersion: 1,
     playerUrl: playerPath,
     ...(typeof source.unityVersion === "string" ? { unityVersion: source.unityVersion } : {}),
+    ...(typeof source.bridgePackageVersion === "string" && source.bridgePackageVersion.trim() ? { bridgePackageVersion: source.bridgePackageVersion.trim().slice(0, 40) } : {}),
+    ...(webBuild ? { webBuild } : {}),
     ...(strings(source.scenes)?.length ? { scenes: strings(source.scenes)! } : {}),
     ...(strings(source.events)?.length ? { events: strings(source.events)! } : {}),
     ...(layers?.length ? { dataLayers: layers } : {}),

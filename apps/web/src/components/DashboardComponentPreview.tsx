@@ -8,7 +8,7 @@ import {
   SquareCode,
 } from "lucide-react";
 import type { DashboardDataWidgetConfig, SceneDashboardWidgetType } from "@bim-studio/contracts";
-import { createContext, useContext } from "react";
+import { createContext, useContext, type CSSProperties } from "react";
 import type { DashboardComponentPresetPreview } from "./dashboardComponentPresetTypes";
 
 type PreviewType = SceneDashboardWidgetType | "scene";
@@ -62,10 +62,15 @@ function DashboardComponentPreviewGraphic({ type, decorationStyle }: Omit<Dashbo
 
 function PreviewShell({ variant, children }: { variant: string; children: React.ReactNode }) {
   const preview = useContext(PreviewMetadataContext);
+  const resourceStyle = preview ? {
+    "--preview-accent": preview.accent,
+    "--preview-secondary": preview.secondary,
+  } as CSSProperties : undefined;
   return <span
     className={`dashboard-library-preview ${variant}`}
     data-preview-family={preview?.family}
     data-preview-variant={preview?.variant}
+    style={resourceStyle}
   >
     {children}
     {preview && <small className="dashboard-library-preview-mark">{preview.mark}</small>}

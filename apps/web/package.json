@@ -17,6 +17,7 @@
     "benchmark:render-engines": "node scripts/gate-render-engine-comparison.mjs",
     "gate:online-flow": "node scripts/gate-online-flow.mjs",
     "gate:asset-material-flow": "node scripts/gate-asset-material-flow.mjs",
+    "gate:data-center-flow": "node scripts/gate-data-center-flow.mjs",
     "gate:production-artifact": "node scripts/check-production-artifact.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
@@ -27,6 +28,7 @@
     "@bim-studio/docs-runtime": "workspace:*",
     "@bim-studio/industrial-agent-orchestrator": "workspace:*",
     "@bim-studio/parametric-modeling-plugin": "workspace:*",
+    "@bim-studio/plant-lite-simulation": "workspace:*",
     "@bim-studio/ppr-lite-engine": "workspace:*",
     "@bim-studio/scene-sdk": "workspace:*",
     "@bim-studio/server-sdk": "workspace:*",
@@ -41,6 +43,7 @@
     "draco3dgltf": "1.5.7",
     "dxf-parser": "^1.1.2",
     "echarts": "^6.1.0",
+    "es-module-lexer": "2.3.1",
     "hls.js": "^1.6.16",
     "jszip": "^3.10.1",
     "lucide-react": "^0.468.0",

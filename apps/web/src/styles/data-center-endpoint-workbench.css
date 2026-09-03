@@ -1,0 +1,107 @@
+/* Publish API */
+.data-center-page .endpoint-studio { display: grid; grid-template-columns: 230px minmax(0, 1fr); }
+.data-center-page .endpoint-library {
+  min-height: 0;
+  grid-template-rows: 48px auto minmax(0, 1fr);
+  overflow: auto;
+  border-right: 1px solid var(--dc-line);
+  background: var(--dc-panel-low);
+}
+.data-center-page :is(.endpoint-library, .endpoint-form, .endpoint-runtime) > header {
+  min-height: 48px;
+  padding: 0 12px;
+  border-color: var(--dc-line);
+  background: #111a1f;
+}
+.data-center-page :is(.endpoint-library, .endpoint-form, .endpoint-runtime) strong { font-size: 12px; }
+.data-center-page :is(.endpoint-library, .endpoint-form, .endpoint-runtime) small { font-size: 11px; }
+.data-center-page .endpoint-library > header button { min-height: 30px; border-radius: 3px; font-size: 12px; }
+.data-center-page .endpoint-list { gap: 2px; padding: 6px; }
+.data-center-page .endpoint-list article { border: 0; border-left: 2px solid transparent; border-radius: 2px; }
+.data-center-page .endpoint-list article.active { border-color: var(--dc-accent); background: var(--dc-accent-soft); }
+.data-center-page .endpoint-list article > button:first-child { padding: 8px; }
+.data-center-page .endpoint-workspace { min-width: 0; min-height: 0; }
+.data-center-page .endpoint-toolbar {
+  min-height: 48px;
+  padding: 0 12px;
+  border-color: var(--dc-line);
+  background: #111a1f;
+}
+.data-center-page .endpoint-toolbar > div:first-child strong { font-size: 13px; }
+.data-center-page .endpoint-toolbar > div:first-child small { font-size: 11px; }
+.data-center-page .endpoint-toolbar button,
+.data-center-page .endpoint-key-summary button { min-height: 31px; border-radius: 3px; font-size: 12px; }
+.data-center-page .endpoint-content {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(300px, .92fr) minmax(330px, 1.08fr);
+  overflow: hidden;
+}
+.data-center-page .endpoint-form {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--dc-line);
+  border-bottom: 0;
+  background: var(--dc-panel);
+}
+.data-center-page .endpoint-runtime {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--dc-panel-low);
+}
+.data-center-page :is(.endpoint-form-body, .endpoint-runtime-body) { gap: 11px; padding: 13px; }
+.data-center-page .endpoint-form-body label { color: var(--dc-muted); font-size: 11px; }
+.data-center-page .endpoint-form-body :is(input, select),
+.data-center-page .endpoint-toggle button {
+  min-height: 33px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.data-center-page .endpoint-path-input,
+.data-center-page .endpoint-url { border-radius: 3px; }
+.data-center-page .endpoint-path-input code,
+.data-center-page .endpoint-url :is(span, code) { font-size: 11px; }
+.data-center-page :is(.endpoint-secret, .endpoint-key-summary, .endpoint-test-result, .endpoint-test-empty) {
+  border-radius: 3px;
+  box-shadow: none;
+}
+.data-center-page .endpoint-secret { border-left: 3px solid var(--dc-accent); }
+.data-center-page .endpoint-secret code,
+.data-center-page .endpoint-secret .endpoint-auth-hint,
+.data-center-page .endpoint-secret > button,
+.data-center-page .endpoint-test-result > p,
+.data-center-page .endpoint-test-result > div > span { font-size: 11px; }
+.data-center-page .endpoint-empty strong,
+.data-center-page .endpoint-blank strong { font-size: 13px; }
+.data-center-page .endpoint-empty span,
+.data-center-page .endpoint-blank span { color: var(--dc-muted); font-size: 11px; }
+.data-center-page .endpoint-blank button { min-height: 32px; border-radius: 3px; font-size: 12px; }
+
+@media (max-width: 1100px) {
+  .data-center-page .endpoint-studio { grid-template-columns: 218px minmax(0, 1fr); }
+  .data-center-page .endpoint-content { grid-template-columns: minmax(290px, .9fr) minmax(320px, 1.1fr); }
+}
+
+@media (max-width: 900px) {
+  .data-center-page .endpoint-content { display: block; overflow: auto; }
+  .data-center-page .endpoint-form {
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--dc-line);
+  }
+  .data-center-page .endpoint-runtime { display: block; overflow: visible; }
+}
+
+@media (max-width: 720px) {
+  .data-center-page .endpoint-studio { grid-template-columns: 1fr; }
+  .data-center-page .endpoint-library {
+    max-height: 250px;
+    border-right: 0;
+    border-bottom: 1px solid var(--dc-line);
+  }
+  .data-center-page .endpoint-toolbar { align-items: flex-start; flex-direction: column; padding-block: 9px; }
+  .data-center-page .endpoint-field-pair { grid-template-columns: 1fr; }
+}

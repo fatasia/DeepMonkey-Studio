@@ -1,0 +1,149 @@
+.workcell-planning-setup {
+  border-top: 1px solid #29383e;
+  background: #111c20;
+}
+
+.workcell-planning-setup > summary {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  list-style: none;
+  cursor: pointer;
+}
+.workcell-planning-setup > summary::-webkit-details-marker { display: none; }
+.workcell-planning-setup > summary > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #cbd6d9;
+  font-size: 11px;
+}
+.workcell-planning-setup > summary small {
+  color: #d6a85a;
+  font-weight: 600;
+}
+.workcell-planning-setup > summary em {
+  color: #809096;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.workcell-planning-content {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px 14px;
+}
+.workcell-planning-confirmation {
+  display: grid;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid #5c4c2f;
+  border-radius: 7px;
+  background: #1d1a14;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.workcell-planning-confirmation.confirmed {
+  border-color: #315b4a;
+  background: #112019;
+}
+.workcell-planning-confirmation > svg { color: #d6a85a; }
+.workcell-planning-confirmation.confirmed > svg { color: #60bf8b; }
+.workcell-planning-confirmation > span {
+  display: grid;
+  gap: 2px;
+}
+.workcell-planning-confirmation strong {
+  color: #dbe4e6;
+  font-size: 11px;
+}
+.workcell-planning-confirmation small {
+  color: #87979c;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.workcell-planning-confirmation button {
+  min-height: 34px;
+  padding: 0 10px;
+  color: #071315;
+  border: 1px solid var(--accent-primary, #3ec6c1);
+  border-radius: 6px;
+  background: var(--accent-primary, #3ec6c1);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.workcell-planning-confirmation button:disabled {
+  color: #718087;
+  border-color: #334349;
+  background: #1a2529;
+  cursor: not-allowed;
+}
+.workcell-planning-fields {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.workcell-planning-fields > label {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid #2e4047;
+  border-radius: 6px;
+  background: #0f181c;
+}
+.workcell-planning-fields > label > span:first-child {
+  display: grid;
+  gap: 2px;
+  color: #bec9cc;
+  font-size: 11px;
+}
+.workcell-planning-fields > label small {
+  color: #6f8087;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+.workcell-planning-number {
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.workcell-planning-number input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  color: #e2eaec;
+  border: 1px solid #3a4d54;
+  border-radius: 5px 0 0 5px;
+  outline: none;
+  background: #101a1e;
+}
+.workcell-planning-number input:focus { border-color: var(--accent-primary, #3ec6c1); }
+.workcell-planning-number em {
+  display: grid;
+  height: 32px;
+  place-items: center;
+  padding: 0 8px;
+  color: #7e8f95;
+  border: 1px solid #3a4d54;
+  border-left: 0;
+  border-radius: 0 5px 5px 0;
+  font-size: 10px;
+  font-style: normal;
+}
+.workcell-planning-content > p {
+  margin: 0;
+  color: #74868d;
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .workcell-planning-confirmation { grid-template-columns: auto minmax(0, 1fr); }
+  .workcell-planning-confirmation button { grid-column: 1 / -1; }
+  .workcell-planning-fields { grid-template-columns: 1fr; }
+}

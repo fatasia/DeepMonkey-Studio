@@ -154,11 +154,11 @@ function assessSpatialAudio(
   if (!audio?.enabled) return;
   const id = `model:${model.modelId}:spatial-audio`;
   if (!safePublishedMediaUrl(audio.url)) {
-    issues.push(sceneIssue(scene, id, "blocker", "asset", "空间音频资源无效", `“${model.name}”的空间音频不是可发布的站内路径或 HTTPS 地址。`, "从项目素材库重新选择音频资源。", model.modelId));
+    issues.push(sceneIssue(scene, id, "blocker", "asset", "空间音频资源无效", `“${model.name}”的空间音频不是可发布的站内路径或 HTTPS 地址。`, "从项目资源重新选择音频资源。", model.modelId));
     return;
   }
   if (/^https:\/\//i.test(audio.url)) {
-    issues.push(sceneIssue(scene, `${id}:external`, "warning", "asset", "空间音频依赖外部网络", `“${model.name}”的空间音频来自外部地址，离线客户端可能无法播放。`, "发布客户端前将音频导入项目素材库。", model.modelId));
+    issues.push(sceneIssue(scene, `${id}:external`, "warning", "asset", "空间音频依赖外部网络", `“${model.name}”的空间音频来自外部地址，离线客户端可能无法播放。`, "发布客户端前将音频导入项目资源。", model.modelId));
   }
 }
 
@@ -172,11 +172,11 @@ function assessModelScreen(
 ): void {
   if (!screen?.enabled) return;
   if (!safePublishedMediaUrl(screen.url)) {
-    issues.push(sceneIssue(scene, id, "blocker", "asset", "模型屏幕资源无效", `“${model.name}”的屏幕资源不是可发布的站内路径或 HTTPS 地址。`, "从项目素材库重新选择图片或视频资源。", targetId));
+    issues.push(sceneIssue(scene, id, "blocker", "asset", "模型屏幕资源无效", `“${model.name}”的屏幕资源不是可发布的站内路径或 HTTPS 地址。`, "从项目资源重新选择图片或视频资源。", targetId));
     return;
   }
   if (/^https:\/\//i.test(screen.url)) {
-    issues.push(sceneIssue(scene, `${id}:external`, "warning", "asset", "模型屏幕依赖外部网络", `“${model.name}”的屏幕资源来自外部地址，离线客户端可能无法显示。`, "发布客户端前将媒体导入项目素材库。", targetId));
+    issues.push(sceneIssue(scene, `${id}:external`, "warning", "asset", "模型屏幕依赖外部网络", `“${model.name}”的屏幕资源来自外部地址，离线客户端可能无法显示。`, "发布客户端前将媒体导入项目资源。", targetId));
   }
 }
 

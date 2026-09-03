@@ -11,4 +11,6 @@ import "./styles/inspectorContext.css";
 import "./styles/interactionPolish.css";
 import "./styles/centers.css";
 import "./styles/operations-study.css";
+import "./styles/plant-lite-authoring.css";
+import "./styles/accessibilityReadability.css";
 import "./components/TopologyEditorPanel.css";

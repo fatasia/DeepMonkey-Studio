@@ -36,7 +36,9 @@ export interface DashboardWorkspaceProps {
   onOpen3D?: (sceneId: string, view: DashboardViewState) => void;
   onOpenTopology: () => void;
   onOpenData: () => void;
-  onOpenScripts?: () => void;
+  onOpenScripts?: (selection: readonly ApplicationObjectRef[]) => void;
+  scriptOpen?: boolean;
+  onCloseScripts?: () => void;
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onFilterChange: (key: string, value: JsonValue | undefined) => void;
   onVariableChange: (key: string, value: JsonValue) => void;

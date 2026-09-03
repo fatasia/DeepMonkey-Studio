@@ -38,7 +38,7 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
 
   return (
     <div className="unified-assets-browser">
-      <div className="unified-assets-dimensions" role="tablist" aria-label={tr(locale, "素材维度", "Asset dimension")}>
+      <div className="unified-assets-dimensions" role="tablist" aria-label={tr(locale, "资源维度", "Asset dimension")}>
         {dimensions.map((item) => (
           <button key={item.id} role="tab" aria-selected={catalog.dimension === item.id} className={catalog.dimension === item.id ? "active" : ""} onClick={() => catalog.updateDimension(item.id)}>
             {item.icon}<span>{tr(locale, item.zh, item.en)}</span>
@@ -46,10 +46,10 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
         ))}
       </div>
       <div className="unified-assets-controls">
-        <label className="unified-assets-search">
+        <div className="unified-assets-search" role="search" aria-label={tr(locale, "搜索资源", "Search assets")}>
           <Search size={15} />
           <input
-            aria-label={tr(locale, "搜索素材", "Search assets")}
+            aria-label={tr(locale, "搜索资源", "Search assets")}
             value={catalog.search}
             onChange={(event) => catalog.updateSearch(event.target.value)}
             placeholder={tr(locale, "搜索模型、环境、材质…", "Search models, environments and materials…")}
@@ -59,20 +59,20 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
             <button
               type="button"
               className="unified-assets-search-clear"
-              aria-label={tr(locale, "清空素材搜索", "Clear asset search")}
+              aria-label={tr(locale, "清空资源搜索", "Clear asset search")}
               onClick={() => catalog.updateSearch("")}
             >
               <X size={13} />
             </button>
           )}
-        </label>
-        <select aria-label={tr(locale, "素材分类", "Asset category")} value={catalog.category} onChange={(event) => catalog.updateCategory(event.target.value)}>
+        </div>
+        <select aria-label={tr(locale, "资源分类", "Asset category")} value={catalog.category} onChange={(event) => catalog.updateCategory(event.target.value)}>
           <option value="all">{tr(locale, "全部分类", "All categories")}</option>
           {catalog.result.categories.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.count}</option>)}
         </select>
         <button className={catalog.featuredOnly ? "active" : ""} onClick={() => catalog.updateFeaturedOnly(!catalog.featuredOnly)}>
           <Sparkles size={14} />
-          {tr(locale, "精选素材", "Curated")}
+          {tr(locale, "精选资源", "Curated")}
         </button>
       </div>
 
@@ -83,10 +83,10 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
           {searchTerm
             ? tr(locale, ` 个“${searchTerm}”搜索结果`, ` results for “${searchTerm}”`)
             : selectedCategory
-              ? tr(locale, ` 个${selectedCategory.name}素材`, ` ${selectedCategory.name} assets`)
+              ? tr(locale, ` 个${selectedCategory.name}资源`, ` ${selectedCategory.name} assets`)
               : catalog.featuredOnly
-                ? tr(locale, ` 个精选素材 · 全库 ${availableTotal.toLocaleString(locale)} 个`, ` curated assets · ${availableTotal.toLocaleString(locale)} total`)
-              : tr(locale, "个可用素材", "ready assets")}
+                ? tr(locale, ` 个精选资源 · 全库 ${availableTotal.toLocaleString(locale)} 个`, ` curated assets · ${availableTotal.toLocaleString(locale)} total`)
+              : tr(locale, "个可用资源", "ready assets")}
         </span>
         <i />
         <span>{tr(locale, "缩略图已标准化，模型结构与文件完整性已校验", "Normalized previews with verified model structure and file integrity")}</span>
@@ -101,20 +101,20 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
 
       {catalog.catalogError && (
         <div className="unified-assets-state error">
-          <strong>{tr(locale, "素材目录暂不可用", "Asset catalog unavailable")}</strong>
+          <strong>{tr(locale, "资源目录暂不可用", "Asset catalog unavailable")}</strong>
           <span>{catalog.catalogError}</span>
           <button className="button" onClick={() => void catalog.reload()}><RefreshCw size={14} />{tr(locale, "重试", "Retry")}</button>
         </div>
       )}
 
       {!catalog.catalogError && catalog.loading && catalog.result.items.length === 0 && (
-        <div className="unified-assets-grid" aria-label={tr(locale, "正在加载素材", "Loading assets")}>{Array.from({ length: 12 }, (_, index) => <div className="asset-card-skeleton" key={index} />)}</div>
+        <div className="unified-assets-grid" aria-label={tr(locale, "正在加载资源", "Loading assets")}>{Array.from({ length: 12 }, (_, index) => <div className="asset-card-skeleton" key={index} />)}</div>
       )}
 
       {!catalog.catalogError && !catalog.loading && catalog.result.items.length === 0 && (
         <div className="unified-assets-state">
           <Box size={34} />
-          <strong>{tr(locale, "没有匹配素材", "No matching assets")}</strong>
+          <strong>{tr(locale, "没有匹配资源", "No matching assets")}</strong>
           <span>{tr(locale, "尝试更换关键词、分类或关闭精选筛选。", "Try another keyword or category, or turn off the curated filter.")}</span>
           {(searchTerm || catalog.category !== "all" || catalog.featuredOnly) && (
             <button className="button" onClick={clearFilters}>{tr(locale, "清空筛选", "Clear filters")}</button>
@@ -163,7 +163,7 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
       )}
 
       {catalog.result.totalPages > 1 && (
-        <nav className="unified-assets-pagination" aria-label={tr(locale, "素材分页", "Asset pagination")}>
+        <nav className="unified-assets-pagination" aria-label={tr(locale, "资源分页", "Asset pagination")}>
           <button disabled={catalog.result.page <= 1 || catalog.loading} onClick={() => catalog.setPage(catalog.result.page - 1)}><ChevronLeft size={15} />{tr(locale, "上一页", "Previous")}</button>
           <span>{catalog.result.page} / {catalog.result.totalPages}</span>
           <button disabled={catalog.result.page >= catalog.result.totalPages || catalog.loading} onClick={() => catalog.setPage(catalog.result.page + 1)}>{tr(locale, "下一页", "Next")}<ChevronRight size={15} /></button>

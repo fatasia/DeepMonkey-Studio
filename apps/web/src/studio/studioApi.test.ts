@@ -3,7 +3,7 @@ import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { createStudioViewerAPI } from "./studioApi";
 
 describe("createStudioViewerAPI", () => {
-  it("provides stable ThingJS-style object and camera handles backed by ViewerEngine", () => {
+  it("provides stable object and camera handles backed by ViewerEngine", () => {
     const setModelTransform = vi.fn();
     const setColor = vi.fn();
     const setCameraPose = vi.fn();

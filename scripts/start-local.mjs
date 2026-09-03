@@ -3,66 +3,96 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:f
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
-import { desktopDevelopmentArguments } from "./lib/localStartupArguments.mjs";
+import {
+  desktopDevelopmentArguments,
+  isBimStudioApiHealth,
+  isBimStudioWebDocument,
+  localHealthSummary,
+  localStartupHelp,
+  parseLocalStartupArguments,
+} from "./lib/localStartupArguments.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runtimeLogDir = join(repositoryRoot, ".runtime-logs");
-const argumentsSet = new Set(process.argv.slice(2));
-const target = readOption("--target") ?? "desktop";
-const skipInfrastructure = argumentsSet.has("--skip-infra");
-const checkOnly = argumentsSet.has("--check");
-const noOpen = argumentsSet.has("--no-open");
-const supportedTargets = new Set(["desktop", "web", "services"]);
 const children = new Set();
 let shuttingDown = false;
-
-if (!supportedTargets.has(target)) fail("--target 仅支持 desktop、web 或 services");
-if (Number(process.versions.node.split(".")[0]) < 24) fail("需要 Node.js 24 或更高版本");
-
-const environment = { ...process.env, ...readEnvironment(join(repositoryRoot, ".env")) };
-const apiPort = positivePort(environment.API_PORT, 4100);
-const apiOrigin = configuredApiOrigin(environment, apiPort);
+let options;
+// 显式进程变量用于 CI、临时诊断和企业终端覆盖；.env 只提供未设置项。
+const environment = { ...readEnvironment(join(repositoryRoot, ".env")), ...process.env };
 const webPort = 5173;
+let apiPort;
+let apiOrigin;
 
-await main();
+try {
+  options = parseLocalStartupArguments(process.argv.slice(2));
+  if (options.help) {
+    process.stdout.write(localStartupHelp());
+  } else {
+    if (Number(process.versions.node.split(".")[0]) < 24) fail("需要 Node.js 24 或更高版本");
+    apiPort = positivePort(environment.API_PORT, 4100);
+    apiOrigin = configuredApiOrigin(environment, apiPort);
+    await main();
+  }
+} catch (error) {
+  process.stderr.write(`[Industrial Studio] 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
+  await shutdown(1);
+}
 
 async function main() {
+  const { target, skipInfrastructure, checkOnly, noOpen } = options;
   ensureCommand("pnpm", ["--version"]);
   if (!existsSync(join(repositoryRoot, "node_modules"))) fail("依赖尚未安装，请先运行 pnpm install");
   // --check 只读取当前状态，不能因为一次诊断调用而启动基础设施服务。
   if (!checkOnly && !skipInfrastructure) await ensureInfrastructure();
 
-  const summary = {
+  const summary = localHealthSummary({
     target,
+    metadataStore: environment.METADATA_STORE ?? "json",
+    objectStore: environment.OBJECT_STORE ?? "local",
     postgres: await canConnect(environment.POSTGRES_HOST ?? "127.0.0.1", positivePort(environment.POSTGRES_PORT, 5432)),
     minio: await endpointReachable(environment.MINIO_ENDPOINT ?? "http://127.0.0.1:9000"),
     api: await apiReachable(apiOrigin),
-    web: await canConnect("127.0.0.1", webPort),
-  };
+    web: await webReachable(),
+  });
   if (checkOnly) {
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-    // 检查模式不启动任何子进程；显式退出可避免某些 Windows 终端保留 stdout/stderr 句柄。
-    process.exit(0);
+    process.exitCode = summary.healthy ? 0 : 1;
+    return;
   }
 
   installShutdownHandlers();
-  if (!summary.api) startPnpm(["--filter", "@bim-studio/api", "dev"], "API");
+  if (!summary.api) {
+    const apiEndpoint = new URL(apiOrigin);
+    const endpointPort = Number(apiEndpoint.port || (apiEndpoint.protocol === "https:" ? 443 : 80));
+    if (!isLoopback(apiEndpoint.hostname) || endpointPort !== apiPort) {
+      fail(`配置的 API ${apiOrigin} 不可用；远程 API 不会由本地启动器代启`);
+    }
+    if (await canConnect(apiEndpoint.hostname, endpointPort)) {
+      fail(`API 端口 ${endpointPort} 已被非 Industrial Studio 服务占用`);
+    }
+    startPnpm(["--filter", "@bim-studio/api", "dev"], "API");
+  }
 
   if (target === "services") {
-    await waitForUrl(`${apiOrigin}/api/meta`, "API");
+    await waitForApi();
     announce("服务端开发环境已就绪", [`API ${apiOrigin}`]);
   } else if (target === "web") {
-    if (!summary.web) startPnpm(["--filter", "@bim-studio/web", "dev"], "Web");
+    if (!summary.web) {
+      if (await canConnect("127.0.0.1", webPort)) fail(`Web 端口 ${webPort} 已被非 Industrial Studio 服务占用`);
+      startPnpm(["--filter", "@bim-studio/web", "dev"], "Web");
+    }
     await Promise.all([
-      waitForUrl(`${apiOrigin}/api/meta`, "API"),
-      waitForUrl(`http://127.0.0.1:${webPort}`, "Web"),
+      waitForApi(),
+      waitForWeb(),
     ]);
     announce("Web 开发环境已就绪", [`http://127.0.0.1:${webPort}`]);
     if (!noOpen) openAddress(`http://127.0.0.1:${webPort}`);
   } else {
-    await waitForUrl(`${apiOrigin}/api/meta`, "API");
+    await waitForApi();
+    if (!summary.web && await canConnect("127.0.0.1", webPort)) fail(`Web 端口 ${webPort} 已被非 Industrial Studio 服务占用`);
     const desktopArgs = desktopDevelopmentArguments(summary.web);
     startPnpm(desktopArgs, "桌面客户端");
+    await waitForWeb();
     announce("桌面联调环境正在运行", [
       `API ${apiOrigin}`,
       "客户端可选择“本地工作台”，也可连接上述 API",
@@ -159,13 +189,18 @@ async function waitForChildren() {
   while (!shuttingDown && children.size > 0) await new Promise((resolveWait) => setTimeout(resolveWait, 1_000));
 }
 
-async function waitForUrl(url, label) {
+async function waitForApi() {
+  return waitForProbe(() => apiReachable(apiOrigin), "API", `${apiOrigin}/health`);
+}
+
+async function waitForWeb() {
+  return waitForProbe(webReachable, "Web", `http://127.0.0.1:${webPort}`);
+}
+
+async function waitForProbe(probe, label, url) {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
-      if (response.ok) return;
-    } catch { /* 服务仍在启动。 */ }
+    if (await probe()) return;
     await new Promise((resolveWait) => setTimeout(resolveWait, 500));
   }
   fail(`${label} 健康检查超时：${url}`);
@@ -180,8 +215,17 @@ async function endpointReachable(value) {
 
 async function apiReachable(origin) {
   try {
-    const response = await fetch(`${origin}/api/meta`, { signal: AbortSignal.timeout(1_000) });
-    return response.ok;
+    const response = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(1_000) });
+    return response.ok && isBimStudioApiHealth(await response.json());
+  } catch {
+    return false;
+  }
+}
+
+async function webReachable() {
+  try {
+    const response = await fetch(`http://127.0.0.1:${webPort}`, { signal: AbortSignal.timeout(1_000) });
+    return response.ok && isBimStudioWebDocument(await response.text());
   } catch {
     return false;
   }
@@ -224,11 +268,6 @@ function readEnvironment(path) {
     const value = match[2].replace(/^(['"])(.*)\1$/, "$2");
     return [[match[1], value]];
   }));
-}
-
-function readOption(name) {
-  const index = process.argv.indexOf(name);
-  return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
 function positivePort(value, fallback) {

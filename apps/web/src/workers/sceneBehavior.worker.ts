@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import * as THREE from "three";
+import { parse as parseModule } from "es-module-lexer";
 import type { DirectBindingSpec, DirectBindingTemplateValue, JsonValue } from "@bim-studio/contracts";
 import type {
   SceneBehaviorModule,
@@ -12,6 +13,7 @@ import type {
   SceneMaterialCommandPatch,
   SceneScriptLifecycle
 } from "@bim-studio/scene-sdk";
+import { assertNoDynamicModuleImports, hardenSceneBehaviorWorkerGlobals } from "./sceneBehaviorSandbox";
 
 type LifecycleContext = {
   sceneId: string;
@@ -37,7 +39,9 @@ type LifecycleContext = {
 type LifecycleHandler = (context: LifecycleContext) => unknown | Promise<unknown>;
 
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
-const send = (message: SceneBehaviorWorkerResponse) => workerScope.postMessage(message);
+// 必须先保存原生通道，再锁住用户模块可见的 postMessage，避免伪造宿主协议消息。
+const sendToHost = hardenSceneBehaviorWorkerGlobals(workerScope as unknown as Record<string, unknown>);
+const send = (message: SceneBehaviorWorkerResponse) => sendToHost(message);
 const scriptState: Record<string, unknown> = {};
 const dataState: Record<string, JsonValue> = {};
 let activeSceneId = "";
@@ -49,10 +53,15 @@ let activeModule: SceneBehaviorModule | undefined;
 let handlers: Partial<Record<SceneScriptLifecycle, LifecycleHandler>> = {};
 let requestQueue = Promise.resolve();
 const pendingNetwork = new Map<string, { resolve: (result: SceneBehaviorNetworkResult) => void; reject: (reason: Error) => void }>();
+const pendingCapabilities = new Map<string, { resolve: (result: JsonValue) => void; reject: (reason: Error) => void }>();
 
 workerScope.onmessage = (event: MessageEvent<SceneBehaviorWorkerRequest>) => {
   if (event.data.type === "behavior.network.result") {
     settleNetworkResult(event.data);
+    return;
+  }
+  if (event.data.type === "behavior.capability.result") {
+    settleCapabilityResult(event.data);
     return;
   }
   requestQueue = requestQueue.then(() => handleRequest(event.data));
@@ -60,7 +69,7 @@ workerScope.onmessage = (event: MessageEvent<SceneBehaviorWorkerRequest>) => {
 
 async function handleRequest(request: SceneBehaviorWorkerRequest): Promise<void> {
   try {
-    if (request.type === "behavior.network.result") return;
+    if (request.type === "behavior.network.result" || request.type === "behavior.capability.result") return;
     if (request.type === "behavior.initialize") {
       activeSceneId = request.sceneId;
       activeModule = request.module;
@@ -75,7 +84,7 @@ async function handleRequest(request: SceneBehaviorWorkerRequest): Promise<void>
       handlers = {};
       activeSceneId = "";
       activeModule = undefined;
-      rejectPendingNetwork("行为脚本已停止");
+      rejectPendingRequests("行为脚本已停止");
       return;
     }
     await invokeLifecycle(request.lifecycle, request.invocationId, request.elapsedMs, request.deltaMs, request.event, request.data);
@@ -134,18 +143,91 @@ async function invokeLifecycle(lifecycle: SceneScriptLifecycle, invocationId: st
 }
 
 async function compileBehavior(module: SceneBehaviorModule): Promise<Partial<Record<SceneScriptLifecycle, LifecycleHandler>>> {
-  const forbiddenHostAccess = /\b(?:window|document|localStorage|sessionStorage|indexedDB|caches|navigator|SharedWorker|Worker|importScripts|globalThis|self|eval|Function)\b|\bimport\s*\(/;
-  const forbiddenNetworkAccess = /\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\b/;
+  const forbiddenHostAccess = /\b(?:window|document|localStorage|sessionStorage|indexedDB|caches|navigator|SharedWorker|Worker|importScripts|postMessage|close|globalThis|self|eval|Function)\b/;
+  const forbiddenNetworkAccess = /\b(?:fetch|XMLHttpRequest|WebSocket|WebSocketStream|EventSource|WebTransport|BroadcastChannel|RTCPeerConnection)\b/;
   if (forbiddenHostAccess.test(module.code) || (!module.permissions.includes("network.connect") && forbiddenNetworkAccess.test(module.code))) {
     throw new Error("脚本请求了 Worker 沙箱中未授权的浏览器或网络能力");
+  }
+  await assertNoDynamicModuleImports(module.code, "项目脚本");
+  for (const dependency of module.dependencies ?? []) {
+    await assertNoDynamicModuleImports(dependency.code, `依赖 ${dependency.specifier}：`);
   }
   const lifecycleNames: SceneScriptLifecycle[] = ["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"];
   const AsyncFunction = Object.getPrototypeOf(async function () { /* sandbox compiler */ }).constructor as new (...arguments_: string[]) => (...values: unknown[]) => Promise<unknown>;
   const studio = createStudioApi();
   const net = createNetworkApi();
   const proxyFetch = (endpoint: string, options?: StudioNetworkFetchOptions) => net.fetch(endpoint, options);
+  if (/\b(?:import|export)\s/.test(module.code)) {
+    return compileModuleBehavior(module, lifecycleNames, { studio, net, proxyFetch });
+  }
   const factory = new AsyncFunction("THREE", "studio", "net", "fetch", `"use strict";\n${module.code}\nreturn { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };\n//# sourceURL=industrial-studio-behavior-${module.id}.js`);
   return await factory(THREE, studio, net, proxyFetch) as Partial<Record<SceneScriptLifecycle, LifecycleHandler>>;
+}
+
+async function compileModuleBehavior(
+  module: SceneBehaviorModule,
+  lifecycleNames: readonly SceneScriptLifecycle[],
+  builtins: { studio: ReturnType<typeof createStudioApi>; net: ReturnType<typeof createNetworkApi>; proxyFetch: (endpoint: string, options?: StudioNetworkFetchOptions) => Promise<SceneBehaviorNetworkResult> },
+): Promise<Partial<Record<SceneScriptLifecycle, LifecycleHandler>>> {
+  const dependencyUrls = new Map<string, string>();
+  const objectUrls: string[] = [];
+  const scopeKey = `__bim_studio_behavior_${crypto.randomUUID().replaceAll("-", "")}`;
+  try {
+    Reflect.set(workerScope, scopeKey, { THREE, ...builtins });
+    dependencyUrls.set("three", createThreeModuleUrl(objectUrls, scopeKey));
+    for (const dependency of module.dependencies ?? []) {
+      await verifyDependencyIntegrity(dependency.code, dependency.integrity);
+      const url = URL.createObjectURL(new Blob([dependency.code], { type: "text/javascript" }));
+      objectUrls.push(url);
+      dependencyUrls.set(dependency.specifier, url);
+    }
+    const source = rewriteModuleImports(module.code, dependencyUrls);
+    const prelude = `const { THREE, studio, net, proxyFetch: fetch } = globalThis[${JSON.stringify(scopeKey)}];\n`;
+    const exported = `\nexport default { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };`;
+    const entryUrl = URL.createObjectURL(new Blob([`${prelude}${source}${exported}\n//# sourceURL=industrial-studio-behavior-${module.id}.mjs`], { type: "text/javascript" }));
+    objectUrls.push(entryUrl);
+    const loaded = await import(/* @vite-ignore */ entryUrl) as { default?: Partial<Record<SceneScriptLifecycle, LifecycleHandler>> };
+    return loaded.default ?? {};
+  } finally {
+    Reflect.deleteProperty(workerScope, scopeKey);
+    for (const url of objectUrls) URL.revokeObjectURL(url);
+  }
+}
+
+function rewriteModuleImports(source: string, dependencyUrls: ReadonlyMap<string, string>): string {
+  const [imports] = parseModule(source);
+  const replacements = imports.filter((entry) => entry.d !== -2).map((entry) => {
+    if (entry.d >= 0) throw new Error("项目脚本暂不允许动态 import；请使用顶部静态 import");
+    if (!entry.n) throw new Error("项目脚本只能使用字符串模块名");
+    const resolved = dependencyUrls.get(entry.n);
+    if (!resolved) throw new Error(`依赖 ${entry.n} 尚未安装到当前项目`);
+    return { start: entry.s, end: entry.e, value: resolved };
+  }).sort((left, right) => right.start - left.start);
+  let output = source;
+  for (const replacement of replacements) output = `${output.slice(0, replacement.start)}${replacement.value}${output.slice(replacement.end)}`;
+  return output;
+}
+
+function createThreeModuleUrl(objectUrls: string[], scopeKey: string): string {
+  const exports = Object.keys(THREE)
+    .filter((name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name))
+    .map((name) => `export const ${name} = globalThis[${JSON.stringify(scopeKey)}].THREE[${JSON.stringify(name)}];`)
+    .join("\n");
+  const url = URL.createObjectURL(new Blob([`${exports}\nexport default globalThis[${JSON.stringify(scopeKey)}].THREE;`], { type: "text/javascript" }));
+  objectUrls.push(url);
+  return url;
+}
+
+async function verifyDependencyIntegrity(code: string, expected: string): Promise<void> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(code));
+  const actual = `sha256-${bytesToBase64(new Uint8Array(digest))}`;
+  if (actual !== expected) throw new Error("项目依赖完整性校验失败，请重新安装");
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }
 
 interface StudioNetworkFetchOptions {
@@ -249,7 +331,24 @@ function createStudioApi() {
       focus: (objectId: string) => object(objectId).focus()
     }),
     selection: Object.freeze({ clear: () => emit({ id: commandId("selection"), type: "selection.set", targets: [] }) }),
+    ai: Object.freeze({
+      invoke: (capabilityId: string, input: JsonValue = {}) => requestCapability(capabilityId, input),
+    }),
     log
+  });
+}
+
+function requestCapability(capabilityId: string, input: JsonValue): Promise<JsonValue> {
+  if (!activeModule?.permissions.includes("ai.invoke") || !activeModule.capabilities.includes("studio.ai")) {
+    return Promise.reject(new Error("脚本未声明 studio.ai 能力或 ai.invoke 权限"));
+  }
+  if (!activeInvocationId) return Promise.reject(new Error("AI 能力只能在行为生命周期函数中调用"));
+  const normalized = capabilityId.trim();
+  if (!normalized) return Promise.reject(new Error("AI 能力 ID 不能为空"));
+  const requestId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    pendingCapabilities.set(requestId, { resolve, reject });
+    send({ type: "behavior.capability.request", requestId, invocationId: activeInvocationId, capabilityId: normalized, input: structuredClone(input) });
   });
 }
 
@@ -277,9 +376,11 @@ function log(message: string, payload?: unknown) {
   send({ type: "behavior.log", level: "info", message: String(message), ...(isJsonValue(payload) ? { data: payload } : {}) });
 }
 
-function rejectPendingNetwork(message: string) {
+function rejectPendingRequests(message: string) {
   for (const pending of pendingNetwork.values()) pending.reject(new Error(message));
   pendingNetwork.clear();
+  for (const pending of pendingCapabilities.values()) pending.reject(new Error(message));
+  pendingCapabilities.clear();
 }
 
 function settleNetworkResult(request: Extract<SceneBehaviorWorkerRequest, { type: "behavior.network.result" }>) {
@@ -288,6 +389,14 @@ function settleNetworkResult(request: Extract<SceneBehaviorWorkerRequest, { type
   pendingNetwork.delete(request.requestId);
   if (request.result) pending.resolve(request.result);
   else pending.reject(new Error(request.error || "网络网关请求失败"));
+}
+
+function settleCapabilityResult(request: Extract<SceneBehaviorWorkerRequest, { type: "behavior.capability.result" }>) {
+  const pending = pendingCapabilities.get(request.requestId);
+  if (!pending) return;
+  pendingCapabilities.delete(request.requestId);
+  if (request.result !== undefined) pending.resolve(request.result);
+  else pending.reject(new Error(request.error || "AI 能力调用失败"));
 }
 
 function isJsonValue(value: unknown, seen = new WeakSet<object>()): value is import("@bim-studio/contracts").JsonValue {

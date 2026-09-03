@@ -5,6 +5,8 @@ param(
 $ErrorActionPreference = "Stop"
 $toolRoot = [IO.Path]::GetFullPath($PSScriptRoot)
 $templateRoot = [IO.Path]::GetFullPath((Join-Path $toolRoot "bridge-smoke"))
+$bridgePackagePath = Join-Path $toolRoot "com.bim-studio.bridge\package.json"
+$bridgePackageVersion = ([IO.File]::ReadAllText($bridgePackagePath, [Text.Encoding]::UTF8) | ConvertFrom-Json).version
 $runsRoot = [IO.Path]::GetFullPath((Join-Path $toolRoot ".smoke-runs"))
 if (-not $runsRoot.StartsWith($toolRoot, [StringComparison]::OrdinalIgnoreCase)) {
   throw "Smoke run root escaped the Unity tools directory."
@@ -81,7 +83,7 @@ foreach ($item in $versions) {
     }
   }
   $log = $safeLog
-  if ($process.ExitCode -ne 0 -or $log -notmatch "BIM Studio Unity bridge (smoke build|package validation) succeeded") {
+  if ($process.ExitCode -ne 0 -or $log -notmatch "Industrial Studio Unity bridge (smoke build|package validation) succeeded") {
     $tail = ($log -split "`r?`n" | Select-Object -Last 30) -join [Environment]::NewLine
     Write-Warning "Unity $($item.Version) validation failed.`n$tail"
     $results += [pscustomobject]@{ Version = $item.Version; Package = "failed"; WebGL = if ($method -eq "BridgeSmokeBuilder.Build") { "failed" } else { "not run" } }
@@ -96,15 +98,21 @@ foreach ($item in $versions) {
     $bridgePath = Join-Path $buildRoot "unity-bridge.js"
     $zipPath = Join-Path (Split-Path $buildRoot -Parent) "bim-studio-webgl.zip"
     if (-not (Test-Path -LiteralPath $manifestPath) -or -not (Test-Path -LiteralPath $bridgePath)) {
-      throw "Unity $($item.Version) build did not contain BIM Studio bridge artifacts."
+      throw "Unity $($item.Version) build did not contain Industrial Studio bridge artifacts."
     }
     $index = Get-Content -LiteralPath $indexPath -Raw
-    if ($index -notmatch 'unity-bridge\.js' -or $index -notmatch 'BimStudioUnityBridge\.register') {
-      throw "Unity $($item.Version) player did not register the BIM Studio browser bridge."
+    if ($index -notmatch 'unity-bridge\.js' -or $index -notmatch 'BimStudioUnityBridge\.register' -or $index -notmatch 'BimStudioUnityBridge\.createTrackedInstance') {
+      throw "Unity $($item.Version) player did not register the Industrial Studio browser bridge with tracked startup progress."
     }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    if ($manifest.unityVersion -ne $item.Version -or $manifest.bridgeVersion -ne 1) {
+    if ($manifest.unityVersion -ne $item.Version -or $manifest.bridgeVersion -ne 1 -or $manifest.bridgePackageVersion -ne $bridgePackageVersion) {
       throw "Unity $($item.Version) manifest metadata is invalid."
+    }
+    $buildFiles = @(Get-ChildItem -LiteralPath $buildRoot -Recurse -File | ForEach-Object { $_.Name })
+    foreach ($pattern in @('\.loader\.js$', '\.framework\.js(?:\.br|\.gz|\.unityweb)?$', '\.wasm(?:\.br|\.gz|\.unityweb)?$', '\.data(?:\.br|\.gz|\.unityweb)?$')) {
+      if (-not ($buildFiles | Where-Object { $_ -match $pattern })) {
+        throw "Unity $($item.Version) build is missing runtime artifact matching $pattern."
+      }
     }
     if (-not (Test-Path -LiteralPath $zipPath)) { throw "Unity $($item.Version) one-click ZIP was not created." }
     $results += [pscustomobject]@{ Version = $item.Version; Package = "passed"; WebGL = "built + bridge injected" }

@@ -1,6 +1,6 @@
-# BIM Studio Revit Worker
+# Industrial Studio Revit Worker
 
-这是 BIM Studio 自研的 C# Revit 转换宿主，由两个部分组成：
+这是 Industrial Studio 自研的 C# Revit 转换宿主，由两个部分组成：
 
 - `BimStudio.RevitWorker.exe`：API 启动的轻量命令行客户端，负责投递任务并等待结果。
 - `BimStudio.RevitAddin.dll`：加载到 Revit 中的常驻 Add-in，负责打开 RVT 并导出原生 GLB 或 IFC。
@@ -18,7 +18,7 @@ pnpm revit:install
 1. 将 Worker 发布到 `tools/revit-worker/publish`。
 2. 自动扫描并针对本机已安装的 Revit 2019 及以上版本分别编译 Add-in。
 3. 把 Add-in 安装到 `%APPDATA%\Autodesk\Revit\Addins\<版本>`。
-4. 创建或复用当前用户的 `BIM Studio Internal` 代码签名证书，签署 Add-in，并将证书加入当前用户的受信任根与受信任发布者，避免无人值守启动停在插件安全确认框。
+4. 创建或复用当前用户的 `Industrial Studio Internal` 代码签名证书，签署 Add-in，并将证书加入当前用户的受信任根与受信任发布者，避免无人值守启动停在插件安全确认框。
 
 安装或更新 Add-in 后，需要重启已经打开的 Revit。
 
@@ -65,7 +65,7 @@ GLB 压缩默认启用；排查兼容问题时可在 API 环境中设置 `RVT_GL
 
 若 Worker 提示 Add-in 没有就绪，检查 Revit 是否完成许可登录、Add-in 是否被禁用，以及 `%APPDATA%\Autodesk\Revit\Addins\<版本>` 下的清单与 DLL 是否存在。
 
-第一次安装内部签名证书时，Windows 可能要求确认将 `BIM Studio Internal` 加入当前用户的受信任根。若机器上还安装了未签名的 Revit Batch Processor，它自己的安全确认框也会阻塞 Revit；本方案不再依赖 RBP，可以把 `BatchRvtAddin<版本>.addin` 移到 Addins 目录下的 `Disabled` 文件夹，需要恢复 RBP 时再移回。
+第一次安装内部签名证书时，Windows 可能要求确认将 `Industrial Studio Internal` 加入当前用户的受信任根。若机器上还安装了未签名的 Revit Batch Processor，它自己的安全确认框也会阻塞 Revit；本方案不再依赖 RBP，可以把 `BatchRvtAddin<版本>.addin` 移到 Addins 目录下的 `Disabled` 文件夹，需要恢复 RBP 时再移回。
 
 ## 商业使用说明
 

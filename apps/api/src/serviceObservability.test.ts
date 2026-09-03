@@ -1,0 +1,120 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import Fastify from "fastify";
+import JSZip from "jszip";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { JsonStore } from "./jsonStore.js";
+import {
+  collectServiceHealth,
+  createDiagnosticArchive,
+  createDiagnosticSnapshot,
+  normalizeServiceLogFilters,
+  queryServiceLogs,
+  redactServiceLog,
+} from "./serviceObservability.js";
+import { registerSystemRoutes } from "./system.js";
+
+const directories: string[] = [];
+
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
+
+describe("service observability", () => {
+  it("filters structured and plain service logs while removing credentials", async () => {
+    const directory = await temporaryDirectory();
+    await writeFile(path.join(directory, "fixture.out.log"), [
+      JSON.stringify({ level: 30, time: "2026-09-03T09:00:00.000Z", msg: "server ready" }),
+      JSON.stringify({ level: 50, time: "2026-09-03T10:00:00.000Z", msg: "request failed", authorization: "Bearer raw-secret" }),
+      "2026-09-03T11:00:00.000Z WARN reconnect password=plain-secret",
+    ].join("\n"), "utf8");
+
+    const result = await queryServiceLogs([directory], normalizeServiceLogFilters({
+      service: "fixture",
+      level: "error",
+      from: "2026-09-03T09:30:00.000Z",
+      keyword: "failed",
+      limit: "50",
+    }));
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({ service: "fixture", level: "error", timestamp: "2026-09-03T10:00:00.000Z" });
+    expect(result.items[0]?.message).toContain("[REDACTED]");
+    expect(result.items[0]?.message).not.toContain("raw-secret");
+    expect(redactServiceLog("password=hunter2 Bearer abc.def.ghi https://u:p@example.test")).toBe("password=[REDACTED] Bearer [REDACTED] https://[REDACTED]@example.test");
+  });
+
+  it("uses explicit not-configured storage states instead of fake health", async () => {
+    vi.stubEnv("METADATA_STORE", "json");
+    vi.stubEnv("OBJECT_STORE", "local");
+    vi.stubEnv("WEB_ORIGIN", "http://127.0.0.1:1");
+    const health = await collectServiceHealth();
+    expect(health.find((item) => item.id === "api")).toMatchObject({ status: "healthy" });
+    expect(health.find((item) => item.id === "api")?.latencyMs).toBeGreaterThan(0);
+    expect(health.find((item) => item.id === "postgres")).toMatchObject({ status: "not-configured" });
+    expect(health.find((item) => item.id === "minio")).toMatchObject({ status: "not-configured" });
+    expect(health.find((item) => item.id === "web")).toMatchObject({ status: "offline" });
+  });
+
+  it("builds a credential-free diagnostic archive", async () => {
+    vi.stubEnv("METADATA_STORE", "json");
+    vi.stubEnv("OBJECT_STORE", "local");
+    vi.stubEnv("WEB_ORIGIN", "http://127.0.0.1:1");
+    const dataDir = await temporaryDataDirectory();
+    await writeFile(path.join(dataDir, "logs", "fixture.err.log"), "ERROR apiKey=archive-secret\n", "utf8");
+    const snapshot = await createDiagnosticSnapshot(dataDir);
+    const bytes = await createDiagnosticArchive(snapshot);
+    const archive = await JSZip.loadAsync(bytes);
+    const diagnostic = await archive.file("diagnostic.json")?.async("string");
+    const readme = await archive.file("README.txt")?.async("string");
+    expect(diagnostic).toContain("[REDACTED]");
+    expect(diagnostic).not.toContain("archive-secret");
+    expect(readme).toContain("不包含凭据");
+  });
+
+  it("exposes authenticated filters, health, export and diagnostic download routes", async () => {
+    vi.stubEnv("METADATA_STORE", "json");
+    vi.stubEnv("OBJECT_STORE", "local");
+    vi.stubEnv("WEB_ORIGIN", "http://127.0.0.1:1");
+    const dataDir = await temporaryDataDirectory();
+    await writeFile(path.join(dataDir, "logs", "route.err.log"), "2026-09-03T10:00:00.000Z ERROR token=route-secret\n", "utf8");
+    const store = new JsonStore(dataDir);
+    await store.init();
+    const app = Fastify();
+    await registerSystemRoutes(app, store, dataDir);
+    const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "admin" } });
+    const authorization = `Bearer ${login.json().token}`;
+
+    const logs = await app.inject({ method: "GET", url: "/api/admin/service-logs?service=route&level=error&keyword=ERROR", headers: { authorization } });
+    expect(logs.statusCode).toBe(200);
+    expect(logs.json()).toMatchObject({ total: 1, items: [{ service: "route", level: "error" }] });
+    expect(logs.body).not.toContain("route-secret");
+
+    const invalid = await app.inject({ method: "GET", url: "/api/admin/service-logs?level=fatal", headers: { authorization } });
+    expect(invalid.statusCode).toBe(400);
+    const health = await app.inject({ method: "GET", url: "/api/admin/health", headers: { authorization } });
+    expect(health.json().find((item: { id: string }) => item.id === "postgres")).toMatchObject({ status: "not-configured" });
+
+    const exported = await app.inject({ method: "GET", url: "/api/admin/service-logs/export?service=route", headers: { authorization } });
+    expect(exported.headers["content-disposition"]).toContain("bim-studio-service-logs-");
+    expect(exported.body).toContain("[REDACTED]");
+    const bundle = await app.inject({ method: "GET", url: "/api/admin/diagnostics/download", headers: { authorization } });
+    expect(bundle.statusCode).toBe(200);
+    expect(bundle.headers["content-type"]).toContain("application/zip");
+    await app.close();
+  });
+});
+
+async function temporaryDirectory(): Promise<string> {
+  const directory = await mkdtemp(path.join(tmpdir(), "bim-studio-observability-"));
+  directories.push(directory);
+  return directory;
+}
+
+async function temporaryDataDirectory(): Promise<string> {
+  const directory = await temporaryDirectory();
+  await mkdir(path.join(directory, "logs"), { recursive: true });
+  return directory;
+}

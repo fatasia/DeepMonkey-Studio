@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Box, ChevronLeft, ChevronRight, LayoutDashboard, Search } from "lucide-react";
+import { ArrowUpRight, Bot, Box, ChevronLeft, ChevronRight, LayoutDashboard, Search } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import { INDUSTRIAL_PREFAB_CATALOG } from "../prefabs/industrialPrefabCatalog";
@@ -20,7 +20,7 @@ interface BuiltInAssetBrowserProps {
 const PAGE_SIZE = 24;
 
 /**
- * 统一素材中心的内置内容浏览器。这里只负责发现与导航，真正插入和参数编辑仍在对应编辑器完成，
+ * 统一“资源”页的内置内容浏览器。这里只负责发现与导航，真正插入和参数编辑仍在对应编辑器完成，
  * 避免管理页复制一套不完整的编辑逻辑。
  */
 export function BuiltInAssetBrowser({ kind, locale, editorAvailable, onOpenEditor }: BuiltInAssetBrowserProps) {
@@ -36,15 +36,24 @@ export function BuiltInAssetBrowser({ kind, locale, editorAvailable, onOpenEdito
   return (
     <div className="unified-assets-browser built-in-assets-browser">
       <div className="unified-assets-controls built-in-assets-controls">
-        <label className="unified-assets-search">
+        <div className="unified-assets-search" role="search" aria-label={tr(locale, "搜索内置资源", "Search built-in assets")}>
           <Search size={15} />
           <input
-            aria-label={tr(locale, "搜索内置素材", "Search built-in assets")}
+            aria-label={tr(locale, "搜索内置资源", "Search built-in assets")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={searchPlaceholder(kind, locale)}
           />
-        </label>
+        </div>
+        <button
+          className="button built-in-editor-entry"
+          disabled={!editorAvailable}
+          onClick={onOpenEditor}
+          title={editorAvailable ? tr(locale, "进入场景编辑器后，从资源面板插入", "Open the scene editor and insert from its Assets panel") : tr(locale, "请先创建场景", "Create a scene first")}
+        >
+          <ArrowUpRight size={15} />
+          {editorAvailable ? tr(locale, "进入编辑器插入", "Open editor to insert") : tr(locale, "请先创建场景", "Create a scene first")}
+        </button>
       </div>
 
       <div className="unified-assets-summary" aria-live="polite">
@@ -66,18 +75,15 @@ export function BuiltInAssetBrowser({ kind, locale, editorAvailable, onOpenEdito
                 <span title={item.description}>{item.description}</span>
                 <small>{item.meta}</small>
               </div>
-              <button className="asset-import" disabled={!editorAvailable} onClick={onOpenEditor}>
-                {editorAvailable ? tr(locale, "进入编辑器使用", "Use in editor") : tr(locale, "请先创建场景", "Create a scene first")}
-              </button>
             </article>
           ))}
         </div>
       ) : (
-        <div className="unified-assets-state"><Box size={32} /><strong>{tr(locale, "没有匹配素材", "No matching assets")}</strong><button className="button" onClick={() => setQuery("")}>{tr(locale, "清空搜索", "Clear search")}</button></div>
+        <div className="unified-assets-state"><Box size={32} /><strong>{tr(locale, "没有匹配资源", "No matching assets")}</strong><button className="button" onClick={() => setQuery("")}>{tr(locale, "清空搜索", "Clear search")}</button></div>
       )}
 
       {totalPages > 1 && (
-        <nav className="unified-assets-pagination" aria-label={tr(locale, "素材分页", "Asset pagination") }>
+        <nav className="unified-assets-pagination" aria-label={tr(locale, "资源分页", "Asset pagination") }>
           <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronLeft size={15} />{tr(locale, "上一页", "Previous")}</button>
           <span>{page} / {totalPages}</span>
           <button disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>{tr(locale, "下一页", "Next")}<ChevronRight size={15} /></button>
@@ -100,7 +106,7 @@ interface BuiltInItem {
 function createItems(kind: BuiltInAssetKind, locale: AppLocale): BuiltInItem[] {
   if (kind === "2d") return DASHBOARD_COMPONENT_PRESETS.map((preset) => {
     const text = dashboardComponentPresetText(preset, locale);
-    const badge = tr(locale, preset.category === "material" ? "二维素材" : "二维组件", preset.category === "material" ? "2D asset" : "2D component");
+    const badge = tr(locale, "二维资源", "2D resource");
     const frame = preset.frame ?? { width: 320, height: 180 };
     return item({
       id: preset.id,
@@ -140,7 +146,7 @@ function searchPlaceholder(kind: BuiltInAssetKind, locale: AppLocale): string {
 }
 
 function resultLabel(kind: BuiltInAssetKind, locale: AppLocale): string {
-  if (kind === "2d") return tr(locale, "个二维组件与素材", "2D components and assets");
+  if (kind === "2d") return tr(locale, "个二维资源", "2D resources");
   if (kind === "template") return tr(locale, "个商业看板模板", "dashboard templates");
   return tr(locale, "个工业三维预制体", "industrial 3D prefabs");
 }

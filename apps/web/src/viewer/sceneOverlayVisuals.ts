@@ -189,20 +189,20 @@ function createAnnotationLabel(annotation: SceneAnnotationState, selected: boole
   const canvas = labelCanvas(640, 160);
   const context = canvas.getContext("2d");
   if (context) {
-    roundedPanel(context, 8, 8, 624, 144, 24, "rgba(20, 25, 29, .96)");
-    context.strokeStyle = selected ? "#4d9fff" : annotation.color;
-    context.lineWidth = selected ? 8 : 5;
+    roundedPanel(context, 8, 8, 624, 144, 18, "rgba(9, 16, 20, .88)");
+    context.strokeStyle = selected ? "#3ec6c1" : "rgba(167, 183, 190, .28)";
+    context.lineWidth = selected ? 6 : 2;
     context.stroke();
-    // 选中蓝框表达交互状态，左侧色条继续表达作者配置的设备/告警状态色。
-    roundedPanel(context, 18, 34, 7, 92, 3, annotation.color);
-    context.fillStyle = "#f5f7f8";
-    context.font = '700 46px "Microsoft YaHei", "Segoe UI", sans-serif';
+    // 青绿细框表达选择，左侧状态条保留作者配置色，避免整块彩色标签遮挡模型。
+    roundedPanel(context, 20, 34, 6, 92, 3, annotation.color);
+    context.fillStyle = "#e6ecef";
+    context.font = '650 40px "Microsoft YaHei UI", "Segoe UI", sans-serif';
     context.textAlign = "left";
     context.textBaseline = "middle";
     context.fillText(ellipsize(annotation.name, 16), 34, annotation.description ? 61 : 81);
     if (annotation.description) {
-      context.fillStyle = "#9ea9b0";
-      context.font = '400 28px "Microsoft YaHei", "Segoe UI", sans-serif';
+      context.fillStyle = "#8f9da4";
+      context.font = '400 26px "Microsoft YaHei UI", "Segoe UI", sans-serif';
       context.fillText(ellipsize(annotation.description, 26), 34, 113);
     }
     if (dismissible) {

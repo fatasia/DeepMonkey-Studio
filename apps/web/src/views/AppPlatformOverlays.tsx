@@ -1,4 +1,4 @@
-import { Bot, HeartHandshake, Languages, LogOut, Radio, ShieldCheck } from "lucide-react";
+import { Bot, Languages, LogOut, Settings } from "lucide-react";
 import { api, setAuthToken } from "../api";
 import { storeLocale, translate as tr } from "../i18n";
 import { AiAssistantPanel } from "../components/AiAssistantPanel";
@@ -65,6 +65,7 @@ export function AppPlatformOverlays({ bindings }: { bindings: AppViewBindings })
           busy={recovery.busy}
           onRestore={() => void recovery.restore()}
           onExport={recovery.export}
+          onDefer={recovery.defer}
           onDiscard={() => void recovery.discard()}
         />
       )}
@@ -82,10 +83,10 @@ function GlobalUtility({ bindings }: { bindings: AppViewBindings }) {
   if (!currentUser) return null;
 
   return (
-    <div className="global-utility">
+    <div className={`global-utility global-utility-${route.view}`}>
       {currentUser.role === "admin" && (
         <button onClick={() => actions.navigate({ view: "system" })}>
-          <ShieldCheck size={15} /> {tr(locale, "系统", "System")}
+          <Settings size={15} /> {tr(locale, "设置", "Settings")}
         </button>
       )}
       {route.view !== "system" && (
@@ -101,12 +102,6 @@ function GlobalUtility({ bindings }: { bindings: AppViewBindings }) {
         }}
       >
         <Languages size={15} /> {locale === "zh-CN" ? "EN" : "中文"}
-      </button>
-      <button onClick={() => state.setDigitalTwinOpen((open) => !open)}>
-        <Radio size={15} /> {tr(locale, "数据", "Data")}
-      </button>
-      <button onClick={() => state.setCreditsOpen(true)}>
-        <HeartHandshake size={15} /> {tr(locale, "致谢", "Credits")}
       </button>
       <button
         title={`${currentUser.displayName} · ${currentUser.role}`}

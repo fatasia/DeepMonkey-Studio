@@ -16,6 +16,18 @@ describe("PD Lite PPR/BOP engine", () => {
       resourceId: "robot", startMinutes: 10, endMinutes: 15,
       operationIds: ["weld", "inspect"], requiredCapacity: 2, availableCapacity: 1,
     }]);
+    expect(result.lineBalance).toMatchObject({
+      targetTaktMinutes: 10,
+      totalWorkContentMinutes: 26,
+      configuredStationUnits: 1,
+      theoreticalMinimumStationUnits: 3,
+      balanceEfficiency: 2.6,
+      overloadedResourceIds: ["station"],
+      unassignedOperationIds: ["weld", "inspect"],
+    });
+    expect(result.lineBalance.stationLoads[0]).toMatchObject({
+      resourceId: "station", assignedMinutes: 14, loadPerUnitMinutes: 14, taktUtilization: 1.4,
+    });
   });
 
   it("reports missing links, cycles and isolated operations without pretending a schedule exists", () => {
@@ -25,6 +37,7 @@ describe("PD Lite PPR/BOP engine", () => {
     input.precedenceRelations.push({ id: "cycle", predecessorOperationId: "finish", successorOperationId: "cut" });
     input.precedenceRelations.push({ id: "missing-op", predecessorOperationId: "cut", successorOperationId: "missing" });
     input.resourceAssignments.push({ id: "missing-resource", operationId: "cut", resourceId: "gone" });
+    input.targetTaktMinutes = 0;
 
     const result = analyzePprBopVersion(input);
     expect(result.issues).toEqual(expect.arrayContaining([
@@ -33,34 +46,75 @@ describe("PD Lite PPR/BOP engine", () => {
       expect.objectContaining({ code: "missing-assignment-reference", entityId: "missing-resource" }),
       expect.objectContaining({ code: "precedence-cycle", entityId: "bop-v1" }),
       expect.objectContaining({ code: "isolated-operation", entityId: "orphan", severity: "warning" }),
+      expect.objectContaining({ code: "invalid-target-takt", entityId: "bop-v1", severity: "error" }),
     ]));
     expect(result.schedule).toEqual([]);
   });
 
+  it("runs an explicit product variant without scheduling excluded operations or resources", () => {
+    const input = plan();
+    input.variantIds = ["EU", "US"];
+    input.operations.find((item) => item.id === "weld")!.variantIds = ["EU"];
+    input.operations.find((item) => item.id === "inspect")!.variantIds = ["US"];
+    input.operations.find((item) => item.id === "weld")!.condition = {
+      expression: "market == 'regulated'",
+      description: "仍需由上游规则解析",
+    };
+    input.resources.find((item) => item.id === "robot")!.variantIds = ["EU"];
+    input.resources.find((item) => item.id === "quality")!.variantIds = ["US"];
+
+    const result = analyzePprBopVersion(input, "EU");
+
+    expect(result.issues.filter((item) => item.severity === "error")).toEqual([]);
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: "variant-condition-not-evaluated" }));
+    expect(result.topologicalOrder).toEqual(["cut", "weld", "finish"]);
+    expect(result.criticalPath).toEqual({ operationIds: ["cut", "weld", "finish"], durationMinutes: 19 });
+    expect(result.variantScope).toMatchObject({
+      activeVariantId: "EU",
+      knownVariant: true,
+      included: { operationIds: ["cut", "weld", "finish"] },
+      excluded: { operationIds: ["inspect"], resourceIds: ["quality"] },
+      unresolvedConditionIds: ["weld"],
+    });
+  });
+
+  it("rejects an undeclared analysis variant instead of silently treating it as a base plan", () => {
+    const result = analyzePprBopVersion(plan(), "right-hand-drive");
+    expect(result.schedule).toEqual([]);
+    expect(result.issues).toContainEqual(expect.objectContaining({
+      code: "unknown-active-variant",
+      severity: "error",
+    }));
+    expect(result.variantScope.knownVariant).toBe(false);
+  });
+
   it("compares snapshots and marks direct scheduling regressions and their affected entities", () => {
     const before = plan();
+    before.targetTaktMinutes = 20;
     const after = plan();
     after.id = "bop-v2";
     after.version = "2.0";
     after.basedOnVersionId = before.id;
     after.operations.find((item) => item.id === "inspect")!.standardTimeMinutes = 9;
     after.resourceAssignments.find((item) => item.id === "inspect-robot")!.resourceId = "robot";
+    after.targetTaktMinutes = 10;
 
     const result = comparePprBopVersions(before, after);
     expect(result.changes).toEqual(expect.arrayContaining([
       { entityType: "operation", entityId: "inspect", changeType: "modified", changedFields: ["standardTimeMinutes"] },
       { entityType: "assignment", entityId: "inspect-robot", changeType: "modified", changedFields: ["resourceId"] },
+      { entityType: "plan", entityId: "vehicle-door", changeType: "modified", changedFields: ["targetTaktMinutes"] },
     ]));
     expect(result.impact).toEqual({ componentIds: ["frame"], operationIds: ["inspect"], resourceIds: ["quality", "robot"] });
     expect(result.regressions.map((item) => item.code)).toEqual(expect.arrayContaining([
-      "critical-path-increased", "standard-time-increased", "resource-conflict-introduced",
+      "critical-path-increased", "standard-time-increased", "resource-conflict-introduced", "takt-overload-introduced",
     ]));
   });
 });
 
 function plan(): PprBopVersion {
   return {
-    id: "bop-v1", planId: "vehicle-door", version: "1.0", name: "车门装配 BOP", createdAt: "2026-08-31T08:00:00.000Z",
+    id: "bop-v1", planId: "vehicle-door", version: "1.0", name: "车门装配 BOP", createdAt: "2026-08-31T08:00:00.000Z", targetTaktMinutes: 10,
     variantIds: ["left-hand-drive"], references: [{ kind: "study", id: "study-cycle-time" }],
     components: [
       { id: "door", name: "车门总成", kind: "product", references: [{ kind: "scene", id: "assembly-scene" }] },

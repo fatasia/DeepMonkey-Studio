@@ -1,0 +1,94 @@
+/* 产品页正文与操作以 12px 为基线；11px 只承载次要说明，技术标尺可继续使用 10px。 */
+.manager-scene-count,
+.optimizer-page small,
+.login-card :is(small, label, em, aside, footer) {
+  font-size: 11px !important;
+}
+
+.scene-organization-search input { font-size: 12px !important; }
+
+.behavior-panel small,
+.behavior-panel .behavior-target-options section > header {
+  font-size: 11px !important;
+}
+
+.data-center-page :is(button, input, select, textarea),
+.vision-page :is(button, input, select, textarea),
+.operations-page :is(button, input, select, textarea) {
+  font-size: 12px !important;
+}
+
+.data-center-page :is(small, label, code, em),
+.vision-page :is(small, label),
+.vision-page .vision-summary > span,
+.vision-page .vision-error,
+.vision-page .vision-state,
+.vision-page .vision-runtime-metrics i,
+.vision-page .vision-task-flow :is(b, small),
+.vision-page .vision-result :is(span, strong, small, li, p),
+.vision-page .vision-source-card :is(small, em),
+.vision-page .vision-event-card :is(small, p, footer span, footer button),
+.vision-page .vision-preset-list :is(strong, small, em, button),
+.vision-page .vision-empty span,
+.vision-page .vision-modal label,
+.vision-page .vision-object-picker :is(header, span, small),
+.operations-page :is(small, label, time),
+.operations-page .operations-source-tabs button {
+  font-size: 11px !important;
+}
+
+.docs-center-page :is(.docs-center-actions span, .docs-navigation button, .docs-on-this-page button, .docs-article-footer),
+.system-center-page :is(small, label, i, table, summary),
+.system-center-page :is(.secondary-page-title small, .system-users header span, .system-audit header span, .system-service-logs header span),
+.branding-settings-page .branding-asset-row :is(small, button),
+.branding-settings-page .branding-sections :is(small, label, b, button),
+.branding-settings-page > .secondary-page-header .secondary-page-title small {
+  font-size: 11px !important;
+}
+
+/* 工作台可读性阻断线：业务文字不低于 12px，主要操作目标不低于 28px。
+ * 编辑器依然保持单行紧凑布局；代码、标尺和缩略图由视觉门禁按技术内容单独放宽。 */
+body .app-workspace-frame.app-workspace-frame :is(button, input, select, textarea, summary, label, small, span, strong, p, a, li, dt, dd, td, th) {
+  font-size: 12px !important;
+}
+
+body .app-workspace-frame.app-workspace-frame :is(
+  button,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="hidden"]),
+  select,
+  textarea,
+  summary,
+  [role="button"],
+  [role="menuitem"],
+  [role="tab"],
+  [role="checkbox"],
+  [role="switch"]
+) {
+  min-width: 28px;
+  min-height: 28px;
+}
+
+body .app-workspace-frame.app-workspace-frame label:has(input, select, textarea) {
+  min-height: 28px;
+}
+
+/* 分屏脚本栏只保留图标和 tooltip。上面的 12px 可读性基线不能把
+ * 这些固定宽度按钮中的文字重新撑成竖排，否则半屏编辑会失去可用性。 */
+body .app-workspace-frame.app-workspace-frame
+  .behavior-workspace-slot.layout-split
+  .behavior-panel-actions button,
+body .app-workspace-frame.app-workspace-frame
+  .behavior-workspace-slot.layout-float
+  .behavior-panel-actions button {
+  flex: 0 0 30px;
+  width: 30px;
+  min-width: 30px;
+  padding-inline: 0;
+  overflow: hidden;
+  font-size: 0 !important;
+  white-space: nowrap;
+}
+
+.global-utility button {
+  font-size: 12px !important;
+}

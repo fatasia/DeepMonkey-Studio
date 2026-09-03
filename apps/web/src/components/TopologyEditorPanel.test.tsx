@@ -1,8 +1,10 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { TopologyDocument } from "@bim-studio/contracts";
 import { assessTopologyScadaRuntime } from "@bim-studio/studio-core";
-import { ScadaRuntimeCard, TopologyEditorPanel, topologyEdgeAnimated, topologyEdgeLabel, topologyEdgeMedium, topologyEdgeStateClass, topologyNodeElevation, topologyProjectedPosition } from "./TopologyEditorPanel";
+import { ScadaRuntimeCard, TopologyEditorPanel, topologyEdgeAnimated, topologyEdgeLabel, topologyEdgeMedium, topologyEdgeStateClass, topologyNodeElevation, topologyPlanPositionFromProjected, topologyProjectedPosition } from "./TopologyEditorPanel";
+import { TopologyExtensionField } from "./TopologyEditorPanelView";
 
 const document: TopologyDocument = {
   id: "topology-line-1",
@@ -15,6 +17,7 @@ const document: TopologyDocument = {
       y: 160,
       properties: {
         label: "码垛机器人",
+        vendor: "示例厂商",
         dataBinding: { productType: "pipeline", productId: "pipeline-status", field: "running" }
       }
     }
@@ -36,15 +39,33 @@ describe("TopologyEditorPanel", () => {
     expect(html).toContain("工业泵");
     expect(html).toContain("SCADA");
     expect(html).toContain("数据驱动");
-    expect(html).toContain("2.5D");
+    expect(html).toContain("层级");
     expect(html).toContain("1 节点");
+    expect(html).toContain("收起设备库");
+    expect(html).toContain("收起属性面板");
+  });
+
+  it("gives extension property controls stable accessible names", () => {
+    const html = renderToStaticMarkup(
+      <TopologyExtensionField locale="zh-CN" name="vendor" value="示例厂商" onCommit={() => undefined} onRemove={() => undefined} />,
+    );
+    expect(html).toContain("扩展属性“vendor”的值");
+    expect(html).toContain("删除扩展属性“vendor”");
+  });
+
+  it("keeps the canvas in its own grid column when both side panels collapse", () => {
+    const css = readFileSync(new URL("./TopologyEditorPanel.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.topology-editor__palette\s*\{[^}]*grid-column:\s*1;/);
+    expect(css).toMatch(/\.topology-editor__viewport\s*\{[^}]*grid-column:\s*2;/);
+    expect(css).toMatch(/\.topology-editor__inspector\s*\{[^}]*grid-column:\s*3;/);
   });
 
   it("projects persisted elevation in 2.5D without changing plan coordinates", () => {
     const node = { x: 100, y: 200, properties: { elevation: 40 } };
 
     expect(topologyProjectedPosition(node, "2d")).toEqual({ x: 100, y: 200 });
-    expect(topologyProjectedPosition(node, "2.5d")).toEqual({ x: 114, y: 178 });
+    expect(topologyProjectedPosition(node, "2.5d")).toEqual({ x: 59, y: 218 });
+    expect(topologyPlanPositionFromProjected({ x: 59, y: 218 }, 40, "2.5d")).toEqual({ x: 100, y: 200 });
     expect(topologyNodeElevation({ properties: { elevation: 900 } })).toBe(500);
     expect(topologyNodeElevation({ properties: { elevation: "invalid" } })).toBe(0);
   });

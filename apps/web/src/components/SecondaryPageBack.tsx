@@ -6,5 +6,6 @@ export function SecondaryPageBack({ locale, onBack }: { locale: AppLocale; onBac
 
   return <button type="button" className="secondary-page-back" onClick={onBack} title={label} aria-label={label}>
     <ArrowLeft aria-hidden="true" />
+    <span>{tr(locale, "返回", "Back")}</span>
   </button>;
 }

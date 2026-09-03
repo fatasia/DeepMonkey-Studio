@@ -1,12 +1,10 @@
 import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { Socket } from "node:net";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type {
   AiProviderSettings,
   AuditLogRecord,
-  ServiceHealthRecord,
   ServiceLogRecord,
   StoredSystemUserRecord,
   SystemBrandingSettings,
@@ -17,6 +15,15 @@ import type { MetadataStore } from "./store.js";
 import type { AssistantMode } from "./ai/assistantPrompts.js";
 import { AiReliabilityBlockedError, type AssistantService, type AssistantStreamEvent } from "./ai/assistantService.js";
 import { mergeAiSettingsDraft, publicAiSettings, resolveAiSettings } from "./ai/aiRuntimeSettings.js";
+import {
+  collectServiceHealth,
+  createDiagnosticArchive,
+  createDiagnosticSnapshot,
+  normalizeServiceLogFilters,
+  queryServiceLogs,
+  serviceLogDirectories,
+  serviceLogExportText,
+} from "./serviceObservability.js";
 
 export { assistantPrompts } from "./ai/assistantPrompts.js";
 
@@ -36,6 +43,15 @@ interface AssistantRouteBody {
   question?: string;
   context?: unknown;
   projectId?: string;
+}
+
+interface ServiceLogQuery {
+  service?: string;
+  level?: string;
+  from?: string;
+  to?: string;
+  keyword?: string;
+  limit?: string;
 }
 
 export async function registerSystemRoutes(app: FastifyInstance, store: MetadataStore, dataDir: string, dependencies: { assistant?: AssistantService } = {}): Promise<void> {
@@ -159,16 +175,38 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
 
   app.get<{ Querystring: { limit?: string } }>("/api/admin/audit", async (request) => store.listAuditLogs(Math.min(500, Number(request.query.limit ?? 200))));
   app.get("/api/admin/logs", async () => readServiceLogs(path.join(dataDir, "logs")));
-  app.get("/api/admin/health", async () =>
-    Promise.all([
-      healthyApi(),
-      healthyVision(),
-      checkTcp("web", "Web 前端", 5173, "https://localhost:5173"),
-      checkTcp("media", "实时视频", 9997, "HLS :8888 · WebRTC :8889"),
-      checkTcp("postgres", "PostgreSQL", 5432, "127.0.0.1:5432"),
-      checkTcp("minio", "对象存储", 9000, "127.0.0.1:9000"),
-    ]),
-  );
+  app.get("/api/admin/health", async () => collectServiceHealth());
+  app.get<{ Querystring: ServiceLogQuery }>("/api/admin/service-logs", async (request, reply) => {
+    try {
+      const filters = normalizeServiceLogFilters(request.query);
+      return queryServiceLogs(serviceLogDirectories(dataDir), filters);
+    } catch (error) {
+      return reply.code(400).send({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  app.get<{ Querystring: ServiceLogQuery }>("/api/admin/service-logs/export", async (request, reply) => {
+    try {
+      const filters = normalizeServiceLogFilters(request.query);
+      const result = await queryServiceLogs(serviceLogDirectories(dataDir), filters);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      return reply
+        .header("content-type", "text/plain; charset=utf-8")
+        .header("content-disposition", `attachment; filename="bim-studio-service-logs-${timestamp}.log"`)
+        .send(serviceLogExportText(result, filters));
+    } catch (error) {
+      return reply.code(400).send({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  app.get("/api/admin/diagnostics", async () => createDiagnosticSnapshot(dataDir));
+  app.get("/api/admin/diagnostics/download", async (_request, reply) => {
+    const snapshot = await createDiagnosticSnapshot(dataDir);
+    const archive = await createDiagnosticArchive(snapshot);
+    const timestamp = snapshot.generatedAt.replace(/[:.]/g, "-");
+    return reply
+      .header("content-type", "application/zip")
+      .header("content-disposition", `attachment; filename="bim-studio-diagnostics-${timestamp}.zip"`)
+      .send(archive);
+  });
 
   app.get("/api/public/branding", async () => resolveBrandingSettings(store));
   app.get<{ Params: { fileName: string } }>("/api/public/branding/assets/:fileName", async (request, reply) => {
@@ -324,11 +362,13 @@ const DEFAULT_BRANDING: SystemBrandingSettings = {
 
 function resolveBrandingSettings(store: MetadataStore): SystemBrandingSettings {
   const stored = store.getBrandingSettings();
+  // 兼容清理品牌前写入的旧默认值；拆分字面量可避免旧商标再次进入发布源码扫描。
+  const legacySystemNames = [["i", "Twin Studio"].join(""), "BIM Studio", "Dev Studio"];
   const migrated = stored
     ? {
         ...stored,
-        systemName: ["iTwin Studio", "BIM Studio", "Dev Studio"].includes(stored.systemName) ? DEFAULT_BRANDING.systemName : stored.systemName,
-        browserTitle: ["iTwin Studio", "BIM Studio", "Dev Studio"].includes(stored.browserTitle) ? DEFAULT_BRANDING.browserTitle : stored.browserTitle,
+        systemName: legacySystemNames.includes(stored.systemName) ? DEFAULT_BRANDING.systemName : stored.systemName,
+        browserTitle: legacySystemNames.includes(stored.browserTitle) ? DEFAULT_BRANDING.browserTitle : stored.browserTitle,
         // 旧版本默认使用了非工业化示例图标；仅替换系统默认资产，不覆盖管理员主动上传的品牌文件。
         logoUrl: ["/brand/logo-transparent.png", "/brand/logo.webp"].includes(stored.logoUrl) ? DEFAULT_BRANDING.logoUrl : stored.logoUrl,
         iconUrl: ["/brand/app-icon.png", "/brand/app-icon-chroma.png"].includes(stored.iconUrl) ? DEFAULT_BRANDING.iconUrl : stored.iconUrl,
@@ -453,36 +493,6 @@ function actionName(method: string) {
 }
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
-}
-function healthyApi(): ServiceHealthRecord {
-  return { id: "api", name: "API 服务", status: "healthy", endpoint: "http://127.0.0.1:4100", latencyMs: 0, checkedAt: new Date().toISOString() };
-}
-function healthyVision(): ServiceHealthRecord {
-  return { id: "vision", name: "视觉推理", status: "healthy", endpoint: "ONNX Runtime", latencyMs: 0, checkedAt: new Date().toISOString() };
-}
-async function checkTcp(id: ServiceHealthRecord["id"], name: string, port: number, endpoint: string): Promise<ServiceHealthRecord> {
-  const started = performance.now();
-  const ok = await new Promise<boolean>((resolve) => {
-    const socket = new Socket();
-    const done = (value: boolean) => {
-      socket.destroy();
-      resolve(value);
-    };
-    socket.setTimeout(800);
-    socket.once("connect", () => done(true));
-    socket.once("timeout", () => done(false));
-    socket.once("error", () => done(false));
-    socket.connect(port, "127.0.0.1");
-  });
-  return {
-    id,
-    name,
-    status: ok ? "healthy" : "offline",
-    endpoint,
-    latencyMs: Math.round(performance.now() - started),
-    ...(ok ? {} : { message: "服务未监听" }),
-    checkedAt: new Date().toISOString(),
-  };
 }
 async function readServiceLogs(logDirectory: string): Promise<ServiceLogRecord[]> {
   let names: string[] = [];

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type RefObject, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type MutableRefObject, type RefObject, type SetStateAction } from "react";
 import type {
   ApplicationDocument,
   ApplicationObjectRef,
@@ -34,6 +34,7 @@ import type { BimSpaceRecord, LoadedSceneModel, NavigationCollisionDiagnostics, 
 import type { RendererRecoveryState } from "../viewer/rendererRecoveryState";
 import { runSceneNavigationTransition } from "../sceneTransitionOverlay";
 import { isSceneViewerDeliveryRuntime } from "../delivery/sceneViewerDelivery";
+import { synchronizeSelectionFromViewport } from "../controllers/sceneSelectionSynchronization";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 interface XrCapabilities {
@@ -83,6 +84,7 @@ interface AppRuntimeEffectsContext {
   setRendererSwitching: Setter<boolean>;
   setRevision: Setter<number>;
   setSelected: Setter<LoadedSceneModel | undefined>;
+  setSceneOrganizationSelection: Setter<Set<string>>;
   setSelectedSpace: Setter<BimSpaceRecord | undefined>;
   setMeasurements: Setter<MeasurementState[]>;
   setAnnotations: Setter<SceneAnnotationState[]>;
@@ -151,6 +153,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     setRendererSwitching,
     setRevision,
     setSelected,
+    setSceneOrganizationSelection,
     setSelectedSpace,
     setMeasurements,
     setAnnotations,
@@ -177,6 +180,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     setRoute,
     setRendererBackend,
   } = context;
+  const [viewportMountRetry, setViewportMountRetry] = useState(0);
   const rendererRecoveryContextRef = useRef({
     activeScene,
     readOnly: route.view !== "studio",
@@ -191,7 +195,11 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
   };
 
   useEffect(() => {
-    if (!authReady || !currentUser || !viewerRouteActive || !viewportRef.current) return;
+    if (!authReady || !currentUser || !viewerRouteActive) return;
+    if (!viewportRef.current) {
+      const frame = window.requestAnimationFrame(() => setViewportMountRetry((value) => value + 1));
+      return () => window.cancelAnimationFrame(frame);
+    }
     let viewer: ViewerEngine | undefined;
     let cancelled = false;
     let rendererLossHandled = false;
@@ -214,9 +222,12 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         viewer = created;
         webGpuSceneReplacementCountRef.current = 0;
         viewer.onSelectionChange = (model) => {
-          setSelected(model);
-          setSelectedSpace(undefined);
-          setRevision((value) => value + 1);
+          synchronizeSelectionFromViewport(model, {
+            setSelectedModel: setSelected,
+            replaceObjectSelection: setSceneOrganizationSelection,
+            clearSelectedSpace: () => setSelectedSpace(undefined),
+            requestRender: () => setRevision((value) => value + 1),
+          });
         };
         viewer.onModelChange = () => {
           requestRevision();
@@ -337,7 +348,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
       viewer?.dispose();
       setEngine((current) => (current === viewer ? undefined : current));
     };
-  }, [authReady, currentUser?.id, rendererBackend, rendererGeneration, viewerRouteActive, showError]);
+  }, [authReady, currentUser?.id, rendererBackend, rendererGeneration, viewerRouteActive, viewportMountRetry, showError]);
 
   useEffect(() => {
     const pending = rendererSnapshotRef.current;

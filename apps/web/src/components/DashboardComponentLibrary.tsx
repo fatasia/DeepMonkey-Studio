@@ -32,7 +32,7 @@ interface DashboardComponentLibraryProps {
   searchInputRef: RefObject<HTMLInputElement | null>;
   onOpenTemplates: () => void;
   onAddSceneViewport: () => void;
-  onAddWidget: (type: SceneDashboardWidgetType, widget?: Partial<DashboardDataWidgetConfig>, frame?: DashboardComponentPreset["frame"]) => void;
+  onAddWidget: (type: SceneDashboardWidgetType, widget?: Partial<DashboardDataWidgetConfig>, frame?: DashboardComponentPreset["frame"], nameHint?: string) => void;
 }
 
 const TAB_ICONS = {
@@ -43,7 +43,7 @@ const TAB_ICONS = {
 
 /**
  * 二维组件浏览器只负责“发现与插入”，数据绑定和样式编辑继续由右侧检查器承担。
- * 这样素材库保持轻量，也避免在同一面板重复一套配置逻辑。
+ * 这样资源库保持轻量，也避免在同一面板重复一套配置逻辑。
  */
 export function DashboardComponentLibrary({ locale, connected, sceneAvailable, searchInputRef, onOpenTemplates, onAddSceneViewport, onAddWidget }: DashboardComponentLibraryProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>("recommended");
@@ -65,7 +65,7 @@ export function DashboardComponentLibrary({ locale, connected, sceneAvailable, s
   useEffect(() => () => window.clearTimeout(feedbackTimer.current), []);
 
   function addItem(item: DashboardLibraryItem) {
-    onAddWidget(item.type, item.preset?.widget ?? item.widget, item.preset?.frame);
+    onAddWidget(item.type, item.preset?.widget ?? item.widget, item.preset?.frame, item.label);
     setRecentlyAddedId(item.id);
     window.clearTimeout(feedbackTimer.current);
     feedbackTimer.current = window.setTimeout(() => setRecentlyAddedId(undefined), 1300);
@@ -86,7 +86,7 @@ export function DashboardComponentLibrary({ locale, connected, sceneAvailable, s
 
       <div className="dashboard-library-heading">
         <span>
-          <strong>{tr(locale, "组件素材", "Components")}</strong>
+          <strong>{tr(locale, "资源", "Resources")}</strong>
           <small>{tr(locale, "点击插入，或拖到画布定位", "Click to insert or drag onto canvas")}</small>
         </span>
         <i className={connected ? "online" : "offline"}>{connected ? tr(locale, "数据在线", "Data online") : tr(locale, "离线编辑", "Offline edit")}</i>
@@ -98,19 +98,19 @@ export function DashboardComponentLibrary({ locale, connected, sceneAvailable, s
           ref={searchInputRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={tr(locale, "搜索图表、指标、素材…", "Search charts, metrics, assets…")}
+          placeholder={tr(locale, "搜索图表、指标、资源…", "Search charts, metrics, assets…")}
         />
         <kbd>Ctrl F</kbd>
       </label>
 
       {!normalizedQuery && (
-        <div className="dashboard-library-tabs" role="tablist" aria-label={tr(locale, "组件分类", "Component categories")}>
+        <div className="dashboard-library-tabs" role="tablist" aria-label={tr(locale, "资源分类", "Resource categories")}>
           {(["recommended", "basic", "material"] as const).map((tab) => {
             const Icon = TAB_ICONS[tab];
             const labels: Record<LibraryTab, [string, string]> = {
               recommended: ["精选", "Featured"],
               basic: ["基础", "Basic"],
-              material: ["素材", "Assets"],
+              material: ["资源", "Assets"],
             };
             return (
               <button role="tab" aria-selected={activeTab === tab} className={activeTab === tab ? "active" : ""} key={tab} onClick={() => setActiveTab(tab)}>
@@ -191,7 +191,7 @@ export function DashboardComponentLibrary({ locale, connected, sceneAvailable, s
           <div className="dashboard-library-empty">
             <ChartNoAxesCombined size={24} />
             <strong>{tr(locale, "没有匹配的组件", "No matching components")}</strong>
-            <small>{tr(locale, "换个关键词，或清空搜索查看全部素材。", "Try another keyword or clear the search.")}</small>
+            <small>{tr(locale, "换个关键词，或清空搜索查看全部资源。", "Try another keyword or clear the search.")}</small>
             <button onClick={() => setQuery("")}>{tr(locale, "清空搜索", "Clear search")}</button>
           </div>
         )}
@@ -228,9 +228,9 @@ function createLibraryItems(locale: AppLocale, tab: LibraryTab): DashboardLibrar
     ...DECORATION_ASSETS.map((asset) => ({
       id: `decoration:${asset.style}`,
       label: tr(locale, asset.zh, asset.en),
-      description: tr(locale, "可组合、可缩放的装饰素材", "Composable and resizable decoration asset"),
+      description: tr(locale, "可组合、可缩放的装饰资源", "Composable and resizable decoration asset"),
       type: "decoration" as const,
-      badge: tr(locale, "矢量素材", "Vector asset"),
+      badge: tr(locale, "矢量资源", "Vector asset"),
       widget: {
         decorationStyle: asset.style,
         title: tr(locale, asset.zh, asset.en),
@@ -259,17 +259,17 @@ function presetItem(locale: AppLocale, preset: DashboardComponentPreset): Dashbo
     gis: ["GIS 地图", "GIS"],
     topology: ["工业拓扑", "Topology"],
     industrial: ["工业状态", "Industrial"],
-    material: ["矢量素材", "Vector asset"],
+    material: ["矢量资源", "Vector asset"],
   };
   const materialBadges: Partial<Record<DashboardComponentPreset["preview"]["family"], [string, string]>> = {
-    title: ["标题素材", "Titles"],
-    badge: ["角标素材", "Badges"],
+    title: ["标题资源", "Titles"],
+    badge: ["角标资源", "Badges"],
     frame: ["边框容器", "Frames"],
-    divider: ["分隔素材", "Dividers"],
-    ruler: ["标尺素材", "Rulers"],
-    light: ["光带素材", "Light bands"],
-    scan: ["扫描素材", "Scanning"],
-    alarm: ["告警素材", "Alerts"],
+    divider: ["分隔资源", "Dividers"],
+    ruler: ["标尺资源", "Rulers"],
+    light: ["光带资源", "Light bands"],
+    scan: ["扫描资源", "Scanning"],
+    alarm: ["告警资源", "Alerts"],
   };
   const badge = preset.category === "material"
     ? materialBadges[preset.preview.family] ?? badges.material

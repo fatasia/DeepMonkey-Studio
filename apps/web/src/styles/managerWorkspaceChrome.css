@@ -1,0 +1,251 @@
+/* 项目工作台采用冷静、精密的工业 SaaS 语言：青色表达导航和主操作，琥珀色仅表达发布状态。 */
+.scene-manager-page {
+  --manager-accent: #62bdca;
+  --manager-accent-soft: rgba(72, 173, 191, .13);
+  --manager-surface: #141b1f;
+  --manager-text: #edf4f5;
+  font-family: "Segoe UI Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  color: var(--manager-text);
+  background: #0d1215;
+}
+
+.scene-manager-page :is(button, select, input):focus-visible {
+  outline: 2px solid rgba(98, 189, 202, .74);
+  outline-offset: 2px;
+}
+
+.scene-manager-page .button {
+  min-height: 36px;
+  padding: 0 13px;
+  border-color: #334249;
+  border-radius: 7px;
+  background: #172025;
+  font-size: 12px;
+}
+
+.scene-manager-page .button:hover:not(:disabled) {
+  color: #f4fbfc;
+  border-color: #52656d;
+  background: #1d292e;
+}
+
+.scene-manager-page .button.primary {
+  color: #f5fcfd;
+  border-color: #328b9b;
+  background: #237789;
+  box-shadow: 0 5px 16px rgba(16, 104, 120, .2);
+}
+
+.scene-manager-page .button.primary:hover:not(:disabled) {
+  border-color: #63c2d0;
+  background: #29899c;
+}
+
+/* 顶栏先表达项目上下文，再表达当前工作区和平台能力。 */
+.manager-header {
+  gap: 12px;
+  height: 70px;
+  padding: 0 22px;
+  border-color: #222d32;
+  background: rgba(14, 20, 23, .96);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .14);
+  backdrop-filter: blur(18px);
+}
+
+.manager-brand { gap: 10px; margin-right: 2px; }
+.manager-brand > span { width: 40px; height: 40px; border-radius: 9px; }
+.manager-brand h1 { color: #f3f7f8; font-size: 15px; font-weight: 680; letter-spacing: -.01em; }
+.manager-brand small { margin-top: 2px; color: #778890; font-size: 10px; letter-spacing: .02em; }
+.manager-project-switch { min-width: 176px; max-width: 226px; gap: 5px; }
+
+.manager-project-switch > select {
+  height: 36px;
+  padding-left: 11px;
+  color: #dce5e7;
+  border-color: #304047;
+  border-radius: 7px;
+  background: #121a1e;
+  font-size: 12px;
+}
+
+.manager-project-switch > details > summary {
+  width: 34px;
+  height: 34px;
+  color: #93a2a8;
+  border-color: #304047;
+  border-radius: 7px;
+  background: #151e22;
+}
+
+.manager-project-switch > details > summary:hover {
+  color: #eaf5f6;
+  border-color: #4b6068;
+  background: #1d282d;
+}
+
+.manager-project-switch > details > div {
+  top: 41px;
+  width: 188px;
+  padding: 6px;
+  border-color: #3b4b52;
+  border-radius: 9px;
+  background: #151f23;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, .5);
+}
+
+.manager-project-switch > details button { height: 35px; padding: 0 10px; font-size: 12px; }
+.manager-primary-nav { gap: 3px; margin-left: 2px; }
+
+.manager-primary-nav button {
+  position: relative;
+  height: 38px;
+  gap: 7px;
+  padding: 0 10px;
+  color: #8fa0a7;
+  border: 0;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.manager-primary-nav button:hover { color: #dce9eb; background: #182227; }
+
+.manager-primary-nav button.active {
+  color: #dff8fb;
+  border: 0;
+  background: var(--manager-accent-soft);
+  box-shadow: inset 0 -2px #55b7c6;
+}
+
+.manager-primary-nav button:disabled { opacity: .34; cursor: not-allowed; }
+
+.manager-capability-nav {
+  gap: 1px;
+  margin-left: auto;
+  padding-left: 10px;
+  border-color: #28353a;
+}
+
+.manager-capability-nav button {
+  height: 34px;
+  gap: 5px;
+  padding: 0 6px;
+  color: #829198;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.manager-capability-nav button:hover:not(:disabled) { color: #dfeaec; background: #1a252a; }
+
+.manager-utility-nav {
+  gap: 2px;
+  margin-left: 2px;
+  padding-left: 7px;
+  border-left: 1px solid #28353a;
+}
+
+.manager-utility-nav button {
+  width: 34px;
+  height: 34px;
+  color: #829299;
+  border-radius: 7px;
+}
+
+.manager-utility-nav button:hover {
+  color: #e9f5f6;
+  border-color: #3c4d54;
+  background: #1a252a;
+}
+
+/* 搜索、筛选和创建动作保持在同一条命令栏，不再包一层卡片。 */
+.manager-content { width: min(1480px, calc(100% - 64px)); padding: 30px 0 84px; }
+.manager-project-bar.contextual { min-height: 40px; margin-bottom: 10px; }
+.manager-project-bar.contextual.scene-toolbar { gap: 8px; }
+
+.manager-scene-search {
+  min-width: 260px;
+  height: 38px;
+  grid-template-columns: 31px minmax(0, 1fr);
+  color: #778b93;
+  border-color: #304047;
+  border-radius: 8px;
+  background: #11191d;
+  transition: border-color .16s, background .16s;
+}
+
+.manager-scene-search:focus-within { border-color: #4c9caa; background: #141f23; }
+.manager-scene-search > input { padding: 0 10px; color: #e2ebed; font-size: 12px; }
+.manager-scene-search > input::placeholder { color: #687981; }
+
+.manager-project-bar.contextual.scene-toolbar > select {
+  min-width: 112px;
+  height: 38px;
+  padding: 0 30px 0 10px;
+  color: #c6d1d4;
+  border-color: #304047;
+  border-radius: 8px;
+  background: #11191d;
+  font-size: 12px;
+}
+
+.manager-scene-count { color: #7d8d94; font: 11px/1.2 "Segoe UI Variable", sans-serif; }
+
+@media (max-width: 1380px) {
+  .manager-header {
+    min-height: 70px;
+    flex-wrap: nowrap;
+    padding: 0 16px;
+  }
+
+  .manager-primary-nav {
+    order: initial;
+    width: auto;
+    flex: 0 0 auto;
+    margin: 0;
+    overflow: visible;
+    padding: 0;
+    border: 0;
+  }
+
+  .manager-capability-nav { margin-left: auto; }
+  .manager-capability-nav button {
+    width: 34px;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+  .manager-capability-nav button > span { display: none; }
+  .manager-content { width: min(1480px, calc(100% - 44px)); padding-top: 24px; }
+}
+
+@media (max-width: 1180px) {
+  .manager-primary-nav button,
+  .manager-capability-nav button { width: 34px; justify-content: center; gap:0; padding: 0; }
+  .manager-primary-nav button > span,
+  .manager-capability-nav button > span { display:none; }
+  .manager-project-switch { max-width: 200px; }
+}
+
+@media (max-width: 760px) {
+  .manager-brand > div { display: none; }
+  .manager-header {
+    min-height: 70px;
+    gap: 5px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-inline: 10px;
+    scrollbar-width: none;
+  }
+
+  .manager-header::-webkit-scrollbar { display: none; }
+  .manager-brand { flex: 0 0 40px; }
+  .manager-project-switch { min-width: 150px; max-width: 170px; flex: 0 0 170px; }
+  .manager-primary-nav,
+  .manager-capability-nav,
+  .manager-utility-nav { flex: 0 0 auto; }
+  .manager-primary-nav { overflow: visible; }
+  .manager-content { width: calc(100% - 24px); }
+  .manager-project-bar.contextual.scene-toolbar { align-items: stretch; }
+  .manager-scene-search { min-width: 100%; }
+  .manager-project-bar.contextual.scene-toolbar > select { flex: 1; }
+}

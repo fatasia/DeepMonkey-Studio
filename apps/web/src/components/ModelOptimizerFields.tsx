@@ -21,7 +21,14 @@ export function OptionSection({
         {icon}
         <strong>{title}</strong>
         {onToggle && (
-          <button className={`toggle ${enabled ? "on" : ""}`} onClick={() => onToggle(!enabled)}>
+          <button
+            type="button"
+            className={`toggle ${enabled ? "on" : ""}`}
+            role="switch"
+            aria-label={title}
+            aria-checked={Boolean(enabled)}
+            onClick={() => onToggle(!enabled)}
+          >
             <i />
           </button>
         )}

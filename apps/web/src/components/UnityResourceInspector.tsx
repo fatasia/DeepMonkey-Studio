@@ -16,7 +16,7 @@ import {
   UnityPublicationAndHosting,
 } from "./UnityResourceSections";
 
-export const UNITY_BRIDGE_PACKAGE_URL = `${import.meta.env.BASE_URL}downloads/com.bim-studio.bridge-0.6.0.tgz`;
+export const UNITY_BRIDGE_PACKAGE_URL = `${import.meta.env.BASE_URL}downloads/com.bim-studio.bridge-0.6.1.tgz`;
 
 export function isUnityWebGlZip(fileName: string): boolean {
   return /\.zip$/i.test(fileName.trim());
@@ -177,7 +177,11 @@ export function UnityResourceInspector({ locale, projectId, widgetId, widget, on
       }}>{resource.versions.map((item) => <option key={item.id} value={item.id}>v{item.version} · {new Date(item.createdAt).toLocaleString(locale)}</option>)}</select></label>
       <div className="unity-resource-summary"><Box size={14} /><span>
         <strong>{version.manifest.unityVersion || tr(locale, "Unity 版本未声明", "Unity version not declared")}</strong>
-        <small>{version.fileCount} files · {Math.max(1, Math.round(version.size / 1024 / 1024))} MiB · Bridge v{version.manifest.bridgeVersion}</small>
+        <small>
+          {version.fileCount} files · {Math.max(1, Math.round(version.size / 1024 / 1024))} MiB
+          {version.manifest.webBuild ? ` · ${compressionLabel(version.manifest.webBuild.compression)} ${Math.max(1, Math.round(version.manifest.webBuild.runtimePayloadBytes / 1024 / 1024))} MiB` : ""}
+          {` · Bridge ${version.manifest.bridgePackageVersion ?? `协议 v${version.manifest.bridgeVersion}`}`}
+        </small>
       </span></div>
       <UnityContractConfiguration
         locale={locale}
@@ -194,4 +198,8 @@ export function UnityResourceInspector({ locale, projectId, widgetId, widget, on
     <UnityPublicationAndHosting locale={locale} widget={widget} readiness={readiness} loading={loading} onChange={onChange} />
     {message && <small className="unity-resource-message">{message}</small>}
   </div>;
+}
+
+function compressionLabel(value: NonNullable<UnityResourceVersionRecord["manifest"]["webBuild"]>["compression"]): string {
+  return ({ brotli: "Brotli", gzip: "Gzip", "decompression-fallback": "浏览器解压", uncompressed: "未压缩", mixed: "混合压缩" })[value];
 }

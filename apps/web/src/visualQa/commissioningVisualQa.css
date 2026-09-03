@@ -13,6 +13,11 @@
   margin: 0 auto;
 }
 
+.commissioning-trajectory-visual-frame {
+  width: min(1280px, 100%);
+  margin: 0 auto;
+}
+
 @media (max-width: 1080px) {
   .commissioning-visual-qa {
     padding: 14px;

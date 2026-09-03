@@ -129,12 +129,30 @@ export function buildScheduleConflicts(
 }
 
 function closestTcpApproach(left: PreparedTrajectorySegment, right: PreparedTrajectorySegment, start: number, end: number) {
-  const relativeStart = subtract(positionAt(left, start), positionAt(right, start));
-  const relativeEnd = subtract(positionAt(left, end), positionAt(right, end));
-  const relativeDelta = subtract(relativeEnd, relativeStart);
-  const denominator = dot(relativeDelta, relativeDelta);
-  const ratio = denominator > 1e-12 ? clamp(-dot(relativeStart, relativeDelta) / denominator, 0, 1) : 0;
-  return { distance: length(add(relativeStart, scale(relativeDelta, ratio))), time: start + (end - start) * ratio };
+  const boundaries = [...new Set([
+    start,
+    end,
+    left.start.timeSec,
+    left.end.timeSec,
+    right.start.timeSec,
+    right.end.timeSec,
+  ].filter((time) => time >= start && time <= end))].sort((a, b) => a - b);
+  let closest = { distance: Number.POSITIVE_INFINITY, time: start };
+  for (let index = 1; index < boundaries.length; index += 1) {
+    const intervalStart = boundaries[index - 1]!;
+    const intervalEnd = boundaries[index]!;
+    const relativeStart = subtract(positionAt(left, intervalStart), positionAt(right, intervalStart));
+    const relativeEnd = subtract(positionAt(left, intervalEnd), positionAt(right, intervalEnd));
+    const relativeDelta = subtract(relativeEnd, relativeStart);
+    const denominator = dot(relativeDelta, relativeDelta);
+    const ratio = denominator > 1e-12 ? clamp(-dot(relativeStart, relativeDelta) / denominator, 0, 1) : 0;
+    const distance = length(add(relativeStart, scale(relativeDelta, ratio)));
+    const time = intervalStart + (intervalEnd - intervalStart) * ratio;
+    if (distance < closest.distance - 1e-12 || (Math.abs(distance - closest.distance) <= 1e-12 && time < closest.time)) {
+      closest = { distance, time };
+    }
+  }
+  return closest;
 }
 
 function detourWaypoints(start: Vector3Value, end: Vector3Value, bounds: WorkcellBounds, margin: number): Vector3Value[] {

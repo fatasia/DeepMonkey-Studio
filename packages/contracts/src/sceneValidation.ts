@@ -215,6 +215,10 @@ function validateMaterial(value: unknown, path: string): void {
     "roughness",
     "metalness",
     "emissiveIntensity",
+    "hue",
+    "saturation",
+    "brightness",
+    "contrast",
   ] as const) optional(object, key, expectNumber, path);
   for (const key of ["wireframe", "doubleSided"] as const) optional(object, key, expectBoolean, path);
   optional(object, "uvAnimation", (animation, animationPath) => {
@@ -288,6 +292,53 @@ function validateRig(value: unknown, path: string): void {
       }),
     path,
   );
+  optional(object, "robot", validateRobotKinematics, path);
+}
+
+function validateRobotKinematics(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "enabled", expectBoolean, path);
+  required(object, "baseBonePath", expectString, path);
+  for (const key of ["toolBonePath", "toolObjectId"] as const) optional(object, key, expectString, path);
+  optional(object, "targetObjectIds", validateStringArray, path);
+  required(object, "joints", (joints, jointsPath) => expectArray(joints, jointsPath, validateRobotJoint), path);
+  optional(object, "loadCapability", validateRobotLoadCapability, path);
+  optional(object, "toolLoad", validateRobotToolLoad, path);
+}
+
+function validateRobotJoint(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of ["bonePath", "name"] as const) required(object, key, expectString, path);
+  requiredLiteral(object, "axis", ["x", "y", "z"], path);
+  for (const key of ["length", "minAngleDeg", "maxAngleDeg"] as const) required(object, key, expectNumber, path);
+  if (typeof object.length === "number" && object.length <= 0) invalid(`${path}.length`, "必须大于 0");
+  validateNumberRange(object.minAngleDeg, `${path}.minAngleDeg`, -360, 360);
+  validateNumberRange(object.maxAngleDeg, `${path}.maxAngleDeg`, -360, 360);
+}
+
+function validateRobotLoadCapability(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  optional(object, "ratedPayloadKg", expectNumber, path);
+  optional(object, "maximumLoadCenterDistanceMeters", expectNumber, path);
+  optionalLiteral(object, "source", ["configured-prefab", "author-confirmed", "imported"], path);
+  optional(object, "reference", expectString, path);
+  if (typeof object.ratedPayloadKg === "number" && object.ratedPayloadKg <= 0) invalid(`${path}.ratedPayloadKg`, "必须大于 0");
+  if (typeof object.maximumLoadCenterDistanceMeters === "number" && object.maximumLoadCenterDistanceMeters <= 0) {
+    invalid(`${path}.maximumLoadCenterDistanceMeters`, "必须大于 0");
+  }
+}
+
+function validateRobotToolLoad(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of ["tcpPositionMeters", "tcpOrientationEulerDeg", "combinedCenterOfMassMeters"] as const) {
+    optional(object, key, validateVector3, path);
+  }
+  for (const key of ["toolMassKg", "carriedPayloadKg"] as const) {
+    optional(object, key, expectNumber, path);
+    if (typeof object[key] === "number" && object[key] < 0) invalid(`${path}.${key}`, "不能为负数");
+  }
+  optionalLiteral(object, "source", ["configured-prefab", "author-confirmed", "imported"], path);
+  optional(object, "reference", expectString, path);
 }
 
 function validatePhysicsBody(value: unknown, path: string): void {

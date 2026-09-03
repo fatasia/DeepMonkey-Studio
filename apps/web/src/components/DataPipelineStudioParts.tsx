@@ -7,27 +7,53 @@ import {
   Calculator,
   CheckCircle2,
   Code2,
+  Columns3,
+  CopyMinus,
   Database,
   Filter,
-  Gauge,
   GitBranch,
   GripVertical,
   ListEnd,
+  Sigma,
   Trash2,
   XCircle,
 } from "lucide-react";
 import type {
   DataDatasetRecord,
+  DataDatasetField,
   DataFieldType,
   DataPipelineDefinition,
   DataPipelineNode,
   DataPipelineNodeDiagnostic,
-  DataPipelinePreview,
 } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 
-export type TransformNodeType = "filter" | "formula" | "script" | "sort" | "limit";
+export type TransformNodeType = "filter" | "formula" | "script" | "select" | "deduplicate" | "aggregate" | "sort" | "limit";
+
+export function validatePipelineDraft(draft: DataPipelineDefinition, datasets: DataDatasetRecord[]): string | undefined {
+  if (!draft.name.trim()) return "流水线名称不能为空";
+  const source = draft.nodes.find((node) => node.type === "source");
+  if (!source) return "请添加数据源节点";
+  if (!datasets.some((dataset) => dataset.id === source.datasetId)) return "数据源引用的数据集不存在";
+  if (draft.nodes.filter((node) => node.type === "output").length !== 1) return "必须保留一个输出节点";
+  if (draft.nodes.some((node) => !node.name.trim())) return "节点名称不能为空";
+  const transform = draft.nodes.find((node) => node.type === "filter" && !node.formula.trim());
+  if (transform) return `节点“${transform.name}”缺少过滤条件`;
+  const formula = draft.nodes.find((node) => node.type === "formula" && (!node.key.trim() || !node.formula.trim()));
+  if (formula) return `节点“${formula.name}”需要输出字段和公式`;
+  const script = draft.nodes.find((node) => node.type === "script" && (!node.key.trim() || !node.source.trim()));
+  if (script) return `节点“${script.name}”需要输出字段和脚本`;
+  const select = draft.nodes.find((node) => node.type === "select" && node.fields.length === 0);
+  if (select) return `节点“${select.name}”至少需要保留一个字段`;
+  const aggregate = draft.nodes.find((node) => node.type === "aggregate" && (!node.outputKey.trim() || (node.operation !== "count" && !node.field.trim())));
+  if (aggregate) return `节点“${aggregate.name}”需要汇总字段和输出字段`;
+  const sort = draft.nodes.find((node) => node.type === "sort" && !node.field.trim());
+  if (sort) return `节点“${sort.name}”需要排序字段`;
+  const limit = draft.nodes.find((node) => node.type === "limit" && (!Number.isInteger(node.count) || node.count < 1 || node.count > 10000));
+  if (limit) return `节点“${limit.name}”的行数必须为 1～10000`;
+  return undefined;
+}
 
 export function PipelineNodeCard({
   node,
@@ -85,6 +111,7 @@ export function NodeInspector({
   locale,
   node,
   datasets,
+  sourceFields = [],
   onChange,
   onRemove,
   onMove,
@@ -92,6 +119,7 @@ export function NodeInspector({
   locale: AppLocale;
   node?: DataPipelineNode | undefined;
   datasets: DataDatasetRecord[];
+  sourceFields?: DataDatasetField[];
   onChange: (updater: (node: DataPipelineNode) => DataPipelineNode) => void;
   onRemove: (id: string) => void;
   onMove: (id: string, offset: -1 | 1) => void;
@@ -104,6 +132,11 @@ export function NodeInspector({
     );
   const mutate = <T extends DataPipelineNode>(patch: Partial<T>) =>
     onChange((current) => ({ ...current, ...patch }) as DataPipelineNode);
+  const fieldHints = sourceFields.length ? <div className="pipeline-field-hints"><span>{tr(locale, "可用字段", "Available fields")}</span>{sourceFields.map((field) => <button type="button" key={field.key} onClick={() => {
+    if (node.type === "sort") onChange((current) => ({ ...current, field: field.key } as DataPipelineNode));
+    else if (node.type === "filter") onChange((current) => ({ ...current, formula: `${node.formula}${node.formula.trim() && node.formula.trim() !== "TRUE" ? " " : ""}${field.key}` } as DataPipelineNode));
+    else if (node.type === "formula") onChange((current) => ({ ...current, formula: `${node.formula}${node.formula.trim() ? " " : ""}${field.key}` } as DataPipelineNode));
+  }}>{field.key}</button>)}</div> : null;
   return (
     <section className="pipeline-inspector">
       <header>
@@ -161,13 +194,10 @@ export function NodeInspector({
           </label>
         )}
         {node.type === "filter" && (
-          <CodeField
-            locale={locale}
-            label={tr(locale, "保留条件", "Keep condition")}
-            value={node.formula}
-            placeholder="temperature > 30 AND running == TRUE"
-            onChange={(formula) => mutate({ formula })}
-          />
+          <>
+            <CodeField locale={locale} label={tr(locale, "保留条件", "Keep condition")} value={node.formula} placeholder="temperature > 30 AND running == TRUE" onChange={(formula) => mutate({ formula })} />
+            {fieldHints}
+          </>
         )}
         {node.type === "formula" && (
           <>
@@ -179,6 +209,7 @@ export function NodeInspector({
               placeholder="ROUND(temperature * 1.8 + 32, 1)"
               onChange={(formula) => mutate({ formula })}
             />
+            {fieldHints}
           </>
         )}
         {node.type === "script" && (
@@ -200,7 +231,63 @@ export function NodeInspector({
             </small>
           </>
         )}
+        {node.type === "select" && (
+          <FieldTokenPicker
+            locale={locale}
+            label={tr(locale, "保留字段", "Keep fields")}
+            fields={sourceFields}
+            selected={node.fields}
+            onChange={(fields) => mutate({ fields })}
+          />
+        )}
+        {node.type === "deduplicate" && (
+          <>
+            <FieldTokenPicker
+              locale={locale}
+              label={tr(locale, "判重字段", "Match fields")}
+              fields={sourceFields}
+              selected={node.fields}
+              onChange={(fields) => mutate({ fields })}
+            />
+            <small>{tr(locale, "未选择字段时按整行去重。", "With no fields selected, entire rows are compared.")}</small>
+          </>
+        )}
+        {node.type === "aggregate" && (
+          <>
+            <FieldTokenPicker
+              locale={locale}
+              label={tr(locale, "分组字段（可选）", "Group fields (optional)")}
+              fields={sourceFields}
+              selected={node.groupBy}
+              onChange={(groupBy) => mutate({ groupBy })}
+            />
+            <div className="pipeline-field-pair">
+              <label>
+                <span>{tr(locale, "计算方式", "Operation")}</span>
+                <select value={node.operation} onChange={(event) => mutate({ operation: event.target.value as typeof node.operation })}>
+                  <option value="count">COUNT</option>
+                  <option value="sum">SUM</option>
+                  <option value="average">AVERAGE</option>
+                  <option value="min">MIN</option>
+                  <option value="max">MAX</option>
+                </select>
+              </label>
+              <label>
+                <span>{tr(locale, "数值字段", "Value field")}</span>
+                <select disabled={node.operation === "count"} value={node.field} onChange={(event) => mutate({ field: event.target.value })}>
+                  <option value="">{tr(locale, "请选择", "Select")}</option>
+                  {sourceFields.map((field) => <option key={field.key} value={field.key}>{field.label || field.key}</option>)}
+                </select>
+              </label>
+            </div>
+            <label>
+              <span>{tr(locale, "输出字段", "Output field")}</span>
+              <input value={node.outputKey} onChange={(event) => mutate({ outputKey: event.target.value })} />
+            </label>
+          </>
+        )}
         {node.type === "sort" && (
+          <>
           <div className="pipeline-field-pair">
             <label>
               <span>{tr(locale, "字段", "Field")}</span>
@@ -222,6 +309,8 @@ export function NodeInspector({
               </select>
             </label>
           </div>
+          {fieldHints}
+          </>
         )}
         {node.type === "limit" && (
           <label>
@@ -252,88 +341,6 @@ export function NodeInspector({
           </small>
         )}
       </div>
-    </section>
-  );
-}
-
-export function PipelineResult({
-  locale,
-  preview,
-  selectedNodeId,
-}: {
-  locale: AppLocale;
-  preview?: DataPipelinePreview | undefined;
-  selectedNodeId?: string | undefined;
-}) {
-  const diagnostic = preview?.diagnostics.find(
-    (item) => item.nodeId === selectedNodeId,
-  );
-  const rows = diagnostic?.sample ?? preview?.rows ?? [];
-  const fields = rows[0] ? Object.keys(rows[0]) : [];
-  return (
-    <section className="pipeline-result">
-      <header>
-        <span>
-          <strong>
-            {diagnostic
-              ? tr(locale, "节点样例", "Node sample")
-              : tr(locale, "运行结果", "Run result")}
-          </strong>
-          <small>
-            {preview
-              ? `${diagnostic?.outputRows ?? preview.rows.length} ${tr(locale, "行", "rows")} · ${(diagnostic?.durationMs ?? preview.durationMs).toFixed(1)}ms`
-              : tr(
-                  locale,
-                  "保存并运行后显示逐节点诊断",
-                  "Save and run for per-node diagnostics",
-                )}
-          </small>
-        </span>
-        {preview && (
-          <div className="pipeline-health">
-            <Gauge size={13} />
-            {
-              preview.diagnostics.filter((item) => item.status === "success")
-                .length
-            }
-            /{preview.pipeline.nodes.length}
-          </div>
-        )}
-      </header>
-      {diagnostic?.error ? (
-        <div className="pipeline-result-error">
-          <XCircle size={18} />
-          <span>{diagnostic.error}</span>
-        </div>
-      ) : rows.length ? (
-        <div className="pipeline-result-table">
-          <table>
-            <thead>
-              <tr>
-                {fields.map((field) => (
-                  <th key={field}>{field}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, 20).map((row, index) => (
-                <tr key={index}>
-                  {fields.map((field) => (
-                    <td key={field}>{formatValue(row[field])}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="pipeline-panel-empty">
-          <Box size={24} />
-          {preview
-            ? tr(locale, "当前节点没有输出数据", "This node has no output")
-            : tr(locale, "尚未运行", "Not run yet")}
-        </div>
-      )}
     </section>
   );
 }
@@ -437,8 +444,19 @@ export function NodeAddButton({
 export function createTransformNode(
   type: TransformNodeType,
   locale: AppLocale,
+  sourceFields: DataDatasetField[] = [],
 ): DataPipelineNode {
   const base = { id: crypto.randomUUID(), position: { x: 0, y: 0 } };
+  const fieldKeys = sourceFields.map((field) => field.key);
+  const firstField = sourceFields[0];
+  const firstFormulaField = sourceFields.find(
+    (field) => field.type !== "json" && isFormulaFieldKey(field.key),
+  );
+  const firstNumericField = sourceFields.find(
+    (field) => field.type === "number" && isFormulaFieldKey(field.key),
+  );
+  const firstSortField =
+    sourceFields.find((field) => field.type === "datetime") ?? firstField;
   if (type === "filter")
     return {
       ...base,
@@ -451,27 +469,57 @@ export function createTransformNode(
       ...base,
       type,
       name: tr(locale, "公式计算", "Formula"),
-      key: "computed_value",
+      key: uniqueOutputKey("computed_value", fieldKeys),
       label: tr(locale, "计算值", "Computed value"),
-      fieldType: "number",
-      formula: "ROUND(value, 2)",
+      fieldType: firstNumericField?.type ?? scalarFieldType(firstFormulaField),
+      formula: firstNumericField
+        ? `ROUND(${firstNumericField.key}, 2)`
+        : firstFormulaField
+          ? firstFormulaField.key
+          : "0",
     };
   if (type === "script")
     return {
       ...base,
       type,
       name: tr(locale, "脚本处理", "Script"),
-      key: "script_value",
+      key: uniqueOutputKey("script_value", fieldKeys),
       label: tr(locale, "脚本值", "Script value"),
-      fieldType: "number",
-      source: "return input.value;",
+      fieldType: scalarFieldType(firstField),
+      source: firstField
+        ? `return input[${JSON.stringify(firstField.key)}];`
+        : "return null;",
+    };
+  if (type === "select")
+    return {
+      ...base,
+      type,
+      name: tr(locale, "选择字段", "Select fields"),
+      fields: fieldKeys,
+    };
+  if (type === "deduplicate")
+    return {
+      ...base,
+      type,
+      name: tr(locale, "数据去重", "Remove duplicates"),
+      fields: [],
+    };
+  if (type === "aggregate")
+    return {
+      ...base,
+      type,
+      name: tr(locale, "分组汇总", "Aggregate"),
+      groupBy: [],
+      field: "",
+      operation: "count",
+      outputKey: "count",
     };
   if (type === "sort")
     return {
       ...base,
       type,
       name: tr(locale, "字段排序", "Sort rows"),
-      field: "value",
+      field: firstSortField?.key ?? "",
       direction: "desc",
     };
   return {
@@ -480,6 +528,22 @@ export function createTransformNode(
     name: tr(locale, "限制数量", "Limit rows"),
     count: 100,
   };
+}
+
+function scalarFieldType(field?: DataDatasetField): DataFieldType {
+  return field && field.type !== "json" ? field.type : "number";
+}
+
+function isFormulaFieldKey(key: string): boolean {
+  return /^[A-Za-z_$\p{L}][\w$\p{L}\p{N}]*$/u.test(key);
+}
+
+function uniqueOutputKey(preferred: string, existingKeys: string[]): string {
+  const occupied = new Set(existingKeys);
+  if (!occupied.has(preferred)) return preferred;
+  let suffix = 2;
+  while (occupied.has(`${preferred}_${suffix}`)) suffix += 1;
+  return `${preferred}_${suffix}`;
 }
 
 export function normalizeLinearPipeline(
@@ -507,6 +571,9 @@ function nodeIcon(type: DataPipelineNode["type"]): ReactNode {
   if (type === "filter") return <Filter size={17} />;
   if (type === "formula") return <Calculator size={17} />;
   if (type === "script") return <Code2 size={17} />;
+  if (type === "select") return <Columns3 size={17} />;
+  if (type === "deduplicate") return <CopyMinus size={17} />;
+  if (type === "aggregate") return <Sigma size={17} />;
   if (type === "sort") return <ArrowDownAZ size={17} />;
   if (type === "limit") return <ListEnd size={17} />;
   if (type === "merge") return <GitBranch size={17} />;
@@ -519,6 +586,9 @@ function nodeTypeLabel(type: DataPipelineNode["type"]): string {
     filter: "FILTER",
     formula: "FORMULA",
     script: "QUICKJS",
+    select: "SELECT",
+    deduplicate: "UNIQUE",
+    aggregate: "AGGREGATE",
     sort: "SORT",
     limit: "LIMIT",
     merge: "MERGE",
@@ -530,6 +600,9 @@ function nodeSummary(node: DataPipelineNode): string {
   if (node.type === "source") return "Dataset";
   if (node.type === "filter") return node.formula;
   if (node.type === "formula" || node.type === "script") return `→ ${node.key}`;
+  if (node.type === "select") return `${node.fields.length} fields`;
+  if (node.type === "deduplicate") return node.fields.length ? node.fields.join(", ") : "Whole row";
+  if (node.type === "aggregate") return `${node.operation.toUpperCase()} → ${node.outputKey}`;
   if (node.type === "sort")
     return `${node.field} · ${node.direction.toUpperCase()}`;
   if (node.type === "limit") return `${node.count} rows`;
@@ -537,12 +610,63 @@ function nodeSummary(node: DataPipelineNode): string {
   return "Data product";
 }
 
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  return typeof value === "object" ? JSON.stringify(value) : String(value);
+function FieldTokenPicker({
+  locale,
+  label,
+  fields,
+  selected,
+  onChange,
+}: {
+  locale: AppLocale;
+  label: string;
+  fields: DataDatasetField[];
+  selected: string[];
+  onChange: (fields: string[]) => void;
+}) {
+  return (
+    <fieldset className="pipeline-field-picker">
+      <legend>{label}</legend>
+      {fields.length ? fields.map((field) => {
+        const active = selected.includes(field.key);
+        return (
+          <button
+            type="button"
+            className={active ? "active" : ""}
+            aria-pressed={active}
+            key={field.key}
+            onClick={() => onChange(active ? selected.filter((key) => key !== field.key) : [...selected, field.key])}
+          >
+            {field.label || field.key}
+            <small>{field.key}</small>
+          </button>
+        );
+      }) : <small>{tr(locale, "先在接入数据中运行查询并同步字段", "Run the dataset query to synchronize fields first")}</small>}
+    </fieldset>
+  );
 }
+
+export function derivePipelineFieldHints(
+  nodes: DataPipelineNode[],
+  selectedNodeId: string | undefined,
+  sourceFields: DataDatasetField[],
+): DataDatasetField[] {
+  let fields = [...sourceFields];
+  for (const node of nodes) {
+    if (node.id === selectedNodeId) break;
+    if (node.type === "formula" || node.type === "script") {
+      fields = [...fields.filter((field) => field.key !== node.key), { key: node.key, label: node.label || node.key, type: node.fieldType }];
+    } else if (node.type === "select") {
+      fields = fields.filter((field) => node.fields.includes(field.key));
+    } else if (node.type === "aggregate") {
+      fields = [
+        ...fields.filter((field) => node.groupBy.includes(field.key)),
+        { key: node.outputKey, label: node.outputKey, type: "number" },
+      ];
+    }
+  }
+  return fields;
+}
+
 export function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason);
 }
-
-

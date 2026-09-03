@@ -15,7 +15,7 @@ export interface AgentEvidenceView extends AgentEvidence {
 export function agentStatusLabel(status: AgentRunStatus, locale: AppLocale): string {
   const labels: Record<AgentRunStatus, [string, string]> = {
     running: ["正在运行", "Running"],
-    "awaiting-approval": ["等待审批", "Awaiting approval"],
+    "awaiting-approval": ["等待确认", "Awaiting confirmation"],
     completed: ["已完成", "Completed"],
     blocked: ["已阻断", "Blocked"],
     failed: ["运行失败", "Failed"],

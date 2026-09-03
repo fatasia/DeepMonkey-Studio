@@ -57,6 +57,7 @@
 实现边界：
 
 - `apps/desktop/scripts/build-scene-viewer.mjs` 负责版本选择、资源固化、专用 Web 构建和 Tauri 动态打包。
+- viewer-only Web 产物先写入 `.scene-viewer-build/<package-id>/web-dist`，再复制到包内 `frontend`；构建和递归清理均限制在当前包目录，不复用或覆盖普通 Web/编辑客户端的 `apps/web/dist`。
 - `apps/web/src/delivery/SceneViewerRoot.tsx` 是专用浏览入口，不加载 `App.tsx`、编辑器样式、Monaco、场景管理、拓扑或参数化工作台。
 - `apps/web/src/delivery/sceneViewerDelivery.ts` 只允许只读 API 合同；写请求返回 405，未知接口返回 404。
 - `apps/desktop/src-tauri/capabilities/scene-viewer.json` 不暴露服务器配置读写能力；生成配置只激活该 capability。

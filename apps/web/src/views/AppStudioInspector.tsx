@@ -1,4 +1,4 @@
-import { Box, Braces, ChevronRight, Layers3, Lock, MousePointer2, Trash2 } from "lucide-react";
+import { AlignCenterHorizontal, AlignCenterVertical, Box, Braces, ChevronRight, Layers3, Lock, MousePointer2, Space, Trash2 } from "lucide-react";
 import { explosionModeName } from "../appPresentation";
 import { publishLocalSceneData } from "../sceneDataBridge";
 import { translate as tr } from "../i18n";
@@ -28,6 +28,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     collisions,
     deleteAnnotation,
     deleteMeasurement,
+    deletePrimitive,
     engine,
     explosionFactor,
     explosionMode,
@@ -37,6 +38,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     inspectorTab,
     interactionTargetOptions,
     locale,
+    layoutSelectedObjects,
     measurements,
     message,
     openDataCenter,
@@ -49,6 +51,8 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     sceneDataBindingRuntime,
     sceneDataBindings,
     sceneInteractions,
+    sceneOrganizationObjects,
+    sceneOrganizationSelection,
     sceneStatistics,
     scenes,
     selected,
@@ -106,6 +110,40 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
           onFocus={() => engine?.focusAnnotation(selectedAnnotation.id)}
           onDelete={() => deleteAnnotation(selectedAnnotation.id)}
         />
+      ) : sceneOrganizationSelection.size > 1 ? (
+        <div className="inspector-content inspector-multi-selection">
+          <div className="inspector-selection-context">
+            <span className="inspector-selection-icon"><Layers3 size={16} /></span>
+            <span>
+              <strong>{tr(locale, `已选择 ${sceneOrganizationSelection.size} 个对象`, `${sceneOrganizationSelection.size} objects selected`)}</strong>
+              <small>{tr(locale, "场景目录多选", "Scene outliner selection")}</small>
+            </span>
+          </div>
+          <div className="inspector-selection-list">
+            {sceneOrganizationObjects
+              .filter((item) => sceneOrganizationSelection.has(item.id))
+              .slice(0, 8)
+              .map((item) => <span title={item.name} key={item.id}>{item.name}</span>)}
+            {sceneOrganizationSelection.size > 8 && <small>+{sceneOrganizationSelection.size - 8}</small>}
+          </div>
+          <section className="inspector-multi-layout" aria-label={tr(locale, "多选布局", "Multi-selection layout")}>
+            <header><span><AlignCenterHorizontal size={14} /><strong>{tr(locale, "布局", "Layout")}</strong></span><small>{tr(locale, "以主选对象对齐", "Align to primary")}</small></header>
+            <div>
+              {(["x", "y", "z"] as const).map((axis) => <button key={axis} type="button" onClick={() => layoutSelectedObjects("align", axis)}><AlignCenterVertical size={12} />{axis.toUpperCase()} {tr(locale, "对齐", "Align")}</button>)}
+            </div>
+            <div>
+              {(["x", "z"] as const).map((axis) => <button key={axis} type="button" disabled={sceneOrganizationSelection.size < 3} onClick={() => layoutSelectedObjects("distribute", axis)}><Space size={12} />{axis.toUpperCase()} {tr(locale, "等距", "Distribute")}</button>)}
+            </div>
+            <small>{tr(locale, "等距保留两端位置；锁定对象不会移动。", "Distribution preserves both ends; locked objects stay in place.")}</small>
+          </section>
+          <div className="inspector-context-note">
+            <Layers3 size={18} />
+            <span>
+              <strong>{tr(locale, "批量操作已集中在左侧目录", "Batch actions stay in the outliner")}</strong>
+              <small>{tr(locale, "可直接编组、显示、隐藏、锁定或右键管理；选择单个对象后在此编辑详细属性。", "Group, show, hide, lock or use the context menu there; select one object to edit detailed properties here.")}</small>
+            </span>
+          </div>
+        </div>
       ) : selectedSpace ? (
         <SceneSpaceInspector
           locale={locale}
@@ -394,11 +432,16 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 if (selectedLayerId && selectedLayerId !== "root") {
                   engine?.deleteSelectedLayer();
                   removeObjectInteractions(selected.id, selectedLayerId);
+                  setRevision((value) => value + 1);
+                  setMessage(tr(locale, `图层“${selectionName || selectedLayerId}”已从场景删除`, `Layer “${selectionName || selectedLayerId}” was removed from the scene`));
+                } else if (selected.kind === "primitive") {
+                  deletePrimitive(selected.id);
                 } else {
                   engine?.removeModel(selected.id);
                   removeObjectInteractions(selected.id);
+                  setRevision((value) => value + 1);
+                  setMessage(tr(locale, `模型“${selected.name}”已从当前场景移除`, `Model “${selected.name}” was removed from this scene`));
                 }
-                setRevision((value) => value + 1);
               }}
             >
               <Trash2 size={16} />

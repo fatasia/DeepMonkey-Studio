@@ -21,6 +21,7 @@ export interface UnityReadinessIssue {
     | "unknown-object"
     | "unknown-property"
     | "missing-health-contract"
+    | "suboptimal-compression"
     | "large-build"
     | "import-diagnostic"
     | "external-runtime";
@@ -236,15 +237,30 @@ function assessManagedVersion(
         "This Unity build does not report message acknowledgements and runtime heartbeats; it can publish, but interruptions are detected only by timeout.",
       ),
     );
-  if (version.size > 256 * 1024 * 1024 || version.fileCount > 5_000)
+  if (manifest.webBuild && !["brotli", "gzip"].includes(manifest.webBuild.compression))
+    issues.push(
+      issue(
+        "suboptimal-compression",
+        "warning",
+        pageId,
+        nodeId,
+        manifest.webBuild.compression === "decompression-fallback"
+          ? "Unity 构建使用浏览器端解压回退，会增加启动耗时和内存占用。"
+          : "Unity 构建未使用一致的原生 Brotli/Gzip 传输压缩。",
+        manifest.webBuild.compression === "decompression-fallback"
+          ? "The Unity build uses browser-side decompression fallback, increasing startup time and memory use."
+          : "The Unity build does not use consistent native Brotli/Gzip transfer compression.",
+      ),
+    );
+  if (version.size > 256 * 1024 * 1024 || version.fileCount > 5_000 || (manifest.webBuild?.runtimePayloadBytes ?? 0) > 256 * 1024 * 1024)
     issues.push(
       issue(
         "large-build",
         "warning",
         pageId,
         nodeId,
-        `Unity 构建较大（${Math.ceil(version.size / 1024 / 1024)} MiB / ${version.fileCount} 文件），生产环境需要 CDN、压缩响应头和启动性能验证。`,
-        `The Unity build is large (${Math.ceil(version.size / 1024 / 1024)} MiB / ${version.fileCount} files); production needs CDN, compression headers, and startup validation.`,
+        `Unity 构建较大（${Math.ceil(version.size / 1024 / 1024)} MiB / ${version.fileCount} 文件），发布前需要完成缓存、压缩响应头和启动性能验证。`,
+        `The Unity build is large (${Math.ceil(version.size / 1024 / 1024)} MiB / ${version.fileCount} files); validate caching, compression headers, and startup performance before release.`,
       ),
     );
   for (const diagnostic of version.diagnostics)

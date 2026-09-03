@@ -1,0 +1,135 @@
+.plant-real-calibration {
+  container-type: inline-size;
+  margin: 0 14px 12px;
+  overflow: hidden;
+  color: #aebbc0;
+  border: 1px solid #2d4147;
+  border-radius: 8px;
+  background: #0e181b;
+}
+
+.plant-real-calibration > summary {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.plant-real-calibration > summary::-webkit-details-marker { display: none; }
+.plant-real-calibration > summary > span { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.plant-real-calibration > summary svg { flex: 0 0 auto; color: #67c797; }
+.plant-real-calibration > summary strong { color: #dde6e8; font-size: 11px; }
+.plant-real-calibration > summary small { overflow: hidden; color: #72858b; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.plant-real-calibration > summary em { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; color: #819399; font-size: 10px; font-style: normal; }
+.plant-real-calibration.is-passed > summary em { color: #74cc9d; }
+.plant-real-calibration.is-conditional > summary em { color: #d5b45f; }
+.plant-real-calibration.is-failed > summary em { color: #e28287; }
+
+.plant-real-calibration-body { box-sizing: border-box; display: grid; width: 100%; gap: 9px; padding: 10px; border-top: 1px solid #28393f; }
+.plant-real-calibration-body > * { box-sizing: border-box; width: auto; min-width: 0; max-width: 100%; }
+.plant-real-calibration-boundary,
+.plant-real-calibration-notice { margin: 0; color: #7e9096; font-size: 10px; line-height: 1.5; }
+.plant-real-calibration-notice { padding: 7px 8px; color: #d0ae67; border: 1px solid #584827; border-radius: 6px; background: #241f15; }
+.plant-real-calibration-notice.is-error { color: #e18a8e; border-color: #65343a; background: #2b181b; }
+
+.plant-real-calibration-source { display: grid; align-items: end; gap: 7px; grid-template-columns: minmax(0, 1fr) auto; }
+.plant-real-calibration label { display: grid; min-width: 0; gap: 4px; }
+.plant-real-calibration label > span { color: #75878d; font-size: 9px; }
+.plant-real-calibration select,
+.plant-real-calibration input,
+.plant-real-calibration button {
+  min-width: 0;
+  min-height: 30px;
+  color: #cbd5d7;
+  border: 1px solid #35474d;
+  border-radius: 5px;
+  background: #101d21;
+  font: inherit;
+  font-size: 10px;
+}
+.plant-real-calibration select,
+.plant-real-calibration input { width: 100%; padding: 0 7px; }
+.plant-real-calibration button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; cursor: pointer; }
+.plant-real-calibration button:hover:not(:disabled) { color: #e1e9eb; border-color: #536a72; }
+.plant-real-calibration button:focus-visible,
+.plant-real-calibration select:focus-visible,
+.plant-real-calibration input:focus-visible { outline: 2px solid var(--accent, #d6a83c); outline-offset: 1px; }
+.plant-real-calibration button:disabled { opacity: .45; cursor: default; }
+
+.plant-real-calibration-snapshot { display: flex; flex-wrap: wrap; gap: 5px 12px; padding: 6px 8px; color: #7c9096; border-left: 2px solid #477a61; background: #11211a; font-size: 9px; }
+.plant-real-calibration-snapshot b { color: #8dd6ae; }
+.plant-real-calibration code { color: #9bb0b5; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.plant-real-calibration-window { display: grid; gap: 7px; grid-template-columns: minmax(130px, 1fr) repeat(2, minmax(142px, 1fr)) minmax(88px, .55fr); }
+
+.plant-real-calibration-mappings { display: grid; overflow: hidden; border: 1px solid #293b40; border-radius: 6px; }
+.plant-real-calibration-mappings > div { display: grid; min-width: 0; align-items: center; gap: 7px; padding: 5px 7px; border-bottom: 1px solid #25363b; grid-template-columns: 70px minmax(110px, 1fr) 88px 62px; }
+.plant-real-calibration-mappings > div:last-child { border-bottom: 0; }
+.plant-real-calibration-mappings > .is-heading { min-height: 25px; color: #687b82; background: #111e22; font-size: 9px; }
+.plant-real-calibration-mappings strong { color: #bac7ca; font-size: 10px; }
+.plant-calibration-tolerance { position: relative; }
+.plant-calibration-tolerance input { padding-right: 22px; }
+.plant-calibration-tolerance > span { position: absolute; right: 7px; bottom: 8px; color: #72858b; }
+
+.plant-real-calibration-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.plant-real-calibration-actions small { color: #71848a; font-size: 9px; line-height: 1.4; }
+.plant-real-calibration-actions button { flex: 0 0 auto; color: #092019; border-color: #65be8f; background: #65be8f; font-weight: 700; }
+
+.plant-real-calibration-result { display: grid; gap: 7px; padding-top: 9px; border-top: 1px solid #293a40; }
+.plant-real-calibration-result > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.plant-real-calibration-result > header > span { display: inline-flex; align-items: center; gap: 5px; }
+.plant-real-calibration-result > header strong { color: #dfe7e9; font-size: 11px; }
+.plant-real-calibration-result > header small { overflow: hidden; color: #74868c; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.plant-real-calibration-result > div { display: grid; overflow: hidden; border: 1px solid #293b40; border-radius: 6px; }
+.plant-real-calibration-result > div > div { display: grid; align-items: center; gap: 7px; padding: 6px 7px; border-bottom: 1px solid #25363b; grid-template-columns: 76px 115px minmax(170px, 1fr) 56px; }
+.plant-real-calibration-result > div > div:last-child { border-bottom: 0; }
+.plant-real-calibration-result span,
+.plant-real-calibration-result strong,
+.plant-real-calibration-result small,
+.plant-real-calibration-result em { font-size: 9px; }
+.plant-real-calibration-result span { color: #a8b7bb; }
+.plant-real-calibration-result strong { color: #d5dee0; }
+.plant-real-calibration-result small { color: #73868c; }
+.plant-real-calibration-result em { color: #72c99a; font-style: normal; text-align: right; }
+.plant-real-calibration-result .is-conditional em { color: #d6b45e; }
+.plant-real-calibration-result .is-failed em { color: #e28689; }
+.plant-real-calibration-result .is-insufficient-data em { color: #94a4aa; }
+.plant-real-calibration-result > p,
+.plant-real-calibration-result > footer { margin: 0; color: #ccaa65; font-size: 9px; line-height: 1.45; }
+.plant-real-calibration-result > footer { color: #70838a; }
+.plant-real-calibration-trace { overflow: hidden; border: 1px solid #293a40; border-radius: 6px; background: #0c1619; }
+.plant-real-calibration-trace > summary { padding: 7px 8px; color: #82949a; font-size: 9px; cursor: pointer; }
+.plant-real-calibration-trace dl { display: grid; gap: 5px; margin: 0; padding: 7px 8px; border-top: 1px solid #26363b; }
+.plant-real-calibration-trace dl > div { display: grid; min-width: 0; gap: 7px; grid-template-columns: 62px minmax(0, 1fr); }
+.plant-real-calibration-trace dt,
+.plant-real-calibration-trace dd { min-width: 0; margin: 0; color: #71848a; font-size: 9px; }
+.plant-real-calibration-trace dd { overflow: hidden; color: #9baeb3; text-overflow: ellipsis; white-space: nowrap; }
+.plant-real-calibration-trace code { user-select: all; }
+
+@media (max-width: 760px) {
+  .plant-real-calibration-window { grid-template-columns: 1fr 1fr; }
+  .plant-real-calibration-actions { align-items: stretch; flex-direction: column; }
+}
+
+@container (max-width: 650px) {
+  .plant-real-calibration-window { grid-template-columns: 1fr 1fr; }
+  .plant-real-calibration-actions { align-items: stretch; flex-direction: column; }
+}
+
+@media (max-width: 480px) {
+  .plant-real-calibration > summary small { display: none; }
+  .plant-real-calibration-source,
+  .plant-real-calibration-window { grid-template-columns: 1fr; }
+  .plant-real-calibration-result > div { overflow-x: auto; }
+  .plant-real-calibration-result > div > div { min-width: 480px; }
+}
+
+@container (max-width: 420px) {
+  .plant-real-calibration-mappings > div { gap: 6px; grid-template-columns: 62px minmax(92px, 1fr) 78px 56px; }
+  .plant-real-calibration-mappings > .is-heading { font-size: 8px; }
+  .plant-real-calibration-mappings select,
+  .plant-real-calibration-mappings input { padding-inline: 5px; font-size: 9px; }
+}

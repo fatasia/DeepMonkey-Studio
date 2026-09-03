@@ -301,7 +301,7 @@ export default function ParametricModelWorkbench({
               onGenerate={() => void createAiDraft()}
             />
           </aside>
-          <main className="parametric-parameters">
+          <section className="parametric-parameters" aria-label={tr(locale, "参数配置", "Parameter configuration")}>
             <label className="parametric-name">
               <span>{tr(locale, "资源名称", "Asset name")}</span>
               <input
@@ -369,7 +369,7 @@ export default function ParametricModelWorkbench({
               sources={bindingSources}
               onChange={updateRuntimeBinding}
             />
-          </main>
+          </section>
           <aside className="parametric-output">
             <ParametricModelPreview result={result} />
             {result ? (

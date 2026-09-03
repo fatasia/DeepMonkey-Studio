@@ -2,6 +2,7 @@ import type { SceneDashboardState } from "./dashboard.js";
 import type { SceneDataBindingState } from "./data.js";
 import type { ModelTransform, Vector3Value } from "./geometry.js";
 import type { ModelFormat } from "./project.js";
+import type { RobotLoadCapabilityState, RobotToolLoadState } from "./robot.js";
 import type { SceneCoordinateSystemState } from "./vision.js";
 import type { IndustrialPrefabInstanceState, IndustrialPrefabRuntimeAction } from "./industrialPrefab.js";
 
@@ -89,6 +90,11 @@ export interface SceneLayerState {
 
 export interface SceneMaterialState {
   color?: string;
+  /** 实例级颜色校正；不改写原始素材，可为同一素材的不同实例保存不同外观。 */
+  hue?: number;
+  saturation?: number;
+  brightness?: number;
+  contrast?: number;
   baseColorMapUrl?: string;
   baseColorMapName?: string;
   normalMapUrl?: string;
@@ -228,6 +234,10 @@ export interface SceneRobotKinematicsState {
   toolObjectId?: string;
   targetObjectIds?: string[];
   joints: SceneRobotJointState[];
+  /** 未提供时负载能力筛查必须保持 needs-data。 */
+  loadCapability?: RobotLoadCapabilityState;
+  /** 未提供时不得用默认工具质量、TCP 或重心冒充工程输入。 */
+  toolLoad?: RobotToolLoadState;
 }
 
 export type PrimitiveKind = "box" | "sphere" | "cylinder" | "cone" | "torus" | "plane" | "capsule";

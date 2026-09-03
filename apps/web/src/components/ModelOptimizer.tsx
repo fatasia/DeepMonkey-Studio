@@ -45,7 +45,7 @@ const DEFAULT_OPTIONS: ModelOptimizationOptions = {
 
 type BakeTransformMode = "translate" | "rotate";
 
-export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocale; copyright: string; onBack: () => void }) {
+export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const sourceUrlRef = useRef<string | undefined>(undefined);
   const optimizedUrlRef = useRef<string | undefined>(undefined);
@@ -241,7 +241,7 @@ export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocal
         <SecondaryPageBack locale={locale} onBack={onBack} />
         <div>
           <span className="eyebrow">LOCAL GLB PIPELINE</span>
-          <h1>{tr(locale, "模型压缩优化", "Model optimization")}</h1>
+          <h1>{tr(locale, "模型优化", "Model optimization")}</h1>
         </div>
         <div className="optimizer-header-actions">
           <button onClick={() => inputRef.current?.click()}>
@@ -255,7 +255,7 @@ export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocal
         </div>
       </header>
       <main className="optimizer-layout">
-        <aside className="optimizer-settings">
+        <aside className={`optimizer-settings ${file ? "" : "awaiting-model"}`}>
           <div className="optimizer-file">
             <Box size={18} />
             <div>
@@ -267,6 +267,21 @@ export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocal
               </span>
             </div>
           </div>
+          {!file && (
+            <section className="optimizer-start-guide" aria-label={tr(locale, "模型优化流程", "Model optimization workflow")}>
+              <strong>{tr(locale, "先导入模型，再配置优化策略", "Import a model before choosing an optimization strategy")}</strong>
+              <ol>
+                <li>{tr(locale, "分析文件体积、面数与材质", "Inspect file size, geometry, and materials")}</li>
+                <li>{tr(locale, "按目标选择减面、贴图与清理参数", "Choose geometry, texture, and cleanup settings")}</li>
+                <li>{tr(locale, "对比原始模型和优化结果后导出", "Compare the original and optimized result before export")}</li>
+              </ol>
+              <button className="primary" onClick={() => inputRef.current?.click()}>
+                <Upload size={14} />
+                {tr(locale, "选择 GLB / glTF", "Choose GLB / glTF")}
+              </button>
+              <small>{tr(locale, "文件仅在当前浏览器本地处理，不会上传。", "Files are processed locally in this browser and are not uploaded.")}</small>
+            </section>
+          )}
           <OptionSection
             icon={<Triangle size={15} />}
             title={tr(locale, "模型减面", "Mesh simplification")}
@@ -277,6 +292,7 @@ export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocal
               <span>{tr(locale, "目标保留比例", "Target ratio")}</span>
               <output>{Math.round(options.simplifyRatio * 100)}%</output>
               <input
+                aria-label={tr(locale, "目标保留比例", "Target ratio")}
                 type="range"
                 min="0.05"
                 max="1"
@@ -289,6 +305,7 @@ export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocal
               <span>{tr(locale, "最大误差", "Maximum error")}</span>
               <output>{(options.simplifyError * 100).toFixed(2)}%</output>
               <input
+                aria-label={tr(locale, "最大误差", "Maximum error")}
                 type="range"
                 min="0.0001"
                 max="0.02"
@@ -438,6 +455,7 @@ export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocal
               <span>{tr(locale, "烘焙强度", "Bake strength")}</span>
               <output>{Math.round(options.bakeStrength * 100)}%</output>
               <input
+                aria-label={tr(locale, "烘焙强度", "Bake strength")}
                 type="range"
                 min="0.05"
                 max="0.8"
@@ -450,6 +468,7 @@ export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocal
               <span>{tr(locale, "环境亮度", "Ambient level")}</span>
               <output>{Math.round(options.bakeAmbient * 100)}%</output>
               <input
+                aria-label={tr(locale, "环境亮度", "Ambient level")}
                 type="range"
                 min="0"
                 max="1"
@@ -735,7 +754,6 @@ export function ModelOptimizer({ locale, copyright, onBack }: { locale: AppLocal
           )}
         </section>
       </main>
-      <div className="app-copyright">{copyright}</div>
       <input ref={inputRef} hidden type="file" accept=".glb,.gltf" onChange={(event) => void importFile(event.target.files?.[0])} />
     </div>
   );

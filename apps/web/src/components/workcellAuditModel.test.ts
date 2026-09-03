@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SceneSnapshot } from "@bim-studio/contracts";
-import { primitiveWorldBounds, workcellAuditInputFromScene, workcellRole } from "./workcellAuditModel";
+import { primitiveWorldBounds, robotPlanningProfileFromSceneModel, starterWorkcellScenePlanningParameters, workcellAuditInputFromScene, workcellRole } from "./workcellAuditModel";
 
 describe("workcell audit scene adapter", () => {
   it("classifies high-value workcell objects without treating robot parts as full robots", () => {
@@ -60,6 +60,12 @@ describe("workcell audit scene adapter", () => {
     };
     const input = workcellAuditInputFromScene(scene);
 
+    expect(input.planningAssumptions).toEqual({
+      origin: "starter-values",
+      status: "unconfirmed",
+      generatedTrajectorySpeedMps: .5,
+      generatedTrajectoryTcpRadiusMeters: .1,
+    });
     expect(input.trajectories).toMatchObject([{
       id: "scene-path:robot",
       robotId: "robot",
@@ -70,5 +76,70 @@ describe("workcell audit scene adapter", () => {
         { id: "robot:target-1", timeSec: 2, position: { x: 1, y: 0, z: 0 } },
       ],
     }]);
+
+    const confirmed = workcellAuditInputFromScene(scene, {
+      ...starterWorkcellScenePlanningParameters(),
+      generatedTrajectorySpeedMps: 1,
+      generatedTrajectoryTcpRadiusMeters: .05,
+      origin: "authored",
+      status: "engineer-confirmed",
+    });
+    expect(confirmed).toMatchObject({
+      clearanceThreshold: .25,
+      planningAssumptions: {
+        origin: "authored",
+        status: "engineer-confirmed",
+        generatedTrajectorySpeedMps: 1,
+        generatedTrajectoryTcpRadiusMeters: .05,
+      },
+      trajectories: [{ tcpRadius: .05, waypoints: [{ timeSec: 0 }, { timeSec: 1 }] }],
+    });
+
+    const colocated = structuredClone(scene);
+    colocated.annotations![0]!.position = { x: 0, y: 0, z: 0 };
+    expect(workcellAuditInputFromScene(colocated).trajectories).toBeUndefined();
+  });
+
+  it("reuses a configured robot prefab payload but never invents tool/TCP evidence", () => {
+    const model: SceneSnapshot["models"][number] = {
+      modelId: "robot", name: "六轴机器人", visible: true, opacity: 1,
+      transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
+      prefab: {
+        definitionId: "robot.articulated-6", definitionVersion: "1.0.0", kind: "robot-arm",
+        parameters: { payloadKg: 20 }, operatingState: "idle",
+      },
+      rig: { bones: [], ik: [], robot: { enabled: true, baseBonePath: "root", joints: [] } },
+    };
+
+    expect(robotPlanningProfileFromSceneModel(model)).toEqual({
+      loadCapability: { ratedPayloadKg: 20, source: "configured-prefab", reference: "robot.articulated-6@1.0.0" },
+    });
+    const modelWithoutPrefab = structuredClone(model);
+    delete modelWithoutPrefab.prefab;
+    expect(robotPlanningProfileFromSceneModel(modelWithoutPrefab)).toEqual({});
+  });
+
+  it("discovers person prefabs but never invents anthropometry or task evidence", () => {
+    const timestamp = "2026-08-30T00:00:00.000Z";
+    const scene: SceneSnapshot = {
+      schemaVersion: 1, id: "scene-human", projectId: "project", name: "人工工位",
+      camera: { position: { x: 1, y: 1, z: 1 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" },
+      models: [{
+        modelId: "person-1", name: "装配人员", visible: true, opacity: 1,
+        transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
+        prefab: { definitionId: "person.operator", definitionVersion: "1.0.0", kind: "person", parameters: { speedMps: 1.3 }, operatingState: "idle" },
+      }, {
+        modelId: "console-1", name: "操作员控制台", visible: true, opacity: 1,
+        transform: { position: { x: 1, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
+      }],
+      primitives: [], measurements: [], createdAt: timestamp, updatedAt: timestamp,
+    };
+
+    expect(workcellAuditInputFromScene(scene).ergonomicsProfiles).toEqual([{
+      id: "human-task:person-1", name: "装配人员 · 人工作业", operatorObjectId: "person-1",
+    }]);
+    expect(workcellAuditInputFromScene(scene).ergonomicsProfiles?.[0]).not.toHaveProperty("anthropometry");
+    expect(workcellAuditInputFromScene(scene).ergonomicsProfiles?.[0]).not.toHaveProperty("task");
+    expect(workcellAuditInputFromScene(scene).ergonomicsProfiles?.[0]).not.toHaveProperty("policy");
   });
 });

@@ -3,6 +3,7 @@ import { createUpdateDashboardDataWidgetCommand } from "@bim-studio/studio-core"
 import { translate as tr } from "../i18n";
 import { DashboardConditionalRulesEditor } from "./DashboardConditionalRulesEditor";
 import { createDefaultDirectBinding, DirectBindingEditor } from "./DirectBindingEditor";
+import { DashboardDataRefreshSummary } from "./DashboardDataRefreshSummary";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 
 export function DashboardInspectorData() {
@@ -15,6 +16,7 @@ export function DashboardInspectorData() {
     inspectorTab,
     locale,
     onCommand,
+    onOpenData,
     page,
     pipelines,
     selectDataField,
@@ -50,7 +52,7 @@ export function DashboardInspectorData() {
             }}
           >
             <option value="unbound">{tr(locale, "实时变量 / 未绑定", "Live variable / Unbound")}</option>
-            <option value="platform">{tr(locale, "数据中台", "Data platform")}</option>
+            <option value="platform">{tr(locale, "数据中心", "Data Center")}</option>
             <option value="direct">{tr(locale, "直接 HTTP / WebSocket", "Direct HTTP / WebSocket")}</option>
           </select>
         </label>
@@ -83,6 +85,16 @@ export function DashboardInspectorData() {
               )}
             </select>
           </label>
+        )}
+        {!selectedNode.widget.directBinding && (selectedNode.widget.pipelineId || selectedNode.widget.datasetId) && (
+          <DashboardDataRefreshSummary
+            locale={locale}
+            kind={selectedNode.widget.pipelineId ? "pipeline" : "dataset"}
+            productId={selectedNode.widget.pipelineId ?? selectedNode.widget.datasetId!}
+            datasets={datasets}
+            pipelines={pipelines}
+            onOpenData={onOpenData}
+          />
         )}
         {selectedNode.widget.directBinding && (
           <DirectBindingEditor

@@ -37,6 +37,8 @@ Key runtime dependencies:
 | `jszip` | 3.10.1 | MIT OR GPL-3.0-or-later | https://github.com/Stuk/jszip |
 | `react` / `react-dom` | 19.2.8 | MIT | https://github.com/facebook/react |
 | `lucide-react` | 0.468.0 | ISC | https://github.com/lucide-icons/lucide |
+| `esbuild` | 0.28.1 | MIT | https://github.com/evanw/esbuild |
+| `es-module-lexer` | 2.3.1 | MIT | https://github.com/guybedford/es-module-lexer |
 | `node-red` | 5.0.4 | Apache-2.0 | https://github.com/node-red/node-red |
 | `@flowfuse/node-red-dashboard` | 1.30.2 | Apache-2.0 | https://github.com/FlowFuse/node-red-dashboard |
 | `echarts` | 6.1.0 | Apache-2.0 | https://github.com/apache/echarts |
@@ -57,13 +59,13 @@ ONNX Runtime only supplies the inference engine. Every imported ONNX/YOLO weight
 
 ## MPL-2.0 note
 
-`web-ifc` is distributed under MPL-2.0. Using the unmodified package does not require the BIM Studio application as a whole to be open-sourced. If an executable distribution includes `web-ifc`, retain its copyright and license notices and tell recipients where the corresponding `web-ifc` source is available. Modifications made directly to MPL-covered files must remain available under MPL-2.0 when distributed.
+`web-ifc` is distributed under MPL-2.0. Using the unmodified package does not require the Industrial Studio application as a whole to be open-sourced. If an executable distribution includes `web-ifc`, retain its copyright and license notices and tell recipients where the corresponding `web-ifc` source is available. Modifications made directly to MPL-covered files must remain available under MPL-2.0 when distributed.
 
 This repository does not vendor BIMI/商业 BIM 平台 viewer code or source from Aedifex, Pascal Editor, Massing, or xeokit.
 
 ## Dashboard design references
 
-The native React/ECharts dashboard templates and decorations are original BIM Studio implementations. DataV React was reviewed as an MIT-licensed visual-design reference; no DataV source code, package, or image asset is vendored or included at runtime. DataV React source and license: https://github.com/DataV-Team/DataV-React
+The native React/ECharts dashboard templates and decorations are original Industrial Studio implementations. DataV React was reviewed as an MIT-licensed visual-design reference; no DataV source code, package, or image asset is vendored or included at runtime. DataV React source and license: https://github.com/DataV-Team/DataV-React
 
 ## STEP and DWG converter notes
 

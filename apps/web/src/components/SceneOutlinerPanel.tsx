@@ -14,12 +14,17 @@ import {
 import type {
   RevitRuntimeInfo,
   RvtConversionMode,
+  IndustrialPrefabDefinition,
+  ProjectAssetRecord,
+  ModelRecord,
 } from "@bim-studio/contracts";
 import { REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { DeviceBoxDraft } from "../deviceLayout/deviceLayout";
 import type { ComponentRecord } from "../viewer/ViewerEngine";
 import type { ConfirmedSmartAssetMapping } from "./smartAssetBindingWorkbenchModel";
+import { INDUSTRIAL_PREFAB_CATALOG } from "../prefabs/industrialPrefabCatalog";
+import { IndustrialPrefabThumbnail } from "./IndustrialPrefabThumbnail";
 
 const DeviceLayoutWorkbench = lazy(() => import("./DeviceLayoutWorkbench").then((module) => ({ default: module.DeviceLayoutWorkbench })));
 const SmartAssetBindingWorkbench = lazy(() => import("./SmartAssetBindingWorkbench").then((module) => ({ default: module.SmartAssetBindingWorkbench })));
@@ -43,12 +48,16 @@ interface SceneOutlinerPanelProps {
   isolationActive: boolean;
   organizationContent: ReactNode;
   objectContent: ReactNode;
+  projectAssets?: ProjectAssetRecord[];
+  projectModels?: ModelRecord[];
   onOrganizationToggle: () => void;
   onImportToggle: () => void;
   onImportClose: () => void;
   onRvtConversionModeChange: (mode: RvtConversionMode) => void;
   onRevitVersionChange: (version: string) => void;
   onUpload: () => void;
+  onInsertProjectModel: (model: ModelRecord) => void;
+  onInsertPrefab: (definition: IndustrialPrefabDefinition) => void;
   onCreateDeviceLayout: (devices: DeviceBoxDraft[], createLabels: boolean) => Promise<void> | void;
   onConfirmSmartBindings: (mappings: ConfirmedSmartAssetMapping[]) => void;
   onQueryChange: (query: string) => void;
@@ -60,6 +69,7 @@ interface SceneOutlinerPanelProps {
 }
 
 export function SceneOutlinerPanel(props: SceneOutlinerPanelProps) {
+  const [resourceOpen, setResourceOpen] = useState(false);
   return (
     <aside className="left-panel">
       <div className="panel-heading">
@@ -69,25 +79,36 @@ export function SceneOutlinerPanel(props: SceneOutlinerPanelProps) {
         </div>
         <div className="panel-heading-actions">
           <button
-            className={`icon-button ${props.organizationOpen ? "active" : ""}`}
+            className={`panel-mode-button ${props.organizationOpen ? "active" : ""}`}
             title={tr(
               props.locale,
-              "批量管理与选择集",
-              "Batch management and selection sets",
+              "多选、编组与层级管理",
+              "Multi-select, grouping and hierarchy",
             )}
-            aria-label={tr(props.locale, "场景组织", "Scene organization")}
-            onClick={props.onOrganizationToggle}
+            aria-label={tr(props.locale, "场景图层与编组", "Scene layers and groups")}
+            onClick={() => { setResourceOpen(false); props.onOrganizationToggle(); }}
           >
             <ListChecks size={17} />
+            <span>{tr(props.locale, "层级", "Layers")}</span>
+          </button>
+          <button
+            className={`panel-mode-button ${resourceOpen ? "active" : ""}`}
+            title={tr(props.locale, "浏览并插入资源", "Browse and insert resources")}
+            aria-label={tr(props.locale, "资源", "Resources")}
+            onClick={() => { const next = !resourceOpen; setResourceOpen(next); if (next) { props.onImportClose(); if (props.organizationOpen) props.onOrganizationToggle(); } }}
+          >
+            <Boxes size={17} />
+            <span>{tr(props.locale, "资源", "Resources")}</span>
           </button>
           <button
             className={`icon-button ${props.importOpen ? "active" : ""}`}
+            aria-label={tr(props.locale, "导入模型与转换设置", "Import models and conversion settings")}
             title={tr(
               props.locale,
               "导入模型与转换设置",
               "Import models and conversion settings",
             )}
-            onClick={props.onImportToggle}
+            onClick={() => { setResourceOpen(false); props.onImportToggle(); }}
             disabled={props.uploading}
           >
             {props.uploading ? (
@@ -99,10 +120,11 @@ export function SceneOutlinerPanel(props: SceneOutlinerPanelProps) {
         </div>
       </div>
       {props.importOpen && <ImportWorkspace {...props} />}
-      {!props.organizationOpen && !props.importOpen && (
+      {resourceOpen && !props.importOpen && <SceneResourceBrowser {...props} />}
+      {!props.organizationOpen && !props.importOpen && !resourceOpen && (
         <ComponentSearch {...props} />
       )}
-      {!props.importOpen && (
+      {!props.importOpen && !resourceOpen && (
         <div
           className={`asset-list ${props.organizationOpen ? "organization-mode" : ""}`}
         >
@@ -113,6 +135,43 @@ export function SceneOutlinerPanel(props: SceneOutlinerPanelProps) {
       )}
     </aside>
   );
+}
+
+export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "locale" | "projectAssets" | "projectModels" | "onImportToggle" | "onInsertProjectModel" | "onInsertPrefab">) {
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<"all" | "prefab" | "project">("all");
+  const [showAll, setShowAll] = useState(false);
+  const assets = (props.projectAssets ?? []).map((asset) => ({ source: "asset" as const, id: asset.id, name: asset.name, fileName: asset.fileName, kind: asset.kind, thumbnailUrl: asset.thumbnailUrl, asset }));
+  const models = (props.projectModels ?? []).map((model) => ({ source: "model" as const, id: model.id, name: model.name, fileName: model.format.toUpperCase(), kind: "model", thumbnailUrl: undefined, model }));
+  const prefabs = INDUSTRIAL_PREFAB_CATALOG.map((definition) => ({ source: "prefab" as const, id: definition.id, name: tr(props.locale, definition.name, definition.englishName), fileName: definition.routeCapable ? tr(props.locale, "路线与动作", "Route & actions") : tr(props.locale, "参数与数据口", "Parameters & ports"), kind: definition.kind, thumbnailUrl: undefined, definition }));
+  const allResources = [...models, ...assets, ...prefabs];
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const scopedResources = allResources.filter((resource) => scope === "all" || (scope === "prefab" ? resource.source === "prefab" : resource.source !== "prefab"));
+  const resources = scopedResources.filter((resource) => `${resource.name} ${resource.fileName} ${resource.kind}`.toLocaleLowerCase().includes(normalizedQuery));
+  const visibleResources = normalizedQuery || showAll ? resources : resources.slice(0, 24);
+  return <section className="scene-resource-browser" aria-label={tr(props.locale, "资源", "Resources")}>
+    <header><div><span className="eyebrow">{tr(props.locale, "场景资源", "SCENE RESOURCES")}</span><strong>{tr(props.locale, "资源", "Resources")}</strong></div><small>{allResources.length}</small></header>
+    <label className="component-search-input"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr(props.locale, "搜索资源", "Search resources")} /></label>
+    <nav className="scene-resource-scopes" aria-label={tr(props.locale, "资源范围", "Resource scope")}>
+      <button className={scope === "all" ? "active" : ""} onClick={() => setScope("all")}>{tr(props.locale, "全部", "All")}</button>
+      <button className={scope === "prefab" ? "active" : ""} onClick={() => setScope("prefab")}>{tr(props.locale, "工业预制体", "Prefabs")}</button>
+      <button className={scope === "project" ? "active" : ""} onClick={() => setScope("project")}>{tr(props.locale, "项目资源", "Project")}</button>
+    </nav>
+    {visibleResources.length > 0 ? <>
+      <div className="scene-resource-list">{visibleResources.map((resource) => <article className="scene-resource-row" key={`${resource.source}:${resource.id}`}>
+        {resource.thumbnailUrl
+          ? <img src={resource.thumbnailUrl} alt="" />
+          : resource.source === "prefab"
+            ? <IndustrialPrefabThumbnail definition={resource.definition} />
+            : <span className={`scene-resource-icon resource-${resource.source}`}><Boxes size={16} /></span>}
+        <div><strong title={resource.name}>{resource.name}</strong><small>{resource.kind} · {resource.fileName}</small></div>
+        {resource.source === "prefab" ? <button type="button" onClick={() => props.onInsertPrefab(resource.definition)} title={tr(props.locale, "插入并选中可配置预制体", "Insert and select configurable prefab")}>{tr(props.locale, "插入", "Insert")}</button>
+          : resource.source === "model" ? <button type="button" onClick={() => props.onInsertProjectModel(resource.model)} title={tr(props.locale, "将项目模型载入当前场景", "Load project model into this scene")}>{tr(props.locale, "载入", "Load")}</button>
+            : <span className="scene-resource-use-hint">{tr(props.locale, "属性中应用", "Use in inspector")}</span>}
+      </article>)}</div>
+      {!normalizedQuery && resources.length > visibleResources.length && <button className="scene-resource-more" type="button" onClick={() => setShowAll(true)}>{tr(props.locale, `显示全部 ${resources.length} 项`, `Show all ${resources.length}`)}</button>}
+    </> : <div className="scene-resource-empty"><Boxes size={22} /><strong>{tr(props.locale, "暂无匹配资源", "No matching resources")}</strong><small>{tr(props.locale, "可以清空搜索，或导入自己的模型资源。", "Clear the search or import your own model resource.")}</small><button type="button" onClick={props.onImportToggle}>{tr(props.locale, "导入模型", "Import model")}</button></div>}
+  </section>;
 }
 
 function ImportWorkspace(props: SceneOutlinerPanelProps) {
@@ -219,13 +278,17 @@ function ImportWorkspace(props: SceneOutlinerPanelProps) {
         <small>
           {tr(
             props.locale,
-            "直接：GLB / glTF / FBX / DXF · 转换：RVT / IFC / STEP / DWG / JT / XT",
-            "Direct: GLB / glTF / FBX / DXF · Convert: RVT / IFC / STEP / DWG / JT / XT",
+            "直接查看：IFC / OpenUSD / 网格 · 内置转换：STEP / IGES",
+            "Direct viewing: IFC / OpenUSD / meshes · Built-in conversion: STEP / IGES",
           )}
         </small>
       </button>
       <small className="industrial-cad-hint">
-        {tr(props.locale, "OpenUSD 可直接查看；JT / XT 需部署对应转换器，未配置时文件会安全保留。", "OpenUSD opens directly; JT / XT require a matching converter and remain safely queued when unavailable.")}
+        {tr(
+          props.locale,
+          "RVT / DWG / X_B 依赖转换服务；JT / X_T 优先本地解析，超出范围时自动转交工业转换器。",
+          "RVT / DWG / X_B require conversion services; JT / X_T parse locally first and fall back to an industrial converter when needed.",
+        )}
       </small>
       <button className="device-layout-entry" onClick={() => setDeviceLayoutOpen(true)}>
         <Boxes size={18} />

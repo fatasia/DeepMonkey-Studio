@@ -53,7 +53,7 @@ export function createExternalConverterRegistrations(
       id: "bim.revit-native",
       name: "Revit 原生高保真转换",
       inputFormats: ["rvt"],
-      providerName: "BIM Studio Revit Worker",
+      providerName: "Industrial Studio Revit Worker",
       config: config.rvt,
       deployment: "desktop",
       requireHierarchy: true,

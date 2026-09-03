@@ -25,14 +25,14 @@ namespace BimStudio.Bridge.Editor
     /// </summary>
     public static class BimStudioManifestSynchronizer
     {
-        [MenuItem("BIM Studio/从场景自动同步集成清单", priority = 3)]
+        [MenuItem("Industrial Studio/从场景自动同步集成清单", priority = 3)]
         public static void SynchronizeMenu()
         {
             var manifest = BimStudioProjectSetup.EnsureManifest();
             var result = Synchronize(manifest);
             Selection.activeObject = manifest;
             EditorGUIUtility.PingObject(manifest);
-            EditorUtility.DisplayDialog("BIM Studio", result.Total == 0
+            EditorUtility.DisplayDialog("Industrial Studio", result.Total == 0
                 ? "场景绑定与集成清单已经一致。"
                 : $"同步完成：数据层 {result.dataLayers}、属性 {result.properties}、动作 {result.actions}、事件 {result.events}、业务对象 {result.objects}、路径更新 {result.updatedPaths}。", "确定");
         }
@@ -41,7 +41,7 @@ namespace BimStudio.Bridge.Editor
         {
             if (manifest == null) throw new ArgumentNullException(nameof(manifest));
             var result = new BimStudioManifestSyncResult();
-            Undo.RecordObject(manifest, "Synchronize BIM Studio manifest");
+            Undo.RecordObject(manifest, "Synchronize Industrial Studio manifest");
 
             var layers = (manifest.dataLayers ?? Array.Empty<BimStudioDataLayer>()).Where(item => item != null).ToList();
             var properties = (manifest.properties ?? Array.Empty<BimStudioProperty>()).Where(item => item != null).ToList();
@@ -80,7 +80,7 @@ namespace BimStudio.Bridge.Editor
                 var objectId = EnsureObject(objects, binding.gameObject, result, binding.objectId);
                 if (string.IsNullOrWhiteSpace(binding.objectId))
                 {
-                    Undo.RecordObject(binding, "Assign BIM Studio object ID");
+                    Undo.RecordObject(binding, "Assign Industrial Studio object ID");
                     binding.objectId = objectId;
                     EditorUtility.SetDirty(binding);
                 }

@@ -1,0 +1,46 @@
+.workcell-ergonomics-setup { border-top: 1px solid #29383e; background: #0f191d; }
+.workcell-ergonomics-setup > summary { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; cursor: pointer; list-style: none; }
+.workcell-ergonomics-setup > summary::-webkit-details-marker { display: none; }
+.workcell-ergonomics-setup > summary > span { display: grid; align-items: center; gap: 3px 7px; color: #d6e0e2; grid-template-columns: auto 1fr; }
+.workcell-ergonomics-setup > summary svg { color: #55b8b2; grid-row: 1 / 3; }
+.workcell-ergonomics-setup > summary strong { font-size: 12px; }
+.workcell-ergonomics-setup > summary small { color: #72858c; font-size: 11px; }
+.workcell-ergonomics-setup > summary em { color: #d5a853; font-size: 11px; font-style: normal; }
+.workcell-ergonomics-setup > summary em.complete { color: #69bd8b; }
+.workcell-ergonomics-profiles { display: grid; gap: 9px; padding: 0 16px 13px; }
+.workcell-ergonomics-toolbar { display: flex; min-height: 34px; align-items: center; justify-content: space-between; gap: 10px; }
+.workcell-ergonomics-toolbar > span { color: #72858c; font-size: 11px; }
+.workcell-ergonomics-toolbar button { display: inline-flex; min-height: 28px; flex: none; align-items: center; gap: 5px; padding: 0 8px; color: #a9d7d4; border: 1px solid #35605f; border-radius: 5px; background: #102625; font-size: 11px; cursor: pointer; }
+.workcell-ergonomics-toolbar button:disabled { cursor: not-allowed; opacity: .55; }
+.workcell-ergonomics-empty { display: flex; min-height: 76px; align-items: center; justify-content: center; gap: 10px; padding: 12px; color: #688087; border: 1px dashed #33464d; border-radius: 8px; background: #101a1e; }
+.workcell-ergonomics-empty > svg { flex: none; color: #4d7e7b; }
+.workcell-ergonomics-empty > span { display: grid; max-width: 430px; gap: 4px; }
+.workcell-ergonomics-empty strong { color: #aebfc2; font-size: 11px; }
+.workcell-ergonomics-empty small { color: #70838a; font-size: 11px; line-height: 1.45; }
+.workcell-ergonomics-profile { overflow: hidden; border: 1px solid #304149; border-radius: 8px; background: #111c20; }
+.workcell-ergonomics-profile > header { display: flex; min-height: 38px; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid #2a393f; }
+.workcell-ergonomics-profile > header span { display: flex; align-items: center; gap: 6px; color: #cbd8db; }
+.workcell-ergonomics-profile > header strong { font-size: 11px; }
+.workcell-ergonomics-profile > header em { color: #bd9450; font-size: 11px; font-style: normal; }
+.workcell-ergonomics-profile > header > div { display: flex; align-items: center; gap: 7px; }
+.workcell-ergonomics-profile > header button { display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; padding: 0; color: #82949a; border: 1px solid transparent; border-radius: 5px; background: transparent; cursor: pointer; }
+.workcell-ergonomics-profile > header button:hover { color: #df8585; border-color: #684047; background: #261719; }
+.workcell-ergonomics-profile > header button:disabled { cursor: not-allowed; opacity: .5; }
+.workcell-ergonomics-profile section { display: grid; gap: 8px; padding: 10px; border-top: 1px solid #25343a; }
+.workcell-ergonomics-profile h4 { display: flex; align-items: baseline; justify-content: space-between; margin: 0; color: #b9c7ca; font-size: 11px; }
+.workcell-ergonomics-profile h4 small { color: #687b82; font-size: 11px; font-weight: 400; }
+.workcell-ergonomics-bindings,.workcell-ergonomics-grid { display: grid; gap: 7px; padding: 10px; grid-template-columns: repeat(3,minmax(0,1fr)); }
+.workcell-ergonomics-bindings { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.workcell-ergonomics-grid { padding: 0; }
+.workcell-ergonomics-bindings label,.workcell-ergonomics-grid label { display: grid; min-width: 0; gap: 4px; color: #72858c; font-size: 11px; }
+.workcell-ergonomics-bindings select,.workcell-ergonomics-grid select,.workcell-ergonomics-grid > label > input { width: 100%; min-width: 0; height: 32px; padding: 0 7px; color: #cbd6d9; border: 1px solid #35464d; border-radius: 5px; outline: none; background: #0d171b; font-size: 11px; }
+.workcell-ergonomics-number { display: grid; overflow: hidden; border: 1px solid #35464d; border-radius: 5px; background: #0d171b; grid-template-columns: minmax(0,1fr) auto; }
+.workcell-ergonomics-number input { min-width: 0; height: 30px; padding: 0 7px; color: #cbd6d9; border: 0; outline: none; background: transparent; font-size: 11px; }
+.workcell-ergonomics-number small { align-self: center; padding-right: 7px; color: #65787f; font-size: 11px; }
+.workcell-ergonomics-vector { display: grid; gap: 7px; margin: 0; padding: 8px; border: 1px solid #2e3e45; border-radius: 6px; grid-template-columns: repeat(3,minmax(0,1fr)); }
+.workcell-ergonomics-vector legend { padding: 0 5px; color: #83949a; font-size: 11px; }
+.workcell-ergonomics-vector label { display: grid; align-items: center; gap: 4px; color: #63767d; font-size: 11px; grid-template-columns: 14px minmax(0,1fr); }
+.workcell-ergonomics-vector input { min-width: 0; height: 30px; padding: 0 6px; color: #cbd6d9; border: 1px solid #35464d; border-radius: 5px; outline: none; background: #0d171b; font-size: 11px; }
+.workcell-ergonomics-linked-point { margin: 0; padding: 8px; color: #8cb7b5; border-left: 2px solid #3a817e; background: #102326; font-size: 11px; }
+.workcell-ergonomics-boundary { display: flex; align-items: flex-start; gap: 7px; margin: 0; padding: 9px 10px; color: #74868c; border: 1px dashed #33454c; border-radius: 6px; font-size: 11px; line-height: 1.5; }
+@media (max-width: 760px) { .workcell-ergonomics-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }

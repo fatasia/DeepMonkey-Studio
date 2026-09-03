@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 
 /** 验证发布者能明确控制浏览工具栏，并确认选择进入公开快照。 */
 export async function publishWithViewerToolbar({ page, sceneCard, apiOrigin, outputRoot, readJsonResponse }) {
-  await sceneCard.getByTitle("发布").click();
+  await sceneCard.getByRole("button", { name: "发布场景", exact: true }).click();
   const dialog = page.locator(".publication-dialog");
   await dialog.waitFor({ state: "visible" });
   const showTools = dialog.getByRole("button", { name: /显示查看工具/ });

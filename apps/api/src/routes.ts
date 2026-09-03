@@ -26,12 +26,14 @@ import {
   writeDataPoint,
   type DataPointWriteRequest,
 } from "./dataIntegration.js";
+import { dataConnectionErrorMessage } from "./dataIntegrationHelpers.js";
+import { createSqlConnectionProbe } from "./dataConnectionProbe.js";
 import { previewPipeline } from "./dataPipelineService.js";
 import type { ConversionQueue } from "./conversion.js";
 import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
 import { getRevitRuntimeInfo } from "./revit.js";
-import { contentType } from "./routeFileTypes.js";
+import { assetContentEncoding, contentType } from "./routeFileTypes.js";
 import { registerModelAssetRoutes } from "./modelAssetRoutes.js";
 import { registerSceneRoutes } from "./sceneRoutes.js";
 import { registerAssetLibraryRoutes } from "./assetLibraryRoutes.js";
@@ -134,9 +136,14 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     const acceptsGzip = request.headers["accept-encoding"]?.includes("gzip") ?? false;
     const gzipKey = `${key}.gz`;
     const useGzip = acceptsGzip && key.toLowerCase().endsWith(".json") && (await objects.stat(gzipKey));
-    const result = await objects.read(useGzip ? gzipKey : key);
+    const responseKey = useGzip ? gzipKey : key;
+    const result = await objects.read(responseKey);
     void result.completed.catch((error) => request.log.error(error));
-    if (useGzip) reply.header("Content-Encoding", "gzip").header("Vary", "Accept-Encoding");
+    const contentEncoding = assetContentEncoding(responseKey);
+    if (contentEncoding) reply.header("Content-Encoding", contentEncoding).header("Vary", "Accept-Encoding");
+    if (/^projects\/[^/]+\/unity\/[^/]+\/[^/]+\//.test(key) && !key.toLowerCase().endsWith("index.html")) {
+      reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    }
     return reply.type(contentType(key)).send(result.stream);
   });
 
@@ -207,10 +214,12 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
         ? store.listDatasets(request.params.projectId).find((item) => item.id === request.body?.datasetId && item.connectionId === connection.id)
         : store.listDatasets(request.params.projectId).find((item) => item.connectionId === connection.id);
       const probeSourceKey = connection.type === "bacnet" ? "8,1,85" : connection.type === "s7" ? "DB1,REAL0" : connection.type === "ethernet-ip" ? "Tag1" : "";
-      if (!dataset && !["simulation", "bacnet", "s7", "ethernet-ip", "serial"].includes(connection.type))
+      const sqlProbe = dataset ? undefined : createSqlConnectionProbe(connection, request.params.projectId);
+      if (!dataset && !sqlProbe && !["simulation", "bacnet", "s7", "ethernet-ip", "serial"].includes(connection.type))
         return reply.code(400).send({ message: "请先为该连接创建一个数据集，再执行真实连接测试" });
       const probe =
         dataset ??
+        sqlProbe ??
         ({
           id: `probe:${connection.id}`,
           projectId: request.params.projectId,
@@ -241,7 +250,7 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
           rowCount: 0,
           fieldCount: 0,
           checkedAt: new Date().toISOString(),
-          message: reason instanceof Error ? reason.message : String(reason),
+          message: dataConnectionErrorMessage(reason, connection.type),
         };
       }
     },
@@ -358,11 +367,11 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
       return reply.code(400).send({ message: reason instanceof Error ? reason.message : "流水线保存失败" });
     }
   });
-  app.get<{ Params: { projectId: string; pipelineId: string } }>("/api/projects/:projectId/data-pipelines/:pipelineId/preview", async (request, reply) => {
+  app.get<{ Params: { projectId: string; pipelineId: string }; Querystring: { throughNodeId?: string } }>("/api/projects/:projectId/data-pipelines/:pipelineId/preview", async (request, reply) => {
     const definition = store.listDataPipelines(request.params.projectId).find((item) => item.id === request.params.pipelineId);
     if (!definition) return reply.code(404).send({ message: "流水线不存在" });
     try {
-      return await previewPipeline(config, store, definition);
+      return await previewPipeline(config, store, definition, request.query.throughNodeId?.trim() || undefined);
     } catch (reason) {
       return reply.code(400).send({ message: reason instanceof Error ? reason.message : "流水线运行失败" });
     }

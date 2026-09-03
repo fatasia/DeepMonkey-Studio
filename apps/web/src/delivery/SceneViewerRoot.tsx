@@ -60,7 +60,9 @@ export function SceneViewerRoot() {
         if (cancelled) return created.dispose();
         viewer = created;
         created.onSelectionChange = (value) => setSelected(value);
-        await applySceneViewerSnapshot(created, manifest.publication.snapshot, manifest.project);
+        await applySceneViewerSnapshot(created, manifest.publication.snapshot, manifest.project, {
+          isCancelled: () => cancelled,
+        });
         if (cancelled) return created.dispose();
         setEngine(created);
         setModels(created.listModels());

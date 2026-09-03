@@ -479,7 +479,7 @@ function actionHint(action: DataEventAction, locale: AppLocale): string {
     position: ["字段需输出 {x, y, z}", "Field must output {x, y, z}"],
     animation: ["布尔值控制模型动画", "A boolean controls model animation"],
     effects: ["字段需输出特效 JSON 对象", "Field must output an effects JSON object"],
-    material: ["JSON 可驱动颜色、粗糙度、金属度与 UV；贴图仍由素材库管理", "JSON controls scalar PBR and UV values; textures stay in the asset library"],
+    material: ["JSON 可驱动颜色、粗糙度、金属度与 UV；贴图仍由资源管理", "JSON controls scalar PBR and UV values; textures stay in Assets"],
     focus: ["每次更新时定位当前对象", "Focuses this object on every update"],
     label: ["字段值更新标注文字", "Field value updates annotation text"],
   };

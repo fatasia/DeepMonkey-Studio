@@ -1,6 +1,7 @@
 import {
   SceneBehaviorScheduler,
   validateSceneCommand,
+  type SceneBehaviorCapabilityRequest,
   type SceneBehaviorModule,
   type SceneBehaviorNetworkRequest,
   type SceneBehaviorNetworkResult,
@@ -29,6 +30,8 @@ export interface SceneBehaviorHostOptions {
   maxCommandsPerInvocation?: number;
   networkTimeoutMs?: number;
   executeNetworkRequest?: (request: Omit<SceneBehaviorNetworkRequest, "requestId" | "invocationId">) => Promise<SceneBehaviorNetworkResult>;
+  capabilityTimeoutMs?: number;
+  executeCapabilityRequest?: (request: Omit<SceneBehaviorCapabilityRequest, "requestId" | "invocationId">) => Promise<JsonValue>;
   now?: () => number;
 }
 
@@ -70,6 +73,8 @@ export class SceneBehaviorHost {
   private readonly maxCommandsPerInvocation: number;
   private readonly networkTimeoutMs: number;
   private readonly executeNetworkRequest: SceneBehaviorHostOptions["executeNetworkRequest"];
+  private readonly capabilityTimeoutMs: number;
+  private readonly executeCapabilityRequest: SceneBehaviorHostOptions["executeCapabilityRequest"];
   private readonly now: () => number;
   private readonly pending = new Map<string, PendingInvocation>();
   private status: SceneBehaviorHostDiagnostics["status"] = "idle";
@@ -95,6 +100,8 @@ export class SceneBehaviorHost {
     this.maxCommandsPerInvocation = Math.round(finiteOption(options.maxCommandsPerInvocation, 1, 10_000, 256));
     this.networkTimeoutMs = finiteOption(options.networkTimeoutMs, 100, 120_000, 15_000);
     this.executeNetworkRequest = options.executeNetworkRequest;
+    this.capabilityTimeoutMs = finiteOption(options.capabilityTimeoutMs, 100, 300_000, 90_000);
+    this.executeCapabilityRequest = options.executeCapabilityRequest;
     this.now = options.now ?? (() => performance.now());
     worker.onmessage = (event) => this.handleMessage(event.data);
     worker.onerror = (event) => this.fail(`行为 Worker 异常：${event.message || "unknown error"}`);
@@ -239,6 +246,10 @@ export class SceneBehaviorHost {
       void this.handleNetworkRequest(value);
       return;
     }
+    if (value.type === "behavior.capability.request") {
+      void this.handleCapabilityRequest(value);
+      return;
+    }
     if (value.type === "behavior.error") {
       this.fail(value.message, behaviorSourceLocation(value.stack, this.module?.id));
       return;
@@ -281,6 +292,39 @@ export class SceneBehaviorHost {
       this.worker.postMessage({ type: "behavior.network.result", requestId: request.requestId, result });
     } catch (reason) {
       this.worker.postMessage({ type: "behavior.network.result", requestId: request.requestId, error: reason instanceof Error ? reason.message : String(reason) });
+    }
+  }
+
+  private async handleCapabilityRequest(request: SceneBehaviorCapabilityRequest): Promise<void> {
+    const pending = this.pending.get(request.invocationId);
+    if (!pending || !this.module) return;
+    if (!this.executeCapabilityRequest) {
+      this.worker.postMessage({
+        type: "behavior.capability.result",
+        requestId: request.requestId,
+        error: "脚本 AI 能力网关暂不可用，请稍后重试或使用编辑器 AI 助手",
+      });
+      return;
+    }
+    if (!this.module.permissions.includes("ai.invoke") || !this.module.capabilities.includes("studio.ai")) {
+      this.worker.postMessage({ type: "behavior.capability.result", requestId: request.requestId, error: "脚本未获 studio.ai 能力或 ai.invoke 权限" });
+      return;
+    }
+    // 工业 AI 可能远程推理，将当前调用切换到独立的可控超时。
+    globalThis.clearTimeout(pending.timeoutId);
+    pending.timeoutId = globalThis.setTimeout(
+      () => this.fail(`行为“${this.module?.name ?? "unknown"}”的 AI 能力调用超过 ${this.capabilityTimeoutMs} ms`),
+      this.capabilityTimeoutMs,
+    );
+    try {
+      const result = await this.executeCapabilityRequest({ capabilityId: request.capabilityId, input: request.input });
+      this.worker.postMessage({ type: "behavior.capability.result", requestId: request.requestId, result });
+    } catch (reason) {
+      this.worker.postMessage({
+        type: "behavior.capability.result",
+        requestId: request.requestId,
+        error: reason instanceof Error ? reason.message : String(reason),
+      });
     }
   }
 
@@ -348,6 +392,13 @@ function isWorkerResponse(value: unknown): value is SceneBehaviorWorkerResponse 
       && typeof message.invocationId === "string"
       && Boolean(message.binding && typeof message.binding === "object")
       && Boolean(message.variables && typeof message.variables === "object");
+  }
+  if (message.type === "behavior.capability.request") {
+    return typeof message.requestId === "string"
+      && typeof message.invocationId === "string"
+      && typeof message.capabilityId === "string"
+      && message.capabilityId.trim().length > 0
+      && isJsonValue(message.input);
   }
   if (message.type === "behavior.log") return typeof message.level === "string" && LOG_LEVELS.has(message.level) && typeof message.message === "string";
   if (message.type === "behavior.error") return typeof message.message === "string" && (message.invocationId === undefined || typeof message.invocationId === "string");

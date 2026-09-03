@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanFileName, contentType, imageContentType, modelFormat, videoContentType } from "./routeFileTypes.js";
+import { assetContentEncoding, cleanFileName, contentType, imageContentType, modelFormat, videoContentType } from "./routeFileTypes.js";
 
 describe("route file types", () => {
   it("removes path segments and unsafe filename characters", () => {
@@ -9,6 +9,7 @@ describe("route file types", () => {
 
   it("detects supported model extensions without case sensitivity", () => {
     expect(modelFormat("battery-pack.STEP")).toBe("step");
+    expect(modelFormat("legacy-surface.IGES")).toBe("iges");
     expect(modelFormat("pump-body.X_T")).toBe("x_t");
     expect(modelFormat("assembly.JT")).toBe("jt");
     expect(modelFormat("factory.USDZ")).toBe("usdz");
@@ -22,9 +23,15 @@ describe("route file types", () => {
     expect(videoContentType(".webm")).toBe("video/webm");
     expect(contentType("scene.gltf")).toBe("application/json; charset=utf-8");
     expect(contentType("worker.wasm")).toBe("application/wasm");
+    expect(contentType("Build/player.wasm.br")).toBe("application/wasm");
+    expect(contentType("Build/player.framework.js.gz")).toBe("text/javascript; charset=utf-8");
+    expect(assetContentEncoding("Build/player.data.br")).toBe("br");
+    expect(assetContentEncoding("Build/player.framework.js.gz")).toBe("gzip");
+    expect(assetContentEncoding("Build/player.wasm")).toBeUndefined();
     expect(contentType("scene.usda")).toBe("model/usd");
     expect(contentType("scene.usdz")).toBe("model/vnd.usdz+zip");
     expect(contentType("mesh.stl")).toBe("model/stl");
+    expect(contentType("surface.igs")).toBe("model/iges");
     expect(contentType("assembly.3mf")).toBe("model/3mf");
     expect(contentType("unknown.bin")).toBe("application/octet-stream");
   });

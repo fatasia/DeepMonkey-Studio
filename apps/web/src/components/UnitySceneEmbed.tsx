@@ -1,4 +1,4 @@
-import { AlertTriangle, Box, LoaderCircle, RefreshCw } from "lucide-react";
+import { AlertTriangle, Box, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DashboardDataWidgetConfig, JsonValue, UnityRuntimeCapability } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -12,8 +12,9 @@ import {
   type UnityBridgeHostMessage,
 } from "../unityBridge";
 
-type UnityRuntimeState = "loading" | "ready" | "degraded" | "error";
+type UnityRuntimeState = "loading" | "ready" | "degraded" | "error" | "cancelled";
 const EMPTY_RUNTIME_CAPABILITIES: UnityRuntimeCapability[] = [];
+const UNITY_STARTUP_STALL_TIMEOUT_MS = 30_000;
 
 export interface UnityRuntimeStatusDetail {
   widgetId: string;
@@ -23,6 +24,7 @@ export interface UnityRuntimeStatusDetail {
   fps?: number;
   scene?: string;
   lastHealthAt?: number;
+  loadProgress?: number;
   capabilities?: UnityRuntimeCapability[];
 }
 
@@ -44,11 +46,14 @@ export function UnitySceneEmbed(props: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const sequenceRef = useRef(0);
   const pendingRef = useRef(new Map<string, { startedAt: number; timeout: number }>());
+  const loadingCancelledRef = useRef(false);
   const [state, setState] = useState<UnityRuntimeState>("loading");
   const [error, setError] = useState<string>();
   const [manifest, setManifest] = useState<UnityBuildManifest>();
   const [playerUrl, setPlayerUrl] = useState(widget.unityUrl ?? "");
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadProgress, setLoadProgress] = useState<number>();
+  const [loadActivityAt, setLoadActivityAt] = useState(() => Date.now());
   const [capabilities, setCapabilities] = useState<UnityRuntimeCapability[]>([]);
   const [telemetry, setTelemetry] = useState<Omit<UnityRuntimeStatusDetail, "widgetId" | "state">>({});
   const targetOrigin = useMemo(
@@ -86,14 +91,20 @@ export function UnitySceneEmbed(props: Props) {
       widgetId,
       state,
       ...telemetry,
+      ...(loadProgress !== undefined ? { loadProgress } : {}),
       ...(error ? { message: error } : {}),
       ...(runtimeCapabilities.length ? { capabilities: runtimeCapabilities } : {}),
     };
     window.dispatchEvent(new CustomEvent("bim-studio:unity-status", { detail }));
-  }, [error, runtimeCapabilities, state, telemetry, widgetId]);
+  }, [error, loadProgress, runtimeCapabilities, state, telemetry, widgetId]);
 
   useEffect(() => {
     clearPendingMessages();
+    loadingCancelledRef.current = false;
+    setState("loading");
+    setError(undefined);
+    setLoadProgress(undefined);
+    setLoadActivityAt(Date.now());
     if (!widget.unityManifestUrl) {
       setManifest(undefined);
       setCapabilities([]);
@@ -101,8 +112,6 @@ export function UnitySceneEmbed(props: Props) {
       return;
     }
     let cancelled = false;
-    setState("loading");
-    setError(undefined);
     void import("../api")
       .then(({ api }) => api.getUnityBuildManifest(widget.unityManifestUrl!))
       .then((value) => parseUnityBuildManifest(value, widget.unityManifestUrl!))
@@ -127,13 +136,17 @@ export function UnitySceneEmbed(props: Props) {
       setError(
         tr(
           locale,
-          "Unity Bridge 启动超时，请检查构建压缩格式、MIME/CSP 或网络后重试。",
-          "Unity Bridge timed out. Check build compression, MIME/CSP, or network, then retry.",
+          loadProgress === undefined
+            ? "Unity Bridge 启动超时，请检查构建压缩格式、MIME/CSP 或网络后重试。"
+            : `Unity 启动进度停在 ${Math.round(loadProgress * 100)}%，请检查网络、压缩响应头或浏览器内存。`,
+          loadProgress === undefined
+            ? "Unity Bridge timed out. Check build compression, MIME/CSP, or network, then retry."
+            : `Unity startup stalled at ${Math.round(loadProgress * 100)}%. Check the network, compression headers, or browser memory.`,
         ),
       );
-    }, 20_000);
+    }, UNITY_STARTUP_STALL_TIMEOUT_MS);
     return () => window.clearTimeout(timeout);
-  }, [loadAttempt, locale, playerUrl, state]);
+  }, [loadActivityAt, loadAttempt, loadProgress, locale, playerUrl, state]);
 
   useEffect(() => () => clearPendingMessages(), []);
 
@@ -144,10 +157,21 @@ export function UnitySceneEmbed(props: Props) {
 
   function retry() {
     clearPendingMessages();
+    loadingCancelledRef.current = false;
     setError(undefined);
     setTelemetry({});
+    setLoadProgress(undefined);
+    setLoadActivityAt(Date.now());
     setState("loading");
     setLoadAttempt((current) => current + 1);
+  }
+
+  function cancelLoading() {
+    clearPendingMessages();
+    loadingCancelledRef.current = true;
+    if (iframeRef.current) iframeRef.current.src = "about:blank";
+    setState("cancelled");
+    setError(tr(locale, "已取消 Unity 加载并卸载运行帧。", "Unity loading was cancelled and its runtime frame was unloaded."));
   }
 
   function clearPendingMessages() {
@@ -177,13 +201,18 @@ export function UnitySceneEmbed(props: Props) {
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
+      if (loadingCancelledRef.current) return;
       if (!targetOrigin || event.origin !== targetOrigin || event.source !== iframeRef.current?.contentWindow) return;
       const message = readUnityBridgeEvent(event.data);
       if (!message || (message.widgetId && message.widgetId !== widgetId)) return;
       if (message.type === "ready") {
+        setLoadProgress(1);
         setState("ready");
         setError(undefined);
         send("init", initPayload);
+      } else if (message.type === "load-progress") {
+        setLoadProgress((current) => current === undefined ? message.progress : Math.max(current, message.progress!));
+        setLoadActivityAt(Date.now());
       } else if (message.type === "event") {
         onEvent(message.eventName!, message.payload);
       } else if (message.type === "ack") {
@@ -277,20 +306,38 @@ export function UnitySceneEmbed(props: Props) {
 
   return (
     <div className={`unity-scene-embed ${compact ? "editing" : "runtime"}`}>
-      <iframe
+      {state !== "cancelled" && <iframe
         key={`${playerUrl}:${loadAttempt}`}
         ref={iframeRef}
         src={playerUrl}
         title={widget.title || "Unity WebGL"}
         sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-downloads"
         allow="fullscreen; gamepad; autoplay; clipboard-read; clipboard-write"
-        onLoad={() => setState("loading")}
-      />
+        onLoad={() => {
+          if (loadingCancelledRef.current) return;
+          setLoadActivityAt(Date.now());
+          setState("loading");
+        }}
+      />}
       {state === "loading" && (
-        <div className="unity-scene-state"><LoaderCircle className="spin" />{tr(locale, "等待 Unity Bridge 就绪", "Waiting for Unity Bridge")}</div>
+        <div className="unity-scene-state loading">
+          <LoaderCircle className="spin" />
+          <span>
+            <strong>{loadProgress === undefined
+              ? tr(locale, "等待 Unity Bridge 就绪", "Waiting for Unity Bridge")
+              : tr(locale, `正在加载 Unity ${Math.round(loadProgress * 100)}%`, `Loading Unity ${Math.round(loadProgress * 100)}%`)}</strong>
+            {loadProgress !== undefined && <i role="progressbar" aria-label={tr(locale, "Unity 加载进度", "Unity loading progress")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(loadProgress * 100)}>
+              <b style={{ width: `${loadProgress * 100}%` }} />
+            </i>}
+          </span>
+          <button onClick={cancelLoading}><X size={13} />{tr(locale, "取消", "Cancel")}</button>
+        </div>
       )}
       {state === "error" && (
         <div className="unity-scene-state error"><AlertTriangle /><span>{error}</span><button onClick={retry}><RefreshCw size={13} />{tr(locale, "重试", "Retry")}</button></div>
+      )}
+      {state === "cancelled" && (
+        <div className="unity-scene-state cancelled"><Box /><span>{error}</span><button onClick={retry}><RefreshCw size={13} />{tr(locale, "重新加载", "Reload")}</button></div>
       )}
       {state === "degraded" && <div className="unity-runtime-warning"><AlertTriangle size={13} />{error}</div>}
       {compact && <i>{tr(locale, "设计模式下 Unity 输入已隔离", "Unity input is isolated in design mode")}</i>}

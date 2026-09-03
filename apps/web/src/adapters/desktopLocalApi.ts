@@ -1,6 +1,7 @@
 import {
   assertApplicationDocument,
   type ApplicationDocument,
+  type ApplicationScriptDependency,
   type ModelFormat,
   type ModelRecord,
   type ProjectRecord,
@@ -10,6 +11,7 @@ import {
   type SystemUserRecord,
   type ViewerKind,
 } from "@bim-studio/contracts";
+import { init as initializeModuleLexer, parse as parseModule } from "es-module-lexer";
 import { DEFAULT_BRANDING } from "../appDefaults.js";
 import {
   IndexedDbDesktopLocalWorkspaceStore,
@@ -56,6 +58,16 @@ const DIRECT_VIEWER_KINDS: Partial<Record<ModelFormat, ViewerKind>> = {
   usdz: "usd",
 };
 
+const SCRIPT_DEPENDENCY_MAX_BYTES = 8 * 1024 * 1024;
+const SCRIPT_SPECIFIER_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/i;
+const EXACT_NPM_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+
+export type DesktopExternalModuleFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+const unavailableExternalModuleFetch: DesktopExternalModuleFetch = async () => {
+  throw new Error("本地依赖下载通道尚未初始化");
+};
+
 export function localDesktopUser(): SystemUserRecord {
   return structuredClone(LOCAL_USER);
 }
@@ -64,7 +76,10 @@ export class DesktopLocalApi {
   private mutationQueue: Promise<void> = Promise.resolve();
   private readonly modelUrls = new Map<string, string>();
 
-  constructor(private readonly store: DesktopLocalWorkspaceStore = new IndexedDbDesktopLocalWorkspaceStore()) {}
+  constructor(
+    private readonly store: DesktopLocalWorkspaceStore = new IndexedDbDesktopLocalWorkspaceStore(),
+    private readonly externalModuleFetch: DesktopExternalModuleFetch = unavailableExternalModuleFetch,
+  ) {}
 
   async handle(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, localDesktopApiOrigin());
@@ -90,6 +105,16 @@ export class DesktopLocalApi {
     if (projectRoute) {
       const project = state.projects.find((item) => item.id === projectRoute[0]);
       return project ? jsonResponse(await this.materializeProject(project)) : notFound("项目不存在");
+    }
+
+    const scriptDependency = matchRoute(url.pathname, /^\/api\/projects\/([^/]+)\/script-dependencies\/([^/]+)\/content$/, 2);
+    if (scriptDependency) {
+      if (!hasProject(state, scriptDependency[0])) return notFound("项目不存在");
+      const asset = await this.store.readScriptDependency(scriptDependency[1]);
+      if (!asset) return notFound("脚本依赖不存在");
+      const headers = new Headers({ "content-type": "text/javascript; charset=utf-8", "cache-control": "private, max-age=31536000, immutable" });
+      if (url.searchParams.get("download") === "1") headers.set("content-disposition", `attachment; filename="${scriptDependency[1]}.mjs"`);
+      return new Response(asset, { status: 200, headers });
     }
 
     const collection = matchRoute(url.pathname, /^\/api\/projects\/([^/]+)\/(scenes|applications)$/, 2);
@@ -156,6 +181,29 @@ export class DesktopLocalApi {
 
     const modelRoute = matchRoute(url.pathname, /^\/api\/projects\/([^/]+)\/models\/([^/]+)$/, 2);
     if (modelRoute) return this.writeModel(state, modelRoute[0], modelRoute[1], method, init, now);
+
+    const dependencyInstall = matchRoute(url.pathname, /^\/api\/projects\/([^/]+)\/script-dependencies\/(npm|upload|external)$/, 2);
+    if (dependencyInstall && method === "POST") {
+      if (!hasProject(state, dependencyInstall[0])) return notFound("项目不存在");
+      try {
+        return await this.installScriptDependency(
+          dependencyInstall[0],
+          dependencyInstall[1] as "npm" | "upload" | "external",
+          url,
+          init,
+          now,
+        );
+      } catch (reason) {
+        return badRequest(reason instanceof Error ? reason.message : "脚本依赖安装失败");
+      }
+    }
+
+    const dependencyDelete = matchRoute(url.pathname, /^\/api\/projects\/([^/]+)\/script-dependencies\/([^/]+)$/, 2);
+    if (dependencyDelete && method === "DELETE") {
+      if (!hasProject(state, dependencyDelete[0])) return notFound("项目不存在");
+      await this.store.deleteScriptDependency(dependencyDelete[1]);
+      return emptyResponse();
+    }
 
     const applications = matchRoute(url.pathname, /^\/api\/projects\/([^/]+)\/applications$/, 1);
     if (applications && method === "POST") {
@@ -288,6 +336,81 @@ export class DesktopLocalApi {
       return emptyResponse();
     }
     return methodNotAllowed();
+  }
+
+  private async installScriptDependency(
+    projectId: string,
+    source: "npm" | "upload" | "external",
+    url: URL,
+    init: RequestInit,
+    now: string,
+  ): Promise<Response> {
+    if (source === "upload") {
+      if (!(init.body instanceof FormData)) return badRequest("请选择 JavaScript 文件");
+      const file = init.body.get("file");
+      if (!(file instanceof File)) return badRequest("请选择 JavaScript 文件");
+      const specifier = validateScriptSpecifier(url.searchParams.get("specifier") ?? "");
+      const code = await file.text();
+      return this.persistScriptDependency(projectId, {
+        specifier,
+        source: "upload",
+        requested: file.name,
+        fileName: `${safeScriptFileName(specifier)}.mjs`,
+        code,
+      }, now);
+    }
+
+    const body = await jsonBody<{ packageName?: string; version?: string; specifier?: string; url?: string }>(init);
+    if (source === "external") {
+      const specifier = validateScriptSpecifier(body.specifier ?? "");
+      const sourceUrl = validateExternalModuleUrl(body.url ?? "");
+      const code = await downloadTextModule(this.externalModuleFetch, sourceUrl);
+      return this.persistScriptDependency(projectId, {
+        specifier,
+        source: "external-url",
+        requested: sourceUrl,
+        fileName: `${safeScriptFileName(specifier)}.mjs`,
+        code,
+      }, now);
+    }
+
+    const packageName = validateScriptSpecifier(body.packageName ?? "");
+    const version = body.version?.trim() ?? "";
+    if (!EXACT_NPM_VERSION_PATTERN.test(version)) throw new Error("npm 依赖必须填写固定版本，例如 1.2.3");
+    const specifier = validateScriptSpecifier(body.specifier || packageName);
+    const code = await downloadBrowserNpmBundle(this.externalModuleFetch, packageName, version);
+    return this.persistScriptDependency(projectId, {
+      specifier,
+      source: "npm",
+      requested: `${packageName}@${version}`,
+      resolvedVersion: version,
+      fileName: `${safeScriptFileName(specifier)}-${version}.mjs`,
+      code,
+    }, now);
+  }
+
+  private async persistScriptDependency(
+    projectId: string,
+    input: Omit<ApplicationScriptDependency, "id" | "assetUrl" | "integrity" | "size" | "installedAt"> & { code: string },
+    now: string,
+  ): Promise<Response> {
+    const bytes = new TextEncoder().encode(input.code);
+    if (bytes.byteLength === 0) throw new Error("JavaScript 模块为空");
+    if (bytes.byteLength > SCRIPT_DEPENDENCY_MAX_BYTES) throw new Error("脚本依赖不能超过 8 MB");
+    await assertSelfContainedModule(input.code);
+    const id = crypto.randomUUID();
+    await this.store.writeScriptDependency(id, new Blob([bytes], { type: "text/javascript" }));
+    const integrity = await sha256Integrity(bytes);
+    const { code: _code, ...metadata } = input;
+    const dependency: ApplicationScriptDependency = {
+      ...metadata,
+      id,
+      assetUrl: `/api/projects/${encodeURIComponent(projectId)}/script-dependencies/${id}/content`,
+      integrity,
+      size: bytes.byteLength,
+      installedAt: now,
+    };
+    return jsonResponse(dependency, 201);
   }
 
   private async writeApplication(state: DesktopLocalWorkspaceState, projectId: string, applicationId: string, method: string, init: RequestInit, now: string): Promise<Response> {
@@ -472,7 +595,13 @@ export class DesktopLocalApi {
   }
 }
 
-const localApi = new DesktopLocalApi();
+let externalModuleFetch = unavailableExternalModuleFetch;
+const localApi = new DesktopLocalApi(undefined, (input, init) => externalModuleFetch(input, init));
+
+/** 原始网络能力由 api.ts 统一注入；本地路由本身只消费受控下载通道。 */
+export function setDesktopLocalExternalModuleFetch(transport: DesktopExternalModuleFetch): void {
+  externalModuleFetch = transport;
+}
 
 export function desktopLocalApiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return localApi.handle(input, init);
@@ -531,4 +660,70 @@ function latestScenePublication(state: DesktopLocalWorkspaceState, sceneId: stri
 
 function extension(fileName: string): string {
   return fileName.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function validateScriptSpecifier(value: string): string {
+  const normalized = value.trim();
+  if (!SCRIPT_SPECIFIER_PATTERN.test(normalized)) throw new Error("模块名格式无效，请使用 npm 风格的名称");
+  return normalized;
+}
+
+function validateExternalModuleUrl(value: string): string {
+  const parsed = new URL(value.trim());
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error("外部 JS 地址必须是无内嵌凭据的 HTTP(S) URL");
+  }
+  return parsed.toString();
+}
+
+async function downloadBrowserNpmBundle(
+  transport: DesktopExternalModuleFetch,
+  packageName: string,
+  version: string,
+): Promise<string> {
+  const entryUrl = `https://esm.sh/${packageName}@${version}?bundle&target=es2022`;
+  const response = await fetchModule(transport, entryUrl);
+  const bundlePath = response.headers.get("x-esm-path");
+  if (bundlePath) return (await fetchModule(transport, new URL(bundlePath, response.url).toString())).text();
+
+  const source = await response.text();
+  // esm.sh 某些节点不返回 x-esm-path，首页只转发一个固定版本 bundle。
+  const forwardedPath = /\bfrom\s*["'](\/[^"']+\.mjs)["']/.exec(source)?.[1];
+  return forwardedPath ? (await fetchModule(transport, new URL(forwardedPath, response.url).toString())).text() : source;
+}
+
+async function downloadTextModule(transport: DesktopExternalModuleFetch, url: string): Promise<string> {
+  return (await fetchModule(transport, url)).text();
+}
+
+async function fetchModule(transport: DesktopExternalModuleFetch, url: string): Promise<Response> {
+  const response = await transport(url, {
+    credentials: "omit",
+    redirect: "follow",
+    headers: { accept: "text/javascript, application/javascript;q=0.9, text/plain;q=0.5" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`JavaScript 资源下载失败（HTTP ${response.status}）`);
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > SCRIPT_DEPENDENCY_MAX_BYTES) throw new Error("脚本依赖不能超过 8 MB");
+  return response;
+}
+
+async function assertSelfContainedModule(code: string): Promise<void> {
+  await initializeModuleLexer;
+  const [imports] = parseModule(code);
+  const moduleImports = imports.filter((entry) => entry.d !== -2);
+  if (moduleImports.some((entry) => entry.d >= 0)) throw new Error("项目依赖不允许动态 import，请上传或选择已打包的 ESM 文件");
+  if (moduleImports.length > 0) throw new Error("本地模式需要单文件 ESM 依赖；该文件仍引用其他模块");
+}
+
+async function sha256Integrity(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer));
+  let binary = "";
+  for (const byte of digest) binary += String.fromCharCode(byte);
+  return `sha256-${btoa(binary)}`;
+}
+
+function safeScriptFileName(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "module";
 }

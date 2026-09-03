@@ -9,42 +9,40 @@ import type { WhatIfStudyRecord } from "@bim-studio/studio-core";
 import { evidenceFingerprint } from "./operationsEngine.js";
 
 interface StudySources {
-  plantLiteStudies: PlantLiteStudyRecord[];
-  validationStudies: IndustrialValidationStudyRecord[];
-  whatIfStudies: WhatIfStudyRecord[];
+  plantLiteStudies: Array<PlantLiteStudyRecord | null | undefined>;
+  validationStudies: Array<IndustrialValidationStudyRecord | null | undefined>;
+  whatIfStudies: Array<WhatIfStudyRecord | null | undefined>;
 }
 
 /** 从各求解器的权威记录派生统一索引，避免重复持久化结果造成漂移。 */
 export function buildOperationsStudyIndex(source: StudySources): IndustrialStudyRecord[] {
   return [
-    ...source.plantLiteStudies.map(fromPlantLite),
-    ...source.whatIfStudies.map(fromWhatIf),
-    ...source.validationStudies.map(fromValidationStudy),
+    ...source.plantLiteStudies.filter(isPresent).map(fromPlantLite),
+    ...source.whatIfStudies.filter(isPresent).map(fromWhatIf),
+    ...source.validationStudies.filter(isPresent).map(fromValidationStudy),
   ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined;
 }
 
 function fromPlantLite(source: PlantLiteStudyRecord): IndustrialStudyRecord {
   const type = "plant-lite" as const;
   const versionFingerprint = executionVersionFingerprint(source.execution);
-  const outcomeFingerprint = evidenceFingerprint({ input: source.inputFingerprint, outcome: source.outcome });
+  const outcomeFingerprint = evidenceFingerprint({ input: source.inputFingerprint, outcome: source.outcome, trace: source.trace ?? null });
   return {
     id: studyId(type, source.id),
     sourceRecordId: source.id,
     projectId: source.projectId,
     type,
     title: source.name,
-    scenarioInput: {
-      templateId: source.templateId,
-      agvCount: source.agvCount,
-      bufferCapacity: source.bufferCapacity,
-      seed: source.seed,
-      replications: source.replications,
-    },
+    scenarioInput: plantScenarioInput(source),
     context: emptyContext(),
     fingerprints: {
       input: source.inputFingerprint,
       scene: null,
-      model: null,
+      model: source.modelFingerprint ?? null,
       version: versionFingerprint,
       evidence: outcomeFingerprint,
     },
@@ -56,15 +54,43 @@ function fromPlantLite(source: PlantLiteStudyRecord): IndustrialStudyRecord {
         metric("throughput", "平均产出", source.outcome.throughputPerHour.mean, "/h"),
         metric("wip", "平均在制品", source.outcome.averageWip.mean),
         metric("lead-time", "平均交付周期", source.outcome.averageLeadTimeMinutes.mean, "min"),
+        ...plantEnergyMetrics(source),
       ],
       evidenceRefs: [source.inputFingerprint, outcomeFingerprint],
       completedAt: source.createdAt,
     },
-    lineage: lineage(type, source.reproductionOf),
+    lineage: lineage(type, source.reproductionOf, source.comparison?.baselineStudyId),
     reproduction: { kind: "rerun", operationsTab: "logistics" },
     createdAt: source.createdAt,
     updatedAt: source.createdAt,
   };
+}
+
+function plantEnergyMetrics(source: PlantLiteStudyRecord): Array<ReturnType<typeof metric>> {
+  const energy = source.outcome.energy;
+  if (!energy) return [];
+  return [
+    metric("unit-energy", "单位能耗", energy.energyPerCompletedItemKwh.mean, "kWh/件"),
+    metric("unit-electricity-cost", "单位电费", energy.electricityCostPerCompletedItem.mean, "元/件"),
+    metric("unit-carbon", "单位碳排", energy.carbonEmissionPerCompletedItemKg.mean, "kgCO₂e/件"),
+  ];
+}
+
+function plantScenarioInput(source: PlantLiteStudyRecord): JsonValue {
+  return {
+    templateId: source.templateId,
+    ...(source.model ? { model: structuredClone(source.model) } : {}),
+    ...(source.agvCount !== undefined ? { agvCount: source.agvCount } : {}),
+    ...(source.bufferCapacity !== undefined ? { bufferCapacity: source.bufferCapacity } : {}),
+    seed: source.seed,
+    replications: source.replications,
+    limits: { ...source.execution.limits },
+    ...(source.execution.trace
+      ? { trace: { ...source.execution.trace } }
+      : source.trace
+        ? { trace: { replication: source.trace.replication, ...source.trace.limits } }
+        : {}),
+  } as unknown as JsonValue;
 }
 
 function fromWhatIf(source: WhatIfStudyRecord): IndustrialStudyRecord {
@@ -169,9 +195,11 @@ function metric(key: string, label: string, value: string | number, unit?: strin
   return { key, label, value, ...(unit ? { unit } : {}) };
 }
 
-function lineage(type: IndustrialStudyType, reproductionOf?: string): IndustrialStudyRecord["lineage"] {
-  const linked = linkedStudyId(type, reproductionOf);
-  return { baselineStudyId: linked, reproductionOf: linked };
+function lineage(type: IndustrialStudyType, reproductionOf?: string, baselineStudyId?: string): IndustrialStudyRecord["lineage"] {
+  return {
+    baselineStudyId: linkedStudyId(type, baselineStudyId ?? reproductionOf),
+    reproductionOf: linkedStudyId(type, reproductionOf),
+  };
 }
 
 function linkedStudyId(type: IndustrialStudyType, sourceId?: string): string | null {

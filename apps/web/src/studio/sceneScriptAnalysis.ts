@@ -30,12 +30,14 @@ const CAPABILITY_RULES: ReadonlyArray<{ pattern: RegExp; capability: SceneCapabi
   { pattern: /\bstudio\.animation\b/, capability: "studio.animation" },
   { pattern: /\.(?:playAnimation|pauseAnimation|stopAnimation|seekAnimation)\s*\(/, capability: "studio.animation" },
   { pattern: /\b(?:studio|ctx)\.(?:getData|setData)\s*\(/, capability: "studio.data" },
+  { pattern: /\bstudio\.ai\.invoke\s*\(/, capability: "studio.ai" },
   { pattern: /\b(?:studio|ctx)\.(?:log|emit)\s*\(/, capability: "studio.runtime" }
 ];
 const PERMISSION_RULES: ReadonlyArray<{ pattern: RegExp; permission: ApplicationScriptPermission }> = [
   { pattern: /\b(?:studio|ctx)\.(?:objects?|component|unity|camera|scene|animation|command)\b/, permission: "scene.write" },
   { pattern: /\b(?:studio|ctx)\.getData\s*\(/, permission: "data.read" },
   { pattern: /\b(?:studio|ctx)\.setData\s*\(/, permission: "data.write" },
+  { pattern: /\bstudio\.ai\.invoke\s*\(/, permission: "ai.invoke" },
   { pattern: /\b(?:studio\.net|net)\.(?:fetch|request)\s*\(|\bfetch\s*\(/, permission: "network.connect" }
 ];
 const WORKER_UNSUPPORTED_API: ReadonlyArray<{ pattern: RegExp; label: string }> = [
@@ -46,11 +48,19 @@ const WORKER_UNSUPPORTED_API: ReadonlyArray<{ pattern: RegExp; label: string }> 
 ];
 
 /** Static, project-aware checks for the small public Scene SDK surface. */
-export function analyzeSceneScript(code: string, script: Pick<ScriptModule, "lifecycle" | "capabilities" | "permissions">, context: SceneScriptIntelligenceContext): SceneScriptAnalysis {
+export function analyzeSceneScript(
+  code: string,
+  script: Pick<ScriptModule, "lifecycle" | "capabilities" | "permissions" | "target">,
+  context: SceneScriptIntelligenceContext,
+): SceneScriptAnalysis {
   const executableCode = maskJavaScriptComments(code);
   const lifecycle = LIFECYCLE_NAMES.filter((name) => new RegExp(`\\b(?:async\\s+)?function\\s+${name}\\s*\\(|\\b(?:const|let|var)\\s+${name}\\s*=`).test(executableCode));
   const capabilities = CAPABILITY_RULES.filter((rule) => rule.pattern.test(executableCode)).map((rule) => rule.capability);
   const permissions = PERMISSION_RULES.filter((rule) => rule.pattern.test(executableCode)).map((rule) => rule.permission);
+  const usesAttachedTarget = /\bctx\.self\b/.test(executableCode);
+  if (usesAttachedTarget && script.target?.kind === "object") capabilities.push("studio.object");
+  if (usesAttachedTarget && script.target?.kind === "component") capabilities.push("studio.component");
+  if (usesAttachedTarget && script.target && script.target.kind !== "scene") permissions.push("scene.write");
   const uniqueCapabilities = unique(capabilities);
   const uniquePermissions = unique(permissions);
   const missingCapabilities = uniqueCapabilities.filter((item) => !script.capabilities.includes(item));
@@ -66,6 +76,29 @@ export function analyzeSceneScript(code: string, script: Pick<ScriptModule, "lif
   const sceneIds = new Set(context.references.filter((item) => item.kind === "scene").map((item) => item.id));
   const pageIds = new Set(context.references.filter((item) => item.kind === "page").map((item) => item.id));
   const cameraViewIds = new Set(context.references.filter((item) => item.kind === "cameraView").map((item) => item.id));
+  if (script.target && script.target.kind !== "scene") {
+    const attachedTargetExists = context.targets.some((item) => item.kind === script.target?.kind && item.id === script.target.id);
+    if (!attachedTargetExists) {
+      issues.push({
+        code: "unknown-reference",
+        severity: "error",
+        message: `脚本挂载目标“${script.target.id}”不存在，请重新选择对象或资源`,
+        line: 1,
+        column: 1,
+        endColumn: 1,
+      });
+    }
+  }
+  if (usesAttachedTarget && (!script.target || script.target.kind === "scene")) {
+    issues.push({
+      code: "unsupported-api",
+      severity: "error",
+      message: "ctx.self 仅在脚本挂载到三维对象或二维资源时可用",
+      line: 1,
+      column: 1,
+      endColumn: 9,
+    });
+  }
   collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.object\s*\(\s*(["'])([^"']+)\1/g, objectIds, "场景对象", issues);
   collectUnknownCalls(executableCode, /\bstudio\.component\s*\(\s*(["'])([^"']+)\1/g, componentIds, "页面组件", issues);
   collectUnknownCalls(executableCode, /\bstudio\.unity\s*\(\s*(["'])([^"']+)\1/g, new Set(context.targets.filter((item) => item.runtime === "unity").map((item) => item.id)), "Unity 组件", issues);

@@ -30,8 +30,8 @@ import {
   topologyEdgeMedium,
   topologyEdgeStateClass,
   topologyNodeElevation,
+  topologyPlanPositionFromProjected,
   topologyProjectedPosition,
-  topologyProjectionOffset,
   type TopologyViewMode,
 } from "./topologyEditorRuntime";
 import { TopologyEditorPanelView } from "./TopologyEditorPanelView";
@@ -48,6 +48,7 @@ export {
   topologyEdgeMedium,
   topologyEdgeStateClass,
   topologyNodeElevation,
+  topologyPlanPositionFromProjected,
   topologyProjectedPosition,
 } from "./topologyEditorRuntime";
 
@@ -283,9 +284,16 @@ function useTopologyEditorController({
     if (!rect) return;
     const node = editor.document.nodes.find((item) => item.id === drag.nodeId);
     const elevation = node ? topologyNodeElevation(node) : 0;
-    const offset = topologyProjectionOffset(elevation, viewMode);
-    const x = snap(Math.max(24, Math.min(CANVAS_WIDTH - NODE_WIDTH - 24, (event.clientX - rect.left) / zoom - drag.offsetX - offset.x)));
-    const y = snap(Math.max(24, Math.min(CANVAS_HEIGHT - NODE_HEIGHT - 24, (event.clientY - rect.top) / zoom - drag.offsetY - offset.y)));
+    const planPosition = topologyPlanPositionFromProjected(
+      {
+        x: (event.clientX - rect.left) / zoom - drag.offsetX,
+        y: (event.clientY - rect.top) / zoom - drag.offsetY,
+      },
+      elevation,
+      viewMode,
+    );
+    const x = snap(Math.max(24, Math.min(CANVAS_WIDTH - NODE_WIDTH - 24, planPosition.x)));
+    const y = snap(Math.max(24, Math.min(CANVAS_HEIGHT - NODE_HEIGHT - 24, planPosition.y)));
     setDragPosition({ x, y });
   }
 

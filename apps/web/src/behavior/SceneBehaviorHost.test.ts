@@ -157,6 +157,88 @@ describe("SceneBehaviorHost", () => {
     expect(port.messages("behavior.network.result")[0]).toEqual({ type: "behavior.network.result", requestId: "net-1", result: { ok: true, status: 200, data: { temperature: 26 }, value: 26 } });
   });
 
+  it("returns an explicit fallback when the script capability gateway is unavailable", () => {
+    const worker = readyHostWorker(["onStart"]);
+    const invocation = worker.port.messages("behavior.invoke")[0]!;
+
+    worker.port.emit({
+      type: "behavior.capability.request",
+      requestId: "capability-1",
+      invocationId: invocation.invocationId,
+      capabilityId: "operations.maintenance.assess",
+      input: { assetId: "pump-01" },
+    });
+
+    expect(worker.port.messages("behavior.capability.result")[0]).toEqual({
+      type: "behavior.capability.result",
+      requestId: "capability-1",
+      error: "脚本 AI 能力网关暂不可用，请稍后重试或使用编辑器 AI 助手",
+    });
+    expect(worker.host.diagnostics()).toMatchObject({ status: "running", pendingInvocations: 1 });
+  });
+
+  it("rejects forged capability requests when the module lacks explicit AI permission", () => {
+    const port = new FakeWorker();
+    const executeCapabilityRequest = vi.fn();
+    const host = new SceneBehaviorHost(port, { executeCapabilityRequest });
+    const module: SceneBehaviorModule = {
+      ...behaviorModule(["onStart"]),
+      capabilities: ["studio.ai"],
+      permissions: ["scene.read"],
+    };
+    host.start(module, "scene-1");
+    port.emit({ type: "behavior.ready", moduleId: module.id, lifecycle: module.lifecycle });
+    const invocation = port.messages("behavior.invoke")[0]!;
+
+    port.emit({
+      type: "behavior.capability.request",
+      requestId: "capability-forged",
+      invocationId: invocation.invocationId,
+      capabilityId: "operations.maintenance.assess",
+      input: { assetId: "pump-01" },
+    });
+
+    expect(executeCapabilityRequest).not.toHaveBeenCalled();
+    expect(port.messages("behavior.capability.result")[0]).toMatchObject({
+      requestId: "capability-forged",
+      error: expect.stringContaining("ai.invoke"),
+    });
+  });
+
+  it("routes authorized AI capability calls through the controlled host gateway", async () => {
+    const port = new FakeWorker();
+    const executeCapabilityRequest = vi.fn().mockResolvedValue({ status: "accepted", evidenceId: "evidence-1" });
+    const host = new SceneBehaviorHost(port, { executeCapabilityRequest });
+    const module: SceneBehaviorModule = {
+      ...behaviorModule(["onStart"]),
+      capabilities: ["studio.ai"],
+      permissions: ["scene.read", "ai.invoke"],
+    };
+    host.start(module, "scene-1");
+    port.emit({ type: "behavior.ready", moduleId: module.id, lifecycle: module.lifecycle });
+    const invocation = port.messages("behavior.invoke")[0]!;
+
+    port.emit({
+      type: "behavior.capability.request",
+      requestId: "capability-2",
+      invocationId: invocation.invocationId,
+      capabilityId: "operations.maintenance.assess",
+      input: { assetId: "pump-01" },
+    });
+    await vi.waitFor(() => expect(port.messages("behavior.capability.result")).toHaveLength(1));
+
+    expect(executeCapabilityRequest).toHaveBeenCalledWith({
+      capabilityId: "operations.maintenance.assess",
+      input: { assetId: "pump-01" },
+    });
+    expect(port.messages("behavior.capability.result")[0]).toEqual({
+      type: "behavior.capability.result",
+      requestId: "capability-2",
+      result: { status: "accepted", evidenceId: "evidence-1" },
+    });
+    expect(host.diagnostics()).toMatchObject({ status: "running", pendingInvocations: 1 });
+  });
+
   it("sends dispose, accepts its completion, and terminates exactly once", () => {
     vi.useFakeTimers();
     const worker = readyHostWorker([]);

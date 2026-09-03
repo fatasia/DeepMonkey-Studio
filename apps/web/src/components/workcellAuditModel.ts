@@ -1,15 +1,42 @@
 import type {
   PrimitiveKind,
+  RobotLoadCapabilityState,
+  RobotToolLoadState,
   SceneSnapshot,
+  SceneModelState,
   Vector3Value,
   WorkcellAuditInput,
   WorkcellAuditObject,
   WorkcellBounds,
   WorkcellObjectRole,
+  WorkcellPlanningAssumptionState,
   WorkcellRobotTrajectory,
 } from "@bim-studio/contracts";
+import { robotLoadCapabilityFromPrefab } from "../viewer/robotKinematics";
 
-export function workcellAuditInputFromScene(scene: SceneSnapshot): WorkcellAuditInput {
+export interface WorkcellScenePlanningParameters {
+  clearanceThresholdMeters: number;
+  generatedTrajectorySpeedMps: number;
+  generatedTrajectoryTcpRadiusMeters: number;
+  origin: WorkcellPlanningAssumptionState["origin"];
+  status: WorkcellPlanningAssumptionState["status"];
+}
+
+export function starterWorkcellScenePlanningParameters(): WorkcellScenePlanningParameters {
+  return {
+    clearanceThresholdMeters: .25,
+    generatedTrajectorySpeedMps: .5,
+    generatedTrajectoryTcpRadiusMeters: .1,
+    origin: "starter-values",
+    status: "unconfirmed",
+  };
+}
+
+export function workcellAuditInputFromScene(
+  scene: SceneSnapshot,
+  planning = starterWorkcellScenePlanningParameters(),
+): WorkcellAuditInput {
+  validatePlanningParameters(planning);
   const objects: WorkcellAuditObject[] = [
     ...scene.models.map((model) => ({
       id: model.modelId,
@@ -23,6 +50,7 @@ export function workcellAuditInputFromScene(scene: SceneSnapshot): WorkcellAudit
           links: model.rig.robot.joints.map((joint) => ({ id: joint.bonePath, name: joint.name, length: joint.length, minAngleDeg: joint.minAngleDeg, maxAngleDeg: joint.maxAngleDeg })),
           ...(model.rig.robot.toolObjectId ? { toolObjectId: model.rig.robot.toolObjectId } : {}),
           ...(model.rig.robot.targetObjectIds?.length ? { targetObjectIds: [...model.rig.robot.targetObjectIds] } : {}),
+          ...robotPlanningProfileFromSceneModel(model),
         },
       } : {}),
     })),
@@ -40,12 +68,39 @@ export function workcellAuditInputFromScene(scene: SceneSnapshot): WorkcellAudit
       position: { ...item.position },
     })),
   ];
-  const trajectories = sceneTrajectories(scene, objects);
+  const trajectories = sceneTrajectories(scene, objects, planning);
+  const ergonomicsProfiles = scene.models
+    // 只有资源元数据明确声明为人员时才预建档案；名称猜测可能把“操作员控制台”等设备误当成人。
+    .filter((model) => model.prefab?.kind === "person")
+    .map((model) => ({ id: `human-task:${model.modelId}`, name: `${model.name} · 人工作业`, operatorObjectId: model.modelId }));
   return {
     sceneId: scene.id,
     objects,
-    clearanceThreshold: 0.25,
+    clearanceThreshold: planning.clearanceThresholdMeters,
+    planningAssumptions: {
+      origin: planning.origin,
+      status: planning.status,
+      ...(trajectories.length ? {
+        generatedTrajectorySpeedMps: planning.generatedTrajectorySpeedMps,
+        generatedTrajectoryTcpRadiusMeters: planning.generatedTrajectoryTcpRadiusMeters,
+      } : {}),
+    },
     ...(trajectories.length ? { trajectories } : {}),
+    ...(ergonomicsProfiles.length ? { ergonomicsProfiles } : {}),
+  };
+}
+
+/** 场景显式配置优先；只有机器人资源预制体的 payloadKg 可作为额定负载回退证据。 */
+export function robotPlanningProfileFromSceneModel(model: SceneModelState): {
+  loadCapability?: RobotLoadCapabilityState;
+  toolLoad?: RobotToolLoadState;
+} {
+  const robot = model.rig?.robot;
+  if (!robot) return {};
+  const loadCapability = robot.loadCapability ?? robotLoadCapabilityFromPrefab(model.prefab);
+  return {
+    ...(loadCapability ? { loadCapability: structuredClone(loadCapability) } : {}),
+    ...(robot.toolLoad ? { toolLoad: structuredClone(robot.toolLoad) } : {}),
   };
 }
 
@@ -53,6 +108,7 @@ export function workcellAuditInputFromScene(scene: SceneSnapshot): WorkcellAudit
 function sceneTrajectories(
   scene: SceneSnapshot,
   objects: WorkcellAuditInput["objects"],
+  planning: WorkcellScenePlanningParameters,
 ): WorkcellRobotTrajectory[] {
   const objectById = new Map(objects.map((item) => [item.id, item]));
   const genericTargets = objects.filter((item) => item.role === "target");
@@ -80,20 +136,35 @@ function sceneTrajectories(
         : {}),
     }];
     for (const target of targets) {
-      // 0.5 m/s 仅用于形成可复核时序候选，不等同于控制器节拍承诺。
-      elapsed += Math.max(0.1, vectorDistance(previous, target.position) / 0.5);
+      const distance = vectorDistance(previous, target.position);
+      // 重合点没有可证明的运动时长；跳过该段，避免再引入隐藏的最短动作时间。
+      if (distance <= 1e-9) continue;
+      elapsed += distance / planning.generatedTrajectorySpeedMps;
       waypoints.push({ id: `${model.modelId}:${target.id}`, timeSec: elapsed, position: { ...target.position } });
       previous = target.position;
     }
+    if (waypoints.length < 2) return [];
     return [{
       id: `scene-path:${model.modelId}`,
       name: `${model.name} · 场景直线候选`,
       robotId: model.modelId,
-      tcpRadius: 0.1,
+      tcpRadius: planning.generatedTrajectoryTcpRadiusMeters,
       precision: { source: "scene-transform" as const },
       waypoints,
     }];
   });
+}
+
+function validatePlanningParameters(value: WorkcellScenePlanningParameters): void {
+  if (!Number.isFinite(value.clearanceThresholdMeters) || value.clearanceThresholdMeters < 0 || value.clearanceThresholdMeters > 100) {
+    throw new Error("工位安全间隙必须在 0–100 m 之间");
+  }
+  if (!Number.isFinite(value.generatedTrajectorySpeedMps) || value.generatedTrajectorySpeedMps <= 0) {
+    throw new Error("候选轨迹 TCP 速度必须大于 0 m/s");
+  }
+  if (!Number.isFinite(value.generatedTrajectoryTcpRadiusMeters) || value.generatedTrajectoryTcpRadiusMeters <= 0) {
+    throw new Error("候选轨迹 TCP 包络半径必须大于 0 m");
+  }
 }
 
 export function workcellRole(name: string): WorkcellObjectRole {

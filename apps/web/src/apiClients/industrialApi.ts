@@ -28,6 +28,7 @@ export interface OperationsSnapshot {
   shadowEvaluations: Array<{ id: string }>;
   cases: OperationalCaseRecord[];
   logisticsExperiments: LogisticsExperimentResult[];
+  /** 最新记录可携带回放轨迹；历史记录的 trace 由服务端按首屏预算省略。 */
   plantLiteStudies: PlantLiteStudyRecord[];
   energyInsights: EnergyInsightRecord[];
   validationStudies: IndustrialValidationStudyRecord[];
@@ -85,10 +86,16 @@ export interface AiProviderDescriptor {
 export interface CapabilityInvocationResult<T = unknown> {
   status: string;
   capabilityId: string;
+  pluginId: string;
+  capabilityVersion: string;
   requestId: string;
   traceId: string;
+  generatedAt: string;
+  durationMs: number;
   decisionStatus: string;
   output?: T;
+  confidence?: number;
+  interval?: { low: number; high: number; unit?: string };
   evidence: Array<{
     id: string;
     kind: string;
@@ -97,6 +104,14 @@ export interface CapabilityInvocationResult<T = unknown> {
     fingerprint?: string;
   }>;
   warnings: string[];
+  suggestedActions: Array<{
+    id: string;
+    label: string;
+    commandType: string;
+    input: Record<string, unknown>;
+    risk: "low" | "medium" | "high";
+    requiresConfirmation: boolean;
+  }>;
   error?: { code: string; message: string; retryable: boolean };
 }
 

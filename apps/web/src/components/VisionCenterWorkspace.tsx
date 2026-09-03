@@ -9,6 +9,7 @@ import {
   ImagePlus,
   LoaderCircle,
   PackagePlus,
+  Pencil,
   Play,
   Plus,
   ScanSearch,
@@ -30,6 +31,7 @@ import {
 } from "./VisionCenterPrimitives";
 import { VisionEventLocalizationBadge } from "./VisionEventLocalizationBadge";
 import { VisionSourcePreview } from "./VisionSourcePreview";
+import { VisionTaskDependencyFlow } from "./VisionTaskDependencyFlow";
 
 export function VisionCenterWorkspace({
   controller,
@@ -51,7 +53,8 @@ export function VisionCenterWorkspace({
     error,
     setError,
     setSourceForm,
-    setTaskForm,
+    openNewTask,
+    openTaskEditor,
     setModelForm,
     selectedImageTaskId,
     setSelectedImageTaskId,
@@ -161,7 +164,7 @@ export function VisionCenterWorkspace({
                 <button
                   className="button primary"
                   disabled={!readyModels.length}
-                  onClick={() => setTaskForm(true)}
+                  onClick={openNewTask}
                 >
                   <Plus size={14} />
                   {tr(locale, "新建任务", "New task")}
@@ -200,6 +203,12 @@ export function VisionCenterWorkspace({
                           <i>{task.actualInferenceFps} FPS</i>
                         )}
                       </div>
+                      <VisionTaskDependencyFlow
+                        task={task}
+                        sources={sources}
+                        models={models}
+                        locale={locale}
+                      />
                       <em title={task.executionFallbackReason}>
                         {task.message}
                       </em>
@@ -221,6 +230,11 @@ export function VisionCenterWorkspace({
                         : tr(locale, "已停止", "Stopped")}
                     </span>
                     <button
+                      aria-label={
+                        task.enabled
+                          ? tr(locale, `停止任务“${task.name}”`, `Stop task “${task.name}”`)
+                          : tr(locale, `启动任务“${task.name}”`, `Start task “${task.name}”`)
+                      }
                       title={
                         task.enabled
                           ? tr(locale, "停止", "Stop")
@@ -238,6 +252,13 @@ export function VisionCenterWorkspace({
                       }
                     >
                       {task.enabled ? "■" : <Play size={13} />}
+                    </button>
+                    <button
+                      aria-label={tr(locale, `编辑任务“${task.name}”`, `Edit task “${task.name}”`)}
+                      title={tr(locale, "编辑", "Edit")}
+                      onClick={() => openTaskEditor(task)}
+                    >
+                      <Pencil size={13} />
                     </button>
                     <button
                       className="danger"

@@ -39,6 +39,7 @@
     "csv-parse": "^7.0.2",
     "dotenv": "^17.2.3",
     "draco3dgltf": "^1.5.7",
+    "esbuild": "0.28.1",
     "fastify": "^5.7.4",
     "jsmodbus": "^4.0.10",
     "jszip": "^3.10.1",

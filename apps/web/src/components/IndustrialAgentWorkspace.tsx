@@ -156,7 +156,7 @@ export function IndustrialAgentWorkspace(props: {
         <span><Workflow size={17} /></span>
         <div>
           <strong>{t("工业任务 Agent", "Industrial task agent")}</strong>
-          <small>{t("有预算、有审批、有证据的受控执行", "Budgeted, approved and evidence-backed execution")}</small>
+          <small>{t("有边界、有确认、有证据的受控执行", "Bounded, confirmed and evidence-backed execution")}</small>
         </div>
         {props.onBack && <button type="button" onClick={props.onBack}><ArrowLeft size={13} />{t("返回脚本", "Back to script")}</button>}
       </header>
@@ -168,7 +168,7 @@ export function IndustrialAgentWorkspace(props: {
             <textarea
               value={objective}
               onChange={(event) => setObjective(event.target.value)}
-              placeholder={t("例如：检查当前产线的设备风险，给出有证据的处理建议；涉及控制时先让我审批。", "Example: inspect line risks and return evidence-backed actions; ask before any control change.")}
+              placeholder={t("例如：检查当前产线的设备风险，给出有证据的处理建议；涉及控制时先让我确认。", "Example: inspect line risks and return evidence-backed actions; ask before any control change.")}
             />
           </label>
           <div className="industrial-agent-examples" aria-label={t("目标示例", "Objective examples")}>
@@ -191,7 +191,7 @@ export function IndustrialAgentWorkspace(props: {
             <span>
               <ShieldCheck size={13} />
               {preview.highRiskCount
-                ? t(`${preview.highRiskCount} 项高风险能力仅在逐次审批后执行`, `${preview.highRiskCount} high-risk capabilities require per-call approval`)
+                ? t(`${preview.highRiskCount} 项高风险能力仅在用户逐次确认后执行`, `${preview.highRiskCount} high-risk capabilities require per-action confirmation`)
                 : t("当前能力不会直接写入或控制现场", "Selected capabilities do not write to or control the site")}
             </span>
             <button className="primary" type="button" disabled={busy || loadingTools || !projectId || !objective.trim() || selectedToolIds.size === 0} onClick={() => void start()}>
@@ -247,7 +247,7 @@ function AgentCapabilityPreview(props: {
                 <input type="checkbox" checked={props.selectedToolIds.has(tool.id)} onChange={() => props.onToggle(tool.id)} />
                 <span><strong>{tool.label}</strong><small>{tool.description}</small></span>
               </label>
-              <em className={tool.requiresApproval ? "high" : tool.effect}>{describeAgentEffect(tool.effect, props.locale)}{tool.requiresApproval ? ` · ${t("需审批", "Approval")}` : ""}</em>
+              <em className={tool.requiresApproval ? "high" : tool.effect}>{describeAgentEffect(tool.effect, props.locale)}{tool.requiresApproval ? ` · ${t("需确认", "Confirmation")}` : ""}</em>
             </li>
           ))}
         </ul>
@@ -287,15 +287,15 @@ export function IndustrialAgentRunView(props: {
       </dl>
       {props.restored && <p className="industrial-agent-notice"><RefreshCw size={12} />{t("已恢复上次 checkpoint，未重复执行已完成的调用。", "Restored the last checkpoint without replaying completed calls.")}</p>}
       {checkpoint.status === "awaiting-approval" && checkpoint.pendingTool && (
-        <section className="industrial-agent-approval" aria-label={t("待审批动作", "Action awaiting approval")}>
-          <header><ShieldCheck size={15} /><span><strong>{t("需要你的明确批准", "Explicit approval required")}</strong><small>{pendingTool?.label ?? checkpoint.pendingTool.call.toolId}</small></span></header>
+        <section className="industrial-agent-approval" aria-label={t("待确认操作", "Action awaiting confirmation")}>
+          <header><ShieldCheck size={15} /><span><strong>{t("执行前需要你确认", "Confirmation required before execution")}</strong><small>{pendingTool?.label ?? checkpoint.pendingTool.call.toolId}</small></span></header>
           <dl>
             <div><dt>{t("影响类型", "Effect")}</dt><dd>{pendingTool ? describeAgentEffect(pendingTool.effect, props.locale) : checkpoint.pendingTool.effect}</dd></div>
             <div><dt>{t("作用范围", "Scope")}</dt><dd>{checkpoint.pendingTool.call.resources.map((item) => `${item.kind}:${item.id}`).join(" · ")}</dd></div>
             <div><dt>{t("验证要求", "Verification")}</dt><dd>{t("完成后必须返回独立验证证据，否则自动判定失败", "Independent post-action evidence is mandatory; otherwise the run fails")}</dd></div>
           </dl>
           <details><summary>{t("查看精确参数", "Review exact arguments")}<ChevronDown size={12} /></summary><pre>{JSON.stringify(checkpoint.pendingTool.call.arguments, null, 2)}</pre></details>
-          <div><button type="button" disabled={props.busy} onClick={() => props.onAction("cancel")}><PauseCircle size={13} />{t("取消任务", "Cancel")}</button><button className="primary" type="button" disabled={props.busy} onClick={() => props.onAction("approve")}><Check size={13} />{t("批准并继续", "Approve and continue")}</button></div>
+          <div><button type="button" disabled={props.busy} onClick={() => props.onAction("cancel")}><PauseCircle size={13} />{t("取消任务", "Cancel")}</button><button className="primary" type="button" disabled={props.busy} onClick={() => props.onAction("approve")}><Check size={13} />{t("确认并继续", "Confirm and continue")}</button></div>
         </section>
       )}
       {checkpoint.completion && (

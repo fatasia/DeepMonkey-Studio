@@ -33,8 +33,9 @@ import {
 import { buildValidationStudyRecord } from "./validationStudy.js";
 import { reproduceWhatIfStudy, runWhatIfStudy } from "./whatIfStudy.js";
 import { plantLiteRequestFromRecord } from "./plantLiteStudy.js";
-import { PlantLiteWorkerExecutor, type PlantLiteStudyExecutor } from "./plantLiteWorkerExecutor.js";
+import { PlantLiteWorkerExecutionError, PlantLiteWorkerExecutor, type PlantLiteStudyExecutor } from "./plantLiteWorkerExecutor.js";
 import { buildOperationsStudyIndex } from "./operationsStudyIndex.js";
+import { plantLiteStudiesForOperationsSnapshot } from "./operationsSnapshot.js";
 
 interface OperationsProjectState {
   models: MaintenanceModelPackage[];
@@ -97,6 +98,15 @@ export class OperationsService {
   snapshot(projectId: string): OperationsProjectState & { studies: IndustrialStudyRecord[] } {
     const state = this.project(projectId);
     return structuredClone({ ...state, studies: buildOperationsStudyIndex(state) });
+  }
+
+  snapshotForApi(projectId: string): OperationsProjectState & { studies: IndustrialStudyRecord[] } {
+    const state = this.project(projectId);
+    return structuredClone({
+      ...state,
+      plantLiteStudies: plantLiteStudiesForOperationsSnapshot(state.plantLiteStudies),
+      studies: buildOperationsStudyIndex(state),
+    });
   }
 
   async syncIotNbModels(projectId: string): Promise<IotNbSyncResult> {
@@ -417,6 +427,8 @@ export class OperationsService {
   }
 
   private async persistPlantLiteStudy(projectId: string, record: PlantLiteStudyRecord): Promise<PlantLiteStudyRecord> {
+    const recordIssue = plantLiteStudyRecordIssue(record);
+    if (recordIssue) throw new PlantLiteWorkerExecutionError(`离散仿真没有返回有效结果（${recordIssue}），未保存本次运行`);
     await this.mutate(projectId, (state) => {
       state.plantLiteStudies.unshift(record);
       state.plantLiteStudies = state.plantLiteStudies.slice(0, 100);
@@ -483,11 +495,18 @@ export class OperationsService {
       models: [], deployments: [], assessments: [], shadowEvaluations: [], cases: [],
       logisticsExperiments: [], plantLiteStudies: [], energyInsights: [], validationStudies: [], whatIfStudies: []
     };
-    // schemaVersion 1 允许增量字段；旧项目在首次读取时补齐，不要求迁移整个运营文件。
-    state.validationStudies ??= [];
-    state.logisticsExperiments ??= [];
-    state.plantLiteStudies ??= [];
-    state.whatIfStudies ??= [];
+    // schemaVersion 1 允许增量字段；旧项目在首次读取时补齐。空记录属于中断写入遗留，
+    // 必须在服务边界隔离，不能让一条坏记录拖垮整个运营工作区。
+    state.models = compactRecords(state.models);
+    state.deployments = compactRecords(state.deployments);
+    state.assessments = compactRecords(state.assessments);
+    state.shadowEvaluations = compactRecords(state.shadowEvaluations);
+    state.cases = compactRecords(state.cases);
+    state.logisticsExperiments = compactRecords(state.logisticsExperiments);
+    state.plantLiteStudies = compactRecords(state.plantLiteStudies);
+    state.energyInsights = compactRecords(state.energyInsights);
+    state.validationStudies = compactRecords(state.validationStudies);
+    state.whatIfStudies = compactRecords(state.whatIfStudies);
     return state;
   }
 
@@ -508,6 +527,26 @@ export class OperationsService {
     await writeFile(temporary, JSON.stringify(this.document, null, 2));
     await rename(temporary, this.filePath);
   }
+}
+
+function compactRecords<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is T => item !== null && item !== undefined)
+    : [];
+}
+
+function isPlantLiteStudyRecord(value: PlantLiteStudyRecord | null | undefined): value is PlantLiteStudyRecord {
+  return plantLiteStudyRecordIssue(value) === undefined;
+}
+
+function plantLiteStudyRecordIssue(value: PlantLiteStudyRecord | null | undefined): string | undefined {
+  if (!value || typeof value !== "object") return "Worker 未返回记录对象";
+  if (typeof value.id !== "string" || !value.id) return "记录 ID 缺失";
+  if (typeof value.projectId !== "string" || !value.projectId) return "项目 ID 缺失";
+  if (typeof value.inputFingerprint !== "string" || !value.inputFingerprint) return "输入指纹缺失";
+  if (!value.execution || typeof value.execution !== "object") return "执行证据缺失";
+  if (!value.outcome || typeof value.outcome !== "object") return "结果证据缺失";
+  return undefined;
 }
 
 function requiredText(value: string | undefined, label: string): string {

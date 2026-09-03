@@ -18,24 +18,21 @@ describe("sceneScriptResourceSnippet", () => {
     expect(listener).toContain('ctx.event?.name === "click"');
   });
 
-  it("keeps 2D and 3D navigation inside the script workspace", () => {
+  it("keeps the script workbench focused and leaves workspace navigation to the global bar", () => {
     const html = renderToStaticMarkup(
       createElement(SceneBehaviorPanel, {
         locale: "zh-CN",
         scripts: [],
+        dependencies: [],
         runtimeEntries: [],
         logs: [],
         codeTargets: [],
         intelligence: { targets: [], references: [], dataKeys: [], eventNames: [] },
-        workspaceNavigation: {
-          contextLabel: "生产应用 · 总览页面",
-          sceneAvailable: true,
-          onSelect2D: vi.fn(),
-          onSelect3D: vi.fn(),
-        },
         paused: false,
         onUpsert: vi.fn(),
         onDelete: vi.fn(),
+        onReplaceScripts: vi.fn(),
+        onDependenciesChange: vi.fn(),
         onRun: vi.fn(),
         onPauseResume: vi.fn(),
         onStop: vi.fn(),
@@ -43,16 +40,35 @@ describe("sceneScriptResourceSnippet", () => {
         onOpenDocs: vi.fn(),
         resolveSceneId: vi.fn(),
         onFocusTarget: vi.fn(),
+        layoutMode: "split",
+        onLayoutModeChange: vi.fn(),
         onClose: vi.fn(),
       }),
     );
 
-    expect(html).toContain('aria-label="编辑模式"');
-    expect(html).toContain("生产应用 · 总览页面");
-    expect(html).toContain(">二维<");
-    expect(html).toContain(">三维<");
-    expect(html).toContain('aria-current="page"');
+    expect(html).not.toContain('aria-label="编辑模式"');
+    expect(html).not.toContain("生产应用 · 总览页面");
+    expect(html).toContain('aria-label="脚本运行操作"');
+    expect(html).toContain('aria-label="AI 脚本助手"');
+    expect(html).toContain('aria-label="脚本版本"');
+    expect(html).toContain('aria-label="收起脚本列表"');
+    expect(html).toContain('aria-label="独立窗口"');
+    expect(html).toContain('aria-label="调整脚本列表宽度"');
     expect(html).toContain("inspector-collapsed");
     expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain(">AI 生成草稿<");
+    expect(html).not.toContain(">应用修改<");
+    expect(html).not.toContain(">还原<");
+  });
+
+  it("exposes a clear return action from the independent window", () => {
+    const html = renderToStaticMarkup(createElement(SceneBehaviorPanel, {
+      locale: "zh-CN", scripts: [], dependencies: [], runtimeEntries: [], logs: [], codeTargets: [],
+      intelligence: { targets: [], references: [], dataKeys: [], eventNames: [] }, paused: false,
+      onUpsert: vi.fn(), onDelete: vi.fn(), onReplaceScripts: vi.fn(), onDependenciesChange: vi.fn(), onRun: vi.fn(), onPauseResume: vi.fn(), onStop: vi.fn(),
+      onClearLogs: vi.fn(), onOpenDocs: vi.fn(), resolveSceneId: vi.fn(), onFocusTarget: vi.fn(),
+      layoutMode: "window", onLayoutModeChange: vi.fn(), onClose: vi.fn(),
+    }));
+    expect(html).toContain('aria-label="收回主窗口"');
   });
 });

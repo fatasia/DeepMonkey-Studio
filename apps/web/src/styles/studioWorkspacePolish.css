@@ -1,17 +1,15 @@
-/* 三维工作区要支持长时间工程操作，正文与操作标签不以“超高密度”为由压缩到 7–9px。 */
+/* 三维工作区要支持长时间工程操作；12px 是控件基线，11px 只用于次要信息。 */
+.app-shell :is(label, summary, button, select, textarea, output) {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .app-shell small,
-.app-shell label,
-.app-shell summary,
-.app-shell button,
-.app-shell select,
-.app-shell textarea,
-.app-shell output,
-.app-shell .eyebrow,
-.app-shell .left-panel :is(span, strong, p),
-.app-shell .right-panel :is(span, strong, p),
+.app-shell .left-panel :is(span, p),
+.app-shell .right-panel :is(span, p),
 .app-shell .tool-dock span {
-  font-size: 10px;
-  line-height: 1.35;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .app-shell button,
@@ -31,13 +29,224 @@
 
 .app-shell .topbar-auto-save {
   min-height: 28px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
-/* 旧样式中组合选择器权重较高，这两项是工作区统一可读性的硬约束。 */
-.app-shell small,
-.app-shell .right-panel button {
-  font-size: 10px !important;
+/* 1024/半屏编辑只保留一个场景标题来源。应用面包屑和模式上下文在此
+ * 尺寸会重复同一名称，优先让返回、模式、撤销、发布和保存始终可达。 */
+@media (max-width: 1500px) {
+  .app-shell .workspace-breadcrumb,
+  .app-shell .workspace-mode-switch .workspace-context,
+  .app-shell .scene-title-wrap > span,
+  .app-shell .topbar-auto-save > span {
+    display: none;
+  }
+
+  /* 紧凑宽度用图标释放标题空间，完整语义仍由 title/aria-label 提供。 */
+  .app-shell .panel-mode-button > span { display: none; }
+
+  .app-shell .workspace-mode-switch {
+    flex: 0 0 auto;
+    margin-left: 0;
+  }
+
+  .app-shell .scene-title-wrap {
+    min-width: 96px;
+    max-width: 180px;
+    flex: 1 1 130px;
+    margin-left: 0;
+  }
+
+  .app-shell .scene-title-wrap input {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell .topbar-actions {
+    flex: 0 0 auto;
+    margin-left: 0;
+    overflow: visible;
+  }
+
+  .app-shell .topbar-actions > :is(.topbar-publish-action, .topbar-save-action) {
+    width: auto;
+    padding-inline: 9px;
+  }
+
+  .app-shell .topbar-actions > :is(.topbar-publish-action, .topbar-save-action) .action-label {
+    display: inline;
+  }
+
+  .app-shell .topbar-auto-save {
+    width: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell .topbar-back > span,
+  .app-shell .topbar-actions > .compact-action {
+    display: none;
+  }
+
+  .app-shell .topbar-back {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .app-shell .scene-title-wrap {
+    max-width: 128px;
+  }
+}
+
+/* 编辑器壳层以背景分区；边框只承担区域分隔，不再为每层容器描边。 */
+.app-shell .topbar {
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom-color: var(--line-subtle);
+  background: rgba(12, 19, 24, .96);
+  backdrop-filter: blur(14px);
+}
+
+.app-shell .topbar-back {
+  height: 32px;
+  padding: 0 9px;
+  color: var(--text-muted);
+  border-color: transparent;
+  background: transparent;
+  font-size: 11px;
+}
+
+.app-shell .topbar-back:hover {
+  color: var(--text-strong);
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.app-shell :is(.left-panel, .right-panel) {
+  background: var(--surface-1);
+}
+
+.app-shell .left-panel { border-right-color: var(--line-subtle); }
+.app-shell .right-panel { border-left-color: var(--line-subtle); }
+
+.app-shell .panel-heading {
+  min-height: 50px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.app-shell .panel-heading .eyebrow { display: none; }
+.app-shell .panel-heading h2 {
+  margin: 0;
+  flex: 0 0 auto;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+
+.app-shell .panel-mode-button {
+  flex: 0 0 auto;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  border-color: transparent;
+  background: transparent;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* 侧栏宽度固定，模式名称使用 tooltip/aria 呈现，避免宽屏下反而逐字竖排。 */
+.app-shell .panel-heading .panel-mode-button > span { display: none; }
+
+.app-shell .panel-mode-button:hover {
+  color: var(--text-strong);
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.app-shell .panel-mode-button.active,
+.app-shell .icon-button.active,
+.app-shell .tool-button.active {
+  color: #08181b;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.app-shell .workspace {
+  background: var(--bg-1);
+}
+
+.app-shell .tool-dock {
+  top: 12px;
+  padding: 3px;
+  border-color: var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(18, 27, 33, .93);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .24);
+}
+
+.app-shell .tool-button {
+  width: 32px;
+  height: 32px;
+}
+
+.app-shell .scene-tree,
+.app-shell .layer-tree {
+  background: var(--bg-1);
+}
+
+.app-shell .scene-tree-group,
+.app-shell .scene-tree-row,
+.app-shell .model-tree-item,
+.app-shell .asset-row {
+  border-bottom-color: var(--line-subtle);
+}
+
+.app-shell .scene-tree-row {
+  height: 32px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.app-shell .scene-tree-row > strong,
+.app-shell .scene-tree-name strong,
+.app-shell .asset-copy strong,
+.app-shell .layer-node-main span {
+  font-size: 11px;
+}
+
+.app-shell .scene-tree-row.group { background: var(--surface-1); }
+.app-shell .scene-tree-row:hover { background: var(--surface-2); }
+.app-shell .scene-tree-row.selected {
+  color: var(--text-strong);
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.app-shell .right-panel button { font-size: 11px !important; }
+.app-shell .inspector-content :is(input, select, textarea) { font-size: 12px; }
+
+.workspace-panel-controls button {
+  top: 62px;
+  border-color: var(--line);
+  background: rgba(19, 28, 34, .94);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .2);
+}
+
+.workspace-panel-controls button:hover,
+.workspace-panel-controls button[aria-pressed="false"] {
+  color: var(--accent-hover);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--accent-soft);
 }
 
 .app-shell .model-expander {

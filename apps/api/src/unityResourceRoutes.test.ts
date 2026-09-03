@@ -20,12 +20,16 @@ describe("Unity resource import", () => {
     const zip = new JSZip();
     zip.file("Build/index.html", "<!doctype html>");
     zip.file("Build/Build.loader.js", "console.log('loader')");
+    zip.file("Build/Build.framework.js.br", "framework");
+    zip.file("Build/Build.wasm.br", "wasm");
+    zip.file("Build/Build.data.br", "data");
     zip.file(
       "Build/bim-studio.manifest.json",
       JSON.stringify({
         schemaVersion: 1,
         bridgeVersion: 1,
         unityVersion: "2022.3",
+        bridgePackageVersion: "0.6.1",
         scenes: ["Factory"],
         events: ["device-click"],
         dataLayers: [{ key: "temperature" }],
@@ -39,6 +43,8 @@ describe("Unity resource import", () => {
 
     expect(result.playerPath).toBe("index.html");
     expect(result.manifest.unityVersion).toBe("2022.3");
+    expect(result.manifest.bridgePackageVersion).toBe("0.6.1");
+    expect(result.manifest.webBuild).toMatchObject({ compression: "brotli", runtimeFileCount: 4 });
     expect(result.manifest.scenes).toEqual(["Factory"]);
     expect(result.manifest.events).toEqual(["device-click"]);
     expect(result.manifest.runtimeCapabilities).toEqual(["ack", "heartbeat"]);
@@ -61,7 +67,11 @@ describe("Unity resource import", () => {
 
     const zip = new JSZip();
     zip.file("Build/index.html", "<!doctype html>");
-    zip.file("Build/bim-studio.manifest.json", JSON.stringify({ schemaVersion: 1, bridgeVersion: 1, unityVersion: "2022.3.62f1", scenes: ["Factory"], events: ["device-click"] }));
+    zip.file("Build/Build.loader.js", "loader");
+    zip.file("Build/Build.framework.js.gz", "framework");
+    zip.file("Build/Build.wasm.gz", "wasm");
+    zip.file("Build/Build.data.gz", "data");
+    zip.file("Build/bim-studio.manifest.json", JSON.stringify({ schemaVersion: 1, bridgeVersion: 1, bridgePackageVersion: "0.6.1", unityVersion: "2022.3.62f1", scenes: ["Factory"], events: ["device-click"] }));
     const archive = await zip.generateAsync({ type: "nodebuffer" });
     const first = await app.inject({ method: "POST", url: "/api/projects/default/unity-resources?name=Factory", ...multipartPayload(archive, "factory.zip") });
     expect(first.statusCode).toBe(201);

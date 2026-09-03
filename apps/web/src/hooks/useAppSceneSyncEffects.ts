@@ -2,6 +2,7 @@ import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "r
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
 import type { AppRoute } from "../appRoute";
+import { derivePipelineRefreshSeconds, normalizeDataRefreshSeconds } from "../components/dataRefreshPolicy";
 import type { AppState } from "./useAppState";
 import { createTopologyRuntimeFailure, createTopologyRuntimeSnapshot, groupTopologyRuntimeBindings, mergeTopologyRuntimeAcknowledgements } from "../topologyRuntime";
 import { focusViewerTargetWhenReady } from "../studio/workspaceTargetNavigation";
@@ -137,7 +138,12 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
             fields: dataset.fields.map((field) => field.key),
             refreshSeconds: dataset.refreshSeconds,
           })),
-          ...pipelines.map((pipeline) => ({ id: pipeline.id, type: "pipeline" as const, name: pipeline.name })),
+          ...pipelines.map((pipeline) => ({
+            id: pipeline.id,
+            type: "pipeline" as const,
+            name: pipeline.name,
+            refreshSeconds: derivePipelineRefreshSeconds(pipeline, datasets),
+          })),
         ]);
         if (topology.id !== topologyId) navigate({ view: "topology", projectId, applicationId, topologyId: topology.id }, true);
       })
@@ -177,7 +183,10 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
       };
       void poll();
       const configuredSeconds = topologyDataProducts.find((product) => product.type === group.productType && product.id === group.productId)?.refreshSeconds;
-      timers.push(window.setInterval(() => void poll(), Math.max(2, configuredSeconds ?? 5) * 1_000));
+      if (configuredSeconds !== undefined) {
+        const refreshSeconds = normalizeDataRefreshSeconds(configuredSeconds);
+        if (refreshSeconds > 0) timers.push(window.setInterval(() => void poll(), refreshSeconds * 1_000));
+      }
     }
     return () => {
       cancelled = true;
@@ -206,7 +215,7 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
           items.some((item) => item.id === result.project.id) ? items.map((item) => (item.id === result.project.id ? result.project : item)) : [...items, result.project],
         );
         if (application) applicationSessionRef.current.openDocument(application);
-        await applyScene(result.scene, false, result.project, false);
+        await applyScene(result.scene, false, result.project, false, false, true);
       } catch (reason) {
         if (!cancelled) {
           sceneWorkspaceLoadRef.current = undefined;

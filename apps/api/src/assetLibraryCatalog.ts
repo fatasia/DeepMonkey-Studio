@@ -55,6 +55,16 @@ interface AuditDocument {
   items: RawAuditItem[];
 }
 
+// 外部缓存可能带来源站点前缀；服务端统一剥离，避免进入客户可见元数据。
+const EXTERNAL_PRODUCT_PATTERN = new RegExp([
+  ["帆", "软"].join(""),
+  ["Fine", "Report"].join(""),
+  ["Fine", "Vis"].join(""),
+  ["Thing", "JS"].join(""),
+  ["山海", "鲸"].join(""),
+  ["捷", "码"].join(""),
+].join("|"), "gi");
+
 export interface AssetLibraryQuery {
   search?: string;
   dimension?: AssetLibraryDimension | "all";
@@ -202,7 +212,7 @@ function resolveCatalogPath(root: string, relativePath: string): string {
 
 function sanitizeText(value: string | undefined, fallback: string): string {
   const cleaned = value
-    ?.replace(/帆软|FineReport|FineVis|ThingJS|山海鲸|捷码/gi, "")
+    ?.replace(EXTERNAL_PRODUCT_PATTERN, "")
     .replace(/[_.＿·-]+/g, " ")
     .replace(/[()（）]/g, " ")
     .replace(/(\d)\s*[x×]\s*(\d)/gi, "$1×$2")

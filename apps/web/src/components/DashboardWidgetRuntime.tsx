@@ -9,6 +9,7 @@ import { DashboardDigitalFlip, DashboardLiquidFill, DashboardScrollTable } from 
 import { DashboardImage, DashboardMonitor, DashboardVideo } from "./DashboardMediaPlayer";
 import { analyzeDashboardMetric, conditionalStyle } from "./dashboardAnalytics";
 import { mergeDirectBindingMetric, mergeProductMetrics } from "./dashboardMetrics";
+import { buildDashboardDataProductRefreshPlans } from "./dataRefreshPolicy";
 import { dashboardJsonRecord as jsonRecord, dashboardJsonValue as jsonValue, finiteDashboardNumber as toFiniteNumber } from "./dashboardWidgetValues";
 import { applyDashboardFilters, DashboardDesignState, DashboardDrillChart, DashboardReportTable } from "./DashboardWidgetVisualization";
 
@@ -44,15 +45,18 @@ export function useDashboardMetrics(
   const [fieldsByProduct, setFieldsByProduct] = useState<Record<string, DataDatasetField[]>>({});
   const [statusByProduct, setStatusByProduct] = useState<Record<string, "loading" | "ready" | "error">>({});
   const [catalogError, setCatalogError] = useState(false);
+  const [catalogResolved, setCatalogResolved] = useState(false);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     if (!widgets.some((widget) => widget.datasetId || widget.pipelineId)) {
       setCatalogError(false);
+      setCatalogResolved(false);
       return;
     }
     let cancelled = false;
     setCatalogError(false);
+    setCatalogResolved(false);
     void Promise.all([api.listDatasets(projectId), api.listDataPipelines(projectId)])
       .then(([nextDatasets, nextPipelines]) => {
         if (cancelled) return;
@@ -62,9 +66,13 @@ export function useDashboardMetrics(
           ...current,
           ...Object.fromEntries(nextDatasets.map((dataset) => [`dataset:${dataset.id}`, dataset.fields])),
         }));
+        setCatalogResolved(true);
       })
       .catch(() => {
-        if (!cancelled) setCatalogError(true);
+        if (!cancelled) {
+          setCatalogError(true);
+          setCatalogResolved(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -90,52 +98,39 @@ export function useDashboardMetrics(
   }, [widgets]);
 
   useEffect(() => {
-    const datasetIds = [...new Set(widgets.map((widget) => widget.datasetId).filter((id): id is string => Boolean(id)))];
-    const pipelineIds = [...new Set(widgets.map((widget) => widget.pipelineId).filter((id): id is string => Boolean(id)))];
-    const productIds = [...datasetIds, ...pipelineIds];
-    const productKeys = [...datasetIds.map((id) => `dataset:${id}`), ...pipelineIds.map((id) => `pipeline:${id}`)];
-    if (productIds.length === 0) return;
+    if (!catalogResolved) return;
+    const plans = buildDashboardDataProductRefreshPlans(widgets, datasets, pipelines);
+    if (plans.length === 0) return;
     let cancelled = false;
-    const refresh = async () => {
-      setStatusByProduct((current) => ({ ...current, ...Object.fromEntries(productKeys.map((key) => [key, "loading"])) }));
-      const previews = await Promise.all([
-        ...datasetIds.map(async (id) => {
-          try {
-            const preview = await api.previewDataset(projectId, id);
-            return { id, kind: "dataset" as const, fields: preview.fields, rows: preview.rows } as const;
-          } catch {
-            return { id, kind: "dataset" as const, error: true } as const;
-          }
-        }),
-        ...pipelineIds.map(async (id) => {
-          try {
-            const preview = await api.previewDataPipeline(projectId, id);
-            if (preview.status === "error") return { id, kind: "pipeline" as const, error: true } as const;
-            return { id, kind: "pipeline" as const, fields: preview.fields, rows: preview.rows } as const;
-          } catch {
-            return { id, kind: "pipeline" as const, error: true } as const;
-          }
-        }),
-      ]);
-      if (cancelled) return;
-      const successes = previews
-        .filter((preview): preview is Extract<typeof preview, { fields: DataDatasetField[] }> => "fields" in preview)
-        .map((preview) => ({ ...preview, rows: applyDashboardFilters(preview.rows, filters, widgets) }));
-      setFieldsByProduct((current) => ({ ...current, ...Object.fromEntries(successes.map((preview) => [`${preview.kind}:${preview.id}`, preview.fields])) }));
-      setStatusByProduct((current) => ({
-        ...current,
-        ...Object.fromEntries(previews.map((preview) => [`${preview.kind}:${preview.id}`, "error" in preview ? "error" : "ready"])),
-      }));
-      setMetrics((current) => successes.reduce((next, preview) => mergeProductMetrics(next, preview.id, preview.fields, preview.rows), current));
+    const timers: number[] = [];
+    const inFlight = new Set<string>();
+    const refresh = async (plan: (typeof plans)[number]) => {
+      if (inFlight.has(plan.key)) return;
+      inFlight.add(plan.key);
+      setStatusByProduct((current) => ({ ...current, [plan.key]: "loading" }));
+      try {
+        const preview = plan.kind === "dataset" ? await api.previewDataset(projectId, plan.id) : await api.previewDataPipeline(projectId, plan.id);
+        if ("status" in preview && preview.status === "error") throw new Error(preview.error || "数据管道运行失败");
+        if (cancelled) return;
+        const rows = applyDashboardFilters(preview.rows, filters, widgets);
+        setFieldsByProduct((current) => ({ ...current, [plan.key]: preview.fields }));
+        setStatusByProduct((current) => ({ ...current, [plan.key]: "ready" }));
+        setMetrics((current) => mergeProductMetrics(current, plan.id, preview.fields, rows));
+      } catch {
+        if (!cancelled) setStatusByProduct((current) => ({ ...current, [plan.key]: "error" }));
+      } finally {
+        inFlight.delete(plan.key);
+      }
     };
-    void refresh();
-    const seconds = Math.max(2, Math.min(...datasetIds.map((id) => datasets.find((item) => item.id === id)?.refreshSeconds || 5), ...(pipelineIds.length > 0 ? [5] : [])));
-    const timer = window.setInterval(() => void refresh(), seconds * 1_000);
+    for (const plan of plans) {
+      void refresh(plan);
+      if (plan.refreshSeconds > 0) timers.push(window.setInterval(() => void refresh(plan), plan.refreshSeconds * 1_000));
+    }
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      for (const timer of timers) window.clearInterval(timer);
     };
-  }, [datasets, filters, projectId, widgets]);
+  }, [catalogResolved, datasets, filters, pipelines, projectId, widgets]);
 
   useEffect(() => {
     // 确定性视觉验收和离线嵌入场景不应建立会重试的现场数据连接。

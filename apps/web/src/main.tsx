@@ -22,26 +22,43 @@ async function bootstrap(): Promise<void> {
 
 async function renderStudioApplication(): Promise<void> {
   await import("./editorStyles");
-  const [{ App }, { DesktopConnectionGate }] = await Promise.all([
-    import("./App"),
-    import("./components/DesktopConnectionGate"),
-  ]);
   // 视觉验收页默认不进入生产入口；CI 通过一次性构建变量显式启用。
   const visualQaEnabled = import.meta.env.DEV || import.meta.env.VITE_VISUAL_QA === "true";
   const DashboardVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/DashboardVisualQa")) : undefined;
   const ViewerVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/ViewerVisualQa")) : undefined;
   const CommissioningVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/CommissioningVisualQa")) : undefined;
+  const OperationsPlanningVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/OperationsPlanningVisualQa")) : undefined;
   const visualQaMode = visualQaEnabled ? new URLSearchParams(window.location.search).get("__visualQa") : undefined;
+  if (visualQaMode && DashboardVisualQa && ViewerVisualQa && CommissioningVisualQa && OperationsPlanningVisualQa) {
+    const VisualQaPage = visualQaMode === "dashboard"
+      ? DashboardVisualQa
+      : visualQaMode === "viewer"
+        ? ViewerVisualQa
+        : visualQaMode === "commissioning"
+          ? CommissioningVisualQa
+          : visualQaMode === "operations-planning"
+            ? OperationsPlanningVisualQa
+          : undefined;
+    if (VisualQaPage) {
+      createRoot(document.getElementById("root")!).render(
+        <StrictMode>
+          <Suspense fallback={<div className="app-auth-loading">正在加载视觉验收页</div>}>
+            <VisualQaPage />
+          </Suspense>
+        </StrictMode>,
+      );
+      return;
+    }
+  }
+
+  const [{ App }, { DesktopConnectionGate }] = await Promise.all([
+    import("./App"),
+    import("./components/DesktopConnectionGate"),
+  ]);
   const standaloneDocsMode = /^\/docs(?:\/|$)/.test(window.location.pathname);
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
-      {visualQaMode === "dashboard" && DashboardVisualQa
-        ? <Suspense fallback={<div className="app-auth-loading">正在加载大屏验收页</div>}><DashboardVisualQa /></Suspense>
-        : visualQaMode === "viewer" && ViewerVisualQa
-          ? <Suspense fallback={<div className="app-auth-loading">正在加载三维验收页</div>}><ViewerVisualQa /></Suspense>
-          : visualQaMode === "commissioning" && CommissioningVisualQa
-            ? <Suspense fallback={<div className="app-auth-loading">正在加载工位验收页</div>}><CommissioningVisualQa /></Suspense>
-            : standaloneDocsMode ? <App /> : <DesktopConnectionGate><App /></DesktopConnectionGate>}
+      {standaloneDocsMode ? <App /> : <DesktopConnectionGate><App /></DesktopConnectionGate>}
     </StrictMode>,
   );
 }

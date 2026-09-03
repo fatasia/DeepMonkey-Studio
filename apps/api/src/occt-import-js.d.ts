@@ -24,6 +24,7 @@ declare module "occt-import-js" {
 
   interface OcctInstance {
     ReadStepFile(content: Uint8Array, params: Record<string, unknown> | null): OcctResult;
+    ReadIgesFile(content: Uint8Array, params: Record<string, unknown> | null): OcctResult;
   }
 
   export default function createOcct(): Promise<OcctInstance>;

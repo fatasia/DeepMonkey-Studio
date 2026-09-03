@@ -18,6 +18,7 @@ import {
   normalizeCameraConstraints,
 } from "../appDefaults";
 import { syncSceneIntoApplication } from "../studio/sceneApplicationSync";
+import { resolveSceneEntryCamera } from "../studio/sceneEntryCamera";
 import { workspaceSaveFailureGuidance } from "../studio/workspaceSaveProtection";
 import { createWorkspaceRecoveryDraft, deleteWorkspaceRecoveryDraft, writeWorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import { normalizeSceneCoordinates } from "../viewer/sceneCoordinates";
@@ -169,7 +170,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
   const fileTransfer = createSceneFileTransferActions(context, makeSnapshot, applyScene);
   const publication = createScenePublicationActions(context, () => saveScene());
 
-  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false) {
+  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false) {
     if (!engine || !sceneProject) return;
     const applyVersion = ++sceneApplyVersionRef.current;
     setBusy(true);
@@ -243,7 +244,8 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       for (const annotation of scene.annotations ?? []) engine.addAnnotation(annotation);
       setAnnotations(engine.listAnnotations());
       const nextCameraViews = scene.cameraViews ?? [];
-      const entryCamera = nextCameraViews.find((item) => item.id === scene.defaultCameraViewId)?.camera ?? scene.camera;
+      const authoredEntryCamera = nextCameraViews.find((item) => item.id === scene.defaultCameraViewId)?.camera ?? scene.camera;
+      const entryCamera = resolveSceneEntryCamera(authoredEntryCamera, { readOnly, safeAuthoringEntry });
       const nextCameraConstraints = normalizeCameraConstraints({ ...DEFAULT_CAMERA_CONSTRAINTS, ...scene.cameraConstraints });
       const nextNavigationSettings = normalizeNavigationSettings(scene.navigationSettings);
       engine.setCameraConstraints(nextCameraConstraints);
@@ -293,7 +295,13 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       setActiveScene(scene);
       setSceneName(scene.name);
       setMessage(`场景“${scene.name}”已恢复`);
-      setRevision((value) => value + 1);
+      setRevision((value) => {
+        const nextRevision = value + 1;
+        // Applying a persisted/recovered snapshot establishes a new clean baseline. Updating the
+        // guard in the same state transition prevents the load itself from recreating a recovery draft.
+        lastAutoSavedSceneRevisionRef.current = nextRevision;
+        return nextRevision;
+      });
       if (readOnly && deferredModels.length) {
         void (async () => {
           let loaded = essentialModels.length;

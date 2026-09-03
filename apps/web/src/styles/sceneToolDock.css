@@ -191,9 +191,14 @@
 }
 
 .scene-tool-xr {
-  font-size: 8px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  font-size: 9px;
   font-weight: 900;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
+  line-height: 1;
 }
 
 @media (max-width: 1180px) {

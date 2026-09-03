@@ -6,6 +6,7 @@ export * from "./directBinding.js";
 export * from "./aiDataBinding.js";
 export * from "./parametricModeling.js";
 export * from "./operations.js";
+export * from "./plantLiteModel.js";
 export * from "./data.js";
 export * from "./geometry.js";
 export * from "./vision.js";
@@ -18,6 +19,8 @@ export * from "./workcellValidation.js";
 export * from "./askData.js";
 export * from "./dashboard.js";
 export * from "./project.js";
+export * from "./ergonomics.js";
+export * from "./robot.js";
 export * from "./scene.js";
 export * from "./industrialPrefab.js";
 export * from "./publicationRendererPolicy.js";
@@ -75,9 +78,9 @@ export interface AiProviderSettings {
 }
 
 export interface ServiceHealthRecord {
-  id: "api" | "web" | "media" | "vision" | "postgres" | "minio";
+  id: "api" | "web" | "node-red" | "media" | "vision" | "postgres" | "minio";
   name: string;
-  status: "healthy" | "degraded" | "offline";
+  status: "healthy" | "degraded" | "offline" | "not-configured";
   endpoint: string;
   latencyMs?: number;
   message?: string;
@@ -96,6 +99,39 @@ export interface AiAssistantResponse {
   dashboard?: SceneDashboardState;
   model: string;
   reliability?: AiAssistantReliability;
+}
+
+export type ServiceLogLevel = "debug" | "info" | "warn" | "error";
+
+export interface ServiceLogEntry {
+  id: string;
+  service: string;
+  level: ServiceLogLevel;
+  timestamp: string;
+  message: string;
+  file: string;
+}
+
+export interface ServiceLogQueryResult {
+  items: ServiceLogEntry[];
+  total: number;
+  truncated: boolean;
+  services: string[];
+  generatedAt: string;
+}
+
+export interface SystemDiagnosticSnapshot {
+  generatedAt: string;
+  runtime: {
+    platform: string;
+    architecture: string;
+    nodeVersion: string;
+    uptimeSeconds: number;
+    metadataStore: "json" | "postgres";
+    objectStore: "local" | "minio";
+  };
+  health: ServiceHealthRecord[];
+  logs: ServiceLogQueryResult;
 }
 
 export type AiAssistantVerification = "verified" | "supported" | "limited" | "unverified";
@@ -153,6 +189,7 @@ export interface DatabaseDocument {
 
 export * from "./application.js";
 export * from "./battery.js";
+export * from "./batteryDataContract.js";
 export * from "./applicationMigration.js";
 export * from "./resourceId.js";
 export * from "./converter.js";

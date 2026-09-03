@@ -1,4 +1,14 @@
-import type { SceneRobotJointState, Vector3Value, WorkcellAuditInput, WorkcellAuditResult, WorkcellBounds, WorkcellReachabilityResult } from "@bim-studio/contracts";
+import type {
+  RobotLoadCapabilityState,
+  RobotToolLoadState,
+  SceneRobotJointState,
+  Vector3Value,
+  WorkcellAuditInput,
+  WorkcellAuditResult,
+  WorkcellBounds,
+  WorkcellReachabilityResult,
+  WorkcellRobotLoadCheck,
+} from "@bim-studio/contracts";
 
 export interface RobotAssistantJointInput extends SceneRobotJointState {
   currentAngleDeg?: number;
@@ -8,6 +18,8 @@ export interface RobotAssistantTargetInput {
   id: string;
   name: string;
   position: Vector3Value;
+  /** 未声明等同启用；停用点保留在草稿中，但不进入本次轨迹、节拍与验证。 */
+  enabled?: boolean;
   orientationEulerDeg?: Vector3Value;
   jointAnglesDeg?: number[];
   processTimeSec?: number;
@@ -25,10 +37,18 @@ export interface RobotAssistantObjectInput {
 export interface RobotCycleGoalInput {
   targetSec: number;
   tcpSpeedMps?: number;
+  /** 规划广相位采用的 TCP/工具/工件组合包络半径。 */
+  tcpRadiusMeters?: number;
   jointSpeedDegPerSec?: number;
   controllerOverheadSec?: number;
   toolActionSec?: number;
   safetyMarginPercent?: number;
+}
+
+export interface RobotPlanningAssumptionState {
+  /** 起步值只用于快速配置；未明确确认前不得执行并生成工程结论。 */
+  origin: "starter-values" | "authored";
+  status: "unconfirmed" | "engineer-confirmed";
 }
 
 export interface RobotWorkcellAssistantInput {
@@ -43,11 +63,15 @@ export interface RobotWorkcellAssistantInput {
     currentTcpPosition?: Vector3Value;
     joints: RobotAssistantJointInput[];
     toolObjectId?: string;
+    loadCapability?: RobotLoadCapabilityState;
+    toolLoad?: RobotToolLoadState;
   };
   targets: RobotAssistantTargetInput[];
   objects: RobotAssistantObjectInput[];
   cycleGoal: RobotCycleGoalInput;
   clearanceThreshold?: number;
+  /** 旧记录可省略；新建任务必须显式确认起步规划参数。 */
+  planningAssumptions?: RobotPlanningAssumptionState;
 }
 
 export interface RobotCycleBudgetLine {
@@ -90,10 +114,12 @@ export interface RobotTaskDraftStep {
 
 export interface RobotWorkcellAssistantResult {
   generatedBy: "robot-workcell-assistant-orchestrator";
-  status: "blocked" | "needs-data" | "ready-for-formal-simulation";
+  /** 只描述快速初筛后的下一步，不能被解释为精确机器人仿真通过。 */
+  status: "blocked" | "needs-data" | "ready-for-control-validation";
   taskDraft: {
     id: string;
     name: string;
+    robotId: string;
     status: "draft";
     controllerProgramGenerated: false;
     steps: RobotTaskDraftStep[];
@@ -102,6 +128,8 @@ export interface RobotWorkcellAssistantResult {
     status: WorkcellAuditResult["status"];
     evidenceCoverage: number;
     evidenceFingerprint: string;
+    /** 与本次任务输入配对的轨迹初筛证据；不包含 IK 或机器人骨骼动画。 */
+    trajectoryAnalysis?: NonNullable<WorkcellAuditResult["trajectoryAnalysis"]>;
   };
   reachability: WorkcellReachabilityResult[];
   jointLimits: RobotJointLimitCheck[];
@@ -111,9 +139,11 @@ export interface RobotWorkcellAssistantResult {
     pairs: WorkcellAuditResult["collisionPairs"];
     declaration: string;
   };
+  loadScreening: WorkcellRobotLoadCheck;
   cycleBudget: RobotCycleBudgetResult;
   missingEvidence: string[];
-  formalSimulationItems: string[];
+  /** 当前网页能力之外仍需完成的工程校核，始终不能被快速初筛或控制逻辑回放替代。 */
+  remainingEngineeringChecks: string[];
   confirmationPolicy: {
     automaticDispatch: false;
     controllerProgramGenerated: false;

@@ -36,4 +36,35 @@ describe("ApplicationSession", () => {
     expect(session.getDocument()?.metadata.name).toBe("第二应用");
     expect(session.store.getState()).toMatchObject({ dirty: false, canUndo: false, canRedo: false });
   });
+
+  it("retains valid selection when the same application is refreshed", () => {
+    const session = new ApplicationSession();
+    const application = migrateSceneSnapshotV1(dashboardFixture as unknown as SceneSnapshot);
+    const selectedWidget = application.pages[0]?.nodes[0];
+    expect(selectedWidget).toBeDefined();
+    session.openDocument(application);
+    session.store.setSelection([{ kind: "widget", id: selectedWidget!.id }]);
+
+    session.openDocument(structuredClone(application));
+
+    expect(session.store.getState().selection).toEqual([{ kind: "widget", id: selectedWidget!.id }]);
+  });
+
+  it("drops selection that no longer exists after refreshing the same application", () => {
+    const session = new ApplicationSession();
+    const application = migrateSceneSnapshotV1(dashboardFixture as unknown as SceneSnapshot);
+    const selectedWidget = application.pages[0]?.nodes[0];
+    expect(selectedWidget).toBeDefined();
+    session.openDocument(application);
+    session.store.setSelection([{ kind: "widget", id: selectedWidget!.id }]);
+    const refreshed = structuredClone(application);
+    refreshed.pages = refreshed.pages.map((page) => ({
+      ...page,
+      nodes: page.nodes.filter((node) => node.id !== selectedWidget!.id),
+    }));
+
+    session.openDocument(refreshed);
+
+    expect(session.store.getState().selection).toEqual([]);
+  });
 });

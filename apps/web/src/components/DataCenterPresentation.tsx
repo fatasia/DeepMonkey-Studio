@@ -17,13 +17,17 @@ export const CONNECTOR_REQUIRED = new Set<DataConnectionType>();
 
 export const WRITABLE_CONNECTIONS = new Set<DataConnectionType>(["bacnet", "s7", "ethernet-ip", "serial", "simulation"]);
 
-export function DatasetPreview({ locale, preview }: { locale: AppLocale; preview?: DataDatasetPreview }) {
+export function DatasetPreview({ locale, preview, datasetName }: { locale: AppLocale; preview?: DataDatasetPreview; datasetName?: string }) {
   if (!preview)
     return (
       <div className="data-preview-empty">
         <Table2 size={30} />
-        <strong>{tr(locale, "选择一个数据集", "Select a dataset")}</strong>
-        <span>{tr(locale, "运行查询后自动识别字段，并展示前 100 行数据。", "Run the query to infer fields and preview up to 100 rows.")}</span>
+        <strong>{datasetName ? tr(locale, "尚未运行查询", "Query not run yet") : tr(locale, "选择一个数据集", "Select a dataset")}</strong>
+        <span>
+          {datasetName
+            ? tr(locale, `运行“${datasetName}”后将在此显示字段和前 100 行数据。`, `Run “${datasetName}” to show inferred fields and up to 100 rows here.`)
+            : tr(locale, "从左侧选择数据集，然后运行查询。", "Select a dataset on the left, then run its query.")}
+        </span>
       </div>
     );
   return (

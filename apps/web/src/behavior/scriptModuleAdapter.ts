@@ -4,6 +4,7 @@ import {
   SCENE_CAPABILITIES,
   SCENE_PERMISSIONS,
   type SceneBehaviorModule,
+  type SceneBehaviorDependencyModule,
   type SceneCapability,
   type ScenePermission
 } from "@bim-studio/scene-sdk";
@@ -17,7 +18,10 @@ const capabilities = new Set<string>(SCENE_CAPABILITIES);
 const permissions = new Set<string>(SCENE_PERMISSIONS);
 
 /** Narrows persisted application strings at the public Scene SDK boundary. */
-export function resolveSceneBehaviorModule(script: ScriptModule): ScriptModuleResolution {
+export function resolveSceneBehaviorModule(
+  script: ScriptModule,
+  dependencies: readonly SceneBehaviorDependencyModule[] = [],
+): ScriptModuleResolution {
   if (!script.enabled) return { status: "skipped", message: "脚本已禁用" };
   if (script.runtime !== "worker-sandbox") return { status: "skipped", message: "旧版可信脚本不会自动进入 Worker 运行时" };
   if (script.apiVersion !== SCENE_API_VERSION) return { status: "rejected", message: `不支持 Scene API ${script.apiVersion}` };
@@ -35,7 +39,9 @@ export function resolveSceneBehaviorModule(script: ScriptModule): ScriptModuleRe
       lifecycle: [...script.lifecycle],
       capabilities: [...script.capabilities] as SceneCapability[],
       permissions: [...script.permissions] as ScenePermission[],
-      ...(script.target ? { target: structuredClone(script.target) } : {})
+      ...(script.target ? { target: structuredClone(script.target) } : {}),
+      // SDK 合同需要可序列化的普通数组；显式复制同时切断调用方的只读引用。
+      ...(dependencies.length ? { dependencies: dependencies.map((dependency) => structuredClone(dependency)) } : {}),
     }
   };
 }

@@ -6,12 +6,27 @@ import { type NavigationViewState } from "./viewerEngineTypes";
 import { ViewerEngineRuntimeSupport } from "./viewerEngineRuntimeSupport";
 import { updateAnnotationVisualPresentation } from "./sceneOverlayVisuals";
 import { visibleAnnotationLabelIds } from "./annotationLabelLayout";
+import { nextFrameCadence } from "./viewerFrameCadence";
+
+const READ_ONLY_TARGET_FPS = 60;
 
 /** Runtime 职责层。 */
 export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
   protected animate = (): void => {
     if (!this.xrActive) this.animationFrame = requestAnimationFrame(this.animate);
     const now = performance.now();
+    if (!this.xrActive && document.visibilityState !== "visible") {
+      this.lastFrameTime = now;
+      this.readOnlyFrameCadenceAnchor = undefined;
+      return;
+    }
+    if (!this.xrActive && this.readOnlyMode) {
+      const cadence = nextFrameCadence(now, this.readOnlyFrameCadenceAnchor, READ_ONLY_TARGET_FPS);
+      this.readOnlyFrameCadenceAnchor = cadence.anchorMs;
+      if (!cadence.render) return;
+    } else {
+      this.readOnlyFrameCadenceAnchor = undefined;
+    }
     this.framePerformanceMonitor.recordFrame(now, document.visibilityState === "visible");
     const delta = Math.min((now - this.lastFrameTime) / 1000, 0.05);
     this.lastFrameTime = now;

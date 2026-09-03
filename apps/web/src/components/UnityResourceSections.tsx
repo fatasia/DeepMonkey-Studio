@@ -43,7 +43,7 @@ export function UnityContractConfiguration({ locale, version, widget, runtimeSta
             <Activity size={13} />
             <strong>{tr(locale, "联动调试", "Integration debug")}</strong>
           </span>
-          <small>{runtimeStateText(locale, runtimeStatus?.state)}</small>
+          <small>{runtimeStateText(locale, runtimeStatus?.state, runtimeStatus?.loadProgress)}</small>
         </header>
         <div>
           <span>
@@ -225,7 +225,7 @@ export function UnityExternalRuntimeStatus({ locale, status }: { locale: AppLoca
           <Activity size={13} />
           <strong>{tr(locale, "外部运行时", "External runtime")}</strong>
         </span>
-        <small>{runtimeStateText(locale, status?.state)}</small>
+        <small>{runtimeStateText(locale, status?.state, status?.loadProgress)}</small>
       </header>
       {status?.state === "ready" && (status.latencyMs !== undefined || status.fps !== undefined) && (
         <p className="healthy">
@@ -293,10 +293,13 @@ export function UnityPublicationAndHosting({ locale, widget, readiness, loading,
   );
 }
 
-function runtimeStateText(locale: AppLocale, state?: UnityRuntimeStatusDetail["state"]): string {
+function runtimeStateText(locale: AppLocale, state?: UnityRuntimeStatusDetail["state"], loadProgress?: number): string {
   if (state === "ready") return tr(locale, "Bridge 已连接", "Bridge connected");
   if (state === "degraded") return tr(locale, "通信降级，自动重试", "Degraded; retrying");
   if (state === "error") return tr(locale, "运行异常", "Runtime error");
+  if (state === "cancelled") return tr(locale, "加载已取消", "Loading cancelled");
+  if (state === "loading" && loadProgress !== undefined)
+    return tr(locale, `正在加载 ${Math.round(loadProgress * 100)}%`, `Loading ${Math.round(loadProgress * 100)}%`);
   if (state === "loading") return tr(locale, "正在连接", "Connecting");
   return tr(locale, "等待场景预览", "Waiting for preview");
 }

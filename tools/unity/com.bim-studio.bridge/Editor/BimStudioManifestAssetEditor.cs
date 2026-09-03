@@ -24,7 +24,7 @@ namespace BimStudio.Bridge.Editor
             var validation = BimStudioManifestValidator.Validate(manifest);
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("BIM Studio · Unity WebGL 集成清单", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Industrial Studio · Unity WebGL 集成清单", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("在这里声明稳定的业务标识。平台将据此生成场景、事件、数据层、对象、动作和属性配置。", MessageType.Info);
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -66,14 +66,14 @@ namespace BimStudio.Bridge.Editor
         {
             foreach (var error in validation.errors) EditorGUILayout.HelpBox(error, MessageType.Error);
             foreach (var warning in validation.warnings) EditorGUILayout.HelpBox(warning, MessageType.Warning);
-            if (validation.errors.Count == 0 && validation.warnings.Count == 0) EditorGUILayout.HelpBox("集成清单已通过 BIM Studio 发布校验。", MessageType.Info);
+            if (validation.errors.Count == 0 && validation.warnings.Count == 0) EditorGUILayout.HelpBox("集成清单已通过 Industrial Studio 发布校验。", MessageType.Info);
         }
 
         private static void LogValidation(BimStudioManifestValidation validation)
         {
-            foreach (var error in validation.errors) Debug.LogError($"[BIM Studio Manifest] {error}");
-            foreach (var warning in validation.warnings) Debug.LogWarning($"[BIM Studio Manifest] {warning}");
-            if (validation.IsValid) Debug.Log("[BIM Studio 集成清单] 校验通过。");
+            foreach (var error in validation.errors) Debug.LogError($"[Industrial Studio Manifest] {error}");
+            foreach (var warning in validation.warnings) Debug.LogWarning($"[Industrial Studio Manifest] {warning}");
+            if (validation.IsValid) Debug.Log("[Industrial Studio 集成清单] 校验通过。");
         }
 
         private static void AddBinding<T>() where T : Component
@@ -90,7 +90,7 @@ namespace BimStudio.Bridge.Editor
     {
         private const string ManifestPath = "Assets/Resources/BimStudioManifest.asset";
 
-        [MenuItem("BIM Studio/准备项目（通信桥与集成清单）", priority = 1)]
+        [MenuItem("Industrial Studio/准备项目（通信桥与集成清单）", priority = 1)]
         public static void Setup()
         {
             EnsureBridgeObject();
@@ -145,7 +145,7 @@ namespace BimStudio.Bridge.Editor
                     return false;
                 }
                 var scenePath = EditorUtility.SaveFilePanelInProject(
-                    "保存要导出到 BIM Studio 的场景",
+                    "保存要导出到 Industrial Studio 的场景",
                     string.IsNullOrWhiteSpace(activeScene.name) ? "BimStudioScene" : activeScene.name,
                     "unity",
                     "导出 WebGL 前需要先保存当前场景。");
@@ -193,12 +193,12 @@ namespace BimStudio.Bridge.Editor
             {
                 var gameObject = new GameObject("BimStudioBridge");
                 bridge = Undo.AddComponent<BimStudioBridge>(gameObject);
-                Undo.RegisterCreatedObjectUndo(gameObject, "Create BIM Studio Bridge");
+                Undo.RegisterCreatedObjectUndo(gameObject, "Create Industrial Studio Bridge");
                 EditorSceneManager.MarkSceneDirty(gameObject.scene);
             }
             else if (bridge.gameObject.name != "BimStudioBridge")
             {
-                Undo.RecordObject(bridge.gameObject, "Rename BIM Studio Bridge");
+                Undo.RecordObject(bridge.gameObject, "Rename Industrial Studio Bridge");
                 bridge.gameObject.name = "BimStudioBridge";
                 EditorSceneManager.MarkSceneDirty(bridge.gameObject.scene);
             }

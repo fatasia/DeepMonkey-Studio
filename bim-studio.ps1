@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("start", "stop", "restart", "status", "help")]
+    [ValidateSet("start", "stop", "restart", "status", "check", "help")]
     [string]$Action = "status",
 
     [Parameter(Position = 1)]
@@ -20,17 +20,18 @@ $LogDirectory = Join-Path $ProjectRoot "data\logs"
 $CacheDirectory = Join-Path $ProjectRoot ".cache"
 $TemporaryDirectory = Join-Path $CacheDirectory "temp"
 $EnvFile = Join-Path $ProjectRoot ".env"
+. (Join-Path $ProjectRoot "scripts\bim-studio-service-health.ps1")
 
 function Write-Info([string]$Message) {
-    Write-Host "[BIM Studio] $Message" -ForegroundColor Cyan
+    Write-Host "[Industrial Studio] $Message" -ForegroundColor Cyan
 }
 
 function Write-Success([string]$Message) {
-    Write-Host "[BIM Studio] $Message" -ForegroundColor Green
+    Write-Host "[Industrial Studio] $Message" -ForegroundColor Green
 }
 
 function Write-WarningMessage([string]$Message) {
-    Write-Host "[BIM Studio] $Message" -ForegroundColor Yellow
+    Write-Host "[Industrial Studio] $Message" -ForegroundColor Yellow
 }
 
 function Get-DotEnvValue([string]$Name) {
@@ -232,7 +233,10 @@ function Start-BackgroundService(
 ) {
     $existingId = Get-ListeningProcessId @($Port)
     if ($existingId) {
-        Write-WarningMessage "$Name is already running (PID $existingId, port $Port)."
+        if (-not (Test-BimStudioExpectedService $Name)) {
+            throw "Port $Port is owned by PID $existingId, but its health response is not the expected $Name service."
+        }
+        Write-WarningMessage "$Name is already healthy (PID $existingId, port $Port)."
         return
     }
 
@@ -260,6 +264,11 @@ function Start-BackgroundService(
             "No error log was produced."
         }
         throw "$Name startup timed out. Log: $stderr`n$errorTail"
+    }
+    if (-not (Test-BimStudioExpectedService $Name)) {
+        Stop-ProcessTree $process.Id
+        Remove-ManagedProcessId $Name
+        throw "$Name opened port $Port but failed its service identity health check. See $stderr"
     }
 
     Write-Success "$Name started (managed PID $($process.Id), port $Port)."
@@ -289,7 +298,7 @@ function Stop-BackgroundService([string]$Name, [int[]]$Ports) {
     }
 
     Stop-ProcessTree $listenerId
-    Write-WarningMessage "$Name was not started by this script. Its verified BIM Studio listener PID $listenerId was stopped."
+    Write-WarningMessage "$Name was not started by this script. Its verified Industrial Studio listener PID $listenerId was stopped."
 }
 
 function Start-Api {
@@ -427,7 +436,8 @@ function Stop-One([string]$Name) {
 function Get-TargetServices([string]$Name, [bool]$Reverse = $false) {
     [string[]]$services = switch ($Name) {
         "all" { @("postgres", "minio", "node-red", "media", "api", "web") }
-        "app" { @("node-red", "media", "api", "web") }
+        # API 启动时会校验对象存储；app 必须包含 MinIO，避免干净环境首次启动必然失败。
+        "app" { @("node-red", "media", "minio", "api", "web") }
         default { @($Name) }
     }
 
@@ -441,16 +451,21 @@ function Get-ServiceStatusRow([string]$Name, [int[]]$Ports) {
     $listenerId = Get-ListeningProcessId $Ports
     $managedId = Read-ManagedProcessId $Name
     $managed = $managedId -and (Test-ProcessExists $managedId)
+    $health = Get-BimStudioServiceHealth $Name ($null -ne $listenerId)
     return [pscustomobject]@{
         Service = $Name
         Status = if ($listenerId) { "running" } else { "stopped" }
+        Health = $health.Health
+        LatencyMs = $health.LatencyMs
+        CheckedAt = $health.CheckedAt
+        Message = $health.Message
         Port = $Ports -join "/"
         Pid = if ($listenerId) { $listenerId } else { "-" }
         Managed = if ($managed) { "yes" } else { "no" }
     }
 }
 
-function Show-Status([string[]]$Names) {
+function Get-ServiceStatusRows([string[]]$Names) {
     $rows = foreach ($name in $Names) {
         switch ($name) {
             "api" { Get-ServiceStatusRow "api" @(4100) }
@@ -462,9 +477,14 @@ function Show-Status([string[]]$Names) {
                 $serviceName = Get-PostgresServiceName
                 $service = Get-Service -Name $serviceName
                 $postgresProcessId = Get-ListeningProcessId @(5432)
+                $health = Get-BimStudioServiceHealth "postgres" ($null -ne $postgresProcessId)
                 [pscustomobject]@{
                     Service = "postgres"
                     Status = $service.Status.ToString().ToLowerInvariant()
+                    Health = $health.Health
+                    LatencyMs = $health.LatencyMs
+                    CheckedAt = $health.CheckedAt
+                    Message = $health.Message
                     Port = "5432"
                     Pid = if ($postgresProcessId) { $postgresProcessId } else { "-" }
                     Managed = "windows-service"
@@ -472,16 +492,20 @@ function Show-Status([string[]]$Names) {
             }
         }
     }
+    return $rows
+}
 
+function Show-Status([string[]]$Names) {
+    $rows = Get-ServiceStatusRows $Names
     $rows | Format-Table -AutoSize
 }
 
 function Show-Help {
     Write-Host @"
-BIM Studio service manager
+Industrial Studio service manager
 
 Usage:
-  .\bim-studio.ps1 <start|stop|restart|status> <all|app|api|web|node-red|media|minio|postgres> [-Https]
+  .\bim-studio.ps1 <start|stop|restart|status|check> <all|app|api|web|node-red|media|minio|postgres> [-Https]
 
 Examples:
   .\bim-studio.ps1 start all
@@ -489,6 +513,7 @@ Examples:
   .\bim-studio.ps1 restart api
   .\bim-studio.ps1 restart app -Https
   .\bim-studio.ps1 status all
+  .\bim-studio.ps1 check app
 
 Ports:
   Web 5173 | API 4100 | Node-RED 1880 | Media 8888/8889/9997 | MinIO 9000/9001 | PostgreSQL 5432
@@ -498,7 +523,8 @@ Logs:
 
 Notes:
   all = postgres + minio + node-red + media + api + web
-  app = node-red + media + api + web
+  app = node-red + media + minio + api + web
+  check performs service identity/health probes and returns exit code 1 when any target is unhealthy.
   PID files are in data\runtime, logs are in data\logs, and cache files are in .cache.
   PostgreSQL is a Windows service and may require administrator privileges.
   If script execution is disabled, use:
@@ -531,8 +557,13 @@ try {
         "status" {
             Show-Status $serviceNames
         }
+        "check" {
+            $rows = Get-ServiceStatusRows $serviceNames
+            $rows | Format-Table -AutoSize
+            if ($rows | Where-Object { $_.Health -ne "healthy" }) { exit 1 }
+        }
     }
 } catch {
-    Write-Host "[BIM Studio] Failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[Industrial Studio] Failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }

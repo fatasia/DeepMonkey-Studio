@@ -34,6 +34,7 @@ describe("data pipeline runtime", () => {
     expect(result.rows).toEqual([{ device: "AHU-03", temperature: 28, running: true, fahrenheit: 82.4, summary: "AHU-03: 82.4°F" }]);
     expect(result.diagnostics).toHaveLength(7);
     expect(result.diagnostics.every((item) => item.status === "success")).toBe(true);
+    expect(result.diagnostics.find((item) => item.nodeId === "filter")?.inputSample).toHaveLength(3);
   });
 
   it("rejects implicit cycles", () => {
@@ -53,5 +54,59 @@ describe("data pipeline runtime", () => {
       { id: "output", type: "output", name: "输出", position: { x: 440, y: 0 } }
     ]);
     await expect(executeDataPipeline(definition, async () => [{ value: 1 }])).rejects.toMatchObject({ nodeId: "script", diagnostics: [{ status: "success" }, { status: "error" }] });
+  });
+
+  it("selects fields, removes duplicates and aggregates groups", async () => {
+    const definition = pipeline([
+      { id: "source", type: "source", name: "源", datasetId: "dataset-1", position: { x: 0, y: 0 } },
+      { id: "select", type: "select", name: "保留字段", fields: ["area", "energy"], position: { x: 220, y: 0 } },
+      { id: "unique", type: "deduplicate", name: "去重", fields: ["area", "energy"], position: { x: 440, y: 0 } },
+      { id: "aggregate", type: "aggregate", name: "区域汇总", groupBy: ["area"], field: "energy", operation: "sum", outputKey: "total", position: { x: 660, y: 0 } },
+      { id: "output", type: "output", name: "输出", position: { x: 880, y: 0 } },
+    ]);
+    const result = await executeDataPipeline(definition, async () => [
+      { area: "A", energy: 10, ignored: true },
+      { area: "A", energy: 10, ignored: false },
+      { area: "A", energy: 15, ignored: true },
+      { area: "B", energy: 7, ignored: true },
+    ]);
+
+    expect(result.rows).toEqual([
+      { area: "A", total: 25 },
+      { area: "B", total: 7 },
+    ]);
+    expect(result.diagnostics.map((item) => item.outputRows)).toEqual([4, 4, 3, 2, 2]);
+  });
+
+  it("runs only through the selected node and keeps downstream work untouched", async () => {
+    const definition = pipeline([
+      { id: "source", type: "source", name: "源", datasetId: "dataset-1", position: { x: 0, y: 0 } },
+      { id: "formula", type: "formula", name: "计算", key: "doubled", label: "两倍", fieldType: "number", formula: "value * 2", position: { x: 220, y: 0 } },
+      { id: "script", type: "script", name: "不应执行", key: "failed", label: "失败", fieldType: "number", source: "throw new Error('downstream ran');", position: { x: 440, y: 0 } },
+      { id: "output", type: "output", name: "输出", position: { x: 660, y: 0 } },
+    ]);
+
+    const result = await executeDataPipeline(definition, async () => [{ value: 4 }], { throughNodeId: "formula" });
+
+    expect(result.status).toBe("success");
+    expect(result.executedThroughNodeId).toBe("formula");
+    expect(result.rows).toEqual([{ value: 4, doubled: 8 }]);
+    expect(result.diagnostics.map((item) => item.nodeId)).toEqual(["source", "formula"]);
+    expect(result.diagnostics[1]?.inputSample).toEqual([{ value: 4 }]);
+  });
+
+  it("publishes the union of sparse output fields", async () => {
+    const definition = pipeline([
+      { id: "source", type: "source", name: "源", datasetId: "dataset-1", position: { x: 0, y: 0 } },
+      { id: "output", type: "output", name: "输出", position: { x: 220, y: 0 } },
+    ]);
+
+    const result = await executeDataPipeline(definition, async () => [{ device: "A", alarm: null }, { device: "B", alarm: true, code: 7 }]);
+
+    expect(result.fields).toEqual([
+      { key: "device", label: "device", type: "string" },
+      { key: "alarm", label: "alarm", type: "boolean" },
+      { key: "code", label: "code", type: "number" },
+    ]);
   });
 });

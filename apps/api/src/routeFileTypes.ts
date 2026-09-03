@@ -12,7 +12,7 @@ export function modelFormat(fileName: string): ModelFormat | undefined {
 }
 
 export function contentType(fileName: string): string {
-  const extension = path.extname(fileName).toLowerCase();
+  const extension = path.extname(uncompressedAssetName(fileName)).toLowerCase();
   const imageType = imageContentType(extension);
   if (imageType) return imageType;
   const videoType = videoContentType(extension);
@@ -33,10 +33,23 @@ export function contentType(fileName: string): string {
   if (extension === ".dxf") return "application/dxf";
   if (extension === ".dwg") return "application/acad";
   if (extension === ".step" || extension === ".stp") return "model/step";
+  if (extension === ".iges" || extension === ".igs") return "model/iges";
   if (extension === ".usd" || extension === ".usda") return "model/usd";
   if (extension === ".usdc") return "application/octet-stream";
   if (extension === ".usdz") return "model/vnd.usdz+zip";
   return "application/octet-stream";
+}
+
+/** Unity Web 构建会直接请求 *.wasm.br / *.data.gz；响应必须声明原始编码。 */
+export function assetContentEncoding(fileName: string): "br" | "gzip" | undefined {
+  const extension = path.extname(fileName).toLowerCase();
+  if (extension === ".br") return "br";
+  if (extension === ".gz") return "gzip";
+  return undefined;
+}
+
+function uncompressedAssetName(fileName: string): string {
+  return assetContentEncoding(fileName) ? fileName.slice(0, -path.extname(fileName).length) : fileName;
 }
 
 export function imageContentType(extension: string): string | undefined {

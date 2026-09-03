@@ -1,6 +1,6 @@
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
-import { hasPublicationDataProduct } from "./publicationReadiness";
+import { assessProjectPublication, hasPublicationDataProduct } from "./publicationReadiness";
 
 /** 项目交付主线的固定顺序；页面只负责渲染，状态判断集中在这里。 */
 export const DELIVERY_STEP_IDS = ["data", "assets", "design", "linkage", "behavior", "simulation", "validate", "publish"] as const;
@@ -19,7 +19,7 @@ export interface DeliveryStepState {
 }
 
 export interface DeliveryBlocker {
-  id: "data" | "design" | "assets" | "linkage";
+  id: "data" | "design" | "assets" | "linkage" | "validation";
   stepId: DeliveryStepId;
   label: string;
   detail: string;
@@ -33,6 +33,7 @@ export interface DeliveryWorkflowFacts {
   behaviorReady: boolean;
   simulationReady: boolean;
   validationReady: boolean;
+  publicationBlockerCount: number;
   published: boolean;
   pendingAssetCount: number;
 }
@@ -44,6 +45,8 @@ export function deriveDeliveryWorkflowFacts(project: ProjectRecord, scenes: Scen
   const behaviorReady = scenes.some((scene) => (scene.interactions?.length ?? 0) > 0);
   const simulationReady = scenes.some((scene) => Boolean(scene.physics) || Boolean(scene.animation));
   const dataReady = hasPublicationDataProduct(project);
+  const publicationAudit = assessProjectPublication(project, scenes);
+  const coreReady = dataReady && designReady && linkageReady && pendingAssetCount === 0;
   return {
     dataReady,
     assetReady: project.models.some((model) => model.status === "ready") || (project.assets?.length ?? 0) > 0,
@@ -51,8 +54,9 @@ export function deriveDeliveryWorkflowFacts(project: ProjectRecord, scenes: Scen
     linkageReady,
     behaviorReady,
     simulationReady,
-    // 交付卡片和发布校验必须使用同一口径，避免页面先显示通过、弹窗又阻断。
-    validationReady: dataReady && designReady && linkageReady && pendingAssetCount === 0,
+    // 交付卡片和发布弹窗复用同一确定性体检，避免卡片先显示通过、弹窗又因断链阻断。
+    validationReady: coreReady && publicationAudit.blockers === 0,
+    publicationBlockerCount: publicationAudit.blockers,
     published: scenes.some((scene) => Boolean(scene.publishedAt)),
     pendingAssetCount,
   };
@@ -117,6 +121,8 @@ export function buildDeliverySteps(locale: AppLocale, project: ProjectRecord, sc
       tr(locale, "交付校验", "Validate delivery"),
       facts.pendingAssetCount > 0
         ? tr(locale, `${facts.pendingAssetCount} 个资源待处理`, `${facts.pendingAssetCount} assets need attention`)
+        : facts.publicationBlockerCount > 0
+          ? tr(locale, `${facts.publicationBlockerCount} 个发布阻断待处理`, `${facts.publicationBlockerCount} publication blockers`)
         : facts.validationReady
           ? tr(locale, "基础检查通过", "Basic checks passed")
           : tr(locale, "仍有必需项未就绪", "Required items are not ready"),
@@ -170,6 +176,14 @@ export function buildDeliveryBlockers(locale: AppLocale, project: ProjectRecord,
       stepId: "linkage",
       label: tr(locale, "场景尚未连接数据", "Scene data is not linked"),
       detail: tr(locale, "至少配置一个数据绑定或交互", "Add at least one data binding or interaction"),
+    });
+  const coreReady = facts.dataReady && facts.designReady && facts.linkageReady && facts.pendingAssetCount === 0;
+  if (coreReady && facts.publicationBlockerCount > 0)
+    blockers.push({
+      id: "validation",
+      stepId: "validate",
+      label: tr(locale, "发布体检未通过", "Publication audit is blocked"),
+      detail: tr(locale, `${facts.publicationBlockerCount} 个断链或无效引用待处理`, `${facts.publicationBlockerCount} broken or invalid references need attention`),
     });
   return blockers;
 }

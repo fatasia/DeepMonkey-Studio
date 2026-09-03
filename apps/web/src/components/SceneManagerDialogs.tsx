@@ -139,9 +139,11 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
             setDeliveryReviewOpen(false);
             setManagerTab("scenes");
           }}
-          onOpenLinkage={() => {
+          onOpenLinkage={(sceneId) => {
             setDeliveryReviewOpen(false);
-            const linked = sortedScenes.find((scene) => (scene.dataBindings?.length ?? 0) + (scene.interactions?.length ?? 0) > 0) ?? sortedScenes[0];
+            const linked = sortedScenes.find((scene) => scene.id === sceneId)
+              ?? sortedScenes.find((scene) => (scene.dataBindings?.length ?? 0) + (scene.interactions?.length ?? 0) > 0)
+              ?? sortedScenes[0];
             if (linked) void onOpen(linked);
             else setManagerTab("scenes");
           }}

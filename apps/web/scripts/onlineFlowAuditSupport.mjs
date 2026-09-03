@@ -1,5 +1,11 @@
 import { writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import {
+  assessOnlineFlowVisualEvidence,
+  collectOnlineFlowVisualEvidence,
+  ONLINE_FLOW_VISUAL_POLICY,
+  ONLINE_FLOW_VISUAL_SELECTORS,
+} from "./onlineFlowVisualQuality.mjs";
 
 export function recordStep(target, name, evidence) {
   target.steps.push({ name, evidence, completedAt: new Date().toISOString() });
@@ -56,7 +62,7 @@ export function writeMinimalGltf(filePath) {
   const indices = Buffer.from(new Uint16Array([0, 1, 2]).buffer);
   const binary = Buffer.concat([positions, indices]);
   const document = {
-    asset: { version: "2.0", generator: "BIM Studio online flow gate" },
+    asset: { version: "2.0", generator: "Industrial Studio online flow gate" },
     scene: 0,
     scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0, name: "Online flow triangle" }],
@@ -75,41 +81,36 @@ export function writeMinimalGltf(filePath) {
 }
 
 export async function auditPage(page, id) {
-  return page.evaluate((auditId) => {
-    const candidates = [...document.querySelectorAll("button,input,select,textarea,summary,label,small,span,strong,p")];
-    const visible = (element) => {
-      // 画布标尺表示用户作品坐标，不属于平台操作文字；业务 UI 仍按完整页面审计。
-      if (element.closest("[hidden], .dashboard-ruler, .dashboard-artboard")) return false;
-      const bounds = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      return bounds.width > 0 && bounds.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-    };
-    const smallTextElements = candidates.filter((element) => {
-      const fontSize = Number.parseFloat(getComputedStyle(element).fontSize);
-      // 响应式导航用 0px 隐藏文案并保留可访问名称，不能把图标按钮误判为小字。
-      return visible(element) && element.textContent?.trim() && fontSize > 0 && fontSize < 10;
-    });
-    const smallTargetElements = candidates.filter((element) => {
-      if (!visible(element) || !["BUTTON", "INPUT", "SELECT", "TEXTAREA", "SUMMARY"].includes(element.tagName)) return false;
-      if (element instanceof HTMLInputElement && ["checkbox", "radio", "color", "range"].includes(element.type)) return false;
-      const bounds = element.getBoundingClientRect();
-      return bounds.width < 24 || bounds.height < 24;
-    });
-    const describe = (element) => {
-      const detail = element instanceof HTMLInputElement ? `${element.type}:${element.getAttribute("aria-label") ?? element.name}` : element.textContent?.trim().slice(0, 16) ?? "";
-      return `${element.tagName.toLowerCase()}.${String(element.className || "").split(" ")[0]}[${detail}]`;
-    };
-    return {
-      id: auditId,
+  const [layout, visualEvidence] = await Promise.all([
+    page.evaluate(() => ({
       documentOverflow: document.documentElement.scrollWidth > innerWidth + 1 || document.documentElement.scrollHeight > innerHeight + 1,
       documentScrollLeft: document.documentElement.scrollLeft || document.body.scrollLeft || 0,
       appShellLeft: document.querySelector(".app-shell")?.getBoundingClientRect().left ?? 0,
-      smallTextCount: smallTextElements.length,
-      smallText: smallTextElements.slice(0, 160).map(describe),
-      smallTargetCount: smallTargetElements.length,
-      smallTargets: smallTargetElements.slice(0, 80).map(describe)
-    };
-  }, id);
+    })),
+    page.evaluate(collectOnlineFlowVisualEvidence, {
+      rootSelector: "body",
+      policy: ONLINE_FLOW_VISUAL_POLICY,
+      selectors: ONLINE_FLOW_VISUAL_SELECTORS,
+    }),
+  ]);
+  const quality = assessOnlineFlowVisualEvidence(visualEvidence, id);
+  return {
+    id,
+    ...layout,
+    ...visualEvidence,
+    smallTextDetails: visualEvidence.smallText,
+    smallText: visualEvidence.smallText.map(formatVisualEvidence),
+    smallTargetDetails: visualEvidence.smallTargets,
+    smallTargets: visualEvidence.smallTargets.map(formatVisualEvidence),
+    qualityFailures: quality.failures,
+    qualityAdvisories: quality.advisories,
+  };
+}
+
+function formatVisualEvidence(item) {
+  if (Number.isFinite(item.fontSize)) return `${item.identity} ${item.fontSize}px < ${item.minimum}px`;
+  if (Number.isFinite(item.width) && Number.isFinite(item.height)) return `${item.identity} ${item.width}×${item.height}px`;
+  return item.identity;
 }
 
 export async function auditDeliveryFlow(page, projectId) {
@@ -155,6 +156,15 @@ export async function readJsonResponse(responsePromise, expectedStatus) {
     throw new Error(`${response.request().method()} ${response.url()} 返回 HTTP ${response.status()}：${detail}`);
   }
   return response.json();
+}
+
+export async function showFlatSceneObjects(page) {
+  if (await page.locator(".asset-row").count()) return;
+  const organizationToggle = page.getByRole("button", { name: "场景图层与编组" });
+  if (await organizationToggle.count() && (await organizationToggle.getAttribute("class"))?.includes("active")) await organizationToggle.click();
+  const resourceToggle = page.getByRole("button", { name: "项目资源" });
+  if (await resourceToggle.count() && (await resourceToggle.getAttribute("class"))?.includes("active")) await resourceToggle.click();
+  await page.locator(".asset-list").waitFor({ state: "visible", timeout: 30_000 });
 }
 
 export function captureProcessOutput(stream, target) {

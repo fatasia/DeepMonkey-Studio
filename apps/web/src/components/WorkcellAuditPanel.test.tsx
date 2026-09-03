@@ -61,8 +61,13 @@ describe("WorkcellAuditPanel", () => {
       />,
     );
 
-    expect(html).toContain("上次体检已留证 · v4");
+    expect(html).toContain("上次快速验证已留证 · v4");
     expect(html).toContain("2 项待处理");
     expect(html).toContain("workcell-evidence-4");
+    expect(html).toContain("系统起步值尚未确认");
+    expect(html).toContain("先检查并确认本次规划基准");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="先检查并确认本次规划基准"/);
+    expect(html).toContain("场景中尚未确认人工作业");
+    expect(html).toContain("添加人工作业");
   });
 });

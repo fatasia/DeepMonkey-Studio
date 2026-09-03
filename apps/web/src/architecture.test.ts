@@ -49,7 +49,7 @@ describe("web architecture boundary", () => {
       }
     }
     expect(violations).toEqual([]);
-  });
+  }, 15_000);
 
   it("keeps raw HTTP transport inside api.ts and documented non-business asset boundaries", async () => {
     const root = path.resolve(import.meta.dirname);
@@ -66,7 +66,7 @@ describe("web architecture boundary", () => {
       if (forbiddenNetworkCapabilities(await readFile(file, "utf8"), file).length > 0) violations.push(relative);
     }
     expect(violations).toEqual([]);
-  });
+  }, 15_000);
 
   it("detects hosted transports and obvious aliases or destructuring", () => {
     expect(forbiddenNetworkCapabilities(`

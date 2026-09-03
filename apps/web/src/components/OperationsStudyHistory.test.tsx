@@ -5,6 +5,19 @@ import { OperationsStudyHistory } from "./OperationsStudyHistory";
 import { compareIndustrialStudies } from "./industrialStudyComparison";
 
 describe("OperationsStudyHistory", () => {
+  it("keeps history as a compact progressive-disclosure row by default", () => {
+    const html = renderToStaticMarkup(<OperationsStudyHistory
+      records={[study()]}
+      busy={false}
+      onReproduce={() => undefined}
+      onOpenTarget={() => undefined}
+    />);
+
+    expect(html).toContain("operations-study-history collapsed");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("查看已保存工况输入");
+  });
+
   it("renders a traceable reproduction and baseline comparison workflow", () => {
     const baseline = study({ id: "plant-lite:base", sourceRecordId: "base", title: "物流基线" });
     const candidate = study({
@@ -17,11 +30,12 @@ describe("OperationsStudyHistory", () => {
     const html = renderToStaticMarkup(<OperationsStudyHistory
       records={[candidate, baseline]}
       busy={false}
+      defaultExpanded
       onReproduce={() => undefined}
       onOpenTarget={() => undefined}
     />);
 
-    expect(html).toContain("Study 运行历史");
+    expect(html).toContain("运行记录");
     expect(html).toContain("物流复现");
     expect(html).toContain("查看已保存工况输入");
     expect(html).toContain("对比基线");
@@ -40,6 +54,7 @@ describe("OperationsStudyHistory", () => {
     const html = renderToStaticMarkup(<OperationsStudyHistory
       records={[legacy]}
       busy={false}
+      defaultExpanded
       onReproduce={() => undefined}
       onOpenTarget={() => undefined}
     />);
@@ -70,7 +85,7 @@ function study(overrides: Partial<IndustrialStudyRecord> = {}): IndustrialStudyR
     sourceRecordId: "study-1",
     projectId: "project-1",
     type: "plant-lite",
-    title: "物流 Study",
+    title: "物流运行",
     scenarioInput: { seed: "fixed" },
     context: { sceneId: null, objectIds: [], modelId: null, modelVersion: null },
     fingerprints: {

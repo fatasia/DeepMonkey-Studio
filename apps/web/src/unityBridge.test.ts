@@ -42,6 +42,12 @@ describe("Unity WebGL bridge", () => {
       readUnityBridgeEvent({ source: "unity-webgl", version: 1, type: "health", fps: 59.8, scene: "Factory" }),
     ).toMatchObject({ fps: 59.8 });
     expect(
+      readUnityBridgeEvent({ source: "unity-webgl", version: 1, type: "load-progress", progress: 0.42 }),
+    ).toMatchObject({ progress: 0.42 });
+    expect(
+      readUnityBridgeEvent({ source: "unity-webgl", version: 1, type: "load-progress", progress: 1.1 }),
+    ).toBeUndefined();
+    expect(
       readUnityBridgeEvent({
         source: "unity-webgl",
         version: 1,
@@ -83,6 +89,7 @@ describe("Unity WebGL bridge", () => {
         {
           schemaVersion: 1,
           bridgeVersion: 1,
+          bridgePackageVersion: "0.6.1",
           playerUrl: "./index.html",
           unityVersion: "Unity 6",
           scenes: ["Factory"],
@@ -92,12 +99,14 @@ describe("Unity WebGL bridge", () => {
           objects: [{ id: "pump-1", name: "Pump 1" }],
           properties: [{ key: "speed", type: "number", target: "pump-1" }],
           runtimeCapabilities: ["ack", "heartbeat"],
+          webBuild: { compression: "brotli", runtimePayloadBytes: 120, wasmBytes: 50, dataBytes: 60, runtimeFileCount: 4, debugSymbols: false },
         },
         "https://cdn.example.com/build/manifest.json",
       ),
     ).toMatchObject({
       playerUrl: "https://cdn.example.com/build/index.html",
       unityVersion: "Unity 6",
+      bridgePackageVersion: "0.6.1",
       scenes: ["Factory"],
       events: ["device-click"],
       dataLayers: [{ key: "telemetry", keyField: "id", target: "Assets" }],
@@ -105,6 +114,7 @@ describe("Unity WebGL bridge", () => {
       objects: [{ id: "pump-1" }],
       properties: [{ key: "speed", type: "number" }],
       runtimeCapabilities: ["ack", "heartbeat"],
+      webBuild: { compression: "brotli", runtimePayloadBytes: 120 },
     });
     expect(() =>
       parseUnityBuildManifest(

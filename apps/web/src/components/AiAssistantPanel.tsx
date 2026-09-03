@@ -293,7 +293,7 @@ export function AiAssistantPanel({
               <Trash2 size={14} />
             </button>
           )}
-          <button aria-label={t("关闭 AI 助手", "Close AI assistant")} onClick={() => { requestAbort.current?.abort(); onClose(); }}>
+          <button aria-label={t("关闭 AI 助手", "Close AI assistant")} title={t("关闭 AI 助手", "Close AI assistant")} onClick={() => { requestAbort.current?.abort(); onClose(); }}>
             <X size={15} />
           </button>
         </div>
@@ -330,7 +330,7 @@ export function AiAssistantPanel({
         <span className={platformLoaded ? "ready" : ""}>{experience === "agent" ? "CONTROLLED AGENT" : platformLoaded ? "PROJECT SNAPSHOT" : projectMissing ? "NO PROJECT" : "LOADING"}</span>
         <small>
           {experience === "agent"
-            ? t("能力白名单 · 逐次审批 · checkpoint 恢复 · 证据验收", "Capability allowlist · per-call approval · checkpoint recovery · evidence verification")
+            ? t("能力白名单 · 操作前确认 · checkpoint 恢复 · 证据验收", "Capability allowlist · action confirmation · checkpoint recovery · evidence verification")
             : projectMissing
             ? t("选择项目后才能读取证据并执行任务", "Select a project to read evidence and run tasks")
             : t("快照只作为模型输入；Capability 执行结果才是事实证据", "The snapshot is model input; only Capability results are execution evidence")}
@@ -447,7 +447,7 @@ export function AiAssistantPanel({
           }}
           placeholder={t("问模型、事件、风险、数据或下一步动作……", "Ask about models, events, risks, data or next actions…")}
         />
-        <button aria-label={t("发送", "Send")} disabled={busy || !question.trim()} onClick={() => void ask()}>
+        <button aria-label={t("发送", "Send")} title={t("发送", "Send")} disabled={busy || !question.trim()} onClick={() => void ask()}>
           {busy ? <LoaderCircle className="spin" size={15} /> : <Send size={15} />}
         </button>
       </footer>}

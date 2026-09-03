@@ -1,6 +1,5 @@
 import {
   Activity,
-  AlertTriangle,
   BookOpen,
   Bot,
   Box,
@@ -11,29 +10,32 @@ import {
   Eye,
   Factory,
   FileUp,
+  FilePenLine,
   Gauge,
-  HeartHandshake,
+  Settings,
   History,
   Languages,
   Layers3,
   LogOut,
+  MoreHorizontal,
   Network,
   Pencil,
   Plus,
-  Radio,
   RefreshCw,
   Rocket,
   ScanSearch,
-  ShieldCheck,
+  Search,
   Square,
   Trash2,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { SceneExportMenu } from "./SceneExportMenu";
 import { translate as tr } from "../i18n";
 import { ProjectDeliveryFlow } from "./SceneDeliveryWorkflow";
 import type { SceneManagerController } from "./SceneManager";
 import { SceneManagerDialogs } from "./SceneManagerDialogs";
 import { UnifiedAssetLibraryPage } from "./UnifiedAssetLibraryPage";
+import { sceneThumbnailItems } from "./sceneManagerPresentation";
 
 export function SceneManagerView({ controller }: { controller: SceneManagerController }) {
   const {
@@ -48,18 +50,17 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     createShowcase,
     deliveryReviewOpen,
     dialogMode,
-    enableProjectCloudRender,
     isAdmin,
     locale,
     managerTab,
     name,
     onAiAssistant,
+    onBrowse,
+    onBrowsePublished,
     onCloudRender,
-    onConnectionStatus,
     onCopy,
     onCreateProject,
     onCreateTopology,
-    onCredits,
     onDataCenter,
     onDelete,
     onDeleteProject,
@@ -87,7 +88,6 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     openRenameDialog,
     openVersions,
     project,
-    projectCloudBusy,
     projects,
     publicationVersions,
     publishMode,
@@ -95,11 +95,17 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     publishTarget,
     restoreVersion,
     scenes,
+    sceneSearch,
+    sceneSort,
+    sceneStatusFilter,
     setCloudError,
     setDeliveryReviewOpen,
     setDialogMode,
     setManagerTab,
     setName,
+    setSceneSearch,
+    setSceneSort,
+    setSceneStatusFilter,
     setPublishMode,
     setPublishPerformance,
     setPublishTarget,
@@ -114,6 +120,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     userName,
     versionBusy,
     versionTarget,
+    visibleScenes,
   } = controller;
 
   return (
@@ -125,110 +132,126 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
             <img src={branding.iconUrl} alt={branding.systemName} />
           </span>
           <div>
-            <strong>{branding.systemName}</strong>
+            <h1>{branding.systemName}</h1>
             <small>{tr(locale, "项目工作台", "Project workspace")}</small>
           </div>
         </div>
+        <div className="manager-project-switch">
+          <select value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label={tr(locale, "当前项目", "Current project")}>
+            {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <details>
+            <summary aria-label={tr(locale, "项目管理", "Project management")} title={tr(locale, "项目管理", "Project management")}><MoreHorizontal size={15} /></summary>
+            <div>
+              <button onClick={onCreateProject}><Plus size={13} />{tr(locale, "新建项目", "New project")}</button>
+              <button disabled={!project} onClick={onRenameProject}><Pencil size={13} />{tr(locale, "重命名项目", "Rename project")}</button>
+              <button className="danger" disabled={!project} onClick={onDeleteProject}><Trash2 size={13} />{tr(locale, "删除项目", "Delete project")}</button>
+            </div>
+          </details>
+        </div>
         <nav className="manager-primary-nav" aria-label={tr(locale, "一级工作区", "Primary workspaces")}>
-          <button className={managerTab === "scenes" ? "active" : ""} onClick={() => setManagerTab("scenes")}>
+          <button aria-label={tr(locale, "项目场景", "Project scenes")} title={tr(locale, "项目场景", "Project scenes")} className={managerTab === "scenes" ? "active" : ""} onClick={() => setManagerTab("scenes")}>
             <Layers3 size={16} />
-            {tr(locale, "项目场景", "Project scenes")}
+            <span>{tr(locale, "项目场景", "Project scenes")}</span>
           </button>
-          <button className={managerTab === "assets" ? "active" : ""} disabled={!project} onClick={() => setManagerTab("assets")}>
+          <button aria-label={tr(locale, "资源", "Assets")} title={tr(locale, "资源", "Assets")} className={managerTab === "assets" ? "active" : ""} disabled={!project} onClick={() => setManagerTab("assets")}>
             <Box size={16} />
-            {tr(locale, "资源库", "Assets")}
+            <span>{tr(locale, "资源", "Assets")}</span>
           </button>
-          <button className={managerTab === "topology" ? "active" : ""} disabled={!project} onClick={() => setManagerTab("topology")}>
+          <button aria-label={tr(locale, "拓扑", "Topology")} title={tr(locale, "拓扑", "Topology")} className={managerTab === "topology" ? "active" : ""} disabled={!project} onClick={() => setManagerTab("topology")}>
             <Network size={16} />
-            {tr(locale, "拓扑", "Topology")}
+            <span>{tr(locale, "拓扑", "Topology")}</span>
           </button>
-          <button className={managerTab === "examples" ? "active" : ""} onClick={() => setManagerTab("examples")}>
+          <button aria-label={tr(locale, "示例场景", "Example scenes")} title={tr(locale, "示例场景", "Example scenes")} className={managerTab === "examples" ? "active" : ""} onClick={() => setManagerTab("examples")}>
             <Factory size={16} />
-            {tr(locale, "示例场景", "Example scenes")}
+            <span>{tr(locale, "示例场景", "Example scenes")}</span>
           </button>
         </nav>
         <nav className="manager-capability-nav" aria-label={tr(locale, "平台能力", "Platform capabilities")}>
-          <button disabled={!project} onClick={onDataCenter}>
+          <button aria-label={tr(locale, "数据中心", "Data center")} title={tr(locale, "数据中心", "Data center")} disabled={!project} onClick={onDataCenter}>
             <Database size={14} />
-            {tr(locale, "数据", "Data")}
+            <span>{tr(locale, "数据", "Data")}</span>
           </button>
-          <button disabled={!project} onClick={onVisionCenter}>
+          <button aria-label={tr(locale, "视觉中心", "Vision center")} title={tr(locale, "视觉中心", "Vision center")} disabled={!project} onClick={onVisionCenter}>
             <ScanSearch size={14} />
-            {tr(locale, "视觉", "Vision")}
+            <span>{tr(locale, "视觉", "Vision")}</span>
           </button>
-          <button disabled={!project} onClick={onOperationsCenter}>
+          <button aria-label={tr(locale, "智能运营", "Intelligent operations")} title={tr(locale, "智能运营", "Intelligent operations")} disabled={!project} onClick={onOperationsCenter}>
             <Activity size={14} />
-            {tr(locale, "智能运营", "Operations")}
+            <span>{tr(locale, "智能运营", "Operations")}</span>
           </button>
-          <button disabled={!project} onClick={onAiAssistant}>
+          <button aria-label={tr(locale, "AI 助手", "AI Assistant")} title={tr(locale, "AI 助手", "AI Assistant")} disabled={!project} onClick={onAiAssistant}>
             <Bot size={14} />
-            {tr(locale, "AI 助手", "AI Assistant")}
+            <span>{tr(locale, "AI 助手", "AI Assistant")}</span>
           </button>
-          <button onClick={onOptimizer}>
+          <button aria-label={tr(locale, "模型优化", "Model optimization")} title={tr(locale, "模型优化", "Model optimization")} onClick={onOptimizer}>
             <Gauge size={14} />
-            {tr(locale, "优化", "Optimize")}
+            <span>{tr(locale, "模型优化", "Model optimization")}</span>
           </button>
           {isAdmin && (
-            <button disabled={!project} onClick={onCloudRender}>
+            <button aria-label={tr(locale, "云渲染设置", "Cloud settings")} title={tr(locale, "云渲染设置", "Cloud settings")} disabled={!project} onClick={onCloudRender}>
               <CloudCog size={14} />
-              {tr(locale, "云渲染设置", "Cloud settings")}
+              <span>{tr(locale, "云渲染设置", "Cloud settings")}</span>
             </button>
           )}
-          <button onClick={onDocs}>
+          <button aria-label={tr(locale, "文档", "Docs")} title={tr(locale, "文档", "Docs")} onClick={onDocs}>
             <BookOpen size={14} />
-            {tr(locale, "文档", "Docs")}
+            <span>{tr(locale, "文档", "Docs")}</span>
           </button>
         </nav>
         <nav className="manager-utility-nav" aria-label={tr(locale, "系统操作", "System actions")}>
           {isAdmin && (
-            <button title={tr(locale, "系统管理", "System administration")} onClick={onSystem}>
-              <ShieldCheck size={14} />
+            <button title={tr(locale, "设置", "Settings")} aria-label={tr(locale, "设置", "Settings")} onClick={onSystem}>
+              <Settings size={15} />
             </button>
           )}
-          <button title={tr(locale, "切换语言", "Switch language")} onClick={onLocaleToggle}>
+          <button aria-label={tr(locale, "切换语言", "Switch language")} title={tr(locale, "切换语言", "Switch language")} onClick={onLocaleToggle}>
             <Languages size={14} />
           </button>
-          <button title={tr(locale, "连接与实时数据", "Connections and live data")} onClick={onConnectionStatus}>
-            <Radio size={14} />
-          </button>
-          <button title={tr(locale, "致谢", "Credits")} onClick={onCredits}>
-            <HeartHandshake size={14} />
-          </button>
-          <button title={`${tr(locale, "退出", "Sign out")} · ${userName}`} onClick={onLogout}>
+          <button aria-label={`${tr(locale, "退出", "Sign out")} · ${userName}`} title={`${tr(locale, "退出", "Sign out")} · ${userName}`} onClick={onLogout}>
             <LogOut size={14} />
           </button>
         </nav>
       </header>
 
       <section className="manager-content">
-        <div className="manager-project-bar">
-          <select value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label={tr(locale, "项目", "Project")}>
-            {projects.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <button className="button" onClick={onCreateProject}>
-            <Plus size={15} />
-            {tr(locale, "新建项目", "New project")}
-          </button>
-          <button className="button" disabled={!project} onClick={onRenameProject}>
-            <Pencil size={14} />
-            {tr(locale, "重命名", "Rename")}
-          </button>
-          <button className="button danger" disabled={!project} onClick={onDeleteProject}>
-            <Trash2 size={14} />
-            {tr(locale, "删除", "Delete")}
-          </button>
-          <span />
+        {(managerTab === "scenes" || managerTab === "topology") && <div className={`manager-project-bar contextual ${managerTab === "scenes" ? "scene-toolbar" : ""}`}>
           {managerTab === "scenes" && (
             <>
-              <button className="button" onClick={onImport}>
+              <label className="manager-scene-search" aria-label={tr(locale, "搜索场景", "Search scenes")} title={tr(locale, "搜索场景", "Search scenes")}>
+                <Search size={14} />
+                <input
+                  aria-label={tr(locale, "搜索场景", "Search scenes")}
+                  value={sceneSearch}
+                  placeholder={tr(locale, "搜索场景名称", "Search scene names")}
+                  onChange={(event) => setSceneSearch(event.target.value)}
+                />
+              </label>
+              <select
+                aria-label={tr(locale, "场景状态", "Scene status")}
+                value={sceneStatusFilter}
+                onChange={(event) => setSceneStatusFilter(event.target.value as typeof sceneStatusFilter)}
+              >
+                <option value="all">{tr(locale, "全部状态", "All statuses")}</option>
+                <option value="published">{tr(locale, "已发布", "Published")}</option>
+                <option value="draft">{tr(locale, "未发布", "Unpublished")}</option>
+              </select>
+              <select
+                aria-label={tr(locale, "场景排序", "Sort scenes")}
+                value={sceneSort}
+                onChange={(event) => setSceneSort(event.target.value as typeof sceneSort)}
+              >
+                <option value="updated">{tr(locale, "最近更新", "Recently updated")}</option>
+                <option value="name">{tr(locale, "按名称", "By name")}</option>
+                <option value="objects">{tr(locale, "按对象数", "By object count")}</option>
+              </select>
+              <span className="manager-scene-count">{visibleScenes.length} / {scenes.length}</span>
+              <i className="manager-toolbar-spacer" />
+              <button type="button" className="button" onClick={onImport}>
                 <FileUp size={15} />
                 {tr(locale, "导入", "Import")}
               </button>
-              <button className="button primary" onClick={openCreateDialog}>
+              <button type="button" className="button primary" onClick={openCreateDialog}>
                 <Plus size={16} />
                 {tr(locale, "新建场景", "New scene")}
               </button>
@@ -240,7 +263,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
               {tr(locale, "新建拓扑", "New topology")}
             </button>
           )}
-        </div>
+        </div>}
         {project && managerTab === "scenes" && (
           <ProjectDeliveryFlow
             locale={locale}
@@ -271,158 +294,117 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
 
         {managerTab === "scenes" && (
           <>
-            {isAdmin && (
-              <>
-                <div className="project-cloud-strip">
-                  <span>
-                    <CloudCog />
-                    <strong>{tr(locale, "项目云渲染", "Project cloud rendering")}</strong>
-                    <small>
-                      {cloudConfigured
-                        ? tr(locale, "一键为全部已发布场景创建云渲染链接", "Create cloud links for every published scene")
-                        : tr(locale, "请先完成云渲染全局设置", "Complete cloud rendering settings first")}
-                    </small>
-                  </span>
-                  <button
-                    className="button"
-                    disabled={!cloudConfigured || projectCloudBusy || !sortedScenes.some((scene) => scene.publishedAt)}
-                    onClick={() => void enableProjectCloudRender()}
-                  >
-                    {projectCloudBusy ? <RefreshCw className="spin" /> : <CloudCog />}
-                    {tr(locale, "一键开启", "Enable all")}
-                  </button>
-                </div>
-                {cloudError && (
-                  <div className="project-cloud-error">
-                    <AlertTriangle size={13} />
-                    <span>{cloudError}</span>
-                    <button onClick={() => setCloudError(undefined)} aria-label={tr(locale, "关闭提示", "Dismiss")}>
-                      ×
-                    </button>
-                  </div>
-                )}
-              </>
+            {cloudError && (
+              <div className="project-cloud-error">
+                <CloudCog size={13} />
+                <span>{cloudError}</span>
+                <button onClick={() => setCloudError(undefined)} aria-label={tr(locale, "关闭提示", "Dismiss")}>
+                  ×
+                </button>
+              </div>
             )}
 
-            {scenes.length > 0 ? (
+            {visibleScenes.length > 0 ? (
               <div className="scene-card-grid">
-                {sortedScenes.map((scene) => (
+                {visibleScenes.map((scene) => (
                   <article className="scene-card" key={scene.id}>
-                    <button className="scene-card-preview" onClick={() => void onOpen(scene)}>
+                    <button type="button" className="scene-card-preview" aria-label={`${tr(locale, "预览场景", "Preview scene")} · ${scene.name}`} title={tr(locale, "预览场景", "Preview scene")} onClick={() => void onBrowse(scene)}>
                       {scene.publishedAt && (
                         <span className="scene-published-badge">
                           <Rocket size={11} />
                           {tr(locale, "已发布", "Published")}
                         </span>
                       )}
-                      <span className="scene-card-orbit" />
-                      <Layers3 size={34} />
+                      <span
+                        className="scene-card-thumbnail"
+                        aria-hidden="true"
+                        style={{ "--scene-thumbnail-background": scene.environment?.backgroundColor ?? "#11191d" } as CSSProperties}
+                      >
+                        {scene.models.some((item) => item.visible) || scene.primitives.some((item) => item.visible)
+                          ? sceneThumbnailItems(scene).map((item) => (
+                              <i
+                                key={`${item.kind}:${item.id}`}
+                                className={`scene-card-thumbnail-item kind-${item.kind}`}
+                                style={{
+                                  "--scene-thumbnail-color": item.color,
+                                  left: `${item.left}%`,
+                                  top: `${item.top}%`,
+                                } as CSSProperties}
+                              />
+                            ))
+                          : <Layers3 className="scene-card-thumbnail-empty" size={32} />}
+                      </span>
                       <small>
                         {scene.models.length + scene.primitives.length + scene.measurements.length + (scene.annotations?.length ?? 0)} {tr(locale, "个对象", "objects")}
                       </small>
                     </button>
                     <div className="scene-card-body">
-                      <button className="scene-card-title" onClick={() => void onOpen(scene)}>
+                      <button type="button" className="scene-card-title" onClick={() => void onBrowse(scene)}>
                         {scene.name}
                       </button>
                       <div className="scene-card-meta">
                         <CalendarDays size={12} />
                         {tr(locale, "更新于", "Updated")} {new Date(scene.updatedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}
                       </div>
-                      {scene.publishedAt && (
-                        <div className="scene-card-publish-time">
-                          <Rocket size={11} />
-                          {tr(locale, "发布于", "Published")} {new Date(scene.publishedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}
-                        </div>
-                      )}
-                      {scene.publishedAt && (
-                        <div className="scene-publication-links">
-                          <button onClick={() => void copyLink(new URL(`/published/${encodeURIComponent(scene.id)}`, window.location.origin).href)}>
-                            <Copy size={11} />
-                            {tr(locale, "复制普通链接", "Copy web link")}
-                          </button>
-                          {cloudSceneLinks[scene.id] && (
-                            <button onClick={() => void copyLink(cloudSceneLinks[scene.id]!)}>
-                              <Copy size={11} />
-                              {tr(locale, "复制云渲染链接", "Copy cloud link")}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {isAdmin && scene.publishedAt && (
-                        <div className="scene-cloud-render-policy">
-                          <span>
-                            <CloudCog size={12} />
-                            {tr(locale, "云渲染", "Cloud rendering")}
-                          </span>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={Boolean(cloudScenePolicies[scene.id])}
-                            className={`toggle ${cloudScenePolicies[scene.id] ? "on" : ""}`}
-                            disabled={!cloudConfigured || cloudBusySceneId === scene.id}
-                            title={!cloudConfigured ? tr(locale, "请先完成云渲染全局设置", "Configure cloud rendering first") : undefined}
-                            onClick={() => void toggleSceneCloudRender(scene.id, !cloudScenePolicies[scene.id])}
-                          >
-                            <i />
-                            {cloudBusySceneId === scene.id
-                              ? tr(locale, "保存中", "Saving")
-                              : cloudScenePolicies[scene.id]
-                                ? tr(locale, "已开启", "Enabled")
-                                : tr(locale, "已关闭", "Disabled")}
-                          </button>
-                        </div>
-                      )}
                       <div className="scene-card-footer">
                         <span>
                           {scene.measurements.length} {tr(locale, "条测量", "measurements")} · {scene.annotations?.length ?? 0} {tr(locale, "个标签", "annotations")}
                         </span>
-                        <div>
+                        <div className="scene-card-actions">
+                          <button type="button" className="primary" aria-label={tr(locale, "预览场景", "Preview scene")} title={tr(locale, "预览", "Preview")} onClick={() => void onBrowse(scene)}><Eye size={15} /></button>
+                          <button type="button" aria-label={tr(locale, "编辑场景", "Edit scene")} title={tr(locale, "编辑", "Edit")} onClick={() => void onOpen(scene)}><Pencil size={15} /></button>
                           <button
+                            type="button"
+                            aria-label={scene.publishedAt ? tr(locale, "重新发布场景", "Republish scene") : tr(locale, "发布场景", "Publish scene")}
                             title={scene.publishedAt ? tr(locale, "重新发布", "Republish") : tr(locale, "发布", "Publish")}
                             onClick={() => {
                               setPublishMode(scene.publicationMode ?? "webgl");
                               setPublishPerformance(scene.publicationPerformance ?? "standard");
                               setPublishTarget(scene);
                             }}
-                          >
-                            <Rocket size={14} />
-                          </button>
-                          {scene.publishedAt && (
-                            <>
-                              <button title={tr(locale, "版本历史", "Version history")} onClick={() => void openVersions(scene)}>
-                                <History size={14} />
-                              </button>
-                              <button title={tr(locale, "撤回发布", "Unpublish")} onClick={() => void onUnpublish(scene)}>
-                                <Square size={13} />
-                              </button>
-                            </>
-                          )}
-                          <button title={tr(locale, "复制场景", "Copy scene")} onClick={() => void onCopy(scene)}>
-                            <Copy size={14} />
-                          </button>
-                          <button title={tr(locale, "重命名场景", "Rename scene")} onClick={() => openRenameDialog(scene)}>
-                            <Pencil size={14} />
-                          </button>
-                          <button title={tr(locale, "打开项目", "Open project")} onClick={() => void onOpen(scene)}>
-                            <Eye size={14} />
-                          </button>
-                          <SceneExportMenu
-                            locale={locale}
-                            compact
-                            onExportLoose={() => onExportLoose(scene)}
-                            onExportSingle={() => void onExportSingle(scene)}
-                            onExportGlb={() => void onExportGlb(scene)}
-                            onExportFbx={() => void onExportFbx(scene)}
-                          />
-                          <button title={tr(locale, "删除场景", "Delete scene")} className="danger" onClick={() => void onDelete(scene)}>
-                            <Trash2 size={15} />
-                          </button>
+                          ><Rocket size={14} /></button>
+                          <button
+                            type="button"
+                            disabled={!scene.publishedAt}
+                            aria-label={tr(locale, "复制发布链接", "Copy published link")}
+                            title={scene.publishedAt ? tr(locale, "复制链接", "Copy link") : tr(locale, "发布后可复制链接", "Publish before copying a link")}
+                            onClick={() => scene.publishedAt && void copyLink(new URL(`/published/${encodeURIComponent(scene.id)}`, window.location.origin).href)}
+                          ><Copy size={15} /></button>
+                          <button type="button" aria-label={tr(locale, "重命名场景", "Rename scene")} title={tr(locale, "重命名", "Rename")} onClick={() => openRenameDialog(scene)}><FilePenLine size={15} /></button>
+                          <details className="scene-card-more">
+                            <summary aria-label={tr(locale, "更多场景操作", "More scene actions")} title={tr(locale, "更多", "More")}><MoreHorizontal size={15} /></summary>
+                            <div className="scene-card-more-menu">
+                              {scene.publishedAt && <button onClick={() => void onBrowsePublished(scene)}><Eye size={13} />{tr(locale, "查看发布版", "View published")}</button>}
+                              {scene.publishedAt && <button onClick={() => void openVersions(scene)}><History size={13} />{tr(locale, "版本历史", "Version history")}</button>}
+                              {scene.publishedAt && <button onClick={() => void onUnpublish(scene)}><Square size={12} />{tr(locale, "撤回发布", "Unpublish")}</button>}
+                              <button onClick={() => void onCopy(scene)}><Copy size={13} />{tr(locale, "复制场景", "Duplicate scene")}</button>
+                              {cloudSceneLinks[scene.id] && <button onClick={() => void copyLink(cloudSceneLinks[scene.id]!)}><CloudCog size={13} />{tr(locale, "复制云渲染链接", "Copy cloud link")}</button>}
+                              {isAdmin && scene.publishedAt && (
+                                <button role="switch" aria-checked={Boolean(cloudScenePolicies[scene.id])} disabled={!cloudConfigured || cloudBusySceneId === scene.id} onClick={() => void toggleSceneCloudRender(scene.id, !cloudScenePolicies[scene.id])}>
+                                  <CloudCog size={13} />
+                                  {cloudBusySceneId === scene.id ? tr(locale, "云渲染保存中", "Saving cloud rendering") : cloudScenePolicies[scene.id] ? tr(locale, "关闭云渲染", "Disable cloud rendering") : tr(locale, "开启云渲染", "Enable cloud rendering")}
+                                </button>
+                              )}
+                              <div className="scene-card-more-export">
+                                <SceneExportMenu locale={locale} onExportLoose={() => onExportLoose(scene)} onExportSingle={() => void onExportSingle(scene)} onExportGlb={() => void onExportGlb(scene)} onExportFbx={() => void onExportFbx(scene)} />
+                              </div>
+                              <button className="danger" onClick={() => void onDelete(scene)}><Trash2 size={13} />{tr(locale, "删除场景", "Delete scene")}</button>
+                            </div>
+                          </details>
                         </div>
                       </div>
                     </div>
                   </article>
                 ))}
+              </div>
+            ) : scenes.length > 0 ? (
+              <div className="manager-empty compact">
+                <Search size={34} />
+                <h2>{tr(locale, "没有匹配的场景", "No matching scenes")}</h2>
+                <p>{tr(locale, "清除搜索词或切换状态筛选。", "Clear the query or change the status filter.")}</p>
+                <button className="button" onClick={() => { setSceneSearch(""); setSceneStatusFilter("all"); }}>
+                  {tr(locale, "清除筛选", "Clear filters")}
+                </button>
               </div>
             ) : (
               <div className="manager-empty">
@@ -479,7 +461,12 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
               <div className="manager-topology-grid">
                 {topologies.map(({ applicationId, applicationName, topology }) => (
                   <article key={`${applicationId}:${topology.id}`}>
-                    <button className="manager-topology-preview" onClick={() => onOpenTopology(applicationId, topology.id)}>
+                    <button
+                      className="manager-topology-preview"
+                      aria-label={tr(locale, `打开拓扑 · ${topology.name}`, `Open topology · ${topology.name}`)}
+                      title={tr(locale, `打开拓扑 · ${topology.name}`, `Open topology · ${topology.name}`)}
+                      onClick={() => onOpenTopology(applicationId, topology.id)}
+                    >
                       <Network size={26} />
                       <span>{topology.nodes.length}</span>
                       <i />
@@ -520,7 +507,6 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
         )}
       </section>
 
-      <div className="app-copyright">{branding.copyright}</div>
 
       <SceneManagerDialogs controller={controller} />
     </main>

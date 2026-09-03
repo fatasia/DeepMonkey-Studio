@@ -14,6 +14,11 @@ export interface PprExternalReference {
   id: string;
 }
 
+export interface PprWorkInstructionVisualReference {
+  kind: "scene" | "object";
+  id: string;
+}
+
 export interface PprCondition {
   /** 可读、可追溯的适用条件，不在 Lite 引擎中执行表达式。 */
   expression: string;
@@ -37,12 +42,66 @@ export interface PprOperationComponentRef {
   quantity?: number;
 }
 
+/** EWI 中按呈现顺序执行的一条操作步骤。 */
+export interface PprWorkInstructionStep {
+  id: string;
+  instruction: string;
+}
+
+/** EWI 中单列的安全注意事项；为空时表示该工序未单列安全补充。 */
+export interface PprWorkInstructionSafetyNote {
+  id: string;
+  note: string;
+}
+
+export type PprQualitySpecificationKind = "limits" | "tolerance";
+export type PprQualitySamplingMode = "every-item" | "first-off" | "every-n-items" | "per-batch" | "once-per-shift";
+
+export interface PprQualitySamplingFrequency {
+  mode: PprQualitySamplingMode;
+  /** 仅 every-n-items 使用；表示每隔多少件抽检一次。 */
+  interval?: number;
+}
+
+/**
+ * 直接随所属 BOP 工序版本化的轻量质量控制点。
+ * 这些字段只表达控制计划定义，不冒充量测采集、SPC 或失控处置闭环。
+ */
+export interface PprWorkInstructionQualityCheck {
+  id: string;
+  /** 质量特性名称；保留 checkpoint 字段以兼容已有 EWI 快照。 */
+  checkpoint: string;
+  /** 旧版或定性要求的补充判定文字。 */
+  acceptanceCriteria?: string;
+  specificationKind?: PprQualitySpecificationKind;
+  targetValue?: number;
+  lowerLimit?: number;
+  upperLimit?: number;
+  tolerance?: number;
+  unit?: string;
+  inspectionMethod?: string;
+  samplingFrequency?: PprQualitySamplingFrequency;
+  outOfControlReaction?: string;
+}
+
+/**
+ * 轻量电子作业指导书。版本、适用条件和工序顺序由所属 BOP 快照负责，
+ * 此处只保存执行内容和已有场景/对象的视觉上下文 ID。
+ */
+export interface PprElectronicWorkInstruction {
+  steps: PprWorkInstructionStep[];
+  safetyNotes: PprWorkInstructionSafetyNote[];
+  qualityChecks: PprWorkInstructionQualityCheck[];
+  visualReferences?: PprWorkInstructionVisualReference[];
+}
+
 export interface PprOperation {
   id: string;
   name: string;
   /** 标准工时，单位分钟；不表达换型、批量或随机波动。 */
   standardTimeMinutes: number;
   componentRefs: PprOperationComponentRef[];
+  workInstruction?: PprElectronicWorkInstruction;
   variantIds?: string[];
   condition?: PprCondition;
   references?: PprExternalReference[];
@@ -84,6 +143,8 @@ export interface PprBopVersion {
   name: string;
   createdAt: string;
   basedOnVersionId?: string;
+  /** 产线目标节拍，单位分钟/件；用于工位负载与线平衡分析。 */
+  targetTaktMinutes?: number;
   components: PprComponent[];
   operations: PprOperation[];
   precedenceRelations: PprPrecedenceRelation[];

@@ -1,4 +1,10 @@
 import type { DataSourceEvidence } from "./data.js";
+import type {
+  PlantLiteModel,
+  PlantLiteReplicationTrace,
+  PlantLiteSimulationLimits,
+  PlantLiteTraceCaptureOptions,
+} from "./plantLiteModel.js";
 
 /**
  * 工业运营领域合同：预测维护、Unity 资源版本、运营案例、物流实验与能耗分析。
@@ -86,11 +92,21 @@ export interface UnityBuildProperty {
   options?: string[];
 }
 export type UnityRuntimeCapability = "ack" | "heartbeat" | "data-layers" | "properties" | "actions" | "events";
+export interface UnityWebBuildProfile {
+  compression: "brotli" | "gzip" | "decompression-fallback" | "uncompressed" | "mixed";
+  runtimePayloadBytes: number;
+  wasmBytes: number;
+  dataBytes: number;
+  runtimeFileCount: number;
+  debugSymbols: boolean;
+}
 export interface UnityBuildManifestRecord {
   schemaVersion: 1;
   bridgeVersion: 1;
   playerUrl: string;
   unityVersion?: string;
+  bridgePackageVersion?: string;
+  webBuild?: UnityWebBuildProfile;
   scenes?: string[];
   events?: string[];
   dataLayers?: UnityBuildDataLayer[];
@@ -245,14 +261,49 @@ export interface LogisticsExperimentResult extends LogisticsExperimentRequest {
   };
 }
 
-/** Plant Lite 仅暴露已校准的产线模板与少量可解释旋钮，不把 DES 内部拓扑暴露给普通运营用户。 */
+/**
+ * Plant 工厂规划 Study 输入。model 是作者器提交的权威模型；旧客户端省略 model 时，
+ * API 继续用 agv-line-v1 与两个兼容旋钮生成起步模型。
+ */
 export interface PlantLiteStudyRequest {
   name: string;
   templateId?: "agv-line-v1";
+  model?: PlantLiteModel;
+  /** @deprecated 仅用于没有 model 的旧模板请求。 */
   agvCount?: number;
+  /** @deprecated 仅用于没有 model 的旧模板请求。 */
   bufferCapacity?: number;
   seed?: string | number;
   replications?: number;
+  /** 通常由高级运行设置或精确复现填充。 */
+  limits?: PlantLiteSimulationLimits;
+  /** 代表性重复的有界事件轨迹；普通作者器无需展示。 */
+  trace?: PlantLiteTraceCaptureOptions;
+  /**
+   * 同一基线派生的方案实验元数据。求解输入仍由 model/seed/limits 决定；
+   * 该字段只负责把多次真实运行组织为可追溯的决策组。
+   */
+  comparison?: PlantLiteStudyComparison;
+  /** 项目侧的验收阈值；不改变求解过程，但属于本次 Study 的决策证据。 */
+  acceptanceTargets?: PlantLiteAcceptanceTargets;
+}
+
+export interface PlantLiteAcceptanceTargets {
+  /** 项目需求、产能规划或合同条款等简短依据。 */
+  basis?: string;
+  minimumThroughputPerHour?: number;
+  maximumAverageWip?: number;
+  maximumAverageLeadTimeMinutes?: number;
+  maximumEnergyPerCompletedItemKwh?: number;
+  maximumElectricityCostPerCompletedItem?: number;
+  maximumCarbonEmissionPerCompletedItemKg?: number;
+}
+
+export interface PlantLiteStudyComparison {
+  groupId: string;
+  baselineStudyId: string;
+  parameterLabel: string;
+  candidateLabel: string;
 }
 
 export interface PlantLiteConfidenceInterval {
@@ -276,8 +327,78 @@ export interface PlantLiteStudyOutcome {
   throughputPerHour: PlantLiteConfidenceInterval;
   averageWip: PlantLiteConfidenceInterval;
   averageLeadTimeMinutes: PlantLiteConfidenceInterval;
+  /** 旧持久化记录可能没有节点级统计。 */
+  nodeMetrics95?: Record<string, PlantLiteNodeMetricConfidence>;
   resourceUtilization95: Record<string, PlantLiteConfidenceInterval>;
+  /** 资源故障容量损失（台·分钟）；单资源时与停机分钟相同，旧记录可能没有。 */
+  resourceFailedMinutes95?: Record<string, PlantLiteConfidenceInterval>;
+  /** 仅在模型配置了真实功率与能源经济参数时生成；旧记录可能没有。 */
+  energy?: PlantLiteStudyEnergyOutcome;
+  /** 配置产品组合时生成；用于核对每类产品的完成占比与吞吐。 */
+  productTypeMetrics95?: Record<string, PlantLiteProductTypeMetricConfidence>;
+  /** 配置有限生产订单时生成；准交率以计划数量为分母。 */
+  productionOrderMetrics95?: Record<string, PlantLiteProductionOrderMetricConfidence>;
+  /** 至少一个工位显式配置良率时生成；旧记录可能没有。 */
+  quality?: PlantLiteStudyQualityOutcome;
   bottlenecks: PlantLiteBottleneckFrequency[];
+}
+
+export interface PlantLiteStationQualityMetricConfidence {
+  inspectedItems: PlantLiteConfidenceInterval;
+  goodItems: PlantLiteConfidenceInterval;
+  scrapItems: PlantLiteConfidenceInterval;
+  firstPassYield: PlantLiteConfidenceInterval;
+}
+
+export interface PlantLiteStudyQualityOutcome {
+  /** 正式统计窗口内到达成品端的合格件，与 completedItems 口径一致。 */
+  goodOutputItems: PlantLiteConfidenceInterval;
+  /** 正式统计窗口内在任一配置良率工位被判废并退出系统的工件。 */
+  scrapItems: PlantLiteConfidenceInterval;
+  /** goodOutputItems / (goodOutputItems + scrapItems)，未处置在制品不进入分母。 */
+  firstPassYield: PlantLiteConfidenceInterval;
+  stationMetrics95: Record<string, PlantLiteStationQualityMetricConfidence>;
+}
+
+export interface PlantLiteProductTypeMetricConfidence {
+  completedItems: PlantLiteConfidenceInterval;
+  completionShare: PlantLiteConfidenceInterval;
+  throughputPerHour: PlantLiteConfidenceInterval;
+}
+
+export interface PlantLiteProductionOrderMetricConfidence {
+  completedItems: PlantLiteConfidenceInterval;
+  completionRate: PlantLiteConfidenceInterval;
+  onTimeFulfillmentRate: PlantLiteConfidenceInterval;
+  /** 在各重复中订单全部完成的比例。 */
+  fullyCompletedRate: PlantLiteConfidenceInterval;
+  /** 完成时按末件完工计算；未完成时按仿真终点计算当前观测拖期。 */
+  observedTardinessMinutes: PlantLiteConfidenceInterval;
+}
+
+export interface PlantLiteStudyEnergyOutcome {
+  activeEnergyKwh: PlantLiteConfidenceInterval;
+  idleEnergyKwh: PlantLiteConfidenceInterval;
+  totalEnergyKwh: PlantLiteConfidenceInterval;
+  energyPerCompletedItemKwh: PlantLiteConfidenceInterval;
+  electricityCost: PlantLiteConfidenceInterval;
+  electricityCostPerCompletedItem: PlantLiteConfidenceInterval;
+  carbonEmissionKg: PlantLiteConfidenceInterval;
+  carbonEmissionPerCompletedItemKg: PlantLiteConfidenceInterval;
+  peakDemandKw: PlantLiteConfidenceInterval;
+  /** 工位或共享资源 ID -> 总电量 95% 区间。 */
+  consumerEnergyKwh: Record<string, PlantLiteConfidenceInterval>;
+}
+
+export interface PlantLiteNodeMetricConfidence {
+  utilization: PlantLiteConfidenceInterval;
+  averageQueueLength: PlantLiteConfidenceInterval;
+  blockedMinutes: PlantLiteConfidenceInterval;
+  starvedMinutes: PlantLiteConfidenceInterval;
+  /** 新版混流模型生成；旧记录或未配置换型时可能没有。 */
+  changeoverCount?: PlantLiteConfidenceInterval;
+  /** 新版混流模型生成；单位分钟。 */
+  changeoverMinutes?: PlantLiteConfidenceInterval;
 }
 
 export interface PlantLiteStudyRecord extends Required<Pick<PlantLiteStudyRequest, "name">> {
@@ -285,10 +406,20 @@ export interface PlantLiteStudyRecord extends Required<Pick<PlantLiteStudyReques
   projectId: string;
   createdAt: string;
   templateId: "agv-line-v1";
-  agvCount: number;
-  bufferCapacity: number;
+  /** 新记录保存实际执行的完整模型快照；旧记录通过模板兼容字段复现。 */
+  model?: PlantLiteModel;
+  modelFingerprint?: string;
+  agvCount?: number;
+  bufferCapacity?: number;
   seed: string | number;
   replications: number;
+  /**
+   * 一个代表性重复的有界真实 DES 轨迹。旧记录可能没有；`GET /operations`
+   * 为控制首屏负载只在最新记录中返回，历史权威记录与 run/reproduce 响应仍保留。
+   */
+  trace?: PlantLiteReplicationTrace;
+  comparison?: PlantLiteStudyComparison;
+  acceptanceTargets?: PlantLiteAcceptanceTargets;
   reproductionOf?: string;
   inputFingerprint: string;
   outcome: PlantLiteStudyOutcome;
@@ -297,7 +428,16 @@ export interface PlantLiteStudyRecord extends Required<Pick<PlantLiteStudyReques
     engineVersion: "1.0.0";
     inputFingerprint: string;
     deterministic: true;
-    limits: { durationMinutes: number; maxEvents: number; maxResources: number };
+    limits: {
+      /** 从空系统开始的总运行时长，包含预热期。 */
+      durationMinutes: number;
+      /** 旧记录省略时按 0 分钟解释。 */
+      warmupMinutes?: number;
+      maxEvents: number;
+      maxResources: number;
+    };
+    /** 新记录保存实际轨迹采集参数；旧记录可从 trace 本身恢复。 */
+    trace?: Required<PlantLiteTraceCaptureOptions>;
   };
 }
 

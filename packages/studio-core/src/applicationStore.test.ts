@@ -10,6 +10,8 @@ import {
   createDeleteDashboardPageCommand,
   createDeleteInteractionFlowCommand,
   createDeleteScriptModuleCommand,
+  createReplaceScriptModulesCommand,
+  createReplaceScriptDependenciesCommand,
   createDeleteDashboardNodeCommand,
   createDeleteDashboardNodesCommand,
   createInsertDashboardNodeCommand,
@@ -68,6 +70,53 @@ describe("StudioCommand", () => {
     expect(source.metadata.name).toBe(originalName);
     expect(source.pages).toBe(result.pages);
     expect(source.scenes).toBe(result.scenes);
+  });
+
+  it("replaces project script dependencies without retaining readonly command references", () => {
+    const source = document();
+    const dependencies = [{
+      id: "dependency:dayjs",
+      specifier: "dayjs",
+      source: "npm" as const,
+      requested: "1.11.13",
+      resolvedVersion: "1.11.13",
+      fileName: "dayjs.mjs",
+      assetUrl: "/api/projects/project-1/script-dependencies/dependency:dayjs/content",
+      integrity: "sha256-test",
+      size: 1024,
+      installedAt: "2026-09-04T00:00:00.000Z",
+    }] as const;
+
+    const result = applyStudioCommand(source, createReplaceScriptDependenciesCommand(dependencies));
+
+    expect(result.scriptDependencies).toEqual(dependencies);
+    expect(result.scriptDependencies).not.toBe(dependencies);
+    expect(result.scriptDependencies?.[0]).not.toBe(dependencies[0]);
+    expect(source.scriptDependencies).toBeUndefined();
+  });
+
+  it("replaces all behavior scripts as one undoable command", () => {
+    const source = document();
+    const scripts = [{
+      id: "remote-controller",
+      name: "远端控制",
+      enabled: true,
+      apiVersion: "1.0" as const,
+      entrypoint: "behavior" as const,
+      runtime: "worker-sandbox" as const,
+      code: "export function onStart(ctx) { ctx.log('ready'); }",
+      lifecycle: ["onStart" as const],
+      capabilities: ["studio.runtime"],
+      permissions: ["scene.read" as const],
+    }];
+    const store = new ApplicationStore(source);
+
+    store.dispatch(createReplaceScriptModulesCommand(scripts));
+
+    expect(store.getState().document?.scripts).toEqual(scripts);
+    expect(store.getState().document?.scripts).not.toBe(scripts);
+    expect(store.undo()).toBe(true);
+    expect(store.getState().document?.scripts).toEqual(source.scripts);
   });
 
   it("renames dashboard pages and updates node frames through serializable commands", () => {

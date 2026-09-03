@@ -27,7 +27,7 @@ const apiOrigin = `http://127.0.0.1:${apiPort}`;
 const server = createProductServer(webDistRoot, apiOrigin);
 await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
 const address = server.address();
-if (!address || typeof address === "string") throw new Error("无法创建素材验收服务器");
+if (!address || typeof address === "string") throw new Error("无法创建资源验收服务器");
 const productOrigin = `http://127.0.0.1:${address.port}`;
 const apiLogs = [];
 const api = spawn(process.execPath, [apiEntry], {
@@ -53,10 +53,11 @@ captureProcessOutput(api.stdout, apiLogs);
 captureProcessOutput(api.stderr, apiLogs);
 
 let browser;
+let page;
 const report = {
   createdAt: new Date().toISOString(),
   productOrigin,
-  evidenceBoundary: "功能闭环与持久化证据，不作为渲染观感或全素材视觉质量证明",
+  evidenceBoundary: "功能闭环与持久化证据，不作为渲染观感或全资源视觉质量证明",
   modelFixture: fixture.modelFixture,
   steps: [],
   audits: [],
@@ -69,7 +70,7 @@ let injectingHashMismatch = false;
 try {
   await waitForHealth(`${apiOrigin}/health`, api);
   browser = await chromium.launch({ executablePath: chromePath, headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     if (injectingHashMismatch && message.text().includes("500")) report.expectedConsoleErrors.push(message.text());
@@ -86,6 +87,7 @@ try {
   await loadModel(page, projectId, fixture.modelFixture, report);
   await applyAppearanceResources(page, editor, report, outputRoot);
   await verifyReloadedAppearance(page, editor, report, outputRoot);
+  await inspectManagerLayouts(page, productOrigin, projectId, report, outputRoot);
   await inspectResponsiveAssetPage(page, productOrigin, projectId, report, outputRoot);
 
   const failures = [
@@ -93,14 +95,19 @@ try {
     ...report.pageErrors.map((value) => `page error: ${value}`),
     ...report.requestFailures.map((value) => `request failed: ${value}`),
     ...report.audits.filter((audit) => audit.documentOverflow).map((audit) => `${audit.id} 页面溢出`),
-    ...report.audits.flatMap((audit) => audit.smallText.map((item) => `${audit.id} 小字号：${item}`)),
-    ...report.audits.flatMap((audit) => audit.smallTargets.map((item) => `${audit.id} 小点击目标：${item}`)),
+    // 统一执行文字、点击目标、图标语义、竖排压缩与顶栏布局硬门槛。
+    ...report.audits.flatMap((audit) => audit.qualityFailures),
   ];
   report.failures = failures;
   writeFileSync(resolve(outputRoot, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
-  if (failures.length) throw new Error(`素材与材质浏览器门禁失败：\n- ${failures.join("\n- ")}`);
+  if (failures.length) throw new Error(`资源与材质浏览器门禁失败：\n- ${failures.join("\n- ")}`);
   console.log(`[asset-material-flow] 通过：目录筛选/治理 → 导入 → 3D 应用 → 保存刷新恢复；报告 ${resolve(outputRoot, "report.json")}`);
 } catch (reason) {
+  if (page && !page.isClosed()) {
+    report.failureUrl = page.url();
+    report.failureVisibleText = (await page.locator("body").innerText().catch(() => "")).slice(0, 4_000);
+    await page.screenshot({ path: resolve(outputRoot, "failure.png"), fullPage: true }).catch(() => undefined);
+  }
   report.apiLogs = apiLogs.slice(-80);
   report.failure = reason instanceof Error ? reason.message : String(reason);
   writeFileSync(resolve(outputRoot, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
@@ -117,13 +124,14 @@ async function loginAndCreateProject(page, origin, report) {
   await page.getByLabel("密码").fill("asset-flow-admin");
   await page.getByRole("button", { name: "登录" }).click();
   await page.locator(".scene-manager-page").waitFor({ state: "visible" });
+  await page.locator('summary[aria-label="项目管理"]').click();
   await page.getByRole("button", { name: "新建项目", exact: true }).click();
-  await page.getByLabel("项目名称").fill("素材材质闭环项目");
+  await page.getByLabel("项目名称").fill("资源材质闭环项目");
   const response = page.waitForResponse((item) => item.url().endsWith("/api/projects") && item.request().method() === "POST");
   await page.getByRole("button", { name: "创建并切换" }).click();
   const project = await readJsonResponse(response, 201);
   report.projectId = project.id;
-  await page.getByLabel("项目").selectOption(project.id);
+  await page.getByLabel("当前项目").selectOption(project.id);
 }
 
 async function openAssetCenter(page, projectId) {
@@ -132,7 +140,7 @@ async function openAssetCenter(page, projectId) {
   await deliveryFlow.getByRole("button", { name: "展开开发流程" }).click();
   await deliveryFlow.locator('button[data-step-id="assets"]').click();
   await page.locator(".asset-library-page").waitFor({ state: "visible" });
-  await page.getByLabel("项目").selectOption(projectId);
+  await page.getByLabel("当前项目").selectOption(projectId);
 }
 
 async function verifyCatalogAndImport(page, projectId, expected, report, outputRoot) {
@@ -150,14 +158,14 @@ async function verifyCatalogAndImport(page, projectId, expected, report, outputR
   await materialCard.getByRole("button", { name: "导入", exact: true }).click();
   await materialCard.getByRole("button", { name: "已在项目", exact: true }).waitFor({ state: "visible" });
   const deprecatedCard = catalog.locator(".unified-asset-card").filter({ hasText: "已废弃表面" });
-  if (!(await deprecatedCard.getByRole("button", { name: "已废弃", exact: true }).isDisabled())) throw new Error("废弃素材仍可导入");
+  if (!(await deprecatedCard.getByRole("button", { name: "已废弃", exact: true }).isDisabled())) throw new Error("废弃资源仍可导入");
   const mismatchCard = catalog.locator(".unified-asset-card").filter({ hasText: "完整性异常表面" });
   injectingHashMismatch = true;
   try {
     await mismatchCard.getByRole("button", { name: "导入", exact: true }).click();
     await catalog.getByText("导入未完成").waitFor({ state: "visible" });
     await catalog.getByText("资源文件完整性校验失败").waitFor({ state: "visible" });
-    if (await catalog.locator(".unified-asset-card").count() < 3) throw new Error("导入失败后素材目录上下文丢失");
+    if (await catalog.locator(".unified-asset-card").count() < 3) throw new Error("导入失败后资源目录上下文丢失");
   } finally {
     injectingHashMismatch = false;
   }
@@ -167,20 +175,20 @@ async function verifyCatalogAndImport(page, projectId, expected, report, outputR
   const token = await page.evaluate(() => localStorage.getItem("bim-studio-auth-token"));
   const project = await fetch(`${page.url().split("/").slice(0, 3).join("/")}/api/projects/${projectId}`, { headers: { authorization: `Bearer ${token}` } }).then((response) => response.json());
   const ids = new Set((project.assets ?? []).map((asset) => asset.libraryOrigin?.itemId));
-  if (!ids.has(expected.environment) || !ids.has(expected.material) || ids.has(expected.hashMismatch) || ids.has(expected.deprecated)) throw new Error("素材来源治理记录异常");
+  if (!ids.has(expected.environment) || !ids.has(expected.material) || ids.has(expected.hashMismatch) || ids.has(expected.deprecated)) throw new Error("资源来源治理记录异常");
   const missing = await page.evaluate(async (itemId) => {
     const token = localStorage.getItem("bim-studio-auth-token");
     const response = await fetch(`/api/asset-library?q=${encodeURIComponent(itemId)}&dimension=material&featured=false`, { headers: { authorization: `Bearer ${token}` } });
     return response.json();
   }, expected.missingThumbnail);
-  if (missing.total !== 0) throw new Error("缺少缩略图的素材未被目录阻断");
+  if (missing.total !== 0) throw new Error("缺少缩略图的资源未被目录阻断");
   report.steps.push({ id: "catalog-import-governance", imported: [...ids], missingThumbnailExcluded: true });
-  report.audits.push({ id: "asset-center-1440", ...await auditPage(page, "asset-center-1440") });
+  report.audits.push({ id: "asset-center-governance-1440", ...await auditPage(page, "asset-center-governance-1440") });
 }
 
 async function createSceneAndOpenEditor(page, origin, projectId) {
   await page.goto(origin, { waitUntil: "networkidle" });
-  await page.getByLabel("项目").selectOption(projectId);
+  await page.getByLabel("当前项目").selectOption(projectId);
   await page.getByRole("button", { name: "新建场景", exact: true }).click();
   await page.getByLabel("场景名称").fill("材质验收场景");
   const response = page.waitForResponse((item) => item.url().includes(`/api/projects/${projectId}/applications`) && item.request().method() === "POST");
@@ -201,9 +209,13 @@ async function loadModel(page, projectId, modelFixture, report) {
   const model = await readJsonResponse(response, 202);
   await waitForModelReady(page, projectId, model.id);
   await page.reload({ waitUntil: "networkidle" });
+  if (await page.locator(".asset-row").count() === 0) {
+    const organizationToggle = page.getByRole("button", { name: "场景图层与编组" });
+    if (await organizationToggle.count()) await organizationToggle.click();
+  }
   const row = page.locator(".asset-row").filter({ hasText: modelFixture.fileName });
   await row.locator(".asset-main").click();
-  await row.getByText("已载入场景").waitFor({ state: "visible", timeout: 30_000 });
+  await row.locator(".mini-button").first().waitFor({ state: "visible", timeout: 30_000 });
   report.modelId = model.id;
   report.modelFileName = modelFixture.fileName;
 }
@@ -245,8 +257,12 @@ async function applyAppearanceResources(page, editor, report, outputRoot) {
 
 async function verifyReloadedAppearance(page, editor, report, outputRoot) {
   await page.reload({ waitUntil: "networkidle" });
+  if (await page.locator(".asset-row").count() === 0) {
+    const organizationToggle = page.getByRole("button", { name: "场景图层与编组" });
+    if (await organizationToggle.count()) await organizationToggle.click();
+  }
   const modelRow = page.locator(".asset-row").filter({ hasText: report.modelFileName });
-  await modelRow.getByText("已载入场景").waitFor({ state: "visible", timeout: 30_000 });
+  await modelRow.locator(".mini-button").first().waitFor({ state: "visible", timeout: 30_000 });
   await modelRow.locator(".asset-main").click();
   const appearance = page.locator(".inspector-appearance-settings");
   await appearance.locator(":scope > summary").click();
@@ -263,28 +279,87 @@ async function verifyReloadedAppearance(page, editor, report, outputRoot) {
 }
 
 async function inspectResponsiveAssetPage(page, origin, projectId, report, outputRoot) {
+  const viewports = [
+    { id: "asset-center-1920", width: 1920, height: 1080 },
+    { id: "asset-center-1440", width: 1440, height: 900 },
+    { id: "asset-center-1366", width: 1366, height: 768 },
+    { id: "asset-center-1280", width: 1280, height: 800 },
+    { id: "asset-center-1024", width: 1024, height: 768 },
+  ];
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(origin, { waitUntil: "networkidle" });
+    await page.getByLabel("当前项目").selectOption(projectId);
+    await openAssetCenter(page, projectId);
+    await page.locator(".unified-assets-grid:not(.is-refreshing)").waitFor({ state: "visible" });
+    if (viewport.width === 1024) await assertPrimaryCardInViewport(page, report, viewport.id);
+    report.audits.push({ id: viewport.id, ...await auditPage(page, viewport.id) });
+    await page.screenshot({ path: resolve(outputRoot, `${viewport.id}.png`) });
+  }
+
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto(origin, { waitUntil: "networkidle" });
-  await page.getByLabel("项目").selectOption(projectId);
+  await page.getByLabel("当前项目").selectOption(projectId);
   await openAssetCenter(page, projectId);
   const filtered = page.waitForResponse((item) => item.url().includes("/api/asset-library?") && item.url().includes("dimension=material"));
   await page.getByRole("tab", { name: "PBR 材质" }).click();
   await filtered;
   await page.locator(".unified-assets-grid:not(.is-refreshing)").waitFor({ state: "visible" });
-  await assertPrimaryCardInViewport(page, report, "asset-center-1024");
-  report.audits.push({ id: "asset-center-1024", ...await auditPage(page, "asset-center-1024") });
-  await page.screenshot({ path: resolve(outputRoot, "04-asset-center-1024.png") });
+  await assertPrimaryCardInViewport(page, report, "asset-center-material-1024");
+  report.audits.push({ id: "asset-center-material-1024", ...await auditPage(page, "asset-center-material-1024") });
+  await page.screenshot({ path: resolve(outputRoot, "asset-center-material-1024.png") });
 
   await page.locator(".unified-assets-kinds button").filter({ hasText: "看板模板" }).click();
   await page.locator(".built-in-asset-card").first().waitFor({ state: "visible" });
-  await assertPrimaryCardInViewport(page, report, "template-center-1024");
+  await assertWorkspacePrimaryActionInViewport(page, report, "template-center-1024");
   report.audits.push({ id: "template-center-1024", ...await auditPage(page, "template-center-1024") });
-  await page.screenshot({ path: resolve(outputRoot, "05-template-center-1024.png") });
+  await page.screenshot({ path: resolve(outputRoot, "06-template-center-1024.png") });
+}
+
+async function inspectManagerLayouts(page, origin, projectId, report, outputRoot) {
+  const viewports = [
+    { id: "manager-1920", width: 1920, height: 1080 },
+    { id: "manager-1440", width: 1440, height: 900 },
+    { id: "manager-1366", width: 1366, height: 768 },
+    { id: "manager-1280", width: 1280, height: 800 },
+    { id: "manager-1024", width: 1024, height: 768 },
+  ];
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(origin, { waitUntil: "networkidle" });
+    await page.getByLabel("当前项目").selectOption(projectId);
+    await page.getByRole("button", { name: "项目场景", exact: true }).click();
+    await page.locator(".scene-card").first().waitFor({ state: "visible" });
+    const metrics = await page.evaluate(() => {
+      const header = document.querySelector(".manager-header");
+      const card = document.querySelector(".scene-card");
+      const actions = card?.querySelector(".scene-card-actions");
+      const deliveryFlow = document.querySelector(".project-delivery-flow");
+      const cardRect = card?.getBoundingClientRect();
+      const actionRect = actions?.getBoundingClientRect();
+      const text = document.body.innerText;
+      return {
+        documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+        headerOverflow: Boolean(header && header.scrollWidth > header.clientWidth + 1),
+        cardActionOverflow: Boolean(cardRect && actionRect && (actionRect.left < cardRect.left || actionRect.right > cardRect.right)),
+        flowCollapsedClean: deliveryFlow?.textContent?.trim() === "开发流程"
+          && deliveryFlow.querySelector('[aria-label="展开开发流程"]') !== null
+          && deliveryFlow.querySelector(".delivery-progress,[data-step-id]") === null,
+        oldResourceTerms: Array.from(text.matchAll(/资源库|资源中心|素材/g), (match) => match[0]),
+      };
+    });
+    report.steps.push({ id: `${viewport.id}-layout`, ...metrics });
+    report.audits.push({ id: viewport.id, ...await auditPage(page, viewport.id) });
+    await page.screenshot({ path: resolve(outputRoot, `${viewport.id}.png`) });
+    if (metrics.documentOverflow || metrics.headerOverflow || metrics.cardActionOverflow) throw new Error(`${viewport.id} 存在横向溢出或卡片动作越界`);
+    if (!metrics.flowCollapsedClean) throw new Error(`${viewport.id} 默认开发流程仍显示状态、进度或步骤`);
+    if (metrics.oldResourceTerms.length) throw new Error(`${viewport.id} 出现过时资源术语：${metrics.oldResourceTerms.join("、")}`);
+  }
 }
 
 async function assertPrimaryCardInViewport(page, report, id) {
   const layouts = await page.locator(".unified-asset-card").evaluateAll((elements) => elements.flatMap((element) => {
-    const action = element.querySelector(".asset-import, .asset-imported");
+    const action = element.querySelector(".asset-import, .asset-imported, .asset-placement-hint");
     if (!action) return [];
     const cardRect = element.getBoundingClientRect();
     const actionRect = action.getBoundingClientRect();
@@ -293,9 +368,21 @@ async function assertPrimaryCardInViewport(page, report, id) {
   }));
   const layout = layouts[0];
   const viewport = page.viewportSize();
-  if (!layout || !viewport) throw new Error(`${id} 无法读取首张素材卡片布局`);
+  if (!layout || !viewport) throw new Error(`${id} 无法读取首张资源卡片布局`);
   const hasLayout = layout.cardBottom > layout.cardTop && layout.actionBottom > layout.actionTop;
   const primaryActionVisible = hasLayout && layout.actionTop >= 0 && layout.actionBottom <= viewport.height;
   report.steps.push({ id: `${id}-first-viewport`, cardBottom: Math.round(layout.cardBottom), actionBottom: Math.round(layout.actionBottom), viewportHeight: viewport.height, primaryActionVisible });
-  if (!primaryActionVisible) throw new Error(`${id} 首张素材卡片或主操作未完整进入首屏`);
+  if (!primaryActionVisible) throw new Error(`${id} 首张资源卡片或使用提示未完整进入首屏`);
+}
+
+async function assertWorkspacePrimaryActionInViewport(page, report, id) {
+  const layout = await page.locator(".built-in-editor-entry").evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return { actionTop: bounds.top, actionBottom: bounds.bottom };
+  });
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error(`${id} 无法读取视口布局`);
+  const primaryActionVisible = layout.actionTop >= 0 && layout.actionBottom <= viewport.height;
+  report.steps.push({ id: `${id}-first-viewport`, actionBottom: Math.round(layout.actionBottom), viewportHeight: viewport.height, primaryActionVisible });
+  if (!primaryActionVisible) throw new Error(`${id} 编辑器入口未完整进入首屏`);
 }

@@ -1,6 +1,6 @@
 # Unity WebGL 集成指南
 
-本文定义 iTwin Studio 嵌入 Unity WebGL 场景的当前接入方式、协议边界和兼容性门禁。当前交付与本机验证目标是 **Unity 2022 LTS 与 Unity 6.0**，不把协议绑定到某个 Unity Editor 小版本；现有 Unity 2023 工程可按同一协议接入但不在本轮本机构建门禁内，Unity 2021 不在项目范围；移动端不在本阶段支持范围内。
+本文定义 Industrial Studio 嵌入 Unity WebGL 场景的当前接入方式、协议边界和兼容性门禁。当前交付与本机验证目标是 **Unity 2022 LTS 与 Unity 6.0**，不把协议绑定到某个 Unity Editor 小版本；现有 Unity 2023 工程可按同一协议接入但不在本轮本机构建门禁内，Unity 2021 不在项目范围；移动端不在本阶段支持范围内。
 
 ## 1. 能力状态
 
@@ -9,17 +9,18 @@
 - 二维看板可添加 `unity` 组件，配置 Unity WebGL 播放页 URL、允许的消息来源、场景列表、当前场景和事件清单。
 - Unity 构建可通过版本化 manifest 声明播放器入口、Unity 版本、场景、事件和数据层；多个看板组件可复用同一个构建清单，播放 URL 仍可按组件覆盖。
 - Unity 播放页通过 iframe 运行；设计态隔离 Unity 输入，运行态恢复输入。
-- iTwin Studio 使用版本化 `postMessage` 协议下发初始化信息、全局变量、筛选参数、组件数据、属性值、Unity 动作和目标场景；属性值在运行时修改时通过 `properties` 消息增量更新，交互流可通过 `action` 消息触发 Unity 动作。
+- Industrial Studio 使用版本化 `postMessage` 协议下发初始化信息、全局变量、筛选参数、组件数据、属性值、Unity 动作和目标场景；属性值在运行时修改时通过 `properties` 消息增量更新，交互流可通过 `action` 消息触发 Unity 动作。
 - 播放页通过 `unityInstance.SendMessage()` 把消息交给 Unity 场景中的 `BimStudioBridge.ApplyStudioMessage(string)`。
 - Unity 可通过 `.jslib` 调用浏览器桥，向看板回传业务事件或运行错误。
 - 看板接收 Unity 事件后，将事件值写入 `unity.{组件数据键}.{事件名}`，并触发该组件的点击联动。
 - 项目内可直接导入 Unity WebGL ZIP；服务端会做 CRC、路径穿越、压缩包大小和文件数校验，自动托管入口与 manifest，并保留不可变版本和内容哈希。
 - 资源版本可在组件内切换；manifest 中声明的 dataLayers 可直接映射到看板变量，objects、actions、properties 会随清单透传给运行时。
-- 仓库提供中文 Unity Package `com.bim-studio.bridge@0.6.0`：自动扫描绑定组件、生成并校验 manifest、修复常驻桥对象、构建 WebGL，再把完整构建目录压缩成可直接拖入平台的 ZIP；Unity 主线程回传消息 ACK、运行心跳、FPS 和活动场景。0.6.0 统一支持模型、Animator、材质、变换、相机、灯光和可选 uGUI 双向绑定。
+- 仓库提供中文 Unity Package `com.bim-studio.bridge@0.6.1`：自动扫描绑定组件、生成并校验 manifest、修复常驻桥对象、构建 WebGL，再把完整构建目录压缩成可直接拖入平台的 ZIP；Unity 主线程回传消息 ACK、运行心跳、FPS 和活动场景。0.6.0 统一支持模型、Animator、材质、变换、相机、灯光和可选 uGUI 双向绑定，0.6.1 增加插件版本、构建完整性与压缩载荷证据，并把 Unity loader 的真实启动进度透传给平台。运行组件可取消加载，取消会卸载 iframe，而不是只隐藏进度提示。
 
 以下能力尚未完成，不应在交付时宣称已经支持：
 
 - CDN 自动发布、增量更新和缓存刷新已明确排除在当前范围外；平台内置托管继续承担快速复用、测试和中小规模交付。
+- 插件尚不替业务工程生成 Addressables catalog、AssetBundle 分组或远程内容更新；大型模型仍需项目团队按依赖与内存预算设计内容分块，平台不能从单一 `.data` 文件推断出安全的分块边界。
 - 数据连接仍统一在平台侧配置，Unity Inspector 只声明稳定的数据层、属性、动作、业务对象和回传事件。插件已提供中文无代码绑定、就地创建标识、GameObject 一键注册和 UnityEvent 事件回传，避免在 Unity 工程中重复保存数据源凭据。
 - 平台图形化面板和 Worker 行为脚本共享 manifest：`studio.unity(id).setProperty/setProperties/invoke/switchScene` 只接受当前资源版本声明的组件、属性、动作、对象和场景。模型、相机、灯光、动画及 uGUI 因而可以用页面配置或脚本编辑，两种方式具有相同的校验和运行语义。
 - 已使用本机 Unity 2022.3.62f1 与 Unity 6.0（6000.0.52f1）完成插件编译、真实 WebGL 构建、桥注入、manifest 和 ZIP 产物门禁；最终浏览器画面与具体业务项目仍需按交付项目验收。
@@ -36,7 +37,7 @@ FineVis 官方文档给出的参照能力包括 Unity WebGL 资源包上传、�
 2. 构建加载器提供 `createUnityInstance()`，成功回调返回 `unityInstance`。
 3. 浏览器使用 `unityInstance.SendMessage(objectName, methodName, value)` 调用 GameObject 上的公开方法；Unity 使用 `.jslib` 调用页面 JavaScript。
 
-Unity 2022、2023 的官方 WebGL 模板文档和 Unity 6 的 Web 模板文档均保留这一路径。iTwin Studio 因而版本化自己的消息协议，而不判断 `Application.unityVersion` 后分支调用内部加载器 API。官方依据见 [Unity 2022 WebGL templates](https://docs.unity3d.com/2022.3/Documentation/Manual/webgl-templates.html)、[Unity 2023 WebGL templates](https://docs.unity3d.com/2023.2/Documentation/Manual/webgl-templates.html) 和 [Unity 6 Web templates](https://docs.unity3d.com/6000.0/Documentation/Manual/webgl-templates.html)。
+Unity 2022、2023 的官方 WebGL 模板文档和 Unity 6 的 Web 模板文档均保留这一路径。Industrial Studio 因而版本化自己的消息协议，而不判断 `Application.unityVersion` 后分支调用内部加载器 API。官方依据见 [Unity 2022 WebGL templates](https://docs.unity3d.com/2022.3/Documentation/Manual/webgl-templates.html)、[Unity 2023 WebGL templates](https://docs.unity3d.com/2023.2/Documentation/Manual/webgl-templates.html) 和 [Unity 6 Web templates](https://docs.unity3d.com/6000.0/Documentation/Manual/webgl-templates.html)。
 
 “版本中立”表示桥接层不主动依赖某一版本私有实现，不表示未经构建验证即可承诺所有补丁版本。每个受支持版本仍需通过第 10 节的验收矩阵。
 
@@ -47,7 +48,7 @@ Unity 2022、2023 的官方 WebGL 模板文档和 Unity 6 的 Web 模板文档�
 ## 3. 总体链路
 
 ```text
-iTwin Studio 看板组件
+Industrial Studio 看板组件
   │  postMessage: init / parameters / data / scene
   ▼
 Unity 播放页 iframe（受控 HTTP(S) origin）
@@ -61,7 +62,7 @@ Unity GameObject + C# 接收器
 Unity 播放页
   │  postMessage: ready / event / error
   ▼
-iTwin Studio 变量与交互流
+Industrial Studio 变量与交互流
 ```
 
 宿主与 Unity 播放页应部署在不同 origin 时也可工作。双方通信只走结构化消息，不要求 iframe 直接读取父页面 DOM。
@@ -70,10 +71,10 @@ iTwin Studio 变量与交互流
 
 ### 4.0 推荐的零代码路径
 
-1. 在平台 Unity 资源面板下载 `com.bim-studio.bridge-0.6.0.tgz`，通过 Unity Package Manager 的 **Add package from tarball** 安装。
+1. 在平台 Unity 资源面板下载 `com.bim-studio.bridge-0.6.1.tgz`，通过 Unity Package Manager 的 **Add package from tarball** 安装。
 2. 给业务对象添加中文 Inspector 中的“数据 / 属性绑定”“动作绑定”或“事件回传”组件；标识和业务对象可以在当前 Inspector 就地创建。
-3. 运行 **BIM Studio/从场景自动同步集成清单** 检查自动发现结果。插件会保留已有标签、类型和选项，同时补齐数据层、属性、动作、事件、对象路径与动作目标 ID。
-4. 运行 **BIM Studio/一键构建并导出 WebGL ZIP**。构建前会再次自动同步和校验，并自动注入浏览器桥。
+3. 运行 **Industrial Studio/从场景自动同步集成清单** 检查自动发现结果。插件会保留已有标签、类型和选项，同时补齐数据层、属性、动作、事件、对象路径与动作目标 ID。
+4. 运行 **Industrial Studio/一键构建并导出 WebGL ZIP**。构建前会再次自动同步和校验，并自动注入浏览器桥。
 5. 把 ZIP 拖入平台 Unity 组件。平台会展示 manifest 发现数、Bridge 状态，并可直接发送测试动作；场景、数据层、属性、动作和回传事件随后进入平台数据与交互配置。
 
 这条路径不要求用户手写 Web 模板、`.jslib` 或桥接 C#。后续小节保留的是协议说明和定制工程的手动接入参考，不是普通用户的必做步骤。
@@ -101,7 +102,7 @@ Assets/
 在模板原有的 `createUnityInstance()` 成功回调内注册实例：
 
 ```js
-createUnityInstance(canvas, config, onProgress)
+window.BimStudioUnityBridge.createTrackedInstance(createUnityInstance, canvas, config, onProgress)
   .then(function (unityInstance) {
     window.BimStudioUnityBridge.register(unityInstance, "BimStudioBridge");
   })
@@ -110,7 +111,7 @@ createUnityInstance(canvas, config, onProgress)
   });
 ```
 
-`BimStudioBridge` 是 Unity 场景中的接收 GameObject 名称，可以在 `register` 的第二个参数中修改，但必须与场景对象名完全一致。注册成功后桥会向父页面发送 `ready`；宿主收到 `ready` 后会再次发送完整 `init`，因此不会依赖 iframe `load` 与 Unity 运行时初始化的先后顺序。
+`createTrackedInstance` 保留模板原有的 `onProgress` 回调，同时把 loader 提供的 0–1 下载进度作为 `load-progress` 事件发给宿主。`BimStudioBridge` 是 Unity 场景中的接收 GameObject 名称，可以在 `register` 的第二个参数中修改，但必须与场景对象名完全一致。注册成功后桥会向父页面发送 `ready`；宿主收到 `ready` 后会再次发送完整 `init`，因此不会依赖 iframe `load` 与 Unity 运行时初始化的先后顺序。
 
 Unity 官方说明 `createUnityInstance()` 由对应构建的 loader 脚本提供，并返回可用于交互的 Unity 实例；`SendMessage` 用于调用场景 GameObject 上的方法。参见 [Unity Web template structure and instantiation](https://docs.unity3d.com/6000.0/Documentation/Manual/web-templates-structure.html) 和 [Unity 2022 WebGL templates](https://docs.unity3d.com/2022.3/Documentation/Manual/webgl-templates.html)。
 
@@ -159,13 +160,13 @@ public sealed class BimStudioBridge : MonoBehaviour
         }
         catch (Exception exception)
         {
-            Debug.LogError($"Invalid iTwin Studio message: {exception.Message}");
+            Debug.LogError($"Invalid Industrial Studio message: {exception.Message}");
             return;
         }
 
         if (envelope == null || envelope.source != "bim-studio" || envelope.version != 1)
         {
-            Debug.LogWarning("Ignored unsupported iTwin Studio message.");
+            Debug.LogWarning("Ignored unsupported Industrial Studio message.");
             return;
         }
 
@@ -177,7 +178,7 @@ public sealed class BimStudioBridge : MonoBehaviour
             case "properties": onProperties.Invoke(json); break;
             case "action":     onAction.Invoke(json); break;
             case "scene":      onScene.Invoke(json); break;
-            default: Debug.LogWarning($"Unknown iTwin Studio message type: {envelope.type}"); break;
+            default: Debug.LogWarning($"Unknown Industrial Studio message type: {envelope.type}"); break;
         }
     }
 }
@@ -297,7 +298,7 @@ public void OnDeviceClicked(string deviceId)
 {
   "source": "unity-webgl",
   "version": 1,
-  "type": "ready | event | error",
+  "type": "ready | event | error | load-progress",
   "widgetId": "dashboard-node-id",
   "eventName": "device-click",
   "payload": { "deviceId": "pump-01" },
@@ -310,12 +311,13 @@ public void OnDeviceClicked(string deviceId)
 | `ready` | 公共信封 | `unityInstance` 已注册，可以接收消息 |
 | `event` | `eventName` | 把 Unity 交互写入看板变量并触发组件联动 |
 | `error` | `message` | 在 Unity 组件上显示明确的运行错误 |
+| `load-progress` | `progress`（0–1） | 展示 Unity loader 的真实下载进度，并刷新启动停滞计时 |
 
 `widgetId` 在第一次宿主消息到达后由播放器桥记住。Unity 过早发送的业务事件可能没有 `widgetId`，宿主仍会按 iframe 来源接收；工程应优先等待 `ready` 完成和首个 `init` 后再发业务事件。
 
 ## 7. 多场景
 
-iTwin Studio 只发送目标场景名，不替 Unity 工程选择加载策略。Unity 侧应按项目规模实现以下任一种方式：
+Industrial Studio 只发送目标场景名，不替 Unity 工程选择加载策略。Unity 侧应按项目规模实现以下任一种方式：
 
 - 小型互斥场景：`SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Single)`。
 - 需要保留公共灯光、相机、桥接器或 UI 的项目：保留 Bootstrap 场景，并用 `LoadSceneMode.Additive` 异步加载业务场景，再卸载上一个业务场景。
@@ -357,7 +359,7 @@ Unity 工程应维护一层映射表，例如：
 }
 ```
 
-当前 iTwin Studio 会读取第 11 节定义的版本化构建清单，把清单随 `init` 消息交给 Unity，并根据平台变量、二维筛选和组件数据结果持续解析/推送 `dataLayers`。Unity 工程仍负责把稳定 layer key 映射到自己的 GameObject、ECS、材质、动画或业务系统；平台不依赖反射扫描场景层级。
+当前 Industrial Studio 会读取第 11 节定义的版本化构建清单，把清单随 `init` 消息交给 Unity，并根据平台变量、二维筛选和组件数据结果持续解析/推送 `dataLayers`。Unity 工程仍负责把稳定 layer key 映射到自己的 GameObject、ECS、材质、动画或业务系统；平台不依赖反射扫描场景层级。
 
 ### 8.2 Unity 事件驱动二维动作
 
@@ -367,7 +369,7 @@ Unity 工程应维护一层映射表，例如：
 window.BimStudioUnityBridge.emit("device-click", { deviceId: "pump-01" });
 ```
 
-若组件数据键为 `factory`, iTwin Studio 将写入：
+若组件数据键为 `factory`, Industrial Studio 将写入：
 
 ```text
 unity.factory.device-click = { "deviceId": "pump-01" }
@@ -380,10 +382,10 @@ unity.factory.device-click = { "deviceId": "pump-01" }
 ### 9.1 Origin 与 iframe
 
 - Unity 播放 URL 和“允许的消息来源”必须是合法 `http:` 或 `https:` URL；生产环境使用 HTTPS。
-- iTwin Studio 向 iframe 发送消息时使用精确 `targetOrigin`，接收时同时校验 `event.origin` 和 `event.source === iframe.contentWindow`。
+- Industrial Studio 向 iframe 发送消息时使用精确 `targetOrigin`，接收时同时校验 `event.origin` 和 `event.source === iframe.contentWindow`。
 - 播放器首次 `ready` 在尚未获知宿主来源时使用 `window.parent.postMessage(..., "*")`；收到第一条通过协议校验的宿主消息后，后续事件固定回传到该消息的 `event.origin`。宿主仍同时校验来源和 iframe 窗口。
 - 当前 iframe sandbox 允许脚本、同源能力、指针锁和下载。Unity 播放页必须部署在受控 origin，不与管理后台 Cookie、敏感 API 或用户上传的任意 HTML 共用同源权限。
-- 若 Unity 播放页不应被其他站点嵌入，应在其响应头设置适合部署拓扑的 `Content-Security-Policy: frame-ancestors ...`；同时让该策略允许 iTwin Studio 的实际 origin。
+- 若 Unity 播放页不应被其他站点嵌入，应在其响应头设置适合部署拓扑的 `Content-Security-Policy: frame-ancestors ...`；同时让该策略允许 Industrial Studio 的实际 origin。
 
 ### 9.2 消息与数据
 
@@ -431,8 +433,8 @@ FineVis 官方方案的产品优势不是 iframe 本身，而是 Unity SDK、资
 1. **已完成**：`schemaVersion: 1` manifest 已覆盖场景、事件、动作、数据层、对象和类型化属性；服务端记录 ZIP 内容哈希和不可变版本。
 2. **已完成**：服务端 ZIP 大小/文件数/解压大小/路径安全校验、Zip Slip 防护、对象存储同步、版本激活和删除生命周期。
 3. **已完成核心闭环**：设计器根据 manifest 生成场景、动作、数据层、对象和类型化属性配置；同名数据层自动绑定，并随平台变量、二维筛选、标量/行集数据持续增量推送；Unity 事件可驱动平台交互，平台动作可下发 Unity。
-4. **已完成**：中文 Unity Editor Package 0.6.0 可从核心及可选 uGUI 场景绑定自动发现数据层、属性、动作、事件和业务对象，导出前自动同步 manifest，输出 `.jslib`，构建后自动复制浏览器桥并向生成的 `index.html` 注入实例注册代码。
-5. **已完成当前版本门禁**：0.6.0 已在 2022.3.62f1 与 6000.0.52f1（含 `com.unity.ugui`）完成插件编译、真实 WebGL 构建、manifest 生成、浏览器桥注入和 ZIP 回灌；Unity 主线程 ACK、5 秒心跳、FPS/活动场景遥测和通信降级恢复均通过编译、构建与浏览器故障恢复门禁。
+4. **已完成**：中文 Unity Editor Package 0.6.1 可从核心及可选 uGUI 场景绑定自动发现数据层、属性、动作、事件和业务对象，导出前自动同步 manifest，输出 `.jslib`，构建后自动复制浏览器桥并向生成的 `index.html` 注入实例注册代码；manifest 同时声明插件包版本。
+5. **已完成当前版本门禁**：0.6.1 已在 2022.3.62f1 与 6000.0.52f1 完成插件编译、真实 WebGL 构建、manifest/插件版本检查、Loader/Framework/WASM/Data 完整性、浏览器桥注入和 ZIP 生成；平台侧 Brotli/Gzip 响应头、运行载荷和调试符号检查通过 API 与合同测试。
 6. **部分完成**：浏览器端已有 20 秒启动超时、明确错误、一键重试、消息确认超时和心跳恢复；继续补生产 HTTPS/CSP/CDN 门禁、依赖诊断、缓存失效和大包分段进度体验。
 
 ### 当前构建清单格式

@@ -38,10 +38,9 @@ export function LoginPage({
   return (
     <main className="login-page">
       <section className="login-card">
-        <div className="login-mark">
-          <img src={branding.logoUrl} alt={branding.systemName} />
-        </div>
-        <h1>{branding.systemName}</h1>
+        <h1 className="login-brand" aria-label={branding.systemName}>
+          <img src={branding.logoUrl} alt="" />
+        </h1>
         {branding.loginSubtitle && <p>{branding.loginSubtitle}</p>}
         {branding.maintenanceEnabled && (
           <aside>{branding.maintenanceMessage}</aside>

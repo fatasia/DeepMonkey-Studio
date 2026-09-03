@@ -1,11 +1,8 @@
-import type { ComponentProps, ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_DASHBOARD_VIEW } from "../studio/workspaceRoute";
-import { SceneBehaviorPanel } from "../components/SceneBehaviorPanel";
-import { AppBehaviorOverlay } from "./AppBehaviorOverlay";
+import { AppBehaviorOverlay, behaviorWindowTitle } from "./AppBehaviorOverlay";
 import type { AppViewBindings } from "./appViewBindings";
-
-type BehaviorPanelElement = ReactElement<ComponentProps<typeof SceneBehaviorPanel>>;
 
 function createBindings(view: "dashboard" | "studio"): {
   bindings: AppViewBindings;
@@ -51,6 +48,8 @@ function createBindings(view: "dashboard" | "studio"): {
   const bindings = {
     state: {
       sceneBehaviorOpen: true,
+      sceneBehaviorLayout: "split",
+      setSceneBehaviorLayout: vi.fn(),
       activeApplication: application,
       activeDashboardPage: view === "dashboard" ? dashboardPage : undefined,
       activeScene: { id: "scene-1", name: "装配车间" },
@@ -61,6 +60,7 @@ function createBindings(view: "dashboard" | "studio"): {
       setSceneBehaviorLogs: vi.fn(),
       setMessage: vi.fn(),
       pendingSceneFocusRef: { current: undefined },
+      pendingBehaviorDraftRef: { current: undefined },
       applicationSessionRef: { current: { store: { setSelection: vi.fn() } } },
       sceneBehaviorEntries: [],
       sceneBehaviorLogs: [],
@@ -90,30 +90,23 @@ function createBindings(view: "dashboard" | "studio"): {
   return { bindings, closePanel, commitSceneName, enterSceneFromDashboard, returnFromSceneEditor, saveActiveApplication };
 }
 
-describe("AppBehaviorOverlay workspace navigation", () => {
-  it("returns from the 3D script overlay to the preserved 2D workspace", async () => {
-    const { bindings, closePanel, commitSceneName, returnFromSceneEditor, saveActiveApplication } = createBindings("studio");
-    const panel = AppBehaviorOverlay({ bindings }) as BehaviorPanelElement;
-
-    await panel.props.workspaceNavigation?.onSelect2D?.();
-
-    expect(saveActiveApplication).toHaveBeenCalledOnce();
-    expect(closePanel).toHaveBeenCalledWith(false);
-    expect(commitSceneName).toHaveBeenCalledOnce();
-    expect(returnFromSceneEditor).toHaveBeenCalledOnce();
+describe("AppBehaviorOverlay workspace integration", () => {
+  it("uses the active workspace in the detached editor title", () => {
+    expect(behaviorWindowTitle("zh-CN", "一号物流车间")).toBe("一号物流车间 · 脚本编辑器 · Industrial Studio");
   });
 
-  it("saves before opening the linked 3D scene with the current viewport state", async () => {
-    const { bindings, closePanel, enterSceneFromDashboard, saveActiveApplication } = createBindings("dashboard");
-    const panel = AppBehaviorOverlay({ bindings }) as BehaviorPanelElement;
+  it("renders the script editor inside the selected workspace layout", () => {
+    const { bindings } = createBindings("studio");
+    const html = renderToStaticMarkup(<AppBehaviorOverlay bindings={bindings} />);
 
-    await panel.props.workspaceNavigation?.onSelect3D?.();
+    expect(html).toContain("behavior-workspace-slot layout-split");
+    expect(html).toContain("正在加载脚本编辑器");
+  });
 
-    expect(saveActiveApplication).toHaveBeenCalledOnce();
-    expect(closePanel).toHaveBeenCalledWith(false);
-    expect(enterSceneFromDashboard).toHaveBeenCalledWith(
-      "scene-1",
-      expect.objectContaining({ zoom: 0.8, scrollLeft: 120, scrollTop: 60 }),
-    );
+  it("keeps workspace switching out of the script panel title bar", () => {
+    const { bindings } = createBindings("dashboard");
+    const html = renderToStaticMarkup(<AppBehaviorOverlay bindings={bindings} />);
+
+    expect(html).not.toContain("workspace-mode-switch");
   });
 });

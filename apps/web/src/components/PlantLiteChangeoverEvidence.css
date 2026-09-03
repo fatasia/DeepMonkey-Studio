@@ -1,0 +1,52 @@
+.plant-changeover-evidence {
+  display: grid;
+  gap: 8px;
+  margin: 0 14px 12px;
+  padding: 10px;
+  border: 1px solid #353349;
+  border-radius: 8px;
+  background: #121621;
+}
+
+.plant-changeover-evidence > header { display:flex;align-items:center;justify-content:space-between;gap:10px; }
+.plant-changeover-evidence > header > span { display:flex;align-items:center;gap:6px;color:#e2e4ed;font-size:12px; }
+.plant-changeover-evidence > header > span svg { color:#ad8ce0; }
+.plant-changeover-evidence > header small { color:#7e7f91;font-size:10px;text-align:right; }
+
+.plant-mix-evidence { display:grid;overflow:hidden;border:1px solid #2c3040;border-radius:6px; }
+.plant-mix-evidence > div { display:grid;min-height:34px;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid #272b39;grid-template-columns:minmax(110px,1fr) 72px minmax(160px,1.15fr) minmax(190px,1.3fr); }
+.plant-mix-evidence > div:last-child { border-bottom:0; }
+.plant-mix-evidence > div.is-heading { min-height:28px;color:#737889;background:#151a25;font-size:9px;text-transform:uppercase; }
+.plant-mix-evidence > div:not(.is-heading) > span { overflow:hidden;color:#afb4c1;font-size:10px;text-overflow:ellipsis;white-space:nowrap; }
+.plant-mix-evidence > div:not(.is-heading) > span:first-child { display:flex;align-items:baseline;gap:6px;color:#dce0e8;font-size:11px; }
+.plant-mix-evidence > div span small { color:#707588;font-size:9px; }
+.plant-mix-evidence > div strong { color:#c8adee;font-size:11px;font-weight:600; }
+
+.plant-changeover-stations { display:grid;border-top:1px solid #292d3c; }
+.plant-changeover-stations > div { display:grid;min-height:40px;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #292d3c;grid-template-columns:minmax(120px,1fr) 90px minmax(210px,1.4fr); }
+.plant-changeover-stations > div > span { display:flex;min-width:0;align-items:baseline;gap:6px;color:#d4d8e1;font-size:10px; }
+.plant-changeover-stations > div span small { color:#737889;font-size:9px; }
+.plant-changeover-stations > div strong { color:#c8adee;font-size:11px;text-align:right; }
+.plant-changeover-stations > div > small { color:#8d92a0;font-size:10px;text-align:right; }
+
+.plant-changeover-note { margin:0;color:#7e8291;font-size:10px;line-height:1.45; }
+.plant-changeover-trace { overflow:hidden;border:1px solid #2b3040;border-radius:6px; }
+.plant-changeover-trace > summary { display:flex;min-height:32px;align-items:center;justify-content:space-between;padding:0 8px;color:#aeb2bf;font-size:10px;list-style:none;cursor:pointer; }
+.plant-changeover-trace > summary::-webkit-details-marker { display:none; }
+.plant-changeover-trace > summary small { color:#717686;font-size:9px; }
+.plant-changeover-trace > div { display:grid;max-height:180px;overflow:auto;border-top:1px solid #292d3b; }
+.plant-changeover-trace > div > span { display:grid;min-height:30px;align-items:center;gap:7px;padding:3px 8px;border-bottom:1px solid #252936;grid-template-columns:62px minmax(90px,.7fr) minmax(140px,1fr) 62px; }
+.plant-changeover-trace time { color:#777c8c;font:9px/1 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.plant-changeover-trace b,.plant-changeover-trace span span { overflow:hidden;color:#b8bdc8;font-size:10px;text-overflow:ellipsis;white-space:nowrap; }
+.plant-changeover-trace span small { color:#9c7eca;font-size:9px;text-align:right; }
+.plant-changeover-trace > p { margin:0;padding:5px 8px;color:#737889;font-size:9px; }
+.plant-changeover-warning { display:flex;align-items:flex-start;gap:5px;margin:0;color:#d2ad67;font-size:10px;line-height:1.45; }
+
+@media (max-width:720px) {
+  .plant-changeover-evidence > header { align-items:flex-start;flex-direction:column; }
+  .plant-changeover-evidence > header small { text-align:left; }
+  .plant-mix-evidence { overflow-x:auto; }
+  .plant-mix-evidence > div { min-width:590px; }
+  .plant-changeover-stations > div { grid-template-columns:minmax(0,1fr) auto; }
+  .plant-changeover-stations > div > small { grid-column:1/-1;text-align:left; }
+}

@@ -18,12 +18,13 @@ namespace BimStudio.Bridge.Editor
             var settings = Resources.Load<BimStudioManifestAsset>("BimStudioManifest")
                 ?? AssetDatabase.LoadAssetAtPath<BimStudioManifestAsset>("Assets/Resources/BimStudioManifest.asset")
                 ?? Resources.FindObjectsOfTypeAll<BimStudioManifestAsset>().FirstOrDefault();
-            if (settings == null) throw new BuildFailedException("缺少 BIM Studio 集成清单，请先运行“BIM Studio/准备项目（通信桥与集成清单）”。");
+            if (settings == null) throw new BuildFailedException("缺少 Industrial Studio 集成清单，请先运行“Industrial Studio/准备项目（通信桥与集成清单）”。");
             var validation = BimStudioManifestValidator.Validate(settings);
-            if (!validation.IsValid) throw new BuildFailedException("BIM Studio 集成清单校验失败：\n" + string.Join("\n", validation.errors));
-            foreach (var warning in validation.warnings) Debug.LogWarning("[BIM Studio Manifest] " + warning);
+            if (!validation.IsValid) throw new BuildFailedException("Industrial Studio 集成清单校验失败：\n" + string.Join("\n", validation.errors));
+            foreach (var warning in validation.warnings) Debug.LogWarning("[Industrial Studio Manifest] " + warning);
             var manifest = new BimStudioManifest
             {
+                bridgePackageVersion = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(BimStudioWebGLExporter).Assembly)?.version ?? "0.6.1",
                 scenes = EditorBuildSettings.scenes.Where(scene => scene.enabled).Select(scene => Path.GetFileNameWithoutExtension(scene.path)).ToArray(),
                 events = settings?.events ?? Array.Empty<string>(),
                 actions = settings?.actions ?? Array.Empty<string>(),
@@ -39,13 +40,13 @@ namespace BimStudio.Bridge.Editor
         private static void InstallBrowserBridge(string outputPath)
         {
             var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(BimStudioWebGLExporter).Assembly);
-            if (package == null) throw new BuildFailedException("无法定位 BIM Studio Bridge 插件目录。");
+            if (package == null) throw new BuildFailedException("无法定位 Industrial Studio Bridge 插件目录。");
 
             var source = Path.Combine(package.resolvedPath, "Editor", "unity-bridge.js");
             var target = Path.Combine(outputPath, "unity-bridge.js");
             var indexPath = Path.Combine(outputPath, "index.html");
             if (!File.Exists(source) || !File.Exists(indexPath))
-                throw new BuildFailedException("BIM Studio Bridge 找不到 unity-bridge.js 或构建生成的 index.html。");
+                throw new BuildFailedException("Industrial Studio Bridge 找不到 unity-bridge.js 或构建生成的 index.html。");
 
             File.Copy(source, target, true);
             var html = File.ReadAllText(indexPath);
@@ -53,10 +54,17 @@ namespace BimStudio.Bridge.Editor
             if (!html.Contains(scriptTag))
                 html = html.Replace("</head>", "  " + scriptTag + Environment.NewLine + "  </head>");
 
+            const string loaderMarker = "createUnityInstance(";
+            var loaderIndex = html.IndexOf(loaderMarker, StringComparison.Ordinal);
+            if (loaderIndex < 0)
+                throw new BuildFailedException("Industrial Studio Bridge 无法在 index.html 中定位 Unity 播放器加载器。");
+            const string trackedLoader = "window.BimStudioUnityBridge.createTrackedInstance(createUnityInstance, ";
+            html = html.Substring(0, loaderIndex) + trackedLoader + html.Substring(loaderIndex + loaderMarker.Length);
+
             const string promiseMarker = ".then((unityInstance) => {";
             var promiseIndex = html.IndexOf(promiseMarker, StringComparison.Ordinal);
             if (promiseIndex < 0)
-                throw new BuildFailedException("BIM Studio Bridge 无法在 index.html 中定位 Unity 播放器创建回调。");
+                throw new BuildFailedException("Industrial Studio Bridge 无法在 index.html 中定位 Unity 播放器创建回调。");
 
             var registration = promiseMarker + Environment.NewLine +
                 "                window.BimStudioUnityBridge.register(unityInstance, \"BimStudioBridge\");";

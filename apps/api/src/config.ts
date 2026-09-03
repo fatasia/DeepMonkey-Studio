@@ -21,6 +21,8 @@ export interface CommandProviderConfig {
   command?: string;
   args: string[];
   cwd: string;
+  /** 防止第三方转换器挂死并永久占用队列；未填写时由执行器采用安全默认值。 */
+  timeoutMs?: number;
 }
 
 export interface AppConfig {
@@ -119,12 +121,14 @@ export function loadConfig(): AppConfig {
     rvt: {
       ...(rvtCommand ? { command: rvtCommand } : {}),
       args: parseArgs(process.env.RVT_CONVERTER_ARGS, ["--input", "{input}", "--output", "{output}", "--mode", "{mode}"]),
-      cwd: projectRoot
+      cwd: projectRoot,
+      timeoutMs: boundedNumber(process.env.RVT_CONVERTER_TIMEOUT_MS, 30 * 60 * 1_000, 1_000, 2 * 60 * 60 * 1_000)
     },
     dwg: {
       ...(dwgCommand ? { command: dwgCommand } : {}),
       args: parseArgs(process.env.DWG_CONVERTER_ARGS, ["-y", "-o", "{output}/model.dxf", "{input}"]),
-      cwd: projectRoot
+      cwd: projectRoot,
+      timeoutMs: boundedNumber(process.env.DWG_CONVERTER_TIMEOUT_MS, 10 * 60 * 1_000, 1_000, 2 * 60 * 60 * 1_000)
     },
     industrialCad: {
       ...(industrialCadCommand ? { command: industrialCadCommand } : {}),
@@ -135,7 +139,8 @@ export function loadConfig(): AppConfig {
         "--quality", "{quality}",
         "--include-pmi", "{includePmi}"
       ]),
-      cwd: projectRoot
+      cwd: projectRoot,
+      timeoutMs: boundedNumber(process.env.INDUSTRIAL_CAD_CONVERTER_TIMEOUT_MS, 30 * 60 * 1_000, 1_000, 2 * 60 * 60 * 1_000)
     },
     cloudRender: {
       ...(cloudRenderWorkerUrl ? { workerUrl: cloudRenderWorkerUrl } : {}),

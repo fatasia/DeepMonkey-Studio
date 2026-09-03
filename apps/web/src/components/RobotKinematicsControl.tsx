@@ -3,7 +3,8 @@ import { Bot, WandSparkles } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
-import { createRobotKinematicsState } from "../viewer/robotKinematics";
+import { createRobotKinematicsState, robotLoadCapabilityFromPrefab } from "../viewer/robotKinematics";
+import { RobotLoadProfileControl } from "./RobotLoadProfileControl";
 
 type BoneInfo = ReturnType<ViewerEngine["listModelBones"]>[number];
 
@@ -25,6 +26,8 @@ export function RobotKinematicsControl({
   onChange: () => void;
 }) {
   const robot = rig.robot;
+  const prefabCapability = robotLoadCapabilityFromPrefab(engine.getIndustrialPrefabState(modelId));
+  const objectOptions = engine.listModels().filter((item) => item.id !== modelId).map((item) => ({ id: item.id, name: item.name }));
 
   function save(nextRobot: SceneRigState["robot"]) {
     engine.setModelRigState(modelId, { ...rig, ...(nextRobot ? { robot: nextRobot } : {}) });
@@ -32,11 +35,11 @@ export function RobotKinematicsControl({
   }
 
   function enableRobot() {
-    if (robot?.enabled) {
-      save({ ...robot, enabled: false });
+    if (robot) {
+      save({ ...robot, enabled: !robot.enabled });
       return;
     }
-    save(createRobotKinematicsState(bones));
+    save(createRobotKinematicsState(bones, prefabCapability));
   }
 
   function updateJoint(index: number, patch: Partial<SceneRobotJointState>) {
@@ -145,6 +148,14 @@ export function RobotKinematicsControl({
               </article>
             ))}
           </div>
+          <RobotLoadProfileControl
+            locale={locale}
+            robot={robot}
+            {...(prefabCapability ? { prefabCapability } : {})}
+            objectOptions={objectOptions}
+            disabled={disabled}
+            onChange={save}
+          />
         </>
       )}
     </section>

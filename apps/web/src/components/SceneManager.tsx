@@ -5,6 +5,7 @@ import { translate as tr } from "../i18n";
 import type { SceneManagerProps } from "./sceneManagerTypes";
 import { SceneManagerView } from "./SceneManagerView";
 import { analyzeProjectResourceGovernance } from "./projectResourceGovernance";
+import { filterAndSortScenes, type SceneSortKey, type SceneStatusFilter } from "./sceneManagerPresentation";
 
 type ProjectAssetTab = "all" | "model" | "image" | "video" | "environment" | "pbr-material";
 
@@ -68,6 +69,9 @@ function useSceneManagerController({
   const [showcaseBusy, setShowcaseBusy] = useState(false);
   const [assetTab, setAssetTab] = useState<ProjectAssetTab>("all");
   const [assetSearch, setAssetSearch] = useState("");
+  const [sceneSearch, setSceneSearch] = useState("");
+  const [sceneStatusFilter, setSceneStatusFilter] = useState<SceneStatusFilter>("all");
+  const [sceneSort, setSceneSort] = useState<SceneSortKey>("updated");
   const [deliveryReviewOpen, setDeliveryReviewOpen] = useState(false);
   const [cloudConfigured, setCloudConfigured] = useState(false);
   const [cloudScenePolicies, setCloudScenePolicies] = useState<Record<string, boolean>>({});
@@ -88,6 +92,10 @@ function useSceneManagerController({
   const videoUploadRef = useRef<HTMLInputElement>(null);
 
   const sortedScenes = useMemo(() => [...scenes].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)), [scenes]);
+  const visibleScenes = useMemo(
+    () => filterAndSortScenes(scenes, sceneSearch, sceneStatusFilter, sceneSort),
+    [sceneSearch, sceneSort, sceneStatusFilter, scenes],
+  );
   const resourceGovernance = useMemo(
     () => analyzeProjectResourceGovernance(project, applications, scenes),
     [applications, project, scenes],
@@ -114,6 +122,10 @@ function useSceneManagerController({
       cancelled = true;
     };
   }, [isAdmin, project?.id, scenes]);
+
+  useEffect(() => {
+    if (!project && (managerTab === "assets" || managerTab === "topology")) setManagerTab("scenes");
+  }, [managerTab, project]);
 
   async function toggleSceneCloudRender(sceneId: string, enabled: boolean): Promise<boolean> {
     setCloudBusySceneId(sceneId);
@@ -379,6 +391,8 @@ function useSceneManagerController({
     name,
     normalizedSearch,
     onAiAssistant,
+    onBrowse,
+    onBrowsePublished,
     onCloudRender,
     onConnectionStatus,
     onCopy,
@@ -425,6 +439,9 @@ function useSceneManagerController({
     renameLibraryItem,
     restoreVersion,
     scenes,
+    sceneSearch,
+    sceneSort,
+    sceneStatusFilter,
     setAssetSearch,
     setAssetTab,
     setCloudError,
@@ -432,6 +449,9 @@ function useSceneManagerController({
     setDialogMode,
     setManagerTab,
     setName,
+    setSceneSearch,
+    setSceneSort,
+    setSceneStatusFilter,
     setParametricSourceModel,
     setParametricWorkbenchOpen,
     setPublishMode,
@@ -456,6 +476,7 @@ function useSceneManagerController({
     visibleAppearanceAssets,
     visibleModels,
     visibleVideos,
+    visibleScenes,
   };
 }
 

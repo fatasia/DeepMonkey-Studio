@@ -29,6 +29,7 @@ export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExpor
     >
       <button
         className={compact ? "" : "button ghost"}
+        aria-label={tr(locale, "导出场景", "Export scene")}
         title={tr(locale, "导出场景", "Export scene")}
         aria-haspopup="menu"
         aria-expanded={open}

@@ -90,6 +90,26 @@ describe("ServerClient", () => {
     await expect(client.request<void>("/api/projects/p1/applications/a1", { method: "DELETE" })).resolves.toBeUndefined();
   });
 
+  it("turns an empty successful response into an actionable transport error", async () => {
+    const client = new ServerClient({
+      profile: { baseUrl: "https://bim.example.test" },
+      authStore: emptyAuthStore,
+      fetch: async () => new Response(null, { status: 200 }),
+    });
+
+    await expect(client.request("/api/projects")).rejects.toThrow("服务返回空响应（HTTP 200）");
+  });
+
+  it("turns malformed successful JSON into an actionable transport error", async () => {
+    const client = new ServerClient({
+      profile: { baseUrl: "https://bim.example.test" },
+      authStore: emptyAuthStore,
+      fetch: async () => new Response("not-json", { status: 200, headers: { "content-type": "text/plain" } }),
+    });
+
+    await expect(client.request("/api/projects")).rejects.toThrow("服务返回了无法解析的数据（HTTP 200）");
+  });
+
   it("throws the JSON error message", async () => {
     const client = new ServerClient({
       profile: { baseUrl: "https://bim.example.test" },

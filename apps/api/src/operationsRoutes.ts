@@ -28,7 +28,7 @@ export async function registerOperationsRoutes(
   };
   app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/operations", async (request) => {
     requireProject(request.params.projectId);
-    return dependencies.service.snapshot(request.params.projectId);
+    return dependencies.service.snapshotForApi(request.params.projectId);
   });
   app.post<{ Params: { projectId: string } }>("/api/projects/:projectId/operations/maintenance/sync-iot-nb", async (request, reply) => {
     requireProject(request.params.projectId);

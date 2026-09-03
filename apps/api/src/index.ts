@@ -47,6 +47,10 @@ import { PprBopService } from "./pprBopService.js";
 import { registerPprBopRoutes } from "./pprBopRoutes.js";
 import { createServerNotificationRuntime } from "./notificationRuntime.js";
 import { registerNotificationRoutes } from "./notificationRoutes.js";
+import { registerScriptDependencyRoutes } from "./scriptDependencyRoutes.js";
+import { ScriptDependencyService } from "./scriptDependencyService.js";
+import { registerScriptGitRoutes } from "./scriptGitRoutes.js";
+import { ScriptGitService } from "./scriptGitService.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -71,7 +75,7 @@ export async function buildApp() {
     store,
     operations,
     dataQuerySource,
-    onError: (error, deploymentId) => app.log.warn({ error, deploymentId }, "maintenance inference failed"),
+    onError: (error, deploymentId) => app.log.warn({ err: error, deploymentId }, "maintenance inference failed"),
   });
   const industrialCapabilities = await createIndustrialCapabilityHost(operations, {
     aiSettings: () => resolveAiSettings(store),
@@ -88,7 +92,7 @@ export async function buildApp() {
     store,
     host: industrialCapabilities,
     dataQuerySource,
-    onError: (error, bindingId) => app.log.warn({ error, bindingId }, "battery inference failed"),
+    onError: (error, bindingId) => app.log.warn({ err: error, bindingId }, "battery inference failed"),
   });
   const queue = new ConversionQueue(store, config, objects);
   const cloudWorker = config.cloudRender.workerUrl && config.cloudRender.workerToken
@@ -143,6 +147,14 @@ export async function buildApp() {
   await registerConversionTaskRoutes(app, { service: conversionTasks, projectExists: (projectId) => Boolean(store.getProject(projectId)) });
   await registerDataEndpointRuntime(app, store, config);
   await registerApplicationRoutes(app, store);
+  await registerScriptDependencyRoutes(app, {
+    store,
+    service: new ScriptDependencyService({ dataDir: config.dataDir, objects }),
+  });
+  await registerScriptGitRoutes(app, {
+    store,
+    service: new ScriptGitService({ dataDir: config.dataDir }),
+  });
   await registerCloudRenderRoutes(app, { store, control: cloudRender });
   await registerIndustrialDemoRoutes(app);
   await registerOperationsRoutes(app, { store, service: operations, dataQuerySource });

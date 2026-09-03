@@ -52,7 +52,7 @@ function Get-InstalledRevitVersions {
 }
 
 function Get-BimStudioSigningCertificate {
-    $subject = "CN=BIM Studio Internal"
+    $subject = "CN=Industrial Studio Internal"
     $certificate = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
         Where-Object { $_.Subject -eq $subject -and $_.NotAfter -gt (Get-Date).AddDays(30) } |
         Sort-Object NotAfter -Descending |
@@ -99,10 +99,10 @@ foreach ($targetVersion in $versions) {
     if ($signature.Status -ne "Valid") { throw "Revit $targetVersion Add-in 签名失败：$($signature.StatusMessage)" }
     $manifest = (Get-Content -LiteralPath $TemplatePath -Raw).Replace("{{ASSEMBLY_PATH}}", $assemblyPath)
     Set-Content -LiteralPath (Join-Path $manifestDirectory "BimStudio.RevitAddin.addin") -Value $manifest -Encoding utf8
-    Write-Host "[BIM Studio] Revit $targetVersion Add-in 已安装：$assemblyPath" -ForegroundColor Green
-    Write-Host "[BIM Studio] Add-in 已使用当前用户的 BIM Studio Internal 证书签名。" -ForegroundColor Green
+    Write-Host "[Industrial Studio] Revit $targetVersion Add-in 已安装：$assemblyPath" -ForegroundColor Green
+    Write-Host "[Industrial Studio] Add-in 已使用当前用户的 Industrial Studio Internal 证书签名。" -ForegroundColor Green
 }
 
-Write-Host "[BIM Studio] 常驻 Worker 已发布：$(Join-Path $PublishDirectory 'BimStudio.RevitWorker.exe')" -ForegroundColor Green
-Write-Host "[BIM Studio] Worker 缓存目录：$WorkerCacheRoot" -ForegroundColor Green
-Write-Host "[BIM Studio] 请重启已打开的 Revit，使 Add-in 生效。" -ForegroundColor Yellow
+Write-Host "[Industrial Studio] 常驻 Worker 已发布：$(Join-Path $PublishDirectory 'BimStudio.RevitWorker.exe')" -ForegroundColor Green
+Write-Host "[Industrial Studio] Worker 缓存目录：$WorkerCacheRoot" -ForegroundColor Green
+Write-Host "[Industrial Studio] 请重启已打开的 Revit，使 Add-in 生效。" -ForegroundColor Yellow

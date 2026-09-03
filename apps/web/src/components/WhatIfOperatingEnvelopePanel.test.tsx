@@ -25,7 +25,7 @@ function study(overrides: Partial<WhatIfStudyRecord> = {}): WhatIfStudyRecord {
 }
 
 describe("WhatIfOperatingEnvelopePanel", () => {
-  it("starts with a clear persisted Study workflow", () => {
+  it("starts with a clear persisted run workflow", () => {
     const html = renderToStaticMarkup(
       <WhatIfOperatingEnvelopePanel results={[]} busy={false} onRun={() => undefined} onReproduce={() => undefined} />,
     );

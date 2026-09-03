@@ -1,10 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import {
   Box,
+  Check,
+  ChevronDown,
+  ChevronRight,
   Eye,
   EyeOff,
   Focus,
+  Folder,
+  FolderOpen,
   Group,
+  GripVertical,
   Layers3,
   Lock,
   RotateCcw,
@@ -41,420 +47,239 @@ interface Props {
   onRestoreIsolation: () => void;
   onCreateSelectionSet: (name: string) => void;
   onCreateGroup: (name: string) => void;
+  onMoveObjects: (ids: string[], groupId?: string, beforeObjectId?: string) => void;
+  onReorderGroup: (id: string, beforeId?: string) => void;
+  onRenameGroup: (id: string, name: string) => void;
   onUpdateSelectionSet: (id: string) => void;
   onApplySelectionSet: (id: string) => void;
   onDeleteSelectionSet: (id: string) => void;
   onRestoreDeletedSelectionSet: () => void;
 }
 
+type ContextTarget = { type: "object" | "group"; id: string; groupId?: string; x: number; y: number };
+
+/** 与场景目录共用一棵紧凑树：选择、编组、拖拽层级和右键操作都在原位置完成。 */
 export function SceneOrganizationPanel(props: Props) {
   const [query, setQuery] = useState("");
-  const [setName, setSetName] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(props.selectionSets.filter((item) => item.kind === "group").map((item) => item.id)));
+  const [draggingIds, setDraggingIds] = useState<string[]>([]);
+  const [dropTarget, setDropTarget] = useState("");
+  const [contextTarget, setContextTarget] = useState<ContextTarget>();
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
-  const filtered = useMemo(
-    () =>
-      normalizedQuery
-        ? props.objects.filter((item) =>
-            `${item.name} ${item.kind}`
-              .toLocaleLowerCase("zh-CN")
-              .includes(normalizedQuery),
-          )
-        : props.objects,
-    [normalizedQuery, props.objects],
-  );
-  const selected = props.objects.filter((item) =>
-    props.selectedIds.has(item.id),
-  );
-  const selectedVisible = selected.filter((item) => item.visible).length;
-  const selectedLocked = selected.filter((item) => item.locked).length;
+  const groups = props.selectionSets.filter((item) => item.kind === "group");
+  const savedSets = props.selectionSets.filter((item) => item.kind !== "group");
+  const objectsById = useMemo(() => new Map(props.objects.map((item) => [item.id, item])), [props.objects]);
+  const groupedIds = new Set(groups.flatMap((group) => group.objectIds));
+  const rootObjects = props.objects.filter((item) => !groupedIds.has(item.id));
+  const selectedObjects = props.objects.filter((item) => props.selectedIds.has(item.id));
 
-  function createSet() {
-    if (selected.length === 0) return;
-    props.onCreateSelectionSet(setName.trim());
-    setSetName("");
+  useEffect(() => {
+    if (!contextTarget) return;
+    const close = () => setContextTarget(undefined);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextTarget]);
+
+  function matches(item: SceneOrganizationObject): boolean {
+    return !normalizedQuery || `${item.name} ${item.kind}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
   }
 
-  function createGroup() {
-    if (selected.length === 0) return;
-    props.onCreateGroup(setName.trim());
-    setSetName("");
+  function toggleExpanded(id: string) {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectObject(event: MouseEvent | KeyboardEvent<HTMLDivElement>, id: string) {
+    event.stopPropagation();
+    if (event.ctrlKey || event.metaKey) props.onToggle(id);
+    else props.onSelect([id]);
+  }
+
+  function startObjectDrag(event: DragEvent, id: string) {
+    const ids = props.selectedIds.has(id) && props.selectedIds.size > 1 ? [...props.selectedIds] : [id];
+    if (!props.selectedIds.has(id)) props.onSelect([id]);
+    setDraggingIds(ids);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-bim-studio-object", ids.join("\n"));
+  }
+
+  function startGroupDrag(event: DragEvent, id: string) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-bim-studio-group", id);
+  }
+
+  function draggedObjects(event: DragEvent): string[] {
+    return (event.dataTransfer.getData("application/x-bim-studio-object") || draggingIds.join("\n")).split("\n").filter(Boolean);
+  }
+
+  function openContext(event: MouseEvent, target: Omit<ContextTarget, "x" | "y">) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (target.type === "object" && !props.selectedIds.has(target.id)) props.onSelect([target.id]);
+    setContextTarget({ ...target, x: Math.min(event.clientX, window.innerWidth - 220), y: Math.min(event.clientY, window.innerHeight - 270) });
+  }
+
+  function objectRow(item: SceneOrganizationObject, groupId?: string) {
+    const selected = props.selectedIds.has(item.id);
+    return (
+      <div
+        key={item.id}
+        className={`scene-tree-row object ${selected ? "selected" : ""} ${dropTarget === `object:${item.id}` ? "drop-target" : ""}`}
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={selected}
+        aria-level={groupId ? 2 : 1}
+        draggable
+        onDragStart={(event) => startObjectDrag(event, item.id)}
+        onDragEnd={() => { setDraggingIds([]); setDropTarget(""); }}
+        onDragOver={(event) => { if (groupId) { event.preventDefault(); event.stopPropagation(); setDropTarget(`object:${item.id}`); } }}
+        onDrop={(event) => {
+          if (!groupId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          props.onMoveObjects(draggedObjects(event), groupId, item.id);
+          setDropTarget("");
+        }}
+        onClick={(event) => selectObject(event, item.id)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          selectObject(event, item.id);
+        }}
+        onContextMenu={(event) => openContext(event, { type: "object", id: item.id, ...(groupId ? { groupId } : {}) })}
+        title={tr(props.locale, "单击选择，Ctrl/⌘ 多选；可拖入或拖出编组", "Click to select, Ctrl/⌘ for multi-select; drag in or out of groups")}
+      >
+        <GripVertical className="scene-tree-grip" size={12} />
+        <span className="scene-tree-type">{item.kind === "model" ? <Layers3 size={13} /> : <Box size={13} />}</span>
+        <strong>{item.name}</strong>
+        {!item.visible && <EyeOff size={12} />}
+        {item.locked && <Lock size={12} />}
+        {selected && <Check className="scene-tree-selected" size={12} />}
+      </div>
+    );
   }
 
   return (
-    <section
-      className="scene-organization-panel"
-      aria-label={tr(props.locale, "场景组织", "Scene organization")}
-    >
-      <header>
-        <div>
-          <strong>{tr(props.locale, "场景组织", "Scene organization")}</strong>
-          <small>
-            {tr(
-              props.locale,
-              "批量管理对象并保存常用选择",
-              "Batch-manage objects and save reusable selections",
-            )}
-          </small>
-        </div>
-        <button
-          aria-label={tr(
-            props.locale,
-            "关闭场景组织",
-            "Close scene organization",
-          )}
-          onClick={props.onClose}
-        >
-          <X size={14} />
-        </button>
-      </header>
-
-      <div className="scene-organization-summary">
-        <div>
-          <strong>{selected.length}</strong>
-          <span>{tr(props.locale, "已选择", "selected")}</span>
-        </div>
-        <div>
-          <strong>{selectedVisible}</strong>
-          <span>{tr(props.locale, "当前显示", "visible")}</span>
-        </div>
-        <div>
-          <strong>{selectedLocked}</strong>
-          <span>{tr(props.locale, "已锁定", "locked")}</span>
-        </div>
-      </div>
-
+    <section className="scene-organization-panel scene-tree-manager" aria-label={tr(props.locale, "场景图层与编组", "Scene layers and groups")}>
       <div className="scene-organization-search">
         <Search size={13} />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={tr(
-            props.locale,
-            "筛选模型与基础元素",
-            "Filter models and primitives",
-          )}
-          aria-label={tr(props.locale, "筛选场景对象", "Filter scene objects")}
-        />
-        {query && (
-          <button
-            aria-label={tr(props.locale, "清空筛选", "Clear filter")}
-            onClick={() => setQuery("")}
-          >
-            <X size={12} />
-          </button>
-        )}
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr(props.locale, "搜索场景元素", "Search scene elements")} aria-label={tr(props.locale, "搜索场景元素", "Search scene elements")} />
+        {query && <button aria-label={tr(props.locale, "清空搜索", "Clear search")} onClick={() => setQuery("")}><X size={12} /></button>}
       </div>
-      <div className="scene-organization-select-actions">
-        <button
-          disabled={filtered.length === 0}
-          onClick={() => props.onSelect(filtered.map((item) => item.id))}
-        >
-          {tr(props.locale, "选择筛选结果", "Select filtered")}
-        </button>
-        <button
-          disabled={props.objects.length === 0}
-          onClick={() =>
-            props.onSelect(
-              props.objects
-                .filter((item) => item.visible)
-                .map((item) => item.id),
-            )
-          }
-        >
-          {tr(props.locale, "选择可见", "Select visible")}
-        </button>
-        <button
-          disabled={selected.length === 0}
-          onClick={() => props.onSelect([])}
-        >
-          {tr(props.locale, "清空", "Clear")}
-        </button>
+      <div className={`scene-tree-selection-bar ${selectedObjects.length ? "visible" : ""}`}>
+        <span><strong>{selectedObjects.length}</strong>{tr(props.locale, " 个已选", " selected")}</span>
+        <button disabled={selectedObjects.length < 2} onClick={() => props.onCreateGroup("")}><Group size={12} />{tr(props.locale, "编组", "Group")}</button>
+        <button aria-label={tr(props.locale, "显示所选元素", "Show selected elements")} title={tr(props.locale, "显示", "Show")} disabled={!selectedObjects.length} onClick={() => props.onShow(selectedObjects.map((item) => item.id), true)}><Eye size={12} /></button>
+        <button aria-label={tr(props.locale, "隐藏所选元素", "Hide selected elements")} title={tr(props.locale, "隐藏", "Hide")} disabled={!selectedObjects.length} onClick={() => props.onShow(selectedObjects.map((item) => item.id), false)}><EyeOff size={12} /></button>
+        <button aria-label={tr(props.locale, "锁定所选元素", "Lock selected elements")} title={tr(props.locale, "锁定", "Lock")} disabled={!selectedObjects.length} onClick={() => props.onLock(selectedObjects.map((item) => item.id), true)}><Lock size={12} /></button>
+        <button aria-label={tr(props.locale, "清除选择", "Clear selection")} title={tr(props.locale, "清除选择", "Clear selection")} disabled={!selectedObjects.length} onClick={() => props.onSelect([])}><X size={12} /></button>
       </div>
 
-      <div className="scene-organization-object-list">
-        {filtered.map((item) => (
-          <label
-            key={item.id}
-            className={props.selectedIds.has(item.id) ? "selected" : ""}
-          >
-            <input
-              type="checkbox"
-              checked={props.selectedIds.has(item.id)}
-              onChange={() => props.onToggle(item.id)}
-            />
-            <span className="scene-organization-object-icon">
-              {item.kind === "model" ? (
-                <Layers3 size={13} />
-              ) : (
-                <Box size={13} />
-              )}
-            </span>
-            <span className="scene-organization-object-copy">
-              <strong title={item.name}>{item.name}</strong>
-              <small>
-                {item.kind === "model"
-                  ? tr(props.locale, "模型", "Model")
-                  : tr(props.locale, "基础元素", "Primitive")}
-              </small>
-            </span>
-            <span
-              className="scene-organization-object-state"
-              title={
-                item.visible
-                  ? tr(props.locale, "显示", "Visible")
-                  : tr(props.locale, "隐藏", "Hidden")
-              }
+      <div className="scene-tree" role="tree" aria-label={tr(props.locale, "场景元素树", "Scene element tree")}>
+        {groups.map((group) => {
+          const members = group.objectIds.map((id) => objectsById.get(id)).filter((item): item is SceneOrganizationObject => Boolean(item));
+          const visibleMembers = members.filter(matches);
+          if (normalizedQuery && !group.name.toLocaleLowerCase("zh-CN").includes(normalizedQuery) && !visibleMembers.length) return null;
+          const open = expanded.has(group.id) || Boolean(normalizedQuery);
+          return (
+            <section
+              className={`scene-tree-group ${dropTarget === `group:${group.id}` ? "drop-target" : ""}`}
+              key={group.id}
+              role="treeitem"
+              aria-expanded={open}
+              aria-level={1}
+              draggable
+              onDragStart={(event) => startGroupDrag(event, group.id)}
+              onDragEnd={() => setDropTarget("")}
+              onDragOver={(event) => { event.preventDefault(); setDropTarget(`group:${group.id}`); }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const sourceGroup = event.dataTransfer.getData("application/x-bim-studio-group");
+                if (sourceGroup) props.onReorderGroup(sourceGroup, group.id);
+                else props.onMoveObjects(draggedObjects(event), group.id);
+                setDropTarget("");
+              }}
             >
-              {item.visible ? <Eye size={12} /> : <EyeOff size={12} />}
-            </span>
-            {item.locked && (
-              <span
-                className="scene-organization-object-state locked"
-                title={tr(props.locale, "已锁定", "Locked")}
-              >
-                <Lock size={12} />
-              </span>
-            )}
-          </label>
-        ))}
-        {props.objects.length === 0 && (
-          <div className="scene-organization-empty">
-            <Layers3 size={20} />
-            <strong>
-              {tr(props.locale, "还没有可组织的对象", "No objects to organize")}
-            </strong>
-            <span>
-              {tr(
-                props.locale,
-                "上传模型或创建基础元素后，可在这里批量管理。",
-                "Upload a model or create a primitive to batch-manage it here.",
-              )}
-            </span>
-          </div>
-        )}
-        {props.objects.length > 0 && filtered.length === 0 && (
-          <div className="scene-organization-empty compact">
-            <Search size={18} />
-            <strong>
-              {tr(props.locale, "没有匹配对象", "No matching objects")}
-            </strong>
-            <button onClick={() => setQuery("")}>
-              {tr(props.locale, "清空筛选", "Clear filter")}
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div
-        className="scene-organization-batch-actions"
-        aria-label={tr(props.locale, "批量操作", "Batch actions")}
-      >
-        <button
-          disabled={selected.length === 0}
-          onClick={() =>
-            props.onShow(
-              selected.map((item) => item.id),
-              true,
-            )
-          }
-        >
-          <Eye size={13} />
-          {tr(props.locale, "显示", "Show")}
-        </button>
-        <button
-          disabled={selected.length === 0}
-          onClick={() =>
-            props.onShow(
-              selected.map((item) => item.id),
-              false,
-            )
-          }
-        >
-          <EyeOff size={13} />
-          {tr(props.locale, "隐藏", "Hide")}
-        </button>
-        <button
-          disabled={selected.length === 0}
-          onClick={() =>
-            props.onLock(
-              selected.map((item) => item.id),
-              true,
-            )
-          }
-        >
-          <Lock size={13} />
-          {tr(props.locale, "锁定", "Lock")}
-        </button>
-        <button
-          disabled={selected.length === 0}
-          onClick={() =>
-            props.onLock(
-              selected.map((item) => item.id),
-              false,
-            )
-          }
-        >
-          <Unlock size={13} />
-          {tr(props.locale, "解锁", "Unlock")}
-        </button>
-        <button
-          disabled={selected.length === 0}
-          onClick={() => props.onIsolate(selected.map((item) => item.id))}
-        >
-          <Focus size={13} />
-          {tr(props.locale, "隔离", "Isolate")}
-        </button>
-        <button
-          disabled={!props.isolationActive}
-          onClick={props.onRestoreIsolation}
-        >
-          <RotateCcw size={13} />
-          {tr(props.locale, "恢复", "Restore")}
-        </button>
-      </div>
-
-      <div className="scene-selection-sets">
-        <div className="scene-selection-set-heading">
-          <div>
-            <strong>
-              {tr(props.locale, "编组与选择集", "Groups & selection sets")}
-            </strong>
-            <small>
-              {tr(
-                props.locale,
-                "载入编组后可统一变换、外观、特效、显隐和锁定",
-                "Load a group to control transforms, appearance, effects, visibility and locking as one",
-              )}
-            </small>
-          </div>
-          <span>{props.selectionSets.length}</span>
-        </div>
-        <div className="scene-selection-set-create">
-          <input
-            value={setName}
-            onChange={(event) => setSetName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") createGroup();
-            }}
-            placeholder={tr(
-              props.locale,
-              `例如：${props.selectionSets.length + 1} 号产线`,
-              `For example: Line ${props.selectionSets.length + 1}`,
-            )}
-            aria-label={tr(
-              props.locale,
-              "编组或选择集名称",
-              "Group or selection set name",
-            )}
-          />
-          <button disabled={selected.length === 0} onClick={createGroup}>
-            <Group size={13} />
-            {tr(props.locale, "创建编组", "Create group")}
-          </button>
-          <button disabled={selected.length === 0} onClick={createSet}>
-            <Save size={13} />
-            {tr(props.locale, "保存选择集", "Save set")}
-          </button>
-        </div>
-        <div className="scene-selection-set-list">
-          {props.lastDeletedSelectionSet && (
-            <div className="scene-selection-set-undo">
-              <span>
-                {tr(
-                  props.locale,
-                  `已删除“${props.lastDeletedSelectionSet.name}”`,
-                  `Deleted “${props.lastDeletedSelectionSet.name}”`,
-                )}
-              </span>
-              <button onClick={props.onRestoreDeletedSelectionSet}>
-                {tr(props.locale, "撤销", "Undo")}
-              </button>
-            </div>
-          )}
-          {props.selectionSets.map((set) => {
-            const available = set.objectIds.filter((id) =>
-              props.objects.some((item) => item.id === id),
-            ).length;
-            const isGroup = set.kind === "group";
-            const groupVisible = set.objectIds.some(
-              (id) => props.objects.find((item) => item.id === id)?.visible,
-            );
-            const groupLocked =
-              set.objectIds.length > 0 &&
-              set.objectIds.every(
-                (id) => props.objects.find((item) => item.id === id)?.locked,
-              );
-            return (
-              <div key={set.id}>
-                <button
-                  className="scene-selection-set-main"
-                  disabled={available === 0}
-                  onClick={() => props.onApplySelectionSet(set.id)}
-                >
-                  {isGroup ? <Group size={12} /> : <Save size={12} />}
-                  <strong title={set.name}>{set.name}</strong>
-                  <small>
-                    {available === set.objectIds.length
-                      ? `${available} ${tr(props.locale, "个对象", "objects")}`
-                      : `${available}/${set.objectIds.length} ${tr(props.locale, "可用", "available")}`}
-                  </small>
-                </button>
-                {isGroup && (
-                  <>
-                    <button
-                      title={
-                        groupVisible
-                          ? tr(props.locale, "隐藏编组", "Hide group")
-                          : tr(props.locale, "显示编组", "Show group")
-                      }
-                      onClick={() => props.onShow(set.objectIds, !groupVisible)}
-                    >
-                      {groupVisible ? <Eye size={12} /> : <EyeOff size={12} />}
-                    </button>
-                    <button
-                      title={
-                        groupLocked
-                          ? tr(props.locale, "解锁编组", "Unlock group")
-                          : tr(props.locale, "锁定编组", "Lock group")
-                      }
-                      onClick={() => props.onLock(set.objectIds, !groupLocked)}
-                    >
-                      {groupLocked ? <Lock size={12} /> : <Unlock size={12} />}
-                    </button>
-                  </>
-                )}
-                <button
-                  disabled={selected.length === 0}
-                  title={tr(
-                    props.locale,
-                    "用当前选择覆盖",
-                    "Replace with current selection",
-                  )}
-                  onClick={() => props.onUpdateSelectionSet(set.id)}
-                >
-                  <Save size={12} />
-                </button>
-                <button
-                  className="danger"
-                  aria-label={`${tr(props.locale, isGroup ? "删除编组" : "删除选择集", isGroup ? "Delete group" : "Delete selection set")} ${set.name}`}
-                  onClick={() => props.onDeleteSelectionSet(set.id)}
-                >
-                  <Trash2 size={12} />
-                </button>
+              <div className="scene-tree-row group" onContextMenu={(event) => openContext(event, { type: "group", id: group.id })}>
+                <GripVertical className="scene-tree-grip" size={12} />
+                <button className="scene-tree-expander" aria-label={open ? tr(props.locale, `收起编组“${group.name}”`, `Collapse group “${group.name}”`) : tr(props.locale, `展开编组“${group.name}”`, `Expand group “${group.name}”`)} onClick={() => toggleExpanded(group.id)}>{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>
+                <span className="scene-tree-type">{open ? <FolderOpen size={13} /> : <Folder size={13} />}</span>
+                <button className="scene-tree-name" onClick={() => props.onApplySelectionSet(group.id)}><strong>{group.name}</strong><small>{members.length}</small></button>
               </div>
-            );
-          })}
-          {props.selectionSets.length === 0 && (
-            <p>
-              {tr(
-                props.locale,
-                "选择对象后保存为选择集，下次可一键载入。",
-                "Select objects and save a set to restore the selection later.",
-              )}
-            </p>
-          )}
+              {open && <div className="scene-tree-children" role="group">{visibleMembers.map((item) => objectRow(item, group.id))}</div>}
+            </section>
+          );
+        })}
+
+        <div
+          className={`scene-tree-root-drop ${dropTarget === "root" ? "drop-target" : ""}`}
+          onDragOver={(event) => { event.preventDefault(); setDropTarget("root"); }}
+          onDrop={(event) => { event.preventDefault(); props.onMoveObjects(draggedObjects(event)); setDropTarget(""); }}
+        >
+          {rootObjects.filter(matches).map((item) => objectRow(item))}
+          {!props.objects.length && <div className="scene-tree-empty"><Layers3 size={18} /><span>{tr(props.locale, "导入模型或创建基础元素后会显示在这里", "Imported models and primitives appear here")}</span></div>}
+          {props.objects.length > 0 && normalizedQuery && !groups.some((group) => group.objectIds.some((id) => objectsById.get(id) && matches(objectsById.get(id)!))) && !rootObjects.some(matches) && <div className="scene-tree-empty"><Search size={17} /><span>{tr(props.locale, "没有匹配元素", "No matching elements")}</span></div>}
         </div>
       </div>
+
+      <div className="scene-tree-footer">
+        <button disabled={!selectedObjects.length} onClick={() => props.onIsolate(selectedObjects.map((item) => item.id))}><Focus size={12} />{tr(props.locale, "隔离", "Isolate")}</button>
+        <button disabled={!props.isolationActive} onClick={props.onRestoreIsolation}><RotateCcw size={12} />{tr(props.locale, "恢复", "Restore")}</button>
+        <details className="scene-saved-selections">
+          <summary><Save size={12} />{tr(props.locale, "保存的选择", "Saved selections")}<small>{savedSets.length}</small></summary>
+          <div>
+            <button disabled={!selectedObjects.length} onClick={() => props.onCreateSelectionSet("")}><Save size={12} />{tr(props.locale, "保存当前选择", "Save current selection")}</button>
+            {savedSets.map((set) => <span key={set.id}><button onClick={() => props.onApplySelectionSet(set.id)}>{set.name}</button><button aria-label={tr(props.locale, `用当前选择更新“${set.name}”`, `Update “${set.name}” with current selection`)} title={tr(props.locale, "更新", "Update")} disabled={!selectedObjects.length} onClick={() => props.onUpdateSelectionSet(set.id)}><Save size={11} /></button><button aria-label={tr(props.locale, `删除保存的选择“${set.name}”`, `Delete saved selection “${set.name}”`)} title={tr(props.locale, "删除", "Delete")} onClick={() => props.onDeleteSelectionSet(set.id)}><Trash2 size={11} /></button></span>)}
+            {props.lastDeletedSelectionSet && <button onClick={props.onRestoreDeletedSelectionSet}>{tr(props.locale, "撤销删除", "Undo delete")} · {props.lastDeletedSelectionSet.name}</button>}
+          </div>
+        </details>
+      </div>
+
+      {contextTarget && (
+        <div className="scene-tree-context-menu" role="menu" style={{ left: contextTarget.x, top: contextTarget.y }} onPointerDown={(event) => event.stopPropagation()}>
+          {contextTarget.type === "object" ? <ObjectContextMenu {...props} target={contextTarget} objectsById={objectsById} close={() => setContextTarget(undefined)} /> : <GroupContextMenu {...props} group={groups.find((item) => item.id === contextTarget.id)!} objectsById={objectsById} close={() => setContextTarget(undefined)} />}
+        </div>
+      )}
     </section>
   );
+}
+
+function ObjectContextMenu(props: Props & { target: ContextTarget; objectsById: Map<string, SceneOrganizationObject>; close: () => void }) {
+  const clicked = props.objectsById.get(props.target.id);
+  const ids = props.selectedIds.has(props.target.id) ? [...props.selectedIds] : [props.target.id];
+  const run = (action: () => void) => { action(); props.close(); };
+  return <>
+    <strong>{ids.length > 1 ? tr(props.locale, `${ids.length} 个已选元素`, `${ids.length} selected elements`) : clicked?.name}</strong>
+    {ids.length > 1 && <button onClick={() => run(() => props.onCreateGroup(""))}><Group size={13} />{tr(props.locale, "编组所选元素", "Group selection")}</button>}
+    {props.target.groupId && <button onClick={() => run(() => props.onMoveObjects(ids))}><Layers3 size={13} />{tr(props.locale, "移出编组", "Move out of group")}</button>}
+    <button onClick={() => run(() => props.onShow(ids, true))}><Eye size={13} />{tr(props.locale, "显示", "Show")}</button>
+    <button onClick={() => run(() => props.onShow(ids, false))}><EyeOff size={13} />{tr(props.locale, "隐藏", "Hide")}</button>
+    <button onClick={() => run(() => props.onLock(ids, true))}><Lock size={13} />{tr(props.locale, "锁定", "Lock")}</button>
+    <button onClick={() => run(() => props.onLock(ids, false))}><Unlock size={13} />{tr(props.locale, "解锁", "Unlock")}</button>
+    <button onClick={() => run(() => props.onIsolate(ids))}><Focus size={13} />{tr(props.locale, "隔离", "Isolate")}</button>
+  </>;
+}
+
+function GroupContextMenu(props: Props & { group: SceneSelectionSetState; objectsById: Map<string, SceneOrganizationObject>; close: () => void }) {
+  const group = props.group;
+  if (!group) return null;
+  const members = group.objectIds.map((id) => props.objectsById.get(id)).filter((item): item is SceneOrganizationObject => Boolean(item));
+  const run = (action: () => void) => { action(); props.close(); };
+  return <>
+    <strong>{group.name}</strong>
+    <button onClick={() => run(() => props.onApplySelectionSet(group.id))}><Check size={13} />{tr(props.locale, "选择组内元素", "Select group elements")}</button>
+    <button onClick={() => run(() => { const name = window.prompt(tr(props.locale, "重命名编组", "Rename group"), group.name); if (name) props.onRenameGroup(group.id, name); })}><Group size={13} />{tr(props.locale, "重命名", "Rename")}</button>
+    <button onClick={() => run(() => props.onShow(group.objectIds, !members.some((item) => item.visible)))}>{members.some((item) => item.visible) ? <EyeOff size={13} /> : <Eye size={13} />}{members.some((item) => item.visible) ? tr(props.locale, "隐藏编组", "Hide group") : tr(props.locale, "显示编组", "Show group")}</button>
+    <button onClick={() => run(() => props.onLock(group.objectIds, !members.every((item) => item.locked)))}>{members.every((item) => item.locked) ? <Unlock size={13} /> : <Lock size={13} />}{members.every((item) => item.locked) ? tr(props.locale, "解锁编组", "Unlock group") : tr(props.locale, "锁定编组", "Lock group")}</button>
+    <button onClick={() => run(() => { props.onMoveObjects(group.objectIds); props.onDeleteSelectionSet(group.id); })}><Layers3 size={13} />{tr(props.locale, "解组并保留元素", "Ungroup and keep elements")}</button>
+    <button className="danger" onClick={() => run(() => props.onDeleteSelectionSet(group.id))}><Trash2 size={13} />{tr(props.locale, "删除编组", "Delete group")}</button>
+  </>;
 }

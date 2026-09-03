@@ -42,8 +42,68 @@ describe("SceneDeliveryWorkflow", () => {
 
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("展开开发流程");
+    expect(html).toContain(">开发流程</button>");
+    expect(html).not.toContain("必需步骤");
+    expect(html).not.toContain("继续：");
     expect(html).not.toContain('data-step-id="data"');
     expect(html).not.toContain("必需步骤完成");
+  });
+
+  it("必需步骤全部完成后不再用可选步骤伪装成下一步", () => {
+    const readyProject: ProjectRecord = {
+      ...project(),
+      dataConnections: [{
+        id: "connection-1",
+        projectId: "project-1",
+        name: "实时源",
+        type: "simulation",
+        enabled: true,
+        config: {},
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }],
+      datasets: [{
+        id: "dataset-1",
+        projectId: "project-1",
+        name: "设备数据",
+        connectionId: "connection-1",
+        refreshSeconds: 10,
+        fields: [{ key: "temperature", label: "温度", type: "number" }],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }],
+    };
+    const readyScene: SceneSnapshot = {
+      ...scene(),
+      publishedAt: timestamp,
+      dataBindings: [{
+        id: "binding-1",
+        name: "温度",
+        enabled: true,
+        datasetId: "dataset-1",
+        field: "temperature",
+        target: {},
+        action: "color",
+        refreshSeconds: 10,
+      }],
+    };
+    const html = renderToStaticMarkup(<ProjectDeliveryFlow
+      locale="zh-CN"
+      project={readyProject}
+      scenes={[readyScene]}
+      defaultCollapsed={false}
+      onData={vi.fn()}
+      onAssets={vi.fn()}
+      onDesign={vi.fn()}
+      onLinkage={vi.fn()}
+      onValidate={vi.fn()}
+      onPublish={vi.fn()}
+    />);
+
+    expect(html).toContain("5/5 必需步骤");
+    expect(html).not.toContain("继续：准备资产");
+    expect(html).not.toContain("继续：行为脚本");
+    expect(html).not.toContain("继续：仿真调试");
   });
 
   it("阻止存在必需缺口的发布继续操作", () => {
@@ -64,6 +124,47 @@ describe("SceneDeliveryWorkflow", () => {
     expect(html).toContain("去创建场景");
     expect(html).toContain("没有可发布场景");
     expect(html).toContain("先创建并保存一个场景");
+  });
+
+  it("发布体检显示场景上下文、问题细节和未展开数量", () => {
+    const auditProject: ProjectRecord = {
+      ...project(),
+      dataConnections: [{ id: "connection-1", projectId: "project-1", name: "实时源", type: "simulation", enabled: true, config: {}, createdAt: timestamp, updatedAt: timestamp }],
+      datasets: [{
+        id: "dataset-1", projectId: "project-1", name: "设备数据", connectionId: "connection-1", refreshSeconds: 10,
+        fields: [{ key: "temperature", label: "温度", type: "number" }], createdAt: timestamp, updatedAt: timestamp,
+      }],
+    };
+    const brokenScenes = Array.from({ length: 5 }, (_, index) => ({
+      ...scene(),
+      id: `scene-${index + 1}`,
+      name: `产线场景 ${index + 1}`,
+      dataBindings: [{
+        id: `binding-${index + 1}`,
+        name: "温度",
+        enabled: true,
+        datasetId: "dataset-1",
+        field: "temperature",
+        target: { modelId: `missing-model-${index + 1}` },
+        action: "color" as const,
+        refreshSeconds: 10,
+      }],
+    }));
+    const html = renderToStaticMarkup(<DeliveryReviewDialog
+      locale="zh-CN"
+      project={auditProject}
+      scenes={brokenScenes}
+      onClose={vi.fn()}
+      onOpenData={vi.fn()}
+      onOpenAssets={vi.fn()}
+      onOpenScenes={vi.fn()}
+      onOpenLinkage={vi.fn()}
+    />);
+
+    expect(html).toContain("产线场景 1 · 引用的模型“missing-model-1”不在当前场景");
+    expect(html).toContain('data-target-scene-id="scene-1"');
+    expect(html).toContain("另有 1 项，进入对应工作区逐项处理");
+    expect(html).not.toContain("产线场景 5 · 引用的模型");
   });
 
   it("发布版本显示与当前草稿的差异证据", () => {

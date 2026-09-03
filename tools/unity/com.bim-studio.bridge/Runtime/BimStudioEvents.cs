@@ -18,7 +18,7 @@ namespace BimStudio.Bridge
 #if UNITY_WEBGL && !UNITY_EDITOR
             BimStudioEmit(eventName, payloadJson ?? "null");
 #else
-            Debug.Log($"[BIM Studio event] {eventName}: {payloadJson}");
+            Debug.Log($"[Industrial Studio event] {eventName}: {payloadJson}");
 #endif
         }
 
@@ -36,7 +36,7 @@ namespace BimStudio.Bridge
 #if UNITY_WEBGL && !UNITY_EDITOR
             BimStudioAck(messageId ?? string.Empty, messageType ?? string.Empty);
 #else
-            Debug.Log($"[BIM Studio ack] {messageType}: {messageId}");
+            Debug.Log($"[Industrial Studio ack] {messageType}: {messageId}");
 #endif
         }
 
@@ -45,7 +45,7 @@ namespace BimStudio.Bridge
 #if UNITY_WEBGL && !UNITY_EDITOR
             BimStudioHealth(messageId ?? string.Empty, fps, scene ?? string.Empty);
 #else
-            Debug.Log($"[BIM Studio health] {scene}: {fps:F1} FPS");
+            Debug.Log($"[Industrial Studio health] {scene}: {fps:F1} FPS");
 #endif
         }
 
@@ -54,7 +54,7 @@ namespace BimStudio.Bridge
 #if UNITY_WEBGL && !UNITY_EDITOR
             BimStudioCapabilities(capabilitiesJson ?? "[]");
 #else
-            Debug.Log($"[BIM Studio capabilities] {capabilitiesJson}");
+            Debug.Log($"[Industrial Studio capabilities] {capabilitiesJson}");
 #endif
         }
     }

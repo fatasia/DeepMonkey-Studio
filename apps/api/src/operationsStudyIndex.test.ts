@@ -79,9 +79,19 @@ describe("unified operations Study index", () => {
       "workcell-audit",
     ]);
     expect(studies.find((study) => study.type === "plant-lite")).toMatchObject({
-      scenarioInput: { seed: "fixed", replications: 2 },
-      fingerprints: { input: plant.inputFingerprint, scene: null, model: null },
+      scenarioInput: {
+        seed: "fixed",
+        replications: 2,
+        limits: { durationMinutes: 480, maxEvents: 100_000, maxResources: 100 },
+        trace: { replication: 0, maxEvents: 2_000, maxItems: 100 },
+      },
+      fingerprints: { input: plant.inputFingerprint, scene: null, model: plant.modelFingerprint },
       reproduction: { kind: "rerun", operationsTab: "logistics" },
+      result: { metrics: expect.arrayContaining([
+        expect.objectContaining({ key: "unit-energy", unit: "kWh/件" }),
+        expect.objectContaining({ key: "unit-electricity-cost", unit: "元/件" }),
+        expect.objectContaining({ key: "unit-carbon", unit: "kgCO₂e/件" }),
+      ]) },
     });
     expect(studies.find((study) => study.type === "plant-lite")?.fingerprints.version).toBe(
       evidenceFingerprint({ engineId: "plant-lite-des", engineVersion: "1.0.0" }),
@@ -114,6 +124,37 @@ describe("unified operations Study index", () => {
       fingerprints: { input: null, scene: null, model: null, evidence: null },
       run: { status: "ready" },
     });
+  });
+
+  it("keeps a Plant sweep baseline separate from an exact reproduction source", () => {
+    const baseline = runPlantLiteStudy("project-1", { name: "产线基线", seed: "fixed", replications: 2 });
+    const candidate = runPlantLiteStudy("project-1", {
+      name: "扩容候选",
+      seed: "fixed",
+      replications: 2,
+      comparison: {
+        groupId: "sweep:baseline",
+        baselineStudyId: baseline.id,
+        parameterLabel: "并行工位数",
+        candidateLabel: "2 路有效并行",
+      },
+    });
+    const [study] = buildOperationsStudyIndex({ plantLiteStudies: [candidate], whatIfStudies: [], validationStudies: [] });
+
+    expect(study?.lineage).toEqual({
+      baselineStudyId: `plant-lite:${baseline.id}`,
+      reproductionOf: null,
+    });
+  });
+
+  it("ignores null persisted records instead of taking down the operations snapshot", () => {
+    const studies = buildOperationsStudyIndex({
+      plantLiteStudies: [null],
+      whatIfStudies: [undefined],
+      validationStudies: [null],
+    });
+
+    expect(studies).toEqual([]);
   });
 });
 

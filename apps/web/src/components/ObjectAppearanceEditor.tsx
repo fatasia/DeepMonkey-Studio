@@ -113,6 +113,24 @@ export function ObjectAppearanceEditor({
 
         <ProjectMaterialResourcePicker locale={locale} assets={projectAssets} disabled={disabled} value={material} onApply={onMaterialChange} />
 
+        <details className="material-color-adjustment" open>
+          <summary>
+            <span>{tr(locale, "颜色调整", "Color adjustment")}</span>
+            <small>{tr(locale, "实例级 · 不修改原资源", "Per instance · source preserved")}</small>
+          </summary>
+          <MaterialAdjustmentRange locale={locale} label={["色相", "Hue"]} value={material.hue ?? 0} min={-180} max={180} step={1} unit="°" disabled={disabled} onChange={(value) => onMaterialChange({ hue: value })} />
+          <MaterialAdjustmentRange locale={locale} label={["饱和度", "Saturation"]} value={material.saturation ?? 0} min={-1} max={1} step={0.01} disabled={disabled} onChange={(value) => onMaterialChange({ saturation: value })} />
+          <MaterialAdjustmentRange locale={locale} label={["亮度", "Brightness"]} value={material.brightness ?? 0} min={-1} max={1} step={0.01} disabled={disabled} onChange={(value) => onMaterialChange({ brightness: value })} />
+          <MaterialAdjustmentRange locale={locale} label={["对比度", "Contrast"]} value={material.contrast ?? 0} min={-1} max={1} step={0.01} disabled={disabled} onChange={(value) => onMaterialChange({ contrast: value })} />
+          <button
+            type="button"
+            disabled={disabled || !materialColorAdjustmentActive(material)}
+            onClick={() => onMaterialChange({ hue: 0, saturation: 0, brightness: 0, contrast: 0 })}
+          >
+            {tr(locale, "重置颜色调整", "Reset color adjustment")}
+          </button>
+        </details>
+
         <MaterialRange
           locale={locale}
           label={["粗糙度", "Roughness"]}
@@ -235,4 +253,38 @@ function MaterialRange({
       <output>{value?.toFixed(2) ?? "—"}</output>
     </label>
   );
+}
+
+function MaterialAdjustmentRange({
+  locale,
+  label,
+  value,
+  min,
+  max,
+  step,
+  unit = "",
+  disabled,
+  onChange,
+}: {
+  locale: AppLocale;
+  label: [string, string];
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  unit?: string;
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label>
+      <span>{tr(locale, ...label)}</span>
+      <input disabled={disabled} type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <output>{step >= 1 ? value.toFixed(0) : value.toFixed(2)}{unit}</output>
+    </label>
+  );
+}
+
+function materialColorAdjustmentActive(material: SceneMaterialState): boolean {
+  return Boolean(material.hue || material.saturation || material.brightness || material.contrast);
 }

@@ -1,6 +1,6 @@
 # 场景文件
 
-iTwin Studio 支持两种可重新编辑的场景交换方式，二者都使用 `schemaVersion: 1`；另提供面向交付的 GLB 几何导出。
+Industrial Studio 支持两种可重新编辑的场景交换方式，二者都使用 `schemaVersion: 1`；另提供面向交付的 GLB 几何导出。
 
 ## 零散文件：`.scene.json`
 
@@ -28,7 +28,7 @@ models/
 
 “GLB 单文件”会把当前已加载且可见的模型和基础元素合并到一个标准 GLB，保留对象名称、层级和当前变换，隐藏或已删除的对象不会导出。普通 GLTF/GLB/FBX 模型保留可导出的材质；IFC Fragments 会先重建完整网格再导出为中性材质，避免只导出约 1 KB 的空根节点。它便于交付给其他 Three.js、Unity 或通用 glTF 工具。
 
-GLB 只承载三维几何与材质，不保存 iTwin Studio 的相机、标尺、标签、碰撞开关、剖切配置、场景资源引用等编辑状态；需要继续完整编辑时应使用 `.scene.json` 或 `.bimscene`。
+GLB 只承载三维几何与材质，不保存 Industrial Studio 的相机、标尺、标签、碰撞开关、剖切配置、场景资源引用等编辑状态；需要继续完整编辑时应使用 `.scene.json` 或 `.bimscene`。
 
 ## URL 部署要求
 

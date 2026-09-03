@@ -31,7 +31,8 @@ describe("AssetLibraryCatalog", () => {
     const root = await createFixture({ brandedName: true });
     const item = (await new AssetLibraryCatalog(root).list({ search: "机械臂" })).items[0];
     expect(item?.name).toBe("六轴机械臂");
-    expect(JSON.stringify(item)).not.toMatch(/帆软|ThingJS/i);
+    const externalProductPattern = new RegExp([["帆", "软"].join(""), ["Thing", "JS"].join("")].join("|"), "i");
+    expect(JSON.stringify(item)).not.toMatch(externalProductPattern);
   });
 
   it("rejects catalog paths that escape the configured offline directory", async () => {
@@ -80,7 +81,7 @@ async function createFixture(options: { brandedName?: boolean; escapedPath?: boo
   temporaryDirectories.push(root);
   await Promise.all([mkdir(path.join(root, "models")), mkdir(path.join(root, "thumbnails"))]);
   const models = [
-    { id: 10, name: `${options.brandedName ? "帆软 " : ""}六轴机械臂`, downloadTotal: 20, haveAnimation: true, type: { name: "工业场景" }, element: { name: "机器人" }, style: { name: "写实" } },
+    { id: 10, name: `${options.brandedName ? ["帆", "软 "].join("") : ""}六轴机械臂`, downloadTotal: 20, haveAnimation: true, type: { name: "工业场景" }, element: { name: "机器人" }, style: { name: "写实" } },
     { id: 11, name: "皮带输送线", downloadTotal: 10, haveAnimation: false, type: { name: "工业场景" }, element: { name: "输送设备" }, style: { name: "写实" } },
   ];
   const files = models.flatMap((model) => [

@@ -1,38 +1,41 @@
 import type { SceneSnapshot, Vector3Value, WorkcellAuditInput, WorkcellAuditResult, WorkcellBounds, WorkcellObjectRole } from "@bim-studio/contracts";
 import {
-  AlertTriangle, Bot, CheckCircle2, FlaskConical, Gauge, ListChecks,
+  AlertTriangle, Bot, CheckCircle2, Crosshair, FlaskConical, Gauge, ListChecks,
   LoaderCircle, Play, Save, ScanSearch, ShieldCheck, Timer,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { runRobotWorkcellAssistant } from "./robotWorkcellAssistant";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { buildRobotWorkcellAuditInput, runRobotWorkcellAssistant } from "./robotWorkcellAssistant";
 import type {
   RobotAssistantObjectInput, RobotAssistantTargetInput, RobotTaskDraftStep,
   RobotWorkcellAssistantInput, RobotWorkcellAssistantResult,
 } from "./robotWorkcellAssistantTypes";
-import { primitiveWorldBounds, workcellRole } from "./workcellAuditModel";
+import { RobotWorkcellSetup } from "./RobotWorkcellSetup";
+import { primitiveWorldBounds, robotPlanningProfileFromSceneModel, workcellRole } from "./workcellAuditModel";
+import { WorkcellLoadEvidence } from "./WorkcellLoadEvidence";
+import { WorkcellTrajectoryEvidence } from "./WorkcellTrajectoryEvidence";
 import "./RobotWorkcellAssistantPanel.css";
 
-export type RobotTaskDraft = RobotWorkcellAssistantResult["taskDraft"];
 export type RobotAuditCapabilityRunner = (projectId: string, input: WorkcellAuditInput) => Promise<WorkcellAuditResult>;
 
 interface PanelProps {
   projectId: string;
   scene: SceneSnapshot;
+  robotModelId?: string;
   runWorkcellAudit: RobotAuditCapabilityRunner;
-  onSaveDraft: (draft: RobotTaskDraft) => void | Promise<void>;
-  onOpenFormalSimulation: (draft: RobotTaskDraft) => void;
+  onSaveStudy: (input: RobotWorkcellAssistantInput, result: RobotWorkcellAssistantResult) => void | Promise<void>;
+  onContinueValidation: (result: RobotWorkcellAssistantResult) => void | Promise<void>;
+  onOpenTarget: (sceneId: string, objectId: string) => void;
 }
-
 export interface RobotAssistantScenePreparation {
   input?: RobotWorkcellAssistantInput;
   issue?: string;
 }
-
 /**
  * 从已有场景配置生成机器人工位任务。只读取用户已配置的数据；模型缺少包围盒时保留缺证据状态。
  */
-export function prepareRobotAssistantScene(scene: SceneSnapshot): RobotAssistantScenePreparation {
-  const robotModel = scene.models.find((model) => model.rig?.robot?.enabled);
+export function prepareRobotAssistantScene(scene: SceneSnapshot, robotModelId?: string): RobotAssistantScenePreparation {
+  const robots = scene.models.filter((model) => model.rig?.robot?.enabled);
+  const robotModel = robots.find((model) => model.modelId === robotModelId) ?? robots[0];
   const robot = robotModel?.rig?.robot;
   if (!robotModel || !robot) return { issue: "当前场景尚未启用机器人关节链" };
 
@@ -74,118 +77,193 @@ export function prepareRobotAssistantScene(scene: SceneSnapshot): RobotAssistant
             : {}),
         })),
         ...(robot.toolObjectId ? { toolObjectId: robot.toolObjectId } : {}),
+        ...robotPlanningProfileFromSceneModel(robotModel),
       },
       targets,
       objects,
-      // 首版采用可解释的保守默认值；结果页明确这是规划预算，不是控制器承诺。
-      cycleGoal: { targetSec: 30, tcpSpeedMps: .5, jointSpeedDegPerSec: 90, controllerOverheadSec: .2, toolActionSec: .5, safetyMarginPercent: 20 },
+      // 起步值必须由工程师在 UI 中确认，不能静默成为工程证据。
+      cycleGoal: { targetSec: 30, tcpSpeedMps: .5, tcpRadiusMeters: .1, jointSpeedDegPerSec: 90, controllerOverheadSec: .2, toolActionSec: .5, safetyMarginPercent: 20 },
       clearanceThreshold: .25,
+      planningAssumptions: { origin: "starter-values", status: "unconfirmed" },
     },
   };
 }
 
-export function RobotWorkcellAssistantPanel({ projectId, scene, runWorkcellAudit, onSaveDraft, onOpenFormalSimulation }: PanelProps) {
-  const prepared = useMemo(() => prepareRobotAssistantScene(scene), [scene]);
+export function RobotWorkcellAssistantPanel({ projectId, scene, robotModelId, runWorkcellAudit, onSaveStudy, onContinueValidation, onOpenTarget }: PanelProps) {
+  const prepared = useMemo(() => prepareRobotAssistantScene(scene, robotModelId), [robotModelId, scene]);
+  const inputContextKey = `${robotModelId ?? ""}:${scene.id}:${scene.updatedAt}:${prepared.input?.robot.id ?? prepared.issue ?? ""}`;
+  const [draftInput, setDraftInput] = useState<RobotWorkcellAssistantInput | undefined>(() => prepared.input ? structuredClone(prepared.input) : undefined);
   const [result, setResult] = useState<RobotWorkcellAssistantResult>();
+  const [resultInput, setResultInput] = useState<RobotWorkcellAssistantInput>();
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-
+  const runSequence = useRef(0);
+  const inputContext = useRef(inputContextKey);
   useEffect(() => {
+    if (inputContext.current === inputContextKey) return;
+    inputContext.current = inputContextKey;
+    runSequence.current += 1;
+    setDraftInput(prepared.input ? structuredClone(prepared.input) : undefined);
     setResult(undefined);
+    setResultInput(undefined);
+    setBusy(false);
+    setSaving(false);
+    setContinuing(false);
     setError("");
     setSaved(false);
-  }, [scene.id]);
+  }, [inputContextKey, prepared]);
+  const activePreparation = draftInput ? { input: draftInput } : prepared;
+  function updateInput(input: RobotWorkcellAssistantInput) {
+    runSequence.current += 1;
+    setDraftInput(input);
+    setResult(undefined);
+    setResultInput(undefined);
+    setBusy(false);
+    setSaving(false);
+    setContinuing(false);
+    setError("");
+    setSaved(false);
+  }
 
   async function run() {
-    if (!prepared.input) return;
+    if (!activePreparation.input) return;
+    const runId = ++runSequence.current;
     setBusy(true);
     setError("");
     setSaved(false);
     try {
-      setResult(await runRobotWorkcellAssistant(prepared.input, (input) => runWorkcellAudit(projectId, input)));
+      const input = structuredClone(activePreparation.input);
+      // “生成任务并验证”是本步骤唯一提交动作；点击即明确确认当前页面展示的规划参数。
+      // 这样保留工程证据的显式确认语义，同时避免用户先点一次“确认”再点一次“运行”。
+      if (input.planningAssumptions?.status === "unconfirmed") {
+        input.planningAssumptions = { ...input.planningAssumptions, status: "engineer-confirmed" };
+        setDraftInput(structuredClone(input));
+      }
+      const nextResult = await runRobotWorkcellAssistant(input, (auditInput) => runWorkcellAudit(projectId, auditInput));
+      if (runId !== runSequence.current) return;
+      setResultInput(input);
+      setResult(nextResult);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (runId === runSequence.current) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setBusy(false);
+      if (runId === runSequence.current) setBusy(false);
     }
   }
 
   async function save() {
-    if (!result) return;
+    if (!result || !resultInput || saved) return;
+    const contextId = runSequence.current;
     setSaving(true);
     setError("");
     try {
-      await onSaveDraft(result.taskDraft);
+      await onSaveStudy(resultInput, result);
+      if (contextId !== runSequence.current) return;
       setSaved(true);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (contextId === runSequence.current) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setSaving(false);
+      if (contextId === runSequence.current) setSaving(false);
+    }
+  }
+
+  async function continueValidation() {
+    if (!result || !resultInput) return;
+    const contextId = runSequence.current;
+    setContinuing(true);
+    setError("");
+    try {
+      if (!saved) {
+        await onSaveStudy(resultInput, result);
+        if (contextId !== runSequence.current) return;
+        setSaved(true);
+      }
+      await onContinueValidation(result);
+    } catch (reason) {
+      if (contextId === runSequence.current) setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      if (contextId === runSequence.current) setContinuing(false);
     }
   }
 
   return <RobotWorkcellAssistantPanelView
-    preparation={prepared} {...(result ? { result } : {})} busy={busy} saving={saving} saved={saved} error={error}
+    preparation={result && resultInput ? { input: resultInput } : activePreparation} {...(result ? { result } : {})} busy={busy} saving={saving} continuing={continuing} saved={saved} error={error}
+    onInputChange={updateInput}
     onRun={() => void run()} onSave={() => void save()}
-    onOpenFormalSimulation={() => { if (result) onOpenFormalSimulation(result.taskDraft); }}
+    onContinueValidation={() => void continueValidation()}
+    onOpenObject={(objectId) => onOpenTarget(scene.id, objectId)}
   />;
 }
 
-export function RobotWorkcellAssistantPanelView({ preparation, result, busy, saving, saved, error, onRun, onSave, onOpenFormalSimulation }: {
+export function RobotWorkcellAssistantPanelView({ preparation, result, busy, saving, continuing, saved, error, onRun, onSave, onContinueValidation, onOpenObject, onInputChange }: {
   preparation: RobotAssistantScenePreparation;
   result?: RobotWorkcellAssistantResult;
   busy: boolean;
   saving: boolean;
+  continuing: boolean;
   saved: boolean;
   error: string;
   onRun: () => void;
   onSave: () => void;
-  onOpenFormalSimulation: () => void;
+  onContinueValidation: () => void;
+  onOpenObject?: (objectId: string) => void;
+  onInputChange?: (input: RobotWorkcellAssistantInput) => void;
 }) {
   const input = preparation.input;
   return <section className={`robot-assistant-panel ${result?.status ?? "idle"}`} aria-label="机器人工位助手">
     <header className="robot-assistant-header">
       <div className="robot-assistant-title">
-        <span><Bot size={14} /> ROBOT WORKCELL ASSISTANT</span>
-        <strong>机器人工位助手</strong>
-        <small>从场景生成可复核任务草稿；不生成控制器程序，也不会自动下发机器人。</small>
+        <span><Bot size={14} />任务快速验证</span>
+        <strong>机器人工位快速验证</strong>
+        <small>识别机器人、目标、工具、负载与 TCP，生成任务草稿并运行快速初筛；不生成程序，也不下发设备。</small>
       </div>
-      <button className="robot-assistant-run" disabled={busy || !input} onClick={onRun}>
+      <button
+        type="button"
+        className="robot-assistant-run"
+        disabled={busy || !input || !input.taskName.trim()}
+        title={input?.planningAssumptions?.status === "unconfirmed" ? "使用页面中的当前参数生成任务并执行快速验证" : undefined}
+        onClick={onRun}
+      >
         {busy ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}
-        {busy ? "正在分析" : result ? "重新分析" : "生成任务草稿"}
+        {busy ? "正在验证" : result ? "重新验证" : "生成任务并验证"}
       </button>
     </header>
 
+    {input && onInputChange && <RobotWorkcellSetup input={input} resultVisible={Boolean(result)} onChange={onInputChange} />}
     {!input && <div className="robot-assistant-empty"><ScanSearch size={20} /><span><strong>还不能生成工位任务</strong><small>{preparation.issue}</small></span></div>}
-    {busy && <div className="robot-assistant-loading" role="status"><LoaderCircle className="spin" size={16} />正在运行关节限位、可达域、AABB 初筛和节拍预算…</div>}
+    {busy && <div className="robot-assistant-loading" role="status"><LoaderCircle className="spin" size={16} />正在生成任务并执行快速初筛…</div>}
     {error && <div className="robot-assistant-error" role="alert"><AlertTriangle size={15} />{error}</div>}
     {input && !result && !busy && <div className="robot-assistant-ready">
       <span><b>{input.robot.joints.length}</b> 关节</span><span><b>{input.targets.length}</b> 目标</span><span><b>{input.objects.length}</b> 场景对象</span>
-      <small>已识别 {input.robot.name}，运行后再决定是否进入正式仿真。</small>
+      <small>已识别 {input.robot.name}，验证后可直接进入控制逻辑虚拟验收。</small>
     </div>}
-    {result && <RobotAssistantResult result={result} />}
+    {result && input && <RobotAssistantResult input={input} result={result} {...(onOpenObject ? { onOpenObject } : {})} />}
     {result && <footer className="robot-assistant-actions">
-      <p><ShieldCheck size={14} /><span><strong>人工确认策略</strong><small>草稿须经机器人程序员、安全复核、离线仿真与低速单步验证。</small></span></p>
+      <p><ShieldCheck size={14} /><span><strong>{continuationTitle(result.status)}</strong><small>{continuationHint(result.status)}</small></span></p>
       <div>
-        <button className="secondary" disabled={saving} onClick={onSave}>
+        <button type="button" className="secondary" disabled={saving || continuing || saved} onClick={onSave}>
           {saving ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}
-          {saved ? "草稿已保存" : "保存待复核草稿"}
+          {saved ? "快速初筛已留证" : "保存快速初筛"}
         </button>
-        <button className="primary" onClick={onOpenFormalSimulation}><FlaskConical size={14} />打开正式仿真</button>
+        <button type="button" className="primary" disabled={saving || continuing} onClick={onContinueValidation}>
+          {continuing ? <LoaderCircle className="spin" size={14} /> : <FlaskConical size={14} />}
+          {continuing ? "正在进入" : "验证控制逻辑"}
+        </button>
       </div>
     </footer>}
   </section>;
 }
 
-function RobotAssistantResult({ result }: { result: RobotWorkcellAssistantResult }) {
+function RobotAssistantResult({ input, result, onOpenObject }: { input: RobotWorkcellAssistantInput; result: RobotWorkcellAssistantResult; onOpenObject?: (objectId: string) => void }) {
   const limitsOutside = result.jointLimits.filter((item) => item.status === "outside-limit").length;
   const reachable = result.reachability.filter((item) => item.status === "reachable").length;
   const collisions = result.collisionScreening.pairs.filter((item) => item.intersects).length;
+  const trajectories = useMemo(() => buildRobotWorkcellAuditInput(input).trajectories ?? [], [input]);
   return <div className="robot-assistant-result">
     <div className="robot-assistant-summary">
-      {result.status === "ready-for-formal-simulation" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+      {result.status === "ready-for-control-validation" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
       <span>
         <strong>{assistantStatusLabel(result.status)}</strong>
         <small>
@@ -204,11 +282,17 @@ function RobotAssistantResult({ result }: { result: RobotWorkcellAssistantResult
         label="规划节拍"
       />
     </div>
-    <ResultDetails result={result} collisionCount={collisions} />
+    <WorkcellLoadEvidence checks={[result.loadScreening]} />
+    {result.workcellAudit.trajectoryAnalysis && <WorkcellTrajectoryEvidence
+      analysis={result.workcellAudit.trajectoryAnalysis}
+      trajectories={trajectories}
+      {...(onOpenObject ? { onOpenObject } : {})}
+    />}
+    <ResultDetails result={result} collisionCount={collisions} {...(onOpenObject ? { onOpenObject } : {})} />
   </div>;
 }
 
-function ResultDetails({ result, collisionCount }: { result: RobotWorkcellAssistantResult; collisionCount: number }) {
+function ResultDetails({ result, collisionCount, onOpenObject }: { result: RobotWorkcellAssistantResult; collisionCount: number; onOpenObject?: (objectId: string) => void }) {
   return <div className="robot-assistant-details">
     <Detail title="任务草稿" meta={`${result.taskDraft.steps.length} 步`} open>
       {result.taskDraft.steps.map((step) => <TaskStep key={step.id} step={step} />)}
@@ -217,7 +301,7 @@ function ResultDetails({ result, collisionCount }: { result: RobotWorkcellAssist
       <ul>{result.reachability.map((item) => <li key={`${item.robotId}:${item.targetId}`}>
         <span>{item.targetId}</span>
         <b className={item.status}>{reachabilityLabel(item.status)}</b>
-        <small>{item.distance.toFixed(2)} m / 最大 {item.maximumReach.toFixed(2)} m</small>
+        <small>{item.distance.toFixed(2)} m / 最大 {item.maximumReach.toFixed(2)} m{onOpenObject && <button type="button" className="robot-assistant-focus" onClick={() => onOpenObject(item.targetId)}><Crosshair size={11} />定位目标</button>}</small>
       </li>)}</ul>
       <ul>{result.jointLimits.map((item) => <li key={`${item.waypointId}:${item.jointId}`}>
         <span>{item.waypointId} · {item.jointName}</span>
@@ -236,7 +320,7 @@ function ResultDetails({ result, collisionCount }: { result: RobotWorkcellAssist
         <b className={item.intersects ? "outside-limit" : "reachable"}>
           {item.intersects ? "包围盒相交" : "未相交"}
         </b>
-        <small>静态距离 {item.distance.toFixed(3)} m</small>
+        <small>静态距离 {item.distance.toFixed(3)} m{item.intersects && onOpenObject && <button type="button" className="robot-assistant-focus" onClick={() => onOpenObject(item.objectIds[0])}><Crosshair size={11} />定位对象</button>}</small>
       </li>)}</ul>
     </Detail>
     <Detail title="节拍预算" meta={cycleStatusLabel(result.cycleBudget.status)}>
@@ -248,10 +332,10 @@ function ResultDetails({ result, collisionCount }: { result: RobotWorkcellAssist
     <Detail title="缺失证据" meta={result.missingEvidence.length ? `${result.missingEvidence.length} 项` : "已满足初筛"} warning={result.missingEvidence.length > 0}>
       {result.missingEvidence.length
         ? <ol>{result.missingEvidence.map((item) => <li key={item}>{item}</li>)}</ol>
-        : <p className="robot-assistant-declaration">当前初筛输入完整；仍需执行下列正式仿真。</p>}
+        : <p className="robot-assistant-declaration">当前快速初筛输入完整；下列工程校核仍未完成。</p>}
     </Detail>
-    <Detail title="正式仿真清单" meta={`${result.formalSimulationItems.length} 项`} warning>
-      <ol>{result.formalSimulationItems.map((item) => <li key={item}>{item}</li>)}</ol>
+    <Detail title="后续工程校核" meta={`${result.remainingEngineeringChecks.length} 项`} warning>
+      <ol>{result.remainingEngineeringChecks.map((item) => <li key={item}>{item}</li>)}</ol>
     </Detail>
   </div>;
 }
@@ -265,7 +349,7 @@ function Metric({ icon, value, label, danger }: { icon: React.ReactNode; value: 
 function TaskStep({ step }: { step: RobotTaskDraftStep }) {
   return <div className="robot-assistant-step">
     <i>{step.id.split("-")[1]}</i>
-    <span><strong>{step.label}</strong><small>待正式仿真与人工复核</small></span>
+    <span><strong>{step.label}</strong><small>待控制逻辑验收与工程复核</small></span>
   </div>;
 }
 
@@ -299,7 +383,15 @@ function radiansToDegrees(value: { x: number; y: number; z: number }) { return {
 function toDegrees(value: number): number { return Math.round(value * 180 / Math.PI * 1_000) / 1_000; }
 function shortFingerprint(value: string): string { return value.length > 22 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value; }
 function assistantStatusLabel(status: RobotWorkcellAssistantResult["status"]): string {
-  return ({ blocked: "发现阻断项", "needs-data": "需要补充证据", "ready-for-formal-simulation": "可进入正式仿真" })[status];
+  return ({ blocked: "快速初筛发现阻断项", "needs-data": "快速初筛证据不足", "ready-for-control-validation": "可继续控制逻辑验收" })[status];
+}
+function continuationTitle(status: RobotWorkcellAssistantResult["status"]): string {
+  return status === "blocked" ? "先修正阻断项，也可独立验证控制逻辑" : status === "needs-data" ? "补充几何证据，控制逻辑可先验证" : "下一步：控制逻辑虚拟验收";
+}
+function continuationHint(status: RobotWorkcellAssistantResult["status"]): string {
+  return status === "ready-for-control-validation"
+    ? "进入下一步时自动保存本次证据；完整 IK、网格碰撞和真实控制器时序仍需工程校核。"
+    : "进入下一步时自动保存本次证据；控制逻辑验证不会把未完成的几何校核判为通过。";
 }
 function reachabilityLabel(status: RobotWorkcellAssistantResult["reachability"][number]["status"]): string {
   return ({ reachable: "包络内", outside: "超出包络", "inner-dead-zone": "内盲区", "needs-data": "待补充" })[status];

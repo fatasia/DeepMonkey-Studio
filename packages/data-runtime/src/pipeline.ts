@@ -74,32 +74,75 @@ export function validateDataPipeline(definition: Pick<DataPipelineDefinition, "n
   return ordered;
 }
 
-export async function executeDataPipeline(definition: DataPipelineDefinition, resolveDataset: DatasetResolver): Promise<DataPipelinePreview> {
+export async function executeDataPipeline(
+  definition: DataPipelineDefinition,
+  resolveDataset: DatasetResolver,
+  options: { throughNodeId?: string } = {},
+): Promise<DataPipelinePreview> {
   const startedAt = performance.now();
   const ordered = validateDataPipeline(definition);
+  const throughNodeId = options.throughNodeId;
+  if (throughNodeId && !ordered.some((node) => node.id === throughNodeId)) {
+    throw new DataPipelineError("调试目标节点不存在", throughNodeId);
+  }
   const outputs = new Map<string, Array<Record<string, unknown>>>();
   const diagnostics: DataPipelineNodeDiagnostic[] = [];
   const predecessors = new Map(definition.nodes.map((node) => [node.id, definition.edges.filter((edge) => edge.targetNodeId === node.id).map((edge) => edge.sourceNodeId)]));
+  const executionNodeIds = throughNodeId ? collectDependencies(throughNodeId, predecessors) : undefined;
 
   for (const node of ordered) {
+    if (executionNodeIds && !executionNodeIds.has(node.id)) continue;
     const nodeStartedAt = performance.now();
     const inputSets = (predecessors.get(node.id) ?? []).map((nodeId) => outputs.get(nodeId) ?? []);
     const inputRows = inputSets.reduce((sum, rows) => sum + rows.length, 0);
+    const inputSample = takeInputSample(inputSets, 5);
     try {
       const rows = await executeNode(node, inputSets, resolveDataset);
       outputs.set(node.id, rows);
-      diagnostics.push({ nodeId: node.id, status: "success", inputRows, outputRows: rows.length, durationMs: performance.now() - nodeStartedAt, sample: rows.slice(0, 5) });
+      diagnostics.push({ nodeId: node.id, status: "success", inputRows, outputRows: rows.length, durationMs: performance.now() - nodeStartedAt, inputSample, sample: rows.slice(0, 5) });
+      if (node.id === throughNodeId) break;
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
-      diagnostics.push({ nodeId: node.id, status: "error", inputRows, outputRows: 0, durationMs: performance.now() - nodeStartedAt, sample: [], error: message });
+      diagnostics.push({ nodeId: node.id, status: "error", inputRows, outputRows: 0, durationMs: performance.now() - nodeStartedAt, inputSample, sample: [], error: message });
       throw new DataPipelineError(`${node.name}: ${message}`, node.id, diagnostics);
     }
   }
 
-  const outputNodes = ordered.filter((node) => node.type === "output");
-  if (outputNodes.length !== 1) throw new DataPipelineError("流水线必须且只能有一个输出节点", undefined, diagnostics);
-  const rows = outputs.get(outputNodes[0]!.id) ?? [];
-  return { pipeline: definition, status: "success", fields: inferFields(rows), rows, durationMs: performance.now() - startedAt, diagnostics };
+  const resultNode = throughNodeId ? ordered.find((node) => node.id === throughNodeId) : ordered.find((node) => node.type === "output");
+  if (!resultNode) throw new DataPipelineError("流水线必须且只能有一个输出节点", undefined, diagnostics);
+  const rows = outputs.get(resultNode.id) ?? [];
+  return {
+    pipeline: definition,
+    status: "success",
+    fields: inferFields(rows),
+    rows,
+    durationMs: performance.now() - startedAt,
+    diagnostics,
+    ...(throughNodeId ? { executedThroughNodeId: throughNodeId } : {}),
+  };
+}
+
+function collectDependencies(targetNodeId: string, predecessors: Map<string, string[]>): Set<string> {
+  const result = new Set<string>();
+  const pending = [targetNodeId];
+  while (pending.length > 0) {
+    const nodeId = pending.pop();
+    if (!nodeId || result.has(nodeId)) continue;
+    result.add(nodeId);
+    pending.push(...(predecessors.get(nodeId) ?? []));
+  }
+  return result;
+}
+
+function takeInputSample(inputSets: Array<Array<Record<string, unknown>>>, limit: number): Array<Record<string, unknown>> {
+  const sample: Array<Record<string, unknown>> = [];
+  for (const rows of inputSets) {
+    for (const row of rows) {
+      sample.push({ ...row });
+      if (sample.length === limit) return sample;
+    }
+  }
+  return sample;
 }
 
 async function executeNode(node: DataPipelineNode, inputSets: Array<Array<Record<string, unknown>>>, resolveDataset: DatasetResolver): Promise<Array<Record<string, unknown>>> {
@@ -119,12 +162,24 @@ async function executeNode(node: DataPipelineNode, inputSets: Array<Array<Record
     const result = await executeRowScript(node.source, rows, {}, { timeoutMs: 150, memoryLimitBytes: 8 * 1024 * 1024 });
     return rows.map((row, index) => ({ ...row, [node.key]: result.output[index] ?? null }));
   }
+  if (node.type === "select")
+    return rows.map((row) => Object.fromEntries(node.fields.map((field) => [field, row[field]])));
+  if (node.type === "deduplicate") {
+    const seen = new Set<string>();
+    return rows.filter((row) => {
+      const key = JSON.stringify(node.fields.length ? node.fields.map((field) => row[field]) : row);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  if (node.type === "aggregate") return aggregateRows(rows, node);
   if (node.type === "sort") return [...rows].sort((left, right) => compareValues(left[node.field], right[node.field]) * (node.direction === "desc" ? -1 : 1));
   return rows.slice(0, node.count);
 }
 
 function validateNodeConfiguration(node: DataPipelineNode): void {
-  if (!["source", "filter", "formula", "script", "sort", "limit", "merge", "output"].includes(String(node.type))) throw new DataPipelineError("不支持的节点类型", node.id);
+  if (!["source", "filter", "formula", "script", "select", "deduplicate", "aggregate", "sort", "limit", "merge", "output"].includes(String(node.type))) throw new DataPipelineError("不支持的节点类型", node.id);
   if (typeof node.name !== "string" || !node.name.trim()) throw new DataPipelineError("节点名称不能为空", node.id);
   if (!node.position || !Number.isFinite(node.position.x) || !Number.isFinite(node.position.y)) throw new DataPipelineError("节点位置无效", node.id);
   if (node.type === "source" && !node.datasetId.trim()) throw new DataPipelineError("数据源节点必须选择数据集", node.id);
@@ -134,8 +189,40 @@ function validateNodeConfiguration(node: DataPipelineNode): void {
     compileFormula(node.formula);
   }
   if (node.type === "script" && (!node.key.trim() || !node.source.trim())) throw new DataPipelineError("脚本节点输出字段和脚本不能为空", node.id);
+  if (node.type === "select" && node.fields.length === 0) throw new DataPipelineError("字段选择节点至少需要一个字段", node.id);
+  if (node.type === "aggregate") {
+    if (!node.outputKey.trim()) throw new DataPipelineError("汇总节点输出字段不能为空", node.id);
+    if (node.operation !== "count" && !node.field.trim()) throw new DataPipelineError("汇总节点必须选择数值字段", node.id);
+  }
   if (node.type === "sort" && !node.field.trim()) throw new DataPipelineError("排序字段不能为空", node.id);
   if (node.type === "limit" && (!Number.isInteger(node.count) || node.count < 1 || node.count > 10_000)) throw new DataPipelineError("限量行数必须是 1 到 10000 的整数", node.id);
+}
+
+function aggregateRows(
+  rows: Array<Record<string, unknown>>,
+  node: Extract<DataPipelineNode, { type: "aggregate" }>,
+): Array<Record<string, unknown>> {
+  const groups = new Map<string, Array<Record<string, unknown>>>();
+  for (const row of rows) {
+    const key = JSON.stringify(node.groupBy.map((field) => row[field]));
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+  return [...groups.values()].map((group) => {
+    const first = group[0] ?? {};
+    const values = group.map((row) => row[node.field]).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    let result: number;
+    if (node.operation === "count") result = group.length;
+    else if (node.operation === "sum") result = values.reduce((sum, value) => sum + value, 0);
+    else if (node.operation === "average") result = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+    else if (node.operation === "min") result = values.length ? Math.min(...values) : 0;
+    else result = values.length ? Math.max(...values) : 0;
+    return {
+      ...Object.fromEntries(node.groupBy.map((field) => [field, first[field]])),
+      [node.outputKey]: result,
+    };
+  });
 }
 
 function compareValues(left: unknown, right: unknown): number {
@@ -147,8 +234,14 @@ function compareValues(left: unknown, right: unknown): number {
 }
 
 function inferFields(rows: Array<Record<string, unknown>>): DataDatasetField[] {
-  const sample = rows[0] ?? {};
-  return Object.entries(sample).map(([key, value]) => ({ key, label: key, type: inferFieldType(value) }));
+  const samples = new Map<string, unknown>();
+  for (const row of rows.slice(0, 100)) {
+    for (const [key, value] of Object.entries(row)) {
+      const saved = samples.get(key);
+      if (!samples.has(key) || ((saved === null || saved === undefined) && value !== null && value !== undefined)) samples.set(key, value);
+    }
+  }
+  return [...samples].map(([key, value]) => ({ key, label: key, type: inferFieldType(value) }));
 }
 
 function inferFieldType(value: unknown): DataFieldType {

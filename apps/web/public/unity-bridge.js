@@ -5,6 +5,7 @@
   var receiverObject = "BimStudioBridge";
   var widgetId = "";
   var parentOrigin = "*";
+  var loadingProgress = -1;
 
   function emit(type, detail) {
     var message = Object.assign({ source: "unity-webgl", version: VERSION, type: type, widgetId: widgetId, emittedAt: Date.now() }, detail || {});
@@ -28,6 +29,14 @@
     });
   }
 
+  function reportLoadingProgress(value) {
+    var progress = Number(value);
+    if (!Number.isFinite(progress) || progress < 0 || progress > 1 || progress < loadingProgress) return;
+    if (progress === loadingProgress) return;
+    loadingProgress = progress;
+    emit("load-progress", { progress: progress });
+  }
+
   window.addEventListener("message", function (event) {
     var message = event.data;
     if (event.source !== window.parent || !message || message.source !== "bim-studio" || message.version !== VERSION) return;
@@ -37,9 +46,18 @@
   });
 
   window.BimStudioUnityBridge = {
+    createTrackedInstance: function (factory, canvas, config, onProgress) {
+      if (typeof factory !== "function") return Promise.reject(new Error("Unity loader is unavailable"));
+      reportLoadingProgress(0);
+      return factory(canvas, config, function (progress) {
+        reportLoadingProgress(progress);
+        if (typeof onProgress === "function") onProgress(progress);
+      });
+    },
     register: function (instance, objectName) {
       unityInstance = instance;
       receiverObject = objectName || receiverObject;
+      reportLoadingProgress(1);
       emit("ready");
     },
     emit: function (eventName, payload) {

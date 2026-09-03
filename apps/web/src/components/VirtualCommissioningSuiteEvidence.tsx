@@ -17,7 +17,7 @@ export function VirtualCommissioningSuiteEvidence({ result, previousResult, onIn
         <div>
           {previousResult.status === "passed" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
           <span>
-            <strong>上次黄金矩阵：{previousResult.status === "passed" ? "通过" : "存在不匹配"}</strong>
+            <strong>上次控制逻辑矩阵：{previousResult.status === "passed" ? "符合预期" : "存在不匹配"}</strong>
             <small>{new Date(previousResult.completedAt).toLocaleString()} · 指纹 {shortFingerprint(previousResult.evidenceFingerprint)}</small>
           </span>
         </div>
@@ -31,7 +31,7 @@ export function VirtualCommissioningSuiteEvidence({ result, previousResult, onIn
         <div>
           {result.status === "passed" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
           <span>
-            <strong>{result.status === "passed" ? "黄金矩阵全部符合预期" : "黄金矩阵存在结果偏差"}</strong>
+            <strong>{result.status === "passed" ? "控制逻辑矩阵全部符合预期" : "控制逻辑矩阵存在结果偏差"}</strong>
             <small>{result.matchedCases}/{result.totalCases} 个用例符合预期 · 指纹 {shortFingerprint(result.evidenceFingerprint)}</small>
           </span>
         </div>

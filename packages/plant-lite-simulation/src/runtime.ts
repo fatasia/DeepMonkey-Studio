@@ -1,6 +1,11 @@
 import type { Availability, PlantLiteNode, PlantLiteReplication, PlantLiteModel, SimulationLimits } from "./model.js";
-import { sample, Random } from "./random.js";
-import type { Item, NodeState, ResourceState, Runtime, SimulationEvent } from "./runtimeTypes.js";
+import { plantLiteEffectiveCapacity, plantLiteRequiredResourceIds } from "./capacity.js";
+import { advancePlantLiteEnergy, createPlantLiteEnergyState } from "./energyRuntime.js";
+import { SimulationEventQueue } from "./eventQueue.js";
+import { addPlantLiteOperatingMinutes, isPlantLiteAvailableAt, unionPlantLiteAvailabilities } from "./operatingCalendar.js";
+import { mixSeed, sample, seedNumber, Random } from "./random.js";
+import type { ChangeoverEventData, Item, NodeState, ResourceState, Runtime, SimulationEvent } from "./runtimeTypes.js";
+import type { PlantLiteTraceRecorder } from "./trace.js";
 
 export function runReplication(
   model: PlantLiteModel,
@@ -9,8 +14,9 @@ export function runReplication(
   limits: Required<SimulationLimits>,
   shouldCancel: (() => boolean) | undefined,
   toMetrics: (runtime: Runtime, termination: PlantLiteReplication["termination"], reason?: PlantLiteReplication["reason"]) => PlantLiteReplication,
+  trace?: PlantLiteTraceRecorder,
 ): PlantLiteReplication {
-  const runtime = createRuntime(model, seed, limits);
+  const runtime = createRuntime(model, seed, limits, trace);
   let termination: PlantLiteReplication["termination"] = "completed";
   let reason: PlantLiteReplication["reason"];
   while (true) {
@@ -19,14 +25,14 @@ export function runReplication(
       reason = "cancelled";
       break;
     }
+    const event = runtime.events.peek();
+    if (!event || event.at > limits.durationMinutes) break;
     if (runtime.eventsProcessed >= limits.maxEvents) {
       termination = "limit-reached";
       reason = "max-events";
       break;
     }
-    const event = runtime.events[0];
-    if (!event || event.at > limits.durationMinutes) break;
-    runtime.events.shift();
+    runtime.events.pop();
     advance(runtime, event.at);
     runtime.eventsProcessed += 1;
     handleEvent(runtime, event);
@@ -38,22 +44,40 @@ export function runReplication(
   return toMetrics(runtime, termination, reason);
 }
 
-function createRuntime(model: PlantLiteModel, seed: number, limits: Required<SimulationLimits>): Runtime {
+function createRuntime(model: PlantLiteModel, seed: number, limits: Required<SimulationLimits>, trace?: PlantLiteTraceRecorder): Runtime {
+  const energy = createPlantLiteEnergyState(model);
+  const qualityStations = model.nodes.filter((node) => node.kind === "station" && node.yieldRate !== undefined);
   const runtime: Runtime = {
     model,
     random: new Random(seed),
+    productRandom: new Random(mixSeed(seed, 0x504d)),
+    qualityRandoms: new Map(qualityStations.map((node) => [node.id, new Random(mixSeed(seed, seedNumber(`quality:${node.id}`)))])),
+    qualityEnabled: qualityStations.length > 0,
     limits,
     states: new Map(),
     resources: new Map(),
     outgoing: new Map(),
-    events: [],
+    events: new SimulationEventQueue(),
     now: 0,
     sequence: 0,
     eventsProcessed: 0,
     created: 0,
     completed: 0,
+    scrapped: 0,
+    measuredCompleted: 0,
+    measuredScrapped: 0,
+    completedByProductType: new Map(),
+    productionOrders: new Map((model.productionOrders ?? []).map((order) => [order.id, {
+      releasedItems: 0,
+      completedItems: 0,
+      scrappedItems: 0,
+      completedOnTimeItems: 0,
+    }])),
+    productionOrderQueues: createProductionOrderQueues(model),
     leadTotal: 0,
     wipArea: 0,
+    ...(energy ? { energy } : {}),
+    ...(trace ? { trace } : {}),
   };
   for (const node of model.nodes) runtime.states.set(node.id, emptyNodeState());
   for (const resource of model.resources ?? []) runtime.resources.set(resource.id, emptyResourceState());
@@ -72,21 +96,31 @@ function initializeOutgoing(runtime: Runtime): void {
 }
 
 function initializeEvents(runtime: Runtime): void {
+  const hasProductionOrders = runtime.productionOrderQueues.size > 0;
   for (const node of runtime.model.nodes) {
-    if (node.kind === "source") schedule(runtime, node.initialDelay ?? 0, "arrival", node.id);
+    if (node.kind === "source" && !hasProductionOrders) schedule(runtime, node.initialDelay ?? 0, "arrival", node.id);
+    if (node.kind === "source" && hasProductionOrders) {
+      const releaseMinute = nextProductionOrderReleaseMinute(runtime, node.id);
+      if (releaseMinute !== undefined) schedule(runtime, releaseMinute, "arrival", node.id);
+    }
     if (node.kind === "station") scheduleAvailability(runtime, node.id, node.availability);
   }
   for (const resource of runtime.model.resources ?? []) {
     scheduleAvailability(runtime, resource.id, resource.availability);
-    if (resource.failure) schedule(runtime, sample(resource.failure.timeToFailure, runtime.random), "failure", resource.id);
+    if (resource.failure) {
+      for (let unitIndex = 0; unitIndex < resource.capacity; unitIndex += 1) {
+        scheduleNextFailure(runtime, resource.id, unitIndex, 0);
+      }
+    }
   }
 }
 
 function handleEvent(runtime: Runtime, event: SimulationEvent): void {
   if (event.type === "arrival") return handleArrival(runtime, event);
+  if (event.type === "changeover-complete") return handleChangeoverCompletion(runtime, event);
   if (event.type === "complete") return handleCompletion(runtime, event);
-  if (event.type === "failure") return handleFailure(runtime, event.id);
-  if (event.type === "repair") return handleRepair(runtime, event.id);
+  if (event.type === "failure") return handleFailure(runtime, event.id, event.unitIndex ?? 0);
+  if (event.type === "repair") return handleRepair(runtime, event.id, event.unitIndex ?? 0);
   // 班次边界只触发重新派工，不抢占正在执行的作业。
 }
 
@@ -94,10 +128,31 @@ function handleArrival(runtime: Runtime, event: SimulationEvent): void {
   const node = findNode(runtime, event.id);
   if (node.kind !== "source") throw new Error("arrival targeted a non-source node");
   const state = nodeState(runtime, node.id);
+  const hasProductionOrders = runtime.productionOrderQueues.size > 0;
+  const order = hasProductionOrders ? selectReadyProductionOrder(runtime, node.id) : undefined;
+  if (hasProductionOrders && !order) {
+    const releaseMinute = nextProductionOrderReleaseMinute(runtime, node.id);
+    if (releaseMinute !== undefined) schedule(runtime, releaseMinute, "arrival", node.id);
+    return;
+  }
   runtime.created += 1;
   state.generated += 1;
-  state.output.push({ id: `${node.id}:${state.generated}`, createdAt: runtime.now });
-  if (node.maxItems === undefined || state.generated < node.maxItems) {
+  const orderState = order ? runtime.productionOrders.get(order.id) : undefined;
+  if (order && !orderState) throw new Error(`missing production order state ${order.id}`);
+  if (orderState) orderState.releasedItems += 1;
+  const productTypeId = order?.productTypeId ?? sampleProductType(runtime);
+  const item: Item = {
+    id: order ? `${node.id}:${order.id}:${orderState?.releasedItems ?? state.generated}` : `${node.id}:${state.generated}`,
+    createdAt: runtime.now,
+    ...(productTypeId ? { productTypeId } : {}),
+    ...(order ? { orderId: order.id } : {}),
+  };
+  state.output.push(item);
+  traceItem(runtime, "item-enter", item, node.id);
+  if (order) {
+    if ((orderState?.releasedItems ?? 0) >= order.quantity) removeProductionOrderFromQueue(runtime, node.id, order.id);
+    scheduleNextProductionOrderArrival(runtime, node);
+  } else if (node.maxItems === undefined || state.generated < node.maxItems) {
     schedule(runtime, runtime.now + sample(node.interarrivalTime, runtime.random), "arrival", node.id);
   }
 }
@@ -109,22 +164,55 @@ function handleCompletion(runtime: Runtime, event: SimulationEvent): void {
   }
   const state = nodeState(runtime, node.id);
   state.active -= 1;
-  state.output.push(event.item);
+  traceItem(runtime, "item-complete", event.item, node.id);
+  const scrapped = node.kind === "station" && itemIsScrapped(runtime, node);
+  if (node.kind === "station" && node.yieldRate !== undefined && runtime.now >= runtime.limits.warmupMinutes) {
+    state.qualityInspected += 1;
+    if (scrapped) state.qualityScrapped += 1;
+    else state.qualityPassed += 1;
+  }
+  if (scrapped && node.kind === "station") {
+    runtime.scrapped += 1;
+    if (runtime.now >= runtime.limits.warmupMinutes) runtime.measuredScrapped += 1;
+    if (event.item.orderId) {
+      const orderState = runtime.productionOrders.get(event.item.orderId);
+      if (orderState) orderState.scrappedItems += 1;
+    }
+    traceItem(runtime, "item-scrap", event.item, node.id, undefined, {
+      configuredYieldRate: node.yieldRate ?? 1,
+      disposition: "scrap",
+    });
+  } else {
+    state.output.push(event.item);
+  }
   releaseResource(runtime, node);
 }
 
-function handleFailure(runtime: Runtime, resourceId: string): void {
-  const resource = resourceState(runtime, resourceId);
-  resource.failed = true;
-  const profile = resourceDefinition(runtime, resourceId).failure;
-  if (profile) schedule(runtime, runtime.now + sample(profile.repairTime, runtime.random), "repair", resourceId);
+function handleChangeoverCompletion(runtime: Runtime, event: SimulationEvent): void {
+  const node = findNode(runtime, event.id);
+  if (!event.item || !event.changeover || node.kind !== "station") {
+    throw new Error("changeover completion event is malformed");
+  }
+  const state = nodeState(runtime, node.id);
+  state.changeoverActive = Math.max(0, state.changeoverActive - 1);
+  traceItem(runtime, "item-changeover-complete", event.item, node.id, event.changeover);
+  startProcessing(runtime, node, event.item);
 }
 
-function handleRepair(runtime: Runtime, resourceId: string): void {
+function handleFailure(runtime: Runtime, resourceId: string, unitIndex: number): void {
   const resource = resourceState(runtime, resourceId);
-  resource.failed = false;
+  if (resource.failedUnits.has(unitIndex)) return;
+  resource.failedUnits.add(unitIndex);
+  runtime.trace?.resource("resource-failure", runtime.now, resourceId, unitIndex, resource.failedUnits.size);
   const profile = resourceDefinition(runtime, resourceId).failure;
-  if (profile) schedule(runtime, runtime.now + sample(profile.timeToFailure, runtime.random), "failure", resourceId);
+  if (profile) schedule(runtime, runtime.now + sample(profile.repairTime, runtime.random), "repair", resourceId, undefined, unitIndex);
+}
+
+function handleRepair(runtime: Runtime, resourceId: string, unitIndex: number): void {
+  const resource = resourceState(runtime, resourceId);
+  if (!resource.failedUnits.delete(unitIndex)) return;
+  runtime.trace?.resource("resource-repair", runtime.now, resourceId, unitIndex, resource.failedUnits.size);
+  scheduleNextFailure(runtime, resourceId, unitIndex, runtime.now);
 }
 
 function drainAndStart(runtime: Runtime): void {
@@ -143,8 +231,12 @@ function drainNetwork(runtime: Runtime): boolean {
     const item = items[0];
     if (!item) continue;
     for (const targetId of runtime.outgoing.get(node.id) ?? []) {
-      if (!accept(runtime, targetId, item)) continue;
+      const target = findNode(runtime, targetId);
+      if (!accept(runtime, target, item)) continue;
       items.shift();
+      traceItem(runtime, "item-exit", item, node.id);
+      traceItem(runtime, "item-enter", item, target.id);
+      if (target.kind === "sink") traceItem(runtime, "item-complete", item, target.id);
       changed = true;
       break;
     }
@@ -152,43 +244,206 @@ function drainNetwork(runtime: Runtime): boolean {
   return changed;
 }
 
-function accept(runtime: Runtime, targetId: string, item: Item): boolean {
-  const target = findNode(runtime, targetId);
+function accept(runtime: Runtime, target: PlantLiteNode, item: Item): boolean {
   if (target.kind === "source") return false;
   if (target.kind === "sink") {
     runtime.completed += 1;
-    runtime.leadTotal += runtime.now - item.createdAt;
+    if (item.orderId) {
+      const order = runtime.model.productionOrders?.find((candidate) => candidate.id === item.orderId);
+      const orderState = runtime.productionOrders.get(item.orderId);
+      if (order && orderState) {
+        orderState.completedItems += 1;
+        orderState.firstCompletionMinute ??= runtime.now;
+        orderState.lastCompletionMinute = runtime.now;
+        if (runtime.now <= runtime.limits.warmupMinutes + order.dueMinute) orderState.completedOnTimeItems += 1;
+      }
+    }
+    if (runtime.now >= runtime.limits.warmupMinutes) {
+      runtime.measuredCompleted += 1;
+      if (item.productTypeId) {
+        runtime.completedByProductType.set(item.productTypeId, (runtime.completedByProductType.get(item.productTypeId) ?? 0) + 1);
+      }
+      // 在正式窗口内完工的在制件保留从进入系统起的完整交付期，避免截短跨越预热边界的订单。
+      runtime.leadTotal += runtime.now - item.createdAt;
+    }
     return true;
   }
-  const state = nodeState(runtime, targetId);
+  const state = nodeState(runtime, target.id);
   const capacity = isBuffer(target) ? target.capacity : target.queueCapacity ?? 100;
   if (state.input.length >= capacity) return false;
   state.input.push(item);
   return true;
 }
 
+function createProductionOrderQueues(model: PlantLiteModel): Runtime["productionOrderQueues"] {
+  const queues = new Map<string, NonNullable<PlantLiteModel["productionOrders"]>>();
+  for (const order of model.productionOrders ?? []) {
+    const queue = queues.get(order.sourceNodeId) ?? [];
+    queue.push(order);
+    queues.set(order.sourceNodeId, queue);
+  }
+  return queues;
+}
+
+function selectReadyProductionOrder(runtime: Runtime, sourceNodeId: string) {
+  const releaseOffset = runtime.limits.warmupMinutes;
+  return runtime.productionOrderQueues.get(sourceNodeId)
+    ?.filter((order) => releaseOffset + order.releaseMinute <= runtime.now)
+    .sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0)
+      || left.releaseMinute - right.releaseMinute
+      || left.id.localeCompare(right.id))[0];
+}
+
+function nextProductionOrderReleaseMinute(runtime: Runtime, sourceNodeId: string): number | undefined {
+  const queue = runtime.productionOrderQueues.get(sourceNodeId);
+  if (!queue?.length) return undefined;
+  return runtime.limits.warmupMinutes + Math.min(...queue.map((order) => order.releaseMinute));
+}
+
+function removeProductionOrderFromQueue(runtime: Runtime, sourceNodeId: string, orderId: string): void {
+  const queue = runtime.productionOrderQueues.get(sourceNodeId);
+  if (!queue) return;
+  const index = queue.findIndex((order) => order.id === orderId);
+  if (index >= 0) queue.splice(index, 1);
+  if (!queue.length) runtime.productionOrderQueues.delete(sourceNodeId);
+}
+
+function scheduleNextProductionOrderArrival(runtime: Runtime, source: Extract<PlantLiteNode, { kind: "source" }>): void {
+  const nextReleaseMinute = nextProductionOrderReleaseMinute(runtime, source.id);
+  if (nextReleaseMinute === undefined) return;
+  const nextTaktMinute = runtime.now + sample(source.interarrivalTime, runtime.random);
+  schedule(runtime, Math.max(nextTaktMinute, nextReleaseMinute), "arrival", source.id);
+}
+
 function startReadyNodes(runtime: Runtime): void {
+  // 没有人工池时完整保留旧派工顺序与求解结果。
+  if (!runtime.model.nodes.some((node) => node.kind === "station" && node.workerResourceId)) {
+    startReadyNodesInModelOrder(runtime);
+    return;
+  }
+  for (const node of runtime.model.nodes) {
+    if ((node.kind !== "station" && node.kind !== "transport") || (node.kind === "station" && node.workerResourceId)) continue;
+    startAvailableWork(runtime, node);
+  }
+  // 共享人工池按最早进入系统的工件优先，避免上游工位长期占满人员造成下游饥饿。
+  while (true) {
+    const ready = runtime.model.nodes
+      .map((node, index) => ({ node, index }))
+      .filter((entry): entry is { node: Extract<PlantLiteNode, { kind: "station" }>; index: number } =>
+        entry.node.kind === "station"
+        && Boolean(entry.node.workerResourceId)
+        && nodeState(runtime, entry.node.id).input.length > 0
+        && nodeState(runtime, entry.node.id).active < plantLiteEffectiveCapacity(runtime.model, entry.node)
+        && canAcquire(runtime, entry.node))
+      .sort((left, right) => {
+        const leftItem = nodeState(runtime, left.node.id).input[0];
+        const rightItem = nodeState(runtime, right.node.id).input[0];
+        return (leftItem?.createdAt ?? 0) - (rightItem?.createdAt ?? 0) || left.index - right.index;
+      });
+    const selected = ready[0]?.node;
+    if (!selected) break;
+    startOne(runtime, selected);
+  }
+}
+
+function startReadyNodesInModelOrder(runtime: Runtime): void {
   for (const node of runtime.model.nodes) {
     if (node.kind !== "station" && node.kind !== "transport") continue;
+    startAvailableWork(runtime, node);
+  }
+}
+
+function startAvailableWork(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): void {
+  const state = nodeState(runtime, node.id);
+  const capacity = plantLiteEffectiveCapacity(runtime.model, node);
+  while (state.input.length > 0 && state.active < capacity && canAcquire(runtime, node)) startOne(runtime, node);
+}
+
+function startOne(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): void {
+  const state = nodeState(runtime, node.id);
+  const item = state.input.shift();
+  if (!item) return;
+  state.active += 1;
+  acquireResource(runtime, node);
+  beginProcessing(runtime, node, item);
+}
+
+function beginProcessing(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>, item: Item): void {
+  if (node.kind === "station" && item.productTypeId) {
     const state = nodeState(runtime, node.id);
-    const capacity = node.kind === "station" ? node.capacity ?? 1 : Number.POSITIVE_INFINITY;
-    while (state.input.length > 0 && state.active < capacity && canAcquire(runtime, node)) {
-      const item = state.input.shift()!;
-      state.active += 1;
-      acquireResource(runtime, node);
-      const distribution = node.kind === "station" ? node.processingTime : node.travelTime;
-      schedule(runtime, runtime.now + sample(distribution, runtime.random), "complete", node.id, item);
+    const previousProductTypeId = state.lastProductTypeId;
+    state.lastProductTypeId = item.productTypeId;
+    const rule = previousProductTypeId === undefined || previousProductTypeId === item.productTypeId
+      ? undefined
+      : node.changeovers?.find((candidate) =>
+        candidate.fromProductTypeId === previousProductTypeId && candidate.toProductTypeId === item.productTypeId);
+    if (rule) {
+      const changeover: ChangeoverEventData = {
+        fromProductTypeId: rule.fromProductTypeId,
+        toProductTypeId: rule.toProductTypeId,
+        startMinute: runtime.now,
+        durationMinutes: rule.minutes,
+      };
+      if (runtime.now >= runtime.limits.warmupMinutes) state.changeoverCount += 1;
+      state.changeoverActive += 1;
+      traceItem(runtime, "item-changeover-start", item, node.id, changeover);
+      schedule(runtime, runtime.now + rule.minutes, "changeover-complete", node.id, item, undefined, changeover);
+      return;
     }
   }
+  startProcessing(runtime, node, item);
+}
+
+function startProcessing(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>, item: Item): void {
+  traceItem(runtime, "item-start", item, node.id);
+  const distribution = node.kind === "station" ? node.processingTime : node.travelTime;
+  schedule(runtime, runtime.now + sample(distribution, runtime.random), "complete", node.id, item);
+}
+
+function sampleProductType(runtime: Runtime): string | undefined {
+  const productTypes = runtime.model.productTypes;
+  if (!productTypes?.length) return undefined;
+  const draw = runtime.productRandom.next();
+  let cumulative = 0;
+  for (const productType of productTypes) {
+    cumulative += productType.share;
+    if (draw < cumulative) return productType.id;
+  }
+  return productTypes.at(-1)?.id;
+}
+
+function traceItem(
+  runtime: Runtime,
+  type: Parameters<NonNullable<Runtime["trace"]>["item"]>[0],
+  item: Item,
+  nodeId: string,
+  changeover?: ChangeoverEventData,
+  quality?: { configuredYieldRate: number; disposition: "scrap" },
+): void {
+  runtime.trace?.item(type, runtime.now, item.id, nodeId, item.productTypeId, item.orderId, changeover, quality);
+}
+
+function itemIsScrapped(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" }>): boolean {
+  if (node.yieldRate === undefined || node.yieldRate >= 1) return false;
+  if (node.yieldRate <= 0) return true;
+  const random = runtime.qualityRandoms.get(node.id);
+  if (!random) throw new Error(`missing quality random stream for ${node.id}`);
+  return random.next() >= node.yieldRate;
 }
 
 function advance(runtime: Runtime, target: number): void {
   const elapsed = target - runtime.now;
   if (elapsed < 0) throw new Error("event queue is not ordered");
   if (elapsed === 0) return;
-  runtime.wipArea += (runtime.created - runtime.completed) * elapsed;
-  for (const node of runtime.model.nodes) advanceNode(runtime, node, elapsed);
-  for (const resource of runtime.model.resources ?? []) advanceResource(runtime, resource.id, resource.availability, resource.capacity, elapsed);
+  const measuredElapsed = Math.max(0, target - Math.max(runtime.now, runtime.limits.warmupMinutes));
+  if (measuredElapsed > 0) {
+    advancePlantLiteEnergy(runtime, measuredElapsed);
+    runtime.wipArea += (runtime.created - runtime.completed - runtime.scrapped) * measuredElapsed;
+    for (const node of runtime.model.nodes) advanceNode(runtime, node, measuredElapsed);
+    for (const resource of runtime.model.resources ?? []) {
+      advanceResource(runtime, resource.id, resourceOperatingAvailability(runtime, resource.id), resource.capacity, measuredElapsed);
+    }
+  }
   runtime.now = target;
 }
 
@@ -196,11 +451,20 @@ function advanceNode(runtime: Runtime, node: PlantLiteNode, elapsed: number): vo
   const state = nodeState(runtime, node.id);
   state.queueArea += state.input.length * elapsed;
   state.busyArea += state.active * elapsed;
-  if ((node.kind === "station" || node.kind === "transport") && isOperational(runtime, node)) {
+  state.changeoverArea += state.changeoverActive * elapsed;
+  if ((node.kind === "station" || node.kind === "transport") && isScheduled(runtime, node)) {
     state.availableArea += nodeCapacity(runtime, node) * elapsed;
+  } else if ((node.kind === "station" || node.kind === "transport") && state.active > 0) {
+    // 非抢占任务可跨班完成；把实际加班占用计入分母，避免计划利用率虚高到 100% 以上。
+    state.availableArea += state.active * elapsed;
   }
-  if (state.output.length > 0) state.blocked += elapsed;
-  if ((node.kind === "station" || node.kind === "transport") && state.input.length === 0 && canAcquire(runtime, node)) {
+  if (isBuffer(node) ? state.input.length >= node.capacity : state.output.length > 0) state.blocked += elapsed;
+  if (
+    (node.kind === "station" || node.kind === "transport")
+    && state.input.length === 0
+    && state.active < nodeCapacity(runtime, node)
+    && canAcquire(runtime, node)
+  ) {
     state.starved += elapsed;
   }
 }
@@ -208,30 +472,39 @@ function advanceNode(runtime: Runtime, node: PlantLiteNode, elapsed: number): vo
 function advanceResource(runtime: Runtime, resourceId: string, availability: Availability | undefined, capacity: number, elapsed: number): void {
   const state = resourceState(runtime, resourceId);
   state.busyArea += state.busy * elapsed;
-  if (!state.failed && inShift(runtime.now, availability)) state.availableArea += capacity * elapsed;
-  if (state.failed) state.failedArea += elapsed;
+  if (isPlantLiteAvailableAt(runtime.now, availability)) state.availableArea += capacity * elapsed;
+  else if (state.busy > 0) state.availableArea += state.busy * elapsed;
+  if (isPlantLiteAvailableAt(runtime.now, availability)) state.failedArea += state.failedUnits.size * elapsed;
 }
 
 function canAcquire(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): boolean {
   if (!isOperational(runtime, node)) return false;
-  if (!node.resourceId) return true;
-  const resource = resourceState(runtime, node.resourceId);
-  return resource.busy < resourceDefinition(runtime, node.resourceId).capacity;
+  return plantLiteRequiredResourceIds(node).every((resourceId) => {
+    const resource = resourceState(runtime, resourceId);
+    return resource.busy < resourceDefinition(runtime, resourceId).capacity - resource.failedUnits.size;
+  });
 }
 
 function isOperational(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): boolean {
-  if (node.kind === "station" && !inShift(runtime.now, node.availability)) return false;
-  if (!node.resourceId) return true;
-  const resource = resourceState(runtime, node.resourceId);
-  return !resource.failed && inShift(runtime.now, resourceDefinition(runtime, node.resourceId).availability);
+  if (!isScheduled(runtime, node)) return false;
+  return plantLiteRequiredResourceIds(node).every((resourceId) => {
+    const resource = resourceState(runtime, resourceId);
+    return resource.failedUnits.size < resourceDefinition(runtime, resourceId).capacity;
+  });
+}
+
+function isScheduled(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): boolean {
+  if (node.kind === "station" && !isPlantLiteAvailableAt(runtime.now, node.availability)) return false;
+  return plantLiteRequiredResourceIds(node).every((resourceId) =>
+    isPlantLiteAvailableAt(runtime.now, resourceOperatingAvailability(runtime, resourceId)));
 }
 
 function acquireResource(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): void {
-  if (node.resourceId) resourceState(runtime, node.resourceId).busy += 1;
+  for (const resourceId of plantLiteRequiredResourceIds(node)) resourceState(runtime, resourceId).busy += 1;
 }
 
 function releaseResource(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): void {
-  if (node.resourceId) resourceState(runtime, node.resourceId).busy -= 1;
+  for (const resourceId of plantLiteRequiredResourceIds(node)) resourceState(runtime, resourceId).busy -= 1;
 }
 
 function scheduleAvailability(runtime: Runtime, id: string, availability: Availability | undefined): void {
@@ -246,16 +519,43 @@ function scheduleAvailability(runtime: Runtime, id: string, availability: Availa
   }
 }
 
-function schedule(runtime: Runtime, at: number, type: SimulationEvent["type"], id: string, item?: Item): void {
-  runtime.events.push({ at, sequence: runtime.sequence++, type, id, ...(item ? { item } : {}) });
-  runtime.events.sort((left, right) => left.at - right.at || left.sequence - right.sequence);
+function schedule(
+  runtime: Runtime,
+  at: number,
+  type: SimulationEvent["type"],
+  id: string,
+  item?: Item,
+  unitIndex?: number,
+  changeover?: ChangeoverEventData,
+  orderId?: string,
+): void {
+  runtime.events.push({
+    at,
+    sequence: runtime.sequence++,
+    type,
+    id,
+    ...(item ? { item } : {}),
+    ...(unitIndex !== undefined ? { unitIndex } : {}),
+    ...(changeover ? { changeover } : {}),
+    ...(orderId ? { orderId } : {}),
+  });
 }
 
-function inShift(minute: number, availability: Availability | undefined): boolean {
-  const shifts = availability?.shifts;
-  if (!shifts?.length) return true;
-  const dayMinute = minute % 1_440;
-  return shifts.some((shift) => dayMinute >= shift.startMinute && dayMinute < shift.endMinute);
+function scheduleNextFailure(runtime: Runtime, resourceId: string, unitIndex: number, from: number): void {
+  const profile = resourceDefinition(runtime, resourceId).failure;
+  if (!profile) return;
+  const operatingMinutes = sample(profile.timeToFailure, runtime.random);
+  const at = addPlantLiteOperatingMinutes(from, operatingMinutes, resourceOperatingAvailability(runtime, resourceId));
+  schedule(runtime, at, "failure", resourceId, undefined, unitIndex);
+}
+
+function resourceOperatingAvailability(runtime: Runtime, resourceId: string): Availability | undefined {
+  const resource = resourceDefinition(runtime, resourceId);
+  if (resource.availability?.shifts?.length) return resource.availability;
+  if (resource.kind !== "equipment") return undefined;
+  const stations = runtime.model.nodes.filter((node): node is Extract<typeof node, { kind: "station" }> =>
+    node.kind === "station" && node.resourceId === resourceId);
+  return unionPlantLiteAvailabilities(stations.map((station) => station.availability));
 }
 
 function isBuffer(node: PlantLiteNode): node is Extract<PlantLiteNode, { kind: "buffer" | "queue-buffer" }> {
@@ -287,13 +587,29 @@ function resourceDefinition(runtime: Runtime, resourceId: string) {
 }
 
 function nodeCapacity(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): number {
-  return node.kind === "station" ? node.capacity ?? 1 : resourceDefinition(runtime, node.resourceId).capacity;
+  return plantLiteEffectiveCapacity(runtime.model, node);
 }
 
 function emptyNodeState(): NodeState {
-  return { input: [], output: [], active: 0, generated: 0, busyArea: 0, availableArea: 0, queueArea: 0, blocked: 0, starved: 0 };
+  return {
+    input: [],
+    output: [],
+    active: 0,
+    generated: 0,
+    busyArea: 0,
+    availableArea: 0,
+    queueArea: 0,
+    blocked: 0,
+    starved: 0,
+    changeoverCount: 0,
+    changeoverActive: 0,
+    changeoverArea: 0,
+    qualityInspected: 0,
+    qualityPassed: 0,
+    qualityScrapped: 0,
+  };
 }
 
 function emptyResourceState(): ResourceState {
-  return { busy: 0, busyArea: 0, availableArea: 0, failed: false, failedArea: 0 };
+  return { busy: 0, busyArea: 0, availableArea: 0, failedUnits: new Set(), failedArea: 0 };
 }

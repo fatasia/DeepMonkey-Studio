@@ -80,4 +80,20 @@ describe("Unity publication readiness", () => {
       expect.objectContaining({ code: "missing-health-contract", severity: "warning" }),
     );
   });
+
+  it("warns when the managed build shifts decompression work into the browser", () => {
+    const candidate = resource({
+      webBuild: {
+        compression: "decompression-fallback",
+        runtimePayloadBytes: 100,
+        wasmBytes: 30,
+        dataBytes: 40,
+        runtimeFileCount: 4,
+        debugSymbols: false,
+      },
+    });
+    expect(assessUnityApplicationReadiness(application, [candidate])).toContainEqual(
+      expect.objectContaining({ code: "suboptimal-compression", severity: "warning" }),
+    );
+  });
 });

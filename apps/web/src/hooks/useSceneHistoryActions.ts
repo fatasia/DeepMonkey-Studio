@@ -118,5 +118,12 @@ export function useSceneHistoryActions({ state, history, applyScene }: SceneHist
     }
   }
 
-  return { undoSceneEdit, redoSceneEdit, restoreRecoveryDraft, discardRecoveryDraft };
+  function deferRecoveryDraft(): void {
+    if (!recoveryDraft) return;
+    recoveryDecisionRef.current = recoveryDraft.savedAt;
+    setRecoveryDraft(undefined);
+    setMessage("已使用服务器版本打开；本地恢复副本仍保留，可稍后处理");
+  }
+
+  return { undoSceneEdit, redoSceneEdit, restoreRecoveryDraft, deferRecoveryDraft, discardRecoveryDraft };
 }

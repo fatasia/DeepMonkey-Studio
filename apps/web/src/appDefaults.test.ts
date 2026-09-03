@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCEPTED_MODELS,
   DEFAULT_CAMERA_CONSTRAINTS,
   DEFAULT_BRANDING,
   DEFAULT_ENVIRONMENT,
@@ -7,11 +8,16 @@ import {
   DEFAULT_POST_PROCESSING,
   normalizeCameraConstraints
 } from "./appDefaults";
+import { supportedExtensions } from "@bim-studio/contracts";
 
 describe("app defaults", () => {
   it("uses a neutral first-party product name in user-visible defaults", () => {
     expect(DEFAULT_BRANDING.systemName).toBe("Industrial Studio");
     expect(DEFAULT_BRANDING.browserTitle).toBe("Industrial Studio");
+  });
+
+  it("derives the browser file picker from the shared upload contract", () => {
+    expect(ACCEPTED_MODELS.split(",")).toEqual(supportedExtensions.map((extension) => `.${extension}`));
   });
 
   it("repairs invalid persisted camera ranges without discarding valid settings", () => {

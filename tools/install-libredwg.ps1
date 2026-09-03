@@ -22,4 +22,4 @@ if (-not (Test-Path -LiteralPath $converter)) {
 }
 
 Write-Host "LibreDWG is ready: $converter"
-Write-Host "Restart BIM Studio. The API discovers this path automatically; no .env change is required."
+Write-Host "Restart Industrial Studio. The API discovers this path automatically; no .env change is required."

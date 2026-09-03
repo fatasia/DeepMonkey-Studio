@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { PprBopVersion, PprBopVersionDraft } from "@bim-studio/contracts";
+import type { PprBopVersion } from "@bim-studio/contracts";
 import {
   analyzePprBopVersion,
   comparePprBopVersions,
   type PprAnalysis,
   type PprVersionComparison,
 } from "@bim-studio/ppr-lite-engine";
+import { requirePprBopVersionDraft } from "./pprBopValidation.js";
 
 interface PprBopDocument {
   schemaVersion: 1;
@@ -39,7 +40,8 @@ export class PprBopService {
     return structuredClone(this.project(projectId));
   }
 
-  async create(projectId: string, draft: PprBopVersionDraft): Promise<PprBopVersion> {
+  async create(projectId: string, value: unknown): Promise<PprBopVersion> {
+    const draft = requirePprBopVersionDraft(value);
     return this.mutate(projectId, (versions) => {
       const planId = requiredText(draft.planId, "计划 ID");
       const name = requiredText(draft.name, "计划名称");
@@ -60,20 +62,24 @@ export class PprBopService {
         version,
         createdAt: new Date().toISOString(),
       };
+      const validationErrors = analyzePprBopVersion(record).issues.filter((issue) => issue.severity === "error");
+      if (validationErrors.length) {
+        throw new Error(`工艺计划校验失败：${validationErrors.map((issue) => `[${issue.code}] ${issue.message}`).join("；")}`);
+      }
       versions.push(record);
       return record;
     });
   }
 
-  analyze(projectId: string, versionId: string): PprAnalysis {
-    return analyzePprBopVersion(this.requireVersion(projectId, versionId));
+  analyze(projectId: string, versionId: string, activeVariantId?: string): PprAnalysis {
+    return analyzePprBopVersion(this.requireVersion(projectId, versionId), activeVariantId);
   }
 
-  compare(projectId: string, beforeVersionId: string, afterVersionId: string): PprVersionComparison {
+  compare(projectId: string, beforeVersionId: string, afterVersionId: string, activeVariantId?: string): PprVersionComparison {
     const before = this.requireVersion(projectId, beforeVersionId);
     const after = this.requireVersion(projectId, afterVersionId);
     if (before.planId !== after.planId) throw new Error("只能比较同一工艺计划的两个版本");
-    return comparePprBopVersions(before, after);
+    return comparePprBopVersions(before, after, activeVariantId);
   }
 
   private project(projectId: string): PprBopVersion[] {
@@ -89,18 +95,29 @@ export class PprBopService {
   private async mutate<T>(projectId: string, action: (versions: PprBopVersion[]) => T): Promise<T> {
     let result!: T;
     const operation = this.writeChain.then(async () => {
-      result = action(this.project(projectId));
-      await this.persist();
+      // Apply and persist against an isolated document. A failed validation or
+      // disk write must not leave an in-memory version that was never committed.
+      const nextDocument = structuredClone(this.document);
+      const versions = nextDocument.projects[projectId] ??= [];
+      result = action(versions);
+      await this.persist(nextDocument);
+      this.document = nextDocument;
     });
     this.writeChain = operation.then(() => undefined, () => undefined);
     await operation;
     return structuredClone(result);
   }
 
-  private async persist(): Promise<void> {
+  private async persist(document: PprBopDocument = this.document): Promise<void> {
     const temporary = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(temporary, JSON.stringify(this.document, null, 2));
-    await rename(temporary, this.filePath);
+    let committed = false;
+    try {
+      await writeFile(temporary, JSON.stringify(document, null, 2));
+      await rename(temporary, this.filePath);
+      committed = true;
+    } finally {
+      if (!committed) await unlink(temporary).catch(() => undefined);
+    }
   }
 }
 

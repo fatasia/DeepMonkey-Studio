@@ -154,8 +154,14 @@ const malformedCases: MalformedCase[] = [
   ["script entrypoint", () => altered(interactionApplication, (value) => {
     Reflect.set(value.scripts[0]!, "entrypoint", "module");
   })],
+  ["script dependency integrity", () => altered(interactionApplication, (value) => {
+    value.scriptDependencies = [scriptDependency({ integrity: "sha256-invalid" })];
+  })],
+  ["script dependency duplicate specifier", () => altered(interactionApplication, (value) => {
+    value.scriptDependencies = [scriptDependency(), scriptDependency({ id: "dependency-2" })];
+  })],
   ["asset", () => altered(pureApplication, (value) => {
-    value.assets = [{ id: "asset-1", kind: "model", projectId: "project-golden", sourceFormat: "obj" as never }];
+    value.assets = [{ id: "asset-1", kind: "model", projectId: "project-golden", sourceFormat: "xyz" as never }];
   })],
   ["asset optional property", () => altered(pureApplication, (value) => {
     value.assets = [{ id: "asset-1", kind: "model", projectId: "project-golden", sourceName: undefined as never }];
@@ -226,6 +232,12 @@ describe("assertApplicationDocument", () => {
     });
   });
 
+  it("accepts a locally cached and hash-locked script dependency", () => {
+    const application = structuredClone(interactionApplication);
+    application.scriptDependencies = [scriptDependency()];
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
   it("accepts an object-attached behavior target and rejects a missing target id", () => {
     const application = structuredClone(behaviorApplicationFixture) as unknown as ApplicationDocument;
     application.scripts[0]!.target = { kind: "object", id: "pump-01" };
@@ -256,7 +268,11 @@ describe("assertApplicationDocument", () => {
       transforms: [{ id: "transform-1", expression: "value * 2" }],
       variables: [{ id: "variable-1", value: { thresholds: [10, 20] } }]
     };
-    application.assets = [{ id: "asset-1", kind: "model", projectId: "project-golden", sourceName: "plant.ifc", sourceFormat: "ifc", contentHash: "sha256:example" }];
+    application.assets = [
+      { id: "asset-1", kind: "model", projectId: "project-golden", sourceName: "plant.ifc", sourceFormat: "ifc", contentHash: "sha256:example" },
+      { id: "asset-2", kind: "model", projectId: "project-golden", sourceName: "surface.iges", sourceFormat: "iges", contentHash: "sha256:iges" },
+      { id: "asset-3", kind: "model", projectId: "project-golden", sourceName: "fixture.obj", sourceFormat: "obj", contentHash: "sha256:obj" },
+    ];
     application.timelines = [{ id: "timeline-1", name: "施工进度", duration: 120, trackIds: ["track-1"] }];
 
     expect(() => assertApplicationDocument(application)).not.toThrow();
@@ -538,3 +554,19 @@ describe("assertApplicationDocument", () => {
     expect(() => assertApplicationDocument(valueFactory())).toThrow();
   });
 });
+
+function scriptDependency(overrides: Partial<NonNullable<ApplicationDocument["scriptDependencies"]>[number]> = {}) {
+  return {
+    id: "dependency-1",
+    specifier: "@plant/math",
+    source: "npm" as const,
+    requested: "@plant/math@1.2.3",
+    resolvedVersion: "1.2.3",
+    fileName: "plant-math-1.2.3.mjs",
+    assetUrl: "/api/projects/project-1/script-dependencies/dependency-1/content",
+    integrity: "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+    size: 24,
+    installedAt: "2026-09-04T00:00:00.000Z",
+    ...overrides,
+  };
+}

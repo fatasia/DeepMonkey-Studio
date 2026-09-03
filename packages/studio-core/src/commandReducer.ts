@@ -130,6 +130,18 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
         ...document,
         scripts: document.scripts.filter((script) => script.id !== command.payload.scriptId)
       };
+    case "script.modules.replace":
+      return {
+        ...document,
+        // pull 采用单条命令整体替换，撤销和保存失败回滚都不会留下半套脚本。
+        scripts: command.payload.scripts.map((script) => structuredClone(script))
+      };
+    case "script.dependencies.replace":
+      return {
+        ...document,
+        // 命令载荷只读，文档字段可变；逐项克隆避免把命令快照暴露给后续编辑。
+        scriptDependencies: command.payload.dependencies.map((dependency) => structuredClone(dependency))
+      };
     case "topology.upsert": {
       const topology = structuredClone(command.payload.topology);
       const exists = document.topologies.some((candidate) => candidate.id === topology.id);
@@ -269,4 +281,3 @@ function applyNodeState(node: WidgetNode, state: DashboardNodeStatePatch): Widge
   if (state.groupName === null) delete next.groupName;
   return next as WidgetNode;
 }
-

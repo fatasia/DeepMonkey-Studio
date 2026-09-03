@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ListChecks,
-  LoaderCircle,
-  Play,
-  Plus,
-} from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import type {
   IndustrialDiagnosisValidationDraft,
   IndustrialValidationStudyRecord,
@@ -24,7 +18,6 @@ import {
   parseSignalValue,
   virtualDebugObjectOptions,
 } from "./virtualCommissioningModel";
-import { BindingRow, NumberField } from "./VirtualCommissioningControls";
 import {
   createVirtualDebugBinding,
   defaultVirtualDebugBindings,
@@ -33,12 +26,14 @@ import {
   validationDraftFromStudy,
   VIRTUAL_DEBUG_SIGNALS,
 } from "./virtualCommissioningDraft";
-import { VirtualCommissioningEvidence } from "./VirtualCommissioningEvidence";
-import { VirtualCommissioningSuiteEvidence } from "./VirtualCommissioningSuiteEvidence";
 import { WorkcellAuditPanel } from "./WorkcellAuditPanel";
-import { VirtualCommissioningTestDesignPanel } from "./VirtualCommissioningTestDesignPanel";
-import { RobotWorkcellAssistantPanel, type RobotTaskDraft } from "./RobotWorkcellAssistantPanel";
-import { buildIndustrialStudyContext } from "./industrialStudyFingerprints";
+import { RobotWorkcellAssistantPanel } from "./RobotWorkcellAssistantPanel";
+import type { RobotWorkcellAssistantInput, RobotWorkcellAssistantResult } from "./robotWorkcellAssistantTypes";
+import { buildRobotWorkcellStudyInput, matchingRobotWorkcellStudy } from "./robotWorkcellStudy";
+import { preferredUsableScene } from "./sceneOptionPresentation";
+import { VirtualCommissioningControlStage } from "./VirtualCommissioningControlStage";
+import { VirtualCommissioningResultStage } from "./VirtualCommissioningResultStage";
+import { VirtualCommissioningWorkflowHeader, type CommissioningWorkflowStage } from "./VirtualCommissioningWorkflowHeader";
 import { buildVirtualCommissioningStudyInput, matchingVirtualCommissioningStudy } from "./virtualCommissioningStudy";
 import { matchingWorkcellStudy } from "./workcellAuditStudy";
 import "./VirtualCommissioningWorkbench.css";
@@ -62,10 +57,15 @@ export function VirtualCommissioningWorkbench({
   onStudyChange,
   onOpenTarget,
 }: Props) {
-  const [sceneId, setSceneId] = useState(scenes[0]?.id ?? "");
-  const scene = useMemo(() => scenes.find((item) => item.id === sceneId) ?? scenes[0], [sceneId, scenes]);
+  const initialScene = scenes.find((candidate) => candidate.id === initialStudy?.sceneId) ?? preferredUsableScene(scenes);
+  const [sceneId, setSceneId] = useState(initialScene?.id ?? "");
+  const scene = useMemo(() => scenes.find((item) => item.id === sceneId) ?? preferredUsableScene(scenes), [sceneId, scenes]);
+  const robotOptions = useMemo(() => scene?.models.filter((model) => model.rig?.robot?.enabled) ?? [], [scene]);
+  const [robotModelId, setRobotModelId] = useState(() => initialRobotId(initialScene, initialStudy));
+  const [selectionConfirmed, setSelectionConfirmed] = useState(Boolean(initialDraft || initialStudy));
+  const [workflowStage, setWorkflowStage] = useState<CommissioningWorkflowStage>("screening");
   const objects = useMemo(() => virtualDebugObjectOptions(scene), [scene]);
-  const [bindings, setBindings] = useState<VirtualDebugSignalBinding[]>(() => defaultVirtualDebugBindings(scenes[0]));
+  const [bindings, setBindings] = useState<VirtualDebugSignalBinding[]>(() => defaultVirtualDebugBindings(preferredUsableScene(scenes)));
   const [durationMs, setDurationMs] = useState(1_000);
   const [tickMs, setTickMs] = useState(50);
   const [faultEnabled, setFaultEnabled] = useState(true);
@@ -83,19 +83,37 @@ export function VirtualCommissioningWorkbench({
   const [error, setError] = useState("");
   const [appliedDraft, setAppliedDraft] = useState<IndustrialDiagnosisValidationDraft>();
   const [activeStudy, setActiveStudy] = useState(initialStudy);
+  const [robotScreening, setRobotScreening] = useState<RobotWorkcellAssistantResult>();
   const activeVirtualStudy = matchingVirtualCommissioningStudy(activeStudy);
   const currentVirtualStudy = activeVirtualStudy?.sceneId === scene?.id
     ? activeVirtualStudy
     : studies.find((study) => matchingVirtualCommissioningStudy(study)?.sceneId === scene?.id);
-  const currentWorkcellStudy = (scene ? matchingWorkcellStudy(activeStudy, scene.id) : undefined)
-    ?? (scene ? studies.find((study) => matchingWorkcellStudy(study, scene.id)) : undefined);
+  const currentRobotStudy = scene && robotModelId
+    ? matchingRobotWorkcellStudy(activeStudy, scene.id, robotModelId)
+      ?? studies.find((study) => matchingRobotWorkcellStudy(study, scene.id, robotModelId))
+    : undefined;
+  const currentWorkcellStudy = scene
+    ? genericWorkcellStudy(activeStudy, scene.id)
+      ?? studies.find((study) => genericWorkcellStudy(study, scene.id))
+    : undefined;
   const result = invocation?.output;
+  useEffect(() => {
+    const fallback = preferredUsableScene(scenes);
+    if (scenes.some((item) => item.id === sceneId) || !fallback) return;
+    setSceneId(fallback.id);
+    setBindings(defaultVirtualDebugBindings(fallback));
+    setSelectionConfirmed(false);
+    setWorkflowStage("screening");
+    setInvocation(undefined);
+    setSuiteInvocation(undefined);
+    setRobotScreening(undefined);
+    setPlayheadMs(0);
+  }, [sceneId, scenes]);
 
   useEffect(() => {
-    if (scene || !scenes[0]) return;
-    setSceneId(scenes[0].id);
-    setBindings(defaultVirtualDebugBindings(scenes[0]));
-  }, [scene, scenes]);
+    if (!robotModelId || robotOptions.some((robot) => robot.modelId === robotModelId)) return;
+    setRobotModelId(robotOptions[0]?.modelId ?? "");
+  }, [robotModelId, robotOptions]);
 
   useEffect(() => {
     const virtualStudy = matchingVirtualCommissioningStudy(initialStudy);
@@ -107,12 +125,18 @@ export function VirtualCommissioningWorkbench({
       if (workcellScene) {
         setSceneId(workcellScene.id);
         setBindings(defaultVirtualDebugBindings(workcellScene));
+        const robotStudy = matchingRobotWorkcellStudy(initialStudy, workcellScene.id);
+        const studiedRobot = robotStudy
+          ? workcellScene.models.find((model) => model.rig?.robot?.enabled && robotStudy.objectIds.includes(model.modelId))
+          : undefined;
+        setRobotModelId(studiedRobot?.modelId ?? "");
+        setSelectionConfirmed(true);
       }
       if (initialStudy) setAppliedDraft(undefined);
       return;
     }
     if (appliedDraft?.sourceAssessmentId === draft.sourceAssessmentId) return;
-    const targetScene = scenes.find((item) => item.id === draft.sceneId) ?? scenes[0];
+    const targetScene = scenes.find((item) => item.id === draft.sceneId) ?? preferredUsableScene(scenes);
     const targetObjects = virtualDebugObjectOptions(targetScene);
     const targetObject = targetObjects.find((item) => item.id === draft.objectId) ?? targetObjects[0];
     if (!targetScene || !targetObject) {
@@ -132,6 +156,7 @@ export function VirtualCommissioningWorkbench({
     setInvocation(undefined);
     setPlayheadMs(0);
     setAppliedDraft(draft);
+    setSelectionConfirmed(true);
   }, [appliedDraft?.sourceAssessmentId, initialDraft, initialStudy, scenes]);
 
   useEffect(() => {
@@ -139,16 +164,42 @@ export function VirtualCommissioningWorkbench({
       ? initialStudy
       : current);
   }, [initialStudy]);
-
   function changeScene(nextSceneId: string) {
     const nextScene = scenes.find((item) => item.id === nextSceneId);
     setSceneId(nextSceneId);
+    setRobotModelId(nextScene?.models.find((model) => model.rig?.robot?.enabled)?.modelId ?? "");
+    setSelectionConfirmed(false);
+    setWorkflowStage("screening");
     setBindings(defaultVirtualDebugBindings(nextScene));
+    setInvocation(undefined);
+    setSuiteInvocation(undefined);
+    setRobotScreening(undefined);
+    setPlayheadMs(0);
+  }
+  function changeRobot(nextRobotId: string) {
+    setRobotModelId(nextRobotId);
+    setSelectionConfirmed(false);
+    const target = objects.find((item) => item.id === nextRobotId) ?? objects[0];
+    if (scene && target) {
+      setBindings([
+        createVirtualDebugBinding(1, "motorRunning", scene.id, target.id, target.kind),
+        createVirtualDebugBinding(2, "alarm", scene.id, target.id, target.kind),
+      ]);
+    }
+    setWorkflowStage("screening");
+    setRobotScreening(undefined);
     setInvocation(undefined);
     setSuiteInvocation(undefined);
     setPlayheadMs(0);
   }
-
+  function confirmSelection() {
+    setWorkflowStage("screening");
+    setSelectionConfirmed(true);
+  }
+  function acceptStudy(study: IndustrialValidationStudyRecord) {
+    setActiveStudy(study);
+    onStudyChange?.(study);
+  }
   async function runScenario() {
     setBusy(true);
     setError("");
@@ -180,13 +231,13 @@ export function VirtualCommissioningWorkbench({
         evidenceFingerprint: response.output.evidenceFingerprint,
         failureCount: response.output.failures.length,
       }, scenario, "simulation.virtual-debug.run");
+      setWorkflowStage("result");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
     }
   }
-
   async function runGoldenSuite() {
     setBusy(true);
     setError("");
@@ -211,6 +262,7 @@ export function VirtualCommissioningWorkbench({
         evidenceFingerprint: response.output.evidenceFingerprint,
         failureCount: response.output.totalCases - response.output.matchedCases,
       }, suite, "simulation.virtual-debug.run-suite");
+      setWorkflowStage("result");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -243,22 +295,33 @@ export function VirtualCommissioningWorkbench({
     return response.output;
   }
 
-  async function saveRobotTaskDraft(draft: RobotTaskDraft) {
+  async function saveRobotScreening(input: RobotWorkcellAssistantInput, result: RobotWorkcellAssistantResult) {
     if (!scene) return;
-    const saved = await api.saveValidationStudy(projectId, {
-      title: `机器人任务复核：${draft.name}`,
-      sourceKind: "workcell-audit",
-      studyType: "workcell-audit",
-      sourceRefs: [draft.id],
-      sceneId: scene.id,
-      objectIds: [...new Set(draft.steps.map((step) => step.targetId))],
-      objective: "完成机器人任务、可达性、碰撞、节拍与安全复核后再生成控制器程序",
-      acceptanceCriteria: draft.steps.map((step) => `${step.label}：通过正式仿真与人工确认`),
-      scenarioInput: structuredClone(draft) as unknown as NonNullable<IndustrialValidationStudyRecord["scenarioInput"]>,
-      context: buildIndustrialStudyContext(scene, "manufacturing.robot-task-draft", "1.0.0"),
+    const saved = await api.saveValidationStudy(projectId, buildRobotWorkcellStudyInput({
+      scene,
+      input,
+      result,
+      ...(currentRobotStudy ? { existing: currentRobotStudy } : {}),
+    }));
+    setRobotScreening(result);
+    acceptStudy(saved);
+  }
+
+  function continueRobotValidation(result: RobotWorkcellAssistantResult) {
+    setRobotScreening(result);
+    const robot = objects.find((item) => item.id === result.taskDraft.robotId);
+    if (scene && robot && bindings.length === 0) {
+      setBindings([
+        createVirtualDebugBinding(1, "motorRunning", scene.id, robot.id, robot.kind),
+        createVirtualDebugBinding(2, "alarm", scene.id, robot.id, robot.kind),
+      ]);
+    }
+    setWorkflowStage("control");
+    requestAnimationFrame(() => {
+      const stage = document.getElementById("commissioning-control-validation");
+      stage?.scrollIntoView({ behavior: "smooth", block: "start" });
+      stage?.focus({ preventScroll: true });
     });
-    setActiveStudy(saved);
-    onStudyChange?.(saved);
   }
 
   function inspectSuiteCase(
@@ -310,7 +373,7 @@ export function VirtualCommissioningWorkbench({
       traceId: invocation.traceId,
       decisionStatus: invocation.decisionStatus,
       evidence: invocation.evidence,
-      ...(initialStudy ? { validationStudy: { id: initialStudy.id, revision: initialStudy.revision } } : {}),
+      ...(currentVirtualStudy ? { validationStudy: { id: currentVirtualStudy.id, revision: currentVirtualStudy.revision } } : {}),
       result,
     });
   }
@@ -328,51 +391,23 @@ export function VirtualCommissioningWorkbench({
     });
   }
 
+  const quickScreenDone = robotModelId ? Boolean(robotScreening || currentRobotStudy?.latestResult) : Boolean(currentWorkcellStudy?.latestResult);
+  const quickScreenHasIssues = robotModelId
+    ? robotScreening ? robotScreening.status !== "ready-for-control-validation" : currentRobotStudy?.latestResult?.status === "failed"
+    : currentWorkcellStudy?.latestResult?.status === "failed";
+  const controlRunDone = Boolean(result || suiteInvocation?.output);
+  const controlStudySaved = Boolean(currentVirtualStudy?.latestResult || controlRunDone);
+  const controlHasIssues = (suiteInvocation?.output?.status ?? result?.status ?? currentVirtualStudy?.latestResult?.status) === "failed";
+
   return (
     <section className="commissioning-workbench">
-      <header className="commissioning-titlebar">
-        <div>
-          <span>VIRTUAL ACCEPTANCE</span>
-          <h2>控制逻辑虚拟验收</h2>
-          <p>映射现有三维设备，注入故障并回放 I/O；不复制场景、不连接真实控制器。</p>
-        </div>
-        <div className="commissioning-title-actions">
-          <button
-            className="commissioning-suite-run"
-            disabled={busy || !scene || objects.length === 0}
-            onClick={() => void runGoldenSuite()}
-          >
-            <ListChecks size={16} />
-            运行黄金矩阵
-          </button>
-          <button
-            className="commissioning-run"
-            disabled={busy || !scene || objects.length === 0}
-            onClick={() => void runScenario()}
-          >
-            {busy ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}
-            运行当前场景
-          </button>
-        </div>
-      </header>
-
-      <div className="commissioning-steps" aria-label="虚拟调试流程">
-        <span className="active">
-          <b>1</b>
-          <i>映射 I/O</i>
-          <small>控制信号关联场景设备</small>
-        </span>
-        <span className={result ? "active" : ""}>
-          <b>2</b>
-          <i>故障回放</i>
-          <small>确定性命令、联锁与复位</small>
-        </span>
-        <span className={result ? "active" : ""}>
-          <b>3</b>
-          <i>验收留证</i>
-          <small>断言、定位与证据指纹</small>
-        </span>
-      </div>
+      <VirtualCommissioningWorkflowHeader
+        scenes={scenes} sceneId={scene?.id ?? ""} robotOptions={robotOptions} robotModelId={robotModelId}
+        selectionConfirmed={selectionConfirmed} stage={workflowStage}
+        quickScreenDone={quickScreenDone} quickScreenHasIssues={quickScreenHasIssues}
+        controlRunDone={controlRunDone} controlHasIssues={controlHasIssues} controlStudySaved={controlStudySaved}
+        onSceneChange={changeScene} onRobotChange={changeRobot} onConfirm={confirmSelection} onStageChange={setWorkflowStage}
+      />
 
       {appliedDraft && (
         <aside className="commissioning-ai-draft">
@@ -394,153 +429,65 @@ export function VirtualCommissioningWorkbench({
         <div className="commissioning-error">
           <AlertTriangle size={15} />
           {error}
-          <button onClick={() => setError("")}>×</button>
+          <button type="button" onClick={() => setError("")}>×</button>
         </div>
       )}
-      {scene && (
-        <VirtualCommissioningTestDesignPanel
-          sceneId={scene.id}
-          bindings={bindings}
-          durationMs={durationMs}
-          tickMs={tickMs}
-          speedSetpoint={speedSetpoint}
-        />
-      )}
-      <VirtualCommissioningSuiteEvidence
-        result={suiteInvocation?.output}
-        previousResult={currentVirtualStudy?.latestResult}
-        onInspect={inspectSuiteCase}
-        onExport={exportSuiteEvidence}
-      />
-      {scene && <WorkcellAuditPanel
-        projectId={projectId}
-        scene={scene}
-        {...(currentWorkcellStudy ? { study: currentWorkcellStudy } : {})}
-        {...(onStudyChange ? { onStudyChange } : {})}
-        onOpenTarget={onOpenTarget}
-      />}
-      {scene?.models.some((model) => model.rig?.robot?.enabled) && (
+      {selectionConfirmed && scene && workflowStage === "screening" && (robotModelId ? (
         <RobotWorkcellAssistantPanel
           projectId={projectId}
           scene={scene}
+          robotModelId={robotModelId}
           runWorkcellAudit={(_panelProjectId, input) => runRobotWorkcellAudit(input)}
-          onSaveDraft={saveRobotTaskDraft}
-          onOpenFormalSimulation={() => document.getElementById("commissioning-formal-simulation")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          onSaveStudy={saveRobotScreening}
+          onContinueValidation={continueRobotValidation}
+          onOpenTarget={onOpenTarget}
         />
-      )}
+      ) : <WorkcellAuditPanel
+        projectId={projectId}
+        scene={scene}
+        {...(currentWorkcellStudy ? { study: currentWorkcellStudy } : {})}
+        onStudyChange={acceptStudy}
+        onAuditComplete={(auditResult) => { if (auditResult.status === "passed") setWorkflowStage("control"); }}
+        onContinueValidation={() => setWorkflowStage("control")}
+        onOpenTarget={onOpenTarget}
+      />)}
       {!scenes.length ? (
         <div className="commissioning-empty">
           <strong>没有可调试场景</strong>
           <span>先在三维工作区创建场景和设备，再回来配置控制信号。</span>
         </div>
-      ) : (
-        <div id="commissioning-formal-simulation" className="commissioning-layout">
-          <section className="commissioning-config">
-            <fieldset>
-              <legend>验收对象</legend>
-              <label>
-                <span>三维场景</span>
-                <select value={scene?.id ?? ""} onChange={(event) => changeScene(event.target.value)}>
-                  {scenes.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="commissioning-field-grid">
-                <NumberField label="仿真时长 ms" value={durationMs} min={100} step={50} onChange={setDurationMs} />
-                <NumberField label="采样周期 ms" value={tickMs} min={10} step={10} onChange={setTickMs} />
-                <NumberField label="速度设定" value={speedSetpoint} min={0} step={100} onChange={setSpeedSetpoint} />
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend>故障与复位</legend>
-              <div className="commissioning-switch-row">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={faultEnabled}
-                    onChange={(event) => setFaultEnabled(event.target.checked)}
-                  />
-                  注入设备联锁故障
-                </label>
-                {faultEnabled && (
-                  <NumberField label="故障时间 ms" value={faultAtMs} min={0} step={tickMs} onChange={setFaultAtMs} />
-                )}
-              </div>
-              <div className="commissioning-switch-row">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={resetEnabled}
-                    onChange={(event) => setResetEnabled(event.target.checked)}
-                  />
-                  执行人工复位
-                </label>
-                {resetEnabled && (
-                  <NumberField label="复位时间 ms" value={resetAtMs} min={0} step={tickMs} onChange={setResetAtMs} />
-                )}
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend className="commissioning-legend-row">
-                <span>控制信号映射</span>
-                <button type="button" onClick={addBinding}>
-                  <Plus size={13} />
-                  添加信号
-                </button>
-              </legend>
-              <div className="commissioning-bindings">
-                {bindings.map((binding) => (
-                  <BindingRow
-                    key={binding.id}
-                    binding={binding}
-                    objects={objects}
-                    onChange={(patch) => updateBinding(binding.id, patch)}
-                    onRemove={() => setBindings((current) => current.filter((item) => item.id !== binding.id))}
-                  />
-                ))}
-              </div>
-              {!bindings.length && (
-                <div className="commissioning-inline-empty">尚未配置映射，验收失败时将无法定位三维设备。</div>
-              )}
-            </fieldset>
-
-            <fieldset>
-              <legend>验收断言</legend>
-              <div className="commissioning-assertion">
-                <span>在</span>
-                <input
-                  type="number"
-                  min="0"
-                  step={tickMs}
-                  value={acceptanceAtMs}
-                  onChange={(event) => setAcceptanceAtMs(Number(event.target.value))}
-                />
-                <span>ms，信号</span>
-                <select value={acceptanceSignal} onChange={(event) => setAcceptanceSignal(event.target.value)}>
-                  {VIRTUAL_DEBUG_SIGNALS.map((item) => (
-                    <option key={item}>{item}</option>
-                  ))}
-                </select>
-                <span>应等于</span>
-                <input value={acceptanceText} onChange={(event) => setAcceptanceText(event.target.value)} />
-              </div>
-            </fieldset>
-          </section>
-
-          <VirtualCommissioningEvidence
-            invocation={invocation}
-            playheadMs={playheadMs}
-            onPlayheadChange={setPlayheadMs}
-            onExport={exportEvidence}
-            onOpenTarget={onOpenTarget}
-          />
-        </div>
-      )}
+      ) : selectionConfirmed && scene && workflowStage === "control" ? (
+        <VirtualCommissioningControlStage
+          scene={scene} objects={objects} bindings={bindings}
+          durationMs={durationMs} tickMs={tickMs} speedSetpoint={speedSetpoint}
+          faultEnabled={faultEnabled} faultAtMs={faultAtMs} resetEnabled={resetEnabled} resetAtMs={resetAtMs}
+          acceptanceAtMs={acceptanceAtMs} acceptanceSignal={acceptanceSignal} acceptanceText={acceptanceText}
+          busy={busy} onRunScenario={() => void runScenario()} onRunSuite={() => void runGoldenSuite()}
+          onDurationChange={setDurationMs} onTickChange={setTickMs} onSpeedChange={setSpeedSetpoint}
+          onFaultEnabledChange={setFaultEnabled} onFaultAtChange={setFaultAtMs}
+          onResetEnabledChange={setResetEnabled} onResetAtChange={setResetAtMs}
+          onAcceptanceAtChange={setAcceptanceAtMs} onAcceptanceSignalChange={setAcceptanceSignal} onAcceptanceTextChange={setAcceptanceText}
+          onAddBinding={addBinding} onBindingChange={updateBinding}
+          onBindingRemove={(id) => setBindings((current) => current.filter((item) => item.id !== id))}
+        />
+      ) : selectionConfirmed && workflowStage === "result" ? <VirtualCommissioningResultStage
+        invocation={invocation} suiteResult={suiteInvocation?.output} previousResult={currentVirtualStudy?.latestResult}
+        playheadMs={playheadMs} onInspectSuiteCase={inspectSuiteCase} onExportSuite={exportSuiteEvidence}
+        onPlayheadChange={setPlayheadMs} onExportEvidence={exportEvidence} onOpenTarget={onOpenTarget}
+        onEditCase={() => setWorkflowStage("control")} onCheckTask={() => setWorkflowStage("screening")}
+      /> : null}
     </section>
   );
+}
+
+function genericWorkcellStudy(study: IndustrialValidationStudyRecord | undefined, sceneId: string) {
+  const matching = matchingWorkcellStudy(study, sceneId);
+  return matching && !matchingRobotWorkcellStudy(matching, sceneId) ? matching : undefined;
+}
+
+function initialRobotId(scene: SceneSnapshot | undefined, study: IndustrialValidationStudyRecord | undefined) {
+  if (!scene) return "";
+  const robotStudy = matchingRobotWorkcellStudy(study, scene.id);
+  if (study?.sourceKind === "workcell-audit" && !robotStudy) return "";
+  return scene.models.find((model) => model.rig?.robot?.enabled && (!robotStudy || robotStudy.objectIds.includes(model.modelId)))?.modelId ?? "";
 }

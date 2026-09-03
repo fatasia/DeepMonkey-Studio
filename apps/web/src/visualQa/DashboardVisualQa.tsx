@@ -14,11 +14,15 @@ const initialApplication: ApplicationDocument = {
     height: 1080,
     viewportFit: "contain",
     nodes: [
-      { id: "widget:title", kind: "data-widget", frame: { x: 64, y: 52, width: 720, height: 100 }, zIndex: 1, widget: { type: "text", title: "标题", key: "", unit: "", content: "智能制造 · 实时运营总览", fontSize: 38, fontWeight: 700, textColor: "#f2e7cb", backgroundOpacity: 0 } },
-      { id: "widget:throughput", kind: "data-widget", frame: { x: 64, y: 190, width: 420, height: 210 }, zIndex: 2, widget: { type: "value", title: "今日产量", key: "throughput", unit: "件", color: "#d4a84f" } },
-      { id: "widget:cycle", kind: "data-widget", frame: { x: 516, y: 190, width: 420, height: 210 }, zIndex: 3, widget: { type: "gauge", title: "平均节拍", key: "cycle", unit: "秒", min: 0, max: 120, color: "#68b7a4" } },
-      { id: "widget:trend", kind: "data-widget", frame: { x: 64, y: 438, width: 872, height: 470 }, zIndex: 4, widget: { type: "line", title: "产线趋势", key: "trend", unit: "件", color: "#d4a84f" } },
-      { id: "widget:overflow", kind: "data-widget", frame: { x: 3740, y: 920, width: 240, height: 120 }, zIndex: 5, widget: { type: "status", title: "越界诊断样例", key: "status", unit: "" } }
+      { id: "widget:title", kind: "data-widget", frame: { x: 80, y: 46, width: 3680, height: 92 }, zIndex: 1, widget: { type: "text", title: "标题", key: "", unit: "", content: "智能制造 · 实时运营总览", fontSize: 40, fontWeight: 700, textColor: "#e6ecef", backgroundOpacity: 0 } },
+      { id: "widget:throughput", kind: "data-widget", frame: { x: 80, y: 166, width: 896, height: 246 }, zIndex: 2, widget: { type: "value", title: "今日产量", key: "throughput", unit: "件", color: "#3ec6c1" } },
+      { id: "widget:cycle", kind: "data-widget", frame: { x: 1008, y: 166, width: 896, height: 246 }, zIndex: 3, widget: { type: "gauge", title: "平均节拍", key: "cycle", unit: "秒", min: 0, max: 120, color: "#59c58d" } },
+      { id: "widget:oee", kind: "data-widget", frame: { x: 1936, y: 166, width: 896, height: 246 }, zIndex: 4, widget: { type: "progress", title: "综合设备效率", key: "oee", unit: "%", min: 0, max: 100, color: "#65aee8" } },
+      { id: "widget:alerts", kind: "data-widget", frame: { x: 2864, y: 166, width: 896, height: 246 }, zIndex: 5, widget: { type: "status", title: "产线状态", key: "status", unit: "", color: "#d8ac52" } },
+      { id: "widget:trend", kind: "data-widget", frame: { x: 80, y: 444, width: 2360, height: 526 }, zIndex: 6, widget: { type: "line", title: "产量与节拍趋势", key: "trend", unit: "件", color: "#3ec6c1" } },
+      { id: "widget:energy", kind: "data-widget", frame: { x: 2472, y: 444, width: 1288, height: 246 }, zIndex: 7, widget: { type: "bar", title: "工序能耗", key: "energy", unit: "kWh", color: "#65aee8" } },
+      { id: "widget:quality", kind: "data-widget", frame: { x: 2472, y: 722, width: 1288, height: 248 }, zIndex: 8, widget: { type: "table", title: "质量与异常明细", key: "quality", unit: "", color: "#59c58d" } },
+      { id: "widget:overflow", kind: "data-widget", frame: { x: 3740, y: 936, width: 180, height: 94 }, zIndex: 9, widget: { type: "status", title: "越界诊断样例", key: "status", unit: "" } }
     ]
   }],
   topologies: [], scenes: [], geo: { providerIds: [], layers: [] },
@@ -47,7 +51,7 @@ export default function DashboardVisualQa() {
     busy={false}
     liveDataEnabled={false}
     selection={selection}
-    variables={{ throughput: 18640, cycle: 72, status: "warning" }}
+    variables={{ throughput: 18640, cycle: 72, oee: 86.4, status: "warning", energy: 318, quality: 98.7 }}
     filters={{}}
     onBack={() => undefined}
     onSelectPage={() => undefined}

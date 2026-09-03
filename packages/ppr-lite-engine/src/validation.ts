@@ -1,12 +1,16 @@
 import type {
   PprBopVersion,
   PprComponent,
+  PprExternalReference,
   PprOperation,
   PprOperationResourceAssignment,
   PprPrecedenceRelation,
   PprResource,
+  PprWorkInstructionQualityCheck,
+  PprWorkInstructionVisualReference,
 } from "@bim-studio/contracts";
 import type { PprIssue, PprIssueSeverity, PprValidatedVersion } from "./types.js";
+import { pprQualityControlGaps, type PprQualityControlGap } from "./qualityControls.js";
 
 export function validatePprBopVersion(version: PprBopVersion): PprValidatedVersion {
   const issues: PprIssue[] = [];
@@ -16,7 +20,7 @@ export function validatePprBopVersion(version: PprBopVersion): PprValidatedVersi
 
   validateVersion(version, issues);
   version.components.forEach((component) => validateComponent(component, components, issues));
-  version.operations.forEach((operation) => validateOperation(operation, components, issues));
+  version.operations.forEach((operation) => validateOperation(operation, components, version.references, issues));
   version.resources.forEach((resource) => validateResource(resource, issues));
 
   const relations = validateRelations(version.precedenceRelations, operations, issues);
@@ -33,6 +37,9 @@ function validateVersion(version: PprBopVersion, issues: PprIssue[]): void {
   }
   if (!isIsoDate(version.createdAt)) {
     addIssue(issues, "invalid-created-at", "error", "version", version.id, "createdAt 必须是有效 ISO 日期时间。");
+  }
+  if (version.targetTaktMinutes !== undefined && !isPositive(version.targetTaktMinutes)) {
+    addIssue(issues, "invalid-target-takt", "error", "version", version.id, "目标节拍必须是正有限分钟数。");
   }
   validateVariants(version.variantIds, "version", version.id, issues);
   validateCondition(version.condition, "version", version.id, issues);
@@ -54,7 +61,12 @@ function validateComponent(component: PprComponent, components: Map<string, PprC
   validateReferences(component.references, "component", component.id, issues);
 }
 
-function validateOperation(operation: PprOperation, components: Map<string, PprComponent>, issues: PprIssue[]): void {
+function validateOperation(
+  operation: PprOperation,
+  components: Map<string, PprComponent>,
+  planReferences: PprExternalReference[] | undefined,
+  issues: PprIssue[],
+): void {
   if (!hasText(operation.name)) {
     addIssue(issues, "invalid-operation", "error", "operation", operation.id, "工序名称不能为空。");
   }
@@ -84,6 +96,198 @@ function validateOperation(operation: PprOperation, components: Map<string, PprC
   validateVariants(operation.variantIds, "operation", operation.id, issues);
   validateCondition(operation.condition, "operation", operation.id, issues);
   validateReferences(operation.references, "operation", operation.id, issues);
+  validateWorkInstruction(operation, planReferences, issues);
+}
+
+function validateWorkInstruction(
+  operation: PprOperation,
+  planReferences: PprExternalReference[] | undefined,
+  issues: PprIssue[],
+): void {
+  const instruction = operation.workInstruction;
+  if (!instruction) {
+    addIssue(issues, "missing-quality-control", "warning", "operation", operation.id, "工序尚未定义质量控制点，计划不能标记为质量就绪。");
+    return;
+  }
+
+  if (!Array.isArray(instruction.steps) || instruction.steps.length === 0) {
+    addIssue(issues, "missing-work-instruction-step", "error", "operation", operation.id, "电子作业指导书至少需要一个操作步骤。");
+  } else {
+    validateInstructionItems(instruction.steps, ["instruction"], "操作步骤", operation.id, issues);
+  }
+  validateInstructionItems(instruction.safetyNotes, ["note"], "安全注意", operation.id, issues);
+  validateQualityControls(instruction.qualityChecks, operation.id, issues);
+
+  const visualReferences = instruction.visualReferences;
+  validateReferences(visualReferences, "operation", operation.id, issues);
+  const availableReferences = new Set(
+    [...(planReferences ?? []), ...(operation.references ?? [])]
+      .filter(isVisualReference)
+      .map(referenceKey),
+  );
+  visualReferences?.forEach((reference) => {
+    if (!isVisualReference(reference)) {
+      addIssue(issues, "invalid-work-instruction-visual-reference", "error", "operation", operation.id, "作业指导书视觉上下文只支持 scene 或 object ID。");
+      return;
+    }
+    if (!availableReferences.has(referenceKey(reference))) {
+      addIssue(issues, "unlinked-work-instruction-visual-reference", "warning", "operation", operation.id, `视觉上下文 ${reference.kind}:${reference.id} 未在计划或工序引用中登记。`);
+    }
+  });
+}
+
+function validateQualityControls(
+  checks: unknown,
+  operationId: string,
+  issues: PprIssue[],
+): void {
+  if (!Array.isArray(checks)) {
+    addIssue(issues, "invalid-work-instruction-structure", "error", "operation", operationId, "质量控制点必须是列表。");
+    return;
+  }
+  if (checks.length === 0) {
+    addIssue(issues, "missing-quality-control", "warning", "operation", operationId, "工序尚未定义质量控制点，计划不能标记为质量就绪。");
+    return;
+  }
+
+  const ids = new Set<string>();
+  checks.forEach((value) => {
+    if (!isRecord(value) || !hasText(value.id) || ids.has(value.id)) {
+      addIssue(issues, "invalid-quality-control", "error", "operation", operationId, "质量控制点 ID 必须非空且不重复。");
+      return;
+    }
+    ids.add(value.id);
+    const check = value as unknown as PprWorkInstructionQualityCheck;
+    if (!hasText(check.checkpoint)) {
+      addIssue(issues, "invalid-quality-control", "error", "operation", operationId, `质量控制点 ${check.id} 的特性名称不能为空。`);
+    }
+    validateQualitySpecification(check, operationId, issues);
+    validateQualitySampling(check, operationId, issues);
+    if (check.inspectionMethod !== undefined && !hasText(check.inspectionMethod)) {
+      addIssue(issues, "invalid-quality-control-method", "error", "operation", operationId, `质量控制点 ${check.id} 的检测方法不能为空。`);
+    }
+    if (check.outOfControlReaction !== undefined && !hasText(check.outOfControlReaction)) {
+      addIssue(issues, "invalid-quality-control-reaction", "error", "operation", operationId, `质量控制点 ${check.id} 的失控反应不能为空。`);
+    }
+    const gaps = pprQualityControlGaps(check);
+    if (gaps.length) {
+      addIssue(issues, "incomplete-quality-control", "warning", "operation", operationId, `质量控制点 ${check.checkpoint.trim() || check.id} 仍缺少：${gaps.map(qualityGapLabel).join("、")}。`);
+    }
+  });
+}
+
+function validateQualitySpecification(
+  check: PprWorkInstructionQualityCheck,
+  operationId: string,
+  issues: PprIssue[],
+): void {
+  const hasLimits = check.lowerLimit !== undefined || check.upperLimit !== undefined;
+  const hasTolerance = check.tolerance !== undefined;
+  if (!check.specificationKind) {
+    if (hasLimits || hasTolerance || check.targetValue !== undefined) {
+      addIssue(issues, "invalid-quality-specification", "error", "operation", operationId, `质量控制点 ${check.id} 有数值规格但未声明上下限或公差模式。`);
+    }
+    return;
+  }
+  if (check.unit !== undefined && !hasText(check.unit)) {
+    addIssue(issues, "invalid-quality-specification", "error", "operation", operationId, `质量控制点 ${check.id} 的单位不能为空。`);
+  }
+  if (check.specificationKind === "limits") {
+    if (!isFiniteNumber(check.lowerLimit) || !isFiniteNumber(check.upperLimit) || check.lowerLimit > check.upperLimit) {
+      addIssue(issues, "invalid-quality-limits", "error", "operation", operationId, `质量控制点 ${check.id} 的下限必须小于或等于上限。`);
+      return;
+    }
+    if (hasTolerance) {
+      addIssue(issues, "invalid-quality-specification", "error", "operation", operationId, `质量控制点 ${check.id} 不能同时使用上下限和公差。`);
+    }
+    if (check.targetValue !== undefined && (!isFiniteNumber(check.targetValue) || check.targetValue < check.lowerLimit || check.targetValue > check.upperLimit)) {
+      addIssue(issues, "invalid-quality-target", "error", "operation", operationId, `质量控制点 ${check.id} 的目标值必须位于上下限之间。`);
+    }
+    return;
+  }
+  if (check.specificationKind === "tolerance") {
+    if (!isFiniteNumber(check.targetValue) || !isFiniteNumber(check.tolerance) || check.tolerance <= 0) {
+      addIssue(issues, "invalid-quality-tolerance", "error", "operation", operationId, `质量控制点 ${check.id} 的目标值必须有限且公差必须大于 0。`);
+    }
+    if (hasLimits) {
+      addIssue(issues, "invalid-quality-specification", "error", "operation", operationId, `质量控制点 ${check.id} 不能同时使用公差和上下限。`);
+    }
+    return;
+  }
+  addIssue(issues, "invalid-quality-specification", "error", "operation", operationId, `质量控制点 ${check.id} 的规格模式无效。`);
+}
+
+function validateQualitySampling(
+  check: PprWorkInstructionQualityCheck,
+  operationId: string,
+  issues: PprIssue[],
+): void {
+  const frequency = check.samplingFrequency;
+  if (!frequency) return;
+  const modes = ["every-item", "first-off", "every-n-items", "per-batch", "once-per-shift"];
+  if (!isRecord(frequency) || !modes.includes(String(frequency.mode))) {
+    addIssue(issues, "invalid-quality-sampling", "error", "operation", operationId, `质量控制点 ${check.id} 的抽检频率无效。`);
+    return;
+  }
+  if (frequency.mode === "every-n-items") {
+    if (!Number.isSafeInteger(frequency.interval) || Number(frequency.interval) <= 0) {
+      addIssue(issues, "invalid-quality-sampling", "error", "operation", operationId, `质量控制点 ${check.id} 的抽检间隔必须是正整数件数。`);
+    }
+  } else if (frequency.interval !== undefined) {
+    addIssue(issues, "invalid-quality-sampling", "error", "operation", operationId, `质量控制点 ${check.id} 仅“每 N 件”模式可以填写抽检间隔。`);
+  }
+}
+
+const QUALITY_GAP_LABELS: Record<PprQualityControlGap, string> = {
+  characteristic: "特性名称",
+  specification: "目标与上下限/公差",
+  "inspection-method": "检测方法",
+  "sampling-frequency": "抽检频率",
+  "reaction-plan": "失控反应",
+};
+
+function qualityGapLabel(gap: PprQualityControlGap): string {
+  return QUALITY_GAP_LABELS[gap];
+}
+
+function validateInstructionItems(
+  items: unknown,
+  textFields: string[],
+  label: string,
+  operationId: string,
+  issues: PprIssue[],
+): void {
+  if (!Array.isArray(items)) {
+    addIssue(issues, "invalid-work-instruction-structure", "error", "operation", operationId, `${label}必须是列表。`);
+    return;
+  }
+  const ids = new Set<string>();
+  items.forEach((item) => {
+    if (!isRecord(item) || !hasText(item.id) || ids.has(item.id)) {
+      addIssue(issues, "invalid-work-instruction-item", "error", "operation", operationId, `${label} ID 必须非空且不重复。`);
+      return;
+    }
+    ids.add(item.id);
+    if (textFields.some((field) => !hasText(item[field]))) {
+      addIssue(issues, "invalid-work-instruction-item", "error", "operation", operationId, `${label}内容不能为空。`);
+    }
+  });
+}
+
+function isVisualReference(reference: { kind: string; id: string }): reference is PprWorkInstructionVisualReference {
+  return (reference.kind === "scene" || reference.kind === "object") && hasText(reference.id);
+}
+
+function referenceKey(reference: { kind: string; id: string }): string {
+  return `${reference.kind}:${reference.id}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function validateResource(resource: PprResource, issues: PprIssue[]): void {

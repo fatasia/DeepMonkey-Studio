@@ -49,7 +49,7 @@ describe("AssetLibraryBrowser", () => {
     );
 
     expect(html).toContain("<strong>300</strong>");
-    expect(html).toContain("个精选素材 · 全库 1,551 个");
+    expect(html).toContain("个精选资源 · 全库 1,551 个");
     expect(html).toContain("六轴机械臂");
     expect(html).toContain("动画");
     expect(html).toContain("1.2 万面");

@@ -8,18 +8,20 @@ import type {
   DataDatasetRecord,
   MaintenanceAssessmentRecord,
   MaintenanceModelPackage,
+  PlantLiteStudyRequest,
   ProjectRecord,
   SceneSnapshot,
 } from "@bim-studio/contracts";
 import { api, type IotNbAssessmentResult, type OperationsSnapshot } from "../api";
+import { plantLiteRequestFromStudy, readPlantLiteDraft, writePlantLiteDraft } from "./plantLiteDraftPersistence";
 import { VirtualCommissioningWorkbench } from "./VirtualCommissioningWorkbench";
 import { MaintenanceDiagnosisCard } from "./MaintenanceDiagnosisCard";
 import { BatteryIntelligencePanel } from "./BatteryIntelligencePanel";
 import {
   AssessmentCard,
-  defaultEnergyText,
   defaultLogistics,
   defaultPlantLite,
+  MaintenanceModelOnboarding,
   ModelEvidence,
   OperationsEmpty,
   OperationsHeader,
@@ -44,6 +46,8 @@ import { AiDataRunHistory } from "./AiDataRunHistory";
 import type { WhatIfStudyRequest } from "@bim-studio/studio-core";
 import { OperationsStudyHistory } from "./OperationsStudyHistory";
 import { resolveOperationsStudyAction } from "./operationsStudyAction";
+import { EMPTY_ENERGY_FIELD_MAP, energyObservationsFromPreview, inferEnergyFieldMap, type EnergyFieldMap } from "./energyDatasetMapping";
+import { usePlantLiteRunController } from "./plantLiteRunController";
 
 const DEFAULT_MAINTENANCE_POLICY: AiDataRunPolicyDraft = {
   mode: "interval",
@@ -63,6 +67,7 @@ export function OperationsCenter({
   onBack,
   initialTab = "maintenance",
   onTabChange,
+  onOpenDataCenter,
 }: {
   project: ProjectRecord;
   scenes: SceneSnapshot[];
@@ -70,15 +75,19 @@ export function OperationsCenter({
   onBack: () => void;
   initialTab?: OperationsTab;
   onTabChange?: (tab: OperationsTab) => void;
+  onOpenDataCenter: () => void;
 }) {
   const [tab, setTab] = useState<OperationsTab>(initialTab);
   const [mountedTabs, setMountedTabs] = useState<Set<OperationsTab>>(() => new Set([initialTab]));
   const [snapshot, setSnapshot] = useState<OperationsSnapshot>();
   const [selectedModelId, setSelectedModelId] = useState("");
   const [logistics, setLogistics] = useState(defaultLogistics);
-  const [plantLite, setPlantLite] = useState(defaultPlantLite);
+  const [plantLite, setPlantLite] = useState(() => readPlantLiteDraft(project.id) ?? structuredClone(defaultPlantLite));
   const [logisticsMode, setLogisticsMode] = useState<LogisticsStudyMode>("analytic");
-  const [energyText, setEnergyText] = useState(defaultEnergyText());
+  const [energyText, setEnergyText] = useState("");
+  const [energySourceMode, setEnergySourceMode] = useState<"dataset" | "paste">("dataset");
+  const [energyDatasetId, setEnergyDatasetId] = useState("");
+  const [energyFieldMap, setEnergyFieldMap] = useState<EnergyFieldMap>(EMPTY_ENERGY_FIELD_MAP);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [syncMessage, setSyncMessage] = useState("");
@@ -92,6 +101,9 @@ export function OperationsCenter({
   const [commissioningStudy, setCommissioningStudy] = useState<IndustrialValidationStudyRecord>();
   const modelImport = useRef<HTMLInputElement>(null);
   const artifactImport = useRef<HTMLInputElement>(null);
+  const activeProjectId = useRef(project.id);
+  const hydratedPlantLiteProjectId = useRef("");
+  activeProjectId.current = project.id;
 
   const models = snapshot?.models ?? [];
   const selectedModel = useMemo(
@@ -117,8 +129,18 @@ export function OperationsCenter({
   }
 
   async function load(preferredModelId?: string) {
-    const next = await api.getOperations(project.id);
+    const requestedProjectId = project.id;
+    const next = await api.getOperations(requestedProjectId);
+    if (activeProjectId.current !== requestedProjectId) return;
     setSnapshot(next);
+    if (hydratedPlantLiteProjectId.current !== requestedProjectId) {
+      hydratedPlantLiteProjectId.current = requestedProjectId;
+      const recovered = next.plantLiteStudies.map(plantLiteRequestFromStudy).find((value) => value !== undefined);
+      if (recovered) {
+        setPlantLite(recovered);
+        writePlantLiteDraft(requestedProjectId, recovered);
+      }
+    }
     setSelectedModelId((current) =>
       next.models.some((item) => item.id === preferredModelId)
         ? preferredModelId!
@@ -128,12 +150,18 @@ export function OperationsCenter({
     );
   }
   useEffect(() => {
+    const requestedProjectId = project.id;
+    setSnapshot(undefined);
+    const draft = readPlantLiteDraft(requestedProjectId);
+    hydratedPlantLiteProjectId.current = draft ? requestedProjectId : "";
+    setPlantLite(draft ?? structuredClone(defaultPlantLite));
     void (async () => {
       const [syncResult, datasetResult, bindingResult] = await Promise.allSettled([
-        api.syncIotNbMaintenanceModels(project.id),
-        api.listDatasets(project.id),
-        api.listAiDataBindings(project.id),
+        api.syncIotNbMaintenanceModels(requestedProjectId),
+        api.listDatasets(requestedProjectId),
+        api.listAiDataBindings(requestedProjectId),
       ]);
+      if (activeProjectId.current !== requestedProjectId) return;
       if (syncResult.status === "fulfilled") {
         setSyncMessage(`已连接 ${syncResult.value.sourceProjectName} · ${syncResult.value.models.length} 个真实训练模型`);
       }
@@ -143,6 +171,23 @@ export function OperationsCenter({
       await load().catch(showError);
     })();
   }, [project.id]);
+
+  function changePlantLite(next: PlantLiteStudyRequest) {
+    hydratedPlantLiteProjectId.current = project.id;
+    setPlantLite(next);
+    writePlantLiteDraft(project.id, next);
+  }
+
+  useEffect(() => {
+    const dataset = datasets.find((item) => item.id === energyDatasetId) ?? datasets[0];
+    if (!dataset) {
+      setEnergyDatasetId("");
+      setEnergyFieldMap(EMPTY_ENERGY_FIELD_MAP);
+      return;
+    }
+    if (dataset.id !== energyDatasetId) setEnergyDatasetId(dataset.id);
+    setEnergyFieldMap(inferEnergyFieldMap(dataset.fields));
+  }, [datasets, energyDatasetId]);
 
   useEffect(() => {
     const deployment = snapshot?.deployments.find(
@@ -175,6 +220,12 @@ export function OperationsCenter({
   function showError(reason: unknown) {
     setError(reason instanceof Error ? reason.message : String(reason));
   }
+  const plantLiteRun = usePlantLiteRunController({
+    projectId: project.id,
+    reload: load,
+    setBusy,
+    setError,
+  });
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -388,18 +439,6 @@ export function OperationsCenter({
       await load();
     });
   }
-  async function runPlantLite() {
-    await run(async () => {
-      await api.runPlantLiteStudy(project.id, plantLite);
-      await load();
-    });
-  }
-  async function reproducePlantLite(studyId: string) {
-    await run(async () => {
-      await api.reproducePlantLiteStudy(project.id, studyId);
-      await load();
-    });
-  }
   async function runWhatIfStudy(request: WhatIfStudyRequest) {
     await run(async () => {
       await api.runWhatIfStudy(project.id, request);
@@ -414,7 +453,10 @@ export function OperationsCenter({
   }
   async function runEnergy() {
     await run(async () => {
-      await api.analyzeEnergy(project.id, parseEnergy(energyText));
+      const observations = energySourceMode === "dataset"
+        ? energyObservationsFromPreview(await api.previewDataset(project.id, energyDatasetId), energyFieldMap)
+        : parseEnergy(energyText);
+      await api.analyzeEnergy(project.id, observations);
       await load();
     });
   }
@@ -422,7 +464,7 @@ export function OperationsCenter({
   function reproduceOrOpenStudy(study: IndustrialStudyRecord) {
     const action = resolveOperationsStudyAction(study);
     if (action.kind === "reproduce-plant-lite") {
-      void reproducePlantLite(action.sourceRecordId);
+      void plantLiteRun.reproduce(action.sourceRecordId);
       return;
     }
     if (action.kind === "reproduce-what-if") {
@@ -431,7 +473,7 @@ export function OperationsCenter({
     }
     const validationStudy = snapshot?.validationStudies.find((item) => item.id === action.sourceRecordId);
     if (!validationStudy) {
-      showError("验证 Study 源记录已不存在，请刷新后重试");
+      showError("源运行记录已不存在，请刷新后重试");
       return;
     }
     setCommissioningDraft(undefined);
@@ -472,6 +514,23 @@ export function OperationsCenter({
                   {maintenanceDatasetId ? "运行现场评估" : "运行源数据验证"}
                 </button>
               </header>
+              {!models.length ? (
+                <>
+                  <MaintenanceModelOnboarding
+                    busy={busy}
+                    onSync={() => void syncIotNb()}
+                    onImport={() => modelImport.current?.click()}
+                    onOpenDataCenter={onOpenDataCenter}
+                  />
+                  <input
+                    ref={modelImport}
+                    hidden
+                    type="file"
+                    accept=".json"
+                    onChange={(event) => void importModel(event.target.files?.[0])}
+                  />
+                </>
+              ) : <>
               <label>
                 <span>维护模型</span>
                 <select
@@ -608,8 +667,14 @@ export function OperationsCenter({
                   )}
                 </>
               ) : (
-                <OperationsEmpty text="选择模型与生产数据集后运行。系统只读取已连接的真实快照，不会自动补演示数据。" />
+                <div className="operations-ready-empty">
+                  <OperationsEmpty text={maintenanceDatasetId ? "数据与模型已就绪，运行评估后将在这里显示风险、依据和下一步动作。" : "选择已连接的生产数据集后运行；系统只读取真实快照，不会补演示数据。"} />
+                  {!maintenanceDatasetId && (
+                    <button onClick={onOpenDataCenter}><Database size={14} />前往数据中心连接数据库</button>
+                  )}
+                </div>
               )}
+              </>}
             </section>
             <MaintenanceCasesPanel snapshot={snapshot} />
             </div>
@@ -643,14 +708,20 @@ export function OperationsCenter({
               mode={logisticsMode}
               snapshot={snapshot}
               onChange={setLogistics}
-              onPlantLiteChange={setPlantLite}
+              onPlantLiteChange={changePlantLite}
               onModeChange={setLogisticsMode}
               onRun={() => void runLogistics()}
-              onRunPlantLite={() => void runPlantLite()}
+              onRunPlantLite={() => void plantLiteRun.run(plantLite)}
+              onRunPlantLiteSweep={(requests) => void plantLiteRun.runBatch(requests)}
+              {...(plantLiteRun.progress ? { plantRunProgress: plantLiteRun.progress } : {})}
+              {...(plantLiteRun.notice ? { plantRunNotice: plantLiteRun.notice } : {})}
+              onCancelPlantLite={plantLiteRun.cancel}
               onReproduce={(experimentId) => void reproduceLogistics(experimentId)}
-              onReproducePlantLite={(studyId) => void reproducePlantLite(studyId)}
+              onReproducePlantLite={(studyId) => void plantLiteRun.reproduce(studyId)}
               project={project}
               scenes={scenes}
+              datasets={datasets}
+              loadDatasetPreview={(datasetId) => api.previewDataset(project.id, datasetId)}
             />
           </div>
         )}
@@ -658,8 +729,15 @@ export function OperationsCenter({
           <div hidden={tab !== "energy"}>
             <EnergyOperationsPanel
               busy={busy}
+              datasets={datasets}
+              sourceMode={energySourceMode}
+              datasetId={energyDatasetId}
+              fieldMap={energyFieldMap}
               energyText={energyText}
               snapshot={snapshot}
+              onSourceModeChange={setEnergySourceMode}
+              onDatasetChange={setEnergyDatasetId}
+              onFieldMapChange={setEnergyFieldMap}
               onChange={setEnergyText}
               onRun={() => void runEnergy()}
             />

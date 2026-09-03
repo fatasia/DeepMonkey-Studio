@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type {
   ApplicationDocument,
   ApplicationObjectRef,
+  ApplicationScriptDependency,
   JsonValue,
   ProjectRecord,
   SceneInteractionTarget,
@@ -14,6 +15,8 @@ import type { SceneCommand } from "@bim-studio/scene-sdk";
 import {
   createDeleteScriptModuleCommand,
   createInsertDashboardNodeCommand,
+  createReplaceScriptDependenciesCommand,
+  createReplaceScriptModulesCommand,
   createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeStateCommand,
@@ -32,6 +35,7 @@ import { DEFAULT_DASHBOARD_VIEW, type DashboardReturnContext, type DashboardView
 import { publishLocalSceneData } from "../sceneDataBridge";
 import { authorizeSceneCommands } from "../behavior/sceneCommandPolicy";
 import { resolveSceneBehaviorModule } from "../behavior/scriptModuleAdapter";
+import { loadScriptDependencyModules } from "../behavior/scriptDependencyRuntime";
 import { SceneBehaviorManager, type SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
 import { createLatestFrameEmitter } from "../behavior/latestFrameEmitter";
 import { SceneCommandExecutor } from "../behavior/SceneCommandExecutor";
@@ -209,18 +213,53 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     dispatchApplicationCommand(createDeleteScriptModuleCommand(scriptId));
   }
 
+  async function replaceScriptDependencies(dependencies: readonly ApplicationScriptDependency[]) {
+    const previous = applicationSessionRef.current.store.getState().document?.scriptDependencies ?? [];
+    dispatchApplicationCommand(createReplaceScriptDependenciesCommand(dependencies));
+    const saved = await saveActiveApplication(true);
+    if (saved) return;
+    // 只有应用文档已持久化新哈希后，UI 才会删除旧缓存；失败时恢复原引用。
+    dispatchApplicationCommand(createReplaceScriptDependenciesCommand(previous));
+    throw new Error(tr(locale, "项目依赖未能保存，已恢复原配置", "Project dependencies were not saved; the previous configuration was restored"));
+  }
+
+  async function replaceBehaviorScripts(scripts: readonly ScriptModule[]) {
+    const previous = applicationSessionRef.current.store.getState().document?.scripts ?? [];
+    if (sceneBehaviorEntries.length) stopSceneBehaviors();
+    dispatchApplicationCommand(createReplaceScriptModulesCommand(scripts));
+    const saved = await saveActiveApplication(true);
+    if (saved) {
+      setMessage(tr(locale, `已应用并保存 ${scripts.length} 个远端脚本`, `Applied and saved ${scripts.length} remote scripts`));
+      return;
+    }
+    // 保存失败只恢复脚本字段，保留等待期间用户对页面、场景等其他内容的修改。
+    dispatchApplicationCommand(createReplaceScriptModulesCommand(previous));
+    throw new Error(tr(locale, "远端脚本未能保存，已恢复原脚本", "Remote scripts were not saved; the original scripts were restored"));
+  }
+
   function appendBehaviorLog(moduleId: string, level: SceneBehaviorLogEntry["level"], text: string) {
     setSceneBehaviorLogs((current) => [...current.slice(-499), { id: crypto.randomUUID(), moduleId, level, message: text, timestamp: new Date().toISOString() }]);
   }
 
-  function runSceneBehaviors(draft?: ScriptModule) {
+  async function runSceneBehaviors(draft?: ScriptModule) {
     if (!activeApplication) {
       showError(new Error(tr(locale, "请先打开可编辑项目", "Open an editable project first")));
       return;
     }
+    let dependencies: Awaited<ReturnType<typeof loadScriptDependencyModules>>;
+    try {
+      dependencies = await loadScriptDependencyModules(
+        activeApplication.metadata.projectId,
+        activeApplication.scriptDependencies ?? [],
+        api.readScriptDependency,
+      );
+    } catch (reason) {
+      showError(reason instanceof Error ? reason : new Error(String(reason)));
+      return;
+    }
     behaviorManagerRef.current?.dispose();
     const scripts = draft ? activeApplication.scripts.map((script) => (script.id === draft.id ? draft : script)) : activeApplication.scripts;
-    const resolved = scripts.map((script) => ({ script, resolution: resolveSceneBehaviorModule(script) }));
+    const resolved = scripts.map((script) => ({ script, resolution: resolveSceneBehaviorModule(script, dependencies) }));
     const modules = resolved.flatMap(({ resolution }) => (resolution.status === "ready" ? [resolution.module] : []));
     for (const { script, resolution } of resolved) {
       if (resolution.status === "rejected") appendBehaviorLog(script.id, "error", resolution.message);
@@ -242,6 +281,16 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
             data: response.data as import("@bim-studio/contracts").JsonValue,
             value: response.value as import("@bim-studio/contracts").JsonValue,
           };
+        },
+        executeCapabilityRequest: async ({ capabilityId, input }) => {
+          const result = await api.invokeCapability(
+            activeApplication.metadata.projectId,
+            capabilityId,
+            input,
+            currentUser?.id ?? "script-runtime",
+          );
+          // Capability 合同是 JSON；通过序列化隔离宿主对象，避免向 Worker 泄露引用或不可克隆值。
+          return JSON.parse(JSON.stringify(result)) as JsonValue;
         },
       },
     });
@@ -513,6 +562,8 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     createIndustrialShowcase,
     upsertBehaviorScript,
     deleteBehaviorScript,
+    replaceBehaviorScripts,
+    replaceScriptDependencies,
     runSceneBehaviors,
     pauseResumeSceneBehaviors,
     stopSceneBehaviors,

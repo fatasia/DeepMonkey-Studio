@@ -45,6 +45,31 @@ describe("analyzeSceneScript", () => {
     expect(analysis.issues).toContainEqual(expect.objectContaining({ code: "unknown-reference", message: expect.stringContaining("missing-unity") }));
   });
 
+  it("requires the explicit AI capability for plugin invocations", () => {
+    const analysis = analyzeSceneScript(`async function onData() {
+  const result = await studio.ai.invoke("maintenance.diagnose", { assetId: "pump-01" });
+  studio.log("diagnosis", result);
+}`, script, context);
+    expect(analysis.capabilities).toEqual(expect.arrayContaining(["studio.ai", "studio.runtime"]));
+    expect(analysis.missingCapabilities).toContain("studio.ai");
+    expect(analysis.permissions).toContain("ai.invoke");
+    expect(analysis.missingPermissions).toContain("ai.invoke");
+  });
+
+  it("treats ctx.self as the attached object and reports missing or scene-level targets", () => {
+    const attachedScript = { ...script, target: { kind: "object" as const, id: "pump-01" }, capabilities: ["studio.object" as const], permissions: ["scene.write" as const] };
+    const attached = analyzeSceneScript("function onStart(ctx) { ctx.self?.show(); }", attachedScript, context);
+    expect(attached.capabilities).toContain("studio.object");
+    expect(attached.permissions).toContain("scene.write");
+    expect(attached.issues).toEqual([]);
+
+    const missing = analyzeSceneScript("function onStart(ctx) { ctx.self?.show(); }", { ...script, target: { kind: "object", id: "retired-pump" } }, context);
+    expect(missing.issues).toContainEqual(expect.objectContaining({ code: "unknown-reference", severity: "error", message: expect.stringContaining("retired-pump") }));
+
+    const sceneLevel = analyzeSceneScript("function onStart(ctx) { ctx.self?.show(); }", { ...script, target: { kind: "scene" } }, context);
+    expect(sceneLevel.issues).toContainEqual(expect.objectContaining({ code: "unsupported-api", severity: "error", message: expect.stringContaining("ctx.self") }));
+  });
+
   it("checks project data and event names for reads, writes, emits and listeners", () => {
     const analysis = analyzeSceneScript(`function onEvent(ctx) {
   ctx.setData("retired.temperature", 0);

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "cargo check --manifest-path src-tauri/Cargo.toml",
-    "bundle": "tauri build",
+    "bundle": "node scripts/build-bundle.mjs",
     "bundle:scene-viewer": "node scripts/build-scene-viewer.mjs",
     "verify:scene-viewer": "node scripts/verify-scene-viewer-package.mjs",
     "test:scene-viewer": "node --test scripts/scene-viewer-package-core.test.mjs",

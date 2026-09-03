@@ -8,14 +8,23 @@ import {
   DEFAULT_POST_PROCESSING,
   normalizeCameraConstraints,
 } from "../appDefaults";
+import { createBrowserCooperativeWorkScheduler, type CooperativeWorkScheduler } from "../cooperativeWorkScheduler";
 import { DEFAULT_NAVIGATION_SETTINGS, normalizeNavigationSettings } from "../navigationSettings";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
+
+export interface ApplySceneViewerSnapshotOptions {
+  /** React 卸载或渲染后端切换时停止继续写入已释放的引擎。 */
+  isCancelled?: () => boolean;
+  /** 允许测试注入确定性的分片边界；生产环境默认使用浏览器协作式调度。 */
+  primitiveScheduler?: Pick<CooperativeWorkScheduler, "checkpoint">;
+}
 
 /** 将不可变发布快照应用到独立 ViewerEngine，不经过任何编辑器控制器。 */
 export async function applySceneViewerSnapshot(
   engine: ViewerEngine,
   scene: SceneSnapshot,
   project: ProjectRecord,
+  options: ApplySceneViewerSnapshotOptions = {},
 ): Promise<void> {
   engine.setReadOnly(true);
   engine.setFastRuntime(scene.publicationPerformance === "fast");
@@ -26,12 +35,15 @@ export async function applySceneViewerSnapshot(
     const record = project.models.find((model) => model.id === state.modelId);
     if (!record?.manifest) throw new Error(`发布包缺少模型“${state.name}”的浏览清单`);
     await engine.loadManifest(record.manifest);
+    if (options.isCancelled?.()) return;
     engine.applyModelState(state.modelId, state);
     engine.rename(state.modelId, state.name);
   }
+  const primitiveScheduler = options.primitiveScheduler ?? createBrowserCooperativeWorkScheduler();
   for (const primitive of scene.primitives) {
     engine.createPrimitive(primitive.modelId, primitive.name, primitive.kind, primitive.color);
     engine.applyModelState(primitive.modelId, primitive);
+    if ((await primitiveScheduler.checkpoint()) && options.isCancelled?.()) return;
   }
   engine.clearMeasurements();
   for (const measurement of scene.measurements) engine.addMeasurementVisual(measurement);

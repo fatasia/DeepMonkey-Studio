@@ -3,7 +3,7 @@ using UnityEngine;
 namespace BimStudio.Bridge
 {
     /// <summary>
-    /// No-code Unity-to-BIM Studio event bridge. Add this component to a button,
+    /// No-code Unity-to-Industrial Studio event bridge. Add this component to a button,
     /// collider, animation event, or any UnityEvent and call Emit.
     /// </summary>
     [DisallowMultipleComponent]
@@ -11,7 +11,7 @@ namespace BimStudio.Bridge
     {
         [Tooltip("集成清单中声明的 Unity 事件名称。")]
         public string eventName;
-        [Tooltip("发送给 BIM Studio 的 JSON；可以是对象、数组、数字、布尔值、字符串或 null。")]
+        [Tooltip("发送给 Industrial Studio 的 JSON；可以是对象、数组、数字、布尔值、字符串或 null。")]
         [TextArea(2, 8)] public string payloadJson = "null";
         public string ContractEventName => eventName;
         public GameObject ContractObject => gameObject;
@@ -21,7 +21,7 @@ namespace BimStudio.Bridge
             var name = (eventName ?? string.Empty).Trim();
             if (name.Length == 0)
             {
-                BimStudioEvents.Error($"{gameObject.name} 的 BIM Studio 事件名称为空。");
+                BimStudioEvents.Error($"{gameObject.name} 的 Industrial Studio 事件名称为空。");
                 return;
             }
             BimStudioEvents.Emit(name, string.IsNullOrWhiteSpace(payloadJson) ? "null" : payloadJson.Trim());
@@ -30,7 +30,7 @@ namespace BimStudio.Bridge
         public void EmitString(string value)
         {
             var name = (eventName ?? string.Empty).Trim();
-            if (name.Length == 0) { BimStudioEvents.Error($"{gameObject.name} 的 BIM Studio 事件名称为空。"); return; }
+            if (name.Length == 0) { BimStudioEvents.Error($"{gameObject.name} 的 Industrial Studio 事件名称为空。"); return; }
             BimStudioEvents.Emit(name, JsonUtility.ToJson(new StringEnvelope { value = value ?? string.Empty }));
         }
 

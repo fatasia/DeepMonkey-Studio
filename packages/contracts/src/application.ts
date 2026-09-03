@@ -176,6 +176,7 @@ export type ApplicationScriptPermission =
   | "scene.write"
   | "data.read"
   | "data.write"
+  | "ai.invoke"
   | "network.connect"
   | "renderer.extend"
   | "editor.extend";
@@ -184,6 +185,25 @@ export type ApplicationScriptPermission =
 export type ApplicationScriptTarget =
   | { kind: "scene" }
   | { kind: "object" | "component"; id: string };
+
+/**
+ * 已安装到项目中的脚本依赖。运行时只读取项目内缓存，不直接执行来源地址，
+ * 因而 Web 发布和离线客户端使用的是同一份经过哈希锁定的代码。
+ */
+export interface ApplicationScriptDependency {
+  id: string;
+  /** JavaScript `import` 使用的模块名，例如 `dayjs`。 */
+  specifier: string;
+  source: "npm" | "upload" | "external-url";
+  requested: string;
+  resolvedVersion?: string;
+  fileName: string;
+  assetUrl: string;
+  integrity: string;
+  size: number;
+  license?: string;
+  installedAt: string;
+}
 
 export interface ScriptModule {
   id: string;
@@ -239,6 +259,8 @@ export interface ApplicationDocument {
   data: ApplicationDataDocument;
   interactions: InteractionFlow[];
   scripts: ScriptModule[];
+  /** 可选字段保证旧应用无迁移成本；首次安装脚本依赖时创建。 */
+  scriptDependencies?: ApplicationScriptDependency[];
   assets: AssetEntry[];
   timelines: TimelineDocument[];
   publicationProfiles: PublicationProfile[];

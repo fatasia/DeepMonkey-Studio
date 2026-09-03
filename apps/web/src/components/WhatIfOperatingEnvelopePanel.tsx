@@ -99,7 +99,7 @@ export function WhatIfOperatingEnvelopePanel({
 
       <section className="operations-panel what-if-result">
         <header>
-          <div><strong>Study 结果与对比</strong><small>每次运行独立保存输入、引擎与结果证据。</small></div>
+          <div><strong>结果与对比</strong><small>每次运行独立保存输入、引擎与结果证据。</small></div>
           <History size={17} aria-hidden="true" />
         </header>
         {!latest ? (

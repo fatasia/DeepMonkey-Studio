@@ -1,17 +1,21 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import type { OperationsSnapshot } from "../api";
 import { PprPlanDetails } from "./PprPlanDetails";
-import { type PprPlanReferenceContext } from "./pprPlanTemplate";
+import { type PprPlanReferenceContext } from "./pprPlanDraftModel";
+import type { PprPlantLiteReadyDraft } from "./pprPlantLiteDraft";
 
 export function PprPlanPanel({
   projectId,
   scenes,
   snapshot,
+  onCreatePlantLiteDraft,
 }: {
   projectId: string;
   scenes: SceneSnapshot[];
   snapshot: OperationsSnapshot | undefined;
+  onCreatePlantLiteDraft: (result: PprPlantLiteReadyDraft) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const references = useMemo(
@@ -23,14 +27,25 @@ export function PprPlanPanel({
     <section className="operations-panel ppr-plan-panel">
       <header>
         <div>
-          <strong>工艺计划 · PD Lite</strong>
-          <small>保存不可变 BOP 快照，检查工序、资源与版本影响；不含审批、报价或完整 PLM。</small>
+          <strong>工艺规划</strong>
+          <small>按产品、工序和资源三步建立计划，并生成现场可用的电子作业指导书。</small>
         </div>
         <button onClick={() => setExpanded((current) => !current)}>
-          {expanded ? "收起" : "打开"}
+          {expanded ? "关闭工作台" : "打开工作台"}
         </button>
       </header>
-      {expanded && <PprPlanDetails projectId={projectId} references={references} />}
+      {expanded && typeof document !== "undefined" && createPortal(
+        <PprPlanDetails
+          projectId={projectId}
+          references={references}
+          onClose={() => setExpanded(false)}
+          onCreatePlantLiteDraft={(result) => {
+            onCreatePlantLiteDraft(result);
+            setExpanded(false);
+          }}
+        />,
+        document.body,
+      )}
     </section>
   );
 }

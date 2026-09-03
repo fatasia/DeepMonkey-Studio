@@ -7,6 +7,11 @@ import { translate as tr } from "../i18n";
 export type TopologyViewMode = "2d" | "2.5d";
 export type TopologyEdgeMedium = "signal" | "power" | "water" | "air" | "material";
 
+const TOPOLOGY_ISOMETRIC_Y_SCALE = 0.72;
+const TOPOLOGY_ISOMETRIC_SHEAR = 0.22;
+const TOPOLOGY_ISOMETRIC_ORIGIN_Y = 96;
+const TOPOLOGY_ISOMETRIC_CENTER_Y = 450;
+
 export function topologyEdgeLabel(edge: Pick<TopologyEdge, "properties">): string {
   return typeof edge.properties.label === "string" ? edge.properties.label.trim() : "";
 }
@@ -39,7 +44,26 @@ export function topologyProjectionOffset(elevation: number, viewMode: TopologyVi
 
 export function topologyProjectedPosition(node: Pick<TopologyNode, "x" | "y" | "properties">, viewMode: TopologyViewMode): { x: number; y: number } {
   const offset = topologyProjectionOffset(topologyNodeElevation(node), viewMode);
-  return { x: node.x + offset.x, y: node.y + offset.y };
+  if (viewMode === "2d") return { x: node.x, y: node.y };
+  return {
+    x: node.x + (node.y - TOPOLOGY_ISOMETRIC_CENTER_Y) * TOPOLOGY_ISOMETRIC_SHEAR + offset.x,
+    y: TOPOLOGY_ISOMETRIC_ORIGIN_Y + node.y * TOPOLOGY_ISOMETRIC_Y_SCALE + offset.y,
+  };
+}
+
+/** 将拖拽后的屏幕投影坐标还原成工程平面坐标，避免 2.5D 编辑污染持久化坐标。 */
+export function topologyPlanPositionFromProjected(
+  position: { x: number; y: number },
+  elevation: number,
+  viewMode: TopologyViewMode,
+): { x: number; y: number } {
+  if (viewMode === "2d") return position;
+  const offset = topologyProjectionOffset(elevation, viewMode);
+  const y = (position.y - TOPOLOGY_ISOMETRIC_ORIGIN_Y - offset.y) / TOPOLOGY_ISOMETRIC_Y_SCALE;
+  return {
+    x: position.x - (y - TOPOLOGY_ISOMETRIC_CENTER_Y) * TOPOLOGY_ISOMETRIC_SHEAR - offset.x,
+    y,
+  };
 }
 
 export function ScadaRuntimeCard({

@@ -206,5 +206,5 @@ internal sealed class JobExternalEventHandler : IExternalEventHandler
 
     public void Execute(UIApplication application) => _execute(application);
 
-    public string GetName() => "BIM Studio persistent conversion queue";
+    public string GetName() => "Industrial Studio persistent conversion queue";
 }

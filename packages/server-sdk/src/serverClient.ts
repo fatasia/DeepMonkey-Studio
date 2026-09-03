@@ -67,7 +67,17 @@ export class ServerClient {
   async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await this.open(path, init);
     if (response.status === 204) return undefined as T;
-    return await response.json() as T;
+    const body = await response.text();
+    if (!body.trim()) {
+      throw new ServerRequestError(`服务返回空响应（HTTP ${response.status}）`, response.status, null);
+    }
+    try {
+      return JSON.parse(body) as T;
+    } catch {
+      throw new ServerRequestError(`服务返回了无法解析的数据（HTTP ${response.status}）`, response.status, {
+        contentType: response.headers.get("content-type"),
+      });
+    }
   }
 
   getMeta(): Promise<ServerMetaResponse> {

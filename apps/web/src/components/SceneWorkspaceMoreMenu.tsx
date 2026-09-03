@@ -34,7 +34,7 @@ interface Props {
 export function SceneWorkspaceMoreMenu(props: Props) {
   return (
     <details className="scene-workspace-more">
-      <summary className="button ghost" title={tr(props.locale, "更多场景工具", "More scene tools")}>
+      <summary className="button ghost" aria-label={tr(props.locale, "更多场景工具", "More scene tools")} title={tr(props.locale, "更多场景工具", "More scene tools")}>
         <MoreHorizontal size={16} />
         <span className="action-label">{tr(props.locale, "更多", "More")}</span>
       </summary>

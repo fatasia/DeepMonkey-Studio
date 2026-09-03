@@ -61,7 +61,7 @@ export function DashboardVideo({ widget, locale, compact }: { widget: DashboardD
       locale={locale}
     />
   ) : (
-    <MediaMessage locale={locale} icon="video" message={tr(locale, "从资源库选择视频或填写 HTTP(S) 地址", "Choose a video asset or enter an HTTP(S) URL")} />
+    <MediaMessage locale={locale} icon="video" message={tr(locale, "从资源选择视频或填写 HTTP(S) 地址", "Choose a video asset or enter an HTTP(S) URL")} />
   );
 }
 

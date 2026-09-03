@@ -1,4 +1,4 @@
-# iTwin Studio
+# Industrial Studio
 
 面向内网部署的轻量 BIM/CAD 场景编辑器。项目采用可插拔转换器架构，浏览器不会假装直接解析 RVT 或 DWG。
 
@@ -69,7 +69,7 @@ pnpm dev
 Windows 推荐使用根目录的 `bim-studio.ps1` 统一管理服务。命令格式：
 
 ```powershell
-.\bim-studio.ps1 <start|stop|restart|status|help> <目标> [-Https]
+.\bim-studio.ps1 <start|stop|restart|status|check|help> <目标> [-Https]
 ```
 
 目标说明：
@@ -77,7 +77,7 @@ Windows 推荐使用根目录的 `bim-studio.ps1` 统一管理服务。命令格
 | 目标 | 服务 | 端口 |
 | --- | --- | --- |
 | `all` | PostgreSQL、MinIO、流程服务、实时视频、API、Web | 全部端口 |
-| `app` | 流程服务、实时视频、API、Web | 1880、8888、8889、9997、4100、5173 |
+| `app` | 流程服务、实时视频、MinIO、API、Web | 1880、8888、8889、9997、9000、9001、4100、5173 |
 | `web` | Vite Web 页面 | 5173 |
 | `api` | Fastify API 与转换队列 | 4100 |
 | `node-red` | 数据采集与流程编排 | 1880 |
@@ -93,6 +93,7 @@ Windows 推荐使用根目录的 `bim-studio.ps1` 统一管理服务。命令格
 .\bim-studio.ps1 stop web
 .\bim-studio.ps1 start media
 .\bim-studio.ps1 status all
+.\bim-studio.ps1 check app
 # 使用 https/private.key 与 https/self-sign.cert 启动局域网 HTTPS
 .\bim-studio.ps1 restart all -Https
 .\bim-studio.ps1 help all
@@ -103,7 +104,8 @@ Windows 推荐使用根目录的 `bim-studio.ps1` 统一管理服务。命令格
 - `start`：仅启动未运行的目标；端口已被其他程序占用时不会盲目覆盖。
 - `stop`：按依赖的反向顺序关闭；脚本只关闭自身管理的进程，或经过项目进程校验的监听进程。
 - `restart`：先关闭再启动，修改 `.env`、证书或服务配置后使用。
-- `status`：显示运行状态、端口、监听 PID，以及进程是否由脚本管理。
+- `status`：显示运行状态、真实健康、延迟、检查时间、失败原因、端口、监听 PID，以及进程是否由脚本管理。
+- `check`：验证 API/Web/MinIO 的服务身份以及其它服务的真实监听状态，显示延迟、检查时间与失败原因；任一目标异常时返回退出码 1。
 - `-Https`：启动 Web 时读取 `https/private.key` 与 `https/self-sign.cert`；缺少证书会直接报出明确路径。
 - `all` 包含 PostgreSQL 和 MinIO；只重启应用而不动数据库时使用 `restart app -Https`。
 - PostgreSQL 作为 Windows 服务管理，启动或关闭可能要求管理员 PowerShell。
@@ -117,7 +119,7 @@ Windows 推荐使用根目录的 `bim-studio.ps1` 统一管理服务。命令格
 - Revit Worker 缓存：`BIM_STUDIO_WORKER_ROOT`，默认 `.cache/revit-worker`
 - 临时目录：`.cache/temp`，脚本会同时设置当前进程的 `TEMP` 和 `TMP`
 
-故障排查顺序：先执行 `.\bim-studio.ps1 status all`，再查看对应的 `data/logs/*.err.log`；如果端口被非项目进程占用，脚本会拒绝关闭并显示 PID。PowerShell 禁止脚本执行时使用：
+故障排查顺序：先执行 `.\bim-studio.ps1 check all`，再进入“设置 → 服务健康”查看失败原因，或在“设置 → 审计与日志”按服务、级别、时间与关键词筛选。服务日志的查询、复制诊断与导出均在服务端脱敏；诊断包只包含运行元数据、健康状态和脱敏错误日志，不包含项目、模型、业务数据或凭据。命令行也可直接查看 `data/logs/*.err.log`。如果端口被非项目进程占用，脚本会拒绝关闭并显示 PID。PowerShell 禁止脚本执行时使用：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\bim-studio.ps1 status all

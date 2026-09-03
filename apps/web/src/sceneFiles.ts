@@ -5,6 +5,7 @@ import {
   type SceneSnapshot
 } from "@bim-studio/contracts";
 import type JSZipRuntime from "jszip";
+import { downloadBlob } from "./browserDownload.js";
 import { loadViewerAssetBuffer } from "./viewer/viewerAssetTransport.js";
 
 const SCENE_PACKAGE_ASSET_TIMEOUT_MS = 10 * 60_000;
@@ -150,15 +151,6 @@ function portableExtension(url: string): ModelFormat | undefined {
 function safeFileStem(value: string): string {
   const withoutExtension = value.replace(/\.[^.]+$/, "");
   return withoutExtension.replace(/[\\/:*?"<>|]/g, "_").trim() || "scene";
-}
-
-function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 async function loadArchiveRuntime(): Promise<typeof JSZipRuntime> {

@@ -20,8 +20,8 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  color: #cda657;
-  font-size: 10px;
+  color: var(--accent-primary, #3ec6c1);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -30,12 +30,12 @@
 }
 .workcell-audit-panel > header small {
   color: #74868d;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.45;
 }
 .workcell-audit-panel > header button {
   display: inline-flex;
-  min-height: 32px;
+  min-height: 38px;
   align-items: center;
   gap: 6px;
   padding: 0 11px;
@@ -43,9 +43,16 @@
   border: 1px solid #415158;
   border-radius: 6px;
   background: #182327;
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
+}
+.workcell-audit-panel.idle > header button,
+.workcell-audit-actions button {
+  color: #071315;
+  border-color: var(--accent-primary, #3ec6c1);
+  background: var(--accent-primary, #3ec6c1);
 }
 .workcell-audit-panel > header button:disabled {
   cursor: not-allowed;
@@ -59,7 +66,7 @@
   margin: 0;
   padding: 9px 16px;
   border-top: 1px solid #29383e;
-  font-size: 10px;
+  font-size: 11px;
 }
 .workcell-audit-error {
   color: #e5a0a0;
@@ -86,11 +93,11 @@
 }
 .workcell-audit-previous small {
   color: #74868d;
-  font-size: 10px;
+  font-size: 11px;
 }
 .workcell-audit-previous em {
   color: #d79b70;
-  font-size: 10px;
+  font-size: 11px;
   font-style: normal;
 }
 .workcell-audit-previous.passed em {
@@ -129,11 +136,11 @@
 }
 .workcell-audit-summary small {
   color: #819198;
-  font-size: 10px;
+  font-size: 11px;
 }
 .workcell-audit-summary em {
   color: #9ba9ad;
-  font-size: 10px;
+  font-size: 11px;
   font-style: normal;
 }
 .workcell-audit-metrics {
@@ -150,11 +157,37 @@
   border-radius: 6px;
   color: #75868d;
   background: #111c20;
-  font-size: 9px;
+  font-size: 11px;
 }
 .workcell-audit-metrics b {
   color: #dbe4e6;
   font-size: 15px;
+}
+.workcell-audit-planning-evidence {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  color: #88999f;
+  border: 1px solid #315b4a;
+  border-radius: 6px;
+  background: #112019;
+  font-size: 11px;
+}
+.workcell-audit-planning-evidence.needs-data {
+  border-color: #5c4c2f;
+  background: #1d1a14;
+}
+.workcell-audit-planning-evidence strong { color: #cdd9db; }
+.workcell-audit-planning-evidence span { color: #9fc6bd; }
+.workcell-audit-planning-evidence small { line-height: 1.45; }
+.workcell-audit-scope {
+  margin: 0;
+  padding: 9px 10px;
+  color: #82949a;
+  border-left: 2px solid var(--accent-primary, #3ec6c1);
+  background: rgba(62, 198, 193, .06);
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .workcell-audit-findings {
@@ -192,68 +225,44 @@
 }
 .workcell-audit-findings strong {
   color: #cbd5d8;
-  font-size: 10px;
+  font-size: 11px;
 }
 .workcell-audit-findings small {
   color: #7e8e94;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.4;
 }
 .workcell-audit-result > code {
   overflow: hidden;
   color: #596b72;
-  font-size: 8px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.workcell-trajectory-evidence {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid #33464d;
-  border-radius: 7px;
-  background: #0f1b20;
-}
-.workcell-trajectory-evidence > header {
+.workcell-audit-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid #29383e;
+  background: #111c20;
 }
-.workcell-trajectory-evidence > header span {
-  color: #a8c8d1;
-  letter-spacing: 0;
-}
-.workcell-trajectory-evidence > header em {
-  color: #d3aa5e;
-  font-size: 10px;
-  font-style: normal;
-}
-.workcell-trajectory-evidence > div {
-  display: grid;
-  gap: 6px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-.workcell-trajectory-evidence > div span {
-  display: grid;
-  gap: 2px;
-  padding: 7px;
-  color: #74868d;
-  border: 1px solid #293b42;
-  border-radius: 5px;
-  background: #10191d;
-  font-size: 10px;
-}
-.workcell-trajectory-evidence > div b {
-  color: #d9e4e7;
-  font-size: 12px;
-}
-.workcell-trajectory-evidence > p {
+.workcell-audit-actions p {
   margin: 0;
-  color: #76888e;
-  font-size: 10px;
+  color: #7f9198;
+  font-size: 11px;
   line-height: 1.5;
+}
+.workcell-audit-actions button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--accent-primary, #3ec6c1);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 @media (max-width: 760px) {
@@ -261,11 +270,12 @@
     align-items: stretch;
     flex-direction: column;
   }
+  .workcell-audit-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
   .workcell-audit-metrics {
     grid-template-columns: repeat(2, 1fr);
-  }
-  .workcell-trajectory-evidence > div {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .workcell-audit-findings {
     grid-template-columns: 1fr;

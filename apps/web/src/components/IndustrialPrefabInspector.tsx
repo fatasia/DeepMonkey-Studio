@@ -8,6 +8,7 @@ import type {
 } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { INDUSTRIAL_PREFAB_CATALOG, industrialPrefabDefinition } from "../prefabs/industrialPrefabCatalog";
+import { createIndustrialPrefabInstance } from "../prefabs/industrialPrefabInstance";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 
 export function IndustrialPrefabInspector({
@@ -132,31 +133,7 @@ function AttachPrefab({ locale, engine, modelId, disabled, onChange }: { locale:
   function attach(definition: IndustrialPrefabDefinition) {
     const transform = engine.getModelTransform(modelId);
     const start = transform?.position ?? { x: 0, y: 0, z: 0 };
-    const parameters = Object.fromEntries(definition.parameters.map((item) => [item.key, item.defaultValue]));
-    engine.setIndustrialPrefabState(modelId, {
-      definitionId: definition.id,
-      definitionVersion: definition.version,
-      kind: definition.kind,
-      parameters,
-      operatingState: "idle",
-      ...(definition.routeCapable
-        ? {
-            motionRoute: {
-              enabled: true,
-              autoplay: false,
-              points: [
-                { id: crypto.randomUUID(), position: { ...start } },
-                { id: crypto.randomUUID(), position: { ...start, x: start.x + 5 } },
-              ],
-              speedMps: numberParameter(parameters.speedMps, 1),
-              accelerationMps2: numberParameter(parameters.accelerationMps2, 0.8),
-              loopMode: "once",
-              orientToPath: true,
-              startOffsetSeconds: 0,
-            },
-          }
-        : {}),
-    });
+    engine.setIndustrialPrefabState(modelId, createIndustrialPrefabInstance(definition, start));
     onChange();
   }
   return (
@@ -193,10 +170,6 @@ function RoutePointRow({ locale, point, index, disabled, onChange, onDelete }: {
 function nextRoutePoint(points: SceneMotionRoutePoint[]): SceneMotionRoutePoint {
   const previous = points.at(-1)?.position ?? { x: 0, y: 0, z: 0 };
   return { id: crypto.randomUUID(), position: { ...previous, x: previous.x + 5 }, waitSeconds: 0 };
-}
-
-function numberParameter(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function operatingStateLabel(locale: AppLocale, state: IndustrialPrefabInstanceState["operatingState"]): string {

@@ -104,6 +104,9 @@ importers:
       draco3dgltf:
         specifier: ^1.5.7
         version: 1.5.7
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
       fastify:
         specifier: ^5.7.4
         version: 5.11.0
@@ -280,6 +283,9 @@ importers:
       '@bim-studio/parametric-modeling-plugin':
         specifier: workspace:*
         version: link:../../packages/parametric-modeling-plugin
+      '@bim-studio/plant-lite-simulation':
+        specifier: workspace:*
+        version: link:../../packages/plant-lite-simulation
       '@bim-studio/ppr-lite-engine':
         specifier: workspace:*
         version: link:../../packages/ppr-lite-engine
@@ -322,6 +328,9 @@ importers:
       echarts:
         specifier: ^6.1.0
         version: 6.1.0
+      es-module-lexer:
+        specifier: 2.3.1
+        version: 2.3.1
       hls.js:
         specifier: ^1.6.16
         version: 1.6.16
@@ -501,6 +510,10 @@ importers:
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1))
 
   packages/plant-lite-simulation:
+    dependencies:
+      '@bim-studio/contracts':
+        specifier: workspace:*
+        version: link:../contracts
     devDependencies:
       typescript:
         specifier: ^5.9.3

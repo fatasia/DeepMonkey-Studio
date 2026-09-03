@@ -4,7 +4,7 @@ import { DashboardInspectorSelection } from "./DashboardInspectorSelection";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 
 export function DashboardWorkspaceInspector() {
-  const { locale } = useDashboardWorkspace();
+  const { locale, selectedNodeIds } = useDashboardWorkspace();
 
   return (
     <aside className="dashboard-inspector-panel">
@@ -12,8 +12,11 @@ export function DashboardWorkspaceInspector() {
         <span className="eyebrow">{tr(locale, "组件检查器", "INSPECTOR")}</span>
         <strong>{tr(locale, "属性", "Properties")}</strong>
       </header>
-      <DashboardInspectorPageSettings />
-      <DashboardInspectorSelection />
+      {selectedNodeIds.length === 0 ? (
+        <DashboardInspectorPageSettings />
+      ) : (
+        <DashboardInspectorSelection />
+      )}
     </aside>
   );
 }

@@ -34,6 +34,7 @@ export interface AppViewBindings {
     busy: boolean;
     restore: () => Promise<void>;
     export: () => void;
+    defer: () => void;
     discard: () => Promise<void>;
   };
   sceneHistory: {

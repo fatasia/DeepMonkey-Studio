@@ -11,12 +11,12 @@ namespace BimStudio.Bridge.Editor
 {
     public static class BimStudioWebGLPackageExporter
     {
-        [MenuItem("BIM Studio/一键构建并导出 WebGL ZIP", priority = 2)]
+        [MenuItem("Industrial Studio/一键构建并导出 WebGL ZIP", priority = 2)]
         public static void BuildAndExport()
         {
             if (!BimStudioProjectSetup.PrepareForExport(out var manifest, out var preparationError))
             {
-                EditorUtility.DisplayDialog("BIM Studio", preparationError, "确定");
+                EditorUtility.DisplayDialog("Industrial Studio", preparationError, "确定");
                 return;
             }
 
@@ -27,19 +27,19 @@ namespace BimStudio.Bridge.Editor
             {
                 Selection.activeObject = manifest;
                 EditorGUIUtility.PingObject(manifest);
-                EditorUtility.DisplayDialog("BIM Studio", "请先修复集成清单中的问题：\n\n" + string.Join("\n", validation.errors), "打开集成清单");
+                EditorUtility.DisplayDialog("Industrial Studio", "请先修复集成清单中的问题：\n\n" + string.Join("\n", validation.errors), "打开集成清单");
                 return;
             }
 
             var enabledScenes = EditorBuildSettings.scenes.Where(scene => scene.enabled && File.Exists(scene.path)).Select(scene => scene.path).ToArray();
             if (enabledScenes.Length == 0)
             {
-                EditorUtility.DisplayDialog("BIM Studio", "没有可导出的已保存场景。", "确定");
+                EditorUtility.DisplayDialog("Industrial Studio", "没有可导出的已保存场景。", "确定");
                 return;
             }
 
             var defaultName = string.IsNullOrWhiteSpace(PlayerSettings.productName) ? "UnityWebGL" : SafeFileName(PlayerSettings.productName);
-            var zipPath = EditorUtility.SaveFilePanel("导出 BIM Studio Unity WebGL ZIP", LastExportDirectory(), defaultName + ".zip", "zip");
+            var zipPath = EditorUtility.SaveFilePanel("导出 Industrial Studio Unity WebGL ZIP", LastExportDirectory(), defaultName + ".zip", "zip");
             if (string.IsNullOrWhiteSpace(zipPath)) return;
             EditorPrefs.SetString("BimStudio.LastExportDirectory", Path.GetDirectoryName(zipPath) ?? string.Empty);
 
@@ -47,12 +47,12 @@ namespace BimStudio.Bridge.Editor
             {
                 BuildToZip(zipPath, enabledScenes);
                 EditorUtility.RevealInFinder(zipPath);
-                EditorUtility.DisplayDialog("BIM Studio", "WebGL ZIP 已生成，可直接拖入 BIM Studio：\n\n" + zipPath, "完成");
+                EditorUtility.DisplayDialog("Industrial Studio", "WebGL ZIP 已生成，可直接拖入 Industrial Studio：\n\n" + zipPath, "完成");
             }
             catch (Exception exception)
             {
                 Debug.LogException(exception);
-                EditorUtility.DisplayDialog("BIM Studio 导出失败", exception.Message, "打开控制台");
+                EditorUtility.DisplayDialog("Industrial Studio 导出失败", exception.Message, "打开控制台");
                 throw;
             }
             finally
@@ -69,7 +69,7 @@ namespace BimStudio.Bridge.Editor
             try
             {
                 Directory.CreateDirectory(buildRoot);
-                EditorUtility.DisplayProgressBar("BIM Studio", "正在构建 Unity WebGL…", 0.2f);
+                EditorUtility.DisplayProgressBar("Industrial Studio", "正在构建 Unity WebGL…", 0.2f);
                 var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
                 {
                     scenes = scenes,
@@ -79,7 +79,7 @@ namespace BimStudio.Bridge.Editor
                 });
                 if (report.summary.result != BuildResult.Succeeded)
                     throw new BuildFailedException($"Unity WebGL 构建失败：{report.summary.result}");
-                EditorUtility.DisplayProgressBar("BIM Studio", "正在打包可直接导入的 ZIP…", 0.9f);
+                EditorUtility.DisplayProgressBar("Industrial Studio", "正在打包可直接导入的 ZIP…", 0.9f);
                 CreateZip(buildRoot, zipPath);
             }
             finally

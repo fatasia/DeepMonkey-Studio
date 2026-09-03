@@ -25,6 +25,7 @@ import { buildMotionRoutePlan, sampleMotionRoute, type MotionRouteSample } from 
 import { mergeModelEffectsPatch, type ModelEffectsPatch } from "./modelEffectState";
 import { normalizeMaterialDataPatch } from "./materialDataPatch";
 import { annotationLocalAnchor, annotationWorldAnchor } from "./annotationAnchor";
+import { clearIndustrialPrefabProxy, ensureIndustrialPrefabProxy } from "./industrialPrefabProxy";
 
 /** Interaction 职责层。 */
 export abstract class ViewerEngineInteraction extends ViewerEngineCore {
@@ -149,16 +150,25 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
     return state ? structuredClone(state) : undefined;
   }
   setIndustrialPrefabState(modelId: string, state: IndustrialPrefabInstanceState | undefined): void {
-    if (!this.models.has(modelId)) return;
+    const model = this.models.get(modelId);
+    if (!model) return;
     const previousState = this.modelPrefabStates.get(modelId);
     const previousRuntime = this.motionRouteRuntimes.get(modelId);
     this.motionRouteRuntimes.delete(modelId);
     if (!state) {
       this.modelPrefabStates.delete(modelId);
+      if (clearIndustrialPrefabProxy(model.object)) {
+        this.rebuildComponentIndex(modelId);
+        this.markShadowMapDirty();
+      }
       return;
     }
     const next = structuredClone(state);
     this.modelPrefabStates.set(modelId, next);
+    if (ensureIndustrialPrefabProxy(model.object, next.kind)) {
+      this.rebuildComponentIndex(modelId);
+      this.markShadowMapDirty();
+    }
     const route = next.motionRoute;
     if (!route) return;
     const plan = buildMotionRoutePlan(route);

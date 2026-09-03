@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentCheckpoint, AgentToolDefinition } from "@bim-studio/industrial-agent-orchestrator";
-import { agentEvidenceViews, agentProgress, selectedToolPreview } from "./industrialAgentViewModel";
+import { agentEvidenceViews, agentProgress, agentStatusLabel, selectedToolPreview } from "./industrialAgentViewModel";
 
 const tools: AgentToolDefinition[] = [
   { id: "read", label: "读取数据", description: "", effect: "read", risk: "low", requiresApproval: false },
@@ -8,6 +8,10 @@ const tools: AgentToolDefinition[] = [
 ];
 
 describe("industrial agent view model", () => {
+  it("presents contract approval state as a local user confirmation", () => {
+    expect(agentStatusLabel("awaiting-approval", "zh-CN")).toBe("等待确认");
+  });
+
   it("separates approval risk from evidence requirements", () => {
     const preview = selectedToolPreview(tools, new Set(["read", "control"]));
     expect(preview.highRiskCount).toBe(1);

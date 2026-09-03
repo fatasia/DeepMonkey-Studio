@@ -9,13 +9,13 @@ describe("deliveryWorkflowModel", () => {
     const project = baseProject({
       dataConnections: [{ id: "connection-1", projectId: "project-1", name: "实时源", type: "simulation", enabled: true, config: {}, createdAt: timestamp, updatedAt: timestamp }],
       datasets: [
-        { id: "dataset-1", projectId: "project-1", name: "设备数据", connectionId: "connection-1", refreshSeconds: 10, fields: [], createdAt: timestamp, updatedAt: timestamp },
+        { id: "dataset-1", projectId: "project-1", name: "设备数据", connectionId: "connection-1", refreshSeconds: 10, fields: [{ key: "temperature", label: "温度", type: "number" }], createdAt: timestamp, updatedAt: timestamp },
       ],
     });
     const scene = baseScene({
       publishedAt: timestamp,
       dataBindings: [
-        { id: "binding-1", name: "温度", enabled: true, datasetId: "dataset-1", field: "temperature", target: { modelId: "model-1" }, action: "color", refreshSeconds: 10 },
+        { id: "binding-1", name: "温度", enabled: true, datasetId: "dataset-1", field: "temperature", target: {}, action: "color", refreshSeconds: 10 },
       ],
     });
     const steps = buildDeliverySteps("zh-CN", project, [scene]);
@@ -59,6 +59,35 @@ describe("deliveryWorkflowModel", () => {
     expect(deriveDeliveryWorkflowFacts(project, [scene]).validationReady).toBe(false);
     expect(buildDeliverySteps("zh-CN", project, [scene]).find((step) => step.id === "validate")).toMatchObject({ ready: false, blocked: true });
     expect(buildDeliveryBlockers("zh-CN", project, [scene])).toContainEqual(expect.objectContaining({ id: "linkage", stepId: "linkage" }));
+  });
+
+  it("场景存在断链时不会让开发流程先于发布体检显示通过", () => {
+    const project = baseProject({
+      dataConnections: [{ id: "connection-1", projectId: "project-1", name: "实时源", type: "simulation", enabled: true, config: {}, createdAt: timestamp, updatedAt: timestamp }],
+      datasets: [{
+        id: "dataset-1", projectId: "project-1", name: "设备数据", connectionId: "connection-1", refreshSeconds: 10,
+        fields: [{ key: "temperature", label: "温度", type: "number" }], createdAt: timestamp, updatedAt: timestamp,
+      }],
+    });
+    const scene = baseScene({
+      publishedAt: timestamp,
+      dataBindings: [{
+        id: "binding-1", name: "温度", enabled: true, datasetId: "dataset-1", field: "temperature",
+        target: { modelId: "missing-model" }, action: "color", refreshSeconds: 10,
+      }],
+    });
+
+    const facts = deriveDeliveryWorkflowFacts(project, [scene]);
+    const steps = buildDeliverySteps("zh-CN", project, [scene]);
+    expect(facts).toMatchObject({ linkageReady: true, validationReady: false, publicationBlockerCount: 1 });
+    expect(steps.find((step) => step.id === "validate")).toMatchObject({ ready: false, blocked: true, detail: "1 个发布阻断待处理" });
+    expect(buildDeliveryBlockers("zh-CN", project, [scene])).toContainEqual({
+      id: "validation",
+      stepId: "validate",
+      label: "发布体检未通过",
+      detail: "1 个断链或无效引用待处理",
+    });
+    expect(firstIncompleteRequiredStep(steps)?.id).toBe("validate");
   });
 });
 

@@ -1,19 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
-import { Crosshair, History, RotateCcw } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { ChevronDown, Crosshair, History, RotateCcw } from "lucide-react";
 import type { IndustrialStudyRecord, IndustrialStudyType } from "@bim-studio/contracts";
 import { compareIndustrialStudies } from "./industrialStudyComparison";
 
 interface Props {
   records: IndustrialStudyRecord[];
   busy: boolean;
+  defaultExpanded?: boolean;
   onReproduce: (record: IndustrialStudyRecord) => void;
   onOpenTarget: (sceneId: string, objectId: string) => void;
 }
 
-export function OperationsStudyHistory({ records, busy, onReproduce, onOpenTarget }: Props) {
+export function OperationsStudyHistory({ records, busy, defaultExpanded = false, onReproduce, onOpenTarget }: Props) {
   const [type, setType] = useState<IndustrialStudyType | "all">("all");
   const [selectedId, setSelectedId] = useState(records[0]?.id ?? "");
   const [baselineId, setBaselineId] = useState("");
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const contentId = useId();
   const visible = useMemo(
     () => type === "all" ? records : records.filter((record) => record.type === type),
     [records, type],
@@ -36,19 +39,23 @@ export function OperationsStudyHistory({ records, busy, onReproduce, onOpenTarge
   }, [selected?.id, selected?.lineage.baselineStudyId]);
 
   if (!records.length) return null;
-  return <section className="operations-study-history" aria-label="统一 Study 历史">
+  return <section className={`operations-study-history ${expanded ? "expanded" : "collapsed"}`} aria-label="统一运行记录">
     <header>
-      <div><History size={15} /><span><strong>Study 运行历史</strong><small>同一入口追溯工况、引擎、场景与结果证据</small></span></div>
-      <select value={type} aria-label="Study 类型" onChange={(event) => setType(event.target.value as IndustrialStudyType | "all")}>
+      <button className="operations-study-toggle" type="button" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded((current) => !current)}>
+        <History size={15} />
+        <span><strong>运行记录</strong><small>{records.length} 条 · 输入、场景、引擎和结果可追溯</small></span>
+        <ChevronDown size={15} />
+      </button>
+      {expanded && <select value={type} aria-label="运行类型" onChange={(event) => setType(event.target.value as IndustrialStudyType | "all")}>
         <option value="all">全部类型</option>
         <option value="plant-lite">物流仿真</option>
-        <option value="what-if">What-if</option>
-        <option value="workcell-audit">工位体检</option>
-        <option value="virtual-commissioning">虚拟调试</option>
-      </select>
+        <option value="what-if">工况推演</option>
+        <option value="workcell-audit">工位检查</option>
+        <option value="virtual-commissioning">控制验证</option>
+      </select>}
     </header>
-    <div className="operations-study-layout">
-      <nav aria-label="Study 记录">
+    {expanded && <div id={contentId} className="operations-study-layout">
+      <nav aria-label="运行记录列表">
         {visible.map((record) => <button
           key={record.id}
           className={record.id === selected?.id ? "active" : ""}
@@ -86,7 +93,7 @@ export function OperationsStudyHistory({ records, busy, onReproduce, onOpenTarge
           {selected.context.sceneId && selected.context.objectIds[0] && <button onClick={() => onOpenTarget(selected.context.sceneId!, selected.context.objectIds[0]!)}><Crosshair size={13} />定位三维对象</button>}
         </div>
       </article>}
-    </div>
+    </div>}
   </section>;
 }
 
@@ -95,7 +102,7 @@ function Evidence({ label, value }: { label: string; value: string | null }) {
 }
 
 function typeLabel(type: IndustrialStudyType): string {
-  return ({ "plant-lite": "物流仿真", "what-if": "What-if", "workcell-audit": "工位体检", "virtual-commissioning": "虚拟调试" })[type];
+  return ({ "plant-lite": "物流仿真", "what-if": "工况推演", "workcell-audit": "工位检查", "virtual-commissioning": "控制验证" })[type];
 }
 
 function statusLabel(status: IndustrialStudyRecord["run"]["status"]): string {

@@ -1,4 +1,4 @@
-import { BatteryCharging, BatteryMedium, CheckCircle2, Cpu, Gauge, Route, Wrench } from "lucide-react";
+import { ArrowRight, BatteryCharging, BatteryMedium, CheckCircle2, Cpu, Database, FileUp, Gauge, RefreshCw, Route, Wrench } from "lucide-react";
 import type {
   EnergyObservation,
   LogisticsExperimentRequest,
@@ -9,6 +9,7 @@ import type {
 } from "@bim-studio/contracts";
 import type { OperationsSnapshot } from "../api";
 import { SecondaryPageBack } from "./SecondaryPageBack";
+import { createDefaultPlantLiteRequest } from "./plantLiteModelEditing";
 
 export type OperationsTab = "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif";
 
@@ -23,14 +24,7 @@ export const defaultLogistics: LogisticsExperimentRequest = {
   durationHours: 8,
 };
 
-export const defaultPlantLite: PlantLiteStudyRequest = {
-  name: "AGV 两工位产线基线",
-  templateId: "agv-line-v1",
-  agvCount: 4,
-  bufferCapacity: 10,
-  seed: "plant-lite-baseline",
-  replications: 12,
-};
+export const defaultPlantLite: PlantLiteStudyRequest = createDefaultPlantLiteRequest();
 
 export function OperationsHeader({
   project,
@@ -46,14 +40,14 @@ export function OperationsHeader({
       <SecondaryPageBack locale="zh-CN" onBack={onBack} />
       <div className="secondary-page-heading-row">
         <div>
-          <span className="eyebrow">AI OPERATIONS LOOP</span>
+          <span className="eyebrow">生产优化与验证</span>
           <h1>智能运营</h1>
-          <p>{project.name} · 默认自动留证、门禁与建案，现场只需运行和确认</p>
+          <p>{project.name} · 从现场数据到规划、验证和改进，按任务一步步完成</p>
         </div>
         <div className="operations-summary">
           <span><Wrench size={15} />{snapshot?.deployments.length ?? 0} 维护部署</span>
           <span><Cpu size={15} />虚拟验收</span>
-          <span><Route size={15} />{(snapshot?.logisticsExperiments.length ?? 0) + (snapshot?.plantLiteStudies.length ?? 0)} 物流 Study</span>
+          <span><Route size={15} />{(snapshot?.logisticsExperiments.length ?? 0) + (snapshot?.plantLiteStudies.length ?? 0)} 规划结果</span>
           <span><BatteryCharging size={15} />{snapshot?.energyInsights.length ?? 0} 能耗洞察</span>
         </div>
       </div>
@@ -63,12 +57,12 @@ export function OperationsHeader({
 
 export function OperationsTabs({ tab, onChange }: { tab: OperationsTab; onChange: (tab: OperationsTab) => void }) {
   const items: Array<{ id: OperationsTab; label: string; icon: typeof Wrench }> = [
-    { id: "maintenance", label: "设备异常与预测维护", icon: Wrench },
-    { id: "commissioning", label: "虚拟调试", icon: Cpu },
-    { id: "battery", label: "电池健康与寿命", icon: BatteryMedium },
-    { id: "logistics", label: "物流仿真", icon: Route },
+    { id: "maintenance", label: "预测维护", icon: Wrench },
+    { id: "commissioning", label: "机器人与控制验证", icon: Cpu },
+    { id: "battery", label: "电池分析", icon: BatteryMedium },
+    { id: "logistics", label: "工厂规划", icon: Route },
     { id: "energy", label: "能耗分析", icon: BatteryCharging },
-    { id: "whatif", label: "What-if 工况", icon: Gauge },
+    { id: "whatif", label: "工况推演", icon: Gauge },
   ];
   return (
     <nav className="vision-tabs operations-tabs">
@@ -96,24 +90,49 @@ export function AssessmentCard({
   onCase: () => void;
   busy: boolean;
 }) {
+  const scorePercent = assessment.score === undefined ? undefined : Math.max(0, Math.min(100, assessment.score * 100));
+  const qualityPercent = Math.max(0, Math.min(100, assessment.dataQuality * 100));
+  const contributors = assessment.topContributors.slice(0, 3);
+  const contributorPeak = Math.max(1, ...contributors.map((item) => Math.abs(item.value)));
   return (
     <article className={`operations-result ${assessment.riskLevel}`}>
-      <div>
-        <span>{assessment.decisionStatus === "shadow" ? "影子评估" : assessment.decisionStatus}</span>
-        <strong>{assessment.score === undefined ? "—" : `${(assessment.score * 100).toFixed(1)}%`}</strong>
-        <small>
-          风险：{assessment.riskLevel} · 数据完整率 {(assessment.dataQuality * 100).toFixed(0)}% · 漂移{" "}
-          {assessment.driftScore.toFixed(2)}σ
-        </small>
+      <div className="maintenance-risk-overview">
+        <div
+          className="maintenance-risk-ring"
+          role="img"
+          aria-label={`风险评分 ${scorePercent === undefined ? "无结果" : `${scorePercent.toFixed(1)}%`}`}
+          style={{ background: `conic-gradient(currentColor ${scorePercent ?? 0}%, #253238 0)` }}
+        >
+          <i><strong>{scorePercent === undefined ? "—" : scorePercent.toFixed(1)}</strong><small>%</small></i>
+        </div>
+        <div className="maintenance-risk-kpis">
+          <span>{assessment.decisionStatus === "shadow" ? "影子评估" : assessment.decisionStatus}</span>
+          <strong>{assessment.riskLevel}</strong>
+          <small>当前风险等级</small>
+        </div>
+        <div className="maintenance-risk-kpis">
+          <span>数据完整率</span>
+          <strong>{qualityPercent.toFixed(0)}%</strong>
+          <i><b style={{ width: `${qualityPercent}%` }} /></i>
+        </div>
+        <div className="maintenance-risk-kpis">
+          <span>数据漂移</span>
+          <strong>{assessment.driftScore.toFixed(2)}σ</strong>
+          <small>{assessment.driftScore >= 2 ? "需要复核" : "处于可用范围"}</small>
+        </div>
       </div>
       <p>{assessment.message}</p>
-      <ol>
-        {assessment.topContributors.slice(0, 3).map((item) => (
-          <li key={item.feature}>
-            {item.feature} <b>{item.value}</b>
-          </li>
-        ))}
-      </ol>
+      {contributors.length > 0 && (
+        <div className="maintenance-contributor-chart" role="img" aria-label="风险贡献因子对比">
+          {contributors.map((item) => (
+            <div key={item.feature}>
+              <span title={item.feature}>{item.feature}</span>
+              <i><b style={{ width: `${Math.max(4, Math.abs(item.value) / contributorPeak * 100)}%` }} /></i>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="operations-result-actions">
         <button className="primary" disabled={busy} onClick={onDiagnose}>
           <Cpu size={14} />
@@ -122,7 +141,7 @@ export function AssessmentCard({
         {(["warning", "critical"] as const).includes(assessment.riskLevel as "warning" | "critical") && (
           <button disabled={busy} onClick={onCase}>
             <CheckCircle2 size={14} />
-            创建维护 Case
+            创建维护处置
           </button>
         )}
       </div>
@@ -181,6 +200,47 @@ export function EnergyCard({ insight }: { insight: NonNullable<OperationsSnapsho
 
 export function OperationsEmpty({ text }: { text: string }) {
   return <div className="operations-empty">{text}</div>;
+}
+
+export function MaintenanceModelOnboarding({
+  busy,
+  onSync,
+  onImport,
+  onOpenDataCenter,
+}: {
+  busy: boolean;
+  onSync: () => void;
+  onImport: () => void;
+  onOpenDataCenter: () => void;
+}) {
+  return (
+    <section className="operations-onboarding" aria-label="维护模型接入">
+      <div className="operations-onboarding-heading">
+        <span><Wrench size={18} /></span>
+        <div>
+          <strong>先接入可执行维护模型</strong>
+          <small>接入模型后选择生产数据，运行风险评估并生成可追溯维护处置。</small>
+        </div>
+      </div>
+      <div className="operations-onboarding-actions">
+        <button className="primary" disabled={busy} onClick={onSync}>
+          <RefreshCw size={15} />
+          <span><b>同步 Iot-nb 工程</b><small>导入当前工程已训练模型</small></span>
+          <ArrowRight size={14} />
+        </button>
+        <button disabled={busy} onClick={onImport}>
+          <FileUp size={15} />
+          <span><b>导入模型 JSON</b><small>接入已有训练模型定义</small></span>
+          <ArrowRight size={14} />
+        </button>
+      </div>
+      <button className="operations-data-link" onClick={onOpenDataCenter}>
+        <Database size={14} />
+        还没有生产数据？前往数据中心连接数据库
+        <ArrowRight size={13} />
+      </button>
+    </section>
+  );
 }
 
 export function ModelEvidence({ model }: { model: MaintenanceModelPackage }) {

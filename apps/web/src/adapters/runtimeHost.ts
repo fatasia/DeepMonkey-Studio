@@ -3,10 +3,19 @@ import { BrowserHostAdapter } from "./browserHostAdapter.js";
 import { isTauriRuntime, TauriHostAdapter } from "./tauriHostAdapter.js";
 import { readDesktopRuntimeMode, storeDesktopRuntimeMode, type DesktopRuntimeMode } from "./desktopRuntimeMode.js";
 
-const desktop = isTauriRuntime(window) ? new TauriHostAdapter(window) : undefined;
-const browser = desktop ? undefined : new BrowserHostAdapter(window);
+const runtimeWindow = typeof window === "undefined" ? undefined : window;
+const desktop = runtimeWindow && isTauriRuntime(runtimeWindow) ? new TauriHostAdapter(runtimeWindow) : undefined;
+const browser = runtimeWindow && !desktop ? new BrowserHostAdapter(runtimeWindow) : undefined;
+const serverRenderHost = {
+  getServerProfile: () => ({ baseUrl: "http://localhost" }),
+  getAccessToken: () => "",
+  setAccessToken: () => undefined,
+  clearAccessToken: () => undefined,
+  notifyUnauthorized: () => undefined,
+};
 
-export const runtimeHost = desktop ?? browser!;
+/** SSR and static component tests receive an inert host without touching browser globals. */
+export const runtimeHost = desktop ?? browser ?? serverRenderHost;
 
 export function isDesktopRuntime(): boolean {
   return Boolean(desktop);

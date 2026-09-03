@@ -98,7 +98,7 @@ export function MaintenanceDiagnosisCard({
         {!requiresData && requiresAction && (
           <button disabled={busy} onClick={onCreateCase}>
             <ClipboardCheck size={14} />
-            创建维护 Case
+            创建维护处置
           </button>
         )}
         {canFocus && (

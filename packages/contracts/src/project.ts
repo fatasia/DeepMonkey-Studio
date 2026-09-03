@@ -11,6 +11,8 @@ export const supportedExtensions = [
   "ifc",
   "step",
   "stp",
+  "iges",
+  "igs",
   "dwg",
   "dxf",
   "gltf",

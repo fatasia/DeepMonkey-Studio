@@ -88,6 +88,11 @@ interface StudioComponentHandle {
   hide(): void;
 }
 ${STUDIO_API_DECLARATIONS}
+interface StudioAIAPI {
+  /** 通过宿主受控网关调用已上线的工业 AI 能力；结果保留状态、证据和建议动作。 */
+  invoke(capabilityId: string, input?: JsonValue): Promise<JsonValue>;
+}
+interface StudioAPI { readonly ai: StudioAIAPI; }
 interface SceneCommand { id?: string; type: string; [key: string]: JsonValue | undefined; }
 interface StudioProjectEventNames {}
 type ProjectEventName = keyof StudioProjectEventNames extends never ? string : keyof StudioProjectEventNames;
@@ -233,6 +238,7 @@ export function ProfessionalCodeEditor({
   compact = false,
   insertRequest,
   intelligence,
+  moduleSpecifiers = [],
   diagnostics = [],
   onChange,
   onSave,
@@ -246,6 +252,7 @@ export function ProfessionalCodeEditor({
   compact?: boolean;
   insertRequest?: CodeInsertRequest;
   intelligence?: SceneScriptIntelligenceContext;
+  moduleSpecifiers?: readonly string[];
   diagnostics?: readonly SceneScriptIssue[];
   onChange: (value: string) => void;
   onSave?: () => void;
@@ -261,6 +268,7 @@ export function ProfessionalCodeEditor({
   const monacoApiRef = useRef<typeof import("monaco-editor") | undefined>(undefined);
   const lastInsertRequestRef = useRef(0);
   const intelligenceTypesRef = useRef<monaco.IDisposable | undefined>(undefined);
+  const dependencyTypesRef = useRef<monaco.IDisposable | undefined>(undefined);
   const problems = languageProblems + diagnostics.length;
   const sortedDiagnostics = useMemo(() => [...diagnostics].sort((left, right) => left.line - right.line || left.column - right.column), [diagnostics]);
 
@@ -306,6 +314,19 @@ export function ProfessionalCodeEditor({
   }, [intelligence, monacoApi, path]);
 
   useEffect(() => {
+    dependencyTypesRef.current?.dispose();
+    dependencyTypesRef.current = undefined;
+    if (!monacoApi || moduleSpecifiers.length === 0) return;
+    const declarations = [...new Set(moduleSpecifiers)].map((specifier) => `declare module ${JSON.stringify(specifier)};`).join("\n");
+    const javascriptDefaults = (monacoApi.languages.typescript as unknown as { javascriptDefaults: { addExtraLib(content: string, filePath?: string): monaco.IDisposable } }).javascriptDefaults;
+    dependencyTypesRef.current = javascriptDefaults.addExtraLib(declarations, `bim-studio://types/project-dependencies-${encodeURIComponent(path)}.d.ts`);
+    return () => {
+      dependencyTypesRef.current?.dispose();
+      dependencyTypesRef.current = undefined;
+    };
+  }, [moduleSpecifiers.join("\u0000"), monacoApi, path]);
+
+  useEffect(() => {
     const api = monacoApiRef.current ?? monacoApi;
     const model = editorRef.current?.getModel();
     if (!api || !model) return;
@@ -319,7 +340,7 @@ export function ProfessionalCodeEditor({
         startColumn: issue.column,
         endLineNumber: issue.line,
         endColumn: Math.max(issue.column + 1, issue.endColumn),
-        source: "BIM Studio",
+        source: "Industrial Studio",
       })),
     );
     return () => api.editor.setModelMarkers(model, "bim-studio-scene-analysis", []);
@@ -462,7 +483,7 @@ export function ProfessionalCodeEditor({
     if (onOpenDocs)
       editor.addAction({
         id: "bim-studio.open-script-docs",
-        label: tr(locale, "BIM Studio：打开场景 API 文档", "BIM Studio: Open scene API docs"),
+        label: tr(locale, "Industrial Studio：打开场景 API 文档", "Industrial Studio: Open scene API docs"),
         keybindings: [api.KeyMod.CtrlCmd | api.KeyCode.F1],
         run: () => onOpenDocs(),
       });
@@ -476,7 +497,7 @@ export function ProfessionalCodeEditor({
         startColumn: issue.column,
         endLineNumber: issue.line,
         endColumn: Math.max(issue.column + 1, issue.endColumn),
-        source: "BIM Studio",
+        source: "Industrial Studio",
       })),
     );
     editor.focus();
@@ -585,7 +606,7 @@ export function ProfessionalCodeEditor({
           theme="vs-dark"
           value={value}
           onChange={(next) => onChange(next ?? "")}
-          onValidate={(markers) => setLanguageProblems(markers.filter((marker) => marker.severity >= monacoApi.MarkerSeverity.Warning && marker.source !== "BIM Studio").length)}
+          onValidate={(markers) => setLanguageProblems(markers.filter((marker) => marker.severity >= monacoApi.MarkerSeverity.Warning && marker.source !== "Industrial Studio").length)}
           loading={<div className="professional-code-loading">{tr(locale, "正在加载代码智能服务…", "Loading code intelligence…")}</div>}
           options={{
             automaticLayout: true,

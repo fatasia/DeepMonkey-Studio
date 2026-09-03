@@ -21,6 +21,7 @@ export const SCENE_CAPABILITIES = [
   "studio.timeline",
   "studio.input",
   "studio.data",
+  "studio.ai",
   "studio.runtime"
 ] as const;
 export type SceneCapability = typeof SCENE_CAPABILITIES[number];
@@ -30,6 +31,7 @@ export const SCENE_PERMISSIONS = [
   "scene.write",
   "data.read",
   "data.write",
+  "ai.invoke",
   "network.connect",
   "renderer.extend",
   "editor.extend"
@@ -117,6 +119,14 @@ export interface SceneBehaviorModule {
   capabilities: SceneCapability[];
   permissions: ScenePermission[];
   target?: SceneBehaviorTarget;
+  /** 已由宿主校验哈希并读取的离线模块；Worker 不直接访问来源网络。 */
+  dependencies?: SceneBehaviorDependencyModule[];
+}
+
+export interface SceneBehaviorDependencyModule {
+  specifier: string;
+  code: string;
+  integrity: string;
 }
 
 export interface SceneBehaviorRuntimeSettings {
@@ -148,17 +158,27 @@ export interface SceneBehaviorNetworkResult {
   value: JsonValue;
 }
 
+/** Worker 行为脚本通过宿主调用的受管项目能力；结果保持 JSON 可序列化，避免向沙箱泄露宿主对象。 */
+export interface SceneBehaviorCapabilityRequest {
+  requestId: string;
+  invocationId: string;
+  capabilityId: string;
+  input: JsonValue;
+}
+
 export type SceneBehaviorLogLevel = "debug" | "info" | "warn" | "error";
 
 export type SceneBehaviorWorkerRequest =
   | { type: "behavior.initialize"; module: SceneBehaviorModule; sceneId: string }
   | { type: "behavior.invoke"; invocationId: string; lifecycle: SceneScriptLifecycle; elapsedMs: number; deltaMs?: number; event?: SceneEvent; data?: JsonValue }
   | { type: "behavior.dispose"; invocationId: string }
-  | { type: "behavior.network.result"; requestId: string; result?: SceneBehaviorNetworkResult; error?: string };
+  | { type: "behavior.network.result"; requestId: string; result?: SceneBehaviorNetworkResult; error?: string }
+  | { type: "behavior.capability.result"; requestId: string; result?: JsonValue; error?: string };
 
 export type SceneBehaviorWorkerResponse =
   | { type: "behavior.ready"; moduleId: string; lifecycle: SceneScriptLifecycle[] }
   | { type: "behavior.result"; invocationId: string; durationMs: number; commands: SceneCommand[]; dataUpdates?: Record<string, JsonValue>; events?: Array<{ name: string; payload?: JsonValue }> }
   | ({ type: "behavior.network.request" } & SceneBehaviorNetworkRequest)
+  | ({ type: "behavior.capability.request" } & SceneBehaviorCapabilityRequest)
   | { type: "behavior.log"; level: SceneBehaviorLogLevel; message: string; data?: JsonValue }
   | { type: "behavior.error"; invocationId?: string; message: string; stack?: string };

@@ -1,4 +1,5 @@
-import { Download, History, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect } from "react";
+import { Clock3, Download, History, RotateCcw, Trash2 } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
@@ -10,12 +11,22 @@ interface WorkspaceRecoveryDialogProps {
   busy: boolean;
   onRestore: () => void;
   onExport: () => void;
+  onDefer: () => void;
   onDiscard: () => void;
 }
 
 export function WorkspaceRecoveryDialog(props: WorkspaceRecoveryDialogProps) {
   const t = (zh: string, en: string) => tr(props.locale, zh, en);
   const serverIsNewer = props.serverRevision !== undefined && props.draft.baseRevision !== undefined && props.serverRevision > props.draft.baseRevision;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || props.busy) return;
+      event.preventDefault();
+      props.onDefer();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [props.busy, props.onDefer]);
   return (
     <div className="dialog-backdrop workspace-recovery-backdrop">
       <section className="dialog workspace-recovery-dialog" role="dialog" aria-modal="true" aria-label={t("恢复未保存工作", "Recover unsaved work")}>
@@ -57,7 +68,11 @@ export function WorkspaceRecoveryDialog(props: WorkspaceRecoveryDialogProps) {
           </span>
         </div>
         <div className="dialog-actions workspace-recovery-actions">
-          <button className="button danger" disabled={props.busy} onClick={props.onDiscard}>
+          <button className="button" disabled={props.busy} onClick={props.onDefer} title={t("保留本地副本，先使用服务器版本进入编辑器", "Keep the local copy and continue with the server version") }>
+            <Clock3 size={13} />
+            {t("稍后处理", "Decide later")}
+          </button>
+          <button className="button ghost" disabled={props.busy} onClick={props.onDiscard}>
             <Trash2 size={13} />
             {t("丢弃副本", "Discard")}
           </button>

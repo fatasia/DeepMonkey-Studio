@@ -13,6 +13,7 @@ import {
   previewDataset,
   writeDataPoint,
 } from "./dataIntegration.js";
+import { dataConnectionErrorMessage, inferFields as inferDatasetFields } from "./dataIntegrationHelpers.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -33,6 +34,18 @@ const dataset: DataDatasetRecord = {
 };
 
 describe("computed dataset fields", () => {
+  it("discovers sparse fields across the sampled rows instead of trusting only row one", () => {
+    expect(inferDatasetFields([{ device: "A", temperature: null }, { device: "B", temperature: 24, alarm: true }])).toEqual([
+      { key: "device", label: "device", type: "string" },
+      { key: "temperature", label: "temperature", type: "number" },
+      { key: "alarm", label: "alarm", type: "boolean" },
+    ]);
+  });
+
+  it("turns localized PostgreSQL authentication output into actionable product copy", () => {
+    expect(dataConnectionErrorMessage(new Error('psql: error: �û� "postgres" Password ��֤ʧ��'), "postgresql"))
+      .toBe("PostgreSQL 身份验证失败，请检查用户名与密码环境变量");
+  });
   it("advertises only connectors backed by executable preview implementations", () => {
     for (const type of [
       "postgresql",
@@ -137,6 +150,20 @@ describe("computed dataset fields", () => {
     expect(first.rows).toHaveLength(3);
     expect(first.rows[0]).toMatchObject({ device_id: "SIM-01", running: false, quality: "good" });
     expect(first.fields.map((field) => field.key)).toEqual(["recorded_at", "device_id", "temperature", "pressure", "vibration", "running", "quality"]);
+  });
+
+  it("refreshes a saved schema while preserving field labels and units", async () => {
+    const preview = await previewDataset(
+      {} as never,
+      connection("simulation", { url: "sim://telemetry?rows=1&seed=7" }),
+      sourceDataset({
+        sourceKey: "",
+        fields: [{ key: "temperature", label: "温度", type: "number", unit: "°C" }],
+      }),
+    );
+
+    expect(preview.fields.find((field) => field.key === "temperature")).toEqual({ key: "temperature", label: "温度", type: "number", unit: "°C" });
+    expect(preview.fields.some((field) => field.key === "device_id")).toBe(true);
   });
 
   it("rejects invalid simulation intervals instead of emitting invalid timestamps", async () => {

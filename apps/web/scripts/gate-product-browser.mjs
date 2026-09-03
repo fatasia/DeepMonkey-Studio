@@ -6,6 +6,7 @@ import { buildVisualQaArtifact, createStaticServer } from "./productBrowserSuppo
 import { compareImageFiles } from "./renderImageSimilarity.mjs";
 import { classifyRendererInitialization } from "./rendererGateClassification.mjs";
 import { assessProductVisualQuality, FIXED_VIEWER_VISUAL_REGIONS } from "./productVisualQualityPolicy.mjs";
+import { inspectCommissioningWorkflow, inspectOperationsPlanning } from "./operationsWorkflowGate.mjs";
 
 const { chromium } = playwright;
 const webRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -39,8 +40,12 @@ const report = { createdAt: new Date().toISOString(), chromePath, requireWebGpu,
 
 try {
   for (const viewport of viewportCases) report.cases.push(await inspectViewport(browser, origin, viewport));
-  report.workflowCases.push(await inspectCommissioning(browser, origin, { id: "commissioning-1440", width: 1440, height: 900 }));
-  report.workflowCases.push(await inspectCommissioning(browser, origin, { id: "commissioning-1024", width: 1024, height: 768 }));
+  for (const viewport of [{ id: "operations-1440", width: 1440, height: 900 }, { id: "operations-1024", width: 1024, height: 768 }]) {
+    report.workflowCases.push(await inspectOperationsPlanning(browser, origin, viewport, outputRoot));
+  }
+  for (const viewport of [{ id: "commissioning-1440", width: 1440, height: 900 }, { id: "commissioning-1024", width: 1024, height: 768 }]) {
+    report.workflowCases.push(await inspectCommissioningWorkflow(browser, origin, viewport, outputRoot));
+  }
   report.viewerCases.push(await inspectViewer(browser, origin, { id: "viewer-webgl-1440", width: 1440, height: 900, backend: "webgl", required: true }));
   report.viewerCases.push(await inspectViewer(browser, origin, { id: "viewer-webgpu-1440", width: 1440, height: 900, backend: "webgpu", required: requireWebGpu }));
   const comparableViewerCases = report.viewerCases.filter((item) => !item.environmentBlocked && item.failures.length === 0);
@@ -72,54 +77,6 @@ try {
 } finally {
   await browser.close();
   await new Promise((resolveClosed, reject) => server.close((error) => error ? reject(error) : resolveClosed()));
-}
-
-async function inspectCommissioning(browserInstance, origin, viewport) {
-  const page = await browserInstance.newPage({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: 1 });
-  const consoleErrors = [];
-  const pageErrors = [];
-  page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  await page.goto(`${origin}/?__visualQa=commissioning`, { waitUntil: "networkidle" });
-  await page.locator(".commissioning-workbench").waitFor({ state: "visible" });
-  await page.screenshot({ path: resolve(outputRoot, `${viewport.id}.png`), fullPage: true });
-  const metrics = await page.evaluate(() => {
-    const root = document.querySelector(".commissioning-visual-qa");
-    const selectors = [".commissioning-titlebar", ".workcell-audit-panel", ".commissioning-layout"];
-    const elements = root ? [...root.querySelectorAll("button,input,select,small,span,strong,code")] : [];
-    const visible = (element) => {
-      const bounds = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      return bounds.width > 0 && bounds.height > 0 && style.display !== "none" && style.visibility !== "hidden";
-    };
-    return {
-      horizontalOverflow: Boolean(root && root.scrollWidth > root.clientWidth + 1),
-      hiddenPrimaryRegions: selectors.filter((selector) => {
-        const element = document.querySelector(selector);
-        if (!element) return true;
-        const bounds = element.getBoundingClientRect();
-        return bounds.width < 1 || bounds.height < 1;
-      }),
-      smallUiText: elements.filter((element) => visible(element) && element.textContent?.trim() && Number.parseFloat(getComputedStyle(element).fontSize) < 9.5)
-        .slice(0, 8).map((element) => `${element.tagName.toLowerCase()}=${getComputedStyle(element).fontSize}[${element.textContent?.trim().slice(0, 18)}]`),
-      smallUiTargets: elements.filter((element) => {
-        if (!visible(element) || !["BUTTON", "INPUT", "SELECT"].includes(element.tagName)) return false;
-        if (element instanceof HTMLInputElement && ["checkbox", "radio"].includes(element.type)) return false;
-        const bounds = element.getBoundingClientRect();
-        return bounds.width < 24 || bounds.height < 24;
-      }).slice(0, 8).map((element) => element.tagName.toLowerCase()),
-    };
-  });
-  const failures = [
-    ...consoleErrors.map((value) => `console error: ${value}`),
-    ...pageErrors.map((value) => `page error: ${value}`),
-    ...(metrics.horizontalOverflow ? ["虚拟验收页产生横向溢出"] : []),
-    ...(metrics.hiddenPrimaryRegions.length ? [`关键区域不可见：${metrics.hiddenPrimaryRegions.join(", ")}`] : []),
-    ...(metrics.smallUiText.length ? [`存在小于 9.5px 的界面文字：${metrics.smallUiText.join(", ")}`] : []),
-    ...(metrics.smallUiTargets.length ? [`存在小于 24px 的点击目标：${metrics.smallUiTargets.join(", ")}`] : []),
-  ];
-  await page.close();
-  return { ...viewport, metrics, consoleErrors, pageErrors, failures };
 }
 
 function buildRendererWarnings(viewerCases) {
@@ -340,13 +297,29 @@ async function inspectViewport(browserInstance, origin, viewport) {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("requestfailed", (request) => requestFailures.push(`${request.method()} ${request.url()} · ${request.failure()?.errorText ?? "unknown"}`));
   await page.addInitScript(() => {
-    window.__productQa = { longTasks: [], layoutShifts: [] };
-    new PerformanceObserver((list) => window.__productQa.longTasks.push(...list.getEntries().map((entry) => entry.duration))).observe({ type: "longtask", buffered: true });
+    window.__productQa = { phase: "boot", longTasks: [], longTaskDetails: [], layoutShifts: [] };
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        window.__productQa.longTasks.push(entry.duration);
+        window.__productQa.longTaskDetails.push({
+          duration: entry.duration,
+          startTime: entry.startTime,
+          phase: window.__productQa.phase,
+          attribution: [...(entry.attribution ?? [])].map((item) => ({
+            name: item.name,
+            containerType: item.containerType,
+            containerName: item.containerName,
+            containerSrc: item.containerSrc,
+          })),
+        });
+      }
+    }).observe({ type: "longtask", buffered: true });
     new PerformanceObserver((list) => window.__productQa.layoutShifts.push(...list.getEntries().filter((entry) => !entry.hadRecentInput).map((entry) => entry.value))).observe({ type: "layout-shift", buffered: true });
   });
 
   await page.goto(`${origin}/?__visualQa=dashboard`, { waitUntil: "networkidle" });
   await page.locator(".dashboard-workspace").waitFor({ state: "visible" });
+  await page.evaluate(() => { window.__productQa.phase = "editor-steady"; });
   await page.screenshot({ path: resolve(outputRoot, `${viewport.id}-editor.png`), fullPage: true });
   const editorMetrics = await collectMetrics(page, [".dashboard-workspace-topbar", ".dashboard-pages-panel", ".dashboard-design-surface"]);
   const editorFocus = await page.locator(".dashboard-artboard").evaluate((element) => {
@@ -359,8 +332,10 @@ async function inspectViewport(browserInstance, origin, viewport) {
     return { zoom: matrix.a, visibleNodeCount: visibleNodes.length };
   });
 
+  await page.evaluate(() => { window.__productQa.phase = "runtime-transition"; });
   await page.getByRole("button", { name: "浏览" }).click();
   await page.locator(".dashboard-runtime-preview").waitFor({ state: "visible" });
+  await page.evaluate(() => { window.__productQa.phase = "runtime-steady"; });
   await page.screenshot({ path: resolve(outputRoot, `${viewport.id}-runtime.png`), fullPage: true });
   const runtimeMetrics = await collectMetrics(page, [".dashboard-runtime-preview", ".dashboard-runtime-surface", ".dashboard-runtime-controller-trigger"]);
   const navigation = await page.evaluate(() => {
@@ -370,6 +345,7 @@ async function inspectViewport(browserInstance, origin, viewport) {
   const observed = await page.evaluate(() => ({
     longTaskCount: window.__productQa.longTasks.length,
     maxLongTaskMs: Math.max(0, ...window.__productQa.longTasks),
+    longTasks: window.__productQa.longTaskDetails,
     cumulativeLayoutShift: window.__productQa.layoutShifts.reduce((sum, value) => sum + value, 0)
   }));
   const failures = [

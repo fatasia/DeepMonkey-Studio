@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { ACCEPTED_MODELS } from "../appDefaults";
+import { useEffect, useRef, useState } from "react";
+import { ACCEPTED_MODELS, STUDIO_INSPECTOR_STORAGE_KEY, STUDIO_LEFT_PANEL_STORAGE_KEY } from "../appDefaults";
+import { readBooleanPreference, writeBooleanPreference } from "../hooks/usePersistedBooleanState";
 import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
 import { ModelTreeItem } from "../components/ModelTreeItem";
 import { SceneOrganizationPanel } from "../components/SceneOrganizationPanel";
@@ -13,8 +14,9 @@ import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "
 
 export function AppStudioShellView({ controller }: { controller: AppStudioController }) {
   // 三维视口是核心工作区，资源树和属性检查器按需收起，避免遮挡模型。
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(() => readBooleanPreference(STUDIO_LEFT_PANEL_STORAGE_KEY, true));
+  const [rightPanelOpen, setRightPanelOpen] = useState(() => readBooleanPreference(STUDIO_INSPECTOR_STORAGE_KEY, true));
+  const panelsBeforeBehaviorSplitRef = useRef<{ left: boolean; right: boolean } | undefined>(undefined);
   const {
     activeApplication,
     activeScene,
@@ -66,6 +68,9 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     createDeviceLayout,
     createSceneGroup,
     createSceneSelectionSet,
+    moveSceneObjectsToGroup,
+    reorderSceneGroup,
+    renameSceneGroup,
     defaultCameraViewId,
     deleteAnnotation,
     deleteKeyframe,
@@ -87,6 +92,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     importRef,
     importScene,
     infoEnabled,
+    insertIndustrialPrefab,
     inspectorTab,
     interactionTargetOptions,
     isolateSceneObjects,
@@ -126,6 +132,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     rvtRevitVersion,
     sceneAnimation,
     sceneBehaviorOpen,
+    sceneBehaviorLayout,
     sceneCoordinates,
     sceneDashboard,
     sceneDataBindingRuntime,
@@ -238,6 +245,21 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     xrPanelOpen,
   } = controller;
 
+  useEffect(() => {
+    const splitActive = sceneBehaviorOpen && sceneBehaviorLayout === "split";
+    if (splitActive) {
+      panelsBeforeBehaviorSplitRef.current ??= { left: leftPanelOpen, right: rightPanelOpen };
+      if (leftPanelOpen) setLeftPanelOpen(false);
+      if (rightPanelOpen) setRightPanelOpen(false);
+      return;
+    }
+    const previous = panelsBeforeBehaviorSplitRef.current;
+    if (!previous) return;
+    panelsBeforeBehaviorSplitRef.current = undefined;
+    setLeftPanelOpen(previous.left);
+    setRightPanelOpen(previous.right);
+  }, [leftPanelOpen, rightPanelOpen, sceneBehaviorLayout, sceneBehaviorOpen]);
+
   return (
     <>
       <div
@@ -247,20 +269,30 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
         {route.view === "studio" && (
           <div className="workspace-panel-controls" role="group" aria-label={locale === "zh-CN" ? "三维工作区面板" : "3D workspace panels"}>
             <button
+              className="panel-toggle-left"
               type="button"
               aria-pressed={leftPanelOpen}
               aria-label={leftPanelOpen ? "收起场景目录" : "展开场景目录"}
               title={leftPanelOpen ? "收起场景目录" : "展开场景目录"}
-              onClick={() => setLeftPanelOpen((value) => !value)}
+              onClick={() => setLeftPanelOpen((value) => {
+                const next = !value;
+                writeBooleanPreference(STUDIO_LEFT_PANEL_STORAGE_KEY, next);
+                return next;
+              })}
             >
               {leftPanelOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
             </button>
             <button
+              className="panel-toggle-right"
               type="button"
               aria-pressed={rightPanelOpen}
               aria-label={rightPanelOpen ? "收起属性检查器" : "展开属性检查器"}
               title={rightPanelOpen ? "收起属性检查器" : "展开属性检查器"}
-              onClick={() => setRightPanelOpen((value) => !value)}
+              onClick={() => setRightPanelOpen((value) => {
+                const next = !value;
+                writeBooleanPreference(STUDIO_INSPECTOR_STORAGE_KEY, next);
+                return next;
+              })}
             >
               {rightPanelOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
             </button>
@@ -296,6 +328,8 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
           onRvtConversionModeChange={setRvtConversionMode}
           onRevitVersionChange={setRvtRevitVersion}
           onUpload={() => uploadRef.current?.click()}
+          onInsertProjectModel={(model) => void loadModel(model)}
+          onInsertPrefab={insertIndustrialPrefab}
           onCreateDeviceLayout={createDeviceLayout}
           onConfirmSmartBindings={(mappings) => {
             const merged = mergeConfirmedSceneAssetBindings(sceneAssetBindings, mappings, bindingComponents);
@@ -333,6 +367,9 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
               onRestoreIsolation={restoreSceneObjectIsolation}
               onCreateSelectionSet={createSceneSelectionSet}
               onCreateGroup={createSceneGroup}
+              onMoveObjects={moveSceneObjectsToGroup}
+              onReorderGroup={reorderSceneGroup}
+              onRenameGroup={renameSceneGroup}
               onUpdateSelectionSet={updateSceneSelectionSet}
               onApplySelectionSet={applySceneSelectionSet}
               onDeleteSelectionSet={deleteSceneSelectionSet}
@@ -414,13 +451,14 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
               }}
             />
           }
+          projectAssets={project?.assets ?? []}
+          projectModels={project?.models ?? []}
         />
 
         <AppStudioViewport controller={controller} />
 
         <AppStudioInspector controller={controller} />
 
-        <div className="app-copyright">{branding.copyright}</div>
       </div>
       <input ref={uploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadModels(event.target.files ?? undefined)} />
       <input ref={importRef} hidden type="file" accept=".json,.bimscene" onChange={(event) => void importScene(event.target.files?.[0])} />

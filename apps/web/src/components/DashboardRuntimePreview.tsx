@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Copy,
   Download,
   ExternalLink,
@@ -157,6 +158,15 @@ export function DashboardRuntimePreview({
   ).length;
   return (
     <main className="dashboard-runtime-preview">
+      <button
+        type="button"
+        className="dashboard-runtime-back"
+        title={tr(locale, "返回编辑（Esc）", "Back to editor (Esc)")}
+        onClick={onClose}
+      >
+        <ArrowLeft size={15} />
+        {tr(locale, "返回编辑", "Back to editor")}
+      </button>
       <section
         ref={surfaceRef}
         className={`dashboard-runtime-surface fit-${page.viewportFit}`}
@@ -348,4 +358,3 @@ export function DashboardRuntimePreview({
     </main>
   );
 }
-

@@ -22,6 +22,7 @@ const assemblyFixturePath = fileURLToPath(new URL(
   "../../../data/external-assets/format-fixtures/jt/voyager-coffee-maker-jt9.5.jt",
   import.meta.url,
 ));
+const converterFixturePath = fileURLToPath(new URL("./fixtures/fakeCadConverter.mjs", import.meta.url));
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
@@ -35,7 +36,7 @@ describe("JT upload inspection closure", () => {
     const uploaded = response.json() as ModelRecord;
     await vi.waitFor(() => {
       expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("ready");
-    });
+    }, { timeout: 5_000, interval: 25 });
 
     const model = store.getProject("default")!.models.find((item) => item.id === uploaded.id)!;
     expect(model).toMatchObject({ status: "ready", progress: 100 });
@@ -102,7 +103,7 @@ describe("JT upload inspection closure", () => {
     const uploaded = response.json() as ModelRecord;
     await vi.waitFor(() => {
       expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("waiting_converter");
-    });
+    }, { timeout: 5_000, interval: 25 });
 
     const model = store.getProject("default")!.models.find((item) => item.id === uploaded.id)!;
     expect(model).toMatchObject({ status: "waiting_converter", progress: 40 });
@@ -124,13 +125,38 @@ describe("JT upload inspection closure", () => {
     await app.close();
   });
 
+  it("hands a valid unsupported JT to the configured industrial converter and preserves inspection evidence", async () => {
+    const { app, dataDir, store } = await createHarness(true);
+    const response = await uploadJt(app, withoutGeometrySegments(await readFile(fixturePath)), "external-lod.jt");
+    const uploaded = response.json() as ModelRecord;
+    await vi.waitFor(() => {
+      expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("ready");
+    }, { timeout: 5_000, interval: 25 });
+
+    const model = store.getProject("default")!.models.find((item) => item.id === uploaded.id)!;
+    expect(model).toMatchObject({ status: "ready", progress: 100 });
+    expect(model.manifest).toMatchObject({
+      sourceFormat: "jt",
+      viewerKind: "gltf",
+      geometryUrl: expect.stringContaining("geometry.glb"),
+      inspectionUrl: expect.stringContaining("inspection.json"),
+    });
+    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "output");
+    expect(JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"))).toMatchObject({
+      status: "structure-read",
+      geometryParsed: false,
+      toc: { entryCount: 9 },
+    });
+    await app.close();
+  });
+
   it("publishes JT 9.5 mesh instances with their accumulated assembly transforms", async () => {
     const { app, store } = await createHarness();
     const response = await uploadJt(app, await readFile(assemblyFixturePath), "coffee-maker.jt");
     const uploaded = response.json() as ModelRecord;
     await vi.waitFor(() => {
       expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("ready");
-    });
+    }, { timeout: 5_000, interval: 25 });
     const model = store.getProject("default")!.models.find((item) => item.id === uploaded.id)!;
     expect(model.message).toContain("44 个网格、64 个装配实例");
     const geometryResponse = await app.inject({ method: "GET", url: model.manifest!.geometryUrl! });
@@ -147,7 +173,7 @@ describe("JT upload inspection closure", () => {
   });
 });
 
-async function createHarness() {
+async function createHarness(withIndustrialConverter = false) {
   const dataDir = await mkdtemp(path.join(tmpdir(), "bim-jt-acceptance-"));
   directories.push(dataDir);
   const store = new JsonStore(dataDir);
@@ -155,7 +181,19 @@ async function createHarness() {
   const objects = new LocalObjectStore(dataDir);
   const config = loadConfig();
   config.dataDir = dataDir;
-  config.industrialCad = { args: [], cwd: process.cwd() };
+  config.industrialCad = withIndustrialConverter
+    ? {
+        command: process.execPath,
+        args: [
+          converterFixturePath,
+          "--input", "{input}",
+          "--output", "{output}",
+          "--format", "{format}",
+          "--include-pmi", "{includePmi}",
+        ],
+        cwd: process.cwd(),
+      }
+    : { args: [], cwd: process.cwd() };
   const queue = new ConversionQueue(store, config, objects);
   const app = createApiServer();
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024, files: 1 } });

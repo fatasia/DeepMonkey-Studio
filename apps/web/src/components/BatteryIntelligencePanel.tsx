@@ -8,10 +8,20 @@ import {
   Database,
   FileSpreadsheet,
   LoaderCircle,
+  Pause,
+  Play,
   ShieldCheck,
+  Trash2,
   Upload,
 } from "lucide-react";
-import type { AiDataBinding, BatteryModelCatalogEntry, DataDatasetRecord } from "@bim-studio/contracts";
+import {
+  assessBatteryDataContract,
+  batteryBindingFeatures,
+  batteryContractFailureMessage,
+  type AiDataBinding,
+  type BatteryModelCatalogEntry,
+  type DataDatasetRecord,
+} from "@bim-studio/contracts";
 import { api, type BatteryReleaseGateSnapshot } from "../api";
 import { parseBatteryCsv, type ParsedBatteryCsv } from "./batteryCsv";
 import {
@@ -21,6 +31,7 @@ import {
 } from "./batteryResultPresentation";
 import { AiDataRunPolicyFields, type AiDataRunPolicyDraft } from "./AiDataRunPolicyFields";
 import { AiDataRunHistory } from "./AiDataRunHistory";
+import { BatteryDataContractStatus } from "./BatteryDataContractStatus";
 
 type FormalModel = "socformer" | "bmsformer" | "batterymformer";
 type Chemistry = "lfp" | "ncm";
@@ -57,6 +68,18 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
   const activeRequest = useRef<AbortController | undefined>(undefined);
   const selectedTask = TASKS.find((item) => item.id === task)!;
   const selectedModel = catalog.find((item) => item.family === selectedTask.model && item.role === "primary-model");
+  const selectedDataset = datasets.find((item) => item.id === datasetId);
+  const nominalCapacityProvided = Number.isFinite(Number(nominalCapacity)) && Number(nominalCapacity) > 0;
+  const datasetAssessments = useMemo(() => new Map(datasets.map((dataset) => [
+    dataset.id,
+    assessBatteryDataContract(selectedTask.model, datasetFields(dataset), { nominalCapacityProvided }),
+  ])), [datasets, nominalCapacityProvided, selectedTask.model]);
+  const dataContract = useMemo(() => {
+    if (sourceMode === "dataset") return datasetId ? datasetAssessments.get(datasetId) : undefined;
+    return source
+      ? assessBatteryDataContract(selectedTask.model, source.parsed.headers.map((key) => ({ key })), { nominalCapacityProvided })
+      : undefined;
+  }, [datasetAssessments, datasetId, nominalCapacityProvided, selectedTask.model, source, sourceMode]);
   const activeBinding = bindings.find((item) =>
     item.capabilityId === "battery.model.predict"
     && item.datasetId === datasetId
@@ -69,7 +92,8 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
         setCatalog(catalogResult.models);
         setRelease(releaseResult);
         setDatasets(datasetResult);
-        setDatasetId((current) => current || datasetResult[0]?.id || "");
+        const recommended = datasetResult.find((dataset) => assessBatteryDataContract("bmsformer", datasetFields(dataset)).compatible);
+        setDatasetId((current) => current || recommended?.id || datasetResult[0]?.id || "");
         setBindings(bindingResult);
       })
       .catch(showError);
@@ -126,6 +150,10 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
       setError("请先上传单电芯或单工况 CSV");
       return;
     }
+    if (!dataContract?.compatible) {
+      setError(dataContract ? batteryContractFailureMessage(dataContract) : "请先选择可用的电池数据");
+      return;
+    }
     setBusy(true);
     setError("");
     setResult(undefined);
@@ -144,7 +172,7 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
       };
       let bindingId: string | undefined;
       if (sourceMode === "dataset") {
-        const dataset = datasets.find((item) => item.id === datasetId);
+        const dataset = selectedDataset;
         if (!dataset) throw new Error("选择的电池数据集已删除");
         const existing = bindings.find((item) =>
           item.capabilityId === "battery.model.predict"
@@ -160,7 +188,7 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
           parameters: common,
           ...(runPolicy.entityField ? { entity: { keyField: runPolicy.entityField } } : {}),
           ...(runPolicy.timeField ? { time: { field: runPolicy.timeField, order: "asc" } } : {}),
-          features: dataset.fields.map((field) => ({ modelField: field.key, sourceField: field.key, required: field.type === "number" })),
+          features: batteryBindingFeatures(dataContract),
           window: { rows: runPolicy.windowRows },
           trigger: runPolicy.mode === "interval" ? { type: "interval", seconds: runPolicy.intervalSeconds } : { type: "manual" },
           quality: { minimumSamples: runPolicy.minimumSamples, maxAgeSeconds: runPolicy.maxAgeSeconds, maximumMissingRate: runPolicy.maximumMissingRate },
@@ -186,6 +214,34 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
     }
   }
 
+  async function setBindingStatus(status: AiDataBinding["status"]) {
+    if (!activeBinding) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.saveAiDataBinding(projectId, { id: activeBinding.id, status });
+      setBindings(await api.listAiDataBindings(projectId));
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeBinding() {
+    if (!activeBinding || !window.confirm(`删除周期任务“${activeBinding.name}”？历史运行证据会保留。`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.deleteAiDataBinding(projectId, activeBinding.id);
+      setBindings(await api.listAiDataBindings(projectId));
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function showError(reason: unknown) {
     setError(reason instanceof Error ? reason.message : String(reason));
   }
@@ -200,7 +256,7 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
           </div>
           <span className={`battery-gate ${release?.ready ? "ready" : "limited"}`}>
             {release?.ready ? <ShieldCheck size={14} /> : <AlertTriangle size={14} />}
-            {release === undefined ? "读取发布门禁" : release.ready ? "目录门槛通过" : "受控运行"}
+            {release === undefined ? "读取模型目录" : release.ready ? "模型目录已验证" : "模型受控运行"}
           </span>
         </header>
 
@@ -239,10 +295,31 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
               <span>电池数据集</span>
               <select value={datasetId} onChange={(event) => setDatasetId(event.target.value)}>
                 <option value="">{datasets.length ? "请选择数据集" : "数据中心暂无数据集"}</option>
-                {datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
+                {datasets.map((dataset) => {
+                  const assessment = datasetAssessments.get(dataset.id);
+                  return (
+                    <option key={dataset.id} value={dataset.id}>
+                      {dataset.name}{assessment?.compatible ? "" : ` · 缺 ${assessment?.missing.length ?? 0} 项`}
+                    </option>
+                  );
+                })}
               </select>
               <small>数据库、HTTP API、Kafka、MQTT 与现场协议均通过同一个数据集合同读取。</small>
             </label>
+            {dataContract && <BatteryDataContractStatus assessment={dataContract} />}
+            {activeBinding && <div className={`battery-binding-control ${dataContract?.compatible ? "" : "is-warning"}`}>
+              <div>
+                <span>{activeBinding.status === "active" ? "周期任务运行中" : activeBinding.status === "paused" ? "周期任务已暂停" : "已保存任务"}</span>
+                <strong>{activeBinding.name}</strong>
+                {!dataContract?.compatible ? <small>现有任务与当前字段合同不兼容；暂停或删除后，先在数据中心修正字段再重新运行。</small> : null}
+              </div>
+              <div>
+                <button type="button" disabled={busy} onClick={() => void setBindingStatus(activeBinding.status === "active" ? "paused" : "active")}>
+                  {activeBinding.status === "active" ? <Pause size={13} /> : <Play size={13} />}{activeBinding.status === "active" ? "暂停" : "恢复"}
+                </button>
+                <button type="button" className="is-danger" disabled={busy} onClick={() => void removeBinding()}><Trash2 size={13} />删除任务</button>
+              </div>
+            </div>}
             {datasetId && (
               <>
                 <AiDataRunPolicyFields
@@ -272,7 +349,12 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
           accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"
           onChange={(event) => void selectFile(event.target.files?.[0])}
         />
-        {sourceMode === "file" && source && <p className="battery-field-preview">已识别：{source.parsed.headers.slice(0, 8).join(" · ")}{source.parsed.headers.length > 8 ? " …" : ""}</p>}
+        {sourceMode === "file" && source && (
+          <>
+            <p className="battery-field-preview">已识别：{source.parsed.headers.slice(0, 8).join(" · ")}{source.parsed.headers.length > 8 ? " …" : ""}</p>
+            {dataContract && <BatteryDataContractStatus assessment={dataContract} />}
+          </>
+        )}
 
         <div className="operations-form-grid battery-options">
           <label>
@@ -283,7 +365,7 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
             </select>
           </label>
           <label>
-            <span>额定容量 Ah（可选）</span>
+            <span>额定容量 Ah{task === "soc" ? "（必填）" : "（可选）"}</span>
             <input inputMode="decimal" value={nominalCapacity} placeholder="优先读取文件字段" onChange={(event) => setNominalCapacity(event.target.value)} />
           </label>
           {task === "rul" && (
@@ -300,7 +382,12 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
             <span>{selectedTask.model === "batterymformer" ? "标准专家 → PINN 动态路由" : "自动路由"}</span>
             <strong>{selectedModel?.label ?? selectedTask.model}</strong>
           </div>
-          <button className="button primary" disabled={busy || (sourceMode === "dataset" ? !datasetId : !source)} onClick={() => void runPrediction()}>
+          <button
+            className="button primary"
+            disabled={busy || !dataContract?.compatible}
+            title={!dataContract?.compatible && dataContract ? batteryContractFailureMessage(dataContract) : undefined}
+            onClick={() => void runPrediction()}
+          >
             {busy ? <LoaderCircle className="spin" size={15} /> : <Activity size={15} />}
             {busy ? "正在分析" : selectedTask.label}
           </button>
@@ -311,6 +398,10 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
       <BatteryEvidencePanel catalog={catalog} release={release} selectedModel={selectedModel} />
     </div>
   );
+}
+
+function datasetFields(dataset: DataDatasetRecord) {
+  return [...dataset.fields, ...(dataset.computedFields ?? [])];
 }
 
 function BatteryPredictionResult({ task, result }: { task: BatteryTask; result: Record<string, unknown> }) {

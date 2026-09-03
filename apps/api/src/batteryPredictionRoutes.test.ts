@@ -31,7 +31,9 @@ describe("battery prediction upload route", () => {
     form.append("model", "bmsformer");
     form.append("chemistry", "lfp");
     form.append("nominalCapacityAh", "100");
-    form.append("file", new Blob(["cellId,cycle,voltage\nLFP-01,1,3.28\n"], { type: "text/csv" }), "cell.csv");
+    form.append("file", new Blob([
+      "cellId,cycle,time,voltage,current,capacityAh\nLFP-01,1,0,3.28,-1.2,99.4\n",
+    ], { type: "text/csv" }), "cell.csv");
     const encoded = new Response(form);
     const response = await app.inject({
       method: "POST",
@@ -47,8 +49,23 @@ describe("battery prediction upload route", () => {
       chemistry: "lfp",
       nominalCapacityAh: 100,
       fileName: "cell.csv",
-      records: [{ cellId: "LFP-01", cycle: 1, voltage: 3.28 }],
+      records: [{ cellId: "LFP-01", cycle: 1, time: 0, voltage: 3.28, current: -1.2, capacityAh: 99.4 }],
     })]);
+
+    const invalidForm = new FormData();
+    invalidForm.append("model", "bmsformer");
+    invalidForm.append("chemistry", "lfp");
+    invalidForm.append("file", new Blob(["equipmentId,temperature\nM-01,28\n"], { type: "text/csv" }), "equipment.csv");
+    const invalidEncoded = new Response(invalidForm);
+    const invalidResponse = await app.inject({
+      method: "POST",
+      url: "/api/projects/project-1/battery/predictions",
+      headers: { "content-type": invalidEncoded.headers.get("content-type")! },
+      payload: Buffer.from(await invalidEncoded.arrayBuffer()),
+    });
+    expect(invalidResponse.statusCode).toBe(422);
+    expect(invalidResponse.json()).toMatchObject({ error: { message: expect.stringContaining("缺少：循环编号") } });
+    expect(calls).toHaveLength(1);
   });
 });
 

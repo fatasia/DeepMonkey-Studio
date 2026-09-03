@@ -57,11 +57,17 @@
 .optimizer-header-actions button:disabled { opacity: .35; cursor: default; }
 .optimizer-layout { display: grid; grid-template-columns: 370px minmax(0,1fr); min-height: 0; }
 .optimizer-settings { min-height: 0; padding: 13px; border-right: 1px solid #2a3136; background: #171b1e; overflow: auto; }
+.optimizer-settings.awaiting-model > :not(.optimizer-file):not(.optimizer-start-guide) { display: none; }
 .optimizer-file { display: grid; grid-template-columns: 35px minmax(0,1fr); align-items: center; min-height: 52px; margin-bottom: 9px; padding: 8px 10px; color: var(--accent); border: 1px solid #30383d; border-radius: 8px; background: #1d2225; }
 .optimizer-file > div { display: flex; flex-direction: column; min-width: 0; }
 .optimizer-file strong, .optimizer-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .optimizer-file strong { color: #dce1e4; font-size: 10px; }
 .optimizer-file span { margin-top: 4px; color: #747f86; font-size: 8px; }
+.optimizer-start-guide { display: grid; gap: 14px; padding: 18px 16px; border: 1px solid #30383d; border-radius: 9px; background: #1b2023; }
+.optimizer-start-guide > strong { color: #e0e5e8; font-size: 12px; line-height: 1.5; }
+.optimizer-start-guide ol { display: grid; gap: 11px; margin: 0; padding-left: 20px; color: #89949b; font-size: 10px; line-height: 1.55; }
+.optimizer-start-guide button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; }
+.optimizer-start-guide small { color: #69757c; font-size: 9px; line-height: 1.5; }
 .optimizer-option { margin-bottom: 7px; padding: 9px 10px; border: 1px solid #2e353a; border-radius: 7px; background: #1b2023; }
 .optimizer-option.disabled .optimizer-option-body { display: none; }
 .optimizer-option-head { display: grid; grid-template-columns: 21px minmax(0,1fr) auto; align-items: center; min-height: 22px; color: var(--accent); }
@@ -260,6 +266,14 @@
 .material-editor output { color: #aab2b7; font-size: 7px; text-align: right; }
 .material-editor .material-emissive { grid-template-columns: 54px 28px 1fr; }
 .material-editor input[type="color"] { width: 28px; height: 23px; padding: 2px; border: 1px solid #354047; border-radius: 4px; background: #222a2e; }
+.material-color-adjustment { margin:7px 0;border-block:1px solid #2c3b40; }
+.material-color-adjustment summary { display:flex;min-height:32px;align-items:center;justify-content:space-between;color:#b4c5ca;cursor:pointer;font-size:10px; }
+.material-color-adjustment summary small { color:#5faeaa;font-size:9px; }
+.material-color-adjustment > label { display:grid;grid-template-columns:58px minmax(0,1fr) 38px;align-items:center;gap:6px;min-height:30px;color:#82949a;font-size:9px; }
+.material-color-adjustment input[type="range"] { width:100%;accent-color:#4dbda2; }
+.material-color-adjustment output { color:#a8b9be;font-size:9px;text-align:right;font-variant-numeric:tabular-nums; }
+.material-color-adjustment > button { width:100%;min-height:28px;margin:3px 0 7px;color:#8fb7b2;border:1px solid #31504d;border-radius:5px;background:#172825;font-size:9px;cursor:pointer; }
+.material-color-adjustment > button:disabled { opacity:.38;cursor:default; }
 .material-uv-transform,.material-uv-animation { display:grid;gap:3px;margin:5px 0; }
 .material-texture-settings>label,.material-uv-transform label,.material-uv-animation label { display:grid;grid-template-columns:72px minmax(0,1fr) 34px;align-items:center;gap:6px;min-height:28px;color:#849097;font-size:9px; }
 .material-texture-settings { margin:6px 0;border-top:1px solid #2c363b;border-bottom:1px solid #2c363b; }
@@ -301,6 +315,7 @@
 .digital-twin-panel pre { max-height: 150px; overflow: auto; margin: 4px 0 0; padding: 8px; color: #96a7af; border-radius: 5px; background: #101619; font-size: 7px; line-height: 1.55; }
 
 .global-utility { position: fixed; top: 24px; right: 18px; z-index: 22; display: flex; gap: 5px; }
+.global-utility-operations { top: 6px; }
 .global-utility button { display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; color: #87939a; border: 1px solid #303b41; border-radius: 6px; background: rgba(24,31,35,.92); font-size: 10px; cursor: pointer; }
 .global-utility button:hover { color: var(--accent); border-color: rgba(212,168,79,.45); }
 .dashboard-value { display: grid; height: 100%; align-content: space-between; }
@@ -536,3 +551,49 @@
 .data-connector-required small { color:#b6a77f; line-height:1.45; }
 .data-resource-card.connector-required { border-color:#5a4828; }
 .interaction-advanced small { display: block; margin-top: 3px; color: #66777e; font-size: 7px; line-height: 1.4; }
+
+/* The optimizer is a full workbench, so its controls must remain readable and keyboard-safe. */
+.optimizer-header-actions button,
+.optimizer-file span,
+.optimizer-option-head strong,
+.optimizer-option-body label,
+.optimizer-option-body label output,
+.optimizer-option-body p,
+.optimizer-option-body select,
+.optimizer-option-body button,
+.optimizer-render-settings label > span,
+.optimizer-render-settings label small,
+.optimizer-render-settings button,
+.optimizer-bake-head,
+.optimizer-bake-head button,
+.optimizer-bake-presets > span,
+.optimizer-bake-transform > span,
+.optimizer-bake-presets button,
+.optimizer-bake-transform button,
+.optimizer-bake-mode button,
+.optimizer-quality,
+.optimizer-quality button,
+.optimizer-ambient-color,
+.optimizer-ambient-color input.optimizer-color-value,
+.optimizer-ambient-color small,
+.optimizer-lightmap-settings label,
+.optimizer-lightmap-settings select,
+.optimizer-lightmap-settings button {
+  font-size: 10px;
+}
+
+.optimizer-preview-toolbar > span,
+.optimizer-drop > span { font-size: 10px; }
+
+.optimizer-option-head strong { font-size: 11px; }
+.optimizer-file span { line-height: 1.4; }
+.optimizer-option-head .toggle { width: 36px; height: 24px; min-height: 24px; }
+.optimizer-option-body label > input[type="range"] { min-height: 24px; }
+.optimizer-bake-head button,
+.optimizer-bake-presets button,
+.optimizer-bake-transform button,
+.optimizer-bake-mode button,
+.optimizer-quality button,
+.optimizer-lightmap-settings select,
+.optimizer-lightmap-settings button,
+.optimizer-render-settings button { min-height: 28px; }

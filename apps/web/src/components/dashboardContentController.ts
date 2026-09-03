@@ -24,7 +24,7 @@ import {
 import { replaceDashboardWidgetDataProduct } from "./dashboardDataProductReplacement";
 import {
   TEMPLATE_FAVORITES_KEY, createDefaultDataWidget, dashboardNodeIdentity,
-  dataWidgetTypeLabel, normalizeDashboardSize, uniqueDashboardNodeName
+  dashboardInsertedNodeName, normalizeDashboardSize, uniqueDashboardNodeName
 } from "./dashboardWorkspaceModel";
 
 type DataWidgetNode = Extract<WidgetNode, { kind: "data-widget" }>;
@@ -177,7 +177,8 @@ export function createDashboardContentController(context: DashboardContentContro
     type: SceneDashboardWidgetType,
     widgetPatch: Partial<DashboardDataWidgetConfig> = {},
     framePatch: DashboardComponentPreset["frame"] = {},
-    placement?: { centerX: number; centerY: number }
+    placement?: { centerX: number; centerY: number },
+    nameHint?: string,
   ) {
     const id = `widget:${crypto.randomUUID()}`;
     const index = page.nodes.filter((node) => node.kind === "data-widget").length;
@@ -195,7 +196,7 @@ export function createDashboardContentController(context: DashboardContentContro
       : { x: 48 + index % 4 * 28, y: 48 + index % 4 * 28, width, height };
     const node: WidgetNode = {
       id,
-      name: uniqueDashboardNodeName(dataWidgetTypeLabel(locale, type), new Set(page.nodes.map((item) => dashboardNodeIdentity(item).toLocaleLowerCase()))),
+      name: dashboardInsertedNodeName(locale, type, widgetPatch, nameHint, page.nodes),
       kind: "data-widget",
       frame,
       zIndex: Math.max(0, ...page.nodes.map((item) => item.zIndex)) + 1,

@@ -266,6 +266,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineSpatialAudio {
   setReadOnly(readOnly: boolean): void {
       const changed = this.readOnlyMode !== readOnly;
       this.readOnlyMode = readOnly;
+      this.readOnlyFrameCadenceAnchor = undefined;
       if (readOnly) {
         this.setMeasureEnabled(false);
         this.setAnnotationPlacementEnabled(false);

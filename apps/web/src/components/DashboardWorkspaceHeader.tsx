@@ -20,11 +20,14 @@ export function DashboardWorkspaceHeader() {
     onOpen3D,
     onOpenData,
     onOpenScripts,
+    scriptOpen,
+    onCloseScripts,
     onPublish,
     onRedo,
     onSave,
     onUndo,
     page,
+    selectedNodeIds,
     setRuntimePreview,
     setLeftPanelOpen,
     inspectorOpen,
@@ -45,13 +48,19 @@ export function DashboardWorkspaceHeader() {
       </div>
       <WorkspaceModeSwitch
         locale={locale}
-        active="2d"
+        active={scriptOpen ? "script" : "2d"}
         contextLabel={`${tr(locale, "二维页面", "2D page")} · ${page.name}`}
         sceneAvailable={Boolean(linkedSceneId)}
+        {...(onCloseScripts ? { onSelect2D: onCloseScripts } : {})}
         onSelect3D={() => {
           if (linkedSceneId) onOpen3D?.(linkedSceneId, currentView());
         }}
-        {...(onOpenScripts ? { onSelectScripts: onOpenScripts } : {})}
+        {...(onOpenScripts
+          ? {
+              onSelectScripts: () =>
+                onOpenScripts(selectedNodeIds.map((id) => ({ kind: "widget" as const, id }))),
+            }
+          : {})}
       />
       <button className="dashboard-data-entry" onClick={onOpenData}>
         <Database size={14} />
@@ -84,10 +93,10 @@ export function DashboardWorkspaceHeader() {
             {tr(locale, "自动保存", "Auto save")}
           </label>
         )}
-        <button disabled={!canUndo || busy} title={tr(locale, "撤销", "Undo")} onClick={onUndo}>
+        <button disabled={!canUndo || busy} aria-label={tr(locale, "撤销", "Undo")} title={tr(locale, "撤销", "Undo")} onClick={onUndo}>
           <Undo2 size={15} />
         </button>
-        <button disabled={!canRedo || busy} title={tr(locale, "重做", "Redo")} onClick={onRedo}>
+        <button disabled={!canRedo || busy} aria-label={tr(locale, "重做", "Redo")} title={tr(locale, "重做", "Redo")} onClick={onRedo}>
           <Redo2 size={15} />
         </button>
         <button disabled={!dirty || busy} onClick={onSave}>

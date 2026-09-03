@@ -6,7 +6,7 @@ import type { AppConfig, CommandProviderConfig } from "./config.js";
 import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
 import { generateGlbLods, optimizeNativeGlb } from "./glbOptimizer.js";
-import { convertStepToGlb } from "./stepConverter.js";
+import { convertIgesToGlb, convertStepToGlb } from "./stepConverter.js";
 import { auditConverterOutput } from "./converterOutputAudit.js";
 import { convertXtTextSubsetToGlb } from "./xtTextSubsetConverter.js";
 import { writeJtInspectionArtifacts } from "./jtInspection.js";
@@ -42,6 +42,9 @@ export class ConversionQueue {
     config: AppConfig,
     objects: ObjectStore
   ) {
+    const industrialCadProvider = config.industrialCad.command
+      ? new CommandProvider(store, objects, config.industrialCad, [{ fileName: "geometry.glb", viewerKind: "gltf" }])
+      : undefined;
     this.providers = {
       ifc: new DirectProvider(store, objects, "ifc"),
       gltf: new DirectProvider(store, objects, "gltf"),
@@ -53,19 +56,21 @@ export class ConversionQueue {
       "3mf": new DirectProvider(store, objects, "3mf"),
       dae: new DirectProvider(store, objects, "dae"),
       "3ds": new DirectProvider(store, objects, "3ds"),
-      step: new StepProvider(store, objects),
-      stp: new StepProvider(store, objects),
+      step: new PreciseCadProvider(store, objects, "step"),
+      stp: new PreciseCadProvider(store, objects, "step"),
+      iges: new PreciseCadProvider(store, objects, "iges"),
+      igs: new PreciseCadProvider(store, objects, "iges"),
       dwg: config.dwg.command
         ? new CommandProvider(store, objects, config.dwg, [{ fileName: "model.dxf", viewerKind: "dxf" }])
         : new MissingProvider(store, "未找到 LibreDWG。请运行 tools/install-libredwg.ps1，或配置 DWG_CONVERTER_COMMAND。"),
       rvt: config.rvt.command
         ? new CommandProvider(store, objects, config.rvt, [])
         : new MissingProvider(store, "未配置 Revit Agent。请在安装 Revit 的 Windows 转换机上配置批处理程序。"),
-      x_t: new XtTextSubsetProvider(store, objects),
-      x_b: config.industrialCad.command
-        ? new CommandProvider(store, objects, config.industrialCad, [{ fileName: "geometry.glb", viewerKind: "gltf" }])
+      x_t: new XtTextSubsetProvider(store, objects, industrialCadProvider),
+      x_b: industrialCadProvider
+        ? industrialCadProvider
         : new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_B")),
-      jt: new JtStructureProvider(store, objects),
+      jt: new JtStructureProvider(store, objects, industrialCadProvider),
       // Three.js 0.185 的官方 USDLoader 同时解析 USDA、USDC 与 USDZ。
       // 原文件直接作为唯一运行资产，避免先预览源格式、再切换 GLB 造成对象标识漂移。
       usd: new DirectProvider(store, objects, "usd"),
@@ -103,21 +108,25 @@ export class ConversionQueue {
   }
 }
 
-class StepProvider implements ConversionProvider {
+class PreciseCadProvider implements ConversionProvider {
   constructor(
     private readonly store: MetadataStore,
-    private readonly objects: ObjectStore
+    private readonly objects: ObjectStore,
+    private readonly format: "step" | "iges",
   ) {}
 
   async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
+    const label = this.format.toUpperCase();
     const outputDir = path.join(modelDir, "output");
     await mkdir(outputDir, { recursive: true });
     await this.store.updateModel(model.projectId, model.id, {
       status: "processing",
       progress: 10,
-      message: "正在解析 STEP 并生成轻量化 GLB"
+      message: `正在解析 ${label} 并生成轻量化 GLB`
     });
-    const result = await convertStepToGlb(sourcePath, outputDir);
+    const result = this.format === "step"
+      ? await convertStepToGlb(sourcePath, outputDir)
+      : await convertIgesToGlb(sourcePath, outputDir);
     const geometryPath = path.join(outputDir, "geometry.glb");
     await optimizeNativeGlb(geometryPath);
     const lods = await createLodResources(geometryPath, model);
@@ -135,7 +144,7 @@ class StepProvider implements ConversionProvider {
     await this.store.updateModel(model.projectId, model.id, {
       status: "ready",
       progress: 100,
-      message: `STEP 转换完成：${result.meshCount} 个网格，${result.triangleCount.toLocaleString("zh-CN")} 个三角面`,
+      message: `${label} 转换完成：${result.meshCount} 个网格，${result.triangleCount.toLocaleString("zh-CN")} 个三角面`,
       manifest,
       manifestUrl: assetUrl(model.projectId, model.id, "manifest.json")
     });
@@ -210,9 +219,7 @@ class CommandProvider implements ConversionProvider {
     await this.store.updateModel(model.projectId, model.id, {
       status: "processing",
       progress: 10,
-      message: model.format === "dwg"
-        ? "LibreDWG 正在转换为 DXF"
-        : model.rvtConversionMode === "ifc" ? `Revit ${model.rvtRevitVersion ?? ""} 正在导出 IFC`.replace("  ", " ") : `Revit ${model.rvtRevitVersion ?? ""} 正在生成原生 GLB`.replace("  ", " ")
+      message: commandProgressMessage(model),
     });
     const args = this.provider.args.map((argument) =>
       argument
@@ -225,7 +232,7 @@ class CommandProvider implements ConversionProvider {
         .replaceAll("{includePmi}", "true")
     );
     if (model.format === "rvt" && model.rvtRevitVersion && !args.includes("--revit-version")) args.push("--revit-version", model.rvtRevitVersion);
-    await runCommand(this.provider.command, args, this.provider.cwd);
+    await runCommand(this.provider.command, args, this.provider.cwd, this.provider.timeoutMs);
     let compressionMessage = "";
     let lods: ModelManifest["lods"];
     if (model.format === "rvt" && model.rvtConversionMode !== "ifc") {
@@ -257,7 +264,11 @@ class CommandProvider implements ConversionProvider {
     const hierarchyUrl = await optionalAsset(hierarchyPath, assetUrl(model.projectId, model.id, "output/hierarchy.json"));
     const propertiesUrl = await optionalAsset(propertiesPath, assetUrl(model.projectId, model.id, "output/properties.json"));
     const pmiUrl = await optionalAsset(path.join(outputDir, "pmi.json"), assetUrl(model.projectId, model.id, "output/pmi.json"));
-    const manifest = createManifest(model, result.viewerKind, geometryUrl, hierarchyUrl, propertiesUrl, lods, pmiUrl);
+    const inspectionUrl = await optionalAsset(path.join(outputDir, "inspection.json"), assetUrl(model.projectId, model.id, "output/inspection.json"));
+    const manifest: ModelManifest = {
+      ...createManifest(model, result.viewerKind, geometryUrl, hierarchyUrl, propertiesUrl, lods, pmiUrl),
+      ...(inspectionUrl ? { inspectionUrl } : {}),
+    };
     await writeManifest(modelDir, manifest);
     await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
     await this.store.updateModel(model.projectId, model.id, {
@@ -274,6 +285,7 @@ class XtTextSubsetProvider implements ConversionProvider {
   constructor(
     private readonly store: MetadataStore,
     private readonly objects: ObjectStore,
+    private readonly fallback?: ConversionProvider,
   ) {}
 
   async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
@@ -286,6 +298,15 @@ class XtTextSubsetProvider implements ConversionProvider {
     const inspection = await writeXtTextInspectionArtifact(sourcePath, outputDir);
     const inspectionUrl = assetUrl(model.projectId, model.id, "output/inspection.json");
     if (!inspection.geometryParsed) {
+      if (inspection.status !== "invalid" && this.fallback) {
+        await this.store.updateModel(model.projectId, model.id, {
+          status: "processing",
+          progress: 40,
+          message: "X_T 文件结构已验证，正在转交工业转换器生成可交互几何",
+        });
+        await this.fallback.convert({ model, modelDir, sourcePath });
+        return;
+      }
       const manifest: ModelManifest = {
         schemaVersion: 1,
         modelId: model.id,
@@ -339,6 +360,7 @@ class JtStructureProvider implements ConversionProvider {
   constructor(
     private readonly store: MetadataStore,
     private readonly objects: ObjectStore,
+    private readonly fallback?: ConversionProvider,
   ) {}
 
   async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
@@ -362,6 +384,15 @@ class JtStructureProvider implements ConversionProvider {
     };
     const result = await convertJtLod0ToGlb(document, outputDir, model.name, inspection.materials);
     if (!result) {
+      if (this.fallback) {
+        await this.store.updateModel(model.projectId, model.id, {
+          status: "processing",
+          progress: 40,
+          message: "JT 装配结构已读取，正在转交工业转换器生成可交互几何",
+        });
+        await this.fallback.convert({ model, modelDir, sourcePath });
+        return;
+      }
       await writeManifest(modelDir, sidecarManifest);
       await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
       await this.store.updateModel(model.projectId, model.id, {
@@ -398,6 +429,17 @@ class JtStructureProvider implements ConversionProvider {
 
 function industrialCadUnavailableMessage(format: string): string {
   return `未配置 ${format} 工业转换器。请配置 INDUSTRIAL_CAD_CONVERTER_COMMAND；正式环境建议使用 HOOPS Exchange、CAD Exchanger 或 Siemens 组件。`;
+}
+
+function commandProgressMessage(model: ModelRecord): string {
+  if (model.format === "dwg") return "LibreDWG 正在转换为 DXF";
+  if (model.format === "rvt") {
+    const version = model.rvtRevitVersion ? ` ${model.rvtRevitVersion}` : "";
+    return model.rvtConversionMode === "ifc"
+      ? `Revit${version} 正在导出 IFC`
+      : `Revit${version} 正在生成原生 GLB`;
+  }
+  return `工业转换器正在解析 ${model.format.toUpperCase()}，生成几何、装配层级与属性`;
 }
 
 function assetKey(projectId: string, modelId: string, fileName: string): string {
@@ -467,18 +509,34 @@ async function writeManifest(modelDir: string, manifest: ModelManifest): Promise
   await writeFile(path.join(modelDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
 }
 
-function runCommand(command: string, args: string[], cwd: string): Promise<void> {
+const DEFAULT_CONVERTER_TIMEOUT_MS = 30 * 60 * 1_000;
+
+function runCommand(command: string, args: string[], cwd: string, configuredTimeoutMs?: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, windowsHide: true, shell: false });
+    const timeoutMs = Number.isFinite(configuredTimeoutMs) && (configuredTimeoutMs ?? 0) > 0
+      ? configuredTimeoutMs!
+      : DEFAULT_CONVERTER_TIMEOUT_MS;
     let stderr = "";
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
+    const timeout = setTimeout(() => {
+      child.kill();
+      finish(() => reject(new Error(`转换器运行超时（${Math.ceil(timeoutMs / 1_000)} 秒）`)));
+    }, timeoutMs);
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
       if (stderr.length > 8_000) stderr = stderr.slice(-8_000);
     });
-    child.on("error", reject);
+    child.on("error", (error) => finish(() => reject(error)));
     child.on("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`转换器退出码 ${String(code)}：${stderr.trim() || "无错误输出"}`));
+      if (code === 0) finish(resolve);
+      else finish(() => reject(new Error(`转换器退出码 ${String(code)}：${stderr.trim() || "无错误输出"}`)));
     });
   });
 }

@@ -46,7 +46,7 @@ export function createSceneFileTransferActions(context: FileTransferContext, mak
     const snapshot = scene ?? makeSnapshot();
     if (!snapshot) return;
     exportLooseScene(snapshot);
-    setMessage("已导出零散场景配置；模型资源仍由项目资源库管理");
+    setMessage("已导出零散场景配置；模型资源仍由项目资源管理");
   }
 
   async function exportSingleFileScene(scene?: SceneSnapshot) {

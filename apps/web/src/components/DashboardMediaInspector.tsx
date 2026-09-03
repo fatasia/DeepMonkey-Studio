@@ -57,7 +57,7 @@ export function DashboardMediaInspector({
         />
         {assetError && (
           <small className="dashboard-inspector-hint">
-            {tr(locale, "资源库读取失败，仍可使用安全的 HTTP(S) 地址。", "The asset library could not be loaded; you can still use a safe HTTP(S) URL.")}
+            {tr(locale, "资源读取失败，仍可使用安全的 HTTP(S) 地址。", "The assets could not be loaded; you can still use a safe HTTP(S) URL.")}
           </small>
         )}
         <label>
@@ -92,7 +92,7 @@ export function DashboardMediaInspector({
         />
         {assetError && (
           <small className="dashboard-inspector-hint">
-            {tr(locale, "资源库读取失败，仍可填写 MP4、WebM 或 HLS 地址。", "The asset library could not be loaded; you can still enter an MP4, WebM, or HLS URL.")}
+            {tr(locale, "资源读取失败，仍可填写 MP4、WebM 或 HLS 地址。", "The assets could not be loaded; you can still enter an MP4, WebM, or HLS URL.")}
           </small>
         )}
         <label>

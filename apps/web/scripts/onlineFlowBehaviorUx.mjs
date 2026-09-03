@@ -22,7 +22,10 @@ export async function auditBehaviorWorkbench(panel) {
       logsCollapsed: root.classList.contains("logs-collapsed"),
       horizontalOverflow: root.scrollWidth > root.clientWidth + 1,
       smallText: textNodes
-        .filter((element) => Number.parseFloat(getComputedStyle(element).fontSize) < 10)
+        .filter((element) => {
+          const iconOnlyControl = element instanceof HTMLButtonElement && element.querySelector("svg") && (element.title || element.getAttribute("aria-label"));
+          return !iconOnlyControl && Number.parseFloat(getComputedStyle(element).fontSize) < 10;
+        })
         .slice(0, 12)
         .map((element) => `${element.tagName.toLowerCase()}=${getComputedStyle(element).fontSize}[${element.textContent?.trim().slice(0, 18)}]`),
       smallTargets: controls.slice(0, 12).map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 18) ?? element.tagName),

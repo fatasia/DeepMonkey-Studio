@@ -10,9 +10,44 @@ type PresetInput = Omit<DashboardComponentPreset, "preview"> & {
   previewMark: string;
 };
 
+interface ResourcePalette {
+  accent: string;
+  secondary: string;
+}
+
+const RESOURCE_PALETTES: ReadonlyArray<{ terms: readonly string[]; colors: ResourcePalette }> = [
+  { terms: ["alarm", "fault", "risk", "hazard", "emergency", "offline", "downtime", "defect", "safety"], colors: { accent: "#e2766a", secondary: "#f0ad62" } },
+  { terms: ["energy", "carbon", "environment", "emission", "water", "liquid", "tank"], colors: { accent: "#55ad82", secondary: "#4d9fbd" } },
+  { terms: ["quality", "yield", "capability", "inspection"], colors: { accent: "#8679cf", secondary: "#55b092" } },
+  { terms: ["maintenance", "health", "device", "motor", "valve", "robot", "asset", "equipment"], colors: { accent: "#4f9fbd", secondary: "#64b68e" } },
+  { terms: ["production", "output", "capacity", "throughput", "order", "inventory", "logistics", "warehouse"], colors: { accent: "#4e88d0", secondary: "#53aa8b" } },
+  { terms: ["gis", "map", "region", "route"], colors: { accent: "#48a29b", secondary: "#6c8fce" } },
+  { terms: ["topology", "network", "communication", "process", "flow"], colors: { accent: "#559bb1", secondary: "#8b82c9" } },
+  { terms: ["report", "table", "rank", "summary"], colors: { accent: "#6e91c8", secondary: "#6aae91" } },
+];
+
+const DEFAULT_RESOURCE_PALETTE: ResourcePalette = { accent: "#4f91c8", secondary: "#59ae8d" };
+
+function resourcePalette(id: string, explicitColor?: string): ResourcePalette {
+  const matched = RESOURCE_PALETTES.find(({ terms }) => terms.some((term) => id.includes(term)))?.colors
+    ?? DEFAULT_RESOURCE_PALETTE;
+  return explicitColor ? { ...matched, accent: explicitColor } : matched;
+}
+
 export function componentPreset(input: PresetInput): DashboardComponentPreset {
   const { previewFamily, previewMark, ...preset } = input;
-  return { ...preset, preview: { family: previewFamily, variant: preset.id, mark: previewMark } };
+  const palette = resourcePalette(preset.id, preset.widget.color);
+  return {
+    ...preset,
+    widget: { ...preset.widget, color: palette.accent },
+    preview: {
+      family: previewFamily,
+      variant: preset.id,
+      mark: previewMark,
+      accent: palette.accent,
+      secondary: palette.secondary,
+    },
+  };
 }
 
 export function metricPreset(

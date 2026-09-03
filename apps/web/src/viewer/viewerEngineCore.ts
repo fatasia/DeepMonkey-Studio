@@ -192,6 +192,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected resizeObserver!: ResizeObserver;
   protected animationFrame = 0;
   protected resizeAnimationFrame = 0;
+  protected readOnlyFrameCadenceAnchor: number | undefined;
   /** 同一对象只允许一个显隐过渡；新动作会取消旧动作并恢复稳定状态。 */
   protected readonly visibilityTransitionCancels = new Map<string, () => void>();
   protected lastViewportWidth = 0;
@@ -333,7 +334,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     this.renderer.toneMappingExposure = 1.05;
     if (this.renderer instanceof THREE.WebGLRenderer) {
       this.renderer.localClippingEnabled = true;
-      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      this.renderer.shadowMap.type = THREE.PCFShadowMap;
     }
     this.container.append(this.renderer.domElement);
     this.scene.add(this.modelRoot);
@@ -393,7 +394,6 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
 
     this.setupEnvironment();
     this.dracoLoader.setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
-    this.dracoLoader.setDecoderConfig({ type: "wasm" });
     this.gltfLoader.setDRACOLoader(this.dracoLoader);
     this.orbit.addEventListener("change", () => {
       void this.fragments?.update();

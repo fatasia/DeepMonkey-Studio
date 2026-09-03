@@ -8,6 +8,7 @@ import {
   boundedInteger,
   connectionPassword,
   connectorUrl,
+  dataConnectionErrorMessage,
   inferFields,
   isRetryablePreviewError,
   normalizeProtocolValue,
@@ -123,7 +124,7 @@ function recordConnectorFailure(connection: DataConnectionRecord, error: unknown
   state.consecutiveFailures += 1;
   state.lastLatencyMs = Math.round(latencyMs);
   state.lastFailureAt = new Date().toISOString();
-  state.lastError = error instanceof Error ? error.message : String(error);
+  state.lastError = dataConnectionErrorMessage(error, connection.type);
 }
 
 export async function ensureDemoMetrics(config: AppConfig): Promise<void> {
@@ -180,7 +181,11 @@ export async function previewDataset(config: AppConfig, connection: DataConnecti
     throw error;
   }
   rows = await applyComputedFields(rows, dataset);
-  const sourceFields = dataset.fields.length > 0 ? dataset.fields : inferFields(rows);
+  const inferredFields = inferFields(rows);
+  const sourceFields = inferredFields.map((field) => {
+    const saved = dataset.fields.find((candidate) => candidate.key === field.key);
+    return saved ? { ...field, label: saved.label || field.label, ...(saved.unit ? { unit: saved.unit } : {}) } : field;
+  });
   const computedFields = (dataset.computedFields ?? []).map(({ key, label, type }) => ({ key, label, type }));
   const fields = [...sourceFields.filter((field) => !computedFields.some((computed) => computed.key === field.key)), ...computedFields];
   const durationMs = performance.now() - startedAt;
@@ -240,14 +245,17 @@ async function previewPostgres(config: AppConfig, connection: DataConnectionReco
   const query = readonlyQuery(dataset);
   const wrapped = `SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)::text FROM (${query.replace(/;+\s*$/, "")}) t;`;
   const passwordEnv = String(connection.config.passwordEnv || "POSTGRES_PASSWORD");
-  const postgres = {
-    host: String(connection.config.host || config.metadata.postgres.host),
-    port: Number(connection.config.port || config.metadata.postgres.port),
-    database: String(connection.config.database || config.metadata.postgres.database),
-    user: String(connection.config.user || config.metadata.postgres.user),
-    password: process.env[passwordEnv] ?? config.metadata.postgres.password,
-    psqlPath: config.metadata.postgres.psqlPath,
-  };
+  // 内置示例始终跟随当前运行时数据库配置；历史项目里的默认用户名不能让首次体验失效。
+  const postgres = connection.id === "example-postgresql"
+    ? config.metadata.postgres
+    : {
+        host: String(connection.config.host || config.metadata.postgres.host),
+        port: Number(connection.config.port || config.metadata.postgres.port),
+        database: String(connection.config.database || config.metadata.postgres.database),
+        user: String(connection.config.user || config.metadata.postgres.user),
+        password: process.env[passwordEnv] ?? config.metadata.postgres.password,
+        psqlPath: config.metadata.postgres.psqlPath,
+      };
   return parseRows(await runPostgres(postgres, wrapped, true));
 }
 

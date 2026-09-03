@@ -13,6 +13,9 @@ export default defineConfig(({ mode }) => {
     "BIM_STUDIO_API_ORIGIN",
   );
   const httpsEnabled = value("BIM_STUDIO_HTTPS", "false") === "true";
+  const sceneViewerOutDir = process.env.VITE_SCENE_VIEWER_BUILD === "true"
+    ? process.env.VITE_SCENE_VIEWER_OUT_DIR?.trim()
+    : undefined;
   const keyPath = resolve(projectRoot, value("BIM_STUDIO_HTTPS_KEY", "https/private.key"));
   const certificatePath = resolve(projectRoot, value("BIM_STUDIO_HTTPS_CERT", "https/self-sign.cert"));
   if (httpsEnabled && (!existsSync(keyPath) || !existsSync(certificatePath))) {
@@ -29,6 +32,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: value("BIM_STUDIO_WEB_HOST", "0.0.0.0"),
       port: 5173,
+      strictPort: true,
       ...(httpsEnabled ? { https: { key: readFileSync(keyPath), cert: readFileSync(certificatePath) } } : {}),
       proxy: {
         "/api": { target: apiOrigin, ws: true },
@@ -39,6 +43,13 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
+      ...(sceneViewerOutDir
+        ? {
+            // 发布器会先清理自己的包级目录；Vite 不得清理普通 Web 产物或其它工作区文件。
+            outDir: resolve(sceneViewerOutDir),
+            emptyOutDir: false,
+          }
+        : {}),
       manifest: true,
       rolldownOptions: {
         output: {

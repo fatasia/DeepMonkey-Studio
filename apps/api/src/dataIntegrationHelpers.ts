@@ -93,6 +93,19 @@ export function runPostgres(postgres: AppConfig["metadata"]["postgres"], stateme
   );
 }
 
+/** 将驱动、CLI 与操作系统错误收敛成用户可行动的连接反馈，禁止把乱码或凭据细节透传到产品界面。 */
+export function dataConnectionErrorMessage(error: unknown, type?: DataConnectionRecord["type"]): string {
+  const raw = (error instanceof Error ? error.message : String(error)).replace(/[\u0000-\u001f]+/g, " ").trim();
+  const lower = raw.toLowerCase();
+  if (type === "postgresql" && (lower.includes("password") || lower.includes("authentication") || raw.includes("�")))
+    return "PostgreSQL 身份验证失败，请检查用户名与密码环境变量";
+  if (/econnrefused|connection refused|无法连接|连接被拒绝/i.test(raw)) return "目标服务拒绝连接，请确认地址、端口和服务状态";
+  if (/enotfound|getaddrinfo|name or service not known|主机名/i.test(raw)) return "无法解析目标主机，请检查连接地址";
+  if (/timeout|timed out|超时/i.test(raw)) return "连接超时，请检查网络、服务状态和超时配置";
+  if (!raw || raw.includes("�")) return `${type ?? "数据"}连接失败，请检查连接配置`;
+  return raw.length > 240 ? `${raw.slice(0, 237)}…` : raw;
+}
+
 export function parseRows(output: string): Array<Record<string, unknown>> {
   const parsed: unknown = JSON.parse(output.trim() || "[]");
   return Array.isArray(parsed) ? parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
@@ -121,8 +134,14 @@ export function normalizeRow(row: Record<string, unknown>): Record<string, unkno
 }
 
 export function inferFields(rows: Array<Record<string, unknown>>): DataDatasetField[] {
-  const sample = rows[0] ?? {};
-  return Object.entries(sample).map(([key, value]) => ({ key, label: key, type: inferFieldType(value) }));
+  const samples = new Map<string, unknown>();
+  for (const row of rows.slice(0, 100)) {
+    for (const [key, value] of Object.entries(row)) {
+      const saved = samples.get(key);
+      if (!samples.has(key) || ((saved === null || saved === undefined) && value !== null && value !== undefined)) samples.set(key, value);
+    }
+  }
+  return [...samples].map(([key, value]) => ({ key, label: key, type: inferFieldType(value) }));
 }
 
 export function parseJsonObjectQuery(query: string | undefined, label: string): Record<string, unknown> {

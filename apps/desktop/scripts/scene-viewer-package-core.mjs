@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const LOOSE_FORMATS = new Set([".gltf", ".usd", ".usda"]);
 const API_TIMEOUT_MS = 30_000;
 const RESOURCE_TIMEOUT_MS = 15 * 60_000;
+const PACKAGE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const EDITOR_MODULE_MARKERS = [
   "App.tsx",
   "editorStyles.ts",
@@ -18,6 +19,35 @@ export function sha256(value) {
   return createHash("sha256").update(value).digest("hex").toUpperCase();
 }
 
+/**
+ * 只读包的临时 Web 产物必须与普通 Web dist 隔离；同时先约束 packageId，
+ * 避免后续递归清理把路径带出 `.scene-viewer-build`。
+ */
+export function resolveSceneViewerBuildPaths(desktopDirectory, packageId, requestedWebDist, workingDirectory = process.cwd()) {
+  if (!PACKAGE_ID_PATTERN.test(packageId)) {
+    throw new Error("--package-id 只能包含字母、数字、点、下划线或短横线，且不能超过 64 个字符");
+  }
+  const buildRoot = path.join(path.resolve(desktopDirectory), ".scene-viewer-build", packageId);
+  const generatedWebDist = path.join(buildRoot, "web-dist");
+  const webDist = requestedWebDist ? path.resolve(workingDirectory, requestedWebDist) : generatedWebDist;
+  if (requestedWebDist && (webDist === buildRoot || webDist.startsWith(`${buildRoot}${path.sep}`))) {
+    throw new Error("--web-dist 不能位于当前只读包的清理目录中");
+  }
+  return {
+    buildRoot,
+    frontendDirectory: path.join(buildRoot, "frontend"),
+    generatedWebDist,
+    webDist,
+  };
+}
+
+export function sceneViewerWebBuildEnvironment(outputDirectory) {
+  return {
+    VITE_SCENE_VIEWER_BUILD: "true",
+    VITE_SCENE_VIEWER_OUT_DIR: path.resolve(outputDirectory),
+  };
+}
+
 /** 阻止调用方把普通编辑器 dist 当作只读客户端打包。 */
 export function assertSceneViewerViteManifest(viteManifest) {
   const sourceEntries = Object.keys(viteManifest);
@@ -26,6 +56,44 @@ export function assertSceneViewerViteManifest(viteManifest) {
   if (!sourceEntries.some((entry) => entry.includes("SceneViewerRoot"))) {
     throw new Error("只读包缺少专用 SceneViewerRoot 入口");
   }
+}
+
+/**
+ * A read-only package knows its complete scene up front. Remove optional
+ * runtimes that cannot be reached by that frozen publication instead of
+ * shipping the editor's entire import surface with every client.
+ */
+export async function pruneSceneViewerFrontend(frontendDirectory, deliveryManifest, viteManifest) {
+  const root = path.resolve(frontendDirectory);
+  const snapshot = deliveryManifest.publication.snapshot;
+  const viewerKinds = new Set(deliveryManifest.project.models.map((model) => model.manifest?.viewerKind).filter(Boolean));
+  const needsFragments = viewerKinds.has("ifc") || viewerKinds.has("fragments");
+  const needsPhysics = Boolean(snapshot.physics?.enabled)
+    || [...(snapshot.models ?? []), ...(snapshot.primitives ?? [])].some((item) => item.physics?.enabled);
+  const removedRuntimeEntries = [];
+  const optionalRuntime = [
+    { needed: needsFragments, matches: (key) => key.includes("@thatopen/fragments") },
+    { needed: needsPhysics, matches: (key) => key.includes("@dimforge+rapier3d-compat") },
+  ];
+  for (const [key, entry] of Object.entries(viteManifest)) {
+    if (!optionalRuntime.some((group) => !group.needed && group.matches(key))) continue;
+    if (entry?.file) await rm(safeFrontendPath(root, entry.file), { force: true });
+    delete viteManifest[key];
+    removedRuntimeEntries.push(key);
+  }
+  for (const entry of Object.values(viteManifest)) {
+    if (!Array.isArray(entry?.dynamicImports)) continue;
+    entry.dynamicImports = entry.dynamicImports.filter((key) => !removedRuntimeEntries.includes(key));
+  }
+
+  const removedPublicRoots = [];
+  if (!needsFragments) await removePublicRoot(root, "wasm", removedPublicRoots);
+  if (!viewerKinds.has("gltf")) await removePublicRoot(root, "draco", removedPublicRoots);
+  for (const name of ["downloads", "showcase"]) {
+    if (!containsUrlPrefix(deliveryManifest, `/${name}/`)) await removePublicRoot(root, name, removedPublicRoots);
+  }
+  const keptBrandFiles = await pruneBrandDirectory(root, deliveryManifest.branding);
+  return { removedRuntimeEntries, removedPublicRoots, keptBrandFiles };
 }
 
 export function validateSource(publication, project, expected) {
@@ -261,4 +329,41 @@ async function fetchWithDeadline(url, init, timeoutMs, timeoutMessage) {
 
 function defaultBranding() {
   return { systemName: "Industrial Studio", browserTitle: "Industrial Studio", loginSubtitle: "数字孪生场景平台", copyright: "", logoUrl: "/brand/logo-industrial.svg", iconUrl: "/brand/app-icon-industrial.svg", primaryColor: "#d6aa4d", defaultLocale: "zh-CN", defaultEntry: "manager", defaultSceneBackground: "#202a31", defaultGridVisible: true, maintenanceEnabled: false, maintenanceMessage: "" };
+}
+
+async function removePublicRoot(root, name, removed) {
+  await rm(safeFrontendPath(root, name), { recursive: true, force: true });
+  removed.push(name);
+}
+
+async function pruneBrandDirectory(root, branding) {
+  const paths = new Set(["/brand/app-icon-industrial.svg"]);
+  for (const value of [branding?.logoUrl, branding?.iconUrl]) {
+    if (typeof value === "string" && value.startsWith("/brand/")) paths.add(value);
+  }
+  const saved = [];
+  for (const resourcePath of paths) {
+    const relativePath = resourcePath.replace(/^\//, "");
+    saved.push({ relativePath, content: await readFile(safeFrontendPath(root, relativePath)) });
+  }
+  await rm(safeFrontendPath(root, "brand"), { recursive: true, force: true });
+  for (const item of saved) {
+    const target = safeFrontendPath(root, item.relativePath);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, item.content);
+  }
+  return saved.map((item) => `/${item.relativePath.replaceAll(path.sep, "/")}`);
+}
+
+function containsUrlPrefix(value, prefix) {
+  if (typeof value === "string") return value.startsWith(prefix);
+  if (Array.isArray(value)) return value.some((item) => containsUrlPrefix(item, prefix));
+  if (!value || typeof value !== "object") return false;
+  return Object.values(value).some((item) => containsUrlPrefix(item, prefix));
+}
+
+function safeFrontendPath(root, relativePath) {
+  const resolved = path.resolve(root, relativePath);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) throw new Error(`只读包路径越界：${relativePath}`);
+  return resolved;
 }

@@ -7,6 +7,7 @@ import { translate as tr } from "../i18n";
 import { api } from "../api";
 import type { VisionCenterController } from "./useVisionCenterController";
 import { Modal } from "./VisionCenterPrimitives";
+import { visionSceneOptionLabel } from "./VisionCenterPresentation";
 
 export function VisionCenterDialogs({
   controller,
@@ -21,6 +22,7 @@ export function VisionCenterDialogs({
     setSourceForm,
     taskForm,
     setTaskForm,
+    editingTaskId,
     modelForm,
     setModelForm,
     sourceDraft,
@@ -44,9 +46,21 @@ export function VisionCenterDialogs({
     showError,
     run,
     createSource,
-    createTask,
+    saveTask,
     uploadModel,
   } = controller;
+  const selectedScene = scenes.find((scene) => scene.id === taskDraft.sceneId);
+  const selectedTargetIds = new Set(csvValues(taskDraft.objectIds));
+  const selectedSceneTargets = selectedScene
+    ? [...selectedScene.models, ...selectedScene.primitives].map((item) => ({ id: item.modelId, name: item.name }))
+    : [];
+
+  function toggleSceneTarget(targetId: string) {
+    const next = new Set(selectedTargetIds);
+    if (next.has(targetId)) next.delete(targetId);
+    else next.add(targetId);
+    setTaskDraft({ ...taskDraft, objectIds: [...next].join(", ") });
+  }
 
   return (
     <>
@@ -160,7 +174,7 @@ export function VisionCenterDialogs({
       )}
       {taskForm && (
         <Modal
-          title={tr(locale, "新建识别任务", "New inference task")}
+          title={editingTaskId ? tr(locale, "编辑识别任务", "Edit inference task") : tr(locale, "新建识别任务", "New inference task")}
           onClose={() => setTaskForm(false)}
         >
           <div className="vision-form-pair">
@@ -377,13 +391,35 @@ export function VisionCenterDialogs({
               <option value="">{tr(locale, "不绑定", "No binding")}</option>
               {scenes.map((scene) => (
                 <option key={scene.id} value={scene.id}>
-                  {scene.name}
+                  {visionSceneOptionLabel(scene, locale)}
                 </option>
               ))}
             </select>
           </label>
+          {selectedSceneTargets.length > 0 && (
+            <section className="vision-object-picker">
+              <header>
+                <span>{tr(locale, "选择场景对象", "Select scene objects")}</span>
+                <small>{tr(locale, `${selectedTargetIds.size} 个已选`, `${selectedTargetIds.size} selected`)}</small>
+              </header>
+              <div>
+                {selectedSceneTargets.slice(0, 40).map((target) => (
+                  <button
+                    type="button"
+                    className={selectedTargetIds.has(target.id) ? "active" : ""}
+                    key={target.id}
+                    onClick={() => toggleSceneTarget(target.id)}
+                  >
+                    <span>{target.name}</span>
+                    <small>{target.id}</small>
+                  </button>
+                ))}
+              </div>
+              {selectedSceneTargets.length > 40 && <small>{tr(locale, `仅显示前 40 个对象；可在下方输入其余 ID。`, `Showing the first 40 objects; enter any additional IDs below.`)}</small>}
+            </section>
+          )}
           <label>
-            <span>{tr(locale, "三维对象ID", "3D object IDs")}</span>
+            <span>{tr(locale, "对象 ID（高级）", "Object IDs (advanced)")}</span>
             <input
               value={taskDraft.objectIds}
               onChange={(event) =>
@@ -408,9 +444,9 @@ export function VisionCenterDialogs({
                 !taskDraft.modelId ||
                 (taskDraft.mode === "video" && !taskDraft.sourceId)
               }
-              onClick={() => void createTask()}
+              onClick={() => void saveTask()}
             >
-              {tr(locale, "创建任务", "Create task")}
+              {editingTaskId ? tr(locale, "保存修改", "Save changes") : tr(locale, "创建任务", "Create task")}
             </button>
           </footer>
         </Modal>
@@ -598,4 +634,8 @@ export function VisionCenterDialogs({
       )}
     </>
   );
+}
+
+function csvValues(value: string) {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
 }

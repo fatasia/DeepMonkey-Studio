@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-iTwin Studio 需要城市地图底板、轻量 GIS、工业拓扑和多种资源导入能力，但产品仍要求简洁、高效和低耦合。如果把地图、拓扑、转换全部塞进二维画布或三维引擎，会形成巨大编辑器；如果按飞渡式重型地理平台建设，又会引入 3D Tiles、倾斜摄影、地形/点云生产和复杂运维。
+Industrial Studio 需要城市地图底板、轻量 GIS、工业拓扑和多种资源导入能力，但产品仍要求简洁、高效和低耦合。如果把地图、拓扑、转换全部塞进二维画布或三维引擎，会形成巨大编辑器；如果按飞渡式重型地理平台建设，又会引入 3D Tiles、倾斜摄影、地形/点云生产和复杂运维。
 
 ## Decision
 
@@ -69,5 +69,5 @@ iTwin Studio 需要城市地图底板、轻量 GIS、工业拓扑和多种资源
 
 ## References
 
-- [iTwin Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
+- [Industrial Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
 - [ADR-0002 模块化编辑器内核](./0002-modular-editor-core.md)

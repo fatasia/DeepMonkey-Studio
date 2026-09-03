@@ -117,6 +117,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
       if (!material) return;
       result = {
         ...(material.color?.isColor ? { color: `#${material.color.getHexString()}` } : {}),
+        ...materialColorAdjustmentState(material),
         ...materialTextureState(material),
         ...(material.normalScale?.isVector2 ? { normalScale: material.normalScale.x } : {}),
         ...(typeof material.roughness === "number" ? { roughness: material.roughness } : {}),
@@ -136,7 +137,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
     object.traverse((child) => {
       for (const source of this.materialsForMesh(child as THREE.Mesh)) {
         const material = source as THREE.MeshStandardMaterial;
-        if (state.color && material.color?.isColor) material.color.set(state.color);
+        applyMaterialColorAdjustment(material, state);
         this.applyMaterialTexture(material, "map", "studioBaseColorMapUrl", state.baseColorMapUrl, state, true);
         this.applyMaterialTexture(material, "normalMap", "studioNormalMapUrl", state.normalMapUrl, state, false);
         this.applyMaterialTexture(material, "emissiveMap", "studioEmissiveMapUrl", state.emissiveMapUrl, state, true);
@@ -396,4 +397,39 @@ function applyMaterialNumbers(material: THREE.MeshStandardMaterial, state: Scene
   }
   if (state.wireframe !== undefined) material.wireframe = state.wireframe;
   if (state.doubleSided !== undefined) material.side = state.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
+}
+
+type MaterialColorAdjustment = Required<Pick<SceneMaterialState, "hue" | "saturation" | "brightness" | "contrast">>;
+
+function materialColorAdjustmentState(material: THREE.MeshStandardMaterial): SceneMaterialState {
+  const value = material.userData.studioColorAdjustment as Partial<MaterialColorAdjustment> | undefined;
+  return value ? {
+    hue: value.hue ?? 0,
+    saturation: value.saturation ?? 0,
+    brightness: value.brightness ?? 0,
+    contrast: value.contrast ?? 0,
+  } : {};
+}
+
+function applyMaterialColorAdjustment(material: THREE.MeshStandardMaterial, state: SceneMaterialState): void {
+  if (!material.color?.isColor) return;
+  const current = materialColorAdjustmentState(material);
+  const next: MaterialColorAdjustment = {
+    hue: THREE.MathUtils.clamp(state.hue ?? current.hue ?? 0, -180, 180),
+    saturation: THREE.MathUtils.clamp(state.saturation ?? current.saturation ?? 0, -1, 1),
+    brightness: THREE.MathUtils.clamp(state.brightness ?? current.brightness ?? 0, -1, 1),
+    contrast: THREE.MathUtils.clamp(state.contrast ?? current.contrast ?? 0, -1, 1),
+  };
+  const baseColor = state.color
+    ?? (typeof material.userData.studioUngradedColor === "string" ? material.userData.studioUngradedColor : `#${material.color.getHexString()}`);
+  material.userData.studioUngradedColor = baseColor;
+  material.userData.studioColorAdjustment = next;
+  material.color.set(baseColor);
+  material.color.offsetHSL(next.hue / 360, next.saturation, next.brightness * 0.5);
+  const factor = next.contrast + 1;
+  material.color.setRGB(
+    THREE.MathUtils.clamp((material.color.r - 0.5) * factor + 0.5, 0, 1),
+    THREE.MathUtils.clamp((material.color.g - 0.5) * factor + 0.5, 0, 1),
+    THREE.MathUtils.clamp((material.color.b - 0.5) * factor + 0.5, 0, 1),
+  );
 }

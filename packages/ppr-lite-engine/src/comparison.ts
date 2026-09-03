@@ -10,6 +10,7 @@ import type {
 
 export function compareVersionSnapshots(beforeVersion: PprBopVersion, afterVersion: PprBopVersion, before: PprAnalysis, after: PprAnalysis): PprVersionComparison {
   const changes = [
+    ...comparePlanSettings(beforeVersion, afterVersion),
     ...compareEntities("component", beforeVersion.components, afterVersion.components),
     ...compareEntities("operation", beforeVersion.operations, afterVersion.operations),
     ...compareEntities("precedence", beforeVersion.precedenceRelations, afterVersion.precedenceRelations),
@@ -89,7 +90,14 @@ function findRegressions(before: PprAnalysis, after: PprAnalysis, beforeVersion:
   addValidationRegressions(regressions, before, after);
   addResourceConflictRegressions(regressions, before, after);
   addStandardTimeRegressions(regressions, beforeVersion, afterVersion);
+  addTaktOverloadRegressions(regressions, before, after);
   return regressions;
+}
+
+function comparePlanSettings(before: PprBopVersion, after: PprBopVersion): PprVersionChange[] {
+  const changedFields = (["name", "targetTaktMinutes", "variantIds", "condition", "references"] as const)
+    .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]));
+  return changedFields.length ? [{ entityType: "plan", entityId: after.planId, changeType: "modified", changedFields: [...changedFields] }] : [];
 }
 
 function addCriticalPathRegression(regressions: PprRegression[], before: PprAnalysis, after: PprAnalysis): void {
@@ -128,6 +136,18 @@ function addStandardTimeRegressions(regressions: PprRegression[], before: PprBop
       code: "standard-time-increased",
       message: `工序 ${operation.id} 标准工时由 ${oldOperation.standardTimeMinutes} 分钟增加到 ${operation.standardTimeMinutes} 分钟。`,
       entityIds: [operation.id],
+    });
+  });
+}
+
+function addTaktOverloadRegressions(regressions: PprRegression[], before: PprAnalysis, after: PprAnalysis): void {
+  const previous = new Set(before.lineBalance.overloadedResourceIds);
+  after.lineBalance.overloadedResourceIds.filter((resourceId) => !previous.has(resourceId)).forEach((resourceId) => {
+    const load = after.lineBalance.stationLoads.find((item) => item.resourceId === resourceId);
+    regressions.push({
+      code: "takt-overload-introduced",
+      message: `工位 ${resourceId} 的单元负载 ${load?.loadPerUnitMinutes.toFixed(2) ?? "—"} 分钟超过目标节拍 ${after.lineBalance.targetTaktMinutes?.toFixed(2) ?? "—"} 分钟。`,
+      entityIds: [resourceId, ...(load?.operationIds ?? [])],
     });
   });
 }

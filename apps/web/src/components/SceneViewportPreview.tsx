@@ -9,6 +9,7 @@ import { DirectBindingRuntime } from "../directBindingRuntime";
 import { sceneViewportRevision } from "./sceneViewportRevision";
 import { registerStudioSceneRuntime } from "../studio/studioSceneRuntimeRegistry";
 import { createBrowserCooperativeWorkScheduler } from "../cooperativeWorkScheduler";
+import { sceneViewportSelection } from "./sceneViewportSelection";
 
 const OBJECT_ACTION_TYPES = new Set(["focus", "visibility", "color", "opacity", "animation"]);
 
@@ -97,7 +98,10 @@ export function SceneViewportPreview({
         unregisterRuntime = registerStudioSceneRuntime(scene.id, engine);
         engine.setReadOnly(true);
         engine.setInteractionScripts([]);
-        engine.onSelectionChange = (model) => onSelectionChange(model ? [{ kind: "object", sceneId: scene.id, modelId: model.id }] : []);
+        engine.onSelectionChange = (model) => {
+          const selection = sceneViewportSelection(scene.id, model?.id, runtimeMode);
+          if (selection) onSelectionChange(selection);
+        };
         engine.onInteractionTrigger = onObjectInteraction;
         unsubscribeEffects = subscribeApplicationInteractionEffects((effect) => {
           const action = effect.action;

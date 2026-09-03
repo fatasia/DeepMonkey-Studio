@@ -141,6 +141,18 @@ export type DataPipelineNode =
   | { id: string; type: "filter"; name: string; formula: string; position: { x: number; y: number } }
   | { id: string; type: "formula"; name: string; key: string; label: string; fieldType: DataFieldType; formula: string; position: { x: number; y: number } }
   | { id: string; type: "script"; name: string; key: string; label: string; fieldType: DataFieldType; source: string; position: { x: number; y: number } }
+  | { id: string; type: "select"; name: string; fields: string[]; position: { x: number; y: number } }
+  | { id: string; type: "deduplicate"; name: string; fields: string[]; position: { x: number; y: number } }
+  | {
+      id: string;
+      type: "aggregate";
+      name: string;
+      groupBy: string[];
+      field: string;
+      operation: "count" | "sum" | "average" | "min" | "max";
+      outputKey: string;
+      position: { x: number; y: number };
+    }
   | { id: string; type: "sort"; name: string; field: string; direction: "asc" | "desc"; position: { x: number; y: number } }
   | { id: string; type: "limit"; name: string; count: number; position: { x: number; y: number } }
   | { id: string; type: "merge"; name: string; position: { x: number; y: number } }
@@ -184,6 +196,9 @@ export interface DataPipelineNodeDiagnostic {
   inputRows: number;
   outputRows: number;
   durationMs: number;
+  /** 节点实际收到的输入样例；用于逐节点调试，不包含连接凭据。 */
+  inputSample: Array<Record<string, unknown>>;
+  /** 节点处理后的输出样例。 */
   sample: Array<Record<string, unknown>>;
   error?: string;
 }
@@ -195,6 +210,8 @@ export interface DataPipelinePreview {
   rows: Array<Record<string, unknown>>;
   durationMs: number;
   diagnostics: DataPipelineNodeDiagnostic[];
+  /** 存在时表示本次仅执行到该节点，不是可发布的全流程结果。 */
+  executedThroughNodeId?: string;
   failedNodeId?: string;
   error?: string;
 }

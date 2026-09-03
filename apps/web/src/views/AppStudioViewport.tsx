@@ -135,6 +135,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     xrPanelOpen,
   } = controller;
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
+  const workspaceIsPrimary = route.view === "studio" || route.view === "view" || route.view === "published";
   const deliveryToolbarVisible = sceneViewerDeliveryToolbarVisible();
   const viewerToolbarVisible = deliveryToolbarVisible ?? (route.view === "view" || activeScene?.publicationToolbarVisible !== false);
   const viewerRouteHasToolbar = (route.view === "view" || route.view === "published") && viewerToolbarVisible;
@@ -159,7 +160,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   }
 
   return (
-    <main className="workspace">
+    <div className="workspace" role={workspaceIsPrimary ? "main" : undefined} aria-hidden={workspaceIsPrimary ? undefined : true}>
+      {workspaceIsPrimary && <h1 className="sr-only">{route.view === "studio" ? tr(locale, `${sceneName} · 三维场景编辑`, `${sceneName} · 3D scene editor`) : tr(locale, `${sceneName} · 场景浏览`, `${sceneName} · Scene viewer`)}</h1>}
       <div className="viewport" ref={viewportRef} />
       {rendererSwitching && (
         <div className="renderer-loading">
@@ -456,6 +458,6 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
         onNavigationSettings={() => setCameraViewsOpen(true)}
         onNavigationExit={() => changeNavigation("orbit")}
       />
-    </main>
+    </div>
   );
 }

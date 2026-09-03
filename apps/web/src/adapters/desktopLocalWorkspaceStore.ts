@@ -7,9 +7,10 @@ import type {
 } from "@bim-studio/contracts";
 
 const DATABASE_NAME = "bim-studio-local-workspace";
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 const STORE_NAME = "workspace";
 const ASSET_STORE_NAME = "model-assets";
+const SCRIPT_DEPENDENCY_STORE_NAME = "script-dependencies";
 const STATE_KEY = "primary";
 
 export interface DesktopLocalWorkspaceState {
@@ -27,6 +28,9 @@ export interface DesktopLocalWorkspaceStore {
   readModelAsset(modelId: string): Promise<Blob | undefined>;
   writeModelAsset(modelId: string, asset: Blob): Promise<void>;
   deleteModelAsset(modelId: string): Promise<void>;
+  readScriptDependency(dependencyId: string): Promise<Blob | undefined>;
+  writeScriptDependency(dependencyId: string, asset: Blob): Promise<void>;
+  deleteScriptDependency(dependencyId: string): Promise<void>;
 }
 
 /** IndexedDB 让本地草稿独立于服务器，并保留比 localStorage 更合理的容量与事务语义。 */
@@ -56,6 +60,22 @@ export class IndexedDbDesktopLocalWorkspaceStore implements DesktopLocalWorkspac
   async deleteModelAsset(modelId: string): Promise<void> {
     const database = await openDatabase();
     await transactStore(database, ASSET_STORE_NAME, "readwrite", (store) => store.delete(modelId));
+  }
+
+  async readScriptDependency(dependencyId: string): Promise<Blob | undefined> {
+    const database = await openDatabase();
+    const stored = await transactStore(database, SCRIPT_DEPENDENCY_STORE_NAME, "readonly", (store) => store.get(dependencyId));
+    return stored instanceof Blob ? stored : undefined;
+  }
+
+  async writeScriptDependency(dependencyId: string, asset: Blob): Promise<void> {
+    const database = await openDatabase();
+    await transactStore(database, SCRIPT_DEPENDENCY_STORE_NAME, "readwrite", (store) => store.put(asset, dependencyId));
+  }
+
+  async deleteScriptDependency(dependencyId: string): Promise<void> {
+    const database = await openDatabase();
+    await transactStore(database, SCRIPT_DEPENDENCY_STORE_NAME, "readwrite", (store) => store.delete(dependencyId));
   }
 }
 
@@ -95,6 +115,7 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME);
       if (!request.result.objectStoreNames.contains(ASSET_STORE_NAME)) request.result.createObjectStore(ASSET_STORE_NAME);
+      if (!request.result.objectStoreNames.contains(SCRIPT_DEPENDENCY_STORE_NAME)) request.result.createObjectStore(SCRIPT_DEPENDENCY_STORE_NAME);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("无法打开本地工作台数据库"));

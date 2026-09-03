@@ -103,6 +103,7 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
           <button
             className={props.weather === "sunny" ? "active" : ""}
             title={tr(locale, "晴天", "Sunny")}
+            aria-label={tr(locale, "晴天", "Sunny")}
             onClick={() => props.onWeatherChange("sunny")}
           >
             <Sun size={15} />
@@ -110,6 +111,7 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
           <button
             className={props.weather === "cloudy" ? "active" : ""}
             title={tr(locale, "阴天", "Cloudy")}
+            aria-label={tr(locale, "阴天", "Cloudy")}
             onClick={() => props.onWeatherChange("cloudy")}
           >
             <Cloud size={15} />
@@ -117,6 +119,7 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
           <button
             className={props.weather === "rain" ? "active" : ""}
             title={tr(locale, "下雨", "Rain")}
+            aria-label={tr(locale, "下雨", "Rain")}
             onClick={() => props.onWeatherChange("rain")}
           >
             <CloudRain size={15} />
@@ -124,6 +127,7 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
           <button
             className={props.weather === "snow" ? "active" : ""}
             title={tr(locale, "下雪", "Snow")}
+            aria-label={tr(locale, "下雪", "Snow")}
             onClick={() => props.onWeatherChange("snow")}
           >
             <Snowflake size={15} />
@@ -131,6 +135,7 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
           <button
             className={props.weather === "fog" ? "active" : ""}
             title={tr(locale, "雾天", "Fog")}
+            aria-label={tr(locale, "雾天", "Fog")}
             onClick={() => props.onWeatherChange("fog")}
           >
             <CloudFog size={15} />
@@ -138,6 +143,7 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
           <button
             className={props.weather === "storm" ? "active" : ""}
             title={tr(locale, "暴雨", "Storm")}
+            aria-label={tr(locale, "暴雨", "Storm")}
             onClick={() => props.onWeatherChange("storm")}
           >
             <CloudLightning size={15} />

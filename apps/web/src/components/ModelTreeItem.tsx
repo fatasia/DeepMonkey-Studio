@@ -53,6 +53,7 @@ export function ModelTreeItem({
         <button
           className="model-expander"
           disabled={!loaded}
+          aria-label={expanded ? tr(locale, "收起模型结构", "Collapse model structure") : tr(locale, "展开模型结构", "Expand model structure")}
           title={expanded ? tr(locale, "收起模型结构", "Collapse model structure") : tr(locale, "展开模型结构", "Expand model structure")}
           onClick={() => loaded && onToggleTree()}
         >
@@ -75,6 +76,7 @@ export function ModelTreeItem({
         {loaded && (
           <button
             className="mini-button"
+            aria-label={loaded.visible ? tr(locale, "隐藏", "Hide") : tr(locale, "显示", "Show")}
             title={loaded.visible ? tr(locale, "隐藏", "Hide") : tr(locale, "显示", "Show")}
             onClick={() => engine?.setVisible(model.id, !loaded.visible)}
           >
@@ -84,6 +86,7 @@ export function ModelTreeItem({
         {loaded && (
           <button
             className={`mini-button ${engine?.isModelLocked(model.id) ? "active" : ""}`}
+            aria-label={engine?.isModelLocked(model.id) ? tr(locale, "解锁模型", "Unlock model") : tr(locale, "锁定模型", "Lock model")}
             title={engine?.isModelLocked(model.id) ? tr(locale, "解锁模型", "Unlock model") : tr(locale, "锁定模型", "Lock model")}
             onClick={() => {
               engine?.setModelLocked(model.id, !engine.isModelLocked(model.id));
@@ -96,6 +99,7 @@ export function ModelTreeItem({
         {loaded && (
           <button
             className={`mini-button scene-row-optional-action collision-toggle ${engine?.isCollisionEnabled(model.id) ? "active" : ""} ${engine?.isColliding(model.id) ? "colliding" : ""}`}
+            aria-label={engine?.isCollisionEnabled(model.id) ? tr(locale, "关闭碰撞检测", "Disable collision detection") : tr(locale, "开启碰撞检测", "Enable collision detection")}
             title={engine?.isCollisionEnabled(model.id) ? tr(locale, "关闭碰撞检测", "Disable collision detection") : tr(locale, "开启碰撞检测", "Enable collision detection")}
             onClick={() => engine?.setCollisionEnabled(model.id, !engine.isCollisionEnabled(model.id))}
           >
@@ -105,6 +109,7 @@ export function ModelTreeItem({
         {loaded && engine?.hasAnimation(model.id) && (
           <button
             className={`mini-button scene-row-optional-action ${engine.isAnimationEnabled(model.id) ? "active" : ""}`}
+            aria-label={engine.isAnimationEnabled(model.id) ? tr(locale, "暂停模型动画", "Pause model animation") : tr(locale, "播放模型动画", "Play model animation")}
             title={engine.isAnimationEnabled(model.id) ? tr(locale, "暂停模型动画", "Pause model animation") : tr(locale, "播放模型动画", "Play model animation")}
             onClick={() => {
               engine.setAnimationEnabled(model.id, !engine.isAnimationEnabled(model.id));
@@ -117,6 +122,7 @@ export function ModelTreeItem({
         <button
           className="mini-button scene-row-optional-action danger"
           disabled={Boolean(loaded && engine?.isModelLocked(model.id))}
+          aria-label={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : tr(locale, "删除模型", "Delete model")}
           title={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : tr(locale, "删除模型", "Delete model")}
           onClick={onDeleteModel}
         >
@@ -139,6 +145,7 @@ export function ModelTreeItem({
               <button
                 key={`${floor.modelId}:${floor.level}`}
                 className={floor.visible ? "active" : ""}
+                aria-label={floor.visible ? tr(locale, "隐藏该楼层", "Hide floor") : tr(locale, "显示该楼层", "Show floor")}
                 title={floor.visible ? tr(locale, "隐藏该楼层", "Hide floor") : tr(locale, "显示该楼层", "Show floor")}
                 onClick={() => onUpdateFloor({ ...floor, visible: !floor.visible })}
               >

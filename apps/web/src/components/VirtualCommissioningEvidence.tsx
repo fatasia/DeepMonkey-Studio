@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Download, Focus, RotateCcw } from "lucide-
 import type { VirtualDebugResult, VirtualDebugSignalBinding, VirtualDebugSignalValue } from "@bim-studio/contracts";
 import type { CapabilityInvocationResult } from "../api";
 import { virtualDebugFrameAt } from "./virtualCommissioningModel";
+import "./VirtualCommissioningEvidence.css";
 
 export function VirtualCommissioningEvidence({
   invocation,
@@ -23,8 +24,8 @@ export function VirtualCommissioningEvidence({
       {!result ? (
         <div className="commissioning-result-empty">
           <RotateCcw size={24} />
-          <strong>等待运行</strong>
-          <span>运行后在这里逐帧检查信号、故障、复位和断言结果。</span>
+          <strong>等待控制逻辑验证</strong>
+          <span>运行后在这里逐帧检查 I/O、故障、复位和断言结果。</span>
         </div>
       ) : (
         <>
@@ -32,11 +33,11 @@ export function VirtualCommissioningEvidence({
             <div>
               {result.status === "passed" ? <CheckCircle2 /> : <AlertTriangle />}
               <span>
-                <strong>{result.status === "passed" ? "验收通过" : `${result.failures.length} 项验收失败`}</strong>
+                <strong>{result.status === "passed" ? "控制逻辑断言通过" : `${result.failures.length} 项控制逻辑断言未通过`}</strong>
                 <small>{result.trace.length} 帧 · {result.tickMs}ms 周期</small>
               </span>
             </div>
-            <button onClick={onExport}>
+            <button type="button" onClick={onExport}>
               <Download size={14} />
               导出证据
             </button>
@@ -45,6 +46,7 @@ export function VirtualCommissioningEvidence({
             <span>证据指纹</span>
             <code>{result.evidenceFingerprint}</code>
           </div>
+          <p className="commissioning-evidence-scope">本结果只覆盖当前 I/O 状态机、故障、复位与断言回放；不覆盖完整 IK、网格级连续碰撞或真实控制器时序。</p>
           <div className="commissioning-timeline">
             <div>
               <strong>{frame?.atMs ?? 0} ms</strong>
@@ -82,10 +84,10 @@ export function VirtualCommissioningEvidence({
                   <AlertTriangle size={14} />
                   <span>
                     <b>{failure.assertionId}</b>
-                    <small>{failure.atMs}ms · {failure.message}</small>
+                    <small>{failure.atMs}ms · {failure.message}{failure.target ? ` · ${failure.target.objectId}` : ""}</small>
                   </span>
                   {failure.target && (
-                    <button onClick={() => onOpenTarget(failure.target!.sceneId, failure.target!.objectId)}>
+                    <button type="button" onClick={() => onOpenTarget(failure.target!.sceneId, failure.target!.objectId)}>
                       <Focus size={13} />
                       定位设备
                     </button>
@@ -116,7 +118,7 @@ function SignalCard({
         ? "running"
         : "normal";
   return (
-    <button className={state} onClick={onFocus}>
+    <button type="button" className={state} onClick={onFocus}>
       <span>{binding.label ?? binding.signal}</span>
       <strong>{String(value ?? "—")}</strong>
       <small><Focus size={11} />定位到场景设备</small>

@@ -35,8 +35,8 @@ export function ProjectAssetToolbar({ controller }: { controller: SceneManagerCo
       <button className="button" disabled={modelLibraryBusy} onClick={() => videoUploadRef.current?.click()}>
         <FileVideo size={16} />{tr(locale, "上传视频", "Upload videos")}
       </button>
-      <button className="button" disabled={modelLibraryBusy} onClick={() => void refreshLibraryModels()}>
-        <RefreshCw className={modelLibraryBusy ? "spin" : ""} size={15} />{tr(locale, "刷新状态", "Refresh")}
+      <button className="manager-icon-button resource-refresh-control" aria-label={tr(locale, "刷新资源状态", "Refresh asset status")} title={tr(locale, "刷新资源状态", "Refresh asset status")} disabled={modelLibraryBusy} onClick={() => void refreshLibraryModels()}>
+        <RefreshCw className={modelLibraryBusy ? "spin" : ""} size={15} />
       </button>
       <input ref={modelUploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadLibraryModels(event.target.files)} />
       <input ref={imageUploadRef} hidden multiple type="file" accept={ACCEPTED_IMAGES} onChange={(event) => void uploadLibraryImages(event.target.files)} />

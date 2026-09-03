@@ -2,7 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{
+    AppHandle, Manager, Runtime,
+    utils::config::WebviewUrl,
+    webview::{NewWindowResponse, WebviewWindowBuilder},
+};
 use url::Url;
 
 const PROFILE_FILE: &str = "server-profile.json";
@@ -129,9 +133,57 @@ fn clear_server_profile<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum NewWindowPolicy {
+    ScriptEditor,
+    Default,
+}
+
+fn classify_new_window_request(url: &Url) -> NewWindowPolicy {
+    if url.scheme() == "about" && url.path() == "blank" && url.query().is_none() && url.fragment().is_none() {
+        NewWindowPolicy::ScriptEditor
+    } else {
+        NewWindowPolicy::Default
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            let main_config = app
+                .config()
+                .app
+                .windows
+                .first()
+                .ok_or("missing main window configuration")?;
+            let app_handle = app.handle().clone();
+            WebviewWindowBuilder::from_config(app, main_config)?
+                .on_new_window(move |url, features| {
+                    if classify_new_window_request(&url) == NewWindowPolicy::Default {
+                        // 普通预览、场景跳转和外部链接继续使用 WebView 默认新窗口行为；
+                        // 只有 about:blank 才由桌面宿主接管为低权限脚本编辑器。
+                        return NewWindowResponse::Allow;
+                    }
+                    let builder = WebviewWindowBuilder::new(
+                        &app_handle,
+                        "script-editor",
+                        WebviewUrl::External("about:blank".parse().expect("valid about:blank URL")),
+                    )
+                    .window_features(features)
+                    .title("脚本编辑器 · Industrial Studio")
+                    .always_on_top(false)
+                    .on_document_title_changed(|window, title| {
+                        let _ = window.set_title(&title);
+                    });
+                    match builder.build() {
+                        Ok(window) => NewWindowResponse::Create { window },
+                        Err(_) => NewWindowResponse::Deny,
+                    }
+                })
+                .build()?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_server_profile,
             set_server_profile,
@@ -167,6 +219,20 @@ mod tests {
     fn rejects_credentials_and_non_http_protocols() {
         assert!(profile("ftp://studio.example.test").validated().is_err());
         assert!(profile("https://user:secret@studio.example.test").validated().is_err());
+    }
+
+    #[test]
+    fn only_routes_the_empty_popup_to_the_script_editor() {
+        assert_eq!(
+            classify_new_window_request(&Url::parse("about:blank").unwrap()),
+            NewWindowPolicy::ScriptEditor
+        );
+        for candidate in ["https://example.test", "data:text/html,test", "tauri://localhost", "about:blank#external"] {
+            assert_eq!(
+                classify_new_window_request(&Url::parse(candidate).unwrap()),
+                NewWindowPolicy::Default
+            );
+        }
     }
 
     #[test]

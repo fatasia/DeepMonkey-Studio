@@ -99,3 +99,60 @@ describe("scene material validation", () => {
     }, "scene")).toThrow("offsetSpeedX");
   });
 });
+
+describe("scene robot planning evidence validation", () => {
+  it("accepts explicit payload, TCP and combined center-of-mass evidence", () => {
+    expect(() => validateScene(robotScene({
+      loadCapability: {
+        ratedPayloadKg: 20,
+        maximumLoadCenterDistanceMeters: 0.35,
+        source: "configured-prefab",
+        reference: "robot.articulated-6",
+      },
+      toolLoad: {
+        tcpPositionMeters: { x: 0, y: 0, z: 0.18 },
+        tcpOrientationEulerDeg: { x: 0, y: 90, z: 0 },
+        toolMassKg: 4.2,
+        carriedPayloadKg: 8,
+        combinedCenterOfMassMeters: { x: 0, y: 0, z: 0.21 },
+        source: "author-confirmed",
+      },
+    }), "scene")).not.toThrow();
+  });
+
+  it("rejects invalid robot planning measurements instead of normalizing them into evidence", () => {
+    expect(() => validateScene(robotScene({
+      loadCapability: { ratedPayloadKg: 0, source: "author-confirmed" },
+    }), "scene")).toThrow("ratedPayloadKg");
+    expect(() => validateScene(robotScene({
+      toolLoad: { toolMassKg: -1, source: "author-confirmed" },
+    }), "scene")).toThrow("toolMassKg");
+  });
+});
+
+function robotScene(robotPatch: Record<string, unknown>) {
+  return {
+    id: "scene-robot",
+    name: "机器人工位",
+    camera: { position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" },
+    models: [{
+      modelId: "robot-1",
+      name: "六轴机器人",
+      visible: true,
+      opacity: 1,
+      transform,
+      rig: {
+        bones: [],
+        ik: [],
+        robot: {
+          enabled: true,
+          baseBonePath: "base",
+          joints: [{ bonePath: "base/j1", name: "J1", axis: "z", length: 1, minAngleDeg: -180, maxAngleDeg: 180 }],
+          ...robotPatch,
+        },
+      },
+    }],
+    primitives: [],
+    measurements: [],
+  };
+}
