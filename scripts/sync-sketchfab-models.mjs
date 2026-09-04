@@ -91,9 +91,17 @@ await writeJsonAtomically(catalogPath, {
 console.log(`完成：本次新增 ${collected.filter((item) => !item.synchronizedAt?.startsWith(new Date().toISOString().slice(0, 10)) ? true : true).length} 条记录，目录共 ${records.length} 个模型`);
 
 async function apiJson(url) {
-  const response = await fetch(url, { headers: { Authorization: `Token ${TOKEN}`, "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(45_000) });
-  if (!response.ok) throw new Error(`${url.slice(0, 60)} → HTTP ${response.status}`);
-  return response.json();
+  // 429 退避重试：多进程/大批量会触发 Sketchfab 限流，空结果静默等于白跑。
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const response = await fetch(url, { headers: { Authorization: `Token ${TOKEN}`, "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(45_000) });
+    if (response.status === 429 && attempt < 4) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 6000));
+      continue;
+    }
+    if (!response.ok) throw new Error(`${url.slice(0, 60)} → HTTP ${response.status}`);
+    return response.json();
+  }
+  throw new Error(`429 persisted: ${url.slice(0, 60)}`);
 }
 
 async function downloadFile(url, partialPath, targetPath) {
