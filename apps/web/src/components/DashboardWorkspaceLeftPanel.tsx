@@ -9,6 +9,7 @@ import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 function DashboardLayerList() {
   const {
     dashboardGroups, deleteLayerNode, draggedLayerId, layerDropTargetId, locale, onCommand, onSelectionChange,
+    openNodeContextMenu,
     page,
     reorderLayerByDrop, selectNode, selectedNodeIds, setDraggedLayerId, setLayerDropTargetId,
     setSelectedNodeIds, renameDashboardGroup, toggleLayerLock, updateDashboardGroup,
@@ -19,7 +20,8 @@ function DashboardLayerList() {
     onDragStart={(event) => { setDraggedLayerId(node.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", node.id); }}
     onDragOver={(event) => { if (!draggedLayerId || draggedLayerId === node.id) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setLayerDropTargetId(node.id); }}
     onDrop={(event) => { event.preventDefault(); const sourceId = draggedLayerId ?? event.dataTransfer.getData("text/plain"); if (sourceId) reorderLayerByDrop(sourceId, node.id); setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}
-    onDragEnd={() => { setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}>
+    onDragEnd={() => { setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}
+    onContextMenu={(event) => openNodeContextMenu(event, node)}>
     <button className="dashboard-layer-select" disabled={node.locked} title={node.locked ? tr(locale, "图层已锁定，解锁后可选取", "Layer is locked; unlock it to select") : nodeLabel(node)} onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey || event.shiftKey, true)}>
       {node.kind === "scene-viewport" ? <Box size={14} /> : <Layers3 size={14} />}<span>{nodeLabel(node)}</span>
     </button>
