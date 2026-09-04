@@ -25,6 +25,9 @@ const PACKS = [
   pack("smoke", "vfx", "https://kenney.nl/media/pages/assets/smoke-particles/23249a0d35-1677695171/kenney_smoke-particles.zip"),
   pack("interface-audio", "audio", "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip"),
   pack("impact-audio", "audio", "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip"),
+  // 2026-09-04 扩容：办公家具与科幻站体（控制室/操作台风格），均 CC0。
+  pack("furniture", "3d-industrial", "https://kenney.nl/media/pages/assets/furniture-kit/440e0608a4-1677580847/kenney_furniture-kit.zip"),
+  pack("space-station", "3d-industrial", "https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip"),
 ];
 
 await mkdir(OUTPUT_DIRECTORY, { recursive: true });
