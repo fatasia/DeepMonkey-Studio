@@ -166,3 +166,8 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* U1-8c：Node-RED 未运行时的明确离线态，替代白屏 iframe。 */
+.node-red-studio__offline { display: grid; place-items: center; gap: 8px; min-height: 320px; padding: 24px; color: #8f9ba1; border: 1px dashed #3a464c; border-radius: 10px; background: #141b1e; text-align: center; }
+.node-red-studio__offline strong { color: #dce2e5; font-size: 13px; }
+.node-red-studio__offline span { max-width: 480px; font-size: 11px; line-height: 1.6; }

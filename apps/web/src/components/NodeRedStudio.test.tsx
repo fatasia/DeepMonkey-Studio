@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { NODE_RED_DASHBOARD_PATH, NODE_RED_EDITOR_PATH, NODE_RED_HTTP_INGRESS_PATH, NODE_RED_WEBSOCKET_PATH, NodeRedStudio, nodeRedGatewayUrls } from "./NodeRedStudio";
 
 describe("NodeRedStudio", () => {
-  it("embeds the advanced editor while clearly separating it from native pipelines", () => {
+  it("defers the editor iframe until health confirms Node-RED is online (no white screen)", () => {
+    // 健康检查未返回前（SSR/静态渲染不跑 effect），iframe 不得指向 /node-red/，避免离线白屏。
     const html = renderToStaticMarkup(<NodeRedStudio locale="zh-CN" />);
 
-    expect(html).toContain(`src="${NODE_RED_EDITOR_PATH}"`);
+    expect(html).not.toContain(`src="${NODE_RED_EDITOR_PATH}"`);
     expect(html).toContain(`href="${NODE_RED_DASHBOARD_PATH}"`);
     expect(html).toContain("独立运行时");
     expect(html).toContain("不等同于平台内置的轻量数据流水线");

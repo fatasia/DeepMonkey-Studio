@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Check, Copy, ExternalLink, Gauge, Radio, Workflow } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Copy, ExternalLink, Gauge, PlugZap, Radio, Workflow } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import "./NodeRedStudio.css";
@@ -11,6 +11,24 @@ export const NODE_RED_WEBSOCKET_PATH = "/iot/ws/scene";
 
 export function NodeRedStudio({ locale }: { locale: AppLocale }) {
   const [copied, setCopied] = useState<"http" | "websocket">();
+  // Node-RED 独立进程，未启动时 iframe 是白屏（U1-8c）；轮询健康接口给出明确离线态。
+  const [online, setOnline] = useState<boolean | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const response = await fetch("/api/node-red/health", { signal: AbortSignal.timeout(4_000) });
+        const body = await response.json().catch(() => null);
+        if (!cancelled) setOnline(Boolean(body?.online));
+      } catch {
+        if (!cancelled) setOnline(false);
+      }
+    };
+    void check();
+    const timer = window.setInterval(check, 15_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
 
   async function copyGateway(kind: "http" | "websocket") {
     const urls = nodeRedGatewayUrls(window.location.origin);
@@ -103,12 +121,20 @@ export function NodeRedStudio({ locale }: { locale: AppLocale }) {
           )}
         </p>
       </section>
-      <iframe
-        className="node-red-studio__frame"
-        src={NODE_RED_EDITOR_PATH}
-        title={tr(locale, "Node-RED 高级事件编排", "Node-RED advanced event orchestration")}
-        sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
-      />
+      {online === false ? (
+        <div className="node-red-studio__offline" role="status">
+          <PlugZap size={20} />
+          <strong>{tr(locale, "Node-RED 服务未运行", "Node-RED service is not running")}</strong>
+          <span>{tr(locale, "高级事件编排依赖独立的 Node-RED 进程；请先在服务器上启动它（默认端口 1880），启动后本页会自动恢复。", "Advanced orchestration relies on the separate Node-RED process. Start it on the server (default port 1880); this page recovers automatically once it is online.")}</span>
+        </div>
+      ) : (
+        <iframe
+          className="node-red-studio__frame"
+          src={online === undefined ? "about:blank" : NODE_RED_EDITOR_PATH}
+          title={tr(locale, "Node-RED 高级事件编排", "Node-RED advanced event orchestration")}
+          sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
+        />
+      )}
     </section>
   );
 }
