@@ -171,7 +171,8 @@
 .dashboard-shortcuts-help>span strong { grid-column:1/-1;color:#e1e7e9;font-size:11px; }
 .dashboard-shortcuts-help>span kbd { color:#e0bf6d;font:10px/1.4 ui-monospace,monospace;white-space:nowrap; }
 .dashboard-shortcuts-help>span em { color:#87969c;font-size:10px;font-style:normal; }
-.dashboard-canvas-scroll { position:relative; min-width: 0; min-height: 0; padding: 0; overflow: auto; cursor:default; background-color: #101517; background-image: radial-gradient(circle,#263136 1px,transparent 1px); background-size: 16px 16px; }
+/* overflow:scroll 滚动条常驻：低倍缩放时内容跨越阈值不再引起滚动条明灭与布局跳动（U1-10 补充：<30% 抖动）。 */
+.dashboard-canvas-scroll { position:relative; min-width: 0; min-height: 0; padding: 0; overflow: scroll; cursor:default; background-color: #101517; background-image: radial-gradient(circle,#263136 1px,transparent 1px); background-size: 16px 16px; }
 .dashboard-canvas-scroll.panning { cursor:grabbing; user-select:none; }
 .dashboard-artboard-stage { position: relative; margin: 0; }
 .dashboard-artboard { position: absolute; top: 0; left: 0; overflow: hidden; background: #12191d; box-shadow:0 20px 58px rgba(0,0,0,.5); transform-origin: top left; }
