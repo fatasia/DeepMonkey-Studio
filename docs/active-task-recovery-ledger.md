@@ -353,3 +353,5 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 已修：顶栏重复面包屑+场景对象间距（24fe51f）；2D 框选恢复=空白拖拽相交命中+Shift/Ctrl 加选+导入面板说明墙删除（3099c02，功能经事件追踪证实 4/4，但 u112b 脚本偶发假阴性待查）。
 **待办队列（按序，9 点后继续不停）**：① 2D 编辑器布局回退：页面 tab 放回底部、图层在左侧（用户明确否定 821ca74 的"页面与图层"合并决策，以本次为准）；② <30% 缩放抖动复现与修复；③ 页面与图层支持右键菜单+双击内联重命名（弃弹窗，对标 FVS/Figma）；④ U1-8a 数据中心监控位置；⑤ U1-8c Node-RED 白屏；⑥ SIM-1a（交接 §6）；⑦ EX-001A 剩余（Alt 拖拽复制、右键选层）；⑧ astral-service 分析（克隆在 D:\Temp\astral-service-analysis）。纪律：严禁 push；admin/admin 与存储拓扑禁改；大改先请示；每修必带聚焦测试+浏览器证据+整页目视。
+
+- 素材 3D 通道阻塞：Poly Pizza/Sketchfab API key 需用户本人注册（邮箱验证+条款），已告知用户；用户给 key 后夜间跑批量下载。期间转 Quaternius/Kenney 无 key 直链通道（全部 CC0）：下一批先抓 quaternius.com 工业相关包直链并入 `scripts/sync-open-asset-packs.mjs`。
