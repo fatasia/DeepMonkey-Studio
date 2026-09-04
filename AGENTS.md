@@ -23,6 +23,7 @@
 
 ## 2026-08-31 最终任务范围
 
+- 2026-09-04 范围更新：用户开启"全面超越"新开发展轮，一级载体为 2D/3D/脚本编辑器与数据中心，二级为 AI 与西门子 Lite 仿真；能力项、批次与验收以 `docs/platform-surpass-development-plan-2026-09-04.md` 为准。该轮取代本节"不再扩张功能域"的旧约束；下节各项硬门槛与 §28"明确不再执行"排除清单继续全部有效。夜间体验优化轮（`docs/nightly-extreme-optimization-plan-2026-09-04.md`）并行继续。
 - 以 `docs/product-depth-experience-stability-ai-mcp-upgrade-plan-2026-08-27.md` 第 28 节为唯一剩余任务总表；除用户明确加入的 Plant Lite、PS Lite、PD Lite 与自研格式探测外，不再扩张功能域。
 - Plant Lite、PS Lite、PD Lite 只抽取高价值工程闭环，不复制完整西门子套件，不新增一级导航，不建设完整 OLP、完整 PLM、认证级人体工效或厂商控制器矩阵。
 - 工业格式采用分级能力与证据合同：允许实现安全结构探测和经过样本验证的高价值子集；没有几何、拓扑和版本矩阵证据时，不得标记为可渲染或生产可用。
