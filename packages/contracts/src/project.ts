@@ -4,6 +4,7 @@ import type { ModelTransform } from "./geometry.js";
 import type { UnityResourceRecord } from "./operations.js";
 import type { ParametricModelGeneration } from "./parametricModeling.js";
 import type { VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "./vision.js";
+import type { SemanticModelRecord } from "./semantic.js";
 
 /** 项目、模型资产、转换清单与 Revit 运行时合同。 */
 export const supportedExtensions = [
@@ -147,6 +148,7 @@ export interface ProjectRecord {
   datasets?: DataDatasetRecord[];
   dataPipelines?: DataPipelineDefinition[];
   dataEndpoints?: DataEndpointDefinition[];
+  semanticModels?: SemanticModelRecord[];
   aiDataBindings?: AiDataBinding[];
   aiDataBindingRuns?: AiDataBindingRunRecord[];
   visionSources?: VisionSourceRecord[];

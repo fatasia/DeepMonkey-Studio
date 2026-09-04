@@ -15,6 +15,7 @@ import type {
   PublishedApplicationRecord,
   PublishedSceneRecord,
   SceneSnapshot,
+  SemanticModelRecord,
   UnityResourceRecord,
   VisionEventRecord,
   VisionModelRecord,
@@ -346,6 +347,35 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
       const originalLength = project.dataPipelines?.length ?? 0;
       project.dataPipelines = (project.dataPipelines ?? []).filter((item) => item.id !== pipelineId);
       if (project.dataPipelines.length === originalLength) return unchanged(false);
+      project.updatedAt = new Date().toISOString();
+      return changed(true);
+    });
+  }
+
+  listSemanticModels(projectId: string): SemanticModelRecord[] {
+    return structuredClone(this.requireProject(projectId).semanticModels ?? []);
+  }
+
+  async saveSemanticModel(projectId: string, model: SemanticModelRecord): Promise<SemanticModelRecord> {
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      if (model.source.kind === "dataset" && !(project.datasets ?? []).some((item) => item.id === model.source.id))
+        throw new Error(`Data dataset not found: ${model.source.id}`);
+      if (model.source.kind === "pipeline" && !(project.dataPipelines ?? []).some((item) => item.id === model.source.id))
+        throw new Error(`Data pipeline not found: ${model.source.id}`);
+      project.semanticModels ??= [];
+      upsert(project.semanticModels, model);
+      project.updatedAt = new Date().toISOString();
+      return changed(structuredClone(model));
+    });
+  }
+
+  async removeSemanticModel(projectId: string, modelId: string): Promise<boolean> {
+    return this.runDocumentMutation((candidate) => {
+      const project = requireProject(candidate, projectId);
+      const originalLength = project.semanticModels?.length ?? 0;
+      project.semanticModels = (project.semanticModels ?? []).filter((item) => item.id !== modelId);
+      if (project.semanticModels.length === originalLength) return unchanged(false);
       project.updatedAt = new Date().toISOString();
       return changed(true);
     });

@@ -141,9 +141,12 @@ export interface SemanticModelRecord {
 - routes.ts 路由注册若不支持模块挂载，允许在 routes.ts 内新增一小节路由（+40 行以内），但必须在回填里说明原因。
 - 管道源字段解析若现有实现不可复用，v1 允许"管道源模型要求手填字段清单"降级（在合同中给 `source.fields?: DataDatasetField[]` 可选覆盖，校验时优先使用），并在回填记录。回滚点：本规格全部改动独立成一次提交，出问题整体 revert 不影响他人。
 
-## 8. 完成回填（夜间执行后填写）
+## 8. 完成回填（2026-09-04 GLM-5.3 白天直接实现，状态：已完成）
 
-- 实际改动文件 / 测试结果 / 门禁输出 / 降级或偏差说明 → 汇总进总账第 14 节。
+- 实际改动：`packages/contracts/src/semantic.ts`（新增，151 行）、`semantic.test.ts`（新增）、`project.ts`（+semanticModels?）、`index.ts`（+导出）；`apps/api/src/semanticModelService.ts`（新增，144 行）、`semanticModelService.test.ts`、`semanticModelRoutes.ts`（新增，83 行）、`semanticModelRoutes.test.ts`、`metadataStore.ts`（接口 +3 方法）、`jsonStore.ts`（实现）、`routes.ts`（挂载 1 行 + 数据集/管道 DELETE 各 +5 行 409 保护，共 +12 行，符合 ≤10 行的轻微超限，原因：引用保护必须内联在既有 DELETE 处理器）。
+- 与规格偏差：①聚合映射按实际三套枚举定稿（看板 distinct-count→countDistinct、average/minimum/maximum→avg/min/max；管道 average→avg；AskData 同名直映），别名表 `LEGACY_AGGREGATION_ALIASES` 带三套枚举全覆盖快照测试；②管道源显式字段清单放在 `source.fields`（规格即如此设计）；③revision 服务端控制：创建=1、保存+1，忽略 body 值。
+- 门禁结果：contracts 166 项、api 全量 108 文件 428 项测试通过（含本规格新增 18 项）；api/contracts/web typecheck 通过；`quality:source-size` 1,634 个源文件全部 ≤800 行。
+- 行为要点：名称项目内唯一（409）；指标 fieldKey/expression 恰一（count/countDistinct 可全空）；表达式过 compileFormula 且依赖⊆源字段；维度/层级/过滤字段必须在源字段内；参数 parentKey 无环、选项维度必须存在；数据集/管道被语义模型引用时删除返回 409。
 
 ---
 

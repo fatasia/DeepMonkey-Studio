@@ -17,6 +17,7 @@ import type {
   PublishedApplicationRecord,
   PublishedSceneRecord,
   SceneSnapshot,
+  SemanticModelRecord,
   StoredSystemUserRecord,
   SystemBrandingSettings,
   UnityResourceRecord,
@@ -102,6 +103,9 @@ export interface MetadataStore {
   saveDataEndpoint(projectId: string, endpoint: DataEndpointDefinition, secretHash?: string): Promise<DataEndpointDefinition>;
   getDataEndpointSecretHash(endpointId: string): string | undefined;
   removeDataEndpoint(projectId: string, endpointId: string): Promise<boolean>;
+  listSemanticModels(projectId: string): SemanticModelRecord[];
+  saveSemanticModel(projectId: string, model: SemanticModelRecord): Promise<SemanticModelRecord>;
+  removeSemanticModel(projectId: string, modelId: string): Promise<boolean>;
   listVisionSources(projectId: string): VisionSourceRecord[];
   saveVisionSource(projectId: string, source: VisionSourceRecord): Promise<VisionSourceRecord>;
   removeVisionSource(projectId: string, sourceId: string): Promise<boolean>;

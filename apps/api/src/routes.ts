@@ -37,6 +37,7 @@ import { assetContentEncoding, contentType } from "./routeFileTypes.js";
 import { registerModelAssetRoutes } from "./modelAssetRoutes.js";
 import { registerSceneRoutes } from "./sceneRoutes.js";
 import { registerAssetLibraryRoutes } from "./assetLibraryRoutes.js";
+import { registerSemanticModelRoutes } from "./semanticModelRoutes.js";
 
 interface RouteDependencies {
   store: MetadataStore;
@@ -332,6 +333,10 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
       .listDataPipelines(request.params.projectId)
       .find((pipeline) => pipeline.nodes.some((node) => node.type === "source" && node.datasetId === request.params.datasetId));
     if (dependentPipeline) return reply.code(409).send({ message: `数据集仍被流水线“${dependentPipeline.name}”使用` });
+    const dependentSemanticModel = store
+      .listSemanticModels(request.params.projectId)
+      .find((model) => model.source.kind === "dataset" && model.source.id === request.params.datasetId);
+    if (dependentSemanticModel) return reply.code(409).send({ message: `数据集仍被语义模型“${dependentSemanticModel.name}”使用` });
     return (await store.removeDataset(request.params.projectId, request.params.datasetId)) ? reply.code(204).send() : reply.code(404).send({ message: "数据集不存在" });
   });
 
@@ -379,6 +384,10 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   app.delete<{ Params: { projectId: string; pipelineId: string } }>("/api/projects/:projectId/data-pipelines/:pipelineId", async (request, reply) => {
     const dependentEndpoint = store.listDataEndpoints(request.params.projectId).find((endpoint) => endpoint.pipelineId === request.params.pipelineId);
     if (dependentEndpoint) return reply.code(409).send({ message: `流水线仍被接口“${dependentEndpoint.name}”使用` });
+    const dependentSemanticModel = store
+      .listSemanticModels(request.params.projectId)
+      .find((model) => model.source.kind === "pipeline" && model.source.id === request.params.pipelineId);
+    if (dependentSemanticModel) return reply.code(409).send({ message: `流水线仍被语义模型“${dependentSemanticModel.name}”使用` });
     return (await store.removeDataPipeline(request.params.projectId, request.params.pipelineId)) ? reply.code(204).send() : reply.code(404).send({ message: "流水线不存在" });
   });
 
@@ -444,6 +453,7 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   });
 
   await registerModelAssetRoutes(app, { store, queue, objects, dataDir, config });
+  await registerSemanticModelRoutes(app, { store });
   await registerAssetLibraryRoutes(app, { store, queue, objects, dataDir, libraryDir: config.assetLibraryDir });
   await registerSceneRoutes(app, {
     store,
