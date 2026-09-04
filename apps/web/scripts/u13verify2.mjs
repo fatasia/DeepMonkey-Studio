@@ -1,0 +1,23 @@
+import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
+const { chromium } = playwright;
+const browser = await chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await page.goto("http://127.0.0.1:5173", { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.getByLabel("用户名").fill("admin");
+await page.getByLabel("密码").fill("admin");
+await page.getByRole("button", { name: "登录" }).click();
+await page.waitForTimeout(3000);
+await page.goto("http://127.0.0.1:5173/studio/d5395a30-4c29-4e8c-8bb0-b6b0d188c615", { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.waitForTimeout(9000);
+const wsMore = page.locator(".scene-workspace-more").first();
+await wsMore.locator("summary").first().click();
+await page.waitForTimeout(500);
+// 逐按钮点：渲染与诊断（弹层最底部，必无重叠）
+let diagClick = null;
+const diagBtn = page.locator(".scene-workspace-more-popover button", { hasText: "渲染能力诊断" }).first();
+await diagBtn.click({ timeout: 5000 }).then(() => { diagClick = "ok"; }).catch((e) => { diagClick = String(e).slice(0, 100); });
+await page.waitForTimeout(1200);
+const dialogOpen = await page.evaluate(() => Boolean(document.querySelector(".dialog, [class*='diagnostics'], [role='dialog']")));
+console.log(JSON.stringify({ diagClick, dialogOpen }, null, 2));
+await page.screenshot({ path: "test-output/nightly-2026-09-05/u13-verify2.png" }).catch(() => {});
+await browser.close();

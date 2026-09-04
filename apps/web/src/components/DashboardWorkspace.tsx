@@ -312,6 +312,10 @@ function useDashboardWorkspaceController({
   useEffect(() => {
     const surface = scrollRef.current;
     if (!surface) return;
+    // resize 风暴期间不跟随，停稳 180ms 后最多执行一次自动聚焦：即时 fit 会改写
+    // zoom/scroll 并触发 ResizeObserver 再判定，与滚动条出现/消失形成反馈振荡
+    // （画布与滚动条抖动，U1-10 根因）。setSurfaceSize 仍即时跟进保证画布盒正确。
+    let fitTimer = 0;
     const update = () => {
       const nextSize = {
         width: surface.clientWidth,
@@ -322,13 +326,17 @@ function useDashboardWorkspaceController({
       const previousFocus = calculateDashboardEditorFocus(page, page.nodes, previousSize.width, previousSize.height, "smart");
       previousSurfaceSizeRef.current = nextSize;
       setSurfaceSize(nextSize);
-      // 仅在仍处于自动聚焦倍率时响应布局变化，保留用户手动缩放和平移结果。
-      if (resized && Math.abs(zoom - previousFocus.zoom) < 0.006) window.requestAnimationFrame(() => fitCanvasToViewport("smart"));
+      if (!resized || Math.abs(zoom - previousFocus.zoom) >= 0.006) return;
+      window.clearTimeout(fitTimer);
+      fitTimer = window.setTimeout(() => fitCanvasToViewport("smart"), 180);
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(surface);
-    return () => observer.disconnect();
+    return () => {
+      window.clearTimeout(fitTimer);
+      observer.disconnect();
+    };
   }, [page.id, zoom]);
 
   useEffect(() => {
