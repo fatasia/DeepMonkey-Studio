@@ -35,14 +35,13 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
         <header className="publication-dialog-header">
           <span className="publication-dialog-icon"><Rocket size={18} /></span>
           <div>
-            <span className="eyebrow">PUBLISH CENTER</span>
             <h2>{tr(locale, "发布运行版本", "Publish runtime version")}</h2>
-            <p>{props.sceneName} · {tr(locale, "当前草稿将冻结为可回退版本", "The current draft becomes a restorable version")}</p>
+            <p title={tr(locale, "当前草稿将冻结为可回退版本", "The current draft becomes a restorable version")}>{props.sceneName} · {tr(locale, "可回退的运行版本", "Restorable runtime version")}</p>
           </div>
         </header>
         <div className="publication-dialog-scroll">
-          <div className="publication-section-heading">
-            <div><strong>{tr(locale, "选择交付方式", "Choose delivery")}</strong><small>{tr(locale, "运行后端可再次发布切换", "Republish later to switch runtime")}</small></div>
+          <div className="publication-section-heading" title={tr(locale, "运行后端可再次发布切换", "Republish later to switch runtime")}>
+            <div><strong>{tr(locale, "选择交付方式", "Choose delivery")}</strong></div>
             <span><ShieldCheck size={13} />{tr(locale, "版本隔离", "Version isolated")}</span>
           </div>
           <div className="publication-mode-options">
@@ -72,8 +71,8 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
               onClick={() => props.onModeChange("cloud")}
             />
           </div>
-          <div className="publication-section-heading compact">
-            <div><strong>{tr(locale, "终端性能策略", "Device performance policy")}</strong><small>{tr(locale, "模型几何与纹理质量不会被重写", "Model geometry and textures are never rewritten")}</small></div>
+          <div className="publication-section-heading compact" title={tr(locale, "模型几何与纹理质量不会被重写", "Model geometry and textures are never rewritten")}>
+            <div><strong>{tr(locale, "终端性能策略", "Device performance policy")}</strong></div>
           </div>
           <div className="publication-performance-options">
             <ModeButton
@@ -92,10 +91,9 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
               onClick={() => props.onPerformanceChange("fast")}
             />
           </div>
-          <div className="publication-section-heading compact">
+          <div className="publication-section-heading compact" title={tr(locale, "只影响发布浏览页，不开放模型编辑能力", "Affects only the published viewer and never enables model editing")}>
             <div>
               <strong>{tr(locale, "浏览工具栏", "Viewer toolbar")}</strong>
-              <small>{tr(locale, "只影响发布浏览页，不开放模型编辑能力", "Affects only the published viewer and never enables model editing")}</small>
             </div>
           </div>
           <div className="publication-toolbar-options">
@@ -139,10 +137,18 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
 }
 
 function ModeButton(props: { active: boolean; disabled?: boolean; icon: React.ReactNode; badge?: string; title: string; description: string; onClick: () => void }) {
+  // 描述文案进 title 悬浮：卡片保持单行紧凑，说明按需查看（用户 2026-09-04 反馈要求）。
   return (
-    <button type="button" className={props.active ? "active" : ""} aria-pressed={props.active} disabled={props.disabled} onClick={props.onClick}>
+    <button
+      type="button"
+      className={props.active ? "active" : ""}
+      aria-pressed={props.active}
+      disabled={props.disabled}
+      title={props.description}
+      onClick={props.onClick}
+    >
       <span className="publication-mode-icon">{props.icon}</span>
-      <span className="publication-mode-copy"><strong>{props.title}</strong><small>{props.description}</small></span>
+      <span className="publication-mode-copy"><strong>{props.title}</strong></span>
       {props.badge && <em>{props.badge}</em>}
     </button>
   );
