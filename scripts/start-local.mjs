@@ -166,7 +166,8 @@ function startPnpm(args, label) {
     cwd: repositoryRoot,
     env: environment,
     stdio: "inherit",
-    windowsHide: false,
+    // API、Web 和桌面联调进程统一由 studio 命令管理，Windows 下不额外弹出命令行窗口。
+    windowsHide: true,
     detached: process.platform !== "win32",
   });
   trackChild(child, label);
