@@ -20,7 +20,7 @@ function DashboardLayerList() {
     onDragOver={(event) => { if (!draggedLayerId || draggedLayerId === node.id) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setLayerDropTargetId(node.id); }}
     onDrop={(event) => { event.preventDefault(); const sourceId = draggedLayerId ?? event.dataTransfer.getData("text/plain"); if (sourceId) reorderLayerByDrop(sourceId, node.id); setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}
     onDragEnd={() => { setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}>
-    <button className="dashboard-layer-select" disabled={node.locked} title={node.locked ? tr(locale, "图层已锁定，解锁后可选取", "Layer is locked; unlock it to select") : nodeLabel(node)} onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey, true)}>
+    <button className="dashboard-layer-select" disabled={node.locked} title={node.locked ? tr(locale, "图层已锁定，解锁后可选取", "Layer is locked; unlock it to select") : nodeLabel(node)} onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey || event.shiftKey, true)}>
       {node.kind === "scene-viewport" ? <Box size={14} /> : <Layers3 size={14} />}<span>{nodeLabel(node)}</span>
     </button>
     <button className="dashboard-layer-action" aria-label={node.visible === false ? tr(locale, "显示图层", "Show layer") : tr(locale, "隐藏图层", "Hide layer")} title={node.visible === false ? tr(locale, "显示图层", "Show layer") : tr(locale, "隐藏图层", "Hide layer")} onClick={() => onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { visible: node.visible === false }))}>{node.visible === false ? <EyeOff size={13} /> : <Eye size={13} />}</button>

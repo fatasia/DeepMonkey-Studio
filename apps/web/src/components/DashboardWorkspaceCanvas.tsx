@@ -230,7 +230,15 @@ export function DashboardWorkspaceCanvas() {
         onScroll={handleCanvasScroll}
         onWheel={zoomCanvas}
         onPointerDownCapture={(event) => {
-          beginCanvasPan(event);
+          // 平移（中键/空格+左键）优先；空白处普通左键拖拽=框选（相交命中，U1-13）；
+          // 点在组件/标尺上时不拦截，交还各自处理。
+          if (beginCanvasPan(event)) return;
+          const target = event.target as HTMLElement;
+          const onInteractive = target.closest?.(".dashboard-node, .dashboard-ruler, .dashboard-ruler-corner");
+          if (event.button === 0 && !onInteractive) {
+            beginMarqueeSelection(event);
+            return;
+          }
           if (event.button === 0 && event.target === event.currentTarget) {
             setSelectedNodeIds([]);
             onSelectionChange([]);
@@ -296,13 +304,6 @@ export function DashboardWorkspaceCanvas() {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setLibraryDropActive(false);
             }}
             onDrop={dropLibraryItem}
-            onPointerDownCapture={(event) => {
-              beginMarqueeSelection(event);
-              if (event.button === 0 && !event.shiftKey && event.target === event.currentTarget) {
-                setSelectedNodeIds([]);
-                onSelectionChange([]);
-              }
-            }}
             onClick={(event) => {
               if (event.target !== event.currentTarget) return;
               setSelectedNodeIds([]);

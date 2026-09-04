@@ -283,13 +283,6 @@ function ImportWorkspace(props: SceneOutlinerPanelProps) {
           )}
         </small>
       </button>
-      <small className="industrial-cad-hint">
-        {tr(
-          props.locale,
-          "RVT / DWG / X_B 依赖转换服务；JT / X_T 优先本地解析，超出范围时自动转交工业转换器。",
-          "RVT / DWG / X_B require conversion services; JT / X_T parse locally first and fall back to an industrial converter when needed.",
-        )}
-      </small>
       <button className="device-layout-entry" onClick={() => setDeviceLayoutOpen(true)}>
         <Boxes size={18} />
         <span><strong>{tr(props.locale, "批量设备布局", "Batch device layout")}</strong><small>{tr(props.locale, "从表格、GeoJSON 或图纸坐标创建方盒与标签", "Create boxes and labels from tables, GeoJSON or drawing coordinates")}</small></span>

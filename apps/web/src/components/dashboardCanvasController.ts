@@ -102,10 +102,10 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
     changeZoom(zoom * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY);
   }
 
-  function beginCanvasPan(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 1 && !(event.button === 0 && spacePressedRef.current)) return;
+  function beginCanvasPan(event: ReactPointerEvent<HTMLDivElement>): boolean {
+    if (event.button !== 1 && !(event.button === 0 && spacePressedRef.current)) return false;
     const surface = scrollRef.current;
-    if (!surface) return;
+    if (!surface) return false;
     event.preventDefault();
     event.stopPropagation();
     const startX = event.clientX;
@@ -130,6 +130,7 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", finish);
+    return true;
   }
 
   function selectNode(node: WidgetNode, additive: boolean, force = false) {
@@ -414,12 +415,15 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
   }
 
   function beginMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || (!marqueeMode && !event.shiftKey && event.target !== event.currentTarget)) return;
+    // 主流约定（对标 FVS/Figma）：空白画布普通拖拽即框选，无需先按 Shift 或切换工具；
+    // 点在组件上时不拦截，交还组件自身的选择/拖动处理。
+    const onNode = (event.target as HTMLElement).closest?.(".dashboard-node");
+    if (event.button !== 0 || (!marqueeMode && onNode)) return;
     event.preventDefault();
     event.stopPropagation();
     const pointerId = event.pointerId;
     const bounds = event.currentTarget.getBoundingClientRect();
-    const additive = event.ctrlKey || event.metaKey;
+    const additive = event.ctrlKey || event.metaKey || event.shiftKey;
     const pointAt = (clientX: number, clientY: number) => ({
       x: Math.max(0, Math.min(page.width, (clientX - bounds.left) / zoom)),
       y: Math.max(0, Math.min(page.height, (clientY - bounds.top) / zoom))
@@ -442,12 +446,21 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
       cleanup();
       const rectangle = rectangleAt(pointer.clientX, pointer.clientY);
       setSelectionRect(undefined);
+      // 真实拖拽后的尾随 click 会命中 stage/画布的"点空白清空"处理器，吞掉它保住框选结果。
+      if (rectangle.width >= 3 || rectangle.height >= 3) {
+        const swallowClick = (clickEvent: Event) => {
+          clickEvent.stopPropagation();
+          clickEvent.preventDefault();
+        };
+        window.addEventListener("click", swallowClick, { capture: true, once: true });
+        window.setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0);
+      }
       const hits = rectangle.width < 3 && rectangle.height < 3 ? [] : page.nodes
         .filter((node) => node.visible !== false && node.selectable !== false
-          && node.frame.x >= rectangle.x
-          && node.frame.y >= rectangle.y
-          && node.frame.x + node.frame.width <= rectangle.x + rectangle.width
-          && node.frame.y + node.frame.height <= rectangle.y + rectangle.height)
+          && node.frame.x < rectangle.x + rectangle.width
+          && node.frame.y < rectangle.y + rectangle.height
+          && node.frame.x + node.frame.width > rectangle.x
+          && node.frame.y + node.frame.height > rectangle.y)
         .map((node) => node.id);
       const ids = additive ? [...new Set([...selectedNodeIds, ...hits])] : hits;
       setSelectedNodeIds(ids);

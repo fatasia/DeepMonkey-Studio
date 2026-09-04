@@ -105,7 +105,7 @@ export function DashboardNode({
         style={style}
         onClick={(event) => {
           event.stopPropagation();
-          if (!runtime) onSelect(event.ctrlKey || event.metaKey);
+          if (!runtime) onSelect(event.ctrlKey || event.metaKey || event.shiftKey);
         }}
         onDoubleClick={(event) => {
           if (!runtime && scene) {
@@ -140,7 +140,7 @@ export function DashboardNode({
             title={tr(locale, "双击进入三维编辑", "Double-click to edit in 3D")}
             onClick={(event) => {
               event.stopPropagation();
-              onSelect(event.ctrlKey || event.metaKey);
+              onSelect(event.ctrlKey || event.metaKey || event.shiftKey);
             }}
             onDoubleClick={(event) => {
               event.stopPropagation();
@@ -188,7 +188,7 @@ export function DashboardNode({
           event.stopPropagation();
           runtime
             ? onInteraction("click")
-            : onSelect(event.ctrlKey || event.metaKey);
+            : onSelect(event.ctrlKey || event.metaKey || event.shiftKey);
         }}
         onDoubleClick={(event) => {
           if (runtime) {
