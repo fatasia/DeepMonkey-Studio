@@ -76,7 +76,7 @@ export async function queryServiceLogs(directories: string[], filters: ServiceLo
 
 export function serviceLogExportText(result: ServiceLogQueryResult, filters: ServiceLogFilters): string {
   const heading = [
-    "# Industrial Studio 脱敏服务日志",
+    "# Deep Monkey Studio 脱敏服务日志",
     `# 导出时间 ${result.generatedAt}`,
     `# 筛选 ${JSON.stringify(filters)}`,
     `# 匹配 ${result.total} 条${result.truncated ? "（已截断）" : ""}`,
@@ -127,7 +127,7 @@ export async function createDiagnosticArchive(snapshot: SystemDiagnosticSnapshot
   archive.file("diagnostic.json", `${JSON.stringify(snapshot, null, 2)}\n`);
   archive.file("health.json", `${JSON.stringify(snapshot.health, null, 2)}\n`);
   archive.file("errors.log", serviceLogExportText(snapshot.logs, { level: "error", limit: 300 }));
-  archive.file("README.txt", "Industrial Studio 诊断包仅包含运行版本、服务健康与已脱敏错误日志；不包含凭据、审计记录、项目数据或模型。\n");
+  archive.file("README.txt", "Deep Monkey Studio 诊断包仅包含运行版本、服务健康与已脱敏错误日志；不包含凭据、审计记录、项目数据或模型。\n");
   return archive.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
 }
 
@@ -222,7 +222,7 @@ async function checkWeb(): Promise<ServiceHealthRecord> {
   try {
     const response = await fetch(endpoint, { signal: AbortSignal.timeout(1_500) });
     const content = await response.text();
-    const valid = response.ok && /<title>\s*Industrial Studio\s*<\/title>/i.test(content);
+    const valid = response.ok && /<title>\s*Deep Monkey Studio\s*<\/title>/i.test(content);
     return record("web", "Web 前端", valid ? "healthy" : "degraded", endpoint, started, valid ? "页面标识验证通过" : `HTTP ${response.status}，页面标识不匹配`);
   } catch (error) {
     return record("web", "Web 前端", "offline", endpoint, started, errorMessage(error));

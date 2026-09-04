@@ -19,6 +19,7 @@ import {
   sceneViewerDeliveryRendererMode,
   sceneViewerDeliveryUser,
 } from "../delivery/sceneViewerDelivery";
+import { applyDocumentBranding } from "../branding/documentBranding";
 
 type ApplicationController = ReturnType<typeof createApplicationRuntimeController>;
 type PersistenceController = ReturnType<typeof createScenePersistenceController>;
@@ -127,15 +128,7 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
   }, [currentUser?.id]);
 
   useEffect(() => {
-    document.title = branding.browserTitle;
-    document.documentElement.style.setProperty("--accent", branding.primaryColor);
-    let icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (!icon) {
-      icon = document.createElement("link");
-      icon.rel = "icon";
-      document.head.append(icon);
-    }
-    icon.href = branding.iconUrl;
+    applyDocumentBranding(branding);
   }, [branding]);
 
   useEffect(() => {

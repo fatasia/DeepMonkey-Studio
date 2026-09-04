@@ -31,7 +31,7 @@ await verifyObjects(objectsDirectory, manifest.minio.objects);
 
 const { values } = loadProductionEnvironment();
 assertProductionStorage(values);
-if (await apiReachable(values)) throw new Error("API 正在运行，恢复前必须执行 pnpm deploy:cloud:stop");
+if (await apiReachable(values)) throw new Error("API 正在运行，恢复前必须执行 pnpm studio undeploy");
 const tools = productionTools(values);
 const maintenance = postgresMaintenanceValues(values);
 

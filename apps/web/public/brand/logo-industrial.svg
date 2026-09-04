@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 304 56" role="img" aria-labelledby="logo-title logo-desc">
-  <title id="logo-title">Industrial Studio</title>
+  <title id="logo-title">Deep Monkey Studio</title>
   <desc id="logo-desc">工业数字孪生节点与轨道组成的几何标志</desc>
   <defs>
     <linearGradient id="signal" x1="8" y1="8" x2="44" y2="46" gradientUnits="userSpaceOnUse">
@@ -16,8 +16,8 @@
     <circle cx="24" cy="46" r="4" fill="#2F83FF"/>
   </g>
   <g transform="translate(68 0)" fill="#E8F0F4">
-    <text x="0" y="31" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="-.6">Industrial</text>
-    <text x="110" y="31" fill="#D6AA4D" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="-.6">Studio</text>
+    <text x="0" y="31" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="-.6">Deep Monkey</text>
+    <text x="142" y="31" fill="#D6AA4D" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="-.6">Studio</text>
     <text x="1" y="46" fill="#80939E" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="8.5" font-weight="600" letter-spacing="2.1">INDUSTRIAL DIGITAL TWIN</text>
   </g>
 </svg>

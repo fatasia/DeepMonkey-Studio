@@ -2,7 +2,7 @@
     {
         "id": "bim-studio-flow",
         "type": "tab",
-        "label": "Industrial Studio 场景数据桥",
+        "label": "Deep Monkey Studio 场景数据桥",
         "disabled": false,
         "info": "HTTP /iot/scene 接收统一场景消息，并广播到 WebSocket /iot/ws/scene。"
     },
@@ -29,7 +29,7 @@
     {
         "id": "bim-dashboard-base",
         "type": "ui-base",
-        "name": "Industrial Studio 看板",
+        "name": "Deep Monkey Studio 看板",
         "path": "/dashboard",
         "appIcon": "",
         "includeClientData": true,
@@ -49,7 +49,7 @@
     {
         "id": "bim-dashboard-theme",
         "type": "ui-theme",
-        "name": "Industrial Studio Dark",
+        "name": "Deep Monkey Studio Dark",
         "colors": {
             "surface": "#182126",
             "primary": "#d4a84f",
@@ -228,7 +228,7 @@
         "order": 1,
         "width": 6,
         "height": 0,
-        "content": "## Industrial Studio 数字孪生\n通过 HTTP、WebSocket、数据库或 IoT 节点接入实时数据，再映射到场景对象的颜色、显隐、位置与标签。",
+        "content": "## Deep Monkey Studio 数字孪生\n通过 HTTP、WebSocket、数据库或 IoT 节点接入实时数据，再映射到场景对象的颜色、显隐、位置与标签。",
         "className": "",
         "x": 770,
         "y": 730,

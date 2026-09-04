@@ -31,8 +31,8 @@ export function NodeRedStudio({ locale }: { locale: AppLocale }) {
           <small>
             {tr(
               locale,
-              "独立运行时：触发、路由、设备协议、状态与子流程。未启动时请运行 pnpm dev:all。",
-              "Separate runtime for triggers, routing, device protocols, state and subflows. Run pnpm dev:all if it is offline.",
+              "独立运行时：触发、路由、设备协议、状态与子流程。离线时请由管理员按部署文档检查外部 Node-RED 服务与反向代理。",
+              "Separate runtime for triggers, routing, device protocols, state and subflows. If offline, ask an administrator to check the external Node-RED service and reverse proxy in the deployment guide.",
             )}
           </small>
         </div>

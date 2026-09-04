@@ -1,4 +1,4 @@
-# Industrial Studio Revit Agent
+# Deep Monkey Studio Revit Agent
 
 该 Agent 使用已安装的 Autodesk Revit 将 RVT 导出为 IFC 或 FBX，不解析 RVT 二进制。生产主链建议使用 Leia 派生插件输出 `geometry.glb`。
 

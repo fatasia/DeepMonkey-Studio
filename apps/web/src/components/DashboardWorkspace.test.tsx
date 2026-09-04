@@ -154,6 +154,9 @@ describe("DashboardWorkspace", () => {
     expect(html).toContain("逻辑分辨率");
     expect(html).toContain("完整显示（推荐）");
     expect(html).toContain("1 个组件越界");
+    expect(html).toContain("拖动时按 Alt 临时关闭");
+    expect(html).toContain('aria-label="智能吸附"');
+    expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('aria-label="页面宽度"');
     expect(html).toContain("实时翻牌指标");
     expect(html).toContain("液位达成率");

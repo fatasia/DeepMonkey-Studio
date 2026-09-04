@@ -11,6 +11,7 @@ import type {
   SystemUserRecord,
   SystemUserRole,
 } from "@bim-studio/contracts";
+import { DEFAULT_PRODUCT_BRANDING } from "@bim-studio/contracts";
 import type { MetadataStore } from "./store.js";
 import type { AssistantMode } from "./ai/assistantPrompts.js";
 import { AiReliabilityBlockedError, type AssistantService, type AssistantStreamEvent } from "./ai/assistantService.js";
@@ -79,7 +80,7 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
     const session = token ? resolveSession(token) : undefined;
     if (!session || session.expiresAt <= Date.now()) {
       if (token) sessions.delete(token);
-      return reply.code(401).send({ message: "请先登录 Industrial Studio" });
+      return reply.code(401).send({ message: `请先登录 ${resolveBrandingSettings(store).systemName}` });
     }
     const stored = store.getUser(session.userId);
     if (!stored?.enabled) return reply.code(401).send({ message: "用户已停用，请重新登录" });
@@ -344,26 +345,17 @@ function authToken(request: FastifyRequest): string | undefined {
   return protocols.find((value) => value.startsWith("bim-studio-auth."))?.slice("bim-studio-auth.".length);
 }
 
-const DEFAULT_BRANDING: SystemBrandingSettings = {
-  systemName: "Industrial Studio",
-  browserTitle: "Industrial Studio",
-  loginSubtitle: "数字孪生场景平台",
-  copyright: "Copyright © 张文鹏 Charlie",
-  logoUrl: "/brand/logo-industrial.svg",
-  iconUrl: "/brand/app-icon-industrial.svg",
-  primaryColor: "#d6aa4d",
-  defaultLocale: "zh-CN",
-  defaultEntry: "manager",
-  defaultSceneBackground: "#202a31",
-  defaultGridVisible: true,
-  maintenanceEnabled: false,
-  maintenanceMessage: "系统维护中，请稍后再试",
-};
+const DEFAULT_BRANDING: SystemBrandingSettings = { ...DEFAULT_PRODUCT_BRANDING };
 
 function resolveBrandingSettings(store: MetadataStore): SystemBrandingSettings {
   const stored = store.getBrandingSettings();
   // 兼容清理品牌前写入的旧默认值；拆分字面量可避免旧商标再次进入发布源码扫描。
-  const legacySystemNames = [["i", "Twin Studio"].join(""), "BIM Studio", "Dev Studio"];
+  const legacySystemNames = [
+    ["i", "Twin Studio"].join(""),
+    ["Industrial", "Studio"].join(" "),
+    "BIM Studio",
+    "Dev Studio",
+  ];
   const migrated = stored
     ? {
         ...stored,

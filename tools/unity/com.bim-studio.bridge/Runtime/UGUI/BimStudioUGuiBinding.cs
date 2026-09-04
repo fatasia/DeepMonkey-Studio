@@ -19,7 +19,7 @@ namespace BimStudio.Bridge.UGUI
     }
 
     /// <summary>
-    /// uGUI 与 Industrial Studio 清单属性的双向无代码绑定。平台回写使用
+    /// uGUI 与 Deep Monkey Studio 清单属性的双向无代码绑定。平台回写使用
     /// SetValueWithoutNotify，防止 Slider、Toggle 等控件形成事件回环。
     /// </summary>
     [DisallowMultipleComponent]

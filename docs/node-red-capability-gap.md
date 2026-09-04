@@ -48,7 +48,7 @@
 - 平台原生增加 `simulation` 开发连接器：通过 `sim://telemetry` 或 `sim://alarm` 生成确定性遥测数据，支持 `rows`、`seed`、`interval`、`start` 参数和可选 JSON 路径。数据集字段契约不变，因此可在开发阶段无缝替换为 HTTP、数据库或消息源。
 - 数据中心连接卡片增加“测试连接”：调用 `/api/projects/:projectId/data-connections/:connectionId/test`，按已有数据集执行真实采样并返回健康状态、耗时、字段数和样本行数；模拟连接无数据集时使用内存探针，不落库。
 
-启动方式：`pnpm dev:all`，然后在数据中心打开“高级编排”。只运行 `pnpm dev` 时 Node-RED 不会启动，这是刻意保持的独立运行边界。
+Node-RED 按需作为独立原生服务运行，然后在数据中心打开“高级编排”。统一入口 `pnpm studio` 不代启这一可选服务，这是刻意保持的运行边界；Node-RED 不可用不会阻断 API、Web、模型浏览、编辑或场景保存。
 
 ## 主流市场连接器差距
 

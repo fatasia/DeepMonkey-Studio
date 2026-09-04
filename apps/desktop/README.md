@@ -1,4 +1,4 @@
-# Industrial Studio Desktop
+# Deep Monkey Studio Desktop
 
 M7 的 Tauri 2 薄宿主。它打包 `apps/web` 的同一份静态产物，只负责桌面系统边界，不复制编辑器业务逻辑。
 

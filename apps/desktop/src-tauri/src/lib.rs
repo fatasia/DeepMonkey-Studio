@@ -159,6 +159,10 @@ pub fn run() {
                 .ok_or("missing main window configuration")?;
             let app_handle = app.handle().clone();
             WebviewWindowBuilder::from_config(app, main_config)?
+                .on_document_title_changed(|window, title| {
+                    // 运行时品牌可由服务器配置，主窗口始终跟随页面标题。
+                    let _ = window.set_title(&title);
+                })
                 .on_new_window(move |url, features| {
                     if classify_new_window_request(&url) == NewWindowPolicy::Default {
                         // 普通预览、场景跳转和外部链接继续使用 WebView 默认新窗口行为；
@@ -171,7 +175,7 @@ pub fn run() {
                         WebviewUrl::External("about:blank".parse().expect("valid about:blank URL")),
                     )
                     .window_features(features)
-                    .title("脚本编辑器 · Industrial Studio")
+                    .title("脚本编辑器 · Deep Monkey Studio")
                     .always_on_top(false)
                     .on_document_title_changed(|window, title| {
                         let _ = window.set_title(&title);
@@ -190,7 +194,7 @@ pub fn run() {
             clear_server_profile
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Industrial Studio desktop host");
+        .expect("failed to run Deep Monkey Studio desktop host");
 }
 
 #[cfg(test)]

@@ -12,8 +12,8 @@ import { supportedExtensions } from "@bim-studio/contracts";
 
 describe("app defaults", () => {
   it("uses a neutral first-party product name in user-visible defaults", () => {
-    expect(DEFAULT_BRANDING.systemName).toBe("Industrial Studio");
-    expect(DEFAULT_BRANDING.browserTitle).toBe("Industrial Studio");
+    expect(DEFAULT_BRANDING.systemName).toBe("Deep Monkey Studio");
+    expect(DEFAULT_BRANDING.browserTitle).toBe("Deep Monkey Studio");
   });
 
   it("derives the browser file picker from the shared upload contract", () => {

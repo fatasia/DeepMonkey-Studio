@@ -83,7 +83,7 @@ foreach ($item in $versions) {
     }
   }
   $log = $safeLog
-  if ($process.ExitCode -ne 0 -or $log -notmatch "Industrial Studio Unity bridge (smoke build|package validation) succeeded") {
+  if ($process.ExitCode -ne 0 -or $log -notmatch "Deep Monkey Studio Unity bridge (smoke build|package validation) succeeded") {
     $tail = ($log -split "`r?`n" | Select-Object -Last 30) -join [Environment]::NewLine
     Write-Warning "Unity $($item.Version) validation failed.`n$tail"
     $results += [pscustomobject]@{ Version = $item.Version; Package = "failed"; WebGL = if ($method -eq "BridgeSmokeBuilder.Build") { "failed" } else { "not run" } }
@@ -98,11 +98,11 @@ foreach ($item in $versions) {
     $bridgePath = Join-Path $buildRoot "unity-bridge.js"
     $zipPath = Join-Path (Split-Path $buildRoot -Parent) "bim-studio-webgl.zip"
     if (-not (Test-Path -LiteralPath $manifestPath) -or -not (Test-Path -LiteralPath $bridgePath)) {
-      throw "Unity $($item.Version) build did not contain Industrial Studio bridge artifacts."
+      throw "Unity $($item.Version) build did not contain Deep Monkey Studio bridge artifacts."
     }
     $index = Get-Content -LiteralPath $indexPath -Raw
     if ($index -notmatch 'unity-bridge\.js' -or $index -notmatch 'BimStudioUnityBridge\.register' -or $index -notmatch 'BimStudioUnityBridge\.createTrackedInstance') {
-      throw "Unity $($item.Version) player did not register the Industrial Studio browser bridge with tracked startup progress."
+      throw "Unity $($item.Version) player did not register the Deep Monkey Studio browser bridge with tracked startup progress."
     }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if ($manifest.unityVersion -ne $item.Version -or $manifest.bridgeVersion -ne 1 -or $manifest.bridgePackageVersion -ne $bridgePackageVersion) {

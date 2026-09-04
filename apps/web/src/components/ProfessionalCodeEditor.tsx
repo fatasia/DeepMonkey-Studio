@@ -340,7 +340,7 @@ export function ProfessionalCodeEditor({
         startColumn: issue.column,
         endLineNumber: issue.line,
         endColumn: Math.max(issue.column + 1, issue.endColumn),
-        source: "Industrial Studio",
+        source: "Deep Monkey Studio",
       })),
     );
     return () => api.editor.setModelMarkers(model, "bim-studio-scene-analysis", []);
@@ -483,7 +483,7 @@ export function ProfessionalCodeEditor({
     if (onOpenDocs)
       editor.addAction({
         id: "bim-studio.open-script-docs",
-        label: tr(locale, "Industrial Studio：打开场景 API 文档", "Industrial Studio: Open scene API docs"),
+        label: tr(locale, "Deep Monkey Studio：打开场景 API 文档", "Deep Monkey Studio: Open scene API docs"),
         keybindings: [api.KeyMod.CtrlCmd | api.KeyCode.F1],
         run: () => onOpenDocs(),
       });
@@ -497,7 +497,7 @@ export function ProfessionalCodeEditor({
         startColumn: issue.column,
         endLineNumber: issue.line,
         endColumn: Math.max(issue.column + 1, issue.endColumn),
-        source: "Industrial Studio",
+        source: "Deep Monkey Studio",
       })),
     );
     editor.focus();
@@ -606,7 +606,7 @@ export function ProfessionalCodeEditor({
           theme="vs-dark"
           value={value}
           onChange={(next) => onChange(next ?? "")}
-          onValidate={(markers) => setLanguageProblems(markers.filter((marker) => marker.severity >= monacoApi.MarkerSeverity.Warning && marker.source !== "Industrial Studio").length)}
+          onValidate={(markers) => setLanguageProblems(markers.filter((marker) => marker.severity >= monacoApi.MarkerSeverity.Warning && marker.source !== "Deep Monkey Studio").length)}
           loading={<div className="professional-code-loading">{tr(locale, "正在加载代码智能服务…", "Loading code intelligence…")}</div>}
           options={{
             automaticLayout: true,

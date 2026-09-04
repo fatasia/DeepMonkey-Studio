@@ -48,6 +48,7 @@ test("parses the local delivery entry point strictly", () => {
     checkOnly: true,
     noOpen: true,
     help: false,
+    readyFile: undefined,
   });
   assert.equal(parseLocalStartupArguments(["-h"]).help, true);
   assert.throws(() => parseLocalStartupArguments(["--target"]), /必须指定/);
@@ -72,10 +73,10 @@ test("reports health only when every configured target dependency is reachable",
   assert.equal(unhealthy.healthy, false);
 });
 
-test("does not accept an arbitrary HTTP listener as Industrial Studio", () => {
+test("does not accept an arbitrary HTTP listener as Deep Monkey Studio", () => {
   assert.equal(isBimStudioApiHealth({ status: "ok", service: "bim-studio-api" }), true);
   assert.equal(isBimStudioApiHealth({ status: "ok", service: "other" }), false);
-  assert.equal(isBimStudioWebDocument('<title>Industrial Studio</title><div id="root"></div>'), true);
+  assert.equal(isBimStudioWebDocument('<title>Deep Monkey Studio</title><div id="root"></div>'), true);
   assert.equal(isBimStudioWebDocument("<title>Other app</title>"), false);
 });
 

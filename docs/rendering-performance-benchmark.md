@@ -1,12 +1,12 @@
-# Industrial Studio 与 Unity 渲染性能基准
+# Deep Monkey Studio 与 Unity 渲染性能基准
 
 ## 目标与结论口径
 
 目标不是证明某一方“总是更快”，而是回答三个可复现的问题：
 
-1. 相同浏览器场景下，Industrial Studio WebGPU 相对 WebGL 2 的收益、退化和兼容性是什么。
-2. 相同资产、相机、分辨率和画质下，Industrial Studio 本地渲染与 Unity Release Player 的性能差异是什么。
-3. 相同 GPU、编码器、码率和网络条件下，Industrial Studio 云渲染与 Unity Render Streaming 的端到端差异是什么。
+1. 相同浏览器场景下，Deep Monkey Studio WebGPU 相对 WebGL 2 的收益、退化和兼容性是什么。
+2. 相同资产、相机、分辨率和画质下，Deep Monkey Studio 本地渲染与 Unity Release Player 的性能差异是什么。
+3. 相同 GPU、编码器、码率和网络条件下，Deep Monkey Studio 云渲染与 Unity Render Streaming 的端到端差异是什么。
 4. Three WebGPU 是否在保持产品能力和画质的前提下，具备晋级默认后端的充分证据。
 
 不生成单一综合分。每个工作负载分别报告帧时间、资源消耗、延迟和画质，结论必须带硬件、驱动、
@@ -17,7 +17,7 @@
 - Windows 11，Intel Core i9-12900HX，31.8 GB RAM。
 - NVIDIA GeForce RTX 4060 Laptop GPU，8188 MiB，驱动 595.79。
 - Unity Hub 3.12.1 与 Unity 2021.3.10f1c2、2022.3.62f1、6000.0.52f1 已纳入当前验证范围且用户许可证有效。2022.3.62f1 和 6000.0.52f1 均已产出可重复的 WebGL Bridge 构建并通过平台 ZIP 回灌；2021.3 的旧 Licensing Client 与当前 Hub batch 激活不兼容。6000.3 按当前项目范围不考虑。Unity 公平性能对照仍需统一资产和浏览器采样，不能用 Bridge 烟测代替。
-- Industrial Studio 已能在同一场景内切换 WebGPU 实验后端并回退 WebGL 2。
+- Deep Monkey Studio 已能在同一场景内切换 WebGPU 实验后端并回退 WebGL 2。
 - 云渲染当前已经具备 Chromium Worker、硬件编码探测、WebRTC 媒体协商、输入 DataChannel、发布作用域隔离和
   资源回收链路；但公网 TURN、并发容量、网络矩阵和 Unity 对照数据尚未完成，因此当前仍不得宣称优于 Unity。
 
@@ -34,7 +34,7 @@
 | 相机 | 同一位置、目标、FOV、near/far 和 120 秒确定性轨迹 |
 | 分辨率 | 1920×1080、2560×1440、3840×2160，渲染比例 100% |
 | 画质 | 阴影、AA、环境、后处理、纹理过滤、LOD 和遮挡逐项映射并截图核对 |
-| 运行形态 | Industrial Studio 生产构建；Unity Windows x64 Release Player，不测 Unity Editor |
+| 运行形态 | Deep Monkey Studio 生产构建；Unity Windows x64 Release Player，不测 Unity Editor |
 | 系统 | 同一机器、同一显示模式、接通电源、固定性能档、关闭覆盖层和无关后台任务 |
 | 采样 | 30 秒预热、120 秒采样、每项 5 次；报告中位数及最差一次，不挑最好结果 |
 
@@ -154,7 +154,7 @@ GPU 发布候选使用单一入口 `pnpm verify:gpu-release`：类型/单测/构
 
 ## 云渲染对照
 
-Industrial Studio 和 Unity 都必须在相同 RTX 4060/同级云 GPU、同一场景与相机轨迹下运行，并固定：
+Deep Monkey Studio 和 Unity 都必须在相同 RTX 4060/同级云 GPU、同一场景与相机轨迹下运行，并固定：
 
 - H.264 硬件编码器、1080p60 / 1440p60 / 4K30、相同码率、GOP 和色彩格式。
 - 相同浏览器、同一台客户端、同一 LAN；再分别注入 20/50/100 ms RTT、0/1/3% 丢包和带宽限制。
@@ -168,7 +168,7 @@ Industrial Studio 和 Unity 都必须在相同 RTX 4060/同级云 GPU、同一�
 - 每 GPU 并发会话、显存/编码器占用、单会话成本和故障回收时间。
 
 Unity Render Streaming 官方资料说明分辨率、码率、网络状态和硬件/软件编码器会显著影响结果，因此这些变量
-必须固定；只有完整 GPU Worker 与 WebRTC 链路通过故障隔离后，Industrial Studio 才能进入这组对比。
+必须固定；只有完整 GPU Worker 与 WebRTC 链路通过故障隔离后，Deep Monkey Studio 才能进入这组对比。
 
 ## 判定门槛
 

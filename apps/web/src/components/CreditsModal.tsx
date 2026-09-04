@@ -32,7 +32,7 @@ const projects = [
   ["Lucide", "ISC", "https://github.com/lucide-icons/lucide"],
 ] as const;
 
-export function CreditsModal({ locale, onClose }: { locale: AppLocale; onClose: () => void }) {
+export function CreditsModal({ locale, systemName, onClose }: { locale: AppLocale; systemName: string; onClose: () => void }) {
   return (
     <div className="modal-backdrop credits-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="credits-modal" role="dialog" aria-modal="true" aria-label={tr(locale, "开源项目致谢", "Open-source acknowledgements")}>
@@ -42,7 +42,7 @@ export function CreditsModal({ locale, onClose }: { locale: AppLocale; onClose: 
           </span>
           <div>
             <strong>{tr(locale, "开源项目致谢", "Open-source acknowledgements")}</strong>
-            <small>{tr(locale, "感谢这些项目让 Industrial Studio 成为可能", "Thanks to the projects that make Industrial Studio possible")}</small>
+            <small>{tr(locale, `感谢这些项目让 ${systemName} 成为可能`, `Thanks to the projects that make ${systemName} possible`)}</small>
           </div>
           <button title={tr(locale, "关闭", "Close")} onClick={onClose}>
             <X size={16} />

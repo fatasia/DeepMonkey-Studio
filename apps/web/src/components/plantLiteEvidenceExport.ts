@@ -24,7 +24,7 @@ interface StudyLineageReference {
 
 export interface PlantLiteEvidencePackage {
   schema: typeof PLANT_LITE_EVIDENCE_SCHEMA;
-  generatedBy: "Industrial Studio";
+  generatedBy: "Deep Monkey Studio";
   exportedAt: string;
   packageId: string;
   units: { time: "minute"; throughput: "item-per-hour"; energy: "kilowatt-hour"; carbon: "kilogram-co2e"; currency: "CNY" };
@@ -196,7 +196,7 @@ export function buildPlantLiteEvidencePackage(
   const packageFingerprint = createEvidenceFingerprint({ schema: PLANT_LITE_EVIDENCE_SCHEMA, ...evidence });
   return {
     schema: PLANT_LITE_EVIDENCE_SCHEMA,
-    generatedBy: "Industrial Studio",
+    generatedBy: "Deep Monkey Studio",
     exportedAt: new Date(exportedAt).toISOString(),
     packageId: `plant-lite-evidence:${packageFingerprint.slice(-16)}`,
     ...evidence,

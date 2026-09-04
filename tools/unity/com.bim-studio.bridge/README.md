@@ -1,14 +1,14 @@
-# Industrial Studio Unity WebGL 桥接插件
+# Deep Monkey Studio Unity WebGL 桥接插件
 
 通过 Unity Package Manager 的 `Add package from disk` 选择本目录的 `package.json`，也可以将本目录复制到项目的 `Packages/com.bim-studio.bridge`。
 
-1. 运行 `Industrial Studio/一键构建并导出 WebGL ZIP`。首次使用时，插件会自动创建或修复常驻的 `BimStudioBridge` 对象和 `Assets/Resources/BimStudioManifest.asset`；只在必要时要求保存当前场景，并自动把它加入 Build Settings，不会删除已有场景。
+1. 运行 `Deep Monkey Studio/一键构建并导出 WebGL ZIP`。首次使用时，插件会自动创建或修复常驻的 `BimStudioBridge` 对象和 `Assets/Resources/BimStudioManifest.asset`；只在必要时要求保存当前场景，并自动把它加入 Build Settings，不会删除已有场景。
 2. 导出前插件会扫描所有已加载场景中的数据、属性、动作和事件组件，自动合并清单、注册稳定业务对象并回填对象 ID。也可随时点击清单中的**从场景自动同步**预览结果。已有的属性类型、标签和选项不会被覆盖。
 3. 如果集成清单仍有空标识或配置错误，插件会自动打开清单检查器；重复标识、错误属性类型、无效对象引用等问题会在导出前阻止构建。
 4. 插件一次完成 WebGL 构建、生成 `bim-studio.manifest.json`、注入 `unity-bridge.js`，并输出可直接导入的 ZIP。
-5. 将 ZIP 拖入 Industrial Studio 的 Unity 组件即可；重复导入相同内容会复用已有版本，不会制造重复资源。平台检查器会展示对象、动作、事件、数据层和属性数量，并可直接测试所选动作与查看 Bridge 状态。
+5. 将 ZIP 拖入 Deep Monkey Studio 的 Unity 组件即可；重复导入相同内容会复用已有版本，不会制造重复资源。平台检查器会展示对象、动作、事件、数据层和属性数量，并可直接测试所选动作与查看 Bridge 状态。
 
-如果团队希望在首次导出前先检查集成配置，仍可使用 `Industrial Studio/准备项目（通信桥与集成清单）`，但它不再是必做步骤。
+如果团队希望在首次导出前先检查集成配置，仍可使用 `Deep Monkey Studio/准备项目（通信桥与集成清单）`，但它不再是必做步骤。
 
 运行时消息以 UnityEvent 形式暴露在 `BimStudioBridge` 上。`onData` 保留原始绑定值以兼容已有项目；平台变量、仪表盘筛选或绑定数据行变化时，`onDataLayers` 接收集成清单声明的数据层映射。`onAction`、`onScene`、`onProperties` 分别用于对象交互、场景切换和属性输入。Unity 可通过 `BimStudioEvents.Emit` 将选择、告警或自定义业务事件回传平台。
 

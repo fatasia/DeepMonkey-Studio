@@ -14,12 +14,12 @@
 
 核心 Web 编辑、2D / 3D、脚本、数据编排和本地场景浏览由仓库锁定的运行时提供。开发人员可在仓库根目录启动：
 
-```powershell
+```bash
 pnpm install --frozen-lockfile
-pnpm dev:local:web
+pnpm studio start web
 ```
 
-需要同时启动桌面客户端时使用 `pnpm dev:local`。核心开发要求 Node.js 24 与 pnpm 11；普通安装包用户不需要安装 Node.js 或 Python。
+需要同时启动桌面客户端时使用 `pnpm studio start client`。启动、关闭、重启、状态检查与生产部署都通过同一个 `pnpm studio` 入口完成。核心开发要求 Node.js 24 与 pnpm 11；普通安装包用户不需要安装 Node.js 或 Python。
 
 产品菜单中的“开源项目致谢”用于查看直接依赖和许可证；精确版本及分发说明以发行包内 `THIRD_PARTY_NOTICES.md` 为准。新增依赖前应重新运行依赖与许可证审计，不能只根据项目首页判断可商用性。
 

@@ -53,10 +53,15 @@
   height: 48px;
   display: grid;
   place-items: center;
-  color: #bfdbfe;
+  overflow: hidden;
   border-radius: 14px;
-  background: #1d4ed8;
+  background: #101a22;
   box-shadow: 0 10px 28px rgba(29, 78, 216, 0.28);
+}
+.desktop-gate-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .desktop-gate-intro {
   margin: 0 0 20px;

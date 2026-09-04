@@ -3,7 +3,7 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 root_hash="$(printf '%s' "$repository_root" | sha256sum | cut -c1-8)"
-service_name="industrial-studio-${root_hash}"
+service_name="deep-monkey-studio-${root_hash}"
 unit_path="/etc/systemd/system/${service_name}.service"
 node_path="$(command -v node || true)"
 service_user="${BIM_STUDIO_SERVICE_USER:-$(id -un)}"
@@ -46,7 +46,7 @@ temporary_unit="$(mktemp)"
 trap 'rm -f "$temporary_unit"' EXIT
 {
   echo "[Unit]"
-  echo "Description=Industrial Studio native cloud service"
+  echo "Description=Deep Monkey Studio native cloud service"
   echo "After=network-online.target postgresql.service minio.service"
   echo "Wants=network-online.target"
   echo

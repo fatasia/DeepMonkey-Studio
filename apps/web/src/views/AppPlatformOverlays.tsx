@@ -70,7 +70,7 @@ export function AppPlatformOverlays({ bindings }: { bindings: AppViewBindings })
         />
       )}
       {utilityVisible && state.creditsOpen && (
-        <CreditsModal locale={locale} onClose={() => state.setCreditsOpen(false)} />
+        <CreditsModal locale={locale} systemName={state.branding.systemName} onClose={() => state.setCreditsOpen(false)} />
       )}
       {state.error && <div className="toast error">{state.error}</div>}
     </>

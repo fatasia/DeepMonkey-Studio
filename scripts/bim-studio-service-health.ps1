@@ -13,7 +13,7 @@ function Invoke-BimStudioHttpProbe(
         return [pscustomobject]@{
             Healthy = [bool]$valid
             LatencyMs = [math]::Max(1, [math]::Round($stopwatch.Elapsed.TotalMilliseconds))
-            Message = if ($valid) { "响应合同有效" } else { "端口响应不属于 Industrial Studio" }
+            Message = if ($valid) { "响应合同有效" } else { "端口响应不属于 Deep Monkey Studio" }
         }
     } catch {
         $stopwatch.Stop()
@@ -40,7 +40,7 @@ function Test-BimStudioExpectedService([string]$Name) {
         "web" {
             $probe = Invoke-BimStudioHttpProbe "http://127.0.0.1:5173/" {
                 param($response)
-                return $response.Content -match "<title>\s*Industrial Studio\s*</title>" -and $response.Content -match 'id=["'']root["'']'
+                return $response.Content -match "<title>\s*Deep Monkey Studio\s*</title>" -and $response.Content -match 'id=["'']root["'']'
             }
             return $probe.Healthy
         }
@@ -74,7 +74,7 @@ function Get-BimStudioServiceHealth([string]$Name, [bool]$Listening) {
         "web" {
             Invoke-BimStudioHttpProbe "http://127.0.0.1:5173/" {
                 param($response)
-                return $response.Content -match "<title>\s*Industrial Studio\s*</title>" -and $response.Content -match 'id=["'']root["'']'
+                return $response.Content -match "<title>\s*Deep Monkey Studio\s*</title>" -and $response.Content -match 'id=["'']root["'']'
             }
         }
         "minio" {

@@ -1,4 +1,7 @@
-param()
+param(
+  [Parameter(Mandatory = $false)]
+  [string]$NodePath = "node"
+)
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
@@ -16,5 +19,5 @@ Set-Location -LiteralPath $repositoryRoot
 
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 Add-Content -LiteralPath (Join-Path $logDirectory "production.out.log") -Value "[$timestamp] production process starting"
-& node $apiEntry 1>> (Join-Path $logDirectory "production.out.log") 2>> (Join-Path $logDirectory "production.err.log")
+& $NodePath $apiEntry 1>> (Join-Path $logDirectory "production.out.log") 2>> (Join-Path $logDirectory "production.err.log")
 exit $LASTEXITCODE

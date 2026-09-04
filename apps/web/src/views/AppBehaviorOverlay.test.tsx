@@ -92,7 +92,7 @@ function createBindings(view: "dashboard" | "studio"): {
 
 describe("AppBehaviorOverlay workspace integration", () => {
   it("uses the active workspace in the detached editor title", () => {
-    expect(behaviorWindowTitle("zh-CN", "一号物流车间")).toBe("一号物流车间 · 脚本编辑器 · Industrial Studio");
+    expect(behaviorWindowTitle("zh-CN", "一号物流车间", "自定义品牌")).toBe("一号物流车间 · 脚本编辑器 · 自定义品牌");
   });
 
   it("renders the script editor inside the selected workspace layout", () => {

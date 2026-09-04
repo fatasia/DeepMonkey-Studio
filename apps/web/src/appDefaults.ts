@@ -1,3 +1,8 @@
+import {
+  DEFAULT_PRODUCT_BRANDING,
+  supportedExtensions,
+  type SystemBrandingSettings,
+} from "@bim-studio/contracts";
 import type {
   CameraConstraintsState,
   ClippingState,
@@ -7,9 +12,7 @@ import type {
   ScenePhysicsState,
   ScenePostProcessingState,
   SkyboxPreset,
-  SystemBrandingSettings
 } from "@bim-studio/contracts";
-import { supportedExtensions } from "@bim-studio/contracts";
 
 /** 与 API 上传合同同源，新增或移除格式时不会出现前后端漂移。 */
 export const ACCEPTED_MODELS = supportedExtensions.map((extension) => `.${extension}`).join(",");
@@ -49,21 +52,7 @@ export const DEFAULT_ENVIRONMENT: SceneEnvironmentState = {
   environmentIntensity: 1
 };
 
-export const DEFAULT_BRANDING: SystemBrandingSettings = {
-  systemName: "Industrial Studio",
-  browserTitle: "Industrial Studio",
-  loginSubtitle: "数字孪生场景平台",
-  copyright: "Copyright © 张文鹏 Charlie",
-  logoUrl: "/brand/logo-industrial.svg",
-  iconUrl: "/brand/app-icon-industrial.svg",
-  primaryColor: "#d6aa4d",
-  defaultLocale: "zh-CN",
-  defaultEntry: "manager",
-  defaultSceneBackground: "#202a31",
-  defaultGridVisible: true,
-  maintenanceEnabled: false,
-  maintenanceMessage: "系统维护中，请稍后再试"
-};
+export const DEFAULT_BRANDING: SystemBrandingSettings = { ...DEFAULT_PRODUCT_BRANDING };
 
 export const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   enabled: true,

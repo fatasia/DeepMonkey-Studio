@@ -206,7 +206,7 @@ export class ScriptGitService implements ScriptGitServiceContract {
     if (!await this.isInitialized(workspace)) await this.git(workspace, ["init", `--initial-branch=${DEFAULT_BRANCH}`], "初始化脚本仓库失败");
     await this.assertGitDirectory(workspace);
     if ((await this.gitOptional(workspace, ["config", "--get", "user.name"])).exitCode !== 0) {
-      await this.git(workspace, ["config", "user.name", "Industrial Studio Script Editor"]);
+      await this.git(workspace, ["config", "user.name", "Deep Monkey Studio Script Editor"]);
     }
     if ((await this.gitOptional(workspace, ["config", "--get", "user.email"])).exitCode !== 0) {
       await this.git(workspace, ["config", "user.email", "script-editor@local"]);

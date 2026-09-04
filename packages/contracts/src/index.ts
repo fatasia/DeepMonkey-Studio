@@ -171,6 +171,23 @@ export interface SystemBrandingSettings {
   updatedAt?: string;
 }
 
+/** Web、API 与本地客户端共享的默认品牌；部署方仍可在运行时覆盖这些字段。 */
+export const DEFAULT_PRODUCT_BRANDING: Readonly<SystemBrandingSettings> = {
+  systemName: "Deep Monkey Studio",
+  browserTitle: "Deep Monkey Studio",
+  loginSubtitle: "数字孪生场景平台",
+  copyright: "Copyright © 张文鹏 Charlie",
+  logoUrl: "/brand/logo-industrial.svg",
+  iconUrl: "/brand/app-icon-industrial.svg",
+  primaryColor: "#d6aa4d",
+  defaultLocale: "zh-CN",
+  defaultEntry: "manager",
+  defaultSceneBackground: "#202a31",
+  defaultGridVisible: true,
+  maintenanceEnabled: false,
+  maintenanceMessage: "系统维护中，请稍后再试",
+};
+
 export interface DatabaseDocument {
   projects: ProjectRecord[];
   scenes: SceneSnapshot[];

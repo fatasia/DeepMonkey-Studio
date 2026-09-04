@@ -1,6 +1,6 @@
-# Industrial Studio
+# Deep Monkey Studio
 
-面向内网部署的轻量 BIM/CAD 场景编辑器。项目采用可插拔转换器架构，浏览器不会假装直接解析 RVT 或 DWG。
+面向内网部署的 Web 原生工业数字孪生、仿真验证与可视化应用平台。BIM/CAD 是工程资产输入而非产品主线；格式能力采用可插拔转换器架构，浏览器不会假装直接解析 RVT 或 DWG。
 
 ## 当前能力
 
@@ -47,12 +47,19 @@
 - 提供上、下、左、右、前、后六个标准视角；当前模型或内部图层以蓝色包围框标识选中状态
 - 编辑页禁用浏览器默认右键菜单，右键保留给三维交互扩展
 
-## 启动
+## 从零启动
 
-```powershell
-pnpm install
-pnpm dev
+项目要求 Node.js 24，包管理器版本由根目录 `packageManager` 固定。首次克隆后只需要一个公开运行入口：
+
+```bash
+corepack enable
+corepack prepare pnpm@11.18.0 --activate
+pnpm install --frozen-lockfile
+pnpm studio start client  # Windows：API + Web + 桌面开发客户端
+pnpm studio start web     # Windows / Linux：API + Web
 ```
+
+关闭、重启、状态和健康检查分别使用 `pnpm studio stop`、`pnpm studio restart`、`pnpm studio status`、`pnpm studio check`。API 可独立以 `pnpm studio start api` 启动；主机、端口、远程 API 和存储模式均可通过同一命令配置。完整的环境准备、本地零依赖模式、PostgreSQL/MinIO、生产部署、升级回滚与排障见 [从零开发与原生部署](docs/native-deployment.md)。
 
 ## 视觉 AI 快速使用
 
@@ -66,68 +73,25 @@ pnpm dev
 
 平台运行 ONNX，不直接运行训练检查点 `.pt`。模型清单中的输入尺寸、RGB/BGR、归一化、类别顺序和输出格式必须与导出模型一致。Windows GPU 推理使用 ONNX Runtime DirectML，可兼容主流 DirectX 12 显卡；DirectML 会话按任务串行执行，防止同一会话并发造成不稳定。
 
-Windows 推荐使用根目录的 `bim-studio.ps1` 统一管理服务。命令格式：
+本地开发与生产部署统一使用 `pnpm studio`，不再维护平台专用的公开启动脚本：
 
-```powershell
-.\bim-studio.ps1 <start|stop|restart|status|check|help> <目标> [-Https]
+```bash
+pnpm studio start client
+pnpm studio start web --api-port 4200 --web-port 5200
+pnpm studio start api --metadata-store postgres --object-store minio
+pnpm studio restart
+pnpm studio stop
+pnpm studio check
+pnpm studio deploy --check
+pnpm studio deploy
+pnpm studio undeploy
 ```
 
-目标说明：
-
-| 目标 | 服务 | 端口 |
-| --- | --- | --- |
-| `all` | PostgreSQL、MinIO、流程服务、实时视频、API、Web | 全部端口 |
-| `app` | 流程服务、实时视频、MinIO、API、Web | 1880、8888、8889、9997、9000、9001、4100、5173 |
-| `web` | Vite Web 页面 | 5173 |
-| `api` | Fastify API 与转换队列 | 4100 |
-| `node-red` | 数据采集与流程编排 | 1880 |
-| `media` | 实时视频转协议与播放 | 8888、8889、9997 |
-| `minio` | 模型与资源对象存储 | 9000、9001 |
-| `postgres` | 元数据数据库 Windows 服务 | 5432 |
-
-常用示例：
-
-```powershell
-.\bim-studio.ps1 start all
-.\bim-studio.ps1 restart api
-.\bim-studio.ps1 stop web
-.\bim-studio.ps1 start media
-.\bim-studio.ps1 status all
-.\bim-studio.ps1 check app
-# 使用 https/private.key 与 https/self-sign.cert 启动局域网 HTTPS
-.\bim-studio.ps1 restart all -Https
-.\bim-studio.ps1 help all
-```
-
-行为说明：
-
-- `start`：仅启动未运行的目标；端口已被其他程序占用时不会盲目覆盖。
-- `stop`：按依赖的反向顺序关闭；脚本只关闭自身管理的进程，或经过项目进程校验的监听进程。
-- `restart`：先关闭再启动，修改 `.env`、证书或服务配置后使用。
-- `status`：显示运行状态、真实健康、延迟、检查时间、失败原因、端口、监听 PID，以及进程是否由脚本管理。
-- `check`：验证 API/Web/MinIO 的服务身份以及其它服务的真实监听状态，显示延迟、检查时间与失败原因；任一目标异常时返回退出码 1。
-- `-Https`：启动 Web 时读取 `https/private.key` 与 `https/self-sign.cert`；缺少证书会直接报出明确路径。
-- `all` 包含 PostgreSQL 和 MinIO；只重启应用而不动数据库时使用 `restart app -Https`。
-- PostgreSQL 作为 Windows 服务管理，启动或关闭可能要求管理员 PowerShell。
-
-运行文件位置：
-
-- PID：`data/runtime/*.pid`
-- 标准输出：`data/logs/<服务>.out.log`
-- 错误日志：`data/logs/<服务>.err.log`
-- 通用缓存：`.cache`
-- Revit Worker 缓存：`BIM_STUDIO_WORKER_ROOT`，默认 `.cache/revit-worker`
-- 临时目录：`.cache/temp`，脚本会同时设置当前进程的 `TEMP` 和 `TMP`
-
-故障排查顺序：先执行 `.\bim-studio.ps1 check all`，再进入“设置 → 服务健康”查看失败原因，或在“设置 → 审计与日志”按服务、级别、时间与关键词筛选。服务日志的查询、复制诊断与导出均在服务端脱敏；诊断包只包含运行元数据、健康状态和脱敏错误日志，不包含项目、模型、业务数据或凭据。命令行也可直接查看 `data/logs/*.err.log`。如果端口被非项目进程占用，脚本会拒绝关闭并显示 PID。PowerShell 禁止脚本执行时使用：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\bim-studio.ps1 status all
-```
+`client` 当前仅支持 Windows，且开发 Web 端口固定为 5173；Linux 服务器使用 `web`、`api` 或 `deploy`。启动器只关闭自己管理且身份校验通过的进程，运行状态写入 `data/runtime`，聚合日志写入 `data/logs/studio.*.log`。
 
 - Web: http://localhost:5173（默认监听 `0.0.0.0`，也可通过本机局域网 IP 访问）
-- HTTPS Web: https://localhost:5173（设置 `BIM_STUDIO_HTTPS=true` 或使用脚本的 `-Https`）
-- 独立全局设置: https://localhost:5173/branding
+- HTTPS Web: https://localhost:5173（设置 `BIM_STUDIO_HTTPS=true` 或为启动命令添加 `--https`）
+- 独立全局品牌设置: http://localhost:5173/branding（HTTPS 模式下使用同路径）
 - 实时监控播放: HTTPS HLS `:8888` / WebRTC `:8889`（页面不暴露底层转协议服务）
 - API: http://localhost:4100
 - Node-RED 流程编辑器: http://localhost:5173/node-red/
@@ -136,7 +100,7 @@ powershell -ExecutionPolicy Bypass -File .\bim-studio.ps1 status all
 
 首次部署的管理员账号与密码均为 `admin`，可通过 `.env` 的 `BIM_STUDIO_ADMIN_PASSWORD` 修改初始密码。登录页勾选“下次自动登录”后使用 30 天签名会话，未勾选时仅在当前浏览器会话保存并于服务重启后失效；生产环境应配置稳定、随机的 `BIM_STUDIO_SESSION_SECRET`。登录后，管理员可从页面右下角“系统”进入用户授权、健康、审计和 AI 配置。AI 也可以直接由 `.env` 初始化：`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`、`AI_PROTOCOL`、`AI_TEMPERATURE`；`AI_PROTOCOL` 可设为 `responses`、`chat-completions` 或 `auto`，页面保存后的配置优先于环境变量，API Key 不会回显到浏览器。
 
-`pnpm dev` 仍只启动 Web 和 API；需要数字孪生流程时使用 `pnpm dev:all`，或通过脚本单独执行 `./bim-studio.ps1 start node-red`。Node-RED 不运行不会影响模型浏览、编辑和场景保存。HTTP 场景桥为 `POST /iot/scene`，浏览器订阅 `/iot/ws/scene`。生产部署应设置随机 `NODE_RED_CREDENTIAL_SECRET`，并通过 Node-RED credential store 保存数据库与设备密码。
+Node-RED 不运行不会影响模型浏览、编辑和场景保存；需要流程服务时按 [从零开发与原生部署](docs/native-deployment.md) 配置为外部原生服务。HTTP 场景桥为 `POST /iot/scene`，浏览器订阅 `/iot/ws/scene`。生产部署应设置随机 `NODE_RED_CREDENTIAL_SECRET`，并通过 Node-RED credential store 保存数据库与设备密码。
 
 TDengine 与 Oracle 的最小可用示例流位于 `apps/node-red/examples/tdengine-oracle-dashboard.json`，并默认内置在 `flows.json` 中但保持禁用。连接参数由仓库根目录 `.env` 注入；Oracle 的用户名和密码通过被 Git 忽略的 `apps/node-red/flows_cred.json` 引用环境变量，也可以在 Node-RED 中双击“Oracle 示例连接”覆盖并加密保存。重启 Node-RED 后启用对应流程即可手动测试。TDengine 示例默认使用官方 `@tdengine/websocket` 连接 taosAdapter，查询失败会自动回退 `/rest/sql`；Oracle 示例使用 `node-red-contrib-oracledb-mod`，Oracle 12.1+ 保持默认 Thin 模式即可，Oracle 11g 或需要 Thick 特性时使用已安装到 `D:\Documents\bim\oracle\instantclient_19_31` 的 Instant Client。两个示例都直接输出到现有 `/iot/dashboard/` 看板。
 

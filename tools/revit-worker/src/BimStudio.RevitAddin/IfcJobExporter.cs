@@ -13,7 +13,7 @@ internal static class IfcJobExporter
         options.AddOption("ExportInternalRevitPropertySets", "true");
         options.AddOption("StoreIFCGUID", "true");
         options.AddOption("UseActiveViewGeometry", "false");
-        using var transaction = new Transaction(document, "Industrial Studio IFC Export");
+        using var transaction = new Transaction(document, "Deep Monkey Studio IFC Export");
         transaction.Start();
         try
         {

@@ -9,8 +9,8 @@
 
 启动 HTTPS：
 
-```powershell
-.\bim-studio.ps1 restart all -Https
+```bash
+pnpm studio restart web --https
 ```
 
 访问：`https://localhost:5173` 或 `https://<本机局域网 IP>:5173`。第一次访问需要在测试设备上信任 `self-sign.cert`。局域网 IP 改变后，应重新生成包含新 IP 的证书。

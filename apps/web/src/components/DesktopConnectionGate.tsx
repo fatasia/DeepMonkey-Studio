@@ -1,8 +1,12 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { DEFAULT_PRODUCT_BRANDING } from "@bim-studio/contracts";
 import type { NamedServerProfile, ServerHandshakeResult } from "@bim-studio/server-sdk";
-import { CheckCircle2, Cloud, HardDrive, LoaderCircle, MonitorCog, RefreshCw, Server, ShieldCheck, WifiOff } from "lucide-react";
+import { CheckCircle2, Cloud, HardDrive, LoaderCircle, RefreshCw, Server, ShieldCheck, WifiOff } from "lucide-react";
 import { connectDesktopServer, currentDesktopRuntimeMode, hydrateDesktopServer, isDesktopRuntime, selectDesktopRuntimeMode } from "../adapters/runtimeHost.js";
 import "./DesktopConnectionGate.css";
+
+const DEFAULT_PRODUCT_NAME = DEFAULT_PRODUCT_BRANDING.systemName;
+const DEFAULT_DESKTOP_LABEL = `${DEFAULT_PRODUCT_NAME.toLocaleUpperCase("en-US")} DESKTOP`;
 
 type GateState =
   | { status: "loading" }
@@ -42,7 +46,7 @@ export function DesktopConnectionGate({ children }: { children: ReactNode }) {
 }
 
 function DesktopLoading() {
-  return <main className="desktop-gate"><section className="desktop-gate-card desktop-gate-loading"><LoaderCircle className="desktop-gate-spinner" /><strong>正在打开 Industrial Studio</strong><span>恢复上次使用的本地或在线工作方式…</span></section></main>;
+  return <main className="desktop-gate"><section className="desktop-gate-card desktop-gate-loading"><LoaderCircle className="desktop-gate-spinner" /><strong>正在打开 {DEFAULT_PRODUCT_NAME}</strong><span>恢复上次使用的本地或在线工作方式…</span></section></main>;
 }
 
 function DesktopModeChooser({ state, onLocal, onServer }: {
@@ -53,8 +57,8 @@ function DesktopModeChooser({ state, onLocal, onServer }: {
   return <main className="desktop-gate">
     <section className="desktop-gate-card desktop-mode-card">
       <header className="desktop-gate-header">
-        <span className="desktop-gate-mark"><MonitorCog size={24} /></span>
-        <span><small>INDUSTRIAL STUDIO DESKTOP</small><strong>选择工作方式</strong></span>
+        <span className="desktop-gate-mark"><img src={DEFAULT_PRODUCT_BRANDING.iconUrl} alt="" /></span>
+        <span><small>{DEFAULT_DESKTOP_LABEL}</small><strong>选择工作方式</strong></span>
       </header>
       <p className="desktop-gate-intro">不填写服务地址也能完整开始设计。需要团队协作、工业 AI 或在线发布时，再连接企业服务器。</p>
       <div className="desktop-mode-options">
@@ -111,8 +115,8 @@ function DesktopServerWizard({ state, onConnected }: {
   return <main className="desktop-gate">
     <section className="desktop-gate-card">
       <header className="desktop-gate-header">
-        <span className="desktop-gate-mark"><MonitorCog size={24} /></span>
-        <span><small>INDUSTRIAL STUDIO DESKTOP</small><strong>连接你的服务器</strong></span>
+        <span className="desktop-gate-mark"><img src={DEFAULT_PRODUCT_BRANDING.iconUrl} alt="" /></span>
+        <span><small>{DEFAULT_DESKTOP_LABEL}</small><strong>连接你的服务器</strong></span>
       </header>
       <p className="desktop-gate-intro">客户端只保存一个主服务器配置。IP 或端口变化时，在这里修改；项目、账户和发布版本仍由同一服务器统一管理。</p>
       <div className="desktop-gate-trust">

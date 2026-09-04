@@ -6,23 +6,23 @@
 
 仓库根目录先安装锁定依赖，再根据目标启动：
 
-```powershell
+```bash
 pnpm install --frozen-lockfile
-pnpm dev:local          # API + 桌面客户端
-pnpm dev:local:web      # API + Web，并打开浏览器
-pnpm dev:local:services # 只启动基础服务与 API
-pnpm dev:local:check    # 只检查当前依赖和服务，不代启动
+pnpm studio start client # Windows：API + Web + 桌面开发客户端
+pnpm studio start web    # Windows / Linux：API + Web
+pnpm studio start api    # 只启动 API 及配置要求的存储服务
+pnpm studio check        # 检查当前运行实例，不代启动
 ```
 
-启动器只会代启本机已安装的 PostgreSQL、MinIO 与本仓库进程；远程地址不可达、端口被其他程序占用或依赖未安装时会直接报告原因。
+关闭和重启使用 `pnpm studio stop` 与 `pnpm studio restart`，不需要记忆第二套脚本。启动器只会代启本机已安装的 PostgreSQL、MinIO 与本仓库进程；远程地址不可达、端口被其他程序占用或依赖未安装时会直接报告原因。
 
 ## 部署生产服务
 
 在服务器安全配置环境变量后先执行预检：
 
-```powershell
-pnpm deploy:cloud:check
-pnpm deploy:cloud
+```bash
+pnpm studio deploy --check
+pnpm studio deploy
 ```
 
 Windows 管理员运行时会注册开机任务并自动重启；没有管理员权限时当前进程仍可启动，但不会承诺开机自启。部署完成后检查系统管理中的服务健康、数据库、对象存储、任务队列和云渲染状态。
@@ -42,8 +42,8 @@ Windows 管理员运行时会注册开机任务并自动重启；没有管理员
 
 一致性备份前先停止 API：
 
-```powershell
-pnpm deploy:cloud:stop
+```bash
+pnpm studio undeploy
 pnpm backup:production
 pnpm verify:restore -- --input <备份目录>
 ```

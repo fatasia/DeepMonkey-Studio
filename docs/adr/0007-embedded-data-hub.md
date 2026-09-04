@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Industrial Studio 的主体是连贯的一体化 2D/3D 编辑器，但工业项目还需要接入数据库、HTTP、WebSocket、MQTT、OPC 等数据，进行过滤、映射、计算和状态逻辑，并向外提供 REST API 或实时 WebSocket。若二维、三维、拓扑和地图各自实现数据源与绑定，数据查询、公式、权限和故障语义会迅速分叉。
+Deep Monkey Studio 的主体是连贯的一体化 2D/3D 编辑器，但工业项目还需要接入数据库、HTTP、WebSocket、MQTT、OPC 等数据，进行过滤、映射、计算和状态逻辑，并向外提供 REST API 或实时 WebSocket。若二维、三维、拓扑和地图各自实现数据源与绑定，数据查询、公式、权限和故障语义会迅速分叉。
 
 帆软 BI 的优势是自助数据准备、字段拖拽、即时预览和基于数据关系的默认联动；ThingJS 森数据 DIX 的优势是连接器、可视化逻辑、在线 JavaScript 和 HTTP/WebSocket 数据服务。传统数据中台常包含数据湖、数仓、主数据、目录、治理审批、调度和多组织运营，这些能力会掩盖编辑器主线并显著增加部署与维护成本。
 
@@ -114,7 +114,7 @@ Schema、直接血缘、质量状态和运行指标仅保留绑定兼容、调�
 
 ## References
 
-- [Industrial Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
+- [Deep Monkey Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
 - [ThingJS 森数据 DIX](https://www.thingjs.com/guide/dix/)
 - [ThingJS 森数据产品文档](https://support.thingjs.com/book/dix-docs)
 - [FineBI 自助数据集](https://help.fanruan.com/finebi/doc-view-43.html)

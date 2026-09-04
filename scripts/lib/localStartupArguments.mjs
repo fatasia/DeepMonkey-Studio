@@ -20,6 +20,7 @@ export function parseLocalStartupArguments(argv) {
     checkOnly: false,
     noOpen: false,
     help: false,
+    readyFile: undefined,
   };
   let targetSeen = false;
 
@@ -38,6 +39,12 @@ export function parseLocalStartupArguments(argv) {
     if (argument === "--skip-infra") options.skipInfrastructure = true;
     else if (argument === "--check") options.checkOnly = true;
     else if (argument === "--no-open") options.noOpen = true;
+    else if (argument === "--ready-file") {
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) throw new Error("--ready-file 后必须指定文件路径");
+      options.readyFile = value;
+      index += 1;
+    }
     else if (argument === "--help" || argument === "-h") options.help = true;
     else throw new Error(`未知参数：${argument}`);
   }
@@ -46,7 +53,7 @@ export function parseLocalStartupArguments(argv) {
 }
 
 export function localStartupHelp() {
-  return `Industrial Studio 本地启动器
+  return `Deep Monkey Studio 内部运行器（用户请使用 pnpm studio）
 
 用法：
   node scripts/start-local.mjs [--target desktop|web|services] [--skip-infra] [--no-open]
@@ -91,5 +98,5 @@ export function isBimStudioApiHealth(value) {
 }
 
 export function isBimStudioWebDocument(value) {
-  return typeof value === "string" && /<title>\s*Industrial Studio\s*<\/title>/i.test(value) && /<div\s+id=["']root["']><\/div>/i.test(value);
+  return typeof value === "string" && /<title>\s*Deep Monkey Studio\s*<\/title>/i.test(value) && /<div\s+id=["']root["']><\/div>/i.test(value);
 }

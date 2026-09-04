@@ -327,7 +327,7 @@ export abstract class ViewerEngineBim extends ViewerEngineSimulation {
   async exportSceneGlb(options: { scope?: "all" | "visible" } = {}): Promise<ArrayBuffer> {
       for (const model of this.models.values()) this.setCollisionHighlight(model, false);
       const exportRoot = new THREE.Group();
-      exportRoot.name = "Industrial Studio Scene";
+      exportRoot.name = "Deep Monkey Studio Scene";
       const includeHidden = options.scope !== "visible";
       const animations: THREE.AnimationClip[] = [];
       let meshCount = 0;
@@ -375,7 +375,7 @@ export abstract class ViewerEngineBim extends ViewerEngineSimulation {
   async exportSceneFbx(): Promise<string> {
       for (const model of this.models.values()) this.setCollisionHighlight(model, false);
       const exportRoot = new THREE.Group();
-      exportRoot.name = "Industrial Studio Scene";
+      exportRoot.name = "Deep Monkey Studio Scene";
       const generatedFragmentRoots: THREE.Group[] = [];
       let meshCount = 0;
       try {

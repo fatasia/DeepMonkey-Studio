@@ -328,7 +328,7 @@ async function fetchWithDeadline(url, init, timeoutMs, timeoutMessage) {
 }
 
 function defaultBranding() {
-  return { systemName: "Industrial Studio", browserTitle: "Industrial Studio", loginSubtitle: "数字孪生场景平台", copyright: "", logoUrl: "/brand/logo-industrial.svg", iconUrl: "/brand/app-icon-industrial.svg", primaryColor: "#d6aa4d", defaultLocale: "zh-CN", defaultEntry: "manager", defaultSceneBackground: "#202a31", defaultGridVisible: true, maintenanceEnabled: false, maintenanceMessage: "" };
+  return { systemName: "Deep Monkey Studio", browserTitle: "Deep Monkey Studio", loginSubtitle: "数字孪生场景平台", copyright: "", logoUrl: "/brand/logo-industrial.svg", iconUrl: "/brand/app-icon-industrial.svg", primaryColor: "#d6aa4d", defaultLocale: "zh-CN", defaultEntry: "manager", defaultSceneBackground: "#202a31", defaultGridVisible: true, maintenanceEnabled: false, maintenanceMessage: "" };
 }
 
 async function removePublicRoot(root, name, removed) {

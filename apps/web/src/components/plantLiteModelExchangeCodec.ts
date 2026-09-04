@@ -52,7 +52,7 @@ export function createPlantLiteModelExchange(model: PlantLiteModel): PlantLiteMo
   return {
     schema: PLANT_LITE_MODEL_EXCHANGE_SCHEMA,
     version: PLANT_LITE_MODEL_EXCHANGE_VERSION,
-    source: { application: "Industrial Studio", kind: "authoring-draft" },
+    source: { application: "Deep Monkey Studio", kind: "authoring-draft" },
     units: { ...PLANT_LITE_MODEL_UNITS },
     model: portablePlantLiteModel(validation.model),
   };
@@ -127,7 +127,7 @@ export function plantLiteModelExchangeFileName(model: PlantLiteModel): string {
 
 function exchangeEnvelopeIssues(input: Record<string, unknown>): string[] {
   const issues: string[] = [];
-  if (input.schema !== PLANT_LITE_MODEL_EXCHANGE_SCHEMA) issues.push("文件类型不受支持，请选择 Industrial Studio Plant Lite 模型文件");
+  if (input.schema !== PLANT_LITE_MODEL_EXCHANGE_SCHEMA) issues.push("文件类型不受支持，请选择 Deep Monkey Studio Plant Lite 模型文件");
   if (input.version !== PLANT_LITE_MODEL_EXCHANGE_VERSION) issues.push("模型文件版本不受支持，当前仅支持 v1");
   if (!isRecord(input.source) || !validSource(input.source)) issues.push("缺少有效的模型来源声明");
   if (!isRecord(input.units)) issues.push("缺少模型单位声明");

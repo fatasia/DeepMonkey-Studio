@@ -45,8 +45,8 @@
 
 | 产物 | 大小 | SHA256 |
 |---|---:|---|
-| `Industrial Studio_0.1.0_x64_zh-CN.msi` | 20,742,144 bytes | `C4AA028F672A17669CE6C034183CA40F9CAE459AD25E52EF8548EBC4FB1AAA30` |
-| `Industrial Studio_0.1.0_x64-setup.exe` | 19,899,616 bytes | `DF4677DB382C7B2DD26F5BFC52CD02983483B920E600114C02759D762CFC1193` |
+| `Deep Monkey Studio_0.1.0_x64_zh-CN.msi` | 20,742,144 bytes | `C4AA028F672A17669CE6C034183CA40F9CAE459AD25E52EF8548EBC4FB1AAA30` |
+| `Deep Monkey Studio_0.1.0_x64-setup.exe` | 19,899,616 bytes | `DF4677DB382C7B2DD26F5BFC52CD02983483B920E600114C02759D762CFC1193` |
 
 这两个包是完整编辑客户端；单场景只读客户端使用下文的独立发布器生成。
 
@@ -91,8 +91,8 @@ pnpm --filter @bim-studio/desktop verify:scene-viewer -- `
 
 ### 原生启动与无 Docker
 
-- `pnpm dev:local` 默认编排 PostgreSQL、MinIO、API 和 Tauri；`web`、`services`、`check` 具有独立目标：`scripts/start-local.mjs`。
-- `pnpm deploy:cloud` 使用 Windows 计划任务，Linux 使用 systemd；运行脚本、工作区脚本和包脚本没有 Docker/Compose 路径。
+- `pnpm studio` 是唯一公开入口，提供 `client`、`web`、`api` 和健康检查；内部编排器仍负责 PostgreSQL、MinIO、API、Web 与 Tauri 的依赖顺序。
+- `pnpm studio deploy` 在 Windows 复用计划任务适配器，在 Linux 复用 systemd 适配器；运行脚本、工作区脚本和包脚本没有 Docker/Compose 路径。
 - 本次在 Windows PowerShell 5.1 真实执行发现部署脚本错误使用现代 .NET 哈希 API，且无 BOM 的中文脚本会被 5.1 错误解码。现已改为 .NET Framework 兼容 SHA-256，并添加 UTF-8 BOM。
 - 默认 `.env` 缺少生产管理员密码和会话密钥时，预检会按设计阻断；使用仅存在于审计进程的临时合规值后，PostgreSQL 与 MinIO 真实预检通过，未把临时值写入仓库。
 
@@ -104,13 +104,13 @@ pnpm --filter @bim-studio/desktop verify:scene-viewer -- `
 | API 云渲染与生产托管测试 | 5 文件、21 测试通过 |
 | Cloud Render Worker 测试 | 4 文件、13 测试通过 |
 | `cargo test` 桌面 Host | 3 测试通过 |
-| `pnpm dev:local:check` | PostgreSQL、MinIO、API、Web 均可达 |
+| 本地编排健康检查（现由 `pnpm studio check` 暴露） | PostgreSQL、MinIO、API、Web 均可达 |
 | `pnpm gate:production-artifact` | 通过 |
 | `pnpm gate:webgpu` | WebGL/WebGPU、画质比较、25 次切换、设备丢失回退通过；SSIM 0.98762 |
 | `pnpm gate:online-flow` | 登录、保存、离线恢复、浏览、发布、匿名公开读取通过 |
 | 临时启动真实云渲染 Worker + `/v1/health` | RTX 4060、H.265 硬编码、状态 `ready` |
-| `pnpm deploy:cloud:check`（进程临时合规密钥） | 生产配置、PostgreSQL、MinIO 预检通过 |
-| `pnpm desktop:bundle` + `pnpm desktop:verify-bundle` | 当前 Industrial Studio MSI/NSIS 生成并通过校验 |
+| 生产适配器预检（现由 `pnpm studio deploy --check` 暴露；进程临时合规密钥） | 生产配置、PostgreSQL、MinIO 预检通过 |
+| `pnpm desktop:bundle` + `pnpm desktop:verify-bundle` | 当前 Deep Monkey Studio MSI/NSIS 生成并通过校验 |
 | 只读发布器、Web runtime 与匿名浏览测试 | 5 个文件、12 个聚焦测试通过；精确版本不匹配会阻断 |
 | 默认 viewer-only Vite + Tauri 动态构建 | 从源码经 typecheck 生成 MSI/NSIS；只读入口、资源摘要、CSP 与 capability 校验通过 |
 | 只读主程序启动与网络观察 | 运行 6 秒稳定，TCP 连接数为 0 |
@@ -125,7 +125,7 @@ pnpm --filter @bim-studio/desktop verify:scene-viewer -- `
 3. **生产模型的只读安装包仍需签署。** 打包核心用真实 HTTP 字节测试验证资源闭合；最终还需选择客户发布版本，生成一次含 GLB/层级/属性的 MSI/NSIS 并在断网环境浏览。
 4. **云渲染生产媒体闭环未签署。** 当前真实证据到 Worker 健康和硬编码；仍需配置正式 `CLOUD_RENDER_*`、TURN/TLS 后跑一次已发布场景的创建会话、offer/answer、媒体帧、输入和停止会话。
 5. **本地模式缺少 Tauri UI 端到端证据。** IndexedDB 与适配器代码存在，安装包能启动，但还需在打包客户端真实完成创建项目、导入模型、保存、重启恢复、导出、切换服务器和断网回本地模式。
-6. **一键云服务不包含 GPU Worker 编排。** `deploy:cloud` 负责 Web/API 与生产存储；GPU Worker 仍是独立进程。这适合 GPU 节点分离，但交付文档应明确两台机器/两个原生服务的启动顺序，不能称“一条命令启动全部云渲染”。
+6. **统一部署不包含 GPU Worker 编排。** `pnpm studio deploy` 负责 Web/API 与生产存储；GPU Worker 仍是独立进程。这适合 GPU 节点分离，但交付文档应明确两台机器/两个原生服务的启动顺序，不能称“一条命令启动全部云渲染”。
 
 官方依据：
 

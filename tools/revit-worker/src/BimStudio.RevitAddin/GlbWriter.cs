@@ -92,7 +92,7 @@ internal static class GlbWriter
 
         var root = new Dictionary<string, object>
         {
-            ["asset"] = new Dictionary<string, object> { ["version"] = "2.0", ["generator"] = "Industrial Studio Revit Add-in" },
+            ["asset"] = new Dictionary<string, object> { ["version"] = "2.0", ["generator"] = "Deep Monkey Studio Revit Add-in" },
             ["scene"] = 0,
             ["scenes"] = new object[] { new Dictionary<string, object> { ["name"] = modelName, ["nodes"] = new[] { 0 } } },
             ["nodes"] = nodes,

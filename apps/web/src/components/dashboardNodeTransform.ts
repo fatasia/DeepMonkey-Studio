@@ -21,6 +21,10 @@ interface DashboardNodeTransformOptions {
   onCommand: (command: StudioCommand) => void;
 }
 
+type DashboardSnapPage = Pick<DashboardPageDocument, "width" | "height" | "guides"> & {
+  nodes: ReadonlyArray<Pick<WidgetNode, "id" | "visible" | "frame">>;
+};
+
 /** 负责一次完整的移动/缩放指针事务，取消时不产生历史命令。 */
 export function beginDashboardNodeTransform(options: DashboardNodeTransformOptions) {
   const { event, node, mode, page, selectedNodeIds, guidesVisible, snapEnabled, zoom } = options;
@@ -41,35 +45,9 @@ export function beginDashboardNodeTransform(options: DashboardNodeTransformOptio
   const startX = event.clientX;
   const startY = event.clientY;
   const pointerId = event.pointerId;
-  const otherNodes = page.nodes.filter((candidate) => !nodeIds.includes(candidate.id) && candidate.visible !== false);
-  const xCandidates = [
-    0,
-    page.width / 2,
-    page.width,
-    ...(guidesVisible
-      ? (page.guides ?? []).filter((guide) => guide.orientation === "vertical").map((guide) => guide.position)
-      : []),
-    ...otherNodes.flatMap((candidate) => [
-      candidate.frame.x,
-      candidate.frame.x + candidate.frame.width / 2,
-      candidate.frame.x + candidate.frame.width,
-    ]),
-  ];
-  const yCandidates = [
-    0,
-    page.height / 2,
-    page.height,
-    ...(guidesVisible
-      ? (page.guides ?? []).filter((guide) => guide.orientation === "horizontal").map((guide) => guide.position)
-      : []),
-    ...otherNodes.flatMap((candidate) => [
-      candidate.frame.y,
-      candidate.frame.y + candidate.frame.height / 2,
-      candidate.frame.y + candidate.frame.height,
-    ]),
-  ];
-  const framesAt = (clientX: number, clientY: number) =>
-    calculateFrames({
+  const { x: xCandidates, y: yCandidates } = createDashboardSnapCandidates(page, nodeIds, guidesVisible);
+  const framesAt = (clientX: number, clientY: number, bypassSnap: boolean) =>
+    calculateDashboardNodeTransformFrames({
       clientX,
       clientY,
       startX,
@@ -80,12 +58,14 @@ export function beginDashboardNodeTransform(options: DashboardNodeTransformOptio
       node,
       initial,
       snapEnabled,
+      bypassSnap,
       xCandidates,
       yCandidates,
     });
   const move = (pointer: PointerEvent) => {
     if (pointer.pointerId !== pointerId) return;
-    const next = framesAt(pointer.clientX, pointer.clientY);
+    // Alt 可在拖拽途中按下或松开，因此必须读取每一帧的修饰键状态。
+    const next = framesAt(pointer.clientX, pointer.clientY, pointer.altKey);
     options.setDraftFrames(next.frames);
     options.setActiveSnapLines(next.lines);
   };
@@ -97,7 +77,7 @@ export function beginDashboardNodeTransform(options: DashboardNodeTransformOptio
   const finish = (pointer: PointerEvent) => {
     if (pointer.pointerId !== pointerId) return;
     cleanup();
-    const finalFrames = framesAt(pointer.clientX, pointer.clientY).frames;
+    const finalFrames = framesAt(pointer.clientX, pointer.clientY, pointer.altKey).frames;
     resetDraft(options);
     const changes = Object.entries(finalFrames)
       .filter(([nodeId, frame]) => JSON.stringify(frame) !== JSON.stringify(initial.get(nodeId)))
@@ -114,24 +94,54 @@ export function beginDashboardNodeTransform(options: DashboardNodeTransformOptio
   window.addEventListener("pointercancel", cancel);
 }
 
-function calculateFrames(options: {
+export function createDashboardSnapCandidates(
+  page: DashboardSnapPage,
+  excludedNodeIds: readonly string[],
+  guidesVisible: boolean,
+): { x: number[]; y: number[] } {
+  const excluded = new Set(excludedNodeIds);
+  const otherNodes = page.nodes.filter((candidate) => !excluded.has(candidate.id) && candidate.visible !== false);
+  return {
+    x: [
+      0,
+      page.width / 2,
+      page.width,
+      ...(guidesVisible
+        ? (page.guides ?? []).filter((guide) => guide.orientation === "vertical").map((guide) => guide.position)
+        : []),
+      ...otherNodes.flatMap((candidate) => [candidate.frame.x, candidate.frame.x + candidate.frame.width / 2, candidate.frame.x + candidate.frame.width]),
+    ],
+    y: [
+      0,
+      page.height / 2,
+      page.height,
+      ...(guidesVisible
+        ? (page.guides ?? []).filter((guide) => guide.orientation === "horizontal").map((guide) => guide.position)
+        : []),
+      ...otherNodes.flatMap((candidate) => [candidate.frame.y, candidate.frame.y + candidate.frame.height / 2, candidate.frame.y + candidate.frame.height]),
+    ],
+  };
+}
+
+export function calculateDashboardNodeTransformFrames(options: {
   clientX: number;
   clientY: number;
   startX: number;
   startY: number;
   zoom: number;
   mode: "move" | "resize";
-  page: DashboardPageDocument;
-  node: WidgetNode;
+  page: Pick<DashboardPageDocument, "width" | "height">;
+  node: Pick<WidgetNode, "id">;
   initial: Map<string, WidgetFrame>;
   snapEnabled: boolean;
+  bypassSnap: boolean;
   xCandidates: number[];
   yCandidates: number[];
 }): { frames: Record<string, WidgetFrame>; lines: ActiveSnapLines } {
   let dx = Math.round((options.clientX - options.startX) / options.zoom);
   let dy = Math.round((options.clientY - options.startY) / options.zoom);
   let lines: ActiveSnapLines = { x: [], y: [] };
-  if (options.snapEnabled) {
+  if (options.snapEnabled && !options.bypassSnap) {
     const anchor = options.initial.get(options.node.id)!;
     if (options.mode === "move") {
       dx = Math.round((anchor.x + dx) / 8) * 8 - anchor.x;

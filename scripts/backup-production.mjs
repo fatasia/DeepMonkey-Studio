@@ -30,7 +30,7 @@ if (existsSync(output) && (await readdir(output)).length > 0) {
 }
 
 if (await apiReachable(values) && !allowLive) {
-  throw new Error("API 正在运行。请先执行 pnpm deploy:cloud:stop，或仅为非一致性审计显式传入 --allow-live");
+  throw new Error("API 正在运行。请先执行 pnpm studio undeploy，或仅为非一致性审计显式传入 --allow-live");
 }
 
 const databaseDump = path.join(output, "postgres.dump");

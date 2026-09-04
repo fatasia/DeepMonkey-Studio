@@ -20,7 +20,7 @@ namespace BimStudio.Bridge.Editor
         {
             if (manifest == null)
             {
-                EditorGUILayout.HelpBox("未找到 Industrial Studio 集成清单，请先准备项目。", MessageType.Warning);
+                EditorGUILayout.HelpBox("未找到 Deep Monkey Studio 集成清单，请先准备项目。", MessageType.Warning);
                 if (GUILayout.Button("准备通信桥与集成清单")) BimStudioProjectSetup.Setup();
                 return;
             }
@@ -58,7 +58,7 @@ namespace BimStudio.Bridge.Editor
             var key = RequireIdentifier(rawKey);
             var existing = manifest.dataLayers.FirstOrDefault(item => string.Equals(item?.key?.Trim(), key, StringComparison.Ordinal));
             if (existing != null) return existing.key.Trim();
-            Undo.RecordObject(manifest, "Add Industrial Studio data layer");
+            Undo.RecordObject(manifest, "Add Deep Monkey Studio data layer");
             manifest.dataLayers = (manifest.dataLayers ?? Array.Empty<BimStudioDataLayer>()).Concat(new[] { new BimStudioDataLayer
             {
                 key = key,
@@ -74,7 +74,7 @@ namespace BimStudio.Bridge.Editor
             var key = RequireIdentifier(rawKey);
             var existing = manifest.properties.FirstOrDefault(item => string.Equals(item?.key?.Trim(), key, StringComparison.Ordinal));
             if (existing != null) return existing.key.Trim();
-            Undo.RecordObject(manifest, "Add Industrial Studio property");
+            Undo.RecordObject(manifest, "Add Deep Monkey Studio property");
             manifest.properties = (manifest.properties ?? Array.Empty<BimStudioProperty>()).Concat(new[] { new BimStudioProperty
             {
                 key = key,
@@ -89,7 +89,7 @@ namespace BimStudio.Bridge.Editor
         {
             var name = RequireIdentifier(rawName);
             if ((manifest.actions ?? Array.Empty<string>()).Any(item => string.Equals(item?.Trim(), name, StringComparison.Ordinal))) return name;
-            Undo.RecordObject(manifest, "Add Industrial Studio action");
+            Undo.RecordObject(manifest, "Add Deep Monkey Studio action");
             manifest.actions = (manifest.actions ?? Array.Empty<string>()).Concat(new[] { name }).ToArray();
             SaveManifest(manifest);
             return name;
@@ -99,7 +99,7 @@ namespace BimStudio.Bridge.Editor
         {
             var name = RequireIdentifier(rawName);
             if ((manifest.events ?? Array.Empty<string>()).Any(item => string.Equals(item?.Trim(), name, StringComparison.Ordinal))) return name;
-            Undo.RecordObject(manifest, "Add Industrial Studio event");
+            Undo.RecordObject(manifest, "Add Deep Monkey Studio event");
             manifest.events = (manifest.events ?? Array.Empty<string>()).Concat(new[] { name }).ToArray();
             SaveManifest(manifest);
             return name;
@@ -115,7 +115,7 @@ namespace BimStudio.Bridge.Editor
             var stem = RequireIdentifier(gameObject.name).Replace("/", "-");
             var id = stem;
             for (var suffix = 2; ids.Contains(id); suffix++) id = stem + "-" + suffix;
-            Undo.RecordObject(manifest, "Register Industrial Studio object");
+            Undo.RecordObject(manifest, "Register Deep Monkey Studio object");
             manifest.objects = (manifest.objects ?? Array.Empty<BimStudioObject>()).Concat(new[] { new BimStudioObject { id = id, name = gameObject.name, path = path } }).ToArray();
             SaveManifest(manifest);
             return id;
@@ -273,7 +273,7 @@ namespace BimStudio.Bridge.Editor
                 }
             }
             EditorGUILayout.PropertyField(serializedObject.FindProperty("payloadJson"), new GUIContent("事件数据 JSON"));
-            EditorGUILayout.HelpBox("将本组件的 Emit() 连接到 Button、Collider、动画事件或任意 UnityEvent，即可把事件回传 Industrial Studio；不需要编写脚本。", MessageType.Info);
+            EditorGUILayout.HelpBox("将本组件的 Emit() 连接到 Button、Collider、动画事件或任意 UnityEvent，即可把事件回传 Deep Monkey Studio；不需要编写脚本。", MessageType.Info);
             if (string.IsNullOrWhiteSpace(eventName.stringValue)) EditorGUILayout.HelpBox("构建 WebGL 前请选择回传事件。", MessageType.Error);
             serializedObject.ApplyModifiedProperties();
         }

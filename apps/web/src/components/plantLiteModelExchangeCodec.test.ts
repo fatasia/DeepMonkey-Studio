@@ -25,7 +25,7 @@ describe("Plant Lite model exchange", () => {
     expect(exchange).toMatchObject({
       schema: PLANT_LITE_MODEL_EXCHANGE_SCHEMA,
       version: 1,
-      source: { application: "Industrial Studio", kind: "authoring-draft" },
+      source: { application: "Deep Monkey Studio", kind: "authoring-draft" },
       units: {
         time: "minute",
         power: "kilowatt",
@@ -64,7 +64,7 @@ describe("Plant Lite model exchange", () => {
       status: "ready",
       preview: {
         fileName: "line.plant-lite.json",
-        sourceApplication: "Industrial Studio",
+        sourceApplication: "Deep Monkey Studio",
         nodeCount: model.nodes.length,
         resourceCount: 2,
         resourceUnitCount: 8,

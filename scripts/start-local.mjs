@@ -1,5 +1,5 @@
 import { createConnection } from "node:net";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
@@ -11,6 +11,7 @@ import {
   localStartupHelp,
   parseLocalStartupArguments,
 } from "./lib/localStartupArguments.mjs";
+import { readHttpText } from "./lib/localHttpProbe.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runtimeLogDir = join(repositoryRoot, ".runtime-logs");
@@ -19,7 +20,8 @@ let shuttingDown = false;
 let options;
 // 显式进程变量用于 CI、临时诊断和企业终端覆盖；.env 只提供未设置项。
 const environment = { ...readEnvironment(join(repositoryRoot, ".env")), ...process.env };
-const webPort = 5173;
+const webPort = positivePort(environment.BIM_STUDIO_WEB_PORT, 5173);
+const webHost = environment.BIM_STUDIO_WEB_HOST ?? "0.0.0.0";
 let apiPort;
 let apiOrigin;
 
@@ -34,7 +36,7 @@ try {
     await main();
   }
 } catch (error) {
-  process.stderr.write(`[Industrial Studio] 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`[Deep Monkey Studio] 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
   await shutdown(1);
 }
 
@@ -42,13 +44,16 @@ async function main() {
   const { target, skipInfrastructure, checkOnly, noOpen } = options;
   ensureCommand("pnpm", ["--version"]);
   if (!existsSync(join(repositoryRoot, "node_modules"))) fail("依赖尚未安装，请先运行 pnpm install");
+  const localApiExpected = environment.BIM_STUDIO_MANAGE_LOCAL_API === "true"
+    || (environment.BIM_STUDIO_MANAGE_LOCAL_API === undefined && managesLocalApi(apiOrigin, apiPort));
   // --check 只读取当前状态，不能因为一次诊断调用而启动基础设施服务。
-  if (!checkOnly && !skipInfrastructure) await ensureInfrastructure();
+  if (!checkOnly && !skipInfrastructure && localApiExpected) await ensureInfrastructure();
 
   const summary = localHealthSummary({
     target,
-    metadataStore: environment.METADATA_STORE ?? "json",
-    objectStore: environment.OBJECT_STORE ?? "local",
+    // 远程 API 自己负责存储依赖，本机只检查远程 API 身份和当前 Web。
+    metadataStore: localApiExpected ? environment.METADATA_STORE ?? "json" : "json",
+    objectStore: localApiExpected ? environment.OBJECT_STORE ?? "local" : "local",
     postgres: await canConnect(environment.POSTGRES_HOST ?? "127.0.0.1", positivePort(environment.POSTGRES_PORT, 5432)),
     minio: await endpointReachable(environment.MINIO_ENDPOINT ?? "http://127.0.0.1:9000"),
     api: await apiReachable(apiOrigin),
@@ -68,7 +73,7 @@ async function main() {
       fail(`配置的 API ${apiOrigin} 不可用；远程 API 不会由本地启动器代启`);
     }
     if (await canConnect(apiEndpoint.hostname, endpointPort)) {
-      fail(`API 端口 ${endpointPort} 已被非 Industrial Studio 服务占用`);
+      fail(`API 端口 ${endpointPort} 已被非 Deep Monkey Studio 服务占用`);
     }
     startPnpm(["--filter", "@bim-studio/api", "dev"], "API");
   }
@@ -76,20 +81,23 @@ async function main() {
   if (target === "services") {
     await waitForApi();
     announce("服务端开发环境已就绪", [`API ${apiOrigin}`]);
+    markReady();
   } else if (target === "web") {
     if (!summary.web) {
-      if (await canConnect("127.0.0.1", webPort)) fail(`Web 端口 ${webPort} 已被非 Industrial Studio 服务占用`);
+      if (await canConnect(localProbeHost(webHost), webPort)) fail(`Web 端口 ${webPort} 已被非 Deep Monkey Studio 服务占用`);
       startPnpm(["--filter", "@bim-studio/web", "dev"], "Web");
     }
     await Promise.all([
       waitForApi(),
       waitForWeb(),
     ]);
-    announce("Web 开发环境已就绪", [`http://127.0.0.1:${webPort}`]);
-    if (!noOpen) openAddress(`http://127.0.0.1:${webPort}`);
+    const webOrigin = configuredWebOrigin();
+    announce("Web 开发环境已就绪", [webOrigin]);
+    markReady();
+    if (!noOpen) openAddress(webOrigin);
   } else {
     await waitForApi();
-    if (!summary.web && await canConnect("127.0.0.1", webPort)) fail(`Web 端口 ${webPort} 已被非 Industrial Studio 服务占用`);
+    if (!summary.web && await canConnect(localProbeHost(webHost), webPort)) fail(`Web 端口 ${webPort} 已被非 Deep Monkey Studio 服务占用`);
     const desktopArgs = desktopDevelopmentArguments(summary.web);
     startPnpm(desktopArgs, "桌面客户端");
     await waitForWeb();
@@ -97,6 +105,7 @@ async function main() {
       `API ${apiOrigin}`,
       "客户端可选择“本地工作台”，也可连接上述 API",
     ]);
+    markReady();
   }
 
   await waitForChildren();
@@ -143,6 +152,7 @@ async function ensureMinio() {
     cwd: repositoryRoot,
     env: { ...environment, MINIO_ROOT_USER: environment.MINIO_ACCESS_KEY, MINIO_ROOT_PASSWORD: environment.MINIO_SECRET_KEY },
     windowsHide: true,
+    detached: process.platform !== "win32",
     stdio: ["ignore", out, err],
   });
   child.once("exit", () => { closeSync(out); closeSync(err); });
@@ -152,7 +162,13 @@ async function ensureMinio() {
 
 function startPnpm(args, label) {
   const invocation = platformCommand("pnpm", args);
-  const child = spawn(invocation.command, invocation.args, { cwd: repositoryRoot, env: environment, stdio: "inherit", windowsHide: false });
+  const child = spawn(invocation.command, invocation.args, {
+    cwd: repositoryRoot,
+    env: environment,
+    stdio: "inherit",
+    windowsHide: false,
+    detached: process.platform !== "win32",
+  });
   trackChild(child, label);
   return child;
 }
@@ -162,9 +178,11 @@ function trackChild(child, label) {
   children.add(child);
   child.once("exit", (code) => {
     children.delete(child);
-    if (!shuttingDown && code && code !== 0) {
-      process.stderr.write(`[启动失败] ${label} 退出码 ${code}\n`);
-      void shutdown(code);
+    if (!shuttingDown) {
+      // 任一受管核心进程退出都结束同一运行环境，避免状态显示健康但客户端或 Web 已经消失。
+      const exitCode = code && code !== 0 ? code : 1;
+      process.stderr.write(`[运行中断] ${label} 已退出（退出码 ${code ?? "unknown"}）\n`);
+      void shutdown(exitCode);
     }
   });
 }
@@ -177,10 +195,11 @@ function installShutdownHandlers() {
 async function shutdown(code) {
   if (shuttingDown) return;
   shuttingDown = true;
-  for (const child of children) {
-    if (!child.pid || child.killed) continue;
-    if (process.platform === "win32") spawnSync("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], { windowsHide: true, stdio: "ignore" });
-    else child.kill("SIGTERM");
+  const activeChildren = [...children].filter((child) => child.pid && !child.killed);
+  for (const child of activeChildren) terminateChildTree(child.pid, "SIGTERM");
+  await waitForChildTrees(activeChildren, 5_000);
+  for (const child of activeChildren) {
+    if (childTreeIsAlive(child.pid)) terminateChildTree(child.pid, "SIGKILL");
   }
   process.exitCode = code;
 }
@@ -194,7 +213,7 @@ async function waitForApi() {
 }
 
 async function waitForWeb() {
-  return waitForProbe(webReachable, "Web", `http://127.0.0.1:${webPort}`);
+  return waitForProbe(webReachable, "Web", configuredWebOrigin());
 }
 
 async function waitForProbe(probe, label, url) {
@@ -224,8 +243,8 @@ async function apiReachable(origin) {
 
 async function webReachable() {
   try {
-    const response = await fetch(`http://127.0.0.1:${webPort}`, { signal: AbortSignal.timeout(1_000) });
-    return response.ok && isBimStudioWebDocument(await response.text());
+    const response = await readHttpText(configuredWebOrigin(), 1_000);
+    return response.ok && isBimStudioWebDocument(response.text);
   } catch {
     return false;
   }
@@ -287,6 +306,58 @@ function configuredApiOrigin(environment, port) {
     fail("BIM_STUDIO_API_ORIGIN 必须是不含账号、路径、查询参数或片段的 HTTP(S) Origin");
   }
   return parsed.origin;
+}
+
+function managesLocalApi(origin, port) {
+  const endpoint = new URL(origin);
+  const endpointPort = Number(endpoint.port || (endpoint.protocol === "https:" ? 443 : 80));
+  return isLoopback(endpoint.hostname) && endpointPort === port;
+}
+
+function configuredWebOrigin() {
+  const protocol = environment.BIM_STUDIO_HTTPS === "true" ? "https" : "http";
+  return `${protocol}://${urlHost(localProbeHost(webHost))}:${webPort}`;
+}
+
+function localProbeHost(host) {
+  return host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
+}
+
+function urlHost(host) {
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+}
+
+function terminateChildTree(pid, signal) {
+  if (process.platform === "win32") {
+    spawnSync("taskkill.exe", ["/pid", String(pid), "/t", "/f"], { windowsHide: true, stdio: "ignore" });
+    return;
+  }
+  try { process.kill(-pid, signal); } catch { /* 子进程可能已在并发退出。 */ }
+}
+
+function childTreeIsAlive(pid) {
+  if (process.platform === "win32") {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  }
+  try { process.kill(-pid, 0); return true; } catch { return false; }
+}
+
+async function waitForChildTrees(activeChildren, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && activeChildren.some((child) => childTreeIsAlive(child.pid))) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+}
+
+function markReady() {
+  if (!options.readyFile) return;
+  mkdirSync(dirname(options.readyFile), { recursive: true });
+  // 统一入口据此区分“本次管理的进程”和“启动前已存在的外部服务”。
+  writeFileSync(options.readyFile, `${JSON.stringify({
+    readyAt: new Date().toISOString(),
+    managedProcessCount: children.size,
+    target: options.target,
+  }, null, 2)}\n`, "utf8");
 }
 
 function isLoopback(host) { return host === "127.0.0.1" || host === "localhost" || host === "::1"; }

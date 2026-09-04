@@ -31,7 +31,7 @@ views = ViewSet()
 views.Insert(view)
 options = FBXExportOptions()
 
-transaction = Transaction(doc, "Industrial Studio FBX Export")
+transaction = Transaction(doc, "Deep Monkey Studio FBX Export")
 transaction.Start()
 try:
     success = doc.Export(output_dir, "model", views, options)
@@ -40,4 +40,4 @@ try:
 finally:
     transaction.RollBack()
 
-Output("Industrial Studio exported FBX to: " + os.path.join(output_dir, "model.fbx"))
+Output("Deep Monkey Studio exported FBX to: " + os.path.join(output_dir, "model.fbx"))

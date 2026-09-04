@@ -8,7 +8,7 @@ describe("SceneManagerView product surface", () => {
   it("keeps the thumbnail primary and exposes the five frequent scene actions", () => {
     const scene = createScene();
     const html = renderToStaticMarkup(<SceneManagerView controller={{
-      branding: { systemName: "Industrial Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "Industrial Studio" },
+      branding: { systemName: "Deep Monkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "Deep Monkey Studio" },
       busy: false,
       cloudConfigured: false,
       cloudSceneLinks: {},
@@ -34,7 +34,7 @@ describe("SceneManagerView product surface", () => {
       visibleScenes: [scene],
     } as unknown as SceneManagerController} />);
 
-    expect(html).toContain("Industrial Studio");
+    expect(html).toContain("Deep Monkey Studio");
     expect(html).toContain("scene-card-thumbnail");
     expect(html).toContain("--scene-thumbnail-color:#2878c7");
     expect(html).toContain('aria-label="预览场景"');
@@ -50,7 +50,7 @@ describe("SceneManagerView product surface", () => {
 
   it("gives topology preview cards a task-oriented accessible name", () => {
     const html = renderToStaticMarkup(<SceneManagerView controller={{
-      branding: { systemName: "Industrial Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "Industrial Studio" },
+      branding: { systemName: "Deep Monkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "Deep Monkey Studio" },
       busy: false,
       cloudConfigured: false,
       cloudSceneLinks: {},

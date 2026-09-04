@@ -28,7 +28,7 @@ export function AppRootView({ bindings, onOpenDocs, onCloseDocs }: AppRootViewPr
           </div>
         }
       >
-        <DocsCenter {...(route.documentId ? { documentId: route.documentId } : {})} onNavigate={onOpenDocs} onClose={onCloseDocs} />
+        <DocsCenter systemName={branding.systemName} {...(route.documentId ? { documentId: route.documentId } : {})} onNavigate={onOpenDocs} onClose={onCloseDocs} />
       </Suspense>
     );
   }

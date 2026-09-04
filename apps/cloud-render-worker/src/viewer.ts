@@ -4,7 +4,7 @@ export function viewerHtml(sessionId: string, iceServers: IceServerConfig[]): st
   const config = JSON.stringify({ sessionId, iceServers }).replaceAll("<", "\\u003c");
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Industrial Studio 云渲染</title><style>
+<title>Deep Monkey Studio 云渲染</title><style>
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#090d0f;color:#dce5e8;font:13px system-ui,sans-serif}
 video{width:100%;height:100%;object-fit:contain;outline:0}
 .status{position:fixed;top:14px;left:14px;padding:8px 11px;border:1px solid #405058;border-radius:8px;background:#11191ddd;backdrop-filter:blur(10px)}

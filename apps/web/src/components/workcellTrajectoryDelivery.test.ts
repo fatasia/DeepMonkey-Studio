@@ -17,7 +17,7 @@ describe("workcell trajectory delivery", () => {
     const second = buildWorkcellTrajectoryDelivery(trajectories, analysis, "2026-09-03T09:00:00.000Z");
 
     expect(first.schema).toBe("bim-studio.workcell-trajectory-delivery.v1");
-    expect(first.generatedBy).toBe("Industrial Studio");
+    expect(first.generatedBy).toBe("Deep Monkey Studio");
     expect(first.traceability.trajectoryInputFingerprint).toMatch(/^fnv1a64-canonical-v1:[a-f0-9]{16}$/);
     expect(first.traceability.analysisFingerprint).toMatch(/^fnv1a64-canonical-v1:[a-f0-9]{16}$/);
     expect(first.traceability.packageFingerprint).toBe(second.traceability.packageFingerprint);

@@ -15,14 +15,14 @@ public static class BridgeSmokeBuilder
         var marker = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Build", "compile-ok.txt"));
         Directory.CreateDirectory(Path.GetDirectoryName(marker));
         File.WriteAllText(marker, Application.unityVersion);
-        Debug.Log($"Industrial Studio Unity bridge package validation succeeded: {Application.unityVersion}");
+        Debug.Log($"Deep Monkey Studio Unity bridge package validation succeeded: {Application.unityVersion}");
     }
 
     public static void Build()
     {
         CreateScene();
         if (!BimStudio.Bridge.Editor.BimStudioProjectSetup.PrepareForExport(out _, out var preparationError))
-            throw new BuildFailedException("Industrial Studio automatic project preparation failed: " + preparationError);
+            throw new BuildFailedException("Deep Monkey Studio automatic project preparation failed: " + preparationError);
         AssertPrepared();
         var output = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Build", "WebGL"));
         Directory.CreateDirectory(output);
@@ -34,9 +34,9 @@ public static class BridgeSmokeBuilder
             options = BuildOptions.None
         });
         if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
-            throw new BuildFailedException($"Industrial Studio Unity bridge smoke build failed: {report.summary.result}");
+            throw new BuildFailedException($"Deep Monkey Studio Unity bridge smoke build failed: {report.summary.result}");
         BimStudio.Bridge.Editor.BimStudioWebGLPackageExporter.CreateZip(output, Path.Combine(Path.GetDirectoryName(output), "bim-studio-webgl.zip"));
-        Debug.Log($"Industrial Studio Unity bridge smoke build succeeded: {report.summary.totalSize} bytes");
+        Debug.Log($"Deep Monkey Studio Unity bridge smoke build succeeded: {report.summary.totalSize} bytes");
     }
 
     private static void CreateScene()
@@ -51,7 +51,7 @@ public static class BridgeSmokeBuilder
         BimStudio.Bridge.Editor.BimStudioProjectSetup.EnsureBridgeObject();
         BimStudio.Bridge.Editor.BimStudioProjectSetup.EnsureManifest();
         if (!BimStudio.Bridge.Editor.BimStudioProjectSetup.EnsureActiveSceneInBuildSettings(out var error))
-            throw new BuildFailedException("Industrial Studio scene preparation failed: " + error);
+            throw new BuildFailedException("Deep Monkey Studio scene preparation failed: " + error);
         AssertPrepared();
     }
 
@@ -59,9 +59,9 @@ public static class BridgeSmokeBuilder
     {
         var bridgeObject = GameObject.Find("BimStudioBridge");
         if (bridgeObject == null || bridgeObject.GetComponent<BimStudioBridge>() == null)
-            throw new BuildFailedException("Industrial Studio automatic setup did not create the Bridge object.");
+            throw new BuildFailedException("Deep Monkey Studio automatic setup did not create the Bridge object.");
         var manifest = AssetDatabase.LoadAssetAtPath<BimStudio.Bridge.Editor.BimStudioManifestAsset>("Assets/Resources/BimStudioManifest.asset");
-        if (manifest == null) throw new BuildFailedException("Industrial Studio automatic setup did not create the Manifest asset.");
+        if (manifest == null) throw new BuildFailedException("Deep Monkey Studio automatic setup did not create the Manifest asset.");
         manifest.events = new string[0];
         manifest.actions = new string[0];
         manifest.dataLayers = new BimStudio.Bridge.Editor.BimStudioDataLayer[0];
@@ -80,12 +80,12 @@ public static class BridgeSmokeBuilder
         BimStudio.Bridge.Editor.BimStudioManifestSynchronizer.Synchronize(manifest);
         if (System.Array.Find(manifest.dataLayers, item => item.key == "telemetry") == null ||
             System.Array.IndexOf(manifest.actions, "focus") < 0 || System.Array.IndexOf(manifest.events, "device-click") < 0 || manifest.objects.Length != 1)
-            throw new BuildFailedException("Industrial Studio automatic manifest discovery did not find every no-code binding.");
+            throw new BuildFailedException("Deep Monkey Studio automatic manifest discovery did not find every no-code binding.");
         if (string.IsNullOrWhiteSpace(actionBinding.objectId))
-            throw new BuildFailedException("Industrial Studio automatic manifest discovery did not assign a stable business object ID.");
+            throw new BuildFailedException("Deep Monkey Studio automatic manifest discovery did not assign a stable business object ID.");
         var validation = BimStudio.Bridge.Editor.BimStudioManifestValidator.Validate(manifest);
-        if (!validation.IsValid) throw new BuildFailedException("Industrial Studio no-code binding validation failed: " + string.Join("; ", validation.errors));
+        if (!validation.IsValid) throw new BuildFailedException("Deep Monkey Studio no-code binding validation failed: " + string.Join("; ", validation.errors));
         var preparedScene = System.Array.Find(EditorBuildSettings.scenes, item => item.enabled && item.path == "Assets/BridgeSmoke.unity");
-        if (preparedScene == null) throw new BuildFailedException("Industrial Studio automatic setup did not enable the active scene in Build Settings.");
+        if (preparedScene == null) throw new BuildFailedException("Deep Monkey Studio automatic setup did not enable the active scene in Build Settings.");
     }
 }

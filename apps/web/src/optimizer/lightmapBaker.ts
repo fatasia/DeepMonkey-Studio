@@ -68,7 +68,7 @@ interface LightingScratch {
  * Browser-only, single-atlas static lightmap baker.
  *
  * The generated texture is attached as the standard glTF occlusion texture on
- * TEXCOORD_1, so it survives GLB export and remains usable outside Industrial Studio.
+ * TEXCOORD_1, so it survives GLB export and remains usable outside Deep Monkey Studio.
  * It preserves existing base-color textures and intentionally avoids offline
  * path tracing, UV chart optimization, and multi-bounce GI.
  */
@@ -103,10 +103,10 @@ export async function bakeWebLightmap(
     target.primitive.setAttribute(
       "TEXCOORD_1",
       document
-        .createAccessor("Industrial Studio lightmap UV")
+        .createAccessor("Deep Monkey Studio lightmap UV")
         .setType("VEC2")
         .setArray(atlasUvs)
-        .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("Industrial Studio lightmap")),
+        .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("Deep Monkey Studio lightmap")),
     );
     coveredTexels += await rasterizePrimitive(target, atlasUvs, occlusionPixels, lightingPixels, covered, resolution, options, acceleration);
     if (targetIndex % 12 === 0) {
@@ -124,8 +124,8 @@ export async function bakeWebLightmap(
   dilateTexture(occlusionPixels, covered.slice(), resolution, 3);
   dilateTexture(lightingPixels, covered.slice(), resolution, 3);
   const [occlusionPng, lightingPng] = await Promise.all([encodeTexture(occlusionPixels, resolution), encodeTexture(lightingPixels, resolution)]);
-  const occlusionTexture = document.createTexture("Industrial Studio Occlusion Lightmap").setMimeType("image/png").setImage(occlusionPng);
-  const lightingTexture = document.createTexture("Industrial Studio Colored Lightmap").setMimeType("image/png").setImage(lightingPng);
+  const occlusionTexture = document.createTexture("Deep Monkey Studio Occlusion Lightmap").setMimeType("image/png").setImage(occlusionPng);
+  const lightingTexture = document.createTexture("Deep Monkey Studio Colored Lightmap").setMimeType("image/png").setImage(lightingPng);
   const materials = new Set(targets.map((target) => target.primitive.getMaterial()).filter((material) => material !== null));
   for (const material of materials) {
     material!.setOcclusionTexture(occlusionTexture).setOcclusionStrength(1);
@@ -168,7 +168,7 @@ function collectTargets(document: Document): PrimitiveBakeTarget[] {
   let fallbackMaterial = document
     .getRoot()
     .listMaterials()
-    .find((material) => material.getName() === "Industrial Studio lightmap default");
+    .find((material) => material.getName() === "Deep Monkey Studio lightmap default");
   for (const node of document.getRoot().listNodes()) {
     const mesh = node.getMesh();
     if (mesh && !firstMatrixByMesh.has(mesh)) firstMatrixByMesh.set(mesh, new THREE.Matrix4().fromArray(node.getWorldMatrix()));
@@ -182,7 +182,7 @@ function collectTargets(document: Document): PrimitiveBakeTarget[] {
       const normal = primitive.getAttribute("NORMAL");
       if (primitive.getMode() !== 4 || !position || !normal || position.getCount() !== normal.getCount()) continue;
       if (!primitive.getMaterial()) {
-        fallbackMaterial ??= document.createMaterial("Industrial Studio lightmap default");
+        fallbackMaterial ??= document.createMaterial("Deep Monkey Studio lightmap default");
         primitive.setMaterial(fallbackMaterial);
       }
       targets.push({

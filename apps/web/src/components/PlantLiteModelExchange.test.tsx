@@ -30,7 +30,7 @@ describe("PlantLiteModelExchange", () => {
         status: "ready",
         preview: {
           fileName: "factory-a.plant-lite.json",
-          sourceApplication: "Industrial Studio",
+          sourceApplication: "Deep Monkey Studio",
           model,
           nodeCount: model.nodes.length,
           resourceCount: 1,

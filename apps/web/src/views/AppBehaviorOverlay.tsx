@@ -140,7 +140,7 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
         popupWindow.focus();
         return;
       }
-      const popup = openBehaviorWindow(locale, workspaceLabel);
+      const popup = openBehaviorWindow(locale, workspaceLabel, state.branding.systemName);
       if (!popup) {
         persistPreference(BEHAVIOR_LAYOUT_STORAGE_KEY, "float");
         state.setSceneBehaviorLayout("float");
@@ -285,11 +285,11 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
   );
 }
 
-export function behaviorWindowTitle(locale: AppLocale, workspaceLabel: string): string {
-  return tr(locale, `${workspaceLabel} · 脚本编辑器 · Industrial Studio`, `${workspaceLabel} · Script editor · Industrial Studio`);
+export function behaviorWindowTitle(locale: AppLocale, workspaceLabel: string, systemName: string): string {
+  return tr(locale, `${workspaceLabel} · 脚本编辑器 · ${systemName}`, `${workspaceLabel} · Script editor · ${systemName}`);
 }
 
-function openBehaviorWindow(locale: AppLocale, workspaceLabel: string): Window | undefined {
+function openBehaviorWindow(locale: AppLocale, workspaceLabel: string, systemName: string): Window | undefined {
   const rect = readWindowRect();
   const popup = window.open("", "bim-studio-script-editor", `popup=yes,width=${rect.width},height=${rect.height},left=${rect.left},top=${rect.top}`) ?? undefined;
   if (!popup) return undefined;
@@ -297,7 +297,7 @@ function openBehaviorWindow(locale: AppLocale, workspaceLabel: string): Window |
   const base = popup.document.createElement("base");
   base.href = document.baseURI;
   popup.document.head.replaceChildren(base, ...[...document.head.querySelectorAll('link[rel="stylesheet"],style')].map((node) => node.cloneNode(true)));
-  popup.document.title = behaviorWindowTitle(locale, workspaceLabel);
+  popup.document.title = behaviorWindowTitle(locale, workspaceLabel, systemName);
   popup.document.body.className = `${document.body.className} behavior-popout-body`;
   popup.document.body.replaceChildren();
   popup.focus();

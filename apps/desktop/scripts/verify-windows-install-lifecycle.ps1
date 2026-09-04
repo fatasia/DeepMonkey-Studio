@@ -17,7 +17,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ProductName = "Industrial Studio"
+$ProductName = "Deep Monkey Studio"
 $ProductExecutable = "bim-studio-desktop.exe"
 $ProfileDirectory = "com.bimstudio.devstudio"
 
@@ -68,7 +68,7 @@ function Resolve-InstalledExecutable($Entry) {
     if ($Entry.InstallLocation) {
         $candidates += Join-Path $Entry.InstallLocation $ProductExecutable
     }
-    $candidates += Join-Path $env:ProgramFiles "Industrial Studio\$ProductExecutable"
+    $candidates += Join-Path $env:ProgramFiles "Deep Monkey Studio\$ProductExecutable"
     $executable = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if (-not $executable) { throw "安装登记存在，但没有找到桌面主程序" }
     return (Resolve-Path -LiteralPath $executable).Path

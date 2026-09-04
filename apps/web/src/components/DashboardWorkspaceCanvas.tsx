@@ -118,7 +118,13 @@ export function DashboardWorkspaceCanvas() {
             </button>
             <button
               className={snapEnabled ? "active" : ""}
-              title={tr(locale, "智能吸附：网格、参考线和组件边缘", "Smart snap: grid, guides and component edges")}
+              aria-label={tr(locale, "智能吸附", "Smart snap")}
+              aria-pressed={snapEnabled}
+              title={tr(
+                locale,
+                "智能吸附：网格、参考线、画布与组件边缘/中心；拖动时按 Alt 临时关闭",
+                "Smart snap: grid, guides, canvas and component edges/centers; hold Alt while dragging to bypass",
+              )}
               onClick={() => setSnapEnabled((enabled) => !enabled)}
             >
               {tr(locale, "吸附", "Snap")}

@@ -8,5 +8,5 @@ fn main() {
             ]),
         ),
     )
-    .expect("failed to build Industrial Studio desktop host");
+    .expect("failed to build Deep Monkey Studio desktop host");
 }

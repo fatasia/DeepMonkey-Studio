@@ -66,7 +66,7 @@ namespace BimStudio.Bridge
                 var envelope = JsonUtility.FromJson<KeyValueEnvelope>(json);
                 if (envelope != null && !string.IsNullOrWhiteSpace(envelope.key)) target.Invoke(envelope.key, envelope.valueJson ?? "null");
             }
-            catch (Exception exception) { Debug.LogWarning($"[Industrial Studio Bridge] Invalid key/value message: {exception.Message}"); }
+            catch (Exception exception) { Debug.LogWarning($"[Deep Monkey Studio Bridge] Invalid key/value message: {exception.Message}"); }
         }
 
         private static string ReadString(string json, string key)

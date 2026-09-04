@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: value("BIM_STUDIO_WEB_HOST", "0.0.0.0"),
-      port: 5173,
+      port: boundedPort(value("BIM_STUDIO_WEB_PORT", "5173"), 5173),
       strictPort: true,
       ...(httpsEnabled ? { https: { key: readFileSync(keyPath), cert: readFileSync(certificatePath) } } : {}),
       proxy: {
@@ -83,4 +83,9 @@ function httpOrigin(value: string, variableName: string): string {
     throw new Error(`${variableName} 必须是不含账号、路径、查询参数或片段的 HTTP(S) Origin`);
   }
   return parsed.origin;
+}
+
+function boundedPort(value: string, fallback: number): number {
+  const port = Number(value);
+  return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : fallback;
 }

@@ -1,6 +1,6 @@
 # Unity WebGL 集成指南
 
-本文定义 Industrial Studio 嵌入 Unity WebGL 场景的当前接入方式、协议边界和兼容性门禁。当前交付与本机验证目标是 **Unity 2022 LTS 与 Unity 6.0**，不把协议绑定到某个 Unity Editor 小版本；现有 Unity 2023 工程可按同一协议接入但不在本轮本机构建门禁内，Unity 2021 不在项目范围；移动端不在本阶段支持范围内。
+本文定义 Deep Monkey Studio 嵌入 Unity WebGL 场景的当前接入方式、协议边界和兼容性门禁。当前交付与本机验证目标是 **Unity 2022 LTS 与 Unity 6.0**，不把协议绑定到某个 Unity Editor 小版本；现有 Unity 2023 工程可按同一协议接入但不在本轮本机构建门禁内，Unity 2021 不在项目范围；移动端不在本阶段支持范围内。
 
 ## 1. 能力状态
 
@@ -9,7 +9,7 @@
 - 二维看板可添加 `unity` 组件，配置 Unity WebGL 播放页 URL、允许的消息来源、场景列表、当前场景和事件清单。
 - Unity 构建可通过版本化 manifest 声明播放器入口、Unity 版本、场景、事件和数据层；多个看板组件可复用同一个构建清单，播放 URL 仍可按组件覆盖。
 - Unity 播放页通过 iframe 运行；设计态隔离 Unity 输入，运行态恢复输入。
-- Industrial Studio 使用版本化 `postMessage` 协议下发初始化信息、全局变量、筛选参数、组件数据、属性值、Unity 动作和目标场景；属性值在运行时修改时通过 `properties` 消息增量更新，交互流可通过 `action` 消息触发 Unity 动作。
+- Deep Monkey Studio 使用版本化 `postMessage` 协议下发初始化信息、全局变量、筛选参数、组件数据、属性值、Unity 动作和目标场景；属性值在运行时修改时通过 `properties` 消息增量更新，交互流可通过 `action` 消息触发 Unity 动作。
 - 播放页通过 `unityInstance.SendMessage()` 把消息交给 Unity 场景中的 `BimStudioBridge.ApplyStudioMessage(string)`。
 - Unity 可通过 `.jslib` 调用浏览器桥，向看板回传业务事件或运行错误。
 - 看板接收 Unity 事件后，将事件值写入 `unity.{组件数据键}.{事件名}`，并触发该组件的点击联动。
@@ -37,7 +37,7 @@ FineVis 官方文档给出的参照能力包括 Unity WebGL 资源包上传、�
 2. 构建加载器提供 `createUnityInstance()`，成功回调返回 `unityInstance`。
 3. 浏览器使用 `unityInstance.SendMessage(objectName, methodName, value)` 调用 GameObject 上的公开方法；Unity 使用 `.jslib` 调用页面 JavaScript。
 
-Unity 2022、2023 的官方 WebGL 模板文档和 Unity 6 的 Web 模板文档均保留这一路径。Industrial Studio 因而版本化自己的消息协议，而不判断 `Application.unityVersion` 后分支调用内部加载器 API。官方依据见 [Unity 2022 WebGL templates](https://docs.unity3d.com/2022.3/Documentation/Manual/webgl-templates.html)、[Unity 2023 WebGL templates](https://docs.unity3d.com/2023.2/Documentation/Manual/webgl-templates.html) 和 [Unity 6 Web templates](https://docs.unity3d.com/6000.0/Documentation/Manual/webgl-templates.html)。
+Unity 2022、2023 的官方 WebGL 模板文档和 Unity 6 的 Web 模板文档均保留这一路径。Deep Monkey Studio 因而版本化自己的消息协议，而不判断 `Application.unityVersion` 后分支调用内部加载器 API。官方依据见 [Unity 2022 WebGL templates](https://docs.unity3d.com/2022.3/Documentation/Manual/webgl-templates.html)、[Unity 2023 WebGL templates](https://docs.unity3d.com/2023.2/Documentation/Manual/webgl-templates.html) 和 [Unity 6 Web templates](https://docs.unity3d.com/6000.0/Documentation/Manual/webgl-templates.html)。
 
 “版本中立”表示桥接层不主动依赖某一版本私有实现，不表示未经构建验证即可承诺所有补丁版本。每个受支持版本仍需通过第 10 节的验收矩阵。
 
@@ -48,7 +48,7 @@ Unity 2022、2023 的官方 WebGL 模板文档和 Unity 6 的 Web 模板文档�
 ## 3. 总体链路
 
 ```text
-Industrial Studio 看板组件
+Deep Monkey Studio 看板组件
   │  postMessage: init / parameters / data / scene
   ▼
 Unity 播放页 iframe（受控 HTTP(S) origin）
@@ -62,7 +62,7 @@ Unity GameObject + C# 接收器
 Unity 播放页
   │  postMessage: ready / event / error
   ▼
-Industrial Studio 变量与交互流
+Deep Monkey Studio 变量与交互流
 ```
 
 宿主与 Unity 播放页应部署在不同 origin 时也可工作。双方通信只走结构化消息，不要求 iframe 直接读取父页面 DOM。
@@ -73,8 +73,8 @@ Industrial Studio 变量与交互流
 
 1. 在平台 Unity 资源面板下载 `com.bim-studio.bridge-0.6.1.tgz`，通过 Unity Package Manager 的 **Add package from tarball** 安装。
 2. 给业务对象添加中文 Inspector 中的“数据 / 属性绑定”“动作绑定”或“事件回传”组件；标识和业务对象可以在当前 Inspector 就地创建。
-3. 运行 **Industrial Studio/从场景自动同步集成清单** 检查自动发现结果。插件会保留已有标签、类型和选项，同时补齐数据层、属性、动作、事件、对象路径与动作目标 ID。
-4. 运行 **Industrial Studio/一键构建并导出 WebGL ZIP**。构建前会再次自动同步和校验，并自动注入浏览器桥。
+3. 运行 **Deep Monkey Studio/从场景自动同步集成清单** 检查自动发现结果。插件会保留已有标签、类型和选项，同时补齐数据层、属性、动作、事件、对象路径与动作目标 ID。
+4. 运行 **Deep Monkey Studio/一键构建并导出 WebGL ZIP**。构建前会再次自动同步和校验，并自动注入浏览器桥。
 5. 把 ZIP 拖入平台 Unity 组件。平台会展示 manifest 发现数、Bridge 状态，并可直接发送测试动作；场景、数据层、属性、动作和回传事件随后进入平台数据与交互配置。
 
 这条路径不要求用户手写 Web 模板、`.jslib` 或桥接 C#。后续小节保留的是协议说明和定制工程的手动接入参考，不是普通用户的必做步骤。
@@ -160,13 +160,13 @@ public sealed class BimStudioBridge : MonoBehaviour
         }
         catch (Exception exception)
         {
-            Debug.LogError($"Invalid Industrial Studio message: {exception.Message}");
+            Debug.LogError($"Invalid Deep Monkey Studio message: {exception.Message}");
             return;
         }
 
         if (envelope == null || envelope.source != "bim-studio" || envelope.version != 1)
         {
-            Debug.LogWarning("Ignored unsupported Industrial Studio message.");
+            Debug.LogWarning("Ignored unsupported Deep Monkey Studio message.");
             return;
         }
 
@@ -178,7 +178,7 @@ public sealed class BimStudioBridge : MonoBehaviour
             case "properties": onProperties.Invoke(json); break;
             case "action":     onAction.Invoke(json); break;
             case "scene":      onScene.Invoke(json); break;
-            default: Debug.LogWarning($"Unknown Industrial Studio message type: {envelope.type}"); break;
+            default: Debug.LogWarning($"Unknown Deep Monkey Studio message type: {envelope.type}"); break;
         }
     }
 }
@@ -317,7 +317,7 @@ public void OnDeviceClicked(string deviceId)
 
 ## 7. 多场景
 
-Industrial Studio 只发送目标场景名，不替 Unity 工程选择加载策略。Unity 侧应按项目规模实现以下任一种方式：
+Deep Monkey Studio 只发送目标场景名，不替 Unity 工程选择加载策略。Unity 侧应按项目规模实现以下任一种方式：
 
 - 小型互斥场景：`SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Single)`。
 - 需要保留公共灯光、相机、桥接器或 UI 的项目：保留 Bootstrap 场景，并用 `LoadSceneMode.Additive` 异步加载业务场景，再卸载上一个业务场景。
@@ -359,7 +359,7 @@ Unity 工程应维护一层映射表，例如：
 }
 ```
 
-当前 Industrial Studio 会读取第 11 节定义的版本化构建清单，把清单随 `init` 消息交给 Unity，并根据平台变量、二维筛选和组件数据结果持续解析/推送 `dataLayers`。Unity 工程仍负责把稳定 layer key 映射到自己的 GameObject、ECS、材质、动画或业务系统；平台不依赖反射扫描场景层级。
+当前 Deep Monkey Studio 会读取第 11 节定义的版本化构建清单，把清单随 `init` 消息交给 Unity，并根据平台变量、二维筛选和组件数据结果持续解析/推送 `dataLayers`。Unity 工程仍负责把稳定 layer key 映射到自己的 GameObject、ECS、材质、动画或业务系统；平台不依赖反射扫描场景层级。
 
 ### 8.2 Unity 事件驱动二维动作
 
@@ -369,7 +369,7 @@ Unity 工程应维护一层映射表，例如：
 window.BimStudioUnityBridge.emit("device-click", { deviceId: "pump-01" });
 ```
 
-若组件数据键为 `factory`, Industrial Studio 将写入：
+若组件数据键为 `factory`, Deep Monkey Studio 将写入：
 
 ```text
 unity.factory.device-click = { "deviceId": "pump-01" }
@@ -382,10 +382,10 @@ unity.factory.device-click = { "deviceId": "pump-01" }
 ### 9.1 Origin 与 iframe
 
 - Unity 播放 URL 和“允许的消息来源”必须是合法 `http:` 或 `https:` URL；生产环境使用 HTTPS。
-- Industrial Studio 向 iframe 发送消息时使用精确 `targetOrigin`，接收时同时校验 `event.origin` 和 `event.source === iframe.contentWindow`。
+- Deep Monkey Studio 向 iframe 发送消息时使用精确 `targetOrigin`，接收时同时校验 `event.origin` 和 `event.source === iframe.contentWindow`。
 - 播放器首次 `ready` 在尚未获知宿主来源时使用 `window.parent.postMessage(..., "*")`；收到第一条通过协议校验的宿主消息后，后续事件固定回传到该消息的 `event.origin`。宿主仍同时校验来源和 iframe 窗口。
 - 当前 iframe sandbox 允许脚本、同源能力、指针锁和下载。Unity 播放页必须部署在受控 origin，不与管理后台 Cookie、敏感 API 或用户上传的任意 HTML 共用同源权限。
-- 若 Unity 播放页不应被其他站点嵌入，应在其响应头设置适合部署拓扑的 `Content-Security-Policy: frame-ancestors ...`；同时让该策略允许 Industrial Studio 的实际 origin。
+- 若 Unity 播放页不应被其他站点嵌入，应在其响应头设置适合部署拓扑的 `Content-Security-Policy: frame-ancestors ...`；同时让该策略允许 Deep Monkey Studio 的实际 origin。
 
 ### 9.2 消息与数据
 

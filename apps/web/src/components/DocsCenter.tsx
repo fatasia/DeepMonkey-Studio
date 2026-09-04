@@ -7,11 +7,12 @@ import "./DocsCenter.css";
 
 export interface DocsCenterProps {
   documentId?: string;
+  systemName: string;
   onNavigate: (documentId: string, sectionId?: string) => void;
   onClose: () => void;
 }
 
-export function DocsCenter({ documentId, onNavigate, onClose }: DocsCenterProps) {
+export function DocsCenter({ documentId, systemName, onNavigate, onClose }: DocsCenterProps) {
   const [query, setQuery] = useState("");
   const articleRef = useRef<HTMLElement>(null);
   const activeNavigationRef = useRef<HTMLButtonElement>(null);
@@ -83,7 +84,7 @@ export function DocsCenter({ documentId, onNavigate, onClose }: DocsCenterProps)
           </button>
           <div className="docs-center-brand">
             <span><BookOpen size={19} /></span>
-            <div><strong>Industrial Studio 文档</strong><small>离线产品指南</small></div>
+            <div><strong>{systemName} 文档</strong><small>离线产品指南</small></div>
           </div>
         </div>
         <label className="docs-search-field">

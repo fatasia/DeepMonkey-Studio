@@ -59,13 +59,13 @@ ONNX Runtime only supplies the inference engine. Every imported ONNX/YOLO weight
 
 ## MPL-2.0 note
 
-`web-ifc` is distributed under MPL-2.0. Using the unmodified package does not require the Industrial Studio application as a whole to be open-sourced. If an executable distribution includes `web-ifc`, retain its copyright and license notices and tell recipients where the corresponding `web-ifc` source is available. Modifications made directly to MPL-covered files must remain available under MPL-2.0 when distributed.
+`web-ifc` is distributed under MPL-2.0. Using the unmodified package does not require the Deep Monkey Studio application as a whole to be open-sourced. If an executable distribution includes `web-ifc`, retain its copyright and license notices and tell recipients where the corresponding `web-ifc` source is available. Modifications made directly to MPL-covered files must remain available under MPL-2.0 when distributed.
 
 This repository does not vendor BIMI/商业 BIM 平台 viewer code or source from Aedifex, Pascal Editor, Massing, or xeokit.
 
 ## Dashboard design references
 
-The native React/ECharts dashboard templates and decorations are original Industrial Studio implementations. DataV React was reviewed as an MIT-licensed visual-design reference; no DataV source code, package, or image asset is vendored or included at runtime. DataV React source and license: https://github.com/DataV-Team/DataV-React
+The native React/ECharts dashboard templates and decorations are original Deep Monkey Studio implementations. DataV React was reviewed as an MIT-licensed visual-design reference; no DataV source code, package, or image asset is vendored or included at runtime. DataV React source and license: https://github.com/DataV-Team/DataV-React
 
 ## STEP and DWG converter notes
 

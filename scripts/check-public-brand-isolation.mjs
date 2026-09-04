@@ -29,6 +29,7 @@ const roots = (configuredRoots.length ? configuredRoots : defaultRoots)
 
 // 这些名称只允许存在于内部调研、许可台账与隔离测试缓存，不能进入用户可见产物。
 const forbiddenMarks = [
+  ["industrial", "studio"].join(" "),
   "itwin",
   "bentley",
   "帆软",

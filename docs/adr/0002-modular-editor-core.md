@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Industrial Studio 当前大量路由、项目状态、场景运行时和 UI 集中在 `apps/web/src/App.tsx`，二维看板又依附于三维场景快照。继续直接增加二维编辑、桌面 Host、脚本和高级三维能力，会扩大修改影响面并形成循环依赖。
+Deep Monkey Studio 当前大量路由、项目状态、场景运行时和 UI 集中在 `apps/web/src/App.tsx`，二维看板又依附于三维场景快照。继续直接增加二维编辑、桌面 Host、脚本和高级三维能力，会扩大修改影响面并形成循环依赖。
 
 项目需要同时支持 B/S 与 Tauri C/S，但团队仍维护一套前端和一套服务器；当前规模不适合微服务化，也不适合一次性重写。目标是高内聚、低耦合、可渐进迁移，并尽量通过复用减少代码，而不是通过新增抽象增加代码。
 
@@ -68,5 +68,5 @@ Industrial Studio 当前大量路由、项目状态、场景运行时和 UI 集�
 
 ## References
 
-- [Industrial Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
+- [Deep Monkey Studio 产品与架构规划](../dev-studio-product-and-architecture-plan.md)
 - [ADR-0001 轻量数字孪生集成边界](./0001-lightweight-digital-twin-integration.md)

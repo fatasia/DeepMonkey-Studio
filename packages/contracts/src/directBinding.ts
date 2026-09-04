@@ -39,7 +39,7 @@ export interface DirectBindingWebSocketOptions {
 }
 
 /**
- * A data source consumed through the Industrial Studio server gateway. Browsers must
+ * A data source consumed through the Deep Monkey Studio server gateway. Browsers must
  * never connect to endpoint directly; credentialRef is resolved server-side.
  */
 export interface DirectBindingSpec {

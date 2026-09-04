@@ -98,7 +98,7 @@ export function explosionModeName(mode: ExplosionMode, locale: AppLocale): strin
 
 export function skyboxEnglishLabel(preset: SkyboxPreset): string {
   if (preset === "none") return "Solid";
-  if (preset === "studio") return "Industrial studio";
+  if (preset === "studio") return "Factory studio";
   if (preset === "bright-studio") return "Bright studio";
   if (preset === "clear") return "Clear sky";
   if (preset === "overcast") return "Overcast";

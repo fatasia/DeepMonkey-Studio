@@ -42,7 +42,7 @@ namespace BimStudio.Bridge.Editor
         [InspectorName("可选项") ] public string[] options = Array.Empty<string>();
     }
 
-    [CreateAssetMenu(fileName = "BimStudioManifest", menuName = "Industrial Studio/Unity WebGL 集成清单")]
+    [CreateAssetMenu(fileName = "BimStudioManifest", menuName = "Deep Monkey Studio/Unity WebGL 集成清单")]
     public sealed class BimStudioManifestAsset : ScriptableObject
     {
         public string[] events = Array.Empty<string>();

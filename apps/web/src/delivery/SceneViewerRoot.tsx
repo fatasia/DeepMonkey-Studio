@@ -11,6 +11,7 @@ import {
 } from "../rendererCapabilities";
 import { applySceneViewerSnapshot } from "./applySceneViewerSnapshot";
 import { sceneViewerDeliveryManifest } from "./sceneViewerDelivery";
+import { applyDocumentBranding } from "../branding/documentBranding";
 
 /** 独立的单场景浏览入口：不挂载项目、脚本、二维或三维编辑器。 */
 export function SceneViewerRoot() {
@@ -34,8 +35,10 @@ export function SceneViewerRoot() {
   const locale = manifest.branding.defaultLocale;
 
   useEffect(() => {
-    document.title = manifest.branding.browserTitle || manifest.publication.name;
-    document.documentElement.style.setProperty("--accent", manifest.branding.primaryColor);
+    applyDocumentBranding({
+      ...manifest.branding,
+      browserTitle: manifest.branding.browserTitle || manifest.publication.name,
+    });
     let cancelled = false;
     void probeRendererCapabilities().then((probe) => {
       if (cancelled) return;

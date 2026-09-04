@@ -17,8 +17,9 @@ try {
   if ($sha256) { $sha256.Dispose() }
 }
 $rootHash = (($rootHashBytes | ForEach-Object { $_.ToString("x2") }) -join "").Substring(0, 8)
-$taskName = "IndustrialStudioServer-$rootHash"
+$taskName = "DeepMonkeyStudioServer-$rootHash"
 $pidFile = Join-Path $runtimeDirectory "production.pid"
+$nodePath = (Get-Command node.exe -ErrorAction Stop).Source
 
 function Test-Administrator {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -36,7 +37,7 @@ function Stop-NativeServer {
     $savedPid = [int](Get-Content -LiteralPath $pidFile -Raw)
     $process = Get-CimInstance Win32_Process -Filter "ProcessId = $savedPid" -ErrorAction SilentlyContinue
     if ($process -and $process.CommandLine -like "*$runner*") {
-      Stop-Process -Id $savedPid -Force
+      & taskkill.exe /PID $savedPid /T /F | Out-Null
     }
     Remove-Item -LiteralPath $pidFile -Force
   }
@@ -66,14 +67,14 @@ New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
 $powershellPath = (Get-Command powershell.exe).Source
 
 if ((Test-Administrator) -and -not $NoAutostart) {
-  $action = New-ScheduledTaskAction -Execute $powershellPath -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runner`"" -WorkingDirectory $repositoryRoot
+  $action = New-ScheduledTaskAction -Execute $powershellPath -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$runner`" -NodePath `"$nodePath`"" -WorkingDirectory $repositoryRoot
   $trigger = New-ScheduledTaskTrigger -AtStartup
   $settings = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 3650)
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -RunLevel Highest -User "SYSTEM" | Out-Null
   Start-ScheduledTask -TaskName $taskName
   Write-Output "已注册原生 Windows 服务任务：$taskName"
 } else {
-  $process = Start-Process -FilePath $powershellPath -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", $runner) -WorkingDirectory $repositoryRoot -WindowStyle Hidden -PassThru
+  $process = Start-Process -FilePath $powershellPath -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", $runner, "-NodePath", $nodePath) -WorkingDirectory $repositoryRoot -WindowStyle Hidden -PassThru
   Set-Content -LiteralPath $pidFile -Value $process.Id -Encoding ascii
   Write-Warning "当前未注册开机自启；请以管理员运行，或移除 -NoAutostart。"
 }
