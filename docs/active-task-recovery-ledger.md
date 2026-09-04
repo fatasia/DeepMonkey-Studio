@@ -361,3 +361,5 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **Sketchfab 通道首批完成（2026-09-05）**：`scripts/sync-sketchfab-models.mjs`（已提交）实测通过——license 字段为 {uid,label}，过滤规则=允许 CC0 与 "CC Attribution"（CC-BY，记 attribution），NC/SA 拒绝；首批 5 轮下载 31 个工业模型（pump/valve/conveyor/electrical/warehouse 等，169MiB，GLB 文件头校验有效，catalog `data/external-assets/source-b/catalog.json` 全部 review-required 待审计）。注意：约 1/6 结果无 .glb（仅 glTF zip）被跳过，后续可加 zip 解包。持续推进方式：每夜无规格余时跑 `node scripts/sync-sketchfab-models.mjs --per-keyword=8 --keywords=<轮换关键词>`（幂等，catalog 去重），旋转关键词直至 3000+。
 
 - U1-8a 排查记录：监控面板 `data-connector-health-panel` 渲染在全部连接卡之后（DataCenter.tsx:395，列表 343）导致选中与监控脱节。修复方向=面板上移至 `data-card-list` 之前；脚本移动未命中标记，下一会话手工编辑完成（约 30 行块整体迁移），随后浏览器截图验证。
+
+- U1-10 补充（<30% 抖动）：画布滚动条常驻 `overflow:scroll`（滚动条明灭根除，实测普通滚轮 0 反转）；Ctrl+滚轮缩放路径的 <30% 专项复现待下一窗口（Playwright wheel 无修饰键参数，需 keyboard.down 组合）。
