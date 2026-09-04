@@ -224,8 +224,7 @@ Windows 客户端还有第三个根因：旧 `TauriHostAdapter` 完全忽略 `re
 
 ## 6. 当前工作树边界
 
-- 本轮尚未提交，也未推送；所有变更都在 `dev-studio` 的工作树中。
-- 工作树中这些改动属于本轮交付，不应丢弃或从头重写。
+- 2026-09-04 状态更新：本文第 3 节描述的全部改动已提交为 `821ca74 fix: polish editors and stabilize sessions`（基线 `168168c` 之上），并已推送 `origin/dev-studio`，工作树干净。接手以 `821ca74` 为基线，不存在未提交工作树丢失风险。
 - 不要把 `apps/desktop/src-tauri/target/` 加入 Git；它是 Rust 本地构建产物。
 - 本轮没有执行全仓生产构建、安装包重打或在线发布；这些属于正式发布门禁，不代表上述产品修复未实现。
 - 换模型后若只继续功能开发，先跑聚焦检查即可；准备正式发布时再跑 `pnpm verify:release` 和桌面 bundle 验证。
@@ -244,6 +243,8 @@ pnpm quality:source-size
 ```
 
 全部通过后才能继续修改。若失败，先判断是否为现有工作树回归；不要通过删除测试或恢复旧 UI 来“修复”。
+
+2026-09-04 接手复核：以上检查在 `821ca74` 上全部通过（typecheck、聚焦 UI 测试 8 文件 30 项、server-sdk 54 项、Rust 测试、1628 文件行数门禁、`git diff --check`）。
 
 ## 8. 继续开发时的检查清单
 
