@@ -340,6 +340,39 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
                 }}
               />
             )}
+            {selectedConnection && (
+              <section className={`data-connector-health-panel ${selectedDiagnostics?.status ?? "idle"}`}>
+                <header>
+                  <div>
+                    <strong>{tr(locale, "连接运行监控", "Connector monitoring")}</strong>
+                    <small>
+                      {selectedDiagnostics
+                        ? tr(
+                            locale,
+                            `${selectedDiagnostics.totalReads} 次读取 · ${selectedDiagnostics.totalWrites} 次写入 · ${selectedDiagnostics.reconnects} 次重连`,
+                            `${selectedDiagnostics.totalReads} reads · ${selectedDiagnostics.totalWrites} writes · ${selectedDiagnostics.reconnects} reconnects`,
+                          )
+                        : tr(locale, "执行连接测试后开始记录", "Run a connection test to start collecting metrics")}
+                    </small>
+                  </div>
+                  <i>{connectorStatusLabel(selectedDiagnostics?.status, locale)}</i>
+                </header>
+                {selectedDiagnostics && (
+                  <div>
+                    <span>
+                      {tr(locale, "最近延迟", "Last latency")} <b>{selectedDiagnostics.lastLatencyMs ?? 0} ms</b>
+                    </span>
+                    <span>
+                      {tr(locale, "连续失败", "Consecutive failures")} <b>{selectedDiagnostics.consecutiveFailures}</b>
+                    </span>
+                    <span>
+                      {tr(locale, "总失败", "Total failures")} <b>{selectedDiagnostics.totalFailures}</b>
+                    </span>
+                  </div>
+                )}
+                {selectedDiagnostics?.lastError && <small title={selectedDiagnostics.lastError}>{selectedDiagnostics.lastError}</small>}
+              </section>
+            )}
             <div className="data-card-list">
               {connections.map((connection) => (
                 <article
@@ -392,39 +425,6 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
                 </div>
               )}
             </div>
-            {selectedConnection && (
-              <section className={`data-connector-health-panel ${selectedDiagnostics?.status ?? "idle"}`}>
-                <header>
-                  <div>
-                    <strong>{tr(locale, "连接运行监控", "Connector monitoring")}</strong>
-                    <small>
-                      {selectedDiagnostics
-                        ? tr(
-                            locale,
-                            `${selectedDiagnostics.totalReads} 次读取 · ${selectedDiagnostics.totalWrites} 次写入 · ${selectedDiagnostics.reconnects} 次重连`,
-                            `${selectedDiagnostics.totalReads} reads · ${selectedDiagnostics.totalWrites} writes · ${selectedDiagnostics.reconnects} reconnects`,
-                          )
-                        : tr(locale, "执行连接测试后开始记录", "Run a connection test to start collecting metrics")}
-                    </small>
-                  </div>
-                  <i>{connectorStatusLabel(selectedDiagnostics?.status, locale)}</i>
-                </header>
-                {selectedDiagnostics && (
-                  <div>
-                    <span>
-                      {tr(locale, "最近延迟", "Last latency")} <b>{selectedDiagnostics.lastLatencyMs ?? 0} ms</b>
-                    </span>
-                    <span>
-                      {tr(locale, "连续失败", "Consecutive failures")} <b>{selectedDiagnostics.consecutiveFailures}</b>
-                    </span>
-                    <span>
-                      {tr(locale, "总失败", "Total failures")} <b>{selectedDiagnostics.totalFailures}</b>
-                    </span>
-                  </div>
-                )}
-                {selectedDiagnostics?.lastError && <small title={selectedDiagnostics.lastError}>{selectedDiagnostics.lastError}</small>}
-              </section>
-            )}
             {selectedConnection && WRITABLE_CONNECTIONS.has(selectedConnection.type) && (
               <section className="data-write-panel">
                 <header>
