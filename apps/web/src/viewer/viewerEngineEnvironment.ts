@@ -70,7 +70,7 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
       if (!context) throw new Error("无法创建天空盒画布");
   
       const palettes = {
-        studio: ["#172126", "#75828a", "#d8d4ca"],
+        studio: ["#081116", "#17272e", "#314149"],
         "bright-studio": ["#d9e1e3", "#eef2f1", "#cbd2d0"],
         clear: ["#4e88b5", "#a6d2e8", "#e7eef0"],
         overcast: ["#5d6970", "#a5adb0", "#d8d8d2"],
@@ -89,8 +89,8 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
       if (preset === "studio" || preset === "bright-studio") {
         // 中性顶部柔光仅用于环境反射与背景，不改变模型材质或贴图。
         const softbox = context.createRadialGradient(500, 120, 15, 500, 120, 310);
-        softbox.addColorStop(0, "rgba(255,255,255,.58)");
-        softbox.addColorStop(0.45, "rgba(230,238,240,.18)");
+        softbox.addColorStop(0, preset === "studio" ? "rgba(205,225,231,.22)" : "rgba(255,255,255,.58)");
+        softbox.addColorStop(0.45, preset === "studio" ? "rgba(156,190,200,.08)" : "rgba(230,238,240,.18)");
         softbox.addColorStop(1, "rgba(210,220,224,0)");
         context.fillStyle = softbox;
         context.fillRect(160, 0, 680, 410);

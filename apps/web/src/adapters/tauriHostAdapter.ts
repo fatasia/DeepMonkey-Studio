@@ -14,7 +14,12 @@ export class TauriHostAdapter implements AuthStore {
   ) {}
 
   async hydrateServerProfile(): Promise<NamedServerProfile | undefined> {
-    this.profile = await this.invokeCommand<NamedServerProfile | undefined>("get_server_profile");
+    const [profile, token] = await Promise.all([
+      this.invokeCommand<NamedServerProfile | undefined>("get_server_profile"),
+      this.invokeCommand<string | undefined>("get_auth_token"),
+    ]);
+    this.profile = profile;
+    this.accessToken = token ?? "";
     return this.currentServerProfile();
   }
 
@@ -46,15 +51,14 @@ export class TauriHostAdapter implements AuthStore {
     return this.accessToken;
   }
 
-  setAccessToken(token: string, _persistent: boolean): void {
-    // M7 foundation deliberately keeps the token in memory until an audited
-    // OS-backed credential adapter is installed. "Remember me" is not faked
-    // with plaintext WebView storage.
+  setAccessToken(token: string, persistent: boolean): void {
     this.accessToken = token;
+    void this.invokeCommand<void>(persistent ? "set_auth_token" : "clear_auth_token", persistent ? { token } : undefined).catch(() => undefined);
   }
 
   clearAccessToken(): void {
     this.accessToken = "";
+    void this.invokeCommand<void>("clear_auth_token").catch(() => undefined);
   }
 
   notifyUnauthorized(): void {

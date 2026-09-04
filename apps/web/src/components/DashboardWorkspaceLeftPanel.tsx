@@ -1,4 +1,4 @@
-import { Box, CircleCheck, Copy, Eye, EyeOff, Group, Layers3, LayoutDashboard, Lock, Pencil, Plus, Trash2, TriangleAlert, Unlock } from "lucide-react";
+import { Box, Copy, Eye, EyeOff, Group, Layers3, LayoutDashboard, Lock, Pencil, Plus, Trash2, Unlock } from "lucide-react";
 import { createUpdateDashboardNodeStateCommand } from "@bim-studio/studio-core";
 import { translate as tr } from "../i18n";
 import { DashboardComponentLibrary } from "./DashboardComponentLibrary";
@@ -57,17 +57,13 @@ export function DashboardWorkspaceLeftPanel() {
     application,
     commitPageViewport,
     componentSearchRef,
-    connected,
     currentView,
-    dashboardDiagnostics,
     deleteDashboardPage,
     duplicateDashboardPage,
     leftPanelTab,
     locale,
     onSelectPage,
     page,
-    selectNode,
-    setInspectorTab,
     setLeftPanelTab,
     setTemplateLibraryOpen,
   } = useDashboardWorkspace();
@@ -134,47 +130,9 @@ export function DashboardWorkspaceLeftPanel() {
       )}
       {leftPanelTab === "components" && (
         <section className="dashboard-component-library">
-          <div className="dashboard-linkage-section">
-            <details
-              className={`dashboard-linkage-diagnostics ${dashboardDiagnostics.some((item) => item.severity === "error") ? "error" : dashboardDiagnostics.length > 0 ? "warning" : "healthy"}`}
-              open={dashboardDiagnostics.some((item) => item.severity === "error") || undefined}
-            >
-              <summary>
-                {dashboardDiagnostics.length > 0 ? <TriangleAlert size={13} /> : <CircleCheck size={13} />}
-                <span>{tr(locale, "联动诊断", "Linkage diagnostics")}</span>
-                <small>{dashboardDiagnostics.length || tr(locale, "正常", "Healthy")}</small>
-              </summary>
-              {dashboardDiagnostics.length > 0 ? (
-                <div>
-                  {dashboardDiagnostics.map((diagnostic, index) => (
-                    <button
-                      className={diagnostic.severity}
-                      key={`${diagnostic.nodeId}:${diagnostic.code}:${index}`}
-                      onClick={() => {
-                        const target = page.nodes.find((node) => node.id === diagnostic.nodeId);
-                        if (target) {
-                          selectNode(target, false, true);
-                          window.requestAnimationFrame(() =>
-                            setInspectorTab(
-                              diagnostic.code.includes("filter") || diagnostic.code.includes("linkage") || diagnostic.code.includes("drill") ? "data" : "interaction",
-                            ),
-                          );
-                        }
-                      }}
-                    >
-                      <i />
-                      <span>{locale === "zh-CN" ? diagnostic.zh : diagnostic.en}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p>{tr(locale, "参数、级联、点击联动与钻取配置未发现冲突。", "No conflicts found in parameters, cascades, click linkage, or drill configuration.")}</p>
-              )}
-            </details>
-          </div>
           <DashboardComponentLibrary
             locale={locale}
-            connected={connected}
+            projectId={application.metadata.projectId}
             sceneAvailable={application.scenes.length > 0}
             searchInputRef={componentSearchRef}
             onOpenTemplates={() => setTemplateLibraryOpen(true)}

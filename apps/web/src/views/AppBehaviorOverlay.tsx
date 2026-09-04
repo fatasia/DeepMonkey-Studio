@@ -21,7 +21,7 @@ const SceneBehaviorPanel = lazy(() => import("../components/SceneBehaviorPanel")
 export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) {
   const { state, derived, sceneEditor, applicationRuntime, actions } = bindings;
   const { activeApplication, activeDashboardPage, activeScene, applicationState, locale, route } = state;
-  const splitWidth = readSplitWidth();
+  const [splitWidth, setSplitWidth] = useState(readSplitWidth);
   const [floatRect, setFloatRect] = useState(readFloatRect);
   const [portalHost] = useState(createBehaviorPortalHost);
   const [portalReady, setPortalReady] = useState(false);
@@ -181,6 +181,9 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
         return location?.kind === "object" ? location.sceneId : undefined;
       }}
       onUpsert={applicationRuntime.upsertBehaviorScript}
+      autoSaveEnabled={state.autoSaveEnabled}
+      onAutoSaveChange={applicationRuntime.changeAutoSave}
+      onSaveWorkspace={applicationRuntime.saveActiveApplication}
       onDelete={applicationRuntime.deleteBehaviorScript}
       onReplaceScripts={applicationRuntime.replaceBehaviorScripts}
       onDependenciesChange={applicationRuntime.replaceScriptDependencies}
@@ -255,6 +258,7 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
             const startX = event.clientX;
             const startWidth = slot.getBoundingClientRect().width;
             let latestWidth = startWidth;
+            slot.classList.add("is-resizing");
             const move = (next: PointerEvent) => {
               const width = Math.max(520, Math.min(window.innerWidth - 360, startWidth + next.clientX - startX));
               latestWidth = width;
@@ -263,6 +267,8 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
             const stop = () => {
               window.removeEventListener("pointermove", move);
               window.removeEventListener("pointerup", stop);
+              slot.classList.remove("is-resizing");
+              setSplitWidth(latestWidth);
               persistPreference(BEHAVIOR_SPLIT_WIDTH_STORAGE_KEY, String(latestWidth));
             };
             window.addEventListener("pointermove", move);
@@ -277,6 +283,7 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
             const width = slot.getBoundingClientRect().width + (event.key === "ArrowRight" ? step : -step);
             const nextWidth = Math.max(520, Math.min(window.innerWidth - 360, width));
             slot.style.setProperty("--behavior-split-width", `${nextWidth}px`);
+            setSplitWidth(nextWidth);
             persistPreference(BEHAVIOR_SPLIT_WIDTH_STORAGE_KEY, String(nextWidth));
           }}
         />

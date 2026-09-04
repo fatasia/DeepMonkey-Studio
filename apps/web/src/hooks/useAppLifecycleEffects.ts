@@ -133,6 +133,7 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: number | undefined;
     const requireLogin = () => {
       setAuthToken();
       setCurrentUser(undefined);
@@ -147,20 +148,27 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
       setCurrentUser(localDesktopUser());
       setAuthReady(true);
     } else if (!getAuthToken()) setAuthReady(true);
-    else
-      void api
-        .me()
-        .then((user) => {
-          if (!cancelled) setCurrentUser(user);
-        })
-        .catch(() => {
-          if (!cancelled) requireLogin();
-        })
-        .finally(() => {
-          if (!cancelled) setAuthReady(true);
+    else {
+      const restoreSession = () => {
+        void api.me().then((user) => {
+          if (cancelled) return;
+          setCurrentUser(user);
+          setAuthReady(true);
+        }).catch(() => {
+          if (cancelled) return;
+          // 401 交给统一二次复核；断网和 5xx 保持凭据并等待服务恢复，不跳回登录页。
+          if (!getAuthToken()) {
+            setAuthReady(true);
+            return;
+          }
+          retryTimer = window.setTimeout(restoreSession, 2_000);
         });
+      };
+      restoreSession();
+    }
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       window.removeEventListener("bim-studio-auth-required", requireLogin);
     };
   }, []);

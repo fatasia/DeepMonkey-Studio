@@ -10,7 +10,7 @@ interface EditorEmptyStateAction {
 interface EditorEmptyStateProps {
   icon: ReactNode;
   title: string;
-  description: string;
+  description?: string;
   primaryAction: EditorEmptyStateAction;
   secondaryAction?: EditorEmptyStateAction;
   hint?: string;
@@ -29,7 +29,7 @@ export function EditorEmptyState(props: EditorEmptyStateProps) {
     >
       <span className="editor-empty-icon">{props.icon}</span>
       <strong>{props.title}</strong>
-      <p>{props.description}</p>
+      {props.description && <p>{props.description}</p>}
       <div>
         <button type="button" className="primary" onClick={props.primaryAction.onClick}>
           {props.primaryAction.icon}{props.primaryAction.label}

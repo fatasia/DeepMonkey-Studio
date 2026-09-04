@@ -46,6 +46,9 @@ export function SceneBehaviorPanel(props: {
   preferredTarget?: BehaviorCodeTarget;
   paused: boolean;
   onUpsert: (script: ScriptModule) => void;
+  autoSaveEnabled: boolean;
+  onAutoSaveChange: (enabled: boolean) => void;
+  onSaveWorkspace: () => void | Promise<unknown>;
   onDelete: (scriptId: string) => void;
   onDependenciesChange: (dependencies: readonly ApplicationScriptDependency[]) => void | Promise<void>;
   onReplaceScripts: (scripts: readonly ScriptModule[]) => void | Promise<void>;
@@ -201,7 +204,8 @@ export function SceneBehaviorPanel(props: {
     props.onUpsert(draft);
     setAiDraftInserted(false);
     setAiDraftUndo(undefined);
-    setActionFeedback(tr(props.locale, "修改已应用", "Changes applied"));
+    globalThis.setTimeout(() => void props.onSaveWorkspace(), 0);
+    setActionFeedback(tr(props.locale, "脚本已保存", "Script saved"));
   }
 
   function leaveForWorkspace(action: () => void | Promise<void>) {
@@ -286,6 +290,10 @@ export function SceneBehaviorPanel(props: {
                   {...(props.preferredTarget ? { preferredTarget: props.preferredTarget } : {})}
                   onChange={changeAttachedTarget}
                 />
+                <label className="behavior-auto-save" title={tr(props.locale, "与二维、三维工作区使用同一自动保存设置", "Uses the same auto-save setting as the 2D and 3D workspaces")}>
+                  <input type="checkbox" checked={props.autoSaveEnabled} onChange={(event) => props.onAutoSaveChange(event.target.checked)} />
+                  <span>{tr(props.locale, "自动保存", "Auto save")}</span>
+                </label>
                 <label className="behavior-enabled" aria-label={draft.enabled ? tr(props.locale, "停用脚本", "Disable script") : tr(props.locale, "启用脚本", "Enable script")} title={draft.enabled ? tr(props.locale, "停用脚本", "Disable script") : tr(props.locale, "启用脚本", "Enable script")}>
                   <input aria-label={draft.enabled ? tr(props.locale, "停用脚本", "Disable script") : tr(props.locale, "启用脚本", "Enable script")} type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
                   <Power size={13} aria-hidden="true" />
@@ -307,8 +315,9 @@ export function SceneBehaviorPanel(props: {
                 >
                   <Sparkles size={13} />
                 </button>
-                <button className="behavior-toolbar-icon" aria-label={tr(props.locale, "应用修改", "Apply changes")} title={tr(props.locale, "应用修改", "Apply changes")} disabled={!dirty || !draft.name.trim()} onClick={applyChanges}>
+                <button className="behavior-save-action" aria-label={tr(props.locale, "保存脚本", "Save script")} title={tr(props.locale, "保存脚本（Ctrl/Cmd+S）", "Save script (Ctrl/Cmd+S)")} disabled={!dirty || !draft.name.trim()} onClick={applyChanges}>
                   <Save size={13} />
+                  {tr(props.locale, "保存", "Save")}
                 </button>
                 <button className="behavior-toolbar-icon" aria-label={tr(props.locale, "下载当前 JS", "Download current JS")} title={tr(props.locale, "下载当前 JS", "Download current JS")} onClick={() => downloadTextFile(draft.code, scriptDownloadFileName(draft.name), "text/javascript;charset=utf-8")}>
                   <Download size={13} />

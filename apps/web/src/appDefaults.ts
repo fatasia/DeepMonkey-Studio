@@ -46,7 +46,7 @@ export const DEFAULT_LIGHTING: GlobalLightingState = {
 
 export const DEFAULT_ENVIRONMENT: SceneEnvironmentState = {
   gridVisible: true,
-  backgroundColor: "#182127",
+  backgroundColor: "#0b1419",
   skybox: "studio",
   environmentAsBackground: false,
   environmentIntensity: 1

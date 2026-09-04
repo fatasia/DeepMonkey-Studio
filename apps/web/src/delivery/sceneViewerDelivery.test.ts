@@ -79,7 +79,7 @@ function manifest() {
       snapshot: { id: "scene-1", projectId: "project-1", name: "工作站", schemaVersion: 1, publicationMode: "cloud", models: [], primitives: [], measurements: [], objects: [], layers: [], settings: {}, camera: {}, createdAt: publishedAt, updatedAt: publishedAt },
     },
     project: { id: "project-1", name: "工厂", description: "", models: [], createdAt: publishedAt, updatedAt: publishedAt },
-    branding: { systemName: "Deep Monkey Studio", browserTitle: "工作站", loginSubtitle: "", copyright: "", logoUrl: "/brand/logo-industrial.svg", iconUrl: "/brand/app-icon-industrial.svg", primaryColor: "#d6aa4d", defaultLocale: "zh-CN", defaultEntry: "manager", defaultSceneBackground: "#202a31", defaultGridVisible: true, maintenanceEnabled: false, maintenanceMessage: "" },
+    branding: { systemName: "Deep Monkey Studio", browserTitle: "工作站", loginSubtitle: "", copyright: "", logoUrl: "/brand/logo-industrial.svg", iconUrl: "/brand/app-icon-industrial.svg", primaryColor: "#d6aa4d", themeMode: "dark", defaultLocale: "zh-CN", defaultEntry: "manager", defaultSceneBackground: "#202a31", defaultGridVisible: true, maintenanceEnabled: false, maintenanceMessage: "" },
     assets: [],
   };
 }

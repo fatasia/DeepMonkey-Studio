@@ -158,8 +158,9 @@ describe("DashboardWorkspace", () => {
     expect(html).toContain('aria-label="智能吸附"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('aria-label="页面宽度"');
-    expect(html).toContain("实时翻牌指标");
-    expect(html).toContain("液位达成率");
-    expect(html).toContain("告警滚动表");
+    expect(html).toContain("页面与图层");
+    expect(html).toContain("纯三维 看板");
+    expect(html).not.toContain('class="dashboard-page-tabs"');
+    expect(html).not.toContain("空格/中键平移");
   });
 });

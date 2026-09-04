@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, LoaderCircle, RadioTower } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { AlertTriangle, CheckCircle2, LoaderCircle, RadioTower, Upload } from "lucide-react";
 import type { DashboardDataWidgetConfig, ProjectAssetRecord } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { liveSourceUrl, mediaUrlErrorMessage } from "./dashboardMedia";
@@ -20,6 +20,8 @@ export function DashboardMediaInspector({
   const [sourceDraft, setSourceDraft] = useState(widget.monitorSourceUrl ?? "");
   const [resolving, setResolving] = useState(false);
   const [resolveStatus, setResolveStatus] = useState<{ kind: "success" | "error"; text: string }>();
+  const [uploading, setUploading] = useState(false);
+  const localFileRef = useRef<HTMLInputElement>(null);
   const assetKind = widget.type === "image" ? "image" : widget.type === "video" ? "video" : undefined;
   const matchingAssets = useMemo(() => assets.filter((asset) => asset.kind === assetKind), [assetKind, assets]);
 
@@ -45,9 +47,37 @@ export function DashboardMediaInspector({
     setResolveStatus(undefined);
   }, [widget.monitorSourceUrl, widget.type]);
 
+  async function uploadLocalMedia(file: File | undefined) {
+    if (!file || !assetKind) return;
+    setUploading(true);
+    setAssetError(false);
+    try {
+      const { api } = await import("../api");
+      const asset = assetKind === "image"
+        ? await api.uploadImageAsset(projectId, file)
+        : await api.uploadVideoAsset(projectId, file);
+      setAssets((current) => [...current.filter((item) => item.id !== asset.id), asset]);
+      onChange(assetKind === "image"
+        ? { assetId: asset.id, imageUrl: asset.url }
+        : { assetId: asset.id, videoUrl: asset.url });
+    } catch {
+      setAssetError(true);
+    } finally {
+      setUploading(false);
+      if (localFileRef.current) localFileRef.current.value = "";
+    }
+  }
+
   if (widget.type === "image")
     return (
       <>
+        <LocalUpload
+          locale={locale}
+          kind="image"
+          busy={uploading}
+          inputRef={localFileRef}
+          onFile={(file) => void uploadLocalMedia(file)}
+        />
         <AssetSelector
           locale={locale}
           assets={matchingAssets}
@@ -83,6 +113,13 @@ export function DashboardMediaInspector({
   if (widget.type === "video")
     return (
       <>
+        <LocalUpload
+          locale={locale}
+          kind="video"
+          busy={uploading}
+          inputRef={localFileRef}
+          onFile={(file) => void uploadLocalMedia(file)}
+        />
         <AssetSelector
           locale={locale}
           assets={matchingAssets}
@@ -186,6 +223,30 @@ export function DashboardMediaInspector({
       </small>
       <PlaybackOptions locale={locale} widget={widget} onChange={onChange} />
     </>
+  );
+}
+
+function LocalUpload({ locale, kind, busy, inputRef, onFile }: {
+  locale: AppLocale;
+  kind: "image" | "video";
+  busy: boolean;
+  inputRef: RefObject<HTMLInputElement | null>;
+  onFile: (file: File | undefined) => void;
+}) {
+  return (
+    <div className="dashboard-local-media-upload">
+      <input
+        ref={inputRef}
+        hidden
+        type="file"
+        accept={kind === "image" ? "image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif" : "video/mp4,video/webm,video/ogg,application/vnd.apple.mpegurl"}
+        onChange={(event) => onFile(event.target.files?.[0])}
+      />
+      <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>
+        {busy ? <LoaderCircle className="spin" size={13} /> : <Upload size={13} />}
+        {busy ? tr(locale, "正在上传…", "Uploading…") : tr(locale, "本地上传", "Upload local file")}
+      </button>
+    </div>
   );
 }
 

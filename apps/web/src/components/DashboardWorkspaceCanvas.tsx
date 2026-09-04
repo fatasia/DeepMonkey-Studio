@@ -5,10 +5,13 @@ import {
   AlignEndVertical,
   AlignStartHorizontal,
   AlignStartVertical,
+  CircleHelp,
   Focus,
+  Grid3X3,
   Group,
   LayoutTemplate,
   Minus,
+  Magnet,
   Plus,
   Scaling,
   ScanSearch,
@@ -93,9 +96,6 @@ export function DashboardWorkspaceCanvas() {
       <div className="dashboard-canvas-toolbar">
         <span>
           {page.width} × {page.height}
-          <small>
-            {tr(locale, "空格/中键平移 · Ctrl/Cmd+滚轮缩放 · Shift 框选 · 方向键微调", "Space/middle-button pan · Ctrl/Cmd+wheel zoom · Shift box-select · Arrows nudge")}
-          </small>
           {overflowNodeIds.length > 0 && (
             <button
               className="dashboard-overflow-warning"
@@ -108,6 +108,19 @@ export function DashboardWorkspaceCanvas() {
         </span>
         <div className="dashboard-layout-tools" aria-label={tr(locale, "排版工具", "Layout tools")}>
           <div className="dashboard-tool-group">
+            <span className="dashboard-shortcuts-help">
+              <button aria-label={tr(locale, "快捷键", "Keyboard shortcuts")} title={tr(locale, "快捷键", "Keyboard shortcuts")}>
+                <CircleHelp size={14} />
+              </button>
+              <span role="tooltip">
+                <strong>{tr(locale, "快捷键", "Keyboard shortcuts")}</strong>
+                <kbd>Space / MMB</kbd><em>{tr(locale, "平移画布", "Pan canvas")}</em>
+                <kbd>Ctrl / Cmd + Wheel</kbd><em>{tr(locale, "缩放画布", "Zoom canvas")}</em>
+                <kbd>Shift + Drag</kbd><em>{tr(locale, "框选组件", "Box select")}</em>
+                <kbd>Arrow</kbd><em>{tr(locale, "微调位置", "Nudge selection")}</em>
+                <kbd>Ctrl / Cmd + F</kbd><em>{tr(locale, "搜索组件", "Search components")}</em>
+              </span>
+            </span>
             <button
               className={marqueeMode ? "active" : ""}
               aria-label={tr(locale, "框选组件（Shift+拖动）", "Box select (Shift-drag)")}
@@ -127,13 +140,13 @@ export function DashboardWorkspaceCanvas() {
               )}
               onClick={() => setSnapEnabled((enabled) => !enabled)}
             >
-              {tr(locale, "吸附", "Snap")}
+              <Magnet size={13} />
             </button>
-            <button className={guidesVisible ? "active" : ""} title={tr(locale, "显示或隐藏参考线", "Show or hide guides")} onClick={() => setGuidesVisible((visible) => !visible)}>
-              {tr(locale, "参考线", "Guides")}
+            <button className={guidesVisible ? "active" : ""} aria-label={tr(locale, "显示或隐藏参考线", "Show or hide guides")} title={tr(locale, "显示或隐藏参考线", "Show or hide guides")} onClick={() => setGuidesVisible((visible) => !visible)}>
+              <Grid3X3 size={13} />
             </button>
           </div>
-          <div className="dashboard-tool-group">
+          {(layoutSelectionCount >= 2 || page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.groupId && node.locked !== true)) && <div className="dashboard-tool-group">
             <button
               disabled={selectedNodeIds.filter((id) => page.nodes.some((node) => node.id === id && node.locked !== true)).length < 2}
               aria-label={tr(locale, "编组", "Group")}
@@ -150,8 +163,8 @@ export function DashboardWorkspaceCanvas() {
             >
               <Ungroup size={13} />
             </button>
-          </div>
-          <div className="dashboard-tool-group">
+          </div>}
+          {layoutSelectionCount >= 2 && <div className="dashboard-tool-group">
             <button disabled={layoutSelectionCount < 2} aria-label={tr(locale, "左对齐", "Align left")} title={tr(locale, "左对齐", "Align left")} onClick={() => layoutSelectedNodes("left")}>
               <AlignStartVertical size={13} />
             </button>
@@ -170,8 +183,8 @@ export function DashboardWorkspaceCanvas() {
             <button disabled={layoutSelectionCount < 2} aria-label={tr(locale, "底对齐", "Align bottom")} title={tr(locale, "底对齐", "Align bottom")} onClick={() => layoutSelectedNodes("bottom")}>
               <AlignEndHorizontal size={13} />
             </button>
-          </div>
-          <div className="dashboard-tool-group">
+          </div>}
+          {layoutSelectionCount >= 3 && <div className="dashboard-tool-group">
             <button
               className="wide"
               disabled={layoutSelectionCount < 3}
@@ -188,7 +201,7 @@ export function DashboardWorkspaceCanvas() {
             >
               {tr(locale, "纵向等距", "V distribute")}
             </button>
-          </div>
+          </div>}
         </div>
         <div>
           <button
@@ -299,8 +312,7 @@ export function DashboardWorkspaceCanvas() {
             {page.nodes.length === 0 && (
               <EditorEmptyState
                 icon={<LayoutTemplate size={20} />}
-                title={tr(locale, "从一个清晰的起点开始", "Start from a clear foundation")}
-                description={tr(locale, "使用行业模板快速形成完整布局，或从左侧选择组件自由搭建。", "Use an industry template for a complete layout, or build freely from the component library.")}
+                title={tr(locale, "开始设计", "Start designing")}
                 primaryAction={{ label: tr(locale, "选择行业模板", "Choose a template"), icon: <LayoutTemplate size={13} />, onClick: () => setTemplateLibraryOpen(true) }}
                 secondaryAction={{
                   label: tr(locale, "浏览组件", "Browse components"),
@@ -310,7 +322,6 @@ export function DashboardWorkspaceCanvas() {
                     window.requestAnimationFrame(() => componentSearchRef.current?.focus());
                   },
                 }}
-                hint={tr(locale, "也可以把左侧组件直接拖到画布", "You can also drag components directly from the left panel")}
                 variant="canvas"
                 displayScale={1 / zoom}
               />

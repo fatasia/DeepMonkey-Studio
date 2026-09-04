@@ -103,6 +103,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "url",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

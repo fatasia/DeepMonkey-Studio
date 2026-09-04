@@ -162,6 +162,7 @@ export interface SystemBrandingSettings {
   logoUrl: string;
   iconUrl: string;
   primaryColor: string;
+  themeMode: "dark" | "light";
   defaultLocale: "zh-CN" | "en-US";
   defaultEntry: "manager" | "studio" | "data";
   defaultSceneBackground: string;
@@ -180,6 +181,7 @@ export const DEFAULT_PRODUCT_BRANDING: Readonly<SystemBrandingSettings> = {
   logoUrl: "/brand/logo-industrial.svg",
   iconUrl: "/brand/app-icon-industrial.svg",
   primaryColor: "#d6aa4d",
+  themeMode: "dark",
   defaultLocale: "zh-CN",
   defaultEntry: "manager",
   defaultSceneBackground: "#202a31",

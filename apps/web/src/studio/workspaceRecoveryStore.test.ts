@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
-import { createWorkspaceRecoveryDraft, isWorkspaceRecoveryDraft, workspaceRecoveryKey } from "./workspaceRecoveryStore";
+import { createWorkspaceRecoveryDraft, hasRecoverableWorkspaceChanges, isWorkspaceRecoveryDraft, workspaceRecoveryKey } from "./workspaceRecoveryStore";
 
 const timestamp = "2026-08-29T00:00:00.000Z";
 const scene: SceneSnapshot = {
@@ -22,5 +22,11 @@ describe("workspaceRecoveryStore", () => {
 
   it("rejects corrupt records before they reach the editor", () => {
     expect(isWorkspaceRecoveryDraft({ schemaVersion: 1, key: "x", projectId: "p", sceneId: "s", savedAt: timestamp, scene: { schemaVersion: 1, id: "other" } })).toBe(false);
+  });
+
+  it("does not prompt when only the server timestamp changed", () => {
+    const draft = createWorkspaceRecoveryDraft("project-1", undefined, scene);
+    expect(hasRecoverableWorkspaceChanges(draft, { ...scene, updatedAt: "2026-08-29T01:00:00.000Z" })).toBe(false);
+    expect(hasRecoverableWorkspaceChanges(draft, { ...scene, name: "装配线 B" })).toBe(true);
   });
 });

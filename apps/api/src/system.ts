@@ -390,6 +390,7 @@ function normalizeBrandingSettings(settings: SystemBrandingSettings): SystemBran
       .trim()
       .slice(0, 160),
     primaryColor: color,
+    themeMode: settings.themeMode === "light" ? "light" : "dark",
     defaultSceneBackground: background,
     defaultLocale: settings.defaultLocale === "en-US" ? "en-US" : "zh-CN",
     defaultEntry: settings.defaultEntry === "studio" || settings.defaultEntry === "data" ? settings.defaultEntry : "manager",

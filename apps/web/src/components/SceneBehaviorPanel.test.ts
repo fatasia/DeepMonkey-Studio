@@ -29,6 +29,9 @@ describe("sceneScriptResourceSnippet", () => {
         codeTargets: [],
         intelligence: { targets: [], references: [], dataKeys: [], eventNames: [] },
         paused: false,
+        autoSaveEnabled: true,
+        onAutoSaveChange: vi.fn(),
+        onSaveWorkspace: vi.fn(),
         onUpsert: vi.fn(),
         onDelete: vi.fn(),
         onReplaceScripts: vi.fn(),
@@ -49,13 +52,12 @@ describe("sceneScriptResourceSnippet", () => {
     expect(html).not.toContain('aria-label="编辑模式"');
     expect(html).not.toContain("生产应用 · 总览页面");
     expect(html).toContain('aria-label="脚本运行操作"');
-    expect(html).toContain('aria-label="AI 脚本助手"');
-    expect(html).toContain('aria-label="脚本版本"');
+    expect(html).toContain("AI 脚本助手");
+    expect(html).toContain("脚本版本");
     expect(html).toContain('aria-label="收起脚本列表"');
-    expect(html).toContain('aria-label="独立窗口"');
+    expect(html).toContain("独立窗口");
     expect(html).toContain('aria-label="调整脚本列表宽度"');
     expect(html).toContain("inspector-collapsed");
-    expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain(">AI 生成草稿<");
     expect(html).not.toContain(">应用修改<");
     expect(html).not.toContain(">还原<");
@@ -65,10 +67,11 @@ describe("sceneScriptResourceSnippet", () => {
     const html = renderToStaticMarkup(createElement(SceneBehaviorPanel, {
       locale: "zh-CN", scripts: [], dependencies: [], runtimeEntries: [], logs: [], codeTargets: [],
       intelligence: { targets: [], references: [], dataKeys: [], eventNames: [] }, paused: false,
+      autoSaveEnabled: true, onAutoSaveChange: vi.fn(), onSaveWorkspace: vi.fn(),
       onUpsert: vi.fn(), onDelete: vi.fn(), onReplaceScripts: vi.fn(), onDependenciesChange: vi.fn(), onRun: vi.fn(), onPauseResume: vi.fn(), onStop: vi.fn(),
       onClearLogs: vi.fn(), onOpenDocs: vi.fn(), resolveSceneId: vi.fn(), onFocusTarget: vi.fn(),
       layoutMode: "window", onLayoutModeChange: vi.fn(), onClose: vi.fn(),
     }));
-    expect(html).toContain('aria-label="收回主窗口"');
+    expect(html).toContain("分屏");
   });
 });

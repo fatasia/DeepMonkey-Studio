@@ -71,7 +71,7 @@ export function BrandingSettingsPage({ value, locale, onChange, onBack }: Brandi
 
       <div className="branding-layout">
         <section className="branding-preview">
-          <div className="branding-preview-window" style={{ "--preview-accent": draft.primaryColor } as CSSProperties}>
+          <div className={`branding-preview-window theme-${draft.themeMode}`} style={{ "--preview-accent": draft.primaryColor } as CSSProperties}>
             <div className="branding-preview-bar">
               <img src={draft.iconUrl} alt="Icon" />
               <span>{draft.browserTitle}</span>
@@ -129,6 +129,13 @@ export function BrandingSettingsPage({ value, locale, onChange, onBack }: Brandi
               </div>
             </header>
             <div className="branding-form-grid">
+              <label>
+                <span>{t("界面主题", "Interface theme")}</span>
+                <select value={draft.themeMode} onChange={(event) => patch("themeMode", event.target.value as SystemBrandingSettings["themeMode"])}>
+                  <option value="dark">{t("深色", "Dark")}</option>
+                  <option value="light">{t("浅色", "Light")}</option>
+                </select>
+              </label>
               <label>
                 <span>{t("系统名称", "System name")}</span>
                 <input value={draft.systemName} onChange={(event) => patch("systemName", event.target.value)} />

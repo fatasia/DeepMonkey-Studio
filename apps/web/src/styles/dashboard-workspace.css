@@ -106,7 +106,7 @@
 .dashboard-template-search { display:flex;align-items:center;gap:7px;margin:0;padding:0 10px;height:34px;color:#6d7d84;border:1px solid #344147;border-radius:6px;background:#0f1619; }
 .dashboard-template-search input { width:100%;border:0;outline:0;color:#dde4e7;background:transparent;font-size:10px; }
 .dashboard-template-filters>select { min-width:0;padding:0 9px;color:#bdc8cc;border:1px solid #344147;border-radius:6px;background:#0f1619;font-size:9px; }
-.dashboard-template-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:14px 16px 18px;overflow:auto; }
+.dashboard-template-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:286px;align-content:start;gap:12px;padding:14px 16px 18px;overflow:auto; }
 .dashboard-template-grid article { position:relative;display:grid;overflow:hidden;border:1px solid #303c42;border-radius:8px;background:#11181b;grid-template-rows:128px minmax(92px,1fr) auto; }
 .dashboard-template-grid .dashboard-template-card-preview { min-height:128px;border:0;border-bottom:1px solid #2e393f;border-radius:0; }
 .dashboard-template-grid article>div:nth-child(2) { display:grid;align-content:start;gap:4px;padding:10px 11px; }
@@ -138,7 +138,12 @@
 .dashboard-runtime-status span { display:inline-flex;align-items:center;gap:4px; }
 .dashboard-runtime-status .healthy { color:#75aa94; }.dashboard-runtime-status .warning { color:#c4a25a; }.dashboard-runtime-status .error { color:#db7f75; }
 .dashboard-runtime-status output { min-width:32px;color:#a7b2b7;text-align:right; }
-.dashboard-canvas-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; overflow-x: auto; color: #717e84; border-bottom: 1px solid #242d31; background: #121719; font-size: 8px; scrollbar-width: thin; }
+.dashboard-page-context { min-width:0;overflow:hidden;padding:0 12px;color:#89979d;font-size:11px;text-overflow:ellipsis;white-space:nowrap; }
+.dashboard-panel-controls .panel-toggle-left { left:206px; }
+.dashboard-panel-controls .panel-toggle-right { right:238px; }
+.dashboard-workspace.left-panel-collapsed .dashboard-panel-controls .panel-toggle-left { left:8px; }
+.dashboard-workspace.inspector-collapsed .dashboard-panel-controls .panel-toggle-right { right:8px; }
+.dashboard-canvas-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; overflow: visible; color: #717e84; border-bottom: 1px solid #242d31; background: #121719; font-size: 8px; }
 .dashboard-canvas-toolbar > span { display: flex; align-items: center; gap: 10px; }
 .dashboard-canvas-toolbar > span,.dashboard-canvas-toolbar > div { flex: 0 0 auto; }
 .dashboard-canvas-toolbar > span small { color: #4f5c62; font-size: 7px; }
@@ -153,6 +158,12 @@
 .dashboard-layout-tools button.active { color: #1a160d; border-color: #d7ad51; background: #d7ad51; }
 .dashboard-layout-tools button.wide,.dashboard-layout-tools button:nth-child(2),.dashboard-layout-tools button:nth-child(3) { width:auto; min-width:42px; padding:0 6px; }
 .dashboard-canvas-toolbar output { width: 42px; color: #aab4b9; text-align: center; }
+.dashboard-shortcuts-help { position:relative;display:inline-flex!important; }
+.dashboard-shortcuts-help>span { position:absolute;z-index:40;top:calc(100% + 8px);left:0;display:grid;width:250px;padding:10px 11px;gap:7px;color:#9ca9ae;border:1px solid #3c484e;border-radius:8px;background:#151d20;box-shadow:0 14px 38px rgba(0,0,0,.48);grid-template-columns:auto 1fr;opacity:0;pointer-events:none;transform:translateY(-3px);transition:opacity .12s ease,transform .12s ease; }
+.dashboard-shortcuts-help:hover>span,.dashboard-shortcuts-help:focus-within>span { opacity:1;transform:none; }
+.dashboard-shortcuts-help>span strong { grid-column:1/-1;color:#e1e7e9;font-size:11px; }
+.dashboard-shortcuts-help>span kbd { color:#e0bf6d;font:10px/1.4 ui-monospace,monospace;white-space:nowrap; }
+.dashboard-shortcuts-help>span em { color:#87969c;font-size:10px;font-style:normal; }
 .dashboard-canvas-scroll { position:relative; min-width: 0; min-height: 0; padding: 0; overflow: auto; cursor:default; background-color: #101517; background-image: radial-gradient(circle,#263136 1px,transparent 1px); background-size: 16px 16px; }
 .dashboard-canvas-scroll.panning { cursor:grabbing; user-select:none; }
 .dashboard-artboard-stage { position: relative; margin: 0; }

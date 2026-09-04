@@ -234,9 +234,8 @@ export function SceneDataBindingEditor({
         <header>
           <div>
             <strong>{targetName}</strong>
-            <small>{tr(locale, "数据产品直接驱动当前对象", "Data products directly drive this object")}</small>
           </div>
-          <button onClick={onOpenData}>
+          <button onClick={onOpenData} title={tr(locale, "打开数据中心", "Open Data Center")}>
             <Database size={12} />
             {tr(locale, "数据中心", "Data Center")}
           </button>
@@ -365,7 +364,7 @@ export function SceneDataBindingEditor({
                 </label>
                 <label>
                   <span>{tr(locale, "驱动动作", "Action")}</span>
-                  <select disabled={disabled} value={binding.action} onChange={(event) => updateBinding(binding.id, { action: event.target.value as DataEventAction })}>
+                  <select title={actionHint(binding.action, locale)} disabled={disabled} value={binding.action} onChange={(event) => updateBinding(binding.id, { action: event.target.value as DataEventAction })}>
                     {ACTIONS.map((action) => (
                       <option key={action} value={action}>
                         {actionLabel(action, locale)}
@@ -374,7 +373,6 @@ export function SceneDataBindingEditor({
                   </select>
                 </label>
               </div>
-              <small className="scene-data-binding-action-hint">{actionHint(binding.action, locale)}</small>
               {!binding.directBinding && (
                 <label>
                   <span>{tr(locale, "刷新周期", "Refresh")}</span>
@@ -417,13 +415,6 @@ export function SceneDataBindingEditor({
             {tr(locale, "添加直接接口", "Add direct interface")}
           </button>
         </div>
-        <p>
-          {tr(
-            locale,
-            "数据管道也可绑定二维组件并发布为 REST / WebSocket；这里只配置数据如何作用于三维对象。",
-            "The same pipeline can bind 2D widgets and publish REST/WebSocket endpoints; this panel only defines how its data affects the 3D object.",
-          )}
-        </p>
       </div>
     </details>
   );

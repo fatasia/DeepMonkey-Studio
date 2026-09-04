@@ -39,8 +39,8 @@ describe("SceneManagerView product surface", () => {
     expect(html).toContain("--scene-thumbnail-color:#2878c7");
     expect(html).toContain('aria-label="预览场景"');
     expect(html).toContain('aria-label="发布场景"');
-    expect(html).toContain('aria-label="复制发布链接"');
-    expect(html).toContain('aria-label="重命名场景"');
+    expect(html).not.toContain('aria-label="复制发布链接"');
+    expect(html).toContain("重命名场景");
     expect(html).toContain('aria-label="编辑场景"');
     expect(html).toContain('aria-label="资源"');
     expect(html).toContain('aria-label="切换语言"');

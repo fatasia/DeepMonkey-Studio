@@ -6,7 +6,7 @@ import { derivePipelineRefreshSeconds, normalizeDataRefreshSeconds } from "../co
 import type { AppState } from "./useAppState";
 import { createTopologyRuntimeFailure, createTopologyRuntimeSnapshot, groupTopologyRuntimeBindings, mergeTopologyRuntimeAcknowledgements } from "../topologyRuntime";
 import { focusViewerTargetWhenReady } from "../studio/workspaceTargetNavigation";
-import { readWorkspaceRecoveryDraft, type WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
+import { deleteWorkspaceRecoveryDraft, hasRecoverableWorkspaceChanges, readWorkspaceRecoveryDraft, type WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import type { createScenePersistenceController } from "../controllers/scenePersistenceController";
 
 type PersistenceController = ReturnType<typeof createScenePersistenceController>;
@@ -248,6 +248,10 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
     let cancelled = false;
     void readWorkspaceRecoveryDraft(route.projectId, route.applicationId, route.sceneId).then((draft) => {
       if (cancelled || !draft || recoveryDecisionRef.current === draft.savedAt) return;
+      if (!hasRecoverableWorkspaceChanges(draft, activeScene)) {
+        void deleteWorkspaceRecoveryDraft(route.projectId!, route.applicationId, route.sceneId!);
+        return;
+      }
       if (Date.parse(draft.savedAt) > Date.parse(activeScene.updatedAt)) setRecoveryDraft(draft);
     });
     return () => {

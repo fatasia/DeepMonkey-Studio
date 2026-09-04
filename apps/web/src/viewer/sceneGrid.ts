@@ -62,18 +62,18 @@ function drawGridLines(context: CanvasRenderingContext2D, layout: SceneGridLayou
   for (let coordinate = -half; coordinate <= half; coordinate += layout.minorStep) {
     if (coordinate % layout.majorStep === 0) continue;
     const pixel = worldToPixel(coordinate, layout);
-    drawLine(context, pixel, false, "rgba(123, 133, 141, .12)");
-    drawLine(context, pixel, true, "rgba(123, 133, 141, .12)");
+    drawLine(context, pixel, false, "rgba(126, 154, 164, .07)");
+    drawLine(context, pixel, true, "rgba(126, 154, 164, .07)");
   }
   for (let coordinate = -half; coordinate <= half; coordinate += layout.majorStep) {
     if (coordinate === 0) continue;
     const pixel = worldToPixel(coordinate, layout);
-    drawLine(context, pixel, false, "rgba(156, 166, 172, .32)", 1.4);
-    drawLine(context, pixel, true, "rgba(156, 166, 172, .32)", 1.4);
+    drawLine(context, pixel, false, "rgba(143, 171, 180, .17)", 1.2);
+    drawLine(context, pixel, true, "rgba(143, 171, 180, .17)", 1.2);
   }
   const center = worldToPixel(0, layout);
-  drawLine(context, center, false, "rgba(191, 89, 89, .68)", 2);
-  drawLine(context, center, true, "rgba(78, 128, 190, .68)", 2);
+  drawLine(context, center, false, "rgba(207, 98, 92, .46)", 1.5);
+  drawLine(context, center, true, "rgba(79, 143, 195, .46)", 1.5);
 }
 
 function worldToPixel(coordinate: number, layout: SceneGridLayout): number {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Box, ChartNoAxesCombined, LayoutDashboard, Plus, Search, Shapes, Sparkles, X } from "lucide-react";
+import { BarChart3, Box, ChartNoAxesCombined, FolderOpen, Image, LayoutTemplate, Plus, Search, SlidersHorizontal, Upload, X } from "lucide-react";
 import type { DashboardDataWidgetConfig, SceneDashboardWidgetType } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import {
@@ -11,7 +11,7 @@ import { DashboardComponentPreview } from "./DashboardComponentPreview";
 import { DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
 import { DATA_WIDGET_CATEGORIES, DECORATION_ASSETS, dataWidgetTypeLabel } from "./dashboardWorkspaceModel";
 
-type LibraryTab = "recommended" | "basic" | "material";
+type LibraryTab = "chart" | "control" | "media" | "threeD" | "resource";
 
 export interface DashboardLibraryItem {
   id: string;
@@ -27,7 +27,7 @@ export const DASHBOARD_LIBRARY_DRAG_TYPE = "application/x-bim-dashboard-componen
 
 interface DashboardComponentLibraryProps {
   locale: AppLocale;
-  connected: boolean;
+  projectId: string;
   sceneAvailable: boolean;
   searchInputRef: RefObject<HTMLInputElement | null>;
   onOpenTemplates: () => void;
@@ -36,20 +36,26 @@ interface DashboardComponentLibraryProps {
 }
 
 const TAB_ICONS = {
-  recommended: Sparkles,
-  basic: Shapes,
-  material: Box,
+  chart: BarChart3,
+  control: SlidersHorizontal,
+  media: Image,
+  threeD: Box,
+  resource: FolderOpen,
 } as const;
 
 /**
  * 二维组件浏览器只负责“发现与插入”，数据绑定和样式编辑继续由右侧检查器承担。
  * 这样资源库保持轻量，也避免在同一面板重复一套配置逻辑。
  */
-export function DashboardComponentLibrary({ locale, connected, sceneAvailable, searchInputRef, onOpenTemplates, onAddSceneViewport, onAddWidget }: DashboardComponentLibraryProps) {
-  const [activeTab, setActiveTab] = useState<LibraryTab>("recommended");
+export function DashboardComponentLibrary({ locale, projectId, sceneAvailable, searchInputRef, onOpenTemplates, onAddSceneViewport, onAddWidget }: DashboardComponentLibraryProps) {
+  const [activeTab, setActiveTab] = useState<LibraryTab>("chart");
   const [query, setQuery] = useState("");
   const [recentlyAddedId, setRecentlyAddedId] = useState<string>();
   const feedbackTimer = useRef<number | undefined>(undefined);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingKind, setUploadingKind] = useState<"image" | "video">();
+  const [uploadError, setUploadError] = useState<string>();
   const normalizedQuery = query.trim().toLocaleLowerCase();
 
   const items = useMemo(() => createLibraryItems(locale, activeTab), [activeTab, locale]);
@@ -59,7 +65,7 @@ export function DashboardComponentLibrary({ locale, connected, sceneAvailable, s
   }, [items, locale, normalizedQuery]);
   const groupedItems = useMemo(() => groupLibraryItems(filteredItems), [filteredItems]);
   const sceneSearchText = tr(locale, "三维场景视口 嵌入场景 业务联动 3D", "3D scene viewport embed scene business linkage").toLocaleLowerCase();
-  const showSceneCard = (!normalizedQuery && activeTab === "recommended") || Boolean(normalizedQuery && sceneSearchText.includes(normalizedQuery));
+  const showSceneCard = (!normalizedQuery && activeTab === "threeD") || Boolean(normalizedQuery && sceneSearchText.includes(normalizedQuery));
   const resultCount = filteredItems.length + (showSceneCard ? 1 : 0);
 
   useEffect(() => () => window.clearTimeout(feedbackTimer.current), []);
@@ -71,46 +77,51 @@ export function DashboardComponentLibrary({ locale, connected, sceneAvailable, s
     feedbackTimer.current = window.setTimeout(() => setRecentlyAddedId(undefined), 1300);
   }
 
+  async function uploadAndInsert(kind: "image" | "video", file: File | undefined) {
+    if (!file) return;
+    setUploadingKind(kind);
+    setUploadError(undefined);
+    try {
+      const { api } = await import("../api");
+      const asset = kind === "image" ? await api.uploadImageAsset(projectId, file) : await api.uploadVideoAsset(projectId, file);
+      onAddWidget(kind, kind === "image" ? { assetId: asset.id, imageUrl: asset.url } : { assetId: asset.id, videoUrl: asset.url }, undefined, asset.name);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : tr(locale, "上传失败", "Upload failed"));
+    } finally {
+      setUploadingKind(undefined);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+      if (videoInputRef.current) videoInputRef.current.value = "";
+    }
+  }
+
   return (
     <div className="dashboard-library-browser">
-      <button className="dashboard-library-template-entry" onClick={onOpenTemplates}>
-        <span className="dashboard-library-template-icon">
-          <LayoutDashboard size={17} />
-        </span>
-        <span>
-          <strong>{tr(locale, "从行业模板开始", "Start from a template")}</strong>
-          <small>{tr(locale, "完整布局，可继续编辑", "Complete, editable layouts")}</small>
-        </span>
-        <em>{DASHBOARD_TEMPLATES.length}</em>
-      </button>
-
-      <div className="dashboard-library-heading">
-        <span>
-          <strong>{tr(locale, "资源", "Resources")}</strong>
-          <small>{tr(locale, "点击插入，或拖到画布定位", "Click to insert or drag onto canvas")}</small>
-        </span>
-        <i className={connected ? "online" : "offline"}>{connected ? tr(locale, "数据在线", "Data online") : tr(locale, "离线编辑", "Offline edit")}</i>
+      <div className="dashboard-library-toolbar">
+        <label className="dashboard-library-search">
+          <Search size={14} />
+          <input
+            ref={searchInputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={tr(locale, "搜索组件", "Search components")}
+          />
+        </label>
+        <button className="dashboard-library-template-button" title={tr(locale, `行业模板（${DASHBOARD_TEMPLATES.length}）`, `Templates (${DASHBOARD_TEMPLATES.length})`)} onClick={onOpenTemplates}>
+          <LayoutTemplate size={14} />
+          {tr(locale, "模板", "Templates")}
+        </button>
       </div>
-
-      <label className="dashboard-library-search">
-        <Search size={14} />
-        <input
-          ref={searchInputRef}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={tr(locale, "搜索图表、指标、资源…", "Search charts, metrics, assets…")}
-        />
-        <kbd>Ctrl F</kbd>
-      </label>
 
       {!normalizedQuery && (
         <div className="dashboard-library-tabs" role="tablist" aria-label={tr(locale, "资源分类", "Resource categories")}>
-          {(["recommended", "basic", "material"] as const).map((tab) => {
+          {(["chart", "control", "media", "threeD", "resource"] as const).map((tab) => {
             const Icon = TAB_ICONS[tab];
             const labels: Record<LibraryTab, [string, string]> = {
-              recommended: ["精选", "Featured"],
-              basic: ["基础", "Basic"],
-              material: ["资源", "Assets"],
+              chart: ["图表", "Charts"],
+              control: ["控件", "Controls"],
+              media: ["媒体", "Media"],
+              threeD: ["3D", "3D"],
+              resource: ["资源", "Assets"],
             };
             return (
               <button role="tab" aria-selected={activeTab === tab} className={activeTab === tab ? "active" : ""} key={tab} onClick={() => setActiveTab(tab)}>
@@ -120,6 +131,18 @@ export function DashboardComponentLibrary({ locale, connected, sceneAvailable, s
             );
           })}
         </div>
+      )}
+
+      {!normalizedQuery && activeTab === "media" && (
+        <>
+          <div className="dashboard-library-local-actions">
+            <input ref={imageInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif" onChange={(event) => void uploadAndInsert("image", event.target.files?.[0])} />
+            <input ref={videoInputRef} hidden type="file" accept="video/mp4,video/webm,video/ogg,application/vnd.apple.mpegurl" onChange={(event) => void uploadAndInsert("video", event.target.files?.[0])} />
+            <button disabled={Boolean(uploadingKind)} onClick={() => imageInputRef.current?.click()}><Upload size={13} />{tr(locale, "上传图片", "Upload image")}</button>
+            <button disabled={Boolean(uploadingKind)} onClick={() => videoInputRef.current?.click()}><Upload size={13} />{tr(locale, "上传视频", "Upload video")}</button>
+          </div>
+          {uploadError && <small className="dashboard-library-upload-error" role="alert">{uploadError}</small>}
+        </>
       )}
 
       {normalizedQuery && (
@@ -139,14 +162,11 @@ export function DashboardComponentLibrary({ locale, connected, sceneAvailable, s
             disabled={!sceneAvailable}
             onDragStart={(event) => beginLibraryDrag(event.dataTransfer, "scene")}
             onClick={() => onAddSceneViewport()}
+            title={sceneAvailable ? tr(locale, "插入三维场景视口", "Insert 3D scene viewport") : tr(locale, "请先创建三维场景", "Create a 3D scene first")}
           >
             <DashboardComponentPreview type="scene" />
             <span>
               <strong>{tr(locale, "三维场景视口", "3D scene viewport")}</strong>
-              <small>
-                {sceneAvailable ? tr(locale, "嵌入场景并配置业务联动", "Embed a scene with business linkage") : tr(locale, "请先创建三维场景", "Create a 3D scene first")}
-              </small>
-              <em>{tr(locale, "3D 联动", "3D linkage")}</em>
             </span>
             <Plus size={14} />
           </button>
@@ -177,8 +197,7 @@ export function DashboardComponentLibrary({ locale, connected, sceneAvailable, s
                   />
                   <span>
                     <strong>{item.label}</strong>
-                    <small>{item.description}</small>
-                    <em>{recentlyAddedId === item.id ? tr(locale, "已插入画布", "Added to canvas") : item.badge}</em>
+                    {recentlyAddedId === item.id && <em>{tr(locale, "已添加", "Added")}</em>}
                   </span>
                   <Plus size={14} />
                 </button>
@@ -207,13 +226,15 @@ function groupLibraryItems(items: readonly DashboardLibraryItem[]): Array<{ labe
 }
 
 function createLibraryItems(locale: AppLocale, tab: LibraryTab): DashboardLibraryItem[] {
-  if (tab === "recommended") {
-    return DASHBOARD_COMPONENT_PRESETS.filter((preset) => preset.category !== "material").map((preset) => presetItem(locale, preset));
+  if (tab === "chart") {
+    return DASHBOARD_COMPONENT_PRESETS.filter((preset) => ["indicator", "analysis", "report", "gis", "industrial"].includes(preset.category)).map((preset) => presetItem(locale, preset));
   }
-  if (tab === "basic") {
-    return DATA_WIDGET_CATEGORIES.flatMap((category) =>
+  if (tab === "control") {
+    return [
+      ...DASHBOARD_COMPONENT_PRESETS.filter((preset) => preset.category === "control").map((preset) => presetItem(locale, preset)),
+      ...DATA_WIDGET_CATEGORIES.flatMap((category) =>
       category.types
-        .filter((type) => type !== "decoration")
+        .filter((type) => ["filter", "text", "shape"].includes(type))
         .map((type) => ({
           id: `basic:${type}`,
           label: dataWidgetTypeLabel(locale, type),
@@ -221,7 +242,33 @@ function createLibraryItems(locale: AppLocale, tab: LibraryTab): DashboardLibrar
           type,
           badge: tr(locale, category.zh, category.en),
         })),
-    );
+      ),
+    ];
+  }
+  if (tab === "media") {
+    return [
+      ...DASHBOARD_COMPONENT_PRESETS.filter((preset) => ["media", "topology"].includes(preset.category)).map((preset) => presetItem(locale, preset)),
+      ...DATA_WIDGET_CATEGORIES.flatMap((category) => category.types)
+        .filter((type) => ["image", "video", "monitor", "url", "topology"].includes(type))
+        .map((type) => ({
+          id: `basic:${type}`,
+          label: dataWidgetTypeLabel(locale, type),
+          description: tr(locale, `插入${dataWidgetTypeLabel(locale, type)}`, `Insert ${dataWidgetTypeLabel(locale, type)}`),
+          type,
+          badge: tr(locale, "媒体", "Media"),
+        })),
+    ];
+  }
+  if (tab === "threeD") {
+    return DATA_WIDGET_CATEGORIES.flatMap((category) => category.types)
+      .filter((type) => type === "unity")
+      .map((type) => ({
+        id: `basic:${type}`,
+        label: dataWidgetTypeLabel(locale, type),
+        description: tr(locale, "嵌入 Unity 内容", "Embed Unity content"),
+        type,
+        badge: "3D",
+      }));
   }
   return [
     ...DASHBOARD_COMPONENT_PRESETS.filter((preset) => preset.category === "material").map((preset) => presetItem(locale, preset)),
@@ -242,7 +289,7 @@ function createLibraryItems(locale: AppLocale, tab: LibraryTab): DashboardLibrar
 
 function createAllLibraryItems(locale: AppLocale): DashboardLibraryItem[] {
   const unique = new Map<string, DashboardLibraryItem>();
-  for (const tab of ["recommended", "basic", "material"] as const) {
+  for (const tab of ["chart", "control", "media", "threeD", "resource"] as const) {
     for (const item of createLibraryItems(locale, tab)) unique.set(item.id, item);
   }
   return [...unique.values()];

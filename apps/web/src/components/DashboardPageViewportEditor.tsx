@@ -106,15 +106,6 @@ export function DashboardPageViewportEditor({
           </option>
         </select>
       </label>
-      {!compact && (
-        <small className="dashboard-inspector-hint">
-          {tr(
-            locale,
-            `支持 ${DASHBOARD_PAGE_MIN_SIZE}–${DASHBOARD_PAGE_MAX_SIZE}px；修改尺寸不会自动缩放已有组件，越界组件会在画布工具栏提示。`,
-            `Supports ${DASHBOARD_PAGE_MIN_SIZE}–${DASHBOARD_PAGE_MAX_SIZE}px. Existing widgets are not resized automatically; out-of-bounds widgets are reported in the canvas toolbar.`,
-          )}
-        </small>
-      )}
     </div>
   );
 }
@@ -126,4 +117,3 @@ function dashboardResolutionPreset(page: DashboardPageDocument): string {
     )?.id ?? "custom"
   );
 }
-

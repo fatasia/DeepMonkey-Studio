@@ -37,6 +37,16 @@ export function createWorkspaceRecoveryDraft(
   };
 }
 
+/** 仅时间戳变化不构成可恢复内容，避免成功保存后反复弹出空恢复提示。 */
+export function hasRecoverableWorkspaceChanges(draft: WorkspaceRecoveryDraft, serverScene: SceneSnapshot): boolean {
+  return comparableScene(draft.scene) !== comparableScene(serverScene);
+}
+
+function comparableScene(scene: SceneSnapshot): string {
+  const { updatedAt: _updatedAt, ...value } = structuredClone(scene);
+  return JSON.stringify(value);
+}
+
 /** 保存恢复副本失败不能阻断正式保存；调用方可根据布尔值记录诊断。 */
 export async function writeWorkspaceRecoveryDraft(draft: WorkspaceRecoveryDraft): Promise<boolean> {
   try {

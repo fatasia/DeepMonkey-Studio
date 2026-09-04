@@ -23,15 +23,7 @@ export function DashboardWorkspaceTemplateLibrary() {
         <section className="dashboard-template-library-panel" onMouseDown={(event) => event.stopPropagation()}>
           <header>
             <div>
-              <span className="eyebrow">{tr(locale, "行业模板", "TEMPLATE LIBRARY")}</span>
               <strong>{tr(locale, "看板模板库", "Dashboard template library")}</strong>
-              <small>
-                {tr(
-                  locale,
-                  "模板按整组插入当前页面，可统一移动、显隐和锁定；不覆盖已有组件。",
-                  "Templates insert as one group for unified move, visibility and locking; existing components stay intact.",
-                )}
-              </small>
             </div>
             <button title={tr(locale, "关闭", "Close")} onClick={() => setTemplateLibraryOpen(false)}>
               <X size={15} />

@@ -194,7 +194,8 @@ function useDashboardWorkspaceController({
   // 左侧资源栏和右侧检查器都是辅助区，允许用户释放画布空间。
   const [leftPanelOpen, setLeftPanelOpen] = usePersistedBooleanState(DASHBOARD_LEFT_PANEL_STORAGE_KEY, true);
   const [inspectorOpen, setInspectorOpen] = usePersistedBooleanState(DASHBOARD_INSPECTOR_STORAGE_KEY, true);
-  const [leftPanelTab, setLeftPanelTab] = useState<"pages" | "components" | "layers">("components");
+  // 页面与图层是进入二维编辑器后的默认工作上下文；资源按需打开。
+  const [leftPanelTab, setLeftPanelTab] = useState<"pages" | "components" | "layers">("pages");
   const [draftFrames, setDraftFrames] = useState<Record<string, WidgetFrame>>({});
   const [selectionRect, setSelectionRect] = useState<SelectionRect>();
   const [marqueeMode, setMarqueeMode] = useState(false);

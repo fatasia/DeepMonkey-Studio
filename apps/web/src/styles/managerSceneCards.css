@@ -134,6 +134,7 @@
 
 .scene-card-footer .scene-card-actions {
   width: 100%;
+  justify-content: flex-end;
   gap: 3px;
   padding: 3px;
   border-radius: 8px;
@@ -191,7 +192,9 @@
 }
 
 .scene-card-footer .scene-card-more-menu > button:hover { color: #edf8fa; background: #213037; }
-.scene-card-more-export .export-menu > button { min-height: 35px; font-size: 11px; }
+.scene-card-more-export .export-menu { width:100%; }
+.scene-card-more-export .export-menu > button { display:flex;width:100%;min-height:35px;justify-content:flex-start;gap:8px;padding-inline:9px;font-size:11px; }
+.scene-card-more-export .export-menu-popup { right:calc(100% + 8px);bottom:0;left:auto; }
 
 .manager-empty {
   min-height: 390px;

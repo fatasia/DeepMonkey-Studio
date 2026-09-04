@@ -1,18 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NamedServerProfile } from "@bim-studio/server-sdk";
-import { isTauriRuntime, TauriHostAdapter } from "./tauriHostAdapter.js";
+import { isTauriRuntime, TauriHostAdapter, type TauriInvoke } from "./tauriHostAdapter.js";
 
 describe("TauriHostAdapter", () => {
   it("hydrates and persists the single server profile through restricted commands", async () => {
     let stored: NamedServerProfile | undefined = profile();
+    let storedToken: string | undefined;
     const invoke = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
       if (command === "get_server_profile") return stored as T;
+      if (command === "get_auth_token") return storedToken as T;
       if (command === "set_server_profile") {
         stored = args?.profile as NamedServerProfile;
         return stored as T;
       }
       if (command === "clear_server_profile") {
         stored = undefined;
+        return undefined as T;
+      }
+      if (command === "clear_auth_token") {
+        storedToken = undefined;
         return undefined as T;
       }
       throw new Error(`unexpected command ${command}`);
@@ -26,17 +32,29 @@ describe("TauriHostAdapter", () => {
     expect(() => adapter.getServerProfile()).toThrow("尚未配置服务器");
   });
 
-  it("keeps desktop login tokens in memory and clears them on unauthorized", () => {
+  it("restores remembered desktop login tokens and clears them on unauthorized", async () => {
     const browserWindow = createWindow();
-    const adapter = new TauriHostAdapter(browserWindow, vi.fn());
+    let storedToken: string | undefined = "remembered-token";
+    const invoke: TauriInvoke = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
+      if (command === "get_server_profile") return profile() as T;
+      if (command === "get_auth_token") return storedToken as T;
+      if (command === "set_auth_token") storedToken = String(args?.token);
+      if (command === "clear_auth_token") storedToken = undefined;
+      return undefined as T;
+    };
+    const adapter = new TauriHostAdapter(browserWindow, invoke);
     const listener = vi.fn();
     browserWindow.addEventListener("bim-studio-auth-required", listener);
 
+    await adapter.hydrateServerProfile();
+    expect(adapter.getAccessToken()).toBe("remembered-token");
     adapter.setAccessToken("token-1", true);
     expect(adapter.getAccessToken()).toBe("token-1");
     adapter.notifyUnauthorized();
+    await Promise.resolve();
 
     expect(adapter.getAccessToken()).toBe("");
+    expect(storedToken).toBeUndefined();
     expect(listener).toHaveBeenCalledOnce();
   });
 

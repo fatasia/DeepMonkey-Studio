@@ -7,6 +7,9 @@
     "core:default",
     "allow-get-server-profile",
     "allow-set-server-profile",
-    "allow-clear-server-profile"
+    "allow-clear-server-profile",
+    "allow-get-auth-token",
+    "allow-set-auth-token",
+    "allow-clear-auth-token"
   ]
 }

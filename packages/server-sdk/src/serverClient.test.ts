@@ -165,6 +165,19 @@ describe("ServerClient", () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
 
+  it("does not clear the signed-in session for an unauthenticated request that returns 401", async () => {
+    const onUnauthorized = vi.fn();
+    const client = new ServerClient({
+      profile: { baseUrl: "https://bim.example.test" },
+      authStore: emptyAuthStore,
+      fetch: async () => new Response(JSON.stringify({ message: "需要登录" }), { status: 401 }),
+      onUnauthorized
+    });
+
+    await expect(client.request("/api/public-scene/missing")).rejects.toThrow("需要登录");
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
   it("submits governed conversion tasks without leaking projectId into the body", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({ id: "task-1" }));
     const client = new ServerClient({

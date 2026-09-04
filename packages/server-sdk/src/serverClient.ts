@@ -58,7 +58,8 @@ export class ServerClient {
     );
     if (!response.ok) {
       const body = await response.clone().json().catch(() => ({ message: response.statusText })) as { message?: string; error?: { message?: string } };
-      if (response.status === 401) this.options.onUnauthorized?.();
+      // 只有携带了当前登录凭据的请求才可能证明会话失效；公开接口自身的 401 不能登出用户。
+      if (response.status === 401 && token) this.options.onUnauthorized?.();
       throw new ServerRequestError(body.message ?? body.error?.message ?? `请求失败：${response.status}`, response.status, body);
     }
     return response;
