@@ -363,15 +363,32 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                               setPublishTarget(scene);
                             }}
                           ><Rocket size={14} /></button>
+                          {scene.publishedAt && (
+                            <button
+                              type="button"
+                              aria-label={tr(locale, "版本历史", "Version history")}
+                              title={tr(locale, "版本历史", "Version history")}
+                              onClick={() => void openVersions(scene)}
+                            ><History size={14} /></button>
+                          )}
+                          <button
+                            type="button"
+                            aria-label={tr(locale, "复制场景", "Duplicate scene")}
+                            title={tr(locale, "复制", "Duplicate")}
+                            onClick={() => void onCopy(scene)}
+                          ><Copy size={14} /></button>
+                          <button
+                            type="button"
+                            aria-label={tr(locale, "重命名场景", "Rename scene")}
+                            title={tr(locale, "重命名", "Rename")}
+                            onClick={() => openRenameDialog(scene)}
+                          ><FilePenLine size={14} /></button>
                           <details className="scene-card-more">
                             <summary aria-label={tr(locale, "更多场景操作", "More scene actions")} title={tr(locale, "更多", "More")}><MoreHorizontal size={15} /></summary>
                             <div className="scene-card-more-menu">
                               {scene.publishedAt && <button onClick={() => void onBrowsePublished(scene)}><Eye size={13} />{tr(locale, "查看发布版", "View published")}</button>}
                               {scene.publishedAt && <button onClick={() => void copyLink(new URL(`/published/${encodeURIComponent(scene.id)}`, window.location.origin).href)}><Copy size={13} />{tr(locale, "复制发布链接", "Copy published link")}</button>}
-                              {scene.publishedAt && <button onClick={() => void openVersions(scene)}><History size={13} />{tr(locale, "版本历史", "Version history")}</button>}
                               {scene.publishedAt && <button onClick={() => void onUnpublish(scene)}><Square size={12} />{tr(locale, "撤回发布", "Unpublish")}</button>}
-                              <button onClick={() => openRenameDialog(scene)}><FilePenLine size={13} />{tr(locale, "重命名场景", "Rename scene")}</button>
-                              <button onClick={() => void onCopy(scene)}><Copy size={13} />{tr(locale, "复制场景", "Duplicate scene")}</button>
                               {cloudSceneLinks[scene.id] && <button onClick={() => void copyLink(cloudSceneLinks[scene.id]!)}><CloudCog size={13} />{tr(locale, "复制云渲染链接", "Copy cloud link")}</button>}
                               {isAdmin && scene.publishedAt && (
                                 <button role="switch" aria-checked={Boolean(cloudScenePolicies[scene.id])} disabled={!cloudConfigured || cloudBusySceneId === scene.id} onClick={() => void toggleSceneCloudRender(scene.id, !cloudScenePolicies[scene.id])}>
