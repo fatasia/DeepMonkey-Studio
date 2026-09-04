@@ -355,3 +355,5 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 **待办队列（按序，9 点后继续不停）**：① 2D 编辑器布局回退：页面 tab 放回底部、图层在左侧（用户明确否定 821ca74 的"页面与图层"合并决策，以本次为准）；② <30% 缩放抖动复现与修复；③ 页面与图层支持右键菜单+双击内联重命名（弃弹窗，对标 FVS/Figma）；④ U1-8a 数据中心监控位置；⑤ U1-8c Node-RED 白屏；⑥ SIM-1a（交接 §6）；⑦ EX-001A 剩余（Alt 拖拽复制、右键选层）；⑧ astral-service 分析（克隆在 D:\Temp\astral-service-analysis）。纪律：严禁 push；admin/admin 与存储拓扑禁改；大改先请示；每修必带聚焦测试+浏览器证据+整页目视。
 
 - 素材 3D 通道阻塞：Poly Pizza/Sketchfab API key 需用户本人注册（邮箱验证+条款），已告知用户；用户给 key 后夜间跑批量下载。期间转 Quaternius/Kenney 无 key 直链通道（全部 CC0）：下一批先抓 quaternius.com 工业相关包直链并入 `scripts/sync-open-asset-packs.mjs`。
+
+- 素材 3D 通道就绪（2026-09-05）：用户已提供 Poly Pizza/Sketchfab key，存于 `data/external-assets/source-b/api-keys.env`（gitignored，值不入日志）。实测：Sketchfab API 200 可用（token 认证通过，search+downloadable 可用）；Poly Pizza 本地网络不通（HTTP 000，与 quaternius.com 同为网络层超时，备用）。下一批任务：新建 `scripts/sync-sketchfab-models.mjs`——按行业关键词（pump/valve/conveyor/industrial/warehouse/forklift/AGV/robot 等）search downloadable=true，许可过滤 CC0/CC-BY（BY 记 attribution），经 download 端点取 GLB+缩略图入 source-b，写 catalog 后跑既有审计门禁；每轮限额（如 200 模型/晚）。
