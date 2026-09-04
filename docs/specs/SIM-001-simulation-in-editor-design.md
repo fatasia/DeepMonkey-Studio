@@ -3,16 +3,16 @@
 状态：设计 v1（2026-09-04，GLM-5.3 依据西门子 Process Simulate 单工作台模型规划）
 触发：用户反馈"仿真相关功能不能结合到 3D 场景编辑器中作为一个插件面板吗？"+"可以参考西门子的实现"。
 
-## 1. 西门子参照（提炼规律，不复制品牌与视觉）
+## 1. 参照与首要原则（提炼规律，不复制品牌与视觉）
 
-Process Simulate 的可借鉴结构：
+**用户定调（2026-09-04）：交互高效轻量，功能全量同级——拖连播是快速通道，不是功能阉割；对标平台有的能力都要有。**
 
-1. **单工作台**：3D 视口即仿真环境，配置、运行、验证同一画面，不切页。
-2. **仿真实体一等公民**：路径点、操作序列、碰撞对、信号映射与几何对象同树管理（对象树里既有机器人也有焊点路径）。
-3. **上下文检查器**：选中什么，右侧面板就配置什么——选中机器人出现路径编辑器，选中路径点出现点位参数。
-4. **全局播放控制**：主工具栏一处 play/pause/倍速/时间轴，驱动任何仿真运行（机器人回放、节拍序列、物流）。
-5. **结果就地呈现**：碰撞标记、可达性、KPI 计数直接叠在 3D 画面；深度报告另开标签页。
-6. **Study/变体**：what-if 与基线共享同一工厂模型，结果归档可对比。
+- **能力基线（全量保留，不得削减）**：Plant 级离散事件（工位/队列/缓冲/输送/AGV/班次/故障维修/随机实验/置信区间）、PS 级工位验证（碰撞对/机器人轨迹/关节约束/时序/节拍/故障矩阵/回放/证据）、PD 级 PPR/BOP、What-if 与统一 Study。引擎与既有功能零删减，`/operations` 全部能力不回退。
+- **Visual Components 的交互规律（快速通道）**：拖预制体进场景即仿真元件（参数/数据端口已带）；点两个对象即建立流程连接；按 play 即出吞吐/瓶颈/利用率。零学习成本起步。
+- **渐进披露（专家深度）**：分布、调度策略、班次表、故障模型、实验矩阵、置信设置全部可达——藏在检查器"高级"区与面板二级页，不占快速通道。
+- **西门子结构规律（工程严谨性）**：单工作台不切页；仿真实体与几何对象同树；上下文检查器；一处播放控制；结果就地呈现 + 深度报告另开；Study 变体归档。
+
+**冲突裁决：交互层取 VC 的高效（少点击、少概念、即时反馈），能力层取西门子的全量（对标功能一项不少）。**
 
 ## 2. 结合形态总览（目标图景）
 
@@ -57,14 +57,17 @@ export interface SceneSimulationPanelProps {
 - 工具坞"仿真与开发"组新增一个「仿真」入口组，枚举注册表面板（SceneToolDock 只加枚举渲染，不写任何面板逻辑——守住 441 行红线）。
 - 面板开启状态与其它开发面板一致随工作区保存恢复。
 
-### 3.2 仿真实体入目录树（左树「仿真」域）
+### 3.2 仿真元件 = 工业预制体 + 全量实体（快速通道 + 完整建模能力）
 
-- 合同扩展（contracts `scene.ts`，沿 SceneSnapshot 既有可选字段模式）：`simulationEntities?: SimulationEntity[]`，判别联合：
-  - `{ kind: "path"; id; name; targetModelId; points: Vec3[]; loopMode; speed }`（机器人/人物/AGV 路径）
-  - `{ kind: "collisionPair"; id; name; a: TargetRef; b: TargetRef; tolerance }`
-  - `{ kind: "queue"; id; name; anchor: Vec3; capacity }`、`{ kind: "signalMap"; id; name; bindings: [...] }`
-- 引用一律用稳定 modelId/layerId；被引用对象删除时实体标记"断链"并黄牌提示（不静默失效——沿 Study 歧义防护原则）。
-- 树节点选中 → 检查器切配置面板（§1 规律 3）；未选中时面板显示引导空态。
+- **预制体即元件（快速通道）**：78 个工业预制体已带参数/动作/数据端口；传送带 `speed/capacity`、机器人 `speed/payload` 直接映射为离散事件/节拍参数。角色（源/汇/工位/缓冲/AGV）在检查器"仿真"页签一选即成。
+- **全量实体同时保留（完整建模）**：需要 VC/Plant 级显式建模时，左侧树「仿真」域可直接创建：
+  - `{ kind: "flowLink"; fromModelId; toModelId }` 连接（点两对象即成，自动生成沿地面的路径线）
+  - `{ kind: "path"; targetModelId; points; loopMode; speed }` 路径（自动生成后可手调）
+  - `{ kind: "queue"; anchor; capacity; discipline }`、`{ kind: "buffer"; ... }` 队列与缓冲（含调度策略）
+  - `{ kind: "source" | "sink"; arrivalDistribution; ... }` 显式源汇（分布可配：常数/指数/均匀/经验）
+  - `{ kind: "collisionPair"; a; b; tolerance }`、`{ kind: "signalMap"; bindings }`、`{ kind: "shiftCalendar"; ... }`、`{ kind: "failureModel"; ... }` 班次与故障
+- 合同扩展在 contracts `scene.ts` 沿 SceneSnapshot 可选字段模式新增 `simulationEntities?`，全部实体入树、入保存。
+- 引用一律稳定 modelId/layerId；断链黄牌不静默（沿 Study 歧义防护原则）。
 
 ### 3.3 仿真覆盖层 `viewer/simulationOverlay.ts`（新，≤250 行）
 
@@ -83,12 +86,12 @@ export interface SceneSimulationPanelProps {
 
 ## 4. 面板分期与范围
 
-| 期 | 面板 | 内容（复用既有引擎） | 不做 |
+| 期 | 面板 | 内容（能力全量，交互走快速通道） | 不做 |
 |---|---|---|---|
-| SIM-1a | 面板框架 + 物流仿真（Plant Lite/factory-flow） | 在场景中点选 Source/Process/Buffer/Sink 锚点成实体；跑离散事件；AGV 轨迹与队列热力覆盖层；KPI HUD；入 Study | 不做新仿真算法，引擎原样 |
-| SIM-1b | 工位与机器人 | 选中机器人→路径点教学（3D 拾取表面点加入路径）→轨迹预览→碰撞对配置→回放标红；节拍摘要入 Study | 不做 OLP、认证动力学、控制器矩阵（§28 排除延续） |
-| SIM-1c | 虚拟调试 | 信号映射实体 + 运行时序轨道 + 证据（复用 VirtualCommissioning 既有引擎与证据格式） | 不做现场下发 |
-| SIM-1d | What-if | 参数扫描面板（选输入域→批量运行→结果对比表→全部入 Study 谱系） | 不做自动调参 |
+| SIM-1a | 面板框架 + 物流仿真 | 拖预制体→选角色→点连 flowLink→play 出吞吐/瓶颈/利用率；检查器"高级"= 分布/班次/故障/队列策略全参数；AGV 轨迹、队列热力、KPI HUD 覆盖层；随机实验与置信区间入口；全部入 Study | 不做新仿真算法，Plant Lite 引擎原样全量接入 |
+| SIM-1b | 工位与机器人 | 选中机器人→表面拾取路径点教学→轨迹预览→碰撞对（含矩阵）→回放标红→节拍与故障矩阵；证据入 Study | 不做 OLP、认证动力学、控制器矩阵（§28 排除延续） |
+| SIM-1c | 虚拟调试 | 信号映射实体+运行时序轨道+证据链（复用既有引擎），编辑器内完成信号绑定与回放 | 不做现场下发 |
+| SIM-1d | What-if + PPR/BOP 轻入口 | 参数扫描与对比表入 Study 谱系；PPR 工序/前置/资源在面板内可查可跳 /operations 深编 | 不做完整 PLM |
 
 每期独立规格（SIM-1a 先行，含文件计划与测试），本文件只锁结合方式。
 

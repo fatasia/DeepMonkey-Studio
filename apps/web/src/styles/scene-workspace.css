@@ -451,8 +451,9 @@
 .timeline-track-label small { min-width: 18px; padding: 2px 4px; color: #6e7b81; border-radius: 8px; background: #242d31; font-size: 7px; text-align: center; }
 .timeline-track-rail { position: relative; min-width: 0; background-image: repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), rgba(80,91,97,.17) calc(10% - 1px), rgba(80,91,97,.17) 10%); }
 .timeline-track-line { position: absolute; top: 50%; right: 0; left: 0; height: 1px; background: #354046; transform: translateY(-50%); }
-.timeline-marker { position: absolute; top: 50%; z-index: 1; width: 11px; height: 11px; padding: 0; border: 2px solid #e6be63; border-radius: 2px; background: #4b4028; box-shadow: 0 0 0 2px rgba(15,19,21,.85); transform: translate(-50%,-50%) rotate(45deg); cursor: pointer; }
-.timeline-marker:hover,.timeline-marker.selected { border-color: #fff0b8; background: var(--accent); box-shadow: 0 0 0 2px #20272b,0 0 11px rgba(212,168,79,.65); }
+.timeline-marker { position: absolute; top: 50%; z-index: 1; width: 7px; height: 7px; padding: 0; border: 1px solid #e6be63; border-radius: 1px; background: #4b4028; box-shadow: 0 0 0 1px rgba(15,19,21,.85); transform: translate(-50%,-50%) rotate(45deg); cursor: pointer; }
+.timeline-marker::after { content: ""; position: absolute; inset: -8px; }
+.timeline-marker:hover,.timeline-marker.selected { border-color: #fff0b8; background: var(--accent); box-shadow: 0 0 0 1px #20272b,0 0 8px rgba(212,168,79,.65); }
 .timeline-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 5px 10px; border-top: 1px solid #30383d; background: #1a2226; }
 .timeline-settings-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 0; color: #89969c; border: 0; background: transparent; font-size: 8px; cursor: pointer; }
 .timeline-settings-toggle svg { transition: transform .16s ease; }

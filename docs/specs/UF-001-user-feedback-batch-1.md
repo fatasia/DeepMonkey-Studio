@@ -15,9 +15,9 @@
 智能运营（/operations）中的 Plant Lite、PS Lite、虚拟调试等仿真能力，应可作为插件面板嵌入 3D 场景编辑器（选中场景对象即为目标，不用切页）。
 现状确认：OperationsCenter.tsx（765 行）承载；3D 编辑器壳层 AppStudioShell.tsx（647 行）。白天写 SIM-001 规格：面板挂载点、场景对象引用、与统一 Study 的关系、`/operations` 入口保留。**不得删除 /operations 现有入口。**
 
-### U1-2 [修] 动画时间线帧图标过大
+### U1-2 [修] 动画时间线帧图标过大 ✅ 2026-09-04 已修
 
-场景动画编辑器（关键帧时间轴）的帧标记图标尺寸过大。定位：grep `timeline`/`keyframe`/`帧` 于 `apps/web/src/components/scene*` 与 `styles/scene-workspace.css`。修复为紧凑尺寸（高度与轨道行高一致，参考主流 NLE 轨道视觉），双主题截图前后对比。
+`.timeline-marker`（styles/scene-workspace.css 454 行）：11px 方块 + 2px 边框 + 2px 外圈阴影的 45° 菱形 → **7px + 1px 边框 + 1px 阴影**，并加 `::after { inset:-8px }` 扩大命中区保证 ≥28px 点击目标（守住门禁）。截图待夜间批次统一补（双主题）。
 
 ### U1-3 [查] 多页面"更多"点击无效
 
