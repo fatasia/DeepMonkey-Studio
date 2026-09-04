@@ -7,6 +7,7 @@ import "./styles/managerWorkspacePolish.css";
 import "./styles/resourceGovernance.css";
 import "./styles/studioWorkspacePolish.css";
 import "./styles/sceneToolDock.css";
+import "./styles/sceneSimulationPanel.css";
 import "./styles/inspectorContext.css";
 import "./styles/interactionPolish.css";
 import "./styles/centers.css";

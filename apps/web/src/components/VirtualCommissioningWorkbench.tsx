@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import type {
   IndustrialDiagnosisValidationDraft,
@@ -44,6 +44,9 @@ interface Props {
   initialDraft?: IndustrialDiagnosisValidationDraft;
   initialStudy?: IndustrialValidationStudyRecord;
   studies?: IndustrialValidationStudyRecord[];
+  initialSceneId?: string;
+  initialObjectId?: string;
+  initialStage?: CommissioningWorkflowStage;
   onStudyChange?: (study: IndustrialValidationStudyRecord) => void;
   onOpenTarget: (sceneId: string, objectId: string) => void;
 }
@@ -54,18 +57,23 @@ export function VirtualCommissioningWorkbench({
   initialDraft,
   initialStudy,
   studies = [],
+  initialSceneId,
+  initialObjectId,
+  initialStage = "screening",
   onStudyChange,
   onOpenTarget,
 }: Props) {
-  const initialScene = scenes.find((candidate) => candidate.id === initialStudy?.sceneId) ?? preferredUsableScene(scenes);
+  const initialScene = scenes.find((candidate) => candidate.id === initialStudy?.sceneId)
+    ?? scenes.find((candidate) => candidate.id === initialSceneId)
+    ?? preferredUsableScene(scenes);
   const [sceneId, setSceneId] = useState(initialScene?.id ?? "");
   const scene = useMemo(() => scenes.find((item) => item.id === sceneId) ?? preferredUsableScene(scenes), [sceneId, scenes]);
   const robotOptions = useMemo(() => scene?.models.filter((model) => model.rig?.robot?.enabled) ?? [], [scene]);
-  const [robotModelId, setRobotModelId] = useState(() => initialRobotId(initialScene, initialStudy));
-  const [selectionConfirmed, setSelectionConfirmed] = useState(Boolean(initialDraft || initialStudy));
-  const [workflowStage, setWorkflowStage] = useState<CommissioningWorkflowStage>("screening");
+  const [robotModelId, setRobotModelId] = useState(() => initialRobotId(initialScene, initialStudy, initialObjectId));
+  const [selectionConfirmed, setSelectionConfirmed] = useState(Boolean(initialDraft || initialStudy || initialSceneId));
+  const [workflowStage, setWorkflowStage] = useState<CommissioningWorkflowStage>(initialStage);
   const objects = useMemo(() => virtualDebugObjectOptions(scene), [scene]);
-  const [bindings, setBindings] = useState<VirtualDebugSignalBinding[]>(() => defaultVirtualDebugBindings(preferredUsableScene(scenes)));
+  const [bindings, setBindings] = useState<VirtualDebugSignalBinding[]>(() => defaultVirtualDebugBindings(initialScene, initialObjectId));
   const [durationMs, setDurationMs] = useState(1_000);
   const [tickMs, setTickMs] = useState(50);
   const [faultEnabled, setFaultEnabled] = useState(true);
@@ -84,6 +92,7 @@ export function VirtualCommissioningWorkbench({
   const [appliedDraft, setAppliedDraft] = useState<IndustrialDiagnosisValidationDraft>();
   const [activeStudy, setActiveStudy] = useState(initialStudy);
   const [robotScreening, setRobotScreening] = useState<RobotWorkcellAssistantResult>();
+  const appliedEditorContext = useRef(`${initialSceneId ?? ""}:${initialObjectId ?? ""}:${initialStage}`);
   const activeVirtualStudy = matchingVirtualCommissioningStudy(activeStudy);
   const currentVirtualStudy = activeVirtualStudy?.sceneId === scene?.id
     ? activeVirtualStudy
@@ -109,6 +118,24 @@ export function VirtualCommissioningWorkbench({
     setRobotScreening(undefined);
     setPlayheadMs(0);
   }, [sceneId, scenes]);
+
+  useEffect(() => {
+    if (!initialSceneId || initialDraft || initialStudy) return;
+    const contextKey = `${initialSceneId}:${initialObjectId ?? ""}:${initialStage}`;
+    if (appliedEditorContext.current === contextKey || busy) return;
+    const targetScene = scenes.find((candidate) => candidate.id === initialSceneId);
+    if (!targetScene) return;
+    appliedEditorContext.current = contextKey;
+    setSceneId(targetScene.id);
+    setRobotModelId(initialRobotId(targetScene, undefined, initialObjectId));
+    setBindings(defaultVirtualDebugBindings(targetScene, initialObjectId));
+    setSelectionConfirmed(true);
+    setWorkflowStage(initialStage);
+    setInvocation(undefined);
+    setSuiteInvocation(undefined);
+    setRobotScreening(undefined);
+    setPlayheadMs(0);
+  }, [busy, initialDraft, initialObjectId, initialSceneId, initialStage, initialStudy, scenes]);
 
   useEffect(() => {
     if (!robotModelId || robotOptions.some((robot) => robot.modelId === robotModelId)) return;
@@ -485,9 +512,17 @@ function genericWorkcellStudy(study: IndustrialValidationStudyRecord | undefined
   return matching && !matchingRobotWorkcellStudy(matching, sceneId) ? matching : undefined;
 }
 
-function initialRobotId(scene: SceneSnapshot | undefined, study: IndustrialValidationStudyRecord | undefined) {
+function initialRobotId(
+  scene: SceneSnapshot | undefined,
+  study: IndustrialValidationStudyRecord | undefined,
+  preferredObjectId?: string,
+) {
   if (!scene) return "";
   const robotStudy = matchingRobotWorkcellStudy(study, scene.id);
   if (study?.sourceKind === "workcell-audit" && !robotStudy) return "";
+  const preferredRobot = scene.models.find(
+    (model) => model.modelId === preferredObjectId && model.rig?.robot?.enabled,
+  );
+  if (!robotStudy && preferredRobot) return preferredRobot.modelId;
   return scene.models.find((model) => model.rig?.robot?.enabled && (!robotStudy || robotStudy.objectIds.includes(model.modelId)))?.modelId ?? "";
 }

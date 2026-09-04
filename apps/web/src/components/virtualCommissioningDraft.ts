@@ -8,8 +8,12 @@ import { virtualDebugObjectOptions } from "./virtualCommissioningModel";
 
 export const VIRTUAL_DEBUG_SIGNALS = ["motorRunning", "alarm", "speedSetpoint"] as const;
 
-export function defaultVirtualDebugBindings(scene: SceneSnapshot | undefined): VirtualDebugSignalBinding[] {
-  const target = virtualDebugObjectOptions(scene)[0];
+export function defaultVirtualDebugBindings(
+  scene: SceneSnapshot | undefined,
+  preferredObjectId?: string,
+): VirtualDebugSignalBinding[] {
+  const options = virtualDebugObjectOptions(scene);
+  const target = options.find((item) => item.id === preferredObjectId) ?? options[0];
   if (!scene || !target) return [];
   return [
     createVirtualDebugBinding(1, "motorRunning", scene.id, target.id, target.kind),

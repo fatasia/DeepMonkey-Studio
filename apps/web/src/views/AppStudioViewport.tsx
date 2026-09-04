@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { DEFAULT_NAVIGATION_SETTINGS } from "../navigationSettings";
 import { normalizeDashboardState } from "../components/dashboardState";
@@ -17,6 +17,9 @@ import { SceneXrPanel } from "../components/SceneXrPanel";
 import { ViewControl } from "../components/AppFormControls";
 import type { AppStudioController } from "./AppStudioShell";
 import { sceneViewerDeliveryToolbarVisible } from "../delivery/sceneViewerDelivery";
+import type { SceneSimulationPanelId } from "../simulation/sceneSimulationRegistry";
+
+const SceneSimulationPanel = lazy(() => import("../components/SceneSimulationPanel").then((module) => ({ default: module.SceneSimulationPanel })));
 
 export function AppStudioViewport({ controller }: { controller: AppStudioController }) {
   const {
@@ -70,6 +73,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     navigationDiagnostics,
     navigationMode,
     navigationSettings,
+    navigate,
+    pendingSceneFocusRef,
     physics,
     physicsOpen,
     postProcessing,
@@ -88,6 +93,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     sceneInteractions,
     sceneName,
     sceneStatistics,
+    scenes,
     selected,
     selectedLightId,
     selectedPhysics,
@@ -96,6 +102,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     selectionProperties,
     selectionScope,
     setAiAssistantOpen,
+    setActiveScene,
     setAnimationOpen,
     setAvatarVisible,
     setCameraViewsOpen,
@@ -135,6 +142,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     xrPanelOpen,
   } = controller;
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
+  const [simulationPanelId, setSimulationPanelId] = useState<SceneSimulationPanelId>();
   const workspaceIsPrimary = route.view === "studio" || route.view === "view" || route.view === "published";
   const deliveryToolbarVisible = sceneViewerDeliveryToolbarVisible();
   const viewerToolbarVisible = deliveryToolbarVisible ?? (route.view === "view" || activeScene?.publicationToolbarVisible !== false);
@@ -157,6 +165,36 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : tr(locale, "当前浏览器无法进入全屏", "Fullscreen is unavailable in this browser"));
     }
+  }
+
+  function toggleSimulationPanel(panel: SceneSimulationPanelId) {
+    setSimulationPanelId((current) => current === panel ? undefined : panel);
+    setAnimationOpen(false);
+    setCameraViewsOpen(false);
+    setEnvironmentOpen(false);
+    setPhysicsOpen(false);
+    setSceneBehaviorOpen(false);
+    setXrPanelOpen(false);
+  }
+
+  function openSimulationTarget(sceneId: string, objectId: string) {
+    const targetScene = scenes.find((scene) => scene.id === sceneId);
+    if (!targetScene) {
+      setMessage(tr(locale, "关联的三维场景已不存在", "The linked 3D scene no longer exists"));
+      return;
+    }
+    if (activeScene?.id === sceneId) {
+      engine?.select(objectId);
+      engine?.focusModel(objectId);
+      setMessage(tr(locale, "已在当前视口定位仿真对象", "Simulation target focused in the viewport"));
+      return;
+    }
+    const targetLabel = targetScene.models.find((item) => item.modelId === objectId)?.name
+      ?? targetScene.primitives.find((item) => item.modelId === objectId)?.name;
+    pendingSceneFocusRef.current = { sceneId, objectId, ...(targetLabel ? { label: targetLabel } : {}) };
+    setActiveScene(undefined);
+    setSimulationPanelId(undefined);
+    navigate({ view: "studio", sceneId });
   }
 
   return (
@@ -219,6 +257,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           cameraOpen={cameraViewsOpen}
           physicsOpen={physicsOpen}
           xrOpen={xrPanelOpen}
+          simulationPanel={simulationPanelId}
           infoEnabled={infoEnabled}
           onFitAll={() => engine?.fitAll()}
           onSelect={() => changeNavigation("orbit")}
@@ -253,8 +292,26 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
             setEnvironmentOpen(false);
           }}
           onXrToggle={() => setXrPanelOpen((value) => !value)}
+          onSimulationPanelChange={toggleSimulationPanel}
         />
       ) : null}
+      {route.view === "studio" && simulationPanelId && project && (
+        <Suspense fallback={<div className="scene-simulation-loading"><LoaderCircle className="spin" size={18} />{tr(locale, "正在加载仿真插件", "Loading simulation plugin")}</div>}>
+          <SceneSimulationPanel
+            locale={locale}
+            panelId={simulationPanelId}
+            project={project}
+            scenes={scenes}
+            {...(activeScene ? { activeScene } : {})}
+            {...(selected ? { selectedObjectId: selected.id, selectedObjectName: selectionName || selected.name } : {})}
+            onPanelChange={setSimulationPanelId}
+            onOpenEvidence={() => navigate({ view: "operations", operationsTab: simulationPanelId === "whatif" ? "whatif" : simulationPanelId === "logistics" ? "logistics" : "commissioning" })}
+            onOpenDataCenter={() => navigate({ view: "data" })}
+            onOpenSceneTarget={openSimulationTarget}
+            onClose={() => setSimulationPanelId(undefined)}
+          />
+        </Suspense>
+      )}
       {route.view === "studio" && <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />}
       {route.view === "studio" && cameraViewsOpen && (
         <CameraNavigationPanel

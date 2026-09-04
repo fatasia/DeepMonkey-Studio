@@ -23,6 +23,7 @@ describe("SceneToolDock", () => {
         cameraOpen={false}
         physicsOpen={false}
         xrOpen={false}
+        simulationPanel={undefined}
         infoEnabled={false}
         onFitAll={onAction}
         onSelect={onAction}
@@ -42,6 +43,7 @@ describe("SceneToolDock", () => {
         onCameraToggle={onAction}
         onPhysicsToggle={onAction}
         onXrToggle={onAction}
+        onSimulationPanelChange={onAction}
       />,
     );
 

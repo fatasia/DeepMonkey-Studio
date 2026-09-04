@@ -1,0 +1,34 @@
+.scene-simulation-visual-qa {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(circle at 30% 25%, #263238, #12181b 58%);
+}
+.scene-simulation-visual-qa-grid {
+  position: absolute;
+  inset: 0;
+  opacity: .22;
+  background-image: linear-gradient(#81909755 1px, transparent 1px), linear-gradient(90deg, #81909755 1px, transparent 1px);
+  background-size: 44px 44px;
+  transform: perspective(600px) rotateX(58deg) scale(1.6) translateY(20%);
+}
+.scene-simulation-visual-qa-object {
+  position: absolute;
+  top: 34%;
+  left: 16%;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  color: #aeb9bd;
+  font-size: 11px;
+}
+.scene-simulation-visual-qa-object i {
+  display: block;
+  width: 150px;
+  height: 110px;
+  border: 2px solid #d5af50;
+  background: linear-gradient(145deg, #47545a, #20292d);
+  box-shadow: 0 20px 50px #0008, inset 0 0 0 8px #1117;
+  transform: skewY(-8deg);
+}

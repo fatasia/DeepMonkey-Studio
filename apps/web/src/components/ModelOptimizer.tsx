@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Crosshair, Download, Eye, Gauge, Image, Lightbulb, LoaderCircle, Move3D, Plus, Rotate3D, Sparkles, Square, Trash2, Triangle, Upload } from "lucide-react";
+import { Box, Crosshair, Eye, Gauge, Image, Lightbulb, LoaderCircle, Move3D, Plus, Rotate3D, Sparkles, Square, Trash2, Triangle, Upload } from "lucide-react";
+import type { ModelRecord, ProjectRecord } from "@bim-studio/contracts";
 import { DEFAULT_BAKE_LIGHTS, type BakeLightState, type BakeLightType, type ModelFileStatistics, type ModelOptimizationOptions } from "../optimizer/modelOptimizer";
 import { ModelOptimizerWorkerClient } from "../optimizer/modelOptimizerWorkerClient";
+import { convertProjectModelToGlb, isDirectOptimizerInput, optimizedAssetFile, uploadAndConvertForOptimizer, waitForOptimizerModel } from "../optimizer/modelOptimizerAssets";
 import type { WebLightmapResult } from "../optimizer/lightmapBaker";
+import { ACCEPTED_MODELS } from "../appDefaults";
+import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
-import { SecondaryPageBack } from "./SecondaryPageBack";
+import { ModelOptimizerHeader, ModelOptimizerPipeline } from "./ModelOptimizerPipeline";
 import { OptimizerPreview } from "./OptimizerPreview";
 import {
   BakeVector,
@@ -45,7 +49,9 @@ const DEFAULT_OPTIONS: ModelOptimizationOptions = {
 
 type BakeTransformMode = "translate" | "rotate";
 
-export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: () => void }) {
+export function ModelOptimizer({ locale, onBack, project, onProjectChange }: {
+  locale: AppLocale; onBack: () => void; project: ProjectRecord | undefined; onProjectChange?: (project: ProjectRecord) => void;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const sourceUrlRef = useRef<string | undefined>(undefined);
   const optimizedUrlRef = useRef<string | undefined>(undefined);
@@ -68,6 +74,8 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
   const [bakeTransformMode, setBakeTransformMode] = useState<BakeTransformMode>("translate");
   const [previewShadows, setPreviewShadows] = useState(false);
   const [previewReflections, setPreviewReflections] = useState(false);
+  const [selectedProjectModelId, setSelectedProjectModelId] = useState("");
+  const [savedModelId, setSavedModelId] = useState<string>();
 
   function addBakeLight(type: BakeLightType) {
     const index = options.bakeLights.length + 1;
@@ -105,6 +113,50 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
     const operation = ++operationRef.current;
     if (sourceUrlRef.current) URL.revokeObjectURL(sourceUrlRef.current);
     if (optimizedUrlRef.current) URL.revokeObjectURL(optimizedUrlRef.current);
+    setSavedModelId(undefined);
+    setBusy(true);
+    setMessage("正在准备模型");
+    setError(undefined);
+    let prepared = next;
+    try {
+      if (!isDirectOptimizerInput(next)) {
+        if (!project) throw new Error("请先选择项目，其他格式需要通过项目转换服务处理");
+        const converted = await uploadAndConvertForOptimizer(project.id, next, setMessage);
+        prepared = converted.file;
+        onProjectChange?.(converted.project);
+      }
+      if (operation !== operationRef.current) return;
+      await loadPreparedFile(prepared, operation);
+    } catch (reason) {
+      if (isAbortError(reason) || operation !== operationRef.current) return;
+      setError(errorMessage(reason, locale));
+      setMessage("模型导入或转换失败");
+    } finally {
+      if (operation === operationRef.current) setBusy(false);
+    }
+  }
+
+  async function importProjectModel(model: ModelRecord) {
+    cancelProcessing(false);
+    const operation = ++operationRef.current;
+    setSelectedProjectModelId(model.id);
+    setSavedModelId(undefined);
+    setBusy(true);
+    setError(undefined);
+    try {
+      const prepared = await convertProjectModelToGlb(model, setMessage);
+      if (operation !== operationRef.current) return;
+      await loadPreparedFile(prepared, operation);
+    } catch (reason) {
+      if (isAbortError(reason) || operation !== operationRef.current) return;
+      setError(errorMessage(reason, locale));
+      setMessage("项目模型转换失败");
+    } finally {
+      if (operation === operationRef.current) setBusy(false);
+    }
+  }
+
+  async function loadPreparedFile(next: File, operation: number) {
     const url = URL.createObjectURL(next);
     sourceUrlRef.current = url;
     optimizedUrlRef.current = undefined;
@@ -116,20 +168,10 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
     setAfter(undefined);
     setLightmapResult(undefined);
     setShowOptimized(false);
-    setBusy(true);
     setMessage("正在分析模型");
-    setError(undefined);
-    try {
-      setBefore(await getWorker().inspect(next));
-      if (operation !== operationRef.current) return;
-      setMessage("模型已载入，可调整参数后开始优化");
-    } catch (reason) {
-      if (isAbortError(reason) || operation !== operationRef.current) return;
-      setError(errorMessage(reason, locale));
-      setMessage("模型解析失败");
-    } finally {
-      if (operation === operationRef.current) setBusy(false);
-    }
+    setBefore(await getWorker().inspect(next));
+    if (operation !== operationRef.current) return;
+    setMessage("模型已载入，可调整参数后开始优化");
   }
 
   async function runOptimization() {
@@ -227,6 +269,28 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
     window.setTimeout(() => URL.revokeObjectURL(link.href), 1_000);
   }
 
+  async function saveToProjectAssets() {
+    if (!output || !file || !project) return;
+    const operation = ++operationRef.current;
+    setBusy(true);
+    setError(undefined);
+    try {
+      setMessage("正在保存优化结果到项目素材库");
+      const uploaded = await api.uploadModel(project.id, optimizedAssetFile(file.name, output));
+      const current = await waitForOptimizerModel(project.id, uploaded.id, setMessage);
+      if (operation !== operationRef.current) return;
+      onProjectChange?.(current);
+      setSavedModelId(uploaded.id);
+      setMessage("优化模型已保存到项目素材库，可直接用于场景");
+    } catch (reason) {
+      if (isAbortError(reason) || operation !== operationRef.current) return;
+      setError(errorMessage(reason, locale));
+      setMessage("保存项目素材失败");
+    } finally {
+      if (operation === operationRef.current) setBusy(false);
+    }
+  }
+
   const optionsFingerprint = JSON.stringify(options);
   const resultOutdated = Boolean(output && optimizedOptionsRef.current !== optionsFingerprint);
   useEffect(() => {
@@ -237,25 +301,10 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
   const displayMessage = localizeOptimizerMessage(locale, message);
   return (
     <div className="optimizer-page">
-      <header className="optimizer-header">
-        <SecondaryPageBack locale={locale} onBack={onBack} />
-        <div>
-          <span className="eyebrow">LOCAL GLB PIPELINE</span>
-          <h1>{tr(locale, "模型优化", "Model optimization")}</h1>
-        </div>
-        <div className="optimizer-header-actions">
-          <button onClick={() => inputRef.current?.click()}>
-            <Upload size={15} />
-            {tr(locale, "导入模型", "Import model")}
-          </button>
-          <button className="primary" disabled={!output || resultOutdated} onClick={exportGlb}>
-            <Download size={15} />
-            {tr(locale, "导出 GLB", "Export GLB")}
-          </button>
-        </div>
-      </header>
+      <ModelOptimizerHeader locale={locale} onBack={onBack} onImport={() => inputRef.current?.click()} onDownload={exportGlb} onSave={() => void saveToProjectAssets()} canExport={Boolean(output && !resultOutdated && !busy)} canSave={Boolean(output && !resultOutdated && project && !busy && !savedModelId)} busy={busy} />
       <main className="optimizer-layout">
         <aside className={`optimizer-settings ${file ? "" : "awaiting-model"}`}>
+          <ModelOptimizerPipeline locale={locale} project={project} models={(project?.models ?? []).filter((model) => model.status === "ready" && model.manifest?.geometryUrl)} selectedModelId={selectedProjectModelId} onSelectModel={(id) => { const model = project?.models.find((item) => item.id === id); if (model) void importProjectModel(model); }} onImport={() => inputRef.current?.click()} hasSource={Boolean(file)} hasOutput={Boolean(output && !resultOutdated)} saved={Boolean(savedModelId)} busy={busy} />
           <div className="optimizer-file">
             <Box size={18} />
             <div>
@@ -263,25 +312,10 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
               <span>
                 {before
                   ? `${formatBytes(before.bytes)} · ${before.triangles.toLocaleString(locale)} ${tr(locale, "面", "triangles")}`
-                  : tr(locale, "支持 GLB / glTF", "Supports GLB / glTF")}
+                  : tr(locale, "支持平台全部模型格式", "Supports all platform model formats")}
               </span>
             </div>
           </div>
-          {!file && (
-            <section className="optimizer-start-guide" aria-label={tr(locale, "模型优化流程", "Model optimization workflow")}>
-              <strong>{tr(locale, "先导入模型，再配置优化策略", "Import a model before choosing an optimization strategy")}</strong>
-              <ol>
-                <li>{tr(locale, "分析文件体积、面数与材质", "Inspect file size, geometry, and materials")}</li>
-                <li>{tr(locale, "按目标选择减面、贴图与清理参数", "Choose geometry, texture, and cleanup settings")}</li>
-                <li>{tr(locale, "对比原始模型和优化结果后导出", "Compare the original and optimized result before export")}</li>
-              </ol>
-              <button className="primary" onClick={() => inputRef.current?.click()}>
-                <Upload size={14} />
-                {tr(locale, "选择 GLB / glTF", "Choose GLB / glTF")}
-              </button>
-              <small>{tr(locale, "文件仅在当前浏览器本地处理，不会上传。", "Files are processed locally in this browser and are not uploaded.")}</small>
-            </section>
-          )}
           <OptionSection
             icon={<Triangle size={15} />}
             title={tr(locale, "模型减面", "Mesh simplification")}
@@ -701,7 +735,7 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
             <button className="optimizer-drop" onClick={() => inputRef.current?.click()}>
               <Upload size={32} />
               <strong>{tr(locale, "导入模型开始", "Import a model to begin")}</strong>
-              <span>{tr(locale, "所有处理均在当前浏览器本地完成", "All processing runs locally in this browser")}</span>
+              <span>{tr(locale, "GLB 本地处理，其他格式自动进入项目转换链路", "GLB runs locally; other formats use the project conversion pipeline")}</span>
             </button>
           )}
           {error && <div className="optimizer-error">{error}</div>}
@@ -754,7 +788,7 @@ export function ModelOptimizer({ locale, onBack }: { locale: AppLocale; onBack: 
           )}
         </section>
       </main>
-      <input ref={inputRef} hidden type="file" accept=".glb,.gltf" onChange={(event) => void importFile(event.target.files?.[0])} />
+      <input ref={inputRef} hidden type="file" accept={ACCEPTED_MODELS} onChange={(event) => void importFile(event.target.files?.[0])} />
     </div>
   );
 }

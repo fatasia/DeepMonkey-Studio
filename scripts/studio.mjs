@@ -7,6 +7,7 @@ import {
   studioRuntimePaths,
 } from "./lib/studioProcessManager.mjs";
 import { getStudioDeploymentStatus, printStudioDeploymentStatus, runStudioDeployment } from "./lib/studioDeployment.mjs";
+import { loadProductionEnvironment } from "./lib/nativeProductionOps.mjs";
 import { withStudioOperationLock } from "./lib/studioOperationLock.mjs";
 
 try {
@@ -51,7 +52,7 @@ async function main() {
     const current = readStudioRuntimeState(paths);
     assertRequestedTarget(parsed, current);
     if (parsed.action === "restart") await stopStudioRuntime(paths, { quiet: true });
-    const configuration = resolveStudioConfiguration(parsed, current?.configuration);
+    const configuration = resolveStudioConfiguration(parsed, current?.configuration, process.platform, loadProductionEnvironment().values);
     const result = await startStudioRuntime(configuration);
     printStatus(await getStudioRuntimeStatus(result.paths, result.state));
   });

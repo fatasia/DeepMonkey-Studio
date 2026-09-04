@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { IndustrialValidationStudyRecord } from "@bim-studio/contracts";
-import { validationDraftFromStudy } from "./virtualCommissioningDraft";
+import type { IndustrialValidationStudyRecord, SceneSnapshot } from "@bim-studio/contracts";
+import { defaultVirtualDebugBindings, validationDraftFromStudy } from "./virtualCommissioningDraft";
 
 describe("saved validation Study draft", () => {
   it("uses record identity and revision so linked runs reopen independently", () => {
@@ -21,5 +21,19 @@ describe("saved validation Study draft", () => {
       objectId: "robot-1",
     });
     expect(validationDraftFromStudy(next).sourceAssessmentId).toBe("study:study-2:v1");
+  });
+
+  it("binds editor-launched validation to the selected scene object", () => {
+    const scene = {
+      id: "scene-1",
+      models: [
+        { modelId: "conveyor-1", name: "输送线" },
+        { modelId: "robot-1", name: "机器人" },
+      ],
+      primitives: [],
+    } as unknown as SceneSnapshot;
+
+    expect(defaultVirtualDebugBindings(scene, "robot-1")).toHaveLength(2);
+    expect(defaultVirtualDebugBindings(scene, "robot-1").every((binding) => binding.target.objectId === "robot-1")).toBe(true);
   });
 });

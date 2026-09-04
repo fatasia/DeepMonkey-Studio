@@ -72,7 +72,7 @@ export function parseStudioArguments(argv, platform = process.platform) {
 }
 
 /** 合并重启前的配置，让 `restart` 不带参数时能准确复用上次启动方式。 */
-export function resolveStudioConfiguration(parsed, previous, platform = process.platform) {
+export function resolveStudioConfiguration(parsed, previous, platform = process.platform, environment = process.env) {
   const defaults = {
     target: defaultTarget(platform),
     apiHost: "0.0.0.0",
@@ -95,6 +95,10 @@ export function resolveStudioConfiguration(parsed, previous, platform = process.
     skipInfrastructure: parsed.skipInfrastructure || reusablePrevious?.skipInfrastructure || false,
     noOpen: parsed.noOpen || reusablePrevious?.noOpen || defaults.noOpen,
     https: parsed.https || reusablePrevious?.https || false,
+    // .env 是存储拓扑的权威配置。显式 CLI 参数优先，其次当前 .env，最后才复用旧运行状态；
+    // 避免一次 JSON 测试运行让后续无参数 restart 悄悄隐藏 PostgreSQL 中的真实项目。
+    metadataStore: parsed.overrides.metadataStore ?? environment.METADATA_STORE ?? reusablePrevious?.metadataStore,
+    objectStore: parsed.overrides.objectStore ?? environment.OBJECT_STORE ?? reusablePrevious?.objectStore,
   };
 
   if (configuration.target === "client" && platform !== "win32") {

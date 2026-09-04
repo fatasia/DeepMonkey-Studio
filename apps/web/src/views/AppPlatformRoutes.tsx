@@ -548,7 +548,15 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
             </div>
           }
         >
-          <ModelOptimizer locale={locale} onBack={() => navigate({ view: "manager" })} />
+          <ModelOptimizer
+            locale={locale}
+            project={project}
+            onProjectChange={(current) => {
+              setProject(current);
+              setProjects((items) => items.map((item) => (item.id === current.id ? current : item)));
+            }}
+            onBack={() => navigate({ view: "manager" })}
+          />
         </Suspense>
       )}
       {route.view === "data" && project && (

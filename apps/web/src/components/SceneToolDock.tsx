@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Atom,
+  Bot,
   Box,
   Braces,
   Camera,
+  Cable,
+  ChartSpline,
   ChevronDown,
   Eye,
   EyeOff,
@@ -17,6 +20,7 @@ import {
   Move,
   Orbit,
   RotateCw,
+  Route,
   Ruler,
   ScanLine,
   Scaling,
@@ -26,6 +30,7 @@ import {
 import type { PrimitiveKind } from "@bim-studio/contracts";
 import { primitiveKindLabel } from "../appPresentation";
 import { translate as tr, type AppLocale } from "../i18n";
+import { SCENE_SIMULATION_PANELS, type SceneSimulationPanelId } from "../simulation/sceneSimulationRegistry";
 import type {
   NavigationMode,
   SelectionScope,
@@ -52,6 +57,7 @@ interface SceneToolDockProps {
   cameraOpen: boolean;
   physicsOpen: boolean;
   xrOpen: boolean;
+  simulationPanel: SceneSimulationPanelId | undefined;
   infoEnabled: boolean;
   onFitAll: () => void;
   onSelect: () => void;
@@ -71,6 +77,7 @@ interface SceneToolDockProps {
   onCameraToggle: () => void;
   onPhysicsToggle: () => void;
   onXrToggle: () => void;
+  onSimulationPanelChange: (panel: SceneSimulationPanelId) => void;
 }
 
 const PRIMITIVE_KINDS: readonly PrimitiveKind[] = [
@@ -301,7 +308,8 @@ export function SceneToolDock(props: SceneToolDockProps) {
           props.animationOpen ||
           props.behaviorOpen ||
           props.physicsOpen ||
-          props.xrOpen
+          props.xrOpen ||
+          Boolean(props.simulationPanel)
         }
         onToggle={() => setOpenMenu((value) => (value === "develop" ? undefined : "develop"))}
       >
@@ -333,9 +341,30 @@ export function SceneToolDock(props: SceneToolDockProps) {
           active={props.xrOpen}
           onClick={() => run(props.onXrToggle)}
         />
+        <div className="scene-tool-menu-rule" />
+        <MenuHeading
+          title={tr(props.locale, "生产仿真插件", "Production simulation plugins")}
+          hint={tr(props.locale, "留在三维视口内运行，结果统一进入 Study", "Run in the viewport; persist results as Studies")}
+        />
+        {SCENE_SIMULATION_PANELS.map((panel) => (
+          <MenuAction
+            key={panel.id}
+            label={tr(props.locale, panel.label, panel.englishLabel)}
+            icon={<SimulationIcon panel={panel.id} />}
+            active={props.simulationPanel === panel.id}
+            onClick={() => run(() => props.onSimulationPanelChange(panel.id))}
+          />
+        ))}
       </TaskMenu>
     </div>
   );
+}
+
+function SimulationIcon({ panel }: { panel: SceneSimulationPanelId }) {
+  if (panel === "logistics") return <Route size={15} />;
+  if (panel === "workcell") return <Bot size={15} />;
+  if (panel === "commissioning") return <Cable size={15} />;
+  return <ChartSpline size={15} />;
 }
 
 function DockButton({

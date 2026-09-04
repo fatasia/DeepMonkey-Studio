@@ -54,6 +54,22 @@ test("reuses the previous mode and explicit ports on restart", () => {
   assert.deepEqual(configuration, previous);
 });
 
+test("uses current environment stores instead of a stale restart snapshot", () => {
+  const previous = {
+    target: "web", apiHost: "0.0.0.0", apiPort: 4100, apiOrigin: undefined,
+    webHost: "0.0.0.0", webPort: 5173, metadataStore: "json", objectStore: "local",
+    skipInfrastructure: false, noOpen: true, https: false,
+  };
+  const result = resolveStudioConfiguration(
+    parseStudioArguments(["restart", "web"], "win32"),
+    previous,
+    "win32",
+    { METADATA_STORE: "postgres", OBJECT_STORE: "minio" },
+  );
+  assert.equal(result.metadataStore, "postgres");
+  assert.equal(result.objectStore, "minio");
+});
+
 test("rejects unsafe or unsupported configuration instead of silently falling back", () => {
   assert.throws(() => parseStudioArguments(["start", "api", "--api-port", "70000"]), /1-65535/);
   assert.throws(() => parseStudioArguments(["start", "web", "--api-origin", "https:\/\/user:secret@example.com"]), /不含账号/);

@@ -1,4 +1,4 @@
-import { FileImage, FileUp, FileVideo, RefreshCw, WandSparkles } from "lucide-react";
+import { FileImage, FileUp, FileVideo, Gauge, RefreshCw, WandSparkles } from "lucide-react";
 import { ACCEPTED_MODELS } from "../appDefaults";
 import { translate as tr } from "../i18n";
 import type { SceneManagerController } from "./SceneManager";
@@ -12,6 +12,7 @@ export function ProjectAssetToolbar({ controller }: { controller: SceneManagerCo
     locale,
     modelLibraryBusy,
     modelUploadRef,
+    onOptimizer,
     project,
     refreshLibraryModels,
     setParametricSourceModel,
@@ -28,6 +29,9 @@ export function ProjectAssetToolbar({ controller }: { controller: SceneManagerCo
       </button>
       <button className="button" disabled={modelLibraryBusy || !project} onClick={() => { setParametricSourceModel(undefined); setParametricWorkbenchOpen(true); }}>
         <WandSparkles size={16} />{tr(locale, "参数化生成", "Parametric asset")}
+      </button>
+      <button className="button" disabled={modelLibraryBusy || !project} onClick={onOptimizer}>
+        <Gauge size={16} />{tr(locale, "导入与优化", "Import & optimize")}
       </button>
       <button className="button" disabled={modelLibraryBusy} onClick={() => imageUploadRef.current?.click()}>
         <FileImage size={16} />{tr(locale, "上传图片", "Upload images")}

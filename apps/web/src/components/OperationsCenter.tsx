@@ -68,6 +68,11 @@ export function OperationsCenter({
   initialTab = "maintenance",
   onTabChange,
   onOpenDataCenter,
+  embedded = false,
+  initialSceneId,
+  initialObjectId,
+  initialCommissioningStage,
+  previewSnapshot,
 }: {
   project: ProjectRecord;
   scenes: SceneSnapshot[];
@@ -76,10 +81,15 @@ export function OperationsCenter({
   initialTab?: OperationsTab;
   onTabChange?: (tab: OperationsTab) => void;
   onOpenDataCenter: () => void;
+  embedded?: boolean;
+  initialSceneId?: string;
+  initialObjectId?: string;
+  initialCommissioningStage?: "screening" | "control";
+  previewSnapshot?: OperationsSnapshot;
 }) {
   const [tab, setTab] = useState<OperationsTab>(initialTab);
   const [mountedTabs, setMountedTabs] = useState<Set<OperationsTab>>(() => new Set([initialTab]));
-  const [snapshot, setSnapshot] = useState<OperationsSnapshot>();
+  const [snapshot, setSnapshot] = useState<OperationsSnapshot | undefined>(previewSnapshot);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [logistics, setLogistics] = useState(defaultLogistics);
   const [plantLite, setPlantLite] = useState(() => readPlantLiteDraft(project.id) ?? structuredClone(defaultPlantLite));
@@ -115,7 +125,7 @@ export function OperationsCenter({
   const configuredDeployment = snapshot?.deployments.find(
     (item) => item.modelId === selectedModel?.id && item.sourceId === maintenanceDatasetId,
   );
-  const latestValidationStudy = commissioningStudy ?? snapshot?.validationStudies[0];
+  const latestValidationStudy = commissioningStudy ?? (embedded ? undefined : snapshot?.validationStudies[0]);
 
   useEffect(() => {
     setTab(initialTab);
@@ -151,6 +161,10 @@ export function OperationsCenter({
   }
   useEffect(() => {
     const requestedProjectId = project.id;
+    if (previewSnapshot) {
+      setSnapshot(previewSnapshot);
+      return;
+    }
     setSnapshot(undefined);
     const draft = readPlantLiteDraft(requestedProjectId);
     hydratedPlantLiteProjectId.current = draft ? requestedProjectId : "";
@@ -170,7 +184,7 @@ export function OperationsCenter({
       if (bindingResult.status === "fulfilled") setDataBindings(bindingResult.value);
       await load().catch(showError);
     })();
-  }, [project.id]);
+  }, [previewSnapshot, project.id]);
 
   function changePlantLite(next: PlantLiteStudyRequest) {
     hydratedPlantLiteProjectId.current = project.id;
@@ -482,12 +496,9 @@ export function OperationsCenter({
   }
 
   return (
-    <main className="operations-page">
-      <OperationsHeader project={project} snapshot={snapshot} onBack={onBack} />
-      <OperationsTabs
-        tab={tab}
-        onChange={selectTab}
-      />
+    <main className={`operations-page${embedded ? " operations-page-embedded" : ""}`}>
+      {!embedded && <OperationsHeader project={project} snapshot={snapshot} onBack={onBack} />}
+      {!embedded && <OperationsTabs tab={tab} onChange={selectTab} />}
       {error && (
         <div className="vision-error">
           <AlertTriangle size={15} />
@@ -686,6 +697,9 @@ export function OperationsCenter({
               projectId={project.id}
               scenes={scenes}
               studies={snapshot?.validationStudies ?? []}
+              {...(initialSceneId ? { initialSceneId } : {})}
+              {...(initialObjectId ? { initialObjectId } : {})}
+              {...(initialCommissioningStage ? { initialStage: initialCommissioningStage } : {})}
               {...(commissioningDraft ? { initialDraft: commissioningDraft } : {})}
               {...(latestValidationStudy ? { initialStudy: latestValidationStudy } : {})}
               onStudyChange={(study) => {
@@ -753,12 +767,12 @@ export function OperationsCenter({
             />
           </div>
         )}
-        <OperationsStudyHistory
+        {!embedded && <OperationsStudyHistory
           records={snapshot?.studies ?? []}
           busy={busy}
           onReproduce={reproduceOrOpenStudy}
           onOpenTarget={onOpenSceneTarget}
-        />
+        />}
       </section>
     </main>
   );

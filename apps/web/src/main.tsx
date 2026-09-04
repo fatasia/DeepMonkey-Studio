@@ -28,8 +28,9 @@ async function renderStudioApplication(): Promise<void> {
   const ViewerVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/ViewerVisualQa")) : undefined;
   const CommissioningVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/CommissioningVisualQa")) : undefined;
   const OperationsPlanningVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/OperationsPlanningVisualQa")) : undefined;
+  const SceneSimulationVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/SceneSimulationVisualQa")) : undefined;
   const visualQaMode = visualQaEnabled ? new URLSearchParams(window.location.search).get("__visualQa") : undefined;
-  if (visualQaMode && DashboardVisualQa && ViewerVisualQa && CommissioningVisualQa && OperationsPlanningVisualQa) {
+  if (visualQaMode && DashboardVisualQa && ViewerVisualQa && CommissioningVisualQa && OperationsPlanningVisualQa && SceneSimulationVisualQa) {
     const VisualQaPage = visualQaMode === "dashboard"
       ? DashboardVisualQa
       : visualQaMode === "viewer"
@@ -38,6 +39,8 @@ async function renderStudioApplication(): Promise<void> {
           ? CommissioningVisualQa
           : visualQaMode === "operations-planning"
             ? OperationsPlanningVisualQa
+          : visualQaMode === "scene-simulation"
+            ? SceneSimulationVisualQa
           : undefined;
     if (VisualQaPage) {
       createRoot(document.getElementById("root")!).render(
