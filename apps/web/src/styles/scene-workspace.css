@@ -1,6 +1,7 @@
 .viewer-shell .topbar, .viewer-shell .left-panel, .viewer-shell .right-panel { display: none; }
 
-.topbar { grid-area: top; display: flex; min-width: 0; align-items: center; gap: 12px; overflow: hidden; padding: 0 16px; border-bottom: 1px solid var(--line); background: rgba(24, 28, 31, .96); z-index: 10; }
+/* 顶栏不可 overflow:hidden：会把下弹的"更多"与导出浮窗裁掉，造成"点击无效"（U1-3 根因）。子项以 min-width:0 自行收缩。 */
+.topbar { grid-area: top; display: flex; min-width: 0; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--line); background: rgba(24, 28, 31, .96); z-index: 10; }
 .brand-mark { display: grid; place-items: center; width: 34px; height: 34px; overflow: hidden; border-radius: 9px; background: transparent; }
 .topbar-back{display:inline-flex;height:34px;align-items:center;gap:5px;padding:0 9px;color:#b8c5ca;border:1px solid #35434a;border-radius:7px;background:#1b2428;font-size:10px;cursor:pointer;white-space:nowrap}.topbar-back:hover{color:#e8f2f4;border-color:#56727c;background:#243138}
 .brand-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -329,7 +330,7 @@
 .viewer-tool-items { display: flex; align-items: center; gap: 1px; max-width: 0; overflow: hidden; opacity: 0; pointer-events: none; transition: max-width .22s ease, opacity .16s ease; }
 .viewer-tool-dock.open .viewer-tool-items { max-width:min(408px,calc(100vw - 84px));overflow:hidden;opacity:1;pointer-events:auto; }
 .viewer-tool-separator { width:1px; height:22px; flex:0 0 1px; margin:0 3px; background:rgba(120,132,138,.28); }
-.viewer-tool-more { position:absolute;right:0;bottom:50px;display:grid;gap:8px;min-width:310px;padding:10px;border:1px solid rgba(69,77,83,.9);border-radius:9px;background:rgba(20,27,30,.96);box-shadow:0 14px 38px rgba(0,0,0,.34);backdrop-filter:blur(12px); }
+.viewer-tool-more { position:absolute;right:0;bottom:50px;z-index:23;display:grid;gap:8px;min-width:310px;padding:10px;border:1px solid rgba(69,77,83,.9);border-radius:9px;background:rgba(20,27,30,.96);box-shadow:0 14px 38px rgba(0,0,0,.34);backdrop-filter:blur(12px); }
 .viewer-tool-more>div { display:flex; align-items:center; gap:3px; }
 .viewer-tool-more strong { width:76px; flex:0 0 76px; color:#87949a; font-size:10px; font-weight:600; }
 .viewer-tool-more>div>button:not(.tool-button) { min-width:34px; height:28px; padding:0 8px; color:#b3bdc1; border:1px solid #344147; border-radius:5px; background:#1b2428; font-size:10px; cursor:pointer; }

@@ -194,6 +194,13 @@
   box-shadow: 0 10px 28px rgba(0, 0, 0, .24);
 }
 
+/* 发布浏览 dock 固定底部居中（scene-workspace.css 的既有语义）；上方 .app-shell .tool-dock 的 top:12px
+   特异性更高，会把发布页工具条钉回顶部、被画布拦截点击（U1-3 关联缺陷），这里显式恢复。 */
+.app-shell .tool-dock.viewer-tool-dock {
+  top: auto;
+  bottom: 18px;
+}
+
 .app-shell .tool-button {
   width: 32px;
   height: 32px;

@@ -18,9 +18,15 @@
 
 `.timeline-marker`（styles/scene-workspace.css 454 行）：11px 方块 + 2px 边框 + 2px 外圈阴影的 45° 菱形 → **7px + 1px 边框 + 1px 阴影**，并加 `::after { inset:-8px }` 扩大命中区保证 ≥28px 点击目标（守住门禁）。截图待夜间批次统一补（双主题）。
 
-### U1-3 [查] 多页面"更多"点击无效
+### U1-3 [查] 多页面"更多"点击无效 ✅ 2026-09-05 夜间已修（两个真缺陷）
 
-用户报告"很多页面的'更多'点击无效"。调查步骤：全局 grep `更多`（含 `More`/`MoreHorizontal` 图标按钮）列出全部入口；逐页在 dev server 复现（场景卡、资源卡、任务卡、面板头部等）；常见根因排查：弹层被 `overflow` 裁切、`pointer-events`、`stopPropagation` 吞掉、`useEffect` 依赖导致菜单立即关闭、`z-index` 低于画布 WebGL 层。修复后按入口逐个回归并截图；**把"更多"菜单可打开性加入 dashboard/manager 视觉验收清单**（防复发回归）。
+真实浏览器逐入口实测（脚本 `apps/web/scripts/u13MoreMenu*.mjs`、截图与 JSON 在 `apps/web/test-output/nightly-2026-09-05/`）：
+
+- 正常入口：管理页场景卡"更多"、项目"更多"（details/summary 正常、命中通过）；发布页工具坞更多（修复后正常）。
+- **缺陷 1（3D 编辑器顶栏"更多"点击无效）**：`.topbar` 同时有 `overflow:hidden` + `z-index:10`，下弹弹层（z-index 45）被顶栏裁切，视觉不可见、点击全落 WebGL 画布——正是用户所见。修复：去掉 topbar 的 overflow:hidden（子项 min-width:0 自收缩）。验证：弹层完整渲染，"渲染能力诊断"真实点击成功且诊断弹窗打开（u13-fix-studio3d.png / u13-verify2.png）。
+- **缺陷 2（发布页工具坞被钉在顶部、点击被画布拦截）**：`studioWorkspacePolish.css` 的 `.app-shell .tool-dock { top:12px }` 特异性高于 `.viewer-tool-dock { bottom:18px }`，发布页工具条被钉回顶部。修复：新增 `.app-shell .tool-dock.viewer-tool-dock { top:auto; bottom:18px }`；`.viewer-tool-more` 补 z-index:23。验证：dock y=838（底部）、更多面板可点且命中通过（u13-fix-published.png）。
+- 回归：PublishedViewerToolDock + SceneManagerView 测试 3/3 过，web typecheck 过。
+- 防复发：夜间验收清单新增"每类'更多'入口点击后 elementFromPoint 命中必须在菜单内"检查项。
 
 ### U1-4 [查] 模型优化页能力回退，需恢复完整定位 ✅ 2026-09-04 Codex 会话已恢复（5dc1e38）
 
