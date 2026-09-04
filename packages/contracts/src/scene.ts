@@ -1,4 +1,5 @@
 import type { SceneDashboardState } from "./dashboard.js";
+import type { SimulationEntityState } from "./simulationEntities.js";
 import type { SceneDataBindingState } from "./data.js";
 import type { ModelTransform, Vector3Value } from "./geometry.js";
 import type { ModelFormat } from "./project.js";
@@ -561,6 +562,8 @@ export interface SceneSnapshot {
   selectedAnnotationId?: string;
   /** 保存时抓取的场景画面（JPEG data URL，宽 ≤480px）；场景卡缩略图优先使用，旧场景回退合成示意。 */
   thumbnail?: string;
+  /** 仿真实体（SIM-1a）：连接/路径/碰撞对；仅持久化配置，运行瞬态与 Study 结果不入快照。 */
+  simulationEntities?: import("./simulationEntities.js").SimulationEntityState[];
   /** 最近一次发布的时间；后续编辑不会覆盖已发布快照，需再次发布才会更新浏览版本。 */
   publishedAt?: string;
   /** Runtime selected for the published scene. Editing remains WebGL by default. */
