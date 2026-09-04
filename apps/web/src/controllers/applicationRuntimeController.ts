@@ -29,6 +29,7 @@ import { api } from "../api";
 import { AUTO_SAVE_STORAGE_KEY } from "../appDefaults";
 import { createIndustrialShowcaseBundle } from "../showcase/industrialShowcase";
 import { ApplicationSession } from "../studio/applicationSession";
+import { captureSceneThumbnail } from "../studio/sceneThumbnailCapture";
 import { publishApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 import { runTrustedApplicationScript } from "../studio/trustedApplicationScript";
 import { DEFAULT_DASHBOARD_VIEW, type DashboardReturnContext, type DashboardViewState } from "../studio/workspaceRoute";
@@ -478,6 +479,12 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     if (!document) return;
     if (!automatic) setBusy(true);
     try {
+      // 3D 编辑器内保存时抓取当前视口，作为该场景的卡片缩略图（U1-9d：默认展示最后保存的画面）。
+      const thumbnail = captureSceneThumbnail(engine);
+      if (thumbnail && activeScene) {
+        const scene = document.scenes.find((item) => item.id === activeScene.id);
+        if (scene) scene.thumbnail = thumbnail;
+      }
       const saved = await api.saveApplication(document);
       applicationSessionRef.current.acknowledgeSave(saved);
       if (!automatic) setMessage(`项目“${saved.metadata.name}”已保存`);

@@ -320,19 +320,21 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                         aria-hidden="true"
                         style={{ "--scene-thumbnail-background": scene.environment?.backgroundColor ?? "#11191d" } as CSSProperties}
                       >
-                        {scene.models.some((item) => item.visible) || scene.primitives.some((item) => item.visible)
-                          ? sceneThumbnailItems(scene).map((item) => (
-                              <i
-                                key={`${item.kind}:${item.id}`}
-                                className={`scene-card-thumbnail-item kind-${item.kind}`}
-                                style={{
-                                  "--scene-thumbnail-color": item.color,
-                                  left: `${item.left}%`,
-                                  top: `${item.top}%`,
-                                } as CSSProperties}
-                              />
-                            ))
-                          : <Layers3 className="scene-card-thumbnail-empty" size={32} />}
+                        {scene.thumbnail
+                          ? <img className="scene-card-thumbnail-image" src={scene.thumbnail} alt="" draggable={false} />
+                          : scene.models.some((item) => item.visible) || scene.primitives.some((item) => item.visible)
+                            ? sceneThumbnailItems(scene).map((item) => (
+                                <i
+                                  key={`${item.kind}:${item.id}`}
+                                  className={`scene-card-thumbnail-item kind-${item.kind}`}
+                                  style={{
+                                    "--scene-thumbnail-color": item.color,
+                                    left: `${item.left}%`,
+                                    top: `${item.top}%`,
+                                  } as CSSProperties}
+                                />
+                              ))
+                            : <Layers3 className="scene-card-thumbnail-empty" size={32} />}
                       </span>
                       <small>
                         {scene.models.length + scene.primitives.length + scene.measurements.length + (scene.annotations?.length ?? 0)} {tr(locale, "个对象", "objects")}

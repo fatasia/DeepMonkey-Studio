@@ -559,6 +559,8 @@ export interface SceneSnapshot {
   selectedModelId?: string;
   selectedLayerId?: string;
   selectedAnnotationId?: string;
+  /** 保存时抓取的场景画面（JPEG data URL，宽 ≤480px）；场景卡缩略图优先使用，旧场景回退合成示意。 */
+  thumbnail?: string;
   /** 最近一次发布的时间；后续编辑不会覆盖已发布快照，需再次发布才会更新浏览版本。 */
   publishedAt?: string;
   /** Runtime selected for the published scene. Editing remains WebGL by default. */

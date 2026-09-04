@@ -19,6 +19,7 @@ import {
 } from "../appDefaults";
 import { syncSceneIntoApplication } from "../studio/sceneApplicationSync";
 import { resolveSceneEntryCamera } from "../studio/sceneEntryCamera";
+import { captureSceneThumbnail } from "../studio/sceneThumbnailCapture";
 import { workspaceSaveFailureGuidance } from "../studio/workspaceSaveProtection";
 import { createWorkspaceRecoveryDraft, deleteWorkspaceRecoveryDraft, writeWorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import { normalizeSceneCoordinates } from "../viewer/sceneCoordinates";
@@ -106,6 +107,9 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     const projectId = project.id;
     if (!automatic) setBusy(true);
     try {
+      // 保存时抓取当前视口作为场景缩略图（U1-9d：卡片默认展示最后保存的画面）；失败不阻断保存。
+      const sceneThumbnail = captureSceneThumbnail(engine);
+      if (sceneThumbnail) snapshot.thumbnail = sceneThumbnail;
       const applicationDraft = route.applicationId && activeApplication?.metadata.id === route.applicationId ? syncSceneIntoApplication(activeApplication, snapshot) : undefined;
       // 网络请求发出前先保存轻量恢复副本；IndexedDB 不可用时仍继续正式保存。
       await writeWorkspaceRecoveryDraft(createWorkspaceRecoveryDraft(projectId, applicationDraft, snapshot));
