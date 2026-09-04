@@ -8,7 +8,8 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 const OUTPUT = path.resolve(process.env.BIM_STUDIO_SOURCE_B_CACHE ?? path.join(process.cwd(), "data", "external-assets", "source-b"));
-const KEYS_PATH = path.join(OUTPUT, "api-keys.env");
+// key 固定从主 source-b 目录读取（gitignored），与 OUTPUT 重定向解耦，支持多进程并行。
+const KEYS_PATH = path.join(process.cwd(), "data", "external-assets", "source-b", "api-keys.env");
 const TOKEN = (await readFile(KEYS_PATH, "utf8")).match(/SKETCHFAB_API_TOKEN=(\S+)/)?.[1];
 if (!TOKEN) throw new Error("缺少 SKETCHFAB_API_TOKEN（data/external-assets/source-b/api-keys.env）");
 const USER_AGENT = "BimStudioAssetSync/1.0";
