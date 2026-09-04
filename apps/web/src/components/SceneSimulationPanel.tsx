@@ -1,5 +1,5 @@
-import { lazy, Suspense, useMemo } from "react";
-import { ArrowUpRight, Box, Database, LoaderCircle, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { ArrowUpRight, Box, Database, GripHorizontal, LoaderCircle, Maximize2, X } from "lucide-react";
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import type { OperationsSnapshot } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -10,6 +10,13 @@ import {
 } from "../simulation/sceneSimulationRegistry";
 
 const OperationsCenter = lazy(() => import("./OperationsCenter").then((module) => ({ default: module.OperationsCenter })));
+const PANEL_LAYOUT_KEY = "bim-studio.scene-simulation-panel-layout.v1";
+const PANEL_MARGIN = 10;
+const PANEL_MIN_WIDTH = 420;
+const PANEL_MIN_HEIGHT = 360;
+
+interface PanelLayout { left: number; top: number; width: number; height: number }
+interface PointerOperation { kind: "move" | "resize"; pointerId: number; x: number; y: number; layout: PanelLayout }
 
 interface Props {
   locale: AppLocale;
@@ -32,14 +39,68 @@ interface Props {
  */
 export function SceneSimulationPanel(props: Props) {
   const panel = sceneSimulationPanel(props.panelId);
+  const panelRef = useRef<HTMLElement>(null);
+  const pointerOperationRef = useRef<PointerOperation | undefined>(undefined);
+  const [layout, setLayout] = useState<PanelLayout>();
   const orderedScenes = useMemo(() => {
     if (!props.activeScene) return props.scenes;
     return [props.activeScene, ...props.scenes.filter((scene) => scene.id !== props.activeScene?.id)];
   }, [props.activeScene, props.scenes]);
 
+  useEffect(() => {
+    const element = panelRef.current;
+    const container = element?.offsetParent as HTMLElement | null;
+    if (!element || !container) return;
+    const bounds = container.getBoundingClientRect();
+    setLayout(constrainPanelLayout(readPanelLayout() ?? defaultPanelLayout(bounds.width, bounds.height), bounds.width, bounds.height));
+    const observer = new ResizeObserver(() => {
+      const nextBounds = container.getBoundingClientRect();
+      setLayout((current) => current && constrainPanelLayout(current, nextBounds.width, nextBounds.height));
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  function beginPointerOperation(kind: PointerOperation["kind"], event: ReactPointerEvent<HTMLElement>) {
+    if (event.button !== 0 || !layout || (kind === "move" && (event.target as Element).closest("button"))) return;
+    pointerOperationRef.current = { kind, pointerId: event.pointerId, x: event.clientX, y: event.clientY, layout };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function updatePointerOperation(event: ReactPointerEvent<HTMLElement>) {
+    const operation = pointerOperationRef.current;
+    const element = panelRef.current;
+    const container = element?.offsetParent as HTMLElement | null;
+    if (!operation || operation.pointerId !== event.pointerId || !container) return;
+    const dx = event.clientX - operation.x;
+    const dy = event.clientY - operation.y;
+    const bounds = container.getBoundingClientRect();
+    const next = operation.kind === "move"
+      ? { ...operation.layout, left: operation.layout.left + dx, top: operation.layout.top + dy }
+      : { ...operation.layout, width: operation.layout.width + dx, height: operation.layout.height + dy };
+    setLayout(constrainPanelLayout(next, bounds.width, bounds.height));
+  }
+
+  function finishPointerOperation(event: ReactPointerEvent<HTMLElement>) {
+    if (pointerOperationRef.current?.pointerId !== event.pointerId) return;
+    pointerOperationRef.current = undefined;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (layout) savePanelLayout(layout);
+  }
+
+  const panelStyle = layout ? ({ left: layout.left, top: layout.top, width: layout.width, height: layout.height } satisfies CSSProperties) : undefined;
+
   return (
-    <aside className="scene-simulation-panel" aria-label={tr(props.locale, "场景仿真插件", "Scene simulation plugin")}>
-      <header className="scene-simulation-header">
+    <aside ref={panelRef} style={panelStyle} className="scene-simulation-panel" aria-label={tr(props.locale, "场景仿真插件", "Scene simulation plugin")}>
+      <header
+        className="scene-simulation-header"
+        title={tr(props.locale, "拖动窗口；右下角可调整大小", "Drag the window; resize from the bottom-right corner")}
+        onPointerDown={(event) => beginPointerOperation("move", event)}
+        onPointerMove={updatePointerOperation}
+        onPointerUp={finishPointerOperation}
+        onPointerCancel={finishPointerOperation}
+      >
         <div className="scene-simulation-title">
           <span>{panel.eyebrow}</span>
           <div>
@@ -47,6 +108,7 @@ export function SceneSimulationPanel(props: Props) {
             <small>{tr(props.locale, panel.description, panel.englishDescription)}</small>
           </div>
         </div>
+        <GripHorizontal className="scene-simulation-drag-indicator" size={16} aria-hidden="true" />
         <button type="button" aria-label={tr(props.locale, "关闭仿真面板", "Close simulation panel")} onClick={props.onClose}>
           <X size={16} />
         </button>
@@ -100,6 +162,46 @@ export function SceneSimulationPanel(props: Props) {
           {tr(props.locale, "查看运营证据", "Open evidence workbench")}<ArrowUpRight size={14} />
         </button>
       </footer>
+      <button
+        type="button"
+        className="scene-simulation-resize-handle"
+        aria-label={tr(props.locale, "调整仿真面板大小", "Resize simulation panel")}
+        title={tr(props.locale, "拖动调整面板大小", "Drag to resize")}
+        onPointerDown={(event) => beginPointerOperation("resize", event)}
+        onPointerMove={updatePointerOperation}
+        onPointerUp={finishPointerOperation}
+        onPointerCancel={finishPointerOperation}
+      ><Maximize2 size={12} /></button>
     </aside>
   );
+}
+
+export function constrainPanelLayout(layout: PanelLayout, boundsWidth: number, boundsHeight: number): PanelLayout {
+  const availableWidth = Math.max(280, boundsWidth - PANEL_MARGIN * 2);
+  const availableHeight = Math.max(280, boundsHeight - PANEL_MARGIN * 2);
+  const width = Math.min(Math.max(Math.min(PANEL_MIN_WIDTH, availableWidth), layout.width), availableWidth);
+  const height = Math.min(Math.max(Math.min(PANEL_MIN_HEIGHT, availableHeight), layout.height), availableHeight);
+  return {
+    left: Math.min(Math.max(PANEL_MARGIN, layout.left), Math.max(PANEL_MARGIN, boundsWidth - width - PANEL_MARGIN)),
+    top: Math.min(Math.max(PANEL_MARGIN, layout.top), Math.max(PANEL_MARGIN, boundsHeight - height - PANEL_MARGIN)),
+    width,
+    height,
+  };
+}
+
+function defaultPanelLayout(boundsWidth: number, boundsHeight: number): PanelLayout {
+  const width = Math.min(520, Math.max(280, boundsWidth - PANEL_MARGIN * 2));
+  const height = Math.min(610, Math.max(280, boundsHeight - 116));
+  return { left: Math.max(PANEL_MARGIN, boundsWidth - width - 18), top: Math.min(84, Math.max(PANEL_MARGIN, boundsHeight - height - PANEL_MARGIN)), width, height };
+}
+
+function readPanelLayout(): PanelLayout | undefined {
+  try {
+    const value = JSON.parse(localStorage.getItem(PANEL_LAYOUT_KEY) ?? "null") as Partial<PanelLayout> | null;
+    return value && [value.left, value.top, value.width, value.height].every(Number.isFinite) ? value as PanelLayout : undefined;
+  } catch { return undefined; }
+}
+
+function savePanelLayout(layout: PanelLayout): void {
+  try { localStorage.setItem(PANEL_LAYOUT_KEY, JSON.stringify(layout)); } catch { /* 私密或受限浏览器中仅保留本次布局。 */ }
 }

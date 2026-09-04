@@ -1,12 +1,16 @@
 .scene-simulation-panel {
   position: absolute;
-  top: 66px;
-  right: 16px;
-  bottom: 48px;
+  top: 84px;
+  right: 18px;
   z-index: 22;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
-  width: clamp(540px, 50vw, 760px);
+  width: min(520px, calc(100% - 28px));
+  height: min(610px, calc(100% - 116px));
+  min-width: min(420px, calc(100% - 20px));
+  min-height: min(360px, calc(100% - 20px));
+  max-width: calc(100% - 20px);
+  max-height: calc(100% - 20px);
   overflow: hidden;
   color: #dfe5e7;
   border: 1px solid rgba(77, 91, 98, 0.92);
@@ -23,6 +27,9 @@
   gap: 16px;
   padding: 13px 14px 11px;
   border-bottom: 1px solid #303b40;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
 }
 
 .scene-simulation-title { display: flex; min-width: 0; align-items: center; gap: 11px; }
@@ -55,6 +62,26 @@
   cursor: pointer;
 }
 .scene-simulation-header > button:hover { color: #f3f5f6; border-color: #455158; background: #252e33; }
+.scene-simulation-drag-indicator { margin-left: auto; color: #536168; pointer-events: none; }
+
+.scene-simulation-resize-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 4;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  place-items: center;
+  color: #63747b;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.scene-simulation-resize-handle:hover { color: #e8c76e; background: #2b281c; }
 
 .scene-simulation-tabs {
   display: grid;
@@ -131,12 +158,12 @@
 .scene-simulation-footer button:hover { color: #ffe39a; border-color: #88713a; }
 
 @media (max-width: 920px) {
-  .scene-simulation-panel { right: 8px; bottom: 42px; width: min(580px, calc(100% - 16px)); }
+  .scene-simulation-panel { right: 8px; width: min(500px, calc(100% - 16px)); }
   .scene-simulation-context { grid-template-columns: auto minmax(0, 124px) 1px auto minmax(0, 1fr); }
 }
 
 @media (max-width: 640px) {
-  .scene-simulation-panel { top: 58px; width: calc(100% - 16px); }
+  .scene-simulation-panel { top: 58px; right: 8px; width: calc(100% - 16px); height: calc(100% - 70px); min-width: 0; min-height: 300px; }
   .scene-simulation-tabs button { min-height: 34px; font-size: 0; text-align: center; }
   .scene-simulation-tabs button span { font-size: 9px; }
   .scene-simulation-context { flex-wrap: wrap; }

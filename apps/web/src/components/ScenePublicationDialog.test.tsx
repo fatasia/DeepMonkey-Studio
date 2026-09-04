@@ -23,6 +23,11 @@ describe("ScenePublicationDialog", () => {
     expect(html).toContain("请先在云渲染设置完成全局配置");
     expect(html).toContain("允许访客使用适应全部、漫游、测量、剖切、爆炸和场景信息");
     expect(html).toContain("只影响发布浏览页，不开放模型编辑能力");
+    expect(html).toContain(">WebGL<");
+    expect(html).toContain(">WebGPU<");
+    expect(html).toContain("高画质");
+    expect(html).toContain("极速模式");
+    expect(html).toContain("发布不会覆盖草稿");
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('aria-pressed="false"');
   });

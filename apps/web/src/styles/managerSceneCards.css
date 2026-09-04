@@ -176,7 +176,7 @@
 
 .scene-card-more-menu {
   bottom: calc(100% + 8px);
-  width: 218px;
+  width: 202px;
   padding: 7px;
   border-color: #3b4c53;
   border-radius: 10px;
@@ -194,7 +194,8 @@
 .scene-card-footer .scene-card-more-menu > button:hover { color: #edf8fa; background: #213037; }
 .scene-card-more-export .export-menu { width:100%; }
 .scene-card-more-export .export-menu > button { display:flex;width:100%;min-height:35px;justify-content:flex-start;gap:8px;padding-inline:9px;font-size:11px; }
-.scene-card-more-export .export-menu-popup { right:calc(100% + 8px);bottom:0;left:auto; }
+.scene-card-more-export .export-menu-popup { position:static;width:100%;margin:3px 0 2px;padding:3px;border-color:#2c3a40;border-radius:6px;background:#11191d;box-shadow:none; }
+.scene-card-footer .scene-card-more-export .export-menu-popup > button { display:grid;width:100%;height:auto;min-height:39px;grid-template-columns:23px minmax(0,1fr);align-items:center;padding:5px 7px;text-align:left;place-items:initial; }
 
 .manager-empty {
   min-height: 390px;

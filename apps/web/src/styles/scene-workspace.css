@@ -29,12 +29,12 @@
 .viewer-mode-badge { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; color: #e6c77f; border: 1px solid rgba(217,170,77,.3); border-radius: 999px; background: rgba(217,170,77,.09); font-size: 8px; font-weight: 750; }
 .export-menu { position: relative; }
 .export-menu > button { white-space: nowrap; }
-.export-menu-popup { position: absolute; top: calc(100% + 7px); right: 0; z-index: 40; width: 218px; padding: 5px; border: 1px solid #3a4248; border-radius: 9px; background: #202529; box-shadow: 0 16px 42px rgba(0,0,0,.42); }
+.export-menu-popup { position: absolute; top: calc(100% + 7px); right: 0; z-index: 40; width: 196px; padding: 5px; border: 1px solid #3a4248; border-radius: 9px; background: #202529; box-shadow: 0 16px 42px rgba(0,0,0,.42); }
 .export-menu-popup > button { display: grid; grid-template-columns: 25px minmax(0, 1fr); align-items: center; width: 100%; padding: 9px 8px; color: #aeb7bd; text-align: left; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
 .export-menu-popup > button:hover { color: var(--accent); background: #2a3034; }
 .export-menu-popup > button > span { display: flex; flex-direction: column; min-width: 0; }
-.export-menu-popup strong { color: #e8ebed; font-size: 10px; }
-.export-menu-popup small { margin-top: 3px; color: #727d84; font-size: 8px; }
+.export-menu-popup strong { overflow:hidden; color: #e8ebed; font-size: 10px; text-overflow:ellipsis; white-space:nowrap; }
+.export-menu-popup small { overflow:hidden; margin-top: 3px; color: #727d84; font-size: 8px; text-overflow:ellipsis; white-space:nowrap; }
 .export-menu.compact { display: inline-flex; }
 .export-menu.compact > button { display: grid; place-items: center; width: 27px; height: 25px; color: #7a858c; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
 .export-menu.compact .export-menu-popup { top: calc(100% + 4px); }

@@ -4,7 +4,8 @@
 
 - 产品仓库：`D:\Documents\bim\bim-studio`
 - 分支：`dev-studio`
-- 本轮提交：执行 `git log -1 --oneline` 获取，提交说明为 `feat: connect simulation and model asset pipelines`
+- 功能基线提交：`5dc1e38 feat: connect simulation and model asset pipelines`。
+- 最新 UI 修正提交：执行 `git log -1 --oneline` 获取，提交说明为 `fix: refine simulation and delivery overlays`。
 - 只允许本地提交；用户明确要求 **不要 push**。
 - 外层 `D:\Documents\bim` 是无远端的工作区快照，不是产品开发仓库；不要在外层提交产品代码，也不要改写其 Git 历史。
 - `D:\Documents\bim\minio` 保持外层兄弟目录，不能迁入产品 Git。`oracle` 仅为可选 Oracle Thick/Node-RED 连接，`installers` 仅为安装介质，均不是普通 Web 启动依赖。
@@ -24,6 +25,7 @@
 
 - “仿真与开发”工具坞注册四个面板：物流仿真、工位与机器人、虚拟调试、What-if。
 - `SceneSimulationPanel` 是编辑器内右侧插件宿主，复用现有 `OperationsCenter`、Plant Lite、虚拟调试和 Study 数据，不复制算法。
+- 面板遵循 Process Simulate 的单工作台原则：默认 520×610 紧凑浮窗，标题栏可拖动、右下角可缩放，移动/尺寸自动限制在 3D 工作区内并保存用户布局；不再用大窗盖住主视口。
 - 编辑器上下文（场景、选中对象）传入工位/机器人与虚拟调试；虚拟调试可直接进入控制验证阶段。
 - 同一运行产生的正式结果继续写入统一 Study；独立 `/operations` 保留为证据、历史与批量分析工作台。
 - 添加了稳定的 Visual QA 入口 `?__visualQa=scene-simulation&panel=logistics|workcell|commissioning|whatif`。已逐个目测四个面板；窄视口仍保留可见 3D 区域。
@@ -46,6 +48,15 @@
 - 可直接从当前项目素材库选择 ready 模型继续优化。
 - 优化结果既可下载 GLB，也可上传回当前项目，等待服务端处理完成后刷新项目素材状态。
 - 项目资源工具栏新增“导入与优化”入口，形成素材库双向链路。
+
+### 用户截图反馈修正
+
+- 发布弹窗只常驻三组决策：交付方式 `WebGL / WebGPU / 云渲染`、性能策略 `高画质 / 极速模式`、浏览工具栏 `显示 / 隐藏`；兼容性、回退、画质和权限说明全部进入按钮或分组悬浮提示。
+- “发布不会覆盖草稿”收成单行安全提示，历史恢复和运行诊断说明移入悬浮提示；弹窗宽度由 640px 收至 540px。
+- 场景卡片的导出菜单不再横向弹出第二个宽浮窗，而是在 202px 的“更多”菜单内紧凑展开；修复通用场景卡按钮样式把导出项压成 27px、导致中文竖排的根因。
+- Siemens 参考依据：Process Simulate 把 Object Tree、Simulation Panel、Signal Viewer、Sequence Editor 等作为围绕中心视口的工具窗；本项目采用其“视口中心 + 可重排工具窗 + 上下文对象 + 统一时序/证据”的结构，不照搬传统 Ribbon 视觉。
+- 官方/官方社区参考：`https://community.sw.siemens.com/s/question/0D54O000084EBSqSAO/how-can-i-connect-my-opc-ua-server-to-process-simulate`、`https://community.sw.siemens.com/s/question/0D54O000061wwKmSAI/virtual-commisioning-in-process-simulate`。
+- UI 修正完成后验证：Web 全量测试 316 个文件、1,111 项全部通过；全仓类型检查、1,645 个源文件尺寸门禁、Web 生产构建与包体预算通过，并完成发布弹窗、导出菜单和仿真面板的真实浏览器目测。
 
 重点文件：
 
