@@ -53,7 +53,7 @@ a) **[查]** 3D 编辑器窗口缩小后，滚动会**反复跳**：2026-09-05 �
 2D 同族问题 **U1-10（画布缩小抖动、滚动条抖动）已修**：根因是 ResizeObserver 即时 fit 的反馈振荡（fit 写 zoom/scroll → 再触发 observer → 再判定自动倍率 → 再 fit），叠加滚动条出现/消失的布局位移。修复（DashboardWorkspace.tsx）：自动 fit 防抖 180ms（resize 风暴期间不跟随）+ 目标状态等值时零写入。深测证据（`u19a-deep-resize.mjs`，与 resize 并发的逐帧采样）：静置 434 帧 0 变化；视觉截图序列（u110-frames/）1080–1440px 全程干净；残余 ±1px scrollLeft 微翻为浏览器原生 scroll anchoring，不可感知。scrollbar-gutter 方案试验后因指标劣化已回退。回归：DashboardWorkspace 9 项测试 + typecheck 过。
 b) **[修]** 发布功能页面排版完全错误 ✅ 2026-09-04 已修（代码层）：`ScenePublicationDialog.tsx` + `scene-manager.css`——删英文眉题 PUBLISH CENTER（沿既有决策）；三组选项卡 122/96px 高块（双行长描述）改 44px 单行紧凑卡，描述全部转 `title` 悬浮（用户要求）；弹窗 900→640px、头部收紧；徽章改流内第三列不再绝对定位。测试 1/1 过；**双主题截图待夜间批次补**（浏览器证据未做，不算最终关闭）。
 c) **[设]** 云渲染无法一键开启；全局设置应默认配好、可一键开启：CloudRenderControl.tsx（660 行）现状调查 + "全局设置默认值 + 一键开关"规格（白天 CLOUD-001）。
-d) **[修]** 场景卡片浏览缩略图不对：应**默认截取场景最后一次保存/发布的画面**。定位场景缩略图生成链路（保存时视口截图？）；修复为保存/发布时自动截取当前视口为卡片图；无截图时回退现有占位。
+d) **[修]** 场景卡片浏览缩略图不对 ✅ 2026-09-05 夜间已修（c0aada2）：`SceneSnapshot` 新增 `thumbnail?: string`；新模块 `sceneThumbnailCapture.ts` 同步重绘一帧→绘制 480px 离屏画布→JPEG data URL（≤160KB 上限，失败返回 undefined 不阻断保存）；接线两条保存链（3D 编辑器 `scenePersistenceController.saveScene`——即"保存项目"实际链路，与应用文档链 `saveActiveApplication`）；管理页卡片优先 `scene.thumbnail` 真实截图，旧场景回退合成示意。E2E 证据（u19d-thumbnail-e2e.mjs + u19d-manager-thumbnail.png）：保存后 scenes API 返回 `thumbnail: true`（15,675 字节），管理页"678"卡显示真实视口画面。已知说明：`/applications` 列表接口为投影不返回 scene 内部字段（假阴性来源，非缺陷）。
 e) **[设]** docs 文档页"不全、太简单"：DocsCenter 15 篇按使用主链补齐（新建→导入→编辑→绑定→发布→运维），并入 S3-C 内容线规格。
 f) **[修]** 场景卡片"更多"里的几项放回主卡片用图标展示 ✅ 2026-09-04 已修（代码层）：SceneManagerView.tsx 主卡动作区新增 图标直达——版本历史（已发布时）/复制场景/重命名场景，"更多"菜单移除重复项仅留真正低频（查看发布版/复制发布链接/撤回发布/云渲染/导出）。测试 2/2 过；**浏览器截图待夜间补**。本次反馈覆盖 821ca74"高频动作精简"的旧决策，交接文档已记录。
 
