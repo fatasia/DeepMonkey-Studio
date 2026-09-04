@@ -151,6 +151,26 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
   }
 
   function beginNodeTransform(event: ReactPointerEvent<HTMLButtonElement>, node: WidgetNode, mode: "move" | "resize") {
+    // Alt+拖拽=复制并拖动副本（对标 FVS alt+拖拽）：同步插入同位克隆，手势无缝接管克隆体。
+    if (event.altKey && mode === "move" && !node.locked) {
+      const topZIndex = Math.max(0, ...page.nodes.map((item) => item.zIndex));
+      const usedNames = new Set(page.nodes.map((item) => dashboardNodeIdentity(item).toLocaleLowerCase()));
+      const name = uniqueDashboardNodeName(`${dashboardNodeIdentity(node)} ${tr(locale, "副本", "copy")}`, usedNames);
+      const clone: WidgetNode = {
+        ...structuredClone(node),
+        id: `${node.kind}:${crypto.randomUUID()}`,
+        name,
+        zIndex: topZIndex + 1,
+        visible: true,
+        locked: false,
+        ...(node.groupId ? { groupId: `group:${crypto.randomUUID()}` } : {})
+      };
+      onCommand(createInsertDashboardNodesCommand(page.id, [clone]));
+      const ids = [clone.id];
+      setSelectedNodeIds(ids);
+      onSelectionChange(ids.map((id) => ({ kind: "widget", id })));
+      node = clone;
+    }
     beginDashboardNodeTransform({
       event,
       node,

@@ -160,7 +160,7 @@ describe("DashboardWorkspace", () => {
     expect(html).toContain('aria-label="页面宽度"');
     expect(html).toContain("页面与图层");
     expect(html).toContain("纯三维 看板");
-    expect(html).not.toContain('class="dashboard-page-tabs"');
+    expect(html).toContain("dashboard-page-tabs"); // 2026-09-05 用户决策反转：底部页签恢复
     expect(html).not.toContain("空格/中键平移");
   });
 });
