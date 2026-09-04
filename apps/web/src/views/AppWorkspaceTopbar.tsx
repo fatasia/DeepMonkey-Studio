@@ -96,14 +96,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
       )}
       {route.view === "studio" ? (
         <>
-          {route.applicationId && activeApplication ? (
-            <div className="workspace-breadcrumb">
-              <LayoutDashboard size={15} />
-              <strong>{activeApplication.metadata.name}</strong>
-              <span>/</span>
-              <em>{tr(locale, "三维场景", "3D scene")}</em>
-            </div>
-          ) : (
+          {route.applicationId && activeApplication ? null : (
             <>
               <select
                 className="project-select"
@@ -122,10 +115,11 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
               </button>
             </>
           )}
+          {/* 模式按钮已高亮当前模式、右侧另有可编辑场景名，面包屑属重复信息（用户反馈低级错误）已移除。 */}
           <WorkspaceModeSwitch
             locale={locale}
             active={sceneBehaviorOpen ? "script" : "3d"}
-            contextLabel={`${tr(locale, "三维场景", "3D scene")} · ${sceneName}`}
+            contextLabel={sceneName}
             onSelect2D={leaveThreeDimensionalWorkspace}
             onSelect3D={showThreeDimensionalWorkspace}
             onSelectScripts={() => setSceneBehaviorOpen(true)}
