@@ -371,3 +371,5 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 素材下载限速判断（2026-09-05）：大批量运行时 Sketchfab 服务端限流/每日下载配额可能触顶（60s 无新增 GLB，脚本含 429 退避会自动等待恢复）。脚本幂等可重入，配额恢复后每次运行自动续传——夜间循环持续补量即可，无需人工干预。当前落地：主库 164 GLB + 三路并行批次产出入库后合并（uid 去重）。stdout 管道缓冲导致后台运行时中间日志不可见属正常，结果以 catalog.json 为准。
 
 - 2026-09-05 用户指令：下载暂停（catalog 164 个保持），集中做剩余 5 项+全量测试。队列：① SIM-1a 场景树仿真域渲染+检查器挂载 ② 覆盖层 ③ U1-8a 双主题截图补档 ④ EX-001A Alt 拖拽复制+右键选层 ⑤ S3-B/S3-C 规格；全量测试=Web 全量+全部路由巡检（u117 脚本已备）。
+
+- EX-001A Alt拖拽复制实现方案（下一窗口照做）：① `pasteCopiedNodes`（controller:217）改为返回新建节点 id 数组；② `DashboardCanvasNode.tsx` 移动手柄（314 行 onPointerDown→onTransformStart(event,"move")）前置判断：event.altKey 时先调 copy+paste（偏移 0），用返回的首个新 id 构造合成 pointer 事件参数继续 onTransformStart；③ 拖动事务与手柄解耦（beginNodeTransform 接受 nodeId 参数而非从 DOM 读），避免粘贴后 React 重渲染打断手势；④ 回归：DashboardWorkspace.test.tsx 加 Alt+拖拽副本断言。已确认 Ctrl+D 复制已存在（508-513），Alt 拖拽是补充交互。
