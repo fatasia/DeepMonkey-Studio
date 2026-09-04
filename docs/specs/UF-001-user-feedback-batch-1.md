@@ -10,10 +10,9 @@
 
 ## 问题清单
 
-### U1-1 [设] 仿真功能并入 3D 编辑器插件面板
+### U1-1 [设] 仿真功能并入 3D 编辑器插件面板 ✅ 设计定稿（2026-09-04）
 
-智能运营（/operations）中的 Plant Lite、PS Lite、虚拟调试等仿真能力，应可作为插件面板嵌入 3D 场景编辑器（选中场景对象即为目标，不用切页）。
-现状确认：OperationsCenter.tsx（765 行）承载；3D 编辑器壳层 AppStudioShell.tsx（647 行）。白天写 SIM-001 规格：面板挂载点、场景对象引用、与统一 Study 的关系、`/operations` 入口保留。**不得删除 /operations 现有入口。**
+已完成 `docs/specs/SIM-001-simulation-in-editor-design.md`：交互层取 Visual Components 快速通道（拖预制体→点连→播放），能力层全量同级（Plant 队列/班次/故障/随机实验/置信区间、PS 碰撞矩阵/轨迹/节拍、PD PPR、What-if 全保留），单工作台结构参照西门子。分期 SIM-1a~1d；SIM-1a 详细实现规格待 EX/S1 队列消化后编写。
 
 ### U1-2 [修] 动画时间线帧图标过大 ✅ 2026-09-04 已修
 
