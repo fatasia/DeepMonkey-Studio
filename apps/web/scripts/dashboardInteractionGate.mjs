@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 
 /** 固定内存夹具，不登录、不编辑用户场景；断言失败必须返回非零。 */
-export async function runDashboardGate(name, inspect) {
+export async function runDashboardGate(name, inspect, prepare) {
   const outputRoot = fileURLToPath(new URL(`../../../test-output/codex-2026-09-05/${name}/`, import.meta.url));
   await mkdir(outputRoot, { recursive: true });
   const browser = await playwright.chromium.launch({ executablePath: process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
@@ -21,6 +21,7 @@ export async function runDashboardGate(name, inspect) {
       const result = { id, passed: false };
       report.cases.push(result);
       try {
+        await prepare?.(page);
         const origin = process.env.BIM_STUDIO_QA_ORIGIN ?? "http://127.0.0.1:5173";
         await page.goto(`${origin}/?__visualQa=dashboard&theme=${theme}`, { waitUntil: "domcontentloaded" });
         await waitCount(page, ".dashboard-node", 9);

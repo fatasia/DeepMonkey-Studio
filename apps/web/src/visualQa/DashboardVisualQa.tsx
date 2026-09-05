@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { applyStudioCommand, type StudioCommand } from "@bim-studio/studio-core";
+import { useState, useSyncExternalStore } from "react";
+import { ApplicationStore, type StudioCommand } from "@bim-studio/studio-core";
 import type { ApplicationDocument, ApplicationObjectRef, ProjectRecord } from "@bim-studio/contracts";
 import { DashboardWorkspace } from "../components/DashboardWorkspace";
 
@@ -34,11 +34,13 @@ const initialApplication: ApplicationDocument = {
 const project: ProjectRecord = { id: "visual-qa", name: "智能工厂运营中心", description: "Dashboard visual QA", models: [], createdAt: now, updatedAt: now };
 
 export default function DashboardVisualQa() {
-  const [application, setApplication] = useState(initialApplication);
+  const [store] = useState(() => new ApplicationStore(initialApplication));
+  const state = useSyncExternalStore((listener) => store.subscribe(listener), () => store.getState());
+  const application = state.document!;
   const [selection, setSelection] = useState<readonly ApplicationObjectRef[]>([]);
   const [pageId, setPageId] = useState(initialApplication.pages[0]!.id);
   const page = application.pages.find((item) => item.id === pageId) ?? application.pages[0]!;
-  const dispatch = (command: StudioCommand) => setApplication((current) => applyStudioCommand(current, command));
+  const dispatch = (command: StudioCommand) => store.dispatch(command);
 
   return <DashboardWorkspace
     locale="zh-CN"
@@ -47,8 +49,8 @@ export default function DashboardVisualQa() {
     page={page}
     rendererBackend="webgl"
     dirty
-    canUndo={false}
-    canRedo={false}
+    canUndo={state.canUndo}
+    canRedo={state.canRedo}
     busy={false}
     liveDataEnabled={false}
     selection={selection}
@@ -65,8 +67,8 @@ export default function DashboardVisualQa() {
     onObjectInteraction={() => undefined}
     onNodeInteraction={() => undefined}
     onCommand={dispatch}
-    onUndo={() => undefined}
-    onRedo={() => undefined}
+    onUndo={() => { store.undo(); }}
+    onRedo={() => { store.redo(); }}
     onSave={() => undefined}
     onPublish={() => undefined}
     onViewStateChange={() => undefined}

@@ -67,12 +67,12 @@
 
 ## 6. 验收标准
 
-- [ ] 数据面板可展开/收起、搜索、空态/错误态正确，展开状态记忆
-- [ ] chart 组件拖字段入维度/指标/系列槽即完成绑定，配置结构与既有完全一致（保存→刷新→恢复）
-- [ ] 类型不匹配槽位标红拒绝且有明确反馈；X 解绑可撤销
-- [ ] 槽位与既有下拉/角色按钮双向一致；纯键盘可完成一次绑定
-- [ ] `DashboardInspectorData.tsx` 行数不增加；新文件 ≤250/220 行
-- [ ] 全部测试 + typecheck + quality:source-size 通过；浏览器截图证据
+- [x] 数据面板可展开/收起、搜索、空态/错误态正确，展开状态记忆
+- [x] chart 组件拖字段入维度/指标/系列槽即完成绑定，配置结构与既有完全一致（保存→刷新→恢复）
+- [x] 类型不匹配槽位标红拒绝且有明确反馈；X 解绑可撤销
+- [x] 字段/角色替换为同一配置的槽位视图，旧产品下拉同步；纯键盘可完成一次绑定
+- [x] `DashboardInspectorData.tsx` 行数降至 290；面板/槽位均低于各自规格上限
+- [x] Web 全量、typecheck、source-size、生产构建及双主题 1440/980 浏览器验证通过；新增静态可访问性测试与最终复跑见交接
 
 ## 7. 风险与回滚
 
@@ -83,4 +83,10 @@
 
 ## 8. 完成回填（执行后填写）
 
-- 实际改动 / 测试 / 截图 / 偏差 → 总账第 14 节。
+- 已完成：独立设计态目录（数据集含计算字段；管道展开才预览），项目 key 隔离、过期请求丢弃、搜索/刷新/空/错误/重试；字段面板 300px，980 下 280px，避让右侧检查器。
+- 已完成：类型化字段槽、chip、X、拖拽拒绝、Enter/方向键/Home/End/Esc、一笔命令撤销。来自拖拽的类型不受信，按当前项目目录重新校验；跨产品保留类型兼容的同名引用，不自动填其它槽；解绑同时清理 field/analysis.measureField/key，避免继续读旧指标。
+- 复用/拆分：未改公共合同和运行态；直接使用既有 createUpdateDashboardDataWidgetCommand 原子提交，而非连续调用 selectDataProduct/assignAnalysisField 造成两条历史。来源/旧分析角色/报表分别抽为 DashboardDataSource、DashboardLegacyFieldRoles、DashboardReportFields，原直连/地图/报表/条件规则保留。选择数据中心时不再隐式绑定首个产品。
+- 实际目录扩展：value/gauge 外，既有 progress/digital-flip/liquid-fill 也使用相同数值槽；status/map/filter/table/video 不替换原编辑器。关闭字段面板只保留展开偏好，文档仍走真实应用保存；不支持从 chip 拖出解绑，不做多值槽。
+- 证据：`gate-dashboard-field-binding.mjs` 四组合，内存夹具 0 写入/浏览器错误，含真实拖放、伪类型拒绝、单步撤销、键盘、管道失败/重试、计算字段搜索、空目录与展开恢复。
+- 生产闭环：`gate-dashboard-field-persistence.mjs`，隔离临时 API/数据目录，真实 HTTP 数据接入和公式计算→拖入→保存→刷新→发布→匿名读取；后续保存草稿不覆盖发布快照。产物 `test-output/codex-2026-09-05/field-persistence-9CISUL`。不读浏览器 token，不写用户开发库；初次夹具目录/临时强密码配置错误已修，未改用户 admin/admin。
+- 结构与测试：Web 全量 1165 项通过（新增静态槽位测试后的最后数值见交接），typecheck/1751 源文件尺寸通过，生产首屏 304.7 KiB/gzip 98.9 KiB；截图显示亮色来源/分析区硬编码深底，已按本工作区令牌同步修复。

@@ -1,4 +1,6 @@
 import { DashboardRuntimePreview } from "./DashboardRuntimePreview";
+import { DashboardDataBindingProvider } from "./DashboardDataBindingProvider";
+import { DashboardDataPanel } from "./DashboardDataPanel";
 import type { DashboardWorkspaceController } from "./DashboardWorkspace";
 import { DashboardWorkspaceCanvas } from "./DashboardWorkspaceCanvas";
 import { DashboardWorkspaceContextMenu } from "./DashboardWorkspaceContextMenu";
@@ -64,6 +66,7 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
 
   return (
     <DashboardWorkspaceProvider controller={controller}>
+      <DashboardDataBindingProvider key={project.id}>
       <main className={`dashboard-workspace${leftPanelOpen ? "" : " left-panel-collapsed"}${inspectorOpen ? "" : " inspector-collapsed"}`}>
         <h1 className="sr-only">{page.name} · {locale === "zh-CN" ? "二维页面编辑" : "2D page editor"}</h1>
         <DashboardWorkspaceHeader />
@@ -91,11 +94,13 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
         </div>
         <DashboardWorkspaceLeftPanel />
         <DashboardWorkspaceCanvas />
+        <DashboardDataPanel />
         <DashboardWorkspaceInspector />
         <DashboardWorkspacePageBar />
         <DashboardWorkspaceTemplateLibrary />
         <DashboardWorkspaceContextMenu />
       </main>
+      </DashboardDataBindingProvider>
     </DashboardWorkspaceProvider>
   );
 }
