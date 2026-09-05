@@ -128,6 +128,8 @@ export interface DashboardContextMenuState {
   x: number;
   y: number;
   nodeId: string;
+  /** 右键点下方全部遮挡组件 id（含被遮者），zIndex 降序；供"选择"子菜单切换（EX-001A）。 */
+  stack?: string[];
 }
 export type InspectorTab = "content" | "data" | "style" | "animation" | "interaction";
 export const RULER_SIZE = 24;

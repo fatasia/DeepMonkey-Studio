@@ -403,7 +403,18 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
     }
     const menuWidth = 190;
     const menuHeight = 310;
-    setContextMenu({ x: Math.min(event.clientX, window.innerWidth - menuWidth - 8), y: Math.min(event.clientY, window.innerHeight - menuHeight - 8), nodeId: node.id });
+    // 右键选层（EX-001A）：按 zIndex 降序列出该节点包围盒内、与节点有面积重叠的全部组件，
+    // 被遮挡组件经"选择"子菜单直达（对标 FVS 右键图层列表）。
+    const bounds = node.frame;
+    const stack = page.nodes
+      .filter((candidate) => candidate.visible !== false)
+      .filter((candidate) => candidate.frame.x < bounds.x + bounds.width
+        && candidate.frame.y < bounds.y + bounds.height
+        && candidate.frame.x + candidate.frame.width > bounds.x
+        && candidate.frame.y + candidate.frame.height > bounds.y)
+      .sort((left, right) => right.zIndex - left.zIndex)
+      .map((candidate) => candidate.id);
+    setContextMenu({ x: Math.min(event.clientX, window.innerWidth - menuWidth - 8), y: Math.min(event.clientY, window.innerHeight - menuHeight - 8), nodeId: node.id, ...(stack.length > 1 ? { stack } : {}) });
   }
 
   function copyContextNodes(duplicate = false) {
