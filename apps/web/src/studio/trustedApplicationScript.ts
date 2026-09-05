@@ -18,6 +18,7 @@ export interface TrustedApplicationScriptHost {
   trigger: SceneInteractionTrigger;
   variables: Readonly<Record<string, JsonValue>>;
   engine?: ViewerEngine;
+  resolveSceneRuntime?: (sceneId: string) => ViewerEngine | undefined;
   emitAction: (action: SceneInteractionActionState) => void;
   setData: (key: string, value: JsonValue) => void;
   updateComponent: (componentIdOrName: string, patch: Record<string, unknown>) => void;
@@ -54,7 +55,7 @@ export async function runTrustedApplicationScript(host: TrustedApplicationScript
     stopAnimation: () => emitObjectAction(entry.scene.id, entry.object.modelId, "animation", { value: "stop" })
   });
   const liveObjectHandle = (entry: typeof objectEntries[number]) => createStudioViewerAPI(
-    getStudioSceneRuntime(entry.scene.id) ?? (host.source.kind === "object" && host.source.sceneId === entry.scene.id ? host.engine : undefined),
+    host.resolveSceneRuntime ? host.resolveSceneRuntime(entry.scene.id) : getStudioSceneRuntime(entry.scene.id) ?? (host.source.kind === "object" && host.source.sceneId === entry.scene.id ? host.engine : undefined),
     { sceneId: entry.scene.id, emitAction: (action) => host.emitAction({ ...action, id: crypto.randomUUID(), enabled: true } as SceneInteractionActionState) }
   ).object(entry.object.modelId) ?? objectHandle(entry);
   const componentHandle = (entry: typeof componentEntries[number]) => Object.freeze({

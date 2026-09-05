@@ -13,7 +13,7 @@ import type {
   SceneMaterialCommandPatch,
   SceneScriptLifecycle
 } from "@bim-studio/scene-sdk";
-import { assertNoDynamicModuleImports, hardenSceneBehaviorWorkerGlobals } from "./sceneBehaviorSandbox";
+import { assertBehaviorSourceAccess, assertNoDynamicModuleImports, hardenSceneBehaviorWorkerGlobals } from "./sceneBehaviorSandbox";
 
 type LifecycleContext = {
   sceneId: string;
@@ -143,11 +143,7 @@ async function invokeLifecycle(lifecycle: SceneScriptLifecycle, invocationId: st
 }
 
 async function compileBehavior(module: SceneBehaviorModule): Promise<Partial<Record<SceneScriptLifecycle, LifecycleHandler>>> {
-  const forbiddenHostAccess = /\b(?:window|document|localStorage|sessionStorage|indexedDB|caches|navigator|SharedWorker|Worker|importScripts|postMessage|close|globalThis|self|eval|Function)\b/;
-  const forbiddenNetworkAccess = /\b(?:fetch|XMLHttpRequest|WebSocket|WebSocketStream|EventSource|WebTransport|BroadcastChannel|RTCPeerConnection)\b/;
-  if (forbiddenHostAccess.test(module.code) || (!module.permissions.includes("network.connect") && forbiddenNetworkAccess.test(module.code))) {
-    throw new Error("脚本请求了 Worker 沙箱中未授权的浏览器或网络能力");
-  }
+  assertBehaviorSourceAccess(module.code, module.permissions.includes("network.connect"));
   await assertNoDynamicModuleImports(module.code, "项目脚本");
   for (const dependency of module.dependencies ?? []) {
     await assertNoDynamicModuleImports(dependency.code, `依赖 ${dependency.specifier}：`);

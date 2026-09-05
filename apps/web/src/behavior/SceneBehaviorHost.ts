@@ -90,6 +90,8 @@ export class SceneBehaviorHost {
   private lastError: string | undefined;
   private lastErrorLocation: { line: number; column: number } | undefined;
   private latestData: JsonValue | undefined;
+  private stopped = false;
+  private terminated = false;
 
   constructor(worker: SceneBehaviorWorkerPort, options: SceneBehaviorHostOptions = {}) {
     this.worker = worker;
@@ -146,6 +148,7 @@ export class SceneBehaviorHost {
 
   resume(): void {
     if (this.status !== "paused") return;
+    this.stopped = false;
     this.scheduler.resume();
     this.status = "running";
     this.emitDiagnostics();
@@ -157,9 +160,11 @@ export class SceneBehaviorHost {
   }
 
   stop(): void {
-    if ((this.status === "running" || this.status === "paused") && this.module?.lifecycle.includes("onStop")) {
+    if (this.status !== "running" && this.status !== "paused") return;
+    if (!this.stopped && this.module?.lifecycle.includes("onStop")) {
       this.invoke("onStop", this.scheduler.diagnostics().elapsedMs);
     }
+    this.stopped = true;
     this.scheduler.pause();
     this.status = "paused";
     this.emitDiagnostics();
@@ -168,15 +173,18 @@ export class SceneBehaviorHost {
   dispose(): void {
     if (this.status === "disposed" || this.status === "disposing") return;
     if (this.status === "idle" || this.status === "error") {
-      this.clearInitializationTimeout();
-      this.clearPending();
-      this.scheduler.dispose();
-      this.status = "disposed";
-      this.emitDiagnostics();
+      this.finishDispose();
       return;
     }
     this.clearInitializationTimeout();
     this.clearPending();
+    // Queue cleanup in lifecycle order, but never apply teardown commands to a
+    // document/viewer that the owner may already have replaced.
+    if (!this.stopped && (this.status === "running" || this.status === "paused") && this.module?.lifecycle.includes("onStop")) {
+      this.worker.postMessage({ type: "behavior.invoke", invocationId: this.nextInvocationId("onStop"), lifecycle: "onStop", elapsedMs: this.scheduler.diagnostics().elapsedMs });
+    }
+    this.stopped = true;
+    this.scheduler.pause();
     this.status = "disposing";
     const invocationId = this.nextInvocationId("onDispose");
     this.pending.set(invocationId, {
@@ -225,6 +233,7 @@ export class SceneBehaviorHost {
   }
 
   private handleMessage(value: unknown): void {
+    if (this.status === "disposed" || this.status === "error") return;
     if (!isWorkerResponse(value)) {
       this.fail("行为 Worker 返回了无效消息");
       return;
@@ -240,6 +249,13 @@ export class SceneBehaviorHost {
     }
     if (value.type === "behavior.log") {
       this.onLog?.(value);
+      return;
+    }
+    if (this.status === "disposing") {
+      if (value.type === "behavior.result" && this.pending.get(value.invocationId)?.lifecycle === "onDispose") {
+        this.completedInvocations += 1;
+        this.finishDispose();
+      }
       return;
     }
     if (value.type === "behavior.network.request") {
@@ -289,8 +305,10 @@ export class SceneBehaviorHost {
     pending.timeoutId = globalThis.setTimeout(() => this.fail(`行为“${this.module?.name ?? "unknown"}”的网络请求超过 ${this.networkTimeoutMs} ms`), this.networkTimeoutMs);
     try {
       const result = await this.executeNetworkRequest({ binding: request.binding, variables: request.variables });
+      if (this.pending.get(request.invocationId) !== pending) return;
       this.worker.postMessage({ type: "behavior.network.result", requestId: request.requestId, result });
     } catch (reason) {
+      if (this.pending.get(request.invocationId) !== pending) return;
       this.worker.postMessage({ type: "behavior.network.result", requestId: request.requestId, error: reason instanceof Error ? reason.message : String(reason) });
     }
   }
@@ -318,8 +336,10 @@ export class SceneBehaviorHost {
     );
     try {
       const result = await this.executeCapabilityRequest({ capabilityId: request.capabilityId, input: request.input });
+      if (this.pending.get(request.invocationId) !== pending) return;
       this.worker.postMessage({ type: "behavior.capability.result", requestId: request.requestId, result });
     } catch (reason) {
+      if (this.pending.get(request.invocationId) !== pending) return;
       this.worker.postMessage({
         type: "behavior.capability.result",
         requestId: request.requestId,
@@ -329,23 +349,33 @@ export class SceneBehaviorHost {
   }
 
   private fail(message: string, location?: { line: number; column: number }): void {
-    if (this.status === "disposed") return;
+    if (this.status === "disposed" || this.status === "error") return;
     this.lastError = message;
     this.lastErrorLocation = location;
     this.status = "error";
     this.scheduler.pause();
     this.clearInitializationTimeout();
     this.clearPending();
-    this.worker.terminate();
+    this.terminate();
     this.emitDiagnostics();
   }
 
   private finishDispose(): void {
+    if (this.status === "disposed") return;
+    this.clearInitializationTimeout();
     this.clearPending();
     this.scheduler.dispose();
-    this.worker.terminate();
+    this.terminate();
     this.status = "disposed";
     this.emitDiagnostics();
+  }
+
+  private terminate(): void {
+    if (this.terminated) return;
+    this.terminated = true;
+    this.worker.terminate();
+    this.worker.onmessage = null;
+    this.worker.onerror = null;
   }
 
   private clearInitializationTimeout(): void {
@@ -431,7 +461,8 @@ function finiteOption(value: number | undefined, min: number, max: number, fallb
 
 function behaviorSourceLocation(stack: string | undefined, moduleId: string | undefined): { line: number; column: number } | undefined {
   if (!stack || !moduleId) return undefined;
-  const marker = `industrial-studio-behavior-${moduleId}.js:`;
+  const isModule = stack.includes(`industrial-studio-behavior-${moduleId}.mjs:`);
+  const marker = `industrial-studio-behavior-${moduleId}.${isModule ? "mjs" : "js"}:`;
   const start = stack.indexOf(marker);
   if (start < 0) return undefined;
   const match = /^(\d+):(\d+)/.exec(stack.slice(start + marker.length));
@@ -439,5 +470,5 @@ function behaviorSourceLocation(stack: string | undefined, moduleId: string | un
   const generatedLine = Number(match[1]);
   const column = Number(match[2]);
   if (!Number.isInteger(generatedLine) || !Number.isInteger(column)) return undefined;
-  return { line: Math.max(1, generatedLine - 3), column: Math.max(1, column) };
+  return { line: Math.max(1, generatedLine - (isModule ? 1 : 3)), column: Math.max(1, column) };
 }

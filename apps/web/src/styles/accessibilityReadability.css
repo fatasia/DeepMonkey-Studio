@@ -72,14 +72,13 @@ body .app-workspace-frame.app-workspace-frame label:has(input, select, textarea)
   min-height: 28px;
 }
 
-/* 分屏脚本栏只保留图标和 tooltip。上面的 12px 可读性基线不能把
- * 这些固定宽度按钮中的文字重新撑成竖排，否则半屏编辑会失去可用性。 */
+/* 仅图标操作固定宽度；主要试运行和菜单文本仍保留可读标签。 */
 body .app-workspace-frame.app-workspace-frame
   .behavior-workspace-slot.layout-split
-  .behavior-panel-actions button,
+  .behavior-panel-actions > .behavior-icon-action,
 body .app-workspace-frame.app-workspace-frame
   .behavior-workspace-slot.layout-float
-  .behavior-panel-actions button {
+  .behavior-panel-actions > .behavior-icon-action {
   flex: 0 0 30px;
   width: 30px;
   min-width: 30px;

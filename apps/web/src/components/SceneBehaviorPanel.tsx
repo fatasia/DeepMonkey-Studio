@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 import type { ApplicationScriptDependency, ApplicationScriptTarget, ScriptModule } from "@bim-studio/contracts";
 import type { SceneCapability } from "@bim-studio/scene-sdk";
-import { Braces, ChevronDown, ChevronUp, Download, Upload, Plus, Power, RotateCcw, Save, Sparkles, Trash2 } from "lucide-react";
+import { Braces } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
@@ -9,8 +9,11 @@ import { ProfessionalCodeEditor, type CodeInsertRequest } from "./ProfessionalCo
 import type { SceneScriptIntelligenceContext, SceneScriptTarget } from "../studio/sceneScriptContext";
 import { analyzeSceneScript } from "../studio/sceneScriptAnalysis";
 import { SceneBehaviorAgentWorkspace, type SceneBehaviorAiMode } from "./SceneBehaviorAgentWorkspace";
-import { SceneBehaviorTargetPicker } from "./SceneBehaviorTargetPicker";
+import { BehaviorEditorToolbar } from "./BehaviorEditorToolbar";
 import { BehaviorPanelHeader } from "./BehaviorPanelHeader";
+import { BehaviorConsole } from "./BehaviorConsole";
+import { BehaviorScriptList } from "./BehaviorScriptList";
+import type { BehaviorLogEntry } from "../behavior/behaviorLogModel";
 import type { BehaviorLayoutMode } from "../appDefaults";
 import { BehaviorScriptListResizer, persistBehaviorScriptListCollapsed, readBehaviorScriptListCollapsed, readBehaviorScriptListWidth } from "./BehaviorScriptListResizer";
 import { downloadTextFile } from "../browserDownload";
@@ -21,18 +24,11 @@ import { isLocalDesktopMode } from "../adapters/desktopRuntimeMode";
 import { createImportedBehaviorScript, scriptDownloadFileName } from "../behavior/scriptFileTransfer";
 import {
   defaultBehaviorCode,
-  runtimeStatus,
   scriptTargetLabel,
   targetMatches,
 } from "./sceneBehaviorPanelModel";
 export { sceneScriptResourceSnippet } from "./sceneBehaviorPanelModel";
-export interface SceneBehaviorLogEntry {
-  id: string;
-  moduleId: string;
-  level: "debug" | "info" | "warn" | "error";
-  message: string;
-  timestamp: string;
-}
+export type SceneBehaviorLogEntry = BehaviorLogEntry;
 export type BehaviorCodeTarget = SceneScriptTarget;
 export function SceneBehaviorPanel(props: {
   locale: AppLocale;
@@ -98,11 +94,11 @@ export function SceneBehaviorPanel(props: {
     return () => props.onPendingDraftChange?.(undefined);
   }, [dirty, draft, props.onPendingDraftChange]);
   const runtime = selected ? props.runtimeEntries.find((entry) => entry.module.id === selected.id) : undefined;
-  const selectedLogs = useMemo(() => (selected ? props.logs.filter((entry) => entry.moduleId === selected.id) : props.logs), [props.logs, selected?.id]);
   const [logsOpen, setLogsOpen] = useState(false);
   // 默认把注意力留给脚本和诊断；资源与高级声明按需展开，降低首次使用的信息负担。
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [insertRequest, setInsertRequest] = useState<CodeInsertRequest>();
+  const [revealRequest, setRevealRequest] = useState<{ id: number; line: number; column: number }>();
   const [agentOpen, setAgentOpen] = useState(false);
   const [dependenciesOpen, setDependenciesOpen] = useState(false);
   const [versionOpen, setVersionOpen] = useState(false);
@@ -112,7 +108,8 @@ export function SceneBehaviorPanel(props: {
   const [aiDraftInserted, setAiDraftInserted] = useState(false);
   const [aiDraftUndo, setAiDraftUndo] = useState<ScriptModule>();
   const [actionFeedback, setActionFeedback] = useState("");
-  const scriptFileInputRef = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const analysis = useMemo(() => (draft ? analyzeSceneScript(draft.code, draft, props.intelligence) : undefined), [draft, props.intelligence]);
   const editorDiagnostics = useMemo(() => {
     const diagnostics = [...(analysis?.issues ?? [])];
@@ -191,21 +188,37 @@ export function SceneBehaviorPanel(props: {
       setActionFeedback(reason instanceof Error ? reason.message : tr(props.locale, "脚本导入失败", "Script import failed"));
     }
   }
-  function applyAndRun() {
+  async function applyAndRun() {
     if (!draft || !draft.name.trim()) return;
     props.onUpsert(draft);
-    props.onRun(draft);
     setAiDraftInserted(false);
     setAiDraftUndo(undefined);
-    setActionFeedback(tr(props.locale, "修改已应用，正在运行", "Changes applied; running"));
+    setLogsOpen(true);
+    setActionFeedback(tr(props.locale, "正在准备试运行…", "Preparing test run…"));
+    try {
+      await props.onRun(draft);
+      setActionFeedback(tr(props.locale, "试运行已提交，请查看运行状态与日志", "Test run submitted; check runtime status and logs"));
+    } catch (reason) {
+      setActionFeedback(reason instanceof Error ? reason.message : String(reason));
+    }
   }
-  function applyChanges() {
-    if (!draft || !dirty || !draft.name.trim()) return;
+  async function applyChanges() {
+    if (!draft || !draft.name.trim() || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     props.onUpsert(draft);
     setAiDraftInserted(false);
     setAiDraftUndo(undefined);
-    globalThis.setTimeout(() => void props.onSaveWorkspace(), 0);
-    setActionFeedback(tr(props.locale, "脚本已保存", "Script saved"));
+    setActionFeedback(tr(props.locale, "正在保存脚本…", "Saving script…"));
+    try {
+      const saved = await props.onSaveWorkspace();
+      setActionFeedback(saved ? tr(props.locale, "脚本已保存", "Script saved") : tr(props.locale, "保存未完成，草稿已保留，请重试", "Save incomplete; draft retained. Retry saving."));
+    } catch (reason) {
+      setActionFeedback(tr(props.locale, "保存失败，草稿已保留：", "Save failed; draft retained: ") + (reason instanceof Error ? reason.message : String(reason)));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
   function leaveForWorkspace(action: () => void | Promise<void>) {
@@ -235,113 +248,29 @@ export function SceneBehaviorPanel(props: {
       style={{ "--behavior-script-list-width": `${scriptListWidth}px` } as CSSProperties}
       aria-label={tr(props.locale, "场景行为脚本", "Scene behavior scripts")}
     >
-      <BehaviorPanelHeader locale={props.locale} layoutMode={props.layoutMode} contextLabel={selectedContextLabel} dirty={dirty} paused={props.paused} running={Boolean(props.runtimeEntries.length)} hasDraft={Boolean(draft)} hasTarget={Boolean(attachedTarget)} agentOpen={agentOpen} dependenciesOpen={dependenciesOpen} versionOpen={versionOpen} inspectorOpen={inspectorOpen} scriptListCollapsed={scriptListCollapsed} onLayoutModeChange={props.onLayoutModeChange} onToggleScriptList={() => { const next = !scriptListCollapsed; setScriptListCollapsed(next); persistBehaviorScriptListCollapsed(next); }} onToggleAgent={() => { setAgentMode("explain"); setDependenciesOpen(false); setVersionOpen(false); setAgentOpen((open) => !open); }} onToggleDependencies={() => { setAgentOpen(false); setVersionOpen(false); setDependenciesOpen((open) => !open); }} onToggleVersion={() => { setAgentOpen(false); setDependenciesOpen(false); setVersionOpen((open) => !open); }} onFocusTarget={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))} onRun={applyAndRun} onPauseResume={props.onPauseResume} onStop={props.onStop} onToggleInspector={() => setInspectorOpen((value) => !value)} onClose={closePanel} />
+      <BehaviorPanelHeader locale={props.locale} layoutMode={props.layoutMode} contextLabel={selectedContextLabel} dirty={dirty} paused={props.paused} running={props.runtimeEntries.some((entry) => ["initializing", "running", "paused"].includes(entry.diagnostics.status))} hasSession={Boolean(props.runtimeEntries.length)} hasDraft={Boolean(draft)} hasTarget={Boolean(attachedTarget)} agentOpen={agentOpen} dependenciesOpen={dependenciesOpen} versionOpen={versionOpen} inspectorOpen={inspectorOpen} scriptListCollapsed={scriptListCollapsed} onLayoutModeChange={props.onLayoutModeChange} onToggleScriptList={() => { const next = !scriptListCollapsed; setScriptListCollapsed(next); persistBehaviorScriptListCollapsed(next); }} onToggleAgent={() => { setAgentMode("explain"); setDependenciesOpen(false); setVersionOpen(false); setAgentOpen((open) => !open); }} onToggleDependencies={() => { setAgentOpen(false); setVersionOpen(false); setDependenciesOpen((open) => !open); }} onToggleVersion={() => { setAgentOpen(false); setDependenciesOpen(false); setVersionOpen((open) => !open); }} onFocusTarget={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))} onRun={applyAndRun} onPauseResume={props.onPauseResume} onStop={props.onStop} onToggleInspector={() => setInspectorOpen((value) => !value)} onClose={closePanel} />
       <div className="behavior-panel-body">
-        {!scriptListCollapsed && <aside className="behavior-script-list">
-          <button className="behavior-add" onClick={addScript}>
-            <Plus size={13} />
-            {tr(props.locale, "新建行为", "New behavior")}
-          </button>
-          <input ref={scriptFileInputRef} hidden type="file" accept=".js,.mjs,text/javascript,application/javascript" multiple onChange={(event) => void importScriptFiles(event)} />
-          <button type="button" onClick={() => scriptFileInputRef.current?.click()}><Upload size={13} /><span><strong>{tr(props.locale, "导入 JS", "Import JS")}</strong><small>{tr(props.locale, "支持多选，保留多文件", "Multi-select; keeps separate files")}</small></span></button>
-          {props.scripts.map((script) => {
-            const entry = props.runtimeEntries.find((candidate) => candidate.module.id === script.id);
-            const targetLabel = scriptTargetLabel(script.target, props.codeTargets, props.locale);
-            const statusLabel = entry
-              ? runtimeStatus(entry.diagnostics.status, props.locale)
-              : script.enabled
-                ? tr(props.locale, "未运行", "Not running")
-                : tr(props.locale, "已禁用", "Disabled");
-            return (
-              <button key={script.id} className={script.id === selected?.id ? "selected" : ""} onClick={() => leaveForWorkspace(() => setSelectedId(script.id))}>
-                <i className={entry?.diagnostics.status ?? (script.enabled ? "idle" : "disabled")} />
-                <span>
-                  <strong>{script.name}</strong>
-                  <small>
-                    {targetLabel} · {statusLabel}
-                  </small>
-                </span>
-              </button>
-            );
-          })}
-          {!props.scripts.length && (
-            <div className="behavior-empty">
-              <Braces size={22} />
-              <strong>{tr(props.locale, "还没有行为脚本", "No behavior scripts yet")}</strong>
-              <span>
-                {tr(props.locale, "创建后可通过公开 Scene SDK 控制对象、相机和动画。", "Create one to control objects, cameras and animation through the public Scene SDK.")}
-              </span>
-            </div>
-          )}
-        </aside>}
+        {!scriptListCollapsed && <BehaviorScriptList locale={props.locale} scripts={props.scripts} entries={props.runtimeEntries} targets={props.codeTargets} selectedId={selected?.id}
+          onAdd={addScript} onImport={(event) => void importScriptFiles(event)} onSelect={(id) => leaveForWorkspace(() => setSelectedId(id))}
+          onCollapse={() => { setScriptListCollapsed(true); persistBehaviorScriptListCollapsed(true); }} />}
         {!scriptListCollapsed && <BehaviorScriptListResizer locale={props.locale} width={scriptListWidth} onWidthChange={setScriptListWidth} />}
         {draft ? (
           <>
             <section className="behavior-editor" aria-label={tr(props.locale, "脚本代码编辑器", "Script code editor")}>
-              <div className="behavior-editor-toolbar">
-                <label>
-                  <span className="behavior-field-label">{tr(props.locale, "名称", "Name")}</span>
-                  <input aria-label={tr(props.locale, "脚本名称", "Script name")} title={tr(props.locale, "脚本名称", "Script name")} placeholder={tr(props.locale, "脚本名称", "Script name")} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-                </label>
-                <SceneBehaviorTargetPicker
-                  locale={props.locale}
-                  value={draft.target}
-                  targets={props.codeTargets}
-                  {...(props.preferredTarget ? { preferredTarget: props.preferredTarget } : {})}
-                  onChange={changeAttachedTarget}
-                />
-                <label className="behavior-auto-save" title={tr(props.locale, "与二维、三维工作区使用同一自动保存设置", "Uses the same auto-save setting as the 2D and 3D workspaces")}>
-                  <input type="checkbox" checked={props.autoSaveEnabled} onChange={(event) => props.onAutoSaveChange(event.target.checked)} />
-                  <span>{tr(props.locale, "自动保存", "Auto save")}</span>
-                </label>
-                <label className="behavior-enabled" aria-label={draft.enabled ? tr(props.locale, "停用脚本", "Disable script") : tr(props.locale, "启用脚本", "Enable script")} title={draft.enabled ? tr(props.locale, "停用脚本", "Disable script") : tr(props.locale, "启用脚本", "Enable script")}>
-                  <input aria-label={draft.enabled ? tr(props.locale, "停用脚本", "Disable script") : tr(props.locale, "启用脚本", "Enable script")} type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />
-                  <Power size={13} aria-hidden="true" />
-                </label>
-                <button
-                  className="behavior-toolbar-icon"
-                  type="button"
-                  disabled={!aiDraftTarget || !aiDraftSceneId}
-                  aria-label={tr(props.locale, "AI 生成草稿", "Generate AI draft")}
-                  title={
-                    aiDraftTarget && aiDraftSceneId
-                      ? tr(props.locale, "生成后先审查，只插入本地编辑器", "Review first; only insert into the local editor")
-                      : tr(props.locale, "请先选择有效的 2D、3D 或 Unity 目标", "Select a valid 2D, 3D, or Unity target first")
-                  }
-                  onClick={() => {
-                    setAgentMode("generate");
-                    setAgentOpen(true);
-                  }}
-                >
-                  <Sparkles size={13} />
-                </button>
-                <button className="behavior-save-action" aria-label={tr(props.locale, "保存脚本", "Save script")} title={tr(props.locale, "保存脚本（Ctrl/Cmd+S）", "Save script (Ctrl/Cmd+S)")} disabled={!dirty || !draft.name.trim()} onClick={applyChanges}>
-                  <Save size={13} />
-                  {tr(props.locale, "保存", "Save")}
-                </button>
-                <button className="behavior-toolbar-icon" aria-label={tr(props.locale, "下载当前 JS", "Download current JS")} title={tr(props.locale, "下载当前 JS", "Download current JS")} onClick={() => downloadTextFile(draft.code, scriptDownloadFileName(draft.name), "text/javascript;charset=utf-8")}>
-                  <Download size={13} />
-                </button>
-                <button className="behavior-toolbar-icon" aria-label={tr(props.locale, "还原修改", "Revert changes")} title={tr(props.locale, "还原修改", "Revert changes")} disabled={!dirty} onClick={() => { setDraft(structuredClone(selected!)); setAiDraftInserted(false); setAiDraftUndo(undefined); }}>
-                  <RotateCcw size={13} />
-                </button>
-                <button
-                  className="danger behavior-toolbar-icon"
-                  aria-label={tr(props.locale, `删除脚本“${draft.name}”`, `Delete script “${draft.name}”`)}
-                  title={tr(props.locale, "删除脚本", "Delete script")}
-                  onClick={() => {
-                    if (window.confirm(tr(props.locale, `删除“${draft.name}”吗？`, `Delete “${draft.name}”?`))) props.onDelete(draft.id);
-                  }}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
+              <BehaviorEditorToolbar locale={props.locale} draft={draft} targets={props.codeTargets} {...(props.preferredTarget ? { preferredTarget: props.preferredTarget } : {})}
+                dirty={dirty} saving={saving} canGenerate={Boolean(aiDraftTarget && aiDraftSceneId)} showAutoSave={props.layoutMode === "window"}
+                autoSaveEnabled={props.autoSaveEnabled} onAutoSaveChange={props.onAutoSaveChange} onChange={setDraft} onTargetChange={changeAttachedTarget}
+                onSave={() => void applyChanges()} onGenerate={() => { setAgentMode("generate"); setAgentOpen(true); }}
+                onDownload={() => downloadTextFile(draft.code, scriptDownloadFileName(draft.name), "text/javascript;charset=utf-8")}
+                onRevert={() => { setDraft(structuredClone(selected!)); setAiDraftInserted(false); setAiDraftUndo(undefined); }}
+                onDelete={() => { if (window.confirm(tr(props.locale, `删除“${draft.name}”吗？`, `Delete “${draft.name}”?`))) props.onDelete(draft.id); }} />
               <ProfessionalCodeEditor
                 locale={props.locale}
                 path={`bim-studio://behavior/${draft.id}.js`}
                 value={draft.code}
                 intelligence={props.intelligence}
                 diagnostics={editorDiagnostics}
+                {...(revealRequest ? { revealRequest } : {})}
                 moduleSpecifiers={props.dependencies.map((dependency) => dependency.specifier)}
                 {...(insertRequest ? { insertRequest } : {})}
                 onChange={(code) => {
@@ -436,30 +365,9 @@ export function SceneBehaviorPanel(props: {
           onClose={() => setVersionOpen(false)}
         />
       )}
-      <footer className="behavior-console">
-        <header>
-          <button className="behavior-console-toggle" onClick={() => setLogsOpen((open) => !open)}>
-            {logsOpen ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-            <strong>{tr(props.locale, "运行日志", "Runtime log")}</strong>
-            <span>{selectedLogs.length}</span>
-          </button>
-          <button onClick={props.onClearLogs}>{tr(props.locale, "清空", "Clear")}</button>
-        </header>
-        {logsOpen && (
-          <div>
-            {selectedLogs.length ? (
-              selectedLogs.slice(-80).map((entry) => (
-                <p key={entry.id} className={entry.level}>
-                  <time>{new Date(entry.timestamp).toLocaleTimeString()}</time>
-                  <span>{entry.message}</span>
-                </p>
-              ))
-            ) : (
-              <small>{tr(props.locale, "运行、错误和权限诊断会显示在这里。", "Runtime, error and permission diagnostics appear here.")}</small>
-            )}
-          </div>
-        )}
-      </footer>
+      <BehaviorConsole locale={props.locale} logs={props.logs} entries={props.runtimeEntries} scripts={props.scripts} selectedId={selected?.id} open={logsOpen}
+        onToggle={() => setLogsOpen((open) => !open)} onClear={props.onClearLogs}
+        onReveal={(id, location) => leaveForWorkspace(() => { setSelectedId(id); setRevealRequest({ id: Date.now(), ...location }); })} />
     </section>
   );
 }

@@ -1,0 +1,12 @@
+.behavior-panel .behavior-editor-toolbar { gap: 6px; }
+.behavior-workspace-slot .behavior-panel .behavior-editor-toolbar > label:first-child { min-width: 80px; flex: 1 1 140px; }
+.behavior-workspace-slot .behavior-panel .behavior-editor-toolbar > .behavior-target-field { min-width: 110px; flex: 1 1 150px; }
+.behavior-panel .behavior-editor-toolbar > :is(button, details, .behavior-enabled) { flex-shrink: 0; }
+.behavior-file-menu { position: relative; }
+.behavior-file-menu > summary { display: grid; width: 30px; height: 30px; place-items: center; list-style: none; color: var(--text); border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); cursor: pointer; }
+.behavior-file-menu > summary::-webkit-details-marker { display: none; }
+.behavior-file-menu > div { position: absolute; z-index: 50; top: calc(100% + 6px); right: 0; width: 172px; padding: 5px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel); box-shadow: var(--shadow-float); }
+.behavior-panel .behavior-file-menu > div > button { display: flex; width: 100%; min-height: 32px; justify-content: flex-start; gap: 8px; border: 0; background: transparent; color: var(--text); }
+.behavior-panel .behavior-file-menu > div > button:hover { background: var(--accent-soft); }
+.behavior-panel .behavior-file-menu > div > button.danger { color: var(--danger); }
+.behavior-file-menu > div > label { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 8px; font-size: 11px; }

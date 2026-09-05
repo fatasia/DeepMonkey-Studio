@@ -557,7 +557,12 @@
 .professional-code-fallback footer { display:flex; justify-content:flex-end; gap:7px; }
 .professional-code-fallback button { min-height:28px; padding:0 10px; color:#b8c2c9; background:#1d2830; border:1px solid #34434e; }
 .professional-code-fallback button.primary { color:#151a1d; background:#d4a84f; border-color:#d4a84f; }
-.professional-code-editor .monaco-editor, .professional-code-editor .monaco-editor-background, .professional-code-editor .monaco-editor .margin { background-color:#0d1319 !important; }
+.professional-code-editor { background: var(--panel); border-color: var(--line); }
+.professional-code-editor .professional-code-toolbar { background: var(--surface-2); border-color: var(--line); color: var(--text-muted); }
+.professional-code-editor .professional-code-toolbar button { color: var(--text); }
+.professional-code-editor .professional-code-problem-list { background: var(--panel); border-color: var(--line-strong); box-shadow: var(--shadow-float); }
+.professional-code-editor .professional-code-problem-list :is(header, strong) { color: var(--text-strong); }
+.professional-code-editor .professional-code-problem-list > button:hover { background: var(--accent-soft); }
 .data-connector-required { display:flex; align-items:flex-start; gap:8px; padding:9px; color:#e7ad55; background:#2b2418; border:1px solid #584829; }
 .data-connector-required span { display:grid; gap:4px; }
 .data-connector-required small { color:#b6a77f; line-height:1.45; }

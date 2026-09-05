@@ -1,4 +1,4 @@
-import { DashboardRuntimePreview } from "./DashboardRuntimePreview";
+import { DashboardPlayback } from "./DashboardPlayback";
 import { DashboardDataBindingProvider } from "./DashboardDataBindingProvider";
 import { DashboardDataPanel } from "./DashboardDataPanel";
 import type { DashboardWorkspaceController } from "./DashboardWorkspace";
@@ -42,7 +42,8 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
 
   if (runtimePreview) {
     return (
-      <DashboardRuntimePreview
+      <DashboardPlayback
+        key={application.metadata.id}
         locale={locale}
         application={application}
         project={project}

@@ -2,6 +2,7 @@ import { AlertTriangle, Box, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DashboardDataWidgetConfig, JsonValue, UnityRuntimeCapability } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
+import { usePlaybackSession } from "../behavior/playbackContext";
 import {
   parseUnityBuildManifest,
   readUnityBridgeEvent,
@@ -42,6 +43,7 @@ interface Props {
 
 /** Unity 作为可观测运行时接入：消息可确认，心跳异常可恢复，业务数据仍由平台统一管理。 */
 export function UnitySceneEmbed(props: Props) {
+  const playback = usePlaybackSession();
   const { locale, widgetId, widget, variables, filters, data, dataContext, compact, onEvent } = props;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const sequenceRef = useRef(0);
@@ -276,9 +278,10 @@ export function UnitySceneEmbed(props: Props) {
       if (!detail || detail.widgetId !== widgetId || !detail.action) return;
       send("action", { action: detail.action, objectId: detail.objectId ?? null, value: detail.value ?? null });
     };
-    window.addEventListener("bim-studio:unity-action", receiveAction);
-    return () => window.removeEventListener("bim-studio:unity-action", receiveAction);
-  }, [locale, supportsAck, targetOrigin, widgetId]);
+    const events = playback?.effects ?? window;
+    events.addEventListener("bim-studio:unity-action", receiveAction);
+    return () => events.removeEventListener("bim-studio:unity-action", receiveAction);
+  }, [locale, supportsAck, targetOrigin, widgetId, playback]);
 
   if (!playerUrl || !targetOrigin) {
     return (

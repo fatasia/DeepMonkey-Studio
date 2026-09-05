@@ -52,10 +52,11 @@
 }
 
 .dashboard-workspace-title { color: var(--accent); }
-.dashboard-workspace-title strong { font-size: 14px; }
+.dashboard-workspace-title strong { color: var(--text-strong); font-size: 14px; }
+.dashboard-workspace-title span { color: var(--text-muted); }
 .dashboard-workspace-title span,
 .dashboard-auto-save { font-size: 11px; }
-.workspace-mode-switch .workspace-context { font-size: 11px; }
+.workspace-mode-switch .workspace-context { font-size: 11px; color: var(--text); background: var(--surface-2); border-color: var(--line); }
 .workspace-mode-switch button.active {
   color: var(--accent-hover);
   border-color: color-mix(in srgb, var(--accent) 42%, transparent);
@@ -121,13 +122,23 @@
 .dashboard-linkage-diagnostics > p,
 .dashboard-linkage-diagnostics > div button { font-size: 11px; }
 
-.dashboard-design-surface { grid-template-rows: 40px minmax(0, 1fr); }
+.dashboard-design-surface { grid-template-rows: 40px minmax(0, 1fr); background: var(--bg-0); }
 .dashboard-canvas-toolbar { color: var(--text-muted); border-bottom-color: var(--line-subtle); background: var(--bg-1); font-size: 11px; }
 .dashboard-canvas-toolbar > span small { font-size: 9px; }
 .dashboard-canvas-toolbar :is(span, button, output) { font-size: 11px; }
 .dashboard-canvas-toolbar > span > small,
 .dashboard-canvas-toolbar .dashboard-overflow-warning { font-size: 11px; }
 .dashboard-canvas-toolbar button { min-width: 28px; min-height: 28px; height: 28px; font-size: 11px; }
+.dashboard-canvas-toolbar button { color: var(--text); border-color: var(--line); background: var(--surface-2); }
+.dashboard-canvas-toolbar button:hover:not(:disabled) { color: var(--text-strong); border-color: var(--line-strong); background: var(--surface-3); }
+.dashboard-canvas-toolbar button.active { color: #17242b; border-color: var(--accent); background: var(--accent); }
+.dashboard-canvas-toolbar output { color: var(--text); }
+.dashboard-workspace .dashboard-tool-group { border-color: var(--line); }
+.dashboard-workspace .dashboard-ruler { border-color: var(--line); }
+.dashboard-workspace .dashboard-page-tabs button.active { color: var(--text-strong); }
+.dashboard-workspace .dashboard-runtime-status { color: var(--text-muted); border-color: var(--line); }
+.dashboard-workspace .dashboard-runtime-status output { color: var(--text); }
+.dashboard-workspace .dashboard-artboard { box-shadow: var(--shadow-float); }
 .dashboard-canvas-toolbar { flex-wrap: wrap; gap: 4px 10px; padding-block: 4px; }
 .dashboard-design-surface { grid-template-rows: auto minmax(0, 1fr); }
 .dashboard-canvas-toolbar .dashboard-layout-tools { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }

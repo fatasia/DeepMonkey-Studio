@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Copy,
@@ -53,6 +53,7 @@ export function DashboardRuntimePreview({
   onSelectionChange,
   onObjectInteraction,
   onNodeInteraction,
+  children,
 }: {
   locale: AppLocale;
   application: ApplicationDocument;
@@ -63,6 +64,7 @@ export function DashboardRuntimePreview({
   variables: Readonly<Record<string, JsonValue>>;
   filters: Readonly<Record<string, JsonValue>>;
   connected: boolean;
+  children?: ReactNode;
   onSelectPage: (pageId: string) => void;
   onClose: () => void;
   onPublish: () => void;
@@ -277,6 +279,8 @@ export function DashboardRuntimePreview({
         <button
           className="dashboard-runtime-controller-trigger"
           title={tr(locale, "项目控制", "Project controls")}
+          aria-label={tr(locale, "项目控制", "Project controls")}
+          aria-expanded={controlsOpen}
           onClick={() => setControlsOpen((open) => !open)}
         >
           <ExternalLink size={15} />
@@ -355,6 +359,7 @@ export function DashboardRuntimePreview({
           </div>
         )}
       </div>
+      {children}
     </main>
   );
 }

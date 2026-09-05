@@ -1,0 +1,10 @@
+.behavior-panel .behavior-script-list { padding: 4px; }
+.behavior-file-header { display: flex; align-items: center; gap: 6px; height: 30px; padding-left: 6px; color: var(--text); font-size: 11px; }
+.behavior-file-header small { color: var(--text-muted); }
+.behavior-file-header button { display: grid; width: 28px; height: 28px; margin-left: auto; padding: 0; place-items: center; border: 0; color: var(--text-muted); background: transparent; }
+.behavior-file-tools { display: flex; gap: 4px; padding: 2px 3px 8px; }
+.behavior-file-tools button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 4px; min-height: 28px; padding: 3px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--surface-2); font-size: 11px; }
+.behavior-panel .behavior-script-list > button { min-height: 30px; gap: 6px; padding: 5px 6px; color: var(--text); }
+.behavior-panel .behavior-script-list > button > i { flex: 0 0 6px; height: 6px; }
+.behavior-panel .behavior-script-list .behavior-file-status { margin: 0; color: var(--text-muted); font-size: 10px; }
+.behavior-panel .behavior-script-list > button strong { font-weight: 500; }

@@ -1,0 +1,32 @@
+.behavior-panel .behavior-console { border-color: var(--line); background: var(--panel); }
+.behavior-panel .behavior-console header, .behavior-panel .behavior-console header .behavior-console-toggle { color: var(--text); }
+.behavior-panel .behavior-console header span, .behavior-panel .behavior-console time, .behavior-panel .behavior-console small { color: var(--text-muted); }
+.behavior-panel .behavior-console header > button:last-child { color: var(--text-muted); }
+.behavior-panel .behavior-console .behavior-console-content { display: flex; min-height: 0; flex-direction: column; overflow: hidden; padding: 0; }
+.behavior-console-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.behavior-console-filters :is(select, input[type="search"]) { min-width: 0; height: 28px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--surface-2); font-size: 11px; }
+.behavior-console-filters input[type="search"] { flex: 1 1 140px; width: 140px; }
+.behavior-console-filters label { display: flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.behavior-console-rows { flex: 1; min-height: 0; overflow: auto; padding: 6px 8px; }
+.behavior-panel .behavior-console p { color: var(--text); padding: 4px 0; }
+.behavior-panel .behavior-console p > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.behavior-panel .behavior-console p small { display: inline; margin-right: 8px; }
+.behavior-panel .behavior-console p time { flex: 0 0 auto; }
+.behavior-panel .behavior-console p.error, .behavior-panel .behavior-console-errors { color: var(--danger); }
+.behavior-panel .behavior-console p.warn { color: var(--warning); }
+.behavior-console-source { padding: 0; color: inherit; text-align: left; border: 0; background: transparent; font: inherit; cursor: pointer; }
+.behavior-console-source:hover { text-decoration: underline; }
+.behavior-console-rows code { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.behavior-log-repeat { align-self: flex-start; flex: 0 0 auto; color: var(--text-muted); }
+.behavior-panel .behavior-panel-actions .behavior-run-action { width: auto; min-width: 72px; padding: 5px 8px; font-size: 11px; color: var(--text); }
+.behavior-panel.logs-open { grid-template-rows: auto minmax(0, 1fr) 200px; }
+.behavior-panel .behavior-editor-toolbar { border-color: var(--line); }
+.behavior-panel .behavior-editor-toolbar input:not([type]), .behavior-panel .behavior-target-picker > summary { height: 32px; color: var(--text-strong); border-color: var(--line-strong); background: var(--surface-2); }
+.behavior-panel .behavior-target-picker > summary > span { display: block; }
+.behavior-panel .behavior-target-picker > summary strong { display: block; font-weight: 500; line-height: 20px; }
+.behavior-panel .behavior-target-popover { color: var(--text); border-color: var(--line-strong); background: var(--panel); box-shadow: var(--shadow-float); }
+.behavior-panel .behavior-target-search { border-color: var(--line); background: var(--surface-2); }
+.behavior-panel .behavior-target-search input { color: var(--text-strong); }
+.behavior-panel .behavior-target-options button { color: var(--text); }
+.behavior-panel .behavior-target-options button.selected { color: var(--accent-hover); background: var(--accent-soft); }
+.behavior-panel .behavior-target-options :is(small, header) { color: var(--text-muted); }

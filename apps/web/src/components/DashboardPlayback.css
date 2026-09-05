@@ -1,0 +1,27 @@
+.playback-status {
+  position: fixed; top: 12px; right: 16px; z-index: 60;
+  display: flex; align-items: center; gap: 10px; padding: 5px 7px 5px 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--text); box-shadow: 0 4px 14px #0002;
+  font-size: 12px; white-space: nowrap;
+}
+.playback-status.has-errors { border-color: var(--danger, #cf635f); }
+.playback-status button, .playback-console header button {
+  display: grid; place-items: center; width: 28px; height: 28px;
+  background: transparent; color: inherit; border: 1px solid var(--line); border-radius: 5px; cursor: pointer;
+}
+.playback-status button:disabled { opacity: .4; cursor: default; }
+.playback-status button:focus-visible, .playback-console button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.playback-console {
+  position: fixed; z-index: 65; right: 16px; bottom: 60px;
+  width: min(560px, calc(100vw - 32px)); max-height: min(300px, 45dvh);
+  display: flex; flex-direction: column; background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 30px #0003;
+}
+.playback-console header { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.playback-console header small { flex: 1; color: var(--muted); }
+.playback-console > div { overflow: auto; padding: 8px 12px; }
+.playback-console p { margin: 0; padding: 5px 0; overflow-wrap: anywhere; font-size: 12px; border-bottom: 1px solid var(--line); }
+.playback-console .error { color: var(--danger, #cf635f); }
+.playback-console code { display: block; white-space: pre-wrap; font: 11px/1.6 "Cascadia Code", Consolas, monospace; }
+@media (max-width: 600px) { .playback-status { top: 56px; right: 8px; } .playback-console header small { display: none; } }

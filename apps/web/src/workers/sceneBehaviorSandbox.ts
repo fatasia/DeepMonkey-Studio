@@ -3,6 +3,16 @@ import { init as initializeModuleLexer, parse as parseModule } from "es-module-l
 type SandboxGlobal = Record<string, unknown>;
 type ProtocolSender = (message: unknown) => void;
 
+/** Keep the documented ctx.self handle distinct from the Worker global self. */
+export function assertBehaviorSourceAccess(source: string, networkAllowed: boolean): void {
+  const accessSource = source.replace(/\.\s*self\b/g, ".target");
+  const host = /\b(?:window|document|localStorage|sessionStorage|indexedDB|caches|navigator|SharedWorker|Worker|importScripts|postMessage|close|globalThis|self|eval|Function)\b/;
+  const network = /\b(?:fetch|XMLHttpRequest|WebSocket|WebSocketStream|EventSource|WebTransport|BroadcastChannel|RTCPeerConnection)\b/;
+  if (host.test(accessSource) || (!networkAllowed && network.test(source))) {
+    throw new Error("脚本请求了 Worker 沙箱中未授权的浏览器或网络能力");
+  }
+}
+
 const BLOCKED_GLOBALS = [
   "postMessage",
   "fetch",

@@ -10,6 +10,8 @@ import { sceneViewportRevision } from "./sceneViewportRevision";
 import { registerStudioSceneRuntime } from "../studio/studioSceneRuntimeRegistry";
 import { createBrowserCooperativeWorkScheduler } from "../cooperativeWorkScheduler";
 import { sceneViewportSelection } from "./sceneViewportSelection";
+import { usePlaybackSession } from "../behavior/playbackContext";
+import { ViewerSceneCommandPort } from "../behavior/ViewerSceneCommandPort";
 
 const OBJECT_ACTION_TYPES = new Set(["focus", "visibility", "color", "opacity", "animation"]);
 
@@ -32,6 +34,7 @@ export function SceneViewportPreview({
   onSelectionChange: (selection: readonly ApplicationObjectRef[]) => void;
   onObjectInteraction: (trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
 }) {
+  const playback = usePlaybackSession();
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<ViewerEngine | undefined>(undefined);
   const [visible, setVisible] = useState(false);
@@ -95,7 +98,6 @@ export function SceneViewportPreview({
         }
         runtime = engine;
         engineRef.current = engine;
-        unregisterRuntime = registerStudioSceneRuntime(scene.id, engine);
         engine.setReadOnly(true);
         engine.setInteractionScripts([]);
         engine.onSelectionChange = (model) => {
@@ -119,7 +121,7 @@ export function SceneViewportPreview({
               : undefined);
           if (!target || !engine.listModels().some((model) => model.id === target.modelId)) return;
           void engine.executeInteractionAction(target, action).catch((reason) => console.error("二维到三维联动执行失败", reason));
-        });
+        }, playback?.effects);
 
         for (const item of scene.models) {
           const record = project.models.find((candidate) => candidate.id === item.modelId);
@@ -173,7 +175,12 @@ export function SceneViewportPreview({
           );
         }
         if (node.interactionPolicy !== "display-only") engine.select(scene.selectedModelId);
-        if (!cancelled) setStatus("ready");
+        if (!cancelled) {
+          unregisterRuntime = playback
+            ? playback.registerScene(scene.id, new ViewerSceneCommandPort(engine), engine)
+            : registerStudioSceneRuntime(scene.id, engine);
+          setStatus("ready");
+        }
       })
       .catch((reason) => {
         if (cancelled) return;
@@ -189,7 +196,7 @@ export function SceneViewportPreview({
       runtime?.dispose();
       setAnimationPlaying(false);
     };
-  }, [visible, activated, rendererBackend, node.id, node.sceneId, node.cameraViewId, node.interactionPolicy, node.renderMode, runtimeMode, sceneRevision, resourceRevision]);
+  }, [visible, activated, rendererBackend, node.id, node.sceneId, node.cameraViewId, node.interactionPolicy, node.renderMode, runtimeMode, sceneRevision, resourceRevision, playback]);
 
   const waitingForInteraction = node.renderMode === "load-on-interaction" && !activated;
   return (

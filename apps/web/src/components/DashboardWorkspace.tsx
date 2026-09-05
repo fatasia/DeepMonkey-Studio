@@ -265,7 +265,7 @@ function useDashboardWorkspaceController({
       label: nodes.find((node) => node.groupName?.trim())?.groupName?.trim() ?? `${tr(locale, "编组", "Group")} ${index + 1}`,
     }));
   }, [locale, page.nodes]);
-  const dataWidgetConfigs = useMemo(() => page.nodes.flatMap((node) => (node.kind === "data-widget" ? [node.widget] : [])), [page.nodes]);
+  const dataWidgetConfigs = useMemo(() => runtimePreview ? [] : page.nodes.flatMap((node) => (node.kind === "data-widget" ? [node.widget] : [])), [page.nodes, runtimePreview]);
   const dashboardDiagnostics = useMemo(() => diagnoseDashboardPage(application, page), [application, page]);
   const { metrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } = useDashboardMetrics(
     project.id,

@@ -48,21 +48,16 @@ export function SceneBehaviorTargetPicker(props: SceneBehaviorTargetPickerProps)
     : selected?.runtime === "unity"
       ? "Unity"
       : tr(props.locale, "二维资源", "2D resource");
+  const contextDescription = selected ? `${selected.context} · ${selectedKind}` : sceneSelected
+    ? tr(props.locale, "场景生命周期", "Scene lifecycle") : `${missingTargetId} · ${tr(props.locale, "目标已失效，请重新选择", "Missing target; choose another")}`;
 
   return (
     <div className={`behavior-target-field ${missingTarget ? "invalid" : ""}`}>
       <span id="behavior-target-label">{tr(props.locale, "挂载到", "Attach to")}</span>
       <details ref={detailsRef} className="behavior-target-picker">
-        <summary aria-labelledby="behavior-target-label behavior-target-current">
+        <summary aria-labelledby="behavior-target-label behavior-target-current" title={contextDescription}>
           <span id="behavior-target-current">
-            <strong>{selected?.name ?? (sceneSelected ? tr(props.locale, "整个场景", "Whole scene") : missingTargetId)}</strong>
-            <small>
-              {selected
-                ? `${selected.context} · ${selectedKind}`
-                : sceneSelected
-                  ? tr(props.locale, "场景生命周期", "Scene lifecycle")
-                  : tr(props.locale, "目标已失效 · 请重新选择", "Missing target · choose another")}
-            </small>
+            <strong>{selected?.name ?? (sceneSelected ? tr(props.locale, "整个场景", "Whole scene") : tr(props.locale, "目标已失效", "Missing target"))}</strong>
           </span>
           <ChevronDown size={13} aria-hidden="true" />
         </summary>

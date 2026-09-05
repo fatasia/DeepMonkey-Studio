@@ -17,10 +17,6 @@ import {
   createInsertDashboardNodeCommand,
   createReplaceScriptDependenciesCommand,
   createReplaceScriptModulesCommand,
-  createUpdateDashboardDataWidgetCommand,
-  createUpdateDashboardNodeFrameCommand,
-  createUpdateDashboardNodeStateCommand,
-  createUpdateDashboardSceneViewportCommand,
   createUpsertScriptModuleCommand,
   type ApplicationInteractionResult,
   type StudioCommand,
@@ -35,6 +31,7 @@ import { runTrustedApplicationScript } from "../studio/trustedApplicationScript"
 import { DEFAULT_DASHBOARD_VIEW, type DashboardReturnContext, type DashboardViewState } from "../studio/workspaceRoute";
 import { publishLocalSceneData } from "../sceneDataBridge";
 import { authorizeSceneCommands } from "../behavior/sceneCommandPolicy";
+import { scriptComponentCommands } from "../behavior/scriptComponentCommands";
 import { resolveSceneBehaviorModule } from "../behavior/scriptModuleAdapter";
 import { loadScriptDependencyModules } from "../behavior/scriptDependencyRuntime";
 import { SceneBehaviorManager, type SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
@@ -48,6 +45,7 @@ import type { AppRoute } from "../appRoute";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
+const pendingBehaviorRuns = new WeakMap<object, symbol>();
 
 interface ApplicationRuntimeControllerContext {
   applicationSessionRef: MutableRefObject<ApplicationSession>;
@@ -238,28 +236,31 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     throw new Error(tr(locale, "远端脚本未能保存，已恢复原脚本", "Remote scripts were not saved; the original scripts were restored"));
   }
 
-  function appendBehaviorLog(moduleId: string, level: SceneBehaviorLogEntry["level"], text: string) {
-    setSceneBehaviorLogs((current) => [...current.slice(-499), { id: crypto.randomUUID(), moduleId, level, message: text, timestamp: new Date().toISOString() }]);
+  function appendBehaviorLog(moduleId: string, level: SceneBehaviorLogEntry["level"], text: string, data?: JsonValue) {
+    setSceneBehaviorLogs((current) => [...current.slice(-499), { id: crypto.randomUUID(), moduleId, level, message: text, timestamp: new Date().toISOString(), ...(data === undefined ? {} : { data }) }]);
   }
 
   async function runSceneBehaviors(draft?: ScriptModule) {
-    if (!activeApplication) {
-      showError(new Error(tr(locale, "请先打开可编辑项目", "Open an editable project first")));
-      return;
-    }
+    const application = applicationSessionRef.current.store.getState().document;
+    if (!application) throw new Error(tr(locale, "请先打开可编辑项目", "Open an editable project first"));
+    const runToken = Symbol("behavior-run");
+    pendingBehaviorRuns.set(behaviorManagerRef, runToken);
     let dependencies: Awaited<ReturnType<typeof loadScriptDependencyModules>>;
     try {
       dependencies = await loadScriptDependencyModules(
-        activeApplication.metadata.projectId,
-        activeApplication.scriptDependencies ?? [],
+        application.metadata.projectId,
+        application.scriptDependencies ?? [],
         api.readScriptDependency,
       );
     } catch (reason) {
       showError(reason instanceof Error ? reason : new Error(String(reason)));
-      return;
+      throw reason;
     }
+    if (pendingBehaviorRuns.get(behaviorManagerRef) !== runToken || applicationSessionRef.current.store.getState().document?.metadata.id !== application.metadata.id) throw new Error(tr(locale, "试运行已取消", "Test run cancelled"));
     behaviorManagerRef.current?.dispose();
-    const scripts = draft ? activeApplication.scripts.map((script) => (script.id === draft.id ? draft : script)) : activeApplication.scripts;
+    const currentScripts = applicationSessionRef.current.store.getState().document?.scripts ?? application.scripts;
+    const scripts = draft ? [...currentScripts.filter((script) => script.id !== draft.id), draft] : currentScripts;
+    setSceneBehaviorLogs([]);
     const resolved = scripts.map((script) => ({ script, resolution: resolveSceneBehaviorModule(script, dependencies) }));
     const modules = resolved.flatMap(({ resolution }) => (resolution.status === "ready" ? [resolution.module] : []));
     for (const { script, resolution } of resolved) {
@@ -268,10 +269,9 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     if (modules.length === 0) {
       setSceneBehaviorEntries([]);
       setSceneBehaviorActive(false);
-      showError(new Error(tr(locale, "没有可运行的 Worker 行为脚本，请先新建并启用脚本", "No runnable Worker behavior scripts. Create and enable one first.")));
-      return;
+      throw new Error(tr(locale, "没有可运行的 Worker 行为脚本，请先新建并启用脚本", "No runnable Worker behavior scripts. Create and enable one first."));
     }
-    const behaviorSceneId = activeScene?.id ?? activeApplication.scenes[0]?.id ?? `application:${activeApplication.metadata.id}`;
+    const behaviorSceneId = activeScene?.id ?? application.scenes[0]?.id ?? `application:${application.metadata.id}`;
     const manager = new SceneBehaviorManager({
       hostOptions: {
         executeNetworkRequest: async ({ binding, variables }) => {
@@ -285,7 +285,7 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
         },
         executeCapabilityRequest: async ({ capabilityId, input }) => {
           const result = await api.invokeCapability(
-            activeApplication.metadata.projectId,
+            application.metadata.projectId,
             capabilityId,
             input,
             currentUser?.id ?? "script-runtime",
@@ -298,7 +298,7 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     const executor = engine && activeScene ? new SceneCommandExecutor(activeScene.id, new ViewerSceneCommandPort(engine, updateComponentFromScript)) : undefined;
     const moduleById = new Map(modules.map((module) => [module.id, module]));
     manager.onChange = createLatestFrameEmitter(setSceneBehaviorEntries);
-    manager.onLog = (moduleId, entry) => appendBehaviorLog(moduleId, entry.level, entry.message);
+    manager.onLog = (moduleId, entry) => appendBehaviorLog(moduleId, entry.level, entry.message, entry.data);
     manager.onDataUpdates = (moduleId, updates) => {
       for (const [key, value] of Object.entries(updates)) {
         const current = applicationSessionRef.current.store.getState().variables[key];
@@ -323,6 +323,7 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
       const module = moduleById.get(moduleId);
       behaviorCommandQueueRef.current = behaviorCommandQueueRef.current
         .then(async () => {
+          if (behaviorManagerRef.current !== manager) return;
           if (!module) {
             appendBehaviorLog(moduleId, "error", tr(locale, "命令被拒绝：脚本模块不存在", "Command rejected: behavior module not found"));
             return;
@@ -354,7 +355,7 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
           }
           const sceneCommands = authorization.allowed.filter((candidate) => candidate.type !== "component.update" && !isUnitySceneCommand(candidate));
           if (!executor && sceneCommands.length > 0) {
-            for (const command of sceneCommands) appendBehaviorLog(moduleId, "warn", `${command.id}: 当前在二维页面，三维命令将在进入关联场景后执行`);
+            for (const command of sceneCommands) appendBehaviorLog(moduleId, "warn", `${command.id}: 当前没有可用三维视口，命令未执行；请在浏览预览中运行关联场景`);
           }
           const results = executor ? await executor.execute(sceneCommands) : [];
           for (const result of results) {
@@ -365,7 +366,6 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
         .catch((reason) => appendBehaviorLog(moduleId, "error", reason instanceof Error ? reason.message : String(reason)));
     };
     behaviorManagerRef.current = manager;
-    setSceneBehaviorLogs([]);
     setSceneBehaviorPaused(false);
     setSceneBehaviorActive(true);
     manager.start(modules, behaviorSceneId);
@@ -381,6 +381,7 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
   }
 
   function stopSceneBehaviors() {
+    pendingBehaviorRuns.delete(behaviorManagerRef);
     behaviorManagerRef.current?.dispose();
     behaviorManagerRef.current = undefined;
     setSceneBehaviorEntries([]);
@@ -434,35 +435,7 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
   function updateComponentFromScript(componentIdOrName: string, patch: Record<string, unknown>) {
     const document = applicationSessionRef.current.store.getState().document;
     if (!document) throw new Error("没有已打开的应用");
-    const entry = document.pages.flatMap((page) => page.nodes.map((node) => ({ page, node }))).find(({ node }) => node.id === componentIdOrName || node.name === componentIdOrName);
-    if (!entry) throw new Error(`找不到组件“${componentIdOrName}”`);
-    const { page, node } = entry;
-    if (patch.frame && typeof patch.frame === "object") {
-      const frame = { ...node.frame, ...(patch.frame as Partial<typeof node.frame>) };
-      dispatchApplicationCommand(createUpdateDashboardNodeFrameCommand(page.id, node.id, frame));
-    }
-    const state = Object.fromEntries(["name", "visible", "selectable", "locked", "groupId", "groupName"].filter((key) => key in patch).map((key) => [key, patch[key]]));
-    if (Object.keys(state).length) dispatchApplicationCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, state));
-    if (node.kind === "data-widget" && patch.widget && typeof patch.widget === "object") {
-      dispatchApplicationCommand(createUpdateDashboardDataWidgetCommand(page.id, node.id, { ...node.widget, ...(patch.widget as Partial<typeof node.widget>) }));
-    }
-    if (node.kind === "scene-viewport") {
-      const viewportPatch = patch.viewport && typeof patch.viewport === "object" ? (patch.viewport as Record<string, unknown>) : patch;
-      dispatchApplicationCommand(
-        createUpdateDashboardSceneViewportCommand(page.id, node.id, {
-          sceneId: typeof viewportPatch.sceneId === "string" ? viewportPatch.sceneId : node.sceneId,
-          renderMode:
-            viewportPatch.renderMode === "load-on-interaction" || viewportPatch.renderMode === "static-placeholder" || viewportPatch.renderMode === "realtime"
-              ? viewportPatch.renderMode
-              : node.renderMode,
-          interactionPolicy:
-            viewportPatch.interactionPolicy === "click-select" || viewportPatch.interactionPolicy === "display-only" || viewportPatch.interactionPolicy === "full-navigation"
-              ? viewportPatch.interactionPolicy
-              : node.interactionPolicy,
-          ...(typeof viewportPatch.cameraViewId === "string" ? { cameraViewId: viewportPatch.cameraViewId } : node.cameraViewId ? { cameraViewId: node.cameraViewId } : {}),
-        }),
-      );
-    }
+    for (const command of scriptComponentCommands(document, componentIdOrName, patch)) dispatchApplicationCommand(command);
   }
 
   function dispatchDashboardNodeInteraction(nodeId: string, trigger: SceneInteractionTrigger = "click", payload?: JsonValue): ApplicationInteractionResult | undefined {

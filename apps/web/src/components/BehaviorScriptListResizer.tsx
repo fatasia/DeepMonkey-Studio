@@ -2,14 +2,15 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { BEHAVIOR_SCRIPT_LIST_COLLAPSED_STORAGE_KEY, BEHAVIOR_SCRIPT_LIST_WIDTH_STORAGE_KEY } from "../appDefaults";
 import { translate as tr, type AppLocale } from "../i18n";
 
-const MIN_WIDTH = 132;
-const MAX_WIDTH = 320;
+const MIN_WIDTH = 120;
+const MAX_WIDTH = 240;
+const DEFAULT_WIDTH = 152;
 
 export function readBehaviorScriptListWidth(): number {
   try {
-    return clamp(Number(window.localStorage.getItem(BEHAVIOR_SCRIPT_LIST_WIDTH_STORAGE_KEY)) || 190);
+    return clamp(Number(window.localStorage.getItem(BEHAVIOR_SCRIPT_LIST_WIDTH_STORAGE_KEY)) || DEFAULT_WIDTH);
   } catch {
-    return 190;
+    return DEFAULT_WIDTH;
   }
 }
 

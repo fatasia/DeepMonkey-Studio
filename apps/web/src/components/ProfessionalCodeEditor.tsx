@@ -237,6 +237,7 @@ export function ProfessionalCodeEditor({
   height = "100%",
   compact = false,
   insertRequest,
+  revealRequest,
   intelligence,
   moduleSpecifiers = [],
   diagnostics = [],
@@ -251,6 +252,7 @@ export function ProfessionalCodeEditor({
   height?: string | number;
   compact?: boolean;
   insertRequest?: CodeInsertRequest;
+  revealRequest?: { id: number; line: number; column: number };
   intelligence?: SceneScriptIntelligenceContext;
   moduleSpecifiers?: readonly string[];
   diagnostics?: readonly SceneScriptIssue[];
@@ -259,7 +261,10 @@ export function ProfessionalCodeEditor({
   onRun?: () => void;
   onOpenDocs?: () => void;
 }) {
-  const [languageProblems, setLanguageProblems] = useState(0);
+  const [languageDiagnostics, setLanguageDiagnostics] = useState<Array<Omit<SceneScriptIssue, "code"> & { code: string }>>([]);
+  const actionsRef = useRef({ onSave, onRun, onOpenDocs });
+  actionsRef.current = { onSave, onRun, onOpenDocs };
+  const [theme, setTheme] = useState("vs-dark");
   const [problemsOpen, setProblemsOpen] = useState(false);
   const [monacoApi, setMonacoApi] = useState<typeof import("monaco-editor")>();
   const [loadError, setLoadError] = useState<Error | undefined>(undefined);
@@ -269,8 +274,22 @@ export function ProfessionalCodeEditor({
   const lastInsertRequestRef = useRef(0);
   const intelligenceTypesRef = useRef<monaco.IDisposable | undefined>(undefined);
   const dependencyTypesRef = useRef<monaco.IDisposable | undefined>(undefined);
-  const problems = languageProblems + diagnostics.length;
-  const sortedDiagnostics = useMemo(() => [...diagnostics].sort((left, right) => left.line - right.line || left.column - right.column), [diagnostics]);
+  const sortedDiagnostics = useMemo(() => [...diagnostics, ...languageDiagnostics].sort((left, right) => left.line - right.line || left.column - right.column), [diagnostics, languageDiagnostics]);
+  const problems = sortedDiagnostics.length;
+  useEffect(() => setLanguageDiagnostics([]), [path]);
+  useEffect(() => {
+    if (!revealRequest || !monacoApi) return;
+    const frame = requestAnimationFrame(() => revealDiagnostic(revealRequest));
+    return () => cancelAnimationFrame(frame);
+  }, [revealRequest?.id, monacoApi, path]);
+  useEffect(() => {
+    const root = editorRef.current?.getDomNode()?.ownerDocument.documentElement ?? document.documentElement;
+    const update = () => setTheme(root.dataset.theme === "light" ? "vs" : "vs-dark");
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, [monacoApi]);
 
   useEffect(() => {
     let active = true;
@@ -344,7 +363,7 @@ export function ProfessionalCodeEditor({
       })),
     );
     return () => api.editor.setModelMarkers(model, "bim-studio-scene-analysis", []);
-  }, [diagnostics, monacoApi]);
+  }, [diagnostics, monacoApi, path]);
 
   useEffect(() => {
     if (!insertRequest || insertRequest.id <= lastInsertRequestRef.current) return;
@@ -478,14 +497,14 @@ export function ProfessionalCodeEditor({
   const onMount: OnMount = (editor, api) => {
     editorRef.current = editor;
     monacoApiRef.current = api;
-    if (onSave) editor.addCommand(api.KeyMod.CtrlCmd | api.KeyCode.KeyS, onSave);
-    if (onRun) editor.addCommand(api.KeyMod.CtrlCmd | api.KeyCode.Enter, onRun);
+    editor.addCommand(api.KeyMod.CtrlCmd | api.KeyCode.KeyS, () => actionsRef.current.onSave?.());
+    editor.addCommand(api.KeyMod.CtrlCmd | api.KeyCode.Enter, () => actionsRef.current.onRun?.());
     if (onOpenDocs)
       editor.addAction({
         id: "bim-studio.open-script-docs",
         label: tr(locale, "Deep Monkey Studio：打开场景 API 文档", "Deep Monkey Studio: Open scene API docs"),
         keybindings: [api.KeyMod.CtrlCmd | api.KeyCode.F1],
-        run: () => onOpenDocs(),
+        run: () => actionsRef.current.onOpenDocs?.(),
       });
     api.editor.setModelMarkers(
       editor.getModel()!,
@@ -503,7 +522,7 @@ export function ProfessionalCodeEditor({
     editor.focus();
   };
 
-  function revealDiagnostic(issue: SceneScriptIssue) {
+  function revealDiagnostic(issue: Pick<SceneScriptIssue, "line" | "column">) {
     const editor = editorRef.current;
     if (!editor) return;
     editor.setPosition({ lineNumber: issue.line, column: issue.column });
@@ -603,10 +622,10 @@ export function ProfessionalCodeEditor({
           height={height}
           language="javascript"
           path={path}
-          theme="vs-dark"
+          theme={theme}
           value={value}
           onChange={(next) => onChange(next ?? "")}
-          onValidate={(markers) => setLanguageProblems(markers.filter((marker) => marker.severity >= monacoApi.MarkerSeverity.Warning && marker.source !== "Deep Monkey Studio").length)}
+          onValidate={(markers) => setLanguageDiagnostics(markers.filter((marker) => marker.severity >= monacoApi.MarkerSeverity.Warning && marker.source !== "Deep Monkey Studio").map((marker) => ({ code: `language-${marker.code}`, severity: marker.severity >= monacoApi.MarkerSeverity.Error ? "error" : "warning", message: marker.message, line: marker.startLineNumber, column: marker.startColumn, endColumn: marker.endColumn })))}
           loading={<div className="professional-code-loading">{tr(locale, "正在加载代码智能服务…", "Loading code intelligence…")}</div>}
           options={{
             automaticLayout: true,

@@ -170,15 +170,15 @@
 .dashboard-shortcuts-help>span kbd { color:#e0bf6d;font:10px/1.4 ui-monospace,monospace;white-space:nowrap; }
 .dashboard-shortcuts-help>span em { color:#87969c;font-size:10px;font-style:normal; }
 /* overflow:scroll 滚动条常驻：低倍缩放时内容跨越阈值不再引起滚动条明灭与布局跳动（U1-10 补充：<30% 抖动）。 */
-.dashboard-canvas-scroll { position:relative; min-width: 0; min-height: 0; padding: 0; overflow: scroll; cursor:default; background-color: #101517; background-image: radial-gradient(circle,#263136 1px,transparent 1px); background-size: 16px 16px; }
+.dashboard-canvas-scroll { position:relative; min-width: 0; min-height: 0; padding: 0; overflow: scroll; cursor:default; background-color: var(--bg-0); background-image: radial-gradient(circle,var(--line-strong) 1px,transparent 1px); background-size: 16px 16px; }
 .dashboard-canvas-scroll.panning { cursor:grabbing; user-select:none; }
 .dashboard-artboard-stage { position: relative; margin: 0; }
 .dashboard-artboard { position: absolute; top: 0; left: 0; overflow: hidden; background: #12191d; box-shadow:0 20px 58px rgba(0,0,0,.5); transform-origin: top left; }
-.dashboard-ruler-corner { position:sticky;z-index:13;top:0;left:0;display:block;width:14px;height:14px!important;padding:0!important;border:0!important;border-radius:0!important;background:#192126!important;box-shadow:inset -1px -1px #344047; }
-.dashboard-ruler { position:sticky;z-index:11;display:block;overflow:hidden;color:#728087;background:#192126;user-select:none;cursor:crosshair; }
+.dashboard-ruler-corner { position:sticky;z-index:13;top:0;left:0;display:block;width:14px;height:14px!important;padding:0!important;border:0!important;border-radius:0!important;background:var(--surface-2)!important;box-shadow:inset -1px -1px var(--line); }
+.dashboard-ruler { position:sticky;z-index:11;display:block;overflow:hidden;color:var(--text-muted);background:var(--surface-2);user-select:none;cursor:crosshair; }
 .dashboard-ruler.horizontal { top:0;left:0;height:14px;margin-top:-14px;border-bottom:1px solid #344047; }
 .dashboard-ruler.vertical { top:0;left:0;width:14px;margin-top:-14px;border-right:1px solid #344047; }
-.dashboard-ruler span { position:absolute;color:#718087;font:6px/1 Consolas,monospace;pointer-events:none; }
+.dashboard-ruler span { position:absolute;color:var(--text-muted);font:6px/1 Consolas,monospace;pointer-events:none; }
 .dashboard-ruler.horizontal span { top:2px;height:12px;border-left:1px solid #617078;padding-left:2px; }
 .dashboard-ruler.vertical span { left:2px;width:12px;border-top:1px solid #617078;padding-top:2px;writing-mode:vertical-rl; }
 .dashboard-guide,.dashboard-smart-guide { position:absolute;z-index:999990;padding:0;border:0;border-radius:0;background:#4bc5ea;box-shadow:0 0 0 1px rgba(75,197,234,.24); }
