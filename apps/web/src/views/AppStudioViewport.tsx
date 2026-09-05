@@ -18,6 +18,7 @@ import { ViewControl } from "../components/AppFormControls";
 import type { AppStudioController } from "./AppStudioShell";
 import { sceneViewerDeliveryToolbarVisible } from "../delivery/sceneViewerDelivery";
 import type { SceneSimulationPanelId } from "../simulation/sceneSimulationRegistry";
+import { useSceneSimulationOverlay } from "../hooks/useSceneSimulationOverlay";
 
 const SceneSimulationPanel = lazy(() => import("../components/SceneSimulationPanel").then((module) => ({ default: module.SceneSimulationPanel })));
 
@@ -143,6 +144,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   } = controller;
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
   const [simulationPanelId, setSimulationPanelId] = useState<SceneSimulationPanelId>();
+  useSceneSimulationOverlay(engine, activeScene, route.view === "studio" && Boolean(simulationPanelId), controller.bindings.state.revision);
   const workspaceIsPrimary = route.view === "studio" || route.view === "view" || route.view === "published";
   const deliveryToolbarVisible = sceneViewerDeliveryToolbarVisible();
   const viewerToolbarVisible = deliveryToolbarVisible ?? (route.view === "view" || activeScene?.publicationToolbarVisible !== false);

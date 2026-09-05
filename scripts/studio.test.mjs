@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
+import { createServer } from "node:http";
 
 const execFileAsync = promisify(execFile);
 const script = fileURLToPath(new URL("./studio.mjs", import.meta.url));
@@ -13,10 +14,14 @@ const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 
 test("help and stopped status are read-only through the canonical command", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "deep-monkey-studio-launcher-"));
+  // 只读状态检查会回探生产 API；独占临时端口，不能依赖开发机 4100 恰好未启动。
+  const probe = createServer((_request, response) => { response.writeHead(503); response.end(); });
+  await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
   const environment = {
     ...process.env,
     BIM_STUDIO_RUNTIME_DIR: join(temporary, "runtime"),
     BIM_STUDIO_LOG_DIR: join(temporary, "logs"),
+    API_PORT: String(probe.address().port),
   };
   try {
     const help = await execFileAsync(process.execPath, [script, "help"], { env: environment, windowsHide: true });
@@ -31,6 +36,7 @@ test("help and stopped status are read-only through the canonical command", asyn
       (error) => error.code === 1 && /未运行/.test(error.stdout),
     );
   } finally {
+    await new Promise((resolve) => probe.close(resolve));
     await rm(temporary, { recursive: true, force: true });
   }
 });

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "qa-simulation-authoring-2026-09-05",
+  "projectId": "qa-simulation",
+  "name": "QA 仿真保存回归 0905",
+  "camera": {"position": {"x": 9, "y": 8, "z": 10}, "target": {"x": 0, "y": 0, "z": 0}, "mode": "orbit"},
+  "models": [],
+  "primitives": [
+    {"modelId": "qa-source", "name": "供料工位", "kind": "box", "color": "#477f83", "visible": true, "opacity": 1, "transform": {"position": {"x": -3, "y": 0.5, "z": 0}, "rotation": {"x": 0, "y": 0, "z": 0}, "scale": {"x": 1, "y": 1, "z": 1}}},
+    {"modelId": "qa-sink", "name": "装配工位", "kind": "box", "color": "#d4a84f", "visible": true, "opacity": 1, "transform": {"position": {"x": 3, "y": 0.5, "z": 0}, "rotation": {"x": 0, "y": 0, "z": 0}, "scale": {"x": 1, "y": 1, "z": 1}}}
+  ],
+  "measurements": [],
+  "simulationEntities": [
+    {"id": "qa-flow", "kind": "flowLink", "fromModelId": "qa-source", "toModelId": "qa-sink"},
+    {"id": "qa-path", "kind": "path", "name": "AGV 送料路线", "targetModelId": "qa-source", "points": [[-3, 0.6, 0], [-3, 0.6, 3], [3, 0.6, 3], [3, 0.6, 0]], "speed": 1.5, "loopMode": "once"},
+    {"id": "qa-missing", "kind": "path", "name": "断链检查样例", "targetModelId": "qa-deleted", "points": [[0, 0, 0], [1, 0, 0]], "speed": 1, "loopMode": "once"}
+  ],
+  "createdAt": "2026-09-05T00:00:00.000Z",
+  "updatedAt": "2026-09-05T00:00:00.000Z"
+}

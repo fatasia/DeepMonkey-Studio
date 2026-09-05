@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { DashboardGuide, WidgetFrame, WidgetNode } from "@bim-studio/contracts";
 import {
   alignDashboardFrames,
@@ -96,7 +96,7 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
     });
   }
 
-  function zoomCanvas(event: ReactWheelEvent<HTMLDivElement>) {
+  function zoomCanvas(event: WheelEvent) {
     if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
     changeZoom(zoom * (event.deltaY > 0 ? 0.9 : 1.1), event.clientX, event.clientY);
@@ -453,7 +453,8 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
     event.preventDefault();
     event.stopPropagation();
     const pointerId = event.pointerId;
-    const bounds = event.currentTarget.getBoundingClientRect();
+    const bounds = artboardRef.current?.getBoundingClientRect();
+    if (!bounds) return;
     const additive = event.ctrlKey || event.metaKey || event.shiftKey;
     const pointAt = (clientX: number, clientY: number) => ({
       x: Math.max(0, Math.min(page.width, (clientX - bounds.left) / zoom)),
@@ -487,7 +488,7 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
         window.setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0);
       }
       const hits = rectangle.width < 3 && rectangle.height < 3 ? [] : page.nodes
-        .filter((node) => node.visible !== false && node.selectable !== false
+        .filter((node) => node.visible !== false && node.selectable !== false && node.locked !== true
           && node.frame.x < rectangle.x + rectangle.width
           && node.frame.y < rectangle.y + rectangle.height
           && node.frame.x + node.frame.width > rectangle.x

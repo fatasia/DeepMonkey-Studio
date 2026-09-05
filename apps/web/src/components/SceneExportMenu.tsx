@@ -23,6 +23,11 @@ export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExpor
   return (
     <div
       className={`export-menu ${compact ? "compact" : ""}`}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !open) return;
+        event.preventDefault(); event.stopPropagation(); setOpen(false);
+        event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus();
+      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}

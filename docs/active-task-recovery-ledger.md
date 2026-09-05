@@ -373,3 +373,19 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 2026-09-05 用户指令：下载暂停（catalog 164 个保持），集中做剩余 5 项+全量测试。队列：① SIM-1a 场景树仿真域渲染+检查器挂载 ② 覆盖层 ③ U1-8a 双主题截图补档 ④ EX-001A Alt 拖拽复制+右键选层 ⑤ S3-B/S3-C 规格；全量测试=Web 全量+全部路由巡检（u117 脚本已备）。
 
 - EX-001A Alt拖拽复制实现方案（下一窗口照做）：① `pasteCopiedNodes`（controller:217）改为返回新建节点 id 数组；② `DashboardCanvasNode.tsx` 移动手柄（314 行 onPointerDown→onTransformStart(event,"move")）前置判断：event.altKey 时先调 copy+paste（偏移 0），用返回的首个新 id 构造合成 pointer 事件参数继续 onTransformStart；③ 拖动事务与手柄解耦（beginNodeTransform 接受 nodeId 参数而非从 DOM 读），避免粘贴后 React 重渲染打断手势；④ 回归：DashboardWorkspace.test.tsx 加 Alt+拖拽副本断言。已确认 Ctrl+D 复制已存在（508-513），Alt 拖拽是补充交互。
+
+### 15.5 2026-09-05 Codex 接手复核与持续优化
+
+本节覆盖 §15.4 中已经过时的待建描述：GLM 的 `b1b2222` 交接及此前提交为基线，必须先查当前代码，不能重新实现已提交的 Alt 拖拽/右键选层、语义合同或 SIM 场景树。
+
+- 用户更新：Codex 在本任务范围内直接改，不需逐项请示；仅本地提交、严禁 push，admin/admin、PostgreSQL+MinIO 拓扑及原数据不动。用户飞行期间继续执行，并增量复核 GLM 测试输出。
+- **已完成**：SIM 仿真实体 controller 直连、快照保存/并发返回合并/导入引用迁移、检查器编辑删除、静态路径与 flowLink 覆盖层及关闭清理。专用 QA 场景保存→刷新恢复已实测；不代表完整 SIM-1a 运行闭环完成。
+- **已完成**：2D 页面仅底部、图层左侧；框选使用实际 artboard 坐标；Ctrl+滚轮 passive:false；确定性浏览器门禁四组合通过，10%→11% 60 帧无漂移。
+- **已完成**：UI 报告确认项的加载反馈、菜单/AI Esc、搜索上下文、登录 502 指引、窄屏导航、连接名称/监控、局部主题与优化器禁用态、datetime/ANSI 清理；旧发布快照兼容读取与保留、版本错误/重试。未复现与已修项分开记录，未覆盖 GLM 原报告。
+- **已完成**：SemaPLC/Astral3D/astral-service 分析与 S3-B/S3-C 规格。Astral Revit 配置处于注释状态，不能宣称已获得可用 RVT 解析器；300+ 数量是待实现目标。
+- **本轮待办**：以 `docs/ui-report-recheck-2026-09-05.md` 的 33 项复核表和 `docs/codex-glm53-handoff-2026-09-05.md` §4 为直接队列。优先 Agent 数据集缺失/AI 取消生命周期、四仿真面板深测、SIM 源汇/队列到运行/覆盖层/Study/统一时间线、拓扑交互、素材深度与大文件职责拆分。
+- **明确排除**：继承 §28；外部素材下载暂停 164 GLB，不因定时续跑恢复下载；不做工业格式真实转换/Revit/Docker/完整 OLP/认证动力学或 8 小时 WebGPU soak。
+- **项目级后验收**：任意客户格式/规模/仿真正确性矩阵及开发完成后的统一全站、性能、稳定性、故障注入与发布回滚。不把固定夹具测试扩成“全面超过行业平台”。
+- 验证：2026-09-05 10:47 全仓 typecheck、`pnpm -r test` 通过（Web 320 文件/1127 测试，API 110 文件/434 测试）；源文件 1704 个均 ≤800；10:55 Web 全量再次 1127/1127。新增门禁、最新构建及截图结论继续回填交接 §7。
+- 产物：`test-output/codex-2026-09-05/`；权威交接 `docs/codex-glm53-handoff-2026-09-05.md`，分析 `docs/semaplc-astral-value-analysis-2026-09-05.md`。GLM 原报告截至 10:01:16 共 33 条（其中重复与未复现项已标出）。本任务 heartbeat 每 30 分钟检查新增项，飞行检查窗口到 15:00；无新项时继续上述队列。
+- 收口增补：四仿真面板 32 组基础布局/折叠检查通过；根启动/CLI 测试 16/16；Web 及依赖生产构建通过，首屏 JS 304.8 KiB / gzip 99.0 KiB，11 chunk。单独 Web 构建的首次缺失导出来自旧 contracts dist，依赖顺序构建后通过；既有外部化/大 chunk 构建提示未抹掉，详见交接 §7。

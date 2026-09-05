@@ -85,7 +85,7 @@
 }
 .data-center-page .data-hub-tabs button:not(.data-hub-advanced):not(:nth-of-type(3))::after {
   margin-left: 6px;
-  color: #40525a;
+  color: var(--muted);
   content: "›";
   font-size: 16px;
   font-weight: 400;
@@ -95,8 +95,8 @@
   width: 20px;
   height: 20px;
   place-items: center;
-  color: #9cabb1;
-  border: 1px solid #405159;
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
   border-radius: 4px;
   font-size: 11px;
 }
@@ -106,7 +106,7 @@
   font-weight: 620;
   white-space: nowrap;
 }
-.data-center-page .data-hub-tabs button:hover { color: #d8e1e4; background: #111a1f; }
+.data-center-page .data-hub-tabs button:hover { color: var(--text-strong); background: var(--surface-2); }
 .data-center-page .data-hub-tabs button.active {
   color: var(--accent-hover);
   border-color: var(--dc-accent);
@@ -167,7 +167,7 @@
   gap: 10px;
   padding: 0 12px;
   border-bottom: 1px solid var(--dc-line);
-  background: #111a1f;
+  background: var(--surface-2);
 }
 .data-center-page :is(.data-center-pane, .data-center-preview) > header > div:first-child {
   display: grid;
@@ -188,10 +188,10 @@
   align-items: center;
   gap: 5px;
   padding: 0 9px;
-  color: #c7d2d6;
-  border: 1px solid #3a4a51;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
   border-radius: 4px;
-  background: #172126;
+  background: var(--surface-2);
   font-size: 12px;
 }
 .data-center-page .data-preview-actions { display: flex !important; gap: 6px !important; }
@@ -203,14 +203,14 @@
 .data-center-page .data-card-list { display: grid; gap: 2px; padding: 6px; }
 .data-center-page .data-resource-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
   border: 0;
   border-left: 2px solid transparent;
   border-radius: 2px;
   background: transparent;
 }
-.data-center-page .data-resource-card:hover { background: #151f24; }
+.data-center-page .data-resource-card:hover { background: var(--surface-2); }
 .data-center-page .data-resource-card.active {
   border-color: var(--dc-accent);
   background: var(--dc-accent-soft);
@@ -222,7 +222,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px;
-  color: #b5c2c7;
+  color: var(--text);
   border: 0;
   text-align: left;
   background: transparent;
@@ -232,14 +232,14 @@
   padding: 5px;
   color: var(--dc-accent);
   border-radius: 3px;
-  background: #222119;
+  background: var(--surface-2);
 }
 .data-center-page .data-card-main > span { display: grid; min-width: 0; gap: 2px; }
 .data-center-page .data-card-main strong,
 .data-center-page .data-card-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.data-center-page .data-card-main strong { color: var(--dc-text); font-size: 12px; }
+.data-center-page .data-card-main strong { color: var(--dc-text); font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
 .data-center-page .data-card-main small { color: var(--dc-muted); font-size: 11px; }
-.data-center-page .data-card-actions { gap: 1px; padding-right: 5px; opacity: .68; }
+.data-center-page .data-card-actions { justify-content: flex-end; gap: 2px; padding: 0 8px 6px; opacity: .68; }
 .data-center-page .data-resource-card:hover .data-card-actions,
 .data-center-page .data-resource-card.active .data-card-actions { opacity: 1; }
 .data-center-page .data-card-actions button { width: 28px; height: 28px; border-radius: 3px; }
@@ -259,7 +259,7 @@
   padding: 22px 16px;
   color: var(--dc-subtle);
 }
-.data-center-page .data-list-empty strong { color: #cbd6d9; font-size: 12px; }
+.data-center-page .data-list-empty strong { color: var(--text-strong); font-size: 12px; }
 .data-center-page .data-list-empty span { color: var(--dc-muted); font-size: 11px; line-height: 1.55; }
 .data-center-page .data-list-empty button { min-height: 32px; padding: 0 11px; border-radius: 4px; font-size: 12px; }
 .data-center-page .data-inline-form {
@@ -278,15 +278,15 @@
 .data-center-page .data-inline-form :is(input, select, textarea) {
   min-height: 32px;
   color: var(--dc-text);
-  border-color: #3a4b52;
+  border-color: var(--line-strong);
   border-radius: 3px;
-  background: #0c1418;
+  background: var(--surface-1);
   font-size: 12px;
 }
 .data-center-page .data-inline-form button { min-height: 31px; border-radius: 3px; font-size: 12px; }
 .data-center-page .data-form-heading strong,
 .data-center-page .data-computed-fields > header strong { font-size: 12px; }
-.data-center-page .data-form-advanced { border-color: var(--dc-line-strong); border-radius: 3px; background: #10191d; }
+.data-center-page .data-form-advanced { border-color: var(--dc-line-strong); border-radius: 3px; background: var(--surface-2); }
 .data-center-page .data-form-advanced summary,
 .data-center-page .data-form-advanced > small,
 .data-center-page .data-computed-fields :is(small, p, em) { font-size: 11px; }
@@ -298,13 +298,16 @@
   border: 0;
   border-top: 1px solid var(--dc-line);
   border-radius: 0;
-  background: #10191d;
+  background: var(--surface-2);
 }
-.data-center-page :is(.data-connector-health-panel, .data-write-panel) strong { font-size: 12px; }
+.data-center-page :is(.data-connector-health-panel, .data-write-panel) strong { color: var(--text); font-size: 12px; }
 .data-center-page :is(.data-connector-health-panel, .data-write-panel) small,
 .data-center-page .data-write-fields label { font-size: 11px; }
 .data-center-page .data-connector-health-panel > div span { font-size: 11px; }
-.data-center-page .data-connector-health-panel > div b { font-size: 12px; }
+.data-center-page .data-connector-health-panel > div b { color: var(--text); font-size: 12px; }
+.data-center-page .data-connector-health-panel small,
+.data-center-page .data-connector-health-panel > div span { color: var(--muted); }
+.data-center-page .data-connector-health-panel > header i { color: var(--text); }
 .data-center-page .data-write-fields input { min-height: 32px; border-radius: 3px; font-size: 12px; }
 .data-center-page .data-sql-assistant {
   margin: 0;
@@ -312,7 +315,7 @@
   border: 0;
   border-bottom: 1px solid var(--dc-line-strong);
   border-radius: 0;
-  background: #10191e;
+  background: var(--surface-2);
   box-shadow: none;
 }
 .data-center-page .data-sql-assistant > header { min-height: 44px; }
@@ -331,7 +334,7 @@
 .data-center-page .data-preview-table { width: 100%; height: 100%; overflow: auto; }
 .data-center-page .data-preview-table table { width: 100%; min-width: 560px; font-size: 11px; }
 .data-center-page .data-preview-table :is(th, td) { padding: 9px 10px; }
-.data-center-page .data-preview-table th { background: #151f24; }
+.data-center-page .data-preview-table th { background: var(--surface-2); }
 .data-center-page .data-center-preview > footer {
   display: flex;
   align-items: center;

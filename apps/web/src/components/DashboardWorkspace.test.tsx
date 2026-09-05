@@ -158,7 +158,10 @@ describe("DashboardWorkspace", () => {
     expect(html).toContain('aria-label="智能吸附"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('aria-label="页面宽度"');
-    expect(html).toContain("页面与图层");
+    expect(html).not.toContain("页面与图层");
+    expect(html).not.toContain("dashboard-page-row");
+    expect(html).toContain('aria-label="复制当前页面"');
+    expect(html).toContain('aria-label="删除当前页面"');
     expect(html).toContain("纯三维 看板");
     expect(html).toContain("dashboard-page-tabs"); // 2026-09-05 用户决策反转：底部页签恢复
     expect(html).not.toContain("空格/中键平移");

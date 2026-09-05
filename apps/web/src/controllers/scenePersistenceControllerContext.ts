@@ -82,6 +82,7 @@ export interface ScenePersistenceControllerContext {
   isModelLoadSuperseded: (reason: unknown) => boolean;
   sortScenesByTime: (items: SceneSnapshot[]) => SceneSnapshot[];
   showError: (reason: unknown) => void;
+  recordSceneEdit: (label: string) => void;
   setActiveScene: Setter<SceneSnapshot | undefined>;
   setAutoSaveEnabled: Setter<boolean>;
   setAnimationPlaying: Setter<boolean>;

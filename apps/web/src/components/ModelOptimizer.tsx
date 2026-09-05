@@ -312,7 +312,7 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange }: {
               <span>
                 {before
                   ? `${formatBytes(before.bytes)} · ${before.triangles.toLocaleString(locale)} ${tr(locale, "面", "triangles")}`
-                  : tr(locale, "支持平台全部模型格式", "Supports all platform model formats")}
+                  : tr(locale, "GLB / glTF，或经转换器处理的模型", "GLB / glTF, or models processed by a converter")}
               </span>
             </div>
           </div>

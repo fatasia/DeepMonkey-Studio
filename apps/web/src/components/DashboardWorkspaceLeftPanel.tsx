@@ -1,8 +1,7 @@
-import { Box, Copy, Eye, EyeOff, Group, Layers3, LayoutDashboard, Lock, Pencil, Plus, Trash2, Unlock } from "lucide-react";
+import { Box, Eye, EyeOff, Group, Layers3, Lock, Pencil, Trash2, Unlock } from "lucide-react";
 import { createUpdateDashboardNodeStateCommand } from "@bim-studio/studio-core";
 import { translate as tr } from "../i18n";
 import { DashboardComponentLibrary } from "./DashboardComponentLibrary";
-import { DashboardPageViewportEditor } from "./DashboardPageViewportEditor";
 import { dashboardNodeLabel as nodeLabel } from "./dashboardWorkspaceModel";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 
@@ -53,19 +52,12 @@ function DashboardLayerList() {
 
 export function DashboardWorkspaceLeftPanel() {
   const {
-    addDashboardPage,
     addDataWidget,
     addSceneViewport,
     application,
-    commitPageViewport,
     componentSearchRef,
-    currentView,
-    deleteDashboardPage,
-    duplicateDashboardPage,
     leftPanelTab,
     locale,
-    onSelectPage,
-    page,
     setLeftPanelTab,
     setTemplateLibraryOpen,
   } = useDashboardWorkspace();
@@ -77,8 +69,8 @@ export function DashboardWorkspaceLeftPanel() {
       </header>
       <nav className="dashboard-left-tabs" aria-label={tr(locale, "二维工作区", "2D workspace")}>
         <button className={leftPanelTab === "pages" ? "active" : ""} onClick={() => setLeftPanelTab("pages")}>
-          <LayoutDashboard size={13} />
-          {tr(locale, "页面与图层", "Pages & layers")}
+          <Layers3 size={13} />
+          {tr(locale, "图层", "Layers")}
         </button>
         <button className={leftPanelTab === "components" ? "active" : ""} onClick={() => setLeftPanelTab("components")}>
           <Box size={13} />
@@ -86,49 +78,7 @@ export function DashboardWorkspaceLeftPanel() {
         </button>
       </nav>
       {leftPanelTab === "pages" && (
-        <section>
-          <div className="dashboard-panel-label">
-            <span>
-              {tr(locale, "页面", "Pages")}
-              <small>{application.pages.length}</small>
-            </span>
-            <span className="dashboard-page-actions">
-              <button title={tr(locale, "复制当前页面", "Duplicate current page")} onClick={duplicateDashboardPage}>
-                <Copy size={12} />
-              </button>
-              <button title={tr(locale, "新增空白页面", "Add blank page")} onClick={addDashboardPage}>
-                <Plus size={12} />
-              </button>
-            </span>
-          </div>
-          {application.pages.map((candidate) => (
-            <div className={`dashboard-page-row ${candidate.id === page.id ? "active" : ""}`} key={candidate.id}>
-              <button className="dashboard-page-select" onClick={() => onSelectPage(candidate.id, currentView())}>
-                <LayoutDashboard size={14} />
-                <span>{candidate.name}</span>
-                <small>{candidate.nodes.length}</small>
-              </button>
-              <button
-                className="dashboard-page-delete"
-                disabled={application.pages.length <= 1}
-                title={tr(locale, "删除页面", "Delete page")}
-                onClick={() => deleteDashboardPage(candidate.id)}
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
-          <details className="dashboard-compact-page-settings">
-            <summary>
-              {tr(locale, "画布尺寸与适配", "Canvas size & fit")}
-              <small>
-                {page.width} × {page.height}
-              </small>
-            </summary>
-            <DashboardPageViewportEditor locale={locale} page={page} onChange={commitPageViewport} compact />
-          </details>
-          <DashboardLayerList />
-        </section>
+        <DashboardLayerList />
       )}
       {leftPanelTab === "components" && (
         <section className="dashboard-component-library">

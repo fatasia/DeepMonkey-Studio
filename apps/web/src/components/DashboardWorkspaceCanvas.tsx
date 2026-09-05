@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -91,6 +92,12 @@ export function DashboardWorkspaceCanvas() {
     zoom,
     zoomCanvas,
   } = useDashboardWorkspace();
+  useEffect(() => {
+    const element = scrollRef.current;
+    // React 委托的 wheel 为 passive，无法阻止浏览器原生缩放；仅画布使用可取消监听。
+    element?.addEventListener("wheel", zoomCanvas, { passive: false });
+    return () => element?.removeEventListener("wheel", zoomCanvas);
+  }, [scrollRef, zoomCanvas]);
   return (
     <section className="dashboard-design-surface">
       <div className="dashboard-canvas-toolbar">
@@ -228,7 +235,6 @@ export function DashboardWorkspaceCanvas() {
         className={`dashboard-canvas-scroll ${panning ? "panning" : ""}`}
         ref={scrollRef}
         onScroll={handleCanvasScroll}
-        onWheel={zoomCanvas}
         onPointerDownCapture={(event) => {
           // 平移（中键/空格+左键）优先；空白处普通左键拖拽=框选（相交命中，U1-13）；
           // 点在组件/标尺上时不拦截，交还各自处理。

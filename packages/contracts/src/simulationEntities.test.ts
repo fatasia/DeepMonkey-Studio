@@ -4,6 +4,13 @@ import { validateSimulationEntities } from "./simulationEntities.js";
 const modelIds = new Set(["m1", "m2"]);
 
 describe("validateSimulationEntities", () => {
+  it("rejects non-finite speed, invalid points and negative collision tolerance", () => {
+    const errors = validateSimulationEntities([
+      { id: "p", kind: "path", name: "路径", targetModelId: "", points: [[NaN, 0, 0]], speed: Infinity, loopMode: "once" },
+      { id: "c", kind: "collisionPair", name: "碰撞", a: { modelId: "m1" }, b: { modelId: "m2" }, tolerance: -1 },
+    ], modelIds);
+    expect(errors).toHaveLength(4);
+  });
   it("accepts valid flow links, paths and collision pairs", () => {
     const errors = validateSimulationEntities([
       { id: "f1", kind: "flowLink", fromModelId: "m1", toModelId: "m2" },

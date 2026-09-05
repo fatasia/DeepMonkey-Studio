@@ -28,6 +28,12 @@ export function rebindImportedSceneModels(
   const rebound: SceneSnapshot = {
     ...scene,
     models: reboundModels,
+    ...(scene.simulationEntities ? {
+      simulationEntities: scene.simulationEntities.map((entity) => entity.kind === "flowLink"
+        ? { ...entity, fromModelId: rebindId(entity.fromModelId), toModelId: rebindId(entity.toModelId) }
+        : entity.kind === "path" ? { ...entity, targetModelId: rebindId(entity.targetModelId) }
+          : { ...entity, a: { ...entity.a, modelId: rebindId(entity.a.modelId) }, b: { ...entity.b, modelId: rebindId(entity.b.modelId) } }),
+    } : {}),
     ...(scene.animation ? {
       animation: {
         ...scene.animation,

@@ -2,6 +2,7 @@ import { GitBranch, Route, Waypoints } from "lucide-react";
 import type { SimulationEntityState } from "@bim-studio/contracts";
 import { translate as tr } from "../i18n";
 import type { AppLocale } from "../i18n";
+import "../styles/sceneSimulationEntities.css";
 
 export interface SceneSimulationEntitiesSectionProps {
   locale: AppLocale;
@@ -43,7 +44,17 @@ export function SceneSimulationEntitiesSection(props: SceneSimulationEntitiesSec
               aria-selected={props.selectedId === entity.id}
               className={`scene-simulation-entity ${props.selectedId === entity.id ? "selected" : ""} ${broken ? "broken" : ""}`}
               title={broken ? tr(props.locale, "引用的场景对象已被删除", "Referenced scene object was deleted") : entityLabel(entity, props.locale)}
-              onClick={() => props.onSelect(props.selectedId === entity.id ? undefined : entity.id)}
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); props.onSelect(entity.id); }
+                if (event.key === "Escape") props.onSelect(undefined);
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  const sibling = event.key === "ArrowDown" ? event.currentTarget.nextElementSibling : event.currentTarget.previousElementSibling;
+                  (sibling as HTMLElement | null)?.focus();
+                }
+              }}
+              onClick={() => props.onSelect(entity.id)}
             >
               <Icon size={13} />
               <span>{entityLabel(entity, props.locale)}</span>

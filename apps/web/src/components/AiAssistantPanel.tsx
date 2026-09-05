@@ -70,6 +70,7 @@ export function AiAssistantPanel({
   const [applyError, setApplyError] = useState<string>();
   const [applyNotice, setApplyNotice] = useState<string>();
   const requestAbort = useRef<AbortController | undefined>(undefined);
+  const inFlight = useRef(false);
   const { platformContext, contextSources, datasets, platformLoaded, projectMissing } = useAiProjectContext(projectId, locale);
   const t = (zh: string, en: string) => tr(locale, zh, en);
   const workspaceTarget = useMemo(() => assistantWorkspaceTarget(context), [context]);
@@ -130,9 +131,21 @@ export function AiAssistantPanel({
 
   useEffect(() => () => requestAbort.current?.abort(), []);
 
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      if (confirmDashboard) setConfirmDashboard(false);
+      else { requestAbort.current?.abort(); onClose(); }
+    };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [confirmDashboard, onClose]);
+
   async function ask(retryPrompt?: string) {
     const prompt = (retryPrompt ?? question).trim();
-    if (!prompt) return;
+    if (!prompt || inFlight.current) return;
+    inFlight.current = true;
     setLastPrompt(prompt);
     setBusy(true);
     setError(undefined);
@@ -220,6 +233,7 @@ export function AiAssistantPanel({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      inFlight.current = false;
       requestAbort.current = undefined;
       setBusy(false);
     }
@@ -348,7 +362,7 @@ export function AiAssistantPanel({
           loading={!platformLoaded && !projectMissing}
         />
         {mode === "sql" && projectId && <AskDataQuickQuery projectId={projectId} datasets={datasets} locale={locale} />}
-        {conversation.length === 0 && !answer && mode !== "sql" && (
+        {conversation.length === 0 && !answer && !busy && !error && mode !== "sql" && (
           <div className="ai-assistant-empty">
             <Sparkles size={23} />
             <strong>{t("问当前平台，不问空泛知识", "Ask your platform, not generic knowledge")}</strong>
@@ -387,6 +401,10 @@ export function AiAssistantPanel({
             </article>
           </section>
         ))}
+        {(busy || error) && lastPrompt && <section className="ai-conversation-turn" aria-label={t("当前请求", "Current request")}>
+          <div className="ai-user-message">{lastPrompt}</div>
+          {busy && !answer && <article role="status"><LoaderCircle className="spin" size={14} /> {t("正在处理，请稍候…", "Working on your request…")}</article>}
+        </section>}
         {answer && (conversation.at(-1)?.answer !== answer || busy) && (
           <article className="ai-streaming-answer">
             <small>{busy ? t("正在基于项目证据分析", "Analyzing project evidence") : t("模型回答", "Model response")}</small>

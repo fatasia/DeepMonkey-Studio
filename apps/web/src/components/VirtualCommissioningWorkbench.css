@@ -1,7 +1,7 @@
 .commissioning-workbench {
   display: grid;
   gap: 16px;
-  color: #dfe7e9;
+  color: var(--text-strong);
 }
 .commissioning-titlebar {
   display: flex;
@@ -15,9 +15,9 @@
   align-items: end;
   gap: 12px;
   padding: 14px 16px;
-  border: 1px solid #2a3a40;
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: #10191d;
+  background: var(--surface-1);
   grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
 }
 .commissioning-selection.confirmed {
@@ -26,7 +26,7 @@
 .commissioning-selection label {
   display: grid;
   gap: 6px;
-  color: #82949a;
+  color: var(--muted);
   font-size: 11px;
 }
 .commissioning-selection select {
@@ -34,10 +34,10 @@
   width: 100%;
   min-height: 38px;
   padding: 0 10px;
-  color: #dce5e7;
-  border: 1px solid #34464d;
+  color: var(--text-strong);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #0c1518;
+  background: var(--surface-1);
   font-size: 12px;
 }
 .commissioning-selection button {
@@ -64,7 +64,7 @@
 }
 .commissioning-titlebar p {
   margin: 0;
-  color: #82939a;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
 }
@@ -91,9 +91,9 @@
   white-space: nowrap;
 }
 .commissioning-suite-run {
-  color: #cbd6d9;
-  border: 1px solid #43545a;
-  background: #172328;
+  color: var(--text-strong);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
 }
 .commissioning-run:disabled,
 .commissioning-suite-run:disabled {
@@ -104,9 +104,9 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   overflow: hidden;
-  border: 1px solid #29383e;
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: #10191d;
+  background: var(--surface-1);
 }
 .commissioning-steps > button {
   display: grid;
@@ -114,7 +114,7 @@
   grid-template-columns: 28px 1fr;
   gap: 1px 9px;
   padding: 12px 15px;
-  border-right: 1px solid #29383e;
+  border-right: 1px solid var(--line);
   border-top: 0;
   border-bottom: 0;
   border-left: 0;
@@ -157,7 +157,7 @@
   font-weight: 700;
 }
 .commissioning-steps small {
-  color: #71838a;
+  color: var(--muted);
   font-size: 11px;
 }
 .commissioning-control-stage {
@@ -176,9 +176,9 @@
   justify-content: space-between;
   gap: 18px;
   padding: 14px 16px;
-  border: 1px solid #2b3b41;
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: #111b1f;
+  background: var(--surface-1);
 }
 .commissioning-control-stage-header > div:first-child {
   display: grid;
@@ -195,7 +195,7 @@
 }
 .commissioning-control-stage-header p {
   margin: 0;
-  color: #7f9198;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -205,27 +205,27 @@
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  color: #7f9198;
-  border: 1px solid #293a40;
+  color: var(--muted);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: #10191d;
+  background: var(--surface-1);
   font-size: 11px;
 }
 .commissioning-preset-summary strong {
   margin-right: auto;
-  color: #cdd7da;
+  color: var(--text-strong);
   font-size: 12px;
 }
 .commissioning-preset-summary span {
   padding: 4px 7px;
   border-radius: 4px;
-  background: #18252a;
+  background: var(--surface-2);
 }
 .commissioning-custom-case {
   overflow: hidden;
-  border: 1px solid #293a40;
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: #10191d;
+  background: var(--surface-1);
 }
 .commissioning-custom-case > summary {
   display: flex;
@@ -234,18 +234,18 @@
   justify-content: space-between;
   gap: 12px;
   padding: 0 12px;
-  color: #b5c2c6;
+  color: var(--text);
   font-size: 12px;
   cursor: pointer;
   list-style: none;
 }
 .commissioning-custom-case > summary span { display: inline-flex; align-items: center; gap: 7px; }
-.commissioning-custom-case > summary small { color: #71848b; font-size: 11px; }
+.commissioning-custom-case > summary small { color: var(--muted); font-size: 11px; }
 .commissioning-custom-case-body {
   display: grid;
   gap: 12px;
   padding: 12px;
-  border-top: 1px solid #293a40;
+  border-top: 1px solid var(--line);
 }
 .commissioning-custom-case-actions {
   display: flex;
@@ -254,13 +254,13 @@
   justify-content: space-between;
   gap: 12px;
   padding-top: 12px;
-  color: #71848b;
-  border-top: 1px solid #293a40;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
   font-size: 11px;
 }
 .commissioning-control-scope {
   margin: 0;
-  color: #81939a;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -284,7 +284,7 @@
   font-size: 12px;
 }
 .commissioning-ai-draft span {
-  color: #a7afb0;
+  color: var(--text);
   font-size: 11px;
   line-height: 1.55;
 }
@@ -298,20 +298,20 @@
   list-style: none;
 }
 
-.commissioning-test-design { margin: 0 18px 12px; border: 1px solid #2d4148; border-radius: 8px; background: #111b1f; }
-.commissioning-test-design > summary { display: flex; min-height: 42px; align-items: center; justify-content: space-between; padding: 0 12px; color: #aebdc2; cursor: pointer; list-style: none; }
-.commissioning-test-design > summary span { display: inline-flex; align-items: center; gap: 7px; }.commissioning-test-design > summary em { color: #71858d; font-size: 11px; font-style: normal; }
-.commissioning-test-design-body { display: grid; gap: 10px; padding: 12px; border-top: 1px solid #28383e; }.commissioning-test-design-body > header,.commissioning-test-design-body > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.commissioning-test-design-body > header div { display: grid; gap: 3px; }.commissioning-test-design-body > header small { color: #71858d; font-size: 11px; line-height: 1.45; }.commissioning-test-design-body > header code { color: #83aa98; font-size: 10px; }
+.commissioning-test-design { margin: 0 18px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-1); }
+.commissioning-test-design > summary { display: flex; min-height: 42px; align-items: center; justify-content: space-between; padding: 0 12px; color: var(--text); cursor: pointer; list-style: none; }
+.commissioning-test-design > summary span { display: inline-flex; align-items: center; gap: 7px; }.commissioning-test-design > summary em { color: var(--muted); font-size: 11px; font-style: normal; }
+.commissioning-test-design-body { display: grid; gap: 10px; padding: 12px; border-top: 1px solid var(--line); }.commissioning-test-design-body > header,.commissioning-test-design-body > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.commissioning-test-design-body > header div { display: grid; gap: 3px; }.commissioning-test-design-body > header small { color: var(--muted); font-size: 11px; line-height: 1.45; }.commissioning-test-design-body > header code { color: #83aa98; font-size: 10px; }
 .commissioning-test-gaps { display: grid; gap: 5px; padding: 9px; border: 1px solid #564727; border-radius: 6px; background: #2d2717; }.commissioning-test-gaps > strong { display: flex; align-items: center; gap: 5px; color: #d7ba76; font-size: 11px; }.commissioning-test-gaps p { margin: 0; color: #a99b76; font-size: 11px; line-height: 1.45; }.commissioning-test-gaps p.blocking { color: #e0a17d; }
-.commissioning-test-drafts { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; }.commissioning-test-drafts article { display: grid; gap: 5px; padding: 9px; border: 1px solid #31434a; border-radius: 6px; background: #162126; }.commissioning-test-drafts article.incomplete { border-color: #5c482d; }.commissioning-test-drafts span { width: fit-content; padding: 2px 6px; color: #9ecdb7; border-radius: 3px; background: #204134; font-size: 11px; }.commissioning-test-drafts strong { font-size: 11px; line-height: 1.35; }.commissioning-test-drafts small,.commissioning-test-drafts em { color: #71858d; font-size: 11px; line-height: 1.4; font-style: normal; }.commissioning-test-drafts article.incomplete em { color: #d3a56a; }
-.commissioning-test-design-body > footer { padding-top: 8px; border-top: 1px solid #293940; }.commissioning-test-design-body > footer label { display: inline-flex; align-items: center; gap: 6px; color: #91a2a8; font-size: 11px; }.commissioning-test-design-body > footer button { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; padding: 0 10px; color: #dbe5e8; border: 1px solid #3b554b; border-radius: 5px; background: #1c342b; font-size: 11px; }.commissioning-test-design-body > footer button:disabled { opacity: .45; }
+.commissioning-test-drafts { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; }.commissioning-test-drafts article { display: grid; gap: 5px; padding: 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); }.commissioning-test-drafts article.incomplete { border-color: #5c482d; }.commissioning-test-drafts span { width: fit-content; padding: 2px 6px; color: #9ecdb7; border-radius: 3px; background: #204134; font-size: 11px; }.commissioning-test-drafts strong { font-size: 11px; line-height: 1.35; }.commissioning-test-drafts small,.commissioning-test-drafts em { color: var(--muted); font-size: 11px; line-height: 1.4; font-style: normal; }.commissioning-test-drafts article.incomplete em { color: #d3a56a; }
+.commissioning-test-design-body > footer { padding-top: 8px; border-top: 1px solid var(--line); }.commissioning-test-design-body > footer label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }.commissioning-test-design-body > footer button { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; padding: 0 10px; color: var(--text-strong); border: 1px solid #3b554b; border-radius: 5px; background: #1c342b; font-size: 11px; }.commissioning-test-design-body > footer button:disabled { opacity: .45; }
 @media (max-width: 900px) { .commissioning-test-drafts { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 .commissioning-ai-draft li {
   padding: 5px 8px;
-  color: #a9b5b8;
-  border: 1px solid #414a46;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
   border-radius: 99px;
-  background: #151c1c;
+  background: var(--surface-1);
   font-size: 11px;
 }
 @media (max-width: 1100px) {
@@ -356,7 +356,7 @@
   }
   .commissioning-steps > button {
     border-right: 0;
-    border-bottom: 1px solid #29383e;
+    border-bottom: 1px solid var(--line);
   }
   .commissioning-preset-summary { align-items: flex-start; flex-direction: column; padding: 10px 12px; }
   .commissioning-preset-summary strong { margin-right: 0; }
@@ -393,6 +393,6 @@
   }
   .commissioning-suite-cases article {
     border-right: 0;
-    border-bottom: 1px solid #29383e;
+    border-bottom: 1px solid var(--line);
   }
 }

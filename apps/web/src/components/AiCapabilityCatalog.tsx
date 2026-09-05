@@ -111,11 +111,11 @@ export function AiCapabilityCatalog({ locale, canOpenTask, onOpenTask }: AiCapab
             </>
           );
           return task && onOpenTask && (canOpenTask?.(task) ?? true) ? (
-            <button key={capability.id} title={capability.id} onClick={() => onOpenTask(task)}>
+            <button key={capability.id} title={`${capability.label} · ${capability.id}`} onClick={() => onOpenTask(task)}>
               {content}
             </button>
           ) : (
-            <span key={capability.id} title={capability.id}>
+            <span key={capability.id} title={`${capability.label} · ${capability.id}`}>
               {content}
             </span>
           );

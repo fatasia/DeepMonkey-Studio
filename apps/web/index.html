@@ -6,9 +6,16 @@
     <meta name="theme-color" content="#111315" />
     <link rel="icon" type="image/svg+xml" href="/brand/app-icon-industrial.svg" />
     <title>Deep Monkey Studio</title>
+    <style>
+      .bootstrap-status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; gap: 12px; margin: 0; color: #cbd5d9; background: #11191d; font: 14px/1.5 system-ui, sans-serif; }
+      .bootstrap-status > i { width: 18px; height: 18px; border: 2px solid #405158; border-top-color: #6dc4ca; border-radius: 50%; animation: bootstrap-spin 1s linear infinite; }
+      @keyframes bootstrap-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .bootstrap-status > i { animation: none; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><p class="bootstrap-status" role="status"><i aria-hidden="true"></i>正在加载工作台…</p></div>
+    <noscript>请启用 JavaScript 后重新加载工作台。</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

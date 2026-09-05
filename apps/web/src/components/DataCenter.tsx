@@ -345,6 +345,7 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
                 <header>
                   <div>
                     <strong>{tr(locale, "连接运行监控", "Connector monitoring")}</strong>
+                    <small title={selectedConnection.name}>{selectedConnection.name}</small>
                     <small>
                       {selectedDiagnostics
                         ? tr(
@@ -389,7 +390,7 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
                   >
                     <ConnectionIcon type={connection.type} />
                     <span>
-                      <strong>{connection.name}</strong>
+                      <strong title={connection.name}>{connection.name}</strong>
                       <small>
                         {connectionLabel(connection.type)} ·{" "}
                         {CONNECTOR_REQUIRED.has(connection.type) ? tr(locale, "需要安装连接器", "Connector required") : connectionSummary(connection)}

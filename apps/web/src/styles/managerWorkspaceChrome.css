@@ -1,12 +1,12 @@
 /* 项目工作台采用冷静、精密的工业 SaaS 语言：青色表达导航和主操作，琥珀色仅表达发布状态。 */
 .scene-manager-page {
-  --manager-accent: #62bdca;
-  --manager-accent-soft: rgba(72, 173, 191, .13);
-  --manager-surface: #141b1f;
-  --manager-text: #edf4f5;
+  --manager-accent: var(--accent);
+  --manager-accent-soft: var(--accent-soft);
+  --manager-surface: var(--surface-1);
+  --manager-text: var(--text-strong);
   font-family: "Segoe UI Variable", "PingFang SC", "Microsoft YaHei UI", sans-serif;
   color: var(--manager-text);
-  background: #0d1215;
+  background: var(--bg-0);
 }
 
 .scene-manager-page :is(button, select, input):focus-visible {
@@ -17,28 +17,28 @@
 .scene-manager-page .button {
   min-height: 36px;
   padding: 0 13px;
-  border-color: #334249;
+  border-color: var(--line-strong);
   border-radius: 7px;
-  background: #172025;
+  background: var(--surface-2);
   font-size: 12px;
 }
 
 .scene-manager-page .button:hover:not(:disabled) {
-  color: #f4fbfc;
-  border-color: #52656d;
-  background: #1d292e;
+  color: var(--text-strong);
+  border-color: var(--line-strong);
+  background: var(--surface-2);
 }
 
 .scene-manager-page .button.primary {
-  color: #f5fcfd;
-  border-color: #328b9b;
-  background: #237789;
+  color: #17242b;
+  border-color: var(--accent);
+  background: var(--accent);
   box-shadow: 0 5px 16px rgba(16, 104, 120, .2);
 }
 
 .scene-manager-page .button.primary:hover:not(:disabled) {
-  border-color: #63c2d0;
-  background: #29899c;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 85%, white);
 }
 
 /* 顶栏先表达项目上下文，再表达当前工作区和平台能力。 */
@@ -46,50 +46,50 @@
   gap: 12px;
   height: 70px;
   padding: 0 22px;
-  border-color: #222d32;
-  background: rgba(14, 20, 23, .96);
+  border-color: var(--line-strong);
+  background: var(--surface-1);
   box-shadow: 0 8px 28px rgba(0, 0, 0, .14);
   backdrop-filter: blur(18px);
 }
 
 .manager-brand { gap: 10px; margin-right: 2px; }
 .manager-brand > span { width: 40px; height: 40px; border-radius: 9px; }
-.manager-brand h1 { color: #f3f7f8; font-size: 15px; font-weight: 680; letter-spacing: -.01em; }
-.manager-brand small { margin-top: 2px; color: #778890; font-size: 10px; letter-spacing: .02em; }
+.manager-brand h1 { color: var(--text-strong); font-size: 15px; font-weight: 680; letter-spacing: -.01em; }
+.manager-brand small { margin-top: 2px; color: var(--muted); font-size: 10px; letter-spacing: .02em; }
 .manager-project-switch { min-width: 176px; max-width: 226px; gap: 5px; }
 
 .manager-project-switch > select {
   height: 36px;
   padding-left: 11px;
-  color: #dce5e7;
-  border-color: #304047;
+  color: var(--text-strong);
+  border-color: var(--line-strong);
   border-radius: 7px;
-  background: #121a1e;
+  background: var(--surface-1);
   font-size: 12px;
 }
 
 .manager-project-switch > details > summary {
   width: 34px;
   height: 34px;
-  color: #93a2a8;
-  border-color: #304047;
+  color: var(--text);
+  border-color: var(--line-strong);
   border-radius: 7px;
-  background: #151e22;
+  background: var(--surface-2);
 }
 
 .manager-project-switch > details > summary:hover {
-  color: #eaf5f6;
-  border-color: #4b6068;
-  background: #1d282d;
+  color: var(--text-strong);
+  border-color: var(--line-strong);
+  background: var(--surface-2);
 }
 
 .manager-project-switch > details > div {
   top: 41px;
   width: 188px;
   padding: 6px;
-  border-color: #3b4b52;
+  border-color: var(--line-strong);
   border-radius: 9px;
-  background: #151f23;
+  background: var(--surface-1);
   box-shadow: 0 20px 48px rgba(0, 0, 0, .5);
 }
 
@@ -101,20 +101,20 @@
   height: 38px;
   gap: 7px;
   padding: 0 10px;
-  color: #8fa0a7;
+  color: var(--text);
   border: 0;
   border-radius: 7px;
   font-size: 12px;
   cursor: pointer;
 }
 
-.manager-primary-nav button:hover { color: #dce9eb; background: #182227; }
+.manager-primary-nav button:hover { color: var(--text-strong); background: var(--surface-2); }
 
 .manager-primary-nav button.active {
-  color: #dff8fb;
+  color: var(--text-strong);
   border: 0;
   background: var(--manager-accent-soft);
-  box-shadow: inset 0 -2px #55b7c6;
+  box-shadow: inset 0 -2px var(--accent);
 }
 
 .manager-primary-nav button:disabled { opacity: .34; cursor: not-allowed; }
@@ -123,38 +123,38 @@
   gap: 1px;
   margin-left: auto;
   padding-left: 10px;
-  border-color: #28353a;
+  border-color: var(--line-strong);
 }
 
 .manager-capability-nav button {
   height: 34px;
   gap: 5px;
   padding: 0 6px;
-  color: #829198;
+  color: var(--muted);
   border-radius: 6px;
   font-size: 11px;
 }
 
-.manager-capability-nav button:hover:not(:disabled) { color: #dfeaec; background: #1a252a; }
+.manager-capability-nav button:hover:not(:disabled) { color: var(--text-strong); background: var(--surface-2); }
 
 .manager-utility-nav {
   gap: 2px;
   margin-left: 2px;
   padding-left: 7px;
-  border-left: 1px solid #28353a;
+  border-left: 1px solid var(--line-strong);
 }
 
 .manager-utility-nav button {
   width: 34px;
   height: 34px;
-  color: #829299;
+  color: var(--muted);
   border-radius: 7px;
 }
 
 .manager-utility-nav button:hover {
-  color: #e9f5f6;
-  border-color: #3c4d54;
-  background: #1a252a;
+  color: var(--text-strong);
+  border-color: var(--line-strong);
+  background: var(--surface-2);
 }
 
 /* 搜索、筛选和创建动作保持在同一条命令栏，不再包一层卡片。 */
@@ -166,29 +166,29 @@
   min-width: 260px;
   height: 38px;
   grid-template-columns: 31px minmax(0, 1fr);
-  color: #778b93;
-  border-color: #304047;
+  color: var(--muted);
+  border-color: var(--line-strong);
   border-radius: 8px;
-  background: #11191d;
+  background: var(--surface-1);
   transition: border-color .16s, background .16s;
 }
 
-.manager-scene-search:focus-within { border-color: #4c9caa; background: #141f23; }
-.manager-scene-search > input { padding: 0 10px; color: #e2ebed; font-size: 12px; }
-.manager-scene-search > input::placeholder { color: #687981; }
+.manager-scene-search:focus-within { border-color: #4c9caa; background: var(--surface-2); }
+.manager-scene-search > input { padding: 0 10px; color: var(--text-strong); font-size: 12px; }
+.manager-scene-search > input::placeholder { color: var(--muted); }
 
 .manager-project-bar.contextual.scene-toolbar > select {
   min-width: 112px;
   height: 38px;
   padding: 0 30px 0 10px;
-  color: #c6d1d4;
-  border-color: #304047;
+  color: var(--text-strong);
+  border-color: var(--line-strong);
   border-radius: 8px;
-  background: #11191d;
+  background: var(--surface-1);
   font-size: 12px;
 }
 
-.manager-scene-count { color: #7d8d94; font: 11px/1.2 "Segoe UI Variable", sans-serif; }
+.manager-scene-count { color: var(--muted); font: 11px/1.2 "Segoe UI Variable", sans-serif; }
 
 @media (max-width: 1380px) {
   .manager-header {
@@ -248,4 +248,25 @@
   .manager-project-bar.contextual.scene-toolbar { align-items: stretch; }
   .manager-scene-search { min-width: 100%; }
   .manager-project-bar.contextual.scene-toolbar > select { flex: 1; }
+}
+
+.manager-copy-notice { margin: 0 0 12px; color: var(--accent); }
+
+/* 紧凑屏分成上下两条导航，系统动作始终可见，不能把整页撑出横向滚动。 */
+@media (max-width: 1000px) {
+  .manager-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 6px 10px; height: auto; min-height: 104px; padding: 10px 12px; overflow: visible; }
+  .manager-brand { grid-column: 1; grid-row: 1; min-width: 0; margin: 0; }
+  .manager-project-switch { grid-column: 2; grid-row: 1; min-width: 0; max-width: 240px; width: 100%; }
+  .manager-project-switch > select { min-width: 0; }
+  .manager-utility-nav { grid-column: 3; grid-row: 1; margin: 0; padding-left: 4px; }
+  .manager-primary-nav { grid-column: 1; grid-row: 2; margin: 0; }
+  .manager-capability-nav { grid-column: 2 / 4; grid-row: 2; margin: 0; padding-left: 8px; justify-content: flex-end; }
+}
+@media (max-width: 540px) {
+  .manager-brand > div { display: none; }
+  .manager-header { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 6px; }
+  .manager-primary-nav { grid-column: 1 / 3; justify-self: start; }
+  .manager-capability-nav { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; padding-left: 0; border: 0; }
+  .manager-utility-nav { grid-row: 2; }
+  .manager-project-switch { grid-column: 2 / 4; max-width: none; }
 }

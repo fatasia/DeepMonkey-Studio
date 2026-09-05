@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ModelRecord, ProjectAssetRecord, PublishedSceneRecord, SceneSnapshot } from "@bim-studio/contracts";
+import type { ModelRecord, ProjectAssetRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr } from "../i18n";
 import type { SceneManagerProps } from "./sceneManagerTypes";
 import { SceneManagerView } from "./SceneManagerView";
 import { analyzeProjectResourceGovernance } from "./projectResourceGovernance";
 import { filterAndSortScenes, type SceneSortKey, type SceneStatusFilter } from "./sceneManagerPresentation";
+import { useScenePublicationHistory } from "../hooks/useScenePublicationHistory";
 
 type ProjectAssetTab = "all" | "model" | "image" | "video" | "environment" | "pbr-material";
 
@@ -70,6 +71,7 @@ function useSceneManagerController({
   const [assetTab, setAssetTab] = useState<ProjectAssetTab>("all");
   const [assetSearch, setAssetSearch] = useState("");
   const [sceneSearch, setSceneSearch] = useState("");
+  const [copyNotice, setCopyNotice] = useState("");
   const [sceneStatusFilter, setSceneStatusFilter] = useState<SceneStatusFilter>("all");
   const [sceneSort, setSceneSort] = useState<SceneSortKey>("updated");
   const [deliveryReviewOpen, setDeliveryReviewOpen] = useState(false);
@@ -82,9 +84,8 @@ function useSceneManagerController({
   const [publishTarget, setPublishTarget] = useState<SceneSnapshot>();
   const [publishMode, setPublishMode] = useState<NonNullable<SceneSnapshot["publicationMode"]>>("webgl");
   const [publishPerformance, setPublishPerformance] = useState<NonNullable<SceneSnapshot["publicationPerformance"]>>("standard");
-  const [versionTarget, setVersionTarget] = useState<SceneSnapshot>();
-  const [publicationVersions, setPublicationVersions] = useState<PublishedSceneRecord[]>([]);
-  const [versionBusy, setVersionBusy] = useState(false);
+  const { versionTarget, setVersionTarget, publicationVersions, versionBusy, versionError, openVersions, restoreVersion }
+    = useScenePublicationHistory(project?.id, locale, onRestorePublication);
   const [parametricWorkbenchOpen, setParametricWorkbenchOpen] = useState(false);
   const [parametricSourceModel, setParametricSourceModel] = useState<ModelRecord>();
   const modelUploadRef = useRef<HTMLInputElement>(null);
@@ -127,6 +128,13 @@ function useSceneManagerController({
     if (!project && (managerTab === "assets" || managerTab === "topology")) setManagerTab("scenes");
   }, [managerTab, project]);
 
+  useEffect(() => {
+    setSceneSearch("");
+    setAssetSearch("");
+    setSceneStatusFilter("all");
+    setCopyNotice("");
+  }, [project?.id]);
+
   async function toggleSceneCloudRender(sceneId: string, enabled: boolean): Promise<boolean> {
     setCloudBusySceneId(sceneId);
     setCloudError(undefined);
@@ -163,7 +171,12 @@ function useSceneManagerController({
   }
 
   async function copyLink(value: string) {
-    await navigator.clipboard.writeText(value);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyNotice(tr(locale, "链接已复制", "Link copied"));
+    } catch {
+      setCopyNotice(tr(locale, "复制失败，请检查浏览器剪贴板权限后重试", "Copy failed. Check clipboard permissions and retry."));
+    }
   }
 
   async function submitPublish(toolbarVisible: boolean) {
@@ -172,28 +185,6 @@ function useSceneManagerController({
     const published = await onPublish(target, publishMode, publishPerformance, toolbarVisible);
     if (!published) return;
     setPublishTarget(undefined);
-  }
-
-  async function openVersions(scene: SceneSnapshot) {
-    if (!project) return;
-    setVersionTarget(scene);
-    setVersionBusy(true);
-    try {
-      setPublicationVersions(await api.listScenePublications(project.id, scene.id));
-    } finally {
-      setVersionBusy(false);
-    }
-  }
-
-  async function restoreVersion(publishedAt: string) {
-    if (!versionTarget) return;
-    setVersionBusy(true);
-    try {
-      await onRestorePublication(versionTarget.id, publishedAt);
-      if (project) setPublicationVersions(await api.listScenePublications(project.id, versionTarget.id));
-    } finally {
-      setVersionBusy(false);
-    }
   }
 
   function openCreateDialog() {
@@ -376,6 +367,7 @@ function useSceneManagerController({
     cloudSceneLinks,
     cloudScenePolicies,
     copyLink,
+    copyNotice,
     createShowcase,
     deleteLibraryAsset,
     deleteLibraryModel,
@@ -470,6 +462,7 @@ function useSceneManagerController({
     uploadLibraryVideos,
     userName,
     versionBusy,
+    versionError,
     versionTarget,
     videoUploadRef,
     visibleImages,

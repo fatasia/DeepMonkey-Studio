@@ -36,6 +36,7 @@ import type {
 import { MAX_AI_DATA_BINDING_RUNS_PER_PROJECT, newestAiDataBindingRuns, retainRecentAiDataBindingRuns } from "./aiDataBindingRunStore.js";
 import { applicationIdReservation, changed, requireProject, unchanged, upsert } from "./storeUtils.js";
 import { JsonStoreFoundation } from "./jsonStoreFoundation.js";
+import { withCurrentScenePublication } from "./scenePublicationHistory.js";
 
 export class JsonStore extends JsonStoreFoundation implements MetadataStore {
   listProjects(): ProjectRecord[] {
@@ -567,8 +568,10 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
   async savePublication(publication: PublishedSceneRecord): Promise<PublishedSceneRecord> {
     return this.runDocumentMutation((candidate) => {
       candidate.publishedScenes ??= [];
-      candidate.scenePublicationHistory ??= [];
-      const version = Math.max(0, ...candidate.scenePublicationHistory.filter((item) => item.sceneId === publication.sceneId).map((item) => item.version ?? 0)) + 1;
+      const current = candidate.publishedScenes.find(item => item.sceneId === publication.sceneId);
+      candidate.scenePublicationHistory = withCurrentScenePublication(candidate.scenePublicationHistory ?? [], current);
+      const history = candidate.scenePublicationHistory.filter(item => item.sceneId === publication.sceneId);
+      const version = Math.max(history.length, ...history.map(item => item.version ?? 0)) + 1;
       const versioned: PublishedSceneRecord = { ...structuredClone(publication), version };
       const index = candidate.publishedScenes.findIndex((item) => item.sceneId === publication.sceneId);
       if (index >= 0) candidate.publishedScenes[index] = versioned;
@@ -585,7 +588,8 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
 
   listScenePublications(sceneId: string): PublishedSceneRecord[] {
     return structuredClone(
-      (this.document.scenePublicationHistory ?? []).filter((item) => item.sceneId === sceneId).sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt)),
+      withCurrentScenePublication(this.document.scenePublicationHistory ?? [], this.getPublication(sceneId))
+        .filter((item) => item.sceneId === sceneId).sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt)),
     );
   }
 
@@ -595,6 +599,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
       const originalLength = publications.length;
       candidate.publishedScenes = publications.filter((item) => item.sceneId !== sceneId);
       if (candidate.publishedScenes.length === originalLength) return unchanged(false);
+      candidate.scenePublicationHistory = withCurrentScenePublication(candidate.scenePublicationHistory ?? [], publications.find(item => item.sceneId === sceneId));
       const scene = candidate.scenes.find((item) => item.id === sceneId);
       if (scene) delete scene.publishedAt;
       return changed(true);

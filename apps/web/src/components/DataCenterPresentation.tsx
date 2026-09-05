@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Database, Globe2, Radio, Table2 } from "lucide-react";
-import type { DataConnectionRecord, DataConnectionType, DataConnectorDiagnostics, DataDatasetPreview } from "@bim-studio/contracts";
+import type { DataConnectionRecord, DataConnectionType, DataConnectorDiagnostics, DataDatasetPreview, DataFieldType } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 
 export const SQL_CONNECTIONS = new Set<DataConnectionType>(["postgresql", "mysql", "mariadb", "tidb", "doris", "starrocks", "sqlserver", "oracle", "tdengine", "clickhouse"]);
@@ -50,7 +50,7 @@ export function DatasetPreview({ locale, preview, datasetName }: { locale: AppLo
           {preview.rows.slice(0, 20).map((row, index) => (
             <tr key={index}>
               {preview.fields.map((field) => (
-                <td key={field.key}>{formatCell(row[field.key])}</td>
+                <td key={field.key} title={field.type === "datetime" ? String(row[field.key] ?? "") : undefined}>{formatCell(row[field.key], field.type, locale)}</td>
               ))}
             </tr>
           ))}
@@ -140,8 +140,14 @@ export function connectionSummary(connection: DataConnectionRecord) {
   return String(connection.config.url || connection.config.database || connection.config.serviceName || connection.config.host || "实时连接");
 }
 
-export function formatCell(value: unknown) {
+export function formatCell(value: unknown, fieldType?: DataFieldType, locale: AppLocale = "zh-CN") {
   if (value === null || value === undefined) return "—";
+  if (fieldType === "datetime" && typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+    const time = new Date(value);
+    if (Number.isFinite(time.getTime())) return time.toLocaleString(locale, {
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    });
+  }
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }

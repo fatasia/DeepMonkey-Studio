@@ -23,6 +23,12 @@ afterEach(async () => {
 });
 
 describe("service observability", () => {
+  it("removes terminal colors before redaction, including JSON escaped colors", () => {
+    expect(redactServiceLog("\u001b[2m09:50:53\u001b[22m \u001b[36m[vite]\u001b[0m ready")).toBe("09:50:53 [vite] ready");
+    expect(redactServiceLog("pass\u001b[31mword=private\u001b[0m")).toBe("password=[REDACTED]");
+    expect(redactServiceLog(JSON.stringify({ msg: "\u001b[31merror\u001b[0m" }))).toBe('{"msg":"error"}');
+    expect(redactServiceLog("array[2] and [31m ordinary text")).toBe("array[2] and [31m ordinary text");
+  });
   it("filters structured and plain service logs while removing credentials", async () => {
     const directory = await temporaryDirectory();
     await writeFile(path.join(directory, "fixture.out.log"), [

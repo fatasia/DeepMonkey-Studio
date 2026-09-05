@@ -543,6 +543,7 @@ export function App() {
   } = applicationRuntimeController;
 
   const scenePersistenceController = createScenePersistenceController({
+    recordSceneEdit: (label) => sceneHistoryRecordRef.current(label),
     engine,
     project,
     activeScene,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { KeyRound, LoaderCircle } from "lucide-react";
 import type {
   SystemBrandingSettings,
@@ -6,6 +6,7 @@ import type {
 } from "@bim-studio/contracts";
 import { api, setAuthToken } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
+import { loginErrorMessage } from "./loginErrorMessage";
 
 export function LoginPage({
   branding,
@@ -21,8 +22,10 @@ export function LoginPage({
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const inFlight = useRef(false);
   async function submit() {
-    if (!username.trim() || !password) return;
+    if (!username.trim() || !password || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setError(undefined);
     try {
@@ -30,8 +33,9 @@ export function LoginPage({
       setAuthToken(result.token, remember);
       onLogin(result.user);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(loginErrorMessage(reason, locale));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
@@ -50,6 +54,7 @@ export function LoginPage({
           <input
             aria-label={tr(locale, "用户名", "Username")}
             autoFocus
+            autoComplete="username"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && void submit()}
@@ -60,6 +65,7 @@ export function LoginPage({
           <input
             aria-label={tr(locale, "密码", "Password")}
             type="password"
+            autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && void submit()}
@@ -73,7 +79,7 @@ export function LoginPage({
           />
           <span>{tr(locale, "下次自动登录", "Remember me")}</span>
         </label>
-        {error && <em>{error}</em>}
+        {error && <em role="alert">{error}</em>}
         <button
           disabled={busy || !username.trim() || !password}
           onClick={() => void submit()}

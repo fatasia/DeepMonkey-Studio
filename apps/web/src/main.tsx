@@ -43,6 +43,9 @@ async function renderStudioApplication(): Promise<void> {
             ? SceneSimulationVisualQa
           : undefined;
     if (VisualQaPage) {
+      // 仅视觉验收入口允许 URL 指定主题；不改用户偏好或平台品牌设置。
+      const qaTheme = new URLSearchParams(window.location.search).get("theme");
+      if (qaTheme === "light" || qaTheme === "dark") document.documentElement.dataset.theme = qaTheme;
       createRoot(document.getElementById("root")!).render(
         <StrictMode>
           <Suspense fallback={<div className="app-auth-loading">正在加载视觉验收页</div>}>

@@ -128,6 +128,9 @@
 .dashboard-canvas-toolbar > span > small,
 .dashboard-canvas-toolbar .dashboard-overflow-warning { font-size: 11px; }
 .dashboard-canvas-toolbar button { min-width: 28px; min-height: 28px; height: 28px; font-size: 11px; }
+.dashboard-canvas-toolbar { flex-wrap: wrap; gap: 4px 10px; padding-block: 4px; }
+.dashboard-design-surface { grid-template-rows: auto minmax(0, 1fr); }
+.dashboard-canvas-toolbar .dashboard-layout-tools { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
 .dashboard-page-tabs button,
 .dashboard-page-tabs button span,
 .dashboard-runtime-status,
@@ -219,6 +222,8 @@
     box-shadow: -18px 0 42px rgba(0, 0, 0, .34);
   }
   .dashboard-workspace.inspector-collapsed .dashboard-inspector-panel { display: none; }
+  .dashboard-workspace:not(.inspector-collapsed) :is(.dashboard-design-surface,.dashboard-page-bar) { margin-right: 288px; }
+  .dashboard-runtime-status > span { display: none; }
   .dashboard-compact-page-settings { display: block; }
   .dashboard-workspace-title { display: none; }
 }

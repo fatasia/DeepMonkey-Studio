@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowUpRight, Box, Database, GripHorizontal, LoaderCircle, Maximize2, X } from "lucide-react";
+import { ArrowUpRight, Box, ChevronDown, ChevronUp, Database, GripHorizontal, LoaderCircle, Maximize2, X } from "lucide-react";
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import type { OperationsSnapshot } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -42,6 +42,7 @@ export function SceneSimulationPanel(props: Props) {
   const panelRef = useRef<HTMLElement>(null);
   const pointerOperationRef = useRef<PointerOperation | undefined>(undefined);
   const [layout, setLayout] = useState<PanelLayout>();
+  const [collapsed, setCollapsed] = useState(false);
   const orderedScenes = useMemo(() => {
     if (!props.activeScene) return props.scenes;
     return [props.activeScene, ...props.scenes.filter((scene) => scene.id !== props.activeScene?.id)];
@@ -52,14 +53,14 @@ export function SceneSimulationPanel(props: Props) {
     const container = element?.offsetParent as HTMLElement | null;
     if (!element || !container) return;
     const bounds = container.getBoundingClientRect();
-    setLayout(constrainPanelLayout(readPanelLayout() ?? defaultPanelLayout(bounds.width, bounds.height), bounds.width, bounds.height));
+    setLayout((current) => constrainPanelLayout(current ?? readPanelLayout() ?? defaultPanelLayout(bounds.width, bounds.height), bounds.width, bounds.height, collapsed));
     const observer = new ResizeObserver(() => {
       const nextBounds = container.getBoundingClientRect();
-      setLayout((current) => current && constrainPanelLayout(current, nextBounds.width, nextBounds.height));
+      setLayout((current) => current && constrainPanelLayout(current, nextBounds.width, nextBounds.height, collapsed));
     });
     observer.observe(container);
     return () => observer.disconnect();
-  }, []);
+  }, [collapsed]);
 
   function beginPointerOperation(kind: PointerOperation["kind"], event: ReactPointerEvent<HTMLElement>) {
     if (event.button !== 0 || !layout || (kind === "move" && (event.target as Element).closest("button"))) return;
@@ -79,7 +80,7 @@ export function SceneSimulationPanel(props: Props) {
     const next = operation.kind === "move"
       ? { ...operation.layout, left: operation.layout.left + dx, top: operation.layout.top + dy }
       : { ...operation.layout, width: operation.layout.width + dx, height: operation.layout.height + dy };
-    setLayout(constrainPanelLayout(next, bounds.width, bounds.height));
+    setLayout(constrainPanelLayout(next, bounds.width, bounds.height, collapsed));
   }
 
   function finishPointerOperation(event: ReactPointerEvent<HTMLElement>) {
@@ -89,10 +90,10 @@ export function SceneSimulationPanel(props: Props) {
     if (layout) savePanelLayout(layout);
   }
 
-  const panelStyle = layout ? ({ left: layout.left, top: layout.top, width: layout.width, height: layout.height } satisfies CSSProperties) : undefined;
+  const panelStyle = layout ? ({ left: layout.left, top: layout.top, width: collapsed ? Math.min(320, layout.width) : layout.width, height: collapsed ? Math.min(48, layout.height) : layout.height } satisfies CSSProperties) : undefined;
 
   return (
-    <aside ref={panelRef} style={panelStyle} className="scene-simulation-panel" aria-label={tr(props.locale, "场景仿真插件", "Scene simulation plugin")}>
+    <aside ref={panelRef} style={panelStyle} className={`scene-simulation-panel${collapsed ? " is-collapsed" : ""}`} aria-label={tr(props.locale, "场景仿真插件", "Scene simulation plugin")}>
       <header
         className="scene-simulation-header"
         title={tr(props.locale, "拖动窗口；右下角可调整大小", "Drag the window; resize from the bottom-right corner")}
@@ -109,6 +110,9 @@ export function SceneSimulationPanel(props: Props) {
           </div>
         </div>
         <GripHorizontal className="scene-simulation-drag-indicator" size={16} aria-hidden="true" />
+        <button type="button" aria-expanded={!collapsed} aria-label={collapsed ? tr(props.locale, "展开仿真面板", "Expand simulation panel") : tr(props.locale, "收起仿真面板", "Collapse simulation panel")} title={tr(props.locale, "收起时保留运行状态与场景路径", "Collapsing preserves running state and scene paths")} onClick={() => setCollapsed((value) => !value)}>
+          {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </button>
         <button type="button" aria-label={tr(props.locale, "关闭仿真面板", "Close simulation panel")} onClick={props.onClose}>
           <X size={16} />
         </button>
@@ -176,14 +180,16 @@ export function SceneSimulationPanel(props: Props) {
   );
 }
 
-export function constrainPanelLayout(layout: PanelLayout, boundsWidth: number, boundsHeight: number): PanelLayout {
-  const availableWidth = Math.max(280, boundsWidth - PANEL_MARGIN * 2);
-  const availableHeight = Math.max(280, boundsHeight - PANEL_MARGIN * 2);
+export function constrainPanelLayout(layout: PanelLayout, boundsWidth: number, boundsHeight: number, collapsed = false): PanelLayout {
+  const marginX = Math.min(PANEL_MARGIN, Math.max(0, boundsWidth / 2));
+  const marginY = Math.min(PANEL_MARGIN, Math.max(0, boundsHeight / 2));
+  const availableWidth = Math.max(0, boundsWidth - marginX * 2);
+  const availableHeight = Math.max(0, boundsHeight - marginY * 2);
   const width = Math.min(Math.max(Math.min(PANEL_MIN_WIDTH, availableWidth), layout.width), availableWidth);
   const height = Math.min(Math.max(Math.min(PANEL_MIN_HEIGHT, availableHeight), layout.height), availableHeight);
   return {
-    left: Math.min(Math.max(PANEL_MARGIN, layout.left), Math.max(PANEL_MARGIN, boundsWidth - width - PANEL_MARGIN)),
-    top: Math.min(Math.max(PANEL_MARGIN, layout.top), Math.max(PANEL_MARGIN, boundsHeight - height - PANEL_MARGIN)),
+    left: Math.min(Math.max(marginX, layout.left), Math.max(marginX, boundsWidth - (collapsed ? Math.min(320, width) : width) - marginX)),
+    top: Math.min(Math.max(marginY, layout.top), Math.max(marginY, boundsHeight - (collapsed ? Math.min(48, height) : height) - marginY)),
     width,
     height,
   };

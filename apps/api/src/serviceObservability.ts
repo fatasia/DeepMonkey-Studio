@@ -3,6 +3,7 @@ import { open, readdir, stat } from "node:fs/promises";
 import { Socket } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import JSZip from "jszip";
 import type {
   ServiceHealthRecord,
@@ -132,7 +133,8 @@ export async function createDiagnosticArchive(snapshot: SystemDiagnosticSnapshot
 }
 
 export function redactServiceLog(value: string): string {
-  return value
+  // 普通终端行与 JSON 字符串都可能带颜色；先剥离控制码再脱敏，避免颜色拆开敏感键。
+  return stripVTControlCharacters(value.replace(/\\u001b(?=\[|\])/gi, "\u001b"))
     .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
     .replace(/((?:password|passwd|pwd|token|secret|api[-_]?key|access[-_]?key|authorization|cookie|session)["']?\s*[:=]\s*["']?)([^\s,"'};]+)/gi, "$1[REDACTED]")
     .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1[REDACTED]@")

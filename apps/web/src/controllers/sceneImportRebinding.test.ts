@@ -77,7 +77,13 @@ function sceneFixture(): SceneSnapshot {
 
 describe("scene import model rebinding", () => {
   it("updates every model reference using the resolved target asset", () => {
-    const result = rebindImportedSceneModels(sceneFixture(), targetProject, new Map());
+    const scene = sceneFixture();
+    scene.simulationEntities = [
+      { id: "flow", kind: "flowLink", fromModelId: "model-old", toModelId: "primitive" },
+      { id: "path", kind: "path", name: "路径", targetModelId: "model-old", points: [[0, 0, 0]], speed: 1, loopMode: "once" },
+      { id: "pair", kind: "collisionPair", name: "碰撞", a: { modelId: "model-old", layerId: "part" }, b: { modelId: "missing" }, tolerance: 0.1 },
+    ];
+    const result = rebindImportedSceneModels(scene, targetProject, new Map());
 
     expect(result.missingModelCount).toBe(0);
     expect(result.scene.models[0]?.modelId).toBe("model-new");
@@ -86,6 +92,11 @@ describe("scene import model rebinding", () => {
     expect(result.scene.floors?.[0]?.modelId).toBe("model-new");
     expect(result.scene.selectionSets?.[0]?.objectIds).toEqual(["model-new"]);
     expect(result.scene.selectedModelId).toBe("model-new");
+    expect(result.scene.simulationEntities).toMatchObject([
+      { fromModelId: "model-new", toModelId: "primitive" }, { targetModelId: "model-new" },
+      { a: { modelId: "model-new", layerId: "part" }, b: { modelId: "missing" } },
+    ]);
+    expect(scene.simulationEntities[0]).toMatchObject({ fromModelId: "model-old" });
   });
 
   it("keeps unresolved references and reports the missing asset", () => {

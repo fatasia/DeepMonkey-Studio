@@ -118,6 +118,10 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
     assetBindings: sceneAssetBindings,
     interactions: sceneInteractions,
     selectionSets,
+    // 仿真输入不属于引擎对象；显式复制，避免保存遗漏或后续编辑污染历史快照。
+    ...(activeScene?.simulationEntities ? { simulationEntities: structuredClone(activeScene.simulationEntities) } : {}),
+    ...(activeScene?.thumbnail ? { thumbnail: activeScene.thumbnail } : {}),
+    ...(activeScene?.publicationToolbarVisible !== undefined ? { publicationToolbarVisible: activeScene.publicationToolbarVisible } : {}),
     ...(selected ? { selectedModelId: selected.id } : {}),
     ...(selectedLayerId ? { selectedLayerId } : {}),
     ...(selectedAnnotationId ? { selectedAnnotationId } : {}),

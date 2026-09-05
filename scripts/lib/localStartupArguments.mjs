@@ -98,5 +98,5 @@ export function isBimStudioApiHealth(value) {
 }
 
 export function isBimStudioWebDocument(value) {
-  return typeof value === "string" && /<title>\s*Deep Monkey Studio\s*<\/title>/i.test(value) && /<div\s+id=["']root["']><\/div>/i.test(value);
+  return typeof value === "string" && /<title>\s*Deep Monkey Studio\s*<\/title>/i.test(value) && /<div\b[^>]*\bid=["']root["'](?:\s|>)/i.test(value);
 }

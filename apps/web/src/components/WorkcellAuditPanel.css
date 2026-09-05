@@ -1,8 +1,8 @@
 .workcell-audit-panel {
   overflow: hidden;
-  border: 1px solid #2b3a40;
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: #10191d;
+  background: var(--surface-1);
 }
 
 .workcell-audit-panel > header {
@@ -29,7 +29,7 @@
   font-size: 13px;
 }
 .workcell-audit-panel > header small {
-  color: #74868d;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -39,10 +39,10 @@
   align-items: center;
   gap: 6px;
   padding: 0 11px;
-  color: #d6dee0;
-  border: 1px solid #415158;
+  color: var(--text-strong);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #182327;
+  background: var(--surface-2);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -65,7 +65,7 @@
   gap: 6px;
   margin: 0;
   padding: 9px 16px;
-  border-top: 1px solid #29383e;
+  border-top: 1px solid var(--line);
   font-size: 11px;
 }
 .workcell-audit-error {
@@ -74,8 +74,8 @@
   background: #211719;
 }
 .workcell-audit-empty {
-  color: #74868d;
-  background: #111c20;
+  color: var(--muted);
+  background: var(--surface-1);
 }
 
 .workcell-audit-previous {
@@ -83,8 +83,8 @@
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-top: 1px solid #29383e;
-  background: #111c20;
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
   grid-template-columns: minmax(0, 1fr) auto;
 }
 .workcell-audit-previous span {
@@ -92,7 +92,7 @@
   gap: 2px;
 }
 .workcell-audit-previous small {
-  color: #74868d;
+  color: var(--muted);
   font-size: 11px;
 }
 .workcell-audit-previous em {
@@ -105,7 +105,7 @@
 }
 .workcell-audit-previous code {
   overflow: hidden;
-  color: #596b72;
+  color: var(--muted);
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -116,7 +116,7 @@
   display: grid;
   gap: 10px;
   padding: 12px 16px;
-  border-top: 1px solid #29383e;
+  border-top: 1px solid var(--line);
 }
 .workcell-audit-summary {
   display: grid;
@@ -135,11 +135,11 @@
   gap: 3px;
 }
 .workcell-audit-summary small {
-  color: #819198;
+  color: var(--muted);
   font-size: 11px;
 }
 .workcell-audit-summary em {
-  color: #9ba9ad;
+  color: var(--text);
   font-size: 11px;
   font-style: normal;
 }
@@ -153,21 +153,21 @@
   align-items: baseline;
   gap: 5px;
   padding: 8px;
-  border: 1px solid #2b3a40;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  color: #75868d;
-  background: #111c20;
+  color: var(--muted);
+  background: var(--surface-1);
   font-size: 11px;
 }
 .workcell-audit-metrics b {
-  color: #dbe4e6;
+  color: var(--text-strong);
   font-size: 15px;
 }
 .workcell-audit-planning-evidence {
   display: grid;
   gap: 3px;
   padding: 9px 10px;
-  color: #88999f;
+  color: var(--muted);
   border: 1px solid #315b4a;
   border-radius: 6px;
   background: #112019;
@@ -177,13 +177,13 @@
   border-color: #5c4c2f;
   background: #1d1a14;
 }
-.workcell-audit-planning-evidence strong { color: #cdd9db; }
+.workcell-audit-planning-evidence strong { color: var(--text-strong); }
 .workcell-audit-planning-evidence span { color: #9fc6bd; }
 .workcell-audit-planning-evidence small { line-height: 1.45; }
 .workcell-audit-scope {
   margin: 0;
   padding: 9px 10px;
-  color: #82949a;
+  color: var(--muted);
   border-left: 2px solid var(--accent-primary, #3ec6c1);
   background: rgba(62, 198, 193, .06);
   font-size: 11px;
@@ -201,9 +201,9 @@
   gap: 7px;
   padding: 8px;
   text-align: left;
-  border: 1px solid #37464c;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #121d21;
+  background: var(--surface-1);
   grid-template-columns: auto 1fr;
   cursor: pointer;
 }
@@ -224,17 +224,17 @@
   gap: 2px;
 }
 .workcell-audit-findings strong {
-  color: #cbd5d8;
+  color: var(--text-strong);
   font-size: 11px;
 }
 .workcell-audit-findings small {
-  color: #7e8e94;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
 }
 .workcell-audit-result > code {
   overflow: hidden;
-  color: #596b72;
+  color: var(--muted);
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -245,12 +245,12 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
-  border-top: 1px solid #29383e;
-  background: #111c20;
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
 }
 .workcell-audit-actions p {
   margin: 0;
-  color: #7f9198;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
 }

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
+import type { SimulationEntityState } from "@bim-studio/contracts";
 import { makeSceneSnapshot } from "./sceneSnapshotFactory";
 
 describe("scene snapshot factory", () => {
   it("collects model, primitive and publication state without changing the editor", () => {
     const primitiveColors = { current: new Map([["marker-1", "#11aa77"]]) };
+    const simulationEntities: SimulationEntityState[] = [{ id: "path-1", kind: "path", name: "送料路线", targetModelId: "marker-1", points: [[0, 0, 0], [3, 0, 0]], speed: 1, loopMode: "once" }];
     const engine = {
       listModels: () => [
         { id: "pump-1", kind: "model", name: "泵", visible: true, opacity: 0.85 },
@@ -41,7 +43,7 @@ describe("scene snapshot factory", () => {
     const snapshot = makeSceneSnapshot({
       engine,
       project: { id: "project-1", name: "工厂", description: "", models: [{ id: "pump-1", name: "pump.glb", format: "glb" }], createdAt: "2026-08-31", updatedAt: "2026-08-31" },
-      activeScene: { id: "scene-1", publishedAt: "2026-08-31T00:00:00.000Z", publicationMode: "webgl", publicationPerformance: "standard", createdAt: "2026-08-30T00:00:00.000Z" },
+      activeScene: { id: "scene-1", simulationEntities, thumbnail: "data:image/jpeg;base64,previous", publicationToolbarVisible: false, publishedAt: "2026-08-31T00:00:00.000Z", publicationMode: "webgl", publicationPerformance: "standard", createdAt: "2026-08-30T00:00:00.000Z" },
       sceneName: "  装配线  ",
       sceneCoordinates: { upAxis: "Y", unit: "meter" },
       cameraViews: [],
@@ -61,5 +63,9 @@ describe("scene snapshot factory", () => {
     expect(snapshot).toMatchObject({ id: "scene-1", name: "装配线", publishedAt: "2026-08-31T00:00:00.000Z" });
     expect(snapshot?.models[0]).toMatchObject({ modelId: "pump-1", sourceName: "pump.glb", material: { roughness: 0.4 } });
     expect(snapshot?.primitives[0]).toMatchObject({ modelId: "marker-1", color: "#11aa77" });
+    expect(snapshot?.simulationEntities).toEqual(simulationEntities);
+    expect(snapshot?.simulationEntities).not.toBe(simulationEntities);
+    expect(snapshot?.thumbnail).toBe("data:image/jpeg;base64,previous");
+    expect(snapshot?.publicationToolbarVisible).toBe(false);
   });
 });

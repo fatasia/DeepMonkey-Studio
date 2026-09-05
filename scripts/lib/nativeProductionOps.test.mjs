@@ -77,6 +77,8 @@ test("does not accept an arbitrary HTTP listener as Deep Monkey Studio", () => {
   assert.equal(isBimStudioApiHealth({ status: "ok", service: "bim-studio-api" }), true);
   assert.equal(isBimStudioApiHealth({ status: "ok", service: "other" }), false);
   assert.equal(isBimStudioWebDocument('<title>Deep Monkey Studio</title><div id="root"></div>'), true);
+  assert.equal(isBimStudioWebDocument('<title>Deep Monkey Studio</title><div id="root"><p role="status">正在加载</p></div>'), true);
+  assert.equal(isBimStudioWebDocument('<title>Deep Monkey Studio</title><div id="root-other"></div>'), false);
   assert.equal(isBimStudioWebDocument("<title>Other app</title>"), false);
 });
 

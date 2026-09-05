@@ -6,7 +6,7 @@
 
 .scene-card {
   overflow: visible;
-  border-color: #27353b;
+  border-color: var(--line-strong);
   border-radius: 12px;
   background: var(--manager-surface);
   box-shadow: 0 10px 30px rgba(0, 0, 0, .14);
@@ -14,7 +14,7 @@
 }
 
 .scene-card:hover {
-  border-color: #40525a;
+  border-color: var(--muted);
   box-shadow: 0 16px 38px rgba(0, 0, 0, .24);
   transform: translateY(-2px);
 }
@@ -24,7 +24,7 @@
   color: var(--manager-accent);
   border-bottom-color: #233137;
   border-radius: 11px 11px 0 0;
-  background-color: #11191d;
+  background-color: var(--surface-1);
   background-image:
     linear-gradient(rgba(106, 141, 151, .07) 1px, transparent 1px),
     linear-gradient(90deg, rgba(106, 141, 151, .07) 1px, transparent 1px),
@@ -48,7 +48,7 @@
     linear-gradient(rgba(110, 143, 151, .07) 1px, transparent 1px),
     linear-gradient(90deg, rgba(110, 143, 151, .07) 1px, transparent 1px),
     radial-gradient(circle at 50% 38%, rgba(130, 174, 184, .13), transparent 48%),
-    var(--scene-thumbnail-background, #11191d);
+    var(--scene-thumbnail-background, var(--surface-1));
   background-size: 22px 22px, 22px 22px, auto, auto;
 }
 
@@ -118,17 +118,17 @@
 .scene-card-title {
   min-height: 25px;
   padding: 1px 0;
-  color: #eef5f6;
+  color: var(--text-strong);
   font-size: 15px;
   font-weight: 650;
   letter-spacing: -.01em;
 }
 
-.scene-card-title:hover { color: #8ad4de; }
+.scene-card-title:hover { color: var(--accent); }
 
 .scene-card-meta {
   margin-top: 7px;
-  color: #829198;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -137,10 +137,10 @@
   gap: 10px;
   margin-top: 13px;
   padding-top: 12px;
-  border-top-color: #263238;
+  border-top-color: var(--line-strong);
 }
 
-.scene-card-footer > span { color: #78888f; font-size: 11px; line-height: 1.4; }
+.scene-card-footer > span { color: var(--muted); font-size: 11px; line-height: 1.4; }
 
 .scene-card-footer .scene-card-actions {
   width: 100%;
@@ -148,7 +148,7 @@
   gap: 3px;
   padding: 3px;
   border-radius: 8px;
-  background: #10171a;
+  background: var(--surface-2);
 }
 
 .scene-card-footer .scene-card-actions > button,
@@ -156,67 +156,67 @@
   width: 34px;
   min-width: 34px;
   height: 34px;
-  color: #93a3a9;
+  color: var(--text);
   border: 0;
   border-radius: 6px;
   background: transparent;
 }
 
 .scene-card-footer .scene-card-actions > button.primary {
-  color: #e9fbfd;
+  color: #17242b;
   border: 0;
-  background: #226b7a;
+  background: var(--accent);
 }
 
 .scene-card-footer .scene-card-actions > button:hover:not(:disabled),
 .scene-card-more > summary:hover {
-  color: #f0fafb;
+  color: var(--text-strong);
   border: 0;
-  background: #223037;
+  background: var(--surface-2);
 }
 
-.scene-card-footer .scene-card-actions > button.primary:hover { background: #2a8394; }
+.scene-card-footer .scene-card-actions > button.primary:hover { background: color-mix(in srgb, var(--accent) 85%, white); }
 .scene-card-more { margin-left: auto; }
 
 .scene-card-more[open] > summary {
-  color: #e6f8fa;
+  color: var(--text-strong);
   border: 0;
-  background: #24353b;
+  background: var(--surface-2);
 }
 
 .scene-card-more-menu {
   bottom: calc(100% + 8px);
   width: 202px;
   padding: 7px;
-  border-color: #3b4c53;
+  border-color: var(--line-strong);
   border-radius: 10px;
-  background: #151f23;
+  background: var(--surface-1);
   box-shadow: 0 22px 52px rgba(0, 0, 0, .54);
 }
 
 .scene-card-footer .scene-card-more-menu > button {
   height: 35px;
   padding: 0 9px;
-  color: #b1c0c5;
+  color: var(--text);
   font-size: 11px;
 }
 
-.scene-card-footer .scene-card-more-menu > button:hover { color: #edf8fa; background: #213037; }
+.scene-card-footer .scene-card-more-menu > button:hover { color: var(--text-strong); background: var(--surface-2); }
 .scene-card-more-export .export-menu { width:100%; }
 .scene-card-more-export .export-menu > button { display:flex;width:100%;min-height:35px;justify-content:flex-start;gap:8px;padding-inline:9px;font-size:11px; }
-.scene-card-more-export .export-menu-popup { position:static;width:100%;margin:3px 0 2px;padding:3px;border-color:#2c3a40;border-radius:6px;background:#11191d;box-shadow:none; }
+.scene-card-more-export .export-menu-popup { position:static;width:100%;margin:3px 0 2px;padding:3px;border-color:var(--line-strong);border-radius:6px;background:var(--surface-1);box-shadow:none; }
 .scene-card-footer .scene-card-more-export .export-menu-popup > button { display:grid;width:100%;height:auto;min-height:39px;grid-template-columns:23px minmax(0,1fr);align-items:center;padding:5px 7px;text-align:left;place-items:initial; }
 
 .manager-empty {
   min-height: 390px;
-  color: #64747b;
-  border-color: #29363c;
+  color: var(--muted);
+  border-color: var(--line-strong);
   border-radius: 12px;
-  background: rgba(17, 24, 28, .52);
+  background: var(--surface-2);
 }
 
-.manager-empty h2 { color: #c7d2d5; font-size: 18px; }
-.manager-empty p { color: #7d8d94; font-size: 12px; }
+.manager-empty h2 { color: var(--text-strong); font-size: 18px; }
+.manager-empty p { color: var(--muted); font-size: 12px; }
 
 /* 项目页内嵌资源库不再额外套一层卡片。 */
 .asset-library-page { padding: 0; border: 0; background: transparent; }
@@ -227,21 +227,21 @@
 }
 
 .manager-topology-grid article {
-  border-color: #29373d;
+  border-color: var(--line-strong);
   border-radius: 11px;
-  background: #141c20;
+  background: var(--surface-1);
 }
 
 .manager-topology-preview {
   height: 158px;
   color: #68bfcc;
-  border-bottom-color: #26343a;
-  background: #11191d;
+  border-bottom-color: var(--line-strong);
+  background: var(--surface-1);
 }
 
 .manager-topology-grid article > div { gap: 5px; padding: 14px; }
-.manager-topology-grid article > div strong { color: #e7eff1; font-size: 13px; }
-.manager-topology-grid article > div small { color: #7b8b92; font-size: 10px; }
+.manager-topology-grid article > div strong { color: var(--text-strong); font-size: 13px; }
+.manager-topology-grid article > div small { color: var(--muted); font-size: 10px; }
 
 @media (max-width: 760px) {
   .scene-card-grid { grid-template-columns: 1fr; }

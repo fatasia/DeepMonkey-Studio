@@ -1,4 +1,4 @@
-import { CircleCheck, CircleDot, Plus, TriangleAlert } from "lucide-react";
+import { CircleCheck, CircleDot, Copy, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { translate as tr } from "../i18n";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 
@@ -7,9 +7,12 @@ export function DashboardWorkspacePageBar() {
   const {
     addDashboardPage,
     application,
+    busy,
     connected,
     currentView,
     dashboardDiagnostics,
+    deleteDashboardPage,
+    duplicateDashboardPage,
     locale,
     onSelectPage,
     page,
@@ -25,17 +28,30 @@ export function DashboardWorkspacePageBar() {
             key={candidate.id}
             role="tab"
             aria-selected={candidate.id === page.id}
+            tabIndex={candidate.id === page.id ? 0 : -1}
             className={`dashboard-page-tab ${candidate.id === page.id ? "active" : ""}`}
             title={candidate.name}
             onClick={() => onSelectPage(candidate.id, currentView())}
+            onKeyDown={(event) => {
+              const index = application.pages.findIndex((item) => item.id === candidate.id);
+              const next = event.key === "Home" ? 0 : event.key === "End" ? application.pages.length - 1 : event.key === "ArrowRight" ? (index + 1) % application.pages.length : event.key === "ArrowLeft" ? (index - 1 + application.pages.length) % application.pages.length : undefined;
+              if (next === undefined) return;
+              event.preventDefault();
+              onSelectPage(application.pages[next]!.id, currentView());
+              event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+            }}
           >
-            {candidate.name}
+            <span>{candidate.name}</span>
             <small>{candidate.nodes.length}</small>
           </button>
         ))}
-        <button className="dashboard-page-tab-add" title={tr(locale, "新增空白页面", "Add blank page")} aria-label={tr(locale, "新增空白页面", "Add blank page")} onClick={addDashboardPage}>
+      </div>
+      <div className="dashboard-page-tools" role="group" aria-label={tr(locale, "页面操作", "Page actions")}>
+        <button disabled={busy} title={tr(locale, "新增空白页面", "Add blank page")} aria-label={tr(locale, "新增空白页面", "Add blank page")} onClick={addDashboardPage}>
           <Plus size={13} />
         </button>
+        <button disabled={busy} title={tr(locale, "复制当前页面", "Duplicate current page")} aria-label={tr(locale, "复制当前页面", "Duplicate current page")} onClick={duplicateDashboardPage}><Copy size={13} /></button>
+        <button disabled={busy || application.pages.length <= 1} title={tr(locale, "删除当前页面", "Delete current page")} aria-label={tr(locale, "删除当前页面", "Delete current page")} onClick={() => deleteDashboardPage(page.id)}><Trash2 size={13} /></button>
       </div>
       <div className="dashboard-runtime-status" aria-label={tr(locale, "编辑器状态", "Editor status")}>
         <span className={connected ? "healthy" : "warning"}><CircleDot size={10} />{connected ? tr(locale, "数据在线", "Data online") : tr(locale, "数据离线", "Data offline")}</span>

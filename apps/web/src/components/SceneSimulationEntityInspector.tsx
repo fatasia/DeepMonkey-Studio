@@ -15,7 +15,7 @@ export interface SceneSimulationEntityInspectorProps {
 /** 选中仿真实体时的配置面板（SIM-1a）：路径速度/循环、碰撞容差、连接只读+删除。 */
 export function SceneSimulationEntityInspector(props: SceneSimulationEntityInspectorProps) {
   const { entity, locale } = props;
-  const modelName = (id: string) => props.modelNames.get(id) ?? id;
+  const modelName = (id: string) => props.modelNames.get(id) ?? `${tr(locale, "目标已移除", "Missing target")} · ${id}`;
   return (
     <div className="inspector-content simulation-entity-inspector">
       <div className="inspector-selection-context">
@@ -33,7 +33,7 @@ export function SceneSimulationEntityInspector(props: SceneSimulationEntityInspe
       {entity.kind === "path" && (
         <section className="inspector-section">
           <label><span>{tr(locale, "名称", "Name")}</span><input value={entity.name} onChange={(event) => props.onChange({ ...entity, name: event.target.value })} /></label>
-          <label><span>{tr(locale, "速度", "Speed")}</span><input type="number" min={0} step={0.1} value={entity.speed} onChange={(event) => props.onChange({ ...entity, speed: Math.max(0, Number(event.target.value)) })} /></label>
+          <label><span>{tr(locale, "速度 (m/s)", "Speed (m/s)")}</span><input type="number" min={0} step={0.1} value={entity.speed} onChange={(event) => { const value = event.target.valueAsNumber; if (Number.isFinite(value) && value >= 0) props.onChange({ ...entity, speed: value }); }} /></label>
           <label><span>{tr(locale, "循环", "Loop")}</span>
             <select value={entity.loopMode} onChange={(event) => props.onChange({ ...entity, loopMode: event.target.value as typeof entity.loopMode })}>
               <option value="once">{tr(locale, "单次", "Once")}</option>
@@ -48,12 +48,12 @@ export function SceneSimulationEntityInspector(props: SceneSimulationEntityInspe
       {entity.kind === "collisionPair" && (
         <section className="inspector-section">
           <label><span>{tr(locale, "名称", "Name")}</span><input value={entity.name} onChange={(event) => props.onChange({ ...entity, name: event.target.value })} /></label>
-          <label><span>{tr(locale, "容差 (m)", "Tolerance (m)")}</span><input type="number" min={0} step={0.01} value={entity.tolerance} onChange={(event) => props.onChange({ ...entity, tolerance: Math.max(0, Number(event.target.value)) })} /></label>
+          <label><span>{tr(locale, "容差 (m)", "Tolerance (m)")}</span><input type="number" min={0} step={0.01} value={entity.tolerance} onChange={(event) => { const value = event.target.valueAsNumber; if (Number.isFinite(value) && value >= 0) props.onChange({ ...entity, tolerance: value }); }} /></label>
           <label><span>{tr(locale, "侧 A", "Side A")}</span><output>{modelName(entity.a.modelId)}{entity.a.layerId ? ` / ${entity.a.layerId}` : ""}</output></label>
           <label><span>{tr(locale, "侧 B", "Side B")}</span><output>{modelName(entity.b.modelId)}{entity.b.layerId ? ` / ${entity.b.layerId}` : ""}</output></label>
         </section>
       )}
-      <button className="danger" onClick={props.onDelete}><Trash2 size={13} />{tr(locale, "删除仿真实体", "Delete simulation entity")}</button>
+      <button type="button" className="button danger" onClick={props.onDelete}><Trash2 size={13} />{tr(locale, "删除仿真实体", "Delete simulation entity")}</button>
     </div>
   );
 }

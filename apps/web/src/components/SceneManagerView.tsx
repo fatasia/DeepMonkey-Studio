@@ -47,6 +47,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     cloudSceneLinks,
     cloudScenePolicies,
     copyLink,
+    copyNotice,
     createShowcase,
     deliveryReviewOpen,
     dialogMode,
@@ -124,7 +125,20 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
   } = controller;
 
   return (
-    <main className={`scene-manager-page ${managerTab === "assets" ? "asset-workspace-active" : ""}`}>
+    <main className={`scene-manager-page ${managerTab === "assets" ? "asset-workspace-active" : ""}`}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        const menus = [...event.currentTarget.querySelectorAll<HTMLDetailsElement>(".scene-card-more[open], .manager-project-switch details[open]")];
+        const menu = menus.find((item) => item.contains(event.target as Node)) ?? menus.at(-1);
+        if (!menu) return;
+        event.preventDefault(); event.stopPropagation(); menu.open = false;
+        menu.querySelector<HTMLElement>("summary")?.focus();
+      }}
+      onPointerDownCapture={(event) => {
+        event.currentTarget.querySelectorAll<HTMLDetailsElement>(".scene-card-more[open], .manager-project-switch details[open]").forEach((menu) => {
+          if (!menu.contains(event.target as Node)) menu.open = false;
+        });
+      }}>
       <header className="manager-header">
         <div className="manager-brand">
           <span>
@@ -215,6 +229,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
       </header>
 
       <section className="manager-content">
+        {copyNotice && <p className="manager-copy-notice" role="status">{copyNotice}</p>}
         {(managerTab === "scenes" || managerTab === "topology") && <div className={`manager-project-bar contextual ${managerTab === "scenes" ? "scene-toolbar" : ""}`}>
           {managerTab === "scenes" && (
             <>
@@ -337,7 +352,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                             : <Layers3 className="scene-card-thumbnail-empty" size={32} />}
                       </span>
                       <small>
-                        {scene.models.length + scene.primitives.length + scene.measurements.length + (scene.annotations?.length ?? 0)} {tr(locale, "个对象", "objects")}
+                        {scene.models.length + scene.primitives.length + scene.measurements.length + (scene.annotations?.length ?? 0)} {tr(locale, "个对象", scene.models.length + scene.primitives.length + scene.measurements.length + (scene.annotations?.length ?? 0) === 1 ? "object" : "objects")}
                       </small>
                     </button>
                     <div className="scene-card-body">
@@ -386,14 +401,14 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                             onClick={() => openRenameDialog(scene)}
                           ><FilePenLine size={14} /></button>
                           <details className="scene-card-more">
-                            <summary aria-label={tr(locale, "更多场景操作", "More scene actions")} title={tr(locale, "更多", "More")}><MoreHorizontal size={15} /></summary>
+                            <summary role="button" aria-label={tr(locale, "更多场景操作", "More scene actions")} title={tr(locale, "更多", "More")}><MoreHorizontal size={15} /></summary>
                             <div className="scene-card-more-menu">
                               {scene.publishedAt && <button onClick={() => void onBrowsePublished(scene)}><Eye size={13} />{tr(locale, "查看发布版", "View published")}</button>}
-                              {scene.publishedAt && <button onClick={() => void copyLink(new URL(`/published/${encodeURIComponent(scene.id)}`, window.location.origin).href)}><Copy size={13} />{tr(locale, "复制发布链接", "Copy published link")}</button>}
+                              {scene.publishedAt && <button onClick={(event) => { const menu = event.currentTarget.closest("details"); if (menu) { menu.open = false; menu.querySelector("summary")?.focus(); } void copyLink(new URL(`/published/${encodeURIComponent(scene.id)}`, window.location.origin).href); }}><Copy size={13} />{tr(locale, "复制发布链接", "Copy published link")}</button>}
                               {scene.publishedAt && <button onClick={() => void onUnpublish(scene)}><Square size={12} />{tr(locale, "撤回发布", "Unpublish")}</button>}
                               {cloudSceneLinks[scene.id] && <button onClick={() => void copyLink(cloudSceneLinks[scene.id]!)}><CloudCog size={13} />{tr(locale, "复制云渲染链接", "Copy cloud link")}</button>}
                               {isAdmin && scene.publishedAt && (
-                                <button role="switch" aria-checked={Boolean(cloudScenePolicies[scene.id])} disabled={!cloudConfigured || cloudBusySceneId === scene.id} onClick={() => void toggleSceneCloudRender(scene.id, !cloudScenePolicies[scene.id])}>
+                                <button role="switch" title={!cloudConfigured ? tr(locale, "云渲染未配置或服务不可用，请在云渲染设置中检查", "Cloud rendering is not configured or unavailable; check Cloud settings") : undefined} aria-checked={Boolean(cloudScenePolicies[scene.id])} disabled={!cloudConfigured || cloudBusySceneId === scene.id} onClick={() => void toggleSceneCloudRender(scene.id, !cloudScenePolicies[scene.id])}>
                                   <CloudCog size={13} />
                                   {cloudBusySceneId === scene.id ? tr(locale, "云渲染保存中", "Saving cloud rendering") : cloudScenePolicies[scene.id] ? tr(locale, "关闭云渲染", "Disable cloud rendering") : tr(locale, "开启云渲染", "Enable cloud rendering")}
                                 </button>

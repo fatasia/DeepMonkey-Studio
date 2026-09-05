@@ -26,6 +26,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
     onDataCenter,
     onOpen,
     onPublish,
+    openVersions,
     parametricSourceModel,
     parametricWorkbenchOpen,
     project,
@@ -50,6 +51,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
     submitPublish,
     submitSceneDialog,
     versionBusy,
+    versionError,
     versionTarget,
   } = controller;
 
@@ -167,7 +169,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
 
       {versionTarget && (
         <div className="dialog-backdrop" onMouseDown={() => !versionBusy && setVersionTarget(undefined)}>
-          <section className="dialog publication-history-dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+          <section className="dialog publication-history-dialog" role="dialog" aria-modal="true" aria-label={tr(locale, "发布版本", "Publication versions")} onMouseDown={(event) => event.stopPropagation()}>
             <span className="eyebrow">VERSION HISTORY</span>
             <h2>{tr(locale, "发布版本", "Publication versions")}</h2>
             <p>
@@ -179,6 +181,8 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
               )}
             </p>
             <div className="publication-history-list">
+              {versionBusy && <div role="status">{tr(locale, "正在读取版本记录…", "Loading versions…")}</div>}
+              {versionError && <div role="alert">{versionError}</div>}
               {publicationVersions.map((version, index) => (
                 <PublicationVersionItem
                   key={`${version.publishedAt}:${version.version}`}
@@ -191,9 +195,10 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
                   onRestore={() => void restoreVersion(version.publishedAt)}
                 />
               ))}
-              {!versionBusy && publicationVersions.length === 0 && <div>{tr(locale, "暂无版本记录", "No versions yet")}</div>}
+              {!versionBusy && !versionError && publicationVersions.length === 0 && <div>{tr(locale, "暂无版本记录", "No versions yet")}</div>}
             </div>
             <div className="dialog-actions">
+              {versionError && <button className="button" disabled={versionBusy} onClick={() => void openVersions(versionTarget)}>{tr(locale, "重新加载", "Reload")}</button>}
               <button className="button" disabled={versionBusy} onClick={() => setVersionTarget(undefined)}>
                 {tr(locale, "关闭", "Close")}
               </button>

@@ -31,6 +31,7 @@ import { createSceneCreationAction } from "./sceneCreationAction";
 import { createScenePublicationActions } from "./scenePublicationActions";
 import { makeSceneSnapshot } from "./sceneSnapshotFactory";
 import { createSceneWorkspaceNavigationActions } from "./sceneWorkspaceNavigationActions";
+import { createSceneSimulationController, mergeSavedSimulationScene } from "./sceneSimulationController";
 
 /** 统一场景快照、保存、发布、导入导出事务，保证各入口使用同一套一致性规则。 */
 export function createScenePersistenceController(context: ScenePersistenceControllerContext) {
@@ -115,7 +116,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       await writeWorkspaceRecoveryDraft(createWorkspaceRecoveryDraft(projectId, applicationDraft, snapshot));
       const workspace = applicationDraft ? await api.saveApplicationWorkspace(applicationDraft, snapshot) : undefined;
       const saved = workspace?.scene ?? (await api.saveScene(snapshot));
-      setActiveScene(saved);
+      setActiveScene((current) => mergeSavedSimulationScene(current, activeScene, saved));
       setSceneName(saved.name);
       setScenes((items) => sortScenesByTime([saved, ...items.filter((item) => item.id !== saved.id)]));
       if (workspace) applicationSessionRef.current.acknowledgeSave(workspace.application);
@@ -344,6 +345,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     ...workspaceNavigation,
     ...fileTransfer,
     ...publication,
+    ...createSceneSimulationController(context),
   };
 }
 

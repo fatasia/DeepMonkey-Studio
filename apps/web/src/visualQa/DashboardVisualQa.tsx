@@ -36,7 +36,8 @@ const project: ProjectRecord = { id: "visual-qa", name: "智能工厂运营中�
 export default function DashboardVisualQa() {
   const [application, setApplication] = useState(initialApplication);
   const [selection, setSelection] = useState<readonly ApplicationObjectRef[]>([]);
-  const page = application.pages[0]!;
+  const [pageId, setPageId] = useState(initialApplication.pages[0]!.id);
+  const page = application.pages.find((item) => item.id === pageId) ?? application.pages[0]!;
   const dispatch = (command: StudioCommand) => setApplication((current) => applyStudioCommand(current, command));
 
   return <DashboardWorkspace
@@ -54,7 +55,7 @@ export default function DashboardVisualQa() {
     variables={{ throughput: 18640, cycle: 72, oee: 86.4, status: "warning", energy: 318, quality: 98.7 }}
     filters={{}}
     onBack={() => undefined}
-    onSelectPage={() => undefined}
+    onSelectPage={(id) => { setPageId(id); setSelection([]); }}
     onEnterScene={() => undefined}
     onOpenTopology={() => undefined}
     onOpenData={() => undefined}

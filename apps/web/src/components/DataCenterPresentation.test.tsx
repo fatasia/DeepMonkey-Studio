@@ -1,8 +1,19 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DatasetPreview } from "./DataCenterPresentation";
+import { DatasetPreview, formatCell } from "./DataCenterPresentation";
 
 describe("DatasetPreview", () => {
+  it("localizes only typed datetimes and preserves invalid values and ordinary identifiers", () => {
+    const iso = "2026-08-06T10:49:58.113327+08:00";
+    const formatted = formatCell(iso, "datetime", "zh-CN");
+    expect(formatted).toContain("2026");
+    expect(formatted).not.toContain("T");
+    expect(formatted).not.toContain("113327");
+    expect(formatCell(iso, "string")).toBe(iso);
+    expect(formatCell("2026-not-a-date", "datetime")).toBe("2026-not-a-date");
+    expect(formatCell(null, "datetime")).toBe("—");
+    expect(formatCell({ count: 2 })).toBe('{"count":2}');
+  });
   it("distinguishes an unselected dataset from a selected dataset that has not run", () => {
     const unselected = renderToStaticMarkup(<DatasetPreview locale="zh-CN" />);
     const selected = renderToStaticMarkup(<DatasetPreview locale="zh-CN" datasetName="设备运行趋势" />);
