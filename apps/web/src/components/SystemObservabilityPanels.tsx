@@ -89,8 +89,11 @@ export function SystemHealthPanel({
               <em>
                 <b>{healthLabel(t, service.status)}</b>
                 {service.latencyMs !== undefined && <small>{service.latencyMs} ms</small>}
-                {service.message && <small title={service.message}>{service.message}</small>}
               </em>
+              {service.message && <details className="system-health-detail">
+                <summary aria-label={`${service.name} · ${t("诊断详情", "Diagnostic details")}`}>{t("诊断详情", "Diagnostic details")}</summary>
+                <pre>{service.message}</pre>
+              </details>}
             </article>
           );
         })}

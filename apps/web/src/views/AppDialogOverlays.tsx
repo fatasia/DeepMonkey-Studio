@@ -1,5 +1,6 @@
 import { translate as tr } from "../i18n";
 import { ScenePublicationDialog } from "../components/ScenePublicationDialog";
+import { NameLengthHint } from "../components/NameLengthHint";
 import type { AppViewBindings } from "./appViewBindings";
 
 export function AppDialogOverlays({ bindings }: { bindings: AppViewBindings }) {
@@ -50,10 +51,12 @@ function ProjectDialog({ bindings }: { bindings: AppViewBindings }) {
           <input
             autoFocus
             value={newProjectName}
+            aria-describedby="project-name-hint"
             onChange={(event) => state.setNewProjectName(event.target.value)}
             placeholder={tr(locale, "例如：研发中心一期", "For example: R&D Center Phase 1")}
           />
         </label>
+        <NameLengthHint id="project-name-hint" value={newProjectName} locale={locale} />
         <label>
           <span>{tr(locale, "项目说明", "Project description")}</span>
           <textarea

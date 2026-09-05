@@ -17,6 +17,7 @@ export interface AppRoute {
   pageId?: string;
   topologyId?: string;
   documentId?: string;
+  fallback?: "not-found";
   dashboardView?: DashboardViewState;
   dashboardReturn?: DashboardReturnContext;
   operationsTab?: "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif";
@@ -25,6 +26,16 @@ export interface AppRoute {
 const operationsTabs = new Set(["maintenance", "commissioning", "battery", "logistics", "energy", "whatif"]);
 
 export function readRoute(): AppRoute {
+  try {
+    return readLocationRoute();
+  } catch (error) {
+    // 非法 URL 编码不能让整个工作台在初始化阶段白屏。
+    if (error instanceof URIError) return { view: "manager", fallback: "not-found" };
+    throw error;
+  }
+}
+
+function readLocationRoute(): AppRoute {
   const deliveryRoute = sceneViewerDeliveryRoute();
   if (deliveryRoute) return deliveryRoute;
   const workspace = parseStudioWorkspacePath(window.location.pathname);
@@ -60,7 +71,9 @@ export function readRoute(): AppRoute {
   };
   const match = window.location.pathname.match(/^\/(studio|view|published)\/([^/]+)$/);
   if (match?.[1] && match[2]) return { view: match[1] as "studio" | "view" | "published", sceneId: decodeURIComponent(match[2]) };
-  return { view: "manager" };
+  return window.location.pathname === "/" || window.location.pathname === "/manager"
+    ? { view: "manager" }
+    : { view: "manager", fallback: "not-found" };
 }
 
 export function routePath(route: AppRoute): string {

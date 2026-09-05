@@ -19,6 +19,8 @@ export interface SceneManagerProps {
   topologies: Array<{ applicationId: string; applicationName: string; topology: TopologyDocument }>;
   userName: string;
   isAdmin: boolean;
+  navigationNotice?: string;
+  onDismissNavigationNotice?: () => void;
   onProjectChange: (projectId: string) => void;
   onCreateProject: () => void;
   onRenameProject: () => void;

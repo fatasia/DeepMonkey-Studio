@@ -14,6 +14,7 @@ describe("SceneManagerView product surface", () => {
       cloudSceneLinks: {},
       cloudScenePolicies: {},
       isAdmin: false,
+      navigationNotice: "页面不存在，已返回项目工作台",
       locale: "zh-CN",
       managerTab: "scenes",
       name: "",
@@ -35,6 +36,10 @@ describe("SceneManagerView product surface", () => {
     } as unknown as SceneManagerController} />);
 
     expect(html).toContain("Deep Monkey Studio");
+    expect(html).toContain('role="status"');
+    expect(html).toContain("页面不存在，已返回项目工作台");
+    expect(html).toContain('aria-label="关闭页面提示"');
+    expect(html).toContain("变更于");
     expect(html).toContain("scene-card-thumbnail");
     expect(html).toContain("--scene-thumbnail-color:#2878c7");
     expect(html).toContain('aria-label="预览场景"');

@@ -2,11 +2,21 @@ import type { ProjectRecord } from "@bim-studio/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { defaultLogistics, defaultPlantLite } from "./operationsPresentation";
-import { LogisticsOperationsPanel } from "./OperationsScenarioPanels";
+import { EnergyOperationsPanel, LogisticsOperationsPanel } from "./OperationsScenarioPanels";
+import { EMPTY_ENERGY_FIELD_MAP } from "./energyDatasetMapping";
 import type { PlantLiteRunProgress } from "./plantLiteRunController";
 
 const project = { id: "project-1", name: "工厂项目" } as ProjectRecord;
 const noop = () => undefined;
+
+it("keeps energy input in one readable column and empty analysis disabled", () => {
+  const html = renderToStaticMarkup(<EnergyOperationsPanel busy={false} datasets={[]} sourceMode="paste" datasetId="" fieldMap={EMPTY_ENERGY_FIELD_MAP} energyText="" snapshot={undefined} onSourceModeChange={noop} onDatasetChange={noop} onFieldMapChange={noop} onChange={noop} onRun={noop} />);
+  expect(html).toContain("operations-energy-grid");
+  expect(html).toContain('aria-label="临时能耗 CSV 数据"');
+  expect(html).toContain('rows="6"');
+  expect(html).toContain('disabled=""');
+  expect(html).toContain("operations-notice info");
+});
 
 describe("LogisticsOperationsPanel", () => {
   it("presents three planning tasks in one compact switch", () => {

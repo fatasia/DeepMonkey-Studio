@@ -26,6 +26,8 @@ describe("system observability panels", () => {
     expect(html).toContain('aria-label="刷新健康状态"');
     expect(html).toContain('aria-label="复制脱敏诊断"');
     expect(html).toContain('aria-label="下载诊断包"');
+    expect(html).toContain('aria-label="服务 2 · 诊断详情"');
+    expect(html).toContain('<pre>原因 2</pre>');
   });
 
   it("renders service, level, time and keyword filters with redacted export wording", () => {

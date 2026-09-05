@@ -27,6 +27,7 @@ import {
   Search,
   Square,
   Trash2,
+  X,
 } from "lucide-react";
 import type { CSSProperties } from "react";
 import { SceneExportMenu } from "./SceneExportMenu";
@@ -36,6 +37,7 @@ import type { SceneManagerController } from "./SceneManager";
 import { SceneManagerDialogs } from "./SceneManagerDialogs";
 import { UnifiedAssetLibraryPage } from "./UnifiedAssetLibraryPage";
 import { sceneThumbnailItems } from "./sceneManagerPresentation";
+import { TopologyMiniature } from "./TopologyMiniature";
 
 export function SceneManagerView({ controller }: { controller: SceneManagerController }) {
   const {
@@ -55,6 +57,8 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     locale,
     managerTab,
     name,
+    navigationNotice,
+    onDismissNavigationNotice,
     onAiAssistant,
     onBrowse,
     onBrowsePublished,
@@ -229,6 +233,10 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
       </header>
 
       <section className="manager-content">
+        {navigationNotice && <div className="manager-navigation-notice" role="status">
+          <span>{navigationNotice}</span>
+          <button aria-label={tr(locale, "关闭页面提示", "Dismiss page notice")} onClick={onDismissNavigationNotice}><X size={16} /></button>
+        </div>}
         {copyNotice && <p className="manager-copy-notice" role="status">{copyNotice}</p>}
         {(managerTab === "scenes" || managerTab === "topology") && <div className={`manager-project-bar contextual ${managerTab === "scenes" ? "scene-toolbar" : ""}`}>
           {managerTab === "scenes" && (
@@ -256,7 +264,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                 value={sceneSort}
                 onChange={(event) => setSceneSort(event.target.value as typeof sceneSort)}
               >
-                <option value="updated">{tr(locale, "最近更新", "Recently updated")}</option>
+                <option value="updated">{tr(locale, "最近变更", "Recently changed")}</option>
                 <option value="name">{tr(locale, "按名称", "By name")}</option>
                 <option value="objects">{tr(locale, "按对象数", "By object count")}</option>
               </select>
@@ -359,9 +367,9 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                       <button type="button" className="scene-card-title" onClick={() => void onBrowse(scene)}>
                         {scene.name}
                       </button>
-                      <div className="scene-card-meta">
+                      <div className="scene-card-meta" title={tr(locale, "最近变更包括内容保存、发布及撤回发布，不仅是模型内容修改", "Last change includes content saves, publishing and unpublishing, not only model edits")}>
                         <CalendarDays size={12} />
-                        {tr(locale, "更新于", "Updated")} {new Date(scene.updatedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}
+                        {tr(locale, "变更于", "Changed")} {new Date(scene.updatedAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}
                       </div>
                       <div className="scene-card-footer">
                         <span>
@@ -495,11 +503,8 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                       title={tr(locale, `打开拓扑 · ${topology.name}`, `Open topology · ${topology.name}`)}
                       onClick={() => onOpenTopology(applicationId, topology.id)}
                     >
-                      <Network size={26} />
+                      <TopologyMiniature topology={topology} />
                       <span>{topology.nodes.length}</span>
-                      <i />
-                      <i />
-                      <i />
                     </button>
                     <div>
                       <strong>{topology.name}</strong>

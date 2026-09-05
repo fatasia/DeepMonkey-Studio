@@ -166,24 +166,27 @@ export function OperationsCenter({
       return;
     }
     setSnapshot(undefined);
+    setSyncMessage("");
+    setDatasets([]);
+    setDataBindings([]);
+    let cancelled = false;
     const draft = readPlantLiteDraft(requestedProjectId);
     hydratedPlantLiteProjectId.current = draft ? requestedProjectId : "";
     setPlantLite(draft ?? structuredClone(defaultPlantLite));
     void (async () => {
-      const [syncResult, datasetResult, bindingResult] = await Promise.allSettled([
-        api.syncIotNbMaintenanceModels(requestedProjectId),
+      // 浏览任意运营页只读取；同步会改写维护模型，只能由显式操作触发。
+      const [datasetResult, bindingResult] = await Promise.allSettled([
         api.listDatasets(requestedProjectId),
         api.listAiDataBindings(requestedProjectId),
       ]);
-      if (activeProjectId.current !== requestedProjectId) return;
-      if (syncResult.status === "fulfilled") {
-        setSyncMessage(`已连接 ${syncResult.value.sourceProjectName} · ${syncResult.value.models.length} 个真实训练模型`);
-      }
+      if (cancelled || activeProjectId.current !== requestedProjectId) return;
       if (datasetResult.status === "fulfilled") setDatasets(datasetResult.value);
       else showError(datasetResult.reason);
       if (bindingResult.status === "fulfilled") setDataBindings(bindingResult.value);
+      else showError(bindingResult.reason);
       await load().catch(showError);
     })();
+    return () => { cancelled = true; };
   }, [previewSnapshot, project.id]);
 
   function changePlantLite(next: PlantLiteStudyRequest) {

@@ -22,8 +22,7 @@ import { RENDERER_BACKEND_STORAGE_KEY } from "../appDefaults";
 import type { SceneDataBindingRuntimeState } from "../components/SceneDataBindingEditor";
 import { dataBindingProduct, directSceneDataBindingMessage, sceneDataBindingMessage } from "../sceneDataBindings";
 import { DirectBindingRuntime } from "../directBindingRuntime";
-import { parseDocsPath } from "../docs/docsRoute";
-import { parseStudioWorkspacePath, DEFAULT_DASHBOARD_VIEW } from "../studio/workspaceRoute";
+import { DEFAULT_DASHBOARD_VIEW } from "../studio/workspaceRoute";
 import { publishApplicationInteractionEffects, subscribeApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "../sceneDataBridge";
 import { readRoute, routePath, type AppRoute } from "../appRoute";
@@ -439,27 +438,17 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
   }, [engine, infoEnabled]);
 
   useEffect(() => {
-    const pathname = window.location.pathname;
-    const recognizedWorkspace = Boolean(parseStudioWorkspacePath(pathname));
-    const recognizedTopology = /^\/projects\/[^/]+\/applications\/[^/]+\/topologies\/[^/]+$/.test(pathname);
-    const recognizedDocs = Boolean(parseDocsPath(pathname));
-    if (
-      pathname !== "/manager" &&
-      pathname !== "/optimizer" &&
-      pathname !== "/data" &&
-      pathname !== "/vision" &&
-      pathname !== "/operations" &&
-      pathname !== "/system" &&
-      pathname !== "/branding" &&
-      !/^\/(studio|view|published)\//.test(pathname) &&
-      !recognizedWorkspace &&
-      !recognizedTopology &&
-      !recognizedDocs
-    ) {
-      window.history.replaceState({}, "", "/manager");
-      setRoute({ view: "manager" });
-    }
-    const handlePopState = () => setRoute(readRoute());
+    const handlePopState = () => {
+      const next = readRoute();
+      if (next.fallback === "not-found") {
+        window.history.replaceState({}, "", "/manager");
+      } else if (next.view === "manager" && window.location.pathname === "/") {
+        window.history.replaceState({}, "", "/manager");
+      }
+      setRoute(next);
+    };
+    const initial = readRoute();
+    if (initial.fallback || (initial.view === "manager" && window.location.pathname === "/")) handlePopState();
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);

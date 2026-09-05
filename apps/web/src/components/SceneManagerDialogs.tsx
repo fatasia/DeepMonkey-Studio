@@ -5,6 +5,7 @@ import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import { DeliveryReviewDialog, PublicationVersionItem } from "./SceneDeliveryWorkflow";
 import { ScenePublicationDialog } from "./ScenePublicationDialog";
+import { NameLengthHint } from "./NameLengthHint";
 import type { SceneManagerController } from "./SceneManager";
 
 const ParametricModelWorkbench = lazy(() => import("../parametric/ParametricModelWorkbench"));
@@ -79,10 +80,12 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
               <input
                 autoFocus
                 value={name}
+                aria-describedby="scene-name-hint"
                 onChange={(event) => setName(event.target.value)}
                 placeholder={tr(locale, "例如：1 号楼施工总览", "For example: Building 1 overview")}
               />
             </label>
+            <NameLengthHint id="scene-name-hint" value={name} locale={locale} />
             <div className="dialog-actions">
               <button type="button" className="button" onClick={() => setDialogMode(undefined)}>
                 {tr(locale, "取消", "Cancel")}

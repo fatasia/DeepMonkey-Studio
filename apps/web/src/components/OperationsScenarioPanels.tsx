@@ -208,7 +208,7 @@ export function EnergyOperationsPanel({
     ? Boolean(datasetId && fieldMap.output && fieldMap.energyKwh)
     : energyText.trim().split(/\r?\n/).filter(Boolean).length >= 4;
   return (
-    <div className="operations-grid">
+    <div className="operations-grid operations-energy-grid">
       <section className="operations-panel">
         <header>
           <div>
@@ -245,12 +245,14 @@ export function EnergyOperationsPanel({
           <>
             <textarea
               className="operations-textarea"
+              aria-label="临时能耗 CSV 数据"
+              rows={6}
               value={energyText}
               onChange={(event) => onChange(event.target.value)}
               placeholder={"时间,产量,能耗kWh,空转分钟\n2026-09-02T08:00:00,120,72,4\n至少 4 行"}
               spellCheck={false}
             />
-            <div className="operations-notice">临时数据不会保存为数据集；需要周期分析时请先在数据中心建立连接和字段。</div>
+            <div className="operations-notice info">临时数据不会保存为数据集；需要周期分析时请先在数据中心建立连接和字段。</div>
           </>
         )}
         {snapshot?.energyInsights[0] ? (

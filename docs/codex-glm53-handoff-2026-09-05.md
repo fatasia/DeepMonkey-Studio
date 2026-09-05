@@ -128,3 +128,23 @@ git diff --check
 - 下一直接工作：按用户最新“全部修复并整体再过一遍”要求，闭合复核表剩余条目及全站主流程。不能把本批局部通过当整个项目结束。
 
 12:58 收口复跑：Web 323 文件/1142 项全通过、Web typecheck/生产构建通过；四组拓扑门禁含新增空态首节点通过；首屏 304.8 KiB / gzip 99.0 KiB 未回退，既有构建提示未消除。日志页 `vite` 关键词真实查询无 ANSI，截图已保留到 `report-final/service-logs-vite-dark.png`，下一批补双主题与失败态后关闭 P2-8。
+
+## 10. 13:38 接续：最终 UI 报告复核（已完成增量）
+
+- 最终 GLM 报告仍 33 条，32 条已修或复核关闭；只剩 P2-5 需要生产冷加载验证。不是全项目验收完成，Agent、SIM 深度和后续规格队列仍保留。
+- `gate-ui-report-final.mjs`：1440/980 × dark/light 四组，真实登录和只读业务 API；长名称、剪贴板拒绝/恢复、真实拓扑预览、三主 CTA、健康键盘诊断、真实日志无 ANSI、能耗单列/CSV 边界、480 AI 芯片、未知路由通知/关闭均通过。业务写请求由拦截器阻止并作为失败记录；最终写请求 0，控制台错误/警告 0。截图在 `report-final/`。
+- 发布的 updatedAt 是元数据变更时间；只改“最近变更/变更于”及说明，不回滚时间戳或改发布合同。长名称提供 60 字符建议而非虚构后端上限：200+ 字符仍保留，旧名称不丢失；辅助说明移出 label，通过 aria-describedby 关联，避免把说明变成输入的可访问名称。
+- 拓扑卡片读取真实坐标/连线，250 节点/500 边预览封顶并注明；拥挤标签隐藏以免重叠，没有用自动布局修改原拓扑。缺边/空图/同坐标/负坐标有聚焦测试。
+- 健康诊断从截断的 title 改为 details + 可复制 pre；设置页及 Study 的中性层换成现有主题令牌。截图目视发现而非仅 DOM 检测的另外两项：设置页亮色仍深底、运营标签保留旧 330px 侧栏空间；均已修。能耗 textarea 的 width:100% 加左右 margin 导致右边框裁切，同族修复为扣除边距。
+- **额外真实缺陷**：运营中心挂载时不论页签都 POST `maintenance/sync-iot-nb`，开发 StrictMode 发两次；该处理会更新维护模型、并按条件清理旧 sample。首次回归已发出两次请求，用户已告知；未记录响应明细，不声称零维护记录影响，也没有无依据回滚。随后移除隐式同步，保留两个显式同步入口，当前四组合浏览无业务写请求，未写原场景。
+- 基线回归 `gate-ui-report-20260905.mjs` 双主题复跑通过。第一遍 dark bootstrap 截图遇 Chromium `Unable to capture screenshot`，light 通过；单独重跑两组通过，没有为此改产品。另一次坏编码直连被开发服务器 404 拒绝，不把它作为正常未知路径 UI 失败。
+- 13:30 Web 全量 325 文件/1148 测试、typecheck、生产构建、1726 源文件尺寸通过；首屏仍 304.8 KiB / gzip 99.0 KiB。13:38 全仓测试与最后构建正在复跑，结果见后续收口补记。
+
+### 全服务检查与本机依赖恢复（接续中）
+
+- Web/API/PostgreSQL/MinIO 一直健康。MediaMTX 按既有配置启动需要工作目录是仓库根（证书路径相对根）；从 tools/mediamtx 目录启动会找不到证书。已用根目录启动，端口 9997 探针健康，没改证书/配置/密码。
+- Node-RED 并非只需启动：本机 tar@7.5.22 缺 `dist/commonjs/package.json`，@tdengine/websocket@3.5.0 缺两个 JS，got/cheerio/debug/long 也有缺文件。通过 `npm pack --ignore-scripts` 获取**锁定版本**官方发布包，SHA-512 integrity 与 pnpm-lock.yaml 对应记录一致，只恢复缺文件，不覆盖现有文件、不改锁文件或新增版本。Node-RED 的 `.data`/flows/凭据没有删除。
+- tar 的两个模块类型声明用原发布内容补回；其他包采用经过目标路径校验的指定缺文件解包。属于本机 node_modules 安装修复，不应生成上游缺陷补丁：官方包本身包含这些文件。
+- Node-RED 第一轮恢复后已监听但仍缺 http request 等节点，不能把 HTTP 200 当所有节点可用；13:38 按锁定包补齐后再次启动，下一步核对节点注册、实际 iframe/桥链路和服务健康。日志 `.runtime-logs/node-red-qa-20260905.*` / `mediamtx-qa-20260905.*`。
+
+13:40 收口：全仓 `pnpm -r test` 通过（Web 1148、API 448，contracts 170，含其余包/Rust/Node-RED 静态校验）；最后 Web 生产构建与预算通过，首屏未回退。全站 UI 旧门禁双主题和新门禁四组合最终通过。Node-RED 已 Started flows，但额外发现 TDengine Function 的 finalize 使用裸 await（静态校验漏查生命周期脚本）以及 OPC UA 依赖 @peculiar/utils 的模块类型声明缺失；下一批优先清这两个实际错误，不能宣称 Node-RED 全恢复。P2-5 与其余主线继续执行。

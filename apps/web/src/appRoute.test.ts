@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { readRoute, routeHistoryState, routePath } from "./appRoute";
 
 describe("app route", () => {
+  it("distinguishes canonical home from missing and malformed routes without throwing", () => {
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { pathname: "/", search: "" }, history: { state: null } } });
+    try {
+      for (const path of ["/", "/manager"]) {
+        globalThis.window.location.pathname = path;
+        expect(readRoute()).toEqual({ view: "manager" });
+      }
+      for (const path of ["/not-a-page", "/view/id/extra", "/view/%E0%A4%A", "/projects/p/applications/a/topologies/%E0%A4%A"]) {
+        globalThis.window.location.pathname = path;
+        expect(readRoute()).toEqual({ view: "manager", fallback: "not-found" });
+      }
+    } finally {
+      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+  });
   it("keeps dashboard and scene workspace identities in generated paths", () => {
     expect(routePath({ view: "dashboard", projectId: "project 1", applicationId: "app/1", pageId: "page 1" }))
       .toBe("/studio/project%201/applications/app%2F1/pages/page%201");
