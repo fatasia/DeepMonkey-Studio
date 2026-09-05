@@ -1,5 +1,7 @@
-import { lazy, StrictMode, Suspense } from "react";
+import { lazy, StrictMode, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import "./styles/base.css";
+import { ApplicationErrorBoundary, ApplicationErrorFallback } from "./components/ApplicationErrorBoundary";
 import {
   initializeSceneViewerDelivery,
   isSceneViewerDeliveryRuntime,
@@ -7,6 +9,10 @@ import {
 import { loadSceneViewerDeliveryManifest } from "./api";
 
 const sceneViewerBuild = import.meta.env.VITE_SCENE_VIEWER_BUILD === "true";
+const root = createRoot(document.getElementById("root")!);
+function renderRoot(children: ReactNode) {
+  root.render(<StrictMode><ApplicationErrorBoundary>{children}</ApplicationErrorBoundary></StrictMode>);
+}
 
 async function bootstrap(): Promise<void> {
   await initializeSceneViewerDelivery(loadSceneViewerDeliveryManifest);
@@ -14,7 +20,7 @@ async function bootstrap(): Promise<void> {
     if (!isSceneViewerDeliveryRuntime()) throw new Error("只读客户端缺少发布器清单，已阻止进入工作台");
     await import("./delivery/sceneViewerStyles");
     const { SceneViewerRoot } = await import("./delivery/SceneViewerRoot");
-    createRoot(document.getElementById("root")!).render(<StrictMode><SceneViewerRoot /></StrictMode>);
+    renderRoot(<SceneViewerRoot />);
     return;
   }
   await renderStudioApplication();
@@ -24,7 +30,7 @@ async function renderStudioApplication(): Promise<void> {
   await import("./editorStyles");
   if (/^\/apps(?:\/|$)/.test(window.location.pathname)) {
     const { PublishedApplicationRoot } = await import("./delivery/PublishedApplicationRoot");
-    createRoot(document.getElementById("root")!).render(<StrictMode><PublishedApplicationRoot /></StrictMode>);
+    renderRoot(<PublishedApplicationRoot />);
     return;
   }
   // 视觉验收页默认不进入生产入口；CI 通过一次性构建变量显式启用。
@@ -54,12 +60,10 @@ async function renderStudioApplication(): Promise<void> {
       // 仅视觉验收入口允许 URL 指定主题；不改用户偏好或平台品牌设置。
       const qaTheme = new URLSearchParams(window.location.search).get("theme");
       if (qaTheme === "light" || qaTheme === "dark") document.documentElement.dataset.theme = qaTheme;
-      createRoot(document.getElementById("root")!).render(
-        <StrictMode>
+      renderRoot(
           <Suspense fallback={<div className="app-auth-loading">正在加载视觉验收页</div>}>
             <VisualQaPage />
           </Suspense>
-        </StrictMode>,
       );
       return;
     }
@@ -70,18 +74,10 @@ async function renderStudioApplication(): Promise<void> {
     import("./components/DesktopConnectionGate"),
   ]);
   const standaloneDocsMode = /^\/docs(?:\/|$)/.test(window.location.pathname);
-  createRoot(document.getElementById("root")!).render(
-    <StrictMode>
-      {standaloneDocsMode ? <App /> : <DesktopConnectionGate><App /></DesktopConnectionGate>}
-    </StrictMode>,
-  );
+  renderRoot(standaloneDocsMode ? <App /> : <DesktopConnectionGate><App /></DesktopConnectionGate>);
 }
 
 void bootstrap().catch((reason) => {
-  const message = reason instanceof Error ? reason.message : "应用启动失败";
-  createRoot(document.getElementById("root")!).render(
-    <div style={{ display: "grid", width: "100%", height: "100%", placeItems: "center", padding: 32, color: "#f0d4d2", background: "#111416" }} role="alert">
-      {message}
-    </div>,
-  );
+  console.error("STUDIO_STARTUP_FAILED", reason);
+  root.render(<ApplicationErrorFallback startup />);
 });

@@ -1,0 +1,39 @@
+.application-error {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 100dvh;
+  padding: clamp(20px, 5vw, 64px);
+  color: var(--text-strong);
+  background: var(--bg-0);
+  overflow: auto;
+}
+.application-error section { width: min(100%, 520px); }
+.application-error-symbol {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--warning);
+  font-size: 24px;
+  font-weight: 600;
+}
+.application-error .application-error-kicker { margin: 0 0 8px; color: var(--text); font-size: 13px; }
+.application-error h1 { margin: 0 0 16px; font-size: clamp(24px, 3vw, 32px); line-height: 1.25; letter-spacing: -.02em; }
+.application-error p { max-width: 48ch; margin: 0 0 24px; color: var(--text); line-height: 1.7; }
+.application-error button {
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  cursor: pointer;
+}
+.application-error button:hover { background: color-mix(in srgb, var(--accent) 24%, var(--surface-1)); }
+#root .application-error button:focus-visible { outline-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.application-error small { display: block; margin-top: 24px; color: var(--text); font-size: 12px; line-height: 1.7; }
+.application-error code { overflow-wrap: anywhere; font-size: 11px; }
