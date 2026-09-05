@@ -23,8 +23,8 @@ export function DashboardInspectorData() {
     !["text", "shape", "decoration", "topology"].includes(selectedNode.widget.type) && (
       <section className="dashboard-inspector-section dashboard-data-widget-properties">
         <DashboardDataSource />
-        {!selectedNode.widget.directBinding && <DashboardFieldSlots key={selectedNode.id} />}
-        {["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "rank", "table", "scroll-table"].includes(
+        {!selectedNode.widget.directBinding && !selectedNode.widget.semanticBinding && <DashboardFieldSlots key={selectedNode.id} />}
+        {!selectedNode.widget.semanticBinding && ["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "rank", "table", "scroll-table"].includes(
           selectedNode.widget.type,
         ) && (
           <details className="dashboard-data-analysis-settings" open={Boolean(selectedNode.widget.analysis || selectedNode.widget.report || selectedNode.widget.type === "map")}>

@@ -4,6 +4,7 @@ import { createWorkspaceRecoveryDraft, deleteWorkspaceRecoveryDraft, writeWorksp
 import type { createScenePersistenceController } from "../controllers/scenePersistenceController";
 import type { AppState } from "./useAppState";
 import type { useSceneHistoryState } from "./useSceneHistoryState";
+import { workspaceRecoveryDecisionKey } from "../studio/workspaceRecoveryDecision";
 
 type PersistenceController = ReturnType<typeof createScenePersistenceController>;
 type SceneHistoryState = ReturnType<typeof useSceneHistoryState>;
@@ -74,22 +75,26 @@ export function useSceneHistoryActions({ state, history, applyScene }: SceneHist
   }, [route.view, project?.id, activeScene?.id, sceneHistoryRevision, busy]);
 
   useEffect(() => {
-    if (route.view !== "studio" || !project || !activeScene || !engine || revision <= lastAutoSavedSceneRevisionRef.current) return;
+    if (route.view !== "studio" || !project || !activeScene || !engine || recoveryDraft || revision <= lastAutoSavedSceneRevisionRef.current) return;
     const timer = window.setTimeout(() => {
       const snapshot = sceneSnapshotFactoryRef.current?.();
       if (!snapshot) return;
       const applicationDraft = activeApplication?.metadata.id === route.applicationId ? activeApplication : undefined;
-      void writeWorkspaceRecoveryDraft(createWorkspaceRecoveryDraft(project.id, applicationDraft, snapshot));
+      const draft = createWorkspaceRecoveryDraft(project.id, applicationDraft, snapshot);
+      // This live editor authored the copy; undo/redo is not a crash-recovery entry.
+      // The ref resets on a real reload, so reload recovery remains available.
+      recoveryDecisionRef.current = workspaceRecoveryDecisionKey(draft);
+      void writeWorkspaceRecoveryDraft(draft);
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [route.view, route.applicationId, project?.id, activeScene?.id, activeApplication?.metadata.revision, engine, revision]);
+  }, [route.view, route.applicationId, project?.id, activeScene?.id, activeApplication?.metadata.revision, engine, revision, recoveryDraft]);
 
   async function restoreRecoveryDraft(): Promise<void> {
     if (!recoveryDraft || !project) return;
     setRecoveryBusy(true);
     try {
       // 使用当前服务器应用 revision，只恢复场景内容，避免旧应用文档重新引入版本冲突。
-      recoveryDecisionRef.current = recoveryDraft.savedAt;
+      recoveryDecisionRef.current = workspaceRecoveryDecisionKey(recoveryDraft);
       await applyScene(recoveryDraft.scene, false, project, false);
       // 恢复动作本身会推进一次场景 revision；将该 revision 视为已处理，避免恢复后立刻重新弹出同一副本。
       lastAutoSavedSceneRevisionRef.current = revision + 1;
@@ -107,7 +112,7 @@ export function useSceneHistoryActions({ state, history, applyScene }: SceneHist
     if (!recoveryDraft) return;
     setRecoveryBusy(true);
     try {
-      recoveryDecisionRef.current = recoveryDraft.savedAt;
+      recoveryDecisionRef.current = workspaceRecoveryDecisionKey(recoveryDraft);
       await deleteWorkspaceRecoveryDraft(recoveryDraft.projectId, recoveryDraft.applicationId, recoveryDraft.sceneId);
       // 丢弃不会改变场景内容，但需要阻止当前 revision 的保护副本被恢复写入 effect 立即重建。
       lastAutoSavedSceneRevisionRef.current = revision;
@@ -120,7 +125,7 @@ export function useSceneHistoryActions({ state, history, applyScene }: SceneHist
 
   function deferRecoveryDraft(): void {
     if (!recoveryDraft) return;
-    recoveryDecisionRef.current = recoveryDraft.savedAt;
+    recoveryDecisionRef.current = workspaceRecoveryDecisionKey(recoveryDraft);
     setRecoveryDraft(undefined);
     setMessage("已使用服务器版本打开；本地恢复副本仍保留，可稍后处理");
   }

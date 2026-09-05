@@ -2,7 +2,7 @@ import type { ModelFileStatistics, ModelOptimizationOptions, ModelOptimizationRe
 
 export type ModelOptimizerWorkerRequest =
   | { id: number; action: "inspect"; name: string; buffer: ArrayBuffer }
-  | { id: number; action: "optimize"; name: string; buffer: ArrayBuffer; options: ModelOptimizationOptions };
+  | { id: number; action: "optimize"; name: string; buffer: ArrayBuffer; options: ModelOptimizationOptions; copyright?: string };
 
 export type ModelOptimizerWorkerResponse =
   | { id: number; type: "progress"; message: string }

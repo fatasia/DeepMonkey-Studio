@@ -8,6 +8,7 @@ import { useDashboardDataBinding } from "./DashboardDataBindingProvider";
 import { replaceDashboardWidgetDataProduct } from "./dashboardDataProductReplacement";
 import { translate as tr } from "../i18n";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
+import { DashboardSemanticFields } from "./DashboardSemanticFields";
 
 export function DashboardDataSource() {
   const { catalogError, datasets, fieldsByProduct, locale, onCommand, onOpenData, page, pipelines, selectDataField, selectDataProduct, selectedNode, statusByProduct, updateDataWidget } = useDashboardWorkspace();
@@ -15,7 +16,9 @@ export function DashboardDataSource() {
   const [choosingProduct, setChoosingProduct] = useState(false);
   useEffect(() => setChoosingProduct(false), [selectedNode?.id]);
   if (selectedNode?.kind !== "data-widget") return null;
+  if (selectedNode.widget.semanticBinding) return <DashboardSemanticFields />;
   return <>
+        <DashboardSemanticFields />
         <label>
           <span>{tr(locale, "数据来源", "Data source")}</span>
           <select

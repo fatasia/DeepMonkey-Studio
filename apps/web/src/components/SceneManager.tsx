@@ -13,6 +13,9 @@ type ProjectAssetTab = "all" | "model" | "image" | "video" | "environment" | "pb
 function useSceneManagerController({
   locale,
   managerTab: requestedManagerTab,
+  assetScope,
+  selectedAssetModelId,
+  onReturnToScene,
   onManagerTabChange,
   branding,
   projects,
@@ -359,6 +362,9 @@ function useSceneManagerController({
   );
 
   return {
+    assetScope,
+    selectedAssetModelId,
+    onReturnToScene,
     assetSearch,
     assetTab,
     branding,

@@ -1,11 +1,15 @@
-import { Box, Image as ImageIcon, Mountain, Paintbrush, Pencil, Search, Trash2, Video, WandSparkles } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Box, Gauge, Plus, Image as ImageIcon, Mountain, Paintbrush, Pencil, Search, Trash2, Video, WandSparkles } from "lucide-react";
 import type { ConversionStatus } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { SceneManagerController } from "./SceneManager";
 import { ProjectResourceGovernancePanel, ResourceUsageBadge } from "./ProjectResourceGovernancePanel";
 import { ProjectAssetToolbar } from "./ProjectAssetToolbar";
+import { ModelAssetCredit } from "./ModelAssetCredit";
 
 export function ProjectAssetInventory({ controller }: { controller: SceneManagerController }) {
+  const focusedModel = useRef<HTMLElement | null>(null);
+  useEffect(() => { focusedModel.current?.scrollIntoView({ block: "center" }); focusedModel.current?.focus({ preventScroll: true }); }, [controller.selectedAssetModelId, controller.project?.models.length]);
   const {
     assetSearch, assetTab, deleteLibraryAsset, deleteLibraryModel, locale, modelLibraryBusy, normalizedSearch,
     project, renameLibraryItem, resourceGovernance, setAssetSearch, setAssetTab, setParametricSourceModel,
@@ -27,14 +31,17 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
       </div>
       <div className="model-library-list">
         {visibleModels.map((model) => (
-          <article className="model-library-item" key={model.id}>
+          <article className={`model-library-item ${controller.selectedAssetModelId === model.id ? "asset-workflow-selected" : ""}`} key={model.id} data-model-id={model.id} tabIndex={controller.selectedAssetModelId === model.id ? -1 : undefined} ref={controller.selectedAssetModelId === model.id ? focusedModel : undefined}>
             <div className="model-library-format">{model.format.toUpperCase()}</div>
             <div className="model-library-info">
               <strong title={model.name}>{model.name}</strong>
               <span>{formatBytes(model.size)} · {new Date(model.updatedAt).toLocaleString(locale, { dateStyle: "short", timeStyle: "short" })}</span>
               {model.generation?.kind === "parametric" && <small>{tr(locale, `参数化资源 · v${model.generation.revision} · ${model.generation.build.triangleCount.toLocaleString("zh-CN")} 三角面`, `Parametric asset · v${model.generation.revision} · ${model.generation.build.triangleCount.toLocaleString("en-US")} triangles`)}</small>}
               {model.status !== "ready" && <small title={model.message}>{model.message}</small>}
+              <ModelAssetCredit model={model} locale={locale} />
             </div>
+            <button className="manager-icon-button" aria-label={tr(locale, `预览与优化 ${model.name}`, `Preview and optimize ${model.name}`)} title={tr(locale, "预览与优化（不修改原素材）", "Preview and optimize (preserves source)")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onOptimizer(model.id)}><Gauge size={15} /></button>
+            {controller.onReturnToScene && <button className="manager-icon-button" aria-label={tr(locale, `添加到原场景 ${model.name}`, `Add to original scene ${model.name}`)} title={tr(locale, "添加到原场景", "Add to original scene")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onReturnToScene?.(model.id)}><Plus size={15} /></button>}
             <div className="model-library-state">
               <span className={`model-status model-status-${model.status}`}>{statusLabel(model.status, locale)}</span>
               <ResourceUsageBadge locale={locale} resource={resourceGovernance.resources.find((resource) => resource.kind === "model" && resource.id === model.id)} />

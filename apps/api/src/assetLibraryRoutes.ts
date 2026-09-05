@@ -58,7 +58,9 @@ export async function registerAssetLibraryRoutes(app: FastifyInstance, dependenc
   });
 
   app.get<{ Params: { itemId: string } }>("/api/public/asset-library/items/:itemId/thumbnail", async (request, reply) => {
-    const entry = await catalog.get(request.params.itemId).catch(() => undefined);
+    let entry;
+    try { entry = await catalog.get(request.params.itemId); }
+    catch { return reply.code(503).send({ message: "素材目录暂时无法读取，请修复目录后重试" }); }
     if (!entry) return reply.code(404).send({ message: "素材不存在" });
     return reply.header("Cache-Control", "private, max-age=86400").type("image/png").send(createReadStream(entry.thumbnailPath));
   });

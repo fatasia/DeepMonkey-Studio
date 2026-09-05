@@ -4,6 +4,9 @@ import { Box, Camera, ChevronDown, Copy, Pause, Play, Plus, RotateCcw, Trash2, X
 import type { CameraKeyframe, ModelKeyframe, SceneAnimationState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { normalizeAnimationFrameRate, snapAnimationTime } from "../viewer/timeline";
+import type { PlantLiteStudyRecord } from "@bim-studio/contracts";
+import { PlantLitePlayback } from "./PlantLitePlayback";
+import type { PlantLitePlaybackFrame } from "./plantLitePlaybackModel";
 
 type TimelineFrame = (CameraKeyframe & { kind: "camera" }) | (ModelKeyframe & { kind: "model" });
 
@@ -22,9 +25,21 @@ interface Props {
   onRecordCamera: () => void;
   onRecordObject: () => void;
   onDeleteFrame: (id: string) => void;
+  simulationStudy?: PlantLiteStudyRecord;
+  onSimulationFrame?: (frame: PlantLitePlaybackFrame | null) => void;
+  onAnimationTrack?: () => void;
 }
 
 export function SceneTimelinePanel(props: Props) {
+  const study = props.simulationStudy;
+  if (study?.trace && study.model) return <section className="timeline-panel scene-simulation-timeline" aria-label="场景仿真时间线">
+    <header className="timeline-heading"><div><strong>仿真轨道 · {study.name}</strong><small>Study {study.id} · 事件位置覆盖层，不修改原场景动画</small></div><div className="timeline-heading-summary"><button type="button" onClick={props.onAnimationTrack}>动画轨道</button><button type="button" aria-label="关闭时间线" onClick={props.onClose}><X size={14} /></button></div></header>
+    <PlantLitePlayback key={study.id} model={study.model} trace={study.trace} {...(props.onSimulationFrame ? { onFrame: props.onSimulationFrame } : {})} />
+  </section>;
+  return <SceneAnimationTimeline {...props} />;
+}
+
+function SceneAnimationTimeline(props: Props) {
   const [selectedFrameId, setSelectedFrameId] = useState<string>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const duration = Math.max(props.animation.duration, 0.1);

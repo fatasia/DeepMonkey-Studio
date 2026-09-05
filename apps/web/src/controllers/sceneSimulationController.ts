@@ -36,12 +36,25 @@ export function createSceneSimulationController(context: Context) {
     context.recordSceneEdit("删除仿真实体");
   }
 
-  return { updateSimulationEntity, deleteSimulationEntity };
+  function replaceSimulationEntities(entities: SimulationEntityState[]): void {
+    const current = context.getActiveScene();
+    if (!sceneId || current?.id !== sceneId) return;
+    if (current.simulationEntities !== context.activeScene?.simulationEntities) throw new Error("场景物流配置已更新，请基于当前配置重新操作");
+    const references = new Set(context.engine?.listModels().map(item => item.id) ?? []);
+    // 已有断链保留以供修复；新增引用必须存在，不能静默绑定默认对象。
+    for (const entity of current.simulationEntities ?? []) for (const id of simulationEntityModelIds(entity)) references.add(id);
+    const errors = validateSimulationEntities(entities, references);
+    if (errors.length) throw new Error(errors.join("；"));
+    context.setActiveScene(value => value?.id === sceneId ? { ...value, simulationEntities: structuredClone(entities) } : value);
+    context.setRevision(value => value + 1);
+    context.recordSceneEdit("编辑场景物流流程");
+  }
+  return { updateSimulationEntity, deleteSimulationEntity, replaceSimulationEntities };
 }
 
 export function simulationEntityModelIds(entity: SimulationEntityState): string[] {
   return entity.kind === "flowLink" ? [entity.fromModelId, entity.toModelId]
-    : entity.kind === "path" ? [entity.targetModelId] : [entity.a.modelId, entity.b.modelId];
+    : entity.kind === "path" || entity.kind === "flowNode" ? [entity.targetModelId] : [entity.a.modelId, entity.b.modelId];
 }
 
 /** 保存响应不能覆盖请求期间的新编辑，也不能把切换后的场景拉回去。 */

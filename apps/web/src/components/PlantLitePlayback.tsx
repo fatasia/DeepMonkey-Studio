@@ -16,18 +16,21 @@ import {
   formatPlantLiteMinute,
   preparePlantLitePlayback,
   selectPlantLitePlaybackFrame,
+  type PlantLitePlaybackFrame,
 } from "./plantLitePlaybackModel";
 
 const BASE_SIMULATION_MINUTES_PER_SECOND = 12;
 const SPEEDS = [0.5, 1, 2, 4] as const;
 
-export function PlantLitePlayback({ trace, model }: { trace: PlantLiteReplicationTrace; model: PlantLiteModel }) {
+export function PlantLitePlayback({ trace, model, onFrame }: { trace: PlantLiteReplicationTrace; model: PlantLiteModel; onFrame?: (frame: PlantLitePlaybackFrame | null) => void }) {
   const prepared = useMemo(() => preparePlantLitePlayback(trace, model), [model, trace]);
   const duration = prepared.duration;
   const [minute, setMinute] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
   const frame = useMemo(() => selectPlantLitePlaybackFrame(prepared, minute), [minute, prepared]);
+  useEffect(() => { onFrame?.(frame); }, [frame, onFrame]);
+  useEffect(() => () => { onFrame?.(null); }, [onFrame]);
 
   useEffect(() => {
     setMinute(0);

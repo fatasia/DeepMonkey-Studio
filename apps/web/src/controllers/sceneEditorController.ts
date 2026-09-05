@@ -128,6 +128,7 @@ export function createSceneEditorController(context: SceneEditorControllerContex
       setMessage(`正在加载 ${model.name}`);
     }
     try {
+      const existed = engine.listModels().some(item => item.id === model.id);
       const loaded = await engine.loadManifest(model.manifest);
       if (!silent) {
         engine.select(model.id);
@@ -135,6 +136,7 @@ export function createSceneEditorController(context: SceneEditorControllerContex
       }
       setRevision((value) => value + 1);
       if (!silent) setMessage(`${model.name} 已加载`);
+      if (!silent && !existed) { engine.focusModel(model.id); recordSceneEdit(`添加模型“${model.name}”`); }
       return loaded;
     } catch (reason) {
       if (isModelLoadSuperseded(reason)) return;

@@ -150,6 +150,8 @@ export class AssetLibraryCatalog {
 }
 
 async function loadCatalogEntries(libraryRoot: string): Promise<AssetLibraryCatalogEntry[]> {
+  try { await stat(libraryRoot); }
+  catch (reason) { if ((reason as NodeJS.ErrnoException).code === "ENOENT") return []; throw reason; }
   const [catalog, audit] = await Promise.all([
     readJson<CatalogDocument>(path.join(libraryRoot, "catalog.json")),
     readJson<AuditDocument>(path.join(libraryRoot, "audit.json")),

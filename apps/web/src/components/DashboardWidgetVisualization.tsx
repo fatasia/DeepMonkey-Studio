@@ -50,9 +50,13 @@ export function DashboardDrillChart({
   const analysis = fields.length > 0 ? analyzeDashboardMetric(drillWidget, drillMetric) : baseAnalysis;
   const canDrill = !compact && fields.length > 1 && level < fields.length - 1;
   function handleInteraction(payload: JsonValue) {
-    onDataInteraction(payload);
+    onDataInteraction(widget.semanticBinding && payload && typeof payload === "object" && !Array.isArray(payload) ? { ...payload, semanticField: fields[level] ?? widget.analysis?.dimensionField ?? "", semanticPath: [...trail, { field: fields[level] ?? widget.analysis?.dimensionField ?? "", value: dashboardLinkageValue(payload) ?? null }] } : payload);
     const value = dashboardLinkageValue(payload);
     if (canDrill && (typeof value === "string" || typeof value === "number")) setTrail((current) => [...current, { field: fields[level]!, value: String(value) }]);
+  }
+  function navigateTrail(next: typeof trail) {
+    setTrail(next);
+    if (widget.semanticBinding) onDataInteraction({ name: next.at(-1)?.value ?? "", semanticField: next.at(-1)?.field ?? fields[0] ?? "", semanticPath: next });
   }
   return (
     <div className="dashboard-drill-chart">
@@ -65,22 +69,24 @@ export function DashboardDrillChart({
         onAnimationStart={onAnimationStart}
         onAnimationEnd={onAnimationEnd}
       />
-      {fields.length > 1 && !compact && (
-        <nav>
+      {(fields.length > 1 || widget.semanticBinding) && !compact && (
+        <nav aria-label="钻取路径">
           <button
+            aria-label="返回上一级"
             disabled={trail.length === 0}
             onClick={(event) => {
               event.stopPropagation();
-              setTrail((current) => current.slice(0, -1));
+              navigateTrail(trail.slice(0, -1));
             }}
           >
             ‹
           </button>
           <button
+            aria-label={widget.semanticBinding ? "清除联动条件" : undefined}
             className={trail.length === 0 ? "active" : ""}
             onClick={(event) => {
               event.stopPropagation();
-              setTrail([]);
+              navigateTrail([]);
             }}
           >
             {fields[0]}
@@ -91,7 +97,7 @@ export function DashboardDrillChart({
               key={`${item.field}:${item.value}:${index}`}
               onClick={(event) => {
                 event.stopPropagation();
-                setTrail((current) => current.slice(0, index + 1));
+                navigateTrail(trail.slice(0, index + 1));
               }}
             >
               {item.value}

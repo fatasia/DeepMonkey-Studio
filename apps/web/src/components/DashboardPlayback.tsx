@@ -56,16 +56,16 @@ export function DashboardPlayback(props: Props) {
   return <PlaybackContext.Provider value={session}><PlaybackView {...props} session={session} /></PlaybackContext.Provider>;
 }
 
-function PlaybackView({ session, ...props }: Props & { session: ApplicationPlaybackSession }) {
+export function PlaybackView({ session, ...props }: Props & { session: ApplicationPlaybackSession }) {
   const { document: application, variables, filters } = session.state;
   const page = application.pages.find((page) => page.id === props.page.id) ?? application.pages[0]!;
   const widgets = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
-  const live = useDashboardMetrics(application.metadata.projectId, props.readOnly ? NO_WIDGETS : widgets, undefined, filters, !props.readOnly);
+  const live = useDashboardMetrics(application.metadata.projectId, props.readOnly ? NO_WIDGETS : widgets, undefined, filters, !props.readOnly, props.project.semanticModels);
   useEffect(() => {
     const updates = Object.fromEntries(Object.entries(live.metrics).filter(([, metric]) => metric.value !== undefined).map(([key, metric]) => [key, JSON.parse(JSON.stringify(metric.value)) as JsonValue]));
     session.setVariables(updates);
   }, [session, live.metrics]);
-  const metrics = useMemo<Record<string, DashboardMetric>>(() => ({ ...props.metrics, ...live.metrics, ...Object.fromEntries(Object.entries(variables).map(([key, value]) => [key, { value, samples: [] }])) }), [props.metrics, live.metrics, variables]);
+  const metrics = useMemo<Record<string, DashboardMetric>>(() => ({ ...props.metrics, ...live.metrics, ...Object.fromEntries(Object.entries(variables).map(([key, value]) => [key, { ...live.metrics[key], value, samples: live.metrics[key]?.samples ?? [] }])) }), [props.metrics, live.metrics, variables]);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const errors = session.entries.filter((entry) => entry.diagnostics.status === "error");
   const logErrors = session.logs.filter((entry) => entry.level === "error");

@@ -1,0 +1,6 @@
+.dashboard-semantic-binding { display: grid; gap: 10px; min-width: 0; margin-bottom: 12px; }
+.dashboard-inspector-panel .dashboard-data-widget-properties .dashboard-semantic-binding :is(label, small) { color: var(--text); font-size: 12px; line-height: 1.5; }
+.dashboard-data-widget-properties .dashboard-semantic-binding .dashboard-semantic-link { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.dashboard-data-widget-properties .dashboard-semantic-binding input[type="checkbox"] { flex: 0 0 16px; width: 16px; height: 16px; min-height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
+.dashboard-semantic-binding select { width: 100%; min-width: 0; }
+.dashboard-semantic-binding > button { min-height: 32px; border: 1px solid var(--line-strong); border-radius: var(--r-4, 4px); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }

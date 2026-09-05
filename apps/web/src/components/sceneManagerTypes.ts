@@ -13,6 +13,9 @@ import type { ManagerWorkspaceTab } from "../appRoute";
 export interface SceneManagerProps {
   locale: AppLocale;
   managerTab?: ManagerWorkspaceTab;
+  assetScope?: "project" | undefined;
+  selectedAssetModelId?: string | undefined;
+  onReturnToScene?: ((modelId?: string) => void) | undefined;
   onManagerTabChange?: (tab: ManagerWorkspaceTab) => void;
   branding: SystemBrandingSettings;
   projects: ProjectRecord[];
@@ -53,7 +56,7 @@ export interface SceneManagerProps {
   onExportGlb: (scene: SceneSnapshot) => Promise<void>;
   onExportFbx: (scene: SceneSnapshot) => Promise<void>;
   onDelete: (scene: SceneSnapshot) => Promise<void>;
-  onOptimizer: () => void;
+  onOptimizer: (modelId?: string) => void;
   onDataCenter: () => void;
   onCreateTopology: () => void;
   onOpenTopology: (applicationId: string, topologyId: string) => void;

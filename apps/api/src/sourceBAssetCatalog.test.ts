@@ -69,6 +69,11 @@ describe("verified community catalog", () => {
     await writeFile(path.join(fixture.root, "catalog.json"), "null");
     await expect(loadSourceBEntries(fixture.root)).rejects.toThrow("素材目录格式无效");
   });
+  it("loads an independent verified source when the legacy library was never installed", async () => {
+    const fixture = await createFixture();
+    const catalog = new AssetLibraryCatalog(path.join(fixture.root, "not-installed"), undefined, fixture.root);
+    expect((await catalog.list()).total).toBe(1);
+  });
 });
 
 async function createFixture() {

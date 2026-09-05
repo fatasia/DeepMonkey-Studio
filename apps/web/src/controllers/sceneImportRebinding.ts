@@ -31,7 +31,7 @@ export function rebindImportedSceneModels(
     ...(scene.simulationEntities ? {
       simulationEntities: scene.simulationEntities.map((entity) => entity.kind === "flowLink"
         ? { ...entity, fromModelId: rebindId(entity.fromModelId), toModelId: rebindId(entity.toModelId) }
-        : entity.kind === "path" ? { ...entity, targetModelId: rebindId(entity.targetModelId) }
+        : entity.kind === "path" || entity.kind === "flowNode" ? { ...entity, targetModelId: rebindId(entity.targetModelId) }
           : { ...entity, a: { ...entity.a, modelId: rebindId(entity.a.modelId) }, b: { ...entity.b, modelId: rebindId(entity.b.modelId) } }),
     } : {}),
     ...(scene.animation ? {

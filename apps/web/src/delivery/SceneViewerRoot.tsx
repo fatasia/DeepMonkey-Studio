@@ -12,6 +12,7 @@ import {
 import { applySceneViewerSnapshot } from "./applySceneViewerSnapshot";
 import { sceneViewerDeliveryManifest } from "./sceneViewerDelivery";
 import { applyDocumentBranding } from "../branding/documentBranding";
+import { PublishedModelCredits } from "./PublishedModelCredits";
 
 /** 独立的单场景浏览入口：不挂载项目、脚本、二维或三维编辑器。 */
 export function SceneViewerRoot() {
@@ -175,6 +176,7 @@ export function SceneViewerRoot() {
         </aside>
       )}
       {error && <div className="scene-viewer-fatal" role="alert">{error}</div>}
+      <PublishedModelCredits locale={locale} models={manifest.project.models} modelIds={manifest.publication.snapshot.models.map(model => model.modelId)} />
     </main>
   );
 }

@@ -11,7 +11,6 @@ import type {
   ScriptModule,
   SystemUserRecord,
 } from "@bim-studio/contracts";
-import type { SceneCommand } from "@bim-studio/scene-sdk";
 import {
   createDeleteScriptModuleCommand,
   createInsertDashboardNodeCommand,
@@ -30,22 +29,14 @@ import { publishApplicationInteractionEffects } from "../studio/applicationInter
 import { runTrustedApplicationScript } from "../studio/trustedApplicationScript";
 import { DEFAULT_DASHBOARD_VIEW, type DashboardReturnContext, type DashboardViewState } from "../studio/workspaceRoute";
 import { publishLocalSceneData } from "../sceneDataBridge";
-import { authorizeSceneCommands } from "../behavior/sceneCommandPolicy";
 import { scriptComponentCommands } from "../behavior/scriptComponentCommands";
-import { resolveSceneBehaviorModule } from "../behavior/scriptModuleAdapter";
-import { loadScriptDependencyModules } from "../behavior/scriptDependencyRuntime";
 import { SceneBehaviorManager, type SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
-import { createLatestFrameEmitter } from "../behavior/latestFrameEmitter";
-import { SceneCommandExecutor } from "../behavior/SceneCommandExecutor";
-import { ViewerSceneCommandPort } from "../behavior/ViewerSceneCommandPort";
-import { executeUnityScriptCommand, isUnitySceneCommand } from "../behavior/unityScriptCommandHost";
 import type { SceneBehaviorLogEntry } from "../components/SceneBehaviorPanel";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { AppRoute } from "../appRoute";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
-const pendingBehaviorRuns = new WeakMap<object, symbol>();
 
 interface ApplicationRuntimeControllerContext {
   applicationSessionRef: MutableRefObject<ApplicationSession>;
@@ -83,7 +74,6 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
   const {
     applicationSessionRef,
     behaviorManagerRef,
-    behaviorCommandQueueRef,
     engine,
     project,
     activeScene,
@@ -94,7 +84,6 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     route,
     locale,
     sceneBehaviorEntries,
-    sceneBehaviorPaused,
     navigate,
     showError,
     sortScenesByTime,
@@ -103,10 +92,8 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     setBusy,
     setExpandedModels,
     setMessage,
-    setRevision,
     setSceneBehaviorActive,
     setSceneBehaviorEntries,
-    setSceneBehaviorLogs,
     setSceneBehaviorPaused,
     setScenes,
   } = context;
@@ -236,152 +223,8 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     throw new Error(tr(locale, "远端脚本未能保存，已恢复原脚本", "Remote scripts were not saved; the original scripts were restored"));
   }
 
-  function appendBehaviorLog(moduleId: string, level: SceneBehaviorLogEntry["level"], text: string, data?: JsonValue) {
-    setSceneBehaviorLogs((current) => [...current.slice(-499), { id: crypto.randomUUID(), moduleId, level, message: text, timestamp: new Date().toISOString(), ...(data === undefined ? {} : { data }) }]);
-  }
-
-  async function runSceneBehaviors(draft?: ScriptModule) {
-    const application = applicationSessionRef.current.store.getState().document;
-    if (!application) throw new Error(tr(locale, "请先打开可编辑项目", "Open an editable project first"));
-    const runToken = Symbol("behavior-run");
-    pendingBehaviorRuns.set(behaviorManagerRef, runToken);
-    let dependencies: Awaited<ReturnType<typeof loadScriptDependencyModules>>;
-    try {
-      dependencies = await loadScriptDependencyModules(
-        application.metadata.projectId,
-        application.scriptDependencies ?? [],
-        api.readScriptDependency,
-      );
-    } catch (reason) {
-      showError(reason instanceof Error ? reason : new Error(String(reason)));
-      throw reason;
-    }
-    if (pendingBehaviorRuns.get(behaviorManagerRef) !== runToken || applicationSessionRef.current.store.getState().document?.metadata.id !== application.metadata.id) throw new Error(tr(locale, "试运行已取消", "Test run cancelled"));
-    behaviorManagerRef.current?.dispose();
-    const currentScripts = applicationSessionRef.current.store.getState().document?.scripts ?? application.scripts;
-    const scripts = draft ? [...currentScripts.filter((script) => script.id !== draft.id), draft] : currentScripts;
-    setSceneBehaviorLogs([]);
-    const resolved = scripts.map((script) => ({ script, resolution: resolveSceneBehaviorModule(script, dependencies) }));
-    const modules = resolved.flatMap(({ resolution }) => (resolution.status === "ready" ? [resolution.module] : []));
-    for (const { script, resolution } of resolved) {
-      if (resolution.status === "rejected") appendBehaviorLog(script.id, "error", resolution.message);
-    }
-    if (modules.length === 0) {
-      setSceneBehaviorEntries([]);
-      setSceneBehaviorActive(false);
-      throw new Error(tr(locale, "没有可运行的 Worker 行为脚本，请先新建并启用脚本", "No runnable Worker behavior scripts. Create and enable one first."));
-    }
-    const behaviorSceneId = activeScene?.id ?? application.scenes[0]?.id ?? `application:${application.metadata.id}`;
-    const manager = new SceneBehaviorManager({
-      hostOptions: {
-        executeNetworkRequest: async ({ binding, variables }) => {
-          const response = await api.executeDirectBinding(binding, variables);
-          return {
-            ok: true,
-            status: response.status,
-            data: response.data as import("@bim-studio/contracts").JsonValue,
-            value: response.value as import("@bim-studio/contracts").JsonValue,
-          };
-        },
-        executeCapabilityRequest: async ({ capabilityId, input }) => {
-          const result = await api.invokeCapability(
-            application.metadata.projectId,
-            capabilityId,
-            input,
-            currentUser?.id ?? "script-runtime",
-          );
-          // Capability 合同是 JSON；通过序列化隔离宿主对象，避免向 Worker 泄露引用或不可克隆值。
-          return JSON.parse(JSON.stringify(result)) as JsonValue;
-        },
-      },
-    });
-    const executor = engine && activeScene ? new SceneCommandExecutor(activeScene.id, new ViewerSceneCommandPort(engine, updateComponentFromScript)) : undefined;
-    const moduleById = new Map(modules.map((module) => [module.id, module]));
-    manager.onChange = createLatestFrameEmitter(setSceneBehaviorEntries);
-    manager.onLog = (moduleId, entry) => appendBehaviorLog(moduleId, entry.level, entry.message, entry.data);
-    manager.onDataUpdates = (moduleId, updates) => {
-      for (const [key, value] of Object.entries(updates)) {
-        const current = applicationSessionRef.current.store.getState().variables[key];
-        if (JSON.stringify(current) === JSON.stringify(value)) continue;
-        applicationSessionRef.current.store.setVariable(key, value);
-        publishLocalSceneData({
-          source: `behavior:${moduleId}`,
-          key,
-          value,
-          timestamp: new Date().toISOString(),
-          ...(route.sceneId ? { sceneId: route.sceneId } : {}),
-        });
-      }
-    };
-    manager.onEvent = (moduleId, event) => {
-      window.dispatchEvent(
-        new CustomEvent("bim-studio:behavior-event", { detail: { moduleId, name: event.name, ...(event.payload === undefined ? {} : { payload: event.payload }) } }),
-      );
-      appendBehaviorLog(moduleId, "info", `事件：${event.name}`);
-    };
-    manager.onCommands = (moduleId, commands) => {
-      const module = moduleById.get(moduleId);
-      behaviorCommandQueueRef.current = behaviorCommandQueueRef.current
-        .then(async () => {
-          if (behaviorManagerRef.current !== manager) return;
-          if (!module) {
-            appendBehaviorLog(moduleId, "error", tr(locale, "命令被拒绝：脚本模块不存在", "Command rejected: behavior module not found"));
-            return;
-          }
-          const authorization = authorizeSceneCommands(module, commands);
-          for (const rejection of authorization.rejected) appendBehaviorLog(moduleId, "error", `${rejection.command.id}: ${rejection.message}`);
-          for (const command of authorization.allowed.filter(
-            (candidate): candidate is Extract<SceneCommand, { type: "component.update" }> => candidate.type === "component.update",
-          )) {
-            try {
-              updateComponentFromScript(command.componentId, command.patch);
-            } catch (reason) {
-              appendBehaviorLog(moduleId, "error", `${command.id}: ${reason instanceof Error ? reason.message : String(reason)}`);
-            }
-          }
-          for (const command of authorization.allowed.filter(isUnitySceneCommand)) {
-            try {
-              const document = applicationSessionRef.current.store.getState().document;
-              if (!document) throw new Error("没有已打开的应用");
-              executeUnityScriptCommand(command, {
-                application: document,
-                ...(project ? { project } : {}),
-                updateWidget: (componentId, widget) => updateComponentFromScript(componentId, { widget }),
-                dispatchAction: (detail) => window.dispatchEvent(new CustomEvent("bim-studio:unity-action", { detail })),
-              });
-            } catch (reason) {
-              appendBehaviorLog(moduleId, "error", `${command.id}: ${reason instanceof Error ? reason.message : String(reason)}`);
-            }
-          }
-          const sceneCommands = authorization.allowed.filter((candidate) => candidate.type !== "component.update" && !isUnitySceneCommand(candidate));
-          if (!executor && sceneCommands.length > 0) {
-            for (const command of sceneCommands) appendBehaviorLog(moduleId, "warn", `${command.id}: 当前没有可用三维视口，命令未执行；请在浏览预览中运行关联场景`);
-          }
-          const results = executor ? await executor.execute(sceneCommands) : [];
-          for (const result of results) {
-            if (!result.success) appendBehaviorLog(moduleId, result.code === "unsupported" ? "warn" : "error", `${result.id}: ${result.message}`);
-          }
-          if (results.some((result) => result.success)) setRevision((value) => value + 1);
-        })
-        .catch((reason) => appendBehaviorLog(moduleId, "error", reason instanceof Error ? reason.message : String(reason)));
-    };
-    behaviorManagerRef.current = manager;
-    setSceneBehaviorPaused(false);
-    setSceneBehaviorActive(true);
-    manager.start(modules, behaviorSceneId);
-    setSceneBehaviorEntries(manager.entries());
-    setMessage(tr(locale, `正在启动 ${modules.length} 个应用行为`, `Starting ${modules.length} application behaviors`));
-  }
-
-  function pauseResumeSceneBehaviors() {
-    if (!behaviorManagerRef.current) return;
-    if (sceneBehaviorPaused) behaviorManagerRef.current.resume();
-    else behaviorManagerRef.current.pause();
-    setSceneBehaviorPaused((value) => !value);
-  }
 
   function stopSceneBehaviors() {
-    pendingBehaviorRuns.delete(behaviorManagerRef);
     behaviorManagerRef.current?.dispose();
     behaviorManagerRef.current = undefined;
     setSceneBehaviorEntries([]);
@@ -544,9 +387,6 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     deleteBehaviorScript,
     replaceBehaviorScripts,
     replaceScriptDependencies,
-    runSceneBehaviors,
-    pauseResumeSceneBehaviors,
-    stopSceneBehaviors,
     dispatchApplicationInteraction,
     updateComponentFromScript,
     dispatchDashboardNodeInteraction,

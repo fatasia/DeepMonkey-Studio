@@ -10,6 +10,7 @@ import type { BakeLightState } from "../optimizer/modelOptimizer";
 import type { AppLocale } from "../i18n";
 import { captureModelThumbnail } from "../optimizer/captureModelThumbnail";
 import { OptimizerPreviewActions } from "./OptimizerPreviewActions";
+import { disposeOptimizerPreview } from "../optimizer/disposeOptimizerPreview";
 
 interface OptimizerPreviewRuntime {
   scene: THREE.Scene;
@@ -23,7 +24,7 @@ interface OptimizerPreviewRuntime {
   center: THREE.Vector3;
   radius: number;
   model?: THREE.Object3D;
-  environment?: THREE.Texture;
+  environment?: THREE.WebGLRenderTarget;
   modelBounds?: THREE.Box3;
 }
 
@@ -107,16 +108,19 @@ export function OptimizerPreview({
     });
     transform.addEventListener("objectChange", () => updateDraggedBakeLight(runtime));
     transform.addEventListener("mouseUp", () => commitDraggedBakeLight(runtime, propsRef.current.onUpdateLight));
-    scene.add(new THREE.GridHelper(30, 30, 0x394249, 0x252c31));
+    const grid = new THREE.GridHelper(30, 30, 0x394249, 0x252c31);
+    scene.add(grid);
     const dracoLoader = new DRACOLoader().setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
     const loader = new GLTFLoader().setDRACOLoader(dracoLoader);
     let model: THREE.Object3D | undefined;
+    let modelScenes: THREE.Object3D[] = [];
     let frame = 0;
     let disposed = false;
     void loader
       .loadAsync(url)
       .then((gltf) => {
-        if (disposed) return;
+        if (disposed) { disposeOptimizerPreview(gltf.scenes); return; }
+        modelScenes = gltf.scenes;
         model = gltf.scene;
         runtime.model = model;
         scene.add(model);
@@ -170,7 +174,8 @@ export function OptimizerPreview({
       renderer.domElement.removeEventListener("pointerdown", selectLight);
       clearOptimizerPreviewLights(runtime);
       runtime.environment?.dispose();
-      if (model) disposeModel(model);
+      disposeOptimizerPreview([...modelScenes, grid]);
+      keyLight.shadow.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       if (runtimeRef.current === runtime) runtimeRef.current = undefined;
@@ -286,11 +291,11 @@ function syncOptimizerPreviewEffects(runtime: OptimizerPreviewRuntime, shadows: 
   if (reflections && !runtime.environment) {
     const pmrem = new THREE.PMREMGenerator(runtime.renderer);
     const room = new RoomEnvironment();
-    runtime.environment = pmrem.fromScene(room, 0.04).texture;
+    runtime.environment = pmrem.fromScene(room, 0.04);
     room.dispose();
     pmrem.dispose();
   }
-  runtime.scene.environment = reflections ? (runtime.environment ?? null) : null;
+  runtime.scene.environment = reflections ? (runtime.environment?.texture ?? null) : null;
   runtime.scene.environmentIntensity = reflections ? 0.65 : 1;
   runtime.model?.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return;
@@ -384,18 +389,9 @@ function clearOptimizerPreviewLights(runtime: OptimizerPreviewRuntime): void {
   for (const entry of runtime.lights.values()) {
     if (entry.light instanceof THREE.DirectionalLight) entry.light.target.removeFromParent();
     entry.light.removeFromParent();
+    if (entry.light instanceof THREE.DirectionalLight || entry.light instanceof THREE.PointLight) entry.light.shadow.dispose();
     entry.proxy.removeFromParent();
-    disposeModel(entry.proxy);
+    disposeOptimizerPreview([entry.proxy]);
   }
   runtime.lights.clear();
-}
-
-/** 预览关闭或 URL 切换时主动释放 GPU 资源，避免重复优化累积显存。 */
-function disposeModel(root: THREE.Object3D): void {
-  root.traverse((object) => {
-    const mesh = object as THREE.Mesh;
-    mesh.geometry?.dispose();
-    const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
-    for (const material of materials) material.dispose();
-  });
 }

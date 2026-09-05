@@ -135,6 +135,15 @@ export interface SceneDashboardWidgetState {
   datasetId?: string;
   pipelineId?: string;
   directBinding?: DirectBindingSpec;
+  /** 引用已确认的语义口径版本；版本变化必须重新确认，不静默漂移。 */
+  semanticBinding?: {
+    modelId: string;
+    revision: number;
+    metricKey?: string;
+    dimensionKey?: string;
+    parameterKey?: string;
+    autoLink?: boolean;
+  };
   field?: string;
   analysis?: DashboardAnalysisConfig;
   report?: DashboardReportConfig;

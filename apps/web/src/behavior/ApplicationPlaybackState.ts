@@ -1,6 +1,7 @@
 import type { ApplicationDocument, JsonValue } from "@bim-studio/contracts";
 import { applyStudioCommand, evaluateApplicationInteraction, type ApplicationInteractionEvent } from "@bim-studio/studio-core";
 import { scriptComponentCommands } from "./scriptComponentCommands";
+import { updateDashboardParameterDraft } from "../components/dashboardWorkspaceModel";
 
 /** Disposable runtime copy: no author store, undo history, autosave or persistence. */
 export class ApplicationPlaybackState {
@@ -30,9 +31,8 @@ export class ApplicationPlaybackState {
   }
 
   setFilter(key: string, value: JsonValue | undefined): void {
-    this.filters = { ...this.filters };
-    if (value === undefined) delete this.filters[key];
-    else this.filters[key] = structuredClone(value);
+    const widgets = this.document.pages.flatMap((page) => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []));
+    this.filters = updateDashboardParameterDraft(this.filters, widgets, key, value === undefined ? undefined : structuredClone(value));
     this.onChange?.();
   }
 

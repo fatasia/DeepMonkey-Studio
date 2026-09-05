@@ -30,7 +30,7 @@ export function ProjectAssetToolbar({ controller }: { controller: SceneManagerCo
       <button className="button" disabled={modelLibraryBusy || !project} onClick={() => { setParametricSourceModel(undefined); setParametricWorkbenchOpen(true); }}>
         <WandSparkles size={16} />{tr(locale, "参数化生成", "Parametric asset")}
       </button>
-      <button className="button" disabled={modelLibraryBusy || !project} onClick={onOptimizer}>
+      <button className="button" disabled={modelLibraryBusy || !project} onClick={() => onOptimizer()}>
         <Gauge size={16} />{tr(locale, "导入与优化", "Import & optimize")}
       </button>
       <button className="button" disabled={modelLibraryBusy} onClick={() => imageUploadRef.current?.click()}>

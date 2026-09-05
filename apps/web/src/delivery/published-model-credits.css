@@ -1,0 +1,13 @@
+.published-model-credits { position:fixed; z-index:180; left:16px; bottom:60px; max-width:calc(100vw - 32px); color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:6px; font-size:12px; box-shadow:0 4px 14px #0002; }
+.published-model-credits > summary { cursor:pointer; min-height:32px; padding:7px 12px; }
+.published-model-credits > summary:focus-visible, .published-model-credits a:focus-visible, .published-model-credits .asset-attribution summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.published-model-credits > section { width:min(360px, calc(100vw - 34px)); max-height:min(440px, 60dvh); overflow:auto; overscroll-behavior:contain; padding:0 12px 12px; }
+.published-model-credits article { border-top:1px solid var(--line); padding-top:10px; margin-top:6px; overflow-wrap:anywhere; line-height:1.6; }
+.published-model-credits article > strong { display:block; font-size:13px; }
+.published-model-credits .model-asset-credit small { display:block; margin-top:4px; color:var(--muted); font-size:12px; }
+.published-model-credits .asset-attribution { margin:4px 0 0; }
+.published-model-credits .asset-attribution summary { cursor:pointer; min-height:32px; padding:5px 0; }
+.published-model-credits .asset-attribution p { margin:4px 0 8px; }
+.published-model-credits .asset-attribution nav { display:flex; flex-wrap:wrap; gap:12px; }
+.published-model-credits .asset-attribution a { display:inline-flex; align-items:center; min-height:32px; color:var(--accent-hover); text-decoration:underline; }
+@media print { .published-model-credits { display:none; } }

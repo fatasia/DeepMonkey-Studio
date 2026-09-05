@@ -3,6 +3,7 @@ import { LoaderCircle } from "lucide-react";
 import { createUpsertTopologyCommand } from "@bim-studio/studio-core";
 import { api, setAuthToken } from "../api";
 import { openBrowseRoute } from "../appRoute";
+import { modelAssetLibraryRoute, modelAssetSceneRoute } from "../optimizer/modelAssetNavigation";
 import { storeLocale, translate as tr } from "../i18n";
 import type { AppViewBindings } from "./appViewBindings";
 import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
@@ -391,9 +392,6 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
     createIndustrialShowcase,
     upsertBehaviorScript,
     deleteBehaviorScript,
-    runSceneBehaviors,
-    pauseResumeSceneBehaviors,
-    stopSceneBehaviors,
     dispatchApplicationInteraction,
     updateComponentFromScript,
     dispatchDashboardNodeInteraction,
@@ -549,13 +547,17 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           }
         >
           <ModelOptimizer
+            key={project?.id ?? "pending-project"}
             locale={locale}
             project={project}
+            requestedModelId={route.modelId}
+            onViewAssets={(modelId) => navigate(modelAssetLibraryRoute(project?.id, modelId, route.assetReturn))}
+            onReturnToScene={project && route.assetReturn ? (modelId) => navigate(modelAssetSceneRoute(project.id, route.assetReturn!, modelId)) : undefined}
             onProjectChange={(current) => {
               setProject(current);
               setProjects((items) => items.map((item) => (item.id === current.id ? current : item)));
             }}
-            onBack={() => navigate({ view: "manager" })}
+            onBack={() => navigate(modelAssetLibraryRoute(project?.id, route.modelId, route.assetReturn))}
           />
         </Suspense>
       )}
@@ -641,7 +643,10 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
         <Suspense fallback={<PlatformRouteLoading label={tr(locale, "正在加载项目工作台", "Loading project workspace")} />}>
           <SceneManager
           managerTab={route.managerTab ?? "scenes"}
-          onManagerTabChange={(managerTab) => navigate({ view: "manager", managerTab }, true)}
+          assetScope={route.assetScope}
+          selectedAssetModelId={route.modelId}
+          onReturnToScene={project && route.assetReturn ? (modelId) => navigate(modelAssetSceneRoute(project.id, route.assetReturn!, modelId)) : undefined}
+          onManagerTabChange={(managerTab) => navigate({ view: "manager", ...(project ? { projectId: project.id } : {}), managerTab, ...(managerTab === "assets" && route.assetReturn ? { assetReturn: route.assetReturn } : {}) }, true)}
           {...(route.fallback === "not-found" ? { navigationNotice: tr(locale, "页面不存在，已返回项目工作台", "Page not found. Returned to the project workspace.") } : {})}
           onDismissNavigationNotice={() => setRoute({ view: "manager" })}
           locale={locale}
@@ -700,7 +705,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           onExportGlb={exportGlbScene}
           onExportFbx={exportFbxScene}
           onDelete={deleteScene}
-          onOptimizer={() => navigate({ view: "optimizer" })}
+          onOptimizer={(modelId) => navigate({ view: "optimizer", ...(project ? { projectId: project.id } : {}), ...(modelId ? { modelId } : {}), ...(route.assetReturn ? { assetReturn: route.assetReturn } : {}) })}
           onDataCenter={openDataCenter}
           onCreateTopology={() => void openTopologyEditor(managerApplications[0], undefined, true)}
           onOpenTopology={(applicationId, topologyId) => {

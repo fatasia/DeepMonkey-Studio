@@ -28,6 +28,7 @@ import { SceneViewportPreview } from "./SceneViewportPreview";
 import { UnitySceneEmbed } from "./UnitySceneEmbed";
 import { usePlaybackSession } from "../behavior/playbackContext";
 import { publicWidgetRestriction } from "../behavior/publicPlaybackPolicy";
+import { isSemanticSelectionWidget, semanticSelectionKey } from "./dashboardSemanticBinding";
 
 export function DashboardNode({
   application,
@@ -278,6 +279,12 @@ export function DashboardNode({
             onFilterChange={onFilterChange}
             onDataInteraction={(payload) => {
               const linkageValue = dashboardLinkageValue(payload);
+              const semanticPath = payload && typeof payload === "object" && !Array.isArray(payload) && Array.isArray(payload.semanticPath) ? payload.semanticPath : undefined;
+              if (runtime && node.widget.semanticBinding?.autoLink !== false && node.widget.semanticBinding && metric?.semanticWidget?.analysis?.dimensionField && isSemanticSelectionWidget(node.widget) && (linkageValue !== undefined || semanticPath?.length === 0)) {
+                const field = payload && typeof payload === "object" && !Array.isArray(payload) && typeof payload.semanticField === "string" ? payload.semanticField : metric.semanticWidget.analysis.dimensionField;
+                const path = semanticPath ?? [{ field, value: linkageValue ?? null }];
+                onFilterChange(semanticSelectionKey(node.widget), path.length ? { field, value: linkageValue ?? null, path } : undefined);
+              }
               if (
                 node.widget.linkageParameterKey?.trim() &&
                 linkageValue !== undefined

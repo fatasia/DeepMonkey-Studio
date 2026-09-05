@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { ACCEPTED_MODELS, STUDIO_INSPECTOR_STORAGE_KEY, STUDIO_LEFT_PANEL_STORAGE_KEY } from "../appDefaults";
 import { readBooleanPreference, writeBooleanPreference } from "../hooks/usePersistedBooleanState";
 import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
+import { useSceneAssetNavigation } from "../optimizer/useSceneAssetNavigation";
+import { SceneAssetWorkflowEntry } from "../components/SceneAssetWorkflowEntry";
 import { ModelTreeItem } from "../components/ModelTreeItem";
 import { SceneOrganizationPanel } from "../components/SceneOrganizationPanel";
 import { AppSimulationInspector } from "./AppSimulationInspector";
@@ -16,6 +18,7 @@ import { AppStudioViewport } from "./AppStudioViewport";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 
 export function AppStudioShellView({ controller }: { controller: AppStudioController }) {
+  const assetWorkflow = useSceneAssetNavigation(controller.bindings);
   // 三维视口是核心工作区，资源树和属性检查器按需收起，避免遮挡模型。
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => readBooleanPreference(STUDIO_LEFT_PANEL_STORAGE_KEY, true));
   const [rightPanelOpen, setRightPanelOpen] = useState(() => readBooleanPreference(STUDIO_INSPECTOR_STORAGE_KEY, true));
@@ -360,6 +363,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
           onRvtConversionModeChange={setRvtConversionMode}
           onRevitVersionChange={setRvtRevitVersion}
           onUpload={() => uploadRef.current?.click()}
+          assetWorkflowEntry={<SceneAssetWorkflowEntry locale={locale} busy={busy || assetWorkflow.leaving} onOptimize={() => assetWorkflow.optimize()} onBrowse={assetWorkflow.browse} />}
           onInsertProjectModel={(model) => void loadModel(model)}
           onInsertPrefab={insertIndustrialPrefab}
           onCreateDeviceLayout={createDeviceLayout}
@@ -433,6 +437,8 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
                   engine={engine}
                   onToggleTree={() => toggleModelTree(model.id)}
                   onLoadModel={() => void loadModel(model)}
+                  onOptimize={() => assetWorkflow.optimize(model)}
+                  optimizing={busy || assetWorkflow.leaving}
                   onSetRevision={() => setRevision((value) => value + 1)}
                   onExpandFloors={(value) => expandFloors(model.id, value)}
                   onUpdateFloor={updateFloor}

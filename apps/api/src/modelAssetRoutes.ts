@@ -17,6 +17,7 @@ import { probeIndustrialFileStructure } from "./industrialFormatProbe.js";
 import { inspectJtFile } from "./jtInspection.js";
 import { inspectXtTextFile } from "./xtTextInspection.js";
 import type { MetadataStore } from "./store.js";
+import { resolveModelOptimizationOrigin } from "./modelOptimizationOrigin.js";
 
 interface ModelAssetRouteDependencies {
   store: MetadataStore;
@@ -30,7 +31,7 @@ interface ModelAssetRouteDependencies {
 export async function registerModelAssetRoutes(app: FastifyInstance, dependencies: ModelAssetRouteDependencies): Promise<void> {
   const { store, queue, objects, dataDir, config } = dependencies;
 
-  app.post<{ Params: { projectId: string }; Querystring: { rvtConversionMode?: string; rvtRevitVersion?: string } }>("/api/projects/:projectId/models", async (request, reply) => {
+  app.post<{ Params: { projectId: string }; Querystring: { rvtConversionMode?: string; rvtRevitVersion?: string; optimizedFromModelId?: string } }>("/api/projects/:projectId/models", async (request, reply) => {
     const project = store.getProject(request.params.projectId);
     if (!project) return reply.code(404).send({ message: "项目不存在" });
     const part = await request.file();
@@ -41,7 +42,10 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
       return reply.code(415).send({ message: `不支持该格式，仅支持 ${supportedExtensions.join(", ")}` });
     }
     let generation;
+    let optimization;
     try {
+      optimization = resolveModelOptimizationOrigin(request.query.optimizedFromModelId, project.models);
+      if (optimization && format !== "glb") throw new Error("优化结果必须保存为 GLB");
       generation = parseParametricModelGeneration(part.fields.generation);
       if (generation) {
         assertParametricModelLineage(generation, project.models);
@@ -95,6 +99,7 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
       message: rvtRevitVersion ? `等待 Revit ${rvtRevitVersion} 转换` : "等待转换",
       sourceUrl: `/assets/projects/${project.id}/models/${modelId}/source/${encodeURIComponent(safeName)}`,
       ...(generation ? { generation } : {}),
+      ...(optimization ? { optimization } : {}),
       createdAt: now,
       updatedAt: now
     };

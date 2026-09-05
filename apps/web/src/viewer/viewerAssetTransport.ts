@@ -7,14 +7,16 @@ const DEFAULT_ASSET_TIMEOUT_MS = 5 * 60_000;
 export interface ViewerAssetRequestOptions {
   /** 大模型允许调用方放宽超时，但禁止回到无限等待。 */
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 async function requestAsset(url: string, assetName: string, options: ViewerAssetRequestOptions = {}): Promise<Response> {
   const timeoutMs = positiveTimeout(options.timeoutMs);
+  options.signal?.throwIfAborted();
   try {
     const response = await fetch(url, {
       credentials: "same-origin",
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error(`${assetName} 下载失败：${response.status}`);
     return response;

@@ -92,6 +92,13 @@ export interface ModelRecord {
   manifestUrl?: string;
   manifest?: ModelManifest;
   generation?: ParametricModelGeneration;
+  /** 优化生成独立素材，不沿用目录去重身份；保存源版本与必要署名的快照。 */
+  optimization?: {
+    sourceModelId: string;
+    sourceModelName: string;
+    sourceUpdatedAt: string;
+    libraryOrigin?: ModelRecord["libraryOrigin"];
+  };
   /** 目录导入来源用于去重、版本治理与交付署名。 */
   libraryOrigin?: {
     itemId: string;

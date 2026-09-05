@@ -1,4 +1,5 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { workspaceRecoveryDecisionKey } from "../studio/workspaceRecoveryDecision";
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
 import type { AppRoute } from "../appRoute";
@@ -248,7 +249,7 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
     if (route.view !== "studio" || !route.projectId || !route.sceneId || activeScene?.id !== route.sceneId) return;
     let cancelled = false;
     void readWorkspaceRecoveryDraft(route.projectId, route.applicationId, route.sceneId).then((draft) => {
-      if (cancelled || !draft || recoveryDecisionRef.current === draft.savedAt) return;
+      if (cancelled || !draft || recoveryDecisionRef.current === workspaceRecoveryDecisionKey(draft)) return;
       if (!hasRecoverableWorkspaceChanges(draft, activeScene)) {
         void deleteWorkspaceRecoveryDraft(route.projectId!, route.applicationId, route.sceneId!);
         return;

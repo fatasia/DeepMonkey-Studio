@@ -202,7 +202,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
             <Bot size={14} />
             <span>{tr(locale, "AI 助手", "AI Assistant")}</span>
           </button>
-          <button aria-label={tr(locale, "模型优化", "Model optimization")} title={tr(locale, "模型优化", "Model optimization")} onClick={onOptimizer}>
+          <button aria-label={tr(locale, "模型优化", "Model optimization")} title={tr(locale, "模型优化", "Model optimization")} onClick={() => onOptimizer()}>
             <Gauge size={14} />
             <span>{tr(locale, "模型优化", "Model optimization")}</span>
           </button>

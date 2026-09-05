@@ -21,6 +21,15 @@ function harness() {
 }
 
 describe("simulation scene controller", () => {
+  it("replaces bound node configuration, preserves explicit empty arrays, and rejects stale whole-graph edits", () => {
+    const h = harness(); const stale = h.actions();
+    h.actions().replaceSimulationEntities([{ id: "source", kind: "flowNode", targetModelId: "box", node: { id: "source", name: "来料", kind: "source", interarrivalTime: { kind: "deterministic", value: 1 } } }]);
+    expect(h.scene().simulationEntities?.[0]?.kind).toBe("flowNode");
+    expect(() => stale.replaceSimulationEntities([])).toThrow("配置已更新");
+    h.actions().replaceSimulationEntities([]); expect(h.scene().simulationEntities).toEqual([]);
+    expect(h.history.undo()?.simulationEntities?.[0]?.kind).toBe("flowNode");
+    expect(() => h.actions().replaceSimulationEntities([{ id: "sink", kind: "flowNode", targetModelId: "missing", node: { id: "sink", name: "汇", kind: "sink" } }])).toThrow("不存在");
+  });
   it("writes edits and deletion into scene snapshots, records dirty state and supports undo/redo", () => {
     const h = harness();
     h.actions().updateSimulationEntity({ ...path, name: "新路线", speed: 2 });

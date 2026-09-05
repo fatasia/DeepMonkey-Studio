@@ -15,6 +15,7 @@ import { BehaviorPanelHeader } from "./BehaviorPanelHeader";
 import { BehaviorConsole } from "./BehaviorConsole";
 import { BehaviorScriptList } from "./BehaviorScriptList";
 import type { BehaviorLogEntry } from "../behavior/behaviorLogModel";
+import type { AuthorBehaviorScope } from "../behavior/authorBehaviorDocument";
 import type { BehaviorLayoutMode } from "../appDefaults";
 import { BehaviorScriptListResizer, persistBehaviorScriptListCollapsed, readBehaviorScriptListCollapsed, readBehaviorScriptListWidth } from "./BehaviorScriptListResizer";
 import { downloadTextFile } from "../browserDownload";
@@ -41,6 +42,9 @@ export function SceneBehaviorPanel(props: {
   intelligence: SceneScriptIntelligenceContext;
   preferredTarget?: BehaviorCodeTarget;
   paused: boolean;
+  hasSession?: boolean;
+  canStep?: boolean;
+  onStep?: () => void;
   onUpsert: (script: ScriptModule) => void;
   autoSaveEnabled: boolean;
   onAutoSaveChange: (enabled: boolean) => void;
@@ -48,7 +52,7 @@ export function SceneBehaviorPanel(props: {
   onDelete: (scriptId: string) => void;
   onDependenciesChange: (dependencies: readonly ApplicationScriptDependency[]) => void | Promise<void>;
   onReplaceScripts: (scripts: readonly ScriptModule[]) => void | Promise<void>;
-  onRun: (draft?: ScriptModule) => void | Promise<void>;
+  onRun: (draft?: ScriptModule, scope?: AuthorBehaviorScope) => void | Promise<void>;
   onPauseResume: () => void;
   onStop: () => void;
   onClearLogs: () => void;
@@ -98,7 +102,9 @@ export function SceneBehaviorPanel(props: {
   const [aiDraftInserted, setAiDraftInserted] = useState(false);
   const [aiDraftUndo, setAiDraftUndo] = useState<ScriptModule>();
   const [saving, setSaving] = useState(false);
+  const [runScope, setRunScope] = useState<AuthorBehaviorScope>("current");
   const savingRef = useRef(false);
+  const runSequence = useRef(0);
   const analysis = useMemo(() => (draft ? analyzeSceneScript(draft.code, draft, props.intelligence) : undefined), [draft, props.intelligence]);
   const editorDiagnostics = useMemo(() => {
     const diagnostics = [...(analysis?.issues ?? [])];
@@ -177,18 +183,23 @@ export function SceneBehaviorPanel(props: {
   }
   async function applyAndRun() {
     if (!draft || !draft.name.trim()) return;
+    const sequence = ++runSequence.current;
     const operation = captureOperation();
-    props.onUpsert(draft);
     setAiDraftInserted(false);
     setAiDraftUndo(undefined);
     setLogsOpen(true);
     setActionFeedback(tr(props.locale, "正在准备试运行…", "Preparing test run…"));
     try {
-      await props.onRun(draft);
-      if (operation.isCurrent()) setActionFeedback(tr(props.locale, "试运行已提交，请查看运行状态与日志", "Test run submitted; check runtime status and logs"));
+      await props.onRun(draft, runScope);
+      if (sequence === runSequence.current && operation.isCurrent()) setActionFeedback(tr(props.locale, "试运行已提交，请查看运行状态与日志", "Test run submitted; check runtime status and logs"));
     } catch (reason) {
-      if (operation.isCurrent()) setActionFeedback(reason instanceof Error ? reason.message : String(reason));
+      if (sequence === runSequence.current && operation.isCurrent()) setActionFeedback(reason instanceof Error ? reason.message : String(reason));
     }
+  }
+  function stopRun() {
+    runSequence.current++;
+    props.onStop();
+    setActionFeedback(tr(props.locale, "试运行已停止，编辑草稿保持不变", "Test stopped; the editing draft is unchanged"));
   }
   async function applyChanges() {
     if (!draft || !draft.name.trim() || savingRef.current) return;
@@ -233,7 +244,7 @@ export function SceneBehaviorPanel(props: {
       style={{ "--behavior-script-list-width": `${scriptListWidth}px` } as CSSProperties}
       aria-label={tr(props.locale, "场景行为脚本", "Scene behavior scripts")}
     >
-      <BehaviorPanelHeader locale={props.locale} layoutMode={props.layoutMode} contextLabel={selectedContextLabel} dirty={dirty} paused={props.paused} running={props.runtimeEntries.some((entry) => ["initializing", "running", "paused"].includes(entry.diagnostics.status))} hasSession={Boolean(props.runtimeEntries.length)} hasDraft={Boolean(draft)} hasTarget={Boolean(attachedTarget)} agentOpen={agentOpen} dependenciesOpen={dependenciesOpen} versionOpen={versionOpen} inspectorOpen={inspectorOpen} scriptListCollapsed={scriptListCollapsed} onLayoutModeChange={props.onLayoutModeChange} onToggleScriptList={() => { const next = !scriptListCollapsed; setScriptListCollapsed(next); persistBehaviorScriptListCollapsed(next); }} onToggleAgent={() => { setAgentMode("explain"); setDependenciesOpen(false); setVersionOpen(false); setAgentOpen((open) => !open); }} onToggleDependencies={() => { setAgentOpen(false); setVersionOpen(false); setDependenciesOpen((open) => !open); }} onToggleVersion={() => { setAgentOpen(false); setDependenciesOpen(false); setVersionOpen((open) => !open); }} onFocusTarget={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))} onRun={applyAndRun} onPauseResume={props.onPauseResume} onStop={props.onStop} onToggleInspector={() => setInspectorOpen((value) => !value)} onClose={closePanel} />
+      <BehaviorPanelHeader locale={props.locale} layoutMode={props.layoutMode} contextLabel={selectedContextLabel} dirty={dirty} paused={props.paused} running={props.runtimeEntries.some((entry) => ["initializing", "running", "paused"].includes(entry.diagnostics.status))} hasSession={props.hasSession ?? Boolean(props.runtimeEntries.length)} canStep={props.canStep ?? false} onStep={props.onStep ?? (() => undefined)} runScope={runScope} onRunScopeChange={setRunScope} hasDraft={Boolean(draft)} hasTarget={Boolean(attachedTarget)} agentOpen={agentOpen} dependenciesOpen={dependenciesOpen} versionOpen={versionOpen} inspectorOpen={inspectorOpen} scriptListCollapsed={scriptListCollapsed} onLayoutModeChange={props.onLayoutModeChange} onToggleScriptList={() => { const next = !scriptListCollapsed; setScriptListCollapsed(next); persistBehaviorScriptListCollapsed(next); }} onToggleAgent={() => { setAgentMode("explain"); setDependenciesOpen(false); setVersionOpen(false); setAgentOpen((open) => !open); }} onToggleDependencies={() => { setAgentOpen(false); setVersionOpen(false); setDependenciesOpen((open) => !open); }} onToggleVersion={() => { setAgentOpen(false); setDependenciesOpen(false); setVersionOpen((open) => !open); }} onFocusTarget={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))} onRun={applyAndRun} onPauseResume={props.onPauseResume} onStop={stopRun} onToggleInspector={() => setInspectorOpen((value) => !value)} onClose={closePanel} />
       <div className="behavior-panel-body">
         {!scriptListCollapsed && <BehaviorScriptList locale={props.locale} scripts={props.scripts} entries={props.runtimeEntries} targets={props.codeTargets} selectedId={selected?.id}
           onAdd={addScript} onImport={(event) => void importScriptFiles(event)} onSelect={selectScript}
@@ -259,6 +270,7 @@ export function SceneBehaviorPanel(props: {
                 moduleSpecifiers={props.dependencies.map((dependency) => dependency.specifier)}
                 {...(insertRequest ? { insertRequest } : {})}
                 onChange={(code) => {
+                  setActionFeedback("");
                   setDraft({ ...draft, code });
                   setAiDraftUndo(undefined);
                   setAiDraftInserted(false);
@@ -275,13 +287,13 @@ export function SceneBehaviorPanel(props: {
                   {draft.code.split("\n").length} {tr(props.locale, "行", "lines")}
                 </span>
                 <em className={dirty ? "pending" : runtime?.diagnostics.status === "error" ? "error" : "ready"} role="status" aria-live="polite">
-                  {!draft.name.trim() ? tr(props.locale, "请先填写脚本名称", "Enter a script name first") : dirty
+                  {!draft.name.trim() ? tr(props.locale, "请先填写脚本名称", "Enter a script name first") : actionFeedback || (dirty
                     ? aiDraftInserted
                       ? tr(props.locale, "AI 草稿待应用", "AI draft awaiting apply")
                       : tr(props.locale, "有未应用的修改", "Unapplied changes")
                     : runtime?.diagnostics.status === "error"
                       ? tr(props.locale, "运行失败，请查看问题", "Run failed; review problems")
-                      : actionFeedback || tr(props.locale, "编辑器与应用状态一致", "Editor is in sync")}
+                      : tr(props.locale, "编辑器与应用状态一致", "Editor is in sync"))}
                 </em>
               </footer>
             </section>

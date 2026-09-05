@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSPropertie
 import { ArrowUpRight, Box, ChevronDown, ChevronUp, Database, GripHorizontal, LoaderCircle, Maximize2, X } from "lucide-react";
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import type { OperationsSnapshot } from "../api";
+import { ScenePlantQuickRun, type ScenePlantQuickRunProps } from "./ScenePlantQuickRun";
 import { translate as tr, type AppLocale } from "../i18n";
 import {
   SCENE_SIMULATION_PANELS,
@@ -27,6 +28,7 @@ interface Props {
   selectedObjectId?: string;
   selectedObjectName?: string;
   previewSnapshot?: OperationsSnapshot;
+  sceneFlow?: Omit<ScenePlantQuickRunProps, "projectId" | "scene" | "selectedObjectId">;
   onPanelChange: (panel: SceneSimulationPanelId) => void;
   onOpenEvidence: () => void;
   onOpenDataCenter: () => void;
@@ -43,6 +45,9 @@ export function SceneSimulationPanel(props: Props) {
   const pointerOperationRef = useRef<PointerOperation | undefined>(undefined);
   const [layout, setLayout] = useState<PanelLayout>();
   const [collapsed, setCollapsed] = useState(false);
+  const [advancedFlow, setAdvancedFlow] = useState(false);
+  const hasSceneFlow = Boolean(props.sceneFlow && props.activeScene);
+  const showSceneFlow = hasSceneFlow && props.panelId === "logistics" && !advancedFlow;
   const orderedScenes = useMemo(() => {
     if (!props.activeScene) return props.scenes;
     return [props.activeScene, ...props.scenes.filter((scene) => scene.id !== props.activeScene?.id)];
@@ -138,10 +143,13 @@ export function SceneSimulationPanel(props: Props) {
         <strong>{props.activeScene?.name ?? tr(props.locale, "未保存场景", "Unsaved scene")}</strong>
         <i />
         <span>{tr(props.locale, "已选对象", "Selection")}</span>
-        <strong>{props.selectedObjectName ?? tr(props.locale, "未选择，将使用场景默认对象", "None; using scene default")}</strong>
+        <strong>{props.selectedObjectName ?? tr(props.locale, "未选择对象", "No object selected")}</strong>
       </div>
 
       <div className="scene-simulation-body">
+        {props.sceneFlow && props.activeScene && <div hidden={!showSceneFlow}><ScenePlantQuickRun key={`${props.project.id}:${props.activeScene.id}`} {...props.sceneFlow} projectId={props.project.id} scene={props.activeScene} {...(props.selectedObjectId ? { selectedObjectId: props.selectedObjectId } : {})} onStudy={study => { setCollapsed(true); props.sceneFlow?.onStudy(study); }} /></div>}
+        {hasSceneFlow && props.panelId === "logistics" && <button type="button" className="scene-simulation-advanced" onClick={() => setAdvancedFlow(value => !value)}>{advancedFlow ? "返回场景物流建模" : "高级分析 · 资源池、班次与历史 Study"}</button>}
+        <div hidden={showSceneFlow}>
         <Suspense fallback={<div className="scene-simulation-loading"><LoaderCircle className="spin" size={18} />{tr(props.locale, "正在加载仿真引擎", "Loading simulation engine")}</div>}>
           <OperationsCenter
             key={props.project.id}
@@ -158,6 +166,7 @@ export function SceneSimulationPanel(props: Props) {
             onOpenSceneTarget={props.onOpenSceneTarget}
           />
         </Suspense>
+        </div>
       </div>
 
       <footer className="scene-simulation-footer">

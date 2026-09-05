@@ -273,6 +273,7 @@ function useDashboardWorkspaceController({
     undefined,
     filters,
     liveDataEnabled,
+    project.semanticModels,
   );
   const selectedProductKey =
     selectedNode?.kind === "data-widget"

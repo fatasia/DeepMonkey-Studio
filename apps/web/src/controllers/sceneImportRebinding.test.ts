@@ -82,6 +82,7 @@ describe("scene import model rebinding", () => {
       { id: "flow", kind: "flowLink", fromModelId: "model-old", toModelId: "primitive" },
       { id: "path", kind: "path", name: "路径", targetModelId: "model-old", points: [[0, 0, 0]], speed: 1, loopMode: "once" },
       { id: "pair", kind: "collisionPair", name: "碰撞", a: { modelId: "model-old", layerId: "part" }, b: { modelId: "missing" }, tolerance: 0.1 },
+      { id: "source", kind: "flowNode", targetModelId: "model-old", node: { id: "source", name: "来料", kind: "source", interarrivalTime: { kind: "deterministic", value: 1 } } },
     ];
     const result = rebindImportedSceneModels(scene, targetProject, new Map());
 
@@ -95,6 +96,7 @@ describe("scene import model rebinding", () => {
     expect(result.scene.simulationEntities).toMatchObject([
       { fromModelId: "model-new", toModelId: "primitive" }, { targetModelId: "model-new" },
       { a: { modelId: "model-new", layerId: "part" }, b: { modelId: "missing" } },
+      { targetModelId: "model-new", node: { id: "source" } },
     ]);
     expect(scene.simulationEntities[0]).toMatchObject({ fromModelId: "model-old" });
   });

@@ -13,7 +13,7 @@ export function simulationOverlayPaths(
 ): SimulationOverlayPath[] {
   const paths: SimulationOverlayPath[] = [];
   for (const entity of entities) {
-    if (entity.kind === "collisionPair") continue;
+    if (entity.kind === "collisionPair" || entity.kind === "flowNode") continue;
     let points: SimulationOverlayPath["points"];
     if (entity.kind === "flowLink") {
       const from = resolvePosition(entity.fromModelId);

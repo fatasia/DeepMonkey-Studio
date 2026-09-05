@@ -151,10 +151,17 @@ describe("IndustrialAgentOrchestrator", () => {
     const toolRuntime = gateway(async () => outcome("unused"));
     const orchestrator = new IndustrialAgentOrchestrator({ decisions, tools: toolRuntime.tools, checkpoints: store });
 
-    const result = await orchestrator.start({ ...startInput([ANALYZE_TOOL.id]), budget: { maxDurationMs: 1_000 } });
-    expect(result.status).toBe("budget-exhausted");
-    expect(result.failure?.message).toContain("时间预算");
-    expect(result.usage.activeDurationMs).toBe(1_000);
+    vi.useFakeTimers();
+    // Wall-clock precision/adjustment must not leave a timed-out run with reusable budget.
+    const wallClock = vi.spyOn(Date, "now").mockReturnValue(0);
+    try {
+      const pending = orchestrator.start({ ...startInput([ANALYZE_TOOL.id]), budget: { maxDurationMs: 1_000 } });
+      await vi.runAllTimersAsync();
+      const result = await pending;
+      expect(result.status).toBe("budget-exhausted");
+      expect(result.failure?.message).toContain("时间预算");
+      expect(result.usage.activeDurationMs).toBe(1_000);
+    } finally { wallClock.mockRestore(); vi.useRealTimers(); }
   });
 });
 

@@ -24,6 +24,8 @@ import { translate as tr, type AppLocale } from "../i18n";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 import { dashboardBackgroundStyle } from "./dashboardCanvasStyle";
 import { DashboardNode } from "./DashboardCanvasNode";
+import { previewSemanticParameter } from "./dashboardSemanticMetrics";
+import { dashboardParameterOrder } from "./dashboardParameterOrder";
 import { downloadDashboardPageData } from "./dashboardPageExport";
 import {
   calculateDashboardRuntimeViewport,
@@ -136,7 +138,7 @@ export function DashboardRuntimePreview({
     );
   }
   function applyParameters() {
-    for (const widget of parameterWidgets)
+    for (const widget of dashboardParameterOrder(parameterWidgets))
       onFilterChange(widget.key, draftFilters[widget.key]);
   }
   function resetParameters() {
@@ -254,7 +256,7 @@ export function DashboardRuntimePreview({
                 key={widget.key}
                 locale={locale}
                 widget={widget}
-                metric={undefined}
+                metric={previewSemanticParameter(widget, metrics[widget.key], project.semanticModels ?? [], parameterWidgets, draftFilters)}
                 compact={false}
                 filters={draftFilters}
                 {...(draftFilters[widget.key] === undefined

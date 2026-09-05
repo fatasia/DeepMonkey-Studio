@@ -36,7 +36,8 @@ try {
       await canvas.waitFor();
       await page.locator(".optimizer-preview-state").waitFor({ state: "detached" });
       await page.getByRole("button", { name: "适应窗口", exact: true }).click();
-      await page.locator(".optimizer-render-settings label").filter({ hasText: "环境反射" }).getByRole("button").click();
+      const reflections = page.locator(".optimizer-render-settings label").filter({ hasText: "环境反射" }).getByRole("button");
+      if (await reflections.innerText() === "关闭") await reflections.click();
       await page.waitForTimeout(500);
       const thumbnailPath = resolve(gate.output, `${theme}-${width}-${uid}.png`);
       const download = page.waitForEvent("download");

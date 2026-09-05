@@ -17,6 +17,7 @@ export interface SceneSimulationEntitiesSectionProps {
 function entityLabel(entity: SimulationEntityState, locale: AppLocale): string {
   if (entity.kind === "flowLink") return tr(locale, "流程连接", "Flow link");
   if (entity.kind === "path") return entity.name || tr(locale, "路径", "Path");
+  if (entity.kind === "flowNode") return entity.node.name;
   return entity.name || tr(locale, "碰撞对", "Collision pair");
 }
 
@@ -33,7 +34,7 @@ export function SceneSimulationEntitiesSection(props: SceneSimulationEntitiesSec
         {entities.map((entity) => {
           const broken = entity.kind === "flowLink"
             ? props.brokenModelIds.has(entity.fromModelId) || props.brokenModelIds.has(entity.toModelId)
-            : entity.kind === "path"
+            : entity.kind === "path" || entity.kind === "flowNode"
               ? props.brokenModelIds.has(entity.targetModelId)
               : props.brokenModelIds.has(entity.a.modelId) || props.brokenModelIds.has(entity.b.modelId);
           const Icon = entity.kind === "flowLink" ? GitBranch : entity.kind === "path" ? Route : Waypoints;

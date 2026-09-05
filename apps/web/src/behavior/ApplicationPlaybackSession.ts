@@ -41,6 +41,8 @@ export class ApplicationPlaybackSession {
     variables?: Readonly<Record<string, JsonValue>>;
     filters?: Readonly<Record<string, JsonValue>>;
     protectedDataEnabled?: boolean;
+    isolateNavigation?: boolean;
+    allowLegacyScripts?: boolean;
   } = {}) {
     this.state = new ApplicationPlaybackState(source, options.variables, options.filters);
     this.pageId = pageId;
@@ -72,13 +74,14 @@ export class ApplicationPlaybackSession {
       });
       this.reconcile();
     } catch (reason) {
-      if (!this.disposed) this.log({ moduleId: "runtime", level: "error", message: reason instanceof Error ? reason.message : String(reason) });
+      if (!this.disposed && generation === this.generation) this.log({ moduleId: "runtime", level: "error", message: reason instanceof Error ? reason.message : String(reason) });
     } finally {
       if (!this.disposed && generation === this.generation) { this.loading = false; this.emit(); }
     }
   }
 
   get allowsProtectedData() { return this.options.protectedDataEnabled !== false; }
+  get currentPageId() { return this.pageId; }
 
   selectPage(pageId: string) {
     if (this.disposed || pageId === this.pageId || !this.source.pages.some((page) => page.id === pageId)) return;
@@ -103,6 +106,8 @@ export class ApplicationPlaybackSession {
   }
 
   advance(deltaMs: number) { if (!this.disposed && !this.paused) this.manager.advance(deltaMs); }
+  get canStep() { return !this.disposed && this.paused && this.manager.canStep; }
+  step() { return this.canStep && this.manager.step(); }
   togglePause() {
     this.paused = !this.paused;
     if (this.paused) this.manager.pause(); else this.manager.resume();
@@ -120,8 +125,8 @@ export class ApplicationPlaybackSession {
     for (const id of result.matchedFlowIds) {
       const flow = this.state.document.interactions.find((flow) => flow.id === id);
       if (!flow?.legacyScript?.script.enabled) continue;
-      if (!this.allowsProtectedData) {
-        this.log({ moduleId: flow.id, level: "warn", message: "公开页不执行旧式主线程事件脚本；请迁移到隔离的生命周期脚本。" });
+      if (!this.allowsProtectedData || this.options.allowLegacyScripts === false) {
+        this.log({ moduleId: flow.id, level: "warn", message: "隔离运行不执行旧式主线程事件脚本；请迁移到 Worker 生命周期脚本。" });
         continue;
       }
       void import("../studio/trustedApplicationScript").then(async ({ runTrustedApplicationScript }) => {
@@ -166,7 +171,7 @@ export class ApplicationPlaybackSession {
     publishApplicationInteractionEffects(effects, this.effects);
     // Navigation/message effects keep the existing platform routing; scene/data
     // effects stay on this session's private bus and cannot hit an author viewer.
-    if (typeof window !== "undefined") publishApplicationInteractionEffects(effects.filter(({ action }) => ["dashboard", "navigateScene", "openUrl", "message"].includes(action.type)), window);
+    if (!this.options.isolateNavigation && typeof window !== "undefined") publishApplicationInteractionEffects(effects.filter(({ action }) => ["dashboard", "navigateScene", "openUrl", "message"].includes(action.type)), window);
   }
 
   private reconcile() {

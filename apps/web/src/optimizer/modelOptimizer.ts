@@ -4,6 +4,7 @@ import { center, dedup, draco, prune, simplify, textureCompress, unwrap, weld } 
 import draco3d from "draco3dgltf";
 import { MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
 import { bakeWebLightmap, type WebLightmapResult } from "./lightmapBaker";
+import { preserveOptimizationCredit } from "./modelOptimizationCredit";
 
 export interface ModelOptimizationOptions {
   simplifyEnabled: boolean;
@@ -86,11 +87,13 @@ let ioPromise: Promise<WebIO> | undefined;
 export async function optimizeModelFile(
   file: File,
   options: ModelOptimizationOptions,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  copyright?: string,
 ): Promise<ModelOptimizationResult> {
   const io = await optimizerIO();
   onProgress?.("正在解析模型");
   const document = await readDocument(io, file);
+  preserveOptimizationCredit(document, copyright);
   const before = statistics(document, file.size);
   const transforms = [];
   if (options.removeUnused) transforms.push(dedup(), weld());

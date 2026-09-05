@@ -87,9 +87,10 @@ export function useAssetLibraryCatalog(projectId: string | undefined, onImported
     setImportingId(itemId);
     setImportError(undefined);
     try {
-      await api.importAssetLibraryItem(projectId, itemId);
+      const result = await api.importAssetLibraryItem(projectId, itemId);
       if (!current()) return;
       await onImported();
+      return current() ? result : undefined;
     } catch (reason) {
       if (current()) setImportError(reason instanceof Error ? reason.message : String(reason));
     } finally {

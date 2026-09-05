@@ -2,6 +2,7 @@ import { Route, Trash2, Waypoints } from "lucide-react";
 import type { SimulationEntityState } from "@bim-studio/contracts";
 import { translate as tr } from "../i18n";
 import type { AppLocale } from "../i18n";
+import { SceneFlowNodeFields } from "./SceneFlowNodeFields";
 
 export interface SceneSimulationEntityInspectorProps {
   locale: AppLocale;
@@ -21,10 +22,11 @@ export function SceneSimulationEntityInspector(props: SceneSimulationEntityInspe
       <div className="inspector-selection-context">
         <span className="inspector-selection-icon"><Waypoints size={16} /></span>
         <span>
-          <strong>{entity.kind === "path" ? entity.name || tr(locale, "路径", "Path") : entity.kind === "collisionPair" ? entity.name || tr(locale, "碰撞对", "Collision pair") : tr(locale, "流程连接", "Flow link")}</strong>
+          <strong>{entity.kind === "flowNode" ? entity.node.name : entity.kind === "path" ? entity.name || tr(locale, "路径", "Path") : entity.kind === "collisionPair" ? entity.name || tr(locale, "碰撞对", "Collision pair") : tr(locale, "流程连接", "Flow link")}</strong>
           <small>{tr(locale, "仿真实体", "Simulation entity")}</small>
         </span>
       </div>
+      {entity.kind === "flowNode" && <section className="inspector-section"><output>{modelName(entity.targetModelId)}</output><SceneFlowNodeFields entity={entity} onChange={props.onChange} /></section>}
       {entity.kind === "flowLink" && (
         <section className="inspector-section">
           <label><span>{tr(locale, "源 → 目标", "From → To")}</span><output>{modelName(entity.fromModelId)} → {modelName(entity.toModelId)}</output></label>

@@ -146,6 +146,21 @@ export class SceneBehaviorHost {
     this.emitDiagnostics();
   }
 
+  /** Advance one simulation frame without resuming event/data dispatch. */
+  step(deltaMs = 1000 / 60): boolean {
+    if (this.status !== "paused" || !this.module || this.pending.size) return false;
+    this.scheduler.resume();
+    try {
+      for (const tick of this.scheduler.advance(deltaMs)) {
+        if (this.module.lifecycle.includes(tick.lifecycle)) this.invoke(tick.lifecycle, tick.elapsedMs, { deltaMs: tick.deltaMs });
+      }
+    } finally {
+      this.scheduler.pause();
+      this.emitDiagnostics();
+    }
+    return true;
+  }
+
   resume(): void {
     if (this.status !== "paused") return;
     this.stopped = false;

@@ -141,6 +141,17 @@ export class SceneBehaviorManager {
     for (const { host } of this.hosts.values()) host.configure(settings);
   }
 
+  get canStep(): boolean {
+    const entries = this.entries().filter(entry => entry.diagnostics.status !== "error");
+    return this.paused && entries.length > 0 && entries.every(entry => entry.diagnostics.status === "paused" && entry.diagnostics.pendingInvocations === 0);
+  }
+
+  step(): boolean {
+    if (this.disposed || !this.canStep) return false;
+    for (const { host } of this.hosts.values()) host.step();
+    return true;
+  }
+
   stop(): void {
     this.paused = false;
     const entries = [...this.hosts.values()];

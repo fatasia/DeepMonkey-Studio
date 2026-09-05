@@ -48,6 +48,7 @@ interface SceneOutlinerPanelProps {
   isolationActive: boolean;
   organizationContent: ReactNode;
   objectContent: ReactNode;
+  assetWorkflowEntry?: ReactNode;
   projectAssets?: ProjectAssetRecord[];
   projectModels?: ModelRecord[];
   onOrganizationToggle: () => void;
@@ -119,6 +120,7 @@ export function SceneOutlinerPanel(props: SceneOutlinerPanelProps) {
           </button>
         </div>
       </div>
+      {(props.importOpen || resourceOpen) && props.assetWorkflowEntry}
       {props.importOpen && <ImportWorkspace {...props} />}
       {resourceOpen && !props.importOpen && <SceneResourceBrowser {...props} />}
       {!props.organizationOpen && !props.importOpen && !resourceOpen && (

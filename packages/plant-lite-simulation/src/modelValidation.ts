@@ -6,6 +6,7 @@ import type {
   PlantLiteNode,
   PlantLiteResource,
 } from "./modelTypes.js";
+import { validateSceneBinding } from "./sceneBindingValidation.js";
 
 export function validatePlantLiteModel(input: unknown): PlantLiteModelValidation {
   const issues: PlantLiteModelIssue[] = [];
@@ -36,6 +37,7 @@ export function validatePlantLiteModel(input: unknown): PlantLiteModelValidation
   const resources = Array.isArray(input.resources) ? input.resources : [];
   resources.forEach((value, index) => validateResource(value, index, resourceIds, resourceKinds, issues));
   nodes.forEach((value, index) => validateNode(value, index, nodeIds, resourceIds, resourceKinds, productTypeIds, issues));
+  validateSceneBinding(input.sceneBinding, nodeIds, issues);
   validateProductionOrders(input.productionOrders, nodes, productTypeIds, issues);
   validateEnergyConsumerIds(nodes, resources, issues);
   validateEnergyCompleteness(input, nodes, resources, issues);

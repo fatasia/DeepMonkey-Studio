@@ -14,6 +14,11 @@ type ApiRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
 /** 工程模型、素材和场景版本接口。BIM 在这里保持资产底座角色。 */
 export function createModelSceneApi(request: ApiRequest) {
   return {
+    uploadOptimizedModel: (projectId: string, file: File, sourceModelId?: string) => {
+      const data = new FormData(); data.append("file", file);
+      const query = sourceModelId ? `?optimizedFromModelId=${encodeURIComponent(sourceModelId)}` : "";
+      return request<ModelRecord>(`/api/projects/${projectId}/models${query}`, { method: "POST", body: data });
+    },
     listRevitInstallations: () =>
       request<RevitRuntimeInfo>("/api/revit/installations"),
     uploadModel: async (

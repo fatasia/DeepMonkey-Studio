@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import type { PlantLiteStudyRecord } from "@bim-studio/contracts";
 import { LoaderCircle } from "lucide-react";
 import { DEFAULT_NAVIGATION_SETTINGS } from "../navigationSettings";
 import { normalizeDashboardState } from "../components/dashboardState";
@@ -19,6 +20,9 @@ import type { AppStudioController } from "./AppStudioShell";
 import { sceneViewerDeliveryToolbarVisible } from "../delivery/sceneViewerDelivery";
 import type { SceneSimulationPanelId } from "../simulation/sceneSimulationRegistry";
 import { useSceneSimulationOverlay } from "../hooks/useSceneSimulationOverlay";
+import { useScenePlantPlayback } from "../hooks/useScenePlantPlayback";
+import type { PlantLitePlaybackFrame } from "../components/plantLitePlaybackModel";
+import { PublishedModelCredits } from "../delivery/PublishedModelCredits";
 
 const SceneSimulationPanel = lazy(() => import("../components/SceneSimulationPanel").then((module) => ({ default: module.SceneSimulationPanel })));
 
@@ -144,6 +148,18 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   } = controller;
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
   const [simulationPanelId, setSimulationPanelId] = useState<SceneSimulationPanelId>();
+  const [simulationStudy, setSimulationStudy] = useState<PlantLiteStudyRecord>();
+  const [simulationFrame, setSimulationFrame] = useState<PlantLitePlaybackFrame | null>(null);
+  const [simulationTrack, setSimulationTrack] = useState(false);
+  const resolveSimulationPosition = useCallback((id: string) => engine?.getModelTransform(id)?.position, [engine, controller.bindings.state.revision]);
+  const activeSimulationStudy = route.view === "studio" && simulationPanelId && simulationStudy?.model?.sceneBinding?.sceneId === activeScene?.id ? simulationStudy : undefined;
+  useEffect(() => { setSimulationStudy(undefined); setSimulationFrame(null); setSimulationTrack(false); }, [project?.id, activeScene?.id]);
+  useScenePlantPlayback(engine, animationOpen && simulationTrack ? activeSimulationStudy?.model : undefined, simulationFrame);
+  const showSimulationStudy = (study: PlantLiteStudyRecord) => {
+    if (study.model?.sceneBinding?.sceneId !== activeScene?.id || study.projectId !== project?.id) return;
+    setSimulationStudy(study); setSimulationTrack(true); setAnimationOpen(true);
+    if (animationPlaying) toggleSceneAnimation();
+  };
   useSceneSimulationOverlay(engine, activeScene, route.view === "studio" && Boolean(simulationPanelId), controller.bindings.state.revision);
   const workspaceIsPrimary = route.view === "studio" || route.view === "view" || route.view === "published";
   const deliveryToolbarVisible = sceneViewerDeliveryToolbarVisible();
@@ -286,7 +302,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
             setEnvironmentOpen((value) => !value);
             setDigitalTwinOpen(false);
           }}
-          onAnimationToggle={() => setAnimationOpen((value) => !value)}
+          onAnimationToggle={() => { setSimulationTrack(false); setAnimationOpen((value) => !value); }}
           onBehaviorToggle={() => setSceneBehaviorOpen((value) => !value)}
           onCameraToggle={() => setCameraViewsOpen((value) => !value)}
           onPhysicsToggle={() => {
@@ -306,11 +322,12 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
             scenes={scenes}
             {...(activeScene ? { activeScene } : {})}
             {...(selected ? { selectedObjectId: selected.id, selectedObjectName: selectionName || selected.name } : {})}
+            sceneFlow={{ objects: loadedModels, resolvePosition: resolveSimulationPosition, onEntitiesChange: controller.bindings.scenePersistence.replaceSimulationEntities, onStudy: showSimulationStudy }}
             onPanelChange={setSimulationPanelId}
             onOpenEvidence={() => navigate({ view: "operations", operationsTab: simulationPanelId === "whatif" ? "whatif" : simulationPanelId === "logistics" ? "logistics" : "commissioning" })}
             onOpenDataCenter={() => navigate({ view: "data" })}
             onOpenSceneTarget={openSimulationTarget}
-            onClose={() => setSimulationPanelId(undefined)}
+            onClose={() => { setSimulationPanelId(undefined); if (simulationTrack) setAnimationOpen(false); setSimulationTrack(false); setSimulationFrame(null); }}
           />
         </Suspense>
       )}
@@ -471,6 +488,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
       )}
       {animationOpen && (
         <SceneTimelinePanel
+          {...(simulationTrack && activeSimulationStudy ? { simulationStudy: activeSimulationStudy, onSimulationFrame: setSimulationFrame } : {})}
+          onAnimationTrack={() => setSimulationTrack(false)}
           locale={locale}
           animation={sceneAnimation}
           currentTime={animationTime}
@@ -487,6 +506,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onDeleteFrame={deleteKeyframe}
         />
       )}
+      {animationOpen && simulationTrack && activeSimulationStudy && simulationFrame && <div className="scene-simulation-live-status" role="status">DES 轨迹样本 · {simulationFrame.atMinute.toFixed(1)} 分钟<br />在制 {simulationFrame.activeItems} · 完成 {simulationFrame.completedItems} · 仅覆盖显示</div>}
+      {(route.view === "view" || route.view === "published") && project && <PublishedModelCredits locale={locale} models={project.models} modelIds={activeScene?.models.map(model => model.modelId) ?? []} />}
       <SceneViewportStatus
         locale={locale}
         studio={route.view === "studio"}

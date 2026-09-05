@@ -1,9 +1,11 @@
 import {
   Braces, CircleStop, ExternalLink, Focus, Maximize2, PanelLeftClose, PanelLeftOpen,
-  GitBranch, MoreHorizontal, PackagePlus, PanelRightOpen, Pause, Play, Settings2, Sparkles, X,
+  GitBranch, MoreHorizontal, PackagePlus, PanelRightOpen, Pause, Play, Settings2, Sparkles, StepForward, X,
 } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { BehaviorLayoutMode } from "../appDefaults";
+import type { AuthorBehaviorScope } from "../behavior/authorBehaviorDocument";
+import "./AuthorBehaviorPreview.css";
 
 interface Props {
   locale: AppLocale;
@@ -13,6 +15,10 @@ interface Props {
   paused: boolean;
   running: boolean;
   hasSession?: boolean;
+  canStep: boolean;
+  runScope: AuthorBehaviorScope;
+  onRunScopeChange: (scope: AuthorBehaviorScope) => void;
+  onStep: () => void;
   hasDraft: boolean;
   hasTarget: boolean;
   agentOpen: boolean;
@@ -34,7 +40,7 @@ interface Props {
 }
 
 export function BehaviorPanelHeader(props: Props) {
-  const runLabel = tr(props.locale, props.running ? "重新试运行已启用脚本" : "试运行已启用脚本", props.running ? "Restart enabled scripts" : "Test enabled scripts");
+  const runLabel = props.runScope === "current" ? tr(props.locale, "试运行当前脚本", "Test current script") : tr(props.locale, "试运行已启用脚本", "Test enabled scripts");
   return <header className="behavior-panel-header">
     <div className="behavior-panel-heading">
       <span><Braces size={16} /></span>
@@ -54,8 +60,10 @@ export function BehaviorPanelHeader(props: Props) {
         </div>
       </details>
       {props.hasTarget && <Action label={tr(props.locale, "定位目标", "Focus target")} onClick={props.onFocusTarget} icon={<Focus size={13} />} />}
+      <select className="behavior-run-scope" aria-label={tr(props.locale, "试运行范围", "Test run scope")} title={tr(props.locale, "当前只运行所选草稿；全部按页面和对象自动加载已启用脚本。项目依赖始终可用。", "Current runs this draft; enabled scripts mount by page and target. Project dependencies remain available.")} value={props.runScope} onChange={event => props.onRunScopeChange(event.target.value as AuthorBehaviorScope)}><option value="current">{tr(props.locale, "当前", "Current")}</option><option value="enabled">{tr(props.locale, "全部启用", "Enabled")}</option></select>
       <button type="button" className="behavior-run-action" disabled={!props.hasDraft} aria-label={runLabel} title={`${runLabel} · Ctrl+Enter`} onClick={props.onRun}><Play size={13} /><span>{tr(props.locale, "试运行", "Test run")}</span></button>
       {props.running && <Action label={props.paused ? tr(props.locale, "继续运行", "Resume") : tr(props.locale, "暂停运行", "Pause")} onClick={props.onPauseResume} icon={props.paused ? <Play size={13} /> : <Pause size={13} />} />}
+      {props.paused && <Action label={tr(props.locale, "推进一帧（1/60 秒，非源码单步）", "Advance one frame (1/60 s, not source stepping)")} disabled={!props.canStep} onClick={props.onStep} icon={<StepForward size={13} />} />}
       {(props.hasSession ?? props.running) && <Action label={tr(props.locale, "停止运行", "Stop")} onClick={props.onStop} icon={<CircleStop size={13} />} />}
       <details className="behavior-header-menu behavior-more-menu">
         <summary aria-label={tr(props.locale, "更多工具", "More tools")} title={tr(props.locale, "更多工具", "More tools")}><MoreHorizontal size={14} /></summary>

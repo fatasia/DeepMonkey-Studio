@@ -18,7 +18,7 @@ async function runRequest(request: ModelOptimizerWorkerRequest) {
       post({ id: request.id, type: "inspect-result", result });
       return;
     }
-    const result = await optimizeModelFile(file, request.options, (message) => post({ id: request.id, type: "progress", message }));
+    const result = await optimizeModelFile(file, request.options, (message) => post({ id: request.id, type: "progress", message }), request.copyright);
     workerScope.postMessage({ id: request.id, type: "optimize-result", result } satisfies ModelOptimizerWorkerResponse, [result.binary.buffer]);
   } catch (reason) {
     const error = reason instanceof Error ? reason : new Error(String(reason));

@@ -154,7 +154,7 @@ export class IndustrialAgentOrchestrator {
       controller.abort(new Error("Agent 已达到时间预算"));
     }, remaining);
     const persist = async () => {
-      checkpoint.usage.activeDurationMs = Math.min(
+      checkpoint.usage.activeDurationMs = budgetTimedOut ? checkpoint.budget.maxDurationMs : Math.min(
         checkpoint.budget.maxDurationMs,
         initialActiveDuration + Math.max(0, Date.now() - segmentStarted),
       );

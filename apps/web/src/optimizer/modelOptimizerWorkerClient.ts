@@ -11,12 +11,14 @@ export class ModelOptimizerWorkerClient {
   private readonly worker: Worker;
   private readonly pending = new Map<number, PendingRequest<unknown>>();
   private nextId = 1;
+  private closed = false;
+  private closedReason: unknown;
 
   constructor() {
     this.worker = new Worker(new URL("./modelOptimizer.worker.ts", import.meta.url), { type: "module", name: "bim-studio-model-optimizer" });
     this.worker.onmessage = (event: MessageEvent<ModelOptimizerWorkerResponse>) => this.handleMessage(event.data);
-    this.worker.onerror = (event) => this.failAll(new Error(event.message || "模型优化 Worker 运行失败"));
-    this.worker.onmessageerror = () => this.failAll(new Error("模型优化 Worker 返回了无法解析的数据"));
+    this.worker.onerror = (event) => this.terminate(new Error(event.message || "模型优化 Worker 运行失败"));
+    this.worker.onmessageerror = () => this.terminate(new Error("模型优化 Worker 返回了无法解析的数据"));
   }
 
   async inspect(file: File): Promise<ModelFileStatistics> {
@@ -24,20 +26,25 @@ export class ModelOptimizerWorkerClient {
     return await this.request<ModelFileStatistics>({ id: this.nextId++, action: "inspect", name: file.name, buffer }, [buffer]);
   }
 
-  async optimize(file: File, options: ModelOptimizationOptions, onProgress?: (message: string) => void): Promise<ModelOptimizationResult> {
+  async optimize(file: File, options: ModelOptimizationOptions, onProgress?: (message: string) => void, copyright?: string): Promise<ModelOptimizationResult> {
     const buffer = await file.arrayBuffer();
-    return await this.request<ModelOptimizationResult>({ id: this.nextId++, action: "optimize", name: file.name, buffer, options }, [buffer], onProgress);
+    return await this.request<ModelOptimizationResult>({ id: this.nextId++, action: "optimize", name: file.name, buffer, options, ...(copyright ? { copyright } : {}) }, [buffer], onProgress);
   }
 
   terminate(reason: unknown = new DOMException("模型处理已取消", "AbortError")) {
+    if (this.closed) return;
+    this.closed = true;
+    this.closedReason = reason;
     this.worker.terminate();
     this.failAll(reason);
   }
 
   private request<T>(message: ModelOptimizerWorkerRequest, transfer: Transferable[], onProgress?: (message: string) => void): Promise<T> {
+    if (this.closed) return Promise.reject(this.closedReason);
     return new Promise<T>((resolve, reject) => {
       this.pending.set(message.id, { resolve: resolve as (value: unknown) => void, reject, onProgress });
-      this.worker.postMessage(message, transfer);
+      try { this.worker.postMessage(message, transfer); }
+      catch (reason) { this.terminate(reason); }
     });
   }
 

@@ -15,12 +15,21 @@ import { DEFAULT_DASHBOARD_VIEW } from "../studio/workspaceRoute";
 import { resolvePreferredScriptTarget } from "../studio/sceneScriptContext";
 import { findScriptTargetLocation } from "../studio/workspaceTargetNavigation";
 import type { AppViewBindings } from "./appViewBindings";
+import { useAuthorBehaviorRun } from "../behavior/useAuthorBehaviorRun";
 
 const SceneBehaviorPanel = lazy(() => import("../components/SceneBehaviorPanel").then((module) => ({ default: module.SceneBehaviorPanel })));
+const AuthorBehaviorPreview = lazy(() => import("../components/AuthorBehaviorPreview").then(module => ({ default: module.AuthorBehaviorPreview })));
 
 export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) {
   const { state, derived, sceneEditor, applicationRuntime, actions } = bindings;
   const { activeApplication, activeDashboardPage, activeScene, applicationState, locale, route } = state;
+  const authorRun = useAuthorBehaviorRun({
+    enabled: state.sceneBehaviorOpen && (route.view === "studio" || route.view === "dashboard"),
+    ...(activeApplication ? { application: activeApplication } : {}), ...(state.project ? { project: state.project } : {}),
+    ...(route.view === "dashboard" && activeDashboardPage ? { pageId: activeDashboardPage.id } : {}),
+    ...(route.view === "studio" && activeScene ? { sceneId: activeScene.id } : {}),
+    variables: applicationState.variables, filters: applicationState.filters,
+  });
   const [splitWidth, setSplitWidth] = useState(readSplitWidth);
   const [floatRect, setFloatRect] = useState(readFloatRect);
   const [portalHost] = useState(createBehaviorPortalHost);
@@ -173,9 +182,12 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
       codeTargets={derived.behaviorCodeTargets}
       {...(preferredTarget ? { preferredTarget } : {})}
       intelligence={derived.behaviorScriptContext}
-      runtimeEntries={state.sceneBehaviorEntries}
-      logs={state.sceneBehaviorLogs}
-      paused={state.sceneBehaviorPaused}
+      runtimeEntries={authorRun.session?.entries ?? []}
+      logs={authorRun.logs}
+      paused={authorRun.session?.paused ?? false}
+      hasSession={Boolean(authorRun.session)}
+      canStep={authorRun.session?.canStep ?? false}
+      onStep={authorRun.step}
       resolveSceneId={(target) => {
         if (target.kind === "component") return linkedSceneId;
         const location = findScriptTargetLocation(activeApplication, target, derived.selectedBehaviorTarget?.id === target.id ? activeScene?.id : undefined);
@@ -185,13 +197,13 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
       autoSaveEnabled={state.autoSaveEnabled}
       onAutoSaveChange={applicationRuntime.changeAutoSave}
       onSaveWorkspace={applicationRuntime.saveActiveApplication}
-      onDelete={applicationRuntime.deleteBehaviorScript}
-      onReplaceScripts={applicationRuntime.replaceBehaviorScripts}
-      onDependenciesChange={applicationRuntime.replaceScriptDependencies}
-      onRun={applicationRuntime.runSceneBehaviors}
-      onPauseResume={applicationRuntime.pauseResumeSceneBehaviors}
-      onStop={applicationRuntime.stopSceneBehaviors}
-      onClearLogs={() => state.setSceneBehaviorLogs([])}
+      onDelete={id => { authorRun.stop(); applicationRuntime.deleteBehaviorScript(id); }}
+      onReplaceScripts={scripts => { authorRun.stop(); return applicationRuntime.replaceBehaviorScripts(scripts); }}
+      onDependenciesChange={dependencies => { authorRun.stop(); return applicationRuntime.replaceScriptDependencies(dependencies); }}
+      onRun={authorRun.run}
+      onPauseResume={authorRun.pauseResume}
+      onStop={authorRun.stop}
+      onClearLogs={authorRun.clearLogs}
       onOpenDocs={actions.openDocs}
       onFocusTarget={focusTarget}
       layoutMode={layoutMode}
@@ -222,6 +234,7 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
     >
       <div className="behavior-portal-anchor" ref={portalAnchorRef} />
       {portalReady && portalHost ? createPortal(panel, portalHost) : panel}
+      {authorRun.session && state.project && <Suspense fallback={null}><AuthorBehaviorPreview key={authorRun.id} session={authorRun.session} project={state.project} locale={locale} rendererBackend={state.rendererBackend} onStop={authorRun.stop} /></Suspense>}
       {layoutMode === "float" && (
         <button
           className="behavior-float-resizer"

@@ -47,6 +47,7 @@ export function bindDashboardField(widget: DashboardDataWidgetConfig, role: Fiel
   const field = product.fields.find((candidate) => candidate.key === fieldKey);
   if (product.status !== "ready" || !/^(dataset|pipeline):.+$/.test(product.key) || !dashboardFieldRoles(widget.type).includes(role) || !field || !fieldMatchesRole(field, role)) return;
   const next = structuredClone(widget);
+  delete next.semanticBinding;
   const productChanged = widgetFieldProduct(widget) !== product.key;
   const analysis = { aggregation: "none" as const, ...next.analysis };
   if (productChanged) {

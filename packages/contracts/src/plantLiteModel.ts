@@ -143,6 +143,8 @@ export interface PlantLiteResource {
 export interface PlantLiteModel {
   id: string;
   name: string;
+  /** 编辑器运行时绑定快照；仅用于证据追溯与轨迹定位，不改变 DES 计算。 */
+  sceneBinding?: { sceneId: string; nodes: Array<{ nodeId: string; objectId: string; position: [number, number, number] }> };
   nodes: PlantLiteNode[];
   edges: PlantLiteEdge[];
   resources?: PlantLiteResource[];

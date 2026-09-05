@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { isDirectOptimizerInput, optimizedAssetFile } from "./modelOptimizerAssets";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ModelRecord } from "@bim-studio/contracts";
+import { convertProjectModelToGlb, isDirectOptimizerInput, optimizedAssetFile } from "./modelOptimizerAssets";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("model optimizer asset pipeline", () => {
   it("keeps GLB and glTF local while routing other formats through conversion", () => {
@@ -9,5 +12,16 @@ describe("model optimizer asset pipeline", () => {
 
   it("creates a stable optimized project asset name", () => {
     expect(optimizedAssetFile("assembly.step", new Uint8Array([1])).name).toBe("assembly.optimized.glb");
+  });
+  it("passes project GLB bytes through without a lossy viewer re-export", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const fetcher = vi.fn(async () => new Response(bytes)); vi.stubGlobal("fetch", fetcher);
+    const model = { name: "animated.glb", format: "glb", status: "ready", sourceUrl: "/assets/original.glb", manifest: { viewerKind: "gltf", geometryUrl: "/assets/converted.glb" } } as ModelRecord;
+    const file = await convertProjectModelToGlb(model);
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(bytes);
+    expect(file.name).toBe(model.name);
+    expect(fetcher).toHaveBeenCalledWith(model.sourceUrl, expect.objectContaining({ credentials: "same-origin", signal: expect.any(AbortSignal) }));
+    const renamed = await convertProjectModelToGlb({ ...model, name: "平行机械夹爪" });
+    expect(renamed.name).toBe("平行机械夹爪.glb");
   });
 });

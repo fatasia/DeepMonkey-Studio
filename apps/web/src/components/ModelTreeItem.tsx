@@ -1,4 +1,4 @@
-import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Layers3, Lock, Pause, Play, ScanLine, Trash2, Unlock } from "lucide-react";
+import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Gauge, Layers3, Lock, Pause, Play, ScanLine, Trash2, Unlock } from "lucide-react";
 import type { ModelRecord, SceneFloorState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { statusText } from "../appPresentation";
@@ -19,6 +19,8 @@ export interface ModelTreeItemProps {
   engine: ViewerEngine | undefined;
   onToggleTree: () => void;
   onLoadModel: () => void;
+  onOptimize?: () => void;
+  optimizing?: boolean;
   onSetRevision: () => void;
   onExpandFloors: (value: number) => void;
   onUpdateFloor: (state: SceneFloorState) => void;
@@ -40,6 +42,8 @@ export function ModelTreeItem({
   engine,
   onToggleTree,
   onLoadModel,
+  onOptimize,
+  optimizing,
   onSetRevision,
   onExpandFloors,
   onUpdateFloor,
@@ -48,7 +52,7 @@ export function ModelTreeItem({
   onDeleteModel,
 }: ModelTreeItemProps) {
   return (
-    <div className="model-tree-item">
+    <div className="model-tree-item" data-model-id={model.id}>
       <div className={`asset-row ${selectedModelId === model.id ? "selected" : ""}`}>
         <button
           className="model-expander"
@@ -119,6 +123,7 @@ export function ModelTreeItem({
             {engine.isAnimationEnabled(model.id) ? <Pause size={14} /> : <Play size={14} />}
           </button>
         )}
+        {onOptimize && <button className="mini-button scene-row-optional-action" disabled={optimizing || model.status !== "ready"} onClick={onOptimize} aria-label={tr(locale, `保存并优化 ${model.name}`, `Save and optimize ${model.name}`)} title={tr(locale, "保存当前场景并优化此素材；不会覆盖原模型", "Save this scene and optimize this asset; source is preserved")}><Gauge size={15} /></button>}
         <button
           className="mini-button scene-row-optional-action danger"
           disabled={Boolean(loaded && engine?.isModelLocked(model.id))}

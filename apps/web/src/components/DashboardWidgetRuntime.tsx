@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Globe2 } from "lucide-react";
-import type { DashboardDataWidgetConfig, DataDatasetField, DataPipelineDefinition, DataDatasetRecord, JsonValue } from "@bim-studio/contracts";
+import type { DashboardDataWidgetConfig, DataDatasetField, DataPipelineDefinition, DataDatasetRecord, JsonValue, SemanticModelRecord } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { subscribeSceneData } from "../sceneDataBridge";
@@ -9,6 +9,8 @@ import { DashboardDigitalFlip, DashboardLiquidFill, DashboardScrollTable } from 
 import { DashboardImage, DashboardMonitor, DashboardVideo } from "./DashboardMediaPlayer";
 import { analyzeDashboardMetric, conditionalStyle } from "./dashboardAnalytics";
 import { mergeDirectBindingMetric, mergeProductMetrics } from "./dashboardMetrics";
+import { resolveSemanticWidget } from "./dashboardSemanticBinding";
+import { buildSemanticMetric } from "./dashboardSemanticMetrics";
 import { buildDashboardDataProductRefreshPlans } from "./dataRefreshPolicy";
 import { dashboardJsonRecord as jsonRecord, dashboardJsonValue as jsonValue, finiteDashboardNumber as toFiniteNumber } from "./dashboardWidgetValues";
 import { applyDashboardFilters, DashboardDesignState, DashboardDrillChart, DashboardReportTable } from "./DashboardWidgetVisualization";
@@ -30,15 +32,24 @@ export interface DashboardMetric {
   value: unknown;
   samples: MetricSample[];
   rows?: Array<Record<string, unknown>>;
+  semanticWidget?: DashboardDataWidgetConfig;
+  semanticError?: string;
+  /** 参数查询草稿只重算本次取数快照，不修改正式筛选或触发额外网络读取。 */
+  semanticSource?: { rows: Record<string, unknown>[]; fields: readonly DataDatasetField[] };
 }
+
+const NO_SEMANTIC_MODELS: SemanticModelRecord[] = [];
 
 export function useDashboardMetrics(
   projectId: string,
-  widgets: readonly DashboardDataWidgetConfig[],
+  sourceWidgets: readonly DashboardDataWidgetConfig[],
   sceneId?: string,
   filters: Readonly<Record<string, JsonValue>> = {},
   liveDataEnabled = true,
+  semanticModels: readonly SemanticModelRecord[] = NO_SEMANTIC_MODELS,
 ) {
+  const resolved = useMemo(() => sourceWidgets.map((widget) => resolveSemanticWidget(widget, semanticModels)), [sourceWidgets, semanticModels]);
+  const widgets = useMemo(() => resolved.filter((entry) => !entry.error).map((entry) => entry.widget), [resolved]);
   const [metrics, setMetrics] = useState<Record<string, DashboardMetric>>({});
   const [datasets, setDatasets] = useState<DataDatasetRecord[]>([]);
   const [pipelines, setPipelines] = useState<DataPipelineDefinition[]>([]);
@@ -112,12 +123,18 @@ export function useDashboardMetrics(
         const preview = plan.kind === "dataset" ? await api.previewDataset(projectId, plan.id) : await api.previewDataPipeline(projectId, plan.id);
         if ("status" in preview && preview.status === "error") throw new Error(preview.error || "数据管道运行失败");
         if (cancelled) return;
-        const rows = applyDashboardFilters(preview.rows, filters, widgets);
+        const rows = applyDashboardFilters(preview.rows, filters, widgets.filter((widget) => !widget.semanticBinding));
         setFieldsByProduct((current) => ({ ...current, [plan.key]: preview.fields }));
         setStatusByProduct((current) => ({ ...current, [plan.key]: "ready" }));
-        setMetrics((current) => mergeProductMetrics(current, plan.id, preview.fields, rows));
+        setMetrics((current) => ({ ...mergeProductMetrics(current, plan.id, preview.fields, rows), ...Object.fromEntries(
+          widgets.filter((widget) => widget.semanticBinding && (plan.kind === "dataset" ? widget.datasetId === plan.id : widget.pipelineId === plan.id))
+            .map((widget) => [widget.key, buildSemanticMetric(widget, semanticModels, preview.rows, preview.fields, widgets, filters)]),
+        ) }));
       } catch {
-        if (!cancelled) setStatusByProduct((current) => ({ ...current, [plan.key]: "error" }));
+        if (!cancelled) {
+          setStatusByProduct((current) => ({ ...current, [plan.key]: "error" }));
+          setMetrics((current) => ({ ...current, ...Object.fromEntries(widgets.filter((widget) => widget.semanticBinding && (widget.datasetId === plan.id || widget.pipelineId === plan.id)).map((widget) => [widget.key, { value: undefined, samples: [], semanticWidget: widget, semanticError: "语义数据源运行失败，请检查数据中心并重试。" }])) }));
+        }
       } finally {
         inFlight.delete(plan.key);
       }
@@ -130,7 +147,7 @@ export function useDashboardMetrics(
       cancelled = true;
       for (const timer of timers) window.clearInterval(timer);
     };
-  }, [catalogResolved, datasets, filters, pipelines, projectId, widgets]);
+  }, [catalogResolved, datasets, filters, pipelines, projectId, widgets, semanticModels]);
 
   useEffect(() => {
     // 确定性视觉验收和离线嵌入场景不应建立会重试的现场数据连接。
@@ -145,7 +162,12 @@ export function useDashboardMetrics(
     );
   }, [liveDataEnabled, projectId, sceneId]);
 
-  return { metrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } as const;
+  const visibleMetrics = useMemo(() => ({ ...metrics, ...Object.fromEntries(resolved.filter((entry) => entry.widget.semanticBinding).map((entry) => {
+    const error = entry.error ?? (catalogError ? "语义数据目录读取失败，请刷新页面重试。" : undefined);
+    const metric = metrics[entry.widget.key];
+    return [entry.widget.key, error ? { value: undefined, samples: [], semanticError: error } : JSON.stringify(metric?.semanticWidget?.semanticBinding) === JSON.stringify(entry.widget.semanticBinding) ? metric! : { value: undefined, samples: [] }];
+  })) }), [metrics, resolved, catalogError]);
+  return { metrics: visibleMetrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } as const;
 }
 
 export function DashboardWidgetView({
@@ -171,6 +193,8 @@ export function DashboardWidgetView({
   onAnimationStart: () => void;
   onAnimationEnd: () => void;
 }) {
+  if (widget.semanticBinding && (!metric?.semanticWidget || metric.semanticError)) return <div className="dashboard-data-binding-state" role={metric?.semanticError ? "alert" : "status"}>{metric?.semanticError ?? tr(locale, "正在读取语义数据…", "Loading semantic data…")}</div>;
+  widget = metric?.semanticWidget ?? widget;
   const analysis = analyzeDashboardMetric(widget, metric);
   const display = analysis.value === undefined ? "—" : typeof analysis.value === "object" ? JSON.stringify(analysis.value) : String(analysis.value);
   const valueStyle = conditionalStyle(widget.conditionalRules, analysis.rows[0] ?? {}, analysis.value);

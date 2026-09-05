@@ -6,6 +6,20 @@ afterEach(() => {
 });
 
 describe("viewer asset transport", () => {
+  it("does not start a cancelled request and propagates cancellation to an active asset read", async () => {
+    const cancelled = new AbortController(); cancelled.abort();
+    const request = vi.fn((_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+    }));
+    vi.stubGlobal("fetch", request);
+    await expect(loadViewerAssetBuffer("/model.glb", "模型", { signal: cancelled.signal })).rejects.toMatchObject({ name: "AbortError" });
+    expect(request).not.toHaveBeenCalled();
+    const active = new AbortController();
+    const pending = loadViewerAssetBuffer("/model.glb", "模型", { signal: active.signal });
+    active.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(request.mock.calls[0]![1].signal.aborted).toBe(true);
+  });
   it("applies a bounded timeout to every asset response type", async () => {
     const request = vi.fn()
       .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3])))

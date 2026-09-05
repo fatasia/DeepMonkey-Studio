@@ -1,4 +1,5 @@
 /** 仿真目标引用：场景内模型或内部图层。 */
+import type { PlantLiteNode } from "./plantLiteModel.js";
 export interface SimulationTargetRef {
   modelId: string;
   layerId?: string;
@@ -6,6 +7,7 @@ export interface SimulationTargetRef {
 
 /** SIM-1a 仿真实体：配置随场景持久化；运行瞬态与 Study 结果不入快照。 */
 export type SimulationEntityState =
+  | { id: string; kind: "flowNode"; targetModelId: string; node: PlantLiteNode }
   | { id: string; kind: "flowLink"; fromModelId: string; toModelId: string }
   | { id: string; kind: "path"; name: string; targetModelId: string; points: Array<[number, number, number]>; loopMode: "once" | "loop" | "pingpong"; speed: number }
   | { id: string; kind: "collisionPair"; name: string; a: SimulationTargetRef; b: SimulationTargetRef; tolerance: number };
@@ -19,7 +21,11 @@ export function validateSimulationEntities(entities: SimulationEntityState[] | u
     if (entity.id && ids.has(entity.id)) errors.push(`仿真实体 id ${entity.id} 重复`);
     if (entity.id) ids.add(entity.id);
     const ref = "targetModelId" in entity ? entity.targetModelId : undefined;
-    if (entity.kind === "path" && (!ref || !modelIds.has(ref))) errors.push(`仿真实体 ${entity.id} 引用的模型 ${ref ?? ""} 不存在`);
+    if ((entity.kind === "path" || entity.kind === "flowNode") && (!ref || !modelIds.has(ref))) errors.push(`仿真实体 ${entity.id} 引用的模型 ${ref ?? ""} 不存在`);
+    if (entity.kind === "flowNode") {
+      if (!entity.node || entity.node.id !== entity.id || !entity.node.name?.trim()) errors.push(`物流节点 ${entity.id} 的标识或名称无效`);
+      else if (!["source", "station", "buffer", "queue-buffer", "transport", "sink"].includes(entity.node.kind)) errors.push(`物流节点 ${entity.id} 的角色无效`);
+    }
     if (entity.kind === "flowLink") {
       if (!modelIds.has(entity.fromModelId)) errors.push(`连接 ${entity.id} 的源模型 ${entity.fromModelId} 不存在`);
       if (!modelIds.has(entity.toModelId)) errors.push(`连接 ${entity.id} 的目标模型 ${entity.toModelId} 不存在`);

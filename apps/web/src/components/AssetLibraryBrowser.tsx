@@ -12,9 +12,10 @@ interface AssetLibraryBrowserProps {
   projectModels: ModelRecord[];
   projectAssets: ProjectAssetRecord[];
   onImported: () => Promise<void>;
+  onOptimize?: (modelId: string) => void;
 }
 
-export function AssetLibraryBrowser({ locale, projectId, projectModels, projectAssets, onImported }: AssetLibraryBrowserProps) {
+export function AssetLibraryBrowser({ locale, projectId, projectModels, projectAssets, onImported, onOptimize }: AssetLibraryBrowserProps) {
   const catalog = useAssetLibraryCatalog(projectId, onImported);
   const importedIds = new Set([
     ...projectModels.flatMap((model) => model.libraryOrigin?.itemId ?? model.sourceUrl.match(/\/library-(industrial-\d+)\.glb$/)?.[1] ?? []),
@@ -146,6 +147,12 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
                   <small>{item.license} · v{item.version}</small>
                 </div>
                 {item.attribution && <AssetAttributionDetails attribution={item.attribution} locale={locale} />}
+                {item.dimension === "3d" && onOptimize && <button className="asset-import" disabled={!projectId || Boolean(catalog.importingId) || unavailable} onClick={async () => {
+                  const existing = projectModels.find(model => model.libraryOrigin?.itemId === item.id);
+                  if (existing) { onOptimize(existing.id); return; }
+                  const result = await catalog.importItem(item.id);
+                  if (result?.kind === "model") onOptimize(result.model.id);
+                }}><Sparkles size={14} />{imported ? tr(locale, "预览与优化", "Preview & optimize") : tr(locale, "导入并优化", "Import & optimize")}</button>}
                 <button className={imported ? "asset-imported" : "asset-import"} disabled={!projectId || Boolean(catalog.importingId) || imported || unavailable} onClick={() => void catalog.importItem(item.id)}>
                   {imported ? <Check size={14} /> : importing ? <RefreshCw className="spin" size={14} /> : <Download size={14} />}
                   {imported

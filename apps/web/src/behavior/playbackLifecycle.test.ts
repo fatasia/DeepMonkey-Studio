@@ -33,9 +33,55 @@ function source() {
   app.scripts = [script("global"), script("a", { kind: "component", id: "one" }), script("b", { kind: "component", id: "two" }), { ...script("disabled"), enabled: false }];
   return app;
 }
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("playback lifecycle ownership", () => {
+  it("does not leak author-test navigation onto the editor event bus", async () => {
+    vi.useFakeTimers();
+    const browser = new EventTarget(); vi.stubGlobal("window", browser);
+    const app = source(); app.scripts = [];
+    app.interactions = [{ id: "go", name: "go", source: { kind: "widget", id: "one" }, trigger: "click", enabled: true,
+      actions: [{ id: "page", type: "dashboard", dashboardPageId: "two", enabled: true }, { id: "url", type: "openUrl", url: "https://example.test", enabled: true }] }];
+    const original = structuredClone(app);
+    const session = new ApplicationPlaybackSession(app, "one", { isolateNavigation: true });
+    const globalEffect = vi.fn(); const privateEffect = vi.fn();
+    browser.addEventListener("bim-studio:application-interaction-effect", globalEffect);
+    session.effects.addEventListener("bim-studio:application-interaction-effect", privateEffect);
+    await session.start(); session.interact({ source: { kind: "widget", id: "one" }, trigger: "click", timestamp: new Date().toISOString() });
+    expect(privateEffect).toHaveBeenCalledTimes(2); expect(globalEffect).not.toHaveBeenCalled(); expect(app).toEqual(original);
+    session.dispose(); vi.runAllTimers();
+  });
+  it("ignores an obsolete dependency failure after a newer start succeeded", async () => {
+    vi.useFakeTimers();
+    const app = source(); app.scripts = [];
+    const session = new ApplicationPlaybackSession(app, "one");
+    let reject!: (error: Error) => void;
+    const first = session.start(() => new Promise((_, fail) => { reject = fail; }));
+    await session.start(); reject(new Error("stale dependency failure")); await first;
+    expect(session.loading).toBe(false); expect(session.logs).toEqual([]); session.dispose();
+  });
+  it("steps one paused frame, waits for outstanding work, and remains paused", async () => {
+    vi.useFakeTimers();
+    const app = source();
+    app.scripts = [{ ...script("frame"), lifecycle: ["onUpdate", "onFixedUpdate"] }];
+    const port = new WorkerPort();
+    const session = new ApplicationPlaybackSession(app, "one", { workerFactory: () => port });
+    await session.start(); port.ready();
+    expect(session.step()).toBe(false);
+    session.togglePause();
+    expect(session.step()).toBe(true);
+    expect(session.step()).toBe(false);
+    expect(port.posted.filter(item => item.type === "behavior.invoke").map(item => item.lifecycle)).toEqual(["onUpdate", "onFixedUpdate"]);
+    port.result([], "onUpdate"); port.result([], "onFixedUpdate");
+    expect(session.entries[0]!.diagnostics.status).toBe("paused");
+    expect(session.entries[0]!.diagnostics.scheduler.frame).toBe(1);
+    session.advance(1000);
+    expect(session.entries[0]!.diagnostics.scheduler.frame).toBe(1);
+    expect(session.step()).toBe(true);
+    session.dispose(); vi.runAllTimers();
+    expect(session.step()).toBe(false);
+    expect(port.terminate).toHaveBeenCalledOnce();
+  });
   it("queues onStop before onDispose once, discards cleanup writes and ignores late messages", () => {
     vi.useFakeTimers();
     const port = new WorkerPort();

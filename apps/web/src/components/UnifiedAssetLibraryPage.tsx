@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bot, Boxes, ChartNoAxesCombined, FolderOpen, LayoutDashboard } from "lucide-react";
 import { translate as tr } from "../i18n";
 import { INDUSTRIAL_PREFAB_CATALOG } from "../prefabs/industrialPrefabCatalog";
@@ -10,7 +10,8 @@ import { DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
 import { ProjectAssetInventory } from "./ProjectAssetInventory";
 
 export function UnifiedAssetLibraryPage({ controller }: { controller: SceneManagerController }) {
-  const [scope, setScope] = useState<"library" | "project">("library");
+  const [scope, setScope] = useState<"library" | "project">(controller.assetScope ?? "library");
+  useEffect(() => { if (controller.assetScope) setScope(controller.assetScope); }, [controller.assetScope, controller.selectedAssetModelId]);
   const [kind, setKind] = useState<"model" | BuiltInAssetKind>("model");
   const { locale, onOpen, project, refreshLibraryModels, sortedScenes } = controller;
   const firstScene = sortedScenes[0];
@@ -22,6 +23,7 @@ export function UnifiedAssetLibraryPage({ controller }: { controller: SceneManag
           <p>{tr(locale, "一个入口管理二维、三维与项目资源；编辑器会自动呈现当前场景最相关的内容。", "One place for 2D, 3D and project assets, filtered automatically by editing context.")}</p>
         </div>
         <div className="unified-assets-scope" role="tablist" aria-label={tr(locale, "资源范围", "Asset scope")}>
+          {controller.onReturnToScene && <button type="button" onClick={() => controller.onReturnToScene?.()}>{tr(locale, "返回原场景", "Return to scene")}</button>}
           <button role="tab" aria-selected={scope === "library"} className={scope === "library" ? "active" : ""} onClick={() => setScope("library")}><Boxes size={15} />{tr(locale, "公共资源", "Library")}</button>
           <button role="tab" aria-selected={scope === "project"} className={scope === "project" ? "active" : ""} onClick={() => setScope("project")}><FolderOpen size={15} />{tr(locale, `项目资源 ${project?.models.length ?? 0}`, `Project assets ${project?.models.length ?? 0}`)}</button>
         </div>
@@ -37,7 +39,7 @@ export function UnifiedAssetLibraryPage({ controller }: { controller: SceneManag
       {scope === "project" ? (
         <ProjectAssetInventory controller={controller} />
       ) : kind === "model" ? (
-        <AssetLibraryBrowser locale={locale} projectId={project?.id} projectModels={project?.models ?? []} projectAssets={project?.assets ?? []} onImported={refreshLibraryModels} />
+        <AssetLibraryBrowser locale={locale} projectId={project?.id} projectModels={project?.models ?? []} projectAssets={project?.assets ?? []} onImported={refreshLibraryModels} onOptimize={controller.onOptimizer} />
       ) : (
         <BuiltInAssetBrowser
           kind={kind}

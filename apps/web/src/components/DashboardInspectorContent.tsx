@@ -210,7 +210,7 @@ export function DashboardInspectorContent() {
                 </select>
               </label>
             )}
-            {selectedNode.widget.type === "filter" && (
+            {selectedNode.widget.type === "filter" && !selectedNode.widget.semanticBinding && (
               <>
                 <label>
                   <span>{tr(locale, "筛选控件", "Filter control")}</span>
