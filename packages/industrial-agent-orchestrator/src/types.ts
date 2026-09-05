@@ -1,6 +1,7 @@
 export type AgentRunStatus =
   | "running"
   | "awaiting-approval"
+  | "awaiting-input"
   | "completed"
   | "blocked"
   | "failed"
@@ -63,6 +64,12 @@ export interface AgentToolOutcome {
 
 export type AgentDecision =
   | {
+      kind: "request-input";
+      rationale: string;
+      question: string;
+      options: AgentSelectionOption[];
+    }
+  | {
       kind: "call-tool";
       rationale: string;
       call: AgentToolCall;
@@ -122,11 +129,23 @@ export interface AgentCheckpoint {
   toolRecords: AgentToolRecord[];
   seenToolFingerprints: string[];
   pendingTool?: AgentPendingTool;
+  pendingSelection?: { step: number; question: string; options: AgentSelectionOption[] };
+  selections?: Array<{ step: number; option: AgentSelectionOption; selectedBy: string; selectedAt: string }>;
+  decisionRecoveries?: Array<{ revision: number; resumedAt: string; failure: NonNullable<AgentCheckpoint["failure"]> }>;
   completion?: Extract<AgentDecision, { kind: "finish" }>;
-  failure?: { code: string; message: string; retryable: boolean };
+  failure?: { code: string; message: string; retryable: boolean; phase?: "decision" | "tool" };
   createdAt: string;
   updatedAt: string;
   revision: number;
+}
+
+export interface AgentSelectionOption { id: string; label: string; description?: string }
+export interface ResumeAgentRunOptions {
+  approval?: AgentApproval;
+  expectedRevision?: number;
+  selectionId?: string;
+  selectedBy?: string;
+  signal?: AbortSignal;
 }
 
 export interface StartAgentRunInput {

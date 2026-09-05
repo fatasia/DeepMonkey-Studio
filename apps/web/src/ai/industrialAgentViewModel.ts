@@ -16,6 +16,7 @@ export function agentStatusLabel(status: AgentRunStatus, locale: AppLocale): str
   const labels: Record<AgentRunStatus, [string, string]> = {
     running: ["正在运行", "Running"],
     "awaiting-approval": ["等待确认", "Awaiting confirmation"],
+    "awaiting-input": ["请选择数据源", "Choose a data source"],
     completed: ["已完成", "Completed"],
     blocked: ["已阻断", "Blocked"],
     failed: ["运行失败", "Failed"],
@@ -27,7 +28,7 @@ export function agentStatusLabel(status: AgentRunStatus, locale: AppLocale): str
 
 export function agentStatusTone(status: AgentRunStatus): "active" | "warning" | "success" | "danger" | "muted" {
   if (status === "running") return "active";
-  if (status === "awaiting-approval" || status === "budget-exhausted") return "warning";
+  if (status === "awaiting-approval" || status === "awaiting-input" || status === "budget-exhausted") return "warning";
   if (status === "completed") return "success";
   if (status === "cancelled") return "muted";
   return "danger";

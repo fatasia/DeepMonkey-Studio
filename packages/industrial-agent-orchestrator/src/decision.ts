@@ -5,6 +5,16 @@ export function parseAgentDecision(value: unknown): AgentDecision {
   const source = record(value, "决策");
   const kind = text(source.kind, "决策 kind");
   const rationale = boundedText(source.rationale, "决策依据", 2_000);
+  if (kind === "request-input") {
+    if (!Array.isArray(source.options) || source.options.length < 2 || source.options.length > 8) throw new Error("候选选项必须为 2 至 8 项");
+    const options = source.options.map(value => {
+      const option = record(value, "候选选项");
+      const description = optionalText(option.description, 400);
+      return { id: boundedText(option.id, "候选 ID", 300), label: boundedText(option.label, "候选名称", 200), ...(description ? { description } : {}) };
+    });
+    if (new Set(options.map(option => option.id)).size !== options.length) throw new Error("候选 ID 不能重复");
+    return { kind, rationale, question: boundedText(source.question, "澄清问题", 1_000), options };
+  }
   if (kind === "call-tool") {
     return { kind, rationale, call: parseToolCall(source.call) };
   }

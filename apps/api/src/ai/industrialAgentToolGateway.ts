@@ -43,6 +43,12 @@ export class IndustrialAgentToolGateway implements AgentToolGateway {
     const descriptor = this.registry.getCapability(call.toolId);
     const definition = this.list().find((tool) => tool.id === call.toolId);
     if (!descriptor || !definition) return blocked("tool-not-allowed", `工具 ${call.toolId} 不在工业 Agent 白名单`);
+    const chosen = context.checkpoint.selections?.at(-1)?.option.id;
+    if (chosen && ["data.query.plan", "data.query.read"].includes(call.toolId)) {
+      const plan = call.arguments.plan as { datasetId?: unknown } | undefined;
+      const datasetId = call.toolId === "data.query.plan" ? call.arguments.datasetId : plan?.datasetId;
+      if (datasetId !== chosen) return blocked("selection-mismatch", "查询数据源与用户已确认的选择不一致");
+    }
     const reliableCall: AiToolCall = {
       ...toReliableCall(call),
       ...(context.approval ? { approval: context.approval } : {}),

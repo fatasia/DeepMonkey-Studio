@@ -6,6 +6,7 @@ import { IndustrialAgentOrchestrator, MemoryAgentCheckpointStore } from "@bim-st
 import { registerDataQueryPlugin } from "../registerDataQueryPlugin.js";
 import { createIndustrialAgentDecisionProvider } from "./industrialAgentDecisionProvider.js";
 import { IndustrialAgentToolGateway } from "./industrialAgentToolGateway.js";
+import { AiProviderHttpError } from "./openAiCompatibleProvider.js";
 
 const dataset: DataDatasetRecord = {
   id: "telemetry", projectId: "project-1", connectionId: "fixture", name: "设备趋势", refreshSeconds: 10,
@@ -13,6 +14,27 @@ const dataset: DataDatasetRecord = {
 };
 
 describe("Agent project discovery → controlled query → evidence", () => {
+  it("clarifies candidates, persists a selection, then recovers a real provider failure without repeating the plan", async () => {
+    const { orchestrator, source } = await runtime("recover-choice");
+    const waiting = await orchestrator.start({ projectId: "project-1", principal: "operator", role: "editor", objective: "读取设备温度", allowedToolIds: ["data.query.plan", "data.query.read"] });
+    expect(waiting).toMatchObject({ status: "awaiting-input", pendingSelection: { options: [{ id: "telemetry", label: "设备趋势" }, { id: "telemetry-b", label: "第二产线设备趋势" }] } });
+    const failed = await orchestrator.resume(waiting.id, { expectedRevision: waiting.revision, selectionId: "telemetry-b", selectedBy: "operator" });
+    expect(failed).toMatchObject({ status: "failed", failure: { code: "decision-provider-unavailable", retryable: true, phase: "decision" }, usage: { steps: 2, toolCalls: 1 } });
+    const completed = await orchestrator.resume(failed.id, { expectedRevision: failed.revision });
+    expect(completed.status).toBe("completed");
+    expect(completed.id).toBe(waiting.id);
+    expect(completed.toolRecords.map(record => record.call.toolId)).toEqual(["data.query.plan", "data.query.read"]);
+    expect(completed.toolRecords[1]?.outcome.output).toMatchObject({ datasetId: "telemetry-b", rows: [{ temperature: 25 }] });
+    expect(source.readDataset).toHaveBeenCalledExactlyOnceWith("project-1", "telemetry-b", expect.any(AbortSignal));
+  });
+
+  it("blocks a planner that ignores the explicit data source selection", async () => {
+    const { orchestrator, source } = await runtime("ignore-choice");
+    const waiting = await orchestrator.start({ projectId: "project-1", principal: "operator", objective: "读取温度", allowedToolIds: ["data.query.plan", "data.query.read"] });
+    const blocked = await orchestrator.resume(waiting.id, { expectedRevision: waiting.revision, selectionId: "telemetry-b", selectedBy: "operator" });
+    expect(blocked).toMatchObject({ status: "blocked", failure: { code: "selection-mismatch" } });
+    expect(source.readDataset).not.toHaveBeenCalled();
+  });
   it("uses the server catalog to plan and read through the real plugins without a client datasetId", async () => {
     const { orchestrator, source } = await runtime();
     const result = await orchestrator.start({ projectId: "project-1", principal: "operator", role: "editor", objective: "读取设备温度", context: {}, allowedToolIds: ["data.query.plan", "data.query.read"] });
@@ -34,10 +56,13 @@ describe("Agent project discovery → controlled query → evidence", () => {
 });
 
 async function runtime(invalid?: string) {
+  const clarify = ["recover-choice", "ignore-choice"].includes(invalid ?? "");
+  let failedOnce = false;
+  const datasets = clarify ? [dataset, { ...dataset, id: "telemetry-b", name: "第二产线设备趋势" }] : [dataset];
   const source: DataQuerySource = {
-    listDatasets: projectId => projectId === dataset.projectId ? [dataset] : [],
-    getDataset: (projectId, id) => projectId === dataset.projectId && id === dataset.id ? dataset : undefined,
-    readDataset: vi.fn(async () => ({ dataset, fields: dataset.fields, rows: [{ temperature: 25 }], durationMs: 1 })),
+    listDatasets: projectId => projectId === dataset.projectId ? datasets : [],
+    getDataset: (projectId, id) => projectId === dataset.projectId ? datasets.find(item => item.id === id) : undefined,
+    readDataset: vi.fn(async (_projectId, id) => ({ dataset: datasets.find(item => item.id === id)!, fields: dataset.fields, rows: [{ temperature: 25 }], durationMs: 1 })),
   };
   const registry = new PluginRegistry({
     apiVersion: "1.0", sceneApiVersion: "1.0", host: "cloud", renderer: "webgl2",
@@ -54,9 +79,11 @@ async function runtime(invalid?: string) {
     async complete(request) {
       const context = JSON.parse(request.input).context;
       const catalog = JSON.parse(context.serverDatasetCatalog);
-      const entry = catalog.datasets[0];
-      expect(entry.id).toBe("telemetry");
+      const selected = context.selectedDatasets?.[0]?.id;
+      const entry = catalog.datasets.find((item: { id: string }) => item.id === (selected && invalid !== "ignore-choice" ? selected : "telemetry"));
       const last = context.toolResults.at(-1);
+      if (clarify && !selected) return { text: JSON.stringify({ kind: "request-input", rationale: "两条产线字段相同", question: "请选择产线", options: catalog.datasets.map((item: { id: string }) => ({ id: item.id, label: "模型的错误名称" })) }), model: "qa" };
+      if (invalid === "recover-choice" && last?.toolId === "data.query.plan" && !failedOnce) { failedOnce = true; throw new AiProviderHttpError(504, "Gateway timeout"); }
       const decision = !last
         ? { kind: "call-tool", rationale: "从服务端目录定位温度", call: { toolId: "data.query.plan", arguments: { datasetId: invalid === "foreign-dataset" ? "foreign" : entry.id, fields: [invalid === "unknown-field" ? "missing" : entry.fields[0].key] }, resources: [{ kind: "project", id: "project-1" }] } }
         : last.toolId === "data.query.plan"

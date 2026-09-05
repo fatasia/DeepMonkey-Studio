@@ -5,6 +5,13 @@ interface ProviderConfig { baseUrl: string; apiKey: string; protocol: Protocol }
 const MAX_PROVIDER_OUTPUT_CHARS = 1_000_000;
 const MAX_SSE_EVENT_CHARS = 256_000;
 
+export class AiProviderHttpError extends Error {
+  constructor(readonly status: number, message?: string) {
+    super(message ?? `大模型请求失败：HTTP ${status}`);
+    this.name = "AiProviderHttpError";
+  }
+}
+
 /** OpenAI 兼容协议插件；厂商选择、密钥和模型均由宿主请求注入。 */
 export function createOpenAiCompatibleProvider(): AiProvider {
   return {
@@ -34,10 +41,10 @@ export function createOpenAiCompatibleProvider(): AiProvider {
           useResponses = true;
           response = await sendStreamRequest(request, config, true, context.signal);
         } else {
-          throw new Error(failure?.error?.message ?? `大模型请求失败：HTTP ${response.status}`);
+          throw new AiProviderHttpError(response.status, failure?.error?.message);
         }
       }
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new AiProviderHttpError(response.status, await responseError(response));
       if (!response.body) throw new Error("大模型未返回流式响应");
       for await (const data of sseData(response.body)) {
         if (data === "[DONE]") continue;
@@ -63,7 +70,7 @@ async function completeChatWithFallback(request: AiProviderRequest, config: Prov
   });
   const body = await response.json().catch(() => undefined) as { choices?: Array<{ message?: { content?: string } }>; error?: { code?: string; message?: string } } | undefined;
   if (!response.ok && config.protocol === "auto" && shouldUseResponses(response.status, body?.error)) return completeResponses(request, config, signal);
-  if (!response.ok) throw new Error(body?.error?.message ?? `大模型请求失败：HTTP ${response.status}`);
+  if (!response.ok) throw new AiProviderHttpError(response.status, body?.error?.message);
   return requireContent(body?.choices?.[0]?.message?.content);
 }
 
@@ -79,7 +86,7 @@ async function completeResponses(request: AiProviderRequest, config: ProviderCon
     output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
     error?: { message?: string };
   } | undefined;
-  if (!response.ok) throw new Error(body?.error?.message ?? `大模型请求失败：HTTP ${response.status}`);
+  if (!response.ok) throw new AiProviderHttpError(response.status, body?.error?.message);
   return requireContent(body?.output_text ?? body?.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text);
 }
 

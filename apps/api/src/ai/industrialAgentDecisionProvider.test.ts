@@ -3,8 +3,16 @@ import type { AgentCheckpoint } from "@bim-studio/industrial-agent-orchestrator"
 import type { PluginRegistry } from "@bim-studio/plugin-runtime";
 import { AiReliabilityAuditBuffer } from "./aiReliabilityAudit.js";
 import { createIndustrialAgentDecisionProvider } from "./industrialAgentDecisionProvider.js";
+import { AiProviderHttpError } from "./openAiCompatibleProvider.js";
+import { AgentDecisionUnavailableError } from "@bim-studio/industrial-agent-orchestrator";
 
 describe("industrial Agent decision provider", () => {
+  it.each([401, 403, 429, 502, 503, 504])("classifies HTTP %s using trusted status, not response prose", async status => {
+    const error = new AiProviderHttpError(status, "opaque upstream message");
+    const provider = createIndustrialAgentDecisionProvider({ registry: { invokeAiProvider: async () => { throw error; } } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] } });
+    const attempt = provider.decide({ checkpoint: checkpoint(), availableTools: [], signal: new AbortController().signal });
+    await expect(attempt).rejects.toBeInstanceOf(status >= 429 ? AgentDecisionUnavailableError : AiProviderHttpError);
+  });
   it("accepts only a JSON decision and records model reliability evidence", async () => {
     const invokeAiProvider = vi.fn(async () => ({
       text: '{"kind":"finish","rationale":"证据不足","summary":"需要补充采样","decisionStatus":"insufficient-data","evidenceIds":[]}',

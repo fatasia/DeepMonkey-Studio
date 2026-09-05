@@ -13,6 +13,24 @@ const tools: AgentToolDefinition[] = [{
 }];
 
 describe("IndustrialAgentRunView", () => {
+  it("offers bounded recovery only for transport decisions, never arbitrary failed tools", () => {
+    const checkpoint = fixture();
+    checkpoint.status = "failed";
+    checkpoint.failure = { code: "decision-provider-unavailable", phase: "decision", message: "Gateway timeout", retryable: true };
+    expect(render(checkpoint)).toContain("重试决策并继续");
+    checkpoint.failure.code = "tool-failed";
+    expect(render(checkpoint)).not.toContain("重试决策并继续");
+  });
+
+  it("renders named choices without a generic resume shortcut and escapes source names", () => {
+    const checkpoint = fixture();
+    checkpoint.status = "awaiting-input";
+    checkpoint.pendingSelection = { step: 1, question: "选产线", options: [{ id: "a", label: "产线 A" }, { id: "b", label: "<img src=x>" }] };
+    const html = render(checkpoint);
+    expect(html).toContain("产线 A");
+    expect(html).toContain("&lt;img src=x&gt;");
+    expect(html).not.toContain("从检查点继续");
+  });
   it("shows the exact pending scope and post-action verification before confirmation", () => {
     const checkpoint = fixture();
     checkpoint.status = "awaiting-approval";

@@ -1,5 +1,6 @@
 import { parseAgentDecision } from "./decision.js";
-import { AgentRunError } from "./errors.js";
+import { AgentDecisionUnavailableError, AgentRunError } from "./errors.js";
+import { prepareAgentRecovery } from "./recovery.js";
 import { normalizeAllowedTools, normalizeApproval, normalizeBudget, requiredText, safeClone } from "./runValidation.js";
 import type {
   AgentApproval,
@@ -11,11 +12,13 @@ import type {
   AgentToolDefinition,
   AgentToolGateway,
   StartAgentRunInput,
+  ResumeAgentRunOptions,
 } from "./types.js";
 
 export class IndustrialAgentOrchestrator {
   readonly #running = new Map<string, Promise<AgentCheckpoint>>();
   readonly #controllers = new Map<string, AbortController>();
+  readonly #resuming = new Set<string>();
 
   constructor(private readonly dependencies: {
     decisions: AgentDecisionProvider;
@@ -69,21 +72,35 @@ export class IndustrialAgentOrchestrator {
     return this.dependencies.checkpoints.get(runId);
   }
 
-  async resume(runId: string, options: { approval?: AgentApproval; signal?: AbortSignal } = {}): Promise<AgentCheckpoint> {
-    const checkpoint = await this.prepareResume(runId, options.approval);
-    if (checkpoint.status !== "running") return checkpoint;
-    return this.drive(runId, options.signal);
+  async resume(runId: string, options: ResumeAgentRunOptions = {}): Promise<AgentCheckpoint> {
+    return this.resumeRun(runId, options, false);
   }
 
   /** 审批或恢复请求立即返回 checkpoint，后续仍由同一受控驱动器推进。 */
-  async resumeDetached(runId: string, options: { approval?: AgentApproval } = {}): Promise<AgentCheckpoint> {
-    const checkpoint = await this.prepareResume(runId, options.approval);
-    if (checkpoint.status === "running") void this.drive(runId).catch(() => undefined);
-    return checkpoint;
+  async resumeDetached(runId: string, options: ResumeAgentRunOptions = {}): Promise<AgentCheckpoint> {
+    return this.resumeRun(runId, options, true);
   }
 
-  private async prepareResume(runId: string, approval?: AgentApproval): Promise<AgentCheckpoint> {
+  private async resumeRun(runId: string, options: ResumeAgentRunOptions, detached: boolean): Promise<AgentCheckpoint> {
+    if (this.#resuming.has(runId) || this.#running.has(runId)) throw new AgentRunError("run-busy", "Agent 运行正在推进，请稍后读取 checkpoint");
+    this.#resuming.add(runId);
+    try {
+      const checkpoint = await this.prepareResume(runId, options);
+      if (checkpoint.status !== "running") return checkpoint;
+      const run = this.drive(runId, options.signal);
+      if (!detached) return await run;
+      void run.catch(() => undefined);
+      return checkpoint;
+    } finally { this.#resuming.delete(runId); }
+  }
+
+  private async prepareResume(runId: string, options: ResumeAgentRunOptions): Promise<AgentCheckpoint> {
     const checkpoint = await this.require(runId);
+    if (prepareAgentRecovery(checkpoint, options, this.now())) {
+      await this.save(checkpoint);
+      return structuredClone(checkpoint);
+    }
+    const approval = options.approval;
     if (terminal(checkpoint.status)) return checkpoint;
     if (checkpoint.status === "awaiting-approval") {
       if (!approval) return checkpoint;
@@ -101,12 +118,14 @@ export class IndustrialAgentOrchestrator {
   }
 
   async cancel(runId: string, cancelledBy: string): Promise<AgentCheckpoint> {
+    if (this.#resuming.has(runId) && !this.#controllers.has(runId)) throw new AgentRunError("run-busy", "检查点正在恢复，请稍后重试取消");
     const checkpoint = await this.require(runId);
     if (terminal(checkpoint.status)) return checkpoint;
     this.#controllers.get(runId)?.abort(new Error(`运行已由 ${requiredText(cancelledBy, "取消人", 200)} 取消`));
     checkpoint.status = "cancelled";
     checkpoint.failure = { code: "cancelled", message: "Agent 运行已取消", retryable: false };
     delete checkpoint.pendingTool;
+    delete checkpoint.pendingSelection;
     await this.save(checkpoint);
     return checkpoint;
   }
@@ -186,7 +205,8 @@ export class IndustrialAgentOrchestrator {
         } catch (error) {
           checkpoint = controller.signal.aborted
             ? fail(checkpoint, budgetTimedOut ? "budget-exhausted" : "cancelled", budgetTimedOut ? "time-budget" : "cancelled", budgetTimedOut ? "Agent 已达到时间预算" : message(error), false)
-            : fail(checkpoint, "failed", "invalid-decision", message(error), true);
+            : fail(checkpoint, "failed", error instanceof AgentDecisionUnavailableError ? "decision-provider-unavailable" : "invalid-decision", message(error), error instanceof AgentDecisionUnavailableError || /^大模型请求失败：HTTP (429|502|503|504)$/.test(message(error)));
+          checkpoint.failure!.phase = "decision";
           await persist();
           break;
         }
@@ -207,6 +227,12 @@ export class IndustrialAgentOrchestrator {
     decision: AgentDecision,
     persist: () => Promise<void>,
   ): Promise<AgentCheckpoint> {
+    if (decision.kind === "request-input") {
+      checkpoint.pendingSelection = { step: checkpoint.usage.steps, question: decision.question, options: structuredClone(decision.options) };
+      checkpoint.status = "awaiting-input";
+      await persist();
+      return checkpoint;
+    }
     if (decision.kind === "stop") {
       const stopped = fail(checkpoint, "blocked", decision.code, decision.message, false);
       await persist();

@@ -71,6 +71,15 @@
 .industrial-agent-workspace button.primary:hover:not(:disabled) { border-color: #eac572; background: #eac572; }
 .industrial-agent-workspace button:disabled { cursor: not-allowed; opacity: .48; }
 
+.industrial-agent-selection > .industrial-agent-choice-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; }
+.industrial-agent-choice-list > button { justify-content: space-between; min-height: 58px; padding: 9px 11px; text-align: left; }
+.industrial-agent-choice-list > button > span { display: grid; gap: 4px; min-width: 0; }
+.industrial-agent-choice-list strong { font-size: 12px; overflow-wrap: anywhere; }
+.industrial-agent-choice-list small,
+.industrial-agent-choice-list code { color: var(--text); font-size: 11px; overflow-wrap: anywhere; }
+.industrial-agent-choice-list button:focus-visible { outline: 2px solid var(--agent-accent); outline-offset: 2px; }
+.industrial-agent-workspace .industrial-agent-approval header small { color: var(--text); }
+
 .industrial-agent-start,
 .industrial-agent-run {
   display: grid;

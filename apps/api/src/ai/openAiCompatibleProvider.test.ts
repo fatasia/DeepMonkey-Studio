@@ -15,6 +15,10 @@ function context() {
 }
 
 describe("OpenAI compatible provider", () => {
+  it.each(["responses", "chat-completions"])("retains actual 504 status when %s error bodies omit it", async protocol => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Gateway timeout" } }), { status: 504 })));
+    await expect(createOpenAiCompatibleProvider().complete({ ...request, config: { ...request.config, protocol } }, context())).rejects.toMatchObject({ name: "AiProviderHttpError", status: 504, message: "Gateway timeout" });
+  });
   it("falls back from Chat Completions to Responses without leaking protocol logic", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "protocol_not_supported" } }), { status: 404, headers: { "content-type": "application/json" } }))

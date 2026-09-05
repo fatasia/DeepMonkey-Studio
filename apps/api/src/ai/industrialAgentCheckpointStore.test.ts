@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,6 +9,20 @@ const directories: string[] = [];
 afterEach(async () => Promise.all(directories.splice(0).map((item) => rm(item, { recursive: true, force: true }))));
 
 describe("IndustrialAgentCheckpointStore", () => {
+  it("keeps a waiting choice while pruning old terminal runs and restores it after restart", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "industrial-agent-choice-"));
+    directories.push(dataDir);
+    const waiting = checkpoint();
+    waiting.status = "awaiting-input";
+    delete waiting.pendingTool;
+    waiting.pendingSelection = { step: 1, question: "选产线", options: [{ id: "a", label: "产线 A" }, { id: "b", label: "产线 B" }] };
+    const older = Array.from({ length: 1000 }, (_, id) => ({ ...checkpoint(), id: `old-${id}`, status: "completed", pendingTool: undefined }));
+    await writeFile(path.join(dataDir, "industrial-agent-checkpoints.json"), JSON.stringify({ schemaVersion: 1, runs: [...older, waiting] }));
+    const first = new IndustrialAgentCheckpointStore(dataDir);
+    await first.init(); await first.save({ ...checkpoint(), id: "new" });
+    const second = new IndustrialAgentCheckpointStore(dataDir); await second.init();
+    expect(await second.get(waiting.id)).toEqual(waiting);
+  });
   it("restores an approval checkpoint after a new store instance starts", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "industrial-agent-checkpoint-"));
     directories.push(dataDir);

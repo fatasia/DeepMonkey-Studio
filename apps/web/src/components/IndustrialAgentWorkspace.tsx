@@ -28,6 +28,7 @@ import {
   selectedToolPreview,
 } from "../ai/industrialAgentViewModel";
 import "./IndustrialAgentWorkspace.css";
+import { IndustrialAgentContinuation } from "./IndustrialAgentContinuation";
 
 const DEFAULT_BUDGET = { maxSteps: 10, maxToolCalls: 6, maxDurationMs: 90_000 };
 
@@ -153,7 +154,7 @@ export function IndustrialAgentWorkspace(props: {
     }
   }
 
-  async function act(action: "approve" | "resume" | "cancel" | "refresh") {
+  async function act(action: "approve" | "resume" | "cancel" | "refresh", selectionId?: string) {
     if (!projectId || !checkpoint || actionPending.current) return;
     const epoch = requestEpoch.current;
     const isCurrent = () => requestEpoch.current === epoch;
@@ -166,7 +167,7 @@ export function IndustrialAgentWorkspace(props: {
       const next = action === "approve" && checkpoint.pendingTool
         ? await client.approveIndustrialAgentRun(projectId, checkpoint.id, checkpoint.pendingTool.fingerprint)
         : action === "resume"
-          ? await client.resumeIndustrialAgentRun(projectId, checkpoint.id)
+          ? await client.resumeIndustrialAgentRun(projectId, checkpoint.id, checkpoint.revision, selectionId)
           : action === "cancel"
             ? await client.cancelIndustrialAgentRun(projectId, checkpoint.id)
             : await client.getIndustrialAgentRun(projectId, checkpoint.id);
@@ -240,6 +241,7 @@ export function IndustrialAgentWorkspace(props: {
           restored={restored}
           {...(error ? { error } : {})}
           onAction={(action) => void act(action)}
+          onSelect={(id) => void act("resume", id)}
           onNew={() => {
             setCheckpoint(undefined);
             setRestored(false);
@@ -296,6 +298,7 @@ export function IndustrialAgentRunView(props: {
   error?: string;
   onAction: (action: "approve" | "resume" | "cancel" | "refresh") => void;
   onNew: () => void;
+  onSelect?: (id: string) => void;
 }) {
   const { checkpoint } = props;
   const t = (zh: string, en: string) => tr(props.locale, zh, en);
@@ -336,6 +339,7 @@ export function IndustrialAgentRunView(props: {
         </section>
       )}
       {checkpoint.failure && <div className="industrial-agent-error" role="alert"><AlertTriangle size={14} /><span><strong>{checkpoint.failure.message}</strong><small>{checkpoint.failure.code}</small></span></div>}
+      <IndustrialAgentContinuation locale={props.locale} checkpoint={checkpoint} busy={props.busy} onResume={() => props.onAction("resume")} {...(props.onSelect ? { onSelect: props.onSelect } : {})} />
       {props.error && <div className="industrial-agent-error" role="alert"><AlertTriangle size={14} />{props.error}</div>}
       {evidence.length > 0 && (
         <details className="industrial-agent-evidence" open={checkpoint.status === "completed"}>
@@ -348,8 +352,8 @@ export function IndustrialAgentRunView(props: {
         <ol>{checkpoint.decisions.map((record) => <li key={`decision-${record.step}`}><b>{record.step}</b><span>{record.decision.rationale}</span></li>)}</ol>
       </details>
       <footer className="industrial-agent-run-actions">
-        {!terminal && checkpoint.status !== "awaiting-approval" && <><button type="button" disabled={props.busy} onClick={() => props.onAction("refresh")}><RefreshCw size={13} />{t("刷新", "Refresh")}</button><button type="button" disabled={props.busy} onClick={() => props.onAction("resume")}><Play size={13} />{t("从检查点继续", "Resume checkpoint")}</button><button type="button" disabled={props.busy} onClick={() => props.onAction("cancel")}><PauseCircle size={13} />{t("取消", "Cancel")}</button></>}
-        {terminal && <button className="primary" type="button" onClick={props.onNew}><Sparkles size={13} />{t("开始新任务", "New task")}</button>}
+        {!terminal && checkpoint.status !== "awaiting-approval" && <><button type="button" disabled={props.busy} onClick={() => props.onAction("refresh")}><RefreshCw size={13} />{t("刷新", "Refresh")}</button>{checkpoint.status !== "awaiting-input" && <button type="button" disabled={props.busy} onClick={() => props.onAction("resume")}><Play size={13} />{t("从检查点继续", "Resume checkpoint")}</button>}<button type="button" disabled={props.busy} onClick={() => props.onAction("cancel")}><PauseCircle size={13} />{t("取消", "Cancel")}</button></>}
+        {terminal && <>{checkpoint.failure && <button type="button" disabled={props.busy} onClick={() => props.onAction("refresh")}><RefreshCw size={13} />{t("刷新", "Refresh")}</button>}<button className="primary" type="button" disabled={props.busy} onClick={props.onNew}><Sparkles size={13} />{t("开始新任务", "New task")}</button></>}
       </footer>
     </div>
   );

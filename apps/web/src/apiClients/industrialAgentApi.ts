@@ -42,11 +42,11 @@ export function createIndustrialAgentApi(request: ApiRequest) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ scopeFingerprint, execution: "background" }),
       }),
-    resumeIndustrialAgentRun: (projectId: string, runId: string) =>
+    resumeIndustrialAgentRun: (projectId: string, runId: string, expectedRevision?: number, selectionId?: string) =>
       request<AgentCheckpoint>(`${agentRunPath(projectId, runId)}/resume`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ execution: "background" }),
+        body: JSON.stringify({ execution: "background", expectedRevision, selectionId }),
       }),
     cancelIndustrialAgentRun: (projectId: string, runId: string) =>
       request<AgentCheckpoint>(agentRunPath(projectId, runId), { method: "DELETE" }),

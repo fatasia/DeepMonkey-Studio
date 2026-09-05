@@ -47,7 +47,7 @@ export class IndustrialAgentCheckpointStore implements AgentCheckpointStore {
 
   private prune(): void {
     if (this.document.runs.length <= 1_000) return;
-    const active = this.document.runs.filter((run) => run.status === "running" || run.status === "awaiting-approval");
+    const active = this.document.runs.filter((run) => ["running", "awaiting-approval", "awaiting-input"].includes(run.status));
     const terminal = this.document.runs.filter((run) => !active.includes(run)).slice(0, Math.max(0, 1_000 - active.length));
     this.document.runs = [...active, ...terminal];
   }
