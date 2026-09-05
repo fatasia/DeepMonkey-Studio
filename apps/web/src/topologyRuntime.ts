@@ -44,7 +44,7 @@ export function mergeTopologyRuntimeAcknowledgements(current: Readonly<Record<st
 function runtimeStateForNode(node: TopologyNode, row: Record<string, unknown> | undefined, sampledAt: string): TopologyScadaRuntimeState {
   const binding = topologyNodeDataBinding(node);
   const config = topologyNodeScadaConfig(node);
-  if (!binding || !row || !(binding.field in row)) return { state: "offline", quality: "bad", updatedAt: sampledAt };
+  if (!binding || !row || !(binding.field in row)) return { state: "unknown", quality: "bad", updatedAt: sampledAt };
 
   const rawValue = row[binding.field];
   const numericValue = finiteNumber(rawValue);
@@ -76,6 +76,7 @@ function operatingStateFromRow(row: Record<string, unknown>, field: string, valu
   const explicit = row[`${field}State`] ?? row[`${field}_state`] ?? row.state ?? row.status;
   if (typeof explicit === "string") {
     const normalized = explicit.trim().toLowerCase();
+    if (["unknown", "未知"].includes(normalized)) return "unknown";
     if (["offline", "disconnected", "down", "离线", "断开"].includes(normalized)) return "offline";
     if (["alarm", "critical", "fault", "error", "告警", "故障"].includes(normalized)) return "alarm";
     if (["warning", "warn", "异常", "预警"].includes(normalized)) return "warning";

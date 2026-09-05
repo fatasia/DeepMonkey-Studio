@@ -49,7 +49,7 @@
 
 | 顺序 | 任务 | 从哪里继续，完成口径 |
 |---|---|---|
-| 1 | GLM 报告增量 + 已确认待复核项 | 先对照复核表；P2-11 目录缺失根因已修，继续日志页/复制失败态、拓扑 fit/状态，不盲改未复现项 |
+| 1 | GLM 最终报告整体复核 | 用户 12:51 确认 GLM 全部测试完成，要求整体修复并完整重测。当前文件仍 33 条；目录发现和拓扑 fit/状态已修，继续日志/复制失败、缩略图、404、名称边界等，不盲改未复现项 |
 | 2 | Agent 深化与失败恢复 | 普通 AI 取消/后续草稿保护已修（§8），剩余 Agent 多候选名称选择、上游 504 恢复与跨项目异步返回；不要重做取消基础设施 |
 | 3 | SIM 四面板运行态深测 | 32 组基础布局/折叠检查已通过；继续真实运行/错误态/键盘、子面板下半部分、关闭与切页生命周期，不能只看首屏 |
 | 4 | SIM-1a 剩余完整闭环 | 创建角色/源汇/队列 → 绑定实体参数到既有物流运行器 → 运行结果适配覆盖层 → 同一 Study 证据 → 时间线播放；静态路径不能算全部完成 |
@@ -115,3 +115,16 @@ git diff --check
 复跑：`node apps/web/scripts/gate-ai-lifecycle.mjs`；产物 `test-output/codex-2026-09-05/ai-lifecycle/`。隔离浏览器只模拟 AI 响应，不调用真实模型、不改品牌设置；真实在线失败单独保留。
 
 12:04 收口：Web/API 生产构建通过，首屏仍为 304.8 KiB / gzip 99.0 KiB、11 chunks，预算无回退；既有 Node 模块 externalization/大 chunk 构建提示仍在。1715 个源文件尺寸门禁与 diff 检查通过，全局 Web/API 健康；本批不再重复改 credentials、存储或下载。
+
+## 9. 12:55 接续：拓扑视口与运行状态（已完成增量）
+
+- P3-2 真实复现：980px 视口内宽 558px，5 节点只有 source 完整可见；不是 z-index 覆盖，而是 100% 固定初始比例 + 无 fit。`useTopologyViewport` 独立管理视角，按节点含端口/高度标记的投影边界适配；首次打开、切文档/投影与概览模式尺寸变化自动 fit，手动缩放/滚动后不强制复位。增加键盘可达“显示全部节点”，缩放保留中心，诊断/工具条不遮画布。
+- 2.5D 的负投影通过画布原点偏移容纳；视角不写文档、不添加撤销记录、不触发保存。空拓扑首个普通节点在 980px 可能越界的同族问题由内存夹具复现，补概览模式结构变化适配。
+- P3-3：服务端合同无改动，studio-core 派生统计新增 unknown；缺快照为“待数据”，明确 unknown 为“未知”，offline 为“离线”，不再合并计数。适配器空行/缺字段返回 unknown，明确 unknown 不再误判 running。真实读取失败的既有 offline 行为保留，不能扩大为物理设备离线诊断。
+- 拓扑亮色页面原为硬编码深色，局部中性面、字段、诊断、边线对接平台令牌；告警语义仍独立。统计区抽取为小组件，主 View 行数下降。
+- 对标采用：[React Flow FitViewOptions](https://reactflow.dev/api-reference/types/fit-view-options) 的节点边界、padding、缩放限值；[Grafana Node graph](https://grafana.com/docs/grafana/latest/visualizations/panels-visualizations/visualizations/node-graph/) 的视图导航与编辑布局分离。不引新图编辑器依赖、不以自动布局改原数据来掩盖裁切。
+- 门禁：`node apps/web/scripts/gate-topology-viewport.mjs`，原项目只读 + DEV 内存 QA；1440/980 × dark/light，包含首次 fit、侧栏双向切换、层级投影、键盘 fit、手动视角、窗口变化、负投影、拖拽一笔/撤销、空态/首个节点/切文档。业务写入 0，控制台错误/警告 0。截图 `test-output/codex-2026-09-05/topology/`；最初脚本误把 2D 当切换钮，已改点击真实“层级”并断言 class，旧 failed 图不代表当前仍坏。
+- 聚焦 Web 19 项、studio-core 全量 70 项、API 全量 448 项通过；Web 全量 1142 项通过，最终复跑/构建以本节收口补记为准。1721 源文件尺寸门禁通过。
+- 下一直接工作：按用户最新“全部修复并整体再过一遍”要求，闭合复核表剩余条目及全站主流程。不能把本批局部通过当整个项目结束。
+
+12:58 收口复跑：Web 323 文件/1142 项全通过、Web typecheck/生产构建通过；四组拓扑门禁含新增空态首节点通过；首屏 304.8 KiB / gzip 99.0 KiB 未回退，既有构建提示未消除。日志页 `vite` 关键词真实查询无 ANSI，截图已保留到 `report-final/service-logs-vite-dark.png`，下一批补双主题与失败态后关闭 P2-8。

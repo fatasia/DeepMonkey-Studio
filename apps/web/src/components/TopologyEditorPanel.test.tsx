@@ -26,6 +26,18 @@ const document: TopologyDocument = {
 };
 
 describe("TopologyEditorPanel", () => {
+  it("distinguishes missing data, explicit unknown and offline snapshots", () => {
+    const nodes = ["missing", "unknown", "offline"].map((id, index) => ({ id, kind: "agv", x: 100 + index * 200, y: 120, properties: {} }));
+    const html = renderToStaticMarkup(<TopologyEditorPanel locale="zh-CN" document={{ ...document, nodes }} runtimeNow={Date.parse("2026-09-05T00:00:00Z")} runtimeStates={{
+      unknown: { state: "unknown", updatedAt: "2026-09-05T00:00:00Z", quality: "good" },
+      offline: { state: "offline", updatedAt: "2026-09-05T00:00:00Z", quality: "good" },
+    }} onChange={() => undefined} />);
+    expect(html).toContain("1</strong>待数据");
+    expect(html).toContain("1</strong>未知");
+    expect(html).toContain("1</strong>离线");
+    expect(html).not.toContain("失联");
+    expect(html).toContain("显示全部节点");
+  });
   it("renders the lightweight workbench and its persisted nodes", () => {
     const html = renderToStaticMarkup(<TopologyEditorPanel locale="zh-CN" document={document} dataProducts={[
       { id: "pipeline-status", type: "pipeline", name: "设备实时状态", fields: ["running", "alarm"] }
@@ -135,7 +147,8 @@ describe("TopologyEditorPanel", () => {
     />);
 
     expect(html).toContain("SCADA 运行诊断");
-    expect(html).toContain("1</strong>失联");
+    expect(html).toContain("1</strong>待数据");
+    expect(html).not.toContain("失联");
     expect(html).toContain("1</strong>时效异常");
     expect(html).toContain("1</strong>质量异常");
     expect(html).toContain("质量无效");

@@ -130,6 +130,7 @@ describe("topology editor", () => {
       total: 3,
       healthy: 1,
       missing: 1,
+      unknown: 0,
       undated: 0,
       stale: 1,
       invalidTimestamp: 0,

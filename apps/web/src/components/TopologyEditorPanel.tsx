@@ -35,6 +35,7 @@ import {
   type TopologyViewMode,
 } from "./topologyEditorRuntime";
 import { TopologyEditorPanelView } from "./TopologyEditorPanelView";
+import { useTopologyViewport } from "./useTopologyViewport";
 import {
   TOPOLOGY_NODE_PRESET_GROUPS,
   TOPOLOGY_NODE_PRESETS,
@@ -115,8 +116,8 @@ function useTopologyEditorController({
   const editorRef = useRef(editor);
   const [tool, setTool] = useState<Tool>("select");
   const [viewMode, setViewMode] = useState<TopologyViewMode>("2d");
-  // 拓扑画布缩放受控，拖拽坐标始终在逻辑画布坐标系内计算。
-  const [zoom, setZoom] = useState(1);
+  const viewport = useTopologyViewport(editor.document, viewMode);
+  const { zoom, zoomIn, zoomOut, resetZoom } = viewport;
   const [paletteQuery, setPaletteQuery] = useState("");
   const [connectionSourceId, setConnectionSourceId] = useState<string>();
   const [drag, setDrag] = useState<{ pointerId: number; nodeId: string; offsetX: number; offsetY: number }>();
@@ -243,21 +244,6 @@ function useTopologyEditorController({
     if (next !== "connect") setConnectionSourceId(undefined);
   }
 
-  function updateZoom(next: number) {
-    setZoom(Math.min(1.5, Math.max(0.6, Math.round(next * 10) / 10)));
-  }
-
-  function zoomIn() {
-    updateZoom(zoom + 0.1);
-  }
-
-  function zoomOut() {
-    updateZoom(zoom - 0.1);
-  }
-
-  function resetZoom() {
-    setZoom(1);
-  }
 
   function beginDrag(event: ReactPointerEvent<HTMLButtonElement>, node: TopologyNode) {
     if (tool !== "select" || event.button !== 0) return;
@@ -490,6 +476,7 @@ function useTopologyEditorController({
     zoomIn,
     zoomOut,
     resetZoom,
+    viewport,
   };
 }
 

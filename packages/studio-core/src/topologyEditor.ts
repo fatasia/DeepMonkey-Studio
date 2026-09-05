@@ -38,6 +38,7 @@ export interface TopologyScadaRuntimeSummary {
   readonly total: number;
   readonly healthy: number;
   readonly missing: number;
+  readonly unknown: number;
   readonly undated: number;
   readonly stale: number;
   readonly invalidTimestamp: number;
@@ -210,6 +211,7 @@ export function summarizeTopologyScadaRuntime(
     total: 0,
     healthy: 0,
     missing: 0,
+    unknown: 0,
     undated: 0,
     stale: 0,
     invalidTimestamp: 0,
@@ -233,6 +235,7 @@ export function summarizeTopologyScadaRuntime(
     if (state && assessment.quality === "uncertain") summary.uncertainQuality += 1;
     if (state && assessment.quality === "bad") summary.badQuality += 1;
     if (state?.state === "offline") summary.offline += 1;
+    if (state?.state === "unknown") summary.unknown += 1;
     if (state?.alarm?.active) {
       summary.activeAlarms += 1;
       if (!state.alarm.acknowledged) summary.unacknowledgedAlarms += 1;

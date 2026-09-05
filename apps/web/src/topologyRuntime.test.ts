@@ -28,6 +28,14 @@ const nodes: TopologyNode[] = [
 ];
 
 describe("topology runtime adapter", () => {
+  it("does not treat empty/missing fields as offline or an explicit unknown state as running", () => {
+    const sampledAt = "2026-09-05T00:00:00Z";
+    for (const rows of [[], [{}], [{ flow: 18, flow_state: "unknown" }], [{ flow: 18, state: "未知" }]]) {
+      const result = createTopologyRuntimeSnapshot(nodes.slice(1, 2), { fields: [], rows }, sampledAt);
+      expect(result["meter-1"]?.state).toBe("unknown");
+    }
+    expect(createTopologyRuntimeSnapshot(nodes.slice(1, 2), { fields: [], rows: [{ flow: 18, state: "offline" }] }, sampledAt)["meter-1"]?.state).toBe("offline");
+  });
   it("groups SCADA bindings so one data product is fetched once", () => {
     expect(groupTopologyRuntimeBindings(nodes)).toEqual([{
       key: "dataset:telemetry",

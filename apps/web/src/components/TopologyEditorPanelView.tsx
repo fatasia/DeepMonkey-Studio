@@ -10,6 +10,7 @@ import {
   Copy,
   Database,
   Gauge,
+  Maximize,
   Layers3,
   LayoutGrid,
   LayoutDashboard,
@@ -19,10 +20,8 @@ import {
   Redo2,
   Save,
   Search,
-  ShieldCheck,
   Trash2,
   Undo2,
-  WifiOff,
   Workflow,
   X,
   ZoomIn,
@@ -56,6 +55,8 @@ import {
   topologyProjectedPosition,
 } from "./topologyEditorRuntime";
 import type { TopologyEditorController } from "./TopologyEditorPanel";
+import { TopologyRuntimeOverview } from "./TopologyRuntimeOverview";
+import { TOPOLOGY_MIN_ZOOM } from "./topologyViewportGeometry";
 
 export function TopologyEditorPanelView({ controller }: { controller: TopologyEditorController }) {
   const {
@@ -130,6 +131,7 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
     zoomIn,
     zoomOut,
     resetZoom,
+    viewport,
   } = controller;
   const [extensionKey, setExtensionKey] = useState("");
   const [extensionValue, setExtensionValue] = useState("");
@@ -284,49 +286,13 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
       </aside>
 
       <main className={`topology-editor__viewport ${tool === "connect" ? "is-connecting" : ""} ${viewMode === "2.5d" ? "is-2-5d" : ""}`}>
-        {runtimeSummary.total > 0 && (
-          <div className="topology-editor__runtime-overview" role="status" aria-label={tr(locale, "SCADA 运行诊断", "SCADA runtime diagnostics")}>
-            <span className="is-healthy">
-              <ShieldCheck size={13} />
-              <strong>
-                {runtimeSummary.healthy}/{runtimeSummary.total}
-              </strong>
-              {tr(locale, "健康", "healthy")}
-            </span>
-            <span className={runtimeSummary.missing + runtimeSummary.offline > 0 ? "has-issue" : ""}>
-              <WifiOff size={13} />
-              <strong>{runtimeSummary.missing + runtimeSummary.offline}</strong>
-              {tr(locale, "失联", "unreachable")}
-            </span>
-            <span className={runtimeSummary.stale + runtimeSummary.undated + runtimeSummary.invalidTimestamp > 0 ? "has-issue" : ""}>
-              <CircleDot size={13} />
-              <strong>{runtimeSummary.stale + runtimeSummary.undated + runtimeSummary.invalidTimestamp}</strong>
-              {tr(locale, "时效异常", "timestamp issues")}
-            </span>
-            <span className={runtimeSummary.badQuality + runtimeSummary.uncertainQuality > 0 ? "has-issue" : ""}>
-              <Gauge size={13} />
-              <strong>{runtimeSummary.badQuality + runtimeSummary.uncertainQuality}</strong>
-              {tr(locale, "质量异常", "quality issues")}
-            </span>
-            {activeAlarms.length > 0 && (
-              <span className="has-alarm">
-                <AlertTriangle size={13} />
-                <strong>{activeAlarms.length}</strong>
-                {tr(locale, "告警", "alarms")}
-                {runtimeSummary.unacknowledgedAlarms > 0 && (
-                  <em>
-                    {runtimeSummary.unacknowledgedAlarms} {tr(locale, "未确认", "unacknowledged")}
-                  </em>
-                )}
-              </span>
-            )}
-          </div>
-        )}
-        <div className="topology-editor__canvas-stage" style={{ width: CANVAS_WIDTH * zoom, height: CANVAS_HEIGHT * zoom }}>
+        <TopologyRuntimeOverview summary={runtimeSummary} locale={locale} />
+        <div className="topology-editor__scroll" ref={viewport.viewportRef} onWheel={viewport.markManualView} onPointerDown={viewport.markManualView}>
+        <div className="topology-editor__canvas-stage" style={viewport.stageSize}>
           <div
             className="topology-editor__canvas"
             ref={canvasRef}
-            style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "top left" }}
+            style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, ...viewport.canvasOffset, transform: `scale(${zoom})`, transformOrigin: "top left" }}
             onClick={() => dispatch({ type: "selection.set", selection: [] })}
           >
           <svg className="topology-editor__edges" width={CANVAS_WIDTH} height={CANVAS_HEIGHT} aria-hidden="true">
@@ -385,7 +351,8 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
               "topology-editor__node",
               selected && "is-selected",
               connecting && "is-source",
-              scada && `is-scada is-state-${operatingState} is-freshness-${runtimeAssessment.freshness} is-quality-${runtimeAssessment.quality}`,
+              scada && `is-scada is-state-${operatingState} is-freshness-${runtimeAssessment.freshness}`,
+              scada && runtimeState && `is-quality-${runtimeAssessment.quality}`,
               runtimeState?.alarm?.active && "has-alarm",
             ]
               .filter(Boolean)
@@ -410,13 +377,13 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
                 </span>
                 <span className="topology-editor__node-copy">
                   <strong>{topologyNodeLabel(node)}</strong>
-                  <small>{scada ? scadaStateLabel(locale, operatingState) : node.kind}</small>
+                  <small>{scada ? (runtimeState ? scadaStateLabel(locale, operatingState) : tr(locale, "待数据", "Awaiting data")) : node.kind}</small>
                   {scada && runtimeState?.value !== undefined && <em>{formatScadaValue(runtimeState.value, runtimeState.unit ?? topologyNodeScadaConfig(node)?.unit)}</em>}
                 </span>
                 {scada && (
                   <span
                     className={`topology-editor__status-dot is-${operatingState}`}
-                    title={`${scadaStateLabel(locale, operatingState)} · ${qualityLabel(locale, runtimeAssessment.quality)} · ${runtimeAssessmentLabel(locale, runtimeAssessment)}`}
+                    title={runtimeState ? `${scadaStateLabel(locale, operatingState)} · ${qualityLabel(locale, runtimeAssessment.quality)} · ${runtimeAssessmentLabel(locale, runtimeAssessment)}` : tr(locale, "等待实时数据，不代表设备离线", "Awaiting runtime data; not an offline diagnosis")}
                   />
                 )}
                 {runtimeState?.alarm?.active && (
@@ -436,6 +403,8 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
               </button>
             );
           })}
+          </div>
+        </div>
           {editor.document.nodes.length === 0 && (
             <div className="topology-editor__empty">
               <span>
@@ -445,10 +414,10 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
               <small>{tr(locale, "设备关系保持轻量，并可直接绑定数据中台产品。", "Keep relationships lightweight and bind data products directly.")}</small>
             </div>
           )}
-          </div>
         </div>
         <div className="topology-editor__zoom" role="toolbar" aria-label={tr(locale, "画布缩放", "Canvas zoom")}>
-          <button onClick={zoomOut} disabled={zoom <= 0.6} title={tr(locale, "缩小", "Zoom out")} aria-label={tr(locale, "缩小", "Zoom out")}><ZoomOut size={14} /></button>
+          <button onClick={viewport.fitView} title={tr(locale, "显示全部节点", "Fit all nodes")} aria-label={tr(locale, "显示全部节点", "Fit all nodes")}><Maximize size={14} /></button>
+          <button onClick={zoomOut} disabled={zoom <= TOPOLOGY_MIN_ZOOM} title={tr(locale, "缩小", "Zoom out")} aria-label={tr(locale, "缩小", "Zoom out")}><ZoomOut size={14} /></button>
           <button className="topology-editor__zoom-value" onClick={resetZoom} title={tr(locale, "重置为 100%", "Reset to 100%")}>{Math.round(zoom * 100)}%</button>
           <button onClick={zoomIn} disabled={zoom >= 1.5} title={tr(locale, "放大", "Zoom in")} aria-label={tr(locale, "放大", "Zoom in")}><ZoomIn size={14} /></button>
         </div>

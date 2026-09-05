@@ -11,7 +11,7 @@
   background: var(--topology-bg);
   color: var(--topology-text);
   display: grid;
-  grid-template: 58px minmax(0, 1fr) 28px / var(--topology-palette-width) minmax(480px, 1fr) var(--topology-inspector-width);
+  grid-template: 58px minmax(0, 1fr) 28px / var(--topology-palette-width) minmax(0, 1fr) var(--topology-inspector-width);
   height: 100%;
   min-height: 560px;
   overflow: hidden;
@@ -146,34 +146,34 @@
 .topology-editor__hint { align-items: flex-start; background: #111719; border: 1px solid #2b353a; border-radius: 9px; color: #78858c; display: flex; font-size: 10px; gap: 7px; line-height: 1.5; margin-top: 18px; padding: 10px; }
 .topology-editor__hint svg { flex: 0 0 auto; margin-top: 1px; }
 
-.topology-editor__viewport { grid-column: 2; grid-row: 2; min-height: 0; overflow: auto; position: relative; }
+.topology-editor__viewport { display: flex; flex-direction: column; grid-column: 2; grid-row: 2; min-width: 0; min-height: 0; overflow: hidden; position: relative; }
+.topology-editor__scroll { flex: 1; min-height: 0; overflow: scroll; position: relative; }
 .topology-editor__viewport.is-connecting { cursor: crosshair; }
-.topology-editor__canvas {
+.topology-editor__scroll {
   background-color: #101517;
   background-image: radial-gradient(circle, #2a353a 1px, transparent 1px);
   background-size: 16px 16px;
-  position: relative;
 }
-.topology-editor__viewport.is-2-5d .topology-editor__canvas {
+.topology-editor__canvas { position: absolute; }
+.topology-editor__viewport.is-2-5d .topology-editor__scroll {
   background-color: #0d1416;
   background-image:
     linear-gradient(rgba(69, 103, 104, .16) 1px, transparent 1px),
     linear-gradient(90deg, rgba(69, 103, 104, .12) 1px, transparent 1px);
   background-size: 32px 32px;
 }
-.topology-editor__canvas-stage { position: relative; }
+.topology-editor__canvas-stage { min-width: 100%; min-height: 100%; overflow: hidden; position: relative; }
 .topology-editor__zoom {
   align-items: center;
   background: rgba(15, 21, 24, .94);
   border: 1px solid #354147;
   border-radius: 8px;
-  bottom: 12px;
   box-shadow: 0 7px 18px rgba(0, 0, 0, .24);
   display: flex;
   gap: 2px;
-  margin: 0 12px 12px auto;
+  margin: 6px 12px 6px auto;
   padding: 3px;
-  position: sticky;
+  flex-shrink: 0;
   width: max-content;
   z-index: 5;
 }
@@ -210,7 +210,7 @@
 .topology-editor__edges g.is-selected .topology-editor__edge-line { stroke: var(--topology-accent); stroke-width: 2; }
 .topology-editor__edges g.is-selected marker path { fill: var(--topology-accent); }
 
-.topology-editor__runtime-overview { align-items: stretch; background: rgba(15, 21, 24, .94); border: 1px solid #354147; border-radius: 9px; box-shadow: 0 7px 22px rgba(0, 0, 0, .24); display: flex; gap: 2px; left: 12px; padding: 4px; position: sticky; top: 12px; width: max-content; z-index: 4; }
+.topology-editor__runtime-overview { align-items: stretch; background: var(--topology-panel); border-bottom: 1px solid var(--topology-line); display: flex; flex-wrap: wrap; flex-shrink: 0; gap: 2px; padding: 6px 12px; z-index: 4; }
 .topology-editor__runtime-overview > span { align-items: center; border-radius: 6px; color: #92a0a6; display: flex; font-size: 10px; gap: 4px; min-height: 28px; padding: 0 8px; white-space: nowrap; }
 .topology-editor__runtime-overview strong { color: #dce4e7; font-size: 10px; font-variant-numeric: tabular-nums; }
 .topology-editor__runtime-overview .is-healthy svg { color: #38b77d; }
@@ -363,3 +363,42 @@
   .topology-editor__header { grid-template-columns: 190px minmax(120px, 1fr) auto auto; }
   .topology-editor__actions label,.topology-editor__actions button:first-of-type { display: none; }
 }
+
+/* 拓扑不是独立品牌；亮色工作区沿用平台中性令牌，运行告警保留语义色。 */
+:root[data-theme="light"] .topology-editor {
+  --topology-bg: var(--bg-0);
+  --topology-panel: var(--surface-1);
+  --topology-line: var(--line);
+  --topology-muted: var(--text-muted);
+  --topology-text: var(--text-strong);
+}
+:root[data-theme="light"] .topology-editor :is(.topology-editor__header,.topology-editor__footer,.topology-editor__zoom,.topology-editor__panel-toggles button,.topology-editor__node,.topology-editor__presets > button) {
+  background: var(--surface-1);
+  color: var(--text-strong);
+  border-color: var(--line-strong);
+  box-shadow: none;
+}
+:root[data-theme="light"] .topology-editor .topology-editor__scroll {
+  background-color: var(--bg-1);
+  background-image: radial-gradient(circle, var(--line-strong) 1px, transparent 1px);
+}
+:root[data-theme="light"] .topology-editor :is(.topology-editor__palette-search,.topology-editor__inspector-search,.topology-editor__hint,.topology-editor__presets > button > span:first-child,.topology-editor__node-icon,.topology-editor__identity code,.topology-editor__scada-runtime,.topology-editor__edge-card,.topology-editor__form-note) {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--line);
+}
+:root[data-theme="light"] .topology-editor :is(input,select,.topology-editor__extension-row input,.topology-editor__extension-add input) {
+  background: var(--surface-1);
+  color: var(--text-strong);
+  border-color: var(--line-strong);
+}
+:root[data-theme="light"] .topology-editor :is(.topology-editor__runtime-overview strong,.topology-editor__zoom-value) { color: var(--text-strong) !important; }
+:root[data-theme="light"] .topology-editor :is(.topology-editor__runtime-overview > span,.topology-editor__presets small,.topology-editor__node-copy small,.topology-editor__node-copy em,.topology-editor__inspector-empty,.topology-editor__inspector-empty strong,.topology-editor__form label,.topology-editor__scada-runtime small) { color: var(--text-muted); }
+:root[data-theme="light"] .topology-editor .topology-editor__runtime-overview .has-issue { color: #785415; }
+:root[data-theme="light"] .topology-editor .topology-editor__runtime-overview .has-alarm { color: #a52a32; }
+:root[data-theme="light"] .topology-editor .topology-editor__edge-label { fill: var(--text); stroke: var(--bg-1); }
+:root[data-theme="light"] .topology-editor .topology-editor__node.is-selected { border-color: var(--topology-accent); box-shadow: 0 0 0 2px var(--topology-accent-soft); }
+:root[data-theme="light"] .topology-editor .topology-editor__node.has-alarm { border-color: var(--danger); }
+:root[data-theme="light"] .topology-editor .topology-editor__preset-group:not(.is-base) .topology-editor__section-title > span { color: #237954; }
+:root[data-theme="light"] .topology-editor .topology-editor__section-title small { background: var(--surface-3); color: var(--text-muted); }
+:root[data-theme="light"] .topology-editor .topology-editor__edge-line { stroke: var(--text-muted); }

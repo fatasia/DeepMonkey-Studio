@@ -29,6 +29,7 @@ async function renderStudioApplication(): Promise<void> {
   const CommissioningVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/CommissioningVisualQa")) : undefined;
   const OperationsPlanningVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/OperationsPlanningVisualQa")) : undefined;
   const SceneSimulationVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/SceneSimulationVisualQa")) : undefined;
+  const TopologyVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/TopologyVisualQa")) : undefined;
   const visualQaMode = visualQaEnabled ? new URLSearchParams(window.location.search).get("__visualQa") : undefined;
   if (visualQaMode && DashboardVisualQa && ViewerVisualQa && CommissioningVisualQa && OperationsPlanningVisualQa && SceneSimulationVisualQa) {
     const VisualQaPage = visualQaMode === "dashboard"
@@ -41,6 +42,8 @@ async function renderStudioApplication(): Promise<void> {
             ? OperationsPlanningVisualQa
           : visualQaMode === "scene-simulation"
             ? SceneSimulationVisualQa
+          : visualQaMode === "topology"
+            ? TopologyVisualQa
           : undefined;
     if (VisualQaPage) {
       // 仅视觉验收入口允许 URL 指定主题；不改用户偏好或平台品牌设置。
