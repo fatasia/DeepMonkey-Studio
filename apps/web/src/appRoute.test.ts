@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 import { readRoute, routeHistoryState, routePath } from "./appRoute";
 
 describe("app route", () => {
+  it("restores the manager workspace and optimizer project without discarding their identity", () => {
+    expect(routePath({ view: "manager", projectId: "factory / 2", managerTab: "assets" })).toBe("/manager?project=factory%20%2F%202&tab=assets");
+    expect(routePath({ view: "optimizer", projectId: "factory 2" })).toBe("/optimizer?project=factory%202");
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { pathname: "/manager", search: "?project=p2&tab=assets" }, history: { state: null } } });
+    try {
+      expect(readRoute()).toEqual({ view: "manager", projectId: "p2", managerTab: "assets" });
+      window.location.search = "?project=p2&tab=unknown";
+      expect(readRoute()).toEqual({ view: "manager", projectId: "p2" });
+      window.location.pathname = "/optimizer";
+      expect(readRoute()).toEqual({ view: "optimizer", projectId: "p2" });
+    } finally { Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow }); }
+  });
   it("round-trips the data center project through reloadable URLs", () => {
     expect(routePath({ view: "data", projectId: "factory / 2" })).toBe("/data?project=factory%20%2F%202");
     const originalWindow = globalThis.window;

@@ -5,13 +5,22 @@ export type AssetLibraryDimension = "2d" | "3d" | "environment" | "material" | "
 export type AssetLibraryQualityTier = "light" | "standard" | "heavy";
 export type AssetLibraryPublicationStatus = "published" | "review-required" | "deprecated";
 
+/** 再分发所需署名信息；随项目素材与交付保留，不参与品牌清理。 */
+export interface AssetAttribution {
+  author: string;
+  sourceUrl: string;
+  licenseUrl: string;
+  text: string;
+  modifications: string;
+}
+
 export interface AssetLibraryCategoryCount {
   id: string;
   name: string;
   count: number;
 }
 
-/** 统一素材目录只暴露平台自己的中性元数据，不把外部站点信息带入产品界面。 */
+/** 展示元数据保持中性；依法所需的作者、来源与许可必须完整保留。 */
 export interface AssetLibraryItem {
   id: string;
   name: string;
@@ -33,6 +42,7 @@ export interface AssetLibraryItem {
   tags: string[];
   version: string;
   license: string;
+  attribution?: AssetAttribution;
   publicationStatus: AssetLibraryPublicationStatus;
   contentHash: string;
   mapKinds?: string[];

@@ -640,6 +640,8 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
       {route.view === "manager" && (
         <Suspense fallback={<PlatformRouteLoading label={tr(locale, "正在加载项目工作台", "Loading project workspace")} />}>
           <SceneManager
+          managerTab={route.managerTab ?? "scenes"}
+          onManagerTabChange={(managerTab) => navigate({ view: "manager", managerTab }, true)}
           {...(route.fallback === "not-found" ? { navigationNotice: tr(locale, "页面不存在，已返回项目工作台", "Page not found. Returned to the project workspace.") } : {})}
           onDismissNavigationNotice={() => setRoute({ view: "manager" })}
           locale={locale}

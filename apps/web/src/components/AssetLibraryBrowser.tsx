@@ -4,6 +4,7 @@ import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import { AssetThumbnail } from "./AssetThumbnail";
 import { useAssetLibraryCatalog } from "./useAssetLibraryCatalog";
+import { AssetAttributionDetails } from "./AssetAttributionDetails";
 
 interface AssetLibraryBrowserProps {
   locale: AppLocale;
@@ -144,7 +145,8 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
                   <small>{item.dimension === "3d" ? `${formatTriangles(item.triangleCount, locale)} · ` : `${item.mapKinds?.length ?? item.textureCount} ${tr(locale, "张贴图", "maps")} · `}{formatBytes(item.size)}</small>
                   <small>{item.license} · v{item.version}</small>
                 </div>
-                <button className={imported ? "asset-imported" : "asset-import"} disabled={!projectId || importing || imported || unavailable} onClick={() => void catalog.importItem(item.id)}>
+                {item.attribution && <AssetAttributionDetails attribution={item.attribution} locale={locale} />}
+                <button className={imported ? "asset-imported" : "asset-import"} disabled={!projectId || Boolean(catalog.importingId) || imported || unavailable} onClick={() => void catalog.importItem(item.id)}>
                   {imported ? <Check size={14} /> : importing ? <RefreshCw className="spin" size={14} /> : <Download size={14} />}
                   {imported
                     ? tr(locale, "已在项目", "In project")

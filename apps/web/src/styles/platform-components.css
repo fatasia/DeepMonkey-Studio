@@ -163,8 +163,11 @@
 .optimizer-preview-toolbar > span { color: var(--muted); font-size: 8px; }
 .optimizer-canvas { position: relative; min-width: 0; min-height: 0; }
 .optimizer-canvas canvas { display: block; }
-.optimizer-fit-view { position: absolute; top: 9px; right: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; background: rgba(24,29,32,.88); font-size: 7px; cursor: pointer; }
-.optimizer-fit-view:hover { color: var(--accent); border-color: rgba(212,168,79,.55); }
+.optimizer-preview-actions { position:absolute; top:9px; right:10px; z-index:3; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; max-width:calc(100% - 20px); }
+.optimizer-fit-view { display:inline-flex; align-items:center; gap:4px; min-height:32px; padding:0 9px; color:var(--text); border:1px solid var(--line); border-radius:5px; background:var(--surface-1); font-size:12px; cursor:pointer; }
+.optimizer-fit-view:hover:not(:disabled) { color:var(--accent-hover); border-color:var(--accent); }
+.optimizer-fit-view:disabled { opacity:.5; cursor:default; }
+.optimizer-preview-actions > span { flex-basis:100%; padding:6px; color:var(--text); background:var(--surface-1); font-size:12px; }
 .optimizer-preview-state { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--muted); background: var(--bg-0); font-size: 9px; pointer-events: none; }
 .optimizer-preview-state.error { color: #d98f8b; }
 .optimizer-drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; color: var(--muted); border: 0; background: radial-gradient(circle at 50% 45%, var(--surface-2), var(--bg-0) 56%); cursor: pointer; }

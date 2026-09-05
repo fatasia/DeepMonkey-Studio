@@ -9,10 +9,13 @@ import {
 } from "./studio/workspaceRoute";
 import { sceneViewerDeliveryRoute } from "./delivery/sceneViewerDelivery";
 
+export type ManagerWorkspaceTab = "scenes" | "assets" | "topology" | "examples";
+
 export interface AppRoute {
   view: "manager" | "dashboard" | "studio" | "topology" | "optimizer" | "data" | "vision" | "operations" | "docs" | "system" | "branding" | "view" | "published";
   sceneId?: string;
   projectId?: string;
+  managerTab?: ManagerWorkspaceTab;
   applicationId?: string;
   pageId?: string;
   topologyId?: string;
@@ -58,7 +61,7 @@ function readLocationRoute(): AppRoute {
     const projectId = new URLSearchParams(window.location.search).get("project");
     return {
       view,
-      ...(view === "data" && projectId ? { projectId } : {}),
+      ...((view === "data" || view === "optimizer") && projectId ? { projectId } : {}),
       ...(view === "operations" && requestedTask && operationsTabs.has(requestedTask)
         ? { operationsTab: requestedTask as NonNullable<AppRoute["operationsTab"]> }
         : {}),
@@ -73,16 +76,26 @@ function readLocationRoute(): AppRoute {
   };
   const match = window.location.pathname.match(/^\/(studio|view|published)\/([^/]+)$/);
   if (match?.[1] && match[2]) return { view: match[1] as "studio" | "view" | "published", sceneId: decodeURIComponent(match[2]) };
-  return window.location.pathname === "/" || window.location.pathname === "/manager"
-    ? { view: "manager" }
-    : { view: "manager", fallback: "not-found" };
+  if (window.location.pathname === "/" || window.location.pathname === "/manager") {
+    const query = new URLSearchParams(window.location.search);
+    const projectId = query.get("project");
+    const tab = query.get("tab");
+    return { view: "manager", ...(projectId ? { projectId } : {}),
+      ...(tab && ["scenes", "assets", "topology", "examples"].includes(tab) ? { managerTab: tab as ManagerWorkspaceTab } : {}) };
+  }
+  return { view: "manager", fallback: "not-found" };
 }
 
 export function routePath(route: AppRoute): string {
   const deliveryRoute = sceneViewerDeliveryRoute();
   if (deliveryRoute) return `/published/${encodeURIComponent(deliveryRoute.sceneId)}`;
   if (route.view === "docs") return docsPath(route.documentId);
-  if (route.view === "data" && route.projectId) return `/data?project=${encodeURIComponent(route.projectId)}`;
+  if (route.view === "data" || route.view === "manager" || route.view === "optimizer") {
+    const query = new URLSearchParams();
+    if (route.projectId) query.set("project", route.projectId);
+    if (route.view === "manager" && route.managerTab) query.set("tab", route.managerTab);
+    return `/${route.view}${query.size ? `?${query.toString().replace(/\+/g, "%20")}` : ""}`;
+  }
   if (route.view === "dashboard" && route.projectId && route.applicationId && route.pageId) {
     return studioWorkspacePath({ kind: "dashboard", projectId: route.projectId, applicationId: route.applicationId, pageId: route.pageId });
   }
@@ -92,7 +105,7 @@ export function routePath(route: AppRoute): string {
   if (route.view === "topology" && route.projectId && route.applicationId && route.topologyId) {
     return `/projects/${encodeURIComponent(route.projectId)}/applications/${encodeURIComponent(route.applicationId)}/topologies/${encodeURIComponent(route.topologyId)}`;
   }
-  return route.view === "manager" || route.view === "optimizer" || route.view === "data" || route.view === "vision" || route.view === "operations" || route.view === "system" || route.view === "branding"
+  return route.view === "vision" || route.view === "operations" || route.view === "system" || route.view === "branding"
     ? route.view === "operations" && route.operationsTab
       ? `/operations?task=${encodeURIComponent(route.operationsTab)}`
       : `/${route.view}`

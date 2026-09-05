@@ -12,6 +12,8 @@ type ProjectAssetTab = "all" | "model" | "image" | "video" | "environment" | "pb
 
 function useSceneManagerController({
   locale,
+  managerTab: requestedManagerTab,
+  onManagerTabChange,
   branding,
   projects,
   project,
@@ -64,7 +66,9 @@ function useSceneManagerController({
   onRefreshModels,
 }: SceneManagerProps) {
   const [dialogMode, setDialogMode] = useState<"create" | "rename">();
-  const [managerTab, setManagerTab] = useState<"scenes" | "assets" | "topology" | "examples">("scenes");
+  const [localManagerTab, setLocalManagerTab] = useState<"scenes" | "assets" | "topology" | "examples">("scenes");
+  const managerTab = requestedManagerTab ?? localManagerTab;
+  const setManagerTab = (tab: typeof managerTab) => { setLocalManagerTab(tab); onManagerTabChange?.(tab); };
   const [targetScene, setTargetScene] = useState<SceneSnapshot>();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -125,10 +129,6 @@ function useSceneManagerController({
       cancelled = true;
     };
   }, [isAdmin, project?.id, scenes]);
-
-  useEffect(() => {
-    if (!project && (managerTab === "assets" || managerTab === "topology")) setManagerTab("scenes");
-  }, [managerTab, project]);
 
   useEffect(() => {
     setSceneSearch("");

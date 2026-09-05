@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import type { AssetLibraryDimension, AssetLibraryImportResult, ModelRecord, ProjectAssetRecord } from "@bim-studio/contracts";
+import type { AssetLibraryDimension, AssetLibraryImportResult, ModelRecord, ProjectAssetRecord, ProjectRecord } from "@bim-studio/contracts";
 import { AssetLibraryCatalog, type AssetLibraryCatalogEntry } from "./assetLibraryCatalog.js";
 import type { ConversionQueue } from "./conversion.js";
 import type { ObjectStore } from "./objects.js";
@@ -28,9 +28,11 @@ interface AssetLibraryListQuery {
 }
 
 export async function registerAssetLibraryRoutes(app: FastifyInstance, dependencies: AssetLibraryRouteDependencies): Promise<void> {
+  const imports = new Map<string, Promise<AssetLibraryImportResult>>();
   const catalog = new AssetLibraryCatalog(
     dependencies.libraryDir,
     path.join(dependencies.dataDir, "external-assets", "environment-materials"),
+    path.join(dependencies.dataDir, "external-assets", "source-b"),
   );
 
   app.get<{ Querystring: AssetLibraryListQuery }>("/api/asset-library", async (request, reply) => {
@@ -74,22 +76,33 @@ export async function registerAssetLibraryRoutes(app: FastifyInstance, dependenc
     const entry = await catalog.get(request.params.itemId).catch(() => undefined);
     if (!entry) return reply.code(404).send({ message: "素材不存在或离线文件缺失" });
     if (entry.publicItem.publicationStatus === "deprecated") return reply.code(409).send({ message: "素材版本已废弃，请选择可用版本" });
+    if (entry.publicItem.publicationStatus !== "published") return reply.code(409).send({ message: "素材待质量复核，暂不能导入" });
+    const key = `${project.id}:${entry.kind}:${entry.contentHash}`;
     try {
-      if (entry.kind === "model") {
-        const existing = project.models.find((model) => importedLibraryItemId(model) === entry.publicItem.id || model.libraryOrigin?.contentHash === entry.contentHash);
-        if (existing) return reply.send({ kind: "model", model: existing, reused: true } satisfies AssetLibraryImportResult);
-        const model = await importCatalogModel(dependencies, project.id, entry);
-        return reply.code(201).send({ kind: "model", model, reused: false } satisfies AssetLibraryImportResult);
-      }
-      const existing = (project.assets ?? []).find((asset) => asset.libraryOrigin?.itemId === entry.publicItem.id || asset.libraryOrigin?.contentHash === entry.contentHash);
-      if (existing) return reply.send({ kind: "resource", asset: existing, reused: true } satisfies AssetLibraryImportResult);
-      const asset = await importCatalogResource(dependencies, project.id, entry);
-      return reply.code(201).send({ kind: "resource", asset, reused: false } satisfies AssetLibraryImportResult);
+      const active = imports.get(key);
+      if (active) return reply.send({ ...await active, reused: true });
+      const operation = resolveCatalogImport(dependencies, project, entry);
+      imports.set(key, operation);
+      try {
+        const result = await operation;
+        return reply.code(result.reused ? 200 : 201).send(result);
+      } finally { if (imports.get(key) === operation) imports.delete(key); }
     } catch (reason) {
       request.log.error({ reason, itemId: entry.publicItem.id }, "asset library import failed");
       return reply.code(500).send({ message: reason instanceof Error ? reason.message : "素材导入失败" });
     }
   });
+}
+
+async function resolveCatalogImport(dependencies: AssetLibraryRouteDependencies, project: ProjectRecord, entry: AssetLibraryCatalogEntry): Promise<AssetLibraryImportResult> {
+  if (entry.kind === "model") {
+    const existing = project.models.find(model => importedLibraryItemId(model) === entry.publicItem.id || model.libraryOrigin?.contentHash === entry.contentHash);
+    return existing ? { kind: "model", model: existing, reused: true }
+      : { kind: "model", model: await importCatalogModel(dependencies, project.id, entry), reused: false };
+  }
+  const existing = (project.assets ?? []).find(asset => asset.libraryOrigin?.itemId === entry.publicItem.id || asset.libraryOrigin?.contentHash === entry.contentHash);
+  return existing ? { kind: "resource", asset: existing, reused: true }
+    : { kind: "resource", asset: await importCatalogResource(dependencies, project.id, entry), reused: false };
 }
 
 async function importCatalogModel(
@@ -107,6 +120,8 @@ async function importCatalogModel(
   await mkdir(sourceDir, { recursive: true });
   try {
     await copyFile(entry.modelPath, sourcePath);
+    // 核对实际将上传的副本，避免目录文件在校验与复制之间被替换。
+    await assertFileHash(sourcePath, entry.contentHash);
     await dependencies.objects.putFile(`projects/${projectId}/models/${modelId}/source/${sourceName}`, sourcePath);
     const now = new Date().toISOString();
     const model: ModelRecord = {
@@ -119,7 +134,11 @@ async function importCatalogModel(
       progress: 0,
       message: "正在导入素材并生成运行清单",
       sourceUrl: `/assets/projects/${projectId}/models/${modelId}/source/${sourceName}`,
-      libraryOrigin: { itemId: entry.publicItem.id, contentHash: entry.contentHash, catalogVersion: 1 },
+      libraryOrigin: {
+        itemId: entry.publicItem.id, contentHash: entry.contentHash, catalogVersion: 1,
+        version: entry.publicItem.version, license: entry.publicItem.license,
+        ...(entry.publicItem.attribution ? { attribution: entry.publicItem.attribution } : {}),
+      },
       createdAt: now,
       updatedAt: now,
     };
@@ -151,9 +170,9 @@ async function importCatalogResource(
   try {
     const copied = [] as Array<{ source: (typeof entry.assetFiles)[number]; url: string }>;
     for (const source of entry.assetFiles) {
-      await assertFileHash(source.filePath, source.sha256);
       const target = path.join(assetDir, source.fileName);
       await copyFile(source.filePath, target);
+      await assertFileHash(target, source.sha256);
       await dependencies.objects.putFile(`${objectPrefix}/${source.fileName}`, target);
       copied.push({ source, url: `/assets/${objectPrefix}/${encodeURIComponent(source.fileName)}` });
     }
@@ -185,6 +204,7 @@ async function importCatalogResource(
         version: entry.publicItem.version,
         license: entry.publicItem.license,
         publicationStatus: entry.publicItem.publicationStatus,
+        ...(entry.publicItem.attribution ? { attribution: entry.publicItem.attribution } : {}),
       },
       createdAt: now,
       updatedAt: now,

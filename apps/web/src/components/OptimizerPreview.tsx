@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Crosshair, LoaderCircle } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
@@ -7,6 +7,9 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { BakeLightState } from "../optimizer/modelOptimizer";
+import type { AppLocale } from "../i18n";
+import { captureModelThumbnail } from "../optimizer/captureModelThumbnail";
+import { OptimizerPreviewActions } from "./OptimizerPreviewActions";
 
 interface OptimizerPreviewRuntime {
   scene: THREE.Scene;
@@ -25,6 +28,7 @@ interface OptimizerPreviewRuntime {
 }
 
 interface OptimizerPreviewProps {
+  locale: AppLocale;
   url: string;
   bakeEnabled: boolean;
   comparisonMode: boolean;
@@ -40,6 +44,7 @@ interface OptimizerPreviewProps {
 }
 
 export function OptimizerPreview({
+  locale,
   url,
   bakeEnabled,
   comparisonMode,
@@ -179,17 +184,17 @@ export function OptimizerPreview({
 
   return (
     <div className="optimizer-canvas" ref={containerRef}>
-      <button
-        className="optimizer-fit-view"
-        title="适应窗口"
-        onClick={() => {
+      <OptimizerPreviewActions key={url} locale={locale} ready={loadState === "ready"}
+        onFit={() => {
           const runtime = runtimeRef.current;
           if (runtime) frameOptimizerCamera(runtime);
         }}
-      >
-        <Crosshair size={13} />
-        适应窗口
-      </button>
+        onCapture={() => {
+          const runtime = runtimeRef.current;
+          if (!runtime?.model) return Promise.reject(new Error("模型尚未载入"));
+          const helpers = [...runtime.scene.children.filter(object => object instanceof THREE.GridHelper), runtime.transform.getHelper(), ...[...runtime.lights.values()].map(light => light.proxy)];
+          return captureModelThumbnail(runtime.renderer, runtime.scene, runtime.camera, helpers);
+        }} />
       {loadState !== "ready" && (
         <div className={`optimizer-preview-state ${loadState}`}>
           <LoaderCircle className={loadState === "loading" ? "spin" : ""} size={18} />

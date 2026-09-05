@@ -4,13 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import Fastify from "fastify";
 import type { ModelRecord, ProjectRecord } from "@bim-studio/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerAssetLibraryRoutes } from "./assetLibraryRoutes.js";
 import type { ConversionQueue } from "./conversion.js";
 import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
 
 const directories: string[] = [];
+const modelHash = createHash("sha256").update("model-binary").digest("hex");
 
 afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))));
 
@@ -41,7 +42,7 @@ describe("asset library routes", () => {
 
     const imported = await app.inject({ method: "POST", url: "/api/projects/default/asset-library/industrial-10/import" });
     expect(imported.statusCode).toBe(201);
-    expect(imported.json()).toMatchObject({ reused: false, model: { name: "六轴机械臂", format: "glb", status: "queued", libraryOrigin: { itemId: "industrial-10", contentHash: "model-hash" } } });
+    expect(imported.json()).toMatchObject({ reused: false, model: { name: "六轴机械臂", format: "glb", status: "queued", libraryOrigin: { itemId: "industrial-10", contentHash: modelHash } } });
     expect(queued).toHaveLength(1);
     expect(await readFile(queued[0]!.sourcePath, "utf8")).toBe("model-binary");
 
@@ -72,6 +73,66 @@ describe("asset library routes", () => {
     expect(project.assets).toHaveLength(2);
     await app.close();
   });
+
+  it("coalesces concurrent imports so only one model and conversion job are created", async () => {
+    const root = await createLibraryFixture();
+    const project = projectFixture();
+    const putFile = vi.fn(async () => new Promise(resolve => setTimeout(resolve, 25)));
+    const enqueue = vi.fn();
+    const app = Fastify();
+    await registerAssetLibraryRoutes(app, {
+      dataDir: root, libraryDir: root, store: storeFixture(project),
+      queue: { enqueue } as unknown as ConversionQueue,
+      objects: { putFile } as unknown as ObjectStore,
+    });
+    const responses = await Promise.all(Array.from({ length: 6 }, () => app.inject({ method: "POST", url: "/api/projects/default/asset-library/industrial-10/import" })));
+    expect(responses.filter(response => response.statusCode === 201)).toHaveLength(1);
+    expect(new Set(responses.map(response => response.json().model.id)).size).toBe(1);
+    expect(putFile).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(project.models).toHaveLength(1);
+    await app.close();
+  });
+
+  it("rejects changed model bytes before object storage or conversion", async () => {
+    const root = await createLibraryFixture();
+    const project = projectFixture();
+    const putFile = vi.fn();
+    const enqueue = vi.fn();
+    const app = Fastify();
+    await registerAssetLibraryRoutes(app, {
+      dataDir: root, libraryDir: root, store: storeFixture(project),
+      queue: { enqueue } as unknown as ConversionQueue,
+      objects: { putFile, removePrefix: vi.fn() } as unknown as ObjectStore,
+    });
+    await writeFile(path.join(root, "models/10.glb"), "changed-model");
+    const response = await app.inject({ method: "POST", url: "/api/projects/default/asset-library/industrial-10/import" });
+    expect(response.statusCode).toBe(500);
+    expect(response.json().message).toContain("完整性校验失败");
+    expect(putFile).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(project.models).toEqual([]);
+    expect(await readFile(path.join(root, "models/10.glb"), "utf8")).toBe("changed-model");
+    await app.close();
+  });
+
+  it("rejects review-required resources even when the UI guard is bypassed", async () => {
+    const root = await createLibraryFixture();
+    await createAppearanceFixture(root, "review-required");
+    const project = projectFixture();
+    const putFile = vi.fn();
+    const app = Fastify();
+    await registerAssetLibraryRoutes(app, {
+      dataDir: root, libraryDir: root, store: storeFixture(project),
+      queue: {} as ConversionQueue, objects: { putFile } as unknown as ObjectStore,
+    });
+    const response = await app.inject({ method: "POST", url: "/api/projects/default/asset-library/environment-workshop/import" });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().message).toContain("待质量复核");
+    expect(putFile).not.toHaveBeenCalled();
+    expect(project.assets).toEqual([]);
+    await app.close();
+  });
 });
 
 function storeFixture(project: ProjectRecord): MetadataStore {
@@ -82,7 +143,7 @@ function storeFixture(project: ProjectRecord): MetadataStore {
   } as unknown as MetadataStore;
 }
 
-async function createAppearanceFixture(dataDir: string): Promise<void> {
+async function createAppearanceFixture(dataDir: string, publicationStatus = "published"): Promise<void> {
   const root = path.join(dataDir, "external-assets", "environment-materials");
   const files = [appearanceFile("base-color.jpg", "base"), appearanceFile("normal.jpg", "normal"), appearanceFile("roughness.jpg", "rough"), appearanceFile("thumbnail.png", "thumb")];
   const environmentFiles = [appearanceFile("environment.hdr", "radiance"), appearanceFile("thumbnail.png", "environment-thumb")];
@@ -100,7 +161,7 @@ async function createAppearanceFixture(dataDir: string): Promise<void> {
         files: files.map(({ content, ...file }) => file), totalBytes: files.reduce((sum, file) => sum + file.bytes, 0),
       },
       {
-        id: "workshop", category: "environment", name: "车间环境", tags: ["industrial"], license: "CC0-1.0", publicationStatus: "review-required",
+        id: "workshop", category: "environment", name: "车间环境", tags: ["industrial"], license: "CC0-1.0", publicationStatus,
         maps: [{ kind: "environment", fileName: "environment.hdr" }],
         files: environmentFiles.map(({ content, ...file }) => file), totalBytes: environmentFiles.reduce((sum, file) => sum + file.bytes, 0),
       },
@@ -123,7 +184,7 @@ async function createLibraryFixture(): Promise<string> {
   await Promise.all([mkdir(path.join(root, "models")), mkdir(path.join(root, "thumbnails"))]);
   const models = [{ id: 10, name: "六轴机械臂", downloadTotal: 8, haveAnimation: true, type: { name: "工业场景" }, element: { name: "机器人" } }];
   const files = [
-    { modelId: 10, kind: "model", relativePath: "models/10.glb", bytes: 12, sha256: "model-hash" },
+    { modelId: 10, kind: "model", relativePath: "models/10.glb", bytes: 12, sha256: modelHash },
     { modelId: 10, kind: "thumbnail", relativePath: "thumbnails/10.png", bytes: 9, sha256: "thumb-hash" },
   ];
   const items = [{ sourceModelId: "10", valid: true, triangleCount: 1200, meshCount: 2, materialCount: 1, textureCount: 0, animationCount: 1, qualityTier: "light" }];

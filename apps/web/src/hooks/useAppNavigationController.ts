@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type RefObject } from "react";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
 import { isDesktopRuntime } from "../adapters/runtimeHost";
@@ -57,13 +57,15 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     setSelectedSpace,
     showError,
   } = state;
+  const activeProjectId = useRef(project?.id);
+  activeProjectId.current = project?.id;
 
   useEffect(() => {
     if (authReady && currentUser && route.view === "branding" && currentUser.role !== "admin") navigate({ view: "manager" }, true);
   }, [authReady, currentUser?.id, currentUser?.role, route.view]);
 
   function navigate(next: AppRoute, replace = false) {
-    if (next.view === "data" && !next.projectId && project) next = { ...next, projectId: project.id };
+    if (["manager", "data", "optimizer"].includes(next.view) && !next.projectId && project) next = { ...next, projectId: project.id };
     const deliveryRoute = sceneViewerDeliveryRoute();
     if (deliveryRoute) next = deliveryRoute;
     // 数据桥是当前工作区的临时抽屉；跨路由保留会遮挡目标页面操作。
@@ -144,7 +146,13 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
       .catch(showError);
   }, [currentUser?.id, showError]);
 
-  function switchProject(next: ProjectRecord) {
+  useEffect(() => {
+    if (!["manager", "data", "optimizer"].includes(route.view) || !route.projectId) return;
+    const requested = projects.find(item => item.id === route.projectId);
+    if (requested && requested.id !== project?.id) switchProject(requested, false);
+  }, [route.view, route.projectId, projects, project?.id]);
+
+  function switchProject(next: ProjectRecord, updateLocation = true) {
     if (next.id === project?.id) return;
     sceneApplyVersionRef.current += 1;
     engine?.clearSceneModels();
@@ -157,7 +165,8 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     setSelectedAnnotationId(undefined);
     setSelectedSpace(undefined);
     setExpandedModels(new Set());
-    if (route.view === "studio" || route.view === "view" || route.view === "published") navigate({ view: "manager" });
+    if (route.view === "studio" || route.view === "view" || route.view === "published") navigate({ view: "manager", projectId: next.id });
+    else if (updateLocation && ["manager", "data", "optimizer"].includes(route.view)) navigate({ ...route, projectId: next.id }, true);
     setMessage(`已切换到项目“${next.name}”`);
     setRevision((value) => value + 1);
   }
@@ -227,6 +236,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
   const refreshProject = useCallback(async () => {
     if (!project) return;
     const next = await api.getProject(project.id);
+    if (activeProjectId.current !== project.id) return;
     setProject(next);
     setProjects((items) => items.map((item) => (item.id === next.id ? next : item)));
   }, [project?.id]);

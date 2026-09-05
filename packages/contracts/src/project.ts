@@ -5,6 +5,7 @@ import type { UnityResourceRecord } from "./operations.js";
 import type { ParametricModelGeneration } from "./parametricModeling.js";
 import type { VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "./vision.js";
 import type { SemanticModelRecord } from "./semantic.js";
+import type { AssetAttribution } from "./assetLibrary.js";
 
 /** 项目、模型资产、转换清单与 Revit 运行时合同。 */
 export const supportedExtensions = [
@@ -91,11 +92,14 @@ export interface ModelRecord {
   manifestUrl?: string;
   manifest?: ModelManifest;
   generation?: ParametricModelGeneration;
-  /** 目录导入来源用于内容去重和后续版本治理；不包含外部产品或站点标识。 */
+  /** 目录导入来源用于去重、版本治理与交付署名。 */
   libraryOrigin?: {
     itemId: string;
     contentHash: string;
     catalogVersion: 1;
+    version?: string;
+    license?: string;
+    attribution?: AssetAttribution;
   };
   createdAt: string;
   updatedAt: string;
@@ -132,6 +136,7 @@ export interface ProjectAssetRecord {
     version: string;
     license: string;
     publicationStatus: "published" | "review-required" | "deprecated";
+    attribution?: AssetAttribution;
   };
   createdAt: string;
   updatedAt: string;

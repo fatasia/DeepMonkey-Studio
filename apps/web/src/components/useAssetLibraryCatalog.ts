@@ -24,6 +24,16 @@ export function useAssetLibraryCatalog(projectId: string | undefined, onImported
   const [importError, setImportError] = useState<string>();
   const [importingId, setImportingId] = useState<string>();
   const requestSequence = useRef(0);
+  const importSequence = useRef(0);
+  const importPending = useRef(false);
+  const activeProject = useRef(projectId);
+  activeProject.current = projectId;
+
+  useEffect(() => {
+    importSequence.current++; importPending.current = false;
+    setImportingId(undefined); setImportError(undefined);
+    return () => { importSequence.current++; importPending.current = false; };
+  }, [projectId]);
 
   const load = useCallback(async () => {
     const sequence = ++requestSequence.current;
@@ -34,7 +44,7 @@ export function useAssetLibraryCatalog(projectId: string | undefined, onImported
         ...(search.trim() ? { search: search.trim() } : {}),
         dimension,
         ...(category !== "all" ? { category } : {}),
-        featured: featuredOnly,
+        ...(featuredOnly ? { featured: true } : {}),
         page,
         pageSize: 24,
       });
@@ -48,7 +58,7 @@ export function useAssetLibraryCatalog(projectId: string | undefined, onImported
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), search ? 220 : 0);
-    return () => window.clearTimeout(timer);
+    return () => { window.clearTimeout(timer); requestSequence.current++; };
   }, [load, search]);
 
   const updateSearch = (value: string) => {
@@ -70,16 +80,20 @@ export function useAssetLibraryCatalog(projectId: string | undefined, onImported
   };
 
   const importItem = async (itemId: string) => {
-    if (!projectId || importingId) return;
+    if (!projectId || importPending.current) return;
+    const sequence = ++importSequence.current;
+    const current = () => sequence === importSequence.current && activeProject.current === projectId;
+    importPending.current = true;
     setImportingId(itemId);
     setImportError(undefined);
     try {
       await api.importAssetLibraryItem(projectId, itemId);
+      if (!current()) return;
       await onImported();
     } catch (reason) {
-      setImportError(reason instanceof Error ? reason.message : String(reason));
+      if (current()) setImportError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setImportingId(undefined);
+      if (current()) { importPending.current = false; setImportingId(undefined); }
     }
   };
 

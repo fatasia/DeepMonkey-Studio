@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type {
   AssetLibraryCategoryCount,
@@ -8,6 +8,7 @@ import type {
   AssetLibraryQualityTier,
 } from "@bim-studio/contracts";
 import { loadEnvironmentMaterialEntries } from "./environmentMaterialCatalog.js";
+import { loadSourceBEntries } from "./sourceBAssetCatalog.js";
 
 interface RawCatalogModel {
   id: number;
@@ -86,11 +87,13 @@ export interface AssetLibraryCatalogEntry {
 
 /** 读取离线素材清单，并在服务端统一完成品牌清理、分页和安全路径解析。 */
 export class AssetLibraryCatalog {
-  private entriesPromise?: Promise<AssetLibraryCatalogEntry[]>;
+  private entriesPromise: Promise<AssetLibraryCatalogEntry[]> | undefined;
+  private sourceRevision?: string;
 
   constructor(
     private readonly libraryRoot: string,
     private readonly environmentMaterialRoot?: string,
+    private readonly sourceBRoot?: string,
   ) {}
 
   async list(query: AssetLibraryQuery = {}): Promise<AssetLibraryPage> {
@@ -124,12 +127,25 @@ export class AssetLibraryCatalog {
     return (await this.entries()).find(({ publicItem }) => publicItem.id === id);
   }
 
-  private entries(): Promise<AssetLibraryCatalogEntry[]> {
-    this.entriesPromise ??= Promise.all([
+  private async entries(): Promise<AssetLibraryCatalogEntry[]> {
+    // 同步目录与审核回填后立即可见；失败不缓存，重试无需重启服务。
+    const files = [path.join(this.libraryRoot, "catalog.json"), path.join(this.libraryRoot, "audit.json"),
+      ...(this.environmentMaterialRoot ? [path.join(this.environmentMaterialRoot, "catalog.json")] : []),
+      ...(this.sourceBRoot ? [path.join(this.sourceBRoot, "catalog.json"), path.join(this.sourceBRoot, "audit.json")] : [])];
+    const revision = (await Promise.all(files.map(async file => {
+      try { const info = await stat(file); return `${info.mtimeMs}:${info.ctimeMs}:${info.size}`; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing"; throw error; }
+    }))).join("|");
+    if (this.entriesPromise && revision === this.sourceRevision) return this.entriesPromise;
+    this.sourceRevision = revision;
+    const pending = Promise.all([
       loadCatalogEntries(this.libraryRoot),
       this.environmentMaterialRoot ? loadEnvironmentMaterialEntries(this.environmentMaterialRoot) : [],
-    ]).then(([models, resources]) => [...models, ...resources]);
-    return this.entriesPromise;
+      this.sourceBRoot ? loadSourceBEntries(this.sourceBRoot) : [],
+    ]).then(([models, resources, community]) => [...models, ...resources, ...community]);
+    this.entriesPromise = pending;
+    try { return await pending; }
+    catch (error) { if (this.entriesPromise === pending) this.entriesPromise = undefined; throw error; }
   }
 }
 

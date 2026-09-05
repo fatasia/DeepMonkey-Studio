@@ -714,6 +714,7 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange }: {
           </div>
           {previewUrl ? (
             <OptimizerPreview
+              locale={locale}
               url={previewUrl}
               bakeEnabled={options.bakeEnabled && !showOptimized}
               comparisonMode={comparisonMode}
