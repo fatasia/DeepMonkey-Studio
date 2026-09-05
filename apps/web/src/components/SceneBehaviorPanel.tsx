@@ -10,6 +10,7 @@ import type { SceneScriptIntelligenceContext, SceneScriptTarget } from "../studi
 import { analyzeSceneScript } from "../studio/sceneScriptAnalysis";
 import { SceneBehaviorAgentWorkspace, type SceneBehaviorAiMode } from "./SceneBehaviorAgentWorkspace";
 import { BehaviorEditorToolbar } from "./BehaviorEditorToolbar";
+import { useBehaviorDraft } from "./useBehaviorDraft";
 import { BehaviorPanelHeader } from "./BehaviorPanelHeader";
 import { BehaviorConsole } from "./BehaviorConsole";
 import { BehaviorScriptList } from "./BehaviorScriptList";
@@ -25,7 +26,6 @@ import { createImportedBehaviorScript, scriptDownloadFileName } from "../behavio
 import {
   defaultBehaviorCode,
   scriptTargetLabel,
-  targetMatches,
 } from "./sceneBehaviorPanelModel";
 export { sceneScriptResourceSnippet } from "./sceneBehaviorPanelModel";
 export type SceneBehaviorLogEntry = BehaviorLogEntry;
@@ -60,33 +60,23 @@ export function SceneBehaviorPanel(props: {
   onPendingDraftChange?: (draft: ScriptModule | undefined) => void;
   onClose: () => void;
 }) {
-  const [selectedId, setSelectedId] = useState(() => props.scripts.find((script) => targetMatches(script.target, props.preferredTarget))?.id ?? props.scripts[0]?.id ?? "");
-  const [pendingScript, setPendingScript] = useState<ScriptModule>();
-  const selected = props.scripts.find((script) => script.id === selectedId)
-    ?? (pendingScript?.id === selectedId ? pendingScript : undefined)
-    ?? props.scripts[0];
-  // 当前脚本的挂载目标始终显示在标题区，避免用户在 2D/3D 切换后误编辑对象。
-  const selectedContextLabel = selected ? scriptTargetLabel(selected.target, props.codeTargets, props.locale) : tr(props.locale, "未选择脚本", "No script selected");
-  const attachedTarget =
-    selected?.target && selected.target.kind !== "scene"
-      ? props.codeTargets.find((target) => target.kind === selected.target?.kind && target.id === selected.target.id)
-      : undefined;
-  const [draft, setDraft] = useState<ScriptModule | undefined>(() => (selected ? structuredClone(selected) : undefined));
+  const [feedback, setFeedback] = useState<{ scriptId: string | undefined; message: string }>({ scriptId: undefined, message: "" });
+  const { selected, draft, setDraft, dirty, prepareLeave, selectScript, addScripts, captureOperation } = useBehaviorDraft({
+    scripts: props.scripts, ...(props.preferredTarget ? { preferredTarget: props.preferredTarget } : {}),
+    onUpsert: props.onUpsert,
+    onInvalidName: () => setActionFeedback(tr(props.locale, "请先填写脚本名称", "Enter a script name first")),
+  });
+  const selectedContextLabel = draft ? scriptTargetLabel(draft.target, props.codeTargets, props.locale) : tr(props.locale, "未选择脚本", "No script selected");
+  const attachedTarget = draft?.target && draft.target.kind !== "scene"
+    ? props.codeTargets.find(target => target.kind === draft.target?.kind && target.id === draft.target.id)
+    : undefined;
+  const actionFeedback = feedback.scriptId === draft?.id ? feedback.message : "";
+  function setActionFeedback(message: string, scriptId = draft?.id) { setFeedback({ scriptId, message }); }
   useEffect(() => {
-    // 选中对象变化时，只切换到该对象已有脚本；没有匹配脚本时保留用户当前编辑项。
-    const preferred = props.scripts.find((script) => targetMatches(script.target, props.preferredTarget));
-    if (preferred) setSelectedId(preferred.id);
-  }, [props.preferredTarget?.kind, props.preferredTarget?.id]);
-  useEffect(() => {
-    if (!selected && props.scripts[0]) setSelectedId(props.scripts[0].id);
-    setDraft(selected ? structuredClone(selected) : undefined);
     setAiDraftUndo(undefined);
     setAiDraftInserted(false);
-  }, [selected?.id, selected?.code, selected?.name, selected?.enabled, selected?.lifecycle.join("|"), selected?.permissions.join("|"), selected?.capabilities.join("|")]);
-  useEffect(() => {
-    if (pendingScript && props.scripts.some((script) => script.id === pendingScript.id)) setPendingScript(undefined);
-  }, [pendingScript, props.scripts]);
-  const dirty = Boolean(selected && draft && JSON.stringify(selected) !== JSON.stringify(draft));
+    setFeedback(current => current.scriptId === draft?.id ? current : { scriptId: undefined, message: "" });
+  }, [draft?.id]);
   useEffect(() => {
     // 连同无名称草稿一起上报：全局 2D/3D/返回导航需要阻止丢稿，而不是把校验失败
     // 误判成“没有待保存修改”。具体错误由全局导航统一反馈给用户。
@@ -107,7 +97,6 @@ export function SceneBehaviorPanel(props: {
   const [scriptListWidth, setScriptListWidth] = useState(readBehaviorScriptListWidth);
   const [aiDraftInserted, setAiDraftInserted] = useState(false);
   const [aiDraftUndo, setAiDraftUndo] = useState<ScriptModule>();
-  const [actionFeedback, setActionFeedback] = useState("");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const analysis = useMemo(() => (draft ? analyzeSceneScript(draft.code, draft, props.intelligence) : undefined), [draft, props.intelligence]);
@@ -170,26 +159,25 @@ export function SceneBehaviorPanel(props: {
       permissions: ["scene.read", "scene.write"],
       target: props.preferredTarget ? { kind: props.preferredTarget.kind, id: props.preferredTarget.id } : { kind: "scene" },
     };
-    setPendingScript(script);
-    props.onUpsert(script);
-    setSelectedId(id);
-    setDraft(structuredClone(script));
+    addScripts([script]);
   }
   async function importScriptFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = [...(event.target.files ?? [])].slice(0, 50);
     event.target.value = "";
-    if (!files.length) return;
+    if (!files.length || !prepareLeave()) return;
+    const operation = captureOperation();
     try {
       const imported = await Promise.all(files.map(async (file) => createImportedBehaviorScript(file, props.preferredTarget)));
-      imported.forEach(props.onUpsert);
-      setSelectedId(imported[0]!.id);
-      setActionFeedback(tr(props.locale, `已导入 ${imported.length} 个独立脚本`, `Imported ${imported.length} separate scripts`));
+      const selectFirst = operation.isCurrent();
+      if (!operation.isOpen() || !addScripts(imported, selectFirst)) return;
+      setActionFeedback(tr(props.locale, `已导入 ${imported.length} 个独立脚本`, `Imported ${imported.length} separate scripts`), selectFirst ? imported[0]!.id : draft?.id);
     } catch (reason) {
-      setActionFeedback(reason instanceof Error ? reason.message : tr(props.locale, "脚本导入失败", "Script import failed"));
+      if (operation.isCurrent()) setActionFeedback(reason instanceof Error ? reason.message : tr(props.locale, "脚本导入失败", "Script import failed"));
     }
   }
   async function applyAndRun() {
     if (!draft || !draft.name.trim()) return;
+    const operation = captureOperation();
     props.onUpsert(draft);
     setAiDraftInserted(false);
     setAiDraftUndo(undefined);
@@ -197,13 +185,14 @@ export function SceneBehaviorPanel(props: {
     setActionFeedback(tr(props.locale, "正在准备试运行…", "Preparing test run…"));
     try {
       await props.onRun(draft);
-      setActionFeedback(tr(props.locale, "试运行已提交，请查看运行状态与日志", "Test run submitted; check runtime status and logs"));
+      if (operation.isCurrent()) setActionFeedback(tr(props.locale, "试运行已提交，请查看运行状态与日志", "Test run submitted; check runtime status and logs"));
     } catch (reason) {
-      setActionFeedback(reason instanceof Error ? reason.message : String(reason));
+      if (operation.isCurrent()) setActionFeedback(reason instanceof Error ? reason.message : String(reason));
     }
   }
   async function applyChanges() {
     if (!draft || !draft.name.trim() || savingRef.current) return;
+    const operation = captureOperation();
     savingRef.current = true;
     setSaving(true);
     props.onUpsert(draft);
@@ -212,22 +201,18 @@ export function SceneBehaviorPanel(props: {
     setActionFeedback(tr(props.locale, "正在保存脚本…", "Saving script…"));
     try {
       const saved = await props.onSaveWorkspace();
-      setActionFeedback(saved ? tr(props.locale, "脚本已保存", "Script saved") : tr(props.locale, "保存未完成，草稿已保留，请重试", "Save incomplete; draft retained. Retry saving."));
+      if (operation.isCurrent()) setActionFeedback(saved ? tr(props.locale, "脚本已保存", "Script saved") : tr(props.locale, "保存未完成，草稿已保留，请重试", "Save incomplete; draft retained. Retry saving."));
     } catch (reason) {
-      setActionFeedback(tr(props.locale, "保存失败，草稿已保留：", "Save failed; draft retained: ") + (reason instanceof Error ? reason.message : String(reason)));
+      if (operation.isCurrent()) setActionFeedback(tr(props.locale, "保存失败，草稿已保留：", "Save failed; draft retained: ") + (reason instanceof Error ? reason.message : String(reason)));
     } finally {
       savingRef.current = false;
-      setSaving(false);
+      if (operation.isOpen()) setSaving(false);
     }
   }
 
   function leaveForWorkspace(action: () => void | Promise<void>) {
-    if (dirty && !draft?.name.trim()) {
-      setActionFeedback(tr(props.locale, "请先填写脚本名称", "Enter a script name first"));
-      return;
-    }
+    if (!prepareLeave()) return;
     if (dirty && draft) {
-      props.onUpsert(draft);
       setAiDraftInserted(false);
       // 先让应用文档提交本轮变更，再卸载脚本面板，避免 React 同事件批处理丢失草稿。
       globalThis.setTimeout(() => void action(), 0);
@@ -251,7 +236,7 @@ export function SceneBehaviorPanel(props: {
       <BehaviorPanelHeader locale={props.locale} layoutMode={props.layoutMode} contextLabel={selectedContextLabel} dirty={dirty} paused={props.paused} running={props.runtimeEntries.some((entry) => ["initializing", "running", "paused"].includes(entry.diagnostics.status))} hasSession={Boolean(props.runtimeEntries.length)} hasDraft={Boolean(draft)} hasTarget={Boolean(attachedTarget)} agentOpen={agentOpen} dependenciesOpen={dependenciesOpen} versionOpen={versionOpen} inspectorOpen={inspectorOpen} scriptListCollapsed={scriptListCollapsed} onLayoutModeChange={props.onLayoutModeChange} onToggleScriptList={() => { const next = !scriptListCollapsed; setScriptListCollapsed(next); persistBehaviorScriptListCollapsed(next); }} onToggleAgent={() => { setAgentMode("explain"); setDependenciesOpen(false); setVersionOpen(false); setAgentOpen((open) => !open); }} onToggleDependencies={() => { setAgentOpen(false); setVersionOpen(false); setDependenciesOpen((open) => !open); }} onToggleVersion={() => { setAgentOpen(false); setDependenciesOpen(false); setVersionOpen((open) => !open); }} onFocusTarget={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))} onRun={applyAndRun} onPauseResume={props.onPauseResume} onStop={props.onStop} onToggleInspector={() => setInspectorOpen((value) => !value)} onClose={closePanel} />
       <div className="behavior-panel-body">
         {!scriptListCollapsed && <BehaviorScriptList locale={props.locale} scripts={props.scripts} entries={props.runtimeEntries} targets={props.codeTargets} selectedId={selected?.id}
-          onAdd={addScript} onImport={(event) => void importScriptFiles(event)} onSelect={(id) => leaveForWorkspace(() => setSelectedId(id))}
+          onAdd={addScript} onImport={(event) => void importScriptFiles(event)} onSelect={selectScript}
           onCollapse={() => { setScriptListCollapsed(true); persistBehaviorScriptListCollapsed(true); }} />}
         {!scriptListCollapsed && <BehaviorScriptListResizer locale={props.locale} width={scriptListWidth} onWidthChange={setScriptListWidth} />}
         {draft ? (
@@ -290,7 +275,7 @@ export function SceneBehaviorPanel(props: {
                   {draft.code.split("\n").length} {tr(props.locale, "行", "lines")}
                 </span>
                 <em className={dirty ? "pending" : runtime?.diagnostics.status === "error" ? "error" : "ready"} role="status" aria-live="polite">
-                  {dirty
+                  {!draft.name.trim() ? tr(props.locale, "请先填写脚本名称", "Enter a script name first") : dirty
                     ? aiDraftInserted
                       ? tr(props.locale, "AI 草稿待应用", "AI draft awaiting apply")
                       : tr(props.locale, "有未应用的修改", "Unapplied changes")
@@ -367,7 +352,7 @@ export function SceneBehaviorPanel(props: {
       )}
       <BehaviorConsole locale={props.locale} logs={props.logs} entries={props.runtimeEntries} scripts={props.scripts} selectedId={selected?.id} open={logsOpen}
         onToggle={() => setLogsOpen((open) => !open)} onClear={props.onClearLogs}
-        onReveal={(id, location) => leaveForWorkspace(() => { setSelectedId(id); setRevealRequest({ id: Date.now(), ...location }); })} />
+        onReveal={(id, location) => { if (selectScript(id)) setRevealRequest({ id: Date.now(), ...location }); }} />
     </section>
   );
 }

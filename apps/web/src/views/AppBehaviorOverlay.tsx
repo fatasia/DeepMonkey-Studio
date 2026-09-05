@@ -165,6 +165,7 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
 
   const panel = <Suspense fallback={<div className="behavior-panel-loading" role="status"><LoaderCircle className="spin" size={17} />{tr(locale, "正在加载脚本编辑器", "Loading script editor")}</div>}>
     <SceneBehaviorPanel
+      key={activeApplication.metadata.id}
       locale={locale}
       projectId={activeApplication.metadata.projectId}
       scripts={activeApplication.scripts}
