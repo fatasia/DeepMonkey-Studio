@@ -38,8 +38,9 @@
     "desktop:bundle": "pnpm --filter @bim-studio/desktop bundle",
     "desktop:verify-bundle": "pnpm --filter @bim-studio/desktop verify:bundle",
     "assets:sync:external-models": "node scripts/sync-external-industrial-models.mjs",
+    "assets:sync:source-b": "node scripts/sync-sketchfab-models.mjs",
     "assets:audit:external-models": "node scripts/audit-external-industrial-models.mjs",
-    "assets:audit:test": "node --test scripts/lib/glbAudit.test.mjs scripts/lib/assetThumbnailAudit.test.mjs scripts/lib/assetQualityAudit.test.mjs scripts/lib/environmentAssetPublication.test.mjs",
+    "assets:audit:test": "node --test scripts/lib/glbAudit.test.mjs scripts/lib/assetThumbnailAudit.test.mjs scripts/lib/assetQualityAudit.test.mjs scripts/lib/environmentAssetPublication.test.mjs scripts/lib/atomicAssetDownload.test.mjs scripts/lib/sourceBModelPolicy.test.mjs scripts/lib/sourceBModelSync.test.mjs",
     "assets:sync:open-packs": "node scripts/sync-open-asset-packs.mjs",
     "assets:sync:environment-materials": "node scripts/sync-environment-material-library.mjs"
   },
