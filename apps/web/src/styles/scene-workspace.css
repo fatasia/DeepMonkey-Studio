@@ -759,3 +759,12 @@
 /* 最终目录密度覆盖：无类型图形、无第二行，右侧操作始终可达。 */
 .asset-row,.scene-object-row{min-height:32px;height:32px;padding:1px 5px}.asset-main{gap:0;padding:0 3px}.format-badge,.scene-object-badge{display:none}.asset-copy{display:block;min-width:0}.asset-copy strong{display:block;font-size:10px;font-weight:560}.asset-copy small{display:none}.mini-button{width:24px;height:24px;flex-basis:24px;margin-left:1px}.model-expander{height:26px}.layer-tree{padding:1px 0}.layer-node{height:28px}.layer-node-main{gap:0}.layer-node-main small{display:none}
 .scene-tree-grip,.scene-tree-row.object>.scene-tree-type{display:none}.scene-tree-row.object{position:relative;grid-template-columns:minmax(0,1fr) 13px 13px 13px;padding-left:10px}.scene-tree-row.group{grid-template-columns:18px 20px minmax(0,1fr);padding-left:4px}.scene-tree-row.group>.scene-tree-type{display:grid}.scene-tree-children{position:relative;margin-left:13px;padding-left:8px;border-left:1px solid #405057}.scene-tree-children .scene-tree-row.object::before{position:absolute;top:15px;left:-8px;width:7px;border-top:1px solid #405057;content:""}.scene-tree-group.drop-target>.scene-tree-row.group{background:#213c3d;box-shadow:inset 0 0 0 1px #51b9b2}.scene-tree-row.object.drop-target::after{position:absolute;right:4px;bottom:-1px;left:0;border-bottom:2px solid #51b9b2;content:""}.scene-tree-root-drop.drop-target{outline:1px dashed #51b9b2;outline-offset:-3px;background:#51b9b20c}
+
+/* 场景树「仿真」域（SIM-1a）。 */
+.scene-simulation-entities { display: flex; flex-direction: column; border-top: 1px solid #2b373c; background: #131a1e; }
+.scene-simulation-entity-list { display: grid; gap: 1px; padding: 4px 0 6px; }
+.scene-simulation-entity { display: flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 10px 0 14px; color: #8b9ba1; font-size: 10px; cursor: pointer; user-select: none; }
+.scene-simulation-entity:hover { color: #d5e1e4; background: #202a30; }
+.scene-simulation-entity.selected { color: #f0d78f; background: rgba(215,173,81,.08); box-shadow: inset 2px 0 #d7ad51; }
+.scene-simulation-entity.broken { color: #c9926a; }
+.scene-simulation-entity em { margin-left: auto; padding: 1px 5px; color: #d4926a; border-radius: 4px; background: rgba(212,146,106,.12); font-size: 8px; font-style: normal; }
