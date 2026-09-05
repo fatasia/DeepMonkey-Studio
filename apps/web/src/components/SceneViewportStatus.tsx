@@ -1,19 +1,14 @@
 import { LoaderCircle, MapPin, ShieldCheck, X } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { MeasureMode, NavigationMode } from "../viewer/ViewerEngine";
+import type { ViewerLoadProgress } from "../viewer/viewerLoadProgress";
+export type { ViewerLoadProgress } from "../viewer/viewerLoadProgress";
 
 export interface SceneStatisticsSummary {
   modelCount: number;
   componentCount: number;
   triangleCount: number;
   vertexCount: number;
-}
-
-export interface ViewerLoadProgress {
-  phase: string;
-  loaded: number;
-  total: number;
-  current: string;
 }
 
 interface SceneViewportStatusProps {
@@ -237,41 +232,48 @@ function NavigationHint(props: SceneViewportStatusProps) {
   );
 }
 
-function PublishedLoadState(
-  props: SceneViewportStatusProps & { viewerLoadState: ViewerLoadProgress },
+export function PublishedLoadState(
+  props: Pick<SceneViewportStatusProps, "locale" | "brandLogoUrl" | "brandName" | "sceneName"> & { viewerLoadState: ViewerLoadProgress },
 ) {
   const state = props.viewerLoadState;
+  const failed = state.phase === "error";
+  const fetching = state.phase === "fetching";
+  const indeterminate = fetching || (state.total === 0 && state.phase !== "ready");
   const percentage = state.total
     ? Math.round((state.loaded / state.total) * 100)
     : 100;
   const phaseLabel =
-    state.phase === "essential"
+    failed ? tr(props.locale, "场景加载失败", "Scene could not be loaded")
+      : fetching ? tr(props.locale, "正在读取场景", "Loading scene data")
+      : state.phase === "essential"
       ? tr(props.locale, "正在准备首屏", "Preparing first view")
       : state.phase === "ready"
         ? tr(props.locale, "场景已可用", "Scene ready")
         : tr(props.locale, "正在渐进加载", "Streaming scene");
   return (
-    <div className={`published-load-state ${state.phase}`}>
+    <div className={`published-load-state ${state.phase}`} role={failed ? "alert" : "status"}>
       <div className="published-load-brand">
         <img src={props.brandLogoUrl} alt="" />
         <span>
           <strong>{props.brandName}</strong>
-          <small>{props.sceneName}</small>
+          {!fetching && !failed && <small>{props.sceneName}</small>}
         </span>
       </div>
       <div className="published-load-progress">
         <div>
           <span>{phaseLabel}</span>
-          <strong>{percentage}%</strong>
+          {!failed && !indeterminate && <strong>{percentage}%</strong>}
         </div>
-        <progress
+        {!failed && <progress
+          aria-label={tr(props.locale, "场景加载进度", "Scene loading progress")}
           max={Math.max(1, state.total)}
-          value={state.total ? state.loaded : 1}
-        />
-        <small>
+          value={indeterminate ? undefined : state.total ? state.loaded : 1}
+        />}
+        <small title={state.current}>
           {state.current}
           {state.total > 0 ? ` · ${state.loaded}/${state.total}` : ""}
         </small>
+        {failed && <button className="button" type="button" onClick={() => window.location.reload()}>{tr(props.locale, "重新加载", "Reload scene")}</button>}
       </div>
     </div>
   );

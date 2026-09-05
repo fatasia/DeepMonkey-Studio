@@ -318,8 +318,13 @@ export function createScenePersistenceController(context: ScenePersistenceContro
           window.setTimeout(() => {
             if (applyVersion === sceneApplyVersionRef.current) setViewerLoadState(undefined);
           }, 900);
-        })().catch((reason) => showError(reason));
+        })().catch((reason) => {
+          if (applyVersion !== sceneApplyVersionRef.current) return;
+          setViewerLoadState({ phase: "error", loaded: 0, total: scene.models.length, current: reason instanceof Error ? reason.message : "模型加载失败" });
+          showError(reason);
+        });
       } else if (readOnly) {
+        setViewerLoadState({ phase: "ready", loaded: scene.models.length, total: scene.models.length, current: scene.name });
         window.setTimeout(() => {
           if (applyVersion === sceneApplyVersionRef.current) setViewerLoadState(undefined);
         }, 600);
@@ -327,7 +332,8 @@ export function createScenePersistenceController(context: ScenePersistenceContro
         setViewerLoadState(undefined);
       }
     } catch (reason) {
-      if (isModelLoadSuperseded(reason)) return;
+      if (isModelLoadSuperseded(reason) || applyVersion !== sceneApplyVersionRef.current) return;
+      if (readOnly) setViewerLoadState({ phase: "error", loaded: 0, total: scene.models.length, current: reason instanceof Error ? reason.message : "场景加载失败" });
       showError(reason);
     } finally {
       if (applyVersion === sceneApplyVersionRef.current) setBusy(false);

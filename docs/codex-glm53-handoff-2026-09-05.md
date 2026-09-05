@@ -49,7 +49,7 @@
 
 | 顺序 | 任务 | 从哪里继续，完成口径 |
 |---|---|---|
-| 1 | GLM 最终报告整体复核 | 用户 12:51 确认 GLM 全部测试完成，要求整体修复并完整重测。当前文件仍 33 条；目录发现和拓扑 fit/状态已修，继续日志/复制失败、缩略图、404、名称边界等，不盲改未复现项 |
+| 1 | 报告回归保持 | 14:15，33 条在报告范围内均已修或复核关闭；逐项证据见复核表。新增项先复现；不要重做本轮修复，也不能把此状态当全项目验收完成 |
 | 2 | Agent 深化与失败恢复 | 普通 AI 取消/后续草稿保护已修（§8），剩余 Agent 多候选名称选择、上游 504 恢复与跨项目异步返回；不要重做取消基础设施 |
 | 3 | SIM 四面板运行态深测 | 32 组基础布局/折叠检查已通过；继续真实运行/错误态/键盘、子面板下半部分、关闭与切页生命周期，不能只看首屏 |
 | 4 | SIM-1a 剩余完整闭环 | 创建角色/源汇/队列 → 绑定实体参数到既有物流运行器 → 运行结果适配覆盖层 → 同一 Study 证据 → 时间线播放；静态路径不能算全部完成 |
@@ -148,3 +148,19 @@ git diff --check
 - Node-RED 第一轮恢复后已监听但仍缺 http request 等节点，不能把 HTTP 200 当所有节点可用；13:38 按锁定包补齐后再次启动，下一步核对节点注册、实际 iframe/桥链路和服务健康。日志 `.runtime-logs/node-red-qa-20260905.*` / `mediamtx-qa-20260905.*`。
 
 13:40 收口：全仓 `pnpm -r test` 通过（Web 1148、API 448，contracts 170，含其余包/Rust/Node-RED 静态校验）；最后 Web 生产构建与预算通过，首屏未回退。全站 UI 旧门禁双主题和新门禁四组合最终通过。Node-RED 已 Started flows，但额外发现 TDengine Function 的 finalize 使用裸 await（静态校验漏查生命周期脚本）以及 OPC UA 依赖 @peculiar/utils 的模块类型声明缺失；下一批优先清这两个实际错误，不能宣称 Node-RED 全恢复。P2-5 与其余主线继续执行。
+
+## 11. 14:15 接续：Node-RED 实际恢复与生产加载（已完成增量）
+
+- Node-RED 5 的消息/初始化 Function 可 async，On Stop 是普通函数；原 TDengine finalize 裸 await 启动编译失败，旧静态校验用 AsyncFunction 漏报。内置/导出两个例子同步改为先清 context 所有权，再调用 close 并处理同步异常/Promise 拒绝；不声称 Node-RED 会等待异步 close 完成。新增生命周期编译及幂等清理测试 2 项，34 内置/18 示例节点校验通过。
+- 完成锁定官方包缺文件恢复，除前节外包括 lru-cache、@peculiar/utils；无新增依赖版本/锁文件变更。Node-RED 现进程 PID 24340，日志 `.runtime-logs/node-red-qa-20260905.validated.*`，Started flows 且 http request/OPC UA 可注册；保留上游 crawler deprecated 提示。TDengine/Oracle 示例触发器仍禁用，没有运行真实工业数据库查询。
+- 真实额外缺陷：`fetchNodeRedHealth` 直接 fetch 未带平台鉴权，401 被伪装成 offline。改复用既有 ServerClient 鉴权/二次复核/取消通道；区分 loading、已确认 offline、检查失败，并允许键盘立即重试。复制权限失败有反馈，两个复制控件独立名称，反馈计时器卸载清理。
+- 受信任同源 Node-RED iframe 原 sandbox 同时 scripts+same-origin 不构成隔离且触发 Chrome 警告，移除无效属性；未改鉴权、反向代理或访问范围。外框主题令牌化、980 网关单列、离线高度收敛；嵌入编辑器仍使用自身主题，不宣称跨 iframe 完整主题一致。
+- `gate-node-red-runtime.mjs`：1440/980 × dark/light 四组，真实 admin/admin、编辑器和节点搜索、运行看板、复制权限拒绝/恢复、离线/503/键盘重试；0 业务写入、0 非预期控制台错误/警告，注入 503 单独记录。没有部署流程/触发工业数据库或广播 QA 消息，完整设备→场景链路不在这项证据内。
+- P2-5 深测另确认：读取场景 API 前无反馈；错误时仅短 toast/进度停留。现在预览/发布统一 `ViewerLoadProgress`（fetching/essential/streaming/ready/error），未知进度不显示 100%，失败长期可见且可重载，基础几何场景正确进入 ready，旧异步模型错误不覆盖新任务。状态卡上移避开浏览工具栏，亮色重试按钮补实际对比度。
+- `gate-production-load.mjs` 复用已有生产静态服务器独占 4174，结束关闭，不动 5173。禁用资源缓存、真实登录、本机 API/资源，无 CPU/网络限速；JS 请求被暂缓时 HTML 状态可见。双主题 × `/view`、`/published`，场景 API 暂缓/503/真实重试均通过，0 业务写入。
+- 最后实测两小场景（预览 2 基础体、发布 1 基础体，外部模型均 0）：场景 ready 393–954ms，FCP 28–36ms。之前 279–395ms 仅 canvas 创建，已弃用为可用时间口径；不拿小场景证明大模型性能。截图 `test-output/codex-2026-09-05/production-load/`、`node-red/`。
+- WebGL 发布不再无条件做 WebGPU 设备探测；WebGPU/cloud 候选保持原设备和作者效果保护。该场景 Windows powerPreference 警告已不再出现；ANGLE/Three X4122 数值精度 warning 在首次启动仍有 1 条，严格按原始文本单列，未压制产品 console 或伪报零所有警告。
+- 验证：聚焦 Web 19 项通过；14:14 `pnpm -r test` 全仓通过（Web 327 文件/1155 项，API 113 文件/448 项，其他包与 Node-RED/Rust 通过）；Web typecheck/生产构建通过，首屏 304.7 KiB / gzip 98.9 KiB、11 chunks。既有构建 externalization/大 chunk 提示不变。质量尺寸与全服务检查见收口补记。
+- GLM 原报告仍截至 10:01:16、33 条，未有新项。报告范围全部关闭不等于 §4 主线全部完成；下一步优先仿真真实运行/状态保留与 AI 恢复。admin/admin、存储、原场景、暂停下载不动，严禁 push。
+
+14:17 收口：1733 源文件尺寸门禁通过（均 ≤800，无豁免），diff 检查无问题；`pnpm studio check` 确认 Web 模式、API 4100/Web 5173 健康。

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, ExternalLink, Gauge, PlugZap, Radio, Workflow } from "lucide-react";
+import { Check, Copy, ExternalLink, Gauge, LoaderCircle, PlugZap, Radio, RefreshCw, Workflow } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import "./NodeRedStudio.css";
@@ -14,27 +14,42 @@ export function NodeRedStudio({ locale }: { locale: AppLocale }) {
   const [copied, setCopied] = useState<"http" | "websocket">();
   // Node-RED 独立进程，未启动时 iframe 是白屏（U1-8c）；轮询健康接口给出明确离线态。
   const [online, setOnline] = useState<boolean | undefined>(undefined);
+  const [healthError, setHealthError] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [copyError, setCopyError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
+    const controller = new AbortController();
     const check = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
-        const health = await fetchNodeRedHealth(AbortSignal.timeout(4_000)).catch(() => null);
-        if (!cancelled) setOnline(Boolean(health?.online));
+        const health = await fetchNodeRedHealth(AbortSignal.any([controller.signal, AbortSignal.timeout(4_000)]));
+        if (!cancelled) { setOnline(health.online); setHealthError(false); }
       } catch {
-        if (!cancelled) setOnline(false);
-      }
+        if (!cancelled) { setOnline(undefined); setHealthError(true); }
+      } finally { inFlight = false; }
     };
     void check();
     const timer = window.setInterval(check, 15_000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, []);
+    return () => { cancelled = true; controller.abort(); window.clearInterval(timer); };
+  }, [retry]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(undefined), 1_500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
 
   async function copyGateway(kind: "http" | "websocket") {
     const urls = nodeRedGatewayUrls(window.location.origin);
-    await navigator.clipboard.writeText(kind === "http" ? urls.httpIngress : urls.websocketConsumer);
-    setCopied(kind);
-    window.setTimeout(() => setCopied((current) => (current === kind ? undefined : current)), 1_500);
+    try {
+      await navigator.clipboard.writeText(kind === "http" ? urls.httpIngress : urls.websocketConsumer);
+      setCopied(kind);
+      setCopyError(false);
+    } catch { setCopied(undefined); setCopyError(true); }
   }
 
   return (
@@ -96,7 +111,7 @@ export function NodeRedStudio({ locale }: { locale: AppLocale }) {
               <small>{tr(locale, "外部系统 / Node-RED 写入", "External systems / Node-RED write")}</small>
             </span>
             <code>{NODE_RED_HTTP_INGRESS_PATH}</code>
-            <button type="button" onClick={() => void copyGateway("http")}>
+            <button type="button" aria-label={tr(locale, "复制 HTTP 地址", "Copy HTTP URL")} onClick={() => void copyGateway("http")}>
               {copied === "http" ? <Check size={13} /> : <Copy size={13} />}
               {copied === "http" ? tr(locale, "已复制", "Copied") : tr(locale, "复制完整地址", "Copy URL")}
             </button>
@@ -107,12 +122,13 @@ export function NodeRedStudio({ locale }: { locale: AppLocale }) {
               <small>{tr(locale, "场景运行时订阅", "Scene runtime subscribes")}</small>
             </span>
             <code>{NODE_RED_WEBSOCKET_PATH}</code>
-            <button type="button" onClick={() => void copyGateway("websocket")}>
+            <button type="button" aria-label={tr(locale, "复制 WebSocket 地址", "Copy WebSocket URL")} onClick={() => void copyGateway("websocket")}>
               {copied === "websocket" ? <Check size={13} /> : <Copy size={13} />}
               {copied === "websocket" ? tr(locale, "已复制", "Copied") : tr(locale, "复制完整地址", "Copy URL")}
             </button>
           </article>
         </div>
+        {copyError && <p role="alert">{tr(locale, "复制失败，请检查浏览器剪贴板权限后重试", "Copy failed. Check clipboard permissions and retry.")}</p>}
         <p>
           {tr(
             locale,
@@ -121,18 +137,19 @@ export function NodeRedStudio({ locale }: { locale: AppLocale }) {
           )}
         </p>
       </section>
-      {online === false ? (
+      {online !== true ? (
         <div className="node-red-studio__offline" role="status">
-          <PlugZap size={20} />
-          <strong>{tr(locale, "Node-RED 服务未运行", "Node-RED service is not running")}</strong>
-          <span>{tr(locale, "高级事件编排依赖独立的 Node-RED 进程；请先在服务器上启动它（默认端口 1880），启动后本页会自动恢复。", "Advanced orchestration relies on the separate Node-RED process. Start it on the server (default port 1880); this page recovers automatically once it is online.")}</span>
+          {online === undefined && !healthError ? <LoaderCircle className="spin" size={20} /> : <PlugZap size={20} />}
+          <strong>{healthError ? tr(locale, "暂时无法确认服务状态", "Service status could not be checked") : online === undefined ? tr(locale, "正在检查 Node-RED 服务", "Checking Node-RED service") : tr(locale, "Node-RED 服务未运行", "Node-RED service is not running")}</strong>
+          <span>{healthError ? tr(locale, "请检查网络或会话后重试；检查失败不代表 Node-RED 已停止。", "Check your connection or session and retry. A failed check does not mean Node-RED is stopped.") : online === false ? tr(locale, "高级事件编排依赖独立的 Node-RED 进程；请先在服务器上启动它（默认端口 1880），启动后本页会自动恢复。", "Start the separate Node-RED service (default port 1880); this page recovers automatically.") : tr(locale, "确认服务可用后自动打开编辑器。", "The editor opens automatically once the service is available.")}</span>
+          {(healthError || online === false) && <button className="button" onClick={() => { setHealthError(false); setOnline(undefined); setRetry(value => value + 1); }}><RefreshCw size={14} />{tr(locale, "重新检查", "Check again")}</button>}
         </div>
       ) : (
         <iframe
           className="node-red-studio__frame"
-          src={online === undefined ? "about:blank" : NODE_RED_EDITOR_PATH}
+          src={NODE_RED_EDITOR_PATH}
           title={tr(locale, "Node-RED 高级事件编排", "Node-RED advanced event orchestration")}
-          sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
+          // 同源部署的受信任管理界面；scripts + same-origin 的 sandbox 并不形成隔离。
         />
       )}
     </section>

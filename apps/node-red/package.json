@@ -7,7 +7,7 @@
     "start": "node-red --settings settings.js --userDir .data --port 1880",
     "build": "node -e \"console.log('Node-RED runtime uses source configuration')\"",
     "typecheck": "node -e \"require('./settings.js')\"",
-    "test": "node validate-flows.mjs"
+    "test": "node validate-flows.mjs && node --test function-lifecycle.test.mjs"
   },
   "dependencies": {
     "@flowfuse/node-red-dashboard": "1.30.2",

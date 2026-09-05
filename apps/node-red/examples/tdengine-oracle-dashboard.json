@@ -50,7 +50,7 @@
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
-    "finalize": "const connection = context.get('tdengineWsConnection');\nif (connection) await connection.close();\ncontext.set('tdengineWsConnection', undefined);",
+    "finalize": "const connection = context.get('tdengineWsConnection');\ncontext.set('tdengineWsConnection', undefined);\nif (connection) {\n  try {\n    Promise.resolve(connection.close()).catch((error) => node.warn(error));\n  } catch (error) {\n    node.warn(error);\n  }\n}",
     "libs": [],
     "x": 730,
     "y": 540,

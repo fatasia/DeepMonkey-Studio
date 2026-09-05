@@ -5,6 +5,7 @@ import {
   rendererReadiness,
   rendererRequirementsForScene,
   selectPublishedRenderer,
+  resolvePublishedRenderer,
 } from "./rendererCapabilities";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -67,6 +68,19 @@ describe("renderer readiness", () => {
 });
 
 describe("published renderer selection", () => {
+  it("does not allocate probe graphics resources for a WebGL publication", async () => {
+    const probe = vi.fn();
+    for (const mode of [undefined, "webgl"] as const) {
+      await expect(resolvePublishedRenderer(mode, { postProcessingEnabled: false }, probe)).resolves.toEqual({ backend: "webgl", reason: "publication-webgl" });
+    }
+    expect(probe).not.toHaveBeenCalled();
+  });
+  it("still probes actual WebGPU candidates and preserves effect guards", async () => {
+    const probe = vi.fn().mockResolvedValue({ secureContext: true, webgpuApi: true, webgpuAdapter: true });
+    await expect(resolvePublishedRenderer("webgpu-preferred", { postProcessingEnabled: false }, probe)).resolves.toEqual({ backend: "webgpu", reason: "webgpu-preferred" });
+    await expect(resolvePublishedRenderer("cloud", { postProcessingEnabled: true }, probe)).resolves.toEqual({ backend: "webgl", reason: "preserve-authored-effects" });
+    expect(probe).toHaveBeenCalledTimes(2);
+  });
   it("uses WebGPU only when the device and authored effects are compatible", () => {
     expect(selectPublishedRenderer("webgpu-preferred", true, { postProcessingEnabled: false })).toEqual({
       backend: "webgpu",

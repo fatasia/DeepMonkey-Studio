@@ -45,6 +45,7 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
     setScenes,
     setTopologyDataProducts,
     setTopologyRuntimeStates,
+    setViewerLoadState,
     showError,
     topologyDataProducts,
   } = state;
@@ -264,6 +265,7 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
     const sceneId = route.sceneId;
     const browseView = route.view;
     let cancelled = false;
+    setViewerLoadState({ phase: "fetching", loaded: 0, total: 0, current: "" });
     void (async () => {
       try {
         const result =
@@ -278,7 +280,10 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
         await applyScene(result.scene, false, result.project, true, browseView === "published" && result.scene.publicationPerformance === "fast");
         if (!cancelled) setMessage(browseView === "published" ? "正在浏览已发布版本" : "正在浏览当前保存版本");
       } catch (reason) {
-        if (!cancelled) showError(reason);
+        if (!cancelled) {
+          setViewerLoadState({ phase: "error", loaded: 0, total: 0, current: reason instanceof Error ? reason.message : "场景读取失败" });
+          showError(reason);
+        }
       }
     })();
     return () => {

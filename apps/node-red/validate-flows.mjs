@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { validateFunctionLifecycle } from "./functionLifecycle.mjs";
 
 const flows = JSON.parse(await readFile(new URL("./flows.json", import.meta.url), "utf8"));
 const databaseExamples = JSON.parse(await readFile(new URL("./examples/tdengine-oracle-dashboard.json", import.meta.url), "utf8"));
@@ -45,9 +46,7 @@ const tdengineQuery = byId.get("example-td-request");
 if (tdengineQuery.outputs !== 2 || !tdengineQuery.func.includes("tdengine.sqlConnect") || !tdengineQuery.func.includes("TDENGINE_WS_URL")) {
   throw new Error("TDengine example must prefer the official WebSocket connector and provide a REST fallback");
 }
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-new AsyncFunction("msg", "context", "global", "env", "node", "Buffer", tdengineQuery.func);
-new AsyncFunction("context", tdengineQuery.finalize);
+for (const node of [...flows, ...databaseExamples]) validateFunctionLifecycle(node);
 if (!byId.get("example-td-normalize").func.includes("body.code")) {
   throw new Error("TDengine example must handle TDengine 3.x REST error responses");
 }

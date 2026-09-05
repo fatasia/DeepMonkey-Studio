@@ -112,6 +112,17 @@ export function selectPublishedRenderer(
   return { backend: "webgpu", reason: "webgpu-preferred" };
 }
 
+/** WebGL 发布不需要申请 WebGPU 适配器；仅实际候选后端执行设备探测。 */
+export async function resolvePublishedRenderer(
+  mode: Parameters<typeof selectPublishedRenderer>[0],
+  requirements: RendererProjectRequirements,
+  probe = probeRendererCapabilities,
+): Promise<PublishedRendererDecision> {
+  if (mode !== "webgpu-preferred" && mode !== "cloud") return selectPublishedRenderer(mode, false, requirements);
+  const capabilities = await probe();
+  return selectPublishedRenderer(mode, capabilities.secureContext && capabilities.webgpuApi && capabilities.webgpuAdapter, requirements);
+}
+
 export function rendererReadiness(probe: RendererCapabilityProbe, project: RendererProjectRequirements): RendererReadiness[] {
   const webglDetails = [
     project.postProcessingEnabled ? "当前后处理与真实对象轮廓完整可用" : "模型、材质、拾取与动画完整可用",

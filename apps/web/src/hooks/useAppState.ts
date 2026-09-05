@@ -104,12 +104,7 @@ export function useAppState() {
   });
   const [rvtRevitVersion, setRvtRevitVersion] = useState(() => window.localStorage.getItem(REVIT_VERSION_STORAGE_KEY) ?? "auto");
   const [busy, setBusy] = useState(false);
-  const [viewerLoadState, setViewerLoadState] = useState<{
-    loaded: number;
-    total: number;
-    current: string;
-    phase: "shell" | "essential" | "streaming" | "ready";
-  }>();
+  const [viewerLoadState, setViewerLoadState] = useState<import("../viewer/viewerLoadProgress").ViewerLoadProgress>();
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => window.localStorage.getItem(AUTO_SAVE_STORAGE_KEY) !== "false");
   const lastAutoSavedSceneRevisionRef = useRef(0);
   const [message, setMessage] = useState("就绪");

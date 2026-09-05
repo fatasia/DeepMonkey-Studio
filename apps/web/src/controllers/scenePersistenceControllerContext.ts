@@ -32,12 +32,7 @@ import type { RendererRecoveryState } from "../viewer/rendererRecoveryState";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
-interface ViewerLoadState {
-  loaded: number;
-  total: number;
-  current: string;
-  phase: "shell" | "essential" | "streaming" | "ready";
-}
+type ViewerLoadState = import("../viewer/viewerLoadProgress").ViewerLoadProgress;
 
 /** 场景持久化控制器的依赖契约；显式列出状态写入点，便于测试与替换。 */
 export interface ScenePersistenceControllerContext {

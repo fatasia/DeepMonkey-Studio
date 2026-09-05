@@ -8,6 +8,8 @@ describe("NodeRedStudio", () => {
     const html = renderToStaticMarkup(<NodeRedStudio locale="zh-CN" />);
 
     expect(html).not.toContain(`src="${NODE_RED_EDITOR_PATH}"`);
+    expect(html).not.toContain("<iframe");
+    expect(html).toContain("正在检查 Node-RED 服务");
     expect(html).toContain(`href="${NODE_RED_DASHBOARD_PATH}"`);
     expect(html).toContain("独立运行时");
     expect(html).toContain("不等同于平台内置的轻量数据流水线");

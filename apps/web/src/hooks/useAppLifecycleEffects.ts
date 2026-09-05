@@ -6,9 +6,8 @@ import { currentDesktopRuntimeMode, isDesktopRuntime } from "../adapters/runtime
 import { RENDERER_BACKEND_STORAGE_KEY, REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
 import { storeLocale } from "../i18n";
 import {
-  probeRendererCapabilities,
+  resolvePublishedRenderer,
   rendererRequirementsForScene,
-  selectPublishedRenderer,
 } from "../rendererCapabilities";
 import type { createApplicationRuntimeController } from "../controllers/applicationRuntimeController";
 import type { createScenePersistenceController } from "../controllers/scenePersistenceController";
@@ -180,14 +179,8 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
     let cancelled = false;
     // 不能只检查 navigator.gpu：部分设备会暴露 API，但无法取得适配器。
     // 真实预检可避免发布页在 WebGPU 初始化失败与 WebGL 回退之间反复切换。
-    void probeRendererCapabilities().then((probe) => {
+    void resolvePublishedRenderer(sceneViewerDeliveryRendererMode() ?? activeScene.publicationMode, rendererRequirementsForScene(activeScene)).then((decision) => {
       if (cancelled) return;
-      const webGpuAvailable = probe.secureContext && probe.webgpuApi && probe.webgpuAdapter;
-      const decision = selectPublishedRenderer(
-        sceneViewerDeliveryRendererMode() ?? activeScene.publicationMode,
-        webGpuAvailable,
-        rendererRequirementsForScene(activeScene),
-      );
       if (decision.backend === rendererBackend) return;
       const fallbackMessage =
         decision.reason === "preserve-authored-effects"
