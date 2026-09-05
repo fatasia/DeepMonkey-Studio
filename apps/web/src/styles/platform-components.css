@@ -265,7 +265,7 @@
 .light-vector label { display: grid; grid-template-columns: 11px 1fr; }
 .light-vector i { font-style: normal; }
 .light-vector input, .light-size input { min-width: 0; width: 100% !important; height: 23px; padding: 0 4px; color: #c2c9cd; border: 1px solid #343e44; border-radius: 4px; background: #22292d; font-size: 7px; }
-.light-parameter { grid-column: 1 / 5; display: grid !important; grid-template-columns: 42px 1fr 25px; }
+.light-parameter { grid-column: 1 / -1; display: grid !important; grid-template-columns: 42px 1fr 25px; }
 .light-size { grid-column: 1 / 5; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .light-size label { display: grid; grid-template-columns: 24px 1fr; }
 .light-editor button { display: block; width: auto; padding: 0 7px; font-size: 7px; }

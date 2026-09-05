@@ -104,7 +104,7 @@ try {
     throw new Error("高级连接策略不应默认展开");
   }
   await connectionForm.getByRole("button", { name: "保存连接" }).click();
-  await connectionPane.getByText("产线模拟数据", { exact: true }).waitFor();
+  await connectionPane.getByRole("button", { name: /^产线模拟数据/ }).waitFor();
   report.steps.push("create-simulation-connection");
 
   await connectionPane.getByTitle("测试连接").click();

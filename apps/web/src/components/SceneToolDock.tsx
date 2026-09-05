@@ -417,6 +417,8 @@ function TaskMenu({
       <button
         type="button"
         className={`scene-tool-task-trigger ${active ? "active" : ""}`}
+        aria-label={label}
+        title={label}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={`scene-tool-menu-${id}`}

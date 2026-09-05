@@ -1,8 +1,10 @@
 /* Environment inspector: dense, aligned and fully controlled by live React state. */
-.environment-control { width: 388px; padding: 0; overflow: hidden auto; color: #8f9aa1; border-color: #3b474e; background: rgba(20,26,30,.97); }
-.environment-heading { position: sticky; top: 0; z-index: 2; height: 44px; margin: 0; padding: 0 13px; border-bottom: 1px solid #303a40; background: rgba(22,29,33,.98); }
-.environment-heading strong { font-size: 11px; letter-spacing: .02em; }
-.environment-heading small { font-size: 10px; }
+.environment-control { width: min(388px,calc(100% - 32px)); padding: 0; overflow: hidden auto; color: var(--text); border-color: var(--line-strong); background: var(--surface-1); }
+/* 滚动工具窗的内容不参与纵向压缩，标题才能始终保留完整的命中/阅读高度。 */
+.environment-control > * { flex-shrink: 0; }
+.environment-heading { position: sticky; top: 0; z-index: 2; height: 44px; margin: 0; padding: 0 13px; border-bottom: 1px solid var(--line); background: var(--surface-1); }
+.environment-heading strong { color: var(--text-strong); font-size: 12px; letter-spacing: .02em; }
+.environment-heading small { color: var(--text-muted); font-size: 11px; }
 .environment-preset-library { padding: 12px 13px; border-bottom: 1px solid rgba(48,58,64,.76); }
 .environment-preset-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
 .environment-preset-title > div { display: grid; gap: 2px; }
@@ -35,7 +37,8 @@
 .environment-gi-row small { grid-column: 2 / 5; color: #6f7c82; font-size: 10px; line-height: 1.5; }
 .post-processing-control,.environment-map-row,.light-system { padding: 11px 13px; border-top: 0; border-bottom: 1px solid #303a40; }
 .post-processing-control > small { display: block; margin-top: 7px; color: #738087; font-size: 10px; line-height: 1.55; }
-.post-effect-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 5px; }
+.post-processing-control { grid-template-columns: minmax(0,1fr); }
+.post-effect-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(56px,1fr)); gap: 5px; }
 .post-effect-grid button { min-width: 0; padding: 0 4px; font-size: 10px; }
 .post-processing-control .light-parameter { display: grid; grid-template-columns: 72px minmax(0,1fr) 38px; align-items: center; gap: 7px; min-height: 30px; color: #7f8b91; font-size: 10px; }
 .environment-map-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 6px; align-items: center; }
@@ -47,18 +50,29 @@
 .environment-resource-picker { margin:8px 12px 12px; }
 .light-system { border-bottom: 0; }
 .light-system-head { min-height: 30px; margin-bottom: 7px; }
-.light-system-head span { font-size: 10px; }
+.light-system-head span { color: var(--text); font-size: 11px; }
 .light-tabs { gap: 5px; padding-bottom: 7px; }
 .light-tabs button { min-width: 0; max-width: 142px; }
 .light-editor { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; padding: 9px; }
-.light-editor label:first-child { grid-column: auto; }
+.light-editor > label { display: grid; grid-template-columns: 44px minmax(0,1fr); color: var(--text); font-size: 11px; }
+.light-editor > label > span { white-space: nowrap; }
+.light-editor label:first-child { grid-column: 1 / -1; }
 .light-editor label > input:not([type="range"]):not([type="color"]) { width: 100%; }
-.light-editor .light-intensity,.light-vector,.light-parameter,.light-size { grid-column: 1 / 3; }
+/* 跨列规则只属于灯光编辑器，不能给后处理的同名参数行制造隐式网格列。 */
+.light-editor :is(.light-intensity,.light-vector,.light-parameter,.light-size) { grid-column: 1 / -1; }
 .light-editor .light-intensity { grid-template-columns: 44px minmax(0,1fr) 34px; }
 .light-vector { grid-template-columns: 50px repeat(3,minmax(0,1fr)); }
 .light-vector > span { font-size: 10px; }
 .light-editor button { justify-self: stretch; }
 .light-editor button.danger { width: 31px; min-width: 31px; padding: 0; }
+
+.environment-control :is(.environment-preset-title strong,.environment-preset-strip button strong,.environment-map-row > div span) { color: var(--text-strong); }
+.environment-control :is(.environment-preset-title small,.environment-preset-strip button small,.environment-row > span,.environment-gi-row small,.post-processing-control > small,.light-parameter,.light-vector,.environment-map-row > div small,output) { color: var(--text-muted); font-size: 11px; }
+.environment-control :is(.environment-row,.environment-preset-library,.post-processing-control,.environment-map-row,.light-editor) { border-color: var(--line); }
+.environment-control :is(.light-editor,.environment-preset-strip button) { background: var(--surface-2); }
+.environment-control button:not(.active) { color: var(--text); border-color: var(--line-strong); background: var(--surface-2); }
+.environment-control button:not(.active):hover { color: var(--text-strong); background: var(--surface-3); }
+.environment-control .light-editor input:not([type="range"]):not([type="color"]),.environment-control .light-system-head select { color: var(--text-strong); border-color: var(--line-strong); background: var(--surface-1); font-size: 11px; }
 
 .xr-panel { position: absolute; top: 70px; left: 50%; z-index: 20; width: min(460px,calc(100% - 32px)); color: #8f9aa1; border: 1px solid #3a464d; border-radius: 11px; background: rgba(20,27,31,.98); box-shadow: 0 18px 55px rgba(0,0,0,.42); transform: translateX(-50%); backdrop-filter: blur(14px); }
 .xr-panel header { display: flex; align-items: center; justify-content: space-between; height: 47px; padding: 0 12px 0 14px; border-bottom: 1px solid #303a40; }

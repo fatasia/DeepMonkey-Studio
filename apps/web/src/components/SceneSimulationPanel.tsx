@@ -144,7 +144,7 @@ export function SceneSimulationPanel(props: Props) {
       <div className="scene-simulation-body">
         <Suspense fallback={<div className="scene-simulation-loading"><LoaderCircle className="spin" size={18} />{tr(props.locale, "正在加载仿真引擎", "Loading simulation engine")}</div>}>
           <OperationsCenter
-            key={panel.id}
+            key={props.project.id}
             embedded
             project={props.project}
             scenes={orderedScenes}

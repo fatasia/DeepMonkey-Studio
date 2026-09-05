@@ -23,6 +23,37 @@ afterEach(async () => {
 });
 
 describe("service observability", () => {
+  it("waits for response audit writes before closing the API", async () => {
+    const dataDir = await temporaryDataDirectory();
+    const store = new JsonStore(dataDir);
+    await store.init();
+    const app = Fastify();
+    await registerSystemRoutes(app, store, dataDir);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const persist = store.addAuditLog.bind(store);
+    const audit = vi.spyOn(store, "addAuditLog").mockImplementation(async (record) => {
+      await pending;
+      await persist(record);
+    });
+    await app.inject({ method: "GET", url: "/api/admin/health" });
+    expect(audit).toHaveBeenCalledOnce();
+    let closed = false;
+    const closing = app.close().then(() => { closed = true; });
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(closed).toBe(false);
+    } finally {
+      release();
+      await closing;
+      await Promise.all(audit.mock.results.map((result) => result.value));
+    }
+    const restored = new JsonStore(dataDir);
+    await restored.init();
+    expect(restored.listAuditLogs()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ resource: "/api/admin/health", statusCode: 401 }),
+    ]));
+  });
   it("removes terminal colors before redaction, including JSON escaped colors", () => {
     expect(redactServiceLog("\u001b[2m09:50:53\u001b[22m \u001b[36m[vite]\u001b[0m ready")).toBe("09:50:53 [vite] ready");
     expect(redactServiceLog("pass\u001b[31mword=private\u001b[0m")).toBe("password=[REDACTED]");

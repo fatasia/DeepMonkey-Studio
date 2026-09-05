@@ -79,6 +79,7 @@ export interface ScenePersistenceControllerContext {
   showError: (reason: unknown) => void;
   recordSceneEdit: (label: string) => void;
   setActiveScene: Setter<SceneSnapshot | undefined>;
+  getActiveScene: () => SceneSnapshot | undefined;
   setAutoSaveEnabled: Setter<boolean>;
   setAnimationPlaying: Setter<boolean>;
   setAnimationTime: Setter<number>;

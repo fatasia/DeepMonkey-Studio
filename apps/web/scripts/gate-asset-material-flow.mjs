@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 import { prepareAssetMaterialFixture } from "./assetMaterialFlowFixture.mjs";
 import { createProductServer } from "./onlineFlowProductServer.mjs";
-import { auditPage, captureProcessOutput, readJsonResponse, reservePort, waitForHealth, waitForModelReady } from "./onlineFlowAuditSupport.mjs";
+import { auditPage, captureProcessOutput, readJsonResponse, reservePort, waitForHealth } from "./onlineFlowAuditSupport.mjs";
 
 const { chromium } = playwright;
 const webRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -54,6 +54,7 @@ captureProcessOutput(api.stderr, apiLogs);
 
 let browser;
 let page;
+let verificationClient;
 const report = {
   createdAt: new Date().toISOString(),
   productOrigin,
@@ -69,6 +70,14 @@ const report = {
 let injectingHashMismatch = false;
 try {
   await waitForHealth(`${apiOrigin}/health`, api);
+  // 仅给临时 API 创建独立验证会话，不从浏览器读取或转移登录材料。
+  const loginResponse = await fetch(`${apiOrigin}/api/auth/login`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "admin", password: "asset-flow-admin" }),
+  });
+  if (!loginResponse.ok) throw new Error(`临时 API 验证登录失败：HTTP ${loginResponse.status}`);
+  const login = await loginResponse.json();
+  verificationClient = await playwright.request.newContext({ baseURL: apiOrigin, extraHTTPHeaders: { authorization: `Bearer ${login.token}` } });
   browser = await chromium.launch({ executablePath: chromePath, headless: true });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   page.on("console", (message) => {
@@ -114,6 +123,7 @@ try {
   throw reason;
 } finally {
   await browser?.close();
+  await verificationClient?.dispose();
   api.kill();
   await new Promise((closed, reject) => server.close((error) => error ? reject(error) : closed()));
 }
@@ -172,15 +182,10 @@ async function verifyCatalogAndImport(page, projectId, expected, report, outputR
   await assertPrimaryCardInViewport(page, report, "asset-center-1440");
   await page.screenshot({ path: resolve(outputRoot, "01-asset-center-governance.png") });
 
-  const token = await page.evaluate(() => localStorage.getItem("bim-studio-auth-token"));
-  const project = await fetch(`${page.url().split("/").slice(0, 3).join("/")}/api/projects/${projectId}`, { headers: { authorization: `Bearer ${token}` } }).then((response) => response.json());
+  const project = await verifyGet(`/api/projects/${encodeURIComponent(projectId)}`);
   const ids = new Set((project.assets ?? []).map((asset) => asset.libraryOrigin?.itemId));
   if (!ids.has(expected.environment) || !ids.has(expected.material) || ids.has(expected.hashMismatch) || ids.has(expected.deprecated)) throw new Error("资源来源治理记录异常");
-  const missing = await page.evaluate(async (itemId) => {
-    const token = localStorage.getItem("bim-studio-auth-token");
-    const response = await fetch(`/api/asset-library?q=${encodeURIComponent(itemId)}&dimension=material&featured=false`, { headers: { authorization: `Bearer ${token}` } });
-    return response.json();
-  }, expected.missingThumbnail);
+  const missing = await verifyGet(`/api/asset-library?q=${encodeURIComponent(expected.missingThumbnail)}&dimension=material&featured=false`);
   if (missing.total !== 0) throw new Error("缺少缩略图的资源未被目录阻断");
   report.steps.push({ id: "catalog-import-governance", imported: [...ids], missingThumbnailExcluded: true });
   report.audits.push({ id: "asset-center-governance-1440", ...await auditPage(page, "asset-center-governance-1440") });
@@ -207,7 +212,16 @@ async function loadModel(page, projectId, modelFixture, report) {
   const response = page.waitForResponse((item) => item.url().includes(`/api/projects/${projectId}/models?`) && item.request().method() === "POST");
   await page.locator('input[type="file"][accept*=".glb"]').setInputFiles(modelFixture.path);
   const model = await readJsonResponse(response, 202);
-  await waitForModelReady(page, projectId, model.id);
+  const deadline = Date.now() + 30000;
+  let ready = false;
+  while (Date.now() < deadline && !ready) {
+    const project = await verifyGet(`/api/projects/${encodeURIComponent(projectId)}`);
+    const current = project.models.find(item => item.id === model.id);
+    if (current?.status === "failed") throw new Error(`模型处理失败：${current.message}`);
+    ready = current?.status === "ready";
+    if (!ready) await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (!ready) throw new Error("模型处理未在 30 秒内完成");
   await page.reload({ waitUntil: "networkidle" });
   if (await page.locator(".asset-row").count() === 0) {
     const organizationToggle = page.getByRole("button", { name: "场景图层与编组" });
@@ -385,4 +399,11 @@ async function assertWorkspacePrimaryActionInViewport(page, report, id) {
   const primaryActionVisible = layout.actionTop >= 0 && layout.actionBottom <= viewport.height;
   report.steps.push({ id: `${id}-first-viewport`, actionBottom: Math.round(layout.actionBottom), viewportHeight: viewport.height, primaryActionVisible });
   if (!primaryActionVisible) throw new Error(`${id} 编辑器入口未完整进入首屏`);
+}
+
+async function verifyGet(path) {
+  if (!path.startsWith("/api/")) throw new Error("验证读取必须限定在临时 API");
+  const response = await verificationClient.get(path);
+  if (!response.ok()) throw new Error(`验证读取失败：HTTP ${response.status()} ${path}`);
+  return response.json();
 }

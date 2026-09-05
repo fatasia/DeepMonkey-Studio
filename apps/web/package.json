@@ -12,6 +12,7 @@
     "bake:fixture": "node scripts/create-bake-validation-model.mjs",
     "smoke:parametric": "node scripts/smoke-parametric-browser.mjs",
     "gate:product-browser": "node scripts/gate-product-browser.mjs",
+    "audit:viewer-performance": "node scripts/gate-viewer-performance-audit.mjs",
     "gate:webgpu": "node scripts/gate-product-browser.mjs --require-webgpu",
     "gate:viewer-soak": "node scripts/gate-viewer-soak.mjs",
     "benchmark:render-engines": "node scripts/gate-render-engine-comparison.mjs",

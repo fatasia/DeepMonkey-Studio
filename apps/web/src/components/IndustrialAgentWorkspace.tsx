@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -47,11 +47,24 @@ export function IndustrialAgentWorkspace(props: {
   const [busy, setBusy] = useState(false);
   const [restored, setRestored] = useState(false);
   const [error, setError] = useState<string>();
+  const requestEpoch = useRef(0);
+  const activeProject = useRef(projectId);
+  const actionPending = useRef(false);
+  if (activeProject.current !== projectId) {
+    activeProject.current = projectId;
+    requestEpoch.current += 1;
+    actionPending.current = false;
+  }
+  useEffect(() => () => { requestEpoch.current += 1; }, []);
   const t = (zh: string, en: string) => tr(locale, zh, en);
   const preview = useMemo(() => selectedToolPreview(tools, selectedToolIds), [selectedToolIds, tools]);
 
   useEffect(() => {
     setCheckpoint(undefined);
+    setObjective("");
+    setBusy(false);
+    setTools([]);
+    setSelectedToolIds(new Set());
     setRestored(false);
     setError(undefined);
     if (!projectId) {
@@ -67,6 +80,7 @@ export function IndustrialAgentWorkspace(props: {
         client.listIndustrialAgentTools(projectId, controller.signal),
         restoreRun(client, projectId, controller.signal),
       ]);
+      if (controller.signal.aborted) return;
       if (catalogResult.status === "rejected") throw catalogResult.reason;
       setTools(catalogResult.value.tools);
       setSelectedToolIds(new Set(catalogResult.value.tools.map((tool) => tool.id)));
@@ -89,12 +103,15 @@ export function IndustrialAgentWorkspace(props: {
   useEffect(() => {
     if (!projectId || checkpoint?.status !== "running" || busy) return;
     const controller = new AbortController();
+    let refreshing = false;
     const timer = window.setInterval(() => {
-      void getAgentApi().then((client) => client.getIndustrialAgentRun(projectId, checkpoint.id, controller.signal))
-        .then(updateCheckpoint)
+      if (refreshing) return;
+      refreshing = true;
+      void getAgentApi().then((client) => controller.signal.aborted ? undefined : client.getIndustrialAgentRun(projectId, checkpoint.id, controller.signal))
+        .then((next) => { if (next && !controller.signal.aborted) updateCheckpoint(next); })
         .catch((reason) => {
           if (!controller.signal.aborted) setError(errorMessage(reason));
-        });
+        }).finally(() => { refreshing = false; });
     }, 1_200);
     return () => {
       window.clearInterval(timer);
@@ -103,36 +120,49 @@ export function IndustrialAgentWorkspace(props: {
   }, [busy, checkpoint?.id, checkpoint?.status, projectId]);
 
   function updateCheckpoint(next: AgentCheckpoint) {
-    setCheckpoint(next);
+    if (next.projectId !== projectId) return;
+    setCheckpoint((current) => current?.id === next.id && current.revision > next.revision ? current : next);
     setError(undefined);
     if (projectId) rememberRun(projectId, next.id);
   }
 
   async function start() {
-    if (!projectId || !objective.trim() || selectedToolIds.size === 0) return;
+    if (!projectId || !objective.trim() || selectedToolIds.size === 0 || actionPending.current) return;
+    const epoch = requestEpoch.current;
+    const isCurrent = () => requestEpoch.current === epoch;
+    actionPending.current = true;
     setBusy(true);
     setRestored(false);
     setError(undefined);
     try {
-      updateCheckpoint(await (await getAgentApi()).startIndustrialAgentRun(projectId, {
+      const client = await getAgentApi();
+      if (!isCurrent()) return;
+      const next = await client.startIndustrialAgentRun(projectId, {
         objective: objective.trim(),
         context,
         allowedToolIds: [...selectedToolIds],
         budget: DEFAULT_BUDGET,
-      }));
+      });
+      // 后台任务不因切页重放；只在所属项目记住 ID，界面更新仍要求当前请求所有权。
+      if (next.projectId === projectId) rememberRun(projectId, next.id);
+      if (isCurrent()) updateCheckpoint(next);
     } catch (reason) {
-      setError(errorMessage(reason));
+      if (isCurrent()) setError(errorMessage(reason));
     } finally {
-      setBusy(false);
+      if (isCurrent()) { actionPending.current = false; setBusy(false); }
     }
   }
 
   async function act(action: "approve" | "resume" | "cancel" | "refresh") {
-    if (!projectId || !checkpoint) return;
+    if (!projectId || !checkpoint || actionPending.current) return;
+    const epoch = requestEpoch.current;
+    const isCurrent = () => requestEpoch.current === epoch;
+    actionPending.current = true;
     setBusy(true);
     setError(undefined);
     try {
       const client = await getAgentApi();
+      if (!isCurrent()) return;
       const next = action === "approve" && checkpoint.pendingTool
         ? await client.approveIndustrialAgentRun(projectId, checkpoint.id, checkpoint.pendingTool.fingerprint)
         : action === "resume"
@@ -140,13 +170,14 @@ export function IndustrialAgentWorkspace(props: {
           : action === "cancel"
             ? await client.cancelIndustrialAgentRun(projectId, checkpoint.id)
             : await client.getIndustrialAgentRun(projectId, checkpoint.id);
-      updateCheckpoint(next);
+      if (isCurrent()) updateCheckpoint(next);
     } catch (reason) {
+      if (!isCurrent()) return;
       const message = errorMessage(reason);
       // 多窗口或自动轮询已在推进时，保留 checkpoint 并继续刷新，不制造重复执行。
       setError(action === "resume" && /正在推进|run-busy/i.test(message) ? t("运行仍在推进，已继续跟踪进度", "The run is already progressing; tracking continues") : message);
     } finally {
-      setBusy(false);
+      if (isCurrent()) { actionPending.current = false; setBusy(false); }
     }
   }
 

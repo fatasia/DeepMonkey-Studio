@@ -92,7 +92,8 @@ export function VirtualCommissioningWorkbench({
   const [appliedDraft, setAppliedDraft] = useState<IndustrialDiagnosisValidationDraft>();
   const [activeStudy, setActiveStudy] = useState(initialStudy);
   const [robotScreening, setRobotScreening] = useState<RobotWorkcellAssistantResult>();
-  const appliedEditorContext = useRef(`${initialSceneId ?? ""}:${initialObjectId ?? ""}:${initialStage}`);
+  const appliedEditorContext = useRef(`${initialSceneId ?? ""}:${initialObjectId ?? ""}`);
+  const appliedEditorStage = useRef(initialStage);
   const activeVirtualStudy = matchingVirtualCommissioningStudy(activeStudy);
   const currentVirtualStudy = activeVirtualStudy?.sceneId === scene?.id
     ? activeVirtualStudy
@@ -121,7 +122,7 @@ export function VirtualCommissioningWorkbench({
 
   useEffect(() => {
     if (!initialSceneId || initialDraft || initialStudy) return;
-    const contextKey = `${initialSceneId}:${initialObjectId ?? ""}:${initialStage}`;
+    const contextKey = `${initialSceneId}:${initialObjectId ?? ""}`;
     if (appliedEditorContext.current === contextKey || busy) return;
     const targetScene = scenes.find((candidate) => candidate.id === initialSceneId);
     if (!targetScene) return;
@@ -136,6 +137,13 @@ export function VirtualCommissioningWorkbench({
     setRobotScreening(undefined);
     setPlayheadMs(0);
   }, [busy, initialDraft, initialObjectId, initialSceneId, initialStage, initialStudy, scenes]);
+
+  useEffect(() => {
+    // 工位/调试只是同一工作台的不同阶段；切入口不能重建信号映射或清掉结果。
+    if (appliedEditorStage.current === initialStage || busy || initialDraft || initialStudy) return;
+    appliedEditorStage.current = initialStage;
+    setWorkflowStage(initialStage);
+  }, [busy, initialDraft, initialStage, initialStudy]);
 
   useEffect(() => {
     if (!robotModelId || robotOptions.some((robot) => robot.modelId === robotModelId)) return;

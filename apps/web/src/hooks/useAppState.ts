@@ -91,6 +91,9 @@ export function useAppState() {
   const [scenes, setScenes] = useState<SceneSnapshot[]>([]);
   const [managerApplications, setManagerApplications] = useState<ApplicationDocument[]>([]);
   const [activeScene, setActiveScene] = useState<SceneSnapshot>();
+  const activeSceneSnapshotRef = useRef(activeScene);
+  activeSceneSnapshotRef.current = activeScene;
+  const getActiveScene = useCallback(() => activeSceneSnapshotRef.current, []);
   const [applicationRevision, setApplicationRevision] = useState(0);
   const [sceneName, setSceneName] = useState("未命名场景");
   const [selected, setSelected] = useState<LoadedSceneModel>();
@@ -250,7 +253,7 @@ export function useAppState() {
     studioPublishPerformance, setStudioPublishPerformance, studioPublishOpen, setStudioPublishOpen,
     studioCloudConfigured, setStudioCloudConfigured, projects, setProjects,
     project, setProject, scenes, setScenes,
-    managerApplications, setManagerApplications, activeScene, setActiveScene,
+    managerApplications, setManagerApplications, activeScene, setActiveScene, getActiveScene,
     applicationRevision, setApplicationRevision, sceneName, setSceneName,
     selected, setSelected, measurements, setMeasurements,
     revision, setRevision, uploading, setUploading,

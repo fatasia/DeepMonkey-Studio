@@ -12,7 +12,7 @@ function harness() {
   history.reset(scene);
   const showError = vi.fn();
   const actions = () => createSceneSimulationController({
-    activeScene: scene, engine: undefined, showError,
+    activeScene: scene, getActiveScene: () => scene, engine: undefined, showError,
     setActiveScene: (update) => { scene = (typeof update === "function" ? update(scene) : update)!; },
     setRevision: (update) => { revision = typeof update === "function" ? update(revision) : update; },
     recordSceneEdit: (label) => { history.record(scene, label); },
@@ -48,6 +48,18 @@ describe("simulation scene controller", () => {
     stale.updateSimulationEntity({ ...path, speed: 3 });
     stale.deleteSimulationEntity("path");
     expect(h.scene()).toEqual({ id: "other", simulationEntities: [] });
+    expect(h.revision()).toBe(0);
+  });
+
+  it("does not dirty a scene when an old editor tries to modify an already deleted entity", () => {
+    const h = harness();
+    const stale = h.actions();
+    h.actions().deleteSimulationEntity("path");
+    const revision = h.revision();
+    stale.updateSimulationEntity({ ...path, speed: 3 });
+    stale.deleteSimulationEntity("path");
+    expect(h.scene().simulationEntities).toEqual([]);
+    expect(h.revision()).toBe(revision);
   });
 
   it("keeps edits made during a save and ignores responses after switching scenes", () => {

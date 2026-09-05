@@ -52,6 +52,11 @@ describe("SceneToolDock", () => {
     expect(html).toContain("创建");
     expect(html).toContain("查看与分析");
     expect(html).toContain("仿真与开发");
+    // 窄视口隐藏文字 span，按钮仍必须有可访问名称与悬浮提示。
+    for (const label of ["创建", "查看与分析", "仿真与开发"]) {
+      expect(html).toContain(`aria-label="${label}"`);
+      expect(html).toContain(`title="${label}"`);
+    }
     expect(html).not.toContain("第一人称行走");
     expect(html).not.toContain("剖切模型");
     expect(html).not.toContain("行为脚本");

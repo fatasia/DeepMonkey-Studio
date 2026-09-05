@@ -98,6 +98,9 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
     if (stored.role === "viewer" && !["GET", "HEAD"].includes(request.method) && !aiReadAction) return reply.code(403).send({ message: "浏览者不能修改数据" });
   });
 
+  // onResponse 在响应发出后落审计；关服需等它完成，避免存储先关闭或测试目录先回收。
+  const pendingAuditWrites = new Set<Promise<void>>();
+  app.addHook("onClose", async () => { await Promise.all(pendingAuditWrites); });
   app.addHook("onResponse", async (request, reply) => {
     const pathname = request.url.split("?", 1)[0] ?? request.url;
     if (!pathname.startsWith("/api/") || pathname.startsWith("/api/admin/audit")) return;
@@ -113,7 +116,9 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
       ...(reply.statusCode >= 400 ? { detail: `HTTP ${reply.statusCode}` } : {}),
       createdAt: new Date().toISOString(),
     };
-    await store.addAuditLog(record).catch((error) => request.log.error(error));
+    const write = store.addAuditLog(record).catch((error) => request.log.error(error));
+    pendingAuditWrites.add(write);
+    try { await write; } finally { pendingAuditWrites.delete(write); }
   });
 
   app.post<{ Body: { username?: string; password?: string; remember?: boolean } }>("/api/auth/login", async (request, reply) => {
