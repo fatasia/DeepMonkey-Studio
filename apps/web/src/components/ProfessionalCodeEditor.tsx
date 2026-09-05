@@ -1,219 +1,13 @@
-import Editor, { loader, type BeforeMount, type OnMount } from "@monaco-editor/react";
+import Editor, { type OnMount } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
 import { BookOpen, Braces, CheckCircle2, Command, TriangleAlert } from "lucide-react";
-import { Component, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
-import { STUDIO_API_DECLARATIONS } from "../studio/studioApi";
 import type { SceneScriptIssue } from "../studio/sceneScriptAnalysis";
 import { buildSceneScriptTypeDeclarations, type SceneScriptIntelligenceContext } from "../studio/sceneScriptContext";
-import { apiDocumentationAt, contextualSuggestions, docsMarkdown, isWorkerBehaviorModel, referenceLabel, snippet, stringLiteralAt } from "./professionalCodeIntelligence";
-
-const monacoEnvironmentTarget = globalThis as typeof globalThis & { MonacoEnvironment?: { getWorker(moduleId: string, label: string): Worker } };
-monacoEnvironmentTarget.MonacoEnvironment = {
-  getWorker(_moduleId: string, label: string) {
-    return label === "javascript" || label === "typescript"
-      ? new Worker(new URL("../workers/monacoTypescript.worker.ts", import.meta.url), { type: "module", name: "studio-typescript" })
-      : new Worker(new URL("../workers/monacoEditor.worker.ts", import.meta.url), { type: "module", name: "studio-editor" });
-  },
-};
-
-let monacoLoadPromise: Promise<typeof import("monaco-editor")> | undefined;
-
-function loadMonacoEditor(): Promise<typeof import("monaco-editor")> {
-  monacoLoadPromise ??= import("monaco-editor")
-    .then(async (api) => {
-      const typescript = await import("monaco-editor/language/typescript/monaco.contribution.js");
-      // Monaco 0.56 的语言贡献模块改为显式导出，不再自动写回 languages 命名空间。
-      const configuredApi = { ...api, languages: { ...api.languages, typescript } } as typeof import("monaco-editor");
-      loader.config({ monaco: configuredApi });
-      return configuredApi;
-    })
-    .catch((error: unknown) => {
-      monacoLoadPromise = undefined;
-      throw error;
-    });
-  return monacoLoadPromise;
-}
-
-const PLATFORM_TYPES = `
-type Vec3 = [number, number, number];
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-interface StudioProjectIdentifiers {}
-type ProjectIdentifier<K extends string> = K extends keyof StudioProjectIdentifiers ? StudioProjectIdentifiers[K] : string;
-type ProjectObjectId = ProjectIdentifier<"object">;
-type ProjectComponentId = ProjectIdentifier<"component">;
-type ProjectUnityComponentId = ProjectIdentifier<"unityComponent">;
-type ProjectDataKey = ProjectIdentifier<"dataKey">;
-type ProjectSceneId = ProjectIdentifier<"scene">;
-type ProjectPageId = ProjectIdentifier<"page">;
-type ProjectCameraViewId = ProjectIdentifier<"cameraView">;
-interface SceneObjectHandle {
-  readonly id: string;
-  show(): void;
-  hide(): void;
-  select(): void;
-  focus(): void;
-  setPosition(x: number, y: number, z: number): void;
-  setRotation(x: number, y: number, z: number): void;
-  setScale(x: number, y?: number, z?: number): void;
-  playAnimation(name?: string): void;
-  pauseAnimation(name?: string): void;
-  stopAnimation(name?: string): void;
-  seekAnimation(seconds: number, name?: string): void;
-  setColor(color: string): void;
-  setOpacity(opacity: number): void;
-}
-interface SceneComponentHandle {
-  readonly id: string;
-  update(patch: Record<string, JsonValue>): void;
-  show(): void;
-  hide(): void;
-  rename(name: string): void;
-}
-interface SceneUnityHandle {
-  readonly id: string;
-  setProperty(key: string, value: JsonValue): void;
-  setProperties(values: Record<string, JsonValue>): void;
-  invoke(action: string, objectId?: string, value?: JsonValue): void;
-  switchScene(scene: string): void;
-}
-interface StudioComponentHandle {
-  readonly id: string;
-  readonly name?: string;
-  readonly pageId: string;
-  readonly kind: "data-widget" | "scene-viewport";
-  update(patch: Record<string, unknown>): void;
-  show(): void;
-  hide(): void;
-}
-${STUDIO_API_DECLARATIONS}
-interface StudioAIAPI {
-  /** 通过宿主受控网关调用已上线的工业 AI 能力；结果保留状态、证据和建议动作。 */
-  invoke(capabilityId: string, input?: JsonValue): Promise<JsonValue>;
-}
-interface StudioAPI { readonly ai: StudioAIAPI; }
-interface SceneCommand { id?: string; type: string; [key: string]: JsonValue | undefined; }
-interface StudioProjectEventNames {}
-type ProjectEventName = keyof StudioProjectEventNames extends never ? string : keyof StudioProjectEventNames;
-interface BehaviorSceneEvent {
-  readonly type: "scene.ready" | "scene.disposed" | "selection.changed" | "object.event" | "business.event" | "data.received" | string;
-  readonly name?: ProjectEventName;
-  readonly sceneId?: string;
-  readonly sourceModuleId?: string;
-  readonly target?: unknown;
-  readonly data?: JsonValue;
-  readonly timestamp?: string;
-}
-interface BehaviorContext {
-  readonly sceneId: string;
-  readonly target: { readonly kind: "scene" } | { readonly kind: "object" | "component"; readonly id: string };
-  readonly self?: SceneObjectHandle | SceneComponentHandle;
-  readonly deltaMs: number;
-  readonly elapsedMs: number;
-  readonly deltaTime: number;
-  readonly elapsedTime: number;
-  readonly state: Record<string, unknown>;
-  readonly data?: JsonValue;
-  readonly event?: BehaviorSceneEvent;
-  object(id: ProjectObjectId): SceneObjectHandle | undefined;
-  objects(query?: string): readonly SceneObjectHandle[];
-  command(command: SceneCommand): void;
-  getData(key: ProjectDataKey): JsonValue | undefined;
-  setData(key: ProjectDataKey, value: JsonValue): void;
-  emit(name: ProjectEventName, payload?: JsonValue): void;
-  readonly THREE: typeof import("three");
-  readonly studio: StudioAPI;
-  readonly net: StudioNetworkAPI;
-  log(message: string, detail?: unknown): void;
-}
-interface StudioNetworkResult<T = JsonValue> { readonly ok: true; readonly status: number; readonly data: T; readonly value: JsonValue; }
-interface StudioNetworkFetchOptions {
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  params?: Record<string, string | number | boolean | null>;
-  body?: JsonValue;
-  credentialRef?: string;
-  variables?: Record<string, JsonValue>;
-  select?: { jsonPath?: string; field?: string };
-}
-interface StudioNetworkAPI {
-  fetch<T = JsonValue>(endpoint: string, options?: StudioNetworkFetchOptions): Promise<StudioNetworkResult<T>>;
-  request<T = JsonValue>(binding: Record<string, unknown>, variables?: Record<string, JsonValue>): Promise<StudioNetworkResult<T>>;
-}
-interface InteractionContext {
-  readonly engine: unknown;
-  readonly THREE: typeof import("three");
-  readonly target: { kind: "object" | "widget"; modelId?: string; layerId?: string; widgetId?: string };
-  readonly event: { type: string; payload?: JsonValue };
-  action(type: string, options?: Record<string, JsonValue>): Promise<void>;
-  getData(key: string): JsonValue | undefined;
-  setData(key: string, value: JsonValue): void;
-  log(message: string, detail?: unknown): void;
-}
-declare const ctx: BehaviorContext & InteractionContext;
-declare const studio: StudioAPI;
-declare const app: unknown;
-declare const engine: unknown;
-declare const THREE: typeof import("three");
-declare const net: StudioNetworkAPI;
-declare function fetch<T = JsonValue>(endpoint: string, options?: StudioNetworkFetchOptions): Promise<StudioNetworkResult<T>>;
-declare function onStart(ctx: BehaviorContext): void | Promise<void>;
-declare function onUpdate(ctx: BehaviorContext): void | Promise<void>;
-declare function onFixedUpdate(ctx: BehaviorContext): void | Promise<void>;
-declare function onData(ctx: BehaviorContext): void | Promise<void>;
-declare function onEvent(ctx: BehaviorContext): void | Promise<void>;
-declare function onStop(ctx: BehaviorContext): void | Promise<void>;
-declare function onDispose(ctx: BehaviorContext): void | Promise<void>;
-`;
-
-let configured = false;
-const intelligenceContexts = new Map<string, SceneScriptIntelligenceContext>();
-
-interface CodeEditorBoundaryProps {
-  locale: AppLocale;
-  value: string;
-  children: ReactNode;
-  onChange: (value: string) => void;
-  onSave?: () => void;
-  onRun?: () => void;
-}
-
-class CodeEditorBoundary extends Component<CodeEditorBoundaryProps, { error: Error | null }> {
-  override state: { error: Error | null } = { error: null };
-
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-
-  override componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("Professional code editor failed; using the safe editor fallback", error, info);
-  }
-
-  override render() {
-    if (!this.state.error) return this.props.children;
-    return (
-      <div className="professional-code-fallback" role="alert">
-        <div>
-          <TriangleAlert size={14} />
-          <span>
-            <strong>{tr(this.props.locale, "代码智能服务加载失败", "Code intelligence failed to load")}</strong>
-            <small>{tr(this.props.locale, "已切换到安全编辑模式，代码仍可编辑和保存。", "Safe editing mode is active; code can still be edited and saved.")}</small>
-          </span>
-        </div>
-        <textarea value={this.props.value} onChange={(event) => this.props.onChange(event.target.value)} spellCheck={false} />
-        <footer>
-          {this.props.onRun && <button onClick={this.props.onRun}>{tr(this.props.locale, "运行", "Run")}</button>}
-          {this.props.onSave && (
-            <button className="primary" onClick={this.props.onSave}>
-              {tr(this.props.locale, "保存", "Save")}
-            </button>
-          )}
-          <button onClick={() => this.setState({ error: null })}>{tr(this.props.locale, "重试智能编辑器", "Retry smart editor")}</button>
-        </footer>
-      </div>
-    );
-  }
-}
+import { configureProfessionalCodeServices, loadMonacoEditor, registerProfessionalCodeContext } from "./professionalCodeServices";
+import { CodeEditorBoundary } from "./CodeEditorBoundary";
 
 export interface CodeInsertRequest {
   id: number;
@@ -310,10 +104,7 @@ export function ProfessionalCodeEditor({
 
   useEffect(() => {
     if (!intelligence) return;
-    intelligenceContexts.set(path, intelligence);
-    return () => {
-      if (intelligenceContexts.get(path) === intelligence) intelligenceContexts.delete(path);
-    };
+    return registerProfessionalCodeContext(path, intelligence);
   }, [intelligence, path]);
 
   useEffect(() => {
@@ -379,120 +170,6 @@ export function ProfessionalCodeEditor({
     editor.pushUndoStop();
     editor.focus();
   }, [insertRequest, monacoApi]);
-
-  const beforeMount: BeforeMount = (api) => {
-    if (configured) return;
-    const typescript = api.languages.typescript;
-    if (!typescript?.javascriptDefaults) throw new Error("Monaco JavaScript language service is unavailable");
-    typescript.javascriptDefaults.setEagerModelSync(true);
-    typescript.javascriptDefaults.setCompilerOptions({
-      allowNonTsExtensions: true,
-      allowJs: true,
-      checkJs: true,
-      module: api.languages.typescript.ModuleKind.ESNext,
-      moduleResolution: api.languages.typescript.ModuleResolutionKind.NodeJs,
-      target: api.languages.typescript.ScriptTarget.ES2022,
-    });
-    typescript.javascriptDefaults.addExtraLib(PLATFORM_TYPES, "bim-studio://types/scene-sdk.d.ts");
-    api.languages.registerCompletionItemProvider("javascript", {
-      triggerCharacters: ['"', "'"],
-      provideCompletionItems(model: monaco.editor.ITextModel, position: monaco.Position) {
-        const range = new api.Range(position.lineNumber, position.column, position.lineNumber, position.column);
-        const workerBehavior = isWorkerBehaviorModel(model);
-        const contextual = contextualSuggestions(api, model, position, intelligenceContexts.get(model.uri.toString()), workerBehavior);
-        if (contextual.length) return { suggestions: contextual };
-        const docs = docsMarkdown("场景脚本 API", "Scene script API", "/docs/behavior-script");
-        const common = [
-          snippet(api, "onStart", "生命周期：场景启动", 'function onStart(ctx) {\n\tctx.log("Scene started", { sceneId: ctx.sceneId });\n}', range, docs),
-          snippet(api, "onUpdate", "生命周期：逐帧更新", 'function onUpdate(ctx) {\n\tctx.object("object-id")?.setRotation(0, ctx.elapsedTime, 0);\n}', range, docs),
-          snippet(
-            api,
-            "data binding",
-            "读取实时数据并驱动对象",
-            'const value = ctx.getData("device.temperature");\nif (typeof value === "number") {\n\tctx.object("device-id")?.setColor(value > 80 ? "#ef4444" : "#22c55e");\n}',
-            range,
-            docs,
-          ),
-          snippet(api, "studio object", "统一 API：操作场景对象", 'const agv = studio.object("AGV-01");\nagv?.setPosition(12, 0, 6);\nagv?.focus();', range, docs),
-          snippet(
-            api,
-            "gateway fetch",
-            "通过服务器代理访问 HTTP 接口",
-            'const response = await studio.net.fetch("https://api.example.com/telemetry", {\n\tmethod: "GET",\n\tcredentialRef: "factory-api"\n});\nstudio.log("telemetry", response.value);',
-            range,
-            docs,
-          ),
-          snippet(
-            api,
-            "Three.js math",
-            "使用完整 Three.js 命名空间进行计算",
-            "const direction = new THREE.Vector3(1, 0, 1).normalize();\nconst next = direction.multiplyScalar(ctx.deltaTime * 2);",
-            range,
-            docs,
-          ),
-        ];
-        return {
-          suggestions: workerBehavior
-            ? common
-            : [
-                ...common,
-                snippet(
-                  api,
-                  "studio camera",
-                  "统一 API：相机与漫游",
-                  'studio.camera.setPose([12, 6, 12], [0, 1, 0], { near: 0.05, far: 100000 });\nstudio.camera.setMode("firstPerson");\nstudio.camera.setCollision(true, 0.32);',
-                  range,
-                  docs,
-                ),
-                snippet(api, "studio scene", "统一 API：场景环境和播放", 'studio.scene.setWeather("sunny");\nstudio.animation.play();', range, docs),
-              ],
-        };
-      },
-    });
-    api.languages.registerHoverProvider("javascript", {
-      provideHover(model: monaco.editor.ITextModel, position: monaco.Position) {
-        const context = intelligenceContexts.get(model.uri.toString());
-        const literal = stringLiteralAt(model, position);
-        if (context && literal) {
-          const target = context.targets.find((item) => item.id === literal.value);
-          if (target)
-            return {
-              range: literal.range,
-              contents: [
-                {
-                  value: `**${target.name}** · ${target.kind === "object" ? "场景对象" : "页面组件"}\n\n${target.context} · \`${target.id}\`\n\n[打开场景脚本文档](/docs/behavior-script)`,
-                },
-              ],
-            };
-          if (context.dataKeys.includes(literal.value))
-            return {
-              range: literal.range,
-              contents: [{ value: `**数据键** · \`${literal.value}\`\n\n可用于 \`getData\` / \`setData\` / \`onData\`。\n\n[打开数据与脚本文档](/docs/studio-api)` }],
-            };
-          if (context.eventNames.includes(literal.value))
-            return {
-              range: literal.range,
-              contents: [{ value: `**场景事件** · \`${literal.value}\`\n\n可用于 \`emit\` 与 \`onEvent\`。\n\n[打开事件文档](/docs/behavior-script)` }],
-            };
-          const reference = context.references.find((item) => item.id === literal.value);
-          if (reference)
-            return {
-              range: literal.range,
-              contents: [
-                { value: `**${referenceLabel(reference.kind)}** · ${reference.name}\n\n${reference.context} · \`${reference.id}\`\n\n[打开场景脚本文档](/docs/studio-api)` },
-              ],
-            };
-        }
-        const apiDocumentation = apiDocumentationAt(model, position);
-        if (apiDocumentation)
-          return {
-            range: apiDocumentation.range,
-            contents: [{ value: `**${apiDocumentation.title}**\n\n${apiDocumentation.description}\n\n[打开关联文档](${apiDocumentation.href})` }],
-          };
-      },
-    });
-    configured = true;
-  };
 
   const onMount: OnMount = (editor, api) => {
     editorRef.current = editor;
@@ -617,7 +294,7 @@ export function ProfessionalCodeEditor({
       )}
       <CodeEditorBoundary locale={locale} value={value} onChange={onChange} {...(onSave ? { onSave } : {})} {...(onRun ? { onRun } : {})}>
         <Editor
-          beforeMount={beforeMount}
+          beforeMount={configureProfessionalCodeServices}
           onMount={onMount}
           height={height}
           language="javascript"
