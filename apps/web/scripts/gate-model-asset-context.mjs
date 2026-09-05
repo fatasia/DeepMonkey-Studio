@@ -73,7 +73,15 @@ try {
       await page.locator(`.model-library-item[data-model-id="${output.id}"].asset-workflow-selected`).waitFor();
       await page.reload();
       const selected = page.locator(`.model-library-item[data-model-id="${output.id}"].asset-workflow-selected`);
-      await selected.waitFor(); await shot("new-asset-located");
+      await selected.waitFor();
+      const rowLayout = await selected.evaluate(element => {
+        const row = element.getBoundingClientRect();
+        return [...element.querySelectorAll(".model-asset-actions button, .model-library-state")].map(child => { const bounds = child.getBoundingClientRect(); return { text: child.getAttribute("aria-label") ?? child.textContent, inside: bounds.left >= row.left && bounds.right <= row.right + 1 && bounds.bottom <= row.bottom + 1 }; });
+      });
+      assert.deepEqual(rowLayout.filter(item => !item.inside), [], "Model row actions and status stay inside the card");
+      entry.assetContrast = await selected.evaluate(collectTextContrast, ".model-library-info strong");
+      assert.deepEqual(entry.assetContrast.filter(item => item.text && item.contrast < 4.5), []);
+      await shot("new-asset-located");
       assert.equal(new URL(page.url()).searchParams.get("model"), output.id);
       await selected.getByRole("button", { name: `添加到原场景 ${output.name}`, exact: true }).click();
       await page.waitForURL(url => url.pathname.includes(`/scenes/${scene.id}`) && !url.searchParams.has("addModel"));
