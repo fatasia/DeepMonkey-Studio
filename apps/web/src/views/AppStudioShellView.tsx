@@ -4,6 +4,7 @@ import { readBooleanPreference, writeBooleanPreference } from "../hooks/usePersi
 import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
 import { ModelTreeItem } from "../components/ModelTreeItem";
 import { SceneOrganizationPanel } from "../components/SceneOrganizationPanel";
+import { SceneSimulationEntitiesSection } from "../components/SceneSimulationEntitiesSection";
 import { SceneOutlinerPanel } from "../components/SceneOutlinerPanel";
 import { AppWorkspaceTopbar } from "./AppWorkspaceTopbar";
 import { mergeConfirmedSceneAssetBindings } from "../studio/sceneAssetBindings";
@@ -16,6 +17,8 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
   // 三维视口是核心工作区，资源树和属性检查器按需收起，避免遮挡模型。
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => readBooleanPreference(STUDIO_LEFT_PANEL_STORAGE_KEY, true));
   const [rightPanelOpen, setRightPanelOpen] = useState(() => readBooleanPreference(STUDIO_INSPECTOR_STORAGE_KEY, true));
+  // SIM-1a：场景树「仿真」域的选中实体与断链集合（引用模型被删时黄牌提示）。
+  const [selectedSimulationEntityId, setSelectedSimulationEntityId] = useState<string | undefined>(undefined);
   const panelsBeforeBehaviorSplitRef = useRef<{ left: boolean; right: boolean } | undefined>(undefined);
   const {
     activeApplication,
@@ -245,6 +248,17 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     xrPanelOpen,
   } = controller;
 
+  // SIM-1a 断链集合：仿真实体引用了已删除模型时在场景树黄牌标注（不静默失效）。
+  const brokenSimulationModelIds = new Set<string>();
+  for (const entity of activeScene?.simulationEntities ?? []) {
+    const referenced = entity.kind === "flowLink" ? [entity.fromModelId, entity.toModelId]
+      : entity.kind === "path" ? [entity.targetModelId]
+        : [entity.a.modelId, entity.b.modelId];
+    for (const modelId of referenced) {
+      if (!project?.models.some((model) => model.id === modelId)) brokenSimulationModelIds.add(modelId);
+    }
+  }
+
   useEffect(() => {
     const splitActive = sceneBehaviorOpen && sceneBehaviorLayout === "split";
     if (splitActive) {
@@ -351,7 +365,15 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
             setRevision((value) => value + 1);
           }}
           organizationContent={
-            <SceneOrganizationPanel
+            <>
+              <SceneSimulationEntitiesSection
+                locale={locale}
+                entities={activeScene?.simulationEntities}
+                selectedId={selectedSimulationEntityId}
+                onSelect={setSelectedSimulationEntityId}
+                brokenModelIds={brokenSimulationModelIds}
+              />
+              <SceneOrganizationPanel
               locale={locale}
               objects={sceneOrganizationObjects}
               selectedIds={sceneOrganizationSelection}
@@ -374,7 +396,8 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
               onApplySelectionSet={applySceneSelectionSet}
               onDeleteSelectionSet={deleteSceneSelectionSet}
               onRestoreDeletedSelectionSet={restoreDeletedSceneSelectionSet}
-            />
+              />
+            </>
           }
           objectContent={
             <FlatSceneObjectList
