@@ -10,3 +10,9 @@
 .scene-asset-workflow-entry button { display: flex; align-items: center; gap: 7px; text-align: left; min-height: 32px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--surface-2); font-size: 12px; }
 .scene-asset-workflow-entry small { color: var(--muted); font-size: 11px; line-height: 1.5; }
 .optimizer-page.with-scene-return { grid-template-rows: 68px auto minmax(0, 1fr); }
+.project-asset-inventory .model-library-item[data-model-id] { grid-template-columns: 42px minmax(0, 1fr) auto auto; }
+.project-asset-inventory .model-asset-actions { display: flex; align-items: center; gap: 5px; }
+.project-asset-inventory .model-library-item[data-model-id] .model-library-state { grid-column: auto; grid-row: auto; }
+.project-asset-inventory .model-library-info strong { color: var(--text-strong); }
+.project-asset-inventory .model-library-info :is(span, small) { color: var(--muted); }
+@media (max-width: 700px) { .project-asset-inventory .model-library-item[data-model-id] { grid-template-columns: 36px minmax(0, 1fr); } .project-asset-inventory .model-asset-actions, .project-asset-inventory .model-library-item[data-model-id] .model-library-state { grid-column: 2; } }

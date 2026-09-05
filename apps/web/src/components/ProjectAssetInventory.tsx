@@ -40,16 +40,18 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
               {model.status !== "ready" && <small title={model.message}>{model.message}</small>}
               <ModelAssetCredit model={model} locale={locale} />
             </div>
-            <button className="manager-icon-button" aria-label={tr(locale, `预览与优化 ${model.name}`, `Preview and optimize ${model.name}`)} title={tr(locale, "预览与优化（不修改原素材）", "Preview and optimize (preserves source)")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onOptimizer(model.id)}><Gauge size={15} /></button>
-            {controller.onReturnToScene && <button className="manager-icon-button" aria-label={tr(locale, `添加到原场景 ${model.name}`, `Add to original scene ${model.name}`)} title={tr(locale, "添加到原场景", "Add to original scene")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onReturnToScene?.(model.id)}><Plus size={15} /></button>}
             <div className="model-library-state">
               <span className={`model-status model-status-${model.status}`}>{statusLabel(model.status, locale)}</span>
               <ResourceUsageBadge locale={locale} resource={resourceGovernance.resources.find((resource) => resource.kind === "model" && resource.id === model.id)} />
               {model.status === "processing" && <progress max={100} value={model.progress} aria-label={`${tr(locale, "转换进度", "Conversion progress")} ${model.progress}%`} />}
             </div>
+            <div className="model-asset-actions" role="group" aria-label={tr(locale, `${model.name} 操作`, `Actions for ${model.name}`)}>
+            <button className="manager-icon-button" aria-label={tr(locale, `预览与优化 ${model.name}`, `Preview and optimize ${model.name}`)} title={tr(locale, "预览与优化（不修改原素材）", "Preview and optimize (preserves source)")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onOptimizer(model.id)}><Gauge size={15} /></button>
+            {controller.onReturnToScene && <button className="manager-icon-button" aria-label={tr(locale, `添加到原场景 ${model.name}`, `Add to original scene ${model.name}`)} title={tr(locale, "添加到原场景", "Add to original scene")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onReturnToScene?.(model.id)}><Plus size={15} /></button>}
             {model.generation?.kind === "parametric" && <button className="manager-icon-button" aria-label={tr(locale, "修改参数并创建新版本", "Edit parameters as a new revision")} title={tr(locale, "修改参数并创建新版本", "Edit parameters as a new revision")} disabled={modelLibraryBusy} onClick={() => { setParametricSourceModel(model); setParametricWorkbenchOpen(true); }}><WandSparkles size={14} /></button>}
             <button className="manager-icon-button" aria-label={tr(locale, `重命名模型 ${model.name}`, `Rename model ${model.name}`)} title={tr(locale, "重命名", "Rename")} disabled={modelLibraryBusy} onClick={() => void renameLibraryItem(model, "model")}><Pencil size={14} /></button>
             <button className="manager-icon-button danger" aria-label={tr(locale, `删除模型 ${model.name}`, `Delete model ${model.name}`)} title={tr(locale, "删除模型", "Delete model")} disabled={modelLibraryBusy} onClick={() => void deleteLibraryModel(model)}><Trash2 size={15} /></button>
+            </div>
           </article>
         ))}
         {visibleImages.map((asset) => (
