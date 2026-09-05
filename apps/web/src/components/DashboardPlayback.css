@@ -45,7 +45,7 @@
 .dashboard-runtime-preview .dashboard-runtime-controller-panel header small,
 .dashboard-runtime-preview .dashboard-runtime-parameters .dashboard-filter-widget small { color: var(--muted); }
 .dashboard-runtime-preview .dashboard-runtime-controller-panel nav button.active,
-.dashboard-runtime-preview .dashboard-runtime-controller.open .dashboard-runtime-controller-trigger { color: var(--accent); border-color: var(--accent); }
+.dashboard-runtime-preview .dashboard-runtime-controller.open .dashboard-runtime-controller-trigger { color: var(--accent-hover); border-color: var(--accent); }
 .dashboard-runtime-preview .dashboard-runtime-parameters { top: 62px; }
 .dashboard-runtime-preview .dashboard-runtime-parameters :is(.dashboard-filter-widget, header > span) { color: var(--text); background: var(--panel); border-color: var(--line); }
 .dashboard-runtime-preview .dashboard-runtime-parameters footer button.primary { background: var(--accent); color: var(--accent-contrast, #14191b); }

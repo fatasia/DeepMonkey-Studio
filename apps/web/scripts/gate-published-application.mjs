@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createIsolatedStudioGate } from "./isolatedStudioGate.mjs";
+import { collectTextContrast } from "./browserTextContrast.mjs";
 
 const gate = await createIsolatedStudioGate("published-application");
 const report = { createdAt: new Date().toISOString(), cases: [] };
@@ -82,6 +83,8 @@ try {
       assert.equal(await page.getByRole("button", { name: "发布更新", exact: true }).count(), 0);
       await page.getByRole("button", { name: "运行概览", exact: true }).click();
       await page.getByText("发布自动启动 42", { exact: true }).waitFor();
+      entry.contrast = await page.locator("body").evaluate(collectTextContrast, ".published-application-header strong, .published-application-header small, .playback-status span, .dashboard-runtime-controller-panel header small, .dashboard-runtime-controller-panel nav button, .dashboard-runtime-controller-trigger");
+      assert.deepEqual(entry.contrast.filter(item => item.text && item.contrast < 4.5), [], "Published chrome text contrast below 4.5:1");
       assert.equal(await page.getByLabel("区域筛选").inputValue(), "华南");
       await context.grantPermissions([], { origin: gate.origin });
       await page.getByRole("button", { name: "复制发布链接", exact: true }).click();
