@@ -4,6 +4,8 @@
 
 ## 最终接手状态：额度仅约1%，优先读本节
 
+最终追加：卡片补丁已提交`1efd53b`，最后Web生产构建与1256项全量再次通过（日志codex-final-layout-*）。ASSET-002最后两组浏览器正在执行，日志`.runtime-logs/codex-model-asset-context-layout-final.log`；只以该最终结果和规格回填判定新卡片布局，不用旧9SL8Cf视觉结论替代。
+
 账户23:59前最后读取已用99%，未兑换reset。**主体源码已经本地提交c77c503**；下面早期“源码未提交”的段落属于过程记录，以本节为准。后续卡片布局/规格文档另作收口提交，查看git log；绝未push。
 
 **已完成**：全仓1256 Web/494 API与其他包测试、根typecheck/1885源文件尺寸、生产构建307.2KiB/gzip99.8。作者隔离LE9JXj、语义最终q9ezkE、SIM最终2R3HHn、公开应用相邻si3ojN、优化链最终iXV4T5均已通过限定真实浏览器验收；各门禁和准确边界在EX-005、S1-003、SIM-001§9、SIM checkpoint中。API/正常Web继续健康，没有改原数据与账号。
