@@ -22,6 +22,11 @@ async function bootstrap(): Promise<void> {
 
 async function renderStudioApplication(): Promise<void> {
   await import("./editorStyles");
+  if (/^\/apps(?:\/|$)/.test(window.location.pathname)) {
+    const { PublishedApplicationRoot } = await import("./delivery/PublishedApplicationRoot");
+    createRoot(document.getElementById("root")!).render(<StrictMode><PublishedApplicationRoot /></StrictMode>);
+    return;
+  }
   // 视觉验收页默认不进入生产入口；CI 通过一次性构建变量显式启用。
   const visualQaEnabled = import.meta.env.DEV || import.meta.env.VITE_VISUAL_QA === "true";
   const DashboardVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/DashboardVisualQa")) : undefined;

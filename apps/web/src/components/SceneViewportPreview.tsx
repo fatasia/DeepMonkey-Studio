@@ -156,7 +156,7 @@ export function SceneViewportPreview({
         const camera = scene.cameraViews?.find((item) => item.id === node.cameraViewId)?.camera ?? scene.camera;
         engine.applyCamera(camera);
         for (const binding of scene.dataBindings ?? []) {
-          if (!binding.enabled || !binding.directBinding) continue;
+          if (!binding.enabled || !binding.directBinding || playback?.allowsProtectedData === false) continue;
           stopBindings.push(
             new DirectBindingRuntime(
               binding.directBinding,

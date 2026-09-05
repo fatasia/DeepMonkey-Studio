@@ -27,6 +27,7 @@ import {
   type ScriptDependencyInstallMode,
 } from "./scriptDependencyManagerModel";
 import "./ScriptDependencyManager.css";
+import { isRetainedScriptDependency } from "./scriptDependencyCleanup";
 
 export type ScriptDependencyClient = Pick<
   typeof api,
@@ -190,16 +191,18 @@ export function ScriptDependencyManager(props: ScriptDependencyManagerProps) {
         throw reason;
       }
 
-      let cleanupWarning = false;
+      let cleanupWarning = "";
       if (editing) {
         try {
           await client.deleteScriptDependency(props.projectId, editing.id);
-        } catch {
-          cleanupWarning = true;
+        } catch (reason) {
+          cleanupWarning = isRetainedScriptDependency(reason)
+            ? "新版本已生效，旧文件因其他草稿或历史发布引用而保留"
+            : "新版本已生效，旧缓存暂未清理；不影响当前运行";
         }
       }
       setFeedback(cleanupWarning
-        ? { tone: "warning", text: "新版本已生效，旧缓存未清理；可稍后重试更新" }
+        ? { tone: "warning", text: cleanupWarning }
         : { tone: "success", text: editing ? "依赖已更新并重新锁定" : "依赖已安装到项目缓存" });
       resetForm(mode);
       setFormOpen(false);
@@ -232,16 +235,20 @@ export function ScriptDependencyManager(props: ScriptDependencyManagerProps) {
     setFeedback(undefined);
     const previous = [...props.dependencies];
     const next = props.dependencies.filter((item) => item.id !== dependency.id);
+    let retained = false;
     try {
       await props.onDependenciesChange(next);
       try {
         await client.deleteScriptDependency(props.projectId, dependency.id);
       } catch (reason) {
-        await props.onDependenciesChange(previous);
-        throw reason;
+        if (isRetainedScriptDependency(reason)) retained = true;
+        else {
+          await props.onDependenciesChange(previous);
+          throw reason;
+        }
       }
       setConfirmDeleteId(undefined);
-      setFeedback({ tone: "success", text: `${dependency.specifier} 已删除` });
+      setFeedback({ tone: retained ? "warning" : "success", text: retained ? `${dependency.specifier} 已从当前应用移除，文件为其他草稿或历史发布保留` : `${dependency.specifier} 已删除` });
     } catch (reason) {
       setFeedback({ tone: "error", text: errorMessage(reason, "依赖删除失败") });
     } finally {

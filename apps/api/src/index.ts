@@ -5,6 +5,7 @@ import { loadConfig } from "./config.js";
 import { ConversionQueue } from "./conversion.js";
 import { registerRoutes } from "./routes.js";
 import { registerApplicationRoutes } from "./applicationRoutes.js";
+import { registerPublishedApplicationRoutes } from "./publishedApplicationRoutes.js";
 import { createObjectStore, migrateLocalObjects } from "./objects.js";
 import { createMetadataStore } from "./store.js";
 import { ensureDemoMetrics } from "./dataIntegration.js";
@@ -148,9 +149,11 @@ export async function buildApp() {
   await registerConversionTaskRoutes(app, { service: conversionTasks, projectExists: (projectId) => Boolean(store.getProject(projectId)) });
   await registerDataEndpointRuntime(app, store, config);
   await registerApplicationRoutes(app, store);
+  const scriptDependencies = new ScriptDependencyService({ dataDir: config.dataDir, objects });
+  await registerPublishedApplicationRoutes(app, { store, dependencies: scriptDependencies });
   await registerScriptDependencyRoutes(app, {
     store,
-    service: new ScriptDependencyService({ dataDir: config.dataDir, objects }),
+    service: scriptDependencies,
   });
   await registerScriptGitRoutes(app, {
     store,

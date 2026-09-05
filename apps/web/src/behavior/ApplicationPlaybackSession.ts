@@ -40,6 +40,7 @@ export class ApplicationPlaybackSession {
     project?: ProjectRecord;
     variables?: Readonly<Record<string, JsonValue>>;
     filters?: Readonly<Record<string, JsonValue>>;
+    protectedDataEnabled?: boolean;
   } = {}) {
     this.state = new ApplicationPlaybackState(source, options.variables, options.filters);
     this.pageId = pageId;
@@ -76,6 +77,8 @@ export class ApplicationPlaybackSession {
       if (!this.disposed && generation === this.generation) { this.loading = false; this.emit(); }
     }
   }
+
+  get allowsProtectedData() { return this.options.protectedDataEnabled !== false; }
 
   selectPage(pageId: string) {
     if (this.disposed || pageId === this.pageId || !this.source.pages.some((page) => page.id === pageId)) return;
@@ -117,6 +120,10 @@ export class ApplicationPlaybackSession {
     for (const id of result.matchedFlowIds) {
       const flow = this.state.document.interactions.find((flow) => flow.id === id);
       if (!flow?.legacyScript?.script.enabled) continue;
+      if (!this.allowsProtectedData) {
+        this.log({ moduleId: flow.id, level: "warn", message: "公开页不执行旧式主线程事件脚本；请迁移到隔离的生命周期脚本。" });
+        continue;
+      }
       void import("../studio/trustedApplicationScript").then(async ({ runTrustedApplicationScript }) => {
         if (this.disposed) return;
         await runTrustedApplicationScript({

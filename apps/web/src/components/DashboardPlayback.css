@@ -25,3 +25,29 @@
 .playback-console .error { color: var(--danger, #cf635f); }
 .playback-console code { display: block; white-space: pre-wrap; font: 11px/1.6 "Cascadia Code", Consolas, monospace; }
 @media (max-width: 600px) { .playback-status { top: 56px; right: 8px; } .playback-console header small { display: none; } }
+
+/* Runtime chrome follows the platform theme; authored artboard colors are untouched. */
+.dashboard-runtime-preview { color: var(--text); background: var(--bg-0); }
+.dashboard-runtime-preview .dashboard-runtime-stage { box-shadow: 0 6px 24px #0002; }
+.dashboard-runtime-copy-url { width: 100%; min-width: 0; height: 32px; padding: 6px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font-size: 12px; }
+.dashboard-node.runtime:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dashboard-runtime-preview .dashboard-runtime-controller-panel,
+.dashboard-runtime-preview .dashboard-runtime-controller-trigger,
+.dashboard-runtime-preview .dashboard-runtime-parameters { color: var(--text); border-color: var(--line); background: var(--panel); box-shadow: 0 8px 28px #0002; }
+.dashboard-runtime-preview .dashboard-runtime-controller-trigger span,
+.dashboard-runtime-preview .dashboard-runtime-controller-panel header small,
+.dashboard-runtime-preview .dashboard-runtime-controller-panel nav button,
+.dashboard-runtime-preview .dashboard-runtime-controller-panel > div > button,
+.dashboard-runtime-preview .dashboard-runtime-parameters :is(strong, small, input, select, button),
+.dashboard-runtime-preview .dashboard-runtime-export-error { font-size: 12px; }
+.dashboard-runtime-preview .dashboard-runtime-controller-panel :is(nav button, div > button),
+.dashboard-runtime-preview .dashboard-runtime-parameters :is(input, select, footer button) { min-height: 32px; color: var(--text); background: var(--panel); border-color: var(--line); }
+.dashboard-runtime-preview .dashboard-runtime-controller-panel header small,
+.dashboard-runtime-preview .dashboard-runtime-parameters .dashboard-filter-widget small { color: var(--muted); }
+.dashboard-runtime-preview .dashboard-runtime-controller-panel nav button.active,
+.dashboard-runtime-preview .dashboard-runtime-controller.open .dashboard-runtime-controller-trigger { color: var(--accent); border-color: var(--accent); }
+.dashboard-runtime-preview .dashboard-runtime-parameters { top: 62px; }
+.dashboard-runtime-preview .dashboard-runtime-parameters :is(.dashboard-filter-widget, header > span) { color: var(--text); background: var(--panel); border-color: var(--line); }
+.dashboard-runtime-preview .dashboard-runtime-parameters footer button.primary { background: var(--accent); color: var(--accent-contrast, #14191b); }
+.dashboard-runtime-preview .dashboard-runtime-export-error { color: var(--text); border-color: var(--line); background: var(--panel); overflow-wrap: anywhere; }
+@media print { .playback-status, .playback-console, .dashboard-runtime-back { display: none; } }

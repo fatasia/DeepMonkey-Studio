@@ -54,6 +54,7 @@ export function DashboardRuntimePreview({
   onObjectInteraction,
   onNodeInteraction,
   children,
+  readOnly = false,
 }: {
   locale: AppLocale;
   application: ApplicationDocument;
@@ -65,6 +66,7 @@ export function DashboardRuntimePreview({
   filters: Readonly<Record<string, JsonValue>>;
   connected: boolean;
   children?: ReactNode;
+  readOnly?: boolean;
   onSelectPage: (pageId: string) => void;
   onClose: () => void;
   onPublish: () => void;
@@ -93,13 +95,15 @@ export function DashboardRuntimePreview({
     [page.nodes],
   );
   const [parametersOpen, setParametersOpen] = useState(
-    parameterWidgets.length > 0,
+    !readOnly && parameterWidgets.length > 0,
   );
   const [draftFilters, setDraftFilters] = useState<Record<string, JsonValue>>(
     () => ({ ...filters }),
   );
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
+  const [manualCopyUrl, setManualCopyUrl] = useState("");
   const [viewport, setViewport] = useState<DashboardRuntimeViewport>(() =>
     calculateDashboardRuntimeViewport(
       page,
@@ -160,7 +164,7 @@ export function DashboardRuntimePreview({
   ).length;
   return (
     <main className="dashboard-runtime-preview">
-      <button
+      {!readOnly && <button
         type="button"
         className="dashboard-runtime-back"
         title={tr(locale, "返回编辑（Esc）", "Back to editor (Esc)")}
@@ -168,7 +172,7 @@ export function DashboardRuntimePreview({
       >
         <ArrowLeft size={15} />
         {tr(locale, "返回编辑", "Back to editor")}
-      </button>
+      </button>}
       <section
         ref={surfaceRef}
         className={`dashboard-runtime-surface fit-${page.viewportFit}`}
@@ -294,7 +298,7 @@ export function DashboardRuntimePreview({
                 {page.name} ·{" "}
                 {connected
                   ? tr(locale, "实时数据", "Live data")
-                  : tr(locale, "离线数据", "Offline data")}
+                  : readOnly ? tr(locale, "快照与脚本数据", "Snapshot and script data") : tr(locale, "离线数据", "Offline data")}
               </small>
             </header>
             {application.pages.length > 1 && (
@@ -331,24 +335,30 @@ export function DashboardRuntimePreview({
                 <Printer size={13} />
                 {tr(locale, "打印", "Print")}
               </button>
-              <button onClick={onPublish}>
+              {!readOnly && <button onClick={onPublish}>
                 <Rocket size={13} />
                 {tr(locale, "发布更新", "Publish update")}
-              </button>
+              </button>}
               <button
-                onClick={() =>
-                  void navigator.clipboard.writeText(
-                    `${window.location.origin}/apps/${encodeURIComponent(application.metadata.id)}`,
-                  )
-                }
+                onClick={() => {
+                  setCopyMessage("");
+                  setManualCopyUrl("");
+                  const url = `${window.location.origin}/apps/${encodeURIComponent(application.metadata.id)}`;
+                  void Promise.resolve().then(() => navigator.clipboard.writeText(url))
+                    .then(() => setCopyMessage(tr(locale, "发布链接已复制", "Published URL copied")))
+                    .catch(() => {
+                      setManualCopyUrl(url);
+                      setCopyMessage(tr(locale, "无法访问剪贴板，请手动复制下方发布链接。", "Clipboard unavailable. Copy the published URL below."));
+                    });
+                }}
               >
                 <Copy size={13} />
                 {tr(locale, "复制发布链接", "Copy published URL")}
               </button>
-              <button onClick={onClose}>
+              {!readOnly && <button onClick={onClose}>
                 <X size={13} />
                 {tr(locale, "返回编辑", "Back to editor")}
-              </button>
+              </button>}
             </div>
             {exportError && (
               <p className="dashboard-runtime-export-error">
@@ -356,6 +366,8 @@ export function DashboardRuntimePreview({
                 {exportError}
               </p>
             )}
+            {copyMessage && <p className="dashboard-runtime-export-error" role="status">{copyMessage}</p>}
+            {manualCopyUrl && <input className="dashboard-runtime-copy-url" aria-label={tr(locale, "发布链接", "Published URL")} readOnly value={manualCopyUrl} onFocus={event => event.currentTarget.select()} />}
           </div>
         )}
       </div>

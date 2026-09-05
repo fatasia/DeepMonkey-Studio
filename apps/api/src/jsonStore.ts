@@ -785,8 +785,8 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
     return item ? structuredClone(item) : undefined;
   }
 
-  listApplicationPublications(applicationId: string): PublishedApplicationRecord[] {
-    return structuredClone((this.document.publishedApplications ?? []).filter((item) => item.applicationId === applicationId));
+  listApplicationPublications(applicationId?: string): PublishedApplicationRecord[] {
+    return structuredClone((this.document.publishedApplications ?? []).filter((item) => !applicationId || item.applicationId === applicationId));
   }
 
   getApplicationPublicationPointer(applicationId: string): ApplicationPublicationPointer | undefined {

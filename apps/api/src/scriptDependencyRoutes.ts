@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { assertPathSafeResourceId } from "@bim-studio/contracts";
 import type { MetadataStore } from "./store.js";
 import { ScriptDependencyService } from "./scriptDependencyService.js";
+import { isScriptDependencyReferenced } from "./publishedApplicationRoutes.js";
 
 type ProjectParams = { projectId: string };
 type DependencyParams = ProjectParams & { dependencyId: string };
@@ -72,6 +73,9 @@ export async function registerScriptDependencyRoutes(
     async (request, reply) => {
       if (!requireProject(dependencies.store, request.params.projectId, reply)) return reply;
       if (!validId(request.params.dependencyId, "dependencyId", reply)) return reply;
+      if (isScriptDependencyReferenced(dependencies.store, request.params.projectId, request.params.dependencyId)) {
+      return reply.code(409).send({ code: "dependency-in-use", message: "依赖仍被应用草稿或历史发布版本引用，已保留文件" });
+      }
       await dependencies.service.remove(request.params.projectId, request.params.dependencyId);
       return reply.code(204).send();
     },

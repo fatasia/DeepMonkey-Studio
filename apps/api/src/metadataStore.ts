@@ -140,7 +140,7 @@ export interface MetadataStore {
   publishApplication(projectId: string, applicationId: string, publicationId: string, publishedAt: string): Promise<PublishApplicationResult>;
   unpublishApplication(projectId: string, applicationId: string): Promise<UnpublishApplicationResult>;
   getPublishedApplication(publicationId: string): PublishedApplicationRecord | undefined;
-  listApplicationPublications(applicationId: string): PublishedApplicationRecord[];
+  listApplicationPublications(applicationId?: string): PublishedApplicationRecord[];
   getApplicationPublicationPointer(applicationId: string): ApplicationPublicationPointer | undefined;
   listUsers(): StoredSystemUserRecord[];
   getUser(userId: string): StoredSystemUserRecord | undefined;

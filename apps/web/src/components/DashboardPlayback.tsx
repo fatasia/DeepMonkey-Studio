@@ -4,13 +4,14 @@ import { api } from "../api";
 import type { JsonValue } from "@bim-studio/contracts";
 import { ApplicationPlaybackSession } from "../behavior/ApplicationPlaybackSession";
 import { PlaybackContext } from "../behavior/playbackContext";
-import { loadScriptDependencyModules } from "../behavior/scriptDependencyRuntime";
+import { loadScriptDependencyModules, type ScriptDependencyReader } from "../behavior/scriptDependencyRuntime";
 import { translate as tr } from "../i18n";
 import { DashboardRuntimePreview } from "./DashboardRuntimePreview";
 import { useDashboardMetrics, type DashboardMetric } from "./DashboardWidgetRuntime";
 import "./DashboardPlayback.css";
 
-type Props = ComponentProps<typeof DashboardRuntimePreview>;
+type Props = ComponentProps<typeof DashboardRuntimePreview> & { readDependency?: ScriptDependencyReader };
+const NO_WIDGETS: never[] = [];
 
 /** Preview mounts a fresh disposable session; closing never saves runtime mutations. */
 export function DashboardPlayback(props: Props) {
@@ -18,15 +19,19 @@ export function DashboardPlayback(props: Props) {
   const [session, setSession] = useState<ApplicationPlaybackSession>();
   const [, refresh] = useState(0);
   useEffect(() => {
-    const { application, page, variables, filters, project } = initial.current;
+    const { application, page, variables, filters, project, readOnly, readDependency } = initial.current;
     const next = new ApplicationPlaybackSession(application, page.id, {
-      project, variables, filters,
+      project, variables, filters, protectedDataEnabled: !readOnly,
       hostOptions: {
         executeNetworkRequest: async ({ binding, variables: requestVariables }) => {
+          if (readOnly) throw new Error("公开页未启用受保护数据网关，请联系发布者配置发布授权。");
           const result = await api.executeDirectBinding(binding, requestVariables);
           return { ok: true, status: result.status, data: result.data as JsonValue, value: result.value as JsonValue };
         },
-        executeCapabilityRequest: async ({ capabilityId, input }) => JSON.parse(JSON.stringify(await api.invokeCapability(application.metadata.projectId, capabilityId, input, "script-runtime"))),
+        executeCapabilityRequest: async ({ capabilityId, input }) => {
+          if (readOnly) throw new Error("公开页未启用 AI 网关，请联系发布者配置发布授权。");
+          return JSON.parse(JSON.stringify(await api.invokeCapability(application.metadata.projectId, capabilityId, input, "script-runtime")));
+        },
       },
     });
     let frame = 0;
@@ -42,7 +47,7 @@ export function DashboardPlayback(props: Props) {
       frame = requestAnimationFrame(advance);
     };
     setSession(next);
-    void next.start(() => loadScriptDependencyModules(application.metadata.projectId, application.scriptDependencies ?? [], api.readScriptDependency));
+    void next.start(() => loadScriptDependencyModules(application.metadata.projectId, application.scriptDependencies ?? [], readDependency ?? api.readScriptDependency));
     frame = requestAnimationFrame(advance);
     return () => { cancelAnimationFrame(frame); next.dispose(); };
   }, []);
@@ -55,7 +60,7 @@ function PlaybackView({ session, ...props }: Props & { session: ApplicationPlayb
   const { document: application, variables, filters } = session.state;
   const page = application.pages.find((page) => page.id === props.page.id) ?? application.pages[0]!;
   const widgets = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
-  const live = useDashboardMetrics(application.metadata.projectId, widgets, undefined, filters);
+  const live = useDashboardMetrics(application.metadata.projectId, props.readOnly ? NO_WIDGETS : widgets, undefined, filters, !props.readOnly);
   useEffect(() => {
     const updates = Object.fromEntries(Object.entries(live.metrics).filter(([, metric]) => metric.value !== undefined).map(([key, metric]) => [key, JSON.parse(JSON.stringify(metric.value)) as JsonValue]));
     session.setVariables(updates);

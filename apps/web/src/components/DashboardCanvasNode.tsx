@@ -26,6 +26,8 @@ import {
 } from "./DashboardWidgetRuntime";
 import { SceneViewportPreview } from "./SceneViewportPreview";
 import { UnitySceneEmbed } from "./UnitySceneEmbed";
+import { usePlaybackSession } from "../behavior/playbackContext";
+import { publicWidgetRestriction } from "../behavior/publicPlaybackPolicy";
 
 export function DashboardNode({
   application,
@@ -80,6 +82,7 @@ export function DashboardNode({
     mode: "move" | "resize",
   ) => void;
 }) {
+  const playback = usePlaybackSession();
   const style = {
     left: frame.x,
     top: frame.y,
@@ -173,9 +176,16 @@ export function DashboardNode({
   }
   if (node.kind === "data-widget") {
     const animationEnabled = runtime && node.widget.animationAutoplay !== false;
+    const restriction = playback?.allowsProtectedData === false ? publicWidgetRestriction(node.widget, metric?.value !== undefined) : undefined;
+    const keyboardInteractive = runtime && ["text", "shape", "decoration", "image", "value", "status"].includes(node.widget.type)
+      && (application.interactions.some(flow => flow.enabled && flow.source.kind === "widget" && flow.source.id === node.id && flow.trigger === "click")
+        || application.scripts.some(script => script.enabled && script.target?.kind === "component" && script.target.id === node.id && script.lifecycle?.includes("onEvent")));
     return (
       <article
         className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${animationEnabled ? `runtime animation-${node.widget.animation ?? "none"}` : runtime ? "runtime" : ""}`}
+        role={keyboardInteractive ? "button" : undefined}
+        tabIndex={keyboardInteractive ? 0 : undefined}
+        aria-label={keyboardInteractive ? node.widget.title || node.name : undefined}
         style={{
           ...style,
           ...widgetBackgroundStyle(node.widget),
@@ -183,6 +193,14 @@ export function DashboardNode({
           animationDuration: `${node.widget.animationDuration ?? 0.6}s`,
           animationDelay: `${node.widget.animationDelay ?? 0}s`,
           animationIterationCount: resolveDashboardAnimationLoop(node.widget) ? "infinite" : "1",
+          ...(restriction ? { background: "var(--panel)", color: "var(--text)" } : {}),
+        }}
+        onKeyDown={(event) => {
+          if (keyboardInteractive && event.target === event.currentTarget && !event.repeat && ["Enter", " "].includes(event.key)) {
+            event.preventDefault();
+            event.stopPropagation();
+            onInteraction("click");
+          }
         }}
         onClick={(event) => {
           event.stopPropagation();
@@ -216,7 +234,7 @@ export function DashboardNode({
           if (runtime) onInteraction("animationEnd");
         }}
       >
-        {node.widget.type === "topology" ? (
+        {restriction ? <div className="dashboard-public-restriction" role="note"><strong>{node.widget.title || node.name}</strong><span>{restriction}</span></div> : node.widget.type === "topology" ? (
           <DashboardTopologyView
             application={application}
             {...(node.widget.topologyId
