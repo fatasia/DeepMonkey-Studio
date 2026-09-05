@@ -429,6 +429,7 @@ export async function registerIndustrialCapabilityRoutes(
     const result = await invokeReliableHttpCapability({
       capabilityId,
       client: request.raw,
+      response: reply.raw,
       invoke: dependencies.host.invoke,
       addAuditLog: dependencies.store.addAuditLog?.bind(dependencies.store),
       request: {

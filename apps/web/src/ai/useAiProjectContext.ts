@@ -30,6 +30,7 @@ export function useAiProjectContext(projectId: string | undefined, locale: AppLo
     }
     setPlatformContext({ status: "loading" });
     setContextSources([]);
+    setDatasets([]);
     let cancelled = false;
     void Promise.allSettled([
       api.getOperations(projectId),

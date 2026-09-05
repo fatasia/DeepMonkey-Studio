@@ -86,6 +86,7 @@ export async function buildApp() {
     dataDir: config.dataDir,
     registry: industrialCapabilities.registry,
     settings: () => resolveAiSettings(store),
+    dataSource: dataQuerySource,
     audit: aiAudit,
   });
   const batteryScheduler = new BatteryInferenceScheduler({

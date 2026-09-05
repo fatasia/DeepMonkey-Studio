@@ -142,6 +142,7 @@ export function createIndustrialApi(request: ApiRequest) {
       capabilityId: string,
       input: unknown,
       principal = "web-user",
+      signal?: AbortSignal,
     ) =>
       request<CapabilityInvocationResult<T>>(
         `/api/projects/${projectId}/capabilities/invoke`,
@@ -149,6 +150,7 @@ export function createIndustrialApi(request: ApiRequest) {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ capabilityId, principal, input }),
+          ...(signal ? { signal } : {}),
         },
       ),
     listBatteryModelCatalog: () =>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertTriangle, Bot, Box, Database, Focus, Layers3, LayoutDashboard, LoaderCircle, MessageSquare, RotateCcw, ScanSearch, Send, Sparkles, Trash2, Workflow, X } from "lucide-react";
-import type { AskDataQueryDraftResult, AskDataQueryReadResult, SceneDashboardState } from "@bim-studio/contracts";
+import { Activity, AlertTriangle, Bot, Box, Database, Focus, Layers3, LayoutDashboard, LoaderCircle, MessageSquare, RotateCcw, ScanSearch, Send, Sparkles, Square, Trash2, Workflow, X } from "lucide-react";
+import type { SceneDashboardState } from "@bim-studio/contracts";
 import { api, type AssistantMode } from "../api";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -10,13 +10,12 @@ import { AiCapabilityCatalog } from "./AiCapabilityCatalog";
 import type { AiWorkspaceTask } from "../ai/capabilityCatalog";
 import { assistantSuggestions } from "../ai/assistantSuggestions";
 import {
-  assistantReliabilityFromResponse,
   assistantWorkspaceTarget,
-  queryCapabilityReliability,
   type AssistantContextSource,
   type AssistantReliabilitySummary,
 } from "../ai/assistantReliability";
 import { useAiProjectContext } from "../ai/useAiProjectContext";
+import { runAssistantRequest } from "../ai/runAssistantRequest";
 import { AiContextDisclosure } from "./AiContextDisclosure";
 import { AiResponseEvidence } from "./AiResponseEvidence";
 import { BimAssistantEvidence, type BimAssistantAction } from "./BimAssistantEvidence";
@@ -70,7 +69,6 @@ export function AiAssistantPanel({
   const [applyError, setApplyError] = useState<string>();
   const [applyNotice, setApplyNotice] = useState<string>();
   const requestAbort = useRef<AbortController | undefined>(undefined);
-  const inFlight = useRef(false);
   const { platformContext, contextSources, datasets, platformLoaded, projectMissing } = useAiProjectContext(projectId, locale);
   const t = (zh: string, en: string) => tr(locale, zh, en);
   const workspaceTarget = useMemo(() => assistantWorkspaceTarget(context), [context]);
@@ -129,24 +127,48 @@ export function AiAssistantPanel({
     if (mode === "component" && !workspaceTarget.selected) setMode(surface === "studio" ? "scene" : "platform");
   }, [mode, surface, workspaceTarget.selected]);
 
-  useEffect(() => () => requestAbort.current?.abort(), []);
+  useEffect(() => {
+    cancelRequest();
+    setConversation([]);
+    setAnswer("");
+    setQuestion("");
+    setLastPrompt("");
+    setError(undefined);
+    setDashboard(undefined);
+    setConfirmDashboard(false);
+    setBimEvidence(undefined);
+    setApplyNotice(undefined);
+    return () => {
+      requestAbort.current?.abort();
+      requestAbort.current = undefined;
+    };
+  }, [projectId, workspaceTarget.scene?.id, workspaceTarget.script?.id]);
 
   useEffect(() => {
     const dismiss = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       event.preventDefault();
       if (confirmDashboard) setConfirmDashboard(false);
-      else { requestAbort.current?.abort(); onClose(); }
+      else { cancelRequest(); onClose(); }
     };
     window.addEventListener("keydown", dismiss);
     return () => window.removeEventListener("keydown", dismiss);
   }, [confirmDashboard, onClose]);
 
+  function cancelRequest() {
+    requestAbort.current?.abort();
+    requestAbort.current = undefined;
+    setBusy(false);
+  }
+
   async function ask(retryPrompt?: string) {
     const prompt = (retryPrompt ?? question).trim();
-    if (!prompt || inFlight.current) return;
-    inFlight.current = true;
+    if (!prompt || requestAbort.current) return;
+    const controller = new AbortController();
+    requestAbort.current = controller;
+    const isCurrent = () => requestAbort.current === controller && !controller.signal.aborted;
     setLastPrompt(prompt);
+    if (!retryPrompt) setQuestion("");
     setBusy(true);
     setError(undefined);
     setApplyNotice(undefined);
@@ -156,89 +178,34 @@ export function AiAssistantPanel({
     setBimEvidence(undefined);
     setAnswer("");
     try {
-      if (mode === "sql") {
-        if (!projectId) throw new Error(t("请先选择项目", "Select a project first"));
-        const drafted = await api.invokeCapability<AskDataQueryDraftResult>(projectId, "data.query.draft", { prompt });
-        const plan = drafted.output?.planning.plan;
-        if (!plan)
-          throw new Error(
-            drafted.output?.planning.issues[0]?.message ?? drafted.warnings[0] ?? drafted.error?.message ?? t("无法生成受控查询计划", "Unable to create a controlled query plan"),
-          );
-        const read = await api.invokeCapability<AskDataQueryReadResult>(projectId, "data.query.read", { plan });
-        if (!read.output) throw new Error(read.error?.message ?? t("查询没有返回数据", "The query returned no data"));
-        const resultText = formatAskDataResult(read.output, locale);
-        const reliability = queryCapabilityReliability({
-          traceId: read.traceId,
-          evidenceCount: read.evidence.length,
-          warnings: [...drafted.warnings, ...read.warnings],
-          evidenceFingerprint: read.output.evidenceFingerprint,
-          sourceLabel: read.output.datasetName,
-        });
-        setAnswer(resultText);
-        setConversation((current) =>
-          [
-            ...current,
-            {
-              id: `${Date.now()}`,
-              mode,
-              question: prompt,
-              answer: resultText,
-              reliability,
-              ...(drafted.output?.model ? { model: drafted.output.model } : {}),
-            },
-          ].slice(-12),
-        );
-        setQuestion("");
-        return;
-      }
-      const prepared = mode === "bim" && onPrepareBimContext ? await onPrepareBimContext(prompt) : undefined;
-      if (prepared) setBimEvidence(prepared);
-      const requestContext = {
-        workspace: context,
-        platform: platformContext,
-        contextTrust: "client-snapshot",
-        ...(prepared ? { bimEvidence: prepared } : {}),
-        recentConversation: conversation
-          .slice(-6)
-          .map(({ mode: itemMode, question: itemQuestion, answer: itemAnswer }) => ({ mode: itemMode, question: itemQuestion, answer: itemAnswer })),
-      };
       let streamed = "";
-      requestAbort.current?.abort();
-      const controller = new AbortController();
-      requestAbort.current = controller;
-      const result = await api.streamAssistant(mode, prompt, requestContext, (delta) => {
-        streamed += delta;
-        setAnswer(streamed);
-      }, { ...(projectId ? { projectId } : {}), signal: controller.signal });
+      const result = await runAssistantRequest({
+        client: api, mode, prompt, locale, context, platformContext, sources: effectiveSources,
+        ...(projectId ? { projectId } : {}),
+        ...(onPrepareBimContext ? { prepareBim: onPrepareBimContext } : {}),
+        recentConversation: conversation.slice(-6).map(({ mode, question, answer }) => ({ mode, question, answer })),
+        signal: controller.signal,
+        onPrepared: (prepared) => { if (isCurrent()) setBimEvidence(prepared); },
+        onDelta: (delta) => { if (isCurrent()) { streamed += delta; setAnswer(streamed); } },
+      });
+      if (!isCurrent()) return;
       setAnswer(result.text);
       setDashboard(result.dashboard);
-      const responseSources = prepared
-        ? [
-            ...effectiveSources,
-            {
-              id: "bim-evidence-snapshot",
-              label: t("BIM 构件匹配快照", "BIM component match snapshot"),
-              state: prepared.confidence === "insufficient" ? "partial" as const : "ready" as const,
-              kind: "snapshot" as const,
-              count: prepared.matchCount,
-            },
-          ]
-        : effectiveSources;
-      const reliability = assistantReliabilityFromResponse(result, mode, responseSources, prepared);
+      setBimEvidence(result.prepared);
       setConversation((current) => [
         ...current,
-        { id: `${Date.now()}`, mode, question: prompt, answer: result.text, model: result.model, reliability },
+        { id: `${Date.now()}`, mode, question: prompt, answer: result.text, reliability: result.reliability,
+          ...(result.model ? { model: result.model } : {}) },
       ].slice(-12));
-      setQuestion("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (isCurrent()) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      inFlight.current = false;
-      requestAbort.current = undefined;
-      setBusy(false);
+      if (requestAbort.current === controller) {
+        requestAbort.current = undefined;
+        setBusy(false);
+      }
     }
   }
-
   async function applyDashboardDraft() {
     if (!dashboard || !onApplyDashboard) return;
     setApplyBusy(true);
@@ -297,6 +264,7 @@ export function AiAssistantPanel({
           {conversation.length > 0 && (
             <button
               title={t("清空对话", "Clear conversation")}
+              disabled={busy}
               onClick={() => {
                 setConversation([]);
                 setAnswer("");
@@ -307,23 +275,24 @@ export function AiAssistantPanel({
               <Trash2 size={14} />
             </button>
           )}
-          <button aria-label={t("关闭 AI 助手", "Close AI assistant")} title={t("关闭 AI 助手", "Close AI assistant")} onClick={() => { requestAbort.current?.abort(); onClose(); }}>
+          <button aria-label={t("关闭 AI 助手", "Close AI assistant")} title={t("关闭 AI 助手", "Close AI assistant")} onClick={() => { cancelRequest(); onClose(); }}>
             <X size={15} />
           </button>
         </div>
       </header>
       <nav className="ai-assistant-tabs">
         <div className="ai-assistant-experience" role="tablist" aria-label={t("AI 使用方式", "AI experience")}>
-          <button role="tab" aria-selected={experience === "chat"} className={experience === "chat" ? "active" : ""} onClick={() => setExperience("chat")}>
+          <button role="tab" disabled={busy} aria-selected={experience === "chat"} className={experience === "chat" ? "active" : ""} onClick={() => setExperience("chat")}>
             <MessageSquare size={12} />{t("问答与生成", "Ask & create")}
           </button>
-          <button role="tab" aria-selected={experience === "agent"} className={experience === "agent" ? "active" : ""} onClick={() => setExperience("agent")}>
+          <button role="tab" disabled={busy} aria-selected={experience === "agent"} className={experience === "agent" ? "active" : ""} onClick={() => setExperience("agent")}>
             <Workflow size={12} />{t("执行任务", "Run task")}
           </button>
         </div>
         {experience === "chat" && tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            disabled={busy}
             className={mode === id ? "active" : ""}
             aria-pressed={mode === id}
             onClick={() => {
@@ -465,25 +434,11 @@ export function AiAssistantPanel({
           }}
           placeholder={t("问模型、事件、风险、数据或下一步动作……", "Ask about models, events, risks, data or next actions…")}
         />
-        <button aria-label={t("发送", "Send")} title={t("发送", "Send")} disabled={busy || !question.trim()} onClick={() => void ask()}>
-          {busy ? <LoaderCircle className="spin" size={15} /> : <Send size={15} />}
-        </button>
+        {busy ? <button aria-label={t("停止生成", "Stop generating")} title={t("停止生成", "Stop generating")} onClick={() => {
+          cancelRequest();
+          setApplyNotice(t("请求已停止，未应用任何更改。", "Request stopped; no changes were applied."));
+        }}><Square size={15} /></button> : <button aria-label={t("发送", "Send")} title={t("发送", "Send")} disabled={!question.trim()} onClick={() => void ask()}><Send size={15} /></button>}
       </footer>}
     </aside>
   );
-}
-
-function formatAskDataResult(result: AskDataQueryReadResult, locale: AppLocale): string {
-  const columns = result.columns.map((column) => `${column.label}${column.unit ? ` (${column.unit})` : ""}`);
-  const rows = result.rows.slice(0, 12).map((row) => result.columns.map((column) => `${column.label}: ${formatCell(row[column.key])}`).join(" · "));
-  const summary =
-    locale === "zh-CN"
-      ? `数据集：${result.datasetName}\n字段：${columns.join("、")}\n匹配 ${result.matchedRows} 行，返回 ${result.returnedRows} 行${result.truncated ? "（已限量）" : ""}`
-      : `Dataset: ${result.datasetName}\nFields: ${columns.join(", ")}\n${result.matchedRows} matched, ${result.returnedRows} returned${result.truncated ? " (limited)" : ""}`;
-  return `${summary}\n\n${rows.map((row) => `- ${row}`).join("\n")}\n\nEvidence: ${result.evidenceFingerprint}`;
-}
-
-function formatCell(value: unknown): string {
-  if (typeof value === "number") return Number(value.toFixed(4)).toLocaleString();
-  return String(value ?? "—");
 }

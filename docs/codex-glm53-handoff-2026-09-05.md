@@ -49,8 +49,8 @@
 
 | 顺序 | 任务 | 从哪里继续，完成口径 |
 |---|---|---|
-| 1 | GLM 报告增量 + 已确认待复核项 | 先对照复核表，重点 P2-11 Agent 数据集、日志页/复制失败态、拓扑 fit/状态，不盲改未复现项 |
-| 2 | AI 请求生命周期 | AiAssistantPanel 目前在准备 BIM 上下文后才建 AbortController；取消/关闭之前的准备不应继续发请求。SQL 两步请求也需取消/过期防护；不能结束时清空用户后来输入的问题 |
+| 1 | GLM 报告增量 + 已确认待复核项 | 先对照复核表；P2-11 目录缺失根因已修，继续日志页/复制失败态、拓扑 fit/状态，不盲改未复现项 |
+| 2 | Agent 深化与失败恢复 | 普通 AI 取消/后续草稿保护已修（§8），剩余 Agent 多候选名称选择、上游 504 恢复与跨项目异步返回；不要重做取消基础设施 |
 | 3 | SIM 四面板运行态深测 | 32 组基础布局/折叠检查已通过；继续真实运行/错误态/键盘、子面板下半部分、关闭与切页生命周期，不能只看首屏 |
 | 4 | SIM-1a 剩余完整闭环 | 创建角色/源汇/队列 → 绑定实体参数到既有物流运行器 → 运行结果适配覆盖层 → 同一 Study 证据 → 时间线播放；静态路径不能算全部完成 |
 | 5 | 仿真可停靠与状态保留 | 当前只有拖动/缩放/折叠，不是完整 dock/autohide；切换 tab 的 OperationsCenter 有 key，仍会卸载。若新增停靠，按工作区尺寸保留可操作视口，不重写壳层 |
@@ -99,3 +99,19 @@ git diff --check
 - 构建体积门禁：首屏 JS 304.8 KiB / gzip 99.0 KiB，11 个 chunk，通过现有预算。Draco/glTF/watlas 的 Node 模块 externalization 与大 chunk 提示仍存在；构建通过不等于零构建警告或所有依赖分支都经过生产浏览器验证。
 - 根启动/CLI/部署操作单元测试 16/16；native ops 聚焦与启动器 9/9。Web/API 仍在 Web 模式健康运行，未停服务。
 - 11:02 最后复跑：四面板 32 组、Web 全量 1127/1127、Web 生产构建与 bundle-budget、1705 源文件尺寸和 diff 检查均通过。当前仍有待办，以上不是全项目最终验收声明。
+
+## 8. 12:00 接续：Agent 目录与 AI 取消（已完成增量）
+
+- 先读了 GLM 新提交 `0d49388`（只改其交接的素材瓶颈统计），没有覆盖并行修改。UI 原报告无新增；164 GLB 下载仍暂停，“zip 可增产三倍”只是 GLM 估算，不是本轮实测。
+- Agent 原失败 checkpoint 仅有项目/场景，无数据集目录，且查询工具要求 datasetId。`industrialAgentDatasetCatalog.ts` 提供服务端当前项目目录，每次决策重新读取；最多 50 数据集/64 字段/约 40k 字符，截断显式标记。只带名称、字段、版本，不带 SQL/连接配置/样本行；经既有输入隔离检查，元数据仍不是执行证据。
+- `industrialAgentDecisionProvider` 保留工具描述，优先目录/工具再放大场景快照，提示按字段匹配与数据集名称澄清。未自动绑定首个数据集，没有放宽审批或工具白名单。集成门禁用真实编排器/工具网关/受控查询插件，模型决策为确定性夹具，覆盖正常读取和越界/未知字段拒绝。
+- `runAssistantRequest.ts` 抽取 BIM 准备/SQL 两阶段/流式读取，统一 signal 与每个 await 后检查。AiAssistantPanel 从准备前持有请求所有权，旧 finally 不影响新请求；增加停止按钮，发送时清空当前输入而不是结束时清空后来草稿；忙时禁止切模式，切项目/场景/脚本清旧会话。BIM 已准备证据在模型失败时仍保留。
+- 服务器同族根因：HTTP 请求正文完成后 `request.aborted` 不再代表等待响应期间的断开；新增 `httpDisconnectScope` 同时跟踪响应 close，普通问答/SSE/Capability 均将 signal 传到提供方。正常响应完成不误取消；SSE 首事件前仍保留结构化 403 错误，关闭后不写迟到事件。
+- 12:00 验证：Web 322 文件/1136 测试、API 113 文件/448 测试全通过；API build 通过。聚焦前端 12 项、API 28 项包括四条真实 HTTP 断开链路。AI 浏览器四组通过、UI 报告门禁双主题通过。构建最终结果见后续补记。
+- 真实在线 Agent：原问题仅开放 plan/read 两个工具，已发现并校验“HTTP · 实时设备状态”；第二次模型决策上游 504，未完成数据读取及诊断。检查点 `a06d9fd8-320d-4167-95e2-bc83fcb56921` 保留，截图见 `ai-lifecycle/agent-live-discovery-provider-504.png`；原失败 `5fae5512-a669-4a5d-b89f-21c159b136cf` 未篡改。原场景未写入。
+- **本轮待办**：Agent 当前失败都被视为终态，即使 failure.retryable=true，也不能从检查点恢复；不要自动重放写入，应另做严格受限的决策失败恢复规格/测试。Agent 启动/操作/轮询的过期响应也需继续收紧。多候选目前是模型按名称文字澄清，尚无选择卡片与续答机制。BIM 准备取消本轮为纯逻辑测试，未冒充真实大 BIM 文件专项浏览器验收。
+- 对标采用：Copilot Studio 官方说明用上下文、工具说明和输入输出选择能力，缺信息先问，取消应停止计划剩余步骤；据此补的是目录、取消与明确证据，不复制竞品界面、不宣称全面超过。来源：[Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-copilot-studio/advanced-generative-actions)。
+
+复跑：`node apps/web/scripts/gate-ai-lifecycle.mjs`；产物 `test-output/codex-2026-09-05/ai-lifecycle/`。隔离浏览器只模拟 AI 响应，不调用真实模型、不改品牌设置；真实在线失败单独保留。
+
+12:04 收口：Web/API 生产构建通过，首屏仍为 304.8 KiB / gzip 99.0 KiB、11 chunks，预算无回退；既有 Node 模块 externalization/大 chunk 构建提示仍在。1715 个源文件尺寸门禁与 diff 检查通过，全局 Web/API 健康；本批不再重复改 credentials、存储或下载。

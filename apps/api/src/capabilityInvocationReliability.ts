@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { httpDisconnectScope } from "./httpDisconnectScope.js";
 import type { AuditLogRecord } from "@bim-studio/contracts";
 import type {
   CapabilityInvocationResult,
@@ -15,6 +16,7 @@ export interface ReliableCapabilityInvocationOptions {
   capabilityId: string;
   request: CapabilityRequest;
   client: ClientAbortSource;
+  response?: Parameters<typeof httpDisconnectScope>[1];
   invoke(
     capabilityId: string,
     request: CapabilityRequest,
@@ -29,19 +31,16 @@ export interface ReliableCapabilityInvocationOptions {
 export async function invokeReliableHttpCapability(
   options: ReliableCapabilityInvocationOptions,
 ): Promise<CapabilityInvocationResult> {
-  const controller = new AbortController();
-  const abortFromClient = () => controller.abort("HTTP 客户端已断开");
-  if (options.client.aborted) abortFromClient();
-  else options.client.once("aborted", abortFromClient);
+  const scope = httpDisconnectScope(options.client, options.response);
 
   let result: CapabilityInvocationResult;
   try {
     result = await options.invoke(options.capabilityId, {
       ...options.request,
-      signal: controller.signal,
+      signal: scope.signal,
     });
   } finally {
-    options.client.removeListener("aborted", abortFromClient);
+    scope.dispose();
   }
 
   if (!options.addAuditLog) return result;

@@ -14,7 +14,9 @@ import type {
 import { DEFAULT_PRODUCT_BRANDING } from "@bim-studio/contracts";
 import type { MetadataStore } from "./store.js";
 import type { AssistantMode } from "./ai/assistantPrompts.js";
-import { AiReliabilityBlockedError, type AssistantService, type AssistantStreamEvent } from "./ai/assistantService.js";
+import { AiReliabilityBlockedError, type AssistantService } from "./ai/assistantService.js";
+import { streamAssistantHttp } from "./ai/streamAssistantHttp.js";
+import { httpDisconnectScope } from "./httpDisconnectScope.js";
 import { mergeAiSettingsDraft, publicAiSettings, resolveAiSettings } from "./ai/aiRuntimeSettings.js";
 import {
   collectServiceHealth,
@@ -275,8 +277,10 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
     const issue = validateAssistantRouteInput(request.body, request.systemUser, store);
     if (issue) return reply.code(issue.statusCode).send({ message: issue.message });
     const projectId = request.body.projectId?.trim();
+    const scope = httpDisconnectScope(request.raw, reply.raw);
     try {
       return await requireAssistant(dependencies.assistant).complete({
+        signal: scope.signal,
         mode: request.body.mode ?? "platform",
         question,
         context: request.body.context ?? {},
@@ -285,8 +289,11 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
         ...(projectId ? { projectId } : {}),
       });
     } catch (reason) {
+      if (reply.raw.destroyed) return reply.hijack();
       if (reason instanceof AiReliabilityBlockedError) return reply.code(403).send(aiBlockedPayload(reason));
       return reply.code(502).send({ message: reason instanceof Error ? reason.message : String(reason) });
+    } finally {
+      scope.dispose();
     }
   });
   app.post<{ Body: AssistantRouteBody }>("/api/ai/assistant/stream", async (request, reply) => {
@@ -295,8 +302,10 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
     const issue = validateAssistantRouteInput(request.body, request.systemUser, store);
     if (issue) return reply.code(issue.statusCode).send({ message: issue.message });
     const projectId = request.body.projectId?.trim();
+    const scope = httpDisconnectScope(request.raw, reply.raw);
     try {
-      await streamAssistant(reply.raw, requireAssistant(dependencies.assistant), {
+      await streamAssistantHttp(reply.raw, requireAssistant(dependencies.assistant), {
+        signal: scope.signal,
         mode: request.body.mode ?? "platform",
         question,
         context: request.body.context ?? {},
@@ -306,6 +315,7 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
       });
       return reply.hijack();
     } catch (reason) {
+      if (reply.raw.destroyed) return reply.hijack();
       const payload = reason instanceof AiReliabilityBlockedError
         ? aiBlockedPayload(reason)
         : { message: reason instanceof Error ? reason.message : String(reason) };
@@ -315,6 +325,8 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
         return reply.hijack();
       }
       return reply.code(reason instanceof AiReliabilityBlockedError ? 403 : 502).send(payload);
+    } finally {
+      scope.dispose();
     }
   });
 }
@@ -415,23 +427,6 @@ function contentTypeFor(fileName: string): string {
   );
 }
 
-async function streamAssistant(raw: import("node:http").ServerResponse, assistant: AssistantService, request: Parameters<AssistantService["complete"]>[0]): Promise<void> {
-  const iterator = assistant.stream(request)[Symbol.asyncIterator]();
-  // 首个 next 会完成输入可靠性检查；失败时仍可返回结构化 HTTP 错误，而不是过早提交 SSE 头。
-  const first = await iterator.next();
-  raw.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", connection: "keep-alive", "x-accel-buffering": "no" });
-  raw.flushHeaders();
-  if (!first.done) writeAssistantEvent(raw, first.value);
-  for await (const event of { [Symbol.asyncIterator]: () => iterator }) {
-    writeAssistantEvent(raw, event);
-  }
-  raw.end();
-}
-
-function writeAssistantEvent(raw: import("node:http").ServerResponse, event: AssistantStreamEvent): void {
-  if (event.type === "delta") raw.write(`event: delta\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`);
-  else raw.write(`event: done\ndata: ${JSON.stringify(event.result)}\n\n`);
-}
 
 function requireAssistant(assistant: AssistantService | undefined): AssistantService {
   if (!assistant) throw new Error("AI 助手插件尚未注册");

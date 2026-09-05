@@ -4,6 +4,7 @@ import {
   type AgentToolGateway,
 } from "@bim-studio/industrial-agent-orchestrator";
 import type { PluginRegistry } from "@bim-studio/plugin-runtime";
+import type { DataQuerySource } from "@bim-studio/data-query-plugin";
 import type { AiRuntimeSettings } from "./assistantService.js";
 import type { AiReliabilityAuditSink } from "./aiReliabilityAudit.js";
 import { IndustrialAgentCheckpointStore } from "./industrialAgentCheckpointStore.js";
@@ -20,6 +21,7 @@ export async function createIndustrialAgentRuntime(input: {
   dataDir: string;
   registry: PluginRegistry;
   settings: () => AiRuntimeSettings;
+  dataSource: Pick<DataQuerySource, "listDatasets">;
   audit?: AiReliabilityAuditSink;
 }): Promise<IndustrialAgentRuntime> {
   const checkpoints = new IndustrialAgentCheckpointStore(input.dataDir);
@@ -28,6 +30,7 @@ export async function createIndustrialAgentRuntime(input: {
   const decisions = createIndustrialAgentDecisionProvider({
     registry: input.registry,
     settings: input.settings,
+    dataSource: input.dataSource,
     ...(input.audit ? { audit: input.audit } : {}),
   });
   return {

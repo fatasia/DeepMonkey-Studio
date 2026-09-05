@@ -1,5 +1,5 @@
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { StoredSystemUserRecord } from "@bim-studio/contracts";
 import { createApiServer } from "../serverOptions.js";
 import type { MetadataStore } from "../store.js";
@@ -7,6 +7,46 @@ import { registerSystemRoutes } from "../system.js";
 import { AiReliabilityBlockedError, type AssistantService } from "./assistantService.js";
 
 describe("AI assistant HTTP reliability boundary", () => {
+  it.each(["complete", "stream-before-first", "stream-after-delta"])("cancels the provider after an uploaded HTTP request disconnects: %s", async mode => {
+    let signal: AbortSignal | undefined;
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const wait = async (request: Parameters<AssistantService["complete"]>[0]) => {
+      signal = request.signal;
+      signal?.addEventListener("abort", release, { once: true });
+      await pending;
+      signal?.throwIfAborted();
+    };
+    const assistant: AssistantService = {
+      async complete(request) { await wait(request); return { text: "done", model: "test" }; },
+      async *stream(request) {
+        if (mode === "stream-after-delta") yield { type: "delta", delta: "first" };
+        await wait(request);
+        yield { type: "done", result: { text: "done", model: "test" } };
+      },
+    };
+    const app = createApiServer();
+    await registerSystemRoutes(app, inMemorySystemStore(), tmpdir(), { assistant });
+    const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: { username: "admin", password: "admin" } });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const controller = new AbortController();
+    try {
+      const response = fetch(`${address}/api/ai/assistant${mode === "complete" ? "" : "/stream"}`, {
+        method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${login.json().token}` },
+        body: JSON.stringify({ question: "检查设备", projectId: "default" }), signal: controller.signal,
+      }).then(result => result.text()).catch(error => error);
+      await vi.waitFor(() => expect(signal).toBeDefined());
+      expect(signal?.aborted).toBe(false);
+      controller.abort();
+      await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+      await response;
+    } finally {
+      controller.abort();
+      release();
+      await app.close();
+    }
+  });
+
   it.each(["/api/ai/assistant", "/api/ai/assistant/stream"])("maps blocked input to a structured 403 before model output: %s", async (url) => {
     const store = inMemorySystemStore();
     const app = createApiServer();
