@@ -55,8 +55,10 @@ function readLocationRoute(): AppRoute {
   if (["optimizer", "data", "vision", "operations", "system", "branding"].includes(window.location.pathname.slice(1))) {
     const view = window.location.pathname.slice(1) as AppRoute["view"];
     const requestedTask = new URLSearchParams(window.location.search).get("task");
+    const projectId = new URLSearchParams(window.location.search).get("project");
     return {
       view,
+      ...(view === "data" && projectId ? { projectId } : {}),
       ...(view === "operations" && requestedTask && operationsTabs.has(requestedTask)
         ? { operationsTab: requestedTask as NonNullable<AppRoute["operationsTab"]> }
         : {}),
@@ -80,6 +82,7 @@ export function routePath(route: AppRoute): string {
   const deliveryRoute = sceneViewerDeliveryRoute();
   if (deliveryRoute) return `/published/${encodeURIComponent(deliveryRoute.sceneId)}`;
   if (route.view === "docs") return docsPath(route.documentId);
+  if (route.view === "data" && route.projectId) return `/data?project=${encodeURIComponent(route.projectId)}`;
   if (route.view === "dashboard" && route.projectId && route.applicationId && route.pageId) {
     return studioWorkspacePath({ kind: "dashboard", projectId: route.projectId, applicationId: route.applicationId, pageId: route.pageId });
   }

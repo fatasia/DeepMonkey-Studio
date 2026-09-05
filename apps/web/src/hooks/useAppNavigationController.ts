@@ -4,7 +4,7 @@ import { api } from "../api";
 import { isDesktopRuntime } from "../adapters/runtimeHost";
 import { docsPath } from "../docs/docsRoute";
 import { RENDERER_BACKEND_STORAGE_KEY, REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
-import { routeHistoryState, routePath, type AppRoute } from "../appRoute";
+import { readRoute, routeHistoryState, routePath, type AppRoute } from "../appRoute";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 import type { DashboardViewState } from "../studio/workspaceRoute";
 import type { AppState } from "./useAppState";
@@ -63,6 +63,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
   }, [authReady, currentUser?.id, currentUser?.role, route.view]);
 
   function navigate(next: AppRoute, replace = false) {
+    if (next.view === "data" && !next.projectId && project) next = { ...next, projectId: project.id };
     const deliveryRoute = sceneViewerDeliveryRoute();
     if (deliveryRoute) next = deliveryRoute;
     // 数据桥是当前工作区的临时抽屉；跨路由保留会遮挡目标页面操作。
@@ -137,7 +138,8 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
       .listProjects()
       .then((items) => {
         setProjects(items);
-        setProject((current) => current ?? items[0]);
+        const requestedProjectId = readRoute().projectId;
+        setProject((current) => items.find((item) => item.id === requestedProjectId) ?? current ?? items[0]);
       })
       .catch(showError);
   }, [currentUser?.id, showError]);

@@ -52,6 +52,7 @@ import { createModelSceneApi } from "./apiClients/modelSceneApi.js";
 import { createVisionApi } from "./apiClients/visionApi.js";
 import { createAssetLibraryApi } from "./apiClients/assetLibraryApi.js";
 import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
+import { createSemanticModelApi } from "./apiClients/semanticModelApi.js";
 import type {
   ScriptGitCommit,
   ScriptGitCommitResult,
@@ -783,6 +784,7 @@ export const api = {
   ...createModelSceneApi(request),
   ...createAssetLibraryApi(request),
   ...createIndustrialAgentApi(request),
+  ...createSemanticModelApi(request),
 };
 
 function serviceLogQuery(filters: { service?: string; level?: ServiceLogLevel; from?: string; to?: string; keyword?: string; limit?: number }): string {

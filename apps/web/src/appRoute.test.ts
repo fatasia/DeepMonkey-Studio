@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { readRoute, routeHistoryState, routePath } from "./appRoute";
 
 describe("app route", () => {
+  it("round-trips the data center project through reloadable URLs", () => {
+    expect(routePath({ view: "data", projectId: "factory / 2" })).toBe("/data?project=factory%20%2F%202");
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { pathname: "/data", search: "?project=factory%20%2F%202" }, history: { state: null } } });
+    try { expect(readRoute()).toEqual({ view: "data", projectId: "factory / 2" }); }
+    finally { Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow }); }
+  });
   it("distinguishes canonical home from missing and malformed routes without throwing", () => {
     const originalWindow = globalThis.window;
     Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { pathname: "/", search: "" }, history: { state: null } } });
