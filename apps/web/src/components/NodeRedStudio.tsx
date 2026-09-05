@@ -3,6 +3,7 @@ import { Check, Copy, ExternalLink, Gauge, PlugZap, Radio, Workflow } from "luci
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import "./NodeRedStudio.css";
+import { fetchNodeRedHealth } from "../api";
 
 export const NODE_RED_EDITOR_PATH = "/node-red/";
 export const NODE_RED_DASHBOARD_PATH = "/iot/dashboard/";
@@ -18,9 +19,8 @@ export function NodeRedStudio({ locale }: { locale: AppLocale }) {
     let cancelled = false;
     const check = async () => {
       try {
-        const response = await fetch("/api/node-red/health", { signal: AbortSignal.timeout(4_000) });
-        const body = await response.json().catch(() => null);
-        if (!cancelled) setOnline(Boolean(body?.online));
+        const health = await fetchNodeRedHealth(AbortSignal.timeout(4_000)).catch(() => null);
+        if (!cancelled) setOnline(Boolean(health?.online));
       } catch {
         if (!cancelled) setOnline(false);
       }

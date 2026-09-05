@@ -1,3 +1,4 @@
+import { useDashboardSurfaceResize } from "../hooks/useDashboardSurfaceResize";
 import {
   useEffect,
   useMemo,
@@ -309,35 +310,6 @@ function useDashboardWorkspaceController({
     setNodeNameError("");
   }, [page.id, selectedInspectorIdentity]);
 
-  useEffect(() => {
-    const surface = scrollRef.current;
-    if (!surface) return;
-    // resize 风暴期间不跟随，停稳 180ms 后最多执行一次自动聚焦：即时 fit 会改写
-    // zoom/scroll 并触发 ResizeObserver 再判定，与滚动条出现/消失形成反馈振荡
-    // （画布与滚动条抖动，U1-10 根因）。setSurfaceSize 仍即时跟进保证画布盒正确。
-    let fitTimer = 0;
-    const update = () => {
-      const nextSize = {
-        width: surface.clientWidth,
-        height: surface.clientHeight,
-      };
-      const previousSize = previousSurfaceSizeRef.current;
-      const resized = previousSize.width > 0 && (previousSize.width !== nextSize.width || previousSize.height !== nextSize.height);
-      const previousFocus = calculateDashboardEditorFocus(page, page.nodes, previousSize.width, previousSize.height, "smart");
-      previousSurfaceSizeRef.current = nextSize;
-      setSurfaceSize(nextSize);
-      if (!resized || Math.abs(zoom - previousFocus.zoom) >= 0.006) return;
-      window.clearTimeout(fitTimer);
-      fitTimer = window.setTimeout(() => fitCanvasToViewport("smart"), 180);
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(surface);
-    return () => {
-      window.clearTimeout(fitTimer);
-      observer.disconnect();
-    };
-  }, [page.id, zoom]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -477,6 +449,16 @@ function useDashboardWorkspaceController({
     setMarqueeMode,
     setSelectionRect,
     dashboardGroups,
+  });
+
+  useDashboardSurfaceResize({
+    page,
+    nodes: page.nodes,
+    surfaceRef: scrollRef,
+    previousSurfaceSizeRef,
+    zoom,
+    setSurfaceSize,
+    fitCanvasToViewport,
   });
 
   useEffect(() => {

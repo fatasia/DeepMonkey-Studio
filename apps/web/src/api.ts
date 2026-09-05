@@ -790,3 +790,11 @@ function serviceLogQuery(filters: { service?: string; level?: ServiceLogLevel; f
   for (const [name, value] of Object.entries(filters)) if (value !== undefined && value !== "") query.set(name, String(value));
   return query.toString();
 }
+
+import type { NodeRedHealth } from "./apiNodeRed";
+/** Node-RED 独立进程健康探针；离线时前端显示明确状态而不是白屏（U1-8c）。 */
+export async function fetchNodeRedHealth(signal?: AbortSignal): Promise<NodeRedHealth> {
+  const response = await fetch("/api/node-red/health", signal ? { signal } : undefined);
+  if (!response.ok) return { online: false };
+  return response.json().catch(() => ({ online: false }));
+}
