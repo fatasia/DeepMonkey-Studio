@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import type { SimulationEntityState } from "@bim-studio/contracts";
+import { translate as tr } from "../i18n";
 import { ACCEPTED_MODELS, STUDIO_INSPECTOR_STORAGE_KEY, STUDIO_LEFT_PANEL_STORAGE_KEY } from "../appDefaults";
 import { readBooleanPreference, writeBooleanPreference } from "../hooks/usePersistedBooleanState";
 import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
 import { ModelTreeItem } from "../components/ModelTreeItem";
 import { SceneOrganizationPanel } from "../components/SceneOrganizationPanel";
+import { SceneSimulationEntityInspector } from "../components/SceneSimulationEntityInspector";
 import { SceneSimulationEntitiesSection } from "../components/SceneSimulationEntitiesSection";
 import { SceneOutlinerPanel } from "../components/SceneOutlinerPanel";
 import { AppWorkspaceTopbar } from "./AppWorkspaceTopbar";
@@ -19,6 +22,8 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
   const [rightPanelOpen, setRightPanelOpen] = useState(() => readBooleanPreference(STUDIO_INSPECTOR_STORAGE_KEY, true));
   // SIM-1a：场景树「仿真」域的选中实体与断链集合（引用模型被删时黄牌提示）。
   const [selectedSimulationEntityId, setSelectedSimulationEntityId] = useState<string | undefined>(undefined);
+  // 仿真实体编辑草稿：下次保存项目时随快照写入（SIM-1a 过渡方案，controller 直连后移除）。
+  const simulationEntityDraftRef = useRef<SimulationEntityState[] | undefined>(undefined);
   const panelsBeforeBehaviorSplitRef = useRef<{ left: boolean; right: boolean } | undefined>(undefined);
   const {
     activeApplication,
@@ -481,6 +486,38 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
         <AppStudioViewport controller={controller} />
 
         <AppStudioInspector controller={controller} />
+
+      {/* SIM-1a：场景树选中仿真实体时，优先显示实体配置面板（当前只读详情+删除；编辑写回待 controller 扩展）。 */}
+      {(() => {
+        const entity = activeScene?.simulationEntities?.find((item) => item.id === selectedSimulationEntityId);
+        if (!entity) return null;
+        const modelNames = new Map((project?.models ?? []).map((model) => [model.id, model.name]));
+        return (
+          <aside className="right-panel simulation-entity-panel" aria-label="仿真实体检查器">
+            <div className="panel-heading">
+              <div>
+                <span className="eyebrow">{tr(locale, "仿真", "SIMULATION")}</span>
+                <h2>{tr(locale, "实体配置", "Entity")}</h2>
+              </div>
+            </div>
+            <SceneSimulationEntityInspector
+              locale={locale}
+              entity={entity}
+              modelNames={modelNames}
+              onChange={(next) => {
+                const entities = (activeScene?.simulationEntities ?? []).map((item) => (item.id === next.id ? next : item));
+                simulationEntityDraftRef.current = entities;
+              }}
+              onDelete={() => {
+                const entities = (activeScene?.simulationEntities ?? []).filter((item) => item.id !== entity.id);
+                simulationEntityDraftRef.current = entities;
+                setSelectedSimulationEntityId(undefined);
+              }}
+            />
+            <small className="simulation-entity-hint">{tr(locale, "删除与编辑在下次保存项目时写入场景。", "Deletion and edits are written to the scene on the next save.")}</small>
+          </aside>
+        );
+      })()}
 
       </div>
       <input ref={uploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadModels(event.target.files ?? undefined)} />
