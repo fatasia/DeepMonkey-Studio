@@ -436,6 +436,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 #### r9 本批最终状态（覆盖上文历史待验收描述）
 
+本批本地提交：保存一致性`b0f5fb4`、目录/弹窗/局部主题修补`e62bb8b`、SIM停靠`5c3c843`；同在内层`dev-studio`，未push。恢复入口为`continuation-checkpoint-2026-09-06.md`。
+
 - **已完成**：三目录有限读取恢复/持久错误/手动重试/取消身份保护；真空单主CTA及按品牌亮度选择中性文字。`read-recovery-EVkckS/mqaLz2`两品牌各两轮双主题共8/8，金9.716:1/紫6.441:1；真实鼠标双击/键盘/POST失败保稿再提交仍通过。
 - **已完成**：Esc/发布busy/非空历史/真实草稿恢复 `dialog-escape-p6S2iL`两轮4/4；2D/3D模型保存与主按钮相邻 `scene-shell-theme-ER7rgY`紫色4/4，API模型与原文件哈希不变。仅键序差异的恢复误报已修，真实字段/数组/微小数值差异仍保护。
 - **已完成**：SIM左右停靠/44px收起/恢复浮动/真实canvas让位、窄画布菜单和六方向按钮可达、输入DOM连续。`simulation-docking-33Wdbl`两轮4/4，布局零API写；真实正式Study全链仍为r7 `scene-plant-flow-ApwMDa`四组证据，不混用构建归属。
