@@ -37,6 +37,30 @@ describe("workspaceRecoveryStore", () => {
     expect(hasRecoverableWorkspaceChanges(draft, reordered)).toBe(false);
   });
 
+  it("does not prompt when the editor materializes an absent empty annotation list", () => {
+    const draft = createWorkspaceRecoveryDraft("project-1", undefined, { ...scene, annotations: [] });
+    expect(hasRecoverableWorkspaceChanges(draft, scene)).toBe(false);
+    expect(hasRecoverableWorkspaceChanges(createWorkspaceRecoveryDraft("project-1", undefined, scene), draft.scene)).toBe(false);
+  });
+
+  it.each(["annotations", "cameraViews", "assetBindings", "selectionSets", "interactions"] as const)("normalizes only empty %s without mutating the recovery copy", key => {
+    const expanded = { ...scene, [key]: [] };
+    const draft = createWorkspaceRecoveryDraft("project-1", undefined, expanded);
+    expect(hasRecoverableWorkspaceChanges(draft, scene)).toBe(false);
+    expect(draft.scene).toEqual(expanded);
+    expect(Object.hasOwn(draft.scene, key)).toBe(true);
+    expect(Object.hasOwn(scene, key)).toBe(false);
+    const nonempty = { ...scene, [key]: [{ id: "retained-author-entry" }] };
+    expect(hasRecoverableWorkspaceChanges(draft, nonempty)).toBe(true);
+  });
+
+  it("does not erase explicit null, unknown collections or nested configuration", () => {
+    const draft = createWorkspaceRecoveryDraft("project-1", undefined, scene);
+    expect(hasRecoverableWorkspaceChanges(draft, { ...scene, annotations: null } as unknown as SceneSnapshot)).toBe(true);
+    expect(hasRecoverableWorkspaceChanges(draft, { ...scene, futureItems: [] } as SceneSnapshot)).toBe(true);
+    expect(hasRecoverableWorkspaceChanges(draft, { ...scene, camera: { ...scene.camera, futureItems: [] } } as SceneSnapshot)).toBe(true);
+  });
+
   it("retains real nested edits and does not round away small numeric differences", () => {
     const draft = createWorkspaceRecoveryDraft("project-1", undefined, scene);
     expect(hasRecoverableWorkspaceChanges(draft, { ...scene, camera: { ...scene.camera, position: { ...scene.camera.position, y: 2.000000000000001 } } })).toBe(true);

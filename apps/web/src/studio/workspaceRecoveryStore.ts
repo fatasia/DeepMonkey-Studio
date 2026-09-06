@@ -44,6 +44,10 @@ export function hasRecoverableWorkspaceChanges(draft: WorkspaceRecoveryDraft, se
 
 function comparableScene(scene: SceneSnapshot): string {
   const { updatedAt: _updatedAt, ...value } = structuredClone(scene);
+  // 加载器将这些可选集合缺省为[]；只消除已知空集合，不归一化配置、null或数值。
+  for (const key of ["annotations", "cameraViews", "assetBindings", "selectionSets", "interactions"] as const) {
+    if (Array.isArray(value[key]) && value[key]?.length === 0) delete value[key];
+  }
   // API / IndexedDB 可按不同顺序生成同一对象；仅规范键序，数组与实际数值保持原样。
   return JSON.stringify(value, (_key: string, item: unknown) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return item;
