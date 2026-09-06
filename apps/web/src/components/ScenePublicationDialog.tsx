@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Cloud, Eye, EyeOff, Gauge, Globe2, LoaderCircle, MonitorUp, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
+import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 
 type PublicationMode = NonNullable<SceneSnapshot["publicationMode"]>;
 type PublicationPerformance = NonNullable<SceneSnapshot["publicationPerformance"]>;
@@ -24,8 +25,9 @@ interface ScenePublicationDialogProps {
 export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
   const { locale } = props;
   const [toolbarVisible, setToolbarVisible] = useState(props.defaultToolbarVisible);
+  const escapeRef = useDialogEscape(props.onCancel, props.busy);
   return (
-    <div className="dialog-backdrop" onMouseDown={() => !props.busy && props.onCancel()}>
+    <div className="dialog-backdrop" ref={escapeRef} onMouseDown={() => !props.busy && props.onCancel()}>
       <section
         className="dialog publication-dialog"
         role="dialog"
@@ -47,6 +49,7 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
             <ModeButton
               icon={<Globe2 size={17} />}
               active={props.mode === "webgl"}
+              disabled={Boolean(props.busy)}
               title="WebGL"
               description={tr(locale, "固定 WebGL 2，本地渲染，适合普通办公终端和系统嵌入。", "Fixed WebGL 2 local rendering for broad device and embedding support.")}
               onClick={() => props.onModeChange("webgl")}
@@ -54,6 +57,7 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
             <ModeButton
               icon={<Sparkles size={17} />}
               active={props.mode === "webgpu-preferred"}
+              disabled={Boolean(props.busy)}
               title="WebGPU"
               description={tr(locale, "支持时启用高级管线；不支持或画质不等价时回退 WebGL 并说明原因。", "Uses the advanced pipeline when supported; otherwise falls back to WebGL with a visible reason.")}
               onClick={() => props.onModeChange("webgpu-preferred")}
@@ -61,7 +65,7 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
             <ModeButton
               icon={<Cloud size={17} />}
               active={props.mode === "cloud"}
-              disabled={props.cloudConfigured !== true}
+              disabled={props.busy || props.cloudConfigured !== true}
               title={tr(locale, "云渲染", "Cloud rendering")}
               description={cloudDescription(locale, props.cloudConfigured)}
               onClick={() => props.onModeChange("cloud")}
@@ -74,6 +78,7 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
             <ModeButton
               icon={<MonitorUp size={16} />}
               active={props.performance === "standard"}
+              disabled={Boolean(props.busy)}
               title={tr(locale, "高画质", "High quality")}
               description={tr(locale, "严格使用作者效果；性能不足时给出诊断，不自动进入极速模式。", "Keeps authored effects; diagnoses pressure without entering fast mode automatically.")}
               onClick={() => props.onPerformanceChange("standard")}
@@ -81,6 +86,7 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
             <ModeButton
               icon={<Gauge size={16} />}
               active={props.performance === "fast"}
+              disabled={Boolean(props.busy)}
               title={tr(locale, "极速模式", "Fast mode")}
               description={tr(locale, "低配终端持续卡顿时可自动启用；优先减轻阴影、后处理与刷新压力，恢复后自动退出。", "May activate under sustained pressure; reduces shadow, post-processing and refresh cost, then restores.")}
               onClick={() => props.onPerformanceChange("fast")}
@@ -95,6 +101,7 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
             <ModeButton
               icon={<Eye size={16} />}
               active={toolbarVisible}
+              disabled={Boolean(props.busy)}
               title={tr(locale, "显示", "Show")}
               description={tr(locale, "允许访客使用适应全部、漫游、测量、剖切、爆炸和场景信息。", "Visitors can fit, navigate, measure, section, explode and inspect scene information.")}
               onClick={() => setToolbarVisible(true)}
@@ -102,6 +109,7 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
             <ModeButton
               icon={<EyeOff size={16} />}
               active={!toolbarVisible}
+              disabled={Boolean(props.busy)}
               title={tr(locale, "隐藏", "Hide")}
               description={tr(locale, "用于展厅、嵌入页和只需观看的交付；场景交互仍可正常运行。", "For kiosks, embeds and view-only delivery; authored scene interactions still run.")}
               onClick={() => setToolbarVisible(false)}

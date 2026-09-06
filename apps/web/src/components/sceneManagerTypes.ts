@@ -8,9 +8,11 @@ import type {
 } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import type { ManagerWorkspaceTab } from "../appRoute";
+import type { ManagerDirectoryController } from "../hooks/useManagerDirectoryController";
 
 /** 场景管理器的外部业务契约，页面内部状态不应泄漏到此接口。 */
 export interface SceneManagerProps {
+  directory?: ManagerDirectoryController | undefined;
   locale: AppLocale;
   managerTab?: ManagerWorkspaceTab;
   assetScope?: "project" | undefined;

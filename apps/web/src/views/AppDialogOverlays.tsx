@@ -2,6 +2,7 @@ import { translate as tr } from "../i18n";
 import { ScenePublicationDialog } from "../components/ScenePublicationDialog";
 import { NameLengthHint } from "../components/NameLengthHint";
 import type { AppViewBindings } from "./appViewBindings";
+import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 
 export function AppDialogOverlays({ bindings }: { bindings: AppViewBindings }) {
   return (
@@ -15,10 +16,11 @@ export function AppDialogOverlays({ bindings }: { bindings: AppViewBindings }) {
 function ProjectDialog({ bindings }: { bindings: AppViewBindings }) {
   const { state, actions } = bindings;
   const { busy, locale, newProjectDescription, newProjectName, projectDialogMode } = state;
+  const escapeRef = useDialogEscape(() => state.setProjectDialogMode(undefined), busy);
   if (!projectDialogMode) return null;
 
   return (
-    <div className="dialog-backdrop" onMouseDown={() => !busy && state.setProjectDialogMode(undefined)}>
+    <div className="dialog-backdrop" ref={escapeRef} onMouseDown={() => !busy && state.setProjectDialogMode(undefined)}>
       <form
         className="dialog"
         onSubmit={(event) => {
@@ -50,6 +52,7 @@ function ProjectDialog({ bindings }: { bindings: AppViewBindings }) {
           <span>{tr(locale, "项目名称", "Project name")}</span>
           <input
             autoFocus
+            disabled={busy}
             value={newProjectName}
             aria-describedby="project-name-hint"
             onChange={(event) => state.setNewProjectName(event.target.value)}
@@ -60,6 +63,7 @@ function ProjectDialog({ bindings }: { bindings: AppViewBindings }) {
         <label>
           <span>{tr(locale, "项目说明", "Project description")}</span>
           <textarea
+            disabled={busy}
             value={newProjectDescription}
             onChange={(event) => state.setNewProjectDescription(event.target.value)}
             placeholder={tr(locale, "可选", "Optional")}

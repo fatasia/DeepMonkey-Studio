@@ -63,7 +63,7 @@ body .app-workspace-frame.app-workspace-frame :is(
   [role="tab"],
   [role="checkbox"],
   [role="switch"]
-) {
+):not(.asset-main) {
   min-width: 28px;
   min-height: 28px;
 }

@@ -77,8 +77,10 @@ async function checkServerTransport() {
   const controller = new AbortController(); controller.abort();
   const aborted: unknown = await client.request("/api/meta", { signal: controller.signal }).catch(error => error);
   check(aborted instanceof DOMException && aborted.name === "AbortError" && requests.length === before, "Already-aborted calls must not fetch");
+  const canceledCatalog: unknown = await client.listApplications("project-1", { signal: controller.signal }).catch(error => error);
+  check(canceledCatalog instanceof DOMException && canceledCatalog.name === "AbortError" && requests.length === before, "Catalog signal must survive the public method boundary");
   check(normalizeServerBaseUrl("https://consumer.invalid/base") === "https://consumer.invalid", "Profile normalizer must remain usable");
-  return { requests, conflictRevision: 7, rejectedForeignOrigin: true, canceledBeforeTransport: true };
+  return { requests, conflictRevision: 7, rejectedForeignOrigin: true, canceledBeforeTransport: true, canceledCatalogRead: true };
 }
 
 /** Same consumer code runs from the installed tarballs in Node and the browser bundle. */

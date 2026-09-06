@@ -8,6 +8,7 @@ import type {
   SubmitConversionTaskRequest,
 } from "@bim-studio/contracts";
 import { assertPathSafeResourceId } from "@bim-studio/contracts";
+import { recoverReadOnce } from "./readRecovery.js";
 
 export type Awaitable<T> = T | Promise<T>;
 
@@ -26,6 +27,8 @@ export interface ServerClientOptions {
   authStore: AuthStore;
   fetch?: typeof globalThis.fetch;
   onUnauthorized?: () => void;
+  /** 默认不自动重试；调用方只为已确认的只读路径开启一次有限恢复。 */
+  retryRead?: (pathname: string) => boolean;
 }
 
 /** 保留 HTTP 状态和服务端结构化信息，调用方才能区分冲突、权限与暂时离线。 */
@@ -45,22 +48,32 @@ export class ServerClient {
   }
 
   async open(path: string, init?: RequestInit): Promise<Response> {
+    init?.signal?.throwIfAborted();
     const profile = typeof this.options.profile === "function"
       ? await this.options.profile()
       : this.options.profile;
     const url = resolveApiUrl(path, profile.baseUrl);
+    const baseUrl = profile.baseUrl;
     const headers = new Headers(init?.headers);
     const token = await this.options.authStore.getAccessToken();
     if (token) headers.set("authorization", `Bearer ${token}`);
-    const response = await this.fetchImpl(
-      url,
-      { ...init, headers }
-    );
+    init?.signal?.throwIfAborted();
+    // 固化原请求，退避期间调用方修改 RequestInit 也不能把读取变为写入。
+    const requestInit = { ...init, headers };
+    const attempt = () => this.fetchImpl(url, { ...requestInit });
+    const canRetry = ["GET", "HEAD"].includes((requestInit.method ?? "GET").toUpperCase())
+      && requestInit.body == null && this.options.retryRead?.(url.pathname) === true;
+    const response = canRetry ? await recoverReadOnce(attempt, async () => {
+      const current = typeof this.options.profile === "function" ? await this.options.profile() : this.options.profile;
+      if (current.baseUrl !== baseUrl || (await this.options.authStore.getAccessToken()) !== token) {
+        throw new DOMException("读取上下文已变化，请重新加载", "AbortError");
+      }
+    }, requestInit.signal) : await attempt();
     if (!response.ok) {
-      const body = await response.clone().json().catch(() => ({ message: response.statusText })) as { message?: string; error?: { message?: string } };
+      const body: unknown = await response.clone().json().catch(() => ({ message: response.statusText }));
       // 只有携带了当前登录凭据的请求才可能证明会话失效；公开接口自身的 401 不能登出用户。
       if (response.status === 401 && token) this.options.onUnauthorized?.();
-      throw new ServerRequestError(body.message ?? body.error?.message ?? `请求失败：${response.status}`, response.status, body);
+      throw new ServerRequestError(requestErrorMessage(body, response.status), response.status, body);
     }
     return response;
   }
@@ -85,9 +98,9 @@ export class ServerClient {
     return this.request("/api/meta");
   }
 
-  listApplications(projectId: string): Promise<ApplicationDocument[]> {
+  listApplications(projectId: string, options: { signal?: AbortSignal } = {}): Promise<ApplicationDocument[]> {
     assertPathSafeResourceId(projectId, "projectId");
-    return this.request(`/api/projects/${encodeURIComponent(projectId)}/applications`);
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/applications`, options);
   }
 
   getApplication(projectId: string, applicationId: string): Promise<ApplicationDocument> {
@@ -182,6 +195,15 @@ export class ServerClient {
       { method: "POST" },
     );
   }
+}
+
+function requestErrorMessage(body: unknown, status: number): string {
+  if (body && typeof body === "object") {
+    const { message, error } = body as { message?: unknown; error?: unknown };
+    if (typeof message === "string" && message.trim()) return message;
+    if (error && typeof error === "object" && "message" in error && typeof error.message === "string" && error.message.trim()) return error.message;
+  }
+  return `请求失败：${status}`;
 }
 
 function resolveApiUrl(path: string, baseUrl: string): URL {

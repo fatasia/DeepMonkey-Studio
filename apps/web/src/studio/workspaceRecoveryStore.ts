@@ -44,7 +44,12 @@ export function hasRecoverableWorkspaceChanges(draft: WorkspaceRecoveryDraft, se
 
 function comparableScene(scene: SceneSnapshot): string {
   const { updatedAt: _updatedAt, ...value } = structuredClone(scene);
-  return JSON.stringify(value);
+  // API / IndexedDB 可按不同顺序生成同一对象；仅规范键序，数组与实际数值保持原样。
+  return JSON.stringify(value, (_key: string, item: unknown) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+    const record = item as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(record).sort().map(key => [key, record[key]]));
+  });
 }
 
 /** 保存恢复副本失败不能阻断正式保存；调用方可根据布尔值记录诊断。 */

@@ -92,8 +92,8 @@ export function createModelSceneApi(request: ApiRequest) {
       request<void>(`/api/projects/${projectId}/models/${modelId}`, {
         method: "DELETE",
       }),
-    listScenes: (projectId: string) =>
-      request<SceneSnapshot[]>(`/api/projects/${projectId}/scenes`),
+    listScenes: (projectId: string, options: { signal?: AbortSignal } = {}) =>
+      request<SceneSnapshot[]>(`/api/projects/${projectId}/scenes`, options),
     saveScene: (scene: SceneSnapshot) =>
       request<SceneSnapshot>(
         `/api/projects/${scene.projectId}/scenes/${scene.id}`,

@@ -11,6 +11,7 @@ import { useScenePublicationHistory } from "../hooks/useScenePublicationHistory"
 type ProjectAssetTab = "all" | "model" | "image" | "video" | "environment" | "pbr-material";
 
 function useSceneManagerController({
+  directory,
   locale,
   managerTab: requestedManagerTab,
   assetScope,
@@ -75,6 +76,7 @@ function useSceneManagerController({
   const [targetScene, setTargetScene] = useState<SceneSnapshot>();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const publicationPendingRef = useRef(false);
   const [modelLibraryBusy, setModelLibraryBusy] = useState(false);
   const [showcaseBusy, setShowcaseBusy] = useState(false);
   const [assetTab, setAssetTab] = useState<ProjectAssetTab>("all");
@@ -185,11 +187,17 @@ function useSceneManagerController({
   }
 
   async function submitPublish(toolbarVisible: boolean) {
-    if (!publishTarget) return;
+    if (!publishTarget || publicationPendingRef.current) return;
+    publicationPendingRef.current = true;
+    setBusy(true);
     const target = publishTarget;
-    const published = await onPublish(target, publishMode, publishPerformance, toolbarVisible);
-    if (!published) return;
-    setPublishTarget(undefined);
+    try {
+      const published = await onPublish(target, publishMode, publishPerformance, toolbarVisible);
+      if (published) setPublishTarget(undefined);
+    } finally {
+      publicationPendingRef.current = false;
+      setBusy(false);
+    }
   }
 
   function openCreateDialog() {
@@ -362,6 +370,7 @@ function useSceneManagerController({
   );
 
   return {
+    directory,
     assetScope,
     selectedAssetModelId,
     onReturnToScene,

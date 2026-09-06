@@ -26,7 +26,7 @@
 
 门禁开发中的两次失败不算产品缺陷：`sdk-consumer-YyrFnM` 暴露 pnpm 11 不再读取 `package.json` 中旧 `pnpm.overrides` 配置，已迁到临时消费者 `pnpm-workspace.yaml`；`sdk-consumer-t7f9AQ` 已通过安装/类型/Node，随后因门禁自身对 Playwright CommonJS 使用命名导入而失败，改为项目既有 default 导入模式。上述记录均保留，没有覆盖成成功报告。
 
-## 最终证据
+## 首次双轮证据（r4 构建）
 
 主任务先完成共享依赖/API 的第四轮构建与 Web `r4b` 构建，再冻结 `dist`。本子任务只打包读取，没有重建或清理共享产物。
 
@@ -55,6 +55,14 @@
 - 两轮均保存 `sdk-consumer-browser.png`；首轮亲审为完整 JSON 成功结果，第二轮截图字节完全一致，SHA-256 为 `150611c3e7efb0b3f23780c19155687dc6fdb065740449626cc2d2e71515146e`。这是技术运行结果页，不是产品 UI 演示。
 
 当前为兼容已有 development 条件而保留 `src`，归档也包含源测试文件（contracts 16、scene-sdk 4、server-sdk 5）。它们没有进入默认运行或浏览器输出。真实 registry 分发前可另做产物最小化与开发出口分层决策；本轮不悄悄更改出口语义或将其包装成公开发行完成。
+
+## r5 最终复核（目录取消接线后）
+
+主任务为管理目录恢复给 `ServerClient.listApplications` 增加可选 `AbortSignal` 后，统一 `r5` 构建再次冻结。本门禁另跑 `sdk-consumer-si8fTx` 通过，随后在同一外部样例补充 `listApplications("project-1", { signal })` 的预取消分支，最终 `sdk-consumer-wgdpKJ` 再次完整通过。
+
+最终权威证据目录为 `test-output/codex-2026-09-06/sdk-consumer-wgdpKJ/`，消费者为 `C:/Users/rain/AppData/Local/Temp/bim-sdk-consumer-wgdpKJ/consumer`。三包默认出口与严格类型仍通过，48 个 SDK 声明、56 个浏览器构建输入不变；运行结果新增 `canceledCatalogRead: true`，确认该可选参数经真实包边界传递，并在进入传输前取消。Node 与 Chrome 结果一致，仍为 0 控制台问题、仅本地 HTML/bundle 两个 GET。
+
+contracts 与 scene-sdk 归档 SHA-256 不变；**最终 server-sdk 归档 SHA-256** 为 `ca203cc68671f17a2cf8d75a8a22613199db0926da8ba30426d2dc7b05ce5968`。增加该检查后的样例浏览器产物为 66,167 字节；这不与前节不同检查内容的 65,813 字节混用。最终浏览器截图已亲审，完整呈现 `canceledCatalogRead: true`，SHA-256 为 `994406478d5db6abef7ebd4f1bc69f41e433b7bded09676edc2ad3407ded1aca`。
 
 ## 官方机制与对标依据
 

@@ -29,7 +29,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import { SceneExportMenu } from "./SceneExportMenu";
 import { translate as tr } from "../i18n";
 import { ProjectDeliveryFlow } from "./SceneDeliveryWorkflow";
@@ -38,9 +38,11 @@ import { SceneManagerDialogs } from "./SceneManagerDialogs";
 import { UnifiedAssetLibraryPage } from "./UnifiedAssetLibraryPage";
 import { sceneThumbnailItems } from "./sceneManagerPresentation";
 import { TopologyMiniature } from "./TopologyMiniature";
+import { ManagerDirectoryStatus, managerDirectoryIssue } from "./ManagerDirectoryStatus";
 
 export function SceneManagerView({ controller }: { controller: SceneManagerController }) {
   const {
+    directory,
     branding,
     busy,
     cloudBusySceneId,
@@ -127,6 +129,13 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     versionTarget,
     visibleScenes,
   } = controller;
+  const directoryIssue = managerDirectoryIssue(directory, Boolean(project));
+  const projectDirectoryBlocked = directory !== undefined && directory.projects.phase !== "ready";
+  function projectAction(event: MouseEvent<HTMLButtonElement>, action: () => void) {
+    const menu = event.currentTarget.closest("details");
+    if (menu) { menu.open = false; menu.querySelector("summary")?.focus(); }
+    action();
+  }
 
   return (
     <main className={`scene-manager-page ${managerTab === "assets" ? "asset-workspace-active" : ""}`}
@@ -155,15 +164,16 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
           </div>
         </div>
         <div className="manager-project-switch">
-          <select value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label={tr(locale, "当前项目", "Current project")}>
+          <select disabled={projectDirectoryBlocked} value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label={tr(locale, "当前项目", "Current project")}>
+            {!project && <option value="">{projectDirectoryBlocked ? tr(locale, "项目目录未就绪", "Directory not ready") : tr(locale, "暂无项目", "No projects")}</option>}
             {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
           <details>
             <summary aria-label={tr(locale, "项目管理", "Project management")} title={tr(locale, "项目管理", "Project management")}><MoreHorizontal size={15} /></summary>
             <div>
-              <button onClick={onCreateProject}><Plus size={13} />{tr(locale, "新建项目", "New project")}</button>
-              <button disabled={!project} onClick={onRenameProject}><Pencil size={13} />{tr(locale, "重命名项目", "Rename project")}</button>
-              <button className="danger" disabled={!project} onClick={onDeleteProject}><Trash2 size={13} />{tr(locale, "删除项目", "Delete project")}</button>
+              <button disabled={projectDirectoryBlocked} title={projectDirectoryBlocked ? tr(locale, "请先重新读取项目目录", "Reload the project directory first") : undefined} onClick={event => projectAction(event, onCreateProject)}><Plus size={13} />{tr(locale, "新建项目", "New project")}</button>
+              <button disabled={!project || projectDirectoryBlocked} onClick={event => projectAction(event, onRenameProject)}><Pencil size={13} />{tr(locale, "重命名项目", "Rename project")}</button>
+              <button className="danger" disabled={!project || projectDirectoryBlocked} onClick={event => projectAction(event, onDeleteProject)}><Trash2 size={13} />{tr(locale, "删除项目", "Delete project")}</button>
             </div>
           </details>
         </div>
@@ -238,7 +248,8 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
           <button aria-label={tr(locale, "关闭页面提示", "Dismiss page notice")} onClick={onDismissNavigationNotice}><X size={16} /></button>
         </div>}
         {copyNotice && <p className="manager-copy-notice" role="status">{copyNotice}</p>}
-        {(managerTab === "scenes" || managerTab === "topology") && <div className={`manager-project-bar contextual ${managerTab === "scenes" ? "scene-toolbar" : ""}`}>
+        {directoryIssue ? <ManagerDirectoryStatus issue={directoryIssue} locale={locale} onRetry={() => directory?.retry()} /> : <>
+        {project && (managerTab === "scenes" || managerTab === "topology") && <div className={`manager-project-bar contextual ${managerTab === "scenes" ? "scene-toolbar" : ""}`}>
           {managerTab === "scenes" && (
             <>
               <label className="manager-scene-search" aria-label={tr(locale, "搜索场景", "Search scenes")} title={tr(locale, "搜索场景", "Search scenes")}>
@@ -274,7 +285,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                 <FileUp size={15} />
                 {tr(locale, "导入", "Import")}
               </button>
-              <button type="button" className="button primary" onClick={openCreateDialog}>
+              <button type="button" className={scenes.length > 0 ? "button primary" : "button"} onClick={openCreateDialog}>
                 <Plus size={16} />
                 {tr(locale, "新建场景", "New scene")}
               </button>
@@ -445,11 +456,11 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
             ) : (
               <div className="manager-empty">
                 <Box size={42} />
-                <h2>{tr(locale, "还没有场景", "No scenes yet")}</h2>
-                <p>{tr(locale, "新建项目内容，默认从空白二维页面开始。", "Create project content starting from a blank 2D page.")}</p>
-                <button className="button primary" onClick={openCreateDialog}>
+                <h2>{project ? tr(locale, "还没有场景", "No scenes yet") : tr(locale, "还没有项目", "No projects yet")}</h2>
+                <p>{project ? tr(locale, "新建项目内容，默认从空白二维页面开始。", "Create project content starting from a blank 2D page.") : tr(locale, "先创建一个项目，再添加场景和资源。", "Create a project before adding scenes and assets.")}</p>
+                <button className="button primary" onClick={project ? openCreateDialog : onCreateProject}>
                   <Plus size={17} />
-                  {tr(locale, "新建第一个场景", "Create first scene")}
+                  {project ? tr(locale, "新建第一个场景", "Create first scene") : tr(locale, "新建第一个项目", "Create first project")}
                 </button>
               </div>
             )}
@@ -538,6 +549,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
             )}
           </section>
         )}
+        </>}
       </section>
 
 

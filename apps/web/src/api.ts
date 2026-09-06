@@ -53,6 +53,8 @@ import { createVisionApi } from "./apiClients/visionApi.js";
 import { createAssetLibraryApi } from "./apiClients/assetLibraryApi.js";
 import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
 import { createSemanticModelApi } from "./apiClients/semanticModelApi.js";
+import { isRecoverableStudioRead } from "./apiClients/studioReadRecovery.js";
+import { createAuthenticationRecheck } from "./apiClients/authenticationRecheck.js";
 import type {
   ScriptGitCommit,
   ScriptGitCommitResult,
@@ -78,7 +80,6 @@ const desktopAwareFetch = (input: RequestInfo | URL, init?: RequestInit) =>
 const STARTUP_MANIFEST_TIMEOUT_MS = 15_000;
 const EXTERNAL_JSON_TIMEOUT_MS = 30_000;
 const UNITY_UPLOAD_TIMEOUT_MS = 10 * 60_000;
-let authenticationRecheck: Promise<void> | undefined;
 
 /** 启动期清单也必须经过统一 HTTP 边界，交付运行时不得自行持有网络能力。 */
 export async function loadSceneViewerDeliveryManifest(url: URL): Promise<unknown> {
@@ -107,37 +108,14 @@ export type {
   ScriptGitStatus,
 } from "./apiClients/scriptGitTypes.js";
 
+const scheduleAuthenticationRecheck = createAuthenticationRecheck(runtimeHost, desktopAwareFetch);
 const serverClient = new ServerClient({
   profile: () => sceneViewerDeliveryServerProfile() ?? runtimeHost.getServerProfile(),
   authStore: runtimeHost,
   onUnauthorized: () => scheduleAuthenticationRecheck(),
   fetch: desktopAwareFetch,
+  retryRead: path => !isLocalDesktopMode() && !isSceneViewerDeliveryRuntime() && isRecoverableStudioRead(path),
 });
-
-/**
- * 业务接口偶发的 401 先用会话端点复核。只有服务端明确否定当前令牌才退出；
- * 网络抖动、网关错误和第三方鉴权失败都保留用户的本地会话与未保存工作。
- */
-function scheduleAuthenticationRecheck(): void {
-  if (authenticationRecheck) return;
-  const token = runtimeHost.getAccessToken();
-  if (!token) return;
-  authenticationRecheck = Promise.resolve(token).then(async (resolvedToken) => {
-    if (!resolvedToken) return;
-    try {
-      const baseUrl = (await runtimeHost.getServerProfile()).baseUrl;
-      const response = await desktopAwareFetch(new URL("/api/auth/me", baseUrl), {
-        headers: { authorization: `Bearer ${resolvedToken}` },
-        cache: "no-store",
-      });
-      if (response.status === 401 && (await runtimeHost.getAccessToken()) === resolvedToken) runtimeHost.notifyUnauthorized();
-    } catch {
-      // 无法复核时保持登录；下一次真实请求仍会重新验证。
-    }
-  }).finally(() => {
-    authenticationRecheck = undefined;
-  });
-}
 
 export function getAuthToken() {
   return runtimeHost.getAccessToken();
@@ -360,8 +338,8 @@ export const api = {
       method: "DELETE",
     }),
   getMeta: () => serverClient.getMeta(),
-  listApplications: (projectId: string) =>
-    serverClient.listApplications(projectId),
+  listApplications: (projectId: string, options: { signal?: AbortSignal } = {}) =>
+    serverClient.listApplications(projectId, options),
   getApplication: (projectId: string, applicationId: string) =>
     serverClient.getApplication(projectId, applicationId),
   createApplication: (document: ApplicationDocument) =>
@@ -605,7 +583,7 @@ export const api = {
       body: JSON.stringify({ mode, question, context, ...(projectId ? { projectId } : {}) }),
     }),
   streamAssistant,
-  listProjects: () => request<ProjectRecord[]>("/api/projects"),
+  listProjects: (options: { signal?: AbortSignal } = {}) => request<ProjectRecord[]>("/api/projects", options),
   createProject: (name: string, description = "") =>
     request<ProjectRecord>("/api/projects", {
       method: "POST",

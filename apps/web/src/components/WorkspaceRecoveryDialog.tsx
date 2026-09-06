@@ -1,8 +1,8 @@
-import { useEffect } from "react";
 import { Clock3, Download, History, RotateCcw, Trash2 } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
+import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 
 interface WorkspaceRecoveryDialogProps {
   locale: AppLocale;
@@ -18,17 +18,9 @@ interface WorkspaceRecoveryDialogProps {
 export function WorkspaceRecoveryDialog(props: WorkspaceRecoveryDialogProps) {
   const t = (zh: string, en: string) => tr(props.locale, zh, en);
   const serverIsNewer = props.serverRevision !== undefined && props.draft.baseRevision !== undefined && props.serverRevision > props.draft.baseRevision;
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || props.busy) return;
-      event.preventDefault();
-      props.onDefer();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [props.busy, props.onDefer]);
+  const escapeRef = useDialogEscape(props.onDefer, props.busy);
   return (
-    <div className="dialog-backdrop workspace-recovery-backdrop">
+    <div className="dialog-backdrop workspace-recovery-backdrop" ref={escapeRef}>
       <section className="dialog workspace-recovery-dialog" role="dialog" aria-modal="true" aria-label={t("恢复未保存工作", "Recover unsaved work")}>
         <header>
           <i>

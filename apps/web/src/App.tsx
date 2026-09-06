@@ -4,6 +4,7 @@ import { createApplicationRuntimeController } from "./controllers/applicationRun
 import { createSceneEditorController } from "./controllers/sceneEditorController";
 import { createScenePersistenceController } from "./controllers/scenePersistenceController";
 import { useAppDerivedState } from "./hooks/useAppDerivedState";
+import { useGlobalDialogEscape } from "./hooks/useGlobalDialogEscape";
 import { useAppLifecycleEffects } from "./hooks/useAppLifecycleEffects";
 import { useAppNavigationController } from "./hooks/useAppNavigationController";
 import { useAppRuntimeEffects } from "./hooks/useAppRuntimeEffects";
@@ -36,6 +37,7 @@ async function waitForModelReady(projectId: string, modelId: string): Promise<Pr
 
 export function App() {
   const appState = useAppState();
+  useGlobalDialogEscape();
   const {
     initialPathRef,
     defaultEntryAppliedRef,
@@ -291,6 +293,7 @@ export function App() {
   } = sceneHistoryState;
 
   const {
+    managerDirectory,
     navigate,
     openDataCenter,
     closeDataCenter,
@@ -741,6 +744,7 @@ export function App() {
   });
 
   const viewBindings: AppViewBindings = {
+    managerDirectory,
     state: appState,
     derived: derivedState,
     sceneEditor: sceneEditorController,

@@ -29,4 +29,27 @@ describe("workspaceRecoveryStore", () => {
     expect(hasRecoverableWorkspaceChanges(draft, { ...scene, updatedAt: "2026-08-29T01:00:00.000Z" })).toBe(false);
     expect(hasRecoverableWorkspaceChanges(draft, { ...scene, name: "装配线 B" })).toBe(true);
   });
+
+  it("does not interpret object property order as an unsaved edit", () => {
+    const draft = createWorkspaceRecoveryDraft("project-1", undefined, scene);
+    const { camera: _camera, ...properties } = scene;
+    const reordered: SceneSnapshot = { camera: { mode: "orbit", target: { z: 0, y: 0, x: 0 }, position: { z: 3, y: 2, x: 1 } }, ...properties };
+    expect(hasRecoverableWorkspaceChanges(draft, reordered)).toBe(false);
+  });
+
+  it("retains real nested edits and does not round away small numeric differences", () => {
+    const draft = createWorkspaceRecoveryDraft("project-1", undefined, scene);
+    expect(hasRecoverableWorkspaceChanges(draft, { ...scene, camera: { ...scene.camera, position: { ...scene.camera.position, y: 2.000000000000001 } } })).toBe(true);
+    expect(hasRecoverableWorkspaceChanges(draft, { ...scene, camera: { ...scene.camera, avatarVisible: true } })).toBe(true);
+    expect(hasRecoverableWorkspaceChanges(draft, { ...scene, createdAt: "2026-08-30T00:00:00.000Z" })).toBe(true);
+  });
+
+  it("preserves array order instead of treating reordered author objects as identical", () => {
+    const models = ["first", "second"].map(modelId => ({ modelId, name: modelId, visible: true, opacity: 1, transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } }));
+    const withModels = { ...scene, models };
+    const draft = createWorkspaceRecoveryDraft("project-1", undefined, withModels);
+    expect(hasRecoverableWorkspaceChanges(draft, { ...withModels, models: [...models].reverse() })).toBe(true);
+    expect(hasRecoverableWorkspaceChanges(draft, structuredClone(withModels))).toBe(false);
+    expect(draft.scene.models.map(model => model.modelId)).toEqual(["first", "second"]);
+  });
 });

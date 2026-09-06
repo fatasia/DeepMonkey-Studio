@@ -1,0 +1,21 @@
+.manager-directory-state { padding: 24px; color: var(--text); border: 1px solid var(--line); border-radius: 12px; background: var(--surface-1); }
+.manager-directory-message { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.manager-directory-icon { display: grid; flex: 0 0 48px; width: 48px; height: 48px; place-items: center; color: var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+.manager-directory-state.is-error .manager-directory-icon { color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, var(--surface-2)); }
+.manager-directory-message > div { flex: 1; min-width: 0; }
+.manager-directory-message h2 { margin: 0 0 8px; color: var(--text-strong); font-size: 17px; line-height: 1.4; }
+.manager-directory-message p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.manager-directory-message small { display: block; margin-top: 8px; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.6; overflow-wrap: anywhere; }
+.manager-directory-message > button { flex: 0 0 auto; min-height: 36px; white-space: nowrap; }
+.manager-directory-skeleton { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+.manager-directory-skeleton > div { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--line-subtle); border-radius: 10px; background: var(--surface-2); }
+.manager-directory-skeleton i { height: 96px; border-radius: 6px; background: var(--surface-3); }
+.manager-directory-skeleton span { height: 12px; border-radius: 4px; background: var(--surface-3); }
+.manager-directory-skeleton span:last-child { width: 60%; }
+@media (max-width: 800px) {
+  .manager-directory-state { padding: 16px; }
+  .manager-directory-message { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+  .manager-directory-message > button { margin-left: 60px; }
+  .manager-directory-skeleton { grid-template-columns: 1fr; }
+  .manager-directory-skeleton > div:not(:first-child) { display: none; }
+}

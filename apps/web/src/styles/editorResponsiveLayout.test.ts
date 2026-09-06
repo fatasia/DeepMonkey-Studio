@@ -4,6 +4,22 @@ import { describe, expect, it } from "vitest";
 const stylesRoot = new URL("./", import.meta.url);
 
 describe("editor responsive layout contracts", () => {
+  it("keeps solid primary actions readable across brand changes and hover", async () => {
+    for (const file of ["scene-workspace.css", "managerWorkspaceChrome.css", "managerSceneCards.css", "dashboardWorkspacePolish.css"]) {
+      const css = await readFile(new URL(file, stylesRoot), "utf8");
+      const primary = [...css.matchAll(/[^{}]*button\.primary\b[^{}]*\{([^{}]*)\}/g)].map(match => match[1]!);
+      expect(primary.length).toBeGreaterThanOrEqual(2);
+      for (const block of primary) expect(block).toContain("color: var(--on-accent)");
+    }
+  });
+
+  it("derives the shared keyboard focus from the current brand rather than fixed gold", async () => {
+    const css = await readFile(new URL("interactionPolish.css", stylesRoot), "utf8");
+    expect(css).toContain("outline: 2px solid var(--accent)");
+    expect(css).toContain("box-shadow: 0 0 0 3px var(--accent-soft)");
+    expect(css).not.toMatch(/#[\da-f]{3,8}|rgba?\(/i);
+  });
+
   it("keeps the 2D inspector reachable as a compact overlay", async () => {
     const css = await readFile(new URL("dashboardWorkspacePolish.css", stylesRoot), "utf8");
 

@@ -30,15 +30,16 @@
 }
 
 .scene-manager-page .button.primary {
-  color: #17242b;
+  color: var(--on-accent);
   border-color: var(--accent);
   background: var(--accent);
   box-shadow: 0 5px 16px rgba(16, 104, 120, .2);
 }
 
 .scene-manager-page .button.primary:hover:not(:disabled) {
+  color: var(--on-accent);
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 85%, white);
+  background: var(--accent);
 }
 
 /* 顶栏先表达项目上下文，再表达当前工作区和平台能力。 */
@@ -269,4 +270,13 @@
   .manager-capability-nav { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; padding-left: 0; border: 0; }
   .manager-utility-nav { grid-row: 2; }
   .manager-project-switch { grid-column: 2 / 4; max-width: none; }
+}
+
+/* 英文文案更长，完整顶栏约需 1664px：英文模式下视口不足时平台能力导航收缩为纯图标
+   （沿用 ≤1380px 的 >span 隐藏模式，aria-label/title 保留可访问名称）；中文不受影响。 */
+@media (max-width: 1700px) {
+  html[lang="en-US"] .manager-capability-nav button > span,
+  html[lang="en"] .manager-capability-nav button > span { display: none; }
+  html[lang="en-US"] .manager-capability-nav button,
+  html[lang="en"] .manager-capability-nav button { gap: 0; padding: 0 9px; }
 }

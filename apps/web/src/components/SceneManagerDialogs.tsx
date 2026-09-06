@@ -7,6 +7,7 @@ import { DeliveryReviewDialog, PublicationVersionItem } from "./SceneDeliveryWor
 import { ScenePublicationDialog } from "./ScenePublicationDialog";
 import { NameLengthHint } from "./NameLengthHint";
 import type { SceneManagerController } from "./SceneManager";
+import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 
 const ParametricModelWorkbench = lazy(() => import("../parametric/ParametricModelWorkbench"));
 
@@ -55,11 +56,14 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
     versionError,
     versionTarget,
   } = controller;
+  const sceneEscapeRef = useDialogEscape(() => setDialogMode(undefined), busy);
+  const versionEscapeRef = useDialogEscape(() => setVersionTarget(undefined), versionBusy);
+  const loadingEscapeRef = useDialogEscape(() => undefined, true);
 
   return (
     <>
       {dialogMode && (
-        <div className="dialog-backdrop" onMouseDown={() => setDialogMode(undefined)}>
+        <div className="dialog-backdrop" ref={sceneEscapeRef} onMouseDown={() => !busy && setDialogMode(undefined)}>
           <form
             className="dialog"
             onSubmit={(event) => {
@@ -79,6 +83,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
               <span>{tr(locale, "场景名称", "Scene name")}</span>
               <input
                 autoFocus
+                disabled={busy}
                 value={name}
                 aria-describedby="scene-name-hint"
                 onChange={(event) => setName(event.target.value)}
@@ -87,7 +92,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
             </label>
             <NameLengthHint id="scene-name-hint" value={name} locale={locale} />
             <div className="dialog-actions">
-              <button type="button" className="button" onClick={() => setDialogMode(undefined)}>
+              <button type="button" className="button" disabled={busy} onClick={() => setDialogMode(undefined)}>
                 {tr(locale, "取消", "Cancel")}
               </button>
               <button className="button primary" disabled={!name.trim() || busy}>
@@ -101,7 +106,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
       {parametricWorkbenchOpen && project && (
         <Suspense
           fallback={
-            <div className="dialog-backdrop">
+            <div className="dialog-backdrop" ref={loadingEscapeRef}>
               <div className="optimizer-loading">
                 <RefreshCw className="spin" size={22} />
                 {tr(locale, "正在加载参数化建模内核…", "Loading parametric modeling…")}
@@ -163,6 +168,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
           performance={publishPerformance}
           defaultToolbarVisible={publishTarget.publicationToolbarVisible !== false}
           cloudConfigured={cloudConfigured}
+          busy={busy}
           onModeChange={setPublishMode}
           onPerformanceChange={setPublishPerformance}
           onCancel={() => setPublishTarget(undefined)}
@@ -171,7 +177,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
       )}
 
       {versionTarget && (
-        <div className="dialog-backdrop" onMouseDown={() => !versionBusy && setVersionTarget(undefined)}>
+        <div className="dialog-backdrop" ref={versionEscapeRef} onMouseDown={() => !versionBusy && setVersionTarget(undefined)}>
           <section className="dialog publication-history-dialog" role="dialog" aria-modal="true" aria-label={tr(locale, "发布版本", "Publication versions")} onMouseDown={(event) => event.stopPropagation()}>
             <span className="eyebrow">VERSION HISTORY</span>
             <h2>{tr(locale, "发布版本", "Publication versions")}</h2>

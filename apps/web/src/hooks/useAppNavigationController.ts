@@ -9,6 +9,7 @@ import type { RendererBackend } from "../viewer/ViewerEngine";
 import type { DashboardViewState } from "../studio/workspaceRoute";
 import type { AppState } from "./useAppState";
 import { sceneViewerDeliveryRoute } from "../delivery/sceneViewerDelivery";
+import { useManagerDirectoryController } from "./useManagerDirectoryController";
 
 interface AppNavigationControllerOptions {
   state: AppState;
@@ -17,6 +18,7 @@ interface AppNavigationControllerOptions {
 
 /** 管理应用路由、项目生命周期和渲染后端切换，避免入口组件承担导航细节。 */
 export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: AppNavigationControllerOptions) {
+  const managerDirectory = useManagerDirectoryController(state);
   const {
     activeScene,
     authReady,
@@ -39,6 +41,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     setBusy,
     setDigitalTwinOpen,
     setExpandedModels,
+    setError,
     setMeasurements,
     setMessage,
     setNewProjectDescription,
@@ -58,6 +61,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     showError,
   } = state;
   const activeProjectId = useRef(project?.id);
+  const projectSubmitting = useRef(false);
   activeProjectId.current = project?.id;
 
   useEffect(() => {
@@ -135,18 +139,6 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
   }
 
   useEffect(() => {
-    if (!currentUser) return;
-    void api
-      .listProjects()
-      .then((items) => {
-        setProjects(items);
-        const requestedProjectId = readRoute().projectId;
-        setProject((current) => items.find((item) => item.id === requestedProjectId) ?? current ?? items[0]);
-      })
-      .catch(showError);
-  }, [currentUser?.id, showError]);
-
-  useEffect(() => {
     if (!["manager", "data", "optimizer"].includes(route.view) || !route.projectId) return;
     const requested = projects.find(item => item.id === route.projectId);
     if (requested && requested.id !== project?.id) switchProject(requested, false);
@@ -184,7 +176,10 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
 
   async function submitProjectDialog() {
     const name = newProjectName.trim();
-    if (!name) return;
+    if (!name || projectSubmitting.current) return;
+    projectSubmitting.current = true;
+    // 显式重试属于一次新操作，旧失败提示不能与后续成功反馈并存。
+    setError(undefined);
     setBusy(true);
     try {
       if (projectDialogMode === "rename" && project) {
@@ -204,6 +199,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     } catch (reason) {
       showError(reason);
     } finally {
+      projectSubmitting.current = false;
       setBusy(false);
     }
   }
@@ -242,6 +238,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
   }, [project?.id]);
 
   return {
+    managerDirectory,
     navigate,
     openDataCenter,
     closeDataCenter,

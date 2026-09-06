@@ -34,6 +34,10 @@
   --accent: var(--accent-primary);
   --accent-hover: color-mix(in srgb, var(--accent) 75%, white);
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  /* 实色品牌按钮的对比文字；品牌同步按亮度选择，不能跟随页面明暗直接翻色。 */
+  --on-accent-dark: #000000;
+  --on-accent-light: #ffffff;
+  --on-accent: var(--on-accent-dark);
   --success: #59c58d;
   --warning: #d8ac52;
   --danger: #e27478;

@@ -1,6 +1,6 @@
 /* 所有工作区共享清晰的键盘焦点，避免鼠标可用但键盘定位不可见。 */
 #root :is(button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid #e3b54f;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
-  box-shadow: 0 0 0 3px rgba(227, 181, 79, 0.2);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }

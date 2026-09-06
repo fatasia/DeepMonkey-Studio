@@ -53,29 +53,9 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
 
   useEffect(() => {
     if (!project) return;
-    void api
-      .listScenes(project.id)
-      .then((items) => setScenes(sortScenesByTime(items)))
-      .catch(showError);
     const timer = window.setInterval(() => void refreshProject().catch(showError), 2500);
     return () => window.clearInterval(timer);
   }, [project?.id, refreshProject, showError]);
-
-  useEffect(() => {
-    if (route.view !== "manager" || !project) return;
-    let cancelled = false;
-    void api
-      .listApplications(project.id)
-      .then((items) => {
-        if (!cancelled) setManagerApplications(items);
-      })
-      .catch((reason) => {
-        if (!cancelled) showError(reason);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [route.view, project?.id, scenes.length, showError]);
 
   useEffect(() => {
     if (defaultEntryAppliedRef.current || !currentUser || !project || initialPathRef.current !== "/") return;

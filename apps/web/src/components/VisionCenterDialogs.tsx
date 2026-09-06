@@ -67,6 +67,7 @@ export function VisionCenterDialogs({
       {sourceForm && (
         <Modal
           title={tr(locale, "添加实时视频源", "Add live video source")}
+          busy={busy}
           onClose={() => setSourceForm(false)}
         >
           <div className="vision-form-pair">
@@ -155,7 +156,7 @@ export function VisionCenterDialogs({
             </label>
           )}
           <footer>
-            <button onClick={() => setSourceForm(false)}>
+            <button disabled={busy} onClick={() => setSourceForm(false)}>
               {tr(locale, "取消", "Cancel")}
             </button>
             <button
@@ -175,6 +176,7 @@ export function VisionCenterDialogs({
       {taskForm && (
         <Modal
           title={editingTaskId ? tr(locale, "编辑识别任务", "Edit inference task") : tr(locale, "新建识别任务", "New inference task")}
+          busy={busy}
           onClose={() => setTaskForm(false)}
         >
           <div className="vision-form-pair">
@@ -433,7 +435,7 @@ export function VisionCenterDialogs({
             />
           </label>
           <footer>
-            <button onClick={() => setTaskForm(false)}>
+            <button disabled={busy} onClick={() => setTaskForm(false)}>
               {tr(locale, "取消", "Cancel")}
             </button>
             <button
@@ -454,6 +456,7 @@ export function VisionCenterDialogs({
       {modelForm && (
         <Modal
           title={tr(locale, "上传ONNX模型包", "Upload ONNX model package")}
+          busy={busy}
           onClose={() => setModelForm(false)}
         >
           <label className="vision-file-field">
@@ -499,7 +502,7 @@ export function VisionCenterDialogs({
             </small>
           </label>
           <footer>
-            <button onClick={() => setModelForm(false)}>
+            <button disabled={busy} onClick={() => setModelForm(false)}>
               {tr(locale, "取消", "Cancel")}
             </button>
             <button
@@ -515,6 +518,7 @@ export function VisionCenterDialogs({
       {reviewEvent && (
         <Modal
           title={tr(locale, "质量复检", "Quality review")}
+          busy={busy}
           onClose={() => setReviewEvent(undefined)}
         >
           <div className="vision-form-pair">
@@ -595,7 +599,7 @@ export function VisionCenterDialogs({
             />
           </label>
           <footer>
-            <button onClick={() => setReviewEvent(undefined)}>
+            <button disabled={busy} onClick={() => setReviewEvent(undefined)}>
               {tr(locale, "取消", "Cancel")}
             </button>
             <button

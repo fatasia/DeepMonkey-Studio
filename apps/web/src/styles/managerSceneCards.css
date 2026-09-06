@@ -163,7 +163,7 @@
 }
 
 .scene-card-footer .scene-card-actions > button.primary {
-  color: #17242b;
+  color: var(--on-accent);
   border: 0;
   background: var(--accent);
 }
@@ -175,7 +175,7 @@
   background: var(--surface-2);
 }
 
-.scene-card-footer .scene-card-actions > button.primary:hover { background: color-mix(in srgb, var(--accent) 85%, white); }
+.scene-card-footer .scene-card-actions > button.primary:hover:not(:disabled) { color: var(--on-accent); background: var(--accent); }
 .scene-card-more { margin-left: auto; }
 
 .scene-card-more[open] > summary {

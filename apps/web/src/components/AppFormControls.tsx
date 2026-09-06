@@ -48,12 +48,19 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
 }) {
   const [draft, setDraft] = useState(String(value));
   const focused = useRef(false);
+  const cancelled = useRef(false);
   useEffect(() => {
     if (!focused.current) setDraft(String(value));
   }, [value]);
 
   function commit() {
     focused.current = false;
+    // Esc 触发 blur 在本次 React 更新之前执行，不能用上一帧草稿回写对象。
+    if (cancelled.current) {
+      cancelled.current = false;
+      setDraft(String(value));
+      return;
+    }
     const parsed = Number(draft);
     if (draft.trim() === "" || !Number.isFinite(parsed)) {
       setDraft(String(value));
@@ -79,7 +86,7 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
     data-max={max}
     data-step={step}
     value={draft}
-    onFocus={() => { focused.current = true; }}
+    onFocus={() => { focused.current = true; cancelled.current = false; }}
     onInput={(event) => {
       // 空值和未完成的小数先保留为草稿，失焦时再校验，避免输入过程被强制回弹。
       updateDraft(event.currentTarget.value);
@@ -89,6 +96,8 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
     onKeyDown={(event) => {
       if (event.key === "Enter") event.currentTarget.blur();
       if (event.key === "Escape") {
+        event.stopPropagation();
+        cancelled.current = true;
         setDraft(String(value));
         event.currentTarget.blur();
       }
@@ -106,7 +115,7 @@ export function TransformFields({ title, transform, suffix, disabled = false, on
   return (
     <fieldset className="transform-fields">
       <legend>{title}</legend>
-      <div>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span><DeferredNumberInput disabled={disabled} step={0.1} value={Number(transform[axis].toFixed(3))} onCommit={(value) => onChange(axis, String(value))} />{suffix && <i>{suffix}</i>}</label>)}</div>
+      <div>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span><DeferredNumberInput ariaLabel={`${title} ${axis.toUpperCase()}${suffix ? ` (${suffix})` : ""}`} disabled={disabled} step={0.1} value={Number(transform[axis].toFixed(3))} onCommit={(value) => onChange(axis, String(value))} />{suffix && <i>{suffix}</i>}</label>)}</div>
     </fieldset>
   );
 }

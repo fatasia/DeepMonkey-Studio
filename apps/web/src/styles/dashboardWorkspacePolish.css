@@ -46,10 +46,11 @@
 }
 
 .dashboard-workspace-actions button.primary {
-  color: #08181b;
+  color: var(--on-accent);
   border-color: var(--accent);
   background: var(--accent);
 }
+.dashboard-workspace-actions button.primary:hover:not(:disabled) { color: var(--on-accent); background: var(--accent); }
 
 .dashboard-workspace-title { color: var(--accent); }
 .dashboard-workspace-title strong { color: var(--text-strong); font-size: 14px; }

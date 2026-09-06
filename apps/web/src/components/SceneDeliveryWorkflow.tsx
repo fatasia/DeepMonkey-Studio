@@ -6,6 +6,7 @@ import { assessProjectPublication, hasPublicationDataProduct } from "./publicati
 import { buildDeliveryBlockers, buildDeliverySteps, type DeliveryStepId } from "./deliveryWorkflowModel";
 import { readDeliveryWorkflowMemory, writeDeliveryWorkflowMemory } from "./deliveryWorkflowPersistence";
 import { summarizeScenePublicationDiff, type ScenePublicationDiffMetric, type ScenePublicationDiffSection } from "./scenePublicationDiff";
+import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 
 interface PublicationVersionItemProps {
   locale: AppLocale;
@@ -98,6 +99,7 @@ interface DeliveryReviewCheck {
 }
 
 export function DeliveryReviewDialog(props: DeliveryReviewDialogProps) {
+  const escapeRef = useDialogEscape(props.onClose);
   const checks = deliveryChecks(props.locale, props.project, props.scenes);
   const blockers = checks.filter((check) => check.required && !check.ready);
   const actions: Record<DeliveryReviewAction, (sceneId?: string) => void> = {
@@ -107,7 +109,7 @@ export function DeliveryReviewDialog(props: DeliveryReviewDialogProps) {
     linkage: props.onOpenLinkage,
   };
   return (
-    <div className="dialog-backdrop" onMouseDown={props.onClose}>
+    <div className="dialog-backdrop" ref={escapeRef} onMouseDown={props.onClose}>
       <section
         className="dialog delivery-review"
         role="dialog"

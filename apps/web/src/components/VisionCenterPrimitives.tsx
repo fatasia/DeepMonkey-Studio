@@ -5,6 +5,7 @@ import type {
 } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
+import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 
 export function InferenceResult({
   result,
@@ -70,20 +71,23 @@ export function Modal({
   title,
   children,
   onClose,
+  busy = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  busy?: boolean;
 }) {
+  const escapeRef = useDialogEscape(onClose, busy);
   return (
-    <div className="dialog-backdrop" onMouseDown={onClose}>
+    <div className="dialog-backdrop" ref={escapeRef} onMouseDown={() => !busy && onClose()}>
       <section
         className="vision-modal"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
           <strong>{title}</strong>
-          <button onClick={onClose}>×</button>
+          <button disabled={busy} onClick={onClose}>×</button>
         </header>
         {children}
       </section>

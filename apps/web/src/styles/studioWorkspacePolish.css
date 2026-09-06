@@ -25,7 +25,12 @@
 
 .app-shell .asset-row {
   min-height: 38px;
+  height: auto;
+  flex-wrap: wrap;
 }
+
+/* 名称按钮比全局28px图标目标更宽，展开行内操作后也保留可读名称。 */
+.app-shell .asset-main { min-width: 100px; min-height: 28px; }
 
 .app-shell .topbar-auto-save {
   min-height: 28px;
@@ -109,7 +114,7 @@
   gap: 8px;
   padding: 0 12px;
   border-bottom-color: var(--line-subtle);
-  background: rgba(12, 19, 24, .96);
+  background: var(--surface-1);
   backdrop-filter: blur(14px);
 }
 
@@ -125,6 +130,21 @@
 .app-shell .topbar-back:hover {
   color: var(--text-strong);
   border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.app-shell .workspace-mode-switch button { color: var(--text); }
+.app-shell .workspace-mode-switch button.active {
+  color: var(--text-strong);
+  background: var(--accent-soft);
+}
+.app-shell .topbar .button.primary {
+  color: var(--text-strong);
+  background: var(--accent-soft);
+}
+.app-shell .topbar .button:hover:not(:disabled) {
+  color: var(--text-strong);
+  border-color: var(--accent);
   background: var(--surface-2);
 }
 
@@ -152,7 +172,8 @@
   white-space: nowrap;
 }
 
-.app-shell .panel-mode-button {
+.app-shell .panel-mode-button,
+.app-shell .panel-heading .icon-button {
   flex: 0 0 auto;
   min-width: 30px;
   height: 30px;
@@ -167,7 +188,8 @@
 /* 侧栏宽度固定，模式名称使用 tooltip/aria 呈现，避免宽屏下反而逐字竖排。 */
 .app-shell .panel-heading .panel-mode-button > span { display: none; }
 
-.app-shell .panel-mode-button:hover {
+.app-shell .panel-mode-button:hover,
+.app-shell .panel-heading .icon-button:hover {
   color: var(--text-strong);
   border-color: var(--line);
   background: var(--surface-2);
@@ -260,13 +282,13 @@
   min-width: 24px;
 }
 
-/* 目录默认只突出选择、显隐和锁定；删除、碰撞等低频动作在悬停/键盘聚焦时出现。 */
+/* 次级动作隐藏时不占列宽；鼠标悬停或键盘进入行时展开，宽度不足则换行，名称至少保留100px。 */
 @media (hover: hover) {
   .app-shell .scene-row-optional-action:not(.active):not(.colliding) {
-    opacity: 0;
+    display: none;
   }
   .app-shell :is(.asset-row:hover, .asset-row:focus-within) .scene-row-optional-action {
-    opacity: 1;
+    display: inline-grid;
   }
 }
 

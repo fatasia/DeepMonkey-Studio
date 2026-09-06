@@ -642,11 +642,12 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
       {route.view === "manager" && (
         <Suspense fallback={<PlatformRouteLoading label={tr(locale, "正在加载项目工作台", "Loading project workspace")} />}>
           <SceneManager
+          directory={bindings.managerDirectory}
           managerTab={route.managerTab ?? "scenes"}
           assetScope={route.assetScope}
           selectedAssetModelId={route.modelId}
           onReturnToScene={project && route.assetReturn ? (modelId) => navigate(modelAssetSceneRoute(project.id, route.assetReturn!, modelId)) : undefined}
-          onManagerTabChange={(managerTab) => navigate({ view: "manager", ...(project ? { projectId: project.id } : {}), managerTab, ...(managerTab === "assets" && route.assetReturn ? { assetReturn: route.assetReturn } : {}) }, true)}
+          onManagerTabChange={(managerTab) => navigate({ view: "manager", ...(route.projectId ?? project?.id ? { projectId: route.projectId ?? project!.id } : {}), managerTab, ...(managerTab === "assets" && route.assetReturn ? { assetReturn: route.assetReturn } : {}) }, true)}
           {...(route.fallback === "not-found" ? { navigationNotice: tr(locale, "页面不存在，已返回项目工作台", "Page not found. Returned to the project workspace.") } : {})}
           onDismissNavigationNotice={() => setRoute({ view: "manager" })}
           locale={locale}

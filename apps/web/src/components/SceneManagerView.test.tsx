@@ -88,7 +88,55 @@ describe("SceneManagerView product surface", () => {
     expect(html).toContain('aria-label="打开拓扑 · 总装线物流拓扑"');
     expect(html).toContain('title="打开拓扑 · 总装线物流拓扑"');
   });
+
+  it.each([
+    { name: "genuinely empty", scenes: [], visibleScenes: [], toolbarClass: "button", emptyAction: true },
+    { name: "filtered empty", scenes: [createScene()], visibleScenes: [], toolbarClass: "button primary", emptyAction: false },
+    { name: "populated", scenes: [createScene()], visibleScenes: [createScene()], toolbarClass: "button primary", emptyAction: false },
+  ])("keeps one scene creation emphasis for a $name directory", ({ scenes, visibleScenes, toolbarClass, emptyAction }) => {
+    const project = { id: "project-1", name: "装配项目", description: "", models: [], createdAt: "2026-09-06", updatedAt: "2026-09-06" };
+    const html = renderToStaticMarkup(<SceneManagerView controller={{
+      branding: { systemName: "Deep Monkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "Deep Monkey Studio" },
+      busy: false,
+      cloudConfigured: false,
+      cloudSceneLinks: {},
+      cloudScenePolicies: {},
+      isAdmin: false,
+      locale: "zh-CN",
+      managerTab: "scenes",
+      name: "",
+      project,
+      projects: [project],
+      publicationVersions: [],
+      publishMode: "webgl",
+      publishPerformance: "standard",
+      scenes,
+      sceneSearch: visibleScenes.length < scenes.length ? "不存在的场景" : "",
+      sceneSort: "updated",
+      sceneStatusFilter: "all",
+      showcaseBusy: false,
+      showcaseExists: false,
+      sortedScenes: scenes,
+      topologies: [],
+      userName: "审计用户",
+      versionBusy: false,
+      visibleScenes,
+    } as unknown as SceneManagerController} />);
+
+    expect(buttonClass(html, "新建场景")).toBe(toolbarClass);
+    expect(buttonClass(html, "新建第一个场景")).toBe(emptyAction ? "button primary" : undefined);
+    expect(buttonClass(html, "导入")).toBe("button");
+    expect(html.includes("没有匹配的场景")).toBe(scenes.length > 0 && visibleScenes.length === 0);
+    expect(html.match(/<button[^>]*class="button primary"/g)).toHaveLength(1);
+  });
 });
+
+function buttonClass(html: string, label: string): string | undefined {
+  const button = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)]
+    .map(([markup]) => markup)
+    .find((markup) => markup.replace(/<[^>]*>/g, "") === label);
+  return button?.match(/class="([^"]*)"/)?.[1];
+}
 
 function createScene(): SceneSnapshot {
   const now = "2026-09-03T08:00:00.000Z";

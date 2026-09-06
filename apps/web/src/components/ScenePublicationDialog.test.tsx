@@ -3,6 +3,18 @@ import { describe, expect, it } from "vitest";
 import { ScenePublicationDialog } from "./ScenePublicationDialog";
 
 describe("ScenePublicationDialog", () => {
+  it("freezes every publication choice while the submitted transaction is pending", () => {
+    const html = renderToStaticMarkup(<ScenePublicationDialog
+      locale="zh-CN" sceneName="发布中" mode="webgl" performance="standard"
+      defaultToolbarVisible cloudConfigured busy
+      onModeChange={() => undefined} onPerformanceChange={() => undefined}
+      onCancel={() => undefined} onPublish={() => undefined}
+    />);
+    const buttons = html.match(/<button\b[^>]*>/g) ?? [];
+    expect(buttons).toHaveLength(9);
+    expect(buttons.every(button => button.includes('disabled=""'))).toBe(true);
+  });
+
   it("shares the quality-preserving WebGPU policy across publication entries", () => {
     const html = renderToStaticMarkup(<ScenePublicationDialog
       locale="zh-CN"
