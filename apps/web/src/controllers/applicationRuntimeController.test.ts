@@ -5,10 +5,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
 import { ApplicationSession } from "../studio/applicationSession";
 import { createApplicationRuntimeController } from "./applicationRuntimeController";
+import * as thumbnails from "../studio/sceneThumbnailCapture";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("applicationRuntimeController script replacement", () => {
+  it("saves a frozen application without trying to mutate its scene thumbnail", async () => {
+    const source = migrateSceneSnapshotV1(pureFixture as SceneSnapshot);
+    const session = new ApplicationSession(); session.openDocument(source);
+    const original = session.getDocument()!;
+    expect(Object.isFrozen(original.scenes[0])).toBe(true);
+    vi.spyOn(thumbnails, "captureSceneThumbnail").mockReturnValue("data:image/jpeg;base64,fixture");
+    const save = vi.spyOn(api, "saveApplication").mockImplementation(async document => structuredClone(document));
+    const showError = vi.fn();
+    const controller = createApplicationRuntimeController({
+      ...controllerContext(session, source, showError), activeScene: pureFixture as SceneSnapshot,
+    });
+    await expect(controller.saveActiveApplication()).resolves.toEqual(source);
+    expect(save).toHaveBeenCalledOnce(); expect(showError).not.toHaveBeenCalled();
+    expect(original).toEqual(source); expect(session.store.getState().dirty).toBe(false);
+  });
+
   it("restores the original scripts after a failed save without reverting concurrent project edits", async () => {
     const source = migrateSceneSnapshotV1(pureFixture as SceneSnapshot);
     const session = new ApplicationSession();

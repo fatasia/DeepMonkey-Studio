@@ -14,8 +14,8 @@ export class ApplicationSession {
     return this.store.getState().document!;
   }
 
-  acknowledgeSave(application: ApplicationDocument): ApplicationDocument {
-    this.store.acknowledgeSave(application);
+  acknowledgeSave(application: ApplicationDocument, baseline?: ApplicationDocument): ApplicationDocument {
+    this.store.acknowledgeSave(application, baseline);
     return this.store.getState().document!;
   }
 

@@ -12,24 +12,37 @@
 
 - R2 根渲染/启动失败恢复：`752b085`，18 个隔离浏览器用例通过。详见 `application-error-verification-2026-09-06.md`。
 - 真实夹爪聚焦：本地提交 `2eff415`；`camera-framing-wGgINY` / `camera-framing-ihB18A` 两轮，44 作者状态、4 保存→刷新→发布匿名链路通过，原 GLB 哈希及比例不改。相机报告明确保留跨比例公开构图、飞行动效等低于 9 分项，不能称全套 Kimi-95 完成。
-- SDK 可消费性前置：`sdk-consumer-cGONEo/lKsvLC` 两轮独立安装运行通过，新增三包 README、门禁和可执行样例，完整证据 `sdk-external-consumer-verification-2026-09-06.md`。包仍 private，未公开发行；更后续列表取消参数不改原调用，新构建后将补相邻复跑。
-- 检查器局部主题和数字输入：`inspector-theme-7ajweL` 四组复检通过（更早两轮详见 `inspector-quality-verification-2026-09-06.md`）。
-- F1 Esc/事务保护与局部弹窗主题：`dialog-escape-gaDn1U` 最终两轮四组通过，附 ZH/EN 1440 导航实测。完整证据/原报告真假核查在 `glm-report-verification-2026-09-06.md`，Vision 全套主题仍未通过。
+- SDK 可消费性前置：`7d55d0d`，`sdk-consumer-cGONEo/lKsvLC` 两轮独立安装运行通过，新增三包 README、门禁和可执行样例。后续可选列表取消参数由 `sdk-consumer-wgdpKJ` 在空目录离线安装后用 Node/Chrome 再验，完整证据 `sdk-external-consumer-verification-2026-09-06.md`。仍为 private 协议/调度/HTTP 包，不是公开发布或可嵌入 Viewer。
+- 检查器局部主题和数字输入：r6 `inspector-theme-slAvBf` 四组复检通过，紫色焦点跟随品牌；更早两轮和边界见 `inspector-quality-verification-2026-09-06.md`。
+- F1 Esc/事务保护与局部弹窗主题：r6 `dialog-escape-xMgPZC` 两轮四组通过，附 ZH/EN 1440 导航实测；覆盖非空版本、发布 busy 和真实本地草稿恢复。完整报告真假核查在 `glm-report-verification-2026-09-06.md`，Vision 全套主题仍未通过。
+- 3D→2D 保存一致性：r6 `scene-shell-theme-ulm3QR/ScDsCs` 默认/紫色共8组实测，实际夹爪模型在2D显示、再回3D完整，API模型数组与GLB哈希保持。修复冻结对象缩略图赋值和 Store 错误回声判定；新增保存前实时基线、三方合并、跨文档/迟到响应保护、撤销保模型。详见 `application-save-reconciliation-verification-2026-09-06.md`。
+- 对象目录和壳层局部主题：同上两轮验证 hover / 键盘动作展开后名字仍可读，六个动作可达；修复全局焦点硬编码金色。r5 功能通过时漏检品牌焦点的反例保留在 `scene-shell-quality-verification-2026-09-06.md`。
+- R1 目录恢复：r6 `read-recovery-oHT3I5` 两轮4组通过。项目/场景/应用最终读取失败不再假空；仅白名单无请求体 GET/HEAD 对502/503/504或网络异常重试一次，取消和身份变化停止；写入、401/403/429/500从不自动重放。真实鼠标双击只一请求、键盘重试、持久错误、创建失败保稿与显式再提交全过；最低错误正文对比度亮5.00/暗6.00。后续空目录CTA精修还须新构建复跑。
 
 ## 本轮待办：当前并行所有权与新发现
 
-1. SIM：沿已有拖/缩/折和物流闭环补左右停靠、收起、恢复浮动，视口实际让位；布局偏好与仿真业务数据分离。`glm_esc_finish` 负责面板、布局 hook/CSS、AppStudioViewport 最小接线、测试和浏览器证据。不是重写已有引擎/Study。
-2. 管理目录：`camera_gate_finish` 已完成 SDK 前置，转而负责项目/场景/应用目录的加载、失败持久反馈/手动重试/请求身份与取消；只修三条目录，不接管现有模型轮询或非管理页文档加载。根负责 API 可选 signal 参数和 R1 浏览器测试。
-3. 3D→2D：原运行控制器修改冻结场景的 thumbnail 导致保存中断，根已去掉重复捕获并统一由 saveScene 保存真实视口。新浏览器证实服务端 models=1，但 Store 的旧 acknowledgeSave 只接受相同指纹、把外部引擎新模型误当成异步冲突，二维仍用空场景。`inspector_finish` 负责 Store/Session 基线回声合并与并发/撤销单测，根负责 saveScene 调用和控制器用例；待新构建实测，不因路由返回成功就称全链通过。
-4. R1：ServerClient 默认关闭恢复，仅 Web 明确目录/快照 GET/HEAD 对 502/503/504 或网络错误自动重试一次；写、401/403/429/500、取消/身份变化不重放。SDK 89 项、Web 边界 38 项通过。`read-recovery-hvigNu` 两轮四组通过，但截图仍发现目录最终失败误显示真空态；补持久错误与重试后需复跑。根新增 `authenticationRecheck` 责任模块保持原二次401语义并让 api.ts 不超过800行；已单测，等待下一构建。
-5. 根统一生产构建与回归、分批本地提交、更新本检查点；所有代理不得并发重建共享 dist。
+1. SIM：左右停靠、44px收起栏、恢复浮动、表单/画布不重挂载和实际让位已实现；r5功能4组/相邻真实Study4组通过，但截图找到工具条/菜单裁切和透明28px手柄覆盖。`glm_esc_finish` 修命名容器查询/菜单锚点/6px手柄，严格门禁预检后等待r7最终构建。当前不能称SIM视觉已最终通过；详见 `simulation-docking-verification-2026-09-06.md`。
+2. 管理目录：主缺陷r6已过；`camera_gate_finish` 小改成功空场景页双主CTA，过滤无结果不能当真空库；根负责r7真实鼠标/键盘与两轮截图终验。
+3. 根为新鉴权编排补适配器同步异常/异步拒绝保护，聚焦2文件32项通过，保持登录并释放 pending；随r7构建/全量Web再验。
+4. 根统一生产构建与回归、分批本地提交、更新本检查点；所有代理不得并发重建共享 dist。`inspector_finish` r6门禁已全部结束，仅整理最终文档。
 
 ## 已完成：当前命令证据与限制
 
-- 最近全量测试 r4：Web 363 文件 / 1319 项、API 119 文件 / 494 项及其余包通过；随后新增保存合并/鉴权编排等须更新数字。
-- r4 root build 在 Web exactOptionalPropertyTypes 错误失败，六处 optional busy 已转 Boolean；r4b Web build exit 0，包/API 已在 r4 前段构建，`smoke-api-import` 通过。不是把失败构建写成通过。
-- r4b root typecheck 类型通过，但 api.ts 新增至802行而体量门禁失败；鉴权编排抽取后 `quality:source-size` 1917 源文件通过。下一统一类型/构建仍待做。
-- 正常 `pnpm studio status`：web 模式健康，API4100/Web5173，PID49856。隔离门禁的临时API/json/local不是正常拓扑迁移。
+- r5 根 `pnpm build` / `pnpm typecheck` / `pnpm test` 均退出0：Web369文件1364项、API119文件494项、Core79项、server-sdk90项及其余包通过，API导入 smoke 通过。日志 `.runtime-logs/codex-20260906-features-{build,typecheck,tests}-r5.log`。
+- r6 Web build / 全量 test 均退出0：370文件1367项；1931源文件均不超过800，diff检查通过。后续小修新增用例须更新r7数字，不拿r6冒充新代码已过。
+- 旧r4 exactOptionalPropertyTypes失败、api.ts802行门禁失败已分别根因修复并经过r5全量确认，历史失败日志保留。
+- 正常 `pnpm studio check`：09:03 web模式健康，API4100/Web5173，PID49856。隔离门禁的临时API/json/local不是正常拓扑迁移。
+
+## 本轮待办：当前修补之后的功能队列
+
+- 脚本源码级断点、单步与调用栈；现有自动生命周期、作者私有播放、日志源码定位不是此能力。
+- 模型独立场景实例与保引用替换；当前模型资源与实例身份仍耦合，不能调用资源删除来伪造替换。
+- SIM连续AGV轨迹/空间热力、机器人路径教学、PLC与What-if跨域轨道；现有18个DES样本、树/覆盖层/Study与时间线不等于认证仿真。
+- AI-2～5工业工作流与质量评测；已完成的数据集选择/取消/重试不代表这些功能已全做。
+- ≥10行业深度包、≥300可编辑业务模板目标；166缓存中只2项已真实审核入库，其余164待审。HDRI/PBR已有数量目标已满足，不重复下载凑数。
+- SDK文档中心、一键插入修改样例、插件安装/启用/兼容与跨项目工作流；本批只完成外部包可消费性前置。
+- 同族UI：2D检查器/Vision旧主题、980场景元素计数、局部旧页脚/工具、完整键盘焦点与更窄断点；相机曲线飞行与跨比例公开构图。确定的功能/视觉缺口不能改名“客户后验收”而消失。
+- 其余原范围与依赖以 `platform-surpass-development-plan-2026-09-04.md`、`codex-glm53-handoff-2026-09-05.md` 后续回填为准；不因本清单聚焦当前直接队列而取消填报/打印、协作等尚未满足的原门槛。用户暂停的第3/6项仍单独明确排除。
 
 ## 新报告的证据边界
 

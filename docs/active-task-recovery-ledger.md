@@ -429,3 +429,7 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **本轮待办（并行）**：SIM 停靠/收起与真实视口让位；SDK 外部独立消费打包验收；编辑器保存快照回声与 3D→2D 模型状态完整同步；限定读请求恢复与目录失败重试。已发现 SDK 归档缺 dist、保存响应误把外部引擎变化当作新草稿而留空场景，按真实根因修，不删除数据或放宽断言。
 - **项目级后验收**：全功能/真实工业场景整体验收继续，不以当前修补或固定夹具代表全部功能完成。原事故无可靠事故前基线，不能独立保证历史数据全恢复；不运行旧 GLM 破坏性脚本。
 - **已完成（SDK 可消费性前置）**：三个私有包补明确 `files` 清单解决 tarball 漏 dist；外部独立消费者 `sdk-consumer-cGONEo/lKsvLC` 两轮空 store 离线安装、NodeNext/Bundler 严格声明、Node 与 Chrome 同结果、零外部/业务请求通过。新增 `pnpm gate:sdk-consumer` 与可执行样例；完整证据 `sdk-external-consumer-verification-2026-09-06.md`。仅协议/调度/HTTP SDK，不代表公开发行、嵌入式 Viewer 或第三方插件生态完成。
+- **已完成（保存一致性）**：修复冻结场景缩略图直接赋值与 Store 把外部引擎新增模型误当并发草稿而拒收的两重根因。发送前取实时基线，三方回声合并保留后续本地编辑/删除/撤销历史，迟到响应不跨项目/文档。r6 `scene-shell-theme-ulm3QR/ScDsCs` 共8组实际模型保存→二维显示→三维返回，完整models数组及原GLB哈希保持，详见 `application-save-reconciliation-verification-2026-09-06.md`。
+- **已完成（r6局部验证）**：对象目录/品牌焦点两轮8组、检查器 `inspector-theme-slAvBf` 4组、Esc/真实非空历史/恢复副本 `dialog-escape-xMgPZC` 两轮4组通过。局部令牌改进遵循 design-taste-digitaltwin，报告保留2D/Vision旧主题及980计数等不足，不据局部通过称全站Kimi-95。目录 `read-recovery-oHT3I5` 两轮4组验证有限读取恢复、持久错误、真实鼠标双击/键盘重试、写失败保稿，真空CTA精修仍待新构建。
+- **已完成（命令基线）**：r5 根 build/typecheck/test均退出0（Web1364/API494/Core79/server-sdk90及其余包）；r6 Web构建/全量1367通过。09:06 r7前置Web1373、根typecheck/1931源文件体量通过；随后恢复比较修补需追加回归，不混用旧数字。正常web API4100/Web5173健康，未改账号与拓扑。
+- **本轮待办（收口）**：SIM菜单窄画布边界/手柄覆盖最终验收、目录空态主CTA、仅字段顺序不同引发恢复提示的稳定比较修补；统一新构建与浏览器复跑、按模块本地提交。非修补功能完整队列保留在最新检查点，不降级为全部完成。

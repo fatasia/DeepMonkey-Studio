@@ -103,25 +103,31 @@ export function createScenePersistenceController(context: ScenePersistenceContro
   }
 
   async function saveScene(automatic = false): Promise<SceneSnapshot | undefined> {
+    const applicationBaseline = applicationSessionRef.current.getDocument();
     const snapshot = makeSnapshot();
     if (!snapshot || !project) return;
     const projectId = project.id;
+    const applyVersion = sceneApplyVersionRef.current;
+    if (route.applicationId && (applicationBaseline?.metadata.id !== route.applicationId || applicationBaseline.metadata.projectId !== projectId)) return;
     if (!automatic) setBusy(true);
     try {
       // 保存时抓取当前视口作为场景缩略图（U1-9d：卡片默认展示最后保存的画面）；失败不阻断保存。
       const sceneThumbnail = captureSceneThumbnail(engine);
       if (sceneThumbnail) snapshot.thumbnail = sceneThumbnail;
-      const applicationDraft = route.applicationId && activeApplication?.metadata.id === route.applicationId ? syncSceneIntoApplication(activeApplication, snapshot) : undefined;
+      // 引擎快照可比 React 闭包中的应用更新；送出前 Store 是并发编辑合并的唯一基线。
+      const applicationDraft = route.applicationId && applicationBaseline?.metadata.id === route.applicationId
+        && applicationBaseline.metadata.projectId === projectId ? syncSceneIntoApplication(applicationBaseline, snapshot) : undefined;
       // 网络请求发出前先保存轻量恢复副本；IndexedDB 不可用时仍继续正式保存。
       await writeWorkspaceRecoveryDraft(createWorkspaceRecoveryDraft(projectId, applicationDraft, snapshot));
       const workspace = applicationDraft ? await api.saveApplicationWorkspace(applicationDraft, snapshot) : undefined;
       const saved = workspace?.scene ?? (await api.saveScene(snapshot));
+      if (workspace) applicationSessionRef.current.acknowledgeSave(workspace.application, applicationBaseline);
+      if (sceneApplyVersionRef.current !== applyVersion || context.getActiveScene()?.id !== activeScene?.id) return saved;
       setActiveScene((current) => mergeSavedSimulationScene(current, activeScene, saved));
       setSceneName(saved.name);
       setScenes((items) => sortScenesByTime([saved, ...items.filter((item) => item.id !== saved.id)]));
-      if (workspace) applicationSessionRef.current.acknowledgeSave(workspace.application);
       lastAutoSavedSceneRevisionRef.current = revision;
-      await deleteWorkspaceRecoveryDraft(projectId, activeApplication?.metadata.id, snapshot.id);
+      await deleteWorkspaceRecoveryDraft(projectId, applicationDraft?.metadata.id, snapshot.id);
       if (!automatic) setMessage(`项目“${saved.name}”已保存`);
       return saved;
     } catch (reason) {

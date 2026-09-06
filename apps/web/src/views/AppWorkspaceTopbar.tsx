@@ -1,4 +1,5 @@
 import { ArrowLeft, Bot, LayoutDashboard, Plus, Redo2, Rocket, Save, Undo2 } from "lucide-react";
+import { useRef } from "react";
 import { SceneWorkspaceMoreMenu } from "../components/SceneWorkspaceMoreMenu";
 import { WorkspaceModeSwitch } from "../components/WorkspaceModeSwitch";
 import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
@@ -7,6 +8,9 @@ import type { AppViewBindings } from "./appViewBindings";
 
 /** 三维编辑/浏览的全局导航与发布操作；与场景画布和检查器职责分离。 */
 export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) {
+  const latestBindings = useRef(bindings);
+  latestBindings.current = bindings;
+  const exitPending = useRef(false);
   const { state, scenePersistence, applicationRuntime, actions, sceneHistory } = bindings;
   const {
     branding,
@@ -35,7 +39,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
     rendererDiagnostics,
   } = state;
   const { commitSceneName, exportSceneConfig, exportSingleFileScene, exportGlbScene, exportFbxScene, browseActiveScene, saveScene } = scenePersistence;
-  const { returnFromSceneEditor, publishActiveApplication, changeAutoSave, saveActiveApplication, upsertBehaviorScript } = applicationRuntime;
+  const { publishActiveApplication, changeAutoSave, upsertBehaviorScript } = applicationRuntime;
   const { switchProjectById, openProjectDialog, changeRendererBackend, navigate } = actions;
   const flushBehaviorDraft = () => {
     const result = flushPendingBehaviorDraft(state.pendingBehaviorDraftRef, upsertBehaviorScript);
@@ -50,13 +54,20 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
     setSceneBehaviorOpen(false);
   };
   const leaveThreeDimensionalWorkspace = () => {
-    if (!flushBehaviorDraft()) return;
+    if (exitPending.current || !flushBehaviorDraft()) return;
+    exitPending.current = true;
     setSceneBehaviorOpen(false);
     globalThis.setTimeout(() => {
       void (async () => {
-        if (activeApplication && !(await saveActiveApplication())) return;
-        if (await commitSceneName()) returnFromSceneEditor();
-      })();
+        // 脚本草稿提交后的下一帧读取最新控制器；三维离开必须保存真实视口，而非只存应用文档。
+        const current = latestBindings.current;
+        if (current.state.route !== route) return;
+        if (current.state.activeScene) {
+          if (!current.state.sceneName.trim()) { await current.scenePersistence.commitSceneName(); return; }
+          if (!(await current.scenePersistence.saveScene())) return;
+        } else if (current.state.activeApplication && !(await current.applicationRuntime.saveActiveApplication())) return;
+        if (latestBindings.current.state.route === route) current.applicationRuntime.returnFromSceneEditor();
+      })().catch(state.showError).finally(() => { exitPending.current = false; });
     }, 0);
   };
 

@@ -1,5 +1,6 @@
 import type { ApplicationDocument, ApplicationObjectRef, JsonValue } from "@bim-studio/contracts";
 import { applyStudioCommand, type StudioCommand } from "./command.js";
+import { mergeApplicationSave } from "./applicationSaveMerge.js";
 import {
   evaluateApplicationInteraction,
   sameObjectRef,
@@ -86,12 +87,15 @@ export class ApplicationStore {
     this.emit();
   }
 
-  /** Accept a saved revision without resetting selection, variables or history. */
-  acknowledgeSave(saved: ApplicationDocument): void {
+  /** 保留选择、变量和历史；外部引擎保存须传扩充请求载荷前的 Store 基线，而不是扩充后的载荷。 */
+  acknowledgeSave(saved: ApplicationDocument, baseline?: ApplicationDocument): void {
     if (!this.document) {
-      this.load(saved);
+      if (!baseline) this.load(saved);
       return;
     }
+    if (this.document.metadata.id !== saved.metadata.id || this.document.metadata.projectId !== saved.metadata.projectId) return;
+    if (saved.metadata.revision < this.document.metadata.revision) return;
+    if (baseline && (baseline.metadata.id !== saved.metadata.id || baseline.metadata.projectId !== saved.metadata.projectId)) return;
     const savedFingerprint = documentFingerprint(saved);
     const withServerMetadata = (document: ApplicationDocument): ApplicationDocument => immutableClone({
       ...document,
@@ -104,11 +108,12 @@ export class ApplicationStore {
         updatedAt: saved.metadata.updatedAt
       }
     });
-    this.document = documentFingerprint(this.document) === savedFingerprint
+    const reconcile = (document: ApplicationDocument) => withServerMetadata(baseline ? mergeApplicationSave(document, baseline, saved) : document);
+    this.document = baseline ? reconcile(this.document) : documentFingerprint(this.document) === savedFingerprint
       ? immutableClone(saved)
       : withServerMetadata(this.document);
-    this.undoStack = this.undoStack.map((entry) => ({ ...entry, before: withServerMetadata(entry.before), after: withServerMetadata(entry.after) }));
-    this.redoStack = this.redoStack.map((entry) => ({ ...entry, before: withServerMetadata(entry.before), after: withServerMetadata(entry.after) }));
+    this.undoStack = this.undoStack.map((entry) => ({ ...entry, before: reconcile(entry.before), after: reconcile(entry.after) }));
+    this.redoStack = this.redoStack.map((entry) => ({ ...entry, before: reconcile(entry.before), after: reconcile(entry.after) }));
     this.savedFingerprint = savedFingerprint;
     this.emit();
   }

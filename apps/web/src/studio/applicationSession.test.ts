@@ -67,4 +67,19 @@ describe("ApplicationSession", () => {
 
     expect(session.store.getState().selection).toEqual([]);
   });
+
+  it("forwards the pre-request baseline while retaining subsequent local edits", () => {
+    const session = new ApplicationSession();
+    const baseline = session.openDocument(migrateSceneSnapshotV1(dashboardFixture as unknown as SceneSnapshot));
+    const saved = structuredClone(baseline);
+    saved.metadata.revision++;
+    saved.scenes[0]!.name = "三维保存的新场景";
+    session.store.dispatch({ id: "concurrent-rename", type: "application.rename", label: "修改应用名", payload: { name: "后续草稿" } });
+
+    session.acknowledgeSave(saved, baseline);
+
+    expect(session.getDocument()?.scenes[0]?.name).toBe("三维保存的新场景");
+    expect(session.getDocument()?.metadata.name).toBe("后续草稿");
+    expect(session.store.getState().dirty).toBe(true);
+  });
 });
