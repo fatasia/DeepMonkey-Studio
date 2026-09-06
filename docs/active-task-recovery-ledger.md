@@ -428,3 +428,4 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **已完成（限定浏览器验证）**：F1 显式 Esc 仲裁、发布 busy 保护、弹窗局部双主题最终 `dialog-escape-gaDn1U` 四组通过；检查器数字输入与局部主题 `inspector-theme-7ajweL` 四组通过。代码与完整报告将按批次本地提交，Vision 整套主题不包含在本次通过范围。
 - **本轮待办（并行）**：SIM 停靠/收起与真实视口让位；SDK 外部独立消费打包验收；编辑器保存快照回声与 3D→2D 模型状态完整同步；限定读请求恢复与目录失败重试。已发现 SDK 归档缺 dist、保存响应误把外部引擎变化当作新草稿而留空场景，按真实根因修，不删除数据或放宽断言。
 - **项目级后验收**：全功能/真实工业场景整体验收继续，不以当前修补或固定夹具代表全部功能完成。原事故无可靠事故前基线，不能独立保证历史数据全恢复；不运行旧 GLM 破坏性脚本。
+- **已完成（SDK 可消费性前置）**：三个私有包补明确 `files` 清单解决 tarball 漏 dist；外部独立消费者 `sdk-consumer-cGONEo/lKsvLC` 两轮空 store 离线安装、NodeNext/Bundler 严格声明、Node 与 Chrome 同结果、零外部/业务请求通过。新增 `pnpm gate:sdk-consumer` 与可执行样例；完整证据 `sdk-external-consumer-verification-2026-09-06.md`。仅协议/调度/HTTP SDK，不代表公开发行、嵌入式 Viewer 或第三方插件生态完成。

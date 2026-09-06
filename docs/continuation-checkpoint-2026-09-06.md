@@ -11,14 +11,15 @@
 ## 已完成：有准确证据的修补
 
 - R2 根渲染/启动失败恢复：`752b085`，18 个隔离浏览器用例通过。详见 `application-error-verification-2026-09-06.md`。
-- 真实夹爪聚焦：`camera-framing-wGgINY` / `camera-framing-ihB18A` 两轮，44 作者状态、4 保存→刷新→发布匿名链路通过，原 GLB 哈希及比例不改。相机报告明确保留跨比例公开构图、飞行动效等低于 9 分项，不能称全套 Kimi-95 完成。
+- 真实夹爪聚焦：本地提交 `2eff415`；`camera-framing-wGgINY` / `camera-framing-ihB18A` 两轮，44 作者状态、4 保存→刷新→发布匿名链路通过，原 GLB 哈希及比例不改。相机报告明确保留跨比例公开构图、飞行动效等低于 9 分项，不能称全套 Kimi-95 完成。
+- SDK 可消费性前置：`sdk-consumer-cGONEo/lKsvLC` 两轮独立安装运行通过，新增三包 README、门禁和可执行样例，完整证据 `sdk-external-consumer-verification-2026-09-06.md`。包仍 private，未公开发行；更后续列表取消参数不改原调用，新构建后将补相邻复跑。
 - 检查器局部主题和数字输入：`inspector-theme-7ajweL` 四组复检通过（更早两轮详见 `inspector-quality-verification-2026-09-06.md`）。
 - F1 Esc/事务保护与局部弹窗主题：`dialog-escape-gaDn1U` 最终两轮四组通过，附 ZH/EN 1440 导航实测。完整证据/原报告真假核查在 `glm-report-verification-2026-09-06.md`，Vision 全套主题仍未通过。
 
 ## 本轮待办：当前并行所有权与新发现
 
 1. SIM：沿已有拖/缩/折和物流闭环补左右停靠、收起、恢复浮动，视口实际让位；布局偏好与仿真业务数据分离。`glm_esc_finish` 负责面板、布局 hook/CSS、AppStudioViewport 最小接线、测试和浏览器证据。不是重写已有引擎/Study。
-2. SDK：外部 tarball 安装真实发现三个包漏 `dist`，已补 files 清单；`camera_gate_finish` 负责独立空目录/空 store 离线安装、默认 Node/Chrome 出口、双 TS 模式、README 与报告。只验证协议/调度/服务端包，不冒充嵌入式 ViewerSDK；后续负责管理页目录失败持久反馈/手动重试。
+2. 管理目录：`camera_gate_finish` 已完成 SDK 前置，转而负责项目/场景/应用目录的加载、失败持久反馈/手动重试/请求身份与取消；只修三条目录，不接管现有模型轮询或非管理页文档加载。根负责 API 可选 signal 参数和 R1 浏览器测试。
 3. 3D→2D：原运行控制器修改冻结场景的 thumbnail 导致保存中断，根已去掉重复捕获并统一由 saveScene 保存真实视口。新浏览器证实服务端 models=1，但 Store 的旧 acknowledgeSave 只接受相同指纹、把外部引擎新模型误当成异步冲突，二维仍用空场景。`inspector_finish` 负责 Store/Session 基线回声合并与并发/撤销单测，根负责 saveScene 调用和控制器用例；待新构建实测，不因路由返回成功就称全链通过。
 4. R1：ServerClient 默认关闭恢复，仅 Web 明确目录/快照 GET/HEAD 对 502/503/504 或网络错误自动重试一次；写、401/403/429/500、取消/身份变化不重放。SDK 89 项、Web 边界 38 项通过。`read-recovery-hvigNu` 两轮四组通过，但截图仍发现目录最终失败误显示真空态；补持久错误与重试后需复跑。根新增 `authenticationRecheck` 责任模块保持原二次401语义并让 api.ts 不超过800行；已单测，等待下一构建。
 5. 根统一生产构建与回归、分批本地提交、更新本检查点；所有代理不得并发重建共享 dist。
