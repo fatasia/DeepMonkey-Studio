@@ -343,8 +343,8 @@
 
 .global-utility { position: fixed; top: 24px; right: 18px; z-index: 22; display: flex; gap: 5px; }
 .global-utility-operations { top: 6px; }
-.global-utility button { display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; color: #87939a; border: 1px solid #303b41; border-radius: 6px; background: rgba(24,31,35,.92); font-size: 10px; cursor: pointer; }
-.global-utility button:hover { color: var(--accent); border-color: rgba(212,168,79,.45); }
+.global-utility button { display: flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; color: var(--text-muted); border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); font-size: 10px; cursor: pointer; }
+.global-utility button:hover { color: var(--accent-hover); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .dashboard-value { display: grid; height: 100%; align-content: space-between; }
 .dashboard-value > span { color: #7f8c92; font-size: 10px; }
 .dashboard-value > strong { color: #f2f4f5; font-size: 27px; font-weight: 600; }

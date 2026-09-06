@@ -7,8 +7,8 @@
   gap: 3px;
   margin: 0;
   padding: 6px 8px;
-  border-bottom: 1px solid #2a3439;
-  background: #12191c;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -20,7 +20,7 @@
   justify-content: center;
   gap: 5px;
   padding: 0 5px;
-  color: #7f8d93;
+  color: var(--text-muted);
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
@@ -30,14 +30,14 @@
 }
 
 .dashboard-left-tabs button:hover {
-  color: #d4dcdf;
-  background: #1d2528;
+  color: var(--text-strong);
+  background: var(--surface-2);
 }
 
 .dashboard-left-tabs button.active {
-  color: #efc96d;
-  border-color: #5b4c2b;
-  background: #29241a;
+  color: var(--accent-hover);
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
+  background: var(--accent-soft);
 }
 
 .dashboard-linkage-section {

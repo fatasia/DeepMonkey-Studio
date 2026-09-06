@@ -78,16 +78,8 @@ export function VisionCenterWorkspace({
         <SecondaryPageBack locale={locale} onBack={onBack} />
         <div className="secondary-page-heading-row">
           <div>
-            <span className="eyebrow">VISUAL AI OPERATIONS</span>
             <h1>{tr(locale, "视觉中心", "Vision center")}</h1>
-            <p>
-              {project.name} ·{" "}
-              {tr(
-                locale,
-                "实时视频与图片识别，结果直接联动三维场景",
-                "Live video and image inference linked to 3D scenes",
-              )}
-            </p>
+            <p>{project.name}</p>
           </div>
         </div>
         <div className="vision-summary">

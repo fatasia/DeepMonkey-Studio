@@ -1,6 +1,8 @@
 # 2026-09-06 接续检查点
 
-## 当前接续：r16 功能批次收口；全项目仍有待办
+## 当前接续：r19 主题修补已完成；全项目仍有待办
+
+**最新 r19**：Vision 及 2D 检查器/左侧页签/全局工具按钮主题硬编码已修，去掉多余头部标识；两轮截图反馈后再修正阴影。Web 401 文件 1615 测试/build、根 typecheck、2043 源文件体量通过；最终真实浏览器 `workspace-themes-5dc7aC` 4/4（含上传图片源、800/480 表单），相邻 `dialog-escape-wvf2hh` 4/4。见 `workspace-theme-verification-2026-09-07.md`；不将局部主题验证说成全站/AI 功能完成。r16/r17 以下为对应历史证据，不是最新 bundle。
 
 **后续r17修补已完成**：旧快照5种已知空集合不再误提示恢复；真实变化保留。Web400文件1613测试/build/typecheck通过，2041源文件体量通过；两轮浏览器 `recovery-collections-lwjM2W`4/4、全局Esc `dialog-escape-RbbjsC`4/4。最新Web SHA `1b5b55a13c0a0173dfd5c9c67c025855d97f2f5c6c68d8a98e362a8404f16251`；机器人测试归属仍为r16，不伪称全部在r17复跑。详见 `recovery-collections-verification-2026-09-06.md`。
 
