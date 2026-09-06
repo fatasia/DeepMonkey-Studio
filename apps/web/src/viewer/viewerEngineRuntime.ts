@@ -7,6 +7,8 @@ import { ViewerEngineRuntimeSupport } from "./viewerEngineRuntimeSupport";
 import { updateAnnotationVisualPresentation } from "./sceneOverlayVisuals";
 import { visibleAnnotationLabelIds } from "./annotationLabelLayout";
 import { nextFrameCadence } from "./viewerFrameCadence";
+import { resolveOrbitCameraRange } from "./cameraFraming";
+import { sceneGridCloseupOpacity } from "./sceneGrid";
 
 const READ_ONLY_TARGET_FPS = 60;
 
@@ -85,6 +87,10 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     if (this.navigationMode !== "firstPerson") {
       this.orbit.update();
       this.enforceCameraCollision(now);
+    }
+    if (this.gridHelper && this.gridHelper.material instanceof THREE.MeshBasicMaterial) {
+      this.gridHelper.material.opacity = this.navigationMode === "orbit"
+        ? sceneGridCloseupOpacity(this.camera.position.distanceTo(this.orbit.target)) : 1;
     }
     this.emitCameraChange();
     this.renderer.info.reset();
@@ -194,8 +200,10 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
       this.orbit.minPolarAngle = THREE.MathUtils.degToRad(this.cameraConstraints.minPolarAngle);
       this.orbit.maxPolarAngle = Math.min(Math.PI * 0.48, THREE.MathUtils.degToRad(this.cameraConstraints.maxPolarAngle));
     } else {
-      this.orbit.minDistance = this.cameraConstraints.minDistance;
-      this.orbit.maxDistance = this.cameraConstraints.maxDistance;
+      const range = mode === "orbit"
+        ? resolveOrbitCameraRange(this.cameraConstraints, this.camera.position.distanceTo(this.orbit.target)) : this.cameraConstraints;
+      this.orbit.minDistance = range.minDistance;
+      this.orbit.maxDistance = range.maxDistance;
       this.orbit.minPolarAngle = THREE.MathUtils.degToRad(this.cameraConstraints.minPolarAngle);
       this.orbit.maxPolarAngle = THREE.MathUtils.degToRad(this.cameraConstraints.maxPolarAngle);
     }
@@ -327,8 +335,10 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     return hit?.point.y ?? (position.y >= -2 && position.y <= 12 ? 0 : undefined);
   }
   protected applyCameraClippingRange(): void {
-    this.camera.near = this.cameraConstraints.nearClip;
-    this.camera.far = this.cameraConstraints.farClip;
+    const range = this.navigationMode === "orbit"
+      ? resolveOrbitCameraRange(this.cameraConstraints, this.camera.position.distanceTo(this.orbit.target)) : this.cameraConstraints;
+    this.camera.near = range.nearClip;
+    this.camera.far = range.farClip;
     this.camera.updateProjectionMatrix();
   }
   protected resetCameraCollisionAnchor(): void {

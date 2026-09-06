@@ -385,19 +385,7 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
     this.emitCameraChange(true);
   }
   protected frameScene(): void {
-    const box = new THREE.Box3();
-    for (const model of this.models.values()) if (model.visible) box.expandByObject(model.object);
-    if (box.isEmpty()) return;
-    const center = box.getCenter(new THREE.Vector3());
-    const size = Math.max(box.getSize(new THREE.Vector3()).length(), 2);
-    this.orbit.target.copy(center);
-    this.camera.position.copy(center).add(new THREE.Vector3(0.8, 0.55, 0.8).normalize().multiplyScalar(size));
-    this.camera.near = Math.max(size / 10_000, 0.01);
-    this.camera.far = Math.max(size * 100, 10_000);
-    this.applyCameraClippingRange();
-    this.camera.updateProjectionMatrix();
-    this.orbit.update();
-    this.resetCameraCollisionAnchor();
+    this.focusBox(this.sceneContentBox(), new THREE.Vector3(0.8, 0.55, 0.8));
   }
   getCameraState(): CameraState {
     const view = this.captureNavigationState(this.navigationMode);
@@ -433,8 +421,6 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
     const targetObject = this.inspectedObject && this.inspectedObject !== selected?.object ? this.inspectedObject : undefined;
     const box = targetObject ? new THREE.Box3().setFromObject(targetObject) : this.sceneContentBox();
     if (box.isEmpty()) return;
-    const center = box.getCenter(new THREE.Vector3());
-    const distance = Math.max(box.getSize(new THREE.Vector3()).length() * 1.25, 3);
     const directions: Record<StandardView, THREE.Vector3> = {
       top: new THREE.Vector3(0, 1, 0),
       bottom: new THREE.Vector3(0, -1, 0),
@@ -443,13 +429,10 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
       front: new THREE.Vector3(0, 0, 1),
       back: new THREE.Vector3(0, 0, -1),
     };
-    this.camera.up.set(0, 1, 0);
-    if (view === "top") this.camera.up.set(0, 0, -1);
-    if (view === "bottom") this.camera.up.set(0, 0, 1);
-    this.orbit.target.copy(center);
-    this.camera.position.copy(center).addScaledVector(directions[view], distance);
-    this.orbit.update();
-    this.resetCameraCollisionAnchor();
+    const up = new THREE.Vector3(0, 1, 0);
+    if (view === "top") up.set(0, 0, -1);
+    if (view === "bottom") up.set(0, 0, 1);
+    if (!this.focusBox(box, directions[view], up)) return;
     this.rememberNavigationState("orbit");
     this.emitCameraChange(true);
   }

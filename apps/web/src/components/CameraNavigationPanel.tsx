@@ -299,8 +299,8 @@ export function CameraNavigationPanel(props: Props) {
           <p>
             {tr(
               props.locale,
-              "裁剪面控制可见深度；碰撞半径越大，镜头与墙体、设备保持的安全距离越大。",
-              "Clipping controls visible depth; a larger collision radius keeps the camera farther from walls and equipment.",
+              "轨道模式下，默认距离与裁剪范围按模型尺寸适配；修改其中任一参数后，严格使用设定范围。碰撞半径控制与物体的安全距离。",
+              "Orbit adapts the default distance and clipping range to model scale. Changing any range value makes these limits fixed. Collision radius sets clearance from objects.",
             )}
           </p>
         </div>

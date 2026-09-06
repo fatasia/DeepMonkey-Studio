@@ -299,13 +299,13 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
         const light = this.sceneLights.get(id);
         if (!light) continue;
         proxy.position.position.copy(light.position);
-        const positionScale = THREE.MathUtils.clamp(this.camera.position.distanceTo(light.position) * 0.035, 0.45, 3.5);
+        const positionScale = THREE.MathUtils.clamp(this.camera.position.distanceTo(light.position) * 0.035, 1e-8, 3.5);
         proxy.position.scale.setScalar(positionScale);
         proxy.position.quaternion.copy(this.camera.quaternion);
         const targetObject = this.sceneLightTargets.get(id);
         if (proxy.target && targetObject) {
           proxy.target.position.copy(targetObject.position);
-          const targetScale = THREE.MathUtils.clamp(this.camera.position.distanceTo(targetObject.position) * 0.03, 0.4, 3);
+          const targetScale = THREE.MathUtils.clamp(this.camera.position.distanceTo(targetObject.position) * 0.03, 1e-8, 3);
           proxy.target.scale.setScalar(targetScale);
           proxy.target.quaternion.copy(this.camera.quaternion);
         }

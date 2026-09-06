@@ -447,7 +447,7 @@ export abstract class ViewerEngineContract {
   protected abstract hydrateFragmentProperties(modelId: string, fragmentsModel: FRAGS.FragmentsModel, localIds: number[]): Promise<void>;
   protected abstract ensureFragmentEntry(modelId: string, localId: number): string | undefined;
   protected abstract highlightFragmentSelection(fragmentModel: FRAGS.FragmentsModel, entry: FragmentLayerEntry): Promise<void>;
-  protected abstract focusBox(box: THREE.Box3): boolean;
+  protected abstract focusBox(box: THREE.Box3, direction?: THREE.Vector3, up?: THREE.Vector3): boolean;
   protected abstract prepareForFocusedView(): void;
   protected abstract syncSpaceVisuals(): void;
   protected abstract showSelectionBox(box: THREE.Box3): void;

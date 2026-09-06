@@ -13,6 +13,7 @@ import { type FragmentLayerEntry } from "./viewerEngineTypes";
 import { ViewerEngineLifecycle } from "./viewerEngineLifecycle";
 import { loadViewerAssetText } from "./viewerAssetTransport";
 import { syncSpaceVisualTransforms } from "./spaceVisualSync";
+import { fitPerspectiveBox } from "./cameraFraming";
 import { createModelFireEffect, disposeModelFireEffect, updateModelFireEffect } from "./modelFireEffect";
 
 /** Rendering 职责层。 */
@@ -438,22 +439,16 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       this.showSelectionBox(box);
       void this.fragments?.update(true);
     }
-  protected focusBox(box: THREE.Box3): boolean {
-      if (!isFiniteBox(box) || box.isEmpty()) return false;
-      const center = box.getCenter(new THREE.Vector3());
-      const dimensions = box.getSize(new THREE.Vector3());
-      const radius = Math.max(dimensions.length() * 0.5, 0.5);
-      const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
-      const horizontalFov = 2 * Math.atan(Math.tan(verticalFov * 0.5) * Math.max(this.camera.aspect, 0.1));
-      const limitingFov = Math.max(Math.min(verticalFov, horizontalFov), THREE.MathUtils.degToRad(10));
-      const distance = Math.max(radius / Math.sin(limitingFov * 0.5) * 1.18, 2);
-      this.camera.up.set(0, 1, 0);
+  protected focusBox(box: THREE.Box3, direction = new THREE.Vector3(1, 0.72, 1), up = new THREE.Vector3(0, 1, 0)): boolean {
+      const frame = fitPerspectiveBox(box, this.camera, this.cameraConstraints, direction, up);
+      if (!frame) return false;
+      const { center, distance } = frame;
+      this.camera.up.copy(up);
       this.orbit.target.copy(center);
-      this.camera.position.copy(center).add(new THREE.Vector3(1, 0.72, 1).normalize().multiplyScalar(distance));
-      this.camera.near = Math.max(radius / 10_000, 0.01);
-      this.camera.far = Math.max(distance + radius * 100, 10_000);
+      this.camera.position.copy(center).addScaledVector(direction.clone().normalize(), distance);
+      this.configureNavigationControls(this.navigationMode);
+      this.camera.up.copy(up);
       this.applyCameraClippingRange();
-      this.camera.updateProjectionMatrix();
       this.orbit.update();
       this.resetCameraCollisionAnchor();
       this.emitCameraChange(true);

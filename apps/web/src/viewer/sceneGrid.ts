@@ -22,6 +22,11 @@ export function sceneGridLayout(): SceneGridLayout {
   };
 }
 
+/** The meter grid is not a useful scale guide in a millimeter close-up; fade, never rescale its units. */
+export function sceneGridCloseupOpacity(distance: number): number {
+  return Number.isFinite(distance) ? THREE.MathUtils.clamp(distance / (MINOR_STEP * 8), 0, 1) : 1;
+}
+
 /**
  * 使用同一张带 mipmap 的纹理表达主/次网格和坐标轴。
  * 相比 LineSegments，可消除 WebGL/WebGPU 在线覆盖率上的差异，并降低远景摩尔纹。
