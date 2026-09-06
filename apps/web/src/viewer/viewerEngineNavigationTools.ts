@@ -29,6 +29,7 @@ import { type MeasureMode, type NavigationCollisionDiagnostics, type NavigationM
 import { DEFAULT_CAMERA_CONSTRAINTS, finiteCameraNumber } from "./viewerEngineTypes";
 import { ViewerEngineMeasurements } from "./viewerEngineMeasurements";
 import { loadViewerAssetJson } from "./viewerAssetTransport";
+import { writeRobotPose } from "./robotPoseRuntime";
 
 /** NavigationTools 职责层。 */
 export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasurements {
@@ -453,6 +454,7 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
       effects?: SceneModelEffectsState;
       prefab?: IndustrialPrefabInstanceState;
       rig?: SceneRigState;
+      robotPose?: Record<string, number>;
       spatialAudio?: SceneSpatialAudioState;
       physics?: ScenePhysicsBodyState;
       transform: ModelTransform;
@@ -491,6 +493,7 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
       this.setAnimationEnabled(id, state.animationEnabled ?? playback.autoplay);
     }
     if (state.rig) this.setModelRigState(id, state.rig);
+    writeRobotPose(model.object, state.robotPose ?? {}, true, true);
     this.setSpatialAudioState(id, state.spatialAudio);
     model.object.updateWorldMatrix(true, true);
     this.syncFragmentsTransformState(id);

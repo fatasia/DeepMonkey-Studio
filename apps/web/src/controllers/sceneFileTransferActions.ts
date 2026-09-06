@@ -102,14 +102,14 @@ export function createSceneFileTransferActions(context: FileTransferContext, mak
       const modelIdMap = new Map<string, string>();
 
       for (const asset of importedFile.assets) {
-        const existing =
-          targetProject.models.find((model) => model.id === asset.originalModelId && model.status === "ready") ??
-          targetProject.models.find((model) => model.name === asset.sourceName && model.format === asset.sourceFormat && model.status === "ready");
+        // 包内有真实资源，不能仅凭同名同格式复用另一文件（机器人还可能有不同入口）。
+        const existing = targetProject.models.find(model => model.id === asset.originalModelId && model.status === "ready"
+          && (!asset.robotEntryPath || model.manifest?.robot?.entryPath === asset.robotEntryPath));
         if (existing) {
           modelIdMap.set(asset.originalModelId, existing.id);
           continue;
         }
-        const uploaded = await api.uploadModel(targetProject.id, asset.file);
+        const uploaded = await api.uploadModel(targetProject.id, asset.file, undefined, undefined, undefined, asset.robotEntryPath);
         targetProject = await waitForModelReady(targetProject.id, uploaded.id);
         modelIdMap.set(asset.originalModelId, uploaded.id);
       }

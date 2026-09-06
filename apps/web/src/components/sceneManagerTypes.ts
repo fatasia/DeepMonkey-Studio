@@ -72,7 +72,7 @@ export interface SceneManagerProps {
   onConnectionStatus: () => void;
   onCredits: () => void;
   onLogout: () => void;
-  onUploadModels: (files: FileList) => Promise<void>;
+  onUploadModels: (files: FileList | File[], robotEntries?: ReadonlyMap<File, string>) => Promise<void>;
   onDeleteModel: (model: ModelRecord) => Promise<void>;
   onRefreshModels: () => Promise<void>;
 }

@@ -16,11 +16,16 @@ import { resolvePreferredScriptTarget } from "../studio/sceneScriptContext";
 import { findScriptTargetLocation } from "../studio/workspaceTargetNavigation";
 import type { AppViewBindings } from "./appViewBindings";
 import { useAuthorBehaviorRun } from "../behavior/useAuthorBehaviorRun";
+import type { SdkExampleInsertRequest } from "../behavior/sdkExampleInsertion";
 
 const SceneBehaviorPanel = lazy(() => import("../components/SceneBehaviorPanel").then((module) => ({ default: module.SceneBehaviorPanel })));
 const AuthorBehaviorPreview = lazy(() => import("../components/AuthorBehaviorPreview").then(module => ({ default: module.AuthorBehaviorPreview })));
 
-export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) {
+export function AppBehaviorOverlay({ bindings, sdkExampleRequest, onSdkExampleConsumed }: {
+  bindings: AppViewBindings;
+  sdkExampleRequest?: SdkExampleInsertRequest;
+  onSdkExampleConsumed?: (requestId: string) => void;
+}) {
   const { state, derived, sceneEditor, applicationRuntime, actions } = bindings;
   const { activeApplication, activeDashboardPage, activeScene, applicationState, locale, route } = state;
   const authorRun = useAuthorBehaviorRun({
@@ -172,11 +177,16 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
     state.setSceneBehaviorLayout(mode);
   };
 
+  // 首次内联面板会被 portal 重挂载；一次性插入请求须等稳定挂载后才消费。
+  const stableSdkExampleRequest = !portalHost || portalReady ? sdkExampleRequest : undefined;
   const panel = <Suspense fallback={<div className="behavior-panel-loading" role="status"><LoaderCircle className="spin" size={17} />{tr(locale, "正在加载脚本编辑器", "Loading script editor")}</div>}>
     <SceneBehaviorPanel
       key={activeApplication.metadata.id}
       locale={locale}
       projectId={activeApplication.metadata.projectId}
+      applicationId={activeApplication.metadata.id}
+      {...(stableSdkExampleRequest ? { sdkExampleRequest: stableSdkExampleRequest } : {})}
+      {...(onSdkExampleConsumed ? { onSdkExampleConsumed } : {})}
       scripts={activeApplication.scripts}
       dependencies={activeApplication.scriptDependencies ?? []}
       codeTargets={derived.behaviorCodeTargets}
@@ -201,6 +211,8 @@ export function AppBehaviorOverlay({ bindings }: { bindings: AppViewBindings }) 
       onReplaceScripts={scripts => { authorRun.stop(); return applicationRuntime.replaceBehaviorScripts(scripts); }}
       onDependenciesChange={dependencies => { authorRun.stop(); return applicationRuntime.replaceScriptDependencies(dependencies); }}
       onRun={authorRun.run}
+      onDebug={authorRun.debug}
+      debugging={authorRun.session?.debugging ?? false}
       onPauseResume={authorRun.pauseResume}
       onStop={authorRun.stop}
       onClearLogs={authorRun.clearLogs}

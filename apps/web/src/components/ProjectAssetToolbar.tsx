@@ -1,5 +1,5 @@
 import { FileImage, FileUp, FileVideo, Gauge, RefreshCw, WandSparkles } from "lucide-react";
-import { ACCEPTED_MODELS } from "../appDefaults";
+import { ModelImportInput } from "./ModelImportInput";
 import { translate as tr } from "../i18n";
 import type { SceneManagerController } from "./SceneManager";
 
@@ -42,7 +42,7 @@ export function ProjectAssetToolbar({ controller }: { controller: SceneManagerCo
       <button className="manager-icon-button resource-refresh-control" aria-label={tr(locale, "刷新资源状态", "Refresh asset status")} title={tr(locale, "刷新资源状态", "Refresh asset status")} disabled={modelLibraryBusy} onClick={() => void refreshLibraryModels()}>
         <RefreshCw className={modelLibraryBusy ? "spin" : ""} size={15} />
       </button>
-      <input ref={modelUploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadLibraryModels(event.target.files)} />
+      <ModelImportInput inputRef={modelUploadRef} locale={locale} scopeKey={project?.id} multiple onFiles={uploadLibraryModels} />
       <input ref={imageUploadRef} hidden multiple type="file" accept={ACCEPTED_IMAGES} onChange={(event) => void uploadLibraryImages(event.target.files)} />
       <input ref={videoUploadRef} hidden multiple type="file" accept={ACCEPTED_VIDEOS} onChange={(event) => void uploadLibraryVideos(event.target.files)} />
     </div>

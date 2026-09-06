@@ -9,7 +9,7 @@
 .plant-shift-minute > span { display: flex; justify-content: space-between; gap: 5px; }
 .plant-shift-minute > span small { color: #526b72; }
 .plant-shift-minute input { box-sizing: border-box; width: 100%; min-height: 30px; padding: 0 7px; color: #d3dfe1; border: 1px solid #31444a; border-radius: 5px; outline: none; background: #101d21; }
-.plant-shift-minute input:focus { border-color: var(--accent-primary, #3ec6c1); box-shadow: 0 0 0 2px rgba(62, 198, 193, .1); }
+.plant-shift-minute input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent); }
 .plant-shift-remove { display: grid; width: 30px; height: 30px; padding: 0; place-items: center; color: #7e9095; border: 1px solid #33464c; border-radius: 5px; background: #142126; cursor: pointer; }
 .plant-shift-remove:hover { color: #e18b8b; border-color: #714248; background: #24191c; }
 .plant-shift-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 2px; }

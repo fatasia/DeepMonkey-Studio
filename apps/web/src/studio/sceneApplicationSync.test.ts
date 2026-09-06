@@ -6,6 +6,18 @@ import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contract
 import { applicationForScene, syncSceneIntoApplication } from "./sceneApplicationSync.js";
 
 describe("scene and application synchronization", () => {
+  it("stores shared resources once while preserving independent object identities", () => {
+    const snapshot = structuredClone(pureFixture) as unknown as SceneSnapshot;
+    const model = { modelId: "one", assetModelId: "shared", name: "实例", visible: true, opacity: 1,
+      transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } };
+    snapshot.models = [model, { ...model, modelId: "two" }];
+    const source = migrateSceneSnapshotV1(snapshot);
+    const synced = syncSceneIntoApplication(source, snapshot);
+    expect(synced.assets.filter(asset => asset.kind === "model").map(asset => asset.id)).toEqual(["shared"]);
+    expect(synced.scenes[0]?.models.map(instance => instance.modelId)).toEqual(["one", "two"]);
+    expect(synced.scenes[0]?.models).toEqual(snapshot.models);
+  });
+
   it("finds the application that owns the scene", () => {
     const scene = dashboardFixture as unknown as SceneSnapshot;
     const application = migrateSceneSnapshotV1(scene);

@@ -175,8 +175,8 @@ export function SceneOrganizationPanel(props: Props) {
         {query && <button aria-label={tr(props.locale, "清空搜索", "Clear search")} onClick={() => setQuery("")}><X size={12} /></button>}
       </div>
       <div className={`scene-tree-selection-bar ${selectedObjects.length ? "visible" : ""}`}>
-        <span><strong>{selectedObjects.length}</strong>{tr(props.locale, " 个已选", " selected")}</span>
-        <button disabled={selectedObjects.length < 2} onClick={() => props.onCreateGroup("")}><Group size={12} />{tr(props.locale, "编组", "Group")}</button>
+        <span className="scene-selection-count">{tr(props.locale, "已选", "Selected")} <strong>{selectedObjects.length}</strong></span>
+        <button aria-label={tr(props.locale, "编组所选元素", "Group selection")} title={tr(props.locale, "编组所选元素", "Group selection")} disabled={selectedObjects.length < 2} onClick={() => props.onCreateGroup("")}><Group size={12} /></button>
         <button aria-label={tr(props.locale, "显示所选元素", "Show selected elements")} title={tr(props.locale, "显示", "Show")} disabled={!selectedObjects.length} onClick={() => props.onShow(selectedObjects.map((item) => item.id), true)}><Eye size={12} /></button>
         <button aria-label={tr(props.locale, "隐藏所选元素", "Hide selected elements")} title={tr(props.locale, "隐藏", "Hide")} disabled={!selectedObjects.length} onClick={() => props.onShow(selectedObjects.map((item) => item.id), false)}><EyeOff size={12} /></button>
         <button aria-label={tr(props.locale, "锁定所选元素", "Lock selected elements")} title={tr(props.locale, "锁定", "Lock")} disabled={!selectedObjects.length} onClick={() => props.onLock(selectedObjects.map((item) => item.id), true)}><Lock size={12} /></button>

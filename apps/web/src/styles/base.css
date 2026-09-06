@@ -9,6 +9,11 @@
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 
+  /* 全屏工作台 < 文档级模态 < 操作反馈；Portal 不继承工作台的层叠上下文。 */
+  --layer-workspace: 40;
+  --layer-modal: 200;
+  --layer-toast: 240;
+
   /* Product surfaces: one cool neutral scale, not a different black for every page. */
   --bg-0: #0b1114;
   --bg-1: #070c0f;
@@ -30,9 +35,10 @@
   --muted: var(--text-muted);
 
   /* 品牌设置可覆盖主色；悬浮与弱强调始终由当前主色派生。 */
-  --accent-primary: #3ec6c1;
-  --accent: var(--accent-primary);
+  --accent: #d6aa4d;
+  --accent-primary: var(--accent);
   --accent-hover: color-mix(in srgb, var(--accent) 75%, white);
+  --accent-primary-hover: var(--accent-hover);
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
   /* 实色品牌按钮的对比文字；品牌同步按亮度选择，不能跟随页面明暗直接翻色。 */
   --on-accent-dark: #000000;

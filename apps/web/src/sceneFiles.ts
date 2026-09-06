@@ -1,5 +1,6 @@
 import {
   supportedExtensions,
+  getSceneModelAssetId,
   type ModelFormat,
   type ModelRecord,
   type SceneSnapshot
@@ -16,6 +17,7 @@ interface ScenePackageAsset {
   sourceFormat: ModelFormat;
   assetPath: string;
   fileName: string;
+  robotEntryPath?: string;
 }
 
 interface ScenePackageManifest {
@@ -58,9 +60,10 @@ export async function exportScenePackage(scene: SceneSnapshot, models: ModelReco
   const usedModelIds = new Set<string>();
 
   for (const state of scene.models) {
-    if (usedModelIds.has(state.modelId)) continue;
-    usedModelIds.add(state.modelId);
-    const record = models.find((item) => item.id === state.modelId);
+    const assetModelId = getSceneModelAssetId(state);
+    if (usedModelIds.has(assetModelId)) continue;
+    usedModelIds.add(assetModelId);
+    const record = models.find((item) => item.id === assetModelId);
     if (!record?.manifest?.geometryUrl || record.status !== "ready") {
       throw new Error(`模型“${state.sourceName ?? state.name}”尚无可打包的浏览资源`);
     }
@@ -78,11 +81,12 @@ export async function exportScenePackage(scene: SceneSnapshot, models: ModelReco
     const assetPath = `models/${String(assets.length + 1).padStart(3, "0")}-${fileName}`;
     zip.file(assetPath, content);
     assets.push({
-      originalModelId: state.modelId,
+      originalModelId: assetModelId,
       sourceName: state.sourceName ?? record.name,
       sourceFormat: state.sourceFormat ?? record.format,
       assetPath,
-      fileName
+      fileName,
+      ...(record.manifest.robot ? { robotEntryPath: record.manifest.robot.entryPath } : {})
     });
   }
 
@@ -104,7 +108,7 @@ export async function readSceneFile(file: File): Promise<ImportedSceneFile> {
   }
 
   const JSZip = await loadArchiveRuntime();
-  const zip = await JSZip.loadAsync(file);
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
   const manifestEntry = zip.file("package.json");
   if (!manifestEntry) throw new Error("单文件场景缺少 package.json");
   const manifest = JSON.parse(await manifestEntry.async("text")) as ScenePackageManifest;
@@ -127,6 +131,7 @@ export async function readSceneFile(file: File): Promise<ImportedSceneFile> {
       sourceName: asset.sourceName,
       sourceFormat: asset.sourceFormat,
       fileName: asset.fileName,
+      ...(asset.robotEntryPath ? { robotEntryPath: asset.robotEntryPath } : {}),
       file: new File([await entry.async("blob")], asset.fileName)
     });
   }

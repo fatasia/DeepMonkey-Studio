@@ -69,8 +69,8 @@
 }
 .commissioning-config input:focus,
 .commissioning-config select:focus {
-  border-color: var(--accent-primary, #3ec6c1);
-  box-shadow: 0 0 0 2px rgba(62, 198, 193, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .commissioning-field-grid {
   display: grid;
@@ -94,7 +94,7 @@
 .commissioning-switch-row input[type="checkbox"] {
   width: 16px;
   min-height: 16px;
-  accent-color: var(--accent-primary, #3ec6c1);
+  accent-color: var(--accent);
 }
 .commissioning-legend-row {
   display: flex;
@@ -126,7 +126,7 @@
   grid-template-columns: 16px 1fr auto 1.25fr 0.9fr 35px;
 }
 .commissioning-bindings article > svg {
-  color: var(--accent-primary, #3ec6c1);
+  color: var(--accent);
 }
 .commissioning-bindings article > span {
   color: #60737a;
@@ -347,7 +347,7 @@
   padding: 9px 18px;
   color: #809198;
   border-bottom: 1px solid #25343a;
-  background: rgba(62, 198, 193, .04);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -366,12 +366,12 @@
   font-size: 18px;
 }
 .commissioning-timeline span {
-  color: var(--accent-primary, #3ec6c1);
+  color: var(--accent);
   font-size: 11px;
 }
 .commissioning-timeline input {
   width: 100%;
-  accent-color: var(--accent-primary, #3ec6c1);
+  accent-color: var(--accent);
 }
 .commissioning-signal-grid {
   display: grid;

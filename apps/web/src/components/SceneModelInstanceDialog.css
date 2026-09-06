@@ -1,0 +1,18 @@
+.instance-dialog-backdrop { padding: 16px; }
+.dialog.instance-dialog { width: min(460px, 100%); max-height: calc(100dvh - 32px); padding: 20px; overflow: auto; color: var(--text); background: var(--surface-1); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-float); }
+.instance-dialog .instance-dialog-heading { display: flex; align-items: center; gap: 12px; margin: 0 0 20px; padding: 0; }
+.instance-dialog-heading > svg { flex-shrink: 0; color: var(--accent); }
+.instance-dialog-heading > div { min-width: 0; flex: 1; }
+.instance-dialog .instance-dialog-heading h2 { margin: 0; color: var(--text-strong); font-size: 18px; line-height: 1.4; }
+.instance-dialog .instance-dialog-heading p { margin: 3px 0 0; overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.instance-dialog-source { display: flex; align-items: baseline; gap: 12px; padding: 12px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.instance-dialog-source span { flex-shrink: 0; font-size: 12px; }
+.instance-dialog-source strong { min-width: 0; overflow: hidden; color: var(--text-strong); text-overflow: ellipsis; white-space: nowrap; }
+.instance-dialog-hint { margin: 12px 0; color: var(--text); font-size: 12px; line-height: 1.7; }
+.instance-dialog-field { display: grid; gap: 8px; margin-top: 20px; color: var(--text-strong); }
+.instance-dialog-field select { width: 100%; min-width: 0; min-height: 36px; padding: 6px 8px; color: var(--text-strong); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
+.instance-dialog-error { padding: 10px 12px; color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--danger) 8%, var(--surface-1)); overflow-wrap: anywhere; }
+.instance-dialog-actions { display: flex; align-items: center; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.instance-dialog-actions > span { flex: 1; }
+.instance-dialog-actions .button { min-height: 34px; white-space: nowrap; }
+@media (max-width: 480px) { .dialog.instance-dialog { padding: 16px; } .instance-dialog-actions { flex-wrap: wrap; } .instance-dialog-actions > span { display: none; } }

@@ -1,4 +1,4 @@
-import type { ProjectRecord, PublishedSceneRecord } from "@bim-studio/contracts";
+import { getSceneModelAssetId, type ProjectRecord, type PublishedSceneRecord } from "@bim-studio/contracts";
 
 export interface PublishedSceneBrowseRecord {
   publication: PublishedSceneRecord;
@@ -16,7 +16,7 @@ export function createPublishedSceneBrowseRecord(
   if (publication.projectId !== project.id) {
     throw new Error("发布快照与项目不匹配");
   }
-  const modelIds = new Set(publication.snapshot.models.map((model) => model.modelId));
+  const modelIds = new Set(publication.snapshot.models.map(getSceneModelAssetId));
   const serializedScene = JSON.stringify(publication.snapshot);
   const assets = project.assets?.filter((asset) => serializedScene.includes(asset.url));
   return {

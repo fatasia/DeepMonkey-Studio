@@ -44,6 +44,7 @@ export interface AppViewBindings {
     canRedo: boolean;
     undoLabel?: string;
     redoLabel?: string;
+    flush: (label?: string) => void;
     undo: () => Promise<void>;
     redo: () => Promise<void>;
   };

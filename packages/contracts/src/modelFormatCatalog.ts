@@ -63,6 +63,10 @@ function declaredCapability(definition: CatalogDefinition): ModelFormatCapabilit
  */
 export const MODEL_FORMAT_CAPABILITY_CATALOG: readonly ModelFormatCapability[] = [
   declaredCapability({
+    id: "urdf", label: "URDF / 机器人 ZIP", extensions: ["urdf", "zip"], family: "scene-description", scope: "core",
+    dimensions: [...COMMON_VISUAL_FIDELITY, "object-properties"], reason: "机器人描述与本地资源包入口；保留关节原始结构，不代表物理仿真或任意机器人兼容，ZIP 仅限机器人包"
+  }),
+  declaredCapability({
     id: "gltf", label: "glTF / GLB", extensions: ["gltf", "glb"], family: "runtime-scene", scope: "core",
     dimensions: [...COMMON_VISUAL_FIDELITY, "animation"], reason: "Web 运行时交付与跨端发布的主格式"
   }),

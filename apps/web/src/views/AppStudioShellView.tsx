@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { ACCEPTED_MODELS, STUDIO_INSPECTOR_STORAGE_KEY, STUDIO_LEFT_PANEL_STORAGE_KEY } from "../appDefaults";
+import { STUDIO_INSPECTOR_STORAGE_KEY, STUDIO_LEFT_PANEL_STORAGE_KEY } from "../appDefaults";
+import { ModelImportInput } from "../components/ModelImportInput";
 import { readBooleanPreference, writeBooleanPreference } from "../hooks/usePersistedBooleanState";
 import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
 import { useSceneAssetNavigation } from "../optimizer/useSceneAssetNavigation";
 import { SceneAssetWorkflowEntry } from "../components/SceneAssetWorkflowEntry";
 import { ModelTreeItem } from "../components/ModelTreeItem";
+import { SceneModelInstanceDialog } from "../components/SceneModelInstanceDialog";
+import { useSceneModelInstances } from "../hooks/useSceneModelInstances";
+import { sceneModelRows } from "../controllers/sceneModelRows";
 import { SceneOrganizationPanel } from "../components/SceneOrganizationPanel";
 import { AppSimulationInspector } from "./AppSimulationInspector";
 import { simulationEntityModelIds } from "../controllers/sceneSimulationController";
@@ -19,6 +23,7 @@ import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "
 
 export function AppStudioShellView({ controller }: { controller: AppStudioController }) {
   const assetWorkflow = useSceneAssetNavigation(controller.bindings);
+  const instances = useSceneModelInstances(controller.bindings);
   // 三维视口是核心工作区，资源树和属性检查器按需收起，避免遮挡模型。
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => readBooleanPreference(STUDIO_LEFT_PANEL_STORAGE_KEY, true));
   const [rightPanelOpen, setRightPanelOpen] = useState(() => readBooleanPreference(STUDIO_INSPECTOR_STORAGE_KEY, true));
@@ -364,7 +369,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
           onRevitVersionChange={setRvtRevitVersion}
           onUpload={() => uploadRef.current?.click()}
           assetWorkflowEntry={<SceneAssetWorkflowEntry locale={locale} busy={busy || assetWorkflow.leaving} onOptimize={() => assetWorkflow.optimize()} onBrowse={assetWorkflow.browse} />}
-          onInsertProjectModel={(model) => void loadModel(model)}
+          onInsertProjectModel={(model) => void loadModel(model, false, loadedModels.some(item => (item.assetModelId ?? item.id) === model.id) ? crypto.randomUUID() : model.id)}
           onInsertPrefab={insertIndustrialPrefab}
           onCreateDeviceLayout={createDeviceLayout}
           onConfirmSmartBindings={(mappings) => {
@@ -422,13 +427,13 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
               locale={locale}
               studio={route.view === "studio"}
               engine={engine}
-              modelRows={project?.models.map((model) => (
+              modelRows={sceneModelRows(project?.models ?? [], loadedModels).map(({ asset, model, loaded }) => (
                 <ModelTreeItem
                   key={model.id}
                   locale={locale}
                   model={model}
-                  loaded={loadedModels.find((item) => item.id === model.id)}
-                  tree={loadedModels.find((item) => item.id === model.id) ? engine?.getLayerTree(model.id) : undefined}
+                  loaded={loaded}
+                  tree={loaded ? engine?.getLayerTree(model.id) : undefined}
                   expanded={expandedModels.has(model.id)}
                   modelFloors={floorStatesByModel.get(model.id) ?? []}
                   floorExpansion={floorExpansionByModel[model.id] ?? 0}
@@ -436,15 +441,16 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
                   selectedLayerId={selectedLayerId}
                   engine={engine}
                   onToggleTree={() => toggleModelTree(model.id)}
-                  onLoadModel={() => void loadModel(model)}
-                  onOptimize={() => assetWorkflow.optimize(model)}
+                  onLoadModel={() => void loadModel(asset)}
+                  onOptimize={() => assetWorkflow.optimize(asset)}
+                  onInstanceActions={() => instances.open(model.id)}
                   optimizing={busy || assetWorkflow.leaving}
                   onSetRevision={() => setRevision((value) => value + 1)}
                   onExpandFloors={(value) => expandFloors(model.id, value)}
                   onUpdateFloor={updateFloor}
                   onRemoveObjectInteractions={removeObjectInteractions}
                   onSetMessage={setMessage}
-                  onDeleteModel={() => void deleteModel(model)}
+                  onDeleteModel={() => loaded ? instances.remove(model.id) : void deleteModel(asset)}
                 />
               ))}
               empty={
@@ -506,7 +512,12 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
           : <AppStudioInspector controller={controller} />}
 
       </div>
-      <input ref={uploadRef} hidden multiple type="file" accept={ACCEPTED_MODELS} onChange={(event) => void uploadModels(event.target.files ?? undefined)} />
+      {instances.selectedId && loadedModels.find(item => item.id === instances.selectedId) && <SceneModelInstanceDialog
+        key={instances.selectedId} locale={locale} instance={loadedModels.find(item => item.id === instances.selectedId)!}
+        assets={project?.models ?? []} busy={instances.working} locked={engine?.isModelLocked(instances.selectedId) ?? false} error={instances.error}
+        onDuplicate={() => void instances.duplicate(instances.selectedId!)} onReplace={asset => void instances.replace(instances.selectedId!, asset)} onClose={instances.close}
+      />}
+      <ModelImportInput inputRef={uploadRef} locale={locale} scopeKey={project?.id} multiple onFiles={uploadModels} />
       <input ref={importRef} hidden type="file" accept=".json,.bimscene" onChange={(event) => void importScene(event.target.files?.[0])} />
       <input ref={environmentMapRef} hidden type="file" accept=".hdr,.exr,.jpg,.jpeg,.png,.webp" onChange={(event) => void uploadEnvironmentMap(event.target.files?.[0])} />
       <input

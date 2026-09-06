@@ -4,6 +4,19 @@ import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { applySceneViewerSnapshot } from "./applySceneViewerSnapshot";
 
 describe("applySceneViewerSnapshot", () => {
+  it("loads two independent published instances from the same resource and restores their poses", async () => {
+    const scene = sceneFixture();
+    const project = projectFixture();
+    const manifest = { modelId: "shared", viewerKind: "gltf", geometryUrl: "/shared.glb" };
+    project.models = [{ id: "shared", status: "ready", manifest } as unknown as ProjectRecord["models"][number]];
+    scene.models = ["one", "two"].map((modelId, index) => ({ ...primitive(modelId, modelId, "#fff"), assetModelId: "shared", transform: { position: { x: index * 2, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } }));
+    const engine = engineFixture();
+    await applySceneViewerSnapshot(engine, scene, project);
+    expect(engine.loadManifest).toHaveBeenNthCalledWith(1, manifest, "one");
+    expect(engine.loadManifest).toHaveBeenNthCalledWith(2, manifest, "two");
+    expect(engine.applyModelState).toHaveBeenCalledWith("two", expect.objectContaining({ transform: scene.models[1]!.transform }));
+  });
+
   it("restores primitives in snapshot order while yielding between time slices", async () => {
     const events: string[] = [];
     const engine = engineFixture({

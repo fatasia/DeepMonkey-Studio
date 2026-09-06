@@ -12,6 +12,7 @@ import { convertXtTextSubsetToGlb } from "./xtTextSubsetConverter.js";
 import { writeJtInspectionArtifacts } from "./jtInspection.js";
 import { convertJtLod0ToGlb } from "./jtGlbConverter.js";
 import { writeXtTextInspectionArtifact } from "./xtTextInspection.js";
+import { RobotSourceProvider } from "./RobotSourceProvider.js";
 
 interface ConversionContext {
   model: ModelRecord;
@@ -76,7 +77,9 @@ export class ConversionQueue {
       usd: new DirectProvider(store, objects, "usd"),
       usda: new DirectProvider(store, objects, "usd"),
       usdc: new DirectProvider(store, objects, "usd"),
-      usdz: new DirectProvider(store, objects, "usd")
+      usdz: new DirectProvider(store, objects, "usd"),
+      urdf: new RobotSourceProvider(store, objects),
+      zip: new RobotSourceProvider(store, objects),
     };
   }
 

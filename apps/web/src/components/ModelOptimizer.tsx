@@ -2,7 +2,8 @@ import { useRef, useState } from "react";
 import { Box, Crosshair, Eye, Gauge, Image, LoaderCircle, Sparkles, Square, Trash2, Triangle, Upload } from "lucide-react";
 import type { ProjectRecord } from "@bim-studio/contracts";
 import { DEFAULT_BAKE_LIGHTS, type BakeLightState, type ModelOptimizationOptions } from "../optimizer/modelOptimizer";
-import { ACCEPTED_MODELS } from "../appDefaults";
+import { ModelImportInput } from "./ModelImportInput";
+import { RobotAssetWorkspace } from "./RobotAssetWorkspace";
 import { translate as tr, type AppLocale } from "../i18n";
 import { ModelOptimizerHeader, ModelOptimizerPipeline } from "./ModelOptimizerPipeline";
 import { useModelOptimizerSession } from "../optimizer/useModelOptimizerSession";
@@ -50,7 +51,7 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [options, setOptions] = useState(DEFAULT_OPTIONS);
-  const { file, optimizedUrl, before, after, lightmapResult, output, showOptimized, setShowOptimized, busy, message, error, selectedProjectModelId, savedModelId, resultOutdated, previewUrl, comparisonMode, importFile, importProjectModel, runOptimization, cancelProcessing, exportGlb, saveToProjectAssets } = useModelOptimizerSession(locale, project, options, onProjectChange, requestedModelId);
+  const { file, robotSource, optimizedUrl, before, after, lightmapResult, output, showOptimized, setShowOptimized, busy, message, error, selectedProjectModelId, savedModelId, resultOutdated, previewUrl, comparisonMode, importFile, importProjectModel, runOptimization, cancelProcessing, exportGlb, saveToProjectAssets } = useModelOptimizerSession(locale, project, options, onProjectChange, requestedModelId);
   const [selectedBakeLightId, setSelectedBakeLightId] = useState(DEFAULT_BAKE_LIGHTS[0]?.id);
   const [bakeTransformMode, setBakeTransformMode] = useState<BakeTransformMode>("translate");
   const [previewShadows, setPreviewShadows] = useState(false);
@@ -62,6 +63,7 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
   }
 
   const displayMessage = localizeOptimizerMessage(locale, message);
+  if (robotSource && project) return <RobotAssetWorkspace key={robotSource.id} locale={locale} model={robotSource} project={project} onBack={onBack} onImport={importFile} importBusy={busy} importError={error} onCancelImport={cancelProcessing} onProjectChange={onProjectChange} onViewAssets={onViewAssets} onReturnToScene={onReturnToScene} />;
   return (
     <div className={`optimizer-page${onReturnToScene ? " with-scene-return" : ""}`}>
       <ModelOptimizerHeader locale={locale} onBack={onBack} onViewAssets={() => onViewAssets?.(savedModelId ?? selectedProjectModelId)} onImport={() => inputRef.current?.click()} onDownload={exportGlb} onSave={() => void saveToProjectAssets()} canExport={Boolean(output && !resultOutdated && !busy)} canSave={Boolean(output && !resultOutdated && project && !busy && !savedModelId)} saved={Boolean(savedModelId && !resultOutdated && !busy)} busy={busy} />
@@ -316,7 +318,7 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
           )}
         </section>
       </main>
-      <input ref={inputRef} hidden type="file" accept={ACCEPTED_MODELS} onChange={(event) => { const next = event.target.files?.[0]; event.target.value = ""; void importFile(next); }} />
+      <ModelImportInput inputRef={inputRef} locale={locale} scopeKey={project?.id} onFiles={async (files, entries) => { const file = files[0]; if (file) await importFile(file, entries.get(file)); }} />
     </div>
   );
 }

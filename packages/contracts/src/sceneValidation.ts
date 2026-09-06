@@ -1,11 +1,14 @@
 /** SceneDocument 与拓扑的结构校验；仅依赖安全原语，避免把业务校验散落到 API 路由。 */
 import { assertDirectBindingSpec } from "./directBinding.js";
+import { assertRobotPose } from "./robotAsset.js";
+import { supportedExtensions } from "./project.js";
 import { validateIndustrialPrefabInstance } from "./industrialPrefabValidation.js";
 import {
   expectArray,
   expectBoolean,
   expectNumber,
   expectObject,
+  expectPathSafeResourceId,
   expectString,
   expectStringNumberOrBoolean,
   hasOwn,
@@ -19,7 +22,7 @@ import {
   validateStringArray,
 } from "./applicationValidationPrimitives.js";
 
-const MODEL_FORMATS = ["rvt", "ifc", "step", "stp", "dwg", "dxf", "gltf", "glb", "fbx", "x_t", "x_b", "jt", "usd", "usda", "usdc", "usdz"] as const;
+const MODEL_FORMATS = supportedExtensions;
 
 export function validateTopology(value: unknown, path: string): void {
   const object = expectObject(value, path);
@@ -130,6 +133,7 @@ function validateSceneDataBinding(value: unknown, path: string): void {
 function validateSceneModel(value: unknown, path: string): void {
   const object = expectObject(value, path);
   required(object, "modelId", expectString, path);
+  optional(object, "assetModelId", expectPathSafeResourceId, path);
   required(object, "name", expectString, path);
   optional(object, "sourceName", expectString, path);
   optionalLiteral(object, "sourceFormat", MODEL_FORMATS, path);
@@ -152,6 +156,7 @@ function validateSceneModel(value: unknown, path: string): void {
   optional(object, "spatialAudio", validateSpatialAudio, path);
   optional(object, "effects", validateModelEffects, path);
   optional(object, "rig", validateRig, path);
+  optional(object, "robotPose", assertRobotPose, path);
   optional(object, "physics", validatePhysicsBody, path);
   optional(object, "prefab", validateIndustrialPrefabInstance, path);
   optional(object, "layers", (layers, layersPath) => expectArray(layers, layersPath, validateLayer), path);

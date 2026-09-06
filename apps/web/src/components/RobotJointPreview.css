@@ -1,0 +1,21 @@
+.robot-joint-preview { border: 1px solid var(--line); border-radius: 8px; color: var(--text); margin-top: 8px; }
+.robot-joint-preview > summary { padding: 8px; cursor: pointer; color: var(--text-strong); font-size: 12px; }
+.robot-joint-preview-body { display: grid; gap: 12px; padding: 4px 8px 8px; }
+.robot-joint-preview-row { display: grid; gap: 4px; min-width: 0; }
+.robot-joint-preview-row > label { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.robot-joint-preview-row > label > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.robot-joint-preview-value { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.robot-joint-preview-value input { width: 80px; min-height: 28px; padding: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.robot-joint-preview-value small { width: 12px; color: var(--text-muted); }
+.robot-joint-preview input[type=range] { width: 100%; min-width: 0; accent-color: var(--accent); }
+.robot-joint-preview-actions { display: flex; gap: 8px; }
+.robot-joint-preview-actions button { flex: 1; min-height: 28px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--text); }
+.robot-joint-preview button:hover:not(:disabled) { border-color: var(--accent); color: var(--text-strong); }
+.robot-joint-preview :is(button,input):disabled { opacity: .45; cursor: not-allowed; }
+.robot-joint-preview :is(button,input,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.robot-joint-preview-passive { font-size: 11px; color: var(--text-muted); }
+.robot-joint-preview-passive summary { cursor: pointer; }
+.robot-joint-preview-passive > div { display: flex; gap: 8px; justify-content: space-between; margin-top: 8px; }
+.robot-joint-preview-passive > div > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.robot-joint-preview-passive output { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.robot-joint-preview [role=alert] { margin: 0; font-size: 12px; color: var(--danger); overflow-wrap: anywhere; }

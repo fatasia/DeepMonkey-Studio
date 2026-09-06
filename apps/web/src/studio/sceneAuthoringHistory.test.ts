@@ -52,4 +52,18 @@ describe("SceneAuthoringHistory", () => {
     expect(history.undo()?.name).toBe("A");
     expect(history.undo()).toBeUndefined();
   });
+
+  it("does not let a generated save thumbnail consume undo or clear redo", () => {
+    const history = new SceneAuthoringHistory();
+    const baseline = { ...scene(), thumbnail: "before" };
+    history.reset(baseline);
+    const replaced = { ...baseline, models: [{ modelId: "instance", assetModelId: "replacement" }] } as SceneSnapshot;
+    history.record(replaced, "替换素材");
+    history.record({ ...replaced, models: [] }, "移除实例");
+    expect(history.record({ ...replaced, models: [], thumbnail: "generated-on-save" }, "编辑三维场景")).toBe(false);
+    expect(history.undo()?.models[0]).toMatchObject({ modelId: "instance", assetModelId: "replacement" });
+    expect(history.record({ ...replaced, thumbnail: "regenerated" }, "编辑三维场景")).toBe(false);
+    expect(history.getState().canRedo).toBe(true);
+    expect(history.redo()?.models).toHaveLength(0);
+  });
 });

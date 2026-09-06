@@ -69,7 +69,7 @@ export interface ScenePersistenceControllerContext {
   primitiveColors: MutableRefObject<Map<string, string>>;
   importRef: RefObject<HTMLInputElement | null>;
   navigate: (route: AppRoute, replace?: boolean) => void;
-  loadModel: (model: ProjectRecord["models"][number], silent?: boolean) => Promise<LoadedSceneModel | undefined>;
+  loadModel: (model: ProjectRecord["models"][number], silent?: boolean, instanceId?: string) => Promise<LoadedSceneModel | undefined>;
   saveActiveApplication: (automatic?: boolean) => Promise<ApplicationDocument | undefined>;
   enablePublishedCloudScene: (sceneId: string) => Promise<{ viewerUrl?: string }>;
   dispatchApplicationCommand: (command: StudioCommand) => void;

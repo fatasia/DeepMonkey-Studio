@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { LoaderCircle } from "lucide-react";
 import { LoginPage } from "../components/LoginPage";
 import type { AppViewBindings } from "./appViewBindings";
+import { useSdkExampleNavigation } from "../hooks/useSdkExampleNavigation";
 
 const DocsCenter = lazy(() => import("../components/DocsCenter").then((module) => ({ default: module.DocsCenter })));
 const AppOverlays = lazy(() => import("./AppOverlays").then((module) => ({ default: module.AppOverlays })));
@@ -18,6 +19,7 @@ interface AppRootViewProps {
 /** 只负责根路由的可见页面选择，不持有应用业务状态。 */
 export function AppRootView({ bindings, onOpenDocs, onCloseDocs }: AppRootViewProps) {
   const { authReady, branding, currentUser, locale, route, setCurrentUser } = bindings.state;
+  const sdkExamples = useSdkExampleNavigation(bindings);
 
   if (route.view === "docs") {
     return (
@@ -28,7 +30,7 @@ export function AppRootView({ bindings, onOpenDocs, onCloseDocs }: AppRootViewPr
           </div>
         }
       >
-        <DocsCenter systemName={branding.systemName} {...(route.documentId ? { documentId: route.documentId } : {})} onNavigate={onOpenDocs} onClose={onCloseDocs} />
+        <DocsCenter systemName={branding.systemName} {...(route.documentId ? { documentId: route.documentId } : {})} onNavigate={onOpenDocs} onClose={onCloseDocs} sdkExampleContext={sdkExamples.context} onInsertSdkExample={sdkExamples.insert} />
       </Suspense>
     );
   }
@@ -49,7 +51,7 @@ export function AppRootView({ bindings, onOpenDocs, onCloseDocs }: AppRootViewPr
           <AppPlatformRoutes bindings={bindings} />
           <AppStudioShell bindings={bindings} />
         </div>
-        <AppBehaviorOverlay bindings={bindings} />
+        <AppBehaviorOverlay bindings={bindings} {...(sdkExamples.request ? { sdkExampleRequest: sdkExamples.request } : {})} onSdkExampleConsumed={sdkExamples.consumed} />
       </div>
       <AppOverlays bindings={bindings} />
     </Suspense>

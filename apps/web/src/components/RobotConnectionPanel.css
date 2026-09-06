@@ -1,0 +1,20 @@
+.robot-connection-panel { display: grid; min-width: 0; gap: 8px; padding-block: 10px; border-top: 1px solid var(--line); color: var(--text); font-size: 12px; }
+.robot-connection-panel header, .robot-connection-panel header strong, .robot-connection-status { display: flex; align-items: center; gap: 6px; }
+.robot-connection-panel header { justify-content: space-between; flex-wrap: wrap; }
+.robot-connection-panel header strong { color: var(--text-strong); font-weight: 600; }
+.robot-connection-panel label { display: grid; min-width: 0; gap: 4px; }
+.robot-connection-panel input:not([type="checkbox"]), .robot-connection-panel select { width: 100%; min-width: 0; min-height: 28px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--text-strong); background: var(--surface-2); font: inherit; font-variant-numeric: tabular-nums; }
+.robot-connection-panel button { min-height: 28px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--text-strong); cursor: pointer; font: inherit; }
+.robot-connection-panel button:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+.robot-connection-panel :is(button,input,select):disabled { opacity: .5; cursor: not-allowed; }
+.robot-connection-panel :is(button,input,select,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.robot-connection-fields { display: grid; grid-template-columns: minmax(64px, .7fr) minmax(0, 1.6fr); gap: 8px; align-items: end; }
+.robot-connection-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.robot-connection-panel p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.robot-connection-panel details { display: grid; gap: 8px; }
+.robot-connection-panel details > :not(summary) { margin-top: 8px; }
+.robot-connection-panel summary { cursor: pointer; color: var(--text-strong); }
+.robot-connection-panel .robot-connection-arm { display: flex; align-items: center; gap: 6px; }
+.robot-connection-panel input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); }
+.robot-connection-error, .robot-connection-status.is-error, .robot-connection-status.is-stale { color: var(--danger); }
+.robot-connection-status.is-live { color: var(--success); }

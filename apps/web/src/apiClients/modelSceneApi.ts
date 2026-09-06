@@ -27,10 +27,12 @@ export function createModelSceneApi(request: ApiRequest) {
       rvtConversionMode: RvtConversionMode = "native-glb",
       rvtRevitVersion = "auto",
       generation?: ParametricModelGeneration,
+      robotEntryPath?: string,
     ) => {
       const data = new FormData();
       // multipart 字段必须位于文件前，服务端才能在开始持久化前完成生成元数据校验。
       if (generation) data.append("generation", JSON.stringify(generation));
+      if (robotEntryPath) data.append("robotEntryPath", robotEntryPath);
       data.append("file", file);
       return request<ModelRecord>(
         `/api/projects/${projectId}/models?rvtConversionMode=${encodeURIComponent(rvtConversionMode)}&rvtRevitVersion=${encodeURIComponent(rvtRevitVersion)}`,

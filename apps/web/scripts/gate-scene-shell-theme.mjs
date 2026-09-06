@@ -60,7 +60,7 @@ async function inspectRow(page, tree, shot, entry) {
   await row.locator(".asset-main").focus();
   for (const button of await optional.all()) assert.equal(await button.isVisible(), true);
   const focusNames = [];
-  for (let index = 0; index < 6; index++) {
+  for (let index = 0; index < 7; index++) {
     await page.keyboard.press("Tab");
     focusNames.push(await row.evaluate(() => document.activeElement?.getAttribute("aria-label")));
   }
@@ -72,7 +72,8 @@ async function inspectRow(page, tree, shot, entry) {
   const focusAccent = entry.keyboardFocus.accent.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
   assert.ok(focusAccent, "Test branding exposes a six-digit accent");
   assert.equal(entry.keyboardFocus.color, `rgb(${focusAccent.slice(1).map(channel => parseInt(channel, 16)).join(", ")})`);
-  for (const expected of ["隐藏", "锁定模型", "开启碰撞检测", "播放模型动画", "删除模型"]) assert.ok(focusNames.includes(expected), `${expected} is not keyboard reachable`);
+  for (const expected of ["隐藏", "锁定模型", "开启碰撞检测", "播放模型动画", "移除实例"]) assert.ok(focusNames.includes(expected), `${expected} is not keyboard reachable`);
+  assert.ok(focusNames.some(name => name?.startsWith("管理模型实例 ")), "Instance actions are keyboard reachable");
   await shot("keyboard-actions");
   const lock = tree.getByRole("button", { name: "锁定模型", exact: true });
   await lock.click(); await tree.getByRole("button", { name: "解锁模型", exact: true }).click();
@@ -144,6 +145,14 @@ async function runCase(theme, width) {
     await sceneSearch.fill("平行"); assert.equal(await sceneSearch.inputValue(), "平行");
     entry.organizationContrast = await page.locator(".scene-tree-manager").evaluate(collectTextContrast, ".scene-organization-search input, .scene-tree-selection-bar > span, .scene-tree-selection-bar strong");
     assert.deepEqual(entry.organizationContrast.filter(item => item.contrast < 4.5), []);
+    entry.selectionBar = await page.locator(".scene-tree-selection-bar").evaluate(root => {
+      const count = root.querySelector(".scene-selection-count");
+      const bounds = root.getBoundingClientRect();
+      return { count: count.textContent, countHeight: count.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(count).lineHeight),
+        actionsContained: [...root.querySelectorAll("button")].every(button => { const box = button.getBoundingClientRect(); return box.left >= bounds.left && box.right <= bounds.right + 1 && box.bottom <= bounds.bottom + 1; }) };
+    });
+    assert.ok(entry.selectionBar.countHeight <= entry.selectionBar.lineHeight + 1, "Selection count stays on one line");
+    assert.ok(entry.selectionBar.actionsContained, "Selection actions remain within their toolbar");
     await shot("organization-search");
     await page.getByRole("button", { name: "清空搜索", exact: true }).click(); assert.equal(await sceneSearch.inputValue(), "");
     await page.getByRole("button", { name: "场景图层与编组", exact: true }).click();

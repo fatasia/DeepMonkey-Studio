@@ -9,7 +9,10 @@ import type { IndustrialPrefabInstanceState, IndustrialPrefabRuntimeAction } fro
 
 /** 三维场景、交互、动画、物理、材质与发布快照合同。 */
 export interface SceneModelState {
+  /** 稳定场景实例 ID；脚本、标签、动画与仿真引用始终指向此身份。 */
   modelId: string;
+  /** 项目模型资源 ID；旧场景省略时使用 modelId，替换资源不改变实例身份。 */
+  assetModelId?: string;
   name: string;
   sourceName?: string;
   sourceFormat?: ModelFormat;
@@ -31,6 +34,8 @@ export interface SceneModelState {
   spatialAudio?: SceneSpatialAudioState;
   effects?: SceneModelEffectsState;
   rig?: SceneRigState;
+  /** URDF 实例关节值；名称来自资源描述，平移为 m，转角为 rad。 */
+  robotPose?: Record<string, number>;
   physics?: ScenePhysicsBodyState;
   /** 可配置工业预制体实例；普通导入模型无需此字段。 */
   prefab?: IndustrialPrefabInstanceState;

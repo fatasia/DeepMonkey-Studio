@@ -14,6 +14,13 @@ export interface CodeInsertRequest {
   text: string;
 }
 
+// Monaco 0.56 的括号连线在位置暂不可见时解引用 null.left（indentGuides.prepareRender）。
+// 仅关闭该装饰路径，保留缩进指示与括号字符配色；不屏蔽渲染异常或更改编辑行为。
+export const PROFESSIONAL_CODE_STRUCTURE_OPTIONS = {
+  bracketPairColorization: { enabled: true },
+  guides: { bracketPairs: false, indentation: true },
+} satisfies Pick<monaco.editor.IStandaloneEditorConstructionOptions, "bracketPairColorization" | "guides">;
+
 /** 为浏览器恢复测试提供不暴露源码内容的轻量指纹。 */
 export function codeContentFingerprint(value: string): string {
   let hash = 2_166_136_261;
@@ -306,7 +313,7 @@ export function ProfessionalCodeEditor({
           loading={<div className="professional-code-loading">{tr(locale, "正在加载代码智能服务…", "Loading code intelligence…")}</div>}
           options={{
             automaticLayout: true,
-            bracketPairColorization: { enabled: true },
+            ...PROFESSIONAL_CODE_STRUCTURE_OPTIONS,
             codeLens: !compact,
             contextmenu: true,
             cursorSmoothCaretAnimation: "on",
@@ -317,7 +324,6 @@ export function ProfessionalCodeEditor({
             fontSize: compact ? 11 : 12,
             formatOnPaste: true,
             glyphMargin: !compact,
-            guides: { bracketPairs: true, indentation: true },
             hover: { enabled: "on", delay: 250 },
             inlayHints: { enabled: "on" },
             lineHeight: compact ? 17 : 20,

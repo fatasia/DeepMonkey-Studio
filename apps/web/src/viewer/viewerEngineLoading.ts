@@ -1,22 +1,43 @@
 import type * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
-import type { ModelManifest, PrimitiveKind } from "@bim-studio/contracts";
+import type { ModelManifest, PrimitiveKind, SceneModelState } from "@bim-studio/contracts";
 import { hydrateNativeBimMetadata, type NativeBimPropertiesFile } from "./bimMetadata";
 import { primitiveGroundOffset } from "./primitiveGeometry";
 import { ModelLoadSupersededError, shouldRenderSceneLightProxy, type LoadedSceneModel } from "./viewerTypes";
 import { DEFAULT_SCENE_LIGHTS } from "./viewerEngineTypes";
-import { ViewerEngineSpatialAudio } from "./viewerEngineSpatialAudio";
+import { ViewerEngineRobot } from "./viewerEngineRobot";
 import { loadViewerAssetBuffer } from "./viewerAssetTransport";
 import { loadLegacyModel, type LegacyViewerKind } from "./legacyModelLoader";
 import { loadOpenUsdModel } from "./openUsdModelLoader";
+import { captureSceneModelState } from "./captureSceneModelState";
+import { assertModelReplacementCompatible } from "./modelReplacementCompatibility";
+import { commitModelReplacement } from "./modelReplacementTransaction";
+import { assertRobotReplacementCompatible, readLiveRobotPose } from "./robotPoseRuntime";
 
 /** Loading 职责层。 */
-export abstract class ViewerEngineLoading extends ViewerEngineSpatialAudio {
-  async loadManifest(manifest: ModelManifest): Promise<LoadedSceneModel> {
-      const existing = this.models.get(manifest.modelId);
-      if (existing) return existing;
+export abstract class ViewerEngineLoading extends ViewerEngineRobot {
+  async loadManifest(manifest: ModelManifest, instanceId = manifest.modelId): Promise<LoadedSceneModel> {
+      const existing = this.models.get(instanceId);
+      if (existing) {
+        if ((existing.assetModelId ?? existing.id) !== manifest.modelId) throw new Error("实例已有其它素材，请使用替换操作");
+        return existing;
+      }
       const epoch = this.modelLoads.currentEpoch;
-      return this.modelLoads.run(manifest.modelId, epoch, () => this.loadManifestOnce(manifest, epoch));
+      return this.modelLoads.run(instanceId, epoch, () => this.loadManifestOnce({ ...manifest, modelId: instanceId }, epoch, manifest.modelId));
+    }
+  async replaceModelManifest(instanceId: string, manifest: ModelManifest): Promise<LoadedSceneModel> {
+      const current = this.models.get(instanceId);
+      if (!current || current.kind !== "model") throw new Error("场景实例已不存在");
+      if (this.readOnlyMode || this.isModelLocked(instanceId)) throw new Error("请在编辑态解锁实例后替换素材");
+      if (this.isIsolationActive()) throw new Error("请先退出隔离查看，再替换素材");
+      if (this.fragmentModels.has(instanceId) || manifest.viewerKind === "ifc" || manifest.viewerKind === "fragments") {
+        throw new Error("IFC/Fragments 的构件替换尚未验证，请新增实例；原模型不会修改");
+      }
+      if ((current.assetModelId ?? current.id) === manifest.modelId) return current;
+      const epoch = this.modelLoads.currentEpoch;
+      // 替换只读取完整几何，但保留 LOD 清单决定容器拓扑，保证刷新后的构件路径一致。
+      return this.modelLoads.run(`replace:${instanceId}:${manifest.modelId}`, epoch,
+        () => this.loadManifestOnce({ ...manifest, modelId: instanceId }, epoch, manifest.modelId, current));
     }
   /**
      * IFC/Fragments 仅在实际加载对应模型时初始化。常规 glTF、FBX 与 DXF 浏览不再承担
@@ -47,7 +68,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineSpatialAudio {
       if (!this.fragments || !this.importer || !this.fragmentApi) throw new Error("IFC/Fragments 运行时尚未初始化");
       return { fragments: this.fragments, importer: this.importer, api: this.fragmentApi };
     }
-  protected async loadManifestOnce(manifest: ModelManifest, epoch: number): Promise<LoadedSceneModel> {
+  protected async loadManifestOnce(manifest: ModelManifest, epoch: number, assetModelId = manifest.modelId, replacing?: LoadedSceneModel): Promise<LoadedSceneModel> {
       if (!manifest.geometryUrl || !manifest.viewerKind) throw new Error("模型清单缺少几何数据");
       let object: THREE.Object3D;
       let animations: THREE.AnimationClip[] = [];
@@ -56,22 +77,25 @@ export abstract class ViewerEngineLoading extends ViewerEngineSpatialAudio {
       if (manifest.viewerKind === "gltf") {
         const lowLod = manifest.lods?.find((item) => item.level === "low");
         const [gltf, bimMetadata] = await Promise.all([
-          this.gltfLoader.loadAsync(lowLod?.url ?? manifest.geometryUrl),
+          this.gltfLoader.loadAsync(replacing ? manifest.geometryUrl : lowLod?.url ?? manifest.geometryUrl),
           manifest.propertiesUrl ? this.loadNativeBimMetadata(manifest.propertiesUrl) : Promise.resolve(undefined)
         ]);
         if (lowLod) {
           const group = new THREE.Group();
-          gltf.scene.name ||= "低精度预览";
+          gltf.scene.name ||= replacing?.object.children[0]?.name || "低精度预览";
           group.add(gltf.scene);
           object = group;
           const medium = manifest.lods?.find((item) => item.level === "medium");
-          progressiveGltf = {
+          if (!replacing) progressiveGltf = {
             levels: [...(medium ? [{ url: medium.url, name: "中精度" }] : []), { url: manifest.geometryUrl, name: "完整精度" }],
             ...(bimMetadata ? { metadata: bimMetadata } : {})
           };
         } else object = gltf.scene;
         animations = gltf.animations;
         if (bimMetadata) hydrateNativeBimMetadata(object, bimMetadata);
+      } else if (manifest.viewerKind === "urdf") {
+        const { loadUrdfModel } = await import("./urdfModelLoader");
+        object = await loadUrdfModel(manifest);
       } else if (manifest.viewerKind === "fbx") {
         object = await this.fbxLoader.loadAsync(manifest.geometryUrl);
         animations = object.animations;
@@ -105,27 +129,89 @@ export abstract class ViewerEngineLoading extends ViewerEngineSpatialAudio {
       } else {
         object = await this.loadDxf(manifest.geometryUrl);
       }
-      if (!this.modelLoads.isCurrent(epoch)) {
+      if (!this.modelLoads.isCurrent(epoch) || (replacing && this.models.get(manifest.modelId) !== replacing)) {
         if (fragmentsModel) await fragmentsModel.dispose();
         else this.disposeObject(object);
         throw new ModelLoadSupersededError();
       }
-      const loaded = this.registerObject(manifest.modelId, manifest.sourceName, object, "model");
-      if (fragmentsModel) await this.registerFragmentsModel(manifest.modelId, fragmentsModel, manifest.sourceName);
-      if (animations.length > 0) {
-        const mixer = new THREE.AnimationMixer(object);
-        animations.forEach((clip) => mixer.clipAction(clip).play());
-        this.mixers.set(manifest.modelId, mixer);
-        this.animationClips.set(manifest.modelId, animations);
-        this.animationClipSelection.delete(manifest.modelId);
-        this.animationEnabledIds.add(manifest.modelId);
+      if (replacing) {
+        let retained: SceneModelState;
+        try {
+          if (this.readOnlyMode || this.isModelLocked(manifest.modelId) || this.isIsolationActive()) throw new Error("加载期间编辑状态已变化，原实例未修改");
+          assertModelReplacementCompatible(replacing.object, object);
+          assertRobotReplacementCompatible(replacing.object, object);
+          const nextClips = new Set(animations.map(clip => clip.name || clip.uuid));
+          if (this.animationClips.get(manifest.modelId)?.some(clip => !nextClips.has(clip.name || clip.uuid))) throw new Error("新素材缺少原动画片段，无法保留动画引用；原实例未修改");
+          const captured = captureSceneModelState(this, replacing);
+          if (!captured) throw new Error("无法读取当前实例状态，原实例未修改");
+          retained = captured;
+        } catch (error) { this.disposeObject(object); throw error; }
+        const loaded = this.commitReplacementObject(replacing, object, animations, assetModelId, retained);
+        this.dispatchObjectLifecycle("load", manifest.modelId);
+        if (animations.length > 0) queueMicrotask(() => this.dispatchObjectLifecycle("animationStart", manifest.modelId));
+        return loaded;
       }
+      const loaded = this.registerObject(manifest.modelId, manifest.sourceName, object, "model");
+      loaded.assetModelId = assetModelId;
+      if (fragmentsModel) await this.registerFragmentsModel(manifest.modelId, fragmentsModel, manifest.sourceName);
+      this.installModelAnimations(manifest.modelId, object, animations);
       // 低精度层只用于加快首帧；无论运行策略如何，最终都会升级到完整资产。
       if (progressiveGltf) void this.streamGltfLevels(manifest.modelId, object, progressiveGltf, epoch);
-      this.fitAll();
+      if (assetModelId === manifest.modelId) this.fitAll();
       this.dispatchObjectLifecycle("load", manifest.modelId);
       if (animations.length > 0) queueMicrotask(() => this.dispatchObjectLifecycle("animationStart", manifest.modelId));
       return loaded;
+    }
+  private installModelAnimations(id: string, object: THREE.Object3D, animations: THREE.AnimationClip[]): void {
+      if (!animations.length) return;
+      const mixer = new THREE.AnimationMixer(object);
+      animations.forEach(clip => mixer.clipAction(clip).play());
+      this.mixers.set(id, mixer); this.animationClips.set(id, animations);
+      this.animationClipSelection.delete(id); this.animationEnabledIds.add(id);
+    }
+  private commitReplacementObject(previous: LoadedSceneModel, object: THREE.Object3D, animations: THREE.AnimationClip[], assetId: string, state: SceneModelState): LoadedSceneModel {
+      const id = previous.id;
+      const selected = this.getSelected()?.id;
+      const layer = this.getSelectedLayerId();
+      const floors = this.getFloorStates().filter(floor => floor.modelId === id);
+      const mixer = this.mixers.get(id), clips = this.animationClips.get(id), clip = this.animationClipSelection.get(id);
+      const animated = this.animationEnabledIds.has(id), playback = this.modelAnimationPlaybackStates.get(id);
+      const liveRobotPose = readLiveRobotPose(previous.object);
+      const restoreState = () => {
+        this.applyModelState(id, state);
+        for (const floor of floors) this.setFloorState(floor.modelId, floor.level, floor.visible, floor.expansion);
+        if (selected === id) { if (layer) this.selectLayer(id, layer); else this.select(id); }
+      };
+      return commitModelReplacement({
+        detachPrevious: () => this.detachModel(id, true),
+        installCandidate: () => {
+          const loaded = this.registerObject(id, state.name, object, "model");
+          loaded.assetModelId = assetId; this.installModelAnimations(id, object, animations);
+          restoreState(); return loaded;
+        },
+        discardCandidate: () => {
+          try {
+            if (this.models.get(id)?.object === object) this.removeModel(id);
+            else this.disposeObject(object);
+          } finally { object.removeFromParent(); }
+        },
+        restorePrevious: () => {
+          this.registerObject(id, previous.name, previous.object, "model");
+          this.models.set(id, previous);
+          restoreState();
+          if (liveRobotPose) this.applyRobotTelemetry(id, liveRobotPose);
+          // 旧 mixer 未 stop/uncache，恢复同一运行对象，保留片段选择、当前时间与动作内部进度。
+          if (mixer) this.mixers.set(id, mixer);
+          if (clips) this.animationClips.set(id, clips);
+          if (clip !== undefined) this.animationClipSelection.set(id, clip);
+          if (animated) this.animationEnabledIds.add(id);
+          if (playback) this.modelAnimationPlaybackStates.set(id, playback);
+        },
+        releasePrevious: () => {
+          mixer?.stopAllAction(); mixer?.uncacheRoot(previous.object);
+          this.disposeObject(previous.object);
+        },
+      });
     }
   protected async streamGltfLevels(modelId: string, container: THREE.Object3D, stream: { levels: Array<{ url: string; name: string }>; metadata?: NativeBimPropertiesFile }, epoch: number): Promise<void> {
       for (const level of stream.levels) {
@@ -200,6 +286,10 @@ export abstract class ViewerEngineLoading extends ViewerEngineSpatialAudio {
       this.updateToolCursor();
     }
   removeModel(id: string): void {
+      this.detachModel(id);
+    }
+  /** 替换事务只暂存原 Object3D/动画运行态，普通删除仍立即释放资源。 */
+  protected detachModel(id: string, preserveObject = false): void {
       const model = this.models.get(id);
       if (!model) return;
       this.removePhysicsBody(id);
@@ -214,8 +304,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineSpatialAudio {
       model.object.removeFromParent();
       const mixer = this.mixers.get(id);
       if (mixer) {
-        mixer.stopAllAction();
-        mixer.uncacheRoot(model.object);
+        if (!preserveObject) { mixer.stopAllAction(); mixer.uncacheRoot(model.object); }
         this.mixers.delete(id);
         this.animationClips.delete(id);
         this.animationClipSelection.delete(id);
@@ -225,7 +314,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineSpatialAudio {
       this.spatialAudioStates.delete(id);
       this.disposeSpatialAudioRuntime(id);
       // 统一释放路径会保留查看器级共享几何；逐对象直接 dispose 会让同类设备反复上传 GPU。
-      this.disposeObject(model.object);
+      if (!preserveObject) this.disposeObject(model.object);
       this.models.delete(id);
       const fragmentsModel = this.fragmentModels.get(id);
       if (fragmentsModel) {

@@ -10,7 +10,7 @@ export function ModelOptimizerHeader({ locale, onBack, onViewAssets, onImport, o
 }) {
   return <header className="optimizer-header">
     <SecondaryPageBack locale={locale} onBack={onBack} />
-    <div><span className="eyebrow">MODEL ASSET PIPELINE</span><h1>{tr(locale, "模型导入与优化", "Model import & optimization")}</h1></div>
+    <div><h1>{tr(locale, "模型导入与优化", "Model import & optimization")}</h1></div>
     <div className="optimizer-header-actions">
       <button disabled={busy} onClick={onImport}><Upload size={15} />{tr(locale, "导入 / 转换", "Import / convert")}</button>
       <button disabled={!canExport} onClick={onDownload}><Download size={15} />{tr(locale, "下载 GLB", "Download GLB")}</button>
@@ -30,12 +30,11 @@ export function ModelOptimizerPipeline({ locale, project, models, selectedModelI
   return <section className="optimizer-pipeline" aria-label={tr(locale, "模型素材处理链路", "Model asset pipeline")}>
     <div className="optimizer-pipeline-steps">{steps.map(([label, done], index) => <span className={done ? "done" : hasSource || index === 0 ? "active" : ""} key={label}>{done ? <Check size={11} /> : index + 1}<b>{label}</b></span>)}</div>
     <div className="optimizer-source-actions">
-      {!hasSource && <button className="button primary" disabled={busy} onClick={onImport}><Upload size={14} />{tr(locale, "从文件导入", "Import file")}</button>}
+      {!hasSource && <button className="button primary" disabled={busy} title={tr(locale, "支持 GLB、内嵌 glTF、URDF 与机器人 ZIP；其他格式需可用转换器", "GLB, embedded glTF, URDF and robot ZIP; other formats require a converter")} onClick={onImport}><Upload size={14} />{tr(locale, "从文件导入", "Import file")}</button>}
       {project && <label><Box size={14} /><select aria-label={tr(locale, "从项目素材选择模型", "Choose model from project assets")} value={selectedModelId} disabled={busy} onChange={(event) => onSelectModel(event.target.value)}>
         <option value="">{tr(locale, "从项目素材继续优化…", "Optimize a project asset…")}</option>
         {models.map((model) => <option key={model.id} value={model.id}>{model.name} · {model.format.toUpperCase()}</option>)}
       </select></label>}
     </div>
-    {!hasSource && <div className="optimizer-start-guide"><strong>{tr(locale, "选择模型，开始优化", "Choose a model to optimize")}</strong><small>{tr(locale, "GLB 与内嵌资源的 glTF 可直接处理。其他格式取决于项目转换器是否可用；原始素材不会被覆盖。", "GLB and embedded glTF can be processed directly. Other formats require an available project converter. Original assets are preserved.")}</small></div>}
   </section>;
 }

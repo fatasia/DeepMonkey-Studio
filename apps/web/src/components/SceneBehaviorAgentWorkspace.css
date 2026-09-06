@@ -29,7 +29,7 @@
 
 .behavior-script-ai-header > button { justify-self: start; padding: 0 9px; }
 .behavior-script-ai-header nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
-.behavior-script-ai-header nav button.active { color: #071517; border-color: #62d3ce; background: #62d3ce; }
+.behavior-script-ai-header nav button.active { color: var(--on-accent); border-color: var(--accent); background: var(--accent); }
 .behavior-script-ai-body { display: grid; gap: 12px; padding: 14px; }
 .behavior-script-ai-context { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 11px; border: 1px solid #2d3d44; border-radius: 7px; background: #101a1f; }
 .behavior-script-ai-context > span { display: grid; min-width: 0; gap: 3px; }
@@ -40,12 +40,12 @@
 .behavior-script-ai-context em { flex: 0 0 auto; color: #8da0a6; font-size: 10px; font-style: normal; }
 .behavior-script-ai-prompt { display: grid; gap: 6px; color: #92a3a8; font-size: 11px; }
 .behavior-script-ai-prompt textarea { resize: vertical; min-height: 84px; padding: 9px 10px; color: #dce5e7; border: 1px solid #34464e; border-radius: 7px; outline: none; background: #0c1519; font: inherit; line-height: 1.55; }
-.behavior-script-ai-prompt textarea:focus { border-color: #54bbb7; box-shadow: 0 0 0 2px #54bbb71a; }
+.behavior-script-ai-prompt textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent); }
 .behavior-script-ai-run { justify-self: end; padding: 0 12px; }
-.behavior-script-ai-run.primary { color: #071517; border-color: #62d3ce; background: #62d3ce; font-weight: 700; }
+.behavior-script-ai-run.primary { color: var(--on-accent); border-color: var(--accent); background: var(--accent); font-weight: 700; }
 .behavior-script-ai-run:disabled { cursor: not-allowed; opacity: .45; }
 .behavior-script-ai-answer { display: grid; align-items: start; gap: 9px; grid-template-columns: auto minmax(0, 1fr); padding: 11px; border: 1px solid #2e4548; border-radius: 7px; background: #102023; }
-.behavior-script-ai-answer > svg { color: #64c5c0; }
+.behavior-script-ai-answer > svg { color: var(--accent); }
 .behavior-script-ai-answer > div { display: grid; gap: 6px; }
 .behavior-script-ai-answer strong { font-size: 12px; }
 .behavior-script-ai-answer p { margin: 0; color: #a7b6ba; font-size: 11px; line-height: 1.65; white-space: pre-wrap; }

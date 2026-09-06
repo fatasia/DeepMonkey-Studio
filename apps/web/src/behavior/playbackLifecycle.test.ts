@@ -36,6 +36,41 @@ function source() {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("playback lifecycle ownership", () => {
+  it("waits for debug sources before starting and discards queued private commands on exit", async () => {
+    const app = source(); app.scripts = [script("debug", { kind: "component", id: "one" })];
+    const original = structuredClone(app);
+    const port = new WorkerPort();
+    const session = new ApplicationPlaybackSession(app, "one", { workerFactory: () => port, hostOptions: { authorDebug: true } });
+    session.togglePause();
+    expect(session.paused).toBe(true);
+    await session.start();
+    session.togglePause();
+    expect(session.paused).toBe(true);
+    port.ready();
+    expect(session.canStep).toBe(false);
+    expect(port.posted.some(item => item.type === "behavior.invoke")).toBe(false);
+    session.togglePause();
+    expect(session.paused).toBe(false);
+    port.result([{ id: "queued", type: "component.update", componentId: "one", patch: { name: "late" } }]);
+    session.dispose();
+    expect(port.terminate).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(session.state.document.pages[0]!.nodes[0]!.name).toBe("one");
+    expect(app).toEqual(original);
+    session.togglePause();
+    expect(session.paused).toBe(false);
+  });
+  it("terminates a debug Worker synchronously when its page mount is retired", async () => {
+    const app = source(); app.scripts = [script("debug", { kind: "component", id: "one" })];
+    const port = new WorkerPort();
+    const session = new ApplicationPlaybackSession(app, "one", { workerFactory: () => port, hostOptions: { authorDebug: true } });
+    await session.start(); port.ready(); session.togglePause();
+    session.selectPage("two");
+    expect(port.terminate).toHaveBeenCalledOnce();
+    expect(port.posted.some(item => item.type === "behavior.dispose")).toBe(false);
+    expect(session.entries).toEqual([]);
+    session.dispose();
+  });
   it("does not leak author-test navigation onto the editor event bus", async () => {
     vi.useFakeTimers();
     const browser = new EventTarget(); vi.stubGlobal("window", browser);

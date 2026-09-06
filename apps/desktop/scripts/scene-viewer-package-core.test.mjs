@@ -53,6 +53,10 @@ test("freezes one publication and rewrites only its required project resources",
   const address = server.address();
   const apiOrigin = `http://127.0.0.1:${address.port}`;
   const source = fixture(`${apiOrigin}/robot.glb`);
+  source.publication.snapshot.models = [
+    { modelId: "robot-a", assetModelId: "model-1", name: "机器人 A", visible: true },
+    { modelId: "robot-b", assetModelId: "model-1", name: "机器人 B", visible: true },
+  ];
   const original = structuredClone(source);
   try {
     const payload = await createSceneViewerPayload(source, {
@@ -68,6 +72,8 @@ test("freezes one publication and rewrites only its required project resources",
     assert.match(payload.manifest.project.models[0].manifest.geometryUrl, /^\/delivery\/assets\//);
     assert.equal(payload.manifest.project.dataConnections, undefined);
     assert.equal(payload.manifest.assets.length, 1);
+    assert.equal(payload.manifest.project.models.length, 1);
+    assert.deepEqual(payload.manifest.publication.snapshot.models.map(model => model.modelId), ["robot-a", "robot-b"]);
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }

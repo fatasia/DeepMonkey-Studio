@@ -1,4 +1,5 @@
 import {
+  getSceneModelAssetId,
   type GlobalLightingState,
   type SceneEnvironmentState,
   type SceneSnapshot,
@@ -226,8 +227,8 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       setSelectionSets(structuredClone(scene.selectionSets ?? []));
       setLastDeletedSelectionSet(undefined);
       const loadSceneModel = async (item: SceneSnapshot["models"][number]) => {
-        const record = sceneProject.models.find((model) => model.id === item.modelId);
-        if (record) await loadModel(record, true);
+        const record = sceneProject.models.find((model) => model.id === getSceneModelAssetId(item));
+        if (record) await loadModel(record, true, item.modelId);
         if (applyVersion !== sceneApplyVersionRef.current) return false;
         engine.applyModelState(item.modelId, item);
         engine.rename(item.modelId, item.name);

@@ -10,6 +10,8 @@ import type { SceneScriptIntelligenceContext, SceneScriptTarget } from "../studi
 import { analyzeSceneScript } from "../studio/sceneScriptAnalysis";
 import { SceneBehaviorAgentWorkspace, type SceneBehaviorAiMode } from "./SceneBehaviorAgentWorkspace";
 import { BehaviorEditorToolbar } from "./BehaviorEditorToolbar";
+import { AuthorBehaviorDebugNotice } from "./AuthorBehaviorDebugNotice";
+import { createSdkExampleScript, type SdkExampleInsertRequest } from "../behavior/sdkExampleInsertion";
 import { useBehaviorDraft } from "./useBehaviorDraft";
 import { BehaviorPanelHeader } from "./BehaviorPanelHeader";
 import { BehaviorConsole } from "./BehaviorConsole";
@@ -21,6 +23,7 @@ import { BehaviorScriptListResizer, persistBehaviorScriptListCollapsed, readBeha
 import { downloadTextFile } from "../browserDownload";
 import { ScriptDependencyManager } from "./ScriptDependencyManager";
 import { ScriptVersionManager } from "./ScriptVersionManager";
+import "./SceneBehaviorLayout.css";
 import { SceneBehaviorInspector } from "./SceneBehaviorInspector";
 import { isLocalDesktopMode } from "../adapters/desktopRuntimeMode";
 import { createImportedBehaviorScript, scriptDownloadFileName } from "../behavior/scriptFileTransfer";
@@ -34,6 +37,9 @@ export type BehaviorCodeTarget = SceneScriptTarget;
 export function SceneBehaviorPanel(props: {
   locale: AppLocale;
   projectId?: string;
+  applicationId?: string;
+  sdkExampleRequest?: SdkExampleInsertRequest;
+  onSdkExampleConsumed?: (requestId: string) => void;
   scripts: readonly ScriptModule[];
   dependencies: readonly ApplicationScriptDependency[];
   runtimeEntries: readonly SceneBehaviorManagerEntry[];
@@ -53,6 +59,8 @@ export function SceneBehaviorPanel(props: {
   onDependenciesChange: (dependencies: readonly ApplicationScriptDependency[]) => void | Promise<void>;
   onReplaceScripts: (scripts: readonly ScriptModule[]) => void | Promise<void>;
   onRun: (draft?: ScriptModule, scope?: AuthorBehaviorScope) => void | Promise<void>;
+  onDebug?: (draft: ScriptModule) => void | Promise<void>;
+  debugging?: boolean;
   onPauseResume: () => void;
   onStop: () => void;
   onClearLogs: () => void;
@@ -76,6 +84,28 @@ export function SceneBehaviorPanel(props: {
     : undefined;
   const actionFeedback = feedback.scriptId === draft?.id ? feedback.message : "";
   function setActionFeedback(message: string, scriptId = draft?.id) { setFeedback({ scriptId, message }); }
+  const consumedExample = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const request = props.sdkExampleRequest;
+    if (!request || consumedExample.current === request.requestId) return;
+    consumedExample.current = request.requestId;
+    try {
+      if (request.projectId === props.projectId && request.applicationId === props.applicationId) {
+        const script = createSdkExampleScript(request.exampleId, props.scripts);
+        if (addScripts([script])) setActionFeedback(tr(props.locale, "样例已插入，可修改并试运行；保存遵循当前自动保存设置", "Example inserted. Edit and test it; saving follows your auto-save setting."), script.id);
+      }
+    } catch (reason) {
+      setActionFeedback(tr(props.locale, "样例插入失败：", "Could not insert example: ") + (reason instanceof Error ? reason.message : String(reason)));
+    } finally {
+      props.onSdkExampleConsumed?.(request.requestId);
+    }
+  }, [props.sdkExampleRequest, props.projectId, props.applicationId]);
+  const debugContext = `${draft?.id ?? ""}:${draft?.target?.kind ?? ""}:${draft?.target && draft.target.kind !== "scene" ? draft.target.id : ""}`;
+  const previousDebugContext = useRef(debugContext);
+  useEffect(() => {
+    if (previousDebugContext.current !== debugContext && props.debugging) props.onStop();
+    previousDebugContext.current = debugContext;
+  }, [debugContext, props.debugging, props.onStop]);
   useEffect(() => {
     setAiDraftUndo(undefined);
     setAiDraftInserted(false);
@@ -181,7 +211,8 @@ export function SceneBehaviorPanel(props: {
       if (operation.isCurrent()) setActionFeedback(reason instanceof Error ? reason.message : tr(props.locale, "脚本导入失败", "Script import failed"));
     }
   }
-  async function applyAndRun() {
+  async function applyAndRun(mode?: unknown) {
+    const debug = mode === true;
     if (!draft || !draft.name.trim()) return;
     const sequence = ++runSequence.current;
     const operation = captureOperation();
@@ -190,7 +221,8 @@ export function SceneBehaviorPanel(props: {
     setLogsOpen(true);
     setActionFeedback(tr(props.locale, "正在准备试运行…", "Preparing test run…"));
     try {
-      await props.onRun(draft, runScope);
+      if (debug && props.onDebug) await props.onDebug(draft);
+      else await props.onRun(draft, runScope);
       if (sequence === runSequence.current && operation.isCurrent()) setActionFeedback(tr(props.locale, "试运行已提交，请查看运行状态与日志", "Test run submitted; check runtime status and logs"));
     } catch (reason) {
       if (sequence === runSequence.current && operation.isCurrent()) setActionFeedback(reason instanceof Error ? reason.message : String(reason));
@@ -244,7 +276,7 @@ export function SceneBehaviorPanel(props: {
       style={{ "--behavior-script-list-width": `${scriptListWidth}px` } as CSSProperties}
       aria-label={tr(props.locale, "场景行为脚本", "Scene behavior scripts")}
     >
-      <BehaviorPanelHeader locale={props.locale} layoutMode={props.layoutMode} contextLabel={selectedContextLabel} dirty={dirty} paused={props.paused} running={props.runtimeEntries.some((entry) => ["initializing", "running", "paused"].includes(entry.diagnostics.status))} hasSession={props.hasSession ?? Boolean(props.runtimeEntries.length)} canStep={props.canStep ?? false} onStep={props.onStep ?? (() => undefined)} runScope={runScope} onRunScopeChange={setRunScope} hasDraft={Boolean(draft)} hasTarget={Boolean(attachedTarget)} agentOpen={agentOpen} dependenciesOpen={dependenciesOpen} versionOpen={versionOpen} inspectorOpen={inspectorOpen} scriptListCollapsed={scriptListCollapsed} onLayoutModeChange={props.onLayoutModeChange} onToggleScriptList={() => { const next = !scriptListCollapsed; setScriptListCollapsed(next); persistBehaviorScriptListCollapsed(next); }} onToggleAgent={() => { setAgentMode("explain"); setDependenciesOpen(false); setVersionOpen(false); setAgentOpen((open) => !open); }} onToggleDependencies={() => { setAgentOpen(false); setVersionOpen(false); setDependenciesOpen((open) => !open); }} onToggleVersion={() => { setAgentOpen(false); setDependenciesOpen(false); setVersionOpen((open) => !open); }} onFocusTarget={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))} onRun={applyAndRun} onPauseResume={props.onPauseResume} onStop={stopRun} onToggleInspector={() => setInspectorOpen((value) => !value)} onClose={closePanel} />
+      <BehaviorPanelHeader locale={props.locale} layoutMode={props.layoutMode} contextLabel={selectedContextLabel} dirty={dirty} paused={props.paused} running={props.runtimeEntries.some((entry) => ["initializing", "running", "paused"].includes(entry.diagnostics.status))} hasSession={props.hasSession ?? Boolean(props.runtimeEntries.length)} canStep={props.canStep ?? false} onStep={props.onStep ?? (() => undefined)} runScope={runScope} onRunScopeChange={setRunScope} hasDraft={Boolean(draft)} hasTarget={Boolean(attachedTarget)} agentOpen={agentOpen} dependenciesOpen={dependenciesOpen} versionOpen={versionOpen} inspectorOpen={inspectorOpen} scriptListCollapsed={scriptListCollapsed} onLayoutModeChange={props.onLayoutModeChange} onToggleScriptList={() => { const next = !scriptListCollapsed; setScriptListCollapsed(next); persistBehaviorScriptListCollapsed(next); }} onToggleAgent={() => { setAgentMode("explain"); setDependenciesOpen(false); setVersionOpen(false); setAgentOpen((open) => !open); }} onToggleDependencies={() => { setAgentOpen(false); setVersionOpen(false); setDependenciesOpen((open) => !open); }} onToggleVersion={() => { setAgentOpen(false); setDependenciesOpen(false); setVersionOpen((open) => !open); }} onFocusTarget={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))} onRun={() => void applyAndRun()} onDebug={props.onDebug ? () => { void applyAndRun(true); } : undefined} onPauseResume={props.onPauseResume} onStop={stopRun} onToggleInspector={() => setInspectorOpen((value) => !value)} onClose={closePanel} />
       <div className="behavior-panel-body">
         {!scriptListCollapsed && <BehaviorScriptList locale={props.locale} scripts={props.scripts} entries={props.runtimeEntries} targets={props.codeTargets} selectedId={selected?.id}
           onAdd={addScript} onImport={(event) => void importScriptFiles(event)} onSelect={selectScript}
@@ -260,6 +292,7 @@ export function SceneBehaviorPanel(props: {
                 onDownload={() => downloadTextFile(draft.code, scriptDownloadFileName(draft.name), "text/javascript;charset=utf-8")}
                 onRevert={() => { setDraft(structuredClone(selected!)); setAiDraftInserted(false); setAiDraftUndo(undefined); }}
                 onDelete={() => { if (window.confirm(tr(props.locale, `删除“${draft.name}”吗？`, `Delete “${draft.name}”?`))) props.onDelete(draft.id); }} />
+              {props.debugging && <AuthorBehaviorDebugNotice locale={props.locale} entries={props.runtimeEntries} onStart={props.onPauseResume} />}
               <ProfessionalCodeEditor
                 locale={props.locale}
                 path={`bim-studio://behavior/${draft.id}.js`}
@@ -278,7 +311,7 @@ export function SceneBehaviorPanel(props: {
                 onSave={() => {
                   applyChanges();
                 }}
-                onRun={applyAndRun}
+                onRun={() => void applyAndRun()}
                 onOpenDocs={() => props.onOpenDocs("behavior-script")}
               />
               <footer>

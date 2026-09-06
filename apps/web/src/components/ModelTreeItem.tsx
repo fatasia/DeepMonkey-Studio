@@ -1,4 +1,4 @@
-import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Gauge, Layers3, Lock, Pause, Play, ScanLine, Trash2, Unlock } from "lucide-react";
+import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Gauge, Layers3, Lock, Pause, Play, ScanLine, Settings2, Trash2, Unlock } from "lucide-react";
 import type { ModelRecord, SceneFloorState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { statusText } from "../appPresentation";
@@ -20,6 +20,7 @@ export interface ModelTreeItemProps {
   onToggleTree: () => void;
   onLoadModel: () => void;
   onOptimize?: () => void;
+  onInstanceActions?: () => void;
   optimizing?: boolean;
   onSetRevision: () => void;
   onExpandFloors: (value: number) => void;
@@ -43,6 +44,7 @@ export function ModelTreeItem({
   onToggleTree,
   onLoadModel,
   onOptimize,
+  onInstanceActions,
   optimizing,
   onSetRevision,
   onExpandFloors,
@@ -124,11 +126,12 @@ export function ModelTreeItem({
           </button>
         )}
         {onOptimize && <button className="mini-button scene-row-optional-action" disabled={optimizing || model.status !== "ready"} onClick={onOptimize} aria-label={tr(locale, `保存并优化 ${model.name}`, `Save and optimize ${model.name}`)} title={tr(locale, "保存当前场景并优化此素材；不会覆盖原模型", "Save this scene and optimize this asset; source is preserved")}><Gauge size={15} /></button>}
+        {loaded && onInstanceActions && <button className="mini-button scene-row-optional-action" disabled={optimizing} onClick={onInstanceActions} aria-label={tr(locale, `管理模型实例 ${model.name}`, `Manage model instance ${model.name}`)} title={tr(locale, "新增独立副本或保引用替换素材", "Duplicate instance or replace its asset")}><Settings2 size={15} /></button>}
         <button
           className="mini-button scene-row-optional-action danger"
           disabled={Boolean(loaded && engine?.isModelLocked(model.id))}
-          aria-label={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : tr(locale, "删除模型", "Delete model")}
-          title={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : tr(locale, "删除模型", "Delete model")}
+          aria-label={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "移除实例", "Remove instance") : tr(locale, "删除素材", "Delete asset")}
+          title={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "从场景移除，素材保留；可撤销", "Remove from scene, keep asset; undo available") : tr(locale, "删除未使用的素材", "Delete unused asset")}
           onClick={onDeleteModel}
         >
           <Trash2 size={15} />

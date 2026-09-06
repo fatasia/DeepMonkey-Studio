@@ -117,7 +117,7 @@ export function createSceneEditorController(context: SceneEditorControllerContex
   const { setSceneObjectsVisible } = organizationCommands;
   const appearanceCommands = createSceneAppearanceCommands(context, setSceneObjectsVisible);
 
-  async function loadModel(model: ModelRecord, silent = false): Promise<LoadedSceneModel | undefined> {
+  async function loadModel(model: ModelRecord, silent = false, instanceId = model.id): Promise<LoadedSceneModel | undefined> {
     if (!engine) return;
     if (model.status !== "ready" || !model.manifest) {
       setMessage(model.message);
@@ -128,15 +128,15 @@ export function createSceneEditorController(context: SceneEditorControllerContex
       setMessage(`正在加载 ${model.name}`);
     }
     try {
-      const existed = engine.listModels().some(item => item.id === model.id);
-      const loaded = await engine.loadManifest(model.manifest);
+      const existed = engine.listModels().some(item => item.id === instanceId);
+      const loaded = instanceId === model.id ? await engine.loadManifest(model.manifest) : await engine.loadManifest(model.manifest, instanceId);
       if (!silent) {
-        engine.select(model.id);
-        setSceneOrganizationSelection(new Set([model.id]));
+        engine.select(instanceId);
+        setSceneOrganizationSelection(new Set([instanceId]));
       }
       setRevision((value) => value + 1);
       if (!silent) setMessage(`${model.name} 已加载`);
-      if (!silent && !existed) { engine.focusModel(model.id); recordSceneEdit(`添加模型“${model.name}”`); }
+      if (!silent && !existed) { engine.focusModel(instanceId); recordSceneEdit(`添加模型“${model.name}”`); }
       return loaded;
     } catch (reason) {
       if (isModelLoadSuperseded(reason)) return;
@@ -146,13 +146,13 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     }
   }
 
-  async function uploadModels(files?: FileList | File[]) {
+  async function uploadModels(files?: FileList | File[], robotEntries?: ReadonlyMap<File, string>) {
     if (!files?.length || !project) return;
     setUploading(true);
     try {
       for (const [index, file] of [...files].entries()) {
         setMessage(`正在上传 ${file.name}（${index + 1}/${files.length}）`);
-        await api.uploadModel(project.id, file, rvtConversionMode, rvtRevitVersion);
+        await api.uploadModel(project.id, file, rvtConversionMode, rvtRevitVersion, undefined, robotEntries?.get(file));
       }
       setMessage(`${files.length} 个模型上传完成，等待处理`);
       await refreshProject();
@@ -166,8 +166,10 @@ export function createSceneEditorController(context: SceneEditorControllerContex
 
   async function deleteModel(model: ModelRecord) {
     if (!project) return;
-    engine?.removeModel(model.id);
-    removeObjectInteractions(model.id);
+    if (engine?.listModels().some(item => item.kind === "model" && (item.assetModelId ?? item.id) === model.id)) {
+      setMessage("此素材仍在当前场景使用，请先移除实例并保存场景；素材未删除");
+      return;
+    }
     try {
       await api.deleteModel(project.id, model.id);
       await refreshProject();
@@ -609,6 +611,7 @@ export function createSceneEditorController(context: SceneEditorControllerContex
   }
 
   return {
+    recordSceneEdit,
     loadModel,
     uploadModels,
     deleteModel,

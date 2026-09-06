@@ -6,6 +6,7 @@ import type { ParametricModelGeneration } from "./parametricModeling.js";
 import type { VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTaskRecord } from "./vision.js";
 import type { SemanticModelRecord } from "./semantic.js";
 import type { AssetAttribution } from "./assetLibrary.js";
+import type { RobotAssetDefinition } from "./robotAsset.js";
 
 /** 项目、模型资产、转换清单与 Revit 运行时合同。 */
 export const supportedExtensions = [
@@ -34,11 +35,14 @@ export const supportedExtensions = [
   "usda",
   "usdc",
   "usdz",
+  "urdf",
+  // ZIP 仅用于完整机器人描述与依赖包，不作为通用压缩模型入口。
+  "zip",
 ] as const;
 
 export type ModelFormat = (typeof supportedExtensions)[number];
 export type ConversionStatus = "queued" | "processing" | "ready" | "waiting_converter" | "failed";
-export type ViewerKind = "ifc" | "fragments" | "gltf" | "fbx" | "dxf" | "obj" | "stl" | "3mf" | "dae" | "3ds" | "usd";
+export type ViewerKind = "ifc" | "fragments" | "gltf" | "fbx" | "dxf" | "obj" | "stl" | "3mf" | "dae" | "3ds" | "usd" | "urdf";
 export type RvtConversionMode = "ifc" | "native-glb";
 
 export interface RevitInstallationRecord {
@@ -67,6 +71,7 @@ export interface ModelManifest {
   inspectionUrl?: string;
   pmiUrl?: string;
   lods?: ModelLodResource[];
+  robot?: RobotAssetDefinition;
   createdAt: string;
 }
 
@@ -84,6 +89,7 @@ export interface ModelRecord {
   rvtConversionMode?: RvtConversionMode;
   rvtSourceVersion?: string;
   rvtRevitVersion?: string;
+  robotEntryPath?: string;
   size: number;
   status: ConversionStatus;
   progress: number;

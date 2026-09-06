@@ -43,16 +43,16 @@
 .commissioning-selection button {
   min-height: 38px;
   padding: 0 16px;
-  color: #071315;
-  border: 1px solid var(--accent-primary, #3ec6c1);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
   border-radius: 6px;
-  background: var(--accent-primary, #3ec6c1);
+  background: var(--accent);
   font-size: 12px;
   font-weight: 750;
   cursor: pointer;
 }
 .commissioning-titlebar span {
-  color: var(--accent-primary, #3ec6c1);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.14em;
@@ -81,10 +81,10 @@
   align-items: center;
   gap: 8px;
   padding: 0 15px;
-  color: #071315;
+  color: var(--on-accent);
   border: 0;
   border-radius: 7px;
-  background: var(--accent-primary, #3ec6c1);
+  background: var(--accent);
   font-size: 12px;
   font-weight: 750;
   cursor: pointer;
@@ -132,7 +132,7 @@
 .commissioning-steps > button.attention {
   opacity: 1;
 }
-.commissioning-steps > button.active { background: rgba(62, 198, 193, .07); }
+.commissioning-steps > button.active { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .commissioning-steps > button.attention { background: rgba(215, 173, 85, .06); }
 .commissioning-steps > button:disabled { cursor: not-allowed; opacity: .35; }
 .commissioning-steps b {
@@ -147,7 +147,8 @@
   font-size: 11px;
 }
 .commissioning-steps .active b {
-  background: var(--accent-primary, #3ec6c1);
+  color: var(--on-accent);
+  background: var(--accent);
 }
 .commissioning-steps .complete b { background: #5fbe8a; }
 .commissioning-steps .attention b { background: #d7ad55; }
@@ -168,7 +169,7 @@
 }
 .commissioning-control-stage:focus-visible {
   border-radius: 10px;
-  box-shadow: 0 0 0 2px rgba(62, 198, 193, .28);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 .commissioning-control-stage-header {
   display: flex;
@@ -185,7 +186,7 @@
   gap: 3px;
 }
 .commissioning-control-stage-header span {
-  color: var(--accent-primary, #3ec6c1);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 750;
 }
@@ -280,7 +281,7 @@
   gap: 4px;
 }
 .commissioning-ai-draft strong {
-  color: var(--accent-primary, #3ec6c1);
+  color: var(--accent);
   font-size: 12px;
 }
 .commissioning-ai-draft span {

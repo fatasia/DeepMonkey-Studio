@@ -20,7 +20,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  color: var(--accent-primary, #3ec6c1);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -50,9 +50,9 @@
 }
 .workcell-audit-panel.idle > header button,
 .workcell-audit-actions button {
-  color: #071315;
-  border-color: var(--accent-primary, #3ec6c1);
-  background: var(--accent-primary, #3ec6c1);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  background: var(--accent);
 }
 .workcell-audit-panel > header button:disabled {
   cursor: not-allowed;
@@ -184,8 +184,8 @@
   margin: 0;
   padding: 9px 10px;
   color: var(--muted);
-  border-left: 2px solid var(--accent-primary, #3ec6c1);
-  background: rgba(62, 198, 193, .06);
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
   font-size: 11px;
   line-height: 1.55;
 }
@@ -257,7 +257,7 @@
 .workcell-audit-actions button {
   min-height: 38px;
   padding: 0 12px;
-  border: 1px solid var(--accent-primary, #3ec6c1);
+  border: 1px solid var(--accent);
   border-radius: 6px;
   font-size: 12px;
   font-weight: 700;

@@ -68,10 +68,10 @@
 .workcell-planning-confirmation button {
   min-height: 34px;
   padding: 0 10px;
-  color: #071315;
-  border: 1px solid var(--accent-primary, #3ec6c1);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
   border-radius: 6px;
-  background: var(--accent-primary, #3ec6c1);
+  background: var(--accent);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -123,7 +123,7 @@
   outline: none;
   background: #101a1e;
 }
-.workcell-planning-number input:focus { border-color: var(--accent-primary, #3ec6c1); }
+.workcell-planning-number input:focus { border-color: var(--accent); }
 .workcell-planning-number em {
   display: grid;
   height: 32px;

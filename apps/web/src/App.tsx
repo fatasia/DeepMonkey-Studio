@@ -775,6 +775,7 @@ export function App() {
     },
     sceneHistory: {
       ...sceneHistoryRef.current.getState(),
+      flush: flushSceneHistoryEdit,
       undo: undoSceneEdit,
       redo: redoSceneEdit,
     },

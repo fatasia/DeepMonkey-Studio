@@ -7,6 +7,7 @@ import { SceneManagerView } from "./SceneManagerView";
 import { analyzeProjectResourceGovernance } from "./projectResourceGovernance";
 import { filterAndSortScenes, type SceneSortKey, type SceneStatusFilter } from "./sceneManagerPresentation";
 import { useScenePublicationHistory } from "../hooks/useScenePublicationHistory";
+import { projectModelMatchesSearch } from "./projectModelSearch";
 
 type ProjectAssetTab = "all" | "model" | "image" | "video" | "environment" | "pbr-material";
 
@@ -236,11 +237,11 @@ function useSceneManagerController({
     }
   }
 
-  async function uploadLibraryModels(files: FileList | null) {
+  async function uploadLibraryModels(files: FileList | File[] | null, robotEntries?: ReadonlyMap<File, string>) {
     if (!files?.length) return;
     setModelLibraryBusy(true);
     try {
-      await onUploadModels(files);
+      await onUploadModels(files, robotEntries);
     } finally {
       setModelLibraryBusy(false);
       if (modelUploadRef.current) modelUploadRef.current.value = "";
@@ -355,7 +356,7 @@ function useSceneManagerController({
 
   const normalizedSearch = assetSearch.trim().toLocaleLowerCase();
   const visibleModels = (project?.models ?? []).filter(
-    (model) => (assetTab === "all" || assetTab === "model") && (!normalizedSearch || model.name.toLocaleLowerCase().includes(normalizedSearch)),
+    (model) => (assetTab === "all" || assetTab === "model") && projectModelMatchesSearch(model, normalizedSearch),
   );
   const visibleImages = (project?.assets ?? []).filter(
     (asset) => asset.kind === "image" && (assetTab === "all" || assetTab === "image") && (!normalizedSearch || asset.name.toLocaleLowerCase().includes(normalizedSearch)),

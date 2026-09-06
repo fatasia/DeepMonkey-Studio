@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProjectRecord } from "@bim-studio/contracts";
+import { createSdkExampleScript } from "../behavior/sdkExampleInsertion";
 import type { AppState } from "./useAppState";
 
 vi.mock("react", () => ({ useEffect: () => undefined, useRef: (current: unknown) => ({ current }), useCallback: (callback: unknown) => callback }));
@@ -50,5 +51,44 @@ describe("explicit project submission recovery", () => {
     await controller.submitProjectDialog();
     expect(apiMock.createProject).toHaveBeenCalledTimes(2);
     expect(state.setError).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("documentation navigation preserves author work", () => {
+  function docsFixture(name = "draft.js") {
+    const base = fixture();
+    const draft = { ...createSdkExampleScript("lifecycle", [], () => "draft"), name, code: "UNSAVED" };
+    const dispatch = vi.fn();
+    const state = { ...base.state, route: { view: "dashboard", projectId: "p", applicationId: "a", pageId: "one" },
+      pendingBehaviorDraftRef: { current: draft }, applicationSessionRef: { current: { store: { dispatch } } },
+    } as unknown as AppState;
+    const controller = useAppNavigationController({ state, sceneSnapshotFactoryRef: { current: undefined } });
+    return { state, controller, dispatch };
+  }
+
+  it("flushes a named draft into the existing store before opening and returns without a reload", () => {
+    const { state, controller, dispatch } = docsFixture();
+    controller.openDocs("sdk-examples");
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(state.pendingBehaviorDraftRef.current).toBeUndefined();
+    expect(state.setRoute).toHaveBeenLastCalledWith({ view: "docs", documentId: "sdk-examples" });
+    controller.closeDocs();
+    expect(state.setRoute).toHaveBeenLastCalledWith(state.route);
+    expect(apiMock.createProject).not.toHaveBeenCalled();
+    expect(apiMock.updateProject).not.toHaveBeenCalled();
+  });
+
+  it("blocks unnamed drafts and store failures without opening docs or discarding data", () => {
+    const unnamed = docsFixture(" ");
+    unnamed.controller.openDocs("sdk-examples");
+    expect(unnamed.state.setRoute).not.toHaveBeenCalled();
+    expect(unnamed.state.setError).toHaveBeenCalledWith("请先填写脚本名称，再离开脚本编辑器");
+    expect(unnamed.state.pendingBehaviorDraftRef.current?.code).toBe("UNSAVED");
+    const failed = docsFixture();
+    failed.dispatch.mockImplementationOnce(() => { throw new Error("store rejected"); });
+    failed.controller.openDocs("sdk-examples");
+    expect(failed.state.showError).toHaveBeenCalled();
+    expect(failed.state.setRoute).not.toHaveBeenCalled();
+    expect(failed.state.pendingBehaviorDraftRef.current?.code).toBe("UNSAVED");
   });
 });

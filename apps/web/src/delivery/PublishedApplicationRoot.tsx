@@ -5,7 +5,7 @@ import { applyDocumentBranding } from "../branding/documentBranding";
 import { DashboardPlayback } from "../components/DashboardPlayback";
 import { subscribeApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 import type { AppLocale } from "../i18n";
-import type { SystemBrandingSettings } from "@bim-studio/contracts";
+import { getSceneModelAssetId, type SystemBrandingSettings } from "@bim-studio/contracts";
 import { publicApplicationAction, publishedApplicationId, publishedEntryPage } from "./publishedApplicationModel";
 import "./published-application.css";
 import { PublishedModelCredits } from "./PublishedModelCredits";
@@ -82,7 +82,7 @@ export function PublishedApplicationRoot() {
       <button type="button" title="发布说明" aria-label="发布说明" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><Info size={15} /></button>
       <button type="button" title="刷新发布版本" aria-label="刷新发布版本" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={15} /></button>
     </header>
-    <PublishedModelCredits locale={locale} models={project.models} modelIds={application.scenes.flatMap(scene => scene.models.map(model => model.modelId))} />
+    <PublishedModelCredits locale={locale} models={project.models} modelIds={application.scenes.flatMap(scene => scene.models.map(getSceneModelAssetId))} />
     {detailsOpen && <aside className="published-application-details" aria-label="发布说明">
       <strong>正式版本 · 只读运行</strong>
       <p>发布于 {new Date(publication.publishedAt).toLocaleString(locale)}。交互、筛选和脚本数据只存在于本次运行，不会修改编辑草稿。</p>

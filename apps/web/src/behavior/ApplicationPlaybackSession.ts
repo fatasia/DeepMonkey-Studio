@@ -47,6 +47,8 @@ export class ApplicationPlaybackSession {
     this.state = new ApplicationPlaybackState(source, options.variables, options.filters);
     this.pageId = pageId;
     this.manager = new SceneBehaviorManager(options);
+    this.paused = options.hostOptions?.authorDebug === true;
+    if (this.paused) this.manager.pause();
     this.state.onChange = () => this.emit();
     this.manager.onChange = (entries) => { this.entries = entries; this.emit(); };
     this.manager.onLog = (moduleId, log) => this.log({ moduleId, ...log });
@@ -81,6 +83,7 @@ export class ApplicationPlaybackSession {
   }
 
   get allowsProtectedData() { return this.options.protectedDataEnabled !== false; }
+  get debugging() { return this.options.hostOptions?.authorDebug === true; }
   get currentPageId() { return this.pageId; }
 
   selectPage(pageId: string) {
@@ -109,6 +112,8 @@ export class ApplicationPlaybackSession {
   get canStep() { return !this.disposed && this.paused && this.manager.canStep; }
   step() { return this.canStep && this.manager.step(); }
   togglePause() {
+    if (this.disposed) return;
+    if (this.debugging && this.paused && (this.loading || !this.entries.length || this.entries.some(entry => entry.diagnostics.status === "initializing"))) return;
     this.paused = !this.paused;
     if (this.paused) this.manager.pause(); else this.manager.resume();
     this.emit();

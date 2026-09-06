@@ -1,5 +1,6 @@
 import type { ApplicationDocument, ApplicationObjectRef, DashboardDataWidgetNode, DashboardPageDocument, InteractionFlow, SceneDocument } from "./application.js";
 import type { SceneDashboardState, SceneDashboardWidgetState, SceneInteractionTarget, SceneSnapshot } from "./index.js";
+import { getSceneModelAssetId } from "./sceneModelAsset.js";
 
 const PAGE_WIDTH = 1920 as const;
 const PAGE_HEIGHT = 1080 as const;
@@ -42,7 +43,7 @@ export function migrateSceneSnapshotV1(snapshot: SceneSnapshot): ApplicationDocu
     actions: structuredClone(script.actions ?? []),
     legacyScript: { runtime: "legacy-trusted-main-thread", script: structuredClone(script) }
   }));
-  const modelAssets = new Map(source.models.map((model) => [model.modelId, model]));
+  const modelAssets = new Map(source.models.map((model) => [getSceneModelAssetId(model), model]));
   return {
     schemaVersion: 2,
     metadata: {
@@ -78,7 +79,7 @@ export function migrateSceneSnapshotV1(snapshot: SceneSnapshot): ApplicationDocu
       permissions: []
     })),
     assets: [...modelAssets.values()].map((model) => ({
-      id: model.modelId,
+      id: getSceneModelAssetId(model),
       kind: "model",
       projectId,
       ...(model.sourceName ? { sourceName: model.sourceName } : {}),

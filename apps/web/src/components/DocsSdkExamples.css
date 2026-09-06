@@ -1,0 +1,39 @@
+.docs-sdk-examples { margin: 24px 0 36px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface-1); overflow: hidden; }
+.docs-sdk-example-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.docs-sdk-example-list button { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 16px 12px; border: 0; border-bottom: 2px solid transparent; color: var(--text); background: transparent; text-align: left; cursor: pointer; }
+.docs-sdk-example-list button + button { border-left: 1px solid var(--line); }
+.docs-sdk-example-list button:hover { background: var(--surface-3); }
+.docs-sdk-example-list button[aria-pressed="true"] { color: var(--text-strong); border-bottom-color: var(--accent); background: var(--accent-soft); }
+.docs-sdk-example-number { font: 12px/1.7 "Cascadia Code", Consolas, monospace; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.docs-sdk-example-list strong { display: block; font-size: 13px; line-height: 1.5; }
+.docs-sdk-example-list small { display: block; margin-top: 4px; font-size: 11px; line-height: 1.5; color: var(--text-muted); }
+.docs-sdk-example-list button[aria-pressed="true"] small,
+.docs-sdk-example-list button[aria-pressed="true"] .docs-sdk-example-number { color: var(--text); }
+.docs-sdk-example-list svg { flex-shrink: 0; margin-top: 3px; color: var(--accent); }
+.docs-sdk-example-detail { padding: 24px; }
+.docs-sdk-example-detail > header > span { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 11px; }
+.docs-sdk-example-detail > header > h2 { margin: 8px 0; padding: 0; font-size: 21px; }
+.docs-sdk-example-detail > header > p { font-size: 13px; }
+.docs-sdk-example-facts { display: grid; gap: 8px; margin: 20px 0; font-size: 12px; }
+.docs-sdk-example-facts > div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; }
+.docs-sdk-example-facts dt { color: var(--text-muted); }
+.docs-sdk-example-facts dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.docs-sdk-example-api { font-size: 12px; }
+.docs-sdk-example-api summary { width: fit-content; color: var(--text-strong); cursor: pointer; }
+.docs-sdk-example-api > ul { margin-top: 12px; }
+.docs-sdk-example-api > p { margin: 6px 0; overflow-wrap: anywhere; }
+.docs-sdk-example-action { margin-top: 20px; }
+.docs-sdk-example-action > p,.docs-sdk-example-confirm > p { margin: 8px 0 0; color: var(--text-muted); font-size: 12px; }
+.docs-sdk-example-action button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-strong); font-size: 12px; cursor: pointer; transition: background 160ms cubic-bezier(.16, 1, .3, 1); }
+.docs-sdk-example-action button:hover { background: var(--surface-3); }
+.docs-sdk-example-action .docs-sdk-primary { color: var(--on-accent); border-color: var(--accent); background: var(--accent); font-weight: 600; }
+.docs-sdk-example-action .docs-sdk-primary:hover { background: var(--accent-hover); }
+.docs-sdk-examples button:disabled { opacity: .5; cursor: not-allowed; }
+.docs-sdk-examples button:focus-visible,.docs-sdk-example-api summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.docs-sdk-example-confirm { padding: 16px; border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--surface-2); }
+.docs-sdk-example-confirm > strong { display: block; color: var(--text-strong); font-size: 13px; overflow-wrap: anywhere; }
+.docs-sdk-example-confirm > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.docs-sdk-example-feedback { min-height: 18px; margin-top: 8px; color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .docs-sdk-example-list { grid-template-columns: 1fr; }.docs-sdk-example-list button { padding: 12px 16px; }.docs-sdk-example-list button + button { border-left: 0; }.docs-sdk-example-list small { display: none; }.docs-sdk-example-list button > span:nth-child(2) { flex: 1; } }
+@media (max-width: 600px) { .docs-sdk-example-detail { padding: 16px; }.docs-sdk-example-facts > div { grid-template-columns: 1fr; gap: 2px; } }
+@media (prefers-reduced-motion: reduce) { .docs-sdk-examples button { transition: none; } }

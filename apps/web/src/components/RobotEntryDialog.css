@@ -1,0 +1,4 @@
+.robot-entry-dialog { width: min(420px, calc(100vw - 32px)); min-width: 0; color: var(--text); background: var(--surface-1); }
+.robot-entry-dialog h2 { margin: 0 0 16px; color: var(--text-strong); font-size: 16px; }
+.robot-entry-dialog select { width: 100%; min-width: 0; }
+.robot-entry-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }

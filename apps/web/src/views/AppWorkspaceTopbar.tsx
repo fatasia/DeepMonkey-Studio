@@ -225,7 +225,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
               </button>
             )}
             <label className="topbar-auto-save" title={tr(locale, "修改后自动保存整个项目", "Automatically save project changes")}>
-              <input type="checkbox" checked={autoSaveEnabled} onChange={(event) => changeAutoSave(event.target.checked)} />
+              <input type="checkbox" aria-label={tr(locale, "自动保存", "Auto save")} checked={autoSaveEnabled} onChange={(event) => changeAutoSave(event.target.checked)} />
               <span>{tr(locale, "自动保存", "Auto save")}</span>
             </label>
             <button className="button primary topbar-save-action" aria-label={tr(locale, "保存项目", "Save project")} title={tr(locale, "保存项目", "Save project")} onClick={() => void saveScene()} disabled={busy}>

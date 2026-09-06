@@ -76,6 +76,23 @@ function sceneFixture(): SceneSnapshot {
 }
 
 describe("scene import model rebinding", () => {
+  it("rebinds one shared asset without rewriting either independent instance or its references", () => {
+    const scene = sceneFixture();
+    scene.models = [
+      { ...scene.models[0]!, assetModelId: "resource-old" },
+      { ...scene.models[0]!, modelId: "instance-two", assetModelId: "resource-old" },
+    ];
+    const before = structuredClone(scene);
+    const result = rebindImportedSceneModels(scene, targetProject, new Map([["resource-old", "model-new"], ["model-old", "accidental-asset-map"]]));
+    expect(result.missingModelCount).toBe(0);
+    expect(result.scene.models.map(item => [item.modelId, item.assetModelId])).toEqual([["model-old", "model-new"], ["instance-two", "model-new"]]);
+    expect(result.scene.animation).toEqual(before.animation);
+    expect(result.scene.annotations).toEqual(before.annotations);
+    expect(result.scene.selectedModelId).toBe("model-old");
+    expect(result.scene.selectionSets).toEqual(before.selectionSets);
+    expect(scene).toEqual(before);
+  });
+
   it("updates every model reference using the resolved target asset", () => {
     const scene = sceneFixture();
     scene.simulationEntities = [

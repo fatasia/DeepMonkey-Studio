@@ -1,5 +1,5 @@
 import {
-  Braces, CircleStop, ExternalLink, Focus, Maximize2, PanelLeftClose, PanelLeftOpen,
+  Braces, Bug, CircleStop, ExternalLink, Focus, Maximize2, PanelLeftClose, PanelLeftOpen,
   GitBranch, MoreHorizontal, PackagePlus, PanelRightOpen, Pause, Play, Settings2, Sparkles, StepForward, X,
 } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -33,6 +33,7 @@ interface Props {
   onToggleVersion: () => void;
   onFocusTarget: () => void;
   onRun: () => void;
+  onDebug?: (() => void) | undefined;
   onPauseResume: () => void;
   onStop: () => void;
   onToggleInspector: () => void;
@@ -41,7 +42,12 @@ interface Props {
 
 export function BehaviorPanelHeader(props: Props) {
   const runLabel = props.runScope === "current" ? tr(props.locale, "试运行当前脚本", "Test current script") : tr(props.locale, "试运行已启用脚本", "Test enabled scripts");
-  return <header className="behavior-panel-header">
+  return <header className="behavior-panel-header" onKeyDown={event => {
+    const menu = (event.target as HTMLElement).closest("details");
+    if (event.key !== "Escape" || !menu?.open) return;
+    event.preventDefault(); event.stopPropagation(); menu.open = false;
+    menu.querySelector("summary")?.focus();
+  }}>
     <div className="behavior-panel-heading">
       <span><Braces size={16} /></span>
       <div>
@@ -68,6 +74,7 @@ export function BehaviorPanelHeader(props: Props) {
       <details className="behavior-header-menu behavior-more-menu">
         <summary aria-label={tr(props.locale, "更多工具", "More tools")} title={tr(props.locale, "更多工具", "More tools")}><MoreHorizontal size={14} /></summary>
         <div>
+          {props.onDebug && <button type="button" disabled={!props.hasDraft} title={tr(props.locale, "使用浏览器 DevTools 调试当前脚本的私有运行副本", "Debug a private run of the current script in browser DevTools")} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); props.onDebug?.(); }}><Bug size={13} /><span>{tr(props.locale, "DevTools 调试当前脚本", "Debug current script in DevTools")}</span></button>}
           <MenuAction active={props.agentOpen} label={tr(props.locale, "AI 脚本助手", "AI script assistant")} onClick={props.onToggleAgent} icon={<Sparkles size={13} />} />
           <MenuAction active={props.dependenciesOpen} label={tr(props.locale, "项目依赖", "Project dependencies")} onClick={props.onToggleDependencies} icon={<PackagePlus size={13} />} />
           <MenuAction active={props.versionOpen} label={tr(props.locale, "脚本版本", "Script versions")} onClick={props.onToggleVersion} icon={<GitBranch size={13} />} />

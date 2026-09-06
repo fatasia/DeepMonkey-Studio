@@ -6,6 +6,7 @@ import { InteractionEditor } from "../components/InteractionEditor";
 import { IndustrialPrefabInspector } from "../components/IndustrialPrefabInspector";
 import { ModelAnimationControl } from "../components/ModelAnimationControl";
 import { ModelRigControl } from "../components/ModelRigControl";
+import { RobotSceneInspector } from "../components/RobotSceneInspector";
 import { ObjectAppearanceEditor } from "../components/ObjectAppearanceEditor";
 import { SceneAnnotationInspector } from "../components/SceneAnnotationInspector";
 import { SceneDataBindingEditor } from "../components/SceneDataBindingEditor";
@@ -249,6 +250,10 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 onChange={(event) => updateSelectionOpacity(Number(event.target.value))}
               />
             </>
+          )}
+          {inspectorTab === "overview" && engine && (
+            <RobotSceneInspector key={`${activeScene?.id}:${selected.id}`} locale={locale} engine={engine} modelId={selected.id}
+              disabled={selectionLocked || bindings.state.busy} onChange={() => setRevision(value => value + 1)} />
           )}
           {inspectorTab === "data" && project && activeScene && (
             <SceneDataBindingEditor

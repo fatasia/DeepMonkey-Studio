@@ -1,4 +1,5 @@
 import type { GlobalLightingState, ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
+import { getSceneModelAssetId } from "@bim-studio/contracts";
 import {
   DEFAULT_CAMERA_CONSTRAINTS,
   DEFAULT_CLIPPING,
@@ -32,9 +33,9 @@ export async function applySceneViewerSnapshot(
   engine.setInteractionScripts(scene.interactions ?? []);
 
   for (const state of scene.models) {
-    const record = project.models.find((model) => model.id === state.modelId);
+    const record = project.models.find((model) => model.id === getSceneModelAssetId(state));
     if (!record?.manifest) throw new Error(`发布包缺少模型“${state.name}”的浏览清单`);
-    await engine.loadManifest(record.manifest);
+    await engine.loadManifest(record.manifest, state.modelId);
     if (options.isCancelled?.()) return;
     engine.applyModelState(state.modelId, state);
     engine.rename(state.modelId, state.name);

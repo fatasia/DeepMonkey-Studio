@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
-import { isDesktopRuntime } from "../adapters/runtimeHost";
+import { createUpsertScriptModuleCommand } from "@bim-studio/studio-core";
+import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
 import { docsPath } from "../docs/docsRoute";
 import { RENDERER_BACKEND_STORAGE_KEY, REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
 import { readRoute, routeHistoryState, routePath, type AppRoute } from "../appRoute";
@@ -62,6 +63,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
   } = state;
   const activeProjectId = useRef(project?.id);
   const projectSubmitting = useRef(false);
+  const docsReturnRoute = useRef<AppRoute | undefined>(undefined);
   activeProjectId.current = project?.id;
 
   useEffect(() => {
@@ -94,6 +96,29 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
       navigate(sceneViewerDeliveryRoute()!, true);
       return;
     }
+    if (route.view !== "docs") {
+      try {
+        const result = flushPendingBehaviorDraft(state.pendingBehaviorDraftRef, draft => {
+          state.applicationSessionRef.current.store.dispatch(createUpsertScriptModuleCommand(draft));
+        });
+        if (result === "name-required") {
+          setError("请先填写脚本名称，再离开脚本编辑器");
+          return;
+        }
+      } catch (reason) {
+        showError(reason);
+        return;
+      }
+      docsReturnRoute.current = structuredClone(route);
+      if (route.view === "studio") {
+        const snapshot = sceneSnapshotFactoryRef.current?.();
+        if (snapshot) {
+          setActiveScene(snapshot);
+          rendererSnapshotRef.current = { scene: snapshot, readOnly: false, fastRuntime: false, recoveryMessage: "已返回编辑器，场景修改已保留" };
+        }
+      }
+    }
+    setError(undefined);
     const next: AppRoute = { view: "docs", ...(documentId ? { documentId } : {}) };
     window.history.pushState(routeHistoryState(next), "", docsPath(documentId, sectionId));
     setRoute(next);
@@ -104,11 +129,9 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
       navigate(sceneViewerDeliveryRoute()!, true);
       return;
     }
-    if (isDesktopRuntime()) {
-      window.location.assign("/manager");
-      return;
-    }
-    navigate({ view: "manager" });
+    const destination = docsReturnRoute.current;
+    docsReturnRoute.current = undefined;
+    navigate(destination ?? { view: "manager" });
   }
 
   function replaceDashboardView(view: DashboardViewState) {

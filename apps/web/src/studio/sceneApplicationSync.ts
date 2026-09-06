@@ -1,4 +1,5 @@
 import {
+  getSceneModelAssetId,
   type ApplicationDocument,
   type ApplicationObjectRef,
   type AssetEntry,
@@ -61,7 +62,7 @@ export function syncSceneIntoApplication(
     }))
   ];
   synced.assets = mergeAssets(synced.assets, snapshot.models.map((model) => ({
-    id: model.modelId,
+    id: getSceneModelAssetId(model),
     kind: "model" as const,
     projectId: snapshot.projectId,
     ...(model.sourceName ? { sourceName: model.sourceName } : {}),
@@ -99,6 +100,6 @@ function mergeAssets(current: readonly AssetEntry[], replacements: readonly Asse
   const replacementIds = new Set(replacements.map((asset) => asset.id));
   return [
     ...current.filter((asset) => !replacementIds.has(asset.id)),
-    ...structuredClone(replacements)
+    ...structuredClone([...new Map(replacements.map(asset => [asset.id, asset])).values()])
   ];
 }

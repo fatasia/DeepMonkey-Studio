@@ -88,6 +88,8 @@ export interface LayerTreeNode {
 
 export interface LoadedSceneModel {
   id: string;
+  /** 场景实例与项目资源分离；未指定的旧模型仍以 id 查资源。 */
+  assetModelId?: string;
   name: string;
   object: THREE.Object3D;
   kind: "model" | "primitive";

@@ -99,8 +99,9 @@ function cloneScene(scene: SceneSnapshot): SceneSnapshot {
 
 function sceneFingerprint(scene: SceneSnapshot): string {
   const copy = cloneScene(scene);
-  // 时间戳和当前选择不是作者内容，不能制造无意义的撤销步骤。
+  // 保存时生成的缩略图、时间戳和当前选择不是作者编辑，不能吃掉一次撤销。
   copy.updatedAt = "";
+  delete copy.thumbnail;
   delete copy.selectedModelId;
   delete copy.selectedLayerId;
   delete copy.selectedAnnotationId;

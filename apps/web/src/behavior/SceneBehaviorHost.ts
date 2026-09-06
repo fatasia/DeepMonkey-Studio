@@ -14,6 +14,7 @@ import {
   type SceneScriptLifecycle
 } from "@bim-studio/scene-sdk";
 import type { JsonValue } from "@bim-studio/contracts";
+import { behaviorScriptSource } from "./behaviorScriptSource";
 
 export interface SceneBehaviorWorkerPort {
   onmessage: ((event: MessageEvent<unknown>) => void) | null;
@@ -23,6 +24,8 @@ export interface SceneBehaviorWorkerPort {
 }
 
 export interface SceneBehaviorHostOptions {
+  /** Only explicit, disposable author sessions may suspend execution watchdogs. */
+  authorDebug?: boolean;
   runtime?: Partial<SceneBehaviorRuntimeSettings>;
   executionBudgetMs?: number;
   initializationTimeoutMs?: number;
@@ -47,12 +50,13 @@ export interface SceneBehaviorHostDiagnostics {
   lastError?: string;
   lastErrorLocation?: { line: number; column: number };
   scheduler: SceneBehaviorSchedulerDiagnostics;
+  authorDebug?: { sourceUrl: string; lineOffset: number; awaitingStart: boolean };
 }
 
 interface PendingInvocation {
   lifecycle: SceneScriptLifecycle;
   startedAt: number;
-  timeoutId: ReturnType<typeof setTimeout>;
+  timeoutId: ReturnType<typeof setTimeout> | undefined;
 }
 
 const LIFECYCLES = new Set<SceneScriptLifecycle>(["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"]);
@@ -66,6 +70,8 @@ export class SceneBehaviorHost {
   onDiagnosticsChange?: (diagnostics: SceneBehaviorHostDiagnostics) => void;
 
   private readonly worker: SceneBehaviorWorkerPort;
+  private readonly authorDebug: boolean;
+  private awaitingDebugStart = false;
   private readonly scheduler: SceneBehaviorScheduler;
   private readonly executionBudgetMs: number;
   private readonly initializationTimeoutMs: number;
@@ -95,6 +101,7 @@ export class SceneBehaviorHost {
 
   constructor(worker: SceneBehaviorWorkerPort, options: SceneBehaviorHostOptions = {}) {
     this.worker = worker;
+    this.authorDebug = options.authorDebug === true;
     this.scheduler = new SceneBehaviorScheduler(options.runtime);
     this.executionBudgetMs = finiteOption(options.executionBudgetMs, 1, 10_000, 25);
     this.initializationTimeoutMs = finiteOption(options.initializationTimeoutMs, 10, 60_000, 2_000);
@@ -119,23 +126,28 @@ export class SceneBehaviorHost {
     this.lastErrorLocation = undefined;
     this.scheduler.reset();
     this.worker.postMessage({ type: "behavior.initialize", module: this.module, sceneId });
-    this.initTimeoutId = globalThis.setTimeout(() => this.fail(`行为“${module.name}”初始化超过 ${this.initializationTimeoutMs} ms`), this.initializationTimeoutMs);
+    if (!this.authorDebug) this.initTimeoutId = globalThis.setTimeout(() => this.fail(`行为“${module.name}”初始化超过 ${this.initializationTimeoutMs} ms`), this.initializationTimeoutMs);
     this.emitDiagnostics();
   }
 
   advance(deltaMs: number): void {
     if (this.status !== "running" || !this.module) return;
+    // DevTools cannot report pause state to page JS. Freeze the clock while a
+    // frame is in flight; never enqueue elapsed wall time behind a breakpoint.
+    if (this.authorDebug && this.pending.size) return;
     for (const tick of this.scheduler.advance(deltaMs)) {
       if (this.module.lifecycle.includes(tick.lifecycle)) this.invoke(tick.lifecycle, tick.elapsedMs, { deltaMs: tick.deltaMs });
     }
   }
 
   dispatchEvent(event: SceneEvent): void {
+    if (this.authorDebug && this.pending.size) return;
     if (this.status === "running" && this.module?.lifecycle.includes("onEvent")) this.invoke("onEvent", this.scheduler.diagnostics().elapsedMs, { event });
   }
 
   dispatchData(data: JsonValue): void {
     this.latestData = structuredClone(data);
+    if (this.authorDebug && this.pending.size) return;
     if (this.status === "running" && this.module?.lifecycle.includes("onData")) this.invoke("onData", this.scheduler.diagnostics().elapsedMs, { data: this.latestData });
   }
 
@@ -148,7 +160,7 @@ export class SceneBehaviorHost {
 
   /** Advance one simulation frame without resuming event/data dispatch. */
   step(deltaMs = 1000 / 60): boolean {
-    if (this.status !== "paused" || !this.module || this.pending.size) return false;
+    if (this.status !== "paused" || !this.module || this.pending.size || this.awaitingDebugStart) return false;
     this.scheduler.resume();
     try {
       for (const tick of this.scheduler.advance(deltaMs)) {
@@ -166,6 +178,10 @@ export class SceneBehaviorHost {
     this.stopped = false;
     this.scheduler.resume();
     this.status = "running";
+    if (this.awaitingDebugStart) {
+      this.awaitingDebugStart = false;
+      this.invokeInitialLifecycles();
+    }
     this.emitDiagnostics();
   }
 
@@ -175,6 +191,7 @@ export class SceneBehaviorHost {
   }
 
   stop(): void {
+    if (this.authorDebug) { this.finishDispose(); return; }
     if (this.status !== "running" && this.status !== "paused") return;
     if (!this.stopped && this.module?.lifecycle.includes("onStop")) {
       this.invoke("onStop", this.scheduler.diagnostics().elapsedMs);
@@ -187,6 +204,9 @@ export class SceneBehaviorHost {
 
   dispose(): void {
     if (this.status === "disposed" || this.status === "disposing") return;
+    // A debugger-paused Worker cannot acknowledge teardown. Its private run is
+    // discarded immediately, including callbacks that were already queued.
+    if (this.authorDebug) { this.finishDispose(); return; }
     if (this.status === "idle" || this.status === "error") {
       this.finishDispose();
       return;
@@ -223,7 +243,8 @@ export class SceneBehaviorHost {
       lastExecutionMs: this.lastExecutionMs,
       ...(this.lastError ? { lastError: this.lastError } : {}),
       ...(this.lastErrorLocation ? { lastErrorLocation: { ...this.lastErrorLocation } } : {}),
-      scheduler: this.scheduler.diagnostics()
+      scheduler: this.scheduler.diagnostics(),
+      ...(this.authorDebug && this.module ? { authorDebug: { sourceUrl: behaviorScriptSource(this.module).url, lineOffset: behaviorScriptSource(this.module).lineOffset, awaitingStart: this.awaitingDebugStart } } : {})
     };
   }
 
@@ -234,7 +255,7 @@ export class SceneBehaviorHost {
       return;
     }
     const invocationId = this.nextInvocationId(lifecycle);
-    const timeoutId = globalThis.setTimeout(() => this.fail(`行为“${this.module?.name ?? "unknown"}”的 ${lifecycle} 超过 ${this.executionBudgetMs} ms`), this.executionBudgetMs);
+    const timeoutId = this.authorDebug ? undefined : globalThis.setTimeout(() => this.fail(`行为“${this.module?.name ?? "unknown"}”的 ${lifecycle} 超过 ${this.executionBudgetMs} ms`), this.executionBudgetMs);
     this.pending.set(invocationId, { lifecycle, startedAt: this.now(), timeoutId });
     this.worker.postMessage({
       type: "behavior.invoke",
@@ -256,9 +277,10 @@ export class SceneBehaviorHost {
     if (value.type === "behavior.ready") {
       if (this.status !== "initializing" || value.moduleId !== this.module?.id) return;
       this.clearInitializationTimeout();
-      this.status = "running";
-      if (this.module.lifecycle.includes("onStart")) this.invoke("onStart", 0, this.latestData === undefined ? {} : { data: this.latestData });
-      if (this.latestData !== undefined && this.module.lifecycle.includes("onData")) this.invoke("onData", 0, { data: this.latestData });
+      this.awaitingDebugStart = this.authorDebug;
+      this.status = this.authorDebug ? "paused" : "running";
+      if (this.authorDebug) this.scheduler.pause();
+      else this.invokeInitialLifecycles();
       this.emitDiagnostics();
       return;
     }
@@ -321,9 +343,11 @@ export class SceneBehaviorHost {
     try {
       const result = await this.executeNetworkRequest({ binding: request.binding, variables: request.variables });
       if (this.pending.get(request.invocationId) !== pending) return;
+      if (this.authorDebug) globalThis.clearTimeout(pending.timeoutId);
       this.worker.postMessage({ type: "behavior.network.result", requestId: request.requestId, result });
     } catch (reason) {
       if (this.pending.get(request.invocationId) !== pending) return;
+      if (this.authorDebug) globalThis.clearTimeout(pending.timeoutId);
       this.worker.postMessage({ type: "behavior.network.result", requestId: request.requestId, error: reason instanceof Error ? reason.message : String(reason) });
     }
   }
@@ -352,9 +376,11 @@ export class SceneBehaviorHost {
     try {
       const result = await this.executeCapabilityRequest({ capabilityId: request.capabilityId, input: request.input });
       if (this.pending.get(request.invocationId) !== pending) return;
+      if (this.authorDebug) globalThis.clearTimeout(pending.timeoutId);
       this.worker.postMessage({ type: "behavior.capability.result", requestId: request.requestId, result });
     } catch (reason) {
       if (this.pending.get(request.invocationId) !== pending) return;
+      if (this.authorDebug) globalThis.clearTimeout(pending.timeoutId);
       this.worker.postMessage({
         type: "behavior.capability.result",
         requestId: request.requestId,
@@ -408,13 +434,18 @@ export class SceneBehaviorHost {
     return `${this.module?.id ?? "behavior"}:${lifecycle}:${this.invocationSequence}`;
   }
 
+  private invokeInitialLifecycles(): void {
+    if (this.module?.lifecycle.includes("onStart")) this.invoke("onStart", 0, this.latestData === undefined ? {} : { data: this.latestData });
+    if (this.latestData !== undefined && this.module?.lifecycle.includes("onData")) this.invoke("onData", 0, { data: this.latestData });
+  }
+
   private emitDiagnostics(): void {
     this.onDiagnosticsChange?.(this.diagnostics());
   }
 }
 
-export function createSceneBehaviorWorker(): SceneBehaviorWorkerPort {
-  return new Worker(new URL("../workers/sceneBehavior.worker.ts", import.meta.url), { type: "module", name: "bim-studio-scene-behavior" });
+export function createSceneBehaviorWorker(name = "bim-studio-scene-behavior"): SceneBehaviorWorkerPort {
+  return new Worker(new URL("../workers/sceneBehavior.worker.ts", import.meta.url), { type: "module", name });
 }
 
 function isWorkerResponse(value: unknown): value is SceneBehaviorWorkerResponse {
@@ -476,8 +507,9 @@ function finiteOption(value: number | undefined, min: number, max: number, fallb
 
 function behaviorSourceLocation(stack: string | undefined, moduleId: string | undefined): { line: number; column: number } | undefined {
   if (!stack || !moduleId) return undefined;
-  const isModule = stack.includes(`industrial-studio-behavior-${moduleId}.mjs:`);
-  const marker = `industrial-studio-behavior-${moduleId}.${isModule ? "mjs" : "js"}:`;
+  const sourceId = encodeURIComponent(moduleId);
+  const isModule = stack.includes(`industrial-studio-behavior-${sourceId}.mjs:`);
+  const marker = `industrial-studio-behavior-${sourceId}.${isModule ? "mjs" : "js"}:`;
   const start = stack.indexOf(marker);
   if (start < 0) return undefined;
   const match = /^(\d+):(\d+)/.exec(stack.slice(start + marker.length));

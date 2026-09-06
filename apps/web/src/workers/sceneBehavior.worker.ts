@@ -14,6 +14,7 @@ import type {
   SceneScriptLifecycle
 } from "@bim-studio/scene-sdk";
 import { assertBehaviorSourceAccess, assertNoDynamicModuleImports, hardenSceneBehaviorWorkerGlobals } from "./sceneBehaviorSandbox";
+import { behaviorScriptSource } from "../behavior/behaviorScriptSource";
 
 type LifecycleContext = {
   sceneId: string;
@@ -156,7 +157,7 @@ async function compileBehavior(module: SceneBehaviorModule): Promise<Partial<Rec
   if (/\b(?:import|export)\s/.test(module.code)) {
     return compileModuleBehavior(module, lifecycleNames, { studio, net, proxyFetch });
   }
-  const factory = new AsyncFunction("THREE", "studio", "net", "fetch", `"use strict";\n${module.code}\nreturn { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };\n//# sourceURL=industrial-studio-behavior-${module.id}.js`);
+  const factory = new AsyncFunction("THREE", "studio", "net", "fetch", `"use strict";\n${module.code}\nreturn { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };\n//# sourceURL=${behaviorScriptSource(module).url}`);
   return await factory(THREE, studio, net, proxyFetch) as Partial<Record<SceneScriptLifecycle, LifecycleHandler>>;
 }
 
@@ -180,7 +181,7 @@ async function compileModuleBehavior(
     const source = rewriteModuleImports(module.code, dependencyUrls);
     const prelude = `const { THREE, studio, net, proxyFetch: fetch } = globalThis[${JSON.stringify(scopeKey)}];\n`;
     const exported = `\nexport default { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };`;
-    const entryUrl = URL.createObjectURL(new Blob([`${prelude}${source}${exported}\n//# sourceURL=industrial-studio-behavior-${module.id}.mjs`], { type: "text/javascript" }));
+    const entryUrl = URL.createObjectURL(new Blob([`${prelude}${source}${exported}\n//# sourceURL=${behaviorScriptSource(module).url}`], { type: "text/javascript" }));
     objectUrls.push(entryUrl);
     const loaded = await import(/* @vite-ignore */ entryUrl) as { default?: Partial<Record<SceneScriptLifecycle, LifecycleHandler>> };
     return loaded.default ?? {};

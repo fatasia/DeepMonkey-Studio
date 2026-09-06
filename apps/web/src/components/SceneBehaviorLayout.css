@@ -1,0 +1,5 @@
+/* 通用按钮 :is() 内的多属性 input 提升了整条规则优先级；分隔手柄须保持专用宽度，
+ * 避免透明拖动区域遮住标题栏/代码操作。仅覆盖 min-width，保留按钮键盘语义与其它可达性规则。
+ * 跟随脚本面板加载，不依赖用户先打开运行预览。 */
+body .app-workspace-frame.app-workspace-frame .behavior-workspace-slot.layout-split > .behavior-split-resizer { min-width: 10px !important; }
+body .app-workspace-frame.app-workspace-frame .behavior-panel .behavior-script-list-resizer { min-width: 5px !important; }

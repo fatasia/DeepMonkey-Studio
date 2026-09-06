@@ -5,6 +5,7 @@ import { ApplicationPlaybackSession } from "./ApplicationPlaybackSession";
 import { authorBehaviorDocument, type AuthorBehaviorScope } from "./authorBehaviorDocument";
 import { loadScriptDependencyModules } from "./scriptDependencyRuntime";
 import type { BehaviorLogEntry } from "./behaviorLogModel";
+import { createSceneBehaviorWorker } from "./SceneBehaviorHost";
 
 interface Options {
   application?: ApplicationDocument;
@@ -62,7 +63,7 @@ export function useAuthorBehaviorRun(options: Options) {
     return () => { cancelAnimationFrame(frame); delete session.onChange; };
   }, [session]);
 
-  const run = useCallback(async (draft?: ScriptModule, scope: AuthorBehaviorScope = "current") => {
+  const run = useCallback(async (draft?: ScriptModule, scope: AuthorBehaviorScope = "current", authorDebug = false) => {
     const current = latest.current;
     if (!current.enabled || !current.application || !current.project) throw new Error("请先打开可编辑项目");
     stop();
@@ -74,8 +75,10 @@ export function useAuthorBehaviorRun(options: Options) {
       project: current.project,
       isolateNavigation: true,
       allowLegacyScripts: false,
+      ...(authorDebug ? { workerFactory: () => createSceneBehaviorWorker("bim-studio-author-debug") } : {}),
       ...(current.variables ? { variables: current.variables } : {}), ...(current.filters ? { filters: current.filters } : {}),
       hostOptions: {
+        ...(authorDebug ? { authorDebug: true } : {}),
         executeNetworkRequest: async ({ binding, variables }) => {
           const result = await api.executeDirectBinding(binding, variables);
           return { ok: true, status: result.status, data: result.data as JsonValue, value: result.value as JsonValue };
@@ -93,6 +96,7 @@ export function useAuthorBehaviorRun(options: Options) {
   }, [stop]);
 
   return { session, logs, run, stop, id: runId.current,
+    debug: (draft: ScriptModule) => run(draft, "current", true),
     clearLogs: () => { if (session) session.logs = []; setLogs([]); },
     pauseResume: () => { owner.current?.togglePause(); refresh(value => value + 1); },
     step: () => { owner.current?.step(); refresh(value => value + 1); },

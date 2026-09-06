@@ -1,8 +1,9 @@
-import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { ArrowLeft, BookOpen, ChevronRight, FileText, Hash, Search } from "lucide-react";
+import { createElement, Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { ArrowLeft, BookOpen, ChevronRight, FileText, Hash, Menu, Search } from "lucide-react";
 import { resolveDocsDestination, searchDocs, type MarkdownBlock, type MarkdownInline } from "@bim-studio/docs-runtime";
 import { DOCS_VERSION, docsCategories, docsDocuments } from "../docs/docsCatalog";
 import { DocsCenterCodeBlock } from "./DocsCenterCodeBlock";
+import { DocsSdkExamples, type DocsSdkExamplesProps } from "./DocsSdkExamples";
 import "./DocsCenter.css";
 
 export interface DocsCenterProps {
@@ -10,10 +11,13 @@ export interface DocsCenterProps {
   systemName: string;
   onNavigate: (documentId: string, sectionId?: string) => void;
   onClose: () => void;
+  sdkExampleContext?: DocsSdkExamplesProps["context"];
+  onInsertSdkExample?: DocsSdkExamplesProps["onInsert"];
 }
 
-export function DocsCenter({ documentId, systemName, onNavigate, onClose }: DocsCenterProps) {
+export function DocsCenter({ documentId, systemName, onNavigate, onClose, sdkExampleContext, onInsertSdkExample }: DocsCenterProps) {
   const [query, setQuery] = useState("");
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
   const activeNavigationRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +54,7 @@ export function DocsCenter({ documentId, systemName, onNavigate, onClose }: Docs
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
       }
+      if (event.key === "Escape") setNavigationOpen(false);
     }
     window.addEventListener("keydown", focusSearch);
     return () => window.removeEventListener("keydown", focusSearch);
@@ -58,6 +63,7 @@ export function DocsCenter({ documentId, systemName, onNavigate, onClose }: Docs
   if (!activeDocument) return null;
 
   function navigateTo(targetDocumentId: string, sectionId?: string) {
+    setNavigationOpen(false);
     onNavigate(targetDocumentId, sectionId);
     if (targetDocumentId === activeDocument?.id && sectionId) {
       window.requestAnimationFrame(() => document.getElementById(sectionId)?.scrollIntoView({ block: "start", behavior: "smooth" }));
@@ -92,7 +98,7 @@ export function DocsCenter({ documentId, systemName, onNavigate, onClose }: Docs
           <input
             ref={searchInputRef}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim()) setNavigationOpen(true); }}
             onKeyDown={handleSearchKeyDown}
             placeholder="搜索功能、操作或错误信息"
             aria-label="搜索使用文档"
@@ -101,12 +107,13 @@ export function DocsCenter({ documentId, systemName, onNavigate, onClose }: Docs
           <kbd>{query.trim() ? `${searchResults.length} 条` : "Ctrl K"}</kbd>
         </label>
         <div className="docs-center-actions">
+          <button className="docs-navigation-toggle" type="button" aria-label="文档目录" aria-expanded={navigationOpen} aria-controls="docs-navigation" onClick={() => setNavigationOpen(open => !open)}><Menu size={17} /></button>
           <span>文档版本 {DOCS_VERSION}</span>
         </div>
       </header>
 
-      <div className="docs-center-layout">
-        <nav className="docs-navigation" aria-label="文档目录">
+      <div className={`docs-center-layout${navigationOpen ? " navigation-open" : ""}`}>
+        <nav id="docs-navigation" className="docs-navigation" aria-label="文档目录">
           {query.trim() ? (
             <section className="docs-search-results">
               <header><strong>搜索结果</strong><small aria-live="polite">{searchResults.length}</small></header>
@@ -118,7 +125,7 @@ export function DocsCenter({ documentId, systemName, onNavigate, onClose }: Docs
                   onClick={() => selectSearchResult(result.document.id, result.section?.id)}
                 >
                   <span><FileText size={14} /><strong>{result.document.title}</strong></span>
-                  <small>{result.excerpt}</small>
+                  <small title={result.excerpt}>{result.excerpt}</small>
                 </button>
               )) : <div className="docs-search-empty"><Search size={22} /><strong>没有找到结果</strong><span>换一个更短的关键词试试</span></div>}
             </section>
@@ -147,7 +154,10 @@ export function DocsCenter({ documentId, systemName, onNavigate, onClose }: Docs
           <div className="docs-article-inner">
             <div className="docs-breadcrumb"><BookOpen size={13} /><span>{activeDocument.category}</span><ChevronRight size={12} /><strong>{activeDocument.title}</strong></div>
             <div className="docs-markdown">
-              {activeDocument.blocks.map((block, index) => renderBlock(block, index, activeDocument.id, navigateTo))}
+              {activeDocument.blocks.map((block, index) => <Fragment key={index}>
+                {renderBlock(block, index, activeDocument.id, navigateTo)}
+                {activeDocument.id === "sdk-examples" && index === 1 && <DocsSdkExamples {...(sdkExampleContext ? { context: sdkExampleContext } : {})} {...(onInsertSdkExample ? { onInsert: onInsertSdkExample } : {})} />}
+              </Fragment>)}
             </div>
             <footer className="docs-article-footer">
               <div><span>本文档随客户端离线提供</span><span>版本 {activeDocument.version}</span></div>

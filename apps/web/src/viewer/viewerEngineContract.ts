@@ -21,6 +21,7 @@ import type {
   NavigationSettingsState,
   PrimitiveKind,
   PrimitiveState,
+  RobotAssetDefinition,
   SceneAnnotationState,
   SceneAnimationState,
   SceneEnvironmentState,
@@ -201,6 +202,11 @@ export abstract class ViewerEngineContract {
   abstract isAnimationEnabled(id: string): boolean;
   abstract setAnimationEnabled(id: string, enabled: boolean): void;
   abstract hasSkeleton(modelId: string): boolean;
+  abstract getRobotDefinition(modelId: string): RobotAssetDefinition | undefined;
+  abstract getRobotPose(modelId: string): Record<string, number> | undefined;
+  abstract setRobotPose(modelId: string, values: Record<string, number>): boolean;
+  abstract applyRobotTelemetry(modelId: string, values: Record<string, number>): boolean;
+  abstract restoreRobotPose(modelId: string): void;
   abstract listModelBones(modelId: string): Array<{
     path: string;
     name: string;
@@ -315,7 +321,8 @@ export abstract class ViewerEngineContract {
   abstract getSelectionTransform(): ModelTransform | undefined;
   abstract applySelectionTransform(transform: ModelTransform): void;
   abstract deleteSelectedLayer(): boolean;
-  abstract loadManifest(manifest: ModelManifest): Promise<LoadedSceneModel>;
+  abstract loadManifest(manifest: ModelManifest, instanceId?: string): Promise<LoadedSceneModel>;
+  abstract replaceModelManifest(instanceId: string, manifest: ModelManifest): Promise<LoadedSceneModel>;
   /**
    * IFC/Fragments 仅在实际加载对应模型时初始化。常规 glTF、FBX 与 DXF 浏览不再承担
    * web-ifc、Fragments worker 和空间树运行时的下载与内存成本。
@@ -326,7 +333,7 @@ export abstract class ViewerEngineContract {
     importer: FRAGS.IfcImporter;
     api: typeof import("@thatopen/fragments");
   };
-  protected abstract loadManifestOnce(manifest: ModelManifest, epoch: number): Promise<LoadedSceneModel>;
+  protected abstract loadManifestOnce(manifest: ModelManifest, epoch: number, assetModelId?: string, replacing?: LoadedSceneModel): Promise<LoadedSceneModel>;
   protected abstract streamGltfLevels(
     modelId: string,
     container: THREE.Object3D,
@@ -411,6 +418,7 @@ export abstract class ViewerEngineContract {
       effects?: SceneModelEffectsState;
       prefab?: IndustrialPrefabInstanceState;
       rig?: SceneRigState;
+      robotPose?: Record<string, number>;
       physics?: ScenePhysicsBodyState;
       transform: ModelTransform;
       collisionEnabled?: boolean;

@@ -1,4 +1,5 @@
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
+import { getSceneModelAssetId } from "@bim-studio/contracts";
 
 export interface SceneImportRebindingResult {
   scene: SceneSnapshot;
@@ -15,16 +16,20 @@ export function rebindImportedSceneModels(
   modelIdMap: Map<string, string>
 ): SceneImportRebindingResult {
   const reboundModels = scene.models.map((item) => {
-    const mappedId = modelIdMap.get(item.modelId);
+    const assetId = getSceneModelAssetId(item);
+    const mappedId = modelIdMap.get(assetId);
     const target = project.models.find((model) => model.id === mappedId)
-      ?? project.models.find((model) => model.id === item.modelId)
+      ?? project.models.find((model) => model.id === assetId)
       ?? project.models.find((model) => model.name === item.sourceName && model.format === item.sourceFormat);
     if (!target) return item;
+    // 显式实例只重绑素材；旧格式仍沿用原有 ID 迁移以兼容历史文件。
+    if (item.assetModelId) return { ...item, assetModelId: target.id, sourceName: target.name, sourceFormat: target.format };
     modelIdMap.set(item.modelId, target.id);
     return { ...item, modelId: target.id, sourceName: target.name, sourceFormat: target.format };
   });
 
-  const rebindId = (id: string) => modelIdMap.get(id) ?? id;
+  const instanceIds = new Set(scene.models.filter(item => item.assetModelId).map(item => item.modelId));
+  const rebindId = (id: string) => instanceIds.has(id) ? id : modelIdMap.get(id) ?? id;
   const rebound: SceneSnapshot = {
     ...scene,
     models: reboundModels,
@@ -60,6 +65,6 @@ export function rebindImportedSceneModels(
 
   return {
     scene: rebound,
-    missingModelCount: reboundModels.filter((item) => !project.models.some((model) => model.id === item.modelId)).length
+    missingModelCount: reboundModels.filter((item) => !project.models.some((model) => model.id === getSceneModelAssetId(item))).length
   };
 }

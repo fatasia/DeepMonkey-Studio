@@ -12,6 +12,7 @@ import runtimeAndExtensions from "./runtime-and-extensions.md?raw";
 import serverPublish from "./server-publish.md?raw";
 import simulationCommissioning from "./simulation-commissioning.md?raw";
 import studioApi from "./studio-api.md?raw";
+import sdkExamples from "./sdk-examples.md?raw";
 import topologyResources from "./topology-resources.md?raw";
 import troubleshooting from "./troubleshooting.md?raw";
 
@@ -27,6 +28,7 @@ export const docsDocuments = createDocsCatalog([
   { id: "ai-workflows", category: "数据与 AI", order: 31, version: DOCS_VERSION, markdown: aiWorkflows },
   { id: "behavior-script", category: "数据与 AI", order: 32, version: DOCS_VERSION, markdown: behaviorScript },
   { id: "studio-api", category: "数据与 AI", order: 33, version: DOCS_VERSION, markdown: studioApi },
+  { id: "sdk-examples", category: "数据与 AI", order: 34, version: DOCS_VERSION, markdown: sdkExamples },
   { id: "industrial-planning", category: "工业任务", order: 40, version: DOCS_VERSION, markdown: industrialPlanning },
   { id: "agv-runtime-simulation", category: "工业任务", order: 41, version: DOCS_VERSION, markdown: agvRuntimeSimulation },
   { id: "simulation-commissioning", category: "工业任务", order: 42, version: DOCS_VERSION, markdown: simulationCommissioning },

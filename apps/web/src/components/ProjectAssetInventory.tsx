@@ -6,6 +6,7 @@ import type { SceneManagerController } from "./SceneManager";
 import { ProjectResourceGovernancePanel, ResourceUsageBadge } from "./ProjectResourceGovernancePanel";
 import { ProjectAssetToolbar } from "./ProjectAssetToolbar";
 import { ModelAssetCredit } from "./ModelAssetCredit";
+import { RobotAssetMediaActions } from "./RobotAssetMediaActions";
 
 export function ProjectAssetInventory({ controller }: { controller: SceneManagerController }) {
   const focusedModel = useRef<HTMLElement | null>(null);
@@ -46,6 +47,7 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
               {model.status === "processing" && <progress max={100} value={model.progress} aria-label={`${tr(locale, "转换进度", "Conversion progress")} ${model.progress}%`} />}
             </div>
             <div className="model-asset-actions" role="group" aria-label={tr(locale, `${model.name} 操作`, `Actions for ${model.name}`)}>
+            <RobotAssetMediaActions locale={locale} model={model} disabled={modelLibraryBusy} screenshot={false} compact />
             <button className="manager-icon-button" aria-label={tr(locale, `预览与优化 ${model.name}`, `Preview and optimize ${model.name}`)} title={tr(locale, "预览与优化（不修改原素材）", "Preview and optimize (preserves source)")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onOptimizer(model.id)}><Gauge size={15} /></button>
             {controller.onReturnToScene && <button className="manager-icon-button" aria-label={tr(locale, `添加到原场景 ${model.name}`, `Add to original scene ${model.name}`)} title={tr(locale, "添加到原场景", "Add to original scene")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onReturnToScene?.(model.id)}><Plus size={15} /></button>}
             {model.generation?.kind === "parametric" && <button className="manager-icon-button" aria-label={tr(locale, "修改参数并创建新版本", "Edit parameters as a new revision")} title={tr(locale, "修改参数并创建新版本", "Edit parameters as a new revision")} disabled={modelLibraryBusy} onClick={() => { setParametricSourceModel(model); setParametricWorkbenchOpen(true); }}><WandSparkles size={14} /></button>}

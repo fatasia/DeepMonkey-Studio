@@ -49,6 +49,7 @@ export async function convertProjectModelToGlb(
   if (model.status !== "ready" || !model.manifest?.viewerKind || !model.manifest.geometryUrl) {
     throw new Error(model.message || "模型尚未转换为可查看资源");
   }
+  if (model.format === "urdf" || model.format === "zip" || model.manifest.viewerKind === "urdf" || model.manifest.robot) throw new Error("机器人资源仅支持原包无损压缩，不能转换为静态 GLB 优化格式");
   onProgress(`正在把 ${model.format.toUpperCase()} 转换为优化工作格式`);
   // 已是GLB时直接读取原始字节，避免Viewer重导出丢失动画、扩展及作者信息。
   if (model.format === "glb") {

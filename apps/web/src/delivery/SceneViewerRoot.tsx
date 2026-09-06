@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ClippingState } from "@bim-studio/contracts";
+import { getSceneModelAssetId, type ClippingState } from "@bim-studio/contracts";
 import { DEFAULT_CLIPPING } from "../appDefaults";
 import { PublishedViewerObjectPanel } from "../components/PublishedViewerObjectPanel";
 import { PublishedViewerToolDock } from "../components/PublishedViewerToolDock";
@@ -176,7 +176,7 @@ export function SceneViewerRoot() {
         </aside>
       )}
       {error && <div className="scene-viewer-fatal" role="alert">{error}</div>}
-      <PublishedModelCredits locale={locale} models={manifest.project.models} modelIds={manifest.publication.snapshot.models.map(model => model.modelId)} />
+      <PublishedModelCredits locale={locale} models={manifest.project.models} modelIds={manifest.publication.snapshot.models.map(getSceneModelAssetId)} />
     </main>
   );
 }

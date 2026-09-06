@@ -13,6 +13,12 @@ describe("model optimizer asset pipeline", () => {
   it("creates a stable optimized project asset name", () => {
     expect(optimizedAssetFile("assembly.step", new Uint8Array([1])).name).toBe("assembly.optimized.glb");
   });
+  it.each(["urdf", "zip"])("rejects flattening %s robot resources before any download", async format => {
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    const model = { name: "robot", format, status: "ready", sourceUrl: "/assets/robot", manifest: { viewerKind: "urdf", geometryUrl: "/assets/robot" } } as ModelRecord;
+    await expect(convertProjectModelToGlb(model)).rejects.toThrow("无损压缩");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it("passes project GLB bytes through without a lossy viewer re-export", async () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const fetcher = vi.fn(async () => new Response(bytes)); vi.stubGlobal("fetch", fetcher);

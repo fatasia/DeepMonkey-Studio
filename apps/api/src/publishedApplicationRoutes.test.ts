@@ -72,12 +72,17 @@ describe("published application runtime boundary", () => {
 
   it("filters project integrations and unreferenced models from the browse bundle", () => {
     const document: ApplicationDocument = migrateSceneSnapshotV1(fixture as SceneSnapshot);
-    document.scenes[0]!.models = [{ modelId: "used", name: "used", visible: true }] as ApplicationDocument["scenes"][number]["models"];
+    document.scenes[0]!.models = [
+      { modelId: "instance-a", assetModelId: "used", name: "used", visible: true },
+      { modelId: "instance-b", assetModelId: "used", name: "used again", visible: true },
+      { modelId: "legacy", name: "legacy", visible: true },
+    ] as ApplicationDocument["scenes"][number]["models"];
     const project = { id: document.metadata.projectId, name: "项目", description: "", createdAt: "now", updatedAt: "now",
-      models: [{ id: "used" }, { id: "private" }], dataConnections: [{ id: "private-source" }], aiBindings: [{ id: "private-ai" }] } as ProjectRecord;
+      models: [{ id: "used" }, { id: "legacy" }, { id: "private" }], dataConnections: [{ id: "private-source" }], aiBindings: [{ id: "private-ai" }] } as ProjectRecord;
     const publication = { id: "publication", applicationId: document.metadata.id, projectId: project.id, applicationRevision: 1, publishedAt: "now", document };
     const bundle = publishedApplicationBundle(publication, project);
-    expect(bundle.project.models.map(model => model.id)).toEqual(["used"]);
+    expect(bundle.project.models.map(model => model.id)).toEqual(["used", "legacy"]);
+    expect(bundle.publication.document.scenes[0]!.models.map(model => model.modelId)).toEqual(["instance-a", "instance-b", "legacy"]);
     expect(bundle.project).not.toHaveProperty("dataConnections");
     expect(bundle.project).not.toHaveProperty("aiBindings");
     expect(bundle.publication.document).not.toBe(document);

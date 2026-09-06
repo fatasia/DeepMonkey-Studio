@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ApplicationObjectRef, ProjectRecord, SceneDocument, SceneInteractionTarget, SceneInteractionTrigger, SceneViewportWidgetNode } from "@bim-studio/contracts";
 import { LoaderCircle, Pause, Play, RotateCcw, TriangleAlert } from "lucide-react";
+import { getSceneModelAssetId } from "@bim-studio/contracts";
 import type { RendererBackend, ViewerEngine } from "../viewer/ViewerEngine";
 import { translate as tr, type AppLocale } from "../i18n";
 import { subscribeApplicationInteractionEffects } from "../studio/applicationInteractionHost";
@@ -47,9 +48,9 @@ export function SceneViewportPreview({
   // editing a title, frame or chart never tears down the live canvas.
   const sceneRevision = useMemo(() => sceneViewportRevision(scene), [scene]);
   const resourceRevision = scene.models
-    .map(({ modelId }) => {
-      const record = project.models.find((candidate) => candidate.id === modelId);
-      return record ? `${record.id}:${record.status}:${record.updatedAt}:${record.manifest?.createdAt ?? ""}` : `${modelId}:missing`;
+    .map((model) => {
+      const record = project.models.find((candidate) => candidate.id === getSceneModelAssetId(model));
+      return record ? `${model.modelId}:${record.id}:${record.status}:${record.updatedAt}:${record.manifest?.createdAt ?? ""}` : `${model.modelId}:missing`;
     })
     .join("|");
 
@@ -124,9 +125,9 @@ export function SceneViewportPreview({
         }, playback?.effects);
 
         for (const item of scene.models) {
-          const record = project.models.find((candidate) => candidate.id === item.modelId);
+          const record = project.models.find((candidate) => candidate.id === getSceneModelAssetId(item));
           if (!record?.manifest || record.status !== "ready") continue;
-          await engine.loadManifest(record.manifest);
+          await engine.loadManifest(record.manifest, item.modelId);
           if (cancelled) return;
           engine.applyModelState(item.modelId, item);
           engine.rename(item.modelId, item.name);

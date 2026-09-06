@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import type { PlantLiteStudyRecord } from "@bim-studio/contracts";
+import { getSceneModelAssetId, type PlantLiteStudyRecord } from "@bim-studio/contracts";
 import { LoaderCircle } from "lucide-react";
 import { DEFAULT_NAVIGATION_SETTINGS } from "../navigationSettings";
 import { normalizeDashboardState } from "../components/dashboardState";
@@ -492,7 +492,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
         />
       )}
       {animationOpen && simulationTrack && activeSimulationStudy && simulationFrame && <div className="scene-simulation-live-status" role="status">DES 轨迹样本 · {simulationFrame.atMinute.toFixed(1)} 分钟<br />在制 {simulationFrame.activeItems} · 完成 {simulationFrame.completedItems} · 仅覆盖显示</div>}
-      {(route.view === "view" || route.view === "published") && project && <PublishedModelCredits locale={locale} models={project.models} modelIds={activeScene?.models.map(model => model.modelId) ?? []} />}
+      {(route.view === "view" || route.view === "published") && project && <PublishedModelCredits locale={locale} models={project.models} modelIds={activeScene?.models.map(getSceneModelAssetId) ?? []} />}
       <SceneViewportStatus
         locale={locale}
         studio={route.view === "studio"}

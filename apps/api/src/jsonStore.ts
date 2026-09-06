@@ -37,6 +37,7 @@ import { MAX_AI_DATA_BINDING_RUNS_PER_PROJECT, newestAiDataBindingRuns, retainRe
 import { applicationIdReservation, changed, requireProject, unchanged, upsert } from "./storeUtils.js";
 import { JsonStoreFoundation } from "./jsonStoreFoundation.js";
 import { withCurrentScenePublication } from "./scenePublicationHistory.js";
+import { assertSceneAssetReferences, removeUnreferencedModel } from "./modelAssetReferences.js";
 
 export class JsonStore extends JsonStoreFoundation implements MetadataStore {
   listProjects(): ProjectRecord[] {
@@ -115,14 +116,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
   }
 
   async removeModel(projectId: string, modelId: string): Promise<boolean> {
-    return this.runDocumentMutation((candidate) => {
-      const project = requireProject(candidate, projectId);
-      const originalLength = project.models.length;
-      project.models = project.models.filter((item) => item.id !== modelId);
-      if (project.models.length === originalLength) return unchanged(false);
-      project.updatedAt = new Date().toISOString();
-      return changed(true);
-    });
+    return this.runDocumentMutation((candidate) => removeUnreferencedModel(candidate, projectId, modelId));
   }
 
   listAssets(projectId: string): ProjectAssetRecord[] {
@@ -542,6 +536,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
 
   async saveScene(scene: SceneSnapshot): Promise<SceneSnapshot> {
     return this.runDocumentMutation((candidate) => {
+      assertSceneAssetReferences(candidate, scene.projectId, [scene]);
       const index = candidate.scenes.findIndex((item) => item.projectId === scene.projectId && item.id === scene.id);
       if (index >= 0) candidate.scenes[index] = structuredClone(scene);
       else candidate.scenes.push(structuredClone(scene));
@@ -567,6 +562,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
 
   async savePublication(publication: PublishedSceneRecord): Promise<PublishedSceneRecord> {
     return this.runDocumentMutation((candidate) => {
+      assertSceneAssetReferences(candidate, publication.projectId, [publication.snapshot]);
       candidate.publishedScenes ??= [];
       const current = candidate.publishedScenes.find(item => item.sceneId === publication.sceneId);
       candidate.scenePublicationHistory = withCurrentScenePublication(candidate.scenePublicationHistory ?? [], current);
@@ -633,6 +629,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
     assertApplicationDocument(application);
     return this.runDocumentMutation<CreateApplicationDraftResult>((candidate) => {
       if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
+      assertSceneAssetReferences(candidate, projectId, application.scenes);
       const reservation = applicationIdReservation(candidate, application.metadata.id);
       if (reservation) return unchanged({ status: "conflict", reservation });
       const saved: ApplicationDocument = {
@@ -657,6 +654,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
     assertApplicationDocument(application);
     return this.runDocumentMutation<UpdateApplicationDraftResult>((candidate) => {
       if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
+      assertSceneAssetReferences(candidate, projectId, application.scenes);
       const index = (candidate.applications ?? []).findIndex((item) => item.metadata.projectId === projectId && item.metadata.id === applicationId);
       if (index < 0) return unchanged({ status: "application-not-found" });
       const current = candidate.applications![index]!;
@@ -692,6 +690,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
     if (scene.schemaVersion !== 1 || scene.projectId !== projectId) throw new Error("场景格式或项目归属无效");
     return this.runDocumentMutation<SaveApplicationWorkspaceResult>((candidate) => {
       if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
+      assertSceneAssetReferences(candidate, projectId, [...application.scenes, scene]);
       const applicationIndex = (candidate.applications ?? []).findIndex((item) => item.metadata.projectId === projectId && item.metadata.id === applicationId);
       if (applicationIndex < 0) return unchanged({ status: "application-not-found" });
       const current = candidate.applications![applicationIndex]!;
@@ -739,6 +738,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
       if (!candidate.projects.some((project) => project.id === projectId)) return unchanged({ status: "project-not-found" });
       const application = (candidate.applications ?? []).find((item) => item.metadata.projectId === projectId && item.metadata.id === applicationId);
       if (!application) return unchanged({ status: "application-not-found" });
+      assertSceneAssetReferences(candidate, projectId, application.scenes);
       candidate.publishedApplications ??= [];
       if (candidate.publishedApplications.some((publication) => publication.id === publicationId)) {
         throw new Error(`发布版本 ${publicationId} 已存在`);

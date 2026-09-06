@@ -1,4 +1,4 @@
-.dialog-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 24px; background: rgba(5,7,8,.68); backdrop-filter: blur(7px); }
+.dialog-backdrop { position: fixed; inset: 0; z-index: var(--layer-modal); display: grid; place-items: center; padding: 24px; background: rgba(5,7,8,.68); backdrop-filter: blur(7px); }
 .dialog { width: min(440px, 100%); padding: 27px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-1); box-shadow: var(--shadow-float); }
 .dialog h2 { margin: 8px 0 7px; color: var(--text-strong); font-size: 21px; }
 .dialog > .eyebrow { color: var(--text-muted); }
@@ -53,7 +53,7 @@
 .dashboard-image-widget > div { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: #69767d; font-size: 9px; }
 
 .optimizer-loading { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); background: #111416; font-size: 11px; }
-.optimizer-page { position: fixed; inset: 0; z-index: 40; display: grid; grid-template-rows: 68px minmax(0,1fr); color: var(--text); background: var(--bg-0); }
+.optimizer-page { position: fixed; inset: 0; z-index: var(--layer-workspace); display: grid; grid-template-rows: 68px minmax(0,1fr); color: var(--text); background: var(--bg-0); }
 .optimizer-header { display: grid; grid-template-columns: 210px 1fr auto; align-items: center; gap: 18px; padding: 0 22px; border-bottom: 1px solid var(--line); background: var(--surface-1); }
 .optimizer-header > div:nth-child(2) { display: flex; align-items: baseline; gap: 11px; }
 .optimizer-header h1 { margin: 0; font-size: 16px; }

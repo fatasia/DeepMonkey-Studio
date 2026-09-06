@@ -1,12 +1,12 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { assertPathSafeResourceId, type ProjectRecord, type PublishedApplicationRecord } from "@bim-studio/contracts";
+import { assertPathSafeResourceId, getSceneModelAssetId, type ProjectRecord, type PublishedApplicationRecord } from "@bim-studio/contracts";
 import type { MetadataStore } from "./store.js";
 import type { ScriptDependencyService } from "./scriptDependencyService.js";
 
 /** 与公开场景相同：只给渲染所需资源，不把项目管理/数据源配置带入匿名边界。 */
 export function publishedApplicationBundle(publication: PublishedApplicationRecord, project: ProjectRecord) {
   if (publication.projectId !== project.id) throw new Error("发布快照与项目不匹配");
-  const modelIds = new Set(publication.document.scenes.flatMap(scene => scene.models.map(model => model.modelId)));
+  const modelIds = new Set(publication.document.scenes.flatMap(scene => scene.models.map(getSceneModelAssetId)));
   const content = JSON.stringify(publication.document);
   const assets = project.assets?.filter(asset => content.includes(asset.url));
   return {

@@ -6,6 +6,7 @@ describe("conversion contract", () => {
     expect(supportedExtensions).toEqual([
       "rvt", "ifc", "step", "stp", "iges", "igs", "dwg", "dxf", "gltf", "glb", "fbx",
       "obj", "stl", "3mf", "dae", "3ds", "x_t", "x_b", "jt", "usd", "usda", "usdc", "usdz",
+      "urdf", "zip",
     ]);
   });
 });

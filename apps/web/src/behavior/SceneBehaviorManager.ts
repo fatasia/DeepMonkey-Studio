@@ -143,7 +143,7 @@ export class SceneBehaviorManager {
 
   get canStep(): boolean {
     const entries = this.entries().filter(entry => entry.diagnostics.status !== "error");
-    return this.paused && entries.length > 0 && entries.every(entry => entry.diagnostics.status === "paused" && entry.diagnostics.pendingInvocations === 0);
+    return this.paused && entries.length > 0 && entries.every(entry => entry.diagnostics.status === "paused" && entry.diagnostics.pendingInvocations === 0 && !entry.diagnostics.authorDebug?.awaitingStart);
   }
 
   step(): boolean {

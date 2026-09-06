@@ -17,6 +17,7 @@ interface SaveReceipt { result: Result; upload: Promise<ModelRecord> }
 export function useModelOptimizerSession(locale: AppLocale, project: ProjectRecord | undefined, options: ModelOptimizationOptions, onProjectChange?: (project: ProjectRecord) => void, requestedModelId?: string) {
   const task = useOptimizerTask();
   const [source, setSource] = useState<Source>();
+  const [robotSource, setRobotSource] = useState<ModelRecord>();
   const [result, setResult] = useState<Result>();
   const [showOptimized, setShowOptimized] = useState(false);
   const [message, setMessage] = useState("导入 GLB 或内嵌资源的 glTF 开始优化");
@@ -49,14 +50,30 @@ export function useModelOptimizerSession(locale: AppLocale, project: ProjectReco
     const statistics = await current.worker().inspect(file);
     current.assertCurrent();
     setSource({ file, statistics, url: URL.createObjectURL(file), ...(model ? { model } : {}) });
+    setRobotSource(undefined);
     setResult(undefined); saveReceipt.current = undefined; setShowOptimized(false);
     setMessage("模型已载入，可调整参数后开始优化");
   }
-  async function importFile(file?: File) {
+  function loadRobotSource(model: ModelRecord) {
+    setRobotSource(model); setSource(undefined); setResult(undefined); saveReceipt.current = undefined; setShowOptimized(false);
+    setMessage("机器人已载入");
+  }
+  async function importFile(file?: File, robotEntryPath?: string) {
     if (!file) return;
     await task.run("import", async current => {
       setError(undefined); setMessage("正在准备模型"); serverWork.current = false;
-      if (isDirectOptimizerInput(file)) await loadPreparedFile(file, current);
+      if (/\.(urdf|zip)$/i.test(file.name)) {
+        if (!project) throw new Error("请先选择项目");
+        serverWork.current = true;
+        const uploaded = await api.uploadModel(project.id, file, undefined, undefined, undefined, robotEntryPath);
+        current.assertCurrent();
+        const updated = await waitForOptimizerModel(project.id, uploaded.id, progress(current), current.signal);
+        current.assertCurrent(); onProjectChange?.(updated);
+        const model = updated.models.find(item => item.id === uploaded.id);
+        if (!model?.manifest?.robot) throw new Error("机器人资源缺少关节描述");
+        loadRobotSource(model);
+      }
+      else if (isDirectOptimizerInput(file)) await loadPreparedFile(file, current);
       else {
         if (!project) throw new Error("请先选择项目，其他格式需要通过项目转换服务处理");
         serverWork.current = true;
@@ -69,6 +86,7 @@ export function useModelOptimizerSession(locale: AppLocale, project: ProjectReco
   async function importProjectModel(model: ModelRecord) {
     await task.run("import", async current => {
       setError(undefined); serverWork.current = false;
+      if (model.manifest?.robot) { loadRobotSource(model); return; }
       const file = await convertProjectModelToGlb(model, progress(current), current.signal);
       await loadPreparedFile(file, current, model);
     }, failed("项目模型转换失败，已载入模型保持不变"), true);
@@ -117,7 +135,8 @@ export function useModelOptimizerSession(locale: AppLocale, project: ProjectReco
   return {
     file: source?.file, sourceModel: source?.model, sourceUrl: source?.url, optimizedUrl: result?.url,
     before: source?.statistics, after: result?.after, lightmapResult: result?.lightmap, output: result?.binary,
-    selectedProjectModelId: source?.model?.id ?? "", savedModelId: result?.savedModelId,
+    selectedProjectModelId: robotSource?.id ?? source?.model?.id ?? "", savedModelId: result?.savedModelId,
+    robotSource,
     showOptimized, setShowOptimized, busy: task.busy, message, error, resultOutdated,
     previewUrl: showOptimized && !resultOutdated ? result?.url ?? source?.url : source?.url,
     comparisonMode: Boolean(result && !resultOutdated),

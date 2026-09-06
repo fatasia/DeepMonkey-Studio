@@ -201,7 +201,7 @@ export function createTauriOverlay(options) {
 }
 
 function publicProjectSubset(project, publication) {
-  const ids = new Set(publication.snapshot.models.map((model) => model.modelId));
+  const ids = new Set(publication.snapshot.models.map((model) => model.assetModelId ?? model.modelId));
   const serialized = JSON.stringify(publication.snapshot);
   const models = project.models.filter((model) => ids.has(model.id)).map((model) => structuredClone(model));
   const missing = [...ids].filter((id) => !models.some((model) => model.id === id));

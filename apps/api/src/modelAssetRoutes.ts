@@ -18,6 +18,8 @@ import { inspectJtFile } from "./jtInspection.js";
 import { inspectXtTextFile } from "./xtTextInspection.js";
 import type { MetadataStore } from "./store.js";
 import { resolveModelOptimizationOrigin } from "./modelOptimizationOrigin.js";
+import { robotArchivePath } from "./robotUrdfValues.js";
+import { RobotUploadLimitError, writeRobotUpload } from "./robotUpload.js";
 
 interface ModelAssetRouteDependencies {
   store: MetadataStore;
@@ -42,10 +44,14 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
       return reply.code(415).send({ message: `不支持该格式，仅支持 ${supportedExtensions.join(", ")}` });
     }
     let generation;
-    let optimization;
+    let optimization: ModelRecord["optimization"];
     try {
       optimization = resolveModelOptimizationOrigin(request.query.optimizedFromModelId, project.models);
-      if (optimization && format !== "glb") throw new Error("优化结果必须保存为 GLB");
+      if (optimization) {
+        const sourceId = optimization.sourceModelId;
+        const robotSource = project.models.find(model => model.id === sourceId)?.manifest?.robot;
+        if (format !== (robotSource ? "zip" : "glb")) throw new Error(robotSource ? "机器人无损压缩结果必须保存为 ZIP" : "优化结果必须保存为 GLB");
+      }
       generation = parseParametricModelGeneration(part.fields.generation);
       if (generation) {
         assertParametricModelLineage(generation, project.models);
@@ -71,7 +77,29 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
     const sourceDir = path.join(modelDir, "source");
     const sourcePath = path.join(sourceDir, safeName);
     await mkdir(sourceDir, { recursive: true });
-    await pipeline(part.file, createWriteStream(sourcePath, { flags: "wx" }));
+    try {
+      if (format === "urdf" || format === "zip") await writeRobotUpload(part.file, sourcePath, format);
+      else await pipeline(part.file, createWriteStream(sourcePath, { flags: "wx" }));
+    } catch (reason) {
+      if (reason instanceof RobotUploadLimitError) return reply.code(413).send({ message: reason.message });
+      throw reason;
+    }
+    if ((format === "urdf" || format === "zip") && part.file.truncated) {
+      await rm(sourcePath, { force: true });
+      return reply.code(413).send({ message: "机器人文件上传被截断，请检查文件大小限制" });
+    }
+    let robotEntryPath: string | undefined;
+    try {
+      const field = part.fields.robotEntryPath;
+      if (field !== undefined) {
+        if (Array.isArray(field) || field.type !== "field" || typeof field.value !== "string" || (format !== "urdf" && format !== "zip")) throw new Error("robotEntryPath 仅允许为机器人包的单一文本入口");
+        robotEntryPath = robotArchivePath(field.value);
+        if (!/\.urdf$/i.test(robotEntryPath)) throw new Error("机器人入口必须是 URDF 文件");
+      }
+    } catch (reason) {
+      await rm(sourcePath, { force: true });
+      return reply.code(400).send({ message: reason instanceof Error ? reason.message : "机器人入口无效" });
+    }
     let rvtSourceVersion: string | undefined;
     let rvtRevitVersion: string | undefined;
     if (format === "rvt") {
@@ -93,6 +121,7 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
       ...(rvtConversionMode ? { rvtConversionMode } : {}),
       ...(rvtSourceVersion ? { rvtSourceVersion } : {}),
       ...(rvtRevitVersion ? { rvtRevitVersion } : {}),
+      ...(robotEntryPath ? { robotEntryPath } : {}),
       size: part.file.bytesRead,
       status: "queued",
       progress: 0,

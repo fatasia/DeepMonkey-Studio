@@ -63,7 +63,11 @@ describe("web architecture boundary", () => {
     for (const file of typescriptSourceFiles(root)) {
       const relative = path.relative(root, file);
       if (exceptions.has(relative) || relative === path.join("adapters", "sceneDataSocket.ts")) continue;
-      if (forbiddenNetworkCapabilities(await readFile(file, "utf8"), file).length > 0) violations.push(relative);
+      const capabilities = forbiddenNetworkCapabilities(await readFile(file, "utf8"), file);
+      // 外部 rosbridge 是显式设备连接，不走工作区 HTTP；仅适配器可创建 WebSocket。
+      const forbidden = relative === path.join("adapters", "rosbridgeSocket.ts")
+        ? capabilities.filter(capability => capability !== "WebSocket") : capabilities;
+      if (forbidden.length > 0) violations.push(relative);
     }
     expect(violations).toEqual([]);
   }, 15_000);

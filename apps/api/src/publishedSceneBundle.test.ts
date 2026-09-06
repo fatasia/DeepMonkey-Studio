@@ -15,7 +15,10 @@ describe("published scene browse boundary", () => {
         projectId: "project-1",
         name: "装配线",
         schemaVersion: 1,
-        models: [{ modelId: "model-used", name: "机器人", visible: true }],
+        models: [
+          { modelId: "instance-a", assetModelId: "model-used", name: "机器人", visible: true },
+          { modelId: "instance-b", assetModelId: "model-used", name: "机器人副本", visible: true },
+        ],
         primitives: [],
         measurements: [],
         objects: [],
@@ -48,6 +51,7 @@ describe("published scene browse boundary", () => {
     const result = createPublishedSceneBrowseRecord(publication, project);
 
     expect(result.project.models.map((model) => model.id)).toEqual(["model-used"]);
+    expect(result.publication.snapshot.models.map(model => model.modelId)).toEqual(["instance-a", "instance-b"]);
     expect(result.project.assets?.map((asset) => asset.id)).toEqual(["env"]);
     expect(result.project.dataConnections).toBeUndefined();
   });

@@ -283,6 +283,9 @@
 }
 
 /* 次级动作隐藏时不占列宽；鼠标悬停或键盘进入行时展开，宽度不足则换行，名称至少保留100px。 */
+.scene-tree-manager .scene-tree-selection-bar { flex-wrap: wrap; row-gap: 4px; }
+.scene-tree-manager .scene-tree-selection-bar > .scene-selection-count { flex: 1 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scene-tree-manager .scene-selection-count strong { margin: 0; }
 @media (hover: hover) {
   .app-shell .scene-row-optional-action:not(.active):not(.colliding) {
     display: none;
