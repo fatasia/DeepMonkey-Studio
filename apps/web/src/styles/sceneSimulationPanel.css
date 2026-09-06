@@ -17,7 +17,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: var(--surface-1);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+  box-shadow: var(--shadow-float);
   backdrop-filter: blur(18px);
 }
 
@@ -25,31 +25,31 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 13px 14px 11px;
+  gap: 6px;
+  padding: 12px 10px;
   border-bottom: 1px solid var(--line);
   cursor: move;
   touch-action: none;
   user-select: none;
 }
 
-.scene-simulation-title { display: flex; min-width: 0; align-items: center; gap: 11px; }
+.scene-simulation-title { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; }
 .scene-simulation-title > span {
   display: grid;
-  min-width: 48px;
+  min-width: 36px;
   height: 30px;
   place-items: center;
-  color: var(--accent);
-  border: 1px solid rgba(224, 183, 85, 0.38);
+  color: var(--text-strong);
+  border: 1px solid color-mix(in srgb,var(--accent) 38%,var(--line));
   border-radius: 6px;
-  background: rgba(224, 183, 85, 0.08);
-  font: 700 9px/1 Consolas, monospace;
+  background: var(--accent-soft);
+  font: 700 10px/1 Consolas, monospace;
   letter-spacing: .08em;
 }
 .scene-simulation-title > div { display: grid; min-width: 0; gap: 3px; }
-.scene-simulation-title strong { color: var(--text-strong); font-size: 14px; }
+.scene-simulation-title strong { overflow: hidden; color: var(--text-strong); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .scene-simulation-title small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.scene-simulation-header > button {
+.scene-simulation-header > button, .scene-simulation-placement button {
   display: grid;
   width: 30px;
   height: 30px;
@@ -62,14 +62,18 @@
   background: transparent;
   cursor: pointer;
 }
-.scene-simulation-header > button:hover { color: var(--text-strong); border-color: var(--line); background: var(--surface-2); }
+.scene-simulation-header > button:hover:not(:disabled), .scene-simulation-placement button:hover { color: var(--text-strong); border-color: var(--line); background: var(--surface-2); }
+.scene-simulation-header > button:disabled { opacity: .45; cursor: not-allowed; }
+.scene-simulation-placement { display: flex; flex: 0 0 auto; gap: 2px; }
+.scene-simulation-placement button { width: 26px; flex-basis: 26px; }
+.scene-simulation-placement button[aria-pressed="true"] { color: var(--text-strong); border-color: var(--accent); background: var(--accent-soft); }
 .scene-simulation-drag-indicator { margin-left: auto; color: var(--muted); pointer-events: none; }
 .scene-simulation-panel.is-collapsed { min-width: 0; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .scene-simulation-panel.is-collapsed > :not(.scene-simulation-header) { display: none; }
 .scene-simulation-panel.is-collapsed .scene-simulation-header { gap: 4px; padding: 6px 8px; border: 0; }
 .scene-simulation-panel.is-collapsed .scene-simulation-title small { display: none; }
 .scene-simulation-panel.is-collapsed .scene-simulation-title strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.scene-simulation-header > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#root .scene-simulation-panel button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .scene-simulation-resize-handle {
   position: absolute;
@@ -113,8 +117,8 @@
 }
 .scene-simulation-tabs button span { color: var(--muted); font: 700 8px/1.2 Consolas, monospace; letter-spacing: .06em; }
 .scene-simulation-tabs button:hover { color: var(--text-strong); background: var(--surface-2); }
-.scene-simulation-tabs button.active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 12%, var(--surface-1)); }
-.scene-simulation-tabs button.active span { color: var(--accent); }
+.scene-simulation-tabs button.active { color: var(--text-strong); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 12%, var(--surface-1)); }
+.scene-simulation-tabs button.active span { color: var(--text-strong); }
 
 .scene-simulation-context {
   display: grid;
@@ -177,14 +181,14 @@
   align-items: center;
   gap: 5px;
   padding: 0 9px;
-  color: var(--accent);
+  color: var(--text-strong);
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: 6px;
   background: color-mix(in srgb, var(--accent) 12%, var(--surface-1));
   font-size: 10px;
   cursor: pointer;
 }
-.scene-simulation-footer button:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.scene-simulation-footer button:hover { color: var(--text-strong); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 
 @media (max-width: 920px) {
   .scene-simulation-panel { right: 8px; width: min(500px, calc(100% - 16px)); }
@@ -198,4 +202,41 @@
   .scene-simulation-context { flex-wrap: wrap; }
   .scene-simulation-footer > span { display: none; }
   .scene-simulation-footer { justify-content: flex-end; }
+}
+
+/* 同一面板节点在 float / dock 间切换；表单不换宿主、不卸载。 */
+.studio-scene-surface { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; container: studio-scene / inline-size; }
+.scene-simulation-panel.is-docked { top: 0; bottom: 0; height: 100%; min-width: 0; min-height: 0; max-width: 100%; max-height: 100%; border-radius: 0; box-shadow: none; }
+.scene-simulation-panel.is-docked .scene-simulation-header { cursor: default; }
+.scene-simulation-panel.is-docked .scene-simulation-drag-indicator { display: none; }
+#root .scene-simulation-panel.is-docked .scene-simulation-resize-handle { top: 0; bottom: 0; right: -1px; width: 6px; min-width: 0; height: 100%; border-radius: 0; cursor: ew-resize; }
+.scene-simulation-panel.is-docked[data-placement="right"] .scene-simulation-resize-handle { right: auto; left: -1px; }
+.scene-simulation-panel.is-docked .scene-simulation-resize-handle svg { display: none; }
+.scene-simulation-panel.is-collapsed .scene-simulation-placement { display: none; }
+.scene-simulation-panel.is-docked.is-collapsed .scene-simulation-header { flex-direction: column; height: 100%; padding: 8px 4px; }
+.scene-simulation-panel.is-docked.is-collapsed .scene-simulation-title { order: 1; flex: 1; justify-content: flex-start; padding-top: 8px; }
+.scene-simulation-panel.is-docked.is-collapsed .scene-simulation-title > span { display: none; }
+.scene-simulation-panel.is-docked.is-collapsed .scene-simulation-title strong { writing-mode: vertical-rl; text-orientation: mixed; max-height: 240px; }
+.scene-simulation-panel.is-docked.is-collapsed .scene-simulation-placement { display: flex; }
+.scene-simulation-panel.is-docked.is-collapsed .scene-simulation-placement button:not([data-placement="float"]) { display: none; }
+.scene-simulation-panel.is-docked.is-collapsed .scene-simulation-header > button:last-child { order: 2; }
+
+/* 工具坞跟随真实画布宽度；宽屏停靠也能使用原图标紧凑模式。 */
+@container studio-scene (max-width: 680px) {
+  .studio-scene-surface .scene-tool-dock { width: auto !important; flex-wrap: nowrap !important; }
+  .studio-scene-surface .scene-tool-task-trigger span,
+  .studio-scene-surface .scene-tool-task-trigger > svg:last-child { display: none; }
+  .studio-scene-surface .scene-tool-task-trigger { width: 36px; padding: 0; justify-content: center; }
+  .studio-scene-surface .scene-tool-task { position: static; }
+  .studio-scene-surface .scene-tool-menu { max-width: 100%; }
+}
+@container studio-scene (max-width: 440px) {
+  .studio-scene-surface .scene-tool-dock { width: calc(100% - 24px) !important; flex-wrap: wrap !important; justify-content: center; }
+  .studio-scene-surface .view-control { top: 110px; }
+}
+
+/* 窄工作区停靠期间暂让出两侧空间；浮动/关闭后原侧栏偏好原样恢复。 */
+@media (max-width: 1180px) {
+  .app-shell:has(.workspace[data-simulation-dock="left"], .workspace[data-simulation-dock="right"]) { grid-template-columns: 0 minmax(0, 1fr) 0; }
+  .app-shell:has(.workspace[data-simulation-dock="left"], .workspace[data-simulation-dock="right"]) > :is(.left-panel,.right-panel,.workspace-panel-controls) { display: none; }
 }

@@ -19,6 +19,7 @@ import { ViewControl } from "../components/AppFormControls";
 import type { AppStudioController } from "./AppStudioShell";
 import { sceneViewerDeliveryToolbarVisible } from "../delivery/sceneViewerDelivery";
 import type { SceneSimulationPanelId } from "../simulation/sceneSimulationRegistry";
+import type { SimulationDockReservation } from "../simulation/sceneSimulationLayout";
 import { useSceneSimulationOverlay } from "../hooks/useSceneSimulationOverlay";
 import { useScenePlantPlayback } from "../hooks/useScenePlantPlayback";
 import type { PlantLitePlaybackFrame } from "../components/plantLitePlaybackModel";
@@ -148,6 +149,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   } = controller;
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
   const [simulationPanelId, setSimulationPanelId] = useState<SceneSimulationPanelId>();
+  const [simulationDock, setSimulationDock] = useState<SimulationDockReservation>({ placement: "float", collapsed: false, width: 0 });
   const [simulationStudy, setSimulationStudy] = useState<PlantLiteStudyRecord>();
   const [simulationFrame, setSimulationFrame] = useState<PlantLitePlaybackFrame | null>(null);
   const [simulationTrack, setSimulationTrack] = useState(false);
@@ -216,7 +218,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   }
 
   return (
-    <div className="workspace" role={workspaceIsPrimary ? "main" : undefined} aria-hidden={workspaceIsPrimary ? undefined : true}>
+    <div className="workspace" data-simulation-dock={route.view === "studio" && simulationPanelId ? simulationDock.placement : "float"} role={workspaceIsPrimary ? "main" : undefined} aria-hidden={workspaceIsPrimary ? undefined : true}>
+      <div className="studio-scene-surface" style={route.view === "studio" && simulationPanelId ? { left: simulationDock.placement === "left" ? simulationDock.width : 0, right: simulationDock.placement === "right" ? simulationDock.width : 0 } : undefined}>
       {workspaceIsPrimary && <h1 className="sr-only">{route.view === "studio" ? tr(locale, `${sceneName} · 三维场景编辑`, `${sceneName} · 3D scene editor`) : tr(locale, `${sceneName} · 场景浏览`, `${sceneName} · Scene viewer`)}</h1>}
       <div className="viewport" ref={viewportRef} />
       {rendererSwitching && (
@@ -313,24 +316,6 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onSimulationPanelChange={toggleSimulationPanel}
         />
       ) : null}
-      {route.view === "studio" && simulationPanelId && project && (
-        <Suspense fallback={<div className="scene-simulation-loading"><LoaderCircle className="spin" size={18} />{tr(locale, "正在加载仿真插件", "Loading simulation plugin")}</div>}>
-          <SceneSimulationPanel
-            locale={locale}
-            panelId={simulationPanelId}
-            project={project}
-            scenes={scenes}
-            {...(activeScene ? { activeScene } : {})}
-            {...(selected ? { selectedObjectId: selected.id, selectedObjectName: selectionName || selected.name } : {})}
-            sceneFlow={{ objects: loadedModels, resolvePosition: resolveSimulationPosition, onEntitiesChange: controller.bindings.scenePersistence.replaceSimulationEntities, onStudy: showSimulationStudy }}
-            onPanelChange={setSimulationPanelId}
-            onOpenEvidence={() => navigate({ view: "operations", operationsTab: simulationPanelId === "whatif" ? "whatif" : simulationPanelId === "logistics" ? "logistics" : "commissioning" })}
-            onOpenDataCenter={() => navigate({ view: "data" })}
-            onOpenSceneTarget={openSimulationTarget}
-            onClose={() => { setSimulationPanelId(undefined); if (simulationTrack) setAnimationOpen(false); setSimulationTrack(false); setSimulationFrame(null); }}
-          />
-        </Suspense>
-      )}
       {route.view === "studio" && <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />}
       {route.view === "studio" && cameraViewsOpen && (
         <CameraNavigationPanel
@@ -538,6 +523,26 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
         onNavigationSettings={() => setCameraViewsOpen(true)}
         onNavigationExit={() => changeNavigation("orbit")}
       />
+      </div>
+      {route.view === "studio" && simulationPanelId && project && (
+        <Suspense fallback={<div className="scene-simulation-loading"><LoaderCircle className="spin" size={18} />{tr(locale, "正在加载仿真插件", "Loading simulation plugin")}</div>}>
+          <SceneSimulationPanel
+            locale={locale}
+            panelId={simulationPanelId}
+            project={project}
+            scenes={scenes}
+            {...(activeScene ? { activeScene } : {})}
+            {...(selected ? { selectedObjectId: selected.id, selectedObjectName: selectionName || selected.name } : {})}
+            sceneFlow={{ objects: loadedModels, resolvePosition: resolveSimulationPosition, onEntitiesChange: controller.bindings.scenePersistence.replaceSimulationEntities, onStudy: showSimulationStudy }}
+            onPanelChange={setSimulationPanelId}
+            onDockChange={setSimulationDock}
+            onOpenEvidence={() => navigate({ view: "operations", operationsTab: simulationPanelId === "whatif" ? "whatif" : simulationPanelId === "logistics" ? "logistics" : "commissioning" })}
+            onOpenDataCenter={() => navigate({ view: "data" })}
+            onOpenSceneTarget={openSimulationTarget}
+            onClose={() => { setSimulationPanelId(undefined); if (simulationTrack) setAnimationOpen(false); setSimulationTrack(false); setSimulationFrame(null); }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

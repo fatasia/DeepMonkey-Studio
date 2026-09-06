@@ -1,9 +1,12 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowUpRight, Box, ChevronDown, ChevronUp, Database, GripHorizontal, LoaderCircle, Maximize2, X } from "lucide-react";
+import { lazy, Suspense, useMemo, useRef, useState } from "react";
+import { ArrowUpRight, Box, ChevronDown, ChevronUp, Database, GripHorizontal, LoaderCircle, Maximize2, PanelLeftClose, PanelRightClose, X } from "lucide-react";
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import type { OperationsSnapshot } from "../api";
 import { ScenePlantQuickRun, type ScenePlantQuickRunProps } from "./ScenePlantQuickRun";
 import { translate as tr, type AppLocale } from "../i18n";
+import { useSceneSimulationLayout } from "../simulation/useSceneSimulationLayout";
+import type { SimulationDockReservation } from "../simulation/sceneSimulationLayout";
+export { constrainPanelLayout } from "../simulation/sceneSimulationLayout";
 import {
   SCENE_SIMULATION_PANELS,
   sceneSimulationPanel,
@@ -11,14 +14,6 @@ import {
 } from "../simulation/sceneSimulationRegistry";
 
 const OperationsCenter = lazy(() => import("./OperationsCenter").then((module) => ({ default: module.OperationsCenter })));
-const PANEL_LAYOUT_KEY = "bim-studio.scene-simulation-panel-layout.v1";
-const PANEL_MARGIN = 10;
-const PANEL_MIN_WIDTH = 420;
-const PANEL_MIN_HEIGHT = 360;
-
-interface PanelLayout { left: number; top: number; width: number; height: number }
-interface PointerOperation { kind: "move" | "resize"; pointerId: number; x: number; y: number; layout: PanelLayout }
-
 interface Props {
   locale: AppLocale;
   panelId: SceneSimulationPanelId;
@@ -34,6 +29,7 @@ interface Props {
   onOpenDataCenter: () => void;
   onOpenSceneTarget: (sceneId: string, objectId: string) => void;
   onClose: () => void;
+  onDockChange?: (reservation: SimulationDockReservation) => void;
 }
 
 /**
@@ -41,10 +37,9 @@ interface Props {
  */
 export function SceneSimulationPanel(props: Props) {
   const panel = sceneSimulationPanel(props.panelId);
-  const panelRef = useRef<HTMLElement>(null);
-  const pointerOperationRef = useRef<PointerOperation | undefined>(undefined);
-  const [layout, setLayout] = useState<PanelLayout>();
-  const [collapsed, setCollapsed] = useState(false);
+  const layout = useSceneSimulationLayout(props.onDockChange);
+  const collapseButton = useRef<HTMLButtonElement>(null);
+  const collapsed = layout.collapsed;
   const [advancedFlow, setAdvancedFlow] = useState(false);
   const hasSceneFlow = Boolean(props.sceneFlow && props.activeScene);
   const showSceneFlow = hasSceneFlow && props.panelId === "logistics" && !advancedFlow;
@@ -53,69 +48,33 @@ export function SceneSimulationPanel(props: Props) {
     return [props.activeScene, ...props.scenes.filter((scene) => scene.id !== props.activeScene?.id)];
   }, [props.activeScene, props.scenes]);
 
-  useEffect(() => {
-    const element = panelRef.current;
-    const container = element?.offsetParent as HTMLElement | null;
-    if (!element || !container) return;
-    const bounds = container.getBoundingClientRect();
-    setLayout((current) => constrainPanelLayout(current ?? readPanelLayout() ?? defaultPanelLayout(bounds.width, bounds.height), bounds.width, bounds.height, collapsed));
-    const observer = new ResizeObserver(() => {
-      const nextBounds = container.getBoundingClientRect();
-      setLayout((current) => current && constrainPanelLayout(current, nextBounds.width, nextBounds.height, collapsed));
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [collapsed]);
-
-  function beginPointerOperation(kind: PointerOperation["kind"], event: ReactPointerEvent<HTMLElement>) {
-    if (event.button !== 0 || !layout || (kind === "move" && (event.target as Element).closest("button"))) return;
-    pointerOperationRef.current = { kind, pointerId: event.pointerId, x: event.clientX, y: event.clientY, layout };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  }
-
-  function updatePointerOperation(event: ReactPointerEvent<HTMLElement>) {
-    const operation = pointerOperationRef.current;
-    const element = panelRef.current;
-    const container = element?.offsetParent as HTMLElement | null;
-    if (!operation || operation.pointerId !== event.pointerId || !container) return;
-    const dx = event.clientX - operation.x;
-    const dy = event.clientY - operation.y;
-    const bounds = container.getBoundingClientRect();
-    const next = operation.kind === "move"
-      ? { ...operation.layout, left: operation.layout.left + dx, top: operation.layout.top + dy }
-      : { ...operation.layout, width: operation.layout.width + dx, height: operation.layout.height + dy };
-    setLayout(constrainPanelLayout(next, bounds.width, bounds.height, collapsed));
-  }
-
-  function finishPointerOperation(event: ReactPointerEvent<HTMLElement>) {
-    if (pointerOperationRef.current?.pointerId !== event.pointerId) return;
-    pointerOperationRef.current = undefined;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-    if (layout) savePanelLayout(layout);
-  }
-
-  const panelStyle = layout ? ({ left: layout.left, top: layout.top, width: collapsed ? Math.min(320, layout.width) : layout.width, height: collapsed ? Math.min(48, layout.height) : layout.height } satisfies CSSProperties) : undefined;
+  function collapse() { collapseButton.current?.focus(); layout.collapse(true); }
 
   return (
-    <aside ref={panelRef} style={panelStyle} className={`scene-simulation-panel${collapsed ? " is-collapsed" : ""}`} aria-label={tr(props.locale, "场景仿真插件", "Scene simulation plugin")}>
+    <aside ref={layout.panelRef} style={layout.style} data-placement={layout.placement} className={`scene-simulation-panel${collapsed ? " is-collapsed" : ""}${layout.docked ? " is-docked" : ""}`} aria-label={tr(props.locale, "场景仿真插件", "Scene simulation plugin")}
+      onKeyDown={event => { if (event.key !== "Escape" || event.defaultPrevented || event.nativeEvent.isComposing) return; event.preventDefault(); event.stopPropagation(); collapse(); }}>
       <header
         className="scene-simulation-header"
-        title={tr(props.locale, "拖动窗口；右下角可调整大小", "Drag the window; resize from the bottom-right corner")}
-        onPointerDown={(event) => beginPointerOperation("move", event)}
-        onPointerMove={updatePointerOperation}
-        onPointerUp={finishPointerOperation}
-        onPointerCancel={finishPointerOperation}
+        title={layout.docked ? tr(props.locale, "停靠为视口留出空间；Esc 收起并保留表单", "Docking reserves viewport space; Escape collapses without clearing inputs") : tr(props.locale, "拖动窗口；右下角可调整大小", "Drag the window; resize from the bottom-right corner")}
+        onPointerDown={(event) => layout.begin("move", event)}
+        onPointerMove={layout.move}
+        onPointerUp={layout.finish}
+        onPointerCancel={layout.finish}
       >
         <div className="scene-simulation-title">
           <span>{panel.eyebrow}</span>
           <div>
-            <strong>{tr(props.locale, panel.label, panel.englishLabel)}</strong>
-            <small>{tr(props.locale, panel.description, panel.englishDescription)}</small>
+            <strong title={tr(props.locale, panel.label, panel.englishLabel)}>{tr(props.locale, panel.label, panel.englishLabel)}</strong>
+            <small title={tr(props.locale, panel.description, panel.englishDescription)}>{tr(props.locale, panel.description, panel.englishDescription)}</small>
           </div>
         </div>
         <GripHorizontal className="scene-simulation-drag-indicator" size={16} aria-hidden="true" />
-        <button type="button" aria-expanded={!collapsed} aria-label={collapsed ? tr(props.locale, "展开仿真面板", "Expand simulation panel") : tr(props.locale, "收起仿真面板", "Collapse simulation panel")} title={tr(props.locale, "收起时保留运行状态与场景路径", "Collapsing preserves running state and scene paths")} onClick={() => setCollapsed((value) => !value)}>
+        <div className="scene-simulation-placement" role="group" aria-label={tr(props.locale, "仿真面板位置", "Simulation panel placement")}>
+          <button type="button" data-placement="left" aria-pressed={layout.placement === "left"} aria-label={tr(props.locale, "仿真面板停靠左侧", "Dock simulation panel left")} title={tr(props.locale, "停靠左侧；窄窗临时收起场景树和检查器", "Dock left; narrow windows temporarily fold the outliner and inspector")} onClick={() => layout.place("left")}><PanelLeftClose size={15} /></button>
+          <button type="button" data-placement="float" aria-pressed={!layout.docked} aria-label={tr(props.locale, "恢复仿真面板浮动", "Float simulation panel")} title={tr(props.locale, "恢复上次浮动位置和大小", "Restore the previous floating position and size")} onClick={() => layout.place("float")}><Maximize2 size={14} /></button>
+          <button type="button" data-placement="right" aria-pressed={layout.placement === "right"} aria-label={tr(props.locale, "仿真面板停靠右侧", "Dock simulation panel right")} title={tr(props.locale, "停靠右侧；窄窗临时收起场景树和检查器", "Dock right; narrow windows temporarily fold the outliner and inspector")} onClick={() => layout.place("right")}><PanelRightClose size={15} /></button>
+        </div>
+        <button ref={collapseButton} type="button" disabled={layout.narrow} aria-expanded={!collapsed} aria-label={collapsed ? tr(props.locale, "展开仿真面板", "Expand simulation panel") : tr(props.locale, "收起仿真面板", "Collapse simulation panel")} title={layout.narrow ? tr(props.locale, "当前区域过窄，请恢复浮动或加宽窗口", "Float the panel or widen the window to expand") : tr(props.locale, "收起时保留运行状态与场景路径", "Collapsing preserves running state and scene paths")} onClick={() => layout.collapse(!collapsed)}>
           {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </button>
         <button type="button" aria-label={tr(props.locale, "关闭仿真面板", "Close simulation panel")} onClick={props.onClose}>
@@ -140,14 +99,14 @@ export function SceneSimulationPanel(props: Props) {
 
       <div className="scene-simulation-context" aria-label={tr(props.locale, "编辑器上下文", "Editor context")}>
         <span><Box size={13} />{tr(props.locale, "当前场景", "Scene")}</span>
-        <strong>{props.activeScene?.name ?? tr(props.locale, "未保存场景", "Unsaved scene")}</strong>
+        <strong title={props.activeScene?.name}>{props.activeScene?.name ?? tr(props.locale, "未保存场景", "Unsaved scene")}</strong>
         <i />
         <span>{tr(props.locale, "已选对象", "Selection")}</span>
-        <strong>{props.selectedObjectName ?? tr(props.locale, "未选择对象", "No object selected")}</strong>
+        <strong title={props.selectedObjectName}>{props.selectedObjectName ?? tr(props.locale, "未选择对象", "No object selected")}</strong>
       </div>
 
       <div className="scene-simulation-body">
-        {props.sceneFlow && props.activeScene && <div hidden={!showSceneFlow}><ScenePlantQuickRun key={`${props.project.id}:${props.activeScene.id}`} {...props.sceneFlow} projectId={props.project.id} scene={props.activeScene} {...(props.selectedObjectId ? { selectedObjectId: props.selectedObjectId } : {})} onStudy={study => { setCollapsed(true); props.sceneFlow?.onStudy(study); }} /></div>}
+        {props.sceneFlow && props.activeScene && <div hidden={!showSceneFlow}><ScenePlantQuickRun key={`${props.project.id}:${props.activeScene.id}`} {...props.sceneFlow} projectId={props.project.id} scene={props.activeScene} {...(props.selectedObjectId ? { selectedObjectId: props.selectedObjectId } : {})} onStudy={study => { collapse(); props.sceneFlow?.onStudy(study); }} /></div>}
         {hasSceneFlow && props.panelId === "logistics" && <button type="button" className="scene-simulation-advanced" onClick={() => setAdvancedFlow(value => !value)}>{advancedFlow ? "返回场景物流建模" : "高级分析 · 资源池、班次与历史 Study"}</button>}
         <div hidden={showSceneFlow}>
         <Suspense fallback={<div className="scene-simulation-loading"><LoaderCircle className="spin" size={18} />{tr(props.locale, "正在加载仿真引擎", "Loading simulation engine")}</div>}>
@@ -179,44 +138,13 @@ export function SceneSimulationPanel(props: Props) {
         type="button"
         className="scene-simulation-resize-handle"
         aria-label={tr(props.locale, "调整仿真面板大小", "Resize simulation panel")}
-        title={tr(props.locale, "拖动调整面板大小", "Drag to resize")}
-        onPointerDown={(event) => beginPointerOperation("resize", event)}
-        onPointerMove={updatePointerOperation}
-        onPointerUp={finishPointerOperation}
-        onPointerCancel={finishPointerOperation}
+        title={tr(props.locale, "拖动或使用方向键调整面板大小", "Drag or use arrow keys to resize")}
+        onPointerDown={(event) => layout.begin("resize", event)}
+        onPointerMove={layout.move}
+        onPointerUp={layout.finish}
+        onPointerCancel={layout.finish}
+        onKeyDown={layout.resizeByKey}
       ><Maximize2 size={12} /></button>
     </aside>
   );
-}
-
-export function constrainPanelLayout(layout: PanelLayout, boundsWidth: number, boundsHeight: number, collapsed = false): PanelLayout {
-  const marginX = Math.min(PANEL_MARGIN, Math.max(0, boundsWidth / 2));
-  const marginY = Math.min(PANEL_MARGIN, Math.max(0, boundsHeight / 2));
-  const availableWidth = Math.max(0, boundsWidth - marginX * 2);
-  const availableHeight = Math.max(0, boundsHeight - marginY * 2);
-  const width = Math.min(Math.max(Math.min(PANEL_MIN_WIDTH, availableWidth), layout.width), availableWidth);
-  const height = Math.min(Math.max(Math.min(PANEL_MIN_HEIGHT, availableHeight), layout.height), availableHeight);
-  return {
-    left: Math.min(Math.max(marginX, layout.left), Math.max(marginX, boundsWidth - (collapsed ? Math.min(320, width) : width) - marginX)),
-    top: Math.min(Math.max(marginY, layout.top), Math.max(marginY, boundsHeight - (collapsed ? Math.min(48, height) : height) - marginY)),
-    width,
-    height,
-  };
-}
-
-function defaultPanelLayout(boundsWidth: number, boundsHeight: number): PanelLayout {
-  const width = Math.min(520, Math.max(280, boundsWidth - PANEL_MARGIN * 2));
-  const height = Math.min(610, Math.max(280, boundsHeight - 116));
-  return { left: Math.max(PANEL_MARGIN, boundsWidth - width - 18), top: Math.min(84, Math.max(PANEL_MARGIN, boundsHeight - height - PANEL_MARGIN)), width, height };
-}
-
-function readPanelLayout(): PanelLayout | undefined {
-  try {
-    const value = JSON.parse(localStorage.getItem(PANEL_LAYOUT_KEY) ?? "null") as Partial<PanelLayout> | null;
-    return value && [value.left, value.top, value.width, value.height].every(Number.isFinite) ? value as PanelLayout : undefined;
-  } catch { return undefined; }
-}
-
-function savePanelLayout(layout: PanelLayout): void {
-  try { localStorage.setItem(PANEL_LAYOUT_KEY, JSON.stringify(layout)); } catch { /* 私密或受限浏览器中仅保留本次布局。 */ }
 }
