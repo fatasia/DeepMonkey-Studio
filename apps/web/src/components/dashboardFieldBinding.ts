@@ -52,6 +52,7 @@ export function bindDashboardField(widget: DashboardDataWidgetConfig, role: Fiel
   const analysis = { aggregation: "none" as const, ...next.analysis };
   if (productChanged) {
     delete next.directBinding;
+    delete next.sampleData;
     delete next.pipelineId;
     delete next.datasetId;
     const [kind, ...parts] = product.key.split(":");

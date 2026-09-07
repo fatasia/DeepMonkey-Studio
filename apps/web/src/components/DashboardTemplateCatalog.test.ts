@@ -20,8 +20,8 @@ describe("DashboardTemplateCatalog", () => {
     const nodes = createDashboardTemplateNodes("zh-CN", page, template.id, 5);
     expect(nodes).toHaveLength(9);
     expect(nodes[0]?.widget.type).toBe("decoration");
-    expect(nodes[1]?.widget).toMatchObject({ type: "filter", filterField: template.filterField });
-    expect(nodes.some((node) => node.widget.type === template.layout.primaryChart)).toBe(true);
+    expect(nodes[1]?.widget).toMatchObject({ type: "filter", filterField: template.id === "production" ? "产线" : template.filterField });
+    expect(nodes.some((node) => node.widget.type === (template.id === "production" ? "bar" : template.layout.primaryChart))).toBe(true);
     expect(nodes.some((node) => node.widget.type === template.layout.secondaryChart)).toBe(true);
     expect(new Set(nodes.map((node) => node.groupId)).size).toBe(1);
     expect(nodes[0]?.groupId).toMatch(/^group:/);
@@ -39,5 +39,17 @@ describe("DashboardTemplateCatalog", () => {
     expect(alert?.widget).toMatchObject({
       conditionalRules: [{ operator: "gt", value: 0, animation: "pulse" }],
     });
+  });
+
+  it("ships one editable production sample without shared identities or overlapping headers", () => {
+    const first = createDashboardTemplateNodes("zh-CN", page, "production", 0);
+    const second = createDashboardTemplateNodes("zh-CN", page, "production", 0);
+    expect(first[0]?.widget.content).toContain("示例");
+    expect(first.filter(node => node.widget.sampleData)).toHaveLength(7);
+    expect(new Set(first.slice(2).map(node => node.widget.sampleData?.sourceId)).size).toBe(1);
+    expect(first[2]?.widget.sampleData?.sourceId).not.toBe(second[2]?.widget.sampleData?.sourceId);
+    expect(first[0]!.frame.x + first[0]!.frame.width).toBeLessThan(first[1]!.frame.x);
+    expect(first[2]?.widget.sampleData?.rows[0]?.["产量"]).toBe(1080);
+    expect(first[3]?.widget.analysis?.aggregation).toBe("average");
   });
 });

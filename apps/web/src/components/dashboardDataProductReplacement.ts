@@ -14,6 +14,7 @@ export function replaceDashboardWidgetDataProduct(
   delete next.datasetId;
   delete next.pipelineId;
   delete next.directBinding;
+  delete next.sampleData;
   delete next.semanticBinding;
   if (!productKey) return next;
   const separator = productKey.indexOf(":");

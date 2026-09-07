@@ -9,6 +9,7 @@ import { DashboardDigitalFlip, DashboardLiquidFill, DashboardScrollTable } from 
 import { DashboardImage, DashboardMonitor, DashboardVideo } from "./DashboardMediaPlayer";
 import { analyzeDashboardMetric, conditionalStyle } from "./dashboardAnalytics";
 import { mergeDirectBindingMetric, mergeProductMetrics } from "./dashboardMetrics";
+import { buildDashboardSampleMetric } from "./dashboardSampleMetrics";
 import { resolveSemanticWidget } from "./dashboardSemanticBinding";
 import { buildSemanticMetric } from "./dashboardSemanticMetrics";
 import { buildDashboardDataProductRefreshPlans } from "./dataRefreshPolicy";
@@ -162,11 +163,14 @@ export function useDashboardMetrics(
     );
   }, [liveDataEnabled, projectId, sceneId]);
 
-  const visibleMetrics = useMemo(() => ({ ...metrics, ...Object.fromEntries(resolved.filter((entry) => entry.widget.semanticBinding).map((entry) => {
+  const visibleMetrics = useMemo(() => ({ ...metrics,
+    ...Object.fromEntries(widgets.filter(widget => widget.sampleData).map(widget => [widget.key,
+      buildDashboardSampleMetric(widget, applyDashboardFilters(widget.sampleData!.rows, filters, widgets) as NonNullable<DashboardDataWidgetConfig["sampleData"]>["rows"])])),
+    ...Object.fromEntries(resolved.filter((entry) => entry.widget.semanticBinding).map((entry) => {
     const error = entry.error ?? (catalogError ? "语义数据目录读取失败，请刷新页面重试。" : undefined);
     const metric = metrics[entry.widget.key];
     return [entry.widget.key, error ? { value: undefined, samples: [], semanticError: error } : JSON.stringify(metric?.semanticWidget?.semanticBinding) === JSON.stringify(entry.widget.semanticBinding) ? metric! : { value: undefined, samples: [] }];
-  })) }), [metrics, resolved, catalogError]);
+  })) }), [metrics, resolved, catalogError, widgets, filters]);
   return { metrics: visibleMetrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } as const;
 }
 

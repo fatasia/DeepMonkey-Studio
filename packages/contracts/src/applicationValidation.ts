@@ -2,6 +2,7 @@ import { validateScene, validateTopology } from "./sceneValidation.js";
 import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocument } from "./application.js";
 import { assertPathSafeResourceId } from "./resourceId.js";
 import { assertDirectBindingSpec } from "./directBinding.js";
+import { assertDashboardSampleData } from "./dashboardSampleData.js";
 import { supportedExtensions } from "./project.js";
 import {
   expectArray,
@@ -302,6 +303,7 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   optional(object, "unityDefaultAction", validateUnityDefaultAction, path);
   optional(object, "unityPropertyValues", validateJsonObject, path);
   optional(object, "directBinding", (binding, bindingPath) => assertDirectBindingSpec(binding, bindingPath), path);
+  optional(object, "sampleData", assertDashboardSampleData, path);
   for (const key of [
     "color",
     "backgroundColor",
@@ -346,10 +348,10 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   optional(object, "animationAutoplay", expectBoolean, path);
   optional(object, "animationLoop", expectBoolean, path);
   for (const key of ["animationDuration", "animationDelay"] as const) optional(object, key, expectNumber, path);
-  const products = [object.datasetId, object.pipelineId, object.directBinding].filter(
+  const products = [object.datasetId, object.pipelineId, object.directBinding, object.sampleData].filter(
     (item) => (typeof item === "string" && item.length > 0) || (typeof item === "object" && item !== null),
   );
-  if (products.length > 1) invalid(path, "数据集、数据管道和直接数据源最多只能选择一个");
+  if (products.length > 1 || (object.sampleData && object.semanticBinding)) invalid(path, "数据集、数据管道、直接数据源和示例数据最多只能选择一个");
 }
 
 function validateDashboardChart(value: unknown, path: string): void {

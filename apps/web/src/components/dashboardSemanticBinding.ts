@@ -23,6 +23,7 @@ export function resolveSemanticWidget(widget: DashboardDataWidgetConfig, models:
   delete next.datasetId;
   delete next.pipelineId;
   delete next.directBinding;
+  delete next.sampleData;
   if (model.source.kind === "dataset") next.datasetId = model.source.id;
   else next.pipelineId = model.source.id;
   if (metric) {

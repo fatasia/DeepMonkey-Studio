@@ -135,6 +135,7 @@ export interface SceneDashboardWidgetState {
   datasetId?: string;
   pipelineId?: string;
   directBinding?: DirectBindingSpec;
+  sampleData?: import("./dashboardSampleData.js").DashboardSampleData;
   /** 引用已确认的语义口径版本；版本变化必须重新确认，不静默漂移。 */
   semanticBinding?: {
     modelId: string;

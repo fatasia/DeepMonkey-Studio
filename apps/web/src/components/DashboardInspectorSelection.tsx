@@ -3,6 +3,7 @@ import { translate as tr } from "../i18n";
 import { InteractionFlowInspector } from "./InteractionFlowInspector";
 import { DashboardInspectorAnimation } from "./DashboardInspectorAnimation";
 import { DashboardInspectorBulkData } from "./DashboardInspectorBulkData";
+import { DashboardSampleGroupEditor } from "./DashboardSampleGroupEditor";
 import { DashboardInspectorContent } from "./DashboardInspectorContent";
 import { DashboardInspectorData } from "./DashboardInspectorData";
 import { DashboardInspectorStyle } from "./DashboardInspectorStyle";
@@ -55,9 +56,10 @@ export function DashboardInspectorSelection() {
 
       <DashboardInspectorContent />
       <DashboardInspectorBulkData />
+      <DashboardSampleGroupEditor />
       <DashboardInspectorData />
       <DashboardInspectorStyle />
-      {inspectorTab === "data" && selectedNode.kind === "data-widget" && ["text", "shape", "decoration"].includes(selectedNode.widget.type) && (
+      {inspectorTab === "data" && selectedNodeIds.length === 1 && selectedNode.kind === "data-widget" && ["text", "shape", "decoration"].includes(selectedNode.widget.type) && (
         <div className="dashboard-inspector-empty">{tr(locale, "静态组件不需要数据绑定。", "Static components do not require data binding.")}</div>
       )}
       <DashboardInspectorAnimation />

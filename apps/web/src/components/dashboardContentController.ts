@@ -13,6 +13,7 @@ import {
   createUpdateDashboardSceneViewportCommand, type StudioCommand
 } from "@bim-studio/studio-core";
 import { translate as tr, type AppLocale } from "../i18n";
+import { isolateCopiedDashboardSamples } from "./dashboardSampleMetrics";
 import type { DashboardViewState } from "../studio/workspaceRoute";
 import type { DashboardComponentPreset } from "./DashboardComponentCatalog";
 import {
@@ -88,7 +89,7 @@ export function createDashboardContentController(context: DashboardContentContro
       ...structuredClone(page),
       id: pageId,
       name: tr(locale, `${page.name} 副本`, `${page.name} copy`),
-      nodes: page.nodes.map((node) => ({ ...structuredClone(node), id: nodeIds.get(node.id)!, ...(node.groupId ? { groupId: groupIds.get(node.groupId)! } : {}) }))
+      nodes: isolateCopiedDashboardSamples(page.nodes.map((node) => ({ ...structuredClone(node), id: nodeIds.get(node.id)!, ...(node.groupId ? { groupId: groupIds.get(node.groupId)! } : {}) })))
     };
     const interactions = application.interactions.flatMap((flow) => {
       const source = flow.source.kind === "page" && flow.source.id === page.id
@@ -270,6 +271,14 @@ export function createDashboardContentController(context: DashboardContentContro
 
   function updateDataWidget(patch: Partial<DashboardDataWidgetConfig>) {
     if (!selectedNode || selectedNode.kind !== "data-widget") return;
+    // 同一模板实例的示例快照一起更新；一个撤销命令，重复插入的模板互不影响。
+    const sourceId = selectedNode.widget.sampleData?.sourceId;
+    if (patch.sampleData && sourceId) {
+      onCommand(createUpdateDashboardDataWidgetsCommand(page.id, page.nodes.flatMap(node =>
+        node.kind === "data-widget" && node.widget.sampleData?.sourceId === sourceId
+          ? [{ nodeId: node.id, widget: { ...node.widget, sampleData: { ...patch.sampleData!, sourceId } } }] : []), tr(locale, "修改示例数据", "Edit sample data")));
+      return;
+    }
     onCommand(createUpdateDashboardDataWidgetCommand(page.id, selectedNode.id, { ...selectedNode.widget, ...patch }));
   }
 
@@ -279,6 +288,7 @@ export function createDashboardContentController(context: DashboardContentContro
     delete next.datasetId;
     delete next.pipelineId;
     delete next.directBinding;
+    delete next.sampleData;
     delete next.field;
     if (value) {
       const separator = value.indexOf(":");

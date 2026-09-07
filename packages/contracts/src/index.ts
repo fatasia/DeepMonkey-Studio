@@ -18,6 +18,7 @@ export * from "./industrialStudyValidation.js";
 export * from "./workcellValidation.js";
 export * from "./askData.js";
 export * from "./dashboard.js";
+export * from "./dashboardSampleData.js";
 export * from "./project.js";
 export * from "./ergonomics.js";
 export * from "./robot.js";

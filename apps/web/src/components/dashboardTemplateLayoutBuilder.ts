@@ -7,6 +7,7 @@ import type {
 } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { DashboardTemplateDefinition } from "./dashboardTemplateTypes";
+import { applyProductionSample } from "./dashboardProductionSample";
 
 export function buildDashboardTemplateNodes(
   locale: AppLocale,
@@ -54,7 +55,7 @@ export function buildDashboardTemplateNodes(
     key: `${template.id}.detail.${template.layout.detailType}`,
   }));
 
-  return nodes;
+  return template.id === "production" ? applyProductionSample(nodes, locale) : nodes;
 }
 
 function dashboardGeometry(page: DashboardPageDocument, primaryRatio: number) {
@@ -73,7 +74,7 @@ function dashboardGeometry(page: DashboardPageDocument, primaryRatio: number) {
   const filterWidth = Math.min(210, Math.max(1, width * 0.25));
   const filterHeight = Math.min(40, titleHeight);
   return {
-    title: { x: margin, y: margin, width, height: titleHeight },
+    title: { x: margin, y: margin, width: width - filterWidth - gap, height: titleHeight },
     filter: { x: margin + width - filterWidth, y: margin, width: filterWidth, height: filterHeight },
     metrics: Array.from({ length: 4 }, (_, index) => ({
       x: margin + index * (metricWidth + gap),

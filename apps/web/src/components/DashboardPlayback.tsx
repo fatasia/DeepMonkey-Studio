@@ -11,7 +11,6 @@ import { useDashboardMetrics, type DashboardMetric } from "./DashboardWidgetRunt
 import "./DashboardPlayback.css";
 
 type Props = ComponentProps<typeof DashboardRuntimePreview> & { readDependency?: ScriptDependencyReader };
-const NO_WIDGETS: never[] = [];
 
 /** Preview mounts a fresh disposable session; closing never saves runtime mutations. */
 export function DashboardPlayback(props: Props) {
@@ -60,12 +59,13 @@ export function PlaybackView({ session, ...props }: Props & { session: Applicati
   const { document: application, variables, filters } = session.state;
   const page = application.pages.find((page) => page.id === props.page.id) ?? application.pages[0]!;
   const widgets = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
-  const live = useDashboardMetrics(application.metadata.projectId, props.readOnly ? NO_WIDGETS : widgets, undefined, filters, !props.readOnly, props.project.semanticModels);
+  const runtimeWidgets = useMemo(() => props.readOnly ? widgets.filter(widget => widget.sampleData || widget.type === "filter" && !widget.datasetId && !widget.pipelineId && !widget.directBinding && !widget.semanticBinding) : widgets, [props.readOnly, widgets]);
+  const live = useDashboardMetrics(application.metadata.projectId, runtimeWidgets, undefined, filters, !props.readOnly, props.project.semanticModels);
   useEffect(() => {
     const updates = Object.fromEntries(Object.entries(live.metrics).filter(([, metric]) => metric.value !== undefined).map(([key, metric]) => [key, JSON.parse(JSON.stringify(metric.value)) as JsonValue]));
     session.setVariables(updates);
   }, [session, live.metrics]);
-  const metrics = useMemo<Record<string, DashboardMetric>>(() => ({ ...props.metrics, ...live.metrics, ...Object.fromEntries(Object.entries(variables).map(([key, value]) => [key, { ...live.metrics[key], value, samples: live.metrics[key]?.samples ?? [] }])) }), [props.metrics, live.metrics, variables]);
+  const metrics = useMemo<Record<string, DashboardMetric>>(() => ({ ...props.metrics, ...live.metrics, ...Object.fromEntries(Object.entries(variables).map(([key, value]) => [key, { ...live.metrics[key], value, samples: live.metrics[key]?.samples ?? [] }])), ...Object.fromEntries(runtimeWidgets.filter(widget => widget.sampleData).map(widget => [widget.key, live.metrics[widget.key]!])) }), [props.metrics, live.metrics, variables, runtimeWidgets]);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const errors = session.entries.filter((entry) => entry.diagnostics.status === "error");
   const logErrors = session.logs.filter((entry) => entry.level === "error");

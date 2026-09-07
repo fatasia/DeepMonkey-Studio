@@ -1,0 +1,20 @@
+.dashboard-sample-editor { display: grid; gap: 8px; min-width: 0; color: var(--text); }
+.dashboard-sample-editor header, .dashboard-sample-editor footer { display: flex; align-items: center; gap: 8px; }
+.dashboard-sample-editor header { justify-content: space-between; }
+.dashboard-sample-editor header span { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.dashboard-sample-scroll { max-width: 100%; max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.dashboard-sample-scroll table { border-collapse: collapse; width: 100%; }
+.dashboard-sample-scroll th { text-align: left; font-weight: 500; color: var(--text-muted); background: var(--surface-2); white-space: nowrap; }
+.dashboard-sample-scroll td, .dashboard-sample-scroll th { padding: 4px; border-bottom: 1px solid var(--line-subtle); }
+.dashboard-inspector-panel .dashboard-sample-editor .dashboard-sample-scroll input { min-width: 86px; width: 96px; font-variant-numeric: tabular-nums; }
+.dashboard-sample-editor .dashboard-sample-scroll table { min-width: 100%; table-layout: fixed; }
+.dashboard-sample-editor .dashboard-sample-scroll :is(th, td):last-child { width: 40px; }
+.dashboard-inspector-panel .dashboard-sample-editor button { color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--surface-2); }
+.dashboard-inspector-panel .dashboard-sample-editor button:hover:not(:disabled) { color: var(--text-strong); background: var(--surface-3); }
+.dashboard-inspector-panel .dashboard-sample-editor button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.dashboard-sample-scroll p { padding: 12px; color: var(--text-muted); }
+.dashboard-sample-editor footer { flex-wrap: wrap; }
+.dashboard-sample-editor footer button:first-child { margin-right: auto; }
+.dashboard-sample-editor [role="alert"] { color: var(--danger); overflow-wrap: anywhere; }
+.dashboard-sample-editor [role="status"] { color: var(--success); }
+.dashboard-sample-editor button:disabled { opacity: .5; cursor: not-allowed; }

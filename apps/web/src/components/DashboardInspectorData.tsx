@@ -23,7 +23,7 @@ export function DashboardInspectorData() {
     !["text", "shape", "decoration", "topology"].includes(selectedNode.widget.type) && (
       <section className="dashboard-inspector-section dashboard-data-widget-properties">
         <DashboardDataSource />
-        {!selectedNode.widget.directBinding && !selectedNode.widget.semanticBinding && <DashboardFieldSlots key={selectedNode.id} />}
+        {!selectedNode.widget.directBinding && !selectedNode.widget.semanticBinding && !selectedNode.widget.sampleData && <DashboardFieldSlots key={selectedNode.id} />}
         {!selectedNode.widget.semanticBinding && ["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "rank", "table", "scroll-table"].includes(
           selectedNode.widget.type,
         ) && (

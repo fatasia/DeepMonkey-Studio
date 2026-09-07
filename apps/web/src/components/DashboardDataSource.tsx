@@ -9,6 +9,8 @@ import { replaceDashboardWidgetDataProduct } from "./dashboardDataProductReplace
 import { translate as tr } from "../i18n";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 import { DashboardSemanticFields } from "./DashboardSemanticFields";
+import { DashboardSampleDataEditor } from "./DashboardSampleDataEditor";
+import { withDashboardSampleData } from "./dashboardSampleMetrics";
 
 export function DashboardDataSource() {
   const { catalogError, datasets, fieldsByProduct, locale, onCommand, onOpenData, page, pipelines, selectDataField, selectDataProduct, selectedNode, statusByProduct, updateDataWidget } = useDashboardWorkspace();
@@ -23,7 +25,7 @@ export function DashboardDataSource() {
           <span>{tr(locale, "数据来源", "Data source")}</span>
           <select
             aria-label={tr(locale, "数据来源", "Data source")}
-            value={choosingProduct ? "platform" : selectedNode.widget.directBinding ? "direct" : selectedNode.widget.pipelineId || selectedNode.widget.datasetId ? "platform" : "unbound"}
+            value={choosingProduct ? "platform" : selectedNode.widget.sampleData ? "sample" : selectedNode.widget.directBinding ? "direct" : selectedNode.widget.pipelineId || selectedNode.widget.datasetId ? "platform" : "unbound"}
             onChange={(event) => {
               const mode = event.target.value;
               setChoosingProduct(mode === "platform");
@@ -34,16 +36,20 @@ export function DashboardDataSource() {
                 };
                 delete next.datasetId;
                 delete next.pipelineId;
+                delete next.sampleData;
                 onCommand(createUpdateDashboardDataWidgetCommand(page.id, selectedNode.id, next));
-              } else if (mode === "platform") setOpen(true);
+              } else if (mode === "sample") onCommand(createUpdateDashboardDataWidgetCommand(page.id, selectedNode.id, withDashboardSampleData(selectedNode.widget)));
+              else if (mode === "platform") setOpen(true);
               else selectDataProduct("");
             }}
           >
             <option value="unbound">{tr(locale, "实时变量 / 未绑定", "Live variable / Unbound")}</option>
             <option value="platform">{tr(locale, "数据中心", "Data Center")}</option>
             <option value="direct">{tr(locale, "直接 HTTP / WebSocket", "Direct HTTP / WebSocket")}</option>
+            <option value="sample">{tr(locale, "示例数据", "Sample data")}</option>
           </select>
         </label>
+        {selectedNode.widget.sampleData && <DashboardSampleDataEditor key={selectedNode.id} locale={locale} widget={selectedNode.widget} disabled={selectedNode.locked ?? false} onChange={updateDataWidget} />}
         {(choosingProduct || !selectedNode.widget.directBinding && (selectedNode.widget.pipelineId || selectedNode.widget.datasetId)) && (
           <label>
             <span>{tr(locale, "数据产品", "Data product")}</span>
@@ -104,6 +110,7 @@ export function DashboardDataSource() {
           />
         )}
         {(() => {
+          if (selectedNode.widget.sampleData) return null;
           if (selectedNode.widget.directBinding)
             return (
               <label>

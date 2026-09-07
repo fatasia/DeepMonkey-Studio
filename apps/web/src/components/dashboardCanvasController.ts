@@ -15,6 +15,7 @@ import {
   type DashboardDistribution
 } from "@bim-studio/studio-core";
 import { translate as tr } from "../i18n";
+import { isolateCopiedDashboardSamples } from "./dashboardSampleMetrics";
 import type { DashboardViewState } from "../studio/workspaceRoute";
 import {
   CANVAS_MARGIN,
@@ -165,6 +166,7 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
         locked: false,
         ...(node.groupId ? { groupId: `group:${crypto.randomUUID()}` } : {})
       };
+      if (clone.kind === "data-widget") clone.widget = (isolateCopiedDashboardSamples([clone])[0] as typeof clone).widget;
       onCommand(createInsertDashboardNodesCommand(page.id, [clone]));
       const ids = [clone.id];
       setSelectedNodeIds(ids);
@@ -239,7 +241,7 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
     const topZIndex = Math.max(0, ...page.nodes.map((node) => node.zIndex));
     const groupIds = new Map([...new Set(clipboardRef.current.flatMap((node) => node.groupId ? [node.groupId] : []))].map((groupId) => [groupId, `group:${crypto.randomUUID()}`]));
     const usedNames = new Set(page.nodes.map((node) => dashboardNodeIdentity(node).toLocaleLowerCase()));
-    const nodes = clipboardRef.current.map((source, index): WidgetNode => {
+    const nodes = isolateCopiedDashboardSamples(clipboardRef.current.map((source, index): WidgetNode => {
       const name = uniqueDashboardNodeName(`${dashboardNodeIdentity(source)} ${tr(locale, "副本", "copy")}`, usedNames);
       usedNames.add(name.toLocaleLowerCase());
       return {
@@ -256,7 +258,7 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
         locked: false,
         ...(source.groupId ? { groupId: groupIds.get(source.groupId)! } : {})
       };
-    });
+    }));
     clipboardRef.current = nodes.map((node) => structuredClone(node));
     onCommand(createInsertDashboardNodesCommand(page.id, nodes));
     const ids = nodes.map((node) => node.id);
