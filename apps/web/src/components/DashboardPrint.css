@@ -1,0 +1,18 @@
+@media print {
+  body:has(.dashboard-runtime-preview) { margin: 0 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  /* 只保留当前运行画布，作者壳层与公开版本工具均不进入纸面。 */
+  #root:has(.dashboard-runtime-preview) *:not(.dashboard-runtime-preview):not(.dashboard-runtime-preview *):not(:has(.dashboard-runtime-preview)) { display: none !important; }
+  #root:has(.dashboard-runtime-preview), #root *:has(.dashboard-runtime-preview) {
+    display: block !important; position: static !important; width: auto !important; height: auto !important;
+    min-height: 0 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; overflow: visible !important;
+  }
+  .dashboard-runtime-preview { width: var(--dashboard-print-width) !important; height: var(--dashboard-print-height) !important; min-height: 0 !important; }
+  .dashboard-runtime-preview > :not(.dashboard-runtime-surface) { display: none !important; }
+  .dashboard-runtime-preview > .dashboard-runtime-surface { width: 100% !important; height: 100% !important; }
+  .dashboard-runtime-stage { width: 100% !important; height: 100% !important; overflow: hidden !important; break-inside: avoid; }
+  .dashboard-runtime-artboard {
+    left: var(--dashboard-print-left) !important; top: var(--dashboard-print-top) !important;
+    transform: scale(var(--dashboard-print-scale)) !important; box-shadow: none !important;
+  }
+  .dashboard-runtime-artboard *, .dashboard-runtime-artboard *::before, .dashboard-runtime-artboard *::after { animation: none !important; transition: none !important; }
+}

@@ -1,0 +1,21 @@
+.dashboard-template-library-backdrop { z-index: var(--layer-modal); padding: clamp(16px, 5vw, 64px); background: color-mix(in srgb, var(--bg-0) 76%, transparent); }
+.dashboard-template-library-panel { background: var(--surface-1); border-color: var(--line-strong); box-shadow: var(--shadow-float); max-height: calc(100dvh - 32px); }
+.dashboard-template-library-panel > header { border-color: var(--line); }
+.dashboard-template-library-panel > header strong { color: var(--text-strong); }
+.dashboard-template-library-panel > header button { color: var(--text); background: var(--surface-2); border-color: var(--line); }
+.dashboard-template-search, .dashboard-template-filters > select { color: var(--text); background: var(--surface-2); border-color: var(--line); font-size: 12px; }
+.dashboard-template-search input { color: var(--text-strong); font-size: 12px; }
+.dashboard-template-search input::placeholder { color: var(--text-muted); opacity: 1; }
+.dashboard-template-library-panel :is(button, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dashboard-template-grid { grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); }
+.dashboard-template-grid article { background: var(--surface-2); border-color: var(--line); }
+.dashboard-template-grid article small { color: var(--text-muted); font-size: 11px; letter-spacing: normal; }
+.dashboard-template-grid article strong { color: var(--text-strong); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-template-grid article p { color: var(--text-muted); font-size: 12px; }
+.dashboard-template-grid article > button { color: var(--text-strong); background: var(--accent-soft); border-color: var(--line-strong); font-size: 12px; }
+.dashboard-template-grid article > button:hover { color: var(--on-accent); background: var(--accent); }
+.dashboard-template-grid article > button.dashboard-template-favorite { color: var(--text); background: var(--surface-1); border-color: var(--line); }
+.dashboard-template-grid article > button.dashboard-template-favorite.active { color: var(--accent-hover); border-color: var(--accent); }
+.dashboard-template-empty { grid-column: 1 / -1; display: grid; place-content: center; justify-items: center; gap: 16px; color: var(--text-strong); }
+.dashboard-template-empty button { padding: 8px 14px; color: var(--on-accent); background: var(--accent); border: 1px solid var(--accent); border-radius: 6px; }
+@media (max-width: 600px) { .dashboard-template-filters { grid-template-columns: minmax(0, 1fr); } .dashboard-template-filters > select { min-height: 34px; } }

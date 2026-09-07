@@ -11,6 +11,7 @@ import type { AppLocale } from "../i18n";
 import { captureModelThumbnail } from "../optimizer/captureModelThumbnail";
 import { OptimizerPreviewActions } from "./OptimizerPreviewActions";
 import { disposeOptimizerPreview } from "../optimizer/disposeOptimizerPreview";
+import { frameOptimizerCamera } from "../optimizer/frameOptimizerCamera";
 
 interface OptimizerPreviewRuntime {
   scene: THREE.Scene;
@@ -208,27 +209,6 @@ export function OptimizerPreview({
       )}
     </div>
   );
-}
-
-function frameOptimizerCamera(runtime: OptimizerPreviewRuntime): void {
-  const bounds = runtime.modelBounds;
-  if (!bounds || bounds.isEmpty()) return;
-  const center = bounds.getCenter(new THREE.Vector3());
-  const dimensions = bounds.getSize(new THREE.Vector3());
-  const verticalFov = THREE.MathUtils.degToRad(runtime.camera.fov);
-  const fitHeight = Math.max(dimensions.y, dimensions.x / Math.max(runtime.camera.aspect, 0.1));
-  const depth = Math.max(dimensions.z, Math.max(dimensions.x, dimensions.y) * 0.15);
-  const modelScale = Math.max(dimensions.x, dimensions.y, dimensions.z, 0.0001);
-  const distance = Math.max(fitHeight / (2 * Math.tan(verticalFov / 2)) + depth * 0.5, modelScale * 0.8) * 1.2;
-  const direction = runtime.camera.position.clone().sub(runtime.controls.target);
-  if (direction.lengthSq() < 0.0001) direction.set(1, 0.7, 1);
-  direction.normalize();
-  runtime.controls.target.copy(center);
-  runtime.camera.position.copy(center).addScaledVector(direction, distance);
-  runtime.camera.near = Math.max(distance / 10_000, 0.001);
-  runtime.camera.far = Math.max(distance * 100, depth * 100, 1_000);
-  runtime.camera.updateProjectionMatrix();
-  runtime.controls.update();
 }
 
 function syncOptimizerPreviewLights(

@@ -482,7 +482,6 @@
 .dashboard-runtime-parameters .dashboard-filter-widget select,.dashboard-runtime-parameters .dashboard-filter-widget input{height:28px;font-size:8px}
 .dashboard-runtime-parameters>footer{display:grid;grid-template-columns:1fr 1fr;gap:6px}.dashboard-runtime-parameters>footer button{height:29px;color:#9aa8ad;border:1px solid #354349;border-radius:5px;background:#172023;font-size:8px}.dashboard-runtime-parameters>footer button.primary{color:#211b0e;border-color:#d8b45f;background:#d8b45f;font-weight:700}
 @media print{
-  @page{size:landscape;margin:0}
   body{background:#fff!important}
   body>*:not(#root){display:none!important}
   .dashboard-runtime-controller,.dashboard-runtime-parameters{display:none!important}

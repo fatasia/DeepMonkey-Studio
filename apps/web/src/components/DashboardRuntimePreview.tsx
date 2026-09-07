@@ -27,6 +27,8 @@ import { DashboardNode } from "./DashboardCanvasNode";
 import { previewSemanticParameter } from "./dashboardSemanticMetrics";
 import { dashboardParameterOrder } from "./dashboardParameterOrder";
 import { downloadDashboardPageData } from "./dashboardPageExport";
+import { dashboardPrintLayout } from "./dashboardPrintLayout";
+import "./DashboardPrint.css";
 import {
   calculateDashboardRuntimeViewport,
   updateDashboardParameterDraft,
@@ -164,8 +166,10 @@ export function DashboardRuntimePreview({
   const activeParameterCount = parameterWidgets.filter(
     (widget) => draftFilters[widget.key] !== undefined,
   ).length;
+  const printLayout = dashboardPrintLayout(page.width, page.height);
   return (
-    <main className="dashboard-runtime-preview">
+    <main className="dashboard-runtime-preview" style={printLayout.style}>
+      <style media="print">{`@page { size: A4 ${printLayout.orientation}; margin: 8mm; }`}</style>
       {!readOnly && <button
         type="button"
         className="dashboard-runtime-back"

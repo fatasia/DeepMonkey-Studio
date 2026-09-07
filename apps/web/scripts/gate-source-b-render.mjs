@@ -4,8 +4,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createIsolatedStudioGate } from "./isolatedStudioGate.mjs";
 import { collectTextContrast } from "./browserTextContrast.mjs";
+import sharp from "sharp";
 
-const targets = ["71df42c5d5964d2ea149c5513bbc061b", "cda46c9b520c48708dbecb5a72bfdf9a"];
+const requested = process.argv.find(argument => argument.startsWith("--uids="))?.slice(7);
+const targets = requested ? requested.split(",") : ["71df42c5d5964d2ea149c5513bbc061b", "cda46c9b520c48708dbecb5a72bfdf9a"];
+assert.ok(targets.length > 0 && targets.length <= 20 && targets.every(uid => /^[a-f0-9]{32}$/.test(uid)), "指定1至20个有效模型UID");
 const root = resolve(import.meta.dirname, "../../..");
 const cache = resolve(root, "data/external-assets/source-b");
 const catalog = JSON.parse(await readFile(resolve(cache, "catalog.json"), "utf8"));
@@ -48,6 +51,19 @@ try {
       assert.deepEqual(entry.contrast.filter(item => item.text && item.contrast < 4.5), []);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
       entry.thumbnail = { path: thumbnailPath, sha256: createHash("sha256").update(await readFile(thumbnailPath)).digest("hex"), ...await canvas.evaluate(element => ({ width: element.clientWidth, height: element.clientHeight })) };
+      if (process.argv.includes("--assert-framed")) {
+        const { data, info } = await sharp(await readFile(thumbnailPath)).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+        const edges = { left: info.width, right: 0, top: info.height, bottom: 0 }; let foreground = 0;
+        for (let y = 0; y < info.height; y++) for (let x = 0; x < info.width; x++) {
+          const offset = (y * info.width + x) * info.channels;
+          if (Math.max(...[0, 1, 2].map(channel => Math.abs(data[offset + channel] - data[channel]))) <= 30) continue;
+          foreground++; edges.left = Math.min(edges.left, x); edges.right = Math.max(edges.right, x); edges.top = Math.min(edges.top, y); edges.bottom = Math.max(edges.bottom, y);
+        }
+        const margin = Math.min(info.width, info.height) * 0.03;
+        assert.ok(foreground > info.width * info.height * 0.01, "模型不能为空");
+        assert.ok(edges.left >= margin && edges.top >= margin && edges.right < info.width - margin && edges.bottom < info.height - margin, "模型像素触及边框或缺少取景留白");
+        entry.thumbnail.pixelBounds = edges;
+      }
       assert.deepEqual(entry.errors, []);
       entry.passed = true;
     } catch (error) { entry.failure = error.stack; await page.screenshot({ path: resolve(gate.output, `${theme}-${width}-${uid}-failed.png`) }); throw error; }

@@ -1,0 +1,5 @@
+.dashboard-template-card-preview.template-layout-preview { display: flex; align-items: center; justify-content: center; padding: 8px; background: var(--template-surface); }
+.template-layout-preview > svg { display: block; width: 100%; height: 100%; }
+.template-layout-preview rect { fill: var(--template-surface); stroke: var(--template-accent); stroke-opacity: .3; }
+.template-layout-preview text { fill: color-mix(in srgb, var(--template-accent) 20%, var(--on-accent-light)); }
+.template-layout-preview :is(line, path) { stroke: var(--template-accent); stroke-opacity: .25; stroke-width: 2; }

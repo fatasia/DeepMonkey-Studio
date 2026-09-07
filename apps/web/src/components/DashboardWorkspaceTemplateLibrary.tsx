@@ -1,14 +1,18 @@
 import { Search, Star, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { translate as tr } from "../i18n";
 import { DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
 import { DashboardTemplatePreview } from "./DashboardTemplatePreview";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
+import { searchDashboardTemplates } from "./dashboardTemplateSearch";
+import "./DashboardTemplateLibrary.css";
 
 export function DashboardWorkspaceTemplateLibrary() {
   const {
     favoriteTemplateIds,
     insertDashboardTemplate,
     locale,
+    page,
     setTemplateCategory,
     setTemplateLibraryOpen,
     setTemplateQuery,
@@ -17,10 +21,31 @@ export function DashboardWorkspaceTemplateLibrary() {
     templateQuery,
     toggleTemplateFavorite,
   } = useDashboardWorkspace();
+  const panelRef = useRef<HTMLElement>(null);
+  const templates = searchDashboardTemplates(locale, templateQuery, templateCategory, favoriteTemplateIds);
+  useEffect(() => {
+    if (!templateLibraryOpen) return;
+    const previous = document.activeElement;
+    panelRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+  }, [templateLibraryOpen]);
   return (
     templateLibraryOpen && (
       <div className="dashboard-template-library-backdrop" onMouseDown={() => setTemplateLibraryOpen(false)}>
-        <section className="dashboard-template-library-panel" onMouseDown={(event) => event.stopPropagation()}>
+        <section ref={panelRef} className="dashboard-template-library-panel" role="dialog" aria-modal="true"
+          aria-label={tr(locale, "看板模板库", "Dashboard template library")}
+          onMouseDown={(event) => event.stopPropagation()}
+          onKeyDown={event => {
+            event.stopPropagation();
+            if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+            if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setTemplateLibraryOpen(false); }
+            if (event.key !== "Tab") return;
+            const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex='0']")]
+              .filter(element => element.getClientRects().length > 0);
+            const first = controls[0], last = controls.at(-1);
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+          }}>
           <header>
             <div>
               <strong>{tr(locale, "看板模板库", "Dashboard template library")}</strong>
@@ -33,7 +58,7 @@ export function DashboardWorkspaceTemplateLibrary() {
             <label className="dashboard-template-search">
               <Search size={14} />
               <input
-                autoFocus
+                aria-label={tr(locale, "搜索模板或行业", "Search templates or industries")}
                 value={templateQuery}
                 onChange={(event) => setTemplateQuery(event.target.value)}
                 placeholder={tr(locale, "搜索模板或行业", "Search templates or industries")}
@@ -50,34 +75,23 @@ export function DashboardWorkspaceTemplateLibrary() {
             </select>
           </div>
           <div className="dashboard-template-grid">
-            {DASHBOARD_TEMPLATES.filter((template) => {
-              const query = templateQuery.trim().toLocaleLowerCase();
-              const category = locale === "zh-CN" ? template.categoryZh : template.categoryEn;
-              const categoryMatch = templateCategory === "all" || templateCategory === category || (templateCategory === "favorites" && favoriteTemplateIds.includes(template.id));
-              const searchableText = [
-                template.zh,
-                template.en,
-                template.categoryZh,
-                template.categoryEn,
-                template.goalZh,
-                template.goalEn,
-                template.descriptionZh,
-                template.descriptionEn,
-                ...template.metrics.flatMap((metric) => [metric.zh, metric.en]),
-              ].join(" ").toLocaleLowerCase();
-              return categoryMatch && (!query || searchableText.includes(query));
-            })
-              .sort((left, right) => Number(favoriteTemplateIds.includes(right.id)) - Number(favoriteTemplateIds.includes(left.id)))
-              .map((template) => (
+            {!templates.length && <div className="dashboard-template-empty" role="status">
+              <strong>{tr(locale, "没有匹配的模板", "No matching templates")}</strong>
+              <button type="button" onClick={() => { setTemplateQuery(""); setTemplateCategory("all"); panelRef.current?.querySelector<HTMLInputElement>("input")?.focus(); }}>
+                {tr(locale, "查看全部模板", "View all templates")}
+              </button>
+            </div>}
+            {templates.map((template) => (
                 <article key={template.id}>
-                  <DashboardTemplatePreview locale={locale} template={template} />
+                  <DashboardTemplatePreview locale={locale} template={template} page={page} />
                   <div>
                     <small>{tr(locale, template.categoryZh, template.categoryEn)}</small>
-                    <strong>{tr(locale, template.zh, template.en)}</strong>
-                    <p>{tr(locale, template.descriptionZh, template.descriptionEn)}</p>
+                    <strong title={tr(locale, template.zh, template.en)}>{tr(locale, template.zh, template.en)}</strong>
+                    <p title={tr(locale, template.descriptionZh, template.descriptionEn)}>{tr(locale, template.goalZh, template.goalEn)}</p>
                   </div>
                   <button
                     className={`dashboard-template-favorite ${favoriteTemplateIds.includes(template.id) ? "active" : ""}`}
+                    aria-pressed={favoriteTemplateIds.includes(template.id)}
                     title={favoriteTemplateIds.includes(template.id) ? tr(locale, "取消收藏", "Remove favorite") : tr(locale, "收藏模板", "Favorite template")}
                     onClick={() => toggleTemplateFavorite(template.id)}
                   >
