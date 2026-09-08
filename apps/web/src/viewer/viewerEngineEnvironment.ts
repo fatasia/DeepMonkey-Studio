@@ -4,6 +4,7 @@ import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import type { SceneLightState, SkyboxPreset, WeatherMode } from "@bim-studio/contracts";
 import { shouldRenderSceneLightProxy } from "./viewerTypes";
 import { createSceneGrid } from "./sceneGrid";
+import { updateSceneLightDirectionLine } from "./sceneLightDirectionLine";
 import { configureDirectionalShadow } from "./sceneShadowQuality";
 import { DEFAULT_SCENE_LIGHTS } from "./viewerEngineTypes";
 import { ViewerEngineRendering } from "./viewerEngineRendering";
@@ -310,11 +311,7 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
           proxy.target.quaternion.copy(this.camera.quaternion);
         }
         if (proxy.line && targetObject) {
-          const position = proxy.line.geometry.getAttribute("position") as THREE.BufferAttribute;
-          position.setXYZ(0, light.position.x, light.position.y, light.position.z);
-          position.setXYZ(1, targetObject.position.x, targetObject.position.y, targetObject.position.z);
-          position.needsUpdate = true;
-          proxy.line.computeLineDistances();
+          updateSceneLightDirectionLine(proxy.line, light.position, targetObject.position);
         }
       }
     }

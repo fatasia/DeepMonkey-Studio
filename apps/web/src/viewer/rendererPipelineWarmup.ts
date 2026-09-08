@@ -20,6 +20,7 @@ export class RendererPipelineWarmupScheduler {
   private pendingTask: WarmupTask | undefined;
   private scheduledHandle: number | undefined;
   private running = false;
+  private disposed = false;
   private status: RendererPipelineWarmupStatus = "idle";
   private completedRuns = 0;
   private skippedRuns = 0;
@@ -33,12 +34,14 @@ export class RendererPipelineWarmupScheduler {
   ) {}
 
   request(task: WarmupTask): void {
+    if (this.disposed) return;
     this.pendingTask = task;
     this.lastError = undefined;
     this.queue();
   }
 
   dispose(): void {
+    this.disposed = true;
     this.pendingTask = undefined;
     if (this.scheduledHandle !== undefined) this.cancelTask(this.scheduledHandle);
     this.scheduledHandle = undefined;
@@ -56,7 +59,7 @@ export class RendererPipelineWarmupScheduler {
   }
 
   private queue(): void {
-    if (this.running || this.scheduledHandle !== undefined) return;
+    if (this.disposed || this.running || this.scheduledHandle !== undefined) return;
     this.status = "scheduled";
     this.scheduledHandle = this.scheduleTask(() => {
       this.scheduledHandle = undefined;
@@ -65,6 +68,7 @@ export class RendererPipelineWarmupScheduler {
   }
 
   private async runNext(): Promise<void> {
+    if (this.disposed) return;
     const task = this.pendingTask;
     this.pendingTask = undefined;
     if (!task) {
@@ -76,11 +80,13 @@ export class RendererPipelineWarmupScheduler {
     const startedAt = this.now();
     try {
       const performed = await task();
+      if (this.disposed) return;
       if (performed === false) this.skippedRuns += 1;
       else this.completedRuns += 1;
       this.lastDurationMs = Math.max(0, this.now() - startedAt);
       this.status = "ready";
     } catch (error) {
+      if (this.disposed) return;
       this.lastError = error instanceof Error ? error.message : String(error);
       this.status = "failed";
     } finally {
