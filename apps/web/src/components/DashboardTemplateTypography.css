@@ -1,0 +1,24 @@
+/* 仅作品中配置了字号的节点；壳层和客户旧节点不受这些设计尺寸影响。 */
+.dashboard-native-widget.authored-typography { font-size: var(--dashboard-authored-font); }
+.dashboard-native-widget.authored-typography .dashboard-value > span,
+.dashboard-native-widget.authored-typography .dashboard-value strong small,
+.dashboard-native-widget.authored-typography .dashboard-filter-widget > span,
+.dashboard-native-widget.authored-typography .dashboard-filter-widget select,
+.dashboard-native-widget.authored-typography .dashboard-filter-widget input,
+.dashboard-native-widget.authored-typography .dashboard-report-table th,
+.dashboard-native-widget.authored-typography .dashboard-report-table td,
+.dashboard-native-widget.authored-typography .dashboard-report-table > header > strong { font-size: var(--dashboard-authored-font); }
+.dashboard-native-widget.authored-typography .dashboard-value > strong { font-size: calc(var(--dashboard-authored-font) * 2); }
+.dashboard-native-widget.authored-typography .dashboard-decoration-widget > strong { font-size: var(--dashboard-authored-font); }
+.dashboard-native-widget.authored-typography .dashboard-filter-widget select,
+.dashboard-native-widget.authored-typography .dashboard-filter-widget input { height: calc(var(--dashboard-authored-font) * 1.8); }
+.dashboard-native-widget.authored-typography .dashboard-filter-widget > span > small { display: none; }
+.dashboard-native-widget.authored-typography .dashboard-report-table th,
+.dashboard-native-widget.authored-typography .dashboard-report-table td { padding: 10px 12px; }
+.dashboard-native-widget.authored-typography .dashboard-report-table > header button { font-size: calc(var(--dashboard-authored-font) * .85); padding: 6px 10px; }
+.dashboard-native-widget.authored-typography .dashboard-report-table > footer { font-size: var(--dashboard-authored-font); }
+.dashboard-native-widget.authored-typography .dashboard-drill-chart { display: flex; flex-direction: column; min-height: 0; }
+.dashboard-native-widget.authored-typography .dashboard-chart { flex: 1; min-height: 0; }
+.dashboard-chart-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 4px 8px 12px; font-size: var(--dashboard-authored-font); }
+.dashboard-chart-heading > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: inherit; }
+.dashboard-chart-heading > span { flex-shrink: 0; font-size: .9em; }

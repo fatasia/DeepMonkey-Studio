@@ -32,7 +32,7 @@ export function applyProductionSample(nodes: DashboardDataWidgetNode[], locale: 
         widget.title = index === 6 ? tr(locale, "各产线产量", "Output by line") : tr(locale, "产量占比", "Output share");
         widget.unit = tr(locale, "件", "units");
         widget.analysis.dimensionField = line;
-        widget.chart = { showLegend: false, showDataLabels: true };
+        widget.chart = { showLegend: index === 7, showDataLabels: true };
       }
       if (index === 8) {
         widget.title = tr(locale, "产线明细", "Line detail");

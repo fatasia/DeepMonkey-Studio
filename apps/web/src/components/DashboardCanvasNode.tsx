@@ -29,6 +29,8 @@ import { UnitySceneEmbed } from "./UnitySceneEmbed";
 import { usePlaybackSession } from "../behavior/playbackContext";
 import { publicWidgetRestriction } from "../behavior/publicPlaybackPolicy";
 import { isSemanticSelectionWidget, semanticSelectionKey } from "./dashboardSemanticBinding";
+import { dashboardAuthoredTypography } from "./dashboardTemplateTypography";
+import "./DashboardTemplateTypography.css";
 
 export function DashboardNode({
   application,
@@ -176,6 +178,7 @@ export function DashboardNode({
     );
   }
   if (node.kind === "data-widget") {
+    const typography = dashboardAuthoredTypography(node.widget);
     const animationEnabled = runtime && node.widget.animationAutoplay !== false;
     const restriction = playback?.allowsProtectedData === false ? publicWidgetRestriction(node.widget, metric?.value !== undefined) : undefined;
     const keyboardInteractive = runtime && ["text", "shape", "decoration", "image", "value", "status"].includes(node.widget.type)
@@ -183,13 +186,14 @@ export function DashboardNode({
         || application.scripts.some(script => script.enabled && script.target?.kind === "component" && script.target.id === node.id && script.lifecycle?.includes("onEvent")));
     return (
       <article
-        className={`dashboard-node dashboard-native-widget ${selected ? "selected" : ""} ${animationEnabled ? `runtime animation-${node.widget.animation ?? "none"}` : runtime ? "runtime" : ""}`}
+        className={`dashboard-node dashboard-native-widget ${typography ? "authored-typography" : ""} ${selected ? "selected" : ""} ${animationEnabled ? `runtime animation-${node.widget.animation ?? "none"}` : runtime ? "runtime" : ""}`}
         role={keyboardInteractive ? "button" : undefined}
         tabIndex={keyboardInteractive ? 0 : undefined}
         aria-label={keyboardInteractive ? node.widget.title || node.name : undefined}
         style={{
           ...style,
           ...widgetBackgroundStyle(node.widget),
+          ...typography,
           color: node.widget.textColor ?? "#eef2f4",
           animationDuration: `${node.widget.animationDuration ?? 0.6}s`,
           animationDelay: `${node.widget.animationDelay ?? 0}s`,

@@ -33,7 +33,7 @@ export function buildIndustryPackImport(pack: IndustryTemplatePack, locale: AppL
         id: `widget:${crypto.randomUUID()}`, kind: "data-widget", name: label, zIndex: page.nodes.length,
         frame: { x: 24 + index * 228, y: page.height - 56, width: Math.min(216, page.width - 48), height: 40 },
         widget: { type: "text", key: `${instanceId}:nav:${spec.templateId}:${index}`, unit: "",
-          title: label, content: `${label} →`, textAlign: "center" },
+          title: label, content: `${label} →`, textAlign: "center", fontSize: 24 },
       };
       page.nodes.push(node);
       interactions.push({ id: `flow:${crypto.randomUUID()}`, name: label, source: { kind: "widget", id: node.id }, trigger: "click", enabled: true,

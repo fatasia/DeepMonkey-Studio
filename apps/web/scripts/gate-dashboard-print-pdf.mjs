@@ -62,6 +62,22 @@ try {
     const entry = { round, theme, width, passed: false, errors: [], driverWarnings: [], expectedNetworkErrors: [], exports: [] };
     report.cases.push(entry);
     const context = await themeContext(gate, theme, width), page = await context.newPage();
+    // Record the latest actual Canvas text draw, so PDF chart truncation cannot hide behind DOM assertions.
+    await page.addInitScript(() => {
+      const originalText = CanvasRenderingContext2D.prototype.fillText;
+      const originalClear = CanvasRenderingContext2D.prototype.clearRect;
+      CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+        this.canvas.__gateChartText = [];
+        return Reflect.apply(originalClear, this, args);
+      };
+      CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
+        if (this.canvas.closest(".dashboard-chart")) {
+          this.canvas.__gateChartText ??= [];
+          this.canvas.__gateChartText.push(String(text));
+        }
+        return Reflect.apply(originalText, this, [text, ...args]);
+      };
+    });
     page.setDefaultTimeout(25000); observeDiagnostics(page, entry);
     try {
       const project = await gate.json("POST", "/api/projects", { name: `PDF gate ${round} ${theme}` });
@@ -103,7 +119,12 @@ try {
         await page.screenshot({ path: resolve(gate.output, `${prefix}-screen.png`) });
         const path = resolve(gate.output, `${prefix}.pdf`);
         await page.pdf({ path, preferCSSPageSize: true, printBackground: true });
-        entry.exports.push({ sample, ...inspectPdf(path, { sample, title, landscape: theme === "dark" }) });
+        const chartText = await page.locator(".dashboard-chart canvas").evaluateAll(canvases => canvases.flatMap(canvas => canvas.__gateChartText ?? []));
+        if (sample) {
+          assert.ok(chartText.some(text => /%$/.test(text)), "Actual pie percentage labels must be drawn");
+          assert.ok(!chartText.some(text => /^\d[\d.,]*(?:\.{3}|…)$/.test(text)), `Truncated chart number: ${chartText.join(" | ")}`);
+        }
+        entry.exports.push({ sample, chartText, ...inspectPdf(path, { sample, title, landscape: theme === "dark" }) });
         const after = await runtime.locator(".dashboard-runtime-artboard").boundingBox();
         assert.ok(Math.abs(after.width - before.width) < 1);
         assert.ok(await page.getByRole("button", { name: "返回编辑", exact: true }).isVisible());

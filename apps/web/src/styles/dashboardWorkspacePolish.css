@@ -199,10 +199,10 @@
   align-items: center;
   gap: 6px;
   padding: 0 11px;
-  color: var(--text);
+  color: var(--text-strong);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: rgba(17, 25, 29, .88);
+  background: var(--surface-1);
   box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
   backdrop-filter: blur(12px);
   cursor: pointer;

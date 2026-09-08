@@ -25,6 +25,7 @@ export function buildDashboardTemplateNodes(
     content: title,
     decorationStyle: template.layout.decorationStyle,
     backgroundOpacity: 0,
+    fontSize: 32,
     key: `${template.id}.title`,
   }));
   nodes.push(make("filter", tr(locale, template.filterZh, template.filterEn), geometry.filter, {
@@ -63,16 +64,16 @@ function dashboardGeometry(page: DashboardPageDocument, primaryRatio: number) {
   const gap = Math.min(20, Math.max(8, Math.floor(margin / 2)));
   const width = Math.max(1, page.width - margin * 2);
   const metricWidth = (width - gap * 3) / 4;
-  const titleHeight = Math.min(60, Math.max(28, page.height * 0.09));
+  const titleHeight = Math.min(88, Math.max(28, page.height * 0.09));
   const metricTop = margin + titleHeight + gap;
-  const metricHeight = Math.max(1, Math.min(94, page.height * 0.14));
+  const metricHeight = Math.max(1, Math.min(132, page.height * 0.14));
   const chartTop = metricTop + metricHeight + gap;
   const availableHeight = Math.max(1, page.height - chartTop - margin);
-  const chartHeight = Math.max(1, Math.min(360, availableHeight * 0.62));
+  const chartHeight = Math.max(1, Math.min(400, availableHeight * 0.56));
   const primaryWidth = width * primaryRatio - gap / 2;
   const bottom = chartTop + chartHeight + gap;
-  const filterWidth = Math.min(210, Math.max(1, width * 0.25));
-  const filterHeight = Math.min(40, titleHeight);
+  const filterWidth = Math.min(280, Math.max(1, width * 0.25));
+  const filterHeight = titleHeight;
   return {
     title: { x: margin, y: margin, width: width - filterWidth - gap, height: titleHeight },
     filter: { x: margin + width - filterWidth, y: margin, width: filterWidth, height: filterHeight },
@@ -115,6 +116,7 @@ function createNodeFactory(
       color: template.accent,
       backgroundColor: template.surface,
       backgroundOpacity: 0.9,
+      fontSize: 24,
       ...patch,
     },
   });

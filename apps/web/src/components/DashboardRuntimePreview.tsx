@@ -100,9 +100,7 @@ export function DashboardRuntimePreview({
       ),
     [page.nodes],
   );
-  const [parametersOpen, setParametersOpen] = useState(
-    !readOnly && parameterWidgets.length > 0,
-  );
+  const [parametersOpen, setParametersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState<Record<string, JsonValue>>(
     () => ({ ...filters }),
   );
@@ -338,7 +336,7 @@ export function DashboardRuntimePreview({
             )}
             <div>
               {parameterWidgets.length > 0 && (
-                <button onClick={() => setParametersOpen((open) => !open)}>
+                <button aria-expanded={parametersOpen} onClick={() => setParametersOpen((open) => !open)}>
                   <SlidersHorizontal size={13} />
                   {tr(locale, "参数", "Parameters")}{" "}
                   {activeParameterCount > 0 && <b>{activeParameterCount}</b>}

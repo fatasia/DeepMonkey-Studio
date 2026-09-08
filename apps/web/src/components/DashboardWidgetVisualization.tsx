@@ -14,6 +14,7 @@ import {
 } from "./dashboardAnalytics";
 import type { DashboardMetric } from "./DashboardWidgetRuntime";
 import { DashboardReportExport } from "./DashboardReportExport";
+import { dashboardReadableChartOptions, readDashboardChartPalette } from "./dashboardReadableChartOptions";
 import {
   dashboardColorWithOpacity as colorWithOpacity,
   dashboardJsonRecord as jsonRecord,
@@ -60,6 +61,10 @@ export function DashboardDrillChart({
   }
   return (
     <div className="dashboard-drill-chart">
+      {widget.fontSize && <header className="dashboard-chart-heading">
+        <strong title={widget.title}>{widget.title}</strong>
+        {widget.unit && <span>{widget.unit}</span>}
+      </header>}
       <DashboardChart
         widget={drillWidget}
         metric={drillMetric}
@@ -448,6 +453,8 @@ function DashboardChart({
       };
       chart.on("finished", finish);
     }
+    const readableOption = ref.current && dashboardReadableChartOptions(widget, categories, seriesValues, readDashboardChartPalette(ref.current), compact);
+    if (readableOption) { chart.setOption(readableOption, true); return; }
     if (widget.type === "gauge") {
       chart.setOption(
         {
