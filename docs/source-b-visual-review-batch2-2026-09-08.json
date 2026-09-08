@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "evidence": "test-output/codex-2026-09-05/source-b-review-93D4Ut/report.json",
+  "reviewedBy": "GLM-5.3 visual review",
+  "items": [
+    {
+      "uid": "0e0f80bb745d4e7dab907406f2ae6ed9",
+      "status": "review-required",
+      "displayName": "埃菲尔铁塔（地标外观）",
+      "notes": "两轮目视：镂空钢构塔身、观景平台与塔尖完整，取景居中；但首轮深色组记录一次 X4122 驱动浮点精度警告（镂空高顶点模型触发），与钢厂先例同族处理保持待审，不因外观完整豁免零警告门槛。"
+    },
+    {
+      "uid": "12cb749961974f94a4063e67dafb2d76",
+      "status": "review-required",
+      "displayName": "PSX 工业物件集合包",
+      "notes": "实际为几十个小物件的集合长列（集装箱、桶、卷材等），等轴视角下主体极小且无法呈现单一设备。作为单个素材卡不可用，需拆分为独立物件或单独布景后重拍，不改原GLB。"
+    },
+    {
+      "uid": "15b4e6d44e4a4f2fb6c0e69174b349d7",
+      "status": "approved",
+      "displayName": "卫生级蝶阀（双把手样式）",
+      "category": "管网与附件",
+      "tags": [
+        "蝶阀",
+        "卫生级",
+        "不锈钢",
+        "阀门"
+      ],
+      "notes": "两轮双主题多角度亲审：金属阀体、卡箍接口与两种把手（拉杆式/球柄式）背面视角同样完整，无贴图缺失或裁切。同一产品的双把手变体并排展示，不宣称口径、压力等级或卫生认证。",
+      "thumbnail": "r2-dark-15b4e6d44e4a4f2fb6c0e69174b349d7-isometric.png"
+    },
+    {
+      "uid": "174ff3bcba98413997c0ec88e5c65e81",
+      "status": "approved",
+      "displayName": "横流冷却塔（剖视）",
+      "category": "暖通与工艺设备",
+      "tags": [
+        "冷却塔",
+        "填料",
+        "风扇",
+        "剖视"
+      ],
+      "notes": "两轮双主题多角度亲审：外壳、两层填料、顶部风扇、红色水盘与蓝色浮子完整，剖视呈现内部结构；取景完整无裁切。来源标注含动画，本证据只验证静态外观，不承诺动画或热工性能。",
+      "thumbnail": "r2-dark-174ff3bcba98413997c0ec88e5c65e81-isometric.png"
+    },
+    {
+      "uid": "17f9bd6278014857947798ea47db40e3",
+      "status": "approved",
+      "displayName": "红砖厂房（做旧外观）",
+      "category": "工业建筑",
+      "tags": [
+        "厂房",
+        "砖墙",
+        "天窗",
+        "做旧"
+      ],
+      "notes": "两轮双主题多角度亲审：红砖墙、波纹金属屋顶、成排天窗、屋顶通风器与侧廊贴图连续完整；仅建筑外观，不承诺内部楼层、BIM构件或尺寸标定。",
+      "thumbnail": "r2-dark-17f9bd6278014857947798ea47db40e3-isometric.png"
+    },
+    {
+      "uid": "17fecf42f0ab486a8130b2c04c077f19",
+      "status": "review-required",
+      "displayName": "球阀（白模）",
+      "notes": "阀体、球柄与螺纹接口几何完整，但原模型无贴图、白色材质层级弱，与已批准带材质阀门相比展示质量不足。保持待审，需材质增强或展示用途复核，不以几何存在放行。"
+    },
+    {
+      "uid": "1978fbe6bd2a4028b877711ec243c0bd",
+      "status": "approved",
+      "displayName": "锥齿轮差动机构（示意）",
+      "category": "机械传动",
+      "tags": [
+        "齿轮",
+        "差动",
+        "传动",
+        "机构示意"
+      ],
+      "notes": "两轮双主题多角度亲审：红/蓝大齿轮、黄小齿轮、绿色支架与传动轴装配关系清晰，彩色为基础材质且完整覆盖。作为机构示意与教学展示资产，不冒充真实减速器或已验证传动精度。",
+      "thumbnail": "r2-dark-1978fbe6bd2a4028b877711ec243c0bd-isometric.png"
+    },
+    {
+      "uid": "1a63d67a03be499393f2171f646ccecf",
+      "status": "approved",
+      "displayName": "A319 客机（涂装外观）",
+      "category": "车辆与载具",
+      "tags": [
+        "客机",
+        "A319",
+        "涂装",
+        "载具"
+      ],
+      "notes": "两轮双主题多角度亲审：机身、机翼、双发动机、起落架与尾翼涂装完整，贴图干净无破面；仅外观展示，不承诺航空工程数据或特定航司授权标识语义。",
+      "thumbnail": "r2-dark-1a63d67a03be499393f2171f646ccecf-isometric.png"
+    },
+    {
+      "uid": "1a919dda8ec949ff8e299918f48c9f3f",
+      "status": "approved",
+      "displayName": "卫生级蝶阀（球柄拉杆）",
+      "category": "管网与附件",
+      "tags": [
+        "蝶阀",
+        "卫生级",
+        "球柄",
+        "卡箍"
+      ],
+      "notes": "两轮双主题多角度亲审：浅灰金属阀体、卡箍接口、紧固螺栓与黑色球柄拉杆完整，金属质感真实；不宣称口径、压力或 BS4825 标准符合性认证。",
+      "thumbnail": "r2-dark-1a919dda8ec949ff8e299918f48c9f3f-isometric.png"
+    },
+    {
+      "uid": "1abe679b0d0c4ecb9ed5fc1b5bea96bd",
+      "status": "review-required",
+      "displayName": "舵机摇臂（白模）",
+      "notes": "双臂打孔摇臂几何完整，但白色单材质、结构单薄且取景留白偏大，主体占比小。作为舵机配件展示质量不足，保持待审。"
+    },
+    {
+      "uid": "1d5285f2e0fd4211a27c8042496d5959",
+      "status": "approved",
+      "displayName": "废弃仓库（扫描外观）",
+      "category": "工业建筑",
+      "tags": [
+        "仓库",
+        "扫描",
+        "做旧",
+        "场景外观"
+      ],
+      "notes": "两轮双主题多角度亲审：坡屋顶、卷帘门、墙面污渍与立柱贴图连续，底部扫描平台不遮挡主体；仅外观，不承诺内部结构或可钻取楼层。",
+      "thumbnail": "r2-dark-1d5285f2e0fd4211a27c8042496d5959-isometric.png"
+    },
+    {
+      "uid": "1f94780d7e5041afba042aace46dd34e",
+      "status": "review-required",
+      "displayName": "闸阀（过度简化）",
+      "notes": "仅有两段圆柱与一个法兰圈，缺少阀体、阀盖与手轮等闸阀可辨识特征，不能代表闸阀外观。保持待审，需更完整模型替代或明确降级用途。"
+    }
+  ]
+}

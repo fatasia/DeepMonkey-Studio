@@ -21,7 +21,7 @@ async function auditRoute(path, name, interactions = []) {
   }
   const after = await page.evaluate(() => ({ overflowX: document.documentElement.scrollWidth > innerWidth + 2 }));
   results.push({ path, name, ...audit, afterInteractionOverflow: after.overflowX });
-  await page.screenshot({ path: `test-output/nightly-2026-09-05/u117${path.replace(/\W/g, "_")}.png` }).catch(() => {});
+  await page.screenshot({ path: `test-output/nightly-2026-09-08/u117${path.replace(/\W/g, "_")}.png` }).catch(() => {});
 }
 await page.goto(origin, { waitUntil: "domcontentloaded", timeout: 60000 });
 await page.getByLabel("用户名").fill("admin");

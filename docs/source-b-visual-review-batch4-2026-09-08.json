@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "evidence": "test-output/codex-2026-09-05/source-b-review-J6Tc4U/report.json",
+  "reviewedBy": "GLM-5.3 visual review",
+  "items": [
+    {
+      "uid": "383a234d6d80421fbe67080048cbbc70",
+      "status": "review-required",
+      "displayName": "室外电气箱（做旧）",
+      "notes": "两轮目视：双开门、警告标识与做旧基座完整；但首轮深色组记录一次 X4122 驱动浮点精度警告，与铁塔/钢厂同族处理保持待审，零警告门槛不豁免。"
+    },
+    {
+      "uid": "394e96223cbf40e08c0f0c2afda95199",
+      "status": "approved",
+      "displayName": "壁挂接线箱（双只）",
+      "notes": "两轮双主题多角度亲审：深灰箱体、警告标识、内部接线贴图与穿线管接头完整，两只变体（闭门/开门展示）并列；仅外观，不承诺电气参数。",
+      "category": "电气设备",
+      "tags": [
+        "接线箱",
+        "警告标识",
+        "穿线管",
+        "做旧"
+      ],
+      "thumbnail": "r2-dark-394e96223cbf40e08c0f0c2afda95199-isometric.png"
+    },
+    {
+      "uid": "3aea6cf7b39e44a79b37a9f37ec94d5d",
+      "status": "review-required",
+      "displayName": "超声支架（白模）",
+      "notes": "折弯钣金支架几何完整但通体白色单材质，与白模球阀/闸阀/锅炉同族保持待审。"
+    },
+    {
+      "uid": "3e899bea64d644eca2d8db04d10edab8",
+      "status": "review-required",
+      "displayName": "蝙蝠侠标志（商标风险）",
+      "notes": "DC 蝙蝠侠标志属于第三方商标，CC 授权不等于商标使用授权；按品牌风险门禁不进入公共包。"
+    },
+    {
+      "uid": "3f1067a86c4c4c3bbfddf61ec0232446",
+      "status": "approved",
+      "displayName": "运动摩托车（白色涂装）",
+      "notes": "两轮双主题多角度亲审：整车、轮胎纹、悬挂与制动细节完整，白/黑/黄涂装干净；外观模型，展示名保持中性，不宣称品牌车型对应或性能参数。",
+      "category": "车辆与载具",
+      "tags": [
+        "摩托车",
+        "运动型",
+        "白色涂装",
+        "外观"
+      ],
+      "thumbnail": "r2-dark-3f1067a86c4c4c3bbfddf61ec0232446-isometric.png"
+    },
+    {
+      "uid": "3f41a7d17044402fa2f3e1798a4bff78",
+      "status": "review-required",
+      "displayName": "壳牌加油机（品牌商标）",
+      "notes": "机身布满 Shell 商标、V-Power Nitro+ 品牌涂装与宣传贴图，第三方品牌标识按品牌风险门禁不进入公共包；需去除品牌贴图的衍生版本再复核，不改原GLB。"
+    },
+    {
+      "uid": "42a6ed89a88240a990196068a90f802e",
+      "status": "approved",
+      "displayName": "不锈钢打蛋器",
+      "notes": "两轮双主题多角度亲审：钢丝圈与手柄金属质感真实，取景完整；厨房场景道具，不冒充工业搅拌设备。",
+      "category": "场景道具",
+      "tags": [
+        "打蛋器",
+        "不锈钢",
+        "厨房",
+        "道具"
+      ],
+      "thumbnail": "r2-dark-42a6ed89a88240a990196068a90f802e-isometric.png"
+    },
+    {
+      "uid": "436925837dbe479893debae41a535270",
+      "status": "review-required",
+      "displayName": "数字舵机（白模）",
+      "notes": "盒体、安装耳与引线几何完整但通体白色单材质，与白模同族保持待审。"
+    },
+    {
+      "uid": "457037406bd945b49b2b1d8ab72a863e",
+      "status": "approved",
+      "displayName": "伸缩臂叉装车（扫描外观）",
+      "notes": "两轮双主题多角度亲审：橙色车身、伸缩臂、铲斗与轮胎完整，扫描污渍风格真实；外观展示，不承诺载荷曲线或品牌对应。",
+      "category": "车辆与载具",
+      "tags": [
+        "叉装车",
+        "伸缩臂",
+        "铲斗",
+        "扫描"
+      ],
+      "thumbnail": "r2-dark-457037406bd945b49b2b1d8ab72a863e-isometric.png"
+    },
+    {
+      "uid": "4736d0c18e7047969639988883f0ad56",
+      "status": "approved",
+      "displayName": "直行辊筒输送段（模块化）",
+      "notes": "两轮双主题多角度亲审：直列机架、锥形辊筒与支撑腿完整，做旧贴图连续，与已批准转弯段同族互补；不承诺承载能力或接口标准。",
+      "category": "输送与物流",
+      "tags": [
+        "辊筒",
+        "直行",
+        "输送机",
+        "模块化"
+      ],
+      "thumbnail": "r2-dark-4736d0c18e7047969639988883f0ad56-isometric.png"
+    },
+    {
+      "uid": "4797800d83f74e07a97e5350639e26d1",
+      "status": "review-required",
+      "displayName": "阀室建筑（扫描边缘破损）",
+      "notes": "八角阀室主体扫描完整，但四周植被与地面点云边缘破损明显（树冠漂浮、地面缺角）；需裁剪衍生或补拍后复核，不改原GLB。"
+    },
+    {
+      "uid": "47c5a905482e45f4a9ee5b5ba32e8613",
+      "status": "review-required",
+      "displayName": "压力表（表盘含品牌文字）",
+      "notes": "表壳、MPa/psi 双刻度盘与指针制作精细，但表盘印有第三方品牌文字，需确认品牌政策或做去标识衍生版本后复核，不改原GLB。"
+    }
+  ]
+}
