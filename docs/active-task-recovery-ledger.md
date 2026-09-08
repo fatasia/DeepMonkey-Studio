@@ -1,5 +1,7 @@
 # Deep Monkey Studio 当前任务恢复总账
 
+2026-09-08 标题栏复核：`24abd5f` 的靠右修补仍生效；新增 `gate-editor-topbar.mjs`，2D/3D 双主题三宽度两轮 24/24，通过证据 `editor-topbar-FybcbB`。见 `topbar-alignment-verification-2026-09-08.md`。此项仅复核布局，不改变下列整体待办状态。
+
 2026-09-08 最新增量：见 `industry-writeback-continuation-2026-09-08.md` 和接续检查点顶部。r40根构建/测试、r41类型、r42Web构建/1745测试通过；行业包/样本Excel/字号/计算字段各两轮4/4。r39 REST与单车仿真最终通过；r42实际PDF纸边修补两轮双主题8/8。十包/三百业务页、163资产审核、二维/SQL填报等仍待办，不宣称全项目完成。目标与明确排除项不变。
 
 更新时间：2026-09-06（最新恢复状态见 §15.6 与接续检查点）
