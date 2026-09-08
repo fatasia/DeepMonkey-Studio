@@ -445,6 +445,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
         <Suspense fallback={<PlatformRouteLoading label={tr(locale, "正在加载二维工作区", "Loading 2D workspace")} />}>
           <DashboardWorkspace
           locale={locale}
+          writebackAccess={{ userId: currentUser.id, canWrite: currentUser.role !== "viewer" }}
           application={activeApplication}
           project={project}
           page={activeDashboardPage}

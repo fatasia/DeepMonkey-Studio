@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Globe2 } from "lucide-react";
 import type { DashboardDataWidgetConfig, DataDatasetField, DataPipelineDefinition, DataDatasetRecord, JsonValue, SemanticModelRecord } from "@bim-studio/contracts";
 import { api } from "../api";
@@ -60,6 +60,8 @@ export function useDashboardMetrics(
   const [catalogError, setCatalogError] = useState(false);
   const [catalogResolved, setCatalogResolved] = useState(false);
   const [connected, setConnected] = useState(false);
+  const datasetRefresh = useRef<((datasetId: string) => void) | undefined>(undefined);
+  const refreshDataset = useCallback((datasetId: string) => datasetRefresh.current?.(datasetId), []);
 
   useEffect(() => {
     if (!widgets.some((widget) => widget.datasetId || widget.pipelineId)) {
@@ -117,8 +119,10 @@ export function useDashboardMetrics(
     let cancelled = false;
     const timers: number[] = [];
     const inFlight = new Set<string>();
-    const refresh = async (plan: (typeof plans)[number]) => {
-      if (inFlight.has(plan.key)) return;
+    const requestedAgain = new Set<string>();
+    const refresh = async (plan: (typeof plans)[number], afterWrite = false) => {
+      // 显式写后刷新不能被正在进行的旧查询吞掉；仅合并一次，不启动轮询。
+      if (inFlight.has(plan.key)) { if (afterWrite) requestedAgain.add(plan.key); return; }
       inFlight.add(plan.key);
       setStatusByProduct((current) => ({ ...current, [plan.key]: "loading" }));
       try {
@@ -139,14 +143,21 @@ export function useDashboardMetrics(
         }
       } finally {
         inFlight.delete(plan.key);
+        if (!cancelled && requestedAgain.delete(plan.key)) void refresh(plan);
       }
     };
+    const refreshOneDataset = (datasetId: string) => {
+      const plan = plans.find(item => item.kind === "dataset" && item.id === datasetId);
+      if (plan) void refresh(plan, true);
+    };
+    datasetRefresh.current = refreshOneDataset;
     for (const plan of plans) {
       void refresh(plan);
       if (plan.refreshSeconds > 0) timers.push(window.setInterval(() => void refresh(plan), plan.refreshSeconds * 1_000));
     }
     return () => {
       cancelled = true;
+      if (datasetRefresh.current === refreshOneDataset) datasetRefresh.current = undefined;
       for (const timer of timers) window.clearInterval(timer);
     };
   }, [catalogResolved, datasets, filters, pipelines, projectId, widgets, semanticModels]);
@@ -172,7 +183,7 @@ export function useDashboardMetrics(
     const metric = metrics[entry.widget.key];
     return [entry.widget.key, error ? { value: undefined, samples: [], semanticError: error } : JSON.stringify(metric?.semanticWidget?.semanticBinding) === JSON.stringify(entry.widget.semanticBinding) ? metric! : { value: undefined, samples: [] }];
   })) }), [metrics, resolved, catalogError, widgets, filters]);
-  return { metrics: visibleMetrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } as const;
+  return { metrics: visibleMetrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected, refreshDataset } as const;
 }
 
 export function DashboardWidgetView({

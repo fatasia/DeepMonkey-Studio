@@ -2,6 +2,7 @@ import type { DashboardDataWidgetConfig } from "@bim-studio/contracts";
 import { translate as tr } from "../i18n";
 import { DashboardConditionalRulesEditor } from "./DashboardConditionalRulesEditor";
 import { DashboardDataSource } from "./DashboardDataSource";
+import { DashboardDatasetWriteback } from "./DashboardDatasetWriteback";
 import { DashboardLegacyFieldRoles } from "./DashboardLegacyFieldRoles";
 import { DashboardReportFields } from "./DashboardReportFields";
 import { DashboardFieldSlots } from "./DashboardFieldSlots";
@@ -14,6 +15,7 @@ export function DashboardInspectorData() {
     locale,
     selectedNode,
     updateDataWidget,
+    datasets, project, page, selectedNodeIds, writebackAccess, refreshDataset,
   } = useDashboardWorkspace();
   if (!selectedNode) return null;
 
@@ -22,6 +24,10 @@ export function DashboardInspectorData() {
     selectedNode.kind === "data-widget" &&
     !["text", "shape", "decoration", "topology"].includes(selectedNode.widget.type) && (
       <section className="dashboard-inspector-section dashboard-data-widget-properties">
+        {selectedNodeIds.length === 1 && writebackAccess && <DashboardDatasetWriteback
+          key={`${writebackAccess.userId}:${project.id}:${page.id}:${selectedNode.id}:${selectedNode.widget.datasetId ?? ""}`}
+          locale={locale} projectId={project.id} widget={selectedNode.widget} datasets={datasets}
+          userId={writebackAccess.userId} canWrite={writebackAccess.canWrite} onSaved={refreshDataset} />}
         <DashboardDataSource />
         {!selectedNode.widget.directBinding && !selectedNode.widget.semanticBinding && !selectedNode.widget.sampleData && <DashboardFieldSlots key={selectedNode.id} />}
         {!selectedNode.widget.semanticBinding && ["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "rank", "table", "scroll-table"].includes(

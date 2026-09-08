@@ -152,6 +152,7 @@ export type { DashboardWorkspaceProps } from "./dashboardWorkspaceTypes";
 
 function useDashboardWorkspaceController({
   locale,
+  writebackAccess,
   application,
   project,
   page,
@@ -267,7 +268,7 @@ function useDashboardWorkspaceController({
   }, [locale, page.nodes]);
   const dataWidgetConfigs = useMemo(() => runtimePreview ? [] : page.nodes.flatMap((node) => (node.kind === "data-widget" ? [node.widget] : [])), [page.nodes, runtimePreview]);
   const dashboardDiagnostics = useMemo(() => diagnoseDashboardPage(application, page), [application, page]);
-  const { metrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected } = useDashboardMetrics(
+  const { metrics, datasets, pipelines, fieldsByProduct, statusByProduct, catalogError, connected, refreshDataset } = useDashboardMetrics(
     project.id,
     dataWidgetConfigs,
     undefined,
@@ -625,6 +626,8 @@ function useDashboardWorkspaceController({
   }
 
   return {
+    writebackAccess,
+    refreshDataset,
     activeSnapLines,
     addDashboardPage,
     addDataWidget,

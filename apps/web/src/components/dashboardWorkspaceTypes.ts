@@ -15,6 +15,8 @@ import type { RendererBackend } from "../viewer/ViewerEngine";
 /** 二维编辑器的宿主合同；页面实现只通过命令和稳定回调修改应用状态。 */
 export interface DashboardWorkspaceProps {
   locale: AppLocale;
+  /** 仅作者宿主显式授权填报；未传身份的预览/嵌入不提供业务写入口。 */
+  writebackAccess?: { userId: string; canWrite: boolean };
   application: ApplicationDocument;
   project: ProjectRecord;
   page: DashboardPageDocument;
