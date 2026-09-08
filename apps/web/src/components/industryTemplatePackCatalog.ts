@@ -7,12 +7,15 @@ import type { PackPageSampleSpec } from "./industryPackSampleApply";
 import { createIndustryPackRegistry } from "./industryPackRegistry";
 import { LOGISTICS_FULFILLMENT_PACK } from "./industryPackLogistics";
 import { LOGISTICS_PACK_SAMPLES } from "./industryPackLogisticsSamples";
+import { POWER_GRID_OPERATIONS_PACK } from "./industryPackPowerGrid";
+import { POWER_GRID_PACK_SAMPLES } from "./industryPackPowerGridSamples";
 
 /** 每包独立校验并隔离错误，不影响其余模板和编辑器启动。 */
 const KNOWN_TEMPLATE_IDS: readonly string[] = DASHBOARD_TEMPLATES.map((template) => template.id);
 const registry = createIndustryPackRegistry([
   { pack: MANUFACTURING_ASSET_OPS_PACK, samples: MANUFACTURING_PACK_SAMPLES },
   { pack: LOGISTICS_FULFILLMENT_PACK, samples: LOGISTICS_PACK_SAMPLES },
+  { pack: POWER_GRID_OPERATIONS_PACK, samples: POWER_GRID_PACK_SAMPLES },
 ], KNOWN_TEMPLATE_IDS);
 export const INDUSTRY_TEMPLATE_PACKS: readonly IndustryTemplatePack[] = registry.packs;
 export const INDUSTRY_PACK_ISSUES: readonly string[] = registry.issues;
