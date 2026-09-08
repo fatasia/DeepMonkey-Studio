@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import type { DataConnectionRecord, DataDatasetRecord, DataPostgresWritebackConfig } from "@bim-studio/contracts";
-import { createIsolatedPostgres } from "../scripts/isolatedPostgresFixture.mjs";
+import { createIsolatedPostgres, postgresFixtureTools, missingPostgresFixtureMessage } from "../scripts/isolatedPostgresFixture.mjs";
 import { DataPostgresWritebackService } from "./dataPostgresWritebackService.js";
 import { createApiServer } from "./serverOptions.js";
 import { registerDataWritebackRoutes } from "./dataWritebackRoutes.js";
@@ -11,6 +11,9 @@ const service = new DataPostgresWritebackService();
 const target: DataPostgresWritebackConfig = { version: 2, kind: "postgresql", schema: "public", table: "records", primaryKey: "id", versionColumn: "revision", fields: [{ key: "output", type: "number", min: 0, max: 100 }, { key: "note", type: "string" }, { key: "due", type: "date" }, { key: "active", type: "boolean" }] };
 let fixture: Awaited<ReturnType<typeof createIsolatedPostgres>>, connection: DataConnectionRecord;
 const dataset: DataDatasetRecord = { id: "rows", projectId: "p", connectionId: "pg", name: "SQL", refreshSeconds: 0, fields: [], createdAt: "now", updatedAt: "now", writeback: target };
+const toolsAvailable = Boolean(postgresFixtureTools());
+if (!toolsAvailable) console.warn(`跳过真实 PostgreSQL 集成测试：${missingPostgresFixtureMessage}`);
+describe.skipIf(!toolsAvailable)("真实隔离 PostgreSQL 单记录填报", () => {
 beforeAll(async () => {
   fixture = await createIsolatedPostgres();
   vi.stubEnv("BIM_WRITEBACK_PG_PASSWORD", "");
@@ -21,7 +24,6 @@ afterAll(async () => { await fixture?.close(); vi.unstubAllEnvs(); }, 30000);
 async function seed(id: string) { await fixture.client.query("INSERT INTO records(id,output,note,due,active) VALUES($1,7,'old','2026-09-08',true)", [id]); }
 const request = (version = '"sql:1"', values: Record<string, unknown> = { output: 12 }) => ({ expectedVersion: version, values });
 
-describe("真实隔离 PostgreSQL 单记录填报", () => {
   it("参数化更新、服务端版本递增、日期布尔读回；SQL片段仅作字符串值", async () => {
     await seed("one");
     expect(await service.read(connection, dataset, "one")).toMatchObject({ version: '"sql:1"', values: { output: 7, due: "2026-09-08", active: true } });

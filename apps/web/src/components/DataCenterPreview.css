@@ -1,0 +1,13 @@
+/* 只覆盖数据中心的查询结果；不改变环境面板、业务画布或其他工作台。 */
+.data-center-page .data-preview-empty strong { color: var(--text-strong); }
+.data-center-page .data-preview-table table { color: var(--text); background: var(--surface-1); }
+.data-center-page .data-preview-table th { color: var(--text-strong); background: var(--surface-2); border-color: var(--line); }
+.data-center-page .data-preview-table th small { color: var(--text-muted); }
+.data-center-page .data-preview-table td { color: var(--text); border-color: var(--line-subtle); font-variant-numeric: tabular-nums; }
+.data-center-page .data-preview-table tr:hover td { background: var(--surface-2); }
+.data-center-page .data-center-notice.success { color: var(--text-strong); background: color-mix(in srgb, var(--success) 10%, var(--surface-1)); border-color: color-mix(in srgb, var(--success) 40%, var(--line)); }
+.data-center-page .data-center-notice.success > svg { color: var(--success); }
+.data-center-page .data-center-preview > footer { border-color: var(--line); background: var(--surface-1); }
+.data-center-page .data-center-preview > footer > div { color: var(--text-strong); background: color-mix(in srgb, var(--success) 8%, var(--surface-1)); }
+.data-center-page .data-center-preview > footer small { color: var(--text-muted); }
+.data-center-page .data-center-preview > footer svg { color: var(--success); }

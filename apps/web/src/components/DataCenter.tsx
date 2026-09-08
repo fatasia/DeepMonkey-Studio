@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -27,8 +27,9 @@ import { DataPipelineStudio } from "./DataPipelineStudio";
 import { NodeRedStudio } from "./NodeRedStudio";
 import { SecondaryPageBack } from "./SecondaryPageBack";
 import { ConnectionForm, DatasetForm } from "./DataCenterForms";
-import { datasetSchemaChanged } from "./datasetSchema";
+import { loadDataCenterPreview } from "./dataCenterPreview";
 import { DatasetWritebackPanel } from "./DatasetWritebackPanel";
+import "./DataCenterPreview.css";
 const SemanticModelStudio = lazy(() => import("./SemanticModelStudio"));
 import {
   CONNECTOR_REQUIRED,
@@ -70,6 +71,10 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
   const [endpointPipelineId, setEndpointPipelineId] = useState<string>();
   const [semanticMounted, setSemanticMounted] = useState(false);
   const [semanticDirty, setSemanticDirty] = useState(false);
+  const previewSequence = useRef(0);
+  const previewScope = useRef({ projectId: project.id, selectedDatasetId });
+  previewScope.current = { projectId: project.id, selectedDatasetId };
+  useEffect(() => () => { previewSequence.current++; }, []);
 
   async function load(preferredConnectionId?: string, preferredDatasetId?: string) {
     setBusy(true);
@@ -109,28 +114,29 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
   const selectedConnectorUnavailable = Boolean(selectedConnection && CONNECTOR_REQUIRED.has(selectedConnection.type));
   const connectionDatasets = useMemo(() => datasets.filter((item) => !selectedConnectionId || item.connectionId === selectedConnectionId), [datasets, selectedConnectionId]);
 
-  async function inspect(datasetId = selectedDatasetId) {
-    if (!datasetId) return;
+  async function inspect(datasetId = selectedDatasetId, readOnly = false): Promise<"ready" | "error" | "cancelled"> {
+    if (!datasetId) return "cancelled";
+    const sequence = ++previewSequence.current, selectedAtStart = selectedDatasetId;
+    const isCurrent = () => sequence === previewSequence.current && previewScope.current.projectId === project.id && previewScope.current.selectedDatasetId === selectedAtStart;
     setBusy(true);
+    if (readOnly) setNotice(undefined);
     try {
-      const result = await api.previewDataset(project.id, datasetId);
-      const current = datasets.find((item) => item.id === datasetId);
-      const discoveredFields = result.fields.length > 0 ? result.fields : current?.fields ?? [];
-      const hydrated = current && result.fields.length > 0 && datasetSchemaChanged(current.fields, discoveredFields)
-        ? await api.createDataset(project.id, { ...result.dataset, fields: discoveredFields })
-        : result.dataset;
-      const effectiveDataset = { ...hydrated, fields: discoveredFields };
-      setDatasets((items) => items.map((item) => item.id === effectiveDataset.id ? effectiveDataset : item));
-      setPreview({ ...result, dataset: effectiveDataset, fields: discoveredFields });
+      const result = await loadDataCenterPreview({ read: () => api.previewDataset(project.id, datasetId), save: value => api.createDataset(project.id, value) }, datasets.find(item => item.id === datasetId), readOnly, isCurrent);
+      if (!result) return "cancelled";
+      setDatasets((items) => items.map((item) => item.id === result.dataset.id ? result.dataset : item));
+      setPreview(result);
       setSelectedDatasetId(datasetId);
       setError(undefined);
-      setNotice(result.fields.length > 0
+      if (!readOnly) setNotice(result.rows.length > 0 && result.fields.length > 0
         ? tr(locale, `查询成功 · 已同步 ${result.fields.length} 个字段`, `Query succeeded · ${result.fields.length} fields synchronized`)
-        : tr(locale, `查询成功但没有返回数据 · 保留 ${discoveredFields.length} 个已有字段`, `Query succeeded with no rows · kept ${discoveredFields.length} existing fields`));
+        : tr(locale, `查询成功但没有返回数据 · 保留 ${result.fields.length} 个已有字段`, `Query succeeded with no rows · kept ${result.fields.length} existing fields`));
+      return "ready";
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (!isCurrent()) return "cancelled";
+      if (!readOnly) setError(reason instanceof Error ? reason.message : String(reason));
+      return "error";
     } finally {
-      setBusy(false);
+      if (sequence === previewSequence.current) setBusy(false);
     }
   }
 
@@ -587,7 +593,7 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
             </header>
             <div className="data-preview-content">
               {selectedDataset?.writeback && currentUser && <DatasetWritebackPanel key={`${currentUser.id}:${project.id}:${selectedDataset.id}`} locale={locale} projectId={project.id} userId={currentUser.id}
-                dataset={{ ...selectedDataset, writeback: selectedDataset.writeback }} canWrite={currentUser.role !== "viewer"} />}
+                dataset={{ ...selectedDataset, writeback: selectedDataset.writeback }} canWrite={currentUser.role !== "viewer"} onSaved={() => inspect(selectedDataset.id, true)} />}
               {sqlAssistantOpen && (
                 <section className="data-sql-assistant">
                   <header>

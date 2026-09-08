@@ -1,9 +1,18 @@
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { createServer, connect } from "node:net";
-import { resolve } from "node:path";
+import { delimiter, resolve } from "node:path";
 import { createRequire } from "node:module";
 const { Client } = createRequire(new URL("../package.json", import.meta.url))("pg");
+export function postgresFixtureTools() {
+  const suffix = process.platform === "win32" ? ".exe" : "";
+  const directories = process.env.BIM_WRITEBACK_PG_BIN ? [process.env.BIM_WRITEBACK_PG_BIN]
+    : [...(process.platform === "win32" ? ["C:/Program Files/PostgreSQL/18/bin"] : []), ...(process.env.PATH ?? "").split(delimiter).filter(Boolean)];
+  const bin = directories.find(directory => ["initdb", "pg_ctl", "postgres"].every(name => existsSync(resolve(directory, `${name}${suffix}`))));
+  return bin ? { initdb: resolve(bin, `initdb${suffix}`), pg_ctl: resolve(bin, `pg_ctl${suffix}`) } : undefined;
+}
+export const missingPostgresFixtureMessage = "隔离 PostgreSQL 测试需要 initdb / pg_ctl / postgres；请加入 PATH 或设置 BIM_WRITEBACK_PG_BIN。不会回退到正常数据库。";
 
 const run = (file, args) => new Promise((done, reject) => {
   const child = spawn(file, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
@@ -17,13 +26,13 @@ async function reservePort() {
 }
 /** 自建临时 cluster；不连接或修改正常 PostgreSQL、平台元数据与 .env。 */
 export async function createIsolatedPostgres() {
+  const executables = postgresFixtureTools();
+  if (!executables) throw new Error(missingPostgresFixtureMessage);
   const parent = resolve(import.meta.dirname, "../../../test-output/codex-2026-09-05"); await mkdir(parent, { recursive: true });
   const output = await mkdtemp(resolve(parent, "postgres-writeback-"));
-  const bin = process.env.BIM_WRITEBACK_PG_BIN ?? "C:/Program Files/PostgreSQL/18/bin";
-  const executable = name => resolve(bin, process.platform === "win32" ? `${name}.exe` : name);
   const cluster = resolve(output, "cluster"), port = await reservePort();
-  await run(executable("initdb"), ["-D", cluster, "-U", "writeback_test", "-A", "trust", "--encoding=UTF8", "--no-locale"]);
-  await run(executable("pg_ctl"), ["-D", cluster, "-l", resolve(output, "postgres.log"), "-o", `-p ${port} -h 127.0.0.1`, "-w", "start"]);
+  await run(executables.initdb, ["-D", cluster, "-U", "writeback_test", "-A", "trust", "--encoding=UTF8", "--no-locale"]);
+  await run(executables.pg_ctl, ["-D", cluster, "-l", resolve(output, "postgres.log"), "-o", `-p ${port} -h 127.0.0.1`, "-w", "start"]);
   const connection = { host: "127.0.0.1", port, database: "postgres", user: "writeback_test", password: "" };
   const client = new Client(connection); await client.connect();
   let disconnectCommit = false, droppedCommits = 0;
@@ -56,7 +65,7 @@ export async function createIsolatedPostgres() {
     dropNextCommit() { disconnectCommit = true; }, droppedCommits: () => droppedCommits,
     async close() {
       for (const socket of sockets) socket.destroy(); await new Promise(done => proxy.close(done));
-      await client.end(); await run(executable("pg_ctl"), ["-D", cluster, "-m", "fast", "-w", "stop"]);
+      await client.end(); await run(executables.pg_ctl, ["-D", cluster, "-m", "fast", "-w", "stop"]);
     },
   };
 }

@@ -70,6 +70,7 @@ try {
       await panel.getByRole("status").filter({ hasText: "记录已写入" }).waitFor();
       assert.equal(gate.record(id).values.output, 12); assert.equal(gate.writes(id), 1);
       assert.equal((await gate.json("GET", recordPath)).values.output, 12);
+      await page.locator(".data-preview-table").getByText("12", { exact: true }).waitFor();
       entry.steps.push("validate then true write and re-read");
       await page.reload(); await page.locator(".data-center-page").waitFor();
       await panel.getByLabel("记录编号", { exact: true }).fill(id);
