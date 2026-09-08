@@ -8,8 +8,10 @@ import { DashboardReportFields } from "./DashboardReportFields";
 import { DashboardFieldSlots } from "./DashboardFieldSlots";
 import { dashboardFieldRoles } from "./dashboardFieldBinding";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
+import { useDashboardDataBinding } from "./DashboardDataBindingProvider";
 
 export function DashboardInspectorData() {
+  const fields = useDashboardDataBinding();
   const {
     inspectorTab,
     locale,
@@ -27,7 +29,8 @@ export function DashboardInspectorData() {
         {selectedNodeIds.length === 1 && writebackAccess && <DashboardDatasetWriteback
           key={`${writebackAccess.userId}:${project.id}:${page.id}:${selectedNode.id}:${selectedNode.widget.datasetId ?? ""}`}
           locale={locale} projectId={project.id} widget={selectedNode.widget} datasets={datasets}
-          userId={writebackAccess.userId} canWrite={writebackAccess.canWrite} onSaved={refreshDataset} />}
+          userId={writebackAccess.userId} canWrite={writebackAccess.canWrite} onSaved={refreshDataset}
+          fieldsOpen={fields.open} onOpen={() => { fields.setDrag(undefined); fields.setOpen(false); }} />}
         <DashboardDataSource />
         {!selectedNode.widget.directBinding && !selectedNode.widget.semanticBinding && !selectedNode.widget.sampleData && <DashboardFieldSlots key={selectedNode.id} />}
         {!selectedNode.widget.semanticBinding && ["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "rank", "table", "scroll-table"].includes(

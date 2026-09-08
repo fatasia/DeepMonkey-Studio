@@ -283,20 +283,20 @@
 .dashboard-field-role-picker > div small { color: #607078; font-size: 7px; }
 .dashboard-field-role-picker button { height: 24px; padding: 0; color: #75858c; border: 1px solid #344047; border-radius: 4px; background: #10171a; font-size: 7px; cursor: pointer; }
 .dashboard-field-role-picker button.active { color: #211b0e; border-color: #c39a42; background: #d8b45f; }
-.dashboard-conditional-editor { display: grid; gap: 8px; padding: 9px; border: 1px solid #303c42; border-radius: 6px; background: #11191c; }
+.dashboard-conditional-editor { display: grid; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-1); }
 .dashboard-conditional-editor > header,.dashboard-conditional-rule > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.dashboard-conditional-editor > header > span { display: grid; gap: 2px; color: #dce2e5; }
-.dashboard-conditional-editor > header small { color: #68767c; font-size: 7px; font-weight: 400; line-height: 1.35; }
-.dashboard-conditional-editor button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 25px; padding: 0 7px; color: #d9c88c; border: 1px solid #4d4328; border-radius: 4px; background: #1a1d18; font-size: 7px; cursor: pointer; }
-.dashboard-conditional-empty { padding: 10px; color: #65747b; border: 1px dashed #344047; border-radius: 5px; font-size: 7px; line-height: 1.5; }
-.dashboard-conditional-rule { display: grid; gap: 8px; padding: 8px; border: 1px solid #344148; border-radius: 5px; background: #0d1316; }
-.dashboard-conditional-rule > header strong { color: #aeb9be; font-size: 8px; }
-.dashboard-conditional-rule > header button { width: 25px; padding: 0; color: #966d69; border-color: transparent; background: transparent; }
-.dashboard-conditional-rule > header button:hover { color: #e58c84; border-color: #5d3432; background: #251719; }
+.dashboard-conditional-editor > header > span { display: grid; gap: 2px; min-width: 0; color: var(--text-strong); }
+.dashboard-conditional-editor > header small { color: var(--text-muted); font-size: 12px; font-weight: 400; line-height: 1.35; }
+.dashboard-conditional-editor button { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 4px; min-height: 32px; padding: 4px 8px; white-space: nowrap; color: var(--text-strong); border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); font-size: 12px; cursor: pointer; }
+.dashboard-conditional-empty { padding: 8px; color: var(--text-muted); border: 1px dashed var(--line); border-radius: 5px; font-size: 12px; line-height: 1.5; }
+.dashboard-conditional-rule { display: grid; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-2); }
+.dashboard-conditional-rule > header strong { color: var(--text-strong); font-size: 13px; }
+.dashboard-conditional-rule > header button { width: 32px; padding: 0; color: var(--danger); border-color: transparent; background: transparent; }
+.dashboard-conditional-rule > header button:hover { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface-1)); }
 .dashboard-conditional-condition-grid { display: grid; gap: 7px; grid-template-columns: repeat(2,minmax(0,1fr)); }
 .dashboard-conditional-effects { display: flex; flex-wrap: wrap; gap: 5px; }
-.dashboard-conditional-effects label { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 5px; color: #869399; border: 1px solid #303b40; border-radius: 4px; background: #11181b; font-size: 7px; }
-.dashboard-conditional-effects input[type="checkbox"] { width: 12px; height: 12px; padding: 0; accent-color: #b58d3d; }
+.dashboard-conditional-effects label { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 6px; color: var(--text); border: 1px solid var(--line); border-radius: 4px; background: var(--surface-1); font-size: 12px; }
+.dashboard-conditional-effects input[type="checkbox"] { width: 12px; height: 12px; padding: 0; accent-color: var(--accent); }
 .dashboard-conditional-effects input[type="color"] { width: 18px; height: 18px; padding: 1px; border: 0; background: transparent; }
 .dashboard-conditional-effects input[type="color"]:disabled { opacity: .28; }
 .dashboard-selection-summary { padding: 12px; border-bottom: 1px solid #293338; }

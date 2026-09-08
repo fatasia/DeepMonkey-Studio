@@ -14,6 +14,7 @@ import { buildDashboardSampleMetric, dashboardSampleFilterWidgets } from "./dash
 import { resolveSemanticWidget } from "./dashboardSemanticBinding";
 import { buildSemanticMetric } from "./dashboardSemanticMetrics";
 import { buildDashboardDataProductRefreshPlans } from "./dataRefreshPolicy";
+import { DashboardDatasetRefreshQueue, type DashboardRefreshResult } from "./dashboardDatasetRefreshQueue";
 import { dashboardJsonRecord as jsonRecord, dashboardJsonValue as jsonValue, finiteDashboardNumber as toFiniteNumber } from "./dashboardWidgetValues";
 import { applyDashboardFilters, DashboardDesignState, DashboardDrillChart, DashboardReportTable } from "./DashboardWidgetVisualization";
 
@@ -60,8 +61,8 @@ export function useDashboardMetrics(
   const [catalogError, setCatalogError] = useState(false);
   const [catalogResolved, setCatalogResolved] = useState(false);
   const [connected, setConnected] = useState(false);
-  const datasetRefresh = useRef<((datasetId: string) => void) | undefined>(undefined);
-  const refreshDataset = useCallback((datasetId: string) => datasetRefresh.current?.(datasetId), []);
+  const datasetRefresh = useRef<((datasetId: string) => Promise<DashboardRefreshResult>) | undefined>(undefined);
+  const refreshDataset = useCallback((datasetId: string) => datasetRefresh.current?.(datasetId) ?? Promise.resolve<DashboardRefreshResult>("cancelled"), []);
 
   useEffect(() => {
     if (!widgets.some((widget) => widget.datasetId || widget.pipelineId)) {
@@ -118,12 +119,7 @@ export function useDashboardMetrics(
     if (plans.length === 0) return;
     let cancelled = false;
     const timers: number[] = [];
-    const inFlight = new Set<string>();
-    const requestedAgain = new Set<string>();
-    const refresh = async (plan: (typeof plans)[number], afterWrite = false) => {
-      // 显式写后刷新不能被正在进行的旧查询吞掉；仅合并一次，不启动轮询。
-      if (inFlight.has(plan.key)) { if (afterWrite) requestedAgain.add(plan.key); return; }
-      inFlight.add(plan.key);
+    const refresh = async (plan: (typeof plans)[number]) => {
       setStatusByProduct((current) => ({ ...current, [plan.key]: "loading" }));
       try {
         const preview = plan.kind === "dataset" ? await api.previewDataset(projectId, plan.id) : await api.previewDataPipeline(projectId, plan.id);
@@ -136,27 +132,27 @@ export function useDashboardMetrics(
           widgets.filter((widget) => widget.semanticBinding && (plan.kind === "dataset" ? widget.datasetId === plan.id : widget.pipelineId === plan.id))
             .map((widget) => [widget.key, buildSemanticMetric(widget, semanticModels, preview.rows, preview.fields, widgets, filters)]),
         ) }));
-      } catch {
+      } catch (reason) {
         if (!cancelled) {
           setStatusByProduct((current) => ({ ...current, [plan.key]: "error" }));
           setMetrics((current) => ({ ...current, ...Object.fromEntries(widgets.filter((widget) => widget.semanticBinding && (widget.datasetId === plan.id || widget.pipelineId === plan.id)).map((widget) => [widget.key, { value: undefined, samples: [], semanticWidget: widget, semanticError: "语义数据源运行失败，请检查数据中心并重试。" }])) }));
         }
-      } finally {
-        inFlight.delete(plan.key);
-        if (!cancelled && requestedAgain.delete(plan.key)) void refresh(plan);
+        throw reason;
       }
     };
+    const queue = new DashboardDatasetRefreshQueue(key => refresh(plans.find(plan => plan.key === key)!));
     const refreshOneDataset = (datasetId: string) => {
       const plan = plans.find(item => item.kind === "dataset" && item.id === datasetId);
-      if (plan) void refresh(plan, true);
+      return plan ? queue.request(plan.key, true) : Promise.resolve<DashboardRefreshResult>("cancelled");
     };
     datasetRefresh.current = refreshOneDataset;
     for (const plan of plans) {
-      void refresh(plan);
-      if (plan.refreshSeconds > 0) timers.push(window.setInterval(() => void refresh(plan), plan.refreshSeconds * 1_000));
+      void queue.request(plan.key);
+      if (plan.refreshSeconds > 0) timers.push(window.setInterval(() => void queue.request(plan.key), plan.refreshSeconds * 1_000));
     }
     return () => {
       cancelled = true;
+      queue.dispose();
       if (datasetRefresh.current === refreshOneDataset) datasetRefresh.current = undefined;
       for (const timer of timers) window.clearInterval(timer);
     };

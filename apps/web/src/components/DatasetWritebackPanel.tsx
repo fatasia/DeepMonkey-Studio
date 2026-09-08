@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { DataDatasetRecord, DataWritebackConfig, DataWritebackField } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { createWritebackDraft, prepareWritebackDraft } from "./dashboardWritebackDraft";
 import { DatasetWritebackSession } from "./datasetWritebackSession";
 import { readWritebackDraft, saveWritebackDraft, writebackDraftKey } from "./datasetWritebackDraftCache";
+import { useWritebackRefreshFeedback, type WritebackRefresh } from "./useWritebackRefreshFeedback";
 import "./DatasetWritebackPanel.css";
 
 export function DatasetWritebackPanel({ locale, projectId, userId, dataset, canWrite, onSaved }: {
-  locale: AppLocale; projectId: string; userId: string; dataset: DataDatasetRecord & { writeback: DataWritebackConfig }; canWrite: boolean; onSaved?(): void | Promise<void>;
+  locale: AppLocale; projectId: string; userId: string; dataset: DataDatasetRecord & { writeback: DataWritebackConfig }; canWrite: boolean; onSaved?: WritebackRefresh;
 }) {
   const cacheKey = writebackDraftKey(userId, projectId, dataset.id);
   const cached = useMemo(() => {
@@ -17,19 +18,10 @@ export function DatasetWritebackPanel({ locale, projectId, userId, dataset, canW
   const session = useMemo(() => new DatasetWritebackSession(dataset.writeback, {
     read: (id, signal) => api.readDatasetRecord(projectId, dataset.id, id, signal),
     write: (id, changes, signal) => api.writeDatasetRecord(projectId, dataset.id, id, changes, signal),
-  }, cached), [projectId, dataset.id, dataset.writeback, cached]);
+  }, cached), [userId, projectId, dataset.id, dataset.writeback, cached]);
   useEffect(() => () => session.dispose(), [session]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
-  const savedCallback = useRef(onSaved); savedCallback.current = onSaved;
-  const [refreshError, setRefreshError] = useState(false);
-  useEffect(() => {
-    setRefreshError(false);
-    if (!state.saved) return;
-    let active = true;
-    // 刷新只是成功后的通知；其失败不能把已确认写入降级为失败或再次提交。
-    void Promise.resolve().then(() => savedCallback.current?.()).catch(() => { if (active) setRefreshError(true); });
-    return () => { active = false; };
-  }, [state.saved]);
+  const viewRefresh = useWritebackRefreshFeedback(state.saved, session, onSaved);
   const [recordId, setRecordId] = useState(cached?.recordId ?? "");
   const [cacheError, setCacheError] = useState(false);
   useEffect(() => {
@@ -60,7 +52,11 @@ export function DatasetWritebackPanel({ locale, projectId, userId, dataset, canW
     {state.error && <p role="alert">{state.error}</p>}
     {cacheError && <p role="alert">{tr(locale, "浏览器无法暂存草稿，请勿刷新或关闭页面。", "Draft storage is unavailable. Do not refresh or close this page.")}</p>}
     {state.saved && <p role="status">{tr(locale, "记录已写入", "Record saved")}</p>}
-    {refreshError && <p role="alert">{tr(locale, "记录已写入，视图刷新失败。请重新查询。", "Record saved, but refreshing the view failed. Query again.")}</p>}
+    {viewRefresh.status === "loading" && <p role="status">{tr(locale, "正在刷新视图…", "Refreshing view…")}</p>}
+    {viewRefresh.status === "error" && <div className="dataset-writeback-notice" role="alert">
+      <span>{tr(locale, "记录已写入，视图刷新失败。", "Record saved, but refreshing the view failed.")}</span>
+      <button type="button" onClick={() => void viewRefresh.refresh()}>{tr(locale, "刷新视图", "Refresh view")}</button>
+    </div>}
     {busy && <p role="status">{state.phase === "writing" ? tr(locale, "正在写入…", "Saving…") : tr(locale, "正在读取…", "Loading…")}</p>}
     {state.baseline && <>
       <fieldset disabled={!canWrite || busy || state.phase === "confirming" || state.needsReconcile}>

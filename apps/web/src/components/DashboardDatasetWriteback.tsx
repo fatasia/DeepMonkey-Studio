@@ -5,6 +5,7 @@ import type { DashboardDataWidgetConfig, DataDatasetRecord, DataWritebackConfig 
 import { translate as tr, type AppLocale } from "../i18n";
 import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 import { DatasetWritebackPanel } from "./DatasetWritebackPanel";
+import type { WritebackRefresh } from "./useWritebackRefreshFeedback";
 import "./DashboardDatasetWriteback.css";
 
 type WritableDataset = DataDatasetRecord & { writeback: DataWritebackConfig };
@@ -17,14 +18,16 @@ export function dashboardWritebackDataset(projectId: string, widget: Binding, da
   return dataset?.writeback ? dataset as WritableDataset : undefined;
 }
 
-export function DashboardDatasetWriteback({ locale, projectId, widget, datasets, userId, canWrite, onSaved }: {
-  locale: AppLocale; projectId: string; widget: Binding; datasets: readonly DataDatasetRecord[]; userId: string; canWrite: boolean; onSaved?(datasetId: string): void;
+export function DashboardDatasetWriteback({ locale, projectId, widget, datasets, userId, canWrite, onSaved, onOpen, fieldsOpen }: {
+  locale: AppLocale; projectId: string; widget: Binding; datasets: readonly DataDatasetRecord[]; userId: string; canWrite: boolean;
+  onSaved?(datasetId: string): ReturnType<WritebackRefresh>; onOpen?(): void; fieldsOpen?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => { if (fieldsOpen) setOpen(false); }, [fieldsOpen]);
   const dataset = dashboardWritebackDataset(projectId, widget, datasets);
   if (!dataset || !userId) return null;
   return <div className="dashboard-writeback-entry">
-    <button type="button" aria-expanded={open} onClick={() => setOpen(true)} title={!canWrite ? tr(locale, "当前账号只读", "This account is read-only") : dataset.name}>
+    <button type="button" aria-expanded={open} onClick={() => { onOpen?.(); setOpen(true); }} title={!canWrite ? tr(locale, "当前账号只读", "This account is read-only") : dataset.name}>
       {tr(locale, "填报", "Record entry")}
     </button>
     {open && createPortal(<WritebackDock key={`${userId}:${projectId}:${dataset.id}`} locale={locale} projectId={projectId} dataset={dataset}
@@ -33,7 +36,7 @@ export function DashboardDatasetWriteback({ locale, projectId, widget, datasets,
 }
 
 function WritebackDock({ locale, projectId, dataset, userId, canWrite, onSaved, onClose }: {
-  locale: AppLocale; projectId: string; dataset: WritableDataset; userId: string; canWrite: boolean; onClose(): void; onSaved(): void;
+  locale: AppLocale; projectId: string; dataset: WritableDataset; userId: string; canWrite: boolean; onClose(): void; onSaved: WritebackRefresh;
 }) {
   const escape = useDialogEscape(onClose);
   const focus = useRef<HTMLElement>(null);

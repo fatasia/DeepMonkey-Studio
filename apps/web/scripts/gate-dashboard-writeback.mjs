@@ -46,9 +46,17 @@ try {
       const saved = page.waitForResponse(response => response.request().method() === "PUT" && response.url().endsWith(appPath));
       await page.getByRole("button", { name: "保存", exact: true }).click(); assert.equal((await saved).status(), 200);
       assert.equal((await gate.json("GET", appPath)).pages[0].nodes[0].widget.datasetId, datasets[0].id);
+      // 两个工具面板共享工作区而不是叠在一起遮挡：填报展开会收起字段目录。
+      const fields = page.getByRole("complementary", { name: "字段面板", exact: true });
+      if (!(await fields.locator(".dashboard-field-panel").count())) await fields.getByTitle("展开数据字段", { exact: true }).click();
       await inspector.getByRole("button", { name: "填报", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "数据集填报", exact: true });
       const panel = dialog.locator(".dataset-writeback");
+      assert.equal(await fields.locator(".dashboard-field-panel").count(), 0);
+      await inspector.getByRole("button", { name: "选字段", exact: true }).click();
+      await dialog.waitFor({ state: "hidden" });
+      await inspector.getByRole("button", { name: "填报", exact: true }).click();
+      await dialog.waitFor(); assert.equal(await fields.locator(".dashboard-field-panel").count(), 0);
       await load(panel, recordId); const input = panel.getByLabel(/^output/); assert.equal(await input.inputValue(), "7");
       const previewPath = `${gate.origin}/api/projects/${project.id}/datasets/${datasets[0].id}/preview`;
       const otherPreviewPath = `${gate.origin}/api/projects/${project.id}/datasets/${datasets[1].id}/preview`;
@@ -101,12 +109,65 @@ try {
       const failedRefresh = page.waitForResponse(response => response.url() === previewPath && response.status() === 503);
       await input.fill("41"); await submit(panel); await failedRefresh;
       await panel.getByRole("status").filter({ hasText: "记录已写入" }).waitFor();
-      await page.waitForTimeout(500);
+      await panel.getByRole("alert").filter({ hasText: "视图刷新失败" }).waitFor();
       assert.equal(gate.record(recordId).values.output, 41); assert.equal(gate.writes(recordId), 4);
       assert.equal(await panel.getByRole("button", { name: "检查并提交", exact: true }).isDisabled(), true);
       assert.equal(await panel.getByText(/写入结果未确认/).count(), 0);
       assert.equal(await nodes.first().locator(".dashboard-value strong").getAttribute("title"), "25");
       await shot("refresh-failed"); await page.unroute(previewPath);
+      // 首次重试只读，并把在飞的旧快照卡住；随后确认的新写入必须等待新查询。
+      let releaseOld, capturedOld;
+      const oldCaptured = new Promise(resolve => { capturedOld = resolve; });
+      const oldRelease = new Promise(resolve => { releaseOld = resolve; });
+      let held = false;
+      await page.route(previewPath, async route => {
+        if (held) { await route.continue(); return; }
+        held = true;
+        const response = await route.fetch(); capturedOld(); await oldRelease; await route.fulfill({ response });
+      });
+      const beforeRetry = previewReads.get(previewPath) ?? 0;
+      await panel.getByRole("button", { name: "刷新视图", exact: true }).click(); await oldCaptured;
+      await panel.getByRole("status").filter({ hasText: "正在刷新视图" }).waitFor();
+      assert.equal(gate.writes(recordId), 4, "刷新视图不能发起写请求");
+      await input.fill("42"); await submit(panel);
+      await panel.getByRole("status").filter({ hasText: "记录已写入" }).waitFor();
+      assert.equal(gate.writes(recordId), 5); releaseOld();
+      await nodes.first().locator('.dashboard-value strong[title="42"]').waitFor();
+      await panel.getByRole("status").filter({ hasText: "正在刷新视图" }).waitFor({ state: "hidden" });
+      assert.equal(previewReads.get(previewPath), beforeRetry + 2, "写后新读不能复用写前的旧在飞快照");
+      assert.equal(await panel.getByRole("alert").filter({ hasText: "视图刷新失败" }).count(), 0);
+      await shot("refresh-recovered"); await page.unroute(previewPath);
+      // 切记录后迟到的查询失败不能污染新记录；仍不得重放已确认的 PATCH。
+      let releaseLate, capturedLate;
+      const lateCaptured = new Promise(resolve => { capturedLate = resolve; });
+      const lateRelease = new Promise(resolve => { releaseLate = resolve; });
+      await page.route(previewPath, async route => {
+        capturedLate(); await lateRelease;
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "受控迟到查询失败" }) });
+      });
+      await input.fill("43"); await submit(panel); await lateCaptured;
+      await panel.getByRole("status").filter({ hasText: "记录已写入" }).waitFor();
+      await load(panel, otherId); await panel.locator("legend").filter({ hasText: otherId }).waitFor();
+      const lateResponse = page.waitForResponse(response => response.url() === previewPath && response.status() === 503);
+      releaseLate(); await (await lateResponse).finished();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(await panel.getByRole("alert").filter({ hasText: "视图刷新失败" }).count(), 0);
+      assert.equal(await input.inputValue(), "7"); assert.equal(gate.writes(recordId), 6);
+      await shot("late-refresh-ignored"); await page.unroute(previewPath);
+      await dialog.getByRole("button", { name: "关闭填报", exact: true }).click();
+      const conditional = inspector.getByRole("region", { name: "条件格式", exact: true });
+      await conditional.getByRole("button", { name: "添加规则", exact: true }).click();
+      await conditional.locator(".dashboard-conditional-rule").scrollIntoViewIfNeeded();
+      entry.conditional = await conditional.evaluate(element => {
+        const rule = element.querySelector(".dashboard-conditional-rule"), button = element.querySelector("header button");
+        const probe = document.createElement("span"); probe.style.backgroundColor = "var(--surface-2)"; element.append(probe);
+        const expected = getComputedStyle(probe).backgroundColor; probe.remove();
+        return { background: getComputedStyle(rule).backgroundColor, expected, nowrap: getComputedStyle(button).whiteSpace };
+      });
+      assert.equal(entry.conditional.nowrap, "nowrap");
+      assert.equal(entry.conditional.background, entry.conditional.expected);
+      await shot("conditional");
+      await conditional.getByRole("button", { name: "删除规则 1", exact: true }).click();
       assert.deepEqual(entry.errors, []); entry.passed = true;
     } catch (error) { entry.failure = String(error); await shot("failure"); throw error; }
     finally { await context.close(); }

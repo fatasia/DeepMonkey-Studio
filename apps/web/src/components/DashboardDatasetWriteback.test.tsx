@@ -19,6 +19,17 @@ describe("2D author record-entry binding", () => {
     const { writeback: _writeback, ...readonly } = dataset;
     expect(dashboardWritebackDataset("p", { datasetId: "ds" }, [readonly])).toBeUndefined();
   });
+  it("keeps adjacent conditional controls token-based and prevents compressed action labels", async () => {
+    const css = await readFile(new URL("../styles/dashboard-workspace.css", import.meta.url), "utf8");
+    const conditional = css.slice(css.indexOf(".dashboard-conditional-editor {"), css.indexOf(".dashboard-selection-summary {"));
+    expect(conditional).not.toMatch(/#[\da-f]{3,8}|rgba?\(/i);
+    expect(conditional).toContain("white-space: nowrap");
+    expect(conditional).toContain("flex: none");
+    expect(conditional).toContain("background: var(--surface-2)");
+    const panelCss = await readFile(new URL("./DatasetWritebackPanel.css", import.meta.url), "utf8");
+    expect(panelCss).toContain("flex-shrink: 0");
+    expect(panelCss).toContain("max-width: 100%");
+  });
   it("does not write through stale dataset IDs behind pipeline, direct or sample bindings", () => {
     expect(dashboardWritebackDataset("p", { datasetId: "ds", pipelineId: "pipe" }, [dataset])).toBeUndefined();
     expect(dashboardWritebackDataset("p", { datasetId: "ds", directBinding: {} as never }, [dataset])).toBeUndefined();
