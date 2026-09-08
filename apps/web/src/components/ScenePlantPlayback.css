@@ -1,0 +1,12 @@
+.scene-plant-layers { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line); }
+.scene-plant-layers button { min-height:30px; padding:4px 10px; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--text-strong); font-size:12px; cursor:pointer; }
+.scene-plant-layers button[aria-pressed="true"] { border-color:var(--accent); background:var(--accent-soft); color:var(--text-strong); }
+.scene-plant-layers button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.scene-plant-layers :is(output,span) { color:var(--text); font-size:12px; font-variant-numeric:tabular-nums; }
+
+/* Keep transport/status reachable inside the existing viewport budget; only the schematic yields space. */
+.timeline-panel.scene-simulation-timeline { display:flex; flex-direction:column; }
+.scene-simulation-timeline > :is(.timeline-heading,.scene-plant-layers) { flex:none; }
+.scene-simulation-timeline > .plant-playback { display:flex; flex-direction:column; min-height:0; overflow:visible; }
+.scene-simulation-timeline .plant-playback > :is(header,footer,.plant-playback-timeline) { flex:none; }
+.scene-simulation-timeline .plant-playback-stage { flex:0 1 126px; min-height:100px; }

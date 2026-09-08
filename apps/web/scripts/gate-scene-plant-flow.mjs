@@ -5,15 +5,19 @@ import { resolve } from "node:path";
 import { createIsolatedStudioGate } from "./isolatedStudioGate.mjs";
 import { collectTextContrast } from "./browserTextContrast.mjs";
 import sharp from "sharp";
+import { verifySpatialLayers, verifyReproducedSpatialLayers, verifySimulationTimelineFooter } from "./gate-scene-spatial-support.mjs";
+import { inspectSimulationGtaoStability, prepareDeterministicSimulationCapture } from "./gate-scene-gtao-support.mjs";
 
-const transportMode = process.argv.includes("--transport");
-const gate = await createIsolatedStudioGate(transportMode ? "scene-transport-flow" : "scene-plant-flow");
+const spatialMode = process.argv.includes("--spatial");
+const transportMode = process.argv.includes("--transport") || spatialMode;
+const gtaoDiagnostic = process.argv.includes("--gtao-ab");
+const gate = await createIsolatedStudioGate(gtaoDiagnostic ? "scene-gtao-diagnostic" : spatialMode ? "scene-spatial-flow" : transportMode ? "scene-transport-flow" : "scene-plant-flow");
 const report = { createdAt: new Date().toISOString(), cases: [] };
 const variants = transportMode
   ? [1, 2].flatMap(round => [{ round, theme: "dark", width: 1440 }, { round, theme: "light", width: 980 }])
   : ["dark", "light"].flatMap(theme => [1440, 980].map(width => ({ round: 1, theme, width })));
 try {
-  for (const { round, theme, width } of variants) {
+  for (const { round, theme, width } of gtaoDiagnostic ? variants.slice(0, 1) : variants) {
     const entry = { round, theme, width, passed: false, errors: [], driverWarnings: [], steps: [] }; report.cases.push(entry);
     const project = await gate.json("POST", "/api/projects", { name: `场景物流闭环-${theme}-${width}` });
     const now = new Date().toISOString();
@@ -61,7 +65,7 @@ try {
       await flow.locator(".scene-plant-node").nth(1).locator("summary").click();
       if (transportMode) {
         await flow.locator(".scene-plant-node").nth(0).locator("summary").click();
-        await flow.getByLabel("到料间隔（分）", { exact: true }).fill("20");
+        await flow.getByLabel("到料间隔（分）", { exact: true }).fill(spatialMode ? "1" : "20");
         await flow.locator(".scene-plant-node").nth(0).locator("summary").click();
         await flow.locator(".scene-plant-node").nth(2).locator("summary").click();
         await flow.getByLabel("搬运时间（分）", { exact: true }).fill("4");
@@ -106,6 +110,11 @@ try {
       await page.waitForFunction(() => Number(document.querySelector('[aria-label="仿真时间轴"]')?.value) > 5);
       await timeline.getByRole("button", { name: "暂停回放", exact: true }).click();
       const clock = await timeline.getByLabel("仿真时间轴").inputValue(); await page.waitForTimeout(250); assert.equal(await timeline.getByLabel("仿真时间轴").inputValue(), clock);
+      if (gtaoDiagnostic) {
+        entry.gtaoDiagnostic = await inspectSimulationGtaoStability({ page, timeline, pixelDifference, output: gate.output, shot });
+        entry.passed = true; continue;
+      }
+      if (spatialMode) await prepareDeterministicSimulationCapture({ page, timeline, shot, appPath, gate, entry, sceneId: scene.id });
       if (transportMode) {
         const range = timeline.getByLabel("仿真时间轴");
         const seek = async minute => {
@@ -148,6 +157,7 @@ try {
         entry.steps.push("single-vehicle-authoring", "continuous-spatial-playback", "keyboard-seek-reversible", "four-times-speed", "pause-stable-after-speed-change");
       }
       assert.match(await page.locator(".scene-simulation-live-status").innerText(), /DES 轨迹样本/);
+      const waitingSamples = spatialMode ? await verifySpatialLayers({ page, timeline, study, stableCanvas, pixelDifference, shot, entry, outputDirectory: gate.output, filePrefix: `r${round}-${theme}-${width}` }) : 0;
       entry.playbackContrast = await page.locator("body").evaluate(collectTextContrast, ".scene-simulation-timeline .timeline-heading strong, .scene-simulation-timeline .timeline-heading small, .scene-simulation-timeline .timeline-heading-summary button:first-child, .scene-simulation-timeline .plant-playback header strong, .scene-simulation-timeline .plant-playback header small, .scene-simulation-timeline .plant-playback-status");
       assert.deepEqual(entry.playbackContrast.filter(item => item.text && item.contrast < 4.5), []);
       const trackHeader = await timeline.locator(".timeline-heading").boundingBox(), trackActions = await timeline.locator(".timeline-heading-summary").boundingBox();
@@ -158,9 +168,13 @@ try {
       const reproduceResponse = page.waitForResponse(response => response.url().endsWith(`${studyPath}/${study.id}/reproduce`));
       await flow.getByRole("button", { name: "按原快照复现", exact: true }).click(); const repeated = await (await reproduceResponse).json();
       assert.equal(repeated.inputFingerprint, study.inputFingerprint); assert.deepEqual(repeated.trace, study.trace); assert.deepEqual(repeated.outcome, study.outcome);
-      await timeline.waitFor(); await page.getByRole("button", { name: "关闭仿真面板", exact: true }).click(); await timeline.waitFor({ state: "detached" });
+      await timeline.waitFor();
+      if (spatialMode) await verifyReproducedSpatialLayers(timeline, waitingSamples, shot);
+      if (spatialMode) await verifySimulationTimelineFooter({ page, timeline, shot, entry });
+      await page.getByRole("button", { name: "关闭仿真面板", exact: true }).click(); await timeline.waitFor({ state: "detached" });
       const after = await gate.json("GET", appPath); assert.deepEqual(after.scenes.find(item => item.id === scene.id).primitives.map(item => item.transform), savedScene.primitives.map(item => item.transform));
       assert.equal(JSON.stringify(after).includes("simulation-playback"), false);
+      assert.equal(JSON.stringify(after).includes("simulation-spatial"), false);
       entry.steps.push("exact-snapshot-reproduction", "close-cleans-timeline", "no-overlay-or-transform-persistence");
       assert.deepEqual(entry.errors, []); entry.passed = true; console.log(JSON.stringify(entry));
     } catch (error) { entry.failure = String(error); await shot("failure"); throw error; }
@@ -182,14 +196,33 @@ function pixelDifference(left, right) {
 
 async function stableCanvas(page) {
   const canvas = page.locator(".viewport canvas").first();
-  let buffer = await canvas.screenshot(), pixels = await sharp(buffer).ensureAlpha().raw().toBuffer(), stable = 0;
+  const geometrySamples = [];
+  const capture = async () => {
+    const buffer = await canvas.screenshot();
+    if (!spatialMode) return buffer;
+    const canvasBox = await canvas.boundingBox(), timelineBox = await page.getByRole("region", { name: "场景仿真时间线", exact: true }).boundingBox();
+    const size = await sharp(buffer).metadata();
+    const height = Math.floor((timelineBox.y - canvasBox.y - 8) * size.height / canvasBox.height);
+    geometrySamples.push({ canvasBox, timelineBox, width: size.width, height: size.height });
+    assert.ok(height > 100 && height <= size.height, "Visible scene above timeline must have a usable capture area");
+    return sharp(buffer).extract({ left: 0, top: 0, width: size.width, height }).png().toBuffer();
+  };
+  let buffer = await capture(), pixels = await sharp(buffer).ensureAlpha().raw().toBuffer(), stable = 0;
+  const differences = [];
   for (let attempt = 0; attempt < 10; attempt++) {
     await page.waitForTimeout(100);
-    const next = await canvas.screenshot(), nextPixels = await sharp(next).ensureAlpha().raw().toBuffer();
+    const next = await capture(), nextPixels = await sharp(next).ensureAlpha().raw().toBuffer();
     const delta = pixelDifference(pixels, nextPixels);
+    if (delta.changed > 100 && !differences.some(item => item.changed > 100)) {
+      await writeFile(resolve(gate.output, "unsettled-before.png"), buffer);
+      await writeFile(resolve(gate.output, "unsettled-after.png"), next);
+    }
+    differences.push(delta);
     stable = delta.maxChannelDelta <= 1 && delta.changed <= Math.ceil(delta.pixels * .00001) ? stable + 1 : 0;
     buffer = next; pixels = nextPixels;
     if (stable >= 3) return buffer;
   }
-  throw new Error("Paused scene did not settle before pixel verification");
+  await writeFile(resolve(gate.output, "unsettled-canvas.png"), buffer);
+  await writeFile(resolve(gate.output, "unsettled-geometry.json"), JSON.stringify(geometrySamples, null, 2));
+  throw new Error(`Paused scene did not settle before pixel verification: ${JSON.stringify(differences)}`);
 }

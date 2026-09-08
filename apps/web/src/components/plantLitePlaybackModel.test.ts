@@ -43,6 +43,22 @@ const TRACE: PlantLiteReplicationTrace = {
 };
 
 describe("plantLitePlaybackModel", () => {
+  it("counts waiting sample items, not events or the 18 visible markers, and seeks without accumulation", () => {
+    const events: PlantLiteReplicationTrace["events"] = Array.from({ length: 25 }, (_, index) => ({
+      sequence: index, atMinute: 0, type: "item-enter" as const, itemId: `item-${index}`, nodeId: "transport",
+    }));
+    events.push({ sequence: 25, atMinute: 1, type: "item-start", itemId: "item-0", nodeId: "transport" });
+    events.push({ sequence: 26, atMinute: 2, type: "item-enter", itemId: "item-1", nodeId: "sink" });
+    events.push({ sequence: 27, atMinute: 2, type: "item-complete", itemId: "item-1", nodeId: "sink" });
+    const prepared = preparePlantLitePlayback({ ...TRACE, events, capturedItemCount: 25 }, MODEL);
+    const before = selectPlantLitePlaybackFrame(prepared, 0);
+    expect(before.items).toHaveLength(18);
+    expect(before.waitingByNode).toEqual({ transport: 25 });
+    expect(selectPlantLitePlaybackFrame(prepared, 1).waitingByNode).toEqual({ transport: 24 });
+    expect(selectPlantLitePlaybackFrame(prepared, 2).waitingByNode).toEqual({ transport: 23 });
+    expect(selectPlantLitePlaybackFrame(prepared, 0)).toEqual(before);
+    expect(derivePlantLitePlaybackFrame(TRACE, MODEL, 5).waitingByNode).toEqual({});
+  });
   it("interpolates a real transport interval and tracks resource failure state", () => {
     const frame = derivePlantLitePlaybackFrame(TRACE, MODEL, 2.5);
     expect(frame.items[0]).toMatchObject({ state: "moving", nodeId: "transport" });

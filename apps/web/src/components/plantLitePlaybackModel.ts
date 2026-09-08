@@ -26,6 +26,9 @@ export interface PlantLitePlaybackFrame {
   failedResourceIds: string[];
   unavailableResourceUnits: Record<string, number>;
   items: PlantLitePlaybackItem[];
+  /** 当前时刻仍等待的已记录物料数；不是事件次数、持续占用或全量队列。 */
+  waitingByNode?: Record<string, number>;
+  sceneLayers?: { heatmap: boolean; trails: boolean };
   latestEvent?: PlantLiteTraceEvent;
 }
 
@@ -99,6 +102,7 @@ export function selectPlantLitePlaybackFrame(
   let activeItems = 0;
   let completedItems = 0;
   let scrappedItems = 0;
+  const waitingByNode: Record<string, number> = {};
   for (const itemId of prepared.itemIds) {
     const timeline = prepared.itemTimelines.get(itemId)!;
     const eventIndex = upperBoundByMinute(timeline, atMinute) - 1;
@@ -110,8 +114,13 @@ export function selectPlantLitePlaybackFrame(
     else if (isScrapped) scrappedItems += 1;
     else activeItems += 1;
     if (isScrapped) continue;
+    const item = toPlaybackItem(prepared, itemId, current, atMinute, isCompleted);
+    const node = prepared.model.nodes[prepared.nodeIndexById.get(current.nodeId) ?? -1];
+    if (!isCompleted && item.state === "queued" && node && node.kind !== "source" && node.kind !== "sink") {
+      waitingByNode[current.nodeId] = (waitingByNode[current.nodeId] ?? 0) + 1;
+    }
     const target = isCompleted ? completed : active;
-    if (target.length < limit) target.push(toPlaybackItem(prepared, itemId, current, atMinute, isCompleted));
+    if (target.length < limit) target.push(item);
   }
   const unavailableResourceUnits = Object.fromEntries([...prepared.resourceTimelines]
     .map(([resourceId, timeline]) => {
@@ -129,6 +138,7 @@ export function selectPlantLitePlaybackFrame(
     scrappedItems,
     failedResourceIds,
     unavailableResourceUnits,
+    waitingByNode,
     items: [...active, ...completed.slice(0, Math.max(0, limit - active.length))],
     ...(latestEvent ? { latestEvent } : {}),
   };

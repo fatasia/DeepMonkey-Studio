@@ -1,10 +1,11 @@
-import { BufferAttribute, BufferGeometry, Points, PointsMaterial, type Object3D } from "three";
+import { BufferAttribute, BufferGeometry, Color, Points, PointsMaterial, type Object3D } from "three";
 import type { PlantLiteModel } from "@bim-studio/contracts";
 import type { PlantLitePlaybackFrame } from "../components/plantLitePlaybackModel";
 import { disposeViewerObject } from "./sceneOverlayVisuals";
+import { createScenePlantSpatialLayers, type ScenePlantPalette } from "./scenePlantSpatialLayers";
 
 /** DES 搬运时段按已存场景端点插值；无时段证据的瞬时连线保持点位。不是物理车辆轨迹。 */
-export function createScenePlantPlaybackOverlay(scene: Object3D, model: PlantLiteModel) {
+export function createScenePlantPlaybackOverlay(scene: Object3D, model: PlantLiteModel, palette: ScenePlantPalette = { waiting: new Color(), moving: new Color(), completed: new Color() }) {
   const anchors = new Map(model.sceneBinding?.nodes.map(node => [node.nodeId, node.position]));
   const positions = new Float32Array(18 * 3);
   const colors = new Float32Array(18 * 3);
@@ -18,8 +19,11 @@ export function createScenePlantPlaybackOverlay(scene: Object3D, model: PlantLit
   points.frustumCulled = false;
   points.renderOrder = 40;
   scene.add(points);
+  const spatial = createScenePlantSpatialLayers(scene, model, palette);
   return {
+    setPalette(next: ScenePlantPalette) { palette = next; spatial.setPalette(next); },
     update(frame: PlantLitePlaybackFrame | null) {
+      spatial.update(frame);
       let count = 0;
       for (const item of frame?.items ?? []) {
         const position = anchors.get(item.nodeId);
@@ -31,13 +35,14 @@ export function createScenePlantPlaybackOverlay(scene: Object3D, model: PlantLit
           position[1] + ((target?.[1] ?? position[1]) - position[1]) * progress + .25 + item.lane * .12,
           position[2] + ((target?.[2] ?? position[2]) - position[2]) * progress,
         ], count * 3);
-        colors.set(item.state === "queued" ? [1, .65, .2] : item.state === "completed" ? [.3, .85, .5] : [.2, .8, .9], count * 3);
+        const color = item.state === "queued" ? palette.waiting : item.state === "completed" ? palette.completed : palette.moving;
+        colors.set([color.r, color.g, color.b], count * 3);
         count += 1;
       }
       geometry.setDrawRange(0, count);
       geometry.getAttribute("position").needsUpdate = true;
       geometry.getAttribute("color").needsUpdate = true;
     },
-    dispose() { disposeViewerObject(points); },
+    dispose() { disposeViewerObject(points); spatial.dispose(); },
   };
 }
