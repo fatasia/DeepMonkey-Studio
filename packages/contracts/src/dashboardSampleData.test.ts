@@ -12,6 +12,15 @@ function application(sampleData: unknown): ApplicationDocument {
   return document;
 }
 describe("authored dashboard samples", () => {
+  it("keeps empty typed columns and rejects duplicate, unsafe or mismatched definitions", () => {
+    expect(() => assertDashboardSampleData({ columns: [{ key: "n", type: "number" }], rows: [] })).not.toThrow();
+    for (const sample of [
+      { columns: [{ key: "n", type: "number" }], rows: [{ n: "2" }] },
+      { columns: [{ key: "n", type: "number" }], rows: [{ extra: 2 }] },
+      { columns: [{ key: "n", type: "number" }, { key: "n", type: "number" }], rows: [] },
+      { columns: [{ key: "__proto__", type: "number" }], rows: [] },
+    ]) expect(() => assertDashboardSampleData(sample)).toThrow();
+  });
   it("accepts finite scalars, empty rows and serializable snapshots", () => {
     for (const rows of [[], [{ value: 0, text: "设备", active: false, missing: null }]]) {
       expect(() => assertApplicationDocument(application({ rows }))).not.toThrow();

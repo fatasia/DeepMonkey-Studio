@@ -24,20 +24,24 @@ export function buildDashboardPageExportEntries(page: DashboardPageDocument, met
   });
 }
 
-export async function downloadDashboardPageData(page: DashboardPageDocument, metrics: Readonly<Record<string, DashboardPageExportMetric>>, filters: Readonly<Record<string, JsonValue>>): Promise<void> {
+export async function downloadDashboardPageData(page: DashboardPageDocument, metrics: Readonly<Record<string, DashboardPageExportMetric>>, filters: Readonly<Record<string, JsonValue>>, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
   const entries = buildDashboardPageExportEntries(page, metrics);
+  const filterSnapshot = JSON.stringify(filters, null, 2);
   if (!entries.length) throw new Error("当前页面没有可导出的表格组件");
   const { default: JSZip } = await import("jszip");
+  signal?.throwIfAborted();
   const zip = new JSZip();
   for (const entry of entries) zip.file(entry.fileName, entry.csv);
-  zip.file("筛选条件.json", JSON.stringify(filters, null, 2));
+  zip.file("筛选条件.json", filterSnapshot);
   const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+  signal?.throwIfAborted();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = `${safeExportName(page.name || "dashboard")}-数据.zip`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  document.body.append(anchor);
+  try { anchor.click(); } finally { anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 2000); }
 }
 
 function safeExportName(value: string): string {

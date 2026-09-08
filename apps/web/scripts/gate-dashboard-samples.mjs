@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import JSZip from "jszip";
 import { resolve } from "node:path";
 import { createIsolatedStudioGate } from "./isolatedStudioGate.mjs";
 import { createScene, observeDiagnostics, themeContext } from "./gateModelInstancesSupport.mjs";
@@ -51,25 +52,44 @@ try {
       await page.reload(); await page.locator(".dashboard-artboard .dashboard-node").first().waitFor();
       await page.getByRole("button", { name: "浏览", exact: true }).click();
       const runtime = page.locator(".dashboard-runtime-preview"); await runtime.waitFor();
-      await runtime.locator(".dashboard-value strong").filter({ hasText: /^3020/ }).waitFor(); await shot("runtime");
+      await runtime.locator(".dashboard-value strong").filter({ hasText: /^3,020\s*件$/ }).waitFor(); await shot("runtime");
       const filter = runtime.locator(".dashboard-runtime-artboard select"); await filter.selectOption("B");
       await runtime.locator(".dashboard-value strong").filter({ hasText: /^920/ }).waitFor();
       assert.equal(await runtime.locator(".dashboard-report-table tbody tr").count(), 1);
+      const [excel] = await Promise.all([page.waitForEvent("download"), runtime.getByTitle("导出 Excel", { exact: true }).click()]);
+      const excelPath = resolve(gate.output, `r${round}-${theme}.xlsx`); await excel.saveAs(excelPath);
+      const zip = await JSZip.loadAsync(await readFile(excelPath));
+      const sheet = await zip.file("xl/worksheets/sheet1.xml").async("string");
+      assert.equal((sheet.match(/<row /g) ?? []).length, 2); assert.match(sheet, /<v>920<\/v>/);
+      assert.match(sheet, /<t xml:space="preserve">B<\/t>/);
       await shot("filtered"); await filter.selectOption("全部");
       const [download] = await Promise.all([page.waitForEvent("download"), runtime.getByTitle("导出 CSV", { exact: true }).click()]);
       await download.saveAs(resolve(gate.output, `r${round}-${theme}.csv`));
       await page.getByRole("button", { name: "返回编辑", exact: true }).click();
       const publishing = page.waitForResponse(response => response.url().endsWith(`${appPath}/publish`) && response.request().method() === "POST");
       await page.getByRole("button", { name: "发布", exact: true }).click(); assert.equal((await publishing).status(), 201);
-      const anonymous = await gate.browser.newContext({ viewport: { width, height: 1000 } });
+      const anonymous = await themeContext(gate, theme, width);
       const publicPage = await anonymous.newPage(); observeDiagnostics(publicPage, entry);
       await publicPage.goto(`${gate.origin}/apps/${application.metadata.id}`);
-      await publicPage.locator(".dashboard-value strong").filter({ hasText: /^3020/ }).waitFor();
-      await publicPage.reload(); await publicPage.locator(".dashboard-value strong").filter({ hasText: /^3020/ }).waitFor();
+      await publicPage.locator(".dashboard-value strong").filter({ hasText: /^3,020\s*件$/ }).waitFor();
+      await publicPage.reload(); await publicPage.locator(".dashboard-value strong").filter({ hasText: /^3,020\s*件$/ }).waitFor();
       // 数据先到达 DOM，ECharts 入场动画随后结束；截图不能截在零高度首帧。
       await publicPage.waitForTimeout(1500);
       await publicPage.screenshot({ path: resolve(gate.output, `r${round}-${theme}-public.png`) });
-      await anonymous.close(); assert.deepEqual(entry.errors, []); entry.passed = true;
+      await anonymous.close();
+      await page.reload(); await page.locator(".dashboard-artboard .dashboard-node").nth(2).click();
+      await page.locator(".dashboard-inspector-tabs").getByRole("button", { name: "数据", exact: true }).click();
+      for (let index = 0; index < 3; index++) await editor.getByRole("button", { name: "删除第 1 行", exact: true }).click();
+      await editor.getByRole("button", { name: "应用", exact: true }).click();
+      const emptySave = page.waitForResponse(response => response.url().endsWith(appPath) && response.request().method() === "PUT");
+      await page.getByRole("button", { name: "保存", exact: true }).click(); assert.equal((await emptySave).status(), 200);
+      await page.reload(); await page.locator(".dashboard-artboard .dashboard-node").nth(2).click();
+      await page.locator(".dashboard-inspector-tabs").getByRole("button", { name: "数据", exact: true }).click();
+      await editor.getByRole("button", { name: "添加行", exact: true }).click();
+      await editor.getByRole("textbox", { name: "1 · 产量", exact: true }).fill("bad");
+      await editor.getByRole("button", { name: "应用", exact: true }).click();
+      await editor.getByRole("alert").waitFor(); await shot("empty-restored-columns");
+      assert.deepEqual(entry.errors, []); entry.passed = true;
     } catch (error) { entry.failure = error.stack; await shot("failed"); throw error; }
     finally { await context.close(); console.log(JSON.stringify(entry)); }
   }

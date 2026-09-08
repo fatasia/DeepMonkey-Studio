@@ -23,15 +23,20 @@ export function DashboardSampleDataEditor({ widget, locale, disabled = false, da
   function apply() {
     try {
       const parsedRows = rows.map((row, index) => Object.fromEntries(Object.entries(row).map(([key, cell]) => {
-        const type = fields.find(field => field.key === key)?.type;
+        const type = columns.find(field => field.key === key)?.type;
         if (type === "number" && cell !== null) {
           const number = typeof cell === "number" ? cell : typeof cell === "string" && cell.trim() ? Number(cell) : NaN;
           if (!Number.isFinite(number)) throw new Error(tr(locale, `第 ${index + 1} 行 ${key}：请输入有效数字`, `Row ${index + 1}, ${key}: enter a valid number`));
           return [key, number];
         }
+        if (type === "boolean" && cell !== null) {
+          if (cell === true || cell === "true") return [key, true];
+          if (cell === false || cell === "false") return [key, false];
+          throw new Error(tr(locale, `第 ${index + 1} 行 ${key}：请输入 true 或 false`, `Row ${index + 1}, ${key}: enter true or false`));
+        }
         return [key, cell];
       })));
-      const sampleData = { ...widget.sampleData, rows: parsedRows };
+      const sampleData = { ...widget.sampleData, columns: columns.map(({ key, type }) => ({ key, type: type === "number" ? "number" as const : type === "boolean" ? "boolean" as const : "string" as const })), rows: parsedRows };
       assertDashboardSampleData(sampleData);
       onChange({ sampleData }); setApplied(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }

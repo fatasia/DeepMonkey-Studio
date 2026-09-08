@@ -8,12 +8,12 @@ import {
   analyzeDashboardMetric,
   buildDashboardReport,
   conditionalStyle,
-  dashboardReportCsv,
   formatDashboardReportValue,
   sortDashboardReportRows,
   type DashboardAnalysisResult,
 } from "./dashboardAnalytics";
 import type { DashboardMetric } from "./DashboardWidgetRuntime";
+import { DashboardReportExport } from "./DashboardReportExport";
 import {
   dashboardColorWithOpacity as colorWithOpacity,
   dashboardJsonRecord as jsonRecord,
@@ -173,14 +173,6 @@ export function DashboardReportTable({
   const safePage = Math.min(page, pageCount - 1);
   const sortedRows = sort ? sortDashboardReportRows(report.rows, sort.column, sort.direction) : report.rows;
   const visibleRows = sortedRows.slice(safePage * pageSize, (safePage + 1) * pageSize);
-  function downloadCsv() {
-    const url = URL.createObjectURL(new Blob([dashboardReportCsv(report)], { type: "text/csv;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${widget.title || "report"}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
   const rowNumberOffset = safePage * pageSize;
   const tableClass = [
     widget.report?.freezeFirstColumn ? "freeze-first-column" : "",
@@ -193,17 +185,7 @@ export function DashboardReportTable({
     <div className="dashboard-mini-table dashboard-report-table">
       <header>
         <strong>{widget.title}</strong>
-        {!compact && (
-          <button
-            title={tr(locale, "导出 CSV", "Export CSV")}
-            onClick={(event) => {
-              event.stopPropagation();
-              downloadCsv();
-            }}
-          >
-            CSV
-          </button>
-        )}
+        {!compact && <DashboardReportExport report={{ ...report, rows: sortedRows }} title={widget.title} locale={locale} />}
       </header>
       <div className="dashboard-report-scroll">
         <table className={tableClass}>

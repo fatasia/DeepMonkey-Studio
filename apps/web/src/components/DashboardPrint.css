@@ -1,4 +1,7 @@
 @media print {
+  html:has(.dashboard-runtime-preview), body:has(.dashboard-runtime-preview) {
+    color-scheme: light !important; color: CanvasText; background: Canvas !important;
+  }
   body:has(.dashboard-runtime-preview) { margin: 0 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   /* 只保留当前运行画布，作者壳层与公开版本工具均不进入纸面。 */
   #root:has(.dashboard-runtime-preview) *:not(.dashboard-runtime-preview):not(.dashboard-runtime-preview *):not(:has(.dashboard-runtime-preview)) { display: none !important; }
@@ -7,12 +10,39 @@
     min-height: 0 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; overflow: visible !important;
   }
   .dashboard-runtime-preview { width: var(--dashboard-print-width) !important; height: var(--dashboard-print-height) !important; min-height: 0 !important; }
-  .dashboard-runtime-preview > :not(.dashboard-runtime-surface) { display: none !important; }
-  .dashboard-runtime-preview > .dashboard-runtime-surface { width: 100% !important; height: 100% !important; }
+  .dashboard-runtime-preview > :not(.dashboard-runtime-surface):not(.dashboard-print-header):not(.dashboard-print-footer) { display: none !important; }
+  .dashboard-runtime-preview > section.dashboard-runtime-surface {
+    position: relative !important; top: var(--dashboard-print-content-inset) !important;
+    width: 100% !important; height: var(--dashboard-print-content-height) !important;
+  }
   .dashboard-runtime-stage { width: 100% !important; height: 100% !important; overflow: hidden !important; break-inside: avoid; }
   .dashboard-runtime-artboard {
     left: var(--dashboard-print-left) !important; top: var(--dashboard-print-top) !important;
     transform: scale(var(--dashboard-print-scale)) !important; box-shadow: none !important;
   }
   .dashboard-runtime-artboard *, .dashboard-runtime-artboard *::before, .dashboard-runtime-artboard *::after { animation: none !important; transition: none !important; }
+  .dashboard-runtime-artboard .dashboard-report-table > header > span,
+  .dashboard-runtime-artboard .dashboard-report-table > footer,
+  .dashboard-runtime-artboard .dashboard-report-table th button i { display: none !important; }
+}
+
+/* 打印页眉页脚：仅纸面可见，屏幕渲染保持零占位；fixed 定位使其每页重复。 */
+.dashboard-runtime-preview > .dashboard-print-header,
+.dashboard-runtime-preview > .dashboard-print-footer { display: none; }
+
+@media print {
+  .dashboard-runtime-preview > .dashboard-print-header {
+    display: flex; position: fixed; top: 0; left: 0; right: 0; height: 6mm;
+    align-items: baseline; gap: 8px;
+    color-scheme: light; color: CanvasText; background: Canvas; padding: 0;
+    font-size: 8.5px; border-bottom: 0.4px solid currentColor;
+  }
+  .dashboard-runtime-preview > .dashboard-print-header strong { font-size: inherit; font-weight: 600; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dashboard-runtime-preview > .dashboard-print-header span { display: block; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dashboard-print-header time { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .dashboard-runtime-preview > .dashboard-print-footer {
+    display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: 6mm;
+    align-items: center;
+    color-scheme: light; color: CanvasText; background: Canvas; font-size: 8px;
+  }
 }

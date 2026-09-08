@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import {
+import { ImageDown,
   ArrowLeft,
   Copy,
   Download,
@@ -28,6 +28,8 @@ import { previewSemanticParameter } from "./dashboardSemanticMetrics";
 import { dashboardParameterOrder } from "./dashboardParameterOrder";
 import { downloadDashboardPageData } from "./dashboardPageExport";
 import { dashboardPrintLayout } from "./dashboardPrintLayout";
+import { dashboardPageUsesSampleData } from "./dashboardPrintLayout";
+import { useDashboardExport } from "./useDashboardExport";
 import "./DashboardPrint.css";
 import {
   calculateDashboardRuntimeViewport,
@@ -104,8 +106,8 @@ export function DashboardRuntimePreview({
   const [draftFilters, setDraftFilters] = useState<Record<string, JsonValue>>(
     () => ({ ...filters }),
   );
-  const [exportBusy, setExportBusy] = useState(false);
-  const [exportError, setExportError] = useState("");
+  const pageExport = useDashboardExport(`${application.metadata.id}:${page.id}`);
+  const exportBusy = pageExport.busy;
   const [copyMessage, setCopyMessage] = useState("");
   const [manualCopyUrl, setManualCopyUrl] = useState("");
   const [viewport, setViewport] = useState<DashboardRuntimeViewport>(() =>
@@ -151,25 +153,39 @@ export function DashboardRuntimePreview({
     }
     setDraftFilters(next);
   }
-  async function exportPageData() {
-    setExportBusy(true);
-    setExportError("");
-    try {
-      await downloadDashboardPageData(page, metrics, filters);
-    } catch (reason) {
-      setExportError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setExportBusy(false);
-    }
+  function exportPageImage(signal: AbortSignal) {
+    const surface = surfaceRef.current;
+    const artboard = surface?.querySelector<HTMLElement>(".dashboard-runtime-artboard");
+    if (!surface || !artboard) throw new Error(tr(locale, "页面未就绪，请重试", "The page is not ready. Retry."));
+    return (async () => {
+      const { downloadDashboardPageImage } = await import("./dashboardPageImageExport");
+      await downloadDashboardPageImage(surface, artboard, page, locale, signal);
+    })();
   }
 
   const activeParameterCount = parameterWidgets.filter(
     (widget) => draftFilters[widget.key] !== undefined,
   ).length;
   const printLayout = dashboardPrintLayout(page.width, page.height);
+  const [printTime, setPrintTime] = useState(() => new Date());
+  useEffect(() => {
+    const refreshPrintTime = () => setPrintTime(new Date());
+    window.addEventListener("beforeprint", refreshPrintTime);
+    return () => window.removeEventListener("beforeprint", refreshPrintTime);
+  }, []);
+  const printStamp = printTime.toLocaleString(locale, { dateStyle: "short", timeStyle: "short" });
+  const exportTimeout = tr(locale, "导出超时，请检查页面资源后重试", "Export timed out. Check page resources and retry.");
   return (
     <main className="dashboard-runtime-preview" style={printLayout.style}>
-      <style media="print">{`@page { size: A4 ${printLayout.orientation}; margin: 8mm; }`}</style>
+      <style media="print">{`@page { size: A4 ${printLayout.orientation}; margin: 10mm 8mm; @bottom-right { content: counter(page) " / " counter(pages); } }`}</style>
+      <header className="dashboard-print-header" aria-hidden="true">
+        <strong>{application.metadata.name}</strong>
+        <span>{page.name}</span>
+        <time>{printStamp}</time>
+      </header>
+      {dashboardPageUsesSampleData(page) && <footer className="dashboard-print-footer" aria-hidden="true">
+        <span>{tr(locale, "包含示例数据，仅供演示", "Contains sample data for demonstration")}</span>
+      </footer>}
       {!readOnly && <button
         type="button"
         className="dashboard-runtime-back"
@@ -330,13 +346,22 @@ export function DashboardRuntimePreview({
               )}
               <button
                 disabled={exportBusy}
-                onClick={() => void exportPageData()}
+                onClick={() => void pageExport.run(signal => downloadDashboardPageData(page, metrics, filters, signal), exportTimeout)}
               >
                 <Download size={13} />
                 {exportBusy
                   ? tr(locale, "导出中", "Exporting")
                   : tr(locale, "导出数据", "Export data")}
               </button>
+              <button
+                disabled={exportBusy}
+                title={tr(locale, "将当前页面导出为 PNG 图片", "Export the current page as a PNG image")}
+                onClick={() => void pageExport.run(exportPageImage, exportTimeout)}
+              >
+                <ImageDown size={13} />
+                {tr(locale, "导出图片", "Export image")}
+              </button>
+              {exportBusy && <button onClick={() => pageExport.cancel()}>{tr(locale, "取消导出", "Cancel export")}</button>}
               <button onClick={() => window.print()}>
                 <Printer size={13} />
                 {tr(locale, "打印", "Print")}
@@ -366,12 +391,13 @@ export function DashboardRuntimePreview({
                 {tr(locale, "返回编辑", "Back to editor")}
               </button>}
             </div>
-            {exportError && (
-              <p className="dashboard-runtime-export-error">
+            {pageExport.error && (
+              <p className="dashboard-runtime-export-error" role="alert">
                 <TriangleAlert size={12} />
-                {exportError}
+                {pageExport.error}
               </p>
             )}
+            {pageExport.completed && <p className="dashboard-runtime-export-error" role="status">{tr(locale, "已导出", "Exported")}</p>}
             {copyMessage && <p className="dashboard-runtime-export-error" role="status">{copyMessage}</p>}
             {manualCopyUrl && <input className="dashboard-runtime-copy-url" aria-label={tr(locale, "发布链接", "Published URL")} readOnly value={manualCopyUrl} onFocus={event => event.currentTarget.select()} />}
           </div>
