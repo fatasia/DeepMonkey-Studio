@@ -11,6 +11,9 @@ describe("asset thumbnail layout contract", () => {
     expect(rule(".unified-asset-preview img")).toMatch(/min-width:\s*0/);
     expect(rule(".unified-asset-preview img")).toMatch(/min-height:\s*0/);
     expect(rule(".unified-asset-preview img")).toMatch(/object-fit:\s*contain/);
+    expect(rule(".unified-asset-preview img")).not.toContain("filter:");
+    expect(rule(".asset-thumbnail-image")).toMatch(/opacity:\s*0/);
+    expect(rule(".asset-thumbnail-image.is-ready")).toMatch(/opacity:\s*1/);
     expect(rule(".asset-workspace-active .unified-asset-preview")).toMatch(/aspect-ratio:\s*16\s*\/\s*9/);
   });
 

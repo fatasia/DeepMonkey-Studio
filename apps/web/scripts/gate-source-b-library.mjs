@@ -18,7 +18,7 @@ function collectThumbnailGeometry(images) {
       complete: image.complete, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight,
       image: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
       preview: { x: box.x, y: box.y, width: box.width, height: box.height },
-      objectFit: style.objectFit, minHeight: style.minHeight, imageHeight: style.height,
+      objectFit: style.objectFit, minHeight: style.minHeight, imageHeight: style.height, opacity: style.opacity,
       display: containerStyle.display, gridRows: containerStyle.gridTemplateRows, aspectRatio: containerStyle.aspectRatio,
       clipped: rect.left < box.left - 1 || rect.top < box.top - 1 || rect.right > box.right + 1 || rect.bottom > box.bottom + 1 };
   });
@@ -26,7 +26,7 @@ function collectThumbnailGeometry(images) {
 
 function assertThumbnailGeometry(images) {
   if (!process.argv.includes("--inspect-geometry")) {
-    assert.deepEqual(images.filter(image => image.clipped || !image.complete || image.naturalWidth === 0), [], "Real thumbnail image must fit its preview container");
+    assert.deepEqual(images.filter(image => image.clipped || !image.complete || image.naturalWidth === 0 || image.opacity !== "1"), [], "Real thumbnail image must be decoded, painted and fit its preview container");
   }
 }
 const gate = await createIsolatedStudioGate("source-b-library");
