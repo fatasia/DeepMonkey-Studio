@@ -5,7 +5,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { CompatibleGLTFLoader as GLTFLoader } from "../viewer/CompatibleGLTFLoader";
 import type { BakeLightState } from "../optimizer/modelOptimizer";
 import type { AppLocale } from "../i18n";
 import { captureModelThumbnail } from "../optimizer/captureModelThumbnail";

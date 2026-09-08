@@ -57,7 +57,9 @@ describe("web architecture boundary", () => {
       "api.ts",
       "sceneFiles.ts",
       path.join("viewer", "viewerAssetTransport.ts"),
-      path.join("optimizer", "modelOptimizer.ts")
+      path.join("optimizer", "modelOptimizer.ts"),
+      // Static Draco WASM bootstrap only; business HTTP remains behind api.ts.
+      path.join("optimizer", "modelOptimizerIO.ts")
     ]);
     const violations: string[] = [];
     for (const file of typescriptSourceFiles(root)) {

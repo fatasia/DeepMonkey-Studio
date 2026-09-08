@@ -2,7 +2,7 @@ import type * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
 import type { ClippingGroup } from "three/webgpu";
 import type { World as RapierWorld } from "@dimforge/rapier3d-compat";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { CompatibleGLTFLoader as GLTFLoader } from "./CompatibleGLTFLoader";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";

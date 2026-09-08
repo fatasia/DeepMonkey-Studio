@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { NodeIO } from "@gltf-transform/core";
-import { EXTMeshoptCompression, KHRDracoMeshCompression } from "@gltf-transform/extensions";
+import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import draco3d from "draco3dgltf";
 import { MeshoptDecoder } from "meshoptimizer";
 
@@ -81,7 +81,7 @@ let ioPromise: Promise<NodeIO> | undefined;
 
 function gltfIo(): Promise<NodeIO> {
   ioPromise ??= Promise.all([draco3d.createDecoderModule(), MeshoptDecoder.ready]).then(([decoder]) => new NodeIO()
-    .registerExtensions([KHRDracoMeshCompression, EXTMeshoptCompression])
+    .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({ "draco3d.decoder": decoder, "meshopt.decoder": MeshoptDecoder }));
   return ioPromise;
 }

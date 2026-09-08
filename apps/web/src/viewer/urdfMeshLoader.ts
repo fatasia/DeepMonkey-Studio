@@ -30,7 +30,7 @@ export async function loadRobotMesh(path: string, manager: THREE.LoadingManager,
     return result.scene;
   }
   if (extension === "glb" || extension === "gltf") {
-    const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+    const { CompatibleGLTFLoader: GLTFLoader } = await import("./CompatibleGLTFLoader");
     return (await new GLTFLoader(manager).parseAsync(prepareRobotGltf(bytes, resource, scope), "")).scene;
   }
   throw new Error(`机器人网格格式暂不支持：${extension ?? "未知"}`);

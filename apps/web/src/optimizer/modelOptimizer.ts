@@ -1,10 +1,10 @@
-import { WebIO, type Document, type JSONDocument } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { type WebIO, type Document, type JSONDocument } from "@gltf-transform/core";
 import { center, dedup, draco, prune, simplify, textureCompress, unwrap, weld } from "@gltf-transform/functions";
-import draco3d from "draco3dgltf";
-import { MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
+import { MeshoptSimplifier } from "meshoptimizer";
 import { bakeWebLightmap, type WebLightmapResult } from "./lightmapBaker";
 import { preserveOptimizationCredit } from "./modelOptimizationCredit";
+import { optimizerIO } from "./modelOptimizerIO";
+import { migrateLegacyMaterials } from "./legacyGltfMaterials";
 
 export interface ModelOptimizationOptions {
   simplifyEnabled: boolean;
@@ -82,8 +82,6 @@ export interface ModelOptimizationResult {
   lightmap?: WebLightmapResult;
 }
 
-let ioPromise: Promise<WebIO> | undefined;
-
 export async function optimizeModelFile(
   file: File,
   options: ModelOptimizationOptions,
@@ -95,6 +93,7 @@ export async function optimizeModelFile(
   const document = await readDocument(io, file);
   preserveOptimizationCredit(document, copyright);
   const before = statistics(document, file.size);
+  await migrateLegacyMaterials(document);
   const transforms = [];
   if (options.removeUnused) transforms.push(dedup(), weld());
   if (options.simplifyEnabled && options.simplifyRatio < 0.999) {
@@ -271,31 +270,6 @@ function normalize3(value: [number, number, number]): [number, number, number] {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
-}
-
-async function optimizerIO(): Promise<WebIO> {
-  ioPromise ??= Promise.all([
-    loadWasm("draco_encoder.wasm"),
-    loadWasm("draco_decoder_gltf.wasm"),
-    MeshoptDecoder.ready
-  ]).then(async ([encoderWasm, decoderWasm]) => {
-    const [encoder, decoder] = await Promise.all([
-      draco3d.createEncoderModule({ wasmBinary: encoderWasm }),
-      draco3d.createDecoderModule({ wasmBinary: decoderWasm })
-    ]);
-    return new WebIO()
-      .registerExtensions(ALL_EXTENSIONS)
-      .registerDependencies({ "draco3d.encoder": encoder, "draco3d.decoder": decoder, "meshopt.decoder": MeshoptDecoder });
-  });
-  return await ioPromise;
-}
-
-async function loadWasm(name: string): Promise<Uint8Array> {
-  const response = await fetch(`${import.meta.env.BASE_URL}draco/${name}`, {
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`Draco 资源加载失败：${name} (${response.status})`);
-  return new Uint8Array(await response.arrayBuffer());
 }
 
 async function readDocument(io: WebIO, file: File): Promise<Document> {
