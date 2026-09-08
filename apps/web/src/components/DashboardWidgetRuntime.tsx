@@ -65,7 +65,7 @@ export function useDashboardMetrics(
   const refreshDataset = useCallback((datasetId: string) => datasetRefresh.current?.(datasetId) ?? Promise.resolve<DashboardRefreshResult>("cancelled"), []);
 
   useEffect(() => {
-    if (!widgets.some((widget) => widget.datasetId || widget.pipelineId)) {
+    if (!widgets.some((widget) => widget.datasetId || widget.pipelineId || widget.type === "record-form")) {
       setCatalogError(false);
       setCatalogResolved(false);
       return;

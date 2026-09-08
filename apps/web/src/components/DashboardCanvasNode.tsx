@@ -30,6 +30,7 @@ import { usePlaybackSession } from "../behavior/playbackContext";
 import { publicWidgetRestriction } from "../behavior/publicPlaybackPolicy";
 import { isSemanticSelectionWidget, semanticSelectionKey } from "./dashboardSemanticBinding";
 import { dashboardAuthoredTypography } from "./dashboardTemplateTypography";
+import { DashboardRecordForm } from "./DashboardRecordForm";
 import "./DashboardTemplateTypography.css";
 
 export function DashboardNode({
@@ -239,7 +240,9 @@ export function DashboardNode({
           if (runtime) onInteraction("animationEnd");
         }}
       >
-        {restriction ? <div className="dashboard-public-restriction" role="note"><strong>{node.widget.title || node.name}</strong><span>{restriction}</span></div> : node.widget.type === "topology" ? (
+        {node.widget.type === "record-form" ? (
+          <DashboardRecordForm widget={node.widget} projectId={project.id} locale={locale} runtime={runtime} />
+        ) : restriction ? <div className="dashboard-public-restriction" role="note"><strong>{node.widget.title || node.name}</strong><span>{restriction}</span></div> : node.widget.type === "topology" ? (
           <DashboardTopologyView
             application={application}
             {...(node.widget.topologyId

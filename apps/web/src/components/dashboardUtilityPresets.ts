@@ -2,6 +2,7 @@ import type { DashboardComponentPreset } from "./dashboardComponentPresetTypes";
 import { utilityPreset } from "./dashboardComponentPresetFactory";
 
 export const DASHBOARD_UTILITY_PRESETS: readonly DashboardComponentPreset[] = [
+  utilityPreset({ id: "record-form", category: "control", zh: "填报表单", en: "Record form", descriptionZh: "绑定已启用填报的数据集与固定记录", type: "record-form", key: "record.form", previewFamily: "control", frame: { width: 600, height: 540 }, widget: { recordForm: { recordId: "" }, backgroundOpacity: 0 } }),
   utilityPreset({ id: "cascade-filter", category: "control", zh: "级联业务筛选", en: "Cascade filter", descriptionZh: "受上级区域参数约束的业务分类筛选", type: "filter", key: "filter.category", previewFamily: "control", frame: { width: 280, height: 82 }, widget: { filterField: "category", parentFilterKey: "filter.region", options: ["全部", "生产", "仓储", "能源"] } }),
   utilityPreset({ id: "date-filter", category: "control", zh: "业务日期筛选", en: "Date filter", descriptionZh: "按业务日期精确过滤全页组件", type: "filter", key: "filter.date", previewFamily: "control", widget: { filterField: "date", filterMode: "date", filterMatch: "exact" } }),
   utilityPreset({ id: "keyword-filter", category: "control", zh: "设备关键词查询", en: "Asset keyword", descriptionZh: "按设备名称或编码进行包含匹配", type: "filter", key: "filter.keyword", previewFamily: "control", frame: { width: 280, height: 76 }, widget: { filterField: "name", filterMode: "text", filterMatch: "contains" } }),

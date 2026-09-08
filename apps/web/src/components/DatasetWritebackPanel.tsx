@@ -8,13 +8,16 @@ import { readWritebackDraft, saveWritebackDraft, writebackDraftKey } from "./dat
 import { useWritebackRefreshFeedback, type WritebackRefresh } from "./useWritebackRefreshFeedback";
 import "./DatasetWritebackPanel.css";
 
-export function DatasetWritebackPanel({ locale, projectId, userId, dataset, canWrite, onSaved }: {
-  locale: AppLocale; projectId: string; userId: string; dataset: DataDatasetRecord & { writeback: DataWritebackConfig }; canWrite: boolean; onSaved?: WritebackRefresh;
+export function DatasetWritebackPanel({ locale, projectId, userId, dataset, canWrite, onSaved, fixedRecordId }: {
+  locale: AppLocale; projectId: string; userId: string; dataset: DataDatasetRecord & { writeback: DataWritebackConfig }; canWrite: boolean; onSaved?: WritebackRefresh; fixedRecordId?: string;
 }) {
-  const cacheKey = writebackDraftKey(userId, projectId, dataset.id);
+  const cacheKey = writebackDraftKey(userId, projectId, dataset.id, fixedRecordId);
   const cached = useMemo(() => {
-    try { return readWritebackDraft(sessionStorage, cacheKey, dataset.writeback); } catch { return undefined; }
-  }, [cacheKey, dataset.writeback]);
+    try {
+      const restored = readWritebackDraft(sessionStorage, cacheKey, dataset.writeback);
+      return fixedRecordId === undefined || restored?.recordId === fixedRecordId ? restored : undefined;
+    } catch { return undefined; }
+  }, [cacheKey, dataset.writeback, fixedRecordId]);
   const session = useMemo(() => new DatasetWritebackSession(dataset.writeback, {
     read: (id, signal) => api.readDatasetRecord(projectId, dataset.id, id, signal),
     write: (id, changes, signal) => api.writeDatasetRecord(projectId, dataset.id, id, changes, signal),
@@ -22,7 +25,13 @@ export function DatasetWritebackPanel({ locale, projectId, userId, dataset, canW
   useEffect(() => () => session.dispose(), [session]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const viewRefresh = useWritebackRefreshFeedback(state.saved, session, onSaved);
-  const [recordId, setRecordId] = useState(cached?.recordId ?? "");
+  const [recordId, setRecordId] = useState(fixedRecordId ?? cached?.recordId ?? "");
+  useEffect(() => {
+    if (!fixedRecordId || cached) return;
+    // 延至挂载完成，只自动读取；恢复草稿必须显式核对，绝不自动提交。
+    const task = window.setTimeout(() => void session.read(fixedRecordId), 0);
+    return () => window.clearTimeout(task);
+  }, [session, fixedRecordId, cached]);
   const [cacheError, setCacheError] = useState(false);
   useEffect(() => {
     try { setCacheError(!saveWritebackDraft(sessionStorage, cacheKey, dataset.writeback, state)); }
@@ -41,7 +50,7 @@ export function DatasetWritebackPanel({ locale, projectId, userId, dataset, canW
   return <section className="dataset-writeback" aria-label={tr(locale, "业务填报", "Record entry")}>
     <header><strong>{tr(locale, "业务填报", "Record entry")}</strong></header>
     <div className="dataset-writeback-record">
-      <label>{tr(locale, "记录编号", "Record ID")}<input value={recordId} maxLength={128} disabled={busy} onChange={event => setRecordId(event.target.value)} /></label>
+      <label>{tr(locale, "记录编号", "Record ID")}<input value={recordId} maxLength={128} disabled={busy} readOnly={fixedRecordId !== undefined} onChange={event => setRecordId(event.target.value)} /></label>
       <button type="button" disabled={busy || !recordId.trim()} onClick={openRecord}>{tr(locale, "读取记录", "Load record")}</button>
     </div>
     {replacement !== undefined && <div className="dataset-writeback-notice" role="alert">

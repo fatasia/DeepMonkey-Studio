@@ -5,8 +5,8 @@ import type { WritebackState } from "./datasetWritebackSession";
 export interface CachedWritebackDraft { recordId: string; baseline: DataWritebackSnapshot; draft: Record<string, string> }
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 const lifetime = 24 * 60 * 60 * 1000;
-export const writebackDraftKey = (userId: string, projectId: string, datasetId: string) =>
-  `studio:record-draft:${JSON.stringify([userId, projectId, datasetId])}`;
+export const writebackDraftKey = (userId: string, projectId: string, datasetId: string, fixedRecordId?: string) =>
+  `studio:record-draft:${JSON.stringify([userId, projectId, datasetId])}${fixedRecordId === undefined ? "" : `:${JSON.stringify(fixedRecordId)}`}`;
 
 export function readWritebackDraft(storage: DraftStorage, key: string, config: DataWritebackConfig, now = Date.now()): CachedWritebackDraft | undefined {
   try {

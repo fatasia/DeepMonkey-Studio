@@ -73,6 +73,7 @@ export function PlaybackView({ session, ...props }: Props & { session: Applicati
   const active = session.entries.filter((entry) => entry.diagnostics.status === "running" || entry.diagnostics.status === "paused").length;
   const label = session.loading ? tr(props.locale, "正在自动加载", "Loading scripts") : failed ? tr(props.locale, `${failed} 项运行错误`, `${failed} runtime errors`) : tr(props.locale, session.paused ? `已暂停 · ${active} 个脚本` : `自动运行 · ${active} 个脚本`, session.paused ? `Paused · ${active} scripts` : `Auto · ${active} scripts`);
   return <DashboardRuntimePreview {...props} application={application} page={page} variables={variables} filters={filters} metrics={metrics} connected={live.connected || props.connected}
+      {...(props.writebackAccess && !props.readOnly ? { writebackAccess: { ...props.writebackAccess, datasets: live.datasets, onSaved: live.refreshDataset } } : {})}
       onFilterChange={(key, value) => session.state.setFilter(key, value)}
       onVariableChange={(key, value) => session.setVariables({ [key]: value })}
       onSelectionChange={() => undefined}

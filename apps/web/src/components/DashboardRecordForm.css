@@ -1,0 +1,8 @@
+.dashboard-record-form { width: 100%; height: 100%; overflow: auto; background: var(--surface-1); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.dashboard-record-form .dataset-writeback { margin: 0; border: 0; min-width: 0; font-size: var(--dashboard-form-font-size, 13px); }
+.dashboard-record-form .dataset-writeback :is(input,select,button,label,legend,small,th,td,p) { font-size: inherit; }
+.dashboard-record-form .dataset-writeback :is(input,select,button) { min-height: var(--dashboard-form-control-height, 32px); height: auto; box-sizing: border-box; }
+.dashboard-record-form-placeholder { display: flex; flex-direction: column; gap: 12px; padding: 24px; min-width: 0; font-size: var(--dashboard-form-font-size, 14px); }
+.dashboard-record-form-placeholder strong { color: var(--text-strong); font-size: 1.15em; overflow-wrap: anywhere; }
+.dashboard-record-form-placeholder span { color: var(--text-muted); overflow-wrap: anywhere; }
+.dashboard-record-form .dataset-writeback-record input[readonly] { color: var(--text-muted); }

@@ -286,6 +286,7 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
       "table",
       "scroll-table",
       "filter",
+      "record-form",
       "image",
       "video",
       "monitor",
@@ -306,6 +307,13 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   optional(object, "unityPropertyValues", validateJsonObject, path);
   optional(object, "directBinding", (binding, bindingPath) => assertDirectBindingSpec(binding, bindingPath), path);
   optional(object, "sampleData", assertDashboardSampleData, path);
+  optional(object, "recordForm", (value, formPath) => {
+    const form = expectObject(value, formPath);
+    required(form, "recordId", expectString, formPath);
+    if (Object.keys(form).some(key => key !== "recordId")) invalid(formPath, "填报组件只允许配置记录编号");
+    if (form.recordId !== "" && (typeof form.recordId !== "string" || !/^[\p{L}\p{N}_-]{1,128}$/u.test(form.recordId))) invalid(`${formPath}.recordId`, "记录编号格式无效");
+  }, path);
+  if (object.type === "record-form" && (object.pipelineId || object.directBinding || object.sampleData || object.semanticBinding)) invalid(path, "填报组件只支持已保存的数据集");
   for (const key of [
     "color",
     "backgroundColor",

@@ -47,6 +47,7 @@ function DashboardComponentPreviewGraphic({ type, decorationStyle }: Omit<Dashbo
     return <MetricPreview type={type} />;
   }
   if (type === "filter") return <FilterPreview />;
+  if (type === "record-form") return <RecordFormPreview />;
   if (type === "text") return <TextPreview />;
   if (type === "shape") return <ShapePreview />;
   if (type === "decoration") return <DecorationPreview style={decorationStyle ?? "title"} />;
@@ -193,6 +194,13 @@ function MetricPreview({ type }: { type: "value" | "digital-flip" | "progress" |
 
 function FilterPreview() {
   return <PreviewShell variant="filter"><i>全部设备</i><b>⌄</b></PreviewShell>;
+}
+
+function RecordFormPreview() {
+  return <PreviewShell variant="record-form"><svg viewBox="0 0 84 48" aria-hidden="true">
+    <g fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10 8H30M10 23H25" /><rect x="10" y="11" width="64" height="8" rx="2" /><rect x="10" y="26" width="64" height="8" rx="2" /></g>
+    <rect x="49" y="38" width="25" height="7" rx="2" fill="currentColor" />
+  </svg></PreviewShell>;
 }
 
 function TextPreview() {

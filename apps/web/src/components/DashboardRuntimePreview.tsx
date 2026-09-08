@@ -24,6 +24,8 @@ import { translate as tr, type AppLocale } from "../i18n";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 import { dashboardBackgroundStyle } from "./dashboardCanvasStyle";
 import { DashboardNode } from "./DashboardCanvasNode";
+import { DashboardRecordFormContext, type DashboardRecordFormAccess } from "./DashboardRecordForm";
+import { dashboardRecordFormSizing } from "./dashboardRecordFormSizing";
 import { previewSemanticParameter } from "./dashboardSemanticMetrics";
 import { dashboardParameterOrder } from "./dashboardParameterOrder";
 import { downloadDashboardPageData } from "./dashboardPageExport";
@@ -61,6 +63,7 @@ export function DashboardRuntimePreview({
   onNodeInteraction,
   children,
   readOnly = false,
+  writebackAccess,
 }: {
   locale: AppLocale;
   application: ApplicationDocument;
@@ -73,6 +76,7 @@ export function DashboardRuntimePreview({
   connected: boolean;
   children?: ReactNode;
   readOnly?: boolean;
+  writebackAccess?: DashboardRecordFormAccess;
   onSelectPage: (pageId: string) => void;
   onClose: () => void;
   onPublish: () => void;
@@ -174,6 +178,7 @@ export function DashboardRuntimePreview({
   const printStamp = printTime.toLocaleString(locale, { dateStyle: "short", timeStyle: "short" });
   const exportTimeout = tr(locale, "导出超时，请检查页面资源后重试", "Export timed out. Check page resources and retry.");
   return (
+    <DashboardRecordFormContext.Provider value={readOnly ? undefined : writebackAccess}>
     <main className="dashboard-runtime-preview" style={printLayout.style}>
       <style media="print">{`@page { size: A4 ${printLayout.orientation}; margin: 10mm 8mm; @bottom-right { content: counter(page) " / " counter(pages); } }`}</style>
       <header className="dashboard-print-header" aria-hidden="true">
@@ -210,6 +215,7 @@ export function DashboardRuntimePreview({
               top: viewport.offsetY,
               transform: `scale(${viewport.scaleX}, ${viewport.scaleY})`,
               ...dashboardBackgroundStyle(page.appearance),
+              ...dashboardRecordFormSizing(viewport.scaleX, viewport.scaleY),
             }}
           >
             {page.nodes
@@ -403,5 +409,6 @@ export function DashboardRuntimePreview({
       </div>
       {children}
     </main>
+    </DashboardRecordFormContext.Provider>
   );
 }

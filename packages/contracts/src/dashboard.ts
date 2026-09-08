@@ -30,6 +30,7 @@ export type SceneDashboardWidgetType =
   | "table"
   | "scroll-table"
   | "filter"
+  | "record-form"
   | "image"
   | "video"
   | "monitor"
@@ -133,6 +134,8 @@ export interface SceneDashboardWidgetState {
   componentBackgroundImageRepeat?: boolean;
   textColor?: string;
   datasetId?: string;
+  /** 作者运行态固定记录；权限与字段规则只取当前项目已保存的数据集。 */
+  recordForm?: { recordId: string };
   pipelineId?: string;
   directBinding?: DirectBindingSpec;
   sampleData?: import("./dashboardSampleData.js").DashboardSampleData;

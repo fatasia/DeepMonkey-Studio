@@ -412,7 +412,10 @@
 .scene-data-binding-empty { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 48px; padding: 8px; color: #78878e; border: 1px dashed #344249; border-radius: 6px; font-size: 8px; }
 .scene-data-binding-empty.error { color: #dc8a82; border-color: #6b3b38; }
 .scene-data-binding-add { width: 100%; border-style: dashed; color: var(--accent); }
-.dashboard-delete-node { display: inline-flex; height: 30px; align-items: center; justify-content: center; gap: 6px; color: #d58d94; border: 1px solid #56383d; border-radius: 5px; background: #1d1618; font-size: 8px; cursor: pointer; }
+.dashboard-delete-node { display: inline-flex; min-height: 32px; padding: 6px 8px; align-items: center; justify-content: center; gap: 6px; color: var(--text-strong); border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--danger) 8%, var(--surface-1)); font-size: 13px; cursor: pointer; }
+.dashboard-delete-node:hover:not(:disabled) { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, var(--surface-1)); }
+.dashboard-delete-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dashboard-delete-node:disabled { opacity: .55; cursor: not-allowed; }
 .interaction-flow-inspector { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid #293338; }
 .interaction-flow-inspector > header { display: flex; align-items: center; justify-content: space-between; color: #8e9ba1; font-size: 9px; }
 .interaction-flow-inspector > header span { display: flex; align-items: center; gap: 6px; color: #d2aa52; }

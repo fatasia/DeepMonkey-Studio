@@ -3,7 +3,7 @@ import type { DashboardDataWidgetConfig, SceneDashboardWidgetType } from "@bim-s
 import { translate as tr } from "../i18n";
 import { DashboardMediaInspector } from "./DashboardMediaInspector";
 import { UnityResourceInspector } from "./UnityResourceInspector";
-import { DATA_WIDGET_TYPES, DECORATION_ASSETS, dashboardNodeIdentity as nodeIdentity, dataWidgetTypeLabel } from "./dashboardWorkspaceModel";
+import { DATA_WIDGET_TYPES, DECORATION_ASSETS, dashboardNodeIdentity as nodeIdentity, dataWidgetTypeLabel, canSelectDataWidgetType } from "./dashboardWorkspaceModel";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 
 export function DashboardInspectorContent() {
@@ -141,7 +141,7 @@ export function DashboardInspectorContent() {
                 }
               >
                 {DATA_WIDGET_TYPES.map((type) => (
-                  <option key={type} value={type}>
+                  <option key={type} value={type} disabled={!canSelectDataWidgetType(type, selectedNode.widget)} title={!canSelectDataWidgetType(type, selectedNode.widget) ? tr(locale, "先移除不兼容的数据来源", "Remove the incompatible data source first") : undefined}>
                     {dataWidgetTypeLabel(locale, type)}
                   </option>
                 ))}

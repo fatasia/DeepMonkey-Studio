@@ -3,6 +3,7 @@ import { translate as tr } from "../i18n";
 import { DashboardConditionalRulesEditor } from "./DashboardConditionalRulesEditor";
 import { DashboardDataSource } from "./DashboardDataSource";
 import { DashboardDatasetWriteback } from "./DashboardDatasetWriteback";
+import { DashboardRecordFormInspector } from "./DashboardRecordFormInspector";
 import { DashboardLegacyFieldRoles } from "./DashboardLegacyFieldRoles";
 import { DashboardReportFields } from "./DashboardReportFields";
 import { DashboardFieldSlots } from "./DashboardFieldSlots";
@@ -20,6 +21,7 @@ export function DashboardInspectorData() {
     datasets, project, page, selectedNodeIds, writebackAccess, refreshDataset,
   } = useDashboardWorkspace();
   if (!selectedNode) return null;
+  if (inspectorTab === "data" && selectedNode.kind === "data-widget" && selectedNode.widget.type === "record-form") return <DashboardRecordFormInspector key={selectedNode.id} />;
 
   return (
     inspectorTab === "data" &&

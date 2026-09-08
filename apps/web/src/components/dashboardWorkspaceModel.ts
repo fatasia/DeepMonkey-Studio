@@ -39,6 +39,7 @@ export const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = [
   "table",
   "scroll-table",
   "filter",
+  "record-form",
   "image",
   "video",
   "monitor",
@@ -54,7 +55,7 @@ export const DATA_WIDGET_CATEGORIES: Array<{ id: string; zh: string; en: string;
     types: ["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map"],
   },
   { id: "indicator", zh: "指标与表格", en: "Metrics & tables", types: ["value", "digital-flip", "liquid-fill", "progress", "status", "rank", "table", "scroll-table"] },
-  { id: "control", zh: "筛选与内容", en: "Controls & content", types: ["filter", "text", "shape", "decoration"] },
+  { id: "control", zh: "筛选与内容", en: "Controls & content", types: ["filter", "record-form", "text", "shape", "decoration"] },
   { id: "media", zh: "媒体与扩展", en: "Media & extensions", types: ["image", "video", "monitor", "url", "unity", "topology"] },
 ];
 export const DECORATION_ASSETS: Array<{ style: NonNullable<DashboardDataWidgetConfig["decorationStyle"]>; zh: string; en: string }> = [
@@ -100,6 +101,7 @@ export function dataWidgetTypeLabel(locale: AppLocale, type: SceneDashboardWidge
     table: ["明细表", "Table"],
     "scroll-table": ["滚动表格", "Scrolling table"],
     filter: ["筛选器", "Filter"],
+    "record-form": ["填报表单", "Record form"],
     image: ["图片", "Image"],
     video: ["视频", "Video"],
     monitor: ["实时监控", "Monitor"],
@@ -108,6 +110,9 @@ export function dataWidgetTypeLabel(locale: AppLocale, type: SceneDashboardWidge
     topology: ["拓扑", "Topology"],
   };
   return tr(locale, ...labels[type]);
+}
+export function canSelectDataWidgetType(type: SceneDashboardWidgetType, widget: DashboardDataWidgetConfig): boolean {
+  return type !== "record-form" || !(widget.pipelineId || widget.directBinding || widget.sampleData || widget.semanticBinding);
 }
 export const DASHBOARD_RESOLUTION_PRESETS = [
   { id: "fhd", width: 1920, height: 1080, label: "Full HD · 1920 × 1080" },
@@ -189,6 +194,7 @@ export function createDefaultDataWidget(locale: AppLocale, type: SceneDashboardW
     ...(type === "shape" ? { shape: "rounded" as const, content: "", color: "#d4a84f", borderColor: "#f0cd78", borderWidth: 1, backgroundOpacity: 0 } : {}),
     ...(type === "decoration" ? { decorationStyle: "title" as const, content: tr(locale, "看板标题", "Dashboard title"), backgroundOpacity: 0 } : {}),
     ...(type === "filter" ? { options: [tr(locale, "全部", "All"), tr(locale, "正常", "Normal"), tr(locale, "告警", "Alarm")] } : {}),
+    ...(type === "record-form" ? { recordForm: { recordId: "" }, backgroundOpacity: 0 } : {}),
     ...(type === "gauge" || type === "liquid-fill" ? { min: 0, max: 100 } : {}),
     ...(type === "digital-flip" ? { fontSize: 38, fontWeight: 700, textColor: "#eef2f4" } : {}),
     ...(type === "scroll-table" ? { report: { mode: "detail" as const, pageSize: 6 } } : {}),

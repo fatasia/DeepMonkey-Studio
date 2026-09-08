@@ -53,6 +53,7 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
         variables={variables}
         filters={filters}
         connected={connected}
+        {...(controller.writebackAccess ? { writebackAccess: { ...controller.writebackAccess, datasets: controller.datasets, onSaved: controller.refreshDataset } } : {})}
         onFilterChange={onFilterChange}
         onVariableChange={onVariableChange}
         onSelectPage={(pageId) => onSelectPage(pageId, currentView())}
