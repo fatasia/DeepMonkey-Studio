@@ -76,3 +76,4 @@ try {
   }
 } finally { await writeFile(resolve(gate.output, "report.json"), JSON.stringify(report, null, 2)); await gate.close(); }
 console.log(JSON.stringify({ output: gate.output, cases: report.cases.length, passed: report.cases.filter(entry => entry.passed).length }));
+assert.ok(report.cases.length === targets.length * 4 && report.cases.every(entry => entry.passed), "Every requested model must pass both rounds and themes; inspect report.json for retained failures");

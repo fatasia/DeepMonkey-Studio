@@ -91,6 +91,11 @@ export function reduction(before: number, after: number) {
   return Math.max(0, Math.round((1 - after / before) * 100));
 }
 
+export function optimizationSizeMessage(before: number, after: number) {
+  if (after <= before) return `优化完成，体积减少 ${reduction(before, after)}%`;
+  return `优化完成，体积增加 ${Math.round((after / before - 1) * 100)}%`;
+}
+
 export function currentLightmapQuality(options: ModelOptimizationOptions): "draft" | "standard" | "high" | "custom" {
   if (
     options.lightmapResolution === 256 &&
@@ -134,6 +139,7 @@ export function isOptimizerAbortError(reason: unknown) {
 export function localizeOptimizerMessage(locale: AppLocale, message: string) {
   if (locale === "zh-CN") return message;
   if (message.startsWith("优化完成，体积减少 ")) return message.replace("优化完成，体积减少 ", "Optimization complete; size reduced by ");
+  if (message.startsWith("优化完成，体积增加 ")) return message.replace("优化完成，体积增加 ", "Optimization complete; size increased by ");
   const messages: Record<string, string> = {
     "导入 GLB 或内嵌资源的 glTF 开始优化": "Import a GLB or embedded glTF to begin",
     正在分析模型: "Analyzing model",

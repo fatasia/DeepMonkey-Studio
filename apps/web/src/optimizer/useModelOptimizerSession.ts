@@ -3,7 +3,7 @@ import type { ModelRecord, ProjectRecord } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { api } from "../api";
 import { downloadBlob } from "../browserDownload";
-import { optimizerErrorMessage, reduction } from "../components/ModelOptimizerFields";
+import { optimizationSizeMessage, optimizerErrorMessage } from "../components/ModelOptimizerFields";
 import type { ModelFileStatistics, ModelOptimizationOptions, ModelOptimizationResult } from "./modelOptimizer";
 import { convertProjectModelToGlb, isDirectOptimizerInput, optimizedAssetFile, uploadAndConvertForOptimizer, waitForOptimizerModel } from "./modelOptimizerAssets";
 import { useOptimizerTask, type OptimizerTask } from "./useOptimizerTask";
@@ -101,7 +101,7 @@ export function useModelOptimizerSession(locale: AppLocale, project: ProjectReco
       saveReceipt.current = undefined; setShowOptimized(true);
       setMessage(optimized.lightmap
         ? `优化完成，已生成 ${optimized.lightmap.resolution}×${optimized.lightmap.resolution} 光照贴图，覆盖 ${optimized.lightmap.coveredTexels.toLocaleString()} 像素`
-        : `优化完成，体积减少 ${reduction(optimized.before.bytes, optimized.after.bytes)}%`);
+        : optimizationSizeMessage(optimized.before.bytes, optimized.after.bytes));
     }, failed("优化失败，原始文件未修改"));
   }
   function cancelProcessing() {
