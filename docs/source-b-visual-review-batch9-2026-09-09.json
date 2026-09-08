@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "evidence": "test-output/codex-2026-09-05/source-b-review-nOB7fF/report.json",
+  "reviewedBy": "GLM-5.3 visual review",
+  "items": [
+    {
+      "uid": "9a132b8313dc4b4ea58e7d55a1411eec",
+      "status": "review-required",
+      "displayName": "闸阀（白模）",
+      "notes": "手轮、阀杆支架与法兰几何完整但通体白色单材质；与白模闸阀先例同族保持待审。"
+    },
+    {
+      "uid": "9ab26e8a5b1d41c799d1a904de7425b8",
+      "status": "approved",
+      "displayName": "移动式蒸汽锅炉（扫描）",
+      "notes": "两轮双主题多角度亲审：青绿罐体、黑色烟囱、轮组与牵引杆扫描完整，历史设备质感真实；外观展示，不承诺压力容器认证。",
+      "category": "动力设备",
+      "tags": [
+        "蒸汽锅炉",
+        "历史设备",
+        "扫描",
+        "轮式"
+      ],
+      "thumbnail": "r2-dark-9ab26e8a5b1d41c799d1a904de7425b8-isometric.png"
+    },
+    {
+      "uid": "9d0d9bd35e1744a4a7b258299c0cffaa",
+      "status": "review-required",
+      "displayName": "蒸汽朋克管件集合",
+      "notes": "铜/黑两组多件管件散排集合，单卡无法呈现单一管件；与集合包同族保持待审，需拆分后逐件入库。"
+    },
+    {
+      "uid": "9d0f4497b2b5465baba2cd7374f9fb0a",
+      "status": "approved",
+      "displayName": "多级变速齿轮箱（教学）",
+      "notes": "两轮双主题多角度亲审：橙色框架与多色多级齿轮系完整，教学机构风格统一；机构示意资产，不冒充真实变速箱或传动精度。",
+      "category": "机械传动",
+      "tags": [
+        "齿轮箱",
+        "变速",
+        "教学",
+        "机构示意"
+      ],
+      "thumbnail": "r2-dark-9d0f4497b2b5465baba2cd7374f9fb0a-isometric.png"
+    },
+    {
+      "uid": "9d7456f25298471aa7b736f2e1c3ffd9",
+      "status": "review-required",
+      "displayName": "Ju 88 军机（军徽风险）",
+      "notes": "机身涂装含纳粹德军条形机徽，军事标志展示存在政治与合规风险；按品牌与标识红线不进入公共包。"
+    },
+    {
+      "uid": "9da83b8f01804daeb3a4ec6e1129726d",
+      "status": "approved",
+      "displayName": "对夹蝶阀（蜗轮传动）",
+      "notes": "两轮双主题多角度亲审：蓝色对夹阀体、衬胶阀座、蜗轮箱与手轮完整；不宣称口径、压力或标准符合性认证。",
+      "category": "管网与附件",
+      "tags": [
+        "蝶阀",
+        "对夹",
+        "蜗轮",
+        "手轮"
+      ],
+      "thumbnail": "r2-dark-9da83b8f01804daeb3a4ec6e1129726d-isometric.png"
+    },
+    {
+      "uid": "9e388e7102a247bcafc28b9ee70ca7f2",
+      "status": "approved",
+      "displayName": "辊筒输送段（深蓝）",
+      "notes": "两轮双主题多角度亲审：深蓝机架与银色辊筒对比清晰，支腿完整；模块化输送段外观，不承诺承载能力或接口标准。",
+      "category": "输送与物流",
+      "tags": [
+        "辊筒",
+        "输送",
+        "深蓝",
+        "低多边形"
+      ],
+      "thumbnail": "r2-dark-9e388e7102a247bcafc28b9ee70ca7f2-isometric.png"
+    },
+    {
+      "uid": "a087cc79ee4a4a159c43f7f72c99dcec",
+      "status": "approved",
+      "displayName": "教育机械臂（3D 打印）",
+      "notes": "两轮双主题多角度亲审：橙色打印臂架、底座、舵机与拉线传动完整；开源教育机械臂外观，不承诺重复定位精度或负载。",
+      "category": "自动化与机器人",
+      "tags": [
+        "机械臂",
+        "教育",
+        "开源",
+        "3D打印"
+      ],
+      "thumbnail": "r2-dark-a087cc79ee4a4a159c43f7f72c99dcec-isometric.png"
+    },
+    {
+      "uid": "a10a6011334e4d11a7023d67705ac1d4",
+      "status": "approved",
+      "displayName": "工业管路组合段（PBR）",
+      "notes": "两轮双主题多角度亲审：锈蚀干管、弯头、支架、红色手轮阀与蓝色段连接完整，PBR 质感真实；组合段为一体化结构非散件集合，不承诺管径或压力等级。",
+      "category": "管网与附件",
+      "tags": [
+        "管路",
+        "PBR",
+        "锈蚀",
+        "支架"
+      ],
+      "thumbnail": "r2-dark-a10a6011334e4d11a7023d67705ac1d4-isometric.png"
+    },
+    {
+      "uid": "a1b0b8e8f3764560a730799218dd539d",
+      "status": "approved",
+      "displayName": "冷却塔（低多边形）",
+      "notes": "两轮双主题多角度亲审：双曲线塔体与进风缘完整，低多边形深灰风格统一；风格化外观，不承诺热工参数或结构计算。",
+      "category": "动力设备",
+      "tags": [
+        "冷却塔",
+        "低多边形",
+        "风格化"
+      ],
+      "thumbnail": "r2-dark-a1b0b8e8f3764560a730799218dd539d-isometric.png"
+    },
+    {
+      "uid": "a35fc24f512e448ebed403beffe09c0d",
+      "status": "review-required",
+      "displayName": "现代武器集合",
+      "notes": "数十件枪械模型散排集合，与工业数字孪生用途无关且为敏感物品；不进入公共包。"
+    },
+    {
+      "uid": "a526c3dac7e6449caca79fc914b4493c",
+      "status": "approved",
+      "displayName": "做旧金属机柜",
+      "notes": "两轮双主题多角度亲审：柜体、网格门、锁扣、铰链与锈蚀贴图完整精致；外观模型，不承诺防护等级或内部结构。",
+      "category": "电气设备",
+      "tags": [
+        "机柜",
+        "做旧",
+        "网格门",
+        "锈蚀"
+      ],
+      "thumbnail": "r2-dark-a526c3dac7e6449caca79fc914b4493c-isometric.png"
+    }
+  ]
+}

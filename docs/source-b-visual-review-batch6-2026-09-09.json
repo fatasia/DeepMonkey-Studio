@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "evidence": "test-output/codex-2026-09-05/source-b-review-sLZzLp/report.json",
+  "reviewedBy": "GLM-5.3 visual review",
+  "items": [
+    {
+      "uid": "5e9b609c353f433498e66920cf5e688d",
+      "status": "review-required",
+      "displayName": "双曲线冷却塔",
+      "notes": "两轮目视：双曲线塔体、喉口与底部进风结构完整；但首轮深色组记录一次 X4122 驱动浮点精度警告，与铁塔/钢厂同族处理保持待审，零警告门槛不豁免。"
+    },
+    {
+      "uid": "5f94fb035fa74f43abda3ada8f0a719e",
+      "status": "approved",
+      "displayName": "木面工作台",
+      "notes": "两轮双主题多角度亲审：木纹桌面与白色几何桌腿完整干净，取景居中；车间/办公场景道具，不冒充防静电工业工作台。",
+      "category": "场景道具",
+      "tags": [
+        "工作台",
+        "木纹",
+        "金属腿",
+        "车间"
+      ],
+      "thumbnail": "r2-dark-5f94fb035fa74f43abda3ada8f0a719e-isometric.png"
+    },
+    {
+      "uid": "6005b211155d4abd8bf03601bc92a8a6",
+      "status": "approved",
+      "displayName": "排风机（做旧圆筒）",
+      "notes": "两轮双主题多角度亲审：圆筒机壳、正面格栅与污渍贴图完整，做旧质感统一；仅外观，不承诺风量或防护等级。",
+      "category": "暖通与工艺设备",
+      "tags": [
+        "排风机",
+        "圆筒",
+        "格栅",
+        "做旧"
+      ],
+      "thumbnail": "r2-dark-6005b211155d4abd8bf03601bc92a8a6-isometric.png"
+    },
+    {
+      "uid": "60806cf488104e25b8aa44c7cefb67ad",
+      "status": "review-required",
+      "displayName": "塔楼手绘平面板",
+      "notes": "实为一张贴着手绘塔楼素描的平面板，不是立体建筑模型；不能作为三维建筑资产发布。"
+    },
+    {
+      "uid": "6241de863511445684a917b5f9572565",
+      "status": "approved",
+      "displayName": "管材堆（含管件）",
+      "notes": "两轮双主题多角度亲审：绿色管材堆、单管与连接管件分组清晰，低多边形风格干净；管材存放场景道具，不承诺管径规格或压力等级。",
+      "category": "管网与附件",
+      "tags": [
+        "管材",
+        "堆放",
+        "低多边形",
+        "管件"
+      ],
+      "thumbnail": "r2-dark-6241de863511445684a917b5f9572565-isometric.png"
+    },
+    {
+      "uid": "633eb98510a74a3d8f484530b32a7122",
+      "status": "review-required",
+      "displayName": "斗式提升机（白模）",
+      "notes": "机头、机筒与底座几何完整但白色单材质、细高取景主体占比小；与白模同族保持待审。"
+    },
+    {
+      "uid": "647a6eb8ef0049de892cfacd79221c3a",
+      "status": "review-required",
+      "displayName": "工厂管件套件（多件集合）",
+      "notes": "弯头/三通/管段/卡箍等 8 件散排集合，单卡无法呈现单一管件；需拆分为独立零件或明确套件用途后复核。"
+    },
+    {
+      "uid": "6500a90ab1dc4d489385026448220157",
+      "status": "approved",
+      "displayName": "壁式排风扇",
+      "notes": "两轮双主题多角度亲审：方形混凝土框、圆形格栅、防护轮辐与叶轮完整，贴图干净；仅外观，不承诺风量或噪音指标。",
+      "category": "暖通与工艺设备",
+      "tags": [
+        "排风扇",
+        "壁式",
+        "格栅",
+        "叶轮"
+      ],
+      "thumbnail": "r2-dark-6500a90ab1dc4d489385026448220157-isometric.png"
+    },
+    {
+      "uid": "65c754a25e13457cbc45b2522fa0dba8",
+      "status": "review-required",
+      "displayName": "做旧木箱（与名称不符）",
+      "notes": "来源标题为压力表，实际渲染主体是封闭做旧木箱，仪表不可见；展示与名称不符，需开箱版本或更名后复核。"
+    },
+    {
+      "uid": "679f98c58e9d4b88986a637bdd31f3dc",
+      "status": "approved",
+      "displayName": "金属闸门（轮盘启闭）",
+      "notes": "两轮双主题多角度亲审：深红门体、中央轮盘、丝杆与导轨紧固件完整，质感统一；外观模型，不承诺水密等级或启闭力矩。",
+      "category": "管网与附件",
+      "tags": [
+        "闸门",
+        "轮盘",
+        "丝杆",
+        "做旧"
+      ],
+      "thumbnail": "r2-dark-679f98c58e9d4b88986a637bdd31f3dc-isometric.png"
+    },
+    {
+      "uid": "690288b8a5794056820368a542fada1a",
+      "status": "review-required",
+      "displayName": "纪念风扇（主体过小）",
+      "notes": "场景几乎全黑、主体物件占比过小不可辨（含地面聚光贴片）；需重设取景或独立出模型后复核，不改原GLB。"
+    },
+    {
+      "uid": "6a2b26c8e2c14ba299cd96d73e8bb516",
+      "status": "approved",
+      "displayName": "红砖厂区（扫描场景）",
+      "notes": "两轮双主题多角度亲审：红砖主楼、场地、堆场与植被扫描完整，整体质量高；大型场景外观，不承诺可钻取楼层、BIM 构件或尺寸标定。",
+      "category": "工业建筑",
+      "tags": [
+        "厂区",
+        "扫描",
+        "红砖",
+        "场景"
+      ],
+      "thumbnail": "r2-dark-6a2b26c8e2c14ba299cd96d73e8bb516-isometric.png"
+    }
+  ]
+}

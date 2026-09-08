@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "evidence": "test-output/codex-2026-09-05/source-b-review-fkX6uD/report.json",
+  "reviewedBy": "GLM-5.3 visual review",
+  "items": [
+    {
+      "uid": "c87d216575f34c7cb3a4ecb23317f335",
+      "status": "review-required",
+      "displayName": "相机磁吸支架（白模含品牌名）",
+      "notes": "打印支架几何完整但通体白色单材质，且来源标题含 Hikmicro 品牌型号；白模与品牌名双重待审。"
+    },
+    {
+      "uid": "c97cd4e234ce4a319abceb3f8ed5a20c",
+      "status": "approved",
+      "displayName": "落地扇（黑色）",
+      "notes": "两轮双主题多角度亲审：网罩、叶轮、立柱与底座结构完整清晰，黑色为产品本色；外观模型，不承诺风量或摇头功能。",
+      "category": "暖通与工艺设备",
+      "tags": [
+        "落地扇",
+        "黑色",
+        "扫描",
+        "网罩"
+      ],
+      "thumbnail": "r2-dark-c97cd4e234ce4a319abceb3f8ed5a20c-isometric.png"
+    },
+    {
+      "uid": "c9a8e084514a4a38b9b13778129ad8b9",
+      "status": "approved",
+      "displayName": "法兰蝶阀（绿体蜗轮）",
+      "notes": "两轮双主题多角度亲审：绿色阀体、双法兰、阀盘与蜗轮箱手轮完整精致；不宣称口径、压力或标准符合性认证。",
+      "category": "管网与附件",
+      "tags": [
+        "蝶阀",
+        "法兰",
+        "蜗轮",
+        "绿色阀体"
+      ],
+      "thumbnail": "r2-dark-c9a8e084514a4a38b9b13778129ad8b9-isometric.png"
+    },
+    {
+      "uid": "c9f71e367c5b4bb38277a9cf3640c304",
+      "status": "approved",
+      "displayName": "机械通风冷却塔（剖视）",
+      "notes": "两轮双主题多角度亲审：外壳、双层填料、热水槽与顶部风机完整，剖视呈现内部结构；外观模型，不承诺热工参数或结构计算。",
+      "category": "暖通与工艺设备",
+      "tags": [
+        "冷却塔",
+        "逆流",
+        "填料",
+        "剖视"
+      ],
+      "thumbnail": "r2-dark-c9f71e367c5b4bb38277a9cf3640c304-isometric.png"
+    },
+    {
+      "uid": "c9faf20accdf4d938f80fabec09a1915",
+      "status": "review-required",
+      "displayName": "女巫坩埚（用途不符）",
+      "notes": "魔法坩埚与火堆游戏道具，与工业数字孪生素材库用途不符；不进入公共包。"
+    },
+    {
+      "uid": "ce9ee6bcae38492e9794de7d59984dc6",
+      "status": "approved",
+      "displayName": "压力表传动教学件",
+      "notes": "两轮双主题多角度亲审：弧形齿条、齿轮副与指针传动关系清晰，教学配色统一；机构示意资产，不冒充真实仪表。",
+      "category": "仪表与传感",
+      "tags": [
+        "压力表",
+        "传动",
+        "教学",
+        "低多边形"
+      ],
+      "thumbnail": "r2-dark-ce9ee6bcae38492e9794de7d59984dc6-isometric.png"
+    },
+    {
+      "uid": "cea67369ae50485c9f06ea44cb608b92",
+      "status": "review-required",
+      "displayName": "手轮压盘件（结构不完整）",
+      "notes": "仅手轮、螺杆与压盘三件，疑为阀门部件而非完整阀门；按“几何存在不放行”先例保持待审。"
+    },
+    {
+      "uid": "cf52adb6bdb34446b0a63129740acb16",
+      "status": "approved",
+      "displayName": "CNC 龙门工作台（示意）",
+      "notes": "两轮双主题多角度亲审：龙门横梁、主轴头、台面与床身结构完整，彩色教学风格统一；机构示意，不承诺加工精度或行程参数。",
+      "category": "产线与工艺",
+      "tags": [
+        "CNC",
+        "龙门",
+        "工作台",
+        "教学风格"
+      ],
+      "thumbnail": "r2-dark-cf52adb6bdb34446b0a63129740acb16-isometric.png"
+    },
+    {
+      "uid": "d00a81d08b1f401ea3b889f668e7397b",
+      "status": "review-required",
+      "displayName": "输送机段（过简偏暗）",
+      "notes": "仅一个盒体与深色带面，结构过简、整体偏暗且无可辨细节；保持待审。"
+    },
+    {
+      "uid": "d0cc69eb28f34f22be33e25e62245979",
+      "status": "approved",
+      "displayName": "相机伺服云台",
+      "notes": "两轮双主题多角度亲审：金属舵机、红色支架、丝杆与轴承组件完整，质感精致；外观模型，不承诺扭矩或定位精度。",
+      "category": "自动化与机器人",
+      "tags": [
+        "舵机",
+        "云台",
+        "丝杆",
+        "金属"
+      ],
+      "thumbnail": "r2-dark-d0cc69eb28f34f22be33e25e62245979-isometric.png"
+    },
+    {
+      "uid": "d186e595cad0409697f49beec8757585",
+      "status": "approved",
+      "displayName": "红色手轮阀门件",
+      "notes": "两轮双主题多角度亲审：红色手轮、螺杆、压紧螺母与底座完整，质感真实；来源标题为游戏梗，展示名保持中性通用件，不冒充完整阀门。",
+      "category": "管网与附件",
+      "tags": [
+        "手轮",
+        "阀门件",
+        "红色",
+        "通用件"
+      ],
+      "thumbnail": "r2-dark-d186e595cad0409697f49beec8757585-isometric.png"
+    },
+    {
+      "uid": "d30366ad73af49f6b7279923fe89faee",
+      "status": "approved",
+      "displayName": "科幻装配线舱段（风格化）",
+      "notes": "两轮双主题多角度亲审：半透明罩、格栅、舱口与管线细节完整，风格化配色统一；游戏风格产线段，不冒充真实工艺设备。",
+      "category": "产线与工艺",
+      "tags": [
+        "装配线",
+        "科幻",
+        "风格化",
+        "舱段"
+      ],
+      "thumbnail": "r2-dark-d30366ad73af49f6b7279923fe89faee-isometric.png"
+    }
+  ]
+}

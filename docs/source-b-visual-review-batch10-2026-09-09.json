@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "evidence": "test-output/codex-2026-09-05/source-b-review-jM4nc9/report.json",
+  "reviewedBy": "GLM-5.3 visual review",
+  "items": [
+    {
+      "uid": "add0f902b9164718bd0540e88bf9927e",
+      "status": "review-required",
+      "displayName": "加油机（虚构品牌涂装）",
+      "notes": "两轮目视：机身、油枪与顶棚完整，涂装为虚构品牌；但首轮深色组记录一次 X4122 驱动浮点精度警告，同族处理保持待审，零警告门槛不豁免。"
+    },
+    {
+      "uid": "ae2d3703324e4178a0a860c7883d2b0c",
+      "status": "review-required",
+      "displayName": "电机支架（白模）",
+      "notes": "折弯支架几何极简且通体白色单材质，与白模同族保持待审。"
+    },
+    {
+      "uid": "afef128e3fcf4aa4ae337e25698aa1dd",
+      "status": "approved",
+      "displayName": "厂用电气箱组（高压警示）",
+      "notes": "两轮双主题多角度亲审：双箱体、通风风扇、高压警告标签、天线与做旧污渍完整；仅外观，不承诺防护等级或内部电气结构。",
+      "category": "电气设备",
+      "tags": [
+        "电气箱",
+        "高压警示",
+        "风扇",
+        "做旧"
+      ],
+      "thumbnail": "r2-dark-afef128e3fcf4aa4ae337e25698aa1dd-isometric.png"
+    },
+    {
+      "uid": "b13c997914cb4db591f84e777564655f",
+      "status": "approved",
+      "displayName": "斜坡输送机（低多边形）",
+      "notes": "两轮双主题多角度亲审：斜段+平段、支架与带面结构完整干净；模块化输送段外观，不承诺承载能力或接口标准。",
+      "category": "输送与物流",
+      "tags": [
+        "输送机",
+        "斜坡",
+        "低多边形",
+        "绿色"
+      ],
+      "thumbnail": "r2-dark-b13c997914cb4db591f84e777564655f-isometric.png"
+    },
+    {
+      "uid": "b5a77ed450b64dac9141da87fc7d4c64",
+      "status": "review-required",
+      "displayName": "复古加油机（历史品牌字样）",
+      "notes": "做旧加油机造型完整，但涂装可辨识 Fire-Chief（Texaco 历史汽油品牌）字样；与 Shell 先例同族按品牌红线待审，需中性涂装衍生版本后复核，不改原GLB。"
+    },
+    {
+      "uid": "badf50e9d6ea47ac814e1cae037799ed",
+      "status": "approved",
+      "displayName": "矿山输送系统（模块套件）",
+      "notes": "两轮双主题多角度亲审：桁架带式主体完整，驱动单元与护罩等套件件并列展示，主体占比清晰；模块化套件外观，不承诺承载能力或接口标准。",
+      "category": "输送与物流",
+      "tags": [
+        "输送机",
+        "矿山",
+        "模块化",
+        "套件"
+      ],
+      "thumbnail": "r2-dark-badf50e9d6ea47ac814e1cae037799ed-isometric.png"
+    },
+    {
+      "uid": "bb01593d244845b3a7e375affff559ad",
+      "status": "review-required",
+      "displayName": "蝶阀剖视（过度简化）",
+      "notes": "蓝黄配色剖视但仅阀体板与阀盘两三个组件，不能表达蝶阀完整特征；与过度简化闸阀先例同族保持待审。"
+    },
+    {
+      "uid": "bd3e25de9df04f80ab5e4989c6f79e69",
+      "status": "review-required",
+      "displayName": "Tec-9 冲锋枪（敏感物品）",
+      "notes": "枪械模型与工业数字孪生用途无关且为敏感物品；不进入公共包。"
+    },
+    {
+      "uid": "c0782a1e39734a16aa9f0609533004d0",
+      "status": "review-required",
+      "displayName": "黑色雕花线脚（不可辨）",
+      "notes": "建筑雕花线脚通体近黑、细节难辨，且与工业数字孪生用途关联弱；保持待审。"
+    },
+    {
+      "uid": "c2cf485ab7ca42c78807e72d8952cc5a",
+      "status": "approved",
+      "displayName": "托盘货堆扫描（含搬运车）",
+      "notes": "两轮双主题多角度亲审：托盘、纸箱堆与手动搬运车扫描完整真实，底部地台不遮挡主体；仓库场景道具，不承诺箱内货物或尺寸标定。",
+      "category": "输送与物流",
+      "tags": [
+        "托盘",
+        "纸箱",
+        "搬运车",
+        "扫描"
+      ],
+      "thumbnail": "r2-dark-c2cf485ab7ca42c78807e72d8952cc5a-isometric.png"
+    },
+    {
+      "uid": "c35555ccb8334c6d8f689db6aee356a6",
+      "status": "approved",
+      "displayName": "激光切割减速面板（教学）",
+      "notes": "两轮双主题多角度亲审：红色切割面板与黄绿蓝多色齿轮机构完整，教育演示风格统一；机构示意资产，不冒充真实减速器。",
+      "category": "机械传动",
+      "tags": [
+        "齿轮",
+        "减速",
+        "激光切割",
+        "教学"
+      ],
+      "thumbnail": "r2-dark-c35555ccb8334c6d8f689db6aee356a6-isometric.png"
+    },
+    {
+      "uid": "c6921a40c1294f058abd56ef4b371cc5",
+      "status": "approved",
+      "displayName": "法兰闸阀（DIN-EN 风格）",
+      "notes": "两轮双主题多角度亲审：阀体、双法兰、阀杆支架与黑色手轮完整，法兰金属面与白阀体有材质对比；来源标题含 DIN-EN 标准字样，展示名不宣称标准符合性认证。",
+      "category": "管网与附件",
+      "tags": [
+        "闸阀",
+        "法兰",
+        "手轮",
+        "DIN-EN"
+      ],
+      "thumbnail": "r2-dark-c6921a40c1294f058abd56ef4b371cc5-isometric.png"
+    }
+  ]
+}
