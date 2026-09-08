@@ -114,7 +114,9 @@ function createItems(kind: BuiltInAssetKind, locale: AppLocale): BuiltInItem[] {
       description: text.description,
       badge,
       meta: tr(locale, `${frame.width} × ${frame.height} · 可绑定数据`, `${frame.width} × ${frame.height} · Data-ready`),
-      preview: <DashboardComponentPreview type={preset.widget.type ?? "value"} preview={preset.preview} {...(preset.widget.decorationStyle ? { decorationStyle: preset.widget.decorationStyle } : {})} />,
+      // 缩略图必须用 preset.type（顶层合同字段）；widget.type 不在预设工厂写入范围，
+      // 误读会全部静默兜底成指标卡，156 个预设缩略图因此变成同一张。
+      preview: <DashboardComponentPreview type={preset.type} preview={preset.preview} {...(preset.widget.decorationStyle ? { decorationStyle: preset.widget.decorationStyle } : {})} />,
     });
   });
   if (kind === "template") return DASHBOARD_TEMPLATES.map((template) => item({

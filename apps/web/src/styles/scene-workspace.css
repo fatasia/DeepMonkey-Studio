@@ -21,8 +21,8 @@
 .workspace-breadcrumb { display:flex; align-items:center; gap:7px; min-width:0; max-width:260px; height:34px; padding:0 10px; color:#dfe5e8; border:1px solid var(--line); border-radius:7px; background:var(--panel-2); font-size:11px; }
 .workspace-breadcrumb strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .workspace-breadcrumb span,.workspace-breadcrumb em { color:#77848b; font-style:normal; white-space:nowrap; }
-.topbar-actions { display: flex; min-width: 0; flex: 0 1 auto; justify-content: flex-start; gap: 5px; margin-left: auto; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-.topbar-actions::-webkit-scrollbar { display: none; }
+/* 顶栏动作区不可裁剪：更多/导出等下弹弹层从这里溢出，滚动兜底由窄屏断点的标签收纳承担。 */
+.topbar-actions { display: flex; min-width: 0; flex: 0 1 auto; justify-content: flex-start; gap: 5px; margin-left: auto; overflow: visible; }
 .topbar-actions > * { flex: 0 0 auto; }
 .topbar-actions > .button,.topbar-actions > .export-menu > .button { height: 32px; padding: 0 9px; gap: 5px; font-size: 10px; line-height: 1; white-space: nowrap; }
 .viewer-scene-title { display: flex; align-items: center; gap: 12px; min-width: 0; }

@@ -9,7 +9,7 @@ import { convertProjectModelToGlb, isDirectOptimizerInput, optimizedAssetFile, u
 import { useOptimizerTask, type OptimizerTask } from "./useOptimizerTask";
 import { modelOptimizationCredit } from "./modelOptimizationCredit";
 
-interface Source { file: File; url: string; statistics: ModelFileStatistics; model?: ModelRecord }
+interface Source { file: File; url: string; statistics: ModelFileStatistics; converted: boolean; model?: ModelRecord }
 interface Result extends ModelOptimizationResult { url: string; fingerprint: string; savedModelId?: string }
 interface SaveReceipt { result: Result; upload: Promise<ModelRecord> }
 
@@ -45,11 +45,11 @@ export function useModelOptimizerSession(locale: AppLocale, project: ProjectReco
   function failed(label: string) {
     return (reason: unknown) => { setError(optimizerErrorMessage(reason, locale)); setMessage(label); };
   }
-  async function loadPreparedFile(file: File, current: OptimizerTask, model?: ModelRecord) {
+  async function loadPreparedFile(file: File, current: OptimizerTask, model?: ModelRecord, converted = false) {
     current.assertCurrent(); setMessage("正在分析模型");
     const statistics = await current.worker().inspect(file);
     current.assertCurrent();
-    setSource({ file, statistics, url: URL.createObjectURL(file), ...(model ? { model } : {}) });
+    setSource({ file, statistics, converted, url: URL.createObjectURL(file), ...(model ? { model } : {}) });
     setRobotSource(undefined);
     setResult(undefined); saveReceipt.current = undefined; setShowOptimized(false);
     setMessage("模型已载入，可调整参数后开始优化");
@@ -73,13 +73,13 @@ export function useModelOptimizerSession(locale: AppLocale, project: ProjectReco
         if (!model?.manifest?.robot) throw new Error("机器人资源缺少关节描述");
         loadRobotSource(model);
       }
-      else if (isDirectOptimizerInput(file)) await loadPreparedFile(file, current);
+      else if (isDirectOptimizerInput(file)) await loadPreparedFile(file, current, undefined, false);
       else {
         if (!project) throw new Error("请先选择项目，其他格式需要通过项目转换服务处理");
         serverWork.current = true;
         const converted = await uploadAndConvertForOptimizer(project.id, file, progress(current), current.signal);
         current.assertCurrent(); onProjectChange?.(converted.project);
-        await loadPreparedFile(converted.file, current, converted.sourceModel);
+        await loadPreparedFile(converted.file, current, converted.sourceModel, true);
       }
     }, failed("模型导入或转换失败，已载入模型保持不变"), true);
   }
@@ -88,7 +88,8 @@ export function useModelOptimizerSession(locale: AppLocale, project: ProjectReco
       setError(undefined); serverWork.current = false;
       if (model.manifest?.robot) { loadRobotSource(model); return; }
       const file = await convertProjectModelToGlb(model, progress(current), current.signal);
-      await loadPreparedFile(file, current, model);
+      // glb 项目模型直接读原始字节，未发生格式转换；其余格式经 viewer 重导出才算转换。
+      await loadPreparedFile(file, current, model, model.format !== "glb");
     }, failed("项目模型转换失败，已载入模型保持不变"), true);
   }
   async function runOptimization() {
@@ -135,6 +136,7 @@ export function useModelOptimizerSession(locale: AppLocale, project: ProjectReco
   return {
     file: source?.file, sourceModel: source?.model, sourceUrl: source?.url, optimizedUrl: result?.url,
     before: source?.statistics, after: result?.after, lightmapResult: result?.lightmap, output: result?.binary,
+    hasConverted: source?.converted ?? false,
     selectedProjectModelId: robotSource?.id ?? source?.model?.id ?? "", savedModelId: result?.savedModelId,
     robotSource,
     showOptimized, setShowOptimized, busy: task.busy, message, error, resultOutdated,

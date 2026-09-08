@@ -73,7 +73,6 @@
   .app-shell .topbar-actions {
     flex: 0 0 auto;
     margin-left: auto;
-    overflow: visible;
   }
 
   .app-shell .topbar-actions > :is(.topbar-publish-action, .topbar-save-action) {

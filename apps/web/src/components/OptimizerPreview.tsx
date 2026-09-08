@@ -7,7 +7,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { CompatibleGLTFLoader as GLTFLoader } from "../viewer/CompatibleGLTFLoader";
 import type { BakeLightState } from "../optimizer/modelOptimizer";
-import type { AppLocale } from "../i18n";
+import { translate as tr, type AppLocale } from "../i18n";
 import { captureModelThumbnail } from "../optimizer/captureModelThumbnail";
 import { OptimizerPreviewActions } from "./OptimizerPreviewActions";
 import { disposeOptimizerPreview } from "../optimizer/disposeOptimizerPreview";
@@ -62,6 +62,8 @@ export function OptimizerPreview({
 }: OptimizerPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<OptimizerPreviewRuntime | undefined>(undefined);
+  // 切换原始/优化结果时保留用户轨道视角：优化不改变几何包围盒，恢复同一相机是安全的。
+  const cameraStateRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | undefined>(undefined);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const propsRef = useRef({ bakeEnabled, comparisonMode, shadows, reflections, ambient, ambientColor, lights, selectedLightId, transformMode, onSelectLight, onUpdateLight });
   propsRef.current = { bakeEnabled, comparisonMode, shadows, reflections, ambient, ambientColor, lights, selectedLightId, transformMode, onSelectLight, onUpdateLight };
@@ -132,6 +134,12 @@ export function OptimizerPreview({
         runtime.center.copy(center);
         runtime.radius = Math.max(size * 0.5, 1);
         frameOptimizerCamera(runtime);
+        const savedCamera = cameraStateRef.current;
+        if (savedCamera) {
+          camera.position.copy(savedCamera.position);
+          controls.target.copy(savedCamera.target);
+          controls.update();
+        }
         syncOptimizerPreviewLights(runtime, propsRef.current);
         setLoadState("ready");
       })
@@ -169,6 +177,8 @@ export function OptimizerPreview({
       disposed = true;
       cancelAnimationFrame(frame);
       resize.disconnect();
+      // 卸载前记住视角，下一个 url 的 effect 挂载后恢复，避免切视图时相机被重置。
+      cameraStateRef.current = { position: camera.position.clone(), target: controls.target.clone() };
       controls.dispose();
       transform.dispose();
       dracoLoader.dispose();
@@ -193,7 +203,9 @@ export function OptimizerPreview({
       <OptimizerPreviewActions key={url} locale={locale} ready={loadState === "ready"}
         onFit={() => {
           const runtime = runtimeRef.current;
-          if (runtime) frameOptimizerCamera(runtime);
+          if (!runtime) return;
+          frameOptimizerCamera(runtime);
+          cameraStateRef.current = { position: runtime.camera.position.clone(), target: runtime.controls.target.clone() };
         }}
         onCapture={() => {
           const runtime = runtimeRef.current;
@@ -204,7 +216,7 @@ export function OptimizerPreview({
       {loadState !== "ready" && (
         <div className={`optimizer-preview-state ${loadState}`}>
           <LoaderCircle className={loadState === "loading" ? "spin" : ""} size={18} />
-          {loadState === "loading" ? "正在载入预览" : "预览载入失败，请检查导出的 GLB"}
+          {loadState === "loading" ? tr(locale, "正在载入预览", "Loading preview") : tr(locale, "预览载入失败，请检查导出的 GLB", "Preview failed to load; check the exported GLB")}
         </div>
       )}
     </div>

@@ -93,6 +93,10 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
         ? sceneGridCloseupOpacity(this.camera.position.distanceTo(this.orbit.target)) : 1;
     }
     this.emitCameraChange();
+    // 渲染前先把待提交的视口尺寸应用掉。setSize 会清空绘图缓冲，若等到渲染之后再执行
+    // （ResizeObserver 排定的下一帧），本帧 paint 出的就是被清空的画布——脚本编辑器分屏
+    // 拖动时表现为 3D 视口持续闪烁。尺寸未变化时 resize 内部直接早退，每帧开销可忽略。
+    this.resize();
     this.renderer.info.reset();
     if (!this.xrActive && this.needsPostProcessing() && this.postProcessing) this.postProcessing.render(delta);
     else this.renderer.render(this.scene, this.camera);

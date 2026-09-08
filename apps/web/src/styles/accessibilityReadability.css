@@ -14,8 +14,13 @@
 
 .data-center-page :is(button, input, select, textarea),
 .vision-page :is(button, input, select, textarea),
-.operations-page :is(button, input, select, textarea) {
+.operations-page :is(button, input, select, textarea),
+.optimizer-page :is(button, input, select, textarea) {
   font-size: 12px !important;
+}
+
+.optimizer-page :is(label, output, p) {
+  font-size: 11px !important;
 }
 
 .data-center-page :is(small, label, code, em),

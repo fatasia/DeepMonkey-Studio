@@ -51,7 +51,8 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [options, setOptions] = useState(DEFAULT_OPTIONS);
-  const { file, robotSource, optimizedUrl, before, after, lightmapResult, output, showOptimized, setShowOptimized, busy, message, error, selectedProjectModelId, savedModelId, resultOutdated, previewUrl, comparisonMode, importFile, importProjectModel, runOptimization, cancelProcessing, exportGlb, saveToProjectAssets } = useModelOptimizerSession(locale, project, options, onProjectChange, requestedModelId);
+  const [dragOver, setDragOver] = useState(false);
+  const { file, robotSource, optimizedUrl, before, after, lightmapResult, output, showOptimized, setShowOptimized, busy, message, error, selectedProjectModelId, savedModelId, resultOutdated, previewUrl, comparisonMode, hasConverted, importFile, importProjectModel, runOptimization, cancelProcessing, exportGlb, saveToProjectAssets } = useModelOptimizerSession(locale, project, options, onProjectChange, requestedModelId);
   const [selectedBakeLightId, setSelectedBakeLightId] = useState(DEFAULT_BAKE_LIGHTS[0]?.id);
   const [bakeTransformMode, setBakeTransformMode] = useState<BakeTransformMode>("translate");
   const [previewShadows, setPreviewShadows] = useState(false);
@@ -66,11 +67,12 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
   if (robotSource && project) return <RobotAssetWorkspace key={robotSource.id} locale={locale} model={robotSource} project={project} onBack={onBack} onImport={importFile} importBusy={busy} importError={error} onCancelImport={cancelProcessing} onProjectChange={onProjectChange} onViewAssets={onViewAssets} onReturnToScene={onReturnToScene} />;
   return (
     <div className={`optimizer-page${onReturnToScene ? " with-scene-return" : ""}`}>
-      <ModelOptimizerHeader locale={locale} onBack={onBack} onViewAssets={() => onViewAssets?.(savedModelId ?? selectedProjectModelId)} onImport={() => inputRef.current?.click()} onDownload={exportGlb} onSave={() => void saveToProjectAssets()} canExport={Boolean(output && !resultOutdated && !busy)} canSave={Boolean(output && !resultOutdated && project && !busy && !savedModelId)} saved={Boolean(savedModelId && !resultOutdated && !busy)} busy={busy} />
+      <ModelOptimizerHeader locale={locale} onBack={onBack} onViewAssets={() => onViewAssets?.(savedModelId ?? selectedProjectModelId)} onImport={() => inputRef.current?.click()} onDownload={exportGlb} onSave={() => void saveToProjectAssets()} canExport={Boolean(output && !resultOutdated && !busy)} canSave={Boolean(output && !resultOutdated && project && !busy && !savedModelId)} saved={Boolean(savedModelId && !resultOutdated && !busy)} busy={busy} resultOutdated={resultOutdated} />
       <ModelAssetWorkflowActions locale={locale} busy={busy} savedModelId={resultOutdated ? undefined : savedModelId} onReturn={onReturnToScene} />
       <main className="optimizer-layout">
-        <aside className={`optimizer-settings ${file || busy ? "" : "awaiting-model"}`}>
-          <ModelOptimizerPipeline locale={locale} project={project} models={(project?.models ?? []).filter((model) => model.status === "ready" && model.manifest?.geometryUrl)} selectedModelId={selectedProjectModelId} onSelectModel={(id) => { const model = project?.models.find((item) => item.id === id); if (model) void importProjectModel(model); }} onImport={() => inputRef.current?.click()} hasSource={Boolean(file)} hasOutput={Boolean(output && !resultOutdated)} saved={Boolean(savedModelId)} busy={busy} />
+        {/* 导入过程中保持收起空壳选项区：此时没有任何可调参数，展示出来只会闪现一片禁用控件。 */}
+        <aside className={`optimizer-settings ${file ? "" : "awaiting-model"}`}>
+          <ModelOptimizerPipeline locale={locale} project={project} models={(project?.models ?? []).filter((model) => model.status === "ready" && model.manifest?.geometryUrl)} selectedModelId={selectedProjectModelId} onSelectModel={(id) => { const model = project?.models.find((item) => item.id === id); if (model) void importProjectModel(model); }} onImport={() => inputRef.current?.click()} hasSource={Boolean(file)} converted={hasConverted} hasOutput={Boolean(output && !resultOutdated)} saved={Boolean(savedModelId && !resultOutdated)} busy={busy} />
           <div className="optimizer-file">
             <Box size={18} />
             <div>
@@ -262,10 +264,20 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
               onUpdateLight={updateBakeLight}
             />
           ) : (
-            <button className="optimizer-drop" onClick={() => inputRef.current?.click()}>
+            <button
+              className={`optimizer-drop${dragOver ? " drag-over" : ""}`}
+              onClick={() => inputRef.current?.click()}
+              onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(event) => {
+                event.preventDefault(); setDragOver(false);
+                const dropped = event.dataTransfer.files?.[0];
+                if (dropped) void importFile(dropped);
+              }}
+            >
               <Upload size={32} />
               <strong>{tr(locale, "导入模型开始", "Import a model to begin")}</strong>
-              <span>{tr(locale, "GLB 本地处理，其他格式自动进入项目转换链路", "GLB runs locally; other formats use the project conversion pipeline")}</span>
+              <span>{tr(locale, "GLB 本地处理，其他格式自动进入项目转换链路；支持拖放文件", "GLB runs locally; other formats use the project conversion pipeline. Drag and drop is supported")}</span>
             </button>
           )}
           {error && <div className="optimizer-error">{error}</div>}

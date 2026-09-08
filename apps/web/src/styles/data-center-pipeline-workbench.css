@@ -158,7 +158,7 @@
 }
 .data-center-page .pipeline-debug-tabs button {
   display: inline-flex;
-  min-height: 26px;
+  min-height: 32px !important;
   align-items: center;
   gap: 6px;
   padding: 0 9px;

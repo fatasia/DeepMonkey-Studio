@@ -30,4 +30,18 @@ describe("BuiltInAssetBrowser", () => {
     expect(html).toContain("disabled");
     expect(html.match(/请先创建场景/g)).toHaveLength(2);
   });
+
+  it("renders a distinct preview variant per 2D preset instead of one shared metric card", () => {
+    // 回归：此前误读 preset.widget.type（恒为 undefined），全部缩略图静默兜底成指标卡。
+    const html = renderToStaticMarkup(
+      <BuiltInAssetBrowser kind="2d" locale="zh-CN" editorAvailable onOpenEditor={() => undefined} />,
+    );
+    const allVariants = new Set(DASHBOARD_COMPONENT_PRESETS.map((preset) => preset.preview.variant));
+    const renderedVariants = [...html.matchAll(/data-preview-variant="([^"]+)"/g)].map((match) => match[1] ?? "");
+    expect(renderedVariants.length).toBeGreaterThan(0);
+    for (const variant of renderedVariants) expect(allVariants.has(variant)).toBe(true);
+    // 首页必须已经呈现多种图形语义（此前全部是 metric value 一种）。
+    const graphicShapes = new Set([...html.matchAll(/dashboard-library-preview ([a-z-]+ [a-z-]+|[a-z-]+)["\s]/g)].map((match) => match[1] ?? ""));
+    expect(graphicShapes.size).toBeGreaterThan(3);
+  });
 });

@@ -50,6 +50,7 @@ export interface DashboardComponentPreset {
   descriptionEn: string;
   type: SceneDashboardWidgetType;
   frame?: Partial<Pick<WidgetFrame, "width" | "height">>;
-  widget: Partial<DashboardDataWidgetConfig>;
+  /** 组件类型由顶层 type 唯一承载；widget 不允许再带 type，防止双入口漂移。 */
+  widget: Partial<Omit<DashboardDataWidgetConfig, "type">>;
   preview: DashboardComponentPresetPreview;
 }

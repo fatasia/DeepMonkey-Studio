@@ -301,7 +301,7 @@
 .dashboard-conditional-effects input[type="color"]:disabled { opacity: .28; }
 .dashboard-selection-summary { padding: 12px; border-bottom: 1px solid #293338; }
 .dashboard-inspector-tabs { display: grid; padding: 5px; border-bottom: 1px solid #293338; background: #111719; grid-template-columns: repeat(5,1fr); }
-.dashboard-inspector-tabs button { min-width: 0; height: 27px; padding: 0 2px; color: #69767c; border: 0; border-radius: 4px; background: transparent; font-size: 7px; cursor: pointer; }
+.dashboard-inspector-tabs button { min-width: 0; height: 32px !important; padding: 0 2px; color: #69767c; border: 0; border-radius: 4px; background: transparent; font-size: 10px; cursor: pointer; }
 .dashboard-inspector-tabs button:hover,.dashboard-inspector-tabs button.active { color: #e7c66f; background: rgba(215,173,81,.1); }
 .dashboard-data-analysis-settings { display: grid; gap: 8px; margin-top: 4px; padding: 8px; border: 1px solid #2d3c43; border-radius: 6px; background: #121b20; }
 .dashboard-data-analysis-settings > summary { color: #c8d5d9; font-size: 9px; font-weight: 700; cursor: pointer; }

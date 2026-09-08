@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+/// <reference types="vitest/config" />
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -23,6 +24,10 @@ export default defineConfig(({ mode }) => {
   }
   return {
     plugins: [react()],
+    test: {
+      // scripts/*.test.mjs 是 node:test 门禁脚本（真实浏览器长跑），不归 vitest 收集。
+      exclude: ["**/node_modules/**", "**/dist/**", "scripts/**"],
+    },
     resolve: {
       alias: {
         "monaco-editor/esm/vs/editor/editor.worker.js": resolve(projectRoot, "apps/web/node_modules/monaco-editor/esm/vs/editor/editor.worker.js"),
