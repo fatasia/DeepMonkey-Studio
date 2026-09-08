@@ -86,6 +86,10 @@ try {
         assert.equal(await panel.count(), 0);
         assert.ok(await page.locator(".app-shell:not(.app-shell-hidden) > .right-panel").isVisible(), "Closing environment must restore the previous inspector");
         await shot("closed-inspector-restored");
+        await page.getByRole("button", { name: "收起属性检查器", exact: true }).click();
+        await open(); await panel.getByRole("button", { name: "关闭环境与灯光", exact: true }).click();
+        assert.equal(await page.locator(".app-shell:not(.app-shell-hidden) > .right-panel").isVisible(), false, "Environment must not overwrite an explicitly collapsed inspector preference");
+        await page.getByRole("button", { name: "展开属性检查器", exact: true }).click();
       }
       await page.goto(`${gate.origin}/manager?project=${project.id}`); await page.locator(".scene-manager-page").waitFor();
       assert.deepEqual(entry.errors, []); entry.passed = true;

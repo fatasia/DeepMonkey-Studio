@@ -93,6 +93,7 @@ export function SceneLightingEditor(props: SceneLightingEditorProps) {
         <span>{tr(locale, "全局光照", "Global illumination")}</span>
         <button
           className={lighting.globalIlluminationEnabled ? "active" : ""}
+          title={tr(locale, "环境漫反射近似", "Environment diffuse approximation")}
           onClick={() =>
             props.onLightingChange({
               ...lighting,
@@ -121,13 +122,6 @@ export function SceneLightingEditor(props: SceneLightingEditorProps) {
         <output>
           {(lighting.globalIlluminationIntensity ?? 0.45).toFixed(2)}
         </output>
-        <small>
-          {tr(
-            locale,
-            "环境漫反射近似，默认关闭",
-            "Environment diffuse approximation, off by default",
-          )}
-        </small>
       </div>
       <div className="light-system">
         <div className="light-system-head">

@@ -20,7 +20,9 @@ export function ScenePostProcessingEditor({
     onChange({ ...value, ...patch });
 
   return (
-    <div className="post-processing-control">
+    <div className="post-processing-control" title={tr(locale,
+      "GTAO、景深和残像开销较高；SMAA 与 FXAA 建议二选一",
+      "GTAO, DOF and trails are costly; use either SMAA or FXAA")}>
       <div className="light-system-head">
         <span>{tr(locale, "后处理", "Post-processing")}</span>
         <button
@@ -240,13 +242,6 @@ export function ScenePostProcessingEditor({
           <EffectRange label={tr(locale, "对比度", "Contrast")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.contrast ?? 0} digits={2} onChange={(next) => update({ contrast: next })} />
         </>
       )}
-      <small>
-        {tr(
-          locale,
-          "GTAO、景深和残像开销较高；SMAA 与 FXAA 建议二选一",
-          "GTAO, DOF and trails are costly; use either SMAA or FXAA",
-        )}
-      </small>
     </div>
   );
 }

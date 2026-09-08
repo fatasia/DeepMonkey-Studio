@@ -5,6 +5,14 @@
 .environment-heading { position: sticky; top: 0; z-index: 2; height: 44px; margin: 0; padding: 0 13px; border-bottom: 1px solid var(--line); background: var(--surface-1); }
 .environment-heading strong { color: var(--text-strong); font-size: 12px; letter-spacing: .02em; }
 .environment-heading small { color: var(--text-muted); font-size: 11px; }
+.environment-heading > button { flex: 0 0 30px; }
+/* 临时让位给正在编辑的环境工具；不修改检查器展开偏好，关闭即恢复。 */
+@media (min-width: 761px) and (max-width: 1180px) {
+  .app-shell:has(.environment-control) { grid-template-columns: 240px minmax(0,1fr) 0; }
+  .app-shell.left-panel-collapsed:has(.environment-control) { grid-template-columns: 0 minmax(0,1fr) 0; }
+  .app-shell:has(.environment-control) > .right-panel,
+  .app-shell:has(.environment-control) > .workspace-panel-controls .panel-toggle-right { display: none; }
+}
 .environment-preset-library { padding: 12px 13px; border-bottom: 1px solid rgba(48,58,64,.76); }
 .environment-preset-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
 .environment-preset-title > div { display: grid; gap: 2px; }

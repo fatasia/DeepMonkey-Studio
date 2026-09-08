@@ -367,6 +367,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onAddLight={addLight}
           onUpdateLight={updateLight}
           onRemoveLight={removeLight}
+          onClose={() => setEnvironmentOpen(false)}
         />
       )}
       {route.view === "studio" && physicsOpen && (

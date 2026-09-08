@@ -1,4 +1,4 @@
-import { Cloud, CloudFog, CloudLightning, CloudRain, Eye, EyeOff, Snowflake, Sun } from "lucide-react";
+import { Cloud, CloudFog, CloudLightning, CloudRain, Eye, EyeOff, Snowflake, Sun, X } from "lucide-react";
 import type {
   GlobalLightingState,
   SceneCoordinateSystemState,
@@ -37,6 +37,7 @@ interface SceneEnvironmentPanelProps {
   onUpdateLight: (id: string, patch: Partial<SceneLightState>) => void;
   onRemoveLight: (id: string) => void;
   projectAssets?: ProjectAssetRecord[];
+  onClose?: () => void;
 }
 
 export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
@@ -64,8 +65,8 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
       )}
     >
       <div className="environment-heading">
-        <strong>{tr(locale, "场景环境", "Scene environment")}</strong>
-        <small>{tr(locale, "随场景保存", "Saved with scene")}</small>
+        <strong title={tr(locale, "随场景保存", "Saved with scene")}>{tr(locale, "场景环境", "Scene environment")}</strong>
+        {props.onClose && <button type="button" onClick={props.onClose} aria-label={tr(locale, "关闭环境与灯光", "Close environment and lighting")} title={tr(locale, "关闭环境与灯光", "Close environment and lighting")}><X size={15} /></button>}
       </div>
       <section className="environment-preset-library" aria-label={tr(locale, "快速环境", "Environment looks")}>
         <div className="environment-preset-title">

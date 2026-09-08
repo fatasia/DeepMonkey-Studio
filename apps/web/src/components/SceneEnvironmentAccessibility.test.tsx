@@ -30,12 +30,15 @@ describe("scene environment accessibility", () => {
         onAddLight={vi.fn()}
         onUpdateLight={vi.fn()}
         onRemoveLight={vi.fn()}
+        onClose={vi.fn()}
       />,
     );
 
-    for (const label of ["晴天", "阴天", "下雨", "下雪", "雾天", "暴雨", "关闭全局灯光", "删除光源"]) {
+    for (const label of ["晴天", "阴天", "下雨", "下雪", "雾天", "暴雨", "关闭全局灯光", "删除光源", "关闭环境与灯光"]) {
       expect(html).toContain(`aria-label="${label}"`);
       expect(html).toContain(`title="${label}"`);
     }
+    expect(html).not.toContain("环境漫反射近似，默认关闭");
+    expect(html).not.toContain("<small>GTAO、景深和残像开销较高");
   });
 });
