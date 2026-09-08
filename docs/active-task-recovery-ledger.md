@@ -1,5 +1,7 @@
 # Deep Monkey Studio 当前任务恢复总账
 
+2026-09-08 收口增量：仓储功能提交 `cbc558e`，二维真实填报与写后指标刷新提交 `54eface`；r46 Web build通过，r45根类型/2142文件及Web1767测试通过；r46可读性4/4与实际PDF8/8已复核。当前批次细节和SQL下一实现入口见 `industry-logistics-continuation-2026-09-08.md`；全目标保持待办，不以本批验证缩围。
+
 2026-09-08 当前批次增量：`industry-logistics-continuation-2026-09-08.md`。仓储五页已通过r44两轮4/4，目前两个业务包十页深化，3D匹配及≥10包/≥300页仍待办；素材7批准/159未批准。r44 Web build及426文件1764测试通过；二维填报成功后指标刷新已接线，正式画布表单/SQL不移出本轮。图表与素材卡视觉修补尚待最终统一构建，不宣称全目标完成。
 
 2026-09-08 标题栏复核：`24abd5f` 的靠右修补仍生效；新增 `gate-editor-topbar.mjs`，2D/3D 双主题三宽度两轮 24/24，通过证据 `editor-topbar-FybcbB`。见 `topbar-alignment-verification-2026-09-08.md`。此项仅复核布局，不改变下列整体待办状态。

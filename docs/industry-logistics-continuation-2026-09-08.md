@@ -1,5 +1,9 @@
 # 行业包与填报接续 · 2026-09-08
 
+最终构建增量：r46 Web build 退出0；r45根typecheck/2142源文件体量和Web427文件1767测试退出0。r46 `dashboard-readability-I7YKEA` 两轮4/4、`dashboard-print-pdf-F6Rd6T` 两轮双主题8份实际PDF通过，主线程亲审横/纵版百分比完整。r44制造原包 `industry-packs-azEGlR` 回归4/4。二维写回与失败隔离证据 `dataset-writeback-gtKDm8` 4/4、原数据中心 `dataset-writeback-rKezmO` 4/4。后文r44 PDF失败保留为真实发现记录，已由r46修补闭环；素材卡最终截图证据见独立审核报告。
+
+素材卡补充：r46 `source-b-library-937xwx` / `source-b-library-aP9QWG` 各4/4，图片与悬浮几何无裁切、七项实际导入与许可/hash检查通过。主线程亲审首轮浅980总览和第二轮深1440悬浮后总览。第二轮首次刷新截图偶有图片尚未绘制、悬浮后恢复，尚未证明是纯测试时机；**首次绘制稳定性仍是本轮待办**，不因尺寸修补通过而隐藏该现象。原GLB/PNG未改。
+
 ## 已完成
 
 - 新增仓储履约运行包五页：履约总览、库存可用性、波次拣选、装车发运、异常闭环。独立业务样本按库区关联；库存件数、托盘、装车箱数不混算。总览待拣/待发/未结异常与逐单台账核对，拣选和装车数量分别守恒。来源、事务、撤销、筛选隔离复用既有行业包实现。
@@ -28,3 +32,9 @@
 ## 项目级后验收
 
 示例业务流程不能代替客户 WMS 数据质量、真实作业调度或设备控制验收。
+
+## 下一批实现入口（已只读核对，不是已实现）
+
+- SQL：`dataIntegration.ts` 已有 PostgreSQL/MySQL/Oracle 预览，`dataIntegrationPreviewAdapters.ts` 有 SQLServer；`dataIntegrationHelpers.ts` 的 PostgreSQL 调用为 psql 整段语句，不能绕过只读门禁来冒充参数绑定。API 已有 mysql2/oracledb/mssql，未有 pg。`dataWritebackService.ts` 与保存配置路由仍明确仅 HTTP；`contracts/src/dataWriteback.ts` 只有 REST recordPath。
+- 复用当前权限、字段校验、opaque version、确认/冲突/未知/草稿状态机；新增 SQL 受控目标合同及独立驱动适配。表/列来自服务端保存的白名单，值必须参数化，主键+版本条件 UPDATE 原子执行；多行回滚、零行区分404/409，提交回执未知不自动重放。首驱动必须真实隔离数据库验证，不拿 REST 测试桩冒充 SQL。不可修改正常 PostgreSQL 配置或数据。
+- 二维填报体验：目前写41已确认但视图查询503时保留旧值25，写状态正确；hook未向表单回传刷新失败，需补独立可见提示与显式重试。不得把刷新失败改成写失败或自动再次提交。再处理窄窗字段面板与填报面板的协调、相邻条件格式浅色暗卡和按钮断行。
