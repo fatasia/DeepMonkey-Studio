@@ -4,20 +4,18 @@ import { MANUFACTURING_ASSET_OPS_PACK } from "./industryPackManufacturing";
 import { MANUFACTURING_PACK_SAMPLES } from "./industryPackManufacturing";
 import type { IndustryTemplatePack, IndustryPackPage } from "./industryTemplatePackTypes";
 import type { PackPageSampleSpec } from "./industryPackSampleApply";
-import { validateIndustryTemplatePack } from "./industryTemplatePackTypes";
+import { createIndustryPackRegistry } from "./industryPackRegistry";
+import { LOGISTICS_FULFILLMENT_PACK } from "./industryPackLogistics";
+import { LOGISTICS_PACK_SAMPLES } from "./industryPackLogisticsSamples";
 
-/** 目录在模块加载时校验：坏包直接抛错，不允许带病进目录。 */
+/** 每包独立校验并隔离错误，不影响其余模板和编辑器启动。 */
 const KNOWN_TEMPLATE_IDS: readonly string[] = DASHBOARD_TEMPLATES.map((template) => template.id);
-for (const pack of [MANUFACTURING_ASSET_OPS_PACK]) {
-  validateIndustryTemplatePack(pack, KNOWN_TEMPLATE_IDS);
-  for (const page of pack.pages) {
-    if (!MANUFACTURING_PACK_SAMPLES[page.templateId]) {
-      throw new Error(`行业包 ${pack.id}: 页面缺少示例数据规格: ${page.templateId}`);
-    }
-  }
-}
-
-export const INDUSTRY_TEMPLATE_PACKS: readonly IndustryTemplatePack[] = [MANUFACTURING_ASSET_OPS_PACK];
+const registry = createIndustryPackRegistry([
+  { pack: MANUFACTURING_ASSET_OPS_PACK, samples: MANUFACTURING_PACK_SAMPLES },
+  { pack: LOGISTICS_FULFILLMENT_PACK, samples: LOGISTICS_PACK_SAMPLES },
+], KNOWN_TEMPLATE_IDS);
+export const INDUSTRY_TEMPLATE_PACKS: readonly IndustryTemplatePack[] = registry.packs;
+export const INDUSTRY_PACK_ISSUES: readonly string[] = registry.issues;
 
 export function findIndustryTemplatePack(packId: string): IndustryTemplatePack | undefined {
   return INDUSTRY_TEMPLATE_PACKS.find((pack) => pack.id === packId);
@@ -31,9 +29,7 @@ export function packPageTemplate(pack: IndustryTemplatePack, page: IndustryPackP
 }
 
 export function packPageSample(pack: IndustryTemplatePack, page: IndustryPackPage): PackPageSampleSpec {
-  const spec = MANUFACTURING_PACK_SAMPLES[page.templateId];
-  if (!spec) throw new Error(`行业包 ${pack.id}: 示例缺失 ${page.templateId}`);
-  return spec;
+  return registry.sample(pack, page.templateId);
 }
 
 export type { DashboardTemplateKind };

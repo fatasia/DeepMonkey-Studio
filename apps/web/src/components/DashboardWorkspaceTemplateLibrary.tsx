@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { translate as tr } from "../i18n";
 import { DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
 import { DashboardTemplatePreview } from "./DashboardTemplatePreview";
-import { INDUSTRY_TEMPLATE_PACKS } from "./industryTemplatePackCatalog";
+import { INDUSTRY_PACK_ISSUES, INDUSTRY_TEMPLATE_PACKS } from "./industryTemplatePackCatalog";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 import { searchDashboardTemplates } from "./dashboardTemplateSearch";
 import "./DashboardTemplateLibrary.css";
@@ -84,6 +84,9 @@ export function DashboardWorkspaceTemplateLibrary() {
             </select>
           </div>
           <div className="dashboard-template-grid" data-category={templateCategory}>
+            {templateCategory === "packs" && INDUSTRY_PACK_ISSUES.length > 0 && <p role="alert" title={INDUSTRY_PACK_ISSUES.join("\n")}>
+              {tr(locale, "部分行业包校验失败，已暂停导入。", "Some industry packs failed validation and cannot be imported.")}
+            </p>}
             {templateCategory === "packs" && !packs.length && <div className="dashboard-template-empty" role="status">
               <strong>{tr(locale, "没有匹配的行业包", "No matching industry packs")}</strong>
               <button type="button" onClick={() => { setTemplateQuery(""); panelRef.current?.querySelector<HTMLInputElement>("input")?.focus(); }}>

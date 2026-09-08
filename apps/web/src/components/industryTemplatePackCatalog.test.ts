@@ -17,7 +17,7 @@ describe("industryTemplatePackCatalog", () => {
     for (const pack of INDUSTRY_TEMPLATE_PACKS) {
       expect(() => validateIndustryTemplatePack(pack, KNOWN_IDS)).not.toThrow();
       for (const page of pack.pages) {
-        expect(MANUFACTURING_PACK_SAMPLES[page.templateId] ?? undefined).toBeDefined();
+        expect(packPageSample(pack, page)).toBeDefined();
       }
     }
   });
