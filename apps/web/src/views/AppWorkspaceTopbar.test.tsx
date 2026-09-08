@@ -36,6 +36,7 @@ describe("3D workspace exit save contract", () => {
     expect(fixture.saveActiveApplication).not.toHaveBeenCalled();
     expect(fixture.commitSceneName).not.toHaveBeenCalled();
     expect(fixture.returnFromSceneEditor).toHaveBeenCalledOnce();
+    expect(fixture.returnFromSceneEditor).toHaveBeenCalledWith("dashboard");
   });
 
   it("keeps the current editor on save failure and allows an explicit retry", async () => {

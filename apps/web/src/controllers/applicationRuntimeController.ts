@@ -363,10 +363,20 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     navigate({ view: "studio", projectId: route.projectId, applicationId: route.applicationId, pageId: route.pageId, sceneId, dashboardReturn });
   }
 
-  function returnFromSceneEditor() {
+  function returnFromSceneEditor(destination?: "dashboard") {
     const target = route.dashboardReturn;
     if (target) {
       navigate({ view: "dashboard", projectId: target.projectId, applicationId: target.applicationId, pageId: target.pageId, dashboardView: target.view });
+    } else if (destination === "dashboard") {
+      // 直接打开三维 URL 时没有返回上下文；模式切换仍应进入本应用，而不是场景管理。
+      const document = applicationSessionRef.current.getDocument();
+      const current = document?.metadata.id === route.applicationId ? document : activeApplication;
+      const page = current?.pages.find(item => item.id === route.pageId) ?? current?.pages[0];
+      if (!current || current.metadata.id !== route.applicationId || current.metadata.projectId !== route.projectId || !page) {
+        showError(new Error(tr(locale, "当前应用没有可打开的二维页面", "No 2D page is available in the current application")));
+        return;
+      }
+      navigate({ view: "dashboard", projectId: current.metadata.projectId, applicationId: current.metadata.id, pageId: page.id, dashboardView: DEFAULT_DASHBOARD_VIEW });
     } else {
       navigate({ view: "manager" });
     }

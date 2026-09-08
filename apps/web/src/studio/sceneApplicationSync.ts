@@ -79,6 +79,9 @@ function sceneDocumentFromSnapshot(snapshot: SceneSnapshot): SceneDocument {
     dashboard: _dashboard,
     interactions: _interactions,
     publishedAt: _publishedAt,
+    publicationMode: _publicationMode,
+    publicationPerformance: _publicationPerformance,
+    publicationToolbarVisible: _publicationToolbarVisible,
     createdAt: _createdAt,
     updatedAt: _updatedAt,
     ...scene

@@ -27,6 +27,7 @@ import {
   Search,
   Square,
   Trash2,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import type { CSSProperties, MouseEvent } from "react";
@@ -129,6 +130,10 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     versionTarget,
     visibleScenes,
   } = controller;
+
+  // V3-P3 预防提示：同名场景计数，仅提示不自动删除（数据治理需用户确认）。
+  const duplicateSceneNames = new Map<string, number>();
+  for (const scene of sortedScenes) duplicateSceneNames.set(scene.name, (duplicateSceneNames.get(scene.name) ?? 0) + 1);
   const directoryIssue = managerDirectoryIssue(directory, Boolean(project));
   const projectDirectoryBlocked = directory !== undefined && directory.projects.phase !== "ready";
   function projectAction(event: MouseEvent<HTMLButtonElement>, action: () => void) {
@@ -377,6 +382,14 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                     <div className="scene-card-body">
                       <button type="button" className="scene-card-title" onClick={() => void onBrowse(scene)}>
                         {scene.name}
+                        {(duplicateSceneNames.get(scene.name) ?? 0) > 1 && (
+                          <span
+                            className="scene-card-duplicate"
+                            title={tr(locale, `同名场景有 ${duplicateSceneNames.get(scene.name)} 个，请核查是否为重复数据`, `${duplicateSceneNames.get(scene.name)} scenes share this name; verify whether they are duplicates`)}
+                          >
+                            <TriangleAlert size={11} />
+                          </span>
+                        )}
                       </button>
                       <div className="scene-card-meta" title={tr(locale, "最近变更包括内容保存、发布及撤回发布，不仅是模型内容修改", "Last change includes content saves, publishing and unpublishing, not only model edits")}>
                         <CalendarDays size={12} />

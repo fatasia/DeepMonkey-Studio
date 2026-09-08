@@ -2,10 +2,19 @@ import { describe, expect, it } from "vitest";
 import dashboardFixture from "../../../../test-fixtures/scene-v1-dashboard.json";
 import interactionFixture from "../../../../test-fixtures/scene-v1-interaction.json";
 import pureFixture from "../../../../test-fixtures/scene-v1-pure-3d.json";
-import { migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
+import { assertApplicationDocument, migrateSceneSnapshotV1, type SceneSnapshot } from "@bim-studio/contracts";
 import { applicationForScene, syncSceneIntoApplication } from "./sceneApplicationSync.js";
 
 describe("scene and application synchronization", () => {
+  it("keeps publication preferences on snapshots, not on the 3D document returned to 2D", () => {
+    const snapshot = { ...structuredClone(pureFixture), publicationMode: "webgpu-preferred", publicationPerformance: "fast", publicationToolbarVisible: false, publishedAt: "2026-09-06T00:00:00.000Z" } as SceneSnapshot;
+    const application = migrateSceneSnapshotV1(snapshot);
+    const result = syncSceneIntoApplication(application, snapshot);
+    expect(() => assertApplicationDocument(result)).not.toThrow();
+    for (const field of ["publicationMode", "publicationPerformance", "publicationToolbarVisible", "publishedAt"]) expect(result.scenes[0]).not.toHaveProperty(field);
+    expect(snapshot.publicationMode).toBe("webgpu-preferred");
+    expect(result.pages).toEqual(application.pages);
+  });
   it("stores shared resources once while preserving independent object identities", () => {
     const snapshot = structuredClone(pureFixture) as unknown as SceneSnapshot;
     const model = { modelId: "one", assetModelId: "shared", name: "实例", visible: true, opacity: 1,

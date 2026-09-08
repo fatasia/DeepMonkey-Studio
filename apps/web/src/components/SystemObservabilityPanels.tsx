@@ -1,3 +1,4 @@
+import { formatAuditActor, formatServiceLogMessage } from "./serviceLogFormat";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AlertTriangle, CheckCircle2, CircleSlash2, Copy, Download, PlugZap, RefreshCw, Search, XCircle } from "lucide-react";
 import type {
@@ -178,7 +179,7 @@ export function SystemLogPanel({ t, auditLogs, onError, initialResult = EMPTY_LO
         <div className="system-log-table-wrap">
           <table className="system-log-table">
             <thead><tr><th>{t("时间", "Time")}</th><th>{t("级别", "Level")}</th><th>{t("服务", "Service")}</th><th>{t("消息", "Message")}</th></tr></thead>
-            <tbody>{result.items.map((entry) => <tr key={entry.id}><td>{new Date(entry.timestamp).toLocaleString()}</td><td><b className={`log-level ${entry.level}`}>{entry.level.toUpperCase()}</b></td><td>{entry.service}</td><td><pre>{entry.message}</pre></td></tr>)}</tbody>
+            <tbody>{result.items.map((entry) => <tr key={entry.id}><td>{new Date(entry.timestamp).toLocaleString()}</td><td><b className={`log-level ${entry.level}`}>{entry.level.toUpperCase()}</b></td><td>{entry.service}</td><td><pre title={entry.message}>{formatServiceLogMessage(entry.message)}</pre></td></tr>)}</tbody>
           </table>
           {!busy && result.items.length === 0 && <p className="system-log-empty">{t("当前筛选没有日志", "No logs match the current filters")}</p>}
         </div>
@@ -186,7 +187,7 @@ export function SystemLogPanel({ t, auditLogs, onError, initialResult = EMPTY_LO
       <section className="system-audit">
         <header><strong>{t("最近操作", "Recent activity")}</strong><span>{t("最多保留 2,000 条；本页不提供审计导出", "Up to 2,000 records; audit export is not provided here")}</span></header>
         <table><thead><tr><th>{t("时间", "Time")}</th><th>{t("用户", "User")}</th><th>{t("动作", "Action")}</th><th>{t("资源", "Resource")}</th><th>{t("状态", "Status")}</th></tr></thead><tbody>
-          {auditLogs.map((log) => <tr key={log.id}><td>{new Date(log.createdAt).toLocaleString()}</td><td>{log.username ?? t("系统", "System")}</td><td>{log.action}</td><td title={log.resource}>{log.resource}</td><td className={log.statusCode >= 400 ? "error" : "ok"}>{log.statusCode}</td></tr>)}
+          {auditLogs.map((log) => <tr key={log.id}><td>{new Date(log.createdAt).toLocaleString()}</td><td>{formatAuditActor(log.username, t("系统", "System"))}</td><td>{log.action}</td><td title={log.resource}>{log.resource}</td><td className={log.statusCode >= 400 ? "error" : "ok"}>{log.statusCode}</td></tr>)}
         </tbody></table>
       </section>
     </div>

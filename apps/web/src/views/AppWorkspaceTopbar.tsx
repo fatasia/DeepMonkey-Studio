@@ -53,7 +53,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
     if (!flushBehaviorDraft()) return;
     setSceneBehaviorOpen(false);
   };
-  const leaveThreeDimensionalWorkspace = () => {
+  const leaveThreeDimensionalWorkspace = (destination?: "dashboard") => {
     if (exitPending.current || !flushBehaviorDraft()) return;
     exitPending.current = true;
     setSceneBehaviorOpen(false);
@@ -66,7 +66,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
           if (!current.state.sceneName.trim()) { await current.scenePersistence.commitSceneName(); return; }
           if (!(await current.scenePersistence.saveScene())) return;
         } else if (current.state.activeApplication && !(await current.applicationRuntime.saveActiveApplication())) return;
-        if (latestBindings.current.state.route === route) current.applicationRuntime.returnFromSceneEditor();
+        if (latestBindings.current.state.route === route) current.applicationRuntime.returnFromSceneEditor(destination);
       })().catch(state.showError).finally(() => { exitPending.current = false; });
     }, 0);
   };
@@ -77,7 +77,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
         <button
           className="topbar-back"
           title={route.dashboardReturn ? tr(locale, "返回二维设计", "Back to 2D design") : tr(locale, "返回场景管理", "Back to scenes")}
-          onClick={leaveThreeDimensionalWorkspace}
+          onClick={() => leaveThreeDimensionalWorkspace()}
         >
           <ArrowLeft size={15} />
           <span>{route.dashboardReturn ? tr(locale, "返回二维", "Back to 2D") : tr(locale, "场景管理", "Scenes")}</span>
@@ -131,7 +131,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
             locale={locale}
             active={sceneBehaviorOpen ? "script" : "3d"}
             contextLabel={sceneName}
-            onSelect2D={leaveThreeDimensionalWorkspace}
+            onSelect2D={() => leaveThreeDimensionalWorkspace("dashboard")}
             onSelect3D={showThreeDimensionalWorkspace}
             onSelectScripts={() => setSceneBehaviorOpen(true)}
           />

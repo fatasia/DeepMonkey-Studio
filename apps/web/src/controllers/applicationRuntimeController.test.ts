@@ -9,6 +9,37 @@ import * as thumbnails from "../studio/sceneThumbnailCapture";
 
 afterEach(() => vi.restoreAllMocks());
 
+describe("scene editor destination", () => {
+  function setup() {
+    const source = migrateSceneSnapshotV1(pureFixture as SceneSnapshot);
+    const session = new ApplicationSession(); session.openDocument(source);
+    const context = controllerContext(session, source, vi.fn());
+    context.route = { view: "studio", projectId: source.metadata.projectId, applicationId: source.metadata.id, sceneId: source.scenes[0]!.id };
+    return { source, context, controller: createApplicationRuntimeController(context) };
+  }
+
+  it("opens an existing page when switching a direct 3D route to 2D", () => {
+    const { source, context, controller } = setup();
+    controller.returnFromSceneEditor("dashboard");
+    expect(context.navigate).toHaveBeenCalledWith(expect.objectContaining({ view: "dashboard", pageId: source.pages[0]!.id, applicationId: source.metadata.id }));
+    expect(context.showError).not.toHaveBeenCalled();
+  });
+
+  it("preserves the separate Back to scenes action", () => {
+    const { context, controller } = setup();
+    controller.returnFromSceneEditor();
+    expect(context.navigate).toHaveBeenCalledWith({ view: "manager" });
+  });
+
+  it("refuses to open a stale application from another route", () => {
+    const { context } = setup();
+    context.route = { ...context.route, applicationId: "other" };
+    createApplicationRuntimeController(context).returnFromSceneEditor("dashboard");
+    expect(context.navigate).not.toHaveBeenCalled();
+    expect(context.showError).toHaveBeenCalledOnce();
+  });
+});
+
 describe("applicationRuntimeController script replacement", () => {
   it("saves a frozen application without trying to mutate its scene thumbnail", async () => {
     const source = migrateSceneSnapshotV1(pureFixture as SceneSnapshot);

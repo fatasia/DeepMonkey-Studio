@@ -126,6 +126,15 @@
 
 .scene-card-title:hover { color: var(--accent); }
 
+/* 同名场景预防提示：跟随文字的行内警示，不占额外空间（V3-P3）。 */
+.scene-card-duplicate {
+  display: inline-flex;
+  vertical-align: -1px;
+  margin-left: 5px;
+  color: var(--warning);
+}
+.scene-card-duplicate svg { display: block; }
+
 .scene-card-meta {
   margin-top: 7px;
   color: var(--muted);
