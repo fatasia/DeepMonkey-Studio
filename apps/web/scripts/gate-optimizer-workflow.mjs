@@ -25,7 +25,7 @@ try {
   const audit = JSON.parse(await readFile(resolve(cache, "audit.json"), "utf8"));
   await Promise.all([mkdir(resolve(target, "models"), { recursive: true }), mkdir(resolve(target, "reviewed-thumbnails"), { recursive: true })]);
   for (const file of ["catalog.json", "audit.json"]) await copyFile(resolve(cache, file), resolve(target, file));
-  for (const item of audit.items) {
+  for (const item of audit.items.filter(item => item.status === "approved")) {
     assert.match(item.uid, /^[a-f0-9]{32}$/);
     await copyFile(resolve(cache, "models", `${item.uid}.glb`), resolve(target, "models", `${item.uid}.glb`));
     await copyFile(resolve(cache, "reviewed-thumbnails", `${item.uid}.png`), resolve(target, "reviewed-thumbnails", `${item.uid}.png`));

@@ -9,6 +9,26 @@ const root = resolve(import.meta.dirname, "../../..");
 const cache = resolve(root, "data/external-assets/source-b");
 const catalog = JSON.parse(await readFile(resolve(cache, "catalog.json"), "utf8"));
 const audit = JSON.parse(await readFile(resolve(cache, "audit.json"), "utf8"));
+const approvedReviews = audit.items.filter(item => item.status === "approved");
+function collectThumbnailGeometry(images) {
+  return images.map(image => {
+    const preview = image.closest(".unified-asset-preview"), box = preview.getBoundingClientRect(), rect = image.getBoundingClientRect();
+    const style = getComputedStyle(image), containerStyle = getComputedStyle(preview);
+    return { name: image.closest(".unified-asset-card").querySelector("strong")?.textContent,
+      complete: image.complete, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight,
+      image: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      preview: { x: box.x, y: box.y, width: box.width, height: box.height },
+      objectFit: style.objectFit, minHeight: style.minHeight, imageHeight: style.height,
+      display: containerStyle.display, gridRows: containerStyle.gridTemplateRows, aspectRatio: containerStyle.aspectRatio,
+      clipped: rect.left < box.left - 1 || rect.top < box.top - 1 || rect.right > box.right + 1 || rect.bottom > box.bottom + 1 };
+  });
+}
+
+function assertThumbnailGeometry(images) {
+  if (!process.argv.includes("--inspect-geometry")) {
+    assert.deepEqual(images.filter(image => image.clipped || !image.complete || image.naturalWidth === 0), [], "Real thumbnail image must fit its preview container");
+  }
+}
 const gate = await createIsolatedStudioGate("source-b-library");
 const report = { createdAt: new Date().toISOString(), cases: [] };
 try {
@@ -19,14 +39,15 @@ try {
   await writeFile(resolve(sourceA, "audit.json"), '{"items":[]}');
   await copyFile(resolve(cache, "catalog.json"), resolve(target, "catalog.json"));
   await copyFile(resolve(cache, "audit.json"), resolve(target, "audit.json"));
-  for (const review of audit.items) {
+  for (const review of approvedReviews) {
     assert.match(review.uid, /^[a-f0-9]{32}$/);
     assert.equal(review.thumbnail.relativePath, `reviewed-thumbnails/${review.uid}.png`);
     await copyFile(resolve(cache, "models", `${review.uid}.glb`), resolve(target, "models", `${review.uid}.glb`));
     await copyFile(resolve(cache, review.thumbnail.relativePath), resolve(target, review.thumbnail.relativePath));
   }
   const available = await gate.json("GET", "/api/asset-library");
-  assert.equal(available.total, 2, "Only two verified new models are expected; no blanket release of old cache");
+  assert.equal(available.total, approvedReviews.length, "Only individually approved assets may be visible");
+  assert.deepEqual(available.items.map(item => item.id).sort(), approvedReviews.map(item => `community-${item.uid}`).sort());
   for (const theme of ["dark", "light"]) for (const width of [1440, 980]) {
     const entry = { theme, width, passed: false, errors: [], steps: [], imports: [] };
     report.cases.push(entry);
@@ -52,8 +73,8 @@ try {
       await page.getByRole("tab", { name: "三维模型", exact: true }).click();
       await library.getByRole("button", { name: "精选资源", exact: true }).click();
       await page.waitForFunction(() => document.querySelector(".unified-assets-summary")?.textContent.includes("个可用资源"));
-      assert.equal(await library.locator(".unified-asset-card").count(), 2, "Disabling curated must include, not exclude, curated assets");
-      for (const review of audit.items) {
+      assert.equal(await library.locator(".unified-asset-card").count(), approvedReviews.length, "Disabling curated must include, not exclude, curated assets");
+      for (const review of approvedReviews) {
         const source = catalog.models.find(model => model.uid === review.uid);
         const card = library.locator(".unified-asset-card").filter({ hasText: review.displayName });
         await card.waitFor();
@@ -89,8 +110,31 @@ try {
       assert.equal(new URL(page.url()).searchParams.get("tab"), "assets");
       await page.reload(); await library.waitFor();
       assert.equal(await page.getByLabel("当前项目").inputValue(), project.id);
-      assert.equal(await library.getByRole("button", { name: "已在项目", exact: true }).count(), 2);
+      await library.getByRole("button", { name: "已在项目", exact: true }).nth(approvedReviews.length - 1).waitFor();
+      assert.equal(await library.getByRole("button", { name: "已在项目", exact: true }).count(), approvedReviews.length);
+      await page.waitForFunction(count => {
+        const images = [...document.querySelectorAll(".unified-asset-card img")];
+        return images.length === count && images.every(image => image.complete && image.naturalWidth > 0);
+      }, approvedReviews.length);
+      await library.locator("img").evaluateAll(images => Promise.all(images.map(image => image.decode())));
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(300);
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      entry.thumbnailGeometry = await library.locator(".unified-asset-preview img").evaluateAll(collectThumbnailGeometry);
       await shot("imported-after-reload");
+      assert.equal(entry.thumbnailGeometry.length, approvedReviews.length);
+      assertThumbnailGeometry(entry.thumbnailGeometry);
+      entry.thumbnailHover = [];
+      for (const card of await library.locator(".unified-asset-card").all()) {
+        await card.hover(); await page.waitForTimeout(300);
+        const [geometry] = await card.locator("img").evaluateAll(collectThumbnailGeometry);
+        entry.thumbnailHover.push(geometry);
+        assertThumbnailGeometry([geometry]);
+      }
+      await page.mouse.move(0, 0);
+      await library.locator(".unified-asset-card").first().scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      await shot("imported-after-hover");
       const search = page.getByRole("textbox", { name: "搜索资源", exact: true });
       await search.fill("不会匹配的名称"); await page.getByText("没有匹配资源", { exact: true }).waitFor();
       await shot("empty-search");
@@ -116,7 +160,7 @@ try {
         release(); await page.waitForTimeout(500);
         assert.equal(await page.getByLabel("当前项目").inputValue(), project.id, "Late import must not switch the active project");
         assert.equal(new URL(page.url()).searchParams.get("project"), project.id);
-        assert.equal(await library.getByRole("button", { name: "已在项目", exact: true }).count(), 2);
+        assert.equal(await library.getByRole("button", { name: "已在项目", exact: true }).count(), approvedReviews.length);
         await shot("late-import-project-protected");
         entry.steps.push("late-import-project-protected");
       }

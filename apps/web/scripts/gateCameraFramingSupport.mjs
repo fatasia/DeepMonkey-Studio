@@ -17,7 +17,7 @@ export async function prepareReviewedGripper(gate) {
   const audit = JSON.parse(await readFile(resolve(cache, "audit.json"), "utf8"));
   await Promise.all(["models", "reviewed-thumbnails"].map(path => mkdir(resolve(target, path), { recursive: true })));
   for (const name of ["catalog.json", "audit.json"]) await copyFile(resolve(cache, name), resolve(target, name));
-  for (const item of audit.items) {
+  for (const item of audit.items.filter(item => item.status === "approved")) {
     assert.match(item.uid, /^[a-f0-9]{32}$/);
     await copyFile(resolve(cache, "models", `${item.uid}.glb`), resolve(target, "models", `${item.uid}.glb`));
     await copyFile(resolve(cache, "reviewed-thumbnails", `${item.uid}.png`), resolve(target, "reviewed-thumbnails", `${item.uid}.png`));

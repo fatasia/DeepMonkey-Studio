@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "evidence": "test-output/codex-2026-09-05/source-b-review-Xm2Qnv/report.json",
+  "reviewedBy": "Codex visual review",
+  "items": [
+    { "uid": "001970c2594e4aa6bef46e63fc9e0c5a", "status": "review-required", "displayName": "碟形工业天线（含背景板）", "notes": "两轮目视一致：巨大弧形背景板占据取景，背面完全挡住天线；首轮另有驱动精度警告。先拆分展示背景并以新衍生资源复核，不改原GLB。" },
+    { "uid": "00a48d161c2448ccbc60da091c64905d", "status": "review-required", "displayName": "长型皮带输送机", "notes": "几何完整且默认取景不再裁切，但白色皮带/框架/支腿接近过曝，同材质细节难辨，旋转后长边还会逼近边界。原模型无贴图，不能把白材质误称贴图丢失；需材质/展示质量复核。" },
+    { "uid": "0413fd1047084a9fa4a1880aedae63ff", "status": "review-required", "displayName": "Fawkner 轻钢结构与围护展示", "notes": "实际为并排的轻钢骨架与围护方案，不是一般完整住宅。高亮粉/黄/青工程分类色且边缘细碎，5280网格；未验证大场景性能，暂不作为即用建筑资产。" },
+    { "uid": "06cec0c0510f4e668ea337dc50c7202c", "status": "review-required", "displayName": "风格化钢厂场景", "notes": "三视角呈白模；四组均报 Unknown extension KHR_materials_pbrSpecularGlossiness，原17贴图未按原材质语义显示。保持待审，需旧材质兼容或独立衍生转换验证。" },
+    { "uid": "07f04ecaf89642dbad604c469e4dada9", "status": "review-required", "displayName": "复古加油机", "notes": "机身、显示框、油管几何可辨，但四组均报 Unknown extension KHR_materials_pbrSpecularGlossiness 并呈白模。原贴图不等于当前正确渲染，保持待审。" },
+    { "uid": "0819b51c59c3407cb98f0e2c75029e30", "status": "review-required", "displayName": "短型橡胶带输送机", "notes": "机架与滚筒完整，但四组均报 Unknown extension KHR_materials_pbrSpecularGlossiness；橡胶带与金属全部发白，当前缩略图不代表原材质。" },
+    { "uid": "08390acccfd84752bd8ec83b8ca07430", "status": "approved", "displayName": "橙色柔性弯管", "category": "管网与附件", "tags": ["软管", "弯管", "法兰", "工业外观"], "notes": "两轮双主题多角度亲审：橙色波纹段、白色硬管、黑色箍圈与法兰内壁完整；未见缺贴图或裁切。名称明确为单段柔性弯管，不宣称管径、压力或工程尺寸已标定。", "thumbnail": "r2-dark-08390acccfd84752bd8ec83b8ca07430-isometric.png" },
+    { "uid": "08a4f422bc634033b8023d53beaf8242", "status": "approved", "displayName": "旧式仓库（做旧风格）", "category": "工业建筑", "tags": ["仓库", "厂房", "做旧", "场景外观"], "notes": "两轮双主题多角度亲审：坡屋顶、高窗、侧翼与做旧墙面纹理连续，无额外背景几何。仅建筑外观展示，不承诺内部楼层、BIM构件或制造尺寸。", "thumbnail": "r2-dark-08a4f422bc634033b8023d53beaf8242-isometric.png" },
+    { "uid": "08ea283cf2e24cde9d3cbaa8eaa0bd49", "status": "review-required", "displayName": "CNC 激光雕刻头（CAD 外观）", "notes": "散热孔、支柱和警告铭牌完整；原模型无贴图，文字为几何/材质。默认视角铭牌倒置、白色表面层级弱，需确认默认装配方向与展示质量，不以几何存在放行。" },
+    { "uid": "099147dc3ecf47a9965036d3e6a97e52", "status": "approved", "displayName": "工业管件台灯（铜色灯罩）", "category": "工业装饰", "tags": ["台灯", "铜色", "管件", "场景装饰"], "notes": "两轮双主题多角度亲审：铜色灯罩、做旧管臂、底座和链状线缆齐全；不是厂房工艺设备或照度仿真灯具。原GLB不改，线缆保留。", "thumbnail": "r2-dark-099147dc3ecf47a9965036d3e6a97e52-isometric.png" },
+    { "uid": "0a99454fa7da46f6a92a047e4dd60a03", "status": "review-required", "displayName": "小型空压机（含长软管）", "notes": "实际外观含储气罐、压缩机、电机和软管，不宜只叫泵。材质完整，但长软管将取景拉远导致主体偏小；先建立主体/软管合适预览，不删除或改写原模型。" },
+    { "uid": "0be859696a3942b09b9c6b05d1cabcb7", "status": "approved", "displayName": "手柄阀门（外观模型）", "category": "管网与附件", "tags": ["手柄", "阀门", "工业外观"], "notes": "两轮双主题多角度亲审：阀体、黑色球柄、紧固件和连接口螺纹清晰完整；看不到蝶板，不从来源标题推断阀门类型。无外部贴图依赖，不宣称标准、口径或密封性能已认证。", "thumbnail": "r2-dark-0be859696a3942b09b9c6b05d1cabcb7-isometric.png" }
+  ]
+}

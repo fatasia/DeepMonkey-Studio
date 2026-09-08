@@ -37,8 +37,10 @@
 .unified-asset-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-1); transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease; }
 .unified-asset-card:hover { z-index: 1; border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,.28),0 0 0 1px rgba(85,185,232,.08); }
 .unified-asset-preview { position: relative; display:grid; aspect-ratio: 4 / 3; overflow: hidden; padding:10px; place-items:center; background:radial-gradient(circle at 48% 38%,#24292c,#181d20 55%,#101416 100%); }
+/* 图片固有比例不能撑大自动轨道；内置组件预览保留其独立布局。 */
+.unified-asset-preview:not(.built-in-asset-preview) { grid-template: minmax(0,1fr) / minmax(0,1fr); }
 .unified-asset-preview::after { position: absolute; inset: 0; border-bottom: 1px solid rgba(255,255,255,.04); background: linear-gradient(180deg,transparent 65%,rgba(9,13,15,.48)); content: ""; pointer-events: none; }
-.unified-asset-preview img { width: 100%; height: 100%; object-fit: contain; filter:drop-shadow(0 10px 14px rgba(0,0,0,.32)); transition: transform .24s ease; }
+.unified-asset-preview img { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; filter:drop-shadow(0 10px 14px rgba(0,0,0,.32)); transition: transform .24s ease; }
 .unified-asset-card.dimension-environment .unified-asset-preview { padding:0;background:#11191d; }
 .unified-asset-card.dimension-environment .unified-asset-preview img { object-fit:cover;filter:none; }
 .unified-asset-card:hover .unified-asset-preview img { transform: scale(1.025); }
