@@ -47,8 +47,8 @@
 }
 
 /* 工作台可读性阻断线：业务文字不低于 12px，主要操作目标不低于 28px。
- * 编辑器依然保持单行紧凑布局；代码、标尺和缩略图由视觉门禁按技术内容单独放宽。 */
-body .app-workspace-frame.app-workspace-frame :is(button, input, select, textarea, summary, label, small, span, strong, p, a, li, dt, dd, td, th) {
+ * 画布内字号与控件尺寸属于用户作品，随画布等比缩放，不受工作台壳层规则覆盖。 */
+body .app-workspace-frame.app-workspace-frame :is(button, input, select, textarea, summary, label, small, span, strong, p, a, li, dt, dd, td, th):not(:where(.dashboard-artboard *)) {
   font-size: 12px !important;
 }
 
@@ -63,12 +63,12 @@ body .app-workspace-frame.app-workspace-frame :is(
   [role="tab"],
   [role="checkbox"],
   [role="switch"]
-):not(.asset-main) {
+):not(.asset-main):not(:where(.dashboard-artboard *)) {
   min-width: 28px;
   min-height: 28px;
 }
 
-body .app-workspace-frame.app-workspace-frame label:has(input, select, textarea) {
+body .app-workspace-frame.app-workspace-frame label:has(input, select, textarea):not(:where(.dashboard-artboard *)) {
   min-height: 28px;
 }
 

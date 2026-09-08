@@ -214,20 +214,22 @@
 .data-form-actions { justify-content: flex-end; padding-top: 3px; }
 .data-form-actions button { min-width: 64px; padding: 0 9px; color: #aab6bb; border: 1px solid #38464c; background: #182125; }
 .data-form-actions button.primary { color: #17130b; border-color: #d6aa4d; background: #d6aa4d; }
-.data-computed-fields { display: grid; gap: 7px; padding-top: 6px; border-top: 1px solid #2d393e; }
+.data-computed-fields { display: grid; gap: 7px; padding-top: 6px; border-top: 1px solid var(--line); }
 .data-computed-fields > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .data-computed-fields > header > span { display: grid; gap: 2px; }
-.data-computed-fields > header strong { color: #dce4e7; font-size: 9px; }
-.data-computed-fields > header small,.data-computed-fields > p { margin: 0; color: #708087; font-size: 7px; line-height: 1.45; }
-.data-computed-fields > header button { display: flex; min-height: 26px; align-items: center; gap: 4px; padding: 0 8px; color: #d7b867; border: 1px solid #5f512c; background: #272318; }
-.data-computed-fields article { display: grid; gap: 6px; padding: 8px; border: 1px solid #34444a; border-radius: 6px; background: #151d20; }
-.data-computed-fields article.invalid { border-color: #74423f; }
-.data-computed-fields article > label,.data-computed-fields .data-form-pair label { display: grid; gap: 4px; color: #88969c; font-size: 8px; }
+.data-computed-fields > header strong { color: var(--text-strong); font-size: 9px; }
+.data-computed-fields > header small,.data-computed-fields > p { margin: 0; color: var(--text-muted); font-size: 7px; line-height: 1.45; }
+.data-computed-fields > header button { display: flex; min-height: 26px; align-items: center; gap: 4px; padding: 0 8px; color: var(--text-strong); border: 1px solid var(--line-strong); background: var(--surface-2); }
+.data-computed-fields > header button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.data-computed-fields article { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-1); }
+.data-computed-fields article.invalid { border-color: var(--danger); }
+.data-computed-fields article > label,.data-computed-fields .data-form-pair label { display: grid; gap: 4px; color: var(--text-muted); font-size: 8px; }
 .data-computed-fields article textarea { min-height: 56px; font-family: "JetBrains Mono", Consolas, monospace; }
-.data-computed-fields article > small { color: #718f87; font-size: 7px; }
-.data-computed-fields article > em { color: #dc8580; font-size: 7px; font-style: normal; }
-.data-computed-field-heading { display: flex; align-items: center; justify-content: space-between; color: #c9d3d7; font-size: 8px; }
-.data-computed-field-heading button { display: grid; width: 24px; min-height: 24px; place-items: center; padding: 0; color: #8d999e; border: 0; background: transparent; }
+.data-computed-fields article > small { color: var(--text-muted); font-size: 7px; }
+.data-computed-fields article > em { color: var(--danger); font-size: 7px; font-style: normal; }
+.data-computed-field-heading { display: flex; align-items: center; justify-content: space-between; color: var(--text-strong); font-size: 8px; }
+.data-computed-field-heading button { display: grid; width: 24px; min-height: 24px; place-items: center; padding: 0; color: var(--text-muted); border: 0; background: transparent; }
+.data-computed-field-heading button:hover:not(:disabled) { color: var(--danger); background: var(--surface-2); }
 
 /* Compact data entry guide. */
 .digital-twin-panel { width: 340px; }
