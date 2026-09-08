@@ -16,6 +16,8 @@ import {
   type WidgetNode,
 } from "@bim-studio/contracts";
 
+import type { InsertDashboardPagesCommand } from "./dashboardPageBatch.js";
+export { createInsertDashboardPagesCommand } from "./dashboardPageBatch.js";
 let nextCommandId = 1;
 
 function commandId(): string {
@@ -64,7 +66,8 @@ export interface InsertDashboardPageCommand {
   readonly id: string;
   readonly type: "dashboard.page.insert";
   readonly label: string;
-  readonly payload: { readonly page: DashboardPageDocument; readonly interactions: readonly InteractionFlow[] };
+  /** 可选插入位置；缺省追加到末尾。行业包导入空应用时入口页置首，使发布回退首页即包入口。 */
+  readonly payload: { readonly page: DashboardPageDocument; readonly interactions: readonly InteractionFlow[]; readonly index?: number };
 }
 
 export interface UpdateDashboardPageGuidesCommand {
@@ -245,6 +248,7 @@ export interface DeleteDashboardNodeCommand {
 }
 
 export type StudioCommand =
+  | InsertDashboardPagesCommand
   | RenameApplicationCommand
   | RenameDashboardPageCommand
   | UpdateDashboardPageViewportCommand
@@ -308,12 +312,12 @@ export function createUpdateDashboardPageAppearanceCommand(pageId: string, appea
   return { id: commandId(), type: "dashboard.page.appearance.update", label: "更新页面背景", payload: { pageId, appearance: structuredClone(appearance) } };
 }
 
-export function createInsertDashboardPageCommand(page: DashboardPageDocument, interactions: readonly InteractionFlow[] = []): InsertDashboardPageCommand {
+export function createInsertDashboardPageCommand(page: DashboardPageDocument, interactions: readonly InteractionFlow[] = [], index?: number): InsertDashboardPageCommand {
   return {
     id: commandId(),
     type: "dashboard.page.insert",
     label: `添加二维页面“${page.name}”`,
-    payload: { page: structuredClone(page), interactions: structuredClone(interactions) },
+    payload: { page: structuredClone(page), interactions: structuredClone(interactions), ...(index === undefined ? {} : { index }) },
   };
 }
 

@@ -16,6 +16,16 @@
 .dashboard-template-grid article > button:hover { color: var(--on-accent); background: var(--accent); }
 .dashboard-template-grid article > button.dashboard-template-favorite { color: var(--text); background: var(--surface-1); border-color: var(--line); }
 .dashboard-template-grid article > button.dashboard-template-favorite.active { color: var(--accent-hover); border-color: var(--accent); }
+/* 行业深度包卡片：跨越两列展示完整动线，与单模板卡片区分层级。 */
+.dashboard-template-grid[data-category="packs"] { grid-auto-rows: auto; }
+.dashboard-template-grid article.dashboard-template-pack { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); grid-template-rows: auto; gap: 0; }
+.dashboard-template-pack .template-layout-preview { height: 180px; border-right: 1px solid var(--line); }
+.dashboard-template-grid article.dashboard-template-pack > .industry-pack-details { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 16px; min-width: 0; }
+.industry-pack-pages { display: flex; flex-wrap: wrap; gap: 6px; }
+.industry-pack-pages button { padding: 5px 8px; color: var(--text); background: var(--surface-1); border: 1px solid var(--line); border-radius: 4px; font-size: 12px; }
+.industry-pack-pages button[aria-pressed=true] { color: var(--text-strong); background: var(--accent-soft); border-color: var(--accent); }
+.industry-pack-details .industry-pack-insert { margin-top: auto; min-height: 32px; padding: 6px 12px; color: var(--on-accent); background: var(--accent); border: 1px solid var(--accent); border-radius: 4px; }
+@media (max-width: 700px) { .dashboard-template-grid article.dashboard-template-pack { grid-template-columns: minmax(0, 1fr); } .dashboard-template-pack .template-layout-preview { border-right: 0; border-bottom: 1px solid var(--line); } }
 .dashboard-template-empty { grid-column: 1 / -1; display: grid; place-content: center; justify-items: center; gap: 16px; color: var(--text-strong); }
 .dashboard-template-empty button { padding: 8px 14px; color: var(--on-accent); background: var(--accent); border: 1px solid var(--accent); border-radius: 6px; }
 @media (max-width: 600px) { .dashboard-template-filters { grid-template-columns: minmax(0, 1fr); } .dashboard-template-filters > select { min-height: 34px; } }

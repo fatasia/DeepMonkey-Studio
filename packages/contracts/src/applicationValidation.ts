@@ -3,6 +3,7 @@ import { DASHBOARD_PAGE_MAX_SIZE, DASHBOARD_PAGE_MIN_SIZE, type ApplicationDocum
 import { assertPathSafeResourceId } from "./resourceId.js";
 import { assertDirectBindingSpec } from "./directBinding.js";
 import { assertDashboardSampleData } from "./dashboardSampleData.js";
+import { validateDashboardTemplateSource } from "./dashboardTemplateSource.js";
 import { supportedExtensions } from "./project.js";
 import {
   expectArray,
@@ -182,6 +183,7 @@ function validatePage(value: unknown, path: string): void {
   required(object, "height", expectDashboardPageSize, path);
   requiredLiteral(object, "viewportFit", ["contain", "cover", "stretch", "fixed"], path);
   optional(object, "appearance", validateDashboardPageAppearance, path);
+  optional(object, "templateSource", validateDashboardTemplateSource, path);
   optional(object, "guides", (guides, guidesPath) => expectArray(guides, guidesPath, validateDashboardGuide), path);
   required(
     object,

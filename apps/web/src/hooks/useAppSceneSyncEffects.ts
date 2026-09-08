@@ -72,8 +72,13 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
     const applicationId = route.applicationId;
     const pageId = route.pageId;
     const openedApplication = applicationSessionRef.current.store.getState().document;
-    if (openedApplication?.metadata.projectId === projectId && openedApplication.metadata.id === applicationId && openedApplication.pages.some((page) => page.id === pageId))
+    if (openedApplication?.metadata.projectId === projectId && openedApplication.metadata.id === applicationId) {
+      // 撤销导入会移除当前页。只切到本地剩余页，不重新读取服务端覆盖撤销历史和草稿。
+      if (!openedApplication.pages.some(page => page.id === pageId) && openedApplication.pages[0]) {
+        navigate({ view: "dashboard", projectId, applicationId, pageId: openedApplication.pages[0].id }, true);
+      }
       return;
+    }
     let cancelled = false;
     void Promise.all([api.getProject(projectId), api.getApplication(projectId, applicationId)])
       .then(([nextProject, application]) => {
@@ -94,7 +99,7 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
     return () => {
       cancelled = true;
     };
-  }, [route.view, route.projectId, route.applicationId, route.pageId]);
+  }, [route.view, route.projectId, route.applicationId, route.pageId, activeApplication?.pages]);
 
   useEffect(() => {
     if (route.view !== "topology" || !route.projectId || !route.applicationId || !route.topologyId) return;

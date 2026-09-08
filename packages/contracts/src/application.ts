@@ -7,6 +7,7 @@ import type {
   SceneSnapshot
 } from "./index.js";
 import { validateApplicationDocument } from "./applicationValidation.js";
+import type { DashboardTemplateSource } from "./dashboardTemplateSource.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -105,6 +106,8 @@ export interface DashboardPageDocument {
   /** How the published page adapts its logical resolution to the display. */
   viewportFit: DashboardViewportFit;
   appearance?: DashboardPageAppearance;
+  /** 导入来源随编辑、保存与发布保留，不参与运行数据绑定。 */
+  templateSource?: DashboardTemplateSource;
   /** Editor-only layout guides. They are saved with the page and hidden at runtime. */
   guides?: DashboardGuide[];
   nodes: WidgetNode[];

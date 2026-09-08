@@ -6,7 +6,7 @@ import type {
 } from "@bim-studio/contracts";
 import {
   createDeleteDashboardPageCommand, createInsertDashboardNodeCommand,
-  createInsertDashboardNodesCommand, createInsertDashboardPageCommand,
+  createInsertDashboardNodesCommand, createInsertDashboardPageCommand, createInsertDashboardPagesCommand,
   createRenameDashboardPageCommand, createUpdateDashboardDataWidgetCommand,
   createUpdateDashboardDataWidgetsCommand, createUpdateDashboardNodeStateCommand,
   createUpdateDashboardPageAppearanceCommand, createUpdateDashboardPageViewportCommand,
@@ -23,6 +23,8 @@ import {
   createDashboardTemplateNodes, type DashboardTemplateKind
 } from "./DashboardTemplateCatalog";
 import { replaceDashboardWidgetDataProduct } from "./dashboardDataProductReplacement";
+import { findIndustryTemplatePack } from "./industryTemplatePackCatalog";
+import { buildIndustryPackImport } from "./industryPackImport";
 import {
   TEMPLATE_FAVORITES_KEY, createDefaultDataWidget, dashboardNodeIdentity,
   dashboardInsertedNodeName, normalizeDashboardSize, uniqueDashboardNodeName
@@ -246,6 +248,17 @@ export function createDashboardContentController(context: DashboardContentContro
     onSelectionChange(nodes.map((node) => ({ kind: "widget", id: node.id })));
   }
 
+  /** 整包一条命令；保留既有发布配置，仅空应用的默认首页采用新包入口。 */
+  function insertIndustryPack(packId: string) {
+    if (busy) return;
+    const pack = findIndustryTemplatePack(packId);
+    if (!pack) return;
+    const emptyFirstPage = application.pages.length === 1 && application.pages[0]!.nodes.length === 0;
+    const imported = buildIndustryPackImport(pack, locale, page);
+    onCommand(createInsertDashboardPagesCommand(imported.pages, imported.interactions, emptyFirstPage ? 0 : undefined, emptyFirstPage ? imported.entryPageId : undefined));
+    onSelectPage(imported.entryPageId, { zoom, scrollLeft: 0, scrollTop: 0, selectedNodeIds: [] });
+  }
+
   function updateSceneViewport(patch: Partial<Pick<Extract<WidgetNode, { kind: "scene-viewport" }>, "sceneId" | "cameraViewId" | "renderMode" | "interactionPolicy">>) {
     if (!selectedNode || selectedNode.kind !== "scene-viewport") return;
     const next = { sceneId: selectedNode.sceneId, renderMode: selectedNode.renderMode, interactionPolicy: selectedNode.interactionPolicy, ...(selectedNode.cameraViewId ? { cameraViewId: selectedNode.cameraViewId } : {}), ...patch };
@@ -387,6 +400,7 @@ export function createDashboardContentController(context: DashboardContentContro
     commitPageViewport, updatePageAppearance, uploadPageBackground, clearPageBackground,
     uploadComponentBackground, clearComponentBackground, applyComponentBackground,
     selectOverflowNodes, addDataWidget, addSceneViewport, insertDashboardTemplate,
+    insertIndustryPack,
     updateSceneViewport, commitNodeName, updateDataWidget, selectDataProduct,
     replaceSelectedDataProduct, toggleTemplateFavorite, selectDataField,
     assignAnalysisField, toggleReportValueField

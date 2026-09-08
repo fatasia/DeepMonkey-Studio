@@ -1,5 +1,5 @@
 import { useMemo, type CSSProperties } from "react";
-import type { DashboardPageDocument } from "@bim-studio/contracts";
+import type { DashboardDataWidgetNode, DashboardPageDocument } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import type { DashboardTemplateDefinition } from "./dashboardTemplateTypes";
 import { buildDashboardTemplateNodes } from "./dashboardTemplateLayoutBuilder";
@@ -9,19 +9,23 @@ interface DashboardTemplatePreviewProps {
   locale: AppLocale;
   template: DashboardTemplateDefinition;
   page?: Pick<DashboardPageDocument, "width" | "height">;
+  previewNodes?: DashboardDataWidgetNode[];
+  previewTitle?: string;
 }
 
 /** 与实际插入使用同一布局工厂；不再用固定图形和虚构指标冒充模板数据。 */
-export function DashboardTemplatePreview({ locale, template, page }: DashboardTemplatePreviewProps) {
+export function DashboardTemplatePreview({ locale, template, page, previewNodes, previewTitle }: DashboardTemplatePreviewProps) {
   const width = page?.width ?? 1920, height = page?.height ?? 1080;
-  const nodes = useMemo(() => buildDashboardTemplateNodes(locale,
-    { id: "preview", name: "preview", width, height, viewportFit: "contain", nodes: [] }, template, 0), [locale, template, width, height]);
-  const title = locale === "zh-CN" ? template.zh : template.en;
+  const nodes = useMemo(() => previewNodes ?? buildDashboardTemplateNodes(locale,
+    { id: "preview", name: "preview", width, height, viewportFit: "contain", nodes: [] }, template, 0), [locale, template, width, height, previewNodes]);
+  const title = previewTitle ?? (locale === "zh-CN" ? template.zh : template.en);
   return <div className="dashboard-template-card-preview template-layout-preview"
-    style={{ "--template-accent": template.accent, "--template-surface": template.surface } as CSSProperties}
+    style={{ "--template-accent": previewNodes ? "var(--accent)" : template.accent,
+      "--template-surface": previewNodes ? "var(--surface-1)" : template.surface,
+      ...(previewNodes ? { "--template-text": "var(--text-strong)" } : {}) } as CSSProperties}
     aria-label={locale === "zh-CN" ? `${title}模板预览` : `${title} template preview`}>
     <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title} preserveAspectRatio="xMidYMid meet">
-      <title>{locale === "zh-CN" ? `${title} · 页面结构，数据待绑定` : `${title} · Layout, data not connected`}</title>
+      <title>{previewNodes ? (locale === "zh-CN" ? `${title} · 页面结构` : `${title} · Page layout`) : (locale === "zh-CN" ? `${title} · 页面结构，数据待绑定` : `${title} · Layout, data not connected`)}</title>
       {nodes.map(({ frame, widget }) => <g key={widget.key} data-template-node={widget.key} data-widget-type={widget.type}>
         <rect x={frame.x} y={frame.y} width={frame.width} height={frame.height} rx={8} />
         <svg x={frame.x + 12} y={frame.y + 8} width={Math.max(1, frame.width - 24)} height={Math.max(1, frame.height - 16)} overflow="hidden">

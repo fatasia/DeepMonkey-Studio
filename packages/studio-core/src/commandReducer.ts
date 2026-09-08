@@ -1,9 +1,11 @@
 import type { ApplicationDocument, WidgetNode } from "@bim-studio/contracts";
 import type { DashboardNodeStatePatch, StudioCommand } from "./command.js";
+import { insertDashboardPages } from "./dashboardPageBatch.js";
 
 /** 命令归约保持纯函数：输入文档不原地修改，便于撤销、回放和审计。 */
 export function applyStudioCommand(document: ApplicationDocument, command: StudioCommand): ApplicationDocument {
   switch (command.type) {
+    case "dashboard.pages.insert": return insertDashboardPages(document, command);
     case "application.rename":
       return { ...document, metadata: { ...document.metadata, name: command.payload.name } };
     case "dashboard.page.rename": {
@@ -41,9 +43,12 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
       if (flowIds.size !== command.payload.interactions.length || document.interactions.some((flow) => flowIds.has(flow.id))) {
         throw new Error("待插入页面包含重复的联动 ID");
       }
+      const pageIndex = command.payload.index;
+      const pages = [...document.pages];
+      pages.splice(pageIndex === undefined || pageIndex < 0 || pageIndex > pages.length ? pages.length : pageIndex, 0, structuredClone(command.payload.page));
       return {
         ...document,
-        pages: [...document.pages, structuredClone(command.payload.page)],
+        pages,
         interactions: [...document.interactions, ...structuredClone(command.payload.interactions)]
       };
     }

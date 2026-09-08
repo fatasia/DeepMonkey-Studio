@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardDataWidgetConfig } from "@bim-studio/contracts";
-import { buildDashboardSampleMetric, dashboardSampleFields, isolateCopiedDashboardSamples, withDashboardSampleData } from "./dashboardSampleMetrics";
+import { buildDashboardSampleMetric, dashboardSampleFields, dashboardSampleFilterWidgets, isolateCopiedDashboardSamples, withDashboardSampleData } from "./dashboardSampleMetrics";
 import { replaceDashboardWidgetDataProduct } from "./dashboardDataProductReplacement";
 import { applyDashboardFilters } from "./DashboardWidgetVisualization";
 
 const widget: DashboardDataWidgetConfig = { title: "产量", type: "value", key: "output", unit: "件", field: "output", analysis: { measureField: "output", aggregation: "sum" } };
 describe("sample metrics", () => {
+  it("retains explicitly declared numeric and boolean columns after clearing all rows", () => {
+    expect(dashboardSampleFields({ columns: [{ key: "output", type: "number" }, { key: "active", type: "boolean" }], rows: [] }).map(field => field.type)).toEqual(["number", "boolean"]);
+  });
+  it("does not combine filters owned by separate inserted or copied templates", () => {
+    const one = { ...widget, sampleData: { sourceId: "one", rows: [] } };
+    const two = { ...widget, sampleData: { sourceId: "two", rows: [] } };
+    const filters = ["one:filter", "two:filter", "global"].map(key => ({ ...widget, type: "filter" as const, key }));
+    expect(dashboardSampleFilterWidgets(one, [one, two, ...filters]).map(item => item.key)).toEqual(["one:filter", "global"]);
+    const node = { id: "filter-copy", kind: "data-widget" as const, widget: filters[0]!, frame: { x: 0, y: 0, width: 10, height: 10 }, zIndex: 0 };
+    const copied = isolateCopiedDashboardSamples([node, { ...node, id: "value-copy", widget: one }]);
+    expect(copied[0]).not.toMatchObject({ widget: { key: "one:filter" } });
+  });
   it("isolates copied sample identities while retaining sharing within the copied set", () => {
     const nodes = ["a", "b"].map(id => ({ id, kind: "data-widget" as const, frame: { x: 0, y: 0, width: 1, height: 1 }, zIndex: 0,
       widget: { ...widget, sampleData: { sourceId: "old", rows: [{ output: 4 }] } } }));

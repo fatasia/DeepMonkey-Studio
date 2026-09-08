@@ -8,8 +8,9 @@ import { DirectBindingRuntime } from "../directBindingRuntime";
 import { DashboardDigitalFlip, DashboardLiquidFill, DashboardScrollTable } from "./DashboardIndustrialWidgets";
 import { DashboardImage, DashboardMonitor, DashboardVideo } from "./DashboardMediaPlayer";
 import { analyzeDashboardMetric, conditionalStyle } from "./dashboardAnalytics";
+import { formatDashboardMetricDisplay } from "./dashboardMetricDisplay";
 import { mergeDirectBindingMetric, mergeProductMetrics } from "./dashboardMetrics";
-import { buildDashboardSampleMetric } from "./dashboardSampleMetrics";
+import { buildDashboardSampleMetric, dashboardSampleFilterWidgets } from "./dashboardSampleMetrics";
 import { resolveSemanticWidget } from "./dashboardSemanticBinding";
 import { buildSemanticMetric } from "./dashboardSemanticMetrics";
 import { buildDashboardDataProductRefreshPlans } from "./dataRefreshPolicy";
@@ -165,7 +166,7 @@ export function useDashboardMetrics(
 
   const visibleMetrics = useMemo(() => ({ ...metrics,
     ...Object.fromEntries(widgets.filter(widget => widget.sampleData).map(widget => [widget.key,
-      buildDashboardSampleMetric(widget, applyDashboardFilters(widget.sampleData!.rows, filters, widgets) as NonNullable<DashboardDataWidgetConfig["sampleData"]>["rows"])])),
+      buildDashboardSampleMetric(widget, applyDashboardFilters(widget.sampleData!.rows, filters, dashboardSampleFilterWidgets(widget, widgets)) as NonNullable<DashboardDataWidgetConfig["sampleData"]>["rows"])])),
     ...Object.fromEntries(resolved.filter((entry) => entry.widget.semanticBinding).map((entry) => {
     const error = entry.error ?? (catalogError ? "语义数据目录读取失败，请刷新页面重试。" : undefined);
     const metric = metrics[entry.widget.key];
@@ -405,8 +406,8 @@ export function DashboardWidgetView({
       style={valueStyle.visible === false ? { display: "none" } : { color: valueStyle.color, backgroundColor: valueStyle.backgroundColor, fontWeight: valueStyle.fontWeight }}
     >
       <span>{widget.title}</span>
-      <strong>
-        {display}
+      <strong title={typeof analysis.value === "number" && Number.isFinite(analysis.value) ? String(analysis.value) : undefined}>
+        {formatDashboardMetricDisplay(analysis.value, widget, locale)}
         <small>{widget.unit}</small>
       </strong>
     </div>
