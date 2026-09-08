@@ -16,7 +16,7 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import type { DataConnectionRecord, DataConnectorDiagnostics, DataDatasetPreview, DataDatasetRecord, ProjectRecord } from "@bim-studio/contracts";
+import type { DataConnectionRecord, DataConnectorDiagnostics, DataDatasetPreview, DataDatasetRecord, ProjectRecord, SystemUserRecord } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import "../styles/data-center-workbench.css";
@@ -28,6 +28,7 @@ import { NodeRedStudio } from "./NodeRedStudio";
 import { SecondaryPageBack } from "./SecondaryPageBack";
 import { ConnectionForm, DatasetForm } from "./DataCenterForms";
 import { datasetSchemaChanged } from "./datasetSchema";
+import { DatasetWritebackPanel } from "./DatasetWritebackPanel";
 const SemanticModelStudio = lazy(() => import("./SemanticModelStudio"));
 import {
   CONNECTOR_REQUIRED,
@@ -44,7 +45,7 @@ import {
   writeAddressPlaceholder,
 } from "./DataCenterPresentation";
 
-export function DataCenter({ locale, project, onBack }: { locale: AppLocale; project: ProjectRecord; onBack: () => void }) {
+export function DataCenter({ locale, project, currentUser, onBack }: { locale: AppLocale; project: ProjectRecord; currentUser?: SystemUserRecord; onBack: () => void }) {
   const [connections, setConnections] = useState<DataConnectionRecord[]>([]);
   const [diagnostics, setDiagnostics] = useState<DataConnectorDiagnostics[]>([]);
   const [datasets, setDatasets] = useState<DataDatasetRecord[]>([]);
@@ -507,6 +508,7 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
             {datasetEditor && selectedConnection && !selectedConnectorUnavailable && (
               <DatasetForm
                 locale={locale}
+                canConfigureWriteback={currentUser?.role === "admin"}
                 projectId={project.id}
                 connection={selectedConnection}
                 {...(datasetEditor === "new" ? {} : { initial: datasetEditor })}
@@ -584,6 +586,8 @@ export function DataCenter({ locale, project, onBack }: { locale: AppLocale; pro
               </div>
             </header>
             <div className="data-preview-content">
+              {selectedDataset?.writeback && currentUser && <DatasetWritebackPanel key={`${currentUser.id}:${project.id}:${selectedDataset.id}`} locale={locale} projectId={project.id} userId={currentUser.id}
+                dataset={{ ...selectedDataset, writeback: selectedDataset.writeback }} canWrite={currentUser.role !== "viewer"} />}
               {sqlAssistantOpen && (
                 <section className="data-sql-assistant">
                   <header>

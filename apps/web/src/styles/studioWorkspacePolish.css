@@ -72,7 +72,7 @@
 
   .app-shell .topbar-actions {
     flex: 0 0 auto;
-    margin-left: 0;
+    margin-left: auto;
     overflow: visible;
   }
 

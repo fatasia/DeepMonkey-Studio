@@ -1,0 +1,25 @@
+.dataset-writeback-config { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; color: var(--text); container-type: inline-size; }
+.data-dataset-form-fields, .dataset-writeback-config fieldset { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.data-dataset-form-fields > label { display: grid; gap: 4px; color: var(--text); font-size: 12px; }
+.dataset-writeback-config label { display: grid; min-width: 0; gap: 4px; color: var(--text); font-size: 12px; }
+.dataset-writeback-config .dataset-writeback-switch { display: flex; align-items: center; gap: 8px; }
+.data-inline-form .dataset-writeback-config .dataset-writeback-switch input { width: 16px; height: 16px; min-height: 16px; margin: 0; accent-color: var(--accent); }
+.dataset-writeback-config article { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px; background: var(--surface-1); }
+.dataset-writeback-field-heading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(80px, .6fr) 32px; gap: 8px; align-items: end; }
+.dataset-writeback-config details { display: grid; min-width: 0; color: var(--text-muted); }
+.dataset-writeback-config summary { cursor: pointer; font-size: 12px; padding: 4px 0; }
+.dataset-writeback-config details > label, .dataset-writeback-bounds { margin-top: 8px; }
+.dataset-writeback-bounds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.data-inline-form .dataset-writeback-config :is(input, select, textarea) { width: 100%; box-sizing: border-box; color: var(--text-strong); background: var(--surface-1); border-color: var(--line-strong); font-size: 12px; font-variant-numeric: tabular-nums; }
+.data-inline-form .dataset-writeback-config textarea { min-height: 56px; }
+.data-inline-form .dataset-writeback-config button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 32px; padding: 4px 8px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius-sm); cursor: pointer; }
+.data-inline-form .dataset-writeback-config button:hover:not(:disabled) { border-color: var(--accent); color: var(--text-strong); }
+.dataset-writeback-config .dataset-writeback-add { justify-self: start; }
+.data-dataset-form-fields :is(input, select, textarea, button):disabled { cursor: not-allowed; opacity: .55; }
+.dataset-writeback-config :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dataset-writeback-config-error { margin: 0; color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .dataset-writeback-field-heading { grid-template-columns: minmax(0, 1fr) 84px 28px; gap: 4px; } }
+@container (max-width: 260px) {
+  .dataset-writeback-field-heading { grid-template-columns: minmax(0, 1fr) 32px; gap: 8px; }
+  .dataset-writeback-field-heading > label:first-child { grid-column: 1 / -1; }
+}

@@ -373,7 +373,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .data-center-page :is(.data-center-columns, .pipeline-studio, .endpoint-studio) { height: auto; min-height: 680px; }
   .data-center-page .data-center-columns { grid-template-columns: 1fr 1fr; }
   .data-center-page .data-center-preview {

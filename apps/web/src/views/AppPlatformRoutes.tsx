@@ -570,7 +570,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
             </div>
           }
         >
-          <DataCenter locale={locale} project={project} onBack={closeDataCenter} />
+          <DataCenter locale={locale} project={project} {...(currentUser ? { currentUser } : {})} onBack={closeDataCenter} />
         </Suspense>
       )}
       {route.view === "vision" && project && (

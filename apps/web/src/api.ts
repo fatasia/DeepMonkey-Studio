@@ -50,6 +50,7 @@ import { createIndustrialApi } from "./apiClients/industrialApi.js";
 import { createPprBopApi } from "./apiClients/pprBopApi.js";
 import { createModelSceneApi } from "./apiClients/modelSceneApi.js";
 import { createVisionApi } from "./apiClients/visionApi.js";
+import { createDataWritebackApi } from "./apiClients/dataWritebackApi.js";
 import { createAssetLibraryApi } from "./apiClients/assetLibraryApi.js";
 import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
 import { createSemanticModelApi } from "./apiClients/semanticModelApi.js";
@@ -684,7 +685,7 @@ export const api = {
     if (options.limit !== undefined) query.set("limit", String(options.limit));
     return request<AiDataBindingRunRecord[]>(`/api/projects/${projectId}/ai-data-binding-runs${query.size ? `?${query}` : ""}`);
   },
-  createDataset: (projectId: string, dataset: Partial<DataDatasetRecord>) =>
+  createDataset: (projectId: string, dataset: Omit<Partial<DataDatasetRecord>, "writeback"> & { writeback?: DataDatasetRecord["writeback"] | null }) =>
     request<DataDatasetRecord>(`/api/projects/${projectId}/datasets`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -757,6 +758,7 @@ export const api = {
       },
     ),
   ...createVisionApi(request),
+  ...createDataWritebackApi(request),
   ...createIndustrialApi(request),
   ...createPprBopApi(request),
   ...createModelSceneApi(request),

@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Plus, Trash2, X } from "lucide-react";
 import type { DataComputedField, DataConnectionRecord, DataConnectionType, DataDatasetRecord } from "@bim-studio/contracts";
 import { compileFormula } from "@bim-studio/data-runtime";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { DEFAULT_DATA_REFRESH_SECONDS, MIN_DATA_REFRESH_SECONDS } from "./dataRefreshPolicy";
+import { createWritebackConfigDraft, DatasetWritebackConfigFields, writebackConfigChange } from "./DatasetWritebackConfigFields";
 import {
   CONNECTOR_REQUIRED,
   DATABASE_CONNECTIONS,
@@ -292,6 +293,7 @@ export function DatasetForm({
   projectId,
   connection,
   initial,
+  canConfigureWriteback = false,
   onSaved,
   onCancel,
   onError,
@@ -300,6 +302,7 @@ export function DatasetForm({
   projectId: string;
   connection: DataConnectionRecord;
   initial?: DataDatasetRecord;
+  canConfigureWriteback?: boolean;
   onSaved: (record: DataDatasetRecord) => void;
   onCancel: () => void;
   onError: (message: string) => void;
@@ -310,6 +313,12 @@ export function DatasetForm({
   const [refreshSeconds, setRefreshSeconds] = useState(initial?.refreshSeconds ?? DEFAULT_DATA_REFRESH_SECONDS);
   const [scheduledSeconds, setScheduledSeconds] = useState(initial?.refreshSeconds && initial.refreshSeconds > 0 ? initial.refreshSeconds : DEFAULT_DATA_REFRESH_SECONDS);
   const [computedFields, setComputedFields] = useState<DataComputedField[]>(initial?.computedFields ?? []);
+  const [writebackDraft, setWritebackDraft] = useState(() => createWritebackConfigDraft(initial?.writeback));
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const writebackChange = useMemo(() => canConfigureWriteback && connection.type === "http" ? writebackConfigChange(initial?.writeback, writebackDraft) : {}, [canConfigureWriteback, connection.type, initial?.writeback, writebackDraft]);
   const sql = SQL_CONNECTIONS.has(connection.type);
   const jsonQuery = JSON_QUERY_CONNECTORS.has(connection.type);
   const queryConnector = QUERY_CONNECTORS.has(connection.type);
@@ -345,27 +354,37 @@ export function DatasetForm({
   }
 
   async function save() {
-    if (invalid) {
+    if (savingRef.current) return;
+    if (invalid || writebackChange.error) {
+      if (writebackChange.error) { onError(writebackChange.error); return; }
       onError(tr(locale, "请先修正计算字段逻辑或字段名。", "Fix computed-field logic or keys before saving."));
       return;
     }
+    savingRef.current = true;
+    setSaving(true);
     try {
+      const { writeback: _initialWriteback, ...initialFields } = initial ?? {};
       const saved = await api.createDataset(projectId, {
-        ...(initial ?? {}),
+        ...initialFields,
         name: name.trim(),
         connectionId: connection.id,
         ...(queryConnector ? { query, ...(jsonQuery || httpQuery ? { sourceKey } : {}) } : { sourceKey }),
         refreshSeconds,
         fields: initial?.fields ?? [],
         computedFields: computedFields.map((field) => ({ ...field, key: field.key.trim(), label: field.label.trim() || field.key.trim(), formula: field.formula.trim() })),
+        ...(writebackChange.writeback !== undefined ? { writeback: writebackChange.writeback } : {}),
       });
-      onSaved(saved);
+      if (mounted.current) onSaved(saved);
     } catch (reason) {
-      onError(reason instanceof Error ? reason.message : String(reason));
+      if (mounted.current) onError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      savingRef.current = false;
+      if (mounted.current) setSaving(false);
     }
   }
   return (
-    <div className="data-inline-form">
+    <div className="data-inline-form" aria-busy={saving}>
+      <fieldset className="data-dataset-form-fields" disabled={saving}>
       <div className="data-form-heading">
         <strong>{initial ? tr(locale, "编辑数据集", "Edit dataset") : tr(locale, "新建数据集", "New dataset")}</strong>
         <button onClick={onCancel}>
@@ -451,6 +470,8 @@ export function DatasetForm({
           ? tr(locale, "打开页面时读取一次，之后仅在用户主动运行时更新。", "Loads once when opened, then updates only when run manually.")
           : tr(locale, "二维组件和拓扑会继承此周期；三维对象可在绑定中单独设置，实时连接仍采用推送。", "2D widgets and topology inherit this interval; 3D objects can override it per binding and live connections continue to use push.")}
       </small>
+      {httpQuery && canConfigureWriteback && <DatasetWritebackConfigFields locale={locale} draft={writebackDraft} disabled={saving} onChange={setWritebackDraft} />}
+      {writebackChange.error && <p className="dataset-writeback-config-error" role="alert">{tr(locale, writebackChange.error, "Check the field keys, types, ranges and options.")}</p>}
       <section className="data-computed-fields">
         <header>
           <span>
@@ -541,10 +562,11 @@ export function DatasetForm({
       </section>
       <div className="data-form-actions">
         <button onClick={onCancel}>{tr(locale, "取消", "Cancel")}</button>
-        <button className="primary" disabled={!name.trim() || invalid} onClick={() => void save()}>
-          {tr(locale, "保存数据集", "Save")}
+        <button className="primary" disabled={!name.trim() || invalid || Boolean(writebackChange.error) || saving} title={writebackChange.error || (saving ? tr(locale, "正在保存", "Saving") : undefined)} onClick={() => void save()}>
+          {saving ? tr(locale, "保存中…", "Saving…") : tr(locale, "保存数据集", "Save")}
         </button>
       </div>
+      </fieldset>
     </div>
   );
 }

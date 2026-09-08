@@ -4,6 +4,21 @@ import { describe, expect, it } from "vitest";
 const stylesRoot = new URL("./", import.meta.url);
 
 describe("editor responsive layout contracts", () => {
+  it("switches data-center columns together with the preview at 1000px", async () => {
+    const css = await readFile(new URL("data-center-workbench.css", stylesRoot), "utf8");
+    expect(css).toMatch(/@media \(max-width: 1000px\)\s*\{[\s\S]*?\.data-center-page \.data-center-columns\s*\{ grid-template-columns: 1fr 1fr;/);
+  });
+  it("anchors scene actions to the right in wide and compact headers", async () => {
+    const base = await readFile(new URL("scene-workspace.css", stylesRoot), "utf8");
+    const actions = base.match(/\.topbar-actions\s*\{([^}]*)\}/)?.[1];
+    expect(actions).toContain("flex: 0 1 auto");
+    expect(actions).toContain("margin-left: auto");
+    const compact = await readFile(new URL("studioWorkspacePolish.css", stylesRoot), "utf8");
+    const override = compact.match(/\.app-shell \.topbar-actions\s*\{([^}]*)\}/)?.[1];
+    expect(override).toContain("margin-left: auto");
+    expect(override).not.toContain("margin-left: 0");
+  });
+
   it("keeps solid primary actions readable across brand changes and hover", async () => {
     for (const file of ["scene-workspace.css", "managerWorkspaceChrome.css", "managerSceneCards.css", "dashboardWorkspacePolish.css"]) {
       const css = await readFile(new URL(file, stylesRoot), "utf8");
