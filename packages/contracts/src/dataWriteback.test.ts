@@ -14,3 +14,18 @@ describe("REST 填报合同", () => {
     expect(validateDataWritebackValues(config, {})).toHaveLength(2);
   });
 });
+
+describe("PostgreSQL 填报目标合同", () => {
+  const sql = { version: 2, kind: "postgresql", schema: "public", table: "records", primaryKey: "id", versionColumn: "revision", fields: [{ key: "output", type: "number" }] };
+  it("接受SQL配置但不改变REST旧配置", () => {
+    expect(() => assertDataWritebackConfig(sql)).not.toThrow();
+    expect(() => assertDataWritebackConfig(config)).not.toThrow();
+  });
+  it.each([
+    { ...sql, table: "records;DROP TABLE records" }, { ...sql, schema: "pg_catalog" }, { ...sql, schema: "information_schema" },
+    { ...sql, table: 'records"' }, { ...sql, primaryKey: "revision" }, { ...sql, table: "a".repeat(64) },
+    { ...sql, table: "中".repeat(22) }, { ...sql, kind: "mysql" }, { ...sql, query: "UPDATE records" },
+    { ...sql, fields: [{ key: "id", type: "string" }] }, { ...sql, fields: [{ key: "revision", type: "number" }] },
+    { ...sql, fields: [{ key: "__revision", type: "number" }] },
+  ])("拒绝越权/歧义标识符 %j", value => expect(() => assertDataWritebackConfig(value)).toThrow());
+});

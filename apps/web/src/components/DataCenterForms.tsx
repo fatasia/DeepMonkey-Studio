@@ -313,12 +313,12 @@ export function DatasetForm({
   const [refreshSeconds, setRefreshSeconds] = useState(initial?.refreshSeconds ?? DEFAULT_DATA_REFRESH_SECONDS);
   const [scheduledSeconds, setScheduledSeconds] = useState(initial?.refreshSeconds && initial.refreshSeconds > 0 ? initial.refreshSeconds : DEFAULT_DATA_REFRESH_SECONDS);
   const [computedFields, setComputedFields] = useState<DataComputedField[]>(initial?.computedFields ?? []);
-  const [writebackDraft, setWritebackDraft] = useState(() => createWritebackConfigDraft(initial?.writeback));
+  const [writebackDraft, setWritebackDraft] = useState(() => createWritebackConfigDraft(initial?.writeback, connection.type === "postgresql" ? "postgresql" : "http"));
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const writebackChange = useMemo(() => canConfigureWriteback && connection.type === "http" ? writebackConfigChange(initial?.writeback, writebackDraft) : {}, [canConfigureWriteback, connection.type, initial?.writeback, writebackDraft]);
+  const writebackChange = useMemo(() => canConfigureWriteback && ["http", "postgresql"].includes(connection.type) ? writebackConfigChange(initial?.writeback, writebackDraft) : {}, [canConfigureWriteback, connection.type, initial?.writeback, writebackDraft]);
   const sql = SQL_CONNECTIONS.has(connection.type);
   const jsonQuery = JSON_QUERY_CONNECTORS.has(connection.type);
   const queryConnector = QUERY_CONNECTORS.has(connection.type);
@@ -470,7 +470,7 @@ export function DatasetForm({
           ? tr(locale, "打开页面时读取一次，之后仅在用户主动运行时更新。", "Loads once when opened, then updates only when run manually.")
           : tr(locale, "二维组件和拓扑会继承此周期；三维对象可在绑定中单独设置，实时连接仍采用推送。", "2D widgets and topology inherit this interval; 3D objects can override it per binding and live connections continue to use push.")}
       </small>
-      {httpQuery && canConfigureWriteback && <DatasetWritebackConfigFields locale={locale} draft={writebackDraft} disabled={saving} onChange={setWritebackDraft} />}
+      {["http", "postgresql"].includes(connection.type) && canConfigureWriteback && <DatasetWritebackConfigFields locale={locale} draft={writebackDraft} disabled={saving} onChange={setWritebackDraft} />}
       {writebackChange.error && <p className="dataset-writeback-config-error" role="alert">{tr(locale, writebackChange.error, "Check the field keys, types, ranges and options.")}</p>}
       <section className="data-computed-fields">
         <header>

@@ -4,13 +4,14 @@ import { translate as tr, type AppLocale } from "../i18n";
 import "./DatasetWritebackConfigFields.css";
 
 type FieldDraft = { key: string; type: DataWritebackField["type"]; required: boolean; min: string; max: string; maxLength: string; options: string };
-export type WritebackConfigDraft = { enabled: boolean; recordPath: string; fields: FieldDraft[] };
+export type WritebackConfigDraft = { enabled: boolean; recordPath: string; kind: "http" | "postgresql"; schema: string; table: string; primaryKey: string; versionColumn: string; fields: FieldDraft[] };
 const blankField = (): FieldDraft => ({ key: "", type: "string", required: false, min: "", max: "", maxLength: "", options: "" });
-export function createWritebackConfigDraft(initial?: DataWritebackConfig): WritebackConfigDraft {
-  return { enabled: Boolean(initial), recordPath: initial?.recordPath ?? "/records/{id}", fields: initial?.fields.map(field => ({ key: field.key, type: field.type, required: field.required ?? false, min: field.min?.toString() ?? "", max: field.max?.toString() ?? "", maxLength: field.maxLength?.toString() ?? "", options: field.options?.map(value => value === null ? "null" : String(value)).join("\n") ?? "" })) ?? [blankField()] };
+export function createWritebackConfigDraft(initial?: DataWritebackConfig, kind: "http" | "postgresql" = "http"): WritebackConfigDraft {
+  const sql = initial?.version === 2 ? initial : undefined;
+  return { enabled: Boolean(initial), kind: sql ? "postgresql" : kind, schema: sql?.schema ?? "public", table: sql?.table ?? "", primaryKey: sql?.primaryKey ?? "id", versionColumn: sql?.versionColumn ?? "revision", recordPath: initial?.recordPath ?? "/records/{id}", fields: initial?.fields.map(field => ({ key: field.key, type: field.type, required: field.required ?? false, min: field.min?.toString() ?? "", max: field.max?.toString() ?? "", maxLength: field.maxLength?.toString() ?? "", options: field.options?.map(value => value === null ? "null" : String(value)).join("\n") ?? "" })) ?? [blankField()] };
 }
 export function writebackConfigChange(initial: DataWritebackConfig | undefined, draft: WritebackConfigDraft): { writeback?: DataWritebackConfig | null; error?: string } {
-  if (JSON.stringify(draft) === JSON.stringify(createWritebackConfigDraft(initial))) return {};
+  if (JSON.stringify(draft) === JSON.stringify(createWritebackConfigDraft(initial, draft.kind))) return {};
   if (!draft.enabled) return initial ? { writeback: null } : {};
   try {
     const fields = draft.fields.map(field => {
@@ -27,7 +28,9 @@ export function writebackConfigChange(initial: DataWritebackConfig | undefined, 
       });
       return { key: field.key.trim(), type: field.type, ...(field.required ? { required: true } : {}), ...(field.min.trim() ? { min: Number(field.min) } : {}), ...(field.max.trim() ? { max: Number(field.max) } : {}), ...(field.maxLength.trim() ? { maxLength: Number(field.maxLength) } : {}), ...(options.length ? { options } : {}) };
     });
-    const config = { version: 1, recordPath: draft.recordPath.trim(), fields };
+    const config = draft.kind === "postgresql"
+      ? { version: 2, kind: "postgresql", schema: draft.schema.trim(), table: draft.table.trim(), primaryKey: draft.primaryKey.trim(), versionColumn: draft.versionColumn.trim(), fields }
+      : { version: 1, recordPath: draft.recordPath.trim(), fields };
     assertDataWritebackConfig(config);
     return { writeback: config };
   } catch (error) { return { error: error instanceof Error ? error.message : "填报配置无效" }; }
@@ -37,12 +40,15 @@ export function DatasetWritebackConfigFields({ locale, draft, disabled = false, 
   const update = (index: number, patch: Partial<FieldDraft>) => onChange({ ...draft, fields: draft.fields.map((field, i) => i === index ? { ...field, ...patch } : field) });
   const title = tr(locale, "填报配置", "Writeback settings");
   return <section className="dataset-writeback-config" aria-label={title}>
-    <label className="dataset-writeback-switch" title={tr(locale, "数据源须支持强 ETag 与 If-Match 条件更新", "The data source must support strong ETags and If-Match updates")}>
+    <label className="dataset-writeback-switch" title={draft.kind === "postgresql" ? tr(locale, "需要真实单列主键与非空整数版本列；所有写入方须递增版本", "Requires a single-column primary key and non-null integer revision; all writers must increment it") : tr(locale, "数据源须支持强 ETag 与 If-Match 条件更新", "The data source must support strong ETags and If-Match updates")}>
       <input type="checkbox" disabled={disabled} checked={draft.enabled} onChange={event => onChange({ ...draft, enabled: event.target.checked })} />
       <span>{tr(locale, "启用填报", "Enable writeback")}</span>
     </label>
     {draft.enabled && <fieldset disabled={disabled}>
-      <label><span>{tr(locale, "记录路径", "Record path")}</span><input aria-label={tr(locale, "填报记录路径", "Writeback record path")} value={draft.recordPath} spellCheck={false} onChange={event => onChange({ ...draft, recordPath: event.target.value })} placeholder="/records/{id}" title={tr(locale, "使用当前连接域名，{id} 替换为记录标识", "Uses the current connection origin; {id} is replaced by the record ID")} /></label>
+      {draft.kind === "postgresql" ? <div className="dataset-writeback-bounds">{([
+        ["schema", "模式", "Schema"], ["table", "数据表", "Table"], ["primaryKey", "主键列", "Primary key"], ["versionColumn", "版本列", "Revision column"],
+      ] as const).map(([key, zh, en]) => <label key={key}><span>{tr(locale, zh, en)}</span><input aria-label={tr(locale, `填报${zh}`, `Writeback ${en}`)} value={draft[key]} spellCheck={false} onChange={event => onChange({ ...draft, [key]: event.target.value })} /></label>)}</div>
+        : <label><span>{tr(locale, "记录路径", "Record path")}</span><input aria-label={tr(locale, "填报记录路径", "Writeback record path")} value={draft.recordPath} spellCheck={false} onChange={event => onChange({ ...draft, recordPath: event.target.value })} placeholder="/records/{id}" title={tr(locale, "使用当前连接域名，{id} 替换为记录标识", "Uses the current connection origin; {id} is replaced by the record ID")} /></label>}
       {draft.fields.map((field, index) => <article key={index}>
         <div className="dataset-writeback-field-heading">
           <label><span>{tr(locale, "字段", "Field")}</span><input aria-label={`${tr(locale, "填报字段", "Writeback field")} ${index + 1}`} value={field.key} onChange={event => update(index, { key: event.target.value })} /></label>

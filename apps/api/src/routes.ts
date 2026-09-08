@@ -301,7 +301,7 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     if (writeback !== undefined && writeback !== null) {
       try { assertDataWritebackConfig(writeback); } catch (error) { return reply.code(400).send({ message: error instanceof Error ? error.message : "填报配置无效" }); }
       const connection = store.listDataConnections(request.params.projectId).find(item => item.id === request.body.connectionId);
-      if (!connection?.enabled || connection.type !== "http") return reply.code(400).send({ message: "填报需要已启用的 HTTP 连接" });
+      if (!connection?.enabled || connection.type !== (writeback.version === 2 ? "postgresql" : "http")) return reply.code(400).send({ message: "填报配置与已启用的连接类型不匹配" });
     }
     const name = request.body.name?.trim();
     if (!name || !request.body.connectionId) return reply.code(400).send({ message: "数据集名称和连接不能为空" });

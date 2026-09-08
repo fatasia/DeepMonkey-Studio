@@ -38,6 +38,15 @@ describe("填报目标配置权限与持久化", () => {
       expect((await app.inject({ method: "POST", url: "/api/projects/default/data-connections", payload: { ...connection, config: { url: "https://other.test" } } })).statusCode).toBe(403);
       role = "admin";
       expect((await save({ ...dataset, writeback: null })).json().writeback).toBeUndefined();
+      const sqlConnection = { id: "pg", name: "SQL", type: "postgresql", config: { host: "127.0.0.1", database: "isolated", user: "test", passwordEnv: "ISOLATED_PG_PASSWORD" } };
+      expect((await app.inject({ method: "POST", url: "/api/projects/default/data-connections", payload: sqlConnection })).statusCode).toBe(201);
+      const sqlWriteback = { version: 2, kind: "postgresql", schema: "public", table: "records", primaryKey: "id", versionColumn: "revision", fields: [{ key: "output", type: "number" }] };
+      expect((await save({ ...dataset, id: "sql", connectionId: "http", writeback: sqlWriteback })).statusCode).toBe(400);
+      expect((await save({ ...dataset, id: "sql", connectionId: "pg", writeback: sqlWriteback })).statusCode).toBe(201);
+      role = "editor";
+      expect((await save({ ...dataset, id: "sql", connectionId: "pg", writeback: { ...sqlWriteback, table: "elsewhere" } })).statusCode).toBe(403);
+      expect((await app.inject({ method: "POST", url: "/api/projects/default/data-connections", payload: { ...sqlConnection, config: { ...sqlConnection.config, database: "other" } } })).statusCode).toBe(403);
+      expect((await save({ ...dataset, id: "sql", connectionId: "pg", name: "Renamed SQL" })).json().writeback).toEqual(sqlWriteback);
     } finally { await app.close(); await rm(dataDir, { recursive: true, force: true }); }
   });
 });

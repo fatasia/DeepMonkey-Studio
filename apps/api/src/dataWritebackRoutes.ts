@@ -2,9 +2,11 @@ import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "./config.js";
 import type { MetadataStore } from "./store.js";
 import { DataWritebackError, DataWritebackService } from "./dataWritebackService.js";
+import { DataPostgresWritebackService } from "./dataPostgresWritebackService.js";
 
 export async function registerDataWritebackRoutes(app: FastifyInstance, store: MetadataStore, config: AppConfig): Promise<void> {
   const service = new DataWritebackService({ outboundPolicy: config.directBindings, timeoutMs: config.directBindings.requestTimeoutMs, maxResponseBytes: Math.min(config.directBindings.maxResponseBytes, 256 * 1024) });
+  const postgres = new DataPostgresWritebackService();
   app.route<{ Params: { projectId: string; datasetId: string; recordId: string }; Body: unknown }>({
     method: ["GET", "PATCH"], url: "/api/projects/:projectId/datasets/:datasetId/records/:recordId", bodyLimit: 160 * 1024,
     handler: async (request, reply) => {
@@ -18,7 +20,8 @@ export async function registerDataWritebackRoutes(app: FastifyInstance, store: M
       if (!dataset || !connection) return reply.code(404).send({ message: "填报数据集不存在" });
       reply.header("cache-control", "no-store");
       try {
-        return request.method === "GET" ? await service.read(connection, dataset, recordId) : await service.write(connection, dataset, recordId, request.body);
+        const target = dataset.writeback?.version === 2 ? postgres : service;
+        return request.method === "GET" ? await target.read(connection, dataset, recordId) : await target.write(connection, dataset, recordId, request.body);
       } catch (error) {
         if (!(error instanceof DataWritebackError)) throw error;
         return reply.code(error.statusCode).send({ code: error.code, message: error.message, outcome: error.outcome, retryable: false, ...(error.issues ? { issues: error.issues } : {}) });

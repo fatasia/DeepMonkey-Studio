@@ -39,5 +39,21 @@ describe("dataset writeback configuration", () => {
     expect(renderToStaticMarkup(<DatasetForm {...props} />)).not.toContain("启用填报");
     expect(renderToStaticMarkup(<DatasetForm {...props} canConfigureWriteback />)).toContain("启用填报");
     expect(renderToStaticMarkup(<DatasetForm {...props} connection={{ ...props.connection, type: "simulation" }} canConfigureWriteback />)).not.toContain("启用填报");
+    expect(renderToStaticMarkup(<DatasetForm {...props} connection={{ ...props.connection, type: "postgresql" }} canConfigureWriteback />)).toContain("启用填报");
+  });
+  it("creates SQL targets without inventing URLs; untouched SQL is omitted and explicit disable is null", () => {
+    const draft = createWritebackConfigDraft(undefined, "postgresql");
+    expect(writebackConfigChange(undefined, draft)).toEqual({});
+    const configured = { ...draft, enabled: true, table: "records", fields: createWritebackConfigDraft(config).fields };
+    const next = writebackConfigChange(undefined, configured);
+    expect(next.error).toBeUndefined();
+    expect(next.writeback).toMatchObject({ version: 2, kind: "postgresql", schema: "public", table: "records", primaryKey: "id", versionColumn: "revision" });
+    expect(next.writeback).not.toHaveProperty("recordPath");
+    expect(writebackConfigChange(next.writeback!, createWritebackConfigDraft(next.writeback!))).toEqual({});
+    expect(writebackConfigChange(next.writeback!, { ...createWritebackConfigDraft(next.writeback!), enabled: false })).toEqual({ writeback: null });
+    expect(writebackConfigChange(undefined, { ...configured, primaryKey: "revision" }).error).toContain("主键");
+    const html = renderToStaticMarkup(<DatasetWritebackConfigFields locale="zh-CN" draft={configured} onChange={vi.fn()} />);
+    expect(html).toContain('aria-label="填报版本列"');
+    expect(html).not.toContain("填报记录路径");
   });
 });

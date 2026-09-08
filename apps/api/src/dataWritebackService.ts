@@ -44,7 +44,7 @@ export class DataWritebackService {
   }
 
   private endpoint(connection: DataConnectionRecord, dataset: DataDatasetRecord, recordId: string): string {
-    if (!connection.enabled || connection.type !== "http" || dataset.connectionId !== connection.id || dataset.projectId !== connection.projectId) throw new DataWritebackError(400, "unsupported-target", "填报仅支持本项目已启用的 HTTP 连接");
+    if (!connection.enabled || connection.type !== "http" || dataset.writeback?.version !== 1 || dataset.connectionId !== connection.id || dataset.projectId !== connection.projectId) throw new DataWritebackError(400, "unsupported-target", "填报仅支持本项目已启用的 HTTP 连接");
     try { assertDataWritebackConfig(dataset.writeback); } catch { throw new DataWritebackError(400, "writeback-not-configured", "数据集尚未配置有效填报目标"); }
     if (!/^[\p{L}\p{N}_-]{1,128}$/u.test(recordId)) throw new DataWritebackError(400, "invalid-record-id", "记录标识无效");
     try {
