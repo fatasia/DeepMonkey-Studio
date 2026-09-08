@@ -216,6 +216,59 @@ export function ObjectAppearanceEditor({
             {tr(locale, "双面", "Double-sided")}
           </button>
         </div>
+
+        <details className="material-shader-effect" open={Boolean(material.shaderEffect)}>
+          <summary>
+            <span>{tr(locale, "着色器效果", "Shader effect")}</span>
+            <small>{tr(locale, "three.js 注入 · 保持 PBR 光照", "three.js injection · PBR preserved")}</small>
+          </summary>
+          <label>
+            <span>{tr(locale, "效果", "Effect")}</span>
+            <select
+              disabled={disabled}
+              value={material.shaderEffect?.kind ?? ""}
+              onChange={(event) => {
+                const kind = event.target.value;
+                onMaterialChange({
+                  shaderEffect: kind === "fresnel-rim"
+                    ? material.shaderEffect?.kind === "fresnel-rim"
+                      ? material.shaderEffect
+                      : { kind: "fresnel-rim", color: "#7fd8ff", intensity: 1.2 }
+                    : undefined,
+                });
+              }}
+            >
+              <option value="">{tr(locale, "无", "None")}</option>
+              <option value="fresnel-rim">{tr(locale, "菲涅尔轮廓光", "Fresnel rim light")}</option>
+            </select>
+          </label>
+          {material.shaderEffect && (
+            <>
+              <label className="material-emissive">
+                <span>{tr(locale, "效果颜色", "Effect color")}</span>
+                <input
+                  disabled={disabled}
+                  type="color"
+                  value={material.shaderEffect.color}
+                  onChange={(event) => material.shaderEffect && onMaterialChange({ shaderEffect: { ...material.shaderEffect, color: event.target.value } })}
+                />
+              </label>
+              <label>
+                <span>{tr(locale, "效果强度", "Effect intensity")}</span>
+                <input
+                  disabled={disabled}
+                  type="range"
+                  min="0"
+                  max="4"
+                  step="0.05"
+                  value={material.shaderEffect.intensity}
+                  onChange={(event) => material.shaderEffect && onMaterialChange({ shaderEffect: { ...material.shaderEffect, intensity: Number(event.target.value) } })}
+                />
+                <output>{material.shaderEffect.intensity.toFixed(2)}</output>
+              </label>
+            </>
+          )}
+        </details>
       </div>
 
       <ModelScreenEditor locale={locale} disabled={disabled} screen={material.screen} onChange={onMaterialChange} />

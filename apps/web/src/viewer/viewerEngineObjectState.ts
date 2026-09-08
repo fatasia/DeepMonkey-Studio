@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { SceneLayerState, SceneMaterialScreenState, SceneMaterialState } from "@bim-studio/contracts";
+import type { SceneLayerState, SceneMaterialScreenState, SceneMaterialShaderEffect, SceneMaterialState } from "@bim-studio/contracts";
 import { buildComponentRecords, type ComponentRecord } from "./analysis";
 import { fragmentPropertyValue } from "./fragmentTree";
 import { detachSharedPrimitiveMaterials } from "./primitiveMaterial";
@@ -119,6 +119,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
         ...(material.color?.isColor ? { color: `#${material.color.getHexString()}` } : {}),
         ...materialColorAdjustmentState(material),
         ...materialTextureState(material),
+        ...(material.userData.studioShaderEffect ? { shaderEffect: structuredClone(material.userData.studioShaderEffect) } : {}),
         ...(material.normalScale?.isVector2 ? { normalScale: material.normalScale.x } : {}),
         ...(typeof material.roughness === "number" ? { roughness: material.roughness } : {}),
         ...(typeof material.metalness === "number" ? { metalness: material.metalness } : {}),
@@ -375,6 +376,7 @@ function materialTextureState(material: THREE.MeshStandardMaterial): SceneMateri
     ...(typeof data.studioRoughnessMapUrl === "string" ? { roughnessMapUrl: data.studioRoughnessMapUrl } : {}),
     ...(typeof data.studioMetalnessMapUrl === "string" ? { metalnessMapUrl: data.studioMetalnessMapUrl } : {}),
     ...materialTextureTransformState(data),
+    ...(data.studioShaderEffect ? { shaderEffect: structuredClone(data.studioShaderEffect) } : {}),
     ...(data.studioUvAnimation ? { uvAnimation: structuredClone(data.studioUvAnimation) } : {}),
     ...(data.studioScreenState ? { screen: structuredClone(data.studioScreenState) } : {}),
   };
@@ -397,6 +399,49 @@ function applyMaterialNumbers(material: THREE.MeshStandardMaterial, state: Scene
   }
   if (state.wireframe !== undefined) material.wireframe = state.wireframe;
   if (state.doubleSided !== undefined) material.side = state.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
+  applyMaterialShaderEffect(material, state.shaderEffect);
+}
+
+/**
+ * 菲涅尔轮廓光：通过 onBeforeCompile 向标准 PBR 输出叠加视角边缘自发光。
+ * 只注入 emissive 项，不替换光照模型；效果关闭时恢复原始编译钩子并触发重编译。
+ */
+function applyMaterialShaderEffect(material: THREE.MeshStandardMaterial, effect: SceneMaterialShaderEffect | undefined): void {
+  const previous = material.userData.studioShaderEffectInstance as
+    | { kind: string; detach: (target: THREE.MeshStandardMaterial) => void }
+    | undefined;
+  if (!effect) {
+    if (previous) {
+      previous.detach(material);
+      delete material.userData.studioShaderEffectInstance;
+    }
+    delete material.userData.studioShaderEffect;
+    material.needsUpdate = true;
+    return;
+  }
+  const previousState = material.userData.studioShaderEffect as SceneMaterialShaderEffect | undefined;
+  if (previous?.kind === effect.kind && previousState?.color === effect.color && previousState?.intensity === effect.intensity) return;
+  const color = new THREE.Color(effect.color);
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uStudioRimColor = { value: color };
+    shader.uniforms.uStudioRimIntensity = { value: THREE.MathUtils.clamp(effect.intensity, 0, 4) };
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform vec3 uStudioRimColor;\nuniform float uStudioRimIntensity;")
+      .replace(
+        "#include <emissivemap_fragment>",
+        "#include <emissivemap_fragment>\nfloat studioRim = pow(1.0 - saturate(dot(normalize(vNormal), normalize(vViewPosition))), 2.5);\n totalEmissiveRadiance += uStudioRimColor * studioRim * uStudioRimIntensity;",
+      );
+  };
+  material.customProgramCacheKey = () => "studio-fresnel-rim";
+  material.userData.studioShaderEffect = { kind: effect.kind, color: effect.color, intensity: effect.intensity };
+  material.userData.studioShaderEffectInstance = {
+    kind: effect.kind,
+    detach: (target: THREE.MeshStandardMaterial) => {
+      target.onBeforeCompile = () => undefined;
+      target.customProgramCacheKey = () => "";
+    },
+  };
+  material.needsUpdate = true;
 }
 
 type MaterialColorAdjustment = Required<Pick<SceneMaterialState, "hue" | "saturation" | "brightness" | "contrast">>;

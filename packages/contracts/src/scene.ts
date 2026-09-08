@@ -133,6 +133,16 @@ export interface SceneMaterialState {
   emissiveIntensity?: number;
   wireframe?: boolean;
   doubleSided?: boolean;
+  /** 基于 MeshStandardMaterial.onBeforeCompile 的轻量着色器效果；不改写 PBR 管线，保持场景光照一致。 */
+  shaderEffect?: SceneMaterialShaderEffect | undefined;
+}
+
+export interface SceneMaterialShaderEffect {
+  kind: "fresnel-rim";
+  /** 轮廓光颜色；#RRGGBB。 */
+  color: string;
+  /** 边缘光强度 0-4；0 等效关闭。 */
+  intensity: number;
 }
 
 export interface SceneMaterialScreenState {

@@ -92,3 +92,16 @@
 - 素材库可用资产 7→89（+82，全部带真实渲染缩略图、许可署名与逐项理由；166 项审核清零），行业包 2→3（新增 5 页电力能源包，端到端门禁 4/4）。
 - 全量验证基线全绿：typecheck、2199 源文件体量、Web 1806 项、API 599 项、其余包 285 项、生产构建、六个浏览器门禁、性能基准、全路由巡检。
 - 未验证与未覆盖部分如上第五节前第四节的六项声明，不以此批通过冒充全项目完成。
+
+## 七、2026-09-09 增量轮（用户指令：删未过审素材、差距调研、治理与云渲染授权、全量测试）
+
+1. **差距调研**：新增 `docs/platform-gap-analysis-2026-09-09.md`——对标山海鲸/ThingJS/帆软 FVS/Unity/西门子的差距矩阵与量化缺口（模板量、行业开箱场景、效果组件化、Shader 自定义、SQL 多库、插件生态），并映射本轮执行计划。
+2. **素材清理（两批）**：77 项未过审 + 9 项品牌/白膜（Kinetix 伺服、Ducati 车型、Machinati X3、Ichigodake 电池、A319 客机、T30104 叉装车、低模冷却塔、灰色排风扇、龙门检测线）全部删除；最终素材库 **80 项全部 approved**，后检零 issue（结构/许可/视觉审核），删除前 catalog/audit 备份于 `test-output/source-b-prune-backup/`。
+3. **云渲染一键启动**：`pnpm studio start web --cloud-worker`——随栈拉起本地 GPU Worker（令牌自动生成仅落 data/，API 变量进程级注入不改 .env），实测 `capability: configured+workerReady`，Worker 识别 RTX 4060 + 硬件编码器；status 显示云渲染行。
+4. **SQL 受控写回确认已完成**：`dataPostgresWritebackTarget/Service` 与真实隔离 PG 测试（参数化、并发版本恰一成功、COMMIT 断线未确认、权限拒写、numeric 精度）18/18 通过——交接文档"仅 HTTP"描述过时，以代码为准。
+5. **水处理运行包（第 4 包）**：5 页 + 水厂联动 + 台账对账单测 + `gate-water-treatment-pack.mjs` 两轮双主题 4/4。行业深度包 3→4。
+6. **Shader Workbench 轻量版（three.js 路线）**：材质外观编辑器新增"着色器效果"面板（菲涅尔轮廓光：颜色/强度参数化），经 `MeshStandardMaterial.onBeforeCompile` 注入 emissive 项（不替换 PBR 光照），合同 `SceneMaterialShaderEffect` 可选字段随场景快照持久化，效果关闭恢复原始编译钩子。类型/构建/面板测试通过。
+7. **字号治理实测澄清**：7 个 frame 外二级页真实渲染审计 **0 违例**（静态字面值均被页面级提权规则覆盖）；残余 500+ 处字面值属样式源整洁度问题，不影响用户可见字号。
+8. **optimizer 消息 i18n 补全**：en-US 下会话/转换消息不再漏译（15+ 条映射 + 动态进度前缀匹配）。
+
+增量轮验证：根 typecheck（2206 源文件 ≤800）、Web 432 文件/1810 项、API 132 文件/599 项、其余包全过、生产构建预算内、u117 巡检 10 路由无溢出。新增未验证声明：着色器注入采用 three.js 官方 onBeforeCompile 模式，类型/构建/面板渲染通过，真实 WebGL 渲染的目视确认待人工完成。
