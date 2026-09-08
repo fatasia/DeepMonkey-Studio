@@ -18,6 +18,7 @@ export function parseStudioArguments(argv, platform = process.platform) {
     skipInfrastructure: false,
     noOpen: platform === "linux",
     https: false,
+    cloudWorker: false,
     deploymentCheck: false,
     skipBuild: false,
   };
@@ -56,6 +57,7 @@ export function parseStudioArguments(argv, platform = process.platform) {
     if (argument === "--skip-infra") options.skipInfrastructure = true;
     else if (argument === "--no-open") options.noOpen = true;
     else if (argument === "--https") options.https = true;
+    else if (argument === "--cloud-worker") options.cloudWorker = true;
     else if (argument === "--api-port") options.overrides.apiPort = readPort(argumentsToParse, ++index, argument);
     else if (argument === "--web-port") options.overrides.webPort = readPort(argumentsToParse, ++index, argument);
     else if (argument === "--api-host") options.overrides.apiHost = readHost(argumentsToParse, ++index, argument);
@@ -85,6 +87,7 @@ export function resolveStudioConfiguration(parsed, previous, platform = process.
     skipInfrastructure: false,
     noOpen: platform === "linux",
     https: false,
+    cloudWorker: false,
   };
   const reusablePrevious = parsed.action === "restart" ? previous : undefined;
   const configuration = {
@@ -95,6 +98,7 @@ export function resolveStudioConfiguration(parsed, previous, platform = process.
     skipInfrastructure: parsed.skipInfrastructure || reusablePrevious?.skipInfrastructure || false,
     noOpen: parsed.noOpen || reusablePrevious?.noOpen || defaults.noOpen,
     https: parsed.https || reusablePrevious?.https || false,
+    cloudWorker: parsed.cloudWorker || reusablePrevious?.cloudWorker || false,
     // .env 是存储拓扑的权威配置。显式 CLI 参数优先，其次当前 .env，最后才复用旧运行状态；
     // 避免一次 JSON 测试运行让后续无参数 restart 悄悄隐藏 PostgreSQL 中的真实项目。
     metadataStore: parsed.overrides.metadataStore ?? environment.METADATA_STORE ?? reusablePrevious?.metadataStore,
@@ -141,6 +145,7 @@ export function studioHelp() {
   --object-store local|minio
   --skip-infra                  不代启本地 PostgreSQL / MinIO
   --https                       Web 模式使用 .env 中配置的 HTTPS 证书
+  --cloud-worker                随栈启动本地云渲染 GPU Worker（自动生成令牌并注入 API）
   --no-open                     就绪后不打开浏览器
 
 示例：

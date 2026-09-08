@@ -165,6 +165,7 @@ export function buildRunnerEnvironment(configuration, baseEnvironment = process.
   };
   if (configuration.metadataStore) environment.METADATA_STORE = configuration.metadataStore;
   if (configuration.objectStore) environment.OBJECT_STORE = configuration.objectStore;
+  if (configuration.cloudWorker) environment.BIM_STUDIO_CLOUD_WORKER_MANAGED = "true";
   return environment;
 }
 

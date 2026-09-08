@@ -33,7 +33,18 @@ test("configures an API-only environment from the same command", () => {
     skipInfrastructure: true,
     noOpen: true,
     https: false,
+    cloudWorker: false,
   });
+});
+
+test("keeps the opt-in cloud worker across restart without touching .env", () => {
+  const first = resolveStudioConfiguration(parseStudioArguments(["start", "web", "--cloud-worker"], "linux"), undefined, "linux");
+  assert.equal(first.cloudWorker, true);
+  const restarted = resolveStudioConfiguration(parseStudioArguments(["restart"], "linux"), first, "linux");
+  assert.equal(restarted.cloudWorker, true);
+  const plain = resolveStudioConfiguration(parseStudioArguments(["start", "web"], "linux"), undefined, "linux");
+  assert.equal(plain.cloudWorker, false);
+  assert.match(studioHelp(), /--cloud-worker/);
 });
 
 test("reuses the previous mode and explicit ports on restart", () => {
@@ -49,6 +60,7 @@ test("reuses the previous mode and explicit ports on restart", () => {
     skipInfrastructure: false,
     noOpen: true,
     https: false,
+    cloudWorker: false,
   };
   const configuration = resolveStudioConfiguration(parseStudioArguments(["restart"], "linux"), previous, "linux");
   assert.deepEqual(configuration, previous);
@@ -57,7 +69,7 @@ test("reuses the previous mode and explicit ports on restart", () => {
 test("uses current environment stores instead of a stale restart snapshot", () => {
   const previous = {
     target: "web", apiHost: "0.0.0.0", apiPort: 4100, apiOrigin: undefined,
-    webHost: "0.0.0.0", webPort: 5173, metadataStore: "json", objectStore: "local",
+    webHost: "0.0.0.0", webPort: 5173, metadataStore: "json", objectStore: "local", cloudWorker: false,
     skipInfrastructure: false, noOpen: true, https: false,
   };
   const result = resolveStudioConfiguration(

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { createConnection } from "node:net";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -66,6 +67,10 @@ async function main() {
   }
 
   installShutdownHandlers();
+  // --cloud-worker：本机闭环（Worker+API 同机）随栈启动；令牌只落 data/，不改 .env。
+  if (environment.BIM_STUDIO_CLOUD_WORKER_MANAGED === "true" && target !== "services") {
+    await ensureCloudRenderWorker();
+  }
   if (!summary.api) {
     const apiEndpoint = new URL(apiOrigin);
     const endpointPort = Number(apiEndpoint.port || (apiEndpoint.protocol === "https:" ? 443 : 80));
@@ -109,6 +114,56 @@ async function main() {
   }
 
   await waitForChildren();
+}
+
+async function ensureCloudRenderWorker() {
+  const workerPort = positivePort(environment.CLOUD_RENDER_WORKER_PORT, 4200);
+  if (await canConnect("127.0.0.1", workerPort)) {
+    fail(`云渲染 Worker 端口 ${workerPort} 已被占用；若已有 Worker 在运行，请勿启用 --cloud-worker`);
+  }
+  const configPath = join(repositoryRoot, "data", "cloud-render-worker.json");
+  let workerConfig;
+  if (existsSync(configPath)) {
+    try { workerConfig = JSON.parse(readFileSync(configPath, "utf8")); } catch { workerConfig = undefined; }
+  }
+  if (!workerConfig?.token) {
+    // 令牌只保存在本机数据目录（不入库、不入 Git），API 与 Worker 共享。
+    workerConfig = { token: randomBytes(24).toString("hex"), port: workerPort };
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, `${JSON.stringify(workerConfig, null, 2)}
+`);
+  }
+  // API 侧三个变量通过进程环境注入：不改 .env，栈停止后不留痕迹。
+  environment.CLOUD_RENDER_WORKER_URL = `http://127.0.0.1:${workerConfig.port}`;
+  environment.CLOUD_RENDER_WORKER_TOKEN = workerConfig.token;
+  environment.CLOUD_RENDER_PUBLIC_ORIGIN = apiOrigin;
+  const workerEnv = {
+    ...environment,
+    CLOUD_RENDER_WORKER_ID: environment.CLOUD_RENDER_WORKER_ID ?? "local-worker",
+    CLOUD_RENDER_WORKER_PORT: String(workerConfig.port),
+    CLOUD_RENDER_WORKER_TOKEN: workerConfig.token,
+    CLOUD_RENDER_WORKER_PUBLIC_ORIGIN: apiOrigin,
+    CLOUD_RENDER_HEADLESS: environment.CLOUD_RENDER_HEADLESS ?? "true",
+  };
+  const distEntry = join(repositoryRoot, "apps", "cloud-render-worker", "dist", "index.js");
+  const invocation = existsSync(distEntry)
+    ? platformCommand(process.execPath, [distEntry])
+    : platformCommand("pnpm", ["--filter", "@bim-studio/cloud-render-worker", "dev"]);
+  const child = spawn(invocation.command, invocation.args, {
+    cwd: repositoryRoot,
+    env: workerEnv,
+    stdio: "inherit",
+    windowsHide: true,
+    detached: process.platform !== "win32",
+  });
+  trackChild(child, "云渲染 Worker");
+  if (!(await waitForPort("127.0.0.1", workerConfig.port, 90_000))) {
+    fail("云渲染 Worker 未能启动，请查看 .runtime-logs 下 Worker 日志");
+  }
+  announce("云渲染 Worker 已就绪", [
+    `Worker http://127.0.0.1:${workerConfig.port} · 发布源 ${apiOrigin}`,
+    "发布弹窗选择“云渲染”即可使用本机 GPU 渲染",
+  ]);
 }
 
 async function ensureInfrastructure() {
