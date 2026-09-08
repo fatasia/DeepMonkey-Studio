@@ -17,6 +17,9 @@ import {
 } from "@bim-studio/contracts";
 
 import type { InsertDashboardPagesCommand } from "./dashboardPageBatch.js";
+import type { PatchDashboardNodesCommand } from "./dashboardNodePatch.js";
+export { createPatchDashboardNodesCommand } from "./dashboardNodePatch.js";
+export type { DashboardNodeChange, PatchDashboardNodesCommand } from "./dashboardNodePatch.js";
 export { createInsertDashboardPagesCommand } from "./dashboardPageBatch.js";
 let nextCommandId = 1;
 
@@ -248,6 +251,7 @@ export interface DeleteDashboardNodeCommand {
 }
 
 export type StudioCommand =
+  | PatchDashboardNodesCommand
   | InsertDashboardPagesCommand
   | RenameApplicationCommand
   | RenameDashboardPageCommand

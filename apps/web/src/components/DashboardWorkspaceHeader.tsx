@@ -2,6 +2,7 @@ import { ArrowLeft, Database, Eye, LayoutDashboard, Redo2, Rocket, Save, Undo2 }
 import { translate as tr } from "../i18n";
 import { WorkspaceModeSwitch } from "./WorkspaceModeSwitch";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
+import { DashboardAiDraftEntry } from "./DashboardAiDraftEntry";
 
 export function DashboardWorkspaceHeader() {
   const {
@@ -63,6 +64,7 @@ export function DashboardWorkspaceHeader() {
         {tr(locale, "数据", "Data")}
       </button>
       <div className="dashboard-workspace-actions">
+        <DashboardAiDraftEntry />
         {onAutoSaveChange && (
           <label className="dashboard-auto-save" title={tr(locale, "修改后自动保存项目", "Automatically save project changes")}>
             <input type="checkbox" checked={autoSaveEnabled} onChange={(event) => onAutoSaveChange(event.target.checked)} />

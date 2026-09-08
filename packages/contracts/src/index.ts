@@ -100,6 +100,8 @@ export interface ServiceLogRecord {
 export interface AiAssistantResponse {
   text: string;
   dashboard?: SceneDashboardState;
+  /** 模型返回的二维页面草案仍不可信，必须经当前页面与数据目录验证后才能应用。 */
+  dashboardPageDraft?: unknown;
   model: string;
   reliability?: AiAssistantReliability;
 }

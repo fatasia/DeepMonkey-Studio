@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../api", () => ({ api: {} }));
@@ -6,6 +7,10 @@ vi.mock("../api", () => ({ api: {} }));
 import { AiAssistantPanel } from "./AiAssistantPanel";
 
 describe("AiAssistantPanel", () => {
+  it("bounds the Studio assistant to its actual viewport rather than subtracting fixed sidebars twice", async () => {
+    const css = await readFile(new URL("../styles/platform-pages.css", import.meta.url), "utf8");
+    expect(css).toContain(".ai-assistant-studio { right: clamp(12px, calc(100% - 444px), 298px); width: min(420px, calc(100% - 24px));");
+  });
   it("uses scene and selected-object modes in Studio without losing the shared AI workflow", () => {
     const html = renderToStaticMarkup(
       <AiAssistantPanel

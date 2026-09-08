@@ -1,4 +1,5 @@
 import type { AiAssistantResponse, SceneDashboardState } from "@bim-studio/contracts";
+import { DASHBOARD_PAGE_PROMPT, isDashboardPageRequest } from "./dashboardPagePrompt.js";
 
 export type AssistantMode = "platform" | "operations" | "vision" | "bim" | "scene" | "component" | "dashboard" | "sql";
 
@@ -13,7 +14,7 @@ export function assistantPrompts(mode: AssistantMode, question: string, context:
         : mode === "platform"
           ? "你是制造数字孪生平台助手。先给直接结论，再按‘证据 / 缺口 / 下一步’组织。数字、模型、告警和状态必须来自上下文；区分真实现场数据、公开/合成基准、演示配置和缺失数据。没有证据就明确说没有。availableCapabilities 只是可调用目录，不是已经执行的事实。"
           : mode === "dashboard"
-            ? "输出严格 JSON：{\"text\":\"说明\",\"dashboard\":{\"enabled\":true,\"dock\":\"right\",\"width\":410,\"collapsed\":false,\"widgets\":[]}}。widgets 仅使用 value、gauge、line、area、bar、pie、table、status，必须包含 id,title,key,type,unit,x,y,w,h,color。"
+            ? isDashboardPageRequest(context) ? DASHBOARD_PAGE_PROMPT : "输出严格 JSON：{\"text\":\"说明\",\"dashboard\":{\"enabled\":true,\"dock\":\"right\",\"width\":410,\"collapsed\":false,\"widgets\":[]}}。widgets 仅使用 value、gauge、line、area、bar、pie、table、status，必须包含 id,title,key,type,unit,x,y,w,h,color。"
           : mode === "sql"
               ? "你是可信问数据助手，不是本体建模工具。只使用 platform.data 的真实数据集、字段和 askDataSemanticContext 轻量索引；回答必须说明数据集、字段、时间窗口、单位、过滤条件和证据。索引只提供设备、测点、指标、空间/产线、维护事件和时间候选，不能证明未提供的关系。字段未知、同名歧义或权限不明时停止并要求澄清。需要 SQL 时默认只生成 SELECT/CTE/EXPLAIN，禁止 INSERT、UPDATE、DELETE、DROP、ALTER、TRUNCATE。"
               : "用中文简洁回答，所有结论基于已提供上下文，并优先给出可执行操作建议。";
@@ -26,8 +27,9 @@ export function assistantPrompts(mode: AssistantMode, question: string, context:
 export function parseAssistantContent(mode: AssistantMode, content: string, model: string): AiAssistantResponse {
   if (mode !== "dashboard") return { text: content, model };
   try {
-    const parsed = JSON.parse(content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")) as { text?: string; dashboard?: SceneDashboardState };
-    return { text: parsed.text ?? "已生成看板方案", ...(parsed.dashboard ? { dashboard: parsed.dashboard } : {}), model };
+    const parsed = JSON.parse(content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")) as { text?: string; dashboard?: SceneDashboardState; dashboardPageDraft?: unknown };
+    return { text: typeof parsed.text === "string" ? parsed.text : "已生成看板方案", ...(parsed.dashboard ? { dashboard: parsed.dashboard } : {}),
+      ...(parsed.dashboardPageDraft ? { dashboardPageDraft: parsed.dashboardPageDraft } : {}), model };
   } catch {
     return { text: content, model };
   }

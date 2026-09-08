@@ -1,10 +1,12 @@
 import type { ApplicationDocument, WidgetNode } from "@bim-studio/contracts";
 import type { DashboardNodeStatePatch, StudioCommand } from "./command.js";
 import { insertDashboardPages } from "./dashboardPageBatch.js";
+import { patchDashboardNodes } from "./dashboardNodePatch.js";
 
 /** 命令归约保持纯函数：输入文档不原地修改，便于撤销、回放和审计。 */
 export function applyStudioCommand(document: ApplicationDocument, command: StudioCommand): ApplicationDocument {
   switch (command.type) {
+    case "dashboard.nodes.patch": return patchDashboardNodes(document, command);
     case "dashboard.pages.insert": return insertDashboardPages(document, command);
     case "application.rename":
       return { ...document, metadata: { ...document.metadata, name: command.payload.name } };
