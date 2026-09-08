@@ -5,6 +5,19 @@ import type { PlantLitePlaybackFrame } from "../components/plantLitePlaybackMode
 import { createScenePlantPlaybackOverlay } from "../viewer/scenePlantPlaybackOverlay";
 
 describe("scene DES event overlay", () => {
+  it("interpolates all recorded axes and seeks reversibly without touching object transforms", () => {
+    const scene = new Scene();
+    const model = { sceneBinding: { sceneId: "scene", nodes: [{ nodeId: "agv", objectId: "vehicle", position: [0, 0, 0] }, { nodeId: "sink", objectId: "end", position: [8, 2, 4] }] } } as PlantLiteModel;
+    const overlay = createScenePlantPlaybackOverlay(scene, model), points = scene.children[0] as Points;
+    const positions = points.geometry.getAttribute("position");
+    const frame = (progress: number) => ({ items: [{ itemId: "one", nodeId: "agv", state: "moving", lane: 0, transport: { toNodeId: "sink", progress } }] } as PlantLitePlaybackFrame);
+    overlay.update(frame(.25)); expect([...positions.array].slice(0, 3)).toEqual([2, .75, 1]);
+    overlay.update(frame(.75)); expect([...positions.array].slice(0, 3)).toEqual([6, 1.75, 3]);
+    overlay.update(frame(.25)); expect([...positions.array].slice(0, 3)).toEqual([2, .75, 1]);
+    expect(points.geometry.getAttribute("position")).toBe(positions);
+    overlay.update(null); expect(points.geometry.drawRange.count).toBe(0);
+    overlay.dispose(); expect(scene.children).toHaveLength(0);
+  });
   it("uses recorded scene anchors, reuses fixed buffers, clears empty frames and disposes without changing scene objects", () => {
     const scene = new Scene();
     const model = { sceneBinding: { sceneId: "scene", nodes: [{ nodeId: "q", objectId: "box", position: [2, 0, 3] }] } } as PlantLiteModel;

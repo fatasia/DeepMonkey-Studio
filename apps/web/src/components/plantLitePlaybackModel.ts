@@ -3,6 +3,7 @@ import type {
   PlantLiteReplicationTrace,
   PlantLiteTraceEvent,
 } from "@bim-studio/contracts";
+import { indexPlantLiteTransport, type PlantLiteTransportInterval } from "./plantLiteTransportPlayback";
 
 export type PlantLitePlaybackItemState = "queued" | "changeover" | "processing" | "moving" | "completed";
 type ItemTraceEvent = Extract<PlantLiteTraceEvent, { itemId: string }>;
@@ -14,6 +15,7 @@ export interface PlantLitePlaybackItem {
   xPercent: number;
   lane: number;
   state: PlantLitePlaybackItemState;
+  transport?: { toNodeId: string; progress: number };
 }
 
 export interface PlantLitePlaybackFrame {
@@ -38,7 +40,7 @@ export interface PreparedPlantLitePlayback {
   orderedEvents: PlantLiteTraceEvent[];
   itemIds: string[];
   itemTimelines: Map<string, ItemTraceEvent[]>;
-  completionByStartSequence: Map<number, number>;
+  transportBySequence: Map<number, PlantLiteTransportInterval>;
   resourceTimelines: Map<string, PreparedResourceEvent[]>;
   sinkIds: Set<string>;
   nodeIndexById: Map<string, number>;
@@ -57,8 +59,6 @@ export function preparePlantLitePlayback(trace: PlantLiteReplicationTrace, model
     if ("itemId" in event) appendToMap(itemTimelines, event.itemId, event);
     else appendToMap(rawResourceTimelines, event.resourceId, event);
   }
-  const completionByStartSequence = new Map<number, number>();
-  for (const timeline of itemTimelines.values()) indexCompletions(timeline, completionByStartSequence);
   const resourceTimelines = new Map<string, PreparedResourceEvent[]>();
   for (const [resourceId, timeline] of rawResourceTimelines) {
     const capacity = model.resources?.find((resource) => resource.id === resourceId)?.capacity ?? 1;
@@ -69,7 +69,7 @@ export function preparePlantLitePlayback(trace: PlantLiteReplicationTrace, model
     orderedEvents,
     itemIds: [...itemTimelines.keys()].sort(),
     itemTimelines,
-    completionByStartSequence,
+    transportBySequence: indexPlantLiteTransport(itemTimelines, model),
     resourceTimelines,
     sinkIds: new Set(model.nodes.filter((node) => node.kind === "sink").map((node) => node.id)),
     nodeIndexById: new Map(model.nodes.map((node, index) => [node.id, index])),
@@ -186,11 +186,11 @@ function toPlaybackItem(
   const nodeIndex = prepared.nodeIndexById.get(current.nodeId) ?? 0;
   const baseX = nodePosition(nodeIndex, prepared.model.nodes.length);
   const node = prepared.model.nodes[nodeIndex];
-  const completionMinute = current.type === "item-start" ? prepared.completionByStartSequence.get(current.sequence) : undefined;
-  const targetId = node?.kind === "transport" ? prepared.model.edges.find((edge) => edge.from === node.id)?.to : undefined;
+  const interval = prepared.transportBySequence.get(current.sequence);
+  const targetId = interval?.toNodeId;
   const targetIndex = targetId ? prepared.nodeIndexById.get(targetId) ?? -1 : -1;
-  const travelProgress = completionMinute !== undefined && targetIndex >= 0 && completionMinute > current.atMinute
-    ? clamp((atMinute - current.atMinute) / (completionMinute - current.atMinute), 0, 1)
+  const travelProgress = interval && targetIndex >= 0
+    ? clamp((atMinute - interval.startMinute) / (interval.endMinute - interval.startMinute), 0, 1)
     : 0;
   const xPercent = targetIndex >= 0 && travelProgress > 0
     ? baseX + (nodePosition(targetIndex, prepared.model.nodes.length) - baseX) * travelProgress
@@ -206,19 +206,7 @@ function toPlaybackItem(
         : current.type === "item-exit"
           ? "moving"
           : "queued";
-  return { itemId, nodeId: current.nodeId, xPercent, lane: stableLane(itemId), state };
-}
-
-function indexCompletions(timeline: ItemTraceEvent[], output: Map<number, number>): void {
-  const nextByNode = new Map<string, number>();
-  for (let index = timeline.length - 1; index >= 0; index -= 1) {
-    const event = timeline[index]!;
-    if (event.type === "item-complete") nextByNode.set(event.nodeId, event.atMinute);
-    else if (event.type === "item-start") {
-      const completion = nextByNode.get(event.nodeId);
-      if (completion !== undefined) output.set(event.sequence, completion);
-    }
-  }
+  return { itemId, nodeId: current.nodeId, xPercent, lane: stableLane(itemId), state, ...(interval ? { transport: { toNodeId: interval.toNodeId, progress: travelProgress } } : {}) };
 }
 
 function indexResourceFailures(timeline: ResourceTraceEvent[], capacity: number): PreparedResourceEvent[] {

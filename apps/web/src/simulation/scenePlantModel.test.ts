@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { compileScenePlantModel, connectSceneFlowNodes, createSceneFlowNode } from "./scenePlantModel";
-import { validatePlantLiteModel } from "@bim-studio/plant-lite-simulation";
+import { runPlantLiteExperiment, validatePlantLiteModel } from "@bim-studio/plant-lite-simulation";
+import { derivePlantLitePlaybackFrame } from "../components/plantLitePlaybackModel";
 
 function fixture() {
   const nodes = [createSceneFlowNode("source-object", "来料", "source", "source"), createSceneFlowNode("queue-object", "等待", "queue-buffer", "queue"), createSceneFlowNode("station-object", "处理", "station", "station"), createSceneFlowNode("sink-object", "产出", "sink", "sink")];
@@ -11,6 +12,25 @@ function fixture() {
   return { scene: { id: "scene", name: "物流", simulationEntities: entities } as SceneSnapshot, resolve: (id: string) => ({ x: nodes.findIndex(node => node.targetModelId === id) * 3, y: 0, z: 0 }) };
 }
 describe("scene Plant Lite model bridge", () => {
+  it("binds a single vehicle transport role, runs the existing DES and replays its recorded journey", () => {
+    const source = createSceneFlowNode("source-object", "来料", "source", "source");
+    const transport = createSceneFlowNode("agv-object", "搬运车", "transport", "transport");
+    const sink = createSceneFlowNode("sink-object", "产出", "sink", "sink");
+    const entities = connectSceneFlowNodes(connectSceneFlowNodes([source, transport, sink], "source-object", "agv-object"), "agv-object", "sink-object");
+    const scene = { id: "transport-scene", name: "搬运", simulationEntities: entities } as SceneSnapshot;
+    const { model, errors } = compileScenePlantModel(scene, () => ({ x: 0, y: 0, z: 0 }));
+    expect(errors).toEqual([]);
+    expect(model.resources).toEqual([{ id: "scene-transport:transport", name: "搬运车 · 搬运（单车） · 单车", kind: "agv", capacity: 1 }]);
+    const input = { model, seed: "transport", replications: 1, limits: { durationMinutes: 20 }, trace: { replication: 0 } };
+    const result = runPlantLiteExperiment(input), repeated = runPlantLiteExperiment(input);
+    expect(result).toEqual(repeated);
+    const trace = result.representativeTrace!;
+    const frame = derivePlantLitePlaybackFrame(trace, model, 1);
+    expect(frame.items.some(item => item.transport && item.transport.progress > 0 && item.transport.progress < 1)).toBe(true);
+    expect(scene.simulationEntities).toEqual(entities);
+    if (transport.node.kind === "transport") transport.node.resourceId = "missing-external-fleet";
+    expect(compileScenePlantModel(scene, () => ({ x: 0, y: 0, z: 0 })).errors.length).toBeGreaterThan(0);
+  });
   it("compiles explicitly linked object roles into existing validated DES inputs and an immutable binding snapshot", () => {
     const { scene, resolve } = fixture(); const before = structuredClone(scene);
     const result = compileScenePlantModel(scene, resolve);

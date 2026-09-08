@@ -136,7 +136,9 @@
 .scene-simulation-context strong { overflow: hidden; color: var(--text-strong); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .scene-simulation-context i { width: 1px; height: 14px; margin: 0 3px; background: var(--line); }
 
-.scene-simulation-body { min-width: 0; min-height: 0; overflow: auto; }
+.scene-simulation-body { min-width: 0; min-height: 0; overflow: auto; scroll-padding-block: 12px; }
+/* 键盘聚焦时为整个控件及焦点环留白，不只把输入光标滚动到边缘。 */
+.scene-simulation-body :is(input, select, textarea, button) { scroll-margin-block: 8px; }
 .scene-simulation-loading { display: flex; height: 160px; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 11px; }
 .scene-simulation-panel .operations-page-embedded { height: auto; min-height: 100%; overflow: visible; background: transparent; }
 .scene-simulation-panel .operations-page-embedded .operations-content { max-width: none; padding: 12px 12px 28px; }

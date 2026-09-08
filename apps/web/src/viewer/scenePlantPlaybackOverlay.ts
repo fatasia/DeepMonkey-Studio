@@ -3,7 +3,7 @@ import type { PlantLiteModel } from "@bim-studio/contracts";
 import type { PlantLitePlaybackFrame } from "../components/plantLitePlaybackModel";
 import { disposeViewerObject } from "./sceneOverlayVisuals";
 
-/** 真实 DES 事件位置；瞬时连线不伪造 AGV 行驶。固定缓冲区、无模型变换写入。 */
+/** DES 搬运时段按已存场景端点插值；无时段证据的瞬时连线保持点位。不是物理车辆轨迹。 */
 export function createScenePlantPlaybackOverlay(scene: Object3D, model: PlantLiteModel) {
   const anchors = new Map(model.sceneBinding?.nodes.map(node => [node.nodeId, node.position]));
   const positions = new Float32Array(18 * 3);
@@ -24,7 +24,13 @@ export function createScenePlantPlaybackOverlay(scene: Object3D, model: PlantLit
       for (const item of frame?.items ?? []) {
         const position = anchors.get(item.nodeId);
         if (!position || count >= 18) continue;
-        positions.set([position[0], position[1] + .25 + item.lane * .12, position[2]], count * 3);
+        const target = item.transport ? anchors.get(item.transport.toNodeId) : undefined;
+        const progress = target ? Math.min(1, Math.max(0, item.transport?.progress ?? 0)) : 0;
+        positions.set([
+          position[0] + ((target?.[0] ?? position[0]) - position[0]) * progress,
+          position[1] + ((target?.[1] ?? position[1]) - position[1]) * progress + .25 + item.lane * .12,
+          position[2] + ((target?.[2] ?? position[2]) - position[2]) * progress,
+        ], count * 3);
         colors.set(item.state === "queued" ? [1, .65, .2] : item.state === "completed" ? [.3, .85, .5] : [.2, .8, .9], count * 3);
         count += 1;
       }

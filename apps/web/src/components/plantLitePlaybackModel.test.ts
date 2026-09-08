@@ -49,6 +49,23 @@ describe("plantLitePlaybackModel", () => {
     expect(frame.items[0]?.xPercent).toBeGreaterThan(50);
     expect(frame.items[0]?.xPercent).toBeLessThan(95);
     expect(frame.failedResourceIds).toEqual(["agv"]);
+    expect(frame.items[0]?.transport).toEqual({ toNodeId: "sink", progress: .375 });
+  });
+  it("uses the actual recorded branch, and reverse seeking has no accumulated drift", () => {
+    const model = structuredClone(MODEL);
+    model.nodes.push({ id: "other", name: "另一出口", kind: "sink" });
+    model.edges.unshift({ id: "wrong-first", from: "transport", to: "other" });
+    const prepared = preparePlantLitePlayback(TRACE, model);
+    const first = selectPlantLitePlaybackFrame(prepared, 2.5);
+    selectPlantLitePlaybackFrame(prepared, 4.9);
+    expect(selectPlantLitePlaybackFrame(prepared, 2.5)).toEqual(first);
+    expect(first.items[0]?.transport?.toNodeId).toBe("sink");
+  });
+  it("does not invent travel for truncated evidence, and stays at the endpoint while waiting to exit", () => {
+    const truncated = { ...TRACE, truncated: true, events: TRACE.events.slice(0, 5) };
+    expect(derivePlantLitePlaybackFrame(truncated, MODEL, 2.5).items[0]?.transport).toBeUndefined();
+    const delayed = { ...TRACE, events: TRACE.events.map(event => event.sequence >= 6 ? { ...event, atMinute: 7 } : event) };
+    expect(derivePlantLitePlaybackFrame(delayed, MODEL, 6).items[0]?.transport).toEqual({ toNodeId: "sink", progress: 1 });
   });
 
   it("counts a completed sink item and clamps the playback cursor", () => {

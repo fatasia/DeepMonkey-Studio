@@ -2,14 +2,15 @@ import type { PlantLiteModel, PlantLiteNode, SceneSnapshot, SimulationEntityStat
 import { validatePlantLiteModel } from "@bim-studio/plant-lite-simulation";
 
 export type SceneFlowNode = Extract<SimulationEntityState, { kind: "flowNode" }>;
-export type SceneFlowRole = "source" | "queue-buffer" | "station" | "sink";
-export const SCENE_FLOW_ROLES: Record<SceneFlowRole, string> = { source: "来料源", "queue-buffer": "队列", station: "工位", sink: "产出汇" };
+export type SceneFlowRole = "source" | "queue-buffer" | "station" | "transport" | "sink";
+export const SCENE_FLOW_ROLES: Record<SceneFlowRole, string> = { source: "来料源", "queue-buffer": "队列", station: "工位", transport: "搬运（单车）", sink: "产出汇" };
 
 export function createSceneFlowNode(objectId: string, name: string, role: SceneFlowRole, id: string = crypto.randomUUID()): SceneFlowNode {
   const base = { id, name: `${name} · ${SCENE_FLOW_ROLES[role]}` };
   const node: PlantLiteNode = role === "source" ? { ...base, kind: role, interarrivalTime: { kind: "deterministic", value: 1 } }
     : role === "queue-buffer" ? { ...base, kind: role, capacity: 10 }
       : role === "station" ? { ...base, kind: role, processingTime: { kind: "deterministic", value: 2 }, capacity: 1, queueCapacity: 20 }
+        : role === "transport" ? { ...base, kind: role, resourceId: `scene-transport:${id}`, travelTime: { kind: "deterministic", value: 2 }, queueCapacity: 20 }
         : { ...base, kind: role };
   return { id, kind: "flowNode", targetModelId: objectId, node };
 }
@@ -28,6 +29,10 @@ export function compileScenePlantModel(scene: SceneSnapshot, resolvePosition: (i
     else bindings.push({ nodeId: node.id, objectId: node.targetModelId, position: [position.x, position.y, position.z] });
   }
   const model: PlantLiteModel = { id: `scene-logistics:${scene.id}`, name: `${scene.name} · 场景物流`, nodes: nodes.map(node => structuredClone(node.node)), edges: [], sceneBinding: { sceneId: scene.id, nodes: bindings } };
+  // 快速作者器每条搬运线显式为单车；完整车队与故障策略仍由高级工作台管理。
+  const resources = new Map<string, NonNullable<PlantLiteModel["resources"]>[number]>();
+  for (const { node } of nodes) if (node.kind === "transport" && typeof node.resourceId === "string" && node.resourceId.startsWith("scene-transport:")) resources.set(node.resourceId, { id: node.resourceId, name: `${node.name} · 单车`, kind: "agv", capacity: 1 });
+  if (resources.size) model.resources = [...resources.values()];
   for (const link of entities) {
     if (link.kind !== "flowLink") continue;
     const from = byObject.get(link.fromModelId), to = byObject.get(link.toModelId);
