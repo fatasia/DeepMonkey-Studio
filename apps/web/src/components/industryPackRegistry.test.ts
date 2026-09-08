@@ -13,8 +13,8 @@ const logistics = { pack: LOGISTICS_FULFILLMENT_PACK, samples: LOGISTICS_PACK_SA
 describe("industry pack registry isolation", () => {
   it("registers distinct business datasets with no runtime catalog errors", () => {
     expect(INDUSTRY_PACK_ISSUES).toEqual([]);
-    expect(INDUSTRY_TEMPLATE_PACKS).toHaveLength(3);
-    expect(INDUSTRY_TEMPLATE_PACKS.map(pack => pack.id)).toEqual(["manufacturing-asset-ops", "warehouse-fulfillment", "power-grid-operations"]);
+    expect(INDUSTRY_TEMPLATE_PACKS).toHaveLength(4);
+    expect(INDUSTRY_TEMPLATE_PACKS.map(pack => pack.id)).toEqual(["manufacturing-asset-ops", "warehouse-fulfillment", "power-grid-operations", "water-treatment"]);
     const registry = createIndustryPackRegistry([manufacturing, logistics], ids);
     expect(registry.sample(logistics.pack, "logistics")).toBe(LOGISTICS_PACK_SAMPLES.logistics);
     expect(() => registry.sample({ ...logistics.pack, revision: 99 }, "logistics")).toThrow(/版本/);
