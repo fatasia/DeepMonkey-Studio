@@ -89,7 +89,7 @@ function ProjectDialog({ bindings }: { bindings: AppViewBindings }) {
 
 function PublicationDialog({ bindings }: { bindings: AppViewBindings }) {
   const { state, scenePersistence } = bindings;
-  const { activeScene, busy, locale, studioCloudConfigured, studioPublishMode, studioPublishPerformance } = state;
+  const { activeScene, busy, locale, studioCloudConfigured, studioCloudHint, studioPublishMode, studioPublishPerformance } = state;
   if (!state.studioPublishOpen || !activeScene) return null;
 
   return <ScenePublicationDialog
@@ -99,6 +99,7 @@ function PublicationDialog({ bindings }: { bindings: AppViewBindings }) {
     performance={studioPublishPerformance}
     defaultToolbarVisible={activeScene.publicationToolbarVisible !== false}
     cloudConfigured={studioCloudConfigured}
+    cloudHint={studioCloudHint}
     busy={busy}
     onModeChange={state.setStudioPublishMode}
     onPerformanceChange={state.setStudioPublishPerformance}

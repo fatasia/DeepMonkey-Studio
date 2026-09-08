@@ -31,6 +31,39 @@ describe("cloud render admin routes", () => {
     await app.close();
   });
 
+  it("exposes a login-readable capability snapshot without admin data", async () => {
+    const { app, worker } = await harness("viewer", false);
+    const response = await app.inject({ method: "GET", url: "/api/cloud-render/capability" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ configured: true, workerReady: true });
+    expect(worker.health).toHaveBeenCalledOnce();
+    await app.close();
+  });
+
+  it("lists missing cloud render requirements for non-admin users", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-cloud-routes-"));
+    directories.push(directory);
+    const store = new JsonStore(directory);
+    await store.init();
+    const control = new CloudRenderControlPlane(new MemoryCloudRenderRegistry(), { now: () => new Date() });
+    await control.init();
+    const app = createApiServer();
+    app.addHook("preHandler", async (request) => {
+      request.systemUser = {
+        id: "user-1", username: "user", displayName: "User", role: "viewer", projectIds: [], enabled: true,
+        createdAt: "2026-08-25T00:00:00.000Z", updatedAt: "2026-08-25T00:00:00.000Z"
+      };
+    });
+    await registerCloudRenderRoutes(app, { store, control });
+    const response = await app.inject({ method: "GET", url: "/api/cloud-render/capability" });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.configured).toBe(false);
+    expect(body.missingRequirements).toEqual(["CLOUD_RENDER_WORKER_URL / CLOUD_RENDER_WORKER_TOKEN", "CLOUD_RENDER_PUBLIC_ORIGIN"]);
+    expect(body.worker).toBeUndefined();
+    await app.close();
+  });
+
   it("only creates a session for a published enabled scene and exposes real media evidence", async () => {
     const { app, publication, worker } = await harness("admin", true);
     expect((await app.inject({ method: "POST", url: `/api/admin/cloud-render/scenes/${publication.sceneId}/sessions` })).statusCode).toBe(409);

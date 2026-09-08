@@ -86,6 +86,7 @@ export function useAppState() {
   const [studioPublishPerformance, setStudioPublishPerformance] = useState<NonNullable<SceneSnapshot["publicationPerformance"]>>("standard");
   const [studioPublishOpen, setStudioPublishOpen] = useState(false);
   const [studioCloudConfigured, setStudioCloudConfigured] = useState<boolean>();
+  const [studioCloudHint, setStudioCloudHint] = useState<string>();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [project, setProject] = useState<ProjectRecord>();
   const [scenes, setScenes] = useState<SceneSnapshot[]>([]);
@@ -251,7 +252,7 @@ export function useAppState() {
     rendererDiagnosticsOpen, setRendererDiagnosticsOpen,
     systemInitialTab, setSystemInitialTab, studioPublishMode, setStudioPublishMode,
     studioPublishPerformance, setStudioPublishPerformance, studioPublishOpen, setStudioPublishOpen,
-    studioCloudConfigured, setStudioCloudConfigured, projects, setProjects,
+    studioCloudConfigured, setStudioCloudConfigured, studioCloudHint, setStudioCloudHint, projects, setProjects,
     project, setProject, scenes, setScenes,
     managerApplications, setManagerApplications, activeScene, setActiveScene, getActiveScene,
     applicationRevision, setApplicationRevision, sceneName, setSceneName,

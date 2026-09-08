@@ -106,6 +106,8 @@
 .publication-mode-copy { display:grid; gap:2px; padding-right:3px; min-width:0; }
 .publication-mode-copy strong { color:var(--text-strong); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .publication-mode-copy small { color:var(--text-muted); font-size:12px; line-height:1.55; }
+.publication-cloud-hint { display:flex; align-items:flex-start; gap:7px; margin-top:13px; padding:8px 10px; color:var(--warning,#e2b75f); border:1px solid color-mix(in srgb,#e2b75f 38%,var(--line)); border-radius:7px; background:color-mix(in srgb,#e2b75f 8%,var(--surface-1)); font-size:12px; line-height:1.55; }
+.publication-cloud-hint svg { flex:0 0 auto; margin-top:2px; }
 .publication-safety-note { display:flex; min-height:34px; align-items:center; gap:7px; margin-top:13px; padding:0 10px; color:var(--success); border:1px solid color-mix(in srgb,var(--success) 35%,var(--line)); border-radius:7px; background:color-mix(in srgb,var(--success) 6%,var(--surface-1)); font-size:12px; white-space:nowrap; }
 .publication-safety-note strong { overflow:hidden; color:var(--success); font-weight:550; text-overflow:ellipsis; }
 @media (prefers-reduced-motion:reduce) { .publication-dialog-scroll button { transition:none; transform:none!important; } }

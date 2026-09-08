@@ -38,6 +38,7 @@ import type {
 } from "@bim-studio/contracts";
 import {
   ServerClient,
+  type CloudRenderCapability,
   type CloudRenderControlOverview,
   type CloudRenderScenePolicy,
   type CloudRenderWorkerHealth,
@@ -528,6 +529,8 @@ export const api = {
     }),
   getCloudRenderOverview: () =>
     request<CloudRenderControlOverview>("/api/admin/cloud-render"),
+  getCloudRenderCapability: () =>
+    request<CloudRenderCapability>("/api/cloud-render/capability"),
   testCloudRenderConfiguration: (configuration: {
     workerUrl: string;
     workerToken: string;

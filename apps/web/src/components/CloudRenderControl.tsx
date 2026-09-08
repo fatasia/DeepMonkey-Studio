@@ -242,8 +242,8 @@ export function CloudRenderConfigurationWizard({
             <span>
               <b>2</b>
               {t(
-                "测试通过后由部署环境安全保存；场景内可直接一键开启。",
-                "After validation, save securely in deployment; scenes can then be enabled with one click.",
+                "配置持久保存在 API 服务器的 .env（本页不代存密钥）；保存并重启 API 后场景即可一键开启。",
+                "Configuration persists in the API server .env (this page never stores secrets); after saving and restarting the API, scenes can be enabled with one click.",
               )}
             </span>
             <button
@@ -343,11 +343,35 @@ export function CloudRenderControlView({
             </strong>
             <p>
               {t(
-                "控制面不会使用计时器或假状态冒充媒体可用。请配置以下服务器环境变量：",
-                "The control plane never uses timers or fake states as media readiness. Configure:",
+                "控制面不会使用计时器或假状态冒充媒体可用。还缺少以下服务器环境变量：",
+                "The control plane never uses timers or fake states as media readiness. Missing:",
               )}
             </p>
-            <code>{overview.missingRequirements.join(" · ")}</code>
+            <ul className="cloud-render-requirements-list">
+              {overview.missingRequirements.map((item) => (
+                <li key={item}><code>{item}</code></li>
+              ))}
+            </ul>
+            <ol className="cloud-render-setup-steps">
+              <li>
+                {t(
+                  "启动 GPU Worker：在仓库目录运行 pnpm --filter @bim-studio/cloud-render-worker dev，并为它设置 CLOUD_RENDER_WORKER_TOKEN 与 CLOUD_RENDER_WORKER_PUBLIC_ORIGIN。",
+                  "Start the GPU Worker: run pnpm --filter @bim-studio/cloud-render-worker dev and set CLOUD_RENDER_WORKER_TOKEN and CLOUD_RENDER_WORKER_PUBLIC_ORIGIN for it.",
+                )}
+              </li>
+              <li>
+                {t(
+                  "在 API 服务环境的 .env 写入上方变量并重启 API（修改 env 后必须重启才会生效）。",
+                  "Write the variables above into the API service .env and restart the API (env changes require a restart).",
+                )}
+              </li>
+              <li>
+                {t(
+                  "回到本页完成连接测试，然后到场景管理为已发布场景开启云渲染。",
+                  "Run the connection test here, then enable cloud rendering per published scene in scene manager.",
+                )}
+              </li>
+            </ol>
           </div>
         </section>
       )}

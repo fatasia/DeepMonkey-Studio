@@ -86,6 +86,14 @@ export interface CloudRenderControlOverview {
   scenes: CloudRenderSceneControl[];
 }
 
+/** 登录用户可读的云渲染能力快照；不含 Worker 地址、令牌或会话明细。 */
+export interface CloudRenderCapability {
+  configured: boolean;
+  missingRequirements: string[];
+  workerReady?: boolean;
+  workerError?: string;
+}
+
 export interface HttpCloudRenderWorkerClientOptions {
   baseUrl: string;
   token: string;

@@ -106,6 +106,30 @@
   color:#e7c979;
   font-size:12px
 }
+.cloud-render-requirements-list {
+  display:grid;
+  gap:5px;
+  margin:0 0 10px;
+  padding:0;
+  list-style:none
+}
+.cloud-render-requirements-list li::before {
+  content:"º6";
+  margin-right:6px;
+  color:#e7c979
+}
+.cloud-render-setup-steps {
+  display:grid;
+  gap:7px;
+  margin:0;
+  padding-left:18px;
+  color:#8d9ba1;
+  font-size:12px;
+  line-height:1.6
+}
+.cloud-render-setup-steps code {
+  color:#c8d5d9
+}
 .cloud-render-worker {
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));

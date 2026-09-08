@@ -17,6 +17,11 @@ export async function registerCloudRenderRoutes(app: FastifyInstance, dependenci
   const { store, control } = dependencies;
   const createWorkerClient = dependencies.createWorkerClient ?? ((options: HttpCloudRenderWorkerClientOptions) => new HttpCloudRenderWorkerClient(options));
 
+  // 登录用户即可读：发布弹窗与场景开关用它判断可用性，避免把 admin 403 误判成“未配置”。
+  app.get("/api/cloud-render/capability", async () => {
+    return control.capability();
+  });
+
   app.get("/api/admin/cloud-render", async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
     return control.overview(listPublishedScenes(store));

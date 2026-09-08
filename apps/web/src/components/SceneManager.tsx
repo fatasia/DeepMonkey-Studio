@@ -88,6 +88,7 @@ function useSceneManagerController({
   const [sceneSort, setSceneSort] = useState<SceneSortKey>("updated");
   const [deliveryReviewOpen, setDeliveryReviewOpen] = useState(false);
   const [cloudConfigured, setCloudConfigured] = useState(false);
+  const [cloudHint, setCloudHint] = useState<string>();
   const [cloudScenePolicies, setCloudScenePolicies] = useState<Record<string, boolean>>({});
   const [cloudBusySceneId, setCloudBusySceneId] = useState<string>();
   const [cloudSceneLinks, setCloudSceneLinks] = useState<Record<string, string>>({});
@@ -122,6 +123,9 @@ function useSceneManagerController({
       .then((overview) => {
         if (cancelled) return;
         setCloudConfigured(overview.configured);
+        setCloudHint(overview.configured
+          ? (overview.workerError ? `云渲染 Worker 暂不可用：${overview.workerError}` : undefined)
+          : "云渲染尚未配置：需要管理员在系统设置的云渲染页完成 GPU Worker 配置。");
         setCloudScenePolicies(Object.fromEntries(overview.scenes.map((scene) => [scene.sceneId, scene.enabled])));
         setCloudSceneLinks(Object.fromEntries(overview.scenes.flatMap((scene) => (scene.session?.viewerUrl ? [[scene.sceneId, scene.session.viewerUrl]] : []))));
       })
@@ -129,6 +133,7 @@ function useSceneManagerController({
         if (!cancelled) {
           setCloudConfigured(false);
           setCloudScenePolicies({});
+          setCloudHint("云渲染状态检查失败，请稍后重试或检查服务可用性。");
         }
       });
     return () => {
@@ -382,6 +387,7 @@ function useSceneManagerController({
     cloudBusySceneId,
     cloudConfigured,
     cloudError,
+    cloudHint,
     cloudSceneLinks,
     cloudScenePolicies,
     copyLink,

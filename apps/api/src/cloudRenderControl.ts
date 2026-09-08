@@ -5,6 +5,7 @@ import { preferredPublicationRenderer, type PublishedSceneRecord } from "@bim-st
 import {
   CLOUD_RENDER_WORKER_CONTRACT_VERSION,
   RemoteRenderSession,
+  type CloudRenderCapability,
   type CloudRenderControlOverview,
   type CloudRenderPublishedSceneScope,
   type CloudRenderScenePolicy,
@@ -113,6 +114,19 @@ export class CloudRenderControlPlane {
         })
         .sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt))
     };
+  }
+
+  /** 登录用户（含 viewer）可读的能力快照：只暴露配置状态与 Worker 就绪度，不暴露地址、令牌或会话。 */
+  async capability(): Promise<CloudRenderCapability> {
+    this.requireInitialized();
+    const missingRequirements = this.missingRequirements();
+    if (missingRequirements.length > 0) return { configured: false, missingRequirements };
+    try {
+      const worker = await this.requireHealthyWorker(false);
+      return { configured: true, missingRequirements, workerReady: worker.status === "ready" };
+    } catch (reason) {
+      return { configured: true, missingRequirements, workerReady: false, workerError: errorMessage(reason) };
+    }
   }
 
   async setEnabled(publication: PublishedSceneRecord, enabled: boolean): Promise<CloudRenderScenePolicy> {

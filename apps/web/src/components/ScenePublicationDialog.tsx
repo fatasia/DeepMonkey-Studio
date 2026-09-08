@@ -14,6 +14,8 @@ interface ScenePublicationDialogProps {
   performance: PublicationPerformance;
   defaultToolbarVisible: boolean;
   cloudConfigured: boolean | undefined;
+  /** 云渲染不可选时的可见原因；只放 title 悬浮会让用户以为按钮坏了。 */
+  cloudHint?: string | undefined;
   busy?: boolean;
   onModeChange: (mode: PublicationMode) => void;
   onPerformanceChange: (performance: PublicationPerformance) => void;
@@ -65,7 +67,8 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
             <ModeButton
               icon={<Cloud size={17} />}
               active={props.mode === "cloud"}
-              disabled={props.busy || props.cloudConfigured !== true}
+              // 未配置时保持可选中：原因在下方提示行可见，用户不应面对一个“灰的点不了”的谜团。
+              disabled={Boolean(props.busy)}
               title={tr(locale, "云渲染", "Cloud rendering")}
               description={cloudDescription(locale, props.cloudConfigured)}
               onClick={() => props.onModeChange("cloud")}
@@ -115,6 +118,11 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
               onClick={() => setToolbarVisible(false)}
             />
           </div>
+          {props.mode === "cloud" && props.cloudConfigured !== true && props.cloudHint && (
+            <div className="publication-cloud-hint" role="note">
+              <Cloud size={14} /><span>{props.cloudHint}</span>
+            </div>
+          )}
           <div className="publication-safety-note" title={tr(locale, "发布版本支持历史恢复，运行状态可在交付工作台诊断", "Published versions can be restored and diagnosed in the delivery workspace")}>
             <ShieldCheck size={14} /><strong>{tr(locale, "发布不会覆盖草稿", "Publishing does not overwrite the draft")}</strong>
           </div>
@@ -156,7 +164,7 @@ function ModeButton(props: { active: boolean; disabled?: boolean; icon: React.Re
 
 function cloudDescription(locale: AppLocale, configured: boolean | undefined): string {
   if (configured === undefined) return tr(locale, "正在检查云渲染配置…", "Checking cloud configuration…");
-  if (!configured) return tr(locale, "请先在云渲染设置完成全局配置", "Complete cloud rendering settings first");
+  if (!configured) return tr(locale, "需要管理员先完成云渲染配置", "An administrator must configure cloud rendering first");
   return tr(
     locale,
     "服务端 GPU 出图，适合超大场景与低配终端；需要稳定网络和已配置 Worker。",

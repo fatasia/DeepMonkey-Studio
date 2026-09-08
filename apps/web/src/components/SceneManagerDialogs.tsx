@@ -21,6 +21,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
   const {
     busy,
     cloudConfigured,
+    cloudHint,
     deliveryReviewOpen,
     dialogMode,
     locale,
@@ -168,6 +169,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
           performance={publishPerformance}
           defaultToolbarVisible={publishTarget.publicationToolbarVisible !== false}
           cloudConfigured={cloudConfigured}
+          cloudHint={cloudHint}
           busy={busy}
           onModeChange={setPublishMode}
           onPerformanceChange={setPublishPerformance}

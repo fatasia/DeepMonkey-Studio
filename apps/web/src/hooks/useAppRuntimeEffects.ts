@@ -99,6 +99,7 @@ interface AppRuntimeEffectsContext {
   setXrActiveMode: Setter<"immersive-vr" | "immersive-ar" | undefined>;
   setXrCapabilities: Setter<XrCapabilities>;
   setStudioCloudConfigured: Setter<boolean | undefined>;
+  setStudioCloudHint: Setter<string | undefined>;
   setSceneDataStatus: Setter<SceneDataBridgeStatus>;
   setSceneDataReceived: Setter<number>;
   setSceneDataBindingRuntime: Setter<Record<string, SceneDataBindingRuntimeState>>;
@@ -168,6 +169,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     setXrActiveMode,
     setXrCapabilities,
     setStudioCloudConfigured,
+    setStudioCloudHint,
     setSceneDataStatus,
     setSceneDataReceived,
     setSceneDataBindingRuntime,
@@ -461,10 +463,22 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     if (!studioPublishOpen) return;
     let cancelled = false;
     setStudioCloudConfigured(undefined);
+    setStudioCloudHint(undefined);
     void api
-      .getCloudRenderOverview()
-      .then((overview) => {
-        if (!cancelled) setStudioCloudConfigured(overview.configured);
+      .getCloudRenderCapability()
+      .then((capability) => {
+        if (cancelled) return;
+        if (!capability.configured) {
+          setStudioCloudConfigured(false);
+          setStudioCloudHint("云渲染尚未配置：需要管理员在系统设置的云渲染页完成 GPU Worker 配置。");
+          return;
+        }
+        if (capability.workerReady === false) {
+          setStudioCloudConfigured(false);
+          setStudioCloudHint(`云渲染 Worker 暂不可用：${capability.workerError ?? "健康检查未通过"}。可稍后重试或联系管理员。`);
+          return;
+        }
+        setStudioCloudConfigured(true);
       })
       .catch(() => {
         if (!cancelled) setStudioCloudConfigured(false);
