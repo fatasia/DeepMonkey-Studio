@@ -339,7 +339,7 @@ async function previewHttp(config: AppConfig, connection: DataConnectionRecord, 
   return selectHttpRows(await response.json(), dataset.sourceKey);
 }
 
-function httpConnectionHeaders(connection: DataConnectionRecord): Record<string, string> {
+export function httpConnectionHeaders(connection: DataConnectionRecord): Record<string, string> {
   const authMode = String(connection.config.authMode || "none");
   if (authMode === "none") return {};
   const secret = connectionPassword(connection, "HTTP_API_TOKEN");

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import {
   assertPathSafeResourceId,
+  assertDataWritebackConfig,
   type DataConnectionRecord,
   type DataDatasetRecord,
   type DataEndpointDefinition,
@@ -38,6 +39,7 @@ import { registerModelAssetRoutes } from "./modelAssetRoutes.js";
 import { registerSceneRoutes } from "./sceneRoutes.js";
 import { registerAssetLibraryRoutes } from "./assetLibraryRoutes.js";
 import { registerSemanticModelRoutes } from "./semanticModelRoutes.js";
+import { registerDataWritebackRoutes } from "./dataWritebackRoutes.js";
 
 interface RouteDependencies {
   store: MetadataStore;
@@ -189,6 +191,7 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   });
   app.post<{ Params: { projectId: string }; Body: Partial<DataConnectionRecord> }>("/api/projects/:projectId/data-connections", async (request, reply) => {
     if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+    if (request.systemUser?.role !== "admin" && store.listDatasets(request.params.projectId).some(dataset => dataset.writeback && dataset.connectionId === request.body.id)) return reply.code(403).send({ message: "只有管理员可以修改填报目标连接" });
     const name = request.body.name?.trim();
     if (!name || !request.body.type) return reply.code(400).send({ message: "连接名称和类型不能为空" });
     if (!hasBuiltInDataConnector(request.body.type)) return reply.code(501).send({ message: `${request.body.type} 连接器尚未内置；当前版本不能创建或测试该连接` });
@@ -290,6 +293,16 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     return store.listDatasets(request.params.projectId);
   });
   app.post<{ Params: { projectId: string }; Body: Partial<DataDatasetRecord> }>("/api/projects/:projectId/datasets", async (request, reply) => {
+    const existing = store.listDatasets(request.params.projectId).find(dataset => dataset.id === request.body.id);
+    const writeback = request.body.writeback === undefined ? existing?.writeback : request.body.writeback;
+    if (JSON.stringify(writeback) !== JSON.stringify(existing?.writeback) || (existing?.writeback && request.body.connectionId !== existing.connectionId)) {
+      if (request.systemUser?.role !== "admin") return reply.code(403).send({ message: "只有管理员可以配置填报目标" });
+    }
+    if (writeback !== undefined && writeback !== null) {
+      try { assertDataWritebackConfig(writeback); } catch (error) { return reply.code(400).send({ message: error instanceof Error ? error.message : "填报配置无效" }); }
+      const connection = store.listDataConnections(request.params.projectId).find(item => item.id === request.body.connectionId);
+      if (!connection?.enabled || connection.type !== "http") return reply.code(400).send({ message: "填报需要已启用的 HTTP 连接" });
+    }
     const name = request.body.name?.trim();
     if (!name || !request.body.connectionId) return reply.code(400).send({ message: "数据集名称和连接不能为空" });
     const computedFields = request.body.computedFields ?? [];
@@ -313,6 +326,7 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
       ...(request.body.sourceKey !== undefined ? { sourceKey: request.body.sourceKey } : {}),
       refreshSeconds: Math.max(0, Number(request.body.refreshSeconds ?? 10)),
       fields: request.body.fields ?? [],
+      ...(writeback ? { writeback } : {}),
       ...(computedFields.length
         ? { computedFields: computedFields.map((field) => ({ ...field, key: field.key.trim(), label: field.label.trim() || field.key.trim(), formula: field.formula.trim() })) }
         : {}),
@@ -454,6 +468,7 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
 
   await registerModelAssetRoutes(app, { store, queue, objects, dataDir, config });
   await registerSemanticModelRoutes(app, { store });
+  await registerDataWritebackRoutes(app, store, config);
   await registerAssetLibraryRoutes(app, { store, queue, objects, dataDir, libraryDir: config.assetLibraryDir });
   await registerSceneRoutes(app, {
     store,

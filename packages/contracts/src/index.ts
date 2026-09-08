@@ -8,6 +8,7 @@ export * from "./parametricModeling.js";
 export * from "./operations.js";
 export * from "./plantLiteModel.js";
 export * from "./data.js";
+export * from "./dataWriteback.js";
 export * from "./geometry.js";
 export * from "./vision.js";
 export * from "./virtualCommissioning.js";

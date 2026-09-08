@@ -120,7 +120,14 @@ export class DirectHttpConnectorGateway {
   }
 }
 
-interface HttpResponseBytes { status: number; contentType?: string; body: Buffer }
+interface HttpResponseBytes { status: number; contentType?: string; etag?: string; body: Buffer }
+
+/** 仅供已授权的服务端业务适配器使用；复用 DNS 固定与出站策略，不扩大直接绑定权限。 */
+export async function requestControlledHttp(endpoint: string, method: "GET" | "PATCH", headers: Record<string, string>, body: Buffer | undefined, options: DirectBindingGatewayOptions): Promise<HttpResponseBytes> {
+  if (!/^https?:\/\//i.test(endpoint)) throw new DirectBindingGatewayError("OUTBOUND_DENIED", "业务写回必须使用绝对 HTTP 地址", 400, false);
+  const target = await prepareTarget({ endpoint } as DirectBindingSpec, ["http:", "https:"], options);
+  return requestPinned(target, method, headers, body, { timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS, maxResponseBytes: options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES });
+}
 
 function requestPinned(
   target: PreparedTarget,
@@ -149,6 +156,7 @@ function requestPinned(
       });
       response.once("end", () => resolve({
         status: response.statusCode ?? 502,
+        ...(typeof response.headers.etag === "string" ? { etag: response.headers.etag } : {}),
         ...(typeof response.headers["content-type"] === "string" ? { contentType: response.headers["content-type"] } : {}),
         body: Buffer.concat(chunks)
       }));

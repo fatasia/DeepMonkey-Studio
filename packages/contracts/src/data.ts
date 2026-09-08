@@ -1,4 +1,5 @@
 import type { DirectBindingSpec } from "./directBinding.js";
+import type { DataWritebackConfig } from "./dataWriteback.js";
 
 /** 数据接入、数据产品、管道与对外端点的稳定合同。 */
 export type DataConnectionType =
@@ -113,6 +114,7 @@ export interface DataDatasetRecord {
   refreshSeconds: number;
   fields: DataDatasetField[];
   computedFields?: DataComputedField[];
+  writeback?: DataWritebackConfig;
   createdAt: string;
   updatedAt: string;
 }
