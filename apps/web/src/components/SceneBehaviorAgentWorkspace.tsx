@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AiAssistantResponse, ScriptModule } from "@bim-studio/contracts";
-import { ArrowLeft, Bot, CheckCircle2, CircleAlert, FileSearch, LoaderCircle, Sparkles, Undo2, WandSparkles, Workflow } from "lucide-react";
+import { ArrowLeft, Bot, CheckCircle2, CircleAlert, FileSearch, Sparkles, Square, Undo2, WandSparkles, Workflow } from "lucide-react";
+import { ScriptAssistantSession, type ScriptAssistantRequest } from "../ai/scriptAssistantSession";
 import { createAiSceneScriptDraft, type AiSceneScriptDraftResult } from "../ai/sceneScriptDraft";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -48,6 +49,10 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [modelEvidence, setModelEvidence] = useState<ModelEvidence>();
+  const session = useRef(new ScriptAssistantSession());
+  const owner = JSON.stringify([props.projectId, props.sceneId, props.draft, props.target, props.intelligence, mode]);
+  const ownerRef = useRef(owner);
+  ownerRef.current = owner;
   const t = (zh: string, en: string) => tr(props.locale, zh, en);
   const scriptContext = useMemo(() => buildScriptAssistantContext(props), [props.analysis, props.draft, props.sceneId, props.target]);
 
@@ -56,15 +61,36 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
   }, [props.initialMode]);
 
   useEffect(() => {
+    session.current.cancel();
+    setBusy(false);
     setDraftResult(undefined);
     setAnswer("");
     setNotice("");
     setError("");
     setModelEvidence(undefined);
-  }, [props.draft?.id, props.draft?.target?.kind, props.draft?.target && props.draft.target.kind !== "scene" ? props.draft.target.id : "scene"]);
+    return () => session.current.cancel();
+  }, [owner]);
+
+  function isCurrent(request: ScriptAssistantRequest) {
+    return session.current.isCurrent(request, ownerRef.current);
+  }
+
+  function stopRequest() {
+    session.current.cancel();
+    setBusy(false);
+    setAnswer("");
+    setNotice(t("已停止，未插入草稿。", "Stopped; no draft was inserted."));
+  }
+
+  function leaveWorkspace() {
+    session.current.cancel();
+    props.onBack();
+  }
 
   async function runAssistant() {
-    if (!props.draft || busy) return;
+    if (!props.draft) return;
+    const request = session.current.begin(owner);
+    if (!request) return;
     setBusy(true);
     setAnswer("");
     setDraftResult(undefined);
@@ -72,14 +98,16 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
     setError("");
     setModelEvidence(undefined);
     try {
-      if (mode === "generate") await generateDraft();
-      else if (mode === "explain" || mode === "diagnose") await answerReadOnly(mode);
+      if (mode === "generate") await generateDraft(request);
+      else if (mode === "explain" || mode === "diagnose") await answerReadOnly(mode, request);
+    } catch (reason) {
+      if (isCurrent(request)) setError(errorMessage(reason));
     } finally {
-      setBusy(false);
+      if (session.current.finish(request)) setBusy(false);
     }
   }
 
-  async function generateDraft() {
+  async function generateDraft(request: ScriptAssistantRequest) {
     const intent = prompt.trim();
     if (!intent || !props.sceneId || !props.target || !props.draft) return;
     const direct = createAiSceneScriptDraft({
@@ -100,7 +128,9 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
       return;
     }
     try {
-      const response = await api.askAssistant("scene", normalizationPrompt(intent), scriptContext, props.projectId);
+      // 归一化流不是可执行草稿，完整响应通过结构与静态检查后才允许审查。
+      const response = await api.streamAssistant("scene", normalizationPrompt(intent), scriptContext, () => {}, { projectId: props.projectId, signal: request.controller.signal });
+      if (!isCurrent(request)) return;
       const normalized = parseNormalizedScriptIntent(response.text);
       if (!normalized) {
         setDraftResult(direct);
@@ -120,12 +150,13 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
       setModelEvidence(toModelEvidence(response));
       if (reviewed.status !== "ready") setNotice(t("模型已解释意图，但结果仍未通过确定性静态门禁。", "The model interpreted the intent, but deterministic static gates still rejected it."));
     } catch (reason) {
+      if (!isCurrent(request)) return;
       setDraftResult(direct);
       setNotice(`${t("模型插件暂不可用，已降级为本地静态检查：", "The model plugin is unavailable; local static checks were used: ")}${errorMessage(reason)}`);
     }
   }
 
-  async function answerReadOnly(task: "explain" | "diagnose") {
+  async function answerReadOnly(task: "explain" | "diagnose", request: ScriptAssistantRequest) {
     if (!props.draft) return;
     const question = prompt.trim() || defaultQuestion(task, props.locale);
     if (!props.projectId) {
@@ -134,10 +165,15 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
       return;
     }
     try {
-      const response = await api.askAssistant("scene", readOnlyPrompt(task, question), scriptContext, props.projectId);
+      let streamed = "";
+      const response = await api.streamAssistant("scene", readOnlyPrompt(task, question), scriptContext, delta => {
+        if (isCurrent(request)) { streamed += delta; setAnswer(streamed); }
+      }, { projectId: props.projectId, signal: request.controller.signal });
+      if (!isCurrent(request)) return;
       setAnswer(response.text);
       setModelEvidence(toModelEvidence(response));
     } catch (reason) {
+      if (!isCurrent(request)) return;
       setAnswer(localReadOnlyFallback(task, props.draft, props.analysis, props.locale));
       setNotice(`${t("模型插件暂不可用，已显示本地结果：", "The model plugin is unavailable; local results are shown: ")}${errorMessage(reason)}`);
     }
@@ -156,7 +192,7 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
 
   if (mode === "agent") {
     return <div className="behavior-agent-workspace">
-      <WorkspaceHeader locale={props.locale} mode={mode} onMode={setMode} onBack={props.onBack} />
+      <WorkspaceHeader locale={props.locale} mode={mode} onMode={setMode} onBack={leaveWorkspace} />
       <IndustrialAgentWorkspace
         locale={props.locale}
         {...(props.projectId ? { projectId: props.projectId } : {})}
@@ -168,7 +204,7 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
 
   const runnable = Boolean(props.draft && (mode !== "generate" || prompt.trim() && props.sceneId && props.target));
   return <div className="behavior-agent-workspace">
-    <WorkspaceHeader locale={props.locale} mode={mode} onMode={setMode} onBack={props.onBack} />
+    <WorkspaceHeader locale={props.locale} mode={mode} onMode={setMode} onBack={leaveWorkspace} />
     <div className="behavior-script-ai-body">
       <div className="behavior-script-ai-context">
         <span><strong>{props.draft?.name ?? t("未选择脚本", "No script selected")}</strong><small>{targetLabel(props.target, props.locale)}</small></span>
@@ -178,11 +214,12 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
         <span>{mode === "generate" ? t("描述要生成的行为", "Describe the behavior") : t("可补充关注点（可选）", "Optional focus")}</span>
         <textarea value={prompt} rows={4} placeholder={placeholder(mode, props.locale)} onChange={(event) => setPrompt(event.target.value)} />
       </label>}
-      {!draftResult && <button className="primary behavior-script-ai-run" type="button" disabled={!runnable || busy} onClick={() => void runAssistant()}>
-        {busy ? <LoaderCircle className="spin" size={14} /> : mode === "generate" ? <WandSparkles size={14} /> : <FileSearch size={14} />}
-        {busy ? t("正在处理", "Working") : mode === "generate" ? t("生成并检查", "Generate and check") : mode === "explain" ? t("解释脚本", "Explain script") : t("诊断脚本", "Diagnose script")}
+      {!draftResult && <button className={`${busy ? "" : "primary "}behavior-script-ai-run`} type="button" disabled={!runnable && !busy} onClick={() => busy ? stopRequest() : void runAssistant()}>
+        {busy ? <Square size={14} /> : mode === "generate" ? <WandSparkles size={14} /> : <FileSearch size={14} />}
+        {busy ? t("停止", "Stop") : mode === "generate" ? t("生成并检查", "Generate and check") : mode === "explain" ? t("解释脚本", "Explain script") : t("诊断脚本", "Diagnose script")}
       </button>}
       {draftResult && <AiSceneScriptDraftReview locale={props.locale} draft={draftResult} {...(error ? { error } : {})} onCancel={() => setDraftResult(undefined)} onInsertIntoEditor={insertIntoEditor} />}
+      {!draftResult && error && <p className="behavior-script-ai-notice" role="alert">{error}</p>}
       {answer && <section className="behavior-script-ai-answer" aria-live="polite"><Bot size={15} /><div><strong>{mode === "generate" ? t("意图解释", "Intent summary") : mode === "explain" ? t("脚本解释", "Script explanation") : t("诊断结论", "Diagnostic result")}</strong><p>{answer}</p></div></section>}
       {modelEvidence && <div className="behavior-script-ai-evidence"><CheckCircle2 size={13} /><span>{modelEvidence.model}<small>{modelEvidence.reliability?.traceId ? `Trace ${modelEvidence.reliability.traceId}` : t("模型文本仅作辅助，静态门禁仍为最终依据", "Model text is advisory; static gates remain authoritative")}</small></span></div>}
       {notice && <p className="behavior-script-ai-notice" role="status"><CircleAlert size={13} />{notice}</p>}

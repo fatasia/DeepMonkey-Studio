@@ -2,10 +2,10 @@
   display: grid;
   gap: 11px;
   padding: 13px;
-  color: #d7dfe2;
-  border: 1px solid #3a4a50;
+  color: var(--text-strong);
+  border: 1px solid var(--line-strong);
   border-radius: 9px;
-  background: #111b1f;
+  background: var(--surface-1);
 }
 
 .ai-script-draft-review > header {
@@ -23,7 +23,7 @@
 
 .ai-script-draft-review > header small {
   overflow: hidden;
-  color: #82949a;
+  color: var(--text-muted);
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -34,28 +34,28 @@
   width: 32px;
   height: 32px;
   place-items: center;
-  color: #dfb252;
+  color: var(--accent);
   border-radius: 7px;
-  background: #2c2618;
+  background: var(--accent-soft);
 }
 
 .ai-script-risk {
   padding: 4px 6px;
-  color: #a6b3b7;
-  border: 1px solid #415158;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
   border-radius: 4px;
   font-size: 9px;
   font-weight: 700;
 }
 
 .ai-script-risk.risk-medium {
-  color: #ddbc74;
-  border-color: #6a572d;
+  color: var(--text-strong);
+  border-color: var(--warning);
 }
 
 .ai-script-risk.risk-high {
-  color: #eda0a6;
-  border-color: #744047;
+  color: var(--text-strong);
+  border-color: var(--danger);
 }
 
 .ai-script-draft-policy {
@@ -63,16 +63,16 @@
   align-items: flex-start;
   gap: 7px;
   padding: 8px;
-  color: #7ac89b;
-  border-left: 2px solid #4ea978;
-  background: #11221b;
+  color: var(--text-strong);
+  border-left: 2px solid var(--success);
+  background: var(--surface-2);
 }
 
 .status-blocked .ai-script-draft-policy,
 .status-needs-input .ai-script-draft-policy {
-  color: #dca766;
-  border-color: #a87335;
-  background: #241d13;
+  color: var(--text-strong);
+  border-color: var(--warning);
+  background: var(--surface-2);
 }
 
 .ai-script-draft-policy > span {
@@ -81,7 +81,7 @@
 }
 
 .ai-script-draft-policy small {
-  color: #829b8b;
+  color: var(--text-muted);
   font-size: 10px;
   line-height: 1.4;
 }
@@ -96,10 +96,10 @@
 .ai-script-draft-actions > span,
 .ai-script-draft-diff > div > span {
   padding: 3px 6px;
-  color: #aebcc0;
-  border: 1px solid #35474e;
+  color: var(--text);
+  border: 1px solid var(--line);
   border-radius: 4px;
-  background: #172328;
+  background: var(--surface-2);
   font-size: 10px;
 }
 
@@ -116,14 +116,14 @@
 }
 
 .ai-script-draft-summary dt {
-  color: #7d8e94;
+  color: var(--text-muted);
   font-size: 10px;
 }
 
 .ai-script-draft-summary dd {
   margin: 0;
   overflow: hidden;
-  color: #bdc8cc;
+  color: var(--text);
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   font-size: 10px;
   text-overflow: ellipsis;
@@ -131,9 +131,9 @@
 }
 
 .ai-script-draft-diff {
-  border: 1px solid #2e4046;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #0e171a;
+  background: var(--surface-2);
 }
 
 .ai-script-draft-diff > summary {
@@ -143,7 +143,7 @@
   gap: 6px;
   padding: 0 8px;
   cursor: pointer;
-  color: #b4c0c4;
+  color: var(--text);
   font-size: 10px;
 }
 
@@ -154,7 +154,7 @@
 }
 
 .ai-script-draft-diff > p {
-  color: #819299;
+  color: var(--text-muted);
   font-size: 10px;
 }
 
@@ -162,9 +162,9 @@
   max-height: 180px;
   padding: 8px;
   overflow: auto;
-  color: #8fd6ab;
+  color: var(--text-strong);
   border-radius: 4px;
-  background: #0b1316;
+  background: var(--bg-0);
   font-size: 10px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -181,13 +181,13 @@
   align-items: flex-start;
   gap: 5px;
   margin: 0;
-  color: #d2a066;
+  color: var(--text);
   font-size: 10px;
   line-height: 1.45;
 }
 
 .ai-script-draft-error {
-  color: #e39aa1;
+  color: var(--danger);
 }
 
 .ai-script-draft-review > footer {
@@ -202,17 +202,17 @@
   align-items: center;
   gap: 5px;
   padding: 0 9px;
-  color: #aeb9bd;
-  border: 1px solid #3b494e;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
   border-radius: 5px;
-  background: #172126;
+  background: var(--surface-2);
   cursor: pointer;
 }
 
 .ai-script-draft-review > footer button.primary {
-  color: #211b0f;
-  border-color: #d7aa4d;
-  background: #d7aa4d;
+  color: var(--on-accent);
+  border-color: var(--accent);
+  background: var(--accent);
   font-weight: 700;
 }
 
@@ -220,6 +220,9 @@
   cursor: not-allowed;
   opacity: 0.5;
 }
+
+.ai-script-draft-review button:focus-visible,
+.ai-script-draft-review summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media (max-width: 420px) {
   .ai-script-draft-review > header {
