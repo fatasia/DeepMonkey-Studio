@@ -90,13 +90,14 @@ export function analyzeSceneScript(
     }
   }
   if (usesAttachedTarget && (!script.target || script.target.kind === "scene")) {
+    const position = sourcePosition(executableCode, executableCode.search(/\bctx\.self\b/));
     issues.push({
       code: "unsupported-api",
       severity: "error",
       message: "ctx.self 仅在脚本挂载到三维对象或二维资源时可用",
-      line: 1,
-      column: 1,
-      endColumn: 9,
+      line: position.line,
+      column: position.column,
+      endColumn: position.column + "ctx.self".length,
     });
   }
   collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.object\s*\(\s*(["'])([^"']+)\1/g, objectIds, "场景对象", issues);

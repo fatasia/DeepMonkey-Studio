@@ -36,10 +36,9 @@ const artifactRoot = resolveInputPath(
 );
 const reportFile = resolve(artifactRoot, "candidate-report.json");
 const manifestsFile = resolve(artifactRoot, "candidate-manifests.json");
-const recordFile = resolveInputPath(
-  argumentsByName.get("record-file") ??
-    "D:/Documents/New project 3/public/samples/multiscale-battery-assessment-engineering-lfp-demo.csv",
-);
+const requestedRecordFile = argumentsByName.get("record-file");
+if (!requestedRecordFile) throw new Error("请用 --record-file 显式指定本项目的电池 CSV 文件");
+const recordFile = resolveInputPath(requestedRecordFile);
 
 /** pnpm --filter 会把 cwd 切到包目录；命令行相对路径仍按仓库根解释，和 README 示例保持一致。 */
 function resolveInputPath(value: string): string {

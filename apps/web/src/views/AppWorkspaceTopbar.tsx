@@ -1,16 +1,26 @@
 import { ArrowLeft, Bot, LayoutDashboard, Plus, Redo2, Rocket, Save, Undo2 } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { SceneWorkspaceMoreMenu } from "../components/SceneWorkspaceMoreMenu";
+import { SceneDrillWizard } from "../components/SceneDrillWizard";
 import { WorkspaceModeSwitch } from "../components/WorkspaceModeSwitch";
 import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
 import { translate as tr } from "../i18n";
 import type { AppViewBindings } from "./appViewBindings";
 
 /** 三维编辑/浏览的全局导航与发布操作；与场景画布和检查器职责分离。 */
-export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) {
+export interface AppWorkspaceTopbarTools {
+  onImportModel?: () => void;
+  onDeviceLayout?: () => void;
+  onSmartBinding?: () => void;
+  onRvtImportSettings?: () => void;
+}
+
+export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindings; tools?: AppWorkspaceTopbarTools }) {
+  const [drillGuideOpen, setDrillGuideOpen] = useState(false);
   const latestBindings = useRef(bindings);
   latestBindings.current = bindings;
   const exitPending = useRef(false);
+  const scriptOpening = useRef(false);
   const { state, scenePersistence, applicationRuntime, actions, sceneHistory } = bindings;
   const {
     branding,
@@ -53,6 +63,20 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
     if (!flushBehaviorDraft()) return;
     setSceneBehaviorOpen(false);
   };
+  const showScripts = async () => {
+    if (!activeScene || scriptOpening.current) return;
+    scriptOpening.current = true;
+    const isCurrent = () => latestBindings.current.state.route === route;
+    try {
+      // 旧式场景直达链接不含应用身份；先恢复已有脚本所属文档再打开面板。
+      const application = await scenePersistence.ensureApplicationForScene(activeScene, isCurrent);
+      if (!isCurrent()) return;
+      if (route.applicationId !== application.metadata.id) navigate({ ...route, projectId: activeScene.projectId, applicationId: application.metadata.id }, true);
+      setSceneBehaviorOpen(true);
+    } catch (reason) {
+      if (isCurrent()) state.showError(reason);
+    } finally { scriptOpening.current = false; }
+  };
   const leaveThreeDimensionalWorkspace = (destination?: "dashboard") => {
     if (exitPending.current || !flushBehaviorDraft()) return;
     exitPending.current = true;
@@ -66,13 +90,13 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
           if (!current.state.sceneName.trim()) { await current.scenePersistence.commitSceneName(); return; }
           if (!(await current.scenePersistence.saveScene())) return;
         } else if (current.state.activeApplication && !(await current.applicationRuntime.saveActiveApplication())) return;
-        if (latestBindings.current.state.route === route) current.applicationRuntime.returnFromSceneEditor(destination);
+        if (latestBindings.current.state.route === route) await current.applicationRuntime.returnFromSceneEditor(destination);
       })().catch(state.showError).finally(() => { exitPending.current = false; });
     }, 0);
   };
 
   return (
-    <header className="topbar">
+    <><header className="topbar">
       {route.view === "studio" && (
         <button
           className="topbar-back"
@@ -131,9 +155,10 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
             locale={locale}
             active={sceneBehaviorOpen ? "script" : "3d"}
             contextLabel={sceneName}
+            scriptsAvailable={Boolean(activeScene)}
             onSelect2D={() => leaveThreeDimensionalWorkspace("dashboard")}
             onSelect3D={showThreeDimensionalWorkspace}
-            onSelectScripts={() => setSceneBehaviorOpen(true)}
+            onSelectScripts={() => void showScripts()}
           />
           <div className="scene-title-wrap">
             <span>{tr(locale, "场景", "Scene")}</span>
@@ -180,6 +205,7 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
               <span className="action-label">{tr(locale, "AI 助手", "AI Assistant")}</span>
             </button>
             <SceneWorkspaceMoreMenu
+              onDrillGuide={() => setDrillGuideOpen(true)}
               locale={locale}
               rendererBackend={rendererBackend}
               rendererSwitching={rendererSwitching}
@@ -189,6 +215,10 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
               changeRendererBackend={(backend) => {
                 if (!busy) void changeRendererBackend(backend);
               }}
+              onImportModel={tools?.onImportModel}
+              onDeviceLayout={tools?.onDeviceLayout}
+              onSmartBinding={tools?.onSmartBinding}
+              onRvtImportSettings={tools?.onRvtImportSettings}
               onImport={() => importRef.current?.click()}
               onExportLoose={() => exportSceneConfig()}
               onExportSingle={() => void exportSingleFileScene()}
@@ -244,5 +274,13 @@ export function AppWorkspaceTopbar({ bindings }: { bindings: AppViewBindings }) 
         </div>
       )}
     </header>
+    {drillGuideOpen && activeScene && <SceneDrillWizard
+      locale={locale} sceneId={activeScene.id} sceneName={sceneName}
+      sources={state.interactionTargetOptions} scenes={state.scenes.map((scene) => ({ id: scene.id, name: scene.name }))}
+      cameras={state.cameraViews.map((view) => ({ id: view.id, name: view.name }))}
+      interactions={state.sceneInteractions} onChange={state.setSceneInteractions}
+      onPreview={(script) => void state.engine?.runInteractionScript(script, { test: true })}
+      onClose={() => setDrillGuideOpen(false)}
+    />}</>
   );
 }

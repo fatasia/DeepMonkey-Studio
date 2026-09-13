@@ -1,6 +1,7 @@
 import type { DashboardDataWidgetConfig } from "@bim-studio/contracts";
 import { translate as tr } from "../i18n";
 import { DashboardConditionalRulesEditor } from "./DashboardConditionalRulesEditor";
+import { DeviceSignalRuleEditor } from "./DeviceSignalRuleEditor";
 import { DashboardDataSource } from "./DashboardDataSource";
 import { DashboardDatasetWriteback } from "./DashboardDatasetWriteback";
 import { DashboardRecordFormInspector } from "./DashboardRecordFormInspector";
@@ -34,8 +35,9 @@ export function DashboardInspectorData() {
           userId={writebackAccess.userId} canWrite={writebackAccess.canWrite} onSaved={refreshDataset}
           fieldsOpen={fields.open} onOpen={() => { fields.setDrag(undefined); fields.setOpen(false); }} />}
         <DashboardDataSource />
+        {selectedNode.widget.type === "status" && <DeviceSignalRuleEditor locale={locale} value={selectedNode.widget.signalRule ?? {}} onChange={signalRule=>updateDataWidget({signalRule})} />}
         {!selectedNode.widget.directBinding && !selectedNode.widget.semanticBinding && !selectedNode.widget.sampleData && <DashboardFieldSlots key={selectedNode.id} />}
-        {!selectedNode.widget.semanticBinding && ["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "rank", "table", "scroll-table"].includes(
+        {!selectedNode.widget.semanticBinding && ["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "wordcloud", "boxplot", "waterfall", "polarBar", "rank", "table", "scroll-table"].includes(
           selectedNode.widget.type,
         ) && (
           <details className="dashboard-data-analysis-settings" open={Boolean(selectedNode.widget.analysis || selectedNode.widget.report || selectedNode.widget.type === "map")}>

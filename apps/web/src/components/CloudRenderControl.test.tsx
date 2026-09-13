@@ -17,6 +17,8 @@ describe("CloudRenderControlView", () => {
     expect(html).toContain("Public Origin");
     expect(html).toContain("高级部署设置");
     expect(html).toContain("CLOUD_RENDER_WORKER_TOKEN=&lt;secure-token&gt;");
+    expect(html).toContain("/v1/health");
+    expect(html).toContain("根地址应返回 200 服务信息");
     expect(html).toContain("测试连接");
   });
 

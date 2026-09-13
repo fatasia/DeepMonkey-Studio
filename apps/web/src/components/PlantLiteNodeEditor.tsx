@@ -91,7 +91,7 @@ function PrimaryNodeControl({ model, node, onModelChange, onNodeChange }: {
   if (node.kind === "buffer" || node.kind === "queue-buffer") return <NumberField compact label="容量" value={node.capacity} min={1} onChange={(capacity) => onNodeChange({ ...node, capacity })} />;
   if (node.kind === "transport") {
     const resource = model.resources?.find((item) => item.id === node.resourceId);
-    return <><DistributionPrimary label="搬运耗时" distribution={node.travelTime} onChange={(travelTime) => onNodeChange({ ...node, travelTime })} /><NumberField compact label="共享资源数" value={resource?.capacity ?? 1} min={1} max={100} onChange={(capacity) => resource && onModelChange(replacePlantLiteResource(model, resource.id, { ...resource, capacity }))} /></>;
+    return <>{node.journey ? <span title="耗时由轨道长度、速度、装卸与路段让行计算；展开车辆与轨道调整">轨道调度 · {node.journey.speedMetersPerMinute} 米/分</span> : <DistributionPrimary label="搬运耗时" distribution={node.travelTime} onChange={(travelTime) => onNodeChange({ ...node, travelTime })} />}<NumberField compact label="共享资源数" value={resource?.capacity ?? 1} min={1} max={100} onChange={(capacity) => resource && onModelChange(replacePlantLiteResource(model, resource.id, { ...resource, capacity }))} /></>;
   }
   return <span className="plant-flow-terminal">流程终点</span>;
 }
@@ -106,7 +106,7 @@ function NodeAdvanced({ model, node, onModelChange, onNodeChange }: {
   onModelChange: (model: PlantLiteModel) => void;
   onNodeChange: (node: PlantLiteNode) => void;
 }) {
-  const distribution = node.kind === "source" ? node.interarrivalTime : node.kind === "station" ? node.processingTime : node.kind === "transport" ? node.travelTime : undefined;
+  const distribution = node.kind === "source" ? node.interarrivalTime : node.kind === "station" ? node.processingTime : node.kind === "transport" && !node.journey ? node.travelTime : undefined;
   const setDistribution = (value: Distribution) => {
     if (node.kind === "source") onNodeChange({ ...node, interarrivalTime: value });
     else if (node.kind === "station") onNodeChange({ ...node, processingTime: value });

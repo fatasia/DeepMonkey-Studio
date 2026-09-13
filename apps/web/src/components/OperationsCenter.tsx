@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertTriangle, CheckCircle2, Database, FileUp, LoaderCircle, RefreshCw } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Database, FileUp, LoaderCircle } from "lucide-react";
 import type {
   AiDataBinding,
   IndustrialDiagnosisResult,
@@ -12,7 +12,7 @@ import type {
   ProjectRecord,
   SceneSnapshot,
 } from "@bim-studio/contracts";
-import { api, type IotNbAssessmentResult, type OperationsSnapshot } from "../api";
+import { api, type OperationsSnapshot } from "../api";
 import { plantLiteRequestFromStudy, readPlantLiteDraft, writePlantLiteDraft } from "./plantLiteDraftPersistence";
 import { VirtualCommissioningWorkbench } from "./VirtualCommissioningWorkbench";
 import { MaintenanceDiagnosisCard } from "./MaintenanceDiagnosisCard";
@@ -48,6 +48,7 @@ import { OperationsStudyHistory } from "./OperationsStudyHistory";
 import { resolveOperationsStudyAction } from "./operationsStudyAction";
 import { EMPTY_ENERGY_FIELD_MAP, energyObservationsFromPreview, inferEnergyFieldMap, type EnergyFieldMap } from "./energyDatasetMapping";
 import { usePlantLiteRunController } from "./plantLiteRunController";
+import { AiSampleRunner } from "./AiSampleRunner";
 
 const DEFAULT_MAINTENANCE_POLICY: AiDataRunPolicyDraft = {
   mode: "interval",
@@ -100,8 +101,6 @@ export function OperationsCenter({
   const [energyFieldMap, setEnergyFieldMap] = useState<EnergyFieldMap>(EMPTY_ENERGY_FIELD_MAP);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [syncMessage, setSyncMessage] = useState("");
-  const [assessmentSource, setAssessmentSource] = useState<IotNbAssessmentResult["source"]>();
   const [datasets, setDatasets] = useState<DataDatasetRecord[]>([]);
   const [dataBindings, setDataBindings] = useState<AiDataBinding[]>([]);
   const [maintenanceDatasetId, setMaintenanceDatasetId] = useState("");
@@ -166,7 +165,6 @@ export function OperationsCenter({
       return;
     }
     setSnapshot(undefined);
-    setSyncMessage("");
     setDatasets([]);
     setDataBindings([]);
     let cancelled = false;
@@ -257,7 +255,7 @@ export function OperationsCenter({
 
   async function runMaintenance() {
     await run(async () => {
-      if (!selectedModel) throw new Error("没有可运行模型，请先同步 Iot-nb 或导入训练模型");
+      if (!selectedModel) throw new Error("没有可运行模型，请先导入训练模型");
       if (maintenanceDatasetId) {
         const existing = snapshot?.deployments.find(
           (item) => item.modelId === selectedModel.id && item.sourceId === maintenanceDatasetId,
@@ -305,27 +303,11 @@ export function OperationsCenter({
         });
         await api.assessMaintenanceDataset(project.id, deployment.id, dataset.id);
         setDataBindings(await api.listAiDataBindings(project.id));
-        setAssessmentSource(undefined);
         setDiagnosis(undefined);
         await load(selectedModel.id);
         return;
       }
-      if (selectedModel.source !== "iot-nb")
-        throw new Error("请选择数据中心的现场数据集后运行该模型");
-      const result = await api.assessIotNbMaintenanceModel(project.id, selectedModel.id);
-      setAssessmentSource(result.source);
-      setDiagnosis(undefined);
-      setCommissioningDraft(undefined);
-      setCommissioningStudy(undefined);
-      await load(selectedModel.id);
-    });
-  }
-
-  async function syncIotNb() {
-    await run(async () => {
-      const result = await api.syncIotNbMaintenanceModels(project.id);
-      setSyncMessage(`同步完成：新增 ${result.imported}，更新 ${result.updated} · ${result.sourceProjectName}`);
-      await load(result.models[0]?.id);
+      throw new Error("请选择当前项目数据中心的现场数据集后运行该模型");
     });
   }
 
@@ -510,6 +492,7 @@ export function OperationsCenter({
         </div>
       )}
       <section className="operations-content">
+        {(tab === "maintenance" || tab === "energy") && <AiSampleRunner key={`${project.id}:${tab}`} projectId={project.id} kind={tab} />}
         {mountedTabs.has("maintenance") && (
           <div hidden={tab !== "maintenance"}>
             <div className="operations-grid">
@@ -532,7 +515,6 @@ export function OperationsCenter({
                 <>
                   <MaintenanceModelOnboarding
                     busy={busy}
-                    onSync={() => void syncIotNb()}
                     onImport={() => modelImport.current?.click()}
                     onOpenDataCenter={onOpenDataCenter}
                   />
@@ -551,7 +533,6 @@ export function OperationsCenter({
                   value={selectedModel?.id ?? ""}
                   onChange={(event) => {
                     setSelectedModelId(event.target.value);
-                    setAssessmentSource(undefined);
                     setDiagnosis(undefined);
                     setCommissioningDraft(undefined);
                     setCommissioningStudy(undefined);
@@ -570,10 +551,9 @@ export function OperationsCenter({
                 <span>运行数据源</span>
                 <select value={maintenanceDatasetId} onChange={(event) => {
                   setMaintenanceDatasetId(event.target.value);
-                  setAssessmentSource(undefined);
                   setDiagnosis(undefined);
                 }}>
-                  <option value="">{selectedModel?.source === "iot-nb" ? "Iot-nb 模型关联源数据" : "请选择现场数据集"}</option>
+                  <option value="">请选择现场数据集</option>
                   {datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
                 </select>
                 <small>数据源连接与字段在数据中心统一管理，模型部署只保存字段映射，不保存密码。</small>
@@ -592,10 +572,6 @@ export function OperationsCenter({
                 </>
               )}
               <div className="operations-inline-actions">
-                <button onClick={() => void syncIotNb()} disabled={busy}>
-                  <RefreshCw size={14} />
-                  同步 Iot-nb 当前工程
-                </button>
                 <button onClick={() => modelImport.current?.click()}>
                   <FileUp size={14} />
                   导入训练模型 JSON
@@ -623,12 +599,6 @@ export function OperationsCenter({
                   </>
                 )}
               </div>
-              {syncMessage && (
-                <p className="operations-sync-ok">
-                  <CheckCircle2 size={14} />
-                  {syncMessage}
-                </p>
-              )}
               {selectedModel && <ModelEvidence model={selectedModel} />}
               {selectedModel?.benchmarkOnly && (
                 <p className="operations-notice">
@@ -665,13 +635,6 @@ export function OperationsCenter({
                           onOpenSceneTarget(latestDeployment.sceneId, objectId);
                       }}
                     />
-                  )}
-                  {assessmentSource && (
-                    <p className="operations-source-proof">
-                      <Database size={14} />
-                      本次实际读取：{assessmentSource.projectName} / {assessmentSource.datasetName} /{" "}
-                      {assessmentSource.rowCount} 行
-                    </p>
                   )}
                   {latestAssessment.sourceEvidence && (
                     <p className="operations-source-proof">
@@ -770,7 +733,7 @@ export function OperationsCenter({
             />
           </div>
         )}
-        {!embedded && <OperationsStudyHistory
+        {!embedded && tab !== "battery" && <OperationsStudyHistory
           records={snapshot?.studies ?? []}
           busy={busy}
           onReproduce={reproduceOrOpenStudy}

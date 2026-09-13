@@ -46,7 +46,7 @@ export function deriveDeliveryWorkflowFacts(project: ProjectRecord, scenes: Scen
   const simulationReady = scenes.some((scene) => Boolean(scene.physics) || Boolean(scene.animation));
   const dataReady = hasPublicationDataProduct(project);
   const publicationAudit = assessProjectPublication(project, scenes);
-  const coreReady = dataReady && designReady && linkageReady && pendingAssetCount === 0;
+  const coreReady = designReady && pendingAssetCount === 0;
   return {
     dataReady,
     assetReady: project.models.some((model) => model.status === "ready") || (project.assets?.length ?? 0) > 0,
@@ -70,7 +70,7 @@ export function buildDeliverySteps(locale: AppLocale, project: ProjectRecord, sc
       tr(locale, "接入数据", "Connect data"),
       facts.dataReady ? tr(locale, "连接与数据集就绪", "Connection and dataset ready") : tr(locale, "缺连接或数据集", "Connection or dataset missing"),
       facts.dataReady,
-      true,
+      false,
     ),
     step(
       "assets",
@@ -95,7 +95,7 @@ export function buildDeliverySteps(locale: AppLocale, project: ProjectRecord, sc
           ? tr(locale, "配置筛选、钻取与 3D 联动", "Configure filters, drill-down and 3D actions")
           : tr(locale, "先创建场景再配置联动", "Create a scene before linking data"),
       facts.linkageReady,
-      true,
+      false,
       !facts.designReady,
     ),
     step(
@@ -149,13 +149,6 @@ export function buildDeliverySteps(locale: AppLocale, project: ProjectRecord, sc
 export function buildDeliveryBlockers(locale: AppLocale, project: ProjectRecord, scenes: SceneSnapshot[]): DeliveryBlocker[] {
   const facts = deriveDeliveryWorkflowFacts(project, scenes);
   const blockers: DeliveryBlocker[] = [];
-  if (!facts.dataReady)
-    blockers.push({
-      id: "data",
-      stepId: "data",
-      label: tr(locale, "数据尚未就绪", "Data is not ready"),
-      detail: tr(locale, "至少启用一个连接并创建一个数据集", "Enable a connection and create a dataset"),
-    });
   if (!facts.designReady)
     blockers.push({
       id: "design",
@@ -170,14 +163,7 @@ export function buildDeliveryBlockers(locale: AppLocale, project: ProjectRecord,
       label: tr(locale, "资源处理未完成", "Asset processing is incomplete"),
       detail: tr(locale, `${facts.pendingAssetCount} 个模型失败或仍在处理中`, `${facts.pendingAssetCount} models failed or are still processing`),
     });
-  if (facts.designReady && !facts.linkageReady)
-    blockers.push({
-      id: "linkage",
-      stepId: "linkage",
-      label: tr(locale, "场景尚未连接数据", "Scene data is not linked"),
-      detail: tr(locale, "至少配置一个数据绑定或交互", "Add at least one data binding or interaction"),
-    });
-  const coreReady = facts.dataReady && facts.designReady && facts.linkageReady && facts.pendingAssetCount === 0;
+  const coreReady = facts.designReady && facts.pendingAssetCount === 0;
   if (coreReady && facts.publicationBlockerCount > 0)
     blockers.push({
       id: "validation",

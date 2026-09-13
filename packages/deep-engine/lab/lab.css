@@ -1,0 +1,78 @@
+html, body { height: auto; min-height: 100%; margin: 0; min-width: 320px; overflow: auto; background: var(--bg-0); color: var(--text); }
+body { display: block; }
+.lab-shell { width: 100%; max-width: 1600px; margin: 0 auto; padding: 24px 40px 32px; box-sizing: border-box; }
+.lab-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid var(--line-subtle); }
+.lab-header > div { display: flex; align-items: center; gap: 16px; }
+.lab-brand { font-size: 16px; font-weight: 650; letter-spacing: -.4px; color: var(--text-strong); }
+.lab-separator { color: var(--text-faint); }
+.lab-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding: 28px 0 24px; }
+.lab-eyebrow { margin: 0 0 8px; color: var(--accent); font-size: 12px; }
+.lab-heading h1 { margin: 0; font-size: 27px; line-height: 1.4; font-weight: 550; letter-spacing: -.8px; color: var(--text-strong); }
+#status { margin: 0 0 4px; font-size: 12px; max-width: 45%; overflow-wrap: anywhere; }
+#status[data-state="error"] { color: var(--danger); }
+.lab-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; }
+.lab-viewport { position: relative; min-height: 520px; background: var(--surface-1); border: 1px solid var(--line-subtle); border-radius: var(--radius-lg); overflow: hidden; }
+.lab-viewport canvas { display: block; width: 100%; height: calc(100% - 112px); position: absolute; inset: 0 0 auto; }
+.lab-caption { position: absolute; left: 24px; right: 24px; top: 20px; display: flex; justify-content: space-between; gap: 16px; font-size: 11px; color: var(--text-muted); pointer-events: none; }
+.lab-metrics { position: absolute; left: 24px; right: 24px; bottom: 20px; display: flex; gap: 32px; padding: 14px 16px; background: color-mix(in srgb, var(--surface-1) 90%, transparent); border: 1px solid var(--line-subtle); border-radius: var(--radius-md); pointer-events: none; }
+.lab-metrics > div { display: grid; gap: 6px; }
+.lab-metrics span { color: var(--text-muted); font-size: 11px; }
+.lab-metrics strong { color: var(--text-strong); font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.lab-controls { display: flex; flex-direction: column; gap: 12px; padding: 0 0 4px; }
+.lab-controls h2 { font-size: 13px; font-weight: 600; color: var(--text-strong); margin: 0 0 4px; }
+.lab-controls h2:not(:first-child) { margin-top: 12px; border-top: 1px solid var(--line-subtle); padding-top: 20px; }
+.lab-controls label { font-size: 12px; color: var(--text-muted); }
+.lab-range-label { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+.lab-range-label output { font-size: 12px; font-variant-numeric: tabular-nums; }
+.lab-shell button, .lab-shell select { min-height: 34px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-1); color: var(--text); padding: 7px 10px; font: inherit; font-size: 12px; cursor: pointer; transition: border-color 160ms ease, background 160ms ease; }
+.lab-shell button:hover, .lab-shell select:hover { background: var(--surface-2); border-color: var(--line-strong); }
+.lab-shell button:focus-visible, .lab-shell select:focus-visible, .lab-shell input:focus-visible, .lab-shell summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.lab-shell button:disabled { opacity: .45; cursor: not-allowed; }
+.lab-shell button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+.lab-shell input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; min-height: 20px; }
+.lab-results { display: grid; gap: 12px; margin-top: 20px; font-size: 12px; color: var(--text-muted); line-height: 1.8; }
+.shader-workbench { margin-top: 28px; border: 1px solid var(--line-subtle); border-radius: var(--radius-lg); background: var(--surface-1); overflow: hidden; }
+.shader-workbench__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 20px 22px; border-bottom: 1px solid var(--line-subtle); }
+.shader-workbench__header h2 { margin: 0; color: var(--text-strong); font-size: 18px; font-weight: 600; letter-spacing: -.3px; }
+.shader-workbench__header p:not(.lab-eyebrow) { max-width: 680px; margin: 5px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.shader-workbench__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+#shader-state { margin-right: 6px; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+#shader-state[data-state="ready"] { color: var(--success); }
+#shader-state[data-state="error"] { color: var(--danger); }
+#shader-state[data-state="compiling"] { color: var(--accent); }
+.lab-shell .primary-action { color: var(--on-accent); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.lab-shell .primary-action:hover { background: color-mix(in srgb, var(--accent) 86%, white); border-color: color-mix(in srgb, var(--accent) 86%, white); }
+.shader-workbench__body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 330px; }
+.shader-code-pane, .shader-output-pane { display: flex; min-width: 0; flex-direction: column; }
+.shader-code-pane { border-right: 1px solid var(--line-subtle); }
+.shader-pane-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; padding: 0 16px; border-bottom: 1px solid var(--line-subtle); color: var(--text-muted); font-size: 11px; }
+.shader-pane-label strong { color: var(--text-strong); font-size: 12px; font-weight: 600; }
+#shader-source, #shader-output { box-sizing: border-box; width: 100%; min-height: 286px; margin: 0; padding: 16px 18px; border: 0; border-radius: 0; background: color-mix(in srgb, var(--bg-0) 62%, var(--surface-1)); color: var(--text); font: 12px/1.65 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; tab-size: 2; white-space: pre; overflow: auto; }
+#shader-source { resize: vertical; outline: none; }
+#shader-source:focus { box-shadow: inset 3px 0 0 var(--accent); }
+#shader-output:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.shader-feedback { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: start; min-height: 42px; padding: 13px 18px; border-top: 1px solid var(--line-subtle); color: var(--text-muted); font-size: 11px; }
+.shader-feedback strong { color: var(--text-strong); font-weight: 600; }
+.shader-feedback ul { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0; padding: 0; list-style: none; }
+.shader-feedback li[data-severity="error"] { color: var(--danger); }
+.shader-feedback li[data-severity="warning"] { color: var(--warning); }
+.shader-feedback li[data-severity="success"] { color: var(--success); }
+.lab-results p { margin: 0; }
+.lab-results summary { cursor: pointer; width: fit-content; }
+.lab-results details p { margin: 12px 0; }
+.lab-results pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; background: var(--surface-1); padding: 16px; border-radius: var(--radius-sm); }
+.lab-shell[data-narrow="true"] { padding: 20px; }
+.lab-shell[data-narrow="true"] .lab-workspace { grid-template-columns: minmax(0, 1fr); }
+.lab-shell[data-narrow="true"] .lab-viewport { min-height: 440px; }
+.lab-shell[data-narrow="true"] .lab-controls { display: flex; gap: 12px; }
+.lab-shell[data-narrow="true"] .lab-controls h2 { grid-column: 1 / -1; }
+.lab-shell[data-narrow="true"] .lab-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+.lab-shell[data-narrow="true"] #status { max-width: 100%; }
+.lab-shell[data-narrow="true"] .lab-caption, .lab-shell[data-narrow="true"] .lab-metrics { left: 12px; right: 12px; }
+.lab-shell[data-narrow="true"] .lab-metrics { gap: 16px; }
+.lab-shell[data-narrow="true"] .shader-workbench__header { align-items: flex-start; flex-direction: column; }
+.lab-shell[data-narrow="true"] .shader-workbench__actions { justify-content: flex-start; }
+.lab-shell[data-narrow="true"] .shader-workbench__body { grid-template-columns: minmax(0, 1fr); }
+.lab-shell[data-narrow="true"] .shader-code-pane { border-right: 0; border-bottom: 1px solid var(--line-subtle); }
+@media (max-width: 800px) { .lab-shell { padding: 20px; } .lab-header > div { gap: 8px; } .lab-heading h1 { font-size: 23px; } }
+@media (prefers-reduced-motion: reduce) { .lab-shell * { transition: none !important; } }

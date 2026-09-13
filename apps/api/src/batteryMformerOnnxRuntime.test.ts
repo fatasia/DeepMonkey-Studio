@@ -76,6 +76,16 @@ describe("BatteryMFormer ONNX runtime", () => {
     expect([...feeds.condition_embedding!.data]).toEqual([1, 2, 3, 4]);
   });
 
+  it("recovers after a transient session load failure", async () => {
+    const fixture = await runtimeFixture();
+    const createSession = vi.fn(async () => ({ inputNames: ["curves", "curve_mask", "condition_embedding", "soh_input", "cycle_features"], outputNames: ["soh_trajectory"], run: async () => ({ soh_trajectory: { data: Float32Array.from({ length: 20 }, () => 0.5) } }) }));
+    createSession.mockRejectedValueOnce(new Error("temporary load failure"));
+    const runtime = new BatteryMformerOnnxRuntime(fixture.deployment, { createSession });
+    await expect(runtime.predict(batteryInput())).rejects.toThrow("temporary load failure");
+    expect(await runtime.predict(batteryInput())).toHaveProperty("predictedCycleLife");
+    expect(createSession).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects a modified condition embedding bundle", async () => {
     const fixture = await runtimeFixture();
     await writeFile(fixture.bundlePath, Buffer.alloc(32, 7));

@@ -8,6 +8,20 @@ import { useAppSceneSyncEffects } from "./useAppSceneSyncEffects";
 
 afterEach(() => { harness.effects.length = 0; harness.dependencies.length = 0; vi.clearAllMocks(); });
 describe("dashboard history route synchronization", () => {
+  it("does not restore over an incremental model insertion in the restored scene", () => {
+    const engine = { scene: { uuid: "viewer" }, hasRestoredSceneSnapshot: vi.fn(() => true), isSceneSnapshotReady: vi.fn(() => false) };
+    const state = {
+      route: { view: "studio", projectId: "project", applicationId: "app", sceneId: "scene" },
+      activeScene: { id: "scene" }, activeApplication: { metadata: { id: "app" } },
+      engine, branding: {}, sceneWorkspaceLoadRef: { current: undefined },
+    } as unknown as AppState;
+    const applyScene = vi.fn();
+    useAppSceneSyncEffects({ state, navigate: vi.fn(), recoveryDecisionRef: { current: undefined }, setRecoveryDraft: vi.fn(), refreshProject: vi.fn(), applyScene, openSceneDashboard: vi.fn() });
+    harness.effects[5]!();
+    expect(engine.hasRestoredSceneSnapshot).toHaveBeenCalledWith("scene");
+    expect(state.sceneWorkspaceLoadRef.current).toBeUndefined();
+    expect(applyScene).not.toHaveBeenCalled();
+  });
   it.each(["removed", "remaining"])("keeps the local document and history for route %s", (pageId) => {
     const pages = [{ id: "remaining" }];
     const document = { metadata: { id: "app", projectId: "project" }, pages };

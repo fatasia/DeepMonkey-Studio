@@ -14,7 +14,7 @@ describe("independent model instance loading", () => {
     a.object.position.x = 17;
     expect(b.object.position.x).toBe(0);
     expect(await h.engine.loadManifest(source, "a")).toBe(a);
-    expect(h.gltfLoader.loadAsync).toHaveBeenCalledTimes(2);
+    expect(h.gltfLoader.loadAsync).toHaveBeenCalledTimes(1);
     expect(h.fitAll).not.toHaveBeenCalled();
     expect(source.modelId).toBe("shared");
     await expect(h.engine.loadManifest(manifest("other"), "a")).rejects.toThrow("替换");

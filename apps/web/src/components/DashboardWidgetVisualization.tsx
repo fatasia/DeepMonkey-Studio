@@ -15,6 +15,7 @@ import {
 import type { DashboardMetric } from "./DashboardWidgetRuntime";
 import { DashboardReportExport } from "./DashboardReportExport";
 import { dashboardReadableChartOptions, readDashboardChartPalette } from "./dashboardReadableChartOptions";
+import { dashboardAdvancedChartOption } from "./dashboardAdvancedChartOptions";
 import {
   dashboardColorWithOpacity as colorWithOpacity,
   dashboardJsonRecord as jsonRecord,
@@ -386,7 +387,8 @@ function DashboardChart({
     const element = ref.current;
     let disposed = false;
     let resize: ResizeObserver | undefined;
-    void Promise.all([import("echarts/core"), import("echarts/charts"), import("echarts/components"), import("echarts/renderers")]).then(
+    // 词云插件只注册副作用;单独 catch,插件异常不得拖垮其余图表的加载
+    void Promise.all([import("echarts/core"), import("echarts/charts"), import("echarts/components"), import("echarts/renderers"), import("echarts-wordcloud").catch(() => undefined)]).then(
       ([echarts, charts, components, renderers]) => {
         if (disposed) return;
         echarts.use([
@@ -403,10 +405,12 @@ function DashboardChart({
           charts.TreemapChart,
           charts.GraphChart,
           charts.MapChart,
+          charts.BoxplotChart,
           components.GridComponent,
           components.GeoComponent,
           components.VisualMapComponent,
           components.RadarComponent,
+          components.PolarComponent,
           components.TooltipComponent,
           components.LegendComponent,
           renderers.CanvasRenderer,
@@ -453,7 +457,10 @@ function DashboardChart({
       };
       chart.on("finished", finish);
     }
-    const readableOption = ref.current && dashboardReadableChartOptions(widget, categories, seriesValues, readDashboardChartPalette(ref.current), compact);
+    const themePalette = ref.current ? readDashboardChartPalette(ref.current) : undefined;
+    const advancedOption = themePalette && dashboardAdvancedChartOption(widget, analysis, themePalette, compact);
+    if (advancedOption) { chart.setOption(advancedOption, true); return; }
+    const readableOption = themePalette && dashboardReadableChartOptions(widget, categories, seriesValues, themePalette, compact);
     if (readableOption) { chart.setOption(readableOption, true); return; }
     if (widget.type === "gauge") {
       chart.setOption(

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, BellRing, Bot, CloudCog, FileClock, KeyRound, Pencil, PlugZap, Plus, Power, Save, Trash2, Users } from "lucide-react";
+import { Activity, BellRing, Box, Bot, CircleAlert, CloudCog, FileClock, KeyRound, Pencil, PlugZap, Plus, Power, Save, Trash2, Users } from "lucide-react";
 import type {
+  AiModelProviderSettings,
   AiProviderSettings,
   AuditLogRecord,
   ConverterPluginDescriptor,
@@ -74,10 +75,9 @@ export function SystemCenter({
   return (
     <main className="system-center-page">
       <header className="secondary-page-header">
-        <SecondaryPageBack locale={locale} onBack={onBack} />
         <div className="secondary-page-heading-row">
+          <SecondaryPageBack locale={locale} onBack={onBack} />
           <div className="secondary-page-title">
-            <small>SETTINGS</small>
             <h1>{t("设置", "Settings")}</h1>
             <p>{t("用户授权、服务健康、通知推送、云渲染、操作审计与 AI 配置", "Users, service health, notifications, cloud rendering, audit logs and AI settings")}</p>
           </div>
@@ -103,6 +103,7 @@ export function SystemCenter({
         {tab === "ai" && ai && (
           <div className="system-ai-layout">
             <AiSettingsPanel t={t} initial={ai} providers={aiProviders} onSaved={setAi} onError={setError} />
+            <AiModelingSettingsPanel t={t} initial={ai.modeling3d} onSaved={setAi} onError={setError} />
             <AiPluginPanel t={t} plugins={plugins} onReload={load} onError={setError} />
           </div>
         )}
@@ -461,6 +462,126 @@ function AiPluginPanel({ t, plugins, onReload, onError }: { t: Translate; plugin
           );
         })}
       </div>
+    </section>
+  );
+}
+
+type Modeling3dProviderKey = "tripo3d" | "tencentHunyuan";
+type Modeling3dSettings = Record<Modeling3dProviderKey, AiModelProviderSettings>;
+
+const DEFAULT_MODELING_3D_SETTINGS: Modeling3dSettings = {
+  tripo3d: {
+    providerId: "ai.tripo3d",
+    baseUrl: "https://openapi.tripo3d.ai",
+    model: "tripo-3d",
+    protocol: "auto",
+  },
+  tencentHunyuan: {
+    providerId: "ai.tencent-hunyuan-3d",
+    baseUrl: "https://ai3d.tencentcloudapi.com",
+    model: "3.1",
+    protocol: "auto",
+    region: "ap-guangzhou",
+  },
+};
+
+function AiModelingSettingsPanel({
+  t,
+  initial,
+  onSaved,
+  onError,
+}: {
+  t: Translate;
+  initial: AiProviderSettings["modeling3d"];
+  onSaved: (value: AiProviderSettings) => void;
+  onError: (value: string) => void;
+}) {
+  const [settings, setSettings] = useState<Modeling3dSettings>(() => ({
+    tripo3d: { ...DEFAULT_MODELING_3D_SETTINGS.tripo3d, ...(initial?.tripo3d ?? {}) },
+    tencentHunyuan: { ...DEFAULT_MODELING_3D_SETTINGS.tencentHunyuan, ...(initial?.tencentHunyuan ?? {}) },
+  }));
+  const [apiKeys, setApiKeys] = useState<Record<Modeling3dProviderKey, string>>({ tripo3d: "", tencentHunyuan: "" });
+  const [secretIds, setSecretIds] = useState<Record<Modeling3dProviderKey, string>>({ tripo3d: "", tencentHunyuan: "" });
+  const [busy, setBusy] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<Modeling3dProviderKey>("tripo3d");
+
+  function update(provider: Modeling3dProviderKey, patch: Partial<AiModelProviderSettings>) {
+    setSettings((current) => ({ ...current, [provider]: { ...current[provider], ...patch } }));
+  }
+
+  async function save() {
+    setBusy(true);
+    try {
+      const modeling3d = {
+        tripo3d: { ...settings.tripo3d, ...(apiKeys.tripo3d.trim() ? { apiKey: apiKeys.tripo3d.trim() } : {}) },
+        tencentHunyuan: { ...settings.tencentHunyuan, ...(secretIds.tencentHunyuan.trim() ? { secretId: secretIds.tencentHunyuan.trim() } : {}), ...(apiKeys.tencentHunyuan.trim() ? { apiKey: apiKeys.tencentHunyuan.trim() } : {}) },
+      };
+      onSaved(await api.saveAiSettings({ modeling3d }));
+      setApiKeys({ tripo3d: "", tencentHunyuan: "" });
+      setSecretIds({ tripo3d: "", tencentHunyuan: "" });
+    } catch (reason) {
+      onError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="system-ai-3d-settings">
+      <header>
+        <span>
+          <Box size={18} />
+          <strong>{t("3D 生成", "3D generation")}</strong>
+        </span>
+      </header>
+      <nav className="system-ai-provider-tabs" aria-label={t("3D 生成供应商", "3D generation provider")}>
+        <button type="button" className={activeProvider === "tripo3d" ? "active" : ""} onClick={() => setActiveProvider("tripo3d")}>Tripo3D</button>
+        <button type="button" className={activeProvider === "tencentHunyuan" ? "active" : ""} onClick={() => setActiveProvider("tencentHunyuan")}>{t("混元 3D", "Hunyuan 3D")}</button>
+      </nav>
+      {(() => {
+        const provider = activeProvider;
+        const value = settings[provider];
+        return (
+          <article>
+            <div className="system-ai-3d-card-heading">
+              <strong>{provider === "tripo3d" ? t("Tripo3D", "Tripo3D") : t("腾讯混元 3D", "Tencent Hunyuan 3D")}</strong>
+              <span className={(value.apiKeyConfigured || apiKeys[provider].trim()) && (provider === "tripo3d" || value.secretIdConfigured || secretIds[provider].trim()) ? "configured" : ""}>
+                {(value.apiKeyConfigured || apiKeys[provider].trim()) && (provider === "tripo3d" || value.secretIdConfigured || secretIds[provider].trim()) ? t("已配置", "Configured") : t("未配置", "Not configured")}
+              </span>
+            </div>
+            <label>
+              <span>Base URL</span>
+              <input value={value.baseUrl} onChange={(event) => update(provider, { baseUrl: event.target.value })} />
+            </label>
+            {provider === "tencentHunyuan" && <label>
+              <span>{t("地域", "Region")}</span>
+              <select value={value.region ?? "ap-guangzhou"} onChange={(event) => update(provider, { region: event.target.value })}>
+                <option value="ap-guangzhou">ap-guangzhou</option>
+                <option value="ap-shanghai">ap-shanghai</option>
+              </select>
+            </label>}
+            {provider === "tencentHunyuan" && <label>
+              <span>Secret ID</span>
+              <input type="password" value={secretIds[provider]} placeholder={value.secretIdConfigured ? t("已配置，留空保持不变", "Configured; leave blank to keep") : "SecretId"} onChange={(event) => setSecretIds((current) => ({ ...current, [provider]: event.target.value }))} />
+            </label>}
+            <label>
+              <span>{provider === "tripo3d" ? "API Key" : "Secret Key"}</span>
+              <input
+                type="password"
+                value={apiKeys[provider]}
+                placeholder={value.apiKeyConfigured ? t("已配置，留空保持不变", "Configured; leave blank to keep") : t("输入密钥", "Enter key")}
+                onChange={(event) => setApiKeys((current) => ({ ...current, [provider]: event.target.value }))}
+              />
+            </label>
+          </article>
+        );
+      })()}
+      <footer>
+        <button className="primary" disabled={busy} onClick={() => void save()}>
+          <Save size={13} />
+          {busy ? t("保存中…", "Saving…") : t("保存", "Save")}
+        </button>
+      </footer>
     </section>
   );
 }

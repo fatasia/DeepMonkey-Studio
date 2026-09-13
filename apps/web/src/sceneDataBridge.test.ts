@@ -25,6 +25,14 @@ afterEach(() => {
 });
 
 describe("scene data bridge reconnect", () => {
+  it("delivers alarms only to an explicitly scoped project",async()=>{
+    const {subscribeSceneData,publishLocalSceneData}=await import("./sceneDataBridge.js");
+    const first=vi.fn(),second=vi.fn();const stopA=subscribeSceneData("project-a",first),stopB=subscribeSceneData("project-b",second);
+    const message={source:"qa",key:"signal",value:"alarm",timestamp:"2026-09-09T00:00:00Z",action:"alarm" as const};
+    publishLocalSceneData(message);expect(first).not.toHaveBeenCalled();expect(second).not.toHaveBeenCalled();
+    publishLocalSceneData(message,"project-a");expect(first).toHaveBeenCalledOnce();expect(second).not.toHaveBeenCalled();
+    publishLocalSceneData(message,"missing");expect(second).not.toHaveBeenCalled();stopA();stopB();
+  });
   it("caps exponential reconnect delay and cancels pending work on unsubscribe", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("window", {

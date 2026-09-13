@@ -351,7 +351,13 @@ pub fn run() {
                     )
                     .window_features(features)
                     .title("脚本编辑器 · Deep Monkey Studio")
+                    // 脚本窗口使用独立系统窗口，不设 owner/parent；保留任务栏及系统窗口按钮。
                     .always_on_top(false)
+                    .decorations(true)
+                    .resizable(true)
+                    .minimizable(true)
+                    .maximizable(true)
+                    .skip_taskbar(false)
                     .on_document_title_changed(|window, title| {
                         let _ = window.set_title(&title);
                     });

@@ -1,7 +1,7 @@
 /* 二维左栏按任务切换，避免页面、素材和图层形成一条无尽长列表。 */
 .dashboard-left-tabs {
   position: sticky;
-  z-index: 3;
+  z-index: 3; /* z-index-audit: keep(页面内容带:左栏粘性页签,面板内局部) */
   top: 0;
   display: grid;
   gap: 3px;

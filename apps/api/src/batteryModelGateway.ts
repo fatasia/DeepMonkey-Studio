@@ -86,7 +86,10 @@ export interface BatteryModelGatewayOptions {
  * 在产品层统一最终采纳、回退、提交与证据；完成 ONNX 等价验证后只需替换 transport。
  */
 export function createBatteryModelGateway(options: BatteryModelGatewayOptions = {}): BatteryModelGateway {
-  const transport = options.transport ?? new HttpBatteryTransport(options.baseUrl ?? process.env.BATTERY_MODEL_SERVICE_URL ?? "http://127.0.0.1:8030", options.timeoutMs ?? 30_000);
+  const serviceUrl = options.baseUrl ?? process.env.BATTERY_MODEL_SERVICE_URL?.trim();
+  const transport = options.transport ?? (serviceUrl ? new HttpBatteryTransport(serviceUrl, options.timeoutMs ?? 30_000) : {
+    async request(): Promise<never> { throw new Error("未配置外置电池服务；默认 SOC/SOH/RUL 使用项目内置 ONNX 模型"); },
+  });
   const objectResponse = async (path: string, init: { method: "GET" | "POST"; body?: unknown; signal?: AbortSignal }) => {
     const response = await transport.request(path, init);
     if (!response || typeof response !== "object" || Array.isArray(response)) throw new Error("电池模型服务返回格式无效");
@@ -198,7 +201,7 @@ export function createBatteryModelGateway(options: BatteryModelGatewayOptions = 
       return { ...routed, committedState, commitSource: "selected-production-route" };
     },
     assimilateTwin: (input, signal) => {
-      if (!input.twinId.trim()) throw new Error("数字孪生同化必须包含 twinId");
+      assertTwinId(input.twinId, "数字孪生同化");
       assertOptionalRange(input.soc, "soc", 0, 1);
       assertOptionalRange(input.soh, "soh", 0.5, 1.05);
       assertOptionalRange(input.temperatureC, "temperatureC", -30, 80);
@@ -214,7 +217,7 @@ export function createBatteryModelGateway(options: BatteryModelGatewayOptions = 
       });
     },
     twinEvidence: (twinId, signal) => {
-      if (!twinId.trim()) throw new Error("查询孪生证据必须包含 twinId");
+      assertTwinId(twinId, "查询孪生证据");
       return objectResponse(`/research/digital-twin/${encodeURIComponent(twinId)}/evidence`, { method: "GET", ...optionalSignal(signal) });
     }
   };
@@ -277,7 +280,11 @@ function validateTwinInitializeInput(input: BatteryTwinInitializeInput): void {
 }
 
 function validateTwinSimulationInput(input: BatteryTwinSimulationInput): void {
-  if (!input.twinId.trim()) throw new Error("数字孪生模拟必须包含 twinId");
+  assertTwinId(input.twinId, "数字孪生模拟");
+  if (input.scenarioName !== undefined) {
+    if (!input.scenarioName.trim()) throw new Error("数字孪生场景名称不能为空");
+    if ([...input.scenarioName].length > 80) throw new Error("数字孪生场景名称不能超过 80 个字符");
+  }
   if (!Array.isArray(input.segments) || input.segments.length === 0) throw new Error("数字孪生模拟至少需要一个工况片段");
   if (input.segments.length > 12) throw new Error("数字孪生模拟最多支持 12 个工况片段");
   assertOptionalRange(input.resolutionMinutes, "resolutionMinutes", 0.25, 10);
@@ -286,6 +293,12 @@ function validateTwinSimulationInput(input: BatteryTwinSimulationInput): void {
     assertRange(segment.currentCRate, `segments[${index}].currentCRate`, -3, 3);
     assertOptionalRange(segment.ambientTemperatureC, `segments[${index}].ambientTemperatureC`, -30, 80);
   });
+  const totalDurationMinutes = input.segments.reduce((total, segment) => total + segment.durationMinutes, 0);
+  if (totalDurationMinutes > 120) throw new Error("数字孪生短时模拟总时长不能超过 120 分钟");
+}
+
+function assertTwinId(twinId: string, action: string): void {
+  if (twinId.trim().length < 8) throw new Error(`${action}必须包含至少 8 个字符的 twinId`);
 }
 
 function assertOptionalRange(value: number | undefined, field: string, minimum: number, maximum: number): void {

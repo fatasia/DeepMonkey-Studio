@@ -11,9 +11,11 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { PlantLiteModel, PlantLiteReplicationTrace } from "@bim-studio/contracts";
+import { PlantTransportNetworkView } from "./PlantTransportNetworkView";
 import {
   describePlantLiteTraceEvent,
   formatPlantLiteMinute,
+  normalizePlantLitePlaybackMinute,
   preparePlantLitePlayback,
   selectPlantLitePlaybackFrame,
   type PlantLitePlaybackFrame,
@@ -110,14 +112,15 @@ export function PlantLitePlayback({ trace, model, onFrame }: { trace: PlantLiteR
         type="range"
         min={0}
         max={Math.max(duration, 0.01)}
-        step={0.02}
+        step="any"
         value={Math.min(minute, Math.max(duration, 0.01))}
         aria-label="仿真时间轴"
         onChange={(event) => {
-          setMinute(Number(event.target.value));
+          setMinute(normalizePlantLitePlaybackMinute(Number(event.target.value), duration));
           setPlaying(false);
         }}
       />
+      {model.transportNetwork && <PlantTransportNetworkView model={model} trace={trace} minute={frame.atMinute} />}
 
       <footer>
         <div className="plant-playback-controls">

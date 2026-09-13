@@ -156,7 +156,7 @@ export function useAppState() {
   const [postProcessing, setPostProcessing] = useState<ScenePostProcessingState>(DEFAULT_POST_PROCESSING);
   const [physics, setPhysics] = useState<ScenePhysicsState>(DEFAULT_PHYSICS);
   const [physicsOpen, setPhysicsOpen] = useState(false);
-  const [selectedLightId, setSelectedLightId] = useState("sun-default");
+  const [selectedLightId, setSelectedLightId] = useState("");
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [digitalTwinOpen, setDigitalTwinOpen] = useState(false);
   const [sceneDataStatus, setSceneDataStatus] = useState<SceneDataBridgeStatus>("offline");

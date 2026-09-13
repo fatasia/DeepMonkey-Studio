@@ -57,6 +57,11 @@ export async function registerAssetLibraryRoutes(app: FastifyInstance, dependenc
     }
   });
 
+  app.get<{ Params: { itemId: string } }>("/api/asset-library/items/:itemId", async (request, reply) => {
+    const entry = await catalog.get(request.params.itemId).catch(() => undefined);
+    return entry?.publicItem ?? reply.code(404).send({ message: "资源不存在，请从资源页重新选择" });
+  });
+
   app.get<{ Params: { itemId: string } }>("/api/public/asset-library/items/:itemId/thumbnail", async (request, reply) => {
     let entry;
     try { entry = await catalog.get(request.params.itemId); }
@@ -70,6 +75,21 @@ export async function registerAssetLibraryRoutes(app: FastifyInstance, dependenc
     if (!entry) return reply.code(404).send({ message: "素材不存在" });
     const previewPath = entry.modelPath ?? entry.thumbnailPath;
     return reply.header("Cache-Control", "private, max-age=3600").type(entry.modelPath ? "model/gltf-binary" : "image/png").send(createReadStream(previewPath));
+  });
+
+  app.get<{ Params: { itemId: string } }>("/api/asset-library/items/:itemId/maps", async (request, reply) => {
+    const entry = await catalog.get(request.params.itemId).catch(() => undefined);
+    if (!entry) return reply.code(404).send({ message: "素材不存在" });
+    return (entry.assetFiles ?? []).filter(file => file.kind !== "thumbnail").map(file => ({
+      kind: file.kind, name: file.fileName, mimeType: resourceMimeType(file.fileName), size: file.bytes,
+      contentHash: file.sha256, url: `/api/asset-library/items/${encodeURIComponent(entry.publicItem.id)}/maps/${file.kind}`,
+    }));
+  });
+  app.get<{ Params: { itemId: string; kind: string } }>("/api/asset-library/items/:itemId/maps/:kind", async (request, reply) => {
+    const entry = await catalog.get(request.params.itemId).catch(() => undefined);
+    const file = entry?.assetFiles?.find(item => item.kind !== "thumbnail" && item.kind === request.params.kind);
+    if (!file) return reply.code(404).send({ message: "贴图不存在" });
+    return reply.header("Cache-Control", "private, max-age=3600").type(resourceMimeType(file.fileName)).send(createReadStream(file.filePath));
   });
 
   app.post<{ Params: { projectId: string; itemId: string } }>("/api/projects/:projectId/asset-library/:itemId/import", async (request, reply) => {

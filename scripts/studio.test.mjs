@@ -45,7 +45,6 @@ test("user-facing operations guidance only exposes the canonical studio command"
   const files = [
     "apps/web/src/docs/runtime-and-extensions.md",
     "apps/web/src/docs/deployment-operations.md",
-    "apps/web/src/components/NodeRedStudio.tsx",
     "scripts/backup-production.mjs",
     "scripts/restore-production.mjs",
     "https/README.md",

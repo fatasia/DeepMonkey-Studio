@@ -17,6 +17,8 @@ const CONVEYOR_VARIANTS = [
   ["sorter", "交叉带分拣机", "Cross-belt sorter", "sorter", "belt"],
   ["spiral", "螺旋升降输送机", "Spiral conveyor", "spiral", "belt"],
   ["vertical-lift", "垂直提升机", "Vertical lift conveyor", "vertical-lift", "chain"],
+  ["screw", "螺旋输送机", "Screw conveyor", "screw", "screw"],
+  ["bucket-elevator", "斗式提升机", "Bucket elevator", "bucket-elevator", "chain"],
 ] as const;
 
 export const CONVEYOR_PREFABS: IndustrialPrefabDefinition[] = CONVEYOR_VARIANTS.map(
@@ -26,7 +28,7 @@ export const CONVEYOR_PREFABS: IndustrialPrefabDefinition[] = CONVEYOR_VARIANTS.
 function conveyorDefinition(id: string, name: string, englishName: string, layout: string, surface: string): IndustrialPrefabDefinition {
   const specialActions = layout === "diverter"
     ? [["divert-left", "左侧分流", "Divert left"], ["divert-right", "右侧分流", "Divert right"]] as const
-    : layout === "vertical-lift" || layout === "spiral"
+    : layout === "vertical-lift" || layout === "spiral" || layout === "bucket-elevator"
       ? [["raise", "上升", "Raise"], ["lower", "下降", "Lower"]] as const
       : [["reverse", "反向", "Reverse"], ["clear-jam", "清除堵料", "Clear jam"]] as const;
   return definition(
@@ -55,7 +57,8 @@ function conveyorDefinition(id: string, name: string, englishName: string, layou
 }
 
 function defaultLength(layout: string): number {
-  if (layout === "spiral" || layout === "vertical-lift") return 6;
+  if (layout === "spiral" || layout === "vertical-lift" || layout === "bucket-elevator") return 6;
+  if (layout === "screw") return 2.5;
   if (layout === "sorter") return 12;
   return 4;
 }

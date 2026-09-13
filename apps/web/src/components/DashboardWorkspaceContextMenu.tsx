@@ -13,12 +13,9 @@ export function DashboardWorkspaceContextMenu() {
     groupSelectedNodes,
     locale,
     onEnterScene,
-    onSelectionChange,
     page,
     reorderNodeIds,
-    selectNode,
     setContextMenu,
-    setSelectedNodeIds,
     ungroupSelectedNodes,
     updateContextNodes,
   } = useDashboardWorkspace();
@@ -43,33 +40,6 @@ export function DashboardWorkspaceContextMenu() {
                   : dataWidgetTypeLabel(locale, target.widget.type)}
             </small>
           </header>
-          {contextMenu.stack && contextMenu.stack.length > 1 && (
-            <div className="dashboard-context-stack" role="group" aria-label={tr(locale, "选择该位置的组件", "Select component at this point")}>
-              <small>{tr(locale, "选择", "Select")}</small>
-              {contextMenu.stack.slice(0, 8).map((stackId) => {
-                const stackNode = page.nodes.find((node) => node.id === stackId);
-                if (!stackNode) return null;
-                return (
-                  <button
-                    key={stackId}
-                    disabled={stackNode.locked}
-                    title={stackNode.locked ? tr(locale, "已锁定", "Locked") : nodeLabel(stackNode)}
-                    onClick={() => {
-                      selectNode(stackNode, false, true);
-                      setContextMenu(undefined);
-                    }}
-                    onMouseEnter={() => {
-                      setSelectedNodeIds([stackId]);
-                      onSelectionChange([{ kind: "widget", id: stackId }]);
-                    }}
-                  >
-                    <span className="dashboard-context-stack-name">{nodeLabel(stackNode)}</span>
-                    <small>{stackNode.kind === "scene-viewport" ? "3D" : dataWidgetTypeLabel(locale, stackNode.widget.type)}</small>
-                  </button>
-                );
-              })}
-            </div>
-          )}
           <button onClick={() => copyContextNodes()}>
             <Copy size={13} />
             {tr(locale, "复制", "Copy")}
@@ -130,15 +100,16 @@ export function DashboardWorkspaceContextMenu() {
             <Lock size={13} />
             {tr(locale, "锁定并取消选取", "Lock and deselect")}
           </button>
-          {targets.length > 1 && (
+          {targets.length > 1 && <button onClick={() => { groupSelectedNodes(ids); setContextMenu(undefined); }}><Group size={13} />{tr(locale, "编组", "Group")}<kbd>Ctrl G</kbd></button>}
+          {grouped && (
             <button
               onClick={() => {
-                grouped ? ungroupSelectedNodes() : groupSelectedNodes();
+                ungroupSelectedNodes(ids);
                 setContextMenu(undefined);
               }}
             >
-              {grouped ? <Ungroup size={13} /> : <Group size={13} />}
-              {grouped ? tr(locale, "解组", "Ungroup") : tr(locale, "编组", "Group")}
+              <Ungroup size={13} />
+              {tr(locale, "取消编组", "Ungroup")}
             </button>
           )}
           {target.kind === "scene-viewport" && (

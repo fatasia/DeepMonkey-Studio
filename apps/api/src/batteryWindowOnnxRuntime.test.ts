@@ -10,6 +10,16 @@ const cleanup: string[] = [];
 afterEach(async () => Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true }))));
 
 describe("battery window ONNX runtime", () => {
+  it("retries a failed session load instead of caching rejection forever", async () => {
+    const fixture = await runtimeFixture("bmsformer", bmsAdapter());
+    const createSession = vi.fn(async () => ({ inputNames: ["input"], outputNames: ["output"], run: async () => ({ output: { data: Float32Array.of(0.9) } }) }));
+    createSession.mockRejectedValueOnce(new Error("temporary load failure"));
+    const runtime = new BatteryWindowOnnxRuntime(fixture.deployment, { createSession });
+    const input = { model: "bmsformer" as const, fileName: "lfp.csv", records: bmsRecords() };
+    await expect(runtime.predict(input)).rejects.toThrow("temporary load failure");
+    expect(await runtime.predict(input)).toHaveProperty("currentSoh", 90);
+    expect(createSession).toHaveBeenCalledTimes(2);
+  });
   it("runs BMSFormer with the approved adapter and reuses the session", async () => {
     const fixture = await runtimeFixture("bmsformer", bmsAdapter());
     const run = vi.fn(async () => ({ output: { data: Float32Array.of(0.987276) } }));

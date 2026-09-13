@@ -4,7 +4,6 @@ import {
   Bot,
   Box,
   Braces,
-  Camera,
   Cable,
   ChartSpline,
   ChevronDown,
@@ -53,8 +52,9 @@ interface SceneToolDockProps {
   avatarVisible: boolean;
   environmentOpen: boolean;
   animationOpen: boolean;
+  /** @deprecated Camera tools are unified in Scene director. */
+  cameraOpen?: boolean;
   behaviorOpen: boolean;
-  cameraOpen: boolean;
   physicsOpen: boolean;
   xrOpen: boolean;
   simulationPanel: SceneSimulationPanelId | undefined;
@@ -73,8 +73,9 @@ interface SceneToolDockProps {
   onInfoToggle: () => void;
   onEnvironmentToggle: () => void;
   onAnimationToggle: () => void;
+  /** @deprecated Camera tools are unified in Scene director. */
+  onCameraToggle?: () => void;
   onBehaviorToggle: () => void;
-  onCameraToggle: () => void;
   onPhysicsToggle: () => void;
   onXrToggle: () => void;
   onSimulationPanelChange: (panel: SceneSimulationPanelId) => void;
@@ -214,7 +215,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
           props.clippingEnabled ||
           props.explosionActive ||
           props.environmentOpen ||
-          props.cameraOpen ||
+          props.animationOpen ||
           props.infoEnabled
         }
         onToggle={() => setOpenMenu((value) => (value === "inspect" ? undefined : "inspect"))}
@@ -291,11 +292,16 @@ export function SceneToolDock(props: SceneToolDockProps) {
           active={props.environmentOpen}
           onClick={() => run(props.onEnvironmentToggle)}
         />
+        <div className="scene-tool-menu-rule" />
+        <MenuHeading
+          title={tr(props.locale, "演示与漫游", "Presentation & navigation")}
+          hint={tr(props.locale, "镜头、路径和动画统一编排", "Direct shots, routes and animation together")}
+        />
         <MenuAction
-          label={tr(props.locale, "相机与漫游", "Camera & navigation")}
-          icon={<Camera size={15} />}
-          active={props.cameraOpen}
-          onClick={() => run(props.onCameraToggle)}
+          label={tr(props.locale, "场景导演台", "Scene director")}
+          icon={<Film size={15} />}
+          active={props.animationOpen}
+          onClick={() => run(props.onAnimationToggle)}
         />
       </TaskMenu>
 
@@ -305,7 +311,6 @@ export function SceneToolDock(props: SceneToolDockProps) {
         icon={<Braces size={16} />}
         open={openMenu === "develop"}
         active={
-          props.animationOpen ||
           props.behaviorOpen ||
           props.physicsOpen ||
           props.xrOpen ||
@@ -316,12 +321,6 @@ export function SceneToolDock(props: SceneToolDockProps) {
         <MenuHeading
           title={tr(props.locale, "场景运行能力", "Scene runtime")}
           hint={tr(props.locale, "高级能力按需加载并随项目保存", "Advanced capabilities load on demand")}
-        />
-        <MenuAction
-          label={tr(props.locale, "动画与时间线", "Animation & timeline")}
-          icon={<Film size={15} />}
-          active={props.animationOpen}
-          onClick={() => run(props.onAnimationToggle)}
         />
         <MenuAction
           label={tr(props.locale, "行为脚本", "Behavior scripts")}

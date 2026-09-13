@@ -5,6 +5,7 @@
   "description": "面向 Deep Monkey Studio 的 Unity WebGL 可靠通信桥、运行健康诊断、场景绑定自动发现、无代码双向联动与一键导出工具。",
   "unity": "2022.3",
   "unityRelease": "62f1",
+  "license": "SEE LICENSE IN LICENSE.md",
   "dependencies": {
     "com.unity.modules.animation": "1.0.0",
     "com.unity.modules.jsonserialize": "1.0.0"

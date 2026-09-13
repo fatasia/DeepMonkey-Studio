@@ -1,0 +1,21 @@
+.project-resource-dialog { width: min(960px, calc(100vw - 48px)); max-width: none; max-height: calc(100dvh - 48px); padding: 0; color: var(--text); background: var(--surface-1); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-float); }
+.project-resource-dialog::backdrop { background: color-mix(in srgb, var(--bg-0) 72%, transparent); backdrop-filter: blur(4px); }
+.project-resource-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.project-resource-dialog h2 { margin: 0; font-size: 16px; color: var(--text-strong); overflow-wrap: anywhere; }
+.project-resource-dialog header button { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; padding: 0; color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.project-resource-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border-top: 1px solid var(--line); font-size: 12px; color: var(--text-muted); }
+.material-upload-dialog { width: min(600px, calc(100vw - 32px)); }
+.material-upload-fields { display: grid; gap: 16px; padding: 24px; }
+.material-upload-fields label { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 16px; align-items: center; font-size: 13px; }
+.material-upload-fields input { width: 100%; color: var(--text); font-size: 12px; }
+.material-upload-fields select { min-width: 0; min-height: 34px; width: 100%; padding: 6px 10px; color: var(--text-strong); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; }
+.project-resource-error { color: var(--danger); font-size: 13px; overflow-wrap: anywhere; }
+.project-resource-dialog .project-resource-error { margin: 12px 24px; }
+.project-resource-preview-content { position: relative; height: min(560px, calc(100dvh - 200px)); min-height: 240px; display: grid; place-items: center; overflow: hidden; background: radial-gradient(ellipse at 50% 30%, var(--surface-3), var(--bg-0)); }
+.project-resource-preview-content > :is(img, video) { width: 100%; height: 100%; object-fit: contain; }
+.project-resource-preview-content .robot-asset-viewport, .appearance-resource-preview { position: relative; width: 100%; height: 100%; }
+.project-resource-preview-content .robot-asset-canvas, .appearance-resource-canvas { position: absolute; inset: 0; }
+.project-resource-preview-content canvas { display: block; width: 100%; height: 100%; }
+.builtin-live-preview { display: grid; place-items: center; width: 100%; height: 100%; }
+.builtin-widget-preview { position: absolute; padding: 16px; color: var(--text); background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
+.resource-preview-feedback { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; width: min(90%, 500px); color: var(--text); font-size: 13px; }

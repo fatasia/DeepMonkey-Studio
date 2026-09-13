@@ -61,10 +61,14 @@ export interface CloudRenderWorkerClient {
   stopSession(workerSessionId: string): Promise<void>;
 }
 
+export const CLOUD_RENDER_RESOLUTIONS = [720, 1080, 1440, 2160] as const;
+export type CloudRenderResolution = typeof CLOUD_RENDER_RESOLUTIONS[number];
+
 export interface CloudRenderScenePolicy {
   sceneId: string;
   projectId: string;
   enabled: boolean;
+  resolution?: CloudRenderResolution;
   updatedAt: string;
 }
 
@@ -74,6 +78,7 @@ export interface CloudRenderSceneControl {
   name: string;
   publishedAt: string;
   enabled: boolean;
+  resolution?: CloudRenderResolution;
   publicationChanged: boolean;
   session?: RemoteRenderSessionSnapshot;
 }
@@ -109,7 +114,7 @@ export class HttpCloudRenderWorkerClient implements CloudRenderWorkerClient {
   private readonly token: string;
 
   constructor(options: HttpCloudRenderWorkerClientOptions) {
-    this.baseUrl = parseHttpUrl(options.baseUrl, "云渲染 Worker 地址");
+    this.baseUrl = normalizeWorkerBaseUrl(parseHttpUrl(options.baseUrl, "云渲染 Worker 地址"));
     this.baseUrl.pathname = `${this.baseUrl.pathname.replace(/\/$/, "")}/`;
     this.baseUrl.search = "";
     this.baseUrl.hash = "";
@@ -258,6 +263,17 @@ function parseHttpUrl(value: string, label: string): URL {
   catch { throw new TypeError(`${label}必须是完整 HTTP(S) URL`); }
   if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new TypeError(`${label}必须是完整 HTTP(S) URL`);
   return parsed;
+}
+
+/**
+ * Worker 配置项表示服务根地址。兼容运维人员习惯填写的末尾 `/v1`，
+ * 避免客户端再拼接版本路径后请求 `/v1/v1/*` 导致误报 404。
+ * 其它路径（例如反向代理下的 `/cloud-render`）保持不变。
+ */
+function normalizeWorkerBaseUrl(parsed: URL): URL {
+  const normalized = new URL(parsed.toString());
+  normalized.pathname = normalized.pathname.replace(/\/v1\/?$/, "") || "/";
+  return normalized;
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {

@@ -8,10 +8,12 @@ import { targetMatches } from "./sceneBehaviorPanelModel";
 export function useBehaviorDraft(options: {
   scripts: readonly ScriptModule[];
   preferredTarget?: SceneScriptTarget;
+  initialSelectedId?: string;
   onUpsert: (script: ScriptModule) => void;
   onInvalidName: () => void;
 }) {
-  const [selectedId, setSelectedId] = useState(() => options.scripts.find(script => targetMatches(script.target, options.preferredTarget))?.id ?? options.scripts[0]?.id);
+  const [selectedId, setSelectedId] = useState(() => options.scripts.find(script => targetMatches(script.target, options.preferredTarget))?.id
+    ?? options.scripts.find(script => script.id === options.initialSelectedId)?.id ?? options.scripts[0]?.id);
   const [pendingScript, setPendingScript] = useState<ScriptModule>();
   const selected = options.scripts.find(script => script.id === selectedId)
     ?? (pendingScript?.id === selectedId ? pendingScript : undefined) ?? options.scripts[0];

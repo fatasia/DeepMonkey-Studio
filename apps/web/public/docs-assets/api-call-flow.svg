@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">Deep Monkey Studio API 调用分层</title>
+  <desc id="desc">编辑器脚本、Studio API、云渲染 Worker、数据接口和 3D 生成服务之间的调用边界。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#111c22"/>
+      <stop offset="1" stop-color="#0a1014"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" x2="1">
+      <stop offset="0" stop-color="#e3b341"/>
+      <stop offset="1" stop-color="#69b9c7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".26"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10Z" fill="#69b9c7"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="430" rx="22" fill="url(#bg)"/>
+  <path d="M44 92H1156M44 338H1156" stroke="#22323a"/>
+  <text x="52" y="56" fill="#f3f7f8" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="22" font-weight="700">API 调用边界 · 请求可追踪、密钥不进浏览器</text>
+  <text x="52" y="79" fill="#91a8b1" font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="12">从编辑器动作到外部服务，按稳定合同逐层传递身份、项目上下文和错误状态</text>
+
+  <g filter="url(#shadow)">
+    <rect x="52" y="126" width="195" height="150" rx="14" fill="#16262d" stroke="#36505a"/>
+    <rect x="277" y="126" width="195" height="150" rx="14" fill="#16262d" stroke="#36505a"/>
+    <rect x="502" y="126" width="195" height="150" rx="14" fill="#16262d" stroke="#36505a"/>
+    <rect x="727" y="126" width="195" height="150" rx="14" fill="#16262d" stroke="#36505a"/>
+    <rect x="952" y="126" width="195" height="150" rx="14" fill="#16262d" stroke="#36505a"/>
+  </g>
+
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif">
+    <g fill="#e3b341">
+      <circle cx="79" cy="157" r="13"/><text x="79" y="162" fill="#101619" text-anchor="middle" font-size="12" font-weight="700">1</text>
+      <circle cx="304" cy="157" r="13"/><text x="304" y="162" fill="#101619" text-anchor="middle" font-size="12" font-weight="700">2</text>
+      <circle cx="529" cy="157" r="13"/><text x="529" y="162" fill="#101619" text-anchor="middle" font-size="12" font-weight="700">3</text>
+      <circle cx="754" cy="157" r="13"/><text x="754" y="162" fill="#101619" text-anchor="middle" font-size="12" font-weight="700">4</text>
+      <circle cx="979" cy="157" r="13"/><text x="979" y="162" fill="#101619" text-anchor="middle" font-size="12" font-weight="700">5</text>
+    </g>
+    <g fill="#f3f7f8" font-size="15" font-weight="700">
+      <text x="102" y="162">编辑器 / 脚本</text>
+      <text x="327" y="162">Studio API</text>
+      <text x="552" y="162">云渲染 Worker</text>
+      <text x="777" y="162">数据与资源</text>
+      <text x="1002" y="162">3D 生成服务</text>
+    </g>
+    <g fill="#91a8b1" font-size="12">
+      <text x="74" y="192">对象 · 相机 · 时间线</text><text x="74" y="214">Worker 无 DOM</text><text x="74" y="236">最小权限声明</text>
+      <text x="299" y="192">/api/*</text><text x="299" y="214">项目身份与审计</text><text x="299" y="236">浏览器不持有密钥</text>
+      <text x="524" y="192">/v1/health</text><text x="524" y="214">/v1/sessions</text><text x="524" y="236">WebRTC 观看端</text>
+      <text x="749" y="192">连接 → 数据集</text><text x="749" y="214">资源版本与校验</text><text x="749" y="236">失败可重试</text>
+      <text x="974" y="192">Tripo3D / 混元</text><text x="974" y="214">异步任务 → GLB</text><text x="974" y="236">适配器负责调用</text>
+    </g>
+  </g>
+
+  <g stroke="url(#accent)" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <path d="M247 201H270"/>
+    <path d="M472 201H495"/>
+    <path d="M697 201H720"/>
+    <path d="M922 201H945"/>
+  </g>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif" font-size="11" fill="#69b9c7" text-anchor="middle">
+    <text x="258" y="187">受控命令</text>
+    <text x="483" y="187">带令牌</text>
+    <text x="708" y="187">项目上下文</text>
+    <text x="933" y="187">服务端密钥</text>
+  </g>
+  <g font-family="Segoe UI,Microsoft YaHei,sans-serif">
+    <rect x="52" y="361" width="1095" height="42" rx="10" fill="#0e171c" stroke="#2a414b"/>
+    <text x="73" y="387" fill="#e3b341" font-size="12" font-weight="700">排错顺序</text>
+    <text x="155" y="387" fill="#b8c8cd" font-size="12">浏览器动作 → Studio API 状态码 → Worker /v1/health → 供应商任务 ID → 资源校验</text>
+  </g>
+</svg>

@@ -6,6 +6,26 @@ import { CloudRenderControlPlane, MemoryCloudRenderRegistry } from "./cloudRende
 const NOW = new Date("2026-08-25T12:00:10.000Z");
 
 describe("CloudRenderControlPlane", () => {
+  it.each([720, 1080, 1440, 2160])("persists %sP per scene and forwards its actual dimensions to the Worker", async resolution => {
+    const registry = new MemoryCloudRenderRegistry();
+    const worker = workerClient(session("starting"));
+    const control = await createControl(worker, registry);
+    const publication = publishedScene();
+    await control.setResolution(publication, resolution);
+    await control.setEnabled(publication, true);
+    const restored = await createControl(worker, registry);
+    expect((await restored.overview([publication])).scenes[0]?.resolution).toBe(resolution);
+    await restored.startSession(publication, "admin-1");
+    expect(worker.createSession).toHaveBeenCalledWith(expect.objectContaining({ render: expect.objectContaining({ width: resolution * 16 / 9, height: resolution }) }));
+  });
+
+  it("rejects invalid quality before changing persisted policy", async () => {
+    const control = await createControl(workerClient(session("starting")));
+    const publication = publishedScene();
+    await expect(control.setResolution(publication, 8000)).rejects.toMatchObject({ code: "invalid_resolution" });
+    await expect(control.setResolution(publication, "720")).rejects.toMatchObject({ code: "invalid_resolution" });
+    expect((await control.overview([publication])).scenes[0]?.enabled).toBe(false);
+  });
   it("requires enablement, real GPU capacity and outbound media evidence before streaming", async () => {
     const worker = workerClient(session("media-ready"));
     const control = await createControl(worker);

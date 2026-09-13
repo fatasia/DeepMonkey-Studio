@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardPageDocument } from "@bim-studio/contracts";
-import { createDashboardTemplateNodes, DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
+import { createDashboardTemplateNodes, DASHBOARD_TEMPLATES } from "./dashboardTemplateCatalog";
 import { INDUSTRY_TEMPLATE_PACKS, packPageSample, packPageTemplate } from "./industryTemplatePackCatalog";
 import { applyPackPageSample } from "./industryPackSampleApply";
 import { validateIndustryTemplatePack } from "./industryTemplatePackTypes";

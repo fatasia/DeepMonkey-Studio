@@ -4,6 +4,7 @@ import type { SystemBrandingSettings } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { SecondaryPageBack } from "./SecondaryPageBack";
+import { ViewerPerformanceSettings } from "./ViewerPerformanceSettings";
 
 interface BrandingSettingsPageProps {
   value: SystemBrandingSettings;
@@ -55,8 +56,8 @@ export function BrandingSettingsPage({ value, locale, onChange, onBack }: Brandi
   return (
     <main className="branding-settings-page">
       <header className="secondary-page-header">
-        <SecondaryPageBack locale={locale} onBack={onBack} />
         <div className="secondary-page-heading-row">
+          <SecondaryPageBack locale={locale} onBack={onBack} />
           <div className="secondary-page-title">
             <small>SYSTEM SETTINGS</small>
             <h1>{t("外观与全局设置", "Appearance & global settings")}</h1>
@@ -120,6 +121,7 @@ export function BrandingSettingsPage({ value, locale, onChange, onBack }: Brandi
         </section>
 
         <div className="branding-sections">
+          <ViewerPerformanceSettings locale={locale} />
           <section>
             <header>
               <Image size={16} />

@@ -80,5 +80,6 @@ describe("simulation scene controller", () => {
     const other = { ...submitted, id: "other" };
     expect(mergeSavedSimulationScene(other, submitted, saved)).toBe(other);
     expect(mergeSavedSimulationScene(undefined, submitted, saved)).toBeUndefined();
+    expect(mergeSavedSimulationScene(undefined, undefined, saved)).toBe(saved);
   });
 });

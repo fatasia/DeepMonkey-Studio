@@ -13,7 +13,7 @@ export function DashboardInspectorPageSettings() {
         <span>{tr(locale, "页面名称", "Page name")}</span>
         <input
           defaultValue={page.name}
-          key={page.id}
+          key={`${page.id}:${page.name}`}
           onBlur={(event) => commitPageName(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") event.currentTarget.blur();

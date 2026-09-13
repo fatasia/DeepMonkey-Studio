@@ -1,5 +1,5 @@
-import { DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
-import type { DashboardTemplateKind } from "./DashboardTemplateCatalog";
+import { DASHBOARD_TEMPLATES } from "./dashboardTemplateCatalog";
+import type { DashboardTemplateKind } from "./dashboardTemplateCatalog";
 import { MANUFACTURING_ASSET_OPS_PACK } from "./industryPackManufacturing";
 import { MANUFACTURING_PACK_SAMPLES } from "./industryPackManufacturing";
 import type { IndustryTemplatePack, IndustryPackPage } from "./industryTemplatePackTypes";

@@ -84,6 +84,7 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
   setOpacity(id: string, opacity: number): void {
     const model = this.models.get(id);
     if (!model) return;
+    this.markShadowMapDirty();
     detachSharedPrimitiveMaterials(model.object, this.collisionOriginalMaterials);
     model.opacity = opacity;
     const fragmentEntry = this.fragmentLayers.get(id)?.get("root");
@@ -167,6 +168,7 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
   setColor(id: string, color: string): void {
     const model = this.models.get(id);
     if (!model) return;
+    this.markShadowMapDirty();
     this.setObjectColor(model.object, color);
     this.modelColorOverrides.set(id, color);
     this.onModelChange?.(model);

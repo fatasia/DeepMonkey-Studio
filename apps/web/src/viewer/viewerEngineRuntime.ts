@@ -9,17 +9,22 @@ import { visibleAnnotationLabelIds } from "./annotationLabelLayout";
 import { nextFrameCadence } from "./viewerFrameCadence";
 import { resolveOrbitCameraRange } from "./cameraFraming";
 import { sceneGridCloseupOpacity } from "./sceneGrid";
+import { updateViewerDeviceSignals } from "./viewerDeviceSignals";
 
 const READ_ONLY_TARGET_FPS = 60;
 
 /** Runtime 职责层。 */
 export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
+  protected override overlaySpritesProvider = (): THREE.Sprite[] => this.collectOverlaySprites();
   protected animate = (): void => {
     if (!this.xrActive) this.animationFrame = requestAnimationFrame(this.animate);
     const now = performance.now();
-    if (!this.xrActive && document.visibilityState !== "visible") {
+    const visible = document.visibilityState === "visible";
+    if (!this.renderDemand.shouldRender(now, this.hasContinuousRenderActivity(), visible, this.xrActive)) {
       this.lastFrameTime = now;
+      this.framePerformanceMonitor.pauseSampling();
       this.readOnlyFrameCadenceAnchor = undefined;
+      this.renderDemand.recordSkippedCost(performance.now() - now);
       return;
     }
     if (!this.xrActive && this.readOnlyMode) {
@@ -98,11 +103,65 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     // 拖动时表现为 3D 视口持续闪烁。尺寸未变化时 resize 内部直接早退，每帧开销可忽略。
     this.resize();
     this.renderer.info.reset();
-    if (!this.xrActive && this.needsPostProcessing() && this.postProcessing) this.postProcessing.render(delta);
-    else this.renderer.render(this.scene, this.camera);
+    this.conservativeOcclusion.update(this.modelRoot, this.camera,
+      this.clippingState.enabled || this.hasContinuousRenderActivity(), this.getSelected()?.object);
+    try {
+      this.repeatedAssetBatcher.begin(this.models.values(), this.conservativeOcclusion.culled);
+      if (!this.xrActive && this.offscreen.wantsFrame()) {
+        // 后台线程渲染：主线程只发增量帧，绘制由 Worker 完成并通过位图回传覆盖画布。
+        this.offscreen.postFrame({
+          width: Math.max(this.container.clientWidth, 1),
+          height: Math.max(this.container.clientHeight, 1),
+          delta,
+          postProcessing: this.postProcessingState,
+          outlined: this.offscreenOutlinedUuids(),
+        });
+      } else if (!this.xrActive && this.needsPostProcessing() && this.postProcessing) this.postProcessing.render(delta);
+      else this.renderer.render(this.scene, this.camera);
+    } finally {
+      this.repeatedAssetBatcher.end();
+    }
     this.gpuFrameTimeMonitor.onFrameRendered();
+    this.renderDemand.didRender(performance.now() - now);
   };
+
+  /** 与 syncPostProcessing 的描边对象口径一致：模型轮廓效果 + 检查中的对象轮廓。 */
+  private offscreenOutlinedUuids(): string[] {
+    const outlined = [...this.modelEffects]
+      .filter(([, effects]) => effects.outline)
+      .map(([id]) => this.models.get(id)?.object)
+      .filter((object): object is THREE.Object3D => Boolean(object?.visible))
+      .map((object) => object.uuid);
+    const selected = this.postProcessingState.enabled && this.postProcessingState.outline && this.inspectedObject?.visible
+      ? [this.inspectedObject.uuid]
+      : [];
+    return [...new Set([...outlined, ...selected])];
+  }
+  /** 叠加标签:作者标注 + 运行告警(effectHelper)的可见 Sprite,由主线程在后台位图上补绘。 */
+  private collectOverlaySprites(): THREE.Sprite[] {
+    const sprites: THREE.Sprite[] = [];
+    for (const annotation of this.annotations.values()) {
+      for (const child of annotation.object.children) if ((child as THREE.Sprite).isSprite) sprites.push(child as THREE.Sprite);
+    }
+    for (const child of this.scene.children) {
+      if (!child.userData?.effectHelper) continue;
+      for (const nested of child.children) if ((nested as THREE.Sprite).isSprite) sprites.push(nested as THREE.Sprite);
+    }
+    return sprites;
+  }
+  private hasContinuousRenderActivity(): boolean {
+    if (this.xrActive || this.sceneAnimationPlaying || this.physicsState.enabled && this.physicsState.playing
+      || this.animationEnabledIds.size > 0 || this.visibilityTransitionCancels.size > 0 || this.transform.dragging
+      || this.navigationMode !== "orbit" || this.orbit.autoRotate || this.weatherEffect || this.fragmentModels.size > 0
+      || this.interactionScripts.some(script => script.enabled)
+      || this.postProcessingState.enabled && (this.postProcessingState.filmGrain || this.postProcessingState.afterimage)) return true;
+    for (const prefab of this.modelPrefabStates.values()) if (prefab.motionRoute && prefab.operatingState === "running") return true;
+    for (const runtime of this.modelEffectRuntimes.values()) if (runtime.scan || runtime.fire) return true;
+    if (this.materialActivityDirty) { this.materialActivity.refresh(this.scene); this.materialActivityDirty = false; }
+    return this.materialActivity.active();
+  }
   private updateAnnotationLabels(): void {
+    updateViewerDeviceSignals(this,this.camera,Math.max(this.container.clientWidth,1),Math.max(this.container.clientHeight,1));
     this.syncAnnotationAnchors();
     const viewportWidth = Math.max(this.container.clientWidth, 1);
     const viewportHeight = Math.max(this.container.clientHeight, 1);

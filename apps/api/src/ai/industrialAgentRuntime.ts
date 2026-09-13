@@ -22,6 +22,7 @@ export async function createIndustrialAgentRuntime(input: {
   registry: PluginRegistry;
   settings: () => AiRuntimeSettings;
   dataSource: Pick<DataQuerySource, "listDatasets">;
+  projectContext?: (projectId: string) => unknown | Promise<unknown>;
   audit?: AiReliabilityAuditSink;
 }): Promise<IndustrialAgentRuntime> {
   const checkpoints = new IndustrialAgentCheckpointStore(input.dataDir);
@@ -31,6 +32,7 @@ export async function createIndustrialAgentRuntime(input: {
     registry: input.registry,
     settings: input.settings,
     dataSource: input.dataSource,
+    ...(input.projectContext ? { projectContext: input.projectContext } : {}),
     ...(input.audit ? { audit: input.audit } : {}),
   });
   return {

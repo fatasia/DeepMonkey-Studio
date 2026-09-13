@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "modelId": "battery.spm-pino",
+  "modelVersion": "spm-pino-v13.6-native-v10-guard",
+  "checkpoint": {
+    "sha256": "710f0aadf5311bc97873bced2a23c4d9854e9fd2232bd8e5a55f655ebea457e9",
+    "fileName": "spm-pino-v13-6-native-v10-guard-seed2026.pt"
+  },
+  "artifact": {
+    "sha256": "591730a9b4c0a26795ff39c9a0af2108dbe472b9b82c77a871b0de67c9f46916",
+    "fileName": "spm-pino-v13-6-native-v10-guard.onnx",
+    "sizeBytes": 1672329,
+    "opset": 18
+  },
+  "adapter": {
+    "sha256": "5c56723e8f8ee7de69bb87a401ff17b6530b7e73753772598b7b7c5f0017693a",
+    "fileName": "spm-pino.adapter.json"
+  },
+  "validation": {
+    "fftToRealDftMaxAbsoluteError": 1.9073486328125e-06,
+    "exactToTanhGeluMaxAbsoluteError": 0.0002269744873046875,
+    "pytorchToOnnxMaxAbsoluteError": 0.000217437744140625
+  }
+}

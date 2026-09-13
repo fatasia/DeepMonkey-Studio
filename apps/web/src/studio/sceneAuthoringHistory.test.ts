@@ -18,6 +18,28 @@ function scene(): SceneSnapshot {
 }
 
 describe("SceneAuthoringHistory", () => {
+  it("keeps draft undo and redo while adopting the first saved identity", () => {
+    const history = new SceneAuthoringHistory();
+    const baseline = scene(); history.reset(baseline);
+    history.record({ ...baseline, id: "temporary-2", name: "A" }, "A");
+    history.record({ ...baseline, id: "temporary-3", name: "B" }, "B");
+    history.undo();
+    const state = history.getState();
+    const saved = { ...baseline, id: "persisted", createdAt: "2026-09-09T00:00:00Z" };
+    history.adoptSceneIdentity(saved);
+    expect(history.getState()).toEqual(state);
+    expect(history.redo()).toMatchObject({ id: "persisted", name: "B", createdAt: saved.createdAt });
+    expect(history.undo()).toMatchObject({ id: "persisted", name: "A" });
+    expect(history.undo()).toMatchObject({ id: "persisted", name: baseline.name });
+  });
+
+  it("ignores temporary draft identity changes and does not carry history into another project", () => {
+    const history = new SceneAuthoringHistory(); const baseline = scene(); history.reset(baseline);
+    expect(history.record({ ...baseline, id: "fresh-draft", createdAt: "later" }, "采样")).toBe(false);
+    history.record({ ...baseline, name: "A" }, "A");
+    history.adoptSceneIdentity({ ...baseline, projectId: "other-project", id: "other" });
+    expect(history.getState().canUndo).toBe(false);
+  });
   it("undoes and redoes one authored scene change", () => {
     const history = new SceneAuthoringHistory();
     const baseline = scene();

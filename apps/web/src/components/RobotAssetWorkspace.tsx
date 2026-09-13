@@ -13,12 +13,12 @@ import { RobotAssetMediaActions } from "./RobotAssetMediaActions";
 import { SecondaryPageBack } from "./SecondaryPageBack";
 import "./RobotAssetWorkspace.css";
 
-export function RobotAssetWorkspace({ locale, model, project, onBack, onImport, importBusy, importError, onCancelImport, onProjectChange, onViewAssets, onReturnToScene }: {
+export function RobotAssetWorkspace({ locale, model, project, onBack, onImport, importBusy, importError, onCancelImport, onProjectChange, onViewAssets, onReturnToScene, returnMode = "insert" }: {
   locale: AppLocale; model: ModelRecord; project: ProjectRecord; onBack: () => void;
   onImport: (file?: File, entry?: string) => Promise<void>;
   importBusy?: boolean; importError?: string | undefined; onCancelImport(): void;
   onProjectChange?: ((project: ProjectRecord) => void) | undefined;
-  onViewAssets?: ((id?: string) => void) | undefined; onReturnToScene?: ((id?: string) => void) | undefined;
+  onViewAssets?: ((id?: string) => void) | undefined; onReturnToScene?: ((id?: string) => void) | undefined; returnMode?: "insert" | "replace";
 }) {
   const t = (zh: string, en: string) => tr(locale, zh, en);
   const input = useRef<HTMLInputElement>(null);
@@ -71,7 +71,7 @@ export function RobotAssetWorkspace({ locale, model, project, onBack, onImport, 
           {processing && <button className="button" title={t("停止本地处理或等待；已提交的素材保留，重试继续同一任务", "Stop processing or waiting; submitted assets stay and retries reuse the task")} onClick={cancel}>{t("取消处理", "Cancel processing")}</button>}
           {error && <span role="alert">{error}</span>}
         </section>
-        {onReturnToScene && <button className={`button${result && !savedId ? "" : " primary"}`} disabled={busy} onClick={() => onReturnToScene(savedId ?? model.id)}>{t("添加到场景", "Add to scene")}</button>}
+        {onReturnToScene && <button className={`button${result && !savedId ? "" : " primary"}`} disabled={busy} onClick={() => onReturnToScene(savedId ?? model.id)}>{returnMode === "replace" ? t("应用并返回场景", "Apply and return") : t("添加到场景", "Add to scene")}</button>}
         {importBusy && <button className="button" onClick={onCancelImport}>{t("取消导入", "Cancel import")}</button>}
         {importError && <p role="alert">{importError}</p>}
       </aside>

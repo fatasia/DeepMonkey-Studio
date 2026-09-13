@@ -20,6 +20,7 @@ export interface BatteryOnnxModelDeployment {
 }
 
 export interface BatteryOnnxDeployment {
+  mode?: "production" | "local-validation";
   enabled: boolean;
   manifestFile?: string;
   artifactRoot?: string;
@@ -78,7 +79,7 @@ export async function loadBatteryOnnxDeployment(
   };
 }
 
-async function verifyRuntimeAdapterResources(
+export async function verifyRuntimeAdapterResources(
   adapterPath: string,
   artifactRoot: string,
   manifest: BatteryOnnxEquivalenceManifest,
@@ -163,7 +164,7 @@ function resolveArtifactPath(root: string, fileName: string): string {
   return target;
 }
 
-async function verifyFile(
+export async function verifyFile(
   path: string,
   expectedBytes: number,
   expectedSha256: string,
@@ -184,7 +185,7 @@ function disabledDeployment(): BatteryOnnxDeployment {
     requestedModels: [],
     manifests: [],
     models: {},
-    diagnostics: ["未配置 BATTERY_ONNX_MANIFEST_FILE，保持 Python 正式主输出"],
+    diagnostics: ["未配置生产 ONNX 清单；默认使用项目内置验证模型"],
   };
 }
 

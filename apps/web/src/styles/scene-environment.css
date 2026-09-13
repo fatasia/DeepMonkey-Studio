@@ -2,7 +2,9 @@
 .environment-control { width: min(388px,calc(100% - 32px)); padding: 0; overflow: hidden auto; color: var(--text); border-color: var(--line-strong); background: var(--surface-1); }
 /* 滚动工具窗的内容不参与纵向压缩，标题才能始终保留完整的命中/阅读高度。 */
 .environment-control > * { flex-shrink: 0; }
-.environment-heading { position: sticky; top: 0; z-index: 2; height: 44px; margin: 0; padding: 0 13px; border-bottom: 1px solid var(--line); background: var(--surface-1); }
+.environment-heading { position: sticky; top: 0; z-index: 2; /* z-index-audit: keep(页面内容带:面板内粘性标题局部) */ height: 44px; margin: 0; padding: 0 13px; border-bottom: 1px solid var(--line); background: var(--surface-1); }
+.environment-heading[data-drag-handle="true"] { cursor: grab; touch-action: none; }
+.environment-heading[data-drag-handle="true"]:active { cursor: grabbing; }
 .environment-heading strong { color: var(--text-strong); font-size: 12px; letter-spacing: .02em; }
 .environment-heading small { color: var(--text-muted); font-size: 11px; }
 .environment-heading > button { flex: 0 0 30px; }
@@ -82,8 +84,10 @@
 .environment-control button:not(.active):hover { color: var(--text-strong); background: var(--surface-3); }
 .environment-control .light-editor input:not([type="range"]):not([type="color"]),.environment-control .light-system-head select { color: var(--text-strong); border-color: var(--line-strong); background: var(--surface-1); font-size: 11px; }
 
-.xr-panel { position: absolute; top: 70px; left: 50%; z-index: 20; width: min(460px,calc(100% - 32px)); color: #8f9aa1; border: 1px solid #3a464d; border-radius: 11px; background: rgba(20,27,31,.98); box-shadow: 0 18px 55px rgba(0,0,0,.42); transform: translateX(-50%); backdrop-filter: blur(14px); }
+.xr-panel { position: absolute; top: 70px; left: 50%; z-index: var(--layer-panel); /* XR 面板,面板带基线 */ width: min(460px,calc(100% - 32px)); color: #8f9aa1; border: 1px solid #3a464d; border-radius: 11px; background: rgba(20,27,31,.98); box-shadow: 0 18px 55px rgba(0,0,0,.42); transform: translateX(-50%); backdrop-filter: blur(14px); }
 .xr-panel header { display: flex; align-items: center; justify-content: space-between; height: 47px; padding: 0 12px 0 14px; border-bottom: 1px solid #303a40; }
+.xr-panel header[data-drag-handle="true"] { cursor: grab; touch-action: none; }
+.xr-panel header[data-drag-handle="true"]:active { cursor: grabbing; }
 .xr-panel header div { display: flex; flex-direction: column; gap: 2px; }
 .xr-panel header strong { color: #e2e7e9; font-size: 11px; }
 .xr-panel header small { color: #66727a; font-size: 7px; }
@@ -102,13 +106,15 @@
 .xr-mode-grid button:disabled { color: #5d686f; border-color: #303a40; background: #20272b; cursor: default; }
 .xr-exit { display: block; width: calc(100% - 26px); height: 30px; margin: 0 13px 9px; color: #f0b0ab; border: 1px solid rgba(211,91,82,.35); border-radius: 6px; background: rgba(211,91,82,.08); cursor: pointer; }
 .xr-panel > p { margin: 0; padding: 0 13px 13px; color: #69757c; font-size: 7px; line-height: 1.65; }
-.xr-session-hud { position: absolute; left: 50%; bottom: 24px; z-index: 30; display: flex; align-items: center; gap: 18px; min-width: 310px; padding: 10px 11px 10px 14px; border: 1px solid rgba(212,168,79,.55); border-radius: 9px; background: rgba(17,23,27,.96); box-shadow: 0 16px 48px rgba(0,0,0,.42); transform: translateX(-50%); }
+.xr-session-hud { position: absolute; left: 50%; bottom: 24px; z-index: calc(var(--layer-panel) + 10); /* XR HUD,须高于面板带 */ display: flex; align-items: center; gap: 18px; min-width: 310px; padding: 10px 11px 10px 14px; border: 1px solid rgba(212,168,79,.55); border-radius: 9px; background: rgba(17,23,27,.96); box-shadow: 0 16px 48px rgba(0,0,0,.42); transform: translateX(-50%); }
 .xr-session-hud > div { display: flex; flex: 1; flex-direction: column; gap: 3px; }
 .xr-session-hud strong { color: #e5bd63; font-size: 10px; }
 .xr-session-hud small { color: #7d8990; font-size: 7px; }
 .xr-session-hud button { height: 29px; padding: 0 13px; color: #ffd2cf; border: 1px solid rgba(212,91,82,.45); border-radius: 6px; background: rgba(212,91,82,.12); cursor: pointer; }
-.physics-panel { position: absolute; top: 70px; left: 16px; z-index: 20; width: 300px; color: #89949b; border: 1px solid #3a464d; border-radius: 11px; background: rgba(20,27,31,.98); box-shadow: 0 18px 55px rgba(0,0,0,.42); backdrop-filter: blur(14px); }
+.physics-panel { position: absolute; top: 70px; left: 16px; z-index: var(--layer-panel); /* 物理面板,面板带基线 */ width: 300px; color: #89949b; border: 1px solid #3a464d; border-radius: 11px; background: rgba(20,27,31,.98); box-shadow: 0 18px 55px rgba(0,0,0,.42); backdrop-filter: blur(14px); }
 .physics-panel header { display: flex; align-items: center; justify-content: space-between; height: 47px; padding: 0 11px 0 14px; border-bottom: 1px solid #303a40; }
+.physics-panel header[data-drag-handle="true"] { cursor: grab; touch-action: none; }
+.physics-panel header[data-drag-handle="true"]:active { cursor: grabbing; }
 .physics-panel header > div { display: flex; flex-direction: column; gap: 2px; }
 .physics-panel header strong { color: #e3e7e9; font-size: 11px; }
 .physics-panel header small { color: #66727a; font-size: 7px; }
@@ -203,7 +209,7 @@
 .data-preview-empty span { max-width: 260px; text-align: center; font-size: 10px; }
 .data-preview-table { overflow: auto; }
 .data-preview-table table { width: 100%; border-collapse: collapse; font-size: 9px; }
-.data-preview-table th { position: sticky; top: 0; z-index: 1; padding: 9px; color: #dce5e8; border-bottom: 1px solid #344249; text-align: left; background: #182126; }
+.data-preview-table th { position: sticky; top: 0; z-index: 1; /* z-index-audit: keep(页面内容带:数据表粘性表头局部) */ padding: 9px; color: #dce5e8; border-bottom: 1px solid #344249; text-align: left; background: #182126; }
 .data-preview-table th span,.data-preview-table th small { display: block; }
 .data-preview-table th small { margin-top: 2px; color: #71838a; font-weight: 400; }
 .data-preview-table td { max-width: 180px; padding: 8px 9px; overflow: hidden; color: #aab8bd; border-bottom: 1px solid #202d32; text-overflow: ellipsis; white-space: nowrap; }
@@ -291,9 +297,9 @@
 .pipeline-node-wrap { display: flex; flex: 0 0 auto; align-items: center; }
 .pipeline-edge { display: block; position: relative; width: 46px; height: 2px; background: #526168; }
 .pipeline-edge::after { position: absolute; top: -3px; right: -1px; width: 7px; height: 7px; content: ""; border-top: 2px solid #798a91; border-right: 2px solid #798a91; transform: rotate(45deg); }
-.pipeline-insert-trigger { display: grid; position: absolute; z-index: 3; top: 50%; left: 50%; width: 26px; height: 26px; place-items: center; color: #9caab0; border: 1px solid #53636a; border-radius: 50%; background: #11191d; transform: translate(-50%,-50%); }
+.pipeline-insert-trigger { display: grid; position: absolute; z-index: 3; /* z-index-audit: keep(页面内容带:流水线插入按钮局部) */ top: 50%; left: 50%; width: 26px; height: 26px; place-items: center; color: #9caab0; border: 1px solid #53636a; border-radius: 50%; background: #11191d; transform: translate(-50%,-50%); }
 .pipeline-insert-trigger:hover,.pipeline-insert-trigger[aria-expanded="true"] { color: #18140c; border-color: #d6aa4d; background: #d6aa4d; }
-.pipeline-insert-menu { display: grid; position: absolute; z-index: 10; bottom: 18px; left: 50%; width: 190px; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 2px; padding: 5px; border: 1px solid #46565d; border-radius: 7px; background: #182226; box-shadow: 0 12px 30px #000a; transform: translateX(-50%); }
+.pipeline-insert-menu { display: grid; position: absolute; z-index: 10; /* z-index-audit: keep(页面内容带:插入菜单,须高于触发钮 3,局部) */ bottom: 18px; left: 50%; width: 190px; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 2px; padding: 5px; border: 1px solid #46565d; border-radius: 7px; background: #182226; box-shadow: 0 12px 30px #000a; transform: translateX(-50%); }
 .pipeline-insert-menu strong { grid-column: 1 / -1; padding: 4px 6px; color: #708188; font-size: 8px; }
 .pipeline-insert-menu button { display: flex; min-height: 27px; align-items: center; gap: 7px; padding: 0 7px; color: #c3cdd0; border: 0; border-radius: 4px; background: transparent; font-size: 9px; }
 .pipeline-insert-menu button:hover { color: #ecd28e; background: #272318; }

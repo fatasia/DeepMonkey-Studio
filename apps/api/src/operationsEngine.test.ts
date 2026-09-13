@@ -8,7 +8,7 @@ const model: MaintenanceModelPackage = {
   name: "test",
   version: "1",
   algorithm: "linear",
-  source: "iot-nb",
+  source: "imported",
   status: "candidate",
   benchmarkOnly: true,
   productionEligible: false,

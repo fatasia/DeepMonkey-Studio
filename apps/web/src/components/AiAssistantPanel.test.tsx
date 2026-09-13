@@ -36,6 +36,19 @@ describe("AiAssistantPanel", () => {
     expect(html).toContain("问数据");
     expect(html).toContain("执行任务");
     expect(html).toContain("搬运机器人");
-    expect(html).toContain("快照只作为模型输入");
+    expect(html).toContain('data-drag-handle="true"');
+    expect(html).toContain('title="问答与生成" aria-label="问答与生成"');
+    expect(html).toContain('title="执行任务" aria-label="执行任务"');
+    expect(html).toContain('title="场景" aria-label="场景"');
+    expect(html).not.toContain(">问答与生成</button>");
+    expect(html).not.toContain(">执行任务</button>");
+  });
+
+  it("keeps every assistant tab icon in one horizontal row", async () => {
+    const chrome = await readFile(new URL("../styles/platform-pages.css", import.meta.url), "utf8");
+    const reliability = await readFile(new URL("./AiAssistantReliability.css", import.meta.url), "utf8");
+
+    expect(chrome).toContain(".ai-assistant-panel > nav { display: flex; align-items: center;");
+    expect(reliability).toMatch(/\.ai-assistant-experience\s*\{[\s\S]*?display: flex;[\s\S]*?flex: 0 0 auto;/);
   });
 });

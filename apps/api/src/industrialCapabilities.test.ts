@@ -28,8 +28,6 @@ describe("industrial capability host", () => {
     expect(host.registry.listCapabilities().map((item) => item.id)).toEqual(expect.arrayContaining([
       "battery.model.predict",
       "battery.release.status",
-      "battery.twin.simulate",
-      "battery.twin.status",
       "operations.energy.analyze",
       "operations.maintenance.assess",
       "operations.maintenance.shadow-evaluate",
@@ -39,6 +37,7 @@ describe("industrial capability host", () => {
       "simulation.virtual-debug.run",
       "simulation.virtual-debug.run-suite"
     ]));
+    expect(host.registry.listCapabilities().some(item => item.id.startsWith("battery.twin."))).toBe(false);
 
     const result = await host.invoke("operations.energy.analyze", {
       requestId: "energy-1",
@@ -145,13 +144,13 @@ describe("industrial capability host", () => {
     expect((await app.inject({ method: "GET", url: "/api/ai/providers" })).json()).toMatchObject({ providers: [expect.objectContaining({ id: "ai.openai-compatible" })] });
     const batteryModels = (await app.inject({ method: "GET", url: "/api/battery/models/catalog" })).json().models;
     expect(batteryModels).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "battery.bmsformer", outputAuthority: "primary" }),
-      expect.objectContaining({ id: "battery.batterymformer-pinn", status: "production", role: "routed-expert", runtimeEnabled: true }),
-      expect.objectContaining({ id: "battery.spm-pino", status: "production", role: "routed-expert", runtimeEnabled: true }),
-      expect.objectContaining({ id: "battery.twin-moe", status: "production", role: "production-router", runtimeEnabled: true })
+      expect.objectContaining({ id: "battery.bmsformer", outputAuthority: "advisory", runtime: "onnx", productionEligible: false }),
+      expect.objectContaining({ id: "battery.socformer", outputAuthority: "advisory" }),
+      expect.objectContaining({ id: "battery.batterymformer", outputAuthority: "advisory" })
     ]));
     expect((await app.inject({ method: "GET", url: "/api/battery/models/release-gate" })).json()).toMatchObject({
-      ready: true,
+      ready: false,
+      deployment: { mode: "local-validation", activeModels: ["bmsformer", "socformer", "batterymformer"] },
       onnxPrimaryModels: [],
       onnxMigration: { ready: false, eligibleModelIds: [] },
       warnings: expect.arrayContaining([expect.stringContaining("ONNX")])

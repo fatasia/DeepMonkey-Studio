@@ -23,10 +23,19 @@ describe("parametric model upload", () => {
     await harness.app.close();
   });
 
-  it("rejects unknown metadata fields and non-STEP generated files before persistence", async () => {
+  it("accepts GLB geometry with editable generation metadata", async () => {
+    const harness = await createHarness();
+    const response = await injectMultipart(harness.app, "plate.glb", generation());
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({ format: "glb", generation: { kind: "parametric", revision: 1 } });
+    expect(harness.queue.enqueue).toHaveBeenCalledOnce();
+    await harness.app.close();
+  });
+
+  it("rejects unknown metadata fields and unsupported generated formats before persistence", async () => {
     const harness = await createHarness();
     const invalid = await injectMultipart(harness.app, "plate.step", { ...generation(), debug: true });
-    const wrongFormat = await injectMultipart(harness.app, "plate.glb", generation());
+    const wrongFormat = await injectMultipart(harness.app, "plate.obj", generation());
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().message).toContain("未知字段");
     expect(wrongFormat.statusCode).toBe(400);

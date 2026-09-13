@@ -7,10 +7,10 @@ import { translate as tr } from "../i18n";
 export type TopologyViewMode = "2d" | "2.5d";
 export type TopologyEdgeMedium = "signal" | "power" | "water" | "air" | "material";
 
-const TOPOLOGY_ISOMETRIC_Y_SCALE = 0.72;
-const TOPOLOGY_ISOMETRIC_SHEAR = 0.22;
-const TOPOLOGY_ISOMETRIC_ORIGIN_Y = 96;
-const TOPOLOGY_ISOMETRIC_CENTER_Y = 450;
+const TOPOLOGY_ISOMETRIC_X_SCALE = Math.sqrt(3) / 2;
+const TOPOLOGY_ISOMETRIC_Y_SCALE = 0.5;
+const TOPOLOGY_ISOMETRIC_ORIGIN_X = 600;
+const TOPOLOGY_ISOMETRIC_ORIGIN_Y = 40;
 
 export function topologyEdgeLabel(edge: Pick<TopologyEdge, "properties">): string {
   return typeof edge.properties.label === "string" ? edge.properties.label.trim() : "";
@@ -27,7 +27,8 @@ export function topologyEdgeAnimated(edge: Pick<TopologyEdge, "properties">): bo
 
 export function topologyEdgeStateClass(source: TopologyScadaRuntimeState | undefined, target: TopologyScadaRuntimeState | undefined): string {
   if (source?.state === "offline" || target?.state === "offline") return "is-offline";
-  if (source?.alarm?.active || target?.alarm?.active || source?.state === "alarm" || target?.state === "alarm") return "has-alarm";
+  if ([source,target].some(state => state?.state === "alarm" || state?.alarm?.active && state.alarm.severity === "critical")) return "has-alarm";
+  if ([source,target].some(state => state?.state === "warning" || state?.alarm?.active)) return "has-warning";
   return "";
 }
 
@@ -39,15 +40,15 @@ export function topologyNodeElevation(node: Pick<TopologyNode, "properties">): n
 
 export function topologyProjectionOffset(elevation: number, viewMode: TopologyViewMode): { x: number; y: number } {
   if (viewMode === "2d") return { x: 0, y: 0 };
-  return { x: elevation * 0.35, y: elevation * -0.55 };
+  return { x: 0, y: elevation * -0.6 };
 }
 
 export function topologyProjectedPosition(node: Pick<TopologyNode, "x" | "y" | "properties">, viewMode: TopologyViewMode): { x: number; y: number } {
   const offset = topologyProjectionOffset(topologyNodeElevation(node), viewMode);
   if (viewMode === "2d") return { x: node.x, y: node.y };
   return {
-    x: node.x + (node.y - TOPOLOGY_ISOMETRIC_CENTER_Y) * TOPOLOGY_ISOMETRIC_SHEAR + offset.x,
-    y: TOPOLOGY_ISOMETRIC_ORIGIN_Y + node.y * TOPOLOGY_ISOMETRIC_Y_SCALE + offset.y,
+    x: TOPOLOGY_ISOMETRIC_ORIGIN_X + (node.x - node.y) * TOPOLOGY_ISOMETRIC_X_SCALE,
+    y: TOPOLOGY_ISOMETRIC_ORIGIN_Y + (node.x + node.y) * TOPOLOGY_ISOMETRIC_Y_SCALE + offset.y,
   };
 }
 
@@ -59,10 +60,11 @@ export function topologyPlanPositionFromProjected(
 ): { x: number; y: number } {
   if (viewMode === "2d") return position;
   const offset = topologyProjectionOffset(elevation, viewMode);
-  const y = (position.y - TOPOLOGY_ISOMETRIC_ORIGIN_Y - offset.y) / TOPOLOGY_ISOMETRIC_Y_SCALE;
+  const difference = (position.x - TOPOLOGY_ISOMETRIC_ORIGIN_X) / TOPOLOGY_ISOMETRIC_X_SCALE;
+  const sum = (position.y - TOPOLOGY_ISOMETRIC_ORIGIN_Y - offset.y) / TOPOLOGY_ISOMETRIC_Y_SCALE;
   return {
-    x: position.x - (y - TOPOLOGY_ISOMETRIC_CENTER_Y) * TOPOLOGY_ISOMETRIC_SHEAR - offset.x,
-    y,
+    x: (sum + difference) / 2,
+    y: (sum - difference) / 2,
   };
 }
 

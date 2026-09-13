@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import test from "node:test";
@@ -12,7 +12,12 @@ const archivePath = fileURLToPath(new URL("../../apps/web/public/downloads/com.b
 test("公开 Unity tgz 与当前插件源码保持一致", async (context) => {
   const extractionRoot = await mkdtemp(join(tmpdir(), "bim-studio-unity-package-"));
   context.after(() => rm(extractionRoot, { recursive: true, force: true }));
-  const extraction = spawnSync("tar", ["-xzf", archivePath, "-C", extractionRoot], { encoding: "utf8" });
+  // 归档先复制进临时目录再用相对路径解包：Git Bash 的 GNU tar 会把 "D:\..." 绝对路径
+  // 解析成"远程主机:文件"(Cannot connect to D:),Windows 自带 bsdtar 则无此问题,
+  // 相对路径在两种 tar 下行为一致。
+  const localArchive = join(extractionRoot, "package.tgz");
+  await copyFile(archivePath, localArchive);
+  const extraction = spawnSync("tar", ["-xzf", "package.tgz"], { cwd: extractionRoot, encoding: "utf8" });
   assert.equal(extraction.status, 0, extraction.stderr || extraction.stdout);
 
   const packedRoot = join(extractionRoot, "package");

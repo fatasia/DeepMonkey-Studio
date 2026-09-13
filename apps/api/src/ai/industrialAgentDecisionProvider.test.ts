@@ -34,6 +34,24 @@ describe("industrial Agent decision provider", () => {
     ]);
   });
 
+  it("includes server project evidence context before dataset routing", async () => {
+    const invokeAiProvider = vi.fn(async (_providerId: string, request: { input: string }) => {
+      expect(request.input).toContain("projectEvidenceContext");
+      expect(request.input).toContain("battery.model.predict");
+      return {
+        text: '{"kind":"finish","rationale":"已有项目证据","summary":"可复用已有电池证据","decisionStatus":"shadow","evidenceIds":[]}',
+        model: "test-model",
+      };
+    });
+    const provider = createIndustrialAgentDecisionProvider({
+      registry: { invokeAiProvider } as unknown as PluginRegistry,
+      settings,
+      dataSource: { listDatasets: () => [] },
+      projectContext: () => ({ battery: { availableCapabilities: [{ id: "battery.model.predict" }] } }),
+    });
+    await expect(provider.decide({ checkpoint: checkpoint(), availableTools: [], signal: new AbortController().signal })).resolves.toMatchObject({ kind: "finish" });
+  });
+
   it("blocks a request that asks the model to bypass approval before provider invocation", async () => {
     const invokeAiProvider = vi.fn();
     const provider = createIndustrialAgentDecisionProvider({ registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] } });

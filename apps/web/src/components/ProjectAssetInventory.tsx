@@ -1,14 +1,22 @@
-import { useEffect, useRef } from "react";
-import { Box, Gauge, Plus, Image as ImageIcon, Mountain, Paintbrush, Pencil, Search, Trash2, Video, WandSparkles } from "lucide-react";
-import type { ConversionStatus } from "@bim-studio/contracts";
+import { useEffect, useRef, useState } from "react";
+import { Box, FileSliders, Gauge, Plus, Image as ImageIcon, Pencil, Search, Trash2, Video, WandSparkles } from "lucide-react";
+import type { ConversionStatus, ModelRecord } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { SceneManagerController } from "./SceneManager";
 import { ProjectResourceGovernancePanel, ResourceUsageBadge } from "./ProjectResourceGovernancePanel";
 import { ProjectAssetToolbar } from "./ProjectAssetToolbar";
 import { ModelAssetCredit } from "./ModelAssetCredit";
 import { RobotAssetMediaActions } from "./RobotAssetMediaActions";
+import { ProjectResourcePreview, type ResourcePreviewItem } from "./ProjectResourcePreview";
+import { ResourceLinkButton } from "./ResourceLinkButton";
+import { ModelEngineeringDialog } from "./ModelEngineeringDialog";
+import { UploadedResourceThumbnails } from "./UploadedResourceThumbnails";
+import { ProjectAssetThumbnail } from "./ProjectAssetThumbnail";
+import "./ProjectAssetInventory.css";
 
 export function ProjectAssetInventory({ controller }: { controller: SceneManagerController }) {
+  const [preview, setPreview] = useState<ResourcePreviewItem | null>(null);
+  const [engineeringModel, setEngineeringModel] = useState<ModelRecord>();
   const focusedModel = useRef<HTMLElement | null>(null);
   useEffect(() => { focusedModel.current?.scrollIntoView({ block: "center" }); focusedModel.current?.focus({ preventScroll: true }); }, [controller.selectedAssetModelId, controller.project?.models.length]);
   const {
@@ -20,6 +28,7 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
     <div className="project-asset-inventory">
       <ProjectResourceGovernancePanel locale={locale} report={resourceGovernance} />
       <ProjectAssetToolbar controller={controller} />
+      {!!controller.uploadedResources?.length && <UploadedResourceThumbnails key={project?.id} items={controller.uploadedResources} locale={locale} onSaved={controller.refreshLibraryModels} onDismiss={() => controller.setUploadedResources([])} />}
       <div className="asset-library-filter">
         <div>
           {(["all", "model", "image", "video", "environment", "pbr-material"] as const).map((tab) => (
@@ -30,10 +39,10 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
         </div>
         <label><Search size={14} /><input aria-label={tr(locale, "搜索项目资源", "Search project assets")} value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder={tr(locale, "搜索项目资源", "Search project assets")} /></label>
       </div>
-      <div className="model-library-list">
+      <div className="project-resource-grid unified-assets-grid">
         {visibleModels.map((model) => (
-          <article className={`model-library-item ${controller.selectedAssetModelId === model.id ? "asset-workflow-selected" : ""}`} key={model.id} data-model-id={model.id} tabIndex={controller.selectedAssetModelId === model.id ? -1 : undefined} ref={controller.selectedAssetModelId === model.id ? focusedModel : undefined}>
-            <div className="model-library-format">{model.format.toUpperCase()}</div>
+          <article className={`project-resource-card unified-asset-card ${controller.selectedAssetModelId === model.id ? "asset-workflow-selected" : ""}`} key={model.id} data-model-id={model.id} tabIndex={controller.selectedAssetModelId === model.id ? -1 : undefined} ref={controller.selectedAssetModelId === model.id ? focusedModel : undefined}>
+            <button type="button" className="project-resource-thumbnail" title={tr(locale, "浏览与设置缩略图", "Preview and set thumbnail")} onClick={() => setPreview(model)}><ProjectAssetThumbnail item={model} locale={locale} /></button>
             <div className="model-library-info">
               <strong title={model.name}>{model.name}</strong>
               <span>{formatBytes(model.size)} · {new Date(model.updatedAt).toLocaleString(locale, { dateStyle: "short", timeStyle: "short" })}</span>
@@ -48,6 +57,9 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
             </div>
             <div className="model-asset-actions" role="group" aria-label={tr(locale, `${model.name} 操作`, `Actions for ${model.name}`)}>
             <RobotAssetMediaActions locale={locale} model={model} disabled={modelLibraryBusy} screenshot={false} compact />
+            <button className="button" onClick={() => setPreview(model)} aria-label={tr(locale, `浏览 ${model.name}`, `Browse ${model.name}`)}>{tr(locale, "浏览", "Browse")}</button>
+            <ResourceLinkButton locale={locale} name={model.name} resource={model} compact />
+            <button className="manager-icon-button" aria-label={tr(locale, `工程资产 ${model.name}`, `Engineering asset ${model.name}`)} title={tr(locale, "工程资产、质量与版本", "Engineering, quality and versions")} onClick={() => setEngineeringModel(model)}><FileSliders size={15} /></button>
             <button className="manager-icon-button" aria-label={tr(locale, `预览与优化 ${model.name}`, `Preview and optimize ${model.name}`)} title={tr(locale, "预览与优化（不修改原素材）", "Preview and optimize (preserves source)")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onOptimizer(model.id)}><Gauge size={15} /></button>
             {controller.onReturnToScene && <button className="manager-icon-button" aria-label={tr(locale, `添加到原场景 ${model.name}`, `Add to original scene ${model.name}`)} title={tr(locale, "添加到原场景", "Add to original scene")} disabled={modelLibraryBusy || model.status !== "ready"} onClick={() => controller.onReturnToScene?.(model.id)}><Plus size={15} /></button>}
             {model.generation?.kind === "parametric" && <button className="manager-icon-button" aria-label={tr(locale, "修改参数并创建新版本", "Edit parameters as a new revision")} title={tr(locale, "修改参数并创建新版本", "Edit parameters as a new revision")} disabled={modelLibraryBusy} onClick={() => { setParametricSourceModel(model); setParametricWorkbenchOpen(true); }}><WandSparkles size={14} /></button>}
@@ -57,34 +69,48 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
           </article>
         ))}
         {visibleImages.map((asset) => (
-          <article className="model-library-item asset-image-item" key={asset.id}>
-            <div className="asset-image-preview"><img src={asset.url} alt="" loading="lazy" /></div>
+          <article className="project-resource-card unified-asset-card" key={asset.id}>
+            <button type="button" className="project-resource-thumbnail" title={tr(locale, "浏览与设置缩略图", "Preview and set thumbnail")} onClick={() => setPreview(asset)}><ProjectAssetThumbnail item={asset} locale={locale} /></button>
             <AssetInfo name={asset.name} size={asset.size} updatedAt={asset.updatedAt} locale={locale} hint={tr(locale, "可用于二维看板图片组件", "Ready for dashboard image widgets")} />
             <div className="model-library-state"><span className="model-status model-status-ready">{tr(locale, "可使用", "Ready")}</span><ResourceUsageBadge locale={locale} resource={resourceGovernance.resources.find((resource) => resource.kind === "media" && resource.id === asset.id)} /></div>
+            <div className="model-asset-actions">
+            <button className="button" aria-label={tr(locale, `浏览 ${asset.name}`, `Browse ${asset.name}`)} onClick={() => setPreview(asset)}>{tr(locale, "浏览", "Browse")}</button>
             <button className="manager-icon-button" aria-label={tr(locale, `重命名图片 ${asset.name}`, `Rename image ${asset.name}`)} title={tr(locale, "重命名", "Rename")} disabled={modelLibraryBusy} onClick={() => void renameLibraryItem(asset, "asset")}><Pencil size={14} /></button>
+            <ResourceLinkButton locale={locale} name={asset.name} resource={asset} compact />
             <button className="manager-icon-button danger" aria-label={tr(locale, `删除图片 ${asset.name}`, `Delete image ${asset.name}`)} title={tr(locale, "删除图片", "Delete image")} disabled={modelLibraryBusy} onClick={() => void deleteLibraryAsset(asset)}><Trash2 size={15} /></button>
+            </div>
           </article>
         ))}
         {visibleVideos.map((asset) => (
-          <article className="model-library-item asset-video-item" key={asset.id}>
-            <div className="asset-video-preview"><Video size={21} /><span>{asset.fileName.split(".").at(-1)?.toUpperCase()}</span></div>
+          <article className="project-resource-card unified-asset-card" key={asset.id}>
+            <button type="button" className="project-resource-thumbnail" title={tr(locale, "浏览与设置缩略图", "Preview and set thumbnail")} onClick={() => setPreview(asset)}><ProjectAssetThumbnail item={asset} locale={locale} /></button>
             <AssetInfo name={asset.name} size={asset.size} updatedAt={asset.updatedAt} locale={locale} hint={tr(locale, "可用于二维看板本地视频组件", "Ready for local dashboard video widgets")} />
             <div className="model-library-state"><span className="model-status model-status-ready">{tr(locale, "可使用", "Ready")}</span><ResourceUsageBadge locale={locale} resource={resourceGovernance.resources.find((resource) => resource.kind === "media" && resource.id === asset.id)} /></div>
+            <div className="model-asset-actions">
+            <button className="button" aria-label={tr(locale, `浏览 ${asset.name}`, `Browse ${asset.name}`)} onClick={() => setPreview(asset)}>{tr(locale, "浏览", "Browse")}</button>
             <button className="manager-icon-button" aria-label={tr(locale, `重命名视频 ${asset.name}`, `Rename video ${asset.name}`)} title={tr(locale, "重命名", "Rename")} disabled={modelLibraryBusy} onClick={() => void renameLibraryItem(asset, "asset")}><Pencil size={14} /></button>
+            <ResourceLinkButton locale={locale} name={asset.name} resource={asset} compact />
             <button className="manager-icon-button danger" aria-label={tr(locale, `删除视频 ${asset.name}`, `Delete video ${asset.name}`)} title={tr(locale, "删除视频", "Delete video")} disabled={modelLibraryBusy} onClick={() => void deleteLibraryAsset(asset)}><Trash2 size={15} /></button>
+            </div>
           </article>
         ))}
         {visibleAppearanceAssets.map((asset) => (
-          <article className="model-library-item asset-image-item" key={asset.id}>
-            <div className="asset-image-preview">{asset.thumbnailUrl ? <img src={asset.thumbnailUrl} alt="" loading="lazy" /> : asset.kind === "environment" ? <Mountain size={20} /> : <Paintbrush size={20} />}</div>
+          <article className="project-resource-card unified-asset-card" key={asset.id}>
+            <button type="button" className="project-resource-thumbnail" title={tr(locale, "浏览与设置缩略图", "Preview and set thumbnail")} onClick={() => setPreview(asset)}><ProjectAssetThumbnail item={asset} locale={locale} /></button>
             <AssetInfo name={asset.name} size={asset.size} updatedAt={asset.updatedAt} locale={locale} hint={asset.kind === "environment" ? tr(locale, "可在场景环境中直接应用", "Apply from scene environment") : tr(locale, "可在选中模型的材质面板中应用", "Apply to the selected model from its material panel")} />
             <div className="model-library-state"><span className="model-status model-status-ready">{tr(locale, "可使用", "Ready")}</span></div>
+            <div className="model-asset-actions">
+            <button className="button" aria-label={tr(locale, `浏览 ${asset.name}`, `Browse ${asset.name}`)} onClick={() => setPreview(asset)}>{tr(locale, "浏览", "Browse")}</button>
             <button className="manager-icon-button" aria-label={tr(locale, `重命名资源 ${asset.name}`, `Rename asset ${asset.name}`)} title={tr(locale, "重命名", "Rename")} disabled={modelLibraryBusy} onClick={() => void renameLibraryItem(asset, "asset")}><Pencil size={14} /></button>
+            <ResourceLinkButton locale={locale} name={asset.name} resource={asset} compact />
             <button className="manager-icon-button danger" aria-label={tr(locale, `删除资源 ${asset.name}`, `Delete asset ${asset.name}`)} title={tr(locale, "删除资源", "Delete resource")} disabled={modelLibraryBusy} onClick={() => void deleteLibraryAsset(asset)}><Trash2 size={15} /></button>
+            </div>
           </article>
         ))}
         {visibleModels.length === 0 && visibleImages.length === 0 && visibleVideos.length === 0 && visibleAppearanceAssets.length === 0 && <div className="model-library-empty">{assetTab === "image" ? <ImageIcon size={34} /> : assetTab === "video" ? <Video size={34} /> : <Box size={34} />}<strong>{normalizedSearch ? tr(locale, "没有匹配的资源", "No matching assets") : tr(locale, "还没有项目资源", "No project assets yet")}</strong><span>{tr(locale, "可从公共资源导入，也可上传模型、图片或视频。", "Import from the library or upload models, images and videos.")}</span></div>}
       </div>
+      {preview && <ProjectResourcePreview key={preview.id} item={preview} locale={locale} onClose={() => setPreview(null)} onThumbnailSaved={async updated => { setPreview(updated); await controller.refreshLibraryModels(); }} />}
+      {engineeringModel && <ModelEngineeringDialog model={engineeringModel} models={project?.models ?? []} locale={locale} onClose={() => setEngineeringModel(undefined)} onOptimize={id => { setEngineeringModel(undefined); controller.onOptimizer(id); }} />}
     </div>
   );
 }

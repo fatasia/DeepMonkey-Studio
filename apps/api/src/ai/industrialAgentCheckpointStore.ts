@@ -34,29 +34,35 @@ export class IndustrialAgentCheckpointStore implements AgentCheckpointStore {
   }
 
   async save(checkpoint: AgentCheckpoint): Promise<void> {
+    const snapshot = structuredClone(checkpoint);
     const operation = this.writes.then(async () => {
-      const index = this.document.runs.findIndex((item) => item.id === checkpoint.id);
-      if (index >= 0) this.document.runs[index] = structuredClone(checkpoint);
-      else this.document.runs.unshift(structuredClone(checkpoint));
-      this.prune();
-      await this.persist();
+      const runs = [...this.document.runs];
+      const index = runs.findIndex((item) => item.id === snapshot.id);
+      if (index >= 0) runs[index] = snapshot;
+      else runs.unshift(snapshot);
+      const next: CheckpointDocument = { schemaVersion: 1, runs: this.prune(runs) };
+      // 读侧只暴露已落盘状态；失败后继续保存也不能带入上次未提交的运行。
+      await this.persist(next);
+      this.document = next;
     });
     this.writes = operation.then(() => undefined, () => undefined);
     await operation;
   }
 
-  private prune(): void {
-    if (this.document.runs.length <= 1_000) return;
-    const active = this.document.runs.filter((run) => ["running", "awaiting-approval", "awaiting-input"].includes(run.status));
-    const terminal = this.document.runs.filter((run) => !active.includes(run)).slice(0, Math.max(0, 1_000 - active.length));
-    this.document.runs = [...active, ...terminal];
+  private prune(runs: AgentCheckpoint[]): AgentCheckpoint[] {
+    if (runs.length <= 1_000) return runs;
+    const active = runs.filter((run) => ["running", "awaiting-approval", "awaiting-input"].includes(run.status));
+    const terminal = runs.filter((run) => !active.includes(run)).slice(0, Math.max(0, 1_000 - active.length));
+    return [...active, ...terminal];
   }
 
-  private async persist(): Promise<void> {
+  private async persist(document = this.document): Promise<void> {
     this.sequence += 1;
     const temporary = `${this.filePath}.${process.pid}.${this.sequence}.tmp`;
-    await writeFile(temporary, JSON.stringify(this.document, null, 2), "utf8");
-    try { await rename(temporary, this.filePath); }
+    try {
+      await writeFile(temporary, JSON.stringify(document, null, 2), "utf8");
+      await rename(temporary, this.filePath);
+    }
     catch (error) { await rm(temporary, { force: true }); throw error; }
   }
 }

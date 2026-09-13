@@ -30,7 +30,6 @@ export function loadMonacoEditor(): Promise<typeof import("monaco-editor")> {
     });
   return monacoLoadPromise;
 }
-
 let configured = false;
 const intelligenceContexts = new Map<string, SceneScriptIntelligenceContext>();
 
@@ -40,7 +39,6 @@ export function registerProfessionalCodeContext(path: string, context: SceneScri
     if (intelligenceContexts.get(path) === context) intelligenceContexts.delete(path);
   };
 }
-
 export const configureProfessionalCodeServices: BeforeMount = (api) => {
   if (configured) return;
   const typescript = api.languages.typescript;
@@ -49,7 +47,7 @@ export const configureProfessionalCodeServices: BeforeMount = (api) => {
   typescript.javascriptDefaults.setCompilerOptions({
     allowNonTsExtensions: true,
     allowJs: true,
-    checkJs: true,
+    checkJs: false,
     module: api.languages.typescript.ModuleKind.ESNext,
     moduleResolution: api.languages.typescript.ModuleResolutionKind.NodeJs,
     target: api.languages.typescript.ScriptTarget.ES2022,

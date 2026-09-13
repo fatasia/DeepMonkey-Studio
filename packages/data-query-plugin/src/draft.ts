@@ -14,9 +14,38 @@ export function parseAskDataQueryDraft(text: string): AskDataQueryPlanInput {
   let value: unknown;
   try { value = JSON.parse(stripFence(text.trim())); }
   catch { throw new Error("AI 问数计划不是有效 JSON"); }
-  const issues = validateCapabilityValue(DATA_QUERY_SCHEMAS.plan.input, value);
+  const normalized = normalizeLegacyAggregationFields(value);
+  const issues = validateCapabilityValue(DATA_QUERY_SCHEMAS.plan.input, normalized);
   if (issues.length) throw new Error(`AI 问数计划不符合受限合同：${issues.slice(0, 5).join("；")}`);
-  return value as AskDataQueryPlanInput;
+  return normalized as AskDataQueryPlanInput;
+}
+
+/**
+ * 部分兼容 OpenAI/Claude 常见的聚合命名，避免模型把正式合同中的
+ * operator/as 写成 function/alias。兼容层仍会删除未知别名并再次走严格
+ * schema 校验，不能绕过字段、类型或数据集检查。
+ */
+function normalizeLegacyAggregationFields(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const plan = value as Record<string, unknown>;
+  if (!Array.isArray(plan.aggregations)) return value;
+  return {
+    ...plan,
+    aggregations: plan.aggregations.map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+      const aggregation = item as Record<string, unknown>;
+      const normalized = { ...aggregation };
+      if (normalized.operator === undefined && typeof normalized.function === "string") {
+        normalized.operator = normalized.function;
+      }
+      if (normalized.as === undefined && typeof normalized.alias === "string") {
+        normalized.as = normalized.alias;
+      }
+      delete normalized.function;
+      delete normalized.alias;
+      return normalized;
+    }),
+  };
 }
 
 function stripFence(value: string): string {

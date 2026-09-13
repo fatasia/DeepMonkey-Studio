@@ -31,7 +31,7 @@ export function ProjectResourceGovernancePanel({ locale, report }: { locale: App
           {tr(locale, `${report.missingDependencies.length} 个资源或版本引用已断开，发布前必须重新绑定。`, `${report.missingDependencies.length} resource or version references are broken and must be rebound before publishing.`)}
         </p>
       )}
-      <details className="resource-governance-details" open={report.unusedCount > 0 || report.missingDependencies.length > 0}>
+      <details className="resource-governance-details" open={report.missingDependencies.length > 0}>
         <summary>
           <span>{tr(locale, "查看依赖、版本与覆盖", "Inspect dependencies, versions, and overrides")}</span>
           <small>{tr(locale, `${report.overrideCount} 项实例覆盖`, `${report.overrideCount} instance overrides`)}</small>

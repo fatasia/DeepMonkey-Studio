@@ -11,10 +11,12 @@ import { useAppRuntimeEffects } from "./hooks/useAppRuntimeEffects";
 import { useAppSceneSyncEffects } from "./hooks/useAppSceneSyncEffects";
 import { useAppState } from "./hooks/useAppState";
 import { useSceneHistoryActions } from "./hooks/useSceneHistoryActions";
+import { useApplicationRecovery } from "./hooks/useApplicationRecovery";
 import { useSceneHistoryState } from "./hooks/useSceneHistoryState";
 import { downloadWorkspaceRecoveryDraft } from "./studio/workspaceRecoveryStore";
 import type { AppViewBindings } from "./views/appViewBindings";
 import { AppRootView } from "./views/AppRootView";
+import { NetworkStatusBanner } from "./appStatus/NetworkStatusBanner";
 
 function sortScenesByTime(items: SceneSnapshot[]): SceneSnapshot[] {
   return [...items].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
@@ -546,6 +548,7 @@ export function App() {
 
   const scenePersistenceController = createScenePersistenceController({
     getActiveScene: appState.getActiveScene,
+    onFirstSceneSave: sceneHistoryState.adoptFirstSavedScene,
     recordSceneEdit: (label) => sceneHistoryRecordRef.current(label),
     engine,
     project,
@@ -625,6 +628,7 @@ export function App() {
     setScenes,
     setSelected,
     setSelectedAnnotationId,
+    setSelectedLightId,
     setSelectedSpace,
     setSelectionSets,
     setStudioPublishOpen,
@@ -672,6 +676,7 @@ export function App() {
     changeRendererBackend,
   });
 
+  const applicationRecovery = useApplicationRecovery(appState);
   const { undoSceneEdit, redoSceneEdit, restoreRecoveryDraft, deferRecoveryDraft, discardRecoveryDraft } = useSceneHistoryActions({
     state: appState,
     history: sceneHistoryState,
@@ -719,6 +724,7 @@ export function App() {
     setSelected,
     setSceneOrganizationSelection,
     setSelectedSpace,
+    setSelectedLightId,
     setMeasurements,
     setAnnotations,
     setSelectedAnnotationId,
@@ -766,6 +772,7 @@ export function App() {
       deleteCurrentProject,
       refreshProject,
     },
+    applicationRecovery,
     recovery: {
       draft: recoveryDraft,
       busy: recoveryBusy,
@@ -784,5 +791,8 @@ export function App() {
     },
   };
 
-  return <AppRootView bindings={viewBindings} onOpenDocs={openDocs} onCloseDocs={closeDocs} />;
+  return <>
+    <NetworkStatusBanner />
+    <AppRootView bindings={viewBindings} onOpenDocs={openDocs} onCloseDocs={closeDocs} />
+  </>;
 }

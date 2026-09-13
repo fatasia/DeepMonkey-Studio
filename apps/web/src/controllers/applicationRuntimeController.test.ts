@@ -18,23 +18,58 @@ describe("scene editor destination", () => {
     return { source, context, controller: createApplicationRuntimeController(context) };
   }
 
-  it("opens an existing page when switching a direct 3D route to 2D", () => {
+  it("opens an existing page when switching a direct 3D route to 2D", async () => {
     const { source, context, controller } = setup();
-    controller.returnFromSceneEditor("dashboard");
+    await controller.returnFromSceneEditor("dashboard");
     expect(context.navigate).toHaveBeenCalledWith(expect.objectContaining({ view: "dashboard", pageId: source.pages[0]!.id, applicationId: source.metadata.id }));
     expect(context.showError).not.toHaveBeenCalled();
   });
 
-  it("preserves the separate Back to scenes action", () => {
+  it("opens the active application's first page from a scene-only 3D route", async () => {
+    const { source, context } = setup();
+    context.route = { view: "studio", projectId: source.metadata.projectId, sceneId: source.scenes[0]!.id };
+    await createApplicationRuntimeController(context).returnFromSceneEditor("dashboard");
+    expect(context.navigate).toHaveBeenCalledWith(expect.objectContaining({ view: "dashboard", pageId: source.pages[0]!.id, applicationId: source.metadata.id }));
+    expect(context.showError).not.toHaveBeenCalled();
+  });
+
+  it("preserves the separate Back to scenes action", async () => {
     const { context, controller } = setup();
-    controller.returnFromSceneEditor();
+    await controller.returnFromSceneEditor();
     expect(context.navigate).toHaveBeenCalledWith({ view: "manager" });
   });
 
-  it("refuses to open a stale application from another route", () => {
+  it("recovers a stale in-memory application from the route authority", async () => {
+    const { source, context } = setup();
+    const authoritative = structuredClone(source);
+    authoritative.metadata.id = "other";
+    context.route = { ...context.route, applicationId: "other" };
+    vi.spyOn(api, "getApplication").mockResolvedValue(authoritative);
+
+    await createApplicationRuntimeController(context).returnFromSceneEditor("dashboard");
+
+    expect(context.navigate).toHaveBeenCalledWith(expect.objectContaining({ view: "dashboard", applicationId: "other", pageId: authoritative.pages[0]!.id }));
+    expect(context.showError).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the scene-linked application when a stale route id no longer exists", async () => {
+    const { source, context } = setup();
+    context.route = { ...context.route, applicationId: "deleted-application" };
+    vi.spyOn(api, "getApplication").mockRejectedValue(new Error("application unavailable"));
+    vi.spyOn(api, "listApplications").mockResolvedValue([source]);
+
+    await createApplicationRuntimeController(context).returnFromSceneEditor("dashboard");
+
+    expect(context.navigate).toHaveBeenCalledWith(expect.objectContaining({ view: "dashboard", applicationId: source.metadata.id, pageId: source.pages[0]!.id }));
+    expect(context.showError).not.toHaveBeenCalled();
+  });
+
+  it("keeps the editor open when the authoritative application cannot be restored", async () => {
     const { context } = setup();
     context.route = { ...context.route, applicationId: "other" };
-    createApplicationRuntimeController(context).returnFromSceneEditor("dashboard");
+    vi.spyOn(api, "getApplication").mockRejectedValue(new Error("application unavailable"));
+    vi.spyOn(api, "listApplications").mockRejectedValue(new Error("application catalog unavailable"));
+    await createApplicationRuntimeController(context).returnFromSceneEditor("dashboard");
     expect(context.navigate).not.toHaveBeenCalled();
     expect(context.showError).toHaveBeenCalledOnce();
   });

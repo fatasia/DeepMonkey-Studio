@@ -1,107 +1,195 @@
-.unified-assets-page { --asset-blue:#55b9e8;--asset-green:#4fc49a;--asset-accent-soft:rgba(70,177,162,.1);gap: 0; overflow: hidden; padding: 0; }
-.unified-assets-head { align-items: center; padding: 14px 18px; background:var(--surface-1); }
-.unified-assets-page .unified-assets-head h2 { color:var(--text-strong); }
-.unified-assets-head h2 { margin:0 0 3px;font-size: 20px; letter-spacing: -.02em; }
-.unified-assets-page .unified-assets-head p { max-width: 680px; color:var(--text); font-size: 12px; line-height: 1.6; }
-.unified-assets-scope { display: inline-flex; flex: 0 0 auto; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
-.unified-assets-scope button { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 12px; color: var(--muted); border: 0; border-radius: 6px; background: transparent; font-size: 12px; cursor: pointer; }
+/* =====================================================================
+ * 资源中心页面级视觉(素材中心)
+ * 对标:山海鲸市场页面氛围(近黑底 + 角部微光 + 细网格 + 满幅密度)与
+ * 帆软市场头部(标题 + 定位语 + 概览统计),压进工作台的克制高度。
+ * 纪律:颜色全部来自 base.css 既有令牌 + color-mix 派生,双主题同步成立;
+ * 选择器只作用于资源页 DOM(.unified-assets-* / .built-in-* /
+ * .scene-manager-page.asset-workspace-active,后者由 SceneManagerView 仅在
+ * 资源 tab 注入),不影响任何其他页面。
+ * ===================================================================== */
+
+/* —— 资源工作台全页氛围:仅资源 tab 生效,切到其他 tab 自动恢复系统背景。
+   微光与网格都走 background 多层(滚动时贴元素框,不产生额外滚动/遮挡);
+   深浅主题各自成立:浅色下即“淡灰底 + 淡网格 + 淡金微光”。 —— */
+.scene-manager-page.asset-workspace-active {
+  background:
+    radial-gradient(1100px 380px at 84% -140px, color-mix(in srgb, var(--accent) 8%, transparent), transparent 68%),
+    radial-gradient(760px 320px at 6% -120px, color-mix(in srgb, var(--info) 6%, transparent), transparent 70%),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--line) 30%, transparent) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 0 1px, transparent 1px 24px),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 38%, var(--bg-0)) 0%, var(--bg-0) 560px);
+}
+
+/* 页面容器:半透明面板浮在氛围底上,不再是一片平涂实色。 */
+.unified-assets-page { position: relative; gap: 0; overflow: hidden; padding: 0; border-color: var(--line); background: color-mix(in srgb, var(--surface-1) 84%, transparent); box-shadow: 0 18px 44px color-mix(in srgb, black 20%, transparent); }
+
+/* —— 页面头部区:标题 + 一句话副题 + 范围切换,高度克制(约 60px),不做营销 hero。 —— */
+.unified-assets-page .unified-assets-head { position: relative; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px 9px; border-bottom: 1px solid var(--line); background: transparent; }
+/* 头部顶缘的一道主色呼吸线:给“成品页”一条克制的品牌高光,宽度和透明度都压低。 */
+.unified-assets-page .unified-assets-head::after { content: ""; position: absolute; top: -1px; right: 0; left: 0; height: 1px; pointer-events: none; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 26%, transparent) 46%, transparent 88%); }
+.unified-assets-head-copy { display: grid; gap: 2px; min-width: 0; }
+.unified-assets-page .unified-assets-head h2 { margin: 0; color: var(--text-strong); font-size: 20px; letter-spacing: -.02em; }
+.unified-assets-head-subtitle { margin: 0; overflow: hidden; color: var(--text-muted); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.unified-assets-scope { display: inline-flex; flex: 0 0 auto; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface-2) 72%, transparent); }
+.unified-assets-scope button { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 12px; color: var(--text-muted); border: 0; border-radius: var(--radius-sm); background: transparent; font-size: 12px; cursor: pointer; transition: color 140ms cubic-bezier(0.16, 1, 0.3, 1), background 140ms; }
+.unified-assets-scope button:hover { color: var(--text-strong); background: var(--surface-2); }
 .unified-assets-scope button.active { color: var(--accent-hover); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.unified-assets-kinds { display:flex;gap:4px;padding:10px 18px 0;border-top:1px solid var(--line);background:var(--surface-1);overflow-x:auto; }
-.unified-assets-kinds button { display:inline-flex;min-height:34px;flex:0 0 auto;align-items:center;gap:6px;padding:0 11px;color:var(--muted);border:1px solid transparent;border-radius:7px;background:transparent;font-size:12px;cursor:pointer; }
-.unified-assets-kinds button:hover { color:var(--text);background:var(--surface-2); }
-.unified-assets-kinds button.active { color:var(--accent-hover);border-color:var(--line-strong);background:var(--accent-soft); }
-.unified-assets-browser { display: grid; gap: 12px; padding: 14px 18px 18px; }
-.unified-assets-dimensions { display:flex;gap:5px;overflow-x:auto; }
-.unified-assets-dimensions button { display:inline-flex;min-height:34px;flex:0 0 auto;align-items:center;gap:6px;padding:0 12px;color:var(--muted);border:1px solid var(--line);border-radius:7px;background:var(--surface-2);font-size:12px;cursor:pointer; }
-.unified-assets-dimensions button.active { color:var(--accent-hover);border-color:var(--accent);background:var(--accent-soft); }
-.unified-assets-controls { display: grid; grid-template-columns: minmax(260px,1fr) 190px auto; gap: 9px; }
+
+/* —— 四类资源概览统计 tab(模型/二维/模板/预制体,真实计数 tabular-nums):
+   对标山海鲸分类树的“图标 + 计数徽章”,但保持工作台控件的体量。 —— */
+.unified-assets-kinds { display: flex; gap: 8px; padding: 7px 16px 11px; background: transparent; overflow-x: auto; scrollbar-width: thin; }
+.unified-assets-kinds button { display: inline-flex; min-height: 38px; flex: 0 0 auto; align-items: center; gap: 8px; padding: 0 13px 0 11px; color: var(--text-muted); border: 1px solid var(--line); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface-2) 60%, transparent); font-size: 12px; cursor: pointer; transition: color 140ms cubic-bezier(0.16, 1, 0.3, 1), border-color 140ms, background 140ms, box-shadow 140ms; }
+.unified-assets-kinds button svg { color: var(--text-faint); transition: color 140ms; }
+.unified-assets-kinds button:hover { color: var(--text-strong); border-color: var(--line-strong); background: var(--surface-2); }
+.unified-assets-kinds button:hover svg { color: var(--text); }
+.unified-assets-kinds button.active { color: var(--accent-hover); border-color: color-mix(in srgb, var(--accent) 36%, transparent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); box-shadow: 0 1px 10px color-mix(in srgb, var(--accent) 12%, transparent); }
+.unified-assets-kinds button.active svg { color: inherit; }
+.unified-assets-kind-label { white-space: nowrap; }
+.unified-assets-kind-count { color: var(--text-strong); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.unified-assets-kinds button.active .unified-assets-kind-count { color: inherit; }
+
+.unified-assets-browser { display: grid; gap: 12px; padding: 14px 16px 20px; }
+.unified-assets-dimensions { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: thin; }
+.unified-assets-dimensions button { display: inline-flex; min-height: 34px; flex: 0 0 auto; align-items: center; gap: 6px; padding: 0 12px; color: var(--text-muted); border: 1px solid var(--line); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface-2) 60%, transparent); font-size: 12px; cursor: pointer; transition: color 140ms, border-color 140ms, background 140ms; }
+.unified-assets-dimensions button:hover { color: var(--text-strong); border-color: var(--line-strong); background: var(--surface-2); }
+.unified-assets-dimensions button.active { color: var(--accent-hover); border-color: color-mix(in srgb, var(--accent) 44%, transparent); background: var(--accent-soft); }
+.unified-assets-controls { display: grid; grid-template-columns: minmax(260px, 1fr) 190px auto; gap: 8px; }
 .unified-assets-controls select,
 .unified-assets-controls > button,
-.unified-assets-search { min-height: 36px; color: var(--text); border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
-.unified-assets-search { display: flex; align-items: center; gap: 8px; padding: 0 9px 0 11px; color: var(--muted); }
+.unified-assets-search { min-height: 36px; color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface-2) 72%, transparent); transition: border-color 140ms, background 140ms; }
+.unified-assets-controls select:hover,
+.unified-assets-controls > button:hover { border-color: var(--line-strong); }
+.unified-assets-search { display: flex; align-items: center; gap: 8px; padding: 0 9px 0 11px; color: var(--text-muted); }
+.unified-assets-search:focus-within { border-color: color-mix(in srgb, var(--accent) 52%, transparent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .unified-assets-search input { width: 100%; min-width: 0; min-height: 24px; color: var(--text-strong); border: 0; outline: 0; background: transparent; font-size: 12px; }
-.unified-assets-search-clear { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; color: var(--text); border: 0; border-radius: 4px; background: transparent; cursor: pointer; }
+.unified-assets-search-clear { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; color: var(--text); border: 0; border-radius: var(--radius-xs); background: transparent; cursor: pointer; }
 .unified-assets-search-clear:hover { color: var(--accent-hover); background: var(--surface-3); }
 .unified-assets-controls select { padding: 0 10px; font-size: 12px; outline: 0; }
-.unified-assets-controls > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 13px; color: var(--muted); font-size: 12px; cursor: pointer; }
-.unified-assets-controls > button.active { color: var(--accent-hover); border-color: var(--accent); background: var(--accent-soft); }
-.unified-assets-summary { display: flex; min-width:0; align-items: center; gap: 10px; color: var(--text); font-size: 12px; }
-.unified-assets-summary > span:last-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.unified-assets-summary strong { color: var(--text-strong); font-size: 13px; font-variant-numeric: tabular-nums; }
-.unified-assets-summary i { width: 1px; height: 13px; background: var(--line); }
-.unified-assets-action-error { display:flex;min-height:40px;align-items:center;justify-content:space-between;gap:12px;padding:7px 9px;color:#cfaaa6;border:1px solid rgba(193,103,96,.34);border-radius:7px;background:rgba(86,37,34,.18);font-size:12px; }
-.unified-assets-action-error span { display:flex;min-width:0;align-items:center;gap:8px;line-height:1.45; }.unified-assets-action-error strong { flex:0 0 auto;color:var(--danger); }
-.unified-assets-action-error button { min-height:32px;padding:0 9px;color:var(--danger);border:1px solid rgba(193,103,96,.32);border-radius:5px;background:var(--surface-1);font-size:12px;cursor:pointer; }
-.unified-assets-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(210px,1fr)); gap: 12px; transition: opacity .16s ease; }
+.unified-assets-controls > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 13px; color: var(--text-muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.unified-assets-controls > button.active { color: var(--accent-hover); border-color: color-mix(in srgb, var(--accent) 44%, transparent); background: var(--accent-soft); }
+
+/* 摘要行:结果计数一行的排版纪律(计数 tabular-nums,弱化说明文字)。 */
+.unified-assets-summary { display: flex; min-width: 0; min-height: 24px; align-items: center; gap: 8px; padding: 0 2px; color: var(--text-muted); font-size: 12px; }
+.unified-assets-summary > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unified-assets-summary strong { color: var(--text-strong); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.unified-assets-summary i { width: 1px; height: 12px; background: var(--line); }
+
+/* 操作反馈横幅:语义色全部派生自 --danger,深浅主题自动成立。 */
+.unified-assets-action-error { display: flex; min-height: 40px; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; color: color-mix(in srgb, var(--danger) 70%, var(--text-strong)); border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent); border-radius: var(--radius-md); background: color-mix(in srgb, var(--danger) 9%, transparent); font-size: 12px; }
+.unified-assets-action-error span { display: flex; min-width: 0; align-items: center; gap: 8px; line-height: 1.45; }
+.unified-assets-action-error strong { flex: 0 0 auto; color: var(--danger); }
+.unified-assets-action-error button { min-height: 32px; padding: 0 10px; color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--danger) 7%, var(--surface-1)); font-size: 12px; cursor: pointer; }
+.unified-assets-action-error button:hover { border-color: color-mix(in srgb, var(--danger) 52%, transparent); }
+
+/* —— 卡片墙:8px 栅格节奏、卡片默认微阴影(墙面不再“平”),hover = 主色描边 + 上浮 + 阴影。 —— */
+.unified-assets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(216px, 1fr)); gap: 12px; transition: opacity .16s ease; }
 .unified-assets-grid.is-refreshing { opacity: .55; pointer-events: none; }
-.unified-asset-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-1); transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease; }
-.unified-asset-card:hover { z-index: 1; border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,.28),0 0 0 1px rgba(85,185,232,.08); }
-.unified-asset-preview { position: relative; display:grid; aspect-ratio: 4 / 3; overflow: hidden; padding:10px; place-items:center; background:radial-gradient(circle at 48% 38%,#24292c,#181d20 55%,#101416 100%); }
+.unified-asset-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: 0 1px 2px color-mix(in srgb, black 16%, transparent); transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease; }
+.unified-asset-card:hover { z-index: 1; /* z-index-audit: keep(页面内容带:卡片悬停抬升局部) */ border-color: color-mix(in srgb, var(--accent) 32%, transparent); transform: translateY(-2px); box-shadow: 0 14px 32px color-mix(in srgb, black 30%, transparent), 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent); }
+.unified-asset-preview { position: relative; display: grid; aspect-ratio: 4 / 3; overflow: hidden; padding: 10px; place-items: center; background: var(--lib-tile-bg); }
 /* 图片固有比例不能撑大自动轨道；内置组件预览保留其独立布局。 */
 .unified-asset-preview:not(.built-in-asset-preview) { grid-template: minmax(0,1fr) / minmax(0,1fr); }
-.unified-asset-preview::after { position: absolute; inset: 0; border-bottom: 1px solid rgba(255,255,255,.04); background: linear-gradient(180deg,transparent 65%,rgba(9,13,15,.48)); content: ""; pointer-events: none; }
+.unified-asset-preview::after { position: absolute; inset: 0; border-bottom: 1px solid color-mix(in srgb, var(--text-strong) 4%, transparent); background: linear-gradient(180deg, transparent 65%, var(--lib-tile-veil)); content: ""; pointer-events: none; }
 .unified-asset-preview img { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; transition: transform .24s ease; }
 .asset-thumbnail-image { opacity:0; transition:opacity .12s ease,transform .24s ease; }
 .asset-thumbnail-image.is-ready { opacity:1; }
-.unified-asset-card.dimension-environment .unified-asset-preview { padding:0;background:#11191d; }
+.unified-asset-card.dimension-environment .unified-asset-preview { padding:0;background:var(--surface-2); }
 .unified-asset-card.dimension-environment .unified-asset-preview img { object-fit:cover;filter:none; }
 .unified-asset-card:hover .unified-asset-preview img { transform: scale(1.025); }
-.asset-thumbnail-fallback { display:grid;place-items:center;align-content:center;gap:7px;color:#7b898f;text-align:center; }
+.asset-thumbnail-fallback { display:grid;place-items:center;align-content:center;gap:7px;color:var(--text-faint);text-align:center; }
 .asset-thumbnail-fallback span { font-size:11px; }
 .quality-tier,
-.asset-animation { position: absolute; z-index: 1; top: 8px; display: inline-flex; min-height: 22px; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid rgba(255,255,255,.12); border-radius: 5px; backdrop-filter: blur(8px); font-size: 12px; }
+.asset-animation { position: absolute; z-index: 1; /* z-index-audit: keep(页面内容带:动画角标局部) */ top: 8px; display: inline-flex; min-height: 22px; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid rgba(255,255,255,.12); border-radius: var(--radius-xs); backdrop-filter: blur(8px); font-size: 12px; }
 .quality-tier { left: 8px; color: #b9d3c6; background: #142a22; }
 .quality-tier.standard { color: #c6d5dc; background: #18262d; }
 .quality-tier.heavy { color: #efd28a; background: #322812; }
 .asset-animation { right: 8px; color: #d6cafa; background: #251b3e; }
-.asset-publication { position:absolute;z-index:2;right:8px;bottom:8px;padding:3px 6px;color:#adcabb;border:1px solid rgba(102,170,135,.22);border-radius:5px;background:#152e23;font-size:12px; }
+.asset-publication { position:absolute;z-index:2; /* z-index-audit: keep(页面内容带:发布角标局部) */right:8px;bottom:8px;padding:3px 6px;color:#adcabb;border:1px solid rgba(102,170,135,.22);border-radius:var(--radius-xs);background:#152e23;font-size:12px; }
 .asset-publication.review-required { color:#e1c378;border-color:rgba(212,168,79,.24);background:rgba(52,42,19,.78); }
 .asset-publication.deprecated { color:#bf9693;border-color:rgba(180,94,86,.24);background:rgba(53,27,27,.78); }
-.unified-asset-copy { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 10px 10px 9px; }
+.unified-asset-copy { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 10px 12px 10px; }
 .unified-asset-copy strong,
 .unified-asset-copy span,
 .unified-asset-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.unified-asset-copy strong { color: var(--text-strong); font-size: 13px; font-weight: 650; }
-.unified-asset-copy span { color: var(--muted); font-size: 12px; }
-.unified-asset-copy small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.unified-asset-copy strong { color: var(--text-strong); font-size: 13px; font-weight: 600; }
+.unified-asset-copy span { color: var(--text-muted); font-size: 11.5px; }
+.unified-asset-copy small { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .asset-import,
-.asset-imported { display: flex; width: calc(100% - 20px); min-height: 34px; align-items: center; justify-content: center; gap: 6px; margin: 0 10px 10px; border: 1px solid var(--line-strong); border-radius: 7px; font-size: 12px; }
-.asset-import { color: var(--accent-hover); background: var(--accent-soft); cursor: pointer; }
+.asset-imported { display: flex; width: calc(100% - 24px); min-height: 34px; align-items: center; justify-content: center; gap: 6px; margin: 0 12px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-size: 12px; }
+.asset-import { color: var(--accent-hover); background: var(--accent-soft); cursor: pointer; transition: border-color 140ms, background 140ms; }
 .asset-import:hover { border-color: var(--accent); background: var(--accent-soft); }
 .asset-imported { color: var(--success); border-color: var(--line); background: var(--surface-2); }
-.asset-attribution { margin:0 10px 10px; min-width:0; color:var(--text); font-size:12px; line-height:1.6; }
+.unified-asset-actions { container-type: inline-size; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; min-width:0; margin:0 12px 12px; transition: opacity .16s ease; }
+/* 对标素材库卡片“封面干净、hover 才出现操作”;键盘焦点(focus-within)下同样保持可见。 */
+.unified-asset-card:not(:hover):not(:focus-within) .unified-asset-actions { opacity: 0; pointer-events: none; }
+.unified-asset-actions > button,
+.unified-asset-actions > .resource-link-action { min-width:0; width:100%; margin:0; }
+.unified-asset-actions > button { min-height:34px; padding:0 4px; overflow:hidden; }
+.unified-asset-actions > button svg { flex:0 0 auto; }
+.unified-asset-actions > .resource-link-action { display:block; }
+.unified-asset-actions > .resource-link-action > button { display:flex; width:100%; min-width:0; min-height:34px; align-items:center; justify-content:center; gap:5px; padding:0 4px; overflow:hidden; }
+.unified-asset-actions > .resource-link-action > button svg { flex:0 0 auto; }
+.unified-asset-actions .asset-action-label { display:none; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.unified-asset-actions > button:disabled { cursor:not-allowed; opacity:.52; }
+.built-in-asset-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@container (min-width: 330px) {
+  .unified-asset-actions > button,
+  .unified-asset-actions > .resource-link-action > button { padding-inline:6px; }
+  .unified-asset-actions .asset-action-label { display:inline; }
+}
+.asset-attribution { margin:0 12px 12px; min-width:0; color:var(--text); font-size:12px; line-height:1.6; }
 .asset-attribution summary { width:fit-content; min-height:32px; cursor:pointer; color:var(--text-strong); }
 .asset-attribution summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
 .asset-attribution p { margin:4px 0 8px; overflow-wrap:anywhere; }
 .asset-attribution nav { display:flex; flex-wrap:wrap; gap:12px; }
 .asset-attribution a { display:inline-flex; align-items:center; min-height:32px; color:var(--accent-hover); text-decoration:underline; }
-.asset-card-skeleton { aspect-ratio: 1.2; border: 1px solid #293337; border-radius: 10px; background: linear-gradient(100deg,#151c1f 28%,#20292d 40%,#151c1f 52%); background-size: 220% 100%; animation: asset-skeleton 1.25s ease-in-out infinite; }
-.unified-assets-state { display: grid; min-height: 280px; place-items: center; align-content: center; gap: 8px; color: var(--muted); text-align: center; }
-.unified-assets-state strong { color: var(--text); font-size: 12px; }
-.unified-assets-state span { max-width: 520px; font-size: 12px; line-height: 1.6; }
+.asset-card-skeleton { aspect-ratio: 1.2; border: 1px solid var(--line); border-radius: var(--radius-lg); background: linear-gradient(100deg,var(--surface-1) 28%,var(--surface-3) 40%,var(--surface-1) 52%); background-size: 220% 100%; animation: asset-skeleton 1.25s ease-in-out infinite; }
+
+/* —— 空态:设计出来的空态(构图 + 引导动作)——细网格底纹 + 主色图标底座 + 主行动按钮。
+   同一规则服务模型库与内置库两处空态,不改 JSX 结构即可完成升级。 —— */
+.unified-assets-state { position: relative; display: grid; min-height: 300px; place-items: center; align-content: center; gap: 8px; padding: 36px 24px 32px; overflow: hidden; color: var(--text-muted); border: 1px dashed var(--line); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--surface-1) 42%, transparent); text-align: center; }
+.unified-assets-state::before { content: ""; position: absolute; inset: 0; pointer-events: none; background:
+    linear-gradient(color-mix(in srgb, var(--line-subtle) 70%, transparent) 1px, transparent 1px) 0 0 / 20px 20px,
+    linear-gradient(90deg, color-mix(in srgb, var(--line-subtle) 70%, transparent) 1px, transparent 1px) 0 0 / 20px 20px;
+  mask-image: radial-gradient(360px 210px at 50% 34%, black 18%, transparent 78%);
+  -webkit-mask-image: radial-gradient(360px 210px at 50% 34%, black 18%, transparent 78%); }
+.unified-assets-state > svg { position: relative; width: 52px; height: 52px; padding: 13px; color: var(--accent-hover); border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--accent) 9%, var(--surface-2)); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 4%, transparent); }
+.unified-assets-state strong { position: relative; margin-top: 4px; color: var(--text-strong); font-size: 13px; }
+.unified-assets-state span { position: relative; max-width: 460px; font-size: 12px; line-height: 1.6; }
+.unified-assets-state .button { position: relative; min-height: 34px; margin-top: 6px; }
+.unified-assets-state.error { border-color: color-mix(in srgb, var(--danger) 28%, transparent); background: color-mix(in srgb, var(--danger) 5%, transparent); }
 .unified-assets-state.error strong { color: var(--danger); }
-.unified-assets-pagination { display: flex; align-items: center; justify-content: center; gap: 13px; padding-top: 3px; }
-.unified-assets-pagination button { display: inline-flex; min-height: 34px; align-items: center; gap: 5px; padding: 0 10px; color: var(--text); border: 1px solid var(--line); border-radius: 7px; background: #151c1f; font-size: 12px; cursor: pointer; }
+
+/* 分页行:与卡片墙同节奏的控件行(8px 间距、hover 反馈、页码 tabular-nums)。 */
+.unified-assets-pagination { display: flex; align-items: center; justify-content: center; gap: 8px; padding-top: 6px; }
+.unified-assets-pagination button { display: inline-flex; min-height: 34px; align-items: center; gap: 5px; padding: 0 10px; color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface-2) 72%, transparent); font-size: 12px; cursor: pointer; transition: color 120ms, border-color 120ms, background 120ms; }
+.unified-assets-pagination button:hover:not(:disabled) { color: var(--text-strong); border-color: var(--line-strong); background: var(--surface-3); }
 .unified-assets-pagination button:disabled { opacity: .35; cursor: default; }
-.unified-assets-pagination span { min-width: 56px; color: var(--muted); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
-.project-asset-inventory { display: grid; gap: 12px; padding: 14px 18px 18px; }
+.unified-assets-pagination span { min-width: 72px; color: var(--text); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
+.project-asset-inventory { display: grid; gap: 12px; padding: 14px 16px 20px; }
 .built-in-assets-controls { grid-template-columns:minmax(260px,640px) auto; align-items:center; }
 .built-in-editor-entry { white-space:nowrap; }
 .built-in-asset-preview { display:grid;place-items:center;padding:12px; }
-.built-in-asset-kind { position:absolute;z-index:2;top:8px;left:8px;min-height:22px;padding:0 6px;color:#b9e8f5;border:1px solid rgba(85,185,232,.24);border-radius:5px;background:rgba(18,39,47,.82);font-size:10px;line-height:22px;backdrop-filter:blur(8px); }
+.built-in-asset-kind { position:absolute;z-index:2; /* z-index-audit: keep(页面内容带:内置类型角标局部) */top:8px;left:8px;min-height:22px;padding:0 6px;color:#b9e8f5;border:1px solid rgba(85,185,232,.24);border-radius:var(--radius-xs);background:rgba(18,39,47,.82);font-size:10px;line-height:22px;backdrop-filter:blur(8px); }
 .built-in-template .built-in-asset-kind { right:8px;left:auto; }
 .built-in-template .template-preview-heading span { max-width:62%; }
-.built-in-asset-preview .dashboard-library-preview { width:100%;height:100%;min-height:112px;border:0;border-radius:6px; }
-.dashboard-template-card-preview { --template-accent:#d4a84f;--template-surface:#172126;display:grid;width:100%;height:100%;min-height:126px;overflow:hidden;padding:9px;gap:7px;border:1px solid color-mix(in srgb,var(--template-accent) 42%,#334047);border-radius:7px;background:linear-gradient(145deg,color-mix(in srgb,var(--template-surface) 86%,#26343a),var(--template-surface));grid-template-rows:auto 30px minmax(0,1fr); }
+.built-in-asset-preview .dashboard-library-preview { width:100%;height:100%;min-height:112px;border:0;border-radius:var(--radius-sm); }
+.dashboard-template-card-preview { --template-accent:#d4a84f;--template-surface:#172126;display:grid;width:100%;height:100%;min-height:126px;overflow:hidden;padding:9px;gap:7px;border:1px solid color-mix(in srgb,var(--template-accent) 42%,#334047);border-radius:var(--radius-sm);background:linear-gradient(145deg,color-mix(in srgb,var(--template-surface) 86%,#26343a),var(--template-surface));grid-template-rows:auto 30px minmax(0,1fr); }
 .template-preview-heading { display:flex;min-width:0;align-items:center;gap:6px;color:color-mix(in srgb,var(--template-accent) 82%,#fff);font-size:10px;font-weight:650; }
 .template-preview-heading span { max-width:72%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }.template-preview-heading i { height:1px;flex:1;background:linear-gradient(90deg,var(--template-accent),transparent); }
 .template-preview-metrics { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px; }
 .template-preview-metrics>span { display:grid;min-width:0;padding:3px 4px;border:1px solid color-mix(in srgb,var(--template-accent) 24%,#34434a);border-radius:3px;background:rgba(6,11,13,.26); }
 .template-preview-metrics small { overflow:hidden;color:#91a0a6;font-size:10px;line-height:1;text-overflow:ellipsis;white-space:nowrap; }.template-preview-metrics b { color:#dce6e8;font-size:10px;font-weight:620;line-height:1.05;font-variant-numeric:tabular-nums; }
 .template-preview-charts { display:grid;min-height:0;gap:5px; }.template-preview-charts .dashboard-library-preview { width:100%;height:100%;min-height:0;border-color:color-mix(in srgb,var(--template-accent) 20%,#33434a);background:rgba(7,13,15,.34); }
-.built-in-prefab-preview { display:grid;width:100%;min-height:112px;place-items:center;align-content:center;gap:9px;color:#8fb4aa;border:1px solid #33434a;border-radius:7px;background:radial-gradient(circle at 50% 35%,#26373b,#131c1f 72%); }
+.built-in-prefab-preview { display:grid;width:100%;min-height:112px;place-items:center;align-content:center;gap:9px;color:#8fb4aa;border:1px solid #33434a;border-radius:var(--radius-sm);background:radial-gradient(circle at 50% 35%,#26373b,#131c1f 72%); }
 .built-in-prefab-preview span { color:#71868d;font-size:10px;letter-spacing:.12em; }
 .built-in-prefab-preview.prefab-robot-arm { color:#63cbb1; }.built-in-prefab-preview.prefab-conveyor,.built-in-prefab-preview.prefab-agv { color:#69bfe2; }
+/* 预制体卡片升级为程序化 3D 小样:缩略图组件撑满预览区,ROUTE/RIG/PARAM 退居右下角徽章。 */
+.built-in-prefab-preview { position:relative;overflow:hidden;padding:0; }
+.built-in-prefab-preview .scene-prefab-thumbnail { display:grid;place-items:center;width:100%;height:100%;min-height:112px;border:0;border-radius:var(--radius-sm);background:#101a1f;box-shadow:none; }
+.built-in-prefab-preview .scene-prefab-thumbnail::after, .built-in-prefab-preview .scene-prefab-thumbnail i, .built-in-prefab-preview .scene-prefab-thumbnail > svg { display:none; }
+.built-in-prefab-preview .scene-prefab-thumbnail > img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover; }
+.built-in-prefab-preview .prefab-preview-badge { position:absolute;z-index:2; /* z-index-audit: keep(页面内容带:预览角标局部) */right:8px;bottom:8px;padding:2px 7px;color:#9fd8cc;border:1px solid rgba(102,200,180,.28);border-radius:var(--radius-xs);background:rgba(11,17,20,.68);font-size:10px;font-weight:600;letter-spacing:.1em;backdrop-filter:blur(6px); }
 
 /* “资源”工作区首屏保留完整卡片和主操作，同时不移除项目与交付流程。 */
 .asset-workspace-active .manager-content { width:min(1360px,calc(100% - 24px));padding-top:12px; }
@@ -115,11 +203,11 @@
 .asset-workspace-active .delivery-step-grid>button>span { gap:0; }
 .asset-workspace-active .delivery-step-grid>button small { display:none; }
 .asset-workspace-active .asset-library-page { gap:8px; }
-.asset-workspace-active .unified-assets-head { padding:10px 14px; }
-.asset-workspace-active .unified-assets-head h2 { margin:1px 0;font-size:17px; }
-.asset-workspace-active .unified-assets-head p { line-height:1.4; }
-.asset-workspace-active .unified-assets-kinds { padding:6px 12px 0; }
-.asset-workspace-active .unified-assets-browser { grid-template-columns:max-content minmax(0,1fr);gap:8px;padding:10px 12px 14px; }
+.asset-workspace-active .unified-assets-head { padding:10px 16px 8px; }
+.asset-workspace-active .unified-assets-head h2 { font-size:18px; }
+.asset-workspace-active .unified-assets-head-subtitle { line-height:1.4; }
+.asset-workspace-active .unified-assets-kinds { padding:6px 16px 10px; }
+.asset-workspace-active .unified-assets-browser { grid-template-columns:max-content minmax(0,1fr);gap:8px;padding:10px 16px 16px; }
 .asset-workspace-active .unified-assets-browser>.unified-assets-summary,
 .asset-workspace-active .unified-assets-browser>.unified-assets-action-error,
 .asset-workspace-active .unified-assets-browser>.unified-assets-grid,
@@ -129,14 +217,26 @@
 .asset-workspace-active .built-in-assets-browser>.built-in-assets-controls { width:min(820px,100%);grid-template-columns:minmax(260px,1fr) auto;grid-column:1 / -1; }
 
 /* 项目资源列表沿用统一字号与点击目标，低频动作保留为带名称的图标按钮。 */
-.unified-assets-page .model-library-toolbar { flex-wrap:wrap; padding:12px 18px; }
+.unified-assets-page .model-library-toolbar { flex-wrap:wrap; padding:12px 16px; }
 .unified-assets-page .model-library-toolbar .button { font-size:12px; }
 .unified-assets-page .resource-refresh-control { margin-left:auto; }
-.unified-assets-page .asset-library-filter { padding-inline:18px; }
+.unified-assets-page .asset-library-filter { padding-inline:16px; }
 .unified-assets-page .asset-library-filter button { min-height:34px; font-size:12px; }
 .unified-assets-page .asset-library-filter label { min-height:36px; }
 .unified-assets-page .asset-library-filter input { height:34px; font-size:12px; }
 .unified-assets-page .model-library-item { min-height:72px; }
+.project-asset-inventory .model-library-item { grid-template-columns:44px minmax(0,1fr) auto auto; border-color:var(--line); }
+.project-asset-inventory .model-asset-actions { display:flex; align-items:center; gap:6px; flex-wrap:nowrap; }
+.project-asset-inventory .model-asset-actions > button { flex-shrink:0; white-space:nowrap; }
+.project-asset-inventory .asset-library-filter label { color:var(--text-muted); border-color:var(--line-strong); background:var(--surface-1); }
+.project-asset-inventory .asset-library-filter input { color:var(--text-strong); }
+.project-asset-inventory .model-library-info :is(span,small) { color:var(--text-muted); }
+.project-asset-inventory .model-status-ready { color:var(--success); background:color-mix(in srgb,var(--success) 12%,transparent); }
+@media(max-width:900px) {
+  .project-asset-inventory .model-library-item { grid-template-columns:44px minmax(0,1fr) auto; }
+  .project-asset-inventory .model-library-state { grid-column:2; grid-row:2; }
+  .project-asset-inventory .model-asset-actions { grid-column:3; grid-row:1 / 3; }
+}
 .unified-assets-page .model-library-format { font-size:11px; }
 .unified-assets-page .model-library-info strong { font-size:13px; }
 .unified-assets-page .model-library-info span,
@@ -149,10 +249,10 @@
   .asset-workspace-active .delivery-progress { display:none; }
   .asset-workspace-active .delivery-blockers { margin-bottom:4px; }
   .asset-workspace-active .unified-assets-head { padding:8px 12px; }
-  .asset-workspace-active .unified-assets-head p { display:none; }
-  .asset-workspace-active .unified-assets-kinds { padding-top:4px; }
+  .asset-workspace-active .unified-assets-head-subtitle { display:none; }
+  .asset-workspace-active .unified-assets-kinds { padding:6px 12px 10px; }
   .asset-workspace-active .unified-assets-kinds button { min-height:34px; }
-  .asset-workspace-active .unified-assets-browser { padding-top:7px; }
+  .asset-workspace-active .unified-assets-browser { padding-top:8px; }
   .asset-workspace-active .unified-asset-preview { aspect-ratio:16 / 9; }
   .asset-workspace-active .unified-asset-copy { gap:2px;padding:7px 10px; }
   .asset-workspace-active .asset-import,
@@ -160,10 +260,23 @@
 }
 
 @media (max-width: 780px) {
-  .unified-assets-head { align-items: stretch; flex-direction: column; gap: 13px; }
+  .unified-assets-page .unified-assets-head { align-items: stretch; flex-direction: column; gap: 12px; }
   .unified-assets-scope { align-self: flex-start; }
   .unified-assets-controls { grid-template-columns: 1fr 1fr; }
   .unified-assets-search { grid-column: 1 / -1; }
-  .unified-assets-grid { grid-template-columns: repeat(auto-fill,minmax(170px,1fr)); }
+  .unified-assets-grid { grid-template-columns: repeat(auto-fill,minmax(168px,1fr)); }
   .asset-workspace-active .unified-assets-browser { grid-template-columns:1fr; }
 }
+
+/* —— 资源中心分类行(对标山海鲸分类树计数徽章 + 帆软大类行):
+   横向滚动 chips + 计数,active 胶囊带主色柔光;双主题走令牌派生。 —— */
+.built-in-assets-browser .built-in-category-row { display: flex; gap: 8px; align-items: center; overflow-x: auto; padding: 2px 2px 10px; scrollbar-width: thin; scroll-snap-type: x proximity; }
+.built-in-assets-browser .built-in-category-row button { display: inline-flex; flex: none; align-items: center; gap: 6px; padding: 6px 12px; color: var(--text); border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--surface-2) 55%, transparent); font-size: 12px; cursor: pointer; scroll-snap-align: start; transition: color 120ms cubic-bezier(0.16, 1, 0.3, 1), border-color 120ms, background 120ms, box-shadow 120ms; }
+.built-in-assets-browser .built-in-category-row button:hover { color: var(--text-strong); border-color: var(--line-strong); background: var(--surface-2); }
+.built-in-assets-browser .built-in-category-row button.active { color: var(--accent-hover); border-color: color-mix(in srgb, var(--accent) 42%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: 0 1px 8px color-mix(in srgb, var(--accent) 14%, transparent); }
+.built-in-assets-browser .built-in-category-row button small { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.built-in-assets-browser .built-in-category-row button.active small { color: inherit; }
+.built-in-assets-browser .built-in-tier-filter { display: inline-flex; flex: none; gap: 4px; margin-left: auto; padding-left: 8px; border-left: 1px solid var(--line-subtle); }
+.built-in-assets-browser .built-in-tier-filter button { display: inline-flex; padding: 6px 10px; font-size: 11.5px; color: var(--text-muted); border: 0; border-radius: var(--radius-sm); background: transparent; cursor: pointer; transition: color 120ms, background 120ms; }
+.built-in-assets-browser .built-in-tier-filter button:hover { color: var(--text-strong); background: var(--surface-2); }
+.built-in-assets-browser .built-in-tier-filter button.active { color: var(--accent-hover); background: color-mix(in srgb, var(--accent) 12%, transparent); }

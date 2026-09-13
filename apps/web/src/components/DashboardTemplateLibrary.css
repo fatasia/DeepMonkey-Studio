@@ -8,10 +8,70 @@
 .dashboard-template-search input::placeholder { color: var(--text-muted); opacity: 1; }
 .dashboard-template-library-panel :is(button, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .dashboard-template-grid { grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); }
-.dashboard-template-grid article { background: var(--surface-2); border-color: var(--line); }
+/* 285 卡大库的渲染预算:屏外卡片跳过内容布局与绘制(content-visibility),滚动时按需渲染;
+   contain-intrinsic-size 记忆实高,避免滚动条跳动。 */
+.dashboard-template-grid article, .dashboard-template-row > article { content-visibility: auto; contain-intrinsic-size: auto 320px; }
+.dashboard-template-grid article { background: var(--surface-2); border-color: var(--line); overflow: hidden; transition: transform .18s cubic-bezier(.16, 1, .3, 1), border-color .18s cubic-bezier(.16, 1, .3, 1), box-shadow .18s cubic-bezier(.16, 1, .3, 1); }
+.dashboard-template-grid article:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-hover), var(--shadow-float); transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) { .dashboard-template-grid article { transition: none; } .dashboard-template-grid article:hover { transform: none; } }
 .dashboard-template-grid article small { color: var(--text-muted); font-size: 11px; letter-spacing: normal; }
-.dashboard-template-grid article strong { color: var(--text-strong); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 面板为三行 grid(header/筛选/内容);内容分支统一收进滚动容器,保持行模板不被打乱 */
+.dashboard-template-body { min-height: 0; overflow: auto; padding-bottom: 14px; }
+/* 主题套件入口横排:套件色渐变卡 + 量化徽章(对标帆软 visuals 套件层的信息架构,配色原创) */
+.dashboard-template-suites { display: flex; gap: 10px; overflow-x: auto; padding: 12px 16px 10px; scrollbar-width: thin; }
+.dashboard-template-suite {
+  flex: 0 0 208px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--text);
+  background:
+    radial-gradient(120% 130% at 88% -18%, color-mix(in srgb, var(--suite-accent) 30%, transparent), transparent 58%),
+    linear-gradient(158deg, color-mix(in srgb, var(--suite-surface) 70%, #04080b), var(--suite-surface));
+  border: 1px solid color-mix(in srgb, var(--suite-accent) 30%, var(--line));
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color .18s cubic-bezier(.16, 1, .3, 1), transform .18s cubic-bezier(.16, 1, .3, 1);
+}
+.dashboard-template-suite:hover { border-color: color-mix(in srgb, var(--suite-accent) 62%, transparent); transform: translateY(-1px); }
+.dashboard-template-suite.active { border-color: var(--suite-accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--suite-accent) 55%, transparent); }
+.dashboard-template-suite strong { color: #eef4f5; font-size: 14px; font-weight: 600; }
+.dashboard-template-suite span { color: #b7c4c9; opacity: .88; font-size: 11px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dashboard-template-suite em { margin-top: 2px; color: color-mix(in srgb, var(--suite-accent) 72%, #fff); font-size: 10px; font-style: normal; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.dashboard-template-suite-active { display: flex; align-items: center; gap: 12px; margin: 0; padding: 2px 16px 8px; color: var(--text-muted); font-size: 12px; }
+.dashboard-template-suite-active strong { color: var(--text-strong); }
+.dashboard-template-suite-active button { padding: 2px 9px; color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; font-size: 11px; }
+.dashboard-template-suite-active button:hover { color: var(--text-strong); border-color: var(--line-strong); }
+/* 搜索 + 行业分组 + 类型三控件同行(覆盖 dashboard-workspace.css 的两列模板) */
+.dashboard-template-filters { grid-template-columns: minmax(0, 1fr) 168px 140px; }
+/* 推荐分区:山海鲸式横排滚动行;flex 行高由最高卡片决定,预览定高避免塌陷。 */
+.dashboard-template-section { min-width: 0; padding-inline: 16px; }
+.dashboard-template-section + .dashboard-template-section { margin-top: 18px; }
+.dashboard-template-section-head { display: flex; align-items: baseline; gap: 10px; padding: 2px 2px 10px; }
+.dashboard-template-section > .dashboard-template-grid { padding-right: 0; padding-left: 0; }
+.dashboard-template-section-head strong { color: var(--text-strong); font-size: 14px; font-weight: 600; }
+.dashboard-template-section-head span { color: var(--text-faint); font-size: 11px; }
+.dashboard-template-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.dashboard-template-row > article { flex: 0 0 250px; width: 250px; display: flex; flex-direction: column; }
+.dashboard-template-row > article > button.dashboard-template-favorite { position: absolute; z-index: 2; top: 8px; right: 8px; display: grid; width: 28px; height: 28px; margin: 0; padding: 0; place-items: center; }
+.dashboard-template-row article > div { display: flex; flex-direction: column; align-items: flex-start; flex: 1; }
+.dashboard-template-row > article .template-layout-preview { height: 148px; flex: 0 0 auto; }
+/* 卡片特征标签行(11px 胶囊,从布局结构诚实推导) */
+.dashboard-template-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.dashboard-template-tags span { padding: 1px 7px; color: var(--text-muted); background: var(--surface-3); border: 1px solid var(--line-subtle); border-radius: 999px; font-size: 11px; line-height: 16px; white-space: nowrap; }
+/* 卡片纵向结构:信息区吃剩余高度,操作按钮贴底 */
+.dashboard-template-grid article { display: flex; flex-direction: column; }
+.dashboard-template-grid article > div { flex: 1; }
+.dashboard-template-grid article > button { margin-top: 10px; }
+/* 卡片信息顺序对齐参照规格:封面 → 标题 → 行业标签 → 描述(纯视觉重排,不改 DOM) */
+.dashboard-template-grid article > div { display: flex; flex-direction: column; align-items: flex-start; }
+.dashboard-template-grid article > div strong, .dashboard-template-row article > div strong { order: -1; }
+.dashboard-template-grid article strong { color: var(--text-strong); font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-template-grid article p { color: var(--text-muted); font-size: 12px; }
+.dashboard-template-grid article .template-layout-preview { border-bottom: 1px solid var(--line); }
 .dashboard-template-grid article > button { color: var(--text-strong); background: var(--accent-soft); border-color: var(--line-strong); font-size: 12px; }
 .dashboard-template-grid article > button:hover { color: var(--on-accent); background: var(--accent); }
 .dashboard-template-grid article > button.dashboard-template-favorite { color: var(--text); background: var(--surface-1); border-color: var(--line); }
@@ -29,3 +89,52 @@
 .dashboard-template-empty { grid-column: 1 / -1; display: grid; place-content: center; justify-items: center; gap: 16px; color: var(--text-strong); }
 .dashboard-template-empty button { padding: 8px 14px; color: var(--on-accent); background: var(--accent); border: 1px solid var(--accent); border-radius: 6px; }
 @media (max-width: 600px) { .dashboard-template-filters { grid-template-columns: minmax(0, 1fr); } .dashboard-template-filters > select { min-height: 34px; } }
+
+/* 推荐区与全部区使用同一张卡片网格；不再把推荐卡压成横向滚动条，
+   这样底部“插入当前页面”按钮始终属于卡片并且在窄面板内可见。 */
+.dashboard-template-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  overflow: visible;
+  padding: 0;
+}
+.dashboard-template-row > article {
+  width: auto;
+  min-width: 0;
+  min-height: 318px;
+  box-sizing: border-box;
+}
+.dashboard-template-row article > div,
+.dashboard-template-grid article > div:nth-child(2) {
+  min-width: 0;
+  padding: 11px 12px;
+}
+.dashboard-template-row article > div { display: flex; flex: 1; flex-direction: column; align-items: flex-start; }
+.dashboard-template-row article > div strong,
+.dashboard-template-grid article > div strong { max-width: 100%; line-height: 1.35; }
+.dashboard-template-row article p,
+.dashboard-template-grid article p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.45; }
+.dashboard-template-row article > button:not(.dashboard-template-favorite),
+.dashboard-template-grid article > button:not(.dashboard-template-favorite) {
+  min-height: 34px;
+  margin: 0 12px 12px;
+  color: var(--text-strong);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-1));
+  font-size: 12px;
+  font-weight: 600;
+}
+.dashboard-template-row article > button:not(.dashboard-template-favorite):hover,
+.dashboard-template-grid article > button:not(.dashboard-template-favorite):hover {
+  color: var(--on-accent);
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.dashboard-template-row > article .template-layout-preview { width: 100%; height: 148px; flex: 0 0 148px; }
+.dashboard-template-grid { grid-auto-rows: minmax(318px, auto); }
+@media (max-width: 720px) {
+  .dashboard-template-row { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-template-row > article { min-height: 300px; }
+}

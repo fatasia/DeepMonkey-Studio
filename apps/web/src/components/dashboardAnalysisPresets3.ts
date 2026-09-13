@@ -1,0 +1,41 @@
+import type { DashboardComponentPreset } from "./dashboardComponentPresetTypes";
+import { analysisPreset } from "./dashboardComponentPresetFactory";
+
+/**
+ * 分析增强族(素材数量波次 A):28 款进阶分析图表。
+ * 每项都落在运行时真实图表类型上(area/pie/waterfall/sankey/treemap/sunburst/
+ * radar/graph/scatter/funnel/wordcloud/boxplot/line/combo/gauge/polarBar/map),
+ * 运行时暂不存在的类型(热力日历/烛台/平行坐标/主题河流)用承载同等信息结构的
+ * 真实类型实现,并在描述中如实说明语义,不做"标签换皮"。
+ */
+export const DASHBOARD_ANALYSIS_PRESETS_3: readonly DashboardComponentPreset[] = [
+  analysisPreset("stacked-area-enhanced", "堆叠面积构成增强", "Enhanced stacked area", "按产线堆叠展示产量构成随时间的迁移", "area", "output.stackedAreaPlus", "date", "output", { analysis: { dimensionField: "date", seriesField: "line", measureField: "output", aggregation: "sum" }, chart: { stacked: true, showLegend: true } }),
+  analysisPreset("yoy-ring-compare", "同比对照环图", "YoY comparison rings", "按年份系列分环对照结构占比变化", "pie", "structure.yoyRing", "category", "value", { analysis: { dimensionField: "category", seriesField: "year", measureField: "value", aggregation: "sum" }, chart: { showLegend: true } }),
+  analysisPreset("attainment-waterfall", "达成瀑布图", "Attainment waterfall", "从基期到实绩逐项展示增减贡献", "waterfall", "target.attainment", "driver", "contribution", { analysis: { dimensionField: "driver", measureField: "contribution", aggregation: "sum" } }),
+  analysisPreset("multi-stage-sankey", "多级桑基流向", "Multi-stage Sankey", "原料-半成品-成品多级流向与损耗", "sankey", "flow.multiStage", "source", "volume", { analysis: { dimensionField: "source", seriesField: "target", measureField: "volume", aggregation: "sum", sort: "value-desc", limit: 10 } }),
+  analysisPreset("treemap-drill-enhanced", "树图逐级钻取增强", "Enhanced treemap drill", "集团-工厂-车间三级面积下钻", "treemap", "capacity.drillPlus", "group", "capacity", { analysis: { dimensionField: "group", measureField: "capacity", aggregation: "sum", drillFields: ["group", "plant", "workshop"] } }),
+  analysisPreset("customer-sunburst", "客户结构旭日", "Customer structure sunburst", "区域-渠道-客户逐环拆解销售额", "sunburst", "sales.customerRing", "region", "amount", { analysis: { dimensionField: "region", measureField: "amount", aggregation: "sum", drillFields: ["region", "channel", "customer"] } }),
+  analysisPreset("radar-group-compare", "雷达组对比", "Radar group compare", "多机组叠加对比能效、稳定与负载", "radar", "unit.radarGroup", "dimension", "score", { analysis: { dimensionField: "dimension", seriesField: "unit", measureField: "score", aggregation: "average" }, chart: { showLegend: true } }),
+  analysisPreset("force-layout-graph", "力导关系网络", "Force-directed network", "力导向布局揭示设备-系统依赖枢纽", "graph", "network.force", "source", "weight", { analysis: { dimensionField: "source", seriesField: "target", measureField: "weight", aggregation: "sum" } }),
+  analysisPreset("calendar-heat-scatter", "日历热力散点", "Calendar heat scatter", "日期×星期双维散点,色深承载热力日历语义", "scatter", "ops.calendarHeat", "date", "events", { analysis: { dimensionField: "date", seriesField: "weekday", measureField: "events", aggregation: "sum" } }),
+  analysisPreset("funnel-stage-compare", "漏斗双期对比", "Funnel stage compare", "本期与上期转化漏斗并排对照", "funnel", "conversion.periodFunnel", "stage", "count", { analysis: { dimensionField: "stage", seriesField: "period", measureField: "count", aggregation: "sum" }, chart: { showLegend: true } }),
+  analysisPreset("wordcloud-tag-groups", "分组标签词云", "Grouped tag cloud", "按主题分色渲染标签词频", "wordcloud", "feedback.tagCloud", "keyword", "count", { field: "count", analysis: { dimensionField: "keyword", seriesField: "topic", measureField: "count", aggregation: "count", sort: "value-desc", limit: 50 } }),
+  analysisPreset("theme-river-flow", "主题河流图", "Theme river", "平滑堆叠面积表达主题词频随时间流动", "area", "content.themeRiver", "date", "mentions", { analysis: { dimensionField: "date", seriesField: "topic", measureField: "mentions", aggregation: "sum" }, chart: { stacked: true, showLegend: true } }),
+  analysisPreset("energy-stream-river", "能源支流河流", "Energy stream river", "多支流能耗包络呈现管网分配", "area", "energy.streamRiver", "date", "consumption", { analysis: { dimensionField: "date", seriesField: "branch", measureField: "consumption", aggregation: "sum" }, chart: { showLegend: true } }),
+  // 烛台与箱线同构(须-箱-线):以四分位箱体渲染开高低收,运行时真实 boxplot。
+  analysisPreset("kline-candlestick", "K线烛台图", "Price candlestick", "按交易日聚合开高低收并以箱线烛台呈现", "boxplot", "market.kline", "date", "price", { analysis: { dimensionField: "date", measureField: "price", aggregation: "none" } }),
+  analysisPreset("candlestick-weekly", "周线烛台变体", "Weekly candlestick", "按周聚合价格区间观察中期趋势", "boxplot", "market.klineWeekly", "week", "price", { analysis: { dimensionField: "week", measureField: "price", aggregation: "none" } }),
+  analysisPreset("boxplot-matrix", "箱线矩阵组", "Boxplot matrix", "多工位尺寸分布箱体并排定位波动源", "boxplot", "quality.boxMatrix", "station", "value", { analysis: { dimensionField: "station", measureField: "value", aggregation: "none" } }),
+  analysisPreset("scatter-matrix", "散点矩阵", "Scatter matrix", "温度-压力-收率多参数对散点定位耦合", "scatter", "process.scatterMatrix", "temperature", "yield", { analysis: { dimensionField: "temperature", seriesField: "pressureBand", measureField: "yield", aggregation: "average" } }),
+  analysisPreset("parallel-coords", "平行坐标图", "Parallel coordinates", "多维指标平行折线对照单机健康画像", "line", "health.parallel", "index", "score", { analysis: { dimensionField: "index", seriesField: "asset", measureField: "score", aggregation: "average" }, chart: { showLegend: true } }),
+  analysisPreset("sankey-branch-fork", "桑基分叉网络", "Sankey branch fork", "总配电向各车间分叉的负荷分配", "sankey", "grid.branchFork", "source", "load", { analysis: { dimensionField: "source", seriesField: "target", measureField: "load", aggregation: "sum", sort: "value-desc", limit: 12 } }),
+  analysisPreset("unit-efficiency-gauge", "机组效率仪表", "Unit efficiency gauge", "以仪表呈现关键机组综合效率与阈值", "gauge", "unit.efficiencyGauge", "unit", "efficiency", { analysis: { dimensionField: "unit", measureField: "efficiency", aggregation: "average" }, min: 0, max: 100, conditionalRules: [{ id: "unit-eff-low", operator: "lt", value: 60, color: "#e8bd68" }] }),
+  analysisPreset("wind-rose-polar", "风向玫瑰图", "Wind rose", "极坐标扇区统计风向-风速频次", "polarBar", "climate.windRose", "direction", "frequency", { analysis: { dimensionField: "direction", seriesField: "windBand", measureField: "frequency", aggregation: "sum" }, chart: { showLegend: true } }),
+  analysisPreset("org-chart-graph", "组织架构图", "Organization chart", "以关系网络呈现部门-班组层级", "graph", "org.chart", "parent", "headcount", { analysis: { dimensionField: "parent", seriesField: "child", measureField: "headcount", aggregation: "sum" } }),
+  analysisPreset("pulse-time-series", "时序脉冲波", "Pulse time series", "高频采样呈现设备启停脉冲序列", "line", "device.pulseSeries", "timestamp", "signal", { analysis: { dimensionField: "timestamp", measureField: "signal", aggregation: "none" } }),
+  analysisPreset("spectrum-line", "频谱分析图", "Spectrum analysis", "频率-幅值曲线定位振动主频", "line", "vibration.spectrum", "frequency", "amplitude", { analysis: { dimensionField: "frequency", measureField: "amplitude", aggregation: "maximum", limit: 40 } }),
+  analysisPreset("harmonic-combo", "谐波柱线组合", "Harmonic combo", "柱表达各次谐波幅值,线表达畸变率", "combo", "power.harmonics", "harmonic", "amplitude", { analysis: { dimensionField: "harmonic", seriesField: "metric", measureField: "amplitude", aggregation: "maximum" }, chart: { showLegend: true, secondaryAxisSeries: ["畸变率"] } }),
+  analysisPreset("phase-plot", "相位轨迹图", "Phase plot", "相位差-幅值散点呈现振动轨迹形态", "scatter", "vibration.phase", "phaseOffset", "amplitude", { analysis: { dimensionField: "phaseOffset", seriesField: "sensor", measureField: "amplitude", aggregation: "average" } }),
+  analysisPreset("trajectory-map", "运动轨迹地图", "Movement trajectory map", "车辆经纬度轨迹回放与里程", "map", "logistics.trajectory", "route", "distance", { analysis: { dimensionField: "route", measureField: "distance", aggregation: "sum" }, map: { mode: "route", longitudeField: "longitude", latitudeField: "latitude", valueField: "distance" } }),
+  analysisPreset("density-heat-map", "密度热力地图", "Density heat map", "事件经纬度密度热力识别热点区域", "map", "ops.densityHeat", "site", "events", { analysis: { dimensionField: "site", measureField: "events", aggregation: "sum" }, map: { mode: "heat", longitudeField: "longitude", latitudeField: "latitude", valueField: "events" } }),
+] as const;

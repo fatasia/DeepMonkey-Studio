@@ -70,15 +70,21 @@ export function SceneBehaviorPanel(props: {
   layoutMode: BehaviorLayoutMode;
   onLayoutModeChange: (mode: BehaviorLayoutMode) => void;
   onPendingDraftChange?: (draft: ScriptModule | undefined) => void;
+  initialSelectedScriptId?: string;
+  onSelectedScriptChange?: (scriptId: string) => void;
   onClose: () => void;
 }) {
   const [feedback, setFeedback] = useState<{ scriptId: string | undefined; message: string }>({ scriptId: undefined, message: "" });
   const { selected, draft, setDraft, dirty, prepareLeave, selectScript, addScripts, captureOperation } = useBehaviorDraft({
     scripts: props.scripts, ...(props.preferredTarget ? { preferredTarget: props.preferredTarget } : {}),
     onUpsert: props.onUpsert,
+    ...(props.initialSelectedScriptId ? { initialSelectedId: props.initialSelectedScriptId } : {}),
     onInvalidName: () => setActionFeedback(tr(props.locale, "请先填写脚本名称", "Enter a script name first")),
   });
   const selectedContextLabel = draft ? scriptTargetLabel(draft.target, props.codeTargets, props.locale) : tr(props.locale, "未选择脚本", "No script selected");
+  useEffect(() => {
+    if (selected?.id) props.onSelectedScriptChange?.(selected.id);
+  }, [selected?.id, props.onSelectedScriptChange]);
   const attachedTarget = draft?.target && draft.target.kind !== "scene"
     ? props.codeTargets.find(target => target.kind === draft.target?.kind && target.id === draft.target.id)
     : undefined;
@@ -189,7 +195,7 @@ export function SceneBehaviorPanel(props: {
       apiVersion: "1.0",
       entrypoint: "behavior",
       runtime: "worker-sandbox",
-      code: defaultBehaviorCode(),
+      code: defaultBehaviorCode(props.preferredTarget),
       lifecycle: ["onStart", "onUpdate", "onDispose"],
       capabilities: [...(targetCapability ? [targetCapability] : []), "studio.runtime"],
       permissions: ["scene.read", "scene.write"],
@@ -289,7 +295,7 @@ export function SceneBehaviorPanel(props: {
                 dirty={dirty} saving={saving} canGenerate={Boolean(aiDraftTarget && aiDraftSceneId)} showAutoSave={props.layoutMode === "window"}
                 autoSaveEnabled={props.autoSaveEnabled} onAutoSaveChange={props.onAutoSaveChange} onChange={setDraft} onTargetChange={changeAttachedTarget}
                 onSave={() => void applyChanges()} onGenerate={() => { setAgentMode("generate"); setAgentOpen(true); }}
-                onDownload={() => downloadTextFile(draft.code, scriptDownloadFileName(draft.name), "text/javascript;charset=utf-8")}
+                onDownload={() => { downloadTextFile(draft.code, scriptDownloadFileName(draft.name), "text/javascript;charset=utf-8"); setActionFeedback(tr(props.locale, "已发起 JS 下载", "JS download started")); }}
                 onRevert={() => { setDraft(structuredClone(selected!)); setAiDraftInserted(false); setAiDraftUndo(undefined); }}
                 onDelete={() => { if (window.confirm(tr(props.locale, `删除“${draft.name}”吗？`, `Delete “${draft.name}”?`))) props.onDelete(draft.id); }} />
               {props.debugging && <AuthorBehaviorDebugNotice locale={props.locale} entries={props.runtimeEntries} onStart={props.onPauseResume} />}
@@ -322,7 +328,7 @@ export function SceneBehaviorPanel(props: {
                 <em className={dirty ? "pending" : runtime?.diagnostics.status === "error" ? "error" : "ready"} role="status" aria-live="polite">
                   {!draft.name.trim() ? tr(props.locale, "请先填写脚本名称", "Enter a script name first") : actionFeedback || (dirty
                     ? aiDraftInserted
-                      ? tr(props.locale, "AI 草稿待应用", "AI draft awaiting apply")
+                      ? tr(props.locale, "动作草稿待应用", "Action draft awaiting apply")
                       : tr(props.locale, "有未应用的修改", "Unapplied changes")
                     : runtime?.diagnostics.status === "error"
                       ? tr(props.locale, "运行失败，请查看问题", "Run failed; review problems")

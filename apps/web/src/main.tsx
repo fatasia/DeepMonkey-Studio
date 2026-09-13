@@ -40,10 +40,16 @@ async function renderStudioApplication(): Promise<void> {
   const CommissioningVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/CommissioningVisualQa")) : undefined;
   const OperationsPlanningVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/OperationsPlanningVisualQa")) : undefined;
   const SceneSimulationVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/SceneSimulationVisualQa")) : undefined;
+  const DeviceSignalVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/DeviceSignalVisualQa")) : undefined;
   const TopologyVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/TopologyVisualQa")) : undefined;
+  const ParametricVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/ParametricVisualQa")) : undefined;
+  const BrandingVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/BrandingVisualQa")) : undefined;
+  const SceneDrillVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/SceneDrillVisualQa")) : undefined;
+  const ObjectTreeVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/ObjectTreeVisualQa")) : undefined;
+  const WorkspaceChromeVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/WorkspaceChromeVisualQa")) : undefined;
   const visualQaMode = visualQaEnabled ? new URLSearchParams(window.location.search).get("__visualQa") : undefined;
   if (visualQaMode && DashboardVisualQa && ViewerVisualQa && CommissioningVisualQa && OperationsPlanningVisualQa && SceneSimulationVisualQa) {
-    const VisualQaPage = visualQaMode === "dashboard"
+    const VisualQaPage = visualQaMode === "device-signal" ? DeviceSignalVisualQa : visualQaMode === "dashboard"
       ? DashboardVisualQa
       : visualQaMode === "viewer"
         ? ViewerVisualQa
@@ -55,6 +61,16 @@ async function renderStudioApplication(): Promise<void> {
             ? SceneSimulationVisualQa
           : visualQaMode === "topology"
             ? TopologyVisualQa
+          : visualQaMode === "parametric"
+            ? ParametricVisualQa
+          : visualQaMode === "branding"
+            ? BrandingVisualQa
+          : visualQaMode === "scene-drill"
+            ? SceneDrillVisualQa
+          : visualQaMode === "object-tree"
+            ? ObjectTreeVisualQa
+          : visualQaMode === "workspace-chrome"
+            ? WorkspaceChromeVisualQa
           : undefined;
     if (VisualQaPage) {
       // 仅视觉验收入口允许 URL 指定主题；不改用户偏好或平台品牌设置。

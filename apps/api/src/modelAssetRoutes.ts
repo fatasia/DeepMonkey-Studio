@@ -20,6 +20,9 @@ import type { MetadataStore } from "./store.js";
 import { resolveModelOptimizationOrigin } from "./modelOptimizationOrigin.js";
 import { robotArchivePath } from "./robotUrdfValues.js";
 import { RobotUploadLimitError, writeRobotUpload } from "./robotUpload.js";
+import { registerAppearanceAssetUpload, saveAppearanceAsset } from "./appearanceAssetUpload.js";
+import { hashModelFile, parseModelProcessingRecord } from "./modelProcessingMetadata.js";
+import { registerResourceThumbnailRoutes } from "./resourceThumbnailRoutes.js";
 
 interface ModelAssetRouteDependencies {
   store: MetadataStore;
@@ -32,6 +35,12 @@ interface ModelAssetRouteDependencies {
 /** 模型转换与媒体资产共同维护本地临时文件和对象存储的一致生命周期。 */
 export async function registerModelAssetRoutes(app: FastifyInstance, dependencies: ModelAssetRouteDependencies): Promise<void> {
   const { store, queue, objects, dataDir, config } = dependencies;
+  registerAppearanceAssetUpload(app, dependencies);
+  registerResourceThumbnailRoutes(app, dependencies);
+  app.get<{Params:{projectId:string}}>("/api/projects/:projectId/model-import-formats",async(request,reply)=>{
+    if(!store.getProject(request.params.projectId))return reply.code(404).send({message:"项目不存在"});
+    return queue.listImportFormats();
+  });
 
   app.post<{ Params: { projectId: string }; Querystring: { rvtConversionMode?: string; rvtRevitVersion?: string; optimizedFromModelId?: string } }>("/api/projects/:projectId/models", async (request, reply) => {
     const project = store.getProject(request.params.projectId);
@@ -44,8 +53,11 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
       return reply.code(415).send({ message: `不支持该格式，仅支持 ${supportedExtensions.join(", ")}` });
     }
     let generation;
+    let processing;
     let optimization: ModelRecord["optimization"];
     try {
+      processing = parseModelProcessingRecord(part.fields.processing);
+      if (processing && format !== "glb") throw new Error("模型处理记录仅用于 GLB 优化产物");
       optimization = resolveModelOptimizationOrigin(request.query.optimizedFromModelId, project.models);
       if (optimization) {
         const sourceId = optimization.sourceModelId;
@@ -61,9 +73,9 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
       part.file.resume();
       return reply.code(400).send({ message: reason instanceof Error ? reason.message : "参数化模型元数据无效" });
     }
-    if (generation && format !== "step" && format !== "stp") {
+    if (generation && format !== "step" && format !== "stp" && format !== "glb") {
       part.file.resume();
-      return reply.code(400).send({ message: "参数化模型当前必须保存为 STEP/STP" });
+      return reply.code(400).send({ message: "参数化模型必须保存为 STEP/STP 或 GLB" });
     }
     const requestedMode = request.query.rvtConversionMode ?? "native-glb";
     if (format === "rvt" && requestedMode !== "ifc" && requestedMode !== "native-glb") {
@@ -113,6 +125,7 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
     }
     await objects.putFile(`projects/${project.id}/models/${modelId}/source/${safeName}`, sourcePath);
     const now = new Date().toISOString();
+    if (processing) processing = { ...processing, outputSha256: await hashModelFile(sourcePath), after: { ...processing.after, bytes: part.file.bytesRead } };
     const model: ModelRecord = {
       id: modelId,
       projectId: project.id,
@@ -128,6 +141,7 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
       message: rvtRevitVersion ? `等待 Revit ${rvtRevitVersion} 转换` : "等待转换",
       sourceUrl: `/assets/projects/${project.id}/models/${modelId}/source/${encodeURIComponent(safeName)}`,
       ...(generation ? { generation } : {}),
+      ...(processing ? { processing } : {}),
       ...(optimization ? { optimization } : {}),
       createdAt: now,
       updatedAt: now
@@ -216,15 +230,9 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
       part.file.resume();
       return reply.code(415).send({ message: "环境贴图仅支持 HDR、EXR、JPG、PNG、WEBP" });
     }
-    const id = randomUUID();
-    const safeName = cleanFileName(part.filename);
-    const directory = path.join(dataDir, "projects", project.id, "environment-maps", id);
-    const filePath = path.join(directory, safeName);
-    await mkdir(directory, { recursive: true });
-    await pipeline(part.file, createWriteStream(filePath, { flags: "wx" }));
-    const key = `projects/${project.id}/environment-maps/${id}/${safeName}`;
-    await objects.putFile(key, filePath);
-    return reply.code(201).send({ name: safeName, url: `/assets/${key}` });
+    async function* maps() { yield { kind: "environment" as const, part: part! }; }
+    try { return reply.code(201).send(await saveAppearanceAsset(dependencies, project.id, "environment", maps())); }
+    catch (error) { return reply.code(400).send({ message: error instanceof Error ? error.message : "环境上传失败" }); }
   });
   app.delete<{ Params: { projectId: string; modelId: string } }>("/api/projects/:projectId/models/:modelId", async (request, reply) => {
     const removed = await store.removeModel(request.params.projectId, request.params.modelId);

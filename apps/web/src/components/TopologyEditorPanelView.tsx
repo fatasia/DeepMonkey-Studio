@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { TopologyCanvasContents } from "./TopologyCanvasContents";
+import { topologyConnectedIds, topologyNodeZone, topologyZones } from "./topologySpatialGeometry";
+import "./TopologySpatialView.css";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -100,6 +103,7 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
     onInsertDashboard,
     onPublish,
     onSave,
+    onSaveAndReturn,
     operationError,
     paletteQuery,
     presetGroups,
@@ -138,6 +142,13 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
   const [inspectorQuery, setInspectorQuery] = useState("");
   const [paletteOpen, setPaletteOpen] = usePersistedBooleanState(TOPOLOGY_PALETTE_STORAGE_KEY, true);
   const [inspectorOpen, setInspectorOpen] = usePersistedBooleanState(TOPOLOGY_INSPECTOR_STORAGE_KEY, true);
+  const [focusZone, setFocusZone] = useState("");
+  const [traceDirection, setTraceDirection] = useState<"all" | "upstream" | "downstream">("all");
+  const zones = useMemo(() => topologyZones(editor.document.nodes), [editor.document.nodes]);
+  const relatedIds = useMemo(() => topologyConnectedIds(editor.document, selectedNode?.id, traceDirection), [editor.document, selectedNode?.id, traceDirection]);
+  const isDimmed = (node: typeof editor.document.nodes[number]) => Boolean(
+    (focusZone && topologyNodeZone(node) !== focusZone) ||
+    (traceDirection !== "all" && selectedNode && !relatedIds.has(node.id)));
   const normalizedInspectorQuery = inspectorQuery.trim().toLowerCase();
 
   return (
@@ -159,7 +170,7 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
             </span>
           )}
           <span>
-            <strong>{editor.document.name}</strong>
+            <strong title={editor.document.name}>{editor.document.name}</strong>
             <small>{tr(locale, "独立拓扑 · 数据驱动", "Topology · Data driven")}</small>
           </span>
         </div>
@@ -190,10 +201,10 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
           <button
             className={`topology-editor__view-25d ${viewMode === "2.5d" ? "is-active" : ""}`}
             onClick={() => setViewMode("2.5d")}
-            title={tr(locale, "分层视图（按标高投影）", "Layered view by elevation")}
+            title={tr(locale, "2.5D 等轴视图", "2.5D isometric view")}
           >
             <Layers3 size={14} />
-            {tr(locale, "层级", "Layers")}
+            2.5D
           </button>
           <span className="topology-editor__divider" />
           <button disabled={!canUndoTopologyEdit(editor)} onClick={() => dispatch({ type: "history.undo" })} aria-label={tr(locale, "撤销 Ctrl+Z", "Undo Ctrl+Z")} title={tr(locale, "撤销 Ctrl+Z", "Undo Ctrl+Z")}>
@@ -223,6 +234,12 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
             <button disabled={!dirty || busy} onClick={onSave}>
               <Save size={14} />
               {tr(locale, "保存", "Save")}
+            </button>
+          )}
+          {onSaveAndReturn && (
+            <button className="primary" disabled={busy} onClick={onSaveAndReturn}>
+              <LayoutDashboard size={14} />
+              {tr(locale, "保存并返回", "Save & return")}
             </button>
           )}
           {onPublish && (
@@ -258,7 +275,7 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
             </div>
             <div className="topology-editor__presets">
               {group.presets.map((preset) => (
-                <button key={preset.kind} onClick={() => addNode(preset)}>
+                <button key={preset.kind} onClick={() => addNode(preset)} title={locale === "zh-CN" ? preset.labelZh : preset.labelEn}>
                   <span><preset.icon size={17} /></span>
                   <span>
                     <strong>{locale === "zh-CN" ? preset.labelZh : preset.labelEn}</strong>
@@ -287,122 +304,25 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
 
       <main className={`topology-editor__viewport ${tool === "connect" ? "is-connecting" : ""} ${viewMode === "2.5d" ? "is-2-5d" : ""}`}>
         <TopologyRuntimeOverview summary={runtimeSummary} locale={locale} />
+        {(zones.length > 0 || selectedNode) && <div className="topology-spatial-focus" role="toolbar" aria-label={tr(locale, "区域与关系聚焦", "Zone and relationship focus")}>
+          {zones.length > 0 && <label><span>{tr(locale, "区域", "Zone")}</span><select aria-label={tr(locale, "聚焦区域", "Focus zone")} value={focusZone} onChange={event => setFocusZone(event.target.value)}>
+            <option value="">{tr(locale, "全部区域", "All zones")}</option>
+            {zones.map(zone => <option key={zone.name} value={zone.name}>{zone.name} · {zone.nodes.length}</option>)}
+          </select></label>}
+          {selectedNode && <label><span>{tr(locale, "关系", "Relations")}</span><select aria-label={tr(locale, "追踪设备关系", "Trace device relations")} value={traceDirection} onChange={event => setTraceDirection(event.target.value as typeof traceDirection)}>
+            <option value="all">{tr(locale, "全部关系", "All relations")}</option><option value="upstream">{tr(locale, "上游设备", "Upstream")}</option><option value="downstream">{tr(locale, "下游设备", "Downstream")}</option>
+          </select></label>}
+          {(focusZone || traceDirection !== "all") && <button type="button" onClick={() => { setFocusZone(""); setTraceDirection("all"); }}>{tr(locale, "清除聚焦", "Clear focus")}</button>}
+        </div>}
         <div className="topology-editor__scroll" ref={viewport.viewportRef} onWheel={viewport.markManualView} onPointerDown={viewport.markManualView}>
         <div className="topology-editor__canvas-stage" style={viewport.stageSize}>
           <div
             className="topology-editor__canvas"
             ref={canvasRef}
-            style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, ...viewport.canvasOffset, transform: `scale(${zoom})`, transformOrigin: "top left" }}
+            style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, ...viewport.canvasOffset, transform: `scale(${zoom})`, transformOrigin: "top left", "--topology-zoom": zoom } as React.CSSProperties}
             onClick={() => dispatch({ type: "selection.set", selection: [] })}
           >
-          <svg className="topology-editor__edges" width={CANVAS_WIDTH} height={CANVAS_HEIGHT} aria-hidden="true">
-            <defs>
-              <marker id={markerId} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" />
-              </marker>
-            </defs>
-            {edgeGeometry.map(({ edge, source, target }) => {
-              const selected = selection?.kind === "edge" && selection.id === edge.id;
-              const medium = topologyEdgeMedium(edge);
-              const animated = topologyEdgeAnimated(edge);
-              const stateClass = topologyEdgeStateClass(runtimeStates[source.id], runtimeStates[target.id]);
-              const sourcePosition = topologyProjectedPosition(source, viewMode);
-              const targetPosition = topologyProjectedPosition(target, viewMode);
-              const x1 = sourcePosition.x + NODE_WIDTH;
-              const y1 = sourcePosition.y + NODE_HEIGHT / 2;
-              const x2 = targetPosition.x;
-              const y2 = targetPosition.y + NODE_HEIGHT / 2;
-              const curve = Math.max(70, Math.abs(x2 - x1) * 0.45);
-              const path = `M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}`;
-              const label = topologyEdgeLabel(edge);
-              return (
-                <g
-                  key={edge.id}
-                  className={`${selected ? "is-selected" : ""} is-${medium} ${animated ? "is-animated" : ""} ${stateClass}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    dispatch({ type: "selection.set", selection: [{ kind: "edge", id: edge.id }] });
-                  }}
-                >
-                  <path className="topology-editor__edge-hit" d={path} />
-                  <path className="topology-editor__edge-line" d={path} markerEnd={`url(#${markerId})`} />
-                  {label && (
-                    <text className="topology-editor__edge-label" x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 7} textAnchor="middle">
-                      {label}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-          </svg>
-          {editor.document.nodes.map((node) => {
-            const selected = selectedNodeIds.includes(node.id);
-            const connecting = connectionSourceId === node.id;
-            const nodeBinding = topologyNodeDataBinding(node);
-            const scada = isTopologyScadaNode(node);
-            const runtimeState = runtimeStates[node.id];
-            const runtimeAssessment = assessTopologyScadaRuntime(runtimeState, runtimeNowMs, runtimeStaleAfterMs);
-            const operatingState = runtimeState?.state ?? "unknown";
-            const basePosition = drag?.nodeId === node.id && dragPosition ? { ...node, ...dragPosition } : node;
-            const position = topologyProjectedPosition(basePosition, viewMode);
-            const elevation = topologyNodeElevation(node);
-            const Icon = NODE_PRESETS.find((preset) => preset.kind === node.kind)?.icon ?? Box;
-            const nodeClassName = [
-              "topology-editor__node",
-              selected && "is-selected",
-              connecting && "is-source",
-              scada && `is-scada is-state-${operatingState} is-freshness-${runtimeAssessment.freshness}`,
-              scada && runtimeState && `is-quality-${runtimeAssessment.quality}`,
-              runtimeState?.alarm?.active && "has-alarm",
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
-              <button
-                key={node.id}
-                className={nodeClassName}
-                style={{ left: position.x, top: position.y }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  selectNode(node.id, event.shiftKey || event.ctrlKey || event.metaKey);
-                }}
-                onPointerDown={(event) => beginDrag(event, node)}
-                onPointerMove={moveDrag}
-                onPointerUp={endDrag}
-                onPointerCancel={endDrag}
-              >
-                <span className="topology-editor__port topology-editor__port--in" />
-                <span className="topology-editor__node-icon">
-                  <Icon size={18} />
-                </span>
-                <span className="topology-editor__node-copy">
-                  <strong>{topologyNodeLabel(node)}</strong>
-                  <small>{scada ? (runtimeState ? scadaStateLabel(locale, operatingState) : tr(locale, "待数据", "Awaiting data")) : node.kind}</small>
-                  {scada && runtimeState?.value !== undefined && <em>{formatScadaValue(runtimeState.value, runtimeState.unit ?? topologyNodeScadaConfig(node)?.unit)}</em>}
-                </span>
-                {scada && (
-                  <span
-                    className={`topology-editor__status-dot is-${operatingState}`}
-                    title={runtimeState ? `${scadaStateLabel(locale, operatingState)} · ${qualityLabel(locale, runtimeAssessment.quality)} · ${runtimeAssessmentLabel(locale, runtimeAssessment)}` : tr(locale, "等待实时数据，不代表设备离线", "Awaiting runtime data; not an offline diagnosis")}
-                  />
-                )}
-                {runtimeState?.alarm?.active && (
-                  <span className={`topology-editor__alarm-badge is-${runtimeState.alarm.severity}`} title={runtimeState.alarm.message}>
-                    <AlertTriangle size={11} />
-                  </span>
-                )}
-                {nodeBinding && (
-                  <span className="topology-editor__binding-dot" title={tr(locale, "已绑定数据", "Data bound")}>
-                    <Database size={11} />
-                  </span>
-                )}
-                {viewMode === "2.5d" && elevation !== 0 && (
-                  <span className="topology-editor__elevation"><Layers3 size={10} />H {elevation}</span>
-                )}
-                <span className="topology-editor__port topology-editor__port--out" />
-              </button>
-            );
-          })}
+          <TopologyCanvasContents controller={controller} focusZone={focusZone} isDimmed={isDimmed} />
           </div>
         </div>
           {editor.document.nodes.length === 0 && (
@@ -473,6 +393,9 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
               placeholder={tr(locale, "设备职责或工艺说明", "Equipment role or process note")}
               onCommit={(description) => dispatch({ type: "node.update", nodeId: selectedNode.id, patch: { properties: { ...selectedNode.properties, description } } })}
             />
+            <InspectorTextField label={tr(locale, "所属区域", "Zone")} value={topologyNodeZone(selectedNode)}
+              placeholder={tr(locale, "例如：冷却水站", "For example: Cooling station")}
+              onCommit={zone => dispatch({ type: "node.update", nodeId: selectedNode.id, patch: { properties: { ...selectedNode.properties, zone } } })} />
             <div className="topology-editor__coordinates">
               <InspectorNumberField
                 label="X"
@@ -607,7 +530,7 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
             </div>
             <div className="topology-editor__extension-list">
               {Object.entries(selectedNode.properties)
-                .filter(([key]) => !["label", "elevation", "scada", "assetCode", "description"].includes(key))
+                .filter(([key]) => !["label", "elevation", "scada", "assetCode", "description", "zone"].includes(key))
                 .filter(([key]) => !normalizedInspectorQuery || key.toLowerCase().includes(normalizedInspectorQuery))
                 .map(([key, value]) => (
                   <TopologyExtensionField
@@ -629,7 +552,7 @@ export function TopologyEditorPanelView({ controller }: { controller: TopologyEd
               <input value={extensionValue} aria-label={tr(locale, "新扩展属性值", "New extension property value")} placeholder={tr(locale, "值", "Value")} onChange={(event) => setExtensionValue(event.target.value)} />
               <button
                 type="button"
-                disabled={!extensionKey.trim() || ["label", "elevation", "scada"].includes(extensionKey.trim())}
+                disabled={!extensionKey.trim() || ["label", "elevation", "scada", "zone"].includes(extensionKey.trim())}
                 onClick={() => {
                   const key = extensionKey.trim();
                   const raw = extensionValue.trim();

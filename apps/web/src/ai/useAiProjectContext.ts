@@ -41,7 +41,11 @@ export function useAiProjectContext(projectId: string | undefined, locale: AppLo
       api.listDataConnections(projectId),
       api.listDatasets(projectId),
       api.listPprBopVersions(projectId),
-    ]).then(([operations, visionModels, visionSources, visionTasks, visionEvents, connections, datasetResult, pprVersions]) => {
+      api.listBatteryModelCatalog(),
+      api.getBatteryReleaseGate(),
+      api.listAiDataBindings(projectId),
+      api.listAiDataBindingRuns(projectId, { limit: 20 }),
+    ]).then(([operations, visionModels, visionSources, visionTasks, visionEvents, connections, datasetResult, pprVersions, batteryCatalog, batteryRelease, batteryBindings, batteryRuns]) => {
       if (cancelled) return;
       const value = <T,>(result: PromiseSettledResult<T>, fallback: T): T =>
         result.status === "fulfilled" ? result.value : fallback;
@@ -62,6 +66,9 @@ export function useAiProjectContext(projectId: string | undefined, locale: AppLo
         sourceFromSettled("connections", tr(locale, "数据连接", "Data connections"), connections, (items) => items.length),
         sourceFromSettled("datasets", tr(locale, "数据集", "Datasets"), datasetResult, (items) => items.length),
         sourceFromSettled("ppr-bop", tr(locale, "工艺计划版本", "Process-plan versions"), pprVersions, (items) => items.length),
+        sourceFromSettled("battery", tr(locale, "电池模型与运行证据", "Battery models and runs"), batteryCatalog, (items) =>
+          items.models.length + value(batteryBindings, []).length + value(batteryRuns, []).length,
+        ),
       ];
       setDatasets(datasetValues);
       setContextSources(sources);
@@ -99,6 +106,20 @@ export function useAiProjectContext(projectId: string | undefined, locale: AppLo
           : { unavailable: true },
         processPlanning: {
           versions: summarizePprVersions(value(pprVersions, [])),
+        },
+        battery: {
+          models: value(batteryCatalog, { models: [] }).models.slice(0, 20).map((model) => ({
+            id: model.id,
+            family: model.family,
+            label: model.label,
+            modelVersion: model.modelVersion,
+            runtime: model.runtime,
+            outputAuthority: model.outputAuthority,
+            productionEligible: model.productionEligible,
+          })),
+          release: summarizeBatteryRelease(value(batteryRelease, undefined)),
+          bindings: value(batteryBindings, []).slice(0, 20),
+          recentRuns: value(batteryRuns, []).slice(0, 20),
         },
         vision: {
           models: value(visionModels, []),
@@ -143,4 +164,26 @@ export function summarizePprVersions(versions: readonly PprBopVersion[]) {
     assignmentCount: version.resourceAssignments.length,
     externalReferenceCount: version.references?.length ?? 0,
   }));
+}
+
+/** 只把模型身份、门禁和运行摘要交给助手，不把原始电池采样数据放入提示词。 */
+function summarizeBatteryRelease(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const release = value as Record<string, unknown>;
+  const deployment = release.deployment && typeof release.deployment === "object" && !Array.isArray(release.deployment)
+    ? release.deployment as Record<string, unknown>
+    : undefined;
+  return {
+    ...(typeof release.status === "string" ? { status: release.status } : {}),
+    ...(Array.isArray(release.blockers) ? { blockers: release.blockers.slice(0, 12) } : {}),
+    ...(Array.isArray(release.warnings) ? { warnings: release.warnings.slice(0, 12) } : {}),
+    ...(deployment ? {
+      deployment: {
+        ...(typeof deployment.enabled === "boolean" ? { enabled: deployment.enabled } : {}),
+        ...(typeof deployment.mode === "string" ? { mode: deployment.mode } : {}),
+        ...(Array.isArray(deployment.activeModels) ? { activeModels: deployment.activeModels.slice(0, 20) } : {}),
+        ...(typeof deployment.twinRuntime === "string" ? { twinRuntime: deployment.twinRuntime } : {}),
+      },
+    } : {}),
+  };
 }

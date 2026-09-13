@@ -5,6 +5,8 @@ import type {
   SceneModelState,
   SceneSnapshot,
 } from "@bim-studio/contracts";
+import { getSceneModelAssetId } from "@bim-studio/contracts";
+import { modelVersionChain } from "../optimizer/modelEngineering";
 
 export type GovernedResourceKind = "model" | "media" | "unity";
 
@@ -59,7 +61,7 @@ export function analyzeProjectResourceGovernance(
   if (!project) return emptyReport();
   const resources = new Map<string, GovernedResource>();
   for (const model of project.models) {
-    const revision = model.generation?.kind === "parametric" ? model.generation.revision : 1;
+    const revision = model.generation?.kind === "parametric" ? model.generation.revision : modelVersionChain(model, project.models).length;
     addDefinition(resources, {
       key: resourceKey("model", model.id), id: model.id, kind: "model", name: model.name,
       versionLabel: `v${revision}`, versionCount: 1, references: [], instanceCount: 0, overrideCount: 0, unused: true,
@@ -86,7 +88,7 @@ export function analyzeProjectResourceGovernance(
     for (const scene of application.scenes) {
       applicationSceneIds.add(scene.id);
       for (const model of scene.models) {
-        addReference(resources, missing, "model", model.modelId, {
+        addReference(resources, missing, "model", getSceneModelAssetId(model), {
           id: `${application.metadata.id}:scene:${scene.id}:model:${model.modelId}`,
           applicationName: application.metadata.name,
           location: `${scene.name} / ${model.name}`,
@@ -125,7 +127,7 @@ export function analyzeProjectResourceGovernance(
   for (const scene of legacyScenes) {
     if (applicationSceneIds.has(scene.id)) continue;
     for (const model of scene.models) {
-      addReference(resources, missing, "model", model.modelId, {
+      addReference(resources, missing, "model", getSceneModelAssetId(model), {
         id: `legacy:scene:${scene.id}:model:${model.modelId}`,
         applicationName: "Legacy",
         location: `${scene.name} / ${model.name}`,

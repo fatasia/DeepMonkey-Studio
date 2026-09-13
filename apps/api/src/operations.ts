@@ -20,7 +20,8 @@ import type {
   SaveIndustrialValidationStudyInput
 } from "@bim-studio/contracts";
 import type { WhatIfStudyRecord, WhatIfStudyRequest } from "@bim-studio/studio-core";
-import { adaptIotNbModel, DEFAULT_MAINTENANCE_GATES, resolveIotNbProjectPath, type IotNbProjectDocument } from "./iotNbModelAdapter.js";
+import { DEFAULT_MAINTENANCE_GATES } from "./maintenanceModelDefaults.js";
+import { archiveLegacyOperationsImports } from "./operationsLegacyImportMigration.js";
 import {
   analyzeEnergy,
   buildMaintenanceAssessment,
@@ -50,25 +51,9 @@ interface OperationsProjectState {
   whatIfStudies: WhatIfStudyRecord[];
 }
 
-interface OperationsDocument {
+export interface OperationsDocument {
   schemaVersion: 1;
   projects: Record<string, OperationsProjectState>;
-}
-
-export interface IotNbSyncResult {
-  sourceProjectId: string;
-  sourceProjectName: string;
-  sourceUpdatedAt?: string;
-  imported: number;
-  updated: number;
-  removedSamples: number;
-  models: MaintenanceModelPackage[];
-}
-
-export interface IotNbAssessmentResult {
-  deployment: MaintenanceDeploymentRecord;
-  assessment: MaintenanceAssessmentRecord;
-  source: { projectName: string; datasetId: string; datasetName: string; rowCount: number; benchmarkOnly: boolean };
 }
 
 export class OperationsService {
@@ -79,7 +64,7 @@ export class OperationsService {
 
   private readonly plantLiteExecutor: PlantLiteStudyExecutor;
 
-  constructor(private readonly dataDir: string, private readonly options: { iotNbProjectPath?: string; plantLiteExecutor?: PlantLiteStudyExecutor } = {}) {
+  constructor(private readonly dataDir: string, options: { plantLiteExecutor?: PlantLiteStudyExecutor } = {}) {
     this.filePath = path.join(dataDir, "operations.json");
     this.plantLiteExecutor = options.plantLiteExecutor ?? new PlantLiteWorkerExecutor();
   }
@@ -89,6 +74,7 @@ export class OperationsService {
     try {
       const parsed = JSON.parse(await readFile(this.filePath, "utf8")) as Partial<OperationsDocument>;
       this.document = { schemaVersion: 1, projects: parsed.projects ?? {} };
+      if (await archiveLegacyOperationsImports(this.dataDir, this.document)) await this.persist();
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       await this.persist();
@@ -107,80 +93,6 @@ export class OperationsService {
       plantLiteStudies: plantLiteStudiesForOperationsSnapshot(state.plantLiteStudies),
       studies: buildOperationsStudyIndex(state),
     });
-  }
-
-  async syncIotNbModels(projectId: string): Promise<IotNbSyncResult> {
-    const sourcePath = await resolveIotNbProjectPath(this.options.iotNbProjectPath);
-    const document = JSON.parse(await readFile(sourcePath, "utf8")) as IotNbProjectDocument;
-    const upstream = document.payload?.maintenanceModels ?? [];
-    if (!upstream.length) throw new Error("Iot-nb 当前工程没有维护模型");
-    const packages = upstream.map((model) => adaptIotNbModel(projectId, model));
-    return this.mutate(projectId, (state) => {
-      const sampleIds = new Set(state.models.filter((item) => item.version.startsWith("iot-nb-sample-")).map((item) => item.id));
-      const removedSamples = sampleIds.size;
-      if (removedSamples) {
-        state.models = state.models.filter((item) => !sampleIds.has(item.id));
-        const deploymentIds = new Set(state.deployments.filter((item) => sampleIds.has(item.modelId)).map((item) => item.id));
-        state.deployments = state.deployments.filter((item) => !sampleIds.has(item.modelId));
-        state.assessments = state.assessments.filter((item) => !sampleIds.has(item.modelId) && !deploymentIds.has(item.deploymentId));
-      }
-      let imported = 0, updated = 0;
-      const synced: MaintenanceModelPackage[] = [];
-      for (const candidate of packages) {
-        const existing = state.models.find((item) => item.version === candidate.version);
-        if (existing) {
-          const next = { ...candidate, id: existing.id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
-          Object.assign(existing, next);
-          synced.push(existing);
-          updated += 1;
-        } else {
-          state.models.push(candidate);
-          synced.push(candidate);
-          imported += 1;
-        }
-      }
-      return {
-        sourceProjectId: document.payload?.projectId ?? "unknown",
-        sourceProjectName: document.payload?.projectName ?? document.name ?? "Iot-nb 当前工程",
-        ...(document.updatedAt ? { sourceUpdatedAt: document.updatedAt } : {}),
-        imported, updated, removedSamples, models: synced
-      };
-    });
-  }
-
-  async assessIotNbModel(projectId: string, modelId: string): Promise<IotNbAssessmentResult> {
-    const model = this.requireModel(projectId, modelId);
-    if (model.source !== "iot-nb") throw new Error("该模型不是从 Iot-nb 同步的模型，请通过现场数据接口执行评估");
-    const sourcePath = await resolveIotNbProjectPath(this.options.iotNbProjectPath);
-    const document = JSON.parse(await readFile(sourcePath, "utf8")) as IotNbProjectDocument;
-    const upstreamModel = (document.payload?.maintenanceModels ?? []).find((item) => item.version === model.version);
-    if (!upstreamModel?.sourceId) throw new Error(`Iot-nb 模型 ${model.version} 没有关联训练数据集`);
-    const dataset = (document.payload?.trainingDatasets ?? []).find((item) => item.id === upstreamModel.sourceId);
-    if (!dataset?.rows?.length) throw new Error(`Iot-nb 数据集 ${upstreamModel.sourceId} 不存在或没有数据`);
-    const rows = dataset.rows.map((row) => Object.fromEntries(Object.entries(row).flatMap(([key, value]) => {
-      const numeric = Number(value);
-      return Number.isFinite(numeric) ? [[key, numeric] as [string, number]] : [];
-    })));
-    const usableRows = rows.filter((row) => model.artifact.features.some((feature) => Number.isFinite(row[feature])));
-    if (usableRows.length < model.gates.minimumSamples) throw new Error(`Iot-nb 数据集有效记录不足：需要 ${model.gates.minimumSamples} 条，实际 ${usableRows.length} 条`);
-    const existing = this.project(projectId).deployments.find((item) => item.modelId === modelId && item.sourceId === upstreamModel.sourceId);
-    const deployment = existing ?? await this.saveDeployment(projectId, {
-      name: `${model.name} · Iot-nb 源数据验证`, modelId,
-      equipmentId: "IOT-NB-SOURCE", maintainableUnitId: upstreamModel.sourceId,
-      sourceId: upstreamModel.sourceId, featureMappings: {}, sampleIntervalSec: 60,
-      windowSize: Math.max(model.gates.minimumSamples, Number(model.artifact.window ?? 1)), enabled: true, status: "shadow"
-    });
-    const assessment = await this.assess(projectId, deployment.id, usableRows);
-    return {
-      deployment, assessment,
-      source: {
-        projectName: document.payload?.projectName ?? document.name ?? "Iot-nb 当前工程",
-        datasetId: upstreamModel.sourceId,
-        datasetName: dataset.name?.trim() || upstreamModel.sourceId,
-        rowCount: usableRows.length,
-        benchmarkOnly: dataset.benchmarkOnly === true || model.benchmarkOnly
-      }
-    };
   }
 
   async importModel(projectId: string, source: Partial<MaintenanceModelPackage>): Promise<MaintenanceModelPackage> {
@@ -327,7 +239,9 @@ export class OperationsService {
   async saveCase(projectId: string, input: Partial<OperationalCaseRecord>): Promise<OperationalCaseRecord> {
     return this.mutate(projectId, (state) => {
       const now = new Date().toISOString();
-      const existing = input.id ? state.cases.find((item) => item.id === input.id) : undefined;
+      // 同一 AI 证据的重试/重复点击只更新已有草稿；普通外部编号仍沿用原合同。
+      const existing = input.id ? state.cases.find((item) => item.id === input.id)
+        : input.externalRef?.startsWith("ai-draft:") ? state.cases.find(item => item.externalRef === input.externalRef) : undefined;
       const externalRef = input.externalRef ?? existing?.externalRef;
       const outcome = input.outcome ?? existing?.outcome;
       const record: OperationalCaseRecord = {
@@ -513,8 +427,14 @@ export class OperationsService {
   private async mutate<T>(projectId: string, action: (state: OperationsProjectState) => T): Promise<T> {
     let result!: T;
     const operation = this.writeChain.then(async () => {
-      result = action(this.project(projectId));
-      await this.persist();
+      const previous = structuredClone(this.document);
+      try {
+        result = action(this.project(projectId));
+        await this.persist();
+      } catch (error) {
+        this.document = previous;
+        throw error;
+      }
     });
     // 单次校验或持久化失败必须返回给当前调用者，但不能毒化后续串行写入。
     this.writeChain = operation.then(() => undefined, () => undefined);

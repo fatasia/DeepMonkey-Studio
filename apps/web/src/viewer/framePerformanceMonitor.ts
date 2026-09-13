@@ -79,6 +79,9 @@ export class FramePerformanceMonitor {
     if (this.frameDurations.length > FRAME_SAMPLE_LIMIT) this.frameDurations.shift();
   }
 
+  /** 按需渲染的空闲期不属于渲染帧耗时，保留已有样本并断开计时。 */
+  pauseSampling(): void { this.lastTimestamp = undefined; }
+
   reset(): void {
     this.frameDurations.length = 0;
     this.lastTimestamp = undefined;

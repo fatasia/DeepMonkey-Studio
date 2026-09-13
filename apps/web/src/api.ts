@@ -45,6 +45,7 @@ import {
   type RemoteRenderSessionSnapshot,
 } from "@bim-studio/server-sdk";
 import { runtimeHost } from "./adapters/runtimeHost.js";
+import { networkStatusMonitor } from "./appStatus/networkStatusMonitor";
 import { desktopLocalApiFetch, setDesktopLocalExternalModuleFetch } from "./adapters/desktopLocalApi.js";
 import { isLocalDesktopMode } from "./adapters/desktopRuntimeMode.js";
 import { createIndustrialApi } from "./apiClients/industrialApi.js";
@@ -53,6 +54,8 @@ import { createModelSceneApi } from "./apiClients/modelSceneApi.js";
 import { createVisionApi } from "./apiClients/visionApi.js";
 import { createDataWritebackApi } from "./apiClients/dataWritebackApi.js";
 import { createAssetLibraryApi } from "./apiClients/assetLibraryApi.js";
+import { createExternalResourceApi } from "./apiClients/externalResourceApi.js";
+import { createModeling3dApi } from "./apiClients/modeling3dApi.js";
 import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
 import { createSemanticModelApi } from "./apiClients/semanticModelApi.js";
 import { isRecoverableStudioRead } from "./apiClients/studioReadRecovery.js";
@@ -72,15 +75,28 @@ import {
 
 setDesktopLocalExternalModuleFetch((input, init) => globalThis.fetch(input, init));
 
+/** 在线模式的统一出口接入连接状态监控:5xx/网络错误计失败,成功或 4xx 计健康(见 S5)。 */
+const monitoredWebFetch: typeof globalThis.fetch = (input, init) =>
+  globalThis.fetch(input, init).then(
+    (response) => {
+      if (response.status >= 500) networkStatusMonitor.recordFailure(`HTTP ${response.status}`);
+      else networkStatusMonitor.recordSuccess();
+      return response;
+    },
+    (reason: unknown) => {
+      networkStatusMonitor.recordFailure(reason instanceof DOMException && reason.name === "AbortError" ? "请求超时" : "网络不可达");
+      throw reason;
+    },
+  );
+
 const desktopAwareFetch = (input: RequestInfo | URL, init?: RequestInit) =>
   isSceneViewerDeliveryRuntime()
     ? sceneViewerDeliveryFetch(input, init)
     : isLocalDesktopMode()
       ? desktopLocalApiFetch(input, init)
-      : globalThis.fetch(input, init);
+      : monitoredWebFetch(input, init);
 
 const STARTUP_MANIFEST_TIMEOUT_MS = 15_000;
-const EXTERNAL_JSON_TIMEOUT_MS = 30_000;
 const UNITY_UPLOAD_TIMEOUT_MS = 10 * 60_000;
 
 /** 启动期清单也必须经过统一 HTTP 边界，交付运行时不得自行持有网络能力。 */
@@ -98,8 +114,6 @@ export type {
   BatteryReleaseGateSnapshot,
   CapabilityDescriptor,
   CapabilityInvocationResult,
-  IotNbAssessmentResult,
-  IotNbSyncResult,
   OperationsSnapshot,
 } from "./apiClients/industrialApi.js";
 export type {
@@ -238,22 +252,10 @@ function uploadUnityResource(
   });
 }
 
-async function getExternalJson(url: string): Promise<unknown> {
-  const parsed = new URL(url, runtimeHost.getServerProfile().baseUrl);
-  if (
-    !["http:", "https:"].includes(parsed.protocol) ||
-    parsed.username ||
-    parsed.password
-  )
-    throw new Error("外部资源地址必须是无凭据的 HTTP(S) URL");
-  const response = await fetch(parsed, {
-    credentials: "omit",
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(EXTERNAL_JSON_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`外部资源 HTTP ${response.status}`);
-  return response.json();
-}
+const { getExternalJson, downloadExternalModel } = createExternalResourceApi(
+  () => runtimeHost.getServerProfile().baseUrl,
+  (input, init) => globalThis.fetch(input, init),
+);
 
 export type AssistantMode =
   | "platform"
@@ -320,6 +322,7 @@ async function streamAssistant(
 
 export const api = {
   getExternalJson,
+  downloadExternalModel,
   getUnityBuildManifest: getExternalJson,
   listUnityResources: (projectId: string) =>
     request<UnityResourceRecord[]>(
@@ -503,6 +506,7 @@ export const api = {
   getSystemHealth: () => request<ServiceHealthRecord[]>("/api/admin/health"),
   listConverters: () =>
     serverClient.listConverters() as Promise<ConverterPluginDescriptor[]>,
+  getModelImportFormats:(projectId:string)=>request<string[]>(`/api/projects/${encodeURIComponent(projectId)}/model-import-formats`),
   getAiSettings: () => request<AiProviderSettings>("/api/admin/ai-settings"),
   listPlugins: () =>
     request<{ plugins: SystemPluginSummary[] }>("/api/plugins"),
@@ -559,6 +563,10 @@ export const api = {
       `/api/admin/cloud-render/scenes/${encodeURIComponent(sceneId)}/sessions`,
       { method: "POST" },
     ),
+  setCloudRenderResolution: (sceneId: string, resolution: number) =>
+    request<CloudRenderScenePolicy>(`/api/admin/cloud-render/scenes/${encodeURIComponent(sceneId)}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ resolution }),
+    }),
   refreshCloudRenderSession: (sceneId: string) =>
     request<RemoteRenderSessionSnapshot>(
       `/api/admin/cloud-render/scenes/${encodeURIComponent(sceneId)}/sessions/current`,
@@ -766,18 +774,17 @@ export const api = {
   ...createPprBopApi(request),
   ...createModelSceneApi(request),
   ...createAssetLibraryApi(request),
+  getLibraryPreviewBlob: async (url: string, signal?: AbortSignal) => {
+    if (!/^\/api\/asset-library\/items\/[^/?#]+\/(?:preview|maps\/[^/?#]+)$/.test(url)) throw new Error("无效的资源浏览地址");
+    return (await serverClient.open(url, signal ? { signal } : {})).blob();
+  },
   ...createIndustrialAgentApi(request),
   ...createSemanticModelApi(request),
+  ...createModeling3dApi(request),
 };
 
 function serviceLogQuery(filters: { service?: string; level?: ServiceLogLevel; from?: string; to?: string; keyword?: string; limit?: number }): string {
   const query = new URLSearchParams();
   for (const [name, value] of Object.entries(filters)) if (value !== undefined && value !== "") query.set(name, String(value));
   return query.toString();
-}
-
-import type { NodeRedHealth } from "./apiNodeRed";
-/** Node-RED 独立进程健康探针；离线时前端显示明确状态而不是白屏（U1-8c）。 */
-export async function fetchNodeRedHealth(signal?: AbortSignal): Promise<NodeRedHealth> {
-  return request<NodeRedHealth>("/api/node-red/health", signal ? { signal } : undefined);
 }

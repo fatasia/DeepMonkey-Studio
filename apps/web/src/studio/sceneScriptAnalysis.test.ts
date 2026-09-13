@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ScriptModule } from "@bim-studio/contracts";
 import { analyzeSceneScript, applySceneScriptDeclarations } from "./sceneScriptAnalysis";
+import { defaultBehaviorCode } from "../components/sceneBehaviorPanelModel";
 
 const script: ScriptModule = {
   id: "behavior-1", name: "Pump", enabled: true, apiVersion: "1.0", entrypoint: "behavior", runtime: "worker-sandbox",
@@ -16,6 +17,20 @@ const context = {
 };
 
 describe("analyzeSceneScript", () => {
+  it.each([undefined, { kind: "scene" as const }, { kind: "object" as const, id: "pump-01" }, { kind: "component" as const, id: "unity-01" }])("creates a valid default script for target %j", target => {
+    const analysis = analyzeSceneScript(defaultBehaviorCode(target), {
+      ...script, ...(target ? { target } : {}), lifecycle: ["onStart", "onUpdate", "onDispose"],
+      capabilities: ["studio.runtime", "studio.object", "studio.component"], permissions: ["scene.read", "scene.write"],
+    }, context);
+    expect(analysis.issues).toEqual([]);
+    expect(analysis.lifecycle).toEqual(["onStart", "onUpdate", "onDispose"]);
+  });
+
+  it("locates an invalid attached API at the actual expression", () => {
+    const analysis = analyzeSceneScript('function onStart(ctx) {\n  ctx.log("start");\n  ctx.self?.show();\n}', { ...script, capabilities: ["studio.runtime"] }, context);
+    expect(analysis.issues).toContainEqual(expect.objectContaining({ code: "unsupported-api", line: 3, column: 3, endColumn: 11 }));
+  });
+
   it("infers lifecycle, SDK declarations and permissions", () => {
     const analysis = analyzeSceneScript(`async function onStart(ctx) {
   const temperature = ctx.getData("pump.temperature");

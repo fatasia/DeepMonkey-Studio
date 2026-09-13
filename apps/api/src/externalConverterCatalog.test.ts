@@ -13,24 +13,20 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())));
 
 describe("external converter catalog", () => {
-  it("declares only RVT, XT and JT when no commercial runtime is configured", () => {
+  it("exposes only the retained RVT converter", () => {
     const registrations = createExternalConverterRegistrations({
-      rvt: { args: [], cwd: process.cwd() },
       industrialCad: { args: [], cwd: process.cwd() },
+      rvt: { args: [], cwd: process.cwd() },
     }, objects);
 
     expect(registrations.map((item) => item.manifest.id)).toEqual([
       "bim.revit-native",
-      "industrial.parasolid-exchange",
-      "industrial.jt-exchange",
     ]);
     expect(registrations.every((item) => item.execute === undefined)).toBe(true);
     expect(registrations.map((item) => item.provider?.status)).toEqual([
       "not_configured",
-      "not_configured",
-      "not_configured",
     ]);
-    expect(registrations[2]?.manifest.outputs).toEqual(expect.arrayContaining([
+    expect(registrations[0]?.manifest.outputs).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "geometry", format: "glb", required: true }),
       expect.objectContaining({ kind: "hierarchy", format: "json", required: true }),
       expect.objectContaining({ kind: "pmi", format: "json", required: false }),
@@ -51,7 +47,7 @@ describe("external converter catalog", () => {
   it("executes a configured adapter and publishes fingerprinted industrial artifacts", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "bim-converter-test-"));
     cleanups.push(() => rm(root, { recursive: true, force: true }));
-    const sourcePath = path.join(root, "assembly.jt");
+    const sourcePath = path.join(root, "assembly.rvt");
     await writeFile(sourcePath, "deterministic-jt-fixture");
     const stored = new Map<string, string>();
     const objectStore = {
@@ -65,8 +61,8 @@ describe("external converter catalog", () => {
     } as ObjectStore;
     const fixture = fileURLToPath(new URL("./fixtures/fakeCadConverter.mjs", import.meta.url));
     const registrations = createExternalConverterRegistrations({
-      rvt: { args: [], cwd: process.cwd() },
-      industrialCad: {
+      industrialCad: { args: [], cwd: process.cwd() },
+      rvt: {
         command: process.execPath,
         args: [fixture, "--input", "{input}", "--output", "{output}", "--format", "{format}", "--include-pmi", "{includePmi}"],
         cwd: process.cwd(),
@@ -76,11 +72,11 @@ describe("external converter catalog", () => {
 
     service.submit({
       projectId: "project-1",
-      pluginId: "industrial.jt-exchange",
+      pluginId: "bim.revit-native",
       input: {
-        objectKey: "projects/project-1/imports/assembly.jt",
-        fileName: "assembly.jt",
-        format: "jt",
+        objectKey: "projects/project-1/imports/assembly.rvt",
+        fileName: "assembly.rvt",
+        format: "rvt",
         size: 24,
       },
     });
@@ -96,7 +92,7 @@ describe("external converter catalog", () => {
   it("rejects a converter that only renames source bytes to geometry.glb", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "bim-converter-invalid-glb-"));
     cleanups.push(() => rm(root, { recursive: true, force: true }));
-    const sourcePath = path.join(root, "assembly.jt");
+    const sourcePath = path.join(root, "assembly.rvt");
     await writeFile(sourcePath, "not-a-glb");
     const stored: string[] = [];
     const objectStore = {
@@ -105,8 +101,8 @@ describe("external converter catalog", () => {
     } as ObjectStore;
     const fixture = fileURLToPath(new URL("./fixtures/fakeCadConverter.mjs", import.meta.url));
     const registrations = createExternalConverterRegistrations({
-      rvt: { args: [], cwd: process.cwd() },
-      industrialCad: {
+      industrialCad: { args: [], cwd: process.cwd() },
+      rvt: {
         command: process.execPath,
         args: [fixture, "--input", "{input}", "--output", "{output}", "--format", "{format}", "--invalid-geometry", "true"],
         cwd: process.cwd(),
@@ -116,8 +112,8 @@ describe("external converter catalog", () => {
 
     service.submit({
       projectId: "project-1",
-      pluginId: "industrial.jt-exchange",
-      input: { objectKey: "projects/project-1/imports/assembly.jt", fileName: "assembly.jt", format: "jt", size: 9 },
+      pluginId: "bim.revit-native",
+      input: { objectKey: "projects/project-1/imports/assembly.rvt", fileName: "assembly.rvt", format: "rvt", size: 9 },
     });
 
     await vi.waitFor(() => expect(service.get("project-1", "task-invalid-glb")?.status).toBe("failed"));

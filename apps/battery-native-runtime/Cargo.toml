@@ -1,0 +1,18 @@
+[package]
+name = "battery-native-runtime"
+version = "0.1.0"
+edition = "2024"
+license = "LicenseRef-Deep-Monkey-Community-1.0"
+
+[dependencies]
+anyhow = "1.0.100"
+axum = "0.8.8"
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "download-binaries", "copy-dylibs", "tls-native", "api-27"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "net", "signal"] }
+uuid = { version = "1.18.1", features = ["v4"] }
+
+[profile.release]
+lto = "thin"
+strip = true

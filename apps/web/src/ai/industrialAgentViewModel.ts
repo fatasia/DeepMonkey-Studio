@@ -34,6 +34,12 @@ export function agentStatusTone(status: AgentRunStatus): "active" | "warning" | 
   return "danger";
 }
 
+export function agentDecisionStatusLabel(status: NonNullable<AgentCheckpoint["completion"]>["decisionStatus"], locale: AppLocale): string {
+  const labels = { production: ["已验证", "Verified"], shadow: ["影子评估", "Shadow evaluation"], "insufficient-data": ["数据不足", "Insufficient data"] } as const;
+  const [zh, en] = labels[status];
+  return tr(locale, zh, en);
+}
+
 export function agentProgress(checkpoint: AgentCheckpoint): number {
   if (checkpoint.status === "completed") return 100;
   const step = checkpoint.usage.steps / Math.max(1, checkpoint.budget.maxSteps);

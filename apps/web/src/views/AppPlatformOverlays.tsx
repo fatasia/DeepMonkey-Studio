@@ -6,6 +6,7 @@ import type { AiWorkspaceTask } from "../ai/capabilityCatalog";
 import { CreditsModal } from "../components/CreditsModal";
 import { DigitalTwinPanel } from "../components/DigitalTwinPanel";
 import { WorkspaceRecoveryDialog } from "../components/WorkspaceRecoveryDialog";
+import { ApplicationRecoveryDialog } from "../components/ApplicationRecoveryDialog";
 import type { AppViewBindings } from "./appViewBindings";
 
 const assistantViews = new Set(["manager", "optimizer", "data", "vision", "operations"]);
@@ -69,6 +70,7 @@ export function AppPlatformOverlays({ bindings }: { bindings: AppViewBindings })
           onDiscard={() => void recovery.discard()}
         />
       )}
+      {!recovery.draft && bindings.applicationRecovery?.draft && <ApplicationRecoveryDialog recovery={bindings.applicationRecovery} locale={locale} />}
       {utilityVisible && state.creditsOpen && (
         <CreditsModal locale={locale} systemName={state.branding.systemName} onClose={() => state.setCreditsOpen(false)} />
       )}

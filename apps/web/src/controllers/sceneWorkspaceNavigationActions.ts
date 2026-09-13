@@ -1,8 +1,9 @@
 import { migrateSceneSnapshotV1, type ApplicationDocument, type SceneSnapshot } from "@bim-studio/contracts";
 import { createUpsertTopologyCommand } from "@bim-studio/studio-core";
 import { api } from "../api";
-import { DEFAULT_DASHBOARD_VIEW } from "../studio/workspaceRoute";
+import { DEFAULT_DASHBOARD_VIEW, type TopologyReturnContext } from "../studio/workspaceRoute";
 import { applicationForScene } from "../studio/sceneApplicationSync";
+import { readLastWorkspace } from "../studio/lastWorkspacePreference";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
 
 type WorkspaceNavigationContext = Pick<
@@ -34,10 +35,14 @@ export function createSceneWorkspaceNavigationActions(context: WorkspaceNavigati
     setMessage,
   } = context;
 
-  async function ensureApplicationForScene(scene: SceneSnapshot): Promise<ApplicationDocument> {
+  async function ensureApplicationForScene(scene: SceneSnapshot, isCurrent: () => boolean = () => true): Promise<ApplicationDocument> {
+    const opened = applicationSessionRef.current.getDocument();
+    if (opened?.metadata.projectId === scene.projectId && applicationForScene([opened], scene.id)) return opened;
     const applications = await api.listApplications(scene.projectId);
+    if (!isCurrent()) throw new Error("场景已切换");
     const existing = applicationForScene(applications, scene.id);
     const application = existing ?? (await api.createApplication(migrateSceneSnapshotV1(scene)));
+    if (!isCurrent()) throw new Error("场景已切换");
     applicationSessionRef.current.openDocument(application);
     return application;
   }
@@ -51,6 +56,13 @@ export function createSceneWorkspaceNavigationActions(context: WorkspaceNavigati
         application.pages[0];
       if (!page) throw new Error("应用没有可编辑的二维页面");
       setActiveScene(scene);
+      // "编辑场景"按项目记忆上次工作区落点(见 S8);无记忆保持默认二维,不改变新项目行为。
+      const remembered = readLastWorkspace(scene.projectId);
+      if (remembered === "studio") {
+        navigate({ view: "studio", projectId: scene.projectId, sceneId: scene.id }, replace);
+        setMessage(`已打开“${scene.name}”三维编辑`);
+        return;
+      }
       navigate(
         {
           view: "dashboard",
@@ -69,7 +81,7 @@ export function createSceneWorkspaceNavigationActions(context: WorkspaceNavigati
     }
   }
 
-  async function openTopologyEditor(preferredApplication?: ApplicationDocument, preferredTopologyId?: string, createNew = false): Promise<void> {
+  async function openTopologyEditor(preferredApplication?: ApplicationDocument, preferredTopologyId?: string, createNew = false, topologyReturn?: TopologyReturnContext): Promise<void> {
     if (!project) return;
     setBusy(true);
     try {
@@ -93,7 +105,7 @@ export function createSceneWorkspaceNavigationActions(context: WorkspaceNavigati
         dispatchApplicationCommand(createUpsertTopologyCommand(topology));
       }
       if (applicationSessionRef.current.store.getState().dirty && !(await saveActiveApplication())) return;
-      navigate({ view: "topology", projectId: project.id, applicationId: application.metadata.id, topologyId: topology.id });
+      navigate({ view: "topology", projectId: project.id, applicationId: application.metadata.id, topologyId: topology.id, ...(topologyReturn ? { topologyReturn } : {}) });
       setMessage(`已打开“${topology.name}”拓扑编辑`);
     } catch (reason) {
       showError(reason);

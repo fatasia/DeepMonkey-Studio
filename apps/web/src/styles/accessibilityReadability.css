@@ -96,3 +96,13 @@ body .app-workspace-frame.app-workspace-frame
 .global-utility button {
   font-size: 12px !important;
 }
+
+@media (max-width:680px) {
+  .global-utility-operations button {
+    width:32px;
+    padding-inline:0;
+    justify-content:center;
+    gap:0;
+    font-size:0 !important;
+  }
+}

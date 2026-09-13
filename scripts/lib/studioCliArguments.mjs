@@ -18,7 +18,8 @@ export function parseStudioArguments(argv, platform = process.platform) {
     skipInfrastructure: false,
     noOpen: platform === "linux",
     https: false,
-    cloudWorker: false,
+    cloudWorker: undefined,
+    coreOnly: undefined,
     deploymentCheck: false,
     skipBuild: false,
   };
@@ -58,6 +59,9 @@ export function parseStudioArguments(argv, platform = process.platform) {
     else if (argument === "--no-open") options.noOpen = true;
     else if (argument === "--https") options.https = true;
     else if (argument === "--cloud-worker") options.cloudWorker = true;
+    else if (argument === "--no-cloud-worker") options.cloudWorker = false;
+    else if (argument === "--core-only") options.coreOnly = true;
+    else if (argument === "--full-services") options.coreOnly = false;
     else if (argument === "--api-port") options.overrides.apiPort = readPort(argumentsToParse, ++index, argument);
     else if (argument === "--web-port") options.overrides.webPort = readPort(argumentsToParse, ++index, argument);
     else if (argument === "--api-host") options.overrides.apiHost = readHost(argumentsToParse, ++index, argument);
@@ -88,6 +92,7 @@ export function resolveStudioConfiguration(parsed, previous, platform = process.
     noOpen: platform === "linux",
     https: false,
     cloudWorker: false,
+    coreOnly: false,
   };
   const reusablePrevious = parsed.action === "restart" ? previous : undefined;
   const configuration = {
@@ -98,7 +103,8 @@ export function resolveStudioConfiguration(parsed, previous, platform = process.
     skipInfrastructure: parsed.skipInfrastructure || reusablePrevious?.skipInfrastructure || false,
     noOpen: parsed.noOpen || reusablePrevious?.noOpen || defaults.noOpen,
     https: parsed.https || reusablePrevious?.https || false,
-    cloudWorker: parsed.cloudWorker || reusablePrevious?.cloudWorker || false,
+    cloudWorker: parsed.cloudWorker ?? reusablePrevious?.cloudWorker ?? ((parsed.target ?? reusablePrevious?.target ?? defaults.target) !== "api"),
+    coreOnly: parsed.coreOnly ?? reusablePrevious?.coreOnly ?? false,
     // .env 是存储拓扑的权威配置。显式 CLI 参数优先，其次当前 .env，最后才复用旧运行状态；
     // 避免一次 JSON 测试运行让后续无参数 restart 悄悄隐藏 PostgreSQL 中的真实项目。
     metadataStore: parsed.overrides.metadataStore ?? environment.METADATA_STORE ?? reusablePrevious?.metadataStore,
@@ -145,7 +151,10 @@ export function studioHelp() {
   --object-store local|minio
   --skip-infra                  不代启本地 PostgreSQL / MinIO
   --https                       Web 模式使用 .env 中配置的 HTTPS 证书
-  --cloud-worker                随栈启动本地云渲染 GPU Worker（自动生成令牌并注入 API）
+  --cloud-worker                启用云渲染 Worker（Web/客户端默认启用）
+  --no-cloud-worker             关闭云渲染，保留流程与实时视频服务
+  --core-only                   精简启动，仅启动 API/Web 及存储
+  --full-services               恢复默认全服务启动（含流程、视频、云渲染）
   --no-open                     就绪后不打开浏览器
 
 示例：

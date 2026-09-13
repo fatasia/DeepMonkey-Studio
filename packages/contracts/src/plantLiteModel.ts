@@ -1,3 +1,4 @@
+import type { PlantTransportJourney, PlantTransportNetwork, PlantTransportReservation } from "./plantTransportNetwork.js";
 /** Plant 工厂规划的稳定模型合同；求解器、API 与作者器共同复用。所有时间单位均为分钟。 */
 export type PlantLiteDistribution =
   | { kind: "deterministic"; value: number }
@@ -107,6 +108,8 @@ export interface PlantLiteTransportNode extends PlantLiteNodeBase {
   travelTime: PlantLiteDistribution;
   queueCapacity?: number;
   resourceId: string;
+  /** 配置后使用物理网络的空驶、装卸、路段预约计算，travelTime 保留给旧模型。 */
+  journey?: PlantTransportJourney;
 }
 
 export interface PlantLiteBufferNode extends PlantLiteNodeBase {
@@ -148,6 +151,7 @@ export interface PlantLiteModel {
   nodes: PlantLiteNode[];
   edges: PlantLiteEdge[];
   resources?: PlantLiteResource[];
+  transportNetwork?: PlantTransportNetwork;
   /** 省略时保持旧模型的单一未分类物料语义。 */
   productTypes?: PlantLiteProductType[];
   /** 配置后替代来料源的无限随机投放，用于验证订单数量与交期。 */
@@ -204,6 +208,8 @@ export type PlantLiteTraceEvent =
       configuredYieldRate: number;
       disposition: "scrap";
     };
+    /** 搬运开始事件上的确定性调度证据；回放不能把等待时间画成移动。 */
+    transport?: PlantTransportReservation;
   }
   | {
     sequence: number;

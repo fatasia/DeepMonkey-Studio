@@ -71,7 +71,7 @@ export function useSceneModelInstances(bindings: AppViewBindings) {
       const authoritative = owner.state.project!.models.find(item => item.id === asset.id);
       if (!authoritative?.manifest || authoritative.status !== "ready") throw new Error("请选择当前项目已就绪的素材");
       await owner.state.engine!.replaceModelManifest(instanceId, authoritative.manifest);
-      if (stillOwned(owner)) changed(owner, instanceId, "已替换素材");
+      if (stillOwned(owner)) changed(owner, instanceId, "已替换素材，原有绑定与配置保留，可撤销");
     } catch (reason) { if (stillOwned(owner)) setError(modelInstanceError(reason)); }
     finally { finish(owner); }
   }

@@ -25,6 +25,9 @@ const ROBOT_VARIANTS = [
   ["spot-welding-6", "六轴点焊机器人", "6-axis spot welding robot", "articulated", 6, 80, 2.6, "点焊"],
   ["palletizer-4-heavy", "四轴高速码垛机器人", "High-speed palletizer", "palletizer", 4, 180, 3.1, "高速码垛"],
   ["scara-4-fast", "四轴高速装配 SCARA", "High-speed assembly SCARA", "scara", 4, 6, 0.55, "高速装配"],
+  ["gantry-3", "龙门桁架机械手", "Gantry truss manipulator", "gantry", 3, 250, 6, "桁架搬运"],
+  ["dual-arm-14", "双臂协作机器人", "Dual-arm collaborative robot", "dual-arm", 14, 4, 1.1, "协作装配"],
+  ["palletizer-6", "六轴码垛机器人", "6-axis palletizing robot", "palletizer", 6, 250, 3.6, "码垛"],
 ] as const;
 
 export const ROBOT_PREFABS: IndustrialPrefabDefinition[] = ROBOT_VARIANTS.map(

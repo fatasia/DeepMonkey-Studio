@@ -1,0 +1,4 @@
+.scene-layer-root-drop { display: grid; place-items: center; min-height: 32px; margin: 6px; border: 1px dashed var(--line); border-radius: var(--radius-sm); color: var(--text-muted); font-size: 11px; }
+.scene-layer-root-drop:hover { border-color: var(--accent); background: var(--accent-soft); }
+.scene-layer-interaction { min-width: 0; }
+.scene-layer-interaction:has(> .scene-layer-group-row .scene-row-menu[open]) { position: relative; z-index: var(--layer-dropdown); }

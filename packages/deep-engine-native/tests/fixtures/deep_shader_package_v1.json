@@ -1,0 +1,71 @@
+{
+  "schema": "deep-shader-package",
+  "schemaVersion": 1,
+  "packageId": "deep.native.fixture",
+  "packageVersion": "1.0.0",
+  "compilerVersion": "0.1.0",
+  "targetProfile": "webgpu-wgsl-core-1",
+  "dependencies": [
+    {
+      "id": "deep.common",
+      "contentHash": {
+        "algorithm": "sha256",
+        "value": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    }
+  ],
+  "modules": [
+    {
+      "id": "module.071da62943b3ca7ae5a4eb7f43397c10c9e7057f4ac98e2651df80eca93a8b92",
+      "language": "wgsl",
+      "source": "@vertex fn deepVertex() -> @builtin(position) vec4f {\n  return vec4f(0.0, 0.0, 0.0, 1.0);\n}\n@fragment fn deepFragment() -> @location(0) vec4f {\n  return vec4f(1.0, 0.5, 0.25, 1.0);\n}\n",
+      "sourceHash": {
+        "algorithm": "sha256",
+        "value": "ceb11cd0c6d5a17b57e5bb8468b9ec68994676ac76e03d37cc36765731ede35d"
+      },
+      "dependencyIds": [
+        "deep.common"
+      ]
+    }
+  ],
+  "passes": [
+    {
+      "id": "default/main",
+      "techniqueId": "default",
+      "passId": "main",
+      "kind": "forward",
+      "moduleId": "module.071da62943b3ca7ae5a4eb7f43397c10c9e7057f4ac98e2651df80eca93a8b92",
+      "cacheKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "entryPoints": {
+        "vertex": "deepVertex",
+        "fragment": "deepFragment"
+      },
+      "reflection": {
+        "properties": [],
+        "bindings": [],
+        "vertexInputs": [],
+        "sourceMap": [
+          {
+            "stage": "vertex",
+            "nodeId": "position",
+            "generatedLine": 2
+          },
+          {
+            "stage": "fragment",
+            "nodeId": "color",
+            "generatedLine": 5
+          }
+        ]
+      },
+      "renderState": {
+        "topology": "triangle-list",
+        "cullMode": "back",
+        "frontFace": "ccw",
+        "depthCompare": "less",
+        "depthWrite": true,
+        "colorWriteMask": 15
+      }
+    }
+  ],
+  "packageCacheKey": "423c1d1cfeee4a632a452725b8eeea75e5934f40595fb0a6f9e3febc04beb5a7"
+}

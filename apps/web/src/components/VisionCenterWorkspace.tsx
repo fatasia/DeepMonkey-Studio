@@ -32,6 +32,7 @@ import {
 import { VisionEventLocalizationBadge } from "./VisionEventLocalizationBadge";
 import { VisionSourcePreview } from "./VisionSourcePreview";
 import { VisionTaskDependencyFlow } from "./VisionTaskDependencyFlow";
+import { AiSampleRunner } from "./AiSampleRunner";
 
 export function VisionCenterWorkspace({
   controller,
@@ -75,8 +76,8 @@ export function VisionCenterWorkspace({
   return (
     <>
       <header className="vision-header secondary-page-header">
-        <SecondaryPageBack locale={locale} onBack={onBack} />
         <div className="secondary-page-heading-row">
+          <SecondaryPageBack locale={locale} onBack={onBack} />
           <div>
             <h1>{tr(locale, "视觉中心", "Vision center")}</h1>
             <p>{project.name}</p>
@@ -130,6 +131,7 @@ export function VisionCenterWorkspace({
           </button>
         ))}
       </nav>
+      <div className="vision-sample-content"><AiSampleRunner key={project.id} projectId={project.id} kind="vision" locale={locale} /></div>
       {error && (
         <div className="vision-error">
           <AlertTriangle size={15} />

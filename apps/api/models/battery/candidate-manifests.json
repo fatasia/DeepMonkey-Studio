@@ -1,0 +1,178 @@
+[
+  {
+    "schemaVersion": 1,
+    "modelId": "battery.bmsformer",
+    "source": {
+      "modelVersion": "bmsformer-li-multichem-v2",
+      "checkpointSha256": "129f84739cb4dd8d016c1659c598e5433be62f7cfc04c651f361510febc7f4ca"
+    },
+    "artifact": {
+      "fileName": "bmsformer.fp32.opset18.onnx",
+      "sha256": "71a730c4b31e997f2d47ef05269e04f956705a984e408065a1a0e08282db1a13",
+      "sizeBytes": 200457,
+      "opset": 18,
+      "precision": "fp32"
+    },
+    "runtimeAdapter": {
+      "fileName": "bmsformer.runtime-adapter.json",
+      "sha256": "06849ecdc8163d43657a0e6d085648ceb05ceb729b9135ae1df63259a38198d8",
+      "sizeBytes": 1537,
+      "schemaVersion": 1
+    },
+    "contract": {
+      "input": "bmsformer-normalized-health-window-v1",
+      "output": "soh-fraction-v1",
+      "preprocessing": "bmsformer-health-window-v1",
+      "postprocessing": "bmsformer-soh-product-v1"
+    },
+    "validation": {
+      "outputs": [
+        {
+          "task": "soh",
+          "samples": 32,
+          "maxAbsoluteError": 5.960464477539063e-08,
+          "meanAbsoluteError": 2.7939677238464355e-08,
+          "allowedMaxAbsoluteError": 5e-05,
+          "allowedMeanAbsoluteError": 1e-06
+        }
+      ],
+      "boundaryCases": 3,
+      "boundaryPassed": 3,
+      "outOfDomainCases": 2,
+      "outOfDomainPassed": 2,
+      "invalidInputCases": 2,
+      "invalidInputRejected": 2,
+      "repeatRuns": 5,
+      "maxRepeatDrift": 0.0,
+      "allowedRepeatDrift": 0.0,
+      "businessReplayCases": 3,
+      "businessReplayPassed": 3
+    },
+    "approval": {
+      "decisionStatus": "candidate",
+      "independentDatasetSplit": false,
+      "externalLockboxCases": 0
+    },
+    "generatedAt": "2026-08-30T04:53:35.942887+00:00"
+  },
+  {
+    "schemaVersion": 1,
+    "modelId": "battery.socformer",
+    "source": {
+      "modelVersion": "socformer-li-hybrid-v2",
+      "checkpointSha256": "9e8cf6e75ae0f94be95740414d8e35b47b5e52f982049c5e8e5a1dc95e7891ad"
+    },
+    "artifact": {
+      "fileName": "socformer.fp32.opset18.onnx",
+      "sha256": "14b824392efb9809a0d6cba753da2f12f0fb2ba0186ca0cf7c3c2555cd8a18df",
+      "sizeBytes": 132718,
+      "opset": 18,
+      "precision": "fp32"
+    },
+    "runtimeAdapter": {
+      "fileName": "socformer.runtime-adapter.json",
+      "sha256": "fcaa92d9b580be90da45ef377525f25d35e6441595e0f2d05bf9d6d5e005a287",
+      "sizeBytes": 1561,
+      "schemaVersion": 1
+    },
+    "contract": {
+      "input": "socformer-normalized-sequence-window-v1",
+      "output": "soc-fraction-v1",
+      "preprocessing": "socformer-sequence-anchor-v1",
+      "postprocessing": "socformer-hybrid-soc-product-v1"
+    },
+    "validation": {
+      "outputs": [
+        {
+          "task": "soc",
+          "samples": 32,
+          "maxAbsoluteError": 2.682209014892578e-07,
+          "meanAbsoluteError": 6.346090231090784e-08,
+          "allowedMaxAbsoluteError": 5e-05,
+          "allowedMeanAbsoluteError": 1e-06
+        }
+      ],
+      "boundaryCases": 3,
+      "boundaryPassed": 3,
+      "outOfDomainCases": 2,
+      "outOfDomainPassed": 2,
+      "invalidInputCases": 2,
+      "invalidInputRejected": 2,
+      "repeatRuns": 5,
+      "maxRepeatDrift": 0.0,
+      "allowedRepeatDrift": 0.0,
+      "businessReplayCases": 3,
+      "businessReplayPassed": 3
+    },
+    "approval": {
+      "decisionStatus": "candidate",
+      "independentDatasetSplit": false,
+      "externalLockboxCases": 0
+    },
+    "generatedAt": "2026-08-30T04:53:35.942915+00:00"
+  },
+  {
+    "schemaVersion": 1,
+    "modelId": "battery.batterymformer",
+    "source": {
+      "modelVersion": "batterymformer-expanded",
+      "checkpointSha256": "5a02f88b51ee06f386ad7a2672b1ec2d7bf16528fc9ba0336a1e70ed43eae1e8"
+    },
+    "artifact": {
+      "fileName": "batterymformer.fp32.opset18.onnx",
+      "sha256": "725e40fb0065d169d7906712ff4a17077345d02403180b59f2f1384bd386da74",
+      "sizeBytes": 36030614,
+      "opset": 18,
+      "precision": "fp32"
+    },
+    "runtimeAdapter": {
+      "fileName": "batterymformer.runtime-adapter.json",
+      "sha256": "94d1d830d7fb4fda65cacde2688a11bec28d10768491945257c92857c5b6da1d",
+      "sizeBytes": 39813,
+      "schemaVersion": 1
+    },
+    "contract": {
+      "input": "batterymformer-early-cycle-multimodal-v1",
+      "output": "soh-trajectory-and-rul-v1",
+      "preprocessing": "batterymformer-multimodal-v1",
+      "postprocessing": "batterymformer-rul-product-v1"
+    },
+    "validation": {
+      "outputs": [
+        {
+          "task": "soh",
+          "samples": 4,
+          "maxAbsoluteError": 5.21540641784668e-07,
+          "meanAbsoluteError": 6.197457480539015e-08,
+          "allowedMaxAbsoluteError": 0.0002,
+          "allowedMeanAbsoluteError": 2e-06
+        },
+        {
+          "task": "rul",
+          "samples": 4,
+          "maxAbsoluteError": 5.21540641784668e-07,
+          "meanAbsoluteError": 6.197457480539015e-08,
+          "allowedMaxAbsoluteError": 0.0002,
+          "allowedMeanAbsoluteError": 2e-06
+        }
+      ],
+      "boundaryCases": 3,
+      "boundaryPassed": 3,
+      "outOfDomainCases": 2,
+      "outOfDomainPassed": 2,
+      "invalidInputCases": 2,
+      "invalidInputRejected": 2,
+      "repeatRuns": 5,
+      "maxRepeatDrift": 0.0,
+      "allowedRepeatDrift": 0.0,
+      "businessReplayCases": 3,
+      "businessReplayPassed": 3
+    },
+    "approval": {
+      "decisionStatus": "candidate",
+      "independentDatasetSplit": false,
+      "externalLockboxCases": 0
+    },
+    "generatedAt": "2026-08-30T04:53:35.942926+00:00"
+  }
+]

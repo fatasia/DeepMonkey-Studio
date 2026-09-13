@@ -93,6 +93,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     setScenes,
     setSelected,
     setSelectedAnnotationId,
+    setSelectedLightId,
     setSelectedSpace,
     setSelectionSets,
     setViewerLoadState,
@@ -100,10 +101,15 @@ export function createScenePersistenceController(context: ScenePersistenceContro
   } = context;
 
   function makeSnapshot(): SceneSnapshot | undefined {
+    if (!engine?.isSceneSnapshotReady(activeScene?.id)) return;
     return makeSceneSnapshot(context);
   }
 
   async function saveScene(automatic = false): Promise<SceneSnapshot | undefined> {
+    if (!engine?.isSceneSnapshotReady(activeScene?.id)) {
+      if (!automatic) showError(new Error("场景尚未完整载入或渲染器正在恢复，请待载入完成后保存"));
+      return;
+    }
     const applicationBaseline = applicationSessionRef.current.getDocument();
     const snapshot = makeSnapshot();
     if (!snapshot || !project) return;
@@ -120,11 +126,17 @@ export function createScenePersistenceController(context: ScenePersistenceContro
         && applicationBaseline.metadata.projectId === projectId ? syncSceneIntoApplication(applicationBaseline, snapshot) : undefined;
       // 网络请求发出前先保存轻量恢复副本；IndexedDB 不可用时仍继续正式保存。
       await writeWorkspaceRecoveryDraft(createWorkspaceRecoveryDraft(projectId, applicationDraft, snapshot));
+      if (!engine.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion
+        || context.getActiveScene()?.id !== activeScene?.id) throw new Error("场景已切换或正在重新载入，本次保存已取消");
       const workspace = applicationDraft ? await api.saveApplicationWorkspace(applicationDraft, snapshot) : undefined;
       const saved = workspace?.scene ?? (await api.saveScene(snapshot));
+      if (!engine.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion || context.getActiveScene()?.id !== activeScene?.id) return saved;
       if (workspace) applicationSessionRef.current.acknowledgeSave(workspace.application, applicationBaseline);
-      if (sceneApplyVersionRef.current !== applyVersion || context.getActiveScene()?.id !== activeScene?.id) return saved;
+      if (!activeScene) context.onFirstSceneSave?.(saved);
+      engine.bindSavedSceneSnapshot(saved.id);
       setActiveScene((current) => mergeSavedSimulationScene(current, activeScene, saved));
+      // 只激活已保存身份，不重载引擎或重开应用，保留当前选择、未提交编辑与撤销栈。
+      if (!activeScene && route.view === "studio") navigate({ ...route, projectId, sceneId: saved.id }, true);
       setSceneName(saved.name);
       setScenes((items) => sortScenesByTime([saved, ...items.filter((item) => item.id !== saved.id)]));
       lastAutoSavedSceneRevisionRef.current = revision;
@@ -210,6 +222,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       engine.setReadOnly(readOnly);
       engine.setFastRuntime(fastRuntime);
       engine.clearSceneModels();
+      const restoreGeneration = engine.beginSceneSnapshotRestore(scene.id);
       const nextInteractions = normalizeInteractionScripts(scene.interactions);
       const nextDataBindings = normalizeSceneDataBindings(scene.dataBindings);
       engine.setInteractionScripts(nextInteractions);
@@ -222,14 +235,17 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       setMeasurements([]);
       setAnnotations([]);
       setSelectedAnnotationId(undefined);
+      setSelectedLightId("");
       setSelectedSpace(undefined);
       setSceneOrganizationSelection(new Set());
       setSelectionSets(structuredClone(scene.selectionSets ?? []));
       setLastDeletedSelectionSet(undefined);
       const loadSceneModel = async (item: SceneSnapshot["models"][number]) => {
         const record = sceneProject.models.find((model) => model.id === getSceneModelAssetId(item));
-        if (record) await loadModel(record, true, item.modelId);
+        if (!record) throw new Error(`模型“${item.name}”的资源不存在，场景尚未完整恢复`);
+        await loadModel(record, true, item.modelId);
         if (applyVersion !== sceneApplyVersionRef.current) return false;
+        if (!engine.listModels().some(model => model.id === item.modelId)) throw new Error(`模型“${item.name}”未能载入，请重新打开场景后保存`);
         engine.applyModelState(item.modelId, item);
         engine.rename(item.modelId, item.name);
         return true;
@@ -304,6 +320,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       else engine.select(scene.selectedModelId);
       setNavigationMode(entryCamera.mode);
       setAvatarVisible(entryCamera.avatarVisible ?? false);
+      if (!deferredModels.length) engine.completeSceneSnapshotRestore(restoreGeneration);
       setActiveScene(scene);
       setSceneName(scene.name);
       setMessage(`场景“${scene.name}”已恢复`);
@@ -322,6 +339,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
             loaded += 1;
             setViewerLoadState({ loaded, total: scene.models.length, current: item.name, phase: loaded === scene.models.length ? "ready" : "streaming" });
           }
+          engine.completeSceneSnapshotRestore(restoreGeneration);
           window.setTimeout(() => {
             if (applyVersion === sceneApplyVersionRef.current) setViewerLoadState(undefined);
           }, 900);

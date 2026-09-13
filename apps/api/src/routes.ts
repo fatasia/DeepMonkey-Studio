@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import {
   assertPathSafeResourceId,
@@ -65,39 +64,6 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   });
 
   app.get("/health", async () => ({ status: "ok", service: "bim-studio-api" }));
-  app.get("/api/node-red/health", async () => {
-    const baseUrl = String(process.env.NODE_RED_URL || "http://127.0.0.1:1880").replace(/\/$/, "");
-    const checkedAt = new Date().toISOString();
-    const startedAt = performance.now();
-    const manifest = await nodeRedManifest();
-    try {
-      const response = await fetch(`${baseUrl}/node-red/`, { signal: AbortSignal.timeout(1_500), redirect: "manual" });
-      await response.body?.cancel().catch(() => undefined);
-      const online = response.status >= 200 && response.status < 500;
-      return {
-        online,
-        status: online ? "online" : "offline",
-        statusCode: response.status,
-        latencyMs: Math.round(performance.now() - startedAt),
-        checkedAt,
-        editorPath: "/node-red/",
-        runtimeVersion: manifest.runtimeVersion,
-        declaredNodes: manifest.declaredNodes,
-        ...(online ? {} : { message: `Node-RED 返回 HTTP ${response.status}` }),
-      };
-    } catch (reason) {
-      return {
-        online: false,
-        status: "offline",
-        latencyMs: Math.round(performance.now() - startedAt),
-        checkedAt,
-        editorPath: "/node-red/",
-        runtimeVersion: manifest.runtimeVersion,
-        declaredNodes: manifest.declaredNodes,
-        message: reason instanceof Error ? reason.message : String(reason),
-      };
-    }
-  });
   app.get("/api/revit/installations", async () => getRevitRuntimeInfo());
 
   app.post<{ Body: { sourceUrl?: string; playback?: "hls" | "webrtc" } }>("/api/live-monitor/resolve", async (request, reply) => {
@@ -479,21 +445,4 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
 
 function isSupportedLiveSource(value: string): boolean {
   return /^(rtsps?|rtmps?|srt|wheps?|https?|udp\+mpegts|udp\+rtp):\/\//i.test(value);
-}
-
-async function nodeRedManifest(): Promise<{ runtimeVersion: string; declaredNodes: string[] }> {
-  const routeDirectory = path.dirname(fileURLToPath(import.meta.url));
-  const manifestPath = path.resolve(routeDirectory, "../../node-red/package.json");
-  try {
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { dependencies?: Record<string, string> };
-    const dependencies = manifest.dependencies ?? {};
-    return {
-      runtimeVersion: dependencies["node-red"] ?? "unknown",
-      declaredNodes: Object.keys(dependencies)
-        .filter((name) => name !== "node-red" && (name.startsWith("node-red-") || name.startsWith("@flowfuse/node-red-")))
-        .sort(),
-    };
-  } catch {
-    return { runtimeVersion: "unknown", declaredNodes: [] };
-  }
 }

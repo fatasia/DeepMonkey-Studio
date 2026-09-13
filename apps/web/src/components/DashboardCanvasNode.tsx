@@ -275,6 +275,7 @@ export function DashboardNode({
           />
         ) : (
           <DashboardWidgetView
+            projectId={project.id}
             locale={locale}
             widget={node.widget}
             metric={metric}

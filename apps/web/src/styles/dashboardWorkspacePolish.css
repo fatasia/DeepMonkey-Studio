@@ -12,6 +12,9 @@
     "pages status inspector";
 }
 
+/* The 28px inspector control straddles the 288px panel boundary. */
+.dashboard-workspace:not(.left-panel-collapsed) .dashboard-panel-controls .panel-toggle-right { right: 274px; }
+
 .dashboard-back,
 .dashboard-data-entry,
 .dashboard-workspace-actions button,
@@ -193,7 +196,7 @@
   position: fixed;
   top: 14px;
   left: 14px;
-  z-index: 142;
+  z-index: calc(var(--layer-runtime) + 22); /* 运行时返回按钮,须高于控制球 140 */
   display: inline-flex;
   min-height: 34px;
   align-items: center;
@@ -225,10 +228,11 @@
       "pages canvas"
       "pages status";
   }
+  .dashboard-panel-controls .panel-toggle-right { right: 274px; }
   /* 紧凑工作区保留完整属性编辑能力，以覆盖抽屉代替永久隐藏。 */
   .dashboard-workspace:not(.inspector-collapsed) .dashboard-inspector-panel {
     position: absolute;
-    z-index: 32;
+    z-index: calc(var(--layer-panel) + 12); /* 紧凑工作区属性抽屉,面板带上层 */
     top: 52px;
     right: 0;
     bottom: 32px;

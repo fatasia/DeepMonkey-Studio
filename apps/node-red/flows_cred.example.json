@@ -1,7 +1,0 @@
-{
-  "example-oracle-server": {
-    "user": "$(ORACLE_USER)",
-    "password": "$(ORACLE_PASSWORD)",
-    "walletpassword": ""
-  }
-}

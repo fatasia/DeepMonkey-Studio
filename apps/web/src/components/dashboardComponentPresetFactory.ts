@@ -15,28 +15,76 @@ interface ResourcePalette {
   secondary: string;
 }
 
-const RESOURCE_PALETTES: ReadonlyArray<{ terms: readonly string[]; colors: ResourcePalette }> = [
-  { terms: ["alarm", "fault", "risk", "hazard", "emergency", "offline", "downtime", "defect", "safety"], colors: { accent: "#e2766a", secondary: "#f0ad62" } },
-  { terms: ["energy", "carbon", "environment", "emission", "water", "liquid", "tank"], colors: { accent: "#55ad82", secondary: "#4d9fbd" } },
-  { terms: ["quality", "yield", "capability", "inspection"], colors: { accent: "#8679cf", secondary: "#55b092" } },
-  { terms: ["maintenance", "health", "device", "motor", "valve", "robot", "asset", "equipment"], colors: { accent: "#4f9fbd", secondary: "#64b68e" } },
-  { terms: ["production", "output", "capacity", "throughput", "order", "inventory", "logistics", "warehouse"], colors: { accent: "#4e88d0", secondary: "#53aa8b" } },
-  { terms: ["gis", "map", "region", "route"], colors: { accent: "#48a29b", secondary: "#6c8fce" } },
-  { terms: ["topology", "network", "communication", "process", "flow"], colors: { accent: "#559bb1", secondary: "#8b82c9" } },
-  { terms: ["report", "table", "rank", "summary"], colors: { accent: "#6e91c8", secondary: "#6aae91" } },
+/**
+ * 资源库 family 级配色语言(对标帆软 FVS 组件面板:分组可凭色相定位,组内仍有节奏):
+ * 业务指标=琥珀金、分析图表=青、业务报表=蓝紫、交互控件=天蓝、媒体监控=青蓝、
+ * GIS=绿松石、工业拓扑=蓝+紫、工业状态=青绿+金、矢量装饰=金+青。
+ * 这里的颜色是「组件自身的数据系列色」(插入画布后仍然生效),不属于 UI 主题硬编码;
+ * 瓷砖、文字、边框等界面色一律走 styles 里的 CSS 令牌。
+ */
+const FAMILY_PALETTES: Readonly<Record<DashboardComponentPresetCategory, ResourcePalette>> = {
+  indicator: { accent: "#e7b45a", secondary: "#ee8f5c" },
+  analysis: { accent: "#3ec2b4", secondary: "#5a9cf5" },
+  report: { accent: "#8b8ef2", secondary: "#58b6d8" },
+  control: { accent: "#57acf0", secondary: "#8f97f0" },
+  media: { accent: "#4cb4dd", secondary: "#dfa05e" },
+  gis: { accent: "#43c39c", secondary: "#5aa6ee" },
+  topology: { accent: "#57a5e6", secondary: "#b48ae6" },
+  industrial: { accent: "#5ec4a4", secondary: "#dcb258" },
+  material: { accent: "#d8a84e", secondary: "#68bec6" },
+};
+
+/**
+ * 装饰素材按子家族(标题/边框/角标/分隔/标尺/光带/扫描/告警)给出多彩但成体系的配色,
+ * 避免「资源」页整屏同色;装饰预设显式传入的 color 仍然优先。
+ */
+const DECORATION_PALETTES: Readonly<Record<DashboardPresetPreviewFamily, ResourcePalette>> = {
+  metric: FAMILY_PALETTES.indicator,
+  chart: FAMILY_PALETTES.analysis,
+  report: FAMILY_PALETTES.report,
+  control: FAMILY_PALETTES.control,
+  media: FAMILY_PALETTES.media,
+  gis: FAMILY_PALETTES.gis,
+  topology: FAMILY_PALETTES.topology,
+  industrial: FAMILY_PALETTES.industrial,
+  title: { accent: "#e0a44e", secondary: "#e8785c" },
+  frame: { accent: "#52b2c8", secondary: "#58a0e8" },
+  badge: { accent: "#e89850", secondary: "#f0c05c" },
+  divider: { accent: "#6a9fe8", secondary: "#58c0d0" },
+  ruler: { accent: "#55c0a2", secondary: "#58a8e8" },
+  light: { accent: "#f0c25a", secondary: "#f09a5c" },
+  scan: { accent: "#4cc4d4", secondary: "#58a8e8" },
+  alarm: { accent: "#ee7a68", secondary: "#f0a95a" },
+};
+
+/**
+ * 语义二级覆盖:告警=红、能源=绿、质量=紫、生产=蓝、设备=青绿,跨分组保持同一语义同色
+ * (西门子水位:语义色全系统唯一),且保证同一分组的相邻卡片也有可辨识差异。
+ */
+const SEMANTIC_PALETTES: ReadonlyArray<{ terms: readonly string[]; colors: ResourcePalette }> = [
+  { terms: ["alarm", "fault", "critical", "hazard", "emergency", "offline", "downtime", "risk", "overdue"], colors: { accent: "#ee7a68", secondary: "#f0a95a" } },
+  { terms: ["energy", "carbon", "environment", "emission", "water", "liquid", "tank"], colors: { accent: "#52c18a", secondary: "#4fb3c8" } },
+  { terms: ["quality", "yield", "defect", "capability", "inspection"], colors: { accent: "#a083e8", secondary: "#d583b4" } },
+  { terms: ["production", "output", "capacity", "throughput", "order", "inventory", "logistics", "warehouse"], colors: { accent: "#559ce8", secondary: "#e0b45c" } },
+  { terms: ["maintenance", "health", "device", "motor", "valve", "robot", "asset", "equipment"], colors: { accent: "#45bfa8", secondary: "#5a9cf5" } },
 ];
 
-const DEFAULT_RESOURCE_PALETTE: ResourcePalette = { accent: "#4f91c8", secondary: "#59ae8d" };
-
-function resourcePalette(id: string, explicitColor?: string): ResourcePalette {
-  const matched = RESOURCE_PALETTES.find(({ terms }) => terms.some((term) => id.includes(term)))?.colors
-    ?? DEFAULT_RESOURCE_PALETTE;
+function resourcePalette(
+  id: string,
+  category: DashboardComponentPresetCategory,
+  previewFamily: DashboardPresetPreviewFamily,
+  explicitColor?: string,
+): ResourcePalette {
+  const semantic = SEMANTIC_PALETTES.find(({ terms }) => terms.some((term) => id.includes(term)))?.colors;
+  const matched = category === "material"
+    ? semantic ?? DECORATION_PALETTES[previewFamily] ?? FAMILY_PALETTES.material
+    : semantic ?? FAMILY_PALETTES[category] ?? FAMILY_PALETTES.analysis;
   return explicitColor ? { ...matched, accent: explicitColor } : matched;
 }
 
 export function componentPreset(input: PresetInput): DashboardComponentPreset {
   const { previewFamily, previewMark, ...preset } = input;
-  const palette = resourcePalette(preset.id, preset.widget.color);
+  const palette = resourcePalette(preset.id, preset.category, previewFamily, preset.widget.color);
   return {
     ...preset,
     widget: { ...preset.widget, color: palette.accent },

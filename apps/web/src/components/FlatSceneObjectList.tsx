@@ -1,8 +1,14 @@
-import type { ReactNode } from "react";
 import {
   Box,
+  Check,
+  ChevronDown,
+  ChevronRight,
   Eye,
   EyeOff,
+  Folder,
+  FolderOpen,
+  Focus,
+  Group,
   Lightbulb,
   Lock,
   LocateFixed,
@@ -12,15 +18,16 @@ import {
   ScanLine,
   Trash2,
   Unlock,
-  Upload,
-  Plus,
+  Pencil,
 } from "lucide-react";
 import type {
   GlobalLightingState,
   MeasurementState,
   SceneAnnotationState,
   SceneLightState,
+  SceneSelectionSetState,
 } from "@bim-studio/contracts";
+import { useEffect, useState } from "react";
 import {
   formatMeasurementValue,
   lightTypeEnglishName,
@@ -34,25 +41,31 @@ import type {
   ViewerEngine,
 } from "../viewer/ViewerEngine";
 import { FlatSpaceList } from "./FlatSpaceList";
-import { EditorEmptyState } from "./EditorEmptyState";
+import { WindowedSceneRows, type SceneRow } from "./WindowedSceneRows";
+import { SceneRowMenu } from "./SceneRowMenu";
+import type { SceneOrganizationObject } from "./SceneOrganizationPanel";
+import { SceneLayerInteractions, SceneLayerRootDrop, type SceneGroupingActions } from "./SceneLayerInteractions";
 
-interface FlatSceneObjectListProps {
+interface FlatSceneObjectListProps extends SceneGroupingActions {
   locale: AppLocale;
   studio: boolean;
   engine?: ViewerEngine | undefined;
-  modelRows: ReactNode;
+  modelRows: SceneRow[];
   empty: boolean;
   lighting: GlobalLightingState;
   selectedLightId: string;
   selectedObjectId?: string | undefined;
+  selectedObjectIds?: ReadonlySet<string> | undefined;
+  selectedLayerId?: string | undefined;
   primitives: LoadedSceneModel[];
   measurements: MeasurementState[];
   annotations: SceneAnnotationState[];
   selectedAnnotationId?: string | undefined;
   spaces: BimSpaceRecord[];
+  groups: SceneSelectionSetState[];
+  organizationObjects: SceneOrganizationObject[];
   onRevision: () => void;
-  onEmptyImport: () => void;
-  onEmptyCreateBox: () => void;
+  onObjectSelect?: (id: string, options: { additive: boolean; range: boolean }) => void;
   onLightSelect: (id: string) => void;
   onLightUpdate: (id: string, patch: Partial<SceneLightState>) => void;
   onLightTransform: (
@@ -70,54 +83,88 @@ interface FlatSceneObjectListProps {
   onAnnotationRemove: (id: string) => void;
   onSpaceFocus: (space: BimSpaceRecord) => void;
   onSpaceVisibilityChange: (space: BimSpaceRecord, visible: boolean) => void;
+  onSelectGroup: (id: string) => void;
+  onRenameGroup: (id: string, name: string) => void;
+  onGroupVisibilityChange: (ids: string[], visible: boolean) => void;
+  onGroupLockChange: (ids: string[], locked: boolean) => void;
 }
 
 /** 主目录只呈现场景对象；不同对象类型保持同层，避免树结构吞噬操作空间。 */
 export function FlatSceneObjectList(props: FlatSceneObjectListProps) {
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const primitiveRows: SceneRow[] = props.primitives.map(primitive => ({ key: `primitive:${primitive.id}`, render: () => <PrimitiveRow {...props} primitive={primitive} /> }));
+  const objectRows: SceneRow[] = [...props.modelRows, ...primitiveRows].map(row => {
+    const objectId = row.key.slice(row.key.indexOf(":") + 1);
+    const groupId = props.groups.find(group => group.kind === "group" && group.objectIds.includes(objectId))?.id;
+    return { ...row, render: () => <SceneLayerInteractions {...props} objectId={objectId} {...(groupId ? { groupId } : {})} selectedIds={props.selectedObjectIds} locked={props.organizationObjects.find(item => item.id === objectId)?.locked ?? false}>{row.render()}</SceneLayerInteractions> };
+  });
+  const rowsByObjectId = new Map(objectRows.map((row) => [row.key.slice(row.key.indexOf(":") + 1), row]));
+  const groups = props.groups.filter((group) => group.kind === "group");
+  const groupedIds = new Set(groups.flatMap((group) => group.objectIds));
+  useEffect(() => {
+    setCollapsedGroups((current) => new Set([...current].filter((id) => groups.some((group) => group.id === id))));
+  }, [groups.map((group) => group.id).join("\u0000")]);
+  const rows: SceneRow[] = [
+    ...groups.map((group) => {
+      const members = group.objectIds.map((id) => rowsByObjectId.get(id)).filter((row): row is SceneRow => Boolean(row));
+      return {
+        key: `group:${group.id}`,
+        keepMounted: true,
+        render: () => <SceneLayerGroup
+          {...props}
+          group={group}
+          members={members}
+          open={!collapsedGroups.has(group.id)}
+          onToggle={() => setCollapsedGroups((current) => {
+            const next = new Set(current);
+            if (next.has(group.id)) next.delete(group.id); else next.add(group.id);
+            return next;
+          })}
+        />,
+      };
+    }),
+    ...objectRows.filter((row) => !groupedIds.has(row.key.slice(row.key.indexOf(":") + 1))),
+    ...(props.studio ? props.lighting.lights ?? [] : []).map(light => ({ key: `light:${light.id}`, render: () => <LightRow {...props} light={light} /> })),
+    ...props.measurements.map((measurement, index) => ({ key: `measurement:${measurement.id}`, render: () => <MeasurementRow locale={props.locale} measurement={measurement} index={index} onFocus={() => props.engine?.focusMeasurement(measurement)} onRemove={() => props.onMeasurementRemove(measurement.id)} /> })),
+    ...props.annotations.map(annotation => ({ key: `annotation:${annotation.id}`, render: () => <AnnotationRow {...props} annotation={annotation} /> })),
+    ...props.spaces.map(space => ({ key: `space:${space.id}`, render: () => <FlatSpaceList locale={props.locale} spaces={[space]} isVisible={item => props.engine?.isSpaceVisible(item) ?? false} onFocus={props.onSpaceFocus} onVisibilityChange={props.onSpaceVisibilityChange} /> })),
+  ];
+  const objectKey = props.selectedObjectId && rows.find(row => row.key === `instance:${props.selectedObjectId}` || row.key === `primitive:${props.selectedObjectId}`)?.key;
+  const selectedKey = props.selectedAnnotationId ? `annotation:${props.selectedAnnotationId}` : objectKey
+    ? props.selectedLayerId ? undefined : objectKey : props.selectedLightId ? `light:${props.selectedLightId}` : undefined;
   return (
     <>
-      {props.modelRows}
-      {props.empty && (
-        <EditorEmptyState
-          icon={<Box size={20} />}
-          title={tr(props.locale, "还没有场景对象", "No scene objects yet")}
-          description={tr(props.locale, "导入已有模型，或用基础方盒快速搭建可交互设备。", "Import an existing model or block out an interactive device with a box.")}
-          primaryAction={{ label: tr(props.locale, "导入模型", "Import model"), icon: <Upload size={13} />, onClick: props.onEmptyImport }}
-          secondaryAction={{ label: tr(props.locale, "创建方盒", "Create box"), icon: <Plus size={13} />, onClick: props.onEmptyCreateBox }}
-          hint={tr(props.locale, "模型、灯光、标签与测量保持同层管理", "Models, lights, labels, and measurements stay in one flat list")}
-          variant="panel"
-        />
-      )}
-      {props.studio &&
-        (props.lighting.lights?.length ?? 0) > 0 &&
-        (props.lighting.lights ?? []).map((light) => (
-          <LightRow key={light.id} {...props} light={light} />
-        ))}
-      {props.primitives.map((primitive) => (
-        <PrimitiveRow key={primitive.id} {...props} primitive={primitive} />
-      ))}
-      {props.measurements.map((measurement, index) => (
-        <MeasurementRow
-          key={measurement.id}
-          locale={props.locale}
-          measurement={measurement}
-          index={index}
-          onFocus={() => props.engine?.focusMeasurement(measurement)}
-          onRemove={() => props.onMeasurementRemove(measurement.id)}
-        />
-      ))}
-      {props.annotations.map((annotation) => (
-        <AnnotationRow key={annotation.id} {...props} annotation={annotation} />
-      ))}
-      <FlatSpaceList
-        locale={props.locale}
-        spaces={props.spaces}
-        isVisible={(space) => props.engine?.isSpaceVisible(space) ?? false}
-        onFocus={props.onSpaceFocus}
-        onVisibilityChange={props.onSpaceVisibilityChange}
-      />
+      <WindowedSceneRows rows={rows} selectedKey={selectedKey} />
+      {groups.length > 0 && <SceneLayerRootDrop locale={props.locale} onMoveObjects={props.onMoveObjects} />}
     </>
   );
+}
+
+function SceneLayerGroup(props: FlatSceneObjectListProps & { group: SceneSelectionSetState; members: SceneRow[]; open: boolean; onToggle: () => void }) {
+  const { group, members, organizationObjects, locale } = props;
+  const states = group.objectIds.map((id) => organizationObjects.find((item) => item.id === id)).filter((item): item is SceneOrganizationObject => Boolean(item));
+  const allHidden = states.length > 0 && states.every((item) => !item.visible);
+  const allLocked = states.length > 0 && states.every((item) => item.locked);
+  const rename = () => {
+    const name = window.prompt(tr(locale, "输入编组名称", "Enter group name"), group.name)?.trim();
+    if (name && name !== group.name) props.onRenameGroup(group.id, name);
+  };
+  return <section className="scene-layer-group" role="treeitem" aria-expanded={props.open}>
+    <SceneLayerInteractions {...props} groupId={group.id}><div className="scene-layer-group-row">
+      <button className="scene-layer-group-select" onClick={props.onToggle} aria-label={props.open ? tr(locale, `收起编组“${group.name}”`, `Collapse group “${group.name}”`) : tr(locale, `展开编组“${group.name}”`, `Expand group “${group.name}”`)}>
+        {props.open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        {props.open ? <FolderOpen size={14} /> : <Folder size={14} />}
+      </button>
+      <button className="scene-layer-group-name" onClick={() => props.onSelectGroup(group.id)} title={tr(locale, "选择并统一控制组内对象", "Select and control all objects in this group")}>
+        <Group size={13} /><strong>{group.name}</strong><small>{members.length}</small>
+      </button>
+      <button className="scene-layer-group-action" aria-label={tr(locale, "重命名编组", "Rename group")} title={tr(locale, "重命名编组", "Rename group")} onClick={rename}><Pencil size={12} /></button>
+      <button className="scene-layer-group-action" aria-label={allHidden ? tr(locale, "显示编组", "Show group") : tr(locale, "隐藏编组", "Hide group")} title={allHidden ? tr(locale, "显示编组", "Show group") : tr(locale, "隐藏编组", "Hide group")} onClick={() => props.onGroupVisibilityChange(group.objectIds, allHidden)}>{allHidden ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+      <button className={`scene-layer-group-action ${allLocked ? "active" : ""}`} aria-label={allLocked ? tr(locale, "解锁编组", "Unlock group") : tr(locale, "锁定编组", "Lock group")} title={allLocked ? tr(locale, "解锁编组", "Unlock group") : tr(locale, "锁定编组", "Lock group")} onClick={() => props.onGroupLockChange(group.objectIds, !allLocked)}>{allLocked ? <Lock size={13} /> : <Unlock size={13} />}</button>
+      <SceneRowMenu locale={locale}><button onClick={rename}><Pencil size={13} />{tr(locale, "重命名", "Rename")}</button></SceneRowMenu>
+    </div></SceneLayerInteractions>
+    {props.open && <div className="scene-layer-group-children" role="group">{members.map((row) => <div className="scene-layer-group-child" key={row.key}>{row.render()}</div>)}</div>}
+  </section>;
 }
 
 function LightRow(
@@ -130,12 +177,16 @@ function LightRow(
     <div
       className={`asset-row scene-object-row ${props.selectedLightId === light.id ? "selected" : ""}`}
     >
+      <span className="scene-row-selection-mark" aria-hidden="true" />
       <span className="model-expander" />
       <button
         className="asset-main"
+        title={props.selectedLightId === light.id ? tr(locale, "再次单击取消选择", "Click again to clear selection") : tr(locale, "选择光源", "Select light")}
         onClick={() => {
-          props.onLightSelect(light.id);
-          props.onEnvironmentOpen();
+          const selected = props.selectedLightId === light.id;
+          props.engine?.clearSceneLightSelection();
+          props.onLightSelect(selected ? "" : light.id);
+          if (!selected) props.onEnvironmentOpen();
         }}
       >
         <span
@@ -169,34 +220,34 @@ function LightRow(
       >
         {light.enabled ? <Eye size={15} /> : <EyeOff size={15} />}
       </button>
+      <SceneRowMenu locale={locale}>
       {canMove && (
         <button
-          className="mini-button"
           aria-label={tr(locale, "移动光源", "Move light")}
           title={tr(locale, "移动光源", "Move light")}
           onClick={() => props.onLightTransform(light, "position")}
         >
-          <Move size={14} />
+          <Move size={14} /><span>{tr(locale, "移动", "Move")}</span>
         </button>
       )}
       {canAim && (
         <button
-          className="mini-button"
           aria-label={tr(locale, "改变光照方向", "Change light direction")}
           title={tr(locale, "改变光照方向", "Change light direction")}
           onClick={() => props.onLightTransform(light, "target")}
         >
-          <LocateFixed size={14} />
+          <LocateFixed size={14} /><span>{tr(locale, "调整方向", "Aim")}</span>
         </button>
       )}
       <button
-        className="mini-button scene-row-optional-action danger"
+        className="danger"
         aria-label={tr(locale, "删除光源", "Delete light")}
         title={tr(locale, "删除光源", "Delete light")}
         onClick={() => props.onLightRemove(light.id)}
       >
-        <Trash2 size={15} />
+        <Trash2 size={15} /><span>{tr(locale, "删除", "Delete")}</span>
       </button>
+      </SceneRowMenu>
     </div>
   );
 }
@@ -206,15 +257,20 @@ function PrimitiveRow(
 ) {
   const { primitive, engine, locale } = props;
   const locked = engine?.isModelLocked(primitive.id) ?? false;
+  const selectedInBatch = props.selectedObjectIds?.has(primitive.id) ?? props.selectedObjectId === primitive.id;
   return (
     <div
-      className={`asset-row scene-object-row ${props.selectedObjectId === primitive.id ? "selected" : ""}`}
+      className={`asset-row scene-object-row ${props.selectedObjectId === primitive.id ? "selected" : ""} ${selectedInBatch ? "batch-selected" : ""}`}
     >
+      <span className="scene-row-selection-mark" aria-hidden="true">{selectedInBatch ? <Check size={12} strokeWidth={3} /> : null}</span>
       <span className="model-expander" />
       <button
         className="asset-main"
-        title={tr(locale, "单击选择，双击聚焦", "Click to select, double-click to focus")}
-        onClick={() => engine?.select(primitive.id)}
+        title={tr(locale, "单击选择，再次单击取消；Ctrl/⌘ 单击多选；Shift 单击连续选择；双击聚焦", "Click to select, click again to clear; Ctrl/⌘-click for multi-select; Shift-click for a range; double-click to focus")}
+        onClick={(event) => {
+          if (props.onObjectSelect) props.onObjectSelect(primitive.id, { additive: event.ctrlKey || event.metaKey, range: event.shiftKey });
+          else engine?.select(primitive.id);
+        }}
         onDoubleClick={() => engine?.focusModel(primitive.id)}
       >
         <span className="scene-object-badge">
@@ -254,25 +310,37 @@ function PrimitiveRow(
       >
         {locked ? <Lock size={14} /> : <Unlock size={14} />}
       </button>
+      <SceneRowMenu locale={locale}>
       <button
-        className={`mini-button scene-row-optional-action collision-toggle ${engine?.isCollisionEnabled(primitive.id) ? "active" : ""} ${engine?.isColliding(primitive.id) ? "colliding" : ""}`}
+        aria-label={tr(locale, "隔离当前基础元素", "Isolate current primitive")}
+        title={tr(locale, "仅显示当前基础元素", "Show only this primitive")}
+        onClick={() => {
+          engine?.isolateModels([primitive.id]);
+          props.onRevision();
+        }}
+      >
+        <Focus size={15} /><span>{tr(locale, "隔离", "Isolate")}</span>
+      </button>
+      <button
+        className={`collision-toggle ${engine?.isCollisionEnabled(primitive.id) ? "active" : ""} ${engine?.isColliding(primitive.id) ? "colliding" : ""}`}
         aria-label={engine?.isCollisionEnabled(primitive.id) ? tr(locale, "关闭碰撞检测", "Disable collision detection") : tr(locale, "开启碰撞检测", "Enable collision detection")}
         title={
           engine?.isCollisionEnabled(primitive.id)
             ? tr(locale, "关闭碰撞检测", "Disable collision detection")
             : tr(locale, "开启碰撞检测", "Enable collision detection")
         }
-        onClick={() =>
+        onClick={() => {
           engine?.setCollisionEnabled(
             primitive.id,
             !engine.isCollisionEnabled(primitive.id),
-          )
-        }
+          );
+          props.onRevision();
+        }}
       >
-        <ScanLine size={15} />
+        <ScanLine size={15} /><span>{engine?.isCollisionEnabled(primitive.id) ? tr(locale, "关闭碰撞", "Disable collision") : tr(locale, "开启碰撞", "Enable collision")}</span>
       </button>
       <button
-        className="mini-button scene-row-optional-action danger"
+        className="danger"
         disabled={locked}
         aria-label={locked ? tr(locale, "请先解锁基础元素", "Unlock the primitive first") : tr(locale, "删除基础元素", "Delete primitive")}
         title={
@@ -282,8 +350,9 @@ function PrimitiveRow(
         }
         onClick={() => props.onPrimitiveRemove(primitive.id)}
       >
-        <Trash2 size={15} />
+        <Trash2 size={15} /><span>{tr(locale, "删除", "Delete")}</span>
       </button>
+      </SceneRowMenu>
     </div>
   );
 }
@@ -318,14 +387,16 @@ function MeasurementRow({
           </small>
         </span>
       </button>
+      <SceneRowMenu locale={locale}>
       <button
-        className="mini-button scene-row-optional-action danger"
+        className="danger"
         aria-label={`${tr(locale, "删除标尺", "Delete measurement")} ${index + 1}`}
         title={`${tr(locale, "删除标尺", "Delete measurement")} ${index + 1}`}
         onClick={onRemove}
       >
-        <Trash2 size={15} />
+        <Trash2 size={15} /><span>{tr(locale, "删除", "Delete")}</span>
       </button>
+      </SceneRowMenu>
     </div>
   );
 }
@@ -389,19 +460,21 @@ function AnnotationRow(
       >
         {annotation.locked ? <Lock size={14} /> : <Unlock size={14} />}
       </button>
-      <button
-        className="mini-button scene-row-optional-action danger"
-        disabled={annotation.locked}
-        aria-label={annotation.locked ? tr(locale, "请先解锁标签", "Unlock the annotation first") : tr(locale, "删除标签", "Delete annotation")}
-        title={
-          annotation.locked
-            ? tr(locale, "请先解锁标签", "Unlock the annotation first")
-            : tr(locale, "删除标签", "Delete annotation")
-        }
-        onClick={() => props.onAnnotationRemove(annotation.id)}
-      >
-        <Trash2 size={15} />
-      </button>
+      <SceneRowMenu locale={locale}>
+        <button
+          className="danger"
+          disabled={annotation.locked}
+          aria-label={annotation.locked ? tr(locale, "请先解锁标签", "Unlock the annotation first") : tr(locale, "删除标签", "Delete annotation")}
+          title={
+            annotation.locked
+              ? tr(locale, "请先解锁标签", "Unlock the annotation first")
+              : tr(locale, "删除标签", "Delete annotation")
+          }
+          onClick={() => props.onAnnotationRemove(annotation.id)}
+        >
+          <Trash2 size={15} /><span>{tr(locale, "删除", "Delete")}</span>
+        </button>
+      </SceneRowMenu>
     </div>
   );
 }

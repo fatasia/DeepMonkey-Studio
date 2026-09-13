@@ -78,10 +78,27 @@ export interface AiProviderSettings {
   apiKey?: string;
   temperature: number;
   updatedAt?: string;
+  /** 3D 生成厂商配置档；仅保存配置，不代表厂商适配器已注册或连接已验证。 */
+  modeling3d?: {
+    tripo3d: AiModelProviderSettings;
+    tencentHunyuan: AiModelProviderSettings;
+  };
+}
+
+export interface AiModelProviderSettings {
+  providerId: string;
+  baseUrl: string;
+  model: string;
+  protocol: "auto" | "responses" | "chat-completions";
+  apiKeyConfigured?: boolean;
+  apiKey?: string;
+  secretIdConfigured?: boolean;
+  secretId?: string;
+  region?: string;
 }
 
 export interface ServiceHealthRecord {
-  id: "api" | "web" | "node-red" | "media" | "vision" | "postgres" | "minio";
+  id: "api" | "web" | "media" | "vision" | "postgres" | "minio";
   name: string;
   status: "healthy" | "degraded" | "offline" | "not-configured";
   endpoint: string;
@@ -221,3 +238,7 @@ export * from "./unityReadiness.js";
 export * from "./semantic.js";
 export * from "./simulationEntities.js";
 export * from "./robotAsset.js";
+export * from "./aiSamples.js";
+export * from "./plantTransportNetwork.js";
+export * from "./deviceSignal.js";
+export * from "./modelProcessing.js";

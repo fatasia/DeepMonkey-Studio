@@ -1,4 +1,4 @@
-import type { IndustrialPrefabDefinition } from "@bim-studio/contracts";
+import type { IndustrialPrefabDefinition, IndustrialPrefabParameterDefinition } from "@bim-studio/contracts";
 import { actions, bool, definition, fixed, number, select, STATE_ACTIONS, text } from "./industrialPrefabShared";
 
 const MACHINE_VARIANTS = [
@@ -8,7 +8,50 @@ const MACHINE_VARIANTS = [
   ["press-brake", "数控折弯机", "CNC press brake", "bending", 0, 160],
   ["injection-molder", "注塑机", "Injection molding machine", "injection", 0, 220],
   ["vision-inspection", "机器视觉检测机", "Machine vision inspection", "inspection", 0, 20],
+  ["gantry-mill", "龙门加工中心", "Gantry machining center", "gantry", 7500, 75],
+  ["surface-grinder", "磨床", "Grinding machine", "grinding", 2880, 30],
+  ["press", "冲压机", "Press machine", "pressing", 0, 55],
+  ["heat-treat-furnace", "热处理炉", "Heat treatment furnace", "heat-treat", 0, 120],
 ] as const;
+
+/** 机床专属参数与数据口:通用工艺参数之外的行业语义补充。 */
+const MACHINE_EXTRAS: Record<string, { parameters?: IndustrialPrefabParameterDefinition[]; ports?: string[] }> = {
+  "gantry-mill": {
+    parameters: [
+      number("tableLengthM", "工作台长度", "Table length", 4, "m", 1, 16, 0.1),
+      number("tableWidthM", "工作台宽度", "Table width", 1.6, "m", 0.5, 6, 0.1),
+      number("tableLoadKg", "最大承重", "Table load", 8000, "kg", 100, 50000, 10),
+      number("rapidFeedMpm", "快速移动", "Rapid traverse", 24, "m/min", 1, 120, 1),
+    ],
+    ports: ["axisPosition", "tableLoadKg"],
+  },
+  "surface-grinder": {
+    parameters: [
+      number("wheelDiameterMm", "砂轮直径", "Wheel diameter", 355, "mm", 100, 900, 1),
+      number("tableSpeedMpm", "台面往复速度", "Table speed", 20, "m/min", 1, 60, 1),
+      number("coolantFlowLmin", "冷却流量", "Coolant flow", 40, "L/min", 0, 200, 1),
+    ],
+    ports: ["wheelWear", "coolantOn"],
+  },
+  press: {
+    parameters: [
+      number("tonnage", "公称压力", "Nominal tonnage", 315, "t", 10, 5000, 5),
+      number("strokesPerMin", "行程次数", "Strokes per minute", 20, "spm", 1, 120, 1),
+      number("strokeMm", "滑块行程", "Stroke", 250, "mm", 5, 1000, 1),
+      number("dieHeightMm", "装模高度", "Die height", 380, "mm", 50, 1200, 1),
+    ],
+    ports: ["strokeCount", "tonnage"],
+  },
+  "heat-treat-furnace": {
+    parameters: [
+      number("furnaceTempC", "炉温设定", "Furnace temperature", 920, "°C", 20, 1800, 1),
+      number("soakMinutes", "保温时间", "Soak time", 90, "min", 1, 1440, 1),
+      number("zoneCount", "控温区数", "Heating zones", 3, "", 1, 12, 1),
+      select("atmosphere", "炉内气氛", "Atmosphere", "air", ["air", "nitrogen", "endothermic", "vacuum"]),
+    ],
+    ports: ["furnaceTempC", "soakRemainingMin"],
+  },
+};
 
 export const MACHINE_PREFABS: IndustrialPrefabDefinition[] = [
   ...MACHINE_VARIANTS.map(([id, name, englishName, process, spindleRpm, powerKw]) =>
@@ -21,6 +64,7 @@ export const MACHINE_PREFABS: IndustrialPrefabDefinition[] = [
 ];
 
 function machineDefinition(id: string, name: string, englishName: string, process: string, spindleRpm: number, powerKw: number): IndustrialPrefabDefinition {
+  const extras = MACHINE_EXTRAS[id];
   return definition(
     `machine.${id}`,
     "machine",
@@ -36,9 +80,10 @@ function machineDefinition(id: string, name: string, englishName: string, proces
       bool("autoLoad", "自动上下料", "Automatic loading", true),
       bool("qualityGate", "质量门禁", "Quality gate", true),
       text("workOrder", "工单号", "Work order", ""),
+      ...(extras?.parameters ?? []),
     ],
     [...STATE_ACTIONS, ...actions([["change-tool", "换刀", "Change tool"], ["run-cleaning", "执行清洁", "Run cleaning"], ["clear-fault", "清除故障", "Clear fault"]])],
-    ["cycleTime", "partCount", "spindleRpm", "powerKw", "toolLife", "qualityPass", "status", "faultCode"],
+    ["cycleTime", "partCount", "spindleRpm", "powerKw", "toolLife", "qualityPass", "status", "faultCode", ...(extras?.ports ?? [])],
     { description: `${name}的工艺配方、节拍、能耗、质量与维护数据配置` },
   );
 }
@@ -61,6 +106,8 @@ function displayWall(): IndustrialPrefabDefinition {
   return definition("display.wall", "display", "电视与拼接大屏", "Display and video wall", [
     number("widthM", "屏幕宽度", "Width", 3.2, "m", 0.2, 30, 0.1),
     number("heightM", "屏幕高度", "Height", 1.8, "m", 0.2, 20, 0.1),
+    number("columns", "显示列数", "Columns", 2, "", 1, 10, 1),
+    number("rows", "显示行数", "Rows", 2, "", 1, 6, 1),
     select("sourceKind", "内容来源", "Source", "dashboard-page", ["dashboard-page", "image", "video", "hls", "webrtc", "url"]),
     text("source", "资源或地址", "Resource or URL", ""),
     number("brightness", "亮度", "Brightness", 1, "", 0, 2, 0.05),

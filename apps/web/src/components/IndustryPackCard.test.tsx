@@ -13,8 +13,10 @@ describe("industry pack preview", () => {
     expect(html).toContain("生产总览模板预览");
     expect(html.match(/导入整包/g)).toHaveLength(1);
     expect(html).not.toContain("数据待绑定");
-    expect(html).toContain("--template-accent:var(--accent)");
-    expect(html).toContain("--template-surface:var(--surface-1)");
-    expect(html).toContain("--template-text:var(--text-strong)");
+    // 封面统一域色深底(不随主题翻转),行业包卡带金色分层徽章。
+    expect(html).toContain("--template-accent:#35d0c0");
+    expect(html).toContain("--template-surface:#0d2126");
+    expect(html).toContain('dashboard-template-tier-badge is-industry');
+    expect(html).toContain("行业包");
   });
 });

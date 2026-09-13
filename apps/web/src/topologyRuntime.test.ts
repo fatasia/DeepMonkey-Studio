@@ -28,6 +28,12 @@ const nodes: TopologyNode[] = [
 ];
 
 describe("topology runtime adapter", () => {
+  it("preserves offline separately from active alarm and ignores stale offline threshold values", () => {
+    const snapshot = (pressure: unknown, extra = {}) => createTopologyRuntimeSnapshot(nodes.slice(0,1),{fields:[],rows:[{pressure,...extra}]})["pump-1"];
+    expect(snapshot(9,{state:"offline"})).toMatchObject({state:"offline"});
+    expect(snapshot(9,{state:"offline"})?.alarm).toBeUndefined();
+    expect(snapshot({state:"offline",value:9,alarm:{id:"pressure-1",active:true,severity:"critical",acknowledged:true}})).toMatchObject({state:"offline",alarm:{id:"pressure-1",active:true,acknowledged:true}});
+  });
   it("does not treat empty/missing fields as offline or an explicit unknown state as running", () => {
     const sampledAt = "2026-09-05T00:00:00Z";
     for (const rows of [[], [{}], [{ flow: 18, flow_state: "unknown" }], [{ flow: 18, state: "未知" }]]) {

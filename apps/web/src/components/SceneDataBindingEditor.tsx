@@ -15,6 +15,7 @@ import { dataBindingProduct, directSceneDataBindingMessage, sameDataBindingTarge
 import { translate as tr, type AppLocale } from "../i18n";
 import { testDirectBinding } from "../directBindingRuntime";
 import { createDefaultDirectBinding, DirectBindingEditor } from "./DirectBindingEditor";
+import { DeviceSignalRuleEditor } from "./DeviceSignalRuleEditor";
 
 export interface SceneDataBindingRuntimeState {
   status: "loading" | "ready" | "error";
@@ -29,7 +30,7 @@ interface DataProductOption {
   name: string;
 }
 
-const ACTIONS: readonly DataEventAction[] = ["color", "visibility", "opacity", "position", "animation", "effects", "material", "focus"];
+const ACTIONS: readonly DataEventAction[] = ["color", "visibility", "opacity", "position", "animation", "effects", "material", "alarm", "focus"];
 
 export function SceneDataBindingEditor({
   locale,
@@ -373,6 +374,7 @@ export function SceneDataBindingEditor({
                   </select>
                 </label>
               </div>
+              {binding.action === "alarm" && <DeviceSignalRuleEditor locale={locale} value={binding.signalRule ?? {}} disabled={disabled} onChange={signalRule=>updateBinding(binding.id,{signalRule})} />}
               {!binding.directBinding && (
                 <label>
                   <span>{tr(locale, "刷新周期", "Refresh")}</span>
@@ -455,6 +457,7 @@ function actionLabel(action: DataEventAction, locale: AppLocale): string {
     position: ["位置", "Position"],
     animation: ["动画播放", "Animation"],
     effects: ["模型特效", "Effects"],
+    alarm: ["设备状态 / 告警", "Device state / alarm"],
     material: ["PBR 材质", "PBR material"],
     focus: ["镜头定位", "Camera focus"],
     label: ["标注文字", "Annotation label"],
@@ -470,6 +473,7 @@ function actionHint(action: DataEventAction, locale: AppLocale): string {
     position: ["字段需输出 {x, y, z}", "Field must output {x, y, z}"],
     animation: ["布尔值控制模型动画", "A boolean controls model animation"],
     effects: ["字段需输出特效 JSON 对象", "Field must output an effects JSON object"],
+    alarm: ["状态枚举或数值阈值驱动告警，恢复时还原原有效果", "State enums or thresholds drive alarms; clearing restores authored effects"],
     material: ["JSON 可驱动颜色、粗糙度、金属度与 UV；贴图仍由资源管理", "JSON controls scalar PBR and UV values; textures stay in Assets"],
     focus: ["每次更新时定位当前对象", "Focuses this object on every update"],
     label: ["字段值更新标注文字", "Field value updates annotation text"],

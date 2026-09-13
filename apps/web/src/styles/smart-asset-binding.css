@@ -1,6 +1,6 @@
 .smart-binding-backdrop {
   position: fixed;
-  z-index: 82;
+  z-index: calc(var(--layer-dialog) + 2); /* 智能绑定遮罩,须高于设备布局遮罩(80) */
   inset: 54px 0 0 292px;
   display: grid;
   place-items: center;

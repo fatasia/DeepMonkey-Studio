@@ -7,6 +7,7 @@ import type {
   PlantLiteResource,
 } from "./modelTypes.js";
 import { validateSceneBinding } from "./sceneBindingValidation.js";
+import { validateTransportNetwork } from "./transportNetworkValidation.js";
 
 export function validatePlantLiteModel(input: unknown): PlantLiteModelValidation {
   const issues: PlantLiteModelIssue[] = [];
@@ -41,6 +42,7 @@ export function validatePlantLiteModel(input: unknown): PlantLiteModelValidation
   validateProductionOrders(input.productionOrders, nodes, productTypeIds, issues);
   validateEnergyConsumerIds(nodes, resources, issues);
   validateEnergyCompleteness(input, nodes, resources, issues);
+  validateTransportNetwork(input, issues);
 
   const edgeIds = new Set<string>();
   const adjacency = new Map<string, string[]>();

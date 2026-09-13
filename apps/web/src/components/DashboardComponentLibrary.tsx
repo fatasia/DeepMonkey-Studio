@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { BarChart3, Box, ChartNoAxesCombined, FolderOpen, Image, LayoutTemplate, Plus, Search, SlidersHorizontal, Upload, X } from "lucide-react";
+import { Box, ChartNoAxesCombined, LayoutTemplate, Plus, Search, Upload, X } from "lucide-react";
 import type { DashboardDataWidgetConfig, SceneDashboardWidgetType } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import {
@@ -8,10 +8,11 @@ import {
   type DashboardComponentPreset,
 } from "./DashboardComponentCatalog";
 import { DashboardComponentPreview } from "./DashboardComponentPreview";
-import { DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
-import { DATA_WIDGET_CATEGORIES, DECORATION_ASSETS, dataWidgetTypeLabel } from "./dashboardWorkspaceModel";
+import { DASHBOARD_TEMPLATES } from "./dashboardTemplateCatalog";
+import { dataWidgetTypeLabel } from "./dashboardWorkspaceModel";
+import { DASHBOARD_RESOURCE_CATEGORIES, dashboardPresetResourceCategory, type DashboardResourceCategoryKey } from "./dashboardResourceCategories";
 
-type LibraryTab = "chart" | "control" | "media" | "threeD" | "resource";
+type LibrarySource = "basic" | "resources";
 
 export interface DashboardLibraryItem {
   id: string;
@@ -29,26 +30,20 @@ interface DashboardComponentLibraryProps {
   locale: AppLocale;
   projectId: string;
   sceneAvailable: boolean;
+  topologies?: ReadonlyArray<{ id: string; name: string }>;
   searchInputRef: RefObject<HTMLInputElement | null>;
   onOpenTemplates: () => void;
   onAddSceneViewport: () => void;
   onAddWidget: (type: SceneDashboardWidgetType, widget?: Partial<DashboardDataWidgetConfig>, frame?: DashboardComponentPreset["frame"], nameHint?: string) => void;
 }
 
-const TAB_ICONS = {
-  chart: BarChart3,
-  control: SlidersHorizontal,
-  media: Image,
-  threeD: Box,
-  resource: FolderOpen,
-} as const;
-
 /**
  * 二维组件浏览器只负责“发现与插入”，数据绑定和样式编辑继续由右侧检查器承担。
  * 这样资源库保持轻量，也避免在同一面板重复一套配置逻辑。
  */
-export function DashboardComponentLibrary({ locale, projectId, sceneAvailable, searchInputRef, onOpenTemplates, onAddSceneViewport, onAddWidget }: DashboardComponentLibraryProps) {
-  const [activeTab, setActiveTab] = useState<LibraryTab>("chart");
+export function DashboardComponentLibrary({ locale, projectId, sceneAvailable, topologies = [], searchInputRef, onOpenTemplates, onAddSceneViewport, onAddWidget }: DashboardComponentLibraryProps) {
+  const [activeSource, setActiveSource] = useState<LibrarySource>("basic");
+  const [activeCategory, setActiveCategory] = useState<DashboardResourceCategoryKey>("data");
   const [query, setQuery] = useState("");
   const [recentlyAddedId, setRecentlyAddedId] = useState<string>();
   const feedbackTimer = useRef<number | undefined>(undefined);
@@ -58,14 +53,14 @@ export function DashboardComponentLibrary({ locale, projectId, sceneAvailable, s
   const [uploadError, setUploadError] = useState<string>();
   const normalizedQuery = query.trim().toLocaleLowerCase();
 
-  const items = useMemo(() => createLibraryItems(locale, activeTab), [activeTab, locale]);
+  const items = useMemo(() => activeSource === "basic" ? createBasicLibraryItems(locale) : createResourceLibraryItems(locale, activeCategory, topologies), [activeCategory, activeSource, locale, topologies]);
   const filteredItems = useMemo(() => {
     if (!normalizedQuery) return items;
-    return createAllLibraryItems(locale).filter((item) => `${item.label} ${item.description} ${item.badge}`.toLocaleLowerCase().includes(normalizedQuery));
-  }, [items, locale, normalizedQuery]);
+    return createAllLibraryItems(locale, topologies).filter((item) => `${item.label} ${item.description} ${item.badge}`.toLocaleLowerCase().includes(normalizedQuery));
+  }, [items, locale, normalizedQuery, topologies]);
   const groupedItems = useMemo(() => groupLibraryItems(filteredItems), [filteredItems]);
   const sceneSearchText = tr(locale, "三维场景视口 嵌入场景 业务联动 3D", "3D scene viewport embed scene business linkage").toLocaleLowerCase();
-  const showSceneCard = (!normalizedQuery && activeTab === "threeD") || Boolean(normalizedQuery && sceneSearchText.includes(normalizedQuery));
+  const showSceneCard = (!normalizedQuery && activeSource === "basic") || Boolean(normalizedQuery && sceneSearchText.includes(normalizedQuery));
   const resultCount = filteredItems.length + (showSceneCard ? 1 : 0);
 
   useEffect(() => () => window.clearTimeout(feedbackTimer.current), []);
@@ -106,34 +101,35 @@ export function DashboardComponentLibrary({ locale, projectId, sceneAvailable, s
             placeholder={tr(locale, "搜索组件", "Search components")}
           />
         </label>
-        <button className="dashboard-library-template-button" title={tr(locale, `行业模板（${DASHBOARD_TEMPLATES.length}）`, `Templates (${DASHBOARD_TEMPLATES.length})`)} onClick={onOpenTemplates}>
-          <LayoutTemplate size={14} />
-          {tr(locale, "模板", "Templates")}
-        </button>
+        {activeSource === "resources" && <div className="dashboard-library-quick-actions">
+          <button className="dashboard-library-template-button" title={tr(locale, `行业模板（${DASHBOARD_TEMPLATES.length}）`, `Templates (${DASHBOARD_TEMPLATES.length})`)} onClick={onOpenTemplates}>
+            <LayoutTemplate size={14} />
+            {tr(locale, "模板", "Templates")}
+          </button>
+        </div>}
       </div>
 
+      {!normalizedQuery && <div className="dashboard-library-sources" role="tablist" aria-label={tr(locale, "组件来源", "Component source")}>
+        <button role="tab" title={tr(locale, "基础控件", "Basic controls")} aria-selected={activeSource === "basic"} className={activeSource === "basic" ? "active" : ""} onClick={() => setActiveSource("basic")}><Box size={14} /><span>{tr(locale, "基础控件", "Basic controls")}</span><small>{createBasicLibraryItems(locale).length + 1}</small></button>
+        <button role="tab" title={tr(locale, "资源库", "Library")} aria-selected={activeSource === "resources"} className={activeSource === "resources" ? "active" : ""} onClick={() => setActiveSource("resources")}><LayoutTemplate size={14} /><span>{tr(locale, "资源库", "Library")}</span><small>{createAllResourceItems(locale, topologies).length}</small></button>
+      </div>}
+
       {!normalizedQuery && (
-        <div className="dashboard-library-tabs" role="tablist" aria-label={tr(locale, "资源分类", "Resource categories")}>
-          {(["chart", "control", "media", "threeD", "resource"] as const).map((tab) => {
-            const Icon = TAB_ICONS[tab];
-            const labels: Record<LibraryTab, [string, string]> = {
-              chart: ["图表", "Charts"],
-              control: ["控件", "Controls"],
-              media: ["媒体", "Media"],
-              threeD: ["3D", "3D"],
-              resource: ["资源", "Assets"],
-            };
+        activeSource === "resources" && <div className="dashboard-library-tabs" role="tablist" aria-label={tr(locale, "资源分类", "Resource categories")}>
+          {DASHBOARD_RESOURCE_CATEGORIES.map((category) => {
+            const tab = category.key;
+            const count = createResourceLibraryItems(locale, tab, topologies).length;
             return (
-              <button role="tab" aria-selected={activeTab === tab} className={activeTab === tab ? "active" : ""} key={tab} onClick={() => setActiveTab(tab)}>
-                <Icon size={13} />
-                {tr(locale, ...labels[tab])}
+              <button role="tab" aria-selected={activeCategory === tab} className={activeCategory === tab ? "active" : ""} key={tab} onClick={() => setActiveCategory(tab)}>
+                <span>{tr(locale, category.zh, category.en)}</span>
+                <small>{count}</small>
               </button>
             );
           })}
         </div>
       )}
 
-      {!normalizedQuery && activeTab === "media" && (
+      {!normalizedQuery && activeSource === "basic" && (
         <>
           <div className="dashboard-library-local-actions">
             <input ref={imageInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif" onChange={(event) => void uploadAndInsert("image", event.target.files?.[0])} />
@@ -190,6 +186,7 @@ export function DashboardComponentLibrary({ locale, projectId, sceneAvailable, s
                 >
                   <DashboardComponentPreview
                     type={item.type}
+                    showMark={false}
                     {...(item.widget?.decorationStyle || item.preset?.widget.decorationStyle
                       ? { decorationStyle: item.widget?.decorationStyle ?? item.preset!.widget.decorationStyle! }
                       : {})}
@@ -225,74 +222,62 @@ function groupLibraryItems(items: readonly DashboardLibraryItem[]): Array<{ labe
   return [...groups].map(([label, groupItems]) => ({ label, items: groupItems }));
 }
 
-function createLibraryItems(locale: AppLocale, tab: LibraryTab): DashboardLibraryItem[] {
-  if (tab === "chart") {
-    return DASHBOARD_COMPONENT_PRESETS.filter((preset) => ["indicator", "analysis", "report", "gis", "industrial"].includes(preset.category)).map((preset) => presetItem(locale, preset));
-  }
-  if (tab === "control") {
+const BASIC_GROUPS: ReadonlyArray<{ zh: string; en: string; types: readonly SceneDashboardWidgetType[] }> = [
+  { zh: "内容与容器", en: "Content & layout", types: ["shape"] },
+  { zh: "数据展示", en: "Data display", types: ["value", "digital-flip", "liquid-fill", "progress", "status", "gauge", "line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "sankey", "sunburst", "treemap", "graph", "map", "wordcloud", "boxplot", "waterfall", "polarBar", "rank", "table", "scroll-table"] },
+  { zh: "交互输入", en: "Input & interaction", types: ["record-form"] },
+  { zh: "媒体", en: "Media", types: ["image", "video", "monitor", "url"] },
+  { zh: "空间与集成", en: "Spatial & integration", types: ["unity", "topology"] },
+];
+
+function createBasicLibraryItems(locale: AppLocale): DashboardLibraryItem[] {
+  const variants: DashboardLibraryItem[] = [
+    { id: "basic:title", label: tr(locale, "标题", "Title"), description: tr(locale, "页面标题或分区标题", "Page or section title"), type: "text", badge: tr(locale, "内容与容器", "Content & layout"), widget: { title: tr(locale, "标题", "Title"), content: tr(locale, "看板标题", "Dashboard title"), fontSize: 32 } },
+    { id: "basic:text", label: tr(locale, "文本", "Text"), description: tr(locale, "说明、注释或动态文本", "Description, annotation or dynamic text"), type: "text", badge: tr(locale, "内容与容器", "Content & layout"), widget: { title: tr(locale, "文本", "Text"), content: tr(locale, "文本内容", "Text content") } },
+    { id: "basic:input", label: tr(locale, "输入框", "Input"), description: tr(locale, "文本查询与参数输入", "Text query and parameter input"), type: "filter", badge: tr(locale, "交互输入", "Input & interaction"), widget: { title: tr(locale, "输入框", "Input"), filterMode: "text" } },
+    { id: "basic:dropdown", label: tr(locale, "下拉框", "Dropdown"), description: tr(locale, "单选下拉筛选", "Single-select dropdown filter"), type: "filter", badge: tr(locale, "交互输入", "Input & interaction"), widget: { title: tr(locale, "下拉框", "Dropdown"), filterMode: "select" } },
+    { id: "basic:multi-select", label: tr(locale, "多选列表", "Multi-select"), description: tr(locale, "多值列表筛选", "Multi-value list filter"), type: "filter", badge: tr(locale, "交互输入", "Input & interaction"), widget: { title: tr(locale, "多选列表", "Multi-select"), filterMode: "multi-select" } },
+    { id: "basic:date", label: tr(locale, "日期选择", "Date picker"), description: tr(locale, "日期参数与时间筛选", "Date parameters and time filtering"), type: "filter", badge: tr(locale, "交互输入", "Input & interaction"), widget: { title: tr(locale, "日期选择", "Date picker"), filterMode: "date" } },
+  ];
+  return BASIC_GROUPS.flatMap((group) => {
+    const badge = tr(locale, group.zh, group.en);
     return [
-      ...DASHBOARD_COMPONENT_PRESETS.filter((preset) => preset.category === "control").map((preset) => presetItem(locale, preset)),
-      ...DATA_WIDGET_CATEGORIES.flatMap((category) =>
-      category.types
-        .filter((type) => ["filter", "text", "shape"].includes(type))
-        .map((type) => ({
-          id: `basic:${type}`,
-          label: dataWidgetTypeLabel(locale, type),
-          description: tr(locale, `创建${dataWidgetTypeLabel(locale, type)}，随后配置数据与交互`, `Add ${dataWidgetTypeLabel(locale, type)}, then configure data and interactions`),
-          type,
-          badge: tr(locale, category.zh, category.en),
-        })),
-      ),
-    ];
-  }
-  if (tab === "media") {
-    return [
-      ...DASHBOARD_COMPONENT_PRESETS.filter((preset) => ["media", "topology"].includes(preset.category)).map((preset) => presetItem(locale, preset)),
-      ...DATA_WIDGET_CATEGORIES.flatMap((category) => category.types)
-        .filter((type) => ["image", "video", "monitor", "url", "topology"].includes(type))
-        .map((type) => ({
-          id: `basic:${type}`,
-          label: dataWidgetTypeLabel(locale, type),
-          description: tr(locale, `插入${dataWidgetTypeLabel(locale, type)}`, `Insert ${dataWidgetTypeLabel(locale, type)}`),
-          type,
-          badge: tr(locale, "媒体", "Media"),
-        })),
-    ];
-  }
-  if (tab === "threeD") {
-    return DATA_WIDGET_CATEGORIES.flatMap((category) => category.types)
-      .filter((type) => type === "unity")
-      .map((type) => ({
+      ...variants.filter((item) => item.badge === badge),
+      ...group.types.map((type) => ({
         id: `basic:${type}`,
         label: dataWidgetTypeLabel(locale, type),
-        description: tr(locale, "嵌入 Unity 内容", "Embed Unity content"),
+        description: type === "topology"
+          ? tr(locale, "新建一个拓扑控件，随后选择或创建拓扑文档", "Add a topology control, then choose or create a topology document")
+          : tr(locale, `插入通用${dataWidgetTypeLabel(locale, type)}，随后配置内容与数据`, `Insert a generic ${dataWidgetTypeLabel(locale, type)}, then configure content and data`),
         type,
-        badge: "3D",
-      }));
-  }
+        badge,
+      })),
+    ];
+  });
+}
+
+function createResourceLibraryItems(locale: AppLocale, category: DashboardResourceCategoryKey, topologies: ReadonlyArray<{ id: string; name: string }> = []): DashboardLibraryItem[] {
+  const presets = DASHBOARD_COMPONENT_PRESETS.filter((preset) => dashboardPresetResourceCategory(preset.category) === category).map((preset) => presetItem(locale, preset));
+  if (category !== "spatial") return presets;
   return [
-    ...DASHBOARD_COMPONENT_PRESETS.filter((preset) => preset.category === "material").map((preset) => presetItem(locale, preset)),
-    ...DECORATION_ASSETS.map((asset) => ({
-      id: `decoration:${asset.style}`,
-      label: tr(locale, asset.zh, asset.en),
-      description: tr(locale, "可组合、可缩放的装饰资源", "Composable and resizable decoration asset"),
-      type: "decoration" as const,
-      badge: tr(locale, "矢量资源", "Vector asset"),
-      widget: {
-        decorationStyle: asset.style,
-        title: tr(locale, asset.zh, asset.en),
-        content: asset.style.includes("title") || asset.style === "title" ? tr(locale, "看板标题", "Dashboard title") : "",
-      },
+    ...topologies.map((topology) => ({
+      id: `topology:${topology.id}`,
+      label: topology.name,
+      description: tr(locale, "插入已完成的项目拓扑，可继续编辑与绑定实时数据", "Insert this completed project topology; it remains editable and data-bindable"),
+      type: "topology" as const,
+      badge: tr(locale, "项目拓扑", "Project topology"),
+      widget: { topologyId: topology.id, title: topology.name },
     })),
+    ...presets,
   ];
 }
 
-function createAllLibraryItems(locale: AppLocale): DashboardLibraryItem[] {
-  const unique = new Map<string, DashboardLibraryItem>();
-  for (const tab of ["chart", "control", "media", "threeD", "resource"] as const) {
-    for (const item of createLibraryItems(locale, tab)) unique.set(item.id, item);
-  }
-  return [...unique.values()];
+function createAllResourceItems(locale: AppLocale, topologies: ReadonlyArray<{ id: string; name: string }> = []): DashboardLibraryItem[] {
+  return DASHBOARD_RESOURCE_CATEGORIES.flatMap(({ key }) => createResourceLibraryItems(locale, key, topologies));
+}
+
+function createAllLibraryItems(locale: AppLocale, topologies: ReadonlyArray<{ id: string; name: string }> = []): DashboardLibraryItem[] {
+  return [...createBasicLibraryItems(locale), ...createAllResourceItems(locale, topologies)];
 }
 
 function presetItem(locale: AppLocale, preset: DashboardComponentPreset): DashboardLibraryItem {
@@ -337,6 +322,6 @@ function beginLibraryDrag(dataTransfer: DataTransfer, itemId: string): void {
   dataTransfer.setData(DASHBOARD_LIBRARY_DRAG_TYPE, itemId);
 }
 
-export function resolveDashboardLibraryItem(locale: AppLocale, itemId: string): DashboardLibraryItem | undefined {
-  return createAllLibraryItems(locale).find((item) => item.id === itemId);
+export function resolveDashboardLibraryItem(locale: AppLocale, itemId: string, topologies: ReadonlyArray<{ id: string; name: string }> = []): DashboardLibraryItem | undefined {
+  return createAllLibraryItems(locale, topologies).find((item) => item.id === itemId);
 }

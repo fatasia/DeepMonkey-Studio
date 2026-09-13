@@ -51,6 +51,7 @@ type SceneCreationContext = Pick<
   | "setScenes"
   | "setSelected"
   | "setSelectedAnnotationId"
+  | "setSelectedLightId"
   | "setSelectionSets"
   | "setWeather"
 >;
@@ -96,6 +97,7 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setScenes,
     setSelected,
     setSelectedAnnotationId,
+    setSelectedLightId,
     setSelectionSets,
     setWeather,
   } = context;
@@ -123,6 +125,7 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setMeasurements([]);
     setAnnotations([]);
     setSelectedAnnotationId(undefined);
+    setSelectedLightId("");
     setSelected(undefined);
     setSceneOrganizationSelection(new Set());
     setSelectionSets([]);

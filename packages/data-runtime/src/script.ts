@@ -8,7 +8,7 @@ export interface ScriptEmission {
   value: unknown;
   sceneId?: string;
   target?: { modelId?: string; layerId?: string; annotationId?: string };
-  action?: "color" | "visibility" | "position" | "label" | "opacity" | "focus" | "animation" | "effects";
+  action?: "color" | "visibility" | "position" | "label" | "opacity" | "focus" | "animation" | "effects" | "material" | "alarm";
 }
 
 export interface ScriptExecutionContext {

@@ -91,7 +91,6 @@ export async function collectServiceHealth(): Promise<ServiceHealthRecord[]> {
   return Promise.all([
     checkApiRuntime(),
     checkWeb(),
-    checkTcp("node-red", "流程服务", configuredEndpoint("NODE_RED_URL", "http://127.0.0.1:1880")),
     checkTcp("media", "实时视频", configuredEndpoint("MEDIA_GATEWAY_CONTROL_URL", "http://127.0.0.1:9997")),
     checkVisionRuntime(),
     metadataStore === "postgres"

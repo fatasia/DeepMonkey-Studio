@@ -5,7 +5,7 @@ import type { DataEvent, DataEventAction, DataEventTarget } from "@bim-studio/co
 import type { MetadataStore } from "./store.js";
 
 type DataEventListener = (event: DataEvent) => void;
-const ACTIONS = new Set<DataEventAction>(["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects"]);
+const ACTIONS = new Set<DataEventAction>(["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material", "alarm"]);
 
 export class DataEventBus {
   private readonly listeners = new Map<string, Set<{ sceneId?: string; listener: DataEventListener }>>();

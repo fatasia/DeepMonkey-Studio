@@ -12,6 +12,14 @@ describe("HttpCloudRenderWorkerClient", () => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer secret");
   });
 
+  it("accepts a worker URL that already ends in /v1 without duplicating the version path", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(health()));
+    const client = new HttpCloudRenderWorkerClient({ baseUrl: "https://worker.example.test/v1/", token: "secret", fetch });
+
+    await expect(client.health()).resolves.toMatchObject({ status: "ready" });
+    expect(String(fetch.mock.calls[0]![0])).toBe("https://worker.example.test/v1/health");
+  });
+
   it("rejects media-ready claims without outbound RTP counters", () => {
     expect(() => assertCloudRenderWorkerSession({ ...workerSession(), mediaEvidence: undefined })).toThrow("未提供 RTP 证据");
     expect(() => assertCloudRenderWorkerSession({ ...workerSession(), mediaEvidence: { ...evidence(), bytesSent: 0 } })).toThrow("bytesSent 必须为正数");

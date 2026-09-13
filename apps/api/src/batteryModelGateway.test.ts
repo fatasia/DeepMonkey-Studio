@@ -279,10 +279,26 @@ describe("battery model gateway", () => {
   it("rejects simulation values outside the source runtime contract", async () => {
     const gateway = createBatteryModelGateway({ transport: new RecordingTransport() });
     await expect(gateway.simulateTwin({
+      twinId: "short",
+      segments: [{ durationMinutes: 1, currentCRate: 0.5 }]
+    })).rejects.toThrow("至少 8 个字符");
+    await expect(gateway.simulateTwin({
+      twinId: "twin-12345678",
+      scenarioName: "场".repeat(81),
+      segments: [{ durationMinutes: 1, currentCRate: 0.5 }]
+    })).rejects.toThrow("不能超过 80 个字符");
+    await expect(gateway.simulateTwin({
       twinId: "twin-12345678",
       resolutionMinutes: 0.1,
       segments: [{ durationMinutes: 30, currentCRate: 0.5 }]
     })).rejects.toThrow("0.25–10");
+    await expect(gateway.simulateTwin({
+      twinId: "twin-12345678",
+      segments: [
+        { durationMinutes: 70, currentCRate: 0.5 },
+        { durationMinutes: 60, currentCRate: -0.5 },
+      ],
+    })).rejects.toThrow("总时长不能超过 120 分钟");
   });
 
   it("commits the TwinMoE-selected PINO state instead of the baseline state", async () => {

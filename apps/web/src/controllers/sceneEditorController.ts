@@ -41,6 +41,7 @@ import { createSceneAppearanceCommands } from "./sceneAppearanceCommands";
 import { createSceneOrganizationCommands } from "./sceneOrganizationCommands";
 import { layoutSceneSelection, type SceneSelectionLayoutAxis, type SceneSelectionLayoutMode } from "./sceneSelectionLayout";
 import { createIndustrialPrefabInstance, industrialPrefabPrimitiveVisual } from "../prefabs/industrialPrefabInstance";
+import { waitForOptimizerModel } from "../optimizer/modelOptimizerAssets";
 
 function isModelLoadSuperseded(reason: unknown): boolean {
   return reason instanceof Error && reason.name === "ModelLoadSupersededError";
@@ -119,6 +120,9 @@ export function createSceneEditorController(context: SceneEditorControllerContex
 
   async function loadModel(model: ModelRecord, silent = false, instanceId = model.id): Promise<LoadedSceneModel | undefined> {
     if (!engine) return;
+    const occupied = engine.listModels().find(item => item.id === instanceId);
+    // 替换后旧资源 ID 仍是另一素材的稳定实例 ID；再插入旧资源必须建立独立实例。
+    if (!silent && instanceId === model.id && occupied && (occupied.assetModelId ?? occupied.id) !== model.id) instanceId = crypto.randomUUID();
     if (model.status !== "ready" || !model.manifest) {
       setMessage(model.message);
       return;
@@ -146,18 +150,32 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     }
   }
 
-  async function uploadModels(files?: FileList | File[], robotEntries?: ReadonlyMap<File, string>) {
-    if (!files?.length || !project) return;
+  async function uploadModels(files?: FileList | File[], robotEntries?: ReadonlyMap<File, string>): Promise<ModelRecord[]> {
+    if (!files?.length || !project) return [];
+    const uploadedModels: ModelRecord[] = [];
+    const readyModels: ModelRecord[] = [];
     setUploading(true);
     try {
       for (const [index, file] of [...files].entries()) {
         setMessage(`正在上传 ${file.name}（${index + 1}/${files.length}）`);
-        await api.uploadModel(project.id, file, rvtConversionMode, rvtRevitVersion, undefined, robotEntries?.get(file));
+        uploadedModels.push(await api.uploadModel(project.id, file, rvtConversionMode, rvtRevitVersion, undefined, robotEntries?.get(file)));
       }
-      setMessage(`${files.length} 个模型上传完成，等待处理`);
+      for (const [index, uploaded] of uploadedModels.entries()) {
+        const authoritativeProject = await waitForOptimizerModel(
+          project.id,
+          uploaded.id,
+          (message) => setMessage(`${uploaded.name}（${index + 1}/${uploadedModels.length}）：${message}`),
+        );
+        const ready = authoritativeProject.models.find((model) => model.id === uploaded.id);
+        if (!ready?.manifest || ready.status !== "ready") throw new Error(`${uploaded.name} 尚未生成可插入资源`);
+        readyModels.push(ready);
+      }
       await refreshProject();
+      setMessage(`${readyModels.length} 个模型已就绪，可直接插入或进入优化`);
+      return readyModels;
     } catch (reason) {
       showError(reason);
+      return readyModels;
     } finally {
       setUploading(false);
       if (uploadRef.current) uploadRef.current.value = "";

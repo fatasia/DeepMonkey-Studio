@@ -9,6 +9,9 @@ export interface DashboardChartPalette {
   surface: string;
   series: string[];
   width?: number;
+  /** 瀑布等增量图的变化语义色,随主题令牌联动(行业惯例:升红降绿)。 */
+  rise?: string | undefined;
+  fall?: string | undefined;
 }
 
 /** 新模板的显式设计字号，不重写缺省旧图表，也不改变原始聚合值。 */
@@ -59,8 +62,16 @@ export function readDashboardChartPalette(element: HTMLElement): DashboardChartP
   const style = getComputedStyle(element);
   const authored = getComputedStyle(element.closest(".dashboard-native-widget") ?? element);
   const token = (name: string) => style.getPropertyValue(name).trim();
+  // 商用大屏系列色阶:语义色(--info/--success/--warning/--danger)打底,后四色为其邻近色相延伸
+  // (紫=info 邻域、青=info→success 过渡、橙=warning→danger 过渡、洋红=紫邻域),中等饱和明度,深浅主题均可读。
+  // 若未来在 base.css 补充 --chart-series-5..8 令牌,将自动优先于内置值。
+  const series = ["--info", "--success", "--warning", "--danger"].map(token);
+  series.push("#9b8cf2", "#45c3c9", "#e08b5c", "#c974b8");
   return { accent: token("--accent"), text: authored.color, muted: authored.color, line: token("--line"), surface: authored.backgroundColor, width: element.clientWidth,
-    series: ["--info", "--success", "--warning", "--danger", "--text-muted"].map(token) };
+    rise: token("--danger") || undefined,
+    fall: token("--success") || undefined,
+    // 相邻系列色相跳开、整体明度渐进;同屏系列纪律仍为 ≤6,超出以备选色循环兜底。
+    series };
 }
 
 /** 标签只缩短显示精度；tooltip、原行及聚合值保留原精度。 */

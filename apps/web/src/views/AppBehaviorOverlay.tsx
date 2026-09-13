@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentProps, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { LoaderCircle } from "lucide-react";
+import { ExternalLink, LoaderCircle, PanelRightOpen } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import { BEHAVIOR_FLOAT_RECT_STORAGE_KEY, BEHAVIOR_LAYOUT_STORAGE_KEY, BEHAVIOR_SPLIT_WIDTH_STORAGE_KEY, BEHAVIOR_WINDOW_RECT_STORAGE_KEY, type BehaviorLayoutMode } from "../appDefaults";
 import {
@@ -17,6 +17,7 @@ import { findScriptTargetLocation } from "../studio/workspaceTargetNavigation";
 import type { AppViewBindings } from "./appViewBindings";
 import { useAuthorBehaviorRun } from "../behavior/useAuthorBehaviorRun";
 import type { SdkExampleInsertRequest } from "../behavior/sdkExampleInsertion";
+import { readBehaviorScriptSelection, rememberBehaviorScriptSelection } from "../behavior/behaviorScriptSelection";
 
 const SceneBehaviorPanel = lazy(() => import("../components/SceneBehaviorPanel").then((module) => ({ default: module.SceneBehaviorPanel })));
 const AuthorBehaviorPreview = lazy(() => import("../components/AuthorBehaviorPreview").then(module => ({ default: module.AuthorBehaviorPreview })));
@@ -41,6 +42,7 @@ export function AppBehaviorOverlay({ bindings, sdkExampleRequest, onSdkExampleCo
   const [portalReady, setPortalReady] = useState(false);
   const [popupWindow, setPopupWindow] = useState<Window>();
   const portalAnchorRef = useRef<HTMLDivElement>(null);
+  const selectedScripts = useRef(new Map<string, string>());
   const layoutMode = state.sceneBehaviorLayout ?? "split";
   const workspaceLabel = activeScene?.name ?? activeDashboardPage?.name ?? activeApplication?.metadata.name ?? tr(locale, "未命名场景", "Untitled scene");
   useEffect(() => {
@@ -73,12 +75,16 @@ export function AppBehaviorOverlay({ bindings, sdkExampleRequest, onSdkExampleCo
     if (state.sceneBehaviorOpen) return;
     closeBehaviorWindow(popupWindow);
     setPopupWindow(undefined);
-  }, [state.sceneBehaviorOpen, popupWindow]);
+    if (layoutMode === "window") state.setSceneBehaviorLayout("float");
+  }, [state.sceneBehaviorOpen, popupWindow, layoutMode]);
   if (!state.sceneBehaviorOpen || !activeApplication || (route.view !== "studio" && route.view !== "dashboard")) {
     return null;
   }
 
   const linkedViewport = activeDashboardPage?.nodes.find((node) => node.kind === "scene-viewport");
+  const selectionKey = `${state.currentUser?.id ?? ""}:${activeApplication.metadata.id}`;
+  const rememberedScriptId = selectedScripts.current.get(selectionKey)
+    ?? readBehaviorScriptSelection(state.currentUser?.id ?? "", activeApplication.metadata.id);
   const linkedSceneId = linkedViewport && "sceneId" in linkedViewport ? linkedViewport.sceneId : activeScene?.id;
   const preferredTarget = resolvePreferredScriptTarget(
     derived.behaviorCodeTargets,
@@ -185,6 +191,11 @@ export function AppBehaviorOverlay({ bindings, sdkExampleRequest, onSdkExampleCo
       locale={locale}
       projectId={activeApplication.metadata.projectId}
       applicationId={activeApplication.metadata.id}
+      {...(rememberedScriptId ? { initialSelectedScriptId: rememberedScriptId } : {})}
+      onSelectedScriptChange={id => {
+        selectedScripts.current.set(selectionKey, id);
+        rememberBehaviorScriptSelection(state.currentUser?.id ?? "", activeApplication.metadata.id, id);
+      }}
       {...(stableSdkExampleRequest ? { sdkExampleRequest: stableSdkExampleRequest } : {})}
       {...(onSdkExampleConsumed ? { onSdkExampleConsumed } : {})}
       scripts={activeApplication.scripts}
@@ -220,7 +231,7 @@ export function AppBehaviorOverlay({ bindings, sdkExampleRequest, onSdkExampleCo
       onFocusTarget={focusTarget}
       layoutMode={layoutMode}
       onLayoutModeChange={changeLayout}
-      onPendingDraftChange={(draft) => { state.pendingBehaviorDraftRef.current = draft; }}
+      onPendingDraftChange={(draft) => { state.pendingBehaviorDraftRef.current = draft; bindings.applicationRecovery?.captureScriptDraft(draft); }}
       onClose={() => { closeBehaviorWindow(popupWindow); state.setSceneBehaviorOpen(false); }}
     />
   </Suspense>;
@@ -245,6 +256,11 @@ export function AppBehaviorOverlay({ bindings, sdkExampleRequest, onSdkExampleCo
       } : undefined}
     >
       <div className="behavior-portal-anchor" ref={portalAnchorRef} />
+      {layoutMode === "window" && <div className="behavior-window-return" role="region" aria-label={tr(locale, "脚本独立窗口", "Detached script window")}>
+        <span>{tr(locale, "脚本已在独立窗口打开", "Scripts are open in another window")}</span>
+        <button type="button" onClick={() => popupWindow?.focus()}><ExternalLink size={14} />{tr(locale, "显示窗口", "Show window")}</button>
+        <button type="button" onClick={() => changeLayout("split")}><PanelRightOpen size={14} />{tr(locale, "回到分屏", "Return to split")}</button>
+      </div>}
       {portalReady && portalHost ? createPortal(panel, portalHost) : panel}
       {authorRun.session && state.project && <Suspense fallback={null}><AuthorBehaviorPreview key={authorRun.id} session={authorRun.session} project={state.project} locale={locale} rendererBackend={state.rendererBackend} onStop={authorRun.stop} /></Suspense>}
       {layoutMode === "float" && (
@@ -324,9 +340,11 @@ export function behaviorWindowTitle(locale: AppLocale, workspaceLabel: string, s
 
 function openBehaviorWindow(locale: AppLocale, workspaceLabel: string, systemName: string): Window | undefined {
   const rect = readWindowRect();
-  const popup = window.open("", "bim-studio-script-editor", `popup=yes,width=${rect.width},height=${rect.height},left=${rect.left},top=${rect.top}`) ?? undefined;
+  const popup = window.open("", "bim-studio-script-editor", `popup=yes,resizable=yes,scrollbars=yes,width=${rect.width},height=${rect.height},left=${rect.left},top=${rect.top}`) ?? undefined;
   if (!popup) return undefined;
   popup.document.documentElement.lang = locale === "zh-CN" ? "zh-CN" : "en";
+  popup.document.documentElement.setAttribute("data-theme", document.documentElement.getAttribute("data-theme") ?? "dark");
+  popup.document.documentElement.style.cssText = document.documentElement.style.cssText;
   const base = popup.document.createElement("base");
   base.href = document.baseURI;
   popup.document.head.replaceChildren(base, ...[...document.head.querySelectorAll('link[rel="stylesheet"],style')].map((node) => node.cloneNode(true)));

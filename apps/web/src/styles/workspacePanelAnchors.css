@@ -1,0 +1,30 @@
+/* 面板开关与画布占用同一网格单元，面板宽度、断点和分屏不再复制像素偏移。 */
+.app-shell > .workspace-panel-controls,
+.dashboard-workspace > .workspace-panel-controls { display: block; position: relative; inset: auto; align-self: start; justify-self: stretch; width: auto; height: 0; min-width: 0; pointer-events: none; }
+.app-shell > .workspace-panel-controls { grid-area: main; }
+.dashboard-workspace > .workspace-panel-controls { grid-area: canvas; }
+.app-shell > .workspace-panel-controls > button,
+.dashboard-workspace > .workspace-panel-controls > button { top: 8px; pointer-events: auto; background: var(--surface-2); color: var(--text-muted); }
+.app-shell > .workspace-panel-controls > .panel-toggle-left,
+.dashboard-workspace > .workspace-panel-controls > .panel-toggle-left { left: -14px; }
+.app-shell > .workspace-panel-controls > .panel-toggle-right,
+.dashboard-workspace.dashboard-workspace > .workspace-panel-controls > .panel-toggle-right { right: -14px; }
+.app-shell.left-panel-collapsed > .workspace-panel-controls > .panel-toggle-left,
+.dashboard-workspace.left-panel-collapsed > .workspace-panel-controls > .panel-toggle-left { left: 6px; }
+.app-shell.right-panel-collapsed > .workspace-panel-controls > .panel-toggle-right,
+.dashboard-workspace.dashboard-workspace.inspector-collapsed > .workspace-panel-controls > .panel-toggle-right { right: 6px; }
+.app-workspace-frame.behavior-split :is(.app-shell,.dashboard-workspace) > .workspace-panel-controls > .panel-toggle-left { left: 6px; }
+.app-workspace-frame.behavior-split :is(.app-shell,.dashboard-workspace) > .workspace-panel-controls > .panel-toggle-right { right: 6px; }
+@media (max-width:1180px) {
+  .dashboard-workspace.dashboard-workspace { --inspector-drawer-width: min(288px, calc(100vw - 48px)); grid-template-columns: 224px minmax(0,1fr); grid-template-areas: "top top" "pages canvas" "pages status"; }
+  .dashboard-workspace.dashboard-workspace.left-panel-collapsed { grid-template-columns: 0 minmax(0,1fr); }
+  .dashboard-workspace.dashboard-workspace:not(.inspector-collapsed) .dashboard-inspector-panel { width: var(--inspector-drawer-width); grid-area: auto; }
+  .dashboard-workspace.dashboard-workspace:not(.inspector-collapsed) > .workspace-panel-controls > .panel-toggle-right { right: calc(var(--inspector-drawer-width) - 14px); z-index: calc(var(--layer-panel) + 14); }
+  .dashboard-workspace.dashboard-workspace:not(.inspector-collapsed) :is(.dashboard-design-surface,.dashboard-page-bar) { margin-right: var(--inspector-drawer-width); }
+}
+@media (max-width:980px) {
+  .dashboard-workspace.dashboard-workspace:not(.left-panel-collapsed) { grid-template-columns: 178px minmax(0,1fr); }
+}
+@media (max-width:850px) {
+  .app-shell > .workspace-panel-controls > .panel-toggle-right { right: 6px; }
+}

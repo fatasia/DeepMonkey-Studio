@@ -146,6 +146,10 @@ export function localizeOptimizerMessage(locale: AppLocale, message: string) {
   if (message.startsWith("正在把 ")) return message.replace(/^正在把 (.+) 转换为优化工作格式$/, "Converting $1 to the optimization format");
   const messages: Record<string, string> = {
     "导入 GLB 或内嵌资源的 glTF 开始优化": "Import a GLB or embedded glTF to begin",
+    "导入模型开始编辑与优化":"Import a model to edit and optimize",
+    "正在更新模型图层":"Updating model layers",
+    "图层已更新，可直接下载或继续优化":"Layers updated; download or continue optimizing",
+    "图层修改失败，模型保持不变":"Layer edit failed; the model is unchanged",
     正在分析模型: "Analyzing model",
     "模型已载入，可调整参数后开始优化": "Model loaded; adjust options and start optimization",
     模型解析失败: "Model parsing failed",

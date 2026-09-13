@@ -5,21 +5,24 @@ import {
   studioWorkspacePath,
   workspaceHistoryState,
   type DashboardReturnContext,
-  type DashboardViewState
+  type DashboardViewState,
+  type TopologyReturnContext
 } from "./studio/workspaceRoute";
 import { sceneViewerDeliveryRoute } from "./delivery/sceneViewerDelivery";
 import { appendSceneAssetQuery, readModelAssetQuery, writeModelAssetQuery, type ModelAssetReturn } from "./optimizer/modelAssetNavigation";
+import { carriesProjectContext } from "./projectNavigationContext";
 
 export type ManagerWorkspaceTab = "scenes" | "assets" | "topology" | "examples";
 
 export interface AppRoute {
-  view: "manager" | "dashboard" | "studio" | "topology" | "optimizer" | "data" | "vision" | "operations" | "docs" | "system" | "branding" | "view" | "published";
+  view: "manager" | "dashboard" | "studio" | "topology" | "optimizer" | "parametric" | "data" | "vision" | "operations" | "docs" | "system" | "branding" | "view" | "published";
   sceneId?: string;
   projectId?: string;
   modelId?: string;
   assetScope?: "project";
   assetReturn?: ModelAssetReturn;
   insertModelId?: string;
+  replaceModelInstanceId?: string;
   managerTab?: ManagerWorkspaceTab;
   applicationId?: string;
   pageId?: string;
@@ -28,6 +31,7 @@ export interface AppRoute {
   fallback?: "not-found";
   dashboardView?: DashboardViewState;
   dashboardReturn?: DashboardReturnContext;
+  topologyReturn?: TopologyReturnContext;
   operationsTab?: "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif";
 }
 
@@ -61,13 +65,13 @@ function readLocationRoute(): AppRoute {
   };
   const docsLocation = parseDocsPath(window.location.pathname);
   if (docsLocation) return { view: "docs", ...docsLocation };
-  if (["optimizer", "data", "vision", "operations", "system", "branding"].includes(window.location.pathname.slice(1))) {
+  if (["optimizer", "parametric", "data", "vision", "operations", "system", "branding"].includes(window.location.pathname.slice(1))) {
     const view = window.location.pathname.slice(1) as AppRoute["view"];
     const requestedTask = new URLSearchParams(window.location.search).get("task");
     const projectId = new URLSearchParams(window.location.search).get("project");
     return {
       view,
-      ...((view === "data" || view === "optimizer") && projectId ? { projectId } : {}),
+      ...(projectId ? { projectId } : {}),
       ...(view === "optimizer" ? readModelAssetQuery(new URLSearchParams(window.location.search)) : {}),
       ...(view === "operations" && requestedTask && operationsTabs.has(requestedTask)
         ? { operationsTab: requestedTask as NonNullable<AppRoute["operationsTab"]> }
@@ -79,7 +83,8 @@ function readLocationRoute(): AppRoute {
     view: "topology",
     projectId: decodeURIComponent(topologyMatch[1]),
     applicationId: decodeURIComponent(topologyMatch[2]),
-    topologyId: decodeURIComponent(topologyMatch[3])
+    topologyId: decodeURIComponent(topologyMatch[3]),
+    ...(historyState.topologyReturn ? { topologyReturn: historyState.topologyReturn } : {})
   };
   const match = window.location.pathname.match(/^\/(studio|view|published)\/([^/]+)$/);
   if (match?.[1] && match[2]) {
@@ -100,11 +105,12 @@ export function routePath(route: AppRoute): string {
   const deliveryRoute = sceneViewerDeliveryRoute();
   if (deliveryRoute) return `/published/${encodeURIComponent(deliveryRoute.sceneId)}`;
   if (route.view === "docs") return docsPath(route.documentId);
-  if (route.view === "data" || route.view === "manager" || route.view === "optimizer") {
+  if (carriesProjectContext(route.view)) {
     const query = new URLSearchParams();
     if (route.projectId) query.set("project", route.projectId);
     if (route.view === "manager" && route.managerTab) query.set("tab", route.managerTab);
-    if (route.view !== "data") writeModelAssetQuery(query, route);
+    if (route.view === "manager" || route.view === "optimizer") writeModelAssetQuery(query, route);
+    if (route.view === "operations" && route.operationsTab) query.set("task", route.operationsTab);
     return `/${route.view}${query.size ? `?${query.toString().replace(/\+/g, "%20")}` : ""}`;
   }
   if (route.view === "dashboard" && route.projectId && route.applicationId && route.pageId) {
@@ -126,7 +132,8 @@ export function routePath(route: AppRoute): string {
 export function routeHistoryState(route: AppRoute): Record<string, unknown> {
   return workspaceHistoryState({
     ...(route.dashboardView ? { dashboardView: route.dashboardView } : {}),
-    ...(route.dashboardReturn ? { dashboardReturn: route.dashboardReturn } : {})
+    ...(route.dashboardReturn ? { dashboardReturn: route.dashboardReturn } : {}),
+    ...(route.topologyReturn ? { topologyReturn: route.topologyReturn } : {})
   });
 }
 

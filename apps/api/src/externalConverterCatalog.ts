@@ -58,24 +58,6 @@ export function createExternalConverterRegistrations(
       deployment: "desktop",
       requireHierarchy: true,
     },
-    {
-      id: "industrial.parasolid-exchange",
-      name: "Parasolid XT 工业转换",
-      inputFormats: ["x_t", "x_b"],
-      providerName: "工业 CAD SDK 适配器",
-      config: config.industrialCad,
-      deployment: "server",
-      requireHierarchy: true,
-    },
-    {
-      id: "industrial.jt-exchange",
-      name: "JT 装配与 PMI 转换",
-      inputFormats: ["jt"],
-      providerName: "工业 CAD SDK 适配器",
-      config: config.industrialCad,
-      deployment: "server",
-      requireHierarchy: true,
-    },
   ];
 
   return definitions.map((definition) => createRegistration(definition, objects));

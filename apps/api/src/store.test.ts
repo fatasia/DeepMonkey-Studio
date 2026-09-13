@@ -70,6 +70,45 @@ describe("JsonStore scene management", () => {
   });
 });
 
+describe("JsonStore AI settings", () => {
+  it("redacts nested 3D provider secrets from the save response", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-studio-ai-settings-"));
+    temporaryDirectories.push(directory);
+    const store = new JsonStore(directory);
+    await store.init();
+
+    const saved = await store.saveAiSettings({
+      providerId: "ai.openai-compatible",
+      baseUrl: "https://api.example.com/v1",
+      model: "model-a",
+      protocol: "auto",
+      temperature: 0.2,
+      apiKey: "assistant-secret",
+      modeling3d: {
+        tripo3d: {
+          providerId: "ai.tripo3d",
+          baseUrl: "https://openapi.tripo3d.ai",
+          model: "tripo-3d",
+          protocol: "auto",
+          apiKey: "tripo-secret",
+        },
+        tencentHunyuan: {
+          providerId: "ai.tencent-hunyuan-3d",
+          baseUrl: "https://hunyuan.tencentcloudapi.com",
+          model: "hunyuan-3d",
+          protocol: "auto",
+          apiKey: "hunyuan-secret",
+        },
+      },
+    });
+
+    expect(saved.apiKeyConfigured).toBe(true);
+    expect(saved.modeling3d?.tripo3d).not.toHaveProperty("apiKey");
+    expect(saved.modeling3d?.tencentHunyuan).not.toHaveProperty("apiKey");
+    expect(store.getAiSettings()?.modeling3d?.tripo3d.apiKey).toBe("tripo-secret");
+  });
+});
+
 describe("JsonStore application management", () => {
   it("rejects a cross-project duplicate application ID", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "bim-studio-store-"));

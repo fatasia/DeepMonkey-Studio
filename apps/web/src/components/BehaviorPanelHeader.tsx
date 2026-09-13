@@ -6,6 +6,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import type { BehaviorLayoutMode } from "../appDefaults";
 import type { AuthorBehaviorScope } from "../behavior/authorBehaviorDocument";
 import "./AuthorBehaviorPreview.css";
+import { useDismissableDetails } from "../hooks/useDismissableDetails";
 
 interface Props {
   locale: AppLocale;
@@ -41,6 +42,8 @@ interface Props {
 }
 
 export function BehaviorPanelHeader(props: Props) {
+  const layoutMenuRef = useDismissableDetails<HTMLDetailsElement>();
+  const moreMenuRef = useDismissableDetails<HTMLDetailsElement>();
   const runLabel = props.runScope === "current" ? tr(props.locale, "试运行当前脚本", "Test current script") : tr(props.locale, "试运行已启用脚本", "Test enabled scripts");
   return <header className="behavior-panel-header" onKeyDown={event => {
     const menu = (event.target as HTMLElement).closest("details");
@@ -57,7 +60,7 @@ export function BehaviorPanelHeader(props: Props) {
     </div>
     <nav className="behavior-panel-actions" aria-label={tr(props.locale, "脚本运行操作", "Script runtime actions")}>
       <Action active={!props.scriptListCollapsed} label={props.scriptListCollapsed ? tr(props.locale, "展开脚本列表", "Expand script list") : tr(props.locale, "收起脚本列表", "Collapse script list")} onClick={props.onToggleScriptList} icon={props.scriptListCollapsed ? <PanelLeftOpen size={13} /> : <PanelLeftClose size={13} />} />
-      <details className="behavior-header-menu behavior-layout-menu">
+      <details ref={layoutMenuRef} className="behavior-header-menu behavior-layout-menu">
         <summary aria-label={tr(props.locale, "切换窗口布局", "Change window layout")} title={tr(props.locale, "切换窗口布局", "Change window layout")}><PanelRightOpen size={13} /></summary>
         <div>
           <MenuAction active={props.layoutMode === "split"} label={tr(props.locale, "分屏", "Split")} onClick={() => props.onLayoutModeChange("split")} icon={<PanelRightOpen size={13} />} />
@@ -71,7 +74,7 @@ export function BehaviorPanelHeader(props: Props) {
       {props.running && <Action label={props.paused ? tr(props.locale, "继续运行", "Resume") : tr(props.locale, "暂停运行", "Pause")} onClick={props.onPauseResume} icon={props.paused ? <Play size={13} /> : <Pause size={13} />} />}
       {props.paused && <Action label={tr(props.locale, "推进一帧（1/60 秒，非源码单步）", "Advance one frame (1/60 s, not source stepping)")} disabled={!props.canStep} onClick={props.onStep} icon={<StepForward size={13} />} />}
       {(props.hasSession ?? props.running) && <Action label={tr(props.locale, "停止运行", "Stop")} onClick={props.onStop} icon={<CircleStop size={13} />} />}
-      <details className="behavior-header-menu behavior-more-menu">
+      <details ref={moreMenuRef} className="behavior-header-menu behavior-more-menu">
         <summary aria-label={tr(props.locale, "更多工具", "More tools")} title={tr(props.locale, "更多工具", "More tools")}><MoreHorizontal size={14} /></summary>
         <div>
           {props.onDebug && <button type="button" disabled={!props.hasDraft} title={tr(props.locale, "使用浏览器 DevTools 调试当前脚本的私有运行副本", "Debug a private run of the current script in browser DevTools")} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); props.onDebug?.(); }}><Bug size={13} /><span>{tr(props.locale, "DevTools 调试当前脚本", "Debug current script in DevTools")}</span></button>}
@@ -87,7 +90,7 @@ export function BehaviorPanelHeader(props: Props) {
 }
 
 function MenuAction(props: { label: string; icon: React.ReactNode; active?: boolean; onClick: () => void }) {
-  return <button className={props.active ? "active" : ""} type="button" onClick={props.onClick}>{props.icon}<span>{props.label}</span></button>;
+  return <button className={props.active ? "active" : ""} type="button" onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); props.onClick(); }}>{props.icon}<span>{props.label}</span></button>;
 }
 
 function Action(props: { label: string; icon: React.ReactNode; active?: boolean; expanded?: boolean; disabled?: boolean; onClick: () => void }) {

@@ -69,10 +69,9 @@ export function isWorkspacePackageSourceDeepImport(
   if (targetParts[0] === ".." || targetParts.length < 3 || targetParts[1] !== "src") return false;
 
   const importerParts = path.relative(packagesRoot, path.resolve(importer)).split(path.sep);
-  const importerIsInSamePackageSource = importerParts[0] !== ".."
-    && importerParts[0] === targetParts[0]
-    && importerParts[1] === "src";
-  return !importerIsInSamePackageSource;
+  const importerIsInSamePackage = importerParts[0] !== ".."
+    && importerParts[0] === targetParts[0];
+  return !importerIsInSamePackage;
 }
 
 const rawNetworkCapabilities = new Set(["fetch", "XMLHttpRequest", "WebSocket", "EventSource"]);

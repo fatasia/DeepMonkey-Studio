@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type {
+  AiModelProviderSettings,
   AiProviderSettings,
   AuditLogRecord,
   DatabaseDocument,
@@ -97,10 +98,20 @@ export abstract class JsonStoreFoundation {
   }
 
   async saveAiSettings(settings: NonNullable<DatabaseDocument["aiSettings"]>): Promise<AiProviderSettings> {
-    const { apiKey: _apiKey, ...safe } = structuredClone(settings);
+    const { apiKey: _apiKey, modeling3d, ...safe } = structuredClone(settings);
+    const safeModeling3d = modeling3d
+      ? {
+          tripo3d: publicModeling3dSettings(modeling3d.tripo3d),
+          tencentHunyuan: publicModeling3dSettings(modeling3d.tencentHunyuan),
+        }
+      : undefined;
     return this.runDocumentMutation((candidate) => {
       candidate.aiSettings = structuredClone(settings);
-      return changed({ ...safe, apiKeyConfigured: Boolean(settings.apiKey) });
+      return changed({
+        ...safe,
+        apiKeyConfigured: Boolean(settings.apiKey),
+        ...(safeModeling3d ? { modeling3d: safeModeling3d } : {}),
+      });
     });
   }
 
@@ -165,4 +176,9 @@ export abstract class JsonStoreFoundation {
   protected async persistDocument(document: DatabaseDocument): Promise<void> {
     await this.filePersistence.write(document);
   }
+}
+
+function publicModeling3dSettings(settings: AiModelProviderSettings): AiModelProviderSettings {
+  const { apiKey: _apiKey, ...safe } = settings;
+  return { ...safe, apiKeyConfigured: Boolean(settings.apiKey) };
 }

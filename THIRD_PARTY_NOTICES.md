@@ -1,30 +1,40 @@
 # Third-party notices
 
-This project uses open-source software. The lockfile is the authoritative inventory of exact versions. Run the following command before each release to audit production dependencies:
+This project uses open-source software. The lockfile is the authoritative inventory of exact versions. Run the following command before each release to audit production dependencies, including version-pinned manual evidence for packages with incomplete metadata:
 
 ```powershell
-corepack pnpm licenses list --prod
+pnpm audit:licenses
 ```
+
+The reviewed overrides live in `config/third-party-license-overrides.json`. A new `Unknown` or ambiguous `BSD` result fails the audit until its exact version and license evidence are recorded.
 
 Key runtime dependencies:
 
 | Package | Version | License | Source |
 | --- | ---: | --- | --- |
 | `@thatopen/fragments` | 3.4.5 | MIT | https://github.com/ThatOpen/engine_fragment |
+| `humanize` | 0.0.9 | MIT (verified from packaged `LICENSE`) | https://github.com/taijinlee/humanize |
+| `pause` | 0.0.1 | MIT (verified from packaged `Readme.md`) | npm production dependency via Passport |
+| `precond` | 0.2.3 | MIT (verified from source headers and packaged `README.md`) | https://github.com/MathieuTurcotte/node-precond |
+| `dequeue` | 1.0.5 | BSD-2-Clause (verified from packaged `LICENSE`) | npm production dependency via node-opcua |
 | `web-ifc` | 0.0.77 | MPL-2.0 | https://github.com/ThatOpen/engine_web-ifc |
 | `three` | 0.185.1 | MIT | https://github.com/mrdoob/three.js |
 | OpenUSD official validation samples | dev snapshots recorded in tests | Tomorrow Open Source Technology License 1.0 | https://github.com/PixarAnimationStudios/OpenUSD |
+| Khronos glTF Sample Assets: Box, BoxInterleaved, BoxTextured, AlphaBlendModeTest, NormalTangentTest, TextureEncodingTest | fixed commit `90d7ede14c7e280af263824604b427a1ca02cb66`; exact hashes in `packages/deep-engine/lab/assets/sources.json` | CC-BY-4.0 or CC0-1.0 per asset; local notices vendored | https://github.com/KhronosGroup/glTF-Sample-Assets |
 | `three-mesh-bvh` | 0.9.14 | MIT | https://github.com/gkjohnson/three-mesh-bvh |
 | `@gltf-transform/core/extensions/functions` | 4.4.2 | MIT | https://github.com/donmccurdy/glTF-Transform |
 | `draco3dgltf` | 1.5.7 | Apache-2.0 | https://github.com/google/draco |
 | `meshoptimizer` | 1.0.1 | MIT | https://github.com/zeux/meshoptimizer |
 | `xz-decompress` | 0.2.3 | MIT | https://github.com/httptoolkit/xz-decompress |
 | `onnxruntime-node` | 1.27.0 | MIT | https://github.com/microsoft/onnxruntime |
+| `ort` / ONNX Runtime Rust binding | 2.0.0-rc.13 | MIT OR Apache-2.0 | https://github.com/pykeio/ort |
+| BatteryLife v11 processed sample data (SNL, CALB, HUST) | v11 | MIT; cite BatteryLife and each original data source | https://huggingface.co/datasets/Battery-Life/BatteryLife_Processed |
+| TEMPEST LIC 280 Ah aging sample data | Zenodo record 20813753 | CC BY 4.0 | https://zenodo.org/records/20813753 |
 | YOLOX-Nano preset weights | 0.1.1rc0 | Apache-2.0 | https://github.com/Megvii-BaseDetection/YOLOX |
 | SSD MobileNet V1 preset weights | ONNX opset 12 | Apache-2.0 | https://huggingface.co/onnxmodelzoo/ssd_mobilenet_v1_12 |
 | MobileNet V2 preset weights | ONNX opset 12 | Apache-2.0 | https://huggingface.co/onnxmodelzoo/mobilenetv2-12 |
 | Pyronear early-smoke preset weights | 1.0.0 | Apache-2.0 | https://huggingface.co/pyronear/yolo11s_sensitive-detector |
-| `sharp` / platform package (transitive, Node-side optional) | 0.34.x | Apache-2.0; bundled libvips components include LGPL-3.0-or-later | https://github.com/lovell/sharp |
+| `sharp` / `@img/sharp-win32-x64` platform package (transitive, Node-side optional) | 0.35.x | Apache-2.0; bundled libvips components include LGPL-3.0-or-later | https://github.com/lovell/sharp |
 | `dxf-parser` | 1.1.2 | MIT | https://github.com/gdsestimating/dxf-parser |
 | `occt-import-js` | 0.0.23 | LGPL-2.1 | https://github.com/kovacsv/occt-import-js |
 | `replicad` | 1.0.0 | MIT | https://replicad.xyz |
@@ -39,8 +49,6 @@ Key runtime dependencies:
 | `lucide-react` | 0.468.0 | ISC | https://github.com/lucide-icons/lucide |
 | `esbuild` | 0.28.1 | MIT | https://github.com/evanw/esbuild |
 | `es-module-lexer` | 2.3.1 | MIT | https://github.com/guybedford/es-module-lexer |
-| `node-red` | 5.0.4 | Apache-2.0 | https://github.com/node-red/node-red |
-| `@flowfuse/node-red-dashboard` | 1.30.2 | Apache-2.0 | https://github.com/FlowFuse/node-red-dashboard |
 | `echarts` | 6.1.0 | Apache-2.0 | https://github.com/apache/echarts |
 | `gridstack` | 13.0.2 | MIT | https://github.com/gridstack/gridstack.js |
 | `@tdengine/websocket` | 3.5.0 | MIT | https://github.com/taosdata/taos-connector-node |
@@ -53,7 +61,6 @@ Key runtime dependencies:
 | `serialport` | 13.0.0 | MIT | https://github.com/serialport/node-serialport |
 | PostgreSQL server | installed local version | PostgreSQL License | https://www.postgresql.org/ |
 | MinIO server | installed local version | AGPL-3.0 | https://github.com/minio/minio |
-| Node-RED database and IoT nodes | see lockfile | Apache-2.0 / MIT / BSD-3-Clause / ISC | https://flows.nodered.org/ |
 
 ONNX Runtime only supplies the inference engine. Every imported ONNX/YOLO weight file remains an independent artifact; verify its dataset, weight and redistribution license before packaging it with a commercial deployment.
 

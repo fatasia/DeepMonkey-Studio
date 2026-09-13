@@ -25,9 +25,15 @@ export interface DashboardReturnContext extends DashboardWorkspaceLocation {
   view: DashboardViewState;
 }
 
+export interface TopologyReturnContext extends DashboardReturnContext {
+  /** Existing topology widget to refill after editing. */
+  nodeId: string;
+}
+
 export interface StudioWorkspaceHistoryState {
   dashboardView?: DashboardViewState;
   dashboardReturn?: DashboardReturnContext;
+  topologyReturn?: TopologyReturnContext;
 }
 
 export const DEFAULT_DASHBOARD_VIEW: DashboardViewState = Object.freeze({
@@ -71,10 +77,19 @@ export function normalizeDashboardViewState(value: unknown): DashboardViewState 
 export function readWorkspaceHistoryState(value: unknown): StudioWorkspaceHistoryState {
   const state = asRecord(asRecord(value).bimStudio);
   const dashboardReturn = readDashboardReturnContext(state.dashboardReturn);
+  const topologyReturn = readTopologyReturnContext(state.topologyReturn);
   return {
     ...(state.dashboardView ? { dashboardView: normalizeDashboardViewState(state.dashboardView) } : {}),
-    ...(dashboardReturn ? { dashboardReturn } : {})
+    ...(dashboardReturn ? { dashboardReturn } : {}),
+    ...(topologyReturn ? { topologyReturn } : {})
   };
+}
+
+function readTopologyReturnContext(value: unknown): TopologyReturnContext | undefined {
+  const dashboard = readDashboardReturnContext(value);
+  const candidate = asRecord(value);
+  if (!dashboard || typeof candidate.nodeId !== "string" || !candidate.nodeId) return undefined;
+  return { ...dashboard, nodeId: candidate.nodeId };
 }
 
 export function workspaceHistoryState(state: StudioWorkspaceHistoryState): Record<string, unknown> {

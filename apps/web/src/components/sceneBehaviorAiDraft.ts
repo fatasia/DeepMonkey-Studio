@@ -10,13 +10,13 @@ export function acceptAiSceneScriptDraft(
   result: AiSceneScriptDraftResult,
 ): ScriptModule {
   if (result.status !== "ready" || !result.draftScript) {
-    throw new Error("AI 草稿尚未通过静态检查");
+    throw new Error("动作草稿尚未通过静态检查");
   }
   if (result.draftScript.id !== current.id) {
-    throw new Error("当前脚本已切换，请重新生成 AI 草稿");
+    throw new Error("当前脚本已切换，请重新生成动作草稿");
   }
   if (!sameTarget(result.draftScript.target, current.target)) {
-    throw new Error("脚本挂载目标已变化，请重新生成 AI 草稿");
+    throw new Error("脚本挂载目标已变化，请重新生成动作草稿");
   }
 
   // 返回副本而不是审查对象本身，避免后续编辑污染审查记录。

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ApplicationDocument, ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
 import { readRoute } from "../appRoute";
+import { readProjectContext, rememberProjectContext } from "../projectNavigationContext";
 import type { AppState } from "./useAppState";
 import { createDirectoryRequest, directoryStateForKey, EMPTY_DIRECTORY_STATE, type DirectoryLoadState } from "./managerDirectoryRequest";
 
@@ -40,7 +41,8 @@ export function useManagerDirectoryController(state: Pick<AppState,
       // 导航可能在请求途中改变，完成时以最新 URL 的项目为准。
       const requestedProjectId = readRoute().projectId;
       setProject(current => items.find(item => item.id === requestedProjectId)
-        ?? items.find(item => item.id === current?.id) ?? items[0]);
+        ?? items.find(item => item.id === current?.id)
+        ?? items.find(item => item.id === readProjectContext(userId)) ?? items[0]);
     }, () => identity.current.userId === userId);
   }
 
@@ -61,6 +63,10 @@ export function useManagerDirectoryController(state: Pick<AppState,
     void loadProjects();
     return projectRequest.cancel;
   }, [userId]);
+
+  useEffect(() => {
+    if (projectsReady) rememberProjectContext(userId, projectId || undefined);
+  }, [userId, projectId, projectsReady]);
 
   useEffect(() => {
     if (lastSceneKey.current !== projectKey) { lastSceneKey.current = projectKey; setScenes([]); }

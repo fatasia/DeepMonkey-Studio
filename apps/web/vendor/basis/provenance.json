@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/BinomialLLC/basis_universal",
+  "commit": "77677a5fd9636e11d9666d70054751ef93cd5f44",
+  "license": "Apache-2.0",
+  "files": {
+    "basis_encoder.js": "d225ce1e7012609bcfbe338351c8778d95eb1c19d404314d513b2b2df94a6ffb",
+    "basis_encoder.wasm": "03c21ad5b0e5d9fbd3f235b90365be703a64c6ed9f567dea81ef92164d150287",
+    "LICENSE": "065fcf48d6af21c0b75e23be5ed5753aee75c892e1c2cf178fa6736305614a5c"
+  }
+}

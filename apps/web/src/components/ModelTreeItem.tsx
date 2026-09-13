@@ -1,8 +1,9 @@
-import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Gauge, Layers3, Lock, Pause, Play, ScanLine, Settings2, Trash2, Unlock } from "lucide-react";
+import { Box, Check, ChevronDown, ChevronRight, Eye, EyeOff, Focus, Gauge, Layers3, Lock, Pause, Play, ScanLine, Settings2, Trash2, Unlock } from "lucide-react";
 import type { ModelRecord, SceneFloorState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { statusText } from "../appPresentation";
 import { LayerTree } from "./LayerTree";
+import { SceneRowMenu } from "./SceneRowMenu";
 import type { LayerTreeNode, LoadedSceneModel, ViewerEngine } from "../viewer/ViewerEngine";
 
 /** 单个模型的目录行，集中承载可见性、锁定、碰撞、动画和图层操作。 */
@@ -15,9 +16,11 @@ export interface ModelTreeItemProps {
   modelFloors: readonly SceneFloorState[];
   floorExpansion: number;
   selectedModelId: string | undefined;
+  selectedInBatch?: boolean;
   selectedLayerId: string | undefined;
   engine: ViewerEngine | undefined;
   onToggleTree: () => void;
+  onSelectObject?: (id: string, options: { additive: boolean; range: boolean }) => void;
   onLoadModel: () => void;
   onOptimize?: () => void;
   onInstanceActions?: () => void;
@@ -39,9 +42,11 @@ export function ModelTreeItem({
   modelFloors,
   floorExpansion,
   selectedModelId,
+  selectedInBatch = false,
   selectedLayerId,
   engine,
   onToggleTree,
+  onSelectObject,
   onLoadModel,
   onOptimize,
   onInstanceActions,
@@ -55,7 +60,8 @@ export function ModelTreeItem({
 }: ModelTreeItemProps) {
   return (
     <div className="model-tree-item" data-model-id={model.id}>
-      <div className={`asset-row ${selectedModelId === model.id ? "selected" : ""}`}>
+      <div className={`asset-row ${loaded && selectedModelId === model.id ? "selected" : ""} ${loaded && selectedInBatch ? "batch-selected" : ""}`}>
+        <span className="scene-row-selection-mark" aria-hidden="true">{loaded && selectedInBatch ? <Check size={12} strokeWidth={3} /> : null}</span>
         <button
           className="model-expander"
           disabled={!loaded}
@@ -67,8 +73,12 @@ export function ModelTreeItem({
         </button>
         <button
           className="asset-main"
-          title={loaded ? tr(locale, "单击选择，双击聚焦", "Click to select, double-click to focus") : tr(locale, "载入模型", "Load model")}
-          onClick={() => (loaded ? engine?.select(model.id) : onLoadModel())}
+          title={loaded ? tr(locale, "单击选择，再次单击取消；Ctrl/⌘ 单击多选；Shift 单击连续选择；双击聚焦", "Click to select, click again to clear; Ctrl/⌘-click for multi-select; Shift-click for a range; double-click to focus") : tr(locale, "载入模型", "Load model")}
+          onClick={(event) => {
+            if (!loaded) return onLoadModel();
+            if (onSelectObject) onSelectObject(model.id, { additive: event.ctrlKey || event.metaKey, range: event.shiftKey });
+            else engine?.select(model.id);
+          }}
           onDoubleClick={() => {
             if (loaded) engine?.focusModel(model.id);
           }}
@@ -102,19 +112,31 @@ export function ModelTreeItem({
             {engine?.isModelLocked(model.id) ? <Lock size={14} /> : <Unlock size={14} />}
           </button>
         )}
-        {loaded && (
-          <button
-            className={`mini-button scene-row-optional-action collision-toggle ${engine?.isCollisionEnabled(model.id) ? "active" : ""} ${engine?.isColliding(model.id) ? "colliding" : ""}`}
+        <SceneRowMenu locale={locale}>
+          {loaded && <button
+            aria-label={tr(locale, "隔离当前模型", "Isolate current model")}
+            title={tr(locale, "仅显示当前模型", "Show only this model")}
+            onClick={() => {
+              engine?.isolateModels([model.id]);
+              onSetRevision();
+            }}
+          >
+            <Focus size={15} /><span>{tr(locale, "隔离", "Isolate")}</span>
+          </button>}
+          {loaded && <button
+            className={`collision-toggle ${engine?.isCollisionEnabled(model.id) ? "active" : ""} ${engine?.isColliding(model.id) ? "colliding" : ""}`}
             aria-label={engine?.isCollisionEnabled(model.id) ? tr(locale, "关闭碰撞检测", "Disable collision detection") : tr(locale, "开启碰撞检测", "Enable collision detection")}
             title={engine?.isCollisionEnabled(model.id) ? tr(locale, "关闭碰撞检测", "Disable collision detection") : tr(locale, "开启碰撞检测", "Enable collision detection")}
-            onClick={() => engine?.setCollisionEnabled(model.id, !engine.isCollisionEnabled(model.id))}
+            onClick={() => {
+              engine?.setCollisionEnabled(model.id, !engine.isCollisionEnabled(model.id));
+              onSetRevision();
+            }}
           >
-            <ScanLine size={15} />
-          </button>
-        )}
+            <ScanLine size={15} /><span>{engine?.isCollisionEnabled(model.id) ? tr(locale, "关闭碰撞", "Disable collision") : tr(locale, "开启碰撞", "Enable collision")}</span>
+          </button>}
         {loaded && engine?.hasAnimation(model.id) && (
           <button
-            className={`mini-button scene-row-optional-action ${engine.isAnimationEnabled(model.id) ? "active" : ""}`}
+            className={engine.isAnimationEnabled(model.id) ? "active" : ""}
             aria-label={engine.isAnimationEnabled(model.id) ? tr(locale, "暂停模型动画", "Pause model animation") : tr(locale, "播放模型动画", "Play model animation")}
             title={engine.isAnimationEnabled(model.id) ? tr(locale, "暂停模型动画", "Pause model animation") : tr(locale, "播放模型动画", "Play model animation")}
             onClick={() => {
@@ -122,20 +144,21 @@ export function ModelTreeItem({
               onSetRevision();
             }}
           >
-            {engine.isAnimationEnabled(model.id) ? <Pause size={14} /> : <Play size={14} />}
+            {engine.isAnimationEnabled(model.id) ? <Pause size={14} /> : <Play size={14} />}<span>{engine.isAnimationEnabled(model.id) ? tr(locale, "暂停动画", "Pause animation") : tr(locale, "播放动画", "Play animation")}</span>
           </button>
         )}
-        {onOptimize && <button className="mini-button scene-row-optional-action" disabled={optimizing || model.status !== "ready"} onClick={onOptimize} aria-label={tr(locale, `保存并优化 ${model.name}`, `Save and optimize ${model.name}`)} title={tr(locale, "保存当前场景并优化此素材；不会覆盖原模型", "Save this scene and optimize this asset; source is preserved")}><Gauge size={15} /></button>}
-        {loaded && onInstanceActions && <button className="mini-button scene-row-optional-action" disabled={optimizing} onClick={onInstanceActions} aria-label={tr(locale, `管理模型实例 ${model.name}`, `Manage model instance ${model.name}`)} title={tr(locale, "新增独立副本或保引用替换素材", "Duplicate instance or replace its asset")}><Settings2 size={15} /></button>}
+        {onOptimize && <button disabled={optimizing || model.status !== "ready"} onClick={onOptimize}><Gauge size={15} /><span>{tr(locale, "优化素材", "Optimize asset")}</span></button>}
+        {loaded && onInstanceActions && <button disabled={optimizing} onClick={onInstanceActions}><Settings2 size={15} /><span>{tr(locale, "实例管理", "Instances")}</span></button>}
         <button
-          className="mini-button scene-row-optional-action danger"
+          className="danger"
           disabled={Boolean(loaded && engine?.isModelLocked(model.id))}
           aria-label={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "移除实例", "Remove instance") : tr(locale, "删除素材", "Delete asset")}
           title={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "从场景移除，素材保留；可撤销", "Remove from scene, keep asset; undo available") : tr(locale, "删除未使用的素材", "Delete unused asset")}
           onClick={onDeleteModel}
         >
-          <Trash2 size={15} />
+          <Trash2 size={15} /><span>{loaded ? tr(locale, "移除实例", "Remove instance") : tr(locale, "删除素材", "Delete asset")}</span>
         </button>
+        </SceneRowMenu>
       </div>
       {expanded && modelFloors.length > 0 && (
         <section className="floor-control model-floor-control" aria-label={`${model.name} ${tr(locale, "楼层控制", "floor controls")}`}>
@@ -170,7 +193,8 @@ export function ModelTreeItem({
           root={tree}
           selectedNodeId={selectedModelId === model.id ? selectedLayerId : undefined}
           onSelect={(node) => {
-            engine?.selectLayer(model.id, node.id);
+            if (selectedModelId === model.id && selectedLayerId === node.id) engine?.select(undefined);
+            else engine?.selectLayer(model.id, node.id);
             onSetRevision();
           }}
           onVisibilityChange={(node, visible) => {

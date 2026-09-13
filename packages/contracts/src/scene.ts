@@ -433,10 +433,14 @@ export interface ScenePostProcessingState {
   contrast?: number;
 }
 
+/** Transition from this keyframe to the next one; omitted uses the track default. */
+export type KeyframeTransition = "linear" | "smooth" | "ease-in" | "ease-out" | "step";
+
 export interface CameraKeyframe {
   id: string;
   time: number;
   camera: CameraState;
+  transition?: KeyframeTransition;
 }
 
 export interface CameraViewState {
@@ -451,6 +455,7 @@ export interface ModelKeyframe {
   time: number;
   modelId: string;
   transform: ModelTransform;
+  transition?: KeyframeTransition;
   /** Optional imported GLTF/FBX animation clip state recorded on the same object track. */
   animation?: ModelAnimationKeyframeState;
 }

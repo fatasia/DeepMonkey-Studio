@@ -59,6 +59,7 @@ export function simulationEntityModelIds(entity: SimulationEntityState): string[
 
 /** 保存响应不能覆盖请求期间的新编辑，也不能把切换后的场景拉回去。 */
 export function mergeSavedSimulationScene(current: SceneSnapshot | undefined, submitted: SceneSnapshot | undefined, saved: SceneSnapshot): SceneSnapshot | undefined {
+  if (!current && !submitted) return saved;
   if (current?.id !== saved.id) return current;
   return current.simulationEntities === submitted?.simulationEntities ? saved : {
     ...saved, ...(current.simulationEntities ? { simulationEntities: current.simulationEntities } : { simulationEntities: [] }),

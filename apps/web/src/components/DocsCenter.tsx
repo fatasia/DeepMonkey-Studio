@@ -201,7 +201,8 @@ function renderBlock(
       renderInline(block.content, documentId, onNavigate)
     );
   }
-  if (block.type === "paragraph") return <p key={key}>{renderInline(block.content, documentId, onNavigate)}</p>;
+  // Markdown 行内图片允许写在普通段落里；渲染时拆成同级 p/figure，避免 figure 嵌套 p 造成非法 HTML。
+  if (block.type === "paragraph") return <Fragment key={key}>{renderParagraph(block.content, documentId, onNavigate)}</Fragment>;
   if (block.type === "quote") return <blockquote key={key}>{renderInline(block.content, documentId, onNavigate)}</blockquote>;
   if (block.type === "divider") return <hr key={key} />;
   if (block.type === "code") return <DocsCenterCodeBlock key={key} value={block.value} {...(block.language ? { language: block.language } : {})} />;
@@ -214,20 +215,60 @@ function renderInline(
   documentId: string,
   onNavigate: (documentId: string, sectionId?: string) => void
 ): ReactNode[] {
-  return content.map((item, index) => {
-    if (item.type === "text") return item.value;
-    if (item.type === "code") return <code key={index}>{item.value}</code>;
-    if (item.external) return <a key={index} href={item.href} target="_blank" rel="noreferrer">{item.label}</a>;
-    const target = resolveDocsDestination(documentId, item.href);
-    return <a
-      key={index}
-      href={item.href}
-      onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-        event.preventDefault();
-        onNavigate(target.documentId, target.sectionId);
-      }}
-    >{item.label}</a>;
+  return content.map((item, index) => renderInlineItem(item, index, documentId, onNavigate));
+}
+
+function renderParagraph(
+  content: readonly MarkdownInline[],
+  documentId: string,
+  onNavigate: (documentId: string, sectionId?: string) => void
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let paragraphItems: ReactNode[] = [];
+  const flushParagraph = () => {
+    if (!paragraphItems.length) return;
+    nodes.push(<p key={`paragraph-${nodes.length}`}>{paragraphItems}</p>);
+    paragraphItems = [];
+  };
+  content.forEach((item, index) => {
+    if (item.type !== "image") {
+      paragraphItems.push(renderInlineItem(item, index, documentId, onNavigate));
+      return;
+    }
+    flushParagraph();
+    nodes.push(renderInlineItem(item, index, documentId, onNavigate));
   });
+  flushParagraph();
+  return nodes;
+}
+
+function renderInlineItem(
+  item: MarkdownInline,
+  key: number,
+  documentId: string,
+  onNavigate: (documentId: string, sectionId?: string) => void
+): ReactNode {
+  if (item.type === "text") return item.value;
+  if (item.type === "code") return <code key={key}>{item.value}</code>;
+  if (item.type === "image") {
+    const source = /^(https?:|data:|blob:)/i.test(item.href) || item.href.startsWith("/") ? item.href : `/${item.href}`;
+    return (
+      <figure key={key} className="docs-image">
+        <img src={source} alt={item.alt} loading="lazy" />
+        <figcaption>{item.alt}</figcaption>
+      </figure>
+    );
+  }
+  if (item.external) return <a key={key} href={item.href} target="_blank" rel="noreferrer">{item.label}</a>;
+  const target = resolveDocsDestination(documentId, item.href);
+  return <a
+    key={key}
+    href={item.href}
+    onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      onNavigate(target.documentId, target.sectionId);
+    }}
+  >{item.label}</a>;
 }
 
 function decodeHash(hash: string): string | undefined {

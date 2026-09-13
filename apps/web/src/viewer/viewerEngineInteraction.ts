@@ -24,8 +24,10 @@ import { ViewerEngineCore } from "./viewerEngineCore";
 import { buildMotionRoutePlan, sampleMotionRoute, type MotionRouteSample } from "../prefabs/motionRoutePlayer";
 import { mergeModelEffectsPatch, type ModelEffectsPatch } from "./modelEffectState";
 import { normalizeMaterialDataPatch } from "./materialDataPatch";
+import { applyViewerDeviceSignal } from "./viewerDeviceSignals";
 import { annotationLocalAnchor, annotationWorldAnchor } from "./annotationAnchor";
 import { clearIndustrialPrefabProxy, ensureIndustrialPrefabProxy } from "./industrialPrefabProxy";
+import { detachSharedGltfResources } from "./sharedGltfAssets";
 
 /** Interaction 职责层。 */
 export abstract class ViewerEngineInteraction extends ViewerEngineCore {
@@ -44,9 +46,12 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
   }
   /** Trusted script escape hatches. Prefer the stable studio API for ordinary work. */
   getRawObject(modelId: string): THREE.Object3D | undefined {
-    return this.models.get(modelId)?.object;
+    const object = this.models.get(modelId)?.object;
+    if (object) detachSharedGltfResources(object);
+    return object;
   }
   getRawScene(): THREE.Scene {
+    for (const model of this.models.values()) detachSharedGltfResources(model.object);
     return this.scene;
   }
   getRawCamera(): THREE.PerspectiveCamera {
@@ -92,6 +97,8 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
   async runInteractionScript(script: SceneInteractionScriptState, detail: InteractionEventDetail = { test: true }): Promise<void> {
     const startedAt = performance.now();
     try {
+      // 旧版 ctx.scene / objects 合同允许直接改 Three 几何，进入可信脚本前隔离共享资源。
+      for (const model of this.models.values()) detachSharedGltfResources(model.object);
       const target = this.interactionTargetContext(script.target, detail);
       const context = {
         trigger: script.trigger,
@@ -510,6 +517,15 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
   applySceneDataMessage(message: DataMessage): boolean {
     const target = message.target;
     if (!target || !message.action) return false;
+    this.markShadowMapDirty();
+    if (message.action === "alarm" && target.modelId) {
+      const model=this.models.get(target.modelId);
+      if(!model)return false;
+      const object=target.layerId?this.layerObjects.get(target.modelId)?.get(target.layerId):model.object;
+      if(!object)return false;
+      return applyViewerDeviceSignal(this,{modelId:target.modelId,target:object,
+        scene:this.scene,container:this.container,value:message.value,getEffects:()=>this.getModelEffects(target.modelId!),setEffects:effects=>this.setModelEffects(target.modelId!,effects)});
+    }
     if (message.action === "visibility" && target.modelId) {
       const visible = Boolean(message.value);
       if (target.layerId) this.setLayerVisible(target.modelId, target.layerId, visible);

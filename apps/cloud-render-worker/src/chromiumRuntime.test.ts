@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { extractWebRtcInternalsHardwareEvidence, firstNonEmpty, isExplicitSoftwareEncoderStats, isHardwareEncoderStats } from "./chromiumRuntime.js";
+import { cloudRenderPageUrl, extractWebRtcInternalsHardwareEvidence, firstNonEmpty, isExplicitSoftwareEncoderStats, isHardwareEncoderStats } from "./chromiumRuntime.js";
 
 describe("Chromium hardware evidence", () => {
+  it("marks capture pages as continuous without dropping their publication or renderer parameters", () => {
+    const url = new URL(cloudRenderPageUrl("https://studio.test/published/scene?renderer=webgl&publicationId=a%2Fb&cloudRender=0#camera"));
+    expect(url.searchParams.get("cloudRender")).toBe("1");
+    expect(url.searchParams.get("renderer")).toBe("webgl");
+    expect(url.searchParams.get("publicationId")).toBe("a/b");
+    expect(url.hash).toBe("#camera");
+  });
   it("falls back from an empty vendorString to driverVendor", () => {
     expect(firstNonEmpty("", "NVIDIA", "unknown")).toBe("NVIDIA");
   });

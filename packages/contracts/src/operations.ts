@@ -55,7 +55,7 @@ export interface MaintenanceModelPackage {
   name: string;
   version: string;
   algorithm: string;
-  source: "iot-nb" | "imported" | "studio-sample";
+  source: "imported" | "studio-sample";
   status: "awaiting-artifact" | "candidate" | "validated" | "retired";
   benchmarkOnly: boolean;
   productionEligible: boolean;

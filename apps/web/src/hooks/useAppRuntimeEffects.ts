@@ -23,6 +23,7 @@ import type { SceneDataBindingRuntimeState } from "../components/SceneDataBindin
 import { dataBindingProduct, directSceneDataBindingMessage, sceneDataBindingMessage } from "../sceneDataBindings";
 import { DirectBindingRuntime } from "../directBindingRuntime";
 import { DEFAULT_DASHBOARD_VIEW } from "../studio/workspaceRoute";
+import { writeLastWorkspace } from "../studio/lastWorkspacePreference";
 import { publishApplicationInteractionEffects, subscribeApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "../sceneDataBridge";
 import { readRoute, routePath, type AppRoute } from "../appRoute";
@@ -85,6 +86,7 @@ interface AppRuntimeEffectsContext {
   setSelected: Setter<LoadedSceneModel | undefined>;
   setSceneOrganizationSelection: Setter<Set<string>>;
   setSelectedSpace: Setter<BimSpaceRecord | undefined>;
+  setSelectedLightId: Setter<string>;
   setMeasurements: Setter<MeasurementState[]>;
   setAnnotations: Setter<SceneAnnotationState[]>;
   setSelectedAnnotationId: Setter<string | undefined>;
@@ -155,6 +157,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     setSelected,
     setSceneOrganizationSelection,
     setSelectedSpace,
+    setSelectedLightId,
     setMeasurements,
     setAnnotations,
     setSelectedAnnotationId,
@@ -206,6 +209,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     let rendererLossHandled = false;
     let revisionFrame: number | undefined;
     const requestRevision = () => {
+      viewer?.requestRender();
       if (revisionFrame !== undefined) return;
       revisionFrame = window.requestAnimationFrame(() => {
         revisionFrame = undefined;
@@ -223,6 +227,9 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         viewer = created;
         webGpuSceneReplacementCountRef.current = 0;
         viewer.onSelectionChange = (model) => {
+          // Any viewport selection transition ends the outliner-only light selection.
+          // Light-row actions set their id again after the engine clears model selection.
+          setSelectedLightId("");
           synchronizeSelectionFromViewport(model, {
             setSelectedModel: setSelected,
             replaceObjectSelection: setSceneOrganizationSelection,
@@ -364,14 +371,12 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
 
   useEffect(() => {
     if (!engine) return;
+    engine.onCameraChange = setCameraInfo;
+    setCameraInfo(engine.getCameraState());
     if (infoEnabled) {
-      engine.onCameraChange = setCameraInfo;
       engine.onPointerInfoChange = setPointerInfo;
-      setCameraInfo(engine.getCameraState());
     } else {
-      delete engine.onCameraChange;
       delete engine.onPointerInfoChange;
-      setCameraInfo(undefined);
       setPointerInfo(undefined);
     }
     return () => {
@@ -383,6 +388,19 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
   useEffect(() => {
     engine?.setInteractionScripts(sceneInteractions);
   }, [engine, sceneInteractions]);
+
+  // 记忆每个项目最近使用的工作区(2D/3D),"编辑场景"入口按记忆落点(见 S8)。
+  useEffect(() => {
+    if (!route.projectId) return;
+    if (route.view === "studio" || route.view === "dashboard") writeLastWorkspace(route.projectId, route.view);
+  }, [route.projectId, route.view]);
+
+  useEffect(() => { engine?.requestRender(); }, [engine, applicationState]);
+
+  useEffect(() => {
+    engine?.setContinuousRender("scene-behavior", sceneBehaviorActive && !sceneBehaviorPaused);
+    return () => engine?.setContinuousRender("scene-behavior", false);
+  }, [engine, sceneBehaviorActive, sceneBehaviorPaused]);
 
   useEffect(() => {
     if (!sceneBehaviorActive || sceneBehaviorPaused) return;
@@ -540,7 +558,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         {
           onValue: (value) => {
             const message = directSceneDataBindingMessage(binding, value, route.sceneId!);
-            publishLocalSceneData(message);
+            publishLocalSceneData(message, project.id);
             updateBindings([binding], { status: "ready", value: message.value, updatedAt: message.timestamp });
           },
           onStatus: (status) => {
@@ -567,7 +585,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
           for (const binding of group.bindings) {
             const message = sceneDataBindingMessage(binding, preview, route.sceneId!);
             messages.set(binding.id, message);
-            publishLocalSceneData(message);
+            publishLocalSceneData(message, project.id);
           }
           updateBindings(group.bindings, (binding) => {
             const message = messages.get(binding.id)!;

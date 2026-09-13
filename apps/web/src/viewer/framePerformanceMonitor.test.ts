@@ -17,6 +17,15 @@ const quietRenderer: RendererLoadSnapshot = {
 };
 
 describe("FramePerformanceMonitor", () => {
+  it("保留有效帧样本且不把按需休眠误判为掉帧", () => {
+    const monitor = new FramePerformanceMonitor();
+    monitor.recordFrame(0); monitor.recordFrame(16);
+    monitor.pauseSampling(); monitor.recordFrame(900); monitor.recordFrame(916);
+    const result = monitor.snapshot(quietRenderer);
+    expect(result.sampleCount).toBe(2);
+    expect(result.frameTimeMs.p95).toBe(16);
+    expect(result.pressureSignals).toEqual([]);
+  });
   it("计算帧时间分位数和掉帧比例", () => {
     const monitor = new FramePerformanceMonitor();
     [0, 16, 32, 48, 88, 148].forEach((timestamp) => monitor.recordFrame(timestamp));

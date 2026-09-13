@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Test-only glTF texture extraction fixture; not renderer-quality or arbitrary-model evidence.",
+  "repository": "https://github.com/KhronosGroup/glTF-Sample-Assets",
+  "commit": "90d7ede14c7e280af263824604b427a1ca02cb66",
+  "file": "BoxTextured.glb",
+  "sourceUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/BoxTextured/glTF-Binary/BoxTextured.glb",
+  "sha256": "b510eca2e2ef33f62f9ed57d6e7ce2d10ebb2bdebc4a8e59d347719ba81abdf4",
+  "bytes": 5956,
+  "license": {
+    "model": "CC-BY-4.0",
+    "artist": "Cesium",
+    "owner": "Cesium",
+    "year": "2017",
+    "localNotice": "BoxTextured.LICENSE.md",
+    "embeddedMarkNotice": "BoxTextured.LegalMark-Cesium.txt"
+  },
+  "modified": false
+}

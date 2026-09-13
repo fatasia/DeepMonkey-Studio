@@ -1,5 +1,5 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { workspaceRecoveryDecisionKey } from "../studio/workspaceRecoveryDecision";
+import { assessWorkspaceRecovery } from "../studio/workspaceRecoveryDecision";
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
 import type { AppRoute } from "../appRoute";
@@ -7,7 +7,7 @@ import { derivePipelineRefreshSeconds, normalizeDataRefreshSeconds } from "../co
 import type { AppState } from "./useAppState";
 import { createTopologyRuntimeFailure, createTopologyRuntimeSnapshot, groupTopologyRuntimeBindings, mergeTopologyRuntimeAcknowledgements } from "../topologyRuntime";
 import { focusViewerTargetWhenReady } from "../studio/workspaceTargetNavigation";
-import { deleteWorkspaceRecoveryDraft, hasRecoverableWorkspaceChanges, readWorkspaceRecoveryDraft, type WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
+import { deleteWorkspaceRecoveryDraft, readWorkspaceRecoveryDraft, type WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import type { createScenePersistenceController } from "../controllers/scenePersistenceController";
 
 type PersistenceController = ReturnType<typeof createScenePersistenceController>;
@@ -182,11 +182,11 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
   }, [activeTopology, project, route.view, topologyDataProducts]);
 
   useEffect(() => {
-    if (route.view !== "studio" || !route.sceneId || !engine) return;
+    if (route.view !== "studio" || !route.sceneId || route.sceneId === "new" || !engine) return;
     const sceneId = route.sceneId;
-    const workspaceKey = `${route.projectId ?? "browse"}:${route.applicationId ?? "scene"}:${sceneId}`;
+    const workspaceKey = `${engine.scene.uuid}:${route.projectId ?? "browse"}:${route.applicationId ?? "scene"}:${sceneId}`;
     const applicationMatches = !route.applicationId || activeApplication?.metadata.id === route.applicationId;
-    if (activeScene?.id === sceneId && applicationMatches) return;
+    if (activeScene?.id === sceneId && applicationMatches && engine.hasRestoredSceneSnapshot(sceneId)) return;
     if (sceneWorkspaceLoadRef.current === workspaceKey) return;
     sceneWorkspaceLoadRef.current = workspaceKey;
     let cancelled = false;
@@ -234,12 +234,13 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
     if (route.view !== "studio" || !route.projectId || !route.sceneId || activeScene?.id !== route.sceneId) return;
     let cancelled = false;
     void readWorkspaceRecoveryDraft(route.projectId, route.applicationId, route.sceneId).then((draft) => {
-      if (cancelled || !draft || recoveryDecisionRef.current === workspaceRecoveryDecisionKey(draft)) return;
-      if (!hasRecoverableWorkspaceChanges(draft, activeScene)) {
+      if (cancelled) return;
+      const assessment = assessWorkspaceRecovery(draft, activeScene, recoveryDecisionRef.current);
+      if (assessment === "discard-equivalent") {
         void deleteWorkspaceRecoveryDraft(route.projectId!, route.applicationId, route.sceneId!);
         return;
       }
-      if (Date.parse(draft.savedAt) > Date.parse(activeScene.updatedAt)) setRecoveryDraft(draft);
+      if (assessment === "offer") setRecoveryDraft(draft);
     });
     return () => {
       cancelled = true;

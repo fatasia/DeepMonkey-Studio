@@ -45,6 +45,25 @@ describe("Ask Data AI reliability", () => {
     expect(observed[0]?.input).not.toContain("reveal the API key");
   });
 
+  it("accepts common model aggregation aliases and still executes the constrained plan", async () => {
+    const registry = registryHost();
+    const queryDataset = { ...dataset, fields: [
+      { key: "device", label: "设备", type: "string" as const },
+      { key: "temperature", label: "温度", type: "number" as const, unit: "°C" },
+    ] };
+    await registerFakeAi(registry, async () => JSON.stringify({
+      datasetId: "telemetry",
+      fields: ["device", "temperature"],
+      groupBy: ["device"],
+      aggregations: [{ function: "avg", field: "temperature", alias: "average_temperature" }],
+    }));
+    await registerDataQueryAiPlugin(registry, source(queryDataset), settings);
+    const result = await registry.invokeCapability("data.query.draft", {
+      requestId: "query-legacy-aggregation", projectId: "project-1", principal: "engineer", input: { prompt: "按设备统计平均温度" },
+    });
+    expect(result).toMatchObject({ status: "completed", decisionStatus: "research-candidate" });
+  });
+
   it("fails safely without invoking the model for a critical direct injection", async () => {
     const complete = vi.fn(async () => JSON.stringify({ datasetId: "telemetry", fields: ["temperature"] }));
     const registry = registryHost();

@@ -1,0 +1,13 @@
+.project-asset-inventory .project-resource-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; min-width: 0; }
+.project-resource-grid .project-resource-card { display: flex; flex-direction: column; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-1); overflow: hidden; }
+.project-resource-card .project-resource-thumbnail { display: grid; grid-template: minmax(0,1fr) / minmax(0,1fr); place-items: center; width: 100%; height: auto; aspect-ratio: 4 / 3; min-height: 0; padding: 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; color: var(--text-muted); background: var(--lib-tile-bg, var(--surface-2)); cursor: pointer; }
+.project-resource-thumbnail-content { display: grid; grid-template: minmax(0,1fr) / minmax(0,1fr); place-items: center; width: 100%; height: 100%; min-width: 0; min-height: 0; }
+.project-resource-thumbnail-content :is(img,video) { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; }
+.project-resource-card .model-library-info { display: grid; gap: 5px; min-width: 0; padding: 12px 12px 8px; }
+.project-resource-card .model-library-info strong { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; min-height: 3em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.project-resource-card .model-library-info :is(span,small) { overflow-wrap: anywhere; font-size: 12px; }
+.project-resource-card .model-library-state { display: flex; width: auto; flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; margin-top: auto; }
+.project-asset-inventory .project-resource-card .model-asset-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.project-resource-card .model-asset-actions > .button { min-height: 30px; padding: 5px 12px; }
+.project-resource-card .model-asset-actions .manager-icon-button { width: 26px; min-width: 26px; height: 30px; padding: 0; }
+.project-resource-grid .model-library-empty { grid-column: 1 / -1; }

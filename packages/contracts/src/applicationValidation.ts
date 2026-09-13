@@ -282,6 +282,10 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
       "treemap",
       "graph",
       "map",
+      "wordcloud",
+      "boxplot",
+      "waterfall",
+      "polarBar",
       "rank",
       "table",
       "scroll-table",
@@ -306,6 +310,7 @@ function validateDashboardWidgetConfig(value: unknown, path: string): void {
   optional(object, "unityDefaultAction", validateUnityDefaultAction, path);
   optional(object, "unityPropertyValues", validateJsonObject, path);
   optional(object, "directBinding", (binding, bindingPath) => assertDirectBindingSpec(binding, bindingPath), path);
+  optional(object, "signalRule", assertDeviceSignalRule, path);
   optional(object, "sampleData", assertDashboardSampleData, path);
   optional(object, "recordForm", (value, formPath) => {
     const form = expectObject(value, formPath);
@@ -621,3 +626,4 @@ function validatePublicationProfile(value: unknown, path: string): void {
   required(object, "entryPageId", expectString, path);
   requiredLiteral(object, "renderer", ["webgl2", "auto"], path);
 }
+import { assertDeviceSignalRule } from "./deviceSignal.js";

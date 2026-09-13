@@ -1,4 +1,4 @@
-import type { ProjectRecord, SceneDashboardWidgetState, SceneMaterialScreenState, SceneModelState, SceneSnapshot, SceneSpatialAudioState } from "@bim-studio/contracts";
+import { getSceneModelAssetId, type ProjectRecord, type SceneDashboardWidgetState, type SceneMaterialScreenState, type SceneModelState, type SceneSnapshot, type SceneSpatialAudioState } from "@bim-studio/contracts";
 import { createEvidenceFingerprint, EVIDENCE_FINGERPRINT_ALGORITHM } from "@bim-studio/studio-core";
 
 /** A persisted enabled connector is runnable; unsupported connector types are rejected by the API before persistence. */
@@ -137,7 +137,7 @@ function assessModel(projectModels: Map<string, ProjectRecord["models"][number]>
   for (const layer of model.layers ?? []) {
     assessModelScreen(scene, model, layer.material?.screen, `model:${model.modelId}:layer:${layer.nodeId}:screen`, layer.nodeId, issues);
   }
-  const source = projectModels.get(model.modelId);
+  const source = projectModels.get(getSceneModelAssetId(model));
   if (!source) {
     issues.push(sceneIssue(scene, `model:${model.modelId}:missing`, "blocker", "asset", "场景模型已断链", `模型“${model.name}”不在项目资产库中。`, "重新导入或替换该模型。", model.modelId));
     return;

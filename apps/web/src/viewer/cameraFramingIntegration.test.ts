@@ -16,7 +16,7 @@ function fixture() {
   const models = new Map([["small", { object, visible: true }]]);
   Object.assign(engine, { camera, orbit, models, navigationMode: "orbit", navigationViewStates: new Map(),
     cameraConstraints: structuredClone(DEFAULT_CAMERA_CONSTRAINTS), pointer: { isLocked: false },
-    updateTransformAccess: vi.fn(), resetCameraCollisionAnchor: vi.fn(), emitCameraChange: vi.fn(), setAvatarVisible: vi.fn(),
+    updateTransformAccess: vi.fn(), resetCameraCollisionAnchor: vi.fn(), requestRender: vi.fn(), emitCameraChange: vi.fn(), setAvatarVisible: vi.fn(),
   });
   return { engine, camera, orbit, object, models };
 }
@@ -54,6 +54,7 @@ describe("camera framing engine integration", () => {
       expect(camera.position.distanceTo(orbit.target)).toBeLessThan(0.01);
       expect(camera.up.toArray()).toEqual(view === "top" ? [0, 0, -1] : view === "bottom" ? [0, 0, 1] : [0, 1, 0]);
     }
+    expect((engine as unknown as { requestRender: ReturnType<typeof vi.fn> }).requestRender).toHaveBeenCalledTimes(7);
   });
 
   it("retains authored limits through focus and saved-camera restore", () => {

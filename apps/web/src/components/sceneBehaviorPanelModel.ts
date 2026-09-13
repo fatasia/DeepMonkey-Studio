@@ -55,11 +55,10 @@ export function runtimeStatus(status: SceneBehaviorManagerEntry["diagnostics"]["
   return locale === "zh-CN" ? pair[0] : pair[1];
 }
 
-export function defaultBehaviorCode(): string {
+export function defaultBehaviorCode(target?: ApplicationScriptTarget): string {
+  const attachedExample = target && target.kind !== "scene" ? '\n  ctx.self?.show();' : "";
   return `function onStart(ctx) {
-  ctx.log("Behavior started", { sceneId: ctx.sceneId });
-  // 挂载到对象或组件时，ctx.self 指向当前目标。
-  ctx.self?.show();
+  ctx.log("Behavior started", { sceneId: ctx.sceneId });${attachedExample}
 }
 
 function onUpdate(ctx) {

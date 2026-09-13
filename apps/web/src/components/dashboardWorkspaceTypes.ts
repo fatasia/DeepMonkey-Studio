@@ -36,7 +36,7 @@ export interface DashboardWorkspaceProps {
   onEnterScene: (sceneId: string, view: DashboardViewState) => void;
   /** 从二维页面直接回到当前页面关联的三维场景。 */
   onOpen3D?: (sceneId: string, view: DashboardViewState) => void;
-  onOpenTopology: () => void;
+  onOpenTopology: (topologyId: string | undefined, nodeId: string, view: DashboardViewState) => void;
   onOpenData: () => void;
   onOpenScripts?: (selection: readonly ApplicationObjectRef[]) => void;
   scriptOpen?: boolean;

@@ -1,6 +1,6 @@
 import type { DashboardDataWidgetNode, DashboardPageDocument, InteractionFlow } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
-import { createDashboardTemplateNodes, DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
+import { createDashboardTemplateNodes, DASHBOARD_TEMPLATES } from "./dashboardTemplateCatalog";
 import { packPageSample } from "./industryTemplatePackCatalog";
 import { applyPackPageSample } from "./industryPackSampleApply";
 import { validateIndustryTemplatePack, type IndustryTemplatePack } from "./industryTemplatePackTypes";

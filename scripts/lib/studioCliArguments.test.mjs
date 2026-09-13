@@ -34,16 +34,23 @@ test("configures an API-only environment from the same command", () => {
     noOpen: true,
     https: false,
     cloudWorker: false,
+    coreOnly: false,
   });
 });
 
-test("keeps the opt-in cloud worker across restart without touching .env", () => {
+test("defaults to cloud rendering and preserves explicit opt-out across restart", () => {
   const first = resolveStudioConfiguration(parseStudioArguments(["start", "web", "--cloud-worker"], "linux"), undefined, "linux");
   assert.equal(first.cloudWorker, true);
   const restarted = resolveStudioConfiguration(parseStudioArguments(["restart"], "linux"), first, "linux");
   assert.equal(restarted.cloudWorker, true);
   const plain = resolveStudioConfiguration(parseStudioArguments(["start", "web"], "linux"), undefined, "linux");
-  assert.equal(plain.cloudWorker, false);
+  assert.equal(plain.cloudWorker, true);
+  const reduced = resolveStudioConfiguration(parseStudioArguments(["restart", "--no-cloud-worker", "--core-only"], "linux"), plain, "linux");
+  assert.equal(reduced.cloudWorker, false);
+  assert.equal(reduced.coreOnly, true);
+  const restored = resolveStudioConfiguration(parseStudioArguments(["restart", "--full-services", "--cloud-worker"], "linux"), reduced, "linux");
+  assert.equal(restored.cloudWorker, true);
+  assert.equal(restored.coreOnly, false);
   assert.match(studioHelp(), /--cloud-worker/);
 });
 
@@ -63,7 +70,7 @@ test("reuses the previous mode and explicit ports on restart", () => {
     cloudWorker: false,
   };
   const configuration = resolveStudioConfiguration(parseStudioArguments(["restart"], "linux"), previous, "linux");
-  assert.deepEqual(configuration, previous);
+  assert.deepEqual(configuration, { ...previous, coreOnly: false });
 });
 
 test("uses current environment stores instead of a stale restart snapshot", () => {

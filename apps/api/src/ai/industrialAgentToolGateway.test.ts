@@ -32,6 +32,13 @@ describe("IndustrialAgentToolGateway", () => {
       kind: "analysis",
       permissions: ["operations.read", "operations.write"],
     };
+    const batteryPrediction: CapabilityDescriptor = {
+      ...descriptor,
+      id: "battery.model.predict",
+      label: "电池 SOC/SOH/RUL 预测",
+      kind: "model",
+      permissions: ["battery.execute"],
+    };
     const invokeCapability = vi.fn(async () => ({
       status: "completed" as const,
       capabilityId: descriptor.id,
@@ -48,13 +55,14 @@ describe("IndustrialAgentToolGateway", () => {
       suggestedActions: [],
     }));
     const registry = {
-      listCapabilities: () => [descriptor, persistedAnalysis],
+      listCapabilities: () => [descriptor, persistedAnalysis, batteryPrediction],
       getCapability: (id: string) => id === descriptor.id ? descriptor : undefined,
       invokeCapability,
     } as unknown as PluginRegistry;
     const audit = new AiReliabilityAuditBuffer();
     const gateway = new IndustrialAgentToolGateway(registry, audit.sink);
     expect(gateway.list().find((tool) => tool.id === persistedAnalysis.id)).toMatchObject({ effect: "write", risk: "high", requiresApproval: true });
+    expect(gateway.list().find((tool) => tool.id === batteryPrediction.id)).toMatchObject({ effect: "analyze", risk: "low", requiresApproval: false });
     const call = {
       toolId: descriptor.id,
       arguments: { target: "pump-1", enabled: true },

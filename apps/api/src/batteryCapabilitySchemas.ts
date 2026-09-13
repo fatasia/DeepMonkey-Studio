@@ -36,8 +36,8 @@ export const BATTERY_CAPABILITY_SCHEMAS = {
     transferContext: { type: "object", additionalProperties: true }
   }),
   "battery.twin.simulate": schema({
-    twinId: { type: "string", minLength: 1 },
-    scenarioName: { type: "string", minLength: 1 },
+    twinId: { type: "string", minLength: 8 },
+    scenarioName: { type: "string", minLength: 1, maxLength: 80 },
     resolutionMinutes: { type: "number", minimum: 0.25, maximum: 10 },
     segments: {
       type: "array",
@@ -58,12 +58,12 @@ export const BATTERY_CAPABILITY_SCHEMAS = {
     commit: { type: "boolean" }
   }, ["twinId", "segments"]),
   "battery.twin.assimilate": schema({
-    twinId: { type: "string", minLength: 1 },
+    twinId: { type: "string", minLength: 8 },
     soc: socSchema,
     soh: sohSchema,
     temperatureC: { type: "number", minimum: -30, maximum: 80 }
   }, ["twinId"]),
-  "battery.twin.evidence": schema({ twinId: { type: "string", minLength: 1 } }, ["twinId"]),
+  "battery.twin.evidence": schema({ twinId: { type: "string", minLength: 8 } }, ["twinId"]),
   "battery.release.status": { input: emptyInput, output: openOutput }
 } as const satisfies Record<string, { input: CapabilityJsonSchema; output: CapabilityJsonSchema }>;
 

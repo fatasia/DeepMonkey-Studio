@@ -113,7 +113,7 @@ function createDraft(input: AiSceneScriptDraftInput): Omit<AiSceneScriptDraftRes
       ...initial,
       lifecycle: trigger.lifecycle,
       status: "blocked",
-      issues: [issue("unsafe-existing-script", "现有脚本包含原始 command 调用，AI 草稿无法静态证明其参数安全；请先人工审查")],
+      issues: [issue("unsafe-existing-script", "现有脚本包含原始 command 调用，动作草稿无法静态证明其参数安全；请先人工审查")],
     };
   }
 
@@ -287,7 +287,7 @@ function validateIdentity(input: AiSceneScriptDraftInput, base: ScriptModule): A
   if (!knownTarget) return issue("unknown-target", `对象“${input.target.id}”不在当前脚本上下文中`);
   const knownScene = input.intelligence.references.some((reference) => reference.kind === "scene" && reference.id === input.sceneId);
   if (input.intelligence.references.some((reference) => reference.kind === "scene") && !knownScene) return issue("unknown-target", `场景“${input.sceneId}”不在当前项目中`);
-  if (base.runtime !== "worker-sandbox") return issue("unsafe-existing-script", "不能把 AI 草稿合并到 legacy trusted 主线程脚本");
+  if (base.runtime !== "worker-sandbox") return issue("unsafe-existing-script", "不能把动作草稿合并到 legacy trusted 主线程脚本");
   if (base.target && base.target.kind !== "scene" && (base.target.kind !== input.target.kind || base.target.id !== input.target.id)) {
     return issue("unknown-target", "现有脚本挂载目标与当前对象不同，请新建脚本或切换正确对象");
   }
@@ -326,7 +326,7 @@ function targetDeclaration(target: SceneScriptTarget): string {
 function newDraftScript(target: SceneScriptTarget): ScriptModule {
   return {
     id: `ai-draft:${target.kind}:${target.id}`,
-    name: `AI 草稿 · ${target.name}`,
+    name: `动作草稿 · ${target.name}`,
     enabled: false,
     apiVersion: "1.0",
     entrypoint: "behavior",

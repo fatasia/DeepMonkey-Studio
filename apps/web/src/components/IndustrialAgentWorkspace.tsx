@@ -20,6 +20,7 @@ import type { AgentCheckpoint, AgentToolDefinition } from "@bim-studio/industria
 import { translate as tr, type AppLocale } from "../i18n";
 import {
   agentEvidenceViews,
+  agentDecisionStatusLabel,
   agentProgress,
   agentStatusLabel,
   agentStatusTone,
@@ -127,8 +128,11 @@ export function IndustrialAgentWorkspace(props: {
     if (projectId) rememberRun(projectId, next.id);
   }
 
-  async function start() {
-    if (!projectId || !objective.trim() || selectedToolIds.size === 0 || actionPending.current) return;
+  async function start(sample = false) {
+    const runObjective = sample ? t("只读检查当前项目可用能力与数据，引用实际证据给出一条可验证结论；没有数据时明确说明缺失，不执行写入或控制。", "Inspect current project capabilities and data read-only. Return one verifiable conclusion with actual evidence; report missing data and perform no writes or controls.") : objective.trim();
+    const toolIds = sample ? tools.filter(tool => tool.effect === "read" && !tool.requiresApproval).map(tool => tool.id) : [...selectedToolIds];
+    if (!projectId || !runObjective || toolIds.length === 0 || actionPending.current) return;
+    if (sample) setObjective(runObjective);
     const epoch = requestEpoch.current;
     const isCurrent = () => requestEpoch.current === epoch;
     actionPending.current = true;
@@ -139,9 +143,9 @@ export function IndustrialAgentWorkspace(props: {
       const client = await getAgentApi();
       if (!isCurrent()) return;
       const next = await client.startIndustrialAgentRun(projectId, {
-        objective: objective.trim(),
+        objective: runObjective,
         context,
-        allowedToolIds: [...selectedToolIds],
+        allowedToolIds: toolIds,
         budget: DEFAULT_BUDGET,
       });
       // 后台任务不因切页重放；只在所属项目记住 ID，界面更新仍要求当前请求所有权。
@@ -204,6 +208,7 @@ export function IndustrialAgentWorkspace(props: {
             />
           </label>
           <div className="industrial-agent-examples" aria-label={t("目标示例", "Objective examples")}>
+            <button type="button" disabled={busy || loadingTools || !projectId || !tools.some(tool => tool.effect === "read" && !tool.requiresApproval)} title={t("使用当前配置的模型执行只读任务；需要大模型配置和可读能力。", "Run a read-only task with the configured model; requires model configuration and read capabilities.")} onClick={() => void start(true)}><Play size={13} />{t("一键运行样例", "Run sample")}</button>
             {[t("检查设备异常并定位可能原因", "Inspect anomalies and locate likely causes"), t("先仿真验证，再给出调试建议", "Validate in simulation before proposing debugging actions")].map((item) => (
               <button key={item} type="button" onClick={() => setObjective(item)}>{item}</button>
             ))}
@@ -319,7 +324,7 @@ export function IndustrialAgentRunView(props: {
         <div><dt>{t("工具调用", "Tool calls")}</dt><dd>{checkpoint.usage.toolCalls} / {checkpoint.budget.maxToolCalls}</dd></div>
         <div><dt>{t("证据", "Evidence")}</dt><dd>{evidence.length}</dd></div>
       </dl>
-      {props.restored && <p className="industrial-agent-notice"><RefreshCw size={12} />{t("已恢复上次 checkpoint，未重复执行已完成的调用。", "Restored the last checkpoint without replaying completed calls.")}</p>}
+      {props.restored && <p className="industrial-agent-notice"><RefreshCw size={12} />{t("已恢复上次检查点，未重复执行已完成的调用。", "Restored the last checkpoint without replaying completed calls.")}</p>}
       {checkpoint.status === "awaiting-approval" && checkpoint.pendingTool && (
         <section className="industrial-agent-approval" aria-label={t("待确认操作", "Action awaiting confirmation")}>
           <header><ShieldCheck size={15} /><span><strong>{t("执行前需要你确认", "Confirmation required before execution")}</strong><small>{pendingTool?.label ?? checkpoint.pendingTool.call.toolId}</small></span></header>
@@ -334,7 +339,7 @@ export function IndustrialAgentRunView(props: {
       )}
       {checkpoint.completion && (
         <section className="industrial-agent-result">
-          <header><Sparkles size={15} /><span><strong>{t("证据结论", "Evidence-backed result")}</strong><small>{checkpoint.completion.decisionStatus}</small></span></header>
+          <header><Sparkles size={15} /><span><strong>{t("证据结论", "Evidence-backed result")}</strong><small>{agentDecisionStatusLabel(checkpoint.completion.decisionStatus, props.locale)}</small></span></header>
           <p>{checkpoint.completion.summary}</p>
         </section>
       )}

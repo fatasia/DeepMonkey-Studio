@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Group, Lock, Trash2, Unlock } from "lucide-react";
 import type { LayerTreeNode } from "../viewer/ViewerEngine";
 import { translate as tr, type AppLocale } from "../i18n";
+import { WindowedSceneRows } from "./WindowedSceneRows";
+import { layerAncestors, visibleLayerTree } from "./visibleLayerTree";
 
 interface LayerTreeProps {
   root: LayerTreeNode;
@@ -19,6 +21,11 @@ export function LayerTree({ root, locale, selectedNodeId, onSelect, onVisibility
   useEffect(() => {
     setExpanded(new Set([root.id]));
   }, [root.modelId]);
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    const ancestors = layerAncestors(root, selectedNodeId);
+    setExpanded(current => ancestors.every(id => current.has(id)) ? current : new Set([...current, ...ancestors]));
+  }, [root, selectedNodeId]);
 
   function toggle(nodeId: string) {
     setExpanded((current) => {
@@ -31,10 +38,10 @@ export function LayerTree({ root, locale, selectedNodeId, onSelect, onVisibility
 
   return (
     <div className="layer-tree">
-      <LayerNode
-        node={root}
+      <WindowedSceneRows rowHeight={28} selectedKey={selectedNodeId} rows={visibleLayerTree(root, expanded).map(({ node, depth }) => ({ key: node.id, render: () => <LayerNode
+        node={node}
         locale={locale}
-        depth={0}
+        depth={depth}
         expanded={expanded}
         selectedNodeId={selectedNodeId}
         onToggle={toggle}
@@ -42,7 +49,7 @@ export function LayerTree({ root, locale, selectedNodeId, onSelect, onVisibility
         onVisibilityChange={onVisibilityChange}
         onLockChange={onLockChange}
         onDelete={onDelete}
-      />
+      /> }))} />
     </div>
   );
 }
@@ -79,6 +86,13 @@ function LayerNode({
       <div
         className={`layer-node ${selectedNodeId === node.id ? "selected" : ""}`}
         style={{ paddingLeft: `${8 + depth * 15}px` }}
+        role="treeitem" aria-level={depth + 1} aria-selected={selectedNodeId === node.id}
+        aria-expanded={hasChildren ? isExpanded : undefined}
+        onKeyDown={event => {
+          if (hasChildren && ((event.key === "ArrowRight" && !isExpanded) || (event.key === "ArrowLeft" && isExpanded))) {
+            event.preventDefault(); onToggle(node.id);
+          }
+        }}
       >
         <button
           className="tree-expander"
@@ -110,21 +124,6 @@ function LayerNode({
           </button>
         )}
       </div>
-      {hasChildren && isExpanded && node.children.map((child) => (
-        <LayerNode
-          key={child.id}
-          node={child}
-          locale={locale}
-          depth={depth + 1}
-          expanded={expanded}
-          selectedNodeId={selectedNodeId}
-          onToggle={onToggle}
-          onSelect={onSelect}
-          onVisibilityChange={onVisibilityChange}
-          onLockChange={onLockChange}
-          onDelete={onDelete}
-        />
-      ))}
     </>
   );
 }

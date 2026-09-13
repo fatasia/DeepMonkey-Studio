@@ -1,4 +1,5 @@
 import { useDashboardSurfaceResize } from "../hooks/useDashboardSurfaceResize";
+import { useDashboardWorkspaceWindowInteractions } from "../hooks/useDashboardWorkspaceWindowInteractions";
 import {
   useEffect,
   useMemo,
@@ -96,7 +97,7 @@ import { InteractionFlowInspector } from "./InteractionFlowInspector";
 import { useDashboardMetrics, type DashboardMetric } from "./DashboardWidgetRuntime";
 import { DashboardMediaInspector } from "./DashboardMediaInspector";
 import { DashboardConditionalRulesEditor } from "./DashboardConditionalRulesEditor";
-import { createDashboardTemplateNodes, DASHBOARD_TEMPLATES, type DashboardTemplateKind } from "./DashboardTemplateCatalog";
+import { createDashboardTemplateNodes, DASHBOARD_TEMPLATES, type DashboardTemplateKind } from "./dashboardTemplateCatalog";
 import type { DashboardComponentPreset } from "./DashboardComponentCatalog";
 import { DASHBOARD_LIBRARY_DRAG_TYPE, DashboardComponentLibrary, resolveDashboardLibraryItem } from "./DashboardComponentLibrary";
 import { DashboardNode } from "./DashboardCanvasNode";
@@ -313,37 +314,7 @@ function useDashboardWorkspaceController({
   }, [page.id, selectedInspectorIdentity]);
 
 
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(undefined);
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("resize", close);
-    window.addEventListener("blur", close);
-    return () => {
-      window.removeEventListener("pointerdown", close);
-      window.removeEventListener("resize", close);
-      window.removeEventListener("blur", close);
-    };
-  }, [contextMenu]);
-
-  useEffect(() => {
-    const keyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (event.code === "Space" && !target?.matches("input,textarea,select,[contenteditable=true]")) {
-        spacePressedRef.current = true;
-        event.preventDefault();
-      }
-    };
-    const keyUp = (event: KeyboardEvent) => {
-      if (event.code === "Space") spacePressedRef.current = false;
-    };
-    window.addEventListener("keydown", keyDown);
-    window.addEventListener("keyup", keyUp);
-    return () => {
-      window.removeEventListener("keydown", keyDown);
-      window.removeEventListener("keyup", keyUp);
-    };
-  }, []);
+  useDashboardWorkspaceWindowInteractions({ contextMenu, setContextMenu, spacePressedRef });
 
   useEffect(() => {
     const widgetIds = selection.filter((item) => item.kind === "widget").map((item) => item.id);
@@ -497,6 +468,12 @@ function useDashboardWorkspaceController({
         pasteCopiedNodes();
         return;
       }
+      if (commandKey && key === "g") {
+        event.preventDefault();
+        if (event.shiftKey) ungroupSelectedNodes();
+        else groupSelectedNodes();
+        return;
+      }
       if (commandKey && key === "d") {
         event.preventDefault();
         copySelectedNodes();
@@ -619,7 +596,7 @@ function useDashboardWorkspaceController({
     };
     if (itemId === "scene") addSceneViewport(placement);
     else {
-      const item = resolveDashboardLibraryItem(locale, itemId);
+      const item = resolveDashboardLibraryItem(locale, itemId, application.topologies);
       if (item) addDataWidget(item.type, item.preset?.widget ?? item.widget, item.preset?.frame, placement, item.label);
     }
     setLibraryDropActive(false);

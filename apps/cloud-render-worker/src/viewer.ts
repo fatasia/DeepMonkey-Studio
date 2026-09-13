@@ -1,4 +1,5 @@
 import type { IceServerConfig } from "./config.js";
+import { collectReceiverDiagnostics } from "./receiverDiagnostics.js";
 
 export function viewerHtml(sessionId: string, iceServers: IceServerConfig[]): string {
   const config = JSON.stringify({ sessionId, iceServers }).replaceAll("<", "\\u003c");
@@ -7,30 +8,66 @@ export function viewerHtml(sessionId: string, iceServers: IceServerConfig[]): st
 <title>Deep Monkey Studio 云渲染</title><style>
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#090d0f;color:#dce5e8;font:13px system-ui,sans-serif}
 video{width:100%;height:100%;object-fit:contain;outline:0}
-.status{position:fixed;top:14px;left:14px;padding:8px 11px;border:1px solid #405058;border-radius:8px;background:#11191ddd;backdrop-filter:blur(10px)}
+.status{position:fixed;top:14px;left:14px;max-width:calc(100vw - 160px);padding:8px 11px;border:1px solid #405058;border-radius:8px;background:#11191ddd;backdrop-filter:blur(10px)}
 .status.ready{border-color:#31745e;color:#78ddb5}
 .status.failed{border-color:#80414a;color:#f1a7af}
-</style></head><body><video id="video" autoplay playsinline tabindex="0"></video><div id="status" class="status">正在建立真实 WebRTC 媒体…</div>
+.diagnostics{position:fixed;inset:14px 14px auto auto;transform:none;padding:8px 11px;border-radius:8px;background:#11191ddd;color:#dce5e8;font-size:12px}
+.diagnostics:focus-visible{outline:2px solid #78ddb5;outline-offset:3px}
+button{position:fixed;inset:50% auto auto 50%;transform:translate(-50%,-50%);padding:12px 24px;border:1px solid #405058;border-radius:8px;background:#dce5e8;color:#090d0f;font:inherit;cursor:pointer}
+</style></head><body><video id="video" autoplay muted playsinline tabindex="0"></video><div id="status" class="status">正在建立真实 WebRTC 媒体…</div><button id="play" type="button" hidden>开始观看</button><button id="diagnostics" class="diagnostics" type="button">导出诊断</button>
 <script type="module">
 const config=${config};
 const viewerToken=new URLSearchParams(location.hash.slice(1)).get('token')||'';
 history.replaceState(null,'',location.pathname);
 const video=document.querySelector('#video');
 const status=document.querySelector('#status');
+const play=document.querySelector('#play');
 const pc=new RTCPeerConnection({iceServers:config.iceServers});
+const collectReceiverDiagnostics=${collectReceiverDiagnostics.toString()};
+const diagnostics=document.querySelector('#diagnostics');
+diagnostics.addEventListener('click',async()=>{
+  if(diagnostics.disabled)return;
+  diagnostics.disabled=true;diagnostics.textContent='正在导出…';
+  try{
+    const stats=await pc.getStats();const quality=video.getVideoPlaybackQuality?.();
+    const evidence=collectReceiverDiagnostics([...stats.values()],{width:video.videoWidth,height:video.videoHeight,readyState:video.readyState,totalVideoFrames:quality?.totalVideoFrames,droppedVideoFrames:quality?.droppedVideoFrames});
+    const url=URL.createObjectURL(new Blob([JSON.stringify(evidence,null,2)],{type:'application/json'}));
+    try{const anchor=document.createElement('a');anchor.href=url;anchor.download='cloud-render-diagnostics-'+Date.now()+'.json';anchor.click();}
+    finally{setTimeout(()=>URL.revokeObjectURL(url),1000);}
+    diagnostics.textContent='诊断已导出';
+  }catch{diagnostics.textContent='导出失败，点击重试';}
+  finally{diagnostics.disabled=false;}
+});
 let input;
+let playing=false;
+function updatePlaybackStatus(){
+  if(['failed','closed','disconnected'].includes(pc.connectionState))return;
+  status.textContent=playing?(input?.readyState==='open'?'媒体与输入已连接':'画面已播放，正在连接输入…'):'媒体已连接，点击开始观看';
+  status.className=playing?'status ready':'status';
+}
+async function startPlayback(){
+  try{
+    await video.play();
+    play.hidden=true;
+    video.focus();
+  }catch{
+    playing=false;
+    play.hidden=false;
+    updatePlaybackStatus();
+  }
+}
+play.addEventListener('click',()=>void startPlayback());
+video.addEventListener('playing',()=>{playing=true;play.hidden=true;updatePlaybackStatus();});
+video.addEventListener('pause',()=>{playing=false;play.hidden=false;updatePlaybackStatus();});
 pc.ontrack=event=>{
   video.srcObject=event.streams[0];
-  video.play().catch(()=>{});
+  void startPlayback();
 };
 pc.ondatachannel=event=>{
   if(event.channel.label!=='input')return;
   input=event.channel;
-  input.onopen=()=>{
-    status.textContent='媒体与输入已连接';
-    status.className='status ready';
-    video.focus();
-  };
+  input.onopen=updatePlaybackStatus;
+  input.onclose=updatePlaybackStatus;
 };
 pc.onconnectionstatechange=()=>{
   if(!['failed','closed','disconnected'].includes(pc.connectionState))return;
@@ -86,11 +123,13 @@ video.addEventListener('wheel',event=>{
   event.preventDefault();
   send({type:'wheel',deltaX:event.deltaX,deltaY:event.deltaY});
 },{passive:false});
-window.addEventListener('keydown',event=>{
+video.addEventListener('keydown',event=>{
+  if(event.key==='Tab')return;
   event.preventDefault();
   send({type:'key',action:'down',key:event.key});
 });
-window.addEventListener('keyup',event=>{
+video.addEventListener('keyup',event=>{
+  if(event.key==='Tab')return;
   event.preventDefault();
   send({type:'key',action:'up',key:event.key});
 });

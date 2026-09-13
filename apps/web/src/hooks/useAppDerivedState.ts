@@ -65,7 +65,7 @@ export function useAppDerivedState(state: AppState) {
     for (const floor of floorStates) grouped.set(floor.modelId, [...(grouped.get(floor.modelId) ?? []), floor]);
     return grouped;
   }, [floorStates]);
-  const selectedLight = lighting.lights?.find((light) => light.id === selectedLightId) ?? lighting.lights?.[0];
+  const selectedLight = lighting.lights?.find((light) => light.id === selectedLightId);
   const componentResults = useMemo(
     () => engine?.searchComponents({ query: componentQuery, level: componentLevel, category: componentCategory }, 80) ?? [],
     [engine, revision, componentQuery, componentLevel, componentCategory],

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { IndustrialPrefabParameterDefinition } from "@bim-studio/contracts";
-import { INDUSTRIAL_PREFAB_CATALOG } from "./industrialPrefabCatalog";
+import { INDUSTRIAL_PREFAB_CATALOG, industrialPrefabDefinition } from "./industrialPrefabCatalog";
 
 describe("industrial prefab catalog", () => {
-  it("contains at least sixty distinct configurable industrial prefabs", () => {
+  it("contains one hundred twenty distinct configurable industrial prefabs", () => {
     const ids = INDUSTRIAL_PREFAB_CATALOG.map((item) => item.id);
 
-    expect(INDUSTRIAL_PREFAB_CATALOG.length).toBeGreaterThanOrEqual(60);
+    expect(INDUSTRIAL_PREFAB_CATALOG.length).toBe(120);
     expect(new Set(ids).size).toBe(ids.length);
     expect(INDUSTRIAL_PREFAB_CATALOG.every((item) => item.parameters.length > 0 && item.actions.length > 0 && item.dataPorts.length > 0)).toBe(true);
   });
@@ -38,6 +38,50 @@ describe("industrial prefab catalog", () => {
       "camera.vision",
       "display.wall",
       "storage.asrs-shuttle",
+      // 2026-09-12 扩量新增:机床四工艺、机器人三族、公用工程四族、过程仪表四族、仓储/输送/无人机
+      "machine.gantry-mill",
+      "machine.surface-grinder",
+      "machine.press",
+      "machine.heat-treat-furnace",
+      "robot.gantry-3",
+      "robot.dual-arm-14",
+      "robot.palletizer-6",
+      "utility.heat-exchanger.shell",
+      "utility.tank.vertical",
+      "utility.softener.duplex",
+      "utility.dosing-station.skid",
+      "sensor.level",
+      "sensor.flow",
+      "sensor.pressure-transmitter",
+      "sensor.temperature-transmitter",
+      "storage.silo",
+      "storage.asrs-rack",
+      "conveyor.screw",
+      "conveyor.bucket-elevator",
+      "agv.uav",
+      // 2026-09-12 数量波次 C:感知 +6、视觉 +4、车辆 +5、仓储 +4、移动 +3
+      "sensor.smoke-detector",
+      "sensor.heat-detector",
+      "sensor.sounder-strobe",
+      "sensor.rtu",
+      "sensor.edge-gateway",
+      "sensor.vibration",
+      "camera.bullet",
+      "camera.dome",
+      "camera.thermal",
+      "camera.ai-box",
+      "vehicle.tractor-unit",
+      "vehicle.dump-truck",
+      "vehicle.water-truck",
+      "vehicle.boom-lift",
+      "vehicle.patrol-pickup",
+      "storage.drive-in-rack",
+      "storage.mobile-shelving",
+      "storage.cold-room",
+      "storage.roll-cage",
+      "agv.stacker",
+      "agv.latent-jack",
+      "agv.tote-robot",
     ];
 
     expect([...ids]).toEqual(expect.arrayContaining(expected));
@@ -47,9 +91,26 @@ describe("industrial prefab catalog", () => {
     const routeAssets = INDUSTRIAL_PREFAB_CATALOG.filter((item) => item.routeCapable);
     const robots = INDUSTRIAL_PREFAB_CATALOG.filter((item) => item.kind === "robot-arm");
 
-    expect(routeAssets).toHaveLength(16);
+    expect(routeAssets).toHaveLength(25); // 17 既有 + 波次 C 新增 8 个可路线移动设备
     expect(routeAssets.every((item) => item.actions.some((action) => action.id === "dispatch") && item.dataPorts.includes("routeProgress"))).toBe(true);
     expect(robots.every((item) => item.rigCapable && item.actions.some((action) => action.id === "move-tool") && item.dataPorts.includes("jointAngles"))).toBe(true);
+  });
+
+  it("keeps wave-C fire/gateway sensors and cameras on industry-real ports", () => {
+    const ports = (id: string) => industrialPrefabDefinition(id)?.dataPorts ?? [];
+    // 火灾探测按 GB 4715/4716 口径暴露遮光率、定温差温与声压数据口
+    expect(ports("sensor.smoke-detector")).toContain("smokeDensity");
+    expect(ports("sensor.heat-detector")).toEqual(expect.arrayContaining(["temperatureC", "rateOfRiseCpm"]));
+    expect(ports("sensor.sounder-strobe")).toEqual(expect.arrayContaining(["soundLevelDb", "active"]));
+    expect(ports("sensor.vibration")).toEqual(expect.arrayContaining(["velocityMms", "accelerationG"]));
+    // RTU/网关按采集与网联口径暴露通道态、扫描与南北向速率
+    expect(ports("sensor.rtu")).toEqual(expect.arrayContaining(["diStates", "doStates", "aiValues"]));
+    expect(ports("sensor.edge-gateway")).toEqual(expect.arrayContaining(["ingressRate", "egressRate", "edgeTasksActive"]));
+    // 热成像/AI 盒子按视频监控口径暴露测温与算力负载
+    expect(ports("camera.thermal")).toEqual(expect.arrayContaining(["temperatureMaxC", "temperatureMinC"]));
+    expect(ports("camera.ai-box")).toEqual(expect.arrayContaining(["channelsOnline", "eventRate", "npuLoad"]));
+    const sounder = industrialPrefabDefinition("sensor.sounder-strobe");
+    expect(sounder?.actions.map((action) => action.id)).toEqual(expect.arrayContaining(["mute", "self-test"]));
   });
 });
 

@@ -2,9 +2,6 @@ import { lazy, Suspense, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   Boxes,
-  Layers3,
-  Link2,
-  ListChecks,
   LoaderCircle,
   Plus,
   Search,
@@ -18,13 +15,16 @@ import type {
   ProjectAssetRecord,
   ModelRecord,
 } from "@bim-studio/contracts";
-import { REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
+import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
+import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { DeviceBoxDraft } from "../deviceLayout/deviceLayout";
 import type { ComponentRecord } from "../viewer/ViewerEngine";
 import type { ConfirmedSmartAssetMapping } from "./smartAssetBindingWorkbenchModel";
 import { INDUSTRIAL_PREFAB_CATALOG } from "../prefabs/industrialPrefabCatalog";
 import { IndustrialPrefabThumbnail } from "./IndustrialPrefabThumbnail";
+import { useAssetLibraryCatalog } from "./useAssetLibraryCatalog";
+import { RvtImportSettings } from "./RvtImportSettings";
 
 const DeviceLayoutWorkbench = lazy(() => import("./DeviceLayoutWorkbench").then((module) => ({ default: module.DeviceLayoutWorkbench })));
 const SmartAssetBindingWorkbench = lazy(() => import("./SmartAssetBindingWorkbench").then((module) => ({ default: module.SmartAssetBindingWorkbench })));
@@ -33,7 +33,7 @@ interface SceneOutlinerPanelProps {
   locale: AppLocale;
   uploading: boolean;
   importOpen: boolean;
-  organizationOpen: boolean;
+  activeWorkflow?: "device-layout" | "smart-binding" | null;
   rvtConversionMode: RvtConversionMode;
   revitVersion: string;
   revitRuntime: RevitRuntimeInfo;
@@ -46,17 +46,16 @@ interface SceneOutlinerPanelProps {
   selectedComponentId?: string | undefined;
   searchActive: boolean;
   isolationActive: boolean;
-  organizationContent: ReactNode;
   objectContent: ReactNode;
-  assetWorkflowEntry?: ReactNode;
   projectAssets?: ProjectAssetRecord[];
   projectModels?: ModelRecord[];
-  onOrganizationToggle: () => void;
-  onImportToggle: () => void;
+  projectId?: string;
+  onLibraryImported?: () => Promise<void>;
   onImportClose: () => void;
+  onImportModel: () => void;
+  onWorkflowClose: () => void;
   onRvtConversionModeChange: (mode: RvtConversionMode) => void;
   onRevitVersionChange: (version: string) => void;
-  onUpload: () => void;
   onInsertProjectModel: (model: ModelRecord) => void;
   onInsertPrefab: (definition: IndustrialPrefabDefinition) => void;
   onCreateDeviceLayout: (devices: DeviceBoxDraft[], createLabels: boolean) => Promise<void> | void;
@@ -71,6 +70,89 @@ interface SceneOutlinerPanelProps {
 
 export function SceneOutlinerPanel(props: SceneOutlinerPanelProps) {
   const [resourceOpen, setResourceOpen] = useState(false);
+  const [deviceLayoutBusy, setDeviceLayoutBusy] = useState(false);
+  const resourcePanelDrag = useFloatingPanelDrag<HTMLElement>();
+  const resourcePanelEscapeRef = useDialogEscape(() => setResourceOpen(false));
+  const importSettingsEscapeRef = useDialogEscape(props.onImportClose);
+  const activeWorkflow = props.activeWorkflow ?? null;
+  const workflowDialogEscapeRef = useDialogEscape(() => {
+    if (activeWorkflow === "device-layout" && deviceLayoutBusy) return;
+    props.onWorkflowClose();
+  });
+  const deviceLayoutDialog = activeWorkflow === "device-layout" && typeof document !== "undefined" ? createPortal(
+    <div
+      className="device-layout-backdrop"
+      data-escape-dialog=""
+      ref={workflowDialogEscapeRef}
+      onMouseDown={() => { if (!deviceLayoutBusy) props.onWorkflowClose(); }}
+    >
+      <Suspense fallback={<div className="device-layout-loading"><LoaderCircle className="spin" size={15} />{tr(props.locale, "正在载入设备布局工具…", "Loading device layout tool…")}</div>}>
+        <DeviceLayoutWorkbench locale={props.locale} onApply={props.onCreateDeviceLayout} onBusyChange={setDeviceLayoutBusy} onClose={props.onWorkflowClose} />
+      </Suspense>
+    </div>,
+    document.body
+  ) : null;
+  const smartBindingDialog = activeWorkflow === "smart-binding" && typeof document !== "undefined" ? createPortal(
+    <div
+      className="smart-binding-backdrop"
+      data-escape-dialog=""
+      ref={workflowDialogEscapeRef}
+      onMouseDown={() => props.onWorkflowClose()}
+    >
+      <Suspense fallback={<div className="device-layout-loading"><LoaderCircle className="spin" size={15} />{tr(props.locale, "正在载入智能绑定…", "Loading smart binding…")}</div>}>
+        <SmartAssetBindingWorkbench locale={props.locale} components={props.bindingComponents} onClose={props.onWorkflowClose} onConfirm={(mappings) => { props.onConfirmSmartBindings(mappings); props.onWorkflowClose(); }} />
+      </Suspense>
+    </div>,
+    document.body
+  ) : null;
+  const resourcePanel = resourceOpen && typeof document !== "undefined" ? createPortal(
+    <section
+      className="scene-resource-floating"
+      role="dialog"
+      aria-label={tr(props.locale, "场景资源浮窗", "Scene resources panel")}
+      data-escape-dialog=""
+      ref={(element) => {
+        resourcePanelDrag.panelRef.current = element;
+        resourcePanelEscapeRef(element);
+      }}
+      style={resourcePanelDrag.style}
+      onPointerDown={resourcePanelDrag.onPointerDown}
+      onPointerMove={resourcePanelDrag.onPointerMove}
+      onPointerUp={resourcePanelDrag.onPointerUp}
+      onPointerCancel={resourcePanelDrag.onPointerCancel}
+    >
+      <header>
+        <span>
+          <strong>{tr(props.locale, "添加模型", "Add model")}</strong>
+        </span>
+        <button
+          type="button"
+          aria-label={tr(props.locale, "关闭资源浮窗", "Close resources panel")}
+          title={tr(props.locale, "关闭资源浮窗", "Close resources panel")}
+          onClick={() => setResourceOpen(false)}
+        >
+          <X size={14} />
+        </button>
+      </header>
+      <SceneResourceBrowser {...props} />
+    </section>,
+    document.body
+  ) : null;
+  const importSettingsDialog = props.importOpen && typeof document !== "undefined" ? createPortal(
+    <div className="dialog-backdrop" data-escape-dialog="" ref={importSettingsEscapeRef} onMouseDown={props.onImportClose}>
+      <section className="dialog scene-import-settings-dialog" role="dialog" aria-modal="true" aria-label={tr(props.locale, "RVT 导入设置", "RVT import settings")} onMouseDown={(event) => event.stopPropagation()}>
+        <span className="eyebrow">RVT / REVIT</span>
+        <h2>{tr(props.locale, "导入设置", "Import settings")}</h2>
+        <p>{tr(props.locale, "这些选项仅影响 RVT 文件；其他模型格式会忽略它们。", "These options only affect RVT files; other formats ignore them.")}</p>
+        <RvtImportSettings locale={props.locale} mode={props.rvtConversionMode} revitVersion={props.revitVersion} runtime={props.revitRuntime} onModeChange={props.onRvtConversionModeChange} onRevitVersionChange={props.onRevitVersionChange} />
+        <div className="dialog-actions">
+          <button type="button" className="button" onClick={props.onImportClose}>{tr(props.locale, "完成", "Done")}</button>
+          <button type="button" className="button primary" onClick={() => { props.onImportClose(); props.onImportModel(); }}>{tr(props.locale, "选择 RVT 文件", "Choose RVT file")}</button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  ) : null;
   return (
     <aside className="left-panel">
       <div className="panel-heading">
@@ -80,36 +162,19 @@ export function SceneOutlinerPanel(props: SceneOutlinerPanelProps) {
         </div>
         <div className="panel-heading-actions">
           <button
-            className={`panel-mode-button ${props.organizationOpen ? "active" : ""}`}
-            title={tr(
-              props.locale,
-              "多选、编组与层级管理",
-              "Multi-select, grouping and hierarchy",
-            )}
-            aria-label={tr(props.locale, "场景图层与编组", "Scene layers and groups")}
-            onClick={() => { setResourceOpen(false); props.onOrganizationToggle(); }}
-          >
-            <ListChecks size={17} />
-            <span>{tr(props.locale, "层级", "Layers")}</span>
-          </button>
-          <button
             className={`panel-mode-button ${resourceOpen ? "active" : ""}`}
             title={tr(props.locale, "浏览并插入资源", "Browse and insert resources")}
             aria-label={tr(props.locale, "资源", "Resources")}
-            onClick={() => { const next = !resourceOpen; setResourceOpen(next); if (next) { props.onImportClose(); if (props.organizationOpen) props.onOrganizationToggle(); } }}
+            onClick={() => { const next = !resourceOpen; setResourceOpen(next); if (next) props.onImportClose(); }}
           >
             <Boxes size={17} />
             <span>{tr(props.locale, "资源", "Resources")}</span>
           </button>
           <button
-            className={`icon-button ${props.importOpen ? "active" : ""}`}
-            aria-label={tr(props.locale, "导入模型与转换设置", "Import models and conversion settings")}
-            title={tr(
-              props.locale,
-              "导入模型与转换设置",
-              "Import models and conversion settings",
-            )}
-            onClick={() => { setResourceOpen(false); props.onImportToggle(); }}
+            className="icon-button"
+            aria-label={tr(props.locale, "导入模型", "Import model")}
+            title={tr(props.locale, "导入模型", "Import model")}
+            onClick={() => { setResourceOpen(false); props.onImportModel(); }}
             disabled={props.uploading}
           >
             {props.uploading ? (
@@ -120,46 +185,61 @@ export function SceneOutlinerPanel(props: SceneOutlinerPanelProps) {
           </button>
         </div>
       </div>
-      {(props.importOpen || resourceOpen) && props.assetWorkflowEntry}
-      {props.importOpen && <ImportWorkspace {...props} />}
-      {resourceOpen && !props.importOpen && <SceneResourceBrowser {...props} />}
-      {!props.organizationOpen && !props.importOpen && !resourceOpen && (
+      {!resourceOpen && (
         <ComponentSearch {...props} />
       )}
-      {!props.importOpen && !resourceOpen && (
-        <div
-          className={`asset-list ${props.organizationOpen ? "organization-mode" : ""}`}
-        >
-          {props.organizationOpen
-            ? props.organizationContent
-            : props.objectContent}
+      {!resourceOpen && (
+        <div className="asset-list unified-object-manager">
+          {props.objectContent}
         </div>
       )}
+      {deviceLayoutDialog}
+      {smartBindingDialog}
+      {resourcePanel}
+      {importSettingsDialog}
     </aside>
   );
 }
 
-export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "locale" | "projectAssets" | "projectModels" | "onImportToggle" | "onInsertProjectModel" | "onInsertPrefab">) {
+export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "locale" | "projectAssets" | "projectModels" | "projectId" | "onLibraryImported" | "onImportModel" | "onInsertProjectModel" | "onInsertPrefab">) {
   const [query, setQuery] = useState("");
-  const [scope, setScope] = useState<"all" | "prefab" | "project">("all");
+  const [scope, setScope] = useState<"platform" | "prefab" | "project">(() => props.projectId ? "platform" : (props.projectModels?.length || props.projectAssets?.length) ? "project" : "prefab");
   const [showAll, setShowAll] = useState(false);
+  const catalog = useAssetLibraryCatalog(props.projectId, props.onLibraryImported ?? (async () => {}), { dimension: "3d", featuredOnly: false });
   const assets = (props.projectAssets ?? []).map((asset) => ({ source: "asset" as const, id: asset.id, name: asset.name, fileName: asset.fileName, kind: asset.kind, thumbnailUrl: asset.thumbnailUrl, asset }));
-  const models = (props.projectModels ?? []).map((model) => ({ source: "model" as const, id: model.id, name: model.name, fileName: model.format.toUpperCase(), kind: "model", thumbnailUrl: undefined, model }));
+  const models = (props.projectModels ?? []).map((model) => ({ source: "model" as const, id: model.id, name: model.name, fileName: model.format.toUpperCase(), kind: "model", thumbnailUrl: model.thumbnailUrl ?? (model.libraryOrigin?.itemId ? `/api/public/asset-library/items/${model.libraryOrigin.itemId}/thumbnail` : undefined), model }));
   const prefabs = INDUSTRIAL_PREFAB_CATALOG.map((definition) => ({ source: "prefab" as const, id: definition.id, name: tr(props.locale, definition.name, definition.englishName), fileName: definition.routeCapable ? tr(props.locale, "路线与动作", "Route & actions") : tr(props.locale, "参数与数据口", "Parameters & ports"), kind: definition.kind, thumbnailUrl: undefined, definition }));
-  const allResources = [...models, ...assets, ...prefabs];
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const scopedResources = allResources.filter((resource) => scope === "all" || (scope === "prefab" ? resource.source === "prefab" : resource.source !== "prefab"));
+  const scopedResources = scope === "prefab" ? prefabs : [...models, ...assets];
   const resources = scopedResources.filter((resource) => `${resource.name} ${resource.fileName} ${resource.kind}`.toLocaleLowerCase().includes(normalizedQuery));
   const visibleResources = normalizedQuery || showAll ? resources : resources.slice(0, 24);
-  return <section className="scene-resource-browser" aria-label={tr(props.locale, "资源", "Resources")}>
-    <header><div><span className="eyebrow">{tr(props.locale, "场景资源", "SCENE RESOURCES")}</span><strong>{tr(props.locale, "资源", "Resources")}</strong></div><small>{allResources.length}</small></header>
-    <label className="component-search-input"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr(props.locale, "搜索资源", "Search resources")} /></label>
+  const platformItems = catalog.result.items.filter((item) => item.dimension === "3d");
+  const resultCount = scope === "platform" ? catalog.result.total : resources.length;
+  async function insertLibraryItem(itemId: string) {
+    const existing = (props.projectModels ?? []).find((model) => model.libraryOrigin?.itemId === itemId);
+    if (existing) return props.onInsertProjectModel(existing);
+    const imported = await catalog.importItem(itemId);
+    if (imported?.kind === "model") props.onInsertProjectModel(imported.model);
+  }
+  return <section className="scene-resource-browser" aria-label={tr(props.locale, "场景资源", "Scene resources")}>
+    <div className="scene-resource-search-row">
+      <label className="component-search-input"><Search size={14} /><input value={query} onChange={(event) => { const value = event.target.value; setQuery(value); if (scope === "platform") catalog.updateSearch(value); }} placeholder={tr(props.locale, "搜索模型", "Search models")} /></label>
+      <button type="button" className="scene-resource-upload" onClick={props.onImportModel} title={tr(props.locale, "本地导入", "Import local model")}><Upload size={14} /></button>
+    </div>
     <nav className="scene-resource-scopes" aria-label={tr(props.locale, "资源范围", "Resource scope")}>
-      <button className={scope === "all" ? "active" : ""} onClick={() => setScope("all")}>{tr(props.locale, "全部", "All")}</button>
-      <button className={scope === "prefab" ? "active" : ""} onClick={() => setScope("prefab")}>{tr(props.locale, "工业预制体", "Prefabs")}</button>
+      <button className={scope === "platform" ? "active" : ""} onClick={() => { setScope("platform"); catalog.updateSearch(query); }}>{tr(props.locale, "平台素材", "Library")}</button>
       <button className={scope === "project" ? "active" : ""} onClick={() => setScope("project")}>{tr(props.locale, "项目资源", "Project")}</button>
+      <button className={scope === "prefab" ? "active" : ""} onClick={() => setScope("prefab")}>{tr(props.locale, "工业预制体", "Prefabs")}</button>
     </nav>
-    {visibleResources.length > 0 ? <>
+    <div className="scene-resource-count">{resultCount.toLocaleString()} {tr(props.locale, "项", "items")}</div>
+    {scope === "platform" ? catalog.loading ? <div className="scene-resource-loading"><LoaderCircle className="spin" size={18} /></div> : platformItems.length > 0 ? <>
+      <div className="scene-resource-grid">{platformItems.map((item) => <article className="scene-resource-card" key={item.id}>
+        <img src={item.thumbnailUrl} alt="" />
+        <div><strong title={item.name}>{item.name}</strong><small>{item.category} · {(item.triangleCount / 1000).toFixed(0)}k</small></div>
+        <button type="button" disabled={!props.projectId || Boolean(catalog.importingId)} onClick={() => void insertLibraryItem(item.id)}>{catalog.importingId === item.id ? <LoaderCircle className="spin" size={12} /> : <Plus size={12} />}</button>
+      </article>)}</div>
+      {catalog.result.totalPages > 1 && <div className="scene-resource-pager"><button disabled={catalog.result.page <= 1} onClick={() => catalog.setPage(catalog.result.page - 1)}>‹</button><span>{catalog.result.page}/{catalog.result.totalPages}</span><button disabled={catalog.result.page >= catalog.result.totalPages} onClick={() => catalog.setPage(catalog.result.page + 1)}>›</button></div>}
+    </> : <div className="scene-resource-empty"><Boxes size={22} /><strong>{catalog.catalogError ?? tr(props.locale, "暂无匹配模型", "No matching models")}</strong></div> : visibleResources.length > 0 ? <>
       <div className="scene-resource-list">{visibleResources.map((resource) => <article className="scene-resource-row" key={`${resource.source}:${resource.id}`}>
         {resource.thumbnailUrl
           ? <img src={resource.thumbnailUrl} alt="" />
@@ -172,131 +252,9 @@ export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "local
             : <span className="scene-resource-use-hint">{tr(props.locale, "属性中应用", "Use in inspector")}</span>}
       </article>)}</div>
       {!normalizedQuery && resources.length > visibleResources.length && <button className="scene-resource-more" type="button" onClick={() => setShowAll(true)}>{tr(props.locale, `显示全部 ${resources.length} 项`, `Show all ${resources.length}`)}</button>}
-    </> : <div className="scene-resource-empty"><Boxes size={22} /><strong>{tr(props.locale, "暂无匹配资源", "No matching resources")}</strong><small>{tr(props.locale, "可以清空搜索，或导入自己的模型资源。", "Clear the search or import your own model resource.")}</small><button type="button" onClick={props.onImportToggle}>{tr(props.locale, "导入模型", "Import model")}</button></div>}
+    </> : <div className="scene-resource-empty"><Boxes size={22} /><strong>{tr(props.locale, "暂无匹配资源", "No matching resources")}</strong></div>}
+    {catalog.importError && <p className="scene-resource-error" role="alert">{catalog.importError}</p>}
   </section>;
-}
-
-function ImportWorkspace(props: SceneOutlinerPanelProps) {
-  const [deviceLayoutOpen, setDeviceLayoutOpen] = useState(false);
-  const [deviceLayoutBusy, setDeviceLayoutBusy] = useState(false);
-  const [smartBindingOpen, setSmartBindingOpen] = useState(false);
-  const deviceLayoutDialog = deviceLayoutOpen && typeof document !== "undefined" ? createPortal(
-    <div className="device-layout-backdrop" onMouseDown={() => { if (!deviceLayoutBusy) setDeviceLayoutOpen(false); }}>
-      <Suspense fallback={<div className="device-layout-loading"><LoaderCircle className="spin" size={15} />{tr(props.locale, "正在载入设备布局工具…", "Loading device layout tool…")}</div>}>
-        <DeviceLayoutWorkbench locale={props.locale} onApply={props.onCreateDeviceLayout} onBusyChange={setDeviceLayoutBusy} onClose={() => setDeviceLayoutOpen(false)} />
-      </Suspense>
-    </div>,
-    document.body
-  ) : null;
-  const smartBindingDialog = smartBindingOpen && typeof document !== "undefined" ? createPortal(
-    <div className="smart-binding-backdrop" onMouseDown={() => setSmartBindingOpen(false)}>
-      <Suspense fallback={<div className="device-layout-loading"><LoaderCircle className="spin" size={15} />{tr(props.locale, "正在载入智能绑定…", "Loading smart binding…")}</div>}>
-        <SmartAssetBindingWorkbench
-          locale={props.locale}
-          components={props.bindingComponents}
-          onClose={() => setSmartBindingOpen(false)}
-          onConfirm={(mappings) => {
-            props.onConfirmSmartBindings(mappings);
-            setSmartBindingOpen(false);
-          }}
-        />
-      </Suspense>
-    </div>,
-    document.body,
-  ) : null;
-  return (
-    <section className="scene-import-workspace">
-      <header>
-        <span>
-          <Upload size={15} />
-          <strong>{tr(props.locale, "导入模型", "Import model")}</strong>
-        </span>
-        <button
-          onClick={props.onImportClose}
-          aria-label={tr(props.locale, "关闭导入面板", "Close import panel")}
-        >
-          <X size={14} />
-        </button>
-      </header>
-      <div
-        className="rvt-route-switch"
-        aria-label={tr(props.locale, "RVT 转换链路", "RVT conversion route")}
-      >
-        <span>{tr(props.locale, "RVT 转换", "RVT conversion")}</span>
-        <button
-          className={props.rvtConversionMode === "native-glb" ? "active" : ""}
-          onClick={() => props.onRvtConversionModeChange("native-glb")}
-        >
-          <strong>{tr(props.locale, "原生 GLB", "Native GLB")}</strong>
-          <small>{tr(props.locale, "快速 · 推荐", "Fast · Recommended")}</small>
-        </button>
-        <button
-          className={props.rvtConversionMode === "ifc" ? "active" : ""}
-          onClick={() => props.onRvtConversionModeChange("ifc")}
-        >
-          <strong>IFC</strong>
-          <small>
-            {tr(props.locale, "兼容备用", "Compatibility fallback")}
-          </small>
-        </button>
-      </div>
-      <label className="revit-version-select">
-        <span>{tr(props.locale, "Revit 版本", "Revit version")}</span>
-        <select
-          value={props.revitVersion}
-          onChange={(event) => {
-            props.onRevitVersionChange(event.target.value);
-            window.localStorage.setItem(
-              REVIT_VERSION_STORAGE_KEY,
-              event.target.value,
-            );
-          }}
-        >
-          <option value="auto">
-            {tr(props.locale, "自动匹配（推荐）", "Auto match (recommended)")}
-          </option>
-          {props.revitRuntime.installations.map((item) => (
-            <option key={item.version} value={item.version}>
-              Revit {item.version}
-              {item.addinInstalled
-                ? " · Ready"
-                : ` · ${tr(props.locale, "需安装插件", "Add-in required")}`}
-            </option>
-          ))}
-        </select>
-        <small>
-          {props.revitRuntime.installations.length > 0
-            ? tr(
-                props.locale,
-                `检测到 ${props.revitRuntime.installations.length} 个本机版本`,
-                `${props.revitRuntime.installations.length} local versions detected`,
-              )
-            : tr(props.locale, "未检测到本机 Revit", "No local Revit detected")}
-        </small>
-      </label>
-      <button className="upload-zone" onClick={props.onUpload}>
-        <Upload size={20} />
-        <span>{tr(props.locale, "上传模型", "Upload model")}</span>
-        <small>
-          {tr(
-            props.locale,
-            "直接查看：IFC / OpenUSD / 网格 · 内置转换：STEP / IGES",
-            "Direct viewing: IFC / OpenUSD / meshes · Built-in conversion: STEP / IGES",
-          )}
-        </small>
-      </button>
-      <button className="device-layout-entry" onClick={() => setDeviceLayoutOpen(true)}>
-        <Boxes size={18} />
-        <span><strong>{tr(props.locale, "批量设备布局", "Batch device layout")}</strong><small>{tr(props.locale, "从表格、GeoJSON 或图纸坐标创建方盒与标签", "Create boxes and labels from tables, GeoJSON or drawing coordinates")}</small></span>
-      </button>
-      <button className="device-layout-entry" onClick={() => setSmartBindingOpen(true)}>
-        <Link2 size={18} />
-        <span><strong>{tr(props.locale, "设备与测点智能绑定", "Smart asset binding")}</strong><small>{tr(props.locale, "导入设备目录，生成可解释候选并人工确认", "Import a device catalog, review explainable candidates, then confirm")}</small></span>
-      </button>
-      {deviceLayoutDialog}
-      {smartBindingDialog}
-    </section>
-  );
 }
 
 function ComponentSearch(props: SceneOutlinerPanelProps) {

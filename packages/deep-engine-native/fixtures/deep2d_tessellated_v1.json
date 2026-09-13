@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "id": "native:overlay:tessellated",
+  "revision": 1,
+  "logicalWidth": 960,
+  "logicalHeight": 640,
+  "scaleFactor": 1,
+  "resources": [
+    {
+      "kind": "path",
+      "id": "overlay:concave-panel",
+      "revision": 0,
+      "verbs": [
+        { "op": "move", "x": 40, "y": 40 },
+        { "op": "line", "x": 380, "y": 40 },
+        { "op": "line", "x": 380, "y": 160 },
+        { "op": "line", "x": 250, "y": 160 },
+        { "op": "line", "x": 220, "y": 130 },
+        { "op": "line", "x": 190, "y": 160 },
+        { "op": "line", "x": 40, "y": 160 },
+        { "op": "close" }
+      ]
+    },
+    {
+      "kind": "path",
+      "id": "overlay:status",
+      "revision": 0,
+      "verbs": [
+        { "op": "move", "x": 60, "y": 62 },
+        { "op": "line", "x": 76, "y": 62 },
+        { "op": "line", "x": 76, "y": 78 },
+        { "op": "line", "x": 60, "y": 78 },
+        { "op": "close" }
+      ]
+    },
+    {
+      "kind": "path",
+      "id": "overlay:curve",
+      "revision": 0,
+      "verbs": [
+        { "op": "move", "x": 60, "y": 220 },
+        { "op": "quadratic", "cx": 150, "cy": 120, "x": 240, "y": 220 },
+        { "op": "cubic", "c1x": 300, "c1y": 282, "c2x": 352, "c2y": 138, "x": 430, "y": 220 }
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "kind": "path",
+      "id": "draw:panel",
+      "zOrder": 0,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "pathId": "overlay:concave-panel",
+      "fill": [0.025, 0.055, 0.095, 0.88],
+      "fillRule": "nonzero"
+    },
+    {
+      "kind": "path",
+      "id": "draw:status",
+      "zOrder": 1,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "pathId": "overlay:status",
+      "fill": [0.12, 0.82, 0.68, 1]
+    },
+    {
+      "kind": "path",
+      "id": "draw:curve",
+      "zOrder": 2,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "pathId": "overlay:curve",
+      "stroke": [0.12, 0.82, 0.68, 0.92],
+      "strokeWidth": 6,
+      "lineCap": "square",
+      "lineJoin": "miter",
+      "miterLimit": 6
+    }
+  ]
+}

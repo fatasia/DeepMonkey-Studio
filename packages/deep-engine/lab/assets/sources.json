@@ -1,0 +1,331 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-09-12",
+  "repository": "https://github.com/KhronosGroup/glTF-Sample-Assets",
+  "commit": "90d7ede14c7e280af263824604b427a1ca02cb66",
+  "downloadMethod": "Official GitHub contents API at the fixed commit was used for path/blob identity; bytes came from the corresponding fixed-commit raw URL and were verified by exact size and SHA-256.",
+  "scope": "Independent loader fixtures. The box variants validate packed/interleaved geometry and one embedded PNG texture path. NormalTangentTest validates a real normal map without authored tangents together with metallic-roughness, R-channel occlusion and double-sided lighting. TextureEncodingTest validates color-space texture semantics and deterministic normal generation for primitives that omit NORMAL. AlphaBlendModeTest validates authored tangent ownership plus OPAQUE, MASK and BLEND material execution. The Lab material-modes option is a self-owned runtime projection fixture derived from decoded, unmodified BoxTextured bytes; it validates core emissive and alpha renderer contracts but is not an additional upstream asset. These fixtures are not arbitrary glTF, industrial-model, renderer-quality or performance acceptance evidence.",
+  "samples": [
+    {
+      "name": "Box",
+      "file": "Box.glb",
+      "sourceUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/Box/glTF-Binary/Box.glb",
+      "gitBlobSha1": "95ec886b6b92b134291fd41d34ac9d5349306e0a",
+      "sha256": "ed52f7192b8311d700ac0ce80644e3852cd01537e4d62241b9acba023da3d54e",
+      "bytes": 1664,
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "artist": "Cesium",
+        "owner": "Cesium",
+        "year": "2017",
+        "url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+        "localNotice": "Box.LICENSE.md",
+        "sourceNoticeUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/Box/LICENSE.md",
+        "localUpstreamMetadata": "Box.upstream-metadata.json",
+        "sourceMetadataUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/Box/metadata.json"
+      },
+      "modified": false,
+      "inspection": {
+        "glbVersion": 2,
+        "scenes": 1,
+        "nodes": 2,
+        "meshes": 1,
+        "primitives": 1,
+        "vertices": 24,
+        "indices": 36,
+        "triangles": 12,
+        "primitiveMode": 4,
+        "indexComponentType": 5123,
+        "vertexComponentType": 5126,
+        "vertexAttributes": [
+          "POSITION",
+          "NORMAL"
+        ],
+        "vertexStride": 12,
+        "positionByteOffset": 288,
+        "normalByteOffset": 0,
+        "parentMatrix": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "positionMin": [
+          -0.5,
+          -0.5,
+          -0.5
+        ],
+        "positionMax": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "baseColorFactor": [
+          0.800000011920929,
+          0,
+          0,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1,
+        "alphaMode": "OPAQUE",
+        "textures": 0,
+        "animations": 0,
+        "skins": 0,
+        "extensions": [],
+        "binaryBoundsFiniteNormalsAndWindingVerified": true
+      }
+    },
+    {
+      "name": "BoxInterleaved",
+      "file": "BoxInterleaved.glb",
+      "sourceUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/BoxInterleaved/glTF-Binary/BoxInterleaved.glb",
+      "gitBlobSha1": "25cb4046fc4d00d40738c9289f96516b40330220",
+      "sha256": "b2ae631f118f1d13f829cdf9d9dc0fe7cb582de20b8c51d17f81f77a1cbf290c",
+      "bytes": 1632,
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "artist": "Cesium",
+        "owner": "Cesium",
+        "year": "2017",
+        "url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+        "localNotice": "BoxInterleaved.LICENSE.md",
+        "sourceNoticeUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/BoxInterleaved/LICENSE.md",
+        "localUpstreamMetadata": "BoxInterleaved.upstream-metadata.json",
+        "sourceMetadataUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/BoxInterleaved/metadata.json"
+      },
+      "modified": false,
+      "inspection": {
+        "glbVersion": 2,
+        "scenes": 1,
+        "nodes": 2,
+        "meshes": 1,
+        "primitives": 1,
+        "vertices": 24,
+        "indices": 36,
+        "triangles": 12,
+        "primitiveMode": 4,
+        "indexComponentType": 5123,
+        "vertexComponentType": 5126,
+        "vertexAttributes": [
+          "POSITION",
+          "NORMAL"
+        ],
+        "vertexStride": 24,
+        "positionByteOffset": 12,
+        "normalByteOffset": 0,
+        "parentMatrix": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "positionMin": [
+          -0.5,
+          -0.5,
+          -0.5
+        ],
+        "positionMax": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "baseColorFactor": [
+          0.800000011920929,
+          0,
+          0,
+          1
+        ],
+        "metallicFactor": 1,
+        "roughnessFactor": 1,
+        "alphaMode": "OPAQUE",
+        "textures": 0,
+        "animations": 0,
+        "skins": 0,
+        "extensions": [],
+        "binaryBoundsFiniteNormalsAndWindingVerified": true
+      }
+    },
+    {
+      "name": "BoxTextured",
+      "file": "BoxTextured.glb",
+      "sourceUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/BoxTextured/glTF-Binary/BoxTextured.glb",
+      "sha256": "b510eca2e2ef33f62f9ed57d6e7ce2d10ebb2bdebc4a8e59d347719ba81abdf4",
+      "bytes": 5956,
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "artist": "Cesium",
+        "owner": "Cesium",
+        "year": "2017",
+        "url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+        "localNotice": "BoxTextured.LICENSE.md",
+        "localUpstreamMetadata": "BoxTextured.upstream-metadata.json"
+      },
+      "modified": false,
+      "inspection": {
+        "glbVersion": 2,
+        "purpose": "embedded PNG, TEXCOORD_0 and baseColorTexture",
+        "vertices": 24,
+        "indices": 36,
+        "imageMimeType": "image/png",
+        "imageWidth": 256,
+        "imageHeight": 256,
+        "normalTexture": false,
+        "animations": 0,
+        "skins": 0
+      }
+    },
+    {
+      "name": "NormalTangentTest",
+      "file": "NormalTangentTest.glb",
+      "sourceUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/NormalTangentTest/glTF-Binary/NormalTangentTest.glb",
+      "gitBlobSha1": "855bad5e79527b68e753b594a728b8054af30969",
+      "sha256": "5ac0932355ae1ea05a7485eeddcc3f1fbe56c678e00b519075feced80e9e9d6a",
+      "bytes": 1796996,
+      "license": {
+        "spdx": "CC0-1.0",
+        "artist": "Ed Mackey",
+        "owner": "Analytical Graphics, Inc.",
+        "year": "2018",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+        "localNotice": "NormalTangentTest.LICENSE.md",
+        "sourceNoticeUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/NormalTangentTest/LICENSE.md",
+        "localUpstreamMetadata": "NormalTangentTest.upstream-metadata.json",
+        "sourceMetadataUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/NormalTangentTest/metadata.json"
+      },
+      "modified": false,
+      "inspection": {
+        "glbVersion": 2,
+        "purpose": "runtime tangent generation with base color, metallic-roughness, R-channel occlusion and tangent-space normal textures",
+        "vertices": 3983,
+        "indices": 23322,
+        "triangles": 7774,
+        "primitiveMode": 4,
+        "indexComponentType": 5123,
+        "vertexAttributes": [
+          "NORMAL",
+          "POSITION",
+          "TEXCOORD_0"
+        ],
+        "authoredTangents": false,
+        "generatedTangentComponents": 15932,
+        "textures": 3,
+        "decodedTextureSemantics": [
+          "baseColor",
+          "metallicRoughness",
+          "occlusion",
+          "normal"
+        ],
+        "imageMimeTypes": [
+          "image/png",
+          "image/png",
+          "image/png"
+        ],
+        "imageDimensions": [
+          [2048, 2048],
+          [2048, 2048],
+          [2048, 2048]
+        ],
+        "occlusionTextureChannel": "R",
+        "occlusionStrength": 1,
+        "doubleSided": true,
+        "animations": 0,
+        "skins": 0,
+        "extensions": []
+      }
+    },
+    {
+      "name": "TextureEncodingTest",
+      "file": "TextureEncodingTest.glb",
+      "sourceUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/TextureEncodingTest/glTF-Binary/TextureEncodingTest.glb",
+      "gitBlobSha1": "42500d87529f799a1355b1066378b58d233da933",
+      "sha256": "c2f654bdf918e3cce93db3f8d8c1b008b90d3089e756c9b38149e9306b1338f4",
+      "bytes": 21612,
+      "license": {
+        "spdx": "CC0-1.0",
+        "artist": "lexaknyazev",
+        "owner": "Public",
+        "year": "2017",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+        "localNotice": "TextureEncodingTest.LICENSE.md",
+        "sourceNoticeUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/TextureEncodingTest/LICENSE.md",
+        "localUpstreamMetadata": "TextureEncodingTest.upstream-metadata.json",
+        "sourceMetadataUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/TextureEncodingTest/metadata.json"
+      },
+      "modified": false,
+      "inspection": {
+        "glbVersion": 2,
+        "purpose": "sRGB versus linear texture sampling and deterministic missing-normal generation",
+        "geometries": 14,
+        "materials": 14,
+        "instances": 14,
+        "embeddedPngImages": 8,
+        "decodedTextureResources": 13,
+        "primitivesWithoutAuthoredNormals": 2,
+        "generatedNormalsUnitLengthVerified": true,
+        "animations": 0,
+        "skins": 0
+      }
+    },
+    {
+      "name": "AlphaBlendModeTest",
+      "file": "AlphaBlendModeTest.glb",
+      "sourceUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/AlphaBlendModeTest/glTF-Binary/AlphaBlendModeTest.glb",
+      "gitBlobSha1": "f2483d76fa9c97af61a1c2c5b4f7ce548afcf60b",
+      "sha256": "37c3577d143071b42dd46e9d942b157837eb25c6340112171d7faecaa987b14e",
+      "bytes": 2978812,
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "artist": "Ed Mackey",
+        "owner": "Analytical Graphics, Inc.",
+        "year": "2018",
+        "url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+        "localNotice": "AlphaBlendModeTest.LICENSE.md",
+        "sourceNoticeUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/AlphaBlendModeTest/LICENSE.md",
+        "localUpstreamMetadata": "AlphaBlendModeTest.upstream-metadata.json",
+        "sourceMetadataUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/AlphaBlendModeTest/metadata.json"
+      },
+      "modified": false,
+      "inspection": {
+        "glbVersion": 2,
+        "purpose": "OPAQUE, MASK and BLEND materials with authored tangent streams",
+        "geometries": 9,
+        "materials": 6,
+        "instances": 9,
+        "embeddedPngImages": 4,
+        "decodedTextureResources": 5,
+        "authoredTangentStreams": 9,
+        "alphaModeMaterials": { "OPAQUE": 2, "MASK": 3, "BLEND": 1 },
+        "alphaModeBatches": { "OPAQUE": 4, "MASK": 3, "BLEND": 2 },
+        "animations": 0,
+        "skins": 0
+      }
+    }
+  ],
+  "blockedReferences": [
+  ]
+}

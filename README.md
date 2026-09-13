@@ -1,6 +1,27 @@
 # Deep Monkey Studio
 
+[简体中文](README.md) · [English](README.en.md)
+
 面向内网部署的 Web 原生工业数字孪生、仿真验证与可视化应用平台。BIM/CAD 是工程资产输入而非产品主线；格式能力采用可插拔转换器架构，浏览器不会假装直接解析 RVT 或 DWG。
+
+> **开发状态：** 项目正在快速演进。正式 Studio 当前仍使用经过验证的 Three.js 路径；自研 Deep Engine 在隔离包、浏览器 WebGPU Lab 与原生 `wgpu` 客户端中开发和验收。仓库不会用固定夹具或 mock 宣称已达到完整引擎或竞品水平。
+
+[贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [治理规则](GOVERNANCE.md) · [路线与诚实边界](docs/specs/deep-engine-execution-plan-2026-09-12.md)
+
+## 许可与协作
+
+对于非受限企业与个人为 MIT 协议。任何企业只要存在许可证所列劳动、薪酬、个人信息或用户权益问题，就属于受限组织，不得以任何方式使用本项目，也不得通过关联企业、承包商或其他第三方使用。公开源码或支付费用均不构成例外。
+
+完整条款见 [Deep Monkey Community Source License 1.0](LICENSE)，中文说明见 [LICENSE.zh-CN.md](LICENSE.zh-CN.md) 和 [LICENSING.md](LICENSING.md)。欢迎通过 Issue 和 Pull Request 参与；所有合并请求都必须通过 `pnpm gate:repository` 及与改动范围相符的测试。
+
+## Deep Engine
+
+Deep Engine 是仓库内正在建设的 WebGPU-first 自研渲染与原生客户端主线。当前已经具备版本化 RenderPacket、PBR/IBL/阴影/HDR 管线、GPU frustum culling 与 indirect draw、DeepSL/Shader Package、基础 glTF/纹理链路，以及 Rust `winit + wgpu` 原生执行器。它与正式应用保持隔离，直到画质、性能、资源生命周期、项目兼容和无感切换门禁全部通过。
+
+- TypeScript/WebGPU 包：[packages/deep-engine](packages/deep-engine/README.md)
+- Rust 原生执行器：[packages/deep-engine-native](packages/deep-engine-native/README.md)
+- 执行方案：[Deep Engine 复审执行计划](docs/specs/deep-engine-execution-plan-2026-09-12.md)
+- 客户端与打包清单：[Deep Engine 交付清单](docs/specs/deep-engine-delivery-backlog-2026-09-12.md)
 
 ## 当前能力
 
@@ -33,7 +54,7 @@
 - 构件可按 BIM 楼层整层显隐，并通过“向上展开”形成楼层分解视图；IFC Fragments 当前保证楼层显隐，逐层位移主要用于原生 GLB/RVT 模型
 - WebGL 模式支持 WebXR 的 VR/AR 会话入口；实际进入需要兼容设备以及 localhost 或 HTTPS 安全上下文
 - 中英文可在各主页面切换；开源致谢窗口列出核心项目、许可证和源码链接
-- 数据中心统一管理 HTTP、WebSocket、MQTT、AMQP、Kafka、CoAP、PostgreSQL、MySQL、Oracle、TDengine、OPC UA、Modbus TCP、BACnet、S7、EtherNet/IP、SNMP、TCP、UDP 和串口连接；流程服务负责协议采集，Studio 只绑定清洗后的数据集
+- 数据中心原生管理 HTTP、WebSocket、MQTT、AMQP、Kafka、CoAP、PostgreSQL、MySQL、Oracle、TDengine、OPC UA、Modbus TCP、BACnet、S7、EtherNet/IP、SNMP、TCP、UDP 和串口连接；Studio 直接绑定清洗后的数据集
 - Studio 内置 ECharts + GridStack 轻量看板，支持数值、仪表、趋势、面积、柱状、饼图、表格、状态、图片、本地视频、实时监控和网页；图片与视频统一进入项目资源库，RTSP、RTMP、SRT 等浏览器不能直接播放的地址会自动转换为 HLS 或 WebRTC 播放地址
 - 模型、图层、BIM 构件与二维看板组件共用可信事件脚本，支持加载、点击、鼠标进入/离开和动画开始/结束；脚本可直接访问 Three.js、ViewerEngine 与全部运行时对象
 - 内置简化用户与权限：管理员、编辑者、浏览者三种角色，非管理员按项目授权；系统管理页统一查看用户、服务健康度、错误/操作审计和 AI 配置
@@ -94,15 +115,9 @@ pnpm studio undeploy
 - 独立全局品牌设置: http://localhost:5173/branding（HTTPS 模式下使用同路径）
 - 实时监控播放: HTTPS HLS `:8888` / WebRTC `:8889`（页面不暴露底层转协议服务）
 - API: http://localhost:4100
-- Node-RED 流程编辑器: http://localhost:5173/node-red/
-- Node-RED Dashboard: http://localhost:5173/iot/dashboard/
 - 健康检查: http://localhost:4100/health
 
 首次部署的管理员账号与密码均为 `admin`，可通过 `.env` 的 `BIM_STUDIO_ADMIN_PASSWORD` 修改初始密码。登录页勾选“下次自动登录”后使用 30 天签名会话，未勾选时仅在当前浏览器会话保存并于服务重启后失效；生产环境应配置稳定、随机的 `BIM_STUDIO_SESSION_SECRET`。登录后，管理员可从页面右下角“系统”进入用户授权、健康、审计和 AI 配置。AI 也可以直接由 `.env` 初始化：`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`、`AI_PROTOCOL`、`AI_TEMPERATURE`；`AI_PROTOCOL` 可设为 `responses`、`chat-completions` 或 `auto`，页面保存后的配置优先于环境变量，API Key 不会回显到浏览器。
-
-Node-RED 不运行不会影响模型浏览、编辑和场景保存；需要流程服务时按 [从零开发与原生部署](docs/native-deployment.md) 配置为外部原生服务。HTTP 场景桥为 `POST /iot/scene`，浏览器订阅 `/iot/ws/scene`。生产部署应设置随机 `NODE_RED_CREDENTIAL_SECRET`，并通过 Node-RED credential store 保存数据库与设备密码。
-
-TDengine 与 Oracle 的最小可用示例流位于 `apps/node-red/examples/tdengine-oracle-dashboard.json`，并默认内置在 `flows.json` 中但保持禁用。连接参数由仓库根目录 `.env` 注入；Oracle 的用户名和密码通过被 Git 忽略的 `apps/node-red/flows_cred.json` 引用环境变量，也可以在 Node-RED 中双击“Oracle 示例连接”覆盖并加密保存。重启 Node-RED 后启用对应流程即可手动测试。TDengine 示例默认使用官方 `@tdengine/websocket` 连接 taosAdapter，查询失败会自动回退 `/rest/sql`；Oracle 示例使用 `node-red-contrib-oracledb-mod`，Oracle 12.1+ 保持默认 Thin 模式即可，Oracle 11g 或需要 Thick 特性时使用已安装到 `D:\Documents\bim\oracle\instantclient_19_31` 的 Instant Client。两个示例都直接输出到现有 `/iot/dashboard/` 看板。
 
 ## PostgreSQL 与 MinIO
 
@@ -132,4 +147,12 @@ pnpm dwg:install
 
 DWG 与 STEP 的开源/商业导入路线、许可证影响和推荐架构见 [DWG/STEP 导入调研](docs/dwg-step-import-research.md)。
 
-与商业 BIM 平台的功能差距和推荐开发顺序见 [商业 BIM 平台功能差距分析](docs/commercial-bim-gap-analysis.md)。
+当前计划、稳定文档与验收入口见 [文档索引](docs/README.md)。
+
+## 鸣谢
+
+Deep Monkey Studio 的成长离不开开源社区。感谢所有依赖项目的维护者与贡献者；完整的依赖来源及许可证信息见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+特别感谢 [Three.js](https://github.com/mrdoob/three.js)、[Orillusion](https://github.com/Orillusion/orillusion) 与 [Unity](https://github.com/Unity-Technologies)，它们在三维渲染、引擎架构、编辑器和交互设计方面为本项目提供了宝贵的学习参考。
+
+同时感谢 [OpenAI GPT](https://github.com/openai) 与 [智谱 GLM](https://github.com/zai-org)。活动期间获赠了很多 Token 和重置卡，为开发优化提供了很大帮助。

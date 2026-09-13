@@ -21,7 +21,8 @@
     "gate:data-center-flow": "node scripts/gate-data-center-flow.mjs",
     "gate:production-artifact": "node scripts/check-production-artifact.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "gate:performance-evidence": "node scripts/gate-performance-evidence.mjs"
   },
   "dependencies": {
     "@bim-studio/contracts": "workspace:*",
@@ -44,6 +45,7 @@
     "draco3dgltf": "1.5.7",
     "dxf-parser": "^1.1.2",
     "echarts": "^6.1.0",
+    "echarts-wordcloud": "^2.1.0",
     "es-module-lexer": "2.3.1",
     "hls.js": "^1.6.16",
     "html-to-image": "^1.11.13",

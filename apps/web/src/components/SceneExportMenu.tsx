@@ -33,6 +33,7 @@ export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExpor
       }}
     >
       <button
+        type="button"
         className={compact ? "" : "button ghost"}
         aria-label={tr(locale, "导出场景", "Export scene")}
         title={tr(locale, "导出场景", "Export scene")}
@@ -41,7 +42,7 @@ export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExpor
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
       >
-        <Download size={compact ? 15 : 16} />{!compact && <><span>{tr(locale, "导出", "Export")}</span><ChevronDown size={13} /></>}
+        <Download size={compact ? 15 : 16} />{!compact && <><span>{tr(locale, "导出场景", "Export scene")}</span><ChevronDown size={13} /></>}
       </button>
       {open && (
         <div className="export-menu-popup" role="menu">

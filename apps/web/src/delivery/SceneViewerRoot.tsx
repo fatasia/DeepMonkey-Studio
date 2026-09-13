@@ -140,6 +140,10 @@ export function SceneViewerRoot() {
           objectPanelOpen={objectPanelOpen}
           onOpenChange={setToolsOpen}
           onFitAll={() => engine?.fitAll()}
+          fitSelectedEnabled={selected?.kind === "model"}
+          onFitSelected={() => {
+            if (selected?.kind === "model") engine?.focusModel(selected.id);
+          }}
           onNavigationChange={changeNavigation}
           onMeasurementToggle={toggleMeasurement}
           onClippingToggle={toggleClipping}

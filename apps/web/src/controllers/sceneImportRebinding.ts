@@ -33,6 +33,20 @@ export function rebindImportedSceneModels(
   const rebound: SceneSnapshot = {
     ...scene,
     models: reboundModels,
+    ...(scene.dataBindings ? { dataBindings: scene.dataBindings.map(binding => ({ ...binding,
+      target: { ...binding.target, ...(binding.target.modelId ? { modelId: rebindId(binding.target.modelId) } : {}) },
+    })) } : {}),
+    ...(scene.assetBindings ? { assetBindings: scene.assetBindings.map(binding => {
+      const modelId = rebindId(binding.modelId);
+      const sceneObjectId = binding.sceneObjectId.startsWith(`${binding.modelId}:`) || binding.sceneObjectId.startsWith(`${binding.modelId}/`)
+        ? modelId + binding.sceneObjectId.slice(binding.modelId.length) : binding.sceneObjectId;
+      return { ...binding, modelId, sceneObjectId };
+    }) } : {}),
+    ...(scene.interactions ? { interactions: scene.interactions.map(interaction => ({ ...interaction,
+      target: interaction.target.kind === "object" ? { ...interaction.target, modelId: rebindId(interaction.target.modelId) } : interaction.target,
+      ...(interaction.actions ? { actions: interaction.actions.map(action => action.target
+        ? { ...action, target: { ...action.target, modelId: rebindId(action.target.modelId) } } : action) } : {}),
+    })) } : {}),
     ...(scene.simulationEntities ? {
       simulationEntities: scene.simulationEntities.map((entity) => entity.kind === "flowLink"
         ? { ...entity, fromModelId: rebindId(entity.fromModelId), toModelId: rebindId(entity.toModelId) }

@@ -3,7 +3,7 @@ import { IndustrialAgentOrchestrator } from "./orchestrator.js";
 import { MemoryAgentCheckpointStore } from "./memoryCheckpointStore.js";
 import type { AgentCheckpoint, AgentToolGateway } from "./types.js";
 import { AgentDecisionUnavailableError } from "./errors.js";
-import { canRetryAgentDecision } from "./recovery.js";
+import { AGENT_RECOVERY_RESERVE_MS, canRetryAgentDecision } from "./recovery.js";
 
 const finish = { kind: "finish", rationale: "完成", summary: "已读取证据", decisionStatus: "production", evidenceIds: ["read-1"] };
 const call = { kind: "call-tool", rationale: "读取数据", call: { toolId: "read", arguments: {}, resources: [{ kind: "project", id: "p" }] } };
@@ -16,7 +16,7 @@ function fixture(decide: (checkpoint: AgentCheckpoint) => unknown) {
 }
 
 describe("decision checkpoint recovery", () => {
-  it("resumes a provider 504 without replaying completed tools or resetting budgets", async () => {
+  it("resumes a provider 504 without replaying completed tools and adds only the recovery reserve", async () => {
     let requests = 0;
     const f = fixture(() => { if (++requests === 1) return call; if (requests === 2) throw new Error("大模型请求失败：HTTP 504"); return finish; });
     const failed = await f.start();
@@ -24,9 +24,28 @@ describe("decision checkpoint recovery", () => {
     const completed = await f.runtime.resume(failed.id, { expectedRevision: failed.revision });
     expect(completed.status).toBe("completed");
     expect(completed.usage).toMatchObject({ steps: 2, toolCalls: 1 });
-    expect(completed.budget).toEqual(failed.budget);
+    expect(completed.budget).toEqual({ ...failed.budget, maxDurationMs: failed.budget.maxDurationMs + AGENT_RECOVERY_RESERVE_MS });
     expect(completed.toolRecords).toEqual(failed.toolRecords);
     expect(f.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("adds a bounded recovery reserve and keeps a timed-out transport recovery resumable", async () => {
+    const f = fixture(() => { throw new AgentDecisionUnavailableError("Gateway timeout"); });
+    const failed = await f.runtime.start({ projectId: "p", principal: "user", objective: "检查数据", allowedToolIds: ["read"], budget: { maxDurationMs: 30_000 } });
+    await f.checkpoints.save(failed);
+    expect(canRetryAgentDecision(failed)).toBe(true);
+    let resumed = await f.runtime.resume(failed.id, { expectedRevision: failed.revision });
+    expect(resumed.budget.maxDurationMs).toBe(30_000 + AGENT_RECOVERY_RESERVE_MS);
+    expect(resumed.decisionRecoveries).toHaveLength(1);
+
+    resumed.status = "budget-exhausted";
+    resumed.usage.activeDurationMs = resumed.budget.maxDurationMs;
+    resumed.failure = { code: "time-budget", message: "Agent 已达到时间预算", retryable: false };
+    await f.checkpoints.save(resumed);
+    expect(canRetryAgentDecision(resumed)).toBe(true);
+    resumed = await f.runtime.resume(resumed.id, { expectedRevision: resumed.revision });
+    expect(resumed.budget.maxDurationMs).toBe(30_000 + AGENT_RECOVERY_RESERVE_MS * 2);
+    expect(resumed.decisionRecoveries).toHaveLength(2);
   });
 
   it("waits for an explicit named choice and persists that choice in the same run", async () => {

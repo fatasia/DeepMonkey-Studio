@@ -89,15 +89,17 @@ export function parseMarkdown(markdown: string): MarkdownBlock[] {
 
 export function parseMarkdownInline(value: string): MarkdownInline[] {
   const segments: MarkdownInline[] = [];
-  const pattern = /(`[^`]+`)|\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  const pattern = /(`[^`]+`)|!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
   let cursor = 0;
   for (const match of value.matchAll(pattern)) {
     const start = match.index;
     if (start > cursor) segments.push({ type: "text", value: value.slice(cursor, start) });
     if (match[1]) {
       segments.push({ type: "code", value: match[1].slice(1, -1) });
-    } else if (match[2] && match[3]) {
-      segments.push({ type: "link", label: match[2], href: match[3], external: isExternalLink(match[3]) });
+    } else if (match[3]) {
+      segments.push({ type: "image", alt: match[2] || "文档图片", href: match[3] });
+    } else if (match[4] && match[5]) {
+      segments.push({ type: "link", label: match[4], href: match[5], external: isExternalLink(match[5]) });
     }
     cursor = start + match[0].length;
   }
@@ -106,7 +108,11 @@ export function parseMarkdownInline(value: string): MarkdownInline[] {
 }
 
 export function markdownInlineText(content: MarkdownInline[]): string {
-  return content.map((item) => item.type === "link" ? item.label : item.value).join("");
+  return content.map((item) => {
+    if (item.type === "link") return item.label;
+    if (item.type === "image") return item.alt;
+    return item.value;
+  }).join("");
 }
 
 export function slugifyHeading(value: string): string {

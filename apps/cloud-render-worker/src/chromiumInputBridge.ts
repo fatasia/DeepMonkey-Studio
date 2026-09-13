@@ -1,23 +1,19 @@
 import type { Page } from "playwright-core";
+import { createInputQueue } from "./chromiumInputQueue.js";
 
 type Codec = "h264" | "h265" | "av1";
 
-type InputEvent =
+export type InputEvent =
   | { type: "pointer"; action: "move" | "down" | "up"; x: number; y: number; button: "left" | "middle" | "right" }
   | { type: "wheel"; deltaX: number; deltaY: number }
   | { type: "key"; action: "down" | "up"; key: string };
 
 export async function installInputBinding(page: Page, width: number, height: number): Promise<void> {
-  await page.exposeFunction("__bimCloudRenderInput", async (raw: unknown) => {
+  const queue = createInputQueue(page, width, height, error => console.warn("云渲染输入执行失败", error instanceof Error ? error.message : String(error)));
+  page.on("close", queue.close);
+  await page.exposeFunction("__bimCloudRenderInput", (raw: unknown) => {
     const input = parseInput(raw);
-    if (!input) return;
-    if (input.type === "pointer") {
-      await page.mouse.move(input.x * width, input.y * height);
-      if (input.action === "down") await page.mouse.down({ button: input.button });
-      if (input.action === "up") await page.mouse.up({ button: input.button });
-    } else if (input.type === "wheel") await page.mouse.wheel(input.deltaX, input.deltaY);
-    else if (input.action === "down") await page.keyboard.down(input.key);
-    else await page.keyboard.up(input.key);
+    if (input) queue.enqueue(input);
   });
 }
 
@@ -42,7 +38,7 @@ export async function createProducer(page: Page, framesPerSecond: number, codecP
     input.addEventListener("message", (event) => {
       let value: unknown;
       try { value = JSON.parse(String(event.data)); } catch { return; }
-      void (window as unknown as { __bimCloudRenderInput: (payload: unknown) => Promise<void> }).__bimCloudRenderInput(value);
+      void (window as unknown as { __bimCloudRenderInput: (payload: unknown) => Promise<void> }).__bimCloudRenderInput(value).catch(() => undefined);
     });
     const id = crypto.randomUUID();
     (window as unknown as { __bimCloudRenderPeer: { id: string; pc: RTCPeerConnection; track: MediaStreamTrack } }).__bimCloudRenderPeer = { id, pc, track };

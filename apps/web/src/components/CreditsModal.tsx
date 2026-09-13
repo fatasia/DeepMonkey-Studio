@@ -18,8 +18,6 @@ const projects = [
   ["watlas", "MIT", "https://github.com/repalash/watlas"],
   ["HLS.js", "Apache-2.0", "https://github.com/video-dev/hls.js"],
   ["MediaMTX", "MIT", "https://github.com/bluenviron/mediamtx"],
-  ["Node-RED", "Apache-2.0", "https://github.com/node-red/node-red"],
-  ["FlowFuse Dashboard", "Apache-2.0", "https://github.com/FlowFuse/node-red-dashboard"],
   ["Apache ECharts", "Apache-2.0", "https://github.com/apache/echarts"],
   ["TDengine Node.js Connector", "MIT", "https://github.com/taosdata/taos-connector-node"],
   ["Fastify", "MIT", "https://github.com/fastify/fastify"],

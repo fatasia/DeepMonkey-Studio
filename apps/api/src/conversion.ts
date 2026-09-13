@@ -21,6 +21,7 @@ interface ConversionContext {
 }
 
 interface ConversionProvider {
+  readonly supportsGeneralImport?: boolean;
   convert(context: ConversionContext): Promise<void>;
 }
 
@@ -81,6 +82,10 @@ export class ConversionQueue {
       urdf: new RobotSourceProvider(store, objects),
       zip: new RobotSourceProvider(store, objects),
     };
+  }
+
+  listImportFormats(): ModelFormat[] {
+    return (Object.entries(this.providers) as [ModelFormat, ConversionProvider][]).filter(([,provider]) => provider.supportsGeneralImport !== false).map(([format]) => format);
   }
 
   enqueue(context: ConversionContext): void {
@@ -193,6 +198,7 @@ class DirectProvider implements ConversionProvider {
 }
 
 class MissingProvider implements ConversionProvider {
+  readonly supportsGeneralImport = false;
   constructor(
     private readonly store: MetadataStore,
     private readonly message: string
@@ -285,6 +291,7 @@ class CommandProvider implements ConversionProvider {
 }
 
 class XtTextSubsetProvider implements ConversionProvider {
+  get supportsGeneralImport() { return Boolean(this.fallback); }
   constructor(
     private readonly store: MetadataStore,
     private readonly objects: ObjectStore,
@@ -360,6 +367,7 @@ class XtTextSubsetProvider implements ConversionProvider {
 }
 
 class JtStructureProvider implements ConversionProvider {
+  get supportsGeneralImport() { return Boolean(this.fallback); }
   constructor(
     private readonly store: MetadataStore,
     private readonly objects: ObjectStore,

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "id": "native:overlay:first-frame",
+  "revision": 1,
+  "logicalWidth": 960,
+  "logicalHeight": 640,
+  "scaleFactor": 1,
+  "resources": [
+    {
+      "kind": "path",
+      "id": "overlay:panel",
+      "revision": 0,
+      "verbs": [
+        { "op": "move", "x": 36, "y": 36 },
+        { "op": "line", "x": 356, "y": 36 },
+        { "op": "line", "x": 356, "y": 148 },
+        { "op": "line", "x": 36, "y": 148 },
+        { "op": "close" }
+      ]
+    },
+    {
+      "kind": "path",
+      "id": "overlay:status",
+      "revision": 0,
+      "verbs": [
+        { "op": "move", "x": 52, "y": 56 },
+        { "op": "line", "x": 66, "y": 56 },
+        { "op": "line", "x": 66, "y": 70 },
+        { "op": "line", "x": 52, "y": 70 },
+        { "op": "close" }
+      ]
+    },
+    {
+      "kind": "path",
+      "id": "overlay:rule",
+      "revision": 0,
+      "verbs": [
+        { "op": "move", "x": 52, "y": 124 },
+        { "op": "line", "x": 334, "y": 124 }
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "kind": "path",
+      "id": "draw:panel",
+      "zOrder": 0,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "pathId": "overlay:panel",
+      "fill": [0.025, 0.055, 0.095, 0.88]
+    },
+    {
+      "kind": "path",
+      "id": "draw:status",
+      "zOrder": 1,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "pathId": "overlay:status",
+      "fill": [0.12, 0.82, 0.68, 1]
+    },
+    {
+      "kind": "path",
+      "id": "draw:rule",
+      "zOrder": 2,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "pathId": "overlay:rule",
+      "stroke": [0.12, 0.82, 0.68, 0.9],
+      "strokeWidth": 3,
+      "lineCap": "butt"
+    }
+  ]
+}

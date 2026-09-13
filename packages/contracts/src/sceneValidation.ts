@@ -113,7 +113,8 @@ function validateSceneDataBinding(value: unknown, path: string): void {
   optional(object, "directBinding", (binding, bindingPath) => assertDirectBindingSpec(binding, bindingPath), path);
   optional(object, "rowIndex", expectNumber, path);
   required(object, "refreshSeconds", expectNumber, path);
-  requiredLiteral(object, "action", ["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material"], path);
+  requiredLiteral(object, "action", ["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material", "alarm"], path);
+  optional(object, "signalRule", assertDeviceSignalRule, path);
   required(
     object,
     "target",
@@ -514,6 +515,7 @@ function validateAnimation(value: unknown, path: string): void {
 
 function validateCameraKeyframe(value: unknown, path: string): void {
   const object = expectObject(value, path);
+  optionalLiteral(object, "transition", ["linear", "smooth", "ease-in", "ease-out", "step"], path);
   required(object, "id", expectString, path);
   required(object, "time", expectNumber, path);
   required(object, "camera", validateCamera, path);
@@ -521,6 +523,7 @@ function validateCameraKeyframe(value: unknown, path: string): void {
 
 function validateModelKeyframe(value: unknown, path: string): void {
   const object = expectObject(value, path);
+  optionalLiteral(object, "transition", ["linear", "smooth", "ease-in", "ease-out", "step"], path);
   required(object, "id", expectString, path);
   required(object, "time", expectNumber, path);
   required(object, "modelId", expectString, path);
@@ -548,3 +551,4 @@ function validateVector3(value: unknown, path: string): void {
   const object = expectObject(value, path);
   for (const key of ["x", "y", "z"] as const) required(object, key, expectNumber, path);
 }
+import { assertDeviceSignalRule } from "./deviceSignal.js";

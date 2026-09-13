@@ -1,0 +1,1736 @@
+{
+  "schema": "deep-shader-package",
+  "schemaVersion": 2,
+  "packageId": "deep.package",
+  "packageVersion": "1.0.0",
+  "compilerVersion": "1.0.0",
+  "targetProfile": "webgpu-wgsl-pipeline-2",
+  "shaderAbi": {
+    "id": "deep.pbr.mesh.v2",
+    "contentHash": {
+      "algorithm": "sha256",
+      "value": "adcdc15ed7ff02966d4033b746da1af90c97a0fb657615fec3bcef375c015cf1"
+    },
+    "contract": {
+      "schema": "deep.shader-abi",
+      "schemaVersion": 1,
+      "id": "deep.pbr.mesh.v2",
+      "dataLayouts": [
+        {
+          "id": "frame",
+          "storage": "uniform",
+          "byteSize": 208,
+          "byteAlignment": 16,
+          "members": [
+            {
+              "name": "view",
+              "format": "mat4x4<f32>",
+              "byteOffset": 0,
+              "byteSize": 64
+            },
+            {
+              "name": "light",
+              "format": "mat4x4<f32>",
+              "byteOffset": 64,
+              "byteSize": 64
+            },
+            {
+              "name": "eye",
+              "format": "vec4<f32>",
+              "byteOffset": 128,
+              "byteSize": 16
+            },
+            {
+              "name": "background",
+              "format": "vec4<f32>",
+              "byteOffset": 144,
+              "byteSize": 16
+            },
+            {
+              "name": "floor",
+              "format": "vec4<f32>",
+              "byteOffset": 160,
+              "byteSize": 16
+            },
+            {
+              "name": "lightDirection",
+              "format": "vec4<f32>",
+              "byteOffset": 176,
+              "byteSize": 16
+            },
+            {
+              "name": "tuning",
+              "format": "vec4<f32>",
+              "byteOffset": 192,
+              "byteSize": 16
+            }
+          ]
+        },
+        {
+          "id": "material",
+          "storage": "uniform",
+          "byteSize": 160,
+          "byteAlignment": 16,
+          "members": [
+            {
+              "name": "baseRow0",
+              "format": "vec4<f32>",
+              "byteOffset": 0,
+              "byteSize": 16
+            },
+            {
+              "name": "baseRow1",
+              "format": "vec4<f32>",
+              "byteOffset": 16,
+              "byteSize": 16
+            },
+            {
+              "name": "mrRow0",
+              "format": "vec4<f32>",
+              "byteOffset": 32,
+              "byteSize": 16
+            },
+            {
+              "name": "mrRow1",
+              "format": "vec4<f32>",
+              "byteOffset": 48,
+              "byteSize": 16
+            },
+            {
+              "name": "occlusionRow0",
+              "format": "vec4<f32>",
+              "byteOffset": 64,
+              "byteSize": 16
+            },
+            {
+              "name": "occlusionRow1",
+              "format": "vec4<f32>",
+              "byteOffset": 80,
+              "byteSize": 16
+            },
+            {
+              "name": "normalRow0",
+              "format": "vec4<f32>",
+              "byteOffset": 96,
+              "byteSize": 16
+            },
+            {
+              "name": "normalRow1",
+              "format": "vec4<f32>",
+              "byteOffset": 112,
+              "byteSize": 16
+            },
+            {
+              "name": "emissiveRow0",
+              "format": "vec4<f32>",
+              "byteOffset": 128,
+              "byteSize": 16
+            },
+            {
+              "name": "emissiveRow1",
+              "format": "vec4<f32>",
+              "byteOffset": 144,
+              "byteSize": 16
+            }
+          ]
+        },
+        {
+          "id": "instance",
+          "storage": "vertex",
+          "byteSize": 144,
+          "byteAlignment": 16,
+          "members": [
+            {
+              "name": "modelRow0",
+              "format": "vec4<f32>",
+              "byteOffset": 0,
+              "byteSize": 16
+            },
+            {
+              "name": "modelRow1",
+              "format": "vec4<f32>",
+              "byteOffset": 16,
+              "byteSize": 16
+            },
+            {
+              "name": "modelRow2",
+              "format": "vec4<f32>",
+              "byteOffset": 32,
+              "byteSize": 16
+            },
+            {
+              "name": "normalColumn0",
+              "format": "vec4<f32>",
+              "byteOffset": 48,
+              "byteSize": 16
+            },
+            {
+              "name": "normalColumn1",
+              "format": "vec4<f32>",
+              "byteOffset": 64,
+              "byteSize": 16
+            },
+            {
+              "name": "normalColumn2",
+              "format": "vec4<f32>",
+              "byteOffset": 80,
+              "byteSize": 16
+            },
+            {
+              "name": "baseColorMetallic",
+              "format": "vec4<f32>",
+              "byteOffset": 96,
+              "byteSize": 16
+            },
+            {
+              "name": "roughnessAlphaCutoffHandednessFlags",
+              "format": "vec4<f32>",
+              "byteOffset": 112,
+              "byteSize": 16
+            },
+            {
+              "name": "emissiveAlpha",
+              "format": "vec4<f32>",
+              "byteOffset": 128,
+              "byteSize": 16
+            }
+          ]
+        },
+        {
+          "id": "cascaded-shadow",
+          "storage": "uniform",
+          "byteSize": 336,
+          "byteAlignment": 16,
+          "members": [
+            {
+              "name": "matrix0",
+              "format": "mat4x4<f32>",
+              "byteOffset": 0,
+              "byteSize": 64
+            },
+            {
+              "name": "matrix1",
+              "format": "mat4x4<f32>",
+              "byteOffset": 64,
+              "byteSize": 64
+            },
+            {
+              "name": "matrix2",
+              "format": "mat4x4<f32>",
+              "byteOffset": 128,
+              "byteSize": 64
+            },
+            {
+              "name": "matrix3",
+              "format": "mat4x4<f32>",
+              "byteOffset": 192,
+              "byteSize": 64
+            },
+            {
+              "name": "split_depths",
+              "format": "vec4<f32>",
+              "byteOffset": 256,
+              "byteSize": 16
+            },
+            {
+              "name": "blend_starts",
+              "format": "vec4<f32>",
+              "byteOffset": 272,
+              "byteSize": 16
+            },
+            {
+              "name": "texel_world",
+              "format": "vec4<f32>",
+              "byteOffset": 288,
+              "byteSize": 16
+            },
+            {
+              "name": "params",
+              "format": "vec4<f32>",
+              "byteOffset": 304,
+              "byteSize": 16
+            },
+            {
+              "name": "camera_forward",
+              "format": "vec4<f32>",
+              "byteOffset": 320,
+              "byteSize": 16
+            }
+          ]
+        }
+      ],
+      "vertexStreams": [
+        {
+          "id": "geometry",
+          "slot": 0,
+          "arrayStride": 40,
+          "stepMode": "vertex",
+          "attributes": [
+            {
+              "semantic": "POSITION",
+              "shaderLocation": 0,
+              "format": "float32x3",
+              "byteOffset": 0
+            },
+            {
+              "semantic": "NORMAL",
+              "shaderLocation": 1,
+              "format": "float32x3",
+              "byteOffset": 12
+            },
+            {
+              "semantic": "TEXCOORD_0",
+              "shaderLocation": 10,
+              "format": "float32x2",
+              "byteOffset": 24
+            },
+            {
+              "semantic": "TEXCOORD_1",
+              "shaderLocation": 13,
+              "format": "float32x2",
+              "byteOffset": 32
+            }
+          ]
+        },
+        {
+          "id": "instance",
+          "slot": 1,
+          "arrayStride": 144,
+          "stepMode": "instance",
+          "attributes": [
+            {
+              "semantic": "MODEL_ROW_0",
+              "shaderLocation": 2,
+              "format": "float32x4",
+              "byteOffset": 0
+            },
+            {
+              "semantic": "MODEL_ROW_1",
+              "shaderLocation": 3,
+              "format": "float32x4",
+              "byteOffset": 16
+            },
+            {
+              "semantic": "MODEL_ROW_2",
+              "shaderLocation": 4,
+              "format": "float32x4",
+              "byteOffset": 32
+            },
+            {
+              "semantic": "NORMAL_COLUMN_0",
+              "shaderLocation": 5,
+              "format": "float32x4",
+              "byteOffset": 48
+            },
+            {
+              "semantic": "NORMAL_COLUMN_1",
+              "shaderLocation": 6,
+              "format": "float32x4",
+              "byteOffset": 64
+            },
+            {
+              "semantic": "NORMAL_COLUMN_2",
+              "shaderLocation": 7,
+              "format": "float32x4",
+              "byteOffset": 80
+            },
+            {
+              "semantic": "BASE_COLOR_METALLIC",
+              "shaderLocation": 8,
+              "format": "float32x4",
+              "byteOffset": 96
+            },
+            {
+              "semantic": "ROUGHNESS_ALPHA_CUTOFF_HANDEDNESS_FLAGS",
+              "shaderLocation": 9,
+              "format": "float32x4",
+              "byteOffset": 112
+            },
+            {
+              "semantic": "EMISSIVE_ALPHA",
+              "shaderLocation": 12,
+              "format": "float32x4",
+              "byteOffset": 128
+            }
+          ]
+        },
+        {
+          "id": "tangent",
+          "slot": 2,
+          "arrayStride": 16,
+          "stepMode": "vertex",
+          "attributes": [
+            {
+              "semantic": "TANGENT",
+              "shaderLocation": 11,
+              "format": "float32x4",
+              "byteOffset": 0
+            }
+          ]
+        }
+      ],
+      "bindGroupLayouts": [
+        {
+          "id": "forward-frame",
+          "group": 0,
+          "bindings": [
+            {
+              "name": "frame",
+              "binding": 0,
+              "visibility": [
+                "vertex",
+                "fragment"
+              ],
+              "resource": {
+                "kind": "uniform-buffer",
+                "dataLayout": "frame",
+                "minBindingSize": 208
+              }
+            },
+            {
+              "name": "shadowMap",
+              "binding": 1,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "texture",
+                "sampleType": "depth",
+                "viewDimension": "2d-array",
+                "multisampled": false
+              }
+            },
+            {
+              "name": "shadowSampler",
+              "binding": 2,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "sampler",
+                "samplerType": "comparison"
+              }
+            },
+            {
+              "name": "specularEnvironment",
+              "binding": 3,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "texture",
+                "sampleType": "float",
+                "viewDimension": "cube",
+                "multisampled": false
+              }
+            },
+            {
+              "name": "diffuseEnvironment",
+              "binding": 4,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "texture",
+                "sampleType": "float",
+                "viewDimension": "cube",
+                "multisampled": false
+              }
+            },
+            {
+              "name": "brdfLut",
+              "binding": 5,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "texture",
+                "sampleType": "float",
+                "viewDimension": "2d",
+                "multisampled": false
+              }
+            },
+            {
+              "name": "environmentSampler",
+              "binding": 6,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "sampler",
+                "samplerType": "filtering"
+              }
+            },
+            {
+              "name": "cascadedShadow",
+              "binding": 7,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "uniform-buffer",
+                "dataLayout": "cascaded-shadow",
+                "minBindingSize": 336
+              }
+            }
+          ]
+        },
+        {
+          "id": "shadow-frame",
+          "group": 0,
+          "bindings": [
+            {
+              "name": "frame",
+              "binding": 0,
+              "visibility": [
+                "vertex"
+              ],
+              "resource": {
+                "kind": "uniform-buffer",
+                "dataLayout": "frame",
+                "minBindingSize": 208
+              }
+            }
+          ]
+        },
+        {
+          "id": "material",
+          "group": 1,
+          "bindings": [
+            {
+              "name": "baseColorMap",
+              "binding": 0,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "texture",
+                "sampleType": "float",
+                "viewDimension": "2d",
+                "multisampled": false
+              }
+            },
+            {
+              "name": "baseColorSampler",
+              "binding": 1,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "sampler",
+                "samplerType": "filtering"
+              }
+            },
+            {
+              "name": "metallicRoughnessMap",
+              "binding": 2,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "texture",
+                "sampleType": "float",
+                "viewDimension": "2d",
+                "multisampled": false
+              }
+            },
+            {
+              "name": "metallicRoughnessSampler",
+              "binding": 3,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "sampler",
+                "samplerType": "filtering"
+              }
+            },
+            {
+              "name": "materialTextures",
+              "binding": 4,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "uniform-buffer",
+                "dataLayout": "material",
+                "minBindingSize": 160
+              }
+            },
+            {
+              "name": "occlusionMap",
+              "binding": 5,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "texture",
+                "sampleType": "float",
+                "viewDimension": "2d",
+                "multisampled": false
+              }
+            },
+            {
+              "name": "occlusionSampler",
+              "binding": 6,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "sampler",
+                "samplerType": "filtering"
+              }
+            },
+            {
+              "name": "normalMap",
+              "binding": 7,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "texture",
+                "sampleType": "float",
+                "viewDimension": "2d",
+                "multisampled": false
+              }
+            },
+            {
+              "name": "normalSampler",
+              "binding": 8,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "sampler",
+                "samplerType": "filtering"
+              }
+            },
+            {
+              "name": "emissiveMap",
+              "binding": 9,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "texture",
+                "sampleType": "float",
+                "viewDimension": "2d",
+                "multisampled": false
+              }
+            },
+            {
+              "name": "emissiveSampler",
+              "binding": 10,
+              "visibility": [
+                "fragment"
+              ],
+              "resource": {
+                "kind": "sampler",
+                "samplerType": "filtering"
+              }
+            }
+          ]
+        }
+      ],
+      "attachmentProfiles": [
+        {
+          "id": "forward-opaque",
+          "pass": "forward",
+          "sampleCount": 4,
+          "resolve": "required",
+          "colorAttachments": [
+            {
+              "format": "rgba16float",
+              "writeMask": "all",
+              "blend": null
+            }
+          ],
+          "depthAttachment": {
+            "format": "depth24plus",
+            "depthWriteEnabled": true,
+            "depthCompare": "less",
+            "depthBias": 0,
+            "depthBiasSlopeScale": 0
+          }
+        },
+        {
+          "id": "forward-blend",
+          "pass": "forward",
+          "sampleCount": 4,
+          "resolve": "required",
+          "colorAttachments": [
+            {
+              "format": "rgba16float",
+              "writeMask": "all",
+              "blend": {
+                "color": {
+                  "srcFactor": "src-alpha",
+                  "dstFactor": "one-minus-src-alpha",
+                  "operation": "add"
+                },
+                "alpha": {
+                  "srcFactor": "one",
+                  "dstFactor": "one-minus-src-alpha",
+                  "operation": "add"
+                }
+              }
+            }
+          ],
+          "depthAttachment": {
+            "format": "depth24plus",
+            "depthWriteEnabled": false,
+            "depthCompare": "less",
+            "depthBias": 0,
+            "depthBiasSlopeScale": 0
+          }
+        },
+        {
+          "id": "shadow",
+          "pass": "shadow",
+          "sampleCount": 1,
+          "resolve": "none",
+          "colorAttachments": [],
+          "depthAttachment": {
+            "format": "depth32float",
+            "depthWriteEnabled": true,
+            "depthCompare": "less",
+            "depthBias": 1,
+            "depthBiasSlopeScale": 1
+          }
+        }
+      ],
+      "alphaModes": [
+        {
+          "mode": "OPAQUE",
+          "forwardAttachmentProfile": "forward-opaque",
+          "depthWriteEnabled": true,
+          "shadow": "solid",
+          "sort": "none"
+        },
+        {
+          "mode": "MASK",
+          "forwardAttachmentProfile": "forward-opaque",
+          "depthWriteEnabled": true,
+          "shadow": "alpha-cutout",
+          "sort": "none"
+        },
+        {
+          "mode": "BLEND",
+          "forwardAttachmentProfile": "forward-blend",
+          "depthWriteEnabled": false,
+          "shadow": "none",
+          "sort": "back-to-front"
+        }
+      ],
+      "rasterModes": [
+        {
+          "id": "ccw",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        {
+          "id": "cw",
+          "frontFace": "cw",
+          "cullMode": "back"
+        },
+        {
+          "id": "double",
+          "frontFace": "ccw",
+          "cullMode": "none"
+        }
+      ],
+      "materialModes": [
+        {
+          "id": "plain",
+          "bindGroupLayouts": [
+            "forward-frame"
+          ],
+          "vertexStreams": [
+            "geometry",
+            "instance"
+          ]
+        },
+        {
+          "id": "material",
+          "bindGroupLayouts": [
+            "forward-frame",
+            "material"
+          ],
+          "vertexStreams": [
+            "geometry",
+            "instance"
+          ]
+        },
+        {
+          "id": "normal",
+          "bindGroupLayouts": [
+            "forward-frame",
+            "material"
+          ],
+          "vertexStreams": [
+            "geometry",
+            "instance",
+            "tangent"
+          ]
+        }
+      ],
+      "passVariants": [
+        {
+          "id": "forward-plain",
+          "pass": "forward",
+          "entryPoints": {
+            "vertex": "vertexMain",
+            "fragment": "fragmentMain"
+          },
+          "attachmentProfiles": [
+            "forward-opaque",
+            "forward-blend"
+          ],
+          "bindGroupLayouts": [
+            "forward-frame"
+          ],
+          "vertexStreams": [
+            "geometry",
+            "instance"
+          ],
+          "materialMode": "plain",
+          "shadowMode": null,
+          "alphaModes": [
+            "OPAQUE",
+            "MASK",
+            "BLEND"
+          ],
+          "rasterModes": [
+            "ccw",
+            "cw",
+            "double"
+          ]
+        },
+        {
+          "id": "forward-material",
+          "pass": "forward",
+          "entryPoints": {
+            "vertex": "vertexMain",
+            "fragment": "fragmentMaterial"
+          },
+          "attachmentProfiles": [
+            "forward-opaque",
+            "forward-blend"
+          ],
+          "bindGroupLayouts": [
+            "forward-frame",
+            "material"
+          ],
+          "vertexStreams": [
+            "geometry",
+            "instance"
+          ],
+          "materialMode": "material",
+          "shadowMode": null,
+          "alphaModes": [
+            "OPAQUE",
+            "MASK",
+            "BLEND"
+          ],
+          "rasterModes": [
+            "ccw",
+            "cw",
+            "double"
+          ]
+        },
+        {
+          "id": "forward-normal",
+          "pass": "forward",
+          "entryPoints": {
+            "vertex": "vertexNormalMapped",
+            "fragment": "fragmentMaterial"
+          },
+          "attachmentProfiles": [
+            "forward-opaque",
+            "forward-blend"
+          ],
+          "bindGroupLayouts": [
+            "forward-frame",
+            "material"
+          ],
+          "vertexStreams": [
+            "geometry",
+            "instance",
+            "tangent"
+          ],
+          "materialMode": "normal",
+          "shadowMode": null,
+          "alphaModes": [
+            "OPAQUE",
+            "MASK",
+            "BLEND"
+          ],
+          "rasterModes": [
+            "ccw",
+            "cw",
+            "double"
+          ]
+        },
+        {
+          "id": "shadow-solid",
+          "pass": "shadow",
+          "entryPoints": {
+            "vertex": "shadowMain",
+            "fragment": null
+          },
+          "attachmentProfiles": [
+            "shadow"
+          ],
+          "bindGroupLayouts": [
+            "shadow-frame"
+          ],
+          "vertexStreams": [
+            "geometry",
+            "instance"
+          ],
+          "materialMode": null,
+          "shadowMode": "solid",
+          "alphaModes": [
+            "OPAQUE"
+          ],
+          "rasterModes": [
+            "ccw",
+            "cw",
+            "double"
+          ]
+        },
+        {
+          "id": "shadow-mask-plain",
+          "pass": "shadow",
+          "entryPoints": {
+            "vertex": "shadowMaskMain",
+            "fragment": "shadowMaskPlain"
+          },
+          "attachmentProfiles": [
+            "shadow"
+          ],
+          "bindGroupLayouts": [
+            "shadow-frame"
+          ],
+          "vertexStreams": [
+            "geometry",
+            "instance"
+          ],
+          "materialMode": null,
+          "shadowMode": "maskPlain",
+          "alphaModes": [
+            "MASK"
+          ],
+          "rasterModes": [
+            "ccw",
+            "cw",
+            "double"
+          ]
+        },
+        {
+          "id": "shadow-mask-material",
+          "pass": "shadow",
+          "entryPoints": {
+            "vertex": "shadowMaskMain",
+            "fragment": "shadowMaskTextured"
+          },
+          "attachmentProfiles": [
+            "shadow"
+          ],
+          "bindGroupLayouts": [
+            "shadow-frame",
+            "material"
+          ],
+          "vertexStreams": [
+            "geometry",
+            "instance"
+          ],
+          "materialMode": null,
+          "shadowMode": "maskMaterial",
+          "alphaModes": [
+            "MASK"
+          ],
+          "rasterModes": [
+            "ccw",
+            "cw",
+            "double"
+          ]
+        }
+      ]
+    }
+  },
+  "dependencies": [],
+  "modules": [
+    {
+      "id": "module.67a60b628ee68464caa757cbfd18dacb0d57edd771603903ca94bebd8855182c",
+      "language": "wgsl",
+      "source": "\nstruct DeepPackageMaterialTextures {\n  baseRow0: vec4f,\n  baseRow1: vec4f,\n  mrRow0: vec4f,\n  mrRow1: vec4f,\n  occlusionRow0: vec4f,\n  occlusionRow1: vec4f,\n  normalRow0: vec4f,\n  normalRow1: vec4f,\n  emissiveRow0: vec4f,\n  emissiveRow1: vec4f,\n};\n@group(1) @binding(0) var deepBaseColorMap: texture_2d<f32>;\n@group(1) @binding(1) var deepBaseColorSampler: sampler;\n@group(1) @binding(2) var deepMetallicRoughnessMap: texture_2d<f32>;\n@group(1) @binding(3) var deepMetallicRoughnessSampler: sampler;\n@group(1) @binding(4) var<uniform> deepMaterialTextures: DeepPackageMaterialTextures;\n@group(1) @binding(5) var deepOcclusionMap: texture_2d<f32>;\n@group(1) @binding(6) var deepOcclusionSampler: sampler;\n@group(1) @binding(7) var deepNormalMap: texture_2d<f32>;\n@group(1) @binding(8) var deepNormalSampler: sampler;\n@group(1) @binding(9) var deepEmissiveMap: texture_2d<f32>;\n@group(1) @binding(10) var deepEmissiveSampler: sampler;\nfn deepPackageSlotUv(uv0: vec2f, uv1: vec2f, row0: vec4f, row1: vec4f) -> vec2f {\n  let uv = vec3f(select(uv0, uv1, row0.w > 1.5), 1.0);\n  return vec2f(\n    dot(row0.xyz, uv),\n    dot(row1.xyz, uv),\n  );\n}\nfn deepPackageSafeNormalize(value: vec3f, fallback: vec3f) -> vec3f {\n  let lengthSquared = dot(value, value);\n  return select(fallback, value * inverseSqrt(max(lengthSquared, 0.00000001)), lengthSquared > 0.00000001);\n}\nfn deepPackageTangentFallback(normal: vec3f) -> vec3f {\n  let axis = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), abs(normal.x) > 0.9);\n  return deepPackageSafeNormalize(cross(axis, normal), vec3f(0.0, 0.0, 1.0));\n}\nfn deepPackageMappedNormal(\n  geometricNormal: vec3f,\n  tangentInput: vec4f,\n  modelHandedness: f32,\n  uv0: vec2f,\n  uv1: vec2f,\n) -> vec3f {\n  let normalUv = deepPackageSlotUv(\n    uv0, uv1, deepMaterialTextures.normalRow0, deepMaterialTextures.normalRow1,\n  );\n  let sourceTangent = deepPackageSafeNormalize(\n    tangentInput.xyz - geometricNormal * dot(geometricNormal, tangentInput.xyz),\n    deepPackageTangentFallback(geometricNormal),\n  );\n  let sourceHandedness = tangentInput.w * modelHandedness;\n  let sourceBitangent = cross(geometricNormal, sourceTangent) * sourceHandedness;\n  let determinant = deepMaterialTextures.normalRow0.x * deepMaterialTextures.normalRow1.y\n    - deepMaterialTextures.normalRow0.y * deepMaterialTextures.normalRow1.x;\n  let determinantSign = select(-1.0, 1.0, determinant >= 0.0);\n  let tangent = deepPackageSafeNormalize(\n    (sourceTangent * deepMaterialTextures.normalRow1.y\n      - sourceBitangent * deepMaterialTextures.normalRow1.x) * determinantSign,\n    deepPackageTangentFallback(geometricNormal),\n  );\n  let bitangent = cross(geometricNormal, tangent) * sourceHandedness * determinantSign;\n  let sampled = textureSample(deepNormalMap, deepNormalSampler, normalUv).rgb * 2.0 - 1.0;\n  let tangentNormal = deepPackageSafeNormalize(\n    vec3f(sampled.xy * deepMaterialTextures.normalRow1.w, sampled.z), vec3f(0.0, 0.0, 1.0),\n  );\n  return deepPackageSafeNormalize(\n    tangent * tangentNormal.x + bitangent * tangentNormal.y + geometricNormal * tangentNormal.z,\n    geometricNormal,\n  );\n}\n// Deep Shader IR schema 1; generated deterministically.\nstruct DeepPbrFrame {\n  view: mat4x4f,\n  light: mat4x4f,\n  eye: vec4f,\n  background: vec4f,\n  floor: vec4f,\n  lightDirection: vec4f,\n  tuning: vec4f,\n};\n@group(0) @binding(0) var<uniform> deepPbrFrame: DeepPbrFrame;\n@group(0) @binding(1) var deepShadowMap: texture_depth_2d_array;\n@group(0) @binding(2) var deepShadowSampler: sampler_comparison;\n@group(0) @binding(3) var deepSpecularEnvironment: texture_cube<f32>;\n@group(0) @binding(4) var deepDiffuseEnvironment: texture_cube<f32>;\n@group(0) @binding(5) var deepBrdfLut: texture_2d<f32>;\n@group(0) @binding(6) var deepEnvironmentSampler: sampler;\nconst DEEP_PI: f32 = 3.141592653589793;\nfn deepSafeNormalize(value: vec3f, fallback: vec3f) -> vec3f {\n  let lengthSquared = dot(value, value);\n  let normalized = value * inverseSqrt(max(lengthSquared, 0.00000001));\n  return select(fallback, normalized, lengthSquared > 0.00000001);\n}\nfn deepFresnelSchlick(cosine: f32, f0: vec3f) -> vec3f {\n  return f0 + (vec3f(1.0) - f0) * pow(1.0 - cosine, 5.0);\n}\nfn deepDistributionGgx(nDotH: f32, roughness: f32) -> f32 {\n  let alpha = roughness * roughness;\n  let alpha2 = alpha * alpha;\n  let denominator = nDotH * nDotH * (alpha2 - 1.0) + 1.0;\n  return alpha2 / max(DEEP_PI * denominator * denominator, 0.000001);\n}\nfn deepGeometrySchlickGgx(nDotX: f32, roughness: f32) -> f32 {\n  let k = (roughness + 1.0) * (roughness + 1.0) / 8.0;\n  return nDotX / max(nDotX * (1.0 - k) + k, 0.0001);\n}\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nfn deepLowerStandardPbr(worldPosition: vec3f, baseInput: vec3f, normalInput: vec3f, metallicInput: f32, roughnessInput: f32, occlusionInput: f32, emission: vec3f, alphaInput: f32) -> vec4f {\n  let baseColor = max(baseInput, vec3f(0.0));\n  let normal = deepSafeNormalize(normalInput, vec3f(0.0, 1.0, 0.0));\n  let view = deepSafeNormalize(deepPbrFrame.eye.xyz - worldPosition, vec3f(0.0, 0.0, 1.0));\n  let light = deepSafeNormalize(deepPbrFrame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));\n  let halfVector = deepSafeNormalize(view + light, normal);\n  let metallic = clamp(metallicInput, 0.0, 1.0);\n  let roughness = clamp(roughnessInput, 0.045, 1.0);\n  let nDotL = clamp(dot(normal, light), 0.0, 1.0);\n  let nDotV = clamp(dot(normal, view), 0.0001, 1.0);\n  let nDotH = clamp(dot(normal, halfVector), 0.0, 1.0);\n  let vDotH = clamp(dot(view, halfVector), 0.0, 1.0);\n  let f0 = mix(vec3f(0.04), baseColor, metallic);\n  let fresnel = deepFresnelSchlick(vDotH, f0);\n  let distribution = deepDistributionGgx(nDotH, roughness);\n  let geometry = deepGeometrySchlickGgx(nDotV, roughness) * deepGeometrySchlickGgx(nDotL, roughness);\n  let specular = distribution * geometry * fresnel / max(4.0 * nDotV * nDotL, 0.0001);\n  let diffuse = (vec3f(1.0) - fresnel) * (1.0 - metallic) * baseColor / DEEP_PI;\n  let shadow = deepShadowVisibility(worldPosition, normal, nDotL);\n  let directRadiance = vec3f(2.5, 2.4, 2.25);\n  let direct = (diffuse + specular) * directRadiance * nDotL * shadow;\n  let occlusion = clamp(occlusionInput, 0.0, 1.0);\n  let indirectFresnel = f0 + (max(vec3f(1.0 - roughness), f0) - f0) * pow(1.0 - nDotV, 5.0);\n  let irradiance = textureSampleLevel(deepDiffuseEnvironment, deepEnvironmentSampler, normal, 0.0).rgb;\n  let indirectDiffuse = (vec3f(1.0) - indirectFresnel) * (1.0 - metallic) * baseColor * irradiance;\n  let reflection = reflect(-view, normal);\n  let maxSpecularLod = f32(textureNumLevels(deepSpecularEnvironment) - 1u);\n  let radiance = textureSampleLevel(deepSpecularEnvironment, deepEnvironmentSampler, reflection, roughness * maxSpecularLod).rgb;\n  let dfg = textureSampleLevel(deepBrdfLut, deepEnvironmentSampler, vec2f(nDotV, roughness), 0.0).rg;\n  let energyCompensation = vec3f(1.0) + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);\n  let indirectSpecular = radiance * (f0 * dfg.x + dfg.y) * energyCompensation;\n  let color = direct + (indirectDiffuse + indirectSpecular) * occlusion + emission;\n  return vec4f(max(color, vec3f(0.0)), clamp(alphaInput, 0.0, 1.0));\n}\nstruct DeepVertexInput {\n  @location(0) a_position: vec3f,\n  @location(1) a_normal: vec3f,\n  @location(2) a_modelRow0: vec4f,\n  @location(3) a_modelRow1: vec4f,\n  @location(4) a_modelRow2: vec4f,\n  @location(5) a_normalColumn0: vec4f,\n  @location(6) a_normalColumn1: vec4f,\n  @location(7) a_normalColumn2: vec4f,\n  @location(8) a_colorMetal: vec4f,\n  @location(9) a_material: vec4f,\n  @location(10) a_uv0: vec2f,\n  @location(11) a_tangent: vec4f,\n  @location(12) a_emissiveAlpha: vec4f,\n  @location(13) a_uv1: vec2f,\n};\nstruct DeepVertexOut {\n  @builtin(position) position: vec4f,\n  @location(0) v_worldPosition: vec3f,\n  @location(1) v_normalWorld: vec3f,\n  @location(2) v_surfaceColorMetal: vec4f,\n  @location(3) v_surfaceMaterial: vec4f,\n  @location(4) v_surfaceEmissiveAlpha: vec4f,\n  @location(5) v_surfaceUv0: vec2f,\n  @location(6) v_surfaceUv1: vec2f,\n  @location(7) v_surfaceTangent: vec4f,\n};\n@vertex fn vertexNormalMapped(input: DeepVertexInput) -> DeepVertexOut {\n  var output: DeepVertexOut;\n  let n_pbrFrameView: mat4x4f = deepPbrFrame.view;\n  let n_worldBasis0: vec3f = vec3f(1.0, 0.0, 0.0);\n  let n_modelRow0: vec4f = input.a_modelRow0;\n  let n_position: vec3f = input.a_position;\n  let n_one: f32 = 1.0;\n  let n_position4: vec4f = vec4f(n_position, n_one);\n  let n_worldComponent0: f32 = dot(n_modelRow0, n_position4);\n  let n_worldAxis0: vec3f = n_worldBasis0 * vec3f(n_worldComponent0);\n  let n_worldBasis1: vec3f = vec3f(0.0, 1.0, 0.0);\n  let n_modelRow1: vec4f = input.a_modelRow1;\n  let n_worldComponent1: f32 = dot(n_modelRow1, n_position4);\n  let n_worldAxis1: vec3f = n_worldBasis1 * vec3f(n_worldComponent1);\n  let n_worldPosition01: vec3f = n_worldAxis0 + n_worldAxis1;\n  let n_worldBasis2: vec3f = vec3f(0.0, 0.0, 1.0);\n  let n_modelRow2: vec4f = input.a_modelRow2;\n  let n_worldComponent2: f32 = dot(n_modelRow2, n_position4);\n  let n_worldAxis2: vec3f = n_worldBasis2 * vec3f(n_worldComponent2);\n  let n_worldPosition: vec3f = n_worldPosition01 + n_worldAxis2;\n  let n_clipPosition: vec4f = n_pbrFrameView * vec4f(n_worldPosition, 1.0);\n  let n_normalColumn0: vec4f = input.a_normalColumn0;\n  let n_normalBasis0: vec3f = n_normalColumn0.xyz;\n  let n_normal: vec3f = input.a_normal;\n  let n_normalComponent0: f32 = n_normal.x;\n  let n_normalAxis0: vec3f = n_normalBasis0 * vec3f(n_normalComponent0);\n  let n_normalColumn1: vec4f = input.a_normalColumn1;\n  let n_normalBasis1: vec3f = n_normalColumn1.xyz;\n  let n_normalComponent1: f32 = n_normal.y;\n  let n_normalAxis1: vec3f = n_normalBasis1 * vec3f(n_normalComponent1);\n  let n_normalWorld01: vec3f = n_normalAxis0 + n_normalAxis1;\n  let n_normalColumn2: vec4f = input.a_normalColumn2;\n  let n_normalBasis2: vec3f = n_normalColumn2.xyz;\n  let n_normalComponent2: f32 = n_normal.z;\n  let n_normalAxis2: vec3f = n_normalBasis2 * vec3f(n_normalComponent2);\n  let n_normalWorldRaw: vec3f = n_normalWorld01 + n_normalAxis2;\n  let n_normalWorld: vec3f = normalize(n_normalWorldRaw);\n  let n_colorMetal: vec4f = input.a_colorMetal;\n  let n_material: vec4f = input.a_material;\n  let n_emissiveAlpha: vec4f = input.a_emissiveAlpha;\n  let n_uv0: vec2f = input.a_uv0;\n  let n_uv1: vec2f = input.a_uv1;\n  let n_tangentWorldBasis0: vec3f = vec3f(1.0, 0.0, 0.0);\n  let n_tangent: vec4f = input.a_tangent;\n  let n_tangentDirection: vec3f = n_tangent.xyz;\n  let n_zero: f32 = 0.0;\n  let n_tangentDirection4: vec4f = vec4f(n_tangentDirection, n_zero);\n  let n_tangentWorldComponent0: f32 = dot(n_modelRow0, n_tangentDirection4);\n  let n_tangentWorldAxis0: vec3f = n_tangentWorldBasis0 * vec3f(n_tangentWorldComponent0);\n  let n_tangentWorldBasis1: vec3f = vec3f(0.0, 1.0, 0.0);\n  let n_tangentWorldComponent1: f32 = dot(n_modelRow1, n_tangentDirection4);\n  let n_tangentWorldAxis1: vec3f = n_tangentWorldBasis1 * vec3f(n_tangentWorldComponent1);\n  let n_tangentWorld01: vec3f = n_tangentWorldAxis0 + n_tangentWorldAxis1;\n  let n_tangentWorldBasis2: vec3f = vec3f(0.0, 0.0, 1.0);\n  let n_tangentWorldComponent2: f32 = dot(n_modelRow2, n_tangentDirection4);\n  let n_tangentWorldAxis2: vec3f = n_tangentWorldBasis2 * vec3f(n_tangentWorldComponent2);\n  let n_tangentWorldDirection: vec3f = n_tangentWorld01 + n_tangentWorldAxis2;\n  let n_tangentSign: f32 = n_tangent.w;\n  let n_tangentWorld: vec4f = vec4f(n_tangentWorldDirection, n_tangentSign);\n  output.position = n_clipPosition;\n  output.v_worldPosition = n_worldPosition;\n  output.v_normalWorld = n_normalWorld;\n  output.v_surfaceColorMetal = n_colorMetal;\n  output.v_surfaceMaterial = n_material;\n  output.v_surfaceEmissiveAlpha = n_emissiveAlpha;\n  output.v_surfaceUv0 = n_uv0;\n  output.v_surfaceUv1 = n_uv1;\n  output.v_surfaceTangent = n_tangentWorld;\n  return output;\n}\n@fragment fn fragmentMaterial(input: DeepVertexOut) -> @location(0) vec4f {\n  let n_colorMetal: vec4f = input.v_surfaceColorMetal;\n  var deepBaseColorSample = vec4f(1.0);\n  var deepMetallicRoughnessSample = vec4f(1.0);\n  var deepOcclusionSample = 1.0;\n  var deepEmissiveSample = vec3f(1.0);\n  if (deepMaterialTextures.baseRow0.w > 0.5) {\n    deepBaseColorSample = textureSample(\n      deepBaseColorMap, deepBaseColorSampler,\n      deepPackageSlotUv(input.v_surfaceUv0, input.v_surfaceUv1, deepMaterialTextures.baseRow0, deepMaterialTextures.baseRow1),\n    );\n  }\n  if (deepMaterialTextures.mrRow0.w > 0.5) {\n    deepMetallicRoughnessSample = textureSample(\n      deepMetallicRoughnessMap, deepMetallicRoughnessSampler,\n      deepPackageSlotUv(input.v_surfaceUv0, input.v_surfaceUv1, deepMaterialTextures.mrRow0, deepMaterialTextures.mrRow1),\n    );\n  }\n  if (deepMaterialTextures.occlusionRow0.w > 0.5) {\n    let deepSampledOcclusion = textureSample(\n      deepOcclusionMap, deepOcclusionSampler,\n      deepPackageSlotUv(input.v_surfaceUv0, input.v_surfaceUv1, deepMaterialTextures.occlusionRow0, deepMaterialTextures.occlusionRow1),\n    ).r;\n    deepOcclusionSample = 1.0 + deepMaterialTextures.occlusionRow1.w * (deepSampledOcclusion - 1.0);\n  }\n  if (deepMaterialTextures.emissiveRow0.w > 0.5) {\n    deepEmissiveSample = textureSample(\n      deepEmissiveMap, deepEmissiveSampler,\n      deepPackageSlotUv(input.v_surfaceUv0, input.v_surfaceUv1, deepMaterialTextures.emissiveRow0, deepMaterialTextures.emissiveRow1),\n    ).rgb;\n  }\n  let n_baseColor: vec3f = n_colorMetal.rgb * deepBaseColorSample.rgb;\n  let n_normalInput: vec3f = input.v_normalWorld;\n  let n_surfaceNormal: vec3f = normalize(n_normalInput);\n  let n_metallic: f32 = n_colorMetal.a * deepMetallicRoughnessSample.b;\n  let n_material: vec4f = input.v_surfaceMaterial;\n  let n_roughness: f32 = n_material.x * deepMetallicRoughnessSample.g;\n  let n_occlusion: f32 = deepOcclusionSample;\n  let n_emissiveAlpha: vec4f = input.v_surfaceEmissiveAlpha;\n  let n_emission: vec3f = n_emissiveAlpha.rgb * deepEmissiveSample * deepMaterialTextures.emissiveRow1.w;\n  let n_alpha: f32 = n_emissiveAlpha.a * deepBaseColorSample.a;\n  var deepPackageNormal = n_surfaceNormal;\n  if (deepMaterialTextures.normalRow0.w > 0.5) {\n    deepPackageNormal = deepPackageMappedNormal(\n      n_surfaceNormal, input.v_surfaceTangent, n_material.z, input.v_surfaceUv0, input.v_surfaceUv1,\n    );\n  }\n  if (n_alpha < n_material.y) { discard; }\n  return deepLowerStandardPbr(input.v_worldPosition, n_baseColor, deepPackageNormal, n_metallic, n_roughness, n_occlusion, n_emission, 1.0);\n}\n\nstruct DeepPackageTexturedShadowInput {\n  @location(0) a_position: vec3f,\n  @location(2) a_modelRow0: vec4f,\n  @location(3) a_modelRow1: vec4f,\n  @location(4) a_modelRow2: vec4f,\n  @location(9) a_material: vec4f,\n  @location(10) a_uv0: vec2f,\n  @location(12) a_emissiveAlpha: vec4f,\n  @location(13) a_uv1: vec2f,\n};\nstruct DeepShadowMaskMaterialVertexOut {\n  @builtin(position) position: vec4f,\n  @location(0) alphaCutoff: vec2f,\n  @location(1) uv0: vec2f,\n  @location(2) uv1: vec2f,\n};\n@vertex fn shadowMaskMain(input: DeepPackageTexturedShadowInput) -> DeepShadowMaskMaterialVertexOut {\n  let deepPackagePosition = vec4f(input.a_position, 1.0);\n  let deepPackageWorld = vec3f(\n    dot(input.a_modelRow0, deepPackagePosition),\n    dot(input.a_modelRow1, deepPackagePosition),\n    dot(input.a_modelRow2, deepPackagePosition),\n  );\n  var output: DeepShadowMaskMaterialVertexOut;\n  output.position = deepPbrFrame.light * vec4f(deepPackageWorld, 1.0);\n  output.alphaCutoff = vec2f(input.a_emissiveAlpha.a, input.a_material.y);\n  output.uv0 = input.a_uv0;\n  output.uv1 = input.a_uv1;\n  return output;\n}\n@fragment fn shadowMaskTextured(input: DeepShadowMaskMaterialVertexOut) {\n  var sampledAlpha = 1.0;\n  if (deepMaterialTextures.baseRow0.w > 0.5) {\n    sampledAlpha = textureSample(\n      deepBaseColorMap,\n      deepBaseColorSampler,\n      deepPackageSlotUv(\n        input.uv0, input.uv1, deepMaterialTextures.baseRow0, deepMaterialTextures.baseRow1,\n      ),\n    ).a;\n  }\n  if (input.alphaCutoff.x * sampledAlpha < input.alphaCutoff.y) { discard; }\n}\n\nstruct DeepCascadedShadowData {\n  matrices: array<mat4x4f, 4>,\n  split_depths: vec4f,\n  blend_starts: vec4f,\n  texel_world: vec4f,\n  params: vec4f,\n  camera_forward: vec4f,\n};\n@group(0) @binding(7) var<uniform> deepCascadedShadow: DeepCascadedShadowData;\nfn deepCascadeIndex(viewDepth: f32) -> u32 {\n  let count = clamp(u32(deepCascadedShadow.params.x), 1u, 4u);\n  for (var index = 0u; index < count; index++) {\n    if (viewDepth <= deepCascadedShadow.split_depths[index]) { return index; }\n  }\n  return count - 1u;\n}\nfn deepSampleCascade(index: u32, world: vec3f, normal: vec3f, nDotL: f32) -> f32 {\n  let receiver = world + normal * deepCascadedShadow.texel_world[index] * (1.0 - clamp(nDotL, 0.0, 1.0));\n  let clip = deepCascadedShadow.matrices[index] * vec4f(receiver, 1.0);\n  let projected = clip.xyz / clip.w;\n  let uv = projected.xy * vec2f(0.5, -0.5) + 0.5;\n  let inside = all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)) && projected.z >= 0.0 && projected.z <= 1.0;\n  if (!inside) { return 1.0; }\n  var visibility = 0.0;\n  for (var y = -1; y <= 1; y++) {\n    for (var x = -1; x <= 1; x++) {\n      visibility += textureSampleCompareLevel(deepShadowMap, deepShadowSampler,\n        uv + vec2f(f32(x), f32(y)) * deepCascadedShadow.params.z,\n        i32(index), projected.z - deepCascadedShadow.params.y);\n    }\n  }\n  return visibility / 9.0;\n}\nfn deepShadowVisibility(world: vec3f, normal: vec3f, nDotL: f32) -> f32 {\n  let count = clamp(u32(deepCascadedShadow.params.x), 1u, 4u);\n  let viewDepth = dot(world - deepPbrFrame.eye.xyz, deepCascadedShadow.camera_forward.xyz);\n  if (viewDepth > deepCascadedShadow.split_depths[count - 1u]) { return 1.0; }\n  let index = deepCascadeIndex(viewDepth);\n  let current = deepSampleCascade(index, world, normal, nDotL);\n  if (index + 1u >= count) { return current; }\n  let blendStart = deepCascadedShadow.blend_starts[index];\n  let split = deepCascadedShadow.split_depths[index];\n  return mix(current, deepSampleCascade(index + 1u, world, normal, nDotL), smoothstep(blendStart, split, viewDepth));\n}\n",
+      "sourceHash": {
+        "algorithm": "sha256",
+        "value": "91709ec6cb2958b17c8f2a1b4c096a102e07ce7f07cde665b7a4a84098f72929"
+      },
+      "dependencyIds": []
+    }
+  ],
+  "passes": [
+    {
+      "id": "webgpu/forwardCcw",
+      "techniqueId": "webgpu",
+      "passId": "forwardCcw",
+      "kind": "forward",
+      "moduleId": "module.67a60b628ee68464caa757cbfd18dacb0d57edd771603903ca94bebd8855182c",
+      "entryPoints": {
+        "vertex": "vertexNormalMapped",
+        "fragment": "fragmentMaterial"
+      },
+      "sourceMap": [
+        {
+          "stage": "vertex",
+          "nodeId": "pbrFrameView",
+          "generatedLine": 116
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldBasis0",
+          "generatedLine": 117
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "modelRow0",
+          "generatedLine": 118
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "position",
+          "generatedLine": 119
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "one",
+          "generatedLine": 120
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "position4",
+          "generatedLine": 121
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldComponent0",
+          "generatedLine": 122
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldAxis0",
+          "generatedLine": 123
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldBasis1",
+          "generatedLine": 124
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "modelRow1",
+          "generatedLine": 125
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldComponent1",
+          "generatedLine": 126
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldAxis1",
+          "generatedLine": 127
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldPosition01",
+          "generatedLine": 128
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldBasis2",
+          "generatedLine": 129
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "modelRow2",
+          "generatedLine": 130
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldComponent2",
+          "generatedLine": 131
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldAxis2",
+          "generatedLine": 132
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldPosition",
+          "generatedLine": 133
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "clipPosition",
+          "generatedLine": 134
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalColumn0",
+          "generatedLine": 135
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalBasis0",
+          "generatedLine": 136
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normal",
+          "generatedLine": 137
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalComponent0",
+          "generatedLine": 138
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalAxis0",
+          "generatedLine": 139
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalColumn1",
+          "generatedLine": 140
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalBasis1",
+          "generatedLine": 141
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalComponent1",
+          "generatedLine": 142
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalAxis1",
+          "generatedLine": 143
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalWorld01",
+          "generatedLine": 144
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalColumn2",
+          "generatedLine": 145
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalBasis2",
+          "generatedLine": 146
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalComponent2",
+          "generatedLine": 147
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalAxis2",
+          "generatedLine": 148
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalWorldRaw",
+          "generatedLine": 149
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalWorld",
+          "generatedLine": 150
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "colorMetal",
+          "generatedLine": 151
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "material",
+          "generatedLine": 152
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "emissiveAlpha",
+          "generatedLine": 153
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "uv0",
+          "generatedLine": 154
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "uv1",
+          "generatedLine": 155
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldBasis0",
+          "generatedLine": 156
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangent",
+          "generatedLine": 157
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentDirection",
+          "generatedLine": 158
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "zero",
+          "generatedLine": 159
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentDirection4",
+          "generatedLine": 160
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldComponent0",
+          "generatedLine": 161
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldAxis0",
+          "generatedLine": 162
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldBasis1",
+          "generatedLine": 163
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldComponent1",
+          "generatedLine": 164
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldAxis1",
+          "generatedLine": 165
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorld01",
+          "generatedLine": 166
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldBasis2",
+          "generatedLine": 167
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldComponent2",
+          "generatedLine": 168
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldAxis2",
+          "generatedLine": 169
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldDirection",
+          "generatedLine": 170
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentSign",
+          "generatedLine": 171
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorld",
+          "generatedLine": 172
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "colorMetal",
+          "generatedLine": 185
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "baseColor",
+          "generatedLine": 186
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "normalInput",
+          "generatedLine": 187
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "surfaceNormal",
+          "generatedLine": 188
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "metallic",
+          "generatedLine": 189
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "material",
+          "generatedLine": 190
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "roughness",
+          "generatedLine": 191
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "occlusion",
+          "generatedLine": 192
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "emissiveAlpha",
+          "generatedLine": 193
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "emission",
+          "generatedLine": 194
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "alpha",
+          "generatedLine": 195
+        }
+      ],
+      "pipeline": {
+        "passVariantId": "forward-normal",
+        "attachmentProfileId": "forward-opaque",
+        "alphaMode": "MASK",
+        "rasterMode": "ccw"
+      },
+      "cacheKey": "45f2a2522b60a07dfc725d880e157d14045d2e6973526fb738bca266f3edf96e"
+    },
+    {
+      "id": "webgpu/forwardCw",
+      "techniqueId": "webgpu",
+      "passId": "forwardCw",
+      "kind": "forward",
+      "moduleId": "module.67a60b628ee68464caa757cbfd18dacb0d57edd771603903ca94bebd8855182c",
+      "entryPoints": {
+        "vertex": "vertexNormalMapped",
+        "fragment": "fragmentMaterial"
+      },
+      "sourceMap": [
+        {
+          "stage": "vertex",
+          "nodeId": "pbrFrameView",
+          "generatedLine": 116
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldBasis0",
+          "generatedLine": 117
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "modelRow0",
+          "generatedLine": 118
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "position",
+          "generatedLine": 119
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "one",
+          "generatedLine": 120
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "position4",
+          "generatedLine": 121
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldComponent0",
+          "generatedLine": 122
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldAxis0",
+          "generatedLine": 123
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldBasis1",
+          "generatedLine": 124
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "modelRow1",
+          "generatedLine": 125
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldComponent1",
+          "generatedLine": 126
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldAxis1",
+          "generatedLine": 127
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldPosition01",
+          "generatedLine": 128
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldBasis2",
+          "generatedLine": 129
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "modelRow2",
+          "generatedLine": 130
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldComponent2",
+          "generatedLine": 131
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldAxis2",
+          "generatedLine": 132
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "worldPosition",
+          "generatedLine": 133
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "clipPosition",
+          "generatedLine": 134
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalColumn0",
+          "generatedLine": 135
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalBasis0",
+          "generatedLine": 136
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normal",
+          "generatedLine": 137
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalComponent0",
+          "generatedLine": 138
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalAxis0",
+          "generatedLine": 139
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalColumn1",
+          "generatedLine": 140
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalBasis1",
+          "generatedLine": 141
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalComponent1",
+          "generatedLine": 142
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalAxis1",
+          "generatedLine": 143
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalWorld01",
+          "generatedLine": 144
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalColumn2",
+          "generatedLine": 145
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalBasis2",
+          "generatedLine": 146
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalComponent2",
+          "generatedLine": 147
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalAxis2",
+          "generatedLine": 148
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalWorldRaw",
+          "generatedLine": 149
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "normalWorld",
+          "generatedLine": 150
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "colorMetal",
+          "generatedLine": 151
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "material",
+          "generatedLine": 152
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "emissiveAlpha",
+          "generatedLine": 153
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "uv0",
+          "generatedLine": 154
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "uv1",
+          "generatedLine": 155
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldBasis0",
+          "generatedLine": 156
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangent",
+          "generatedLine": 157
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentDirection",
+          "generatedLine": 158
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "zero",
+          "generatedLine": 159
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentDirection4",
+          "generatedLine": 160
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldComponent0",
+          "generatedLine": 161
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldAxis0",
+          "generatedLine": 162
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldBasis1",
+          "generatedLine": 163
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldComponent1",
+          "generatedLine": 164
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldAxis1",
+          "generatedLine": 165
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorld01",
+          "generatedLine": 166
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldBasis2",
+          "generatedLine": 167
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldComponent2",
+          "generatedLine": 168
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldAxis2",
+          "generatedLine": 169
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorldDirection",
+          "generatedLine": 170
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentSign",
+          "generatedLine": 171
+        },
+        {
+          "stage": "vertex",
+          "nodeId": "tangentWorld",
+          "generatedLine": 172
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "colorMetal",
+          "generatedLine": 185
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "baseColor",
+          "generatedLine": 186
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "normalInput",
+          "generatedLine": 187
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "surfaceNormal",
+          "generatedLine": 188
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "metallic",
+          "generatedLine": 189
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "material",
+          "generatedLine": 190
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "roughness",
+          "generatedLine": 191
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "occlusion",
+          "generatedLine": 192
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "emissiveAlpha",
+          "generatedLine": 193
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "emission",
+          "generatedLine": 194
+        },
+        {
+          "stage": "fragment",
+          "nodeId": "alpha",
+          "generatedLine": 195
+        }
+      ],
+      "pipeline": {
+        "passVariantId": "forward-normal",
+        "attachmentProfileId": "forward-opaque",
+        "alphaMode": "MASK",
+        "rasterMode": "cw"
+      },
+      "cacheKey": "5d4ae1a919c0384c7cf218c73b769288ca8af115c005b0958c8c777cfc1e1492"
+    },
+    {
+      "id": "webgpu/shadowCcw",
+      "techniqueId": "webgpu",
+      "passId": "shadowCcw",
+      "kind": "shadow",
+      "moduleId": "module.67a60b628ee68464caa757cbfd18dacb0d57edd771603903ca94bebd8855182c",
+      "entryPoints": {
+        "vertex": "shadowMaskMain",
+        "fragment": "shadowMaskTextured"
+      },
+      "sourceMap": [],
+      "pipeline": {
+        "passVariantId": "shadow-mask-material",
+        "attachmentProfileId": "shadow",
+        "alphaMode": "MASK",
+        "rasterMode": "ccw"
+      },
+      "cacheKey": "27f40946a1e05dc114ff4e9268e523fed1d86aa7c327b3d7fab36673701e5ccf"
+    },
+    {
+      "id": "webgpu/shadowCw",
+      "techniqueId": "webgpu",
+      "passId": "shadowCw",
+      "kind": "shadow",
+      "moduleId": "module.67a60b628ee68464caa757cbfd18dacb0d57edd771603903ca94bebd8855182c",
+      "entryPoints": {
+        "vertex": "shadowMaskMain",
+        "fragment": "shadowMaskTextured"
+      },
+      "sourceMap": [],
+      "pipeline": {
+        "passVariantId": "shadow-mask-material",
+        "attachmentProfileId": "shadow",
+        "alphaMode": "MASK",
+        "rasterMode": "cw"
+      },
+      "cacheKey": "50a2abc546c218e59a9b2370172beea9616e8216062ec702be9d6390977148f6"
+    }
+  ],
+  "packageCacheKey": "637ada84d69d229afe2976f2ae754f4198a4ceca1343f65f2283ebcacc9001a3"
+}

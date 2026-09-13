@@ -28,6 +28,7 @@ interface BrowserPeerStatus {
   width?: number;
   height?: number;
   framesEncoded?: number;
+  framesPerSecond?: number;
   packetsSent?: number;
   bytesSent?: number;
   encoderImplementation?: string;
@@ -123,7 +124,7 @@ export class ChromiumRenderRuntime implements RenderRuntime {
       await internals.goto("chrome://webrtc-internals");
       const page = await context.newPage();
       await installInputBinding(page, request.render.width, request.render.height);
-      await page.goto(request.scope.renderUrl, { waitUntil: "domcontentloaded", timeout: this.config.navigationTimeoutMs });
+      await page.goto(cloudRenderPageUrl(request.scope.renderUrl), { waitUntil: "domcontentloaded", timeout: this.config.navigationTimeoutMs });
       await page.waitForFunction(() => [...document.querySelectorAll("canvas")].some((canvas) => canvas.width > 0 && canvas.height > 0 && canvas.getBoundingClientRect().width > 0), undefined, { timeout: this.config.canvasTimeoutMs });
       const offer = await createProducer(page, request.render.framesPerSecond, request.render.codecPreferences, this.config.iceServers, this.config.iceGatheringTimeoutMs);
       return new ChromiumRuntimeSession(context, page, internals, offer, new Set(this.config.verifiedHardwareCodecs));
@@ -137,6 +138,11 @@ export class ChromiumRenderRuntime implements RenderRuntime {
     await this.browser?.close();
     this.browser = undefined;
   }
+}
+
+/** 云视频编码依赖连续画面，即使静态场景也不能进入客户端按需休眠。 */
+export function cloudRenderPageUrl(value: string): string {
+  const url = new URL(value); url.searchParams.set("cloudRender", "1"); return url.toString();
 }
 
 class ChromiumRuntimeSession implements RenderRuntimeSession {
@@ -170,6 +176,7 @@ class ChromiumRuntimeSession implements RenderRuntimeSession {
         ...(typeof outbound?.frameWidth === "number" ? { width: outbound.frameWidth } : {}),
         ...(typeof outbound?.frameHeight === "number" ? { height: outbound.frameHeight } : {}),
         ...(typeof outbound?.framesEncoded === "number" ? { framesEncoded: outbound.framesEncoded } : {}),
+        ...(typeof outbound?.framesPerSecond === "number" ? { framesPerSecond: outbound.framesPerSecond } : {}),
         ...(typeof outbound?.packetsSent === "number" ? { packetsSent: outbound.packetsSent } : {}),
         ...(typeof outbound?.bytesSent === "number" ? { bytesSent: outbound.bytesSent } : {}),
         ...(typeof outbound?.encoderImplementation === "string" ? { encoderImplementation: outbound.encoderImplementation } : {}),
@@ -205,6 +212,7 @@ class ChromiumRuntimeSession implements RenderRuntimeSession {
         width: status.width,
         height: status.height,
         framesEncoded: status.framesEncoded,
+        ...(typeof status.framesPerSecond === "number" && Number.isFinite(status.framesPerSecond) && status.framesPerSecond >= 0 ? { framesPerSecond: status.framesPerSecond } : {}),
         packetsSent: status.packetsSent,
         bytesSent: status.bytesSent
       }

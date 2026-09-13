@@ -44,6 +44,7 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
     this.#outlinePass = this.add(new OutlinePass(new THREE.Vector2(1, 1), scene, camera));
     this.#outlinePass.visibleEdgeColor.set(0x4d9fff);
     this.#outlinePass.hiddenEdgeColor.set(0x234a71);
+    this.#installSpriteGhostGuard(scene);
     this.#bloomPass = this.add(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.35, 0.25, 0.9));
     this.#bokehPass = this.add(new BokehPass(scene, camera, { focus: 10, aperture: 0.00002, maxblur: 0.006 }));
     this.#afterimagePass = this.add(new AfterimagePass(0.9));
@@ -118,6 +119,32 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
     pass.enabled = false;
     this.#composer.addPass(pass as never);
     return pass;
+  }
+
+  /**
+   * S1-A:OutlinePass 的深度/遮罩预通道以 overrideMaterial 渒染整场景,会把 Sprite 的
+   * billboard 睾色器替换成世界空间四边形,近景表现为黑色"幽灵板"。只包装 OutlinePass 自身的
+   * render(主通道 RenderPass 在 composer 链中独立执行,不受影响),内部渲染期间临时隐藏 Sprite。
+   */
+  #installSpriteGhostGuard(scene: THREE.Scene): void {
+    const outline = this.#outlinePass;
+    const originalRender = outline.render.bind(outline);
+    const hidden: THREE.Sprite[] = [];
+    outline.render = (...args: Parameters<OutlinePass["render"]>) => {
+      hidden.length = 0;
+      scene.traverse((object) => {
+        const sprite = object as THREE.Sprite;
+        if (sprite.isSprite && sprite.visible) {
+          hidden.push(sprite);
+          sprite.visible = false;
+        }
+      });
+      try {
+        originalRender(...args);
+      } finally {
+        for (const sprite of hidden) sprite.visible = true;
+      }
+    };
   }
 
   private setUniform(uniforms: Record<string, THREE.IUniform>, key: string, value: number): void {

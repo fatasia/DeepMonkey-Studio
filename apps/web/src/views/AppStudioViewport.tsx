@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { getSceneModelAssetId, type PlantLiteStudyRecord } from "@bim-studio/contracts";
+import type { CameraState } from "@bim-studio/contracts";
 import { LoaderCircle } from "lucide-react";
 import { DEFAULT_NAVIGATION_SETTINGS } from "../navigationSettings";
 import { normalizeDashboardState } from "../components/dashboardState";
@@ -11,11 +12,12 @@ import { SceneEnvironmentPanel } from "../components/SceneEnvironmentPanel";
 import { ScenePhysicsPanel } from "../components/ScenePhysicsPanel";
 import { PublishedViewerToolDock } from "../components/PublishedViewerToolDock";
 import { PublishedViewerObjectPanel } from "../components/PublishedViewerObjectPanel";
-import { SceneTimelinePanel } from "../components/SceneTimelinePanel";
+import { SceneTimelinePanel, type SceneDirectorWorkspace } from "../components/SceneTimelinePanel";
 import { SceneToolDock } from "../components/SceneToolDock";
+import { ViewOrientationCube } from "../components/ViewOrientationCube";
+import "../components/ViewOrientationCube.css";
 import { SceneViewportStatus } from "../components/SceneViewportStatus";
 import { SceneXrPanel } from "../components/SceneXrPanel";
-import { ViewControl } from "../components/AppFormControls";
 import type { AppStudioController } from "./AppStudioShell";
 import { sceneViewerDeliveryToolbarVisible } from "../delivery/sceneViewerDelivery";
 import type { SceneSimulationPanelId } from "../simulation/sceneSimulationRegistry";
@@ -44,8 +46,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     branding,
     busy,
     cameraConstraints,
+    cameraInfo,
     cameraViews,
-    cameraViewsOpen,
     changeCameraConstraints,
     changeClippingMode,
     changeLighting,
@@ -111,7 +113,6 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     setActiveScene,
     setAnimationOpen,
     setAvatarVisible,
-    setCameraViewsOpen,
     setDefaultCameraViewId,
     setDigitalTwinOpen,
     setEnvironmentOpen,
@@ -153,13 +154,14 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   const [simulationStudy, setSimulationStudy] = useState<PlantLiteStudyRecord>();
   const [simulationFrame, setSimulationFrame] = useState<PlantLitePlaybackFrame | null>(null);
   const [simulationTrack, setSimulationTrack] = useState(false);
+  const [directorWorkspace, setDirectorWorkspace] = useState<SceneDirectorWorkspace>("timeline");
   const resolveSimulationPosition = useCallback((id: string) => engine?.getModelTransform(id)?.position, [engine, controller.bindings.state.revision]);
   const activeSimulationStudy = route.view === "studio" && simulationPanelId && simulationStudy?.model?.sceneBinding?.sceneId === activeScene?.id ? simulationStudy : undefined;
-  useEffect(() => { setSimulationStudy(undefined); setSimulationFrame(null); setSimulationTrack(false); }, [project?.id, activeScene?.id]);
+  useEffect(() => { setSimulationStudy(undefined); setSimulationFrame(null); setSimulationTrack(false); setDirectorWorkspace("timeline"); }, [project?.id, activeScene?.id]);
   useScenePlantPlayback(engine, animationOpen && simulationTrack ? activeSimulationStudy?.model : undefined, simulationFrame);
   const showSimulationStudy = (study: PlantLiteStudyRecord) => {
     if (study.model?.sceneBinding?.sceneId !== activeScene?.id || study.projectId !== project?.id) return;
-    setSimulationStudy(study); setSimulationTrack(true); setAnimationOpen(true);
+    setSimulationStudy(study); setSimulationTrack(true); setDirectorWorkspace("timeline"); setAnimationOpen(true);
     if (animationPlaying) toggleSceneAnimation();
   };
   useSceneSimulationOverlay(engine, activeScene, route.view === "studio" && Boolean(simulationPanelId), controller.bindings.state.revision);
@@ -167,13 +169,16 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   const deliveryToolbarVisible = sceneViewerDeliveryToolbarVisible();
   const viewerToolbarVisible = deliveryToolbarVisible ?? (route.view === "view" || activeScene?.publicationToolbarVisible !== false);
   const viewerRouteHasToolbar = (route.view === "view" || route.view === "published") && viewerToolbarVisible;
-  const viewerExplosionTargets = selected?.kind === "model" ? [selected] : loadedModels.filter((model) => model.kind === "model");
-  const viewerExplosionActive = Boolean(engine && viewerExplosionTargets.some((model) => engine.getExplosionFactor(model.id) > 0));
+  const viewerExplosionTargets = (engine?.listModels() ?? loadedModels).filter((model) => model.kind === "model");
+  const [viewerExplosion, setViewerExplosion] = useState(false);
+  const viewerExplosionActive = viewerExplosion && Boolean(engine && viewerExplosionTargets.length > 0);
+  const cubeOrientation = getCubeOrientation(cameraInfo);
 
   function toggleViewerExplosion() {
     if (!engine || viewerExplosionTargets.length === 0) return;
     const nextFactor = viewerExplosionActive ? 0 : 0.55;
     for (const model of viewerExplosionTargets) engine.setExplosion(model.id, nextFactor);
+    setViewerExplosion(nextFactor > 0);
     setRevision((value) => value + 1);
     setMessage(nextFactor > 0 ? tr(locale, "已展开模型，再次点击可复位", "Model exploded; click again to restore") : tr(locale, "已恢复模型组合", "Model restored"));
   }
@@ -190,11 +195,16 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   function toggleSimulationPanel(panel: SceneSimulationPanelId) {
     setSimulationPanelId((current) => current === panel ? undefined : panel);
     setAnimationOpen(false);
-    setCameraViewsOpen(false);
     setEnvironmentOpen(false);
     setPhysicsOpen(false);
     setSceneBehaviorOpen(false);
     setXrPanelOpen(false);
+  }
+
+  function openDirector(workspace: SceneDirectorWorkspace) {
+    if (workspace !== "timeline") setSimulationTrack(false);
+    setDirectorWorkspace(workspace);
+    setAnimationOpen(true);
   }
 
   function openSimulationTarget(sceneId: string, objectId: string) {
@@ -232,6 +242,20 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           </span>{" "}
         </div>
       )}
+      {route.view === "studio" && engine && (
+        <ViewOrientationCube
+          locale={locale}
+          azimuthDeg={cubeOrientation.azimuthDeg}
+          elevationDeg={cubeOrientation.elevationDeg}
+          hasSelection={Boolean(selected)}
+          onStandardView={(view) => engine.setStandardView(view)}
+          onFitAll={() => engine.fitAll()}
+          onFitSelected={() => {
+            if (selected?.kind === "model") engine.focusModel(selected.id);
+          }}
+          onOptimizeView={() => engine.fitAll()}
+        />
+      )}
       {viewerRouteHasToolbar ? (
         <PublishedViewerToolDock
           locale={locale}
@@ -245,6 +269,10 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           objectPanelOpen={viewerObjectPanelOpen}
           onOpenChange={setViewerToolsOpen}
           onFitAll={() => engine?.fitAll()}
+          fitSelectedEnabled={selected?.kind === "model"}
+          onFitSelected={() => {
+            if (selected?.kind === "model") engine?.focusModel(selected.id);
+          }}
           onNavigationChange={changeNavigation}
           onMeasurementToggle={toggleMeasurement}
           onClippingToggle={toggleClipping}
@@ -275,7 +303,6 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           environmentOpen={environmentOpen}
           animationOpen={animationOpen}
           behaviorOpen={sceneBehaviorOpen}
-          cameraOpen={cameraViewsOpen}
           physicsOpen={physicsOpen}
           xrOpen={xrPanelOpen}
           simulationPanel={simulationPanelId}
@@ -305,9 +332,12 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
             setEnvironmentOpen((value) => !value);
             setDigitalTwinOpen(false);
           }}
-          onAnimationToggle={() => { setSimulationTrack(false); setAnimationOpen((value) => !value); }}
+          onAnimationToggle={() => {
+            setSimulationTrack(false);
+            if (animationOpen && directorWorkspace === "timeline") setAnimationOpen(false);
+            else openDirector("timeline");
+          }}
           onBehaviorToggle={() => setSceneBehaviorOpen((value) => !value)}
-          onCameraToggle={() => setCameraViewsOpen((value) => !value)}
           onPhysicsToggle={() => {
             setPhysicsOpen((value) => !value);
             setEnvironmentOpen(false);
@@ -316,36 +346,6 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onSimulationPanelChange={toggleSimulationPanel}
         />
       ) : null}
-      {route.view === "studio" && <ViewControl locale={locale} onSelect={(view) => engine?.setStandardView(view)} />}
-      {route.view === "studio" && cameraViewsOpen && (
-        <CameraNavigationPanel
-          locale={locale}
-          mode={navigationMode}
-          modelCount={loadedModels.filter((item) => item.visible).length}
-          avatarVisible={avatarVisible}
-          constraints={cameraConstraints}
-          navigation={navigationSettings}
-          diagnostics={navigationDiagnostics}
-          views={cameraViews}
-          defaultViewId={defaultCameraViewId}
-          onClose={() => setCameraViewsOpen(false)}
-          onModeChange={changeNavigation}
-          onAvatarVisibleChange={(visible) => {
-            setAvatarVisible(visible);
-            engine?.setAvatarVisible(visible);
-          }}
-          onConstraintsChange={changeCameraConstraints}
-          onNavigationChange={changeNavigationSettings}
-          onDebugVisibleChange={(visible) => engine?.setNavigationCollisionDebugVisible(visible)}
-          onResetNavigation={() => changeNavigationSettings(DEFAULT_NAVIGATION_SETTINGS)}
-          onAddView={addCameraView}
-          onApplyView={(view) => engine?.applyCamera(view.camera)}
-          onRenameView={updateCameraViewName}
-          onReplaceView={replaceCameraView}
-          onRemoveView={removeCameraView}
-          onDefaultViewChange={setDefaultCameraViewId}
-        />
-      )}
       {route.view === "studio" && environmentOpen && (
         <SceneEnvironmentPanel
           locale={locale}
@@ -474,8 +474,43 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
       )}
       {animationOpen && (
         <SceneTimelinePanel
+          engine={engine}
           {...(simulationTrack && activeSimulationStudy ? { simulationStudy: activeSimulationStudy, onSimulationFrame: setSimulationFrame } : {})}
           onAnimationTrack={() => setSimulationTrack(false)}
+          workspace={directorWorkspace}
+          onWorkspaceChange={(workspace) => {
+            if (workspace !== "timeline") setSimulationTrack(false);
+            setDirectorWorkspace(workspace);
+          }}
+          cameraWorkspace={<CameraNavigationPanel
+            embedded
+            section={directorWorkspace === "shots" ? "views" : "walk"}
+            locale={locale}
+            mode={navigationMode}
+            modelCount={loadedModels.filter((item) => item.visible).length}
+            avatarVisible={avatarVisible}
+            constraints={cameraConstraints}
+            navigation={navigationSettings}
+            diagnostics={navigationDiagnostics}
+            views={cameraViews}
+            defaultViewId={defaultCameraViewId}
+            onClose={() => setAnimationOpen(false)}
+            onModeChange={changeNavigation}
+            onAvatarVisibleChange={(visible) => {
+              setAvatarVisible(visible);
+              engine?.setAvatarVisible(visible);
+            }}
+            onConstraintsChange={changeCameraConstraints}
+            onNavigationChange={changeNavigationSettings}
+            onDebugVisibleChange={(visible) => engine?.setNavigationCollisionDebugVisible(visible)}
+            onResetNavigation={() => changeNavigationSettings(DEFAULT_NAVIGATION_SETTINGS)}
+            onAddView={addCameraView}
+            onApplyView={(view) => engine?.applyCamera(view.camera)}
+            onRenameView={updateCameraViewName}
+            onReplaceView={replaceCameraView}
+            onRemoveView={removeCameraView}
+            onDefaultViewChange={setDefaultCameraViewId}
+          />}
           locale={locale}
           animation={sceneAnimation}
           currentTime={animationTime}
@@ -521,7 +556,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           setMessage(tr(locale, "已清除当前浏览会话的标尺", "Measurements cleared for this viewer session"));
         }}
         onAnnotationClose={toggleAnnotationPlacement}
-        onNavigationSettings={() => setCameraViewsOpen(true)}
+        onNavigationSettings={() => openDirector("navigation")}
         onNavigationExit={() => changeNavigation("orbit")}
       />
       </div>
@@ -546,4 +581,16 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
       )}
     </div>
   );
+}
+function getCubeOrientation(camera?: CameraState): { azimuthDeg: number; elevationDeg: number } {
+  if (!camera) return { azimuthDeg: 0, elevationDeg: 25 };
+  const dx = camera.position.x - camera.target.x;
+  const dy = camera.position.y - camera.target.y;
+  const dz = camera.position.z - camera.target.z;
+  const horizontalDistance = Math.hypot(dx, dz);
+  if (horizontalDistance + Math.abs(dy) < 0.0001) return { azimuthDeg: 0, elevationDeg: 25 };
+  return {
+    azimuthDeg: Math.atan2(dx, dz) * 180 / Math.PI,
+    elevationDeg: Math.atan2(dy, horizontalDistance) * 180 / Math.PI,
+  };
 }

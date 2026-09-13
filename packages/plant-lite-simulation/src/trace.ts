@@ -15,6 +15,7 @@ export interface PlantLiteTraceRecorder {
     orderId?: string,
     changeover?: Extract<PlantLiteTraceEvent, { itemId: string }>["changeover"],
     quality?: Extract<PlantLiteTraceEvent, { itemId: string }>["quality"],
+    transport?: Extract<PlantLiteTraceEvent, { itemId: string }>["transport"],
   ): void;
   resource(
     type: Extract<PlantLiteTraceEvent, { resourceId: string }>["type"],
@@ -62,7 +63,7 @@ export function createTraceRecorder(replication: number, seed: number, limits: P
     events.push({ sequence: sequence++, ...event } as PlantLiteTraceEvent);
   };
   return {
-    item(type, atMinute, itemId, nodeId, productTypeId, orderId, changeover, quality) {
+    item(type, atMinute, itemId, nodeId, productTypeId, orderId, changeover, quality, transport) {
       if (events.length >= limits.maxEvents) {
         omittedEventCount += 1;
         return;
@@ -83,6 +84,7 @@ export function createTraceRecorder(replication: number, seed: number, limits: P
         ...(orderId ? { orderId } : {}),
         ...(changeover ? { changeover } : {}),
         ...(quality ? { quality } : {}),
+        ...(transport ? { transport } : {}),
       });
     },
     resource(type, atMinute, resourceId, unitIndex, unavailableUnits) {

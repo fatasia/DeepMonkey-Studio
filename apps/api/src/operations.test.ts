@@ -17,59 +17,34 @@ describe("operations routes", () => {
   it("creates the minimal maintenance flow and persists logistics and energy outputs", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "bim-operations-"));
     cleanups.push(() => rm(directory, { recursive: true, force: true }));
-    const iotNbProjectPath = path.join(directory, "iot-nb-project.json");
-    await writeFile(
-      iotNbProjectPath,
-      JSON.stringify({
-        name: "IoT-NB test",
-        updatedAt: "2026-08-26T00:00:00Z",
-        payload: {
-          projectId: "iot-project-1",
-          projectName: "真实训练工程",
-          maintenanceModels: [
-            {
-              version: "pdm-logistic-real",
-              name: "传动链健康预测",
-              algorithm: "logistic",
-              sourceId: "drive-data",
-              status: "validated",
-              benchmarkOnly: true,
-              productionEligible: false,
-              trainRows: 120,
-              validationRows: 30,
-              metrics: { auc: 0.91 },
-              artifact: { modelKind: "failure-probability", features: ["current", "temperature"], means: [10, 20], stds: [2, 4], weights: [0.8, 0.2], bias: -1 },
-            },
-          ],
-          trainingDatasets: [
-            {
-              id: "drive-data",
-              name: "传动链源数据",
-              benchmarkOnly: true,
-              rows: Array.from({ length: 40 }, (_, index) => ({ current: 10 + index / 100, temperature: 20 + index / 50 })),
-            },
-          ],
-        },
-      }),
-    );
-    const service = new OperationsService(directory, { iotNbProjectPath });
+    const service = new OperationsService(directory);
     await service.init();
     const app = createApiServer();
     cleanups.push(() => app.close());
     await registerOperationsRoutes(app, { service, store: { getProject: (id: string) => (id === "project-1" ? { id } : undefined) } as never });
-
-    const synced = await app.inject({ method: "POST", url: "/api/projects/project-1/operations/maintenance/sync-iot-nb" });
-    expect(synced.statusCode).toBe(200);
-    expect(synced.json()).toMatchObject({
-      sourceProjectName: "真实训练工程",
-      imported: 1,
-      models: [{ version: "pdm-logistic-real", artifact: { engine: "native-json", weights: [0.8, 0.2] } }],
+    const imported = await app.inject({
+      method: "POST", url: "/api/projects/project-1/operations/maintenance/models",
+      payload: {
+        version: "pdm-logistic-real", name: "传动链健康预测", algorithm: "logistic",
+        status: "validated", benchmarkOnly: true, productionEligible: false, trainRows: 120, validationRows: 30,
+        metrics: { auc: 0.91 },
+        artifact: { engine: "native-json", modelKind: "failure-probability", features: ["current", "temperature"], means: [10, 20], stds: [2, 4], weights: [0.8, 0.2], bias: -1 },
+      },
     });
-    const model = (synced.json() as { models: Array<{ id: string }> }).models[0]!;
-    const assessed = await app.inject({ method: "POST", url: `/api/projects/project-1/operations/maintenance/models/${model.id}/assess-iot-nb` });
+    expect(imported.statusCode).toBe(200);
+    const model = imported.json() as { id: string };
+    const deployed = await app.inject({
+      method: "POST", url: "/api/projects/project-1/operations/maintenance/deployments",
+      payload: { name: "传动链评估", modelId: model.id, equipmentId: "drive", maintainableUnitId: "drive", objectIds: [], sourceId: "drive-data", featureMappings: {}, windowSize: 40, sampleIntervalSec: 60, enabled: true, status: "shadow" },
+    });
+    expect(deployed.statusCode).toBe(200);
+    const deployment = deployed.json() as { id: string };
+    const assessed = await app.inject({
+      method: "POST", url: `/api/projects/project-1/operations/maintenance/deployments/${deployment.id}/assess`,
+      payload: { rows: Array.from({ length: 40 }, (_, index) => ({ current: 10 + index / 100, temperature: 20 + index / 50 })) },
+    });
     expect(assessed.statusCode).toBe(200);
-    expect(assessed.json()).toMatchObject({ assessment: { decisionStatus: "shadow" }, source: { datasetId: "drive-data", rowCount: 40, benchmarkOnly: true } });
-    const deployment = (assessed.json() as { deployment: { id: string } }).deployment;
+    expect(assessed.json()).toMatchObject({ decisionStatus: "shadow", deploymentId: deployment.id, sampleCount: 40 });
 
     const createdStudy = await app.inject({
       method: "POST",
@@ -230,7 +205,7 @@ describe("operations routes", () => {
       ],
       energyInsights: [{ samples: 4 }],
     });
-    const reloadedService = new OperationsService(directory, { iotNbProjectPath });
+    const reloadedService = new OperationsService(directory);
     await reloadedService.init();
     expect(reloadedService.snapshot("project-1").validationStudies).toMatchObject([
       {

@@ -50,7 +50,7 @@ export interface DataConnectionRecord {
 
 export type DataFieldType = "string" | "number" | "boolean" | "datetime" | "json";
 
-export type DataEventAction = "color" | "visibility" | "position" | "label" | "opacity" | "focus" | "animation" | "effects" | "material";
+export type DataEventAction = "color" | "visibility" | "position" | "label" | "opacity" | "focus" | "animation" | "effects" | "material" | "alarm";
 
 export interface DataEventTarget {
   modelId?: string;
@@ -80,6 +80,7 @@ export interface SceneDataBindingState {
   rowIndex?: number;
   target: DataEventTarget;
   action: DataEventAction;
+  signalRule?: import("./deviceSignal.js").DeviceSignalRule;
   refreshSeconds: number;
 }
 

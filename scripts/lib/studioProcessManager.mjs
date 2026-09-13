@@ -4,6 +4,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { isBimStudioApiHealth, isBimStudioWebDocument } from "./localStartupArguments.mjs";
 import { readHttpText } from "./localHttpProbe.mjs";
+import { probeManagedService } from "./localManagedServices.mjs";
+import { loadProductionEnvironment } from "./nativeProductionOps.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const internalRunner = join(repositoryRoot, "scripts", "start-local.mjs");
@@ -80,7 +82,7 @@ export async function startStudioRuntime(configuration, environment = process.en
   writeState(paths.stateFile, startingState);
 
   try {
-    const ready = await waitForReady(paths, child.pid, 90_000);
+    const ready = await waitForReady(paths, child.pid, 300_000);
     const ownsProcesses = Number(ready.managedProcessCount) > 0;
     const runningState = {
       ...startingState,
@@ -88,6 +90,7 @@ export async function startStudioRuntime(configuration, environment = process.en
       owned: ownsProcesses,
       status: ownsProcesses ? "running" : "external",
       readyAt: ready.readyAt,
+      managedServices: ready.managedServices ?? [],
     };
     writeState(paths.stateFile, runningState);
     return { state: runningState, paths };
@@ -135,10 +138,21 @@ export async function getStudioRuntimeStatus(paths = studioRuntimePaths(), suppl
   const web = webRequired ? await probeWeb(state.configuration) : undefined;
   const externallyHealthy = !state.owned && api && (!webRequired || web);
   const running = (ownedProcessAlive && identityVerified) || externallyHealthy;
+  const environment = loadProductionEnvironment().values;
+  let workerToken = environment.CLOUD_RENDER_WORKER_TOKEN;
+  if (!workerToken) {
+    try { workerToken = JSON.parse(readFileSync(join(repositoryRoot, "data/cloud-render-worker.json"), "utf8")).token; }
+    catch { /* 未配置的 Worker 会由健康检查如实报告异常。 */ }
+  }
+  const services = await Promise.all((state.managedServices ?? []).map(async service => ({
+    id: service.id, label: service.label,
+    healthy: await probeManagedService({ ...service, ...(service.id === "cloud-render-worker" ? { headers: { authorization: `Bearer ${workerToken ?? ""}` } } : {}) }),
+  })));
   return {
     state: !running ? "stopped" : state.status,
     running,
-    healthy: running && api && (!webRequired || web),
+    healthy: running && api && (!webRequired || web) && services.every(service => service.healthy),
+    services,
     owned: Boolean(state.owned),
     pid: state.pid ?? undefined,
     target: state.configuration.target,
@@ -165,7 +179,8 @@ export function buildRunnerEnvironment(configuration, baseEnvironment = process.
   };
   if (configuration.metadataStore) environment.METADATA_STORE = configuration.metadataStore;
   if (configuration.objectStore) environment.OBJECT_STORE = configuration.objectStore;
-  if (configuration.cloudWorker) environment.BIM_STUDIO_CLOUD_WORKER_MANAGED = "true";
+  environment.BIM_STUDIO_CLOUD_WORKER_MANAGED = configuration.cloudWorker ? "true" : "false";
+  environment.BIM_STUDIO_CORE_ONLY = configuration.coreOnly ? "true" : "false";
   return environment;
 }
 

@@ -1,0 +1,196 @@
+{
+  "name": "@bim-studio/deep-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebGPU-first rendering, shader, scene, and compatibility foundations for Deep Monkey Studio",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fatasia/bim-studio.git",
+    "directory": "packages/deep-engine"
+  },
+  "keywords": [
+    "webgpu",
+    "wgsl",
+    "rendering",
+    "3d",
+    "digital-twin"
+  ],
+  "type": "module",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./webgpu": {
+      "development": {
+        "types": "./src/webgpu/index.ts",
+        "default": "./src/webgpu/index.ts"
+      },
+      "types": "./dist/webgpu/index.d.ts",
+      "default": "./dist/webgpu/index.js"
+    },
+    "./gltf": {
+      "development": {
+        "types": "./src/gltf/index.ts",
+        "default": "./src/gltf/index.ts"
+      },
+      "types": "./dist/gltf/index.d.ts",
+      "default": "./dist/gltf/index.js"
+    },
+    "./geometry": {
+      "development": {
+        "types": "./src/geometry/index.ts",
+        "default": "./src/geometry/index.ts"
+      },
+      "types": "./dist/geometry/index.d.ts",
+      "default": "./dist/geometry/index.js"
+    },
+    "./textures": {
+      "development": {
+        "types": "./src/textures/index.ts",
+        "default": "./src/textures/index.ts"
+      },
+      "types": "./dist/textures/index.d.ts",
+      "default": "./dist/textures/index.js"
+    },
+    "./streaming": {
+      "development": {
+        "types": "./src/streaming/index.ts",
+        "default": "./src/streaming/index.ts"
+      },
+      "types": "./dist/streaming/index.d.ts",
+      "default": "./dist/streaming/index.js"
+    },
+    "./shadows": {
+      "development": {
+        "types": "./src/shadows/index.ts",
+        "default": "./src/shadows/index.ts"
+      },
+      "types": "./dist/shadows/index.d.ts",
+      "default": "./dist/shadows/index.js"
+    },
+    "./shader": {
+      "development": {
+        "types": "./src/shader/index.ts",
+        "default": "./src/shader/index.ts"
+      },
+      "types": "./dist/shader/index.d.ts",
+      "default": "./dist/shader/index.js"
+    },
+    "./shader-migration": {
+      "development": {
+        "types": "./src/shaderMigration/index.ts",
+        "default": "./src/shaderMigration/index.ts"
+      },
+      "types": "./dist/shaderMigration/index.d.ts",
+      "default": "./dist/shaderMigration/index.js"
+    },
+    "./shader-presets": {
+      "development": {
+        "types": "./src/shaderPresets/index.ts",
+        "default": "./src/shaderPresets/index.ts"
+      },
+      "types": "./dist/shaderPresets/index.d.ts",
+      "default": "./dist/shaderPresets/index.js"
+    },
+    "./shader-authoring": {
+      "development": {
+        "types": "./src/shaderAuthoring/index.ts",
+        "default": "./src/shaderAuthoring/index.ts"
+      },
+      "types": "./dist/shaderAuthoring/index.d.ts",
+      "default": "./dist/shaderAuthoring/index.js"
+    },
+    "./shader-package": {
+      "development": {
+        "types": "./src/shaderPackage/index.ts",
+        "default": "./src/shaderPackage/index.ts"
+      },
+      "types": "./dist/shaderPackage/index.d.ts",
+      "default": "./dist/shaderPackage/index.js"
+    },
+    "./runtime-package": {
+      "development": {
+        "types": "./src/runtimePackage/index.ts",
+        "default": "./src/runtimePackage/index.ts"
+      },
+      "types": "./dist/runtimePackage/index.d.ts",
+      "default": "./dist/runtimePackage/index.js"
+    },
+    "./shader-cache": {
+      "development": {
+        "types": "./src/shaderCache/index.ts",
+        "default": "./src/shaderCache/index.ts"
+      },
+      "types": "./dist/shaderCache/index.d.ts",
+      "default": "./dist/shaderCache/index.js"
+    },
+    "./shader-abi": {
+      "development": {
+        "types": "./src/shaderAbi/index.ts",
+        "default": "./src/shaderAbi/index.ts"
+      },
+      "types": "./dist/shaderAbi/index.d.ts",
+      "default": "./dist/shaderAbi/index.js"
+    },
+    "./three-bridge": {
+      "development": {
+        "types": "./src/threeBridge/index.ts",
+        "default": "./src/threeBridge/index.ts"
+      },
+      "types": "./dist/threeBridge/index.d.ts",
+      "default": "./dist/threeBridge/index.js"
+    },
+    "./lighting": {
+      "development": {
+        "types": "./src/lighting/index.ts",
+        "default": "./src/lighting/index.ts"
+      },
+      "types": "./dist/lighting/index.d.ts",
+      "default": "./dist/lighting/index.js"
+    },
+    "./postprocess": {
+      "development": {
+        "types": "./src/postprocess/index.ts",
+        "default": "./src/postprocess/index.ts"
+      },
+      "types": "./dist/postprocess/index.d.ts",
+      "default": "./dist/postprocess/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/clean-dir.mjs dist && tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.lab.json",
+    "lab:build": "node scripts/buildLab.mjs",
+    "lab:serve": "node scripts/serveLab.mjs",
+    "lab:isolation": "node scripts/verifyIsolation.mjs && pnpm --filter @bim-studio/web test src/architecture.test.ts",
+    "test": "vitest run src && node --test scripts/threeUsageScanner.test.mjs scripts/shaderUsageScanner.test.mjs scripts/runtimePurityPolicy.test.mjs scripts/collectNativeUiInventory.test.mjs && node scripts/runtimePurityGate.mjs && node scripts/sourceSizeGate.mjs",
+    "gate:source-size": "node scripts/sourceSizeGate.mjs",
+    "gate:runtime-purity": "node scripts/runtimePurityGate.mjs",
+    "benchmark:residency-planner": "node scripts/benchmarkPacketResidencyPlanner.mjs",
+    "inventory:three": "node scripts/collectThreeInventory.mjs",
+    "inventory:shader": "node scripts/collectShaderInventory.mjs docs/specs/deep-engine-shader-source-inventory-2026-09-12.json",
+    "inventory:native-ui": "node scripts/collectNativeUiInventory.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/three": "0.185.4",
+    "@webgpu/types": "0.1.72",
+    "esbuild": "0.28.1",
+    "fake-indexeddb": "6.2.4",
+    "three": "0.185.1",
+    "three-mesh-bvh": "0.9.14",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

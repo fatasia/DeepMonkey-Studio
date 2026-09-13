@@ -4,8 +4,8 @@ import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { translate as tr, type AppLocale } from "../i18n";
 
 /** 复用主 Viewer，预览姿态不写回项目或场景。 */
-export function RobotAssetPreview({ locale, model, onReady }: {
-  locale: AppLocale; model: ModelRecord; onReady: (engine: ViewerEngine | undefined) => void;
+export function RobotAssetPreview({ locale, model, onReady, label }: {
+  locale: AppLocale; model: ModelRecord; onReady: (engine: ViewerEngine | undefined) => void; label?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [retry, setRetry] = useState(0);
@@ -20,6 +20,7 @@ export function RobotAssetPreview({ locale, model, onReady }: {
       const engine = await ViewerEngine.create(container, "webgl");
       if (closed) { engine.dispose(); return; }
       viewer = engine;
+      engine.setReadOnly(true);
       engine.setInteractionScripts([]);
       await engine.loadManifest(manifest);
       if (closed) return;
@@ -29,7 +30,7 @@ export function RobotAssetPreview({ locale, model, onReady }: {
     });
     return () => { closed = true; onReady(undefined); viewer?.dispose(); };
   }, [model.id, model.updatedAt, retry, onReady]);
-  return <div className="robot-asset-viewport" aria-label={tr(locale, "机器人预览", "Robot preview")}>
+  return <div className="robot-asset-viewport" aria-label={label ?? tr(locale, "机器人预览", "Robot preview")}>
     <div className="robot-asset-canvas" ref={host} />
     {loading && <span className="robot-asset-feedback" role="status">{tr(locale, "正在加载…", "Loading…")}</span>}
     {error && <div className="robot-asset-feedback" role="alert"><span>{error}</span><button className="button" onClick={() => setRetry(value => value + 1)}>{tr(locale, "重试", "Retry")}</button></div>}

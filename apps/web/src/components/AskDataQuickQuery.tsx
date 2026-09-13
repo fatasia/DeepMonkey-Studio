@@ -1,10 +1,11 @@
 import type { AskDataAggregationOperator, AskDataQueryPlanInput, AskDataQueryPlanningResult, AskDataQueryReadResult, DataDatasetRecord } from "@bim-studio/contracts";
 import { BarChart3, LoaderCircle, Play } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import "./AskDataQuickQuery.css";
+import { AiSampleRunner } from "./AiSampleRunner";
 
 export function AskDataQuickQuery({ projectId, datasets, locale }: { projectId: string; datasets: DataDatasetRecord[]; locale: AppLocale }) {
   const [datasetId, setDatasetId] = useState(datasets[0]?.id ?? "");
@@ -16,7 +17,15 @@ export function AskDataQuickQuery({ projectId, datasets, locale }: { projectId: 
   const [result, setResult] = useState<AskDataQueryReadResult>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const request = useRef(0);
+  const running = useRef(false);
   const t = (zh: string, en: string) => tr(locale, zh, en);
+
+  useEffect(() => {
+    request.current += 1; running.current = false;
+    setBusy(false); setResult(undefined); setError("");
+    return () => { request.current += 1; };
+  }, [projectId, dataset?.id, metric, groupBy, operator]);
 
   useEffect(() => {
     const active = datasets.find((item) => item.id === datasetId) ?? datasets[0];
@@ -38,38 +47,43 @@ export function AskDataQuickQuery({ projectId, datasets, locale }: { projectId: 
   }
 
   async function run() {
-    if (!dataset || !metric) return;
+    if (!dataset || !metric || running.current) return;
+    const current = ++request.current; running.current = true;
     setBusy(true);
     setError("");
+    setResult(undefined);
     try {
       const input = buildQuickAskDataPlan(dataset, metric, groupBy, operator);
       const planned = await api.invokeCapability<AskDataQueryPlanningResult>(projectId, "data.query.plan", input);
+      if (request.current !== current) return;
       if (!planned.output?.plan) throw new Error(planned.output?.issues[0]?.message ?? planned.error?.message ?? "查询计划需要补充字段");
       const read = await api.invokeCapability<AskDataQueryReadResult>(projectId, "data.query.read", { plan: planned.output.plan });
+      if (request.current !== current) return;
       if (!read.output) throw new Error(read.error?.message ?? "数据读取没有返回结果");
       setResult(read.output);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (request.current === current) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setBusy(false);
+      if (request.current === current) { setBusy(false); running.current = false; }
     }
   }
 
   if (!datasets.length)
     return (
-      <section className="ask-data-quick empty">
+      <><AiSampleRunner projectId={projectId} kind="query" locale={locale} /><section className="ask-data-quick empty">
         <BarChart3 size={16} />
         <span>
           <strong>{t("项目还没有数据集", "No project datasets")}</strong>
           <small>{t("先在数据中心接入数据，再从这里直接统计。", "Connect data in Data Center, then query it here.")}</small>
         </span>
-      </section>
+      </section></>
     );
   const numericFields = dataset?.fields.filter((field) => field.type === "number") ?? [];
   const groupFields = dataset?.fields.filter((field) => ["string", "boolean"].includes(field.type)) ?? [];
 
   return (
     <section className="ask-data-quick">
+      <AiSampleRunner projectId={projectId} kind="query" locale={locale} />
       <header>
         <span>
           <BarChart3 size={14} />

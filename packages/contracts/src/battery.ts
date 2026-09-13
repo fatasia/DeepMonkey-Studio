@@ -55,7 +55,7 @@ export interface BatteryInferenceEvidence {
   startedAt: string;
   durationMs: number;
   authority: BatteryOutputAuthority;
-  routingPolicy: "primary-python" | "approved-onnx-with-python-fallback" | "routed-expert-python";
+  routingPolicy: "primary-python" | "approved-onnx-with-python-fallback" | "routed-expert-python" | "local-validation-onnx";
   requestedRuntime: "python-service" | "onnx";
   actualRuntime: "python-service" | "onnx";
   fellBack: boolean;
@@ -149,21 +149,21 @@ export const BATTERY_MODEL_CATALOG: readonly BatteryModelCatalogEntry[] = [
   },
   {
     id: "battery.batterymformer-pinn", family: "batterymformer-pinn", label: "BatteryMFormer PINN · 物理路由专家",
-    tasks: ["soh", "rul", "multi-physics"], runtime: "python-service", status: "production", role: "routed-expert", outputAuthority: "advisory", runtimeEnabled: true,
+    tasks: ["soh", "rul", "multi-physics"], runtime: "onnx", status: "production", role: "routed-expert", outputAuthority: "advisory", runtimeEnabled: true,
     sourceCheckpoint: "checkpoints/batterymformer-physics/model.safetensors", modelVersion: "batterymformer-spm-pinn-v9-fieldcal-seed7181",
     chemistryScope: ["lfp", "ncm"], productionTraffic: 0, productionEligible: true, executionMode: "dynamic-risk-routed",
     evidence: { gate: "production-routing", passed: true, source: "batterymformer-physics/confidence_gate.json", summary: "标准专家出现物理风险时执行；通过完整性、置信与分歧保护后可由正式路由采纳。", metrics: { testMape: 1.3223 } }
   },
   {
     id: "battery.spm-pino", family: "spm-pino-transformer", label: "SPM-PINO · 多物理路由专家",
-    tasks: ["soc", "multi-physics", "safety"], runtime: "python-service", status: "production", role: "routed-expert", outputAuthority: "advisory", runtimeEnabled: true,
+    tasks: ["soc", "multi-physics", "safety"], runtime: "onnx", status: "production", role: "routed-expert", outputAuthority: "advisory", runtimeEnabled: true,
     sourceCheckpoint: "checkpoints/research-candidate/spm-pino-v13-6-native-v10-guard-seed2026.pt", modelVersion: "spm-pino-v13.6-native-v10-guard",
     chemistryScope: ["lfp"], productionTraffic: 0, productionEligible: true, executionMode: "dynamic-risk-routed",
     evidence: { gate: "production-routing", passed: true, source: "checkpoint.metadata.gate", summary: "保留源 checkpoint 动态稀疏路由；域内且路由收益为正时可成为正式孪生轨迹。", metrics: { nativeVoltageMaeV: 0.01822087913751602, dynamicP95LatencyMs: 9.9593, samples: 63 } }
   },
   {
     id: "battery.twin-moe", family: "twin-moe", label: "TwinMoE · 正式稀疏专家路由",
-    tasks: ["expert-routing", "multi-physics", "safety"], runtime: "python-service", status: "production", role: "production-router", outputAuthority: "primary", runtimeEnabled: true,
+    tasks: ["expert-routing", "multi-physics", "safety"], runtime: "onnx", status: "production", role: "production-router", outputAuthority: "primary", runtimeEnabled: true,
     sourceCheckpoint: "checkpoints/research-candidate/spm-pino-v13-6-native-v10-guard-seed2026.pt", modelVersion: "twin-moe-production-route-v1",
     chemistryScope: ["lfp"], productionTraffic: 1, productionEligible: true, executionMode: "production-router",
     evidence: { gate: "production-routing", passed: true, source: "logs/research-candidate/twinmoe-actual-jacobian-stability-v1.json + pino-spm-handoff-vhil-contract-v1.json", summary: "按原动态风险、域判断与 SPM 回退逻辑生成正式路由结果；单个专家不能绕过路由。", metrics: { calibratedConditions: 27, handoffCases: 54, maxNormalizedJump: 0.0957 } }
@@ -275,7 +275,7 @@ export function assessBatteryRelease(
   const shadowModels = entries.filter((entry) => entry.status === "active-shadow").map((entry) => entry.id);
   const routedModels = entries.filter((entry) => ["routed-expert", "production-router"].includes(entry.role)).map((entry) => entry.id);
   const fallbackModels = entries.filter((entry) => entry.outputAuthority === "fallback").map((entry) => entry.id);
-  const onnxPrimaryModels = entries.filter((entry) => entry.runtime === "onnx" && entry.outputAuthority === "primary" && entry.status === "production" && entry.evidence.passed).map((entry) => entry.id);
+  const onnxPrimaryModels = entries.filter((entry) => entry.role === "primary-model" && entry.runtime === "onnx" && entry.outputAuthority === "primary" && entry.status === "production" && entry.evidence.passed).map((entry) => entry.id);
 
   for (const task of ["soc", "soh", "rul"] as const) {
     const covered = entries.some((entry) => entry.outputAuthority === "primary" && entry.runtimeEnabled && entry.evidence.passed && entry.tasks.includes(task));

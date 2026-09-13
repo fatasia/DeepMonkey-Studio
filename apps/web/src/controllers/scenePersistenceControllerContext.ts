@@ -80,6 +80,7 @@ export interface ScenePersistenceControllerContext {
   recordSceneEdit: (label: string) => void;
   setActiveScene: Setter<SceneSnapshot | undefined>;
   getActiveScene: () => SceneSnapshot | undefined;
+  onFirstSceneSave?: (saved: SceneSnapshot) => void;
   setAutoSaveEnabled: Setter<boolean>;
   setAnimationPlaying: Setter<boolean>;
   setAnimationTime: Setter<number>;
@@ -116,6 +117,7 @@ export interface ScenePersistenceControllerContext {
   setScenes: Setter<SceneSnapshot[]>;
   setSelected: Setter<LoadedSceneModel | undefined>;
   setSelectedAnnotationId: Setter<string | undefined>;
+  setSelectedLightId: Setter<string>;
   setSelectedSpace: Setter<BimSpaceRecord | undefined>;
   setSelectionSets: Setter<SceneSelectionSetState[]>;
   setStudioPublishOpen: Setter<boolean>;

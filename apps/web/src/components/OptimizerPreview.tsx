@@ -6,12 +6,15 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { CompatibleGLTFLoader as GLTFLoader } from "../viewer/CompatibleGLTFLoader";
+import { configureGltfKtx2, disposeGltfKtx2 } from "../viewer/gltfKtx2Support";
 import type { BakeLightState } from "../optimizer/modelOptimizer";
 import { translate as tr, type AppLocale } from "../i18n";
 import { captureModelThumbnail } from "../optimizer/captureModelThumbnail";
 import { OptimizerPreviewActions } from "./OptimizerPreviewActions";
 import { disposeOptimizerPreview } from "../optimizer/disposeOptimizerPreview";
 import { frameOptimizerCamera } from "../optimizer/frameOptimizerCamera";
+import { syncOptimizerLayerPreview } from "../optimizer/optimizerLayerPreview";
+import type { OptimizerLayer } from "../optimizer/optimizerLayers";
 
 interface OptimizerPreviewRuntime {
   scene: THREE.Scene;
@@ -32,6 +35,7 @@ interface OptimizerPreviewRuntime {
 interface OptimizerPreviewProps {
   locale: AppLocale;
   url: string;
+  layerDraft?: OptimizerLayer[] | undefined;
   bakeEnabled: boolean;
   comparisonMode: boolean;
   shadows: boolean;
@@ -48,6 +52,7 @@ interface OptimizerPreviewProps {
 export function OptimizerPreview({
   locale,
   url,
+  layerDraft,
   bakeEnabled,
   comparisonMode,
   shadows,
@@ -62,6 +67,8 @@ export function OptimizerPreview({
 }: OptimizerPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<OptimizerPreviewRuntime | undefined>(undefined);
+  const layerDraftRef = useRef(layerDraft);
+  layerDraftRef.current = layerDraft;
   // 切换原始/优化结果时保留用户轨道视角：优化不改变几何包围盒，恢复同一相机是安全的。
   const cameraStateRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | undefined>(undefined);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
@@ -73,7 +80,8 @@ export function OptimizerPreview({
     if (!container) return;
     setLoadState("loading");
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111518);
+    const tokens=getComputedStyle(container);
+    scene.background = new THREE.Color(tokens.getPropertyValue("--bg-0").trim());
     const hemisphere = new THREE.HemisphereLight(0xe8f2ff, 0x36404a, 2);
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
     keyLight.position.set(5, 10, 7);
@@ -111,10 +119,11 @@ export function OptimizerPreview({
     });
     transform.addEventListener("objectChange", () => updateDraggedBakeLight(runtime));
     transform.addEventListener("mouseUp", () => commitDraggedBakeLight(runtime, propsRef.current.onUpdateLight));
-    const grid = new THREE.GridHelper(30, 30, 0x394249, 0x252c31);
+    const grid = new THREE.GridHelper(30,30,new THREE.Color(tokens.getPropertyValue("--text-faint").trim()),new THREE.Color(tokens.getPropertyValue("--surface-3").trim()));
     scene.add(grid);
     const dracoLoader = new DRACOLoader().setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
     const loader = new GLTFLoader().setDRACOLoader(dracoLoader);
+    configureGltfKtx2(loader, renderer);
     let model: THREE.Object3D | undefined;
     let modelScenes: THREE.Object3D[] = [];
     let frame = 0;
@@ -127,7 +136,9 @@ export function OptimizerPreview({
         model = gltf.scene;
         runtime.model = model;
         scene.add(model);
+        if (layerDraftRef.current) syncOptimizerLayerPreview(model, layerDraftRef.current);
         const box = new THREE.Box3().setFromObject(model);
+        if(box.isEmpty())box.set(new THREE.Vector3(-1,0,-1),new THREE.Vector3(1,1,1));
         const center = box.getCenter(new THREE.Vector3());
         const size = Math.max(box.getSize(new THREE.Vector3()).length(), 1);
         runtime.modelBounds = box.clone();
@@ -141,6 +152,7 @@ export function OptimizerPreview({
           controls.update();
         }
         syncOptimizerPreviewLights(runtime, propsRef.current);
+        renderer.render(scene, camera);
         setLoadState("ready");
       })
       .catch(() => {
@@ -165,6 +177,7 @@ export function OptimizerPreview({
       renderer.setSize(width, height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
     });
     resize.observe(container);
     const animate = () => {
@@ -178,10 +191,11 @@ export function OptimizerPreview({
       cancelAnimationFrame(frame);
       resize.disconnect();
       // 卸载前记住视角，下一个 url 的 effect 挂载后恢复，避免切视图时相机被重置。
-      cameraStateRef.current = { position: camera.position.clone(), target: controls.target.clone() };
+      if (runtime.modelBounds) cameraStateRef.current = { position: camera.position.clone(), target: controls.target.clone() };
       controls.dispose();
       transform.dispose();
       dracoLoader.dispose();
+      disposeGltfKtx2(loader);
       renderer.domElement.removeEventListener("pointerdown", selectLight);
       clearOptimizerPreviewLights(runtime);
       runtime.environment?.dispose();
@@ -195,6 +209,14 @@ export function OptimizerPreview({
 
   useEffect(() => {
     const runtime = runtimeRef.current;
+    if (runtime?.model && layerDraft) {
+      syncOptimizerLayerPreview(runtime.model, layerDraft);
+      runtime.renderer.render(runtime.scene, runtime.camera);
+    }
+  }, [layerDraft]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
     if (runtime) syncOptimizerPreviewLights(runtime, { bakeEnabled, comparisonMode, shadows, reflections, ambient, ambientColor, lights, selectedLightId, transformMode });
   }, [ambient, ambientColor, bakeEnabled, comparisonMode, lights, reflections, selectedLightId, shadows, transformMode]);
 
@@ -205,6 +227,7 @@ export function OptimizerPreview({
           const runtime = runtimeRef.current;
           if (!runtime) return;
           frameOptimizerCamera(runtime);
+          runtime.renderer.render(runtime.scene, runtime.camera);
           cameraStateRef.current = { position: runtime.camera.position.clone(), target: runtime.controls.target.clone() };
         }}
         onCapture={() => {

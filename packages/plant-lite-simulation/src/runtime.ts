@@ -6,6 +6,7 @@ import { addPlantLiteOperatingMinutes, isPlantLiteAvailableAt, unionPlantLiteAva
 import { mixSeed, sample, seedNumber, Random } from "./random.js";
 import type { ChangeoverEventData, Item, NodeState, ResourceState, Runtime, SimulationEvent } from "./runtimeTypes.js";
 import type { PlantLiteTraceRecorder } from "./trace.js";
+import { TransportNetworkScheduler } from "./transportNetwork.js";
 
 export function runReplication(
   model: PlantLiteModel,
@@ -78,6 +79,7 @@ function createRuntime(model: PlantLiteModel, seed: number, limits: Required<Sim
     wipArea: 0,
     ...(energy ? { energy } : {}),
     ...(trace ? { trace } : {}),
+    ...(model.transportNetwork ? { transport: new TransportNetworkScheduler(model.transportNetwork, model) } : {}),
   };
   for (const node of model.nodes) runtime.states.set(node.id, emptyNodeState());
   for (const resource of model.resources ?? []) runtime.resources.set(resource.id, emptyResourceState());
@@ -395,6 +397,12 @@ function beginProcessing(runtime: Runtime, node: Extract<PlantLiteNode, { kind: 
 }
 
 function startProcessing(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>, item: Item): void {
+  if (node.kind === "transport" && node.journey && runtime.transport) {
+    const reservation = runtime.transport.reserve(node.resourceId, node.journey, runtime.now, resourceState(runtime, node.resourceId).failedUnits);
+    runtime.trace?.item("item-start", runtime.now, item.id, node.id, item.productTypeId, item.orderId, undefined, undefined, reservation);
+    schedule(runtime, reservation.finishMinute, "complete", node.id, item);
+    return;
+  }
   traceItem(runtime, "item-start", item, node.id);
   const distribution = node.kind === "station" ? node.processingTime : node.travelTime;
   schedule(runtime, runtime.now + sample(distribution, runtime.random), "complete", node.id, item);

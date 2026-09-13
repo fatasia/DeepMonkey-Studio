@@ -79,6 +79,7 @@ export interface TopologyEditorPanelProps {
   readonly autoSaveEnabled?: boolean;
   readonly onAutoSaveChange?: (enabled: boolean) => void;
   readonly onSave?: () => void;
+  readonly onSaveAndReturn?: () => void;
   readonly onPublish?: () => void;
   readonly onInsertDashboard?: () => void;
   readonly onClose?: () => void;
@@ -107,6 +108,7 @@ function useTopologyEditorController({
   autoSaveEnabled = false,
   onAutoSaveChange,
   onSave,
+  onSaveAndReturn,
   onPublish,
   onInsertDashboard,
   onClose,
@@ -445,6 +447,7 @@ function useTopologyEditorController({
     onInsertDashboard,
     onPublish,
     onSave,
+    onSaveAndReturn,
     operationError,
     paletteQuery,
     presetGroups,

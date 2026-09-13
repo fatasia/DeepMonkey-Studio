@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { ClippingGroup } from "three/webgpu";
 import type { World as RapierWorld } from "@dimforge/rapier3d-compat";
 import { CompatibleGLTFLoader as GLTFLoader } from "./CompatibleGLTFLoader";
+import { configureGltfKtx2 } from "./gltfKtx2Support";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -78,6 +79,13 @@ import {
 import { runtimeGpuDevice, type RendererInstance } from "./viewerRendererTypes";
 import { ViewerEngineContract } from "./viewerEngineContract";
 import type { MotionRoutePlan } from "../prefabs/motionRoutePlayer";
+import { ViewerRenderDemand, isCloudCaptureSearch } from "./viewerRenderDemand";
+import { ViewerMaterialActivity } from "./viewerMaterialActivity";
+import { ViewerSnapshotReadiness } from "./viewerSnapshotReadiness";
+import { RepeatedAssetBatcher } from "./repeatedAssetBatcher";
+import { ConservativeOcclusion } from "./conservativeOcclusion";
+import { installOcclusionDrawFilter } from "./occlusionDrawFilter";
+import { ViewerOffscreenController } from "./viewerOffscreenController";
 
 /** ViewerEngine 的共享状态与跨模块契约，具体能力由职责层逐级实现。 */
 export abstract class ViewerEngineCore extends ViewerEngineContract {
@@ -109,6 +117,12 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   onInteractionTrigger?: (trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
   protected readonly raycaster = new THREE.Raycaster();
   protected readonly modelRoot: THREE.Group | ClippingGroup;
+  protected readonly repeatedAssetBatcher: RepeatedAssetBatcher;
+  protected readonly conservativeOcclusion = new ConservativeOcclusion();
+  protected releaseOcclusionFilter: (() => void) | undefined;
+  protected readonly offscreen: ViewerOffscreenController;
+  /** Runtime 职责层覆盖:返回需要主线程补绘的叠加标签。 */
+  protected overlaySpritesProvider: () => THREE.Sprite[] = () => [];
   protected readonly pointerPosition = new THREE.Vector2();
   protected readonly models = new Map<string, LoadedSceneModel>();
   protected readonly modelLoads = new ModelLoadCoordinator<LoadedSceneModel>();
@@ -128,6 +142,12 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected readonly gltfLoader = new GLTFLoader();
   protected readonly fbxLoader = new FBXLoader();
   protected readonly keys = new Set<string>();
+  protected readonly renderDemand = new ViewerRenderDemand();
+  protected readonly snapshotReadiness = new ViewerSnapshotReadiness();
+  protected readonly materialActivity = new ViewerMaterialActivity(() => this.requestRender());
+  protected materialActivityDirty = true;
+  protected readonly renderWake = () => this.requestRender();
+  protected readonly renderInputEvents = ["pointerdown", "pointermove", "pointerup", "wheel", "keydown", "keyup", "input", "change", "click"];
   protected readonly mixers = new Map<string, THREE.AnimationMixer>();
   protected readonly animationClips = new Map<string, THREE.AnimationClip[]>();
   protected readonly animationClipSelection = new Map<string, string>();
@@ -328,6 +348,15 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     this.renderer.info.autoReset = false;
     this.gpuFrameTimeMonitor = new GpuFrameTimeMonitor(renderer);
     this.modelRoot = modelRoot;
+    this.repeatedAssetBatcher = new RepeatedAssetBatcher(modelRoot);
+    this.offscreen = new ViewerOffscreenController({
+      container,
+      renderer,
+      scene: this.scene,
+      camera: this.camera,
+      requestRender: () => this.requestRender(),
+      overlaySprites: () => this.overlaySpritesProvider(),
+    });
     this.renderer.setPixelRatio(this.adaptiveRenderScaleController.state().basePixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -350,6 +379,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     this.cameraCollisionAnchor.copy(this.camera.position);
     this.orbit.addEventListener("change", () => {
       this.cameraCollisionDirty = true;
+      this.requestRender();
     });
     this.pointer = new PointerLockControls(this.camera, this.renderer.domElement);
     this.transform = new TransformControls(this.camera, this.renderer.domElement);
@@ -395,6 +425,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     this.setupEnvironment();
     this.dracoLoader.setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
     this.gltfLoader.setDRACOLoader(this.dracoLoader);
+    configureGltfKtx2(this.gltfLoader, this.renderer);
     this.orbit.addEventListener("change", () => {
       void this.fragments?.update();
       this.emitCameraChange();
@@ -403,6 +434,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
 
   /** 在空闲窗口预编译当前场景管线，减少首次显示材质、灯光或效果时的卡顿。 */
   protected scheduleRendererPipelineWarmup(): void {
+    this.materialActivityDirty = true;
+    this.requestRender();
     this.pipelineWarmupScheduler.request(async () => {
       const signature = rendererPipelineSignature(this.scene, this.rendererBackend, this.postProcessingState);
       if (this.warmedPipelineSignatures.has(signature)) return false;
@@ -424,10 +457,48 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   }
 
   protected markShadowMapDirty(): void {
+    this.conservativeOcclusion.invalidate();
     this.shadowUpdateGovernor.markDirty();
+    this.materialActivityDirty = true;
+    this.requestRender();
+  }
+
+  /** 外部渲染集成可声明连续源；停止时再补一帧，保留最终姿态。 */
+  setContinuousRender(reason: string, active: boolean): void { this.renderDemand.setContinuous(reason, active, performance.now()); }
+  requestRender(): void {
+    // 任何重绘请求都可能伴随结构变化（模型增删、辅助对象）；后台渲染激活时借防抖重新体检。
+    this.offscreen.noteSceneMutated();
+    this.renderDemand.invalidate(performance.now());
+  }
+  isSceneSnapshotReady(sceneId?: string): boolean { return this.snapshotReadiness.ready(sceneId, this.rendererDisposalStarted, this.modelLoads.hasPending); }
+  /** 增量插入模型期间仍属于当前场景；路由同步不能因此重新恢复快照。 */
+  hasRestoredSceneSnapshot(sceneId: string): boolean { return this.snapshotReadiness.ready(sceneId, this.rendererDisposalStarted, false); }
+  beginSceneSnapshotRestore(sceneId: string): number { return this.snapshotReadiness.begin(sceneId); }
+  completeSceneSnapshotRestore(generation: number): void { this.snapshotReadiness.complete(generation); }
+  bindSavedSceneSnapshot(sceneId: string): void { this.snapshotReadiness.bindSaved(sceneId); }
+  getRenderDemandDiagnostics() { return this.renderDemand.snapshot(); }
+  getRepeatedAssetDiagnostics() { return this.repeatedAssetBatcher.statistics(); }
+  getOcclusionDiagnostics() { return this.conservativeOcclusion.diagnostics(); }
+  setOcclusionCullingEnabled(enabled: boolean): void {
+    this.releaseOcclusionFilter?.(); this.releaseOcclusionFilter = undefined;
+    this.conservativeOcclusion.setEnabled(enabled);
+    if (enabled) this.releaseOcclusionFilter = installOcclusionDrawFilter(this.renderer, this.camera, this.conservativeOcclusion.culled);
+    this.requestRender();
+  }
+  /** 后台线程渲染：开启为异步启动（体检失败或 Worker 异常都会自动回退主线程，原因见诊断）。 */
+  setOffscreenRenderingEnabled(enabled: boolean): void {
+    void this.offscreen.setEnabled(enabled);
+  }
+  getOffscreenDiagnostics() {
+    return this.offscreen.diagnostics();
+  }
+  setRepeatedAssetBatchingEnabled(enabled: boolean): void {
+    this.repeatedAssetBatcher.setEnabled(enabled);
+    this.markShadowMapDirty();
   }
 
   protected scheduleResize(): void {
+    this.requestRender();
     if (this.resizeAnimationFrame !== 0 || this.rendererDisposalStarted) return;
     this.resizeAnimationFrame = requestAnimationFrame(() => {
       this.resizeAnimationFrame = 0;
@@ -437,6 +508,9 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
 
   /** 派生职责层字段初始化完成后，再统一绑定输入事件并启动渲染循环。 */
   protected startRuntime(): void {
+    this.setContinuousRender("cloud-capture", isCloudCaptureSearch(window.location.search));
+    for (const event of this.renderInputEvents) window.addEventListener(event, this.renderWake, { capture: true, passive: true });
+    document.addEventListener("visibilitychange", this.renderWake);
     this.renderer.domElement.addEventListener("pointerdown", this.handlePointerDown);
     this.renderer.domElement.addEventListener("pointermove", this.handlePointerMove);
     this.renderer.domElement.addEventListener("pointerleave", this.handlePointerLeave);

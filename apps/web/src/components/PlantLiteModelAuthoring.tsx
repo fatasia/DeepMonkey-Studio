@@ -1,7 +1,8 @@
 import { AlertTriangle, ArrowDown, ArrowUp, Boxes, ChevronDown, Factory, PackageCheck, PackagePlus, RotateCcw, Truck } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { PlantLiteStudyRequest } from "@bim-studio/contracts";
-import { createAgvLinePlantLiteModel, type PlantLiteModel } from "@bim-studio/plant-lite-simulation";
+import { createAgvLinePlantLiteModel, createAgvNetworkPlantLiteModel, type PlantLiteModel } from "@bim-studio/plant-lite-simulation";
+import { PlantTransportNetworkEditor } from "./PlantTransportNetworkEditor";
 import { PlantLiteNodeEditor } from "./PlantLiteNodeEditor";
 import { PlantLiteEnergyPolicyEditor } from "./PlantLiteEnergyControls";
 import { PlantLiteProductMixEditor } from "./PlantLiteProductMixEditor";
@@ -52,10 +53,12 @@ export function PlantLiteModelAuthoring({ value, onChange }: { value: PlantLiteS
         <div className="plant-authoring-template">
           <span><b>{model.nodes.length}</b> 个节点 · <b>{model.edges.length}</b> 条顺序连接</span>
           <button type="button" onClick={() => onChange(resetPlantLiteModel(value))}><RotateCcw size={13} />恢复起步模板</button>
+          <button type="button" title="用三辆 AGV、共享轨道、输送线与机器人替换当前方案草稿" onClick={() => { const sample = createAgvNetworkPlantLiteModel(); onChange(withAuthoredModel({ ...value, name: sample.name, limits: { ...value.limits, durationMinutes: 60, warmupMinutes: 0 } }, sample)); }}><Truck size={13} />多车交接样例</button>
         </div>
       </div>
 
       <PlantLiteEnergyPolicyEditor model={model} onChange={setModel} />
+      <PlantTransportNetworkEditor model={model} onChange={setModel} />
       <PlantLiteProductMixEditor model={model} onChange={setModel} />
       <PlantLiteProductionOrdersEditor model={model} onChange={setModel} />
       <PlantLiteAcceptanceTargetsEditor value={value} onChange={onChange} />

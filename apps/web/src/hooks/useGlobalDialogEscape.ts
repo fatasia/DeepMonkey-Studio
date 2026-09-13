@@ -18,7 +18,7 @@ export function useDialogEscape(dismiss: () => void, busy = false) {
 function topVisibleBackdrop(): HTMLElement | undefined {
   let top: HTMLElement | undefined;
   let topZ = -Infinity;
-  for (const element of document.querySelectorAll<HTMLElement>(".dialog-backdrop")) {
+  for (const element of document.querySelectorAll<HTMLElement>(".dialog-backdrop, [data-escape-dialog]")) {
     const bounds = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     if (bounds.width <= 0 || bounds.height <= 0 || style.visibility === "hidden" || style.display === "none") continue;

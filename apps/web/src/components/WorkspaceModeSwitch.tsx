@@ -10,6 +10,7 @@ export interface WorkspaceModeSwitchProps {
   /** 当前页面或场景名称，帮助用户确认自己仍在同一交付上下文。 */
   contextLabel: string;
   sceneAvailable?: boolean;
+  scriptsAvailable?: boolean;
   onSelect2D?: () => void;
   onSelect3D?: () => void;
   onSelectScripts?: () => void;
@@ -24,6 +25,7 @@ export function WorkspaceModeSwitch({
   active,
   contextLabel,
   sceneAvailable = true,
+  scriptsAvailable = true,
   onSelect2D,
   onSelect3D,
   onSelectScripts
@@ -40,7 +42,7 @@ export function WorkspaceModeSwitch({
       <button type="button" className={active === "3d" ? "active" : ""} aria-current={active === "3d" ? "page" : undefined} disabled={!sceneAvailable || active === "3d"} onClick={onSelect3D}>
         <Box size={14} />{tr(locale, "三维", "3D")}
       </button>
-      <button type="button" className={active === "script" ? "active" : ""} aria-current={active === "script" ? "page" : undefined} disabled={active === "script"} onClick={onSelectScripts}>
+      <button type="button" className={active === "script" ? "active" : ""} aria-current={active === "script" ? "page" : undefined} disabled={!scriptsAvailable || active === "script"} title={!scriptsAvailable ? tr(locale, "场景加载后可编辑脚本", "Scripts are available after the scene loads") : undefined} onClick={onSelectScripts}>
         <Braces size={14} />{tr(locale, "脚本", "Scripts")}
       </button>
     </nav>

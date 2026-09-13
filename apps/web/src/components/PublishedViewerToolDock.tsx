@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronRight,
+  SlidersHorizontal,
   Eye,
   EyeOff,
   Footprints,
@@ -30,8 +31,10 @@ interface PublishedViewerToolDockProps {
   avatarVisible: boolean;
   infoEnabled: boolean;
   objectPanelOpen: boolean;
+  fitSelectedEnabled?: boolean;
   onOpenChange: (open: boolean) => void;
   onFitAll: () => void;
+  onFitSelected?: () => void;
   onNavigationChange: (mode: NavigationMode) => void;
   onMeasurementToggle: () => void;
   onClippingToggle: () => void;
@@ -51,8 +54,17 @@ interface PublishedViewerToolDockProps {
 export function PublishedViewerToolDock(props: PublishedViewerToolDockProps) {
   const { locale } = props;
   const [moreOpen, setMoreOpen] = useState(false);
+  const dockRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !dockRef.current?.contains(event.target)) setMoreOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    return () => document.removeEventListener("pointerdown", dismiss, true);
+  }, [moreOpen]);
   return (
-    <div className={`tool-dock viewer-tool-dock ${props.open ? "open" : "collapsed"}`} role="toolbar" aria-label={tr(locale, "浏览工具", "Viewer tools")}>
+    <div ref={dockRef} className={`tool-dock viewer-tool-dock ${props.open ? "open" : "collapsed"}`} role="toolbar" aria-label={tr(locale, "浏览工具", "Viewer tools")}>
       <button
         className="viewer-tool-toggle"
         type="button"
@@ -60,10 +72,17 @@ export function PublishedViewerToolDock(props: PublishedViewerToolDockProps) {
         title={props.open ? tr(locale, "收起浏览工具", "Collapse viewer tools") : tr(locale, "展开浏览工具", "Expand viewer tools")}
         onClick={() => props.onOpenChange(!props.open)}
       >
-        <ChevronRight size={18} />
+        {props.open ? <ChevronRight size={18} /> : <SlidersHorizontal size={18} />}
       </button>
       <div className="viewer-tool-items" aria-hidden={!props.open}>
         <ToolButton title={tr(locale, "适应全部（回到模型）", "Fit all")} active={false} onClick={props.onFitAll} icon={<Focus size={19} />} />
+        <ToolButton
+          title={tr(locale, "适应选中模型", "Fit selected model")}
+          active={false}
+          disabled={props.fitSelectedEnabled === false || !props.onFitSelected}
+          onClick={() => props.onFitSelected?.()}
+          icon={<Focus size={17} />}
+        />
         <ToolButton title={tr(locale, "对象与属性", "Objects and properties")} active={props.objectPanelOpen} onClick={() => props.onObjectPanelOpenChange(!props.objectPanelOpen)} icon={<ListTree size={19} />} />
         <span className="viewer-tool-separator" />
         <ToolButton title={tr(locale, "测量标尺", "Measure")} active={props.measureEnabled} onClick={props.onMeasurementToggle} icon={<Ruler size={19} />} />
@@ -76,7 +95,7 @@ export function PublishedViewerToolDock(props: PublishedViewerToolDockProps) {
         <div className="viewer-tool-more" role="group" aria-label={tr(locale, "视图与漫游", "Views and navigation")}>
           <div>
             <strong>{tr(locale, "标准视图", "Standard views")}</strong>
-            {(["top", "front", "right", "back"] as const).map((view) => (
+            {(["top", "front", "right", "back", "bottom", "left"] as const).map((view) => (
               <button key={view} onClick={() => props.onStandardView(view)}>{standardViewLabel(locale, view)}</button>
             ))}
           </div>
@@ -100,7 +119,7 @@ export function PublishedViewerToolDock(props: PublishedViewerToolDockProps) {
   );
 }
 
-function standardViewLabel(locale: AppLocale, view: "top" | "front" | "right" | "back"): string {
-  const labels = { top: ["顶", "Top"], front: ["前", "Front"], right: ["右", "Right"], back: ["后", "Back"] } as const;
+function standardViewLabel(locale: AppLocale, view: "top" | "front" | "right" | "back" | "bottom" | "left"): string {
+  const labels = { top: ["顶", "Top"], front: ["前", "Front"], right: ["右", "Right"], back: ["后", "Back"], bottom: ["底", "Bottom"], left: ["左", "Left"] } as const;
   return tr(locale, labels[view][0], labels[view][1]);
 }

@@ -1,11 +1,27 @@
 import * as THREE from "three";
 import { ViewerEngineNavigationTools } from "./viewerEngineNavigationTools";
+import { disposeViewerDeviceSignals } from "./viewerDeviceSignals";
+import { closeSharedGltfPool } from "./sharedGltfAssets";
+import { disposeGltfKtx2 } from "./gltfKtx2Support";
+import { disposeOrdinaryPicking } from "./ordinaryPicking";
+import { disposeViewerPerformanceBinding } from "./viewerPerformanceBinding";
 
 /** 集中释放浏览器事件、Worker、物理世界和 GPU 资源。 */
 export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools {
   dispose(): void {
     if (this.rendererDisposalStarted) return;
     this.rendererDisposalStarted = true;
+    disposeViewerPerformanceBinding(this);
+    disposeOrdinaryPicking(this);
+    this.offscreen.dispose();
+    this.releaseOcclusionFilter?.();
+    this.conservativeOcclusion.dispose();
+    this.repeatedAssetBatcher.dispose();
+    closeSharedGltfPool(this);
+    disposeViewerDeviceSignals(this);
+    this.materialActivity.dispose();
+    for (const event of this.renderInputEvents) window.removeEventListener(event, this.renderWake, { capture: true });
+    document.removeEventListener("visibilitychange", this.renderWake);
     cancelAnimationFrame(this.animationFrame);
     for (const cancel of this.visibilityTransitionCancels.values()) cancel();
     this.visibilityTransitionCancels.clear();
@@ -27,6 +43,7 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
     this.pointer.disconnect();
     this.transform.dispose();
     this.dracoLoader.dispose();
+    disposeGltfKtx2(this.gltfLoader);
     this.clearSceneModels();
     this.disposeAllSpatialAudio();
     this.primitiveGeometryCache.dispose();

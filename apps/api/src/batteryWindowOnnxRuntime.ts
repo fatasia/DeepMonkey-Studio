@@ -91,7 +91,7 @@ export class BatteryWindowOnnxRuntime implements BatteryOnnxRuntime {
   private adapter(model: "bmsformer" | "socformer", deployment: BatteryOnnxModelDeployment): Promise<WindowAdapterDocument> {
     let adapter = this.adapters.get(model);
     if (!adapter) {
-      adapter = readAdapter(deployment, model);
+      adapter = readAdapter(deployment, model).catch(error => { this.adapters.delete(model); throw error; });
       this.adapters.set(model, adapter);
     }
     return adapter;
@@ -100,7 +100,7 @@ export class BatteryWindowOnnxRuntime implements BatteryOnnxRuntime {
   private session(model: "bmsformer" | "socformer", deployment: BatteryOnnxModelDeployment): Promise<SessionLike> {
     let session = this.sessions.get(model);
     if (!session) {
-      session = this.createSession(deployment.artifactPath);
+      session = this.createSession(deployment.artifactPath).catch(error => { this.sessions.delete(model); throw error; });
       this.sessions.set(model, session);
     }
     return session;

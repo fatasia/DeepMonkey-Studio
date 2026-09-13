@@ -5,6 +5,7 @@ import type {
 } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { DeferredNumberInput } from "./AppFormControls";
+import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 
 interface ScenePhysicsPanelProps {
   locale: AppLocale;
@@ -19,13 +20,23 @@ interface ScenePhysicsPanelProps {
 
 export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
   const { locale, value, selectedBody } = props;
+  const drag = useFloatingPanelDrag<HTMLDivElement>();
 
   return (
     <div
+      ref={drag.panelRef}
+      style={drag.style}
       className="physics-panel"
       aria-label={tr(locale, "物理系统", "Physics system")}
     >
-      <header>
+      <header
+        data-drag-handle="true"
+        title={tr(locale, "拖动标题栏移动物理面板", "Drag the title bar to move the physics panel")}
+        onPointerDown={drag.onPointerDown}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
+        onPointerCancel={drag.onPointerCancel}
+      >
         <div>
           <strong>{tr(locale, "物理系统", "Physics")}</strong>
           <small>Rapier · WebAssembly</small>

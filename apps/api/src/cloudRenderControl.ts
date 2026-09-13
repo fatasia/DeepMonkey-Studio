@@ -4,11 +4,13 @@ import path from "node:path";
 import { preferredPublicationRenderer, type PublishedSceneRecord } from "@bim-studio/contracts";
 import {
   CLOUD_RENDER_WORKER_CONTRACT_VERSION,
+  CLOUD_RENDER_RESOLUTIONS,
   RemoteRenderSession,
   type CloudRenderCapability,
   type CloudRenderControlOverview,
   type CloudRenderPublishedSceneScope,
   type CloudRenderScenePolicy,
+  type CloudRenderResolution,
   type CloudRenderWorkerClient,
   type CloudRenderWorkerHealth,
   type CloudRenderWorkerSession,
@@ -108,6 +110,7 @@ export class CloudRenderControlPlane {
             name: publication.name,
             publishedAt: publication.publishedAt,
             enabled: policy?.enabled === true,
+            resolution: policy?.resolution ?? 1080,
             publicationChanged: Boolean(session && session.publicationId !== publication.publishedAt),
             ...(session ? { session } : {})
           };
@@ -129,13 +132,21 @@ export class CloudRenderControlPlane {
     }
   }
 
-  async setEnabled(publication: PublishedSceneRecord, enabled: boolean): Promise<CloudRenderScenePolicy> {
+  async setResolution(publication: PublishedSceneRecord, resolution: unknown): Promise<CloudRenderScenePolicy> {
+    if (!CLOUD_RENDER_RESOLUTIONS.includes(resolution as CloudRenderResolution)) {
+      throw new CloudRenderControlError("分辨率仅支持 720P、1080P、1440P、2160P", 400, "invalid_resolution");
+    }
+    return this.setEnabled(publication, this.policies.get(publication.sceneId)?.enabled ?? false, resolution as CloudRenderResolution);
+  }
+
+  async setEnabled(publication: PublishedSceneRecord, enabled: boolean, resolution?: CloudRenderResolution): Promise<CloudRenderScenePolicy> {
     this.requireInitialized();
     if (!enabled) await this.stopSession(publication.sceneId);
     const policy: CloudRenderScenePolicy = {
       sceneId: publication.sceneId,
       projectId: publication.projectId,
       enabled,
+      resolution: resolution ?? this.policies.get(publication.sceneId)?.resolution ?? 1080,
       updatedAt: this.now().toISOString()
     };
     this.policies.set(publication.sceneId, policy);
@@ -173,8 +184,8 @@ export class CloudRenderControlPlane {
         contractVersion: CLOUD_RENDER_WORKER_CONTRACT_VERSION,
         scope: this.publicationScope(publication),
         render: {
-          width: 1920,
-          height: 1080,
+          width: (this.policies.get(publication.sceneId)?.resolution ?? 1080) * 16 / 9,
+          height: this.policies.get(publication.sceneId)?.resolution ?? 1080,
           framesPerSecond: 60,
           codecPreferences: preferredCodecs(health)
         }

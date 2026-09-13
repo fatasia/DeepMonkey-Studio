@@ -1,9 +1,9 @@
-import { assertDirectBindingSpec, type DataEventAction, type DataMessage, type DataPipelinePreview, type DataDatasetPreview, type SceneDataBindingState } from "@bim-studio/contracts";
+import { assertDirectBindingSpec, assertDeviceSignalRule, resolveDeviceSignal, type DataEventAction, type DataMessage, type DataPipelinePreview, type DataDatasetPreview, type SceneDataBindingState } from "@bim-studio/contracts";
 import { normalizeMaterialDataPatch } from "./viewer/materialDataPatch";
 
 export type DataProductPreview = Pick<DataDatasetPreview, "fields" | "rows"> | Pick<DataPipelinePreview, "fields" | "rows">;
 
-const ACTIONS: readonly DataEventAction[] = ["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material"];
+const ACTIONS: readonly DataEventAction[] = ["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material", "alarm"];
 
 export function normalizeSceneDataBindings(value: unknown): SceneDataBindingState[] {
   if (!Array.isArray(value)) return [];
@@ -25,6 +25,7 @@ export function normalizeSceneDataBindings(value: unknown): SceneDataBindingStat
     }
     if ([datasetId, pipelineId, directBinding].filter(Boolean).length !== 1) return [];
     if (typeof item.field !== "string" || !item.field.trim() || !ACTIONS.includes(item.action as DataEventAction)) return [];
+    if (item.signalRule) { try { assertDeviceSignalRule(item.signalRule); } catch { return []; } }
     let id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : `data-binding-${index}`;
     while (ids.has(id)) id = `${id}-${index}`;
     ids.add(id);
@@ -41,6 +42,7 @@ export function normalizeSceneDataBindings(value: unknown): SceneDataBindingStat
         ...(annotationId ? { annotationId } : {})
       },
       action: item.action!,
+      ...(item.signalRule ? {signalRule:structuredClone(item.signalRule)} : {}),
       refreshSeconds: clampInteger(item.refreshSeconds, 2, 3_600, 5)
     }];
   }).slice(0, 500);
@@ -51,7 +53,7 @@ export function directSceneDataBindingMessage(binding: SceneDataBindingState, va
   return {
     source: `direct:${binding.id}`,
     key: binding.field,
-    value: normalizeActionValue(binding.action, value),
+    value: binding.action === "alarm" ? resolveDeviceSignal(value,binding.signalRule) : normalizeActionValue(binding.action, value),
     timestamp,
     sceneId,
     target: { ...binding.target },
@@ -73,7 +75,7 @@ export function sceneDataBindingMessage(binding: SceneDataBindingState, preview:
   return {
     source: `${product.kind}:${product.id}`,
     key: binding.field,
-    value: normalizeActionValue(binding.action, row[binding.field]),
+    value: binding.action === "alarm" ? resolveDeviceSignal(row[binding.field],binding.signalRule) : normalizeActionValue(binding.action, row[binding.field]),
     timestamp,
     sceneId,
     target: { ...binding.target },

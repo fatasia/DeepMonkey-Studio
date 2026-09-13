@@ -16,4 +16,20 @@ describe("DocsCenter", () => {
     expect(html).toContain("aria-keyshortcuts=\"Control+K Meta+K /\"");
     expect(html.indexOf("返回")).toBeLessThan(html.indexOf("Deep Monkey Studio 文档"));
   });
+
+  it("renders local documentation diagrams as real images", () => {
+    const html = renderToStaticMarkup(<DocsCenter systemName="Deep Monkey Studio" documentId="dashboard-scene" onNavigate={() => undefined} onClose={() => undefined} />);
+    expect(html).toContain('class="docs-image"');
+    expect(html).toContain('src="/docs-assets/project-to-publish-flow.svg"');
+    expect(html).toContain("项目到发布的交付路径图");
+    expect(html).not.toMatch(/<p[^>]*>\s*<figure/);
+  });
+
+  it("renders the API reference diagram and cloud-render troubleshooting", () => {
+    const html = renderToStaticMarkup(<DocsCenter systemName="Deep Monkey Studio" documentId="api-reference" onNavigate={() => undefined} onClose={() => undefined} />);
+    expect(html).toContain('src="/docs-assets/api-call-flow.svg"');
+    expect(html).toContain("直接打开根地址得到");
+    expect(html).toContain("Tripo3D");
+    expect(html).toContain("腾讯混元");
+  });
 });

@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Cpu,
   Database,
+  Download,
   FileSpreadsheet,
   LoaderCircle,
   Pause,
@@ -32,6 +33,16 @@ import {
 import { AiDataRunPolicyFields, type AiDataRunPolicyDraft } from "./AiDataRunPolicyFields";
 import { AiDataRunHistory } from "./AiDataRunHistory";
 import { BatteryDataContractStatus } from "./BatteryDataContractStatus";
+import { BatteryAnalysisReport } from "./BatteryAnalysisReport";
+import { BatteryScenarioWorkbench } from "./BatteryScenarioWorkbench";
+import {
+  BATTERY_EXAMPLES,
+  BATTERY_EXAMPLE_GROUPS,
+  batteryExampleById,
+  batteryExampleFile,
+} from "../ai/batterySample";
+import { batterySuggestionDraft, type OperationalSuggestionDraft } from "../ai/operationalSuggestionDraft";
+import { AiOperationalDraftReview } from "./AiOperationalDraftReview";
 
 type FormalModel = "socformer" | "bmsformer" | "batterymformer";
 type Chemistry = "lfp" | "ncm";
@@ -51,10 +62,11 @@ const BATTERY_POLICY: Record<BatteryTask, AiDataRunPolicyDraft> = {
 export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
   const [task, setTask] = useState<BatteryTask>("soh");
   const [chemistry, setChemistry] = useState<Chemistry>("lfp");
-  const [nominalCapacity, setNominalCapacity] = useState("");
+  const [nominalCapacity, setNominalCapacity] = useState("100");
   const [targetRetention, setTargetRetention] = useState("80");
   const [source, setSource] = useState<{ file: File; parsed: ParsedBatteryCsv }>();
-  const [sourceMode, setSourceMode] = useState<"dataset" | "file">("dataset");
+  const [sourceMode, setSourceMode] = useState<"example" | "dataset" | "file">("example");
+  const [exampleId, setExampleId] = useState("lfp-engineering");
   const [datasets, setDatasets] = useState<DataDatasetRecord[]>([]);
   const [bindings, setBindings] = useState<AiDataBinding[]>([]);
   const [datasetId, setDatasetId] = useState("");
@@ -64,9 +76,13 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
   const [result, setResult] = useState<Record<string, unknown>>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [sampleRun, setSampleRun] = useState<string>();
+  const [evidence, setEvidence] = useState<{ draft: OperationalSuggestionDraft; payload: unknown }>();
   const fileInput = useRef<HTMLInputElement>(null);
+  const fileRead = useRef(0);
   const activeRequest = useRef<AbortController | undefined>(undefined);
   const selectedTask = TASKS.find((item) => item.id === task)!;
+  const selectedExample = batteryExampleById(exampleId);
   const selectedModel = catalog.find((item) => item.family === selectedTask.model && item.role === "primary-model");
   const selectedDataset = datasets.find((item) => item.id === datasetId);
   const nominalCapacityProvided = Number.isFinite(Number(nominalCapacity)) && Number(nominalCapacity) > 0;
@@ -76,10 +92,15 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
   ])), [datasets, nominalCapacityProvided, selectedTask.model]);
   const dataContract = useMemo(() => {
     if (sourceMode === "dataset") return datasetId ? datasetAssessments.get(datasetId) : undefined;
+    if (sourceMode === "example") {
+      return assessBatteryDataContract(selectedTask.model, selectedExample.headers.map((key) => ({ key })), {
+        nominalCapacityProvided: true,
+      });
+    }
     return source
       ? assessBatteryDataContract(selectedTask.model, source.parsed.headers.map((key) => ({ key })), { nominalCapacityProvided })
       : undefined;
-  }, [datasetAssessments, datasetId, nominalCapacityProvided, selectedTask.model, source, sourceMode]);
+  }, [datasetAssessments, datasetId, nominalCapacityProvided, selectedExample, selectedTask.model, source, sourceMode]);
   const activeBinding = bindings.find((item) =>
     item.capabilityId === "battery.model.predict"
     && item.datasetId === datasetId
@@ -87,8 +108,11 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    setDatasets([]); setBindings([]); setDatasetId(""); setSource(undefined); setResult(undefined); setEvidence(undefined);
     void Promise.all([api.listBatteryModelCatalog(), api.getBatteryReleaseGate(), api.listDatasets(projectId), api.listAiDataBindings(projectId)])
       .then(([catalogResult, releaseResult, datasetResult, bindingResult]) => {
+        if (cancelled) return;
         setCatalog(catalogResult.models);
         setRelease(releaseResult);
         setDatasets(datasetResult);
@@ -96,9 +120,14 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
         setDatasetId((current) => current || recommended?.id || datasetResult[0]?.id || "");
         setBindings(bindingResult);
       })
-      .catch(showError);
-    return () => activeRequest.current?.abort();
+      .catch(reason => { if (!cancelled) showError(reason); });
+    return () => { cancelled = true; fileRead.current += 1; activeRequest.current?.abort(); activeRequest.current = undefined; };
   }, [projectId]);
+
+  useEffect(() => {
+    activeRequest.current?.abort(); activeRequest.current = undefined;
+    setBusy(false); setResult(undefined); setEvidence(undefined); setError(""); setSampleRun(undefined);
+  }, [projectId, task, sourceMode, source, datasetId, exampleId, chemistry, nominalCapacity, targetRetention]);
 
   useEffect(() => {
     const binding = bindings.find((item) =>
@@ -124,6 +153,7 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
 
   async function selectFile(file: File | undefined) {
     if (!file) return;
+    const current = ++fileRead.current;
     const pendingRequest = activeRequest.current;
     activeRequest.current = undefined;
     pendingRequest?.abort();
@@ -131,17 +161,18 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
     setError("");
     setResult(undefined);
     try {
-      setSource({ file, parsed: await parseBatteryCsv(file) });
+      const parsed = await parseBatteryCsv(file);
+      if (fileRead.current === current) setSource({ file, parsed });
     } catch (reason) {
-      showError(reason);
-      setSource(undefined);
+      if (fileRead.current === current) { showError(reason); setSource(undefined); }
     } finally {
-      setBusy(false);
+      if (fileRead.current === current) setBusy(false);
       if (fileInput.current) fileInput.current.value = "";
     }
   }
 
   async function runPrediction() {
+    if (activeRequest.current) return;
     if (sourceMode === "dataset" && !datasetId) {
       setError("请先在数据中心建立并选择电池数据集");
       return;
@@ -157,16 +188,20 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
     setBusy(true);
     setError("");
     setResult(undefined);
-    activeRequest.current?.abort();
     const controller = new AbortController();
     activeRequest.current = controller;
     try {
-      const capacity = optionalPositiveNumber(nominalCapacity, "额定容量");
+      setSampleRun(sourceMode === "example" ? selectedExample.id : undefined);
+      const capacity = sourceMode === "example"
+        ? selectedExample.nominalCapacityAh
+        : optionalPositiveNumber(nominalCapacity, "额定容量");
       const retention = task === "rul" ? requiredRange(targetRetention, "寿命阈值", 50, 100) : undefined;
       const common = {
         model: selectedTask.model,
         chemistry,
-        ...(selectedTask.model === "batterymformer" ? { routingMode: "dynamic" as const } : {}),
+        ...(selectedTask.model === "batterymformer" ? {
+          routingMode: release?.deployment.twinRuntime === "rust-ort" ? "dynamic" as const : "standard" as const,
+        } : {}),
         ...(capacity !== undefined ? { nominalCapacityAh: capacity } : {}),
         ...(retention !== undefined ? { targetCapacityRetention: retention } : {}),
       };
@@ -188,7 +223,7 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
           parameters: common,
           ...(runPolicy.entityField ? { entity: { keyField: runPolicy.entityField } } : {}),
           ...(runPolicy.timeField ? { time: { field: runPolicy.timeField, order: "asc" } } : {}),
-          features: batteryBindingFeatures(dataContract),
+          features: batteryBindingFeatures(dataContract!),
           window: { rows: runPolicy.windowRows },
           trigger: runPolicy.mode === "interval" ? { type: "interval", seconds: runPolicy.intervalSeconds } : { type: "manual" },
           quality: { minimumSamples: runPolicy.minimumSamples, maxAgeSeconds: runPolicy.maxAgeSeconds, maximumMissingRate: runPolicy.maximumMissingRate },
@@ -198,13 +233,26 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
         bindingId = binding.id;
         setBindings(await api.listAiDataBindings(projectId));
       }
-      const response = sourceMode === "dataset"
+      const response = sourceMode === "example"
+        ? await api.predictBatteryFromFile<Record<string, unknown>>(projectId, {
+          ...common,
+          file: await batteryExampleFile(selectedExample, controller.signal),
+        }, controller.signal)
+        : sourceMode === "dataset"
         ? await api.predictBatteryFromDataset<Record<string, unknown>>(projectId, { ...common, datasetId, ...(bindingId ? { bindingId } : {}) }, controller.signal)
         : await api.predictBatteryFromFile<Record<string, unknown>>(projectId, { ...common, file: source!.file }, controller.signal);
+      if (activeRequest.current !== controller || controller.signal.aborted) return;
       if (!response.output) throw new Error(response.error?.message ?? "模型没有返回结构化结果");
       setResult(response.output);
+      const sourceLabel = sourceMode === "example"
+        ? `内置样例 · ${selectedExample.name}`
+        : sourceMode === "dataset"
+          ? `项目数据集 · ${selectedDataset?.name ?? datasetId}`
+          : `上传文件 · ${source?.file.name ?? "CSV"}`;
+      const draft = batterySuggestionDraft({ projectId, task, result: response.output, source: sourceMode === "example" ? "local-sample" : sourceMode === "dataset" ? "project-data" : "uploaded-file", reference: response.requestId, sourceLabel });
+      setEvidence({ draft, payload: { source: draft.source, sourceLabel, response } });
     } catch (reason) {
-      if (!isAbortError(reason)) showError(reason);
+      if (activeRequest.current === controller && !isAbortError(reason)) showError(reason);
     } finally {
       // 旧请求被新请求替换时，不得清空新请求的 busy 状态。
       if (activeRequest.current === controller) {
@@ -242,38 +290,57 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
     }
   }
 
+  function chooseTask(nextTask: BatteryTask) {
+    const pendingRequest = activeRequest.current;
+    activeRequest.current = undefined;
+    pendingRequest?.abort();
+    setBusy(false);
+    setTask(nextTask);
+    if (sourceMode === "example" && !selectedExample.tasks.includes(nextTask)) {
+      const replacement = BATTERY_EXAMPLES.find((example) => example.tasks.includes(nextTask));
+      if (replacement) applyExample(replacement.id, nextTask);
+    }
+    setResult(undefined);
+    setError("");
+  }
+
+  function applyExample(nextExampleId: string, currentTask = task) {
+    const example = batteryExampleById(nextExampleId);
+    setExampleId(example.id);
+    setChemistry(example.chemistry);
+    setNominalCapacity(String(example.nominalCapacityAh));
+    if (!example.tasks.includes(currentTask)) setTask(example.defaultTask);
+  }
+
   function showError(reason: unknown) {
-    setError(reason instanceof Error ? reason.message : String(reason));
+    const message = reason instanceof Error ? reason.message : String(reason);
+    setError(/^(fetch failed|Failed to fetch)$/i.test(message)
+      ? "无法连接电池预测服务。请在服务健康中检查预测服务地址与运行状态，然后重新运行。"
+      : message);
   }
 
   return (
     <div className="battery-workspace">
+      <BatteryTechnologyRail nativeRuntime={release?.deployment.twinRuntime === "rust-ort"} />
       <section className="operations-panel battery-run-panel">
         <header>
           <div>
             <strong>电池健康与寿命</strong>
-            <small>直接绑定数据中心的接口、数据库或消息流，也可临时上传文件；不会用演示数据补齐缺失字段。</small>
+            <small>选择内置工况直接运行，或接入数据中心与临时文件。</small>
           </div>
           <span className={`battery-gate ${release?.ready ? "ready" : "limited"}`}>
             {release?.ready ? <ShieldCheck size={14} /> : <AlertTriangle size={14} />}
-            {release === undefined ? "读取模型目录" : release.ready ? "模型目录已验证" : "模型受控运行"}
+            {release === undefined ? "读取模型目录" : release.deployment.mode === "local-validation" ? "本地验证推理" : release.ready ? "模型目录已验证" : "模型受控运行"}
           </span>
         </header>
 
+        <div className="battery-task-heading"><span>分析目标</span></div>
         <div className="battery-task-picker" aria-label="分析目标">
           {TASKS.map((item) => (
             <button
               key={item.id}
               className={task === item.id ? "active" : ""}
-              onClick={() => {
-                const pendingRequest = activeRequest.current;
-                activeRequest.current = undefined;
-                pendingRequest?.abort();
-                setBusy(false);
-                setTask(item.id);
-                setResult(undefined);
-                setError("");
-              }}
+              onClick={() => chooseTask(item.id)}
             >
               <span>{item.label}</span>
               <small>{item.detail}</small>
@@ -282,6 +349,9 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
         </div>
 
         <div className="battery-source-tabs" role="tablist" aria-label="数据来源">
+          <button className={sourceMode === "example" ? "active" : ""} onClick={() => { setSourceMode("example"); applyExample(exampleId); }}>
+            <BatteryMedium size={15} />内置样例
+          </button>
           <button className={sourceMode === "dataset" ? "active" : ""} onClick={() => setSourceMode("dataset")}>
             <Database size={15} />生产数据源
           </button>
@@ -289,7 +359,24 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
             <Upload size={15} />临时文件
           </button>
         </div>
-        {sourceMode === "dataset" ? (
+        {sourceMode === "example" ? (
+          <label className="battery-example-picker">
+            <span>样例工况</span>
+            <select value={selectedExample.id} onChange={(event) => applyExample(event.target.value)}>
+              {BATTERY_EXAMPLE_GROUPS.map((group) => (
+                <optgroup key={group.id} label={group.label}>
+                  {BATTERY_EXAMPLES.filter((example) => example.group === group.id).map((example) => (
+                    <option key={example.id} value={example.id}>{example.name}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <div>
+              <strong>{selectedExample.detail}</strong>
+              <small>{selectedExample.tasks.map((item) => TASKS.find((taskItem) => taskItem.id === item)!.label).join(" · ")}</small>
+            </div>
+          </label>
+        ) : sourceMode === "dataset" ? (
           <>
             <label className="battery-dataset-picker">
               <span>电池数据集</span>
@@ -327,7 +414,6 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
                   fields={datasets.find((item) => item.id === datasetId)?.fields ?? []}
                   onChange={setRunPolicy}
                 />
-                <AiDataRunHistory projectId={projectId} {...(activeBinding ? { bindingId: activeBinding.id } : {})} />
               </>
             )}
           </>
@@ -379,7 +465,9 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
         {error && <p className="operations-notice"><AlertTriangle size={14} />{error}</p>}
         <div className="battery-run-action">
           <div>
-            <span>{selectedTask.model === "batterymformer" ? "标准专家 → PINN 动态路由" : "自动路由"}</span>
+            <span>{selectedTask.model === "batterymformer" && release?.deployment.twinRuntime === "rust-ort"
+              ? "标准专家 → PINN 动态路由"
+              : release?.deployment.mode === "local-validation" ? "项目内置模型" : "自动路由"}</span>
             <strong>{selectedModel?.label ?? selectedTask.model}</strong>
           </div>
           <button
@@ -392,11 +480,75 @@ export function BatteryIntelligencePanel({ projectId }: { projectId: string }) {
             {busy ? "正在分析" : selectedTask.label}
           </button>
         </div>
+        {sampleRun && <p className="operations-notice">已使用内置样例：{batteryExampleById(sampleRun).name}</p>}
         {result && <BatteryPredictionResult task={task} result={result} />}
+        {evidence && <div className="battery-follow-up">
+          <button type="button" className="button" onClick={() => {
+            const url = URL.createObjectURL(new Blob([JSON.stringify(evidence.payload, null, 2)], { type: "application/json" }));
+            const link = document.createElement("a"); link.href = url; link.download = `battery-${task}-evidence.json`; link.click();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+          }}><Download size={13} />下载运行证据</button>
+          <AiOperationalDraftReview draft={evidence.draft} />
+        </div>}
       </section>
 
-      <BatteryEvidencePanel catalog={catalog} release={release} selectedModel={selectedModel} />
+      <BatteryEvidencePanel
+        catalog={catalog}
+        release={release}
+        selectedModel={selectedModel}
+        projectId={projectId}
+        bindingId={activeBinding?.id}
+      />
+      <BatteryScenarioWorkbench
+        projectId={projectId}
+        chemistry={chemistry}
+        nominalCapacityAh={positiveOrUndefined(nominalCapacity)}
+        nativeRuntime={release?.deployment.twinRuntime === "rust-ort"}
+      />
     </div>
+  );
+}
+
+function BatteryTechnologyRail({ nativeRuntime }: { nativeRuntime: boolean }) {
+  return (
+    <section className="battery-technology-rail" aria-label="电池多物理推理架构">
+      <div className="battery-technology-heading">
+        <div>
+          <span>AI 电池分析 · 原生推理</span>
+          <strong>SPM-PINO 多物理神经算子 <b>×</b> TwinMoE 风险路由</strong>
+        </div>
+        <span className={`battery-native-runtime ${nativeRuntime ? "is-ready" : ""}`}>
+          <i aria-hidden="true" />Rust · ONNX Runtime{nativeRuntime ? " · 已连接" : ""}
+        </span>
+      </div>
+      <div className="battery-route-map">
+        <article>
+          <span>01</span>
+          <div><strong>工况序列</strong><small>I · T · Δt · Chemistry</small></div>
+        </article>
+        <i aria-hidden="true" />
+        <article className="is-operator">
+          <span>02</span>
+          <div><strong>SPM-PINO</strong><small>电化学 · 热 · 退化场</small></div>
+        </article>
+        <i aria-hidden="true" />
+        <article className="is-router">
+          <span>03</span>
+          <div><strong>TwinMoE</strong><small>域判断 · 物理残差 · 专家分歧</small></div>
+        </article>
+        <i aria-hidden="true" />
+        <article>
+          <span>04</span>
+          <div><strong>主轨迹</strong><small>轻专家 / 谱算子 / SPM 回退</small></div>
+        </article>
+      </div>
+      <div className="battery-twin-capabilities" aria-label="数字孪生在线能力">
+        <span>在线状态同化</span>
+        <span>10 分钟多物理推演</span>
+        <span>迁移校准门禁</span>
+        <span>CLF-CBF 影子投影</span>
+      </div>
+    </section>
   );
 }
 
@@ -430,7 +582,8 @@ function BatteryPredictionResult({ task, result }: { task: BatteryTask; result: 
         </p>
       )}
       {trend.length > 1 && <BatteryTrend task={task} points={trend} />}
-      {typeof result.summary === "string" && <p>{result.summary}</p>}
+      {resultSummary(task, result) && <p>{resultSummary(task, result)}</p>}
+      <BatteryAnalysisReport result={result} />
       {routing?.reviewRequired === true && <p className="operations-notice"><AlertTriangle size={14} />专家分歧超过保护阈值，当前结果需复核。</p>}
       {warnings.length > 0 && <ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
     </article>
@@ -468,41 +621,46 @@ function BatteryTrend({ task, points }: { task: BatteryTask; points: BatteryTren
   );
 }
 
-function BatteryEvidencePanel({ catalog, release, selectedModel }: {
+function BatteryEvidencePanel({ catalog, release, selectedModel, projectId, bindingId }: {
   catalog: BatteryModelCatalogEntry[];
   release: BatteryReleaseGateSnapshot | undefined;
   selectedModel: BatteryModelCatalogEntry | undefined;
+  projectId: string;
+  bindingId: string | undefined;
 }) {
-  const routedExperts = catalog.filter((item) => ["routed-expert", "production-router"].includes(item.role));
+  const routedExperts = catalog.filter((item) =>
+    item.runtime === "onnx" && ["routed-expert", "production-router"].includes(item.role)
+  );
   return (
     <aside className="operations-panel battery-evidence-panel">
       <header><div><strong>模型与证据</strong><small>默认收起技术细节，结论仍保留来源、适用域与回退记录。</small></div></header>
       {selectedModel ? (
         <div className="battery-primary-model">
-          <span>当前正式模型</span>
+          <span>{release?.deployment.mode === "local-validation" ? "项目内置模型" : "当前模型"}</span>
           <strong>{selectedModel.label}</strong>
           <p>{selectedModel.evidence.summary}</p>
-          <div><span>{selectedModel.modelVersion}</span><b>{selectedModel.evidence.gate.toUpperCase()}</b></div>
+          <div><span>{selectedModel.modelVersion}</span><b>{release?.deployment.mode === "local-validation" ? "验证用" : selectedModel.evidence.gate.toUpperCase()}</b></div>
         </div>
       ) : <div className="operations-empty">正在读取模型目录…</div>}
       <details className="battery-details">
         <summary><span>运行时与发布门禁</span><ChevronDown size={14} /></summary>
         <div>
           <p>主模型：{release?.primaryModels.length ?? 0} 个 · 正式路由：{release?.routedModels.length ?? 0} 个 · 安全回退：{release?.fallbackModels.length ?? 0} 个</p>
-          <p>ONNX：{release?.deployment.activeModels.length ? `${release.deployment.activeModels.length} 个正式运行` : "候选验证中，当前保持 Python 主链"}</p>
+          <p>ONNX：{release?.deployment.activeModels.length ? `${release.deployment.activeModels.length} 个${release.deployment.mode === "local-validation" ? "本地验证模型" : "正式模型"}` : "未启用"}</p>
           {release?.blockers.map((blocker) => <small key={blocker}>{blocker}</small>)}
         </div>
       </details>
-      <details className="battery-details">
+      {routedExperts.length > 0 && <details className="battery-details">
         <summary><span>正式物理与路由专家</span><ChevronDown size={14} /></summary>
         <div className="battery-shadow-list">
           {routedExperts.map((model) => (
             <article key={model.id}><strong>{model.label}</strong><small>{model.evidence.summary}</small></article>
           ))}
-          <p>PINN、PINO 与 TwinMoE 按原物理风险、动态稀疏路由和域外回退逻辑正式运行；单个专家不能绕过路由直接覆盖结果。</p>
+          <p>SPM-PINO 与 TwinMoE 按动态风险、域判断和 SPM 回退运行；单个专家不能绕过路由直接覆盖结果。</p>
         </div>
-      </details>
-      <div className="battery-evidence-foot"><BatteryMedium size={15} /><span>域外或极高风险时，由确定性 SPM 守恒求解接管。</span></div>
+      </details>}
+      {bindingId && <AiDataRunHistory projectId={projectId} bindingId={bindingId} />}
+      {catalog.some(item => item.family === "spm-conservation" && item.runtimeEnabled) && <div className="battery-evidence-foot"><BatteryMedium size={15} /><span>域外或极高风险时，由确定性 SPM 守恒求解接管。</span></div>}
     </aside>
   );
 }
@@ -516,6 +674,12 @@ function resultMetrics(task: BatteryTask, result: Record<string, unknown>): Arra
     ].filter(hasMetric);
   }
   if (task === "soh") {
+    const pack = objectValue(objectValue(result.dataProfile)?.packAssessment);
+    if (pack) return [
+      metric("Pack 平均 SOH", pack.meanSohPct, "%"),
+      metric("最弱电芯 SOH", pack.weakestSohPct, "%"),
+      metric("SOH 极差", pack.sohSpreadPct, "%"),
+    ].filter(hasMetric);
     return [
       metric("当前 SOH", result.currentSoh, "%"),
       metric("估计容量", result.predictedCapacityAh, " Ah"),
@@ -526,6 +690,17 @@ function resultMetrics(task: BatteryTask, result: Record<string, unknown>): Arra
     metric("预计寿命", result.predictedCycleLife, " 圈", 0),
     metric("已观测下限", observation?.lifetimeLowerBoundCycles, " 圈", 0),
   ].filter(hasMetric);
+}
+
+function resultSummary(task: BatteryTask, result: Record<string, unknown>): string | undefined {
+  const pack = objectValue(objectValue(result.dataProfile)?.packAssessment);
+  if (task === "soh" && pack) {
+    const cells = typeof pack.assessedCells === "number" ? pack.assessedCells.toFixed(0) : "多";
+    const weakest = String(pack.weakestCellId ?? "最弱电芯");
+    const spread = typeof pack.sohSpreadPct === "number" ? pack.sohSpreadPct.toFixed(1) : "—";
+    return `已聚合 ${cells} 个电芯的末圈健康状态；${weakest} 为当前短板，SOH 极差 ${spread}%。`;
+  }
+  return typeof result.summary === "string" ? result.summary : undefined;
 }
 
 function metric(label: string, value: unknown, suffix: string, digits = 2) {
@@ -553,8 +728,8 @@ function confidenceLabel(value: unknown) {
 }
 function runtimeLabel(runtime: Record<string, unknown>) {
   if (runtime.actual === "onnx") return "ONNX 本地推理";
-  if (runtime.fellBack) return "已安全回退 Python";
-  return "Python 正式运行时";
+  if (runtime.fellBack) return "已切换兼容运行时";
+  return "外置模型运行时";
 }
 
 function expertRoutingLabel(routing: Record<string, unknown>) {
@@ -567,6 +742,10 @@ function optionalPositiveNumber(value: string, label: string): number | undefine
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) throw new Error(`${label}必须是正数`);
   return number;
+}
+function positiveOrUndefined(value: string): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 function requiredRange(value: string, label: string, minimum: number, maximum: number): number {
   const number = Number(value);

@@ -1,4 +1,4 @@
-import type { AiProviderSettings } from "@bim-studio/contracts";
+import type { AiModelProviderSettings, AiProviderSettings } from "@bim-studio/contracts";
 import type { MetadataStore } from "../store.js";
 import type { AiRuntimeSettings } from "./assistantService.js";
 
@@ -12,6 +12,7 @@ export function resolveAiSettings(store?: Pick<MetadataStore, "getAiSettings">):
     protocol: normalizeAiProtocol(saved?.protocol || process.env.AI_PROTOCOL),
     apiKey: saved?.apiKey || process.env.AI_API_KEY || "",
     temperature: saved?.temperature ?? Number(process.env.AI_TEMPERATURE ?? 0.2),
+    ...(saved?.modeling3d ? { modeling3d: mergeModeling3dSettings(undefined, saved.modeling3d) } : {}),
     ...(saved?.updatedAt ? { updatedAt: saved.updatedAt } : {})
   };
 }
@@ -20,6 +21,7 @@ export function publicAiSettings(settings: AiRuntimeSettings): AiProviderSetting
   return {
     providerId: settings.providerId, baseUrl: settings.baseUrl, model: settings.model,
     protocol: settings.protocol, temperature: settings.temperature, apiKeyConfigured: Boolean(settings.apiKey),
+    ...(settings.modeling3d ? { modeling3d: publicModeling3dSettings(settings.modeling3d) } : {}),
     ...(settings.updatedAt ? { updatedAt: settings.updatedAt } : {})
   };
 }
@@ -42,10 +44,75 @@ export function mergeAiSettingsDraft(
     protocol: normalizeAiProtocol(draft.protocol ?? current.protocol),
     apiKey: draft.apiKey?.trim() || (credentialContextChanged ? "" : current.apiKey),
     temperature: Number.isFinite(temperature) ? Math.min(2, Math.max(0, temperature)) : current.temperature,
+    ...(draft.modeling3d || current.modeling3d
+      ? { modeling3d: mergeModeling3dSettings(current.modeling3d, draft.modeling3d) }
+      : {}),
     ...(current.updatedAt ? { updatedAt: current.updatedAt } : {}),
   };
 }
 
 export function normalizeAiProtocol(value: unknown): AiProviderSettings["protocol"] {
   return value === "responses" || value === "chat-completions" ? value : "auto";
+}
+
+const MODELING_3D_DEFAULTS = {
+  tripo3d: {
+    providerId: "ai.tripo3d",
+    baseUrl: "https://openapi.tripo3d.ai",
+    model: "tripo-3d",
+    protocol: "auto" as const,
+  },
+  tencentHunyuan: {
+    providerId: "ai.tencent-hunyuan-3d",
+    baseUrl: "https://ai3d.tencentcloudapi.com",
+    model: "3.1",
+    protocol: "auto" as const,
+    region: "ap-guangzhou",
+  },
+};
+
+function mergeModeling3dSettings(
+  current: AiProviderSettings["modeling3d"] | undefined,
+  draft: AiProviderSettings["modeling3d"] | undefined,
+): NonNullable<AiProviderSettings["modeling3d"]> {
+  return {
+    tripo3d: mergeModeling3dProvider(current?.tripo3d, draft?.tripo3d, MODELING_3D_DEFAULTS.tripo3d),
+    tencentHunyuan: mergeModeling3dProvider(current?.tencentHunyuan, draft?.tencentHunyuan, MODELING_3D_DEFAULTS.tencentHunyuan),
+  };
+}
+
+function mergeModeling3dProvider(
+  current: AiModelProviderSettings | undefined,
+  draft: AiModelProviderSettings | undefined,
+  defaults: Omit<AiModelProviderSettings, "apiKey" | "apiKeyConfigured">,
+): AiModelProviderSettings {
+  const providerId = draft?.providerId?.trim() || current?.providerId || defaults.providerId;
+  const baseUrl = draft?.baseUrl?.trim() || current?.baseUrl || defaults.baseUrl;
+  const model = draft?.model?.trim() || current?.model || defaults.model;
+  const apiKey = draft?.apiKey?.trim() || current?.apiKey;
+  const secretId = draft?.secretId?.trim() || current?.secretId;
+  const region = draft?.region?.trim() || current?.region || defaults.region;
+  return {
+    providerId,
+    baseUrl: baseUrl.replace(/\/$/, ""),
+    model,
+    protocol: normalizeAiProtocol(draft?.protocol ?? current?.protocol ?? defaults.protocol),
+    ...(apiKey ? { apiKey } : {}),
+    ...(secretId ? { secretId } : {}),
+    ...(region ? { region } : {}),
+  };
+}
+
+function publicModeling3dSettings(
+  settings: NonNullable<AiRuntimeSettings["modeling3d"]>,
+): NonNullable<AiProviderSettings["modeling3d"]> {
+  return {
+    tripo3d: publicModeling3dProvider(settings.tripo3d),
+    tencentHunyuan: publicModeling3dProvider(settings.tencentHunyuan),
+  };
+}
+
+function publicModeling3dProvider(settings: AiModelProviderSettings): AiModelProviderSettings {
+  const { apiKey: _apiKey, secretId: _secretId, ...safe } = settings;
+  return { ...safe, apiKeyConfigured: Boolean(settings.apiKey), secretIdConfigured: Boolean(settings.secretId) };
 }

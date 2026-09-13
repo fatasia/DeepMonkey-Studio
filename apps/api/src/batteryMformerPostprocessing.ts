@@ -94,6 +94,13 @@ export function completeBatteryMformerPrediction(
     warnings,
     modelVersion,
     domainAssessment,
+    rulObservation: {
+      eventObserved: declaredEvent,
+      observedSurvivalCycles: observedCycles,
+      lifetimeLowerBoundCycles: lifetimeLowerBound,
+      targetThresholdPct: round(targetThreshold * 100, 2),
+      targetSemantics: rightCensored ? "right-censored-lower-bound" : "observed-or-model-extrapolated",
+    },
   };
 }
 

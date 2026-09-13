@@ -30,19 +30,9 @@ export async function registerOperationsRoutes(
     requireProject(request.params.projectId);
     return dependencies.service.snapshotForApi(request.params.projectId);
   });
-  app.post<{ Params: { projectId: string } }>("/api/projects/:projectId/operations/maintenance/sync-iot-nb", async (request, reply) => {
-    requireProject(request.params.projectId);
-    try { return await dependencies.service.syncIotNbModels(request.params.projectId); }
-    catch (error) { return reply.code(400).send({ message: compactError(error) }); }
-  });
-  app.post<{ Params: { projectId: string; modelId: string } }>("/api/projects/:projectId/operations/maintenance/models/:modelId/assess-iot-nb", async (request, reply) => {
-    requireProject(request.params.projectId);
-    try { return await dependencies.service.assessIotNbModel(request.params.projectId, request.params.modelId); }
-    catch (error) { return reply.code(400).send({ message: compactError(error) }); }
-  });
   app.post<{ Params: { projectId: string }; Body: Partial<MaintenanceModelPackage> }>("/api/projects/:projectId/operations/maintenance/models", async (request, reply) => {
     requireProject(request.params.projectId);
-    try { return await dependencies.service.importModel(request.params.projectId, request.body ?? {}); }
+    try { return await dependencies.service.importModel(request.params.projectId, { ...request.body, source: "imported" }); }
     catch (error) { return reply.code(400).send({ message: compactError(error) }); }
   });
   app.post<{ Params: { projectId: string; modelId: string } }>("/api/projects/:projectId/operations/maintenance/models/:modelId/artifact", async (request, reply) => {

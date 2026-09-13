@@ -8,7 +8,7 @@ import type { BatteryOnnxDeployment, BatteryOnnxModelDeployment } from "./batter
 import { prepareBatteryMformerInput, type BatteryMformerModelMetadata } from "./batteryMformerPreprocessing.js";
 import { completeBatteryMformerPrediction, type BatteryMformerConditionMode } from "./batteryMformerPostprocessing.js";
 
-interface EmbeddingDescriptor {
+export interface EmbeddingDescriptor {
   fileName: string;
   sha256: string;
   sizeBytes: number;
@@ -37,7 +37,7 @@ interface SessionLike {
   run(feeds: Record<string, ort.Tensor>): Promise<Record<string, { data: ArrayLike<number> }>>;
 }
 
-interface EmbeddingBundle {
+export interface EmbeddingBundle {
   data: Float32Array;
   byKey: Map<string, number>;
   descriptor: EmbeddingDescriptor;
@@ -93,17 +93,17 @@ export class BatteryMformerOnnxRuntime implements BatteryOnnxRuntime {
   }
 
   private adapter(deployment: BatteryOnnxModelDeployment): Promise<BatteryMformerAdapterDocument> {
-    this.adapterPromise ??= readAdapter(deployment);
+    this.adapterPromise ??= readAdapter(deployment).catch(error => { delete this.adapterPromise; throw error; });
     return this.adapterPromise;
   }
 
   private session(deployment: BatteryOnnxModelDeployment): Promise<SessionLike> {
-    this.sessionPromise ??= this.createSession(deployment.artifactPath);
+    this.sessionPromise ??= this.createSession(deployment.artifactPath).catch(error => { delete this.sessionPromise; throw error; });
     return this.sessionPromise;
   }
 
   private bundle(deployment: BatteryOnnxModelDeployment, adapter: BatteryMformerAdapterDocument): Promise<EmbeddingBundle> {
-    this.bundlePromise ??= readEmbeddingBundle(deployment.runtimeAdapterPath, adapter.conditionEmbeddings);
+    this.bundlePromise ??= readEmbeddingBundle(deployment.runtimeAdapterPath, adapter.conditionEmbeddings).catch(error => { delete this.bundlePromise; throw error; });
     return this.bundlePromise;
   }
 }
@@ -119,7 +119,7 @@ async function readAdapter(deployment: BatteryOnnxModelDeployment): Promise<Batt
   return parsed;
 }
 
-async function readEmbeddingBundle(adapterPath: string, descriptor: EmbeddingDescriptor): Promise<EmbeddingBundle> {
+export async function readEmbeddingBundle(adapterPath: string, descriptor: EmbeddingDescriptor): Promise<EmbeddingBundle> {
   if (descriptor.fileName !== basename(descriptor.fileName)) throw new Error("BatteryMFormer 工况嵌入文件名越界");
   const path = resolve(dirname(adapterPath), descriptor.fileName);
   const info = await stat(path);
@@ -134,7 +134,7 @@ async function readEmbeddingBundle(adapterPath: string, descriptor: EmbeddingDes
   return { data, byKey: new Map(descriptor.keys.map((key, index) => [key, index])), descriptor };
 }
 
-function resolveConditionEmbedding(input: BatteryPredictionInput, bundle: EmbeddingBundle): { embedding: Float32Array; mode: BatteryMformerConditionMode } {
+export function resolveConditionEmbedding(input: BatteryPredictionInput, bundle: EmbeddingBundle): { embedding: Float32Array; mode: BatteryMformerConditionMode } {
   const suppliedNames = [input.fileName, ...input.records.map((record) => String(record.sourceFile ?? "")).filter(Boolean)]
     .map(fileBaseName);
   const candidates = [...new Set([

@@ -21,7 +21,7 @@
 
 .device-layout-backdrop {
   position: fixed;
-  z-index: 80;
+  z-index: var(--layer-dialog); /* 设备布局局部模态遮罩(工作台区内) */
   inset: 54px 0 0 292px;
   display: grid;
   place-items: center;

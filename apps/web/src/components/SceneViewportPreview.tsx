@@ -7,6 +7,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { subscribeApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 import { directSceneDataBindingMessage } from "../sceneDataBindings";
 import { DirectBindingRuntime } from "../directBindingRuntime";
+import { subscribeSceneData } from "../sceneDataBridge";
 import { sceneViewportRevision } from "./sceneViewportRevision";
 import { registerStudioSceneRuntime } from "../studio/studioSceneRuntimeRegistry";
 import { createBrowserCooperativeWorkScheduler } from "../cooperativeWorkScheduler";
@@ -156,6 +157,10 @@ export function SceneViewportPreview({
         if (scene.clipping) engine.setClipping(scene.clipping);
         const camera = scene.cameraViews?.find((item) => item.id === node.cameraViewId)?.camera ?? scene.camera;
         engine.applyCamera(camera);
+        if(runtimeMode && playback?.allowsProtectedData !== false) stopBindings.push(subscribeSceneData(project.id,message=>{
+          if(!message.sceneId || message.sceneId!==scene.id)return;
+          engine.applySceneDataMessage(message);
+        }));
         for (const binding of scene.dataBindings ?? []) {
           if (!binding.enabled || !binding.directBinding || playback?.allowsProtectedData === false) continue;
           stopBindings.push(

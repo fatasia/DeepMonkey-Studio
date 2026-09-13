@@ -14,6 +14,7 @@ import type {
 import {
   createDeleteScriptModuleCommand,
   createInsertDashboardNodeCommand,
+  createUpdateDashboardDataWidgetCommand,
   createReplaceScriptDependenciesCommand,
   createReplaceScriptModulesCommand,
   createUpsertScriptModuleCommand,
@@ -24,9 +25,11 @@ import { api } from "../api";
 import { AUTO_SAVE_STORAGE_KEY } from "../appDefaults";
 import { createIndustrialShowcaseBundle } from "../showcase/industrialShowcase";
 import { ApplicationSession } from "../studio/applicationSession";
+import { applicationForScene } from "../studio/sceneApplicationSync";
 import { publishApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 import { runTrustedApplicationScript } from "../studio/trustedApplicationScript";
 import { DEFAULT_DASHBOARD_VIEW, type DashboardReturnContext, type DashboardViewState } from "../studio/workspaceRoute";
+import { workspaceSaveFailureGuidance } from "../studio/workspaceSaveProtection";
 import { publishLocalSceneData } from "../sceneDataBridge";
 import { scriptComponentCommands } from "../behavior/scriptComponentCommands";
 import { SceneBehaviorManager, type SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
@@ -300,7 +303,14 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
       if (!automatic) setMessage(`项目“${saved.metadata.name}”已保存`);
       return saved;
     } catch (reason) {
-      showError(reason);
+      // 与场景保存链路同族:409 时给出可操作指引并暂停自动保存,避免反复冲突覆盖(见 S6)。
+      const guidance = workspaceSaveFailureGuidance(reason, locale);
+      if (guidance) {
+        if (guidance.pauseAutoSave) setAutoSaveEnabled(false);
+        showError(new Error(guidance.message));
+      } else {
+        showError(reason);
+      }
     } finally {
       if (!automatic) setBusy(false);
     }
@@ -327,10 +337,38 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     setMessage(enabled ? "已开启自动保存" : "已关闭自动保存");
   }
 
-  function insertActiveTopologyIntoDashboard() {
+  async function insertActiveTopologyIntoDashboard() {
     if (!activeApplication || !activeTopology) return;
-    const page = activeApplication.pages[0];
+    const currentDocument = applicationSessionRef.current.store.getState().document ?? activeApplication;
+    const returnTarget = route.topologyReturn;
+    const page = returnTarget
+      ? currentDocument.pages.find((candidate) => candidate.id === returnTarget.pageId)
+      : currentDocument.pages[0];
     if (!page) return;
+    if (returnTarget) {
+      const node = page.nodes.find((candidate) => candidate.id === returnTarget.nodeId);
+      if (!node || node.kind !== "data-widget" || node.widget.type !== "topology") {
+        showError(new Error(tr(locale, "原拓扑控件已被删除，拓扑已保存但无法回填", "The original topology control was removed. The topology was saved but cannot be refilled.")));
+        await saveActiveApplication();
+        return;
+      }
+      dispatchApplicationCommand(createUpdateDashboardDataWidgetCommand(page.id, node.id, {
+        ...node.widget,
+        topologyId: activeTopology.id,
+        title: activeTopology.name,
+      }));
+      const saved = await saveActiveApplication();
+      if (!saved) return;
+      navigate({
+        view: "dashboard",
+        projectId: returnTarget.projectId,
+        applicationId: returnTarget.applicationId,
+        pageId: returnTarget.pageId,
+        dashboardView: { ...returnTarget.view, selectedNodeIds: [returnTarget.nodeId] },
+      });
+      setMessage(`拓扑“${activeTopology.name}”已保存并回填原控件`);
+      return;
+    }
     const usedNames = new Set(page.nodes.map((node) => (node.name ?? node.id).trim().toLocaleLowerCase()));
     let name = activeTopology.name.trim() || "拓扑";
     let suffix = 2;
@@ -346,6 +384,8 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
         widget: { title: activeTopology.name, key: "", unit: "", type: "topology", topologyId: activeTopology.id, backgroundColor: "#11191d", backgroundOpacity: 0.94 },
       }),
     );
+    const saved = await saveActiveApplication();
+    if (!saved) return;
     navigate({
       view: "dashboard",
       projectId: activeApplication.metadata.projectId,
@@ -363,20 +403,42 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     navigate({ view: "studio", projectId: route.projectId, applicationId: route.applicationId, pageId: route.pageId, sceneId, dashboardReturn });
   }
 
-  function returnFromSceneEditor(destination?: "dashboard") {
+  async function returnFromSceneEditor(destination?: "dashboard") {
     const target = route.dashboardReturn;
     if (target) {
       navigate({ view: "dashboard", projectId: target.projectId, applicationId: target.applicationId, pageId: target.pageId, dashboardView: target.view });
     } else if (destination === "dashboard") {
-      // 直接打开三维 URL 时没有返回上下文；模式切换仍应进入本应用，而不是场景管理。
-      const document = applicationSessionRef.current.getDocument();
-      const current = document?.metadata.id === route.applicationId ? document : activeApplication;
-      const page = current?.pages.find(item => item.id === route.pageId) ?? current?.pages[0];
-      if (!current || current.metadata.id !== route.applicationId || current.metadata.projectId !== route.projectId || !page) {
-        showError(new Error(tr(locale, "当前应用没有可打开的二维页面", "No 2D page is available in the current application")));
-        return;
+      // React 状态可能比保存后的 ApplicationSession 晚一帧；先读会话，再用项目权威数据兜底，避免误报“无二维页面”。
+      const projectId = route.projectId ?? activeScene?.projectId;
+      const sceneId = route.sceneId ?? activeScene?.id;
+      const hasPageInProject = (candidate: ApplicationDocument | undefined) => Boolean(candidate && candidate.metadata.projectId === projectId && candidate.pages.length > 0);
+      const candidates = [applicationSessionRef.current.getDocument(), activeApplication, ...managerApplications];
+      let current = candidates.find(candidate => hasPageInProject(candidate) && candidate?.metadata.id === route.applicationId)
+        ?? (!route.applicationId ? candidates.find(hasPageInProject) : undefined);
+      try {
+        if (!current && projectId) {
+          if (route.applicationId) {
+            try {
+              const requested = await api.getApplication(projectId, route.applicationId);
+              if (hasPageInProject(requested)) current = requested;
+            } catch {
+              // The route may have survived an application replacement. Resolve again by scene below.
+            }
+          }
+          if (!current) {
+            const applications = await api.listApplications(projectId);
+            current = (sceneId ? applicationForScene(applications, sceneId) : undefined)
+              ?? applications.find(candidate => candidate.metadata.id === route.applicationId && candidate.pages.length > 0)
+              ?? applications.find(candidate => candidate.pages.length > 0);
+          }
+        }
+        const page = current?.pages.find(item => item.id === route.pageId) ?? current?.pages[0];
+        if (!current || current.metadata.projectId !== projectId || !page) throw new Error(tr(locale, "当前应用没有可打开的二维页面", "No 2D page is available in the current application"));
+        if (applicationSessionRef.current.getDocument()?.metadata.id !== current.metadata.id) applicationSessionRef.current.openDocument(current);
+        navigate({ view: "dashboard", projectId: current.metadata.projectId, applicationId: current.metadata.id, pageId: page.id, dashboardView: DEFAULT_DASHBOARD_VIEW });
+      } catch (reason) {
+        showError(reason);
       }
-      navigate({ view: "dashboard", projectId: current.metadata.projectId, applicationId: current.metadata.id, pageId: page.id, dashboardView: DEFAULT_DASHBOARD_VIEW });
     } else {
       navigate({ view: "manager" });
     }

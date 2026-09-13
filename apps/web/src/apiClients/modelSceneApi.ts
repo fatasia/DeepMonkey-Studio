@@ -1,5 +1,6 @@
 import type {
   ModelRecord,
+  ModelProcessingRecord,
   ParametricModelGeneration,
   ProjectAssetRecord,
   ProjectRecord,
@@ -14,8 +15,15 @@ type ApiRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
 /** 工程模型、素材和场景版本接口。BIM 在这里保持资产底座角色。 */
 export function createModelSceneApi(request: ApiRequest) {
   return {
-    uploadOptimizedModel: (projectId: string, file: File, sourceModelId?: string) => {
-      const data = new FormData(); data.append("file", file);
+    saveResourceThumbnail: (projectId: string, kind: "models" | "assets", resourceId: string, file: Blob) => {
+      const body = new FormData();
+      body.append("file", file, "thumbnail.webp");
+      return request<ModelRecord | ProjectAssetRecord>(`/api/projects/${encodeURIComponent(projectId)}/${kind}/${encodeURIComponent(resourceId)}/thumbnail`, { method: "POST", body });
+    },
+    uploadOptimizedModel: (projectId: string, file: File, sourceModelId?: string, processing?: ModelProcessingRecord) => {
+      const data = new FormData();
+      if (processing) data.append("processing", JSON.stringify(processing));
+      data.append("file", file);
       const query = sourceModelId ? `?optimizedFromModelId=${encodeURIComponent(sourceModelId)}` : "";
       return request<ModelRecord>(`/api/projects/${projectId}/models${query}`, { method: "POST", body: data });
     },
@@ -85,10 +93,15 @@ export function createModelSceneApi(request: ApiRequest) {
     uploadEnvironmentMap: async (projectId: string, file: File) => {
       const data = new FormData();
       data.append("file", file);
-      return request<{ name: string; url: string }>(
+      return request<ProjectAssetRecord>(
         `/api/projects/${projectId}/environment-maps`,
         { method: "POST", body: data },
       );
+    },
+    uploadMaterialAsset: async (projectId: string, maps: Partial<Record<"base-color" | "normal" | "roughness" | "metalness" | "ao", File>>) => {
+      const data = new FormData();
+      for (const [kind, file] of Object.entries(maps)) if (file) data.append(kind, file);
+      return request<ProjectAssetRecord>(`/api/projects/${projectId}/assets/materials`, { method: "POST", body: data });
     },
     deleteModel: (projectId: string, modelId: string) =>
       request<void>(`/api/projects/${projectId}/models/${modelId}`, {

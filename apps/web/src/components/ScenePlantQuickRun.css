@@ -28,7 +28,7 @@
 .scene-plant-result small { overflow-wrap: anywhere; }
 .scene-simulation-advanced { margin: 0 16px 14px; padding: 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--text-strong); cursor: pointer; }
 .scene-simulation-panel [hidden] { display: none !important; }
-.timeline-panel.scene-simulation-timeline { max-height: min(360px, 48%); overflow: auto; }
+.timeline-panel.scene-simulation-timeline { overflow: hidden; }
 .scene-simulation-timeline .plant-playback { margin: 0; border: 0; }
 .scene-simulation-timeline .timeline-heading small { overflow-wrap: anywhere; }
 .scene-simulation-live-status { position: absolute; left: 12px; top: 130px; z-index: 12; max-width: 270px; padding: 8px 11px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-1); color: var(--text-strong); font-size: 11px; pointer-events: none; }

@@ -24,7 +24,6 @@ import "../styles/data-center-pipeline-workbench.css";
 import "../styles/data-center-endpoint-workbench.css";
 import { DataEndpointStudio } from "./DataEndpointStudio";
 import { DataPipelineStudio } from "./DataPipelineStudio";
-import { NodeRedStudio } from "./NodeRedStudio";
 import { SecondaryPageBack } from "./SecondaryPageBack";
 import { ConnectionForm, DatasetForm } from "./DataCenterForms";
 import { loadDataCenterPreview } from "./dataCenterPreview";
@@ -67,7 +66,7 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
   const [writeAddress, setWriteAddress] = useState("");
   const [writeValue, setWriteValue] = useState("");
   const [writeBusy, setWriteBusy] = useState(false);
-  const [section, setSection] = useState<"data" | "pipeline" | "endpoint" | "node-red" | "semantic">("data");
+  const [section, setSection] = useState<"data" | "pipeline" | "endpoint" | "semantic">("data");
   const [endpointPipelineId, setEndpointPipelineId] = useState<string>();
   const [semanticMounted, setSemanticMounted] = useState(false);
   const [semanticDirty, setSemanticDirty] = useState(false);
@@ -248,10 +247,10 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
   return (
     <main className="data-center-page">
       <header className="data-center-header secondary-page-header">
-        <SecondaryPageBack locale={locale} onBack={() => {
-          if (!semanticDirty || window.confirm(tr(locale, "语义模型有未保存修改，仍要离开数据中心？", "Leave data center and discard the unsaved semantic model?"))) onBack();
-        }} />
         <div className="secondary-page-heading-row">
+          <SecondaryPageBack locale={locale} onBack={() => {
+            if (!semanticDirty || window.confirm(tr(locale, "语义模型有未保存修改，仍要离开数据中心？", "Leave data center and discard the unsaved semantic model?"))) onBack();
+          }} />
           <div className="data-center-title secondary-page-title">
             <h1>{tr(locale, "数据中心", "Data center")}</h1>
             <p>
@@ -294,11 +293,6 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
           <strong>{tr(locale, "发布接口", "Publish API")}</strong>
         </button>
         <button aria-label={tr(locale, "语义模型", "Semantic models")} className={section === "semantic" ? "active" : ""} onClick={() => { setSemanticMounted(true); setSection("semantic"); }}><Table2 size={14} /><strong>{tr(locale, "语义模型", "Semantic models")}</strong></button>
-        <i />
-        <button className={`data-hub-advanced ${section === "node-red" ? "active" : ""}`} onClick={() => setSection("node-red")}>
-          <Workflow size={14} />
-          <strong>{tr(locale, "高级接入", "Advanced")}</strong>
-        </button>
       </nav>
       {semanticMounted && <div hidden={section !== "semantic"}>
         <Suspense fallback={<p role="status">{tr(locale, "正在加载语义模型…", "Loading semantic models…")}</p>}><SemanticModelStudio key={project.id} projectId={project.id} locale={locale} onDirtyChange={setSemanticDirty} /></Suspense>
@@ -321,8 +315,6 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
           initialPipelineId={endpointPipelineId}
           onError={(message) => setError(message || undefined)}
         />
-      ) : section === "node-red" ? (
-        <NodeRedStudio locale={locale} />
       ) : loading ? (
         <div className="pipeline-blank data-center-loading">
           <LoaderCircle className="spin" size={28} />

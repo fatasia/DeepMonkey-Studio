@@ -5,6 +5,7 @@ import type {
 } from "@bim-studio/industrial-agent-orchestrator";
 
 type ApiRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
+import type { AiSampleKind, AiSampleResult } from "@bim-studio/contracts";
 
 export interface StartIndustrialAgentRunInput {
   objective: string;
@@ -16,6 +17,10 @@ export interface StartIndustrialAgentRunInput {
 /** 工业 Agent 的浏览器端调用集中在一个边界，避免组件自行拼接审批或项目作用域。 */
 export function createIndustrialAgentApi(request: ApiRequest) {
   return {
+    runAiSample: (projectId: string, kind: AiSampleKind, signal?: AbortSignal) =>
+      request<AiSampleResult>(`/api/projects/${encodeURIComponent(projectId)}/ai/samples/${kind}/run`, {
+        method: "POST", ...(signal ? { signal } : {}),
+      }),
     listIndustrialAgentTools: (projectId: string, signal?: AbortSignal) =>
       request<{ tools: AgentToolDefinition[] }>(
         `/api/projects/${encodeURIComponent(projectId)}/ai/agent-tools`,

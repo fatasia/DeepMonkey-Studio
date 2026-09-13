@@ -162,6 +162,11 @@ function portablePlantLiteModel(model: PlantLiteModel): PlantLiteModel {
     ...(model.resources ? { resources: model.resources.map(portableResource) } : {}),
     ...(model.productTypes ? { productTypes: model.productTypes.map((item) => ({ id: item.id, name: item.name, share: item.share })) } : {}),
     ...(model.energyEconomics ? { energyEconomics: { ...model.energyEconomics } } : {}),
+    ...(model.transportNetwork ? { transportNetwork: {
+      waypoints: model.transportNetwork.waypoints.map(({ id, name, position }) => ({ id, name, position: [...position] })),
+      segments: model.transportNetwork.segments.map(({ id, from, to, lengthMeters, conflictZone, blockedUntilMinute }) => ({ id, from, to, lengthMeters, ...(conflictZone ? { conflictZone } : {}), ...(blockedUntilMinute !== undefined ? { blockedUntilMinute } : {}) })),
+      fleets: model.transportNetwork.fleets.map(({ resourceId, homeWaypointId }) => ({ resourceId, homeWaypointId })),
+    } } : {}),
   };
 }
 
@@ -191,6 +196,7 @@ function portableNode(node: PlantLiteNode): PlantLiteNode {
     ...base,
     kind: node.kind,
     travelTime: portableDistribution(node.travelTime),
+    ...(node.journey ? { journey: { from: node.journey.from, to: node.journey.to, speedMetersPerMinute: node.journey.speedMetersPerMinute, loadMinutes: node.journey.loadMinutes, unloadMinutes: node.journey.unloadMinutes } } : {}),
     resourceId: node.resourceId,
     ...(node.queueCapacity !== undefined ? { queueCapacity: node.queueCapacity } : {}),
   };

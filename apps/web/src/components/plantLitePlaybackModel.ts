@@ -4,6 +4,7 @@ import type {
   PlantLiteTraceEvent,
 } from "@bim-studio/contracts";
 import { indexPlantLiteTransport, type PlantLiteTransportInterval } from "./plantLiteTransportPlayback";
+import { transportPositionAt } from "./plantTransportPlayback";
 
 export type PlantLitePlaybackItemState = "queued" | "changeover" | "processing" | "moving" | "completed";
 type ItemTraceEvent = Extract<PlantLiteTraceEvent, { itemId: string }>;
@@ -16,6 +17,7 @@ export interface PlantLitePlaybackItem {
   lane: number;
   state: PlantLitePlaybackItemState;
   transport?: { toNodeId: string; progress: number };
+  worldPosition?: [number, number, number];
 }
 
 export interface PlantLitePlaybackFrame {
@@ -52,6 +54,12 @@ export interface PreparedPlantLitePlayback {
 
 export function plantLiteTraceDuration(trace: PlantLiteReplicationTrace): number {
   return trace.events.reduce((maximum, event) => Math.max(maximum, event.atMinute), 0);
+}
+
+export function normalizePlantLitePlaybackMinute(requestedMinute: number, duration: number): number {
+  const minute = clamp(requestedMinute, 0, duration);
+  // 浏览器 range 会缩短末位小数；落在浮点误差内的终点必须包含最后一条事件。
+  return duration - minute <= 1e-9 ? duration : minute;
 }
 
 export function preparePlantLitePlayback(trace: PlantLiteReplicationTrace, model: PlantLiteModel): PreparedPlantLitePlayback {
@@ -95,7 +103,7 @@ export function selectPlantLitePlaybackFrame(
   requestedMinute: number,
   visibleItemLimit = 18,
 ): PlantLitePlaybackFrame {
-  const atMinute = clamp(requestedMinute, 0, prepared.duration);
+  const atMinute = normalizePlantLitePlaybackMinute(requestedMinute, prepared.duration);
   const limit = Math.max(1, visibleItemLimit);
   const active: PlantLitePlaybackItem[] = [];
   const completed: PlantLitePlaybackItem[] = [];
@@ -205,10 +213,13 @@ function toPlaybackItem(
   const xPercent = targetIndex >= 0 && travelProgress > 0
     ? baseX + (nodePosition(targetIndex, prepared.model.nodes.length) - baseX) * travelProgress
     : baseX;
+  const worldPosition = current.transport && prepared.model.transportNetwork ? transportPositionAt(prepared.model.transportNetwork, current.transport, atMinute, false) : undefined;
+  const networkWaiting = current.transport && interval && atMinute < interval.startMinute;
   const state: PlantLitePlaybackItemState = completed
     ? "completed"
     : current.type === "item-changeover-start" || current.type === "item-changeover-complete"
       ? "changeover"
+    : networkWaiting ? "queued"
     : node?.kind === "transport" && current.type === "item-start"
       ? "moving"
       : current.type === "item-start"
@@ -216,7 +227,7 @@ function toPlaybackItem(
         : current.type === "item-exit"
           ? "moving"
           : "queued";
-  return { itemId, nodeId: current.nodeId, xPercent, lane: stableLane(itemId), state, ...(interval ? { transport: { toNodeId: interval.toNodeId, progress: travelProgress } } : {}) };
+  return { itemId, nodeId: current.nodeId, xPercent, lane: stableLane(itemId), state, ...(interval ? { transport: { toNodeId: interval.toNodeId, progress: travelProgress } } : {}), ...(worldPosition ? { worldPosition } : {}) };
 }
 
 function indexResourceFailures(timeline: ResourceTraceEvent[], capacity: number): PreparedResourceEvent[] {

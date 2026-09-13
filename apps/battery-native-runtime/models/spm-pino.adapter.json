@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "modelId": "battery.spm-pino",
+  "modelVersion": "spm-pino-v13.6-native-v10-guard",
+  "runtime": "rust-ort",
+  "precision": "fp32",
+  "timeSteps": 64,
+  "radialPoints": 18,
+  "chemistry": {
+    "lfp": 5
+  },
+  "routing": {
+    "physicsRiskThreshold": 3.0,
+    "operatorProbabilityThreshold": 0.75
+  },
+  "inputNames": [
+    "current_c_rate",
+    "temperature_c",
+    "delta_time",
+    "initial_concentration",
+    "diffusivity",
+    "surface_flux_scale",
+    "chemistry_index",
+    "initial_soc",
+    "duration_hours",
+    "capacity_ratio"
+  ],
+  "outputNames": [
+    "voltage_v",
+    "soc",
+    "temperature_out_c",
+    "route_weights",
+    "route_risk_features",
+    "fast_voltage_v",
+    "operator_voltage_v"
+  ],
+  "preprocessing": "digital-twin-profile-v1",
+  "postprocessing": "twin-moe-risk-route-v1"
+}

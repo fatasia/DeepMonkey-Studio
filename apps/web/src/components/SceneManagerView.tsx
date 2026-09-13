@@ -1,3 +1,4 @@
+import { CloudRenderQualityEntry } from "./CloudRenderQualityDialog";
 import {
   Activity,
   BookOpen,
@@ -19,6 +20,7 @@ import {
   LogOut,
   MoreHorizontal,
   Network,
+  Palette,
   Pencil,
   Plus,
   RefreshCw,
@@ -28,9 +30,10 @@ import {
   Square,
   Trash2,
   TriangleAlert,
+  WandSparkles,
   X,
 } from "lucide-react";
-import type { CSSProperties, MouseEvent } from "react";
+import { lazy, Suspense, type CSSProperties, type MouseEvent } from "react";
 import { SceneExportMenu } from "./SceneExportMenu";
 import { translate as tr } from "../i18n";
 import { ProjectDeliveryFlow } from "./SceneDeliveryWorkflow";
@@ -40,6 +43,8 @@ import { UnifiedAssetLibraryPage } from "./UnifiedAssetLibraryPage";
 import { sceneThumbnailItems } from "./sceneManagerPresentation";
 import { TopologyMiniature } from "./TopologyMiniature";
 import { ManagerDirectoryStatus, managerDirectoryIssue } from "./ManagerDirectoryStatus";
+
+const ProjectTransferDialog = lazy(() => import("./ProjectTransferDialog").then(module => ({ default: module.ProjectTransferDialog })));
 
 export function SceneManagerView({ controller }: { controller: SceneManagerController }) {
   const {
@@ -86,10 +91,12 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     onOpenTopology,
     onOperationsCenter,
     onOptimizer,
+    onParametric,
     onProjectChange,
     onPublish,
     onRenameProject,
     onSystem,
+    onBranding,
     onUnpublish,
     onVisionCenter,
     openCreateDialog,
@@ -178,6 +185,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
             <div>
               <button disabled={projectDirectoryBlocked} title={projectDirectoryBlocked ? tr(locale, "请先重新读取项目目录", "Reload the project directory first") : undefined} onClick={event => projectAction(event, onCreateProject)}><Plus size={13} />{tr(locale, "新建项目", "New project")}</button>
               <button disabled={!project || projectDirectoryBlocked} onClick={event => projectAction(event, onRenameProject)}><Pencil size={13} />{tr(locale, "重命名项目", "Rename project")}</button>
+              <button disabled={projectDirectoryBlocked} onClick={event => projectAction(event, () => controller.setProjectTransferOpen(true))}><FileUp size={13} />{tr(locale, "项目交付", "Project delivery")}</button>
               <button className="danger" disabled={!project || projectDirectoryBlocked} onClick={event => projectAction(event, onDeleteProject)}><Trash2 size={13} />{tr(locale, "删除项目", "Delete project")}</button>
             </div>
           </details>
@@ -221,6 +229,10 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
             <Gauge size={14} />
             <span>{tr(locale, "模型优化", "Model optimization")}</span>
           </button>
+          <button aria-label={tr(locale, "参数化生成", "Parametric generation")} title={tr(locale, "参数化生成", "Parametric generation")} disabled={!project} onClick={onParametric}>
+            <WandSparkles size={14} />
+            <span>{tr(locale, "参数化", "Parametric")}</span>
+          </button>
           {isAdmin && (
             <button aria-label={tr(locale, "云渲染设置", "Cloud settings")} title={tr(locale, "云渲染设置", "Cloud settings")} disabled={!project} onClick={onCloudRender}>
               <CloudCog size={14} />
@@ -236,6 +248,11 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
           {isAdmin && (
             <button title={tr(locale, "设置", "Settings")} aria-label={tr(locale, "设置", "Settings")} onClick={onSystem}>
               <Settings size={15} />
+            </button>
+          )}
+          {isAdmin && (
+            <button title={tr(locale, "品牌设置", "Brand settings")} aria-label={tr(locale, "品牌设置", "Brand settings")} onClick={onBranding}>
+              <Palette size={15} />
             </button>
           )}
           <button aria-label={tr(locale, "切换语言", "Switch language")} title={tr(locale, "切换语言", "Switch language")} onClick={onLocaleToggle}>
@@ -439,6 +456,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                               {scene.publishedAt && <button onClick={(event) => { const menu = event.currentTarget.closest("details"); if (menu) { menu.open = false; menu.querySelector("summary")?.focus(); } void copyLink(new URL(`/published/${encodeURIComponent(scene.id)}`, window.location.origin).href); }}><Copy size={13} />{tr(locale, "复制发布链接", "Copy published link")}</button>}
                               {scene.publishedAt && <button onClick={() => void onUnpublish(scene)}><Square size={12} />{tr(locale, "撤回发布", "Unpublish")}</button>}
                               {cloudSceneLinks[scene.id] && <button onClick={() => void copyLink(cloudSceneLinks[scene.id]!)}><CloudCog size={13} />{tr(locale, "复制云渲染链接", "Copy cloud link")}</button>}
+                              {isAdmin && scene.publishedAt && <CloudRenderQualityEntry sceneId={scene.id} locale={locale} />}
                               {isAdmin && scene.publishedAt && (
                                 <button role="switch" title={!cloudConfigured ? tr(locale, "云渲染未配置或服务不可用，请在云渲染设置中检查", "Cloud rendering is not configured or unavailable; check Cloud settings") : undefined} aria-checked={Boolean(cloudScenePolicies[scene.id])} disabled={!cloudConfigured || cloudBusySceneId === scene.id} onClick={() => void toggleSceneCloudRender(scene.id, !cloudScenePolicies[scene.id])}>
                                   <CloudCog size={13} />
@@ -567,6 +585,8 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
 
 
       <SceneManagerDialogs controller={controller} />
+      {controller.projectTransferOpen && <Suspense fallback={null}><ProjectTransferDialog project={project} locale={locale}
+        onClose={() => controller.setProjectTransferOpen(false)} onImported={value => controller.onProjectImported ? controller.onProjectImported(value) : onProjectChange(value.id)} /></Suspense>}
     </main>
   );
 }

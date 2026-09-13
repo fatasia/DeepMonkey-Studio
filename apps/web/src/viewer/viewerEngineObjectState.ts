@@ -244,6 +244,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
         this.disposeManagedMaterialTexture(material[slot]);
         material[slot] = texture;
         material.needsUpdate = true;
+        this.markShadowMapDirty();
       })
       .catch(() => {
         if (material.userData[metadataKey] === requestedUrl) delete material.userData[metadataKey];
@@ -319,6 +320,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
     material.emissive.set("#ffffff");
     material.emissiveIntensity = screen.emissiveIntensity;
     material.needsUpdate = true;
+    this.markShadowMapDirty();
   }
 
   protected restoreModelScreenMaterial(material: THREE.MeshStandardMaterial): void {

@@ -46,6 +46,15 @@ export interface DashboardTemplateDomain {
   metrics: Record<DashboardMetricRole, Omit<DashboardTemplateMetric, "role" | "dataKey">>;
 }
 
+/** 特征标签:必须从布局结构诚实推导(图型/明细形态/告警能力),禁止虚构功能。 */
+export interface DashboardTemplateTag {
+  zh: string;
+  en: string;
+}
+
+/** 商用分层:industry=被行业深度包引用的模板,standard=标准模板。展示文案由解析模块统一给出。 */
+export type DashboardTemplateTier = "industry" | "standard";
+
 export interface DashboardTemplateView {
   id: string;
   nameZh: string;
@@ -108,4 +117,10 @@ export interface DashboardTemplateDefinition {
   layout: DashboardTemplateLayout;
   accent: string;
   surface: string;
+  /** 特征标签(2-4 个,由目录工厂从布局结构推导),供卡片展示与搜索联动。 */
+  tags?: readonly DashboardTemplateTag[];
+  /** 静态默认 standard;行业包归属由 dashboardTemplateTiers 按行业包目录动态解析,展示一律用解析结果。 */
+  tier?: DashboardTemplateTier;
+  /** 主题套件 id(帆软 visuals 页"主题套件"聚合层的对标,见 dashboardTemplateSuites)。 */
+  suite?: string;
 }

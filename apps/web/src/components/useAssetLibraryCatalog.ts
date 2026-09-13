@@ -12,11 +12,15 @@ const EMPTY_PAGE: AssetLibraryPage = {
   dimensions: [],
 };
 
-export function useAssetLibraryCatalog(projectId: string | undefined, onImported: () => Promise<void>) {
+export function useAssetLibraryCatalog(
+  projectId: string | undefined,
+  onImported: () => Promise<void>,
+  initial?: { dimension?: AssetLibraryDimension | "all"; featuredOnly?: boolean },
+) {
   const [search, setSearch] = useState("");
-  const [dimension, setDimension] = useState<AssetLibraryDimension | "all">("all");
+  const [dimension, setDimension] = useState<AssetLibraryDimension | "all">(initial?.dimension ?? "all");
   const [category, setCategory] = useState("all");
-  const [featuredOnly, setFeaturedOnly] = useState(true);
+  const [featuredOnly, setFeaturedOnly] = useState(initial?.featuredOnly ?? true);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<AssetLibraryPage>(EMPTY_PAGE);
   const [loading, setLoading] = useState(true);

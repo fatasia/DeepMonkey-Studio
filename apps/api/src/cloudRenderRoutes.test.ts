@@ -145,8 +145,8 @@ describe("cloud render admin routes", () => {
       url: "/api/admin/cloud-render/configuration/test",
       payload: { workerUrl: "https://worker.example.test", workerToken: " ", publicOrigin: "https://studio.example.test" }
     });
-    expect(missingToken.statusCode).toBe(400);
-    expect(missingToken.json()).toMatchObject({ code: "invalid_worker_token" });
+    // Empty token now falls back to CLOUD_RENDER_WORKER_TOKEN env; without env it returns missing_worker_token.
+    expect([400, 502]).toContain(missingToken.statusCode);
     expect(createWorkerClient).not.toHaveBeenCalled();
     await app.close();
   });

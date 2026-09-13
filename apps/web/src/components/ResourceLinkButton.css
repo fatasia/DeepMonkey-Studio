@@ -1,0 +1,14 @@
+.resource-link-action { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.resource-link-action > button { white-space: nowrap; }
+.resource-link-action > button[data-copied] { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, var(--line)); background: color-mix(in srgb, var(--success) 10%, var(--surface-2)); }
+.resource-link-feedback { color: var(--success); font-size: 12px; }
+.resource-link-action.is-compact .resource-link-feedback { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.resource-link-fallback { display: grid; gap: 6px; width: min(440px, 100%); color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }
+.resource-link-fallback input { width: 100%; min-width: 0; color: var(--text-strong); background: var(--surface-2); border: 1px solid var(--line-strong); padding: 6px; }
+.unified-asset-card > .resource-link-action { margin: 0 10px 10px; }
+.unified-asset-card > .resource-link-action > button { width: 100%; justify-content: center; }
+.project-resource-dialog footer .resource-link-action { margin-left: auto; }
+.resource-map-links { padding: 12px 20px; border-top: 1px solid var(--line); font-size: 12px; }
+.resource-map-links > summary { cursor: pointer; }
+.resource-map-links > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; }
+.resource-map-links > div > span { min-width: 0; overflow-wrap: anywhere; }

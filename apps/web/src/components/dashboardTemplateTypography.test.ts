@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { DashboardDataWidgetConfig, DashboardPageDocument } from "@bim-studio/contracts";
-import { createDashboardTemplateNodes } from "./DashboardTemplateCatalog";
+import { createDashboardTemplateNodes } from "./dashboardTemplateCatalog";
 import { dashboardAuthoredTypography } from "./dashboardTemplateTypography";
 import { dashboardPiePercentLabel, dashboardReadableChartOptions } from "./dashboardReadableChartOptions";
 

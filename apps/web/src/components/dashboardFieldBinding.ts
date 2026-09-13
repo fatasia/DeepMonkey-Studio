@@ -17,7 +17,7 @@ export interface DashboardFieldDrag {
   unit?: string | undefined;
 }
 
-const chartTypes = new Set(["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "sankey", "sunburst", "treemap", "graph", "rank"]);
+const chartTypes = new Set(["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "sankey", "sunburst", "treemap", "graph", "rank", "wordcloud", "boxplot", "waterfall", "polarBar"]);
 const metricTypes = new Set(["value", "gauge", "digital-flip", "liquid-fill", "progress"]);
 export function dashboardFieldRoles(type: DashboardDataWidgetConfig["type"]): FieldRole[] {
   return chartTypes.has(type) ? ["dimension", "measure", "series"] : metricTypes.has(type) ? ["measure"] : [];

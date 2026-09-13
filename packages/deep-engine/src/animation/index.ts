@@ -1,0 +1,20 @@
+export { SceneAnimationMixer, DEEP_ANIMATION_LIMITS } from "./SceneAnimationMixer.js";
+export {
+  AnimationError,
+  type AnimationBlendMode,
+  type AnimationClipId,
+  type AnimationClipInput,
+  type AnimationErrorCode,
+  type AnimationFadeOptions,
+  type AnimationFrameResult,
+  type AnimationInterpolation,
+  type AnimationLayerId,
+  type AnimationLayerInput,
+  type AnimationSampleArray,
+  type AnimationTargetPath,
+  type AnimationTrackInput,
+  type AnimationWrapMode,
+  type SceneAnimationMixerConfiguration,
+  type SceneAnimationMixerOptions,
+  type SceneAnimationMixerStats,
+} from "./types.js";

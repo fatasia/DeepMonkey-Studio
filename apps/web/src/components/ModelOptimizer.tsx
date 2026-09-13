@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, Crosshair, Eye, Gauge, Image, LoaderCircle, Sparkles, Square, Trash2, Triangle, Upload } from "lucide-react";
 import type { ProjectRecord } from "@bim-studio/contracts";
 import { DEFAULT_BAKE_LIGHTS, type BakeLightState, type ModelOptimizationOptions } from "../optimizer/modelOptimizer";
@@ -11,6 +11,11 @@ import { ModelOptimizerBaking } from "./ModelOptimizerBaking";
 import { ModelAssetCredit } from "./ModelAssetCredit";
 import { ModelAssetWorkflowActions } from "./ModelAssetWorkflowActions";
 import { OptimizerPreview } from "./OptimizerPreview";
+import { OptimizerLayerTree } from "./OptimizerLayerTree";
+import {useOptimizerInputFormats} from "../optimizer/useOptimizerInputFormats";
+import { applyOptimizationPreset, assessModelQuality, type OptimizationPresetId } from "../optimizer/modelEngineering";
+import { OptimizerEngineeringPanel } from "./OptimizerEngineeringPanel";
+import "./OptimizerWorkspace.css";
 import {
   formatBytes,
   localizeOptimizerMessage,
@@ -45,34 +50,40 @@ const DEFAULT_OPTIONS: ModelOptimizationOptions = {
 
 type BakeTransformMode = "translate" | "rotate";
 
-export function ModelOptimizer({ locale, onBack, project, onProjectChange, requestedModelId, onViewAssets, onReturnToScene }: {
+export function ModelOptimizer({ locale, onBack, project, onProjectChange, requestedModelId, onViewAssets, onReturnToScene, returnMode = "insert" }: {
   locale: AppLocale; onBack: () => void; project: ProjectRecord | undefined; onProjectChange?: (project: ProjectRecord) => void;
-  requestedModelId?: string | undefined; onViewAssets?: (modelId?: string) => void; onReturnToScene?: ((modelId?: string) => void) | undefined;
+  requestedModelId?: string | undefined; onViewAssets?: (modelId?: string) => void; onReturnToScene?: ((modelId?: string) => void) | undefined; returnMode?: "insert" | "replace";
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [options, setOptions] = useState(DEFAULT_OPTIONS);
+  const inputFormats=useOptimizerInputFormats(project);
+  const [options, setOptions] = useState(() => applyOptimizationPreset(DEFAULT_OPTIONS, "balanced"));
+  const [preset, setPreset] = useState<OptimizationPresetId>("balanced");
+  const [qualityAcknowledged, setQualityAcknowledged] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const { file, robotSource, optimizedUrl, before, after, lightmapResult, output, showOptimized, setShowOptimized, busy, message, error, selectedProjectModelId, savedModelId, resultOutdated, previewUrl, comparisonMode, hasConverted, importFile, importProjectModel, runOptimization, cancelProcessing, exportGlb, saveToProjectAssets } = useModelOptimizerSession(locale, project, options, onProjectChange, requestedModelId);
+  const { file, robotSource, optimizedUrl, before, after, lightmapResult, output, hasOutput, continuousLayers, changeContinuousLayers, previewLayers, showOptimized, setShowOptimized, busy, message, error, selectedProjectModelId, savedModelId, resultOutdated, previewUrl, comparisonMode, hasConverted, importFile, importProjectModel, runOptimization, cancelProcessing, exportGlb, saveToProjectAssets,layers,editLayer,canUndoLayer,canRedoLayer,undoLayer,redoLayer,replayProcessing } = useModelOptimizerSession(locale, project, options, onProjectChange, requestedModelId, preset, (restored, restoredPreset) => { setOptions(restored); setPreset(restoredPreset); });
   const [selectedBakeLightId, setSelectedBakeLightId] = useState(DEFAULT_BAKE_LIGHTS[0]?.id);
   const [bakeTransformMode, setBakeTransformMode] = useState<BakeTransformMode>("translate");
   const [previewShadows, setPreviewShadows] = useState(false);
   const [previewReflections, setPreviewReflections] = useState(true);
   const sourceModel = project?.models.find(model => model.id === selectedProjectModelId);
+  const quality = assessModelQuality(after ?? before, preset);
+  const qualityAllowed = quality.status !== "blocked" && (quality.status !== "warning" || qualityAcknowledged);
+  useEffect(() => setQualityAcknowledged(false), [output, preset, layers]);
 
   function updateBakeLight(id: string, patch: Partial<BakeLightState>) {
     setOptions((current) => ({ ...current, bakeLights: current.bakeLights.map((light) => (light.id === id ? { ...light, ...patch } : light)) }));
   }
 
   const displayMessage = localizeOptimizerMessage(locale, message);
-  if (robotSource && project) return <RobotAssetWorkspace key={robotSource.id} locale={locale} model={robotSource} project={project} onBack={onBack} onImport={importFile} importBusy={busy} importError={error} onCancelImport={cancelProcessing} onProjectChange={onProjectChange} onViewAssets={onViewAssets} onReturnToScene={onReturnToScene} />;
+  if (robotSource && project) return <RobotAssetWorkspace key={robotSource.id} locale={locale} model={robotSource} project={project} onBack={onBack} onImport={importFile} importBusy={busy} importError={error} onCancelImport={cancelProcessing} onProjectChange={onProjectChange} onViewAssets={onViewAssets} onReturnToScene={onReturnToScene} returnMode={returnMode} />;
   return (
     <div className={`optimizer-page${onReturnToScene ? " with-scene-return" : ""}`}>
-      <ModelOptimizerHeader locale={locale} onBack={onBack} onViewAssets={() => onViewAssets?.(savedModelId ?? selectedProjectModelId)} onImport={() => inputRef.current?.click()} onDownload={exportGlb} onSave={() => void saveToProjectAssets()} canExport={Boolean(output && !resultOutdated && !busy)} canSave={Boolean(output && !resultOutdated && project && !busy && !savedModelId)} saved={Boolean(savedModelId && !resultOutdated && !busy)} busy={busy} resultOutdated={resultOutdated} />
-      <ModelAssetWorkflowActions locale={locale} busy={busy} savedModelId={resultOutdated ? undefined : savedModelId} onReturn={onReturnToScene} />
+      <ModelOptimizerHeader locale={locale} onBack={onBack} onViewAssets={() => onViewAssets?.(savedModelId ?? selectedProjectModelId)} onImport={() => inputRef.current?.click()} onDownload={() => void exportGlb()} onSave={() => void saveToProjectAssets()} canExport={Boolean(hasOutput && !resultOutdated && !busy)} canSave={Boolean(hasOutput && !resultOutdated && project && !busy && !savedModelId && qualityAllowed)} saved={Boolean(savedModelId && !resultOutdated && !busy)} busy={busy} resultOutdated={resultOutdated} saveBlockReason={!qualityAllowed ? tr(locale, "请先处理或确认工程质量检查结果", "Resolve or acknowledge the quality check first") : undefined} />
+      <ModelAssetWorkflowActions locale={locale} busy={busy} savedModelId={resultOutdated ? undefined : savedModelId} onReturn={onReturnToScene} returnMode={returnMode} canSave={Boolean(hasOutput && !resultOutdated && project && qualityAllowed)} blockReason={resultOutdated ? tr(locale, "参数已更改，请重新生成结果。", "Settings changed. Generate the result again.") : !qualityAllowed ? tr(locale, "请先处理或确认工程质量检查结果。", "Resolve or acknowledge the quality check first.") : undefined} onSaveAndReturn={() => { void saveToProjectAssets().then(id => { if (id) onReturnToScene?.(id); }); }} />
       <main className="optimizer-layout">
         {/* 导入过程中保持收起空壳选项区：此时没有任何可调参数，展示出来只会闪现一片禁用控件。 */}
         <aside className={`optimizer-settings ${file ? "" : "awaiting-model"}`}>
-          <ModelOptimizerPipeline locale={locale} project={project} models={(project?.models ?? []).filter((model) => model.status === "ready" && model.manifest?.geometryUrl)} selectedModelId={selectedProjectModelId} onSelectModel={(id) => { const model = project?.models.find((item) => item.id === id); if (model) void importProjectModel(model); }} onImport={() => inputRef.current?.click()} hasSource={Boolean(file)} converted={hasConverted} hasOutput={Boolean(output && !resultOutdated)} saved={Boolean(savedModelId && !resultOutdated)} busy={busy} />
+          <ModelOptimizerPipeline locale={locale} project={project} models={(project?.models ?? []).filter((model) => model.status === "ready" && model.manifest?.geometryUrl)} selectedModelId={selectedProjectModelId} onSelectModel={(id) => { const model = project?.models.find((item) => item.id === id); if (model) void importProjectModel(model); }} onImport={() => inputRef.current?.click()} hasSource={Boolean(file)} converted={hasConverted} hasOutput={Boolean(hasOutput && !resultOutdated)} saved={Boolean(savedModelId && !resultOutdated)} busy={busy} />
           <div className="optimizer-file">
             <Box size={18} />
             <div>
@@ -80,11 +91,13 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
               <span>
                 {before
                   ? `${formatBytes(before.bytes)} · ${before.triangles.toLocaleString(locale)} ${tr(locale, "面", "triangles")}`
-                  : tr(locale, "GLB / glTF，或经转换器处理的模型", "GLB / glTF, or models processed by a converter")}
+                  : inputFormats.label}
               </span>
             </div>
           </div>
           {sourceModel && <ModelAssetCredit model={sourceModel} locale={locale} />}
+          {file && <OptimizerEngineeringPanel locale={locale} preset={preset} onPreset={id => { setPreset(id); setOptions(current => applyOptimizationPreset(current, id)); }} statistics={after ?? before} acknowledged={qualityAcknowledged} onAcknowledge={setQualityAcknowledged} busy={busy} source={sourceModel} onReplay={() => sourceModel && void replayProcessing(sourceModel)} />}
+          {file&&<OptimizerLayerTree key={selectedProjectModelId||file.name} locale={locale} layers={layers} busy={busy} onEdit={editLayer} canUndo={canUndoLayer} canRedo={canRedoLayer} onUndo={undoLayer} onRedo={redoLayer} continuous={continuousLayers} onContinuous={changeContinuousLayers}/>}
           <OptionSection
             icon={<Triangle size={15} />}
             title={tr(locale, "模型减面", "Mesh simplification")}
@@ -148,6 +161,8 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
                   value={options.textureFormat}
                   onChange={(event) => setOptions({ ...options, textureFormat: event.target.value as ModelOptimizationOptions["textureFormat"] })}
                 >
+                  <option value="ktx2-uastc">{tr(locale, "KTX2 · 清晰优先", "KTX2 · Quality")}</option>
+                  <option value="ktx2-etc1s">{tr(locale, "KTX2 · 体积优先", "KTX2 · Compact")}</option>
                   <option value="webp">WebP</option>
                   <option value="jpeg">JPEG</option>
                   <option value="original">{tr(locale, "保持原格式", "Keep original")}</option>
@@ -233,10 +248,10 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
               {optimizedUrl && (
                 <>
                   <button className={!showOptimized ? "active" : ""} onClick={() => setShowOptimized(false)}>
-                    {tr(locale, "原始模型", "Original")}
+                    {tr(locale, "编辑模型", "Working model")}
                   </button>
                   <button className={showOptimized ? "active" : ""} disabled={resultOutdated} onClick={() => setShowOptimized(true)}>
-                    {tr(locale, "优化结果", "Optimized")}
+                    {tr(locale, "处理结果", "Processed")}
                   </button>
                 </>
               )}
@@ -247,6 +262,7 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
             <OptimizerPreview
               locale={locale}
               url={previewUrl}
+              layerDraft={previewLayers}
               bakeEnabled={options.bakeEnabled && !showOptimized}
               comparisonMode={comparisonMode}
               shadows={previewShadows}
@@ -277,7 +293,7 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
             >
               <Upload size={32} />
               <strong>{tr(locale, "导入模型开始", "Import a model to begin")}</strong>
-              <span>{tr(locale, "GLB 本地处理，其他格式自动进入项目转换链路；支持拖放文件", "GLB runs locally; other formats use the project conversion pipeline. Drag and drop is supported")}</span>
+              <span>{inputFormats.label}</span>
             </button>
           )}
           {error && <div className="optimizer-error">{error}</div>}
@@ -330,7 +346,7 @@ export function ModelOptimizer({ locale, onBack, project, onProjectChange, reque
           )}
         </section>
       </main>
-      <ModelImportInput inputRef={inputRef} locale={locale} scopeKey={project?.id} onFiles={async (files, entries) => { const file = files[0]; if (file) await importFile(file, entries.get(file)); }} />
+      <ModelImportInput inputRef={inputRef} locale={locale} scopeKey={project?.id} accept={inputFormats.accept} onFiles={async (files, entries) => { const file = files[0]; if (file) await importFile(file, entries.get(file)); }} />
     </div>
   );
 }

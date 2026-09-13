@@ -22,6 +22,12 @@ export function buildWorkerApp(config: CloudRenderWorkerConfig, runtime: RenderR
   });
 
   app.get("/v1/health", async () => manager.health());
+  app.get("/", async () => ({
+    service: "bim-studio-cloud-render-worker",
+    status: "ok",
+    hint: "云渲染 Worker 运行中。健康检查请访问 /v1/health；观看地址由会话创建后下发（/viewer/:id）。",
+    links: { health: "/v1/health" },
+  }));
   app.post<{ Body: CloudRenderWorkerSessionRequest }>("/v1/sessions", async (request, reply) => {
     try { return reply.code(201).send(await manager.create(request.body)); }
     catch (reason) { return sendError(reply, reason); }

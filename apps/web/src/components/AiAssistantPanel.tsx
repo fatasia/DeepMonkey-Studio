@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Activity, AlertTriangle, Bot, Box, Database, Focus, Layers3, LayoutDashboard, LoaderCircle, MessageSquare, RotateCcw, ScanSearch, Send, Sparkles, Square, Trash2, Workflow, X } from "lucide-react";
 import type { SceneDashboardState } from "@bim-studio/contracts";
 import { api, type AssistantMode } from "../api";
@@ -68,6 +68,10 @@ export function AiAssistantPanel({
   const [applyBusy, setApplyBusy] = useState(false);
   const [applyError, setApplyError] = useState<string>();
   const [applyNotice, setApplyNotice] = useState<string>();
+  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | undefined>(undefined);
+  const panelRef = useRef<HTMLElement>(null);
+  const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | undefined>(undefined);
+  const previousUserSelectRef = useRef<string | undefined>(undefined);
   const requestAbort = useRef<AbortController | undefined>(undefined);
   const { platformContext, contextSources, datasets, platformLoaded, projectMissing } = useAiProjectContext(projectId, locale);
   const t = (zh: string, en: string) => tr(locale, zh, en);
@@ -138,9 +142,14 @@ export function AiAssistantPanel({
     setConfirmDashboard(false);
     setBimEvidence(undefined);
     setApplyNotice(undefined);
+    setDragPosition(undefined);
     return () => {
       requestAbort.current?.abort();
       requestAbort.current = undefined;
+      if (previousUserSelectRef.current !== undefined) {
+        document.body.style.userSelect = previousUserSelectRef.current;
+        previousUserSelectRef.current = undefined;
+      }
     };
   }, [projectId, workspaceTarget.scene?.id, workspaceTarget.script?.id]);
 
@@ -159,6 +168,59 @@ export function AiAssistantPanel({
     requestAbort.current?.abort();
     requestAbort.current = undefined;
     setBusy(false);
+  }
+
+  function dragBounds() {
+    const panel = panelRef.current;
+    const parent = panel?.offsetParent as HTMLElement | null;
+    const rect = parent?.getBoundingClientRect();
+    return rect
+      ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+      : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  }
+
+  function handleDragStart(event: ReactPointerEvent<HTMLElement>) {
+    if ((event.target as HTMLElement).closest("button, input, textarea, a")) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const bounds = dragBounds();
+    const rect = panel.getBoundingClientRect();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    previousUserSelectRef.current = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragPosition({
+      x: Math.max(8, rect.left - bounds.left),
+      y: Math.max(8, rect.top - bounds.top),
+    });
+  }
+
+  function handleDragMove(event: ReactPointerEvent<HTMLElement>) {
+    const drag = dragRef.current;
+    const panel = panelRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !panel) return;
+    const bounds = dragBounds();
+    const rect = panel.getBoundingClientRect();
+    const maxX = Math.max(8, bounds.width - rect.width - 8);
+    const maxY = Math.max(8, bounds.height - rect.height - 8);
+    setDragPosition({
+      x: Math.min(maxX, Math.max(8, event.clientX - bounds.left - drag.offsetX)),
+      y: Math.min(maxY, Math.max(8, event.clientY - bounds.top - drag.offsetY)),
+    });
+  }
+
+  function handleDragEnd(event: ReactPointerEvent<HTMLElement>) {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    dragRef.current = undefined;
+    if (previousUserSelectRef.current !== undefined) {
+      document.body.style.userSelect = previousUserSelectRef.current;
+      previousUserSelectRef.current = undefined;
+    }
   }
 
   async function ask(retryPrompt?: string) {
@@ -245,25 +307,30 @@ export function AiAssistantPanel({
   const latestReliability = conversation.at(-1)?.reliability;
 
   return (
-    <aside className={`ai-assistant-panel ai-assistant-${surface} ${experience === "agent" ? "agent-active" : ""}`}>
-      <header>
+    <aside
+      ref={panelRef}
+      className={`ai-assistant-panel ai-assistant-${surface} ${experience === "agent" ? "agent-active" : ""}`}
+      style={dragPosition ? { left: `${dragPosition.x}px`, top: `${dragPosition.y}px`, right: "auto", bottom: "auto" } : undefined}
+    >
+      <header
+        data-drag-handle="true"
+        title={t("拖动标题栏移动助手面板", "Drag the title bar to move the assistant panel")}
+        onPointerDown={handleDragStart}
+        onPointerMove={handleDragMove}
+        onPointerUp={handleDragEnd}
+        onPointerCancel={handleDragEnd}
+      >
         <div>
           <Bot size={18} />
           <span>
             <strong>{t("平台 AI 助手", "Platform AI Assistant")}</strong>
-            <small>
-              {platformLoaded
-                ? t("项目上下文快照已连接", "Project context snapshot connected")
-                : projectMissing
-                  ? t("请先选择或创建项目", "Select or create a project first")
-                  : t("正在读取平台上下文", "Loading platform context")}
-            </small>
           </span>
         </div>
         <div className="ai-assistant-header-actions">
           {conversation.length > 0 && (
             <button
               title={t("清空对话", "Clear conversation")}
+              aria-label={t("清空对话", "Clear conversation")}
               disabled={busy}
               onClick={() => {
                 setConversation([]);
@@ -282,11 +349,11 @@ export function AiAssistantPanel({
       </header>
       <nav className="ai-assistant-tabs">
         <div className="ai-assistant-experience" role="tablist" aria-label={t("AI 使用方式", "AI experience")}>
-          <button role="tab" disabled={busy} aria-selected={experience === "chat"} className={experience === "chat" ? "active" : ""} onClick={() => setExperience("chat")}>
-            <MessageSquare size={12} />{t("问答与生成", "Ask & create")}
+          <button role="tab" disabled={busy} aria-selected={experience === "chat"} title={t("问答与生成", "Ask & create")} aria-label={t("问答与生成", "Ask & create")} className={experience === "chat" ? "active" : ""} onClick={() => setExperience("chat")}>
+            <MessageSquare size={14} />
           </button>
-          <button role="tab" disabled={busy} aria-selected={experience === "agent"} className={experience === "agent" ? "active" : ""} onClick={() => setExperience("agent")}>
-            <Workflow size={12} />{t("执行任务", "Run task")}
+          <button role="tab" disabled={busy} aria-selected={experience === "agent"} title={t("执行任务", "Run task")} aria-label={t("执行任务", "Run task")} className={experience === "agent" ? "active" : ""} onClick={() => setExperience("agent")}>
+            <Workflow size={14} />
           </button>
         </div>
         {experience === "chat" && tabs.map(({ id, label, icon: Icon }) => (
@@ -294,6 +361,8 @@ export function AiAssistantPanel({
             key={id}
             disabled={busy}
             className={mode === id ? "active" : ""}
+            title={label}
+            aria-label={label}
             aria-pressed={mode === id}
             onClick={() => {
               setMode(id);
@@ -305,20 +374,9 @@ export function AiAssistantPanel({
             }}
           >
             <Icon size={12} />
-            {label}
           </button>
         ))}
       </nav>
-      <div className="ai-assistant-context-bar">
-        <span className={platformLoaded ? "ready" : ""}>{experience === "agent" ? "CONTROLLED AGENT" : platformLoaded ? "PROJECT SNAPSHOT" : projectMissing ? "NO PROJECT" : "LOADING"}</span>
-        <small>
-          {experience === "agent"
-            ? t("能力白名单 · 操作前确认 · checkpoint 恢复 · 证据验收", "Capability allowlist · action confirmation · checkpoint recovery · evidence verification")
-            : projectMissing
-            ? t("选择项目后才能读取证据并执行任务", "Select a project to read evidence and run tasks")
-            : t("快照只作为模型输入；Capability 执行结果才是事实证据", "The snapshot is model input; only Capability results are execution evidence")}
-        </small>
-      </div>
       <div className="ai-assistant-body">
         {experience === "agent" ? (
           <IndustrialAgentWorkspace locale={locale} {...(projectId ? { projectId } : {})} context={context} />
@@ -352,6 +410,9 @@ export function AiAssistantPanel({
               />
             )}
             <div className="ai-platform-suggestions">
+              <button type="button" disabled={!projectId || busy} onClick={() => void ask(suggestions[0])}>
+                <Sparkles size={13} />{t("一键运行样例", "Run sample")}
+              </button>
               {suggestions.map((item) => (
                 <button key={item} onClick={() => setQuestion(item)}>
                   {item}

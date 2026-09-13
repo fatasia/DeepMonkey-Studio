@@ -4,14 +4,15 @@ import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { BimPropertyEntry, StandardView } from "../viewer/ViewerEngine";
 
-export function ToolButton({ title, active, onClick, icon, className = "" }: {
+export function ToolButton({ title, active, onClick, icon, className = "", disabled = false }: {
   title: string;
   active: boolean;
   onClick: () => void;
   icon: ReactNode;
   className?: string;
+  disabled?: boolean;
 }) {
-  return <button className={`tool-button ${active ? "active" : ""} ${className}`.trim()} title={title} onClick={onClick}>{icon}<span>{title}</span></button>;
+  return <button className={`tool-button ${active ? "active" : ""} ${className}`.trim()} title={title} aria-label={title} disabled={disabled} onClick={onClick}>{icon}<span>{title}</span></button>;
 }
 
 export function ViewControl({ locale, onSelect }: { locale: AppLocale; onSelect: (view: StandardView) => void }) {

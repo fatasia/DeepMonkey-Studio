@@ -265,6 +265,7 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
     }
   setModelEffects(id: string, state: SceneModelEffectsState): void {
       if (!this.models.has(id)) return;
+      this.markShadowMapDirty();
       const normalized: SceneModelEffectsState = {
         outline: Boolean(state.outline),
         glow: Boolean(state.glow),

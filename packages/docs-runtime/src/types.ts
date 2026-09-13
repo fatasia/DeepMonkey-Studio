@@ -42,6 +42,7 @@ export interface DocsLinkIssue {
 export type MarkdownInline =
   | { type: "text"; value: string }
   | { type: "code"; value: string }
+  | { type: "image"; alt: string; href: string }
   | { type: "link"; label: string; href: string; external: boolean };
 
 export type MarkdownBlock =

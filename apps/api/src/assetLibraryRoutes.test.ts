@@ -35,6 +35,11 @@ describe("asset library routes", () => {
     const list = await app.inject({ method: "GET", url: "/api/asset-library?q=机械臂&pageSize=1" });
     expect(list.statusCode).toBe(200);
     expect(list.json()).toMatchObject({ total: 1, pageSize: 1, items: [{ id: "industrial-10", name: "六轴机械臂" }] });
+    const linkedItem = await app.inject({ method: "GET", url: "/api/asset-library/items/industrial-10" });
+    expect(linkedItem.statusCode).toBe(200);
+    expect(linkedItem.json()).toMatchObject({ id: "industrial-10", name: "六轴机械臂" });
+    expect(linkedItem.json()).not.toHaveProperty("modelPath");
+    expect((await app.inject({ method: "GET", url: "/api/asset-library/items/missing" })).statusCode).toBe(404);
 
     const thumbnail = await app.inject({ method: "GET", url: "/api/public/asset-library/items/industrial-10/thumbnail" });
     expect(thumbnail.statusCode).toBe(200);
@@ -53,6 +58,15 @@ describe("asset library routes", () => {
 
     const materialList = await app.inject({ method: "GET", url: "/api/asset-library?dimension=material" });
     expect(materialList.json()).toMatchObject({ total: 1, items: [{ id: "material-steel", mapKinds: ["base-color", "normal", "roughness"] }] });
+    const materialMaps = await app.inject({ method: "GET", url: "/api/asset-library/items/material-steel/maps" });
+    expect(materialMaps.statusCode).toBe(200);
+    expect(materialMaps.json()).toHaveLength(3);
+    for (const map of materialMaps.json()) {
+      const content = await app.inject({ method: "GET", url: map.url });
+      expect(content.statusCode).toBe(200);
+      expect(content.rawPayload.length).toBe(map.size);
+    }
+    expect((await app.inject({ method: "GET", url: "/api/asset-library/items/material-steel/maps/missing" })).statusCode).toBe(404);
     const material = await app.inject({ method: "POST", url: "/api/projects/default/asset-library/material-steel/import" });
     expect(material.statusCode).toBe(201);
     expect(material.json()).toMatchObject({

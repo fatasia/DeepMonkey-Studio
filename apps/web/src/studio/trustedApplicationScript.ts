@@ -40,7 +40,7 @@ export async function runTrustedApplicationScript(host: TrustedApplicationScript
     ...entry.object,
     id: entry.object.modelId,
     sceneId: entry.scene.id,
-    raw: host.engine?.getRawObject(entry.object.modelId),
+    get raw() { return host.engine?.getRawObject(entry.object.modelId); },
     show: () => emitObjectAction(entry.scene.id, entry.object.modelId, "visibility", { value: "show" }),
     hide: () => emitObjectAction(entry.scene.id, entry.object.modelId, "visibility", { value: "hide" }),
     toggle: () => emitObjectAction(entry.scene.id, entry.object.modelId, "visibility", { value: "toggle" }),

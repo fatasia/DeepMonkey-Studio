@@ -14,6 +14,18 @@ export interface BatteryExpertRoutingEvidence {
   reasons: string[];
   disagreementRatio?: number;
   reviewRequired: boolean;
+  candidateComparison: {
+    standard: BatteryLifeExpertSnapshot;
+    pinn?: BatteryLifeExpertSnapshot;
+  };
+}
+
+interface BatteryLifeExpertSnapshot {
+  predictedCycleLife?: number;
+  confidence?: string;
+  modelVersion?: string;
+  physicsArchitecture?: string;
+  identifiedPhysicsParameters?: Record<string, unknown>;
 }
 
 interface ExpertDecision {
@@ -69,7 +81,8 @@ export function selectLifeExpert(
 ): ExpertDecision {
   const standardLife = finiteNumber(standard.predictedCycleLife);
   const physicsLife = finiteNumber(physics?.predictedCycleLife);
-  const disagreementRatio = standardLife && physicsLife
+  const directPhysics = mode === "physics";
+  const disagreementRatio = !directPhysics && standardLife && physicsLife
     ? Math.abs(physicsLife - standardLife) / standardLife
     : undefined;
   const physicsReady = Boolean(physics && physicsLife !== undefined && physicsVariantWasUsed(physics));
@@ -85,7 +98,7 @@ export function selectLifeExpert(
     || (triggerReasons.length > 0 && physicsConfidence >= standardConfidence)
   );
   const selectedExpert: BatteryLifeExpert = physicsSelected ? "pinn" : "standard";
-  const executedExperts: BatteryLifeExpert[] = physics ? ["standard", "pinn"] : ["standard"];
+  const executedExperts: BatteryLifeExpert[] = directPhysics ? ["pinn"] : physics ? ["standard", "pinn"] : ["standard"];
   const reasons = physicsSelected
     ? [...triggerReasons, "PINN 结果完整、置信不低于标准专家且通过分歧保护"]
     : highDisagreement
@@ -103,10 +116,16 @@ export function selectLifeExpert(
       authority: "production-route",
       selectedExpert,
       executedExperts,
-      routePath: ["标准寿命专家", ...(physics ? ["PINN 物理专家"] : []), `采纳${selectedExpert === "pinn" ? " PINN" : "标准专家"}`],
+      routePath: directPhysics
+        ? ["PINN 物理专家", "采纳 PINN"]
+        : ["标准寿命专家", ...(physics ? ["PINN 物理专家"] : []), `采纳${selectedExpert === "pinn" ? " PINN" : "标准专家"}`],
       reasons: unique(reasons),
       ...(disagreementRatio !== undefined ? { disagreementRatio } : {}),
       reviewRequired: highDisagreement,
+      candidateComparison: {
+        standard: expertSnapshot(standard),
+        ...(physics ? { pinn: expertSnapshot(physics) } : {}),
+      },
     },
   };
 }
@@ -190,6 +209,21 @@ function confidenceRank(value: unknown): number {
 
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function expertSnapshot(output: Record<string, unknown>): BatteryLifeExpertSnapshot {
+  const predictedCycleLife = finiteNumber(output.predictedCycleLife);
+  const confidence = typeof output.confidence === "string" ? output.confidence : undefined;
+  const modelVersion = typeof output.modelVersion === "string" ? output.modelVersion : undefined;
+  const physicsArchitecture = typeof output.physicsArchitecture === "string" ? output.physicsArchitecture : undefined;
+  const identifiedPhysicsParameters = asRecord(output.identifiedPhysicsParameters);
+  return {
+    ...(predictedCycleLife !== undefined ? { predictedCycleLife } : {}),
+    ...(confidence ? { confidence } : {}),
+    ...(modelVersion ? { modelVersion } : {}),
+    ...(physicsArchitecture ? { physicsArchitecture } : {}),
+    ...(identifiedPhysicsParameters ? { identifiedPhysicsParameters } : {}),
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

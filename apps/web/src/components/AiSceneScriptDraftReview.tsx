@@ -30,7 +30,7 @@ export function AiSceneScriptDraftReview({
   const analysisWarnings = draft.analysis?.issues.filter((issue) => issue.severity === "warning") ?? [];
 
   return (
-    <section className={`ai-script-draft-review status-${draft.status}`} aria-label={t("审查 AI 脚本草稿", "Review AI script draft")}>
+    <section className={`ai-script-draft-review status-${draft.status}`} aria-label={t("审查动作脚本草稿", "Review action script draft")}>
       <header>
         <span className="ai-script-draft-icon"><Code2 size={16} /></span>
         <span>

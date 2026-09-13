@@ -43,8 +43,6 @@ export default defineConfig(({ mode }) => {
         "/api": { target: apiOrigin, ws: true },
         "/assets": apiOrigin,
         "/health": apiOrigin,
-        "/node-red": { target: "http://localhost:1880", ws: true },
-        "/iot": { target: "http://localhost:1880", ws: true }
       }
     },
     build: {

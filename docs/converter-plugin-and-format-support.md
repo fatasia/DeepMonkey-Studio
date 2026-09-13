@@ -56,7 +56,7 @@ RVT、Parasolid XT 与 JT 的技术/商业边界见[格式接入决策](./rvt-xt
 ## 2026-08-31 本机验收记录
 
 - OpenUSD 使用官方 `Sphere.usda`、`skinnedArm.usda`、`geom.usdc`、`simpleMesh.usdz` 和 Three.js 官方贴图 USDZ 验收；几何、动画、贴图结果与 SHA-256 见 [OpenUSD 原生查看管线](./openusd-asset-pipeline.md)。
-- 本地已有许可与 SHA-256 来源清晰的 JT 10.3 小型零件、JT 9.5 多网格装配和 SolidWorks X_T 证据样本。JT 10.3 样本的 LOD0 已输出 8 个源顶点、12 个三角面和 6 个面组图元，包围盒为 `[0,0,0]`–`[100,80,60]`；JT 9.5 样本输出 44 个复用网格、64 个装配实例、23,999 顶点、47,962 三角面，实例采用 reader 的列主序 world transform，44 个网格均映射到 shape node。X_T 仅证明 V24.1 单体共轴旋转件子集。详见 [JT / X_T 开发前证据审计](./jt-xt-preimplementation-evidence-audit-2026-08-31.md)。
+- 本地已有许可与 SHA-256 来源清晰的 JT 10.3 小型零件、JT 9.5 多网格装配和 SolidWorks X_T 证据样本。JT 10.3 样本的 LOD0 已输出 8 个源顶点、12 个三角面和 6 个面组图元，包围盒为 `[0,0,0]`–`[100,80,60]`；JT 9.5 样本输出 44 个复用网格、64 个装配实例、23,999 顶点、47,962 三角面，实例采用 reader 的列主序 world transform，44 个网格均映射到 shape node。X_T 仅证明 V24.1 单体共轴旋转件子集；历史证据已汇总进[任务恢复总账](./active-task-recovery-ledger.md)。
 - 本机未配置 `INDUSTRIAL_CAD_CONVERTER_COMMAND`；X_B 和超出内部子集的 X_T 仍等待。JT 只有命中内部 JT 9.5/10 小端 TriStrip/TopoMesh v1 且存在完整 LOD0 时才发布 GLB；没有受支持网格时仅保留层级、属性和检查证据并进入 `waiting_converter`。OpenUSD 不属于该外部 Provider 路径。
 - 合成 Provider 仅用于验证“输入对象→隔离进程→GLB/sidecar→几何审计→对象存储”架构；它生成固定三角形，不能作为任何源格式解析能力的证据。
 

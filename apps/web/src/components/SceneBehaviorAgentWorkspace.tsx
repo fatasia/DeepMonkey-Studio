@@ -87,7 +87,7 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
     props.onBack();
   }
 
-  async function runAssistant() {
+  async function runAssistant(sampleIntent?: string) {
     if (!props.draft) return;
     const request = session.current.begin(owner);
     if (!request) return;
@@ -98,7 +98,7 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
     setError("");
     setModelEvidence(undefined);
     try {
-      if (mode === "generate") await generateDraft(request);
+      if (mode === "generate") await generateDraft(request, sampleIntent);
       else if (mode === "explain" || mode === "diagnose") await answerReadOnly(mode, request);
     } catch (reason) {
       if (isCurrent(request)) setError(errorMessage(reason));
@@ -107,8 +107,8 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
     }
   }
 
-  async function generateDraft(request: ScriptAssistantRequest) {
-    const intent = prompt.trim();
+  async function generateDraft(request: ScriptAssistantRequest, sampleIntent?: string) {
+    const intent = (sampleIntent ?? prompt).trim();
     if (!intent || !props.sceneId || !props.target || !props.draft) return;
     const direct = createAiSceneScriptDraft({
       intent,
@@ -218,6 +218,10 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
         {busy ? <Square size={14} /> : mode === "generate" ? <WandSparkles size={14} /> : <FileSearch size={14} />}
         {busy ? t("停止", "Stop") : mode === "generate" ? t("生成并检查", "Generate and check") : mode === "explain" ? t("解释脚本", "Explain script") : t("诊断脚本", "Diagnose script")}
       </button>}
+      {!draftResult && mode === "generate" && <button type="button" className="behavior-script-ai-undo" disabled={busy || !props.draft || !props.sceneId || !props.target} onClick={() => {
+        const sample = "点击当前对象时隐藏";
+        setPrompt(sample); void runAssistant(sample);
+      }}><Sparkles size={14} />{t("一键运行本地样例", "Run local sample")}</button>}
       {draftResult && <AiSceneScriptDraftReview locale={props.locale} draft={draftResult} {...(error ? { error } : {})} onCancel={() => setDraftResult(undefined)} onInsertIntoEditor={insertIntoEditor} />}
       {!draftResult && error && <p className="behavior-script-ai-notice" role="alert">{error}</p>}
       {answer && <section className="behavior-script-ai-answer" aria-live="polite"><Bot size={15} /><div><strong>{mode === "generate" ? t("意图解释", "Intent summary") : mode === "explain" ? t("脚本解释", "Script explanation") : t("诊断结论", "Diagnostic result")}</strong><p>{answer}</p></div></section>}

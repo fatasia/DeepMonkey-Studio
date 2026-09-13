@@ -1,6 +1,8 @@
 import type { RendererCapabilityProbe, RendererReadiness } from "../rendererCapabilities";
 import type { FramePerformanceSnapshot } from "./framePerformanceMonitor";
 import type { RendererBackend } from "./viewerTypes";
+import { loadingTimeline } from "./loadingTimeline";
+import { readBrowserInputTiming } from "./browserInputTiming";
 
 interface RendererDiagnosticInput {
   current: RendererBackend;
@@ -18,7 +20,9 @@ export function createRendererDiagnosticEvidence(input: RendererDiagnosticInput,
     currentBackend: input.current,
     capabilityProbe: input.probe,
     readiness: input.readiness,
-    performance: input.performance
+    performance: input.performance,
+    loadingTimeline: loadingTimeline.snapshot(),
+    browserInput: readBrowserInputTiming(),
   };
 }
 

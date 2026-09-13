@@ -1,0 +1,20 @@
+.plant-transport-network { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-1); color: var(--text); }
+.plant-transport-network header { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.plant-transport-network header span { color: var(--text-muted); }
+.plant-transport-network svg { display: block; width: 100%; max-height: 280px; margin-top: 12px; }
+.plant-transport-network .track { stroke: var(--line-strong); stroke-width: 5; }
+.plant-transport-network .blocked { stroke: var(--danger); stroke-width: 5; stroke-dasharray: 6 4; }
+.plant-transport-network .waypoint { fill: var(--surface-2); stroke: var(--text-muted); stroke-width: 2; }
+.plant-transport-network text { fill: var(--text); font-size: 13px; font-family: inherit; }
+.plant-transport-network .vehicle rect { fill: var(--accent); stroke: var(--text-strong); }
+.plant-transport-network .vehicle text { fill: var(--bg-0); font-weight: 700; }
+.plant-transport-network .vehicle.waiting rect { fill: var(--warning); }
+.plant-transport-vehicle-list { display: flex; flex-wrap: wrap; gap: 8px 20px; font-variant-numeric: tabular-nums; }
+.plant-transport-vehicle-list span { display: inline-flex; gap: 8px; }
+.plant-transport-vehicle-list b { color: var(--text-strong); }
+.plant-transport-editor { margin-block: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.plant-transport-editor summary { cursor: pointer; }
+.plant-transport-editor section { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-top: 12px; }
+.plant-transport-editor label { display: grid; gap: 4px; min-width: 110px; flex: 1; }
+.plant-transport-editor input, .plant-transport-editor select { min-width: 0; width: 100%; }
+.plant-transport-editor section > strong { flex-basis: 100%; }

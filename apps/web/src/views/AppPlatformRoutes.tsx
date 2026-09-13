@@ -7,6 +7,7 @@ import { modelAssetLibraryRoute, modelAssetSceneRoute } from "../optimizer/model
 import { storeLocale, translate as tr } from "../i18n";
 import type { AppViewBindings } from "./appViewBindings";
 import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
+import { ParametricRoutePage } from "./ParametricRoutePage";
 
 // 三个完整编辑工作区都不是登录首屏依赖，按路由加载可显著降低初始脚本体积。
 const DashboardWorkspace = lazy(() => import("../components/DashboardWorkspace").then((module) => ({ default: module.DashboardWorkspace })));
@@ -471,7 +472,19 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           }
           onEnterScene={enterSceneFromDashboard}
           onOpen3D={(sceneId, view) => leaveDashboardAfterDraft(() => enterSceneFromDashboard(sceneId, view))}
-          onOpenTopology={() => void openTopologyEditor(activeApplication)}
+          onOpenTopology={(topologyId, nodeId, view) => leaveDashboardAfterDraft(() => void openTopologyEditor(
+            activeApplication,
+            topologyId,
+            !topologyId,
+            {
+              kind: "dashboard",
+              projectId: activeApplication.metadata.projectId,
+              applicationId: activeApplication.metadata.id,
+              pageId: activeDashboardPage.id,
+              nodeId,
+              view,
+            },
+          ))}
           onOpenData={openDataCenter}
           onOpenScripts={(selection) => {
             applicationSessionRef.current.store.setSelection(selection);
@@ -521,13 +534,15 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           autoSaveEnabled={autoSaveEnabled}
           onAutoSaveChange={changeAutoSave}
           onSave={() => void saveActiveApplication()}
+          {...(route.topologyReturn ? { onSaveAndReturn: () => void insertActiveTopologyIntoDashboard() } : {})}
           onPublish={() => void publishActiveApplication()}
-          onInsertDashboard={insertActiveTopologyIntoDashboard}
-          onClose={() =>
-            void saveActiveApplication().then((saved) => {
+          {...(!route.topologyReturn ? { onInsertDashboard: insertActiveTopologyIntoDashboard } : {})}
+          onClose={() => {
+            if (route.topologyReturn) void insertActiveTopologyIntoDashboard();
+            else void saveActiveApplication().then((saved) => {
               if (saved) navigate({ view: "manager" });
-            })
-          }
+            });
+          }}
           onError={(message) => showError(new Error(message))}
           />
         </Suspense>
@@ -552,6 +567,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
             locale={locale}
             project={project}
             requestedModelId={route.modelId}
+            returnMode={route.assetReturn?.instanceId ? "replace" : "insert"}
             onViewAssets={(modelId) => navigate(modelAssetLibraryRoute(project?.id, modelId, route.assetReturn))}
             onReturnToScene={project && route.assetReturn ? (modelId) => navigate(modelAssetSceneRoute(project.id, route.assetReturn!, modelId)) : undefined}
             onProjectChange={(current) => {
@@ -561,6 +577,17 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
             onBack={() => navigate(modelAssetLibraryRoute(project?.id, route.modelId, route.assetReturn))}
           />
         </Suspense>
+      )}
+      {route.view === "parametric" && project && (
+        <ParametricRoutePage
+          locale={locale}
+          project={project}
+          onBack={() => navigate({ view: "manager", managerTab: "assets" })}
+          onSaved={async () => {
+            await refreshProject();
+            navigate({ view: "manager", managerTab: "assets" }, true);
+          }}
+        />
       )}
       {route.view === "data" && project && (
         <Suspense
@@ -662,7 +689,13 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           )}
           userName={currentUser.displayName}
           isAdmin={currentUser.role === "admin"}
+          onBranding={() => navigate({ view: "branding" })}
           onProjectChange={switchProjectById}
+          onProjectImported={value => {
+            setProjects(items => [...items.filter(item => item.id !== value.id), value]);
+            setProject(value);
+            navigate({ view: "manager", projectId: value.id, managerTab: "scenes" });
+          }}
           onCreateProject={() => openProjectDialog("create")}
           onRenameProject={() => openProjectDialog("rename")}
           onDeleteProject={() => void deleteCurrentProject()}
@@ -708,6 +741,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           onExportFbx={exportFbxScene}
           onDelete={deleteScene}
           onOptimizer={(modelId) => navigate({ view: "optimizer", ...(project ? { projectId: project.id } : {}), ...(modelId ? { modelId } : {}), ...(route.assetReturn ? { assetReturn: route.assetReturn } : {}) })}
+          onParametric={() => navigate({ view: "parametric", ...(project ? { projectId: project.id } : {}) })}
           onDataCenter={openDataCenter}
           onCreateTopology={() => void openTopologyEditor(managerApplications[0], undefined, true)}
           onOpenTopology={(applicationId, topologyId) => {

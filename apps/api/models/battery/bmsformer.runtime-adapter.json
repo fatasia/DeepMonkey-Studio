@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "modelId": "battery.bmsformer",
+  "modelVersion": "bmsformer-li-multichem-v2",
+  "kind": "bmsformer-window-v1",
+  "session": {
+    "inputs": [
+      "input"
+    ],
+    "output": "output"
+  },
+  "model": {
+    "windowSize": 20,
+    "inputFeatures": 6,
+    "featureNames": [
+      "observed_soh",
+      "log1p_charge_duration_s",
+      "log1p_discharge_duration_s",
+      "log1p_relative_upper_charge_duration_s",
+      "log1p_relative_mid_discharge_duration_s",
+      "voltage_span_v"
+    ],
+    "featureMean": [
+      0.821799099445343,
+      8.055200576782227,
+      7.53148889541626,
+      6.529202938079834,
+      5.1565141677856445,
+      1.2858140468597412
+    ],
+    "featureStd": [
+      0.19179590046405792,
+      0.7036188840866089,
+      0.5555826425552368,
+      2.0715019702911377,
+      1.7921674251556396,
+      0.5451845526695251
+    ],
+    "chemistryScope": [
+      "lfp",
+      "ncm"
+    ],
+    "chemistryMetrics": {
+      "lfp": {
+        "test_mae": 0.0016551451990380883,
+        "test_cells": 20,
+        "min_test_cells": 10,
+        "passed": true
+      },
+      "ncm": {
+        "test_mae": 0.003141418332234025,
+        "test_cells": 51,
+        "min_test_cells": 20,
+        "passed": true
+      }
+    },
+    "confidenceGate": {
+      "level": "high",
+      "max_test_mae": 0.02,
+      "min_test_cells": 20,
+      "requires_all_chemistries": true,
+      "passed": true
+    },
+    "testMae": 0.0023588717449456453
+  }
+}

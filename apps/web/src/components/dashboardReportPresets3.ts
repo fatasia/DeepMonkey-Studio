@@ -1,0 +1,32 @@
+import type { DashboardComponentPreset } from "./dashboardComponentPresetTypes";
+import { reportPreset } from "./dashboardComponentPresetFactory";
+
+/**
+ * 报表形态族(素材数量波次 A):7 种经营报表形态 × 2 个实例 = 14 款。
+ * 形态:分组交叉小计 / 多级表头(多指标列矩阵)/ 树形明细 / 左右对比 /
+ * 时间轴明细 / 阈值染色 / 排名变动。全部落在 table / scroll-table / rank
+ * 运行时合同的真实 mode 与字段上,不引入虚构表头层级字段。
+ */
+export const DASHBOARD_REPORT_PRESETS_3: readonly DashboardComponentPreset[] = [
+  // ── 分组交叉小计 ──────────────────────────────────────────────────────
+  reportPreset("cross-subtotal-report", "分组交叉小计表", "Cross subtotal report", "区域与渠道交叉汇总并逐组小计", "table", "report.crossSubtotal", { analysis: { dimensionField: "region", seriesField: "channel", measureField: "amount", aggregation: "sum" }, report: { mode: "crosstab", rowField: "region", columnField: "channel", valueField: "amount", aggregation: "sum", showSubtotal: true, showGrandTotal: true, stripedRows: true } }),
+  reportPreset("crosstab-quarter-report", "季度交叉汇总表", "Quarterly crosstab report", "季度与产品线交叉汇总并显示总计", "table", "report.quarterCrosstab", { analysis: { dimensionField: "quarter", seriesField: "productLine", measureField: "output", aggregation: "sum" }, report: { mode: "crosstab", rowField: "quarter", columnField: "productLine", valueField: "output", aggregation: "sum", showSubtotal: true, showGrandTotal: true, valueFormat: "number", decimalPlaces: 0 } }),
+  // ── 多级表头(多指标列矩阵,grouped 多 valueFields)──────────────────
+  reportPreset("multi-measure-header-report", "多指标列汇总表", "Multi-measure header report", "行分组下列出收入、成本、毛利多指标列", "table", "report.multiMeasure", { report: { mode: "grouped", rowField: "department", valueFields: ["revenue", "cost", "profit"], aggregation: "sum", showGrandTotal: true, stripedRows: true, valueFormat: "number", decimalPlaces: 1 } }),
+  reportPreset("kpi-matrix-report", "KPI 矩阵表", "KPI matrix report", "按机构分组的产量、合格、能耗、停机四列矩阵", "table", "report.kpiMatrix", { report: { mode: "grouped", rowField: "plant", valueFields: ["output", "qualified", "energy", "downtime"], aggregation: "sum", showGrandTotal: true, stripedRows: true } }),
+  // ── 树形明细(grouped 分组承载层级)────────────────────────────────
+  reportPreset("hierarchical-detail-report", "层级树形明细表", "Hierarchical detail report", "项目-任务两级分组展开工时明细", "table", "report.hierarchicalDetail", { analysis: { dimensionField: "project", measureField: "hours", aggregation: "sum", drillFields: ["project", "task"] }, report: { mode: "grouped", rowField: "project", valueFields: ["hours"], aggregation: "sum", showSubtotal: true, stripedRows: true } }),
+  reportPreset("cost-tree-detail-report", "成本树明细表", "Cost tree detail report", "成本中心-费用项两级分组展开支出", "table", "report.costTree", { analysis: { dimensionField: "costCenter", measureField: "cost", aggregation: "sum", drillFields: ["costCenter", "expenseItem"] }, report: { mode: "grouped", rowField: "costCenter", valueFields: ["cost"], aggregation: "sum", showSubtotal: true, showGrandTotal: true } }),
+  // ── 左右对比(本期/上期/差额)───────────────────────────────────────
+  reportPreset("side-by-side-report", "左右对比表", "Side-by-side comparison report", "本期与上期并排对照并计算差额", "table", "report.sideBySide", { report: { mode: "grouped", rowField: "product", valueFields: ["current", "previous", "delta"], aggregation: "sum", showGrandTotal: true, stripedRows: true }, conditionalRules: [{ id: "delta-negative", field: "delta", operator: "lt", value: 0, color: "#ff8170" }] }),
+  reportPreset("region-compare-report", "区域对比表", "Region compare report", "南北区域销量与达成率并列对照", "table", "report.regionCompare", { report: { mode: "grouped", rowField: "month", valueFields: ["south", "north", "rate"], aggregation: "sum", showGrandTotal: true, stripedRows: true }, conditionalRules: [{ id: "rate-low", field: "rate", operator: "lt", value: 0.9, color: "#e8bd68" }] }),
+  // ── 时间轴明细(按时间正序)────────────────────────────────────────
+  reportPreset("timeline-detail-report", "时间轴明细表", "Timeline detail report", "按事件时间正序滚动展示处置记录", "table", "report.timelineDetail", { analysis: { dimensionField: "time", measureField: "count", aggregation: "sum", sort: "dimension-asc" }, report: { mode: "detail", pageSize: 14, showRowNumbers: true, stripedRows: true } }),
+  reportPreset("shift-timeline-report", "班次时间轴表", "Shift timeline report", "班次交接时间轴展示产量与异常", "scroll-table", "report.shiftTimeline", { analysis: { dimensionField: "time", measureField: "output", aggregation: "sum", sort: "dimension-asc" }, report: { mode: "detail", pageSize: 8, showRowNumbers: true, stripedRows: true } }),
+  // ── 阈值染色 ─────────────────────────────────────────────────────────
+  reportPreset("threshold-tint-report", "阈值染色明细表", "Threshold tint report", "按库存区间自动染色并加粗告警行", "table", "report.thresholdTint", { report: { mode: "detail", pageSize: 12, showRowNumbers: true, stripedRows: true }, conditionalRules: [{ id: "stock-critical", field: "stock", operator: "lt", value: 20, color: "#ff8170", backgroundColor: "#3d2422", fontWeight: 700 }, { id: "stock-warn", field: "stock", operator: "between", value: 20, valueTo: 60, color: "#e8bd68" }] }),
+  reportPreset("sla-threshold-report", "SLA 阈值表", "SLA threshold report", "服务等级达标率低于阈值整行预警", "table", "report.slaThreshold", { report: { mode: "detail", pageSize: 10, showRowNumbers: true, stripedRows: true, freezeFirstColumn: true }, conditionalRules: [{ id: "sla-breach", field: "attainment", operator: "lt", value: 99.9, color: "#ff8170", fontWeight: 700 }, { id: "sla-met", field: "attainment", operator: "gte", value: 99.9, backgroundColor: "#223a30" }] }),
+  // ── 排名变动(scroll-table 滚动)───────────────────────────────────
+  reportPreset("rank-shift-scroll", "排名变动滚动表", "Rank shift scrolling table", "滚动展示销售额排名与升降标记", "scroll-table", "report.rankShift", { field: "amount", analysis: { dimensionField: "store", measureField: "amount", aggregation: "sum", sort: "value-desc", limit: 12 }, report: { mode: "detail", pageSize: 8 }, conditionalRules: [{ id: "rank-down", field: "shift", operator: "lt", value: 0, color: "#ff8170" }, { id: "rank-up", field: "shift", operator: "gt", value: 0, color: "#52c18a" }] }),
+  reportPreset("score-rank-scroll", "评分排名滚动表", "Score rank scrolling table", "滚动展示服务评分排名与变动趋势", "scroll-table", "report.scoreRank", { field: "score", analysis: { dimensionField: "branch", measureField: "score", aggregation: "average", sort: "value-desc", limit: 10 }, report: { mode: "detail", pageSize: 7 }, conditionalRules: [{ id: "score-drop", field: "trend", operator: "lt", value: 0, color: "#ff9b73", animation: "pulse" }] }),
+] as const;

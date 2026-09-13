@@ -34,6 +34,7 @@ function DashboardAiDraftPanel({ onClose }: { onClose(): void }) {
         <form onSubmit={event => { event.preventDefault(); void session.generate(question); }}>
           <textarea ref={focus} aria-label={t("看板需求", "Dashboard request")} value={question} maxLength={3000} rows={3} placeholder={t("描述要新增或修改的组件", "Describe widgets to add or change")} onChange={event => setQuestion(event.target.value)} />
           <div className="dashboard-ai-draft-actions">
+            <button type="button" disabled={Boolean(session.phase) || !session.catalogReady} onClick={() => { const sample = t("在当前页面新增一个展示设备总数的数值卡片；没有真实数据字段时保留未绑定状态，不编造设备数。", "Add a metric card for device count to the current page; leave it unbound if no real data field is available, without inventing a count."); setQuestion(sample); void session.generate(sample); }}>{t("一键运行样例", "Run sample")}</button>
             {session.phase ? <button type="button" onClick={event => { event.preventDefault(); session.cancel(); }}><Square size={14} />{t("停止", "Stop")}</button>
               : <button type="submit" disabled={!question.trim() || !session.catalogReady}><Send size={14} />{t("生成草案", "Generate draft")}</button>}
           </div>

@@ -1,6 +1,7 @@
 import type {
   CameraKeyframe,
   CameraState,
+  KeyframeTransition,
   ModelAnimationKeyframeState,
   ModelKeyframe,
   ModelTransform,
@@ -29,6 +30,15 @@ function smoothStep(value: number): number {
 
 type CameraInterpolation = "linear" | "smooth" | "spline";
 
+export function transitionProgress(progress: number, transition: KeyframeTransition | "spline"): number {
+  const t = clampProgress(progress);
+  if (transition === "step") return t < 1 ? 0 : 1;
+  if (transition === "smooth") return smoothStep(t);
+  if (transition === "ease-in") return t * t;
+  if (transition === "ease-out") return 1 - (1 - t) * (1 - t);
+  return t;
+}
+
 function interpolateVector(start: Vector3Value, end: Vector3Value, progress: number, smooth = true): Vector3Value {
   const amount = smooth ? smoothStep(progress) : clampProgress(progress);
   return {
@@ -54,7 +64,7 @@ function catmullRomVector(p0: Vector3Value, p1: Vector3Value, p2: Vector3Value, 
 
 function interpolateAngle(start: number, end: number, progress: number): number {
   const delta = Math.atan2(Math.sin(end - start), Math.cos(end - start));
-  return start + delta * smoothStep(progress);
+  return start + delta * clampProgress(progress);
 }
 
 function surroundingFrames<T extends { time: number }>(frames: T[], time: number): [T, T, number] | undefined {
@@ -80,22 +90,24 @@ export function sampleCameraKeyframes(
   const sample = surroundingFrames(frames, time);
   if (!sample) return undefined;
   const [start, end, progress] = sample;
+  const mode = start.transition ?? interpolation;
+  const amount = transitionProgress(progress, mode);
   const sorted = [...frames].sort((a, b) => a.time - b.time);
   const startIndex = Math.max(sorted.findIndex((frame) => frame.id === start.id), 0);
   const p0 = sorted[Math.max(0, startIndex - 1)] ?? start;
   const p3 = sorted[Math.min(sorted.length - 1, startIndex + 2)] ?? end;
-  const position = interpolation === "spline" && start !== end
+  const position = mode === "spline" && start !== end
     ? catmullRomVector(p0.camera.position, start.camera.position, end.camera.position, p3.camera.position, progress)
-    : interpolateVector(start.camera.position, end.camera.position, progress, interpolation !== "linear");
-  const target = interpolation === "spline" && start !== end
+    : interpolateVector(start.camera.position, end.camera.position, amount, false);
+  const target = mode === "spline" && start !== end
     ? catmullRomVector(p0.camera.target, start.camera.target, end.camera.target, p3.camera.target, progress)
-    : interpolateVector(start.camera.target, end.camera.target, progress, interpolation !== "linear");
+    : interpolateVector(start.camera.target, end.camera.target, amount, false);
   return {
     position,
     target,
-    mode: progress < 0.5 ? start.camera.mode : end.camera.mode,
-    ...((progress < 0.5 ? start.camera.avatarVisible : end.camera.avatarVisible) === undefined ? {} : {
-      avatarVisible: progress < 0.5 ? start.camera.avatarVisible : end.camera.avatarVisible
+    mode: amount < 0.5 ? start.camera.mode : end.camera.mode,
+    ...((amount < 0.5 ? start.camera.avatarVisible : end.camera.avatarVisible) === undefined ? {} : {
+      avatarVisible: amount < 0.5 ? start.camera.avatarVisible : end.camera.avatarVisible
     })
   };
 }
@@ -104,14 +116,15 @@ export function sampleModelKeyframes(frames: ModelKeyframe[], time: number, inte
   const sample = surroundingFrames(frames, time);
   if (!sample) return undefined;
   const [start, end, progress] = sample;
+  const amount = transitionProgress(progress, start.transition ?? interpolation);
   return {
-    position: interpolateVector(start.transform.position, end.transform.position, progress, interpolation === "smooth"),
+    position: interpolateVector(start.transform.position, end.transform.position, amount, false),
     rotation: {
-      x: interpolateAngle(start.transform.rotation.x, end.transform.rotation.x, progress),
-      y: interpolateAngle(start.transform.rotation.y, end.transform.rotation.y, progress),
-      z: interpolateAngle(start.transform.rotation.z, end.transform.rotation.z, progress)
+      x: interpolateAngle(start.transform.rotation.x, end.transform.rotation.x, amount),
+      y: interpolateAngle(start.transform.rotation.y, end.transform.rotation.y, amount),
+      z: interpolateAngle(start.transform.rotation.z, end.transform.rotation.z, amount)
     },
-    scale: interpolateVector(start.transform.scale, end.transform.scale, progress, interpolation === "smooth")
+    scale: interpolateVector(start.transform.scale, end.transform.scale, amount, false)
   };
 }
 
@@ -127,6 +140,6 @@ export function sampleModelAnimationKeyframes(frames: ModelKeyframe[], time: num
   }
   return {
     ...(startAnimation.clipId ? { clipId: startAnimation.clipId } : {}),
-    time: startAnimation.time + (endAnimation.time - startAnimation.time) * clampProgress(progress)
+    time: startAnimation.time + (endAnimation.time - startAnimation.time) * transitionProgress(progress, start.transition ?? "linear")
   };
 }

@@ -21,9 +21,7 @@ const AXES = ["x", "y", "z"] as const;
 
 export function SceneLightingEditor(props: SceneLightingEditorProps) {
   const { locale, lighting } = props;
-  const selectedLight =
-    lighting.lights?.find((light) => light.id === props.selectedLightId) ??
-    lighting.lights?.[0];
+  const selectedLight = lighting.lights?.find((light) => light.id === props.selectedLightId);
 
   return (
     <>

@@ -19,6 +19,7 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
   const sceneSnapshotFactoryRef = useRef<(() => SceneSnapshot | undefined) | undefined>(undefined);
   const sceneHistoryTimerRef = useRef<{ timer: number; label: string } | undefined>(undefined);
   const sceneHistoryApplyingRef = useRef(false);
+  const firstSavedSceneIdRef = useRef<string | undefined>(undefined);
   const sceneHistoryRecordRef = useRef<(label: string) => void>(() => undefined);
   const [sceneHistoryRevision, setSceneHistoryRevision] = useState(0);
 
@@ -28,6 +29,9 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     const pending = sceneHistoryTimerRef.current;
     if (pending) window.clearTimeout(pending.timer);
     sceneHistoryTimerRef.current = undefined;
+    const firstSavedId = firstSavedSceneIdRef.current;
+    firstSavedSceneIdRef.current = undefined;
+    if (activeScene && firstSavedId === activeScene.id) return;
     sceneHistoryRef.current.reset(activeScene);
   }, [activeScene?.id]);
 
@@ -56,6 +60,12 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
 
   sceneHistoryRecordRef.current = scheduleSceneHistoryEdit;
 
+  function adoptFirstSavedScene(saved: SceneSnapshot): void {
+    flushSceneHistoryEdit();
+    sceneHistoryRef.current.adoptSceneIdentity(saved);
+    firstSavedSceneIdRef.current = saved.id;
+  }
+
   return {
     recoveryDraft,
     setRecoveryDraft,
@@ -68,5 +78,6 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     sceneHistoryRecordRef,
     sceneHistoryRevision,
     flushSceneHistoryEdit,
+    adoptFirstSavedScene,
   };
 }

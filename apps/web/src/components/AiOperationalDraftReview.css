@@ -1,0 +1,20 @@
+.ai-operational-draft { margin-top:12px;padding-top:12px;border-top:1px solid var(--line);color:var(--text);font-size:12px; }
+.battery-follow-up { margin:0 14px 14px; }
+.ai-operational-draft > header,.ai-operational-draft footer { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+.ai-operational-draft > header { justify-content:space-between; }
+.ai-operational-draft button { display:inline-flex;min-height:32px;align-items:center;justify-content:center;gap:6px;padding:6px 10px;border:1px solid var(--line-strong);border-radius:6px;color:var(--text-strong);background:var(--surface-2);font:inherit;cursor:pointer; }
+.ai-operational-draft button:hover { border-color:var(--accent); }
+.ai-operational-draft button.primary { color:var(--on-accent);border-color:var(--accent);background:var(--accent); }
+.ai-operational-draft button:disabled { opacity:.5;cursor:not-allowed; }
+.ai-operational-draft :is(button,input,textarea,summary):focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+.ai-operational-draft-body { display:grid;gap:10px;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface-1); }
+.ai-operational-draft label { display:grid;gap:5px;margin:0; }
+.ai-operational-draft :is(input,textarea) { box-sizing:border-box;width:100%;min-height:34px;padding:8px;border:1px solid var(--line-strong);border-radius:5px;color:var(--text-strong);background:var(--surface-2);font:inherit;line-height:1.6; }
+.ai-operational-draft textarea { resize:vertical; }
+.ai-operational-draft :is(p,small) { margin:0;color:var(--text-muted);line-height:1.6; }
+.ai-operational-draft p[role=alert] { margin-top:8px;color:var(--danger);overflow-wrap:anywhere; }
+.ai-operational-draft p[role=status] { margin-top:8px;color:var(--success); }
+.ai-operational-draft summary { cursor:pointer; }
+.ai-operational-draft ul { margin:8px 0;padding-left:20px;line-height:1.6; }
+.ai-operational-draft footer { justify-content:flex-end; }
+@media (max-width:540px) { .ai-operational-draft footer button { flex:1 1 40%; } }

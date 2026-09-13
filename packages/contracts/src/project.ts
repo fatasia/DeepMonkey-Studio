@@ -7,6 +7,7 @@ import type { VisionEventRecord, VisionModelRecord, VisionSourceRecord, VisionTa
 import type { SemanticModelRecord } from "./semantic.js";
 import type { AssetAttribution } from "./assetLibrary.js";
 import type { RobotAssetDefinition } from "./robotAsset.js";
+import type { ModelProcessingRecord } from "./modelProcessing.js";
 
 /** 项目、模型资产、转换清单与 Revit 运行时合同。 */
 export const supportedExtensions = [
@@ -95,9 +96,11 @@ export interface ModelRecord {
   progress: number;
   message: string;
   sourceUrl: string;
+  thumbnailUrl?: string;
   manifestUrl?: string;
   manifest?: ModelManifest;
   generation?: ParametricModelGeneration;
+  processing?: ModelProcessingRecord;
   /** 优化生成独立素材，不沿用目录去重身份；保存源版本与必要署名的快照。 */
   optimization?: {
     sourceModelId: string;

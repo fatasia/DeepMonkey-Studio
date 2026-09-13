@@ -1,0 +1,37 @@
+.workspace-recovery-backdrop { z-index:180; /* z-index-audit: keep(介于运行时带 120–142 与 --layer-modal 200 之间的精调值:升至 200 会改变文档级模态的 tie-break,降级会盖不住运行时控件) */ backdrop-filter:blur(7px); }
+.workspace-recovery-dialog { width:min(500px,calc(100vw - 32px)); padding:20px; border-color:var(--line-strong); box-shadow:var(--shadow-float); }
+.workspace-recovery-dialog>.eyebrow { color:var(--text-muted); font:12px/1 Consolas,monospace; letter-spacing:.12em; }
+.workspace-recovery-dialog>header { display:flex; align-items:center; gap:12px; margin:0 0 15px; }
+.workspace-recovery-dialog>header>i { display:grid; width:38px; height:38px; flex:0 0 38px; place-items:center; color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line)); border-radius:9px; background:var(--accent-soft); }
+.workspace-recovery-dialog h2 { margin:0 0 4px; color:var(--text-strong); font-size:17px; }
+.workspace-recovery-dialog header p { margin:0; color:var(--text-muted); font-size:12px; }
+.workspace-recovery-safe,.workspace-recovery-warning { display:grid; gap:5px; padding:12px 13px; border:1px solid color-mix(in srgb,var(--success) 35%,var(--line)); border-radius:7px; background:color-mix(in srgb,var(--success) 6%,var(--surface-1)); }
+.workspace-recovery-warning { border-color:color-mix(in srgb,var(--warning) 35%,var(--line)); background:color-mix(in srgb,var(--warning) 6%,var(--surface-1)); }
+.workspace-recovery-safe strong,.workspace-recovery-warning strong { color:var(--success); font-size:12px; }
+.workspace-recovery-warning strong { color:var(--warning); }
+.workspace-recovery-safe small,.workspace-recovery-warning small { color:var(--text); font-size:12px; line-height:1.55; }
+.workspace-recovery-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin:12px 0 19px; }
+.workspace-recovery-summary>span { display:grid; gap:4px; padding:10px; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); }
+.workspace-recovery-summary small { color:var(--text-muted); font-size:12px; }
+.workspace-recovery-summary strong { color:var(--text-strong); font-size:16px; font-variant-numeric:tabular-nums; }
+.workspace-recovery-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; margin-top:16px; }
+.workspace-recovery-actions .button { min-height:36px; justify-content:center; }
+.workspace-recovery-actions .button.ghost { width:auto; padding:0 12px; font-size:12px; }
+
+/* 属性检查器保持可读的字段密度，解释只在控件 title 中按需出现。 */
+.properties-panel :is(.structured-properties summary,.scene-data-binding-editor summary,.scene-data-binding-body label,.scene-data-binding-body button,.scene-data-binding-body input,.scene-data-binding-body select) { font-size:11px; }
+.scene-data-binding-body { gap:10px;padding:10px; }
+.scene-data-binding-body>header { min-height:34px; }
+.scene-data-binding-body>header>div { min-width:0; }
+.scene-data-binding-body>header strong { overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap; }
+.scene-data-binding-card { gap:9px;padding:10px;border-radius:7px; }
+.scene-data-binding-grid { gap:8px; }
+.scene-history-controls { display:flex; flex:0 0 auto; align-items:center; overflow:hidden; border:1px solid #303a3e; border-radius:6px; background:#151c1f; }
+.scene-history-controls button { display:grid; flex:0 0 31px; width:31px; height:31px; padding:0; place-items:center; color:#a8b2b6; border:0; border-right:1px solid #303a3e; background:transparent; cursor:pointer; }
+.scene-history-controls button:last-child { border-right:0; }
+.scene-history-controls button:hover:not(:disabled) { color:#ebc76f; background:#252a25; }
+.scene-history-controls button:disabled { color:#4e595e; cursor:default; }
+
+/* 最终目录密度覆盖：无类型图形、无第二行，右侧操作始终可达。 */
+.asset-row,.scene-object-row{min-height:32px;height:32px;padding:1px 5px}.asset-main{gap:0;padding:0 3px}.format-badge,.scene-object-badge{display:none}.asset-copy{display:block;min-width:0}.asset-copy strong{display:block;font-size:10px;font-weight:560}.asset-copy small{display:none}.mini-button{width:24px;height:24px;flex-basis:24px;margin-left:1px}.model-expander{height:26px}.layer-tree{padding:1px 0}.layer-node{height:28px}.layer-node-main{gap:0}.layer-node-main small{display:none}
+.scene-tree-grip,.scene-tree-row.object>.scene-tree-type{display:none}.scene-tree-row.object{position:relative;grid-template-columns:minmax(0,1fr) 13px 13px 13px;padding-left:10px}.scene-tree-row.group{grid-template-columns:18px 20px minmax(0,1fr);padding-left:4px}.scene-tree-row.group>.scene-tree-type{display:grid}.scene-tree-children{position:relative;margin-left:13px;padding-left:8px;border-left:1px solid #405057}.scene-tree-children .scene-tree-row.object::before{position:absolute;top:15px;left:-8px;width:7px;border-top:1px solid #405057;content:""}.scene-tree-group.drop-target>.scene-tree-row.group{background:#213c3d;box-shadow:inset 0 0 0 1px #51b9b2}.scene-tree-row.object.drop-target::after{position:absolute;right:4px;bottom:-1px;left:0;border-bottom:2px solid #51b9b2;content:""}.scene-tree-root-drop.drop-target{outline:1px dashed #51b9b2;outline-offset:-3px;background:#51b9b20c}

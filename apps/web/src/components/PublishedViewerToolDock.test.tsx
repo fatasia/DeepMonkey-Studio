@@ -14,8 +14,10 @@ describe("PublishedViewerToolDock", () => {
       avatarVisible={false}
       infoEnabled={false}
       objectPanelOpen={false}
+      fitSelectedEnabled
       onOpenChange={vi.fn()}
       onFitAll={vi.fn()}
+      onFitSelected={vi.fn()}
       onNavigationChange={vi.fn()}
       onMeasurementToggle={vi.fn()}
       onClippingToggle={vi.fn()}
@@ -33,6 +35,8 @@ describe("PublishedViewerToolDock", () => {
     expect(html).toContain("模型爆炸");
     expect(html).toContain("对象与属性");
     expect(html).toContain("更多视图工具");
+    expect(html).toContain("适应选中模型");
+    expect(html).toContain("适应全部");
     expect(html).not.toContain("移动");
     expect(html).not.toContain("材质");
   });

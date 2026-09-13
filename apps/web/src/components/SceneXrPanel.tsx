@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
+import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 
 export type SceneXrMode = "immersive-vr" | "immersive-ar";
 
@@ -23,14 +24,24 @@ interface SceneXrPanelProps {
 
 export function SceneXrPanel(props: SceneXrPanelProps) {
   const { locale, capabilities, activeMode } = props;
+  const drag = useFloatingPanelDrag<HTMLDivElement>();
 
   return (
     <>
       <div
+        ref={drag.panelRef}
+        style={drag.style}
         className="xr-panel"
         aria-label={tr(locale, "沉浸式体验", "Immersive experience")}
       >
-        <header>
+        <header
+          data-drag-handle="true"
+          title={tr(locale, "拖动标题栏移动沉浸式面板", "Drag the title bar to move the immersive panel")}
+          onPointerDown={drag.onPointerDown}
+          onPointerMove={drag.onPointerMove}
+          onPointerUp={drag.onPointerUp}
+          onPointerCancel={drag.onPointerCancel}
+        >
           <div>
             <strong>VR / AR</strong>
             <small>

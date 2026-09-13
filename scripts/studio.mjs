@@ -83,9 +83,7 @@ function printStatus(status) {
     const protocol = configuration.https ? "https" : "http";
     lines.push(`Web       ${status.web ? "正常" : "异常"} · ${protocol}://${urlHost(displayHost(configuration.webHost))}:${configuration.webPort}`);
   }
-  if (configuration.cloudWorker) {
-    lines.push("云渲染    本地 GPU Worker 随栈启动（--cloud-worker）");
-  }
+  for (const service of status.services ?? []) lines.push(`${service.label}    ${service.healthy ? "正常" : "异常"}`);
   lines.push(`日志      ${status.logs.stderr}`);
   process.stdout.write(`\nDeep Monkey Studio 运行状态\n${lines.map((line) => `  ${line}`).join("\n")}\n\n`);
 }

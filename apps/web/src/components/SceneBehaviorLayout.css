@@ -3,3 +3,33 @@
  * 跟随脚本面板加载，不依赖用户先打开运行预览。 */
 body .app-workspace-frame.app-workspace-frame .behavior-workspace-slot.layout-split > .behavior-split-resizer { min-width: 10px !important; }
 body .app-workspace-frame.app-workspace-frame .behavior-panel .behavior-script-list-resizer { min-width: 5px !important; }
+
+/* 分屏后的可用宽度由容器决定，左右工具以抽屉展开，不挤压代码和画布。 */
+.app-workspace-frame.behavior-split .behavior-workspace-slot.layout-split {
+  width: min(var(--behavior-split-width), calc(100vw - 360px));
+  flex-basis: min(var(--behavior-split-width), calc(100vw - 360px));
+}
+.app-workspace-frame.behavior-split .app-shell:not(.viewer-shell) {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+.app-workspace-frame.behavior-split :is(.left-panel, .right-panel, .dashboard-pages-panel, .dashboard-inspector-panel) {
+  grid-area: auto;
+  position: absolute;
+  top: 52px;
+  bottom: 34px;
+  z-index: 25;
+  width: min(288px, calc(100% - 48px));
+  box-shadow: var(--shadow-float);
+}
+.app-workspace-frame.behavior-split :is(.left-panel, .dashboard-pages-panel) { left: 0; }
+.app-workspace-frame.behavior-split :is(.right-panel, .dashboard-inspector-panel) { right: 0; }
+.app-workspace-frame.behavior-split .dashboard-workspace:not(.inspector-collapsed) .dashboard-inspector-panel { display: block; }
+.app-workspace-frame.behavior-split .app-shell:not(.right-panel-collapsed) > .right-panel { display: flex; }
+.app-workspace-frame.behavior-split .workspace-panel-controls .panel-toggle-left { left: 8px; }
+.app-workspace-frame.behavior-split .workspace-panel-controls .panel-toggle-right { right: 8px; }
+.app-workspace-frame.behavior-split .workspace-panel-controls button { z-index: 33; }
+.app-workspace-frame.behavior-split :is(.left-panel, .right-panel, .dashboard-pages-panel, .dashboard-inspector-panel) > header { padding-top: 50px; }
+
+.behavior-window-return { position: fixed; z-index: var(--layer-workspace); top: 60px; right: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; max-width: calc(100vw - 24px); padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); color: var(--text); box-shadow: var(--shadow-float); font-size: 12px; }
+.behavior-window-return button { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-strong); cursor: pointer; }
+.behavior-window-return button:hover { border-color: var(--accent); background: var(--accent-soft); }

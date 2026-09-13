@@ -1,0 +1,17 @@
+.view-orientation-cube { position:absolute; top:76px; right:28px; z-index:10; display:flex; flex-direction:column; align-items:flex-end; gap:5px; user-select:none; touch-action:none; }
+.view-orientation-cube .cube-viewport { width:56px; height:56px; perspective:170px; perspective-origin:50% 50%; cursor:grab; }
+.view-orientation-cube .cube-viewport:active { cursor:grabbing; }
+.view-orientation-cube .cube-inner { position:relative; width:56px; height:56px; transform-style:preserve-3d; transition:transform .28s cubic-bezier(.16,1,.3,1); }
+.view-orientation-cube .cube-viewport.dragging .cube-inner { transition:none; }
+.view-orientation-cube .cube-face { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; width:56px; height:56px; color:var(--text-muted); font-size:10px; font-weight:700; border:none; border-radius:5px; background:linear-gradient(145deg, color-mix(in srgb, var(--surface-3) 72%, transparent), color-mix(in srgb, var(--surface-1) 88%, transparent)); backdrop-filter:blur(6px); cursor:pointer; transition:color .18s, box-shadow .18s, transform .18s; box-shadow:inset 0 1px 0 color-mix(in srgb, var(--text-strong) 6%, transparent), 0 1px 3px color-mix(in srgb, var(--bg-0) 30%, transparent); }
+.view-orientation-cube .cube-face:hover { color:var(--accent); transform:translateZ(26px) scale(1.06); box-shadow:inset 0 1px 0 color-mix(in srgb, var(--text-strong) 10%, transparent), 0 0 12px color-mix(in srgb, var(--accent) 24%, transparent), 0 2px 6px color-mix(in srgb, var(--bg-0) 35%, transparent); }
+.view-orientation-cube .cube-face.active { color:var(--accent); background:linear-gradient(145deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 8%, transparent)); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 48%, transparent), 0 0 14px color-mix(in srgb, var(--accent) 28%, transparent); }
+.view-orientation-cube .cube-actions { position:absolute; right:0; bottom:calc(100% + 24px); display:grid; grid-template-columns:repeat(3, max-content); gap:4px; padding:6px; width:max-content; box-sizing:border-box; border:1px solid var(--line-subtle); border-radius:6px; background:color-mix(in srgb, var(--surface-2) 84%, transparent); backdrop-filter:blur(5px); box-shadow:0 3px 12px color-mix(in srgb, var(--bg-0) 22%, transparent); }
+.view-orientation-cube .cube-actions button { display:grid; place-items:center; width:22px; min-width:0; height:22px; min-height:0; padding:0; color:var(--text-muted); border:1px solid transparent; border-radius:4px; background:transparent; cursor:pointer; transition:color .15s, background .15s, border-color .15s; }
+.view-orientation-cube .cube-actions button:hover:not(:disabled) { color:var(--accent); background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 36%, transparent); }
+.view-orientation-cube .cube-actions button:disabled { opacity:.35; cursor:not-allowed; }
+.view-orientation-cube .cube-actions button:focus-visible { outline:none; border-color:color-mix(in srgb, var(--accent) 58%, transparent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent); }
+@media (prefers-reduced-motion: reduce) { .view-orientation-cube .cube-inner, .view-orientation-cube .cube-actions button { transition:none; } }
+@container studio-scene (max-width:1000px) {
+  .app-shell .scene-tool-dock { left:16px; right:auto; width:max-content !important; max-width:calc(100% - 168px); transform:none; flex-wrap:wrap !important; justify-content:flex-start; }
+}

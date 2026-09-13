@@ -1,0 +1,19 @@
+.project-transfer-dialog { width: min(840px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); overflow: auto; }
+.project-transfer-actions { display: flex; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--line); }
+.project-transfer-actions label, .project-transfer-files label { position: relative; overflow: hidden; cursor: pointer; }
+.project-transfer-actions input[type="file"], .project-transfer-files input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.project-transfer-review { padding: 16px 24px; display: grid; gap: 12px; }
+.project-transfer-review > label { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 12px; }
+.project-transfer-review p, .project-transfer-dialog > p { color: var(--muted); font-size: 12px; margin: 0; line-height: 1.6; }
+.project-transfer-dialog > p { padding: 8px 24px; display: flex; gap: 8px; align-items: center; }
+.project-transfer-dialog > .project-resource-error { color: var(--danger); }
+.project-transfer-files { max-height: 320px; overflow: auto; border-block: 1px solid var(--line); }
+.project-transfer-files > div { display: grid; grid-template-columns: minmax(120px, 1fr) auto minmax(140px, 220px); gap: 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.project-transfer-files > div > span { min-width: 0; display: grid; gap: 4px; }
+.project-transfer-files strong, .project-transfer-files small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-transfer-files small { color: var(--muted); }
+.project-transfer-files .missing small { color: var(--warning); }
+.project-transfer-files select { width: 100%; min-width: 0; }
+.project-transfer-review input:not([type="file"]), .project-transfer-files select { min-height: 34px; padding: 6px 10px; color: var(--text); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; }
+.project-transfer-dialog label.button:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 700px) { .project-transfer-files > div { grid-template-columns: minmax(100px, 1fr) auto; } .project-transfer-files select { grid-column: 1 / -1; } }

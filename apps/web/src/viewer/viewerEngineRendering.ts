@@ -128,6 +128,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
         ? [this.inspectedObject]
         : [];
       runtime.apply(this.postProcessingState, [...new Set([...outlined, ...selected])]);
+      this.requestRender();
     }
   protected needsPostProcessing(): boolean {
       return this.postProcessingState.enabled || [...this.modelEffects.values()].some((effects) => effects.outline);
@@ -451,6 +452,10 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       this.applyCameraClippingRange();
       this.orbit.update();
       this.resetCameraCollisionAnchor();
+      // Programmatic camera moves can happen while demand rendering is idle
+      // (for example, releasing the orientation cube outside the canvas).
+      // Wake the renderer explicitly so the canvas and camera HUD stay in sync.
+      this.requestRender();
       this.emitCameraChange(true);
       return true;
     }

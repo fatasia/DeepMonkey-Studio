@@ -25,7 +25,15 @@ const initialApplication: ApplicationDocument = {
       { id: "widget:overflow", kind: "data-widget", frame: { x: 3740, y: 936, width: 180, height: 94 }, zIndex: 9, widget: { type: "status", title: "越界诊断样例", key: "status", unit: "" } }
     ]
   }],
-  topologies: [], scenes: [], geo: { providerIds: [], layers: [] },
+  topologies: [{
+    id: "topology:assembly-line",
+    name: "总装线设备拓扑",
+    nodes: [
+      { id: "pump-1", kind: "pump", x: 120, y: 120, properties: { label: "循环泵 P-101" } },
+      { id: "plc-1", kind: "plc", x: 420, y: 120, properties: { label: "控制柜 PLC-01" } },
+    ],
+    edges: [{ id: "signal-1", sourceNodeId: "pump-1", targetNodeId: "plc-1", properties: { medium: "signal" } }],
+  }], scenes: [], geo: { providerIds: [], layers: [] },
   data: { connectionIds: [], datasetIds: [], transforms: [], variables: [] },
   interactions: [], scripts: [], assets: [], timelines: [],
   publicationProfiles: [{ id: "browser", name: "浏览器发布", target: "browser-preview", entryPageId: "page:overview", renderer: "auto" }]

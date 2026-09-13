@@ -1,0 +1,50 @@
+name: Repository governance
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev-studio]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-governance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    name: repository-governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Validate policy implementation
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node --test scripts/check-repository-governance.test.mjs && node scripts/check-repository-governance.mjs
+      - name: Validate distributed Unity package license
+        run: node --test tools/unity/unity-package-archive.test.mjs
+
+  dependency-licenses:
+    name: dependency-licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Audit production dependency licenses
+        run: pnpm audit:licenses

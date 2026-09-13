@@ -4,6 +4,8 @@ import { translate as tr } from "../i18n";
 import { DashboardComponentLibrary } from "./DashboardComponentLibrary";
 import { dashboardNodeLabel as nodeLabel } from "./dashboardWorkspaceModel";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
+import "./SceneLayerInteractions.css";
+import "../styles/workspacePanelAnchors.css";
 
 function DashboardLayerList() {
   const {
@@ -18,7 +20,7 @@ function DashboardLayerList() {
     role="treeitem" aria-level={nested ? 2 : 1} aria-selected={selectedNodeIds.includes(node.id)}
     onDragStart={(event) => { setDraggedLayerId(node.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", node.id); }}
     onDragOver={(event) => { if (!draggedLayerId || draggedLayerId === node.id) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setLayerDropTargetId(node.id); }}
-    onDrop={(event) => { event.preventDefault(); const sourceId = draggedLayerId ?? event.dataTransfer.getData("text/plain"); if (sourceId) reorderLayerByDrop(sourceId, node.id); setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}
+    onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const sourceId = draggedLayerId ?? event.dataTransfer.getData("text/plain"); if (sourceId) reorderLayerByDrop(sourceId, node.id); setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}
     onDragEnd={() => { setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}
     onContextMenu={(event) => openNodeContextMenu(event, node)}>
     <button className="dashboard-layer-select" disabled={node.locked} title={node.locked ? tr(locale, "图层已锁定，解锁后可选取", "Layer is locked; unlock it to select") : nodeLabel(node)} onClick={(event) => selectNode(node, event.ctrlKey || event.metaKey || event.shiftKey, true)}>
@@ -35,7 +37,10 @@ function DashboardLayerList() {
         {dashboardGroups.map((group) => {
           const allHidden = group.nodes.every((node) => node.visible === false);
           const allLocked = group.nodes.every((node) => node.locked === true);
-          return <section className="dashboard-layer-group" role="treeitem" aria-level={1} aria-expanded="true" key={group.id}><div className="dashboard-group-row">
+          return <section className="dashboard-layer-group" role="treeitem" aria-level={1} aria-expanded="true" key={group.id}><div className="dashboard-group-row"
+            onContextMenu={event => { if (group.nodes[0]) openNodeContextMenu(event, group.nodes[0]); }}
+            onDragOver={event => { if (draggedLayerId && !allLocked) { event.preventDefault(); event.stopPropagation(); } }}
+            onDrop={event => { event.preventDefault(); event.stopPropagation(); if (draggedLayerId && !allLocked && group.nodes[0]) reorderLayerByDrop(draggedLayerId, group.nodes[0].id); setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}>
             <button className="dashboard-group-select" title={tr(locale, "选择并统一控制组内组件", "Select and control all group components")} onClick={() => { const ids = group.nodes.filter((node) => node.locked !== true).map((node) => node.id); setSelectedNodeIds(ids); onSelectionChange(ids.map((id) => ({ kind: "widget", id }))); }}>
               <Group size={13} /><span>{group.label}</span><small>{group.nodes.length}</small>
             </button>
@@ -45,6 +50,7 @@ function DashboardLayerList() {
           </div><div className="dashboard-layer-children" role="group">{[...group.nodes].sort((left, right) => right.zIndex - left.zIndex).map((node) => renderLayer(node, true))}</div></section>;
         })}
         {[...page.nodes].filter((node) => !groupedNodeIds.has(node.id)).sort((left, right) => right.zIndex - left.zIndex).map((node) => renderLayer(node))}
+        {dashboardGroups.length > 0 && <div className="scene-layer-root-drop" onDragOver={event => { if (draggedLayerId) event.preventDefault(); }} onDrop={event => { event.preventDefault(); if (draggedLayerId) reorderLayerByDrop(draggedLayerId); setDraggedLayerId(undefined); setLayerDropTargetId(undefined); }}>{tr(locale, "拖到此处移出编组", "Drop here to move out of groups")}</div>}
       </div>
     </section>
   );
@@ -86,6 +92,7 @@ export function DashboardWorkspaceLeftPanel() {
             locale={locale}
             projectId={application.metadata.projectId}
             sceneAvailable={application.scenes.length > 0}
+            topologies={application.topologies}
             searchInputRef={componentSearchRef}
             onOpenTemplates={() => setTemplateLibraryOpen(true)}
             onAddSceneViewport={addSceneViewport}

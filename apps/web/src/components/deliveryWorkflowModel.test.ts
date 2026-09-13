@@ -47,7 +47,7 @@ describe("deliveryWorkflowModel", () => {
     expect(facts.validationReady).toBe(false);
   });
 
-  it("校验卡片与发布弹窗使用同一联动就绪口径", () => {
+  it("纯展示项目不强迫新增数据联动，已有绑定仍经过发布体检", () => {
     const project = baseProject({
       dataConnections: [{ id: "connection-1", projectId: "project-1", name: "实时源", type: "simulation", enabled: true, config: {}, createdAt: timestamp, updatedAt: timestamp }],
       datasets: [
@@ -56,9 +56,9 @@ describe("deliveryWorkflowModel", () => {
     });
     const scene = baseScene();
 
-    expect(deriveDeliveryWorkflowFacts(project, [scene]).validationReady).toBe(false);
-    expect(buildDeliverySteps("zh-CN", project, [scene]).find((step) => step.id === "validate")).toMatchObject({ ready: false, blocked: true });
-    expect(buildDeliveryBlockers("zh-CN", project, [scene])).toContainEqual(expect.objectContaining({ id: "linkage", stepId: "linkage" }));
+    expect(deriveDeliveryWorkflowFacts(project, [scene]).validationReady).toBe(true);
+    expect(buildDeliverySteps("zh-CN", project, [scene]).find((step) => step.id === "validate")).toMatchObject({ ready: true, blocked: false });
+    expect(buildDeliveryBlockers("zh-CN", baseProject(), [scene])).toEqual([]);
   });
 
   it("场景存在断链时不会让开发流程先于发布体检显示通过", () => {

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" role="img" aria-labelledby="title desc">
+  <title id="title">AI 请求、能力执行与工程证据关系</title>
+  <desc id="desc">用户请求进入上下文检查，再经能力执行产生可审阅的工程证据。</desc>
+  <defs>
+    <marker id="arrow" markerHeight="8" markerWidth="8" refX="7" refY="4" orient="auto">
+      <path d="m0 0 8 4-8 4z" fill="#d6aa4d"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="330" rx="12" fill="#0b1114"/>
+  <path d="M252 150h145m160 0h145m160 0h145" fill="none" stroke="#d6aa4d" stroke-width="2" marker-end="url(#arrow)"/>
+  <g font-family="Microsoft YaHei,Arial,sans-serif">
+    <g transform="translate(28 72)">
+      <rect width="224" height="156" rx="8" fill="#172126" stroke="#3b4a50"/>
+      <circle cx="30" cy="32" r="15" fill="#65aee8"/><text x="30" y="37" text-anchor="middle" font-size="13" font-weight="700" fill="#0b1114">A</text>
+      <text x="24" y="72" font-size="18" font-weight="700" fill="#e6ecef">用户请求</text>
+      <text x="24" y="103" font-size="13" fill="#a7b2b8">问题、生成要求</text>
+      <text x="24" y="127" font-size="13" fill="#a7b2b8">当前项目与对象</text>
+    </g>
+    <g transform="translate(397 72)">
+      <rect width="224" height="156" rx="8" fill="#172126" stroke="#3b4a50"/>
+      <circle cx="30" cy="32" r="15" fill="#d6aa4d"/><text x="30" y="37" text-anchor="middle" font-size="13" font-weight="700" fill="#0b1114">B</text>
+      <text x="24" y="72" font-size="18" font-weight="700" fill="#e6ecef">上下文与策略</text>
+      <text x="24" y="103" font-size="13" fill="#a7b2b8">敏感信息检查</text>
+      <text x="24" y="127" font-size="13" fill="#a7b2b8">能力与权限目录</text>
+    </g>
+    <g transform="translate(766 72)">
+      <rect width="224" height="156" rx="8" fill="#172126" stroke="#3b4a50"/>
+      <circle cx="30" cy="32" r="15" fill="#59c58d"/><text x="30" y="37" text-anchor="middle" font-size="13" font-weight="700" fill="#0b1114">C</text>
+      <text x="24" y="72" font-size="18" font-weight="700" fill="#e6ecef">确定性能力</text>
+      <text x="24" y="103" font-size="13" fill="#a7b2b8">查询、草案或仿真</text>
+      <text x="24" y="127" font-size="13" fill="#a7b2b8">checkpoint 与重试</text>
+    </g>
+    <g transform="translate(1012 72)">
+      <rect width="160" height="156" rx="8" fill="#211d15" stroke="#d6aa4d"/>
+      <text x="20" y="53" font-size="17" font-weight="700" fill="#e6ecef">工程证据</text>
+      <text x="20" y="86" font-size="12" fill="#d6aa4d">结果与指纹</text>
+      <text x="20" y="109" font-size="12" fill="#d6aa4d">可审阅差异</text>
+      <text x="20" y="132" font-size="12" fill="#d6aa4d">下一步动作</text>
+    </g>
+    <text x="600" y="282" text-anchor="middle" font-size="13" fill="#8b989f">模型文本不能替代 Capability 结果；未完成执行时只显示草案或未验证状态。</text>
+  </g>
+</svg>

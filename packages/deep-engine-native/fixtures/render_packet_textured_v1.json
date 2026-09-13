@@ -1,0 +1,108 @@
+{
+  "schema": "deep-engine.render-packet",
+  "version": 1,
+  "geometries": [
+    {
+      "id": "textured-quad",
+      "revision": 1,
+      "vertices": [
+        -0.8, -0.8, 0.0, 0.0, 0.0, 1.0,
+         0.8, -0.8, 0.0, 0.0, 0.0, 1.0,
+         0.8,  0.8, 0.0, 0.0, 0.0, 1.0,
+        -0.8,  0.8, 0.0, 0.0, 0.0, 1.0
+      ],
+      "uv0": [0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
+      "uv1": [0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
+      "tangents": [
+        1.0, 0.0, 0.0, 1.0,
+        1.0, 0.0, 0.0, 1.0,
+        1.0, 0.0, 0.0, 1.0,
+        1.0, 0.0, 0.0, 1.0
+      ],
+      "indices": [0, 1, 2, 0, 2, 3]
+    }
+  ],
+  "materials": [
+    {
+      "id": "textured-pbr",
+      "baseColor": [0.8, 0.7, 0.6],
+      "metallic": 0.75,
+      "roughness": 0.4,
+      "baseColorTexture": {
+        "texture": "base-srgb",
+        "texCoord": 1,
+        "offset": [0.125, 0.25],
+        "scale": [0.75, 0.5],
+        "rotation": 0.25
+      },
+      "metallicRoughnessTexture": { "texture": "metal-rough-linear" },
+      "normalTexture": { "texture": "normal-linear", "texCoord": 1, "normalScale": 0.65 },
+      "occlusionTexture": { "texture": "occlusion-linear", "strength": 0.4 },
+      "emissiveFactor": [0.2, 0.1, 0.05],
+      "emissiveTexture": { "texture": "emissive-srgb", "texCoord": 1 },
+      "alphaMode": "OPAQUE"
+    }
+  ],
+  "instances": [
+    {
+      "id": "textured-regular",
+      "geometry": "textured-quad",
+      "material": "textured-pbr",
+      "transform": [0.9, 0, 0, 0, 0, 0.9, 0, 0, 0, 0, 0.9, 0, -0.75, 0, 0, 1]
+    },
+    {
+      "id": "textured-mirrored",
+      "geometry": "textured-quad",
+      "material": "textured-pbr",
+      "transform": [-0.65, 0, 0, 0, 0, 0.65, 0, 0, 0, 0, 0.65, 0, 0.85, 0, 0, 1]
+    }
+  ],
+  "textures": [
+    {
+      "id": "base-srgb",
+      "revision": 2,
+      "semantic": "baseColor",
+      "width": 2,
+      "height": 2,
+      "data": [255, 64, 32, 255, 64, 255, 32, 255, 32, 64, 255, 255, 255, 255, 255, 255],
+      "mipmaps": [{ "width": 1, "height": 1, "data": [160, 160, 160, 255] }],
+      "sampler": { "addressModeU": "repeat", "addressModeV": "mirror-repeat", "magFilter": "linear", "minFilter": "linear", "mipmapFilter": "linear", "maxAnisotropy": 4 }
+    },
+    {
+      "id": "metal-rough-linear",
+      "revision": 3,
+      "semantic": "metallicRoughness",
+      "width": 2,
+      "height": 2,
+      "data": [255, 64, 192, 255, 255, 128, 128, 255, 255, 192, 64, 255, 255, 96, 224, 255],
+      "mipmaps": [{ "width": 1, "height": 1, "data": [255, 120, 152, 255] }]
+    },
+    {
+      "id": "normal-linear",
+      "revision": 4,
+      "semantic": "normal",
+      "width": 2,
+      "height": 2,
+      "data": [128, 128, 255, 255, 160, 128, 251, 255, 128, 160, 251, 255, 96, 128, 251, 255],
+      "mipmaps": [{ "width": 1, "height": 1, "data": [128, 128, 255, 255] }]
+    },
+    {
+      "id": "occlusion-linear",
+      "revision": 5,
+      "semantic": "occlusion",
+      "width": 2,
+      "height": 2,
+      "data": [32, 0, 0, 255, 96, 0, 0, 255, 160, 0, 0, 255, 255, 0, 0, 255],
+      "mipmaps": [{ "width": 1, "height": 1, "data": [136, 0, 0, 255] }]
+    },
+    {
+      "id": "emissive-srgb",
+      "revision": 6,
+      "semantic": "emissive",
+      "width": 2,
+      "height": 2,
+      "data": [255, 96, 16, 255, 96, 255, 16, 255, 16, 96, 255, 255, 255, 255, 96, 255],
+      "mipmaps": [{ "width": 1, "height": 1, "data": [160, 160, 80, 255] }]
+    }
+  ]
+}

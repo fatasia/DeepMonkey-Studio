@@ -1,4 +1,4 @@
-.credits-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 20px; background: rgba(5,8,9,.72); backdrop-filter: blur(8px); }
+.credits-backdrop { position: fixed; inset: 0; z-index: var(--layer-dropdown); /* 全屏关于弹窗遮罩,落 40 弹出带(轻遮罩语义,值不变) */ display: grid; place-items: center; padding: 20px; background: rgba(5,8,9,.72); backdrop-filter: blur(8px); }
 .credits-modal { width: min(560px, 100%); max-height: min(680px, calc(100vh - 40px)); overflow: hidden; color: #818d94; border: 1px solid #344047; border-radius: 13px; background: #161d21; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
 .credits-modal header { display: grid; grid-template-columns: 38px 1fr 30px; align-items: center; gap: 9px; padding: 15px; border-bottom: 1px solid #2d373d; }
 .credits-modal header > span { display: grid; place-items: center; width: 38px; height: 38px; color: #17130b; border-radius: 9px; background: var(--accent); }

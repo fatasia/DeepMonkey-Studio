@@ -1,0 +1,34 @@
+/* 连接状态横幅:固定顶部居中,克制不阻塞;深浅主题都从令牌派生。 */
+.network-status-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  z-index: var(--layer-toast, 9000);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 9px 14px;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-float, 0 14px 38px rgba(0, 0, 0, 0.32));
+  transform: translateX(-50%);
+  animation: network-status-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.network-status-banner.is-degraded { border-color: color-mix(in srgb, var(--warning) 55%, var(--line-strong)); }
+.network-status-banner.is-degraded .network-status-dot { background: var(--warning); animation: network-status-pulse 1.6s ease-in-out infinite; }
+.network-status-banner.is-recovered { border-color: color-mix(in srgb, var(--success) 55%, var(--line-strong)); }
+.network-status-banner.is-recovered .network-status-dot { background: var(--success); }
+.network-status-banner strong { color: var(--text-strong); font-size: 12.5px; white-space: nowrap; }
+.network-status-detail { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.network-status-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+@media (prefers-reduced-motion: reduce) {
+  .network-status-banner { animation: none; }
+  .network-status-banner.is-degraded .network-status-dot { animation: none; }
+}
+@keyframes network-status-in { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } }
+@keyframes network-status-pulse { 50% { opacity: 0.35; } }

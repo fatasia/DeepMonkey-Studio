@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { DashboardPageDocument } from "@bim-studio/contracts";
-import { createDashboardTemplateNodes } from "./DashboardTemplateCatalog";
+import { createDashboardTemplateNodes } from "./dashboardTemplateCatalog";
 import { DashboardWidgetView } from "./DashboardWidgetRuntime";
 import { INDUSTRY_TEMPLATE_PACKS, packPageSample } from "./industryTemplatePackCatalog";
 import { applyPackPageSample } from "./industryPackSampleApply";

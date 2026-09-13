@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep Engine · 双后端切换验证</title>
+  <link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/switch.css">
+</head>
+<body>
+  <main class="switch-shell">
+    <header><div><span>Deep Engine</span><small>Three → WebGPU 迁移实验</small></div><a href="/">返回渲染实验室</a></header>
+    <section class="switch-heading"><div><p>无感切换门槛</p><h1>同一场景，同一脚本时钟。</h1></div><p id="switch-status" role="status" aria-live="polite">正在建立初始 Three 后端…</p></section>
+    <section class="switch-stage">
+      <div id="canvas-host" class="canvas-host"><canvas id="three-canvas" width="960" height="540" aria-label="双后端共享场景"></canvas></div>
+      <div class="switch-controls">
+        <label for="backend">渲染引擎</label>
+        <select id="backend"><option value="three">Three.js</option><option value="deep-webgpu">Deep WebGPU</option></select>
+        <button id="roundtrip" type="button">执行 20 次往返验证</button>
+        <p>候选引擎先在独立 Canvas 完成真实首帧，再在帧边界交接；失败时当前画面继续服务。</p>
+      </div>
+    </section>
+    <section class="metrics" aria-label="切换指标">
+      <div><span>当前后端</span><strong id="active">—</strong></div><div><span>活动 Canvas</span><strong id="surfaces">—</strong></div>
+      <div><span>脚本 Tick</span><strong id="ticks">—</strong></div><div><span>已验证切换</span><strong id="switches">—</strong></div>
+    </section>
+    <details><summary>切换诊断</summary><pre id="switch-diagnostics">尚无切换记录。</pre></details>
+  </main>
+  <script type="module" src="/switch.js"></script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+{
+  "schema": "deep-engine.deep2d-runtime",
+  "schemaVersion": 1,
+  "id": "native:deep2d:atlas-smoke",
+  "revision": 1,
+  "composition": "path-then-atlas",
+  "displayList": {
+    "schemaVersion": 1,
+    "id": "native:deep2d:atlas-smoke:paths",
+    "revision": 1,
+    "logicalWidth": 960,
+    "logicalHeight": 640,
+    "scaleFactor": 1,
+    "resources": [
+      {
+        "kind": "path",
+        "id": "overlay:panel",
+        "revision": 1,
+        "verbs": [
+          { "op": "move", "x": 24, "y": 24 },
+          { "op": "line", "x": 320, "y": 24 },
+          { "op": "line", "x": 320, "y": 128 },
+          { "op": "line", "x": 24, "y": 128 },
+          { "op": "close" }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "kind": "path",
+        "id": "overlay:panel:draw",
+        "zOrder": -1,
+        "transform": [1, 0, 0, 1, 0, 0],
+        "pathId": "overlay:panel",
+        "fill": [0.02, 0.04, 0.08, 0.94]
+      }
+    ]
+  },
+  "atlases": [
+    {
+      "id": "atlas:glyph:ui",
+      "revision": 1,
+      "kind": "glyph",
+      "format": "r8unorm",
+      "width": 4,
+      "height": 4,
+      "sampling": "linear",
+      "dataBase64": "AECA/0CA/4CA/4BA/4BAAA=="
+    },
+    {
+      "id": "atlas:image:ui",
+      "revision": 1,
+      "kind": "image",
+      "format": "rgba8unorm-srgb",
+      "width": 2,
+      "height": 2,
+      "sampling": "nearest",
+      "dataBase64": "//////8AAP8A/wD/AID//w=="
+    }
+  ],
+  "quads": [
+    {
+      "id": "glyph:status:0",
+      "zOrder": 0,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "atlasId": "atlas:glyph:ui",
+      "source": [0, 0, 2, 4],
+      "destination": [44, 48, 34, 52],
+      "color": [0.2, 0.9, 1, 1]
+    },
+    {
+      "id": "glyph:status:1",
+      "zOrder": 1,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "atlasId": "atlas:glyph:ui",
+      "source": [2, 0, 2, 4],
+      "destination": [82, 48, 34, 52],
+      "color": [0.2, 0.9, 1, 1],
+      "opacity": 0.9
+    },
+    {
+      "id": "image:status",
+      "zOrder": 2,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "atlasId": "atlas:image:ui",
+      "source": [0, 0, 2, 2],
+      "destination": [220, 44, 64, 64],
+      "color": [1, 1, 1, 1]
+    }
+  ]
+}

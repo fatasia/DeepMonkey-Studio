@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import type { ClippingState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
+import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 
 type Axis = "x" | "y" | "z";
 type Bounds = { min: Record<Axis, number>; max: Record<Axis, number> };
@@ -22,13 +23,24 @@ const AXES: Axis[] = ["x", "y", "z"];
 export function SceneClippingPanel(props: SceneClippingPanelProps) {
   const { locale, value, sceneBounds } = props;
   const mode = value.mode ?? "axis";
+  const drag = useFloatingPanelDrag<HTMLDivElement>();
 
   return (
     <div
+      ref={drag.panelRef}
+      style={drag.style}
       className={`clipping-bar clipping-${mode}`}
       aria-label={tr(locale, "剖切设置", "Section settings")}
     >
-      <div className="clipping-tabs">
+      <div
+        className="clipping-tabs"
+        data-drag-handle="true"
+        title={tr(locale, "拖动工具栏移动剖切面板", "Drag the toolbar to move the section panel")}
+        onPointerDown={drag.onPointerDown}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
+        onPointerCancel={drag.onPointerCancel}
+      >
         <span>{tr(locale, "剖切", "Section")}</span>
         <button
           className={mode === "box" ? "active" : ""}

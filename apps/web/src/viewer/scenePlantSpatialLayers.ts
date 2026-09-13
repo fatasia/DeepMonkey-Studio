@@ -41,6 +41,8 @@ export function createScenePlantSpatialLayers(scene: Object3D, model: PlantLiteM
       }
       let count = 0;
       if (frame?.sceneLayers?.trails) for (const item of frame.items) {
+        // 网络轨迹可能转弯，不能用端点直线冒充已行驶路段。
+        if (item.worldPosition) continue;
         const from = anchors.get(item.nodeId), to = item.transport && anchors.get(item.transport.toNodeId);
         if (!from || !to || count >= 18) continue;
         const progress = Math.max(0, Math.min(1, item.transport!.progress));

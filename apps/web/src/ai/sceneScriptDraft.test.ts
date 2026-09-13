@@ -14,6 +14,14 @@ const intelligence: SceneScriptIntelligenceContext = {
 };
 
 describe("createAiSceneScriptDraft", () => {
+  it("compiles the one-click local sample for both object and component targets", () => {
+    for (const target of [robot, widget]) {
+      const draft = createAiSceneScriptDraft({ intent: "点击当前对象时隐藏", sceneId: "scene-1", target, intelligence });
+      expect(draft.status).toBe("ready");
+      expect(draft.lifecycle).toBe("onEvent");
+      expect(draft.draftScript?.enabled).toBe(false);
+    }
+  });
   it("compiles multiple object actions through the script analyzer and command policy", () => {
     const result = createAiSceneScriptDraft({
       intent: "定位搬运机器人并播放动画",

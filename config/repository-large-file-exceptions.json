@@ -1,0 +1,20 @@
+{
+  "schema": "deep-monkey-repository-large-file-exceptions-v1",
+  "files": [
+    {
+      "path": "apps/api/models/battery/batterymformer.fp32.opset18.onnx",
+      "reason": "Required self-contained CPU inference model for the API battery RUL validation runtime.",
+      "sha256": "725E40FB0065D169D7906712FF4A17077345D02403180B59F2F1384BD386DA74"
+    },
+    {
+      "path": "apps/battery-native-runtime/models/batterymformer-spm-pinn.fp32.opset18.onnx",
+      "reason": "Required offline ONNX model for the Windows native battery SPM-PINN runtime.",
+      "sha256": "90B5D22EFA0497196696A5883CF81CEBAB6CF8D670547E79ADF440D1CBD18271"
+    },
+    {
+      "path": "apps/web/public/samples/multiscale-battery-assessment-tempest-lfp-280ah-700cycle.csv",
+      "reason": "Required public validation sample for the bundled 280 Ah LFP aging workflow.",
+      "sha256": "632D30BAEA05BAC80E1BEAF9762C70DA24793BC675AA9C55FE0381448B2952A5"
+    }
+  ]
+}

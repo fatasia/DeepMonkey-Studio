@@ -33,21 +33,23 @@ export async function registerCloudRenderRoutes(app: FastifyInstance, dependenci
     const publicOrigin = requiredHttpUrl(request.body?.publicOrigin, "Public Origin", reply, true);
     const workerToken = typeof request.body?.workerToken === "string" ? request.body.workerToken.trim() : "";
     if (!workerUrl || !publicOrigin) return reply;
-    if (!workerToken) return reply.code(400).send({ message: "Worker Token 不能为空", code: "invalid_worker_token" });
     try {
-      const worker = await createWorkerClient({ baseUrl: workerUrl, token: workerToken, timeoutMs: 5_000 }).health();
+      const token = workerToken || process.env.CLOUD_RENDER_WORKER_TOKEN || "";
+      if (!token) return reply.code(400).send({ message: "Worker Token 为空且未配置默认密钥，请填写或保存配置", code: "missing_worker_token" });
+      const worker = await createWorkerClient({ baseUrl: workerUrl, token, timeoutMs: 5_000 }).health();
       return { ok: worker.status === "ready", worker, publicOrigin };
     } catch (reason) {
       return reply.code(502).send({ message: `GPU Worker 连接测试失败：${redactSecret(errorMessage(reason), workerToken)}`, code: "worker_test_failed" });
     }
   });
 
-  app.patch<{ Params: SceneParams; Body: { enabled?: unknown } }>("/api/admin/cloud-render/scenes/:sceneId", async (request, reply) => {
+  app.patch<{ Params: SceneParams; Body: { enabled?: unknown; resolution?: unknown } }>("/api/admin/cloud-render/scenes/:sceneId", async (request, reply) => {
     if (!requireAdmin(request, reply) || !validSceneId(request.params.sceneId, reply)) return reply;
-    if (typeof request.body?.enabled !== "boolean") return reply.code(400).send({ message: "enabled 必须是布尔值", code: "invalid_request" });
+    if (request.body?.resolution !== undefined && request.body?.enabled !== undefined) return reply.code(400).send({ message: "请分别设置画质和场景开关", code: "invalid_request" });
+    if (request.body?.resolution === undefined && typeof request.body?.enabled !== "boolean") return reply.code(400).send({ message: "enabled 必须是布尔值", code: "invalid_request" });
     const publication = requirePublication(store, request.params.sceneId, reply);
     if (!publication) return reply;
-    try { return await control.setEnabled(publication, request.body.enabled); }
+    try { return request.body.resolution !== undefined ? await control.setResolution(publication, request.body.resolution) : await control.setEnabled(publication, request.body.enabled as boolean); }
     catch (reason) { return sendControlError(reply, reason); }
   });
 

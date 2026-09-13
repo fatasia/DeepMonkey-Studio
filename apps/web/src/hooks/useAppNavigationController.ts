@@ -11,6 +11,7 @@ import type { DashboardViewState } from "../studio/workspaceRoute";
 import type { AppState } from "./useAppState";
 import { sceneViewerDeliveryRoute } from "../delivery/sceneViewerDelivery";
 import { useManagerDirectoryController } from "./useManagerDirectoryController";
+import { carriesProjectContext, rememberProjectContext } from "../projectNavigationContext";
 
 interface AppNavigationControllerOptions {
   state: AppState;
@@ -71,7 +72,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
   }, [authReady, currentUser?.id, currentUser?.role, route.view]);
 
   function navigate(next: AppRoute, replace = false) {
-    if (["manager", "data", "optimizer"].includes(next.view) && !next.projectId && project) next = { ...next, projectId: project.id };
+    if (carriesProjectContext(next.view) && !next.projectId && project) next = { ...next, projectId: project.id };
     const deliveryRoute = sceneViewerDeliveryRoute();
     if (deliveryRoute) next = deliveryRoute;
     // 数据桥是当前工作区的临时抽屉；跨路由保留会遮挡目标页面操作。
@@ -162,7 +163,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
   }
 
   useEffect(() => {
-    if (!["manager", "data", "optimizer"].includes(route.view) || !route.projectId) return;
+    if (!carriesProjectContext(route.view) || !route.projectId) return;
     const requested = projects.find(item => item.id === route.projectId);
     if (requested && requested.id !== project?.id) switchProject(requested, false);
   }, [route.view, route.projectId, projects, project?.id]);
@@ -172,6 +173,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     sceneApplyVersionRef.current += 1;
     engine?.clearSceneModels();
     setProject(next);
+    if (currentUser) rememberProjectContext(currentUser.id, next.id);
     setActiveScene(undefined);
     setSceneName("未命名场景");
     setSelected(undefined);
@@ -181,7 +183,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     setSelectedSpace(undefined);
     setExpandedModels(new Set());
     if (route.view === "studio" || route.view === "view" || route.view === "published") navigate({ view: "manager", projectId: next.id });
-    else if (updateLocation && ["manager", "data", "optimizer"].includes(route.view)) navigate({ ...route, projectId: next.id }, true);
+    else if (updateLocation && carriesProjectContext(route.view)) navigate({ ...route, projectId: next.id }, true);
     setMessage(`已切换到项目“${next.name}”`);
     setRevision((value) => value + 1);
   }

@@ -1,0 +1,67 @@
+name: Deep Engine
+
+on:
+  pull_request:
+    paths:
+      - "packages/deep-engine/**"
+      - "packages/deep-engine-native/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deep-engine.yml"
+  push:
+    branches: [main, dev-studio]
+    paths:
+      - "packages/deep-engine/**"
+      - "packages/deep-engine-native/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deep-engine.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-engine-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bim-studio/deep-engine typecheck
+      - run: pnpm --filter @bim-studio/deep-engine test
+      - run: pnpm --filter @bim-studio/deep-engine build
+      - run: pnpm --filter @bim-studio/deep-engine lab:build
+      - run: node packages/deep-engine/scripts/verifyIsolation.mjs
+
+  native-core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: packages/deep-engine-native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/deep-engine-native
+      - run: cargo test --locked
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings

@@ -130,6 +130,8 @@ async function inspectViewer(browserInstance, origin, testCase) {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("requestfailed", (request) => requestFailures.push(`${request.method()} ${request.url()} · ${request.failure()?.errorText ?? "unknown"}`));
   await page.goto(`${origin}/?__visualQa=viewer&renderer=${testCase.backend}&effects=${viewerEffectsEnabled ? "on" : "off"}&shadows=${viewerShadowsEnabled ? "on" : "off"}`, { waitUntil: "networkidle" });
+  // QA 页自己的 header/aside 展示后端与实时性能，属于动态文字，不能参与 WebGL/WebGPU 固定画面对比。
+  await page.addStyleTag({ content: ".viewer-visual-qa > header,.viewer-visual-qa > aside{display:none !important;}" });
   const environment = await page.evaluate(async () => {
     const gpu = navigator.gpu;
     let adapterAvailable = false;
@@ -315,6 +317,29 @@ async function inspectViewport(browserInstance, origin, viewport) {
       }
     }).observe({ type: "longtask", buffered: true });
     new PerformanceObserver((list) => window.__productQa.layoutShifts.push(...list.getEntries().filter((entry) => !entry.hadRecentInput).map((entry) => entry.value))).observe({ type: "layout-shift", buffered: true });
+  });
+  // 静态产物门禁只验页面视觉与主线程行为；用内存 WebSocket 避免握手 200 被浏览器记为 console error。
+  await page.addInitScript(() => {
+    class StaticSceneDataWebSocket {
+      constructor() {
+        this.readyState = 1;
+        const listeners = new Map();
+        this.addEventListener = (type, listener) => {
+          listeners.set(type, [...listeners.get(type) ?? [], listener]);
+        };
+        this.removeEventListener = (type, listener) => {
+          listeners.set(type, (listeners.get(type) ?? []).filter(item => item !== listener));
+        };
+        this.dispatchEvent = event => {
+          for (const listener of listeners.get(event.type) ?? []) listener(event);
+          return true;
+        };
+        setTimeout(() => this.dispatchEvent(new Event("open")));
+      }
+      close() {}
+      send() {}
+    }
+    window.WebSocket = StaticSceneDataWebSocket;
   });
 
   await page.goto(`${origin}/?__visualQa=dashboard`, { waitUntil: "networkidle" });

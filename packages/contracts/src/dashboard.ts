@@ -26,6 +26,10 @@ export type SceneDashboardWidgetType =
   | "treemap"
   | "graph"
   | "map"
+  | "wordcloud"
+  | "boxplot"
+  | "waterfall"
+  | "polarBar"
   | "rank"
   | "table"
   | "scroll-table"
@@ -138,6 +142,7 @@ export interface SceneDashboardWidgetState {
   recordForm?: { recordId: string };
   pipelineId?: string;
   directBinding?: DirectBindingSpec;
+  signalRule?: import("./deviceSignal.js").DeviceSignalRule;
   sampleData?: import("./dashboardSampleData.js").DashboardSampleData;
   /** 引用已确认的语义口径版本；版本变化必须重新确认，不静默漂移。 */
   semanticBinding?: {

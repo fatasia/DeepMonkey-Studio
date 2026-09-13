@@ -4,7 +4,7 @@ import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { SCENE_COMMAND_APPLIED, type SceneCommandPort, type SceneCommandPortOutcome } from "./SceneCommandExecutor";
 
 const unsupported = (message: string): SceneCommandPortOutcome => ({ status: "unsupported", message });
-const DATA_ACTIONS = new Set<DataEventAction>(["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material"]);
+const DATA_ACTIONS = new Set<DataEventAction>(["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material", "alarm"]);
 
 export class ViewerSceneCommandPort implements SceneCommandPort {
   constructor(private readonly viewer: ViewerEngine, private readonly componentUpdater?: (componentId: string, patch: Record<string, unknown>) => void) {}

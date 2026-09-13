@@ -30,6 +30,7 @@ export interface SceneManagerProps {
   navigationNotice?: string;
   onDismissNavigationNotice?: () => void;
   onProjectChange: (projectId: string) => void;
+  onProjectImported?: (project: ProjectRecord) => void;
   onCreateProject: () => void;
   onRenameProject: () => void;
   onDeleteProject: () => void;
@@ -59,6 +60,7 @@ export interface SceneManagerProps {
   onExportFbx: (scene: SceneSnapshot) => Promise<void>;
   onDelete: (scene: SceneSnapshot) => Promise<void>;
   onOptimizer: (modelId?: string) => void;
+  onParametric: () => void;
   onDataCenter: () => void;
   onCreateTopology: () => void;
   onOpenTopology: (applicationId: string, topologyId: string) => void;
@@ -67,12 +69,13 @@ export interface SceneManagerProps {
   onAiAssistant: () => void;
   onDocs: () => void;
   onSystem: () => void;
+  onBranding: () => void;
   onCloudRender: () => void;
   onLocaleToggle: () => void;
   onConnectionStatus: () => void;
   onCredits: () => void;
   onLogout: () => void;
-  onUploadModels: (files: FileList | File[], robotEntries?: ReadonlyMap<File, string>) => Promise<void>;
+  onUploadModels: (files: FileList | File[], robotEntries?: ReadonlyMap<File, string>) => Promise<ModelRecord[]>;
   onDeleteModel: (model: ModelRecord) => Promise<void>;
   onRefreshModels: () => Promise<void>;
 }

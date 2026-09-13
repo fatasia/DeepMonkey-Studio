@@ -8,7 +8,6 @@ allowBuilds:
   core-js: true
   es5-ext: false
   esbuild: true
-  node-red-contrib-bacnet: true
   onnxruntime-node: true
   oracledb: true
   utf-8-validate: false

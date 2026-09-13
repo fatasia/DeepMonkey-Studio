@@ -79,13 +79,12 @@ describe("scene workspace panels", () => {
     expect(html).not.toContain("实时后处理当前使用 WebGL 管线");
   });
 
-  it("uses one scene-object list instead of object and space directory tabs", () => {
+  it("keeps object browsing and grouping in one scene-object manager", () => {
     const html = renderToStaticMarkup(
       <SceneOutlinerPanel
         locale="zh-CN"
         uploading={false}
         importOpen={false}
-        organizationOpen={false}
         rvtConversionMode="native-glb"
         revitVersion="auto"
         revitRuntime={{ installations: [], defaultVersion: "auto" }}
@@ -97,14 +96,12 @@ describe("scene workspace panels", () => {
         bindingComponents={[]}
         searchActive={false}
         isolationActive={false}
-        organizationContent={<span>批量组织内容</span>}
         objectContent={<span>模型、灯光、空间同层内容</span>}
-        onOrganizationToggle={vi.fn()}
-        onImportToggle={vi.fn()}
+        onImportModel={vi.fn()}
         onImportClose={vi.fn()}
+        onWorkflowClose={vi.fn()}
         onRvtConversionModeChange={vi.fn()}
         onRevitVersionChange={vi.fn()}
-        onUpload={vi.fn()}
         onInsertProjectModel={vi.fn()}
         onInsertPrefab={vi.fn()}
         onCreateDeviceLayout={vi.fn()}
@@ -119,7 +116,10 @@ describe("scene workspace panels", () => {
     );
 
     expect(html).toContain("模型、灯光、空间同层内容");
+    expect(html).not.toContain("编组与选择集");
+    expect(html).not.toContain("批量组织内容");
     expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain("场景对象列表");
     expect(html).not.toContain("space-tree");
   });
 });

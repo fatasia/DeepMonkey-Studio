@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "modelId": "battery.socformer",
+  "modelVersion": "socformer-li-hybrid-v2",
+  "kind": "socformer-window-v1",
+  "session": {
+    "inputs": [
+      "input"
+    ],
+    "output": "output"
+  },
+  "model": {
+    "windowSize": 16,
+    "inputFeatures": 7,
+    "featureNames": [
+      "normalized_voltage",
+      "c_rate",
+      "temperature_c",
+      "phase",
+      "coulomb_soc_anchor",
+      "delta_time_s",
+      "is_lfp"
+    ],
+    "featureMean": [
+      0.6991637349128723,
+      -0.15106016397476196,
+      26.79315757751465,
+      0.08748409152030945,
+      0.5612816214561462,
+      25.990787506103516,
+      0.2421577274799347
+    ],
+    "featureStd": [
+      0.23332035541534424,
+      1.5722473859786987,
+      4.142085552215576,
+      0.9804049134254456,
+      0.3093648850917816,
+      39.64286422729492,
+      0.428389310836792
+    ],
+    "chemistryScope": [
+      "lfp",
+      "ncm"
+    ],
+    "chemistryMetrics": {
+      "lfp": {
+        "test_mae": 0.016111135482788086,
+        "test_cells": 20,
+        "min_test_cells": 10,
+        "passed": true
+      },
+      "ncm": {
+        "test_mae": 0.018836118280887604,
+        "test_cells": 51,
+        "min_test_cells": 20,
+        "passed": true
+      }
+    },
+    "confidenceGate": {
+      "level": "high",
+      "max_test_mae": 0.03,
+      "min_test_cells": 20,
+      "requires_all_chemistries": true,
+      "passed": true
+    },
+    "testMae": 0.018071787431836128,
+    "deepCorrectionWeight": 0.2
+  }
+}

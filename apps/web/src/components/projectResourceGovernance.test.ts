@@ -25,7 +25,8 @@ describe("analyzeProjectResourceGovernance", () => {
         id: "scene-1",
         name: "泵站场景",
         models: [{
-          modelId: "model-1",
+          modelId: "pump-instance",
+          assetModelId: "model-1",
           name: "主泵",
           visible: true,
           opacity: 0.8,
@@ -60,6 +61,7 @@ describe("analyzeProjectResourceGovernance", () => {
 
     expect(report).toMatchObject({ definitionCount: 5, versionCount: 6, instanceCount: 4, overrideCount: 7, unusedCount: 1 });
     expect(report.resources.find((resource) => resource.id === "image-unused")?.unused).toBe(true);
+    expect(report.resources.find((resource) => resource.id === "model-1")?.references[0]?.id).toContain("pump-instance");
     expect(report.resources.find((resource) => resource.id === "unity-1")?.versionLabel).toBe("v2");
     expect(report.resources.find((resource) => resource.id === "material-1")?.references[0]?.location).toContain("材质");
     expect(report.resources.find((resource) => resource.id === "environment-1")?.references[0]?.location).toContain("场景环境");

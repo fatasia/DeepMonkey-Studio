@@ -23,7 +23,7 @@ export function IndustrialAgentContinuation(props: {
       </button>)}</div>
     </section>}
     {canRetryAgentDecision(checkpoint) && <section className="industrial-agent-approval" aria-label={t("恢复失败决策", "Recover failed decision")}>
-      <header><RefreshCw size={15} /><span><strong>{t("上游暂时不可用，可以继续", "The provider was unavailable; you can resume")}</strong><small>{t(`仅重试下一步决策，保留已完成操作和剩余预算。还可恢复 ${MAX_AGENT_DECISION_RECOVERIES - (checkpoint.decisionRecoveries?.length ?? 0)} 次。`, `Retry only the next decision, keeping completed operations and remaining budget. ${MAX_AGENT_DECISION_RECOVERIES - (checkpoint.decisionRecoveries?.length ?? 0)} recovery attempts remain.`)}</small></span></header>
+      <header><RefreshCw size={15} /><span><strong>{t("上游暂时不可用，可以继续", "The provider was unavailable; you can resume")}</strong><small>{t(`仅重试下一步决策，保留已完成操作；本次追加 30 秒恢复保留时间。还可恢复 ${MAX_AGENT_DECISION_RECOVERIES - (checkpoint.decisionRecoveries?.length ?? 0)} 次。`, `Retry only the next decision, keeping completed operations; this adds a 30-second recovery reserve. ${MAX_AGENT_DECISION_RECOVERIES - (checkpoint.decisionRecoveries?.length ?? 0)} recovery attempts remain.`)}</small></span></header>
       <button type="button" className="primary" disabled={props.busy} onClick={props.onResume}><RefreshCw size={13} />{t("重试决策并继续", "Retry decision and continue")}</button>
     </section>}
   </>;

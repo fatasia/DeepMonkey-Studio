@@ -37,8 +37,8 @@ export function OperationsHeader({
 }) {
   return (
     <header className="operations-header secondary-page-header">
-      <SecondaryPageBack locale="zh-CN" onBack={onBack} />
       <div className="secondary-page-heading-row">
+        <SecondaryPageBack locale="zh-CN" onBack={onBack} />
         <div>
           <span className="eyebrow">生产优化与验证</span>
           <h1>智能运营</h1>
@@ -204,12 +204,10 @@ export function OperationsEmpty({ text }: { text: string }) {
 
 export function MaintenanceModelOnboarding({
   busy,
-  onSync,
   onImport,
   onOpenDataCenter,
 }: {
   busy: boolean;
-  onSync: () => void;
   onImport: () => void;
   onOpenDataCenter: () => void;
 }) {
@@ -223,11 +221,6 @@ export function MaintenanceModelOnboarding({
         </div>
       </div>
       <div className="operations-onboarding-actions">
-        <button className="primary" disabled={busy} onClick={onSync}>
-          <RefreshCw size={15} />
-          <span><b>同步 Iot-nb 工程</b><small>导入当前工程已训练模型</small></span>
-          <ArrowRight size={14} />
-        </button>
         <button disabled={busy} onClick={onImport}>
           <FileUp size={15} />
           <span><b>导入模型 JSON</b><small>接入已有训练模型定义</small></span>

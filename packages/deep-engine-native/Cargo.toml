@@ -1,0 +1,23 @@
+[package]
+name = "deep-engine-native"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+description = "Native winit + wgpu viewer bootstrap for Deep Engine"
+license-file = "../../LICENSE"
+repository = "https://github.com/fatasia/bim-studio"
+homepage = "https://github.com/fatasia/bim-studio"
+publish = false
+
+[dependencies]
+bytemuck = "=1.25.2"
+pollster = "=1.0.1"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl"] }
+winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"

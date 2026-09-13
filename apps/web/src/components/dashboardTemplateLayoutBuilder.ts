@@ -8,6 +8,7 @@ import type {
 import { translate as tr, type AppLocale } from "../i18n";
 import type { DashboardTemplateDefinition } from "./dashboardTemplateTypes";
 import { applyProductionSample } from "./dashboardProductionSample";
+import { applyTemplateSampleData } from "../studio/templateSampleData";
 
 export function buildDashboardTemplateNodes(
   locale: AppLocale,
@@ -56,7 +57,9 @@ export function buildDashboardTemplateNodes(
     key: `${template.id}.detail.${template.layout.detailType}`,
   }));
 
-  return template.id === "production" ? applyProductionSample(nodes, locale) : nodes;
+  // 插入即带真实示例数据:通用模板走确定性样例生成器(studio/templateSampleData),
+  // production 保留手写小样例;行业包在 createDashboardTemplateNodes 之外用 applyPackPageSample 逐项覆盖。
+  return template.id === "production" ? applyProductionSample(nodes, locale) : applyTemplateSampleData(nodes, template, locale);
 }
 
 function dashboardGeometry(page: DashboardPageDocument, primaryRatio: number) {
@@ -69,7 +72,9 @@ function dashboardGeometry(page: DashboardPageDocument, primaryRatio: number) {
   const metricHeight = Math.max(1, Math.min(132, page.height * 0.14));
   const chartTop = metricTop + metricHeight + gap;
   const availableHeight = Math.max(1, page.height - chartTop - margin);
-  const chartHeight = Math.max(1, Math.min(400, availableHeight * 0.56));
+  // 主视觉带占剩余高度的 66%(1080 基准下约 45% 画布高):对标 FVS/山海鲸"中心主视觉支配版面",
+  // 底部明细带相应收紧为紧凑数据条(仍可容纳 4-6 行)。
+  const chartHeight = Math.max(1, Math.min(540, availableHeight * 0.66));
   const primaryWidth = width * primaryRatio - gap / 2;
   const bottom = chartTop + chartHeight + gap;
   const filterWidth = Math.min(280, Math.max(1, width * 0.25));

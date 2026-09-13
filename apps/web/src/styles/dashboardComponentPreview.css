@@ -1,369 +1,676 @@
-/* 商业组件预览：小尺寸内优先表达组件语义，不追求装饰性缩略图。 */
+/* =====================================================================
+ * 二维素材商用缩略图(对标帆软 FVS 组件面板 + 山海鲸素材库质感)
+ * 瓷砖/文字/轴线等界面色全部走下方声明的 --lib-tile-* 令牌,双主题覆盖;
+ * --preview-accent / --preview-secondary 是组件自身的数据系列色,随预设注入。
+ * ===================================================================== */
+
+:root {
+  /* 缩略图瓷砖:深色渐变底 + 网格/轴线层次,形成"图表工作台"氛围而非纯色块。 */
+  --lib-tile-bg: linear-gradient(152deg, #1a2a32 0%, #101c22 55%, #0c1418 100%);
+  --lib-tile-border: #31434c;
+  --lib-tile-grid: rgba(126, 160, 174, .14);
+  --lib-tile-raised: rgba(255, 255, 255, .055);
+  --lib-tile-sunken: rgba(4, 9, 12, .52);
+  --lib-tile-text: #e2ecf0;
+  --lib-tile-text-dim: #93a6ae;
+  /* 预览底部的压暗遮罩(管理端资源卡徽标可读性),浅色主题换为提亮遮罩。 */
+  --lib-tile-veil: rgba(7, 12, 15, .5);
+}
+
+:root[data-theme="light"] {
+  --lib-tile-bg: linear-gradient(152deg, #f6f9fa 0%, #e9f0f3 55%, #dfe9ee 100%);
+  --lib-tile-border: #bcccd4;
+  --lib-tile-grid: rgba(58, 92, 108, .12);
+  --lib-tile-raised: rgba(255, 255, 255, .8);
+  --lib-tile-sunken: rgba(38, 62, 74, .07);
+  --lib-tile-text: #223742;
+  --lib-tile-text-dim: #5c7280;
+  --lib-tile-veil: rgba(255, 255, 255, .42);
+}
+
+.dashboard-library-preview {
+  position: relative;
+  display: block !important;
+  width: 86px;
+  height: 64px;
+  overflow: hidden !important;
+  box-sizing: border-box;
+  border: 1px solid var(--lib-tile-border);
+  border-radius: 7px;
+  background: var(--lib-tile-bg);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent), inset 0 -12px 22px color-mix(in srgb, black 16%, transparent);
+}
+
+:root[data-theme="light"] .dashboard-library-preview {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 72%, transparent);
+}
+
+/* 底纹网格:比轴线更弱一档,提供"设计画布"的空间参照。 */
+.dashboard-library-preview::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background-image: linear-gradient(var(--lib-tile-grid) 1px, transparent 1px), linear-gradient(90deg, var(--lib-tile-grid) 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+
 .dashboard-library-preview .dashboard-library-preview-mark {
   position: absolute;
   z-index: 4;
   right: 4px;
   bottom: 3px;
-  max-width: 48px;
+  max-width: 46px;
   overflow: hidden;
-  padding: 2px 3px;
-  color: #c5d0d4;
-  border-radius: 2px;
-  background: rgba(9, 15, 18, .76);
-  font: 600 6px/1 ui-monospace, monospace;
-  letter-spacing: .04em;
+  padding: 1.5px 3px;
+  color: var(--lib-tile-text-dim);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--lib-tile-sunken) 72%, transparent);
+  font: 600 7px/1 ui-monospace, monospace;
+  letter-spacing: .05em;
   text-overflow: ellipsis;
   white-space: nowrap;
+  pointer-events: none;
 }
 
-.dashboard-library-preview[data-preview-family="alarm"] .dashboard-library-preview-mark { color: var(--preview-accent, #ff9b8f); }
+.dashboard-library-preview[data-preview-family="alarm"] .dashboard-library-preview-mark,
 .dashboard-library-preview[data-preview-family="gis"] .dashboard-library-preview-mark,
-.dashboard-library-preview[data-preview-family="topology"] .dashboard-library-preview-mark { color: var(--preview-accent, #79b6c5); }
-.dashboard-library-preview[data-preview-family="industrial"] .dashboard-library-preview-mark { color: var(--preview-accent, #8bc29f); }
+.dashboard-library-preview[data-preview-family="topology"] .dashboard-library-preview-mark,
+.dashboard-library-preview[data-preview-family="industrial"] .dashboard-library-preview-mark { color: var(--preview-accent, #4f91c8); }
 
-.dashboard-library-preview.trend svg,
-.dashboard-library-preview.scatter svg,
-.dashboard-library-preview.radar svg,
-.dashboard-library-preview.graph svg,
-.dashboard-library-preview.sankey svg,
-.dashboard-library-preview.map svg {
+/* ---- SVG 图表通用:网格、轴线、图例、数据点、渐变 stop ---- */
+.dashboard-library-preview svg {
   position: relative;
   z-index: 1;
   width: 100%;
   height: 100%;
   fill: none;
+  font-family: inherit;
 }
 
-.dashboard-library-preview.trend .primary {
+/* 帆软缩略图规范:无坐标轴线;网格只保留雷达/地图的语义网格,且为极淡一档。 */
+.dashboard-library-preview .grid { stroke: var(--lib-tile-grid); stroke-width: 1; }
+
+.dashboard-library-preview .legend { opacity: .85; }
+.dashboard-library-preview .legend rect:first-child { fill: var(--preview-accent, #4f91c8); }
+.dashboard-library-preview .legend rect:last-child { fill: var(--preview-secondary, #59ae8d); }
+
+.dashboard-library-preview .dots circle { fill: var(--preview-accent, #4f91c8); stroke: var(--lib-tile-border); stroke-width: 1; }
+.dashboard-library-preview .dots-alt circle { fill: var(--preview-secondary, #59ae8d); stroke: var(--lib-tile-border); stroke-width: 1; }
+
+.stop-accent-strong { stop-color: var(--preview-accent, #4f91c8); stop-opacity: .58; }
+.stop-accent-mid { stop-color: var(--preview-accent, #4f91c8); stop-opacity: .4; }
+.stop-accent-deep { stop-color: var(--preview-accent, #4f91c8); stop-opacity: .26; }
+.stop-accent-ghost { stop-color: var(--preview-accent, #4f91c8); stop-opacity: .05; }
+.stop-secondary-strong { stop-color: var(--preview-secondary, #59ae8d); stop-opacity: .6; }
+.stop-secondary-ghost { stop-color: var(--preview-secondary, #59ae8d); stop-opacity: .08; }
+
+/* ---- 趋势:双系列折线 / 面积渐变 / 柱线组合 ---- */
+.dashboard-library-preview.trend .line-primary {
   stroke: var(--preview-accent, #4f91c8);
-  stroke-width: 2;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.dashboard-library-preview.trend .secondary {
+.dashboard-library-preview.trend .line-secondary {
   stroke: var(--preview-secondary, #59ae8d);
-  stroke-width: 1.3;
-}
-
-.dashboard-library-preview.trend .area-fill {
-  fill: color-mix(in srgb, var(--preview-accent, #4f91c8) 22%, transparent);
-  stroke: none;
-}
-
-.dashboard-library-preview.trend .combo-bars rect {
-  fill: var(--preview-secondary, #59ae8d);
-  opacity: .9;
-}
-
-.dashboard-library-preview.scatter .axis {
-  stroke: #44565d;
-  stroke-width: 1;
-}
-
-.dashboard-library-preview.scatter circle {
-  fill: var(--preview-accent, #4f91c8);
-  stroke: #11191c;
-  stroke-width: 1;
-}
-
-.dashboard-library-preview.scatter circle:nth-of-type(even) {
-  fill: var(--preview-secondary, #59ae8d);
-}
-
-.dashboard-library-preview.radar .grid {
-  stroke: #3b525b;
-  stroke-width: 1;
-}
-
-.dashboard-library-preview.radar .value {
-  fill: color-mix(in srgb, var(--preview-accent, #4f91c8) 22%, transparent);
-  stroke: var(--preview-accent, #4f91c8);
-  stroke-width: 1.5;
-}
-
-.dashboard-library-preview.graph path {
-  stroke: #4c6d78;
   stroke-width: 1.4;
-}
-
-.dashboard-library-preview.graph circle {
-  fill: var(--preview-accent, #4f91c8);
-  stroke: #172125;
-  stroke-width: 1.5;
-}
-
-.dashboard-library-preview.graph circle:nth-child(2n) {
-  fill: var(--preview-secondary, #59ae8d);
-}
-
-.dashboard-library-preview.sankey .flow {
-  opacity: .75;
-  fill: none;
+  stroke-dasharray: 3 2.6;
   stroke-linecap: round;
 }
 
-.dashboard-library-preview.sankey .flow.primary {
+.dashboard-library-preview.trend .area-fill { stroke: none; }
+.dashboard-library-preview.trend .combo-bars rect { fill: color-mix(in srgb, var(--preview-secondary, #59ae8d) 78%, transparent); }
+
+/* ---- 散点:双组样本 + 虚线趋势拟合 ---- */
+.dashboard-library-preview.scatter .trend-fit {
+  stroke: color-mix(in srgb, var(--preview-secondary, #59ae8d) 62%, transparent);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+}
+
+/* ---- 雷达:三层网格 + 渐变填充 + 顶点 ---- */
+.dashboard-library-preview.radar .value {
   stroke: var(--preview-accent, #4f91c8);
-  stroke-width: 7;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
 }
 
-.dashboard-library-preview.sankey .flow.secondary {
-  stroke: var(--preview-secondary, #59ae8d);
-  stroke-width: 6;
-}
+/* ---- 关系网络:边 + 节点光晕 ---- */
+.dashboard-library-preview.graph .edges { stroke: color-mix(in srgb, var(--preview-secondary, #59ae8d) 42%, transparent); stroke-width: 1.3; }
+.dashboard-library-preview.graph .halo circle { fill: color-mix(in srgb, var(--preview-accent, #4f91c8) 15%, transparent); }
+.dashboard-library-preview.graph .nodes circle { fill: var(--preview-secondary, #59ae8d); stroke: var(--lib-tile-border); stroke-width: 1.4; }
+.dashboard-library-preview.graph .nodes circle:nth-child(2n) { fill: var(--preview-accent, #4f91c8); }
 
-.dashboard-library-preview.sankey .node {
-  stroke: #d7e0e3;
-  stroke-width: 4;
-}
+/* ---- 桑基:渐变流带 + 节点竖条 ---- */
+.dashboard-library-preview.sankey .flow { opacity: .85; stroke-linecap: round; }
+.dashboard-library-preview.sankey .nodes path { stroke: var(--lib-tile-text); stroke-width: 3.4; stroke-linecap: round; opacity: .8; }
 
-.dashboard-library-preview.rank-bars {
+/* ---- 柱状:渐变柱 + 目标线 + 峰值点 ---- */
+.dashboard-library-preview.bars-svg .target { stroke: color-mix(in srgb, var(--preview-secondary, #59ae8d) 70%, transparent); stroke-width: 1.1; stroke-dasharray: 4 3; }
+.dashboard-library-preview.bars-svg .peak { fill: var(--lib-tile-text); }
+
+/* ---- 排行:渐变横条 + 第一名亮端帽 ---- */
+.dashboard-library-preview.rank-svg .rank-caps .cap { fill: var(--lib-tile-text); }
+
+/* ---- 漏斗 / 矩形树图:成体系的多档透明度 ---- */
+.dashboard-library-preview.funnel-svg .step-1 { fill: var(--preview-accent, #4f91c8); }
+.dashboard-library-preview.funnel-svg .step-2 { fill: color-mix(in srgb, var(--preview-secondary, #59ae8d) 86%, transparent); }
+.dashboard-library-preview.funnel-svg .step-3 { fill: color-mix(in srgb, var(--preview-secondary, #59ae8d) 62%, transparent); }
+.dashboard-library-preview.funnel-svg .step-4 { fill: color-mix(in srgb, var(--preview-secondary, #59ae8d) 40%, transparent); }
+
+.dashboard-library-preview.treemap-svg .cell-2 { fill: color-mix(in srgb, var(--preview-secondary, #59ae8d) 80%, transparent); }
+.dashboard-library-preview.treemap-svg .cell-3 { fill: color-mix(in srgb, var(--preview-secondary, #59ae8d) 56%, transparent); }
+.dashboard-library-preview.treemap-svg .cell-4 { fill: color-mix(in srgb, var(--preview-accent, #4f91c8) 40%, transparent); }
+
+/* ---- 环形 / 旭日:conic 分段 + 中心占比 ---- */
+.dashboard-library-preview.ring {
   display: grid !important;
-  align-content: center;
-  gap: 5px;
-  padding: 8px;
+  place-items: center;
 }
 
-.dashboard-library-preview.rank-bars i {
+.dashboard-library-preview.ring i {
   z-index: 1;
-  width: 92%;
-  height: 5px;
-  border-radius: 1px;
-  background: linear-gradient(90deg, var(--preview-accent, #4f91c8) 0 70%, #24353b 70%);
+  width: 37px;
+  height: 37px;
+  border-radius: 50%;
+  background: conic-gradient(var(--preview-accent, #4f91c8) 0 62%, var(--preview-secondary, #59ae8d) 62% 86%, color-mix(in srgb, var(--preview-secondary, #59ae8d) 26%, transparent) 86%);
+  -webkit-mask: radial-gradient(circle, transparent 0 9px, #000 9.5px);
+  mask: radial-gradient(circle, transparent 0 9px, #000 9.5px);
 }
-
-.dashboard-library-preview.rank-bars i:nth-child(2) { width: 78%; background: linear-gradient(90deg, var(--preview-secondary, #59ae8d) 0 60%, #24353b 60%); }
-.dashboard-library-preview.rank-bars i:nth-child(3) { width: 67%; background: linear-gradient(90deg, var(--preview-secondary, #59ae8d) 0 48%, #24353b 48%); }
-.dashboard-library-preview.rank-bars i:nth-child(4) { width: 54%; background: linear-gradient(90deg, var(--preview-secondary, #59ae8d) 0 42%, #24353b 42%); }
-
-.dashboard-library-preview.funnel {
-  display: grid !important;
-  align-content: center;
-  justify-items: center;
-  gap: 2px;
-  padding: 8px;
-}
-
-.dashboard-library-preview.funnel i {
-  z-index: 1;
-  height: 7px;
-  clip-path: polygon(5% 0, 95% 0, 85% 100%, 15% 100%);
-  background: var(--preview-secondary, #59ae8d);
-}
-
-.dashboard-library-preview.funnel i:nth-child(1) { width: 58px; background: var(--preview-accent, #4f91c8); }
-.dashboard-library-preview.funnel i:nth-child(2) { width: 45px; }
-.dashboard-library-preview.funnel i:nth-child(3) { width: 33px; }
-.dashboard-library-preview.funnel i:nth-child(4) { width: 21px; background: color-mix(in srgb, var(--preview-secondary, #59ae8d) 68%, #39464b); }
-
-.dashboard-library-preview.treemap {
-  display: grid !important;
-  gap: 2px;
-  padding: 7px;
-  grid-template: 1fr 1fr / 1.35fr .8fr .8fr;
-}
-
-.dashboard-library-preview.treemap i {
-  z-index: 1;
-  border-radius: 1px;
-  background: var(--preview-secondary, #59ae8d);
-}
-
-.dashboard-library-preview.treemap i:first-child { grid-row: 1 / 3; background: var(--preview-accent, #4f91c8); }
-.dashboard-library-preview.treemap i:nth-child(4) { grid-column: 2 / 4; background: color-mix(in srgb, var(--preview-secondary, #59ae8d) 72%, #34434a); }
 
 .dashboard-library-preview.ring.sunburst i {
-  box-shadow: inset 0 0 0 6px #11191c, inset 0 0 0 10px var(--preview-secondary, #59ae8d);
+  background: conic-gradient(var(--preview-accent, #4f91c8) 0 30%, var(--preview-secondary, #59ae8d) 30% 52%, color-mix(in srgb, var(--preview-accent, #4f91c8) 55%, transparent) 52% 70%, color-mix(in srgb, var(--preview-secondary, #59ae8d) 45%, transparent) 70% 88%, transparent 88%);
 }
 
-.dashboard-library-preview.ring b {
+.dashboard-library-preview.ring .inner {
   position: absolute;
   z-index: 2;
-  width: 9px;
-  height: 9px;
+  width: 21px;
+  height: 21px;
   border-radius: 50%;
-  background: #11191c;
+  background: conic-gradient(var(--preview-accent, #4f91c8) 0 42%, var(--preview-secondary, #59ae8d) 42% 80%, transparent 80%);
+  -webkit-mask: radial-gradient(circle, transparent 0 4.5px, #000 5px);
+  mask: radial-gradient(circle, transparent 0 4.5px, #000 5px);
 }
 
-.dashboard-library-preview.gauge {
-  display: grid !important;
-  place-items: center;
-}
-
-.dashboard-library-preview.gauge i {
-  position: absolute;
-  z-index: 1;
-  top: 13px;
-  width: 40px;
-  height: 20px;
-  overflow: hidden;
-  border-radius: 40px 40px 0 0;
-  background: conic-gradient(from 270deg at 50% 100%, #4f8a70 0 32%, #d5ad4c 32% 62%, #b96058 62% 75%, transparent 75%);
-}
-
-.dashboard-library-preview.gauge b {
-  position: absolute;
-  z-index: 2;
-  top: 18px;
-  width: 2px;
-  height: 18px;
-  background: #e4ecef;
-  transform: rotate(38deg);
-  transform-origin: 50% 100%;
-}
-
-.dashboard-library-preview.gauge em,
-.dashboard-library-preview.liquid em {
+.dashboard-library-preview.ring em,
+.dashboard-library-preview.gauge em {
   position: absolute;
   z-index: 3;
-  bottom: 7px;
-  color: #d7e0e3;
-  font: normal 8px/1 ui-monospace, monospace;
+  color: var(--lib-tile-text);
+  font-style: normal;
+  font-weight: 700;
+  font-size: 8.5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
 }
 
-.dashboard-library-preview.liquid {
-  display: grid !important;
+/* 卡片徽章规则 .dashboard-library-card em 的 width:fit-content 会波及瓷砖内 em,
+   环形/液位的中心占比 em 依赖 absolute 拉伸居中,显式还原 auto。 */
+.dashboard-library-preview.ring em { inset: 0; display: grid; place-items: center; width: auto; }
+.dashboard-library-preview.liquid em {
+  position: absolute;
+  inset: 0;
+  display: grid;
   place-items: center;
+  width: auto;
+  font-size: 9px;
+  text-shadow: 0 1px 3px color-mix(in srgb, black 45%, transparent);
 }
+
+/* ---- 仪表盘:渐变值弧 + 指针 + 刻度 ---- */
+.dashboard-library-preview.gauge { display: grid !important; place-items: center; }
+.dashboard-library-preview.gauge .gauge-track { stroke: var(--lib-tile-grid); stroke-width: 6.5; stroke-linecap: round; }
+.dashboard-library-preview.gauge .gauge-value { stroke-width: 6.5; stroke-linecap: round; }
+.dashboard-library-preview.gauge .ticks circle { fill: var(--lib-tile-text-dim); }
+.dashboard-library-preview.gauge .needle { stroke: var(--lib-tile-text); stroke-width: 1.9; stroke-linecap: round; }
+.dashboard-library-preview.gauge .hub { fill: var(--lib-tile-text); }
+.dashboard-library-preview.gauge em { bottom: 3px; font-size: 9px; }
+.dashboard-library-preview.gauge em i { color: var(--lib-tile-text-dim); font-size: 6.5px; font-style: normal; }
+
+/* ---- 液位:双波浪旋转 + 外圈刻度 ---- */
+.dashboard-library-preview.liquid { display: grid !important; place-items: center; }
 
 .dashboard-library-preview.liquid > i {
   position: relative;
   z-index: 1;
-  width: 35px;
-  height: 35px;
+  width: 37px;
+  height: 37px;
   overflow: hidden;
-  border: 1px solid var(--preview-secondary, #59ae8d);
+  border: 1px solid color-mix(in srgb, var(--preview-accent, #4f91c8) 55%, transparent);
   border-radius: 50%;
-  background: #121d21;
+  background: color-mix(in srgb, var(--preview-accent, #4f91c8) 7%, var(--lib-tile-sunken));
 }
 
-.dashboard-library-preview.liquid > i b {
+.dashboard-library-preview.liquid > i::after {
   position: absolute;
-  inset: 12px -5px -5px;
-  background: linear-gradient(var(--preview-accent, #4f91c8), var(--preview-secondary, #59ae8d));
-  transform: rotate(-4deg);
+  inset: -3px;
+  content: "";
+  border: 1px dashed color-mix(in srgb, var(--preview-accent, #4f91c8) 34%, transparent);
+  border-radius: 50%;
 }
 
-.dashboard-library-preview.liquid em { bottom: 23px; color: #eef4f5; }
+.dashboard-library-preview.liquid .wave {
+  position: absolute;
+  top: 46%;
+  left: -60%;
+  width: 220%;
+  height: 220%;
+  border-radius: 42%;
+  background: color-mix(in srgb, var(--preview-accent, #4f91c8) 52%, transparent);
+  animation: liquid-spin 6s linear infinite;
+}
 
-.dashboard-library-preview.map path {
-  fill: #20343b;
-  stroke: #56747e;
+.dashboard-library-preview.liquid .wave-b {
+  top: 52%;
+  border-radius: 45%;
+  background: color-mix(in srgb, var(--preview-accent, #4f91c8) 30%, transparent);
+  animation-duration: 8.5s;
+  animation-direction: reverse;
+}
+
+.dashboard-library-preview.liquid em { color: var(--lib-tile-text); }
+
+@keyframes liquid-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- 地图:经纬网 + 渐变陆区 + 路线 + 呼吸热点 ---- */
+.dashboard-library-preview.map .graticule path { stroke: var(--lib-tile-grid); stroke-width: 1; }
+.dashboard-library-preview.map .land { stroke: color-mix(in srgb, var(--preview-secondary, #59ae8d) 62%, transparent); stroke-width: 1.2; stroke-linejoin: round; }
+.dashboard-library-preview.map .route { stroke: var(--lib-tile-text); stroke-width: 1.1; stroke-dasharray: 3 2.4; opacity: .65; }
+.dashboard-library-preview.map .hot { fill: var(--preview-accent, #4f91c8); stroke: var(--lib-tile-border); stroke-width: .8; }
+.dashboard-library-preview.map .hot-dim { fill: var(--preview-secondary, #59ae8d); }
+.dashboard-library-preview.map .hot-ring {
+  fill: none;
+  stroke: var(--preview-accent, #4f91c8);
   stroke-width: 1.2;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hotspot-ring 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
 
-.dashboard-library-preview.map circle {
-  fill: var(--preview-accent, #4f91c8);
-  stroke: #141d20;
-  stroke-width: 1;
+@keyframes hotspot-ring {
+  0% { opacity: .75; transform: scale(.5); }
+  75% { opacity: 0; transform: scale(1.25); }
+  100% { opacity: 0; transform: scale(1.25); }
 }
 
-.dashboard-library-preview.metric.status {
-  grid-template-columns: auto 1fr;
+/* ---- 表格:表头 + 斑马纹数据行 + 滚动指示 ---- */
+.dashboard-library-preview.table {
+  display: grid !important;
+  align-content: center;
+  gap: 3px;
+  padding: 8px 10px;
 }
 
-.dashboard-library-preview.metric.status span {
+.dashboard-library-preview.table i {
+  height: 7px;
+  border-radius: 2px;
+  background-image: linear-gradient(90deg, var(--lib-tile-raised) 0 21%, transparent 21% 24%, color-mix(in srgb, var(--lib-tile-text) 32%, transparent) 24% 58%, transparent 58% 61%, var(--preview-secondary, #59ae8d) 61% 82%, transparent 82%);
+  background-repeat: no-repeat;
+}
+
+.dashboard-library-preview.table .thead {
+  background-color: color-mix(in srgb, var(--preview-accent, #4f91c8) 24%, transparent);
+  background-image: none;
+}
+
+.dashboard-library-preview.table .striped { background-color: var(--lib-tile-raised); }
+.dashboard-library-preview.table .row:last-of-type { background-position: 0 0; }
+.dashboard-library-preview.table.scrolling { padding-top: 6px; }
+.dashboard-library-preview.table.scrolling .thead { height: 5px; opacity: .55; }
+.dashboard-library-preview.table .scrollbar {
+  position: absolute;
+  z-index: 2;
+  top: 15px;
+  right: 4px;
+  bottom: 15px;
+  width: 2.5px;
+  height: auto;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--lib-tile-text) 30%, transparent);
+  background-image: none;
+}
+
+/* ---- 指标 KPI:大数字 + 单位 + 涨跌 + 迷你趋势 ---- */
+.dashboard-library-preview.metric {
+  display: grid !important;
+  align-content: center;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.dashboard-library-preview.metric .kpi {
   z-index: 1;
+  overflow: hidden;
+  color: var(--lib-tile-text);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-library-preview.metric .kpi .unit {
+  margin-left: 2px;
+  color: var(--lib-tile-text-dim);
+  font-size: 7.5px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.dashboard-library-preview.metric .delta {
+  z-index: 1;
+  justify-self: start;
+  color: var(--success);
+  font-size: 8px;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-library-preview.metric .spark { grid-row: 1 / 3; grid-column: 2; align-self: center; width: 30px; height: 21px; }
+.dashboard-library-preview.metric .spark-line { stroke: var(--preview-accent, #4f91c8); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 翻牌:底板 + 中缝 + 数字辉光 */
+.dashboard-library-preview.metric.digital-flip { grid-template-columns: 1fr; }
+.dashboard-library-preview.metric .flip {
+  position: relative;
+  justify-self: start;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: var(--lib-tile-sunken);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--preview-accent, #4f91c8) 45%, transparent);
+}
+
+.dashboard-library-preview.metric .flip::before {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 50%;
+  width: 1px;
+  content: "";
+  background: color-mix(in srgb, var(--lib-tile-text) 20%, transparent);
+}
+
+/* 进度:渐变进度条 + 游标亮点 */
+.dashboard-library-preview.metric.progress { grid-template-columns: 1fr; gap: 5px; }
+
+.dashboard-library-preview.metric .bar {
+  position: relative;
+  z-index: 1;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 3px;
+  background: var(--lib-tile-sunken);
+}
+
+.dashboard-library-preview.metric .bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--preview-accent, #4f91c8), var(--preview-secondary, #59ae8d));
+}
+
+.dashboard-library-preview.metric .bar i::after {
+  position: absolute;
+  top: 50%;
+  right: -2px;
   width: 7px;
   height: 7px;
+  content: "";
   border-radius: 50%;
-  background: var(--preview-secondary, #59ae8d);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--preview-secondary, #59ae8d) 12%, transparent);
+  background: var(--lib-tile-text);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--preview-accent, #4f91c8) 38%, transparent);
+  transform: translateY(-50%);
 }
 
-.dashboard-library-preview.metric.status b { color: #dce6e2; font-size: 12px; }
-.dashboard-library-preview.metric.status i { grid-column: 1 / 3; }
-.dashboard-library-preview.metric.digital-flip b { letter-spacing: 2px; text-shadow: 0 0 12px color-mix(in srgb, var(--preview-accent, #4f91c8) 25%, transparent); }
+/* 状态:语义呼吸点 + 状态词 + 副信息条(色+形+文字三重编码) */
+.dashboard-library-preview.metric.status { grid-template-columns: auto 1fr; column-gap: 6px; }
 
+.dashboard-library-preview.metric .status-dot {
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 18%, transparent);
+  animation: status-breath 2s ease-in-out infinite;
+}
+
+.dashboard-library-preview.metric .status-label {
+  color: var(--lib-tile-text);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.dashboard-library-preview.metric .status-sub {
+  grid-column: 1 / 3;
+  width: 58%;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--lib-tile-text) 22%, transparent);
+}
+
+@keyframes status-breath {
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 7%, transparent); }
+}
+
+/* ---- 筛选:选中态下拉框 ---- */
+.dashboard-library-preview.filter {
+  display: flex !important;
+  height: 25px;
+  align-items: center;
+  gap: 5px;
+  box-sizing: border-box;
+  margin: auto 8px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--preview-accent, #4f91c8) 48%, var(--lib-tile-border));
+  border-radius: 6px;
+  background: var(--lib-tile-raised);
+}
+
+.dashboard-library-preview.filter .funnel-icon { flex: 0 0 auto; width: 10px; height: 10px; stroke: var(--preview-accent, #4f91c8); stroke-width: 1.5; stroke-linecap: round; }
+
+.dashboard-library-preview.filter i {
+  overflow: hidden;
+  color: var(--lib-tile-text);
+  font-size: 8.5px;
+  font-style: normal;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dashboard-library-preview.filter .chevron {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-right: 1.4px solid var(--lib-tile-text-dim);
+  border-bottom: 1.4px solid var(--lib-tile-text-dim);
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+/* 筛选瓷砖自身以“全部设备”示意为语义,右下短标记会压在 25px 高的下拉框上,隐藏(HTML 保留)。 */
+.dashboard-library-preview.filter .dashboard-library-preview-mark { display: none; }
+
+/* ---- 记录表单:标签列 + 输入框(聚焦高亮)+ 主按钮 ---- */
+.dashboard-library-preview.record-form .form-labels path { stroke: var(--lib-tile-text-dim); stroke-width: 1.6; stroke-linecap: round; }
+.dashboard-library-preview.record-form .form-field { fill: var(--lib-tile-raised); stroke: var(--lib-tile-border); stroke-width: 1; }
+.dashboard-library-preview.record-form .field-focus {
+  fill: color-mix(in srgb, var(--preview-accent, #4f91c8) 12%, var(--lib-tile-raised));
+  stroke: var(--preview-accent, #4f91c8);
+}
+.dashboard-library-preview.record-form .form-submit { fill: var(--preview-accent, #4f91c8); opacity: .94; }
+.dashboard-library-preview.record-form .form-submit-label { stroke: var(--on-accent, #000); stroke-width: 1.8; stroke-linecap: round; opacity: .75; }
+
+/* ---- 文本:标题条 + 正文行 ---- */
 .dashboard-library-preview.text {
   display: grid !important;
   align-content: center;
-  gap: 5px;
-  padding: 9px;
+  gap: 4px;
+  padding: 8px 9px 8px 13px;
 }
 
-.dashboard-library-preview.text b,
-.dashboard-library-preview.text i {
+.dashboard-library-preview.text .title-bar {
+  position: absolute;
   z-index: 1;
+  top: 15px;
+  bottom: 15px;
+  left: 8px;
+  width: 2.5px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--preview-accent, #4f91c8), color-mix(in srgb, var(--preview-accent, #4f91c8) 25%, transparent));
 }
 
-.dashboard-library-preview.text b { color: #dfe6e8; font-size: 8px; }
-.dashboard-library-preview.text i { width: 88%; height: 2px; background: #465b63; }
-.dashboard-library-preview.text i:last-child { width: 62%; }
+.dashboard-library-preview.text b { z-index: 1; overflow: hidden; color: var(--lib-tile-text); font-size: 9px; font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+.dashboard-library-preview.text .line { z-index: 1; width: 86%; height: 2.5px; border-radius: 2px; background: color-mix(in srgb, var(--lib-tile-text) 26%, transparent); }
+.dashboard-library-preview.text .line.short { width: 60%; }
 
-.dashboard-library-preview.shape {
-  display: grid !important;
-  place-items: center;
+/* ---- 形状:渐变矩形 + 渐变圆 + 虚线连接 ---- */
+.dashboard-library-preview.shape { display: grid !important; place-items: center; }
+
+.dashboard-library-preview.shape i {
+  position: absolute;
+  z-index: 1;
+  top: 19px;
+  left: 21px;
+  width: 34px;
+  height: 26px;
+  border: 1px solid color-mix(in srgb, var(--preview-accent, #4f91c8) 72%, transparent);
+  border-radius: 4px;
+  background: linear-gradient(140deg, color-mix(in srgb, var(--preview-accent, #4f91c8) 30%, transparent), color-mix(in srgb, var(--preview-accent, #4f91c8) 8%, transparent));
 }
 
-.dashboard-library-preview.shape i,
 .dashboard-library-preview.shape b {
   position: absolute;
   z-index: 1;
-  width: 33px;
-  height: 25px;
-  border: 1px solid var(--preview-accent, #4f91c8);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--preview-accent, #4f91c8) 12%, transparent);
-  transform: translate(-8px, 3px);
-}
-
-.dashboard-library-preview.shape b {
-  width: 21px;
-  height: 21px;
-  border-color: var(--preview-secondary, #59ae8d);
+  top: 11px;
+  right: 21px;
+  width: 20px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--preview-secondary, #59ae8d) 72%, transparent);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--preview-secondary, #59ae8d) 13%, transparent);
-  transform: translate(14px, -6px);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--preview-secondary, #59ae8d) 38%, transparent), color-mix(in srgb, var(--preview-secondary, #59ae8d) 10%, transparent));
 }
 
+.dashboard-library-preview.shape .connector {
+  position: absolute;
+  z-index: 1;
+  top: 32px;
+  left: 53px;
+  width: 18px;
+  border-top: 1.4px dashed var(--lib-tile-text-dim);
+  transform: rotate(-13deg);
+}
+
+/* ---- 装饰素材:以自身 accent 发色,边框同族 ---- */
 .dashboard-library-preview.decoration {
   display: grid !important;
   place-items: center;
   color: var(--preview-accent, #4f91c8);
-  border-color: color-mix(in srgb, var(--preview-accent, #4f91c8) 48%, #263238);
+  border-color: color-mix(in srgb, var(--preview-accent, #4f91c8) 48%, var(--lib-tile-border));
 }
 
 .dashboard-library-preview.decoration i,
 .dashboard-library-preview.decoration b {
   position: absolute;
   z-index: 1;
-  inset: 8px;
+  inset: 9px;
   border: 1px solid currentColor;
   clip-path: polygon(0 0, 28% 0, 33% 4px, 67% 4px, 72% 0, 100% 0, 100% 100%, 0 100%);
 }
 
-.dashboard-library-preview.decoration b { inset: 12px; opacity: .28; }
-.dashboard-library-preview.decoration em { z-index: 2; color: #dfe6e8; font: normal 7px/1 ui-monospace, monospace; letter-spacing: .8px; }
+.dashboard-library-preview.decoration b { inset: 13px; opacity: .3; }
+.dashboard-library-preview.decoration em { z-index: 2; color: var(--lib-tile-text); font: 650 8px/1 ui-monospace, monospace; letter-spacing: 1px; }
 .dashboard-library-preview.decoration-divider i,
 .dashboard-library-preview.decoration-segment i,
 .dashboard-library-preview.decoration-dots i,
-.dashboard-library-preview.decoration-diagonal i { inset: auto 7px 26px; height: 2px; border: 0; clip-path: none; background: currentColor; }
+.dashboard-library-preview.decoration-diagonal i { inset: auto 8px 27px; height: 2px; border: 0; clip-path: none; background: currentColor; }
 .dashboard-library-preview.decoration-segment i { background: repeating-linear-gradient(90deg, currentColor 0 9px, transparent 9px 13px); }
 .dashboard-library-preview.decoration-dots i { background: radial-gradient(circle, currentColor 1px, transparent 2px) 0 50% / 7px 4px; }
 .dashboard-library-preview.decoration-diagonal i { height: 7px; background: repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 6px); }
-.dashboard-library-preview.decoration-neon { box-shadow: inset 0 0 13px color-mix(in srgb, var(--preview-accent, #4f91c8) 12%, transparent); }
-.dashboard-library-preview.decoration-scan::before { position: absolute; z-index: 2; inset: 9px 12px auto; height: 1px; content: ""; background: var(--preview-accent, #4f91c8); box-shadow: 0 0 8px var(--preview-accent, #4f91c8); animation: dashboard-preview-scan 2.4s ease-in-out infinite; }
+.dashboard-library-preview.decoration-neon { box-shadow: inset 0 0 14px color-mix(in srgb, var(--preview-accent, #4f91c8) 16%, transparent); }
+.dashboard-library-preview.decoration-scan::before { position: absolute; z-index: 2; inset: 10px 12px auto; height: 1px; content: ""; background: var(--preview-accent, #4f91c8); box-shadow: 0 0 8px var(--preview-accent, #4f91c8); animation: dashboard-preview-scan 2.4s ease-in-out infinite; }
 
-.dashboard-library-preview.icon {
-  display: grid !important;
-  place-items: center;
+.dashboard-library-preview[class*="decoration-"] {
   color: var(--preview-accent, #4f91c8);
-  perspective: 100px;
+  border-color: color-mix(in srgb, var(--preview-accent, #4f91c8) 48%, var(--lib-tile-border));
 }
-
-.dashboard-library-preview.icon > svg { z-index: 2; filter: drop-shadow(0 6px 7px #0008); }
-.dashboard-library-preview.icon > i,
-.dashboard-library-preview.icon > b { position: absolute; z-index: 1; bottom: 9px; width: 48px; height: 1px; background: var(--preview-secondary, #59ae8d); transform: rotate(18deg); }
-.dashboard-library-preview.icon > b { transform: rotate(-18deg); }
-.dashboard-library-preview.icon.topology,
-.dashboard-library-preview.icon.monitor,
-.dashboard-library-preview.icon.unity { color: var(--preview-accent, #4f91c8); }
 
 @keyframes dashboard-preview-scan {
   0%, 100% { transform: translateY(0); opacity: .3; }
-  50% { transform: translateY(34px); opacity: 1; }
+  50% { transform: translateY(36px); opacity: 1; }
 }
 
+/* ---- 媒体 / 3D / 拓扑构图示意(渐变底 + 图形组合,不再用裸图标) ---- */
+.dashboard-library-preview.composition .frame { fill: var(--lib-tile-sunken); stroke: var(--lib-tile-border); stroke-width: 1.2; }
+.dashboard-library-preview.composition .screen { fill: color-mix(in srgb, var(--preview-secondary, #59ae8d) 10%, var(--lib-tile-sunken)); }
+
+.dashboard-library-preview.composition-scene .ground,
+.dashboard-library-preview.composition-unity .ground { fill: color-mix(in srgb, black 32%, transparent); }
+.dashboard-library-preview.composition .orbit { fill: none; stroke: color-mix(in srgb, var(--preview-secondary, #59ae8d) 52%, transparent); stroke-width: 1; stroke-dasharray: 4 3; }
+.dashboard-library-preview.composition .face-right { fill: color-mix(in srgb, var(--preview-accent, #4f91c8) 30%, transparent); }
+.dashboard-library-preview.composition .cube path { stroke: color-mix(in srgb, var(--lib-tile-text) 30%, transparent); stroke-width: .8; stroke-linejoin: round; }
+
+.dashboard-library-preview.composition-topology .edges path { stroke: color-mix(in srgb, var(--lib-tile-text) 24%, transparent); stroke-width: 1.1; }
+.dashboard-library-preview.composition-topology .halo circle { fill: color-mix(in srgb, var(--preview-accent, #4f91c8) 16%, transparent); }
+.dashboard-library-preview.composition-topology .nodes circle { fill: var(--preview-secondary, #59ae8d); stroke: var(--lib-tile-border); stroke-width: 1; }
+.dashboard-library-preview.composition-topology .hub circle { fill: var(--preview-accent, #4f91c8); }
+.dashboard-library-preview.composition-topology .hub .ring { fill: none; stroke: color-mix(in srgb, var(--preview-accent, #4f91c8) 45%, transparent); stroke-width: 1.2; }
+.dashboard-library-preview.composition-topology .link-active { stroke: var(--preview-accent, #4f91c8); stroke-width: 1.8; stroke-dasharray: 5 3; stroke-linecap: round; animation: composition-dash-flow 3.2s linear infinite; }
+
+@keyframes composition-dash-flow {
+  to { stroke-dashoffset: -16; }
+}
+
+.dashboard-library-preview.composition-image .photo { fill: color-mix(in srgb, var(--preview-secondary, #59ae8d) 46%, transparent); stroke: color-mix(in srgb, var(--preview-secondary, #59ae8d) 70%, transparent); stroke-width: 1; stroke-linejoin: round; }
+.dashboard-library-preview.composition-image .sun { fill: var(--preview-accent, #4f91c8); }
+.dashboard-library-preview.composition-image .photo-glint { stroke: color-mix(in srgb, var(--lib-tile-text) 40%, transparent); stroke-width: 1.4; stroke-linecap: round; }
+
+.dashboard-library-preview.composition-video .play-halo { fill: color-mix(in srgb, var(--preview-accent, #4f91c8) 18%, transparent); }
+.dashboard-library-preview.composition-video .play { fill: var(--preview-accent, #4f91c8); }
+.dashboard-library-preview.composition-video .play-tri { fill: var(--on-accent, #fff); opacity: .88; }
+.dashboard-library-preview.composition-video .progress-track { stroke: color-mix(in srgb, var(--lib-tile-text) 24%, transparent); stroke-width: 2; stroke-linecap: round; }
+.dashboard-library-preview.composition-video .progress-fill { stroke: var(--preview-accent, #4f91c8); stroke-width: 2; stroke-linecap: round; }
+.dashboard-library-preview.composition-video .playhead { fill: var(--lib-tile-text); }
+
+.dashboard-library-preview.composition-monitor .grid-cells rect { fill: var(--lib-tile-sunken); stroke: var(--lib-tile-border); stroke-width: 1; }
+.dashboard-library-preview.composition-monitor .cam-sweep { stroke: var(--preview-accent, #4f91c8); stroke-width: 1.6; stroke-linecap: round; opacity: .85; }
+.dashboard-library-preview.composition-monitor .rec circle { fill: var(--danger); animation: composition-rec 1.8s ease-in-out infinite; }
+.dashboard-library-preview.composition-monitor .timeline { stroke: color-mix(in srgb, var(--lib-tile-text) 28%, transparent); stroke-width: 1.4; stroke-linecap: round; stroke-dasharray: 8 3; }
+
+@keyframes composition-rec {
+  50% { opacity: .3; }
+}
+
+.dashboard-library-preview.composition-url .chrome-bar { stroke: var(--lib-tile-border); stroke-width: 1.2; }
+.dashboard-library-preview.composition-url .dot-a { fill: var(--preview-accent, #4f91c8); }
+.dashboard-library-preview.composition-url .dot-b { fill: var(--preview-secondary, #59ae8d); }
+.dashboard-library-preview.composition-url .dot-c { fill: color-mix(in srgb, var(--lib-tile-text) 34%, transparent); }
+.dashboard-library-preview.composition-url .addr { fill: var(--lib-tile-raised); }
+.dashboard-library-preview.composition-url .hero { fill: color-mix(in srgb, var(--preview-accent, #4f91c8) 32%, transparent); }
+.dashboard-library-preview.composition-url .line { stroke: color-mix(in srgb, var(--lib-tile-text) 24%, transparent); stroke-width: 2; stroke-linecap: round; }
+
+/* ---- 兜底 generic(未知类型,保留极简占位) ---- */
+.dashboard-library-preview.generic { display: grid !important; place-items: center; color: var(--preview-secondary, #59ae8d); }
+.dashboard-library-preview.generic svg { z-index: 1; width: auto; height: auto; }
+.dashboard-library-preview.generic i { position: absolute; z-index: 1; right: 8px; bottom: 8px; width: 17px; height: 3px; border-radius: 2px; background: var(--preview-accent, #4f91c8); }
+
 @media (prefers-reduced-motion: reduce) {
-  .dashboard-library-preview.decoration-scan::before { animation: none; transform: translateY(18px); }
+  .dashboard-library-preview .wave,
+  .dashboard-library-preview .status-dot,
+  .dashboard-library-preview .hot-ring,
+  .dashboard-library-preview .link-active,
+  .dashboard-library-preview .rec circle,
+  .dashboard-library-preview.decoration-scan::before { animation: none; }
+  .dashboard-library-preview.decoration-scan::before { transform: translateY(18px); }
 }

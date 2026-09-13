@@ -9,10 +9,36 @@
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 
-  /* 全屏工作台 < 文档级模态 < 操作反馈；Portal 不继承工作台的层叠上下文。 */
+  /* ===== 全局浮层层级总表(S3 z-index 收敛审计 2026-09-12,唯一权威口径) =====
+     页面内容 0–14:组件 stacking context 内的局部相对值(粘性表头/卡片徽标/行内覆盖/画布节点把手)。
+       不设全局令牌;保留裸值的必须逐处加 z-index-audit: keep 注释,禁止跨组件比较语义。
+     浮动面板 20 --layer-panel:画布/工作台内浮动面板基线(3D viewer 信息卡、XR/物理面板、全局工具、
+       页内下拉基线)。带内更上层(21–36)用 calc(var(--layer-panel) + N) 保持既有次序,禁止回写裸值。
+     下拉/弹出 40 --layer-dropdown:下拉菜单、悬浮弹卡、工具条 hover 弹层、轻遮罩。与 --layer-workspace
+       (40,全屏工作台/顶栏)同值带:顶栏内弹出层锚定其上,同值按 DOM 序,不得相互跨越。
+     模态遮罩 60 --layer-backdrop:模板库等模态遮罩;与其弹出内容成对(遮罩 60 < 内容/菜单 80)。
+     对话框/右键菜单 80 --layer-dialog:右键菜单、工作台内局部模态、紧贴遮罩的浮层(82=遮罩+2)。
+     全屏运行时 120 --layer-runtime:全屏预览/运行时层;其上浮动控件 calc(+15/+20/+22) 保持次序。
+     文档级模态 200 --layer-modal(已有):全局对话框,永远高于运行时带与一切页内浮层。
+     操作反馈 240 --layer-toast(已有):toast / 网络状态横幅,全局最高(画布特殊层除外)。
+     画布特殊层 999989–999999 --layer-canvas-*(已有):画布内局部对齐/吸附/拖选,不参与全局分层。
+     铁律:任何两处浮层的相对次序不得因令牌化而反转;跨带新浮层先查本表再取值。 */
+  --layer-panel: 20;
+  --layer-dropdown: 40;
+  --layer-backdrop: 60;
+  --layer-dialog: 80;
+  --layer-runtime: 120;
+
+  /* 全屏工作台 < 文档级模态 < 操作反馈;Portal 不继承工作台的层叠上下文。 */
   --layer-workspace: 40;
   --layer-modal: 200;
   --layer-toast: 240;
+
+  /* 画布内局部覆盖层（看板对齐参考线/智能吸附线/拖选框）：仅在画布 stacking context 内比较，
+     刻意高于画布内一切节点，但不参与全局弹层分层；值沿用历史局部约定，禁止再写裸值。 */
+  --layer-canvas-smart-guide: 999989;
+  --layer-canvas-guide: 999990;
+  --layer-canvas-selection: 999999;
 
   /* Product surfaces: one cool neutral scale, not a different black for every page. */
   --bg-0: #0b1114;
@@ -99,18 +125,18 @@
 * { box-sizing: border-box; }
 .behavior-workspace-slot.is-resizing,.behavior-workspace-slot.is-resizing * { transition:none!important; }
 html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}.app-workspace-frame{display:flex;width:100%;height:100%;min-width:0;overflow:hidden}.app-workspace-surface{position:relative;min-width:0;height:100%;flex:1;overflow:hidden}.behavior-workspace-slot.layout-split{--behavior-split-width:clamp(540px,55vw,820px);position:relative;z-index:34;order:-1;width:var(--behavior-split-width);height:100%;flex:0 0 var(--behavior-split-width);border-right:1px solid var(--line);background:var(--surface-1)}.behavior-workspace-slot.layout-float{position:fixed;inset:0;z-index:34;pointer-events:none}.behavior-workspace-slot.layout-float .behavior-panel{pointer-events:auto}.behavior-split-resizer{position:absolute;z-index:4;top:0;right:-5px;width:10px;height:100%;padding:0;border:0;background:transparent;cursor:col-resize;touch-action:none;user-select:none}.behavior-split-resizer::after{position:absolute;top:50%;left:4px;width:2px;height:52px;border-radius:2px;background:var(--line-strong);content:"";transform:translateY(-50%);transition:height .15s,background .15s}.behavior-split-resizer:hover::after,.behavior-split-resizer:focus-visible::after{height:86px;background:var(--accent)}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}.app-workspace-frame{display:flex;width:100%;height:100%;min-width:0;overflow:hidden}.app-workspace-surface{position:relative;min-width:0;height:100%;flex:1;overflow:hidden}.behavior-workspace-slot.layout-split{--behavior-split-width:clamp(540px,55vw,820px);position:relative;z-index:34 /* z-index-audit: keep(行为工作台槽位,分屏/浮动成对同值,精调于面板带20与顶栏40之间) */;order:-1;width:var(--behavior-split-width);height:100%;flex:0 0 var(--behavior-split-width);border-right:1px solid var(--line);background:var(--surface-1)}.behavior-workspace-slot.layout-float{position:fixed;inset:0;z-index:34 /* z-index-audit: keep(与 layout-split 成对同值,理由同上) */;pointer-events:none}.behavior-workspace-slot.layout-float .behavior-panel{pointer-events:auto}.behavior-split-resizer{position:absolute;z-index:4 /* z-index-audit: keep(槽位内局部把手,无跨组件语义) */;top:0;right:-5px;width:10px;height:100%;padding:0;border:0;background:transparent;cursor:col-resize;touch-action:none;user-select:none}.behavior-split-resizer::after{position:absolute;top:50%;left:4px;width:2px;height:52px;border-radius:2px;background:var(--line-strong);content:"";transform:translateY(-50%);transition:height .15s,background .15s}.behavior-split-resizer:hover::after,.behavior-split-resizer:focus-visible::after{height:86px;background:var(--accent)}
 .behavior-panel-loading{display:flex;width:100%;height:100%;align-items:center;justify-content:center;gap:8px;color:#9cabb1;background:#10171d;font-size:11px}.behavior-workspace-slot.layout-float .behavior-panel-loading{position:absolute;top:68px;right:20px;width:min(760px,calc(100vw - 40px));height:calc(100vh - 88px);border:1px solid #3a4850;border-radius:9px;box-shadow:0 18px 54px #000a;pointer-events:auto}
 .app-workspace-frame.behavior-split.behavior-from-studio .behavior-workspace-slot.layout-split{height:calc(100% - 52px);margin-top:52px}
-.app-workspace-frame.behavior-split.behavior-from-studio .app-workspace-surface .topbar{position:fixed;top:0;right:0;left:0;z-index:40;height:52px}
+.app-workspace-frame.behavior-split.behavior-from-studio .app-workspace-surface .topbar{position:fixed;top:0;right:0;left:0;z-index:var(--layer-workspace);height:52px}
 .app-workspace-frame.behavior-split.behavior-from-dashboard .behavior-workspace-slot.layout-split{height:calc(100% - 52px);margin-top:52px}
-.app-workspace-frame.behavior-split.behavior-from-dashboard .dashboard-workspace-topbar{position:fixed;top:0;right:0;left:0;z-index:40;height:52px}
+.app-workspace-frame.behavior-split.behavior-from-dashboard .dashboard-workspace-topbar{position:fixed;top:0;right:0;left:0;z-index:var(--layer-workspace);height:52px}
 .app-workspace-frame.behavior-split.behavior-from-dashboard .app-workspace-surface{padding-top:52px}
 .app-workspace-frame.behavior-split.behavior-from-dashboard .dashboard-workspace{grid-template:0 minmax(0,1fr) 34px/minmax(0,1fr);grid-template-areas:"top" "canvas" "status"}
-.app-workspace-frame.behavior-split.behavior-from-dashboard :is(.dashboard-pages-panel,.dashboard-inspector-panel,.dashboard-compact-page-settings,.dashboard-panel-toggles,.dashboard-panel-controls){display:none}
+.app-workspace-frame.behavior-split.behavior-from-dashboard .dashboard-compact-page-settings{display:none}
 .app-workspace-frame.behavior-split.behavior-from-dashboard :is(.dashboard-design-surface,.dashboard-page-bar,.dashboard-field-panel-shell){margin-right:0;max-width:100%}
 .app-workspace-frame.behavior-split .topbar .brand-copy span,.app-workspace-frame.behavior-split .topbar .scene-title-wrap{display:none}.app-workspace-frame.behavior-split .topbar .brand-copy{min-width:auto}.app-workspace-frame.behavior-split .topbar-actions{margin-left:auto}
-@media (max-width:1180px){.app-workspace-frame.behavior-split .topbar .workspace-breadcrumb,.app-workspace-frame.behavior-split .topbar .topbar-auto-save{display:none}.app-workspace-frame.behavior-split .topbar-actions .action-label{display:none}.app-workspace-frame.behavior-split .topbar-actions .button{width:32px;padding:0}}
+@media (max-width:1180px){.app-workspace-frame.behavior-split .topbar .workspace-breadcrumb,.app-workspace-frame.behavior-split .topbar .topbar-auto-save{display:none}.app-workspace-frame.behavior-split .topbar-actions .action-label{display:none}.app-workspace-frame.behavior-split .topbar-actions > .compact-action{width:32px;padding:0}}
 button, input, select { font: inherit; }
 button { color: inherit; }
 button:focus-visible,
@@ -120,6 +146,26 @@ textarea:focus-visible,
 summary:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, white);
   outline-offset: 2px;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3d4a52 var(--surface-1);
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: var(--surface-1);
+}
+*::-webkit-scrollbar-thumb {
+  border: 2px solid var(--surface-1);
+  border-radius: 999px;
+  background: #3d4a52;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #4d5d66;
 }
 ::selection { color: #071619; background: color-mix(in srgb, var(--accent) 78%, white); }
 
@@ -131,11 +177,11 @@ summary:focus-visible {
 }
 .app-shell-hidden { display: none; }
 .app-shell.viewer-shell { grid-template: minmax(0, 1fr) / minmax(0, 1fr); grid-template-areas: "main"; }
-.app-shell.left-panel-collapsed { grid-template-columns: 0 minmax(480px, 1fr) 288px; }
+.app-shell.left-panel-collapsed { grid-template-columns: 0 minmax(480px, 1fr) 304px; }
 .app-shell.right-panel-collapsed { grid-template-columns: 248px minmax(480px, 1fr) 0; }
 .app-shell.left-panel-collapsed.right-panel-collapsed { grid-template-columns: 0 minmax(480px, 1fr) 0; }
 .app-shell.left-panel-collapsed .left-panel,.app-shell.right-panel-collapsed .right-panel { display: none; }
 .workspace-panel-controls { display:contents; }
-.workspace-panel-controls button { position:absolute;top:70px;z-index:26;display: grid; width: 28px; height: 28px; padding: 0; place-items: center; color: #8d9aa0; border: 1px solid #38444a; border-radius: 6px; background: rgba(20,27,30,.94);box-shadow:0 6px 18px rgba(0,0,0,.25); cursor: pointer; }
-.workspace-panel-controls .panel-toggle-left{left:234px}.workspace-panel-controls .panel-toggle-right{right:290px}.app-shell.left-panel-collapsed .panel-toggle-left{left:8px}.app-shell.right-panel-collapsed .panel-toggle-right{right:8px}
+.workspace-panel-controls button { position:absolute;top:70px;z-index:calc(var(--layer-panel) + 6) /* 面板折叠按钮,须高于 --layer-panel 浮动面板 */;display: grid; width: 28px; height: 28px; padding: 0; place-items: center; color: #8d9aa0; border: 1px solid #38444a; border-radius: 6px; background: rgba(20,27,30,.94);box-shadow:0 6px 18px rgba(0,0,0,.25); cursor: pointer; }
+.workspace-panel-controls .panel-toggle-left{left:234px}.workspace-panel-controls .panel-toggle-right{right:290px}.app-shell.left-panel-collapsed .panel-toggle-left{left:6px}.app-shell.right-panel-collapsed .panel-toggle-right{right:6px}
 .workspace-panel-controls button:hover,.workspace-panel-controls button[aria-pressed="false"] { color: #e3bd65; border-color: #6e592e; background: rgba(215,173,81,.1); }

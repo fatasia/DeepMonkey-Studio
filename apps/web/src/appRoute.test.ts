@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 import { readRoute, routeHistoryState, routePath } from "./appRoute";
 
 describe("app route", () => {
+  it("keeps project and operations task together across module URL reloads", () => {
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { pathname: "/vision", search: "" }, history: { state: null } } });
+    try {
+      for (const view of ["vision", "operations", "system", "branding"] as const) {
+        const route = { view, projectId: "factory / 2", ...(view === "operations" ? { operationsTab: "energy" as const } : {}) };
+        const url = new URL(routePath(route), "http://localhost");
+        window.location.pathname = url.pathname;
+        window.location.search = url.search;
+        expect(readRoute()).toEqual(route);
+      }
+    } finally { Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow }); }
+  });
   it("restores the manager workspace and optimizer project without discarding their identity", () => {
     expect(routePath({ view: "manager", projectId: "factory / 2", managerTab: "assets" })).toBe("/manager?project=factory%20%2F%202&tab=assets");
     expect(routePath({ view: "optimizer", projectId: "factory 2" })).toBe("/optimizer?project=factory%202");
@@ -21,6 +34,19 @@ describe("app route", () => {
     Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { pathname: "/data", search: "?project=factory%20%2F%202" }, history: { state: null } } });
     try { expect(readRoute()).toEqual({ view: "data", projectId: "factory / 2" }); }
     finally { Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow }); }
+  });
+  it("round-trips the independent parametric generation page with project context", () => {
+    expect(routePath({ view: "parametric", projectId: "factory / 2" })).toBe("/parametric?project=factory%20%2F%202");
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { location: { pathname: "/parametric", search: "?project=factory%20%2F%202" }, history: { state: null } },
+    });
+    try {
+      expect(readRoute()).toEqual({ view: "parametric", projectId: "factory / 2" });
+    } finally {
+      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
   });
   it("distinguishes canonical home from missing and malformed routes without throwing", () => {
     const originalWindow = globalThis.window;

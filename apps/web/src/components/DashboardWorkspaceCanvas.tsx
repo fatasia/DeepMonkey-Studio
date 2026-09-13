@@ -155,20 +155,24 @@ export function DashboardWorkspaceCanvas() {
           </div>
           {(layoutSelectionCount >= 2 || page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.groupId && node.locked !== true)) && <div className="dashboard-tool-group">
             <button
+              className="dashboard-group-command"
               disabled={selectedNodeIds.filter((id) => page.nodes.some((node) => node.id === id && node.locked !== true)).length < 2}
               aria-label={tr(locale, "编组", "Group")}
-              title={tr(locale, "编组", "Group")}
-              onClick={groupSelectedNodes}
+              title={tr(locale, "编组（Ctrl/⌘ G）", "Group (Ctrl/⌘ G)")}
+              onClick={() => groupSelectedNodes()}
             >
               <Group size={13} />
+              <span>{tr(locale, "编组", "Group")}</span>
             </button>
             <button
+              className="dashboard-group-command"
               disabled={!page.nodes.some((node) => selectedNodeIds.includes(node.id) && node.groupId && node.locked !== true)}
               aria-label={tr(locale, "解组", "Ungroup")}
-              title={tr(locale, "解组", "Ungroup")}
-              onClick={ungroupSelectedNodes}
+              title={tr(locale, "解组（Ctrl/⌘ Shift G）", "Ungroup (Ctrl/⌘ Shift G)")}
+              onClick={() => ungroupSelectedNodes()}
             >
               <Ungroup size={13} />
+              <span>{tr(locale, "解组", "Ungroup")}</span>
             </button>
           </div>}
           {layoutSelectionCount >= 2 && <div className="dashboard-tool-group">

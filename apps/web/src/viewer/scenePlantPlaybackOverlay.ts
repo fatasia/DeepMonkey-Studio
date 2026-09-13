@@ -4,7 +4,7 @@ import type { PlantLitePlaybackFrame } from "../components/plantLitePlaybackMode
 import { disposeViewerObject } from "./sceneOverlayVisuals";
 import { createScenePlantSpatialLayers, type ScenePlantPalette } from "./scenePlantSpatialLayers";
 
-/** DES 搬运时段按已存场景端点插值；无时段证据的瞬时连线保持点位。不是物理车辆轨迹。 */
+/** 网络模型使用已记录路段坐标；旧模型按场景端点插值。物料点不代表实体车模型。 */
 export function createScenePlantPlaybackOverlay(scene: Object3D, model: PlantLiteModel, palette: ScenePlantPalette = { waiting: new Color(), moving: new Color(), completed: new Color() }) {
   const anchors = new Map(model.sceneBinding?.nodes.map(node => [node.nodeId, node.position]));
   const positions = new Float32Array(18 * 3);
@@ -26,9 +26,9 @@ export function createScenePlantPlaybackOverlay(scene: Object3D, model: PlantLit
       spatial.update(frame);
       let count = 0;
       for (const item of frame?.items ?? []) {
-        const position = anchors.get(item.nodeId);
+        const position = item.worldPosition ?? anchors.get(item.nodeId);
         if (!position || count >= 18) continue;
-        const target = item.transport ? anchors.get(item.transport.toNodeId) : undefined;
+        const target = !item.worldPosition && item.transport ? anchors.get(item.transport.toNodeId) : undefined;
         const progress = target ? Math.min(1, Math.max(0, item.transport?.progress ?? 0)) : 0;
         positions.set([
           position[0] + ((target?.[0] ?? position[0]) - position[0]) * progress,

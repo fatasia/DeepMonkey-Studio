@@ -19,7 +19,7 @@ export function createBatteryCapabilityProviders(gateway: BatteryModelGateway): 
     provider("battery.model.predict", "电池 SOC/SOH/RUL 预测", "model", "battery.execute", async (input, signal) => {
       const request = preparePredictionRequest(input as unknown as BatteryPredictionInput);
       const output = await gateway.predict(request, signal);
-      return batteryResult(output, "production", request.routingMode
+      return batteryResult(output, output.productionApproved === false ? "shadow" : "production", output.productionApproved === false ? `本地验证模型 ${request.model}` : request.routingMode
         ? `正式专家路由 ${request.routingMode}`
         : `正式模型 ${request.model}`);
     }),
@@ -100,7 +100,7 @@ function batteryResult(output: Record<string, unknown>, decisionStatus: "product
     status: "completed" as const,
     decisionStatus,
     output,
-    evidence: [{ id: `battery:${label}`, kind: "model" as const, label, source: "battery-model-service" }],
+    evidence: [{ id: `battery:${label}`, kind: "model" as const, label, source: output.executionMode === "local-validation" ? "project-bundled-onnx" : "battery-model-service" }],
     warnings: decisionStatus === "shadow" ? ["该能力当前仅用于观察与审计。"] : []
   };
 }

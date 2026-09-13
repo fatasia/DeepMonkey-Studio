@@ -1,0 +1,31 @@
+.ai-sample-runner { box-sizing: border-box; width: 100%; margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-1); color: var(--text); font-size: 13px; overflow: hidden; }
+.ai-sample-runner-toolbar, .ai-sample-runner-result > header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ai-sample-runner-toolbar > span { flex: 1 1 240px; color: var(--text-muted); line-height: 1.6; }
+.ai-sample-runner button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text-strong); font: inherit; cursor: pointer; }
+.ai-sample-runner button:hover { border-color: var(--accent); }
+.ai-sample-runner button:disabled { opacity: .5; cursor: not-allowed; }
+.ai-sample-runner button:focus-visible, .ai-sample-runner summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ai-sample-runner p[role=alert] { color: var(--danger); overflow-wrap: anywhere; }
+.ai-sample-runner-result { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.ai-sample-runner-result > header { justify-content: space-between; }
+.ai-sample-runner-result strong { color: var(--success); }
+.ai-sample-runner-result dl { display: flex; flex-wrap: wrap; gap: 12px 32px; }
+.ai-sample-runner-result dt { color: var(--text-muted); }
+.ai-sample-runner-result dd { margin: 4px 0 0; font-size: 18px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.ai-sample-runner-result summary { cursor: pointer; }
+/* 工作台旧的字号兜底不能抹平样例结果的数值层级。 */
+body .app-workspace-frame.app-workspace-frame .ai-sample-runner-result dd { font-size: 18px !important; }
+.ai-sample-runner-result pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.ai-query-sample-table { overflow:auto;margin:10px 0; }
+.ai-query-sample-table table { width:100%;border-collapse:collapse; }
+.ai-query-sample-table :is(th,td) { padding:8px;text-align:left;border-bottom:1px solid var(--line);color:var(--text);font-size:12px;font-variant-numeric:tabular-nums; }
+@media (max-width: 900px) { .ai-sample-runner { width: 100%; } }
+@media (max-width: 520px) {
+  .ai-sample-runner-toolbar { align-items: stretch; }
+  .ai-sample-runner-toolbar > span { flex-basis: 100%; }
+  .ai-sample-runner-toolbar button { width: 100%; }
+  .ai-sample-runner-result > header { align-items: flex-start; flex-direction: column; }
+  .ai-sample-runner-result > header button { width: 100%; }
+  .ai-sample-runner-result dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .ai-sample-runner-result dd { font-size: 16px; }
+}

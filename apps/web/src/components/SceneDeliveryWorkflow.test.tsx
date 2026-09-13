@@ -100,7 +100,7 @@ describe("SceneDeliveryWorkflow", () => {
       onPublish={vi.fn()}
     />);
 
-    expect(html).toContain("5/5 必需步骤");
+    expect(html).toContain("3/3 必需步骤");
     expect(html).not.toContain("继续：准备资产");
     expect(html).not.toContain("继续：行为脚本");
     expect(html).not.toContain("继续：仿真调试");

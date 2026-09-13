@@ -95,6 +95,9 @@ describe("scene import model rebinding", () => {
 
   it("updates every model reference using the resolved target asset", () => {
     const scene = sceneFixture();
+    scene.dataBindings = [{ id: "data", name: "数据", enabled: true, datasetId: "data-set", field: "value", action: "color", refreshSeconds: 5, target: { modelId: "model-old", layerId: "part" } }];
+    scene.assetBindings = [{ id: "binding", sceneObjectId: "model-old:part", modelId: "model-old", objectName: "设备", deviceId: "pump", confidence: 1, confirmedAt: "now" }];
+    scene.interactions = [{ id: "interaction", name: "点击", target: { kind: "object", modelId: "model-old" }, trigger: "click", enabled: true, code: "// model-old remains script text", actions: [{ id: "action", type: "focus", enabled: true, target: { kind: "object", modelId: "model-old" } }] }];
     scene.simulationEntities = [
       { id: "flow", kind: "flowLink", fromModelId: "model-old", toModelId: "primitive" },
       { id: "path", kind: "path", name: "路径", targetModelId: "model-old", points: [[0, 0, 0]], speed: 1, loopMode: "once" },
@@ -110,6 +113,9 @@ describe("scene import model rebinding", () => {
     expect(result.scene.floors?.[0]?.modelId).toBe("model-new");
     expect(result.scene.selectionSets?.[0]?.objectIds).toEqual(["model-new"]);
     expect(result.scene.selectedModelId).toBe("model-new");
+    expect(result.scene.dataBindings?.[0]?.target).toEqual({ modelId: "model-new", layerId: "part" });
+    expect(result.scene.assetBindings?.[0]).toMatchObject({ modelId: "model-new", sceneObjectId: "model-new:part", deviceId: "pump" });
+    expect(result.scene.interactions?.[0]).toMatchObject({ target: { modelId: "model-new" }, actions: [{ target: { modelId: "model-new" } }], code: "// model-old remains script text" });
     expect(result.scene.simulationEntities).toMatchObject([
       { fromModelId: "model-new", toModelId: "primitive" }, { targetModelId: "model-new" },
       { a: { modelId: "model-new", layerId: "part" }, b: { modelId: "missing" } },

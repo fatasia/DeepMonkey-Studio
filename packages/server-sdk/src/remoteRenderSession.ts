@@ -43,6 +43,7 @@ export interface RemoteRenderMediaEvidence {
   width: number;
   height: number;
   framesEncoded: number;
+  framesPerSecond?: number;
   packetsSent: number;
   bytesSent: number;
 }
@@ -153,6 +154,7 @@ export function assertRemoteRenderMediaEvidence(value: RemoteRenderMediaEvidence
   if (value.hardwareEncoder !== true) throw new TypeError("云渲染媒体证据未确认硬件编码");
   if (typeof value.encoderImplementation !== "string" || !value.encoderImplementation.trim()) throw new TypeError("云渲染媒体证据缺少编码器实现");
   if (!["runtime-stats", "operator-attested"].includes(value.encoderEvidence)) throw new TypeError("云渲染硬件编码证据来源无效");
+  if (value.framesPerSecond !== undefined && (!Number.isFinite(value.framesPerSecond) || value.framesPerSecond < 0)) throw new TypeError("云渲染媒体帧率必须为非负有限数");
   for (const [field, amount] of Object.entries({
     width: value.width,
     height: value.height,

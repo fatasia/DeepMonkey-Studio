@@ -12,6 +12,7 @@ import { DashboardWorkspaceTemplateLibrary } from "./DashboardWorkspaceTemplateL
 import { DashboardWorkspaceProvider } from "./dashboardWorkspaceContext";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { translate as tr } from "../i18n";
+import { useEffect, useRef } from "react";
 
 export function DashboardWorkspaceView({ controller }: { controller: DashboardWorkspaceController }) {
   const {
@@ -39,6 +40,21 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
     setRuntimePreview,
     variables,
   } = controller;
+
+  const panelsBeforeScript = useRef<{ left: boolean; right: boolean } | undefined>(undefined);
+  useEffect(() => {
+    if (controller.scriptOpen) {
+      if (panelsBeforeScript.current) return;
+      panelsBeforeScript.current = { left: leftPanelOpen, right: inspectorOpen };
+      setLeftPanelOpen(false);
+      setInspectorOpen(false);
+    } else if (panelsBeforeScript.current) {
+      const previous = panelsBeforeScript.current;
+      panelsBeforeScript.current = undefined;
+      setLeftPanelOpen(previous.left);
+      setInspectorOpen(previous.right);
+    }
+  }, [controller.scriptOpen, leftPanelOpen, inspectorOpen, setLeftPanelOpen, setInspectorOpen]);
 
   if (runtimePreview) {
     return (
@@ -79,7 +95,7 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
             aria-pressed={leftPanelOpen}
             aria-label={leftPanelOpen ? tr(locale, "收起左侧面板", "Collapse left panel") : tr(locale, "展开左侧面板", "Expand left panel")}
             title={leftPanelOpen ? tr(locale, "收起左侧面板", "Collapse left panel") : tr(locale, "展开左侧面板", "Expand left panel")}
-            onClick={() => setLeftPanelOpen((value) => !value)}
+            onClick={() => { if (controller.scriptOpen && !leftPanelOpen) setInspectorOpen(false); setLeftPanelOpen(!leftPanelOpen); }}
           >
             {leftPanelOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
           </button>
@@ -89,7 +105,7 @@ export function DashboardWorkspaceView({ controller }: { controller: DashboardWo
             aria-pressed={inspectorOpen}
             aria-label={inspectorOpen ? tr(locale, "收起右侧面板", "Collapse right panel") : tr(locale, "展开右侧面板", "Expand right panel")}
             title={inspectorOpen ? tr(locale, "收起右侧面板", "Collapse right panel") : tr(locale, "展开右侧面板", "Expand right panel")}
-            onClick={() => setInspectorOpen((value) => !value)}
+            onClick={() => { if (controller.scriptOpen && !inspectorOpen) setLeftPanelOpen(false); setInspectorOpen(!inspectorOpen); }}
           >
             {inspectorOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
           </button>

@@ -137,7 +137,15 @@ export function CloudRenderConfigurationWizard({
         ),
       );
     } catch (reason) {
-      setError(message(reason));
+      const detail = message(reason);
+      setError(
+        detail.includes("404")
+          ? t(
+              "连接失败：Worker 未找到 /v1/health。请填写 Worker 根地址，不要附加 /v1；根地址应返回 200 服务信息。",
+              "Connection failed: the Worker did not expose /v1/health. Enter the Worker root URL without /v1; the root should return 200.",
+            )
+          : detail,
+      );
     } finally {
       setBusy(false);
     }
@@ -186,6 +194,12 @@ export function CloudRenderConfigurationWizard({
                 onChange={(event) => setWorkerUrl(event.target.value)}
                 placeholder="https://gpu-worker.example.com"
               />
+              <small className="cloud-render-config-field-hint">
+                {t(
+                  "填写 Worker 根地址；测试会请求 /v1/health，根地址应返回 200 服务信息。",
+                  "Enter the Worker root URL. The test calls /v1/health; the root should return 200.",
+                )}
+              </small>
             </label>
             <label>
               <span>{t("访问令牌", "Worker Token")}</span>
@@ -195,10 +209,15 @@ export function CloudRenderConfigurationWizard({
                 onChange={(event) => setWorkerToken(event.target.value)}
                 autoComplete="new-password"
               />
+              <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                <button type="button" onClick={() => { const a = new Uint8Array(16); crypto.getRandomValues(a); setWorkerToken(Array.from(a).map(b => b.toString(16).padStart(2, "0")).join("")); }}>
+                  {t("生成密钥", "Generate")}
+                </button>
+              </div>
               <small>
                 {t(
-                  "只用于本次服务端连接测试，不会保存到浏览器或项目",
-                  "Used only for this server-side test; never stored in the browser or project",
+                  "留空使用已保存密钥；或生成随机密钥",
+                  "Leave empty to use stored key; or generate random key",
                 )}
               </small>
             </label>
@@ -251,7 +270,6 @@ export function CloudRenderConfigurationWizard({
               disabled={
                 busy ||
                 !workerUrl.trim() ||
-                !workerToken.trim() ||
                 !publicOrigin.trim()
               }
               onClick={() => void test()}
@@ -267,14 +285,7 @@ export function CloudRenderConfigurationWizard({
 }
 
 function defaultPublicOrigin(): string {
-  if (typeof window === "undefined") return "http://127.0.0.1:4100";
-  const url = new URL(window.location.origin);
-  if (
-    ["localhost", "127.0.0.1", "::1"].includes(url.hostname) &&
-    url.port !== "4100"
-  )
-    url.port = "4100";
-  return url.origin;
+  return typeof window === "undefined" ? "http://127.0.0.1:5173" : window.location.origin;
 }
 
 export function CloudRenderControlView({

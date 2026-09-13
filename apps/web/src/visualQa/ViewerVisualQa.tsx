@@ -7,6 +7,7 @@ import type { RendererBackend, SceneStatistics } from "../viewer/viewerTypes";
 import { runtimeGpuDevice } from "../viewer/viewerRendererTypes";
 import { shouldRecycleWebGpuRenderer, webGpuSceneReplacementThreshold } from "../viewer/webGpuRendererLifecyclePolicy";
 import "./viewerVisualQa.css";
+import { populateOcclusionVisualFixture } from "./occlusionVisualFixture";
 
 interface ViewerQaState {
   backend: RendererBackend;
@@ -15,6 +16,12 @@ interface ViewerQaState {
   startedAt: number;
   statistics?: SceneStatistics;
   performance?: FramePerformanceSnapshot;
+  renderDemand?: ReturnType<ViewerEngine["getRenderDemandDiagnostics"]>;
+  repeatedAssets?: ReturnType<ViewerEngine["getRepeatedAssetDiagnostics"]>;
+  occlusion?: ReturnType<ViewerEngine["getOcclusionDiagnostics"]>;
+  offscreen?: ReturnType<ViewerEngine["getOffscreenDiagnostics"]>;
+  picking?: ReturnType<ViewerEngine["getPickingAccelerationDiagnostics"]>;
+  sceneCycle?: number;
   deviceLossRecovery?: { message: string; recoveredBackend: RendererBackend; primitiveCount: number };
   rendererLifecycle?: { recycleCount: number; lastRecycledCycle?: number; lastRecycleDurationMs?: number };
 }
@@ -30,6 +37,8 @@ interface ViewerQaControl {
   };
   resetPerformanceSamples: () => void;
   simulateDeviceLoss: () => boolean;
+  setOcclusion: (enabled: boolean) => void;
+  setOffscreen: (enabled: boolean) => void;
 }
 
 interface RendererCacheDiagnostics {
@@ -64,6 +73,14 @@ export default function ViewerVisualQa() {
   const effectVariant = query.get("effect") ?? "all";
   const repeatEffects = query.get("repeatEffects") === "true";
   const shadowsEnabled = query.get("shadows") !== "off";
+  const batchingEnabled = query.get("batching") !== "off";
+  const occlusionFixture = query.get("fixture") === "occlusion";
+  const initialOcclusion = query.get("occlusion") === "on";
+  const initialOffscreen = query.get("offscreen") === "on";
+  const [occlusionEnabled, setOcclusionEnabled] = useState(initialOcclusion);
+  const [offscreenEnabled, setOffscreenEnabled] = useState(initialOffscreen);
+  const [cycling, setCycling] = useState(false);
+  const cycleRef = useRef(0);
   const objectCount = Math.max(120, Math.min(5_000, Math.round(Number(query.get("objects")) || 120)));
   const [state, setState] = useState<ViewerQaState>({ backend: requestedBackend, ready: false, startedAt: performance.now() });
 
@@ -93,6 +110,12 @@ export default function ViewerVisualQa() {
         startedAt: state.startedAt,
         statistics: engine.getSceneStatistics(),
         performance: engine.getPerformanceSnapshot(),
+        renderDemand: engine.getRenderDemandDiagnostics(),
+        repeatedAssets: engine.getRepeatedAssetDiagnostics(),
+        occlusion: engine.getOcclusionDiagnostics(),
+        offscreen: engine.getOffscreenDiagnostics(),
+        picking: engine.getPickingAccelerationDiagnostics(),
+        sceneCycle: cycleRef.current,
         rendererLifecycle: {
           recycleCount,
           ...(lastRecycledCycle === undefined ? {} : { lastRecycledCycle }),
@@ -109,9 +132,13 @@ export default function ViewerVisualQa() {
       engine = created;
       sceneReplacementsSinceRendererCreated = 0;
       created.setReadOnly(true);
+      created.setRepeatedAssetBatchingEnabled(batchingEnabled);
+      created.setOcclusionCullingEnabled(initialOcclusion);
+      created.setOffscreenRenderingEnabled(initialOffscreen);
       created.setGlobalLighting({ ...created.getGlobalLighting(), shadowsEnabled });
       populateDeterministicScene(created, cycle, objectCount, effectsEnabled, effectVariant, repeatEffects, (object, kind) => trackPrimitive(cycle, object, kind));
       created.setCameraPose({ position: [19, 15, 19], target: [0, 1.8, 0], near: 0.1, far: 250, fov: 48 });
+      if (occlusionFixture) { created.clearSceneModels(); populateOcclusionVisualFixture(created, objectCount, cycle); }
       created.select(undefined);
       created.selectAnnotation("qa-equipment-label");
       created.onRendererDeviceLost = (info) => {
@@ -162,11 +189,16 @@ export default function ViewerVisualQa() {
             lastRecycleDurationMs = performance.now() - recycleStartedAt;
           } else {
             engine?.clearSceneModels();
-            if (engine) populateDeterministicScene(engine, cycle, objectCount, effectsEnabled, effectVariant, repeatEffects, (object, kind) => trackPrimitive(cycle, object, kind));
+            if (engine) {
+              if (occlusionFixture) populateOcclusionVisualFixture(engine, objectCount, cycle);
+              else populateDeterministicScene(engine, cycle, objectCount, effectsEnabled, effectVariant, repeatEffects, (object, kind) => trackPrimitive(cycle, object, kind));
+            }
           }
           await waitForFrames(4);
           return publish()!;
         },
+        setOcclusion(enabled) { engine?.setOcclusionCullingEnabled(enabled); publish(); },
+        setOffscreen(enabled) { engine?.setOffscreenRenderingEnabled(enabled); publish(); },
         retainedPrimitiveObjects() {
           const alive = primitiveRefs.filter(({ reference }) => reference.deref());
           primitiveRefs.splice(0, primitiveRefs.length, ...alive);
@@ -205,7 +237,7 @@ export default function ViewerVisualQa() {
       delete window.__viewerQa;
       delete window.__viewerQaControl;
     };
-  }, [effectsEnabled, objectCount, requestedBackend, shadowsEnabled]);
+  }, [effectsEnabled, objectCount, requestedBackend, shadowsEnabled, batchingEnabled, occlusionFixture, initialOcclusion, initialOffscreen]);
 
   return <main className="viewer-visual-qa" data-viewer-ready={state.ready} data-viewer-error={state.error ?? ""}>
     <div className="viewer-visual-qa-canvas" ref={hostRef} />
@@ -214,7 +246,18 @@ export default function ViewerVisualQa() {
       <em>{state.backend.toUpperCase()}</em>
     </header>
     <output data-viewer-metrics>{JSON.stringify(state)}</output>
-    <aside><strong>{state.statistics?.primitiveCount ?? 0}</strong><span>确定性对象</span><small>{state.performance ? `P95 ${state.performance.frameTimeMs.p95.toFixed(1)} ms · ${state.performance.renderer.drawCalls} draws` : state.error ?? "初始化中"}</small></aside>
+    <aside>
+      <strong>{state.statistics?.primitiveCount ?? 0}</strong><span>确定性对象</span>
+      <small>{state.performance ? `P95 ${state.performance.frameTimeMs.p95.toFixed(1)} ms · ${state.performance.renderer.drawCalls} draws` : state.error ?? "初始化中"}</small>
+      <button disabled={!state.ready} onClick={() => window.__viewerQaControl?.resetPerformanceSamples()}>重置性能采样</button>
+      <button disabled={!state.ready || cycling} onClick={() => {
+        setCycling(true);
+        void window.__viewerQaControl?.cycleScene(++cycleRef.current).catch(reason => setState(previous => ({ ...previous, error: String(reason) }))).finally(() => setCycling(false));
+      }}>{cycling ? "切换中" : "切换场景"}</button>
+      <button disabled={!state.ready} onClick={() => { setOcclusionEnabled(!occlusionEnabled); window.__viewerQaControl?.setOcclusion(!occlusionEnabled); }}>{occlusionEnabled ? "关闭遮挡剔除" : "开启遮挡剔除"}</button>
+      <button disabled={!state.ready} onClick={() => { setOffscreenEnabled(!offscreenEnabled); window.__viewerQaControl?.setOffscreen(!offscreenEnabled); }}>{offscreenEnabled ? "关闭后台渲染" : "开启后台渲染"}</button>
+      <button disabled={!state.ready || state.backend !== "webgpu"} onClick={() => window.__viewerQaControl?.simulateDeviceLoss()}>模拟设备丢失</button>
+    </aside>
   </main>;
 }
 

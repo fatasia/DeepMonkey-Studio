@@ -1,10 +1,15 @@
-import { Box, Check, ChevronLeft, ChevronRight, Download, Film, Mountain, Paintbrush, RefreshCw, Search, Sparkles, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Box, Check, ChevronLeft, ChevronRight, Download, Eye, Film, Mountain, Paintbrush, RefreshCw, Search, Sparkles, X } from "lucide-react";
 import type { AssetLibraryDimension, AssetLibraryItem, ModelRecord, ProjectAssetRecord } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import { AssetThumbnail } from "./AssetThumbnail";
 import { useAssetLibraryCatalog } from "./useAssetLibraryCatalog";
 import { AssetAttributionDetails } from "./AssetAttributionDetails";
+import { ProjectResourcePreview } from "./ProjectResourcePreview";
+import { ResourceLinkButton } from "./ResourceLinkButton";
+import { readResourceBrowseTarget } from "./resourceLinks";
+import { api } from "../api";
 
 interface AssetLibraryBrowserProps {
   locale: AppLocale;
@@ -16,6 +21,17 @@ interface AssetLibraryBrowserProps {
 }
 
 export function AssetLibraryBrowser({ locale, projectId, projectModels, projectAssets, onImported, onOptimize }: AssetLibraryBrowserProps) {
+  const [preview, setPreview] = useState<AssetLibraryItem | null>(null);
+  const [linkedError, setLinkedError] = useState<string>();
+  useEffect(() => {
+    const target = readResourceBrowseTarget(window.location.hash);
+    if (target?.kind !== "library") return;
+    const controller = new AbortController();
+    void api.getAssetLibraryItem(target.id, controller.signal).then(item => {
+      if (!controller.signal.aborted) setPreview(item);
+    }).catch(reason => { if (!controller.signal.aborted) setLinkedError(reason instanceof Error ? reason.message : String(reason)); });
+    return () => controller.abort();
+  }, []);
   const catalog = useAssetLibraryCatalog(projectId, onImported);
   const importedIds = new Set([
     ...projectModels.flatMap((model) => model.libraryOrigin?.itemId ?? model.sourceUrl.match(/\/library-(industrial-\d+)\.glb$/)?.[1] ?? []),
@@ -40,6 +56,7 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
 
   return (
     <div className="unified-assets-browser">
+      {linkedError && <div className="unified-assets-action-error" role="alert">{linkedError}<button onClick={() => setLinkedError(undefined)}>{tr(locale, "关闭", "Close")}</button></div>}
       <div className="unified-assets-dimensions" role="tablist" aria-label={tr(locale, "资源维度", "Asset dimension")}>
         {dimensions.map((item) => (
           <button key={item.id} role="tab" aria-selected={catalog.dimension === item.id} className={catalog.dimension === item.id ? "active" : ""} onClick={() => catalog.updateDimension(item.id)}>
@@ -90,8 +107,6 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
                 ? tr(locale, ` 个精选资源 · 全库 ${availableTotal.toLocaleString(locale)} 个`, ` curated assets · ${availableTotal.toLocaleString(locale)} total`)
               : tr(locale, "个可用资源", "ready assets")}
         </span>
-        <i />
-        <span>{tr(locale, "缩略图已标准化，模型结构与文件完整性已校验", "Normalized previews with verified model structure and file integrity")}</span>
       </div>
 
       {catalog.importError && (
@@ -147,24 +162,29 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
                   <small>{item.license} · v{item.version}</small>
                 </div>
                 {item.attribution && <AssetAttributionDetails attribution={item.attribution} locale={locale} />}
-                {item.dimension === "3d" && onOptimize && <button className="asset-import" disabled={!projectId || Boolean(catalog.importingId) || unavailable} onClick={async () => {
-                  const existing = projectModels.find(model => model.libraryOrigin?.itemId === item.id);
-                  if (existing) { onOptimize(existing.id); return; }
-                  const result = await catalog.importItem(item.id);
-                  if (result?.kind === "model") onOptimize(result.model.id);
-                }}><Sparkles size={14} />{imported ? tr(locale, "预览与优化", "Preview & optimize") : tr(locale, "导入并优化", "Import & optimize")}</button>}
-                <button className={imported ? "asset-imported" : "asset-import"} disabled={!projectId || Boolean(catalog.importingId) || imported || unavailable} onClick={() => void catalog.importItem(item.id)}>
-                  {imported ? <Check size={14} /> : importing ? <RefreshCw className="spin" size={14} /> : <Download size={14} />}
-                  {imported
-                    ? tr(locale, "已在项目", "In project")
-                    : deprecated
-                      ? tr(locale, "已废弃", "Deprecated")
-                      : reviewRequired
-                        ? tr(locale, "待质量复核", "Quality review")
-                        : importing
-                          ? tr(locale, "导入中", "Importing")
-                          : tr(locale, "导入", "Import")}
-                </button>
+                <div className="unified-asset-actions" role="group" aria-label={tr(locale, `${item.name} 操作`, `${item.name} actions`)}>
+                  <button className="asset-import asset-action-button" title={tr(locale, `浏览 ${item.name}`, `Browse ${item.name}`)} aria-label={tr(locale, `浏览 ${item.name}`, `Browse ${item.name}`)} onClick={() => setPreview(item)}><Eye size={14} /><span className="asset-action-label">{tr(locale, "浏览", "Browse")}</span></button>
+                  <ResourceLinkButton compact locale={locale} name={item.name} resource={projectModels.find(model => model.libraryOrigin?.itemId === item.id) ?? projectAssets.find(asset => asset.libraryOrigin?.itemId === item.id)} browse={{ kind: "library", id: item.id }} />
+                  <button className="asset-import asset-action-button" title={item.dimension !== "3d" ? tr(locale, "仅支持 3D 模型", "Only available for 3D models") : tr(locale, `优化 ${item.name}`, `Optimize ${item.name}`)} aria-label={tr(locale, `优化 ${item.name}`, `Optimize ${item.name}`)} disabled={item.dimension !== "3d" || !onOptimize || !projectId || Boolean(catalog.importingId) || unavailable} onClick={async () => {
+                    if (item.dimension !== "3d" || !onOptimize) return;
+                    const existing = projectModels.find(model => model.libraryOrigin?.itemId === item.id);
+                    if (existing) { onOptimize(existing.id); return; }
+                    const result = await catalog.importItem(item.id);
+                    if (result?.kind === "model") onOptimize(result.model.id);
+                  }}><Sparkles size={14} /><span className="asset-action-label">{tr(locale, "优化", "Optimize")}</span></button>
+                  <button className={`${imported ? "asset-imported" : "asset-import"} asset-action-button`} title={imported ? tr(locale, "已在项目", "Already in project") : tr(locale, `导入 ${item.name}`, `Import ${item.name}`)} aria-label={tr(locale, `导入 ${item.name}`, `Import ${item.name}`)} disabled={!projectId || Boolean(catalog.importingId) || imported || unavailable} onClick={() => void catalog.importItem(item.id)}>
+                    {imported ? <Check size={14} /> : importing ? <RefreshCw className="spin" size={14} /> : <Download size={14} />}
+                    <span className="asset-action-label">{imported
+                      ? tr(locale, "已在项目", "In project")
+                      : deprecated
+                        ? tr(locale, "已废弃", "Deprecated")
+                        : reviewRequired
+                          ? tr(locale, "待复核", "Review")
+                          : importing
+                            ? tr(locale, "导入中", "Importing")
+                            : tr(locale, "导入", "Import")}</span>
+                  </button>
+                </div>
               </article>
             );
           })}
@@ -178,6 +198,7 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
           <button disabled={catalog.result.page >= catalog.result.totalPages || catalog.loading} onClick={() => catalog.setPage(catalog.result.page + 1)}>{tr(locale, "下一页", "Next")}<ChevronRight size={15} /></button>
         </nav>
       )}
+      {preview && <ProjectResourcePreview key={preview.id} item={preview} locale={locale} onClose={() => setPreview(null)} />}
     </div>
   );
 }

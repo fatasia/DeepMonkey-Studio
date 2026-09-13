@@ -43,6 +43,14 @@ const TRACE: PlantLiteReplicationTrace = {
 };
 
 describe("plantLitePlaybackModel", () => {
+  it("includes the last completion when a range control rounds a fractional endpoint", () => {
+    const duration = 15.883333333333333;
+    const trace = { ...TRACE, events: TRACE.events.map(event => event.sequence >= 5 ? { ...event, atMinute: duration } : event) };
+    const prepared = preparePlantLitePlayback(trace, MODEL);
+    expect(selectPlantLitePlaybackFrame(prepared, 15.8833333333333)).toMatchObject({ atMinute: duration, completedItems: 1, activeItems: 0 });
+    expect(selectPlantLitePlaybackFrame(prepared, duration - 0.001)).toMatchObject({ completedItems: 0, activeItems: 1 });
+  });
+
   it("counts waiting sample items, not events or the 18 visible markers, and seeks without accumulation", () => {
     const events: PlantLiteReplicationTrace["events"] = Array.from({ length: 25 }, (_, index) => ({
       sequence: index, atMinute: 0, type: "item-enter" as const, itemId: `item-${index}`, nodeId: "transport",

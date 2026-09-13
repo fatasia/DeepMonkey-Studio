@@ -1,0 +1,17 @@
+.device-signal-qa { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(360px,1fr); grid-template-rows:64px 180px minmax(0,1fr); height:100%; gap:12px; padding:12px; background:var(--bg-0); color:var(--text-strong); }
+.device-signal-qa>header { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.device-signal-qa>header>div { display:flex; flex-wrap:wrap; gap:8px; }
+.device-signal-qa button { color:var(--text-strong); background:var(--surface-2); border:1px solid var(--line-strong); border-radius:6px; padding:6px 10px; cursor:pointer; }
+.device-signal-qa button[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); }
+.device-signal-qa button:disabled { opacity:.45; cursor:not-allowed; }
+.device-signal-qa__viewer { position:relative; grid-row:2/4; min-height:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.device-signal-qa__host { height:100%; }
+.device-signal-qa__viewer output { position:absolute; bottom:12px; left:12px; background:var(--surface-1); color:var(--text-muted); padding:6px 10px; border-radius:6px; font-size:12px; }
+.device-signal-qa__viewer output:last-child { left:auto; right:12px; }
+.device-signal-qa__state { background:var(--surface-1); border:1px solid var(--line); border-radius:8px; }
+.device-signal-qa__topology { min-height:0; }
+.device-signal-qa__topology .topology-editor { --topology-palette-width:0px; --topology-inspector-width:0px; grid-template-rows:96px minmax(0,1fr) 28px; }
+.device-signal-qa__topology :is(.topology-editor__palette,.topology-editor__inspector,.topology-editor__panel-toggles,.topology-editor__sync) { display:none; }
+.device-signal-qa__topology .topology-editor__header { grid-template-columns:1fr; grid-template-rows:40px 40px; }
+.device-signal-qa__topology .topology-editor__tools { grid-row:2; justify-self:start; }
+@media(max-width:980px) { .device-signal-qa { grid-template-columns:minmax(0,1fr) minmax(360px,1fr); } .device-signal-qa>header { align-items:flex-start; } }

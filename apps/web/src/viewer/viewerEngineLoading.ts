@@ -13,6 +13,9 @@ import { captureSceneModelState } from "./captureSceneModelState";
 import { assertModelReplacementCompatible } from "./modelReplacementCompatibility";
 import { commitModelReplacement } from "./modelReplacementTransaction";
 import { assertRobotReplacementCompatible, readLiveRobotPose } from "./robotPoseRuntime";
+import { loadSharedGltf, sharedGltfLoadState } from "./sharedGltfAssets";
+import { loadingFailureOutcome, loadingTimeline } from "./loadingTimeline";
+import { loadGltfWithMetadata } from "./gltfMetadataLoad";
 
 /** Loading 职责层。 */
 export abstract class ViewerEngineLoading extends ViewerEngineRobot {
@@ -70,16 +73,23 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
     }
   protected async loadManifestOnce(manifest: ModelManifest, epoch: number, assetModelId = manifest.modelId, replacing?: LoadedSceneModel): Promise<LoadedSceneModel> {
       if (!manifest.geometryUrl || !manifest.viewerKind) throw new Error("模型清单缺少几何数据");
+      const finishLoad = loadingTimeline.begin("load-and-parse", { format: manifest.viewerKind,
+        shared: manifest.viewerKind === "gltf" && !replacing ? sharedGltfLoadState(this, manifest.lods?.find(item => item.level === "low")?.url ?? manifest.geometryUrl, `${assetModelId}:${manifest.createdAt}`) : "none" });
+      let finishAttach: ReturnType<typeof loadingTimeline.begin> | undefined;
+      try {
       let object: THREE.Object3D;
       let animations: THREE.AnimationClip[] = [];
       let fragmentsModel: FRAGS.FragmentsModel | undefined;
       let progressiveGltf: { levels: Array<{ url: string; name: string }>; metadata?: NativeBimPropertiesFile } | undefined;
       if (manifest.viewerKind === "gltf") {
+        const geometryUrl = manifest.geometryUrl;
         const lowLod = manifest.lods?.find((item) => item.level === "low");
-        const [gltf, bimMetadata] = await Promise.all([
-          this.gltfLoader.loadAsync(replacing ? manifest.geometryUrl : lowLod?.url ?? manifest.geometryUrl),
-          manifest.propertiesUrl ? this.loadNativeBimMetadata(manifest.propertiesUrl) : Promise.resolve(undefined)
-        ]);
+        const [gltf, bimMetadata] = await loadGltfWithMetadata(
+          () => replacing ? this.gltfLoader.loadAsync(geometryUrl)
+            : loadSharedGltf(this, this.gltfLoader, lowLod?.url ?? geometryUrl, `${assetModelId}:${manifest.createdAt}`),
+          () => manifest.propertiesUrl ? this.loadNativeBimMetadata(manifest.propertiesUrl) : Promise.resolve(undefined),
+          scene => this.disposeObject(scene),
+        );
         if (lowLod) {
           const group = new THREE.Group();
           gltf.scene.name ||= replacing?.object.children[0]?.name || "低精度预览";
@@ -129,6 +139,8 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       } else {
         object = await this.loadDxf(manifest.geometryUrl);
       }
+      finishLoad("ok");
+      finishAttach = loadingTimeline.begin("scene-attach", { format: manifest.viewerKind });
       if (!this.modelLoads.isCurrent(epoch) || (replacing && this.models.get(manifest.modelId) !== replacing)) {
         if (fragmentsModel) await fragmentsModel.dispose();
         else this.disposeObject(object);
@@ -161,6 +173,9 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       this.dispatchObjectLifecycle("load", manifest.modelId);
       if (animations.length > 0) queueMicrotask(() => this.dispatchObjectLifecycle("animationStart", manifest.modelId));
       return loaded;
+      } catch (error) {
+        finishLoad(loadingFailureOutcome(error)); finishAttach?.(loadingFailureOutcome(error)); throw error;
+      } finally { finishAttach?.("ok"); }
     }
   private installModelAnimations(id: string, object: THREE.Object3D, animations: THREE.AnimationClip[]): void {
       if (!animations.length) return;
@@ -216,7 +231,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
   protected async streamGltfLevels(modelId: string, container: THREE.Object3D, stream: { levels: Array<{ url: string; name: string }>; metadata?: NativeBimPropertiesFile }, epoch: number): Promise<void> {
       for (const level of stream.levels) {
         try {
-          const gltf = await this.gltfLoader.loadAsync(level.url);
+          const gltf = await loadSharedGltf(this, this.gltfLoader, level.url);
           if (!this.modelLoads.isCurrent(epoch) || this.models.get(modelId)?.object !== container) {
             this.disposeObject(gltf.scene);
             return;
@@ -372,6 +387,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       this.updateTransformAccess();
     }
   clearSceneModels(): void {
+      this.snapshotReadiness.cancelRestore();
       this.modelLoads.invalidate();
       if (this.rendererBackend === "webgpu" && !this.rendererDisposalStarted && this.models.size > 0) {
         this.primitiveMaterialCache.beginSceneGeneration();

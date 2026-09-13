@@ -48,7 +48,22 @@ describe("battery expert production routing", () => {
       ["标准专家未达到高置信"],
     );
     expect(decision.evidence).toMatchObject({ selectedExpert: "standard", reviewRequired: true });
+    expect(decision.evidence.candidateComparison).toMatchObject({
+      standard: { predictedCycleLife: 1000, confidence: "medium" },
+      pinn: { predictedCycleLife: 1400, confidence: "high" },
+    });
     expect(decision.selected.predictedCycleLife).toBe(1000);
+  });
+
+  it("reports only the PINN expert for an explicit physics run", () => {
+    const physics = lifeResult("physics", 1900, "high", 100);
+    const decision = selectLifeExpert("physics", physics, physics, ["用户明确选择物理专家"]);
+    expect(decision.evidence).toMatchObject({
+      selectedExpert: "pinn",
+      executedExperts: ["pinn"],
+      routePath: ["PINN 物理专家", "采纳 PINN"],
+    });
+    expect(decision.evidence.disagreementRatio).toBeUndefined();
   });
 
   it("promotes a qualified PINO route and commits the selected trajectory", () => {

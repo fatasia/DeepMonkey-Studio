@@ -1,0 +1,14 @@
+.object-tree-qa { display: flex; flex-direction: column; height: 100dvh; padding: 16px; gap: 12px; background: var(--bg-0); color: var(--text); }
+.object-tree-qa > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.object-tree-qa h1 { margin: 0; font-size: 18px; color: var(--text-strong); }
+.object-tree-qa h2 { margin: 0; font-size: 13px; color: var(--text-strong); }
+.object-tree-qa > nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.object-tree-qa > nav label { display: inline-flex; gap: 6px; align-items: center; }
+.object-tree-qa > nav button,.object-tree-qa > nav select,.object-tree-qa > nav > input { min-height: 30px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--text); background: var(--surface-1); padding: 4px 8px; }
+.object-tree-qa > nav input[type=checkbox] { accent-color: var(--accent); }
+.object-tree-qa-layout { display: grid; grid-template-columns: 360px minmax(0,1fr); min-height: 0; flex: 1; gap: 16px; }
+.object-tree-qa-layout > .left-panel { display: flex; flex-direction: column; width: auto; min-width: 0; min-height: 0; border: 1px solid var(--line); background: var(--surface-1); }
+.object-tree-qa-layout > section { overflow: auto; min-width: 0; padding: 16px; border: 1px solid var(--line); background: var(--surface-1); }
+.object-tree-qa-layout pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; font-variant-numeric: tabular-nums; }
+.object-tree-qa-layout p { color: var(--text-muted); max-width: 560px; line-height: 1.7; }
+@media(max-width:1000px) { .object-tree-qa-layout { grid-template-columns: 300px minmax(0,1fr); } }

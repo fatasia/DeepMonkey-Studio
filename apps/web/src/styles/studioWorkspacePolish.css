@@ -220,6 +220,9 @@
 .app-shell .tool-dock.viewer-tool-dock {
   top: auto;
   bottom: 18px;
+  right: auto;
+  left: 18px;
+  transform: none;
 }
 
 .app-shell .tool-button {

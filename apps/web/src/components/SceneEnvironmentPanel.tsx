@@ -16,6 +16,7 @@ import { SceneCoordinateEditor } from "./SceneCoordinateEditor";
 import { SceneLightingEditor } from "./SceneLightingEditor";
 import { ScenePostProcessingEditor } from "./ScenePostProcessingEditor";
 import { ProjectEnvironmentResourcePicker } from "./ProjectAppearanceResources";
+import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 
 interface SceneEnvironmentPanelProps {
   locale: AppLocale;
@@ -42,6 +43,7 @@ interface SceneEnvironmentPanelProps {
 
 export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
   const { locale, environment } = props;
+  const drag = useFloatingPanelDrag<HTMLDivElement>();
 
   const applyPreset = (preset: (typeof SCENE_ENVIRONMENT_PRESETS)[number]) => {
     const next = applySceneEnvironmentPreset(preset, {
@@ -57,6 +59,8 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
 
   return (
     <div
+      ref={drag.panelRef}
+      style={drag.style}
       className="environment-control"
       aria-label={tr(
         locale,
@@ -64,7 +68,15 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
         "Environment and global lighting",
       )}
     >
-      <div className="environment-heading">
+      <div
+        className="environment-heading"
+        data-drag-handle="true"
+        title={tr(locale, "拖动标题栏移动环境面板", "Drag the title bar to move the environment panel")}
+        onPointerDown={drag.onPointerDown}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
+        onPointerCancel={drag.onPointerCancel}
+      >
         <strong title={tr(locale, "随场景保存", "Saved with scene")}>{tr(locale, "场景环境", "Scene environment")}</strong>
         {props.onClose && <button type="button" onClick={props.onClose} aria-label={tr(locale, "关闭环境与灯光", "Close environment and lighting")} title={tr(locale, "关闭环境与灯光", "Close environment and lighting")}><X size={15} /></button>}
       </div>

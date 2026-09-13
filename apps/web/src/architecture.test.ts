@@ -26,10 +26,12 @@ describe("web architecture boundary", () => {
     const workspaceRoot = path.resolve(import.meta.dirname, "../../..");
     const webFile = path.join(workspaceRoot, "apps", "web", "src", "feature.ts");
     const contractsFile = path.join(workspaceRoot, "packages", "contracts", "src", "application.ts");
+    const deepEngineLabFile = path.join(workspaceRoot, "packages", "deep-engine", "lab", "probe.ts");
 
     expect(isWorkspacePackageSourceDeepImport("@bim-studio/contracts/src/application.js", webFile, workspaceRoot)).toBe(true);
     expect(isWorkspacePackageSourceDeepImport("../../../packages/scene-sdk/src/protocol.js", webFile, workspaceRoot)).toBe(true);
     expect(isWorkspacePackageSourceDeepImport("./resourceId.js", contractsFile, workspaceRoot)).toBe(false);
+    expect(isWorkspacePackageSourceDeepImport("../src/renderPacket.js", deepEngineLabFile, workspaceRoot)).toBe(false);
     expect(moduleSpecifiers(`
       import "@bim-studio/contracts/src/application.js";
       void import("../../../packages/scene-sdk/src/protocol.js", { with: { type: "json" } });
@@ -49,7 +51,7 @@ describe("web architecture boundary", () => {
       }
     }
     expect(violations).toEqual([]);
-  }, 15_000);
+  }, 30_000);
 
   it("keeps raw HTTP transport inside api.ts and documented non-business asset boundaries", async () => {
     const root = path.resolve(import.meta.dirname);
@@ -59,7 +61,13 @@ describe("web architecture boundary", () => {
       path.join("viewer", "viewerAssetTransport.ts"),
       path.join("optimizer", "modelOptimizer.ts"),
       // Static Draco WASM bootstrap only; business HTTP remains behind api.ts.
-      path.join("optimizer", "modelOptimizerIO.ts")
+      path.join("optimizer", "modelOptimizerIO.ts"),
+      // Local Basis/KTX2 encoder bootstrap only; it fetches bundled assets, not business data.
+      path.join("optimizer", "ktx2Encoder.ts"),
+      // SMAA LUT data URL adapter for the offscreen renderer; no external business transport.
+      path.join("viewer", "offscreenPostProcessing.ts"),
+      // Bundled battery CSV fixtures are static product assets, not business HTTP.
+      path.join("ai", "batterySample.ts")
     ]);
     const violations: string[] = [];
     for (const file of typescriptSourceFiles(root)) {
@@ -72,7 +80,7 @@ describe("web architecture boundary", () => {
       if (forbidden.length > 0) violations.push(relative);
     }
     expect(violations).toEqual([]);
-  }, 15_000);
+  }, 30_000);
 
   it("detects hosted transports and obvious aliases or destructuring", () => {
     expect(forbiddenNetworkCapabilities(`

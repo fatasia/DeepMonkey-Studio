@@ -51,6 +51,26 @@ describe("publication data readiness", () => {
     expect(assessProjectPublication(project, [scene])).toMatchObject({ status: "ready", blockers: 0, warnings: 0 });
   });
 
+  it("treats the replacement asset as the dependency while retaining the scene instance identity", () => {
+    const project = publicationProject();
+    const scene = publicationScene();
+    scene.models[0] = { ...scene.models[0]!, modelId: "pump-instance", assetModelId: "model-1", name: "一号泵实例" };
+    scene.dataBindings = [{
+      id: "binding-1", name: "温度联动", enabled: true, datasetId: "dataset-1", field: "temperature",
+      target: { modelId: "pump-instance", layerId: "pump" }, action: "color", refreshSeconds: 5,
+    }];
+    scene.assetBindings = [{
+      id: "asset-binding-1", sceneObjectId: "pump-instance/pump", objectName: "泵",
+      modelId: "pump-instance", layerId: "pump", deviceId: "P-001", confidence: 1,
+      confirmedAt: "2026-09-09T08:00:00.000Z",
+    }];
+
+    const report = assessProjectPublication(project, [scene]);
+
+    expect(report).toMatchObject({ status: "ready", blockers: 0, warnings: 0 });
+    expect(report.issues).toEqual([]);
+  });
+
   it("blocks duplicate or broken confirmed asset mappings", () => {
     const project = publicationProject();
     const scene = publicationScene();

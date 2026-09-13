@@ -1,0 +1,10 @@
+.vision-sample-result { display: grid; grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr); gap: 20px; margin: 16px 0; align-items: start; }
+.vision-sample-image { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); }
+.vision-sample-image img { display: block; width: 100%; height: auto; }
+.vision-sample-image svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.vision-sample-image rect { fill: transparent; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.vision-sample-result figcaption > strong { color: var(--text-strong); }
+.vision-sample-result ul { list-style: none; padding: 0; margin: 12px 0; }
+.vision-sample-result li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.vision-sample-result figcaption > p { color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+@media(max-width: 620px) { .vision-sample-result { grid-template-columns: minmax(0, 1fr); } }

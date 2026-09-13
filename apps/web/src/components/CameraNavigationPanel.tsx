@@ -3,6 +3,7 @@ import { Camera, Footprints, Orbit, Plus, Save, ScanLine, ShieldCheck, Trash2, U
 import type { CameraConstraintsState, CameraState, CameraViewState, NavigationSettingsState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { NavigationCollisionDiagnostics } from "../viewer/ViewerEngine";
+import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 
 type NavigationMode = CameraState["mode"];
 
@@ -29,6 +30,9 @@ interface Props {
   onReplaceView: (id: string) => void;
   onRemoveView: (id: string) => void;
   onDefaultViewChange: (id: string) => void;
+  /** Embedded inside the director dock; the parent owns heading and workspace tabs. */
+  embedded?: boolean;
+  section?: "views" | "walk";
 }
 
 const MODES: Array<{ mode: NavigationMode; icon: typeof Orbit; zh: string; en: string; zhHint: string; enHint: string }> = [
@@ -38,20 +42,35 @@ const MODES: Array<{ mode: NavigationMode; icon: typeof Orbit; zh: string; en: s
 ];
 
 export function CameraNavigationPanel(props: Props) {
+  const [localSection, setLocalSection] = useState<"views" | "walk">("views");
+  const section = props.section ?? localSection;
   const activeMode = MODES.find((item) => item.mode === props.mode) ?? MODES[0]!;
   const collisionReady = props.constraints.collisionEnabled && props.modelCount > 0;
+  const drag = useFloatingPanelDrag<HTMLElement>();
   return (
-    <section className="camera-views-panel camera-navigation-panel" aria-label={tr(props.locale, "相机与漫游", "Camera and navigation")}>
-      <header>
+    <section ref={props.embedded ? undefined : drag.panelRef} style={props.embedded ? undefined : drag.style} className={`camera-views-panel camera-navigation-panel${props.embedded ? " director-camera-workspace" : ""}`} aria-label={tr(props.locale, "相机与漫游", "Camera and navigation")}>
+      {!props.embedded && <header
+        data-drag-handle="true"
+        title={tr(props.locale, "拖动标题栏移动面板", "Drag the title bar to move the panel")}
+        onPointerDown={drag.onPointerDown}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
+        onPointerCancel={drag.onPointerCancel}
+      >
         <div>
           <strong>{tr(props.locale, "相机与漫游", "Camera & navigation")}</strong>
-          <small>{tr(props.locale, "切换模式时保留各自视角，配置随场景保存", "Each mode remembers its view; settings are saved with the scene")}</small>
         </div>
         <button aria-label={tr(props.locale, "关闭", "Close")} onClick={props.onClose}>
           <X size={14} />
         </button>
-      </header>
+      </header>}
 
+      {!props.embedded && <nav className="camera-panel-tabs" aria-label={tr(props.locale, "相机面板", "Camera panel")}>
+        <button className={section === "views" ? "active" : ""} onClick={() => setLocalSection("views")}><Camera size={13} />{tr(props.locale, "镜头", "Shots")}</button>
+        <button className={section === "walk" ? "active" : ""} onClick={() => setLocalSection("walk")}><Footprints size={13} />{tr(props.locale, "漫游", "Navigation")}</button>
+      </nav>}
+
+      {section === "walk" && <>
       <div className="navigation-mode-grid" role="group" aria-label={tr(props.locale, "漫游模式", "Navigation mode")}>
         {MODES.map((item) => {
           const Icon = item.icon;
@@ -90,7 +109,7 @@ export function CameraNavigationPanel(props: Props) {
         </button>
       </div>
 
-      <div className="navigation-active-summary">
+      <div className="navigation-active-summary" aria-label={tr(props.locale, "当前模式操作", "Active mode controls")}>
         <div>
           <span>{tr(props.locale, "当前模式", "Active mode")}</span>
           <strong>{tr(props.locale, activeMode.zh, activeMode.en)}</strong>
@@ -305,11 +324,12 @@ export function CameraNavigationPanel(props: Props) {
           </p>
         </div>
       </details>
+      </>}
 
+      {section === "views" && <>
       <div className="camera-view-section-heading">
         <span>
           <strong>{tr(props.locale, "场景视角", "Scene views")}</strong>
-          <small>{tr(props.locale, "用于一键定位和进入场景的默认视角", "One-click locations and default scene entry")}</small>
         </span>
         <button onClick={props.onAddView}>
           <Plus size={13} />
@@ -347,6 +367,7 @@ export function CameraNavigationPanel(props: Props) {
         ))}
         {props.views.length === 0 && <p>{tr(props.locale, "移动相机后保存第一个常用视角。", "Move the camera, then save your first useful view.")}</p>}
       </div>
+      </>}
     </section>
   );
 }

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { ClippingGroup } from "three/webgpu";
 import { type RendererBackend } from "./viewerTypes";
 import { ViewerEnginePointer } from "./viewerEnginePointer";
+import { bindViewerPerformancePreferences } from "./viewerPerformanceBinding";
 import { normalizeRendererDeviceLoss, runtimeGpuDevice, type RendererInstance, type WebGpuRendererWithLossHandler } from "./viewerRendererTypes";
 
 export type { CollisionRecord, ComponentFacets, ComponentFilter, ComponentRecord } from "./analysis";
@@ -30,6 +31,7 @@ export { normalizedSpaceBox } from "./sceneObjectUtils";
 export class ViewerEngine extends ViewerEnginePointer {
   private constructor(container: HTMLElement, renderer: RendererInstance, backend: RendererBackend, modelRoot: THREE.Group | ClippingGroup) {
     super(container, renderer, backend, modelRoot);
+    bindViewerPerformancePreferences(this);
     this.startRuntime();
   }
 

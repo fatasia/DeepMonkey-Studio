@@ -1,4 +1,4 @@
-import type { DashboardTemplateKind } from "./DashboardTemplateCatalog";
+import type { DashboardTemplateKind } from "./dashboardTemplateCatalog";
 
 /**
  * 行业深度包合同（S3-C）：一个包是一个有业务故事的页面集合，不是模板换个名字。

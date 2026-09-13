@@ -11,10 +11,10 @@ export function topologyContentBounds(nodes: readonly TopologyNode[], mode: Topo
   for (const node of nodes) {
     const position = topologyProjectedPosition(node, mode);
     // 包含端口、告警角标和 2.5D 高度标签，不只计算节点中心。
-    left = Math.min(left, position.x - 8);
+    left = Math.min(left, position.x - (mode === "2.5d" ? 32 : 8));
     top = Math.min(top, position.y - (mode === "2.5d" ? 28 : 8));
-    right = Math.max(right, position.x + 172);
-    bottom = Math.max(bottom, position.y + 84);
+    right = Math.max(right, position.x + (mode === "2.5d" ? 238 : 172));
+    bottom = Math.max(bottom, position.y + (mode === "2.5d" ? 184 : 84));
   }
   return { x: left, y: top, width: right - left, height: bottom - top };
 }

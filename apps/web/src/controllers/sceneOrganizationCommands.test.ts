@@ -47,6 +47,44 @@ describe("场景组织命令", () => {
     expect([...selection]).toEqual(["base", "arm"]);
   });
 
+  it("clears a single object selection when the selected row is clicked again", () => {
+    let selection = new Set(["base"]);
+    const select = vi.fn();
+    const commands = createSceneOrganizationCommands({
+      engine: { select } as unknown as SceneEditorControllerContext["engine"],
+      locale: "zh-CN",
+      sceneOrganizationObjects: [{ id: "base", name: "base", kind: "primitive", visible: true, locked: false }],
+      sceneOrganizationSelection: selection,
+      selectionSets: [],
+      setSceneOrganizationSelection: (next: SetStateAction<Set<string>>) => { selection = typeof next === "function" ? next(selection) : next; },
+    } as unknown as SceneEditorControllerContext);
+
+    commands.selectSceneOrganizationObject("base");
+
+    expect(select).toHaveBeenCalledWith(undefined);
+    expect([...selection]).toEqual([]);
+  });
+
+  it("selects a contiguous Shift range and keeps the last clicked object primary", () => {
+    let selection = new Set(["arm"]);
+    const select = vi.fn();
+    const commands = createSceneOrganizationCommands({
+      engine: { select } as unknown as SceneEditorControllerContext["engine"],
+      locale: "zh-CN",
+      sceneOrganizationObjects: ["base", "arm", "joint", "tool"].map((id) => ({ id, name: id, kind: "primitive" as const, visible: true, locked: false })),
+      sceneOrganizationSelection: selection,
+      selectionSets: [],
+      setSceneOrganizationSelection: (next: SetStateAction<Set<string>>) => {
+        selection = typeof next === "function" ? next(selection) : next;
+      },
+    } as unknown as SceneEditorControllerContext);
+
+    commands.selectSceneOrganizationObject("tool", { range: true });
+
+    expect([...selection]).toEqual(["arm", "joint", "tool"]);
+    expect(select).toHaveBeenCalledWith("tool");
+  });
+
   it("locks every object and advances the revision only once", () => {
     const setModelLocked = vi.fn();
     let revision = 4;

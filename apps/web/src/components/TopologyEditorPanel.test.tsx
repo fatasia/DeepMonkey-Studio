@@ -51,10 +51,16 @@ describe("TopologyEditorPanel", () => {
     expect(html).toContain("工业泵");
     expect(html).toContain("SCADA");
     expect(html).toContain("数据驱动");
-    expect(html).toContain("层级");
+    expect(html).toContain("2.5D");
     expect(html).toContain("1 节点");
     expect(html).toContain("收起设备库");
     expect(html).toContain("收起属性面板");
+  });
+
+  it("offers a single save-and-return action when opened from a dashboard widget", () => {
+    const html = renderToStaticMarkup(<TopologyEditorPanel locale="zh-CN" document={document} onChange={() => undefined} onSave={() => undefined} onSaveAndReturn={() => undefined} />);
+    expect(html).toContain("保存并返回");
+    expect(html).toContain("保存");
   });
 
   it("gives extension property controls stable accessible names", () => {
@@ -76,8 +82,12 @@ describe("TopologyEditorPanel", () => {
     const node = { x: 100, y: 200, properties: { elevation: 40 } };
 
     expect(topologyProjectedPosition(node, "2d")).toEqual({ x: 100, y: 200 });
-    expect(topologyProjectedPosition(node, "2.5d")).toEqual({ x: 59, y: 218 });
-    expect(topologyPlanPositionFromProjected({ x: 59, y: 218 }, 40, "2.5d")).toEqual({ x: 100, y: 200 });
+    const projected = topologyProjectedPosition(node, "2.5d");
+    expect(projected.x).toBeCloseTo(600 - 100 * Math.sqrt(3) / 2);
+    expect(projected.y).toBe(166);
+    const restored = topologyPlanPositionFromProjected(projected, 40, "2.5d");
+    expect(restored.x).toBeCloseTo(100);
+    expect(restored.y).toBeCloseTo(200);
     expect(topologyNodeElevation({ properties: { elevation: 900 } })).toBe(500);
     expect(topologyNodeElevation({ properties: { elevation: "invalid" } })).toBe(0);
   });

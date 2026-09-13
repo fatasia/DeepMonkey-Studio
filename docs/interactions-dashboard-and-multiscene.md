@@ -50,7 +50,7 @@ if (object) {
 
 常用治理路径通过内嵌 Data Hub 完成；已有 HTTP(S) 或 WebSocket 服务可以直接绑定，无需先创建数据集。直接绑定由同源 `ConnectorGateway` 代理：浏览器不直接请求外部域名，所以不产生 CORS 问题；服务器负责凭据、超时、限流、重连和错误诊断，并把外部 WebSocket 复用到应用级同源 channel。2D 与 3D 使用同一 `DirectBindingSpec`，避免两个编辑器重复连接。
 
-Node-RED 只作为可选协议/流程扩展，不是数据接入前置。MQTT、OPC UA、Modbus TCP、BACnet 等现场协议可由 Data Hub 连接器或按需插件接入；浏览器不保存 PLC 地址或凭据。西门子 S7、EtherNet/IP 仍按现场需要安装，不进入默认轻量包。
+MQTT、OPC UA、Modbus TCP、BACnet 等现场协议由 Data Hub 原生连接器或按需插件接入；浏览器不保存 PLC 地址或凭据。西门子 S7、EtherNet/IP 仍按现场需要安装，不进入默认轻量包。
 
 网页能否嵌入还取决于目标站点的 `X-Frame-Options` 和 CSP `frame-ancestors`。被目标站点禁止嵌入时，应改用对方提供的嵌入地址，或通过受控反向代理部署同源页面。
 

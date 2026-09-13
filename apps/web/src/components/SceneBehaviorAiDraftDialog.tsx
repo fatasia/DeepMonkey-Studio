@@ -36,10 +36,10 @@ export function SceneBehaviorAiDraftDialog(props: SceneBehaviorAiDraftDialogProp
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [props.onClose]);
 
-  function generateDraft() {
+  function generateDraft(sampleIntent?: string) {
     setError("");
     setResult(createAiSceneScriptDraft({
-      intent,
+      intent: sampleIntent ?? intent,
       sceneId: props.sceneId,
       target: props.target,
       intelligence: props.intelligence,
@@ -61,10 +61,10 @@ export function SceneBehaviorAiDraftDialog(props: SceneBehaviorAiDraftDialogProp
         <header>
           <span><WandSparkles size={16} /></span>
           <div>
-            <strong id="behavior-ai-draft-title">{t("AI 生成脚本草稿", "Generate an AI script draft")}</strong>
-            <small>{t("受限动作模板 · 静态检查 · 人工确认", "Restricted templates · static checks · user confirmation")}</small>
+            <strong id="behavior-ai-draft-title">{t("动作脚本草稿", "Action script draft")}</strong>
+            <small>{t("本地动作模板 · 静态检查 · 人工确认", "Local action templates · static checks · user confirmation")}</small>
           </div>
-          <button type="button" aria-label={t("关闭 AI 草稿", "Close AI draft")} onClick={props.onClose}><X size={15} /></button>
+          <button type="button" aria-label={t("关闭动作草稿", "Close action draft")} onClick={props.onClose}><X size={15} /></button>
         </header>
 
         <div className="behavior-ai-draft-context">
@@ -98,6 +98,7 @@ export function SceneBehaviorAiDraftDialog(props: SceneBehaviorAiDraftDialogProp
               onChange={(event) => setIntent(event.target.value)}
             />
             <div className="behavior-ai-draft-suggestions" aria-label={t("意图示例", "Intent examples")}>
+              <button type="button" onClick={() => { const sample = suggestions[0]; if (sample) { setIntent(sample); generateDraft(sample); } }}>{t("一键运行样例", "Run sample")}</button>
               {suggestions.map((suggestion) => (
                 <button key={suggestion} type="button" onClick={() => setIntent(suggestion)}>{suggestion}</button>
               ))}
@@ -105,7 +106,7 @@ export function SceneBehaviorAiDraftDialog(props: SceneBehaviorAiDraftDialogProp
             <p><Sparkles size={12} />{t("生成过程不会调用运行时；只有白名单动作可进入审查。", "Generation does not call the runtime; only allowlisted actions can enter review.")}</p>
             <footer>
               <button type="button" onClick={props.onClose}>{t("取消", "Cancel")}</button>
-              <button className="primary" type="button" disabled={!intent.trim()} onClick={generateDraft}>
+              <button className="primary" type="button" disabled={!intent.trim()} onClick={() => generateDraft()}>
                 <WandSparkles size={13} />{t("生成并静态检查", "Generate and check")}
               </button>
             </footer>

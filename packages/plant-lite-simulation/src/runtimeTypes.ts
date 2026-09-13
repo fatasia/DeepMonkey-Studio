@@ -2,6 +2,7 @@ import type { PlantLiteModel, PlantLiteProductionOrder, SimulationLimits } from 
 import type { Random } from "./random.js";
 import type { PlantLiteTraceRecorder } from "./trace.js";
 import type { SimulationEventQueue } from "./eventQueue.js";
+import type { TransportNetworkScheduler } from "./transportNetwork.js";
 
 export interface Item {
   id: string;
@@ -113,4 +114,5 @@ export interface Runtime {
   wipArea: number;
   trace?: PlantLiteTraceRecorder;
   energy?: EnergyState;
+  transport?: TransportNetworkScheduler;
 }

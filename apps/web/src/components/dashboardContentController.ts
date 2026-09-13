@@ -21,7 +21,7 @@ import {
 } from "./DashboardComponentBackgroundCatalog";
 import {
   createDashboardTemplateNodes, type DashboardTemplateKind
-} from "./DashboardTemplateCatalog";
+} from "./dashboardTemplateCatalog";
 import { replaceDashboardWidgetDataProduct } from "./dashboardDataProductReplacement";
 import { findIndustryTemplatePack } from "./industryTemplatePackCatalog";
 import { buildIndustryPackImport } from "./industryPackImport";
@@ -203,7 +203,7 @@ export function createDashboardContentController(context: DashboardContentContro
       kind: "data-widget",
       frame,
       zIndex: Math.max(0, ...page.nodes.map((item) => item.zIndex)) + 1,
-      widget: { ...createDefaultDataWidget(locale, type), ...(type === "topology" && application.topologies[0] ? { topologyId: application.topologies[0].id } : {}), ...widgetPatch }
+      widget: { ...createDefaultDataWidget(locale, type), ...widgetPatch }
     };
     onCommand(createInsertDashboardNodeCommand(page.id, node));
     setSelectedNodeIds([id]);

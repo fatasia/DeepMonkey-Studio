@@ -1,0 +1,16 @@
+.renderer-diagnostics-dialog {
+  width: min(620px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  overflow: auto;
+  color: var(--text);
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+}
+.renderer-diagnostics-dialog::backdrop { background: color-mix(in srgb, var(--bg-0) 72%, transparent); backdrop-filter: blur(5px); }
+.renderer-diagnostics-dialog .renderer-diagnostics-panel { position: static; width: 100%; max-height: none; margin: 0; border: 0; box-shadow: none; }
+.renderer-diagnostics-dialog .renderer-diagnostics-panel :is(small, button, span) { font-size: max(12px, 1em); }
+.renderer-diagnostics-dialog .renderer-device-card :is(strong, small) { white-space: normal; overflow-wrap: anywhere; }

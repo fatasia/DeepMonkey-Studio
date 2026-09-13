@@ -20,6 +20,7 @@ import { ConversionTaskService } from "./conversionTasks.js";
 import { HttpCloudRenderWorkerClient } from "@bim-studio/server-sdk";
 import { CloudRenderControlPlane, JsonCloudRenderRegistry } from "./cloudRenderControl.js";
 import { registerCloudRenderRoutes } from "./cloudRenderRoutes.js";
+import { registerCloudRenderViewerRoutes } from "./cloudRenderViewerRoutes.js";
 import {
   DirectHttpConnectorGateway,
   DirectWebSocketMultiplexer
@@ -37,6 +38,8 @@ import { createMetadataAiAuditSink } from "./ai/metadataAiAuditSink.js";
 import { resolveAiSettings } from "./ai/aiRuntimeSettings.js";
 import { createIndustrialAgentRuntime } from "./ai/industrialAgentRuntime.js";
 import { registerIndustrialAgentRoutes } from "./ai/industrialAgentRoutes.js";
+import { registerAiSampleRoutes } from "./ai/aiSampleRoutes.js";
+import { registerModeling3dRoutes } from "./ai/modeling3dRoutes.js";
 import { createDataQuerySource } from "./dataQuerySource.js";
 import { createExternalConverterRegistrations } from "./externalConverterCatalog.js";
 import { registerProductionWeb } from "./productionWeb.js";
@@ -88,6 +91,40 @@ export async function buildApp() {
     registry: industrialCapabilities.registry,
     settings: () => resolveAiSettings(store),
     dataSource: dataQuerySource,
+    projectContext: (projectId) => {
+      const operationsSnapshot = operations.snapshotForApi(projectId);
+      return {
+        operations: {
+          models: operationsSnapshot.models.slice(0, 20),
+          deployments: operationsSnapshot.deployments.slice(0, 20),
+          assessments: operationsSnapshot.assessments.slice(0, 20),
+          cases: operationsSnapshot.cases.slice(0, 20),
+          logisticsExperiments: operationsSnapshot.logisticsExperiments.slice(0, 20),
+          plantLiteStudies: operationsSnapshot.plantLiteStudies.slice(0, 20),
+          energyInsights: operationsSnapshot.energyInsights.slice(0, 20),
+          validationStudies: operationsSnapshot.validationStudies.slice(0, 20),
+          whatIfStudies: operationsSnapshot.whatIfStudies.slice(0, 20),
+          studies: operationsSnapshot.studies.slice(0, 30),
+        },
+        battery: {
+          release: industrialCapabilities.batteryRelease,
+          deployment: {
+            enabled: industrialCapabilities.batteryOnnx.enabled,
+            mode: industrialCapabilities.batteryOnnx.mode,
+          activeModels: industrialCapabilities.batteryOnnxRuntimeModels.map((model) => ({
+              id: `battery.${model}`,
+              model,
+              runtime: "onnx",
+            })),
+          },
+          availableCapabilities: industrialCapabilities.registry.listCapabilities()
+            .filter((capability) => capability.id.startsWith("battery."))
+            .map((capability) => ({ id: capability.id, label: capability.label, kind: capability.kind })),
+        },
+        aiDataBindings: store.listAiDataBindings(projectId).slice(0, 20),
+        aiDataBindingRuns: store.listAiDataBindingRuns(projectId, { limit: 20 }),
+      };
+    },
     audit: aiAudit,
   });
   const batteryScheduler = new BatteryInferenceScheduler({
@@ -160,12 +197,15 @@ export async function buildApp() {
     service: new ScriptGitService({ dataDir: config.dataDir }),
   });
   await registerCloudRenderRoutes(app, { store, control: cloudRender });
+  registerCloudRenderViewerRoutes(app, { workerUrl: config.cloudRender.workerUrl });
   await registerIndustrialDemoRoutes(app);
   await registerOperationsRoutes(app, { store, service: operations, dataQuerySource });
   await registerPprBopRoutes(app, { store, service: pprBop });
   await registerAiDataBindingRoutes(app, store);
   await registerIndustrialCapabilityRoutes(app, { store, host: industrialCapabilities, dataQuerySource });
   await registerIndustrialAgentRoutes(app, { store, runtime: industrialAgent });
+  await registerAiSampleRoutes(app, { store });
+  await registerModeling3dRoutes(app, { store });
   await registerMcpCapabilityRoute(app, { store, host: industrialCapabilities });
   const directCredentialResolver = new StaticDirectCredentialResolver(config.directBindings.credentials);
   const directBindingOptions = {

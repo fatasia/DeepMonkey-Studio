@@ -8,6 +8,7 @@ import type { ScenePersistenceController } from "../controllers/scenePersistence
 import type { ApplicationRuntimeController } from "../controllers/applicationRuntimeController";
 import type { WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import type { ManagerDirectoryController } from "../hooks/useManagerDirectoryController";
+import type { useApplicationRecovery } from "../hooks/useApplicationRecovery";
 
 export interface AppViewActions {
   navigate: (route: AppRoute, replace?: boolean) => void;
@@ -24,6 +25,7 @@ export interface AppViewActions {
 }
 
 export interface AppViewBindings {
+  applicationRecovery?: ReturnType<typeof useApplicationRecovery>;
   managerDirectory?: ManagerDirectoryController;
   state: AppState;
   derived: AppDerivedState;

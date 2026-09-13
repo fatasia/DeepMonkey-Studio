@@ -25,7 +25,8 @@ export function indexPlantLiteTransport(timelines: Map<string, ItemEvent[]>, mod
         const target = completed.get(event.nodeId);
         completed.delete(event.nodeId);
         if (!target || target.event.atMinute <= event.atMinute) continue;
-        const interval = { toNodeId: target.destination, startMinute: event.atMinute, endMinute: target.event.atMinute };
+        const loadedLegs = event.transport?.legs.filter(leg => leg.loaded);
+        const interval = { toNodeId: target.destination, startMinute: loadedLegs?.[0]?.startMinute ?? event.atMinute, endMinute: loadedLegs?.at(-1)?.endMinute ?? target.event.atMinute };
         intervals.set(event.sequence, interval);
         intervals.set(target.event.sequence, interval);
       }

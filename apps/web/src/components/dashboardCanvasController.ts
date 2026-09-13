@@ -327,16 +327,17 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
     if (changed.length > 0) onCommand(createUpdateDashboardNodeFramesCommand(page.id, changed));
   }
 
-  function groupSelectedNodes() {
-    const nodes = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.locked !== true);
+  function groupSelectedNodes(ids = selectedNodeIds) {
+    const nodes = page.nodes.filter((node) => ids.includes(node.id) && node.locked !== true);
     if (nodes.length < 2) return;
     const groupId = `group:${crypto.randomUUID()}`;
     const groupName = `${tr(locale, "编组", "Group")} ${dashboardGroups.length + 1}`;
     onCommand(createUpdateDashboardNodeStatesCommand(page.id, nodes.map((node) => ({ nodeId: node.id, state: { groupId, groupName } })), `编组 ${nodes.length} 个二维组件`));
   }
 
-  function ungroupSelectedNodes() {
-    const nodes = page.nodes.filter((node) => selectedNodeIds.includes(node.id) && node.groupId && node.locked !== true);
+  function ungroupSelectedNodes(ids = selectedNodeIds) {
+    const groups = new Set(page.nodes.filter(node => ids.includes(node.id) && node.groupId).map(node => node.groupId));
+    const nodes = page.nodes.filter((node) => groups.has(node.groupId) && node.groupId && node.locked !== true);
     if (nodes.length === 0) return;
     onCommand(createUpdateDashboardNodeStatesCommand(page.id, nodes.map((node) => ({ nodeId: node.id, state: { groupId: null, groupName: null } })), `解组 ${nodes.length} 个二维组件`));
   }
@@ -377,17 +378,20 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
     if (order.length > 0) onCommand(createUpdateDashboardNodeOrderCommand(page.id, order));
   }
 
-  function reorderLayerByDrop(sourceId: string, targetId: string) {
+  function reorderLayerByDrop(sourceId: string, targetId?: string) {
     if (sourceId === targetId) return;
     const displayed = [...page.nodes].sort((left, right) => right.zIndex - left.zIndex);
     const source = displayed.find((node) => node.id === sourceId);
-    const targetIndex = displayed.findIndex((node) => node.id === targetId);
-    if (!source || source.locked || targetIndex < 0) return;
+    const target = displayed.find((node) => node.id === targetId);
+    if (!source || source.locked || (targetId && !target)) return;
     const withoutSource = displayed.filter((node) => node.id !== sourceId);
     const insertionIndex = withoutSource.findIndex((node) => node.id === targetId);
-    withoutSource.splice(Math.max(0, insertionIndex), 0, source);
+    withoutSource.splice(insertionIndex < 0 ? withoutSource.length : insertionIndex, 0, source);
     const order = [...withoutSource].reverse().map((node, zIndex) => ({ nodeId: node.id, zIndex }));
-    onCommand(createUpdateDashboardNodeOrderCommand(page.id, order));
+    onCommand(createUpdateDashboardNodeStatesCommand(page.id, order.map(item => ({ nodeId: item.nodeId, state: {
+      zIndex: item.zIndex,
+      ...(item.nodeId === sourceId ? { groupId: target?.groupId ?? null, groupName: target?.groupName ?? null } : {}),
+    } })), "移动二维图层"));
   }
 
   function contextNodeIds(): string[] {
@@ -405,18 +409,7 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
     }
     const menuWidth = 190;
     const menuHeight = 310;
-    // 右键选层（EX-001A）：按 zIndex 降序列出该节点包围盒内、与节点有面积重叠的全部组件，
-    // 被遮挡组件经"选择"子菜单直达（对标 FVS 右键图层列表）。
-    const bounds = node.frame;
-    const stack = page.nodes
-      .filter((candidate) => candidate.visible !== false)
-      .filter((candidate) => candidate.frame.x < bounds.x + bounds.width
-        && candidate.frame.y < bounds.y + bounds.height
-        && candidate.frame.x + candidate.frame.width > bounds.x
-        && candidate.frame.y + candidate.frame.height > bounds.y)
-      .sort((left, right) => right.zIndex - left.zIndex)
-      .map((candidate) => candidate.id);
-    setContextMenu({ x: Math.min(event.clientX, window.innerWidth - menuWidth - 8), y: Math.min(event.clientY, window.innerHeight - menuHeight - 8), nodeId: node.id, ...(stack.length > 1 ? { stack } : {}) });
+    setContextMenu({ x: Math.min(event.clientX, window.innerWidth - menuWidth - 8), y: Math.min(event.clientY, window.innerHeight - menuHeight - 8), nodeId: node.id });
   }
 
   function copyContextNodes(duplicate = false) {

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Globe2 } from "lucide-react";
-import type { DashboardDataWidgetConfig, DataDatasetField, DataPipelineDefinition, DataDatasetRecord, JsonValue, SemanticModelRecord } from "@bim-studio/contracts";
+import { resolveDeviceSignal, type DashboardDataWidgetConfig, type DataDatasetField, type DataPipelineDefinition, type DataDatasetRecord, type JsonValue, type SemanticModelRecord } from "@bim-studio/contracts";
+import { DeviceSignalView } from "./DeviceSignalView";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
-import { subscribeSceneData } from "../sceneDataBridge";
+import { publishLocalSceneData, subscribeSceneData } from "../sceneDataBridge";
 import { DirectBindingRuntime } from "../directBindingRuntime";
 import { DashboardDigitalFlip, DashboardLiquidFill, DashboardScrollTable } from "./DashboardIndustrialWidgets";
 import { DashboardImage, DashboardMonitor, DashboardVideo } from "./DashboardMediaPlayer";
@@ -183,6 +184,7 @@ export function useDashboardMetrics(
 }
 
 export function DashboardWidgetView({
+  projectId,
   locale,
   widget,
   metric,
@@ -194,6 +196,7 @@ export function DashboardWidgetView({
   onAnimationStart,
   onAnimationEnd,
 }: {
+  projectId?: string;
   locale: AppLocale;
   widget: DashboardDataWidgetConfig;
   metric: DashboardMetric | undefined;
@@ -273,7 +276,7 @@ export function DashboardWidgetView({
     return <DashboardDigitalFlip widget={widget} analysis={analysis} compact={compact} onActivate={() => onDataInteraction({ value: jsonValue(analysis.value) })} />;
   if (widget.type === "liquid-fill")
     return <DashboardLiquidFill locale={locale} widget={widget} analysis={analysis} compact={compact} onActivate={() => onDataInteraction({ value: jsonValue(analysis.value) })} />;
-  if (["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map"].includes(widget.type))
+  if (["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "wordcloud", "boxplot", "waterfall", "polarBar"].includes(widget.type))
     return (
       <DashboardDrillChart
         widget={widget}
@@ -394,19 +397,12 @@ export function DashboardWidgetView({
         onRowInteraction={(row, index) => onDataInteraction({ data: jsonRecord(row), index })}
       />
     );
-  if (widget.type === "status")
-    return (
-      <div
-        className={`dashboard-status ${Boolean(analysis.value) ? "ok" : ""} ${valueStyle.animation === "pulse" ? "conditional-pulse" : ""}`}
-        style={valueStyle.visible === false ? { display: "none" } : { color: valueStyle.color, backgroundColor: valueStyle.backgroundColor, fontWeight: valueStyle.fontWeight }}
-      >
-        <i />
-        <span>
-          <small>{widget.title}</small>
-          <strong>{display === "—" ? tr(locale, "未知", "Unknown") : display}</strong>
-        </span>
-      </div>
-    );
+  if (widget.type === "status") {
+    const signal=resolveDeviceSignal(analysis.value,widget.signalRule);
+    const target=signal.target;
+    return valueStyle.visible === false ? null : <DeviceSignalView locale={locale} title={widget.title} signal={signal}
+      {...(!compact && projectId && target ? {onLocate:()=>publishLocalSceneData({source:"dashboard",key:`${widget.key}:locate`,value:true,sceneId:target.sceneId,target:{modelId:target.modelId,...(target.layerId?{layerId:target.layerId}:{})},action:"focus",timestamp:new Date().toISOString()},projectId)}:{})} />;
+  }
   return (
     <div
       className={`dashboard-value ${valueStyle.animation === "pulse" ? "conditional-pulse" : ""}`}

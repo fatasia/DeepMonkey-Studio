@@ -47,11 +47,15 @@ import {
   type BatteryOnnxDeployment,
 } from "./batteryOnnxDeployment.js";
 import { BatteryProductionOnnxRuntime } from "./batteryProductionOnnxRuntime.js";
+import { bundledBatteryCatalog, loadBundledBatteryModels } from "./batteryBundledModels.js";
+import { createLocalBatteryGateway } from "./batteryLocalGateway.js";
+import { BatteryPinnRustRuntime } from "./batteryPinnRustRuntime.js";
 import type { FormalBatteryModel } from "./batteryModelGateway.js";
 import {
   BATTERY_UPLOAD_LIMIT_BYTES,
   parseBatteryUpload,
 } from "./batteryUpload.js";
+import { batteryDataProfile } from "./batteryDataProfile.js";
 import {
   capabilityInvocationHttpStatus,
   invokeReliableHttpCapability,
@@ -59,6 +63,7 @@ import {
 import { readAiDataset } from "./aiDatasetSource.js";
 import { prepareAiBindingSnapshot } from "./aiDataBindingRuntime.js";
 import { failAiDataBindingRun, startAiDataBindingRun, succeedAiDataBindingRun } from "./aiDataBindingRunRecorder.js";
+import { httpDisconnectScope } from "./httpDisconnectScope.js";
 
 /**
  * API 层只负责把已有领域服务挂到插件运行时，不把算法复制到路由中。
@@ -68,6 +73,7 @@ export interface IndustrialCapabilityHost {
   registry: PluginRegistry;
   batteryRelease: BatteryReleaseAssessment;
   batteryOnnx: BatteryOnnxDeployment;
+  batteryTwinRuntime?: "rust-ort";
   batteryOnnxRuntimeModels: FormalBatteryModel[];
   invoke<TOutput = unknown>(
     capabilityId: string,
@@ -92,16 +98,27 @@ export async function createIndustrialCapabilityHost(
     conversionTasks?: ConversionTaskService;
   } = {},
 ): Promise<IndustrialCapabilityHost> {
-  const batteryOnnx =
+  let batteryOnnx =
     options.batteryOnnx ?? (await loadBatteryOnnxDeployment());
+  const routedTwinRuntime = Boolean(process.env.BATTERY_MODEL_SERVICE_URL?.trim());
+  if (!batteryOnnx.enabled && !options.batteryGateway) batteryOnnx = await loadBundledBatteryModels();
+  const localBattery = batteryOnnx.mode === "local-validation" && !routedTwinRuntime;
   const batteryOnnxRuntimeModels = [...batteryOnnx.requestedModels];
   const productionOnnxRuntime =
     batteryOnnxRuntimeModels.length > 0
       ? new BatteryProductionOnnxRuntime(batteryOnnx)
       : undefined;
-  const batteryGateway =
-    options.batteryGateway ??
-    createBatteryModelGateway({
+  const routedGateway = routedTwinRuntime ? createBatteryModelGateway() : undefined;
+  const nativeServiceUrl = process.env.BATTERY_MODEL_SERVICE_URL?.trim();
+  const localGateway = batteryOnnx.mode === "local-validation"
+    ? createLocalBatteryGateway(
+        batteryOnnx,
+        nativeServiceUrl ? new BatteryPinnRustRuntime(nativeServiceUrl) : undefined,
+      )
+    : undefined;
+  const batteryGateway = options.batteryGateway ?? (routedGateway && localGateway
+    ? { ...routedGateway, predict: localGateway.predict }
+    : localBattery ? localGateway! : createBatteryModelGateway({
       onnxManifests: batteryOnnx.manifests,
       ...(productionOnnxRuntime ? { onnxRuntime: productionOnnxRuntime } : {}),
       ...(batteryOnnxRuntimeModels.length > 0
@@ -111,11 +128,15 @@ export async function createIndustrialCapabilityHost(
             ),
           }
         : {}),
-    });
+    }));
   const batteryRelease = assessBatteryRelease(
-    BATTERY_MODEL_CATALOG,
+    localBattery ? bundledBatteryCatalog() : BATTERY_MODEL_CATALOG,
     batteryOnnx.manifests,
   );
+  if (localBattery) {
+    batteryRelease.blockers = ["内置候选模型尚未完成生产等价审批"];
+    batteryRelease.warnings = ["本地 ONNX 验证推理可用；生产输出未启用"];
+  }
   const registry = new PluginRegistry(hostPolicy());
   const manifest = {
     schemaVersion: 1 as const,
@@ -131,7 +152,7 @@ export async function createIndustrialCapabilityHost(
       "battery.model",
       "battery.twin",
       "modeling.parametric",
-    ],
+    ].filter(id => !localBattery || id !== "battery.twin"),
     permissions: [
       "operations.read",
       "operations.write",
@@ -158,7 +179,7 @@ export async function createIndustrialCapabilityHost(
           "battery.twin.evidence",
           "battery.release.status",
           "modeling.parametric.validate",
-        ],
+        ].filter(id => !localBattery || !id.startsWith("battery.twin.")),
         execution: "in-process" as const,
         limits: {
           timeoutMs: 30_000,
@@ -171,6 +192,7 @@ export async function createIndustrialCapabilityHost(
 
   const registration = registry.register(manifest, ({ registerCapability }) => {
     for (const capability of providers(operations, batteryGateway)) {
+      if (localBattery && capability.descriptor.id.startsWith("battery.twin.")) continue;
       const result = registerCapability(capability);
       if (!result.ok) throw new Error(`核心能力注册失败：${result.message}`);
     }
@@ -203,6 +225,7 @@ export async function createIndustrialCapabilityHost(
     registry,
     batteryRelease,
     batteryOnnx,
+    ...(routedTwinRuntime ? { batteryTwinRuntime: "rust-ort" as const } : {}),
     batteryOnnxRuntimeModels,
     invoke: (capabilityId, request) =>
       registry.invokeCapability(capabilityId, request),
@@ -255,15 +278,18 @@ export async function registerIndustrialCapabilityRoutes(
     providers: dependencies.host.registry.listAiProviders(),
   }));
   app.get("/api/battery/models/catalog", async () => ({
-    models: BATTERY_MODEL_CATALOG,
+    models: dependencies.host.batteryTwinRuntime === "rust-ort" || dependencies.host.batteryOnnx.mode !== "local-validation"
+      ? BATTERY_MODEL_CATALOG : bundledBatteryCatalog(),
   }));
   app.get("/api/battery/models/release-gate", async () => ({
     ...dependencies.host.batteryRelease,
     deployment: {
       enabled: dependencies.host.batteryOnnx.enabled,
+      mode: dependencies.host.batteryOnnx.mode ?? "production",
       requestedModels: dependencies.host.batteryOnnx.requestedModels,
       activeModels: dependencies.host.batteryOnnxRuntimeModels,
       diagnostics: dependencies.host.batteryOnnx.diagnostics,
+      ...(dependencies.host.batteryTwinRuntime ? { twinRuntime: dependencies.host.batteryTwinRuntime } : {}),
     },
     evaluatedAt: new Date().toISOString(),
   }));
@@ -291,16 +317,14 @@ export async function registerIndustrialCapabilityRoutes(
           fields,
           "targetCapacityRetention",
         );
-        const controller = new AbortController();
-        const abortFromClient = () => controller.abort("客户端已取消电池分析");
-        request.raw.once("aborted", abortFromClient);
+        const scope = httpDisconnectScope(request.raw, reply.raw);
         const result = await dependencies.host
           .invoke("battery.model.predict", {
             requestId: randomUUID(),
             projectId: request.params.projectId,
             principal: request.systemUser?.id ?? "web-user",
             ...(request.systemUser ? { role: request.systemUser.role } : {}),
-            signal: controller.signal,
+            signal: scope.signal,
             input: {
               model,
               fileName: upload.filename,
@@ -313,12 +337,13 @@ export async function registerIndustrialCapabilityRoutes(
                 : {}),
             },
           })
-          .finally(() =>
-            request.raw.removeListener("aborted", abortFromClient),
-          );
-        return result.status === "failed" || result.status === "blocked"
-          ? reply.code(422).send(result)
+          .finally(scope.dispose);
+        const withProfile = result.output && typeof result.output === "object" && !Array.isArray(result.output)
+          ? { ...result, output: { ...result.output, dataProfile: batteryDataProfile(records) } }
           : result;
+        return result.status === "failed" || result.status === "blocked"
+          ? reply.code(422).send(withProfile)
+          : withProfile;
       } catch (error) {
         return reply
           .code(400)
@@ -352,18 +377,16 @@ export async function registerIndustrialCapabilityRoutes(
     const datasetId = binding?.datasetId ?? request.body?.datasetId?.trim();
     if (!datasetId) return reply.code(400).send({ message: "请选择电池数据集" });
 
-    const controller = new AbortController();
     const bindingRun = binding ? await startAiDataBindingRun(dependencies.store, binding) : undefined;
+    const scope = httpDisconnectScope(request.raw, reply.raw);
     let sourceEvidence;
-    const abortFromClient = () => controller.abort("客户端已取消电池分析");
-    request.raw.once("aborted", abortFromClient);
     try {
       const snapshot = await readAiDataset(
         dependencies.dataQuerySource,
         dependencies.store,
         request.params.projectId,
         datasetId,
-        controller.signal,
+        scope.signal,
       );
       sourceEvidence = snapshot.evidence;
       const prepared = binding ? prepareAiBindingSnapshot(binding, snapshot) : snapshot;
@@ -374,7 +397,7 @@ export async function registerIndustrialCapabilityRoutes(
         projectId: request.params.projectId,
         principal: request.systemUser?.id ?? "web-user",
         ...(request.systemUser ? { role: request.systemUser.role } : {}),
-        signal: controller.signal,
+        signal: scope.signal,
         input: {
           model,
           fileName: `dataset:${datasetId}`,
@@ -386,7 +409,7 @@ export async function registerIndustrialCapabilityRoutes(
         },
       });
       const withEvidence = result.output && typeof result.output === "object" && !Array.isArray(result.output)
-        ? { ...result, output: { ...result.output, sourceEvidence: snapshot.evidence } }
+        ? { ...result, output: { ...result.output, sourceEvidence: snapshot.evidence, dataProfile: batteryDataProfile(prepared.records) } }
         : result;
       if (bindingRun && binding) {
         if (result.status === "failed" || result.status === "blocked") {
@@ -402,7 +425,7 @@ export async function registerIndustrialCapabilityRoutes(
       if (bindingRun) await failAiDataBindingRun(dependencies.store, bindingRun, error, sourceEvidence);
       return reply.code(400).send({ message: error instanceof Error ? error.message : "电池数据集无效" });
     } finally {
-      request.raw.removeListener("aborted", abortFromClient);
+      scope.dispose();
     }
   });
   app.post<{

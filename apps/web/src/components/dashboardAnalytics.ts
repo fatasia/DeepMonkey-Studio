@@ -239,7 +239,8 @@ function matchesRule(rule: DashboardConditionalRule, value: unknown): boolean {
   return left >= right && left <= (rule.valueTo ?? right);
 }
 
-function readPath(row: Record<string, unknown>, key: string): unknown {
+/** 供箱线/瀑布等高级图表按 a.b.c 路径取数;与行内多处实现保持同一语义。 */
+export function readPath(row: Record<string, unknown>, key: string): unknown {
   return key.split(".").reduce<unknown>((current, segment) => (current && typeof current === "object" ? (current as Record<string, unknown>)[segment] : undefined), row);
 }
 

@@ -1,0 +1,17 @@
+/* 延续工作台的单一视觉焦点；图层与参数在同一侧，视口保留连续操作面积。 */
+.optimizer-page .optimizer-file span,.optimizer-page .optimizer-option-head strong,.optimizer-page .optimizer-option-body :is(label,p,select,button,output),.optimizer-page .optimizer-render-settings :is(label,span,small,button),.optimizer-page .optimizer-bake-head,.optimizer-page .optimizer-bake-head button,.optimizer-page .optimizer-bake-presets,.optimizer-page .optimizer-bake-presets button,.optimizer-page .optimizer-bake-transform,.optimizer-page .optimizer-bake-transform button,.optimizer-page .optimizer-bake-mode button,.optimizer-page .optimizer-quality,.optimizer-page .optimizer-quality button,.optimizer-page .optimizer-lightmap-settings :is(label,select,button),.optimizer-page .optimizer-preview-toolbar>span,.optimizer-page .optimizer-drop>span,.optimizer-page .optimizer-pipeline :is(span,small){font-size:12px;}
+.optimizer-page .optimizer-header-actions button.primary{color:var(--on-accent);}
+.optimizer-page .optimizer-header-actions button.primary:disabled{color:var(--muted);}
+.optimizer-page .optimizer-file{min-width:0;}
+.optimizer-page .optimizer-file span{white-space:normal;overflow-wrap:anywhere;}
+.optimizer-page .optimizer-drop>span{max-width:580px;line-height:1.7;overflow-wrap:anywhere;}
+.optimizer-page .optimizer-layer-tree{margin-bottom:12px;border:1px solid var(--line);border-radius:var(--radius-sm);}
+.optimizer-page .optimizer-pipeline{border-color:var(--line-strong);background:var(--surface-1);}
+.optimizer-page .optimizer-pipeline-steps{grid-template-columns:repeat(2,minmax(0,1fr));}
+.optimizer-page .optimizer-pipeline-steps b{white-space:nowrap;}
+.optimizer-page .optimizer-header h1{white-space:nowrap;color:var(--text-strong);}
+.optimizer-page button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.optimizer-page .optimizer-preview-toolbar{min-width:0;}
+.optimizer-page .optimizer-preview-toolbar>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+@media(max-width:1100px){.optimizer-page .optimizer-layout{grid-template-columns:320px minmax(0,1fr);}.optimizer-page .optimizer-header{grid-template-columns:auto minmax(0,1fr) auto;gap:12px;padding:0 14px;}.optimizer-page .optimizer-header-actions button{padding:0 8px;}.optimizer-page .optimizer-settings{padding:10px;}}
+@media(max-width:760px){.optimizer-page{grid-template-rows:98px minmax(0,1fr);}.optimizer-page .optimizer-header{grid-template-columns:auto minmax(0,1fr);gap:8px;padding:8px 12px;}.optimizer-page .optimizer-header-actions{grid-column:1/-1;justify-content:flex-end;}.optimizer-page .optimizer-layout{grid-template-columns:minmax(0,1fr);overflow-x:hidden;}.optimizer-page .optimizer-settings{width:100%;box-sizing:border-box;border-right:0;}.optimizer-page .optimizer-preview-toolbar>span{display:none;}}

@@ -16,16 +16,16 @@
 }
 .cloud-render-heading>div>span {
   display:grid;
-  width:42px;
-  height:42px;
+  width:28px;
+  height:28px;
   place-items:center;
-  border-radius:12px;
-  background:#202c32;
-  color:#788990
+  border-radius:7px;
+  background:#1a2328;
+  color:#6a7a80
 }
 .cloud-render-heading>div>span.ready {
-  background:#17392f;
-  color:#61d6a7
+  background:#142b23;
+  color:#4aa882
 }
 .cloud-render-heading svg {
   width:20px;
@@ -35,14 +35,14 @@
   display:block
 }
 .cloud-render-heading strong {
-  font-size:15px
+  font-size:13px
 }
 .cloud-render-heading small {
   max-width:720px;
-  margin-top:4px;
-  color:#829198;
-  font-size:12px;
-  line-height:1.5
+  margin-top:2px;
+  color:#6a7a80;
+  font-size:10px;
+  line-height:1.4
 }
 .cloud-render-heading button,.cloud-render-scenes button,.cloud-render-empty button {
   display:inline-flex;
@@ -76,11 +76,12 @@
 .cloud-render-requirements {
   display:flex;
   align-items:flex-start;
-  gap:12px;
-  padding:16px;
-  border:1px solid #3c4950;
-  border-radius:10px;
-  background:#121a1e
+  gap:10px;
+  padding:12px;
+  border:1px solid #283238;
+  border-radius:8px;
+  background:#0f1518;
+  color:#6a7a80
 }
 .cloud-render-requirements>svg {
   flex:0 0 auto;

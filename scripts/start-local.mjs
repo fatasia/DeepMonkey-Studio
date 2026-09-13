@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { localManagedServices, ensureManagedService } from "./lib/localManagedServices.mjs";
 import { createConnection } from "node:net";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -17,6 +17,7 @@ import { readHttpText } from "./lib/localHttpProbe.mjs";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runtimeLogDir = join(repositoryRoot, ".runtime-logs");
 const children = new Set();
+let managedServices = [];
 let shuttingDown = false;
 let options;
 // 显式进程变量用于 CI、临时诊断和企业终端覆盖；.env 只提供未设置项。
@@ -67,9 +68,15 @@ async function main() {
   }
 
   installShutdownHandlers();
-  // --cloud-worker：本机闭环（Worker+API 同机）随栈启动；令牌只落 data/，不改 .env。
-  if (environment.BIM_STUDIO_CLOUD_WORKER_MANAGED === "true" && target !== "services") {
-    await ensureCloudRenderWorker();
+  if (localApiExpected && target !== "services" && environment.BIM_STUDIO_CORE_ONLY !== "true") {
+    const services = localManagedServices(repositoryRoot, environment, {
+      apiOrigin, webOrigin: configuredWebOrigin(), cloudWorker: environment.BIM_STUDIO_CLOUD_WORKER_MANAGED !== "false",
+    });
+    managedServices = services.map(({ id, label, healthUrl }) => ({ id, label, healthUrl }));
+    for (const service of services) {
+      const ownership = await ensureManagedService(service, { canConnect, start: startManagedService, isStopping: () => shuttingDown });
+      announce(`${service.label} 已就绪`, [ownership === "external" ? "复用已有实例，停止时保留" : "随本次运行环境管理"]);
+    }
   }
   if (!summary.api) {
     const apiEndpoint = new URL(apiOrigin);
@@ -116,54 +123,18 @@ async function main() {
   await waitForChildren();
 }
 
-async function ensureCloudRenderWorker() {
-  const workerPort = positivePort(environment.CLOUD_RENDER_WORKER_PORT, 4200);
-  if (await canConnect("127.0.0.1", workerPort)) {
-    fail(`云渲染 Worker 端口 ${workerPort} 已被占用；若已有 Worker 在运行，请勿启用 --cloud-worker`);
-  }
-  const configPath = join(repositoryRoot, "data", "cloud-render-worker.json");
-  let workerConfig;
-  if (existsSync(configPath)) {
-    try { workerConfig = JSON.parse(readFileSync(configPath, "utf8")); } catch { workerConfig = undefined; }
-  }
-  if (!workerConfig?.token) {
-    // 令牌只保存在本机数据目录（不入库、不入 Git），API 与 Worker 共享。
-    workerConfig = { token: randomBytes(24).toString("hex"), port: workerPort };
-    mkdirSync(dirname(configPath), { recursive: true });
-    writeFileSync(configPath, `${JSON.stringify(workerConfig, null, 2)}
-`);
-  }
-  // API 侧三个变量通过进程环境注入：不改 .env，栈停止后不留痕迹。
-  environment.CLOUD_RENDER_WORKER_URL = `http://127.0.0.1:${workerConfig.port}`;
-  environment.CLOUD_RENDER_WORKER_TOKEN = workerConfig.token;
-  environment.CLOUD_RENDER_PUBLIC_ORIGIN = apiOrigin;
-  const workerEnv = {
-    ...environment,
-    CLOUD_RENDER_WORKER_ID: environment.CLOUD_RENDER_WORKER_ID ?? "local-worker",
-    CLOUD_RENDER_WORKER_PORT: String(workerConfig.port),
-    CLOUD_RENDER_WORKER_TOKEN: workerConfig.token,
-    CLOUD_RENDER_WORKER_PUBLIC_ORIGIN: apiOrigin,
-    CLOUD_RENDER_HEADLESS: environment.CLOUD_RENDER_HEADLESS ?? "true",
-  };
-  const distEntry = join(repositoryRoot, "apps", "cloud-render-worker", "dist", "index.js");
-  const invocation = existsSync(distEntry)
-    ? platformCommand(process.execPath, [distEntry])
-    : platformCommand("pnpm", ["--filter", "@bim-studio/cloud-render-worker", "dev"]);
+function startManagedService(service) {
+  mkdirSync(runtimeLogDir, { recursive: true });
+  const out = openSync(join(runtimeLogDir, `${service.id}.out.log`), "a");
+  const err = openSync(join(runtimeLogDir, `${service.id}.err.log`), "a");
+  const invocation = service.command === "pnpm" ? platformCommand(service.command, service.args) : { command: service.command, args: service.args };
   const child = spawn(invocation.command, invocation.args, {
-    cwd: repositoryRoot,
-    env: workerEnv,
-    stdio: "inherit",
-    windowsHide: true,
-    detached: process.platform !== "win32",
+    cwd: repositoryRoot, env: service.environment, stdio: ["ignore", out, err],
+    windowsHide: true, detached: process.platform !== "win32",
   });
-  trackChild(child, "云渲染 Worker");
-  if (!(await waitForPort("127.0.0.1", workerConfig.port, 90_000))) {
-    fail("云渲染 Worker 未能启动，请查看 .runtime-logs 下 Worker 日志");
-  }
-  announce("云渲染 Worker 已就绪", [
-    `Worker http://127.0.0.1:${workerConfig.port} · 发布源 ${apiOrigin}`,
-    "发布弹窗选择“云渲染”即可使用本机 GPU 渲染",
-  ]);
+  closeSync(out);
+  closeSync(err);
+  trackChild(child, service.label);
 }
 
 async function ensureInfrastructure() {
@@ -232,6 +203,11 @@ function startPnpm(args, label) {
 function trackChild(child, label) {
   child.__label = label;
   children.add(child);
+  child.once("error", (error) => {
+    children.delete(child);
+    process.stderr.write(`[启动失败] ${label}：${error.message}\n`);
+    void shutdown(1);
+  });
   child.once("exit", (code) => {
     children.delete(child);
     if (!shuttingDown) {
@@ -412,6 +388,7 @@ function markReady() {
   writeFileSync(options.readyFile, `${JSON.stringify({
     readyAt: new Date().toISOString(),
     managedProcessCount: children.size,
+    managedServices,
     target: options.target,
   }, null, 2)}\n`, "utf8");
 }

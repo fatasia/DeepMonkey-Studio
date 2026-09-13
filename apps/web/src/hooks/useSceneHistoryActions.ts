@@ -91,18 +91,22 @@ export function useSceneHistoryActions({ state, history, applyScene }: SceneHist
 
   async function restoreRecoveryDraft(): Promise<void> {
     if (!recoveryDraft || !project) return;
+    const previousDecision = recoveryDecisionRef.current;
     setRecoveryBusy(true);
+    setAutoSaveEnabled(false);
     try {
       // 使用当前服务器应用 revision，只恢复场景内容，避免旧应用文档重新引入版本冲突。
       recoveryDecisionRef.current = workspaceRecoveryDecisionKey(recoveryDraft);
       await applyScene(recoveryDraft.scene, false, project, false);
       // 恢复动作本身会推进一次场景 revision；将该 revision 视为已处理，避免恢复后立刻重新弹出同一副本。
       lastAutoSavedSceneRevisionRef.current = revision + 1;
-      await deleteWorkspaceRecoveryDraft(recoveryDraft.projectId, recoveryDraft.applicationId, recoveryDraft.sceneId);
+      // 恢复只改变内存工作区；正式保存成功或用户明确丢弃时才删除副本，避免再次刷新丢稿。
       sceneHistoryRef.current.record(recoveryDraft.scene, "恢复本地修改");
-      setAutoSaveEnabled(false);
       setRecoveryDraft(undefined);
       setMessage("已恢复本地修改；自动保存已暂停，请检查后手动保存");
+    } catch (reason) {
+      recoveryDecisionRef.current = previousDecision;
+      showError(reason);
     } finally {
       setRecoveryBusy(false);
     }

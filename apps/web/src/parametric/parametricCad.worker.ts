@@ -69,12 +69,16 @@ async function build(input: ParametricCadDefinition): Promise<ParametricCadBuild
     const vertices = new Float32Array(mesh.vertices);
     const triangles = new Uint32Array(mesh.triangles);
     const normals = new Float32Array(mesh.normals);
+    const volume = replicad.measureVolume(result);
+    if (triangles.length < 3 || vertices.length < 9 || !Number.isFinite(volume) || volume <= 0) {
+      throw new Error("当前尺寸没有形成有效实体，请检查内外尺寸、孔径与布尔运算关系后重试");
+    }
     const step = await result.blobSTEP().arrayBuffer();
     const bounds = result.boundingBox.bounds as [[number, number, number], [number, number, number]];
     return {
       vertices, triangles, normals, step,
       summary: {
-        durationMs: Math.round(performance.now() - startedAt), volumeMm3: Math.round(replicad.measureVolume(result) * 100) / 100,
+        durationMs: Math.round(performance.now() - startedAt), volumeMm3: Math.round(volume * 100) / 100,
         faceCount: result.faces.length, edgeCount: result.edges.length, triangleCount: triangles.length / 3,
         bounds: structuredClone(bounds), warnings
       }

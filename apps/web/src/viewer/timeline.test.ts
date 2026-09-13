@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 import { normalizeAnimationFrameRate, sampleCameraKeyframes, sampleModelAnimationKeyframes, sampleModelKeyframes, snapAnimationTime } from "./timeline";
 
 describe("timeline sampling", () => {
+  it("uses each outgoing camera segment's transition including exact hold boundaries", () => {
+    const camera = (x: number) => ({ position: { x, y: 0, z: 5 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" as const });
+    const frames = [{ id: "a", time: 0, camera: camera(0), transition: "step" as const }, { id: "b", time: 4, camera: camera(4), transition: "ease-in" as const }, { id: "c", time: 8, camera: camera(8) }];
+    expect(sampleCameraKeyframes(frames, 3.99)?.position.x).toBe(0);
+    expect(sampleCameraKeyframes(frames, 4)?.position.x).toBe(4);
+    expect(sampleCameraKeyframes(frames, 6)?.position.x).toBe(5);
+    expect(sampleCameraKeyframes(frames, 8)?.position.x).toBe(8);
+  });
+  it("applies outgoing easing to position, rotation, scale and clip time consistently", () => {
+    const transform = (x: number) => ({ position: { x, y: 0, z: 0 }, rotation: { x: 0, y: x / 10, z: 0 }, scale: { x: 1 + x / 10, y: 1, z: 1 } });
+    const frames = [{ id: "a", modelId: "m", time: 0, transform: transform(0), animation: { time: 0 }, transition: "ease-out" as const }, { id: "b", modelId: "m", time: 10, transform: transform(10), animation: { time: 10 } }];
+    const sampled = sampleModelKeyframes(frames, 5);
+    expect(sampled?.position.x).toBe(7.5);
+    expect(sampled?.rotation.y).toBeCloseTo(.75);
+    expect(sampled?.scale.x).toBe(1.75);
+    expect(sampleModelAnimationKeyframes(frames, 5)?.time).toBe(7.5);
+  });
   it("snaps frame-authored animation to the configured frame rate", () => {
     expect(snapAnimationTime(1.017, 30)).toBeCloseTo(1.0333333333);
     expect(snapAnimationTime(1.017, 30, false)).toBe(1.017);

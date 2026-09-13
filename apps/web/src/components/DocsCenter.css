@@ -81,6 +81,9 @@
 .docs-markdown li::marker { color: var(--accent); }
 .docs-markdown a { color: var(--text-strong); text-decoration: none; border-bottom: 1px solid var(--accent); }
 .docs-markdown a:hover { color: var(--text-strong); border-color: var(--accent); }
+.docs-image { display: grid; gap: 8px; margin: 22px 0 24px; padding: 10px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-1); }
+.docs-image img { display: block; width: 100%; height: auto; max-height: 360px; object-fit: contain; background: var(--bg-0); }
+.docs-image figcaption { padding: 0 4px 2px; color: var(--text-muted); font-size: 11px; text-align: center; }
 .docs-markdown :not(pre) > code { padding: 2px 5px; color: var(--text-strong); border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); font: 12px/1.4 "Cascadia Code", Consolas, monospace; }
 .docs-code-block { position: relative; margin: 18px 0; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--bg-1); }
 .docs-code-toolbar { display: flex; min-height: 34px; align-items: center; justify-content: space-between; padding: 0 9px 0 15px; color: var(--text-muted); border-bottom: 1px solid var(--line); background: var(--surface-1); font-size: 10px; text-transform: uppercase; }

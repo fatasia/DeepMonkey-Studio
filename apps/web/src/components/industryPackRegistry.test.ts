@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createIndustryPackRegistry } from "./industryPackRegistry";
-import { DASHBOARD_TEMPLATES } from "./DashboardTemplateCatalog";
+import { DASHBOARD_TEMPLATES } from "./dashboardTemplateCatalog";
 import { MANUFACTURING_ASSET_OPS_PACK, MANUFACTURING_PACK_SAMPLES } from "./industryPackManufacturing";
 import { LOGISTICS_FULFILLMENT_PACK } from "./industryPackLogistics";
 import { LOGISTICS_PACK_SAMPLES } from "./industryPackLogisticsSamples";

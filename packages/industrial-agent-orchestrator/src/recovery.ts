@@ -3,19 +3,24 @@ import { requiredText } from "./runValidation.js";
 import type { AgentCheckpoint, ResumeAgentRunOptions } from "./types.js";
 
 export const MAX_AGENT_DECISION_RECOVERIES = 3;
+/** 传输失败后的每次人工重试最多追加 30 秒，不重置已消耗时间或工具调用。 */
+export const AGENT_RECOVERY_RESERVE_MS = 30_000;
+const MAX_AGENT_DURATION_MS = 15 * 60_000;
 
 export function canRetryAgentDecision(checkpoint: AgentCheckpoint): boolean {
   const failure = checkpoint.failure;
-  // 旧 checkpoint 缺少传输分类，仅兼容既有适配器的精确 HTTP 错误，不按任意错误文本猜测。
-  const transportFailure = (failure?.code === "decision-provider-unavailable" && failure.phase === "decision")
-    || (failure?.code === "invalid-decision" && /^大模型请求失败：HTTP (429|502|503|504)$/.test(failure.message));
-  return checkpoint.status === "failed" && failure?.retryable === true && transportFailure
+  const transportFailure = isDecisionTransportFailure(failure);
+  // 若一次由传输失败触发的恢复跑满时间预算，仍允许在固定次数内追加恢复保留时间；
+  // 不把任意 budget-exhausted 误判为可重试，避免对卡死或业务错误无限续跑。
+  const timedOutRecovery = checkpoint.status === "budget-exhausted"
+    && failure?.code === "time-budget"
+    && Boolean(checkpoint.decisionRecoveries?.some((recovery) => isDecisionTransportFailure(recovery.failure)));
+  return ((checkpoint.status === "failed" && failure?.retryable === true && transportFailure) || timedOutRecovery)
     && !checkpoint.pendingTool && !checkpoint.pendingSelection
     && checkpoint.toolRecords.every(record => record.outcome.status === "completed")
     && checkpoint.decisions.filter(record => record.decision.kind === "call-tool").every(decision => checkpoint.toolRecords.some(record => record.step === decision.step))
     && (checkpoint.decisionRecoveries?.length ?? 0) < MAX_AGENT_DECISION_RECOVERIES
-    && checkpoint.usage.steps < checkpoint.budget.maxSteps
-    && checkpoint.usage.activeDurationMs < checkpoint.budget.maxDurationMs;
+    && checkpoint.usage.steps < checkpoint.budget.maxSteps;
 }
 
 /** 只修改等待的输入/失败决策；已执行工具、指纹和预算不可重置。 */
@@ -38,9 +43,19 @@ export function prepareAgentRecovery(checkpoint: AgentCheckpoint, options: Resum
     delete checkpoint.pendingSelection;
   } else {
     if (options.selectionId) throw new AgentRunError("invalid-state", "失败决策不能接收额外数据源选择");
+    checkpoint.budget.maxDurationMs = Math.min(
+      MAX_AGENT_DURATION_MS,
+      checkpoint.budget.maxDurationMs + AGENT_RECOVERY_RESERVE_MS,
+    );
     (checkpoint.decisionRecoveries ??= []).push({ revision: checkpoint.revision, resumedAt: now, failure: { ...checkpoint.failure! } });
     delete checkpoint.failure;
   }
   checkpoint.status = "running";
   return true;
+}
+
+function isDecisionTransportFailure(failure: AgentCheckpoint["failure"] | undefined): boolean {
+  // 旧 checkpoint 缺少传输分类，仅兼容既有适配器的精确 HTTP 错误，不按任意错误文本猜测。
+  return (failure?.code === "decision-provider-unavailable" && failure.phase === "decision")
+    || (failure?.code === "invalid-decision" && /^大模型请求失败：HTTP (429|502|503|504)$/.test(failure.message));
 }

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Thin Tauri host for Deep Monkey Studio"
 authors = ["Deep Monkey Studio"]
 edition = "2024"
+license-file = "../../../LICENSE"
 
 [lib]
 name = "bim_studio_desktop_lib"

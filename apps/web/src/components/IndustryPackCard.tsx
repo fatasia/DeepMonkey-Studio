@@ -4,6 +4,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { buildIndustryPackImport } from "./industryPackImport";
 import { packPageTemplate } from "./industryTemplatePackCatalog";
 import { DashboardTemplatePreview } from "./DashboardTemplatePreview";
+import { templateTierLabel } from "./dashboardTemplateTiers";
 import type { IndustryTemplatePack } from "./industryTemplatePackTypes";
 
 export function IndustryPackCard({ pack, locale, page, onInsert }: { pack: IndustryTemplatePack; locale: AppLocale; page: DashboardPageDocument; onInsert(): void }) {
@@ -13,6 +14,7 @@ export function IndustryPackCard({ pack, locale, page, onInsert }: { pack: Indus
   const template = packPageTemplate(pack, pack.pages[selected] ?? pack.pages[0]!);
   return <article className="dashboard-template-pack">
     <DashboardTemplatePreview locale={locale} template={template} page={preview}
+      tier="industry" tierLabel={templateTierLabel("industry", locale)}
       previewTitle={preview.name} previewNodes={preview.nodes.filter((node): node is DashboardDataWidgetNode => node.kind === "data-widget")} />
     <div className="industry-pack-details">
       <strong title={tr(locale, pack.guideZh, pack.guideEn)}>{tr(locale, pack.titleZh, pack.titleEn)}</strong>

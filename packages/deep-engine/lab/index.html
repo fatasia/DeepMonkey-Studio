@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep Engine · 渲染实验室</title>
+  <link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/lab.css">
+</head>
+<body>
+  <main class="lab-shell" id="shell">
+    <header class="lab-header"><div><span class="lab-brand">Deep Engine</span><span class="lab-separator">/</span><span>渲染实验室</span></div>
+      <button id="theme" type="button">浅色主题</button></header>
+    <div class="lab-heading"><div><p class="lab-eyebrow">材质与设备验证</p><h1>从真实的一帧开始。</h1></div>
+      <p id="status" role="status" aria-live="polite">准备 WebGPU…</p></div>
+    <div class="lab-workspace">
+      <section class="lab-viewport" aria-label="PBR 材质场景">
+        <canvas id="canvas" aria-label="PBR 网格实例与地面阴影"></canvas>
+        <div class="lab-caption"><span>材质与几何</span><span id="resolution">—</span></div>
+        <div class="lab-metrics"><div><span>绘制调用 / 帧</span><strong id="draws">—</strong></div><div><span>CPU 提交</span><strong id="cpu">—</strong></div><div><span>受管资源</span><strong id="resources">—</strong></div></div>
+      </section>
+      <aside class="lab-controls" aria-label="渲染控制">
+        <h2>场景</h2>
+        <label for="geometry">几何类型</label><select id="geometry"><option value="spheres">材质球</option><option value="mixed">混合网格</option><option value="Box">GLB 标准网格</option><option value="BoxInterleaved">GLB 交错顶点</option><option value="BoxTextured">GLB 嵌入纹理</option><option value="NormalTangentTest">GLB 法线 / AO / 双面</option><option value="TextureEncodingTest">GLB 色彩空间 / 自动法线</option><option value="AlphaBlendModeTest">GLB Alpha / authored TBN</option><option value="MaterialModes">发光 / 遮罩 / 透明合同</option><option value="UvSets">UV0 色彩 / UV1 AO</option></select>
+        <label for="count">实例数量</label><select id="count"><option value="1">1</option><option value="49" selected>49</option><option value="256">256</option><option value="1024">1,024</option><option value="0">空场景</option></select>
+        <div class="lab-range-label"><label for="roughness">粗糙度倍率</label><output id="roughness-value">1.00</output></div>
+        <input id="roughness" type="range" min="0.2" max="2" step="0.05" value="1">
+        <div class="lab-range-label"><label for="exposure">曝光</label><output id="exposure-value">1.00</output></div>
+        <input id="exposure" type="range" min="0.25" max="2" step="0.05" value="1">
+        <button id="motion" type="button" aria-pressed="false">开始环绕</button>
+        <button id="objects" type="button" aria-pressed="false" disabled>开始实例运动</button>
+        <h2>验证</h2>
+        <button id="sample" type="button">采样 120 帧</button>
+        <button id="rebuild" type="button">重建设备</button>
+        <button id="rollback" type="button">测试上传失败回滚</button>
+        <button id="loss" type="button">测试设备丢失与恢复</button>
+        <label for="width">验证页宽度</label><select id="width"><option value="0">自适应</option><option value="1280">1,280 px</option><option value="980">980 px</option><option value="800">800 px</option><option value="480">480 px</option></select>
+        <button id="export" type="button">保存验证记录</button>
+      </aside>
+    </div>
+    <section class="shader-workbench" aria-labelledby="shader-title">
+      <div class="shader-workbench__header">
+        <div><p class="lab-eyebrow">编辑器能力验证</p><h2 id="shader-title">Shader Studio</h2><p>用简洁的 DeepSL 描述材质，由同一套类型 IR 生成 WGSL，并交给当前 GPU 设备复核。</p></div>
+        <div class="shader-workbench__actions"><span id="shader-state" data-state="dirty" role="status" aria-live="polite">等待设备</span><button id="shader-reset" type="button">恢复样例</button><button id="shader-compile" class="primary-action" type="button">编译并校验</button></div>
+      </div>
+      <div class="shader-workbench__body">
+        <div class="shader-code-pane"><div class="shader-pane-label"><strong>DeepSL</strong><span>Ctrl / ⌘ + Enter</span></div><textarea id="shader-source" aria-label="DeepSL Shader 源代码" aria-describedby="shader-diagnostics" spellcheck="false"></textarea></div>
+        <div class="shader-output-pane"><div class="shader-pane-label"><strong>生成的 WGSL</strong><span>最后正确版本</span></div><pre id="shader-output" tabindex="0">设备就绪后显示编译结果。</pre></div>
+      </div>
+      <div class="shader-feedback"><strong>诊断</strong><ul id="shader-diagnostics" aria-live="polite"><li>等待第一次编译。</li></ul></div>
+    </section>
+    <div class="lab-results"><p id="result" aria-live="polite">首帧就绪后可采样；结果仅代表此固定场景。</p>
+      <details><summary>诊断与能力边界</summary><p>静态 glTF/GLB 子集 · UV0/UV1 每纹理槽独立选择 · 嵌入 PNG baseColor / 金属粗糙度 / 法线 / R 通道 AO / sRGB 发光 · 缺失 NORMAL 的确定性生成 · MASK 同步颜色与阴影 cutoff · BLEND 独立透明 pass、稳定后向前排序且不写深度或投射阴影 · authored/运行时切线 · 双面光照 · 摄影棚 IBL。</p><p>GLB 样本：Cesium / Khronos Box、BoxInterleaved、BoxTextured、AlphaBlendModeTest（CC BY 4.0），以及 NormalTangentTest、TextureEncodingTest（CC0 1.0）；源文件未修改，展示时统一缩放与落地。材质模式与 UV 集选项是基于未修改 BoxTextured 解码结果构造的自有运行时合同样本。<a href="/assets/sources.json" target="_blank" rel="noopener">来源、版本、许可与官方样本记录</a></p><pre id="diagnostics">尚未产生诊断记录。</pre></details></div>
+  </main><script type="module" src="/lab.js"></script>
+</body></html>

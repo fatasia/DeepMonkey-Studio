@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import type { SceneSelectionSetState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
+import { WindowedSceneRows } from "./WindowedSceneRows";
+import { SceneSelectionBar } from "./SceneSelectionBar";
 
 export interface SceneOrganizationObject {
   id: string;
@@ -54,6 +56,8 @@ interface Props {
   onApplySelectionSet: (id: string) => void;
   onDeleteSelectionSet: (id: string) => void;
   onRestoreDeletedSelectionSet: () => void;
+  /** 统一对象管理器在主列表已有一条选择工具栏时关闭此处重复的工具栏。 */
+  showSelectionBar?: boolean;
 }
 
 type ContextTarget = { type: "object" | "group"; id: string; groupId?: string; x: number; y: number };
@@ -100,7 +104,7 @@ export function SceneOrganizationPanel(props: Props) {
   function selectObject(event: MouseEvent | KeyboardEvent<HTMLDivElement>, id: string) {
     event.stopPropagation();
     if (event.ctrlKey || event.metaKey) props.onToggle(id);
-    else props.onSelect([id]);
+    else props.onSelect(props.selectedIds.size === 1 && props.selectedIds.has(id) ? [] : [id]);
   }
 
   function startObjectDrag(event: DragEvent, id: string) {
@@ -174,14 +178,14 @@ export function SceneOrganizationPanel(props: Props) {
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr(props.locale, "搜索场景元素", "Search scene elements")} aria-label={tr(props.locale, "搜索场景元素", "Search scene elements")} />
         {query && <button aria-label={tr(props.locale, "清空搜索", "Clear search")} onClick={() => setQuery("")}><X size={12} /></button>}
       </div>
-      <div className={`scene-tree-selection-bar ${selectedObjects.length ? "visible" : ""}`}>
-        <span className="scene-selection-count">{tr(props.locale, "已选", "Selected")} <strong>{selectedObjects.length}</strong></span>
-        <button aria-label={tr(props.locale, "编组所选元素", "Group selection")} title={tr(props.locale, "编组所选元素", "Group selection")} disabled={selectedObjects.length < 2} onClick={() => props.onCreateGroup("")}><Group size={12} /></button>
-        <button aria-label={tr(props.locale, "显示所选元素", "Show selected elements")} title={tr(props.locale, "显示", "Show")} disabled={!selectedObjects.length} onClick={() => props.onShow(selectedObjects.map((item) => item.id), true)}><Eye size={12} /></button>
-        <button aria-label={tr(props.locale, "隐藏所选元素", "Hide selected elements")} title={tr(props.locale, "隐藏", "Hide")} disabled={!selectedObjects.length} onClick={() => props.onShow(selectedObjects.map((item) => item.id), false)}><EyeOff size={12} /></button>
-        <button aria-label={tr(props.locale, "锁定所选元素", "Lock selected elements")} title={tr(props.locale, "锁定", "Lock")} disabled={!selectedObjects.length} onClick={() => props.onLock(selectedObjects.map((item) => item.id), true)}><Lock size={12} /></button>
-        <button aria-label={tr(props.locale, "清除选择", "Clear selection")} title={tr(props.locale, "清除选择", "Clear selection")} disabled={!selectedObjects.length} onClick={() => props.onSelect([])}><X size={12} /></button>
-      </div>
+      {props.showSelectionBar !== false && <SceneSelectionBar
+          locale={props.locale}
+          selectedObjects={selectedObjects}
+          onGroup={() => props.onCreateGroup("")}
+          onShow={(visible) => props.onShow(selectedObjects.map((item) => item.id), visible)}
+          onLock={() => props.onLock(selectedObjects.map((item) => item.id), true)}
+          onClear={() => props.onSelect([])}
+        />}
 
       <div className="scene-tree" role="tree" aria-label={tr(props.locale, "场景元素树", "Scene element tree")}>
         {groups.map((group) => {
@@ -214,7 +218,7 @@ export function SceneOrganizationPanel(props: Props) {
                 <span className="scene-tree-type">{open ? <FolderOpen size={13} /> : <Folder size={13} />}</span>
                 <button className="scene-tree-name" onClick={() => props.onApplySelectionSet(group.id)}><strong>{group.name}</strong><small>{members.length}</small></button>
               </div>
-              {open && <div className="scene-tree-children" role="group">{visibleMembers.map((item) => objectRow(item, group.id))}</div>}
+              {open && <div className="scene-tree-children" role="group"><WindowedSceneRows rows={visibleMembers.map(item => ({ key: item.id, render: () => objectRow(item, group.id) }))} selectedKey={visibleMembers.find(item => props.selectedIds.has(item.id))?.id} /></div>}
             </section>
           );
         })}
@@ -224,8 +228,7 @@ export function SceneOrganizationPanel(props: Props) {
           onDragOver={(event) => { event.preventDefault(); setDropTarget("root"); }}
           onDrop={(event) => { event.preventDefault(); props.onMoveObjects(draggedObjects(event)); setDropTarget(""); }}
         >
-          {rootObjects.filter(matches).map((item) => objectRow(item))}
-          {!props.objects.length && <div className="scene-tree-empty"><Layers3 size={18} /><span>{tr(props.locale, "导入模型或创建基础元素后会显示在这里", "Imported models and primitives appear here")}</span></div>}
+          <WindowedSceneRows rows={rootObjects.filter(matches).map(item => ({ key: item.id, render: () => objectRow(item) }))} selectedKey={rootObjects.find(item => props.selectedIds.has(item.id))?.id} />
           {props.objects.length > 0 && normalizedQuery && !groups.some((group) => group.objectIds.some((id) => objectsById.get(id) && matches(objectsById.get(id)!))) && !rootObjects.some(matches) && <div className="scene-tree-empty"><Search size={17} /><span>{tr(props.locale, "没有匹配元素", "No matching elements")}</span></div>}
         </div>
       </div>

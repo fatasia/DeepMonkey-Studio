@@ -10,7 +10,7 @@ describe("SceneResourceBrowser", () => {
         locale="zh-CN"
         projectModels={[{ id: "model-1", name: "六轴机器人", format: "glb" } as ModelRecord]}
         projectAssets={[{ id: "asset-1", name: "设备铭牌", fileName: "plate.png", kind: "image" } as ProjectAssetRecord]}
-        onImportToggle={vi.fn()}
+        onImportModel={vi.fn()}
         onInsertProjectModel={vi.fn()}
         onInsertPrefab={vi.fn()}
       />,
@@ -23,7 +23,7 @@ describe("SceneResourceBrowser", () => {
     expect(html).toContain(">载入<");
     expect(html).toContain("属性中应用");
     expect(html).toContain("工业预制体");
-    expect(html).toContain(">插入<");
+    expect(html).toContain("平台素材");
   });
 
   it("keeps built-in 3D resources available when a project has no uploads", () => {
@@ -32,7 +32,7 @@ describe("SceneResourceBrowser", () => {
         locale="zh-CN"
         projectModels={[]}
         projectAssets={[]}
-        onImportToggle={vi.fn()}
+        onImportModel={vi.fn()}
         onInsertProjectModel={vi.fn()}
         onInsertPrefab={vi.fn()}
       />,

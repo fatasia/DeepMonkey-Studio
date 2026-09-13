@@ -8,7 +8,6 @@ const defaultRoots = [
   "apps/cloud-render-worker/src",
   "apps/desktop/scripts",
   "apps/desktop/src-tauri",
-  "apps/node-red",
   "apps/web/dist",
   "apps/web/index.html",
   "apps/web/public",

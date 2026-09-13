@@ -1,0 +1,18 @@
+{
+  "dequeue@1.0.5": {
+    "license": "BSD-2-Clause",
+    "evidence": "The installed package includes LICENSE identifying the 2-Clause BSD license."
+  },
+  "humanize@0.0.9": {
+    "license": "MIT",
+    "evidence": "The installed package includes the complete MIT text in LICENSE."
+  },
+  "pause@0.0.1": {
+    "license": "MIT",
+    "evidence": "The installed package includes the complete MIT text under the License section of Readme.md."
+  },
+  "precond@0.2.3": {
+    "license": "MIT",
+    "evidence": "The installed package identifies MIT in README.md and in every distributed source-file header."
+  }
+}

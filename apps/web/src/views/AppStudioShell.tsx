@@ -329,6 +329,7 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     updateFloor,
     expandFloors,
     replaceSceneOrganizationSelection,
+    selectSceneOrganizationObject,
     toggleSceneOrganizationObject,
     setSceneObjectsVisible,
     setSceneObjectsLocked,
@@ -407,6 +408,7 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
   } = actions;
   return {
     currentUser,
+    refreshProject,
     activeApplication,
     activeScene,
     addCameraKeyframe,
@@ -515,6 +517,7 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     rendererSwitching,
     replaceCameraView,
     replaceSceneOrganizationSelection,
+    selectSceneOrganizationObject,
     restoreDeletedSceneSelectionSet,
     restoreSceneObjectIsolation,
     revitRuntime,

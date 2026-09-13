@@ -44,5 +44,21 @@ describe("studio workspace routing", () => {
       pageId: "page",
       view: { zoom: 0.75, scrollLeft: 120, scrollTop: 80, selectedNodeIds: ["widget"] }
     });
+
+    const topologyHistory = workspaceHistoryState({
+      topologyReturn: {
+        kind: "dashboard",
+        projectId: "project",
+        applicationId: "application",
+        pageId: "page",
+        nodeId: "topology-widget",
+        view: { zoom: 0.6, scrollLeft: 40, scrollTop: 30, selectedNodeIds: [] },
+      },
+    });
+    expect(readWorkspaceHistoryState(topologyHistory).topologyReturn).toMatchObject({
+      nodeId: "topology-widget",
+      pageId: "page",
+      view: { zoom: 0.6, scrollLeft: 40, scrollTop: 30 },
+    });
   });
 });

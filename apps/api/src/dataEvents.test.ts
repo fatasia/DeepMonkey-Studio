@@ -42,11 +42,11 @@ describe("data event bus", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/projects/default/data/events",
-      payload: { source: "mqtt/ahu-01", key: "alarm", value: true, sceneId: "scene-1", target: { modelId: "model-1" }, action: "visibility" }
+      payload: { source: "mqtt/ahu-01", key: "alarm", value: {state:"alarm",active:true,severity:"critical",acknowledged:true}, sceneId: "scene-1", target: { modelId: "model-1" }, action: "alarm" }
     });
 
     expect(response.statusCode).toBe(202);
-    await expect(received).resolves.toMatchObject({ projectId: "default", source: "mqtt/ahu-01", key: "alarm", value: true, sceneId: "scene-1" });
+    await expect(received).resolves.toMatchObject({ projectId: "default", source: "mqtt/ahu-01", key: "alarm", action:"alarm",value:{active:true,acknowledged:true,severity:"critical"}, sceneId: "scene-1" });
     expect((await app.inject({ method: "GET", url: "/api/projects/default/data/events/latest?sceneId=scene-1" })).json()).toHaveLength(1);
 
     socket.terminate();

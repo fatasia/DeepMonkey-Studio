@@ -1,0 +1,56 @@
+{
+  "schema": "deep-monkey-battery-example-pack-v1",
+  "sourceProject": "D:/Documents/New project 3",
+  "artifacts": [
+    {
+      "file": "multiscale-battery-assessment-demo.csv",
+      "source": "BatteryLife v11 / SNL",
+      "rows": 5287,
+      "bytes": 1051150,
+      "sha256": "BB1F8EF24D114867BA685F3F9A8514163159859CDECB929773D4795C19CE6661"
+    },
+    {
+      "file": "multiscale-battery-assessment-lfp-demo.csv",
+      "source": "BatteryLife v11 / SNL",
+      "rows": 7239,
+      "bytes": 1459110,
+      "sha256": "E3713635A43585DF2D78EF2A03B3C7B4F965274A206ACC4144608CFD07862A1F"
+    },
+    {
+      "file": "multiscale-battery-assessment-engineering-nmc-demo.csv",
+      "source": "BatteryLife v11 / CALB",
+      "rows": 8955,
+      "bytes": 1398741,
+      "sha256": "3033C1587AD267663160B10077F0C7E166F886506FF70BFF89D552614BE94B5C"
+    },
+    {
+      "file": "multiscale-battery-assessment-engineering-lfp-demo.csv",
+      "source": "BatteryLife v11 / HUST; 100 Ah C-rate-preserving engineering equivalent",
+      "rows": 9391,
+      "bytes": 2132495,
+      "sha256": "1471DA69A7455F892845300C8D8875BB4DE9CD3B62F05336805BCF186742FA1F"
+    },
+    {
+      "file": "multiscale-battery-assessment-pack-demo.csv",
+      "source": "Original deterministic 96S1P engineering fixture",
+      "rows": 8640,
+      "bytes": 1575065,
+      "sha256": "A23E899222A90B816B3887386B8597554853A931BC1878481DA2B2702FF38652"
+    },
+    {
+      "file": "multiscale-battery-assessment-tempest-lfp-280ah-700cycle.csv",
+      "source": "TEMPEST LIC 280 Ah aging / Zenodo 20813753",
+      "derivation": "Endpoint-preserving 4x waveform downsample from the original 89600-row page fixture",
+      "rows": 23100,
+      "bytes": 10030806,
+      "sha256": "632D30BAEA05BAC80E1BEAF9762C70DA24793BC675AA9C55FE0381448B2952A5"
+    },
+    {
+      "file": "soc-estimation-demo.csv",
+      "source": "Original deterministic SOC operating-window fixture",
+      "rows": 241,
+      "bytes": 6882,
+      "sha256": "61973D95D257CEE856049D2CD8D5D8637D52F54449A3DD66117347432F308419"
+    }
+  ]
+}

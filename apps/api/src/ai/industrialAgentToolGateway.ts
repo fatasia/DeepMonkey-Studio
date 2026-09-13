@@ -17,6 +17,8 @@ const CURATED_TOOL_IDS = new Set([
   "operations.maintenance.shadow-evaluate",
   "operations.energy.analyze",
   "operations.control.apply",
+  "battery.model.predict",
+  "battery.release.status",
   "industrial.ai.diagnosis.compose",
   "industrial.ai.alarm-rca.compose",
   "simulation.virtual-debug.run",

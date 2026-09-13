@@ -1,5 +1,5 @@
 .scene-tool-dock {
-  z-index: 24;
+  z-index: calc(var(--layer-panel) + 4); /* 2D 场景工具坞,面板带上层 */
   gap: 3px;
   padding: 6px;
   border-color: rgba(97, 109, 116, 0.72);

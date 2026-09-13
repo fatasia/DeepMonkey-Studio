@@ -42,15 +42,21 @@ export function createSceneFileTransferActions(context: FileTransferContext, mak
     setScenes,
   } = context;
 
-  function exportSceneConfig(scene?: SceneSnapshot) {
+  function snapshotForExport(scene?: SceneSnapshot): SceneSnapshot | undefined {
     const snapshot = scene ?? makeSnapshot();
+    if (!snapshot) showError(new Error("场景尚未完整载入或渲染器正在恢复，请待载入完成后导出"));
+    return snapshot;
+  }
+
+  function exportSceneConfig(scene?: SceneSnapshot) {
+    const snapshot = snapshotForExport(scene);
     if (!snapshot) return;
     exportLooseScene(snapshot);
     setMessage("已导出零散场景配置；模型资源仍由项目资源管理");
   }
 
   async function exportSingleFileScene(scene?: SceneSnapshot) {
-    const snapshot = scene ?? makeSnapshot();
+    const snapshot = snapshotForExport(scene);
     if (!snapshot || !project) return;
     setBusy(true);
     try {
@@ -68,6 +74,7 @@ export function createSceneFileTransferActions(context: FileTransferContext, mak
     setBusy(true);
     try {
       if (scene && activeScene?.id !== scene.id) await applyScene(scene, false);
+      if (!engine.isSceneSnapshotReady(scene?.id ?? activeScene?.id)) throw new Error("场景尚未完整载入，请待载入完成后导出");
       const data = await engine.exportSceneGlb({ scope: "all" });
       exportGlbFile(data, scene?.name ?? sceneName);
       setMessage("已导出完整场景 GLB（几何、材质、纹理、层级、变换与兼容动画）");
@@ -83,6 +90,7 @@ export function createSceneFileTransferActions(context: FileTransferContext, mak
     setBusy(true);
     try {
       if (scene && activeScene?.id !== scene.id) await applyScene(scene, false);
+      if (!engine.isSceneSnapshotReady(scene?.id ?? activeScene?.id)) throw new Error("场景尚未完整载入，请待载入完成后导出");
       const data = await engine.exportSceneFbx();
       exportFbxFile(data, scene?.name ?? sceneName);
       setMessage("已导出 FBX（当前可见网格、变换与基础材质）");

@@ -5,6 +5,7 @@ import { bakeWebLightmap, type WebLightmapResult } from "./lightmapBaker";
 import { preserveOptimizationCredit } from "./modelOptimizationCredit";
 import { optimizerIO } from "./modelOptimizerIO";
 import { migrateLegacyMaterials } from "./legacyGltfMaterials";
+import { compressKtx2Textures, type Ktx2Quality } from "./ktx2Encoder";
 
 export interface ModelOptimizationOptions {
   simplifyEnabled: boolean;
@@ -13,7 +14,7 @@ export interface ModelOptimizationOptions {
   dracoEnabled: boolean;
   textureEnabled: boolean;
   textureSize: number;
-  textureFormat: "webp" | "jpeg" | "original";
+  textureFormat: "webp" | "jpeg" | "original" | Ktx2Quality;
   bakeEnabled: boolean;
   bakeMode: "vertex" | "lightmap";
   bakeStrength: number;
@@ -105,8 +106,9 @@ export async function optimizeModelFile(
       lockBorder: false
     }));
   }
-  if (options.textureEnabled) {
+  if (options.textureEnabled && options.textureFormat !== "ktx2-uastc" && options.textureFormat !== "ktx2-etc1s") {
     transforms.push(textureCompress({
+      formats: /^(?!image\/ktx2$)/,
       ...(options.textureFormat === "original" ? {} : { targetFormat: options.textureFormat }),
       resize: [options.textureSize, options.textureSize]
     }));
@@ -142,6 +144,9 @@ export async function optimizeModelFile(
       indirectSamples: options.lightmapIndirectSamples,
       denoise: options.lightmapDenoise
     }, onProgress);
+  }
+  if (options.textureEnabled && (options.textureFormat === "ktx2-uastc" || options.textureFormat === "ktx2-etc1s")) {
+    await compressKtx2Textures(document, options.textureFormat, options.textureSize, onProgress);
   }
   if (options.dracoEnabled) {
     onProgress?.("正在执行 Draco 压缩");
@@ -272,7 +277,7 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-async function readDocument(io: WebIO, file: File): Promise<Document> {
+export async function readDocument(io: WebIO, file: File): Promise<Document> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (file.name.toLocaleLowerCase().endsWith(".glb")) {
     const jsonDocument = await io.binaryToJSON(bytes);
@@ -307,7 +312,7 @@ function repairInvalidSparseAccessors(json: JSONDocument["json"]): void {
   }
 }
 
-function statistics(document: Document, bytes: number): ModelFileStatistics {
+export function statistics(document: Document, bytes: number): ModelFileStatistics {
   const root = document.getRoot();
   let primitives = 0;
   let triangles = 0;

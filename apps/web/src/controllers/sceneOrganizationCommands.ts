@@ -14,6 +14,7 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
     lastDeletedSelectionSet,
     setMessage,
     setRevision,
+    setSelectedLightId,
     setSceneOrganizationSelection,
     setSelectionSets,
     setLastDeletedSelectionSet,
@@ -27,21 +28,41 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
 
   function replaceSceneOrganizationSelection(ids: string[]) {
     const available = new Set(sceneOrganizationObjects.map((item) => item.id));
+    setSelectedLightId?.("");
     synchronizeSelectionFromOutliner(ids, available, {
       selectPrimaryInViewer: (id) => engine?.select(id),
       replaceObjectSelection: (next) => setSceneOrganizationSelection(next),
     });
   }
 
+  function selectSceneOrganizationObject(
+    id: string,
+    options: { additive?: boolean; range?: boolean } = {},
+  ) {
+    const orderedIds = sceneOrganizationObjects.map((item) => item.id);
+    if (!orderedIds.includes(id)) return;
+
+    let requestedIds: string[];
+    if (options.range) {
+      const currentIds = [...sceneOrganizationSelection].filter((itemId) => orderedIds.includes(itemId));
+      const anchorId = currentIds.at(-1) ?? id;
+      const anchorIndex = orderedIds.indexOf(anchorId);
+      const targetIndex = orderedIds.indexOf(id);
+      const rangeIds = orderedIds.slice(Math.min(anchorIndex, targetIndex), Math.max(anchorIndex, targetIndex) + 1);
+      requestedIds = options.additive ? [...new Set([...currentIds, ...rangeIds])] : rangeIds;
+    } else if (options.additive) {
+      requestedIds = [...sceneOrganizationSelection];
+      const index = requestedIds.indexOf(id);
+      if (index >= 0) requestedIds.splice(index, 1);
+      else requestedIds.push(id);
+    } else {
+      requestedIds = sceneOrganizationSelection.size === 1 && sceneOrganizationSelection.has(id) ? [] : [id];
+    }
+    replaceSceneOrganizationSelection(requestedIds);
+  }
+
   function toggleSceneOrganizationObject(id: string) {
-    const next = new Set(sceneOrganizationSelection);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    const available = new Set(sceneOrganizationObjects.map((item) => item.id));
-    synchronizeSelectionFromOutliner([...next], available, {
-      selectPrimaryInViewer: (primaryId) => engine?.select(primaryId),
-      replaceObjectSelection: (ids) => setSceneOrganizationSelection(ids),
-    });
+    selectSceneOrganizationObject(id, { additive: true });
   }
 
   function setSceneObjectsVisible(ids: string[], visible: boolean) {
@@ -90,9 +111,11 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
     commitOrganizationChange(`保存选择集“${next.name}”`);
   }
 
-  function createSceneGroup(name: string) {
+  function createSceneGroup(name: string, ids?: string[]) {
     const next = createSelectionState(name, "group");
-    if (!next) return;
+    const objectIds = (ids ?? next?.objectIds ?? []).filter(id => sceneOrganizationObjects.some(item => item.id === id && !item.locked));
+    if (!next || objectIds.length < 2) return;
+    next.objectIds = objectIds;
     setSelectionSets((items) => [
       ...items.map((item) => item.kind === "group" ? { ...item, objectIds: item.objectIds.filter((id) => !next.objectIds.includes(id)) } : item),
       next,
@@ -108,7 +131,8 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
   }
 
   function moveSceneObjectsToGroup(ids: string[], groupId?: string, beforeObjectId?: string) {
-    const moving = [...new Set(ids)].filter((id) => sceneOrganizationObjects.some((item) => item.id === id));
+    const moving = [...new Set(ids)].filter((id) => sceneOrganizationObjects.some((item) => item.id === id && !item.locked));
+    if (groupId && !selectionSets.some(item => item.kind === "group" && item.id === groupId)) return;
     if (!moving.length) return;
     setSelectionSets((items) => items.map((item) => {
       if (item.kind !== "group") return item;
@@ -185,6 +209,7 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
 
   return {
     replaceSceneOrganizationSelection,
+    selectSceneOrganizationObject,
     toggleSceneOrganizationObject,
     setSceneObjectsVisible,
     setSceneObjectsLocked,

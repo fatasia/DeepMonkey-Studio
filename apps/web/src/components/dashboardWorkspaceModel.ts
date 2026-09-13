@@ -35,6 +35,10 @@ export const DATA_WIDGET_TYPES: SceneDashboardWidgetType[] = [
   "treemap",
   "graph",
   "map",
+  "wordcloud",
+  "boxplot",
+  "waterfall",
+  "polarBar",
   "rank",
   "table",
   "scroll-table",
@@ -52,7 +56,7 @@ export const DATA_WIDGET_CATEGORIES: Array<{ id: string; zh: string; en: string;
     id: "analysis",
     zh: "图表",
     en: "Charts",
-    types: ["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map"],
+    types: ["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "wordcloud", "boxplot", "waterfall", "polarBar"],
   },
   { id: "indicator", zh: "指标与表格", en: "Metrics & tables", types: ["value", "digital-flip", "liquid-fill", "progress", "status", "rank", "table", "scroll-table"] },
   { id: "control", zh: "筛选与内容", en: "Controls & content", types: ["filter", "record-form", "text", "shape", "decoration"] },
@@ -97,6 +101,10 @@ export function dataWidgetTypeLabel(locale: AppLocale, type: SceneDashboardWidge
     treemap: ["矩形树图", "Treemap"],
     graph: ["关系图", "Graph"],
     map: ["地图", "Map"],
+    wordcloud: ["词云", "Word cloud"],
+    boxplot: ["箱线图", "Boxplot"],
+    waterfall: ["瀑布图", "Waterfall"],
+    polarBar: ["极坐标柱", "Polar bars"],
     rank: ["排行列表", "Ranking"],
     table: ["明细表", "Table"],
     "scroll-table": ["滚动表格", "Scrolling table"],
@@ -133,8 +141,6 @@ export interface DashboardContextMenuState {
   x: number;
   y: number;
   nodeId: string;
-  /** 右键点下方全部遮挡组件 id（含被遮者），zIndex 降序；供"选择"子菜单切换（EX-001A）。 */
-  stack?: string[];
 }
 export type InspectorTab = "content" | "data" | "style" | "animation" | "interaction";
 export const RULER_SIZE = 24;

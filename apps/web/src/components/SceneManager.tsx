@@ -30,6 +30,7 @@ function useSceneManagerController({
   navigationNotice,
   onDismissNavigationNotice,
   onProjectChange,
+  onProjectImported,
   onCreateProject,
   onRenameProject,
   onDeleteProject,
@@ -53,6 +54,7 @@ function useSceneManagerController({
   onExportFbx,
   onDelete,
   onOptimizer,
+  onParametric,
   onDataCenter,
   onCreateTopology,
   onOpenTopology,
@@ -61,6 +63,7 @@ function useSceneManagerController({
   onAiAssistant,
   onDocs,
   onSystem,
+  onBranding,
   onCloudRender,
   onLocaleToggle,
   onConnectionStatus,
@@ -79,6 +82,9 @@ function useSceneManagerController({
   const [busy, setBusy] = useState(false);
   const publicationPendingRef = useRef(false);
   const [modelLibraryBusy, setModelLibraryBusy] = useState(false);
+  const [uploadedResources, setUploadedResources] = useState<Array<ModelRecord | ProjectAssetRecord>>([]);
+  const resourceProject = useRef(project?.id);
+  resourceProject.current = project?.id;
   const [showcaseBusy, setShowcaseBusy] = useState(false);
   const [assetTab, setAssetTab] = useState<ProjectAssetTab>("all");
   const [assetSearch, setAssetSearch] = useState("");
@@ -87,6 +93,7 @@ function useSceneManagerController({
   const [sceneStatusFilter, setSceneStatusFilter] = useState<SceneStatusFilter>("all");
   const [sceneSort, setSceneSort] = useState<SceneSortKey>("updated");
   const [deliveryReviewOpen, setDeliveryReviewOpen] = useState(false);
+  const [projectTransferOpen, setProjectTransferOpen] = useState(false);
   const [cloudConfigured, setCloudConfigured] = useState(false);
   const [cloudHint, setCloudHint] = useState<string>();
   const [cloudScenePolicies, setCloudScenePolicies] = useState<Record<string, boolean>>({});
@@ -143,6 +150,7 @@ function useSceneManagerController({
 
   useEffect(() => {
     setSceneSearch("");
+    setUploadedResources([]);
     setAssetSearch("");
     setSceneStatusFilter("all");
     setCopyNotice("");
@@ -246,7 +254,9 @@ function useSceneManagerController({
     if (!files?.length) return;
     setModelLibraryBusy(true);
     try {
-      await onUploadModels(files, robotEntries);
+      const projectId = project?.id;
+      const models = await onUploadModels(files, robotEntries);
+      if (resourceProject.current === projectId) setUploadedResources(models);
     } finally {
       setModelLibraryBusy(false);
       if (modelUploadRef.current) modelUploadRef.current.value = "";
@@ -290,7 +300,11 @@ function useSceneManagerController({
     if (!files?.length || !project) return;
     setModelLibraryBusy(true);
     try {
-      for (const file of [...files]) await api.uploadImageAsset(project.id, file);
+      const uploaded: ProjectAssetRecord[] = [];
+      for (const file of [...files]) {
+        uploaded.push(await api.uploadImageAsset(project.id, file));
+        if (resourceProject.current === project.id) setUploadedResources([...uploaded]);
+      }
       await onRefreshModels();
     } catch (reason) {
       window.alert(reason instanceof Error ? reason.message : String(reason));
@@ -304,7 +318,11 @@ function useSceneManagerController({
     if (!files?.length || !project) return;
     setModelLibraryBusy(true);
     try {
-      for (const file of [...files]) await api.uploadVideoAsset(project.id, file);
+      const uploaded: ProjectAssetRecord[] = [];
+      for (const file of [...files]) {
+        uploaded.push(await api.uploadVideoAsset(project.id, file));
+        if (resourceProject.current === project.id) setUploadedResources([...uploaded]);
+      }
       await onRefreshModels();
     } catch (reason) {
       window.alert(reason instanceof Error ? reason.message : String(reason));
@@ -434,10 +452,13 @@ function useSceneManagerController({
     onOpenTopology,
     onOperationsCenter,
     onOptimizer,
+    onParametric,
     onProjectChange,
+    onProjectImported,
     onPublish,
     onRenameProject,
     onSystem,
+    onBranding,
     onUnpublish,
     onVisionCenter,
     openCreateDialog,
@@ -464,6 +485,8 @@ function useSceneManagerController({
     setAssetTab,
     setCloudError,
     setDeliveryReviewOpen,
+    projectTransferOpen,
+    setProjectTransferOpen,
     setDialogMode,
     setManagerTab,
     setName,
@@ -484,6 +507,8 @@ function useSceneManagerController({
     toggleSceneCloudRender,
     topologies,
     uploadLibraryImages,
+    uploadedResources,
+    setUploadedResources,
     uploadLibraryModels,
     uploadLibraryVideos,
     userName,

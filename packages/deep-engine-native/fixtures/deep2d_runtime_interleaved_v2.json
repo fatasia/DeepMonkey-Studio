@@ -1,0 +1,101 @@
+{
+  "schema": "deep-engine.deep2d-runtime",
+  "schemaVersion": 2,
+  "id": "native:deep2d:interleaved-probe",
+  "revision": 1,
+  "composition": "z-ordered",
+  "displayList": {
+    "schemaVersion": 1,
+    "id": "native:deep2d:interleaved-probe:paths",
+    "revision": 1,
+    "logicalWidth": 4,
+    "logicalHeight": 1,
+    "scaleFactor": 1,
+    "resources": [
+      {
+        "kind": "path",
+        "id": "probe:background",
+        "revision": 1,
+        "verbs": [
+          { "op": "move", "x": 0, "y": 0 },
+          { "op": "line", "x": 4, "y": 0 },
+          { "op": "line", "x": 4, "y": 1 },
+          { "op": "line", "x": 0, "y": 1 },
+          { "op": "close" }
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "probe:foreground",
+        "revision": 1,
+        "verbs": [
+          { "op": "move", "x": 2, "y": 0 },
+          { "op": "line", "x": 3, "y": 0 },
+          { "op": "line", "x": 3, "y": 1 },
+          { "op": "line", "x": 2, "y": 1 },
+          { "op": "close" }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "kind": "path",
+        "id": "probe:red-path",
+        "zOrder": 0,
+        "transform": [1, 0, 0, 1, 0, 0],
+        "pathId": "probe:background",
+        "fill": [1, 0, 0, 1]
+      },
+      {
+        "kind": "path",
+        "id": "probe:blue-path",
+        "zOrder": 2,
+        "transform": [1, 0, 0, 1, 0, 0],
+        "pathId": "probe:foreground",
+        "fill": [0, 0, 1, 1]
+      }
+    ]
+  },
+  "atlases": [
+    {
+      "id": "probe:image-atlas",
+      "revision": 1,
+      "kind": "image",
+      "format": "rgba8unorm-srgb",
+      "width": 1,
+      "height": 1,
+      "sampling": "nearest",
+      "dataBase64": "AP8A/w=="
+    },
+    {
+      "id": "probe:glyph-atlas",
+      "revision": 1,
+      "kind": "glyph",
+      "format": "r8unorm",
+      "width": 1,
+      "height": 1,
+      "sampling": "nearest",
+      "dataBase64": "/w=="
+    }
+  ],
+  "quads": [
+    {
+      "id": "probe:green-image",
+      "zOrder": 1,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "atlasId": "probe:image-atlas",
+      "source": [0, 0, 1, 1],
+      "destination": [1, 0, 2, 1],
+      "color": [1, 1, 1, 1]
+    },
+    {
+      "id": "probe:yellow-glyph",
+      "zOrder": 3,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "atlasId": "probe:glyph-atlas",
+      "source": [0, 0, 1, 1],
+      "destination": [3, 0, 1, 1],
+      "color": [1, 1, 0, 1]
+    }
+  ]
+}

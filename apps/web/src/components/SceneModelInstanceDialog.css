@@ -11,6 +11,9 @@
 .instance-dialog-hint { margin: 12px 0; color: var(--text); font-size: 12px; line-height: 1.7; }
 .instance-dialog-field { display: grid; gap: 8px; margin-top: 20px; color: var(--text-strong); }
 .instance-dialog-field select { width: 100%; min-width: 0; min-height: 36px; padding: 6px 8px; color: var(--text-strong); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
+.instance-dialog .instance-previous-version{margin-top:10px;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;}
+.instance-replacement-review{display:grid;gap:8px;margin-top:16px;padding:12px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);font-size:12px;line-height:1.6;}
+.instance-replacement-review p{margin:0;color:var(--text-strong);overflow-wrap:anywhere;}.instance-replacement-review small{color:var(--text-muted);font-size:12px;}
 .instance-dialog-error { padding: 10px 12px; color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--danger) 8%, var(--surface-1)); overflow-wrap: anywhere; }
 .instance-dialog-actions { display: flex; align-items: center; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 .instance-dialog-actions > span { flex: 1; }

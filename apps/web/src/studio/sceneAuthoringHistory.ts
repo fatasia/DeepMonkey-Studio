@@ -70,6 +70,16 @@ export class SceneAuthoringHistory {
     return true;
   }
 
+  /** 首次保存只确定身份，所有草稿历史仍指向同一已保存场景。 */
+  adoptSceneIdentity(saved: SceneSnapshot): void {
+    if (!this.current || this.current.projectId !== saved.projectId) { this.reset(saved); return; }
+    const identify = (scene: SceneSnapshot): SceneSnapshot => ({ ...scene, id: saved.id, projectId: saved.projectId, createdAt: saved.createdAt });
+    this.current = identify(this.current);
+    this.undoStack = this.undoStack.map(entry => ({ ...entry, before: identify(entry.before), after: identify(entry.after) }));
+    this.redoStack = this.redoStack.map(entry => ({ ...entry, before: identify(entry.before), after: identify(entry.after) }));
+    this.emit();
+  }
+
   undo(): SceneSnapshot | undefined {
     const entry = this.undoStack.pop();
     if (!entry) return;
@@ -101,6 +111,9 @@ function sceneFingerprint(scene: SceneSnapshot): string {
   const copy = cloneScene(scene);
   // 保存时生成的缩略图、时间戳和当前选择不是作者编辑，不能吃掉一次撤销。
   copy.updatedAt = "";
+  // 未保存草稿的快照身份和创建时间会变化，它们不是用户编辑。
+  copy.id = "";
+  copy.createdAt = "";
   delete copy.thumbnail;
   delete copy.selectedModelId;
   delete copy.selectedLayerId;

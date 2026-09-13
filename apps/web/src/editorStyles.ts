@@ -11,6 +11,7 @@ import "./styles/sceneSimulationPanel.css";
 import "./styles/inspectorContext.css";
 import "./styles/interactionPolish.css";
 import "./styles/centers.css";
+import "./styles/battery-analysis.css";
 import "./styles/operations-study.css";
 import "./styles/plant-lite-authoring.css";
 import "./styles/accessibilityReadability.css";

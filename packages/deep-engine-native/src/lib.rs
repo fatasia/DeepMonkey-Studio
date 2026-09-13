@@ -1,0 +1,23 @@
+pub mod bloom;
+pub mod cascaded_shadow;
+mod cascaded_shadow_math;
+pub mod contract;
+pub mod culling_contract;
+pub mod deep2d;
+pub mod ibl;
+pub mod lod_contract;
+pub mod mesh_abi;
+pub mod pbr_reference;
+pub mod pbr_texture;
+pub mod runtime_package;
+pub mod scene;
+mod scene_alpha;
+pub mod scene_bounds;
+mod scene_pack;
+pub mod scene_resource_domain;
+pub mod scene_resource_identity;
+pub mod shader_disk_cache;
+pub mod shader_package;
+pub mod shadow_cache;
+
+pub const NATIVE_SHADER_VERSION: u32 = 1;

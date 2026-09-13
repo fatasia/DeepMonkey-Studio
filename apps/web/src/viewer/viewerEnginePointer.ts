@@ -10,10 +10,19 @@ import { createAnnotationVisual, createMeasurementVisual, disposeViewerObject } 
 import { type AnnotationPointerHit, type InteractionEventDetail, type LoadedSceneModel } from "./viewerTypes";
 import { type PointerSceneHit } from "./viewerEngineTypes";
 import { ViewerEngineObjectState } from "./viewerEngineObjectState";
+import { createOrdinaryPicking } from "./ordinaryPicking";
 
 /** Pointer 职责层。 */
 export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
+  protected readonly ordinaryPicking = createOrdinaryPicking(this);
+
+  setPickingAccelerationEnabled(enabled: boolean): void { this.ordinaryPicking.setEnabled(enabled); }
+
+  getPickingAccelerationDiagnostics() { return this.ordinaryPicking.diagnostics(); }
+
   protected updateCollisions(force: boolean, now = performance.now()): void {
+      // 未启用碰撞且没有待清理高亮时，不遍历全场景计算包围盒。
+      if (!this.collisionEnabledIds.size && !this.collidingIds.size && !this.collisionRecords.length) return;
       if (!force && now - this.lastCollisionCheck < 300) return;
       this.lastCollisionCheck = now;
       const next = new Set<string>();
@@ -146,7 +155,12 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
         -((event.clientY - rect.top) / rect.height) * 2 + 1
       );
       this.raycaster.setFromCamera(this.pointerPosition, this.camera);
-      return this.raycaster.intersectObjects(this.visibleModelObjects(), true)[0];
+      const excluded = new Set<THREE.Object3D>();
+      for (const id of this.fragmentModels.keys()) {
+        const object = this.models.get(id)?.object;
+        if (object) excluded.add(object);
+      }
+      return this.ordinaryPicking.intersectObjects(this.raycaster, this.visibleModelObjects(), excluded)[0];
     }
   protected annotationPointerHit(event: PointerEvent): AnnotationPointerHit | undefined {
       const rect = this.renderer.domElement.getBoundingClientRect();

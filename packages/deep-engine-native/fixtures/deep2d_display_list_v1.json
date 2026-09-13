@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "id": "chart:temperature",
+  "revision": 4,
+  "logicalWidth": 640,
+  "logicalHeight": 360,
+  "scaleFactor": 1.5,
+  "resources": [
+    {
+      "kind": "path",
+      "id": "series:line",
+      "revision": 2,
+      "verbs": [
+        { "op": "move", "x": 0, "y": 20 },
+        { "op": "line", "x": 640, "y": 100 }
+      ]
+    },
+    {
+      "kind": "font",
+      "id": "font:ui",
+      "revision": 0,
+      "assetId": "asset:noto-sans-sc",
+      "family": "Noto Sans SC",
+      "weight": 400,
+      "style": "normal"
+    },
+    {
+      "kind": "image",
+      "id": "image:logo",
+      "revision": 1,
+      "assetId": "asset:logo",
+      "width": 64,
+      "height": 64,
+      "colorSpace": "srgb"
+    }
+  ],
+  "commands": [
+    {
+      "kind": "path",
+      "id": "draw:line",
+      "zOrder": 0,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "pathId": "series:line",
+      "stroke": [0.1, 0.6, 0.9, 1],
+      "strokeWidth": 2,
+      "dash": [4, 2],
+      "lineJoin": "round",
+      "hitId": "series:temperature"
+    },
+    {
+      "kind": "text",
+      "id": "draw:title",
+      "zOrder": 1,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "text": "温度 / °C",
+      "x": 16,
+      "y": 24,
+      "fontId": "font:ui",
+      "fontSize": 14,
+      "color": [1, 1, 1, 1],
+      "direction": "ltr"
+    },
+    {
+      "kind": "image",
+      "id": "draw:logo",
+      "zOrder": 2,
+      "transform": [1, 0, 0, 1, 0, 0],
+      "imageId": "image:logo",
+      "x": 560,
+      "y": 16,
+      "width": 64,
+      "height": 64,
+      "opacity": 0.8,
+      "sampling": "linear"
+    }
+  ]
+}

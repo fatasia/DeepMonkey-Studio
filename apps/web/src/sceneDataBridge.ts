@@ -38,9 +38,11 @@ export function subscribeSceneData(projectId: string, listener: MessageListener,
   };
 }
 
-export function publishLocalSceneData(message: DataMessage): void {
+export function publishLocalSceneData(message: DataMessage, projectId?: string): void {
+  if (message.action === "alarm" && !projectId) return;
   const delivered = new Set<MessageListener>();
-  for (const channel of channels.values()) for (const listener of channel.messageListeners) {
+  const selected = projectId ? [channels.get(projectId)].filter((channel): channel is ProjectChannel => Boolean(channel)) : channels.values();
+  for (const channel of selected) for (const listener of channel.messageListeners) {
     if (!delivered.has(listener)) listener(message);
     delivered.add(listener);
   }

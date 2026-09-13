@@ -13,10 +13,9 @@ test-model/
 --format/
 apps/web/public/wasm/
 apps/web/public/draco/
+apps/web/public/basis/
 apps/web/public/brand/logo.webp
-apps/node-red/.data/
-apps/node-red/flows_cred.json
-apps/node-red/.flows*.backup
+apps/web/public/brand/backups/
 https/*
 !https/README.md
 auto.crt
@@ -25,6 +24,8 @@ auto.key
 login-verification.png
 **/bin/
 **/obj/
+**/target/
+packages/deep-engine-native/target-native-packet-cache/
 tools/libredwg/
 tools/fbx2gltf/
 tools/mediamtx/mediamtx.exe
@@ -42,5 +43,12 @@ tools/unity/.smoke-runs/
 .DS_Store
 .superpowers/
 .gstack/
+.runtime-logs/
+/artifacts/
+test-output*.mjs
+.idea/
+.vscode/
+Thumbs.db
+*.swp
 apps/desktop/.scene-viewer-build/
 apps/desktop/src-tauri/scene-viewer.generated.conf.json

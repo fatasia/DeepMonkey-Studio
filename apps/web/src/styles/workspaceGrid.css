@@ -1,0 +1,25 @@
+/* 资源页的 24px 工业网格扩展到其余工作台；只作用于页面底层，不覆盖内容面板。 */
+:is(
+  .scene-manager-page.scene-manager-page,
+  .dashboard-workspace.dashboard-workspace,
+  .branding-settings-page.branding-settings-page,
+  .data-center-page.data-center-page,
+  .parametric-page-shell.parametric-page-shell,
+  .optimizer-page.optimizer-page
+) {
+  background-color: var(--bg-0);
+  background-image:
+    radial-gradient(1100px 380px at 84% -140px, color-mix(in srgb, var(--accent) 8%, transparent), transparent 68%),
+    radial-gradient(760px 320px at 6% -120px, color-mix(in srgb, var(--info) 6%, transparent), transparent 70%),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--line) 30%, transparent) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--line) 30%, transparent) 0 1px, transparent 1px 24px),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 38%, var(--bg-0)) 0%, var(--bg-0) 560px);
+}
+
+/* 看板画布保留自身页面底色；网格只透过工作区的空白边界显现。 */
+.dashboard-workspace .dashboard-canvas-scroll {
+  background-color: color-mix(in srgb, var(--bg-0) 88%, transparent);
+  background-image:
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--line) 24%, transparent) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--line) 24%, transparent) 0 1px, transparent 1px 24px);
+}

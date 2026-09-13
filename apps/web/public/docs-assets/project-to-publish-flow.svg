@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">项目到发布的交付路径</title>
+  <desc id="desc">项目、资源、编辑、验证和发布五个步骤由箭头连接。</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#172126"/>
+      <stop offset="1" stop-color="#0f171a"/>
+    </linearGradient>
+    <marker id="arrow" markerHeight="8" markerWidth="8" refX="7" refY="4" orient="auto">
+      <path d="m0 0 8 4-8 4z" fill="#d6aa4d"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="300" rx="12" fill="#0b1114"/>
+  <path d="M184 150h76m160 0h76m160 0h76m160 0h76" fill="none" stroke="#d6aa4d" stroke-width="2" marker-end="url(#arrow)"/>
+  <g font-family="Microsoft YaHei,Arial,sans-serif">
+    <g transform="translate(24 60)">
+      <rect width="160" height="180" rx="8" fill="url(#panel)" stroke="#3b4a50"/>
+      <circle cx="32" cy="34" r="18" fill="#d6aa4d"/><text x="32" y="40" text-anchor="middle" font-size="16" font-weight="700" fill="#0b1114">1</text>
+      <text x="24" y="86" font-size="19" font-weight="700" fill="#e6ecef">项目</text>
+      <text x="24" y="117" font-size="13" fill="#a7b2b8">身份与权限</text>
+      <text x="24" y="141" font-size="13" fill="#a7b2b8">场景与应用</text>
+    </g>
+    <g transform="translate(260 60)">
+      <rect width="160" height="180" rx="8" fill="url(#panel)" stroke="#3b4a50"/>
+      <circle cx="32" cy="34" r="18" fill="#d6aa4d"/><text x="32" y="40" text-anchor="middle" font-size="16" font-weight="700" fill="#0b1114">2</text>
+      <text x="24" y="86" font-size="19" font-weight="700" fill="#e6ecef">资源</text>
+      <text x="24" y="117" font-size="13" fill="#a7b2b8">模型、媒体</text>
+      <text x="24" y="141" font-size="13" fill="#a7b2b8">环境与材质</text>
+    </g>
+    <g transform="translate(496 60)">
+      <rect width="160" height="180" rx="8" fill="url(#panel)" stroke="#3b4a50"/>
+      <circle cx="32" cy="34" r="18" fill="#d6aa4d"/><text x="32" y="40" text-anchor="middle" font-size="16" font-weight="700" fill="#0b1114">3</text>
+      <text x="24" y="86" font-size="19" font-weight="700" fill="#e6ecef">编辑</text>
+      <text x="24" y="117" font-size="13" fill="#a7b2b8">二维看板</text>
+      <text x="24" y="141" font-size="13" fill="#a7b2b8">三维场景与脚本</text>
+    </g>
+    <g transform="translate(732 60)">
+      <rect width="160" height="180" rx="8" fill="url(#panel)" stroke="#3b4a50"/>
+      <circle cx="32" cy="34" r="18" fill="#d6aa4d"/><text x="32" y="40" text-anchor="middle" font-size="16" font-weight="700" fill="#0b1114">4</text>
+      <text x="24" y="86" font-size="19" font-weight="700" fill="#e6ecef">验证</text>
+      <text x="24" y="117" font-size="13" fill="#a7b2b8">预览与体检</text>
+      <text x="24" y="141" font-size="13" fill="#a7b2b8">数据与交互回归</text>
+    </g>
+    <g transform="translate(968 60)">
+      <rect width="160" height="180" rx="8" fill="#211d15" stroke="#d6aa4d"/>
+      <circle cx="32" cy="34" r="18" fill="#d6aa4d"/><text x="32" y="40" text-anchor="middle" font-size="16" font-weight="700" fill="#0b1114">5</text>
+      <text x="24" y="86" font-size="19" font-weight="700" fill="#e6ecef">发布</text>
+      <text x="24" y="117" font-size="13" fill="#d6aa4d">版本与恢复</text>
+      <text x="24" y="141" font-size="13" fill="#d6aa4d">公开访问</text>
+    </g>
+  </g>
+</svg>

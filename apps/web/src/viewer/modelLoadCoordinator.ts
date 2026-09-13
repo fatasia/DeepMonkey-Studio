@@ -6,6 +6,10 @@ export class ModelLoadCoordinator<T> {
     return this.epoch;
   }
 
+  get hasPending(): boolean {
+    return [...this.pending.values()].some(entry => entry.epoch === this.epoch);
+  }
+
   isCurrent(epoch: number): boolean {
     return epoch === this.epoch;
   }

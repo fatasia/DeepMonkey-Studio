@@ -329,9 +329,9 @@ export function DashboardInspectorContent() {
                     ))}
                   </select>
                 </label>
-                <button className="dashboard-enter-scene" disabled={!selectedNode.widget.topologyId} onClick={onOpenTopology}>
+                <button className="dashboard-enter-scene" onClick={() => onOpenTopology(selectedNode.widget.topologyId, selectedNode.id, currentView())}>
                   <Workflow size={15} />
-                  {tr(locale, "编辑当前拓扑", "Edit topology")}
+                  {selectedNode.widget.topologyId ? tr(locale, "编辑当前拓扑", "Edit topology") : tr(locale, "新建并编辑拓扑", "Create and edit topology")}
                 </button>
               </>
             )}

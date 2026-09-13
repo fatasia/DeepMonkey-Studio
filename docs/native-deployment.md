@@ -6,7 +6,7 @@ Deep Monkey Studio 不使用 Docker。开发、联调、健康检查和生产部
 
 | 场景 | 必需环境 | 可选环境 |
 | --- | --- | --- |
-| Web / API 开发 | Git、Node.js 24、Corepack、pnpm 11.18 | PostgreSQL、MinIO、Node-RED、实时视频服务 |
+| Web / API 开发 | Git、Node.js 24、Corepack、pnpm 11.18 | PostgreSQL、MinIO、实时视频服务 |
 | Windows 客户端源码开发 | 上述环境、Rust stable、Visual Studio C++ Build Tools、WebView2 | Revit 与格式转换 Worker |
 | Windows 已安装客户端 | WebView2 | 服务端 Origin；本地工作台不要求 Node、Python、PostgreSQL 或 MinIO |
 | Linux 生产服务器 | 64 位 Linux、Node.js 24、Corepack、systemd、bash、sudo、PostgreSQL、MinIO | 企业反向代理与 TLS 证书 |
@@ -267,7 +267,7 @@ pnpm studio check
 
 ## 10. 可选能力边界
 
-- Node-RED、实时视频和云渲染是按需部署的外部原生服务，不进入首次启动的必需链路。
+- 实时视频和云渲染是按需部署的外部原生服务，不进入首次启动的必需链路。
 - RVT 转换只在装有合法 Revit 的 Windows 转换机运行；客户端和 Linux Web 服务器不因未安装 Revit 而失去普通场景能力。
 - DWG 开源转换器、Revit Worker、Unity 包和外部工业格式转换链路分别按对应文档安装，不应塞进基础启动命令。
 - 弱网重试、离线状态和冲突保护由应用运行时处理；基础设施不可达时启动器会明确失败，不会伪报健康。

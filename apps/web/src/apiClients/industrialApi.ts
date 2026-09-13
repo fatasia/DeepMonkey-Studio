@@ -37,28 +37,6 @@ export interface OperationsSnapshot {
   studies: IndustrialStudyRecord[];
 }
 
-export interface IotNbSyncResult {
-  sourceProjectId: string;
-  sourceProjectName: string;
-  sourceUpdatedAt?: string;
-  imported: number;
-  updated: number;
-  removedSamples: number;
-  models: MaintenanceModelPackage[];
-}
-
-export interface IotNbAssessmentResult {
-  deployment: MaintenanceDeploymentRecord;
-  assessment: MaintenanceAssessmentRecord;
-  source: {
-    projectName: string;
-    datasetId: string;
-    datasetName: string;
-    rowCount: number;
-    benchmarkOnly: boolean;
-  };
-}
-
 export interface CapabilityDescriptor {
   id: string;
   version: string;
@@ -117,10 +95,12 @@ export interface CapabilityInvocationResult<T = unknown> {
 
 export interface BatteryReleaseGateSnapshot extends BatteryReleaseAssessment {
   deployment: {
+    mode?: "production" | "local-validation";
     enabled: boolean;
     requestedModels: string[];
     activeModels: string[];
     diagnostics: string[];
+    twinRuntime?: "rust-ort";
   };
 }
 
@@ -235,18 +215,6 @@ export function createIndustrialApi(request: ApiRequest) {
             input: suite,
           }),
         },
-      ),
-    syncIotNbMaintenanceModels: (projectId: string) =>
-      request<IotNbSyncResult>(
-        `/api/projects/${projectId}/operations/maintenance/sync-iot-nb`,
-        {
-          method: "POST",
-        },
-      ),
-    assessIotNbMaintenanceModel: (projectId: string, modelId: string) =>
-      request<IotNbAssessmentResult>(
-        `/api/projects/${projectId}/operations/maintenance/models/${modelId}/assess-iot-nb`,
-        { method: "POST" },
       ),
     importMaintenanceModel: (
       projectId: string,

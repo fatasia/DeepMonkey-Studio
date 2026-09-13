@@ -1,4 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,4 +32,16 @@ if (!dracoGltfFiles.every((name) => existsSync(join(dracoGltfSource, name)))) {
 }
 for (const name of dracoGltfFiles) copyFileSync(join(dracoGltfSource, name), join(dracoDestination, name));
 
-console.log(`[copy-wasm] web-ifc -> ${destination}; draco -> ${dracoDestination}`);
+const basisDestination = join(here, "..", "public", "basis");
+const basisVendor = join(here, "..", "vendor", "basis");
+const provenance = JSON.parse(readFileSync(join(basisVendor, "provenance.json"), "utf8"));
+mkdirSync(basisDestination, { recursive: true });
+for (const [name, expected] of Object.entries(provenance.files)) {
+  const bytes = readFileSync(join(basisVendor, name));
+  if (createHash("sha256").update(bytes).digest("hex") !== expected) throw new Error(`Basis encoder checksum mismatch: ${name}`);
+  writeFileSync(join(basisDestination, name === "basis_encoder.js" ? "basis_encoder.mjs" : name), name === "basis_encoder.js" ? `${bytes.toString("utf8")}\nexport default BASIS;\n` : bytes);
+}
+const basisSource = join(dirname(require.resolve("three")), "..", "examples", "jsm", "libs", "basis");
+for (const name of ["basis_transcoder.js", "basis_transcoder.wasm"]) copyFileSync(join(basisSource, name), join(basisDestination, name));
+copyFileSync(join(basisVendor, "provenance.json"), join(basisDestination, "provenance.json"));
+console.log(`[copy-wasm] web-ifc -> ${destination}; draco -> ${dracoDestination}; basis -> ${basisDestination}`);
