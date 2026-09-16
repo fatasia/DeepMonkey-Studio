@@ -1,0 +1,18 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard WebGPU composition probe</title>
+<style>
+  :root{color-scheme:dark light;font-family:system-ui,"Microsoft YaHei",sans-serif}body{margin:0;background:Canvas;color:CanvasText}
+  main{display:grid;gap:16px;padding:24px;min-width:0}header{display:flex;gap:16px;align-items:baseline;justify-content:space-between;flex-wrap:wrap}
+  h1{font-size:18px;margin:0}code,pre{font-variant-numeric:tabular-nums}#package-source{overflow-wrap:anywhere;color:GrayText}
+  fieldset{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:0;padding:0;margin:0}#pages{display:flex;gap:8px;flex-wrap:wrap}
+  button{min-height:36px;padding:0 12px;border:1px solid GrayText;border-radius:6px;background:ButtonFace;color:ButtonText;cursor:pointer}
+  button[aria-pressed="true"]{outline:2px solid Highlight;outline-offset:1px}fieldset:disabled button{cursor:wait;opacity:.6}
+  #surface{width:960px;height:640px;max-width:100%;display:grid;overflow:auto;border:1px solid GrayText;background:Canvas}
+  #output{box-sizing:border-box;max-width:960px;min-height:120px;margin:0;padding:12px;overflow:auto;border:1px solid GrayText;border-radius:6px;white-space:pre-wrap}
+  @media(max-width:640px){main{padding:12px}header{display:grid}#surface{height:auto;min-height:320px}}
+</style>
+<main><header><h1>Dashboard WebGPU composition probe</h1><code id="package-source">Loading package…</code></header>
+<fieldset id="controls" disabled><legend hidden>Probe actions</legend><button id="tick" type="button">Tick +100 ms</button>
+<div id="pages" role="group" aria-label="Dashboard pages"></div><button id="diagnostics" type="button">Diagnostics</button></fieldset>
+<div id="surface" aria-label="WebGPU dashboard surface"></div><pre id="output" aria-live="polite">Preparing WebGPU candidate…</pre></main>
+<script type="module" src="./dashboardCompositionProbe.js"></script></html>
