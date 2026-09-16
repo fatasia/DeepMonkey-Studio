@@ -1,10 +1,13 @@
-import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   assertDashboardPublicationAuthorityRequest,
   type DashboardPublicationAuthorityRequest,
 } from "./dashboardPublicationAuthorityAdapter.js";
 import type { DashboardNativeCandidateService } from "./dashboardNativeCandidateService.js";
+import type {
+  DashboardNativeCandidateRegistry,
+  DashboardNativeCandidateSummary,
+} from "./dashboardNativeCandidateRegistry.js";
 import { httpDisconnectScope } from "./httpDisconnectScope.js";
 
 type RouteParams = { projectId: string; applicationId: string };
@@ -22,6 +25,7 @@ type CandidateBody = {
 export async function registerDashboardPublicationCandidateRoutes(
   app: FastifyInstance,
   service?: Pick<DashboardNativeCandidateService, "prepare">,
+  registry?: Pick<DashboardNativeCandidateRegistry, "register">,
 ): Promise<void> {
   app.post<{ Params: RouteParams; Body: CandidateBody }>(
     "/api/projects/:projectId/applications/:applicationId/dashboard-candidates",
@@ -34,6 +38,7 @@ export async function registerDashboardPublicationCandidateRoutes(
       const authority = parseAuthority(request.params, request.body, reply);
       if (!authority) return reply;
       if (!service) return reply.code(503).send({ message: "Dashboard Native 候选服务未配置" });
+      if (!registry) return reply.code(503).send({ message: "Dashboard Native 候选注册表未配置" });
 
       const disconnect = httpDisconnectScope(request.raw, reply.raw);
       try {
@@ -42,7 +47,7 @@ export async function registerDashboardPublicationCandidateRoutes(
           AbortSignal.any([disconnect.signal, AbortSignal.timeout(180_000)]),
         );
         reply.header("cache-control", "private, no-store");
-        return reply.code(201).send(candidateMetadata(candidate));
+        return reply.code(201).send(candidateMetadata(registry.register(candidate), candidate));
       } catch (reason) {
         return reply.code(409).send({
           code: candidateErrorCode(reason),
@@ -82,15 +87,12 @@ function isExactBody(body: CandidateBody | undefined): body is Required<Candidat
   return keys.length === 3 && keys[0] === "applicationRevision" && keys[1] === "entryPageId" && keys[2] === "publicationId";
 }
 
-function candidateMetadata(candidate: Awaited<ReturnType<DashboardNativeCandidateService["prepare"]>>) {
+function candidateMetadata(
+  summary: DashboardNativeCandidateSummary,
+  candidate: Awaited<ReturnType<DashboardNativeCandidateService["prepare"]>>,
+) {
   return {
-    candidateId: randomUUID(),
-    authority: candidate.authority,
-    freezeManifestSha256: candidate.freezeManifestSha256,
-    sourceSemanticHash: candidate.sourceSemanticHash,
-    compileGraphHash: candidate.compileGraphHash,
-    targetArtifactHash: candidate.targetArtifactHash,
-    artifactSha256: candidate.artifactSha256,
+    ...summary,
     verifier: candidate.windowVerification.verifier,
     objects: candidate.capability.objects.map(({ nodeId, status, deferredFields }) => ({ nodeId, status, deferredFields })),
   };

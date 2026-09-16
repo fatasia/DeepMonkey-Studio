@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApiServer } from "./serverOptions.js";
 import { registerDashboardPublicationCandidateRoutes } from "./dashboardPublicationCandidateRoutes.js";
 import type { DashboardNativeCandidateService } from "./dashboardNativeCandidateService.js";
+import { createDashboardNativeCandidateRegistry, type DashboardNativeCandidateRegistry } from "./dashboardNativeCandidateRegistry.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { await Promise.all(cleanups.splice(0).map(cleanup => cleanup())); });
@@ -24,18 +25,19 @@ function candidate(): Awaited<ReturnType<DashboardNativeCandidateService["prepar
     artifactSha256: "d".repeat(64),
     windowVerification: { verifier: "native-dashboard-window-v1" },
     capability: { objects: [{ nodeId: "widget-1", status: "supported", deferredFields: [] }] },
-    artifact: { bytes: new Uint8Array([1, 2, 3]) },
+    artifact: { artifact: new Uint8Array([1, 2, 3]) },
   } as unknown as Awaited<ReturnType<DashboardNativeCandidateService["prepare"]>>;
 }
 
 async function fixture(options: {
   readonly service?: Pick<DashboardNativeCandidateService, "prepare">;
+  readonly registry?: Pick<DashboardNativeCandidateRegistry, "register">;
   readonly user?: { readonly id: string; readonly role: string; readonly projectIds: readonly string[]; readonly enabled: boolean };
 } = {}) {
   const app = createApiServer();
   cleanups.push(() => app.close());
   if (options.user) app.addHook("preHandler", async request => { request.systemUser = options.user as never; });
-  await registerDashboardPublicationCandidateRoutes(app, options.service);
+  await registerDashboardPublicationCandidateRoutes(app, options.service, options.registry);
   return app;
 }
 
@@ -88,9 +90,24 @@ describe("dashboard publication candidate routes", () => {
     })).statusCode).toBe(503);
   });
 
-  it("passes server-derived authority to the service and exposes metadata only", async () => {
-    const prepare = vi.fn().mockResolvedValue(candidate());
+  it("reports an unconfigured registry before preparing a candidate", async () => {
+    const prepare = vi.fn();
     const app = await fixture({ service: { prepare } as never, user: { id: "editor", role: "editor", projectIds: [authority.projectId], enabled: true } });
+    expect((await request(app, {
+      publicationId: authority.publicationId,
+      applicationRevision: authority.applicationRevision,
+      entryPageId: authority.entryPageId,
+    })).statusCode).toBe(503);
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it("registers the prepared candidate for download and exposes only its safe summary plus route metadata", async () => {
+    const prepare = vi.fn().mockResolvedValue(candidate());
+    const registry = createDashboardNativeCandidateRegistry({
+      createId: () => "candidate-download-1",
+      now: () => Date.parse("2026-09-16T12:00:00.000Z"),
+    });
+    const app = await fixture({ service: { prepare } as never, registry, user: { id: "editor", role: "editor", projectIds: [authority.projectId], enabled: true } });
     const response = await request(app, {
       publicationId: authority.publicationId,
       applicationRevision: authority.applicationRevision,
@@ -99,12 +116,15 @@ describe("dashboard publication candidate routes", () => {
     expect(response.statusCode).toBe(201);
     expect(response.headers["cache-control"]).toBe("private, no-store");
     expect(prepare).toHaveBeenCalledWith(authority, expect.any(AbortSignal));
-    expect(response.json()).toMatchObject({ candidateId: expect.any(String), authority, artifactSha256: "d".repeat(64),
+    expect(response.json()).toMatchObject({ candidateId: "candidate-download-1", authority, artifactSha256: "d".repeat(64),
       verifier: "native-dashboard-window-v1", objects: [{ nodeId: "widget-1", status: "supported" }] });
     const metadata = response.json() as Record<string, unknown>;
     expect(metadata).not.toHaveProperty("artifact");
     expect(metadata).not.toHaveProperty("capability");
     expect(metadata).not.toHaveProperty("windowVerification");
+    expect(metadata).not.toHaveProperty("artifactSha256Bytes");
+    expect(registry.read({ candidateId: "candidate-download-1", projectId: authority.projectId, applicationId: authority.applicationId })
+      .candidate.artifact.artifact).toEqual(Uint8Array.of(1, 2, 3));
   });
 
   it.each([
@@ -115,7 +135,8 @@ describe("dashboard publication candidate routes", () => {
   ] as const)("maps %s to a retryable conflict without returning compiler details", async (name, code) => {
     const reason = name === "TimeoutError" ? new DOMException("expired", name) : Object.assign(new Error("private compiler detail"), { name });
     const prepare = vi.fn().mockRejectedValue(reason);
-    const app = await fixture({ service: { prepare } as never, user: { id: "editor", role: "editor", projectIds: [authority.projectId], enabled: true } });
+    const registry = { register: vi.fn() };
+    const app = await fixture({ service: { prepare } as never, registry, user: { id: "editor", role: "editor", projectIds: [authority.projectId], enabled: true } });
     const response = await request(app, {
       publicationId: authority.publicationId,
       applicationRevision: authority.applicationRevision,
@@ -123,5 +144,6 @@ describe("dashboard publication candidate routes", () => {
     });
     expect(response.statusCode).toBe(409);
     expect(response.json()).toEqual({ code, message: "Dashboard 候选版本在校验窗口内失效，请刷新后重试" });
+    expect(registry.register).not.toHaveBeenCalled();
   });
 });
