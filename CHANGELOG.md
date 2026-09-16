@@ -4,6 +4,10 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Dashboard resource preparation
+
+- Separate resource prewarm planning and lifecycle from geometry bake policy so v5 dashboards can prepare without the 3D LOD dependency. Reject publish/dispose reentry during commit to protect active resource ownership.
+
 ### Dashboard frozen content
 
 - Compile author text and images into multi-page Dashboard packages using explicit font/image bytes, measured text styles, real Native glyphs and Sharp image decoding. Preserve node mappings and verify source, producer and pixel identity.

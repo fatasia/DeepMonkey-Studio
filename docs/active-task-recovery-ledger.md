@@ -1,5 +1,6 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：C2 文字/图片子片已提交并推送 `56c500d`。[C1 通用资源准备基础](specs/dashboard-resource-prewarm-2026-09-16.md) 独立 224 测试、兼容 302 测试及双类型通过；复核补三项 commit 重入回归并修复资源生命周期问题。浏览器组合绘制/present 仍待实现。
 - 已完成：C2 字体 producer 已提交 `22a6b03`；[文字/图片内容编译](specs/dashboard-frozen-raster-content-2026-09-16.md) 的最小独立闭包通过严格 TS、62 项 Vitest、28 项 Node 测试，真实 producer 包通过 Native GPU 读回。仍为 C2 子片，数据组件、完整外观、交互及正式发布待办。
 - 已完成：A/B 与 C1 core/Native 分片已推送至 `dev-studio` 的 `3a88b5c`。C2 [冻结字体 producer](specs/dashboard-frozen-text-producer-2026-09-16.md)、CLI 与 Node adapter 已实现；中间全量 Native 1000 通过/63 忽略，最终修复后定向 15、Node 23、严格 Clippy 和独立 HEAD 加 24 文件的 all-targets 检查通过。文字/图片 producer 包真实 GPU 读回通过，中文 PNG 已目检。
 - 本轮待办：当前顺序为 C2 文字/图片编译及真实 GPU 读回→冻结数据内容→绑定/报告/正式离线交付；C1 Web prewarm 缺口保留。完整 84 个上层编号和原验收条件不变，浏览器视觉 V-02 仍未完成。下列条目保留此前各阶段证据，以本节最新状态为准。
