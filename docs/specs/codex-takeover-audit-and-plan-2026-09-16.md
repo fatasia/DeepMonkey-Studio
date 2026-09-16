@@ -2,7 +2,7 @@
 
 2026-09-16。接手基线：`dev-studio`，HEAD `d6a7ae5`。下方审计表保留接手时结果；后续修复与证据见 [Native A/B 执行记录](codex-native-correctness-and-gates-2026-09-16.md)。用户已要求按本计划顺序最大并行执行，完整 84 个上层编号持续有效。
 
-执行状态：A/B 已修复并提交；C1 core/Native、WebGPU 整页候选宿主及 C2 冻结文字/图片/KPI/表格/图表子片已提交，真实浏览器与 Native GPU 均完成读回。C3 已落地纯冻结合同，正式存储/路由接线仍待完成；当前按顺序推进 C4，正式 Dashboard 发布继续按 [C1～C5](codex-dashboard-delivery-slices-2026-09-16.md) 逐项验收。
+执行状态：A/B 已修复并提交；C1 core/Native、WebGPU 整页候选宿主及 C2 冻结文字/图片/KPI/表格/图表子片已提交，真实浏览器与 Native GPU 均完成读回。C3 冻结、C4 三 hash 能力凭据、C5 候选编译服务与离线归档合同已落地；正式 HTTP route、持久化候选登记、下载字节包与 launcher 接线仍待完成。Dashboard 发布继续按 [C1～C5](codex-dashboard-delivery-slices-2026-09-16.md) 逐项验收。
 
 结论：GLM 的基础模块和既有测试有实际成果，但交付未收口。Native 原测试数字可复现，新增边界用例仍发现缺陷；Deep Engine 完整包级命令失败，不能依据交接中的“全绿”直接分包提交。
 
