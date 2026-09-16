@@ -8,6 +8,7 @@ pub mod contract;
 pub mod culling_contract;
 pub mod dashboard_runtime;
 pub mod deep2d;
+pub mod executable_overlay;
 pub mod fog;
 pub mod half_decode;
 pub mod host_capabilities;

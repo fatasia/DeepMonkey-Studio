@@ -32,9 +32,20 @@ pub fn execute() -> Result<(), String> {
         return result;
     }
     match command {
+        Some("--licenses") => {
+            reject_extra(args)?;
+            let path =
+                env::current_exe().map_err(|error| format!("overlay/current-exe: {error}"))?;
+            let mut file =
+                std::fs::File::open(path).map_err(|error| format!("overlay/open: {error}"))?;
+            let notices = deep_engine_native::executable_overlay::read_notices(&mut file)?;
+            println!("{}\n\n{}", notices.license, notices.third_party_notices);
+            Ok(())
+        }
         Some("--help" | "-h") => {
             reject_extra(args)?;
             print_help();
+            println!("\n  --licenses  Show licenses embedded in a standalone executable.");
             Ok(())
         }
         Some("--headless-contract") => {
@@ -292,7 +303,14 @@ pub fn execute() -> Result<(), String> {
             reject_extra(args)?;
             run_viewer(packet_path, Some(load_deep2d(&display_list_path)?), false)
         }
-        None => run_viewer(default_fixture_path().to_owned(), None, false),
+        None => {
+            let executable =
+                env::current_exe().map_err(|error| format!("overlay/current-exe: {error}"))?;
+            match runtime_package_startup::load_embedded(&executable)? {
+                Some(package) => runtime_package_startup::run(package, PackageMode::Viewer),
+                None => run_viewer(default_fixture_path().to_owned(), None, false),
+            }
+        }
         Some(argument) => Err(format!("unknown argument {argument:?}; use --help")),
     }
 }

@@ -42,6 +42,33 @@ pub fn load(path: &Path) -> Result<PreparedRuntimePackage, String> {
     Ok(prepared)
 }
 
+pub fn load_embedded(path: &Path) -> Result<Option<PreparedRuntimePackage>, String> {
+    let mut executable =
+        std::fs::File::open(path).map_err(|error| format!("overlay/open: {error}"))?;
+    let Some(bytes) = deep_engine_native::executable_overlay::read(&mut executable)? else {
+        return Ok(None);
+    };
+    let loaded = deep_engine_native::runtime_package::parse_and_validate_runtime_package(&bytes)
+        .map_err(|error| format!("overlay/runtime-package: {error}"))?;
+    let mut package = prepare(loaded)?;
+    package
+        .content
+        .bind_resource_source(path, "embedded-runtime")?;
+    match crate::runtime_lkg::Store::local(path) {
+        Ok(store) => {
+            package.content.pending_lkg = Some(crate::runtime_lkg::Pending {
+                store,
+                bytes,
+                hash: package.hash.clone(),
+            })
+        }
+        Err(error) => {
+            package.content.startup_notice = Some(format!("recovery cache unavailable: {error}"))
+        }
+    }
+    Ok(Some(package))
+}
+
 pub fn load_auto(path: &Path) -> Result<PreparedRuntimePackage, String> {
     use deep_engine_native::runtime_package::{
         parse_and_validate_runtime_package, read_runtime_package_bytes,
