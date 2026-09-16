@@ -1699,3 +1699,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:`packages/deep-engine/src/gltf/capabilityInventory.ts`——逐对象失败码账本(码/阶段/资产字段定位/可操作原因/频次);可渲染与语义保留分列;不可渲染对象必须带可定位失败,可渲染对象禁止携带 decode 失败;频次汇总确定性排序。对齐 gltf/validation 既有 unsupported 语义。
 - 验证:合同测试 3 项通过;typecheck 0 错误。
 - 边界(如实):三路径(direct/bridge/native)语料 runner 归下一批——需要把 A02 的 RVT 语料经 PLAN 转换为 glTF 后才能跑真实频次;当前合同以结构化账本先行。
+
+### 2026-09-17 DE26/A08 第一切片:确定性证据索引(GLM)
+
+- 已完成:`scripts/generate-de26-evidence-index.mts`——从执行清单 JSON 生成 `docs/specs/de26-evidence-index.md`;逐证据文件实测 SHA-256;缺失/不可读显式标红不静默;内置易变时间戳自检(违反即抛错);**同输入同输出经双跑 sha256 一致实测**。当前覆盖 A01/A02/A03/B01 四卡 9 个证据文件,0 缺失。
+- 验证:生成器双跑确定性通过。
+- 边界(如实):报告的身份绑定源码 hash(区分旧EXE/新包)与置信区间归后续切片(依赖 A04 真实观测);当前只覆盖已登记 evidence 的卡。
