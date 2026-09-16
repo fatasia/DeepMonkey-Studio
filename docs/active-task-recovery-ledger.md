@@ -1,5 +1,7 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：ZIP 下载路由复用候选鉴权、项目域与到期/撤销复核，压缩后重查，部署端固定 EXE 路径；主线相关 API 43 项通过。编译窗口证据新增作者节点→运行节点→实际 atlas 绑定，校验 producer 像素 hash 与实际使用字体，并以独立副本交给窗口验证器；实际 producer 6 项、能力报告 10 项、Web 内容 15 项、Web/API 类型及治理通过。API 启动注册和真实绘制回执合流仍待完成。
+
 - 已完成：真实服务端 Dashboard 内容编译器与 Windows portable ZIP 子片合入主线。冻结 manifest 贯穿编译，复用 Native 字体光栅化与 sharp 图片解码；主线实际 producer 5 项（无跳过）、相关 API 21 项、API 类型与仓库治理通过。ZIP 含原字节运行包、指定 EXE、许可证和 PowerShell 启动器，实际 PowerShell 启动测试覆盖空格路径及参数/篡改拒绝。测试字体仅使用本机文件，不随交付再分发。详见 [编译接线](specs/dashboard-content-compiler-wiring-2026-09-16.md) 与 [portable ZIP](specs/dashboard-portable-zip-2026-09-16.md)。生产资源闭包、逐对象窗口回执和正式 ZIP 下载仍在接线，C1～C5 保留待验收。
 
 - 已完成：C1 非入口页更新修复。带 expectedSource 的 Tick/图表更新省略 pageId 时默认使用来源页，保留旧代次与显式跨页拒绝；新增四项回归，原逻辑两项失败，修复后 Runtime Package 244 项与核心类型检查通过。见 [非入口页输入记录](specs/dashboard-non-entry-input-2026-09-16.md)；本次纯请求层验证不代表真实浏览器 GPU 输入矩阵已完成。

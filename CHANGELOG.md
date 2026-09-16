@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard content and portable packaging
 
+- Add deployment-configured ZIP downloads with candidate scope and expiry checks after compression. Bind text producer evidence to emitted atlas bytes for native window verification.
+
 - Compile frozen Dashboard resources and data through the existing Native text and image producers, preserving font faces and explicit fallback order.
 - Package validated Dashboard archives with a Windows player, licenses and a PowerShell launcher that checks file hashes before launch. Formal publication wiring and full window acceptance remain pending.
 

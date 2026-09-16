@@ -80,6 +80,7 @@ export interface DashboardRasterHost {
 }
 export interface DashboardRasterEvidence {
   readonly nodeId: string;
+  readonly atlasId: string;
   readonly requestHash: string;
   readonly sourceSha256: string;
   readonly pixelSha256: string;

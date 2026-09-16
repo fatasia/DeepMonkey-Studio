@@ -11,6 +11,13 @@ import {
 
 const SHA256 = /^[a-f0-9]{64}$/;
 
+export interface DashboardCompiledWindowEvidence {
+  readonly nodeBindings: readonly { readonly nodeId: string; readonly runtimeNodeId: string;
+    readonly pageId: string; readonly staticResourceId: string }[];
+  readonly fontBindings: readonly { readonly resourceId: string; readonly sha256: string;
+    readonly faceIndex: number; readonly runtimeNodeId: string; readonly atlasId: string }[];
+}
+
 /** A compiler result is accepted only through this server-owned callback. */
 export interface AuthoritativeDashboardCompiler {
   readonly compilerId: string;
@@ -25,6 +32,7 @@ export interface AuthoritativeDashboardCompiler {
     readonly freezeManifest?: DashboardPublicationFreezeCandidate["manifest"];
   }, signal?: AbortSignal): Promise<{
     readonly artifact: Uint8Array;
+    readonly windowEvidence?: DashboardCompiledWindowEvidence;
     readonly objects: readonly { readonly nodeId: string; readonly contentCompiled: boolean; readonly deferredFields: readonly string[] }[];
   }>;
 }
@@ -68,6 +76,7 @@ export interface BuildDashboardPublicationCapabilityOptions {
   /** This callback must run in the trusted server verifier boundary. */
   readonly verifyWindow: (input: {
     readonly artifact: Uint8Array;
+    readonly windowEvidence?: DashboardCompiledWindowEvidence;
     readonly candidate: DashboardPublicationFreezeCandidate;
     readonly sourceSemanticHash: string;
     readonly compileGraphHash: string;
@@ -105,6 +114,7 @@ export async function buildDashboardPublicationCapabilityReport(options: BuildDa
   signal?.throwIfAborted();
 
   const verification = await options.verifyWindow({ artifact: Uint8Array.from(compiled.artifact), candidate,
+    ...(compiled.windowEvidence ? { windowEvidence: structuredClone(compiled.windowEvidence) } : {}),
     sourceSemanticHash, compileGraphHash, targetArtifactHash }, signal);
   signal?.throwIfAborted();
   assertWindowVerification(verification, candidate, sourceSemanticHash, compileGraphHash, targetArtifactHash,

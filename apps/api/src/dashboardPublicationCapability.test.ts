@@ -40,6 +40,21 @@ function inputs(frozen: Awaited<ReturnType<typeof candidate>>, patch: Partial<Da
 }
 
 describe("dashboard publication capability report", () => {
+  it("passes an owned copy of compiler node and font evidence to the window verifier", async () => {
+    const input = inputs(await candidate());
+    const compile = input.compiler.compile;
+    const windowEvidence = { nodeBindings: [{ nodeId: "widget-scene-main", runtimeNodeId: "runtime-node",
+      pageId: "runtime-page", staticResourceId: "static" }], fontBindings: [] };
+    Object.assign(input.compiler, { compile: async () => ({ ...await compile(), windowEvidence }) });
+    const verify = input.verifyWindow;
+    await buildDashboardPublicationCapabilityReport({ ...input, verifyWindow: async request => {
+      expect(request.windowEvidence).toEqual(windowEvidence);
+      expect(request.windowEvidence).not.toBe(windowEvidence);
+      expect(request.windowEvidence?.nodeBindings).not.toBe(windowEvidence.nodeBindings);
+      return verify(request);
+    } });
+  });
+
   it("keeps uncompiled fields degraded even when the object was rendered", async () => {
     const input = inputs(await candidate());
     const compile = input.compiler.compile;

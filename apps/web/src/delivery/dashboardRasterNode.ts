@@ -81,7 +81,7 @@ export async function rasterNode(node: DashboardDataWidgetNode, id: string, revi
               { content: { ...content, id: textId, displayList: { ...content.displayList, id: `${textId}.paths`,
                 resources: [], commands: [] } }, clip: [inset, inset, width, height] }];
           }
-          evidence = [{ nodeId: node.id, requestHash: result.requestHash, sourceSha256: result.sourceSha256,
+          evidence = [{ nodeId: node.id, atlasId, requestHash: result.requestHash, sourceSha256: result.sourceSha256,
             pixelSha256: result.sha256, producer: result.producer,
             ...(result.producerEvidence ? { producerEvidence: result.producerEvidence } : {}), usedFaces: result.usedFaces ?? [],
             lines: result.lines ?? [], clipped: result.clipped ?? false }];

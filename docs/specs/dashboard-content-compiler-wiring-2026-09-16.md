@@ -1,5 +1,7 @@
 # Dashboard 冻结内容编译接线
 
+编译结果的 `windowEvidence` 提供作者节点与运行节点映射，以及实际使用字体到 atlas 的映射。生成时复核 atlas 像素 SHA-256 与 producer 回执一致；未使用的后备字体不会生成使用证据。API 将其复制给窗口验证器，后者仍须以真实 draw 回执确认覆盖。
+
 服务端 bundle 复用 `compileDashboardRasterContent`、Native cosmic-text 和 sharp，将 C3 冻结内容编译为 canonical runtime v5。没有替代字体、样例数据或客户端资源读取。
 
 ## 构建与组合

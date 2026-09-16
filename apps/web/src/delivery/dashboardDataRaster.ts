@@ -87,7 +87,7 @@ export async function rasterDataContent(node: DashboardDataWidgetNode, content: 
     quads.push({ id: `${id}.quad`, atlasId: id, zOrder: paintIndex, transform: [1, 0, 0, 1, 0, 0],
       source: [0, 0, width, height], destination: [box.rect[0], box.rect[1], width, height], color: [1, 1, 1, 1] });
     layer.content = { ...layer.content, atlases, quads };
-    evidence.push({ nodeId: node.id, requestHash, sourceSha256: result.sourceSha256, pixelSha256: result.sha256,
+    evidence.push({ nodeId: node.id, atlasId: id, requestHash, sourceSha256: result.sourceSha256, pixelSha256: result.sha256,
       producer: result.producer, ...(result.producerEvidence ? { producerEvidence: result.producerEvidence } : {}),
       usedFaces: result.usedFaces ?? [], lines: result.lines ?? [], clipped: result.clipped ?? false });
   }

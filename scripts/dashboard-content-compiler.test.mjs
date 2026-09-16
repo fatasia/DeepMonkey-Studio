@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { dashboardFrozenRasterInput } from "./lib/dashboardFrozenRasterInput.mjs";
+import { dashboardCompiledWindowEvidence } from "./lib/dashboardCompiledWindowEvidence.mjs";
 import { createDashboardContentCompiler } from "../apps/api/dist/dashboard-content-compiler/compiler.mjs";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -68,8 +69,24 @@ test("actual Native producer consumes the explicitly frozen font face", {
       fontStyle: "normal", lineHeight: 22, color: [255, 255, 255, 255], align: "left" } } } } });
   const result = await compiler.compile(input);
   assert.equal(result.objects[0].contentCompiled, true);
+  assert.ok(result.windowEvidence.fontBindings.length > 0);
+  const fontBinding = result.windowEvidence.fontBindings[0];
+  assert.equal(fontBinding.resourceId, "explicit-test-font");
+  assert.equal(fontBinding.sha256, hash(bytes));
+  assert.ok(result.windowEvidence.nodeBindings.some(binding => binding.runtimeNodeId === fontBinding.runtimeNodeId));
   const payloads = Object.values(JSON.parse(new TextDecoder().decode(result.artifact)).payloads);
   assert.ok(payloads.some(value => value.atlases?.some(atlas => Buffer.from(atlas.dataBase64, "base64").some(byte => byte > 0))));
+});
+
+test("window evidence rejects atlas bytes that differ from the producer receipt", () => {
+  const result = { package: { payloads: {
+    dashboard: { schema: "deep-engine.dashboard-runtime", pages: [{ id: "page", nodes: [{ id: "runtime", deep2d: "static" }] }] },
+    static: { atlases: [{ id: "atlas", dataBase64: Buffer.from([1]).toString("base64") }] },
+  } }, nodeBindings: [{ nodeId: "author", runtimePageId: "page", runtimeNodeIds: ["runtime"] }],
+  producerEvidence: [{ nodeId: "author", atlasId: "atlas", pixelSha256: hash(Buffer.from([2])), usedFaces: [] }] };
+  assert.throws(() => dashboardCompiledWindowEvidence(result, { nodeAssets: {}, assets: {} }), /atlas bytes/);
+  result.producerEvidence[0].pixelSha256 = hash(Buffer.from([1]));
+  assert.deepEqual(dashboardCompiledWindowEvidence(result, { nodeAssets: {}, assets: {} }).fontBindings, []);
 });
 
 test("rejects corrupted frozen bytes, extra resources and manifest changes", async () => {

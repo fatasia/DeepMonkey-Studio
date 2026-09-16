@@ -5,6 +5,7 @@ import { compileDashboardRasterContent } from "../apps/web/src/delivery/compileD
 import { serializeDeepRuntimePackage } from "../packages/deep-engine/src/runtimePackage/index.ts";
 import { createDashboardRasterHost } from "./lib/dashboardRasterHost.mjs";
 import { dashboardFrozenRasterInput } from "./lib/dashboardFrozenRasterInput.mjs";
+import { dashboardCompiledWindowEvidence } from "./lib/dashboardCompiledWindowEvidence.mjs";
 
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 
@@ -28,6 +29,7 @@ export async function createDashboardContentCompiler({ nativeExecutable, configu
       // Page appearance and runtime interactions remain unimplemented even when every pixel producer succeeds.
       const pageDeferred = result.deferredPageFields.flatMap(page => page.fields.map(field => `page.${field}`));
       return { artifact: new TextEncoder().encode(serializeDeepRuntimePackage(result.package)),
+        windowEvidence: dashboardCompiledWindowEvidence(result, input),
         objects: result.capabilityReport.objects.map(object => ({ nodeId: object.nodeId,
           contentCompiled: object.contentCompiled, deferredFields: [...new Set([...object.deferredFields,
             ...pageDeferred, "runtime.interactions", "appearance.crossHost"])] })) };
