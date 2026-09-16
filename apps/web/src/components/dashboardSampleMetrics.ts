@@ -1,6 +1,6 @@
 import type { DashboardDataWidgetConfig, DashboardSampleData, DataDatasetField, WidgetNode } from "@bim-studio/contracts";
 import { aggregate } from "./dashboardAnalytics";
-import type { DashboardMetric } from "./DashboardWidgetRuntime";
+import type { DashboardMetric } from "./dashboardMetricTypes";
 
 export function dashboardSampleFields(sample: DashboardSampleData | undefined): DataDatasetField[] {
   if (sample?.columns) return sample.columns.map(column => ({ ...column, label: column.key }));

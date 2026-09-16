@@ -1,3 +1,4 @@
+import type { DashboardFrozenData } from "./dashboardDataRasterTypes";
 import type { DashboardDocument } from "@bim-studio/contracts";
 
 export interface FrozenRasterAsset {
@@ -26,6 +27,7 @@ export interface DashboardRasterCompileInput {
   readonly packageId: string;
   readonly packageVersion: string;
   readonly locale: string;
+  readonly data?: Readonly<Record<string, DashboardFrozenData | Pick<DashboardFrozenData, "source" | "metric">>>;
   readonly assets: Readonly<Record<string, FrozenRasterAsset>>;
   readonly nodeAssets: Readonly<Record<string, DashboardRasterNodeAssets>>;
 }
@@ -35,8 +37,8 @@ export interface DashboardTextRasterRequest extends DashboardRasterTextStyle {
   readonly locale: string;
   readonly width: number;
   readonly height: number;
-  readonly verticalAlign: "center";
-  readonly wrap: "word-or-glyph";
+  readonly verticalAlign: "top" | "center" | "bottom";
+  readonly wrap: "none" | "word" | "glyph" | "word-or-glyph";
   readonly fonts: readonly FrozenRasterAsset[];
 }
 export interface DashboardImageRasterRequest {

@@ -1,7 +1,7 @@
 import type { DashboardDataWidgetConfig, DataDatasetField, JsonValue, SemanticMetricFilter, SemanticModelRecord } from "@bim-studio/contracts";
 import { compileFormula, evaluateFormula } from "@bim-studio/data-runtime";
 import { aggregate } from "./dashboardAnalytics";
-import type { DashboardMetric } from "./DashboardWidgetRuntime";
+import type { DashboardMetric } from "./dashboardMetricTypes";
 import { isSemanticSelectionWidget, resolveSemanticWidget, semanticParameterKey, semanticSelectionKey } from "./dashboardSemanticBinding";
 
 function read(row: Record<string, unknown>, key: string): unknown {

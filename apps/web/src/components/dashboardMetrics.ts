@@ -1,5 +1,5 @@
 import type { DataDatasetField } from "@bim-studio/contracts";
-import type { DashboardMetric } from "./DashboardWidgetRuntime";
+import type { DashboardMetric } from "./dashboardMetricTypes";
 
 export function mergeProductMetrics(current: Record<string, DashboardMetric>, productId: string, fields: readonly DataDatasetField[], rows: Array<Record<string, unknown>>): Record<string, DashboardMetric> {
   const next = { ...current };

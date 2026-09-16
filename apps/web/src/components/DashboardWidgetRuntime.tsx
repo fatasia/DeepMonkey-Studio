@@ -1,3 +1,4 @@
+import type { DashboardMetric } from "./dashboardMetricTypes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Globe2 } from "lucide-react";
 import { resolveDeviceSignal, type DashboardDataWidgetConfig, type DataDatasetField, type DataPipelineDefinition, type DataDatasetRecord, type JsonValue, type SemanticModelRecord } from "@bim-studio/contracts";
@@ -28,19 +29,7 @@ export {
   widgetBackgroundStyle,
 } from "./DashboardWidgetVisualization";
 
-interface MetricSample {
-  time: number;
-  value: number;
-}
-export interface DashboardMetric {
-  value: unknown;
-  samples: MetricSample[];
-  rows?: Array<Record<string, unknown>>;
-  semanticWidget?: DashboardDataWidgetConfig;
-  semanticError?: string;
-  /** 参数查询草稿只重算本次取数快照，不修改正式筛选或触发额外网络读取。 */
-  semanticSource?: { rows: Record<string, unknown>[]; fields: readonly DataDatasetField[] };
-}
+export type { DashboardMetric } from "./dashboardMetricTypes";
 
 const NO_SEMANTIC_MODELS: SemanticModelRecord[] = [];
 

@@ -1,3 +1,4 @@
+import { DashboardDataUnavailable, rasterDataContent } from "./dashboardDataRaster";
 import type { DashboardDataWidgetNode } from "@bim-studio/contracts";
 import { runtimeContentSha256, type Deep2dRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import { lowerDashboardWidget } from "./dashboardWidgetContent";
@@ -18,7 +19,8 @@ export async function rasterNode(node: DashboardDataWidgetNode, id: string, revi
   const reasons = ["Container shadow, border radius, background images and runtime behaviors are not compiled",
     ...chrome.reasons.filter(reason => reason.startsWith("容器背景"))];
   let contentCompiled = chrome.contentCompiled;
-  let evidence: DashboardRasterEvidence | undefined;
+  let evidence: DashboardRasterEvidence[] = [];
+  let layers: Array<{ content: Deep2dRuntimePackage; clip: readonly [number, number, number, number] | null }> | undefined;
   const inset = DASHBOARD_CONTENT_INSET, width = node.frame.width - inset * 2, height = node.frame.height - inset * 2;
   if (node.visible === false) reasons.push("Hidden node has no draw commands");
   else if (node.widget.type === "text" || node.widget.type === "image") {
@@ -71,21 +73,39 @@ export async function rasterNode(node: DashboardDataWidgetNode, id: string, revi
           content = { ...content, atlases: [{ id: atlasId, revision, kind: "image", format: "rgba8unorm-srgb",
             width: result.width, height: result.height, sampling: "linear", dataBase64: base64(result.rgba) }],
           quads: [{ id: `${id}.quad`, zOrder: 1, transform: [1, 0, 0, 1, 0, 0], atlasId,
-            source: [0, 0, result.width, result.height], destination: [inset, inset, width, height], color: [1, 1, 1, 1] }] };
-          evidence = { nodeId: node.id, requestHash: result.requestHash, sourceSha256: result.sourceSha256,
+            source: [0, 0, result.width, result.height], destination: [inset, inset,
+              node.widget.type === "text" ? result.width : width, node.widget.type === "text" ? result.height : height], color: [1, 1, 1, 1] }] };
+          if (node.widget.type === "text" && (width !== result.width || height !== result.height)) {
+            const textId = `${id}.text`;
+            layers = [{ content: { ...content, atlases: [], quads: [] }, clip: null },
+              { content: { ...content, id: textId, displayList: { ...content.displayList, id: `${textId}.paths`,
+                resources: [], commands: [] } }, clip: [inset, inset, width, height] }];
+          }
+          evidence = [{ nodeId: node.id, requestHash: result.requestHash, sourceSha256: result.sourceSha256,
             pixelSha256: result.sha256, producer: result.producer,
             ...(result.producerEvidence ? { producerEvidence: result.producerEvidence } : {}), usedFaces: result.usedFaces ?? [],
-            lines: result.lines ?? [], clipped: result.clipped ?? false };
+            lines: result.lines ?? [], clipped: result.clipped ?? false }];
           contentCompiled = true;
         }
       }
+    }
+  } else if (node.widget.type === "value" || node.widget.type === "table") {
+    try {
+      const result = await rasterDataContent(node, content, input, host);
+      layers = result.layers; content = layers[0]!.content; evidence = result.evidence; contentCompiled = true;
+      compiledFields.push("widget.title", "widget.unit", "widget.report", "widget.analysis");
+      reasons.push("Only the measured static data view is compiled; filtering, paging, sorting, row actions and export remain deferred",
+        "Measured styles retain frozen Web locale/font metrics; cross-host CSS/OpenType equivalence is not asserted");
+    } catch (error) {
+      if (!(error instanceof DashboardDataUnavailable)) throw error;
+      contentCompiled = false; reasons.push(error.message);
     }
   } else {
     reasons.push(...chrome.reasons);
     if (node.widget.type !== "shape") contentCompiled = false;
   }
   const fields = [...Object.keys(node).filter(key => key !== "widget"), ...Object.keys(node.widget).map(key => `widget.${key}`)];
-  return { content, evidence, report: { nodeId: node.id, contentCompiled,
+  return { content, layers: layers ?? [{ content, clip: null }], evidence, report: { nodeId: node.id, contentCompiled,
     status: contentCompiled || chrome.commands.length ? "degraded" as const : "blocked" as const,
     compiledFields, deferredFields: fields.filter(key => !compiledFields.includes(key)), reasons } };
 }

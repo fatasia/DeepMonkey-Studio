@@ -1,6 +1,6 @@
 import type { DashboardAggregation, DashboardConditionalRule, DashboardDataWidgetConfig } from "@bim-studio/contracts";
 import { compileFormula, evaluateFormula } from "@bim-studio/data-runtime";
-import type { DashboardMetric } from "./DashboardWidgetRuntime";
+import type { DashboardMetric } from "./dashboardMetricTypes";
 
 export interface DashboardAnalysisResult {
   rows: Array<Record<string, unknown>>;
