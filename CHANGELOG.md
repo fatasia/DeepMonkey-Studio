@@ -4,6 +4,10 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Browser image decoding
+
+- Add `@bim-studio/deep-engine/browser-image-decoder`, a host-injected decoder factory that keeps browser APIs outside the engine core. The Lab adapter owns bitmap/canvas access; cancellation and failed pixel reads still release the bitmap, and decoded bytes have independent ownership.
+
 ### Native text correctness and engineering gates
 
 - Fix IME deletion redo and grapheme-boundary edits, including combining marks, emoji sequences and CRLF. Undo/redo restores text metadata and caret together; failed commits preserve composition.
