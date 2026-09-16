@@ -61,6 +61,8 @@ describe("dashboard v5 runtime compiler contract", () => {
     expect(accepted).toMatchObject({ artifactSha256: report.targetArtifactHash, authority, freezeManifestSha256: candidate.manifest.manifestSha256 });
     expect(accepted.runtimePackage.schemaVersion).toBe(5);
     expect(input.resources.font).not.toBe(candidate.resources.font);
+    expect(input.freezeManifest).toEqual(candidate.manifest);
+    expect(input.freezeManifest).not.toBe(candidate.manifest);
   });
 
   it("rejects compiler/capability substitution before work and stale authority during preparation", async () => {

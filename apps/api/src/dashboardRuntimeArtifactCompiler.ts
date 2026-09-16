@@ -22,6 +22,7 @@ export interface DashboardRuntimeArtifactCompilerInput {
   readonly protocol: "dashboard-runtime-compiler-v1";
   readonly authority: DashboardPublicationFreezeCandidate["authority"];
   readonly freezeManifestSha256: string;
+  readonly freezeManifest?: DashboardPublicationFreezeCandidate["manifest"];
   readonly sourceSemanticHash: string;
   readonly compileGraphHash: string;
   readonly compiler: { readonly id: string; readonly version: string; readonly sha256: string; readonly configuration: Readonly<Record<string, unknown>> };
@@ -81,6 +82,7 @@ export async function prepareDashboardRuntimeArtifactCompilerInput(
     protocol: "dashboard-runtime-compiler-v1",
     authority: snapshot(options.candidate.authority),
     freezeManifestSha256: options.candidate.manifest.manifestSha256,
+    freezeManifest: snapshot(options.candidate.manifest),
     sourceSemanticHash: options.capability.sourceSemanticHash,
     compileGraphHash: options.capability.compileGraphHash,
     compiler: freezeCompiler(options.compiler),

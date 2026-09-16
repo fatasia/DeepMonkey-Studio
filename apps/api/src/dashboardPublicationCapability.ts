@@ -22,6 +22,7 @@ export interface AuthoritativeDashboardCompiler {
     readonly document: DashboardPublicationFreezeCandidate["document"];
     readonly data: Readonly<Record<string, unknown>>;
     readonly resources: Readonly<Record<string, Uint8Array>>;
+    readonly freezeManifest?: DashboardPublicationFreezeCandidate["manifest"];
   }, signal?: AbortSignal): Promise<{
     readonly artifact: Uint8Array;
     readonly objects: readonly { readonly nodeId: string; readonly contentCompiled: boolean; readonly deferredFields: readonly string[] }[];
@@ -94,7 +95,8 @@ export async function buildDashboardPublicationCapabilityReport(options: BuildDa
     configurationSha256: hashCanonical(options.compiler.configuration) };
   if (!compiler.id || !compiler.version || !SHA256.test(compiler.sha256)) throw new Error("Authoritative dashboard compiler identity is required");
   const compileGraphHash = hashCanonical({ kind: "dashboard-compile-v1", sourceSemanticHash, compiler });
-  const compiled = await options.compiler.compile({ document: candidate.document, data: candidate.data, resources: candidate.resources }, signal);
+  const compiled = await options.compiler.compile({ document: candidate.document, data: candidate.data,
+    resources: candidate.resources, freezeManifest: structuredClone(candidate.manifest) }, signal);
   signal?.throwIfAborted();
   if (!(compiled.artifact instanceof Uint8Array) || compiled.artifact.byteLength < 1) throw new Error("Dashboard compiler returned no artifact bytes");
   const targetArtifactHash = sha256(compiled.artifact);

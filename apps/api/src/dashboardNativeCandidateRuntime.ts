@@ -85,7 +85,8 @@ export function createInProcessDashboardNativeCandidateWorker(compiler: Authorit
   return Object.freeze({
     async compile(input: DashboardRuntimeArtifactCompilerInput, signal?: AbortSignal): Promise<DashboardRuntimeArtifactCompilerOutput> {
       signal?.throwIfAborted();
-      const result = await compiler.compile({ document: input.document, data: input.data, resources: input.resources }, signal);
+      const result = await compiler.compile({ document: input.document, data: input.data, resources: input.resources,
+        ...(input.freezeManifest ? { freezeManifest: input.freezeManifest } : {}) }, signal);
       signal?.throwIfAborted();
       return Object.freeze({ protocol: input.protocol, authority: structuredClone(input.authority),
         freezeManifestSha256: input.freezeManifestSha256, sourceSemanticHash: input.sourceSemanticHash,

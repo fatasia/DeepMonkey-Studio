@@ -103,6 +103,8 @@ describe("dashboard Native candidate runtime composition", () => {
     expect(f.closure.derive).toHaveBeenCalledWith(expect.objectContaining({ id: authority.publicationId }), authority.entryPageId, expect.any(AbortSignal));
     expect(f.closure.resourceRevision).toHaveBeenCalledWith(authority, expect.objectContaining({ objectKey: "projects/project-golden/assets/font.woff2" }), expect.any(AbortSignal));
     expect(f.compiler.compile).toHaveBeenCalledTimes(2);
+    for (const call of [1, 2]) expect(f.compiler.compile).toHaveBeenNthCalledWith(call,
+      expect.objectContaining({ freezeManifest: candidate.freezeManifest }), expect.any(AbortSignal));
   });
 
   it("fails closed when trusted resource metadata no longer has the frozen revision", async () => {
