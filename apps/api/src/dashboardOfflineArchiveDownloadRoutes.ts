@@ -18,10 +18,9 @@ type RouteParams = { readonly projectId: string; readonly applicationId: string;
 export interface DashboardOfflineArchiveDownloadDependencies {
   /** Candidate records are private; routes may read them only through this scoped port. */
   readonly registry: Pick<DashboardNativeCandidateRegistry, "read">;
-  /** Resolves the C3 manifest from server-side publication storage, never from HTTP input. */
+  /** Resolves the C3 manifest from the server-only candidate record, never from HTTP input. */
   readonly readFreezeManifest: (input: {
-    readonly authority: DashboardNativeCandidateRecord["candidate"]["authority"];
-    readonly freezeManifestSha256: string;
+    readonly record: DashboardNativeCandidateRecord;
     readonly signal?: AbortSignal;
   }) => Promise<DashboardPublicationFreezeManifest | undefined>;
   readonly createArchive?: (input: {
@@ -63,8 +62,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
 
       try {
         const freezeManifest = await dependencies.readFreezeManifest({
-          authority: record.candidate.authority,
-          freezeManifestSha256: record.candidate.freezeManifestSha256,
+          record,
           signal: request.signal,
         });
         if (!freezeManifest) return reply.code(409).send({ code: "candidate_invalid", message: "Dashboard 候选离线包已失效，请刷新后重试" });

@@ -56,7 +56,9 @@ describe("dashboard offline archive download routes", () => {
     const response = await f.app.inject({ method: "GET", url: path });
     expect(response.statusCode).toBe(200);
     expect(f.registry.read).toHaveBeenCalledWith({ candidateId: "candidate-1", projectId: authority.projectId, applicationId: authority.applicationId });
-    expect(f.readFreezeManifest).toHaveBeenCalledWith({ authority, freezeManifestSha256: "a".repeat(64), signal: expect.any(AbortSignal) });
+    expect(f.readFreezeManifest).toHaveBeenCalledWith({ record: expect.objectContaining({
+      summary: expect.objectContaining({ candidateId: "candidate-1" }),
+    }), signal: expect.any(AbortSignal) });
     expect(f.createArchive).toHaveBeenCalledWith({ freezeManifest: { manifest: "server-only" }, capability: record().candidate.capability, artifact: Uint8Array.of(1, 2, 3) });
     await f.app.close();
   });

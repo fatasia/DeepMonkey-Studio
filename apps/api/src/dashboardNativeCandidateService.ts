@@ -1,6 +1,7 @@
 import {
   assertDashboardPublicationFreezeCommit,
   type DashboardPublicationFreezeCandidate,
+  type DashboardPublicationFreezeManifest,
 } from "./dashboardPublicationFreeze.js";
 import type {
   DashboardPublicationAuthorityAdapter,
@@ -50,6 +51,8 @@ export interface DashboardNativeCandidateServiceDependencies {
  */
 export interface DashboardNativeCandidate {
   readonly authority: DashboardPublicationFreezeCandidate["authority"];
+  /** Server-only C3 snapshot retained so the download route can build DMDA bytes. */
+  readonly freezeManifest: DashboardPublicationFreezeManifest;
   readonly freezeManifestSha256: string;
   readonly sourceSemanticHash: string;
   readonly compileGraphHash: string;
@@ -127,6 +130,7 @@ export function createDashboardNativeCandidateService(
         requireCurrent(activeGeneration, controller.signal);
         if (!receipt) throw new Error("Dashboard window verifier returned no receipt");
         const result = freezeCandidate({ authority: frozen.authority,
+          freezeManifest: frozen.manifest,
           freezeManifestSha256: frozen.manifest.manifestSha256,
           sourceSemanticHash: capability.sourceSemanticHash,
           compileGraphHash: capability.compileGraphHash,
