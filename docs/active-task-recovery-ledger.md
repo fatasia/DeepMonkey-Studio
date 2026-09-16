@@ -1,5 +1,7 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：增加 [Dashboard 离线进程入口](specs/dashboard-offline-process-launcher-2026-09-16.md)，校验 DMDA 后以固定 `--package` 参数启动本地播放器，关闭后清理，取消终止子进程；CLI `--help` 可实际执行。生命周期测试不替代真实窗口证据，独立 ZIP 与正式发布下载仍待办。
+
 - 已完成：修复 Dashboard 私有资源读取取消挂起。打开对象期间取消、EOF 后等待 transport completion 时取消，两项新增回归均先复现超时；读取改为同时等待流与 transport，并与取消竞争，失败或退出销毁流。另覆盖 transport 失败且流仍空闲的资源清理。真实生产 closure/compiler/verifier 接入仍待办。
 
 - 已完成：C5 候选所有权回归复现返回字节与内部已验证产物共享引用；prepare 返回值及 candidate getter 改为独立副本，调用方修改不再污染服务状态。增加编译中取消保留旧候选检查。服务、登记、路由组合与下载 34 项测试、API 类型检查通过。此修复不代表真实发布及离线窗口验收完成。

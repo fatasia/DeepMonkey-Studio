@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
+import { readFile, stat } from "node:fs/promises";
+import { EventEmitter } from "node:events";
+import type { spawn } from "node:child_process";
+import { describe, expect, it, vi } from "vitest";
 import { parseDeepRuntimePackage, serializeDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import { createDashboardOfflineArchive, dashboardArchiveCanonicalSha256 } from "./dashboardOfflineArchive.js";
 import { serializeDashboardOfflineArchive } from "./dashboardOfflineArchiveBytes.js";
 import { createDashboardOfflineNativeLaunchPlan } from "./dashboardOfflineNativeLauncher.js";
+import { runDashboardOfflineNative } from "./dashboardOfflineNativeProcess.js";
 
 const sha = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
@@ -22,6 +25,73 @@ async function validArchiveBytes(): Promise<Uint8Array> {
 }
 
 describe("dashboard offline native launcher", () => {
+  it.each(["spawn-error", "nonzero-exit"])("cleans runtime files after %s", async failure => {
+    const child = new EventEmitter();
+    let directory = "";
+    const spawnProcess = vi.fn((_exe: string, _args: string[], options: { cwd: string }) => {
+      directory = options.cwd; return child;
+    });
+    const running = runDashboardOfflineNative(await validArchiveBytes(), process.execPath,
+      { spawnProcess: spawnProcess as unknown as typeof spawn });
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledOnce());
+    const rejection = expect(running).rejects.toThrow(failure === "spawn-error" ? "spawn failed" : "Native Dashboard exited: 2");
+    if (failure === "spawn-error") child.emit("error", new Error("spawn failed"));
+    expect((await stat(directory)).isDirectory()).toBe(true);
+    child.emit("close", 2, null);
+    await rejection;
+    await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("passes exact validated bytes to the process and cleans only after close", async () => {
+    const bytes = await validArchiveBytes();
+    const expected = createDashboardOfflineNativeLaunchPlan(bytes);
+    const child = new EventEmitter();
+    let directory = "", packagePath = "";
+    const spawnProcess = vi.fn((_exe: string, args: string[], options: { cwd: string; shell: boolean }) => {
+      expect(_exe).toBe(process.execPath);
+      expect(options.shell).toBe(false);
+      expect(args).toHaveLength(2);
+      expect(args[0]).toBe("--package");
+      directory = options.cwd; packagePath = args[1]!;
+      return child;
+    });
+    const running = runDashboardOfflineNative(bytes, process.execPath, { spawnProcess: spawnProcess as unknown as typeof spawn });
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledOnce());
+    expect(sha(await readFile(packagePath))).toBe(expected.targetArtifactHash);
+    child.emit("exit", 0);
+    expect((await stat(packagePath)).isFile()).toBe(true);
+    child.emit("close", 0, null);
+    await expect(running).resolves.toMatchObject({ status: "closed", targetArtifactHash: expected.targetArtifactHash });
+    await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("kills cancelled playback and retains files until the child closes", async () => {
+    const controller = new AbortController();
+    const child = Object.assign(new EventEmitter(), { kill: vi.fn(() => true) });
+    let directory = "";
+    const spawnProcess = vi.fn((_exe: string, _args: string[], options: { cwd: string }) => {
+      directory = options.cwd; return child;
+    });
+    const running = runDashboardOfflineNative(await validArchiveBytes(), process.execPath,
+      { signal: controller.signal, spawnProcess: spawnProcess as unknown as typeof spawn });
+    await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledOnce());
+    const reason = new Error("playback cancelled");
+    controller.abort(reason);
+    expect(child.kill).toHaveBeenCalledOnce();
+    expect((await stat(directory)).isDirectory()).toBe(true);
+    const rejection = expect(running).rejects.toBe(reason);
+    child.emit("close", null, "SIGTERM");
+    await rejection;
+    await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("never spawns for tampered archive bytes", async () => {
+    const bytes = await validArchiveBytes(); bytes[bytes.length - 1] ^= 1;
+    const spawnProcess = vi.fn();
+    await expect(runDashboardOfflineNative(bytes, process.execPath, { spawnProcess })).rejects.toThrow();
+    expect(spawnProcess).not.toHaveBeenCalled();
+  });
+
   it("turns verified DMDA bytes into a minimal local native plan", async () => {
     const bytes = await validArchiveBytes();
     const plan = createDashboardOfflineNativeLaunchPlan(bytes);
