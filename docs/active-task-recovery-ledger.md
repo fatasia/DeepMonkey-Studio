@@ -1,5 +1,7 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：主线正常 API build 后复跑作者柱图发布至独立 EXE 全链，3 帧 Native GPU clean、下载内嵌数据与归档一致、无 Node/旁文件独立呈现通过。证据 `test-output/dashboard-author-main-build-20260916`，最新本机测试指南已指向该产物。验证脚本新增 `--sample-chart` 模式并已提交 `a835410`；本次仍保持 degraded。
+
 - 已完成：API build/predev 自动生成 Dashboard 部署 bundle，修复正常清理 dist 后丢失动态模块的部署缺口。主线实际 API build 与无 tsx/development 条件的生产 Node import/注册检查通过，三个下载入口均要求鉴权。工作区依赖须先按正常顺序构建；保留既有 Native Scene 构建和无关依赖改动。
 
 - 已完成：作者 37/91 样例柱图经过磁盘发布、真实编译与 Native 窗口、HTTP 单 EXE 下载后，在 PATH 无 Node、无旁文件目录独立呈现。主线程读取实际证据并复核 EXE SHA-256 `d3c06a5b64bec623698b49c3404ab6b9d84eb46e91f68f15bfe67e94c56d8775`；[启动与测试步骤](specs/dashboard-single-exe-test-2026-09-16.md) 已补。能力仍为 degraded，完整交互、视觉和组合页面验收保持待办。
