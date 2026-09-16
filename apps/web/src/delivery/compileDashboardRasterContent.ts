@@ -72,7 +72,7 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
     documentId: document.application.metadata.id, documentRevision: revision, entryPageId: first.tree.id, pages };
   const packageValue = buildDashboardCompositionRuntimePackage({ packageId: input.packageId,
     packageVersion: input.packageVersion, dashboard, deep2d, charts, chartSims: [] });
-  const compileGraphHash = runtimeContentSha256({ sourceSemanticHash, pass: "dashboard-frozen-raster-v2", producerEvidence });
+  const compileGraphHash = runtimeContentSha256({ sourceSemanticHash, pass: "dashboard-frozen-raster-v3", producerEvidence });
   return { schemaVersion: 1 as const, scope: "dashboard-frozen-raster" as const, publicationReady: false as const,
     sourceSemanticHash, compileGraphHash, targetArtifactHash: runtimeContentSha256(packageValue), package: packageValue,
     producerEvidence, nodeBindings, capabilityReport: { objects, contentCompiled: objects.filter(o => o.contentCompiled).length,

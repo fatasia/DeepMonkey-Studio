@@ -2,6 +2,7 @@ import type { DashboardDataWidgetNode } from "@bim-studio/contracts";
 import { runtimeContentSha256, type Deep2dRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import { assetIdentity, base64, rasterExtent, verifyRaster } from "./dashboardRasterValidation";
 import { dataPresentation, dataRoleKey } from "./dashboardDataPresentation";
+import { dashboardDataPaint } from "./dashboardDataPaint";
 import type { DashboardDataTextBox } from "./dashboardDataRasterTypes";
 import type { DashboardRasterCompileInput, DashboardRasterEvidence, DashboardRasterHost } from "./dashboardRasterTypes";
 
@@ -11,8 +12,11 @@ export async function rasterDataContent(node: DashboardDataWidgetNode, content: 
   input: DashboardRasterCompileInput, host: DashboardRasterHost) {
   const data = input.data?.[node.id];
   if (!data || !("layout" in data) || node.widget.semanticBinding) throw new DashboardDataUnavailable("Frozen resolved metric and measured Web layout are required");
-  if (node.widget.type === "table" && node.widget.report?.freezeFirstColumn)
+  if (node.widget.type === "table" && node.widget.report?.freezeFirstColumn && !data.layout.paint)
     throw new DashboardDataUnavailable("Sticky table cells require ordered background/text composition");
+  let paint;
+  try { paint = dashboardDataPaint(data.layout); }
+  catch (error) { throw new DashboardDataUnavailable(error instanceof Error ? error.message : String(error)); }
   const texts = dataPresentation(node.widget, data, input.locale), seen = new Set<string>();
   if (data.layout.textBoxes.length > 512) throw new DashboardDataUnavailable("Data text atlas budget exceeded");
   const boxes = data.layout.textBoxes.map(box => {
@@ -27,24 +31,42 @@ export async function rasterDataContent(node: DashboardDataWidgetNode, content: 
     return { box, key, text: value.text, source, clip };
   });
   if (seen.size !== texts.size) throw new DashboardDataUnavailable("Measured Web text layout is incomplete");
-  const resources = [...content.displayList.resources], commands = [...content.displayList.commands];
-  for (const [index, background] of data.layout.backgrounds.entries()) {
+  for (const background of data.layout.backgrounds) {
     rect(background.rect, true);
     if (background.rect[2] === 0 || background.rect[3] === 0) continue;
     if (background.color.length !== 4 || background.color.some(v => !Number.isFinite(v) || v < 0 || v > 1))
       throw new DashboardDataUnavailable("Invalid measured background color");
-    const [x, y, width, height] = background.rect, id = `${content.id}.bg.${index}`;
-    resources.push({ kind: "path", id, revision: content.revision, verbs: [{ op: "move", x, y },
-      { op: "line", x: x + width, y }, { op: "line", x: x + width, y: y + height },
-      { op: "line", x, y: y + height }, { op: "close" }] });
-    commands.push({ kind: "path", id: `${id}.draw`, pathId: id, zOrder: 1,
-      transform: [1, 0, 0, 1, 0, 0], fill: background.color });
   }
   const layers: Array<{ content: Deep2dRuntimePackage; clip: DashboardDataTextBox["clip"] }> = [{
-    content: { ...content, displayList: { ...content.displayList, resources, commands } }, clip: null }];
+    content, clip: null }];
+  const nextLayer = (clip: DashboardDataTextBox["clip"]) => {
+    const previous = layers.length > 1 ? layers.at(-1) : undefined;
+    if (previous && JSON.stringify(previous.clip) === JSON.stringify(clip)) return previous;
+    const id = `layer.${runtimeContentSha256([content.id, layers.length])}`;
+    const layer = { clip, content: { ...content, id,
+      displayList: { ...content.displayList, id: `${id}.paths`, resources: [], commands: [] },
+      atlases: [], quads: [] } as Deep2dRuntimePackage };
+    layers.push(layer);
+    return layer;
+  };
   const evidence: DashboardRasterEvidence[] = [];
   let totalBytes = 0;
-  for (const { box, key, text, source, clip } of boxes) {
+  for (const [paintIndex, entry] of paint.entries()) {
+    if (entry.kind === "background") {
+      const background = data.layout.backgrounds[entry.index]!;
+      const [x, y, width, height] = background.rect;
+      if (width === 0 || height === 0) continue;
+      const layer = !data.layout.paint && layers.length === 1 ? layers[0]! : nextLayer(null);
+      const id = `${content.id}.bg.${entry.index}`;
+      layer.content = { ...layer.content, displayList: { ...layer.content.displayList,
+        resources: [...layer.content.displayList.resources, { kind: "path", id, revision: content.revision,
+          verbs: [{ op: "move", x, y }, { op: "line", x: x + width, y },
+            { op: "line", x: x + width, y: y + height }, { op: "line", x, y: y + height }, { op: "close" }] }],
+        commands: [...layer.content.displayList.commands, { kind: "path", id: `${id}.draw`, pathId: id,
+          zOrder: paintIndex, transform: [1, 0, 0, 1, 0, 0], fill: background.color }] } };
+      continue;
+    }
+    const { box, key, text, source, clip } = boxes[entry.index]!;
     if (!source) continue;
     const fonts = box.fonts.map(ref => { const font = input.assets[ref];
       if (!font || font.faceIndex === undefined) throw new DashboardDataUnavailable("Missing measured text font"); return font; });
@@ -57,18 +79,12 @@ export async function rasterDataContent(node: DashboardDataWidgetNode, content: 
     const result = verifyRaster(await host.rasterizeText(structuredClone({ ...box.style, requestHash, text,
       locale: input.locale, width, height, verticalAlign: box.verticalAlign, wrap: box.wrap, fonts })),
       requestHash, width, height, fonts);
-    let layer = layers.length > 1 ? layers.at(-1)! : undefined;
-    if (!layer || JSON.stringify(layer.clip) !== JSON.stringify(clip)) {
-      const id = `layer.${runtimeContentSha256([content.id, layers.length])}`;
-      layer = { clip, content: { ...content, id,
-        displayList: { ...content.displayList, id: `${id}.paths`, resources: [], commands: [] }, atlases: [], quads: [] } };
-      layers.push(layer);
-    }
+    const layer = nextLayer(clip);
     const atlases = [...layer.content.atlases], quads = [...layer.content.quads];
     const id = `raster.${key}`;
     atlases.push({ id, revision: content.revision, kind: "image", format: "rgba8unorm-srgb", width, height,
       sampling: "linear", dataBase64: base64(result.rgba) });
-    quads.push({ id: `${id}.quad`, atlasId: id, zOrder: 2, transform: [1, 0, 0, 1, 0, 0],
+    quads.push({ id: `${id}.quad`, atlasId: id, zOrder: paintIndex, transform: [1, 0, 0, 1, 0, 0],
       source: [0, 0, width, height], destination: [box.rect[0], box.rect[1], width, height], color: [1, 1, 1, 1] });
     layer.content = { ...layer.content, atlases, quads };
     evidence.push({ nodeId: node.id, requestHash, sourceSha256: result.sourceSha256, pixelSha256: result.sha256,

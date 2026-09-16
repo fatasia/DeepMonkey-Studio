@@ -25,7 +25,13 @@ export interface DashboardFrozenData {
   readonly table?: { readonly page: number; readonly sort?: { readonly column: string; readonly direction: "asc" | "desc" };
     readonly scrollLeft: number };
   readonly layout: { readonly textBoxes: readonly DashboardDataTextBox[];
+    /** Complete back-to-front sequence captured by a bounded DOM paint adapter. */
+    readonly paint?: readonly DashboardDataPaint[];
     readonly backgrounds: readonly { readonly rect: readonly [number, number, number, number];
       /** Linear RGB, unchanged alpha (0..1); text styles remain sRGB bytes. */
       readonly color: readonly [number, number, number, number] }[] };
+}
+export interface DashboardDataPaint {
+  readonly kind: "background" | "text";
+  readonly index: number;
 }

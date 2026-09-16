@@ -1,5 +1,6 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：[C2 表格有序绘制子片](specs/dashboard-ordered-table-paint-2026-09-16.md) 支持实测背景/文字交错、冻结首列层级和现有 1px 阴影；独立 59 项及类型通过，真实浏览器完成横滚与捕获验证。生产页面自动绑定仍待办。
 - 已完成：[C2 冻结数据内容子片](specs/dashboard-frozen-data-content-2026-09-16.md) 独立导出严格类型、149 项测试通过；真实 KPI/表格/图表包通过字体 producer 与 Native GPU 读回。修复小数文字贴图压缩。GPU 目检发现柱图自动零基线缺陷，正同步修复 Native/Web；冻结首列及正式发布仍待办。
 - 已完成：[C1 页面候选事务子片](specs/dashboard-candidate-transaction-2026-09-16.md) 独立导出 302 项、主树 305 项测试及核心/Lab 类型通过；资源屏障、旧事件拒绝、失败保持与跨页游标恢复已实现。真实 WebGPU 组合绘制宿主仍为本轮待办。
 - 已完成：真实 GPU 对抗验证发现 GLM 作者颜色转换缺失，蓝色 `[54,139,214]` 输出为 `[127,195,236]`；[生产端颜色修复](specs/dashboard-css-color-correction-2026-09-16.md) 后三色 sRGB 像素断言通过，Native 内容 golden 两项、TS 69 项与严格 Clippy 通过。C1 资源基础已提交 `59c5fea`。

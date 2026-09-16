@@ -17,6 +17,7 @@ export default {
     "apps/web/src/delivery/dashboardTextContent.test.ts",
     "apps/web/src/delivery/dashboardColor.test.ts",
     "apps/web/src/delivery/dashboardData*.test.ts",
+    "apps/web/src/delivery/dashboardTable*.test.ts",
     "apps/web/src/delivery/captureDashboardDataLayout.test.ts",
     "apps/web/src/delivery/lowerDashboardChart.test.ts",
     "apps/web/src/components/dashboardAnalytics.test.ts",

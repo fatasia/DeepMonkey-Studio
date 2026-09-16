@@ -1,4 +1,5 @@
-import type { DashboardDataTextBox, DashboardDataTextRole, DashboardFrozenData } from "./dashboardDataRasterTypes";
+import type { DashboardDataPaint, DashboardDataTextBox, DashboardDataTextRole, DashboardFrozenData } from "./dashboardDataRasterTypes";
+import { validateDashboardTablePaint } from "./dashboardTablePaintCapture";
 import { cssSrgbToLinearColor } from "./dashboardColor";
 import { captureColor, captureNormalizedColor, capturePixels, captureTextWrap, captureTransformScale, intersectCaptureRects, type CaptureRect } from "./dashboardDataCaptureGeometry";
 
@@ -13,6 +14,8 @@ export interface DashboardDataCaptureOptions {
   readonly logicalSize: readonly [number, number];
   readonly text: readonly DashboardTextCaptureBinding[];
   readonly backgrounds?: readonly HTMLElement[];
+  /** Complete adapter-supplied report-table order, checked against actual DOM stacking. */
+  readonly tablePaint?: readonly DashboardDataPaint[];
   readonly resolveFonts: (style: CSSStyleDeclaration) => readonly string[];
 }
 
@@ -106,14 +109,27 @@ export function captureDashboardDataLayout(root: HTMLElement, options: Dashboard
         align: align as "left" | "center" | "right", color: captureColor(style.color),
       } };
   });
-  const backgrounds = (options.backgrounds ?? []).map(element => {
+  if (options.tablePaint) validateDashboardTablePaint(root, options.text, options.backgrounds ?? [], options.tablePaint);
+  const backgroundGroups = (options.backgrounds ?? []).map(element => {
     const { style, clip } = inspect(element);
-    if (style.backgroundImage !== "none" || style.boxShadow !== "none"
+    if (style.backgroundImage !== "none"
       || [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomLeftRadius, style.borderBottomRightRadius]
         .some(value => value !== "0px")) throw new Error("Background needs a separate appearance producer");
     const rect = local(element.getBoundingClientRect());
-    return { rect: clip ? intersectCaptureRects(rect, clip) : rect,
+    const base = { rect: clip ? intersectCaptureRects(rect, clip) : rect,
       color: cssSrgbToLinearColor(captureNormalizedColor(style.backgroundColor)) };
+    if (style.boxShadow === "none") return [base];
+    const shadow = /^(rgba?\([^)]+\)) (-?[\d.]+px) (-?[\d.]+px) 0px(?: 0px)?$/.exec(style.boxShadow);
+    if (!options.tablePaint || !shadow) throw new Error("Background needs a separate appearance producer");
+    const shadowRect: CaptureRect = [rect[0] + capturePixels(shadow[2]!, "shadow-x"),
+      rect[1] + capturePixels(shadow[3]!, "shadow-y"), rect[2], rect[3]];
+    return [{ rect: clip ? intersectCaptureRects(shadowRect, clip) : shadowRect,
+      color: cssSrgbToLinearColor(captureNormalizedColor(shadow[1]!)) }, base];
   });
-  return { textBoxes, backgrounds };
+  const backgrounds = backgroundGroups.flat();
+  let offset = 0;
+  const indices = backgroundGroups.map(group => { const result = group.map((_, index) => offset + index); offset += group.length; return result; });
+  const paint = options.tablePaint?.flatMap(entry => entry.kind === "text" ? [entry]
+    : indices[entry.index]!.map(index => ({ kind: "background" as const, index })));
+  return { textBoxes, backgrounds, ...(paint ? { paint } : {}) };
 }

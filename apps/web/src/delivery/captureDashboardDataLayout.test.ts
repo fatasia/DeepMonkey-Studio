@@ -63,6 +63,19 @@ function setup() {
 afterEach(() => { vi.restoreAllMocks(); document.body.replaceChildren(); });
 
 describe("dashboard measured geometry capture", () => {
+  it("expands an explicitly ordered frozen-cell hard shadow before its background and text", () => {
+    const { root, text, styles, options } = setup();
+    const table = { querySelectorAll: () => [text] };
+    Object.assign(root, { querySelector: () => table, querySelectorAll: () => [table] });
+    Object.assign(text, { closest: (selector: string) => selector === "table" ? table : text });
+    styles.set(text, { position: "sticky", zIndex: "2", boxShadow: "rgb(43, 57, 63) 1px 0px 0px 0px" } as Partial<typeof base>);
+    const result = captureDashboardDataLayout(root, { ...options, backgrounds: [text],
+      tablePaint: [{ kind: "background", index: 0 }, { kind: "text", index: 0 }] });
+    expect(result.backgrounds.map(item => item.rect)).toEqual([[11, 10, 40, 20], [10, 10, 40, 20]]);
+    expect(result.paint).toEqual([{ kind: "background", index: 0 }, { kind: "background", index: 1 }, { kind: "text", index: 0 }]);
+    expect(() => captureDashboardDataLayout(root, { ...options, backgrounds: [text],
+      tablePaint: [{ kind: "text", index: 0 }, { kind: "background", index: 0 }] })).toThrow("background");
+  });
   it("captures background as linear RGB while retaining text sRGB bytes", () => {
     const { root, text, styles, options } = setup();
     styles.set(text, { color: "rgb(128, 128, 128)", backgroundColor: "rgba(128, 128, 128, 0.5)" });
