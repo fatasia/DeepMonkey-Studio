@@ -46,6 +46,58 @@ const editor = { id: "editor-1", role: "editor", projectIds: [authority.projectI
 describe("dashboard offline archive download routes", () => {
   const zipPath = path.replace("offline-archive", "portable-zip");
   const executable = nodePath.resolve("server-only-player.exe");
+  const exePath = path.replace("offline-archive", "standalone-executable");
+
+  it("serves a single EXE using the deployment executable and verified DMDA bytes", async () => {
+    const unavailable = await fixture({ user: editor });
+    expect((await unavailable.app.inject({ method: "GET", url: exePath })).statusCode).toBe(404);
+    await unavailable.app.close();
+    const createExecutable = vi.fn(async () => Uint8Array.of(0x4d, 0x5a, 1));
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable, createExecutable } });
+    try {
+      const response = await f.app.inject({ method: "GET", url: exePath });
+      expect(response.statusCode).toBe(200);
+      expect(response.rawPayload).toEqual(Buffer.from([0x4d, 0x5a, 1]));
+      expect(response.headers["content-type"]).toBe("application/vnd.microsoft.portable-executable");
+      expect(response.headers["content-disposition"]).toBe('attachment; filename="dashboard-candidate-candidate-1.exe"');
+      expect(response.headers["cache-control"]).toBe("private, no-store");
+      expect(response.headers["content-length"]).toBe("3");
+      expect(createExecutable).toHaveBeenCalledWith(Uint8Array.of(0x44, 0x4d, 0x44, 0x41), executable, { signal: expect.any(AbortSignal) });
+      expect(f.registry.read).toHaveBeenCalledTimes(2);
+      expect((await f.app.inject({ method: "GET", url: exePath + "?nativeExecutable=evil.exe" })).statusCode).toBe(400);
+      expect(createExecutable).toHaveBeenCalledTimes(1);
+    } finally { await f.app.close(); }
+  });
+
+  it.each([undefined, { ...editor, role: "viewer" }, { ...editor, projectIds: ["other"] }])("authorizes EXE before accessing its candidate", async user => {
+    const createExecutable = vi.fn(async () => new Uint8Array());
+    const f = await fixture({ user, portable: { nativeExecutable: executable, createExecutable } });
+    try {
+      expect((await f.app.inject({ method: "GET", url: exePath })).statusCode).toBe(user ? 403 : 401);
+      expect(f.registry.read).not.toHaveBeenCalled(); expect(createExecutable).not.toHaveBeenCalled();
+    } finally { await f.app.close(); }
+  });
+
+  it.each([[new DashboardNativeCandidateExpiredError(), 410], [new DashboardNativeCandidateNotFoundError(), 404], [new DashboardNativeCandidateAuthorityError(), 404]])("rechecks candidate validity after asynchronous EXE generation", async (error, status) => {
+    let invalid = false;
+    const f = await fixture({ user: editor, read: () => { if (invalid) throw error; return record(); },
+      portable: { nativeExecutable: executable, createExecutable: async () => { await Promise.resolve(); invalid = true; return Uint8Array.of(0x4d, 0x5a); } } });
+    try {
+      const response = await f.app.inject({ method: "GET", url: exePath });
+      expect(response.statusCode).toBe(status); expect(response.headers["content-disposition"]).toBeUndefined();
+      expect(f.registry.read).toHaveBeenLastCalledWith({ candidateId: "candidate-1", projectId: authority.projectId, applicationId: authority.applicationId });
+    } finally { await f.app.close(); }
+  });
+
+  it("does not return partial EXE bytes when packaging fails", async () => {
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable,
+      createExecutable: async () => { throw new Error("private executable detail"); } } });
+    try {
+      const response = await f.app.inject({ method: "GET", url: exePath });
+      expect(response.statusCode).toBe(409); expect(response.headers["content-disposition"]).toBeUndefined();
+      expect(response.body).not.toContain("private executable detail");
+    } finally { await f.app.close(); }
+  });
 
   it.each(["", "relative.exe", nodePath.resolve("player.dll")])("rejects invalid deployment executable configuration: %s", async nativeExecutable => {
     const app = createApiServer();

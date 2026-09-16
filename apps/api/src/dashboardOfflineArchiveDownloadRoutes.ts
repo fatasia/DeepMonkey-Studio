@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import path from "node:path";
 import { createDashboardPortableZip } from "./dashboardPortableZip.js";
+import { createDashboardStandaloneExecutable } from "./dashboardStandaloneExecutable.js";
 import {
   createDashboardOfflineArchive,
   type DashboardOfflineArchiveV1,
@@ -31,15 +32,16 @@ export interface DashboardOfflineArchiveDownloadDependencies {
     readonly artifact: Uint8Array;
   }) => DashboardOfflineArchiveV1;
   readonly serializeArchive?: (archive: DashboardOfflineArchiveV1) => Uint8Array;
-  /** 部署固定播放器路径；HTTP 参数不能选择或覆盖它。未配置时不注册 ZIP 路由。 */
+  /** 部署固定播放器路径；HTTP 不能覆盖。未配置时不注册 ZIP/EXE 路由。 */
   readonly portable?: {
     readonly nativeExecutable: string;
     readonly createZip?: typeof createDashboardPortableZip;
+    readonly createExecutable?: typeof createDashboardStandaloneExecutable;
   };
 }
 
 /**
- * Serves a verified, short-lived C5 candidate as DMDA or deployment-enabled ZIP.
+ * Serves verified C5 candidates as DMDA or deployment-enabled ZIP/single EXE.
  * This module deliberately does not register itself in the global route index,
  * so composition owns the concrete store and identity integrations.
  */
@@ -53,17 +55,19 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
     throw new Error("Dashboard portable download requires an absolute .exe path");
   }
   const createZip = portable?.createZip ?? createDashboardPortableZip;
-  for (const format of portable ? ["dmda", "zip"] : ["dmda"]) {
+  const createExecutable = portable?.createExecutable ?? createDashboardStandaloneExecutable;
+  for (const format of portable ? ["dmda", "zip", "exe"] : ["dmda"]) {
+  const endpoint = format === "exe" ? "standalone-executable" : format === "zip" ? "portable-zip" : "offline-archive";
   app.get<{ Params: RouteParams }>(
-    `/api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/${format === "zip" ? "portable-zip" : "offline-archive"}`,
+    `/api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/${endpoint}`,
     async (request, reply) => {
       if (!request.systemUser?.enabled) return reply.code(401).send({ message: "请先登录" });
       if (request.systemUser.role === "viewer") return reply.code(403).send({ message: "浏览者不能下载 Dashboard 候选离线包" });
       if (request.systemUser.role !== "admin" && !request.systemUser.projectIds.includes(request.params.projectId)) {
         return reply.code(403).send({ message: "没有该项目的访问权限" });
       }
-      if (format === "zip" && Object.keys(request.query as object).length !== 0) {
-        return reply.code(400).send({ message: "Dashboard ZIP 下载不接受查询参数" });
+      if (format !== "dmda" && Object.keys(request.query as object).length !== 0) {
+        return reply.code(400).send({ message: "Dashboard 下载不接受查询参数" });
       }
 
       let record: DashboardNativeCandidateRecord;
@@ -92,7 +96,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
         request.signal.throwIfAborted();
         const bytes = format === "zip"
           ? await createZip(archiveBytes, executable!, { signal: request.signal })
-          : archiveBytes;
+          : format === "exe" ? await createExecutable(archiveBytes, executable!, { signal: request.signal }) : archiveBytes;
         request.signal.throwIfAborted();
         // 清单读取及 ZIP 压缩均可能等待；发送前重查 TTL 和候选撤销状态。
         try {
@@ -104,7 +108,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
           .header("content-disposition", `attachment; filename="dashboard-candidate-${safeFileId(record.summary.candidateId)}.${format}"`)
           .header("content-length", String(bytes.byteLength))
           .header("x-content-type-options", "nosniff")
-          .type(format === "zip" ? "application/zip" : "application/octet-stream")
+          .type(format === "exe" ? "application/vnd.microsoft.portable-executable" : format === "zip" ? "application/zip" : "application/octet-stream")
           .send(Buffer.from(bytes));
       } catch {
         return reply.code(409).send({ code: "candidate_invalid", message: "Dashboard 候选离线包已失效，请刷新后重试" });
