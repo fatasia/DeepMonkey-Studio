@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import path from "node:path";
 import { runDashboardOfflineNative } from "../apps/api/src/dashboardOfflineNativeProcess.js";
 
-const usage = "pnpm exec tsx scripts/run-dashboard-client-native.mts <archive.dmda> --native-executable <player.exe>";
+const usage = "pnpm exec tsx --conditions=development scripts/run-dashboard-client-native.mts <archive.dmda> --native-executable <player.exe>";
 try {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === "--help") {
