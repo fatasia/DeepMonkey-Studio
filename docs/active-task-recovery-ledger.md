@@ -1,3 +1,10 @@
+### 2026-09-17 交接#5 工业格式 PLAN-02 Windows 离线试构建与体量记录(GLM;构建可行性记录,未集成)
+
+- 已完成(全部实测,无预计):[报告](specs/industrial-format-plan02-build-trial-2026-09-17.md)。工具链事实:**本机无 MSVC(VS2019 只剩 Installer)、无 cmake,唯一 C++ 链是 MinGW-w64 GCC 15.1.0**。逐库:① **laz-perf 3.4.0 成功零补丁**——静态库 0.67 MB(15 TU,3 s),上游 readlaz 读锁定样本 autzen_trim.laz 92 ms/峰值 RSS 6.9 MB、1.2-with-color.copc.laz 130 ms/14.6 MB(-static 自包含 exe);② **openNURBS v8.35 失败(192/199 TU,不可链接)**——2 处构建定义级修正(UNICODE/Win10 SDK 宏)+1 处构建副本补丁(lock.h atomic brace 初始化,GCC15 拒拷贝初始化)后打包出 13.5 MB 库,但链接报 **3,141 个 undefined reference**,根因=7 个文件平台分支只覆盖 MSVC/Linux(sprintf_l 家族/qsort_r/localtime_r/CoCreateGuid 分支/KNOWNFOLDERID/`L#c` 宏),头文件消费面(example_read.o)反而通过;③ libE57Format v3.4.0 **被硬依赖 XercesC 3.2 阻断**(PLAN-01 锁定遗漏,已记入下一步),公共头 6 个手工补生成头后全部编译通过;④ 3d-tiles-renderer v0.5.2 离线 `pnpm install` 失败(ERR_PNPM_NO_OFFLINE_META @babylonjs/loaders);⑤ rhino3dm 三个 submodule 全空按约束跳过;⑥ PDAL 源码包本就未下载;⑦ rvt-rs/parasolid-kit/cadmpeg 离线 cargo 全失败(Cargo.lock 在但本地缓存无 crate 源码)。
+- **D 盘 RVT 盘点(只盘点不解析)**:深扫 37 个唯一 RVT 共 4,963.3 MB、0 个 RFA;**28 个约 4.5 GB 在 D:\[已脱敏]\项目\[已脱敏]([已脱敏]二 A/B 区、[已脱敏]车间二,土建+机电分层分文件,含 .0001 等版本备份)**——正好补 PLAN-01"RVT 学科覆盖不足";另有仓内 5 个 Autodesk 官方样例(建筑/机电/结构)。37 个均为 OLE/CFB 容器,4 MB 头窗口内未检出 Revit 版本字符串(版本需流级解析,列入下一步)。Top 20 候选清单在报告 §6.3,完整 CSV 在 `build-trial/rvt-inventory-deep.csv`(data/ 不入 git)。
+- **边界(如实)**:openNURBS 无 MSVC 复测,当前结论仅对 MinGW GCC 15.1 成立;峰值 RSS 为 1 ms 轮询采样近似;openNURBS 1 处补丁在 data/ 构建副本上(生产源码零改动,git 仅 add 本报告与总账);Rust 系未联网 vendor,结论限于离线口径。
+- **下一步**:MSVC 机器复测 openNURBS+libE57Format(+XercesC)并记体量/RSS/hash(PLAN-01 停止条件#1 正解);锁定缺口补齐(XercesC、rhino3dm submodule、PDAL 完整包、cargo vendor);[已脱敏] RVT 挑 8~10 个登记 manifest+SHA-256;3D Tiles C++ 候选重新选型或 vendor 锁定 TS 依赖。
+
 ### 2026-09-17 交接#4 C1 输入矩阵 + C2 整页视觉(GLM,真实浏览器)
 
 - 已完成:新增 `apps/web/scripts/gate-dashboard-c1-input-matrix.mjs`(playwright 真实点击,15 步):发布链整页打开(KPI/表格渲染、控制台零 error)→ 表头排序 asc/desc(断言首行 45/91 与方向属性)→ 分页矩阵(8 行×3 页,首/末页禁用态,行号 4-6/7-8,prev/next)→ 行点击零错误 → CSV 导出真实下载 → 项目控制面板换页(二级页面↔回验收总览)→ **换页返回后再排序仍路由回本页表格**(跨页输入归属)→ C2 整页截图 双主题×双宽度(1280/980)。主题走**真实品牌链路**:admin 登录 PATCH branding.themeMode,断言 `document.documentElement.dataset.theme`,finally 还原 dark(已核实还原)。
@@ -1674,3 +1681,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:`packages/deep-engine/src/benchmarkSampleSchema.ts`——统一采样窗口合同(8 通道:bridge/update/upload/cpu-submit/gpu-timestamp/present/frame-interval/input-latency;clockId 区分时间源);**不可用必须显式 unavailable+原因,禁止伪零**;sampleCount 与原始样本一一对应;通道窗口不得超出运行窗口;中位数只对 measured 定义(unavailable 返回 undefined 非 0)。
 - 验证:合同测试 4 项通过;typecheck 0 错误。
 - 边界(如实):native telemetry_gpu.rs 的同源接线与 StudioDeepPerformance 对接归下一批(cargo 车道被 P1-23 占用);置信区间/分组比较语义归 A04 消费时冻结。
+
+### 2026-09-17 DE26/C01 合同切片:能力清单账本(GLM)
+
+- 已完成:`packages/deep-engine/src/gltf/capabilityInventory.ts`——逐对象失败码账本(码/阶段/资产字段定位/可操作原因/频次);可渲染与语义保留分列;不可渲染对象必须带可定位失败,可渲染对象禁止携带 decode 失败;频次汇总确定性排序。对齐 gltf/validation 既有 unsupported 语义。
+- 验证:合同测试 3 项通过;typecheck 0 错误。
+- 边界(如实):三路径(direct/bridge/native)语料 runner 归下一批——需要把 A02 的 RVT 语料经 PLAN 转换为 glTF 后才能跑真实频次;当前合同以结构化账本先行。
