@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
 import JSZip from "jszip";
 import { createDashboardOfflineNativeLaunchPlan } from "./dashboardOfflineNativeLauncher.js";
+import { readDashboardWindowsExecutable } from "./dashboardWindowsExecutable.js";
 
 const executableName = "deep-native-player.exe";
 const packageName = "runtime-package.json";
@@ -17,13 +17,7 @@ export async function createDashboardPortableZip(
 ): Promise<Uint8Array> {
   options.signal?.throwIfAborted();
   const plan = createDashboardOfflineNativeLaunchPlan(archiveBytes);
-  if (!path.isAbsolute(nativeExecutable) || path.extname(nativeExecutable).toLowerCase() !== ".exe") {
-    throw new Error("Native executable must be an absolute .exe path");
-  }
-  const info = await stat(nativeExecutable);
-  if (!info.isFile() || info.size > 512 * 1024 * 1024) throw new Error("Native executable must be a file under 512 MiB");
-  const executable = await readFile(nativeExecutable);
-  validateWindowsExecutable(executable);
+  const executable = await readDashboardWindowsExecutable(nativeExecutable, options.signal);
   const files = new Map<string, Uint8Array | string>([
     [packageName, plan.artifact], [executableName, executable],
     ["LICENSE", await readFile(new URL("../../../LICENSE", import.meta.url))],
@@ -46,15 +40,6 @@ export async function createDashboardPortableZip(
   const result = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 }, platform: "DOS" }, () => options.signal?.throwIfAborted());
   options.signal?.throwIfAborted();
   return result;
-}
-
-function validateWindowsExecutable(bytes: Buffer): void {
-  if (bytes.length < 64 || bytes.readUInt16LE(0) !== 0x5a4d) throw new Error("Native executable is not a Windows PE file");
-  const offset = bytes.readUInt32LE(0x3c);
-  if (offset < 64 || offset > bytes.length - 24 || bytes.readUInt32LE(offset) !== 0x00004550) {
-    throw new Error("Native executable has an invalid PE header");
-  }
-  if ((bytes.readUInt16LE(offset + 22) & 0x2000) !== 0) throw new Error("Native executable cannot be a DLL");
 }
 
 function portableLauncher(hashes: Record<string, string>): string {
