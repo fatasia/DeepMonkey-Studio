@@ -95,12 +95,23 @@ export function createInProcessDashboardNativeCandidateWorker(compiler: Authorit
 }
 
 async function readTrustedObject(objects: Pick<ObjectStore, "read">, key: string, signal?: AbortSignal): Promise<Uint8Array> {
+  signal?.throwIfAborted();
   const result = await objects.read(key);
   const chunks: Uint8Array[] = [];
   let size = 0;
-  const cancel = () => result.stream.destroy(signal?.reason instanceof Error ? signal.reason : new DOMException("Aborted", "AbortError"));
+  let rejectAbort!: (reason: unknown) => void;
+  const cancelled = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+  const cancel = () => {
+    result.stream.destroy();
+    rejectAbort(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+  };
   signal?.addEventListener("abort", cancel, { once: true });
-  try {
+  const completed = result.completed.catch(reason => {
+    result.stream.destroy();
+    throw reason;
+  });
+  const pumping = (async () => {
+    signal?.throwIfAborted();
     for await (const chunk of result.stream) {
       signal?.throwIfAborted();
       const bytes = chunk instanceof Uint8Array ? Uint8Array.from(chunk) : new Uint8Array(chunk);
@@ -108,7 +119,10 @@ async function readTrustedObject(objects: Pick<ObjectStore, "read">, key: string
       if (size > MAX_RESOURCE_BYTES) throw new Error("Dashboard trusted object exceeds the frozen resource byte budget");
       chunks.push(bytes);
     }
-    await result.completed;
+  })();
+  try {
+    if (signal?.aborted) cancel();
+    await Promise.race([Promise.all([completed, pumping]), cancelled]);
     signal?.throwIfAborted();
     const output = new Uint8Array(size);
     let offset = 0;
@@ -116,5 +130,7 @@ async function readTrustedObject(objects: Pick<ObjectStore, "read">, key: string
     return output;
   } finally {
     signal?.removeEventListener("abort", cancel);
+    result.stream.destroy();
+    await pumping.catch(() => undefined);
   }
 }

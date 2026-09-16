@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertDashboardDocument, type PublishedApplicationRecord } from "@bim-studio/contracts";
 import { parseDeepRuntimePackage, serializeDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import source from "../../../packages/deep-engine/fixtures/dashboard-layout-source-v1.json";
-import { LocalObjectStore } from "./objects.js";
+import { LocalObjectStore, type ObjectStore } from "./objects.js";
 import { createDashboardNativeCandidateRuntime } from "./dashboardNativeCandidateRuntime.js";
 
 const authority = { projectId: "project-golden", applicationId: "application-worker-behavior",
@@ -21,7 +22,7 @@ function published(): PublishedApplicationRecord {
     applicationRevision: authority.applicationRevision, document: document.application, publishedAt: "2026-09-16T12:00:00.000Z" };
 }
 
-async function fixture() {
+async function fixture(objects?: Pick<ObjectStore, "read">) {
   const directory = await mkdtemp(path.join(tmpdir(), "dashboard-runtime-")); cleanup.push(directory);
   const objectKey = "projects/project-golden/assets/font.woff2", font = Uint8Array.of(1, 2, 3);
   const objectPath = path.join(directory, objectKey);
@@ -43,7 +44,7 @@ async function fixture() {
   };
   const compiler = { compilerId: "native-dashboard-v5", compilerVersion: "1.0.0", compilerSha256: "c".repeat(64),
     configuration: { runtimeSchema: 5 }, compile: vi.fn(async () => ({ artifact, objects: [{ nodeId: "widget-scene-main", contentCompiled: true, deferredFields: [] }] })) };
-  const runtime = createDashboardNativeCandidateRuntime({ store, objects: new LocalObjectStore(directory), closure, compiler,
+  const runtime = createDashboardNativeCandidateRuntime({ store, objects: objects ?? new LocalObjectStore(directory), closure, compiler,
     expectedDeviceFingerprintSha256: "a".repeat(64), verifier: { verify: async input => ({ verifier: "native-dashboard-window-v1",
       authority, freezeManifestSha256: input.candidate.manifest.manifestSha256, sourceSemanticHash: input.sourceSemanticHash,
       compileGraphHash: input.compileGraphHash, targetArtifactHash: input.targetArtifactHash, fixtureSha256: "b".repeat(64),
@@ -53,6 +54,46 @@ async function fixture() {
 }
 
 describe("dashboard Native candidate runtime composition", () => {
+  it("closes an idle stream when the object transport fails", async () => {
+    const stream = new Readable({ read() {} });
+    const reason = new Error("object transport failed");
+    const f = await fixture({ read: async () => ({ stream, completed: Promise.reject(reason) }) });
+    await expect(f.runtime.service.prepare(authority)).rejects.toBe(reason);
+    expect(stream.destroyed).toBe(true);
+    expect(f.compiler.compile).not.toHaveBeenCalled();
+  });
+
+  it("cancels an idle resource returned after the request was already aborted", async () => {
+    const stream = new Readable({ read() {} });
+    let release!: () => void;
+    const read = vi.fn(async () => {
+      await new Promise<void>(resolve => { release = resolve; });
+      return { stream, completed: Promise.resolve() };
+    });
+    const f = await fixture({ read });
+    const controller = new AbortController();
+    const pending = f.runtime.service.prepare(authority, controller.signal);
+    await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
+    const reason = new Error("cancelled while opening object");
+    controller.abort(reason);
+    release();
+    await expect(pending).rejects.toBe(reason);
+    expect(stream.destroyed).toBe(true);
+    expect(f.compiler.compile).not.toHaveBeenCalled();
+  }, 1500);
+
+  it("cancels after resource EOF without waiting indefinitely for transport completion", async () => {
+    const stream = Readable.from([Uint8Array.of(1, 2, 3)]);
+    const f = await fixture({ read: async () => ({ stream, completed: new Promise<void>(() => {}) }) });
+    const controller = new AbortController();
+    const pending = f.runtime.service.prepare(authority, controller.signal);
+    await vi.waitFor(() => expect(stream.readableEnded).toBe(true));
+    const reason = new Error("cancelled after EOF");
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    expect(f.compiler.compile).not.toHaveBeenCalled();
+  }, 1500);
+
   it("uses the current published snapshot, trusted closure reader, object store and in-process authoritative compiler", async () => {
     const f = await fixture();
     const candidate = await f.runtime.service.prepare(authority);
