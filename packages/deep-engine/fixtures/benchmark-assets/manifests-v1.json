@@ -1,0 +1,103 @@
+{
+  "generatedAt": "2026-09-16T17:45:29.917Z",
+  "manifests": [
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.bim.snowdon-towers-arch",
+      "name": "Snowdon Towers Sample Architectural",
+      "domain": "bim",
+      "primaryLoadClass": "heterogeneous-bim",
+      "source": {
+        "path": "D:\\Documents\\bim\\bim-studio\\test-model\\Snowdon Towers Sample Architectural.rvt",
+        "bytes": 94691328,
+        "sha256": "33271010919acb2a0d0d040851393a511d86ea7fd9a1f4c054797ae03e5e44a1",
+        "format": "rvt",
+        "formatVersion": "unknown"
+      },
+      "units": "feet",
+      "license": {
+        "redistributable": false,
+        "evidence": "Autodesk sample content; local benchmark use only, not redistributable"
+      },
+      "tasks": [
+        {
+          "kind": "appearance",
+          "fixtureId": "fixture.appearance.orbit-360"
+        }
+      ],
+      "cacheConditions": [
+        "cold",
+        "warm"
+      ]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.bim.golden-nugget-arch",
+      "name": "BIM Projekt Golden Nugget - Architektur und Ingenieurbau",
+      "domain": "bim",
+      "primaryLoadClass": "heterogeneous-bim",
+      "source": {
+        "path": "D:\\Soft\\Revit\\RVT2019\\Revit 2019\\Samples\\BIM_Projekt_Golden_Nugget-Architektur_und_Ingenieurbau.rvt",
+        "bytes": 127918080,
+        "sha256": "dce9af8a0f210e47a4ebae34a4a8c51a3fdbb9ffa29dabaf0a4e079b008fe749",
+        "format": "rvt",
+        "formatVersion": "2019"
+      },
+      "units": "millimeters",
+      "license": {
+        "redistributable": false,
+        "evidence": "Autodesk sample content; local benchmark use only, not redistributable"
+      },
+      "tasks": [
+        {
+          "kind": "appearance",
+          "fixtureId": "fixture.appearance.facade-sweep"
+        },
+        {
+          "kind": "dashboard",
+          "fixtureId": "fixture.dashboard.component-count"
+        }
+      ],
+      "cacheConditions": [
+        "cold",
+        "warm"
+      ]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.bim.rme-advanced-mep",
+      "name": "rme_advanced_sample_project (MEP)",
+      "domain": "bim",
+      "primaryLoadClass": "heterogeneous-bim",
+      "source": {
+        "path": "D:\\Soft\\Revit\\RVT2019\\Revit 2019\\Samples\\rme_advanced_sample_project.rvt",
+        "bytes": 33984512,
+        "sha256": "976d3e356224fb9ea625a06f3c1c6739d3e9ff38d056bbdb3b9e2245c2485839",
+        "format": "rvt",
+        "formatVersion": "2019"
+      },
+      "units": "feet",
+      "license": {
+        "redistributable": false,
+        "evidence": "Autodesk sample content; local benchmark use only, not redistributable"
+      },
+      "tasks": [
+        {
+          "kind": "appearance",
+          "fixtureId": "fixture.appearance.mep-isolation"
+        },
+        {
+          "kind": "animation",
+          "fixtureId": "fixture.animation.system-flow"
+        }
+      ],
+      "cacheConditions": [
+        "cold",
+        "warm"
+      ]
+    }
+  ]
+}

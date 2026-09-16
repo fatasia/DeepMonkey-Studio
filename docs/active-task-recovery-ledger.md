@@ -1662,3 +1662,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 已完成:runtimePurityGate 此前在 HEAD 即红(18689fa 引入):dashboardCompositionHost 的桥导入实为纯类型使用→改 `import type`;类型-only 导入在编译期擦除、无运行时耦合,策略扫描器新增 `isTypeOnlyImport` 豁免(含策略测试:类型导入纯净/值导入仍越界);按既有先例将 dashboardCompositionHost(HTMLCanvasElement)、deep2d/gpu(DOMException)登记进 browserSurfaceAllowlist。门禁复跑:**585 浏览器/核心源 + 439 native 源全绿**。
 - 边界(如实):deep-engine 全量链仍被 sourceSizeGate 挡(15 项既有违规:chart_render.rs 748 等历史文件 + P1-23 代理在产文件),本切片文件全部 <300 行;该门禁的既有违规清理归后续专门切片,不在本切片越权拆他人文件。
+
+### 2026-09-17 DE26/A02 第一批:真实资产清单合同+三真实项目入库(GLM)
+
+- 已完成:`packages/deep-engine/src/benchmarkAssetManifest.ts` 合同 v1(schema/六类负载对齐 A01/源哈希必须可复算/单位原样声明/许可证据强制/任务夹具/冷热缓存条件);生成器 `scripts/generate-benchmark-asset-manifests.mts` 实测本机资产;三份真实清单落盘 `packages/deep-engine/fixtures/benchmark-assets/manifests-v1.json`:Snowdon Towers(94.7MB)、Golden Nugget 多专业(127.9MB)、RME Advanced MEP(34.0MB),均 Autodesk 官方样例、实测 SHA-256、标注不可再分发仅本机基准。用户解锁:D 盘 92 个 RVT/RFA(Autodesk 样例库 2019/2026),已列为语料候选。
+- 验证:合同测试 3 项通过;deep-engine typecheck 0 错误。
+- 边界(如实):RVT 三角面/材质统计待工业格式 PLAN 转换后回填(脚本明确不估算);factory 域与 far-origin-campus 类资产待下载开放许可样本;manifests 引用本机绝对路径(资产不入 git)。
