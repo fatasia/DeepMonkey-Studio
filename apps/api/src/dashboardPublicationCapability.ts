@@ -108,16 +108,22 @@ export async function buildDashboardPublicationCapabilityReport(options: BuildDa
   assertWindowVerification(verification, candidate, sourceSemanticHash, compileGraphHash, targetArtifactHash,
     options.expectedDeviceFingerprintSha256);
   const rendered = new Set(verification.renderedNodeIds);
+  const authoredIds = new Set(candidate.document.application.pages.flatMap(page => page.nodes.map(node => node.id)));
   const objectIds = new Set<string>();
   const objects = compiled.objects.map(object => {
     if (!object.nodeId || objectIds.has(object.nodeId)) throw new Error("Compiler returned duplicate or invalid dashboard object identity");
+    if (!authoredIds.has(object.nodeId)) throw new Error(`Compiler returned unknown dashboard object ${object.nodeId}`);
     objectIds.add(object.nodeId);
     return { nodeId: object.nodeId,
-      status: object.contentCompiled && rendered.has(object.nodeId) ? "supported" as const
+      status: object.contentCompiled && rendered.has(object.nodeId) && object.deferredFields.length === 0 ? "supported" as const
         : object.contentCompiled ? "degraded" as const : "blocked" as const,
       deferredFields: [...new Set(object.deferredFields)].sort() };
   });
   for (const nodeId of rendered) if (!objectIds.has(nodeId)) throw new Error(`Verifier attested an unknown dashboard object ${nodeId}`);
+  // 编译器遗漏对象也必须出现在报告中，不能使部分页面看起来已全部支持。
+  for (const nodeId of authoredIds) {
+    if (!objectIds.has(nodeId)) objects.push({ nodeId, status: "blocked", deferredFields: ["$"] });
+  }
   return { schema: "deep-engine.dashboard-publication-capability", schemaVersion: 1, authority: { ...candidate.authority },
     freezeManifestSha256: candidate.manifest.manifestSha256, sourceSemanticHash, compileGraphHash, targetArtifactHash,
     compiler, evidence: { verifier: verification.verifier, fixtureSha256: verification.fixtureSha256,

@@ -1,5 +1,7 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：C4 能力报告三项回归先复现错误支持/遗漏/伪造对象，再修复：有 deferredFields 的已呈现对象仅 degraded；冻结文档中漏编译对象补为 blocked、缺口 `$`；不在冻结文档的编译对象拒绝。运行时与部署集成断言同步确认漏编译对象不会在报告中消失。正式发布、窗口逐对象覆盖仍待办。
+
 - 已完成：C2 修正后 producer 包经既有通用 Native 窗口验证器实际 present 3 帧，1200×800、RTX 4060/Vulkan、GPU clean；报告与包/EXE hash 见 [离线进程入口](specs/dashboard-offline-process-launcher-2026-09-16.md)。纠正“Scene verifier 整体不能复用”的旧结论：通用窗口启动及回执校验可复用，Dashboard 逐对象/字体覆盖仍缺失。补 `--conditions=development` 避免 CLI 加载旧 dist。正式发布到离线链、交互与视觉验收保持待办。
 
 - 已完成：增加 [Dashboard 离线进程入口](specs/dashboard-offline-process-launcher-2026-09-16.md)，校验 DMDA 后以固定 `--package` 参数启动本地播放器，关闭后清理，取消终止子进程；CLI `--help` 可实际执行。生命周期测试不替代真实窗口证据，独立 ZIP 与正式发布下载仍待办。

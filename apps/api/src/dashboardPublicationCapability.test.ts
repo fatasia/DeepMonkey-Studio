@@ -30,7 +30,7 @@ function inputs(frozen: Awaited<ReturnType<typeof candidate>>, patch: Partial<Da
       readResource: async () => ({ revision: 2, bytes: new Uint8Array([1, 2, 3]) }) },
     compiler: { compilerId: "native-dashboard", compilerVersion: "1", compilerSha256: "c".repeat(64), configuration: { antialias: "msaa4" },
       compile: async () => ({ artifact, objects: [{ nodeId: "widget-scene-main", contentCompiled: true, deferredFields: [] },
-        { nodeId: "deferred", contentCompiled: false, deferredFields: ["widget.video"] }] }) },
+        { nodeId: "second", contentCompiled: false, deferredFields: ["widget.video"] }] }) },
     verifyWindow: async (request: { sourceSemanticHash: string; compileGraphHash: string; targetArtifactHash: string }) => ({
       verifier: "native-dashboard-window-v1", authority, freezeManifestSha256: frozen.manifest.manifestSha256,
       sourceSemanticHash: request.sourceSemanticHash, compileGraphHash: request.compileGraphHash, targetArtifactHash: request.targetArtifactHash,
@@ -40,11 +40,42 @@ function inputs(frozen: Awaited<ReturnType<typeof candidate>>, patch: Partial<Da
 }
 
 describe("dashboard publication capability report", () => {
+  it("keeps uncompiled fields degraded even when the object was rendered", async () => {
+    const input = inputs(await candidate());
+    const compile = input.compiler.compile;
+    Object.assign(input.compiler, { compile: async () => {
+      const result = await compile();
+      return { ...result, objects: result.objects.map(object => ({ ...object, deferredFields: ["widget.interactions"] })) };
+    } });
+    expect((await buildDashboardPublicationCapabilityReport(input)).objects[0]).toMatchObject({ status: "degraded" });
+  });
+
+  it("reports omitted authored objects as blocked rather than silently dropping them", async () => {
+    const input = inputs(await candidate());
+    const compile = input.compiler.compile;
+    Object.assign(input.compiler, { compile: async () => {
+      const result = await compile(); return { ...result, objects: result.objects.slice(0, 1) };
+    } });
+    expect((await buildDashboardPublicationCapabilityReport(input)).objects).toContainEqual({
+      nodeId: "second", status: "blocked", deferredFields: ["$"],
+    });
+  });
+
+  it("rejects compiler object identities absent from the frozen document", async () => {
+    const input = inputs(await candidate());
+    const compile = input.compiler.compile;
+    Object.assign(input.compiler, { compile: async () => {
+      const result = await compile(); return { ...result, objects: [...result.objects,
+        { nodeId: "invented", contentCompiled: true, deferredFields: [] }] };
+    } });
+    await expect(buildDashboardPublicationCapabilityReport(input)).rejects.toThrow(/unknown dashboard object/);
+  });
+
   it("binds the three hashes to frozen authority, actual target bytes, device and font closure", async () => {
     const frozen = await candidate(), report = await buildDashboardPublicationCapabilityReport(inputs(frozen));
     expect(report).toMatchObject({ authority, freezeManifestSha256: frozen.manifest.manifestSha256,
       targetArtifactHash: sha(new Uint8Array([9, 8, 7])), objects: [{ nodeId: "widget-scene-main", status: "supported" },
-        { nodeId: "deferred", status: "blocked" }] });
+        { nodeId: "second", status: "blocked" }] });
     expect(report.sourceSemanticHash).toMatch(/^[a-f0-9]{64}$/); expect(report.compileGraphHash).toMatch(/^[a-f0-9]{64}$/);
   });
 

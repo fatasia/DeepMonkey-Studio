@@ -63,7 +63,9 @@ describe("Dashboard Native deployment adapter", () => {
     } });
     const candidate = await runtime.service.prepare(authority);
     expect(candidate).toMatchObject({ authority, artifactSha256: sha(candidate.artifact.artifact),
-      capability: { compiler: { id: "native-dashboard-v5", sha256: "c".repeat(64) }, objects: [{ nodeId: "widget-scene-main", status: "supported" }] } });
+      capability: { compiler: { id: "native-dashboard-v5", sha256: "c".repeat(64) }, objects: [
+        { nodeId: "widget-scene-main", status: "supported" }, { nodeId: "second", status: "blocked", deferredFields: ["$"] },
+      ] } });
     expect(f.closure.derive).toHaveBeenCalledOnce();
     expect(f.verifier.verify).toHaveBeenCalledOnce();
     expect(f.compiler.compile).toHaveBeenCalledTimes(2);

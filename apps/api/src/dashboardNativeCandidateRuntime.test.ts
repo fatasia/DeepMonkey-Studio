@@ -97,7 +97,9 @@ describe("dashboard Native candidate runtime composition", () => {
   it("uses the current published snapshot, trusted closure reader, object store and in-process authoritative compiler", async () => {
     const f = await fixture();
     const candidate = await f.runtime.service.prepare(authority);
-    expect(candidate).toMatchObject({ authority, artifactSha256: sha(candidate.artifact.artifact), capability: { objects: [{ nodeId: "widget-scene-main", status: "supported" }] } });
+    expect(candidate).toMatchObject({ authority, artifactSha256: sha(candidate.artifact.artifact), capability: { objects: [
+      { nodeId: "widget-scene-main", status: "supported" }, { nodeId: "second", status: "blocked", deferredFields: ["$"] },
+    ] } });
     expect(f.closure.derive).toHaveBeenCalledWith(expect.objectContaining({ id: authority.publicationId }), authority.entryPageId, expect.any(AbortSignal));
     expect(f.closure.resourceRevision).toHaveBeenCalledWith(authority, expect.objectContaining({ objectKey: "projects/project-golden/assets/font.woff2" }), expect.any(AbortSignal));
     expect(f.compiler.compile).toHaveBeenCalledTimes(2);
