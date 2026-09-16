@@ -48,6 +48,40 @@ describe("dashboard offline archive download routes", () => {
   const executable = nodePath.resolve("server-only-player.exe");
   const exePath = path.replace("offline-archive", "standalone-executable");
 
+  it("finishes a real HTTP download after asynchronous packaging", async () => {
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable,
+      createExecutable: async (_archive, _file, options) => {
+        await new Promise(resolve => setTimeout(resolve, 25));
+        options?.signal?.throwIfAborted();
+        return Uint8Array.of(0x4d, 0x5a);
+      } } });
+    try {
+      const origin = await f.app.listen({ host: "127.0.0.1", port: 0 });
+      const response = await fetch(origin + exePath);
+      expect(response.status).toBe(200);
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(Uint8Array.of(0x4d, 0x5a));
+    } finally { await f.app.close(); }
+  });
+
+  it("cancels packaging when the HTTP client disconnects while awaiting bytes", async () => {
+    let signal: AbortSignal | undefined;
+    let ready!: () => void, release!: () => void;
+    const started = new Promise<void>(resolve => { ready = resolve; });
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable,
+      createExecutable: async (_archive, _file, options) => {
+        signal = options?.signal; ready(); await blocked;
+        signal?.throwIfAborted(); return Uint8Array.of(0x4d, 0x5a);
+      } } });
+    try {
+      const origin = await f.app.listen({ host: "127.0.0.1", port: 0 });
+      const controller = new AbortController();
+      const download = fetch(origin + exePath, { signal: controller.signal }).catch(error => error);
+      await started; controller.abort(); await download;
+      await vi.waitFor(() => expect(signal?.aborted).toBe(true), { timeout: 1000 });
+    } finally { release(); await f.app.close(); }
+  });
+
   it("serves a single EXE using the deployment executable and verified DMDA bytes", async () => {
     const unavailable = await fixture({ user: editor });
     expect((await unavailable.app.inject({ method: "GET", url: exePath })).statusCode).toBe(404);
