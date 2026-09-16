@@ -14,6 +14,7 @@ export default {
     "apps/web/src/delivery/compileDashboardRasterContent.test.ts",
     "apps/web/src/delivery/compileDashboardLayout.test.ts",
     "apps/web/src/delivery/dashboardTextContent.test.ts",
+    "apps/web/src/delivery/dashboardColor.test.ts",
     "apps/web/src/delivery/compileDashboardContent.test.ts",
     "packages/contracts/src/dashboardDocument*.test.ts",
     "scripts/lib/dashboardRasterEndToEnd.vitest.mjs",

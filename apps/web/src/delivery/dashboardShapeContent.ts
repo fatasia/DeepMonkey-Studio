@@ -1,5 +1,6 @@
 import type { DashboardDataWidgetNode } from "@bim-studio/contracts";
 import type { Deep2dColor, Deep2dPathVerb } from "@bim-studio/deep-engine";
+import { cssSrgbToLinearColor } from "./dashboardColor";
 
 /** Matches the content box in dashboard-native-widget (1px border + 16px padding). */
 export const DASHBOARD_CONTENT_INSET = 17;
@@ -9,7 +10,7 @@ export function lowerDashboardShape(node: DashboardDataWidgetNode) {
   if (widget.type !== "shape") throw new Error(`组件 ${widget.type} 尚无内容编译器`);
   if (widget.content) throw new Error("形状文字需要字体编译");
   if (widget.semanticBinding) throw new Error("语义绑定必须先解析为冻结组件快照");
-  const fill = parseHexColor(widget.color);
+  const fill = cssSrgbToLinearColor(parseHexColor(widget.color));
   const width = node.frame.width - DASHBOARD_CONTENT_INSET * 2;
   const height = node.frame.height - DASHBOARD_CONTENT_INSET * 2;
   if (width <= 0 || height <= 0) throw new Error("组件内容框为空");
@@ -21,7 +22,7 @@ export function lowerDashboardShape(node: DashboardDataWidgetNode) {
   return { fill, verbs, x: node.frame.x + DASHBOARD_CONTENT_INSET, y: node.frame.y + DASHBOARD_CONTENT_INSET };
 }
 
-/** 解析 #RGB/#RGBA/#RRGGBB/#RRGGBBAA;其余(CSS 变量、渐变、函数色)显式拒绝。 */
+/** 解析 #RGB/#RGBA/#RRGGBB/#RRGGBBAA 为 CSS sRGB，保留文字 atlas 字节语义。 */
 export function parseHexColor(value: string | undefined): Deep2dColor {
   if (!value || !/^#(?:[a-f\d]{3}|[a-f\d]{4}|[a-f\d]{6}|[a-f\d]{8})$/i.test(value))
     throw new Error("形状颜色需要解析后的十六进制颜色，CSS 变量与渐变尚未编译");

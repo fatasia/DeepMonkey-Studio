@@ -2,6 +2,7 @@ import type { DashboardDataWidgetNode, WidgetFrame } from "@bim-studio/contracts
 import type { Deep2dColor, Deep2dCommand, Deep2dResource } from "@bim-studio/deep-engine";
 import { DASHBOARD_CONTENT_INSET, lowerDashboardShape, parseHexColor } from "./dashboardShapeContent";
 import { lowerDashboardText, lowerDashboardValueText } from "./dashboardTextContent";
+import { cssSrgbToLinearColor } from "./dashboardColor";
 
 /** Web 运行时 widgetBackground 的默认值;编译必须与真实渲染一致,不允许臆造颜色。 */
 const WIDGET_BACKGROUND_DEFAULT = "#172126";
@@ -132,7 +133,7 @@ function containerBackground(color: string | undefined, opacity: number | undefi
 
 function parseHexColorLoose(value: string): Deep2dColor | null {
   if (!/^#(?:[a-f\d]{3}|[a-f\d]{4}|[a-f\d]{6}|[a-f\d]{8})$/i.test(value)) return null;
-  try { return parseHexColor(value); } catch { return null; }
+  try { return cssSrgbToLinearColor(parseHexColor(value)); } catch { return null; }
 }
 
 function rectangle(width: number, height: number) {

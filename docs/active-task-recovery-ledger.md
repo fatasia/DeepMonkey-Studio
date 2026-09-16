@@ -1,5 +1,6 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：真实 GPU 对抗验证发现 GLM 作者颜色转换缺失，蓝色 `[54,139,214]` 输出为 `[127,195,236]`；[生产端颜色修复](specs/dashboard-css-color-correction-2026-09-16.md) 后三色 sRGB 像素断言通过，Native 内容 golden 两项、TS 69 项与严格 Clippy 通过。C1 资源基础已提交 `59c5fea`。
 - 已完成：C2 文字/图片子片已提交并推送 `56c500d`。[C1 通用资源准备基础](specs/dashboard-resource-prewarm-2026-09-16.md) 独立 224 测试、兼容 302 测试及双类型通过；复核补三项 commit 重入回归并修复资源生命周期问题。浏览器组合绘制/present 仍待实现。
 - 已完成：C2 字体 producer 已提交 `22a6b03`；[文字/图片内容编译](specs/dashboard-frozen-raster-content-2026-09-16.md) 的最小独立闭包通过严格 TS、62 项 Vitest、28 项 Node 测试，真实 producer 包通过 Native GPU 读回。仍为 C2 子片，数据组件、完整外观、交互及正式发布待办。
 - 已完成：A/B 与 C1 core/Native 分片已推送至 `dev-studio` 的 `3a88b5c`。C2 [冻结字体 producer](specs/dashboard-frozen-text-producer-2026-09-16.md)、CLI 与 Node adapter 已实现；中间全量 Native 1000 通过/63 忽略，最终修复后定向 15、Node 23、严格 Clippy 和独立 HEAD 加 24 文件的 all-targets 检查通过。文字/图片 producer 包真实 GPU 读回通过，中文 PNG 已目检。

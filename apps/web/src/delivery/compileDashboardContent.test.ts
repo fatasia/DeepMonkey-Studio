@@ -28,9 +28,9 @@ describe("Dashboard widget content lowering", () => {
     const { document } = fixture(), result = compileDashboardContent(document);
     // 命令 0:容器背景(整框,Web 默认 #172126 @ 0.86);命令 1:形状内容填充(内容框)。
     expect(result.displayList.commands[0]).toMatchObject({ transform: [1, 0, 0, 1, 20, 30], zOrder: 3,
-      fill: [0x17 / 255, 0x21 / 255, 0x26 / 255, 0.86] });
+      fill: [0.008568125618069307, 0.01520851442291271, 0.019382360956935723, 0.86] });
     expect(result.displayList.commands[1]).toMatchObject({ transform: [1, 0, 0, 1, 37, 47], zOrder: 3,
-      fill: [17 / 255, 34 / 255, 51 / 255, 68 / 255] });
+      fill: [0.005605391624202723, 0.01599629336550963, 0.033104766570885055, 68 / 255] });
     expect(result.displayList.commands[0]!.id).not.toBe(result.displayList.commands[1]!.id);
     expect(result.publicationReady).toBe(false);
     expect(result.capabilityReport).toMatchObject({ degraded: 1, blocked: 0, contentCompiled: 1, chromeOnly: 0 });

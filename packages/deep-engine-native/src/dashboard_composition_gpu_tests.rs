@@ -18,14 +18,23 @@ fn draw(
     content: &Deep2dRuntimeContent,
     cache: &Arc<Deep2dGpuAssetCache>,
 ) -> Vec<u8> {
-    let painter = Deep2dGpuPainter::new(
+    draw_in_format(
         device,
         queue,
-        wgpu::TextureFormat::Rgba8Unorm,
         content,
         cache,
+        wgpu::TextureFormat::Rgba8Unorm,
     )
-    .unwrap();
+}
+
+fn draw_in_format(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    content: &Deep2dRuntimeContent,
+    cache: &Arc<Deep2dGpuAssetCache>,
+    format: wgpu::TextureFormat,
+) -> Vec<u8> {
+    let painter = Deep2dGpuPainter::new(device, queue, format, content, cache).unwrap();
     let size = wgpu::Extent3d {
         width: WIDTH,
         height: HEIGHT,
@@ -37,7 +46,7 @@ fn draw(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
+        format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
@@ -90,13 +99,17 @@ fn draw(
 }
 
 fn capture(name: &str, pixels: &[u8]) {
+    capture_in_format(name, pixels, "rgba8unorm");
+}
+
+fn capture_in_format(name: &str, pixels: &[u8], format: &str) {
     let Some(directory) = std::env::var_os("DEEP_DASHBOARD_CAPTURE_DIR") else {
         return;
     };
     let directory = std::path::PathBuf::from(directory);
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::write(directory.join(format!("{name}.rgba")), pixels).unwrap();
-    let metadata = serde_json::json!({"width":WIDTH,"height":HEIGHT,"format":"rgba8unorm","bytesPerRow":WIDTH*4,"origin":"top-left"});
+    let metadata = serde_json::json!({"width":WIDTH,"height":HEIGHT,"format":format,"bytesPerRow":WIDTH*4,"origin":"top-left"});
     std::fs::write(
         directory.join("dimensions.json"),
         serde_json::to_vec_pretty(&metadata).unwrap(),

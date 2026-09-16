@@ -1,10 +1,10 @@
 # Dashboard 正式交付切片
 
-本文件把[接手执行计划](codex-takeover-audit-and-plan-2026-09-16.md)批次 C 拆成可实施切片，供接手开发与验收使用。状态均为 **本轮待办**；本次只读核对代码，不代表功能或发布验收完成。
+本文件把[接手执行计划](codex-takeover-audit-and-plan-2026-09-16.md)批次 C 拆成可实施切片，供接手开发与验收使用。C1～C5 整项仍为 **本轮待办**，已验证的子片与剩余边界分别记录在各节。
 
 原任务范围和完整完成条件仍以 [Deep2D 剩余任务表](deep2d-remaining-tasks-2026-09-16.md) P0-01、P0-03、P0-04、P0-06 及[终局方案](Deep2D-跨时代发布终局方案-2026-09-15.md)为准。本文件不删除文字、图片、KPI、表格、图表、筛选、阴影、页面外观、绑定和离线交付要求。P0-05/07/08 的三端事务、golden、像素与输入验收继续保留在原批次 D；相关代码变化时仍须回归。
 
-## 当前代码事实
+## 接手时代码事实
 
 - `apps/web/src/delivery/compileDashboardContent.ts` 只输出组件背景与限定形状；文字 pass 只解算样式和行框。对象状态仅有 degraded/blocked，`publicationReady` 固定为 false。调用集中在测试与 golden 生成，尚未接入正式发布消费方。
 - `packages/contracts/src/dashboardDocument.ts` 已有完整作者快照、入口页及引用校验；`compileDashboardLayout.ts` 已派生稳定节点身份，不需重建作者文档。
@@ -17,7 +17,7 @@
 
 **状态：本轮待办。归属：P0-01/03/06 的共同前置。**
 
-2026-09-16 进展：[包合同与 Native 组合宿主](dashboard-composition-runtime-2026-09-16.md) 已进入收尾验证。Web prewarm 仍拒绝 chart/dashboard kind；现有 prewarmPlan 还依赖未独立提交的作者 LOD 驻留合同，需要按依赖闭包接通。先交付可独立验证的 core/Native 子片，C1 全项保持待办。
+2026-09-16 进展：[包合同与 Native 组合宿主](dashboard-composition-runtime-2026-09-16.md) 已提交并验证。[通用资源准备基础](dashboard-resource-prewarm-2026-09-16.md) 已分离三维 bake 依赖并提交。Web 组合候选、绘制消费与整页 present 仍待接通，C1 全项保持待办。
 
 最小切片：定义静态二维内容与多个动态图表的版本化组合、页面逻辑尺寸、节点资源引用、局部坐标与命中归属。复用 ChartIR、Deep2D、已有包校验、prewarm 和 LKG；不放宽旧 v4 的互斥规则，不引入第二套 loader。
 

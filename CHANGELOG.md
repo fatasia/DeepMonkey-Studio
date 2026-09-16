@@ -4,6 +4,10 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Dashboard color correction
+
+- Convert authored CSS colors to linear RGB at Native path inputs while keeping text/image pixels in sRGB. Fix overly bright shapes and backgrounds; regenerate producer golden packages and verify three authored colors on a real sRGB GPU target.
+
 ### Dashboard resource preparation
 
 - Separate resource prewarm planning and lifecycle from geometry bake policy so v5 dashboards can prepare without the 3D LOD dependency. Reject publish/dispose reentry during commit to protect active resource ownership.

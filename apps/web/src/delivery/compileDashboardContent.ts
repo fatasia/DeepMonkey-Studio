@@ -45,7 +45,7 @@ export function compileDashboardContent(input: DashboardDocument, pageId = input
   const validation = validateDeep2dDisplayList(displayList);
   if (!validation.valid) throw new Error(`二维内容不符合显示合同：${validation.issues[0]?.message}`);
   const sourceSemanticHash = runtimeContentSha256(layout.source);
-  const pass = { id: "dashboard-widget-content", version: 3, pageId,
+  const pass = { id: "dashboard-widget-content", version: 4, pageId,
     contentInset: 17, chromeDefaults: { background: "#172126", opacity: 0.86 },
     // v3:文字组件进入样式/排版解算,但字形运行未就绪,像素产出显式 deferred;
     // 文本折行宽度与行高为声明式口径(见 dashboardTextContent),不是实测结论。
