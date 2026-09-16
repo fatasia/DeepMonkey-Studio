@@ -6,7 +6,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2023"],
-    "types": ["node"]
+    "types": ["node", "@webgpu/types"]
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]

@@ -28,7 +28,7 @@ function inputs(frozen: Awaited<ReturnType<typeof candidate>>, patch: Partial<Da
   return { candidate: frozen, expectedDeviceFingerprintSha256: device,
     revalidation: { readAuthority: async () => state(), resolveData: async () => ({ sourceRevision: "", value: null }),
       readResource: async () => ({ revision: 2, bytes: new Uint8Array([1, 2, 3]) }) },
-    compiler: { compilerId: "native-dashboard", compilerVersion: "1", configuration: { antialias: "msaa4" },
+    compiler: { compilerId: "native-dashboard", compilerVersion: "1", compilerSha256: "c".repeat(64), configuration: { antialias: "msaa4" },
       compile: async () => ({ artifact, objects: [{ nodeId: "widget-scene-main", contentCompiled: true, deferredFields: [] },
         { nodeId: "deferred", contentCompiled: false, deferredFields: ["widget.video"] }] }) },
     verifyWindow: async (request: { sourceSemanticHash: string; compileGraphHash: string; targetArtifactHash: string }) => ({

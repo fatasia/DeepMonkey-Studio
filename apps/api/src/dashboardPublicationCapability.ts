@@ -15,6 +15,8 @@ const SHA256 = /^[a-f0-9]{64}$/;
 export interface AuthoritativeDashboardCompiler {
   readonly compilerId: string;
   readonly compilerVersion: string;
+  /** SHA-256 of the deployed compiler bytes, never a worker-supplied label. */
+  readonly compilerSha256: string;
   readonly configuration: Readonly<Record<string, unknown>>;
   compile(input: {
     readonly document: DashboardPublicationFreezeCandidate["document"];
@@ -48,7 +50,7 @@ export interface DashboardPublicationCapabilityReport {
   readonly sourceSemanticHash: string;
   readonly compileGraphHash: string;
   readonly targetArtifactHash: string;
-  readonly compiler: { readonly id: string; readonly version: string; readonly configurationSha256: string };
+  readonly compiler: { readonly id: string; readonly version: string; readonly sha256: string; readonly configurationSha256: string };
   readonly evidence: Pick<DashboardWindowVerification, "verifier" | "fixtureSha256" | "deviceFingerprintSha256" | "fontSha256">;
   readonly objects: readonly { readonly nodeId: string; readonly status: "supported" | "degraded" | "blocked"; readonly deferredFields: readonly string[] }[];
 }
@@ -88,9 +90,9 @@ export async function buildDashboardPublicationCapabilityReport(options: BuildDa
 
   const sourceSemanticHash = hashCanonical({ kind: "dashboard-source-v1", authority: candidate.authority,
     freezeManifestSha256: candidate.manifest.manifestSha256 });
-  const compiler = { id: options.compiler.compilerId, version: options.compiler.compilerVersion,
+  const compiler = { id: options.compiler.compilerId, version: options.compiler.compilerVersion, sha256: options.compiler.compilerSha256,
     configurationSha256: hashCanonical(options.compiler.configuration) };
-  if (!compiler.id || !compiler.version) throw new Error("Authoritative dashboard compiler identity is required");
+  if (!compiler.id || !compiler.version || !SHA256.test(compiler.sha256)) throw new Error("Authoritative dashboard compiler identity is required");
   const compileGraphHash = hashCanonical({ kind: "dashboard-compile-v1", sourceSemanticHash, compiler });
   const compiled = await options.compiler.compile({ document: candidate.document, data: candidate.data, resources: candidate.resources }, signal);
   signal?.throwIfAborted();
