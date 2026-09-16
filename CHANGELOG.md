@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard content and portable packaging
 
+- Build a standalone Windows EXE with the runtime package and licenses embedded. Launch without arguments or sidecar files; inspect notices with `--licenses`.
+
 - Fix offline downloads rejecting compiled page identities. Validate the shared authored-to-runtime page mapping and retain unused fallback fonts in the archive without claiming they were rendered.
 
 - Enable Dashboard candidate and portable download routes through explicit server deployment configuration, including a frozen font catalog and real native window verification.

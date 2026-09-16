@@ -1,5 +1,7 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：单文件 Windows EXE 内嵌已验证运行包和许可证，无参数启动直接读取自身尾部并校验 SHA-256、严格运行包合同；`--licenses` 显示许可。主线构建产物在仅一个 EXE 的目录、PATH 仅 System32、隔离 LOCALAPPDATA 下真实呈现并写入与原包一致的呈现后恢复记录，见 `test-output/dashboard-single-exe-main-verification-20260916/evidence.json`。Native 尾部 6 测试、API 打包 7 测试、API 类型通过；开发与 API 服务仍使用 Node，接收端不需要。当前样例仅两种形状，完整用户项目、交互与视觉仍待验收；单 EXE HTTP 下载入口继续接线。
+
 - 已完成：隔离磁盘 Application 发布→重新读取→真实编译→真实 Native 窗口→HTTP 候选 201→ZIP 200→解包全 hash→DMDA 同 artifact→撤销后 404 全链通过。过程发现作者 page-main 与编译派生 page ID 被错误直接比较，已抽出共享身份函数并修复归档校验，新增合法映射与串页拒绝回归。测试为两种形状，均保持 degraded，未覆盖登录或用户项目。字体归档校验同步允许未使用 fallback 保留在完整冻结闭包中；只接受闭包内实际字体证据。用户确认客户端不依赖 Node，并希望 EXE 直接运行；正补原生自含运行包，不以 PowerShell 启动器作为最终体验。
 
 - 已完成：API 按显式部署 JSON 组合真实内容编译器、窗口验证器、发布资源 closure 与 ZIP 下载，并在 index 注册；新增 [启动方式](specs/dashboard-native-startup-2026-09-16.md)。字体目录绑定项目/应用 revision、许可、face 与实际对象 hash，C3 读字节时再查防替换。主线 41 项 API、类型、窗口过程与证据绑定 28 项通过；真实文字编译→新 EXE 正常窗口→实际节点/字体回执的 6 项测试通过。独立真实候选 prepare→ZIP 整链正在复验，尚未交付完整可测验收版本。
