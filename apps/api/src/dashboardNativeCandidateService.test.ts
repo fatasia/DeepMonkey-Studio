@@ -75,6 +75,21 @@ function makeOutput(input: { readonly protocol: "dashboard-runtime-compiler-v1";
 }
 
 describe("dashboard Native candidate service", () => {
+  it("rejects an already cancelled request without replacing an in-flight candidate", async () => {
+    const f = await fixture({ deferWorker: true });
+    const first = f.service.prepare(request);
+    await vi.waitFor(() => expect(f.worker.compile).toHaveBeenCalledTimes(1));
+    const cancelled = new AbortController();
+    const reason = new Error("request disconnected before preparation");
+    cancelled.abort(reason);
+    await expect(f.service.prepare(request, cancelled.signal)).rejects.toBe(reason);
+    expect(f.trustedInputs.derive).toHaveBeenCalledTimes(1);
+    expect(f.worker.compile).toHaveBeenCalledTimes(1);
+    f.releaseWorker();
+    await expect(first).resolves.toMatchObject({ authority: request });
+    expect(f.service.candidate).toMatchObject({ authority: request });
+  });
+
   it("keeps only a fully authority, hash, and window-bound candidate in memory", async () => {
     const f = await fixture();
     const candidate = await f.service.prepare(request);

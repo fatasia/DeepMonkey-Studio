@@ -1,5 +1,8 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：修复 C5 候选请求预取消检查遗漏；已经取消的请求在修改 generation 或中止旧候选前拒绝，原在途候选保持可完成。服务与路由组合回归 5 项、API 类型检查、仓库治理门禁通过。
+- 本轮待办：C1～C5 整项均以交付切片原验收为准，C3/C4 的纯合同与注入式测试不代表正式发布链完成。此前口头 31%/33% 为未逐项核算的粗估，不作为验收进度。DMDA 字节封装与 launch plan 仍不能替代原要求的 ZIP、真实 EXE 离线正常窗口及恢复验证。
+
 - 已完成：C5 前置、候选、归档、路由、下载、launcher 与可信运行时组合提交至 `e2dbda4`。服务端只从 published Application 权威读取 Dashboard freeze 输入，浏览器提供 document/data/resource/hash 会被拒绝；冻结候选会复核能力凭据、编译严格校验的 v5 artifact，并在写入前二次确认权威状态。候选登记仅存服务端对象，读取绑定候选、项目、应用并在到期删除；路由签发的 candidateId 可供受限下载使用。DMDA v1 离线字节包与本地启动计划完整验证冻结 manifest、资源闭包、能力凭据和三项 hash，拒绝篡改或错误目标。组合模块仅在部署层注入真实可信闭包、权威编译器身份和原生窗口验证器时注册候选与下载入口，当前 `index.ts` 尚无这三项部署适配，故完整端到端仍待接线。83 项 C3～C5 聚焦回归和 API 类型检查通过。
 - 已完成：C4 Dashboard 权威能力报告提交 `912fde1`。source/compile/target 三 hash 分别绑定冻结 authority+manifest、服务器编译器身份+配置、实际产物 bytes；窗口证据复核 revision、设备、fixture 与字体闭包，浏览器自报不能放行对象。冻结、能力和 Application 回归共 39 项通过；正式 candidate/route/download 接线仍待 C5。
 - 已完成：WebGPU Dashboard 组合宿主提交 `18689fa`。真实 C2 包在浏览器 WebGPU 候选中成功 committed，tick generation 1→2，diagnostics 与 console warning/error 均为空；截图闭环发现并修复 clip 输出共享顶点被重复投影导致的巨大三角，修复后 KPI、表格与 7/9 双柱正确显示。

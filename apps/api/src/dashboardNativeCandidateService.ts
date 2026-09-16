@@ -95,6 +95,7 @@ export function createDashboardNativeCandidateService(
       current = undefined;
     },
     async prepare(request: DashboardPublicationAuthorityRequest, outerSignal?: AbortSignal): Promise<DashboardNativeCandidate> {
+      outerSignal?.throwIfAborted();
       generation++;
       const activeGeneration = generation;
       pending?.abort();
