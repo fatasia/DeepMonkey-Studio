@@ -44,7 +44,8 @@ describe("dashboard publication capability report", () => {
     const input = inputs(await candidate());
     const compile = input.compiler.compile;
     const windowEvidence = { nodeBindings: [{ nodeId: "widget-scene-main", runtimeNodeId: "runtime-node",
-      pageId: "runtime-page", staticResourceId: "static" }], fontBindings: [] };
+      pageId: "runtime-page", staticResourceId: "static" }], fontBindings: [
+        { resourceId: "font", sha256: sha(new Uint8Array([1, 2, 3])), faceIndex: 0, runtimeNodeId: "runtime-node", atlasId: "atlas" }] };
     Object.assign(input.compiler, { compile: async () => ({ ...await compile(), windowEvidence }) });
     const verify = input.verifyWindow;
     await buildDashboardPublicationCapabilityReport({ ...input, verifyWindow: async request => {
@@ -127,5 +128,79 @@ describe("dashboard publication capability report", () => {
       deviceFingerprintSha256: device, fontSha256: [{ resourceId: "font", sha256: sha(new Uint8Array([1, 2, 3])), faceIndex: 0 }], renderedNodeIds: [] }) });
     const report = await buildDashboardPublicationCapabilityReport(input);
     expect(report.objects[0]).toMatchObject({ nodeId: "widget-scene-main", status: "degraded" });
+  });
+});
+
+async function coverageInput(multiPage = false) {
+  const authoritative = state();
+  if (multiPage) {
+    const page = authoritative.publication.document.pages[0]!;
+    authoritative.publication.document.pages.push({ ...structuredClone(page), id: "page-second", nodes: [page.nodes.pop()!] });
+  }
+  const readAuthority = async () => authoritative;
+  const bytes = new Uint8Array([1, 2, 3]);
+  const resources = [font(), { ...font(), id: "unused-fallback" },
+    { ...font(), id: "other-page-font", nodeIds: ["second"] }];
+  const frozen = await prepareDashboardPublicationFreeze({ expected: authority, entryPageId: "page-main", data: [], resources,
+    readAuthority, resolveData: async () => ({ sourceRevision: "", value: null }), readResource: async () => ({ revision: 2, bytes }) });
+  const input = inputs(frozen);
+  Object.assign(input.revalidation, { readAuthority });
+  const evidence = { nodeBindings: [
+    { nodeId: "widget-scene-main", runtimeNodeId: "runtime-main", pageId: "runtime-page-main", staticResourceId: "static-main" },
+    { nodeId: "second", runtimeNodeId: "runtime-second", pageId: "runtime-page-second", staticResourceId: "static-second" },
+  ], fontBindings: [
+    { resourceId: "font", sha256: sha(bytes), faceIndex: 0, runtimeNodeId: "runtime-main", atlasId: "atlas-main" },
+    { resourceId: "other-page-font", sha256: sha(bytes), faceIndex: 0, runtimeNodeId: "runtime-second", atlasId: "atlas-second" },
+  ] };
+  Object.assign(input.compiler, { compile: async () => ({ artifact: new Uint8Array([9, 8, 7]), windowEvidence: evidence,
+    objects: [{ nodeId: "widget-scene-main", contentCompiled: true, deferredFields: [] },
+      { nodeId: "second", contentCompiled: true, deferredFields: [] }] }) });
+  return { input, evidence };
+}
+
+describe("compiler-bound font coverage", () => {
+  it("accepts a frozen but unused fallback while supporting only the verified node", async () => {
+    const { input } = await coverageInput();
+    const report = await buildDashboardPublicationCapabilityReport(input);
+    expect(report.objects.map(object => object.status)).toEqual(["supported", "degraded"]);
+    expect(report.evidence.fontSha256.map(font => font.resourceId)).toEqual(["font"]);
+  });
+  it("leaves the unpresented second page degraded without requiring its font in the receipt", async () => {
+    const { input } = await coverageInput(true);
+    expect((await buildDashboardPublicationCapabilityReport(input)).objects).toEqual([
+      { nodeId: "widget-scene-main", status: "supported", deferredFields: [] },
+      { nodeId: "second", status: "degraded", deferredFields: [] },
+    ]);
+  });
+  it("does not support a rendered node whose compiler-used font was not verified", async () => {
+    const { input } = await coverageInput();
+    const verify = input.verifyWindow;
+    const report = await buildDashboardPublicationCapabilityReport({ ...input, verifyWindow: async request => ({ ...await verify(request), fontSha256: [] }) });
+    expect(report.objects[0]!.status).toBe("degraded");
+  });
+  it.each(["unused-fallback", "other-page-font", "invented"])("rejects unattested %s as a drawn font", async resourceId => {
+    const { input } = await coverageInput(true), verify = input.verifyWindow;
+    await expect(buildDashboardPublicationCapabilityReport({ ...input, verifyWindow: async request => ({ ...await verify(request),
+      fontSha256: [{ resourceId, sha256: sha(new Uint8Array([1, 2, 3])), faceIndex: 0 }] }) })).rejects.toThrow(/compiler-bound/);
+  });
+  it("rejects substituted font faces and compiler font consumers outside the closure", async () => {
+    const { input, evidence } = await coverageInput();
+    evidence.fontBindings[0]!.faceIndex = 1;
+    await expect(buildDashboardPublicationCapabilityReport(input)).rejects.toThrow(/frozen font closure/);
+    evidence.fontBindings[0]!.faceIndex = 0; evidence.fontBindings[0]!.runtimeNodeId = "runtime-second";
+    await expect(buildDashboardPublicationCapabilityReport(input)).rejects.toThrow(/frozen font closure/);
+  });
+  it("does not allow the verifier to remove required font coverage by mutating compiler evidence", async () => {
+    const { input, evidence } = await coverageInput(), verify = input.verifyWindow;
+    const report = await buildDashboardPublicationCapabilityReport({ ...input, verifyWindow: async request => {
+      evidence.fontBindings.length = 0;
+      (request.windowEvidence!.fontBindings as unknown[]).length = 0;
+      return { ...await verify(request), fontSha256: [] };
+    } });
+    expect(report.objects[0]!.status).toBe("degraded");
+  });
+  it("retains complete frozen-font equality for legacy compilers without provenance", async () => {
+    const input = inputs(await candidate(), { fontSha256: [] });
+    await expect(buildDashboardPublicationCapabilityReport(input)).rejects.toThrow(/frozen font closure/);
   });
 });

@@ -108,17 +108,18 @@ export async function buildDashboardPublicationCapabilityReport(options: BuildDa
     resources: candidate.resources, freezeManifest: structuredClone(candidate.manifest) }, signal);
   signal?.throwIfAborted();
   if (!(compiled.artifact instanceof Uint8Array) || compiled.artifact.byteLength < 1) throw new Error("Dashboard compiler returned no artifact bytes");
+  const windowEvidence = compiled.windowEvidence ? structuredClone(compiled.windowEvidence) : undefined;
   const targetArtifactHash = sha256(compiled.artifact);
   await assertDashboardPublicationFreezeCommit(candidate, { ...options.revalidation,
     ...(signal ? { signal } : {}) });
   signal?.throwIfAborted();
 
   const verification = await options.verifyWindow({ artifact: Uint8Array.from(compiled.artifact), candidate,
-    ...(compiled.windowEvidence ? { windowEvidence: structuredClone(compiled.windowEvidence) } : {}),
+    ...(windowEvidence ? { windowEvidence: structuredClone(windowEvidence) } : {}),
     sourceSemanticHash, compileGraphHash, targetArtifactHash }, signal);
   signal?.throwIfAborted();
-  assertWindowVerification(verification, candidate, sourceSemanticHash, compileGraphHash, targetArtifactHash,
-    options.expectedDeviceFingerprintSha256);
+  const missingFontNodes = assertWindowVerification(verification, candidate, sourceSemanticHash, compileGraphHash, targetArtifactHash,
+    options.expectedDeviceFingerprintSha256, windowEvidence);
   const rendered = new Set(verification.renderedNodeIds);
   const authoredIds = new Set(candidate.document.application.pages.flatMap(page => page.nodes.map(node => node.id)));
   const objectIds = new Set<string>();
@@ -127,7 +128,8 @@ export async function buildDashboardPublicationCapabilityReport(options: BuildDa
     if (!authoredIds.has(object.nodeId)) throw new Error(`Compiler returned unknown dashboard object ${object.nodeId}`);
     objectIds.add(object.nodeId);
     return { nodeId: object.nodeId,
-      status: object.contentCompiled && rendered.has(object.nodeId) && object.deferredFields.length === 0 ? "supported" as const
+      status: object.contentCompiled && rendered.has(object.nodeId) && !missingFontNodes.has(object.nodeId)
+        && object.deferredFields.length === 0 ? "supported" as const
         : object.contentCompiled ? "degraded" as const : "blocked" as const,
       deferredFields: [...new Set(object.deferredFields)].sort() };
   });
@@ -143,7 +145,8 @@ export async function buildDashboardPublicationCapabilityReport(options: BuildDa
 }
 
 function assertWindowVerification(verification: DashboardWindowVerification, candidate: DashboardPublicationFreezeCandidate,
-  sourceSemanticHash: string, compileGraphHash: string, targetArtifactHash: string, expectedDevice: string): void {
+  sourceSemanticHash: string, compileGraphHash: string, targetArtifactHash: string, expectedDevice: string,
+  windowEvidence?: DashboardCompiledWindowEvidence): ReadonlySet<string> {
   if (verification.verifier !== "native-dashboard-window-v1"
     || canonical(verification.authority) !== canonical(candidate.authority)
     || verification.freezeManifestSha256 !== candidate.manifest.manifestSha256
@@ -155,10 +158,46 @@ function assertWindowVerification(verification: DashboardWindowVerification, can
   assertSha(verification.deviceFingerprintSha256, "Verifier device fingerprint");
   const expectedFonts = candidate.manifest.resources.filter(item => item.kind === "font")
     .map(item => ({ resourceId: item.id, sha256: item.sha256, faceIndex: item.faceIndex! }));
-  if (canonical(normalizedFonts(verification.fontSha256)) !== canonical(normalizedFonts(expectedFonts)))
+  if (!windowEvidence && canonical(normalizedFonts(verification.fontSha256)) !== canonical(normalizedFonts(expectedFonts)))
     throw new Error("Dashboard verifier font evidence is not the frozen font closure");
   if (new Set(verification.renderedNodeIds).size !== verification.renderedNodeIds.length)
     throw new Error("Dashboard verifier repeated an object identity");
+  return windowEvidence ? missingVerifiedFonts(verification, candidate, windowEvidence) : new Set();
+}
+
+/** Frozen fallback and other-page fonts need not be used; actual used fonts remain node-bound. */
+function missingVerifiedFonts(verification: DashboardWindowVerification, candidate: DashboardPublicationFreezeCandidate,
+  evidence: DashboardCompiledWindowEvidence): ReadonlySet<string> {
+  const authored = new Set(candidate.document.application.pages.flatMap(page => page.nodes.map(node => node.id)));
+  const bindings = new Map<string, DashboardCompiledWindowEvidence["nodeBindings"][number]>();
+  const boundAuthors = new Set<string>();
+  for (const binding of evidence.nodeBindings) {
+    if (!authored.has(binding.nodeId) || !binding.runtimeNodeId || !binding.pageId || !binding.staticResourceId
+      || bindings.has(binding.runtimeNodeId) || boundAuthors.has(binding.nodeId)) throw new Error("Invalid compiler font node binding");
+    bindings.set(binding.runtimeNodeId, binding); boundAuthors.add(binding.nodeId);
+  }
+  const rendered = new Set(verification.renderedNodeIds);
+  for (const id of rendered) if (!boundAuthors.has(id)) throw new Error("Rendered node lacks compiler font binding");
+  const key = (font: { resourceId: string; sha256: string; faceIndex: number }) =>
+    canonical([font.resourceId, font.sha256, font.faceIndex]);
+  const required = new Map<string, Set<string>>(), permitted = new Set<string>();
+  for (const font of evidence.fontBindings) {
+    normalizedFonts([font]);
+    const binding = bindings.get(font.runtimeNodeId);
+    const frozen = candidate.manifest.resources.find(resource => resource.id === font.resourceId && resource.kind === "font");
+    if (!binding || !font.atlasId || !frozen || frozen.sha256 !== font.sha256 || frozen.faceIndex !== font.faceIndex
+      || !frozen.nodeIds.includes(binding.nodeId)) throw new Error("Compiler font evidence is outside the frozen font closure");
+    const fonts = required.get(binding.nodeId) ?? new Set<string>();
+    fonts.add(key(font)); required.set(binding.nodeId, fonts);
+    if (rendered.has(binding.nodeId)) permitted.add(key(font));
+  }
+  const verified = new Set<string>();
+  for (const font of normalizedFonts(verification.fontSha256)) {
+    const identity = key(font);
+    if (verified.has(identity) || !permitted.has(identity)) throw new Error("Verifier font evidence is not compiler-bound rendered coverage");
+    verified.add(identity);
+  }
+  return new Set([...required].filter(([, fonts]) => [...fonts].some(font => !verified.has(font))).map(([id]) => id));
 }
 
 function normalizedFonts(fonts: readonly { readonly resourceId: string; readonly sha256: string; readonly faceIndex: number }[]) {
