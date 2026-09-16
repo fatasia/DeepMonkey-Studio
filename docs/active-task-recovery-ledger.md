@@ -1705,3 +1705,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:`scripts/generate-de26-evidence-index.mts`——从执行清单 JSON 生成 `docs/specs/de26-evidence-index.md`;逐证据文件实测 SHA-256;缺失/不可读显式标红不静默;内置易变时间戳自检(违反即抛错);**同输入同输出经双跑 sha256 一致实测**。当前覆盖 A01/A02/A03/B01 四卡 9 个证据文件,0 缺失。
 - 验证:生成器双跑确定性通过。
 - 边界(如实):报告的身份绑定源码 hash(区分旧EXE/新包)与置信区间归后续切片(依赖 A04 真实观测);当前只覆盖已登记 evidence 的卡。
+
+### 2026-09-17 Deep2D P1-23 N1 版本化适配器(GLM 子代理实现,主线程复核)
+
+- 已完成:`adapter_n1.rs`+`adapter_n1/`(schema/svg_parse/adapt/chart_overlay/validate)+三测试文件(274/332/111),共 9 文件全 ≤400 行。四类输入(SVG path 子集/富文本 inline/图表扩展/动画 ABI)版本化信封;fail-closed 三态 Unknown(未知 kind/版本)/Blocked(缺 fixture、未认证、摘要不符、超预算、语义非法,全带原因);产物 N1DisplayDelta 与 TS Deep2dDisplayList serde 同形,经 validate_display_list 交叉校验;资源/预算/时钟全宿主注入;与 P1-22 呼应:适配产物入 replay 双跑逐字节一致。
+- 主线程复核:lib.rs 仅 +1;适配器测试 11/11 复跑通过;fmt clean;全 lib **275/0/1 ignored**;clippy 0 警告(代理侧)。
+- 边界(如实):摆位恒单位矩阵(布局归宿主);无 baked glyphs;认证=与已复核 fixture 逐字节等价(不认证任意运行期内容);TS 端到端消费未做(靠 serde 同形+交叉校验)。

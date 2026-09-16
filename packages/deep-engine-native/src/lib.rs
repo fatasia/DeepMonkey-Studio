@@ -1,3 +1,4 @@
+pub mod adapter_n1;
 pub mod asset_package;
 pub mod behavior_ir;
 pub mod bloom;
