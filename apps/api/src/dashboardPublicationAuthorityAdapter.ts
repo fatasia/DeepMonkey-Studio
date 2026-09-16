@@ -11,6 +11,12 @@ import {
   type DashboardResolvedResourceValue,
 } from "./dashboardPublicationFreeze.js";
 
+export interface DashboardPublicationAuthorityRevalidation {
+  readonly readAuthority: (signal?: AbortSignal) => Promise<DashboardPublicationAuthorityState | undefined>;
+  readonly resolveData: (request: DashboardResolvedDataRequest, signal?: AbortSignal) => Promise<DashboardResolvedDataValue>;
+  readonly readResource: (request: DashboardFrozenResourceRequest, signal?: AbortSignal) => Promise<DashboardResolvedResourceValue>;
+}
+
 /** The complete request shape accepted at the API boundary. */
 export interface DashboardPublicationAuthorityRequest {
   readonly projectId: string;
@@ -52,6 +58,8 @@ export interface DashboardPublicationAuthorityAdapterDependencies {
 
 export interface DashboardPublicationAuthorityAdapter {
   prepare(request: unknown, signal?: AbortSignal): Promise<DashboardPublicationFreezeCandidate>;
+  /** Supplies only authority-bound read functions for a candidate recheck. */
+  revalidation(request: unknown): DashboardPublicationAuthorityRevalidation;
 }
 
 /**
@@ -81,7 +89,20 @@ export function createDashboardPublicationAuthorityAdapter(
     };
   };
 
+  const revalidation = (value: unknown): DashboardPublicationAuthorityRevalidation => {
+      assertDashboardPublicationAuthorityRequest(value);
+      const request = { ...value };
+      return Object.freeze({
+        readAuthority: (signal?: AbortSignal) => {
+          signal?.throwIfAborted();
+          return readAuthority(request);
+        },
+        resolveData: (item: DashboardResolvedDataRequest, signal?: AbortSignal) => dependencies.trustedInputs.resolveData(request, item, signal),
+        readResource: (item: DashboardFrozenResourceRequest, signal?: AbortSignal) => dependencies.trustedInputs.readResource(request, item, signal),
+      });
+    };
   return {
+    revalidation,
     async prepare(value: unknown, signal?: AbortSignal): Promise<DashboardPublicationFreezeCandidate> {
       assertDashboardPublicationAuthorityRequest(value);
       const request = value;
@@ -95,9 +116,7 @@ export function createDashboardPublicationAuthorityAdapter(
         entryPageId: request.entryPageId,
         data: structuredClone(closure.data),
         resources: structuredClone(closure.resources),
-        readAuthority: () => readAuthority(request),
-        resolveData: (item, innerSignal) => dependencies.trustedInputs.resolveData(request, item, innerSignal),
-        readResource: (item, innerSignal) => dependencies.trustedInputs.readResource(request, item, innerSignal),
+        ...revalidation(request),
         ...(signal ? { signal } : {}),
       });
     },
