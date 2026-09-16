@@ -1,6 +1,6 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
-- 已完成：C5 前置、候选、归档、路由与 launcher 合同提交 `f677b78`、`8c2e15f`、`82eb34b`、`6966f14`、`1b8e2a1`、`0c0bfdc`、`2ee82d4`、`f0ceb58`。服务端只从 published Application 权威读取 Dashboard freeze 输入，浏览器提供 document/data/resource/hash 会被拒绝；冻结候选会复核能力凭据、编译严格校验的 v5 artifact，并在写入前二次确认权威状态。候选登记仅存服务端对象，读取绑定候选、项目、应用并在到期删除。DMDA v1 离线字节包与本地启动计划完整验证冻结 manifest、资源闭包、能力凭据和三项 hash，拒绝篡改或错误目标。候选 HTTP 路由合同已覆盖受控输入、断链和超时，但尚未注册：可信组合工厂、运行时注册、下载路由与完整端到端仍待接线。71 项 C3～C5 聚焦回归和 API 类型检查通过。
+- 已完成：C5 前置、候选、归档、路由、下载、launcher 与可信运行时组合提交至 `e2dbda4`。服务端只从 published Application 权威读取 Dashboard freeze 输入，浏览器提供 document/data/resource/hash 会被拒绝；冻结候选会复核能力凭据、编译严格校验的 v5 artifact，并在写入前二次确认权威状态。候选登记仅存服务端对象，读取绑定候选、项目、应用并在到期删除；路由签发的 candidateId 可供受限下载使用。DMDA v1 离线字节包与本地启动计划完整验证冻结 manifest、资源闭包、能力凭据和三项 hash，拒绝篡改或错误目标。组合模块仅在部署层注入真实可信闭包、权威编译器身份和原生窗口验证器时注册候选与下载入口，当前 `index.ts` 尚无这三项部署适配，故完整端到端仍待接线。83 项 C3～C5 聚焦回归和 API 类型检查通过。
 - 已完成：C4 Dashboard 权威能力报告提交 `912fde1`。source/compile/target 三 hash 分别绑定冻结 authority+manifest、服务器编译器身份+配置、实际产物 bytes；窗口证据复核 revision、设备、fixture 与字体闭包，浏览器自报不能放行对象。冻结、能力和 Application 回归共 39 项通过；正式 candidate/route/download 接线仍待 C5。
 - 已完成：WebGPU Dashboard 组合宿主提交 `18689fa`。真实 C2 包在浏览器 WebGPU 候选中成功 committed，tick generation 1→2，diagnostics 与 console warning/error 均为空；截图闭环发现并修复 clip 输出共享顶点被重复投影导致的巨大三角，修复后 KPI、表格与 7/9 双柱正确显示。
 - 已完成：六类图表 Web/Native 几何对照提交 `ae22419`，36 个 Native reference cases、42 项 Web 测试和严格类型通过。真实 Native GPU 复跑为 206400 个着色像素；7/9 两柱共享零基线，高度比与 7/9 误差小于一个栅格行。
@@ -24,6 +24,13 @@
 - 本轮待办：先完成 A/B 的独立导出验证与分片提交，再执行 [Dashboard C1～C5](specs/codex-dashboard-delivery-slices-2026-09-16.md)。真实浏览器视觉验证尚未完成，现有 GPU 读回不代表 V-02。
 - 本轮待办：用户明确要求将完整剩余计划设为任务目标，已创建 active goal，覆盖原有 84 个上层编号与原验收条件。用户随后强调严格按既定顺序、最快速度和最大并行；不另插演示版本分支，不以今晚可测取代正式验收。
 - 本轮待办：当前执行 A 正确性与 B 门禁恢复；主线程负责文本事务与合并验证，三条独立子任务处理运行时边界/模块拆分/应用与合同门禁。GPU/全量 Rust 编译统一单车道，避免竞争；后续状态与证据继续回填本节。
+
+### 2026-09-16 五平台超越重新分析与任务分解（Codex）
+
+- 已完成：按用户要求重新分析Deep Engine对Three.js、Babylon.js、Unity、UE、Godot的差距，交付[全面方案](specs/deep-engine-comprehensive-plan-2026-09-16.md)和[82张机器可读任务卡](specs/deep-engine-execution-tasks-2026-09-16.json)。源码复核窗口截至 `678d2715`；后续C5并行进展以本账最新执行记录与源码为准。
+- 已完成：Deep Engine核心/Lab类型检查、16文件170项专项测试、仓库治理通过；任务代码入口、本地链接、ID、状态、工量与无环依赖已校验。本轮产出为分析文档，没有实施任务卡，也未新跑Native全量、GPU视觉或五平台性能比赛。
+- 本轮待办：`DE26`命名空间的72张建设卡是超越路线建议，领取前与旧84项、Deep2D及格式计划去重；不替代当前执行总表，不打断C5正式交付。5张V卡保留项目级后验收。
+- 明确排除：5张X卡记录当前交付线排除领域的综合差距和后续研究入口，不改变既有实施范围；这些领域未解决时不宣称全平台全能力超过。账号、存储、数据和许可证约束保持。
 
 ### 2026-09-16 GLM 接手复核与剩余计划（Codex）
 
