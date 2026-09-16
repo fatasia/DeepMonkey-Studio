@@ -89,6 +89,7 @@ export type {
 } from "./deep2dDisplayList.js";
 
 export * from "./chartIr.js";
+export { parseChartIR, validateChartIR } from "./chartIrReader.js";
 export * from "./echartsOptionCompat.js";
 export * from "./retainedUi.js";
 export * from "./hostCapabilities.js";

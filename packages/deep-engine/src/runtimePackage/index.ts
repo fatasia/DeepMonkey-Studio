@@ -11,3 +11,5 @@ export { buildDashboardRuntimePackage } from "./dashboard.js";
 export { buildChartRuntimePackage } from "./chart.js";
 export { buildDashboardCompositionRuntimePackage } from "./dashboardComposition.js";
 export * from "./dashboardCompositionTypes.js";
+export { DashboardCandidateController } from "./dashboardCandidateController.js";
+export type * from "./dashboardCandidateTypes.js";

@@ -1,7 +1,8 @@
 //! Cartesian source rows to pixel coordinates and bar dimensions.
 use super::domain::{numeric_mapper, resolve_domain, zoom_domain};
 use super::{
-    ChartAxis, ChartDataset, ChartIR, ChartScale, ChartSeries, axis_of, dim, finite_value,
+    ChartAxis, ChartDataset, ChartIR, ChartScale, ChartSeries, ChartSeriesType, axis_of, dim,
+    finite_value,
 };
 use crate::chart::scales::category_scale;
 /// Resolves a cartesian series into pixel points plus bar layout facts
@@ -136,7 +137,14 @@ pub(in crate::chart) fn map_cartesian(
         }
     }
     let [px, py, pw, ph] = plot;
-    let y_domain = resolve_domain(y_axis, kept.iter().map(|&(_, _, y)| y))?;
+    // Automatic bar bounds include the zero baseline; explicit axis bounds still win.
+    let shared_y = shared_axis_values(ir, series, false);
+    let has_bar = ir
+        .series
+        .iter()
+        .any(|peer| peer.y_axis_id == series.y_axis_id && peer.series_type == ChartSeriesType::Bar);
+    let zero = (has_bar && !log_y && !shared_y.is_empty()).then_some(0.0);
+    let y_domain = resolve_domain(y_axis, shared_y.into_iter().chain(zero))?;
     let y_map = numeric_mapper(
         y_axis,
         zoom_domain(y_axis, y_domain, windows)?,
@@ -149,7 +157,7 @@ pub(in crate::chart) fn map_cartesian(
         (px, px + pw),
         numeric_ok,
         windows,
-        kept.iter().filter_map(|&(_, x, _)| x),
+        shared_axis_values(ir, series, true).into_iter(),
     )?;
 
     let points = kept
@@ -170,6 +178,58 @@ pub(in crate::chart) fn map_cartesian(
         baseline,
         invert_x,
     })
+}
+
+/// Series bound to the same numeric axis share one data domain.
+fn shared_axis_values(ir: &ChartIR, current: &ChartSeries, horizontal: bool) -> Vec<f64> {
+    let mut values = Vec::new();
+    for peer in &ir.series {
+        if !matches!(
+            peer.series_type,
+            ChartSeriesType::Line | ChartSeriesType::Bar | ChartSeriesType::Scatter
+        ) || (if horizontal {
+            &peer.x_axis_id
+        } else {
+            &peer.y_axis_id
+        }) != (if horizontal {
+            &current.x_axis_id
+        } else {
+            &current.y_axis_id
+        }) {
+            continue;
+        }
+        let Some(dataset) = ir.datasets.iter().find(|data| data.id == peer.dataset_id) else {
+            continue;
+        };
+        let Some(y_col) = dim(dataset, &peer.y) else {
+            continue;
+        };
+        let column = if horizontal {
+            dim(dataset, &peer.x)
+        } else {
+            Some(y_col)
+        };
+        let Some(column) = column else { continue };
+        let log_y =
+            axis_of(ir, peer.y_axis_id.as_ref()).is_some_and(|axis| axis.scale == ChartScale::Log);
+        let log_x = horizontal
+            && axis_of(ir, peer.x_axis_id.as_ref())
+                .is_some_and(|axis| axis.scale == ChartScale::Log);
+        for row in dataset.rows.iter() {
+            let Some(y) = finite_value(row, y_col) else {
+                continue;
+            };
+            if log_y && y <= 0.0 {
+                continue;
+            }
+            if let Some(value) = finite_value(row, column)
+                && (!log_x || value > 0.0)
+            {
+                values.push(value);
+            }
+        }
+    }
+    values
 }
 
 /// X 轴的正向映射与反解器成对产出:数值/时间/对数轴走连续域插值,
