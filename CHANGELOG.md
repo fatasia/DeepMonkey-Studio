@@ -4,6 +4,11 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Dashboard frozen content
+
+- Compile author text and images into multi-page Dashboard packages using explicit font/image bytes, measured text styles, real Native glyphs and Sharp image decoding. Preserve node mappings and verify source, producer and pixel identity.
+- Keep unsupported appearance and runtime behavior visible in the capability report; publication remains unavailable until the remaining delivery checks pass.
+
 ### Frozen text compilation
 
 - Add CPU text rasterization from explicit font bytes with SHA-256 and face-index checks, real wrapping and alignment, full-text missing-glyph checks, and actual font-use evidence. Keep existing system-font APIs unchanged.

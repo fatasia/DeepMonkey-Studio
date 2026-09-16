@@ -1,0 +1,133 @@
+{
+  "schema": "deep-engine.dashboard-document",
+  "schemaVersion": 1,
+  "entryPageId": "page-main",
+  "application": {
+    "schemaVersion": 2,
+    "metadata": {
+      "id": "application-worker-behavior",
+      "projectId": "project-golden",
+      "name": "Worker 行为脚本契约",
+      "revision": 1,
+      "createdAt": "2026-08-25T10:00:00.000Z",
+      "updatedAt": "2026-08-25T10:00:00.000Z"
+    },
+    "pages": [
+      {
+        "id": "page-main",
+        "name": "主页面",
+        "width": 1920,
+        "height": 1080,
+        "viewportFit": "contain",
+        "nodes": [
+          {
+            "id": "shape-rectangle",
+            "kind": "data-widget",
+            "zIndex": 0,
+            "frame": {
+              "x": 100,
+              "y": 100,
+              "width": 260,
+              "height": 180
+            },
+            "widget": {
+              "title": "rectangle",
+              "key": "rectangle",
+              "unit": "",
+              "type": "shape",
+              "shape": "rectangle",
+              "color": "#368bd6",
+              "borderWidth": 0
+            }
+          },
+          {
+            "id": "shape-rounded",
+            "kind": "data-widget",
+            "zIndex": 1,
+            "frame": {
+              "x": 400,
+              "y": 100,
+              "width": 260,
+              "height": 180
+            },
+            "widget": {
+              "title": "rounded",
+              "key": "rounded",
+              "unit": "",
+              "type": "shape",
+              "shape": "rounded",
+              "color": "#33bb99",
+              "borderWidth": 0
+            }
+          },
+          {
+            "id": "shape-ellipse",
+            "kind": "data-widget",
+            "zIndex": 2,
+            "frame": {
+              "x": 700,
+              "y": 100,
+              "width": 260,
+              "height": 180
+            },
+            "widget": {
+              "title": "ellipse",
+              "key": "ellipse",
+              "unit": "",
+              "type": "shape",
+              "shape": "ellipse",
+              "color": "#e5aa44",
+              "borderWidth": 0
+            }
+          }
+        ]
+      }
+    ],
+    "topologies": [],
+    "scenes": [
+      {
+        "id": "scene-main",
+        "name": "主场景",
+        "camera": {
+          "position": {
+            "x": 5,
+            "y": 4,
+            "z": 3
+          },
+          "target": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "mode": "orbit"
+        },
+        "models": [],
+        "primitives": [],
+        "measurements": []
+      }
+    ],
+    "geo": {
+      "providerIds": [],
+      "layers": []
+    },
+    "data": {
+      "connectionIds": [],
+      "datasetIds": [],
+      "transforms": [],
+      "variables": []
+    },
+    "interactions": [],
+    "scripts": [],
+    "assets": [],
+    "timelines": [],
+    "publicationProfiles": [
+      {
+        "id": "browser-preview",
+        "name": "浏览器预览",
+        "target": "browser-preview",
+        "entryPageId": "page-main",
+        "renderer": "auto"
+      }
+    ]
+  }
+}

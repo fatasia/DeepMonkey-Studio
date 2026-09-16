@@ -244,3 +244,4 @@ export * from "./deviceSignal.js";
 export * from "./modelProcessing.js";
 
 export * from "./sceneScriptProtocol.js";
+export * from "./dashboardDocument.js";
