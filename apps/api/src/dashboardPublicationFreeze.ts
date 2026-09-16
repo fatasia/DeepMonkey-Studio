@@ -172,7 +172,13 @@ export async function assertDashboardPublicationFreezeCommit(candidate: Dashboar
     if (resolved.revision !== item.revision || resolved.bytes.byteLength !== item.bytes || sha256(resolved.bytes) !== item.sha256)
       throw new DashboardPublicationStaleError(`Resource ${item.id} changed before commit`);
   }
+  // 资源读取期间仍可能保存草稿；结束时必须重新确认发布身份及候选自身。
   options.signal?.throwIfAborted();
+  const finalState = snapshotAuthority(await options.readAuthority(options.signal));
+  options.signal?.throwIfAborted();
+  assertCandidateIntegrity(candidate);
+  assertAuthority(finalState, candidate.authority);
+  assertPublishedDocument(finalState, candidate.document);
 }
 
 function snapshotAuthority(state: DashboardPublicationAuthorityState | undefined): DashboardPublicationAuthorityState {

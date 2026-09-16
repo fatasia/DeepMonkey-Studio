@@ -143,7 +143,7 @@ describe("dashboard publication freeze", () => {
     readers.resolveData = vi.fn(readers.resolveData);
     readers.readResource = vi.fn(readers.readResource);
     await expect(assertDashboardPublicationFreezeCommit(candidate, readers)).resolves.toBeUndefined();
-    expect(readers.readAuthority).toHaveBeenCalledOnce();
+    expect(readers.readAuthority).toHaveBeenCalledTimes(2);
     expect(readers.resolveData).toHaveBeenCalledOnce();
     expect(readers.readResource).toHaveBeenCalledTimes(2);
   });
@@ -156,6 +156,32 @@ describe("dashboard publication freeze", () => {
       bytes: request.kind === "font" ? new Uint8Array([1, 2, 9]) : new Uint8Array([4, 5]) });
     await expect(assertDashboardPublicationFreezeCommit(candidate, readers))
       .rejects.toMatchObject({ name: "DashboardPublicationStaleError" });
+  });
+
+  it("rejects a draft saved while the final commit resource is being read", async () => {
+    const candidate = await prepareDashboardPublicationFreeze(options());
+    const readers = commitReaders();
+    let revision = 1;
+    readers.readAuthority = async () => authority({ currentApplicationRevision: revision });
+    const readResource = readers.readResource;
+    readers.readResource = async request => {
+      const result = await readResource(request);
+      revision = 2;
+      return result;
+    };
+    await expect(assertDashboardPublicationFreezeCommit(candidate, readers))
+      .rejects.toMatchObject({ name: "DashboardPublicationStaleError" });
+  });
+
+  it("detects mutation of already-checked candidate data during resource revalidation", async () => {
+    const candidate = await prepareDashboardPublicationFreeze(options());
+    const readers = commitReaders();
+    const readResource = readers.readResource;
+    readers.readResource = async request => {
+      mutate(candidate, "data");
+      return readResource(request);
+    };
+    await expect(assertDashboardPublicationFreezeCommit(candidate, readers)).rejects.toThrow(/modified/);
   });
 
   it.each(["document", "data", "resource", "manifest"] as const)("detects %s mutation before commit", async kind => {
