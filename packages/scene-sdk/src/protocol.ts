@@ -3,40 +3,15 @@ import type {
   DirectBindingTemplateValue,
   JsonValue,
   SceneMaterialState,
+  SceneApiVersion,
+  SceneCapability,
+  ScenePermission,
 } from "@bim-studio/contracts";
 
-export const SCENE_API_VERSION = "1.0" as const;
-export type SceneApiVersion = typeof SCENE_API_VERSION;
-
-export const SCENE_CAPABILITIES = [
-  "studio.scene",
-  "studio.object",
-  "studio.component",
-  "studio.unity",
-  "studio.mesh",
-  "studio.material",
-  "studio.camera",
-  "studio.controls",
-  "studio.animation",
-  "studio.timeline",
-  "studio.input",
-  "studio.data",
-  "studio.ai",
-  "studio.runtime"
-] as const;
-export type SceneCapability = typeof SCENE_CAPABILITIES[number];
-
-export const SCENE_PERMISSIONS = [
-  "scene.read",
-  "scene.write",
-  "data.read",
-  "data.write",
-  "ai.invoke",
-  "network.connect",
-  "renderer.extend",
-  "editor.extend"
-] as const;
-export type ScenePermission = typeof SCENE_PERMISSIONS[number];
+export {
+  SCENE_API_VERSION, SCENE_CAPABILITIES, SCENE_PERMISSIONS,
+  type SceneApiVersion, type SceneCapability, type ScenePermission,
+} from "@bim-studio/contracts";
 
 export type SceneObjectRef =
   | { kind: "scene"; sceneId: string }

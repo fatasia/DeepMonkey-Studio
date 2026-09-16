@@ -4,6 +4,10 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Shared scene script protocol
+
+- Move scene API identity and script compatibility checks into Contracts while preserving the SDK exports and constant values. Add an SDK adapter that copies persisted scripts into runtime modules, allowing publication checks to use Contracts without depending on the runtime SDK.
+
 ### Browser image decoding
 
 - Add `@bim-studio/deep-engine/browser-image-decoder`, a host-injected decoder factory that keeps browser APIs outside the engine core. The Lab adapter owns bitmap/canvas access; cancellation and failed pixel reads still release the bitmap, and decoded bytes have independent ownership.

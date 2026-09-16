@@ -1,5 +1,6 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：解码器切片提交 `7167bd3`；[共享场景脚本协议](specs/shared-scene-script-protocol-2026-09-16.md) 最小六文件独立导出通过 Contracts 构建、SDK 类型与 88 测试。未将发布大闭包混入基础切片。
 - 已完成：Native 切片提交 `de2f3dc`；浏览器解码器核心/Lab 最小切片经 HEAD 独立导出 9 测试、双类型检查通过，见 [解码边界](specs/browser-image-decoder-boundary-2026-09-16.md)。原混合工作树的其他功能仍分别审查提交闭包。
 - 已完成：A/B 已修复文本字素/IME 历史与原 helper 边界，以及 invocation ID 复用风险；四种终态共享有界 FIFO 身份窗口，窗口外宿主仍不得复用 ID。Native 独立导出全量 952 通过/60 忽略，5 项专项 GPU 通过，严格 Clippy 通过。提交闭包含真实 ChartSpec 拒绝夹具，584 个 Native 文件与导出逐一一致，见 [A/B 执行记录](specs/codex-native-correctness-and-gates-2026-09-16.md)。
 - 已完成：Deep Engine 全包 2827 测试通过/41 跳过及 Node 26 通过；Web 3323 通过/2 跳过、API 954 通过/1 跳过，Web/API 生产构建和生产 import smoke 通过。浏览器适配器与共享协议依赖方向已修复，TS 未提交闭包仍在分片核对。

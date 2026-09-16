@@ -242,3 +242,5 @@ export * from "./aiSamples.js";
 export * from "./plantTransportNetwork.js";
 export * from "./deviceSignal.js";
 export * from "./modelProcessing.js";
+
+export * from "./sceneScriptProtocol.js";
