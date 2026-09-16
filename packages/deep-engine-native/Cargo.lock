@@ -343,6 +343,7 @@ dependencies = [
  "pollster",
  "serde",
  "serde_json",
+ "unicode-segmentation",
  "wgpu",
  "winit",
 ]

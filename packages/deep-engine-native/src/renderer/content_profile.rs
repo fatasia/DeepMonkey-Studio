@@ -153,8 +153,14 @@ mod tests {
             empty_packet(),
             Some(deep_engine_native::deep2d::Deep2dRuntimeContent::DisplayList(list)),
         );
-        assert!(!planeless(&content, features(true, false)), "shadow probe 否决");
-        assert!(!planeless(&content, features(false, true)), "ibl probe 否决");
+        assert!(
+            !planeless(&content, features(true, false)),
+            "shadow probe 否决"
+        );
+        assert!(
+            !planeless(&content, features(false, true)),
+            "ibl probe 否决"
+        );
         assert!(!skip_forward_targets(&content, features(true, false)));
         assert!(!skip_forward_targets(&content, features(false, true)));
     }

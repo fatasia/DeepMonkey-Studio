@@ -159,7 +159,10 @@ fn runtime_highlight_downplay_reaches_the_same_state_as_initial_actions() {
         )
         .unwrap();
     assert_eq!(initial_down.emphasis, dispatch_down.emphasis);
-    assert!(!dispatch_down.emphasis.contains("line", 1), "downplay 后不再强调");
+    assert!(
+        !dispatch_down.emphasis.contains("line", 1),
+        "downplay 后不再强调"
+    );
 }
 
 /// 运行期强调必须与既有守卫一致:未知系列报错、隐藏系列拒绝。

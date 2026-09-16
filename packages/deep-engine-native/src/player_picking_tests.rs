@@ -153,8 +153,8 @@ fn pitched_camera_projects_and_picks_the_same_off_center_world_point() {
             ];
             let hit = pick(&scene, camera, size, pixel).unwrap();
             assert_eq!(hit.id, "authored-guid");
-            for axis in 0..3 {
-                assert!((hit.point[axis] - point[axis]).abs() < 0.0001);
+            for (axis, value) in point.iter().enumerate() {
+                assert!((hit.point[axis] - *value).abs() < 0.0001);
             }
         }
     }

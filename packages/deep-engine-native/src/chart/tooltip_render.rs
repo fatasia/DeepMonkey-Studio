@@ -37,10 +37,8 @@ pub fn compose_tooltip(
         .into_iter()
         .any(|v| !v.is_finite() || v < 0.0)
         || padding > 64.0
-        || font_size < 1.0
-        || font_size > 256.0
-        || line_height < 1.0
-        || line_height > 512.0
+        || !(1.0..=256.0).contains(&font_size)
+        || !(1.0..=512.0).contains(&line_height)
     {
         return Err("tooltip metrics invalid".into());
     }

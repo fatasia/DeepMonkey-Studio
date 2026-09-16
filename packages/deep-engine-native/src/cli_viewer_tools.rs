@@ -1,29 +1,6 @@
 use deep_engine_native::contract::{default_fixture_path, load_and_validate};
 use std::{ffi::OsString, path::PathBuf};
 
-#[cfg(test)]
-mod package_selection_tests {
-    use super::*;
-
-    #[test]
-    fn package_selection_requires_one_exact_valid_runtime_package_before_window_start() {
-        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/runtime-package-coordinate-origin-a.json");
-        for args in [
-            vec![],
-            vec![fixture.into_os_string(), OsString::from("extra")],
-            vec![OsString::from("missing-package-selection-fixture.json")],
-            vec![default_fixture_path().as_os_str().to_owned()],
-        ] {
-            assert!(
-                execute(Some("--smoke-package-selection"), &mut args.into_iter())
-                    .unwrap()
-                    .is_err()
-            );
-        }
-    }
-}
-
 pub fn execute(
     command: Option<&str>,
     args: &mut impl Iterator<Item = OsString>,
@@ -53,7 +30,9 @@ pub fn execute(
             // 等价于用户在界面上展开图例面板。产品夹具与其语义保持不变。
             if !ir.legend.visible {
                 ir.legend.visible = true;
-                println!("native chart keyboard smoke: legend was hidden in fixture; enabled for the probe");
+                println!(
+                    "native chart keyboard smoke: legend was hidden in fixture; enabled for the probe"
+                );
             }
             let content = crate::player_content::PlayerContent::from_chart(ir)?;
             crate::app::run_chart_keyboard_smoke(content)
@@ -143,4 +122,27 @@ pub fn execute(
             crate::app::run_selection_smoke(content)
         }
     })())
+}
+
+#[cfg(test)]
+mod package_selection_tests {
+    use super::*;
+
+    #[test]
+    fn package_selection_requires_one_exact_valid_runtime_package_before_window_start() {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/runtime-package-coordinate-origin-a.json");
+        for args in [
+            vec![],
+            vec![fixture.into_os_string(), OsString::from("extra")],
+            vec![OsString::from("missing-package-selection-fixture.json")],
+            vec![default_fixture_path().as_os_str().to_owned()],
+        ] {
+            assert!(
+                execute(Some("--smoke-package-selection"), &mut args.into_iter())
+                    .unwrap()
+                    .is_err()
+            );
+        }
+    }
 }

@@ -128,9 +128,8 @@ pub(super) fn update(
             let epoch = super::deep2d_context::current_resource_epoch(app);
             let context = super::deep2d_context::active_frame_context(app, &content, epoch);
             let renderer = app.renderer.as_mut().ok_or("chart renderer is not ready")?;
-            let staged = pollster::block_on(
-                renderer.stage_deep2d_update_inner(Some(&content), context),
-            )?;
+            let staged =
+                pollster::block_on(renderer.stage_deep2d_update_inner(Some(&content), context))?;
             // 提交区:publish 不可回滚,之后只有无失败赋值,epoch 与内容同帧落地。
             let commit = ChartEpochCommit::new(candidate, content, app.chart_legend_page);
             renderer.publish_deep2d_update(staged);

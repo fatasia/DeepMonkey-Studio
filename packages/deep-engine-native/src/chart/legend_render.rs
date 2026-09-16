@@ -40,10 +40,8 @@ pub fn append_legend(
         if !padding.is_finite()
             || padding < 0.0
             || !width.is_finite()
-            || width < 1.0
-            || width > 2048.0
-            || height < 1.0
-            || height > 2048.0
+            || !(1.0..=2048.0).contains(&width)
+            || !(height.is_nan() || (1.0..=2048.0).contains(&height))
         {
             return Err("legend text viewport invalid".into());
         }
@@ -236,7 +234,7 @@ pub fn fit_ellipsis(
     let mut lo = 0usize;
     let mut hi = chars.len();
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = (lo + hi).div_ceil(2);
         if fits(mid, rasterizer)? {
             lo = mid;
         } else {

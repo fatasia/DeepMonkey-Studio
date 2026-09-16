@@ -83,11 +83,8 @@ fn context_uses_letterbox_ratio() {
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let context = deep2d_frame_context(&content, [1280, 720], 3);
     assert_eq!(context.resource_epoch, 3);
-    let expected = LetterboxMapping::new(
-        [list.logical_width, list.logical_height],
-        [1280.0, 720.0],
-    )
-    .scale;
+    let expected =
+        LetterboxMapping::new([list.logical_width, list.logical_height], [1280.0, 720.0]).scale;
     assert!((context.camera_scale - expected).abs() < 1e-12);
 }
 
@@ -98,7 +95,11 @@ fn real_dpi_reaches_the_dependency_graph() {
     let mut list = fixture();
     list.logical_width = 480.0;
     list.logical_height = 320.0;
-    let context = deep2d_frame_context(&Deep2dRuntimeContent::DisplayList(list.clone()), [960, 640], 0);
+    let context = deep2d_frame_context(
+        &Deep2dRuntimeContent::DisplayList(list.clone()),
+        [960, 640],
+        0,
+    );
     assert!((context.camera_scale - 2.0).abs() < 1e-12);
 
     // 该上下文喂进缓存后,必须真的按 2.0 细分:与 1.0 的产物不同。

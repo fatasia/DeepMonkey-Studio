@@ -83,18 +83,19 @@ impl WinitImeAdapter {
                 }
             }
             winit::event::Ime::Commit(text) => {
-                let was_active = self.composition.active;
-                if was_active {
-                    self.composition.cancel()?;
-                }
                 if text.is_empty() {
+                    if self.composition.active {
+                        self.composition.cancel()?;
+                    }
                     return Ok(ImeOutcome::Idle);
                 }
-                editor.replace_selection(&text).map_err(|_| {
-                    // replace_selection validates cluster boundaries; a
-                    // commit always lands at the caret, which is a boundary.
-                    CompositionError::NotActive
-                })?;
+                // 宿主可能已改变选区；提交失败时保留预编辑，允许修正后重试。
+                editor
+                    .replace_selection(&text)
+                    .map_err(|_| CompositionError::NotActive)?;
+                if self.composition.active {
+                    self.composition.cancel()?;
+                }
                 Ok(ImeOutcome::Committed { text })
             }
         }
@@ -105,6 +106,55 @@ impl WinitImeAdapter {
 mod tests {
     use super::*;
     use crate::platform_text::text_edit::Move;
+
+    #[test]
+    fn rejected_commit_preserves_preedit_and_editor_then_allows_retry() {
+        for invalid in [1, 99] {
+            let mut editor = TextEditState::new("中", 8);
+            let mut adapter = WinitImeAdapter::new();
+            adapter
+                .handle_ime(&mut editor, winit::event::Ime::Preedit("wen".into(), None))
+                .unwrap();
+            let pending = adapter.composition.clone();
+            editor.caret = invalid;
+            let before = editor.clone();
+            assert!(
+                adapter
+                    .handle_ime(&mut editor, winit::event::Ime::Commit("文".into()))
+                    .is_err()
+            );
+            assert_eq!(editor, before);
+            assert_eq!(adapter.composition, pending);
+            editor.caret = 0;
+            adapter
+                .handle_ime(&mut editor, winit::event::Ime::Commit("文".into()))
+                .unwrap();
+            assert_eq!(editor.document, "文中");
+            assert!(!adapter.composing());
+            assert!(adapter.composition.pending.is_empty());
+            editor.undo().unwrap();
+            assert_eq!(editor.document, "中");
+        }
+    }
+
+    #[test]
+    fn empty_commit_closes_composition_without_an_edit() {
+        let mut editor = TextEditState::new("中", 8);
+        let mut adapter = WinitImeAdapter::new();
+        adapter
+            .handle_ime(&mut editor, winit::event::Ime::Preedit("wen".into(), None))
+            .unwrap();
+        let before = editor.clone();
+        assert_eq!(
+            adapter
+                .handle_ime(&mut editor, winit::event::Ime::Commit(String::new()))
+                .unwrap(),
+            ImeOutcome::Idle
+        );
+        assert!(!adapter.composing());
+        assert!(adapter.composition.pending.is_empty());
+        assert_eq!(editor, before);
+    }
 
     #[test]
     fn preedit_never_touches_document_until_commit() {

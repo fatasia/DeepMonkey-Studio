@@ -70,7 +70,8 @@ fn clip_resource_changes_invalidate_every_dependent_command() {
 
 #[test]
 fn scale_transform_and_every_stroke_input_match_uncached_results() {
-    let changes: Vec<Box<dyn Fn(&mut Deep2dDisplayList)>> = vec![
+    type DisplayListMutation = Box<dyn Fn(&mut Deep2dDisplayList)>;
+    let changes: Vec<DisplayListMutation> = vec![
         Box::new(|list| list.scale_factor = 2.0),
         Box::new(|list| command(list, 2).transform = [-1.5, 0.0, 0.0, 0.5, 800.0, 10.0]),
         Box::new(|list| command(list, 2).stroke_width = Some(8.0)),

@@ -20,6 +20,7 @@ mod chart_keyboard_smoke;
 mod chart_sim;
 mod chart_smoke;
 mod deep2d_context;
+mod lifecycle;
 mod package_camera;
 #[cfg(test)]
 mod package_drop_probe_tests;
@@ -33,6 +34,7 @@ mod packet_live_probe;
 mod packet_mailbox;
 mod packet_watch;
 mod recovery;
+mod renderer_lifecycle;
 mod runner;
 mod section;
 mod section_probe;
@@ -97,7 +99,7 @@ impl NativeApp {
     fn new(content: PlayerContent, proxy: EventLoopProxy<GpuEvent>, setup: NativeAppSetup) -> Self {
         let view = content.initial_view();
         // 键盘 smoke 与图表交互 smoke 都推进 chart 探针,同一窗口只能选一条;
-// 键盘模式下 chart_probe 保持 None,由 chart_key_probe 独占推进权。
+        // 键盘模式下 chart_probe 保持 None,由 chart_key_probe 独占推进权。
         let chart_probe =
             (setup.smoke_frame && content.chart.is_some() && !setup.chart_key_probe).then_some(0);
         Self {
@@ -141,82 +143,6 @@ impl NativeApp {
         }
     }
 
-    fn initialize_renderer(&mut self) {
-        let Some(window) = self.window.as_ref() else {
-            return;
-        };
-        let renderer_id = self.next_renderer_id;
-        self.next_renderer_id = self
-            .next_renderer_id
-            .checked_add(1)
-            .expect("renderer generation exhausted");
-        let replacing_live_renderer = self.renderer.is_some();
-        match pollster::block_on(Renderer::new(
-            window.clone(),
-            self.proxy.clone(),
-            renderer_id,
-            self.content.active(),
-            self.state.view,
-            self.features,
-        )) {
-            Ok(renderer) => {
-                self.state.renderer_ready();
-                report_renderer_ready(&renderer);
-                // P1-19:图表内容才需要字体,因此能力探测只在此时做一次。
-                // 探测要遍历系统字体库(实测约 9ms),不放进无文本场景的启动路径。
-                if self.content.active().chart.is_some() {
-                    let capability = self
-                        .chart_text
-                        .get_or_insert_with(Default::default)
-                        .font_capability();
-                    println!("native font capability: {}", capability.summary());
-                    for face in capability.faces.iter().take(8) {
-                        println!(
-                            "native font face: family={} postscript={} weight={} italic={} mono={} hash={:016x} bytes={}",
-                            face.identity.family,
-                            face.identity.post_script_name,
-                            face.identity.weight,
-                            face.identity.italic,
-                            face.identity.monospaced,
-                            face.identity.content_hash,
-                            face.identity.content_bytes
-                        );
-                    }
-                    if capability.faces.len() > 8 {
-                        println!(
-                            "native font capability: {} more faces omitted",
-                            capability.faces.len() - 8
-                        );
-                    }
-                }
-                self.renderer = Some(renderer);
-                let title = if self.content.active().deep2d.is_some() {
-                    "Deep Engine Native Viewer — native wgpu 3D + Deep2d"
-                } else {
-                    "Deep Engine Native Viewer — native wgpu renderer"
-                };
-                window.set_title(title);
-                window.request_redraw();
-            }
-            Err(error) => {
-                eprintln!("{error}");
-                if self.smoke_frame || !replacing_live_renderer {
-                    self.state.failed(error);
-                }
-                if replacing_live_renderer {
-                    window.set_title(
-                        "Deep Engine Native Viewer — rebuild rejected, previous frame retained",
-                    );
-                    window.request_redraw();
-                } else {
-                    window.set_title(
-                        "Deep Engine Native Viewer — GPU initialization failed (press R)",
-                    );
-                }
-            }
-        }
-    }
-
     fn rotate(&mut self, delta: f32) {
         self.state.rotate(delta);
         if let Some(renderer) = self.renderer.as_mut() {
@@ -240,74 +166,5 @@ impl NativeApp {
             self.state.failed(error);
         }
         self.request_redraw();
-    }
-}
-
-impl ApplicationHandler<GpuEvent> for NativeApp {
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        package_open::flush_drop(self);
-        chart_sim::tick(self, event_loop);
-    }
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_none() {
-            let attributes = window_attributes(self.smoke_frame);
-            match event_loop.create_window(attributes) {
-                Ok(window) => self.window = Some(Arc::new(window)),
-                Err(error) => {
-                    self.state.failure = Some(format!("native window creation failed: {error}"));
-                    event_loop.exit();
-                    return;
-                }
-            }
-        }
-        if self.renderer.is_none() {
-            self.initialize_renderer();
-            if self.smoke_frame && self.state.failure.is_some() {
-                event_loop.exit();
-                return;
-            }
-        }
-        if self.smoke_frame {
-            let proxy = self.proxy.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(10));
-                let _ = proxy.send_event(GpuEvent::SmokeTimeout);
-            });
-        }
-    }
-
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: GpuEvent) {
-        if recovery::handle(self, event_loop, &event) {
-            return;
-        }
-        match event {
-            GpuEvent::PacketArrived => packet_live::apply_latest(self),
-            GpuEvent::PackageArrived => package_live::apply_latest(self),
-            GpuEvent::PackageOpened => package_open::apply_latest(self),
-            GpuEvent::LiveProbeCheckpoint => {
-                let result = self
-                    .packet_live_probe
-                    .as_mut()
-                    .zip(self.renderer.as_ref())
-                    .ok_or_else(|| {
-                        "live reload rejection checkpoint has no active probe/renderer".to_owned()
-                    })
-                    .and_then(|(probe, renderer)| probe.after_rejection_checkpoint(renderer));
-                if let Err(error) = result {
-                    self.state.failed(error);
-                    event_loop.exit();
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        window_events::handle(self, event_loop, window_id, event);
     }
 }

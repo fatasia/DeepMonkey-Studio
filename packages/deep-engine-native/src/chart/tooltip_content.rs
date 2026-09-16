@@ -127,6 +127,12 @@ fn cartesian(kind: ChartSeriesType) -> bool {
     )
 }
 
+fn display(value: &serde_json::Value) -> String {
+    value
+        .as_str()
+        .map_or_else(|| value.to_string(), str::to_owned)
+}
+
 #[cfg(test)]
 mod tests {
     use super::same_value;
@@ -145,9 +151,4 @@ mod tests {
         ));
         assert!(same_value(&json!(u64::MAX), &json!(u64::MAX)));
     }
-}
-fn display(value: &serde_json::Value) -> String {
-    value
-        .as_str()
-        .map_or_else(|| value.to_string(), str::to_owned)
 }

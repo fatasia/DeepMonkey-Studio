@@ -100,10 +100,12 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let mut state = crate::player_state::PlayerState::default();
-        state.selected = Some("box".into());
-        state.selected_point = Some([1.0; 3]);
-        state.cursor = Some([12.0; 2]);
+        let mut state = crate::player_state::PlayerState {
+            selected: Some("box".into()),
+            selected_point: Some([1.0; 3]),
+            cursor: Some([12.0; 2]),
+            ..Default::default()
+        };
         state.measurement.toggle();
         state.measurement.hit([1e9; 3]);
         state.measurement.hit([1e9 + 1.0; 3]);

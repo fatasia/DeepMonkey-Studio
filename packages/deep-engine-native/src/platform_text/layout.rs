@@ -1,5 +1,5 @@
 //! D05/U05 foundation: pure text layout over UTF-8 without a shaping
-//! library. This module owns the parts of the text contract that do NOT
+//! engine. This module owns the parts of the text contract that do NOT
 //! require font metrics or glyph rasterization: grapheme cluster boundaries
 //! (cursor/selection granularity), simplified line breaking (CJK per-character
 //! vs. space-delimited words) and width-driven line assembly. Shaping,
@@ -25,65 +25,16 @@ pub struct TextLine {
     pub width: f64,
 }
 
-/// Splits `text` into grapheme clusters and measures each. Simplified
-/// UAX #29: combining marks (Mn/Me ranges sampled), variation selectors and
-/// ZWJ sequences attach to the previous cluster; CRLF is one cluster; each
-/// regional indicator pair is one cluster. This is deliberately more
-/// conservative than full UAX #29 — it never splits where full rules would
-/// keep, and it keeps ASCII/emoji/CJK correct, which is the Studio's text
-/// population. Latin combining sequences outside the sampled ranges may
-/// over-split; those cases require the approved shaping library (D05).
+/// UAX #29 extended grapheme boundaries, shared with the existing shaping dependency.
 pub fn grapheme_clusters(text: &str, advance_of: impl Fn(&str) -> f64) -> Vec<Cluster> {
-    let bytes = text.as_bytes();
-    let mut clusters = Vec::new();
-    let mut iter = text.char_indices().peekable();
-    while let Some((start, ch)) = iter.next() {
-        let mut end = start + ch.len_utf8();
-        // CRLF is a single cluster.
-        if ch == '\r' && iter.peek().is_some_and(|(_, next)| *next == '\n') {
-            let (_, next) = iter.next().expect("peeked");
-            end += next.len_utf8();
-        }
-        // Regional indicator pairs (flag emoji).
-        if is_regional_indicator(ch)
-            && iter
-                .peek()
-                .is_some_and(|(_, next)| is_regional_indicator(*next))
-        {
-            let (_, next) = iter.next().expect("peeked");
-            end += next.len_utf8();
-        }
-        // Extend with attach-to-previous code points.
-        while let Some((_, next)) = iter.peek() {
-            if attaches_to_previous(*next) {
-                end += next.len_utf8();
-                iter.next();
-            } else {
-                break;
-            }
-        }
-        let cluster_text = std::str::from_utf8(&bytes[start..end]).unwrap_or("");
-        clusters.push(Cluster {
+    use unicode_segmentation::UnicodeSegmentation;
+    text.grapheme_indices(true)
+        .map(|(start, cluster)| Cluster {
             start,
-            end,
-            advance: advance_of(cluster_text),
-        });
-    }
-    clusters
-}
-
-fn is_regional_indicator(ch: char) -> bool {
-    ('\u{1F1E6}'..='\u{1F1FF}').contains(&ch)
-}
-
-fn attaches_to_previous(ch: char) -> bool {
-    // Sampled combining-mark ranges (Latin/Greek/Cyrillic base + general
-    // extending), variation selectors, ZWJ.
-    matches!(ch, '\u{0300}'..='\u{036F}' | '\u{0483}'..='\u{0489}' | '\u{0591}'..='\u{05BD}'
-        | '\u{0610}'..='\u{061A}' | '\u{064B}'..='\u{065F}' | '\u{0670}'
-        | '\u{20D0}'..='\u{20F0}' | '\u{FE00}'..='\u{FE0F}'
-        | '\u{200D}' | '\u{1F3FB}'..='\u{1F3FF}')
-        || ch == '\u{200D}'
+            end: start + cluster.len(),
+            advance: advance_of(cluster),
+        })
+        .collect()
 }
 
 /// Line-breaking decision (simplified UAX #14): break opportunities after
@@ -129,46 +80,46 @@ pub fn layout_lines(text: &str, max_width: f64, advance_of: impl Fn(&str) -> f64
     let mut lines = Vec::new();
     let mut line_start = 0usize;
     let mut line_width = 0.0f64;
-    let mut last_break: Option<(usize, f64)> = None;
+    // 换行位置同时记录可见宽度与已消费宽度，避免回退时漏掉后面的已量测簇。
+    let mut last_break: Option<(usize, f64, f64)> = None;
     for cluster in &clusters {
-        let would_exceed = line_width > 0.0 && line_width + cluster.advance > max_width;
-        if would_exceed {
-            // Prefer the last break opportunity inside the line, if any.
-            if let Some((break_at, break_width)) = last_break {
-                lines.push(TextLine {
-                    start: line_start,
-                    end: break_at,
-                    width: break_width,
-                });
-                line_start = break_at;
-                line_width = cluster.advance;
-                last_break = Some((cluster.end, line_width));
-                continue;
-            }
-            lines.push(TextLine {
-                start: line_start,
-                end: cluster.start,
-                width: line_width,
-            });
-            line_start = cluster.start;
-            line_width = cluster.advance;
-            last_break = Some((cluster.end, line_width));
-            continue;
-        }
-        line_width += cluster.advance;
         let cluster_end = cluster.end;
         let cluster_text = &text[cluster.start..cluster_end];
         if cluster_text.contains('\n') {
             lines.push(TextLine {
                 start: line_start,
                 end: cluster.start,
-                width: line_width - cluster.advance,
+                width: line_width,
             });
             line_start = cluster_end;
             line_width = 0.0;
             last_break = None;
             continue;
         }
+        let would_exceed = line_width > 0.0 && line_width + cluster.advance > max_width;
+        if would_exceed {
+            // Prefer the last break opportunity inside the line, if any.
+            if let Some((break_at, break_width, consumed_width)) = last_break.take() {
+                lines.push(TextLine {
+                    start: line_start,
+                    end: break_at,
+                    width: break_width,
+                });
+                line_start = break_at;
+                line_width -= consumed_width;
+            }
+            // 留下的长词加当前簇仍超宽时，在当前簇前强制断开。
+            if line_start < cluster.start && line_width + cluster.advance > max_width {
+                lines.push(TextLine {
+                    start: line_start,
+                    end: cluster.start,
+                    width: line_width,
+                });
+                line_start = cluster.start;
+                line_width = 0.0;
+            }
+        }
+        line_width += cluster.advance;
         if can_break_before(text, cluster_end) {
             // Whitespace clusters end the word: the break sits after them and
             // the trailing space does not count toward the next line width.
@@ -178,7 +129,7 @@ pub fn layout_lines(text: &str, max_width: f64, advance_of: impl Fn(&str) -> f64
             } else {
                 line_width
             };
-            last_break = Some((cluster_end, width_before));
+            last_break = Some((cluster_end, width_before, line_width));
         }
     }
     if line_start < text.len() {
@@ -196,6 +147,10 @@ pub fn layout_lines(text: &str, max_width: f64, advance_of: impl Fn(&str) -> f64
     }
     lines
 }
+
+#[cfg(test)]
+#[path = "layout_wrap_tests.rs"]
+mod wrap_tests;
 
 #[cfg(test)]
 mod tests {

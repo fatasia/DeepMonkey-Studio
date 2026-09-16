@@ -1,5 +1,7 @@
 # Deep2D 剩余任务总表
 
+> 2026-09-16 Codex 接手复核：本表的基础模块交付不等于整项验收通过。P1-18/P1-20 已复现字素簇边界和退格重做缺陷；先按 [复核与执行计划](codex-takeover-audit-and-plan-2026-09-16.md) 修复正确性与失败门禁，再继续下列任务。原完成条件全部保留。
+
 更新时间：2026-09-16 00:45，北京时间（交接入口更新，45项状态未变）。供接手模型继续完成 [Deep2D 终局方案](Deep2D-跨时代发布终局方案-2026-09-15.md)。本表覆盖该方案 §2–§10 的全部未关闭任务及最终验收；两窗口已合为 [Deep Engine + Deep2D统一交接](C:/Users/rain/AppData/Local/Temp/Deep-Engine-Deep2D-handoff-2026-09-16-0045.md)，三维详细任务仍见其永久任务表。
 
 恢复时先读 [总账](../active-task-recovery-ledger.md) 和仓库 `AGENTS.md`，再核对当前代码。本表替代旧 GLM 交接中的进度与执行顺序。历史规格中的“未开始”可能已过时，以下“已有部分”专门防止重复开发。
@@ -64,6 +66,8 @@ P0 进入点：`apps/web/src/delivery/compileDashboardContent.ts`、`packages/de
 | P1-17 | ~~**真实文字测量/省略和布局**~~ **已完成(2026-09-16,见[spec](deep2d-epoch-and-text-fit-2026-09-16.md))**:rasterizer measure()、fit_ellipsis 二分测量截断(图例含图标占宽)、tooltip 按行整体实测;3 项新测试+既有回归通过。剩余:单位/术语系统一致性巡查随 P1-19 字体包推进。 |
 
 ### 文本与行为
+
+2026-09-16 Codex 复核修正：下表保留原交接记录，当前实现与验证见 [A/B 执行记录](codex-native-correctness-and-gates-2026-09-16.md)。P1-18 已改为完整 Unicode 字素重映射；P1-20 使用完整不可变文档快照恢复历史，取代区间夹取；P1-21 四种终态共享有界 FIFO 身份窗口，窗口外宿主仍不得复用 ID。表中原测试数为交接时数字，剩余跨端与宿主验收继续有效。
 
 | ID | 剩余任务、已有部分与完成条件 |
 | --- | --- |

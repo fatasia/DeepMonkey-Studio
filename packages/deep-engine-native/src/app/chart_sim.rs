@@ -34,7 +34,7 @@ pub(super) enum PumpOutcome {
 /// 前置条件:宿主存在且 source 未取消。
 pub(super) fn pump(app: &mut NativeApp, host: &mut ChartSimHost, now: Instant) -> PumpOutcome {
     let started = *host.started.get_or_insert(now);
-    if !host.wake_at.is_none_or(|wake| now >= wake) {
+    if host.wake_at.is_some_and(|wake| now < wake) {
         return PumpOutcome::Idle;
     }
     let elapsed = now

@@ -33,6 +33,10 @@ fn actual_binary_validates_shared_chart_ir_without_starting_a_window() {
 
 #[test]
 fn actual_binary_rejects_author_spec_missing_file_and_extra_arguments() {
+    assert!(
+        fixture("chart-spec-v1.json").is_file(),
+        "author-spec rejection requires its real fixture"
+    );
     for name in ["chart-spec-v1.json", "missing-chart-ir-file.json"] {
         let output = Command::new(env!("CARGO_BIN_EXE_deep-engine-native"))
             .arg("--headless-chart")

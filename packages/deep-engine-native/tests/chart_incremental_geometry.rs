@@ -93,7 +93,10 @@ fn resource_revisions(chart: &ChartRuntime, series: &str) -> Vec<u64> {
         .iter()
         .enumerate()
         .filter_map(|(i, r)| {
-            (chart.frame().command_target(i)?.series_id == series).then(|| match r {
+            if chart.frame().command_target(i)?.series_id != series {
+                return None;
+            }
+            Some(match r {
                 Deep2dResource::Path(p) => p.revision,
                 _ => unreachable!(),
             })

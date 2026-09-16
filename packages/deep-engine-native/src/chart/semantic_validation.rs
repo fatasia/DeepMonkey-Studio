@@ -108,21 +108,20 @@ pub(super) fn validate_semantics(
         if dataset.rows.len() > CHART_BUDGETS.rows {
             continue;
         }
-        if series.series_type == ChartSeriesType::Heatmap {
-            if let Some(column) = series.value.as_ref().and_then(|name| {
+        if series.series_type == ChartSeriesType::Heatmap
+            && let Some(column) = series.value.as_ref().and_then(|name| {
                 dataset
                     .dimensions
                     .iter()
                     .position(|dimension| dimension == name)
-            }) {
-                if !dataset.rows.stats().column_is_finite(column) {
-                    add(
-                        InvalidValue,
-                        path.clone(),
-                        "Heatmap values must be finite numbers.".into(),
-                    );
-                }
-            }
+            })
+            && !dataset.rows.stats().column_is_finite(column)
+        {
+            add(
+                InvalidValue,
+                path.clone(),
+                "Heatmap values must be finite numbers.".into(),
+            );
         }
         if matches!(
             series.series_type,

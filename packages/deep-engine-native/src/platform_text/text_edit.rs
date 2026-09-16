@@ -60,7 +60,6 @@ impl TextEditState {
     }
 
     fn snap(&self, offset: usize) -> Result<Caret, EditError> {
-        let offset = offset.min(self.document.len());
         if self.boundaries().contains(&offset) || offset == 0 {
             Ok(offset)
         } else {
@@ -79,15 +78,24 @@ impl TextEditState {
     /// Moves the caret; any movement collapses the selection unless
     /// `extend` is set (shift-held semantics).
     pub fn move_caret(&mut self, movement: Move, extend: bool) {
+        let bounds = self.boundaries();
+        self.anchor = self.anchor.map(|anchor| {
+            bounds[bounds.partition_point(|&byte| byte < anchor.min(self.document.len()))]
+        });
+        self.caret = bounds[bounds
+            .partition_point(|&byte| byte <= self.caret)
+            .saturating_sub(1)];
         if !extend {
             if let Some(anchor) = self.anchor {
-                self.caret = if self.caret > anchor {
-                    anchor
+                self.caret = if matches!(movement, Move::Left) {
+                    self.caret.min(anchor)
                 } else {
                     self.caret.max(anchor)
                 };
-                self.caret = anchor;
                 self.anchor = None;
+                if matches!(movement, Move::Left | Move::Right) {
+                    return;
+                }
             }
         } else if self.anchor.is_none() {
             self.anchor = Some(self.caret);
@@ -95,14 +103,12 @@ impl TextEditState {
         let bytes = self.document.as_bytes();
         match movement {
             Move::Left => {
-                if let Some(ch) = self.document[..self.caret].chars().next_back() {
-                    self.caret -= ch.len_utf8();
-                }
+                let index = bounds.partition_point(|&byte| byte < self.caret);
+                self.caret = bounds[index.saturating_sub(1)];
             }
             Move::Right => {
-                if let Some(ch) = self.document[self.caret..].chars().next() {
-                    self.caret += ch.len_utf8();
-                }
+                let index = bounds.partition_point(|&byte| byte <= self.caret);
+                self.caret = bounds[index.min(bounds.len() - 1)];
             }
             Move::WordStart => {
                 let prefix = &self.document[..self.caret];
@@ -118,15 +124,16 @@ impl TextEditState {
             }
             Move::LineStart => {
                 let prefix = &self.document[..self.caret];
-                self.caret = prefix.rfind('\n').map_or(0, |index| index + 1);
+                self.caret = prefix.rfind(['\r', '\n']).map_or(0, |index| index + 1);
             }
             Move::LineEnd => {
                 let rest = &self.document[self.caret..];
-                self.caret += rest.find('\n').unwrap_or(rest.len());
+                self.caret += rest.find(['\r', '\n']).unwrap_or(rest.len());
             }
             Move::DocumentStart => self.caret = 0,
             Move::DocumentEnd => self.caret = bytes.len(),
         }
+        self.caret = bounds[bounds.partition_point(|&byte| byte < self.caret)];
     }
 
     /// The selected byte range in document order, if any.
@@ -152,7 +159,11 @@ impl TextEditState {
         next.push_str(text);
         next.push_str(&self.document[end..]);
         self.document = next;
-        self.caret = start + text.len();
+        self.caret = self
+            .boundaries()
+            .into_iter()
+            .find(|&byte| byte >= start + text.len())
+            .expect("document end is a boundary");
         self.anchor = None;
         Ok(())
     }
@@ -160,34 +171,41 @@ impl TextEditState {
     /// Deletes one cluster in the given direction (backspace/forward-delete);
     /// deletes the selection when present.
     pub fn delete(&mut self, backward: bool) -> Result<bool, EditError> {
+        self.snap(self.caret)?;
+        if let Some(anchor) = self.anchor {
+            self.snap(anchor)?;
+        }
         if let Some((start, end)) = self.selection() {
-            self.push_undo();
-            let mut next = String::with_capacity(self.document.len());
-            next.push_str(&self.document[..start]);
-            next.push_str(&self.document[end..]);
-            self.document = next;
-            self.caret = start;
-            self.anchor = None;
+            if start == end {
+                self.anchor = None;
+                return self.delete(backward);
+            }
+            self.replace_selection("")?;
             return Ok(true);
         }
+        let bounds = self.boundaries();
+        let index = bounds.partition_point(|&byte| byte < self.caret);
         let (from, to) = if backward {
-            let previous = self.document[..self.caret].chars().next_back();
-            match previous {
-                Some(ch) => (self.caret - ch.len_utf8(), self.caret),
-                None => return Ok(false),
+            if index == 0 {
+                return Ok(false);
             }
+            (bounds[index - 1], self.caret)
         } else {
-            match self.document[self.caret..].chars().next() {
-                Some(ch) => (self.caret, self.caret + ch.len_utf8()),
-                None => return Ok(false),
+            if index + 1 == bounds.len() {
+                return Ok(false);
             }
+            (self.caret, bounds[index + 1])
         };
         self.push_undo();
         let mut next = String::with_capacity(self.document.len());
         next.push_str(&self.document[..from]);
         next.push_str(&self.document[to..]);
         self.document = next;
-        self.caret = from;
+        self.caret = self
+            .boundaries()
+            .into_iter()
+            .find(|&byte| byte >= from)
+            .expect("document end is a boundary");
         Ok(true)
     }
 
@@ -219,74 +237,5 @@ impl TextEditState {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn insert_and_cluster_cursor_never_splits_emoji() {
-        let mut editor = TextEditState::new("a👍b", 16);
-        editor.move_caret(Move::DocumentStart, false);
-        editor.move_caret(Move::Right, false);
-        editor.move_caret(Move::Right, false);
-        assert_eq!(editor.caret, 5, "emoji is ONE cluster = one Right press");
-        editor.replace_selection("X").expect("insert at cluster");
-        assert_eq!(editor.document, "a👍Xb");
-        assert_eq!(editor.caret, 6);
-    }
-
-    #[test]
-    fn selection_replace_and_backspace_delete_the_whole_cluster() {
-        let mut editor = TextEditState::new("中文", 16);
-        editor.move_caret(Move::DocumentStart, false);
-        editor.move_caret(Move::Right, true);
-        editor.move_caret(Move::Right, true);
-        assert_eq!(
-            editor.selection(),
-            Some((0, 6)),
-            "two CJK clusters selected"
-        );
-        editor.replace_selection("好").expect("replace selection");
-        assert_eq!(
-            editor.document, "好",
-            "full selection replaced by inserted text"
-        );
-
-        let mut single = TextEditState::new("👍x", 16);
-        single.move_caret(Move::DocumentEnd, false);
-        assert!(single.delete(true).expect("backspace deletes 'x'"));
-        assert_eq!(single.document, "👍");
-        assert!(single.delete(true).expect("backspace deletes emoji whole"));
-        assert_eq!(single.document, "", "4-byte emoji deleted as one unit");
-        assert!(!single.delete(true).expect("no-op at start"));
-    }
-
-    #[test]
-    fn undo_redo_round_trip_and_history_bound() {
-        let mut editor = TextEditState::new("", 3);
-        for ch in ['a', 'b', 'c', 'd', 'e'] {
-            editor.replace_selection(&ch.to_string()).expect("insert");
-        }
-        assert_eq!(editor.document, "abcde");
-        assert_eq!(editor.history_depth(), 3, "history capped at 3");
-        for expected in ["abcd", "abc", "ab"] {
-            editor.undo().expect("undo");
-            assert_eq!(editor.document, expected);
-        }
-        assert!(matches!(editor.undo(), Err(EditError::NothingToUndo)));
-        editor.redo().expect("redo");
-        assert_eq!(editor.document, "abc");
-    }
-
-    #[test]
-    fn word_and_line_movement_hit_document_edges() {
-        let mut editor = TextEditState::new("hello world\n第二行", 16);
-        editor.move_caret(Move::DocumentEnd, false);
-        editor.move_caret(Move::LineStart, false);
-        assert_eq!(editor.caret, 12, "after the newline");
-        editor.move_caret(Move::WordStart, false);
-        assert_eq!(editor.caret, 12, "word start at line start stays");
-        editor.move_caret(Move::DocumentStart, false);
-        editor.move_caret(Move::WordEnd, false);
-        assert_eq!(editor.caret, 5, "end of 'hello'");
-    }
-}
+#[path = "text_edit_tests.rs"]
+mod tests;

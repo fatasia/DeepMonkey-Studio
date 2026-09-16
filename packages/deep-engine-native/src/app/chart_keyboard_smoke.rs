@@ -8,8 +8,8 @@
 //! 「真实窗口里按键确实走到了生产派发路径并改变了呈现」。
 use winit::keyboard::KeyCode;
 
-use super::window_events::{chart_key, chart_legend_focus};
 use super::NativeApp;
+use super::window_events::{chart_key, chart_legend_focus};
 
 /// 键盘 smoke 的推进阶段。顺序固定,便于失败时定位到具体一步。
 const STAGES: [KeyCode; 6] = [
@@ -103,7 +103,7 @@ fn chart_hidden(app: &NativeApp) -> Vec<String> {
         .chart
         .as_ref()
         .map(|chart| {
-            let mut hidden = chart.state().hidden_series.iter().cloned().collect::<Vec<_>>();
+            let mut hidden = chart.state().hidden_series.to_vec();
             hidden.sort();
             hidden
         })

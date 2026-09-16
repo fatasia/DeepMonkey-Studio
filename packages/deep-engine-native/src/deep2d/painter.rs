@@ -100,6 +100,12 @@ pub struct PreparedDeep2d {
     pub summary: PreparedDeep2dSummary,
 }
 
+/// 已定格的整帧路径资源与物理缩放，缓存见证和几何细分共用。
+pub(super) struct PathPrepareFrame<'a> {
+    pub scale_factor: f64,
+    pub paths: &'a HashMap<&'a str, (usize, &'a super::PathResource)>,
+}
+
 pub fn prepare_display_list(
     display_list: &Deep2dDisplayList,
 ) -> Result<PreparedDeep2d, Deep2dPainterError> {
@@ -166,6 +172,10 @@ fn prepare_impl(
             vertices: 0,
         },
     };
+    let frame = PathPrepareFrame {
+        scale_factor,
+        paths: &paths,
+    };
     let mut issues = Vec::new();
     for (index, command) in ordered {
         let path = format!("commands[{index}]");
@@ -179,8 +189,7 @@ fn prepare_impl(
                         resource,
                         &format!("resources[{resource_index}]"),
                         &path,
-                        scale_factor,
-                        &paths,
+                        &frame,
                         &mut output,
                     )
                 } else {
@@ -209,26 +218,16 @@ fn prepare_impl(
                 }
             }
             Deep2dCommand::Text(command) => {
-                if let Err(value) = prepare_text(
-                    command,
-                    index,
-                    &path,
-                    &paths,
-                    scale_factor,
-                    &mut output,
-                ) {
+                if let Err(value) =
+                    prepare_text(command, index, &path, &paths, scale_factor, &mut output)
+                {
                     issues.push(value);
                 }
             }
             Deep2dCommand::Image(command) => {
-                if let Err(value) = prepare_image(
-                    command,
-                    index,
-                    &path,
-                    &paths,
-                    scale_factor,
-                    &mut output,
-                ) {
+                if let Err(value) =
+                    prepare_image(command, index, &path, &paths, scale_factor, &mut output)
+                {
                     issues.push(value);
                 }
             }

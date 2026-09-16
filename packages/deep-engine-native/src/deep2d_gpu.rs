@@ -191,7 +191,15 @@ impl Deep2dGpuPainter {
         format: wgpu::TextureFormat,
         content: &Deep2dRuntimeContent,
     ) -> Result<Self, String> {
-        Self::new_candidate(device, queue, format, content, &self.cache, Some(self), None)
+        Self::new_candidate(
+            device,
+            queue,
+            format,
+            content,
+            &self.cache,
+            Some(self),
+            None,
+        )
     }
 
     /// 宿主换包/换页入口:与 `stage_update` 相同的事务语义,但显式声明帧级依赖,

@@ -46,8 +46,8 @@ mod tests {
         ] {
             camera.position = position;
             let view = super::PlayerView::from_camera(&camera).unwrap();
-            for i in 0..3 {
-                assert!((view.eye()[i] - position[i] as f32).abs() < 0.00001);
+            for (i, value) in position.iter().enumerate() {
+                assert!((view.eye()[i] - *value as f32).abs() < 0.00001);
                 assert_eq!(view.target[i], camera.target[i] as f32);
             }
             assert!((2.0 * (1.0 / view.focal).atan().to_degrees() - 50.0).abs() < 0.00001);

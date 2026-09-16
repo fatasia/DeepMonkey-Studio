@@ -44,13 +44,13 @@ pub(in crate::chart) fn render_chart_with_points(
 ) -> Result<(Deep2dDisplayList, Vec<(String, CartesianPoints)>), String> {
     let mut seen = std::collections::BTreeSet::new();
     for (id, start, end) in windows {
-        if !seen.insert(id)
-            || !ir.axes.iter().any(|axis| axis.id == *id)
-            || !(start.is_finite()
-                && end.is_finite()
-                && *start >= 0.0
-                && *start < *end
-                && *end <= 1.0)
+        if !(seen.insert(id)
+            && ir.axes.iter().any(|axis| axis.id == *id)
+            && start.is_finite()
+            && end.is_finite()
+            && *start >= 0.0
+            && *start < *end
+            && *end <= 1.0)
         {
             return Err(format!("invalid chart zoom window: {id}"));
         }

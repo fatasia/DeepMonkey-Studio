@@ -50,8 +50,7 @@ pub fn parse_chart_data_update(bytes: &[u8]) -> Result<ChartDataMessage, String>
 pub(super) fn normalize_integer(value: &mut serde_json::Value) {
     if value.as_u64().is_none()
         && let Some(number) = value.as_f64()
-        && number >= 0.0
-        && number <= 9_007_199_254_740_991.0
+        && (0.0..=9_007_199_254_740_991.0).contains(&number)
         && number.fract() == 0.0
     {
         *value = serde_json::json!(number as u64);

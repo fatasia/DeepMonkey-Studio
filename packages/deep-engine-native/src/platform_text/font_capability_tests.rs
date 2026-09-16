@@ -131,7 +131,11 @@ fn family_exists_rejects_absent_and_out_of_bounds_families() {
     assert!(!family_exists(&mut fonts, &"x".repeat(300)), "越界输入拒绝");
     // 正向对照:报告里任意一个真实家族必须被判为存在——否则探针恒 false。
     let report = report();
-    if let Some(face) = report.faces.iter().find(|face| !face.identity.family.is_empty()) {
+    if let Some(face) = report
+        .faces
+        .iter()
+        .find(|face| !face.identity.family.is_empty())
+    {
         assert!(
             family_exists(&mut fonts, &face.identity.family),
             "报告中列出的家族必须能查到: {}",

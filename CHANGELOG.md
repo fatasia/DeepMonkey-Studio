@@ -4,6 +4,13 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Native text correctness and engineering gates
+
+- Fix IME deletion redo and grapheme-boundary edits, including combining marks, emoji sequences and CRLF. Undo/redo restores text metadata and caret together; failed commits preserve composition.
+- Add `TextChange.previous_end_cluster` and atomic revision-exhaustion errors. Reuse the existing locked unicode-segmentation dependency for full grapheme boundaries.
+- Split Native text, chart, cache and window modules by responsibility and restore strict Clippy checks. Correct soft-wrap width accounting and legacy editor selection movement.
+- Remember cancelled, timed-out, settled and failed invocation IDs in a shared bounded FIFO window, rejecting reuse before late callbacks can target a new command. Hosts must still keep invocation IDs unique after eviction.
+
 ### Deep2D chart packages
 
 - Add a font identity and capability matrix that hashes each installed face's font data (FNV-1a, stable across machines) instead of trusting family names, models source and license status explicitly, keeps system fonts out of the artifact by default, and reports missing-versus-license-blocked families as distinct object-level reasons; also split family existence from shaping coverage because the shaper silently falls back to other installed fonts.

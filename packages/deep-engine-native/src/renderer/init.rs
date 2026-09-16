@@ -6,28 +6,23 @@ use deep_engine_native::{
     pbr_texture::prepare_pbr_resources, scene::prepare_scene, scene_bounds::prepare_scene_bounds,
     shadow_cache::ShadowVersion,
 };
-use wgpu::util::DeviceExt;
 use winit::{event_loop::EventLoopProxy, window::Window};
 
 use crate::{
     bloom_pass::BloomPass,
-    deep2d_gpu::Deep2dGpuPainter,
     events::GpuEvent,
     forward_targets::ForwardTargets,
-    frame_bindings::{create_frame_layouts, create_native_mesh_shader},
+    frame_bindings::create_frame_layouts,
     gpu_context::{GpuContext, create_gpu_context},
     gpu_culling::GpuCulling,
     gpu_ibl::GpuIblEnvironment,
     gpu_lod::GpuLod,
-    gpu_resources::{
-        create_shadow_map, frame_data_with_camera, shadow_camera, shadow_ray_direction,
-    },
+    gpu_resources::frame_data_with_camera,
     gpu_scene_cache::GpuSceneCache,
     gpu_shader_materials::GpuShaderMaterials,
     gpu_textures::create_material_layout,
     ibl_probe::IblProbe,
     output_pass::OutputPass,
-    pipeline::create_mesh_pipelines,
     player_content::PlayerContent,
     player_state::PlayerView,
     shadow_dirty::{ShadowCasterSet, ShadowDirtyCache, ShadowDirtyEvidence, shader_key},
@@ -35,6 +30,8 @@ use crate::{
 };
 
 use super::{Renderer, RendererFeatures};
+
+mod resources;
 
 pub(super) async fn create_renderer(
     window: Arc<Window>,
@@ -86,26 +83,15 @@ pub(super) async fn create_renderer(
     let frame_layouts = create_frame_layouts(&device);
     let frame_layout = frame_layouts.frame;
     let shadow_frame_layout = frame_layouts.shadow;
-    let shadow_map = if compact_content {
-        crate::shadow_map::ShadowMap::new_with_options(
-            &device,
-            &shadow_frame_layout,
-            &frame,
-            shadow_camera(size, &frame, view),
-            shadow_ray_direction(&frame),
-            scene_bounds,
-            super::content_profile::shadow_options(true),
-        )?
-    } else {
-        create_shadow_map(
-            &device,
-            &shadow_frame_layout,
-            size,
-            &frame,
-            scene_bounds,
-            view,
-        )?
-    };
+    let shadow_map = resources::shadow_map(
+        &device,
+        &shadow_frame_layout,
+        size,
+        &frame,
+        scene_bounds,
+        view,
+        compact_content,
+    )?;
     queue.write_buffer(&shadow_map.section_uniform, 0, cast_slice(&view.clipping));
     let shadow_cache = ShadowDirtyCache::default();
     let shadow_version = ShadowVersion::INITIAL;
@@ -113,23 +99,14 @@ pub(super) async fn create_renderer(
         ShadowCasterSet::prepare(packet, &prepared, &prepared_culling, &prepared_lod)?;
     let shadow_shader_key = shader_key(GpuShaderMaterials::content_key(content)?.as_deref());
     let material_layout = create_material_layout(&device);
-    let pipelines = if compact_content {
-        crate::pipeline::MeshPipelines::for_empty_scene()
-    } else {
-        let shader = create_native_mesh_shader(&device);
-        create_mesh_pipelines(
-            &device,
-            &frame_layout,
-            &shadow_frame_layout,
-            &material_layout,
-            &shader,
-        )
-    };
-    let frame_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Deep Engine native frame"),
-        contents: cast_slice(&frame),
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-    });
+    let pipelines = resources::pipelines(
+        &device,
+        &frame_layout,
+        &shadow_frame_layout,
+        &material_layout,
+        compact_content,
+    );
+    let frame_buffer = resources::frame_buffer(&device, &frame);
     let mut scene_cache = GpuSceneCache::new(&device, renderer_id)
         .with_budget(crate::gpu_scene_cache::default_budget(&device));
     let candidate = GpuIblEnvironment::new(&device, &queue, &content.environment).and_then(|ibl| {
@@ -212,37 +189,29 @@ pub(super) async fn create_renderer(
                     view.near,
                 )?;
                 let shadow_keys = shadow_casters.keys(&shadow_map, shadow_shader_key)?;
-                display_list
-                    .map(|display_list| {
-                        let cache = std::sync::Arc::new(
-                            crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new(),
-                        );
-                        Deep2dGpuPainter::new(&device, &queue, config.format, display_list, &cache)
-                    })
-                    .transpose()
-                    .map(|deep2d| {
-                        (
-                            scene,
-                            culling,
-                            lod,
-                            deep2d,
-                            frame_buffer,
-                            frame_layout,
-                            frame_bind_group,
-                            shadow_map,
-                            ibl,
-                            shadow_cache,
-                            shadow_casters.clone(),
-                            shadow_keys,
-                            shadow_shader_key,
-                            shadow_version,
-                            shadow_probe,
-                            ibl_probe,
-                            forward_targets,
-                            bloom,
-                            output_pass,
-                        )
-                    })
+                resources::deep2d(&device, &queue, config.format, display_list).map(|deep2d| {
+                    (
+                        scene,
+                        culling,
+                        lod,
+                        deep2d,
+                        frame_buffer,
+                        frame_layout,
+                        frame_bind_group,
+                        shadow_map,
+                        ibl,
+                        shadow_cache,
+                        shadow_casters.clone(),
+                        shadow_keys,
+                        shadow_shader_key,
+                        shadow_version,
+                        shadow_probe,
+                        ibl_probe,
+                        forward_targets,
+                        bloom,
+                        output_pass,
+                    )
+                })
             })
     });
     let gpu_errors = [

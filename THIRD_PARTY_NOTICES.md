@@ -12,6 +12,7 @@ Key runtime dependencies:
 
 | Package | Version | License | Source |
 | --- | ---: | --- | --- |
+| `unicode-segmentation` (Native text boundaries; already present through cosmic-text, now also direct) | 1.13.3 | MIT OR Apache-2.0; packaged LICENSE-MIT, LICENSE-APACHE and COPYRIGHT retained | https://github.com/unicode-rs/unicode-segmentation |
 | `@thatopen/fragments` | 3.4.5 | MIT | https://github.com/ThatOpen/engine_fragment |
 | `humanize` | 0.0.9 | MIT (verified from packaged `LICENSE`) | https://github.com/taijinlee/humanize |
 | `pause` | 0.0.1 | MIT (verified from packaged `Readme.md`) | npm production dependency via Passport |

@@ -65,10 +65,10 @@ fn real_rebased_box_picks_restore_world_points_and_measure_with_fixed_budgets() 
                     );
                 }
                 let roundtrip = content.world_to_local(hit.world_point).unwrap();
-                for axis in 0..3 {
-                    max_roundtrip_error = max_roundtrip_error
-                        .max((roundtrip[axis] - hit.local.point[axis] as f64).abs());
-                    assert!((roundtrip[axis] - hit.local.point[axis] as f64).abs() <= 1e-6);
+                for (axis, value) in roundtrip.iter().enumerate() {
+                    max_roundtrip_error =
+                        max_roundtrip_error.max((*value - hit.local.point[axis] as f64).abs());
+                    assert!((*value - hit.local.point[axis] as f64).abs() <= 1e-6);
                 }
                 measure.hit(hit.world_point);
                 hits.push(hit.world_point);

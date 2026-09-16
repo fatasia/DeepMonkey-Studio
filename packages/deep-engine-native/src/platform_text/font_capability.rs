@@ -111,7 +111,9 @@ impl FontCapabilityReport {
         }
         if matching.iter().all(|face| !face.usable_in_artifact) {
             return Some(match matching[0].license {
-                LicenseStatus::Unknown => "font is installed but its redistribution license is unknown",
+                LicenseStatus::Unknown => {
+                    "font is installed but its redistribution license is unknown"
+                }
                 LicenseStatus::NotRedistributable => "font license forbids redistribution",
                 LicenseStatus::Redistributable => "font is not embedded in the artifact",
             });
@@ -179,10 +181,11 @@ pub fn capability_report(fonts: &mut FontSystem) -> FontCapabilityReport {
     }
     // 稳定排序:hash 优先,再按 PostScript 名,使结果与枚举顺序无关。
     faces.sort_by(|a, b| {
-        a.identity
-            .content_hash
-            .cmp(&b.identity.content_hash)
-            .then(a.identity.post_script_name.cmp(&b.identity.post_script_name))
+        a.identity.content_hash.cmp(&b.identity.content_hash).then(
+            a.identity
+                .post_script_name
+                .cmp(&b.identity.post_script_name),
+        )
     });
     faces.dedup_by(|a, b| a.identity.content_hash == b.identity.content_hash);
 
@@ -258,7 +261,11 @@ pub fn family_exists(fonts: &mut FontSystem, family: &str) -> bool {
 /// 注意语义:**这不能证明指定家族覆盖**,因为整形器会 fallback 到其他已装字体;
 /// 它回答的是「按当前系统整体字体能力,这段文字能否成形而不出现缺字方框」。
 /// 需要「指定家族是否可用」时用 `family_exists`。
-pub fn text_shapes_without_missing_glyphs(fonts: &mut FontSystem, family: &str, text: &str) -> bool {
+pub fn text_shapes_without_missing_glyphs(
+    fonts: &mut FontSystem,
+    family: &str,
+    text: &str,
+) -> bool {
     if family.len() > 256 || text.len() > 16_384 {
         return false;
     }
