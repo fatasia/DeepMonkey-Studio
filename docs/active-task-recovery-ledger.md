@@ -1639,3 +1639,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:`DashboardDataTextRole` 新增 `{kind:"tool",tool:"csv"|"excel"}`;捕获链(captureDashboardDataLayout 白名单+identity 含 tool+isolatedButton 复用 buttonGroup;captureRenderedDashboardData 解析 data-capture-tool,backgrounds 排除 tool 防双重绘制);API 测量布局校验同步 ROLES/TOOLS fail-closed;真实工具栏 DashboardReportExport 按钮携带捕获属性;DOM 捕获脚本新增真实组件断言(csv/excel 双 buttonGroup)。导出动作 reason 拆分保持明确 deferred;golden 实测再生零 diff。
 - 验证:真实浏览器 DOM 捕获通过;web 聚焦 4 文件 40 用例、api 14 用例全绿;双包 typecheck 通过。
 - 边界(如实):消费端(rasterDataContent)按任务收窄未接线,tool 流入冻结数据时 degraded 不崩溃;Native 确认不解析 role 枚举,无需改动。
+
+### 2026-09-17 Deep2D P1-22 统一固定步回放(GLM 子代理实现,主线程复核)
+
+- 已完成:`src/replay.rs`(381)+`replay/{target,trace}.rs`(336)+模块测试 4 项+集成测试 `tests/unified_fixed_step_replay.rs` 7 项。ScriptEntry 封闭枚举驱动 sim tick/行为命令/输入事件/种子化 RNG(splitmix64)/延迟结算;轨迹+display hash 用既有 hash_canonical;过期命令 submit/settle 双侧 CAS 拒绝且旧 epoch/轨迹冻结;取消终态幂等;预算硬拒;同种子双跑逐字节一致(trace+wire_bytes)。复用 SimSource/CommandBus/ChartAction dispatch,零新依赖,时间全注入,网络副作用仅测试 fixture。
+- 主线程复核:lib.rs 仅 +1 行模块注册,fmt clean,集成测试 7/7 复跑通过(代理侧 lib 264/0/1、clippy 0 warning)。
+- 边界(如实):集成测试 428 行超 400 目标(低于硬红线,共享构造不强拆);防御性分支(同步单线程不可达路径)未被独立触发;display hash f64 跨平台稳定性未验证(范围外)。

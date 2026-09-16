@@ -21,6 +21,7 @@ pub mod pbr_reference;
 pub mod pbr_texture;
 pub mod platform_text;
 pub mod player_view;
+pub mod replay;
 pub mod runtime_camera;
 pub mod runtime_coordinates;
 pub mod runtime_package;
