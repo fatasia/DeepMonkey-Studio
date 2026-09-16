@@ -1711,3 +1711,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:`adapter_n1.rs`+`adapter_n1/`(schema/svg_parse/adapt/chart_overlay/validate)+三测试文件(274/332/111),共 9 文件全 ≤400 行。四类输入(SVG path 子集/富文本 inline/图表扩展/动画 ABI)版本化信封;fail-closed 三态 Unknown(未知 kind/版本)/Blocked(缺 fixture、未认证、摘要不符、超预算、语义非法,全带原因);产物 N1DisplayDelta 与 TS Deep2dDisplayList serde 同形,经 validate_display_list 交叉校验;资源/预算/时钟全宿主注入;与 P1-22 呼应:适配产物入 replay 双跑逐字节一致。
 - 主线程复核:lib.rs 仅 +1;适配器测试 11/11 复跑通过;fmt clean;全 lib **275/0/1 ignored**;clippy 0 警告(代理侧)。
 - 边界(如实):摆位恒单位矩阵(布局归宿主);无 baked glyphs;认证=与已复核 fixture 逐字节等价(不认证任意运行期内容);TS 端到端消费未做(靠 serde 同形+交叉校验)。
+
+### 2026-09-17 DE26/B03 第一切片完成,暂缓落地(GLM 子代理实现;依赖并行在途文件)
+
+- 已完成(在工作树,已验证未提交):`pbrFramePlanResources.ts`(21 资源合同+尺寸推导)+`pbrFramePlanExecutor.ts`(编译计划→有序执行计划+unmapped 显式+计划↔实际对拍+移相器未映射不可用回执)+16 测试全过;renderGraph 加只读 declaredPasses();pbrFrameGraph 抽 builder 工厂并修正 apply-ambient-occlusion 漏 view-normal(对拍逼出真实漂移);pbrOutputBindings/pbrPostProcessChain/pbrTransparencyPass/pbrOpaquePass 加 describe* 实际执行描述。purity 门禁复跑通过。
+- **暂缓落地原因(如实)**:执行器传递闭包含并行会话未提交的 transparency/OIT 文件组(pbrOpaquePass/pbrTransparencyPass/postprocess 类型文件等 4-9 个),经验证编译+26 定向测试绿,但归属他 session 在途工作;按「不代提交他人未验证工作+HEAD 自洽」纪律,待其落地后本切片立即随行提交,或经协调后整组提交。
+- 边界(如实):真实 GPU 提交顺序未改(合同+对拍+回执层);像素级画面一致归真机门禁。
