@@ -53,6 +53,13 @@ export class ChartSimulationSource {
       throw new Error("Sim fixture exceeds 16 MiB.");
     return new ChartSimulationSource(JSON.parse(text), chart, dataRevision);
   }
+  /** Independent cursor for a page candidate; pending frame tokens never cross ownership. */
+  fork(chart: ChartIR, dataRevision = 0): ChartSimulationSource {
+    const copy = new ChartSimulationSource(this.#fixture, chart, dataRevision);
+    copy.#tick = this.#tick;
+    copy.#cancelled = this.#cancelled;
+    return copy;
+  }
   get nextDueMs(): number {
     const due = this.#tick * this.#fixture.intervalMs;
     if (!Number.isSafeInteger(due)) throw new Error("Sim clock exhausted.");
