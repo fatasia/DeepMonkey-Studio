@@ -1,3 +1,10 @@
+### 2026-09-17 交接#4 C1 输入矩阵 + C2 整页视觉(GLM,真实浏览器)
+
+- 已完成:新增 `apps/web/scripts/gate-dashboard-c1-input-matrix.mjs`(playwright 真实点击,15 步):发布链整页打开(KPI/表格渲染、控制台零 error)→ 表头排序 asc/desc(断言首行 45/91 与方向属性)→ 分页矩阵(8 行×3 页,首/末页禁用态,行号 4-6/7-8,prev/next)→ 行点击零错误 → CSV 导出真实下载 → 项目控制面板换页(二级页面↔回验收总览)→ **换页返回后再排序仍路由回本页表格**(跨页输入归属)→ C2 整页截图 双主题×双宽度(1280/980)。主题走**真实品牌链路**:admin 登录 PATCH branding.themeMode,断言 `document.documentElement.dataset.theme`,finally 还原 dark(已核实还原)。
+- 验收夹具:克隆真实大屏改造的 QA 应用(项目 智造综合案例验证,app `d7c63730-393f-4ade-a6ec-60af914d7c0a`,发布 rev3;1920×1080 两页,sampleData 驱动,8 行表格 pageSize=3)。三轮迭代修复:排序循环假设、行点击选择器、直连绑定组件在只读回放不渲染、3840 画布布局、text widget unit 校验、save 409 修订冲突、?theme 参数不作用于发布路由(改走品牌链)。
+- 证据:`test-output/dashboard-c1c2-browser-20260917/`(evidence.json + 4 张整页截图 + 导出 CSV);两轮截图目检:布局整洁、主题真实切换。
+- **边界(如实)**:本矩阵覆盖发布回放**表现层**真实输入;Deep WebGPU 组合宿主的浏览器侧输入矩阵(命中归属、双动态图表 tick)仍只有请求层 4 项回归 + 既有 WebGPU 候选证据,宿主探针接线未做;C2 冻结编译侧的筛选/完整外观语义仍 deferred;C3/C4/C5 状态不变(正式链验收待 G03–G05)。
+
 ### 2026-09-17 交接#2 作者端离线包入口(GLM;按用户指令提前收尾,浏览器闭环未过)
 
 - 已完成(停放,未验收):作者端候选准备/单 EXE 下载入口——`dashboardOfflinePackageState.ts` 纯状态机(loading→idle→preparing→ready/failed,prepare 显式携带 pointer,迟到响应 ticket 比对丢弃,Escape/关闭中止在途请求)+ `DashboardOfflinePackageEntry.tsx`(portal 对话框:发布版本读取、准备/取消/重新准备、blocked/degraded 对象汇总、EXE/ZIP/DMDA 下载与 content-disposition 文件名)+ api.ts 三个方法(readActivePublication/prepareDashboardCandidate/openDashboardCandidateDownload,409/410 机器码映射 typed error)。挂接 DashboardWorkspaceHeader。
