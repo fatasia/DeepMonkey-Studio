@@ -72,6 +72,11 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
           artifact: record.candidate.artifact.artifact,
         });
         const bytes = (dependencies.serializeArchive ?? serializeDashboardOfflineArchive)(archive);
+        // 清单读取可能等待外部存储；发送前重查 TTL 和候选撤销状态。
+        try {
+          dependencies.registry.read({ candidateId: request.params.candidateId,
+            projectId: request.params.projectId, applicationId: request.params.applicationId });
+        } catch (reason) { return sendLookupFailure(reply, reason); }
         return reply
           .header("cache-control", "private, no-store")
           .header("content-disposition", `attachment; filename="dashboard-candidate-${safeFileId(record.summary.candidateId)}.dmda"`)

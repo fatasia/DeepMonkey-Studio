@@ -41,6 +41,23 @@ async function fixture(options: {
 const editor = { id: "editor-1", role: "editor", projectIds: [authority.projectId], enabled: true } as const;
 
 describe("dashboard offline archive download routes", () => {
+  it.each([
+    [new DashboardNativeCandidateExpiredError(), 410],
+    [new DashboardNativeCandidateNotFoundError(), 404],
+  ])("rechecks candidate lifetime before sending a prepared download", async (error, status) => {
+    let revoked = false;
+    const f = await fixture({ user: editor,
+      read: () => { if (revoked) throw error; return record(); },
+      readFreezeManifest: async () => { revoked = true; return { manifest: "server-only" }; },
+    });
+    try {
+      const response = await f.app.inject({ method: "GET", url: path });
+      expect(response.statusCode).toBe(status);
+      expect(response.headers["content-disposition"]).toBeUndefined();
+      expect(f.registry.read).toHaveBeenCalledTimes(2);
+    } finally { await f.app.close(); }
+  });
+
   it("requires identity and project authority before touching a private candidate", async () => {
     for (const user of [undefined, { ...editor, role: "viewer" }, { ...editor, projectIds: ["other-project"] }]) {
       const f = await fixture({ user });
