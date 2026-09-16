@@ -74,6 +74,15 @@ test("actual Native producer consumes the explicitly frozen font face", {
   assert.equal(fontBinding.resourceId, "explicit-test-font");
   assert.equal(fontBinding.sha256, hash(bytes));
   assert.ok(result.windowEvidence.nodeBindings.some(binding => binding.runtimeNodeId === fontBinding.runtimeNodeId));
+  if (process.env.C2_VERIFY_WINDOW === "1") {
+    const { createDashboardNativeDeployment } = await import("../apps/api/dist/dashboard-content-compiler/deployment.mjs");
+    const deployment = await createDashboardNativeDeployment({ nativeExecutable: process.env.C2_NATIVE_EXECUTABLE, configuration });
+    const receipt = await deployment.verifier.verify({ artifact: result.artifact, windowEvidence: result.windowEvidence,
+      candidate: { document: input.document, manifest: input.freezeManifest, authority: input.freezeManifest.authority },
+      sourceSemanticHash: "a".repeat(64), compileGraphHash: "b".repeat(64), targetArtifactHash: hash(result.artifact) });
+    assert.deepEqual(receipt.renderedNodeIds, ["text"]);
+    assert.deepEqual(receipt.fontSha256, [{ resourceId: "explicit-test-font", sha256: hash(bytes), faceIndex: 0 }]);
+  }
   const payloads = Object.values(JSON.parse(new TextDecoder().decode(result.artifact)).payloads);
   assert.ok(payloads.some(value => value.atlases?.some(atlas => Buffer.from(atlas.dataBase64, "base64").some(byte => byte > 0))));
 });

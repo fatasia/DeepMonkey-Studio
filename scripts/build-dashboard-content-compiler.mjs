@@ -12,4 +12,7 @@ await mkdir(directory, { recursive: true });
 await build({ absWorkingDir: root, entryPoints: ["scripts/dashboard-content-compiler.mjs"],
   outfile: path.join(directory, "compiler.mjs"), bundle: true, platform: "node", format: "esm",
   conditions: ["development"], external: ["sharp"], logLevel: "error" });
+await build({ absWorkingDir: root, entryPoints: ["scripts/dashboard-native-deployment.mjs"],
+  outfile: path.join(directory, "deployment.mjs"), bundle: true, platform: "node", format: "esm",
+  conditions: ["development"], external: ["sharp"], logLevel: "error" });
 console.log("Dashboard content compiler built");
