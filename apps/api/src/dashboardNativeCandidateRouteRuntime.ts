@@ -23,6 +23,7 @@ export interface DashboardNativeCandidateRouteRuntimeDependencies {
   readonly registryOptions?: DashboardNativeCandidateRegistryOptions;
   /** 部署固定的 Windows 播放器路径；省略时仅提供 DMDA 下载。 */
   readonly nativeExecutable?: string;
+  readonly nativeExecutableSha256?: string;
 }
 
 export interface DashboardNativeCandidateRouteRuntime {
@@ -44,7 +45,8 @@ export async function registerDashboardNativeCandidateRouteRuntime(
   await registerDashboardPublicationCandidateRoutes(app, runtime.service, registry);
   await registerDashboardOfflineArchiveDownloadRoutes(app, {
     registry,
-    ...(dependencies.nativeExecutable === undefined ? {} : { portable: { nativeExecutable: dependencies.nativeExecutable } }),
+    ...(dependencies.nativeExecutable === undefined ? {} : { portable: { nativeExecutable: dependencies.nativeExecutable,
+      ...(dependencies.nativeExecutableSha256 === undefined ? {} : { expectedSha256: dependencies.nativeExecutableSha256 }) } }),
     readFreezeManifest: async ({ record, signal }) => {
       signal?.throwIfAborted();
       const manifest = record.candidate.freezeManifest;

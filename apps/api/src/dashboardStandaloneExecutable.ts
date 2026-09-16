@@ -7,12 +7,12 @@ import { readDashboardWindowsExecutable } from "./dashboardWindowsExecutable.js"
 export async function createDashboardStandaloneExecutable(
   archiveBytes: Uint8Array,
   nativeExecutable: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; expectedSha256?: string } = {},
 ): Promise<Uint8Array> {
   options.signal?.throwIfAborted();
   const plan = createDashboardOfflineNativeLaunchPlan(archiveBytes);
   if (plan.artifact.byteLength > 256 * 1024 ** 2) throw new Error("Embedded Dashboard payload exceeds 256 MiB");
-  const executable = await readDashboardWindowsExecutable(nativeExecutable, options.signal);
+  const executable = await readDashboardWindowsExecutable(nativeExecutable, options.signal, options.expectedSha256);
   if (executable.length >= 48 && executable.subarray(-48, -40).equals(Buffer.from("DMDASH01", "ascii"))) {
     throw new Error("Native executable already contains a Dashboard overlay");
   }

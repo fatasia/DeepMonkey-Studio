@@ -18,3 +18,5 @@ pnpm exec tsx --conditions=development scripts/package-dashboard-executable.mts 
 
 样例只有两个形状，不代表完整 Dashboard 或视觉验收；验证器在成功呈现并写入恢复记录后终止进程。
 部署已固定 `nativeExecutable` 时，候选支持 `GET /api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/standalone-executable`，返回单个 `.exe` 附件，类型为 `application/vnd.microsoft.portable-executable`。客户端不能提供播放器路径或其它查询参数。下载沿用候选权限、项目/应用范围、TTL 与撤销校验，并在异步打包后再次检查有效性；旧 ZIP 与 DMDA 下载保留。
+
+正式启动从编译器配置的 `nativeSha256` 固定播放器身份，并传至 ZIP/EXE 下载。打包器对实际读入并用于输出的同一份 EXE 字节计算 SHA-256；部署后原路径被重新构建或替换会拒绝下载，需要重新部署。通用构建 API 保留可选 `expectedSha256`，正式启动不能省略此绑定。

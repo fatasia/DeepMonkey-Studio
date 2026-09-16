@@ -33,6 +33,13 @@ async function fixture() {
 }
 
 describe("Dashboard Windows portable ZIP", () => {
+  it("rejects a valid PE replaced at the deployed path", async () => {
+    const input = await fixture();
+    const options = { expectedSha256: sha(input.pe) };
+    await expect(createDashboardPortableZip(input.archive, input.executable, options)).resolves.toBeInstanceOf(Uint8Array);
+    input.pe[100] ^= 1; await writeFile(input.executable, input.pe);
+    await expect(createDashboardPortableZip(input.archive, input.executable, options)).rejects.toThrow("changed since deployment");
+  });
   it("writes a real deterministic ZIP with identical verified bytes and complete hashes", async () => {
     const input = await fixture();
     const bytes = await createDashboardPortableZip(input.archive, input.executable);

@@ -57,13 +57,14 @@ async function fixture(portable = false) {
   const pe = Buffer.alloc(128); pe.writeUInt16LE(0x5a4d); pe.writeUInt32LE(64, 60); pe.writeUInt32LE(0x00004550, 64);
   if (portable) await writeFile(nativeExecutable, pe);
   app.addHook("preHandler", async request => { request.systemUser = { id: "editor", role: "editor", projectIds: [authority.projectId], enabled: true } as never; });
-  const registered = await registerDashboardNativeCandidateRouteRuntime(app, { nativeExecutable: portable ? nativeExecutable : undefined, runtime: { store, objects: new LocalObjectStore(directory), closure, compiler,
+  const registered = await registerDashboardNativeCandidateRouteRuntime(app, { nativeExecutable: portable ? nativeExecutable : undefined,
+    ...(portable ? { nativeExecutableSha256: sha(pe) } : {}), runtime: { store, objects: new LocalObjectStore(directory), closure, compiler,
     expectedDeviceFingerprintSha256: "a".repeat(64), verifier: { verify: async input => ({ verifier: "native-dashboard-window-v1",
       authority, freezeManifestSha256: input.candidate.manifest.manifestSha256, sourceSemanticHash: input.sourceSemanticHash,
       compileGraphHash: input.compileGraphHash, targetArtifactHash: input.targetArtifactHash, fixtureSha256: "b".repeat(64),
       deviceFingerprintSha256: "a".repeat(64), fontSha256: [{ resourceId: "font", sha256: sha(font), faceIndex: 0 }],
       renderedNodeIds: ["widget-scene-main"] }) } } });
-  return { app, registered, compiler, pe, artifact };
+  return { app, registered, compiler, pe, artifact, nativeExecutable };
 }
 
 describe("dashboard Native candidate route runtime", () => {
@@ -99,6 +100,14 @@ describe("dashboard Native candidate route runtime", () => {
       expect(dmda.statusCode).toBe(200);
       const parsed = parseDashboardOfflineArchive(dmda.rawPayload);
       expect(parsed.archive.artifact).toEqual(await zip.file("runtime-package.json")!.async("uint8array"));
+      const changedExecutable = Buffer.from(f.pe); changedExecutable[100] ^= 1;
+      await writeFile(f.nativeExecutable, changedExecutable);
+      for (const endpoint of ["portable-zip", "standalone-executable"]) {
+        const replaced = await f.app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/${endpoint}` });
+        expect(replaced.statusCode).toBe(409);
+        expect(replaced.headers["content-disposition"]).toBeUndefined();
+      }
+      expect((await f.app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/offline-archive` })).statusCode).toBe(200);
       f.registered.registry.remove(candidate.candidateId);
       expect((await f.app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip` })).statusCode).toBe(404);
     } finally { await f.app.close(); }

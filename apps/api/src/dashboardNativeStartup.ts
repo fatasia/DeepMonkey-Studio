@@ -32,12 +32,17 @@ export async function registerConfiguredDashboardNative(app: FastifyInstance, de
   };
   const bindings = await bundle.createDashboardNativeDeployment({ nativeExecutable: deployment.nativeExecutable,
     configuration: { ...deployment.configuration, ...(fonts ? { nodeAssets: fonts.compilerNodeAssets } : {}) } });
+  const nativeExecutableSha256 = bindings.compiler.configuration.nativeSha256;
+  if (typeof nativeExecutableSha256 !== "string" || !/^[a-f0-9]{64}$/.test(nativeExecutableSha256)) {
+    throw new Error("Dashboard compiler must bind the deployed Native executable SHA-256");
+  }
   return registerDashboardNativeCandidateRouteRuntime(app, {
     runtime: { store: dependencies.store, objects: dependencies.objects,
       closure: createDashboardPublishedClosure(dependencies.store, dependencies.config, fonts ? { fonts } : {}),
       compiler: bindings.compiler, verifier: bindings.verifier,
       expectedDeviceFingerprintSha256: deployment.expectedDeviceFingerprintSha256 },
     nativeExecutable: deployment.nativeExecutable,
+    nativeExecutableSha256,
   });
 }
 

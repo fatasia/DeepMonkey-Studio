@@ -35,6 +35,7 @@ export interface DashboardOfflineArchiveDownloadDependencies {
   /** 部署固定播放器路径；HTTP 不能覆盖。未配置时不注册 ZIP/EXE 路由。 */
   readonly portable?: {
     readonly nativeExecutable: string;
+    readonly expectedSha256?: string;
     readonly createZip?: typeof createDashboardPortableZip;
     readonly createExecutable?: typeof createDashboardStandaloneExecutable;
   };
@@ -51,6 +52,8 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
 ): Promise<void> {
   const portable = dependencies.portable;
   const executable = portable?.nativeExecutable;
+  const expectedSha256 = portable?.expectedSha256;
+  if (expectedSha256 !== undefined && !/^[a-f0-9]{64}$/.test(expectedSha256)) throw new Error("Invalid expected Native executable SHA-256");
   if (portable && (!executable || !path.isAbsolute(executable) || path.extname(executable).toLowerCase() !== ".exe")) {
     throw new Error("Dashboard portable download requires an absolute .exe path");
   }
@@ -94,9 +97,10 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
         });
         const archiveBytes = (dependencies.serializeArchive ?? serializeDashboardOfflineArchive)(archive);
         request.signal.throwIfAborted();
+        const packagingOptions = { signal: request.signal, ...(expectedSha256 === undefined ? {} : { expectedSha256 }) };
         const bytes = format === "zip"
-          ? await createZip(archiveBytes, executable!, { signal: request.signal })
-          : format === "exe" ? await createExecutable(archiveBytes, executable!, { signal: request.signal }) : archiveBytes;
+          ? await createZip(archiveBytes, executable!, packagingOptions)
+          : format === "exe" ? await createExecutable(archiveBytes, executable!, packagingOptions) : archiveBytes;
         request.signal.throwIfAborted();
         // 清单读取及 ZIP 压缩均可能等待；发送前重查 TTL 和候选撤销状态。
         try {

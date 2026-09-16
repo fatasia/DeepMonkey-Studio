@@ -13,11 +13,11 @@ const sha256 = (bytes: Uint8Array | string) => createHash("sha256").update(bytes
 export async function createDashboardPortableZip(
   archiveBytes: Uint8Array,
   nativeExecutable: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; expectedSha256?: string } = {},
 ): Promise<Uint8Array> {
   options.signal?.throwIfAborted();
   const plan = createDashboardOfflineNativeLaunchPlan(archiveBytes);
-  const executable = await readDashboardWindowsExecutable(nativeExecutable, options.signal);
+  const executable = await readDashboardWindowsExecutable(nativeExecutable, options.signal, options.expectedSha256);
   const files = new Map<string, Uint8Array | string>([
     [packageName, plan.artifact], [executableName, executable],
     ["LICENSE", await readFile(new URL("../../../LICENSE", import.meta.url))],

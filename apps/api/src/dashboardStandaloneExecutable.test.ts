@@ -30,6 +30,14 @@ async function fixture() {
 }
 
 describe("Dashboard standalone executable", () => {
+  it("checks the deployed hash against the exact executable bytes used for packaging", async () => {
+    const input = await fixture();
+    const options = { expectedSha256: sha(input.pe) };
+    await expect(createDashboardStandaloneExecutable(input.archive, input.executable, options)).resolves.toBeInstanceOf(Uint8Array);
+    input.pe[100] ^= 1; await writeFile(input.executable, input.pe);
+    await expect(createDashboardStandaloneExecutable(input.archive, input.executable, options)).rejects.toThrow("changed since deployment");
+    await expect(createDashboardStandaloneExecutable(input.archive, input.executable, { expectedSha256: "bad" })).rejects.toThrow("Invalid expected");
+  });
   it("preserves base EXE and exact validated runtime bytes with Native-readable footer and notices", async () => {
     const input = await fixture();
     const packed = Buffer.from(await createDashboardStandaloneExecutable(input.archive, input.executable));
