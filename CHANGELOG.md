@@ -4,6 +4,11 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Frozen text compilation
+
+- Add CPU text rasterization from explicit font bytes with SHA-256 and face-index checks, real wrapping and alignment, full-text missing-glyph checks, and actual font-use evidence. Keep existing system-font APIs unchanged.
+- Add `--rasterize-text` and a bounded Node process adapter that verifies request, pixel and executable identity, handles cancellation and timeout, and preserves existing output files on failure.
+
 ### Dashboard composition runtime
 
 - Add v5 packages for multiple pages, independent charts and static Deep2D layers, preserving older package contracts. Native input, data updates and replay commit together only after a whole frame presents successfully.

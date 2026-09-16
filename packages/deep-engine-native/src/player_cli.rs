@@ -255,6 +255,9 @@ pub fn reject_extra(mut args: impl Iterator<Item = std::ffi::OsString>) -> Resul
 
 pub fn print_help() {
     println!(
+        "Frozen-font CPU compilation: --rasterize-text <request.json> --output <new-result.json>"
+    );
+    println!(
         "Deep Asset directory profile: --asset-package <manifest.json>; --headless-asset-package validates all chunks; --smoke-asset-package presents the entry scene."
     );
     println!(

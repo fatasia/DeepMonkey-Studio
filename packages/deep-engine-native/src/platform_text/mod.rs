@@ -8,7 +8,9 @@ pub mod ime;
 pub mod ime_winit;
 pub mod layout;
 pub mod raster;
+mod raster_wire;
 pub use raster::{RasterizedText, TextRasterRequest, TextRasterizer};
+pub use raster_wire::{TEXT_RASTER_REQUEST_MAX_BYTES, rasterize_text_json};
 pub mod ime_session;
 pub mod text_document;
 pub mod text_edit;
@@ -30,3 +32,8 @@ pub use text_document::{
     TextDocumentError, TextDocumentV1, TextStyleId,
 };
 pub use text_edit::{EditError, Move, TextEditState};
+
+pub use raster::{
+    FrozenFontInput, FrozenFontRef, FrozenTextRasterizer, StyledRasterizedText, StyledTextRequest,
+    TextAlign, TextFontStyle, TextLayoutLine, TextVerticalAlign, TextWrap, UsedFontFace,
+};

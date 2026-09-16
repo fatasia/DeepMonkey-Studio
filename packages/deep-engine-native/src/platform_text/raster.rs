@@ -1,8 +1,15 @@
 //! Real shaping and font rasterization; callers supply colors and viewport limits.
 use cosmic_text::{FontSystem, SwashCache};
 
+mod frozen_fonts;
 mod glyph_cache;
 mod shaping;
+mod styled;
+mod styled_types;
+pub use frozen_fonts::FrozenTextRasterizer;
+pub use styled_types::*;
+#[cfg(test)]
+mod frozen_tests;
 
 pub use glyph_cache::{
     CachedTextRequest, GLYPH_CACHE_MAX_BYTES, GLYPH_CACHE_MAX_ENTRIES, GlyphCacheStats,
@@ -61,3 +68,6 @@ impl TextRasterizer {
         super::font_capability::family_exists(&mut self.fonts, family)
     }
 }
+
+#[cfg(all(test, target_os = "windows"))]
+mod frozen_windows_tests;

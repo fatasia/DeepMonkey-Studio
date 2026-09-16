@@ -1,6 +1,6 @@
 const INVALID_BASE64: &str = "Expected canonical RFC 4648 base64 without whitespace.";
 
-pub(super) fn decoded_len(value: &str) -> Result<usize, &'static str> {
+pub(crate) fn decoded_len(value: &str) -> Result<usize, &'static str> {
     let bytes = value.as_bytes();
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return Err(INVALID_BASE64);
@@ -26,7 +26,7 @@ pub(super) fn decoded_len(value: &str) -> Result<usize, &'static str> {
     Ok(bytes.len() / 4 * 3 - padding)
 }
 
-pub(super) fn decode(value: &str) -> Result<Vec<u8>, &'static str> {
+pub(crate) fn decode(value: &str) -> Result<Vec<u8>, &'static str> {
     let capacity = decoded_len(value)?;
     let bytes = value.as_bytes();
     let mut output = Vec::with_capacity(capacity);

@@ -9,6 +9,8 @@ use deep_engine_native::{
 use std::sync::Arc;
 const WIDTH: u32 = 960;
 const HEIGHT: u32 = 540;
+#[path = "dashboard_package_capture_gpu_test.rs"]
+mod package_capture;
 
 fn draw(
     device: &wgpu::Device,

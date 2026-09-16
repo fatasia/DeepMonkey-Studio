@@ -114,7 +114,7 @@ impl TextRasterizer {
     }
 }
 
-fn blend(destination: &mut [u8], source: [u8; 4]) {
+pub(super) fn blend(destination: &mut [u8], source: [u8; 4]) {
     let alpha = u32::from(source[3]);
     let inverse = 255 - alpha;
     let out_alpha = alpha * 255 + u32::from(destination[3]) * inverse;

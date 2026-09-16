@@ -1,5 +1,7 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：A/B 与 C1 core/Native 分片已推送至 `dev-studio` 的 `3a88b5c`。C2 [冻结字体 producer](specs/dashboard-frozen-text-producer-2026-09-16.md)、CLI 与 Node adapter 已实现；中间全量 Native 1000 通过/63 忽略，最终修复后定向 15、Node 23、严格 Clippy 和独立 HEAD 加 24 文件的 all-targets 检查通过。文字/图片 producer 包真实 GPU 读回通过，中文 PNG 已目检。
+- 本轮待办：当前顺序为 C2 文字/图片编译及真实 GPU 读回→冻结数据内容→绑定/报告/正式离线交付；C1 Web prewarm 缺口保留。完整 84 个上层编号和原验收条件不变，浏览器视觉 V-02 仍未完成。下列条目保留此前各阶段证据，以本节最新状态为准。
 - 已完成：C1 core/Native 子片通过 Native 987 测试/63 忽略、严格 Clippy、格式检查及 3 项真实 GPU 测试；TS 独立闭包 259 测试和双类型通过，见 [组合运行时记录](specs/dashboard-composition-runtime-2026-09-16.md)。修复整页缓存清理、Recover 与计时退避。C1 Web prewarm 仍待接通；C2 文字/图片编译在隔离目录推进，尚未合入。
 - 已完成：TS Runtime Package 基础切片独立导出 219 测试、核心/Lab 类型检查通过，补齐 v3/v4 与图表数据合同，见 [基础合同记录](specs/runtime-package-foundation-2026-09-16.md)。C1 v5 组合包仍在真实 GPU 与窗口验证中。
 - 本轮待办：基础修复分片已提交 `de2f3dc`、`7167bd3`、`8e431b2`，进入 C1。TS v5 组合合同与真实双图表 golden 已通过 257 项运行包测试及类型检查；Rust 包解析、多组件组合层、窗口整帧事务与 GPU 回归正在合并。C1 尚未验收，未提交本批产品改动。

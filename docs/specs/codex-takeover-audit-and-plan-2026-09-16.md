@@ -2,7 +2,7 @@
 
 2026-09-16。接手基线：`dev-studio`，HEAD `d6a7ae5`。下方审计表保留接手时结果；后续修复与证据见 [Native A/B 执行记录](codex-native-correctness-and-gates-2026-09-16.md)。用户已要求按本计划顺序最大并行执行，完整 84 个上层编号持续有效。
 
-执行状态：A/B 收尾中。文本复现缺陷已修复；Deep Engine 完整包测试、Web/API 全量与构建通过。正式 Dashboard 发布缺口已细化为 [C1～C5](codex-dashboard-delivery-slices-2026-09-16.md)，仍属本轮待办。
+执行状态：A/B 已修复并提交；C1 core/Native 组合运行时已提交并推送至 `3a88b5c`，Web prewarm 仍待接通。当前推进 C2 冻结文字与图片编译，正式 Dashboard 发布仍按 [C1～C5](codex-dashboard-delivery-slices-2026-09-16.md) 逐项验收。
 
 结论：GLM 的基础模块和既有测试有实际成果，但交付未收口。Native 原测试数字可复现，新增边界用例仍发现缺陷；Deep Engine 完整包级命令失败，不能依据交接中的“全绿”直接分包提交。
 

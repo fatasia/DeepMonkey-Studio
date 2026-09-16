@@ -5,6 +5,9 @@ pub fn execute(
     command: Option<&str>,
     args: &mut impl Iterator<Item = OsString>,
 ) -> Option<Result<(), String>> {
+    if let Some(result) = crate::text_raster_cli::execute(command, args) {
+        return Some(result);
+    }
     if let Some(result) = crate::asset_package_cli::execute(command, args) {
         return Some(result);
     }

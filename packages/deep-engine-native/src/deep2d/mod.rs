@@ -17,7 +17,7 @@ mod painter_prepare;
 mod painter_stroke;
 pub mod raster_reference;
 #[allow(clippy::duplicate_mod)] // runtime_package/prefiltered_ibl.rs reuses this via #[path]
-mod runtime_base64;
+pub(crate) mod runtime_base64;
 pub(crate) use base64_encode::encode as encode_base64;
 mod runtime_layers;
 mod runtime_prepare;
