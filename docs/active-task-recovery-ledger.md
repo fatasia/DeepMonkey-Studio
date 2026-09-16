@@ -1,3 +1,10 @@
+### 2026-09-16 交接#1 可信 Chromium 布局宿主 + C3 冻结布局 hash(GLM)
+
+- 已完成:`apps/api/src/dashboardMeasuredLayout.ts` 测量布局合同——宿主只回传测量值,`freezeManifestSha256/documentSha256/dataSha256/字体 sha256+faceIndex` 全部由服务端从冻结候选计算(宿主结构上无法伪造绑定);`layoutSha256` 用新增导出 `dashboardCanonicalJsonSha256`(冻结域唯一 canonical JSON,非有限数拒绝)覆盖 logicalSize+layout+table;`verifyDashboardMeasuredLayout` 供编译/能力/下载任意后续边界复核,分级报 stale(manifest 伞→数据 hash→字体逐 hash)。只接 value/table widget,隐藏/无字体绑定/frame 越界拒绝;捕获输出字体引用越界抛 `DashboardLayoutFontMissingError`。`dashboardDataRequestId` 从闭包导出双处共享。
+- 已完成:真实 Chromium 宿主端到端验证 `scripts/verify-dashboard-trusted-layout-host.mts` + 参数化捕获页 fixture(`addInitScript` 注入请求,页面不自定身份)。四项硬验证全过:**重复捕获 hash 一致、取消(预中止/在途中止真实关页)、字体缺失、绑定复核**;双模式:fontface 注入(发现并固化 Chromium ArrayBuffer FontFace 懒解析陷阱,改用实测排版宽度探针验证字节生效)与 css-binding(本地回退,仅测试证据)。证据 `test-output/dashboard-trusted-layout-host/result.json`(不入库)。
+- 验证:合同单测 13 项、API 全量 **1135/1 跳过**、typecheck 通过;fontface 模式用 OFL 字体(Lato)本机验证,未入库。
+- 边界(诚实):宿主未接 API 启动的正式候选链路(record→编译输入 `DashboardFrozenData.layout` 的组装归 G04/G05);css-binding 模式不声明与交付字体逐像素等价。[spec](specs/dashboard-trusted-layout-host-2026-09-16.md)
+
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
 - 已完成：候选并发替换原先以默认 AbortError 中断，HTTP 因而误报 candidate_invalid；改为携带明确 superseded 原因，正确映射 candidate_concurrent。合作取消与返回后复核两条 worker 路径均先复现再修复，Dashboard API 168 项及 API 类型检查通过；用户自身取消原因仍保留。

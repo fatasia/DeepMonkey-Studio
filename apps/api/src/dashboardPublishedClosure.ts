@@ -9,7 +9,12 @@ import { dashboardSavedDataSource, readDashboardSavedData, type DashboardDataSto
 import type { DashboardPublishedFontCatalog } from "./dashboardPublishedFontCatalog.js";
 
 type ClosureStore = DashboardDataStore & Pick<MetadataStore, "getProject" | "getPublishedApplication" | "listAssets">;
-const dataId = (nodeId: string) => `data.${createHash("sha256").update(nodeId).digest("hex")}`;
+
+/** Stable frozen-data request id for a widget node; shared by the closure and measurement binding. */
+export function dashboardDataRequestId(nodeId: string): string {
+  return `data.${createHash("sha256").update(nodeId).digest("hex")}`;
+}
+const dataId = dashboardDataRequestId;
 
 /** Production closure over server-owned publications, project assets and Data Hub sources. */
 export function createDashboardPublishedClosure(store: ClosureStore, config: AppConfig,

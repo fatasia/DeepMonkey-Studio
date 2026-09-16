@@ -88,6 +88,11 @@ export class DashboardPublicationStaleError extends Error {
   override readonly name = "DashboardPublicationStaleError";
 }
 
+/** Canonical JSON SHA-256 shared by every frozen dashboard evidence record. */
+export function dashboardCanonicalJsonSha256(value: unknown): string {
+  return sha256(canonicalBytes(value));
+}
+
 export async function prepareDashboardPublicationFreeze(
   options: PrepareDashboardPublicationFreezeOptions,
 ): Promise<DashboardPublicationFreezeCandidate> {

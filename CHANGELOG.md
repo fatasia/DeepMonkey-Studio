@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard content and portable packaging
 
+- Add the trusted Chromium measured-layout contract: a server-owned capture host returns only measurements while freeze manifest, data and font byte hashes are bound server-side; verify cancellation (pre-aborted, mid-flight with the page closed, late responses), missing-font failures, font hash changes and repeat-capture hash identity end to end in real Chromium.
+
 - Report a replaced candidate as a concurrent request instead of a generic invalid candidate, including when compilation observes cancellation itself.
 
 - Generate the Dashboard deployment bundle during API build and development startup. Verify production imports and provide a standalone author-data chart test guide.
