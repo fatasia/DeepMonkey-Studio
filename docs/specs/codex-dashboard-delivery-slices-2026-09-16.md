@@ -92,6 +92,8 @@
 
 **状态：本轮待办。归属：P0-06，并回归 P0-03/04。**
 
+2026-09-16 进展：已提交服务端 authority adapter，仅接受 project/application/publication/revision/entryPage 五项请求，并由 MetadataStore 的 active publication、published snapshot 与可信 data/resource reader 组装 C3 freeze；文档、资源或 hash 等浏览器输入一律拒绝。已提交冻结候选到 v5 runtime artifact 的纯编译合同，编译前后复核 authority/closure，实际 bytes 绑定 targetArtifactHash，且 C4 compileGraph 绑定部署 compiler hash。相关冻结、能力、authority 与编译回归 41 项及 API 类型检查通过。候选服务、HTTP 路由、存储 manifest、下载 ZIP 与 launcher 仍待接线，C5 全项保持待办。
+
 为现有候选编译与交付机制增加 Dashboard 输入分支，复用正常窗口验证、ZIP launcher、下载、恢复检查点。动态包必须由正式发布结果生成，不从开发 fixture 旁路导出。
 
 关键源路径：`scripts/native-scene-compiler-worker.mjs`、`apps/api/src/{nativeSceneCandidateCompiler,nativeSceneCandidateRoutes,nativeSceneCandidateService,prepareNativeSceneCandidate}.ts`、`apps/api/src/publishedSceneBundle.ts`、`apps/web/src/delivery/sceneClientPackage.ts`、`scripts/lib/sceneClientArchive*`、Native 包加载与恢复入口。
