@@ -4,7 +4,7 @@ use super::{
     Deep2dAtlasFormat, Deep2dAtlasKind, Deep2dComposition, Deep2dRect, Deep2dRuntimeContent,
     ImageSampling, PreparedDeep2d, PreparedDeep2dSummary,
     painter_clip::clip_vertices,
-    prepare_display_list, runtime_base64,
+    runtime_base64,
     runtime_layers::{PreparedAtlasItem, build_chunks},
     runtime_quad::append_quad,
     validate_runtime_package,
@@ -59,27 +59,28 @@ pub struct PreparedDeep2dRuntime {
 pub fn prepare_runtime_content(
     content: &Deep2dRuntimeContent,
 ) -> Result<PreparedDeep2dRuntime, String> {
-    prepare_impl(content, None)
+    prepare_impl(content, None, true)
 }
 
 pub fn prepare_runtime_content_cached(
     content: &Deep2dRuntimeContent,
     cache: &mut super::Deep2dPathCache,
 ) -> Result<PreparedDeep2dRuntime, String> {
-    prepare_impl(content, Some(cache))
+    prepare_impl(content, Some(cache), true)
 }
 
-fn prepare_impl(
+pub(super) fn prepare_impl(
     content: &Deep2dRuntimeContent,
     cache: Option<&mut super::Deep2dPathCache>,
+    finish_frame: bool,
 ) -> Result<PreparedDeep2dRuntime, String> {
     match content {
+        Deep2dRuntimeContent::Composite(value) => {
+            super::runtime_composite_prepare::prepare(value, cache)
+        }
         Deep2dRuntimeContent::DisplayList(display_list) => {
-            let path = match cache {
-                Some(cache) => super::prepare_display_list_cached(display_list, cache),
-                None => prepare_display_list(display_list),
-            }
-            .map_err(|error| error.to_string())?;
+            let path = super::painter::prepare_impl(display_list, cache, finish_frame)
+                .map_err(|error| error.to_string())?;
             let atlases = display_list
                 .atlases
                 .iter()
@@ -197,11 +198,8 @@ fn prepare_impl(
                     issue.message, issue.path, issue.code
                 ));
             }
-            let path = match cache {
-                Some(cache) => super::prepare_display_list_cached(&package.display_list, cache),
-                None => prepare_display_list(&package.display_list),
-            }
-            .map_err(|error| error.to_string())?;
+            let path = super::painter::prepare_impl(&package.display_list, cache, finish_frame)
+                .map_err(|error| error.to_string())?;
             let atlases = package
                 .atlases
                 .iter()

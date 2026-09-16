@@ -3,7 +3,11 @@ use super::*;
 impl ApplicationHandler<GpuEvent> for NativeApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         package_open::flush_drop(self);
-        chart_sim::tick(self, event_loop);
+        if self.content.active().dashboard.is_some() {
+            dashboard::tick(self, event_loop);
+        } else {
+            chart_sim::tick(self, event_loop);
+        }
     }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {

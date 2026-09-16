@@ -14,7 +14,7 @@ export const DEEP_RUNTIME_PACKAGE_BUDGETS = Object.freeze({
 });
 export type RuntimeJson = null | boolean | number | string | readonly RuntimeJson[] | { readonly [key: string]: RuntimeJson };
 export interface RuntimeContentHash { readonly algorithm: "sha256"; readonly value: string }
-export type RuntimeResourceKind = "render-packet" | "deep2d-runtime" | "ibl-environment" | "shader-package" | "scene-camera" | "chart-runtime" | "chart-sim-runtime";
+export type RuntimeResourceKind = "render-packet" | "deep2d-runtime" | "ibl-environment" | "shader-package" | "scene-camera" | "chart-runtime" | "chart-sim-runtime" | "dashboard-runtime";
 export interface RuntimeResourceIndexEntry {
   readonly id: string;
   readonly kind: RuntimeResourceKind;
@@ -58,7 +58,13 @@ export interface DeepRuntimePackageV4 extends Omit<DeepRuntimePackageV2, "schema
   readonly schemaVersion: typeof DEEP_RUNTIME_PACKAGE_CHART_VERSION;
   readonly entrypoints: RuntimeEntrypoints & { readonly chart: string; readonly chartSim: string | null };
 }
-export type DeepRuntimePackage = DeepRuntimePackageV1 | DeepRuntimePackageV2 | DeepRuntimePackageV3 | DeepRuntimePackageV4;
+export interface DeepRuntimePackageV5 extends Omit<DeepRuntimePackageV2, "schemaVersion" | "entrypoints"> {
+  readonly schemaVersion: 5;
+  readonly entrypoints: RuntimeEntrypoints & {
+    readonly deep2d: null; readonly chart: null; readonly chartSim: null; readonly dashboard: string;
+  };
+}
+export type DeepRuntimePackage = DeepRuntimePackageV1 | DeepRuntimePackageV2 | DeepRuntimePackageV3 | DeepRuntimePackageV4 | DeepRuntimePackageV5;
 export interface Deep2dRuntimeAtlas {
   readonly id: string;
   readonly revision: number;

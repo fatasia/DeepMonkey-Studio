@@ -2,6 +2,8 @@ import { validateDeepShaderPackage } from "../shaderPackage/validation.js";
 import type { DeepShaderPackageV2 } from "../shaderPackage/types.js";
 import { validateRuntimeMaterialBindings } from "./materialBindings.js";
 import { validateRuntimeDeep2d } from "./deep2d.js";
+import { validateDashboardComposition } from "./dashboardCompositionValidation.js";
+import { DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION } from "./dashboardCompositionTypes.js";
 import { validateRuntimeChartPackage, validateRuntimeChartSimPackage } from "./chartPackage.js";
 import { validateRuntimeSceneCamera } from "./camera.js";
 import { runtimeContentSha256, runtimePackageSha256 } from "./hash.js";
@@ -21,7 +23,8 @@ function validate(input: unknown): DeepRuntimePackage {
   const value = record(snapshotJson(input), "$");
   const hasCamera = value.schemaVersion === 3;
   const hasChart = value.schemaVersion === DEEP_RUNTIME_PACKAGE_CHART_VERSION;
-  const hasBindings = hasCamera || hasChart || value.schemaVersion === DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION;
+  const hasDashboard = value.schemaVersion === DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION;
+  const hasBindings = hasCamera || hasChart || hasDashboard || value.schemaVersion === DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION;
   fields(value, ["schema", "schemaVersion", "packageId", "packageVersion", "entrypoints", "resources", "payloads", "packageHash",
     ...(hasBindings ? ["materialBindings"] : [])], [], "$");
   requireValue(value.schema === DEEP_RUNTIME_PACKAGE_SCHEMA && (value.schemaVersion === DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION || hasBindings),
@@ -41,7 +44,8 @@ function validate(input: unknown): DeepRuntimePackage {
     const id = resourceId(entry.id, `${path}.id`);
     requireValue(id > previous, path, "Resource index must be sorted by unique id."); previous = id;
     requireValue(["render-packet", "deep2d-runtime", "ibl-environment", "shader-package", ...(hasCamera ? ["scene-camera"] : []),
-      ...(hasChart ? ["chart-runtime", "chart-sim-runtime"] : [])].includes(string(entry.kind, `${path}.kind`)), path, "Unknown resource kind.");
+      ...(hasChart || hasDashboard ? ["chart-runtime", "chart-sim-runtime"] : []),
+      ...(hasDashboard ? ["dashboard-runtime"] : [])].includes(string(entry.kind, `${path}.kind`)), path, "Unknown resource kind.");
     index.set(id, { kind: entry.kind as RuntimeResourceKind, revision: revision(entry.revision, `${path}.revision`), hash: hash(entry.contentHash, `${path}.contentHash`) });
   }
   const payloads = record(value.payloads, "$.payloads");
@@ -49,7 +53,9 @@ function validate(input: unknown): DeepRuntimePackage {
   for (const [id, entry] of index) requireValue(runtimeContentSha256(payloads[id]) === entry.hash, `$.payloads.${id}`, "Resource content hash mismatch.");
   const entry = record(value.entrypoints, "$.entrypoints");
   fields(entry, ["renderPacket", "deep2d", "environment", "shaderPackages", ...(hasCamera ? ["camera"] : []),
-    ...(hasChart ? ["chart", "chartSim"] : [])], [], "$.entrypoints");
+    ...(hasChart || hasDashboard ? ["chart", "chartSim"] : []), ...(hasDashboard ? ["dashboard"] : [])], [], "$.entrypoints");
+  if (hasDashboard) requireValue(entry.deep2d === null && entry.chart === null && entry.chartSim === null,
+    "$.entrypoints", "Dashboard owns all 2D content references.");
   const used = new Set<string>();
   const use = (value: unknown, kind: RuntimeResourceKind): string => {
     const id = resourceId(value, `$.entrypoints.${kind}`);
@@ -66,6 +72,17 @@ function validate(input: unknown): DeepRuntimePackage {
   requireValue(chartSimId === null || chartId !== null, "$.entrypoints", "chartSim requires a chart entrypoint.");
   const shaderIds = array(entry.shaderPackages, "$.entrypoints.shaderPackages", LIMITS.shaderPackages).map(value => use(value, "shader-package"));
   requireValue(shaderIds.every((id, i) => i === 0 || id > shaderIds[i - 1]!), "$.entrypoints.shaderPackages", "Shader entrypoints must be sorted and unique.");
+  if (hasDashboard) {
+    const dashboardId = use(entry.dashboard, "dashboard-runtime");
+    validateDashboardComposition(payloads[dashboardId], dashboardId, index, payloads, use);
+    const packet = record(payloads[renderId], `$.payloads.${renderId}`);
+    requireValue(["geometries", "materials", "instances", "textures"].every(key => Array.isArray(packet[key]) && packet[key].length === 0)
+      && shaderIds.length === 0 && array(value.materialBindings, "$.materialBindings").length === 0,
+    "$.entrypoints", "Dashboard requires an empty render packet and no shader bindings.");
+    const environment = record(payloads[environmentId], `$.payloads.${environmentId}`);
+    requireValue(environmentId === BUILTIN_RUNTIME_IBL_ID && environment.schema === "deep-engine.ibl-reference"
+      && environment.kind === "builtin-default", "$.entrypoints.environment", "Dashboard requires the builtin environment.");
+  }
   requireValue(used.size === index.size, "$.entrypoints", "Every resource needs exactly one entrypoint role.");
   validateRuntimeRenderPacket(payloads[renderId], `$.payloads.${renderId}`);
   if (cameraId !== null) {
@@ -92,7 +109,7 @@ function validate(input: unknown): DeepRuntimePackage {
   }
   if (hasBindings) {
     const packet = payloads[renderId] as { materials: readonly { id: string }[] };
-    validateRuntimeMaterialBindings(value.materialBindings, packet.materials, shaders, hasCamera || hasChart);
+    validateRuntimeMaterialBindings(value.materialBindings, packet.materials, shaders, hasCamera || hasChart || hasDashboard);
   }
   return value as unknown as DeepRuntimePackage;
 }

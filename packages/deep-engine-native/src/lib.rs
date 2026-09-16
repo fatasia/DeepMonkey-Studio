@@ -6,6 +6,7 @@ mod cascaded_shadow_math;
 pub mod chart;
 pub mod contract;
 pub mod culling_contract;
+pub mod dashboard_runtime;
 pub mod deep2d;
 pub mod fog;
 pub mod half_decode;

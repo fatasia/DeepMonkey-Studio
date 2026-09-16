@@ -11,7 +11,7 @@ use crate::{
     shader_package::DeepShaderPackageV2,
 };
 
-fn required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(super) fn required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
@@ -36,6 +36,7 @@ pub enum RuntimeResourceKind {
     SceneCamera,
     ChartRuntime,
     ChartSimRuntime,
+    DashboardRuntime,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -62,6 +63,8 @@ pub struct RuntimeEntrypoints {
     pub chart: Option<String>,
     #[serde(default)]
     pub chart_sim: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dashboard: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,6 +108,7 @@ pub struct IblEnvironmentReferenceV1 {
 
 #[derive(Debug)]
 pub struct LoadedRuntimePackage {
+    pub dashboard: Option<super::LoadedDashboard>,
     pub camera: Option<crate::runtime_camera::RuntimeSceneCamera>,
     pub package_id: String,
     pub package_version: String,

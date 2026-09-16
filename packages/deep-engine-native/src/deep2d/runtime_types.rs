@@ -28,6 +28,8 @@ pub enum Deep2dComposition {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Deep2dRuntimeContent {
     DisplayList(Deep2dDisplayList),
+    /// Host-only layered content; never accepted by the package wire decoder.
+    Composite(super::Deep2dComposite),
     Package(Deep2dRuntimePackage),
 }
 
@@ -35,6 +37,7 @@ impl Deep2dRuntimeContent {
     pub fn display_list(&self) -> &Deep2dDisplayList {
         match self {
             Self::DisplayList(value) => value,
+            Self::Composite(value) => value.display_list(),
             Self::Package(value) => &value.display_list,
         }
     }

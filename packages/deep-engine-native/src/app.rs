@@ -19,6 +19,9 @@ mod chart;
 mod chart_keyboard_smoke;
 mod chart_sim;
 mod chart_smoke;
+mod dashboard;
+#[cfg(all(test, target_os = "windows"))]
+mod dashboard_gpu_tests;
 mod deep2d_context;
 mod lifecycle;
 mod package_camera;
@@ -79,6 +82,7 @@ struct NativeApp {
     chart_text: Option<deep_engine_native::platform_text::TextRasterizer>,
     chart_legend_page: usize,
     chart_sim_scheduled: bool,
+    dashboard_wake_at: Option<std::time::Instant>,
 }
 
 struct NativeAppSetup {
@@ -108,6 +112,7 @@ impl NativeApp {
             chart_text: None,
             chart_legend_page: 0,
             chart_sim_scheduled: false,
+            dashboard_wake_at: None,
             content: PublishedState::new(content),
             proxy,
             window: None,

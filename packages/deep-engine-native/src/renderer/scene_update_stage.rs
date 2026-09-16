@@ -18,6 +18,8 @@ use crate::{
 };
 
 use super::Renderer;
+#[path = "dashboard_update.rs"]
+mod dashboard_update;
 #[path = "drop_preview.rs"]
 mod drop_preview;
 

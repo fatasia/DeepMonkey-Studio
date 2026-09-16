@@ -17,7 +17,9 @@ fn chart_package_builds_runtime_sim_host_and_presentable_display_list() {
     assert!(content.chart_sim.is_some());
     let list = match content.deep2d.as_ref().expect("chart presentation") {
         Deep2dRuntimeContent::DisplayList(list) => list,
-        Deep2dRuntimeContent::Package(_) => panic!("chart package must present a display list"),
+        Deep2dRuntimeContent::Package(_) | Deep2dRuntimeContent::Composite(_) => {
+            panic!("chart package must present a display list")
+        }
     };
     assert!(list.logical_width > 0.0);
     assert!(!list.commands.is_empty());

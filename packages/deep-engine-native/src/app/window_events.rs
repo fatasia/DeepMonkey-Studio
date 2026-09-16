@@ -95,6 +95,11 @@ pub(super) fn handle(
             if event.state == ElementState::Pressed && !event.repeat =>
         {
             if let PhysicalKey::Code(key) = event.physical_key
+                && super::dashboard::key(app, key)
+            {
+                return;
+            }
+            if let PhysicalKey::Code(key) = event.physical_key
                 && super::annotations::key(app, key, event.text.as_deref())
             {
                 return;

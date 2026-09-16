@@ -9,3 +9,5 @@ export { validateRuntimeSceneCamera, type RuntimeSceneCamera } from "./camera.js
 export * from "./coordinates.js";
 export { buildDashboardRuntimePackage } from "./dashboard.js";
 export { buildChartRuntimePackage } from "./chart.js";
+export { buildDashboardCompositionRuntimePackage } from "./dashboardComposition.js";
+export * from "./dashboardCompositionTypes.js";

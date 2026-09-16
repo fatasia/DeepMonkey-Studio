@@ -42,6 +42,7 @@ pub fn parse_chart_sim_fixture(bytes: &[u8]) -> Result<ChartSimFixture, String> 
 
 /// Fixed-step cyclic playback of validated fixture rows, rotated by seed.
 /// No wall clock, network, random host state or background callbacks are accessed here.
+#[derive(Clone)]
 pub struct ChartSimulationSource {
     identity: Arc<()>,
     fixture: ChartSimFixture,

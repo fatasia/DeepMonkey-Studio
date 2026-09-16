@@ -91,3 +91,14 @@ pub use runtime_prepare::{
 };
 pub use runtime_types::*;
 pub use runtime_validate::{decode_runtime_content, validate_runtime_package};
+
+mod runtime_composite;
+mod runtime_composite_prepare;
+mod runtime_namespace;
+pub use runtime_composite::{Deep2dComposite, Deep2dLayer};
+
+#[cfg(test)]
+mod runtime_composite_tests;
+
+#[cfg(test)]
+mod runtime_composite_cache_tests;

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde_json::Value;
 
@@ -6,14 +6,13 @@ use super::hash::hash_canonical;
 use super::{
     DEEP_RUNTIME_PACKAGE_SCHEMA, DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION,
     DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION, RuntimePackageEnvelope, RuntimePackageError,
-    RuntimeResourceIndexEntry, RuntimeResourceKind, fail,
+    RuntimeResourceIndexEntry, fail,
 };
 
 pub(super) const MAX_INPUT_BYTES: usize = 256 * 1024 * 1024;
 pub(super) const MAX_JSON_NODES: usize = 2_000_000;
 pub(super) const MAX_JSON_DEPTH: usize = 32;
 const MAX_RESOURCES: usize = 132;
-const MAX_SHADER_PACKAGES: usize = 128;
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 pub(super) fn input_size(bytes: &[u8]) -> Result<(), RuntimePackageError> {
@@ -53,6 +52,7 @@ pub(super) fn envelope(
             DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION,
             super::DEEP_RUNTIME_PACKAGE_CAMERA_VERSION,
             super::DEEP_RUNTIME_PACKAGE_CHART_VERSION,
+            super::DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION,
         ]
         .contains(&package.schema_version)
     {
@@ -62,38 +62,7 @@ pub(super) fn envelope(
     if has_bindings != (package.schema_version >= DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION) {
         return fail("materialBindings is required in runtime package v2 and forbidden in v1");
     }
-    let entrypoints_value = value.get("entrypoints");
-    let has_camera = entrypoints_value.and_then(|v| v.get("camera")).is_some();
-    let camera_era = package.schema_version == super::DEEP_RUNTIME_PACKAGE_CAMERA_VERSION;
-    let chart_era = package.schema_version >= super::DEEP_RUNTIME_PACKAGE_CHART_VERSION;
-    if (has_camera && !camera_era && !chart_era)
-        || camera_era && (!has_camera || package.entrypoints.camera.is_none())
-    {
-        return fail(
-            "camera entrypoint is required in v3, optional from v4, and forbidden in v1/v2",
-        );
-    }
-    // chart 时代合同:键必须成对声明,chart 必须非空;更早版本禁止出现键。
-    let has_chart_key = entrypoints_value.and_then(|v| v.get("chart")).is_some();
-    let has_chart_sim_key = entrypoints_value.and_then(|v| v.get("chartSim")).is_some();
-    if chart_era {
-        if !has_chart_key || !has_chart_sim_key {
-            return fail(
-                "runtime package v4 must declare chart and chartSim entrypoints (chartSim may be null)",
-            );
-        }
-        if package.entrypoints.chart.is_none() {
-            return fail("runtime package v4 requires a chart entrypoint");
-        }
-    } else if has_chart_key || has_chart_sim_key {
-        return fail("chart entrypoints are forbidden before runtime package v4");
-    }
-    if package.entrypoints.chart_sim.is_some() && package.entrypoints.chart.is_none() {
-        return fail("chartSim entrypoint requires a chart entrypoint");
-    }
-    if package.entrypoints.chart.is_some() && package.entrypoints.deep2d.is_some() {
-        return fail("chart and deep2d entrypoints are mutually exclusive");
-    }
+    super::entrypoints::version(package, value)?;
     if !package_id(&package.package_id) || !semantic_version(&package.package_version) {
         return fail("invalid runtime package identifier or semantic version");
     }
@@ -110,7 +79,7 @@ pub(super) fn envelope(
     }
     let by_id = resource_index(package)?;
     validate_payloads(package, &by_id)?;
-    validate_entrypoints(package, &by_id)
+    super::entrypoints::validate_entrypoints(package, &by_id)
 }
 
 fn resource_index(
@@ -160,78 +129,6 @@ fn validate_payloads(
     Ok(())
 }
 
-fn validate_entrypoints(
-    package: &RuntimePackageEnvelope,
-    index: &HashMap<&str, &RuntimeResourceIndexEntry>,
-) -> Result<(), RuntimePackageError> {
-    let entry = &package.entrypoints;
-    require_kind(
-        index,
-        &entry.render_packet,
-        RuntimeResourceKind::RenderPacket,
-    )?;
-    require_kind(
-        index,
-        &entry.environment,
-        RuntimeResourceKind::IblEnvironment,
-    )?;
-    if let Some(id) = &entry.deep2d {
-        require_kind(index, id, RuntimeResourceKind::Deep2dRuntime)?;
-    }
-    if let Some(id) = &entry.camera {
-        require_kind(index, id, RuntimeResourceKind::SceneCamera)?;
-    }
-    if let Some(id) = &entry.chart {
-        require_kind(index, id, RuntimeResourceKind::ChartRuntime)?;
-    }
-    if let Some(id) = &entry.chart_sim {
-        require_kind(index, id, RuntimeResourceKind::ChartSimRuntime)?;
-    }
-    if entry.shader_packages.len() > MAX_SHADER_PACKAGES
-        || entry
-            .shader_packages
-            .windows(2)
-            .any(|pair| pair[0] >= pair[1])
-    {
-        return fail("shader package entrypoints must be sorted, unique, and bounded");
-    }
-    for id in &entry.shader_packages {
-        require_kind(index, id, RuntimeResourceKind::ShaderPackage)?;
-    }
-    let mut referenced = HashSet::from([entry.render_packet.as_str(), entry.environment.as_str()]);
-    if let Some(id) = &entry.deep2d {
-        referenced.insert(id);
-    }
-    if let Some(id) = &entry.camera {
-        referenced.insert(id);
-    }
-    if let Some(id) = &entry.chart {
-        referenced.insert(id);
-    }
-    if let Some(id) = &entry.chart_sim {
-        referenced.insert(id);
-    }
-    referenced.extend(entry.shader_packages.iter().map(String::as_str));
-    if referenced.len() != index.len() || index.keys().any(|id| !referenced.contains(id)) {
-        return fail("every runtime resource must be referenced by exactly one entrypoint role");
-    }
-    Ok(())
-}
-
-fn require_kind(
-    index: &HashMap<&str, &RuntimeResourceIndexEntry>,
-    id: &str,
-    kind: RuntimeResourceKind,
-) -> Result<(), RuntimePackageError> {
-    if !resource_id(id) || index.get(id).is_none_or(|resource| resource.kind != kind) {
-        fail(format!(
-            "entrypoint {id:?} is missing or has the wrong resource kind"
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 fn valid_hash(value: &super::RuntimeContentHash) -> bool {
     value.algorithm == "sha256"
         && value.value.len() == 64
@@ -241,7 +138,7 @@ fn valid_hash(value: &super::RuntimeContentHash) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
-fn resource_id(value: &str) -> bool {
+pub(super) fn resource_id(value: &str) -> bool {
     (1..=256).contains(&value.len())
         && value.bytes().enumerate().all(|(index, byte)| {
             if index == 0 {

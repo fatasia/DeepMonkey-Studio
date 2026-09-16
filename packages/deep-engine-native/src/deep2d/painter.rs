@@ -109,19 +109,20 @@ pub(super) struct PathPrepareFrame<'a> {
 pub fn prepare_display_list(
     display_list: &Deep2dDisplayList,
 ) -> Result<PreparedDeep2d, Deep2dPainterError> {
-    prepare_impl(display_list, None)
+    prepare_impl(display_list, None, true)
 }
 
 pub fn prepare_display_list_cached(
     display_list: &Deep2dDisplayList,
     cache: &mut super::Deep2dPathCache,
 ) -> Result<PreparedDeep2d, Deep2dPainterError> {
-    prepare_impl(display_list, Some(cache))
+    prepare_impl(display_list, Some(cache), true)
 }
 
-fn prepare_impl(
+pub(super) fn prepare_impl(
     display_list: &Deep2dDisplayList,
     mut cache: Option<&mut super::Deep2dPathCache>,
+    finish_frame: bool,
 ) -> Result<PreparedDeep2d, Deep2dPainterError> {
     let validation = validate_display_list(display_list);
     if !validation.valid {
@@ -236,7 +237,7 @@ fn prepare_impl(
     if !issues.is_empty() {
         return Err(Deep2dPainterError { issues });
     }
-    if let Some(cache) = cache {
+    if finish_frame && let Some(cache) = cache {
         let live_ids = display_list
             .commands
             .iter()

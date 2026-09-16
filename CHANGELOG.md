@@ -4,6 +4,11 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Dashboard composition runtime
+
+- Add v5 packages for multiple pages, independent charts and static Deep2D layers, preserving older package contracts. Native input, data updates and replay commit together only after a whole frame presents successfully.
+- Preserve atlas tint and clipping across layers, isolate path-cache identities, and clean removed paths once per completed page. Retry skipped frames with backoff and rebuild lost surfaces without publishing rejected CPU state.
+
 ### Runtime package foundation
 
 - Add TypeScript camera v3 and single-chart v4 package producers and validators, compiled ChartIR reads, revision-checked data updates and fixed-step simulation. Preserve legacy package versions and static dashboard packaging.

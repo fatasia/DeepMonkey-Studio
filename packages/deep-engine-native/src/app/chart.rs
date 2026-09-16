@@ -4,6 +4,9 @@ use deep_engine_native::chart::{ChartAction, ChartEpochCommit, ChartRuntime};
 use deep_engine_native::deep2d::{Deep2dRuntimeContent, LetterboxMapping};
 
 pub(super) fn pointer(app: &mut NativeApp, select: bool) -> bool {
+    if super::dashboard::pointer(app, select) {
+        return true;
+    }
     if app.content.active().chart.is_none() {
         return false;
     }
@@ -40,6 +43,9 @@ pub(super) fn pointer(app: &mut NativeApp, select: bool) -> bool {
 }
 
 pub(super) fn zoom(app: &mut NativeApp, delta: f64) -> bool {
+    if super::dashboard::zoom(app, delta) {
+        return true;
+    }
     if app.content.active().chart.is_none() {
         return false;
     }

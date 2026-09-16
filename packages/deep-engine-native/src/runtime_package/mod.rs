@@ -1,4 +1,9 @@
+mod content_payloads;
+mod dashboard;
+mod dashboard_types;
+mod dashboard_validation;
 mod diff;
+mod entrypoints;
 mod file_read;
 mod hash;
 mod material_bindings;
@@ -13,6 +18,7 @@ use std::{fmt, path::Path};
 
 use serde_json::Value;
 
+pub use dashboard_types::{DashboardNode, DashboardPage, DashboardRuntimeV1, LoadedDashboard};
 pub use diff::{
     RuntimeResourceDiffPlan, RuntimeResourcePlanAction, RuntimeResourcePlanEntry,
     plan_runtime_package_diff, plan_runtime_package_resource_diff,
@@ -35,6 +41,7 @@ pub const DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION: u32 = 2;
 pub const DEEP_RUNTIME_PACKAGE_CAMERA_VERSION: u32 = 3;
 /// v4 起 chart/chartSim 入口参与包合同;chart 展示列表与静态 deep2d 互斥。
 pub const DEEP_RUNTIME_PACKAGE_CHART_VERSION: u32 = 4;
+pub const DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimePackageError(String);

@@ -17,6 +17,8 @@
 
 **状态：本轮待办。归属：P0-01/03/06 的共同前置。**
 
+2026-09-16 进展：[包合同与 Native 组合宿主](dashboard-composition-runtime-2026-09-16.md) 已进入收尾验证。Web prewarm 仍拒绝 chart/dashboard kind；现有 prewarmPlan 还依赖未独立提交的作者 LOD 驻留合同，需要按依赖闭包接通。先交付可独立验证的 core/Native 子片，C1 全项保持待办。
+
 最小切片：定义静态二维内容与多个动态图表的版本化组合、页面逻辑尺寸、节点资源引用、局部坐标与命中归属。复用 ChartIR、Deep2D、已有包校验、prewarm 和 LKG；不放宽旧 v4 的互斥规则，不引入第二套 loader。
 
 关键源路径：
@@ -97,3 +99,98 @@
 ## 交付边界
 
 五个切片只是原批次 C 的实施分解。完成单个静态组件或一个 ChartIR 页面不能关闭 P0-01/03/04/06；每片更新证据后再按原任务表判断完成状态。项目级 V-01～V-05 与全部后续任务保持有效。
+
+## C1 实现合同草案：Dashboard 根 v1 / 运行包 v5
+
+**状态：本轮待办。以下是实现对齐设计，尚无产品实现或验收证据。** 仅增加组合容器和严格引用规则；不新增作者文档、图表语言、loader、资源下载协议或脚本执行器。C2～C5 与原 P0 验收保持原范围。
+
+### 版本与包入口
+
+新增 `DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION = 5`、资源 kind `dashboard-runtime`，根载荷 schema 为 `deep-engine.dashboard-runtime`、schemaVersion 为 `1`。运行包 v5 保留现有 schema、packageId、packageVersion、resources、payloads、packageHash、materialBindings 字段；entrypoints **精确包含**：
+
+```ts
+{
+  renderPacket: string;
+  environment: string;
+  shaderPackages: readonly string[];
+  deep2d: null;
+  chart: null;
+  chartSim: null;
+  dashboard: string;
+}
+```
+
+v5 的唯一二维入口是 dashboard；其下资源通过根引用，不能同时占用顶层入口。C1 是纯 Dashboard 配置：renderPacket 保留现有空场景占位，geometry/material/instance/texture 均为空，shaderPackages 与 materialBindings 均为空，environment 使用现有 builtin 默认值；不接受 camera 字段或 scene-camera 资源。这样复用现有包外壳和预热，不引入尚无需求的二维/三维混合视口。
+
+兼容规则必须按 `schemaVersion === n` 分支，不能把 v5 当作 `>= 4` 的单图表包。旧 v1～v4 builder、序列化和 wire golden 不变；v1～v4 拒绝 dashboard 字段及新资源 kind。既有 `buildDashboardRuntimePackage({deep2d})` 仍输出旧静态包，新建组合 builder，不隐式升级旧调用方。
+
+当前差异：TS `runtimePackage/validation.ts` 的 `hasCamera = schemaVersion === 3`，v4 的字段白名单及资源 kind 均禁止 camera；Rust `runtime_package/validate.rs` 的 `chart_era >= 4` 则允许 v4 camera。这是既有不对称，不能把“v4 两端都支持 camera”写进设计。C1 分别锁定旧行为，新增 v5 两端一致拒绝 camera 的用例；旧 v4 差异另列兼容修复，不借 v5 放宽或改变旧 wire。
+
+### 根载荷的精确字段
+
+所有字段必填；nullable 字段不得省略；对象拒绝未知字段。下述类型是 wire 字段说明，不是新导出的产品 API。
+
+```ts
+type DashboardRect = readonly [number, number, number, number]; // x,y,width,height
+interface DashboardRuntimeV1 {
+  schema: "deep-engine.dashboard-runtime";
+  schemaVersion: 1;
+  id: string;
+  revision: number;
+  documentId: string;
+  documentRevision: number;
+  entryPageId: string;
+  pages: readonly DashboardRuntimePageV1[];
+}
+interface DashboardRuntimePageV1 {
+  id: string;
+  width: number;
+  height: number;
+  nodes: readonly DashboardRuntimeNodeV1[];
+}
+interface DashboardRuntimeNodeV1 {
+  id: string;
+  revision: number;
+  frame: DashboardRect;
+  clip: DashboardRect | null;
+  zOrder: number;
+  visible: boolean;
+  hitId: string | null;
+  deep2d: string | null;
+  chart: string | null;
+  chartSim: string | null;
+}
+```
+
+- 根 id/revision 必须等于资源索引；revision、documentRevision、node.revision 为 `1..Number.MAX_SAFE_INTEGER`。documentId 是冻结 Application metadata.id 的原值，非空 UTF-8、最多 256 字节，拒绝控制字符；documentRevision 是该作者版本。C3 在发布 manifest 校验作者身份，C1 不添加第二份作者快照或可信能力声明。
+- 根/资源 id 复用现有 runtime resourceId 规则。页面与节点使用 `compileDashboardLayout.ts` 已有的确定性 `page.<sha256>` / `node.<sha256>` 身份；相同 app/page/sourceNode 输入得到相同 id，不把 revision 或数组位置编码进 id。pages 按作者页面顺序保存，entryPageId 必须命中一个页面；根内页面 id 唯一、节点 id 全局唯一。作者原始 id 的映射保留在编译报告，不能靠拆分哈希反推。
+- page width/height 为有限正数，最大 16,777,216；frame 的 x/y 绝对值及 width/height 不超过同一界限，尺寸必须为正。坐标统一使用页面逻辑像素，原点左上。节点内容以 `(0,0)` 为局部原点，通过 frame.x/y 平移；frame.width/height 是实际内容布局尺寸，禁止暗中缩放另一尺寸的 ChartIR。ChartIR 本身没有视口字段；组合宿主必须用 frame.width/height 构造 ChartRuntime，替代旧单入口 assemble 中固定 640×360 的尺寸。C1 不新增节点旋转/嵌套 transform；现有 Deep2D 内部 transform 原样保留。
+- clip 是**节点局部**矩形，有限坐标、正尺寸，同一数值界限；null 表示无节点外层裁剪。最终裁剪为页面矩形、外层 clip（若有）与内容内部 clip 的交集。frame 不隐式裁剪，避免吞掉合法阴影。绘制和命中使用同一变换与交集。
+- zOrder 是 i32。producer 将 nodes 按 `(zOrder, id)` 升序序列化，validator 检查顺序；绘制同序、命中反序，同 z 不依赖语言排序稳定性。一个节点是连续绘制组：先 deep2d 静态底层（容器、阴影、背景），后 chart 动态内容；需要上层静态装饰时输出独立节点，不允许跨组插队。隐藏节点不绘制、不命中，但仍校验依赖和预算。
+- hitId 为 null 则节点整体不接输入；非空则必须等于 node.id，避免第二套可串节点身份。命中返回 `{pageId,nodeId,hitId,subHitId}`，前三者由组合宿主填入，subHitId 来自局部内容，可为 null。静态 quad 缺少内部命中标识时仅返回节点身份；动态图表保留自身 action/series/data 身份，不能把两个图表相同的局部 id 当作全页 id。布局 letterbox 逆变换后再按节点局部坐标测试。换页/换包成功后，旧页面的 focus、capture 和迟到输入不得转交给新节点。
+
+### 静态、动态资源及唯一所有权
+
+每节点 deep2d/chart 至少一个非空；chartSim 非空必须同时有 chart。deep2d 引用既有 `deep2d-runtime` v1/v2，chart 引用既有 `chart-runtime` v1，chartSim 引用既有 `chart-sim-runtime` v1；资源信封 id/revision/hash 与索引一致，内部结构继续调用原 validator。sim.fixture.chartId 必须匹配**本节点所引用 ChartIR 的内部 id**，不是包资源 id。
+
+静态图表可以作为 deep2d 产物；需要 tooltip、数据刷新、legend 等行为的图表必须保留 chart 引用。不能用静态像素替代动态验收。图表自身背景与节点静态底层由 producer 明确分工，不能双画同一背景。
+
+引用闭包固定为 `entrypoints.dashboard → pages[].nodes[] → deep2d/chart/chartSim`，无任意依赖图、跨包 URL、节点互引或页面互引。每个引用必须存在且 kind 精确匹配；**每个资源只有一个所有者**：顶层角色、组合根或一个节点字段。相同资源 id 被两个节点/页面引用即拒绝；未引用资源拒绝；同一内部 ChartIR id 在根内也必须唯一，避免 sim 与宿主路由歧义。不可用复制 payload 到根的方法绕过索引。
+
+资源只存在于外层 resources/payloads，根只存 id。加载结果持有资源表，节点持资源句柄；不要同时在页面、节点、`PlayerContent.chart` 和组合宿主各存一份 ChartRuntime。旧单图表入口使用原字段；v5 的独立组合宿主持有按 node.id 索引的图表状态。Deep2D atlas 仍由原载荷拥有，不在 C1 拆出新 atlas kind；缓存可按已验证的 hash 复用不可变 bytes/GPU 句柄，不能共享不同节点的可变图表状态。
+
+### 预算和事务
+
+沿用包上限：输入 256 MiB、JSON 节点 2,000,000、深度 32、资源总数 132；组合根、空 renderPacket 和 environment 同样计数。C1 新增组合限额建议为 32 页、全包 128 节点、全包 32 个 chart；这是明确拒绝阈值，不是性能通过声明，TS/Rust 用共同边界 fixture 锁定。节点底层/图表/sim 各自占一个资源，资源上限先触顶即拒绝，不能按页面重新获得 132 额度。
+
+各载荷继续遵守现有 ChartIR/Deep2D 限额；另对包内静态 atlas 解码字节累计应用既有 64 MiB 上限，防止拆成多节点绕过单载荷预算。活动页拼接后，命令/路径/quad/atlas 和动态文字产物必须再次通过现有最终帧及 GPU 字节预算，不能只验证每个图表。预热继续使用 `prewarmPlan` 的现有 item/byte 限额，在 RESOURCE_ORDER 中新增组合根且排在依赖资源之后；资源按 id 记账一次。非活动页也必须完成结构、hash、引用及解码预算校验；其 GPU 内容允许换页时按原预热事务准备。
+
+包替换、换页与图表更新共用既有 candidate/LKG：validate → closure → prewarm → build frame → present → commit。全页候选同时冻结静态节点、各 ChartEpoch、资源句柄和命中索引；只有整页 present 成功才一起交换。单图表数据更新可复用其他节点不可变内容，但不能先提交其 ChartEpoch、游标或命中再等待全页 present。任意节点失败/超预算、取消、device epoch 变化或迟到候选都丢弃整页候选，旧画面、旧命中、旧图表数据及 sim 时钟仍保持；成功后才推进 replay checkpoint/LKG。候选身份至少绑定 packageHash、pageId、宿主 candidate generation 及 device epoch，这些是宿主事务状态，不新增可由包伪造的 wire 字段。
+
+### 最小实施顺序与必须新增的证据
+
+1. TS types/validator/builder 与 Rust envelope/types/payloads 同步增加精确 v5 分支；保留旧静态 builder。先补双语言共享的两页、静态内容加双 chart/sim producer golden，旧 v1～v4 fixture 文件不重写。
+2. 补严格失败矩阵：缺字段/null 差异、未知版本/kind、重复节点/ChartIR id、跨页复用资源、缺资源/错 kind、sim 串图表、未引用资源、坏 hash、宿主布局尺寸与 frame 不匹配、非法 clip/排序、每项预算边界。v4 camera 差异用独立测试说明，v5 两端必须同判。
+3. 在现有 prewarm 和 PlayerContent 组合宿主接线，补双图表独立动作、局部 clip、重叠 z/hit、letterbox 坐标、换页焦点/迟到事件，以及第二图表失败时旧页全保持。复用现有真实窗口/GPU车道验证，CPU golden 不代替 present/LKG 证据。
+
+C1 只在结构和宿主事务验收后完成；文字/图片/KPI/表格/筛选真实内容、发布三种 hash、权威冻结和正式离线下载仍按 C2～C5 逐项交付。

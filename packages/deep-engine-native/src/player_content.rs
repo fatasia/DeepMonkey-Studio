@@ -15,6 +15,9 @@ mod chart_entry;
 mod chart_package_tests;
 #[path = "player_chart_sim.rs"]
 pub mod chart_sim;
+#[cfg(test)]
+#[path = "player_content_dashboard_tests.rs"]
+mod dashboard_tests;
 #[path = "player_resource_domain.rs"]
 mod resource_domain;
 
@@ -31,6 +34,8 @@ pub struct PlayerContent {
     scene_content_key: u64,
     pub deep2d: Option<Deep2dRuntimeContent>,
     pub chart: Option<deep_engine_native::chart::ChartRuntime>,
+    pub dashboard: Option<deep_engine_native::dashboard_runtime::DashboardRuntime>,
+    pub dashboard_started: Option<std::time::Instant>,
     pub epoch: ChartEpoch,
     pub chart_sim: Option<chart_sim::ChartSimHost>,
     pub environment: PreparedIblEnvironment,
@@ -102,6 +107,8 @@ impl PlayerContent {
             scene_content_key,
             deep2d,
             chart: None,
+            dashboard: None,
+            dashboard_started: None,
             epoch: ChartEpoch::initial(),
             chart_sim: None,
             environment: builtin_default_environment(),
@@ -123,6 +130,7 @@ impl PlayerContent {
             deep2d,
             chart: chart_source,
             chart_sim: chart_sim_fixture,
+            dashboard,
             environment,
             shader_packages,
             material_bindings,
@@ -130,6 +138,13 @@ impl PlayerContent {
         } = package;
         // 图表包：ChartIR 经包校验后重建运行时；展示列表由图表呈现，与静态 deep2d 入口互斥。
         let entry = chart_entry::assemble(chart_source, chart_sim_fixture, deep2d)?;
+        let dashboard = dashboard
+            .map(deep_engine_native::dashboard_runtime::DashboardRuntime::new)
+            .transpose()?;
+        let deep2d = dashboard
+            .as_ref()
+            .map(|runtime| runtime.content().clone())
+            .or(entry.deep2d);
         let content = Self {
             authored_view: camera
                 .as_ref()
@@ -145,8 +160,10 @@ impl PlayerContent {
             startup_notice: None,
             packet: render_packet,
             scene_content_key,
-            deep2d: entry.deep2d,
+            deep2d,
             chart: entry.chart,
+            dashboard,
+            dashboard_started: None,
             // 换包重建即新 epoch:文档标识取包 id + 包哈希。
             epoch: ChartEpoch::for_document(ChartEpoch::document_revision(
                 &package_id,

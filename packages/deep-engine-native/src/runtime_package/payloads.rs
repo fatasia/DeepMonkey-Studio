@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use super::content_payloads::{decode_chart, decode_chart_sim, decode_deep2d};
 use serde_json::Value;
 
 use super::{
@@ -6,40 +6,12 @@ use super::{
     RuntimePackageError, RuntimeResourceKind, fail, render_packet,
 };
 use crate::{
-    chart::simulation::{ChartSimFixture, parse_chart_sim_fixture},
-    chart::{ChartIR, parse_chart_ir},
-    deep2d::{Deep2dRuntimeContent, decode_runtime_content},
     ibl::{builtin_default_environment, validate_ibl_environment},
     shader_package::parse_and_validate_shader_package,
 };
 
 const IBL_REFERENCE_SCHEMA: &str = "deep-engine.ibl-reference";
 const IBL_REFERENCE_VERSION: u32 = 1;
-const CHART_RUNTIME_SCHEMA: &str = "deep-engine.chart-runtime";
-const CHART_RUNTIME_VERSION: u32 = 1;
-const CHART_SIM_RUNTIME_SCHEMA: &str = "deep-engine.chart-sim-runtime";
-const CHART_SIM_RUNTIME_VERSION: u32 = 1;
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct ChartRuntimePayloadV1 {
-    schema: String,
-    schema_version: u32,
-    id: String,
-    revision: u64,
-    chart: Value,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct ChartSimRuntimePayloadV1 {
-    schema: String,
-    schema_version: u32,
-    id: String,
-    revision: u64,
-    fixture: Value,
-}
-
 pub(super) fn decode(
     package: RuntimePackageEnvelope,
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
@@ -87,7 +59,9 @@ pub(super) fn decode(
         .as_deref()
         .map(|id| decode_camera(&package, id))
         .transpose()?;
+    let dashboard = super::dashboard::decode(&package, &render_summary)?;
     Ok(LoadedRuntimePackage {
+        dashboard,
         camera,
         package_id: package.package_id,
         package_version: package.package_version,
@@ -117,101 +91,6 @@ fn decode_camera(
         return fail("camera identity differs from resource index");
     }
     Ok(camera)
-}
-
-fn decode_deep2d(
-    package: &RuntimePackageEnvelope,
-    id: &str,
-) -> Result<Deep2dRuntimeContent, RuntimePackageError> {
-    let descriptor = descriptor(package, id, RuntimeResourceKind::Deep2dRuntime)?;
-    let bytes = serde_json::to_vec(payload(package, id)?).map_err(|error| {
-        RuntimePackageError(format!("resource {id} serialization failed: {error}"))
-    })?;
-    let content = decode_runtime_content(&bytes)
-        .map_err(|error| RuntimePackageError(format!("resource {id}: {error}")))?;
-    match &content {
-        Deep2dRuntimeContent::Package(value)
-            if value.id == descriptor.id && value.revision == descriptor.revision =>
-        {
-            Ok(content)
-        }
-        Deep2dRuntimeContent::Package(_) => fail(format!(
-            "resource {id} Deep2d identity differs from its index entry"
-        )),
-        Deep2dRuntimeContent::DisplayList(_) => fail(format!(
-            "resource {id} must use the versioned Deep2d runtime package"
-        )),
-    }
-}
-
-fn decode_chart(
-    package: &RuntimePackageEnvelope,
-    id: &str,
-) -> Result<ChartIR, RuntimePackageError> {
-    let descriptor = descriptor(package, id, RuntimeResourceKind::ChartRuntime)?;
-    let envelope: ChartRuntimePayloadV1 = serde_json::from_value(payload(package, id)?.clone())
-        .map_err(|error| RuntimePackageError(format!("resource {id}: {error}")))?;
-    if envelope.schema != CHART_RUNTIME_SCHEMA || envelope.schema_version != CHART_RUNTIME_VERSION {
-        return fail(format!(
-            "resource {id} has an unsupported chart payload schema"
-        ));
-    }
-    if envelope.id != descriptor.id || envelope.revision != descriptor.revision {
-        return fail(format!(
-            "resource {id} chart identity differs from its index entry"
-        ));
-    }
-    let bytes = serde_json::to_vec(&envelope.chart).map_err(|error| {
-        RuntimePackageError(format!("resource {id} serialization failed: {error}"))
-    })?;
-    parse_chart_ir(&bytes).map_err(|validation| {
-        let detail = validation
-            .diagnostics
-            .first()
-            .map(|diagnostic| {
-                format!(
-                    "{:?} at {}: {}",
-                    diagnostic.code, diagnostic.path, diagnostic.message
-                )
-            })
-            .unwrap_or_else(|| "validation failed".into());
-        RuntimePackageError(format!("resource {id}: {detail}"))
-    })
-}
-
-fn decode_chart_sim(
-    package: &RuntimePackageEnvelope,
-    id: &str,
-    chart: Option<&ChartIR>,
-) -> Result<ChartSimFixture, RuntimePackageError> {
-    let descriptor = descriptor(package, id, RuntimeResourceKind::ChartSimRuntime)?;
-    let envelope: ChartSimRuntimePayloadV1 = serde_json::from_value(payload(package, id)?.clone())
-        .map_err(|error| RuntimePackageError(format!("resource {id}: {error}")))?;
-    if envelope.schema != CHART_SIM_RUNTIME_SCHEMA
-        || envelope.schema_version != CHART_SIM_RUNTIME_VERSION
-    {
-        return fail(format!(
-            "resource {id} has an unsupported chart sim payload schema"
-        ));
-    }
-    if envelope.id != descriptor.id || envelope.revision != descriptor.revision {
-        return fail(format!(
-            "resource {id} chart sim identity differs from its index entry"
-        ));
-    }
-    let bytes = serde_json::to_vec(&envelope.fixture).map_err(|error| {
-        RuntimePackageError(format!("resource {id} serialization failed: {error}"))
-    })?;
-    let fixture = parse_chart_sim_fixture(&bytes)
-        .map_err(|error| RuntimePackageError(format!("resource {id}: {error}")))?;
-    let chart_id = chart.map(|chart| chart.id.as_str()).unwrap_or_default();
-    if chart_id.is_empty() || fixture.chart_id != chart_id {
-        return fail(format!(
-            "resource {id} sim fixture targets chart {:?} instead of the package chart",
-            fixture.chart_id
-        ));
-    }
-    Ok(fixture)
 }
 
 fn decode_environment(
@@ -268,7 +147,7 @@ fn decode_shader_package(
     Ok(shader)
 }
 
-fn descriptor<'a>(
+pub(super) fn descriptor<'a>(
     package: &'a RuntimePackageEnvelope,
     id: &str,
     kind: RuntimeResourceKind,
@@ -280,7 +159,7 @@ fn descriptor<'a>(
         .ok_or_else(|| RuntimePackageError(format!("resource {id} is absent from its typed index")))
 }
 
-fn payload<'a>(
+pub(super) fn payload<'a>(
     package: &'a RuntimePackageEnvelope,
     id: &str,
 ) -> Result<&'a Value, RuntimePackageError> {
