@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import path from "node:path";
+import { createDashboardPortableZip } from "./dashboardPortableZip.js";
 import {
   createDashboardOfflineArchive,
   type DashboardOfflineArchiveV1,
@@ -29,10 +31,15 @@ export interface DashboardOfflineArchiveDownloadDependencies {
     readonly artifact: Uint8Array;
   }) => DashboardOfflineArchiveV1;
   readonly serializeArchive?: (archive: DashboardOfflineArchiveV1) => Uint8Array;
+  /** 部署固定播放器路径；HTTP 参数不能选择或覆盖它。未配置时不注册 ZIP 路由。 */
+  readonly portable?: {
+    readonly nativeExecutable: string;
+    readonly createZip?: typeof createDashboardPortableZip;
+  };
 }
 
 /**
- * Serves a verified, short-lived C5 candidate as a download-only DMDA stream.
+ * Serves a verified, short-lived C5 candidate as DMDA or deployment-enabled ZIP.
  * This module deliberately does not register itself in the global route index,
  * so composition owns the concrete store and identity integrations.
  */
@@ -40,13 +47,23 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
   app: FastifyInstance,
   dependencies: DashboardOfflineArchiveDownloadDependencies,
 ): Promise<void> {
+  const portable = dependencies.portable;
+  const executable = portable?.nativeExecutable;
+  if (portable && (!executable || !path.isAbsolute(executable) || path.extname(executable).toLowerCase() !== ".exe")) {
+    throw new Error("Dashboard portable download requires an absolute .exe path");
+  }
+  const createZip = portable?.createZip ?? createDashboardPortableZip;
+  for (const format of portable ? ["dmda", "zip"] : ["dmda"]) {
   app.get<{ Params: RouteParams }>(
-    "/api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/offline-archive",
+    `/api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/${format === "zip" ? "portable-zip" : "offline-archive"}`,
     async (request, reply) => {
       if (!request.systemUser?.enabled) return reply.code(401).send({ message: "请先登录" });
       if (request.systemUser.role === "viewer") return reply.code(403).send({ message: "浏览者不能下载 Dashboard 候选离线包" });
       if (request.systemUser.role !== "admin" && !request.systemUser.projectIds.includes(request.params.projectId)) {
         return reply.code(403).send({ message: "没有该项目的访问权限" });
+      }
+      if (format === "zip" && Object.keys(request.query as object).length !== 0) {
+        return reply.code(400).send({ message: "Dashboard ZIP 下载不接受查询参数" });
       }
 
       let record: DashboardNativeCandidateRecord;
@@ -71,24 +88,30 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
           capability: record.candidate.capability,
           artifact: record.candidate.artifact.artifact,
         });
-        const bytes = (dependencies.serializeArchive ?? serializeDashboardOfflineArchive)(archive);
-        // 清单读取可能等待外部存储；发送前重查 TTL 和候选撤销状态。
+        const archiveBytes = (dependencies.serializeArchive ?? serializeDashboardOfflineArchive)(archive);
+        request.signal.throwIfAborted();
+        const bytes = format === "zip"
+          ? await createZip(archiveBytes, executable!, { signal: request.signal })
+          : archiveBytes;
+        request.signal.throwIfAborted();
+        // 清单读取及 ZIP 压缩均可能等待；发送前重查 TTL 和候选撤销状态。
         try {
           dependencies.registry.read({ candidateId: request.params.candidateId,
             projectId: request.params.projectId, applicationId: request.params.applicationId });
         } catch (reason) { return sendLookupFailure(reply, reason); }
         return reply
           .header("cache-control", "private, no-store")
-          .header("content-disposition", `attachment; filename="dashboard-candidate-${safeFileId(record.summary.candidateId)}.dmda"`)
+          .header("content-disposition", `attachment; filename="dashboard-candidate-${safeFileId(record.summary.candidateId)}.${format}"`)
           .header("content-length", String(bytes.byteLength))
           .header("x-content-type-options", "nosniff")
-          .type("application/octet-stream")
+          .type(format === "zip" ? "application/zip" : "application/octet-stream")
           .send(Buffer.from(bytes));
       } catch {
         return reply.code(409).send({ code: "candidate_invalid", message: "Dashboard 候选离线包已失效，请刷新后重试" });
       }
     },
   );
+  }
 }
 
 function sendLookupFailure(reply: { code(statusCode: number): { send(payload: unknown): unknown } }, reason: unknown): unknown {

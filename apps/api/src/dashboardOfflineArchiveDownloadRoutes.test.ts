@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createApiServer } from "./serverOptions.js";
 import { registerDashboardOfflineArchiveDownloadRoutes } from "./dashboardOfflineArchiveDownloadRoutes.js";
+import type { DashboardOfflineArchiveDownloadDependencies } from "./dashboardOfflineArchiveDownloadRoutes.js";
+import nodePath from "node:path";
 import {
   DashboardNativeCandidateAuthorityError,
   DashboardNativeCandidateExpiredError,
@@ -26,6 +28,7 @@ async function fixture(options: {
   readonly readFreezeManifest?: () => Promise<unknown>;
   readonly createArchive?: ReturnType<typeof vi.fn>;
   readonly serializeArchive?: ReturnType<typeof vi.fn>;
+  readonly portable?: DashboardOfflineArchiveDownloadDependencies["portable"];
 } = {}) {
   const app = createApiServer();
   if (options.user) app.addHook("preHandler", async request => { request.systemUser = options.user as never; });
@@ -34,13 +37,87 @@ async function fixture(options: {
   const createArchive = options.createArchive ?? vi.fn(() => ({ archive: "private" }));
   const serializeArchive = options.serializeArchive ?? vi.fn(() => Uint8Array.of(0x44, 0x4d, 0x44, 0x41));
   await registerDashboardOfflineArchiveDownloadRoutes(app, { registry, readFreezeManifest: readFreezeManifest as never,
-    createArchive: createArchive as never, serializeArchive: serializeArchive as never });
+    createArchive: createArchive as never, serializeArchive: serializeArchive as never, portable: options.portable });
   return { app, registry, readFreezeManifest, createArchive, serializeArchive };
 }
 
 const editor = { id: "editor-1", role: "editor", projectIds: [authority.projectId], enabled: true } as const;
 
 describe("dashboard offline archive download routes", () => {
+  const zipPath = path.replace("offline-archive", "portable-zip");
+  const executable = nodePath.resolve("server-only-player.exe");
+
+  it.each(["", "relative.exe", nodePath.resolve("player.dll")])("rejects invalid deployment executable configuration: %s", async nativeExecutable => {
+    const app = createApiServer();
+    try {
+      await expect(registerDashboardOfflineArchiveDownloadRoutes(app, {
+        registry: { read: record }, readFreezeManifest: async () => undefined, portable: { nativeExecutable },
+      })).rejects.toThrow("absolute .exe");
+    } finally { await app.close(); }
+  });
+
+  it("registers ZIP only with a fixed deployment executable and preserves DMDA", async () => {
+    const unavailable = await fixture({ user: editor });
+    expect((await unavailable.app.inject({ method: "GET", url: zipPath })).statusCode).toBe(404);
+    await unavailable.app.close();
+    const createZip = vi.fn(async () => Uint8Array.of(0x50, 0x4b, 1));
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable, createZip } });
+    try {
+      const response = await f.app.inject({ method: "GET", url: zipPath });
+      expect(response.statusCode).toBe(200);
+      expect(response.rawPayload).toEqual(Buffer.from([0x50, 0x4b, 1]));
+      expect(response.headers["content-type"]).toBe("application/zip");
+      expect(response.headers["content-disposition"]).toBe('attachment; filename="dashboard-candidate-candidate-1.zip"');
+      expect(response.headers["cache-control"]).toBe("private, no-store");
+      expect(response.headers["content-length"]).toBe("3");
+      expect(createZip).toHaveBeenCalledWith(Uint8Array.of(0x44, 0x4d, 0x44, 0x41), executable, { signal: expect.any(AbortSignal) });
+      expect(f.registry.read).toHaveBeenCalledTimes(2);
+      expect((await f.app.inject({ method: "GET", url: path })).statusCode).toBe(200);
+      expect(createZip).toHaveBeenCalledTimes(1);
+    } finally { await f.app.close(); }
+  });
+
+  it.each([undefined, { ...editor, role: "viewer" }, { ...editor, projectIds: ["other"] }])("authorizes ZIP before touching private candidates", async user => {
+    const createZip = vi.fn(async () => new Uint8Array());
+    const f = await fixture({ user, portable: { nativeExecutable: executable, createZip } });
+    try {
+      const response = await f.app.inject({ method: "GET", url: zipPath });
+      expect(response.statusCode).toBe(user ? 403 : 401);
+      expect(f.registry.read).not.toHaveBeenCalled(); expect(createZip).not.toHaveBeenCalled();
+    } finally { await f.app.close(); }
+  });
+
+  it("rejects client executable overrides and all ZIP query arguments", async () => {
+    const createZip = vi.fn(async () => new Uint8Array());
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable, createZip } });
+    try {
+      for (const query of ["?nativeExecutable=evil.exe", "?format=dmda", "?x=1"]) {
+        expect((await f.app.inject({ method: "GET", url: zipPath + query })).statusCode).toBe(400);
+      }
+      expect(f.registry.read).not.toHaveBeenCalled(); expect(createZip).not.toHaveBeenCalled();
+    } finally { await f.app.close(); }
+  });
+
+  it.each([[new DashboardNativeCandidateExpiredError(), 410], [new DashboardNativeCandidateNotFoundError(), 404], [new DashboardNativeCandidateAuthorityError(), 404]])("rechecks scope and lifetime after asynchronous ZIP preparation", async (error, status) => {
+    let expired = false;
+    const createZip = vi.fn(async () => { await Promise.resolve(); expired = true; return Uint8Array.of(0x50, 0x4b); });
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable, createZip }, read: () => { if (expired) throw error; return record(); } });
+    try {
+      const response = await f.app.inject({ method: "GET", url: zipPath });
+      expect(response.statusCode).toBe(status); expect(response.headers["content-disposition"]).toBeUndefined();
+      expect(f.registry.read).toHaveBeenLastCalledWith({ candidateId: "candidate-1", projectId: authority.projectId, applicationId: authority.applicationId });
+    } finally { await f.app.close(); }
+  });
+
+  it("does not expose ZIP generation failures or attach partial bytes", async () => {
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable, createZip: async () => { throw new Error("private executable path"); } } });
+    try {
+      const response = await f.app.inject({ method: "GET", url: zipPath });
+      expect(response.statusCode).toBe(409); expect(response.headers["content-disposition"]).toBeUndefined();
+      expect(response.body).not.toContain("private executable path");
+    } finally { await f.app.close(); }
+  });
+
   it.each([
     [new DashboardNativeCandidateExpiredError(), 410],
     [new DashboardNativeCandidateNotFoundError(), 404],
