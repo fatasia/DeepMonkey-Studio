@@ -1,5 +1,7 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：发布作者 sampleData 复用 Web 指标转换进入冻结数据闭包，保留原始行和数值样本索引，绑定应用 revision；数据或 revision 改变、同时绑定其他数据源均拒绝。单 EXE/ZIP 下载核对实际读取的播放器字节与部署 SHA-256，路径内文件替换后返回 409。主线 Dashboard API 165 项、Web 指标 12 项、API/data-runtime 类型及仓库治理通过。样例柱图真实交付链、KPI/表格 DOM 布局和正常构建产物接线继续推进，C1～C5 整体验收仍待完成。
+
 - 已完成：正式候选 `/standalone-executable` 已接通，真实磁盘发布→候选编译与窗口验证→HTTP EXE 下载→仅 EXE 目录无参数呈现全部通过。下载文件 hash 为 `c8d90e71ffcd5df309f01463283186ce86c57e628f9c62d93c1ab940a40b7a1d`，证据见 `test-output/dashboard-downloaded-exe-verification-20260916/evidence.json`；58 项相关 API、类型与治理通过。修复 C4 对同作者多运行层的误拒绝，字体要求按作者合并。作者样例数据与 KPI/表格真实布局接线仍在推进，本次两形状链路不等于 C1～C5 整体完成。
 
 - 已完成：单文件 Windows EXE 内嵌已验证运行包和许可证，无参数启动直接读取自身尾部并校验 SHA-256、严格运行包合同；`--licenses` 显示许可。主线构建产物在仅一个 EXE 的目录、PATH 仅 System32、隔离 LOCALAPPDATA 下真实呈现并写入与原包一致的呈现后恢复记录，见 `test-output/dashboard-single-exe-main-verification-20260916/evidence.json`。Native 尾部 6 测试、API 打包 7 测试、API 类型通过；开发与 API 服务仍使用 Node，接收端不需要。当前样例仅两种形状，完整用户项目、交互与视觉仍待验收；单 EXE HTTP 下载入口继续接线。
