@@ -84,6 +84,17 @@ async function main() {
     assert.equal(archiveResponse.statusCode, 200, archiveResponse.body);
     await writeFile(path.join(directory, "dashboard.dmda"), archiveResponse.rawPayload);
     const verified = parseDashboardOfflineArchive(archiveResponse.rawPayload);
+    const exeResponse = await app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/standalone-executable` });
+    assert.equal(exeResponse.statusCode, 200, exeResponse.body);
+    assert.equal(exeResponse.headers["content-type"], "application/vnd.microsoft.portable-executable");
+    const standaloneDirectory = path.join(directory, "standalone"); await mkdir(standaloneDirectory);
+    await writeFile(path.join(standaloneDirectory, "Dashboard.exe"), exeResponse.rawPayload);
+    const footer = exeResponse.rawPayload.subarray(-48);
+    assert.equal(footer.subarray(0, 8).toString("ascii"), "DMDASH01");
+    const embeddedLength = Number(footer.readBigUInt64LE(8));
+    const embedded = exeResponse.rawPayload.subarray(-48 - embeddedLength, -48);
+    assert.deepEqual(new Uint8Array(embedded), verified.archive.artifact);
+    assert.equal(sha(embedded), footer.subarray(16).toString("hex"));
     const zip = await JSZip.loadAsync(zipResponse.rawPayload, { checkCRC32: true });
     const manifest = JSON.parse(await zip.file("manifest.json").async("text"));
     const extracted = path.join(directory, "extracted"); await mkdir(extracted);
@@ -99,10 +110,12 @@ async function main() {
     assert.equal((await app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip?nativeExecutable=other.exe` })).statusCode, 400);
     registered.registry.remove(candidate.candidateId);
     assert.equal((await app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip` })).statusCode, 404);
+    assert.equal((await app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/standalone-executable` })).statusCode, 404);
     const evidence = { scope: "isolated-published-application-to-portable-zip", verifiedAt: new Date().toISOString(),
       testDataOnly: true, loginAuthenticationTested: false, nativeExecutableSha256: sha(await readFile(nativeExecutable)),
       candidate, capability: record.candidate.capability, windowVerification: record.candidate.windowVerification,
-      zipSha256: sha(zipResponse.rawPayload), zipBytes: zipResponse.rawPayload.byteLength, manifest };
+      zipSha256: sha(zipResponse.rawPayload), zipBytes: zipResponse.rawPayload.byteLength,
+      standaloneSha256: sha(exeResponse.rawPayload), standaloneBytes: exeResponse.rawPayload.byteLength, manifest };
     await writeFile(path.join(directory, "evidence.json"), JSON.stringify(evidence, null, 2));
     console.log(JSON.stringify({ status: "passed", directory, zipBytes: evidence.zipBytes, candidateId: candidate.candidateId,
       artifactSha256: candidate.targetArtifactHash, deviceFingerprint, objects: candidate.objects }));

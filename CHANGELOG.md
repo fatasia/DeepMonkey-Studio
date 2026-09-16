@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard content and portable packaging
 
+- Download verified candidates directly as a standalone EXE. Preserve font coverage when a table or text widget compiles into multiple drawing layers.
+
 - Build a standalone Windows EXE with the runtime package and licenses embedded. Launch without arguments or sidecar files; inspect notices with `--licenses`.
 
 - Fix offline downloads rejecting compiled page identities. Validate the shared authored-to-runtime page mapping and retain unused fallback fonts in the archive without claiming they were rendered.
