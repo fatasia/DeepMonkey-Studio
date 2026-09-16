@@ -46,7 +46,7 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
       const capturedAt = Date.now();
       for (const node of document.application.pages.flatMap(page => page.nodes)) {
         if (node.kind !== "data-widget") continue;
-        const source = dashboardSavedDataSource(store, publication.projectId, node);
+        const source = dashboardSavedDataSource(store, publication.projectId, node, publication.applicationRevision);
         if (source) data.push({ id: dataId(node.id), nodeId: node.id,
           sourceRevision: JSON.stringify({ metadataSha256: source.metadataSha256, capturedAt }) });
       }
@@ -59,7 +59,7 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
       const document = published(authority);
       const node = document.application.pages.flatMap(page => page.nodes).find(node => node.id === request.nodeId);
       if (!node || node.kind !== "data-widget" || request.id !== dataId(node.id)) throw new Error("Unbound Dashboard data request");
-      return readDashboardSavedData(config, store, authority.projectId, node, request.sourceRevision, signal);
+      return readDashboardSavedData(config, store, authority.projectId, node, request.sourceRevision, signal, authority.applicationRevision);
     },
     async resourceRevision(authority, request, signal) {
       signal?.throwIfAborted();

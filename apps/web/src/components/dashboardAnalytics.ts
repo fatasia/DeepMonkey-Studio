@@ -1,5 +1,7 @@
-import type { DashboardAggregation, DashboardConditionalRule, DashboardDataWidgetConfig } from "@bim-studio/contracts";
+import type { DashboardConditionalRule, DashboardDataWidgetConfig } from "@bim-studio/contracts";
 import { compileFormula, evaluateFormula } from "@bim-studio/data-runtime";
+import { aggregate } from "@bim-studio/data-runtime";
+export { aggregate } from "@bim-studio/data-runtime";
 import type { DashboardMetric } from "./dashboardMetricTypes";
 
 export interface DashboardAnalysisResult {
@@ -182,21 +184,6 @@ export function formatDashboardReportValue(value: unknown, widget: DashboardData
     options.currency = widget.report?.currency || "CNY";
   }
   return new Intl.NumberFormat(locale, options).format(numeric);
-}
-
-export function aggregate(values: readonly unknown[], mode: DashboardAggregation): number {
-  if (mode === "count") return values.filter((value) => value !== undefined && value !== null && value !== "").length;
-  if (mode === "distinct-count") return new Set(values.filter((value) => value !== undefined && value !== null).map(String)).size;
-  const numbers = values.flatMap((value) => {
-    const number = typeof value === "number" ? value : Number(value);
-    return Number.isFinite(number) ? [number] : [];
-  });
-  if (numbers.length === 0) return 0;
-  if (mode === "average") return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
-  if (mode === "minimum") return Math.min(...numbers);
-  if (mode === "maximum") return Math.max(...numbers);
-  if (mode === "none") return numbers.at(-1) ?? 0;
-  return numbers.reduce((sum, value) => sum + value, 0);
 }
 
 function applyCalculatedFields(rows: Array<Record<string, unknown>>, fields: readonly { key: string; formula: string }[]): Array<Record<string, unknown>> {

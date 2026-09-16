@@ -1,15 +1,25 @@
 import { createHash } from "node:crypto";
 import type { DashboardDataWidgetNode, DataDatasetField, JsonValue } from "@bim-studio/contracts";
 import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
+import { buildDashboardSampleMetric } from "@bim-studio/data-runtime";
 import type { AppConfig } from "./config.js";
 import { previewDataset } from "./dataIntegration.js";
 import { previewPipeline } from "./dataPipelineService.js";
 import type { MetadataStore } from "./metadataStore.js";
 
 export type DashboardDataStore = Pick<MetadataStore, "listDatasets" | "listDataConnections" | "listDataPipelines">;
-export function dashboardSavedDataSource(store: DashboardDataStore, projectId: string, node: DashboardDataWidgetNode) {
+export function dashboardSavedDataSource(store: DashboardDataStore, projectId: string, node: DashboardDataWidgetNode, applicationRevision?: number) {
   const widget = node.widget;
-  if (widget.semanticBinding || widget.directBinding || widget.sampleData || (!widget.datasetId && !widget.pipelineId)) return;
+  if (widget.sampleData) {
+    if (widget.datasetId || widget.pipelineId || widget.directBinding || widget.semanticBinding) throw new Error("Dashboard author sample data source is ambiguous");
+    if (!Number.isSafeInteger(applicationRevision) || applicationRevision! < 1) throw new Error("Author sample requires the published application revision");
+    const metric = buildDashboardSampleMetric(widget, structuredClone(widget.sampleData.rows));
+    const { value, ...rest } = metric;
+    const frozenMetric = { ...rest, ...(value === undefined ? {} : { value }) };
+    return { id: widget.sampleData.sourceId ?? `sample:${node.id}`, revision: applicationRevision!, kind: "sample" as const,
+      metadataSha256: runtimeContentSha256({ projectId, nodeId: node.id, applicationRevision, widget }), metric: frozenMetric };
+  }
+  if (widget.semanticBinding || widget.directBinding || (!widget.datasetId && !widget.pipelineId)) return;
   if (widget.datasetId && widget.pipelineId) throw new Error("Dashboard data source is ambiguous");
   const datasets = store.listDatasets(projectId), connections = store.listDataConnections(projectId);
   const pipeline = widget.pipelineId ? store.listDataPipelines(projectId).find(item => item.id === widget.pipelineId) : undefined;
@@ -32,12 +42,14 @@ export function dashboardSavedDataSource(store: DashboardDataStore, projectId: s
 }
 
 export async function readDashboardSavedData(config: AppConfig, store: DashboardDataStore, projectId: string,
-  node: DashboardDataWidgetNode, sourceRevision: string, signal?: AbortSignal) {
+  node: DashboardDataWidgetNode, sourceRevision: string, signal?: AbortSignal, applicationRevision?: number) {
   signal?.throwIfAborted();
   const token: { metadataSha256: string; capturedAt: number } = JSON.parse(sourceRevision);
   if (!Number.isSafeInteger(token.capturedAt) || token.capturedAt < 0) throw new Error("Dashboard data capture time is invalid");
-  const source = dashboardSavedDataSource(store, projectId, node);
+  const source = dashboardSavedDataSource(store, projectId, node, applicationRevision);
   if (!source || source.metadataSha256 !== token.metadataSha256) throw new Error("Dashboard data source changed since freeze");
+  if (source.kind === "sample") return { sourceRevision, value: { source: { kind: source.kind, id: source.id,
+    revision: source.revision, contentSha256: runtimeContentSha256(source.metric) }, metric: source.metric } };
   let rows: Array<Record<string, unknown>>, fields: DataDatasetField[];
   if (source.pipeline) {
     const result = await previewPipeline(config, store as MetadataStore, source.pipeline);
@@ -49,7 +61,7 @@ export async function readDashboardSavedData(config: AppConfig, store: Dashboard
     rows = result.rows; fields = result.fields;
   }
   signal?.throwIfAborted();
-  if (dashboardSavedDataSource(store, projectId, node)?.metadataSha256 !== source.metadataSha256)
+  if (dashboardSavedDataSource(store, projectId, node, applicationRevision)?.metadataSha256 !== source.metadataSha256)
     throw new Error("Dashboard data metadata changed during read");
   const field = fields.find(field => `${source.id}.${field.key}` === node.widget.key);
   if (!field) throw new Error("Published widget metric key does not select a saved source field");

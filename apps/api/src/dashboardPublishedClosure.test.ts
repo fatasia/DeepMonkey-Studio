@@ -109,4 +109,38 @@ describe("published Dashboard production closure", () => {
     const controller = new AbortController(); controller.abort();
     await expect(f.closure.derive(f.publication, authority.entryPageId, controller.signal)).rejects.toThrow();
   });
+
+  it.each(["bar", "value", "table"] as const)("freezes authored %s rows with exact Web samples and author revision", async type => {
+    const f = fixture();
+    const chart = f.publication.document.pages[0]!.nodes[1]!;
+    if (chart.kind !== "data-widget") throw new Error("invalid test node");
+    delete chart.widget.datasetId;
+    chart.widget.type = type; chart.widget.field = "ignored";
+    chart.widget.analysis = { measureField: "value", aggregation: "sum" };
+    const rows = [{ value: null }, { value: 7 }, { value: "9" }, { value: -3 }];
+    chart.widget.sampleData = { sourceId: "author-supplied", rows };
+    const selected = await f.closure.derive(f.publication, authority.entryPageId);
+    const result = await f.closure.resolveData(authority, selected.data[0]!);
+    expect(result.value).toEqual({ source: { kind: "sample", id: "author-supplied", revision: 1,
+      contentSha256: runtimeContentSha256({ value: 13, rows, samples: [{ time: 1, value: 7 }, { time: 3, value: -3 }] }) },
+      metric: { value: 13, rows, samples: [{ time: 1, value: 7 }, { time: 3, value: -3 }] } });
+    expect(result.value).not.toHaveProperty("layout");
+    rows[1]!.value = 20;
+    await expect(f.closure.resolveData(authority, selected.data[0]!)).rejects.toThrow(/changed since freeze/);
+  });
+
+  it("keeps empty authored samples empty and rejects simultaneous data products", async () => {
+    const f = fixture();
+    const chart = f.publication.document.pages[0]!.nodes[1]!;
+    if (chart.kind !== "data-widget") throw new Error("invalid test node");
+    chart.widget.sampleData = { rows: [] };
+    await expect(f.closure.derive(f.publication, authority.entryPageId)).rejects.toThrow();
+    delete chart.widget.datasetId;
+    const selected = await f.closure.derive(f.publication, authority.entryPageId);
+    expect((await f.closure.resolveData(authority, selected.data[0]!)).value).toMatchObject({
+      source: { kind: "sample", revision: 1 }, metric: { rows: [], samples: [] } });
+    expect((await f.closure.resolveData(authority, selected.data[0]!)).value).not.toHaveProperty("metric.value");
+    f.publication.applicationRevision = 2; f.publication.document.metadata.revision = 2;
+    await expect(f.closure.resolveData({ ...authority, applicationRevision: 2 }, selected.data[0]!)).rejects.toThrow(/changed since freeze/);
+  });
 });

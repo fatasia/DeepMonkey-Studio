@@ -1,6 +1,5 @@
 import type { DashboardDataWidgetConfig, DashboardSampleData, DataDatasetField, WidgetNode } from "@bim-studio/contracts";
-import { aggregate } from "./dashboardAnalytics";
-import type { DashboardMetric } from "./dashboardMetricTypes";
+export { buildDashboardSampleMetric } from "@bim-studio/data-runtime";
 
 export function dashboardSampleFields(sample: DashboardSampleData | undefined): DataDatasetField[] {
   if (sample?.columns) return sample.columns.map(column => ({ ...column, label: column.key }));
@@ -10,14 +9,6 @@ export function dashboardSampleFields(sample: DashboardSampleData | undefined): 
     const values = rows.map(row => row[key]).filter(value => value !== null && value !== undefined);
     return { key, label: key, type: values.length && values.every(value => typeof value === "number") ? "number" : values.length && values.every(value => typeof value === "boolean") ? "boolean" : "string" };
   });
-}
-
-export function buildDashboardSampleMetric(widget: DashboardDataWidgetConfig, rows: DashboardSampleData["rows"]): DashboardMetric {
-  const field = widget.analysis?.measureField ?? widget.field;
-  const values = field ? rows.map(row => row[field]) : [];
-  const mode = widget.analysis?.aggregation ?? "none";
-  const value = mode === "none" ? values[0] : rows.length ? aggregate(values, mode) : undefined;
-  return { value, rows, samples: values.flatMap((item, index) => typeof item === "number" ? [{ time: index, value: item }] : []) };
 }
 
 export function withDashboardSampleData(widget: DashboardDataWidgetConfig): DashboardDataWidgetConfig {
