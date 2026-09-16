@@ -24,6 +24,13 @@
 - 证据:
   - [x] `packages/deep-engine/src/benchmarkSampleSchema.ts` sha256=683e4abfe98414774b4c42940f13f059de512edc20419812183d3e879d21dfa9
 
+## A08 · 自动生成证据与差距报告
+- 状态:本轮待办
+- 说明:第一切片:确定性索引(双跑同哈希实测)+证据缺失标红;源码身份绑定与置信区间归后续切片
+- 证据:
+  - [x] `scripts/generate-de26-evidence-index.mts` sha256=636ca18f2290981bee4fad6823cd97e17dce08fd831cd66bb594c9cd52316931
+  - [x] `docs/specs/de26-evidence-index.md` sha256=22f8ef027168bc6601bf8ef45f47cfff36a07d8c35f1ed521d8d8f99644fb586
+
 ## B01 · 统一场景变化所有权
 - 状态:本轮待办
 - 说明:变化集合同+节点级CAS+撤销同通道已提交;Three 侧投影消费(B02)与 GPU 缓存键控接线待做
@@ -31,4 +38,4 @@
   - [x] `packages/deep-engine/src/scene/SceneChangeset.ts` sha256=6cfaafde7fbe920cb8054e1a2fe987f372c4255a9c7b4712a7634465ccb3137c
 
 ---
-覆盖 4 卡;证据缺失 0 项。
+覆盖 5 卡;证据缺失 0 项。

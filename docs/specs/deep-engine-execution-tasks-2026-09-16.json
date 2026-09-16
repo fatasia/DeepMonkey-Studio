@@ -278,7 +278,10 @@
    ],
    "status": "本轮待办",
    "proposed": true,
-   "evidence": [],
+   "evidence": [
+    "scripts/generate-de26-evidence-index.mts",
+    "docs/specs/de26-evidence-index.md"
+   ],
    "completed": false,
    "document": "deep-engine-tasks-foundation-2026-09-16.md#a08",
    "qualifiedId": "DE26/A08",
@@ -286,7 +289,8 @@
     "DE26/A01",
     "DE26/A03",
     "DE26/A04"
-   ]
+   ],
+   "note": "第一切片:确定性索引(双跑同哈希实测)+证据缺失标红;源码身份绑定与置信区间归后续切片"
   },
   {
    "id": "B01",
