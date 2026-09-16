@@ -20,6 +20,9 @@ export interface TransformNode<TId extends SceneTransformNodeId> {
   worldBounds: SpatialAabb | null;
   worldDirty: boolean;
   boundsDirty: boolean;
+  hidden: boolean;
+  /** 全局 revision 戳:update() 命中任何字段时刷新;changeset CAS 的依据。 */
+  lastChangedRevision: number;
 }
 
 export interface GraphState<TId extends SceneTransformNodeId> {
@@ -52,6 +55,8 @@ export function createTransformNode<TId extends SceneTransformNodeId>(
     worldBounds: null,
     worldDirty: true,
     boundsDirty: true,
+    hidden: false,
+    lastChangedRevision: 0,
   };
 }
 

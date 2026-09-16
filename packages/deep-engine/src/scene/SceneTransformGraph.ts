@@ -82,6 +82,8 @@ export class SceneTransformGraph<TId extends SceneTransformNodeId = string> {
       ...evaluated,
       localBounds: node.localBounds,
       dirty: node.worldDirty || node.boundsDirty,
+      hidden: node.hidden,
+      lastChangedRevision: node.lastChangedRevision,
     });
   }
 
@@ -118,13 +120,16 @@ export class SceneTransformGraph<TId extends SceneTransformNodeId = string> {
     if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new SceneTransformGraphError("invalid-transform", "Scene node patch must be an object.");
     const changesTransform = Object.prototype.hasOwnProperty.call(patch, "localTransform");
     const changesBounds = Object.prototype.hasOwnProperty.call(patch, "localBounds");
+    const changesHidden = Object.prototype.hasOwnProperty.call(patch, "hidden");
+    if (changesHidden && typeof patch.hidden !== "boolean") throw new SceneTransformGraphError("invalid-transform", "hidden must be a boolean when provided.");
     if (changesTransform && patch.localTransform === undefined) throw new SceneTransformGraphError("invalid-transform", "localTransform cannot be undefined.");
     if (changesBounds && patch.localBounds === undefined) throw new SceneTransformGraphError("invalid-bounds", "localBounds cannot be undefined.");
     const nextTransform = changesTransform ? validateLocalTransform(patch.localTransform) : node.localTransform;
     const nextBounds = changesBounds ? validateLocalBounds(patch.localBounds) : node.localBounds;
     const transformChanged = !sameLocalTransform(node.localTransform, nextTransform);
     const boundsChanged = !sameNullableBounds(node.localBounds, nextBounds);
-    if (!transformChanged && !boundsChanged) return;
+    const hiddenChanged = changesHidden && node.hidden !== patch.hidden;
+    if (!transformChanged && !boundsChanged && !hiddenChanged) return;
     const currentWorld = node.worldMatrix;
     const proposedWorld = transformChanged
       ? (node.parent === null ? localTransformMatrix(nextTransform) : multiplySceneMatrices(this.nodes.get(node.parent)!.worldMatrix, localTransformMatrix(nextTransform)))
@@ -140,6 +145,8 @@ export class SceneTransformGraph<TId extends SceneTransformNodeId = string> {
       node.localBounds = nextBounds;
       node.boundsDirty = true;
     }
+    if (hiddenChanged) node.hidden = patch.hidden as boolean;
+    node.lastChangedRevision = this.stateRevision;
     this.didMutate();
   }
 

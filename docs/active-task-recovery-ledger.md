@@ -1651,3 +1651,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:`packages/deep-engine/src/benchmarkTargetMatrix.ts` + 6 项测试。五张矩阵独立判定;引擎身份未锁定(unlocked)永不判 passed;双赛道(common-baseline/best-quality)禁混口径;六类工业负载为必选下限;必选能力+case 构成固定分母,缺失证据按 unverified 留分母;禁止退化项命中即判负;排除项显式登记不进分母且越权评分拒绝;权重按域合计必须等于 v1 冻结值防篡改;非法矩阵零评分。v1 合同 8 项回归不动。
 - 验证:deep-engine typecheck 通过;A01 6 项+v1 8 项测试全绿。
 - 边界(如实):真实引擎版本/环境hash/配对观测由 A02/A04/A05–A07 提供后才产出真实 verdict;矩阵 JSON 实例落盘归 A04。[spec](specs/de26-a01-target-matrix-v2-2026-09-17.md)
+
+### 2026-09-17 DE26/B01 统一场景变化所有权(GLM)
+
+- 已完成:SceneTransformGraph 节点新增 `hidden` 权威状态与 `lastChangedRevision` CAS 戳(update 命中即刷新,快照透出);新模块 `SceneChangeset.ts`——版本化纯数据变化集(transform/hidden 命令,携带节点级 expectedRevision + baseRevision),两阶段应用(全量校验→图事务原子应用→事务外 flush 推进单一权威 revision);重复 nodeId/非有限值构造期 fail-closed;迟到节点戳或 base revision → 整体拒绝且图零触碰;撤销走 `captureSceneChangesetInverse` 同一 CAS 通道,不产生第二权威;所有权合同成文(图=唯一权威,Three 投影进图,GPU 缓存只消费 flush 结果)。index 导出。
+- 验证:SceneChangeset 7 项 + scene 全量 32 项(4 文件)通过;deep-engine typecheck 通过;全包测试回归绿。
+- 边界(如实):Three 侧投影消费方(B02 的桥增量)未接;hidden 的绘制过滤由消费方执行(图不裁剪 world 计算)。

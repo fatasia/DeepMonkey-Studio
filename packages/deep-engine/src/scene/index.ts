@@ -1,5 +1,7 @@
 export { SceneTransformGraph } from "./SceneTransformGraph.js";
 export { SceneTransformSpatialBridge } from "./SceneTransformSpatialBridge.js";
+export { SCENE_CHANGESET_SCHEMA_VERSION, createSceneChangeset, applySceneChangeset, captureSceneChangesetInverse,
+  type SceneChangeset, type SceneChangesetCommand, type SceneChangesetOutcome, type SceneChangesetRejection } from "./SceneChangeset.js";
 export { DEEP_SCENE_TRANSFORM_LIMITS } from "./validation.js";
 export {
   SceneTransformGraphError,

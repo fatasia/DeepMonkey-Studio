@@ -44,6 +44,8 @@ export interface SceneTransformNodeInput<TId extends SceneTransformNodeId> {
 export interface SceneTransformNodePatch {
   readonly localTransform?: SceneLocalTransform;
   readonly localBounds?: SpatialAabb | null;
+  /** 隐藏只影响消费方绘制/拾取过滤,不改世界矩阵;属于权威状态。 */
+  readonly hidden?: boolean;
 }
 
 export interface SceneReparentOptions {
@@ -66,6 +68,9 @@ export interface SceneTransformNodeSnapshot<TId extends SceneTransformNodeId> {
   readonly localBounds: SpatialAabb | null;
   readonly worldBounds: SpatialAabb | null;
   readonly dirty: boolean;
+  readonly hidden: boolean;
+  /** 节点最近一次状态变更所在的全局 revision;0 表示创建后从未变更。 */
+  readonly lastChangedRevision: number;
 }
 
 export interface SceneTransformChange<TId extends SceneTransformNodeId> {
