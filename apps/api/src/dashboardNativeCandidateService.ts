@@ -98,7 +98,7 @@ export function createDashboardNativeCandidateService(
       outerSignal?.throwIfAborted();
       generation++;
       const activeGeneration = generation;
-      pending?.abort();
+      pending?.abort(new DashboardNativeCandidateSupersededError());
       const controller = new AbortController();
       pending = controller;
       const abort = () => controller.abort(outerSignal?.reason);

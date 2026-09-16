@@ -32,7 +32,7 @@ async function artifact(): Promise<Uint8Array> {
   return new TextEncoder().encode(serializeDeepRuntimePackage(parsed.value));
 }
 
-async function fixture(options: { readonly changeAfterWorker?: boolean; readonly deferWorker?: boolean } = {}) {
+async function fixture(options: { readonly changeAfterWorker?: boolean; readonly deferWorker?: boolean; readonly checkWorkerSignal?: boolean } = {}) {
   let active = publication(), revision = 1;
   const bytes = await artifact();
   const store = {
@@ -49,8 +49,9 @@ async function fixture(options: { readonly changeAfterWorker?: boolean; readonly
   };
   const authority = createDashboardPublicationAuthorityAdapter({ store, trustedInputs });
   let releaseWorker: (() => void) | undefined, workerRuns = 0;
-  const worker = { compile: vi.fn(async (input: Parameters<typeof makeOutput>[0]) => {
+  const worker = { compile: vi.fn(async (input: Parameters<typeof makeOutput>[0], signal?: AbortSignal) => {
     if (options.deferWorker && ++workerRuns === 1) await new Promise<void>(resolve => { releaseWorker = resolve; });
+    if (options.checkWorkerSignal) signal?.throwIfAborted();
     if (options.changeAfterWorker) revision = 2;
     return makeOutput(input, bytes);
   }) };
@@ -137,13 +138,13 @@ describe("dashboard Native candidate service", () => {
     expect(f.worker.compile).toHaveBeenCalledTimes(1);
   });
 
-  it("cancels an older candidate before it becomes observable", async () => {
-    const f = await fixture({ deferWorker: true });
+  it.each([false, true])("reports supersession consistently when worker checks cancellation: %s", async checkWorkerSignal => {
+    const f = await fixture({ deferWorker: true, checkWorkerSignal });
     const first = f.service.prepare(request);
     await vi.waitFor(() => expect(f.worker.compile).toHaveBeenCalledTimes(1));
     const second = f.service.prepare(request);
     f.releaseWorker();
-    await expect(first).rejects.toSatisfy((error: unknown) => error instanceof DOMException || error instanceof DashboardNativeCandidateSupersededError);
+    await expect(first).rejects.toBeInstanceOf(DashboardNativeCandidateSupersededError);
     await expect(second).resolves.toMatchObject({ authority: request });
   });
 });

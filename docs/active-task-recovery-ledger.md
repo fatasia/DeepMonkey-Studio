@@ -1,5 +1,7 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：候选并发替换原先以默认 AbortError 中断，HTTP 因而误报 candidate_invalid；改为携带明确 superseded 原因，正确映射 candidate_concurrent。合作取消与返回后复核两条 worker 路径均先复现再修复，Dashboard API 168 项及 API 类型检查通过；用户自身取消原因仍保留。
+
 - 已完成：补充真实 TCP 的 EXE 下载回归，验证异步打包正常返回字节及客户端断开后打包 AbortSignal 取消；未发现需修改的生产缺陷。主线 Dashboard API 167 项、API 类型检查通过。该验证不替代作者界面取消与重复操作验收。
 
 - 已完成：主线正常 API build 后复跑作者柱图发布至独立 EXE 全链，3 帧 Native GPU clean、下载内嵌数据与归档一致、无 Node/旁文件独立呈现通过。证据 `test-output/dashboard-author-main-build-20260916`，最新本机测试指南已指向该产物。验证脚本新增 `--sample-chart` 模式并已提交 `a835410`；本次仍保持 degraded。

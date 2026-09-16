@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard content and portable packaging
 
+- Report a replaced candidate as a concurrent request instead of a generic invalid candidate, including when compilation observes cancellation itself.
+
 - Generate the Dashboard deployment bundle during API build and development startup. Verify production imports and provide a standalone author-data chart test guide.
 
 - Freeze published author sample data using the same metric conversion as Web preview. Reject executable downloads when the deployed player bytes have changed.
