@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { JsonStore } from "../apps/api/src/jsonStore.js";
 import { LocalObjectStore } from "../apps/api/src/objects.js";
 import { createApiServer } from "../apps/api/src/serverOptions.js";
@@ -14,13 +16,15 @@ import { assertDashboardDocument } from "../packages/contracts/src/index.ts";
 const require = createRequire(new URL("../apps/api/package.json", import.meta.url));
 const JSZip = require("jszip");
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-const usage = "pnpm exec tsx --conditions=development scripts/verify-dashboard-published-portable.mts <native.exe> <device-sha256> <new-output-directory>";
+const usage = "pnpm exec tsx --conditions=development scripts/verify-dashboard-published-portable.mts <native.exe> <device-sha256> <new-output-directory> [--sample-chart]";
 
 async function main() {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === "--help") { console.log(usage); return; }
-  const [executable, deviceFingerprint, output] = args;
-  if (args.length !== 3 || !executable || !deviceFingerprint || !output || !/^[a-f0-9]{64}$/.test(deviceFingerprint)) throw new Error(usage);
+  const [executable, deviceFingerprint, output, variant] = args;
+  if ((args.length !== 3 && !(args.length === 4 && variant === "--sample-chart"))
+    || !executable || !deviceFingerprint || !output || !/^[a-f0-9]{64}$/.test(deviceFingerprint)) throw new Error(usage);
+  const sampleChart = variant === "--sample-chart";
   const directory = path.resolve(output);
   await mkdir(directory); // Existing evidence is never overwritten.
   const nativeExecutable = path.resolve(executable);
@@ -36,7 +40,7 @@ async function main() {
   assertDashboardDocument(document);
   document.application.metadata.id = randomUUID();
   document.application.metadata.projectId = project.id;
-  document.application.metadata.name = "Portable acceptance shapes";
+  document.application.metadata.name = sampleChart ? "Portable acceptance authored bar" : "Portable acceptance shapes";
   document.application.scripts = []; document.application.interactions = []; document.application.scenes = [];
   const page = document.application.pages[0]!;
   page.width = 960; page.height = 540;
@@ -46,6 +50,14 @@ async function main() {
     { id: "portable-green-ellipse", kind: "data-widget", zIndex: 1, frame: { x: 480, y: 100, width: 320, height: 260 },
       widget: { title: "", key: "shape-b", unit: "", type: "shape", shape: "ellipse", color: "#3dbd8c", borderWidth: 0 } },
   ];
+  if (sampleChart) {
+    document.application.pages = [page];
+    page.nodes = [{ id: "portable-author-bar", kind: "data-widget", zIndex: 0,
+      frame: { x: 40, y: 40, width: 880, height: 460 },
+      widget: { title: "Authored output", key: "author.value", unit: "", type: "bar", field: "value",
+        analysis: { dimensionField: "region", measureField: "value", aggregation: "sum" },
+        sampleData: { sourceId: "acceptance-author-samples", rows: [{ region: "A", value: 37 }, { region: "B", value: 91 }] } } }];
+  }
   assertDashboardDocument(document);
   const draft = await initialStore.createApplicationDraft(project.id, document.application, new Date().toISOString());
   assert.equal(draft.status, "created");
@@ -73,6 +85,17 @@ async function main() {
     assert.equal(response.statusCode, 201, response.body);
     const candidate = response.json();
     const record = registered.registry.read({ candidateId: candidate.candidateId, projectId: project.id, applicationId: persisted.applicationId });
+    if (sampleChart) {
+      assert.equal(record.candidate.freezeManifest.data.length, 1);
+      assert.equal(record.candidate.freezeManifest.data[0]!.nodeId, "portable-author-bar");
+      const runtime = JSON.parse(new TextDecoder().decode(record.candidate.artifact.artifact));
+      const charts = Object.values(runtime.payloads).filter((value: any) => value.schema === "deep-engine.chart-runtime") as any[];
+      assert.equal(charts.length, 1, "Published authored rows must produce a chart payload");
+      assert.deepEqual(charts[0].chart.datasets[0].rows, [["A", 37], ["B", 91]]);
+      assert.deepEqual(record.candidate.windowVerification.renderedNodeIds, ["portable-author-bar"]);
+      assert.deepEqual(record.candidate.capability.objects.map(object => ({ nodeId: object.nodeId, status: object.status })),
+        [{ nodeId: "portable-author-bar", status: "degraded" }]);
+    }
     await writeFile(path.join(directory, "runtime-package.json"), record.candidate.artifact.artifact);
     await writeFile(path.join(directory, "prepared-evidence.json"), JSON.stringify({ freezeManifest: record.candidate.freezeManifest,
       capability: record.candidate.capability, windowVerification: record.candidate.windowVerification }, null, 2));
@@ -95,6 +118,11 @@ async function main() {
     const embedded = exeResponse.rawPayload.subarray(-48 - embeddedLength, -48);
     assert.deepEqual(new Uint8Array(embedded), verified.archive.artifact);
     assert.equal(sha(embedded), footer.subarray(16).toString("hex"));
+    if (sampleChart) {
+      execFileSync(process.execPath, [fileURLToPath(new URL("./verify-dashboard-standalone.mjs", import.meta.url)),
+        path.join(standaloneDirectory, "Dashboard.exe"), path.join(directory, "runtime-package.json"),
+        path.join(directory, "standalone-validation")], { windowsHide: true, stdio: "inherit", timeout: 30_000 });
+    }
     const zip = await JSZip.loadAsync(zipResponse.rawPayload, { checkCRC32: true });
     const manifest = JSON.parse(await zip.file("manifest.json").async("text"));
     const extracted = path.join(directory, "extracted"); await mkdir(extracted);
@@ -112,6 +140,8 @@ async function main() {
     assert.equal((await app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip` })).statusCode, 404);
     assert.equal((await app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/standalone-executable` })).statusCode, 404);
     const evidence = { scope: "isolated-published-application-to-portable-zip", verifiedAt: new Date().toISOString(),
+      content: sampleChart ? "published-author-sample-bar-37-91" : "shapes",
+      standaloneNoArgumentVerified: sampleChart,
       testDataOnly: true, loginAuthenticationTested: false, nativeExecutableSha256: sha(await readFile(nativeExecutable)),
       candidate, capability: record.candidate.capability, windowVerification: record.candidate.windowVerification,
       zipSha256: sha(zipResponse.rawPayload), zipBytes: zipResponse.rawPayload.byteLength,
