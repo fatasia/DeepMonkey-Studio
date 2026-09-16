@@ -1668,3 +1668,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:`packages/deep-engine/src/benchmarkAssetManifest.ts` 合同 v1(schema/六类负载对齐 A01/源哈希必须可复算/单位原样声明/许可证据强制/任务夹具/冷热缓存条件);生成器 `scripts/generate-benchmark-asset-manifests.mts` 实测本机资产;三份真实清单落盘 `packages/deep-engine/fixtures/benchmark-assets/manifests-v1.json`:Snowdon Towers(94.7MB)、Golden Nugget 多专业(127.9MB)、RME Advanced MEP(34.0MB),均 Autodesk 官方样例、实测 SHA-256、标注不可再分发仅本机基准。用户解锁:D 盘 92 个 RVT/RFA(Autodesk 样例库 2019/2026),已列为语料候选。
 - 验证:合同测试 3 项通过;deep-engine typecheck 0 错误。
 - 边界(如实):RVT 三角面/材质统计待工业格式 PLAN 转换后回填(脚本明确不估算);factory 域与 far-origin-campus 类资产待下载开放许可样本;manifests 引用本机绝对路径(资产不入 git)。
+
+### 2026-09-17 DE26/A03 采样合同 v1(GLM;TS 侧,native 接线待 cargo 车道)
+
+- 已完成:`packages/deep-engine/src/benchmarkSampleSchema.ts`——统一采样窗口合同(8 通道:bridge/update/upload/cpu-submit/gpu-timestamp/present/frame-interval/input-latency;clockId 区分时间源);**不可用必须显式 unavailable+原因,禁止伪零**;sampleCount 与原始样本一一对应;通道窗口不得超出运行窗口;中位数只对 measured 定义(unavailable 返回 undefined 非 0)。
+- 验证:合同测试 4 项通过;typecheck 0 错误。
+- 边界(如实):native telemetry_gpu.rs 的同源接线与 StudioDeepPerformance 对接归下一批(cargo 车道被 P1-23 占用);置信区间/分组比较语义归 A04 消费时冻结。
