@@ -11,9 +11,11 @@ use deep_engine_native::{
 
 use crate::player_cli::{
     PackageMode, default_shadow_fixture_path, load_deep2d, print_help, reject_extra, required_path,
-    run_package, run_shadow_update_probe, run_viewer, run_viewer_mode, run_viewer_without_bloom,
+    run_package, run_package_live, run_packet_live, run_shadow_update_probe, run_telemetry_smoke,
+    run_viewer, run_viewer_mode, run_viewer_without_bloom,
 };
-use crate::{deep2d_interleave_probe, shader_package_probe};
+use crate::runtime_package_startup;
+use crate::{deep2d_interleave_probe, fog_cli, shader_package_probe};
 
 pub fn execute() -> Result<(), String> {
     let mut args = env::args_os().skip(1);
@@ -26,6 +28,9 @@ pub fn execute() -> Result<(), String> {
                 .ok_or("command must be valid Unicode; use --help")
         })
         .transpose()?;
+    if let Some(result) = crate::cli_viewer_tools::execute(command, &mut args) {
+        return result;
+    }
     match command {
         Some("--help" | "-h") => {
             reject_extra(args)?;
@@ -104,6 +109,7 @@ pub fn execute() -> Result<(), String> {
             );
             Ok(())
         }
+        Some("--verify-package") => crate::publication_verification::execute(args),
         Some(option @ ("--package" | "--smoke-package" | "--headless-package")) => {
             let path = required_path(&mut args, option)?;
             reject_extra(args)?;
@@ -113,6 +119,22 @@ pub fn execute() -> Result<(), String> {
                 _ => PackageMode::Viewer,
             };
             run_package(path, mode)
+        }
+        Some(option @ ("--package-recover" | "--headless-package-recover")) => {
+            let primary = required_path(&mut args, option)?;
+            let last_known_good = required_path(&mut args, option)?;
+            reject_extra(args)?;
+            let mode = if option == "--headless-package-recover" {
+                PackageMode::Headless
+            } else {
+                PackageMode::Viewer
+            };
+            runtime_package_startup::recover(primary, last_known_good, mode)
+        }
+        Some(option @ ("--package-live" | "--smoke-package-live")) => {
+            let path = required_path(&mut args, option)?;
+            reject_extra(args)?;
+            run_package_live(path, option == "--smoke-package-live")
         }
         Some("--packet") => {
             let path = args
@@ -170,6 +192,23 @@ pub fn execute() -> Result<(), String> {
             reject_extra(args)?;
             run_viewer_mode(path, None, true, true, false)
         }
+        Some("--packet-live") => {
+            let path = required_path(&mut args, "--packet-live")?;
+            reject_extra(args)?;
+            run_packet_live(path, false)
+        }
+        Some("--smoke-telemetry") => {
+            let path = args
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| default_fixture_path().to_owned());
+            reject_extra(args)?;
+            run_telemetry_smoke(path)
+        }
+        Some("--smoke-packet-live") => {
+            reject_extra(args)?;
+            run_packet_live(default_fixture_path().to_owned(), true)
+        }
         Some("--smoke-shadow-update") => {
             let path = args
                 .next()
@@ -185,6 +224,9 @@ pub fn execute() -> Result<(), String> {
                 .unwrap_or_else(|| default_textured_fixture_path().to_owned());
             reject_extra(args)?;
             run_viewer_mode(path, None, true, false, true)
+        }
+        Some(option @ ("--fog" | "--smoke-fog" | "--headless-fog")) => {
+            fog_cli::run(args, option == "--smoke-fog", option == "--headless-fog")
         }
         Some("--smoke-shader-package") => {
             reject_extra(args)?;

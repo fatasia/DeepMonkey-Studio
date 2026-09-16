@@ -11,6 +11,10 @@ pub const MESH_PIPELINE_VARIANTS: usize = 12;
 pub const SHADOW_PIPELINE_VARIANTS: usize = 9;
 
 pub struct MeshPipelines {
+    active: Option<ActiveMeshPipelines>,
+}
+
+struct ActiveMeshPipelines {
     solid: MaterialPipelines,
     blend: MaterialPipelines,
     shadow: ShadowPipelines,
@@ -46,6 +50,18 @@ impl RasterPipelines {
 }
 
 impl MeshPipelines {
+    pub fn for_empty_scene() -> Self {
+        Self { active: None }
+    }
+
+    pub fn counts(&self) -> (usize, usize) {
+        if self.active.is_some() {
+            (MESH_PIPELINE_VARIANTS, SHADOW_PIPELINE_VARIANTS)
+        } else {
+            (0, 0)
+        }
+    }
+
     pub fn select(
         &self,
         alpha_mode: AlphaMode,
@@ -53,10 +69,14 @@ impl MeshPipelines {
         double_sided: bool,
         normal_mapped: bool,
     ) -> &wgpu::RenderPipeline {
+        let active = self
+            .active
+            .as_ref()
+            .expect("scene draws require material pipelines");
         let set = if alpha_mode == AlphaMode::Blend {
-            &self.blend
+            &active.blend
         } else {
-            &self.solid
+            &active.solid
         };
         let set = if normal_mapped {
             &set.normal_mapped
@@ -72,15 +92,19 @@ impl MeshPipelines {
         mirrored: bool,
         double_sided: bool,
     ) -> (&wgpu::RenderPipeline, bool) {
+        let shadow = &self
+            .active
+            .as_ref()
+            .expect("shadow draws require material pipelines")
+            .shadow;
         match mode {
-            ShadowCasterMode::Solid => (self.shadow.solid.select(mirrored, double_sided), false),
+            ShadowCasterMode::Solid => (shadow.solid.select(mirrored, double_sided), false),
             ShadowCasterMode::MaskPlain => {
-                (self.shadow.mask_plain.select(mirrored, double_sided), false)
+                (shadow.mask_plain.select(mirrored, double_sided), false)
             }
-            ShadowCasterMode::MaskMaterial => (
-                self.shadow.mask_material.select(mirrored, double_sided),
-                true,
-            ),
+            ShadowCasterMode::MaskMaterial => {
+                (shadow.mask_material.select(mirrored, double_sided), true)
+            }
         }
     }
 }
@@ -93,19 +117,27 @@ pub fn create_mesh_pipelines(
     shader: &wgpu::ShaderModule,
 ) -> MeshPipelines {
     MeshPipelines {
-        solid: mesh::create_material_pipelines(
-            device,
-            frame_layout,
-            material_layout,
-            shader,
-            false,
-        ),
-        blend: mesh::create_material_pipelines(device, frame_layout, material_layout, shader, true),
-        shadow: shadow::create_shadow_pipelines(
-            device,
-            shadow_frame_layout,
-            material_layout,
-            shader,
-        ),
+        active: Some(ActiveMeshPipelines {
+            solid: mesh::create_material_pipelines(
+                device,
+                frame_layout,
+                material_layout,
+                shader,
+                false,
+            ),
+            blend: mesh::create_material_pipelines(
+                device,
+                frame_layout,
+                material_layout,
+                shader,
+                true,
+            ),
+            shadow: shadow::create_shadow_pipelines(
+                device,
+                shadow_frame_layout,
+                material_layout,
+                shader,
+            ),
+        }),
     }
 }

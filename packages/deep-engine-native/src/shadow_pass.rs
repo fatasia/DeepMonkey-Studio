@@ -3,15 +3,19 @@ use crate::{
     pipeline::MeshPipelines, shadow_map::ShadowMap,
 };
 
-pub fn encode_shadow_pass(
+pub fn encode_shadow_cascades(
     encoder: &mut wgpu::CommandEncoder,
     shadow_map: &ShadowMap,
     scene: &GpuScene,
     culling: &GpuCulling,
     lod: Option<&GpuLod>,
     pipelines: &MeshPipelines,
+    dirty_mask: u8,
 ) {
     for (cascade_index, layer_view) in shadow_map.layer_views.iter().enumerate() {
+        if dirty_mask & (1 << cascade_index) == 0 {
+            continue;
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Deep Engine native cached cascade shadow pass"),
             color_attachments: &[],

@@ -47,7 +47,7 @@ pub fn verify(
             .pipeline
     );
 
-    for mutation in 0..4 {
+    for mutation in [0usize, 1, 3] {
         let mut candidate = crate::fixture();
         let expected = match mutation {
             0 => {
@@ -65,12 +65,6 @@ pub fn verify(
                 });
                 "rebuild the entire scene"
             }
-            2 => {
-                candidate.shader_packages[0].modules[0]
-                    .source
-                    .push_str("\nthis is invalid WGSL");
-                "SHA-256"
-            }
             _ => {
                 candidate.material_bindings[0].technique_id = "missingTechnique".into();
                 "missingTechnique"
@@ -85,6 +79,26 @@ pub fn verify(
             scene.shader_materials.as_ref().unwrap().signature,
             signature
         );
+    }
+
+    // Invalid WGSL is isolated per package instead of failing the whole
+    // transaction (isolation slice): dependents fall back to builtin PBR and
+    // the signature advances, proving the update published.
+    let mut broken = crate::fixture();
+    let broken_id = broken.shader_packages[0].package_id.clone();
+    broken.shader_packages[0].modules[0].source.push_str(
+        "
+this is invalid WGSL",
+    );
+    assert!(
+        scene
+            .replace_shader_materials(device, &broken, frame, shadows, ibl)
+            .unwrap()
+    );
+    {
+        let materials = scene.shader_materials.as_ref().unwrap();
+        assert_eq!(materials.isolated, vec![broken_id]);
+        assert!(materials.fallback_materials >= 1);
     }
 
     let wrong_device = scene
@@ -109,7 +123,9 @@ pub fn verify(
         .replace_shader_materials(device, &candidate, &invalid_frame, shadows, ibl)
         .unwrap_err();
     assert!(error.contains("transaction rejected"), "{error}");
-    assert_eq!(scene.shader_revision, revision);
+    // Re-baseline after the isolated publish above.
+    let revision = scene.shader_revision;
+    let signature = scene.shader_materials.as_ref().unwrap().signature.clone();
     assert_eq!(
         scene.shader_materials.as_ref().unwrap().signature,
         signature

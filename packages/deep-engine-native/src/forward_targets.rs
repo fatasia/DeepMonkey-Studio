@@ -48,7 +48,7 @@ impl ForwardTargets {
             sample_count: FORWARD_SAMPLE_COUNT,
             dimension: wgpu::TextureDimension::D2,
             format: FORWARD_DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let hdr_view = hdr.create_view(&Default::default());

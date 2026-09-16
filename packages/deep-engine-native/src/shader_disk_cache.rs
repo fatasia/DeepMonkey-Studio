@@ -23,7 +23,8 @@ pub use types::{
     DEEP_SHADER_DISK_CACHE_SCHEMA, DEEP_SHADER_DISK_CACHE_SCHEMA_VERSION,
     DEEP_SHADER_DISK_RECORD_SCHEMA, DEEP_SHADER_DISK_RECORD_SCHEMA_VERSION,
     ShaderDiskCacheCancellation, ShaderDiskCacheConfig, ShaderDiskCacheError,
-    ShaderDiskCacheErrorCode, ShaderDiskCacheScope, ShaderDiskCacheStats,
+    ShaderDiskCacheErrorCode, ShaderDiskCacheScope, ShaderDiskCacheStartupDisposition,
+    ShaderDiskCacheStats,
 };
 
 #[derive(Clone)]
@@ -58,6 +59,36 @@ impl ShaderDiskCache {
         cache.cleanup(None)?;
         cache.enforce_limits()?;
         Ok(cache)
+    }
+
+    /// Opens a validated snapshot or rebuilds only when every owned snapshot is corrupt.
+    /// Compatibility, locking, permission and capacity errors remain fatal and untouched.
+    pub fn open_for_startup(
+        config: ShaderDiskCacheConfig,
+        cancellation: Option<&ShaderDiskCacheCancellation>,
+    ) -> Result<(Self, ShaderDiskCacheStartupDisposition), ShaderDiskCacheError> {
+        match Self::open(config.clone()) {
+            Ok(cache) => Ok((cache, ShaderDiskCacheStartupDisposition::Opened)),
+            Err(error)
+                if matches!(
+                    error.code,
+                    ShaderDiskCacheErrorCode::CorruptIndex
+                        | ShaderDiskCacheErrorCode::CorruptRecord
+                ) =>
+            {
+                let disposition = match error.code {
+                    ShaderDiskCacheErrorCode::CorruptIndex => {
+                        ShaderDiskCacheStartupDisposition::RebuiltCorruptIndex
+                    }
+                    ShaderDiskCacheErrorCode::CorruptRecord => {
+                        ShaderDiskCacheStartupDisposition::RebuiltCorruptRecord
+                    }
+                    _ => unreachable!("guarded corrupt-cache error"),
+                };
+                Self::rebuild(config, cancellation).map(|cache| (cache, disposition))
+            }
+            Err(error) => Err(error),
+        }
     }
 
     /// Removes only files owned by this cache format, then creates an empty cache.

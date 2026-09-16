@@ -18,14 +18,14 @@ use crate::{
     gpu_textures::{GpuMaterial, GpuPbrResources},
 };
 
-type VersionedStage<T> = (Vec<Arc<T>>, Vec<(VersionKey, Arc<T>)>);
+type VersionedStage<T> = (Vec<Arc<T>>, Vec<(VersionKey, Arc<T>, u64)>);
 type MaterialStage = (
     Vec<Arc<GpuMaterial>>,
     Vec<(MaterialResourceIdentity, Arc<GpuMaterial>)>,
 );
 
 impl GpuSceneCache {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, dead_code)] // Independent cache tests use the default domain.
     pub fn stage(
         &self,
         device: &wgpu::Device,
@@ -36,10 +36,47 @@ impl GpuSceneCache {
         prepared: &PreparedScene,
         pbr: &PreparedPbrResources,
     ) -> Result<GpuSceneCandidate, String> {
+        self.stage_scoped(
+            device,
+            queue,
+            material_layout,
+            packet,
+            scene_key,
+            prepared,
+            pbr,
+            "",
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn stage_scoped(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        material_layout: &wgpu::BindGroupLayout,
+        packet: &RenderPacket,
+        scene_key: u64,
+        prepared: &PreparedScene,
+        pbr: &PreparedPbrResources,
+        domain: &str,
+    ) -> Result<GpuSceneCandidate, String> {
+        if !self.domains.contains(domain) && self.domains.len() >= 256 {
+            return Err("native scene source-domain budget exhausted; reopen Viewer".into());
+        }
         if device != &self.device {
             return Err("native scene cache belongs to another GPU device epoch".into());
         }
-        let manifest = scene_resource_manifest(packet, prepared, pbr)?;
+        let mut manifest = scene_resource_manifest(packet, prepared, pbr)?;
+        if !domain.is_empty() {
+            for identity in manifest.geometries.iter_mut().chain(&mut manifest.textures) {
+                identity.id =
+                    serde_json::to_string(&(domain, &identity.id)).map_err(|e| e.to_string())?;
+            }
+            for identity in &mut manifest.materials {
+                identity.id =
+                    serde_json::to_string(&(domain, &identity.id)).map_err(|e| e.to_string())?;
+            }
+        }
         let revisions = self.revisions.stage(&manifest)?;
         let mut metrics = GpuSceneCacheMetrics::default();
         let (geometries, new_geometries) =
@@ -56,13 +93,14 @@ impl GpuSceneCache {
             &fallbacks,
             &mut metrics,
         )?;
+        let mut new_instance_bytes = None;
         let instance = if let Some(value) = self
             .instances
             .get(&manifest.instances)
-            .and_then(Weak::upgrade)
+            .and_then(|(weak, _)| weak.upgrade())
         {
             metrics.instance_buffer_reuses = 1;
-            value
+            std::sync::Arc::clone(&value)
         } else {
             metrics.instance_buffer_uploads = 1;
             let previous = self.latest_instance.upgrade();
@@ -70,6 +108,7 @@ impl GpuSceneCache {
                 stage_instance_update(device, queue, previous.as_ref(), &prepared.instances);
             metrics.instance_uploaded_bytes = transfer.uploaded_bytes;
             metrics.instance_copied_bytes = transfer.copied_bytes;
+            new_instance_bytes = Some(value.buffer.size());
             value
         };
         let scene = GpuScene::from_resources(
@@ -85,7 +124,14 @@ impl GpuSceneCache {
             scene_key,
             device,
         );
+        let new_resident_bytes = new_geometries
+            .iter()
+            .map(|(_, _, bytes)| bytes)
+            .sum::<u64>()
+            + new_textures.iter().map(|(_, _, bytes)| bytes).sum::<u64>()
+            + new_instance_bytes.unwrap_or(0);
         Ok(GpuSceneCandidate {
+            domain: domain.into(),
             epoch: self.epoch,
             revisions,
             scene,
@@ -93,6 +139,8 @@ impl GpuSceneCache {
             new_geometries,
             new_textures,
             new_materials,
+            new_resident_bytes,
+            new_instance_bytes,
             instance,
             fallbacks,
             metrics,
@@ -113,13 +161,23 @@ impl GpuSceneCache {
             .zip(&manifest.geometries)
             .map(|(source, identity)| {
                 let key = version(identity);
-                if let Some(value) = self.geometries.get(&key).and_then(Weak::upgrade) {
+                if let Some(value) = self
+                    .geometries
+                    .get(&key)
+                    .and_then(|(weak, _)| weak.upgrade())
+                {
                     metrics.geometry_reuses += 1;
                     value
                 } else {
                     metrics.geometry_uploads += 1;
                     let value = Arc::new(GpuGeometry::new(device, source));
-                    pending.push((key, Arc::clone(&value)));
+                    let bytes = value.vertex_buffer.size()
+                        + value.index_buffer.size()
+                        + value
+                            .tangent_buffer
+                            .as_ref()
+                            .map_or(0, |buffer| buffer.size());
+                    pending.push((key, Arc::clone(&value), bytes));
                     value
                 }
             })
@@ -142,13 +200,18 @@ impl GpuSceneCache {
             .zip(&manifest.textures)
             .map(|(source, identity)| {
                 let key = version(identity);
-                if let Some(value) = self.textures.get(&key).and_then(Weak::upgrade) {
+                if let Some(value) = self.textures.get(&key).and_then(|(weak, _)| weak.upgrade()) {
                     metrics.texture_reuses += 1;
                     Ok(value)
                 } else {
                     metrics.texture_uploads += 1;
                     let value = Arc::new(upload_texture(device, queue, source)?);
-                    pending.push((key, Arc::clone(&value)));
+                    let bytes: u64 = source
+                        .levels
+                        .iter()
+                        .map(|level| u64::from(level.width) * u64::from(level.height) * 4)
+                        .sum();
+                    pending.push((key, Arc::clone(&value), bytes));
                     Ok(value)
                 }
             })

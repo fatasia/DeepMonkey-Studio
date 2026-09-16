@@ -1,0 +1,304 @@
+{
+  "schemaVersion": 1,
+  "id": "deep.design-tokens.v1",
+  "source": "apps/web/src/styles/base.css",
+  "brandOverrideKey": "--accent",
+  "themes": {
+    "dark": {
+      "colors": {
+        "bg-0": [
+          0.0431,
+          0.0667,
+          0.0784,
+          1
+        ],
+        "bg-1": [
+          0.0275,
+          0.0471,
+          0.0588,
+          1
+        ],
+        "surface-1": [
+          0.0667,
+          0.098,
+          0.1137,
+          1
+        ],
+        "surface-2": [
+          0.0902,
+          0.1294,
+          0.149,
+          1
+        ],
+        "surface-3": [
+          0.1098,
+          0.1569,
+          0.1804,
+          1
+        ],
+        "line-subtle": [
+          0.6549,
+          0.7176,
+          0.7451,
+          0.1
+        ],
+        "line": [
+          0.6549,
+          0.7176,
+          0.7451,
+          0.14
+        ],
+        "line-strong": [
+          0.6549,
+          0.7176,
+          0.7451,
+          0.26
+        ],
+        "text-strong": [
+          0.902,
+          0.9255,
+          0.9373,
+          1
+        ],
+        "text": [
+          0.6549,
+          0.698,
+          0.7216,
+          1
+        ],
+        "text-muted": [
+          0.5451,
+          0.5961,
+          0.6235,
+          1
+        ],
+        "text-faint": [
+          0.451,
+          0.5059,
+          0.5373,
+          1
+        ],
+        "accent": [
+          0.8392,
+          0.6667,
+          0.302,
+          1
+        ],
+        "accent-hover": [
+          0.8794,
+          0.75,
+          0.4765,
+          1
+        ],
+        "accent-soft": [
+          0.8392,
+          0.6667,
+          0.302,
+          0.14
+        ],
+        "success": [
+          0.349,
+          0.7725,
+          0.5529,
+          1
+        ],
+        "warning": [
+          0.8471,
+          0.6745,
+          0.3216,
+          1
+        ],
+        "danger": [
+          0.8863,
+          0.4549,
+          0.4706,
+          1
+        ],
+        "info": [
+          0.3961,
+          0.6824,
+          0.9098,
+          1
+        ]
+      },
+      "radii": {
+        "radius-xs": 4,
+        "radius-sm": 6,
+        "radius-md": 8,
+        "radius-lg": 12
+      },
+      "spacing": {
+        "space-1": 4,
+        "space-2": 8,
+        "space-3": 12,
+        "space-4": 16,
+        "space-6": 24
+      },
+      "typography": {
+        "fontFamily": "Inter, ui-sans-serif, system-ui, 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif",
+        "fontSizeBase": 13,
+        "lineHeight": 1.45
+      },
+      "motion": {
+        "fastMs": 150,
+        "baseMs": 200,
+        "slowMs": 320,
+        "easing": "cubic-bezier(0.2, 0, 0, 1)"
+      },
+      "reducedMotion": {
+        "fastMs": 0,
+        "baseMs": 0,
+        "slowMs": 0,
+        "easing": "linear"
+      }
+    },
+    "light": {
+      "colors": {
+        "bg-0": [
+          0.9294,
+          0.949,
+          0.9569,
+          1
+        ],
+        "bg-1": [
+          0.9686,
+          0.9765,
+          0.9804,
+          1
+        ],
+        "surface-1": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "surface-2": [
+          0.9451,
+          0.9608,
+          0.9647,
+          1
+        ],
+        "surface-3": [
+          0.9059,
+          0.9294,
+          0.9373,
+          1
+        ],
+        "line-subtle": [
+          0.1412,
+          0.2157,
+          0.251,
+          0.09
+        ],
+        "line": [
+          0.1412,
+          0.2157,
+          0.251,
+          0.15
+        ],
+        "line-strong": [
+          0.1412,
+          0.2157,
+          0.251,
+          0.26
+        ],
+        "text-strong": [
+          0.0902,
+          0.1412,
+          0.1686,
+          1
+        ],
+        "text": [
+          0.251,
+          0.3176,
+          0.3529,
+          1
+        ],
+        "text-muted": [
+          0.3804,
+          0.4471,
+          0.4784,
+          1
+        ],
+        "text-faint": [
+          0.4784,
+          0.5373,
+          0.5647,
+          1
+        ],
+        "accent": [
+          0.8392,
+          0.6667,
+          0.302,
+          1
+        ],
+        "accent-hover": [
+          0.3149,
+          0.2988,
+          0.2086,
+          1
+        ],
+        "accent-soft": [
+          0.8392,
+          0.6667,
+          0.302,
+          0.14
+        ],
+        "success": [
+          0.149,
+          0.451,
+          0.3059,
+          1
+        ],
+        "warning": [
+          0.549,
+          0.3647,
+          0.0706,
+          1
+        ],
+        "danger": [
+          0.6902,
+          0.2275,
+          0.2706,
+          1
+        ],
+        "info": [
+          0.1412,
+          0.4118,
+          0.6157,
+          1
+        ]
+      },
+      "radii": {
+        "radius-xs": 4,
+        "radius-sm": 6,
+        "radius-md": 8,
+        "radius-lg": 12
+      },
+      "spacing": {
+        "space-1": 4,
+        "space-2": 8,
+        "space-3": 12,
+        "space-4": 16,
+        "space-6": 24
+      },
+      "typography": {
+        "fontFamily": "Inter, ui-sans-serif, system-ui, 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif",
+        "fontSizeBase": 13,
+        "lineHeight": 1.45
+      },
+      "motion": {
+        "fastMs": 150,
+        "baseMs": 200,
+        "slowMs": 320,
+        "easing": "cubic-bezier(0.2, 0, 0, 1)"
+      },
+      "reducedMotion": {
+        "fastMs": 0,
+        "baseMs": 0,
+        "slowMs": 0,
+        "easing": "linear"
+      }
+    }
+  }
+}

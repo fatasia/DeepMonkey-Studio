@@ -47,7 +47,12 @@ pub fn prepare_gpu_culling(
         let mask = if batch.alpha_mode == AlphaMode::Blend || batch.lod {
             0
         } else {
-            MAIN_SOLID_MASK | SHADOW_CASTER_MASK
+            MAIN_SOLID_MASK
+                | if batch.cast_shadow {
+                    SHADOW_CASTER_MASK
+                } else {
+                    0
+                }
         };
         for index in batch.instance_start as usize..end {
             bounds[index] = spheres[batch.geometry_index];

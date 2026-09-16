@@ -8,6 +8,8 @@ use deep_engine_native::{
     scene_bounds::SceneWorldBounds,
 };
 use wgpu::util::DeviceExt;
+#[path = "shadow_map/section_bindings.rs"]
+mod section_bindings;
 
 pub(crate) const DEPTH_BIAS: f32 = 0.00075;
 
@@ -20,11 +22,12 @@ pub struct CascadedShadowGpuMetrics {
 }
 
 pub struct ShadowMap {
-    _texture: wgpu::Texture,
+    pub(crate) _texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub layer_views: Vec<wgpu::TextureView>,
     pub sampler: wgpu::Sampler,
     pub sampling_uniform: wgpu::Buffer,
+    pub section_uniform: wgpu::Buffer,
     pub(crate) shadow_frames: wgpu::Buffer,
     pub shadow_frame_bind_group: wgpu::BindGroup,
     pub(crate) options: CascadedShadowOptions,
@@ -48,7 +51,26 @@ impl ShadowMap {
         light_direction: [f32; 3],
         scene_bounds: Option<SceneWorldBounds>,
     ) -> Result<Self, String> {
-        let options = CascadedShadowOptions::default();
+        Self::new_with_options(
+            device,
+            shadow_frame_layout,
+            frame,
+            camera,
+            light_direction,
+            scene_bounds,
+            CascadedShadowOptions::default(),
+        )
+    }
+
+    pub(crate) fn new_with_options(
+        device: &wgpu::Device,
+        shadow_frame_layout: &wgpu::BindGroupLayout,
+        frame: &FrameUniform,
+        camera: CascadedShadowCamera,
+        light_direction: [f32; 3],
+        scene_bounds: Option<SceneWorldBounds>,
+        options: CascadedShadowOptions,
+    ) -> Result<Self, String> {
         validate_device(device, options)?;
         let plan = plan_cascaded_shadows_for_scene(camera, light_direction, options, scene_bounds)?;
         let sampling_data = plan.uniform(DEPTH_BIAS)?;
@@ -65,7 +87,9 @@ impl ShadowMap {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: SHADOW_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
@@ -113,24 +137,15 @@ impl ShadowMap {
             contents: &shadow_frame_data,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let shadow_frame_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Deep Engine native cascade caster bindings"),
-            layout: shadow_frame_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &shadow_frames,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(FRAME_UNIFORM_BYTES),
-                }),
-            }],
-        });
+        let (section_uniform, shadow_frame_bind_group) =
+            section_bindings::create(device, shadow_frame_layout, &shadow_frames);
         Ok(Self {
             _texture: texture,
             view,
             layer_views,
             sampler,
             sampling_uniform,
+            section_uniform,
             shadow_frames,
             shadow_frame_bind_group,
             options,

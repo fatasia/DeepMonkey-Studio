@@ -5,6 +5,16 @@ use super::command_types::Deep2dCommand;
 pub type Deep2dColor = [f64; 4];
 pub type Deep2dMatrix = [f64; 6];
 
+/// Axis-aligned rectangle in logical canvas units. Used for scissor-based clipping.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct Deep2dRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Deep2dDisplayList {
@@ -16,6 +26,10 @@ pub struct Deep2dDisplayList {
     pub scale_factor: f64,
     pub resources: Vec<Deep2dResource>,
     pub commands: Vec<Deep2dCommand>,
+    /// Optional image atlases; absent on legacy display lists. Required by
+    /// `ImageCommand::atlas_id` — images have no other native pixel source.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atlases: Vec<super::runtime_types::Deep2dAtlas>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

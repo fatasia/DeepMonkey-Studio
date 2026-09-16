@@ -1,3 +1,4 @@
+use crate::hdr_readback::half_to_f32;
 use std::sync::mpsc;
 
 use deep_engine_native::{mesh_abi::SHADOW_FORMAT, shadow_cache::ShadowVersion};
@@ -73,6 +74,10 @@ impl ShadowProbe {
             label: Some("Deep Engine native shadow-off probe bindings"),
             layout: frame_layout,
             entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: shadow_map.section_uniform.as_entire_binding(),
+                },
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: frame_buffer.as_entire_binding(),
@@ -272,29 +277,4 @@ fn map_buffer(
 fn pixel_luminance(pixel: &[u8]) -> f64 {
     let channel = |offset| half_to_f32(u16::from_le_bytes([pixel[offset], pixel[offset + 1]]));
     f64::from(channel(0)) * 0.2126 + f64::from(channel(2)) * 0.7152 + f64::from(channel(4)) * 0.0722
-}
-
-fn half_to_f32(value: u16) -> f32 {
-    let sign = if value & 0x8000 == 0 { 1.0 } else { -1.0 };
-    let exponent = i32::from((value >> 10) & 0x1f);
-    let mantissa = u32::from(value & 0x03ff);
-    match exponent {
-        0 => sign * (mantissa as f32 / 1_024.0) * 2.0_f32.powi(-14),
-        31 if mantissa == 0 => sign * f32::INFINITY,
-        31 => f32::NAN,
-        _ => sign * (1.0 + mantissa as f32 / 1_024.0) * 2.0_f32.powi(exponent - 15),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::half_to_f32;
-
-    #[test]
-    fn decodes_half_float_readback_channels() {
-        assert_eq!(half_to_f32(0x0000), 0.0);
-        assert_eq!(half_to_f32(0x3c00), 1.0);
-        assert_eq!(half_to_f32(0xc000), -2.0);
-        assert!(half_to_f32(0x7e00).is_nan());
-    }
 }

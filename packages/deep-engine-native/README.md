@@ -1,5 +1,7 @@
 # Deep Engine Native Viewer
 
+普通 Viewer 窗口可拖入 Deep Runtime Package JSON。文件读取、哈希校验与 CPU 内容准备在单后台线程执行，连续拖放只保留最新待处理文件；候选 GPU 资源准备成功后才替换当前场景。打开失败保留原场景，标题栏显示结果，终端保留错误详情。此入口不接受裸 GLB；smoke 和 live-reload 模式仍以命令行指定的数据源为准，不接受拖放。GPU 创建阶段目前仍同步执行，完整 Windows 拖放与失败截图验收待补。
+
 这是 Deep Engine 的独立原生 Viewer 起步实现，不是 WebView/Tauri/Chromium 壳，也没有接入正式 `apps/desktop`。它直接使用 Rust `winit 0.30.13 + wgpu 30.0.1` 创建 Windows 系统窗口、DX12/Vulkan adapter、device 和 surface，并执行版本化 RenderPacket JSON。当前实机验收覆盖 Windows Vulkan；macOS、Linux 与移动端已移出当前交付范围。
 
 当前已具备：静态几何/材质/实例的索引绘制与深度缓冲；按几何、材质和镜像绕序建立稳定批次；同一不透明批次单次 instanced draw；非均匀缩放的逆转置法线矩阵；正/镜像背面剔除与 double-sided no-cull；空场景 clear/present；以及同一 device/queue/surface/view 上的原生 Deep2d 透明后置 pass。RenderPacket v1 的第一批真实纹理 PBR 已支持 baseColor 与 emissive 的 sRGB 采样、metallic-roughness/normal/occlusion 的线性采样、完整 authored mip、采样器、每槽 UV0/UV1 选择、KHR 风格 UV 仿射变换、TBN 法线、AO strength、IBL、emissive 在线性光照后和 ACES 前叠加。GPU compute 剔除与 LOD 选择会压实实例并驱动主视图和各级阴影的 indirect draw；2–4 级 CSM 提供稳定分割、texel snapping、级联混合和 3×3 PCF。原生 HDR Bloom 默认启用，在线性色彩空间按 threshold/soft-knee 预过滤，使用半分辨率双向高斯模糊，并在 ACES 前按 intensity 合成；`--no-bloom` 保留单次 ACES 输出路径，不创建 Bloom pipeline、纹理或额外 pass。版本化 Shader Package 能与内建材质共用真实 Frame、IBL、纹理、LOD 和 CSM 场景资源。MASK 使用 factor×纹理 alpha cutoff；BLEND 进入独立 pass，关闭深度写入，以实例为批次按相机全局稳定后向前排序并使用 straight-alpha source-over。GPU shader/pipeline/texture/sampler/material bind group、frame、depth 与 Bloom 资源在 error scope 中整批构建，失败时不会发布候选资源；手动 R 重建失败会保留旧 renderer。resize/缩放恢复只重建尺寸相关的 HDR/Bloom 纹理和绑定，设备级 pipeline 不会逐帧或随 resize 重建。
@@ -16,6 +18,8 @@ cargo run --locked -- --headless-pbr
 cargo run --locked -- --headless-alpha
 cargo run --locked -- --headless-deep2d
 cargo run --locked -- --smoke-frame
+cargo run --locked -- --smoke-selection
+cargo run --locked -- --smoke-section
 cargo run --locked -- --smoke-no-bloom
 cargo run --locked -- --smoke-textured
 cargo run --locked -- --smoke-textured-deep2d
@@ -52,6 +56,6 @@ Native ABI-3 最初建立了 `depth32float` shadow map、真实 light VP 与 3×
 
 Deep2d GPU painter 接受单子路径的 `move/line/quadratic/cubic/close`。二次和三次 Bézier 使用确定性 De Casteljau 自适应展平，误差同时按 affine 线性变换范数和 display-list `scaleFactor` 换算，目标为变换后 0.25 个物理像素；展平上限为每路径 16,384 段。填充使用简单多边形自交/接触边检查和确定性耳切，支持顺/逆时针凸面与凹面；描边支持开放多段路径、butt/square cap、bevel/miter join 和 miterLimit 回退。它执行命令 opacity、稳定 z-order 和 alpha blending。
 
-当前有意拒绝多子路径/孔洞、自交或近退化多边形、闭合描边、round cap/join、dash、非空 clip、text 和 image。简单多边形轮廓上限为 512 点；超过曲线、轮廓或递归预算时返回 `tessellation-budget-exceeded`。所有未支持输入均返回可序列化的结构化 `Deep2dPainterError`，整个 display list 不会提交部分画面。`--headless-deep2d` 同时执行合同和 painter 能力校验，无需创建窗口或 GPU。
+填充之外的描边能力含 round cap/join（以追加填充环实现）、dash 与非空 clip（`painter_dash`/`painter_stroke`/`painter_clip`，`deep2d_stroke_matrix`/`deep2d_clip_contract` 有矩阵级回归）；text 与 image 经 atlas/quad 路径进入（`painter_atlas`），文字由 `platform_text` 用系统字体真实 shaping 与栅格化。仍有意拒绝多子路径/孔洞与自交或近退化多边形；简单多边形轮廓上限为 512 点；超过曲线、轮廓或递归预算时返回 `tessellation-budget-exceeded`。所有未支持输入均返回可序列化的结构化 `Deep2dPainterError`，整个 display list 不会提交部分画面。`--headless-deep2d` 同时执行合同和 painter 能力校验，无需创建窗口或 GPU。
 
-尚未完成：GPU compute tessellation、孔洞/多子路径、闭合描边、round cap/join、clip/dash、原生字体 shaping、交互控件和命中测试；3D 的压缩纹理、自动 mip 生成、HDR/EXR 导入、多级 Bloom 金字塔、雾、OIT、glTF/纹理解码与流式、PBR 画质一致性；以及多窗口输入、中文 IME、文件选择、音视频、脚本宿主、完整 GUI/图表、缓存/诊断界面、离线资源包、安装器、签名、自动更新和 Studio 编辑器接入。当前只接受 OPAQUE/MASK/straight-alpha BLEND；未知 additive/custom/premultiplied 模式结构化拒绝。因此这里已有真实原生纹理、透明、HDR/IBL/Bloom、GPU LOD/剔除、四级 CSM、Shader Package 材质与 Deep2d 首帧，但仍不是完整原生客户端或引擎发布版。
+尚未完成：GPU compute tessellation、孔洞/多子路径；命中测试已有 hit index 与折线最近点/线段拾取，交互控件与中文 IME 仍按任务表推进；3D 的压缩纹理、自动 mip 生成、HDR/EXR 导入、多级 Bloom 金字塔、雾、OIT、glTF/纹理解码与流式、PBR 画质一致性；以及多窗口输入、中文 IME、文件选择、音视频、脚本宿主、完整 GUI/图表、缓存/诊断界面、离线资源包、安装器、签名、自动更新和 Studio 编辑器接入。当前只接受 OPAQUE/MASK/straight-alpha BLEND；未知 additive/custom/premultiplied 模式结构化拒绝。因此这里已有真实原生纹理、透明、HDR/IBL/Bloom、GPU LOD/剔除、四级 CSM、Shader Package 材质与 Deep2d 首帧，但仍不是完整原生客户端或引擎发布版。

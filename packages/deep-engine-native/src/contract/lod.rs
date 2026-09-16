@@ -29,6 +29,22 @@ pub(super) fn validate_lod(
         return Ok(());
     };
     let label = format!("LOD profile for instance {}", instance.id);
+    if profile.author.is_some() {
+        super::author_lod::validate(profile)?;
+        if profile.levels[0].geometry != instance.geometry {
+            return Err(format!("{label} must start with its primary geometry"));
+        }
+        for level in &profile.levels {
+            let geometry = geometries
+                .get(level.geometry.as_str())
+                .ok_or_else(|| format!("{label} missing geometry"))?;
+            if geometry.indices.len() < 3 {
+                return Err(format!("{label} requires triangles"));
+            }
+            validate_material_geometry(geometry, material, &instance.material)?;
+        }
+        return Ok(());
+    }
     if !(2..=8).contains(&profile.levels.len()) {
         return Err(format!("{label} must have 2-8 levels"));
     }

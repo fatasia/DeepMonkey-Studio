@@ -4,6 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::{
+    chart::ChartIR,
     contract::{ContractSummary, RenderPacket},
     deep2d::Deep2dRuntimeContent,
     ibl::PreparedIblEnvironment,
@@ -32,6 +33,9 @@ pub enum RuntimeResourceKind {
     Deep2dRuntime,
     IblEnvironment,
     ShaderPackage,
+    SceneCamera,
+    ChartRuntime,
+    ChartSimRuntime,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -46,11 +50,18 @@ pub struct RuntimeResourceIndexEntry {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct RuntimeEntrypoints {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<String>,
     pub render_packet: String,
     #[serde(deserialize_with = "required_nullable")]
     pub deep2d: Option<String>,
     pub environment: String,
     pub shader_packages: Vec<String>,
+    /// v4 起进入 chart 时代:键必须声明,chart 必须非空,chartSim 可空。
+    #[serde(default)]
+    pub chart: Option<String>,
+    #[serde(default)]
+    pub chart_sim: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +105,7 @@ pub struct IblEnvironmentReferenceV1 {
 
 #[derive(Debug)]
 pub struct LoadedRuntimePackage {
+    pub camera: Option<crate::runtime_camera::RuntimeSceneCamera>,
     pub package_id: String,
     pub package_version: String,
     pub package_hash: String,
@@ -101,6 +113,8 @@ pub struct LoadedRuntimePackage {
     pub render_packet: RenderPacket,
     pub render_summary: ContractSummary,
     pub deep2d: Option<Deep2dRuntimeContent>,
+    pub chart: Option<ChartIR>,
+    pub chart_sim: Option<crate::chart::simulation::ChartSimFixture>,
     pub environment: PreparedIblEnvironment,
     pub shader_packages: Vec<DeepShaderPackageV2>,
     pub material_bindings: Vec<RuntimeMaterialShaderBinding>,
@@ -115,6 +129,7 @@ pub struct RuntimePackageSummary {
     pub textures: usize,
     pub triangles: usize,
     pub has_deep2d: bool,
+    pub has_chart: bool,
     pub shader_packages: usize,
 }
 
@@ -128,6 +143,7 @@ impl LoadedRuntimePackage {
             textures: self.render_summary.textures,
             triangles: self.render_summary.triangles,
             has_deep2d: self.deep2d.is_some(),
+            has_chart: self.chart.is_some(),
             shader_packages: self.shader_packages.len(),
         }
     }

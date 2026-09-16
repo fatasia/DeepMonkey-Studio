@@ -1,6 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
-fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+pub(super) fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
@@ -47,6 +47,8 @@ pub struct GeometryResource {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct PbrMaterial {
     pub id: String,
+    #[serde(default, deserialize_with = "present")]
+    pub shading_model: Option<ShadingModel>,
     pub base_color: [f32; 3],
     pub metallic: f32,
     pub roughness: f32,
@@ -118,6 +120,12 @@ pub struct OcclusionTextureSlot {
     pub strength: Option<f32>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub enum ShadingModel {
+    #[serde(rename = "unlit")]
+    Unlit,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Hash, PartialEq, Eq)]
 pub enum AlphaMode {
     #[serde(rename = "OPAQUE")]
@@ -136,19 +144,18 @@ pub struct RenderInstance {
     pub material: String,
     pub transform: [f32; 16],
     #[serde(default, deserialize_with = "present")]
+    pub cast_shadow: Option<bool>,
+    #[serde(default, deserialize_with = "present")]
+    pub receive_shadow: Option<bool>,
+    #[serde(default, deserialize_with = "present")]
     pub lod: Option<RenderLodProfile>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub struct RenderLodProfile {
     pub levels: Vec<RenderLodLevel>,
-    #[serde(
-        default,
-        deserialize_with = "present",
-        skip_serializing_if = "Option::is_none"
-    )]
     pub hysteresis_ratio: Option<f64>,
+    pub author: Option<super::author_lod::AuthorSelection>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

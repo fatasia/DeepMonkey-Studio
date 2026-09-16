@@ -1,5 +1,6 @@
 use super::{
-    Deep2dComposition, PreparedDeep2dChunk, PreparedDeep2dChunkKind, PreparedDeep2dPathChunk,
+    Deep2dComposition, Deep2dRect, PreparedDeep2dChunk, PreparedDeep2dChunkKind,
+    PreparedDeep2dPathChunk,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -8,6 +9,8 @@ pub(super) struct PreparedAtlasItem {
     pub source_index: usize,
     pub atlas_index: usize,
     pub first_vertex: u32,
+    pub vertex_count: u32,
+    pub clip_rect: Option<Deep2dRect>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -18,6 +21,7 @@ struct Candidate {
     kind: PreparedDeep2dChunkKind,
     first_vertex: u32,
     vertex_count: u32,
+    clip_rect: Option<Deep2dRect>,
 }
 
 pub(super) fn build_chunks(
@@ -34,6 +38,7 @@ pub(super) fn build_chunks(
             kind: PreparedDeep2dChunkKind::Path,
             first_vertex: path.first_vertex,
             vertex_count: path.vertex_count,
+            clip_rect: path.clip_rect,
         })
         .chain(atlases.iter().map(|atlas| Candidate {
             z_order: atlas.z_order,
@@ -43,7 +48,8 @@ pub(super) fn build_chunks(
                 atlas_index: atlas.atlas_index,
             },
             first_vertex: atlas.first_vertex,
-            vertex_count: 6,
+            vertex_count: atlas.vertex_count,
+            clip_rect: atlas.clip_rect,
         }))
         .collect::<Vec<_>>();
     match composition {
@@ -58,6 +64,7 @@ pub(super) fn build_chunks(
     for candidate in candidates {
         if let Some(chunk) = chunks.last_mut().filter(|chunk| {
             chunk.kind == candidate.kind
+                && chunk.clip_rect == candidate.clip_rect
                 && chunk.first_vertex + chunk.vertex_count == candidate.first_vertex
         }) {
             chunk.vertex_count += candidate.vertex_count;
@@ -66,6 +73,7 @@ pub(super) fn build_chunks(
                 kind: candidate.kind,
                 first_vertex: candidate.first_vertex,
                 vertex_count: candidate.vertex_count,
+                clip_rect: candidate.clip_rect,
             });
         }
     }

@@ -65,6 +65,16 @@ fn select_lod(@builtin(global_invocation_id) invocation: vec3u) {
     let object = objects[object_index];
     if (object.info.w & view.params.y) == 0u { return; }
     let row = source[object.info.x];
+    // Authored selection is identical for camera and cascades; only visibility differs.
+    if (object.info.w & 4u) != 0u {
+        for (var index = 0u; index < object.info.z; index++) {
+            let level = levels[object.info.y + index];
+            if level.info.w == 0u || !sphere_visible(row, level.bound) { continue; }
+            let slot = atomicAdd(&indirect[level.info.x].instance_count, 1u);
+            visible[level.info.y + slot] = row;
+        }
+        return;
+    }
     let radius = object.bound.w * affine_scale(row);
     let depth = dot(world_center(row, object.bound.xyz) - view.eye.xyz, view.forward.xyz);
     var pixels_per_world = view.projection.x;

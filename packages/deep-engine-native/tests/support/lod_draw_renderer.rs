@@ -18,7 +18,7 @@ use crate::{
     lod_draw_readback,
     mesh_pass::encode_mesh_passes,
     pipeline::create_mesh_pipelines,
-    shadow_pass::encode_shadow_pass,
+    shadow_pass::encode_shadow_cascades,
 };
 
 pub struct Snapshot {
@@ -43,7 +43,15 @@ pub async fn render(
     let size = PhysicalSize::new(256, 256);
     let frame = frame_data(size, 0.0);
     let layouts = create_frame_layouts(device);
-    let shadows = create_shadow_map(device, &layouts.shadow, size, &frame, None).unwrap();
+    let shadows = create_shadow_map(
+        device,
+        &layouts.shadow,
+        size,
+        &frame,
+        None,
+        Default::default(),
+    )
+    .unwrap();
     let material_layout = create_material_layout(device);
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("production mesh + CSM shader"),
@@ -90,6 +98,7 @@ pub async fn render(
         &frame,
         size,
         &shadows,
+        deep_engine_native::mesh_abi::CAMERA_NEAR,
     )
     .unwrap();
     let frame_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -104,6 +113,7 @@ pub async fn render(
         &frame_buffer,
         &shadows,
         "LOD verification frame",
+        true,
     );
     let targets = ForwardTargets::new(device, size);
     let mut encoder = device.create_command_encoder(&Default::default());
@@ -111,13 +121,14 @@ pub async fn render(
     if let Some(lod) = &lod {
         lod.encode(queue, &mut encoder);
     }
-    encode_shadow_pass(
+    encode_shadow_cascades(
         &mut encoder,
         &shadows,
         &scene,
         &culling,
         lod.as_ref(),
         &pipelines,
+        u8::MAX,
     );
     encode_mesh_passes(
         &mut encoder,

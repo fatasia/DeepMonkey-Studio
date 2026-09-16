@@ -7,6 +7,7 @@ use deep_engine_native::{
 
 use crate::shadow_map::{DEPTH_BIAS, ShadowMap, ShadowViewSource, pack_shadow_frames};
 
+#[derive(Clone)]
 pub struct ShadowMapUpdate {
     plan: CascadedShadowPlan,
     scene_bounds: Option<SceneWorldBounds>,

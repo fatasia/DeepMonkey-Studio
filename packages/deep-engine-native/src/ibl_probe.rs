@@ -33,6 +33,7 @@ impl IblProbe {
             frame_buffer,
             shadow_map,
             "Deep Engine native IBL-off frame bindings",
+            true,
         );
         Ok(Self {
             _disabled_environment: disabled_environment,

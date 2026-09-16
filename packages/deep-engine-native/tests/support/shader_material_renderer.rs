@@ -19,7 +19,7 @@ use crate::{
     mesh_pass::encode_mesh_passes,
     pipeline::create_mesh_pipelines,
     player_content::PlayerContent,
-    shadow_pass::encode_shadow_pass,
+    shadow_pass::encode_shadow_cascades,
 };
 
 pub struct Snapshot {
@@ -28,6 +28,14 @@ pub struct Snapshot {
     pub commands: Vec<Vec<[u32; 5]>>,
     pub shadow_size: u32,
     pub nonzero_vertex_offsets: usize,
+}
+
+/// Evidence about the ShaderPackage material transaction for one render.
+#[derive(Debug, Default, Clone)]
+pub struct ShaderMaterialReport {
+    pub isolated: Vec<String>,
+    pub fallback_materials: usize,
+    pub custom_materials: usize,
 }
 
 pub async fn render(
@@ -46,6 +54,18 @@ pub async fn render_checked(
     reuse_first_cascade: bool,
     foreign_device: Option<&wgpu::Device>,
 ) -> Snapshot {
+    render_reported(device, queue, content, reuse_first_cascade, foreign_device)
+        .await
+        .0
+}
+
+pub async fn render_reported(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    content: &PlayerContent,
+    reuse_first_cascade: bool,
+    foreign_device: Option<&wgpu::Device>,
+) -> (Snapshot, ShaderMaterialReport) {
     let packet = content.packet();
     let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
@@ -55,7 +75,15 @@ pub async fn render_checked(
     let size = PhysicalSize::new(256, 256);
     let frame = frame_data(size, 0.0);
     let layouts = create_frame_layouts(device);
-    let shadows = create_shadow_map(device, &layouts.shadow, size, &frame, None).unwrap();
+    let shadows = create_shadow_map(
+        device,
+        &layouts.shadow,
+        size,
+        &frame,
+        None,
+        Default::default(),
+    )
+    .unwrap();
     let material_layout = create_material_layout(device);
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("production mesh + CSM shader"),
@@ -102,6 +130,7 @@ pub async fn render_checked(
         &frame,
         size,
         &shadows,
+        deep_engine_native::mesh_abi::CAMERA_NEAR,
     )
     .unwrap();
     let frame_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -113,10 +142,28 @@ pub async fn render_checked(
     scene
         .replace_shader_materials(device, content, &frame_buffer, &shadows, &ibl)
         .expect("production Player shader material binding");
+    let report = ShaderMaterialReport {
+        isolated: scene
+            .shader_materials
+            .as_ref()
+            .map(|materials| materials.isolated.clone())
+            .unwrap_or_default(),
+        fallback_materials: scene
+            .shader_materials
+            .as_ref()
+            .map(|materials| materials.fallback_materials)
+            .unwrap_or(0),
+        custom_materials: scene
+            .shader_materials
+            .as_ref()
+            .map(|materials| materials.materials.iter().flatten().count())
+            .unwrap_or(0),
+    };
     if let Some(custom) = &mut scene.shader_materials {
         assert_eq!(
             custom.materials.iter().flatten().count(),
-            content.material_bindings.len()
+            content.material_bindings.len() - report.fallback_materials,
+            "custom bindings minus isolated fallbacks must stay bound"
         );
         for pass in custom
             .materials
@@ -153,6 +200,7 @@ pub async fn render_checked(
         &frame_buffer,
         &shadows,
         "LOD verification frame",
+        true,
     );
     let targets = ForwardTargets::new(device, size);
     let mut encoder = device.create_command_encoder(&Default::default());
@@ -160,13 +208,14 @@ pub async fn render_checked(
     if let Some(lod) = &lod {
         lod.encode(queue, &mut encoder);
     }
-    encode_shadow_pass(
+    encode_shadow_cascades(
         &mut encoder,
         &shadows,
         &scene,
         &culling,
         lod.as_ref(),
         &pipelines,
+        u8::MAX,
     );
     encode_mesh_passes(
         &mut encoder,
@@ -218,7 +267,7 @@ pub async fn render_checked(
     ] {
         assert!(error.is_none(), "production draw GPU error: {error:?}");
     }
-    Snapshot {
+    let snapshot = Snapshot {
         hdr,
         depths,
         commands,
@@ -229,5 +278,6 @@ pub async fn render_checked(
             .flatten()
             .filter(|draw| draw.resident && draw.instance_start > 0)
             .count(),
-    }
+    };
+    (snapshot, report)
 }

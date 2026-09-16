@@ -8,8 +8,9 @@ pub(super) fn validate(
     bindings: &[RuntimeMaterialShaderBinding],
     packet: &RenderPacket,
     shaders: &[DeepShaderPackageV2],
+    allow_empty: bool,
 ) -> Result<(), RuntimePackageError> {
-    if bindings.is_empty() || bindings.len() > 16_384 {
+    if !allow_empty && bindings.is_empty() || bindings.len() > 16_384 {
         return fail("runtime package v2 requires 1..=16384 material bindings");
     }
     let materials: HashSet<_> = packet

@@ -95,7 +95,7 @@ fn create_shadow_pipeline(
     });
     let vertex_buffers = vertex_buffers();
     let fragment_entry = match mode {
-        ShadowCasterMode::Solid => None,
+        ShadowCasterMode::Solid => Some("shadow_section"),
         ShadowCasterMode::MaskPlain => Some("shadow_mask_plain"),
         ShadowCasterMode::MaskMaterial => Some("shadow_mask_material"),
     };
@@ -108,11 +108,7 @@ fn create_shadow_pipeline(
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: shader,
-            entry_point: Some(if mode == ShadowCasterMode::Solid {
-                "shadow_main"
-            } else {
-                "shadow_mask_main"
-            }),
+            entry_point: Some("shadow_mask_main"),
             compilation_options: Default::default(),
             buffers: &vertex_buffers,
         },

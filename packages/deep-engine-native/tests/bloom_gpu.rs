@@ -91,14 +91,17 @@ fn nvidia_hdr_bloom_spreads_highlights_without_adding_dark_energy() {
         FORWARD_COLOR_FORMAT,
         &source_view,
         Some((bloom.output_view(), bloom.settings().intensity)),
+        None,
     );
     assert!(output.uses_bloom());
     assert!(
-        output.prepare_rebind(&device, &source_view, None).is_err(),
+        output
+            .prepare_rebind(&device, &source_view, None, None)
+            .is_err(),
         "resize must reject a partial bloom binding transaction"
     );
     let rebound = output
-        .prepare_rebind(&device, &source_view, Some(bloom.output_view()))
+        .prepare_rebind(&device, &source_view, Some(bloom.output_view()), None)
         .unwrap();
     output.publish_rebind(rebound);
     let readback = device.create_buffer(&wgpu::BufferDescriptor {

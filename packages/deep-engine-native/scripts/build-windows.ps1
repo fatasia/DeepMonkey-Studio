@@ -6,9 +6,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'portable-provenance.ps1')
 $packageRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $manifestPath = Join-Path $packageRoot "Cargo.toml"
 $targetTriple = "x86_64-pc-windows-msvc"
+$buildInputFingerprint = Get-NativeBuildInputFingerprint -PackageRoot $packageRoot
 
 & (Join-Path $PSScriptRoot "verify-dependencies.ps1") -Target $targetTriple
 if (-not $SkipTests) {
@@ -30,7 +33,7 @@ foreach ($item in $profiles) {
   $file = Get-Item -LiteralPath $binary
   $artifacts += [ordered]@{
     profile = $item
-    path = $file.FullName
+    path = Get-ProvenanceRelativeUnixPath -Root $packageRoot -Path $file.FullName
     bytes = $file.Length
     sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
   }
@@ -47,13 +50,17 @@ if ($SmokeFrame) {
 
 $artifactDirectory = Join-Path $packageRoot "artifacts"
 New-Item -ItemType Directory -Force -Path $artifactDirectory | Out-Null
+$sbomPath = Join-Path $artifactDirectory 'native-build-sbom-input.json'
+$supplyChain = Write-NativeSupplyChainEvidence -PackageRoot $packageRoot -Target $targetTriple `
+  -Destination $sbomPath -LogicalPath 'native-build-sbom-input.json' -Profile $Profile -RustFlags ''
+if ($supplyChain.buildInputFingerprint -cne $buildInputFingerprint) {
+  throw 'Native build inputs changed while the Windows artifacts were being compiled or tested.'
+}
 $manifest = [ordered]@{
   schema = "deep-engine.native-build"
-  version = 1
+  version = 2
   target = $targetTriple
-  rustc = (& rustc --version)
-  cargo = (& cargo --version)
-  generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+  supplyChain = $supplyChain
   smokeFrameVerified = [bool]$SmokeFrame
   artifacts = $artifacts
 }

@@ -1,4 +1,3 @@
-#[derive(Debug)]
 pub enum GpuEvent {
     DeviceLost {
         renderer_id: u64,
@@ -10,6 +9,14 @@ pub enum GpuEvent {
         message: String,
     },
     SmokeTimeout,
+    /// A watched RenderPacket file changed and validated; the payload carries the
+    /// fully prepared content and a monotonic watcher generation. Delivery is
+    /// best-effort: closing the window drops pending updates and keeps the last
+    /// correct frame.
+    PacketArrived,
+    PackageArrived,
+    PackageOpened,
+    LiveProbeCheckpoint,
 }
 
 pub fn targets_active_renderer(active_renderer_id: Option<u64>, renderer_id: u64) -> bool {

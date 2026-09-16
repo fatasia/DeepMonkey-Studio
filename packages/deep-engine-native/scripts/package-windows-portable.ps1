@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'portable-package-common.ps1')
 & (Join-Path $PSScriptRoot 'portable-package-common.test.ps1')
+& (Join-Path $PSScriptRoot 'portable-process.test.ps1')
 
 $packageRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $repositoryRoot = (Resolve-Path (Join-Path $packageRoot '../..')).Path
@@ -49,6 +50,7 @@ if (Test-Path -LiteralPath $stagingRoot) {
 [void](New-Item -ItemType Directory -Path $stagedPackage)
 
 try {
+  $buildInputFingerprint = Get-NativeBuildInputFingerprint -PackageRoot $packageRoot
   $targetDirectory = Join-Path $packageRoot 'target/portable-windows'
   $rustFlagsName = 'CARGO_TARGET_' + $Target.ToUpperInvariant().Replace('-', '_') + '_RUSTFLAGS'
   $previousRustFlags = [Environment]::GetEnvironmentVariable($rustFlagsName, 'Process')
@@ -80,6 +82,9 @@ try {
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $fixtureDirectory }
   Copy-Item -LiteralPath (Join-Path $packageRoot 'tests/fixtures/runtime-package-v1.json') -Destination $fixtureDirectory
   Copy-Item -LiteralPath (Join-Path $packageRoot 'tests/fixtures/runtime-package-lod-v1.json') -Destination $fixtureDirectory
+  Copy-Item -LiteralPath (Join-Path $packageRoot 'tests/fixtures/runtime-package-author-lod-v1.json') -Destination $fixtureDirectory
+  Copy-Item -LiteralPath (Join-Path $packageRoot 'tests/fixtures/runtime-package-prefiltered-ibl-v1.json') -Destination $fixtureDirectory
+  Copy-Item -LiteralPath (Join-Path $packageRoot 'tests/fixtures/asset-directory-v1') -Destination $fixtureDirectory -Recurse
   Copy-Item -LiteralPath (Join-Path $packageRoot 'tests/fixtures/runtime-package-shader-v2.json') -Destination $fixtureDirectory
   Get-ChildItem -LiteralPath (Join-Path $packageRoot 'assets/shaders') -File -Filter '*.wgsl' |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $shaderDirectory }
@@ -89,6 +94,11 @@ try {
       throw "Required repository license file is missing: $licenseName"
     }
     Copy-Item -LiteralPath $source -Destination (Join-Path $licenseDirectory $licenseName)
+  }
+  $supplyChain = Write-NativeSupplyChainEvidence -PackageRoot $packageRoot -Target $Target `
+    -Destination (Join-Path $licenseDirectory 'rust-sbom-input.json')
+  if ($supplyChain.buildInputFingerprint -cne $buildInputFingerprint) {
+    throw 'Native build inputs changed while the release artifact was being compiled.'
   }
 
   $launcher = @'
@@ -115,11 +125,33 @@ exit /b %ERRORLEVEL%
   $readme = @"
 Deep Engine Native Player $version ($Target)
 
+TEST CANDIDATE: not a signed or release-qualified distribution.
+Packaging checks do not certify signing, installer/update, or the full hardware matrix.
+Author-selected LOD: bin\deep-engine-native.exe --package fixtures\runtime-package-author-lod-v1.json
+Asset directory: bin\deep-engine-native.exe --asset-package fixtures\asset-directory-v1\manifest.json
+Prefiltered IBL: bin\deep-engine-native.exe --package fixtures\runtime-package-prefiltered-ibl-v1.json
+Both package modes save a source-bound recovery checkpoint after the first successful GPU frame.
+Later corrupt sources recover only their own validated checkpoint; errors are shown in the title/console.
+
 Run-Viewer.cmd starts the native Player with the bundled runtime package.
 The package contains the 3D scene, environment lighting and Deep2D content.
 The EXE contains the WGSL shaders and does not require a WebView or browser runtime.
 Run-LOD.cmd opens the LOD fixture using GPU selection for color and cascaded shadows.
 Run-Shaders.cmd opens authored DeepSL materials with five texture slots, LOD and cascaded shadows.
+Click an object to select and focus it; click blank space to clear the selection.
+M toggles two-point measurement (scene units); Home resets the camera; left/right arrows orbit.
+C toggles sectioning; X/Y/Z set the plane axis; PageUp/PageDown move it; [ and ] rotate; Backspace resets.
+Sectioning supports built-in materials; authored ShaderPackage materials report it as unavailable.
+After selecting an object, A starts an annotation; type text and press Enter, or Esc to cancel.
+F5 saves annotations in LOCALAPPDATA/DeepEngineNative/annotations; F9 restores them; Tab jumps; Delete removes the active annotation.
+Scene changes and closing save pending notes first; a draft or failed save keeps the scene open. Finish/cancel the draft and retry.
+
+Open your own Deep Runtime Package JSON from the extracted package directory:
+  bin\deep-engine-native.exe --package "C:\My Projects\scene.runtime.json"
+For drag and drop, start Run-Viewer.cmd, then drop one Runtime Package JSON, Asset Directory folder or manifest.json.
+The same device stages scene and environment together; builtin and prefiltered IBL can switch without reopening.
+An invalid dropped package leaves the previous scene loaded; the title shows the result and the terminal shows the error.
+Smoke and live-reload modes do not accept dropped files. This entry does not open raw GLB files.
 
 Headless checks:
   bin\deep-engine-native.exe --headless-package fixtures\runtime-package-v1.json
@@ -138,10 +170,10 @@ Headless checks:
   $payload = @(Get-PayloadInventory -PackageRoot $stagedPackage)
   $manifest = [ordered]@{
     schema = 'deep-engine.native-portable'
-    schemaVersion = 2
+    schemaVersion = 3
     name = 'deep-engine-native'
     version = $version
-    channel = 'beta'
+    channel = 'candidate'
     target = $Target
     profile = 'release'
     binary = 'bin/deep-engine-native.exe'
@@ -160,6 +192,7 @@ Headless checks:
     source = [ordered]@{
       cargoLockSha256 = Get-FileSha256 -Path $cargoLock
     }
+    supplyChain = $supplyChain
     purity = $purity
     embeddedShaders = $embeddedShaders
     smoke = [ordered]@{

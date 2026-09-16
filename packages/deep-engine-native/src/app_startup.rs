@@ -1,9 +1,6 @@
 use winit::{dpi::PhysicalSize, window::WindowAttributes};
 
-use crate::{
-    pipeline::{MESH_PIPELINE_VARIANTS, SHADOW_PIPELINE_VARIANTS},
-    renderer::Renderer,
-};
+use crate::renderer::Renderer;
 
 pub fn window_attributes(smoke_frame: bool) -> WindowAttributes {
     let attributes = winit::window::Window::default_attributes()
@@ -21,10 +18,22 @@ pub fn window_attributes(smoke_frame: bool) -> WindowAttributes {
 }
 
 pub fn report_renderer_ready(renderer: &Renderer) {
+    println!(
+        "native content profile: {}",
+        renderer.content_profile_summary()
+    );
     let (pbr, resident_textures) = renderer.pbr_summary();
     let alpha = renderer.alpha_summary();
     let (ibl_id, ibl_revision, ibl) = renderer.ibl_summary();
     let shadow = renderer.shadow_summary();
+    let (mesh_pipelines, shadow_pipelines) = renderer.pipeline_counts();
+    if let Some((isolated, fallbacks)) = renderer.shader_isolation_summary() {
+        println!(
+            "native Player ShaderPackage isolation: isolated_packages={} fallback_materials={}",
+            isolated.len(),
+            fallbacks
+        );
+    }
     let culling = renderer.culling_summary();
     println!(
         "native PBR prepared: authored_textures={} fallback_textures={} resident_textures={} mip_levels={} srgb={} linear={} material_bindings={}",
@@ -42,8 +51,8 @@ pub fn report_renderer_ready(renderer: &Renderer) {
         alpha.mask_batches,
         alpha.blend_batches,
         alpha.double_sided_batches,
-        MESH_PIPELINE_VARIANTS,
-        SHADOW_PIPELINE_VARIANTS
+        mesh_pipelines,
+        shadow_pipelines
     );
     println!(
         "native IBL prepared: id={ibl_id} revision={ibl_revision} specular_mips={} specular_texels={} diffuse_texels={} brdf_texels={} format=rgba16float bindings=group0/b3,b4,b5,b6",
@@ -66,6 +75,52 @@ pub fn report_renderer_ready(renderer: &Renderer) {
         culling.allocated_bytes
     );
     if let Some(painter) = renderer.deep2d_summary() {
+        if let Some(cache) = renderer.deep2d_path_cache_stats() {
+            let reasons = cache.miss_reasons;
+            println!(
+                "native Deep2d path cache: hits={} misses={} entries={} payload_bytes={} evictions={} deletions={}",
+                cache.hits,
+                cache.misses,
+                cache.entries,
+                cache.payload_bytes,
+                cache.evictions,
+                cache.deletions
+            );
+            // 与 vertex transfer 的 reasons 一起构成两层账:
+            // 这一层回答「细分为什么重算」,那一层回答「顶点为什么重传」。
+            println!(
+                "native Deep2d path cache misses: camera={} epoch={} structure={} clip={} resource={} style={} evicted={}",
+                reasons.camera_changed,
+                reasons.epoch_changed,
+                reasons.structure_changed,
+                reasons.clip_changed,
+                reasons.resource_changed,
+                reasons.style_changed,
+                reasons.evicted
+            );
+        }
+        if let Some(transfer) = renderer.deep2d_vertex_transfer_stats() {
+            println!(
+                "native Deep2d vertex transfer: uploaded={} copied={} reused={} upload_regions={} copy_regions={} cpu_shadow={}",
+                transfer.uploaded_bytes,
+                transfer.copied_bytes,
+                transfer.reused_bytes,
+                transfer.upload_regions,
+                transfer.copy_regions,
+                transfer.shadow_bytes
+            );
+            let reasons = transfer.reasons;
+            println!(
+                "native Deep2d vertex transfer reasons: content_reused={} incremental_copies={} no_previous_frame={} previous_not_copyable={} plan_rejected={} below_copy_threshold={} stages={}",
+                reasons.content_reused,
+                reasons.incremental_copies,
+                reasons.no_previous_frame,
+                reasons.previous_not_copyable,
+                reasons.plan_rejected,
+                reasons.below_copy_threshold,
+                reasons.total()
+            );
+        }
         println!(
             "native Deep2d prepared: commands={} path_segments={} fill_triangles={} stroke_triangles={} vertices={}",
             painter.path.commands,

@@ -131,6 +131,7 @@ fn instance_fingerprint(scene: &PreparedScene) -> ContentFingerprint {
     hash.usize(scene.batches.len());
     for batch in &scene.batches {
         hash.bool(batch.lod);
+        hash.bool(batch.cast_shadow);
         hash.usize(batch.geometry_index);
         hash.usize(batch.material_index);
         hash.bool(batch.mirrored);

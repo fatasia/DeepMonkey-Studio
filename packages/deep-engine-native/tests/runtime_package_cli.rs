@@ -124,7 +124,11 @@ fn package_modes_require_one_path_and_are_mutually_exclusive() {
 fn rejects_missing_file_directory_and_malformed_json_before_opening_a_window() {
     let missing = fixture().with_file_name("runtime-package-does-not-exist.json");
     for mode in ["--package", "--smoke-package", "--headless-package"] {
-        assert_rejected(run(&[OsStr::new(mode), missing.as_os_str()]), "cannot read");
+        let output = run(&[OsStr::new(mode), missing.as_os_str()]);
+        assert!(
+            !String::from_utf8_lossy(&output.stderr).contains(missing.to_string_lossy().as_ref())
+        );
+        assert_rejected(output, "cannot read");
         assert_rejected(
             run(&[
                 OsStr::new(mode),
@@ -211,7 +215,7 @@ fn unbound_shader_entrypoints_cannot_succeed_as_builtin_pbr() {
 }
 
 #[test]
-fn absent_deep2d_entry_is_valid_but_unsupported_path_commands_fail_before_gpu_creation() {
+fn absent_deep2d_entry_is_valid_but_invalid_path_geometry_fails_before_gpu_creation() {
     let mut value = package();
     let id = value["entrypoints"]["deep2d"]
         .as_str()
@@ -240,14 +244,15 @@ fn absent_deep2d_entry_is_valid_but_unsupported_path_commands_fail_before_gpu_cr
     assert!(String::from_utf8_lossy(&output.stdout).contains("deep2d=false"));
 
     let mut value = package();
-    value["payloads"][&id]["displayList"]["commands"][0]["stroke"] = json!([1, 1, 1, 1]);
-    value["payloads"][&id]["displayList"]["commands"][0]["strokeWidth"] = json!(2);
-    value["payloads"][&id]["displayList"]["commands"][0]["dash"] = json!([4, 2]);
+    value["payloads"][&id]["displayList"]["resources"][0]["verbs"]
+        .as_array_mut()
+        .expect("path verbs")
+        .pop();
     reseal_resource(&mut value, &id);
     let unsupported = TemporaryPackage::json(&value);
     assert_rejected(
         run(&[OsStr::new("--package"), unsupported.0.as_os_str()]),
-        "UnsupportedDash",
+        "UnsupportedGeometry",
     );
 }
 

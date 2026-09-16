@@ -1,125 +1,101 @@
-use std::sync::{Arc, Mutex, mpsc};
-
 use deep_engine_native::{
-    contract::{RenderPacket, default_textured_fixture_path, load_and_validate},
-    mesh_abi::PACKED_INSTANCE_BYTES,
-    pbr_texture::{PreparedPbrResources, prepare_pbr_resources},
-    scene::{PreparedScene, prepare_scene},
+    mesh_abi::PACKED_INSTANCE_BYTES, pbr_texture::prepare_pbr_resources, scene::prepare_scene,
 };
 
 use crate::{
-    gpu_scene::GpuScene, gpu_scene_cache::GpuSceneCache, gpu_textures::create_material_layout,
+    gpu_scene_cache::GpuSceneCache,
+    gpu_scene_cache_test_support::{
+        assert_no_uncaptured_errors, capture_uncaptured_errors, clean_scopes,
+        high_performance_device, push_scopes, read_instances, stage, textured_packet,
+    },
+    gpu_textures::create_material_layout,
     player_shader_plan::scene_content_key,
 };
 
-fn packet() -> RenderPacket {
-    load_and_validate(default_textured_fixture_path())
-        .unwrap()
-        .0
-}
-
-fn prepare(packet: &RenderPacket) -> (PreparedScene, PreparedPbrResources) {
-    (
-        prepare_scene(packet).unwrap(),
-        prepare_pbr_resources(packet).unwrap(),
-    )
-}
-
-fn stage(
-    cache: &GpuSceneCache,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    layout: &wgpu::BindGroupLayout,
-    packet: &RenderPacket,
-) -> crate::gpu_scene_cache::GpuSceneCandidate {
-    let (scene, pbr) = prepare(packet);
-    cache
-        .stage(
-            device,
-            queue,
-            layout,
-            packet,
-            scene_content_key(packet),
-            &scene,
-            &pbr,
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn author_selected_explicit_resident_budget_rejects_without_publication() {
+    pollster::block_on(async {
+        let (device, queue) = high_performance_device().await;
+        let scopes = push_scopes(&device);
+        let layout = create_material_layout(&device);
+        let packet = deep_engine_native::runtime_package::parse_and_validate_runtime_package(
+            include_bytes!("../tests/fixtures/runtime-package-author-lod-v1.json"),
         )
         .unwrap()
-}
-
-fn read_instances(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    scene: &GpuScene,
-    count: usize,
-) -> Vec<u8> {
-    let bytes = u64::try_from(count.max(1)).unwrap() * PACKED_INSTANCE_BYTES;
-    let output = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("native scene cache instance readback"),
-        size: bytes,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
+        .render_packet;
+        let mut cache = GpuSceneCache::new(&device, 13).with_budget(1);
+        let candidate = stage(&cache, &device, &queue, &layout, &packet);
+        assert!(candidate.new_resident_bytes > 1);
+        assert!(
+            cache
+                .commit(candidate)
+                .err()
+                .unwrap()
+                .contains("resident budget")
+        );
+        assert_eq!(cache.live_bytes(), 0);
+        clean_scopes(scopes, "author budget reject").await;
     });
-    let mut encoder = device.create_command_encoder(&Default::default());
-    encoder.copy_buffer_to_buffer(&scene.instance_buffer, 0, &output, 0, bytes);
-    queue.submit([encoder.finish()]);
-    let (sender, receiver) = mpsc::sync_channel(1);
-    output.map_async(wgpu::MapMode::Read, .., move |result| {
-        let _ = sender.send(result);
+}
+
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn nvidia_resident_budget_rejects_atomically_and_sweeps_dead_entries() {
+    use crate::gpu_scene_cache::default_budget;
+
+    pollster::block_on(async {
+        let (device, queue) = high_performance_device().await;
+        let uncaptured = capture_uncaptured_errors(&device);
+        let layout = create_material_layout(&device);
+        let mut cache = GpuSceneCache::new(&device, 11).with_budget(1);
+        assert_eq!(cache.budget_bytes(), 1);
+
+        let source = textured_packet();
+        // Even the first candidate cannot fit a one-byte budget: staging builds
+        // the candidate, but commit rejects it atomically before anything is
+        // published or retained.
+        let scopes = push_scopes(&device);
+        let candidate =
+            crate::gpu_scene_cache_test_support::stage(&cache, &device, &queue, &layout, &source);
+        let error = match cache.commit(candidate) {
+            Ok(_) => panic!("one-byte budget must reject every candidate"),
+            Err(error) => error,
+        };
+        assert!(error.contains("resident budget"), "{error}");
+        assert_eq!(cache.live_bytes(), 0);
+        assert_eq!(cache.peak_live_bytes(), 0);
+        clean_scopes(scopes, "budget reject").await;
+
+        // A realistic budget accepts the packet and reports exact live bytes.
+        let mut cache = GpuSceneCache::new(&device, 12).with_budget(default_budget(&device));
+        assert!(cache.budget_bytes() >= 256 * 1024 * 1024);
+        let staged =
+            crate::gpu_scene_cache_test_support::stage(&cache, &device, &queue, &layout, &source);
+        let bytes = staged.new_resident_bytes;
+        assert!(bytes > 0);
+        let live = cache.commit(staged).unwrap();
+        assert_eq!(cache.live_bytes(), bytes);
+        assert!(cache.peak_live_bytes() >= bytes);
+        drop(live);
+        assert_eq!(cache.live_bytes(), 0, "dropped scene releases its bytes");
+        assert_no_uncaptured_errors(&uncaptured);
+        println!(
+            "native resident budget OK: candidate_bytes={bytes} budget={} live_after_drop=0",
+            cache.budget_bytes()
+        );
     });
-    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-    receiver.recv().unwrap().unwrap();
-    let result = output.get_mapped_range(..).unwrap().to_vec();
-    output.unmap();
-    result
-}
-
-async fn clean_scope(scopes: [wgpu::ErrorScopeGuard; 3]) {
-    let [validation, memory, internal] = scopes;
-    for error in [
-        internal.pop().await,
-        memory.pop().await,
-        validation.pop().await,
-    ] {
-        assert!(error.is_none(), "native cache GPU error: {error:?}");
-    }
-}
-
-fn push_scopes(device: &wgpu::Device) -> [wgpu::ErrorScopeGuard; 3] {
-    [
-        device.push_error_scope(wgpu::ErrorFilter::Validation),
-        device.push_error_scope(wgpu::ErrorFilter::OutOfMemory),
-        device.push_error_scope(wgpu::ErrorFilter::Internal),
-    ]
 }
 
 #[test]
 #[ignore = "requires a real GPU; run explicitly with --ignored"]
 fn nvidia_packet_cache_reuses_replaces_rolls_back_and_releases() {
     pollster::block_on(async {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                force_fallback_adapter: false,
-                ..Default::default()
-            })
-            .await
-            .expect("real GPU adapter");
-        let info = adapter.get_info();
-        assert_ne!(info.device_type, wgpu::DeviceType::Cpu, "software adapter");
-        println!("native packet cache adapter: {info:?}");
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
-            .await
-            .unwrap();
-        let uncaptured = Arc::new(Mutex::new(Vec::new()));
-        let errors = Arc::clone(&uncaptured);
-        device.on_uncaptured_error(Arc::new(move |error| {
-            errors.lock().unwrap().push(error.to_string());
-        }));
+        let (device, queue) = high_performance_device().await;
+        let uncaptured = capture_uncaptured_errors(&device);
         let layout = create_material_layout(&device);
         let mut cache = GpuSceneCache::new(&device, 41);
-        let source = packet();
+        let source = textured_packet();
 
         let scopes = push_scopes(&device);
         let first = stage(&cache, &device, &queue, &layout, &source);
@@ -128,7 +104,7 @@ fn nvidia_packet_cache_reuses_replaces_rolls_back_and_releases() {
         assert_eq!(first_metrics.texture_uploads, source.textures.len());
         assert_eq!(first_metrics.material_uploads, source.materials.len());
         assert_eq!(first_metrics.instance_buffer_uploads, 1);
-        clean_scope(scopes).await;
+        clean_scopes(scopes, "native cache first stage").await;
         let first = cache.commit(first).unwrap();
         let first_bytes = read_instances(&device, &queue, &first, source.instances.len());
 
@@ -140,7 +116,7 @@ fn nvidia_packet_cache_reuses_replaces_rolls_back_and_releases() {
         assert_eq!(same_metrics.instance_buffer_reuses, 1);
         let same = cache.commit(same).unwrap();
 
-        let mut moved = packet();
+        let mut moved = textured_packet();
         moved.instances[0].transform[12] += 0.4;
         let scopes = push_scopes(&device);
         let moved_candidate = stage(&cache, &device, &queue, &layout, &moved);
@@ -150,7 +126,7 @@ fn nvidia_packet_cache_reuses_replaces_rolls_back_and_releases() {
         assert_eq!(moved_metrics.material_reuses, moved.materials.len());
         assert_eq!(moved_metrics.instance_uploaded_bytes, PACKED_INSTANCE_BYTES);
         assert_eq!(moved_metrics.instance_copied_bytes, PACKED_INSTANCE_BYTES);
-        clean_scope(scopes).await;
+        clean_scopes(scopes, "native cache moved stage").await;
         let moved_scene = cache.commit(moved_candidate).unwrap();
         let moved_bytes = read_instances(&device, &queue, &moved_scene, moved.instances.len());
         assert_ne!(
@@ -162,7 +138,7 @@ fn nvidia_packet_cache_reuses_replaces_rolls_back_and_releases() {
             &moved_bytes[PACKED_INSTANCE_BYTES as usize..]
         );
 
-        let mut illegal = packet();
+        let mut illegal = textured_packet();
         illegal.geometries[0].vertices[0] += 0.5;
         let error = match cache.stage(
             &device,
@@ -182,7 +158,7 @@ fn nvidia_packet_cache_reuses_replaces_rolls_back_and_releases() {
             read_instances(&device, &queue, &first, source.instances.len())
         );
 
-        let mut material = packet();
+        let mut material = textured_packet();
         material.materials[0]
             .base_color_texture
             .as_mut()
@@ -222,11 +198,7 @@ fn nvidia_packet_cache_reuses_replaces_rolls_back_and_releases() {
         };
         assert!(error.contains("stale"), "{error}");
         assert_eq!(cache.epoch(), 42);
-        assert!(
-            uncaptured.lock().unwrap().is_empty(),
-            "uncaptured GPU errors: {:?}",
-            uncaptured.lock().unwrap()
-        );
+        assert_no_uncaptured_errors(&uncaptured);
         println!(
             "native packet cache: first={first_metrics:?} same={same_metrics:?} moved={moved_metrics:?}; release=0; epoch=42"
         );

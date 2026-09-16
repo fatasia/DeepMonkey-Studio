@@ -1,0 +1,279 @@
+//! Atomic Runtime Package publication for the native live-reload path.
+
+use std::{
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
+
+use winit::event_loop::EventLoopProxy;
+
+use crate::{
+    app::{
+        NativeApp,
+        package_watch::{self, WatchedPackage},
+        packet_coalescer::{PublishDecision, SubmitDecision},
+        packet_mailbox::LatestMailbox,
+    },
+    app_startup::report_renderer_ready,
+    events::GpuEvent,
+    player_content::RuntimePackageSnapshot,
+    renderer::Renderer,
+};
+
+pub(super) struct PackageLiveTransport {
+    mailbox: LatestMailbox<WatchedPackage>,
+    published: Arc<RwLock<RuntimePackageSnapshot>>,
+}
+
+pub(super) fn start(
+    path: PathBuf,
+    published: RuntimePackageSnapshot,
+    proxy: EventLoopProxy<GpuEvent>,
+) -> PackageLiveTransport {
+    let mailbox = LatestMailbox::default();
+    let published = Arc::new(RwLock::new(published));
+    package_watch::spawn(path, mailbox.clone(), Arc::clone(&published), proxy);
+    PackageLiveTransport { mailbox, published }
+}
+
+/// Applies render/shader-only diffs through the GPU scene transaction. Changes to
+/// Deep2D or IBL stage a complete renderer while the active renderer remains drawable.
+pub(super) fn apply_latest(app: &mut NativeApp) {
+    let Some(candidate) = app
+        .package_live_transport
+        .as_ref()
+        .and_then(|transport| transport.mailbox.take_latest())
+    else {
+        return;
+    };
+    let generation = candidate.generation;
+    if !super::annotations::preserve(app) {
+        return;
+    }
+    if app.packet_coalescer.submit(generation) == SubmitDecision::Discard {
+        return;
+    }
+    if app
+        .renderer
+        .as_ref()
+        .is_some_and(|renderer| renderer.requires_content_rebuild(&candidate.value.content))
+    {
+        apply_full(app, generation, candidate.value);
+        return;
+    }
+    if candidate.value.plan.entries.iter().all(|entry| {
+        matches!(
+            entry.kind,
+            deep_engine_native::runtime_package::RuntimeResourceKind::RenderPacket
+                | deep_engine_native::runtime_package::RuntimeResourceKind::ShaderPackage
+        )
+    }) {
+        apply_incremental(app, generation, candidate.value);
+        return;
+    }
+    if candidate.value.plan.entries.iter().all(|entry| {
+        entry.kind == deep_engine_native::runtime_package::RuntimeResourceKind::Deep2dRuntime
+    }) {
+        apply_deep2d(app, generation, candidate.value);
+        return;
+    }
+    apply_full(app, generation, candidate.value);
+}
+
+/// 候选内容的资源代次。换包重建时 `PlayerContent::from_package` 已按
+/// (package_id, package_hash) 初始化 `document_revision`,但 `resource_set`
+/// 在重建后仍为初始值;这里把两段折进一个代次,使**同一包重复发布得到相同值**
+/// (幂等,不制造假失效)、**不同包必然不同值**(整批失效)。
+fn content_epoch(candidate: &WatchedPackage) -> u64 {
+    let epoch = &candidate.content.epoch;
+    epoch
+        .document_revision
+        .rotate_left(17)
+        .wrapping_add(epoch.resource_set)
+}
+
+fn apply_deep2d(app: &mut NativeApp, generation: u64, candidate: WatchedPackage) {
+    if app.packet_coalescer.staged(generation) == PublishDecision::Superseded {
+        return;
+    }
+    let Some(renderer) = app.renderer.as_ref() else {
+        app.packet_coalescer.failed(generation);
+        return;
+    };
+    // 换包即新文档代次:上下文用候选内容自带的 epoch(resource_set),
+    // 而不是当前活动内容——否则新包条目会沿用旧代见证被误判命中。
+    let context = candidate.content.deep2d.as_ref().and_then(|content| {
+        let size = app.window.as_ref()?.inner_size();
+        Some(crate::deep2d_gpu::deep2d_frame_context(
+            content,
+            [size.width, size.height],
+            content_epoch(&candidate),
+        ))
+    });
+    let staged = match pollster::block_on(
+        renderer.stage_deep2d_update_inner(candidate.content.deep2d.as_ref(), context),
+    ) {
+        Ok(staged) => staged,
+        Err(error) => {
+            app.packet_coalescer.failed(generation);
+            eprintln!(
+                "runtime package Deep2D update rejected, keeping last correct frame: {error}"
+            );
+            return;
+        }
+    };
+    let mailbox = app
+        .package_live_transport
+        .as_ref()
+        .expect("package live transport exists")
+        .mailbox
+        .clone();
+    let Some(stats) = mailbox.publish_if_latest(generation, || {
+        let stats = app
+            .renderer
+            .as_mut()
+            .expect("renderer stayed active while staging")
+            .publish_deep2d_update(staged);
+        publish(app, generation, candidate, None);
+        stats
+    }) else {
+        return;
+    };
+    println!(
+        "Deep2D live cache: frame_layout_hits={} atlas_texture_hits={} vertex_buffer_hits={} atlas_evictions={} vertex_evictions={}",
+        stats.frame_layout_hits,
+        stats.atlas_texture_hits,
+        stats.vertex_buffer_hits,
+        stats.atlas_evictions,
+        stats.vertex_evictions
+    );
+}
+
+fn apply_incremental(app: &mut NativeApp, generation: u64, candidate: WatchedPackage) {
+    if app.packet_coalescer.staged(generation) == PublishDecision::Superseded {
+        return;
+    }
+    let previous_packet = app.content.active().packet();
+    let Some(renderer) = app.renderer.as_ref() else {
+        app.packet_coalescer.failed(generation);
+        return;
+    };
+    let staged = match pollster::block_on(
+        renderer.stage_render_packet_update(previous_packet, &candidate.content),
+    ) {
+        Ok(staged) => staged,
+        Err(error) => {
+            app.packet_coalescer.failed(generation);
+            eprintln!("runtime package live update rejected, keeping last correct frame: {error}");
+            return;
+        }
+    };
+    let mailbox = app
+        .package_live_transport
+        .as_ref()
+        .expect("package live transport exists")
+        .mailbox
+        .clone();
+    let publication = mailbox.publish_if_latest(generation, || {
+        app.renderer
+            .as_mut()
+            .expect("renderer stayed active while staging")
+            .publish_render_packet_update(staged)?;
+        publish(app, generation, candidate, None);
+        Ok::<_, String>(())
+    });
+    match publication {
+        None | Some(Ok(())) => {}
+        Some(Err(error)) => {
+            app.packet_coalescer.failed(generation);
+            eprintln!(
+                "runtime package live update rejected at commit, keeping last correct frame: {error}"
+            );
+        }
+    }
+}
+
+fn apply_full(app: &mut NativeApp, generation: u64, candidate: WatchedPackage) {
+    let Some(window) = app.window.as_ref().cloned() else {
+        app.packet_coalescer.failed(generation);
+        return;
+    };
+    let renderer_id = app.next_renderer_id;
+    app.next_renderer_id = app
+        .next_renderer_id
+        .checked_add(1)
+        .expect("renderer generation exhausted");
+    let staged = pollster::block_on(Renderer::new_candidate(
+        window,
+        app.proxy.clone(),
+        renderer_id,
+        &candidate.content,
+        candidate
+            .content
+            .view_after_reload(app.content.active(), app.state.view),
+        app.features,
+    ));
+    let renderer = match staged {
+        Ok(mut renderer) => {
+            if let Err(error) = renderer.verify_candidate_frame() {
+                app.packet_coalescer.failed(generation);
+                eprintln!(
+                    "runtime package candidate frame rejected, previous frame retained: {error}"
+                );
+                return;
+            }
+            renderer
+        }
+        Err(error) => {
+            app.packet_coalescer.failed(generation);
+            eprintln!("runtime package live update rejected, keeping last correct frame: {error}");
+            return;
+        }
+    };
+    let mailbox = app
+        .package_live_transport
+        .as_ref()
+        .expect("package live transport exists")
+        .mailbox
+        .clone();
+    mailbox.publish_if_latest(generation, || {
+        publish(app, generation, candidate, Some(renderer));
+    });
+}
+
+fn publish(
+    app: &mut NativeApp,
+    generation: u64,
+    candidate: WatchedPackage,
+    renderer: Option<Renderer>,
+) {
+    let transport = app
+        .package_live_transport
+        .as_ref()
+        .expect("package live transport exists");
+    let action_count = candidate.plan.entries.len();
+    let reused = candidate.plan.reused;
+    let package_version = candidate.snapshot.package_version.clone();
+    if let Some(renderer) = renderer {
+        drop(app.renderer.take());
+        renderer.activate_surface();
+        app.state.view = candidate
+            .content
+            .view_after_reload(app.content.active(), app.state.view);
+        report_renderer_ready(&renderer);
+        app.renderer = Some(renderer);
+    }
+    app.content.publish(generation, *candidate.content);
+    *transport
+        .published
+        .write()
+        .unwrap_or_else(|error| error.into_inner()) = candidate.snapshot;
+    app.packet_coalescer.publish_ok(generation);
+    app.state.renderer_ready();
+    super::selection::clear(app);
+    super::annotations::clear(app);
+    println!(
+        "runtime package live update applied: generation={generation} version={package_version} actions={action_count} reused={reused}"
+    );
+    app.request_redraw();
+}

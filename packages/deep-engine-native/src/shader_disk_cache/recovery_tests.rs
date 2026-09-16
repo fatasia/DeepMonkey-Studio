@@ -1,7 +1,7 @@
 use std::fs;
 
 use super::{
-    ShaderDiskCache, ShaderDiskCacheErrorCode,
+    ShaderDiskCache, ShaderDiskCacheErrorCode, ShaderDiskCacheStartupDisposition,
     test_support::{PACKAGE_A, PACKAGE_B, TestDirectory, config, owned_names, package_key},
 };
 
@@ -180,6 +180,66 @@ fn explicit_newer_schema_never_falls_back() {
         Err(error) => error,
     };
     assert_eq!(error.code, ShaderDiskCacheErrorCode::VersionUnsupported);
+}
+
+#[test]
+fn startup_rebuilds_an_unrecoverable_corrupt_index_without_touching_unowned_files() {
+    let directory = TestDirectory::new("startup-rebuild");
+    let cache = ShaderDiskCache::open(config(&directory.0)).expect("open");
+    cache.put(PACKAGE_A, None).expect("put");
+    drop(cache);
+    let index = index_names(&directory).pop().expect("index");
+    fs::write(directory.0.join(index), b"{\"partial\":true}").expect("corrupt index");
+    let sentinel = directory.0.join("runtime-package.last-known-good.json");
+    fs::write(&sentinel, b"do-not-touch").expect("write sentinel");
+
+    let (recovered, disposition) =
+        ShaderDiskCache::open_for_startup(config(&directory.0), None).expect("rebuild cache");
+    assert_eq!(
+        disposition,
+        ShaderDiskCacheStartupDisposition::RebuiltCorruptIndex
+    );
+    assert_eq!(recovered.stats().expect("stats").entries, 0);
+    assert_eq!(fs::read(sentinel).expect("sentinel"), b"do-not-touch");
+}
+
+#[test]
+fn startup_reports_an_unrecoverable_corrupt_record_rebuild() {
+    let directory = TestDirectory::new("startup-record");
+    let cache = ShaderDiskCache::open(config(&directory.0)).expect("open");
+    cache.put(PACKAGE_A, None).expect("put");
+    drop(cache);
+    let record = owned_names(&directory.0)
+        .into_iter()
+        .find(|name| name.starts_with("record-"))
+        .expect("record");
+    fs::write(directory.0.join(record), b"{\"partial\":true}").expect("corrupt record");
+
+    let (recovered, disposition) =
+        ShaderDiskCache::open_for_startup(config(&directory.0), None).expect("rebuild cache");
+    assert_eq!(
+        disposition,
+        ShaderDiskCacheStartupDisposition::RebuiltCorruptRecord
+    );
+    assert_eq!(recovered.stats().expect("stats").entries, 0);
+}
+
+#[test]
+fn startup_never_rebuilds_an_incompatible_cache() {
+    let directory = TestDirectory::new("startup-scope");
+    let cache = ShaderDiskCache::open(config(&directory.0)).expect("open");
+    cache.put(PACKAGE_A, None).expect("put");
+    drop(cache);
+    let before = owned_names(&directory.0);
+    let mut incompatible = config(&directory.0);
+    incompatible.scope.compiler_version = "next".into();
+
+    let error = match ShaderDiskCache::open_for_startup(incompatible, None) {
+        Ok(_) => panic!("scope mismatch must remain fatal"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ShaderDiskCacheErrorCode::ScopeMismatch);
+    assert_eq!(owned_names(&directory.0), before);
 }
 
 fn index_names(directory: &TestDirectory) -> Vec<String> {

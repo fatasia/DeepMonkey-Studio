@@ -80,8 +80,47 @@ fn help_exposes_the_shader_package_gpu_probe() {
     assert!(stdout.contains("--smoke-deep2d-interleaved"));
     assert!(stdout.contains("--smoke-ibl"));
     assert!(stdout.contains("--smoke-shadow-update"));
+    assert!(stdout.contains("--packet-live <render-packet.json>"));
+    assert!(stdout.contains("--smoke-packet-live"));
+    assert!(stdout.contains("--package-live <runtime-package.json>"));
+    assert!(stdout.contains("--smoke-package-live <runtime-package.json>"));
     assert!(stdout.contains("--no-bloom"));
     assert!(stdout.contains("--smoke-no-bloom"));
+    assert!(stdout.contains("--headless-fog <density> <r> <g> <b>"));
+}
+
+#[test]
+fn headless_fog_validates_explicit_parameters_without_opening_a_window() {
+    let output = Command::new(env!("CARGO_BIN_EXE_deep-engine-native"))
+        .args(["--headless-fog", "0.2", "0.1", "0.2", "0.3"])
+        .output()
+        .expect("run headless fog command");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("native fog preflight OK: mode=exponential"));
+    assert!(stdout.contains("density=0.2"));
+    assert!(stdout.contains("color=[0.1, 0.2, 0.3]"));
+}
+
+#[test]
+fn headless_fog_rejects_missing_nonfinite_and_unbounded_parameters() {
+    for arguments in [
+        vec!["--headless-fog", "0.2", "0.1", "0.2"],
+        vec!["--headless-fog", "NaN", "0", "0", "0"],
+        vec!["--headless-fog", "8.1", "0", "0", "0"],
+        vec!["--headless-fog", "0.2", "65", "0", "0"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_deep-engine-native"))
+            .args(arguments)
+            .output()
+            .expect("run rejected fog command");
+        assert!(!output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("fog preflight OK"));
+    }
 }
 
 #[test]
@@ -124,6 +163,9 @@ fn headless_deep2d_prepares_the_path_only_fixture_without_opening_a_window() {
 
 #[test]
 fn headless_deep2d_rejects_unsupported_commands_without_partial_rendering() {
+    // Dashes, round caps and round joins are supported now; the v1 fixture
+    // still carries text/image direct commands without baked glyphs, which
+    // must fail closed with structured issues instead of partial rendering.
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("fixtures/deep2d_display_list_v1.json");
     let output = Command::new(env!("CARGO_BIN_EXE_deep-engine-native"))
@@ -133,8 +175,8 @@ fn headless_deep2d_rejects_unsupported_commands_without_partial_rendering() {
         .expect("run headless Deep2d rejection");
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("utf8 error");
-    assert!(stderr.contains("UnsupportedDash"));
-    assert!(stderr.contains("commands[0].dash"));
+    assert!(stderr.contains("UnsupportedCommand"));
+    assert!(stderr.contains("commands[1]"));
 }
 
 #[test]

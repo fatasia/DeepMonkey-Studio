@@ -2,26 +2,57 @@ use std::sync::Arc;
 
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, WindowEvent},
+    event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoopProxy},
-    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
 use crate::{
-    app_startup::{report_presented, report_renderer_ready, window_attributes},
-    events::{GpuEvent, RenderOutcome, targets_active_renderer},
+    app_startup::{report_renderer_ready, window_attributes},
+    events::GpuEvent,
     player_content::PlayerContent,
     player_state::PlayerState,
     renderer::{Renderer, RendererFeatures},
 };
+mod annotations;
+mod chart;
+mod chart_keyboard_smoke;
+mod chart_sim;
+mod chart_smoke;
+mod deep2d_context;
+mod package_camera;
+#[cfg(test)]
+mod package_drop_probe_tests;
+mod package_live;
+mod package_open;
+mod package_source;
+mod package_watch;
+mod packet_coalescer;
+mod packet_live;
+mod packet_live_probe;
+mod packet_mailbox;
+mod packet_watch;
+mod recovery;
 mod runner;
+mod section;
+mod section_probe;
+mod selection;
+mod selection_probe;
 mod shadow_update_probe;
-pub use runner::{run, run_shadow_update_probe};
+mod window_events;
+use package_live::PackageLiveTransport;
+use packet_coalescer::{PublishedState, UpdateCoalescer};
+use packet_live::PacketLiveTransport;
+use packet_live_probe::PacketLiveProbe;
+pub use runner::{
+    PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_fog, run_package_live,
+    run_packet_live, run_section_smoke, run_selection_smoke, run_shadow_update_probe,
+    run_telemetry_smoke, run_verification,
+};
 use shadow_update_probe::ShadowUpdateProbe;
 
 struct NativeApp {
-    content: PlayerContent,
+    content: PublishedState<PlayerContent>,
     proxy: EventLoopProxy<GpuEvent>,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
@@ -29,27 +60,84 @@ struct NativeApp {
     smoke_frame: bool,
     features: RendererFeatures,
     shadow_update_probe: Option<ShadowUpdateProbe>,
+    packet_live_probe: Option<PacketLiveProbe>,
+    packet_live_transport: Option<PacketLiveTransport>,
+    package_live_transport: Option<PackageLiveTransport>,
+    package_open: Option<package_open::PackageOpen>,
+    drop_batch: package_source::DropBatch,
+    packet_coalescer: UpdateCoalescer,
+    telemetry_warmup_frames_remaining: u8,
+    telemetry_sample_frames_remaining: u8,
     state: PlayerState,
+    selection_probe: Option<u8>,
+    section_probe: Option<section_probe::SectionProbe>,
+    chart_probe: Option<u8>,
+    /// P1-16 第三批键盘 smoke 的推进阶段;独立于 chart_probe,两者不共存。
+    chart_key_probe: Option<u8>,
+    chart_text: Option<deep_engine_native::platform_text::TextRasterizer>,
+    chart_legend_page: usize,
+    chart_sim_scheduled: bool,
+}
+
+struct NativeAppSetup {
+    smoke_frame: bool,
+    features: RendererFeatures,
+    shadow_update_probe: Option<ShadowUpdateProbe>,
+    packet_live_probe: Option<PacketLiveProbe>,
+    packet_live_transport: Option<PacketLiveTransport>,
+    package_live_transport: Option<PackageLiveTransport>,
+    telemetry_report: bool,
+    selection_probe: bool,
+    section_probe: bool,
+    /// P1-16 第三批:键盘 smoke。与 chart_probe 互斥(见 `NativeApp::new`)。
+    chart_key_probe: bool,
 }
 
 impl NativeApp {
-    fn new(
-        content: PlayerContent,
-        proxy: EventLoopProxy<GpuEvent>,
-        smoke_frame: bool,
-        features: RendererFeatures,
-        shadow_update_probe: Option<ShadowUpdateProbe>,
-    ) -> Self {
+    fn new(content: PlayerContent, proxy: EventLoopProxy<GpuEvent>, setup: NativeAppSetup) -> Self {
+        let view = content.initial_view();
+        // 键盘 smoke 与图表交互 smoke 都推进 chart 探针,同一窗口只能选一条;
+// 键盘模式下 chart_probe 保持 None,由 chart_key_probe 独占推进权。
+        let chart_probe =
+            (setup.smoke_frame && content.chart.is_some() && !setup.chart_key_probe).then_some(0);
         Self {
-            content,
+            chart_probe,
+            chart_key_probe: (setup.chart_key_probe && content.chart.is_some()).then_some(0),
+            chart_text: None,
+            chart_legend_page: 0,
+            chart_sim_scheduled: false,
+            content: PublishedState::new(content),
             proxy,
             window: None,
             renderer: None,
             next_renderer_id: 1,
-            smoke_frame,
-            features,
-            shadow_update_probe,
-            state: PlayerState::default(),
+            smoke_frame: setup.smoke_frame,
+            features: setup.features,
+            shadow_update_probe: setup.shadow_update_probe,
+            packet_live_probe: setup.packet_live_probe,
+            packet_live_transport: setup.packet_live_transport,
+            package_live_transport: setup.package_live_transport,
+            package_open: None,
+            drop_batch: Default::default(),
+            packet_coalescer: UpdateCoalescer::new(0),
+            telemetry_warmup_frames_remaining: if setup.telemetry_report {
+                crate::player_diagnostics::TELEMETRY_WARMUP_FRAMES
+            } else {
+                0
+            },
+            telemetry_sample_frames_remaining: if setup.telemetry_report {
+                crate::player_diagnostics::TELEMETRY_SAMPLE_FRAMES
+            } else {
+                0
+            },
+            state: PlayerState {
+                view,
+                ..Default::default()
+            },
+            selection_probe: setup.selection_probe.then_some(0),
+            section_probe: setup
+                .section_probe
+                .then(section_probe::SectionProbe::default),
         }
     }
 
@@ -67,15 +155,42 @@ impl NativeApp {
             window.clone(),
             self.proxy.clone(),
             renderer_id,
-            &self.content,
+            self.content.active(),
             self.state.view,
             self.features,
         )) {
             Ok(renderer) => {
                 self.state.renderer_ready();
                 report_renderer_ready(&renderer);
+                // P1-19:图表内容才需要字体,因此能力探测只在此时做一次。
+                // 探测要遍历系统字体库(实测约 9ms),不放进无文本场景的启动路径。
+                if self.content.active().chart.is_some() {
+                    let capability = self
+                        .chart_text
+                        .get_or_insert_with(Default::default)
+                        .font_capability();
+                    println!("native font capability: {}", capability.summary());
+                    for face in capability.faces.iter().take(8) {
+                        println!(
+                            "native font face: family={} postscript={} weight={} italic={} mono={} hash={:016x} bytes={}",
+                            face.identity.family,
+                            face.identity.post_script_name,
+                            face.identity.weight,
+                            face.identity.italic,
+                            face.identity.monospaced,
+                            face.identity.content_hash,
+                            face.identity.content_bytes
+                        );
+                    }
+                    if capability.faces.len() > 8 {
+                        println!(
+                            "native font capability: {} more faces omitted",
+                            capability.faces.len() - 8
+                        );
+                    }
+                }
                 self.renderer = Some(renderer);
-                let title = if self.content.deep2d.is_some() {
+                let title = if self.content.active().deep2d.is_some() {
                     "Deep Engine Native Viewer — native wgpu 3D + Deep2d"
                 } else {
                     "Deep Engine Native Viewer — native wgpu renderer"
@@ -129,6 +244,10 @@ impl NativeApp {
 }
 
 impl ApplicationHandler<GpuEvent> for NativeApp {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        package_open::flush_drop(self);
+        chart_sim::tick(self, event_loop);
+    }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let attributes = window_attributes(self.smoke_frame);
@@ -158,52 +277,28 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: GpuEvent) {
+        if recovery::handle(self, event_loop, &event) {
+            return;
+        }
         match event {
-            GpuEvent::DeviceLost {
-                renderer_id,
-                reason,
-                message,
-            } => {
-                if !targets_active_renderer(self.renderer.as_ref().map(Renderer::id), renderer_id) {
-                    return;
-                }
-                if self.smoke_frame {
-                    self.state.failure = Some(format!(
-                        "GPU device lost during smoke frame ({reason}): {message}"
-                    ));
+            GpuEvent::PacketArrived => packet_live::apply_latest(self),
+            GpuEvent::PackageArrived => package_live::apply_latest(self),
+            GpuEvent::PackageOpened => package_open::apply_latest(self),
+            GpuEvent::LiveProbeCheckpoint => {
+                let result = self
+                    .packet_live_probe
+                    .as_mut()
+                    .zip(self.renderer.as_ref())
+                    .ok_or_else(|| {
+                        "live reload rejection checkpoint has no active probe/renderer".to_owned()
+                    })
+                    .and_then(|(probe, renderer)| probe.after_rejection_checkpoint(renderer));
+                if let Err(error) = result {
+                    self.state.failed(error);
                     event_loop.exit();
-                    return;
-                }
-                eprintln!("GPU device lost ({reason}): {message}; rebuilding native renderer");
-                self.renderer = None;
-                self.initialize_renderer();
-            }
-            GpuEvent::UncapturedError {
-                renderer_id,
-                message,
-            } => {
-                if !targets_active_renderer(self.renderer.as_ref().map(Renderer::id), renderer_id) {
-                    return;
-                }
-                if self.smoke_frame {
-                    self.state.failure = Some(format!(
-                        "uncaptured GPU error during smoke frame: {message}"
-                    ));
-                    event_loop.exit();
-                    return;
-                }
-                self.state
-                    .failed(format!("uncaptured GPU error: {message}"));
-                eprintln!("uncaptured GPU error: {message}");
-                if let Some(window) = self.window.as_ref() {
-                    window.set_title("Deep Engine Native Viewer — GPU error (press R to rebuild)");
                 }
             }
-            GpuEvent::SmokeTimeout if self.smoke_frame => {
-                self.state.failure = Some("native smoke frame timed out before present".into());
-                event_loop.exit();
-            }
-            GpuEvent::SmokeTimeout => {}
+            _ => {}
         }
     }
 
@@ -213,88 +308,6 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        if self
-            .window
-            .as_ref()
-            .is_none_or(|window| window.id() != window_id)
-        {
-            return;
-        }
-        match event {
-            WindowEvent::CloseRequested => {
-                if self.smoke_frame {
-                    self.state
-                        .failed("native smoke window closed before GPU completion".into());
-                }
-                event_loop.exit();
-            }
-            WindowEvent::Resized(size) => self.resize(size),
-            WindowEvent::ScaleFactorChanged { .. } => {
-                if let Some(size) = self.window.as_ref().map(|window| window.inner_size()) {
-                    self.resize(size);
-                }
-            }
-            WindowEvent::Occluded(false) => self.request_redraw(),
-            WindowEvent::RedrawRequested => {
-                let outcome = self
-                    .renderer
-                    .as_mut()
-                    .map(|renderer| renderer.render(self.smoke_frame));
-                if let Some(RenderOutcome::Failed(error)) = outcome.as_ref() {
-                    self.state.failure = Some(error.clone());
-                    event_loop.exit();
-                    return;
-                }
-                if self.smoke_frame && matches!(outcome, Some(RenderOutcome::Presented)) {
-                    if let Some(probe) = self.shadow_update_probe.as_mut() {
-                        let result = probe.after_present(
-                            self.renderer.as_mut().expect("renderer exists"),
-                            &mut self.content,
-                        );
-                        match result {
-                            Ok(false) => {
-                                self.request_redraw();
-                                return;
-                            }
-                            Ok(true) => {}
-                            Err(error) => {
-                                self.state.failure = Some(error);
-                                event_loop.exit();
-                                return;
-                            }
-                        }
-                    }
-                    let size = self.window.as_ref().expect("window exists").inner_size();
-                    report_presented(size, self.content.deep2d.is_some());
-                    event_loop.exit();
-                    return;
-                }
-                if self.smoke_frame && matches!(outcome, Some(RenderOutcome::Skipped)) {
-                    self.request_redraw();
-                }
-                if matches!(outcome, Some(RenderOutcome::Recover)) {
-                    if self.smoke_frame {
-                        self.state.failure =
-                            Some("surface was lost during native smoke frame".into());
-                        event_loop.exit();
-                        return;
-                    }
-                    self.renderer = None;
-                    self.initialize_renderer();
-                }
-            }
-            WindowEvent::KeyboardInput { event, .. }
-                if event.state == ElementState::Pressed && !event.repeat =>
-            {
-                match event.physical_key {
-                    PhysicalKey::Code(KeyCode::Escape) => event_loop.exit(),
-                    PhysicalKey::Code(KeyCode::ArrowLeft) => self.rotate(-0.18),
-                    PhysicalKey::Code(KeyCode::ArrowRight) => self.rotate(0.18),
-                    PhysicalKey::Code(KeyCode::KeyR) => self.initialize_renderer(),
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
+        window_events::handle(self, event_loop, window_id, event);
     }
 }

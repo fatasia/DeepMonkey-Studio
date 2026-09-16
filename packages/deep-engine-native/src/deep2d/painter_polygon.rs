@@ -149,7 +149,7 @@ fn reject_self_intersections(
     Ok(())
 }
 
-fn segments_intersect(
+pub(super) fn segments_intersect(
     a: Point,
     b: Point,
     c: Point,
@@ -204,7 +204,7 @@ fn point_in_triangle(
         && cross(c, a, point) * winding >= -epsilon
 }
 
-fn signed_area_twice(points: &[Point]) -> f64 {
+pub(super) fn signed_area_twice(points: &[Point]) -> f64 {
     let origin = points[0];
     (1..points.len() - 1)
         .map(|index| cross(origin, points[index], points[index + 1]))
@@ -218,6 +218,6 @@ fn orient_triangle(mut triangle: [usize; 3], winding: f64) -> [usize; 3] {
     triangle
 }
 
-fn geometry_issue(path: &str, message: &str) -> Deep2dPainterIssue {
+pub(super) fn geometry_issue(path: &str, message: &str) -> Deep2dPainterIssue {
     issue(Deep2dPainterIssueCode::UnsupportedGeometry, path, message)
 }

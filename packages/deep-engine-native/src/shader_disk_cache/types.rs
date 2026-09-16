@@ -131,6 +131,14 @@ pub struct ShaderDiskCacheStats {
     pub coalesced_writes: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ShaderDiskCacheStartupDisposition {
+    Opened,
+    RebuiltCorruptIndex,
+    RebuiltCorruptRecord,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub(crate) struct CacheIdentity {

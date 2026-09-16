@@ -36,11 +36,31 @@ try {
     throw 'UTF-16 browser dependency marker escaped detection'
   }
 
+  $licenseRoot = Join-Path $testRoot 'licenses'
+  [void](New-Item -ItemType Directory -Force -Path $licenseRoot)
+  $packageRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+  $supplyChain = Write-NativeSupplyChainEvidence -PackageRoot $packageRoot `
+    -Target 'x86_64-pc-windows-msvc' -Destination (Join-Path $licenseRoot 'rust-sbom-input.json')
+  $sbom = Get-Content -LiteralPath (Join-Path $licenseRoot 'rust-sbom-input.json') -Raw | ConvertFrom-Json
+  $brokenSbom = $sbom | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+  $brokenSbom.components[0].license = ''
+  Assert-Rejected { Test-NativeSupplyChainEvidence -Evidence $brokenSbom } 'lacks name, version, or license'
+  $brokenChecksum = $sbom | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+  $brokenChecksum.components[0].checksumSha256 = ''
+  Assert-Rejected { Test-NativeSupplyChainEvidence -Evidence $brokenChecksum } 'registry checksum is missing'
+  $brokenFingerprint = $sbom | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+  $brokenFingerprint.buildInputs[0].sha256 = [string]::new([char]'0', 64)
+  Assert-Rejected { Test-NativeSupplyChainEvidence -Evidence $brokenFingerprint } 'fingerprint is missing'
+  $brokenGraph = $sbom | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+  $brokenGraph.dependencies[0].dependsOn = @('pkg:cargo/not-in-lock@1.0.0')
+  Assert-Rejected { Test-NativeSupplyChainEvidence -Evidence $brokenGraph } 'unknown or self reference'
+
   # A manifest cannot override a fresh purity result, even if its own gates claim success.
   $manifest = [ordered]@{
-    schema = 'deep-engine.native-portable'; schemaVersion = 2; channel = 'beta'
+    schema = 'deep-engine.native-portable'; schemaVersion = 3; channel = 'beta'
     runtime = @{ browserShell = $false }; binary = 'player.exe'
     purity = @{ passed = $true }; embeddedShaders = @{ passed = $true }
+    supplyChain = $supplyChain
     smoke = @{ passed = $true; checks = @(@{ name = 'gpu-first-frame'; passed = $true }) }
     files = @(Get-PayloadInventory -PackageRoot $testRoot)
   }
@@ -89,7 +109,9 @@ try {
   Write-Utf8File -Path (Join-Path $zipSource 'a.txt') -Content 'same bytes'
   Write-Utf8File -Path (Join-Path $zipSource 'b.txt') -Content 'same bytes'
   $zipPath = Join-Path $testRoot 'duplicate.zip'
-  $stream = [IO.File]::Create($zipPath)
+  Add-Type -AssemblyName System.IO.Compression
+  $zipSharing = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+  $stream = [IO.File]::Open($zipPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, $zipSharing)
   $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create)
   try {
     foreach ($unused in 1..2) {
@@ -104,5 +126,18 @@ try {
   'Portable verifier regressions passed: purity, stale manifest, nine shader sources, nested inventory, duplicate ZIP.'
 } finally {
   Assert-ChildPath -Root $testParent -Path $testRoot
-  Remove-Item -LiteralPath $testRoot -Recurse -Force
+  # Windows PowerShell 5.1 can keep ZipArchive finalizers alive briefly after
+  # the duplicate-entry rejection. Retry bounded cleanup so the regression
+  # suite remains deterministic on the shell shipped with Windows.
+  $cleanupDeadline = [DateTime]::UtcNow.AddSeconds(2)
+  while (Test-Path -LiteralPath $testRoot) {
+    try {
+      Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction Stop
+    } catch {
+      if ([DateTime]::UtcNow -ge $cleanupDeadline) { throw }
+      [GC]::Collect()
+      [GC]::WaitForPendingFinalizers()
+      Start-Sleep -Milliseconds 100
+    }
+  }
 }

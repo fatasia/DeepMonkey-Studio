@@ -1,9 +1,10 @@
+use deep_engine_native::fog::FogSettings;
 use deep_engine_native::mesh_abi::{
     FORWARD_COLOR_FORMAT, FORWARD_DEPTH_FORMAT, FORWARD_RESOLVE_REQUIRED, FORWARD_SAMPLE_COUNT,
     FRAME_MEMBER_BYTE_OFFSETS, FRAME_UNIFORM_BYTES, FRAME_UNIFORM_FLOATS,
     GEOMETRY_VERTEX_ATTRIBUTES, GEOMETRY_VERTEX_BYTES, INSTANCE_VERTEX_ATTRIBUTES,
     MATERIAL_UNIFORM_BYTES, MATERIAL_UNIFORM_FLOATS, MESH_ABI_ID, PACKED_INSTANCE_BYTES,
-    TANGENT_VERTEX_ATTRIBUTES, TANGENT_VERTEX_BYTES, frame_uniform,
+    TANGENT_VERTEX_ATTRIBUTES, TANGENT_VERTEX_BYTES, frame_uniform, frame_uniform_with_fog,
 };
 
 const _: () = assert!(FORWARD_RESOLVE_REQUIRED);
@@ -97,6 +98,10 @@ fn native_frame_abi1_matches_the_208_byte_browser_golden() {
     assert_slice_close(&flat[44..48], &[0.55, 0.8, 0.35, 0.0]);
     assert_slice_close(&flat[48..52], &[0.0; 4]);
     assert!(flat.iter().all(|value| value.is_finite()));
+
+    let fog = FogSettings::exponential(0.125, [0.2, 0.3, 0.4]).unwrap();
+    let fog_frame = frame_uniform_with_fog(2.0, 0.0, fog);
+    assert_slice_close(&fog_frame.as_flattened()[48..52], &[0.2, 0.3, 0.4, 0.125]);
 }
 
 #[test]

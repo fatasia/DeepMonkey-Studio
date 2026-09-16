@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 bytemuck = "=1.25.2"
+cosmic-text = { version = "=0.19.0", default-features = false, features = ["std", "swash"] }
 pollster = "=1.0.1"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }

@@ -7,10 +7,38 @@ pub struct FrameLayouts {
     pub shadow: wgpu::BindGroupLayout,
 }
 
+pub fn create_native_mesh_shader(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Deep Engine native mesh shader v1"),
+        source: wgpu::ShaderSource::Wgsl(
+            concat!(
+                include_str!("../assets/shaders/native_mesh_v1.wgsl"),
+                "\n",
+                include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl")
+            )
+            .into(),
+        ),
+    })
+}
+
+fn section_layout() -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding: 8,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: wgpu::BufferSize::new(16),
+        },
+        count: None,
+    }
+}
+
 pub fn create_frame_layouts(device: &wgpu::Device) -> FrameLayouts {
     let frame = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Deep Engine native frame layout"),
         entries: &[
+            section_layout(),
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -87,16 +115,19 @@ pub fn create_frame_layouts(device: &wgpu::Device) -> FrameLayouts {
     });
     let shadow = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Deep Engine native shadow frame layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: true,
-                min_binding_size: wgpu::BufferSize::new(FRAME_UNIFORM_BYTES),
+        entries: &[
+            section_layout(),
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: wgpu::BufferSize::new(FRAME_UNIFORM_BYTES),
+                },
+                count: None,
             },
-            count: None,
-        }],
+        ],
     });
     FrameLayouts { frame, shadow }
 }

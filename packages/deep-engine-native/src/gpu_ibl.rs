@@ -18,6 +18,8 @@ pub struct GpuIblEnvironment {
     pub id: String,
     pub revision: u32,
     pub summary: IblSummary,
+    pub identity: String,
+    pub resident_bytes: u64,
 }
 
 impl GpuIblEnvironment {
@@ -27,6 +29,11 @@ impl GpuIblEnvironment {
         source: &PreparedIblEnvironment,
     ) -> Result<Self, String> {
         let summary = validate_ibl_environment(source)?;
+        let resident_bytes =
+            (summary.specular_texels + summary.diffuse_texels + summary.brdf_texels) as u64 * 8;
+        if resident_bytes > 64 * 1024 * 1024 {
+            return Err("native IBL exceeds 64 MiB resident budget".into());
+        }
         let limit = device.limits().max_texture_dimension_2d;
         let largest = source
             .specular
@@ -94,6 +101,8 @@ impl GpuIblEnvironment {
             id: source.id.clone(),
             revision: source.revision,
             summary,
+            identity: Self::source_identity(source),
+            resident_bytes,
         })
     }
 
@@ -104,31 +113,45 @@ impl GpuIblEnvironment {
         frame: &wgpu::Buffer,
         shadow: &ShadowMap,
         label: &'static str,
+        include_native_section: bool,
     ) -> wgpu::BindGroup {
+        let entries = [
+            wgpu::BindGroupEntry {
+                binding: 8,
+                resource: shadow.section_uniform.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: frame.as_entire_binding(),
+            },
+            texture_entry(1, &shadow.view),
+            sampler_entry(2, &shadow.sampler),
+            texture_entry(3, &self.specular_view),
+            texture_entry(4, &self.diffuse_view),
+            texture_entry(5, &self.brdf_lut_view),
+            sampler_entry(6, &self.sampler),
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: shadow.sampling_uniform.as_entire_binding(),
+            },
+        ];
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some(label),
             layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: frame.as_entire_binding(),
-                },
-                texture_entry(1, &shadow.view),
-                sampler_entry(2, &shadow.sampler),
-                texture_entry(3, &self.specular_view),
-                texture_entry(4, &self.diffuse_view),
-                texture_entry(5, &self.brdf_lut_view),
-                sampler_entry(6, &self.sampler),
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: shadow.sampling_uniform.as_entire_binding(),
-                },
-            ],
+            entries: if include_native_section {
+                &entries
+            } else {
+                &entries[1..]
+            },
         })
     }
 
     pub fn specular_view(&self) -> &wgpu::TextureView {
         &self.specular_view
+    }
+
+    pub fn source_identity(source: &PreparedIblEnvironment) -> String {
+        format!("{}:{}:{:?}", source.id, source.revision, source.provenance)
     }
 
     pub fn diffuse_view(&self) -> &wgpu::TextureView {

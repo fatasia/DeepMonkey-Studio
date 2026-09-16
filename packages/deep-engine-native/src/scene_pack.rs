@@ -1,4 +1,4 @@
-use crate::contract::AlphaMode;
+use crate::contract::{AlphaMode, ShadingModel};
 use crate::scene::{PACKED_INSTANCE_FLOATS, PackedInstance};
 
 pub(super) fn pack_instance(
@@ -22,9 +22,20 @@ pub(super) fn pack_instance(
     ]);
     packed[28..32].copy_from_slice(&[
         material.roughness,
-        material.alpha_cutoff.unwrap_or(0.5),
+        material
+            .alpha_cutoff
+            .unwrap_or(if material.alpha_mode == Some(AlphaMode::Blend) {
+                0.0
+            } else {
+                0.5
+            }),
         determinant_sign,
-        flags,
+        flags
+            + if material.alpha_mode == Some(AlphaMode::Blend) && material.alpha_cutoff.is_some() {
+                2.0
+            } else {
+                0.0
+            },
     ]);
     let emissive = material.emissive_factor.unwrap_or([0.0; 3]);
     packed[32..36].copy_from_slice(&[
@@ -36,13 +47,22 @@ pub(super) fn pack_instance(
     packed
 }
 
-pub(super) fn alpha_flags(alpha_mode: AlphaMode, double_sided: bool) -> f32 {
+pub(super) fn surface_flags(
+    alpha_mode: AlphaMode,
+    double_sided: bool,
+    receive_shadow: Option<bool>,
+    shading_model: Option<ShadingModel>,
+) -> f32 {
     let alpha = match alpha_mode {
         AlphaMode::Opaque => 0,
         AlphaMode::Mask => 2,
         AlphaMode::Blend => 4,
     };
-    (alpha + usize::from(double_sided)) as f32
+    // 与 Browser 实例 ABI 一致：16 禁用接收阴影，64 为 unlit。
+    (alpha
+        + usize::from(double_sided)
+        + 16 * usize::from(receive_shadow == Some(false))
+        + 64 * usize::from(shading_model == Some(ShadingModel::Unlit))) as f32
 }
 
 pub(super) fn geometry_center(vertices: &[f32], indices: &[u32]) -> [f32; 3] {

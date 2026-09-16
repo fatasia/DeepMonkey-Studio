@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'portable-smoke.ps1')
+. (Join-Path $PSScriptRoot 'portable-provenance.ps1')
 
 function Assert-ChildPath {
   param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Path)
@@ -18,7 +19,22 @@ function Write-Utf8File {
 
 function Get-RelativeUnixPath {
   param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Path)
-  return [IO.Path]::GetRelativePath($Root, $Path).Replace('\', '/')
+  # Windows PowerShell 5.1 runs on .NET Framework, where Path.GetRelativePath
+  # does not exist. Keep the Windows packaging contract compatible with both
+  # powershell.exe and modern pwsh without depending on that API.
+  $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar,
+    [IO.Path]::AltDirectorySeparatorChar
+  )
+  $candidate = [IO.Path]::GetFullPath($Path)
+  if ($candidate.Equals($rootPath, [StringComparison]::OrdinalIgnoreCase)) {
+    return '.'
+  }
+  $prefix = $rootPath + [IO.Path]::DirectorySeparatorChar
+  if (-not $candidate.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Path escapes the relative-path root: $candidate"
+  }
+  return $candidate.Substring($prefix.Length).Replace('\', '/')
 }
 
 function Get-FileSha256 {
@@ -139,9 +155,9 @@ function Test-ManifestPayload {
   param([Parameter(Mandatory)][string]$PackageRoot)
   $manifestPath = Join-Path $PackageRoot 'manifest.json'
   $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-  if ($manifest.schema -ne 'deep-engine.native-portable' -or $manifest.schemaVersion -ne 2 -or
-      $manifest.channel -ne 'beta' -or $manifest.runtime.browserShell -ne $false) {
-    throw 'Portable manifest does not describe a native Beta schema v2 package.'
+  if ($manifest.schema -ne 'deep-engine.native-portable' -or $manifest.schemaVersion -ne 3 -or
+      $manifest.channel -notin @('beta', 'candidate') -or $manifest.runtime.browserShell -ne $false) {
+    throw 'Portable manifest does not describe a native beta/candidate schema v3 package.'
   }
   $records = @($manifest.files)
   $paths = @($records | ForEach-Object path)
@@ -168,6 +184,20 @@ function Test-ManifestPayload {
   if (-not $manifest.embeddedShaders.passed -or
       -not (@($manifest.smoke.checks | Where-Object name -eq 'gpu-first-frame').passed)) {
     throw 'Portable manifest lacks embedded shader or GPU first-frame evidence.'
+  }
+  $sbomPath = Join-Path $PackageRoot ($manifest.supplyChain.path.Replace('/', [IO.Path]::DirectorySeparatorChar))
+  Assert-ChildPath -Root $PackageRoot -Path $sbomPath
+  if (-not $manifest.supplyChain.passed -or -not (Test-Path -LiteralPath $sbomPath -PathType Leaf) -or
+      (Get-FileSha256 -Path $sbomPath) -ne $manifest.supplyChain.sha256) {
+    throw 'Portable manifest lacks valid supply-chain evidence.'
+  }
+  $sbom = Get-Content -LiteralPath $sbomPath -Raw | ConvertFrom-Json
+  $sbomResult = Test-NativeSupplyChainEvidence -Evidence $sbom
+  if ($sbomResult.components -ne $manifest.supplyChain.components -or
+      $sbomResult.buildInputs -ne $manifest.supplyChain.buildInputs -or
+      $sbom.buildInputFingerprint -cne $manifest.supplyChain.buildInputFingerprint -or
+      @($sbom.dependencies).Count -ne $manifest.supplyChain.dependencyRelations) {
+    throw 'Portable supply-chain evidence summary differs from its manifest.'
   }
   $actualPaths = @((Get-PayloadInventory -PackageRoot $PackageRoot) | ForEach-Object path)
   if ($actualPaths.Count -ne $paths.Count -or @($actualPaths | Where-Object { $_ -notin $paths }).Count) {
@@ -213,7 +243,10 @@ function Test-ZipMatchesDirectory {
       sha256 = Get-FileSha256 -Path $file.FullName
     }
   }
-  $stream = [IO.File]::OpenRead($ArchivePath)
+  # FileShare.Delete avoids a Windows PowerShell 5.1 ZipArchive handle-lifetime
+  # quirk from turning a completed verification into a locked artifact.
+  $sharing = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+  $stream = [IO.File]::Open($ArchivePath, [IO.FileMode]::Open, [IO.FileAccess]::Read, $sharing)
   try {
     $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Read, $false)
     try {
@@ -229,7 +262,7 @@ function Test-ZipMatchesDirectory {
         $entryStream = $entry.Open()
         try {
           $sha = [Security.Cryptography.SHA256]::Create()
-          try { $hash = [Convert]::ToHexString($sha.ComputeHash($entryStream)).ToLowerInvariant() }
+          try { $hash = ConvertTo-LowerHex -Bytes $sha.ComputeHash($entryStream) }
           finally { $sha.Dispose() }
         } finally { $entryStream.Dispose() }
         if ($hash -ne $record.sha256) { throw "ZIP hash mismatch: $($entry.FullName)" }

@@ -65,7 +65,15 @@ fn nvidia_scene_fitted_shadow_update_is_transactional() {
         let frame = frame_data(size, 0.0);
         let layouts = create_frame_layouts(&device);
         let bounds = prepare_scene_bounds(&packet).unwrap();
-        let mut shadow = create_shadow_map(&device, &layouts.shadow, size, &frame, bounds).unwrap();
+        let mut shadow = create_shadow_map(
+            &device,
+            &layouts.shadow,
+            size,
+            &frame,
+            bounds,
+            Default::default(),
+        )
+        .unwrap();
         let initial = read_uniform(&device, &queue, &shadow.sampling_uniform);
 
         let invalid = SceneWorldBounds {
@@ -76,7 +84,7 @@ fn nvidia_scene_fitted_shadow_update_is_transactional() {
             shadow
                 .stage_scene_update(
                     &frame,
-                    shadow_camera(size, &frame),
+                    shadow_camera(size, &frame, Default::default()),
                     shadow_ray_direction(&frame),
                     Some(invalid)
                 )
@@ -94,7 +102,7 @@ fn nvidia_scene_fitted_shadow_update_is_transactional() {
         let candidate = shadow
             .stage_scene_update(
                 &frame,
-                shadow_camera(size, &frame),
+                shadow_camera(size, &frame, Default::default()),
                 shadow_ray_direction(&frame),
                 moved_bounds,
             )

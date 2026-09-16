@@ -25,7 +25,14 @@ pub struct BoundShaderMaterial {
 }
 
 pub struct GpuShaderMaterials {
-    _packages: Vec<Arc<ExecutableShaderPackage>>,
+    /// Compiled packages aligned with `content.shader_packages` order; `None`
+    /// marks an isolated (failed-to-compile) package whose dependents fell back
+    /// to the standard PBR path.
+    _packages: Vec<Option<Arc<ExecutableShaderPackage>>>,
+    /// Ids of isolated packages, in submission order — machine-readable evidence.
+    pub isolated: Vec<String>,
+    /// Materials that fell back to standard PBR because their package failed.
+    pub fallback_materials: usize,
     pub materials: Vec<Option<BoundShaderMaterial>>,
     pub signature: String,
 }
@@ -66,13 +73,27 @@ impl GpuShaderMaterials {
             resources.batches,
             resources.features,
         )?;
+        // Per-package isolation: one broken or incompatible package must not
+        // kill the others. Failed entries stay `None` and every material that
+        // referenced them falls back to the standard PBR path below.
         let mut executor = ShaderPackageGpuExecutor::default();
-        let mut packages = Vec::with_capacity(content.shader_packages.len());
+        let mut packages: Vec<Option<Arc<ExecutableShaderPackage>>> =
+            Vec::with_capacity(content.shader_packages.len());
+        let mut isolated = Vec::new();
+        let mut fallback_materials = 0usize;
         for package in &content.shader_packages {
             let bytes = serde_json::to_vec(package).map_err(|error| error.to_string())?;
-            packages.push(executor.prepare_bytes(device, &bytes).map_err(|error| {
-                format!("native Player package {}: {error}", package.package_id)
-            })?);
+            match executor.prepare_bytes(device, &bytes) {
+                Ok(executable) => packages.push(Some(executable)),
+                Err(error) => {
+                    eprintln!(
+                        "native Player package {} isolated, materials fall back to standard PBR: {error}",
+                        package.package_id
+                    );
+                    isolated.push(package.package_id.clone());
+                    packages.push(None);
+                }
+            }
         }
         let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
@@ -84,7 +105,12 @@ impl GpuShaderMaterials {
                     materials.push(None);
                     continue;
                 };
-                let package = &packages[plan.package_index];
+                let Some(package) = &packages[plan.package_index] else {
+                    // Plan referenced an isolated package: standard PBR fallback.
+                    fallback_materials += 1;
+                    materials.push(None);
+                    continue;
+                };
                 let mut material = BoundShaderMaterial {
                     forward: std::array::from_fn(|_| None),
                     shadow: std::array::from_fn(|_| None),
@@ -106,6 +132,8 @@ impl GpuShaderMaterials {
             }
             Ok(Self {
                 _packages: packages,
+                isolated,
+                fallback_materials,
                 materials,
                 signature,
             })
@@ -153,6 +181,7 @@ fn bind_pass(
             resources.frame,
             resources.shadows,
             "native package forward frame",
+            false,
         )],
         "shadow-frame" => (0..resources.shadows.cascade_count() as usize)
             .map(|cascade| {

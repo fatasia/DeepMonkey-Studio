@@ -8,6 +8,9 @@ pub(crate) struct GpuContext {
     pub(crate) surface: wgpu::Surface<'static>,
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
+    pub(crate) adapter_info: wgpu::AdapterInfo,
+    pub(crate) adapter_features: wgpu::Features,
+    pub(crate) device_features: wgpu::Features,
     pub(crate) config: wgpu::SurfaceConfiguration,
     pub(crate) size: PhysicalSize<u32>,
     pub(crate) failures: GpuFailures,
@@ -17,6 +20,7 @@ pub(crate) async fn create_gpu_context(
     window: Arc<Window>,
     proxy: EventLoopProxy<GpuEvent>,
     renderer_id: u64,
+    request_timestamps: bool,
 ) -> Result<GpuContext, String> {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::DX12 | wgpu::Backends::METAL | wgpu::Backends::VULKAN;
@@ -33,9 +37,20 @@ pub(crate) async fn create_gpu_context(
         })
         .await
         .map_err(|error| format!("GPU adapter request failed: {error}"))?;
+    let adapter_info = adapter.get_info();
+    let adapter_features = adapter.features();
+    // Timestamps are only requested when telemetry needs them and the adapter
+    // actually supports them, so the default path keeps an unmodified feature set.
+    let required_features = if request_timestamps {
+        adapter_features
+            & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS)
+    } else {
+        wgpu::Features::empty()
+    };
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("Deep Engine native device"),
+            required_features,
             ..Default::default()
         })
         .await
@@ -49,15 +64,17 @@ pub(crate) async fn create_gpu_context(
         .ok_or("adapter cannot present to the native window surface")?;
     config.present_mode = wgpu::PresentMode::AutoVsync;
     config.desired_maximum_frame_latency = 2;
-    let info = adapter.get_info();
     println!(
         "native GPU: {} ({:?}, {:?}) surface={:?}",
-        info.name, info.backend, info.device_type, config.format
+        adapter_info.name, adapter_info.backend, adapter_info.device_type, config.format
     );
     Ok(GpuContext {
         surface,
         device,
         queue,
+        adapter_info,
+        adapter_features,
+        device_features: required_features,
         config,
         size,
         failures,

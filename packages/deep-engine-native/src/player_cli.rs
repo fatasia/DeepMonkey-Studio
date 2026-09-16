@@ -4,10 +4,12 @@ use deep_engine_native::{
     bloom::BloomSettings,
     contract::load_and_validate,
     deep2d::{Deep2dRuntimeContent, decode_runtime_content},
-    runtime_package::load_and_validate_runtime_package,
+    runtime_package::{
+        load_and_validate_runtime_package, runtime_content_sha256, runtime_package_sha256,
+    },
 };
 
-use crate::{app, player_content::PlayerContent};
+use crate::{app, player_content::PlayerContent, runtime_package_startup};
 
 pub enum PackageMode {
     Viewer,
@@ -16,35 +18,8 @@ pub enum PackageMode {
 }
 
 pub fn run_package(path: PathBuf, mode: PackageMode) -> Result<(), String> {
-    let package = load_and_validate_runtime_package(&path).map_err(|error| error.to_string())?;
-    let summary = package.summary();
-    let id = package.package_id.clone();
-    let version = package.package_version.clone();
-    let hash = package.package_hash.clone();
-    let content = PlayerContent::from_package(package)?;
-    println!(
-        "Deep Runtime Package Player preflight OK: id={id} version={version} hash={hash} resources={} geometries={} materials={} instances={} textures={} triangles={} deep2d={} shader_packages={} environment={} environment_revision={}",
-        summary.resources,
-        summary.geometries,
-        summary.materials,
-        summary.instances,
-        summary.textures,
-        summary.triangles,
-        summary.has_deep2d,
-        summary.shader_packages,
-        content.environment.id,
-        content.environment.revision
-    );
-    if matches!(mode, PackageMode::Headless) {
-        return Ok(());
-    }
-    app::run(
-        content,
-        matches!(mode, PackageMode::Smoke),
-        false,
-        false,
-        BloomSettings::default(),
-    )
+    let package = runtime_package_startup::load_auto(&path)?;
+    runtime_package_startup::run(package, mode)
 }
 
 pub fn required_path(
@@ -151,6 +126,113 @@ fn run_viewer_configured(
     )
 }
 
+/// `--packet-live`: interactive viewer whose packet file is watched for updates.
+/// `--smoke-packet-live` variant watches a temp copy and self-rewrites it.
+pub fn run_packet_live(path: PathBuf, smoke: bool) -> Result<(), String> {
+    let (watch_path, smoke_rewrite) = if smoke {
+        let source = fs::read(&path).map_err(|error| format!("cannot read {path:?}: {error}"))?;
+        let watch_path = std::env::temp_dir().join(format!(
+            "deep-engine-native-packet-live-smoke-{}.json",
+            std::process::id()
+        ));
+        fs::write(&watch_path, &source)
+            .map_err(|error| format!("cannot stage smoke watch file: {error}"))?;
+        (watch_path, Some(moved_packet_bytes(&source)?))
+    } else {
+        (path.clone(), None)
+    };
+    let (packet, summary) = load_and_validate(&watch_path)?;
+    println!(
+        "packet live contract v1 loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_packet_live(
+        PlayerContent::from_packet(packet, None),
+        app::PacketLiveSpec {
+            watch_path,
+            smoke_rewrite,
+        },
+    )
+}
+
+pub fn run_package_live(path: PathBuf, smoke: bool) -> Result<(), String> {
+    let (watch_path, smoke_rewrite, smoke_rejected_rewrite) = if smoke {
+        let source = fs::read(&path).map_err(|error| format!("cannot read {path:?}: {error}"))?;
+        let watch_path = std::env::temp_dir().join(format!(
+            "deep-engine-native-package-live-smoke-{}.json",
+            std::process::id()
+        ));
+        fs::write(&watch_path, &source)
+            .map_err(|error| format!("cannot stage package smoke watch file: {error}"))?;
+        (
+            watch_path,
+            Some(moved_package_bytes(&source)?),
+            Some(b"{".to_vec()),
+        )
+    } else {
+        (path.clone(), None, None)
+    };
+    let package = load_and_validate_runtime_package(&watch_path)
+        .map_err(|error| format!("runtime package live preflight failed: {error}"))?;
+    let summary = package.summary();
+    let content = PlayerContent::from_package(package)?;
+    println!(
+        "runtime package live preflight OK: resources={} geometries={} instances={} deep2d={} shader_packages={}",
+        summary.resources,
+        summary.geometries,
+        summary.instances,
+        summary.has_deep2d,
+        summary.shader_packages
+    );
+    app::run_package_live(
+        content,
+        app::PackageLiveSpec {
+            watch_path,
+            smoke_rewrite,
+            smoke_rejected_rewrite,
+        },
+    )
+}
+
+fn moved_packet_bytes(source: &[u8]) -> Result<Vec<u8>, String> {
+    let mut value: serde_json::Value =
+        serde_json::from_slice(source).map_err(|error| format!("invalid smoke packet: {error}"))?;
+    value["instances"][0]["transform"][12] = serde_json::json!(-0.75);
+    serde_json::to_vec_pretty(&value)
+        .map_err(|error| format!("smoke packet encode failed: {error}"))
+}
+
+fn moved_package_bytes(source: &[u8]) -> Result<Vec<u8>, String> {
+    let mut value: serde_json::Value = serde_json::from_slice(source)
+        .map_err(|error| format!("invalid smoke runtime package: {error}"))?;
+    let id = value["entrypoints"]["renderPacket"]
+        .as_str()
+        .ok_or("smoke runtime package has no renderPacket entry")?
+        .to_owned();
+    value["payloads"][&id]["instances"][0]["transform"][12] = serde_json::json!(-0.75);
+    let hash = runtime_content_sha256(&value["payloads"][&id]);
+    let resource = value["resources"]
+        .as_array_mut()
+        .and_then(|resources| resources.iter_mut().find(|resource| resource["id"] == id))
+        .ok_or("smoke runtime package render resource is missing")?;
+    resource["revision"] = serde_json::json!(resource["revision"].as_u64().unwrap_or(0) + 1);
+    resource["contentHash"]["value"] = serde_json::json!(hash);
+    value["packageHash"]["value"] =
+        serde_json::json!(runtime_package_sha256(&value).map_err(|error| error.to_string())?);
+    serde_json::to_vec_pretty(&value)
+        .map_err(|error| format!("smoke runtime package encode failed: {error}"))
+}
+
+/// `--smoke-telemetry`: smoke frame with segmented telemetry report at exit.
+pub fn run_telemetry_smoke(path: PathBuf) -> Result<(), String> {
+    let (packet, summary) = load_and_validate(&path)?;
+    println!(
+        "telemetry smoke contract v1 loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_telemetry_smoke(PlayerContent::from_packet(packet, None))
+}
+
 pub fn default_shadow_fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/render_packet_shadow_v1.json")
 }
@@ -173,6 +255,15 @@ pub fn reject_extra(mut args: impl Iterator<Item = std::ffi::OsString>) -> Resul
 
 pub fn print_help() {
     println!(
-        "Deep Engine Native Player\n\n  deep-engine-native --package <runtime-package.json>\n  deep-engine-native --headless-package <runtime-package.json>\n  deep-engine-native --smoke-package <runtime-package.json>\n  deep-engine-native\n  deep-engine-native --packet <render-packet.json>\n  deep-engine-native --no-bloom [render-packet.json]\n  deep-engine-native --headless-contract [render-packet.json]\n  deep-engine-native --headless-pbr [render-packet.json]\n  deep-engine-native --headless-alpha [render-packet.json]\n  deep-engine-native --headless-ibl\n  deep-engine-native --headless-deep2d [deep2d.json]\n  deep-engine-native --smoke-frame [render-packet.json]\n  deep-engine-native --smoke-no-bloom [render-packet.json]\n  deep-engine-native --smoke-textured\n  deep-engine-native --smoke-textured-deep2d\n  deep-engine-native --smoke-alpha\n  deep-engine-native --smoke-alpha-deep2d\n  deep-engine-native --smoke-shadow [render-packet.json]\n  deep-engine-native --smoke-shadow-update [render-packet.json]\n  deep-engine-native --smoke-ibl [render-packet.json]\n  deep-engine-native --smoke-shader-package\n  deep-engine-native --smoke-deep2d-interleaved\n  deep-engine-native --smoke-deep2d [deep2d.json]\n  deep-engine-native --packet-with-deep2d <render-packet.json> <deep2d.json>\n\nArrow keys rotate the mesh, R rebuilds the GPU state, Esc exits."
+        "Deep Asset directory profile: --asset-package <manifest.json>; --headless-asset-package validates all chunks; --smoke-asset-package presents the entry scene."
+    );
+    println!(
+        "C sections; X/Y/Z select axis, PageUp/PageDown move, [ ] rotate, Backspace resets.\nA adds an annotation; Enter confirms text, Esc cancels. F5 saves, F9 restores, Tab jumps, Delete removes.\n  deep-engine-native --smoke-section [render-packet.json]"
+    );
+    println!(
+        "Click a triangle to select and focus its object; blank space clears selection. M toggles two-point measurement in scene units. Home resets the view.\n  deep-engine-native --smoke-selection [render-packet.json]\n  deep-engine-native --smoke-package-selection <runtime-package.json>"
+    );
+    println!(
+        "Deep Engine Native Player\n\n  deep-engine-native --package <runtime-package.json>\n  deep-engine-native --headless-package <runtime-package.json>\n  deep-engine-native --smoke-package <runtime-package.json>\n  deep-engine-native --package-recover <primary.json> <last-known-good.json>\n  deep-engine-native --headless-package-recover <primary.json> <last-known-good.json>\n  deep-engine-native --package-live <runtime-package.json>\n  deep-engine-native --smoke-package-live <runtime-package.json>\n  deep-engine-native\n  deep-engine-native --packet <render-packet.json>\n  deep-engine-native --packet-live <render-packet.json>\n  deep-engine-native --fog <density> <r> <g> <b> [render-packet.json]\n  deep-engine-native --smoke-fog <density> <r> <g> <b> [render-packet.json]\n  deep-engine-native --headless-fog <density> <r> <g> <b> [render-packet.json]\n  deep-engine-native --no-bloom [render-packet.json]\n  deep-engine-native --headless-contract [render-packet.json]\n  deep-engine-native --headless-pbr [render-packet.json]\n  deep-engine-native --headless-alpha [render-packet.json]\n  deep-engine-native --headless-ibl\n  deep-engine-native --chart <chart-ir.json>\n  deep-engine-native --smoke-chart <chart-ir.json>\n  deep-engine-native --headless-chart <chart-ir.json>\n  deep-engine-native --headless-deep2d [deep2d.json]\n  deep-engine-native --smoke-frame [render-packet.json]\n  deep-engine-native --smoke-no-bloom [render-packet.json]\n  deep-engine-native --smoke-textured\n  deep-engine-native --smoke-textured-deep2d\n  deep-engine-native --smoke-alpha\n  deep-engine-native --smoke-alpha-deep2d\n  deep-engine-native --smoke-shadow [render-packet.json]\n  deep-engine-native --smoke-shadow-update [render-packet.json]\n  deep-engine-native --smoke-packet-live\n  deep-engine-native --smoke-ibl [render-packet.json]\n  deep-engine-native --smoke-shader-package\n  deep-engine-native --smoke-deep2d-interleaved\n  deep-engine-native --smoke-deep2d [deep2d.json]\n  deep-engine-native --smoke-telemetry [render-packet.json]\n  deep-engine-native --packet-with-deep2d <render-packet.json> <deep2d.json>\n\nArrow keys rotate the mesh, R rebuilds the GPU state, Esc exits."
     );
 }

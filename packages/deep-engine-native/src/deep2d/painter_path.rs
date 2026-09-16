@@ -2,6 +2,7 @@ use super::{
     Deep2dMatrix, Deep2dPainterIssue, Deep2dPainterIssueCode, Deep2dPathVerb, PathResource,
     painter::issue,
     painter_math::{Point, line_distance, midpoint, near, point_epsilon},
+    painter_path_intersections::{reject_cross_subpath_intersections, reject_self_intersections},
 };
 
 /// Maximum curve flattening error in physical pixels.
@@ -9,12 +10,42 @@ pub const DEEP2D_CURVE_TOLERANCE: f64 = 0.25;
 pub const DEEP2D_MAX_FLATTENED_SEGMENTS: usize = 16_384;
 const MAX_CURVE_DEPTH: u8 = 24;
 
-pub(super) struct LinearPath {
+pub(super) struct LinearSubPath {
     pub points: Vec<Point>,
     pub closed: bool,
 }
 
+pub(super) struct LinearPath {
+    pub subpaths: Vec<LinearSubPath>,
+}
+
+impl LinearSubPath {
+    /// Implicit closing segment (last -> first) for closed subpaths.
+    pub(super) fn segments(&self) -> Vec<[Point; 2]> {
+        let mut segments = self
+            .points
+            .windows(2)
+            .map(|pair| [pair[0], pair[1]])
+            .collect::<Vec<_>>();
+        if self.closed && self.points.len() > 2 {
+            segments.push([
+                *self.points.last().expect("closed subpath has points"),
+                self.points[0],
+            ]);
+        }
+        segments
+    }
+}
+
 impl LinearPath {
+    /// Total flattened segments including implicit closing edges.
+    pub(super) fn segment_count(&self) -> usize {
+        self.subpaths
+            .iter()
+            .map(|subpath| subpath.segments().len())
+            .sum()
+    }
+
     pub(super) fn from_resource(
         resource: &PathResource,
         resource_path: &str,
@@ -29,18 +60,19 @@ impl LinearPath {
             .sqrt();
         let physical_scale_bound = (scale_bound * scale_factor).max(1e-12);
         let tolerance = (DEEP2D_CURVE_TOLERANCE / physical_scale_bound).max(1e-12);
-        let mut points = Vec::new();
+        let mut subpaths: Vec<LinearSubPath> = Vec::new();
+        let mut points: Vec<Point> = Vec::new();
         let mut closed = false;
         for (index, verb) in resource.verbs.iter().enumerate() {
             let verb_path = format!("{resource_path}.verbs[{index}]");
             match verb {
-                Deep2dPathVerb::Move { x, y } if points.is_empty() => points.push([*x, *y]),
-                Deep2dPathVerb::Move { .. } => {
-                    return Err(issue(
-                        Deep2dPainterIssueCode::UnsupportedGeometry,
-                        &verb_path,
-                        "The native painter accepts one subpath per path resource.",
-                    ));
+                Deep2dPathVerb::Move { x, y } => {
+                    if !points.is_empty() {
+                        finalize_subpath(&mut subpaths, points, closed, command_path)?;
+                        points = Vec::new();
+                        closed = false;
+                    }
+                    points.push([*x, *y]);
                 }
                 Deep2dPathVerb::Line { x, y } if !closed => {
                     push_segment(&mut points, [*x, *y], &verb_path)?;
@@ -77,39 +109,77 @@ impl LinearPath {
                         &verb_path,
                     )?;
                 }
-                Deep2dPathVerb::Close if !closed => closed = true,
+                Deep2dPathVerb::Close if !closed => {
+                    if points.len() < 2 {
+                        return Err(issue(
+                            Deep2dPainterIssueCode::UnsupportedGeometry,
+                            &verb_path,
+                            "Close requires at least two distinct points in the subpath.",
+                        ));
+                    }
+                    closed = true;
+                }
                 _ => {
                     return Err(issue(
                         Deep2dPainterIssueCode::UnsupportedGeometry,
                         &verb_path,
-                        "Path contains a second subpath or geometry after close.",
+                        "Path contains duplicate close or geometry after close.",
                     ));
                 }
             }
         }
-        if points.len() < 2 {
+        if points.is_empty() {
+            if subpaths.is_empty() {
+                return Err(issue(
+                    Deep2dPainterIssueCode::UnsupportedGeometry,
+                    command_path,
+                    "Path requires at least two distinct points for the native painter.",
+                ));
+            }
             return Err(issue(
                 Deep2dPainterIssueCode::UnsupportedGeometry,
                 command_path,
-                "Path requires at least two distinct points for the native painter.",
+                "Path ends with an empty subpath.",
             ));
         }
-        let epsilon = point_epsilon(&points);
-        if closed && points.len() > 2 && near(points[0], *points.last().expect("points"), epsilon) {
-            points.pop();
+        finalize_subpath(&mut subpaths, points, closed, command_path)?;
+        for subpath in &subpaths {
+            reject_self_intersections(subpath, command_path)?;
         }
-        if points
-            .windows(2)
-            .any(|pair| near(pair[0], pair[1], epsilon))
-        {
-            return Err(issue(
-                Deep2dPainterIssueCode::UnsupportedGeometry,
-                command_path,
-                "Path contains a zero-length or numerically indistinguishable segment.",
-            ));
-        }
-        Ok(Self { points, closed })
+        reject_cross_subpath_intersections(&subpaths, command_path)?;
+        Ok(Self { subpaths })
     }
+}
+
+fn finalize_subpath(
+    subpaths: &mut Vec<LinearSubPath>,
+    mut points: Vec<Point>,
+    closed: bool,
+    command_path: &str,
+) -> Result<(), Deep2dPainterIssue> {
+    if points.len() < 2 {
+        return Err(issue(
+            Deep2dPainterIssueCode::UnsupportedGeometry,
+            command_path,
+            "Each subpath requires at least two distinct points.",
+        ));
+    }
+    let epsilon = point_epsilon(&points);
+    if closed && points.len() > 2 && near(points[0], *points.last().expect("points"), epsilon) {
+        points.pop();
+    }
+    if points
+        .windows(2)
+        .any(|pair| near(pair[0], pair[1], epsilon))
+    {
+        return Err(issue(
+            Deep2dPainterIssueCode::UnsupportedGeometry,
+            command_path,
+            "Subpath contains a zero-length or numerically indistinguishable segment.",
+        ));
+    }
+    subpaths.push(LinearSubPath { points, closed });
+    Ok(())
 }
 
 fn push_segment(

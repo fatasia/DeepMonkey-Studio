@@ -1,6 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::types::{Deep2dColor, Deep2dMatrix};
+use super::types::{Deep2dColor, Deep2dMatrix, Deep2dRect};
 
 fn non_null_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
@@ -36,6 +36,12 @@ pub struct PathCommand {
         skip_serializing_if = "Option::is_none"
     )]
     pub clip_path_ids: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub clip_rect: Option<Deep2dRect>,
     #[serde(
         default,
         deserialize_with = "non_null_option",
@@ -122,6 +128,12 @@ pub struct TextCommand {
         deserialize_with = "non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    pub clip_rect: Option<Deep2dRect>,
+    #[serde(
+        default,
+        deserialize_with = "non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub hit_id: Option<String>,
     pub text: String,
     pub x: f64,
@@ -153,6 +165,31 @@ pub struct TextCommand {
         skip_serializing_if = "Option::is_none"
     )]
     pub direction: Option<TextDirection>,
+    /// Native runtime extension: the glyph atlas selected by `bakedGlyphs`.
+    #[serde(
+        default,
+        deserialize_with = "non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub atlas_id: Option<String>,
+    /// Host-shaped glyphs in draw order. Destinations are relative to `(x, y)`.
+    #[serde(
+        default,
+        deserialize_with = "non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub baked_glyphs: Option<Vec<BakedGlyphPlacement>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct BakedGlyphPlacement {
+    /// UTF-16 cluster offset in `TextCommand::text`; informational but bounded.
+    pub cluster: u32,
+    /// Pixel-space [x, y, width, height] inside the glyph atlas.
+    pub source: [u32; 4],
+    /// Logical [x, y, width, height] relative to the command origin.
+    pub destination: [f64; 4],
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -178,12 +215,31 @@ pub struct ImageCommand {
         deserialize_with = "non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    pub clip_rect: Option<Deep2dRect>,
+    #[serde(
+        default,
+        deserialize_with = "non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub hit_id: Option<String>,
     pub image_id: String,
     pub x: f64,
     pub y: f64,
     pub width: f64,
     pub height: f64,
+    #[serde(
+        default,
+        deserialize_with = "non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub atlas_id: Option<String>,
+    /// Pixel-space [x, y, width, height] inside the referenced atlas.
+    #[serde(
+        default,
+        deserialize_with = "non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub source: Option<[u32; 4]>,
     #[serde(
         default,
         deserialize_with = "non_null_option",

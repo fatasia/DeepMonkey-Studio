@@ -1,5 +1,13 @@
 #![allow(dead_code)]
 
+#[path = "support/author_lod_draw.rs"]
+mod author_lod_draw;
+
+#[path = "../src/shadow_dirty.rs"]
+mod shadow_dirty;
+#[path = "support/surface_flags_draw.rs"]
+mod surface_flags_draw;
+
 #[path = "../src/forward_targets.rs"]
 mod forward_targets;
 #[path = "../src/frame_bindings.rs"]
@@ -46,6 +54,8 @@ mod pipeline;
 mod player_content;
 #[path = "../src/player_shader_plan.rs"]
 mod player_shader_plan;
+#[path = "../src/runtime_lkg.rs"]
+mod runtime_lkg;
 #[path = "../src/shadow_map.rs"]
 mod shadow_map;
 #[path = "../src/shadow_pass.rs"]

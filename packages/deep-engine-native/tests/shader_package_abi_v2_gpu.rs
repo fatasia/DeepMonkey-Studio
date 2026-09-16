@@ -66,3 +66,55 @@ fn csm_and_v1_pipelines_coexist_and_failed_compilation_preserves_the_cache() {
     assert!(!Arc::ptr_eq(&rebuilt, &csm));
     assert_eq!(rebuilt.package_cache_key, csm.package_cache_key);
 }
+
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn device_replacement_rebuilds_packages_deterministically_on_a_new_device() {
+    let (adapter, first_device, replacement_device) = pollster::block_on(async {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                ..Default::default()
+            })
+            .await
+            .expect("real GPU adapter");
+        let (first_device, _) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default())
+            .await
+            .expect("first GPU device");
+        let (replacement_device, _) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default())
+            .await
+            .expect("replacement GPU device");
+        (adapter, first_device, replacement_device)
+    });
+    println!(
+        "Shader ABI v2 dual-device adapter: {:?}",
+        adapter.get_info()
+    );
+    let mut executor = ShaderPackageGpuExecutor::default();
+    let first = executor
+        .prepare_bytes(&first_device, V1)
+        .expect("package on the first device");
+    assert_eq!(first.device_epoch, 0);
+
+    executor.invalidate_device();
+    assert_eq!(executor.cache_size(), 0);
+    let rebuilt = executor
+        .prepare_bytes(&replacement_device, V1)
+        .expect("package rebuilt on the replacement device");
+    assert_eq!(executor.device_epoch(), 1);
+    assert_eq!(rebuilt.device_epoch, 1);
+    assert!(
+        !Arc::ptr_eq(&rebuilt, &first),
+        "epoch invalidation must not resurrect the previous device's handles"
+    );
+    assert_eq!(
+        rebuilt.package_cache_key, first.package_cache_key,
+        "rebuild must stay content-deterministic across devices"
+    );
+    assert_eq!(rebuilt.passes.len(), first.passes.len());
+    assert_eq!(executor.cache_size(), 1);
+}

@@ -65,7 +65,8 @@ fn prepares_versioned_glyph_and_image_atlases_in_stable_batches() {
     );
     assert_eq!(prepared.atlases[0].format, Deep2dAtlasFormat::R8Unorm);
     assert_eq!(prepared.atlases[0].data.len(), 16);
-    assert_eq!(prepared.atlas_vertices[0][0..4], [44.0, 48.0, 0.125, 0.125]);
+    assert_eq!(prepared.atlas_vertices[0][0..4], [44.0, 48.0, 0.0, 0.0]);
+    assert_eq!(prepared.atlas_vertices[0][9..11], [0.125, 0.125]);
     assert_eq!(prepared.atlas_vertices[0][8], 1.0);
     assert_eq!(prepared.atlas_vertices[12][8], 0.0);
 }

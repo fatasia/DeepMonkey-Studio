@@ -44,6 +44,8 @@ mod pipeline;
 mod player_content;
 #[path = "../src/player_shader_plan.rs"]
 mod player_shader_plan;
+#[path = "../src/runtime_lkg.rs"]
+mod runtime_lkg;
 #[path = "support/shader_material_assertions.rs"]
 mod shader_material_assertions;
 #[path = "support/shader_material_renderer.rs"]
@@ -58,7 +60,7 @@ mod shadow_pass;
 use deep_engine_native::runtime_package::parse_and_validate_runtime_package;
 use player_content::PlayerContent;
 use shader_material_assertions::*;
-use shader_material_renderer::render;
+use shader_material_renderer::{render, render_reported};
 use std::sync::{Arc, Mutex};
 
 fn fixture() -> PlayerContent {
@@ -132,6 +134,74 @@ fn production_player_shader_materials_preserve_lod_cascades_and_transparency() {
             errors.lock().unwrap().is_empty(),
             "uncaptured GPU errors: {:?}",
             errors.lock().unwrap()
+        );
+    });
+}
+
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn nvidia_broken_package_is_isolated_and_dependents_fall_back_to_builtin() {
+    pollster::block_on(async {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                ..Default::default()
+            })
+            .await
+            .expect("real GPU adapter");
+        println!("ShaderPackage isolation adapter: {:?}", adapter.get_info());
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default())
+            .await
+            .unwrap();
+        let errors = Arc::new(Mutex::new(Vec::new()));
+        let uncaptured = Arc::clone(&errors);
+        device.on_uncaptured_error(Arc::new(move |error| {
+            uncaptured.lock().unwrap().push(error.to_string());
+        }));
+
+        let mut content = fixture();
+        assert_eq!(content.shader_packages.len(), 3);
+        let (baseline, healthy) = render_reported(&device, &queue, &content, false, None).await;
+        assert!(
+            healthy.isolated.is_empty(),
+            "healthy fixture must not isolate"
+        );
+        assert_eq!(healthy.fallback_materials, 0);
+
+        // Break one package after contract validation: only its dependents may
+        // fall back to builtin PBR; the remaining packages stay bound.
+        let broken_id = content.shader_packages[0].package_id.clone();
+        content.shader_packages[0].modules[0].source = "broken wgsl that cannot compile".into();
+        let (isolated_render, report) =
+            render_reported(&device, &queue, &content, false, None).await;
+        assert_eq!(report.isolated, vec![broken_id]);
+        assert!(report.fallback_materials >= 1, "dependents must fall back");
+        assert!(
+            report.custom_materials >= 1,
+            "surviving packages must keep their custom materials"
+        );
+        assert_eq!(
+            report.custom_materials + report.fallback_materials,
+            healthy.custom_materials + healthy.fallback_materials,
+            "material count must be conserved"
+        );
+
+        let changed = color_changes(&baseline, &isolated_render);
+        assert!(
+            changed > 0,
+            "builtin fallback must be visible where the isolated package drew"
+        );
+        assert!(
+            errors.lock().unwrap().is_empty(),
+            "uncaptured GPU errors: {:?}",
+            errors.lock().unwrap()
+        );
+        println!(
+            "ShaderPackage isolation OK: isolated={:?} fallback={} custom={} changed_pixels={changed}",
+            report.isolated, report.fallback_materials, report.custom_materials
         );
     });
 }

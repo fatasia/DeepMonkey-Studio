@@ -1,7 +1,11 @@
 use wgpu::util::DeviceExt;
 
+use deep_engine_native::mesh_abi::FRAME_UNIFORM_BYTES;
+
 const PLAIN_SHADER: &str = include_str!("../assets/shaders/native_output_v1.wgsl");
 const BLOOM_SHADER: &str = include_str!("../assets/shaders/native_output_bloom_v1.wgsl");
+const FOG_SHADER: &str = include_str!("../assets/shaders/native_output_fog_v1.wgsl");
+const BLOOM_FOG_SHADER: &str = include_str!("../assets/shaders/native_output_bloom_fog_v1.wgsl");
 
 pub struct OutputPass {
     texture_layout: wgpu::BindGroupLayout,
@@ -9,6 +13,7 @@ pub struct OutputPass {
     pipeline: wgpu::RenderPipeline,
     bloom_intensity: Option<wgpu::Buffer>,
     bloom_sampler: Option<wgpu::Sampler>,
+    fog_enabled: bool,
 }
 
 impl OutputPass {
@@ -17,9 +22,11 @@ impl OutputPass {
         surface_format: wgpu::TextureFormat,
         hdr_view: &wgpu::TextureView,
         bloom: Option<(&wgpu::TextureView, f32)>,
+        fog: Option<(&wgpu::TextureView, &wgpu::Buffer)>,
     ) -> Self {
         let bloom_enabled = bloom.is_some();
-        let texture_layout = create_layout(device, bloom_enabled);
+        let fog_enabled = fog.is_some();
+        let texture_layout = create_layout(device, bloom_enabled, fog_enabled);
         let bloom_intensity = bloom.map(|(_, intensity)| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Deep Engine native bloom output controls"),
@@ -36,19 +43,8 @@ impl OutputPass {
             })
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(if bloom_enabled {
-                "Deep Engine native HDR bloom output shader v1"
-            } else {
-                "Deep Engine native HDR output shader v1"
-            }),
-            source: wgpu::ShaderSource::Wgsl(
-                if bloom_enabled {
-                    BLOOM_SHADER
-                } else {
-                    PLAIN_SHADER
-                }
-                .into(),
-            ),
+            label: Some("Deep Engine native HDR output shader v1"),
+            source: wgpu::ShaderSource::Wgsl(output_shader(bloom_enabled, fog_enabled).into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Deep Engine native output pipeline layout"),
@@ -63,6 +59,7 @@ impl OutputPass {
             bloom.map(|(view, _)| view),
             bloom_sampler.as_ref(),
             bloom_intensity.as_ref(),
+            fog,
         );
         Self {
             texture_layout,
@@ -70,6 +67,7 @@ impl OutputPass {
             pipeline,
             bloom_intensity,
             bloom_sampler,
+            fog_enabled,
         }
     }
 
@@ -77,14 +75,22 @@ impl OutputPass {
         self.bloom_intensity.is_some()
     }
 
+    pub fn uses_fog(&self) -> bool {
+        self.fog_enabled
+    }
+
     pub fn prepare_rebind(
         &self,
         device: &wgpu::Device,
         hdr_view: &wgpu::TextureView,
         bloom_view: Option<&wgpu::TextureView>,
+        fog: Option<(&wgpu::TextureView, &wgpu::Buffer)>,
     ) -> Result<wgpu::BindGroup, String> {
         if self.uses_bloom() != bloom_view.is_some() {
             return Err("output bloom mode cannot change during a resize transaction".into());
+        }
+        if self.uses_fog() != fog.is_some() {
+            return Err("output fog mode cannot change during a resize transaction".into());
         }
         Ok(create_texture_bind_group(
             device,
@@ -93,6 +99,7 @@ impl OutputPass {
             bloom_view,
             self.bloom_sampler.as_ref(),
             self.bloom_intensity.as_ref(),
+            fog,
         ))
     }
 
@@ -121,7 +128,20 @@ impl OutputPass {
     }
 }
 
-fn create_layout(device: &wgpu::Device, bloom_enabled: bool) -> wgpu::BindGroupLayout {
+fn output_shader(bloom: bool, fog: bool) -> &'static str {
+    match (bloom, fog) {
+        (false, false) => PLAIN_SHADER,
+        (true, false) => BLOOM_SHADER,
+        (false, true) => FOG_SHADER,
+        (true, true) => BLOOM_FOG_SHADER,
+    }
+}
+
+fn create_layout(
+    device: &wgpu::Device,
+    bloom_enabled: bool,
+    fog_enabled: bool,
+) -> wgpu::BindGroupLayout {
     let texture = |binding, filterable| wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -148,6 +168,28 @@ fn create_layout(device: &wgpu::Device, bloom_enabled: bool) -> wgpu::BindGroupL
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
                 min_binding_size: wgpu::BufferSize::new(16),
+            },
+            count: None,
+        });
+    }
+    if fog_enabled {
+        entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 4,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Depth,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: true,
+            },
+            count: None,
+        });
+        entries.push(wgpu::BindGroupLayoutEntry {
+            binding: 5,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: wgpu::BufferSize::new(FRAME_UNIFORM_BYTES),
             },
             count: None,
         });
@@ -202,6 +244,7 @@ fn create_texture_bind_group(
     bloom_view: Option<&wgpu::TextureView>,
     sampler: Option<&wgpu::Sampler>,
     intensity: Option<&wgpu::Buffer>,
+    fog: Option<(&wgpu::TextureView, &wgpu::Buffer)>,
 ) -> wgpu::BindGroup {
     let mut entries = vec![wgpu::BindGroupEntry {
         binding: 0,
@@ -219,6 +262,16 @@ fn create_texture_bind_group(
         entries.push(wgpu::BindGroupEntry {
             binding: 3,
             resource: buffer.as_entire_binding(),
+        });
+    }
+    if let Some((depth, frame)) = fog {
+        entries.push(wgpu::BindGroupEntry {
+            binding: 4,
+            resource: wgpu::BindingResource::TextureView(depth),
+        });
+        entries.push(wgpu::BindGroupEntry {
+            binding: 5,
+            resource: frame.as_entire_binding(),
         });
     }
     device.create_bind_group(&wgpu::BindGroupDescriptor {

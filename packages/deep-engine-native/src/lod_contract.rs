@@ -79,7 +79,9 @@ pub fn prepare_gpu_lod(
             .collect::<Result<_, _>>()?;
         let union = union_sphere(&bounds)?;
         let level_start = result.levels.len() as u32;
-        for ((level, &geometry_index), bound) in profile.levels.iter().zip(&indices).zip(bounds) {
+        for (level_index, ((level, &geometry_index), bound)) in
+            profile.levels.iter().zip(&indices).zip(bounds).enumerate()
+        {
             let draw_index = result.indirect_template.len() as u32;
             let start = result.visible_capacity;
             result.visible_capacity = start
@@ -101,7 +103,17 @@ pub fn prepare_gpu_lod(
                 resident: level.is_resident(),
             });
             result.levels.push([
-                [draw_index, start, u32::from(level.is_resident()), 0],
+                [
+                    draw_index,
+                    start,
+                    u32::from(level.is_resident()),
+                    u32::from(
+                        profile
+                            .author
+                            .as_ref()
+                            .is_some_and(|a| a.selected_levels.contains(&level_index)),
+                    ),
+                ],
                 bound.map(f32::to_bits),
                 [
                     (level.min_projected_diameter_pixels as f32).to_bits(),
@@ -111,11 +123,11 @@ pub fn prepare_gpu_lod(
                 ],
             ]);
         }
-        let flags = if batch.alpha_mode == AlphaMode::Blend {
+        let flags = (if batch.alpha_mode == AlphaMode::Blend || !batch.cast_shadow {
             1
         } else {
             3
-        };
+        }) | if profile.author.is_some() { 4 } else { 0 };
         for source in batch.instance_start..batch.instance_start + batch.instance_count {
             result.objects.push([
                 [source, level_start, profile.levels.len() as u32, flags],

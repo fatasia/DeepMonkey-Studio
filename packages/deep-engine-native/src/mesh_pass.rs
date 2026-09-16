@@ -14,6 +14,37 @@ pub fn encode_mesh_passes(
     pipelines: &MeshPipelines,
     yaw: f32,
 ) {
+    encode_opaque_pass(
+        encoder,
+        targets,
+        frame_bind_group,
+        scene,
+        culling,
+        lod,
+        pipelines,
+    );
+    encode_transparent_pass(
+        encoder,
+        targets,
+        frame_bind_group,
+        scene,
+        culling,
+        lod,
+        pipelines,
+        yaw,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn encode_opaque_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    targets: &ForwardTargets,
+    frame_bind_group: &wgpu::BindGroup,
+    scene: &GpuScene,
+    culling: &GpuCulling,
+    lod: Option<&GpuLod>,
+    pipelines: &MeshPipelines,
+) {
     let has_transparent = scene.has_transparent();
     {
         let color_attachments = [Some(wgpu::RenderPassColorAttachment {
@@ -63,22 +94,10 @@ pub fn encode_mesh_passes(
             },
         );
     }
-    if has_transparent {
-        encode_blend_pass(
-            encoder,
-            targets,
-            frame_bind_group,
-            scene,
-            culling,
-            lod,
-            pipelines,
-            yaw,
-        );
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn encode_blend_pass(
+pub fn encode_transparent_pass(
     encoder: &mut wgpu::CommandEncoder,
     targets: &ForwardTargets,
     frame_bind_group: &wgpu::BindGroup,
@@ -88,6 +107,9 @@ fn encode_blend_pass(
     pipelines: &MeshPipelines,
     yaw: f32,
 ) {
+    if !scene.has_transparent() {
+        return;
+    }
     let color_attachments = [Some(wgpu::RenderPassColorAttachment {
         view: &targets.msaa_view,
         depth_slice: None,

@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
 use super::{
-    Deep2dAtlasFormat, Deep2dAtlasKind, Deep2dComposition, Deep2dRuntimeContent, ImageSampling,
-    PreparedDeep2d, PreparedDeep2dSummary, prepare_display_list, runtime_base64,
+    Deep2dAtlasFormat, Deep2dAtlasKind, Deep2dComposition, Deep2dRect, Deep2dRuntimeContent,
+    ImageSampling, PreparedDeep2d, PreparedDeep2dSummary,
+    painter_clip::clip_vertices,
+    prepare_display_list, runtime_base64,
     runtime_layers::{PreparedAtlasItem, build_chunks},
+    runtime_quad::append_quad,
     validate_runtime_package,
 };
 
@@ -24,11 +27,12 @@ pub enum PreparedDeep2dChunkKind {
     Atlas { atlas_index: usize },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PreparedDeep2dChunk {
     pub kind: PreparedDeep2dChunkKind,
     pub first_vertex: u32,
     pub vertex_count: u32,
+    pub clip_rect: Option<Deep2dRect>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +51,7 @@ pub struct PreparedDeep2dRuntimeSummary {
 pub struct PreparedDeep2dRuntime {
     pub path: PreparedDeep2d,
     pub atlases: Vec<PreparedDeep2dAtlas>,
-    pub atlas_vertices: Vec<[f32; 9]>,
+    pub atlas_vertices: Vec<[f32; 13]>,
     pub chunks: Vec<PreparedDeep2dChunk>,
     pub summary: PreparedDeep2dRuntimeSummary,
 }
@@ -55,24 +59,132 @@ pub struct PreparedDeep2dRuntime {
 pub fn prepare_runtime_content(
     content: &Deep2dRuntimeContent,
 ) -> Result<PreparedDeep2dRuntime, String> {
+    prepare_impl(content, None)
+}
+
+pub fn prepare_runtime_content_cached(
+    content: &Deep2dRuntimeContent,
+    cache: &mut super::Deep2dPathCache,
+) -> Result<PreparedDeep2dRuntime, String> {
+    prepare_impl(content, Some(cache))
+}
+
+fn prepare_impl(
+    content: &Deep2dRuntimeContent,
+    cache: Option<&mut super::Deep2dPathCache>,
+) -> Result<PreparedDeep2dRuntime, String> {
     match content {
         Deep2dRuntimeContent::DisplayList(display_list) => {
-            let path = prepare_display_list(display_list).map_err(|error| error.to_string())?;
+            let path = match cache {
+                Some(cache) => super::prepare_display_list_cached(display_list, cache),
+                None => prepare_display_list(display_list),
+            }
+            .map_err(|error| error.to_string())?;
+            let atlases = display_list
+                .atlases
+                .iter()
+                .map(|atlas| {
+                    let data = runtime_base64::decode(&atlas.data_base64).map_err(|error| {
+                        format!("atlas {} failed base64 decode: {error}", atlas.id)
+                    })?;
+                    let expected = atlas.width as usize
+                        * atlas.height as usize
+                        * atlas.format.bytes_per_pixel();
+                    if data.len() != expected {
+                        return Err(format!(
+                            "atlas {} pixel data is {} bytes, expected {expected}",
+                            atlas.id,
+                            data.len()
+                        ));
+                    }
+                    Ok(PreparedDeep2dAtlas {
+                        id: atlas.id.clone(),
+                        kind: atlas.kind,
+                        format: atlas.format,
+                        width: atlas.width,
+                        height: atlas.height,
+                        sampling: atlas.sampling,
+                        data,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let atlas_indices = atlases
+                .iter()
+                .enumerate()
+                .map(|(index, atlas)| (atlas.id.as_str(), index))
+                .collect::<HashMap<_, _>>();
+            let mut atlas_vertices = Vec::new();
+            let mut atlas_items = Vec::with_capacity(path.images.len() + path.glyphs.len());
+            let mut image_quads = 0usize;
+            let mut glyph_quads = 0usize;
+            let direct_quads = path
+                .images
+                .iter()
+                .map(|item| {
+                    (
+                        &item.quad,
+                        item.source_index,
+                        item.clip_rect,
+                        &item.clip_sets,
+                    )
+                })
+                .chain(path.glyphs.iter().map(|item| {
+                    (
+                        &item.quad,
+                        item.source_index,
+                        item.clip_rect,
+                        &item.clip_sets,
+                    )
+                }));
+            for (quad, source_index, clip_rect, clip_sets) in direct_quads {
+                let atlas_index = atlas_indices[quad.atlas_id.as_str()];
+                let first_vertex = atlas_vertices.len() as u32;
+                append_quad(&mut atlas_vertices, quad, &atlases[atlas_index]);
+                if !clip_sets.is_empty() {
+                    let clipped = clip_vertices(
+                        &atlas_vertices[first_vertex as usize..],
+                        clip_sets,
+                        &format!("commands[{source_index}]"),
+                    )
+                    .map_err(|error| error.message)?;
+                    atlas_vertices.truncate(first_vertex as usize);
+                    atlas_vertices.extend(clipped);
+                }
+                let vertex_count = atlas_vertices.len() as u32 - first_vertex;
+                if vertex_count == 0 {
+                    continue;
+                }
+                atlas_items.push(PreparedAtlasItem {
+                    z_order: quad.z_order,
+                    source_index,
+                    atlas_index,
+                    first_vertex,
+                    vertex_count,
+                    clip_rect,
+                });
+                match atlases[atlas_index].kind {
+                    Deep2dAtlasKind::Glyph => glyph_quads += 1,
+                    Deep2dAtlasKind::Image => image_quads += 1,
+                }
+            }
+            let chunks = build_chunks(Deep2dComposition::ZOrdered, &path.chunks, &atlas_items);
             let summary = PreparedDeep2dRuntimeSummary {
                 path: path.summary,
-                atlases: 0,
-                atlas_bytes: 0,
-                glyph_quads: 0,
-                image_quads: 0,
-                atlas_batches: 0,
-                atlas_vertices: 0,
-                render_chunks: usize::from(!path.chunks.is_empty()),
+                atlases: atlases.len(),
+                atlas_bytes: atlases.iter().map(|atlas| atlas.data.len()).sum(),
+                glyph_quads,
+                image_quads,
+                atlas_batches: chunks
+                    .iter()
+                    .filter(|chunk| matches!(chunk.kind, PreparedDeep2dChunkKind::Atlas { .. }))
+                    .count(),
+                atlas_vertices: atlas_vertices.len(),
+                render_chunks: chunks.len(),
             };
-            let chunks = build_chunks(Deep2dComposition::PathThenAtlas, &path.chunks, &[]);
             Ok(PreparedDeep2dRuntime {
                 path,
-                atlases: Vec::new(),
-                atlas_vertices: Vec::new(),
+                atlases,
+                atlas_vertices,
                 chunks,
                 summary,
             })
@@ -85,8 +197,11 @@ pub fn prepare_runtime_content(
                     issue.message, issue.path, issue.code
                 ));
             }
-            let path =
-                prepare_display_list(&package.display_list).map_err(|error| error.to_string())?;
+            let path = match cache {
+                Some(cache) => super::prepare_display_list_cached(&package.display_list, cache),
+                None => prepare_display_list(&package.display_list),
+            }
+            .map_err(|error| error.to_string())?;
             let atlases = package
                 .atlases
                 .iter()
@@ -130,6 +245,8 @@ pub fn prepare_runtime_content(
                     source_index,
                     atlas_index,
                     first_vertex,
+                    vertex_count: 6,
+                    clip_rect: None,
                 });
                 match atlas.kind {
                     Deep2dAtlasKind::Glyph => glyph_quads += 1,
@@ -160,53 +277,4 @@ pub fn prepare_runtime_content(
             })
         }
     }
-}
-
-fn append_quad(
-    vertices: &mut Vec<[f32; 9]>,
-    quad: &super::Deep2dAtlasQuad,
-    atlas: &PreparedDeep2dAtlas,
-) {
-    let [x, y, width, height] = quad.destination;
-    let positions = [
-        point(quad.transform, x, y),
-        point(quad.transform, x + width, y),
-        point(quad.transform, x + width, y + height),
-        point(quad.transform, x, y + height),
-    ];
-    let [source_x, source_y, source_width, source_height] = quad.source;
-    let left = (source_x as f32 + 0.5) / atlas.width as f32;
-    let top = (source_y as f32 + 0.5) / atlas.height as f32;
-    let right = (source_x + source_width) as f32 - 0.5;
-    let bottom = (source_y + source_height) as f32 - 0.5;
-    let right = right / atlas.width as f32;
-    let bottom = bottom / atlas.height as f32;
-    let uvs = [[left, top], [right, top], [right, bottom], [left, bottom]];
-    let color = [
-        quad.color[0] as f32,
-        quad.color[1] as f32,
-        quad.color[2] as f32,
-        (quad.color[3] * quad.opacity) as f32,
-    ];
-    let glyph = f32::from(atlas.kind == Deep2dAtlasKind::Glyph);
-    for index in [0, 1, 2, 0, 2, 3] {
-        vertices.push([
-            positions[index][0],
-            positions[index][1],
-            uvs[index][0],
-            uvs[index][1],
-            color[0],
-            color[1],
-            color[2],
-            color[3],
-            glyph,
-        ]);
-    }
-}
-
-fn point(matrix: [f64; 6], x: f64, y: f64) -> [f32; 2] {
-    [
-        (matrix[0] * x + matrix[2] * y + matrix[4]) as f32,
-        (matrix[1] * x + matrix[3] * y + matrix[5]) as f32,
-    ]
 }

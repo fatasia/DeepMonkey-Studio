@@ -4,6 +4,8 @@
 mod player_content;
 #[path = "../src/player_shader_plan.rs"]
 mod player_shader_plan;
+#[path = "../src/runtime_lkg.rs"]
+mod runtime_lkg;
 
 use deep_engine_native::{
     runtime_package::parse_and_validate_runtime_package,

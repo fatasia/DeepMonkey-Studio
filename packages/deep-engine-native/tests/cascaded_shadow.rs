@@ -1,5 +1,5 @@
 use deep_engine_native::cascaded_shadow::{
-    CASCADED_SHADOW_UNIFORM_BYTES, CascadedShadowCamera, CascadedShadowOptions,
+    CASCADED_SHADOW_UNIFORM_BYTES, CascadedShadowCamera, CascadedShadowOptions, CascadedShadowPlan,
     plan_cascaded_shadows, plan_cascaded_shadows_for_scene,
 };
 use deep_engine_native::scene_bounds::SceneWorldBounds;
@@ -164,6 +164,64 @@ fn scene_fitted_plan_keeps_texel_snapping_stable() {
     assert_ne!(
         first.cascades[0].view_projection, resized.cascades[0].view_projection,
         "aspect resize must update the scene-fitted shadow view"
+    );
+}
+
+#[test]
+fn scene_fitting_survives_extremes_empty_scenes_and_rejects_out_of_range() {
+    let light = [0.0, -1.0, -1.0];
+    let finite_cascades = |plan: &CascadedShadowPlan| {
+        plan.cascades.iter().all(|slice| {
+            slice
+                .view_projection
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+        })
+    };
+
+    // A one-millimetre slab must fit without degenerate depth or non-finite matrices.
+    let thin = SceneWorldBounds {
+        minimum: [2.0, -1.0, -1.0],
+        maximum: [2.001, 1.0, 1.0],
+    };
+    let thin_plan =
+        plan_cascaded_shadows_for_scene(camera(0.0), light, Default::default(), Some(thin))
+            .expect("thin slab fits");
+    assert!(finite_cascades(&thin_plan));
+
+    // Extreme span inside the native fitting range stays valid and deterministic.
+    let huge = SceneWorldBounds {
+        minimum: [-40_000.0; 3],
+        maximum: [40_000.0; 3],
+    };
+    let huge_plan =
+        plan_cascaded_shadows_for_scene(camera(0.0), light, Default::default(), Some(huge))
+            .expect("huge span fits");
+    assert!(finite_cascades(&huge_plan));
+    let huge_again =
+        plan_cascaded_shadows_for_scene(camera(0.0), light, Default::default(), Some(huge))
+            .expect("huge span refit");
+    assert_eq!(
+        huge_plan.cascades[0].view_projection, huge_again.cascades[0].view_projection,
+        "a static scene must refit to identical matrices"
+    );
+
+    // Empty scenes (no bounds) fall back to the camera-driven default plan.
+    let empty_plan = plan_cascaded_shadows_for_scene(camera(0.0), light, Default::default(), None)
+        .expect("empty scene fits");
+    assert!(finite_cascades(&empty_plan));
+
+    // Bounds beyond the native fitting range fail closed instead of producing
+    // degenerate shadow matrices.
+    let overflow = SceneWorldBounds {
+        minimum: [-60_000.0; 3],
+        maximum: [60_000.0; 3],
+    };
+    assert!(
+        plan_cascaded_shadows_for_scene(camera(0.0), light, Default::default(), Some(overflow))
+            .is_err(),
+        "span beyond the fitting budget must be rejected"
     );
 }
 

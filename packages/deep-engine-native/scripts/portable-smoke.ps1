@@ -1,10 +1,62 @@
+. (Join-Path $PSScriptRoot 'portable-process.ps1')
+. (Join-Path $PSScriptRoot 'portable-recovery-smoke.ps1')
+
+# The packaging entry point loads portable-package-common.ps1 first, but this
+# script is also a supported standalone smoke entry. Keep the path guard
+# available in both invocation modes without introducing a circular import.
+if (-not (Get-Command Assert-ChildPath -ErrorAction SilentlyContinue)) {
+  function Assert-ChildPath {
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Path)
+    $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd([IO.Path]::DirectorySeparatorChar)
+    $candidate = [IO.Path]::GetFullPath($Path)
+    $prefix = $rootPath + [IO.Path]::DirectorySeparatorChar
+    if (-not $candidate.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+      throw "Path escapes the package output root: $candidate"
+    }
+  }
+}
+
 function Invoke-PortableSmoke {
+  param([Parameter(Mandatory)][string]$Executable, [Parameter(Mandatory)][string]$PackageRoot, [switch]$IncludeRuntimeDetails)
+  $sandbox = Join-Path ([IO.Path]::GetTempPath()) ('deep-portable-' + [Guid]::NewGuid().ToString('N'))
+  [void](New-Item -ItemType Directory -Path $sandbox)
+  $oldLocal = [Environment]::GetEnvironmentVariable('LOCALAPPDATA', 'Process')
+  try {
+    [Environment]::SetEnvironmentVariable('LOCALAPPDATA', (Join-Path $sandbox 'local'), 'Process')
+    Invoke-PortableSmokeCore -Executable $Executable -PackageRoot $PackageRoot -IncludeRuntimeDetails:$IncludeRuntimeDetails
+    if (Test-Path -LiteralPath (Join-Path $PackageRoot 'fixtures/asset-directory-v1/manifest.json')) {
+      Invoke-PortableRecoverySmoke -Executable $Executable -PackageRoot $PackageRoot -Sandbox $sandbox
+    }
+  } finally {
+    [Environment]::SetEnvironmentVariable('LOCALAPPDATA', $oldLocal, 'Process')
+    Assert-ChildPath -Root ([IO.Path]::GetTempPath()) -Path $sandbox
+    Remove-Item -LiteralPath $sandbox -Recurse -Force
+  }
+}
+
+function Invoke-PortableSmokeCore {
   param(
     [Parameter(Mandatory)][string]$Executable,
     [Parameter(Mandatory)][string]$PackageRoot,
     [switch]$IncludeRuntimeDetails
   )
   $checks = @(
+    [ordered]@{
+      name = 'viewer-section-pixels'
+      arguments = @('--smoke-section', (Join-Path $PackageRoot 'fixtures/render_packet_v1.json'))
+      expected = @('native section GPU probe OK:', 'restored=true color=0 shadow=0')
+    },
+    [ordered]@{
+      name = 'viewer-section-alpha-pixels'
+      arguments = @('--smoke-section', (Join-Path $PackageRoot 'fixtures/render_packet_alpha_v1.json'))
+      expected = @('native section GPU probe OK:', 'restored=true color=0 shadow=0')
+    },
+    [ordered]@{
+      name = 'viewer-selection-measurement'
+      arguments = @('--smoke-selection', (Join-Path $PackageRoot 'fixtures/render_packet_v1.json'))
+      expected = @('native selection GPU probe OK:', 'measurement=two-world-points annotations=persisted',
+        'native smoke GPU submission complete: scopes=clean callbacks=clean')
+    },
     [ordered]@{
       name = 'headless-contract'
       arguments = @('--headless-contract', (Join-Path $PackageRoot 'fixtures/render_packet_v1.json'))
@@ -19,6 +71,27 @@ function Invoke-PortableSmoke {
       name = 'runtime-package-contract'
       arguments = @('--headless-package', (Join-Path $PackageRoot 'fixtures/runtime-package-v1.json'))
       expected = 'Deep Runtime Package Player preflight OK:'
+    },
+    [ordered]@{
+      name = 'runtime-package-startup-recovery'
+      arguments = @('--headless-package-recover',
+        (Join-Path $PackageRoot 'fixtures/render_packet_v1.json'),
+        (Join-Path $PackageRoot 'fixtures/runtime-package-v1.json'))
+      expected = @('"active":"last-known-good"', 'Deep Runtime Package Player preflight OK:')
+    },
+    [ordered]@{
+      name = 'runtime-package-invalid-fallback'
+      arguments = @('--headless-package-recover',
+        (Join-Path $PackageRoot 'fixtures/render_packet_v1.json'),
+        (Join-Path $PackageRoot 'fixtures/render_packet_v1.json'))
+      expected = '"code":"no-valid-runtime-package"'
+      expectedExitCode = 1
+    },
+    [ordered]@{
+      name = 'runtime-package-live-recovery'
+      arguments = @('--smoke-package-live', (Join-Path $PackageRoot 'fixtures/runtime-package-v1.json'))
+      expected = @('live reload smoke published', 'live reload rejected candidate retained last frame',
+        'native smoke GPU submission complete: scopes=clean callbacks=clean')
     },
     [ordered]@{
       name = 'runtime-package-gpu-first-frame'
@@ -64,14 +137,33 @@ function Invoke-PortableSmoke {
       expected = @('native smoke GPU submission complete: scopes=clean callbacks=clean', 'native smoke frame presented: 64x64')
     }
   )
+  $prefiltered = Join-Path $PackageRoot 'fixtures/runtime-package-prefiltered-ibl-v1.json'
+  if (Test-Path -LiteralPath $prefiltered -PathType Leaf) {
+    $checks += @(
+      [ordered]@{
+        name = 'runtime-prefiltered-ibl-contract'
+        arguments = @('--headless-package', $prefiltered)
+        expected = 'Deep Runtime Package Player preflight OK:'
+      },
+      [ordered]@{
+        name = 'runtime-prefiltered-ibl-gpu-first-frame'
+        arguments = @('--smoke-package', $prefiltered)
+        expected = @('native IBL prepared: id=environment.prefiltered.golden',
+          'native smoke GPU submission complete: scopes=clean callbacks=clean',
+          'native smoke frame presented: 64x64')
+      }
+    )
+  }
   $results = @()
   foreach ($check in $checks) {
-    $lines = @(& $Executable @($check.arguments) 2>&1)
-    $exitCode = $LASTEXITCODE
-    $output = ($lines | ForEach-Object ToString) -join "`n"
+    $process = Invoke-PortableProcess -Executable $Executable -Arguments $check.arguments
+    $exitCode = $process.exitCode
+    $output = $process.output
+    $lines = $output -split "`r?`n"
     $markers = @($check.expected)
     $missing = @($markers | Where-Object { -not $output.Contains($_) })
-    $passed = $exitCode -eq 0 -and $missing.Count -eq 0
+    $expectedExitCode = if ($check.Contains('expectedExitCode')) { $check.expectedExitCode } else { 0 }
+    $passed = $exitCode -eq $expectedExitCode -and $missing.Count -eq 0
     $evidence = @(foreach ($marker in $markers) {
       $lines | ForEach-Object ToString | Where-Object { $_.Contains($marker) } | Select-Object -First 1
     })
@@ -79,6 +171,7 @@ function Invoke-PortableSmoke {
       name = $check.name
       passed = $passed
       exitCode = $exitCode
+      elapsedMilliseconds = $process.elapsedMilliseconds
       evidence = ($evidence | ForEach-Object { $_.Trim() }) -join ' | '
     }
     if ($IncludeRuntimeDetails) { $result.runtimeOutput = $output.Trim() }

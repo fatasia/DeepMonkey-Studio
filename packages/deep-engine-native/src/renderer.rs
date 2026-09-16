@@ -2,11 +2,8 @@ use std::sync::Arc;
 
 use bytemuck::cast_slice;
 use deep_engine_native::{
-    bloom::BloomSettings,
-    ibl::IblSummary,
-    mesh_abi::FrameUniform,
-    pbr_texture::PreparedPbrSummary,
-    shadow_cache::{ShadowCache, ShadowVersion},
+    bloom::BloomSettings, fog::FogSettings, mesh_abi::FrameUniform,
+    pbr_texture::PreparedPbrSummary, shadow_cache::ShadowVersion,
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
@@ -18,7 +15,7 @@ use crate::{
     gpu_culling::{GpuCulling, GpuCullingSummary},
     gpu_ibl::GpuIblEnvironment,
     gpu_lod::GpuLod,
-    gpu_resources::{frame_data, update_shadow_map},
+    gpu_resources::update_shadow_map,
     gpu_scene::GpuScene,
     gpu_scene_cache::GpuSceneCache,
     gpu_submission::GpuFailures,
@@ -27,19 +24,38 @@ use crate::{
     pipeline::MeshPipelines,
     player_content::PlayerContent,
     player_state::PlayerView,
+    shadow_dirty::{ShadowCascadeKey, ShadowCasterSet, ShadowDirtyCache, ShadowDirtyEvidence},
     shadow_map::{CascadedShadowGpuMetrics, ShadowMap},
     shadow_probe::ShadowProbe,
 };
 
+mod content_profile;
+pub(crate) use content_profile::ContentProfileReport;
+#[cfg(all(test, target_os = "windows"))]
+mod content_profile_gpu_tests;
+#[cfg(all(test, target_os = "windows"))]
+mod coordinate_frame_gpu_tests;
+#[cfg(test)]
+mod environment_probe_tests;
+mod environment_update;
 mod frame;
+mod frame_probes;
+mod frame_target;
 mod init;
+mod init_report;
 pub(crate) mod scene_update;
+mod scene_update_stage;
+mod section_readback;
+pub(crate) use section_readback::SectionReadback;
 
 #[derive(Clone, Copy)]
 pub struct RendererFeatures {
     pub bloom: BloomSettings,
+    pub fog: FogSettings,
     pub shadow_probe: bool,
     pub ibl_probe: bool,
+    /// Opt-in segmented frame telemetry; off by default with zero frame cost.
+    pub telemetry: bool,
 }
 
 pub struct Renderer {
@@ -51,7 +67,6 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
     pipelines: MeshPipelines,
-    #[allow(dead_code)] // Owned for the packet-update entrypoint before live reload wiring lands.
     material_layout: wgpu::BindGroupLayout,
     _scene_cache: GpuSceneCache,
     scene: GpuScene,
@@ -63,7 +78,11 @@ pub struct Renderer {
     frame_bind_group: wgpu::BindGroup,
     shadow_map: ShadowMap,
     ibl: GpuIblEnvironment,
-    shadow_cache: ShadowCache,
+    shadow_cache: ShadowDirtyCache,
+    shadow_casters: ShadowCasterSet,
+    shadow_keys: Vec<ShadowCascadeKey>,
+    shadow_shader_key: u64,
+    last_shadow_evidence: ShadowDirtyEvidence,
     shadow_version: ShadowVersion,
     shadow_probe: Option<ShadowProbe>,
     last_shadow_probe: Option<crate::shadow_probe::ShadowProbeMetrics>,
@@ -72,18 +91,74 @@ pub struct Renderer {
     bloom: Option<BloomPass>,
     output_pass: OutputPass,
     frame: FrameUniform,
+    fog: FogSettings,
     yaw: f32,
+    view: PlayerView,
+    telemetry: Option<crate::telemetry::FrameTelemetry>,
+    diagnostics: crate::player_diagnostics::PlayerDiagnostics,
+    /// 构造期求值的分配档位事实(P1-09):纯二维场景是否可跳过前向目标。
+    /// 只读诊断用;帧路径的跳过改造属独立切片。
+    content_profile: crate::renderer::ContentProfileReport,
 }
 
 impl Renderer {
+    pub fn render(&mut self, verify_submission: bool) -> crate::events::RenderOutcome {
+        self.render_internal(verify_submission, true)
+    }
+    pub fn verification_backend(&self) -> &str {
+        self.diagnostics.backend()
+    }
+
     pub fn id(&self) -> u64 {
         self.id
+    }
+
+    /// Isolated ShaderPackage ids + material fallback count for startup evidence.
+    pub fn shader_isolation_summary(&self) -> Option<(&[String], usize)> {
+        self.scene
+            .shader_materials
+            .as_ref()
+            .map(|materials| (materials.isolated.as_slice(), materials.fallback_materials))
+    }
+
+    /// JSON telemetry report; `None` when telemetry was not enabled. The GPU
+    /// readback runs its own submit + wait, so this is report-path only.
+    pub fn telemetry_report(&self) -> Option<serde_json::Value> {
+        let telemetry = self.telemetry.as_ref()?;
+        let mut metrics = telemetry.report(&self.device, &self.queue);
+        metrics["shadow_cascades"] = serde_json::json!(self.last_shadow_evidence);
+        Some(self.diagnostics.with_metrics(metrics))
+    }
+
+    pub fn reset_telemetry(&mut self) {
+        if let Some(telemetry) = self.telemetry.as_mut() {
+            telemetry.reset_barrier();
+        }
     }
 
     pub fn deep2d_summary(
         &self,
     ) -> Option<deep_engine_native::deep2d::PreparedDeep2dRuntimeSummary> {
         self.deep2d.as_ref().map(|painter| painter.summary)
+    }
+
+    pub fn deep2d_vertex_transfer_stats(&self) -> Option<crate::deep2d_gpu::VertexTransferStats> {
+        self.deep2d
+            .as_ref()
+            .map(|painter| painter.vertex_transfer_stats())
+    }
+
+    pub fn deep2d_path_cache_stats(
+        &self,
+    ) -> Option<deep_engine_native::deep2d::Deep2dPathCacheStats> {
+        self.deep2d
+            .as_ref()
+            .map(|painter| painter.path_cache_stats())
+    }
+
+    /// 构造期定格的分配档位摘要(P1-09):纯二维判据与前向目标字节估算。
+    pub fn content_profile_summary(&self) -> String {
+        self.content_profile.summary()
     }
 
     pub fn pbr_summary(&self) -> (PreparedPbrSummary, usize) {
@@ -95,10 +170,6 @@ impl Renderer {
 
     pub fn alpha_summary(&self) -> deep_engine_native::scene::SceneAlphaSummary {
         self.scene.alpha_summary()
-    }
-
-    pub fn ibl_summary(&self) -> (&str, u32, IblSummary) {
-        (&self.ibl.id, self.ibl.revision, self.ibl.summary)
     }
 
     pub fn shadow_summary(&self) -> CascadedShadowGpuMetrics {
@@ -117,7 +188,22 @@ impl Renderer {
         view: PlayerView,
         features: RendererFeatures,
     ) -> Result<Self, String> {
-        init::create_renderer(window, proxy, renderer_id, content, view, features).await
+        init::create_renderer(window, proxy, renderer_id, content, view, features, true).await
+    }
+
+    pub(crate) async fn new_candidate(
+        window: Arc<Window>,
+        proxy: EventLoopProxy<GpuEvent>,
+        renderer_id: u64,
+        content: &PlayerContent,
+        view: PlayerView,
+        features: RendererFeatures,
+    ) -> Result<Self, String> {
+        init::create_renderer(window, proxy, renderer_id, content, view, features, false).await
+    }
+
+    pub(crate) fn activate_surface(&self) {
+        self.surface.configure(&self.device, &self.config);
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) -> Result<(), String> {
@@ -142,6 +228,8 @@ impl Renderer {
                 &self.device,
                 &next_forward.hdr_view,
                 next_bloom.as_ref().map(BloomTargets::output_view),
+                (self.fog.density() > 0.0)
+                    .then_some((&next_forward.depth_view, &self.frame_buffer)),
             )
             .expect("renderer bloom mode remains stable during resize");
         let gpu_errors = [
@@ -163,9 +251,15 @@ impl Renderer {
             bloom.publish_resize(targets);
         }
         self.output_pass.publish_rebind(next_output);
-        self.frame = frame_data(size, self.yaw);
-        update_shadow_map(&mut self.shadow_map, &self.queue, size, &self.frame)
-            .expect("validated CSM must update after resize");
+        self.frame = crate::gpu_resources::frame_data_with_camera(size, self.view, self.fog);
+        update_shadow_map(
+            &mut self.shadow_map,
+            &self.queue,
+            size,
+            &self.frame,
+            self.view,
+        )
+        .expect("validated CSM must update after resize");
         self.culling
             .update_views(&self.queue, &self.frame, &self.shadow_map)
             .expect("validated GPU culling views must update after resize");
@@ -194,30 +288,68 @@ impl Renderer {
             );
         }
         if let Some(lod) = &mut self.lod {
-            lod.update_views(&self.queue, &self.frame, self.size, &self.shadow_map)
-                .expect("validated GPU LOD views remain valid after camera or surface change");
+            lod.update_views(
+                &self.queue,
+                &self.frame,
+                self.size,
+                &self.shadow_map,
+                self.view.near,
+            )
+            .expect("validated GPU LOD views remain valid after camera or surface change");
         }
+        self.shadow_keys = self
+            .shadow_casters
+            .keys(&self.shadow_map, self.shadow_shader_key)?;
+        self.shadow_cache.invalidate();
         self.queue
             .write_buffer(&self.frame_buffer, 0, cast_slice(&self.frame));
+        if let Some(telemetry) = self.telemetry.as_mut() {
+            telemetry.reset_barrier();
+        }
         Ok(())
     }
 
     pub fn set_view(&mut self, view: PlayerView) {
-        if view.yaw.to_bits() == self.yaw.to_bits() {
+        if view == self.view {
             return;
         }
+        if view.clipping != self.view.clipping {
+            self.queue.write_buffer(
+                &self.shadow_map.section_uniform,
+                0,
+                cast_slice(&view.clipping),
+            );
+            self.shadow_cache.invalidate();
+        }
         self.yaw = view.yaw;
+        self.view = view;
         self.shadow_version.bump_light();
-        self.frame = frame_data(self.size, self.yaw);
-        update_shadow_map(&mut self.shadow_map, &self.queue, self.size, &self.frame)
-            .expect("validated CSM must update after camera rotation");
+        self.frame = crate::gpu_resources::frame_data_with_camera(self.size, self.view, self.fog);
+        update_shadow_map(
+            &mut self.shadow_map,
+            &self.queue,
+            self.size,
+            &self.frame,
+            self.view,
+        )
+        .expect("validated CSM must update after camera rotation");
         self.culling
             .update_views(&self.queue, &self.frame, &self.shadow_map)
             .expect("validated GPU culling views must update after camera rotation");
         if let Some(lod) = &mut self.lod {
-            lod.update_views(&self.queue, &self.frame, self.size, &self.shadow_map)
-                .expect("validated GPU LOD views remain valid after camera or surface change");
+            lod.update_views(
+                &self.queue,
+                &self.frame,
+                self.size,
+                &self.shadow_map,
+                self.view.near,
+            )
+            .expect("validated GPU LOD views remain valid after camera or surface change");
         }
+        self.shadow_keys = self
+            .shadow_casters
+            .keys(&self.shadow_map, self.shadow_shader_key)
+            .expect("validated caster set must remain finite after camera update");
         self.queue
             .write_buffer(&self.frame_buffer, 0, cast_slice(&self.frame));
     }

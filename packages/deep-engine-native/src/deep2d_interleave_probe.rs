@@ -88,7 +88,14 @@ fn draw_and_readback(
         view_formats: &[],
     });
     let view = target.create_view(&Default::default());
-    let painter = Deep2dGpuPainter::new(device, queue, wgpu::TextureFormat::Rgba8Unorm, content)?;
+    let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
+    let painter = Deep2dGpuPainter::new(
+        device,
+        queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        content,
+        &cache,
+    )?;
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Deep2d interleaved readback buffer"),
         size: u64::from(ROW_BYTES),
@@ -99,7 +106,7 @@ fn draw_and_readback(
         label: Some("Deep2d interleaved readback encoder"),
     });
     clear(&mut encoder, &view);
-    painter.draw(&mut encoder, &view);
+    painter.draw(&mut encoder, &view, (WIDTH, HEIGHT));
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &target,

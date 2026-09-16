@@ -52,6 +52,7 @@ fn referenced_lod_indices_expand_bounds_but_unreferenced_vertices_do_not() {
             },
         ],
         hysteresis_ratio: None,
+        author: None,
     });
     packet.geometries.push(GeometryResource {
         id: "lod-bounds".into(),

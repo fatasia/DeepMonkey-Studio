@@ -30,12 +30,13 @@ impl GpuLod {
         frame: &FrameUniform,
         size: PhysicalSize<u32>,
         shadows: &impl ShadowViewSource,
+        near: f32,
     ) -> Result<Option<Self>, String> {
         if prepared.objects.is_empty() {
             return Ok(None);
         }
         resources::validate_device(device, prepared)?;
-        let params = pack_views(frame, size, shadows, prepared.objects.len() as u32)?;
+        let params = pack_views(frame, size, shadows, prepared.objects.len() as u32, near)?;
         let objects = resources::init(
             device,
             "native LOD objects",
@@ -100,8 +101,9 @@ impl GpuLod {
         frame: &FrameUniform,
         size: PhysicalSize<u32>,
         shadows: &impl ShadowViewSource,
+        near: f32,
     ) -> Result<(), String> {
-        let packed = pack_views(frame, size, shadows, self.count)?;
+        let packed = pack_views(frame, size, shadows, self.count, near)?;
         if packed.len() != self.views.len() {
             return Err("native GPU LOD view count changed after allocation".into());
         }

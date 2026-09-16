@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::runtime_types::{Deep2dAtlas, Deep2dAtlasFormat, Deep2dAtlasKind};
 use super::validate::{MAX_DRAW_VALUE, MAX_IMAGE_DIMENSION, ResourceKind, Validator};
 use super::{DEEP_2D_DISPLAY_LIST_BUDGETS, Deep2dIssueCode, Deep2dPathVerb, Deep2dResource};
 
@@ -68,6 +69,61 @@ impl Validator {
             );
         }
         resources
+    }
+
+    /// Registers display-list atlases into the shared id map and checks their
+    /// kind/format pairing before a command can reference them.
+    pub(super) fn atlas_resources<'a>(
+        &mut self,
+        atlases: &'a [Deep2dAtlas],
+        map: &mut HashMap<&'a str, ResourceKind>,
+    ) {
+        if atlases.len() > DEEP_2D_DISPLAY_LIST_BUDGETS.resources {
+            self.add(
+                Deep2dIssueCode::BudgetExceeded,
+                "atlases",
+                format!(
+                    "At most {} atlases are allowed per display list.",
+                    DEEP_2D_DISPLAY_LIST_BUDGETS.resources
+                ),
+            );
+        }
+        for (index, atlas) in atlases.iter().enumerate() {
+            let path = format!("atlases[{index}]");
+            let id_valid = self.id(&atlas.id, &format!("{path}.id"));
+            self.revision(atlas.revision, &format!("{path}.revision"));
+            if !matches!(
+                (atlas.kind, atlas.format),
+                (Deep2dAtlasKind::Glyph, Deep2dAtlasFormat::R8Unorm)
+                    | (Deep2dAtlasKind::Image, Deep2dAtlasFormat::Rgba8UnormSrgb)
+            ) {
+                self.add(
+                    Deep2dIssueCode::InvalidStructure,
+                    format!("{path}.format"),
+                    "Glyph atlases require r8unorm; image atlases require rgba8unorm-srgb.",
+                );
+            }
+            self.image_dimension(atlas.width, &format!("{path}.width"));
+            self.image_dimension(atlas.height, &format!("{path}.height"));
+            if atlas.data_base64.is_empty() {
+                self.add(
+                    Deep2dIssueCode::InvalidStructure,
+                    format!("{path}.dataBase64"),
+                    "Atlas requires pixel data.",
+                );
+            }
+            if id_valid {
+                if map.contains_key(atlas.id.as_str()) {
+                    self.add(
+                        Deep2dIssueCode::DuplicateId,
+                        format!("{path}.id"),
+                        format!("Duplicate resource id: {}.", atlas.id),
+                    );
+                } else {
+                    map.insert(atlas.id.as_str(), ResourceKind::Atlas);
+                }
+            }
+        }
     }
 
     fn image_dimension(&mut self, value: u32, path: &str) {

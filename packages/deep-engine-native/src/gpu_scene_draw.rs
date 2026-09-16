@@ -79,7 +79,7 @@ impl GpuScene {
         view: usize,
     ) {
         for (index, batch) in self.batches.iter().enumerate() {
-            if batch.alpha_mode != AlphaMode::Blend {
+            if batch.cast_shadow && batch.alpha_mode != AlphaMode::Blend {
                 self.draw_selected(pass, pipelines, culling, lod, frame, index, view);
             }
         }
@@ -138,6 +138,9 @@ impl GpuScene {
         frame: DrawFrame<'a>,
     ) {
         if let Some((cascade, _)) = frame.cascade {
+            if !batch.cast_shadow {
+                return;
+            }
             let material = &self.pbr.materials[batch.material_index];
             let Some(mode) = shadow_caster_mode(batch.alpha_mode, material.base_color_mapped)
             else {

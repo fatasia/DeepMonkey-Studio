@@ -1,8 +1,5 @@
 use bytemuck::cast_slice;
-use deep_engine_native::{
-    culling_contract::frustum_planes,
-    mesh_abi::{CAMERA_FOCAL, CAMERA_NEAR, FrameUniform},
-};
+use deep_engine_native::{culling_contract::frustum_planes, mesh_abi::FrameUniform};
 use winit::dpi::PhysicalSize;
 
 use crate::shadow_map::ShadowViewSource;
@@ -12,24 +9,24 @@ pub fn pack_views(
     size: PhysicalSize<u32>,
     shadows: &impl ShadowViewSource,
     count: u32,
+    near: f32,
 ) -> Result<Vec<[u8; 160]>, String> {
     let main_matrix = frame[..4]
         .try_into()
         .map_err(|_| "native LOD camera ABI mismatch")?;
     let eye = frame[8];
-    let length = (eye[0] * eye[0] + eye[1] * eye[1] + eye[2] * eye[2]).sqrt();
-    let forward = [-eye[0] / length, -eye[1] / length, -eye[2] / length, 0.0];
+    let focal = (0..3)
+        .map(|axis| frame[axis][1].powi(2))
+        .sum::<f32>()
+        .sqrt();
+    // 透视矩阵的 w 行给出观察方向；相机位置不能推导非原点目标的方向。
+    let forward = [frame[0][3], frame[1][3], frame[2][3], 0.0];
     let mut views = vec![pack(
         frustum_planes(main_matrix)?,
         eye,
         forward,
         [count, 1, 0, 0],
-        [
-            size.height as f32 * CAMERA_FOCAL * 0.5,
-            CAMERA_NEAR,
-            0.0,
-            0.0,
-        ],
+        [size.height as f32 * focal * 0.5, near, 0.0, 0.0],
     )];
     for index in 0..shadows.cascade_count() as usize {
         let matrix = shadows.cascade_view_projection(index);
@@ -49,6 +46,10 @@ pub fn pack_views(
     }
     Ok(views)
 }
+
+#[cfg(test)]
+#[path = "gpu_lod_views_tests.rs"]
+mod tests;
 
 fn pack(
     planes: [[f32; 4]; 6],

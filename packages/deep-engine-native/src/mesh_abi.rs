@@ -73,8 +73,14 @@ pub fn frame_uniform(aspect: f32, yaw: f32) -> FrameUniform {
             0.55 * sin_yaw + 0.35 * cos_yaw,
             0.0,
         ],
-        [0.0, 0.0, 0.0, 0.0],
+        [0.0; 4],
     ]
+}
+
+pub fn frame_uniform_with_fog(aspect: f32, yaw: f32, fog: crate::fog::FogSettings) -> FrameUniform {
+    let mut frame = frame_uniform(aspect, yaw);
+    frame[12] = fog.frame_tuning();
+    frame
 }
 
 fn light_view_projection(yaw: f32) -> [[f32; 4]; 4] {

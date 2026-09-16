@@ -49,15 +49,16 @@ impl ShadowUpdateProbe {
         let initial_probe = renderer
             .last_shadow_probe()
             .ok_or("initial shadow frame produced no probe evidence")?;
-        let noop = pollster::block_on(renderer.replace_render_packet(active))?;
+        let noop = pollster::block_on(renderer.replace_render_packet(active.packet(), active))?;
         if noop != Default::default() || renderer.scene_update_evidence() != before {
             return Err("identical RenderPacket was not a zero-work update".into());
         }
         let rejected = self.rejected.take().ok_or("missing rejected candidate")?;
-        let rejection = match pollster::block_on(renderer.replace_render_packet(&rejected)) {
-            Ok(_) => return Err("revision collision candidate unexpectedly committed".into()),
-            Err(error) => error,
-        };
+        let rejection =
+            match pollster::block_on(renderer.replace_render_packet(active.packet(), &rejected)) {
+                Ok(_) => return Err("revision collision candidate unexpectedly committed".into()),
+                Err(error) => error,
+            };
         if !rejection.contains("reused for different content") {
             return Err(format!("unexpected replacement rejection: {rejection}"));
         }
@@ -68,7 +69,9 @@ impl ShadowUpdateProbe {
             .out_of_range
             .take()
             .ok_or("missing out-of-range candidate")?;
-        let rejection = match pollster::block_on(renderer.replace_render_packet(&out_of_range)) {
+        let rejection = match pollster::block_on(
+            renderer.replace_render_packet(active.packet(), &out_of_range),
+        ) {
             Ok(_) => return Err("out-of-range bounds candidate unexpectedly committed".into()),
             Err(error) => error,
         };
@@ -79,7 +82,8 @@ impl ShadowUpdateProbe {
             return Err("bounds rejection changed live scene or shadow state".into());
         }
         let replacement = self.replacement.take().ok_or("missing replacement")?;
-        let metrics = pollster::block_on(renderer.replace_render_packet(&replacement))?;
+        let metrics =
+            pollster::block_on(renderer.replace_render_packet(active.packet(), &replacement))?;
         let staged = renderer.scene_update_evidence();
         validate_staged(before, staged, metrics)?;
         println!(

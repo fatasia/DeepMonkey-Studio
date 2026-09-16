@@ -58,20 +58,27 @@ fn rejects_invalid_contract_before_preparing_any_gpu_geometry() {
 }
 
 #[test]
-fn rejects_clips_and_dashes_with_structured_issues() {
+fn supports_path_clips_and_dash_expansion_with_structured_issues() {
     let mut clipped = fixture();
     let Deep2dCommand::Path(command) = &mut clipped.commands[0] else {
         panic!("path command")
     };
     command.clip_path_ids = Some(vec!["overlay:status".into()]);
-    assert_first_code(&clipped, Deep2dPainterIssueCode::UnsupportedClip);
+    let clipped = prepare_display_list(&clipped).expect("simple clip path");
+    assert!(!clipped.vertices.is_empty());
 
     let mut dashed = fixture();
     let Deep2dCommand::Path(command) = &mut dashed.commands[2] else {
         panic!("path command")
     };
     command.dash = Some(vec![4.0, 2.0]);
-    assert_first_code(&dashed, Deep2dPainterIssueCode::UnsupportedDash);
+    let solid = fixture();
+    let solid_prepared = prepare_display_list(&solid).expect("solid stroke");
+    let dashed_prepared = prepare_display_list(&dashed).expect("dashed stroke prepares");
+    assert!(
+        dashed_prepared.summary.stroke_triangles > solid_prepared.summary.stroke_triangles,
+        "dashes must split the stroke into more segments"
+    );
 }
 
 #[test]

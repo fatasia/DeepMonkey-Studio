@@ -16,6 +16,10 @@ struct MaterialTextures {
   emissive_row_0: vec4f, emissive_row_1: vec4f,
 };
 @group(0) @binding(0) var<uniform> frame: Frame;
+@group(0) @binding(8) var<uniform> section_plane: vec4f;
+fn section_rejected(world: vec3f) -> bool {
+  return dot(section_plane.xyz, world) + section_plane.w < 0.0;
+}
 @group(0) @binding(3) var specular_environment: texture_cube<f32>;
 @group(0) @binding(4) var diffuse_environment: texture_cube<f32>;
 @group(0) @binding(5) var brdf_lut: texture_2d<f32>;
@@ -116,6 +120,7 @@ struct ShadowVertexOutput {
   @location(0) uv0: vec2f,
   @location(1) uv1: vec2f,
   @location(2) alpha_cutoff: vec2f,
+  @location(3) world: vec3f,
 };
 
 @vertex fn shadow_mask_main(v: VertexInput) -> ShadowVertexOutput {
@@ -126,6 +131,7 @@ struct ShadowVertexOutput {
   out.uv0 = v.uv0;
   out.uv1 = v.uv1;
   out.alpha_cutoff = vec2f(v.emissive_alpha.w, v.material.y);
+  out.world = world;
   return out;
 }
 
@@ -135,10 +141,12 @@ fn transformed_uv(uv0: vec2f, uv1: vec2f, row_0: vec4f, row_1: vec4f) -> vec2f {
 }
 
 @fragment fn shadow_mask_plain(input: ShadowVertexOutput) {
+  if (section_rejected(input.world)) { discard; }
   if (input.alpha_cutoff.x < input.alpha_cutoff.y) { discard; }
 }
 
 @fragment fn shadow_mask_material(input: ShadowVertexOutput) {
+  if (section_rejected(input.world)) { discard; }
   let uv = transformed_uv(input.uv0, input.uv1,
     material_textures.base_row_0, material_textures.base_row_1);
   var sampled_alpha = 1.0;
@@ -146,6 +154,10 @@ fn transformed_uv(uv0: vec2f, uv1: vec2f, row_0: vec4f, row_1: vec4f) -> vec2f {
     sampled_alpha = textureSample(base_color_map, base_color_sampler, uv).a;
   }
   if (input.alpha_cutoff.x * sampled_alpha < input.alpha_cutoff.y) { discard; }
+}
+
+@fragment fn shadow_section(input: ShadowVertexOutput) {
+  if (section_rejected(input.world)) { discard; }
 }
 
 fn flag(value: f32, bit: u32) -> bool {
@@ -180,7 +192,8 @@ fn mapped_normal(input: VertexOutput, front_facing: bool) -> vec3f {
 }
 
 fn fresnel(cosine: f32, f0: vec3f) -> vec3f {
-  return f0 + (1.0 - f0) * pow(1.0 - cosine, 5.0);
+  let factor = exp2((-5.55473 * cosine - 6.98316) * cosine);
+  return f0 * (1.0 - factor) + factor;
 }
 
 fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32) -> vec3f {
@@ -190,17 +203,20 @@ fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32
   let alpha = rough * rough; let alpha_2 = alpha * alpha;
   let denominator = nh * nh * (alpha_2 - 1.0) + 1.0;
   let distribution = alpha_2 / max(3.14159265 * denominator * denominator, 0.000001);
-  let k = (rough + 1.0) * (rough + 1.0) / 8.0;
-  let geometry = (nv / (nv * (1.0 - k) + k)) * (nl / max(nl * (1.0 - k) + k, 0.0001));
+  let gv = nl * sqrt(alpha_2 + (1.0 - alpha_2) * nv * nv);
+  let gl = nv * sqrt(alpha_2 + (1.0 - alpha_2) * nl * nl);
+  let visibility = 0.5 / max(gv + gl, 0.000001);
   let f = fresnel(vh, mix(vec3f(0.04), base, metal));
-  let specular = distribution * geometry * f / max(4.0 * nv * nl, 0.0001);
-  return ((1.0 - f) * (1.0 - metal) * base / 3.14159265 + specular) * nl;
+  let specular = distribution * visibility * f;
+  let diffuse = (1.0 - metal) * base / 3.14159265;
+  return (diffuse + specular) * nl;
 }
 
 @fragment fn fragment_main(
   input: VertexOutput,
   @builtin(front_facing) front_facing: bool,
 ) -> @location(0) vec4f {
+  if (section_rejected(input.world)) { discard; }
   var base_sample = vec4f(1.0); var mr_sample = vec4f(1.0);
   var ao = 1.0; var emission = vec3f(1.0);
   if (material_textures.base_row_0.w > 0.5) {
@@ -224,12 +240,13 @@ fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32
   if (flag(input.material.w, 2u) && alpha < input.material.y) { discard; }
   let base = input.base_color.rgb * base_sample.rgb;
   let metal = clamp(input.base_color.w * mr_sample.b, 0.0, 1.0);
-  let rough = clamp(input.material.x * mr_sample.g, 0.06, 1.0);
+  let rough = clamp(input.material.x * mr_sample.g, 0.045, 1.0);
   var normal = oriented_normal(input, front_facing);
   if (material_textures.normal_row_0.w > 0.5) { normal = mapped_normal(input, front_facing); }
   let view = safe_normalize(frame.eye.xyz - input.world, vec3f(0.0, 0.0, 1.0));
   let light = safe_normalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
-  let visibility = shadow_visibility(input.world, normal, max(dot(normal, light), 0.0));
+  let visibility = select(shadow_visibility(input.world, normal, max(dot(normal, light), 0.0)),
+    1.0, flag(input.material.w, 16u));
   var color = direct_brdf(normal, view, light, base, metal, rough)
     * vec3f(3.2, 3.0, 2.8) * visibility;
   let nv = clamp(dot(normal, view), 0.001, 1.0);
@@ -249,5 +266,6 @@ fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32
     + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
   color += radiance * (f0 * dfg.x + dfg.y) * energy_compensation * ambient_occlusion;
   color += input.emissive_alpha.rgb * emission;
-  return vec4f(color, select(1.0, alpha, flag(input.material.w, 4u)));
+  return vec4f(select(color, base, flag(input.material.w, 64u)),
+    select(1.0, alpha, flag(input.material.w, 4u)));
 }

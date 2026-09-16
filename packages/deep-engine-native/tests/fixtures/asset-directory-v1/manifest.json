@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "blobs": [
+    {
+      "hash": "7af0187f8ff3410b85e52cdd669346b8a05b9f3e4afdad57377c36a018fa56da",
+      "byteLength": 4973,
+      "mediaType": "application/vnd.deep.runtime-package+json"
+    },
+    {
+      "hash": "ca3b5a9d4ef89b01c66b0e00296d2be60f71031491f51f93424381f065884b10",
+      "byteLength": 9175,
+      "mediaType": "text/plain"
+    },
+    {
+      "hash": "e249b18d8bc73cc22f1453aab606cc7f278b95dc53808ae0188e77baf8118c27",
+      "byteLength": 304,
+      "mediaType": "application/vnd.deep.asset-license+json"
+    }
+  ],
+  "manifest": {
+    "schemaVersion": 1,
+    "packageId": "deep.asset.native-fixture",
+    "source": {
+      "kind": "model-file",
+      "logicalName": "fixtures/runtime-package-v1.json",
+      "contentHash": "7af0187f8ff3410b85e52cdd669346b8a05b9f3e4afdad57377c36a018fa56da",
+      "byteLength": 4973
+    },
+    "importer": {
+      "kind": "direct-parser",
+      "id": "deep.runtime-directory-fixture",
+      "version": "1.0.0",
+      "recipeHash": "9bce68aa3a500dcaf5590bbc918ad47cb8af2af52a791f0eb45082852ecbfc91",
+      "deterministic": true
+    },
+    "compatibility": {
+      "schemaVersion": 1,
+      "id": "native-directory-v1",
+      "sourceKind": "model-file",
+      "format": "json",
+      "importer": "direct-parser",
+      "runtimeArtifact": "deep-asset-package",
+      "importerVersion": "1.0.0",
+      "fixtureSetHash": "7af0187f8ff3410b85e52cdd669346b8a05b9f3e4afdad57377c36a018fa56da",
+      "deterministic": true,
+      "facets": {
+        "geometry": {
+          "status": "verified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "hierarchy": {
+          "status": "verified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "materials": {
+          "status": "verified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "textures": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "animation": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "skin": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "morph": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "cameras": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "lights": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "colliders": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "navmesh": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "metadata": {
+          "status": "verified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "pmi": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "behavior": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        },
+        "audio": {
+          "status": "unverified",
+          "evidenceIds": [
+            "fixture:runtime-package-v1"
+          ],
+          "reason": null
+        }
+      }
+    },
+    "resources": [
+      {
+        "id": "metadata/license",
+        "kind": "metadata",
+        "logicalPath": "metadata/license.json",
+        "blobHash": "e249b18d8bc73cc22f1453aab606cc7f278b95dc53808ae0188e77baf8118c27",
+        "dependencies": [
+          "metadata/license-text"
+        ]
+      },
+      {
+        "id": "metadata/license-text",
+        "kind": "metadata",
+        "logicalPath": "metadata/LICENSE",
+        "blobHash": "ca3b5a9d4ef89b01c66b0e00296d2be60f71031491f51f93424381f065884b10",
+        "dependencies": []
+      },
+      {
+        "id": "scene/main",
+        "kind": "scene",
+        "logicalPath": "scenes/main.runtime.json",
+        "blobHash": "7af0187f8ff3410b85e52cdd669346b8a05b9f3e4afdad57377c36a018fa56da",
+        "dependencies": [
+          "metadata/license"
+        ]
+      }
+    ],
+    "entryScene": "scene/main"
+  }
+}

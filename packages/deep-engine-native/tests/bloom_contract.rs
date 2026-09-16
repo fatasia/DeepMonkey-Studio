@@ -45,6 +45,20 @@ fn bloom_uses_half_resolution_reusable_targets() {
 }
 
 #[test]
+fn fog_is_a_separate_opt_in_hdr_variant_before_aces() {
+    let plain = include_str!("../assets/shaders/native_output_v1.wgsl");
+    let fog = include_str!("../assets/shaders/native_output_fog_v1.wgsl");
+    let bloom_fog = include_str!("../assets/shaders/native_output_bloom_fog_v1.wgsl");
+    assert!(!plain.contains("forward_depth"));
+    for shader in [fog, bloom_fog] {
+        assert!(shader.contains("texture_depth_multisampled_2d"));
+        assert!(shader.contains("1.0 - exp(-frame.tuning.w * distance)"));
+        assert!(shader.find("mix(").unwrap() < shader.find("aces(hdr.rgb)").unwrap());
+    }
+    assert!(bloom_fog.contains("mix(hdr.rgb + glow, frame.tuning.rgb, amount)"));
+}
+
+#[test]
 fn resize_prepares_every_binding_before_publishing_the_candidate() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let renderer = fs::read_to_string(root.join("src/renderer.rs")).unwrap();

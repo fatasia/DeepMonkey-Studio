@@ -14,6 +14,7 @@ pub(super) enum ResourceKind {
     Path,
     Font,
     Image,
+    Atlas,
 }
 
 pub fn decode_display_list(bytes: &[u8]) -> Result<Deep2dDisplayList, String> {
@@ -73,8 +74,9 @@ pub fn validate_display_list(display_list: &Deep2dDisplayList) -> Deep2dValidati
         return validator.finish();
     }
 
-    let resources = validator.resources(&display_list.resources);
-    validator.commands(&display_list.commands, &resources);
+    let mut resources = validator.resources(&display_list.resources);
+    validator.atlas_resources(&display_list.atlases, &mut resources);
+    validator.commands(&display_list.commands, &resources, &display_list.atlases);
     validator.finish()
 }
 

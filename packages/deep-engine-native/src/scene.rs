@@ -17,6 +17,7 @@ pub struct GeometryKey {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DrawBatch {
     pub lod: bool,
+    pub cast_shadow: bool,
     pub geometry_index: usize,
     pub material_index: usize,
     pub mirrored: bool,
@@ -48,6 +49,7 @@ pub struct PreparedScene {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct BatchKey {
     lod_profile: Option<usize>,
+    cast_shadow: bool,
     geometry_index: usize,
     material_index: usize,
     mirrored: bool,
@@ -115,6 +117,16 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
             .transpose()?;
         let lod_profile = instance.lod.as_ref().map(|profile| {
             let key = (
+                profile.author.as_ref().map(|a| {
+                    (
+                        a.revision.to_bits(),
+                        a.selected_levels.clone(),
+                        a.levels
+                            .iter()
+                            .map(|l| (l.distance.to_bits(), l.hysteresis.to_bits()))
+                            .collect::<Vec<_>>(),
+                    )
+                }),
                 profile.hysteresis_ratio().to_bits(),
                 profile
                     .levels
@@ -134,6 +146,7 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
         });
         let key = BatchKey {
             lod_profile,
+            cast_shadow: instance.cast_shadow.unwrap_or(true),
             geometry_index,
             material_index,
             mirrored: !double_sided && mirrored,
@@ -161,7 +174,12 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
                 inverse_transpose3(&instance.transform, determinant),
                 material,
                 if mirrored { -1.0 } else { 1.0 },
-                alpha_flags(alpha_mode, double_sided),
+                surface_flags(
+                    alpha_mode,
+                    double_sided,
+                    instance.receive_shadow,
+                    material.shading_model,
+                ),
             ),
         ));
     }
@@ -178,6 +196,7 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
         }
         batches.push(DrawBatch {
             lod: batch.key.lod_profile.is_some(),
+            cast_shadow: batch.key.cast_shadow,
             geometry_index: batch.key.geometry_index,
             material_index: batch.key.material_index,
             mirrored: batch.key.mirrored,
