@@ -87,7 +87,7 @@ export function createDashboardNativeCandidateService(
   };
 
   return {
-    get candidate(): DashboardNativeCandidate | undefined { return current; },
+    get candidate(): DashboardNativeCandidate | undefined { return current ? freezeCandidate(current) : undefined; },
     clear(): void {
       generation++;
       pending?.abort();
@@ -143,7 +143,7 @@ export function createDashboardNativeCandidateService(
         });
         requireCurrent(activeGeneration, controller.signal);
         current = result;
-        return result;
+        return freezeCandidate(result);
       } finally {
         outerSignal?.removeEventListener("abort", abort);
         if (pending === controller) pending = undefined;

@@ -75,6 +75,35 @@ function makeOutput(input: { readonly protocol: "dashboard-runtime-compiler-v1";
 }
 
 describe("dashboard Native candidate service", () => {
+  it("isolates retained artifact bytes from both preparation and observation callers", async () => {
+    const f = await fixture();
+    const prepared = await f.service.prepare(request);
+    const original = Uint8Array.from(prepared.artifact.artifact);
+    prepared.artifact.artifact.fill(0);
+    expect(f.service.candidate?.artifact.artifact).toEqual(original);
+    const observed = f.service.candidate!;
+    observed.artifact.artifact.fill(1);
+    expect(f.service.candidate?.artifact.artifact).toEqual(original);
+  });
+
+  it("rejects a cancelled worker result and preserves the last accepted candidate", async () => {
+    const f = await fixture();
+    const accepted = await f.service.prepare(request);
+    let release!: () => void;
+    f.worker.compile.mockImplementationOnce(async input => {
+      await new Promise<void>(resolve => { release = resolve; });
+      return makeOutput(input, accepted.artifact.artifact);
+    });
+    const controller = new AbortController();
+    const pending = f.service.prepare(request, controller.signal);
+    await vi.waitFor(() => expect(f.worker.compile).toHaveBeenCalledTimes(2));
+    const reason = new Error("disconnected during compile");
+    controller.abort(reason);
+    release();
+    await expect(pending).rejects.toBe(reason);
+    expect(f.service.candidate).toEqual(accepted);
+  });
+
   it("rejects an already cancelled request without replacing an in-flight candidate", async () => {
     const f = await fixture({ deferWorker: true });
     const first = f.service.prepare(request);
