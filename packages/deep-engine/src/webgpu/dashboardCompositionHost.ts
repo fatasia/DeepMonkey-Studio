@@ -1,4 +1,4 @@
-import { BackendCanvasDeck, type BackendCanvasLease } from "../threeBridge/BackendCanvasDeck.js";
+import type { BackendCanvasDeck, BackendCanvasLease } from "../threeBridge/BackendCanvasDeck.js";
 import type { DashboardCandidateHost, DashboardCandidateNode } from "../runtimePackage/dashboardCandidateTypes.js";
 import type { Deep2dRuntimePackage } from "../runtimePackage/types.js";
 import type { DeviceSession } from "./deviceSession.js";

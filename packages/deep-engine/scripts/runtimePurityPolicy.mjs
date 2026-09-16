@@ -11,7 +11,21 @@ const domGlobals = new Set([
   "document", "window", "navigator", "HTMLElement", "HTMLDivElement", "HTMLImageElement",
   "OffscreenCanvas", "WebView", "React", "echarts",
 ]);
+function isTypeOnlyImport(node) {
+  if (ts.isImportDeclaration(node)) {
+    const clause = node.importClause;
+    if (!clause) return true;
+    if (clause.isTypeOnly) return true;
+    const bindings = clause.namedBindings;
+    const allNamedTypeOnly = !bindings || (ts.isNamedImports(bindings) && bindings.elements.every(element => element.isTypeOnly));
+    return allNamedTypeOnly && !clause.defaultBinding && !clause.name;
+  }
+  return Boolean(node.exportClause && ts.isNamedExports(node.exportClause) && node.exportClause.elements.every(element => element.isTypeOnly));
+}
+
 const browserSurfaceAllowlist = new Map([
+  ["src/webgpu/dashboardCompositionHost.ts", new Set(["HTMLCanvasElement"])],
+  ["src/webgpu/deep2d/gpu.ts", new Set(["DOMException"])],
   ["src/webgpu/deviceSession.ts", new Set(["DOMException", "Event", "HTMLCanvasElement"])],
   ["src/webgpu/pbrRenderer.ts", new Set(["DOMException", "HTMLCanvasElement", "performance"])],
   ["src/webgpu/packetBuffers.ts", new Set(["DOMException"])],
@@ -83,9 +97,12 @@ export function scanTypeScriptRuntime(sources) {
     }
     function visit(node) {
       if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
-        pushModuleIssue(issues, source, node.moduleSpecifier, node.moduleSpecifier.text);
-        if (!isBridgeFile(source.fileName) && /(?:^|\/)threeBridge(?:\/|$)/i.test(node.moduleSpecifier.text)) {
-          issues.push({ code: "bridge-boundary-crossed", detail: node.moduleSpecifier.text, ...location(source, node.moduleSpecifier) });
+        // 类型-only 导入编译期擦除,不构成运行时耦合,不参与纯净性判定。
+        if (!isTypeOnlyImport(node)) {
+          pushModuleIssue(issues, source, node.moduleSpecifier, node.moduleSpecifier.text);
+          if (!isBridgeFile(source.fileName) && /(?:^|\/)threeBridge(?:\/|$)/i.test(node.moduleSpecifier.text)) {
+            issues.push({ code: "bridge-boundary-crossed", detail: node.moduleSpecifier.text, ...location(source, node.moduleSpecifier) });
+          }
         }
       }
       if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword

@@ -40,6 +40,15 @@ test("keeps Three inside its explicit bridge and blocks it from core", () => {
   assert.equal(RUNTIME_PURITY_ALLOWLIST.threeCompatibilityBoundary, "src/threeBridge/");
 });
 
+test("type-only bridge imports erase at compile time and stay pure", () => {
+  const typeOnly = scanTypeScriptRuntime([{ file: "src/webgpu/host.ts",
+    code: "import type { BackendCanvasDeck } from \"../threeBridge/BackendCanvasDeck.js\";\nlet deck: BackendCanvasDeck | undefined;" }]);
+  assert.deepEqual(typeOnly, []);
+  const value = scanTypeScriptRuntime([{ file: "src/webgpu/host.ts",
+    code: "import { BackendCanvasDeck } from \"../threeBridge/BackendCanvasDeck.js\";" }]);
+  assert.deepEqual(value.map(({ code }) => code), ["bridge-boundary-crossed"]);
+});
+
 test("surface allowlist is exact and cannot spread DOM APIs into another file", () => {
   assert.deepEqual(scanTypeScriptRuntime([{ file: "src/webgpu/deviceSession.ts", code: `let canvas: HTMLCanvasElement; new DOMException();` }]), []);
   const issues = scanTypeScriptRuntime([{ file: "src/webgpu/other.ts", code: `let canvas: HTMLCanvasElement; new DOMException();` }]);

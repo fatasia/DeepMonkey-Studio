@@ -1657,3 +1657,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:SceneTransformGraph 节点新增 `hidden` 权威状态与 `lastChangedRevision` CAS 戳(update 命中即刷新,快照透出);新模块 `SceneChangeset.ts`——版本化纯数据变化集(transform/hidden 命令,携带节点级 expectedRevision + baseRevision),两阶段应用(全量校验→图事务原子应用→事务外 flush 推进单一权威 revision);重复 nodeId/非有限值构造期 fail-closed;迟到节点戳或 base revision → 整体拒绝且图零触碰;撤销走 `captureSceneChangesetInverse` 同一 CAS 通道,不产生第二权威;所有权合同成文(图=唯一权威,Three 投影进图,GPU 缓存只消费 flush 结果)。index 导出。
 - 验证:SceneChangeset 7 项 + scene 全量 32 项(4 文件)通过;deep-engine typecheck 通过;全包测试回归绿。
 - 边界(如实):Three 侧投影消费方(B02 的桥增量)未接;hidden 的绘制过滤由消费方执行(图不裁剪 world 计算)。
+
+### 2026-09-17 解除 deep-engine 纯净性门禁阻塞(GLM;同族修复)
+
+- 已完成:runtimePurityGate 此前在 HEAD 即红(18689fa 引入):dashboardCompositionHost 的桥导入实为纯类型使用→改 `import type`;类型-only 导入在编译期擦除、无运行时耦合,策略扫描器新增 `isTypeOnlyImport` 豁免(含策略测试:类型导入纯净/值导入仍越界);按既有先例将 dashboardCompositionHost(HTMLCanvasElement)、deep2d/gpu(DOMException)登记进 browserSurfaceAllowlist。门禁复跑:**585 浏览器/核心源 + 439 native 源全绿**。
+- 边界(如实):deep-engine 全量链仍被 sourceSizeGate 挡(15 项既有违规:chart_render.rs 748 等历史文件 + P1-23 代理在产文件),本切片文件全部 <300 行;该门禁的既有违规清理归后续专门切片,不在本切片越权拆他人文件。
