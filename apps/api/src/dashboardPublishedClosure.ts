@@ -6,12 +6,14 @@ import type { DashboardPublicationAuthorityRequest } from "./dashboardPublicatio
 import type { DashboardPublicationClosureReader } from "./dashboardNativeCandidateRuntime.js";
 import type { DashboardFrozenResourceRequest, DashboardResolvedDataRequest } from "./dashboardPublicationFreeze.js";
 import { dashboardSavedDataSource, readDashboardSavedData, type DashboardDataStore } from "./dashboardPublishedDataSource.js";
+import type { DashboardPublishedFontCatalog } from "./dashboardPublishedFontCatalog.js";
 
 type ClosureStore = DashboardDataStore & Pick<MetadataStore, "getProject" | "getPublishedApplication" | "listAssets">;
 const dataId = (nodeId: string) => `data.${createHash("sha256").update(nodeId).digest("hex")}`;
 
 /** Production closure over server-owned publications, project assets and Data Hub sources. */
-export function createDashboardPublishedClosure(store: ClosureStore, config: AppConfig): DashboardPublicationClosureReader {
+export function createDashboardPublishedClosure(store: ClosureStore, config: AppConfig,
+  options: { readonly fonts?: DashboardPublishedFontCatalog } = {}): DashboardPublicationClosureReader {
   function published(request: Pick<DashboardPublicationAuthorityRequest, "publicationId" | "projectId" | "applicationId" | "applicationRevision" | "entryPageId">) {
     const publication = store.getPublishedApplication(request.publicationId);
     if (!publication || !store.getProject(request.projectId) || publication.projectId !== request.projectId
@@ -48,7 +50,9 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
         if (source) data.push({ id: dataId(node.id), nodeId: node.id,
           sourceRevision: JSON.stringify({ metadataSha256: source.metadataSha256, capturedAt }) });
       }
-      return { data, resources: imageRequests(publication, entryPageId) };
+      const resources = [...imageRequests(publication, entryPageId), ...await options.fonts?.derive(publication, signal) ?? []];
+      if (new Set(resources.map(resource => resource.id)).size !== resources.length) throw new Error("Font and image resource IDs collide");
+      return { data, resources };
     },
     async resolveData(authority, request, signal) {
       signal?.throwIfAborted();
@@ -61,6 +65,10 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
       signal?.throwIfAborted();
       published(authority);
       const publication = store.getPublishedApplication(authority.publicationId)!;
+      if (request.kind === "font") {
+        if (!options.fonts) throw new Error("Published font catalog is not configured");
+        return options.fonts.resourceRevision(publication, request, signal);
+      }
       const current = imageRequests(publication, authority.entryPageId).find(item => item.id === request.id);
       if (!current || current.objectKey !== request.objectKey || current.kind !== request.kind || current.mime !== request.mime
         || [...current.nodeIds].sort().join("\0") !== [...request.nodeIds].sort().join("\0"))

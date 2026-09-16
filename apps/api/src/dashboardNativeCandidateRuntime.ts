@@ -67,7 +67,7 @@ export function createDashboardNativeCandidateRuntime(
         signal?.throwIfAborted();
         const revision = await dependencies.closure.resourceRevision(authorityRequest, item, signal);
         signal?.throwIfAborted();
-        return { revision, bytes: await readTrustedObject(dependencies.objects, item.objectKey, signal) };
+        return { revision, bytes: await readDashboardTrustedObject(dependencies.objects, item.objectKey, signal) };
       },
     },
   });
@@ -95,7 +95,7 @@ export function createInProcessDashboardNativeCandidateWorker(compiler: Authorit
   });
 }
 
-async function readTrustedObject(objects: Pick<ObjectStore, "read">, key: string, signal?: AbortSignal): Promise<Uint8Array> {
+export async function readDashboardTrustedObject(objects: Pick<ObjectStore, "read">, key: string, signal?: AbortSignal): Promise<Uint8Array> {
   signal?.throwIfAborted();
   const result = await objects.read(key);
   const chunks: Uint8Array[] = [];

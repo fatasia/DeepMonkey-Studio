@@ -39,6 +39,8 @@ export interface DashboardFrozenResourceRequest {
   readonly mime: string;
   readonly nodeIds: readonly string[];
   readonly revision: number;
+  /** Optional deployment/catalog identity, checked against the bytes actually frozen. */
+  readonly expectedSha256?: string;
   readonly faceIndex?: number;
   readonly license?: { readonly redistributable: boolean; readonly evidence: string };
 }
@@ -121,6 +123,8 @@ export async function prepareDashboardPublicationFreeze(
     options.signal?.throwIfAborted();
     if (resolved.revision !== request.revision) throw new DashboardPublicationStaleError(`Resource ${request.id} revision changed`);
     const bytes = Uint8Array.from(resolved.bytes);
+    if (request.expectedSha256 && sha256(bytes) !== request.expectedSha256)
+      throw new DashboardPublicationStaleError(`Resource ${request.id} differs from the deployed catalog`);
     totalBytes = addBytes(totalBytes, bytes.byteLength, request.id);
     resources[request.id] = bytes;
     resourceManifest.push({ id: request.id, kind: request.kind, objectKey: request.objectKey, mime: request.mime,
@@ -205,6 +209,7 @@ function assertPublishedDocument(state: DashboardPublicationAuthorityState, expe
 }
 
 function assertResourceRequest(request: DashboardFrozenResourceRequest, projectId: string, nodeIds: ReadonlySet<string>): void {
+  if (request.expectedSha256 !== undefined && !HASH.test(request.expectedSha256)) throw new Error(`Resource ${request.id} has an invalid expected hash`);
   if (!validId(request.id) || !request.objectKey.startsWith(`projects/${projectId}/`) || /[?#]/.test(request.objectKey)
     || request.objectKey.split("/").some((part) => !validObjectSegment(part))) throw new Error(`Resource ${request.id} has an invalid private object key`);
   if (!Number.isSafeInteger(request.revision) || request.revision < 1 || !request.nodeIds.length
