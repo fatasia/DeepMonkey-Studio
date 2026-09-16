@@ -16,7 +16,7 @@ pnpm exec tsx --conditions=development scripts/package-dashboard-executable.mts 
 
 2026-09-16：主线 EXE 在只有 `Dashboard.exe` 的目录启动成功。测试子进程 PATH 仅含 Windows System32，LOCALAPPDATA 使用隔离目录；呈现后的恢复记录与原运行包字节及 packageHash 一致，启动目录没有产生依赖文件。验证脚本：`node scripts/verify-dashboard-standalone.mjs <EXE> <预期运行包JSON> <新证据目录>`。测试运行器需要 Node，待测 EXE 不需要。
 
-样例只有两个形状，不代表完整 Dashboard 或视觉验收；验证器在成功呈现并写入恢复记录后终止进程。
+最初样例包含两个形状；后续作者 37/91 两条柱图数据也完成真实发布、下载和独立启动，见 [本机测试步骤](dashboard-single-exe-test-2026-09-16.md)。这些样例不代表完整 Dashboard 或视觉验收；验证器在成功呈现并写入恢复记录后终止进程。
 部署已固定 `nativeExecutable` 时，候选支持 `GET /api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/standalone-executable`，返回单个 `.exe` 附件，类型为 `application/vnd.microsoft.portable-executable`。客户端不能提供播放器路径或其它查询参数。下载沿用候选权限、项目/应用范围、TTL 与撤销校验，并在异步打包后再次检查有效性；旧 ZIP 与 DMDA 下载保留。
 
 正式启动从编译器配置的 `nativeSha256` 固定播放器身份，并传至 ZIP/EXE 下载。打包器对实际读入并用于输出的同一份 EXE 字节计算 SHA-256；部署后原路径被重新构建或替换会拒绝下载，需要重新部署。通用构建 API 保留可选 `expectedSha256`，正式启动不能省略此绑定。

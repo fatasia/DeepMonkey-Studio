@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard content and portable packaging
 
+- Generate the Dashboard deployment bundle during API build and development startup. Verify production imports and provide a standalone author-data chart test guide.
+
 - Freeze published author sample data using the same metric conversion as Web preview. Reject executable downloads when the deployed player bytes have changed.
 
 - Download verified candidates directly as a standalone EXE. Preserve font coverage when a table or text widget compiles into multiple drawing layers.

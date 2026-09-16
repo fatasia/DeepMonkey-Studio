@@ -1,5 +1,9 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：API build/predev 自动生成 Dashboard 部署 bundle，修复正常清理 dist 后丢失动态模块的部署缺口。主线实际 API build 与无 tsx/development 条件的生产 Node import/注册检查通过，三个下载入口均要求鉴权。工作区依赖须先按正常顺序构建；保留既有 Native Scene 构建和无关依赖改动。
+
+- 已完成：作者 37/91 样例柱图经过磁盘发布、真实编译与 Native 窗口、HTTP 单 EXE 下载后，在 PATH 无 Node、无旁文件目录独立呈现。主线程读取实际证据并复核 EXE SHA-256 `d3c06a5b64bec623698b49c3404ab6b9d84eb46e91f68f15bfe67e94c56d8775`；[启动与测试步骤](specs/dashboard-single-exe-test-2026-09-16.md) 已补。能力仍为 degraded，完整交互、视觉和组合页面验收保持待办。
+
 - 已完成：发布作者 sampleData 复用 Web 指标转换进入冻结数据闭包，保留原始行和数值样本索引，绑定应用 revision；数据或 revision 改变、同时绑定其他数据源均拒绝。单 EXE/ZIP 下载核对实际读取的播放器字节与部署 SHA-256，路径内文件替换后返回 409。主线 Dashboard API 165 项、Web 指标 12 项、API/data-runtime 类型及仓库治理通过。样例柱图真实交付链、KPI/表格 DOM 布局和正常构建产物接线继续推进，C1～C5 整体验收仍待完成。
 
 - 已完成：正式候选 `/standalone-executable` 已接通，真实磁盘发布→候选编译与窗口验证→HTTP EXE 下载→仅 EXE 目录无参数呈现全部通过。下载文件 hash 为 `c8d90e71ffcd5df309f01463283186ce86c57e628f9c62d93c1ab940a40b7a1d`，证据见 `test-output/dashboard-downloaded-exe-verification-20260916/evidence.json`；58 项相关 API、类型与治理通过。修复 C4 对同作者多运行层的误拒绝，字体要求按作者合并。作者样例数据与 KPI/表格真实布局接线仍在推进，本次两形状链路不等于 C1～C5 整体完成。
