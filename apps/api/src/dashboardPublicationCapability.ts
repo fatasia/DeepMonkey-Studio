@@ -173,7 +173,7 @@ function missingVerifiedFonts(verification: DashboardWindowVerification, candida
   const boundAuthors = new Set<string>();
   for (const binding of evidence.nodeBindings) {
     if (!authored.has(binding.nodeId) || !binding.runtimeNodeId || !binding.pageId || !binding.staticResourceId
-      || bindings.has(binding.runtimeNodeId) || boundAuthors.has(binding.nodeId)) throw new Error("Invalid compiler font node binding");
+      || bindings.has(binding.runtimeNodeId)) throw new Error("Invalid compiler font node binding");
     bindings.set(binding.runtimeNodeId, binding); boundAuthors.add(binding.nodeId);
   }
   const rendered = new Set(verification.renderedNodeIds);

@@ -159,6 +159,28 @@ async function coverageInput(multiPage = false) {
 }
 
 describe("compiler-bound font coverage", () => {
+  it("merges table chrome and text-cell layer fonts under their shared author node", async () => {
+    const { input, evidence } = await coverageInput(), verify = input.verifyWindow;
+    evidence.nodeBindings.push({ nodeId: "widget-scene-main", runtimeNodeId: "runtime-cell",
+      pageId: "runtime-page-main", staticResourceId: "static-cell" });
+    // The frozen fallback is now actually used by a cell layer, separate from table chrome.
+    evidence.fontBindings.push({ resourceId: "unused-fallback", sha256: sha(new Uint8Array([1, 2, 3])),
+      faceIndex: 0, runtimeNodeId: "runtime-cell", atlasId: "atlas-cell" });
+    const incomplete = await buildDashboardPublicationCapabilityReport(input);
+    expect(incomplete.objects[0]!.status).toBe("degraded");
+    const complete = await buildDashboardPublicationCapabilityReport({ ...input, verifyWindow: async request => {
+      const receipt = await verify(request);
+      return { ...receipt, fontSha256: [...receipt.fontSha256,
+        { resourceId: "unused-fallback", sha256: sha(new Uint8Array([1, 2, 3])), faceIndex: 0 }] };
+    } });
+    expect(complete.objects[0]!.status).toBe("supported");
+    expect(complete.objects[1]!.status).toBe("degraded");
+  });
+  it("rejects duplicate runtime identities even when their author is the same", async () => {
+    const { input, evidence } = await coverageInput();
+    evidence.nodeBindings.push({ ...evidence.nodeBindings[0]! });
+    await expect(buildDashboardPublicationCapabilityReport(input)).rejects.toThrow(/Invalid compiler font node binding/);
+  });
   it("accepts a frozen but unused fallback while supporting only the verified node", async () => {
     const { input } = await coverageInput();
     const report = await buildDashboardPublicationCapabilityReport(input);
