@@ -1,0 +1,469 @@
+{
+  "schemaVersion": 1,
+  "scope": "dashboard-widget-content",
+  "publicationReady": false,
+  "sourceSemanticHash": "e10e93d74cf2f81a19271eaef134293748c818d80c67aa95108cc93811cc41e8",
+  "compileGraphHash": "def3aeb7602174acd10ba55d77927310d5bd79decb52cbe5e749110179d68a64",
+  "targetArtifactHash": "70c6cb078e171fb6ea0a24ae87fe7f3fc5e88f0a09155e603e45c6fdcefd1236",
+  "displayList": {
+    "schemaVersion": 1,
+    "id": "page.13f9015f70880324868d491854f7dba443ee61696d5ea99846e6d26e266e5ffd.content",
+    "revision": 1,
+    "logicalWidth": 1920,
+    "logicalHeight": 1080,
+    "scaleFactor": 1,
+    "resources": [
+      {
+        "kind": "path",
+        "id": "node.5c7a3db6df007933f9e1d65e3bad0c7084b3e46caf3e10050c5a314befebd266.content.bg",
+        "revision": 1,
+        "verbs": [
+          {
+            "op": "move",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "op": "line",
+            "x": 260,
+            "y": 0
+          },
+          {
+            "op": "line",
+            "x": 260,
+            "y": 180
+          },
+          {
+            "op": "line",
+            "x": 0,
+            "y": 180
+          },
+          {
+            "op": "close"
+          }
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.5c7a3db6df007933f9e1d65e3bad0c7084b3e46caf3e10050c5a314befebd266.content.content",
+        "revision": 1,
+        "verbs": [
+          {
+            "op": "move",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "op": "line",
+            "x": 226,
+            "y": 0
+          },
+          {
+            "op": "line",
+            "x": 226,
+            "y": 146
+          },
+          {
+            "op": "line",
+            "x": 0,
+            "y": 146
+          },
+          {
+            "op": "close"
+          }
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.c5fe49132e1fa925aaa5ef9e564075f6a36738005b25aa7295ea8e8d7df48798.content.bg",
+        "revision": 1,
+        "verbs": [
+          {
+            "op": "move",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "op": "line",
+            "x": 260,
+            "y": 0
+          },
+          {
+            "op": "line",
+            "x": 260,
+            "y": 180
+          },
+          {
+            "op": "line",
+            "x": 0,
+            "y": 180
+          },
+          {
+            "op": "close"
+          }
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.c5fe49132e1fa925aaa5ef9e564075f6a36738005b25aa7295ea8e8d7df48798.content.content",
+        "revision": 1,
+        "verbs": [
+          {
+            "op": "move",
+            "x": 18,
+            "y": 0
+          },
+          {
+            "op": "line",
+            "x": 208,
+            "y": 0
+          },
+          {
+            "op": "cubic",
+            "c1x": 217.94112549695427,
+            "c1y": 0,
+            "c2x": 226,
+            "c2y": 8.058874503045717,
+            "x": 226,
+            "y": 18
+          },
+          {
+            "op": "line",
+            "x": 226,
+            "y": 128
+          },
+          {
+            "op": "cubic",
+            "c1x": 226,
+            "c1y": 137.94112549695427,
+            "c2x": 217.94112549695427,
+            "c2y": 146,
+            "x": 208,
+            "y": 146
+          },
+          {
+            "op": "line",
+            "x": 18,
+            "y": 146
+          },
+          {
+            "op": "cubic",
+            "c1x": 8.058874503045717,
+            "c1y": 146,
+            "c2x": 0,
+            "c2y": 137.94112549695427,
+            "x": 0,
+            "y": 128
+          },
+          {
+            "op": "line",
+            "x": 0,
+            "y": 18
+          },
+          {
+            "op": "cubic",
+            "c1x": 0,
+            "c1y": 8.058874503045717,
+            "c2x": 8.058874503045717,
+            "c2y": 0,
+            "x": 18,
+            "y": 0
+          },
+          {
+            "op": "close"
+          }
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.f1ea4a608463c01d030337f544292fb8bb2cc2c647d7140e99928a7e303f1b53.content.bg",
+        "revision": 1,
+        "verbs": [
+          {
+            "op": "move",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "op": "line",
+            "x": 260,
+            "y": 0
+          },
+          {
+            "op": "line",
+            "x": 260,
+            "y": 180
+          },
+          {
+            "op": "line",
+            "x": 0,
+            "y": 180
+          },
+          {
+            "op": "close"
+          }
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.f1ea4a608463c01d030337f544292fb8bb2cc2c647d7140e99928a7e303f1b53.content.content",
+        "revision": 1,
+        "verbs": [
+          {
+            "op": "move",
+            "x": 226,
+            "y": 73
+          },
+          {
+            "op": "cubic",
+            "c1x": 226,
+            "c1y": 113.31678673764794,
+            "c2x": 175.4081767308797,
+            "c2y": 146,
+            "x": 113,
+            "y": 146
+          },
+          {
+            "op": "cubic",
+            "c1x": 50.591823269120326,
+            "c1y": 146,
+            "c2x": 0,
+            "c2y": 113.31678673764794,
+            "x": 0,
+            "y": 73
+          },
+          {
+            "op": "cubic",
+            "c1x": 0,
+            "c1y": 32.68321326235207,
+            "c2x": 50.591823269120326,
+            "c2y": 0,
+            "x": 113,
+            "y": 0
+          },
+          {
+            "op": "cubic",
+            "c1x": 175.4081767308797,
+            "c1y": 0,
+            "c2x": 226,
+            "c2y": 32.68321326235207,
+            "x": 226,
+            "y": 73
+          },
+          {
+            "op": "close"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "kind": "path",
+        "id": "node.5c7a3db6df007933f9e1d65e3bad0c7084b3e46caf3e10050c5a314befebd266.content.bg.draw",
+        "pathId": "node.5c7a3db6df007933f9e1d65e3bad0c7084b3e46caf3e10050c5a314befebd266.content.bg",
+        "zOrder": 0,
+        "transform": [
+          1,
+          0,
+          0,
+          1,
+          100,
+          100
+        ],
+        "fill": [
+          0.09019607843137255,
+          0.12941176470588237,
+          0.14901960784313725,
+          0.86
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.5c7a3db6df007933f9e1d65e3bad0c7084b3e46caf3e10050c5a314befebd266.content.content.draw",
+        "pathId": "node.5c7a3db6df007933f9e1d65e3bad0c7084b3e46caf3e10050c5a314befebd266.content.content",
+        "zOrder": 0,
+        "transform": [
+          1,
+          0,
+          0,
+          1,
+          117,
+          117
+        ],
+        "fill": [
+          0.21176470588235294,
+          0.5450980392156862,
+          0.8392156862745098,
+          1
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.c5fe49132e1fa925aaa5ef9e564075f6a36738005b25aa7295ea8e8d7df48798.content.bg.draw",
+        "pathId": "node.c5fe49132e1fa925aaa5ef9e564075f6a36738005b25aa7295ea8e8d7df48798.content.bg",
+        "zOrder": 1,
+        "transform": [
+          1,
+          0,
+          0,
+          1,
+          400,
+          100
+        ],
+        "fill": [
+          0.09019607843137255,
+          0.12941176470588237,
+          0.14901960784313725,
+          0.86
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.c5fe49132e1fa925aaa5ef9e564075f6a36738005b25aa7295ea8e8d7df48798.content.content.draw",
+        "pathId": "node.c5fe49132e1fa925aaa5ef9e564075f6a36738005b25aa7295ea8e8d7df48798.content.content",
+        "zOrder": 1,
+        "transform": [
+          1,
+          0,
+          0,
+          1,
+          417,
+          117
+        ],
+        "fill": [
+          0.2,
+          0.7333333333333333,
+          0.6,
+          1
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.f1ea4a608463c01d030337f544292fb8bb2cc2c647d7140e99928a7e303f1b53.content.bg.draw",
+        "pathId": "node.f1ea4a608463c01d030337f544292fb8bb2cc2c647d7140e99928a7e303f1b53.content.bg",
+        "zOrder": 2,
+        "transform": [
+          1,
+          0,
+          0,
+          1,
+          700,
+          100
+        ],
+        "fill": [
+          0.09019607843137255,
+          0.12941176470588237,
+          0.14901960784313725,
+          0.86
+        ]
+      },
+      {
+        "kind": "path",
+        "id": "node.f1ea4a608463c01d030337f544292fb8bb2cc2c647d7140e99928a7e303f1b53.content.content.draw",
+        "pathId": "node.f1ea4a608463c01d030337f544292fb8bb2cc2c647d7140e99928a7e303f1b53.content.content",
+        "zOrder": 2,
+        "transform": [
+          1,
+          0,
+          0,
+          1,
+          717,
+          117
+        ],
+        "fill": [
+          0.8980392156862745,
+          0.6666666666666666,
+          0.26666666666666666,
+          1
+        ]
+      }
+    ]
+  },
+  "capabilityReport": {
+    "objects": [
+      {
+        "nodeId": "shape-rectangle",
+        "status": "degraded",
+        "contentCompiled": true,
+        "compiledFields": [
+          "id",
+          "frame",
+          "zIndex",
+          "widget.type",
+          "widget.backgroundColor",
+          "widget.backgroundOpacity",
+          "widget.shape",
+          "widget.color",
+          "widget.borderWidth"
+        ],
+        "deferredFields": [
+          "kind",
+          "widget.title",
+          "widget.key",
+          "widget.unit"
+        ],
+        "reasons": [
+          "组件文字排版、数据绑定内容、容器阴影与运行时行为尚未编译"
+        ]
+      },
+      {
+        "nodeId": "shape-rounded",
+        "status": "degraded",
+        "contentCompiled": true,
+        "compiledFields": [
+          "id",
+          "frame",
+          "zIndex",
+          "widget.type",
+          "widget.backgroundColor",
+          "widget.backgroundOpacity",
+          "widget.shape",
+          "widget.color",
+          "widget.borderWidth"
+        ],
+        "deferredFields": [
+          "kind",
+          "widget.title",
+          "widget.key",
+          "widget.unit"
+        ],
+        "reasons": [
+          "组件文字排版、数据绑定内容、容器阴影与运行时行为尚未编译"
+        ]
+      },
+      {
+        "nodeId": "shape-ellipse",
+        "status": "degraded",
+        "contentCompiled": true,
+        "compiledFields": [
+          "id",
+          "frame",
+          "zIndex",
+          "widget.type",
+          "widget.backgroundColor",
+          "widget.backgroundOpacity",
+          "widget.shape",
+          "widget.color",
+          "widget.borderWidth"
+        ],
+        "deferredFields": [
+          "kind",
+          "widget.title",
+          "widget.key",
+          "widget.unit"
+        ],
+        "reasons": [
+          "组件文字排版、数据绑定内容、容器阴影与运行时行为尚未编译"
+        ]
+      }
+    ],
+    "degraded": 3,
+    "blocked": 0,
+    "contentCompiled": 3,
+    "chromeOnly": 0
+  },
+  "deferredPageFields": [
+    "name",
+    "viewportFit"
+  ]
+}

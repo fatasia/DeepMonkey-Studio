@@ -1,0 +1,11 @@
+{
+  "schema": "deep-engine.scene-camera",
+  "schemaVersion": 1,
+  "id": "scene.camera",
+  "revision": 1,
+  "position": [12, 8, 16],
+  "target": [3, 2, -4],
+  "verticalFovDegrees": 50,
+  "near": 0.05,
+  "far": 100000
+}

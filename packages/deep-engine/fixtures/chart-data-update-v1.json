@@ -1,0 +1,482 @@
+{
+  "source": {
+    "schemaVersion": 1,
+    "sourceSpecVersion": 1,
+    "id": "chart-v1-golden",
+    "datasets": [
+      {
+        "id": "main",
+        "dimensions": [
+          "x",
+          "y",
+          "value",
+          "name"
+        ],
+        "rows": [
+          [
+            "A",
+            1,
+            0.2,
+            "泵"
+          ],
+          [
+            "B",
+            2,
+            0.8,
+            "水箱"
+          ]
+        ]
+      }
+    ],
+    "axes": [
+      {
+        "id": "x",
+        "channel": "x",
+        "scale": "category",
+        "min": null,
+        "max": null
+      },
+      {
+        "id": "y",
+        "channel": "y",
+        "scale": "linear",
+        "min": 0,
+        "max": 10
+      }
+    ],
+    "series": [
+      {
+        "id": "line",
+        "label": "line",
+        "type": "line",
+        "datasetId": "main",
+        "x": "x",
+        "y": "y",
+        "xAxisId": "x",
+        "yAxisId": "y"
+      },
+      {
+        "id": "bar",
+        "label": "bar",
+        "type": "bar",
+        "datasetId": "main",
+        "x": "x",
+        "y": "y",
+        "xAxisId": "x",
+        "yAxisId": "y"
+      },
+      {
+        "id": "scatter",
+        "label": "scatter",
+        "type": "scatter",
+        "datasetId": "main",
+        "x": "x",
+        "y": "y",
+        "xAxisId": "x",
+        "yAxisId": "y"
+      },
+      {
+        "id": "pie",
+        "label": "占比",
+        "type": "pie",
+        "datasetId": "main",
+        "name": "name",
+        "value": "value"
+      },
+      {
+        "id": "heat",
+        "label": "热力",
+        "type": "heatmap",
+        "datasetId": "main",
+        "x": "x",
+        "y": "y",
+        "xAxisId": "x",
+        "yAxisId": "y",
+        "value": "value"
+      },
+      {
+        "id": "gauge",
+        "label": "水位",
+        "type": "gauge",
+        "datasetId": "main",
+        "name": "name",
+        "value": "value",
+        "min": 0,
+        "max": 1
+      }
+    ],
+    "legend": {
+      "visible": false,
+      "position": "right"
+    },
+    "tooltip": {
+      "enabled": true,
+      "trigger": "axis"
+    },
+    "dataZoom": [
+      {
+        "id": "zoom",
+        "axisId": "x",
+        "start": 10,
+        "end": 90,
+        "mode": "slider"
+      }
+    ],
+    "actions": [
+      {
+        "type": "highlight",
+        "seriesId": "line",
+        "dataIndex": null
+      },
+      {
+        "type": "downplay",
+        "seriesId": "line",
+        "dataIndex": 1
+      },
+      {
+        "type": "select",
+        "seriesId": "bar",
+        "dataIndex": 0
+      },
+      {
+        "type": "unselect",
+        "seriesId": "bar",
+        "dataIndex": 0
+      },
+      {
+        "type": "dataZoom",
+        "axisId": "x",
+        "start": 20,
+        "end": 80
+      }
+    ]
+  },
+  "steps": [
+    {
+      "message": {
+        "schema": "deep-engine.chart-data-update",
+        "schemaVersion": 1,
+        "chartId": "chart-v1-golden",
+        "expectedDataRevision": 0,
+        "dataRevision": 1,
+        "datasets": [
+          {
+            "kind": "append-window",
+            "datasetId": "main",
+            "rows": [
+              [
+                "C",
+                4,
+                0.4,
+                "泵三"
+              ]
+            ],
+            "maxRows": 2
+          }
+        ]
+      },
+      "expected": {
+        "ir": {
+          "schemaVersion": 1,
+          "sourceSpecVersion": 1,
+          "id": "chart-v1-golden",
+          "datasets": [
+            {
+              "id": "main",
+              "dimensions": [
+                "x",
+                "y",
+                "value",
+                "name"
+              ],
+              "rows": [
+                [
+                  "B",
+                  2,
+                  0.8,
+                  "水箱"
+                ],
+                [
+                  "C",
+                  4,
+                  0.4,
+                  "泵三"
+                ]
+              ]
+            }
+          ],
+          "axes": [
+            {
+              "id": "x",
+              "channel": "x",
+              "scale": "category",
+              "min": null,
+              "max": null
+            },
+            {
+              "id": "y",
+              "channel": "y",
+              "scale": "linear",
+              "min": 0,
+              "max": 10
+            }
+          ],
+          "series": [
+            {
+              "id": "line",
+              "label": "line",
+              "type": "line",
+              "datasetId": "main",
+              "x": "x",
+              "y": "y",
+              "xAxisId": "x",
+              "yAxisId": "y"
+            },
+            {
+              "id": "bar",
+              "label": "bar",
+              "type": "bar",
+              "datasetId": "main",
+              "x": "x",
+              "y": "y",
+              "xAxisId": "x",
+              "yAxisId": "y"
+            },
+            {
+              "id": "scatter",
+              "label": "scatter",
+              "type": "scatter",
+              "datasetId": "main",
+              "x": "x",
+              "y": "y",
+              "xAxisId": "x",
+              "yAxisId": "y"
+            },
+            {
+              "id": "pie",
+              "label": "占比",
+              "type": "pie",
+              "datasetId": "main",
+              "name": "name",
+              "value": "value"
+            },
+            {
+              "id": "heat",
+              "label": "热力",
+              "type": "heatmap",
+              "datasetId": "main",
+              "x": "x",
+              "y": "y",
+              "xAxisId": "x",
+              "yAxisId": "y",
+              "value": "value"
+            },
+            {
+              "id": "gauge",
+              "label": "水位",
+              "type": "gauge",
+              "datasetId": "main",
+              "name": "name",
+              "value": "value",
+              "min": 0,
+              "max": 1
+            }
+          ],
+          "legend": {
+            "visible": false,
+            "position": "right"
+          },
+          "tooltip": {
+            "enabled": true,
+            "trigger": "axis"
+          },
+          "dataZoom": [
+            {
+              "id": "zoom",
+              "axisId": "x",
+              "start": 10,
+              "end": 90,
+              "mode": "slider"
+            }
+          ],
+          "actions": [
+            {
+              "type": "highlight",
+              "seriesId": "line",
+              "dataIndex": null
+            },
+            {
+              "type": "downplay",
+              "seriesId": "line",
+              "dataIndex": 0
+            },
+            {
+              "type": "dataZoom",
+              "axisId": "x",
+              "start": 20,
+              "end": 80
+            }
+          ]
+        },
+        "dataRevision": 1
+      }
+    },
+    {
+      "message": {
+        "schema": "deep-engine.chart-data-update",
+        "schemaVersion": 1,
+        "chartId": "chart-v1-golden",
+        "expectedDataRevision": 1,
+        "dataRevision": 2,
+        "datasets": [
+          {
+            "kind": "replace",
+            "datasetId": "main",
+            "rows": [
+              [
+                "D",
+                8,
+                0.8,
+                "水箱四"
+              ]
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "ir": {
+          "schemaVersion": 1,
+          "sourceSpecVersion": 1,
+          "id": "chart-v1-golden",
+          "datasets": [
+            {
+              "id": "main",
+              "dimensions": [
+                "x",
+                "y",
+                "value",
+                "name"
+              ],
+              "rows": [
+                [
+                  "D",
+                  8,
+                  0.8,
+                  "水箱四"
+                ]
+              ]
+            }
+          ],
+          "axes": [
+            {
+              "id": "x",
+              "channel": "x",
+              "scale": "category",
+              "min": null,
+              "max": null
+            },
+            {
+              "id": "y",
+              "channel": "y",
+              "scale": "linear",
+              "min": 0,
+              "max": 10
+            }
+          ],
+          "series": [
+            {
+              "id": "line",
+              "label": "line",
+              "type": "line",
+              "datasetId": "main",
+              "x": "x",
+              "y": "y",
+              "xAxisId": "x",
+              "yAxisId": "y"
+            },
+            {
+              "id": "bar",
+              "label": "bar",
+              "type": "bar",
+              "datasetId": "main",
+              "x": "x",
+              "y": "y",
+              "xAxisId": "x",
+              "yAxisId": "y"
+            },
+            {
+              "id": "scatter",
+              "label": "scatter",
+              "type": "scatter",
+              "datasetId": "main",
+              "x": "x",
+              "y": "y",
+              "xAxisId": "x",
+              "yAxisId": "y"
+            },
+            {
+              "id": "pie",
+              "label": "占比",
+              "type": "pie",
+              "datasetId": "main",
+              "name": "name",
+              "value": "value"
+            },
+            {
+              "id": "heat",
+              "label": "热力",
+              "type": "heatmap",
+              "datasetId": "main",
+              "x": "x",
+              "y": "y",
+              "xAxisId": "x",
+              "yAxisId": "y",
+              "value": "value"
+            },
+            {
+              "id": "gauge",
+              "label": "水位",
+              "type": "gauge",
+              "datasetId": "main",
+              "name": "name",
+              "value": "value",
+              "min": 0,
+              "max": 1
+            }
+          ],
+          "legend": {
+            "visible": false,
+            "position": "right"
+          },
+          "tooltip": {
+            "enabled": true,
+            "trigger": "axis"
+          },
+          "dataZoom": [
+            {
+              "id": "zoom",
+              "axisId": "x",
+              "start": 10,
+              "end": 90,
+              "mode": "slider"
+            }
+          ],
+          "actions": [
+            {
+              "type": "highlight",
+              "seriesId": "line",
+              "dataIndex": null
+            },
+            {
+              "type": "dataZoom",
+              "axisId": "x",
+              "start": 20,
+              "end": 80
+            }
+          ]
+        },
+        "dataRevision": 2
+      }
+    }
+  ]
+}

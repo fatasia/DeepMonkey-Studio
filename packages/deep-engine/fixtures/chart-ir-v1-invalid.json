@@ -1,0 +1,14 @@
+[
+  { "name": "reserved-chart-id", "pointer": "/id", "value": "constructor" },
+  { "name": "non-ascii-chart-id", "pointer": "/id", "value": "图表" },
+  { "name": "blank-series-label", "pointer": "/series/0/label", "value": "  " },
+  { "name": "non-numeric-linear-x", "pointer": "/axes/0/scale", "value": "linear" },
+  { "name": "non-positive-log-y", "pointer": "/datasets/0/rows/0/1", "value": 0, "logY": true },
+  { "name": "heatmap-non-numeric-value", "seriesOnly": 4, "pointer": "/datasets/0/rows/0/2", "value": "bad" },
+  { "name": "heatmap-wrong-axis-channel", "seriesOnly": 4, "pointer": "/series/0/xAxisId", "value": "y" },
+  { "name": "heatmap-null-required-dimension", "seriesOnly": 4, "pointer": "/series/0/value", "value": null },
+  { "name": "line-pie-field", "pointer": "/series/0/name", "value": "name" },
+  { "name": "line-null-pie-field", "pointer": "/series/0/name", "value": null },
+  { "name": "pie-cartesian-field", "pointer": "/series/3/x", "value": "x" },
+  { "name": "pie-gauge-field", "pointer": "/series/3/min", "value": 0 }
+]

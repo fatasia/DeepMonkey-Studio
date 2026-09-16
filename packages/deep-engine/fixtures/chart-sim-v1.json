@@ -1,0 +1,13 @@
+{
+  "schema": "deep-engine.chart-sim",
+  "schemaVersion": 1,
+  "id": "offline-pump-sim",
+  "chartId": "chart-v1-golden",
+  "datasetId": "main",
+  "dimensions": ["x", "y", "value", "name"],
+  "rows": [["C", 3, 0.3, "泵三"], ["D", 4, 0.4, "水箱四"], ["E", 5, 0.5, "泵五"]],
+  "seed": 1,
+  "intervalMs": 100,
+  "startTimeMs": 1767225600000,
+  "maxRows": 3
+}

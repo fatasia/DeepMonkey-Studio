@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "sourceSpecVersion": 1,
+  "id": "chart-v1-golden",
+  "datasets": [
+    {
+      "id": "main",
+      "dimensions": [
+        "x",
+        "y",
+        "value",
+        "name"
+      ],
+      "rows": [
+        [
+          "A",
+          1,
+          0.2,
+          "泵"
+        ],
+        [
+          "B",
+          2,
+          0.8,
+          "水箱"
+        ]
+      ]
+    }
+  ],
+  "axes": [
+    {
+      "id": "x",
+      "channel": "x",
+      "scale": "category",
+      "min": null,
+      "max": null
+    },
+    {
+      "id": "y",
+      "channel": "y",
+      "scale": "linear",
+      "min": 0,
+      "max": 10
+    }
+  ],
+  "series": [
+    {
+      "id": "line",
+      "label": "line",
+      "type": "line",
+      "datasetId": "main",
+      "x": "x",
+      "y": "y",
+      "xAxisId": "x",
+      "yAxisId": "y"
+    },
+    {
+      "id": "bar",
+      "label": "bar",
+      "type": "bar",
+      "datasetId": "main",
+      "x": "x",
+      "y": "y",
+      "xAxisId": "x",
+      "yAxisId": "y"
+    },
+    {
+      "id": "scatter",
+      "label": "scatter",
+      "type": "scatter",
+      "datasetId": "main",
+      "x": "x",
+      "y": "y",
+      "xAxisId": "x",
+      "yAxisId": "y"
+    },
+    {
+      "id": "pie",
+      "label": "占比",
+      "type": "pie",
+      "datasetId": "main",
+      "name": "name",
+      "value": "value"
+    },
+    {
+      "id": "heat",
+      "label": "热力",
+      "type": "heatmap",
+      "datasetId": "main",
+      "x": "x",
+      "y": "y",
+      "xAxisId": "x",
+      "yAxisId": "y",
+      "value": "value"
+    },
+    {
+      "id": "gauge",
+      "label": "水位",
+      "type": "gauge",
+      "datasetId": "main",
+      "name": "name",
+      "value": "value",
+      "min": 0,
+      "max": 1
+    }
+  ],
+  "legend": {
+    "visible": false,
+    "position": "right"
+  },
+  "tooltip": {
+    "enabled": true,
+    "trigger": "axis"
+  },
+  "dataZoom": [
+    {
+      "id": "zoom",
+      "axisId": "x",
+      "start": 10,
+      "end": 90,
+      "mode": "slider"
+    }
+  ],
+  "actions": [
+    {
+      "type": "highlight",
+      "seriesId": "line",
+      "dataIndex": null
+    },
+    {
+      "type": "downplay",
+      "seriesId": "line",
+      "dataIndex": 1
+    },
+    {
+      "type": "select",
+      "seriesId": "bar",
+      "dataIndex": 0
+    },
+    {
+      "type": "unselect",
+      "seriesId": "bar",
+      "dataIndex": 0
+    },
+    {
+      "type": "dataZoom",
+      "axisId": "x",
+      "start": 20,
+      "end": 80
+    }
+  ]
+}
