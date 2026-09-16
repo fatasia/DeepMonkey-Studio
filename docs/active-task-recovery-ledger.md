@@ -1,5 +1,6 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：C4 Dashboard 权威能力报告提交 `912fde1`。source/compile/target 三 hash 分别绑定冻结 authority+manifest、服务器编译器身份+配置、实际产物 bytes；窗口证据复核 revision、设备、fixture 与字体闭包，浏览器自报不能放行对象。冻结、能力和 Application 回归共 39 项通过；正式 candidate/route/download 接线仍待 C5。
 - 已完成：WebGPU Dashboard 组合宿主提交 `18689fa`。真实 C2 包在浏览器 WebGPU 候选中成功 committed，tick generation 1→2，diagnostics 与 console warning/error 均为空；截图闭环发现并修复 clip 输出共享顶点被重复投影导致的巨大三角，修复后 KPI、表格与 7/9 双柱正确显示。
 - 已完成：六类图表 Web/Native 几何对照提交 `ae22419`，36 个 Native reference cases、42 项 Web 测试和严格类型通过。真实 Native GPU 复跑为 206400 个着色像素；7/9 两柱共享零基线，高度比与 7/9 误差小于一个栅格行。
 - 已完成：C3 纯发布冻结合同提交 `654d4e7`，冻结作者、绑定、字体和图片身份，并在候选准备前后与提交前复核 stale/cancel；专项加 Application 回归 33 项、API 类型通过。正式 store/routes/下载接线仍待办，当前顺序进入 C4 三种 hash 与权威证据。

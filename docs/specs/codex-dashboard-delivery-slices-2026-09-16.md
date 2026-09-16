@@ -76,6 +76,8 @@
 
 **状态：本轮待办。归属：P0-04。**
 
+2026-09-16 进展：已提交 Dashboard 专用证据合同，以 C3 冻结候选作为唯一 authority/闭包；sourceSemanticHash 绑定 authority 与 freeze manifest，compileGraphHash 绑定服务器 compiler 身份与配置，targetArtifactHash 取实际 artifact bytes。Native 窗口收据必须同时匹配 authority/revision、三 hash、设备指纹、fixture 与冻结字体 hash/face；未被窗口实测覆盖的编译对象只能 degraded。39 项冻结/能力/Application 回归及 API 类型检查通过。正式候选服务、路由、存储 manifest 和下载接线仍待 C5，C4 全项保持待办。
+
 将 sourceSemanticHash、compileGraphHash、targetArtifactHash 绑定真实发布 manifest、资源闭包与可信平台证据。逐对象区分 supported/degraded/blocked/webview-only；保留字段级缺口与内容覆盖，支持范围必须匹配 fixture、设备和字体身份。
 
 关键源路径：`compileDashboardContent.ts`、`apps/web/src/delivery/scenePublicationCompatibility.ts`、`packages/contracts/src/scenePublicationCompatibility.ts`、`apps/api/src/nativeSceneCandidateService.ts`、`nativeSceneWindowVerifier.ts`。
