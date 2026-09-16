@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard content and portable packaging
 
+- Resolve frozen Dashboard inputs from published applications, project image assets, saved datasets and pipelines. Reject source changes during compilation.
+
 - Add deployment-configured ZIP downloads with candidate scope and expiry checks after compression. Bind text producer evidence to emitted atlas bytes for native window verification.
 
 - Compile frozen Dashboard resources and data through the existing Native text and image producers, preserving font faces and explicit fallback order.

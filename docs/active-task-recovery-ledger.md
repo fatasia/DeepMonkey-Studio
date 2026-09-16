@@ -1,5 +1,7 @@
 ### 2026-09-16 全量目标启动与最大并行（Codex）
 
+- 已完成：生产 Dashboard closure 接通发布文档、项目图片、已保存数据集与管道，复用现有查询服务；真实本地 HTTP 数据读取、管道运行及冻结后数据变化拒绝已测，主线相关 45 项与 API 类型通过。字体元数据、继承文字样式与 KPI/表格布局仍待补，direct/semantic/sample 数据源未纳入此适配。原生窗口回执并行实现中。
+
 - 已完成：ZIP 下载路由复用候选鉴权、项目域与到期/撤销复核，压缩后重查，部署端固定 EXE 路径；主线相关 API 43 项通过。编译窗口证据新增作者节点→运行节点→实际 atlas 绑定，校验 producer 像素 hash 与实际使用字体，并以独立副本交给窗口验证器；实际 producer 6 项、能力报告 10 项、Web 内容 15 项、Web/API 类型及治理通过。API 启动注册和真实绘制回执合流仍待完成。
 
 - 已完成：真实服务端 Dashboard 内容编译器与 Windows portable ZIP 子片合入主线。冻结 manifest 贯穿编译，复用 Native 字体光栅化与 sharp 图片解码；主线实际 producer 5 项（无跳过）、相关 API 21 项、API 类型与仓库治理通过。ZIP 含原字节运行包、指定 EXE、许可证和 PowerShell 启动器，实际 PowerShell 启动测试覆盖空格路径及参数/篡改拒绝。测试字体仅使用本机文件，不随交付再分发。详见 [编译接线](specs/dashboard-content-compiler-wiring-2026-09-16.md) 与 [portable ZIP](specs/dashboard-portable-zip-2026-09-16.md)。生产资源闭包、逐对象窗口回执和正式 ZIP 下载仍在接线，C1～C5 保留待验收。
