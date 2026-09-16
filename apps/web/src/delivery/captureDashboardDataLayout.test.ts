@@ -8,11 +8,13 @@ class Rect {
 }
 const DOMRect = Rect as typeof globalThis.DOMRect;
 class TestElement {
+  readonly tagName: string;
   parentElement: TestElement | null = null;
   children: TestElement[] = [];
   firstChild: { nodeType: number; parentElement: TestElement } | null = null;
   private content = "";
   clientLeft = 0; clientTop = 0; clientWidth = 0; clientHeight = 0;
+  constructor(tag = "div") { this.tagName = tag.toUpperCase(); }
   get ownerDocument() { return document; }
   get isConnected(): boolean { return this === body || Boolean(this.parentElement?.isConnected); }
   set textContent(value: string) { this.content = value; this.firstChild = { nodeType: 3, parentElement: this }; }
@@ -29,7 +31,7 @@ const body = new TestElement();
 const window = { getComputedStyle: (_element: Element): CSSStyleDeclaration => base as unknown as CSSStyleDeclaration };
 const document = {
   body, defaultView: window, fonts: { status: "loaded" },
-  createElement: (_tag: string) => new TestElement() as unknown as HTMLElement,
+  createElement: (tag: string) => new TestElement(tag) as unknown as HTMLElement,
   createRange: (): Range => {
     const range = { startContainer: null as Node | null, endContainer: null as Node | null, collapsed: false,
       setStart(node: Node, _offset: number) { this.startContainer = node; },
@@ -170,6 +172,47 @@ describe("dashboard measured geometry capture", () => {
     const { root, text, styles, options } = setup(); styles.set(text, { whiteSpace });
     expect(captureDashboardDataLayout(root, options).textBoxes[0]?.wrap)
       .toBe(["nowrap", "pre"].includes(whiteSpace) ? "none" : "word-or-glyph");
+  });
+  const buttonStyles = { borderTopWidth: "1px", borderRightWidth: "1px", borderBottomWidth: "1px", borderLeftWidth: "1px",
+    borderTopColor: "rgb(0, 0, 0)", borderRightColor: "rgb(0, 0, 0)", borderBottomColor: "rgb(0, 0, 0)", borderLeftColor: "rgb(0, 0, 0)",
+    borderTopStyle: "solid", borderRightStyle: "solid", borderBottomStyle: "solid", borderLeftStyle: "solid",
+    borderTopLeftRadius: "4px", borderTopRightRadius: "4px", borderBottomRightRadius: "4px", borderBottomLeftRadius: "4px",
+    backgroundColor: "rgb(9, 9, 9)", opacity: "0.4", textShadow: "none", backgroundClip: "border-box" };
+  function toolbarButton(name: string, tool: "csv" | "excel", x: number) {
+    const button = document.createElement("button");
+    button.textContent = name; rect(button, x, 10, 36, 18);
+    return { button, binding: { element: button, role: { kind: "tool" as const, tool } } };
+  }  it("captures export toolbar buttons as isolated tool groups with distinct role identities", () => {
+    const { root, styles, options } = setup();
+    const csv = toolbarButton("CSV", "csv", 120), excel = toolbarButton("Excel", "excel", 160);
+    root.append(csv.button); root.append(excel.button);
+    styles.set(csv.button, buttonStyles);
+    styles.set(excel.button, { ...buttonStyles, borderTopLeftRadius: "6px", borderTopRightRadius: "6px",
+      borderBottomRightRadius: "6px", borderBottomLeftRadius: "6px" });
+    const result = captureDashboardDataLayout(root, { ...options, text: [...options.text, csv.binding, excel.binding] });
+    expect(result.textBoxes[1]?.buttonGroup).toEqual({ rect: [100, 0, 36, 18], radius: 4, borderWidth: 1, opacity: 0.4,
+      background: [9, 9, 9, 255], border: [0, 0, 0, 255] });
+    expect(result.textBoxes[2]?.buttonGroup).toMatchObject({ radius: 6, rect: [140, 0, 36, 18] });
+    expect(result.textBoxes[2]?.role).toEqual({ kind: "tool", tool: "excel" });
+    const cloned = toolbarButton("Excel", "csv", 160);
+    root.append(cloned.button); styles.set(cloned.button, buttonStyles);
+    expect(() => captureDashboardDataLayout(root, { ...options, text: [...options.text, csv.binding, cloned.binding] }))
+      .toThrow("Duplicate");
+  });
+  it("applies the hidden, nested-content and single-run discipline to tool roles", () => {
+    const { root, styles, options } = setup();
+    const csv = toolbarButton("CSV", "csv", 120);
+    root.append(csv.button); styles.set(csv.button, buttonStyles);
+    const optionsWithTool = { ...options, text: [...options.text, csv.binding] };
+    styles.set(csv.button, { ...buttonStyles, display: "none" });
+    expect(() => captureDashboardDataLayout(root, optionsWithTool)).toThrow("Hidden or translucent");
+    styles.set(csv.button, buttonStyles);
+    const badge = document.createElement("span"); badge.textContent = "!"; csv.button.append(badge);
+    expect(() => captureDashboardDataLayout(root, optionsWithTool)).toThrow("single-text");
+    badge.remove();
+    const range = document.createRange(); range.selectNodeContents(csv.button.firstChild!); range.collapse();
+    expect(() => captureDashboardDataLayout(root, { ...optionsWithTool, text: [...options.text, { ...csv.binding, range }] }))
+      .toThrow("Range");
   });
   it("refuses whitespace collapse and unsupported CSS breaking instead of changing text", () => {
     const style = base as unknown as CSSStyleDeclaration;

@@ -62,7 +62,8 @@ it("compiles actual table pager roles through isolated atlas output and replays 
   const input = { ...f.input, data: { kpi: { ...data, layout: { textBoxes, backgrounds: [] } } } };
   const result = await compileDashboardRasterContent(input, f.host);
   expect(result.capabilityReport.contentCompiled).toBe(1);
-  expect(result.capabilityReport.objects[0]!.reasons).toContain("CSV/Excel export toolbar appearance and download actions are not included in the measured table contract");
+  expect(result.capabilityReport.objects[0]!.reasons).toContain("CSV/Excel export toolbar buttons have a static appearance capture contract; the production widget is not yet wired into the measured table view");
+  expect(result.capabilityReport.objects[0]!.reasons).toContain("CSV/Excel export download actions are not included in the measured table contract");
   const composed = result.producerEvidence.filter(item => item.composition);
   expect(composed).toHaveLength(2);
   for (const receipt of composed) {

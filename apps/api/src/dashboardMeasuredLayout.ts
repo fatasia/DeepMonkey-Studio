@@ -214,8 +214,9 @@ function assertTableState(table: DashboardMeasuredLayoutRecord["table"]): void {
   }
 }
 
-const ROLES = new Set(["title", "value", "unit", "footer", "previous", "next", "row-number-header", "header", "sort", "total", "cell", "row-number"]);
+const ROLES = new Set(["title", "value", "unit", "footer", "previous", "next", "row-number-header", "header", "sort", "total", "cell", "row-number", "tool"]);
 const PLAIN_ROLES = new Set(["title", "value", "unit", "footer", "previous", "next", "row-number-header"]);
+const TOOLS = new Set(["csv", "excel"]);
 const COLUMN_ROLES = new Set(["header", "sort", "total"]);
 const WRAPS = new Set(["none", "word", "glyph", "word-or-glyph"]);
 const WHITE_SPACES = new Set(["normal", "nowrap", "pre", "pre-wrap"]);
@@ -236,9 +237,11 @@ function assertMeasuredLayoutShape(layout: DashboardMeasuredLayout): void {
     }
   }
   layout.textBoxes.forEach((box, index) => {
-    const role = box.role as { kind?: unknown; row?: unknown; column?: unknown };
+    const role = box.role as { kind?: unknown; row?: unknown; column?: unknown; tool?: unknown };
     if (typeof role.kind !== "string" || !ROLES.has(role.kind)) throw new Error(`Measured text box ${index} has an unknown role`);
-    if (PLAIN_ROLES.has(role.kind) && (role.row !== undefined || role.column !== undefined)) throw new Error(`Measured text box ${index} carries unexpected role fields`);
+    if (role.kind === "tool" && !TOOLS.has(role.tool as string)) throw new Error(`Measured text box ${index} has an unknown export tool`);
+    if ((PLAIN_ROLES.has(role.kind) || role.kind === "tool") && (role.row !== undefined || role.column !== undefined))
+      throw new Error(`Measured text box ${index} carries unexpected role fields`);
     if (COLUMN_ROLES.has(role.kind) && (typeof role.column !== "string" || !role.column)) throw new Error(`Measured text box ${index} is missing its column`);
     if ((role.kind === "cell" || role.kind === "row-number") && (!Number.isSafeInteger(role.row) || (role.row as number) < 0)) {
       throw new Error(`Measured text box ${index} has an invalid row`);

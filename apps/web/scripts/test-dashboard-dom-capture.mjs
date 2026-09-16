@@ -37,6 +37,10 @@ try {
   const table = await page.evaluate(() => globalThis.captureWidget("table"));
   assert.equal(table.table.page, 0); assert.ok(table.layout.paint.length > table.layout.textBoxes.length);
   assert.ok(table.layout.textBoxes.some(box => box.role.kind === "cell" && box.role.column === "count"));
+  const tools = table.layout.textBoxes.filter(box => box.role.kind === "tool");
+  assert.deepEqual(tools.map(box => box.role.tool), ["csv", "excel"]);
+  assert.ok(tools.every(box => box.buttonGroup && box.buttonGroup.rect[2] > 0 && box.buttonGroup.rect[3] > 0),
+    "real export toolbar must capture a static button group");
   await page.locator('[data-capture-role="header"][data-capture-column="count"]').first().click();
   const sorted = await page.evaluate(() => globalThis.captureWidget("table"));
   assert.deepEqual(sorted.table.sort, { column: "count", direction: "asc" });

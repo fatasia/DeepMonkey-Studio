@@ -1633,3 +1633,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 验证:三项合计 **44 项新测试**;`cargo check --all-targets` **0 warning**;`cargo test --lib` **204 通过 / 0 失败**;体量门禁 4348 文件通过(新文件最大 588 行 < 800 线)。全量 Native 回归见 `ds-full5`。
 - 边界(诚实):三项均为纯 CPU 合同切片,**未接产品路径、未做浏览器/GPU 验证**;P1-19 未内嵌字体(再分发权未决)且未做子集化与跨机器实测;P1-20 的 RTL/DPI 与 P1-21 的真实异步/签名扩展显式排除。
 - [spec](specs/deep2d-font-capability-2026-09-16.md)、[spec](specs/deep2d-ime-and-behavior-ir-2026-09-16.md)
+
+### 2026-09-17 交接#3 CSV/Excel 工具栏静态捕获合同(GLM+子代理)
+
+- 已完成:`DashboardDataTextRole` 新增 `{kind:"tool",tool:"csv"|"excel"}`;捕获链(captureDashboardDataLayout 白名单+identity 含 tool+isolatedButton 复用 buttonGroup;captureRenderedDashboardData 解析 data-capture-tool,backgrounds 排除 tool 防双重绘制);API 测量布局校验同步 ROLES/TOOLS fail-closed;真实工具栏 DashboardReportExport 按钮携带捕获属性;DOM 捕获脚本新增真实组件断言(csv/excel 双 buttonGroup)。导出动作 reason 拆分保持明确 deferred;golden 实测再生零 diff。
+- 验证:真实浏览器 DOM 捕获通过;web 聚焦 4 文件 40 用例、api 14 用例全绿;双包 typecheck 通过。
+- 边界(如实):消费端(rasterDataContent)按任务收窄未接线,tool 流入冻结数据时 degraded 不崩溃;Native 确认不解析 role 枚举,无需改动。

@@ -96,7 +96,8 @@ export async function rasterNode(node: DashboardDataWidgetNode, id: string, revi
       compiledFields.push("widget.title", "widget.unit", "widget.report", "widget.analysis");
       reasons.push("Only the measured static data view is compiled; filtering, paging, sorting, row actions and export remain deferred",
         "Measured styles retain frozen Web locale/font metrics; cross-host CSS/OpenType equivalence is not asserted");
-      if (node.widget.type === "table") reasons.push("CSV/Excel export toolbar appearance and download actions are not included in the measured table contract");
+      if (node.widget.type === "table") reasons.push("CSV/Excel export toolbar buttons have a static appearance capture contract; the production widget is not yet wired into the measured table view",
+        "CSV/Excel export download actions are not included in the measured table contract");
     } catch (error) {
       if (!(error instanceof DashboardDataUnavailable)) throw error;
       contentCompiled = false; reasons.push(error.message);

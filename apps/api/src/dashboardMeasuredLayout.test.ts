@@ -236,6 +236,22 @@ describe("dashboard measured layout", () => {
       .rejects.toThrow(/Only table widgets/);
   });
 
+  it("accepts the tool export-button role and fails closed on unknown tools or stray fields", async () => {
+    const frozen = await candidate();
+    const toolLayout = measuredLayout();
+    (toolLayout.textBoxes[0] as { role: unknown }).role = { kind: "tool", tool: "csv" };
+    const record = await captureDashboardMeasuredLayout(captureOptions({ candidate: frozen,
+      host: host({ capture: vi.fn(async () => captureOf(toolLayout)) }) }));
+    expect(record.layout.textBoxes[0]!.role).toEqual({ kind: "tool", tool: "csv" });
+    expect(() => verifyDashboardMeasuredLayout(record, frozen)).not.toThrow();
+    for (const role of [{ kind: "tool", tool: "pdf" }, { kind: "tool", tool: "excel", column: "x" }]) {
+      const invalid = measuredLayout();
+      (invalid.textBoxes[0] as { role: unknown }).role = role;
+      await expect(captureDashboardMeasuredLayout(captureOptions({ candidate: frozen,
+        host: host({ capture: vi.fn(async () => captureOf(invalid)) }) }))).rejects.toThrow(/export tool|unexpected role fields/);
+    }
+  });
+
   it("rejects capture hosts with invalid deployment identity", async () => {
     const frozen = await candidate();
     await expect(captureDashboardMeasuredLayout(captureOptions({ candidate: frozen,

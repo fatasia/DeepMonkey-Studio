@@ -4,7 +4,9 @@ import type { DashboardRasterTextStyle } from "./dashboardRasterTypes";
 export type DashboardDataTextRole = { readonly kind: "title" | "value" | "unit" | "footer" | "previous" | "next" | "row-number-header" }
   | { readonly kind: "header" | "sort" | "total"; readonly column: string }
   | { readonly kind: "cell"; readonly row: number; readonly column: string }
-  | { readonly kind: "row-number"; readonly row: number };
+  | { readonly kind: "row-number"; readonly row: number }
+  /** Static export-button appearance only; the download action stays outside the measured contract. */
+  | { readonly kind: "tool"; readonly tool: "csv" | "excel" };
 export interface DashboardDataTextBox {
   /** Single-text pagination control, isolated before applying its CSS group opacity. */
   readonly buttonGroup?: DashboardButtonGroup;

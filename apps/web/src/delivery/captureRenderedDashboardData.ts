@@ -29,7 +29,7 @@ export function captureRenderedDashboardData(root: HTMLElement, options: Rendere
   }
   const backgrounds = [root, ...root.querySelectorAll<HTMLElement>("[data-capture-background]")]
     .filter(element => element.hasAttribute("data-capture-background") && visible(element)
-      && !["previous", "next"].includes(element.dataset.captureRole ?? ""));
+      && !["previous", "next", "tool"].includes(element.dataset.captureRole ?? ""));
   if (kind === "value") {
     if (!text.some(binding => binding.role.kind === "value")) throw new Error("Value capture is missing its numeric text");
     return { layout: captureDashboardDataLayout(root, { ...options, text, backgrounds }) };
@@ -54,6 +54,11 @@ function role(element: HTMLElement): DashboardDataTextRole {
   if (kind === "cell") return { kind, row, column: column! };
   if (kind === "row-number") return { kind, row };
   if (kind === "header" || kind === "sort" || kind === "total") return { kind, column: column! };
+  if (kind === "tool") {
+    const tool = element.dataset.captureTool;
+    if (tool !== "csv" && tool !== "excel") throw new Error("Unknown rendered export tool capture role");
+    return { kind, tool };
+  }
   if (kind === "title" || kind === "value" || kind === "unit" || kind === "footer" || kind === "previous" || kind === "next" || kind === "row-number-header") return { kind };
   throw new Error("Unknown rendered data capture role");
 }

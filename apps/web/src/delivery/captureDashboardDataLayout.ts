@@ -74,15 +74,16 @@ export function captureDashboardDataLayout(root: HTMLElement, options: Dashboard
   const identities = new Set<string>();
   const textBoxes: DashboardDataTextBox[] = options.text.map(binding => {
     const role = binding.role;
-    if (!["title", "value", "unit", "footer", "previous", "next", "row-number-header", "header", "sort", "total", "cell", "row-number"].includes(role.kind)
+    if (!["title", "value", "unit", "footer", "previous", "next", "row-number-header", "header", "sort", "total", "cell", "row-number", "tool"].includes(role.kind)
       || ("row" in role && (!Number.isSafeInteger(role.row) || role.row < 0))
-      || ("column" in role && (typeof role.column !== "string" || !role.column)))
+      || ("column" in role && (typeof role.column !== "string" || !role.column))
+      || (role.kind === "tool" && role.tool !== "csv" && role.tool !== "excel"))
       throw new Error("Invalid semantic text capture role");
     const identity = JSON.stringify([binding.role.kind, "row" in binding.role ? binding.role.row : null,
-      "column" in binding.role ? binding.role.column : null]);
+      "column" in binding.role ? binding.role.column : null, "tool" in binding.role ? binding.role.tool : null]);
     if (identities.has(identity)) throw new Error("Duplicate text capture role");
     identities.add(identity);
-    const isolatedButton = (role.kind === "previous" || role.kind === "next") && binding.element.tagName === "BUTTON";
+    const isolatedButton = (role.kind === "previous" || role.kind === "next" || role.kind === "tool") && binding.element.tagName === "BUTTON";
     const { style, clip } = inspect(binding.element, isolatedButton);
     const buttonGroup = isolatedButton ? captureDashboardButtonGroup(binding.element, style, local(binding.element.getBoundingClientRect())) : undefined;
     if (binding.range && (binding.range.collapsed || binding.range.startContainer !== binding.range.endContainer

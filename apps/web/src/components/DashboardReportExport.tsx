@@ -24,8 +24,8 @@ export function DashboardReportExport({ report, title, locale }: { report: Dashb
     } finally { running.current = false; if (mounted.current) setBusy(false); }
   }
   return <span onClick={event => event.stopPropagation()}>
-    <button type="button" disabled={busy} title={tr(locale, "导出 CSV", "Export CSV")} onClick={() => void download("csv")}>CSV</button>
-    <button type="button" disabled={busy} title={tr(locale, "导出 Excel", "Export Excel")} onClick={() => void download("xlsx")}>{busy ? "…" : "Excel"}</button>
+    <button type="button" data-capture-role="tool" data-capture-tool="csv" disabled={busy} title={tr(locale, "导出 CSV", "Export CSV")} onClick={() => void download("csv")}>CSV</button>
+    <button type="button" data-capture-role="tool" data-capture-tool="excel" disabled={busy} title={tr(locale, "导出 Excel", "Export Excel")} onClick={() => void download("xlsx")}>{busy ? "…" : "Excel"}</button>
     {message && <span role={error ? "alert" : "status"} style={{ color: error ? "var(--danger)" : "var(--text-muted)", overflowWrap: "anywhere" }}>{message}</span>}
   </span>;
 }
