@@ -7,6 +7,10 @@ mod validate;
 mod validate_geometry;
 mod validate_texture;
 
+#[cfg(test)]
+#[path = "contract_color_stream_tests.rs"]
+mod color_stream_tests;
+
 use std::{fs::File, io::Read, path::Path};
 
 pub use lod::DEFAULT_LOD_HYSTERESIS_RATIO;

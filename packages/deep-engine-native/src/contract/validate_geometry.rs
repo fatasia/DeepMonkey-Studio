@@ -47,6 +47,14 @@ pub(super) fn validate_geometries(
                 geometry.id
             ));
         }
+        if let Some(colors) = &geometry.colors
+            && (colors.len() != vertex_count * 4 || colors.iter().any(|value| !value.is_finite()))
+        {
+            return Err(format!(
+                "geometry {} has an invalid color layout",
+                geometry.id
+            ));
+        }
         if geometry
             .indices
             .iter()
@@ -87,6 +95,12 @@ pub(super) fn validate_geometries(
             .and_then(|sum| {
                 geometry
                     .tangents
+                    .as_ref()
+                    .map_or(Some(sum), |values| sum.checked_add(values.len() * 4))
+            })
+            .and_then(|sum| {
+                geometry
+                    .colors
                     .as_ref()
                     .map_or(Some(sum), |values| sum.checked_add(values.len() * 4))
             })

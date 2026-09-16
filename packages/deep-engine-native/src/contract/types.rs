@@ -40,6 +40,8 @@ pub struct GeometryResource {
     pub uv1: Option<Vec<f32>>,
     #[serde(default, deserialize_with = "present")]
     pub tangents: Option<Vec<f32>>,
+    #[serde(default, deserialize_with = "present")]
+    pub colors: Option<Vec<f32>>,
     pub indices: Vec<u32>,
 }
 

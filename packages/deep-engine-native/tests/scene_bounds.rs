@@ -64,6 +64,7 @@ fn referenced_lod_indices_expand_bounds_but_unreferenced_vertices_do_not() {
         uv0: None,
         uv1: None,
         tangents: None,
+        colors: None,
         indices: vec![0, 1, 0],
     });
     let bounds = prepare_scene_bounds(&packet).unwrap().unwrap();

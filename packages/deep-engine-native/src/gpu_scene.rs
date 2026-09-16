@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bytemuck::cast_slice;
 use deep_engine_native::{
     contract::{AlphaMode, GeometryResource, RenderPacket},
-    mesh_abi::{GEOMETRY_VERTEX_FLOATS, TANGENT_VERTEX_FLOATS},
+    mesh_abi::{GEOMETRY_VERTEX_FLOATS, TANGENT_VERTEX_FLOATS, pack_color_vertices},
     pbr_texture::{PreparedPbrResources, PreparedPbrSummary},
     scene::{DrawBatch, PACKED_INSTANCE_FLOATS, PreparedScene, SceneAlphaSummary, alpha_summary},
 };
@@ -18,6 +18,10 @@ use crate::{
 pub struct GpuGeometry {
     pub vertex_buffer: wgpu::Buffer,
     pub tangent_buffer: Option<wgpu::Buffer>,
+    /// 可选线性 RGBA 顶点色；无颜色几何为 `None`，旧上传序列逐字节不变。
+    /// 渲染管线的绑定与 shader 采样由颜色变体切片接入（Web 侧已按 slot4 绑定）。
+    #[allow(dead_code)]
+    pub color_buffer: Option<wgpu::Buffer>,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
 }
@@ -208,6 +212,14 @@ impl GpuGeometry {
                 ]);
             }
         }
+        let color_buffer =
+            pack_color_vertices(geometry.colors.as_deref(), vertex_count).map(|colors| {
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Deep Engine native geometry colors"),
+                    contents: cast_slice(&colors),
+                    usage: wgpu::BufferUsages::VERTEX,
+                })
+            });
         Self {
             vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Deep Engine native geometry vertices"),
@@ -221,6 +233,7 @@ impl GpuGeometry {
                     usage: wgpu::BufferUsages::VERTEX,
                 })
             }),
+            color_buffer,
             index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Deep Engine native geometry indices"),
                 contents: cast_slice(&geometry.indices),

@@ -20,6 +20,11 @@ pub const GEOMETRY_VERTEX_BYTES: wgpu::BufferAddress =
 pub const TANGENT_VERTEX_FLOATS: usize = 4;
 pub const TANGENT_VERTEX_BYTES: wgpu::BufferAddress =
     (TANGENT_VERTEX_FLOATS * size_of::<f32>()) as wgpu::BufferAddress;
+/// DE26/C02 冻结的可选顶点色流：线性 RGBA f32，独立 vertex buffer；
+/// 无颜色几何不产生该 buffer，旧 40B 顶点流布局逐字节不变。
+pub const COLOR_VERTEX_FLOATS: usize = 4;
+pub const COLOR_VERTEX_BYTES: wgpu::BufferAddress =
+    (COLOR_VERTEX_FLOATS * size_of::<f32>()) as wgpu::BufferAddress;
 pub const PACKED_INSTANCE_FLOATS: usize = 36;
 pub const PACKED_INSTANCE_BYTES: wgpu::BufferAddress =
     (PACKED_INSTANCE_FLOATS * size_of::<f32>()) as wgpu::BufferAddress;
@@ -34,6 +39,24 @@ pub const INSTANCE_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 9] = wgpu::vertex_
 ];
 pub const TANGENT_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 1] =
     wgpu::vertex_attr_array![11 => Float32x4];
+pub const COLOR_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 1] =
+    wgpu::vertex_attr_array![16 => Float32x4];
+
+/// 把可选颜色流打包为独立顶点 buffer 内容。无颜色流返回 `None`——调用方不创建
+/// 颜色 buffer，旧无颜色包的 GPU 上传序列与旧 ABI 逐字节一致。
+pub fn pack_color_vertices(
+    colors: Option<&[f32]>,
+    vertex_count: usize,
+) -> Option<Vec<[f32; COLOR_VERTEX_FLOATS]>> {
+    let colors = colors?;
+    debug_assert_eq!(colors.len(), vertex_count * COLOR_VERTEX_FLOATS);
+    Some(
+        colors
+            .chunks_exact(COLOR_VERTEX_FLOATS)
+            .map(|color| [color[0], color[1], color[2], color[3]])
+            .collect(),
+    )
+}
 
 pub fn frame_uniform(aspect: f32, yaw: f32) -> FrameUniform {
     let aspect = aspect.max(0.01);
@@ -140,4 +163,44 @@ fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
 
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        COLOR_VERTEX_ATTRIBUTES, COLOR_VERTEX_BYTES, COLOR_VERTEX_FLOATS, pack_color_vertices,
+    };
+    use wgpu::VertexFormat;
+
+    #[test]
+    fn color_stream_abi_is_frozen() {
+        assert_eq!(COLOR_VERTEX_FLOATS, 4);
+        assert_eq!(COLOR_VERTEX_BYTES, 16);
+        assert_eq!(COLOR_VERTEX_ATTRIBUTES.len(), 1);
+        assert_eq!(COLOR_VERTEX_ATTRIBUTES[0].shader_location, 16);
+        assert_eq!(COLOR_VERTEX_ATTRIBUTES[0].format, VertexFormat::Float32x4);
+        assert_eq!(COLOR_VERTEX_ATTRIBUTES[0].offset, 0);
+    }
+
+    #[test]
+    fn absent_color_stream_stays_absent() {
+        assert!(pack_color_vertices(None, 3).is_none());
+    }
+
+    #[test]
+    fn color_stream_roundtrips_per_vertex() {
+        let colors = vec![
+            0.0_f32, 0.25, 0.5, 1.0, 1.0, 0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 0.25,
+        ];
+        let packed = pack_color_vertices(Some(&colors), 3).expect("colors must pack");
+        assert_eq!(packed.len(), 3);
+        assert_eq!(packed[0], [0.0, 0.25, 0.5, 1.0]);
+        assert_eq!(packed[1], [1.0, 0.0, 0.0, 0.5]);
+        assert_eq!(packed[2], [0.5, 1.0, 0.0, 0.25]);
+        let bytes: Vec<u8> = packed
+            .iter()
+            .flat_map(|c| c.iter().flat_map(|v| v.to_le_bytes()))
+            .collect();
+        assert_eq!(bytes.len(), 3 * 16);
+    }
 }

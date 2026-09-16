@@ -199,6 +199,7 @@ fn non_rendering_metadata_is_ignored() {
         uv0: None,
         uv1: None,
         tangents: None,
+        colors: None,
         indices: vec![0],
     };
     let mut with_unused = fixture_packet();
