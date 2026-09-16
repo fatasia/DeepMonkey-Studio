@@ -4,6 +4,10 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Dashboard page input
+
+- Route updates without an explicit page ID to their captured source page. Ticks and chart data updates continue after switching away from the entry page; stale and cross-page events remain rejected.
+
 ### Dashboard color correction
 
 - Convert authored CSS colors to linear RGB at Native path inputs while keeping text/image pixels in sRGB. Fix overly bright shapes and backgrounds; regenerate producer golden packages and verify three authored colors on a real sRGB GPU target.

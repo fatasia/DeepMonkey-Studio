@@ -11,7 +11,8 @@ export function prepareDashboardCandidateRequest(input: unknown, requested: Dash
   if (checked.value.schemaVersion !== 5) throw new Error("Dashboard candidates require runtime package v5.");
   const value = checked.value, options = snapshotOptions(requested);
   const root = value.payloads[value.entrypoints.dashboard] as unknown as DashboardRuntimeV1;
-  const page = root.pages.find(page => page.id === (options.pageId ?? root.entryPageId));
+  // Updates belong to their captured page; only an unbound publication starts at the entry page.
+  const page = root.pages.find(page => page.id === (options.pageId ?? options.expectedSource?.pageId ?? root.entryPageId));
   if (!page) throw new Error("Unknown dashboard page.");
   if (options.updates !== undefined || options.elapsedMs !== undefined || options.expectedSource !== undefined) {
     const expected = options.expectedSource;
