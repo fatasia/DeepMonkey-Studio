@@ -22,7 +22,7 @@ describe("industry pack actual widget rendering", () => {
       const html = renderToStaticMarkup(<DashboardWidgetView locale={locale} widget={widget} metric={metric} compact={false} {...callbacks} />);
       expect(html).toContain("dashboard-report-table");
       expect(html).not.toContain("dashboard-rank-widget");
-      for (const column of spec.columns) expect(html).toContain(`${column.key}<i>`);
+      for (const column of spec.columns) expect(html).toContain(`${column.key}<i data-capture-role="sort"`);
       for (const row of widget.sampleData!.rows) {
         for (const value of Object.values(row)) if (typeof value === "string") expect(html).toContain(`>${value}</td>`);
       }
@@ -42,7 +42,7 @@ describe("industry pack actual widget rendering", () => {
     const metric = buildDashboardSampleMetric(widget, rows);
     const before = structuredClone(metric);
     const html = renderToStaticMarkup(<DashboardWidgetView locale="zh-CN" widget={widget} metric={metric} compact={false} {...callbacks} />);
-    expect(html).toContain('title="2.6666666666666665">2.67<small>');
+    expect(html).toContain('title="2.6666666666666665">2.67<small data-capture-role="unit">');
     expect(metric).toEqual(before);
     expect(metric.value).toBe(8 / 3);
     const chart = nodes[7]!.widget;

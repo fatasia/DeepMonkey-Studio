@@ -49,7 +49,7 @@ describe("power grid operations business pack", () => {
         metric={buildDashboardSampleMetric(widget, widget.sampleData!.rows)} compact={false}
         onDataInteraction={() => {}} onAnimationStart={() => {}} onAnimationEnd={() => {}} />);
       expect(html).toContain("dashboard-report-table");
-      for (const column of widget.sampleData!.columns!) expect(html).toContain(`${column.key}<i>`);
+      for (const column of widget.sampleData!.columns!) expect(html).toContain(`${column.key}<i data-capture-role="sort"`);
       expect(html).toContain(">CSV</button>");
       expect(html).toContain(">Excel</button>");
     }
