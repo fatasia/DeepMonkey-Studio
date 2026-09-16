@@ -1,3 +1,15 @@
+## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
+
+**目标:一天内完成 Deep2D 剩余 + Deep Engine(三维/DE26)+ 工业格式 三个战场的全部可执行任务;被外部前置阻塞的卡逐张列明阻塞物。**
+
+- 权威顺序:接手文档(GLM-接手会话交接-2026-09-16.md)严格顺序 + DE26 综合方案第一批。
+- 验收标准:每张卡/切片 = 代码+测试+对应门禁全绿+台账条目+独立提交;未验证部分如实标注,不因赶工降级;绝不为绿改测试。
+- 执行模式:双子代理持续并行(约 2 并发)+ 主线程连续出卡;cargo/GPU 单车道串行。
+- 进度基准(2026-09-17 晚):交接下一批 4/4;Deep2D ≈10%(P1-22 完成,P1-23 在跑);工业格式 ≈30%(PLAN-02 完成);DE26 ≈6%(A01 完整,A02/A03/B01/C01 各第一切片)。总体 ≈17%。
+- 本日已完成提交:b912d5a、5b75182、b4b3466、fed27b3、b3c3839、2eec131、ad1b076、cabb1a5、e0b2568、43d327d、ad3e432、43af23e、2d86950。
+
+---
+
 ### 2026-09-17 交接#5 工业格式 PLAN-02 Windows 离线试构建与体量记录(GLM;构建可行性记录,未集成)
 
 - 已完成(全部实测,无预计):[报告](specs/industrial-format-plan02-build-trial-2026-09-17.md)。工具链事实:**本机无 MSVC(VS2019 只剩 Installer)、无 cmake,唯一 C++ 链是 MinGW-w64 GCC 15.1.0**。逐库:① **laz-perf 3.4.0 成功零补丁**——静态库 0.67 MB(15 TU,3 s),上游 readlaz 读锁定样本 autzen_trim.laz 92 ms/峰值 RSS 6.9 MB、1.2-with-color.copc.laz 130 ms/14.6 MB(-static 自包含 exe);② **openNURBS v8.35 失败(192/199 TU,不可链接)**——2 处构建定义级修正(UNICODE/Win10 SDK 宏)+1 处构建副本补丁(lock.h atomic brace 初始化,GCC15 拒拷贝初始化)后打包出 13.5 MB 库,但链接报 **3,141 个 undefined reference**,根因=7 个文件平台分支只覆盖 MSVC/Linux(sprintf_l 家族/qsort_r/localtime_r/CoCreateGuid 分支/KNOWNFOLDERID/`L#c` 宏),头文件消费面(example_read.o)反而通过;③ libE57Format v3.4.0 **被硬依赖 XercesC 3.2 阻断**(PLAN-01 锁定遗漏,已记入下一步),公共头 6 个手工补生成头后全部编译通过;④ 3d-tiles-renderer v0.5.2 离线 `pnpm install` 失败(ERR_PNPM_NO_OFFLINE_META @babylonjs/loaders);⑤ rhino3dm 三个 submodule 全空按约束跳过;⑥ PDAL 源码包本就未下载;⑦ rvt-rs/parasolid-kit/cadmpeg 离线 cargo 全失败(Cargo.lock 在但本地缓存无 crate 源码)。
