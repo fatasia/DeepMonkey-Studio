@@ -1,5 +1,7 @@
 import type { DashboardDataWidgetNode } from "@bim-studio/contracts";
 import { runtimeContentSha256, type Deep2dRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
+import { sha256Bytes } from "@bim-studio/deep-engine/shader-package";
+import { compositeDashboardButtonGroup } from "./dashboardButtonGroup";
 import { assetIdentity, base64, rasterExtent, verifyRaster } from "./dashboardRasterValidation";
 import { dataPresentation, dataRoleKey } from "./dashboardDataPresentation";
 import { dashboardDataPaint } from "./dashboardDataPaint";
@@ -79,15 +81,23 @@ export async function rasterDataContent(node: DashboardDataWidgetNode, content: 
     const result = verifyRaster(await host.rasterizeText(structuredClone({ ...box.style, requestHash, text,
       locale: input.locale, width, height, verticalAlign: box.verticalAlign, wrap: box.wrap, fonts })),
       requestHash, width, height, fonts);
-    const layer = nextLayer(clip);
+    const group = box.buttonGroup;
+    const pixels = group ? compositeDashboardButtonGroup(group, { rect: box.rect, width, height, rgba: result.rgba }) : result;
+    if (group) { totalBytes += pixels.rgba.byteLength; if (totalBytes > 64 * 1024 * 1024) throw new DashboardDataUnavailable("Data atlas byte budget exceeded"); }
+    const pixelSha256 = group ? sha256Bytes(pixels.rgba) : result.sha256;
+    const layer = nextLayer(group ? box.clip : clip);
     const atlases = [...layer.content.atlases], quads = [...layer.content.quads];
     const id = `raster.${key}`;
-    atlases.push({ id, revision: content.revision, kind: "image", format: "rgba8unorm-srgb", width, height,
-      sampling: "linear", dataBase64: base64(result.rgba) });
+    atlases.push({ id, revision: content.revision, kind: "image", format: "rgba8unorm-srgb", width: pixels.width, height: pixels.height,
+      sampling: "linear", dataBase64: base64(pixels.rgba) });
     quads.push({ id: `${id}.quad`, atlasId: id, zOrder: paintIndex, transform: [1, 0, 0, 1, 0, 0],
-      source: [0, 0, width, height], destination: [box.rect[0], box.rect[1], width, height], color: [1, 1, 1, 1] });
+      source: [0, 0, pixels.width, pixels.height], destination: [group?.rect[0] ?? box.rect[0], group?.rect[1] ?? box.rect[1], pixels.width, pixels.height], color: [1, 1, 1, 1] });
     layer.content = { ...layer.content, atlases, quads };
-    evidence.push({ nodeId: node.id, atlasId: id, requestHash, sourceSha256: result.sourceSha256, pixelSha256: result.sha256,
+    evidence.push({ nodeId: node.id, atlasId: id, requestHash, sourceSha256: result.sourceSha256, pixelSha256,
+      ...(group ? { composition: { id: "dashboard-button-group-v1" as const, sourcePixelSha256: result.sha256,
+        outputPixelSha256: pixelSha256, sourceRgbaBase64: base64(result.rgba), sourceWidth: width, sourceHeight: height,
+        recipe: { group, textRect: box.rect, role: box.role },
+        recipeSha256: runtimeContentSha256({ group, textRect: box.rect, role: box.role }) } } : {}),
       producer: result.producer, ...(result.producerEvidence ? { producerEvidence: result.producerEvidence } : {}),
       usedFaces: result.usedFaces ?? [], lines: result.lines ?? [], clipped: result.clipped ?? false });
   }
@@ -112,6 +122,8 @@ function cropBox(box: DashboardDataTextBox) {
     && Math.min(y + h, clip[1] + clip[3]) > Math.max(y, clip[1]);
 }
 function validateStyle(box: DashboardDataTextBox): void {
+  if (box.buttonGroup && box.role.kind !== "previous" && box.role.kind !== "next")
+    throw new DashboardDataUnavailable("Isolated button groups require a pagination role");
   const style = box.style;
   if (!Number.isFinite(style.fontSize) || style.fontSize <= 0 || !Number.isFinite(style.lineHeight) || style.lineHeight <= 0
     || !Number.isInteger(style.fontWeight) || style.fontWeight < 1 || style.fontWeight > 1000

@@ -395,12 +395,14 @@ export function DashboardWidgetView({
   return (
     <div
       className={`dashboard-value ${valueStyle.animation === "pulse" ? "conditional-pulse" : ""}`}
+      data-dashboard-capture="value"
+      data-capture-background=""
       style={valueStyle.visible === false ? { display: "none" } : { color: valueStyle.color, backgroundColor: valueStyle.backgroundColor, fontWeight: valueStyle.fontWeight }}
     >
-      <span>{widget.title}</span>
-      <strong title={typeof analysis.value === "number" && Number.isFinite(analysis.value) ? String(analysis.value) : undefined}>
+      <span data-capture-role="title">{widget.title}</span>
+      <strong data-capture-role="value" title={typeof analysis.value === "number" && Number.isFinite(analysis.value) ? String(analysis.value) : undefined}>
         {formatDashboardMetricDisplay(analysis.value, widget, locale)}
-        <small>{widget.unit}</small>
+        <small data-capture-role="unit">{widget.unit}</small>
       </strong>
     </div>
   );

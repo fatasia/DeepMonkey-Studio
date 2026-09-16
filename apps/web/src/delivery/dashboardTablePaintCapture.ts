@@ -8,8 +8,8 @@ export function validateDashboardTablePaint(root: HTMLElement, text: readonly Da
   dashboardDataPaint({ textBoxes: text as never, backgrounds: backgrounds as never, paint });
   const view = root.ownerDocument.defaultView;
   if (!view) throw new Error("Measured table paint needs a document");
-  const table = root.querySelector("table.freeze-first-column");
-  if (!table || root.querySelectorAll("table").length !== 1) throw new Error("Expected one frozen report table");
+  const table = root.querySelector("table");
+  if (!table || root.querySelectorAll("table").length !== 1) throw new Error("Expected one report table");
   const items = paint.map(entry => {
     const element = entry.kind === "background" ? backgrounds[entry.index]! : text[entry.index]!.element;
     if (!root.contains(element)) throw new Error("Paint element is outside the table widget");

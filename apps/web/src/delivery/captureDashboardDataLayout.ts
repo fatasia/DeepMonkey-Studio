@@ -2,6 +2,7 @@ import type { DashboardDataPaint, DashboardDataTextBox, DashboardDataTextRole, D
 import { validateDashboardTablePaint } from "./dashboardTablePaintCapture";
 import { cssSrgbToLinearColor } from "./dashboardColor";
 import { captureColor, captureNormalizedColor, capturePixels, captureTextWrap, captureTransformScale, intersectCaptureRects, type CaptureRect } from "./dashboardDataCaptureGeometry";
+import { captureDashboardButtonGroup } from "./dashboardButtonGroup";
 
 export interface DashboardTextCaptureBinding {
   readonly role: DashboardDataTextRole;
@@ -43,12 +44,13 @@ export function captureDashboardDataLayout(root: HTMLElement, options: Dashboard
   };
   if (Math.abs(worldScale(root) - scale) > 0.0001)
     throw new Error("Logical dimensions must match the untransformed author node");
-  const inspect = (element: HTMLElement): { style: CSSStyleDeclaration; clip: CaptureRect | null } => {
+  const inspect = (element: HTMLElement, isolatedButton = false): { style: CSSStyleDeclaration; clip: CaptureRect | null } => {
     if (!root.contains(element)) throw new Error("Capture element is outside the author node");
     let clip: CaptureRect | null = null;
     for (let current: HTMLElement | null = element; current; current = current.parentElement) {
       const style = view.getComputedStyle(current);
-      if (style.display === "none" || style.visibility !== "visible" || Number(style.opacity) !== 1)
+      if (style.display === "none" || style.visibility !== "visible"
+        || Number(style.opacity) !== 1 && !(isolatedButton && current === element))
         throw new Error("Hidden or translucent capture requires a separate appearance pass");
       if ([style.clipPath, style.filter, style.perspective].some(value => value && value !== "none"))
         throw new Error("Nonrectangular clipping or effects require a separate appearance pass");
@@ -80,7 +82,9 @@ export function captureDashboardDataLayout(root: HTMLElement, options: Dashboard
       "column" in binding.role ? binding.role.column : null]);
     if (identities.has(identity)) throw new Error("Duplicate text capture role");
     identities.add(identity);
-    const { style, clip } = inspect(binding.element);
+    const isolatedButton = (role.kind === "previous" || role.kind === "next") && binding.element.tagName === "BUTTON";
+    const { style, clip } = inspect(binding.element, isolatedButton);
+    const buttonGroup = isolatedButton ? captureDashboardButtonGroup(binding.element, style, local(binding.element.getBoundingClientRect())) : undefined;
     if (binding.range && (binding.range.collapsed || binding.range.startContainer !== binding.range.endContainer
       || binding.range.startContainer.nodeType !== 3 || binding.range.startContainer.parentElement !== binding.element
       || binding.range.getClientRects().length !== 1))
@@ -102,6 +106,7 @@ export function captureDashboardDataLayout(root: HTMLElement, options: Dashboard
     const fontSize = capturePixels(style.fontSize, "font-size"), lineHeight = capturePixels(style.lineHeight, "line-height");
     if (fontSize <= 0 || lineHeight <= 0) throw new Error("Invalid computed text metrics");
     return { role: structuredClone(binding.role), rect: local((binding.range ?? binding.element).getBoundingClientRect()),
+      ...(buttonGroup ? { buttonGroup } : {}),
       clip, fonts, wrap, whiteSpace: style.whiteSpace as DashboardDataTextBox["whiteSpace"],
       verticalAlign: binding.verticalAlign ?? "top", style: {
         fontSize, lineHeight,

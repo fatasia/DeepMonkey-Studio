@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 /** Bind producer receipts to the exact atlas bytes emitted by this compilation. */
-export function dashboardCompiledWindowEvidence(result, input) {
+export function dashboardCompiledWindowEvidence(result, input, verifyComposition) {
   const payloads = result.package.payloads;
   const dashboard = Object.values(payloads).find(value => value.schema === "deep-engine.dashboard-runtime");
   if (!dashboard) throw new Error("Compiled Dashboard payload is missing");
@@ -19,8 +19,12 @@ export function dashboardCompiledWindowEvidence(result, input) {
         if (!atlas) continue;
         const pixelSha256 = createHash("sha256").update(Buffer.from(atlas.dataBase64, "base64")).digest("hex");
         if (pixelSha256 !== evidence.pixelSha256) throw new Error("Producer evidence does not match compiled atlas bytes");
+        if (evidence.composition) {
+          if (typeof verifyComposition !== "function") throw new Error("Composed atlas requires trusted pixel replay");
+          verifyComposition(evidence, input, atlas);
+        }
         for (const face of evidence.usedFaces) {
-          if (!evidence.producerEvidence || evidence.producerEvidence.pixelSha256 !== pixelSha256)
+          if (!evidence.producerEvidence || evidence.producerEvidence.pixelSha256 !== (evidence.composition?.sourcePixelSha256 ?? pixelSha256))
             throw new Error("Font atlas requires a trusted text producer receipt");
           const resources = (input.nodeAssets[binding.nodeId]?.fonts ?? []).filter(id =>
             input.assets[id].sha256 === face.sha256 && input.assets[id].faceIndex === face.faceIndex);

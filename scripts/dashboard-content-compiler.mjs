@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 import { compileDashboardRasterContent } from "../apps/web/src/delivery/compileDashboardRasterContent.ts";
+import { verifyDashboardButtonComposition } from "../apps/web/src/delivery/verifyDashboardButtonComposition.ts";
 import { serializeDeepRuntimePackage } from "../packages/deep-engine/src/runtimePackage/index.ts";
 import { createDashboardRasterHost } from "./lib/dashboardRasterHost.mjs";
 import { dashboardFrozenRasterInput } from "./lib/dashboardFrozenRasterInput.mjs";
@@ -29,7 +30,7 @@ export async function createDashboardContentCompiler({ nativeExecutable, configu
       // Page appearance and runtime interactions remain unimplemented even when every pixel producer succeeds.
       const pageDeferred = result.deferredPageFields.flatMap(page => page.fields.map(field => `page.${field}`));
       return { artifact: new TextEncoder().encode(serializeDeepRuntimePackage(result.package)),
-        windowEvidence: dashboardCompiledWindowEvidence(result, input),
+        windowEvidence: dashboardCompiledWindowEvidence(result, input, verifyDashboardButtonComposition),
         objects: result.capabilityReport.objects.map(object => ({ nodeId: object.nodeId,
           contentCompiled: object.contentCompiled, deferredFields: [...new Set([...object.deferredFields,
             ...pageDeferred, "runtime.interactions", "appearance.crossHost"])] })) };

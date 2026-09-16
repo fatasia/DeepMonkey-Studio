@@ -188,19 +188,21 @@ export function DashboardReportTable({
     .filter(Boolean)
     .join(" ");
   return (
-    <div className="dashboard-mini-table dashboard-report-table">
+    <div className="dashboard-mini-table dashboard-report-table" data-dashboard-capture="table"
+      data-capture-page={safePage} data-capture-sort-column={sort?.column} data-capture-sort-direction={sort?.direction}>
       <header>
-        <strong>{widget.title}</strong>
+        <strong data-capture-role="title">{widget.title}</strong>
         {!compact && <DashboardReportExport report={{ ...report, rows: sortedRows }} title={widget.title} locale={locale} />}
       </header>
-      <div className="dashboard-report-scroll">
+      <div className="dashboard-report-scroll" data-capture-scroll="">
         <table className={tableClass}>
           <thead>
             <tr>
-              {widget.report?.showRowNumbers && <th className="report-row-number">#</th>}
+              {widget.report?.showRowNumbers && <th className="report-row-number" data-capture-background="" data-capture-role="row-number-header">#</th>}
               {report.columns.map((column) => (
-                <th key={column}>
+                <th key={column} data-capture-background="">
                   <button
+                    data-capture-role="header" data-capture-column={column}
                     title={tr(locale, "点击排序", "Click to sort")}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -209,7 +211,7 @@ export function DashboardReportTable({
                     }}
                   >
                     {column}
-                    <i>{sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</i>
+                    <i data-capture-role="sort" data-capture-column={column}>{sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</i>
                   </button>
                 </th>
               ))}
@@ -220,6 +222,7 @@ export function DashboardReportTable({
               const style = conditionalStyle(widget.conditionalRules, row);
               return (
                 <tr
+                  data-capture-background=""
                   key={index}
                   className={style.animation === "pulse" ? "conditional-pulse" : ""}
                   style={style.visible === false ? { display: "none" } : { color: style.color, backgroundColor: style.backgroundColor, fontWeight: style.fontWeight }}
@@ -227,18 +230,18 @@ export function DashboardReportTable({
                     if (!compact) onDataInteraction({ data: jsonRecord(row), index: rowNumberOffset + index });
                   }}
                 >
-                  {widget.report?.showRowNumbers && <td className="report-row-number">{rowNumberOffset + index + 1}</td>}
+                  {widget.report?.showRowNumbers && <td className="report-row-number" data-capture-background="" data-capture-role="row-number" data-capture-row={rowNumberOffset + index}>{rowNumberOffset + index + 1}</td>}
                   {report.columns.map((column) => (
-                    <td key={column}>{formatDashboardReportValue(row[column], widget, locale)}</td>
+                    <td key={column} data-capture-background="" data-capture-role="cell" data-capture-row={rowNumberOffset + index} data-capture-column={column}>{formatDashboardReportValue(row[column], widget, locale)}</td>
                   ))}
                 </tr>
               );
             })}
             {report.grandTotal && (
-              <tr className="dashboard-report-total">
-                {widget.report?.showRowNumbers && <td className="report-row-number" />}
+              <tr className="dashboard-report-total" data-capture-background="">
+                {widget.report?.showRowNumbers && <td className="report-row-number" data-capture-background="" />}
                 {report.columns.map((column, index) => (
-                  <td key={column}>{index === 0 ? tr(locale, "总计", "Total") : formatDashboardReportValue(report.grandTotal?.[column], widget, locale)}</td>
+                  <td key={column} data-capture-background="" data-capture-role="total" data-capture-column={column}>{index === 0 ? tr(locale, "总计", "Total") : formatDashboardReportValue(report.grandTotal?.[column], widget, locale)}</td>
                 ))}
               </tr>
             )}
@@ -248,6 +251,7 @@ export function DashboardReportTable({
       {pageCount > 1 && (
         <footer>
           <button
+            data-capture-role="previous" data-capture-background=""
             disabled={safePage === 0}
             onClick={(event) => {
               event.stopPropagation();
@@ -256,10 +260,11 @@ export function DashboardReportTable({
           >
             ‹
           </button>
-          <span>
-            {safePage + 1} / {pageCount}
+          <span data-capture-role="footer">
+            {`${safePage + 1} / ${pageCount}`}
           </span>
           <button
+            data-capture-role="next" data-capture-background=""
             disabled={safePage >= pageCount - 1}
             onClick={(event) => {
               event.stopPropagation();

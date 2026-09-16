@@ -79,6 +79,12 @@ export interface DashboardRasterHost {
   decodeImage(request: DashboardImageRasterRequest): Promise<DashboardRasterResult>;
 }
 export interface DashboardRasterEvidence {
+  readonly composition?: { readonly id: "dashboard-button-group-v1"; readonly sourcePixelSha256: string;
+    readonly outputPixelSha256: string; readonly recipeSha256: string; readonly sourceRgbaBase64: string;
+    readonly sourceWidth: number; readonly sourceHeight: number;
+    readonly recipe: { readonly group: NonNullable<import("./dashboardDataRasterTypes").DashboardDataTextBox["buttonGroup"]>;
+      readonly textRect: import("./dashboardDataRasterTypes").DashboardDataTextBox["rect"];
+      readonly role: import("./dashboardDataRasterTypes").DashboardDataTextRole } };
   readonly nodeId: string;
   readonly atlasId: string;
   readonly requestHash: string;

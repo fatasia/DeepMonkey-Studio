@@ -6,6 +6,8 @@ export type DashboardDataTextRole = { readonly kind: "title" | "value" | "unit" 
   | { readonly kind: "cell"; readonly row: number; readonly column: string }
   | { readonly kind: "row-number"; readonly row: number };
 export interface DashboardDataTextBox {
+  /** Single-text pagination control, isolated before applying its CSS group opacity. */
+  readonly buttonGroup?: DashboardButtonGroup;
   readonly role: DashboardDataTextRole;
   /** Measured node-local Web CSS box and clipping rectangle, without fabricated column widths. */
   readonly rect: readonly [number, number, number, number];
@@ -15,6 +17,14 @@ export interface DashboardDataTextBox {
   readonly wrap: "none" | "word" | "glyph" | "word-or-glyph";
   readonly whiteSpace: "normal" | "nowrap" | "pre" | "pre-wrap";
   readonly fonts: readonly string[];
+}
+export interface DashboardButtonGroup {
+  readonly rect: readonly [number, number, number, number];
+  readonly radius: number;
+  readonly borderWidth: number;
+  readonly background: readonly [number, number, number, number];
+  readonly border: readonly [number, number, number, number];
+  readonly opacity: number;
 }
 export interface DashboardFrozenData {
   readonly source: { readonly kind: "dataset" | "pipeline" | "binding" | "sample";
