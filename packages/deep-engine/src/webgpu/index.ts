@@ -1,6 +1,12 @@
 /// <reference types="@webgpu/types" />
 export { DeviceSession } from "./deviceSession.js";
 export type { DeviceState, DeviceEvent } from "./deviceSession.js";
+export { SharedShadowAtlasResources } from "./sharedShadowAtlasResources.js";
+export type { SharedShadowAtlasBudgetEvidence, SharedShadowAtlasGpuResource,
+  SharedShadowAtlasResourceUpdate } from "./sharedShadowAtlasResources.js";
+export { ENGINE_TIMING_STAGES, EnginePerformanceTelemetry } from "./performanceTelemetry.js";
+export type { EngineFrameTimingSample, EnginePerformanceTelemetrySnapshot,
+  EngineTimingQuantiles, EngineTimingStage } from "./performanceTelemetry.js";
 export { PbrRenderer } from "./pbrRenderer.js";
 export { createHdrEnvironment } from "./hdrEnvironment.js";
 export type { HdrEnvironment, HdrEnvironmentOptions } from "./hdrEnvironment.js";
@@ -9,13 +15,30 @@ export type { PbrEnvironmentSource } from "./pbrEnvironmentSource.js";
 export { PbrEnvironmentState } from "./pbrEnvironmentState.js";
 export type { EnvironmentFactory, EnvironmentStageResult } from "./pbrEnvironmentState.js";
 export type { RenderView, FrameMetrics, PbrRendererOptions } from "./pbrRenderer.js";
+export { resolvePbrEnvironmentIntensity } from "./pbrEnvironmentIntensity.js";
 export { DEFAULT_PBR_RENDERER_FEATURES, resolvePbrRendererFeatures } from "./pbrRendererFeatures.js";
 export type { PbrRendererFeatureOptions, PbrRendererFeatures, PbrToneMapping } from "./pbrRendererFeatures.js";
+export { applyPbrColorGradingLinear, NEUTRAL_PBR_COLOR_GRADING,
+  resolvePbrColorGrading, STUDIO_PBR_COLOR_GRADING } from "./pbrColorGrading.js";
+export type { PbrColorGrading, PbrColorGradingOptions } from "./pbrColorGrading.js";
+export { applyPbrAuthorColorEffects, packPbrAuthorColorEffects } from "./pbrAuthorColorEffects.js";
+export type { PbrAuthorColorEffects } from "./pbrAuthorColorEffects.js";
+export type { PbrPostProcessOverrides, PbrAuthorBloomOptions } from "./pbrPostProcessOverrides.js";
 export type { Vec3 } from "./cameraMath.js";
 export { CameraFrameHistory, jitterViewProjection } from "./cameraFrameHistory.js";
 export type { CameraFrameHistoryResult, CameraFrameState } from "./cameraFrameHistory.js";
-export { compilePbrFrameGraph } from "./pbrFrameGraph.js";
+export { compilePbrFrameGraph, buildPbrFrameGraph } from "./pbrFrameGraph.js";
 export type { PbrFrameGraphOptions } from "./pbrFrameGraph.js";
+export { buildPbrFrameExecutionPlan, diffPlanAgainstActual, assertPlanMatchesActual,
+  collectActualPbrFramePasses, createPbrFrameReceipt, createPbrPassTimingSample,
+  createPbrPassUnavailableSample, pbrReceiptSampleWindow, pbrPassChannelName } from "./pbrFramePlanExecutor.js";
+export type { PbrFrameExecutionPlan, PbrPlannedPass, PbrPlannedPassResource, PbrPlannedResourceLifetime,
+  PbrPassMapping, PbrPlanMismatch, PbrPlanDiffResult, PbrFrameExecutionReceipt, PbrPassChannelSample,
+  PbrPassTimingEntry } from "./pbrFramePlanExecutor.js";
+export { PBR_FRAME_RESOURCE_CONTRACTS, resolvePbrFrameResourceSizes, resolvePbrFramePlanSurface,
+  pbrFrameResourceContract, FRAME_PLAN_USAGES } from "./pbrFramePlanResources.js";
+export type { PbrFrameResourceContract, PbrFrameResourceSizeRole, FramePlanUsage,
+  PbrPassResourceClaim, PbrUnplannedAttachment, PbrActualPassDescription } from "./pbrFramePlanResources.js";
 export { MAX_EMISSIVE_STRENGTH } from "../renderPacket.js";
 export type { RenderPacket, GeometryResource, PbrMaterial, RenderInstance, RenderLodLevel, RenderLodProfile,
   PreparedBatch, PreparedLodLevel, PreparedLodProfile, PreparedPacket,
@@ -37,7 +60,8 @@ export type { GpuRenderResidencyHandle, GpuRenderResidencySource, GpuRenderResid
 export { GpuRenderResidencyRuntime } from "./gpuRenderResidencyRuntime.js";
 export type { GpuRenderResidencyCommitResult, GpuRenderResidencyExecutionResult,
   GpuRenderResidencyFrameResult, GpuRenderResidencyIdentity, GpuRenderResidencyLevel,
-  GpuRenderResidencyProfile, GpuRenderResidencyRequest } from "./gpuRenderResidencyRuntime.js";
+  GpuRenderResidencyProfile, GpuRenderResidencyRequest,
+  GpuRenderResidencyRuntimeOptions } from "./gpuRenderResidencyRuntime.js";
 export type { GpuRenderResidencyAppliedFrameTelemetry, GpuRenderResidencyBudgetTelemetry,
   GpuRenderResidencyKindTelemetry, GpuRenderResidencyTelemetrySnapshot,
 } from "./gpuRenderResidencyTelemetry.js";
@@ -52,6 +76,8 @@ export type { PacketResidencyLoader, PacketResidencyLoadErrorCode,
   PacketResidencyLoadOptions } from "./packetResidencyLoader.js";
 export { createPacketResidencyDomain } from "./packetResidencyDomain.js";
 export type { PacketResidencyDomain, PacketResidencyTicket } from "./packetResidencyDomain.js";
+export { createRuntimePackageWebGpuPrewarmAdapter } from "./runtimePackagePrewarmAdapter.js";
+export type { RuntimePackageWebGpuPrewarmOptions, RuntimePackageWebGpuRenderPublication } from "./runtimePackagePrewarmAdapter.js";
 export type { PacketResidencySetEntry, PacketResidencySetLoadOptions,
   PacketResidencySetProjection } from "./packetResidencySet.js";
 export { createPacketResidencyRequestPlanner,
@@ -68,6 +94,7 @@ export { createPbrResidencyStream } from "./pbrResidencyStream.js";
 export type { PbrResidencyFrameTarget, PbrResidencyStageResult,
   PbrResidencyStream, PbrResidencyStreamOptions } from "./pbrResidencyStream.js";
 export { createSceneChunkResidency, SceneChunkResidencyError } from "./sceneChunkResidency.js";
+export { stageSceneChunkFrame } from "./sceneChunkFrameStage.js";
 export type { ResidentSceneChunk, ResidentSceneChunkFrame, SceneChunkResidency,
   SceneChunkResidencyDemand, SceneChunkResidencyErrorCode, SceneChunkResidencyFrameInput,
   SceneChunkResidencyMode, SceneChunkResidencyOptions } from "./sceneChunkResidency.js";
@@ -163,3 +190,21 @@ export type {
   ShaderHotReloadFrameBoundaryHook, ShaderHotReloadOptions, ShaderHotReloadPublishResult,
   ShaderHotReloadRequestResult, ShaderHotReloadRequestStatus, ShaderHotReloadState,
 } from "./hotReloadTypes.js";
+export * from "./webgpuProbeCaptureAdapter.js";
+export * from "./webgpuProbeCaptureTypes.js";
+export * from "./webgpuProbeCaptureWgsl.js";
+export * from "./probeClipmapRuntime.js";
+export * from "./probeClipmapPbrController.js";
+export * from "./gpuParticleRuntime.js";
+export * from "./gpuParticleTypes.js";
+export * from "./gpuParticleWgsl.js";
+export * from "./gpuParticleEmitters.js";
+export * from "./gpuParticleBurstTypes.js";
+export * from "./gpuParticleBurstWgsl.js";
+export * from "./shaderAuthoringCompiler.js";
+export { validatePanoramaBackground } from "./pbrPanoramaBackground.js";
+export { validatePbrFog, snapshotPbrFog, packPbrFog, pbrFogFactor } from "./pbrFog.js";
+export type { PbrFog, PbrFogColor } from "./pbrFog.js";
+export { snapshotEditorOverlay, EDITOR_OVERLAY_MAX_VERTICES, type EditorOverlaySnapshot } from "./editorOverlayTypes.js";
+export type { AuthorGridView } from "./authorGridTypes.js";
+export { createBrowserImageDecoder, type DecodedImageHandle, type ImageDecoderHost } from "./browserImageDecoder.js";

@@ -141,6 +141,34 @@ describe("DeepSL surface authoring", () => {
     expect(result).toMatchObject({ success: true, model: { emissiveStrength: 8 } });
   });
 
+  it("carries every Standard material semantic through the runtime package adapter", () => {
+    const source = DEEP_SL_SURFACE_EXAMPLE
+      .replace("baseColorTexture off", "baseColorTexture on")
+      .replace("metallicRoughnessTexture off", "metallicRoughnessTexture on")
+      .replace("normalTexture off", "normalTexture on")
+      .replace("occlusionTexture off", "occlusionTexture on")
+      .replace("emissiveTexture off", "emissiveTexture on")
+      .replace("normalScale 1", "normalScale -0.5")
+      .replace("occlusionStrength 1", "occlusionStrength 0.25")
+      .replace("emissiveFactor [0, 0, 0]", "emissiveFactor [0.1, 0.2, 0.3]")
+      .replace("emissiveStrength 1", "emissiveStrength 4");
+    const result = compileDeepSlSurface({ document: textDocument(source),
+      revision: "d".repeat(64), candidateId: 4 }, { capabilities: TEST_CAPABILITIES });
+    expect(result).toMatchObject({ success: true, artifact: { runtimeCompatibility: {
+      materialDefaults: { emissiveAlpha: [0.1, 0.2, 0.3, 1] },
+      materialTextureDefaults: {
+        enabledSlots: ["baseColor", "metallicRoughness", "occlusion", "normal", "emissive"],
+        normal: { normalScale: -0.5 }, occlusion: { strength: 0.25 },
+        emissive: { emissiveStrength: 4 },
+      },
+    } } });
+    const wgsl = result.artifact?.runtimePackage?.modules[0]?.source ?? "";
+    expect(wgsl).toContain("deepMetallicRoughnessSample.b");
+    expect(wgsl).toContain("deepPackageMappedNormal(");
+    expect(wgsl).toContain("deepSampledOcclusion");
+    expect(wgsl).toContain("deepEmissiveSample");
+  });
+
   it("rejects non-text input at the public inspection boundary", () => {
     expect(inspectDeepSlSurface({ source: DEEP_SL_SURFACE_EXAMPLE })).toMatchObject({
       success: false, diagnostics: [{ code: "invalid-source", range: { start: { line: 1, column: 1 } } }],
@@ -166,11 +194,12 @@ describe("DeepSL surface authoring", () => {
     expect(result.artifact!.sourceMap.find((entry) => entry.generatedLine === multiplyLine)?.range.start.line).toBe(3);
   });
 
-  it("maps preset capability failures to the responsible DeepSL declaration", () => {
+  it("compiles the bounded DeepSL MASK declaration through the typed alpha-clip output", () => {
     const source = `shader deep.mask {\n  surface standard;\n  alpha mask;\n}`;
     const document = textDocument(source);
     const result = compileDeepSlSurface({ document, revision: "b".repeat(64), candidateId: 2 }, { capabilities: TEST_CAPABILITIES });
-    expect(result).toMatchObject({ success: false });
-    expect(result.diagnostics[0]).toMatchObject({ code: "unsupported-feature", range: { start: { line: 3, column: 3 } } });
+    expect(result).toMatchObject({ success: true, diagnostics: [] });
+    expect(result.artifact?.pass.module.code).toContain("if (n_alpha < n_alphaCutoff) { discard; }");
+    expect(result.artifact?.pass.propertyLayout).toContainEqual(expect.objectContaining({ name: "alphaCutoff", group: 1, binding: 0 }));
   });
 });

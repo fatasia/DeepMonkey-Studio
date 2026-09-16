@@ -1,6 +1,9 @@
 import type { DeviceSession } from "./deviceSession.js";
 import type { MeshData } from "./primitives.js";
 import type { GeometryResource } from "../renderPacket.js";
+import { PacketMeshletSource, type PacketMeshletBudget } from "./packetMeshletSource.js";
+import type { PacketLodDraw } from "./packetLodTypes.js";
+import { failWithResourceCleanup } from "./resourceCleanup.js";
 
 export function uploadBuffer(session: DeviceSession, label: string, data: Float32Array<ArrayBuffer> | Uint32Array<ArrayBuffer>, usage: GPUBufferUsageFlags): GPUBuffer {
   const buffer = session.own(session.device.createBuffer({ label, size: Math.max(4, data.byteLength), usage: usage | GPUBufferUsage.COPY_DST }));
@@ -12,31 +15,48 @@ export function uploadBuffer(session: DeviceSession, label: string, data: Float3
 export class MeshBuffers {
   readonly vertices: GPUBuffer;
   readonly tangents: GPUBuffer | undefined;
+  /** 线性 RGBA 顶点色；独立流，旧无颜色几何没有该 buffer，顶点流布局保持 40B 不变。 */
+  readonly colors: GPUBuffer | undefined;
   readonly indices: GPUBuffer;
   readonly indexCount: number;
+  readonly meshletSource: PacketMeshletSource | undefined;
+  readonly meshletFallback: string | undefined;
 
-  constructor(private readonly session: DeviceSession, mesh: MeshData | GeometryResource) {
+  constructor(private readonly session: DeviceSession, mesh: MeshData | GeometryResource, meshletBudget?: PacketMeshletBudget) {
     this.vertices = uploadBuffer(session, "Deep vertices", interleaveUvSets(mesh), GPUBufferUsage.VERTEX);
-    let tangents: GPUBuffer | undefined;
+    let tangents: GPUBuffer | undefined, colors: GPUBuffer | undefined;
     try {
       if ("tangents" in mesh && mesh.tangents) tangents = uploadBuffer(session, "Deep tangents", mesh.tangents, GPUBufferUsage.VERTEX);
+      if ("colors" in mesh && mesh.colors) colors = uploadBuffer(session, "Deep colors", mesh.colors, GPUBufferUsage.VERTEX);
       this.indices = uploadBuffer(session, "Deep indices", mesh.indices, GPUBufferUsage.INDEX);
     } catch (error) {
-      if (tangents) session.release(tangents);
+      const allocated = [tangents, colors].filter(Boolean) as GPUBuffer[];
+      for (const buffer of allocated) session.release(buffer);
       session.release(this.vertices); throw error;
     }
-    this.tangents = tangents;
+    this.tangents = tangents; this.colors = colors;
     this.indexCount = mesh.indices.length;
+    try {
+      const prepared = meshletBudget && "id" in mesh ? PacketMeshletSource.prepare(session, mesh, meshletBudget) : undefined;
+      this.meshletSource = prepared?.source; this.meshletFallback = prepared?.fallback;
+    } catch (error) { failWithResourceCleanup(error, "Mesh buffer preparation failed.", [() => this.dispose()]); }
   }
 
   dispose(): void {
     const failures: unknown[] = [];
-    for (const buffer of [this.vertices, this.tangents, this.indices]) {
+    try { this.meshletSource?.dispose(); } catch (error) { failures.push(error); }
+    for (const buffer of [this.vertices, this.tangents, this.colors, this.indices]) {
       if (!buffer) continue;
       try { this.session.release(buffer); }
       catch (error) { failures.push(error); }
     }
     if (failures.length) throw new AggregateError(failures, "Mesh buffer disposal failed.");
+  }
+
+  /** 颜色流绑定 slot4：现行 pipeline 未声明该 slot 的属性输入（shader 消费在颜色变体切片接入），
+   * WebGPU 允许绑定 pipeline 未引用的 slot，旧无颜色几何不会走到这里。 */
+  private bindColor(pass: GPURenderPassEncoder): void {
+    if (this.colors) pass.setVertexBuffer(4, this.colors);
   }
 
   draw(pass: GPURenderPassEncoder, instances: GPUBuffer, count: number, normalMapped = false, previous?: GPUBuffer): void {
@@ -46,6 +66,7 @@ export class MeshBuffers {
     pass.setVertexBuffer(1, instances);
     if (previous) pass.setVertexBuffer(2, previous);
     if (normalMapped) pass.setVertexBuffer(previous ? 3 : 2, this.tangents!);
+    this.bindColor(pass);
     pass.setIndexBuffer(this.indices, "uint32");
     pass.drawIndexed(this.indexCount, count);
   }
@@ -57,8 +78,19 @@ export class MeshBuffers {
     pass.setVertexBuffer(1, instances, instanceByteOffset);
     if (previous) pass.setVertexBuffer(2, previous, previousByteOffset);
     if (normalMapped) pass.setVertexBuffer(previous ? 3 : 2, this.tangents!);
+    this.bindColor(pass);
     pass.setIndexBuffer(this.indices, "uint32");
     pass.drawIndexedIndirect(indirect, indirectOffset);
+  }
+  drawMeshletIndirect(pass: GPURenderPassEncoder, draw: PacketLodDraw, normalMapped: boolean, previous: boolean): void {
+    if (!draw.meshlets) throw Error("Meshlet draw metadata is missing.");
+    if (normalMapped && !this.tangents) throw Error("Normal-mapped draw requires tangent GPU data.");
+    pass.setVertexBuffer(0, this.vertices); pass.setVertexBuffer(1, draw.instances, draw.instanceByteOffset);
+    if (previous) pass.setVertexBuffer(2, draw.previousTransforms, draw.previousByteOffset);
+    if (normalMapped) pass.setVertexBuffer(previous ? 3 : 2, this.tangents!);
+    this.bindColor(pass);
+    pass.setIndexBuffer(draw.meshlets.indexBuffer, "uint32");
+    for (let command = 0; command < draw.meshlets.commandCount; command++) pass.drawIndexedIndirect(draw.indirect, command * 20);
   }
 }
 

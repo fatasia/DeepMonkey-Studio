@@ -3,9 +3,14 @@ export type PbrToneMapping = "deep-aces" | "three-aces-r185";
 export interface PbrRendererFeatureOptions {
   readonly environment?: boolean;
   readonly fog?: boolean;
+  /** Built-in solid preview ground; disable when the author scene owns its floor. */
+  readonly groundPlane?: boolean;
   readonly groundGrid?: boolean;
   readonly ambientOcclusion?: boolean;
   readonly temporalAa?: boolean;
+  /** Display-domain edge AA, independent of temporal history. */
+  readonly spatialAa?: boolean;
+  readonly occlusionCulling?: boolean;
   readonly bloom?: boolean;
   readonly vignette?: boolean;
   readonly toneMapping?: PbrToneMapping;
@@ -14,17 +19,20 @@ export interface PbrRendererFeatureOptions {
 export interface PbrRendererFeatures {
   readonly environment: boolean;
   readonly fog: boolean;
+  readonly groundPlane: boolean;
   readonly groundGrid: boolean;
   readonly ambientOcclusion: boolean;
   readonly temporalAa: boolean;
+  readonly spatialAa: boolean;
+  readonly occlusionCulling: boolean;
   readonly bloom: boolean;
   readonly vignette: boolean;
   readonly toneMapping: PbrToneMapping;
 }
 
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
-  environment: true, fog: true, groundGrid: true, ambientOcclusion: true,
-  temporalAa: true, bloom: true, vignette: true, toneMapping: "deep-aces",
+  environment: true, fog: true, groundPlane: true, groundGrid: true, ambientOcclusion: true,
+  temporalAa: true, spatialAa: true, occlusionCulling: true, bloom: true, vignette: true, toneMapping: "deep-aces",
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -39,6 +47,8 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
   const toneMapping = options.toneMapping ?? DEFAULT_PBR_RENDERER_FEATURES.toneMapping;
   if (toneMapping !== "deep-aces" && toneMapping !== "three-aces-r185") throw new RangeError("Unknown PBR tone mapping.");
   return Object.freeze({ environment: boolean("environment"), fog: boolean("fog"),
+    groundPlane: boolean("groundPlane"),
     groundGrid: boolean("groundGrid"), ambientOcclusion: boolean("ambientOcclusion"),
-    temporalAa: boolean("temporalAa"), bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping });
+    temporalAa: boolean("temporalAa"), spatialAa: boolean("spatialAa"), occlusionCulling: boolean("occlusionCulling"),
+    bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping });
 }

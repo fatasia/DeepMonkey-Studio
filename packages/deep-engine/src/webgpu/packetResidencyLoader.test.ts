@@ -1,16 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  prepareRenderPacket,
-  type GeometryResource,
-  type PreparedPacket,
-} from "../renderPacket.js";
+import { prepareRenderPacket, type GeometryResource, type PreparedPacket } from "../renderPacket.js";
 import type { DecodedTexture } from "../textures/decodedTexture.js";
 import type { DeviceSession } from "./deviceSession.js";
+import { authorPacket } from "./authorLod.testUtils.js";
+import { planPacketResidencyRequests } from "./packetResidencyRequestPlanner.js";
+import { compilePacketResidencyIndex } from "./packetResidencyPlannerIndex.js";
 import type { GpuRenderResidencyFrameResult } from "./gpuRenderResidencyRuntime.js";
-import {
-  createPacketResidencyLoader,
-  PacketResidencyLoadError,
-} from "./packetResidencyLoader.js";
+import { createPacketResidencyLoader, PacketResidencyLoadError } from "./packetResidencyLoader.js";
 
 const TRANSFORM = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
@@ -34,14 +30,16 @@ function packet(): PreparedPacket {
   });
 }
 
-function gpuFixture(failBuffer = false) {
+function gpuFixture(failBuffer: boolean | (() => boolean) = false) {
   const owned = new Set<{ destroy(): void }>();
   const destroyable = () => ({ destroy: vi.fn() });
   const device = { lost: new Promise<void>(() => {}), features: new Set<GPUFeatureName>(),
     limits: { maxTextureDimension2D: 8192, maxBufferSize: 1_000_000 },
     pushErrorScope: vi.fn(), popErrorScope: vi.fn(() => Promise.resolve<GPUError | null>(null)),
     createBuffer: vi.fn(() => {
-      if (failBuffer) throw new Error("buffer allocation failed");
+      if (typeof failBuffer === "function" ? failBuffer() : failBuffer) {
+        throw new Error("buffer allocation failed");
+      }
       return destroyable() as unknown as GPUBuffer;
     }),
     createTexture: vi.fn(() => ({ ...destroyable(), createView: vi.fn(() => ({})) }) as unknown as GPUTexture),
@@ -52,6 +50,20 @@ function gpuFixture(failBuffer = false) {
     release(resource: { destroy(): void }) { if (owned.delete(resource)) resource.destroy(); },
   } as unknown as DeviceSession;
   return { session, owned };
+}
+
+function lodPacket(): PreparedPacket {
+  const fine = { ...geometry(), id: "fine", indices: new Uint32Array([0, 1, 2, 0, 2, 1]) };
+  const coarse = { ...geometry(), id: "coarse", revision: 4,
+    indices: new Uint32Array([0, 1, 2]) };
+  return prepareRenderPacket({ geometries: [fine, coarse],
+    materials: [{ id: "mat", baseColor: [1, 1, 1], metallic: 0, roughness: 1 }],
+    instances: [{ id: "instance", geometry: "fine", material: "mat", transform: TRANSFORM,
+      lod: { levels: [
+        { geometry: "fine", minProjectedDiameterPixels: 100, geometricError: 0 },
+        { geometry: "coarse", minProjectedDiameterPixels: 0, geometricError: 1 },
+      ] } }],
+  });
 }
 
 function runtimeFor(loader: ReturnType<typeof createPacketResidencyLoader>, fixture = gpuFixture()) {
@@ -76,6 +88,52 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("createPacketResidencyLoader", () => {
+  it("leases a shared author geometry once while preserving two selected levels", async () => {
+    const packet = authorPacket([0, 1]), instance = packet.instances[0]!;
+    const prepared = prepareRenderPacket({ ...packet, instances: [{ ...instance,
+      lod: { strategy: "author-selected", revision: 1, selectedLevels: [0, 1], levels: [
+        { geometry: "high", distance: 0, hysteresis: 0 }, { geometry: "high", distance: 2, hysteresis: 0 },
+      ] } }] });
+    const loader = createPacketResidencyLoader(prepared), f = gpuFixture();
+    const runtime = loader.createRuntime(f.session, { maxResidentBytes: 1_000_000, maxUploadBytesPerFrame: 1_000_000 });
+    const projection = await loader.loadInto(runtime, { frame: 1, allowPartialLod: true });
+    expect(projection.batches[0]!.geometries.map(value => value.sourceId)).toEqual(["high"]);
+    expect(projection.batches[0]!.source.lod).toMatchObject({ selectedLevels: [0, 1] });
+    projection.release(); runtime.dispose(); expect(f.owned.size).toBe(0);
+  });
+
+  it.each([[[]], [[0]], [[0, 1]]])("prewarms every real author level without changing selection %j", async (selected) => {
+    const prepared = prepareRenderPacket(authorPacket(selected)), batch = prepared.batches[0]!;
+    const indexed = compilePacketResidencyIndex(prepared).batches.get(batch.key)!;
+    expect(indexed.authorLevels).toEqual(["high", "low"]);
+    expect(indexed.fallbackGeometry).toBeUndefined();
+    const requests = planPacketResidencyRequests(prepared, [{ batchKey: batch.key, priority: 7 }]);
+    expect(requests.map(value => [value.id, value.required, value.priority])).toEqual([["high", true, 7], ["low", true, 7]]);
+    expect(() => planPacketResidencyRequests(prepared, [{ batchKey: batch.key, desiredLod: 0 }])).toThrow(/override/);
+    const loader = createPacketResidencyLoader(prepared), f = gpuFixture();
+    const runtime = loader.createRuntime(f.session, { maxResidentBytes: 1_000_000, maxUploadBytesPerFrame: 1_000_000 });
+    const projection = await loader.loadInto(runtime, { frame: 1, requests, allowPartialLod: true });
+    expect(projection.batches[0]!.geometries.map(value => value.sourceId)).toEqual(["high", "low"]);
+    expect(projection.batches[0]!.source.lod).toMatchObject({ strategy: "author-selected", revision: 1, selectedLevels: selected });
+    projection.release(); runtime.dispose(); expect(f.owned.size).toBe(0);
+  });
+
+  it("rejects a missing author level even when partial screen LOD is allowed", async () => {
+    const loader = createPacketResidencyLoader(prepareRenderPacket(authorPacket([]))), f = gpuFixture();
+    const runtime = loader.createRuntime(f.session, { maxResidentBytes: 1_000_000, maxUploadBytesPerFrame: 1_000_000 });
+    await expect(loader.loadInto(runtime, { frame: 1, allowPartialLod: true,
+      requests: loader.requests.filter(value => value.id === "low") })).rejects.toMatchObject({ code: "incomplete-residency" });
+    runtime.dispose(); expect(f.owned.size).toBe(0);
+  });
+
+  it("accepts single-level author residency without inventing a fallback", () => {
+    const packet = authorPacket([0]), instance = packet.instances[0]!;
+    const prepared = prepareRenderPacket({ ...packet, instances: [{ ...instance,
+      lod: { strategy: "author-selected", revision: 2, levels: [{ geometry: "high", distance: 0, hysteresis: 0 }], selectedLevels: [0] } }] });
+    const requests = planPacketResidencyRequests(prepared, []);
+    expect(requests.map(value => [value.id, value.required])).toEqual([["high", true]]);
+  });
+
   it("takes exactly one private typed-array snapshot during registration", () => {
     const prepared = packet();
     const floats = vi.spyOn(Float32Array.prototype, "slice");
@@ -162,6 +220,32 @@ describe("createPacketResidencyLoader", () => {
 
     f.runtime.dispose();
     expect(f.runtime.retiredBytes).toBe(0); expect(f.owned.size).toBe(0);
+  });
+
+  it("keeps the resident coarse LOD drawable when an optional fine upload fails", async () => {
+    let failUploads = false;
+    const loader = createPacketResidencyLoader(lodPacket()), f = gpuFixture(() => failUploads);
+    const runtime = loader.createRuntime(f.session,
+      { maxResidentBytes: 1_000_000, maxUploadBytesPerFrame: 1_000_000 });
+    const coarse = loader.requests.find(value => value.id === "coarse")!;
+    const fine = loader.requests.find(value => value.id === "fine")!;
+    const first = await loader.loadInto(runtime, { frame: 1,
+      requests: [{ ...coarse, required: true }], allowPartialLod: true });
+    expect(first.batches[0]?.geometries.map(value => value.sourceId)).toEqual(["coarse"]);
+
+    failUploads = true;
+    const fallback = await loader.loadInto(runtime, { frame: 2, requests: [
+      { ...coarse, required: true }, { ...fine, required: false },
+    ], allowPartialLod: true });
+
+    expect(runtime.snapshot().map(value => value.id)).toEqual(["coarse"]);
+    expect(fallback.batches[0]?.geometries.map(value => value.sourceId)).toEqual(["coarse"]);
+    expect(fallback.geometry("fine")).toBeUndefined();
+    await expect(loader.loadInto(runtime, { frame: 3, requests: [
+      { ...coarse, required: true }, { ...fine, required: true },
+    ], allowPartialLod: true })).rejects.toMatchObject({ code: "partial-failure" });
+    first.release(); fallback.release(); runtime.dispose();
+    expect(runtime.retiredBytes).toBe(0); expect(f.owned.size).toBe(0);
   });
 
   it("fails closed when a runtime belongs to another loader", async () => {

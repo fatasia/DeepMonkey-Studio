@@ -2,7 +2,7 @@ import { decodeGlb, decodeTexturedGlb } from "@bim-studio/deep-engine/gltf";
 import type { RenderPacket } from "@bim-studio/deep-engine/webgpu";
 import { browserImageDecoder } from "./browserImageDecoder.js";
 
-export type ModelName = "Box" | "BoxInterleaved" | "BoxTextured" | "NormalTangentTest" | "TextureEncodingTest" | "AlphaBlendModeTest" | "MaterialModes" | "UvSets";
+export type ModelName = "Box" | "BoxInterleaved" | "BoxTextured" | "NormalTangentTest" | "TextureEncodingTest" | "TextureTransformMultiTest" | "AlphaBlendModeTest" | "MaterialModes" | "UvSets";
 const decoded = new Map<ModelName, RenderPacket>();
 
 export async function loadModelPacket(name: ModelName, count: number, signal?: AbortSignal): Promise<RenderPacket> {
@@ -12,8 +12,15 @@ export async function loadModelPacket(name: ModelName, count: number, signal?: A
     const response = await fetch(`/assets/${asset}.glb`, signal ? { signal } : {});
     if (!response.ok) throw new Error(`模型加载失败 (${response.status})`);
     const bytes = new Uint8Array(await response.arrayBuffer());
-    source = asset === "BoxTextured" || asset === "NormalTangentTest" || asset === "TextureEncodingTest" || asset === "AlphaBlendModeTest"
-      ? await decodeTexturedGlb(bytes, browserImageDecoder, { resourcePrefix: name, ...(signal ? { signal } : {}) })
+    const optionalMaterialFallbacks = asset === "TextureTransformMultiTest"
+      ? ["KHR_materials_clearcoat", "KHR_materials_unlit"] as const
+      : undefined;
+    source = asset === "BoxTextured" || asset === "NormalTangentTest" || asset === "TextureEncodingTest" || asset === "TextureTransformMultiTest" || asset === "AlphaBlendModeTest"
+      ? await decodeTexturedGlb(bytes, browserImageDecoder, {
+        resourcePrefix: name,
+        ...(optionalMaterialFallbacks ? { optionalMaterialFallbacks } : {}),
+        ...(signal ? { signal } : {}),
+      })
       : decodeGlb(bytes, { resourcePrefix: name });
     if (name === "MaterialModes") source = materialModesPacket(source);
     if (name === "UvSets") source = uvSetsPacket(source);

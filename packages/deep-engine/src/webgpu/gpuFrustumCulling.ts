@@ -13,6 +13,7 @@ import {
   type Frustum,
   type IndirectDrawArgs,
 } from "./gpuFrustumPacking.js";
+import { failWithResourceCleanup } from "./resourceCleanup.js";
 
 export { cpuFrustumCull, GPU_CULL_INDIRECT_STRIDE, GPU_CULL_INSTANCE_STRIDE,
   GPU_CULL_PREVIOUS_TRANSFORM_STRIDE, packCullingInstances } from "./gpuFrustumPacking.js";
@@ -193,8 +194,14 @@ function createSharedInputs(kernel: GpuCullingKernel, capacity: number, onDispos
           encode(encoder): void {
             assertPhaseAlive();
             if (!viewReady) throw new Error("GPU culling view must be prepared before encode.");
-            const pass = encoder.beginComputePass({ label: "Deep frustum culling" }); pass.setBindGroup(0, bindGroup); pass.setPipeline(cullPipeline); if (inputCount) pass.dispatchWorkgroups(Math.ceil(inputCount / WORKGROUP_SIZE)); pass.setPipeline(indirectPipeline); pass.dispatchWorkgroups(1); pass.end();
             viewReady = false;
+            const pass = encoder.beginComputePass({ label: "Deep frustum culling" });
+            try {
+              pass.setBindGroup(0, bindGroup); pass.setPipeline(cullPipeline);
+              if (inputCount) pass.dispatchWorkgroups(Math.ceil(inputCount / WORKGROUP_SIZE));
+              pass.setPipeline(indirectPipeline); pass.dispatchWorkgroups(1);
+            } catch (error) { failWithResourceCleanup(error, "Frustum culling encoding failed.", [() => pass.end()]); }
+            pass.end();
           },
           dispose(): void {
             if (phaseDisposed) return;

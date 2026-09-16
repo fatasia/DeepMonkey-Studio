@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GpuTimer } from "./gpuTimer.js";
 import type { DeviceSession } from "./deviceSession.js";
 
-function fixture(supported = true) {
+function fixture(supported = true, onTiming?: (timing: { frame: number; milliseconds: number }) => void) {
   const resources: unknown[] = [];
   const readbacks: Array<{ mapAsync: ReturnType<typeof vi.fn>; getMappedRange: () => ArrayBuffer; mapState: string; unmap: ReturnType<typeof vi.fn> }> = [];
   const device = { features: new Set(supported ? ["timestamp-query"] : []), createQuerySet: vi.fn(() => ({ destroy: vi.fn() })),
@@ -13,7 +13,7 @@ function fixture(supported = true) {
       readbacks.push(buffer); return buffer;
     }) };
   const session = { device, state: "ready", own: <T>(value: T): T => { resources.push(value); return value; } };
-  return { timer: new GpuTimer(session as unknown as DeviceSession), session, device, resources, readbacks };
+  return { timer: new GpuTimer(session as unknown as DeviceSession, onTiming), session, device, resources, readbacks };
 }
 
 beforeEach(() => {
@@ -30,7 +30,7 @@ describe("asynchronous GPU timing", () => {
   });
 
   it("preserves timestamp precision and maps only after explicit submission notification", async () => {
-    const f = fixture(); f.timer.enabled = true;
+    const observed = vi.fn(), f = fixture(true, observed); f.timer.enabled = true;
     const frame = f.timer.begin(7)!;
     const encoder = { resolveQuerySet: vi.fn(), copyBufferToBuffer: vi.fn() };
     frame.resolve(encoder as unknown as GPUCommandEncoder);
@@ -38,6 +38,7 @@ describe("asynchronous GPU timing", () => {
     expect(f.readbacks[1]!.mapAsync).not.toHaveBeenCalled();
     frame.read();
     expect(await f.timer.collect(7, 7)).toEqual([{ frame: 7, milliseconds: 2.5 }]);
+    expect(observed).toHaveBeenCalledWith({ frame: 7, milliseconds: 2.5 });
     expect(f.readbacks[1]!.unmap).toHaveBeenCalledOnce();
     expect(await f.timer.collect(8, 9)).toEqual([]);
   });

@@ -24,6 +24,13 @@ interface UploadedInputs {
   readonly localBounds: Float32Array;
   readonly parameters: ArrayBuffer;
 }
+interface ClusterAssignmentInputs {
+  readonly resources: Allocation;
+  readonly points: Float32Array;
+  readonly spots: Float32Array;
+  readonly localBounds: Float32Array;
+  readonly parameters: ArrayBuffer;
+}
 
 export interface ForwardPlusClusterResources {
   readonly pipelineKey: typeof FORWARD_PLUS_CLUSTER_PIPELINE_KEY;
@@ -96,6 +103,8 @@ export class ForwardPlusClusterAssigner {
   private readonly pipeline: GPUComputePipeline;
   private resources: Allocation | undefined;
   private prepared: ForwardPlusClusterResources | undefined;
+  private preparedAssignment: ClusterAssignmentInputs | undefined;
+  private assigned: ClusterAssignmentInputs | undefined;
   private uploaded: UploadedInputs | undefined;
   private disposed = false;
 
@@ -115,7 +124,7 @@ export class ForwardPlusClusterAssigner {
   }
 
   prepare(config: ClusterGridConfig, lights: ClusteredLights, options: ForwardPlusClusterPrepareOptions = {}): ForwardPlusClusterResources {
-    this.assertReady(); this.prepared = undefined;
+    this.assertReady(); this.prepared = undefined; this.preparedAssignment = undefined;
     const boundedLights = options.maxLocalLights === undefined ? lights : prioritizeLocalLights(lights, options.maxLocalLights);
     const grid = normalizeClusterGrid(config), packed = packClusteredLights(boundedLights);
     const cpuReference = options.cpuReference ? assignLightsToClusters(config, boundedLights) : undefined;
@@ -144,24 +153,36 @@ export class ForwardPlusClusterAssigner {
       selectedLocalLightCount: packed.pointCount + packed.spotCount,
       droppedLocalLightCount: (lights.points?.length ?? 0) + (lights.spots?.length ?? 0) - packed.pointCount - packed.spotCount,
     });
-    this.prepared = result; return result;
+    this.prepared = result;
+    this.preparedAssignment = { resources: candidate, points: packed.points, spots: packed.spots,
+      localBounds: packed.localBounds, parameters: packParameters(grid, packed) };
+    return result;
   }
 
   encode(encoder: GPUCommandEncoder): ForwardPlusClusterResources {
     this.assertReady();
-    const prepared = this.prepared, resources = this.resources;
-    if (!prepared || !resources) throw new Error("Forward+ cluster inputs must be prepared before encode.");
-    const groups = Math.ceil(prepared.grid.clusterCount / FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE);
-    const maxGroups = this.session.device.limits.maxComputeWorkgroupsPerDimension;
-    if (groups > maxGroups) throw new Error(`Forward+ cluster dispatch exceeds device limit ${maxGroups}.`);
-    const pass = encoder.beginComputePass({ label: "Deep Forward+ cluster assignment" });
-    pass.setPipeline(this.pipeline); pass.setBindGroup(0, resources.bindGroup); pass.dispatchWorkgroups(groups); pass.end();
-    this.prepared = undefined; return prepared;
+    const prepared = this.prepared, resources = this.resources, assignment = this.preparedAssignment;
+    if (!prepared || !resources || !assignment) throw new Error("Forward+ cluster inputs must be prepared before encode.");
+    if (!sameAssignment(assignment, this.assigned)) {
+      const groups = Math.ceil(prepared.grid.clusterCount / FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE);
+      const maxGroups = this.session.device.limits.maxComputeWorkgroupsPerDimension;
+      if (groups > maxGroups) throw new Error(`Forward+ cluster dispatch exceeds device limit ${maxGroups}.`);
+      this.session.device.queue.writeBuffer(resources.overflowBuffer, 0, new Uint32Array([0]));
+      const pass = encoder.beginComputePass({ label: "Deep Forward+ cluster assignment" });
+      pass.setPipeline(this.pipeline); pass.setBindGroup(0, resources.bindGroup); pass.dispatchWorkgroups(groups); pass.end();
+      this.assigned = assignment;
+    }
+    this.prepared = undefined; this.preparedAssignment = undefined; return prepared;
+  }
+
+  /** Forces the next frame to rebuild cluster lists after an encoder or submission failure. */
+  invalidateAssignment(): void {
+    this.prepared = undefined; this.preparedAssignment = undefined; this.assigned = undefined;
   }
 
   dispose(): void {
     if (this.disposed) return;
-    this.disposed = true; this.prepared = undefined;
+    this.disposed = true; this.prepared = undefined; this.preparedAssignment = undefined; this.assigned = undefined;
     this.uploaded = undefined;
     if (this.resources) { this.release(this.resources); this.resources = undefined; }
   }
@@ -204,7 +225,6 @@ export class ForwardPlusClusterAssigner {
     if (!sameWords(parameters, previous?.parameters)) {
       queue.writeBuffer(resources.parameterBuffer, 0, parameters); count++;
     }
-    queue.writeBuffer(resources.overflowBuffer, 0, new Uint32Array([0]));
     this.uploaded = { resources, directional: packed.directional, points: packed.points,
       spots: packed.spots, localBounds: packed.localBounds, parameters };
     return count;
@@ -236,4 +256,10 @@ function sameWords(current: ArrayBuffer, previous: ArrayBuffer | undefined): boo
   if (!previous || current.byteLength !== previous.byteLength) return false;
   const left = new Uint32Array(current), right = new Uint32Array(previous);
   return left.every((value, index) => value === right[index]);
+}
+
+function sameAssignment(current: ClusterAssignmentInputs, previous: ClusterAssignmentInputs | undefined): boolean {
+  return previous !== undefined && current.resources === previous.resources
+    && sameFloats(current.points, previous.points) && sameFloats(current.spots, previous.spots)
+    && sameFloats(current.localBounds, previous.localBounds) && sameWords(current.parameters, previous.parameters);
 }

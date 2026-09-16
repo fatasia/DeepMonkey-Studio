@@ -66,6 +66,13 @@ function partialRequiredIdentities(packet: PreparedPacket): Set<string> {
       required.add(identity("geometry", batch.geometry));
       continue;
     }
+    if (batch.lod.strategy === "author-selected") {
+      for (const level of batch.lod.levels) {
+        if (!level.resident) throw new Error(`Author LOD geometry is unavailable: ${level.geometry}.`);
+        required.add(identity("geometry", level.geometry));
+      }
+      continue;
+    }
     const coarsest = batch.lod.levels.at(-1);
     if (!coarsest || !coarsest.resident) {
       throw new Error(`Prepared LOD coarsest fallback is unavailable: ${batch.key}.`);

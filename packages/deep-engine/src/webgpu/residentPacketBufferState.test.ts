@@ -78,9 +78,16 @@ describe("ResidentPacketBufferState", () => {
 
   it("keeps a validated candidate private until every GPU scope succeeds", async () => {
     const state = new ResidentPacketBufferState(), f = validationContext(), value = projection();
+    const previous = projection(); state.stage(f.context, previous, 6); state.publish(f.context, 6);
     const result = state.stageValidated(f.context, value, 7);
     expect(state.pending).toBe(true);
     expect(f.checks).toHaveLength(3);
+    expect(state.publish(f.context, 7)).toBeUndefined();
+    expect(state.active?.projection).toBe(previous);
+    f.checks[0]!(null); f.checks[1]!(null);
+    await Promise.resolve();
+    expect(state.publish(f.context, 7)).toBeUndefined();
+    expect(previous.released).toBe(false);
     f.checks.forEach(resolve => resolve(null));
     await expect(result).resolves.toBe(true);
     expect(state.publish(f.context, 7)?.current.projection).toBe(value);
@@ -88,12 +95,16 @@ describe("ResidentPacketBufferState", () => {
 
   it("releases a candidate rejected by GPU validation", async () => {
     const state = new ResidentPacketBufferState(), f = validationContext(), value = projection();
+    const previous = projection(); state.stage(f.context, previous, 3); state.publish(f.context, 3);
     const result = state.stageValidated(f.context, value, 4);
+    expect(state.publish(f.context, 4)).toBeUndefined();
     f.checks[0]!({ message: "allocation rejected" } as GPUError);
     f.checks[1]!(null); f.checks[2]!(null);
     await expect(result).rejects.toThrow("GPU resident packet preparation failed: allocation rejected");
     expect(value.release).toHaveBeenCalledOnce();
     expect(state.pending).toBe(false);
+    expect(state.active?.projection).toBe(previous);
+    expect(previous.released).toBe(false);
   });
 
   it("rejects immediately when a validated candidate is superseded", async () => {

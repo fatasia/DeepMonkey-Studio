@@ -55,6 +55,38 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("weighted blended order-independent transparency", () => {
+  it.each(["dispose", "loss"])("detaches ownership and attempts both releases after %s cleanup throws", point => {
+    const f = fixture(), oit = new WeightedOitPass(f.session); oit.resize(8, 8);
+    f.textures.forEach(value => value.destroy.mockImplementation(() => { throw Error("destroy failed"); }));
+    if (point === "dispose") expect(() => oit.dispose()).toThrow();
+    else { f.rawSession.state = "lost"; expect(() => oit.resize(8, 8)).toThrow(); }
+    expect(oit.current).toBeUndefined(); expect(f.owned.size).toBe(0);
+    f.textures.forEach(value => expect(value.destroy).toHaveBeenCalledOnce());
+    expect(() => oit.dispose()).not.toThrow();
+  });
+  it("preserves the new resize allocation after old-target retirement throws", () => {
+    const f = fixture(), oit = new WeightedOitPass(f.session); oit.resize(8, 8);
+    const old = f.textures.slice(); old.forEach(value => value.destroy.mockImplementation(() => { throw Error("retirement failed"); }));
+    expect(() => oit.resize(16, 16)).toThrow();
+    expect(oit.current).toMatchObject({ width: 16, height: 16, generation: 2 });
+    const next = oit.current; expect(oit.resize(16, 16)).toBe(next); expect(f.textures).toHaveLength(4);
+    old.forEach(value => expect(value.destroy).toHaveBeenCalledOnce());
+    f.textures.slice(2).forEach(value => expect(value.destroy).not.toHaveBeenCalled());
+    expect(f.owned.size).toBe(2); oit.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("keeps the allocation failure and attempts every rollback release when cleanup also throws", () => {
+    const f = fixture(), oit = new WeightedOitPass(f.session), original = f.device.createTexture.getMockImplementation()!;
+    f.device.createTexture.mockImplementation(descriptor => {
+      const value = original(descriptor);
+      value.destroy.mockImplementation(() => { throw Error("rollback failed"); });
+      value.createView.mockImplementation(() => { throw Error("view creation failed"); }); return value;
+    });
+    let failure: unknown; try { oit.resize(8, 8); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors[0]).toMatchObject({ message: "view creation failed" });
+    expect(f.textures).toHaveLength(2); f.textures.forEach(value => expect(value.destroy).toHaveBeenCalledOnce());
+    expect(oit.current).toBeUndefined(); expect(f.owned.size).toBe(0); oit.dispose();
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("passes Naga parsing and semantic validation", () => {
     for (const [name, code] of [["fragment", WEIGHTED_OIT_FRAGMENT_WGSL], ["composite", WEIGHTED_OIT_COMPOSITE_WGSL]] as const) {
       const result = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,

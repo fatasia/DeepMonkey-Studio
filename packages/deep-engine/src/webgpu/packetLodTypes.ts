@@ -10,6 +10,7 @@ export interface PacketLodView {
 }
 
 export interface PacketLodDraw {
+  readonly meshlets?: { readonly indexBuffer: GPUBuffer; readonly commandCount: number };
   readonly geometry: string;
   readonly instances: GPUBuffer;
   /** 当前级别在实例缓冲区中的字节起点，间接命令的 firstInstance 固定为 0。 */
@@ -21,6 +22,11 @@ export interface PacketLodDraw {
 }
 
 export interface PacketLodFrameStats {
+  readonly meshletPasses?: number;
+  readonly meshletDispatches?: number;
+  readonly meshletFallbackReasons?: readonly string[];
+  readonly authorFrustumPasses?: number;
+  readonly authorFrustumDispatches?: number;
   readonly inputObjects: number;
   readonly selectionBatches: number;
   readonly indirectDraws: number;

@@ -6,7 +6,7 @@ import { GPU_LOD_MAX_LEVELS } from "./gpuLodTypes.js";
 import { conservativeAffineScale } from "./affineSphereBounds.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 
-type LodProfile = NonNullable<PreparedBatch["lod"]>;
+type LodProfile = Exclude<NonNullable<PreparedBatch["lod"]>, { strategy: "author-selected" }>;
 export interface PacketLodBatchMapping {
   readonly batch: CachedPacketBatch;
   readonly offset: number;
@@ -31,6 +31,7 @@ export class PacketLodSceneCache {
     const objects = [], mappings: PacketLodBatchMapping[] = []; let offset = 0;
     for (const batch of batches) {
       const profile = batch.source.lod!;
+      if (profile.strategy === "author-selected") throw Error("Author-selected LOD must bypass the screen-space scene cache.");
       const sphere = localProfileSphere(profile, bounds);
       const residentLevelIndices = Object.freeze(profile.levels.flatMap((level, index) =>
         level.resident && residentGeometries.has(level.geometry) ? [index] : []));
@@ -38,7 +39,8 @@ export class PacketLodSceneCache {
       for (let index = 0; index < batch.source.count; index++) objects.push({ sphere: worldSphere(batch.source.data, index, sphere),
         instanceIndex: index, hysteresisRatio: profile.hysteresisRatio, levels: profile.levels.map((level, levelIndex) => ({
           minProjectedDiameterPixels: level.minProjectedDiameterPixels, geometricError: level.geometricError,
-          triangles: level.triangles, meshletOffset: levelIndex, meshletCount: 1,
+          triangles: level.triangles, meshletOffset: level.meshletOffset ?? levelIndex,
+          meshletCount: level.meshletCount ?? 1,
           resident: level.resident && residentGeometries.has(level.geometry),
         })) });
       offset += batch.source.count;

@@ -45,14 +45,12 @@ export function clusterIndexForFragment(assignment: CpuClusterAssignment, fragme
 }
 
 function fresnelSchlick(cosine: number, f0: LightVector3): MutableVec3 {
-  const factor = (1 - cosine) ** 5; return f0.map(value => value + (1 - value) * factor) as MutableVec3;
+  const factor = 2 ** ((-5.55473 * cosine - 6.98316) * cosine);
+  return f0.map(value => value * (1 - factor) + factor) as MutableVec3;
 }
 function distributionGgx(nDotH: number, roughness: number): number {
   const alpha = roughness * roughness, alpha2 = alpha * alpha, denominator = nDotH * nDotH * (alpha2 - 1) + 1;
   return alpha2 / Math.max(PI * denominator * denominator, 1e-6);
-}
-function geometrySchlickGgx(nDotX: number, roughness: number): number {
-  const k = (roughness + 1) ** 2 / 8; return nDotX / Math.max(nDotX * (1 - k) + k, 1e-4);
 }
 function brdf(baseColor: LightVector3, metallic: number, roughness: number, normal: LightVector3,
   view: LightVector3, surfaceToLight: LightVector3, radiance: LightVector3): MutableVec3 {
@@ -61,17 +59,20 @@ function brdf(baseColor: LightVector3, metallic: number, roughness: number, norm
   const nDotV = clamp(dot(normal, view), 1e-4, 1), nDotH = clamp(dot(normal, half), 0, 1), vDotH = clamp(dot(view, half), 0, 1);
   const f0 = baseColor.map(value => 0.04 * (1 - metallic) + value * metallic) as MutableVec3;
   const fresnel = fresnelSchlick(vDotH, f0), distribution = distributionGgx(nDotH, roughness);
-  const geometry = geometrySchlickGgx(nDotV, roughness) * geometrySchlickGgx(nDotL, roughness);
+  const alpha = roughness * roughness, alpha2 = alpha * alpha;
+  const gv = nDotL * Math.sqrt(alpha2 + (1 - alpha2) * nDotV * nDotV);
+  const gl = nDotV * Math.sqrt(alpha2 + (1 - alpha2) * nDotL * nDotL);
+  const visibility = 0.5 / Math.max(gv + gl, 1e-6);
   return baseColor.map((base, index) => {
-    const specular = distribution * geometry * fresnel[index]! / Math.max(4 * nDotV * nDotL, 1e-4);
-    const diffuse = (1 - fresnel[index]!) * (1 - metallic) * base / PI;
+    const specular = distribution * visibility * fresnel[index]!;
+    const diffuse = (1 - metallic) * base / PI;
     return (diffuse + specular) * radiance[index]! * nDotL;
   }) as MutableVec3;
 }
 function rangeAttenuation(distanceSquared: number, range: number): number {
   if (distanceSquared >= range * range) return 0;
   const ratioSquared = distanceSquared / Math.max(range * range, 1e-4), window = Math.max(1 - ratioSquared * ratioSquared, 0);
-  return window * window / Math.max(distanceSquared, 1e-4);
+  return window * window / Math.max(distanceSquared, 0.01);
 }
 function localContribution(light: PointLight | SpotLight, surface: ForwardPlusPbrSurface, base: LightVector3,
   metallic: number, roughness: number, normal: LightVector3, view: LightVector3): MutableVec3 {
@@ -81,7 +82,8 @@ function localContribution(light: PointLight | SpotLight, surface: ForwardPlusPb
   if ("directionView" in light) {
     const direction = normalize(light.directionView, [0, 0, -1]);
     const coneCos = dot(scale(surfaceToLight, -1), direction);
-    attenuation *= clamp((coneCos - light.outerConeCos) / (light.innerConeCos - light.outerConeCos), 0, 1);
+    const coneWeight = clamp((coneCos - light.outerConeCos) / (light.innerConeCos - light.outerConeCos), 0, 1);
+    attenuation *= coneWeight * coneWeight * (3 - 2 * coneWeight);
   }
   return brdf(base, metallic, roughness, normal, view, surfaceToLight,
     scale(light.color, light.intensity * attenuation));

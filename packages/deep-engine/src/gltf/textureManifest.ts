@@ -1,5 +1,6 @@
 import type { TextureSampler, TextureSemantic } from "../textures/decodedTexture.js";
 import { TextureDataReader } from "./textureDataReader.js";
+import { decodeImageDataUri } from "./textureDataUri.js";
 import {
   KHR_MATERIALS_EMISSIVE_STRENGTH, readEmissiveStrength, validateExtensionSets,
 } from "./materialExtensions.js";
@@ -14,6 +15,8 @@ const defaultSampler: Required<TextureSampler> = { addressModeU: "repeat", addre
 export interface GltfTextureManifestOptions {
   readonly resourcePrefix?: string;
   readonly signal?: AbortSignal;
+  /** 此 manifest 最多保留的编码图像总字节数。 */
+  readonly maxImageBytes?: number;
 }
 
 /** KHR_texture_transform 的列主序 T*R*S 3×3 矩阵；glTF UV 原点保持左上，不翻转 V。 */
@@ -54,21 +57,33 @@ function sampler(value: unknown, index: number): Required<TextureSampler> {
   return result;
 }
 
-function encodedImages(document: JsonObject, reader: TextureDataReader, prefix: string): GltfEncodedImage[] {
+function encodedImages(document: JsonObject, reader: TextureDataReader, prefix: string, maxBytes: number,
+  signal?: AbortSignal): GltfEncodedImage[] {
   let bytes = 0;
   return list(document.images, "images", 4096).map((value, index) => {
+    signal?.throwIfAborted();
     const path = `images[${index}]`, image = object(value, path); noExtensions(image, path);
-    if (image.uri !== undefined) unsupported(`${path}.uri`, "external or data-URI images");
-    if (image.bufferView === undefined) invalid(`${path}.bufferView`, "Embedded images require a bufferView.");
-    if (image.mimeType !== "image/png" && image.mimeType !== "image/jpeg" && image.mimeType !== "image/ktx2") unsupported(`${path}.mimeType`, "image MIME type");
-    const data = reader.imageBytes(image.bufferView, `${path}.bufferView`, MAX_BYTES - bytes); bytes += data.byteLength;
+    let mimeType: GltfEncodedImage["mimeType"], data: Uint8Array<ArrayBuffer>;
+    if (image.uri !== undefined) {
+      if (image.bufferView !== undefined) invalid(path, "Image URI and bufferView are mutually exclusive.");
+      if (typeof image.uri !== "string") invalid(`${path}.uri`, "Image URI must be a string.");
+      const embedded = decodeImageDataUri(image.uri, `${path}.uri`, maxBytes - bytes, signal);
+      if (image.mimeType !== undefined && image.mimeType !== embedded.mimeType) invalid(`${path}.mimeType`, "Image MIME type does not match its Data URI.");
+      mimeType = embedded.mimeType; data = embedded.data;
+    } else {
+      if (image.bufferView === undefined) invalid(`${path}.bufferView`, "Embedded images require a bufferView or Data URI.");
+      if (image.mimeType !== "image/png" && image.mimeType !== "image/jpeg" && image.mimeType !== "image/ktx2") unsupported(`${path}.mimeType`, "image MIME type");
+      mimeType = image.mimeType;
+      data = reader.imageBytes(image.bufferView, `${path}.bufferView`, maxBytes - bytes);
+    }
+    bytes += data.byteLength;
     const png = data.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, offset) => data[offset] === byte);
     const jpeg = data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
     const ktx2 = data.length >= 12 && [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]
       .every((byte, offset) => data[offset] === byte);
-    const signatureMatches = image.mimeType === "image/png" ? png : image.mimeType === "image/jpeg" ? jpeg : ktx2;
-    if (!signatureMatches) invalid(path, `Encoded bytes do not match ${image.mimeType}.`);
-    return { id: `${prefix}/image/${index}`, imageIndex: index, mimeType: image.mimeType, data };
+    const signatureMatches = mimeType === "image/png" ? png : mimeType === "image/jpeg" ? jpeg : ktx2;
+    if (!signatureMatches) invalid(path, `Encoded bytes do not match ${mimeType}.`);
+    return { id: `${prefix}/image/${index}`, imageIndex: index, mimeType, data };
   });
 }
 
@@ -108,7 +123,12 @@ export function extractGltfTextureManifest(json: unknown, buffers: readonly Uint
     new Set([TRANSFORM, BASISU, KHR_MATERIALS_EMISSIVE_STRENGTH]));
   const prefix = options.resourcePrefix === undefined ? "gltf" : options.resourcePrefix;
   if (typeof prefix !== "string" || !prefix.length || prefix.length > 256) invalid("options.resourcePrefix", "Expected a nonempty prefix of at most 256 characters.");
-  const reader = new TextureDataReader(document, buffers, options.signal), images = encodedImages(document, reader, prefix);
+  const maxImageBytes = options.maxImageBytes ?? MAX_BYTES;
+  if (!Number.isSafeInteger(maxImageBytes) || maxImageBytes < 1 || maxImageBytes > MAX_BYTES) {
+    invalid("options.maxImageBytes", `Expected an integer in 1..${MAX_BYTES}.`);
+  }
+  const reader = new TextureDataReader(document, buffers, options.signal);
+  const images = encodedImages(document, reader, prefix, maxImageBytes, options.signal);
   const samplers = list(document.samplers, "samplers", 4096).map(sampler);
   const textures = list(document.textures, "textures", 4096).map((value, index) => {
     const path = `textures[${index}]`, texture = object(value, path);

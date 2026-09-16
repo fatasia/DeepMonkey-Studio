@@ -201,7 +201,8 @@ function checks(input: CheckInput): ProbeChecks {
   const surfaces = Object.freeze({ legacy: input.legacySurface, coarseStage: input.coarseStageSurface,
     coarse: input.coarseSurface, fineStage: input.fineStageSurface, fine: input.fineSurface, far: input.farSurface });
   return Object.freeze({ coarseOnlyActuallyDrew: !!coarseLeft && input.coarseSurface.redPixels > 16
-      && input.firstResidents.join() === "geometry:coarse" && draws.coarse.lodSelectionBatches === 1,
+      && input.firstResidents.join() === "geometry:coarse" && draws.coarse.drawCalls > 0
+      && draws.coarse.lodSelectionBatches === 1 && draws.coarse.lodIndirectDraws === 1,
     coarseStagePreservedLegacyFrame: input.legacySurface?.checksum === input.coarseStageSurface?.checksum,
     fineStagePreservedCoarseFrameAndLease: input.coarseSurface?.checksum === input.fineStageSurface?.checksum
       && input.coarseLeaseHeldDuringFineStage,

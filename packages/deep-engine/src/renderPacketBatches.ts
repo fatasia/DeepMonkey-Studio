@@ -11,11 +11,14 @@ import type {
 } from "./renderPacketTypes.js";
 
 interface MutableBatch {
+  readonly pose?: string;
   readonly geometry: string;
   readonly instanceIds: string[];
   readonly mirrored: boolean;
   readonly doubleSided: boolean;
   readonly alphaMode: AlphaMode;
+  readonly alphaCutoff?: number;
+  readonly castShadow: boolean;
   readonly offsets: number[];
   readonly textures?: PreparedMaterialTextures;
   readonly lod?: PreparedLodProfile;
@@ -28,6 +31,10 @@ export function validateInstanceIds(instances: readonly RenderInstance[]): void 
       throw new Error("Invalid or duplicate instance ID.");
     }
     ids.add(instance.id);
+    if (instance.pose !== undefined && (typeof instance.pose !== "string" || !instance.pose.trim())) throw new Error("Instance pose must be a nonempty ID.");
+    for (const key of ["castShadow", "receiveShadow"] as const) {
+      if (instance[key] !== undefined && typeof instance[key] !== "boolean") throw new Error(`Instance ${key} must be boolean.`);
+    }
   }
 }
 
@@ -51,18 +58,25 @@ export function packInstanceBatches(
     const lod = prepareLodProfile(instance, geometries, material, textures);
     const mirrored = packTransform(instance.transform, staging, offset);
     packMaterialRecord(staging, offset, material, textures, mirrored);
+    if (instance.receiveShadow === false) staging[offset + 31]! += 16;
     const alphaMode = material.alphaMode ?? "OPAQUE";
     const doubleSided = material.doubleSided === true;
     const batchMirrored = doubleSided ? false : mirrored;
-    const key = batchKey(instance.geometry, batchMirrored, doubleSided, alphaMode, textures, lod);
+    const castShadow = instance.castShadow !== false;
+    const key = batchKey(instance.geometry, batchMirrored, doubleSided, alphaMode, textures, lod)
+      + (lod?.strategy === "author-selected" ? `/author-lod:${JSON.stringify(instance.id)}` : "")
+      + (castShadow ? "" : "/no-shadow") + (instance.pose === undefined ? "" : `/pose:${JSON.stringify(instance.pose)}`);
     let batch = grouped.get(key);
     if (!batch) {
       batch = {
+        ...(instance.pose === undefined ? {} : { pose: instance.pose }),
         geometry: instance.geometry,
         instanceIds: [],
         mirrored: batchMirrored,
         doubleSided,
         alphaMode,
+        ...(material.alphaCutoff === undefined ? {} : { alphaCutoff: material.alphaCutoff }),
+        castShadow,
         offsets: [],
         ...(textures ? { textures } : {}),
         ...(lod ? { lod } : {}),
@@ -88,12 +102,13 @@ function packMaterialRecord(
   target[offset + 26] = material.baseColor[2];
   target[offset + 27] = material.metallic;
   target[offset + 28] = material.roughness;
-  target[offset + 29] = Math.fround(material.alphaCutoff ?? 0.5);
+  target[offset + 29] = Math.fround(material.alphaCutoff ?? (material.alphaMode === "BLEND" ? 0 : 0.5));
   // shader 使用该符号修正镜像实例的 TBN 手性；不占用 ground 标志所在的 material.y。
   target[offset + 30] = mirrored ? -1 : 1;
   const alphaMode = material.alphaMode ?? "OPAQUE";
   const doubleSided = material.doubleSided === true;
-  target[offset + 31] = (doubleSided ? 1 : 0) + (alphaMode === "MASK" ? 2 : alphaMode === "BLEND" ? 4 : 0);
+  target[offset + 31] = (doubleSided ? 1 : 0) + (alphaMode === "MASK" ? 2 : alphaMode === "BLEND" ? 4 + (material.alphaCutoff !== undefined ? 2 : 0) : 0)
+    + (material.fog === false ? 32 : 0) + (material.shadingModel === "unlit" ? 64 : 0);
   const emissiveFactor = material.emissiveFactor ?? [0, 0, 0];
   // v1 plain ABI 没有空闲标量，故无材质组时预乘 strength；材质组路径在 WGSL 显式乘 emissiveRow1.w。
   const emissiveScale = textures ? 1 : material.emissiveStrength ?? 1;
@@ -117,12 +132,15 @@ function finalizeBatches(
       }
     }
     result.push({
+      ...(group.pose === undefined ? {} : { pose: group.pose }),
       key,
       geometry: group.geometry,
       instanceIds: Object.freeze(group.instanceIds.slice()),
       mirrored: group.mirrored,
       doubleSided: group.doubleSided,
       alphaMode: group.alphaMode,
+      ...(group.alphaCutoff === undefined ? {} : { alphaCutoff: group.alphaCutoff }),
+      ...(group.castShadow ? {} : { castShadow: false }),
       data,
       count: group.offsets.length,
       ...(group.textures ? { textures: group.textures } : {}),
@@ -142,5 +160,6 @@ function batchKey(
 ): string {
   // Keep the retired per-instance transparency discriminator slot stable so existing
   // packet caches do not churn when moving to batched weighted OIT.
-  return JSON.stringify([geometry, mirrored, doubleSided, alphaMode, textures ?? null, lod ?? null]);
+  const topology = lod?.strategy === "author-selected" ? { strategy: lod.strategy, levels: lod.levels } : lod;
+  return JSON.stringify([geometry, mirrored, doubleSided, alphaMode, textures ?? null, topology ?? null]);
 }

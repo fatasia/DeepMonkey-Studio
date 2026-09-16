@@ -1,8 +1,5 @@
 import type { PreparedPacket } from "../renderPacketTypes.js";
-import type {
-  GpuResidencyExecutorOptions,
-  ResidencyBudgets,
-} from "../streaming/index.js";
+import type { ResidencyBudgets } from "../streaming/index.js";
 import type { DeviceSession } from "./deviceSession.js";
 import type { GpuRenderResidencyTelemetrySnapshot } from "./gpuRenderResidencyTelemetry.js";
 import {
@@ -10,6 +7,7 @@ import {
   type GpuRenderResidencyFrameResult,
   type GpuRenderResidencyProfile,
   type GpuRenderResidencyRequest,
+  type GpuRenderResidencyRuntimeOptions,
 } from "./gpuRenderResidencyRuntime.js";
 import {
   createPacketResidencyCatalogFromSnapshot,
@@ -82,7 +80,7 @@ interface SourceRecord {
 export function createPacketResidencyDomain(
   session: DeviceSession,
   budgets: ResidencyBudgets,
-  options?: GpuResidencyExecutorOptions,
+  options?: GpuRenderResidencyRuntimeOptions,
 ): PacketResidencyDomain {
   const records = new Map<string, SourceRecord>();
   const tickets = new WeakMap<object, TicketState>();

@@ -106,7 +106,7 @@ describe("packet LOD GPU path", () => {
   it("connects packet order, one global budget, residency, compaction, and per-level indirect draws", () => {
     const f = fixture(); f.cache.set(packet());
     const stats = f.cache.encodeLod(f.encoder as unknown as GPUCommandEncoder, view);
-    expect(stats).toEqual({ inputObjects: 64, selectionBatches: 1, indirectDraws: 2, historyReset: true });
+    expect(stats).toEqual({ inputObjects: 64, selectionBatches: 1, indirectDraws: 2, historyReset: true, authorFrustumPasses: 0, authorFrustumDispatches: 0 });
     expect(f.encoder.beginComputePass).toHaveBeenCalledTimes(3);
     expect(f.cache.encodeCulling(f.encoder as unknown as GPUCommandEncoder, frustum, "opaque"))
       .toEqual({ phase: "opaque", frustumBatches: 0, occlusionBatches: 0 });
@@ -221,7 +221,7 @@ describe("packet LOD GPU path", () => {
     const encoder = f.encoder as unknown as GPUCommandEncoder;
     f.cache.encodeLod(encoder, { ...view, budget: { maxObjects: 0 } });
     const stats = f.cache.encodeShadowLod(encoder, shadowPlan());
-    expect(stats).toEqual({ inputObjects: 4, selectionBatches: 3, indirectDraws: 6, historyReset: true });
+    expect(stats).toEqual({ inputObjects: 4, selectionBatches: 3, indirectDraws: 6, historyReset: true, authorFrustumPasses: 0, authorFrustumDispatches: 0 });
     for (const label of ["Deep packet LOD objects", "Deep packet LOD levels"]) {
       expect(f.byLabel(label)).toHaveLength(1);
       expect(f.writes.filter(write => write.buffer.label === label)).toHaveLength(1);
@@ -249,7 +249,7 @@ describe("packet LOD GPU path", () => {
     f.cache.set({ ...source, instances });
     expect(inputs.every(buffer => buffer.destroy.mock.calls.length === 1)).toBe(true);
     expect(f.cache.encodeLod(f.encoder as unknown as GPUCommandEncoder, view))
-      .toEqual({ inputObjects: 0, selectionBatches: 0, indirectDraws: 0, historyReset: false });
+      .toEqual({ inputObjects: 0, selectionBatches: 0, indirectDraws: 0, historyReset: false, authorFrustumPasses: 0, authorFrustumDispatches: 0 });
     f.cache.dispose(); expect(f.owned.size).toBe(0);
   });
 

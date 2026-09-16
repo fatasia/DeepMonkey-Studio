@@ -42,6 +42,8 @@ export { BackendSwitchCoordinator } from "./backendSwitch.js";
 export type { BackendPreparation, BackendRevisionBarrier, BackendStateRevision,
   BackendSwitchResult, SwitchableBackend } from "./backendSwitch.js";
 export { BackendPreferenceController } from "./backendPreference.js";
+export { resolveRayTracingCapability } from "./rayTracingCapability.js";
+export type { RayTracingBackend, RayTracingCapability } from "./rayTracingCapability.js";
 export type { BackendPreferenceResult, BackendPreferenceSnapshot,
   BackendPreferenceStore } from "./backendPreference.js";
 export { MAX_EMISSIVE_STRENGTH, prepareInstanceUpdate, prepareRenderPacket } from "./renderPacket.js";
@@ -74,6 +76,8 @@ export { decodeRadianceHdr } from "./textures/radianceHdr.js";
 export type { RadianceHdrDecodeOptions, RadianceHdrImage } from "./textures/radianceHdr.js";
 export { prepareHdrEnvironmentUpload } from "./textures/hdrEnvironmentUpload.js";
 export type { HdrEnvironmentUpload, HdrEnvironmentUploadOptions } from "./textures/hdrEnvironmentUpload.js";
+export { resolveRayTracingDecision, validateRayTracingCapabilities } from "./rayTracingCapabilities.js";
+export type { RayTracingCapabilities, RayTracingDecision, RayTracingFallback, RayTracingFeature, RayTracingTier } from "./rayTracingCapabilities.js";
 
 export { DEEP_2D_DISPLAY_LIST_BUDGETS, DEEP_2D_DISPLAY_LIST_SCHEMA_VERSION, validateDeep2dDisplayList } from "./deep2dDisplayList.js";
 export type {
@@ -89,6 +93,9 @@ export type {
 } from "./deep2dDisplayList.js";
 
 export * from "./chartIr.js";
+export * from "./chartDataUpdate.js";
+export * from "./chartDataApply.js";
+export * from "./chartSimulation.js";
 export { parseChartIR, validateChartIR } from "./chartIrReader.js";
 export * from "./echartsOptionCompat.js";
 export * from "./retainedUi.js";
@@ -98,7 +105,15 @@ export * from "./competitiveBenchmark.js";
 export * from "./assetCompatibility.js";
 export * from "./assetPackage.js";
 export * from "./assetPackageValidation.js";
+export * from "./assetPackageStoreTypes.js";
+export * from "./assetPackageStoreExecutor.js";
+export * from "./assetReimport.js";
+export * from "./assetReimportCoordinatorTypes.js";
+export * from "./assetReimportCoordinator.js";
+export * from "./packagePurity.js";
+export * from "./residencyDiagnostics.js";
 export * from "./assetBakePlan.js";
+export * from "./assetBakeResidency.js";
 export * from "./geometry/index.js";
 export * from "./spatial/index.js";
 export * from "./scene/index.js";

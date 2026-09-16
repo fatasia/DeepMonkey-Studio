@@ -17,7 +17,8 @@ export class GpuTimer {
   private readonly values: GpuTiming[] = [];
   private readonly failures: string[] = [];
 
-  constructor(private readonly session: DeviceSession) {}
+  constructor(private readonly session: DeviceSession,
+    private readonly onTiming?: (timing: GpuTiming) => void) {}
   get supported(): boolean { return this.session.device.features.has("timestamp-query"); }
   get diagnostics(): readonly string[] { return this.failures.slice(); }
 
@@ -61,7 +62,10 @@ export class GpuTimer {
       await slot.readback.mapAsync(GPUMapMode.READ);
       const times = new BigUint64Array(slot.readback.getMappedRange());
       const milliseconds = Number(times[1]! - times[0]!) / 1_000_000;
-      if (Number.isFinite(milliseconds) && milliseconds >= 0) this.values.push({ frame, milliseconds });
+      if (Number.isFinite(milliseconds) && milliseconds >= 0) {
+        const timing = Object.freeze({ frame, milliseconds });
+        this.values.push(timing); this.onTiming?.(timing);
+      }
       if (this.values.length > 512) this.values.shift();
     } catch (error) {
       if (this.session.state === "ready") this.failures.push(String(error));

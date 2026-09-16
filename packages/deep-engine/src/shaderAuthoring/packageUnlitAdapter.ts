@@ -10,11 +10,13 @@ import type {
   DeepSlPackagePassCompatibility,
 } from "./packageAdapterTypes.js";
 import { buildUnlitPackageWgsl } from "./packageUnlitWgsl.js";
+import { appendAuxiliaryWgsl, packageAuxiliaryPasses } from "./packageAuxiliaryPasses.js";
 
 const FORBIDDEN_FIELDS = Object.freeze([
   "metallic", "roughness", "metallicRoughnessTexture", "metallicRoughnessTextureTransform",
   "normalTexture", "normalTextureTransform", "normalScale",
   "occlusionTexture", "occlusionTextureTransform", "occlusionStrength",
+  "clearcoatFactor", "clearcoatRoughness",
 ] as const);
 
 function unsupportedFields(fields: ReadonlyMap<string, unknown>): DeepSlPackageCompatibilityIssue[] {
@@ -28,11 +30,11 @@ function capacityIssues(
   limits: Readonly<{
     maxBindGroups: number; maxBindingsPerBindGroup: number; maxInterStageShaderVariables: number;
   }>,
-  targetAbi: "deep.pbr.mesh.v1" | "deep.pbr.mesh.v2",
+  targetAbi: "deep.pbr.mesh.v1" | "deep.pbr.mesh.v2" | "deep.pbr.mesh.v3" | "deep.pbr.mesh.v4",
   textured: boolean,
 ): DeepSlPackageCompatibilityIssue[] {
   const issues: DeepSlPackageCompatibilityIssue[] = [];
-  const forwardBindings = targetAbi === "deep.pbr.mesh.v2" ? 8 : 7;
+  const forwardBindings = targetAbi === "deep.pbr.mesh.v1" ? 7 : 8;
   if (limits.maxBindGroups < (textured ? 2 : 1)) issues.push(packageAdapterIssue(
     "unsupported-capability", "$.capabilities.limits.maxBindGroups",
     `Unlit ${textured ? "texture" : "plain"} ABI requires ${textured ? 2 : 1} bind group(s).`,
@@ -114,8 +116,20 @@ export function adaptDeepSlUnlitToShaderPackage(input: unknown): DeepSlPackageAd
   const textured = inspected.model.baseColorTexture || inspected.model.emissiveTexture;
   const capabilityIssues = capacityIssues(request.value.capabilities.limits, targetAbi, textured);
   if (capabilityIssues.length > 0) return reject(capabilityIssues, textured);
-  const module = buildUnlitPackageWgsl({ alphaMode: inspected.model.alpha, textured });
-  const passes = packagePasses(module, inspected.model.alpha, inspected.model.doubleSided, textured);
+  const coreModule = buildUnlitPackageWgsl({ alphaMode: inspected.model.alpha, textured });
+  const auxiliaryOptions = { alpha: inspected.model.alpha, doubleSided: inspected.model.doubleSided,
+    textured, uvFunction: "deepUnlitUv" as const };
+  // v4 只新增几何端颜色流，shader 产物与 v3 相同：同样携带 depth/picking 辅助通道。
+  const auxiliaryAbi = targetAbi === "deep.pbr.mesh.v3" || targetAbi === "deep.pbr.mesh.v4";
+  const module = auxiliaryAbi
+    ? appendAuxiliaryWgsl(coreModule, auxiliaryOptions) : coreModule;
+  const corePasses = packagePasses(module, inspected.model.alpha, inspected.model.doubleSided, textured);
+  const auxiliary = auxiliaryAbi
+    ? packageAuxiliaryPasses(module, auxiliaryOptions) : undefined;
+  const passes = auxiliary ? {
+    builds: [...corePasses.builds, ...auxiliary.builds],
+    reports: [...corePasses.reports, ...auxiliary.reports],
+  } : corePasses;
   const built = buildDeepShaderPackage({
     packageId: request.value.packageId ?? inspected.model.shaderId,
     packageVersion: request.value.packageVersion,

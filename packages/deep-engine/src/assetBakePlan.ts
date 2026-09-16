@@ -68,7 +68,7 @@ export function bakeRenderPacket(packet: Pick<RenderPacket, "geometries" | "mate
     meshletCount: value.meshlets.meshletCount, expandedIndexCount: value.indices.indices.length })));
   const materialVariantKeys = Object.freeze([...new Set(packet.materials.map(materialVariantKey))]);
   const textureIds = Object.freeze([...new Set((packet.textures ?? []).map(value => value.id))].sort());
-  const sourceHash = hashStrings([recipeVersion, quality, ...geometries.map(value => `${value.id}:${value.sourceHash}:${value.meshletHash}`),
+  const sourceHash = hashStrings([recipeVersion, quality, ...geometries.map(value => `${value.id}:${value.revision}:${value.sourceHash}:${value.meshletHash}`),
     ...materialVariantKeys, ...textureIds]);
   return Object.freeze({ schemaVersion: DEEP_BAKE_SCHEMA_VERSION, quality, recipeVersion, sourceHash,
     cacheKey: `deep.bake.v${DEEP_BAKE_SCHEMA_VERSION}:${sourceHash}`, geometries, geometryPlans, materialVariantKeys, textureIds,
@@ -78,7 +78,12 @@ export function bakeRenderPacket(packet: Pick<RenderPacket, "geometries" | "mate
 function bakeGeometry(geometry: GeometryResource, target: Readonly<{ maxVertices: number; maxTriangles: number }>): DeepBakedGeometry {
   if (geometry.vertices.length % 6 !== 0) throw new RangeError(`Geometry ${geometry.id} vertex stride must be six floats.`);
   const positions = new Float32Array(geometry.vertices.length / 2);
-  for (let vertex = 0; vertex < positions.length / 3; vertex += 1) positions.set(geometry.vertices.slice(vertex * 6, vertex * 6 + 3), vertex * 3);
+  for (let vertex = 0; vertex < positions.length / 3; vertex += 1) {
+    const source = vertex * 6, targetOffset = vertex * 3;
+    positions[targetOffset] = geometry.vertices[source]!;
+    positions[targetOffset + 1] = geometry.vertices[source + 1]!;
+    positions[targetOffset + 2] = geometry.vertices[source + 2]!;
+  }
   const meshlets = buildMeshlets({ positions, indices: geometry.indices }, target);
   const indices = expandMeshletIndices(meshlets);
   const sourceHash = hashTypedArrays(geometry.vertices, geometry.indices);

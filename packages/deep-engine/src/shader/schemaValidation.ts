@@ -138,6 +138,12 @@ function validateGraph(value: unknown, path: string, diagnostics: ShaderDiagnost
       }
       return;
     }
+    if (output.semantic === "alpha-clip") {
+      exactFields(output, ["semantic", "alpha", "cutoff"], outputPath, diagnostics);
+      validName(output.alpha, `${outputPath}.alpha`, diagnostics);
+      validName(output.cutoff, `${outputPath}.cutoff`, diagnostics);
+      return;
+    }
     exactFields(output, ["semantic", "node", "name"], outputPath, diagnostics);
     if (!new Set(["position", "color", "varying"]).has(output.semantic as string)) issue(diagnostics, "invalid-value", `${outputPath}.semantic`, "Unknown stage output semantic.");
     validName(output.node, `${outputPath}.node`, diagnostics);
@@ -198,9 +204,9 @@ export function nodeInputs(node: ShaderNode): readonly string[] {
 }
 
 export function outputNodeIds(output: ShaderStageOutput): readonly string[] {
-  return output.semantic === "surface"
-    ? DEEP_STANDARD_SURFACE_FIELD_NAMES.map((field) => output.fields[field])
-    : [output.node];
+  if (output.semantic === "surface") return DEEP_STANDARD_SURFACE_FIELD_NAMES.map((field) => output.fields[field]);
+  if (output.semantic === "alpha-clip") return [output.alpha, output.cutoff];
+  return [output.node];
 }
 
 export function stageGraph(value: unknown): ShaderStageGraph { return value as ShaderStageGraph; }

@@ -17,6 +17,7 @@ import type {
 import { parseDeepSlDocument } from "./deepSlParser.js";
 import { deepSlIssue } from "./deepSlSyntax.js";
 import type { DeepSlCompilerOptions } from "./deepSlTypes.js";
+import { adaptDeepSlToShaderPackage } from "./packageAdapterDispatch.js";
 
 function presetDiagnostic(
   entry: ShaderPresetIssue,
@@ -56,6 +57,14 @@ export function compileDeepSlSurface(
     return Object.freeze({ success: false, diagnostics: parsed.inspection.diagnostics });
   }
   const model = parsed.inspection.model;
+  const runtime = adaptDeepSlToShaderPackage({ schemaVersion: 1, source: request.document.source,
+    packageId: model.shaderId, packageVersion: "0.0.0-authoring", compilerVersion: "0.0.0-authoring",
+    capabilities: options.capabilities });
+  if (!runtime.success) return Object.freeze({ success: false, diagnostics: Object.freeze(
+    runtime.report.issues.map((entry) => Object.freeze({ severity: "error" as const,
+      source: "text-compiler" as const, code: entry.code, path: entry.path, message: entry.message,
+      ...(parsed.fields.get(entry.path.split(".").at(-1) ?? "")
+        ? { range: parsed.fields.get(entry.path.split(".").at(-1) ?? "")! } : {}) }))) });
   const common = {
     id: model.shaderId,
     baseColor: model.baseColor,
@@ -100,7 +109,8 @@ export function compileDeepSlSurface(
   return Object.freeze({
     success: true,
     diagnostics,
-    artifact: Object.freeze({ target: "webgpu", pass: compiled.value, sourceMap }),
+    artifact: Object.freeze({ target: "webgpu", pass: compiled.value, sourceMap,
+      runtimePackage: runtime.package, runtimeCompatibility: runtime.report }),
   });
 }
 

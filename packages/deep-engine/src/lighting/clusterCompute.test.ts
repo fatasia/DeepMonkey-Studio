@@ -111,7 +111,7 @@ describe("Forward+ WebGPU cluster assignment", () => {
     expect(restored.uploadedInputBufferCount).toBe(3);
     expect(f.queue.writeBuffer.mock.calls.map(call => (call[0] as FakeBuffer).label)).toEqual([
       "Deep Forward+ point lights", "Deep Forward+ local light bounds",
-      "Deep Forward+ cluster parameters", "Deep Forward+ overflow counter",
+      "Deep Forward+ cluster parameters",
     ]);
     assigner.dispose();
   });

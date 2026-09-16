@@ -91,6 +91,23 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("stable WebGPU meshlet culling", () => {
+  it("closes failed compute passes", () => {
+    const f = fixture(), culler = new MeshletCuller(f.session), end = vi.fn();
+    const encoder = { beginComputePass: () => ({ setBindGroup() {}, setPipeline() {},
+      dispatchWorkgroups() { throw Error("dispatch failed"); }, end }) } as unknown as GPUCommandEncoder;
+    expect(() => culler.encode(encoder, request(), view())).toThrow("dispatch failed");
+    expect(end).toHaveBeenCalledOnce(); culler.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("keeps published replacement resources when retiring an old buffer throws", () => {
+    const f = fixture(), culler = new MeshletCuller(f.session), encoder = encoderFixture();
+    culler.encode(encoder.encoder, request(64), view());
+    const old = f.allocated[0]!; old.destroy.mockImplementationOnce(() => { throw Error("retirement failed"); });
+    const start = f.allocated.length, next = request(128, 1);
+    expect(() => culler.encode(encoder.encoder, next, view())).toThrow();
+    for (const resource of f.allocated.slice(start)) expect(resource.destroy).not.toHaveBeenCalled();
+    const count = f.allocated.length; expect(culler.encode(encoder.encoder, next, view()).mode).toBe("gpu");
+    expect(f.allocated).toHaveLength(count); culler.dispose(); expect(f.owned.size).toBe(0);
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("passes Naga parsing and semantic validation", () => {
     const validation = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,
       ["--stdin-file-path", "deep-meshlet-culling.wgsl", "--input-kind", "wgsl"], { input: MESHLET_CULL_WGSL, encoding: "utf8" });
@@ -206,6 +223,16 @@ describe("stable WebGPU meshlet culling", () => {
     f.queue.writeBuffer.mockImplementation(() => { throw new Error("write failed"); });
     expect(() => culler.encode(encoder.encoder, { ...input, revision: 1 }, view())).toThrow("write failed");
     expect(active.every(value => value.destroy.mock.calls.length === 1)).toBe(true); expect(f.owned.size).toBe(1);
+  });
+
+  it("releases the fallback texture even if lost-device output cleanup throws", () => {
+    const f = fixture(), encoder = encoderFixture(), culler = new MeshletCuller(f.session), input = request();
+    culler.encode(encoder.encoder, input, view());
+    f.allocated[0]!.destroy.mockImplementationOnce(() => { throw Error("destroy failed"); });
+    f.rawSession.state = "lost";
+    expect(() => culler.encode(encoder.encoder, input, view())).toThrow();
+    expect(f.textures[0]!.destroy).toHaveBeenCalledOnce(); expect(f.owned.size).toBe(0);
+    culler.dispose();
   });
 
   it("fails closed for invalid ABI/device/view inputs, then releases all ownership on lost/dispose", () => {

@@ -14,6 +14,7 @@ export function validateGeometries(geometries: ReadonlyMap<string, GeometryResou
 export function geometryGpuByteLength(geometry: GeometryResource): number {
   return geometry.vertices.length / 6 * 40
     + (geometry.tangents?.byteLength ?? 0)
+    + (geometry.colors?.byteLength ?? 0)
     + geometry.indices.byteLength;
 }
 
@@ -24,6 +25,7 @@ export function geometryFeatureMap(
     uv0: geometry.uv0 !== undefined,
     uv1: geometry.uv1 !== undefined,
     tangents: geometry.tangents !== undefined,
+    colors: geometry.colors !== undefined,
     triangles: geometry.indices.length / 3,
     center: geometryCenter(geometry),
   }]));
@@ -32,23 +34,22 @@ export function geometryFeatureMap(
 export function snapshotUsedGeometries(
   geometries: ReadonlyMap<string, GeometryResource>,
   batches: readonly PreparedBatch[],
+  requiredGeometryIds: readonly string[] = [],
 ): ReadonlyMap<string, GeometryResource> {
   const owned = new Map<string, GeometryResource>();
-  for (const batch of batches) {
-    const usedIds = batch.lod?.levels.map(level => level.geometry) ?? [batch.geometry];
-    for (const id of usedIds) {
-      const geometry = geometries.get(id)!;
-      if (owned.has(geometry.id)) continue;
-      owned.set(geometry.id, {
-        id: geometry.id,
-        revision: geometry.revision,
-        vertices: geometry.vertices.slice(),
-        ...(geometry.uv0 ? { uv0: geometry.uv0.slice() } : {}),
-        ...(geometry.uv1 ? { uv1: geometry.uv1.slice() } : {}),
-        ...(geometry.tangents ? { tangents: geometry.tangents.slice() } : {}),
-        indices: geometry.indices.slice(),
-      });
-    }
+  const usedIds = new Set([...requiredGeometryIds, ...batches.flatMap(batch => batch.lod?.levels.map(level => level.geometry) ?? [batch.geometry])]);
+  for (const id of usedIds) {
+    const geometry = geometries.get(id)!;
+    owned.set(geometry.id, {
+      id: geometry.id,
+      revision: geometry.revision,
+      vertices: geometry.vertices.slice(),
+      ...(geometry.uv0 ? { uv0: geometry.uv0.slice() } : {}),
+      ...(geometry.uv1 ? { uv1: geometry.uv1.slice() } : {}),
+      ...(geometry.tangents ? { tangents: geometry.tangents.slice() } : {}),
+      ...(geometry.colors ? { colors: geometry.colors.slice() } : {}),
+      indices: geometry.indices.slice(),
+    });
   }
   return owned;
 }
@@ -85,6 +86,11 @@ function validateGeometryLayout(geometry: GeometryResource): void {
   const tangents = geometry.tangents;
   if (tangents !== undefined && (!(tangents instanceof Float32Array) || !(tangents.buffer instanceof ArrayBuffer)
     || tangents.length !== vertices.length / 6 * 4)) throw new Error("Invalid geometry tangent layout.");
+  const colors = geometry.colors;
+  if (colors !== undefined && (!(colors instanceof Float32Array) || !(colors.buffer instanceof ArrayBuffer)
+    || colors.length !== vertices.length / 6 * 4 || !colors.every(Number.isFinite))) {
+    throw new Error("Invalid geometry colors layout.");
+  }
 }
 
 function validateGeometryContent(geometry: GeometryResource): void {

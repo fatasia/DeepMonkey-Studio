@@ -135,9 +135,14 @@ export function validateStageGraph(
   const primary = graph.outputs.filter((output) => stage === "vertex"
     ? output.semantic === "position"
     : output.semantic === "color" || output.semantic === "surface");
-  if (primary.length !== 1) issue(diagnostics, "invalid-stage", `${path}.outputs`, stage === "vertex"
+  const clips = graph.outputs.filter((output) => output.semantic === "alpha-clip");
+  const clipOnlyPass = stage === "fragment" && (pass.kind === "depth" || pass.kind === "shadow");
+  if (primary.length !== (clipOnlyPass ? 0 : 1)) issue(diagnostics, "invalid-stage", `${path}.outputs`, stage === "vertex"
     ? "Vertex stage requires exactly one position output."
-    : "Fragment stage requires exactly one color or surface output.");
+    : clipOnlyPass ? "Depth and shadow fragment stages cannot write color." : "Fragment stage requires exactly one color or surface output.");
+  if (clips.length > 1 || (clipOnlyPass && clips.length !== 1)) issue(diagnostics, "invalid-stage", `${path}.outputs`, clipOnlyPass
+    ? "Depth and shadow fragment stages require exactly one alpha-clip output."
+    : "Fragment stages allow at most one alpha-clip output.");
   for (const [index, output] of graph.outputs.entries()) {
     const outputPath = `${path}.outputs.${index}`;
     if (output.semantic === "surface") {
@@ -148,6 +153,16 @@ export function validateStageGraph(
         if (!node) issue(diagnostics, "missing-symbol", `${outputPath}.fields.${field}`, `Unknown surface field node ${nodeId}.`);
         else if (node.type !== DEEP_STANDARD_SURFACE_FIELD_TYPES[field]) issue(diagnostics, "type-mismatch", `${outputPath}.fields.${field}`, `Surface ${field} requires ${DEEP_STANDARD_SURFACE_FIELD_TYPES[field]}.`);
       }
+      continue;
+    }
+    if (output.semantic === "alpha-clip") {
+      const alpha = nodes.get(output.alpha);
+      const cutoff = nodes.get(output.cutoff);
+      if (stage !== "fragment") issue(diagnostics, "invalid-stage", outputPath, "Alpha clip outputs are only valid in the fragment stage.");
+      if (!alpha) issue(diagnostics, "missing-symbol", `${outputPath}.alpha`, `Unknown alpha node ${output.alpha}.`);
+      else if (alpha.type !== "f32") issue(diagnostics, "type-mismatch", `${outputPath}.alpha`, "Alpha clip alpha must be f32.");
+      if (!cutoff) issue(diagnostics, "missing-symbol", `${outputPath}.cutoff`, `Unknown cutoff node ${output.cutoff}.`);
+      else if (cutoff.type !== "f32") issue(diagnostics, "type-mismatch", `${outputPath}.cutoff`, "Alpha clip cutoff must be f32.");
       continue;
     }
     const node = nodes.get(output.node);
@@ -165,5 +180,4 @@ export function validateStageGraph(
     const names = graph.outputs.filter((output) => output.semantic === "varying").map((output) => output.name);
     if (new Set(names).size !== names.length) issue(diagnostics, "duplicate-symbol", `${path}.outputs`, "Vertex varying outputs must be unique.");
   }
-  if ((pass.kind === "depth" || pass.kind === "shadow") && stage === "fragment") issue(diagnostics, "invalid-stage", path, "Depth and shadow passes in shader schema v1 are vertex-only.");
 }

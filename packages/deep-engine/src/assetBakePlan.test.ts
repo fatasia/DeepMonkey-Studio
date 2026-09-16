@@ -14,9 +14,13 @@ describe("Deep asset bake artifact", () => {
     expect(first.staticLighting).toBe("probe-hybrid");
   });
 
-  it("changes cache identity when geometry content or recipe changes", () => {
+  it("changes cache identity when geometry content, revision, or recipe changes", () => {
     const base = bakeRenderPacket(packet()), changed = packet(); changed.geometries[0]!.vertices[0] = 0.25;
     expect(bakeRenderPacket(changed).cacheKey).not.toBe(base.cacheKey);
+    const reimported = packet(); reimported.geometries[0] = { ...reimported.geometries[0]!, revision: 2 };
+    const baked = bakeRenderPacket(reimported);
+    expect(baked.cacheKey).not.toBe(base.cacheKey);
+    expect(baked.geometries[0]!.revision).toBe(2);
     expect(bakeRenderPacket(packet(), { recipeVersion: "next" }).cacheKey).not.toBe(base.cacheKey);
     expect(bakeRenderPacket(packet(), { quality: "performance" }).geometries[0]!.meshlets.maxTriangles).toBe(64);
   });

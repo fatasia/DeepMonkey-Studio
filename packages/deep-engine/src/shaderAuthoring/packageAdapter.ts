@@ -3,7 +3,7 @@ import type { ShaderSourceMapEntry } from "../shader/types.js";
 import { buildDeepShaderPackage } from "../shaderPackage/builder.js";
 import type { ShaderPackagePassBuildInput } from "../shaderPackage/types.js";
 import { buildDeepPbrMeshV1StandardShader } from "../shaderPresets/packageStandardSurface.js";
-import { inspectDeepSlSurface } from "./deepSl.js";
+import { parseDeepSlDocument } from "./deepSlParser.js";
 import {
   inspectPackageAdapterRequest,
   packageAdapterIssue,
@@ -21,11 +21,14 @@ import type {
   DeepSlPackageCompatibilityReport,
   DeepSlPackagePassCompatibility,
 } from "./packageAdapterTypes.js";
+import type { DeepSlSurfaceModel } from "./deepSlTypes.js";
 import { adaptStandardPlainWgsl } from "./packageAdapterWgsl.js";
 import { adaptCsmWgsl } from "./packageAdapterCsm.js";
+import { appendAuxiliaryWgsl, packageAuxiliaryPasses } from "./packageAuxiliaryPasses.js";
+import { adaptClearcoatWgsl } from "./packageClearcoat.js";
 
 function compatibilityIssues(
-  model: NonNullable<ReturnType<typeof inspectDeepSlSurface>["model"]>,
+  model: DeepSlSurfaceModel,
 ): DeepSlPackageCompatibilityIssue[] {
   return model.surface === "standard" ? [] : [packageAdapterIssue(
     "unsupported-surface",
@@ -110,13 +113,18 @@ export function adaptDeepSlStandardToShaderPackage(input: unknown): DeepSlPackag
   const targetAbi = request.value.targetAbi ?? "deep.pbr.mesh.v1";
   const rejected = (issues: readonly DeepSlPackageCompatibilityIssue[], textured = false) =>
     rejectedPackageAdapterResult(issues, textured, targetAbi);
-  if (targetAbi === "deep.pbr.mesh.v2" && request.value.capabilities.limits.maxBindingsPerBindGroup < 8) {
+  if (targetAbi !== "deep.pbr.mesh.v1" && request.value.capabilities.limits.maxBindingsPerBindGroup < 8) {
     return rejected([packageAdapterIssue("unsupported-capability", "$.capabilities.limits.maxBindingsPerBindGroup",
       "The CSM ABI requires forward group bindings 0 through 7.")]);
   }
-  const inspected = inspectDeepSlSurface(request.value.source);
+  const parsed = parseDeepSlDocument(request.value.source);
+  const inspected = parsed.inspection;
   if (!inspected.success || !inspected.model) return rejected(inspected.diagnostics.map((entry) =>
     packageAdapterIssue("invalid-deepsl", entry.path, `${entry.code}: ${entry.message}`)));
+  const clearcoatDeclared = parsed.fields.has("clearcoatFactor") || parsed.fields.has("clearcoatRoughness");
+  if (clearcoatDeclared && targetAbi !== "deep.pbr.mesh.v3") return rejected([packageAdapterIssue(
+    "unsupported-capability", "$.source.clearcoatFactor", "Clearcoat scalar materials require deep.pbr.mesh.v3.",
+  )]);
   const textured = hasPackageMaterialTextures(inspected.model);
   const normalMapped = inspected.model.normalTexture;
   const unsupported = compatibilityIssues(inspected.model);
@@ -148,14 +156,31 @@ export function adaptDeepSlStandardToShaderPackage(input: unknown): DeepSlPackag
     materialMode: textured ? "base-color-texture" : "plain",
     normalMapped,
   });
-  if (module && targetAbi === "deep.pbr.mesh.v2") module = adaptCsmWgsl(module);
+  if (module && targetAbi !== "deep.pbr.mesh.v1") module = adaptCsmWgsl(module);
+  if (module && targetAbi === "deep.pbr.mesh.v3") {
+    module = adaptClearcoatWgsl(module, inspected.model.clearcoatFactor, inspected.model.clearcoatRoughness);
+  }
   if (!module) return rejected([
     packageAdapterIssue("shader-compile-failed", "$.module",
       "Compiled Standard pass did not satisfy the fixed ABI adapter preconditions."),
   ], textured);
-  const passes = packagePasses(
+  const corePasses = packagePasses(
     module, alphaMode, inspected.model.doubleSided, textured, normalMapped, compiled.value.sourceMap,
   );
+  const auxiliary = targetAbi === "deep.pbr.mesh.v3"
+    ? packageAuxiliaryPasses(appendAuxiliaryWgsl(module, {
+      alpha: alphaMode, doubleSided: inspected.model.doubleSided, textured,
+      uvFunction: "deepPackageSlotUv",
+    }), { alpha: alphaMode, doubleSided: inspected.model.doubleSided, textured,
+      uvFunction: "deepPackageSlotUv" }) : undefined;
+  const executableModule = auxiliary ? auxiliary.builds[0]!.module : module;
+  const passes = auxiliary ? {
+    builds: [
+      ...corePasses.builds.map((entry) => ({ ...entry, module: { ...executableModule } })),
+      ...auxiliary.builds,
+    ],
+    reports: [...corePasses.reports, ...auxiliary.reports],
+  } : corePasses;
   const built = buildDeepShaderPackage({
     packageId: request.value.packageId ?? inspected.model.shaderId,
     packageVersion: request.value.packageVersion,
@@ -174,6 +199,12 @@ export function adaptDeepSlStandardToShaderPackage(input: unknown): DeepSlPackag
     textured ? packageMaterialTextureDefaults(inspected.model) : undefined,
     normalMapped,
     targetAbi,
+    "standard",
+    targetAbi === "deep.pbr.mesh.v3" ? {
+      factor: inspected.model.clearcoatFactor,
+      roughness: inspected.model.clearcoatRoughness,
+      source: "compile-time-v3",
+    } : undefined,
   ) as DeepSlPackageCompatibilityReport & { status: "direct-package-ready" };
   return Object.freeze({ success: true, report: readyReport, package: built.value });
 }

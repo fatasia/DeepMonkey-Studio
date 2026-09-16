@@ -48,6 +48,16 @@ export function factor(value: unknown, path: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) invalid(path, "Expected a factor in 0..1.");
   return value;
 }
+export function abortSignal(value: unknown, path: string): AbortSignal | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object"
+    || typeof (value as AbortSignal).aborted !== "boolean"
+    || typeof (value as AbortSignal).throwIfAborted !== "function"
+    || typeof (value as AbortSignal).addEventListener !== "function") {
+    invalid(path, "Expected an AbortSignal.");
+  }
+  return value as AbortSignal;
+}
 export function noExtensions(value: JsonObject, path: string): void {
   if (value.extensions === undefined) return;
   const names = Object.keys(object(value.extensions, `${path}.extensions`));

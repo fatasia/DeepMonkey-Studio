@@ -30,6 +30,8 @@ export interface DeepSlSurfaceModel {
   readonly occlusionStrength: number;
   readonly emissiveFactor: readonly [number, number, number];
   readonly emissiveStrength: number;
+  readonly clearcoatFactor: number;
+  readonly clearcoatRoughness: number;
 }
 
 export interface DeepSlInspection {
@@ -46,7 +48,8 @@ export type DeepSlTextureFieldName = "baseColorTexture" | "metallicRoughnessText
   | "occlusionTexture" | "emissiveTexture";
 export type DeepSlTextureTransformFieldName = `${"baseColor" | "metallicRoughness" | "normal" | "occlusion" | "emissive"}TextureTransform`;
 export type DeepSlFieldName = "shader" | "surface" | "baseColor" | "metallic" | "roughness" | "alpha" | "doubleSided"
-  | DeepSlTextureFieldName | DeepSlTextureTransformFieldName | "normalScale" | "occlusionStrength" | "emissiveFactor" | "emissiveStrength";
+  | DeepSlTextureFieldName | DeepSlTextureTransformFieldName | "normalScale" | "occlusionStrength" | "emissiveFactor" | "emissiveStrength"
+  | "clearcoatFactor" | "clearcoatRoughness";
 
 export interface DeepSlParsedLine {
   readonly line: number;
@@ -64,6 +67,7 @@ export interface DeepSlMutableModel {
   normalTextureTransform: DeepSlTextureTransform; occlusionTextureTransform: DeepSlTextureTransform;
   emissiveTextureTransform: DeepSlTextureTransform; normalScale: number; occlusionStrength: number;
   emissiveFactor: [number, number, number]; emissiveStrength: number;
+  clearcoatFactor: number; clearcoatRoughness: number;
 }
 
 export interface DeepSlParseState {

@@ -1,4 +1,5 @@
-import { createBenchmarkScene, BENCHMARK_COUNTS } from "./benchmarkScene.js";
+import { createAssetBenchmarkScene, createBenchmarkScene, BENCHMARK_COUNTS } from "./benchmarkScene.js";
+import type { ModelName } from "./modelPacket.js";
 import { DeepBenchmarkBackend } from "./deepBenchmarkBackend.js";
 import { ThreeWebGpuBenchmarkBackend } from "./threeWebGpuBenchmarkBackend.js";
 import {
@@ -28,10 +29,13 @@ async function run(instanceCount: 1024 | 10000,
   if (!BENCHMARK_PROFILES.includes(profile)) throw new RangeError("Unknown benchmark profile.");
   controller?.abort(); disposeActiveBackends(); controller = new AbortController(); const signal = controller.signal;
   latest = undefined; failure = undefined; pageErrors.length = 0; setBusy(true);
-  const fixture = createBenchmarkScene(instanceCount); let candidate: DeepBenchmarkBackend | undefined;
+  const asset = element<HTMLSelectElement>("asset").value;
+  const fixture = asset === "procedural" ? createBenchmarkScene(instanceCount)
+    : await createAssetBenchmarkScene(asset as ModelName, instanceCount, signal);
+  let candidate: DeepBenchmarkBackend | undefined;
   let reference: ThreeWebGpuBenchmarkBackend | undefined;
   try {
-    show(`正在准备 ${instanceCount.toLocaleString()} 实例的 Deep WebGPU…`);
+    show(`正在准备 ${asset} · ${instanceCount.toLocaleString()} 实例的 Deep WebGPU…`);
     candidate = await DeepBenchmarkBackend.create(candidateCanvas, fixture, signal, profile);
     show("正在准备 Three.js 0.185.1 WebGPU 优化路径…");
     reference = await ThreeWebGpuBenchmarkBackend.create(referenceCanvas, fixture, signal, candidate.timestampSupported, profile);

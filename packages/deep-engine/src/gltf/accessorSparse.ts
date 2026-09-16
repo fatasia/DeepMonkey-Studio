@@ -8,14 +8,15 @@ export interface SparseBufferView {
   target?: number;
 }
 
-interface SparseApplyOptions<T extends Float32Array<ArrayBuffer> | Uint32Array<ArrayBuffer>> {
+interface SparseApplyOptions<T extends Float32Array<ArrayBuffer> | Uint32Array<ArrayBuffer> | Uint16Array<ArrayBuffer>> {
   readonly accessor: JsonObject;
   readonly location: string;
   readonly views: readonly SparseBufferView[];
   readonly count: number;
   readonly width: number;
   readonly componentSize: number;
-  readonly output: T;
+  /** Omit only when a caller needs validation without retaining expanded values. */
+  readonly output?: T;
   readonly readValue: (view: DataView, byteOffset: number) => number;
   readonly signal: AbortSignal | undefined;
 }
@@ -60,7 +61,7 @@ function readIndex(view: DataView, offset: number, componentType: number): numbe
 }
 
 /** Applies a glTF sparse overlay only after all expanded-output allocation budgets have passed. */
-export function applySparseAccessor<T extends Float32Array<ArrayBuffer> | Uint32Array<ArrayBuffer>>(
+export function applySparseAccessor<T extends Float32Array<ArrayBuffer> | Uint32Array<ArrayBuffer> | Uint16Array<ArrayBuffer>>(
   options: SparseApplyOptions<T>,
 ): void {
   if (options.accessor.sparse === undefined) return;
@@ -98,7 +99,7 @@ export function applySparseAccessor<T extends Float32Array<ArrayBuffer> | Uint32
     for (let axis = 0; axis < options.width; axis++) {
       const decoded = options.readValue(valueView.data, source + axis * options.componentSize);
       if (!Number.isFinite(decoded)) invalid(valuesPath, "Sparse accessor contains a non-finite value.");
-      options.output[index * options.width + axis] = decoded;
+      if (options.output) options.output[index * options.width + axis] = decoded;
     }
   }
 }

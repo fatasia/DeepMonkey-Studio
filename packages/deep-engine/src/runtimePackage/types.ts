@@ -1,6 +1,7 @@
 import type { Deep2dColor, Deep2dDisplayList, Deep2dMatrix } from "../deep2dDisplayList.js";
 import type { RenderPacket } from "../renderPacketTypes.js";
 import type { DeepShaderPackageV2 } from "../shaderPackage/types.js";
+import type { RuntimePrefilteredIbl } from "./environmentTypes.js";
 import type { RuntimeSceneCamera } from "./camera.js";
 
 export const DEEP_RUNTIME_PACKAGE_SCHEMA = "deep-engine.runtime-package" as const;
@@ -97,6 +98,7 @@ export interface Deep2dRuntimePackage {
 }
 export interface BuildDeepRuntimePackageInput {
   readonly camera?: RuntimeSceneCamera;
+  readonly environment?: RuntimePrefilteredIbl;
   readonly packageId: string;
   readonly packageVersion: string;
   readonly renderPacket: { readonly id: string; readonly revision: number; readonly value: RenderPacket };

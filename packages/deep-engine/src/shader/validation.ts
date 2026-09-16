@@ -77,10 +77,9 @@ function semanticValidation(asset: DeepShaderAsset, diagnostics: ShaderDiagnosti
       validatePredicateReferences(pass.predicate, keywords, `${path}.predicate`, diagnostics);
       const colorPass = pass.kind === "forward" || pass.kind === "picking";
       if (colorPass && !pass.fragment) issue(diagnostics, "invalid-stage", `${path}.fragment`, `${pass.kind} pass requires a fragment graph.`);
-      if (!colorPass && pass.fragment) issue(diagnostics, "invalid-stage", `${path}.fragment`, `${pass.kind} pass is vertex-only in schema v1.`);
       if (colorPass && pass.state.colorWriteMask === 0) issue(diagnostics, "invalid-state", `${path}.state.colorWriteMask`, "Color passes require a non-zero write mask.");
       if (!colorPass && pass.state.colorWriteMask !== 0) issue(diagnostics, "invalid-state", `${path}.state.colorWriteMask`, "Depth/shadow passes must disable color writes.");
-      if (!colorPass && pass.state.blend) issue(diagnostics, "invalid-state", `${path}.state.blend`, "Depth/shadow passes cannot blend in schema v1.");
+      if (!colorPass && pass.state.blend) issue(diagnostics, "invalid-state", `${path}.state.blend`, "Depth/shadow passes cannot blend.");
       validateStageGraph(asset, pass, pass.vertex, "vertex", `${path}.vertex`, diagnostics);
       if (pass.fragment) validateStageGraph(asset, pass, pass.fragment, "fragment", `${path}.fragment`, diagnostics);
       const produced = new Set(pass.vertex.outputs.filter((output) => output.semantic === "varying").map((output) => output.name));

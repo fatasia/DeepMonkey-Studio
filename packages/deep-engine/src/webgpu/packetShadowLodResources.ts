@@ -15,7 +15,8 @@ export class PacketShadowLodResources {
   encode(encoder: GPUCommandEncoder, batches: ReadonlyMap<string, CachedPacketBatch>,
     geometries: ReadonlyMap<string, CachedPacketGeometry>, revision: number,
     plan: CascadedShadowPlan, bounds: PacketGeometryBoundsMap = geometries): PacketLodFrameStats {
-    const stats = { inputObjects: 0, selectionBatches: 0, indirectDraws: 0, historyReset: false };
+    const stats = { inputObjects: 0, selectionBatches: 0, indirectDraws: 0, historyReset: false, authorFrustumPasses: 0, authorFrustumDispatches: 0 };
+    let meshletPasses = 0, meshletDispatches = 0; const meshletFallbackReasons = new Set<string>();
     try {
       for (const cascade of plan.cascades) {
         let resources = this.cascades.get(cascade.index);
@@ -27,12 +28,16 @@ export class PacketShadowLodResources {
         stats.inputObjects = Math.max(stats.inputObjects, result.inputObjects);
         stats.selectionBatches += result.selectionBatches; stats.indirectDraws += result.indirectDraws;
         stats.historyReset ||= result.historyReset;
+        stats.authorFrustumPasses += result.authorFrustumPasses ?? 0;
+        stats.authorFrustumDispatches += result.authorFrustumDispatches ?? 0;
+        meshletPasses += result.meshletPasses ?? 0; meshletDispatches += result.meshletDispatches ?? 0;
+        result.meshletFallbackReasons?.forEach(reason => meshletFallbackReasons.add(reason));
       }
       const retired = [...this.cascades].filter(([index]) => !plan.cascades.some(cascade => cascade.index === index));
       for (const [index] of retired) this.cascades.delete(index);
       runResourceCleanup("Superseded shadow LOD cascade retirement failed.",
         retired.map(([, resources]) => () => resources.dispose()));
-      return stats;
+      return meshletPasses || meshletFallbackReasons.size ? { ...stats, meshletPasses, meshletDispatches, meshletFallbackReasons: [...meshletFallbackReasons] } : stats;
     } catch (error) { failWithResourceCleanup(error, "Shadow LOD encoding failed.",
       [...this.cascades.values()].map(resources => () => resources.cancelFrame())); }
   }
@@ -59,7 +64,7 @@ export function shadowLodView(plan: CascadedShadowPlan, cascade: CascadedShadowS
     position: [cascade.center[0] - plan.lightDirection[0] * distance,
       cascade.center[1] - plan.lightDirection[1] * distance,
       cascade.center[2] - plan.lightDirection[2] * distance],
-    verticalSize: 2 * cascade.radius, near: padding / 2, far: depthSpan + padding * 2 },
+    verticalSize: 2 / Math.hypot(m[1]!, m[5]!, m[9]!), near: padding / 2, far: depthSpan + padding * 2 },
     viewport: { width: plan.shadowMapSize, height: plan.shadowMapSize },
     frustum: viewProjectionFrustum(cascade.viewProjection) };
 }

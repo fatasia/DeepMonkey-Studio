@@ -1,9 +1,11 @@
-import { prepareRenderPacket, type RenderPacket } from "../renderPacket.js";
-import { array, fields, integer, record, requireValue, string } from "./primitives.js";
+import { prepareRenderPacket, type PbrMaterial, type RenderPacket } from "../renderPacket.js";
+import { array, fields, integer, record, requireValue, string, snapshotJson } from "./primitives.js";
+import { assertNativePacketDeformationSupported, deformationForBrowserJson, materializePacketDeformation } from "./renderPacketDeformation.js";
+export { assertNativePacketDeformationSupported } from "./renderPacketDeformation.js";
 
-const GEOMETRY_OPTIONAL = ["uv0", "uv1", "tangents"];
+const GEOMETRY_OPTIONAL = ["uv0", "uv1", "tangents", "colors"];
 const MATERIAL_OPTIONAL = ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture",
-  "emissiveFactor", "emissiveStrength", "emissiveTexture", "baseColorAlpha", "alphaMode", "alphaCutoff", "doubleSided"];
+  "emissiveFactor", "emissiveStrength", "emissiveTexture", "baseColorAlpha", "alphaMode", "alphaCutoff", "doubleSided", "fog", "shadingModel"];
 const SLOT_FIELDS = ["texCoord", "offset", "scale", "rotation"];
 const SAMPLER_FIELDS = ["addressModeU", "addressModeV", "magFilter", "minFilter", "mipmapFilter", "maxAnisotropy"];
 function id(value: unknown, path: string): void {
@@ -27,7 +29,7 @@ function numericArray(input: unknown, path: string, maxInteger?: number): number
   path, "Invalid array element.");
   return values as number[];
 }
-function material(input: unknown, path: string): Record<string, unknown> {
+function material(input: unknown, path: string): PbrMaterial {
   const value = record(input, path);
   fields(value, ["id", "baseColor", "metallic", "roughness"], MATERIAL_OPTIONAL, path);
   id(value.id, `${path}.id`); nonnullOptions(value, MATERIAL_OPTIONAL, path);
@@ -41,9 +43,15 @@ function material(input: unknown, path: string): Record<string, unknown> {
   requireValue(factor.length === 3 && factor.every(number => number >= 0), path, "Invalid emissiveFactor.");
   const strength = value.emissiveStrength === undefined ? 1 : value.emissiveStrength;
   requireValue(typeof strength === "number" && strength >= 0 && strength <= 256, path, "Invalid emissiveStrength.");
-  requireValue(factor.every(number => Number.isFinite(Math.fround(number * strength))), path, "Emissive factor exceeds float32.");
-  // 本地 RenderPacket 验证器的作者 factor 限制为 0..1；独立验证打包后的 HDR 值。
-  return { ...value, emissiveFactor: [0, 0, 0], emissiveStrength: 1 };
+  const emission = factor.map(number => number * strength);
+  requireValue(emission.every(number => Number.isFinite(Math.fround(number)) && number <= 256), path,
+    "Emissive output exceeds the runtime HDR limit.");
+  // Runtime Package v1 may store factor*strength in emissiveFactor. Re-split it
+  // for the author RenderPacket ABI without changing the final linear emission.
+  const runtimeStrength = Math.max(1, ...emission);
+  const { emissiveFactor: _factor, emissiveStrength: _strength, ...rest } = value;
+  return { ...rest, emissiveFactor: emission.map(number => number / runtimeStrength) as [number, number, number],
+    ...(runtimeStrength === 1 ? {} : { emissiveStrength: runtimeStrength }) } as unknown as PbrMaterial;
 }
 function texture(input: unknown, path: string): Record<string, unknown> {
   const value = record(input, path);
@@ -55,27 +63,39 @@ function texture(input: unknown, path: string): Record<string, unknown> {
     nonnullOptions(sampler, SAMPLER_FIELDS, `${path}.sampler`);
   }
   const levels = value.mipmaps === undefined ? undefined : array(value.mipmaps, `${path}.mipmaps`).map((level, index) => {
-    const candidate = record(level, `${path}.mipmaps[${index}]`);
-    fields(candidate, ["width", "height", "data"], ["bytesPerRow"], path);
-    nonnullOptions(candidate, ["bytesPerRow"], path);
+    const levelPath = `${path}.mipmaps[${index}]`, candidate = record(level, levelPath);
+    fields(candidate, ["width", "height", "data"], ["bytesPerRow"], levelPath);
+    nonnullOptions(candidate, ["bytesPerRow"], levelPath);
     return { ...candidate, data: new Uint8Array(numericArray(candidate.data, `${path}.mipmaps[${index}].data`, 255)) };
   });
   return { ...value, data: new Uint8Array(numericArray(value.data, `${path}.data`, 255)), ...(levels ? { mipmaps: levels } : {}) };
 }
 function lod(input: unknown, path: string): void {
   const profile = record(input, path);
-  fields(profile, ["levels"], ["hysteresisRatio"], path);
-  nonnullOptions(profile, ["hysteresisRatio"], path);
+  const authored = profile.strategy === "author-selected";
+  if (authored) {
+    fields(profile, ["strategy", "revision", "levels", "selectedLevels"], [], path);
+    integer(profile.revision, 0, Number.MAX_SAFE_INTEGER, `${path}.revision`);
+    for (const value of array(profile.selectedLevels, `${path}.selectedLevels`, 8))
+      integer(value, 0, 7, `${path}.selectedLevels`);
+  } else {
+    fields(profile, ["levels"], ["strategy", "hysteresisRatio"], path);
+    nonnullOptions(profile, ["strategy", "hysteresisRatio"], path);
+    requireValue(profile.strategy === undefined || profile.strategy === "screen-space", path, "Unsupported LOD strategy.");
+  }
   for (const [index, input] of array(profile.levels, `${path}.levels`, 8).entries()) {
     const p = `${path}.levels[${index}]`, level = record(input, p);
-    fields(level, ["geometry", "minProjectedDiameterPixels", "geometricError"], ["resident"], p);
-    nonnullOptions(level, ["resident"], p);
+    if (authored) fields(level, ["geometry", "distance", "hysteresis"], [], p);
+    else {
+      fields(level, ["geometry", "minProjectedDiameterPixels", "geometricError"], ["resident"], p);
+      nonnullOptions(level, ["resident"], p);
+    }
   }
   // prepareRenderPacket below owns level ordering, residency, geometry/material compatibility and numeric limits.
 }
-export function validateRuntimeRenderPacket(input: unknown, path: string): void {
+function parseRuntimeRenderPacket(input: unknown, path: string): RenderPacket {
   const value = record(input, path);
-  fields(value, ["geometries", "materials", "instances"], ["schema", "version", "textures"], path);
+  fields(value, ["geometries", "materials", "instances"], ["schema", "version", "textures", "deformation"], path);
   requireValue(value.schema === undefined || value.schema === "deep-engine.render-packet", path, "Unsupported RenderPacket schema.");
   requireValue(value.version === undefined || value.version === 1, path, "Unsupported RenderPacket version.");
   const geometries = array(value.geometries, `${path}.geometries`, 4096).map((input, index) => {
@@ -89,23 +109,44 @@ export function validateRuntimeRenderPacket(input: unknown, path: string): void 
     }
     return result;
   });
-  const materials = array(value.materials, `${path}.materials`, 16_384).map((item, index) => material(item, `${path}.materials[${index}]`));
+  const materials = array(value.materials, `${path}.materials`, 16_384)
+    .map((item, index) => material(item, `${path}.materials[${index}]`));
   const instances = array(value.instances, `${path}.instances`, 16_384).map((input, index) => {
     const p = `${path}.instances[${index}]`, instance = record(input, p);
-    fields(instance, ["id", "geometry", "material", "transform"], ["lod"], p);
+    fields(instance, ["id", "geometry", "material", "transform"], ["lod", "castShadow", "receiveShadow", "pose"], p);
+    if (Object.hasOwn(instance, "pose")) id(instance.pose, `${p}.pose`);
     if (Object.hasOwn(instance, "lod")) lod(instance.lod, `${p}.lod`);
     id(instance.id, `${p}.id`); string(instance.geometry, p); string(instance.material, p);
-    const transform = array(instance.transform, `${p}.transform`);
+    const transform = numericArray(instance.transform, `${p}.transform`);
     requireValue(transform.length === 16, p, "Expected a 16-value transform.");
-    numericArray(transform, `${p}.transform`);
-    return { ...instance, transform: new Float32Array(transform as number[]) };
+    return { ...instance, transform: new Float32Array(transform) };
   });
   const textures = value.textures === undefined ? [] : array(value.textures, `${path}.textures`, 4096).map((item, index) => texture(item, `${path}.textures[${index}]`));
-  prepareRenderPacket({ geometries, materials, instances, textures } as unknown as RenderPacket);
+  const deformation = Object.hasOwn(value, "deformation") ? materializePacketDeformation(value.deformation, `${path}.deformation`, numericArray) : undefined;
+  const packet = { geometries, materials, instances, textures, ...(deformation ? { deformation } : {}) } as unknown as RenderPacket;
+  prepareRenderPacket(packet);
+  return packet;
+}
+
+export function validateRuntimeRenderPacket(input: unknown, path: string): void {
+  assertNativePacketDeformationSupported(parseRuntimeRenderPacket(input, path));
+}
+
+/** Rehydrates the validated JSON payload into the typed arrays required by Browser residency upload. */
+export function materializeRuntimeRenderPacket(input: unknown, path: string): RenderPacket {
+  return parseRuntimeRenderPacket(input, path);
+}
+
+/** Browser-only JSON roundtrip retains pose/source fields and the exact skin-joint array width. */
+export function serializeBrowserRenderPacket(packet: RenderPacket): string {
+  prepareRenderPacket(packet);
+  return JSON.stringify(snapshotJson({ ...packet, schema: "deep-engine.render-packet", version: 1,
+    ...(packet.deformation ? { deformation: deformationForBrowserJson(packet.deformation) } : {}) }, true));
 }
 
 /** 只折叠已有语义；不丢弃 LOD、压缩纹理或未来字段来伪造可执行包。 */
 export function normalizeRuntimeRenderPacket(value: Record<string, unknown>): void {
+  assertNativePacketDeformationSupported(value);
   value.schema = "deep-engine.render-packet";
   value.version = 1;
   for (const candidate of value.materials as Record<string, unknown>[]) {

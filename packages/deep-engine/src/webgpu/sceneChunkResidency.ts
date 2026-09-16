@@ -35,6 +35,7 @@ export interface SceneChunkResidencyFrameInput {
 }
 
 export interface SceneChunkResidencyOptions {
+  readonly meshlets?: boolean;
   readonly executor?: GpuResidencyExecutorOptions;
   readonly onDiscardError?: (error: unknown) => void;
 }
@@ -74,7 +75,8 @@ export function createSceneChunkResidency(session: DeviceSession, budgets: Resid
   options: SceneChunkResidencyOptions = {}): SceneChunkResidency {
   validateOptions(options);
   const domain = createPacketResidencyDomain(session,
-    { ...budgets, retainFrames: budgets.retainFrames ?? 0 }, options.executor);
+    { ...budgets, retainFrames: budgets.retainFrames ?? 0 }, { ...options.executor,
+      ...(options.meshlets === undefined ? {} : { meshlets: options.meshlets }) });
   const chunks = new Map<string, ChunkState>();
   let disposed = false, latestFrame = -1, generation = 0, submittedFrameCount = 0;
   let current: PendingUpdate | undefined, lastDiscardError: unknown;
@@ -221,6 +223,7 @@ function validateChunkDemand(input: SceneChunkResidencyDemand): void {
 }
 function validateOptions(options: SceneChunkResidencyOptions): void {
   if (!options || typeof options !== "object" || Array.isArray(options)
+    || (options.meshlets !== undefined && typeof options.meshlets !== "boolean")
     || (options.executor !== undefined && (!options.executor || typeof options.executor !== "object"))
     || (options.onDiscardError !== undefined && typeof options.onDiscardError !== "function")) {
     throw new TypeError("Scene chunk residency options are invalid.");

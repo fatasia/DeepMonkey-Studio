@@ -40,6 +40,25 @@ describe("SceneAnimationMixer playback", () => {
     expect(x(graph, "node")).toBe(10);
   });
 
+  it("rebases an interrupted layer set from the graph's exact current pose", () => {
+    const graph = graphWithNodes("node"), mixer = new SceneAnimationMixer<string>();
+    mixer.registerClip(linearClip("first", ["node"], 0, 10));
+    mixer.registerClip(linearClip("latest", ["node"], 10, 20));
+    mixer.play({ id: "first-layer", clipId: "first", time: 0.5, timeScale: 0, wrapMode: "clamp" });
+    mixer.sampleAndApply(graph, 0);
+    expect(x(graph, "node")).toBe(5);
+
+    expectCode(() => mixer.rebaseFromCurrentGraphPose(), "invalid-layer");
+    mixer.stop("first-layer");
+    mixer.rebaseFromCurrentGraphPose();
+    mixer.play({ id: "latest-layer", clipId: "latest", time: 0, timeScale: 0, wrapMode: "clamp", weight: 0 });
+    mixer.fade("latest-layer", 1, 1);
+    mixer.sampleAndApply(graph, 0);
+    expect(x(graph, "node")).toBe(5);
+    mixer.sampleAndApply(graph, 0.5);
+    expect(x(graph, "node")).toBe(7.5);
+  });
+
   it("combines override and additive layers relative to the additive reference pose", () => {
     const graph = graphWithNodes("node");
     graph.update("node", { localTransform: trsAt(10) });

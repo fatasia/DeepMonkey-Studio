@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import { GpuSkinner, type DeviceSession, type SkinningPalette, type SkinningSource } from "@bim-studio/deep-engine/webgpu";
+import { runGpuSkinTangentProbe } from "./gpuSkinTangentProbe.js";
 
 export interface GpuSkinningProbeResult {
   readonly action: "gpu-skinning-compute";
@@ -9,6 +10,7 @@ export interface GpuSkinningProbeResult {
   readonly normal: readonly number[];
   readonly paletteBufferReused: boolean;
   readonly deviceError?: string;
+  readonly tangentProbe?: Awaited<ReturnType<typeof runGpuSkinTangentProbe>>;
 }
 
 /** Runs source upload, compute deformation, palette swap and exact buffer readback on the active device. */
@@ -19,7 +21,7 @@ export async function runGpuSkinningProbe(session: DeviceSession): Promise<GpuSk
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }));
   const source: SkinningSource = { revision: 0, positions: new Float32Array([1, 0, 0]), normals: new Float32Array([1, 0, 0]),
     joints: new Uint16Array([0, 0, 0, 0]), weights: new Float32Array([1, 0, 0, 0]) };
-  device.pushErrorScope("validation");
+  device.pushErrorScope("validation"); let scopeOpen = true;
   try {
     skinner.setSource(source, palette(0, 2));
     const initialPosition = await execute(device, skinner, readback);
@@ -27,16 +29,17 @@ export async function runGpuSkinningProbe(session: DeviceSession): Promise<GpuSk
     skinner.updatePalette(palette(1, 4));
     const paletteBufferReused = session.resourceCount === resourceCount;
     const updatedPosition = await execute(device, skinner, readback);
-    const error = await device.popErrorScope();
+    scopeOpen = false; const error = await device.popErrorScope();
     if (error) return Object.freeze({ action: "gpu-skinning-compute", success: false, initialPosition: [], updatedPosition: [],
       normal: [], paletteBufferReused, deviceError: error.message });
     const normal = updatedPosition.slice(4, 7);
+    const tangentProbe = await runGpuSkinTangentProbe(session);
     const success = close(initialPosition.slice(0, 3), [3, 0, 0]) && close(updatedPosition.slice(0, 3), [5, 0, 0])
-      && close(normal, [1, 0, 0]) && paletteBufferReused;
+      && close(normal, [1, 0, 0]) && paletteBufferReused && tangentProbe.success;
     return Object.freeze({ action: "gpu-skinning-compute", success, initialPosition: initialPosition.slice(0, 3),
-      updatedPosition: updatedPosition.slice(0, 3), normal, paletteBufferReused });
+      updatedPosition: updatedPosition.slice(0, 3), normal, paletteBufferReused, tangentProbe });
   } catch (error) {
-    const scoped = await device.popErrorScope().catch(() => null);
+    const scoped = scopeOpen ? await device.popErrorScope().catch(() => null) : null;
     return Object.freeze({ action: "gpu-skinning-compute", success: false, initialPosition: [], updatedPosition: [], normal: [],
       paletteBufferReused: false, deviceError: scoped?.message ?? (error instanceof Error ? error.message : String(error)) });
   } finally {

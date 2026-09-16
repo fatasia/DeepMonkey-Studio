@@ -1,8 +1,9 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import type { LocalSpotShadowBindings } from "../webgpu/localSpotShadowRuntime.js";
 import { MAX_FORWARD_PLUS_CLUSTER_COUNT, normalizeClusterGrid } from "./clusterGrid.js";
 import { ForwardPlusClusterAssigner, type ForwardPlusClusterResources } from "./clusterCompute.js";
-import { ForwardPlusPbrLightingBindings } from "./pbrLightingBindings.js";
+import { ForwardPlusPbrLightingBindings, type ProbeClipmapLightingBinding } from "./pbrLightingBindings.js";
 import type { ClusteredLights, NormalizedClusterGrid } from "./types.js";
 
 type LightingSession = Pick<DeviceSession, "device" | "state" | "own" | "release">;
@@ -67,12 +68,12 @@ export class ForwardPlusPbrRuntime {
   private readonly bindings: ForwardPlusPbrLightingBindings;
   private disposed = false;
 
-  constructor(private readonly session: LightingSession) {
+  constructor(private readonly session: LightingSession, localShadow?: LocalSpotShadowBindings) {
     if (session.device.limits.maxBindGroups < 4 || session.device.limits.maxStorageBuffersPerShaderStage < 6) {
       throw new Error("Forward+ PBR requires four bind groups and six fragment storage buffers.");
     }
     this.assigner = new ForwardPlusClusterAssigner(session);
-    this.bindings = new ForwardPlusPbrLightingBindings(session);
+    this.bindings = new ForwardPlusPbrLightingBindings(session, localShadow);
     this.layout = this.bindings.layout;
   }
 
@@ -85,6 +86,12 @@ export class ForwardPlusPbrRuntime {
     return Object.freeze({ bindGroupIndex: binding.group, bindGroup: binding.bindGroup, resources, grid,
       lightCount: resources.directionalCount + resources.pointCount + resources.spotCount });
   }
+
+  get hasProbeClipmap(): boolean { return this.bindings.hasProbeClipmap; }
+  setProbeClipmap(binding?: ProbeClipmapLightingBinding): void { this.bindings.setProbeClipmap(binding); }
+
+  /** Discards cached cluster lists when a frame may not have reached the GPU. */
+  invalidateAssignment(): void { this.assigner.invalidateAssignment(); }
 
   dispose(): void {
     if (this.disposed) return;

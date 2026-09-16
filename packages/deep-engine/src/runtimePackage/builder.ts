@@ -2,13 +2,14 @@ import { prepareRenderPacket } from "../renderPacket.js";
 import { runtimeContentSha256, runtimePackageSha256 } from "./hash.js";
 import { normalizeRuntimeMaterialBindings } from "./materialBindings.js";
 import { record, requireValue, snapshotJson } from "./primitives.js";
-import { normalizeRuntimeRenderPacket, validateRuntimeRenderPacket } from "./renderPacket.js";
+import { assertNativePacketDeformationSupported, normalizeRuntimeRenderPacket, validateRuntimeRenderPacket } from "./renderPacket.js";
 import { BUILTIN_RUNTIME_IBL_ID, validateDeepRuntimePackage } from "./validation.js";
 import { DEEP_RUNTIME_PACKAGE_SCHEMA, DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION, DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION, DEEP_RUNTIME_PACKAGE_CAMERA_VERSION, DEEP_RUNTIME_PACKAGE_CHART_VERSION,
   type BuildDeepRuntimePackageInput, type DeepRuntimePackage, type RuntimeJson,
   type RuntimeResourceIndexEntry, type RuntimeResourceKind } from "./types.js";
 
 export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): DeepRuntimePackage {
+  assertNativePacketDeformationSupported(input.renderPacket.value);
   const packet = record(snapshotJson(input.renderPacket.value, true), "$.renderPacket");
   validateRuntimeRenderPacket(packet, "$.renderPacket");
   prepareRenderPacket(input.renderPacket.value);
@@ -21,7 +22,7 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
     resources.push({ id, revision, kind, contentHash: { algorithm: "sha256", value: runtimeContentSha256(payload) } });
   };
   add(input.renderPacket.id, input.renderPacket.revision, "render-packet", packet);
-  const environment = {
+  const environment = input.environment ?? {
     schema: "deep-engine.ibl-reference", schemaVersion: 1, id: BUILTIN_RUNTIME_IBL_ID, revision: 1, kind: "builtin-default",
   };
   add(environment.id, environment.revision, "ibl-environment", environment);

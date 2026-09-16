@@ -16,7 +16,8 @@ function fixture() {
   const pipelines = { mainPipelines: new Map([
     [mainPipelineKey("plain", false, "ccw"), "main"], [mainPipelineKey("plain", false, "cw"), "mirror"],
     [mainPipelineKey("plain", false, "double"), "double"], [mainPipelineKey("plain", true, "ccw"), "blend"],
-  ]), shadowPipelines: new Map([
+  ]), displayPipelines: new Map([[mainPipelineKey("plain", false, "ccw"), "display"]]),
+  displayDirectionalPipelines: new Map([[mainPipelineKey("plain", false, "ccw"), "directional"]]), shadowPipelines: new Map([
     [shadowPipelineKey("solid", "ccw"), "shadow"], [shadowPipelineKey("solid", "cw"), "shadowMirror"],
     [shadowPipelineKey("solid", "double"), "shadowDouble"], [shadowPipelineKey("maskPlain", "ccw"), "shadowMask"],
   ]) } as unknown as Pipelines;
@@ -37,6 +38,15 @@ beforeEach(() => vi.stubGlobal("GPUBufferUsage", { VERTEX: 32, INDEX: 16, COPY_D
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("packet draw modes", () => {
+  it("keeps non-casters in the visible pass but out of the shadow pass after updates", () => {
+    const f = fixture(), p = packet();
+    f.cache.set({ ...p, instances: [p.instances[0]!, { ...p.instances[0]!, id: "no-shadow", castShadow: false }] });
+    expect(f.draw()).toEqual({ drawCalls: 2, triangles: 2 });
+    expect(f.draw("shadow")).toEqual({ drawCalls: 1, triangles: 1 });
+    f.cache.updateInstances({ materials: p.materials, instances: [{ ...p.instances[0]!, castShadow: false }] });
+    expect(f.draw()).toEqual({ drawCalls: 1, triangles: 1 });
+    expect(f.draw("shadow")).toEqual({ drawCalls: 0, triangles: 0 });
+  });
   it("shares geometry across mirrored batches and preserves winding in both passes", () => {
     const f = fixture(), p = packet();
     f.cache.set({ ...p, instances: [...p.instances, { ...p.instances[0]!, id: "mirror", transform: [-1, ...transform.slice(1)] }] });
@@ -73,6 +83,16 @@ describe("packet draw modes", () => {
     expect(f.pass.setPipeline.mock.calls).toEqual([["blend"]]);
   });
 
+  it.each([0, 0.3, 1])("writes author BLEND depth without opacity %s becoming alphaTest", baseColorAlpha => {
+    const f = fixture(), p = packet();
+    f.cache.set({ ...p, materials: [{ ...p.materials[0]!, alphaMode: "BLEND", baseColorAlpha }],
+      instances: [p.instances[0]!, { ...p.instances[0]!, id: "disabled", castShadow: false }] });
+    expect(f.draw("shadow")).toEqual({ drawCalls: 0, triangles: 0 });
+    expect(f.cache.draw(f.pass as unknown as GPURenderPassEncoder, f.pipelines, "shadow",
+      undefined, true, 0, false, true)).toEqual({ drawCalls: 1, triangles: 1 });
+    expect(f.pass.setPipeline.mock.calls).toEqual([["shadowMask"]]);
+  });
+
   it("uses the cutout shadow pipeline for MASK while retaining the opaque phase", () => {
     const f = fixture(), p = packet();
     f.cache.set({ ...p, materials: [{ ...p.materials[0]!, alphaMode: "MASK", alphaCutoff: 0.25, baseColorAlpha: 0.5 }] });
@@ -81,5 +101,26 @@ describe("packet draw modes", () => {
     expect(data[29]).toBe(0.25); expect(data[31]).toBe(2); expect(data[35]).toBe(0.5);
     f.pass.setPipeline.mockClear(); expect(f.draw("shadow")).toEqual({ drawCalls: 1, triangles: 1 });
     expect(f.pass.setPipeline).toHaveBeenCalledWith("shadowMask");
+    f.pass.setPipeline.mockClear();
+    f.cache.draw(f.pass as unknown as GPURenderPassEncoder, f.pipelines, "shadow", undefined, false, 0, false, true);
+    expect(f.pass.setPipeline).toHaveBeenCalledWith("shadowMask");
+  });
+
+  it("retains cutout coverage for BLEND in color and author shadow passes", () => {
+    const f = fixture(), p = packet();
+    f.cache.set({ ...p, materials: [{ ...p.materials[0]!, alphaMode: "BLEND", alphaCutoff: 0.25, baseColorAlpha: 0.5 }] });
+    const data = f.contents.get(f.byLabel("Deep packet instances")[0]!)!;
+    expect(data[29]).toBe(0.25); expect(data[31]).toBe(6);
+    expect(f.draw("shadow")).toEqual({ drawCalls: 0, triangles: 0 });
+    f.cache.draw(f.pass as unknown as GPURenderPassEncoder, f.pipelines, "shadow", undefined, false, 0, false, true);
+    expect(f.pass.setPipeline).toHaveBeenCalledWith("shadowMask");
+  });
+
+  it("uses the directional display variant without binding motion history", () => {
+    const f = fixture(); f.cache.set(packet());
+    expect(f.cache.draw(f.pass as unknown as GPURenderPassEncoder, f.pipelines, "display",
+      undefined, false, 0, true)).toEqual({ drawCalls: 1, triangles: 1 });
+    expect(f.pass.setPipeline).toHaveBeenCalledWith("directional");
+    expect(f.pass.setVertexBuffer.mock.calls.some(call => call[0] === 2)).toBe(false);
   });
 });

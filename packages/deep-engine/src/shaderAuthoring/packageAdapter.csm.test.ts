@@ -86,7 +86,7 @@ describe("DeepSL explicit CSM ABI", () => {
     }
   });
 
-  it.each([null, "deep.pbr.mesh.v3", 2, {}])("rejects unsupported target %s", targetAbi => {
+  it.each([null, "deep.pbr.mesh.v4", 2, {}])("rejects unsupported target %s", targetAbi => {
     const result = adaptDeepSlStandardToShaderPackage({ ...packageRequest(OPAQUE), targetAbi });
     expect(result).toMatchObject({ success: false, report: { issues: [{ path: "$.targetAbi", code: "invalid-request" }] } });
   });

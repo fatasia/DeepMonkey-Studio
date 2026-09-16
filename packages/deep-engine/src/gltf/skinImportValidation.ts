@@ -1,6 +1,6 @@
 import type { SpatialItemId } from "../spatial/types.js";
 import type { GltfSkinImportConfiguration, GltfSkinImportOptions } from "./skinTypes.js";
-import { MAX_BYTES, invalid, object } from "./validation.js";
+import { MAX_BYTES, abortSignal, invalid, object } from "./validation.js";
 
 export const DEEP_GLTF_SKIN_LIMITS = Object.freeze({
   maxNodes: 250_000,
@@ -16,6 +16,7 @@ export function resolveSkinOptions<TId extends SpatialItemId>(
   options: GltfSkinImportOptions<TId>,
 ): GltfSkinImportConfiguration {
   object(options, "options");
+  const signal = abortSignal(options.signal, "options.signal"); signal?.throwIfAborted();
   if (options.mapNodeId !== undefined && typeof options.mapNodeId !== "function") {
     invalid("options.mapNodeId", "Expected a function.");
   }
@@ -32,6 +33,7 @@ export function resolveSkinOptions<TId extends SpatialItemId>(
     maxPrimitives: optionLimit(options.maxPrimitives, DEEP_GLTF_SKIN_LIMITS.maxPrimitives, "maxPrimitives"),
     maxVerticesPerPrimitive: optionLimit(options.maxVerticesPerPrimitive, DEEP_GLTF_SKIN_LIMITS.maxVerticesPerPrimitive, "maxVerticesPerPrimitive"),
     maxDecodedBytes: optionLimit(options.maxDecodedBytes, DEEP_GLTF_SKIN_LIMITS.maxDecodedBytes, "maxDecodedBytes"),
+    ...(signal ? { signal } : {}),
   });
 }
 

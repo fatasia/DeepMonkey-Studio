@@ -41,6 +41,12 @@ export function prepareMaterialTextures(
 }
 
 function validateMaterial(material: PbrMaterial): number {
+  if (material.shadingModel !== undefined && material.shadingModel !== "unlit") {
+    throw new Error("Invalid material shadingModel.");
+  }
+  if (material.fog !== undefined && typeof material.fog !== "boolean") {
+    throw new Error("PBR material fog must be boolean.");
+  }
   if (material.baseColor.length !== 3
     || !unitFloat(material.baseColor[0])
     || !unitFloat(material.baseColor[1])

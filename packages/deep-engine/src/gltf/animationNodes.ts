@@ -25,9 +25,13 @@ export function selectAnimationNodes<TId extends SpatialItemId>(
   maximum: number,
   allowMorphWeights = false,
 ): AnimationNodeSelection<TId> {
+  options.signal?.throwIfAborted();
   const values = list(document.nodes, "nodes", maximum), parents = new Int32Array(values.length).fill(-1);
-  const source = values.map((value, index) => node(value, index, values, parents, allowMorphWeights));
-  assertAcyclic(source, parents);
+  const source = values.map((value, index) => {
+    if ((index & 0x3ff) === 0) options.signal?.throwIfAborted();
+    return node(value, index, values, parents, allowMorphWeights);
+  });
+  assertAcyclic(source, parents, options.signal);
   const scenes = list(document.scenes, "scenes");
   if (scenes.length === 0) invalid("scenes", "At least one explicit scene is required.");
   const selectedScene = reference(scenes, options.sceneIndex ?? document.scene ?? 0, "scene");
@@ -42,6 +46,7 @@ export function selectAnimationNodes<TId extends SpatialItemId>(
   const matrixNodes = new Set<number>();
   const pending = [...rootsByScene[selectedScene]!].reverse().map((index) => ({ index, parent: null as TId | null }));
   while (pending.length > 0) {
+    if ((result.length & 0x3ff) === 0) options.signal?.throwIfAborted();
     const current = pending.pop()!, sourceNode = source[current.index]!;
     selected.add(current.index);
     const id = mappedId(options, sourceNode);
@@ -88,9 +93,10 @@ function localTransform(node: JsonObject, path: string): SceneLocalTransform {
   return Object.freeze({ kind: "trs", translation, rotation, scale });
 }
 
-function assertAcyclic(nodes: readonly SourceAnimationNode[], parents: Int32Array): void {
+function assertAcyclic(nodes: readonly SourceAnimationNode[], parents: Int32Array, signal?: AbortSignal): void {
   const state = new Uint8Array(nodes.length);
   for (let start = 0; start < nodes.length; start += 1) {
+    if ((start & 0x3ff) === 0) signal?.throwIfAborted();
     let current = start;
     while (current !== -1 && state[current] === 0) { state[current] = 1; current = parents[current]!; }
     if (current !== -1 && state[current] === 1) invalid("nodes", "Node hierarchy contains a cycle.");

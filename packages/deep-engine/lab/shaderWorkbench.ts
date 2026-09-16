@@ -1,78 +1,14 @@
 import {
-  compileDeepSlSurface,
   createShaderAuthoringSession,
   DEEP_SL_SURFACE_EXAMPLE,
-  type ShaderAuthoringCompileRequest,
-  type ShaderAuthoringCompilerResult,
   type ShaderAuthoringDiagnostic,
-  type ShaderAuthoringSourceMapEntry,
   type ShaderTextAuthoringDocument,
 } from "@bim-studio/deep-engine/shader-authoring";
-import type { ShaderCompileCapabilities } from "@bim-studio/deep-engine/shader";
+import { createWebGpuDeepSlCompiler } from "@bim-studio/deep-engine/webgpu";
 import { element } from "./fixture.js";
-
-const FEATURES = new Set([
-  "depth-clip-control", "float32-filterable", "indirect-first-instance", "shader-f16",
-  "texture-compression-bc", "texture-compression-etc2", "texture-compression-astc",
-]);
-
-type TextSourceMapEntry = Extract<ShaderAuthoringSourceMapEntry, { readonly sourceKind: "text-range" }>;
-function isTextSourceMapEntry(entry: ShaderAuthoringSourceMapEntry): entry is TextSourceMapEntry {
-  return entry.sourceKind === "text-range";
-}
 
 function sourceDocument(source: string): ShaderTextAuthoringDocument {
   return { schemaVersion: 1, id: "lab.shader-editor", mode: "text", language: "deepsl", source };
-}
-
-function capabilities(device: GPUDevice): ShaderCompileCapabilities {
-  return Object.freeze({
-    features: Object.freeze([...device.features].filter((name) => FEATURES.has(name))),
-    limits: Object.freeze({
-      maxBindGroups: device.limits.maxBindGroups,
-      maxBindingsPerBindGroup: device.limits.maxBindingsPerBindGroup,
-      maxInterStageShaderVariables: device.limits.maxInterStageShaderVariables,
-    }),
-  }) as ShaderCompileCapabilities;
-}
-
-function gpuDiagnostic(
-  message: GPUCompilationMessage,
-  sourceMap: readonly ShaderAuthoringSourceMapEntry[],
-  sourceLineCount: number,
-): ShaderAuthoringDiagnostic {
-  const mapped = sourceMap.filter(isTextSourceMapEntry).find((entry) => entry.generatedLine === message.lineNum);
-  const range = mapped?.range ?? Object.freeze({
-    start: Object.freeze({ line: 1, column: 1 }),
-    end: Object.freeze({ line: Math.max(1, sourceLineCount), column: 1 }),
-  });
-  return Object.freeze({
-    severity: message.type === "error" ? "error" : "warning",
-    source: "text-compiler",
-    code: `wgsl-${message.type}`,
-    path: "$.source",
-    message: `WGSL ${Math.max(1, message.lineNum)}:${Math.max(1, message.linePos)} · ${message.message}`,
-    range,
-  });
-}
-
-async function compileOnDevice(
-  request: ShaderAuthoringCompileRequest,
-  getDevice: () => GPUDevice | undefined,
-): Promise<ShaderAuthoringCompilerResult> {
-  const device = getDevice();
-  if (!device) return Object.freeze({ success: false, diagnostics: Object.freeze([{
-    severity: "error" as const, source: "text-compiler" as const, code: "device-unavailable", path: "$.source",
-    message: "WebGPU device is not ready.",
-  }]) });
-  const compiled = compileDeepSlSurface(request, { capabilities: capabilities(device) });
-  if (!compiled.success || !compiled.artifact) return compiled;
-  const module = device.createShaderModule({ label: `DeepSL ${request.document.id} ${request.revision.slice(0, 8)}`, code: compiled.artifact.pass.module.code });
-  const sourceLineCount = request.document.source.split(/\r?\n/u).length;
-  const messages = (await module.getCompilationInfo()).messages.map((message) => gpuDiagnostic(message, compiled.artifact!.sourceMap, sourceLineCount));
-  const diagnostics = Object.freeze([...compiled.diagnostics, ...messages]);
-  if (messages.some((entry) => entry.severity === "error")) return Object.freeze({ success: false, diagnostics });
-  return Object.freeze({ success: true, diagnostics, artifact: compiled.artifact });
 }
 
 export interface ShaderWorkbench {
@@ -87,7 +23,17 @@ export function initShaderWorkbench(getDevice: () => GPUDevice | undefined, reco
   const diagnosticsNode = element<HTMLUListElement>("shader-diagnostics");
   const output = element("shader-output");
   source.value = DEEP_SL_SURFACE_EXAMPLE;
-  const created = createShaderAuthoringSession(sourceDocument(source.value), { textCompiler: (request) => compileOnDevice(request, getDevice) });
+  let compilerDevice: GPUDevice | undefined;
+  let compiler: ReturnType<typeof createWebGpuDeepSlCompiler> | undefined;
+  const created = createShaderAuthoringSession(sourceDocument(source.value), { textCompiler: (request) => {
+    const device = getDevice();
+    if (!device) return Object.freeze({ success: false, diagnostics: Object.freeze([{
+      severity: "error" as const, source: "text-compiler" as const, code: "device-unavailable",
+      path: "$.source", message: "WebGPU device is not ready.",
+    }]) });
+    if (device !== compilerDevice) { compilerDevice = device; compiler = createWebGpuDeepSlCompiler(device); }
+    return compiler!(request);
+  } });
   if (!created.session) throw new Error("DeepSL editor session could not be created.");
   const session = created.session;
   let uiGeneration = 0;

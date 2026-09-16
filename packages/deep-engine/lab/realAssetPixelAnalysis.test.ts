@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  backgroundResponse, evaluateAlphaModes, evaluateTextureEncoding, foregroundSample,
+  backgroundResponse, evaluateAlphaModes, evaluateMetallicRoughnessTransform,
+  evaluateTextureEncoding, foregroundDifference, foregroundSample,
   type ForegroundSample,
 } from "./realAssetPixelAnalysis.js";
 import type { SurfacePixels } from "./assetPixelReadback.js";
@@ -49,7 +50,32 @@ describe("real asset pixel analysis", () => {
     expect(opaque).toBe(0); expect(blend).toBeGreaterThan(0.1);
     expect(evaluateAlphaModes({ opaqueBackgroundResponse: opaque, blendBackgroundResponse: blend,
       maskCoverage: [0.3, 0.2, 0.1] })).toBe(true);
+    expect(evaluateAlphaModes({ opaqueBackgroundResponse: 0.08, blendBackgroundResponse: 0.145,
+      maskCoverage: [0.3, 0.2, 0.1] })).toBe(true);
     expect(evaluateAlphaModes({ opaqueBackgroundResponse: blend, blendBackgroundResponse: opaque,
       maskCoverage: [0.2, 0.2, 0.2] })).toBe(false);
+  });
+
+  it("requires repeat-stable transformed MR output, a reference match and a distinct ignored-transform control", () => {
+    const baseline = surface(20, 20, () => [8, 8, 8, 255]);
+    const transformed = surface(20, 20, (x, y) => x > 4 && x < 15 && y > 4 && y < 15
+      ? [180, 150, 90, 255] : [8, 8, 8, 255]);
+    const reference = surface(20, 20, (x, y) => x > 4 && x < 15 && y > 4 && y < 15
+      ? [176, 148, 92, 255] : [8, 8, 8, 255]);
+    const ignored = surface(20, 20, (x, y) => x > 4 && x < 15 && y > 4 && y < 15
+      ? [60, 80, 190, 255] : [8, 8, 8, 255]);
+    const evidence = { uv0: foregroundSample(transformed, baseline), uv1: foregroundSample(transformed, baseline),
+      reference: foregroundSample(reference, baseline), ignoredTransform: foregroundSample(ignored, baseline),
+      uv0ToReference: foregroundDifference(transformed, reference, baseline),
+      uv1ToReference: foregroundDifference(transformed, reference, baseline),
+      repeatedDifference: foregroundDifference(transformed, transformed, baseline),
+      transformedToIgnored: foregroundDifference(transformed, ignored, baseline),
+      transformedChecksum: "stable", repeatedChecksum: "stable", ignoredChecksum: "control",
+      decodedLinearSemantic: true, decodedUv1Transform: true };
+    expect(evaluateMetallicRoughnessTransform(evidence)).toBe(true);
+    expect(evaluateMetallicRoughnessTransform({ ...evidence,
+      repeatedDifference: { pixels: 100, changedFraction: 0.5, meanDistance: 0.08 } })).toBe(false);
+    expect(evaluateMetallicRoughnessTransform({ ...evidence,
+      transformedToIgnored: { pixels: 100, changedFraction: 0, meanDistance: 0 } })).toBe(false);
   });
 });

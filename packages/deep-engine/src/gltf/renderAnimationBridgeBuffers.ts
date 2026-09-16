@@ -12,8 +12,21 @@ import { GltfRenderAnimationBridgeError } from "./renderAnimationBridgeTypes.js"
 import type { GltfSkin, GltfSkinBinding } from "./skinTypes.js";
 
 interface MutableRevision { revision: number }
-interface MutableFrame<TId extends SpatialItemId> extends GltfRenderAnimationFrame<TId> { revision: number; time: number; paused: boolean }
+interface MutableFrame<TId extends SpatialItemId> extends GltfRenderAnimationFrame<TId> {
+  revision: number; time: number; paused: boolean; finished: boolean;
+}
 interface SkinLayout<TId extends SpatialItemId> { readonly binding: GltfSkinBinding<TId>; readonly skin: GltfSkin<TId> }
+export interface BridgeMorphSample<TId extends SpatialItemId> {
+  readonly clip: MorphWeightClip<TId>;
+  readonly time: number;
+  readonly wrapMode: "loop" | "clamp";
+  readonly weight: number;
+}
+
+export interface BridgeMorphPose {
+  readonly values: readonly Float32Array<ArrayBuffer>[];
+  readonly weight: number;
+}
 
 export interface BridgeLayout<TId extends SpatialItemId> {
   readonly source: ResolvedGltfRenderAnimationSources<TId>;
@@ -23,6 +36,7 @@ export interface BridgeLayout<TId extends SpatialItemId> {
   readonly morphIndices: ReadonlyMap<TId, number>;
   readonly inverseScratch: Float64Array<ArrayBuffer>;
   readonly multiplyScratch: Float64Array<ArrayBuffer>;
+  readonly morphScratch: Float32Array<ArrayBuffer>;
 }
 export interface BridgeBank<TId extends SpatialItemId> {
   readonly frame: MutableFrame<TId>;
@@ -61,7 +75,9 @@ export function createBridgeLayout<TId extends SpatialItemId>(source: ResolvedGl
       || [...binding.initialWeights].some((value) => !Number.isFinite(value))) fail("invalid-binding", "Morph binding and primitive targets are inconsistent.");
     morphIndices.set(binding.nodeId, index);
   }
-  return { source, nodeIndices, skins, morphs, morphIndices, inverseScratch: new Float64Array(16), multiplyScratch: new Float64Array(16) };
+  const maximumMorphTargets = Math.max(1, ...morphs.map((binding) => binding.initialWeights.length));
+  return { source, nodeIndices, skins, morphs, morphIndices, inverseScratch: new Float64Array(16),
+    multiplyScratch: new Float64Array(16), morphScratch: new Float32Array(maximumMorphTargets) };
 }
 
 export function createBridgeBank<TId extends SpatialItemId>(layout: BridgeLayout<TId>, options: GltfRenderAnimationBridgeOptions<TId>): BridgeBank<TId> {
@@ -83,14 +99,15 @@ export function createBridgeBank<TId extends SpatialItemId>(layout: BridgeLayout
   });
   const morphSkinning = pairedDynamics(skinPalettes, morphWeights);
   const instanceUpdate = options.instances ? projectInstances(options.instances.materials, options.instances.bindings, nodeWorldTransforms) : undefined;
-  const frame: MutableFrame<TId> = { revision: 0, time: 0, paused: false, nodeWorldTransforms: Object.freeze(nodeWorldTransforms),
+  const frame: MutableFrame<TId> = { revision: 0, time: 0, paused: false, finished: false,
+    nodeWorldTransforms: Object.freeze(nodeWorldTransforms),
     skinPalettes: Object.freeze(skinPalettes), morphWeights: Object.freeze(morphWeights), morphSkinning,
     ...(instanceUpdate ? { instanceUpdate } : {}) };
   return { frame, worlds };
 }
 
 export function fillBridgeBank<TId extends SpatialItemId>(bank: BridgeBank<TId>, layout: BridgeLayout<TId>, graph: SceneTransformGraph<TId>,
-  morphClip: MorphWeightClip<TId> | null, time: number, wrapMode: "loop" | "clamp"): void {
+  morphSamples: readonly BridgeMorphSample<TId>[], morphPose?: BridgeMorphPose): void {
   for (let index = 0; index < layout.source.nodes.length; index += 1) {
     const node = layout.source.nodes[index]!, snapshot = graph.getNode(node.id);
     if (!snapshot) fail("missing-node", `Animation graph lost node ${String(node.id)}.`);
@@ -99,7 +116,7 @@ export function fillBridgeBank<TId extends SpatialItemId>(bank: BridgeBank<TId>,
     }
     bank.frame.nodeWorldTransforms[index]!.worldTransform.set(snapshot.worldMatrix);
   }
-  fillMorphs(bank.frame.morphWeights, layout.morphs, morphClip, time, wrapMode, layout.morphIndices);
+  fillMorphs(bank.frame.morphWeights, layout.morphs, morphSamples, layout.morphIndices, layout.morphScratch, morphPose);
   fillSkins(bank.frame.skinPalettes, layout, bank.worlds);
 }
 
@@ -112,15 +129,16 @@ export function sameBridgeBank<TId extends SpatialItemId>(left: BridgeBank<TId>,
   return left.frame.morphWeights.every((entry, index) => sameArray(entry.weights.values, right.frame.morphWeights[index]!.weights.values));
 }
 
-export function initializeBankState<TId extends SpatialItemId>(bank: BridgeBank<TId>, revision: number, time: number, paused: boolean): void {
-  bank.frame.revision = revision; bank.frame.time = time; bank.frame.paused = paused;
+export function initializeBankState<TId extends SpatialItemId>(bank: BridgeBank<TId>, revision: number, time: number,
+  paused: boolean, finished: boolean): void {
+  bank.frame.revision = revision; bank.frame.time = time; bank.frame.paused = paused; bank.frame.finished = finished;
   for (const entry of bank.frame.skinPalettes) (entry.palette as MutableRevision).revision = revision;
   for (const entry of bank.frame.morphWeights) (entry.weights as MutableRevision).revision = revision;
 }
 
 export function commitBankState<TId extends SpatialItemId>(previous: BridgeBank<TId>, next: BridgeBank<TId>, revision: number,
-  time: number, paused: boolean): void {
-  next.frame.revision = revision; next.frame.time = time; next.frame.paused = paused;
+  time: number, paused: boolean, finished: boolean): void {
+  next.frame.revision = revision; next.frame.time = time; next.frame.paused = paused; next.frame.finished = finished;
   for (let index = 0; index < next.frame.skinPalettes.length; index += 1) {
     const before = previous.frame.skinPalettes[index]!.palette, after = next.frame.skinPalettes[index]!.palette;
     (after as MutableRevision).revision = before.revision + (sameArray(before.matrices, after.matrices)
@@ -133,13 +151,24 @@ export function commitBankState<TId extends SpatialItemId>(previous: BridgeBank<
 }
 
 function fillMorphs<TId extends SpatialItemId>(outputs: readonly GltfMorphWeightsFrame<TId>[], bindings: readonly GltfMorphBinding<TId>[],
-  clip: MorphWeightClip<TId> | null, time: number, wrapMode: "loop" | "clamp", indices?: ReadonlyMap<TId, number>): void {
+  samples: readonly BridgeMorphSample<TId>[], indices: ReadonlyMap<TId, number>, scratch: Float32Array,
+  pose?: BridgeMorphPose): void {
   for (let index = 0; index < outputs.length; index += 1) outputs[index]!.weights.values.set(bindings[index]!.initialWeights);
-  if (!clip) return;
-  for (const track of clip.tracks) {
-    const index = indices?.get(track.nodeId) ?? bindings.findIndex((binding) => Object.is(binding.nodeId, track.nodeId));
-    if (index < 0) fail("invalid-binding", `Morph track references an unknown binding: ${String(track.nodeId)}.`);
-    sampleMorphWeightTrack(track, time, { wrapMode }, outputs[index]!.weights.values);
+  if (pose) for (let index = 0; index < outputs.length; index += 1) {
+    const output = outputs[index]!.weights.values, base = bindings[index]!.initialWeights, frozen = pose.values[index]!;
+    for (let target = 0; target < output.length; target += 1) {
+      output[target] = output[target]! + (frozen[target]! - base[target]!) * pose.weight;
+    }
+  }
+  for (const sample of samples) for (const track of sample.clip.tracks) {
+    const index = indices.get(track.nodeId);
+    if (index === undefined) fail("invalid-binding", `Morph track references an unknown binding: ${String(track.nodeId)}.`);
+    const output = outputs[index]!.weights.values, base = bindings[index]!.initialWeights;
+    const sampled = scratch.subarray(0, track.targetCount) as Float32Array<ArrayBuffer>;
+    sampleMorphWeightTrack(track, sample.time, { wrapMode: sample.wrapMode }, sampled);
+    for (let target = 0; target < output.length; target += 1) {
+      output[target] = output[target]! + (sampled[target]! - base[target]!) * sample.weight;
+    }
   }
 }
 

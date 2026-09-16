@@ -6,6 +6,7 @@ import {
   type TextureCompressionFeature, type TextureSemantic,
 } from "../textures/decodedTexture.js";
 import type { DeviceSession } from "./deviceSession.js";
+import { bindGpuResidencyHandleDevice } from "./gpuResidencyDeviceAffinity.js";
 
 export type GpuTextureResidencyTexture = PreparedTexture | DecodedTexture;
 /** Provider 必须声明返回内容对应的外部 LOD，不能只靠相同字节数猜测。 */
@@ -109,11 +110,12 @@ export class GpuTextureResidencyUploader implements GpuResidencyUploader<GpuText
       if (validationError !== undefined) throw validationError;
       if (request.signal.aborted) throw cancellation(request.signal);
       const base = source.levels[0]!;
-      const handle = Object.freeze({ kind: "texture" as const, texture: texture!, view: view!, sampler: sampler!,
+      const handle = bindGpuResidencyHandleDevice(Object.freeze({ kind: "texture" as const,
+        texture: texture!, view: view!, sampler: sampler!,
         id: request.id, revision: request.revision,
         level: request.level, byteLength: source.byteLength, semantic: source.semantic, format: source.format,
         width: base.width, height: base.height, mipLevelCount: source.levels.length,
-        ...(source.requiredFeature ? { requiredFeature: source.requiredFeature } : {}) });
+        ...(source.requiredFeature ? { requiredFeature: source.requiredFeature } : {}) }), device);
       return Object.freeze({ handle, byteLength: source.byteLength });
     } catch (error) {
       if (texture) this.session.release(texture);

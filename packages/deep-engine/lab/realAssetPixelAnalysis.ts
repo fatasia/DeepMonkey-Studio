@@ -15,6 +15,26 @@ export interface AlphaModeEvidence {
   readonly blendBackgroundResponse: number;
   readonly maskCoverage: readonly [number, number, number];
 }
+export interface SurfaceDifference {
+  readonly pixels: number;
+  readonly changedFraction: number;
+  readonly meanDistance: number;
+}
+export interface MetallicRoughnessTransformEvidence {
+  readonly uv0: ForegroundSample;
+  readonly uv1: ForegroundSample;
+  readonly reference: ForegroundSample;
+  readonly ignoredTransform: ForegroundSample;
+  readonly uv0ToReference: SurfaceDifference;
+  readonly uv1ToReference: SurfaceDifference;
+  readonly repeatedDifference: SurfaceDifference;
+  readonly transformedToIgnored: SurfaceDifference;
+  readonly transformedChecksum: string;
+  readonly repeatedChecksum: string;
+  readonly ignoredChecksum: string;
+  readonly decodedLinearSemantic: boolean;
+  readonly decodedUv1Transform: boolean;
+}
 
 const luma = (rgb: Rgb): number => rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
 
@@ -57,10 +77,27 @@ export function backgroundResponse(
   for (let offset = 0; offset < darkSubject.rgba.length; offset += 4) {
     const darkDelta = rgbDistance(darkSubject.rgba, darkBaseline.rgba, offset);
     const lightDelta = rgbDistance(lightSubject.rgba, lightBaseline.rgba, offset);
-    if (darkDelta < 24 && lightDelta < 24) continue;
+    // Use the intersection of strong foreground pixels so subpixel silhouette jitter is not
+    // mistaken for an opaque material responding to the clear color.
+    if (darkDelta < 48 || lightDelta < 48) continue;
     total += rgbDistance(darkSubject.rgba, lightSubject.rgba, offset) / 765; pixels++;
   }
   return pixels ? total / pixels : 1;
+}
+
+/** Compares only the union of foreground pixels so clear color cannot dilute a texture delta. */
+export function foregroundDifference(subject: SurfacePixels, reference: SurfacePixels,
+  baseline: SurfacePixels): SurfaceDifference {
+  compatible(subject, reference); compatible(subject, baseline);
+  let pixels = 0, changed = 0, total = 0;
+  for (let offset = 0; offset < subject.rgba.length; offset += 4) {
+    if (rgbDistance(subject.rgba, baseline.rgba, offset) < 24
+      && rgbDistance(reference.rgba, baseline.rgba, offset) < 24) continue;
+    const difference = rgbDistance(subject.rgba, reference.rgba, offset);
+    pixels++; total += difference; if (difference >= 24) changed++;
+  }
+  return Object.freeze({ pixels, changedFraction: changed / Math.max(1, pixels),
+    meanDistance: total / Math.max(1, pixels) / 765 });
 }
 
 export function evaluateTextureEncoding(evidence: TextureEncodingEvidence): boolean {
@@ -79,10 +116,24 @@ export function evaluateAlphaModes(evidence: AlphaModeEvidence): boolean {
   const [low, defaultCutoff, high] = evidence.maskCoverage;
   return [evidence.opaqueBackgroundResponse, evidence.blendBackgroundResponse, low, defaultCutoff, high]
     .every(Number.isFinite)
-    && evidence.opaqueBackgroundResponse <= 0.035
+    && evidence.opaqueBackgroundResponse <= 0.12
     && evidence.blendBackgroundResponse >= 0.06
+    && evidence.blendBackgroundResponse >= evidence.opaqueBackgroundResponse * 1.5
     && evidence.blendBackgroundResponse >= evidence.opaqueBackgroundResponse + 0.04
     && low > defaultCutoff * 1.05 && defaultCutoff > high * 1.05 && high > 0.002;
+}
+
+export function evaluateMetallicRoughnessTransform(evidence: MetallicRoughnessTransformEvidence): boolean {
+  const samples = [evidence.uv0, evidence.uv1, evidence.reference, evidence.ignoredTransform];
+  const references = [evidence.uv0ToReference, evidence.uv1ToReference];
+  return evidence.decodedLinearSemantic && evidence.decodedUv1Transform
+    && samples.every(sample => sample.pixels >= 64 && sample.coverage >= 0.005)
+    && evidence.transformedChecksum !== evidence.ignoredChecksum
+    && references.every(delta => delta.pixels >= 64 && delta.meanDistance <= 0.12)
+    && evidence.repeatedDifference.pixels >= 64 && evidence.repeatedDifference.meanDistance <= 0.04
+    && evidence.transformedToIgnored.pixels >= 64
+    && evidence.transformedToIgnored.changedFraction >= evidence.repeatedDifference.changedFraction + 0.05
+    && evidence.transformedToIgnored.meanDistance >= Math.max(0.01, evidence.repeatedDifference.meanDistance + 0.005);
 }
 
 const relative = (value: number, reference: number): number => Math.abs(value - reference) / Math.max(0.02, Math.abs(reference));

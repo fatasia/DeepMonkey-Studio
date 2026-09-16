@@ -172,6 +172,10 @@ export class ShaderHotReloadRuntime {
       capabilities: this.options.capabilities, ...(this.options.packageId === undefined ? {} : { packageId: this.options.packageId }) });
     if (!adapted.success) return requestResult("failed",
       Object.freeze([...diagnostics, ...adapterDiagnostics(adapted.report.issues)]), identity);
+    if (artifact.runtimePackage && !sameModuleContent(artifact.runtimePackage.modules, adapted.package.modules)) {
+      return requestResult("failed", Object.freeze([...diagnostics,
+        runtimeDiagnostic("runtime-semantic-drift", "Authoring and hot-reload adapters emitted different WGSL modules.")]), identity);
+    }
     const sameActive = artifact.pass.cacheKey === this.active?.artifactHash
       && adapted.package.packageCacheKey === this.active.packageHash;
     const samePending = artifact.pass.cacheKey === this.pending?.artifactHash
@@ -213,4 +217,14 @@ export class ShaderHotReloadRuntime {
     const message = this.currentState === "disposed" ? "Shader hot reload runtime is disposed." : "Shader hot reload GPU device is lost.";
     return requestResult("failed", Object.freeze([runtimeDiagnostic(code, message)]));
   }
+}
+
+function sameModuleContent(
+  left: readonly Readonly<{ sourceHash: Readonly<{ value: string }> }>[],
+  right: readonly Readonly<{ sourceHash: Readonly<{ value: string }> }>[],
+): boolean {
+  const hashes = (values: readonly Readonly<{ sourceHash: Readonly<{ value: string }> }>[]) =>
+    values.map(value => value.sourceHash.value).sort();
+  const a = hashes(left), b = hashes(right);
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }

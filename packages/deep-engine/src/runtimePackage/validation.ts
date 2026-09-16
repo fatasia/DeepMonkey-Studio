@@ -9,10 +9,11 @@ import { validateRuntimeSceneCamera } from "./camera.js";
 import { runtimeContentSha256, runtimePackageSha256 } from "./hash.js";
 import { array, fields, record, requireValue, resourceId, revision, RuntimePackageError, snapshotJson, string } from "./primitives.js";
 import { validateRuntimeRenderPacket } from "./renderPacket.js";
+import { BUILTIN_RUNTIME_IBL_ID, validateRuntimeEnvironment } from "./environment.js";
 import { DEEP_RUNTIME_PACKAGE_BUDGETS as LIMITS, DEEP_RUNTIME_PACKAGE_SCHEMA, DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION,
   DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION, DEEP_RUNTIME_PACKAGE_CHART_VERSION, type DeepRuntimePackage, type RuntimePackageValidation, type RuntimeResourceKind } from "./types.js";
 
-export const BUILTIN_RUNTIME_IBL_ID = "deep.builtin.studio-ibl.v1";
+export { BUILTIN_RUNTIME_IBL_ID } from "./environment.js";
 function hash(value: unknown, path: string): string {
   const object = record(value, path);
   fields(object, ["algorithm", "value"], [], path);
@@ -90,12 +91,7 @@ function validate(input: unknown): DeepRuntimePackage {
     requireValue(camera.id === cameraId && camera.revision === index.get(cameraId)!.revision,
       `$.payloads.${cameraId}`, "Camera identity differs from index.");
   }
-  const environment = record(payloads[environmentId], `$.payloads.${environmentId}`);
-  fields(environment, ["schema", "schemaVersion", "id", "revision", "kind"], [], `$.payloads.${environmentId}`);
-  requireValue(environment.schema === "deep-engine.ibl-reference" && environment.schemaVersion === 1
-    && environment.id === environmentId && environmentId === BUILTIN_RUNTIME_IBL_ID
-    && environment.revision === 1 && index.get(environmentId)!.revision === 1 && environment.kind === "builtin-default",
-  `$.payloads.${environmentId}`, "Unsupported built-in IBL identity or source.");
+  validateRuntimeEnvironment(payloads[environmentId], environmentId, index.get(environmentId)!.revision, `$.payloads.${environmentId}`);
   if (deep2dId !== null) validateRuntimeDeep2d(payloads[deep2dId], deep2dId, index.get(deep2dId)!.revision, `$.payloads.${deep2dId}`);
   let chartIr: unknown;
   if (chartId !== null) chartIr = validateRuntimeChartPackage(payloads[chartId], chartId, index.get(chartId)!.revision, `$.payloads.${chartId}`);

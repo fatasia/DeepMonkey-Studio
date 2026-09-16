@@ -8,12 +8,14 @@ describe("world-space Forward+ light adapter", () => {
       directional: [{ directionWorld: [0, 0, -1], color: [1, 1, 1], intensity: 2 }],
       points: [{ positionWorld: [1, 2, 3], range: 8, color: [1, 0.5, 0.25], intensity: 4 }],
       spots: [{ positionWorld: [-1, 0, 4], directionWorld: [0, 0, -1], range: 10,
-        color: [0.25, 0.5, 1], intensity: 3, innerConeCos: 0.9, outerConeCos: 0.7 }],
+        color: [0.25, 0.5, 1], intensity: 3, innerConeCos: 0.9, outerConeCos: 0.7,
+        shadow: { key: "authored-spot", importance: 5 } }],
     }, lookAt([0, 0, 10], [0, 0, 0]));
 
     expect(result.directional?.[0]).toMatchObject({ directionView: [0, 0, -1], intensity: 2 });
     expect(result.points?.[0]).toMatchObject({ positionView: [1, 2, -7], range: 8 });
-    expect(result.spots?.[0]).toMatchObject({ positionView: [-1, 0, -6], directionView: [0, 0, -1] });
+    expect(result.spots?.[0]).toMatchObject({ positionView: [-1, 0, -6], directionView: [0, 0, -1],
+      shadow: { key: "authored-spot", importance: 5 } });
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.points)).toBe(true);
   });

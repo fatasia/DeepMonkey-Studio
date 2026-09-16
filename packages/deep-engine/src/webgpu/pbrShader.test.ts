@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { currentToPreviousUvMotion, outputShader, sceneShader } from "./pbrShader.js";
+import { PBR_DIRECT_LIGHTING_WGSL } from "./pbrDirectLightingWgsl.js";
 
 describe("normal-map WGSL contract", () => {
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("passes Naga parsing and semantic validation", () => {
@@ -23,6 +24,15 @@ describe("normal-map WGSL contract", () => {
   it("keeps display output to tone mapping after the dedicated bloom pass", () => {
     expect(outputShader).not.toContain("for (var y = -1; y <= 1; y++)");
     expect(outputShader).not.toContain("settings.bloom / 9.0");
+    expect(outputShader.indexOf("color *= toneExposure")).toBeLessThan(outputShader.indexOf("color = deepApplyColorGrading(color"));
+    expect(outputShader.indexOf("color = deepApplyColorGrading(color")).toBeLessThan(outputShader.indexOf("deepThreeAcesFit(color, toneExposure)"));
+    expect(outputShader.match(/deepLinearToSrgb\(color\)/g)).toHaveLength(1);
+    expect(outputShader.match(/textureSample\(/g)).toHaveLength(1);
+  });
+  it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("validates the display output with Naga", () => {
+    const result = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!, ["--stdin-file-path", "deep-pbr-output.wgsl", "--input-kind", "wgsl"],
+      { input: outputShader, encoding: "utf8" });
+    expect(result.status, result.stderr).toBe(0);
   });
   it("writes weighted OIT accumulation and revealage for transparent materials", () => {
     expect(sceneShader).toContain("struct DeepWeightedOitOutput");
@@ -32,9 +42,20 @@ describe("normal-map WGSL contract", () => {
     expect(sceneShader).not.toContain("v.clip.z / max(v.clip.w");
   });
   it("uses the Forward+ group for fill lights in every material path", () => {
-    expect(sceneShader).toContain("deepForwardPlusPbrWorld(fragmentCoordinate, world, n, frame.worldToView");
+    expect(sceneShader).toContain("deepForwardPlusPbrWorldReceiving(fragmentCoordinate, world, n, frame.worldToView");
+    expect(sceneShader).toContain("deepClusterParams.limits.z > 0u || deepClusterParams.grid1.w > 0u");
     expect(sceneShader).not.toContain("safeNormalize(vec3f(-0.8, 0.4, -0.6)");
-    expect(sceneShader.match(/shade\(v\.clip\.xy/g)).toHaveLength(4);
+    expect(sceneShader.match(/shade\(v\.clip\.xy/g)).toHaveLength(8);
+    expect(sceneShader).toContain("@fragment fn fragmentMainColor");
+    expect(sceneShader).toContain("@fragment fn fragmentMaterialColor");
+    expect(sceneShader).toContain("@fragment fn fragmentMainDisplay");
+    expect(sceneShader).toContain("@fragment fn fragmentMaterialDisplay");
+  });
+
+  it("branches around disabled environment, fog and ground-grid work", () => {
+    expect(sceneShader).toContain("if (frame.floor.w > 0.0)");
+    expect(sceneShader).toContain("if (frame.eye.w > 0.0)");
+    expect(sceneShader).toContain("if (frame.tuning.w <= 0.0) { return color; }");
   });
 
   it("takes primary directional radiance from the frame instead of a baked studio constant", () => {
@@ -42,13 +63,25 @@ describe("normal-map WGSL contract", () => {
     expect(sceneShader).toContain("frame.sunColor.rgb * frame.sunColor.w * visibility");
     expect(sceneShader).not.toContain("vec3f(2.5, 2.4, 2.25) * visibility");
   });
+  it("keeps direct diffuse separate from view-dependent Fresnel without extra texture samples", () => {
+    expect(sceneShader).toContain("let visibility = 0.5 / max(gv + gl, 0.000001)");
+    expect(PBR_DIRECT_LIGHTING_WGSL).not.toContain("textureSample");
+    expect(sceneShader).toContain("let diffuse = (1.0 - metal) * base / 3.14159265");
+    expect(PBR_DIRECT_LIGHTING_WGSL).not.toContain("(1.0 - f) * (1.0 - metal) * base");
+  });
+  it("raises roughness from screen-space normal derivatives to suppress specular aliasing", () => {
+    expect(PBR_DIRECT_LIGHTING_WGSL).toContain("max(abs(dpdx(normal)), abs(dpdy(normal)))");
+    expect(sceneShader.match(/\+ deepGeometryRoughness\(n\)/g)).toHaveLength(4);
+    expect(sceneShader).toContain("let rough = min(1.0");
+  });
   it("uses four blended cascades for the default directional shadow", () => {
     expect(sceneShader).toContain("@group(2) @binding(1) var deepShadowMap: texture_depth_2d_array");
     expect(sceneShader).toContain("textureSampleCompareLevel(deepShadowMap, deepShadowSampler");
     expect(sceneShader).toContain("if (viewDepth > lastSplit) { return 1.0; }");
     expect(sceneShader).toContain("let slopeBias = 1.0 - clamp(nDotL, 0.0, 1.0);");
     expect(sceneShader).toContain("let receiverPosition = worldPosition + worldNormal * texelWorld * normalBias;");
-    expect(sceneShader).toContain("let visibility = deepCascadedShadow(max(");
+    expect(sceneShader).toContain("let visibility = deepPrimaryShadow(world, n, dot(n, l), authorShadow");
+    expect(sceneShader).toContain("return deepCascadedShadow(max(");
     expect(sceneShader).toContain("deepSampleCascade(index + 1u, worldPosition, worldNormal, nDotL), blend)");
   });
   it("keeps degenerate lighting and tangent vectors finite", () => {

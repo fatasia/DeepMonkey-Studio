@@ -39,7 +39,7 @@ export function createBenchmarkFidelitySnapshot(engine: "deep-webgpu" | "three-w
         filter: "pcf-soft-3x3", update: "static-dirty" }
         : { enabled: true, cascadeCount: 1, mapSize: 2048, filter: "three-pcf-soft", update: "static-dirty" },
     "post-process": baseline ? disabledEffects() : engine === "deep-webgpu"
-      ? { ambientOcclusion: true, temporalAa: true, bloom: true, vignette: true, fog: true, groundGrid: true }
+      ? { ambientOcclusion: true, temporalAa: true, spatialAa: true, bloom: true, vignette: true, fog: true, groundGrid: true }
       : disabledEffects(),
     "tone-mapping": baseline || engine === "three-webgpu"
       ? { operator: "three-aces-r185", exposure: 1, outputTransfer: "srgb" }
@@ -54,6 +54,6 @@ export function benchmarkRenderSettings(candidate: BenchmarkFidelitySnapshot,
 }
 
 function disabledEffects() {
-  return Object.freeze({ ambientOcclusion: false, temporalAa: false, bloom: false,
-    vignette: false, fog: false, groundGrid: false });
+  return Object.freeze({ ambientOcclusion: false, temporalAa: false, spatialAa: false, bloom: false,
+    vignette: false, fog: false, groundGrid: false, occlusionCulling: false });
 }

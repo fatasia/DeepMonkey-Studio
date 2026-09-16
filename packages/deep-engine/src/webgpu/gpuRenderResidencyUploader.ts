@@ -31,12 +31,12 @@ export class GpuRenderResidencyUploader implements GpuResidencyUploader<GpuRende
   private readonly textures: GpuTextureResidencyUploader;
 
   constructor(session: DeviceSession, sourceFor: GpuRenderResidencySourceProvider,
-    private readonly sourceIdFor: GpuRenderResidencySourceId = request => request.id) {
+    private readonly sourceIdFor: GpuRenderResidencySourceId = request => request.id, meshlets = false) {
     this.geometries = new GpuGeometryResidencyUploader(session, async request => {
       const source = await sourceFor(request);
       if (source.kind !== "geometry") throw sourceKindError(request, source.kind);
       return source.source;
-    });
+    }, meshlets);
     this.textures = new GpuTextureResidencyUploader(session, async request => {
       const source = await sourceFor(request);
       if (source.kind !== "texture") throw sourceKindError(request, source.kind);

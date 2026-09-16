@@ -40,6 +40,47 @@ const input = Object.freeze({ eye: [4, 3, 5] as const, target: [0, 0, 0] as cons
   verticalFovRadians: Math.PI / 3, aspect: 16 / 9, near: 0.1, far: 1_000, extent: 10 });
 
 describe("default PBR cascaded shadow resources", () => {
+  it("uses authored matrix independently of main camera and updates signed sampling parameters", () => {
+    const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines,
+      { exactProfile: { cascadeCount: 1, shadowMapSize: 1024 } });
+    const authored = { viewProjection: [0.2, 0, 0, 0, 0, 0.2, 0, 0, 0, 0, -0.01, 0, 0, 0, 0, 1],
+      mapSize: 1024, bias: -0.0001, normalBias: 0.015, intensity: 0.38, radius: 3 };
+    const first = shadows.prepare({ ...input, authored, viewportHeight: 800 }, false);
+    expect(first.plan.cascades[0]!.viewProjection).toEqual(new Float32Array(authored.viewProjection));
+    expect(first.render).toBe(true); shadows.commit();
+    expect(shadows.prepare({ ...input, eye: [40, 30, 50], authored, viewportHeight: 800 }, false).render).toBe(false);
+    expect(shadows.prepare({ ...input, authored: { ...authored, intensity: 0 }, viewportHeight: 800 }, false).render).toBe(true);
+    const uniform = f.writes.at(-2) as Float32Array;
+    expect(uniform[149]).toBe(0); expect(uniform[153]).toBeCloseTo(-0.0001); expect(uniform[155]).toBe(2);
+    expect(() => shadows.prepare({ ...input, authored: { ...authored, mapSize: 2048 } }, false)).toThrow("matching one-layer");
+    shadows.dispose();
+  });
+  it("suppresses disabled shadow work even when forced and refreshes before re-enabling", () => {
+    const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines);
+    const binding = shadows.binding;
+    expect(shadows.prepare(input, true, false).render).toBe(false);
+    shadows.commit();
+    expect(shadows.prepare(input, true, false).render).toBe(false);
+    shadows.commit();
+    expect(shadows.prepare(input, false, true).render).toBe(true);
+    // A failed submission cannot publish the fresh shadow map.
+    expect(shadows.prepare(input, false, true).render).toBe(true);
+    shadows.commit();
+    expect(shadows.prepare(input, false, true).render).toBe(false);
+    expect(shadows.binding).toBe(binding);
+    expect(f.device.createTexture).toHaveBeenCalledTimes(1);
+    shadows.dispose();
+  });
+  it("refreshes an existing map after author changes while shadows are disabled", () => {
+    const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines);
+    shadows.prepare(input, false); shadows.commit();
+    expect(shadows.prepare(input, true, false).render).toBe(false);
+    shadows.commit();
+    expect(shadows.prepare(input, false).render).toBe(true);
+    shadows.commit();
+    expect(shadows.prepare(input, false).render).toBe(false);
+    shadows.dispose();
+  });
   it("allocates one array map and isolated render views for all cascades", () => {
     const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines);
     expect(shadows.selection).toMatchObject({ requestedTier: "high", selectedTier: "high", downgraded: false });

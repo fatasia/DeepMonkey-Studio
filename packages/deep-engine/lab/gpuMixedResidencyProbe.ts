@@ -38,6 +38,8 @@ export interface GpuMixedResidencyProbeResult {
   readonly resourcesBefore: number;
   readonly resourcesHeldAfterDispose: number;
   readonly resourcesAfterRelease: number;
+  readonly peakResidentBytes: number;
+  readonly peakAllocatedBytes: number;
   readonly failure?: string;
 }
 
@@ -64,6 +66,7 @@ export async function verifyGpuMixedResidency(session: DeviceSession): Promise<G
       { id: SHARED_ID, kind: "texture", desiredLevel: 0, required: true },
     ]);
     const residents = runtime.snapshot();
+    const residencyPeak = runtime.telemetrySnapshot();
     const samePublicIdResident = frame.status === "applied" && residents.length === 2
       && residents.every(resource => resource.id === SHARED_ID)
       && residents.some(resource => resource.kind === "geometry")
@@ -90,7 +93,8 @@ export async function verifyGpuMixedResidency(session: DeviceSession): Promise<G
       releaseCleanedResources, gpuErrorScopesClean: draw.errors.length === 0,
       deviceDiagnosticsClean: session.diagnostics.length === diagnosticsBefore,
       nonFallbackAdapter: session.adapterInfo?.isFallbackAdapter === false,
-      pixel: draw.pixel, gpuErrors: draw.errors, resourcesBefore, resourcesHeldAfterDispose, resourcesAfterRelease });
+      pixel: draw.pixel, gpuErrors: draw.errors, resourcesBefore, resourcesHeldAfterDispose, resourcesAfterRelease,
+      peakResidentBytes: residencyPeak.residentBytes, peakAllocatedBytes: residencyPeak.allocatedBytes });
     return Object.freeze({ action: "gpu-mixed-residency", success: evaluateGpuMixedResidencyProbe(values), ...values });
   } catch (error) {
     try { runtime.dispose(); } catch { /* Preserve the primary failure. */ }
@@ -101,6 +105,7 @@ export async function verifyGpuMixedResidency(session: DeviceSession): Promise<G
       deviceDiagnosticsClean: session.diagnostics.length === diagnosticsBefore,
       nonFallbackAdapter: session.adapterInfo?.isFallbackAdapter === false, pixel: null, gpuErrors: [],
       resourcesBefore, resourcesHeldAfterDispose, resourcesAfterRelease,
+      peakResidentBytes: 0, peakAllocatedBytes: 0,
       failure: error instanceof Error ? error.message : String(error) });
   }
 }

@@ -167,11 +167,16 @@ function emitEntryPoints(asset: DeepShaderAsset, pass: ShaderPass, lines: string
   }
   lines.push("  return output;", "}");
   if (!pass.fragment) return;
-  lines.push("@fragment fn deepFragment(input: DeepVertexOut) -> @location(0) vec4f {");
+  const primary = pass.fragment.outputs.find((output) => output.semantic === "color" || output.semantic === "surface");
+  lines.push(`@fragment fn deepFragment(input: DeepVertexOut)${primary ? " -> @location(0) vec4f" : ""} {`);
   emitGraph(asset, pass.fragment, "fragment", lines, sourceMap);
-  const primary = pass.fragment.outputs.find((output) => output.semantic === "color" || output.semantic === "surface")!;
-  const result = primary.semantic === "surface" ? standardPbrReturn(primary) : `n_${primary.node}`;
-  lines.push(`  return ${result};`, "}");
+  const clip = pass.fragment.outputs.find((output) => output.semantic === "alpha-clip");
+  if (clip?.semantic === "alpha-clip") lines.push(`  if (n_${clip.alpha} < n_${clip.cutoff}) { discard; }`);
+  if (primary) {
+    const result = primary.semantic === "surface" ? standardPbrReturn(primary) : `n_${primary.node}`;
+    lines.push(`  return ${result};`);
+  }
+  lines.push("}");
 }
 
 export interface EmittedShaderPass {

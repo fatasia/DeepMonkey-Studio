@@ -5,10 +5,14 @@ const MAX_VERTICES = 16_000_000, MAX_JOINTS = 65_535;
 export function prepareSkinningInput(source: SkinningSource, palette: SkinningPalette): PreparedSkinningInput {
   validateRevision(source?.revision, "Skinning source revision"); validateRevision(palette?.revision, "Skinning palette revision");
   sourceArrays(source); paletteArrays(palette);
+  if (source.weightMode !== undefined && source.weightMode !== "normalize" && source.weightMode !== "preserve") {
+    throw new Error("Skinning weight mode is invalid.");
+  }
   if (source.positions.length % 3 !== 0 || source.positions.length === 0) throw new Error("Skinning positions must contain complete vertices.");
   const vertexCount = source.positions.length / 3;
   if (vertexCount > MAX_VERTICES || source.normals.length !== vertexCount * 3
     || source.joints.length !== vertexCount * 4 || source.weights.length !== vertexCount * 4) throw new Error("Skinning vertex attribute counts do not match.");
+  validateSkinTangents(source.tangents, source.normals);
   if (palette.matrices.length % 16 !== 0 || palette.matrices.length === 0) throw new Error("Skinning palette matrices are invalid.");
   const jointCount = palette.matrices.length / 16;
   if (jointCount > MAX_JOINTS) throw new Error("Skinning joint count exceeds the supported limit.");
@@ -32,10 +36,12 @@ export function prepareSkinningInput(source: SkinningSource, palette: SkinningPa
       uints[dst + 8 + influence] = joint; weightSum += weight;
     }
     if (weightSum < 1e-8) throw new Error(`Skinning vertex ${vertex} has zero total weight.`);
-    for (let influence = 0; influence < 4; influence += 1) floats[dst + 12 + influence] = source.weights[src4 + influence]! / weightSum;
+    const divisor = source.weightMode === "preserve" ? 1 : weightSum;
+    for (let influence = 0; influence < 4; influence += 1) floats[dst + 12 + influence] = source.weights[src4 + influence]! / divisor;
   }
   const joints = packJointPalette(palette);
-  return Object.freeze({ vertexCount, jointCount, vertices, joints });
+  return Object.freeze({ vertexCount, jointCount, vertices, joints,
+    ...(source.tangents ? { tangents: source.tangents.slice() } : {}) });
 }
 
 export function packJointPalette(palette: SkinningPalette): Float32Array<ArrayBuffer> {
@@ -56,9 +62,10 @@ export function packJointPalette(palette: SkinningPalette): Float32Array<ArrayBu
 }
 
 export function cpuSkinVertices(input: PreparedSkinningInput): Float32Array<ArrayBuffer> {
-  const sourceF = new Float32Array(input.vertices), sourceU = new Uint32Array(input.vertices), output = new Float32Array(input.vertexCount * 8);
+  const stride = input.tangents ? 12 : 8;
+  const sourceF = new Float32Array(input.vertices), sourceU = new Uint32Array(input.vertices), output = new Float32Array(input.vertexCount * stride);
   for (let vertex = 0; vertex < input.vertexCount; vertex += 1) {
-    const src = vertex * 16, dst = vertex * 8; let px = 0, py = 0, pz = 0, nx = 0, ny = 0, nz = 0;
+    const src = vertex * 16, dst = vertex * stride; let px = 0, py = 0, pz = 0, nx = 0, ny = 0, nz = 0;
     for (let influence = 0; influence < 4; influence += 1) {
       const weight = sourceF[src + 12 + influence]!, joint = sourceU[src + 8 + influence]! * 28;
       const x = sourceF[src]!, y = sourceF[src + 1]!, z = sourceF[src + 2]!;
@@ -73,8 +80,49 @@ export function cpuSkinVertices(input: PreparedSkinningInput): Float32Array<Arra
     const length = Math.hypot(nx, ny, nz), sx = sourceF[src + 4]!, sy = sourceF[src + 5]!, sz = sourceF[src + 6]!;
     output.set([px, py, pz, 1, length > 1e-8 ? nx / length : sx, length > 1e-8 ? ny / length : sy,
       length > 1e-8 ? nz / length : sz, 0], dst);
+    if (input.tangents) skinTangent(input, sourceF, sourceU, vertex, output, dst);
   }
   return output;
+}
+
+export function validateSkinTangents(tangents: Float32Array | undefined, normals: Float32Array): void {
+  if (tangents === undefined) return;
+  if (!(tangents instanceof Float32Array) || !(tangents.buffer instanceof ArrayBuffer)
+    || tangents.length !== normals.length / 3 * 4) throw new Error("Skinning tangent layout is invalid.");
+  for (let vertex = 0; vertex < tangents.length / 4; vertex++) {
+    const t = vertex * 4, n = vertex * 3;
+    const xyz = [tangents[t]!, tangents[t + 1]!, tangents[t + 2]!];
+    if (!xyz.every(Number.isFinite) || Math.abs(Math.hypot(...xyz) - 1) > 1e-5
+      || Math.abs(tangents[t + 3]!) !== 1) throw new Error("Skinning tangent must be unit length with handedness -1/+1.");
+    const length = Math.hypot(normals[n]!, normals[n + 1]!, normals[n + 2]!);
+    if (Math.abs((xyz[0]! * normals[n]! + xyz[1]! * normals[n + 1]! + xyz[2]! * normals[n + 2]!) / length) > 1e-5)
+      throw new Error("Skinning tangent must be orthogonal to the normal.");
+  }
+}
+
+function skinTangent(input: PreparedSkinningInput, floats: Float32Array, uints: Uint32Array,
+  vertex: number, output: Float32Array, dst: number): void {
+  const src = vertex * 16, t = vertex * 4, linear = new Array<number>(9).fill(0);
+  for (let slot = 0; slot < 4; slot++) {
+    const joint = uints[src + 8 + slot]! * 28, weight = floats[src + 12 + slot]!;
+    for (let column = 0; column < 3; column++) for (let row = 0; row < 3; row++)
+      linear[column * 3 + row]! += input.joints[joint + column * 4 + row]! * weight;
+  }
+  const direction = [0, 1, 2].map(row => linear[row]! * input.tangents![t]!
+    + linear[3 + row]! * input.tangents![t + 1]! + linear[6 + row]! * input.tangents![t + 2]!);
+  const normal = Array.from(output.subarray(dst + 4, dst + 7));
+  const dot = direction.reduce((sum, value, axis) => sum + value * normal[axis]!, 0);
+  const tangent = direction.map((value, axis) => value - dot * normal[axis]!);
+  const length = Math.hypot(...tangent);
+  const axis = Math.abs(normal[0]!) > 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const fallback = [normal[1]! * axis[2]! - normal[2]! * axis[1]!, normal[2]! * axis[0]! - normal[0]! * axis[2]!,
+    normal[0]! * axis[1]! - normal[1]! * axis[0]!];
+  const fallbackLength = Math.hypot(...fallback);
+  const determinant = linear[0]! * (linear[4]! * linear[8]! - linear[7]! * linear[5]!)
+    - linear[3]! * (linear[1]! * linear[8]! - linear[7]! * linear[2]!)
+    + linear[6]! * (linear[1]! * linear[5]! - linear[4]! * linear[2]!);
+  output.set([...(length > 1e-8 ? tangent.map(value => value / length) : fallback.map(value => value / fallbackLength)),
+    input.tangents![t + 3]! * (determinant < -1e-8 ? -1 : 1)], dst + 8);
 }
 
 function inverseTransposeRows(matrix: Float32Array, joint: number): Float32Array<ArrayBuffer> {

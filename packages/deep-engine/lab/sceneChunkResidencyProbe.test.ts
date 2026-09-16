@@ -19,6 +19,7 @@ const passing = (): Omit<SceneChunkResidencyProbeResult, "action" | "success" | 
   sameFrameLatestWon: true,
   mergedSharedUploadOnce: true,
   visibleChunksDrew: true,
+  sameFrameChunkCounts: [2, 3],
   prefetchHadNoProjection: true,
   prefetchPromotionReusedUploads: true,
   exitedChunkLeaseRetired: true,
@@ -47,5 +48,6 @@ describe("scene chunk residency probe evaluation", () => {
     }
     expect(evaluateSceneChunkResidencyProbe({ ...passing(),
       submittedFrames: { firstDelta: 3, final: 7 } })).toBe(false);
+    expect(evaluateSceneChunkResidencyProbe({ ...passing(), sameFrameChunkCounts: [1, 1, 1] })).toBe(false);
   });
 });

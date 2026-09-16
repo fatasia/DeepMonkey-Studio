@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { buildDashboardCompositionRuntimePackage } from "./dashboardComposition.js";
+import { buildRuntimePackagePrewarmPlan } from "./prewarmPlan.js";
 import { parseDeepRuntimePackage, serializeDeepRuntimePackage } from "./serialization.js";
 import { validateDeepRuntimePackage } from "./validation.js";
 import { runtimePackageSha256 } from "./hash.js";
@@ -22,6 +23,13 @@ it("snapshots producer inputs and keeps resource identity across revisions", () 
   expect(after.packageHash).not.toEqual(before.packageHash);
   (source.dashboard as { documentId: string }).documentId = "mutated";
   expect(serializeDeepRuntimePackage(before)).toBe(bytes);
+});
+it("prewarms each indexed resource exactly once and the composition after its dependencies", () => {
+  const plan = buildRuntimePackagePrewarmPlan(build());
+  const resources = plan.items.filter(item => item.type === "resource");
+  expect(resources).toHaveLength(9);
+  expect(new Set(resources.map(item => item.resourceId)).size).toBe(9);
+  expect(resources.at(-1)?.resourceId).toBe("dashboard.root");
 });
 
 const invalid = (edit: (value: Mutable<DeepRuntimePackageV5>) => void) => {

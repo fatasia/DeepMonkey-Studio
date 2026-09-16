@@ -19,6 +19,8 @@ export interface GltfMorphImportOptions<TNodeId extends SpatialItemId = number> 
   readonly maxChannelsPerAnimation?: number;
   readonly maxKeysPerTrack?: number;
   readonly maxDecodedBytes?: number;
+  /** Cancels validation and owned accessor expansion before publication. */
+  readonly signal?: AbortSignal;
 }
 
 export interface GltfMorphBinding<TNodeId extends SpatialItemId> {
@@ -40,15 +42,16 @@ export interface DecodedMorphGlb<TNodeId extends SpatialItemId = number> {
 }
 
 export type GltfMorphImportTuning<TNodeId extends SpatialItemId> = Omit<
-  GltfMorphImportOptions<TNodeId>, "sceneIndex" | "mapNodeId"
+  GltfMorphImportOptions<TNodeId>, "sceneIndex" | "mapNodeId" | "signal"
 >;
 export type GltfTransformAnimationTuning<TNodeId extends SpatialItemId> = Omit<
-  GltfAnimationImportOptions<TNodeId>, "sceneIndex" | "mapNodeId"
+  GltfAnimationImportOptions<TNodeId>, "sceneIndex" | "mapNodeId" | "signal"
 >;
 
 export interface GltfAnimatedMorphImportOptions<TNodeId extends SpatialItemId = number> {
   readonly sceneIndex?: number;
   readonly mapNodeId?: (sourceNodeIndex: number, name: string | undefined) => TNodeId;
+  readonly signal?: AbortSignal;
   readonly animation?: GltfTransformAnimationTuning<TNodeId>;
   readonly morph?: GltfMorphImportTuning<TNodeId>;
 }
@@ -71,4 +74,5 @@ export interface GltfMorphImportConfiguration {
   readonly maxChannelsPerAnimation: number;
   readonly maxKeysPerTrack: number;
   readonly maxDecodedBytes: number;
+  readonly signal?: AbortSignal;
 }

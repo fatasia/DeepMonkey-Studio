@@ -1,4 +1,5 @@
 import {
+  assertPacketDeformationSupported,
   geometryCenter,
   prepareInstanceUpdate,
   type InstanceUpdate,
@@ -16,10 +17,15 @@ import {
   packPreviousTransforms,
 } from "./packetInstanceHistory.js";
 import type { PacketTextureLookup } from "./packetTextureLookup.js";
+import type { DeformationSnapshot } from "../deformation/types.js";
+import { runResourceCleanup } from "./resourceCleanup.js";
+import { authorLodMetadataChanged } from "./authorLodMetadata.js";
 
 export class PacketInstanceRollbackError extends AggregateError {}
 
 export interface PacketInstanceUpdateContext {
+  readonly deformation?: DeformationSnapshot;
+  readonly commitDeformation?: () => boolean;
   readonly session: DeviceSession;
   readonly materials: MaterialBindingPool;
   readonly textures: PacketTextureLookup;
@@ -48,14 +54,16 @@ export function updatePacketInstances(
   context: PacketInstanceUpdateContext,
   update: InstanceUpdate,
 ): PacketInstanceUpdateResult {
+  assertPacketDeformationSupported(update, context?.commitDeformation !== undefined);
   const features = new Map(Array.from(context.geometries, ([id, value]) => [id, {
     uv0: value.source.uv0 !== undefined,
     uv1: value.source.uv1 !== undefined,
     tangents: value.source.tangents !== undefined,
+    colors: value.source.colors !== undefined,
     triangles: value.source.indices.length / 3,
     center: geometryCenter(value.source),
   }]));
-  const prepared = prepareInstanceUpdate(features, update, context.textures.semanticMap());
+  const prepared = prepareInstanceUpdate(features, update, context.textures.semanticMap(), context.deformation);
   const history = collectTransformHistory(context.batches);
   for (const source of prepared) {
     if (source.data.byteLength > context.session.device.limits.maxBufferSize) {
@@ -69,9 +77,12 @@ export function updatePacketInstances(
   const writes: PendingWrite[] = [];
   const attempted: PendingWrite[] = [];
   const historyUpdates = new Map<string, Float32Array<ArrayBuffer>>();
+  let deformationChanged = false;
+  let lodChanged = false;
   try {
     for (const source of prepared) {
       const previous = context.batches.get(source.key);
+      const metadataChanged = authorLodMetadataChanged(previous?.source, source);
       const previousTransforms = packPreviousTransforms(source, history);
       const currentTransforms = packCurrentTransforms(source);
       if (!equal(currentTransforms, previousTransforms)) historyUpdates.set(source.key, currentTransforms);
@@ -79,7 +90,8 @@ export function updatePacketInstances(
       const sameMaterial = materialBindingMatches(previous?.material, source.textures, lookup);
       if (previous && equal(previous.source.data, source.data)
         && equal(previous.previousTransforms, previousTransforms) && sameMaterial) {
-        batches.set(source.key, previous);
+        batches.set(source.key, metadataChanged ? { ...previous, source } : previous);
+        lodChanged ||= metadataChanged;
         continue;
       }
       const material = sameMaterial
@@ -120,18 +132,29 @@ export function updatePacketInstances(
       context.session.device.queue.writeBuffer(write.next.buffer, 0, write.next.source.data);
     }
     context.assertCurrent();
+    deformationChanged = context.commitDeformation?.() ?? false;
   } catch (error) {
     rollbackWrites(context, attempted, createdBuffers, acquiredMaterials, error);
   }
 
-  for (const [key, previous] of context.batches) {
-    const next = batches.get(key);
-    if (next?.buffer !== previous.buffer) context.session.release(previous.buffer);
-    if (next?.previousBuffer !== previous.previousBuffer) context.session.release(previous.previousBuffer);
-    if (next?.material !== previous.material) context.materials.release(previous.material);
+  try {
+    runResourceCleanup("Instance retirement failed.", [...context.batches].flatMap(([key, previous]) => {
+      const next = batches.get(key);
+      return [() => { if (next?.buffer !== previous.buffer) context.session.release(previous.buffer); },
+        () => { if (next?.previousBuffer !== previous.previousBuffer) context.session.release(previous.previousBuffer); },
+        () => { if (next?.material !== previous.material) context.materials.release(previous.material); }];
+    }));
+  } catch (error) {
+    // 发布前旧资源已开始退役，不能回到旧映射；连候选一起释放并请求整个 packet 重建。
+    const failures: unknown[] = [error];
+    try { runResourceCleanup("Instance candidate disposal failed.", [
+      ...createdBuffers.map(buffer => () => context.session.release(buffer)),
+      ...acquiredMaterials.map(material => () => context.materials.release(material)),
+    ]); } catch (cleanup) { failures.push(cleanup); }
+    throw new PacketInstanceRollbackError(failures, "Instance retirement failed; packet rebuild is required.");
   }
   return { batches, historyUpdates,
-    changed: writes.length > 0 || context.batches.size !== batches.size };
+    changed: deformationChanged || lodChanged || writes.length > 0 || context.batches.size !== batches.size };
 }
 
 /** Advances motion history only after the renderer has submitted the frame successfully. */

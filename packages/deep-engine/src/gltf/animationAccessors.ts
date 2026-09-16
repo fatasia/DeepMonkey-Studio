@@ -1,13 +1,8 @@
 import type { GltfAnimationImportConfiguration } from "./animationTypes.js";
 import { budget, integer, invalid, list, noExtensions, object, reference, unsupported, vector, type JsonObject } from "./validation.js";
+import { applySparseAccessor, validateSparseAccessor, type SparseBufferView } from "./accessorSparse.js";
 
-interface AnimationBufferView {
-  readonly data: DataView;
-  readonly offset: number;
-  readonly length: number;
-  readonly stride?: number;
-  readonly target?: number;
-}
+interface AnimationBufferView extends SparseBufferView {}
 
 export interface FloatAccessorData {
   readonly count: number;
@@ -20,10 +15,13 @@ export class AnimationAccessorReader {
   private readonly views: readonly AnimationBufferView[];
   private decoded = 0;
 
-  constructor(document: JsonObject, buffers: readonly Uint8Array[], private readonly limits: GltfAnimationImportConfiguration) {
+  constructor(document: JsonObject, buffers: readonly Uint8Array[], private readonly limits: GltfAnimationImportConfiguration,
+    private readonly signal?: AbortSignal) {
+    signal?.throwIfAborted();
     const declarations = list(document.buffers, "buffers", 1);
     if (declarations.length !== buffers.length) invalid("buffers", "Embedded animation buffers are missing or inconsistent.");
     const data = declarations.map((value, index) => {
+      if ((index & 0x3ff) === 0) signal?.throwIfAborted();
       const path = `buffers[${index}]`, declaration = object(value, path), bytes = buffers[index];
       noExtensions(declaration, path);
       if (declaration.uri !== undefined) unsupported(`${path}.uri`, "external animation buffers");
@@ -32,6 +30,7 @@ export class AnimationAccessorReader {
       return new DataView(bytes.buffer, bytes.byteOffset, length);
     });
     this.views = list(document.bufferViews, "bufferViews", 250_000).map((value, index) => {
+      if ((index & 0x3ff) === 0) signal?.throwIfAborted();
       const path = `bufferViews[${index}]`, view = object(value, path);
       noExtensions(view, path);
       const source = data[reference(data, view.buffer, `${path}.buffer`)]!;
@@ -45,9 +44,11 @@ export class AnimationAccessorReader {
       return { data: source, offset, length, ...(stride === undefined ? {} : { stride }), ...(target === undefined ? {} : { target }) };
     });
     this.accessors = list(document.accessors, "accessors", 250_000).map((value, index) => {
+      if ((index & 0x3ff) === 0) signal?.throwIfAborted();
       const path = `accessors[${index}]`, accessor = object(value, path);
       noExtensions(accessor, path);
       if (accessor.normalized !== undefined && typeof accessor.normalized !== "boolean") invalid(`${path}.normalized`, "normalized must be boolean.");
+      validateSparseAccessor(accessor, path);
       return accessor;
     });
   }
@@ -56,7 +57,6 @@ export class AnimationAccessorReader {
 
   readFloat(value: unknown, expectedType: "SCALAR" | "VEC3" | "VEC4", maximumCount: number, path: string): FloatAccessorData {
     const index = reference(this.accessors, value, path), location = `accessors[${index}]`, accessor = this.accessors[index]!;
-    if (accessor.sparse !== undefined) unsupported(`${location}.sparse`, "sparse animation accessors");
     if (accessor.componentType !== 5126 || accessor.type !== expectedType) invalid(location, `Animation accessor must be FLOAT ${expectedType}.`);
     if (accessor.normalized === true) invalid(`${location}.normalized`, "FLOAT animation accessors cannot be normalized.");
     const width = componentWidth(expectedType);
@@ -64,19 +64,27 @@ export class AnimationAccessorReader {
     const count = integer(accessor.count, `${location}.count`, 1);
     budget(count, maximumCount, `${location}.count`);
     const offset = integer(accessor.byteOffset ?? 0, `${location}.byteOffset`);
-    const view = this.views[reference(this.views, accessor.bufferView, `${location}.bufferView`)]!;
-    if (view.target !== undefined) invalid(location, "Animation buffer views cannot declare a vertex or index target.");
-    const elementBytes = width * 4, stride = view.stride ?? elementBytes;
-    if (offset % 4 !== 0 || (view.offset + offset) % 4 !== 0 || stride < elementBytes || stride % 4 !== 0) invalid(location, "Animation accessor alignment or stride is invalid.");
-    if (offset + (count - 1) * stride + elementBytes > view.length) invalid(location, "Animation accessor exceeds its buffer view.");
+    const view = accessor.bufferView === undefined ? undefined
+      : this.views[reference(this.views, accessor.bufferView, `${location}.bufferView`)]!;
+    const elementBytes = width * 4, stride = view?.stride ?? elementBytes;
+    if (!view && (offset !== 0 || accessor.sparse === undefined)) {
+      invalid(`${location}.bufferView`, "Animation accessor without a buffer view requires sparse storage and zero byteOffset.");
+    }
+    if (view?.target !== undefined) invalid(location, "Animation buffer views cannot declare a vertex or index target.");
+    if (view && (offset % 4 !== 0 || (view.offset + offset) % 4 !== 0
+      || stride < elementBytes || stride % 4 !== 0)) invalid(location, "Animation accessor alignment or stride is invalid.");
+    if (view && offset + (count - 1) * stride + elementBytes > view.length) invalid(location, "Animation accessor exceeds its buffer view.");
     this.decoded += count * elementBytes;
     budget(this.decoded, this.limits.maxDecodedBytes, "animations.decodedBytes");
     const values = new Float32Array(count * width);
-    for (let item = 0; item < count; item += 1) for (let component = 0; component < width; component += 1) {
+    for (let item = 0; view && item < count; item += 1) for (let component = 0; component < width; component += 1) {
+      if (component === 0 && (item & 0x3ff) === 0) this.signal?.throwIfAborted();
       const number = view.data.getFloat32(view.offset + offset + item * stride + component * 4, true);
       if (!Number.isFinite(number)) invalid(location, "Animation accessor contains a non-finite value.");
       values[item * width + component] = number;
     }
+    applySparseAccessor({ accessor, location, views: this.views, count, width, componentSize: 4, output: values,
+      readValue: (data, position) => data.getFloat32(position, true), signal: this.signal });
     return Object.freeze({ count, values });
   }
 }

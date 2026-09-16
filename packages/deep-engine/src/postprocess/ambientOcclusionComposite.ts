@@ -49,6 +49,7 @@ export class AmbientOcclusionCompositePass {
       { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage", minBindingSize: PARAMETER_BYTES } },
       { binding: 4, visibility: GPUShaderStage.COMPUTE,
         storageTexture: { access: "write-only", format: AMBIENT_OCCLUSION_COMPOSITE_COLOR_FORMAT } },
+      { binding: 5, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
     ] });
     this.pipeline = device.createComputePipeline({
       label: "Deep ambient occlusion HDR composite pipeline",
@@ -141,6 +142,7 @@ export class AmbientOcclusionCompositePass {
         ...views.map((resource, binding) => ({ binding, resource })),
         { binding: 3, resource: { buffer: allocation.parameters } },
         { binding: 4, resource: allocation.outputView },
+        { binding: 5, resource: (source.normal ?? source.color).createView({ dimension: "2d", baseMipLevel: 0, mipLevelCount: 1 }) },
       ],
     });
   }
@@ -172,6 +174,12 @@ function validateRequest(
   if (!Number.isSafeInteger(source.revision) || source.revision < 0) throw new Error("AO composite revision must be a nonnegative safe integer.");
   validateTexture(source.color, AMBIENT_OCCLUSION_COMPOSITE_COLOR_FORMAT, "color");
   validateTexture(source.depth, AMBIENT_OCCLUSION_COMPOSITE_DEPTH_FORMAT, "depth");
+  if (source.normal) {
+    validateTexture(source.normal, "rgba8unorm", "normal mask");
+    if (source.normal.width !== source.color.width || source.normal.height !== source.color.height) {
+      throw new Error("AO composite normal mask dimensions must match color.");
+    }
+  }
   if (source.color.width !== source.depth.width || source.color.height !== source.depth.height) {
     throw new Error("AO composite color and depth dimensions must match.");
   }
@@ -219,12 +227,12 @@ function validateTexture(texture: GPUTexture, format: GPUTextureFormat, name: st
 function packParameters(source: AmbientOcclusionCompositeSource, options: AmbientOcclusionCompositeOptions): ArrayBuffer {
   const buffer = new ArrayBuffer(PARAMETER_BYTES), uints = new Uint32Array(buffer), floats = new Float32Array(buffer);
   uints.set([source.color.width, source.color.height, source.ambientOcclusion.width, source.ambientOcclusion.height], 0);
-  floats.set([options.depthSigma, options.strength, 0, 0], 4);
+  floats.set([options.depthSigma, options.strength, source.normal ? 1 : 0, 0], 4);
   return buffer;
 }
 
 function sameTextureBindings(left: AmbientOcclusionCompositeSource, right: AmbientOcclusionCompositeSource): boolean {
-  return left.color === right.color && left.depth === right.depth
+  return left.color === right.color && left.depth === right.depth && left.normal === right.normal
     && left.ambientOcclusion.texture === right.ambientOcclusion.texture;
 }
 function sameSource(left: AmbientOcclusionCompositeSource, right: AmbientOcclusionCompositeSource): boolean {

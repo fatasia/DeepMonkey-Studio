@@ -25,6 +25,7 @@ export class SharedOperations<T> {
   private readonly entries = new Map<string, SharedEntry<T>>();
 
   get size(): number { return this.entries.size; }
+  has(key: string): boolean { return this.entries.has(key); }
 
   run(key: string, start: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
     if (signal?.aborted) return Promise.reject(abortError(signal));

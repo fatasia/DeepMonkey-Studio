@@ -71,7 +71,9 @@ function planBaseClosure(indexed: CompiledResidencyBatch, priority: number,
   geometryOrder: ReadonlyMap<string, number>, textureOrder: ReadonlyMap<string, number>,
   textureLevels: ReadonlyMap<string, number>,
   planned: Map<string, PlannedRequest>): void {
-  addGeometry(indexed.fallbackGeometry, priority, true, geometryOrder, planned);
+  for (const id of indexed.authorLevels ?? [indexed.fallbackGeometry!]) {
+    addGeometry(id, priority, true, geometryOrder, planned);
+  }
   for (const id of indexed.textures) {
     add(planned, "texture", id, textureLevels.get(id) ?? 0,
       priority, true, textureOrder.get(id));
@@ -82,6 +84,9 @@ function collectDemand(indexed: CompiledResidencyBatch, desired: number | undefi
   maxPriorities: (number | undefined)[],
   detailPriorities: ((number | undefined)[] | undefined)[]): void {
   const levels = indexed.lod;
+  if (indexed.authorLevels && desired !== undefined) {
+    throw new Error(`Author-selected LOD does not accept a desiredLod override: ${indexed.key}.`);
+  }
   if (!levels) {
     if (desired !== undefined && desired !== 0) {
       throw new RangeError(`Non-LOD batch ${indexed.key} only accepts desired LOD zero.`);
@@ -109,7 +114,9 @@ function planAggregatedDemand(indexed: CompiledResidencyBatch,
   planned: Map<string, PlannedRequest>): void {
   const maxPriority = maxPriorities[indexed.order];
   if (maxPriority === undefined) return;
-  addGeometry(indexed.fallbackGeometry, maxPriority, true, geometryOrder, planned);
+  for (const id of indexed.authorLevels ?? [indexed.fallbackGeometry!]) {
+    addGeometry(id, maxPriority, true, geometryOrder, planned);
+  }
   for (const id of indexed.textures) {
     add(planned, "texture", id, textureLevels.get(id) ?? 0,
       maxPriority, true, textureOrder.get(id));

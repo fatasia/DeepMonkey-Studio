@@ -31,6 +31,10 @@ function validateCpuInput(input: AmbientOcclusionCompositeCpuInput): void {
     throw new Error("AO composite CPU input requires exact ceil-half AO dimensions.");
   }
   const pixels = input.width * input.height, aoPixels = input.ambientOcclusionWidth * input.ambientOcclusionHeight;
+  if (input.unlitMask && (input.unlitMask.length !== pixels
+    || !finiteValues(input.unlitMask) || !input.unlitMask.every(value => value >= 0 && value <= 1))) {
+    throw new Error("AO composite unlit mask must contain one finite 0..1 value per pixel.");
+  }
   if (input.color.length !== pixels * 4 || input.depth.length !== pixels || input.ambientOcclusion.length !== aoPixels) {
     throw new Error("AO composite CPU input array lengths do not match their dimensions.");
   }
@@ -82,7 +86,8 @@ export function compositeAmbientOcclusionCpu(
   for (let y = 0; y < input.height; y += 1) {
     for (let x = 0; x < input.width; x += 1) {
       const pixel = y * input.width + x, colorOffset = pixel * 4;
-      const visibility = Math.pow(bilateralVisibility(input, x, y, options.depthSigma), options.strength);
+      const visibility = (input.unlitMask?.[pixel] ?? 0) > 0.5 ? 1
+        : Math.pow(bilateralVisibility(input, x, y, options.depthSigma), options.strength);
       output[colorOffset] = Math.fround(input.color[colorOffset]! * visibility);
       output[colorOffset + 1] = Math.fround(input.color[colorOffset + 1]! * visibility);
       output[colorOffset + 2] = Math.fround(input.color[colorOffset + 2]! * visibility);

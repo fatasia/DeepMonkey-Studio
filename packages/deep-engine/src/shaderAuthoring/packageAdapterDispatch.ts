@@ -1,4 +1,4 @@
-import { inspectDeepSlSurface } from "./deepSl.js";
+import { inspectDeepSlSurface } from "./deepSlParser.js";
 import { adaptDeepSlStandardToShaderPackage } from "./packageAdapter.js";
 import { inspectPackageAdapterRequest, rejectedPackageAdapterResult } from "./packageAdapterContract.js";
 import type { DeepSlPackageAdapterResult } from "./packageAdapterTypes.js";

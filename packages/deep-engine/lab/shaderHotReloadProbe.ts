@@ -3,10 +3,10 @@ import {
   createShaderAuthoringSession,
   type ShaderTextAuthoringDocument,
 } from "@bim-studio/deep-engine/shader-authoring";
-import type { ShaderCompileCapabilities } from "@bim-studio/deep-engine/shader";
 import {
   ShaderHotReloadRuntime,
   ShaderPackageExecutor,
+  shaderCapabilitiesForDevice,
   type ShaderHotReloadRequestResult,
 } from "@bim-studio/deep-engine/webgpu";
 
@@ -68,17 +68,6 @@ export function evaluateShaderHotReloadChecks(checks: ShaderHotReloadProbeChecks
 
 function sourceDocument(source: string): ShaderTextAuthoringDocument {
   return { schemaVersion: 1, id: "deep.hot.probe", mode: "text", language: "deepsl", source };
-}
-
-function capabilities(device: GPUDevice): ShaderCompileCapabilities {
-  return Object.freeze({
-    features: Object.freeze([]),
-    limits: Object.freeze({
-      maxBindGroups: device.limits.maxBindGroups,
-      maxBindingsPerBindGroup: device.limits.maxBindingsPerBindGroup,
-      maxInterStageShaderVariables: device.limits.maxInterStageShaderVariables,
-    }),
-  });
 }
 
 function instrumentRealDevice(real: GPUDevice, trace: GpuTrace): GPUDevice {
@@ -143,12 +132,13 @@ export async function verifyShaderHotReloadRuntime(): Promise<ShaderHotReloadPro
   try {
     realDevice = await requestDedicatedDevice();
     const device = instrumentRealDevice(realDevice, trace);
-    const created = createShaderAuthoringSession(sourceDocument(OPAQUE), { capabilities: capabilities(realDevice) });
+    const targetCapabilities = shaderCapabilitiesForDevice(realDevice);
+    const created = createShaderAuthoringSession(sourceDocument(OPAQUE), { capabilities: targetCapabilities });
     if (!created.success || !created.session) throw new Error("Hot reload authoring session creation failed.");
     const authoring = created.session;
     const executor = new ShaderPackageExecutor(device);
     runtime = new ShaderHotReloadRuntime(authoring, executor, {
-      capabilities: capabilities(realDevice), packageVersion: "1.0.0", compilerVersion: "1.0.0", debounceMs: 4,
+      capabilities: targetCapabilities, packageVersion: "1.0.0", compilerVersion: "1.0.0", debounceMs: 4,
     });
 
     stage = "initial-publish";

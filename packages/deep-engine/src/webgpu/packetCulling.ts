@@ -10,6 +10,8 @@ import {
 import type { CachedPacketBatch, CachedPacketGeometry } from "./packetBufferTypes.js";
 import { HiZOcclusionCuller, HI_Z_OCCLUSION_MIN_INSTANCES, type HiZOcclusionView } from "./hiZOcclusionCulling.js";
 import { HiZInstanceCompactor } from "./hiZInstanceCompactor.js";
+import type { DeformationBoundsEnvelope } from "./deformationBounds.js";
+import { cullingBounds, preflightCullingBounds } from "./packetCullingBounds.js";
 
 export interface PacketCullingView {
   readonly previousHiZ?: HiZOcclusionView;
@@ -28,6 +30,10 @@ export interface PacketCullingStats {
   readonly occlusionBatches: number;
 }
 
+export interface PacketDynamicCullingDraw extends PacketCullingDraw {
+  readonly bounds: "deformed";
+}
+
 interface OcclusionResources {
   readonly culler: HiZOcclusionCuller;
   readonly compactor: HiZInstanceCompactor;
@@ -41,6 +47,7 @@ interface CachedCullingBatch {
   readonly active: Map<CullingPhaseKey, PacketCullingDraw>;
   source: PreparedBatch;
   geometryRevision: number;
+  bounds: readonly number[];
   previousTransforms: Float32Array<ArrayBuffer>;
   occlusion?: OcclusionResources;
 }
@@ -52,6 +59,7 @@ export const GPU_CULLING_MIN_INSTANCES = 64;
 export class PacketCullingResources {
   private readonly batches = new Map<string, CachedCullingBatch>();
   private context: GpuCullingPipelineContext | undefined;
+  private readonly dynamicResults = new WeakSet<PacketCullingDraw>();
 
   constructor(private readonly session: DeviceSession) {}
 
@@ -63,45 +71,71 @@ export class PacketCullingResources {
     geometries: ReadonlyMap<string, CachedPacketGeometry>,
     view?: PacketCullingView,
     shadowCascade = 0,
+    dynamicBounds?: ReadonlyMap<string, DeformationBoundsEnvelope>,
   ): PacketCullingStats {
     let frustumBatches = 0, occlusionBatches = 0;
     const phaseKey = cullingPhaseKey(phase, shadowCascade);
-    for (const cached of batches.values()) {
-      if (cached.source.lod) {
-        this.batches.get(cached.source.key)?.active.delete(phaseKey);
-        continue;
-      }
-      if ((phase === "shadow" && cached.source.alphaMode === "BLEND")
-        || cached.source.count < GPU_CULLING_MIN_INSTANCES) continue;
-      const geometry = geometries.get(cached.source.geometry)!;
-      const culler = this.ensure(phaseKey, cached, geometry);
-      const entry = this.batches.get(cached.source.key)!;
-      entry.active.delete(phaseKey);
-      if (phase === "opaque" && view?.previousHiZ && cached.source.count >= HI_Z_OCCLUSION_MIN_INSTANCES) {
-        entry.occlusion ??= { culler: new HiZOcclusionCuller(this.session), compactor: new HiZInstanceCompactor(this.session) };
-        const visible = entry.occlusion.culler.encode(encoder, { instances: entry.shared.input,
-          bounds: entry.shared.bounds, count: cached.source.count, revision: view.sceneRevision,
-          indexCount: geometry.mesh.indexCount }, view.previousHiZ, { temporal: true });
-        if (visible.mode === "indirect") {
-          const compacted = entry.occlusion.compactor.encode(encoder, { instances: entry.shared.input,
-            previousTransforms: entry.shared.previous, count: cached.source.count,
-            capacity: entry.shared.capacity, visibility: visible });
-          entry.active.set(phaseKey, { compacted: compacted.instances,
-            compactedPrevious: compacted.previousTransforms, indirect: compacted.indirect });
-          occlusionBatches++;
-          continue;
+    this.clearPhase(phaseKey);
+    const candidates = Array.from(batches.values()).filter(({ source }) => !source.lod
+      && !(phase === "shadow" && source.alphaMode === "BLEND") && source.count >= GPU_CULLING_MIN_INSTANCES);
+    try {
+      preflightCullingBounds(candidates, geometries, dynamicBounds);
+      for (const cached of candidates) {
+        const geometry = geometries.get(cached.source.geometry)!;
+        const culler = this.ensure(phaseKey, cached, geometry, dynamicBounds?.get(cached.source.key));
+        const entry = this.batches.get(cached.source.key)!;
+        if (phase === "opaque" && view?.previousHiZ && cached.source.count >= HI_Z_OCCLUSION_MIN_INSTANCES) {
+          entry.occlusion ??= { culler: new HiZOcclusionCuller(this.session), compactor: new HiZInstanceCompactor(this.session) };
+          const visible = entry.occlusion.culler.encode(encoder, { instances: entry.shared.input,
+            bounds: entry.shared.bounds, count: cached.source.count, revision: view.sceneRevision,
+            indexCount: geometry.mesh.indexCount }, view.previousHiZ, { temporal: true });
+          if (visible.mode === "indirect") {
+            const compacted = entry.occlusion.compactor.encode(encoder, { instances: entry.shared.input,
+              previousTransforms: entry.shared.previous, count: cached.source.count,
+              capacity: entry.shared.capacity, visibility: visible });
+            this.publish(entry, phaseKey, { compacted: compacted.instances,
+              compactedPrevious: compacted.previousTransforms, indirect: compacted.indirect }, cached.source.pose !== undefined);
+            occlusionBatches++;
+            continue;
+          }
         }
+        culler.writeView(this.session.device.queue, frustum, { indexCount: geometry.mesh.indexCount });
+        culler.encode(encoder);
+        this.publish(entry, phaseKey, culler, cached.source.pose !== undefined);
+        frustumBatches++;
       }
-      culler.writeView(this.session.device.queue, frustum, { indexCount: geometry.mesh.indexCount });
-      culler.encode(encoder);
-      entry.active.set(phaseKey, culler);
-      frustumBatches++;
+    } catch (error) {
+      this.clearPhase(phaseKey);
+      throw error;
     }
     return { phase, frustumBatches, occlusionBatches };
   }
 
   phase(batchKey: string, phase: "shadow" | "opaque", shadowCascade = 0): PacketCullingDraw | undefined {
     return this.batches.get(batchKey)?.active.get(cullingPhaseKey(phase, shadowCascade));
+  }
+
+  dynamicPhase(batch: PreparedBatch, phase: "shadow" | "opaque", shadowCascade = 0): PacketDynamicCullingDraw | undefined {
+    const entry = this.batches.get(batch.key), draw = entry?.active.get(cullingPhaseKey(phase, shadowCascade));
+    return entry?.source === batch && batch.pose !== undefined && draw && this.dynamicResults.has(draw)
+      ? draw as PacketDynamicCullingDraw : undefined;
+  }
+
+  isDynamicPhase(draw: PacketCullingDraw, batch: PreparedBatch, phase: "shadow" | "opaque", shadowCascade = 0): boolean {
+    return this.dynamicPhase(batch, phase, shadowCascade) === draw;
+  }
+
+  private clearPhase(phase: CullingPhaseKey): void {
+    for (const entry of this.batches.values()) entry.active.delete(phase);
+  }
+
+  private publish(entry: CachedCullingBatch, phase: CullingPhaseKey, draw: PacketCullingDraw, dynamic: boolean): void {
+    if (dynamic) {
+      draw = Object.freeze({ compacted: draw.compacted, compactedPrevious: draw.compactedPrevious,
+        indirect: draw.indirect, bounds: "deformed" });
+      this.dynamicResults.add(draw);
+    }
+    entry.active.set(phase, draw);
   }
 
   /** Keeps the compacted motion stream on the same submitted-frame boundary as direct draws. */
@@ -155,11 +189,12 @@ export class PacketCullingResources {
     phase: CullingPhaseKey,
     batch: CachedPacketBatch,
     geometry: CachedPacketGeometry,
+    dynamicBounds?: DeformationBoundsEnvelope,
   ): GpuCullingPhaseResources {
     const key = batch.source.key;
     const previous = this.batches.get(key);
     const reusable = previous !== undefined && previous.shared.capacity >= batch.source.count;
-    const bounds = [...geometry.center, geometry.radius] as [number, number, number, number];
+    const bounds = cullingBounds(geometry, dynamicBounds);
     const values = (): Array<{ instanceData: Float32Array; bounds: [number, number, number, number] }> =>
       Array.from({ length: batch.source.count }, (_, index) => ({
         instanceData: batch.source.data.subarray(index * 36, index * 36 + 36),
@@ -183,6 +218,7 @@ export class PacketCullingResources {
           active: new Map(),
           source: batch.source,
           geometryRevision: geometry.source.revision,
+          bounds,
           previousTransforms: batch.previousTransforms.slice(),
         };
       } catch (error) {
@@ -197,7 +233,8 @@ export class PacketCullingResources {
     }
 
     entry = previous;
-    if (entry.source !== batch.source || entry.geometryRevision !== geometry.source.revision) {
+    if (entry.source !== batch.source || entry.geometryRevision !== geometry.source.revision
+      || bounds.some((value, index) => value !== entry.bounds[index])) {
       try {
         entry.shared.writeInstances(this.session.device.queue, values());
       } catch (error) {
@@ -207,6 +244,7 @@ export class PacketCullingResources {
       }
       entry.source = batch.source;
       entry.geometryRevision = geometry.source.revision;
+      entry.bounds = bounds;
       entry.previousTransforms = batch.previousTransforms.slice();
     }
     const currentPhase = entry.phases.get(phase);

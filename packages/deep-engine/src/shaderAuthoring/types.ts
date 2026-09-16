@@ -4,6 +4,8 @@ import type {
   ShaderCompileCapabilities,
   ShaderStage,
 } from "../shader/index.js";
+import type { DeepShaderPackageV2 } from "../shaderPackage/types.js";
+import type { DeepSlPackageCompatibilityReport } from "./packageAdapterTypes.js";
 
 export const SHADER_AUTHORING_SCHEMA_VERSION = 1 as const;
 
@@ -80,6 +82,9 @@ export interface ShaderAuthoringArtifact {
   readonly target: "webgpu";
   readonly pass: CompiledShaderPass;
   readonly sourceMap: readonly ShaderAuthoringSourceMapEntry[];
+  /** Exact bounded package emitted by the runtime adapter for driver validation and semantic parity. */
+  readonly runtimePackage?: DeepShaderPackageV2;
+  readonly runtimeCompatibility?: DeepSlPackageCompatibilityReport & Readonly<{ status: "direct-package-ready" }>;
 }
 
 export interface ShaderAuthoringCompilerResult {

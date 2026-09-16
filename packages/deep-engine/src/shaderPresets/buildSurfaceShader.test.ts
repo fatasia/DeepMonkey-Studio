@@ -135,10 +135,15 @@ describe("Deep surface shader presets", () => {
     expect(planShaderVariants(result.asset, capabilities).variants).toHaveLength(1);
   });
 
-  it("fails Standard auxiliary passes closed and preserves Unlit pass variants", () => {
-    expect(buildStandardSurfaceShader({ passes: { depth: true, shadow: true, picking: true } })).toMatchObject({
-      ok: false, issues: [{ feature: "pbr-auxiliary-passes" }],
-    });
+  it("uses a pass-scoped view projection for Standard auxiliary passes and preserves Unlit variants", () => {
+    const standard = accepted(buildStandardSurfaceShader({ passes: { depth: true, shadow: true, picking: true } }));
+    expect(standard.asset.techniques[0]!.passes.map((pass) => pass.id)).toEqual(["forward", "depth", "shadow", "picking"]);
+    for (const passId of ["depth", "shadow", "picking"]) {
+      const compiled = compileShaderPass(standard.asset, "webgpu", passId, capabilities);
+      expect(compiled.success).toBe(true);
+      expect(compiled.value?.module.code).toContain("deepPass.p_passViewProjection");
+      expect(compiled.value?.propertyLayout).toContainEqual(expect.objectContaining({ name: "passViewProjection", group: 3, binding: 0 }));
+    }
     const result = accepted(buildUnlitShader({
       alphaMode: "blend", switchableAlpha: true, passes: { depth: true, shadow: true, picking: true },
     }));
@@ -159,13 +164,78 @@ describe("Deep surface shader presets", () => {
     expect(picking).not.toContain("let n_baseColor:");
   });
 
+  it("uses one typed alpha MASK rule in Standard and Unlit forward/depth/shadow/picking", () => {
+    for (const build of [buildStandardSurfaceShader, buildUnlitShader]) {
+      const first = accepted(build({
+        alphaMode: "mask", alphaCutoff: 0.37, baseColorTexture: true,
+        passes: { depth: true, shadow: true, picking: true },
+      }));
+      expect(first).toEqual(accepted(build({
+        alphaMode: "mask", alphaCutoff: 0.37, baseColorTexture: true,
+        passes: { depth: true, shadow: true, picking: true },
+      })));
+      expect(first.asset.properties).toContainEqual({ name: "alphaCutoff", type: "f32", scope: "material", default: 0.37 });
+      expect(first.asset.techniques[0]!.passes.map((pass) => pass.id)).toEqual(["forward", "depth", "shadow", "picking"]);
+      for (const pass of first.asset.techniques[0]!.passes) {
+        expect(pass.fragment?.outputs).toContainEqual({ semantic: "alpha-clip", alpha: "alpha", cutoff: "alphaCutoff" });
+        expect(pass.state.depthWrite).toBe(true);
+        expect(pass.state.blend).toBeUndefined();
+        const compiled = compileShaderPass(first.asset, "webgpu", pass.id, capabilities);
+        expect(compiled.success).toBe(true);
+        const wgsl = compiled.value?.module.code ?? "";
+        expect(wgsl).toContain("let n_alpha: f32 = n_tintedBaseColor.a;");
+        expect(wgsl).toContain("if (n_alpha < n_alphaCutoff) { discard; }");
+        if (pass.kind === "depth" || pass.kind === "shadow") {
+          expect(wgsl).toContain("@fragment fn deepFragment(input: DeepVertexOut) {");
+          expect(wgsl).not.toContain("return n_objectId;");
+        }
+        if (pass.kind === "picking") {
+          expect(wgsl.indexOf("discard;")).toBeLessThan(wgsl.indexOf("return n_objectId;"));
+        }
+        if (process.env.DEEP_SHADER_NAGA_BIN) {
+          const validation = spawnSync(
+            process.env.DEEP_SHADER_NAGA_BIN,
+            ["--stdin-file-path", `${pass.kind}-mask.wgsl`, "--input-kind", "wgsl"],
+            { input: wgsl, encoding: "utf8" },
+          );
+          expect({ pass: pass.kind, status: validation.status, stderr: validation.stderr })
+            .toEqual({ pass: pass.kind, status: 0, stderr: "" });
+        }
+      }
+    }
+  });
+
+  it("bounds MASK texture variants and rejects malformed clip configuration", () => {
+    const result = accepted(buildUnlitShader({
+      alphaMode: "mask", baseColorTexture: "switchable", passes: { depth: true, shadow: true, picking: true },
+    }));
+    const plan = planShaderVariants(result.asset, capabilities);
+    expect(plan.valid).toBe(true);
+    expect(plan.variants).toHaveLength(2);
+    expect(plan.variants.map((variant) => variant.passIds)).toEqual([
+      ["forwardColor", "depthColor", "shadowColor", "pickingColor"],
+      ["forwardTextured", "depthTextured", "shadowTextured", "pickingTextured"],
+    ]);
+    const malformed = JSON.parse(JSON.stringify(result.asset)) as typeof result.asset;
+    const output = malformed.techniques[0]!.passes[0]!.fragment!.outputs[1] as unknown as { cutoff: string };
+    output.cutoff = "baseColor";
+    expect(validateShaderAsset(malformed).diagnostics).toContainEqual(expect.objectContaining({ code: "type-mismatch", path: expect.stringContaining(".cutoff") }));
+    const injected = JSON.parse(JSON.stringify(result.asset)) as typeof result.asset;
+    const injectedOutput = injected.techniques[0]!.passes[0]!.fragment!.outputs[1] as unknown as Record<string, unknown>;
+    injectedOutput.wgsl = "discard;";
+    expect(validateShaderAsset(injected).diagnostics).toContainEqual(expect.objectContaining({ code: "unknown-field", path: expect.stringContaining(".wgsl") }));
+    expect(buildUnlitShader({ alphaMode: "mask", switchableAlpha: true })).toMatchObject({
+      ok: false, issues: [{ feature: "switchable-alpha-mask" }],
+    });
+  });
+
   it("fails explicitly instead of fabricating unsupported texture and alpha behavior", () => {
     const unsupported = buildStandardSurfaceShader({
       alphaMode: "mask", normalTexture: true, occlusionTexture: true, metallicRoughnessTexture: true,
     });
     expect(unsupported.ok).toBe(false);
     expect(unsupported.issues.map((issue) => issue.feature)).toEqual([
-      "alpha-mask", "normal-texture", "occlusion-texture", "metallic-roughness-texture",
+      "normal-texture", "occlusion-texture", "metallic-roughness-texture",
     ]);
     expect(buildUnlitShader({ alphaMode: "blend", passes: { depth: true } })).toMatchObject({
       ok: false, issues: [{ feature: "transparent-depth-shadow" }],
@@ -174,6 +244,7 @@ describe("Deep surface shader presets", () => {
 
   it("rejects invalid scalar/color input before creating an IR asset", () => {
     expect(buildStandardSurfaceShader({ roughness: 1.1 }).issues).toMatchObject([{ code: "invalid-option", path: "$.roughness" }]);
+    expect(buildUnlitShader({ alphaMode: "mask", alphaCutoff: 1.1 }).issues).toMatchObject([{ code: "invalid-option", path: "$.alphaCutoff" }]);
     expect(buildUnlitShader({ baseColor: [1, -0, 0, 1] }).issues).toMatchObject([{ code: "invalid-option", path: "$.baseColor" }]);
     expect(buildUnlitShader({ id: "Invalid ID" }).issues).toMatchObject([{ code: "invalid-asset", path: "$.id" }]);
   });

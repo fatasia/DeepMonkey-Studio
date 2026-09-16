@@ -11,6 +11,8 @@ import {
 
 export interface GpuLodSelectionProbeResult {
   readonly objectCount: number;
+  readonly recordCount: number;
+  readonly peakResourceCount: number;
   readonly initialDesiredLevelOne: number;
   readonly hysteresisHeldLevelOne: number;
   readonly cameraJumpDesiredLevelZero: number;
@@ -20,9 +22,12 @@ export interface GpuLodSelectionProbeResult {
 }
 
 /** Real-device CPU/GPU LOD parity probe; intentionally not registered in lab/main.ts. */
-export async function runGpuLodSelectionProbe(session: DeviceSession): Promise<GpuLodSelectionProbeResult> {
+export async function runGpuLodSelectionProbe(session: DeviceSession, objectCount = 128): Promise<GpuLodSelectionProbeResult> {
   if (session.state !== "ready") throw new Error("GPU LOD selection probe requires a ready device session.");
-  const device = session.device, objectCount = 128;
+  if (!Number.isSafeInteger(objectCount) || objectCount < 1 || objectCount > 524_288) {
+    throw new RangeError("GPU LOD selection probe object count is invalid.");
+  }
+  const device = session.device;
   const packed = packGpuLodScene(Array.from({ length: objectCount }, (_, index) => ({
     bounds: { min: [-1, -1, 9] as const, max: [1, 1, 11] as const }, instanceIndex: 1_000 + index, hysteresisRatio: 0.1,
     levels: [
@@ -59,8 +64,9 @@ export async function runGpuLodSelectionProbe(session: DeviceSession): Promise<G
     const cameraJumpDesiredLevelZero = reset.filter(record => record.desiredLevel === 0).length;
     const residencyFallbacks = reset.filter(record => record.selectedLevel !== null && record.selectedLevel > record.desiredLevel).length;
     const passed = cpuGpuMatched && initialDesiredLevelOne === objectCount && hysteresisHeldLevelOne === objectCount
-      && cameraJumpDesiredLevelZero === objectCount && residencyFallbacks === objectCount / 2;
-    return Object.freeze({ objectCount, initialDesiredLevelOne, hysteresisHeldLevelOne,
+      && cameraJumpDesiredLevelZero === objectCount && residencyFallbacks === Math.floor(objectCount / 2);
+    return Object.freeze({ objectCount, recordCount: reset.length, peakResourceCount: session.resourceCount,
+      initialDesiredLevelOne, hysteresisHeldLevelOne,
       cameraJumpDesiredLevelZero, residencyFallbacks, cpuGpuMatched, passed });
   } finally {
     selector.dispose(); for (const resource of owned.reverse()) session.release(resource);

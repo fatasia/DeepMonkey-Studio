@@ -14,16 +14,22 @@ export function materialVisible(value: unknown): boolean { return record(value, 
 export interface ProjectedMaterial {
   readonly material: PbrMaterial;
   readonly textures: readonly DecodedTexture[];
+  /** 作者请求的顶点色；接受的前提是几何携带颜色流，交叉校验由投影桥执行。 */
+  readonly vertexColors: boolean;
+  /** 作者请求的平面着色；不改 shader，由投影桥按派生合同展开非索引面法线几何。 */
+  readonly flatShading: boolean;
 }
 
 export function projectMaterial(value: unknown, id: string, hooks: ThreeProjectionHooks,
   textures: ThreeTextureProjector): ProjectedMaterial {
   const m = record(value, "material"), physical = m.isMeshPhysicalMaterial === true;
+  const basic = m.type === "MeshBasicMaterial" && m.isMeshBasicMaterial === true;
   const standard = m.type === "MeshStandardMaterial" && m.isMeshStandardMaterial === true && !physical;
-  if (!standard && !(physical && m.type === "MeshPhysicalMaterial" && m.isMeshStandardMaterial === true)) unsupported("material type");
+  if (!basic && !standard && !(physical && m.type === "MeshPhysicalMaterial" && m.isMeshStandardMaterial === true)) unsupported("material type");
   if (m.onBeforeRender !== hooks.materialBeforeRender || m.onBeforeCompile !== hooks.materialBeforeCompile
     || m.customProgramCacheKey !== hooks.materialProgramCacheKey) unsupported("material render hooks");
-  validateDefines(m, physical);
+  validateDefines(m, physical, basic);
+  if (basic) for (const key of ["aoMap", "specularMap"] as const) if (m[key] != null) unsupported(`material.${key}`);
   if (physical) validateNeutralPhysical(m);
   for (const key of unsupportedTextureFields) if (m[key] != null) unsupported(`material.${key}`);
   if (m.alphaHash || m.alphaToCoverage) unsupported("material stochastic alpha");
@@ -32,7 +38,7 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
 
   const opacity = unit(m.opacity, "material.opacity"), alphaTest = nonnegative(m.alphaTest, "material.alphaTest");
   if (m.transparent !== true && m.transparent !== false) invalid("material.transparent");
-  if (m.transparent && alphaTest > 0) unsupported("material simultaneous alphaTest and transparent");
+  if (typeof m.fog !== "boolean") invalid("material.fog");
   const alphaMode: AlphaMode = m.transparent ? "BLEND" : alphaTest > 0 ? "MASK" : "OPAQUE";
   if (alphaMode === "OPAQUE" && opacity !== 1) unsupported("material opacity without alpha mode");
 
@@ -43,7 +49,11 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
     unsupported("material transparent DoubleSide two-pass rendering");
   }
   if (typeof m.forceSinglePass !== "boolean") invalid("material.forceSinglePass");
-  if (m.wireframe || m.flatShading || m.vertexColors) unsupported("material surface mode");
+  if (m.wireframe) unsupported("material wireframe");
+  // DE26/C02：vertexColors 要求几何颜色流（桥内交叉校验）；flatShading 走非索引面法线派生。
+  // 两字段缺省（MeshBasicMaterial 无 flatShading）等价于未请求；提供时必须是布尔。
+  if (m.flatShading !== undefined && typeof m.flatShading !== "boolean") invalid("material.flatShading");
+  if (m.vertexColors !== undefined && typeof m.vertexColors !== "boolean") invalid("material.vertexColors");
   // Deep BLEND 固定关闭 depth write；Three 的默认 true 无法无损表达，调用侧需显式采用透明材质惯例。
   if (alphaMode === "BLEND" && m.depthWrite !== false) unsupported("material transparent depthWrite");
   if (m.depthTest !== true || alphaMode !== "BLEND" && m.depthWrite !== true
@@ -52,20 +62,22 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   }
   if (Array.isArray(m.clippingPlanes) && m.clippingPlanes.length || m.shadowSide != null) unsupported("material clipping or shadow side");
 
-  const color = color3(m.color, "material.color"), emissive = color3(m.emissive, "material.emissive");
-  const metallic = unit(m.metalness, "material.metalness"), roughness = unit(m.roughness, "material.roughness");
-  const emissiveIntensity = nonnegative(m.emissiveIntensity, "material.emissiveIntensity");
+  const color = color3(m.color, "material.color"), emissive = basic ? [0, 0, 0] : color3(m.emissive, "material.emissive");
+  const metallic = basic ? 0 : unit(m.metalness, "material.metalness"), roughness = basic ? 1 : unit(m.roughness, "material.roughness");
+  const emissiveIntensity = basic ? 0 : nonnegative(m.emissiveIntensity, "material.emissiveIntensity");
   const emissiveFactor = emissive.map(component => component * emissiveIntensity) as [number, number, number];
   if (!emissiveFactor.every(component => component <= 1 && Number.isFinite(Math.fround(component)))) {
     unsupported("material emissive HDR factor");
   }
 
   const base = m.map == null ? undefined : textures.projectBaseColor(m.map);
-  const metallicRoughness = textures.projectMetallicRoughness(m.metalnessMap, m.roughnessMap);
-  const normal = projectNormal(m, textures), occlusion = projectOcclusion(m, textures);
-  const emissiveMap = m.emissiveMap == null ? undefined : textures.projectEmissive(m.emissiveMap);
+  const metallicRoughness = basic ? undefined : textures.projectMetallicRoughness(m.metalnessMap, m.roughnessMap);
+  const normal = basic ? undefined : projectNormal(m, textures), occlusion = basic ? undefined : projectOcclusion(m, textures);
+  const emissiveMap = basic || m.emissiveMap == null ? undefined : textures.projectEmissive(m.emissiveMap);
   // THREE.Color 和 emissive 已经处于线性工作色彩空间；不能再次执行 sRGB 解码。
   const material: PbrMaterial = { id, baseColor: color, metallic, roughness,
+    ...(basic ? { shadingModel: "unlit" as const } : {}),
+    ...(m.fog === false ? { fog: false } : {}),
     ...(base ? { baseColorTexture: base.slot } : {}),
     ...(metallicRoughness ? { metallicRoughnessTexture: metallicRoughness.slot } : {}),
     ...(normal ? { normalTexture: { ...normal.texture.slot, normalScale: normal.scale } } : {}),
@@ -73,10 +85,11 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
     ...(emissiveFactor.some(component => component !== 0) ? { emissiveFactor } : {}),
     ...(emissiveMap ? { emissiveTexture: emissiveMap.slot } : {}),
     ...(alphaMode === "OPAQUE" ? {} : { alphaMode, baseColorAlpha: opacity }),
-    ...(alphaMode === "MASK" ? { alphaCutoff: alphaTest } : {}),
+    ...(alphaTest > 0 ? { alphaCutoff: alphaTest } : {}),
     ...(side === THREE.doubleSide ? { doubleSided: true } : {}) };
   return { material, textures: [base, metallicRoughness, normal?.texture, occlusion?.texture, emissiveMap]
-    .filter((texture): texture is ProjectedTexture => texture !== undefined).map(texture => texture.resource) };
+    .filter((texture): texture is ProjectedTexture => texture !== undefined).map(texture => texture.resource),
+    vertexColors: m.vertexColors === true, flatShading: m.flatShading === true };
 }
 
 function projectNormal(m: Record<string, unknown>, textures: ThreeTextureProjector): { texture: ProjectedTexture; scale: number } | undefined {
@@ -92,8 +105,9 @@ function projectOcclusion(m: Record<string, unknown>, textures: ThreeTextureProj
   return { texture: textures.projectOcclusion(m.aoMap), strength: unit(m.aoMapIntensity, "material.aoMapIntensity") };
 }
 
-function validateDefines(m: Record<string, unknown>, physical: boolean): void {
-  const defines = record(m.defines, "material.defines"), expected = physical ? ["PHYSICAL", "STANDARD"] : ["STANDARD"];
+function validateDefines(m: Record<string, unknown>, physical: boolean, basic: boolean): void {
+  const defines = record(basic && m.defines === undefined ? {} : m.defines, "material.defines"),
+    expected = basic ? [] : physical ? ["PHYSICAL", "STANDARD"] : ["STANDARD"];
   const actual = Object.keys(defines).sort();
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index] || defines[key] !== "")) {
     unsupported("material.defines");

@@ -17,10 +17,14 @@ export class DeepBenchmarkBackend implements BenchmarkBackend {
     signal: AbortSignal, profile: BenchmarkProfile): Promise<DeepBenchmarkBackend> {
     const baseline = profile === "baseline-equivalent";
     const renderer = await PbrRenderer.create(canvas, navigator.gpu, signal, {
+      // Keep benchmark comparisons on the production Studio feature profile.
+      meshlets: true,
+      deformation: true,
       shadows: baseline ? { exactProfile: { cascadeCount: 1, shadowMapSize: 2048,
         depthBias: 0.00075, receiverNormalBias: "constant-one-texel" as const } } : { requestedTier: "high" },
       ...(baseline ? { features: { environment: false, fog: false, groundGrid: false,
-        ambientOcclusion: false, temporalAa: false, bloom: false, vignette: false,
+        ambientOcclusion: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
+        occlusionCulling: false,
         toneMapping: "three-aces-r185" as const } } : {}),
     });
     try {

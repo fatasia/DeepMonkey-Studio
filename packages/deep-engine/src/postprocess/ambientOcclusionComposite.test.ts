@@ -73,6 +73,28 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("ambient occlusion HDR composite", () => {
+  it("preserves unlit HDR RGB and opacity while lit neighbors retain AO", () => {
+    const input = { width: 2, height: 1, color: [2, 0.5, 0.25, 0.5, 2, 0.5, 0.25, 0.75],
+      depth: [10, 10], ambientOcclusionWidth: 1, ambientOcclusionHeight: 1, ambientOcclusion: [0.25], unlitMask: [1, 0] };
+    expect([...compositeAmbientOcclusionCpu(input, options)]).toEqual([2, 0.5, 0.25, 0.5, 0.5, 0.125, 0.0625, 0.75]);
+    for (const mask of [[NaN, 0], [-1, 0], [2, 0], [1], new Array(2)]) {
+      expect(() => compositeAmbientOcclusionCpu({ ...input, unlitMask: mask }, options)).toThrow("unlit mask");
+    }
+  });
+
+  it("binds the real normal mask, tracks its identity and validates dimensions before allocation", () => {
+    const f = fixture(), encoder = encoderFixture(), pass = new AmbientOcclusionCompositePass(f.session);
+    const ordinary = source(), normal = texture(13, 7, "rgba8unorm"), masked = { ...ordinary, normal };
+    expect(() => pass.encode(encoder.encoder, { ...ordinary, normal: texture(1, 1, "rgba8unorm") }, options)).toThrow("dimensions");
+    expect(f.outputs).toHaveLength(0);
+    pass.encode(encoder.encoder, masked, options);
+    expect(f.device.createBindGroup.mock.calls.at(-1)![0].entries.find(entry => entry.binding === 5)?.resource)
+      .toBe(normal.createView.mock.results[0]!.value);
+    expect(new Float32Array(f.device.queue.writeBuffer.mock.calls.at(-1)![2] as ArrayBuffer)[6]).toBe(1);
+    expect(() => pass.encode(encoder.encoder, { ...masked, normal: texture(13, 7, "rgba8unorm") }, options)).toThrow("without a revision");
+    pass.encode(encoder.encoder, source(1, 13, 7, ordinary), options);
+    expect(new Float32Array(f.device.queue.writeBuffer.mock.calls.at(-1)![2] as ArrayBuffer)[6]).toBe(0);
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("is Naga-valid", () => {
     const validation = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,
       ["--stdin-file-path", "deep-ao-composite.wgsl", "--input-kind", "wgsl"],

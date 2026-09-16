@@ -17,6 +17,7 @@ struct SpotLightAbi {
 };
 fn deepSpotAttenuation(light: SpotLightAbi, surfaceToLightDirection: vec3<f32>) -> f32 {
   let coneCos = dot(-surfaceToLightDirection, light.directionOuterCos.xyz);
-  return clamp((coneCos - light.directionOuterCos.w) * light.radianceConeScale.w, 0.0, 1.0);
+  let coneWeight = clamp((coneCos - light.directionOuterCos.w) * light.radianceConeScale.w, 0.0, 1.0);
+  return coneWeight * coneWeight * (3.0 - 2.0 * coneWeight);
 }
 `;

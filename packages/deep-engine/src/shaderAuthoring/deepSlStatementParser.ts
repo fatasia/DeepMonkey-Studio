@@ -93,6 +93,14 @@ function parseMaterialParameter(statement: string, line: DeepSlParsedLine, state
     else setDeepSlFieldOnce(state, "emissiveStrength", line, () => { state.model.emissiveStrength = value; });
     return true;
   }
+  if ((match = new RegExp(`^(clearcoatFactor|clearcoatRoughness)\\s+(${DEEP_SL_FINITE_NUMBER})$`, "u").exec(statement))) {
+    const field = match[1] as "clearcoatFactor" | "clearcoatRoughness";
+    const value = Number(match[2]);
+    if (!finiteFloat32Values([value])) appendDeepSlDiagnostic(state, deepSlIssue(line, "invalid-number", `${field} must be a finite float32 number.`));
+    else if (value < 0 || value > 1) appendDeepSlDiagnostic(state, deepSlIssue(line, "out-of-range", `${field} must be between 0 and 1.`));
+    else setDeepSlFieldOnce(state, field, line, () => { state.model[field] = value; });
+    return true;
+  }
   return false;
 }
 
@@ -103,6 +111,7 @@ function appendKnownSyntaxError(statement: string, line: DeepSlParsedLine, state
     [/^occlusionStrength\b/u, "invalid-number", "occlusionStrength must be a finite float32 number between 0 and 1."],
     [/^emissiveFactor\b/u, "invalid-number", "emissiveFactor must contain three finite float32 numbers between 0 and 1."],
     [/^emissiveStrength\b/u, "invalid-number", `emissiveStrength must be a finite float32 number between 0 and ${MAX_EMISSIVE_STRENGTH}.`],
+    [/^(clearcoatFactor|clearcoatRoughness)\b/u, "invalid-number", "clearcoatFactor and clearcoatRoughness must be finite float32 numbers between 0 and 1."],
   ] as const;
   const match = known.find(([pattern]) => pattern.test(statement));
   if (!match) return false;

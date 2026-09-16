@@ -14,6 +14,8 @@ export interface GltfSkinImportOptions<TNodeId extends SpatialItemId = number> {
   readonly maxPrimitives?: number;
   readonly maxVerticesPerPrimitive?: number;
   readonly maxDecodedBytes?: number;
+  /** Cancels validation and owned accessor expansion before publication. */
+  readonly signal?: AbortSignal;
 }
 
 export interface GltfSkin<TNodeId extends SpatialItemId> {
@@ -58,15 +60,16 @@ export interface DecodedSkinnedGlb<TNodeId extends SpatialItemId = number> {
 }
 
 export type GltfAnimationImportTuning<TNodeId extends SpatialItemId> = Omit<
-  GltfAnimationImportOptions<TNodeId>, "sceneIndex" | "mapNodeId"
+  GltfAnimationImportOptions<TNodeId>, "sceneIndex" | "mapNodeId" | "signal"
 >;
 export type GltfSkinImportTuning<TNodeId extends SpatialItemId> = Omit<
-  GltfSkinImportOptions<TNodeId>, "sceneIndex" | "mapNodeId"
+  GltfSkinImportOptions<TNodeId>, "sceneIndex" | "mapNodeId" | "signal"
 >;
 
 export interface GltfAnimatedSkinnedImportOptions<TNodeId extends SpatialItemId = number> {
   readonly sceneIndex?: number;
   readonly mapNodeId?: (sourceNodeIndex: number, name: string | undefined) => TNodeId;
+  readonly signal?: AbortSignal;
   readonly animation?: GltfAnimationImportTuning<TNodeId>;
   readonly skinning?: GltfSkinImportTuning<TNodeId>;
 }
@@ -87,4 +90,5 @@ export interface GltfSkinImportConfiguration {
   readonly maxPrimitives: number;
   readonly maxVerticesPerPrimitive: number;
   readonly maxDecodedBytes: number;
+  readonly signal?: AbortSignal;
 }

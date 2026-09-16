@@ -1,15 +1,25 @@
 import { GROUND_ALBEDO_WGSL } from "./pbrGroundAlbedo.js";
+import { PBR_FOG_WGSL } from "./pbrFogWgsl.js";
+import { PBR_DIRECT_LIGHTING_WGSL } from "./pbrDirectLightingWgsl.js";
+import { PBR_DISPLAY_COLOR_WGSL } from "./pbrDisplayColorWgsl.js";
+import { PBR_DIRECT_DISPLAY_WGSL } from "./pbrDirectDisplayWgsl.js";
 import { WEIGHTED_OIT_FRAGMENT_WGSL } from "./weightedOitWgsl.js";
 import { composeForwardPlusPbrShader } from "../lighting/clusterLightingPbrWgsl.js";
+import { PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL } from "../lighting/probeClipmapTextureSamplingWgsl.js";
 import { CASCADED_SHADOW_WGSL } from "../shadows/cascadedShadowShader.js";
+export { outputShader } from "./pbrOutputShader.js";
 
 /** 自研验证管线：GGX / Smith / Schlick，线性 HDR，中间过程不做显示编码。 */
 export const sceneShaderCore = /* wgsl */ `
 ${WEIGHTED_OIT_FRAGMENT_WGSL}
+${PBR_DISPLAY_COLOR_WGSL}
+${PBR_FOG_WGSL}
+${PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL}
 struct Frame {
   currentViewProjection: mat4x4f, previousViewProjection: mat4x4f,
   worldToView: mat4x4f, light: mat4x4f,
   eye: vec4f, background: vec4f, floor: vec4f, lightDirection: vec4f, tuning: vec4f, sunColor: vec4f,
+  output: DeepOutputSettings,
 };
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var shadowMap: texture_depth_2d;
@@ -52,9 +62,11 @@ struct TangentInput {
 struct Vertex {
   @builtin(position) clip: vec4f,
   @location(0) world: vec3f, @location(1) normal: vec3f,
-  @location(2) colorMetal: vec4f, @location(3) material: vec4f, @location(4) uv0: vec2f,
-  @location(5) tangent: vec4f, @location(6) emissiveAlpha: vec4f, @location(7) uv1: vec2f,
+  @location(2) @interpolate(flat) colorMetal: vec4f,
+  @location(3) @interpolate(flat) material: vec4f, @location(4) uv0: vec2f,
+  @location(5) tangent: vec4f, @location(6) @interpolate(flat) emissiveAlpha: vec4f, @location(7) uv1: vec2f,
   @location(8) currentClip: vec4f, @location(9) previousClip: vec4f, @location(10) viewDepth: f32,
+  @location(11) authorShadow: vec4f,
 };
 struct PreviousInstanceInput {
   @location(13) row0: vec4f, @location(14) row1: vec4f, @location(15) row2: vec4f,
@@ -80,6 +92,7 @@ fn tangentFallback(normal: vec3f) -> vec3f {
   out.normal = safeNormalize(mat3x3f(v.normal0.xyz, v.normal1.xyz, v.normal2.xyz) * v.normal, vec3f(0.0, 1.0, 0.0));
   out.tangent = vec4f(1.0, 0.0, 0.0, v.material.z);
   out.colorMetal = v.colorMetal; out.material = v.material; out.uv0 = v.uvSets.xy; out.uv1 = v.uvSets.zw; out.emissiveAlpha = v.emissiveAlpha;
+  out.authorShadow = deepAuthorShadowCoordinate(out.world, out.normal);
   return out;
 }
 @vertex fn vertexNormalMapped(v: TangentInput, previous: PreviousInstanceInput) -> Vertex {
@@ -95,16 +108,26 @@ fn tangentFallback(normal: vec3f) -> vec3f {
   out.normal = n;
   out.tangent = vec4f(safeNormalize(rawTangent - n * dot(n, rawTangent), tangentFallback(n)), v.tangent.w * v.material.z);
   out.colorMetal = v.colorMetal; out.material = v.material; out.uv0 = v.uvSets.xy; out.uv1 = v.uvSets.zw; out.emissiveAlpha = v.emissiveAlpha;
+  out.authorShadow = deepAuthorShadowCoordinate(out.world, out.normal);
   return out;
 }
-@vertex fn shadowMain(v: Input) -> @builtin(position) vec4f {
+struct ShadowInput {
+  @location(0) position: vec3f,
+  @location(2) row0: vec4f, @location(3) row1: vec4f, @location(4) row2: vec4f,
+};
+struct ShadowMaskInput {
+  @location(0) position: vec3f, @location(10) uvSets: vec4f,
+  @location(2) row0: vec4f, @location(3) row1: vec4f, @location(4) row2: vec4f,
+  @location(9) material: vec4f, @location(12) emissiveAlpha: vec4f,
+};
+@vertex fn shadowMain(v: ShadowInput) -> @builtin(position) vec4f {
   let p = vec4f(v.position, 1.0);
   return frame.light * vec4f(dot(v.row0, p), dot(v.row1, p), dot(v.row2, p), 1.0);
 }
 struct ShadowVertex {
   @builtin(position) clip: vec4f, @location(0) uv0: vec2f, @location(1) uv1: vec2f, @location(2) alphaCutoff: vec2f,
 };
-@vertex fn shadowMaskMain(v: Input) -> ShadowVertex {
+@vertex fn shadowMaskMain(v: ShadowMaskInput) -> ShadowVertex {
   var out: ShadowVertex; let p = vec4f(v.position, 1.0);
   out.clip = frame.light * vec4f(dot(v.row0, p), dot(v.row1, p), dot(v.row2, p), 1.0);
   out.uv0 = v.uvSets.xy; out.uv1 = v.uvSets.zw; out.alphaCutoff = vec2f(v.emissiveAlpha.w, v.material.y); return out;
@@ -117,18 +140,7 @@ struct ShadowVertex {
   if (materialTextures.baseRow0.w > 0.5) { sampledAlpha = textureSample(baseColorMap, baseColorSampler, baseUv).a; }
   if (v.alphaCutoff.x * sampledAlpha < v.alphaCutoff.y) { discard; }
 }
-fn fresnel(cosine: f32, f0: vec3f) -> vec3f { return f0 + (1.0 - f0) * pow(1.0 - cosine, 5.0); }
-fn brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32) -> vec3f {
-  let h = safeNormalize(v + l, n); let nv = clamp(dot(n, v), 0.0001, 1.0); let nl = clamp(dot(n, l), 0.0, 1.0);
-  let nh = clamp(dot(n, h), 0.0, 1.0); let vh = clamp(dot(v, h), 0.0, 1.0);
-  let alpha = rough * rough; let a2 = alpha * alpha; let denom = nh * nh * (a2 - 1.0) + 1.0;
-  let distribution = a2 / max(3.14159265 * denom * denom, 0.000001);
-  let k = (rough + 1.0) * (rough + 1.0) / 8.0;
-  let geometry = (nv / (nv * (1.0 - k) + k)) * (nl / max(nl * (1.0 - k) + k, 0.0001));
-  let f = fresnel(vh, mix(vec3f(0.04), base, metal));
-  let specular = distribution * geometry * f / max(4.0 * nv * nl, 0.0001);
-  return ((1.0 - f) * (1.0 - metal) * base / 3.14159265 + specular) * nl;
-}
+${PBR_DIRECT_LIGHTING_WGSL}
 fn orientedNormal(normalInput: vec3f, material: vec4f, frontFacing: bool) -> vec3f {
   let gltfFront = select(!frontFacing, frontFacing, material.z > 0.0);
   let reverseBackFace = flag(material.w, 1u) && !gltfFront;
@@ -136,31 +148,39 @@ fn orientedNormal(normalInput: vec3f, material: vec4f, frontFacing: bool) -> vec
 }
 ${GROUND_ALBEDO_WGSL}
 fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, ground: bool, baseInput: vec3f, metalInput: f32,
-  roughInput: f32, occlusionInput: f32, emissive: vec3f) -> vec3f {
+  roughInput: f32, occlusionInput: f32, emissive: vec3f, authorShadow: vec4f, materialFlags: f32) -> vec3f {
   let n = safeNormalize(normalInput, vec3f(0.0, 1.0, 0.0));
   let view = safeNormalize(frame.eye.xyz - world, vec3f(0.0, 0.0, 1.0));
   let l = safeNormalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
-  let metal = select(metalInput, 0.0, ground); let rough = select(clamp(roughInput, 0.06, 1.0), 0.9, ground);
-  let gridDistance = abs(fract(world.xz / 2.4 - 0.5) - 0.5) / max(fwidth(world.xz / 2.4), vec2f(0.0001));
-  let grid = (1.0 - min(min(gridDistance.x, gridDistance.y), 1.0)) * exp(-length(world.xz) * 0.06) * frame.floor.w;
+  let metal = select(metalInput, 0.0, ground); let rough = min(1.0,
+    select(clamp(roughInput, 0.06, 1.0), 0.9, ground) + deepGeometryRoughness(n));
+  var grid = 0.0;
+  if (frame.floor.w > 0.0) {
+    let gridDistance = abs(fract(world.xz / 2.4 - 0.5) - 0.5) / max(fwidth(world.xz / 2.4), vec2f(0.0001));
+    grid = (1.0 - min(min(gridDistance.x, gridDistance.y), 1.0)) * exp(-length(world.xz) * 0.06) * frame.floor.w;
+  }
   let base = groundGridAlbedo(select(baseInput, frame.floor.rgb, ground), grid, ground);
-  let visibility = deepCascadedShadow(max(-(frame.worldToView * vec4f(world, 1.0)).z, 0.0), world, n, dot(n, l));
+  let visibility = deepPrimaryShadow(world, n, dot(n, l), authorShadow, fragmentCoordinate, materialFlags);
   var color = brdf(n, view, l, base, metal, rough) * frame.sunColor.rgb * frame.sunColor.w * visibility;
-  color += deepForwardPlusPbrWorld(fragmentCoordinate, world, n, frame.worldToView, base, metal, rough);
-  let nv = clamp(dot(n, view), 0.001, 1.0); let f0 = mix(vec3f(0.04), base, metal);
-  let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
-  let irradiance = textureSampleLevel(diffuseEnvironment, environmentSampler, n, 0.0).rgb;
-  let occlusion = clamp(occlusionInput, 0.0, 1.0);
-  color += (1.0 - f) * (1.0 - metal) * base * irradiance * occlusion * frame.eye.w;
-  let reflection = reflect(-view, n);
-  let maxSpecularLod = f32(textureNumLevels(specularEnvironment) - 1u);
-  let radiance = textureSampleLevel(specularEnvironment, environmentSampler, reflection, rough * maxSpecularLod).rgb;
-  let dfg = textureSampleLevel(brdfLut, environmentSampler, vec2f(nv, rough), 0.0).rg;
-  let energyCompensation = vec3f(1.0) + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
-  color += radiance * (f0 * dfg.x + dfg.y) * energyCompensation * occlusion * frame.eye.w;
-  color += select(emissive, vec3f(0.0), ground);
-  let distance = length(frame.eye.xyz - world); let fog = 1.0 - exp(-pow(distance * frame.tuning.w, 2.0));
-  return mix(color, frame.background.rgb, min(fog, 0.95));
+  if (deepClusterParams.limits.z > 0u || deepClusterParams.grid1.w > 0u) {
+    color += deepForwardPlusPbrWorldReceiving(fragmentCoordinate, world, n, frame.worldToView, base, metal, rough, !flag(materialFlags, 16u));
+  }
+  if (frame.eye.w > 0.0) {
+    let nv = clamp(dot(n, view), 0.001, 1.0); let f0 = mix(vec3f(0.04), base, metal);
+    let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
+    let environmentIrradiance = textureSampleLevel(diffuseEnvironment, environmentSampler, n, 0.0).rgb * frame.lightDirection.w;
+    let gi = deepGiSampleTexture(world, n); let irradiance = mix(environmentIrradiance, gi.rgb, gi.a);
+    let occlusion = clamp(occlusionInput, 0.0, 1.0);
+    color += (1.0 - f) * (1.0 - metal) * base * irradiance * occlusion * frame.eye.w;
+    let reflection = reflect(-view, n);
+    let maxSpecularLod = f32(textureNumLevels(specularEnvironment) - 1u);
+    let radiance = textureSampleLevel(specularEnvironment, environmentSampler, reflection, rough * maxSpecularLod).rgb * frame.lightDirection.w;
+    let dfg = textureSampleLevel(brdfLut, environmentSampler, vec2f(nv, rough), 0.0).rg;
+    let energyCompensation = vec3f(1.0) + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
+    color += radiance * (f0 * dfg.x + dfg.y) * energyCompensation * occlusion * frame.eye.w;
+  }
+  color += deepAuthoredDiffuse(n, base, metal, occlusionInput) + select(emissive, vec3f(0.0), ground);
+  return deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags);
 }
 fn coverage(alpha: f32, material: vec4f) -> f32 {
   if (flag(material.w, 2u) && alpha < material.y) { discard; }
@@ -181,7 +201,7 @@ fn clipUv(clip: vec4f) -> vec2f {
 fn geometryOutput(v: Vertex, color: vec4f, worldNormal: vec3f) -> GeometryOutput {
   var out: GeometryOutput; out.color = color; out.viewDepth = v.viewDepth;
   let viewNormal = safeNormalize((frame.worldToView * vec4f(worldNormal, 0.0)).xyz, vec3f(0.0, 0.0, 1.0));
-  out.viewNormal = vec4f(viewNormal * 0.5 + 0.5, 0.0);
+  out.viewNormal = vec4f(viewNormal * 0.5 + 0.5, select(0.0, 1.0, flag(v.material.w, 64u)));
   let projectionJitterDeltaUv = frame.tuning.xy;
   out.motion = clamp(clipUv(v.previousClip) - clipUv(v.currentClip) - projectionJitterDeltaUv, vec2f(-2.0), vec2f(2.0)); return out;
 }
@@ -189,12 +209,20 @@ fn geometryOutput(v: Vertex, color: vec4f, worldNormal: vec3f) -> GeometryOutput
   let ground = flag(v.material.w, 8u);
   let normal = orientedNormal(v.normal, v.material, frontFacing);
   let color = shade(v.clip.xy, v.world, normal, ground,
-    v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb);
+    v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w);
   return geometryOutput(v, vec4f(color, coverage(v.emissiveAlpha.w, v.material)), normal);
 }
+@fragment fn fragmentMainColor(v: Vertex, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
+  let ground = flag(v.material.w, 8u);
+  let normal = orientedNormal(v.normal, v.material, frontFacing);
+  let color = shade(v.clip.xy, v.world, normal, ground,
+    v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w);
+  return vec4f(color, coverage(v.emissiveAlpha.w, v.material));
+}
+${PBR_DIRECT_DISPLAY_WGSL}
 @fragment fn fragmentMainTransparent(v: Vertex, @builtin(front_facing) frontFacing: bool) -> DeepWeightedOitOutput {
   let ground = flag(v.material.w, 8u); let normal = orientedNormal(v.normal, v.material, frontFacing);
-  let color = shade(v.clip.xy, v.world, normal, ground, v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb);
+  let color = shade(v.clip.xy, v.world, normal, ground, v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w);
   let depth = clamp(v.clip.z, 0.0, 1.0);
   return deepWeightedOit(color, coverage(v.emissiveAlpha.w, v.material), depth);
 }
@@ -234,13 +262,26 @@ fn mappedNormal(v: Vertex, frontFacing: bool) -> vec3f {
 @fragment fn fragmentMaterial(v: Vertex, @builtin(front_facing) frontFacing: bool) -> GeometryOutput {
   let surface = sampleSurface(v); var normal = orientedNormal(v.normal, v.material, frontFacing);
   if (materialTextures.normalRow0.w > 0.5) { normal = mappedNormal(v, frontFacing); }
-  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive);
+  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w);
   return geometryOutput(v, vec4f(color, coverage(surface.alpha, v.material)), normal);
+}
+@fragment fn fragmentMaterialColor(v: Vertex, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
+  let surface = sampleSurface(v); var normal = orientedNormal(v.normal, v.material, frontFacing);
+  if (materialTextures.normalRow0.w > 0.5) { normal = mappedNormal(v, frontFacing); }
+  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w);
+  return vec4f(color, coverage(surface.alpha, v.material));
+}
+@fragment fn fragmentMaterialDisplay(v: Vertex, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
+  let surface = sampleSurface(v); var normal = orientedNormal(v.normal, v.material, frontFacing);
+  if (materialTextures.normalRow0.w > 0.5) { normal = mappedNormal(v, frontFacing); }
+  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough,
+    surface.occlusion, surface.emissive, v.authorShadow, v.material.w);
+  return vec4f(deepDisplayColor(color, frame.output), coverage(surface.alpha, v.material));
 }
 @fragment fn fragmentMaterialTransparent(v: Vertex, @builtin(front_facing) frontFacing: bool) -> DeepWeightedOitOutput {
   let surface = sampleSurface(v); var normal = orientedNormal(v.normal, v.material, frontFacing);
   if (materialTextures.normalRow0.w > 0.5) { normal = mappedNormal(v, frontFacing); }
-  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive);
+  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w);
   let depth = clamp(v.clip.z, 0.0, 1.0);
   return deepWeightedOit(color, coverage(surface.alpha, v.material), depth);
 }
@@ -249,49 +290,4 @@ fn mappedNormal(v: Vertex, frontFacing: bool) -> vec3f {
 /** Ready-to-compile default module with the fixed Forward+ group-3 library. */
 export const sceneShader = composeForwardPlusPbrShader(`${CASCADED_SHADOW_WGSL}\n${sceneShaderCore}`);
 
-export const outputShader = /* wgsl */ `
-@group(0) @binding(0) var source: texture_2d<f32>;
-@group(0) @binding(1) var sourceSampler: sampler;
-struct OutputSettings { exposure: f32, bloom: f32, vignette: f32, pad: f32 };
-@group(0) @binding(2) var<uniform> settings: OutputSettings;
-struct Vertex { @builtin(position) position: vec4f, @location(0) uv: vec2f };
-@vertex fn vertexMain(@builtin(vertex_index) i: u32) -> Vertex {
-  let positions = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
-  var out: Vertex; out.position = vec4f(positions[i], 0.0, 1.0);
-  out.uv = positions[i] * vec2f(0.5, -0.5) + 0.5; return out;
-}
-fn linearToSrgb(c: vec3f) -> vec3f {
-  return select(1.055 * pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.4)) - 0.055, c * 12.92, c <= vec3f(0.0031308));
-}
-fn threeAcesFit(source: vec3f, exposure: f32) -> vec3f {
-  let input = mat3x3f(vec3f(0.59719, 0.07600, 0.02840), vec3f(0.35458, 0.90834, 0.13383),
-    vec3f(0.04823, 0.01566, 0.83777));
-  let output = mat3x3f(vec3f(1.60475, -0.10208, -0.00327), vec3f(-0.53108, 1.10813, -0.07276),
-    vec3f(-0.07367, -0.00605, 1.07602));
-  let value = input * (source * exposure / 0.6);
-  let fitted = (value * (value + 0.0245786) - 0.000090537)
-    / (value * (0.983729 * value + 0.4329510) + 0.238081);
-  return clamp(output * fitted, vec3f(0.0), vec3f(1.0));
-}
-@fragment fn fragmentMain(v: Vertex) -> @location(0) vec4f {
-  var color = textureSample(source, sourceSampler, v.uv).rgb;
-  let radial = dot(v.uv - 0.5, v.uv - 0.5);
-  color *= 1.0 - settings.vignette * smoothstep(0.05, 0.5, radial);
-  if (settings.pad > 0.5) { color = threeAcesFit(color, settings.exposure); }
-  else { color *= settings.exposure;
-    color = clamp((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14), vec3f(0.0), vec3f(1.0)); }
-  return vec4f(linearToSrgb(color), 1.0);
-}
-`;
-
-/** CPU contract mirror used by camera-history integration tests and diagnostics. */
-export function currentToPreviousUvMotion(currentClip: readonly number[], previousClip: readonly number[], jitterDeltaUv: readonly [number, number] = [0, 0]): readonly [number, number] {
-  if (currentClip.length !== 4 || previousClip.length !== 4 || ![...currentClip, ...previousClip].every(Number.isFinite)
-    || !jitterDeltaUv.every(Number.isFinite) || Math.abs(currentClip[3]!) < 1e-8 || Math.abs(previousClip[3]!) < 1e-8) throw new Error("Motion clip positions are invalid.");
-  const uv = (clip: readonly number[]): readonly [number, number] => [
-    clip[0]! / clip[3]! * 0.5 + 0.5, clip[1]! / clip[3]! * -0.5 + 0.5,
-  ];
-  const current = uv(currentClip), previous = uv(previousClip);
-  return Object.freeze([Math.max(-2, Math.min(2, previous[0] - current[0] - jitterDeltaUv[0])),
-    Math.max(-2, Math.min(2, previous[1] - current[1] - jitterDeltaUv[1]))]);
-}
+export { currentToPreviousUvMotion } from "./pbrMotionCpu.js";

@@ -8,8 +8,11 @@ export interface PbrFrameGraphOptions {
  * The production frame contract. GPU deformation, visibility and lighting must feed the same
  * geometry pass; post effects consume its real attachments and current Hi-Z is published for
  * the next frame instead of creating a same-frame depth dependency.
+ *
+ * Builder factory so the compile plan and the per-pass read/write declarations stay
+ * sourced from one graph definition (DE26/B03 execution planning).
  */
-export function compilePbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphCompileResult {
+export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBuilder {
   const graph = new RenderGraphBuilder()
     .addResource({ id: "animation-state", descriptor: "scene-animation-v1", external: true })
     .addResource({ id: "lights", descriptor: "clustered-lights-v1", external: true })
@@ -38,7 +41,7 @@ export function compilePbrFrameGraph(options: PbrFrameGraphOptions): RenderGraph
     .addPass({ id: "build-hiz", kind: "compute", inputs: ["linear-depth"], outputs: ["current-hiz"] })
     .addPass({ id: "publish-hiz", kind: "history", inputs: ["current-hiz"], outputs: ["next-hiz"] })
     .addPass({ id: "ambient-occlusion", kind: "compute", inputs: ["linear-depth", "view-normal"], outputs: ["ao-half"] })
-    .addPass({ id: "apply-ambient-occlusion", kind: "compute", inputs: ["opaque-hdr", "linear-depth", "ao-half"], outputs: ["ao-hdr"] });
+    .addPass({ id: "apply-ambient-occlusion", kind: "compute", inputs: ["opaque-hdr", "linear-depth", "view-normal", "ao-half"], outputs: ["ao-hdr"] });
 
   let temporalInput = "ao-hdr";
   if (options.transparency) {
@@ -54,6 +57,9 @@ export function compilePbrFrameGraph(options: PbrFrameGraphOptions): RenderGraph
   return graph
     .addPass({ id: "temporal-aa", kind: "compute", inputs: [temporalInput, "linear-depth", "motion"], outputs: ["temporal-hdr"] })
     .addPass({ id: "bloom", kind: "compute", inputs: ["temporal-hdr"], outputs: ["bloom-hdr"] })
-    .addPass({ id: "present", kind: "render", inputs: ["bloom-hdr"], outputs: ["surface"] })
-    .compile();
+    .addPass({ id: "present", kind: "render", inputs: ["bloom-hdr"], outputs: ["surface"] });
+}
+
+export function compilePbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphCompileResult {
+  return buildPbrFrameGraph(options).compile();
 }

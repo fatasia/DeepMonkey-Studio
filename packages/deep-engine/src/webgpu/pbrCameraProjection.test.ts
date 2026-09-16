@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { CameraFrameHistory } from "./cameraFrameHistory.js";
 import { resolvePbrCameraProjection, updatePbrFrameUniforms, type PbrFrameUniformResources } from "./pbrFrameUniforms.js";
+import { PBR_OUTPUT_UNIFORM_FLOATS } from "./pbrColorGrading.js";
+import { PBR_FRAME_UNIFORM_FLOATS } from "./pipelines.js";
 
 const base = {
   eye: [0, 0, 10] as const, target: [0, 0, 0] as const, extent: 10,
@@ -10,7 +12,8 @@ const base = {
 function resources(): PbrFrameUniformResources {
   return {
     frameBuffer: {} as GPUBuffer, outputBuffer: {} as GPUBuffer, groundInstance: {} as GPUBuffer,
-    frameData: new Float32Array(88), outputData: new Float32Array(4), groundData: new Float32Array(36),
+    frameData: new Float32Array(PBR_FRAME_UNIFORM_FLOATS), outputData: new Float32Array(PBR_OUTPUT_UNIFORM_FLOATS),
+    groundData: new Float32Array(36),
   };
 }
 
@@ -33,8 +36,9 @@ describe("PBR camera projection", () => {
     });
     expect(result.projection).toEqual({ verticalFovRadians: Math.PI / 2, near: 0.5, far: 2_000 });
     expect(result.stableViewProjection.every(Number.isFinite)).toBe(true);
-    expect(Array.from(packed.frameData.slice(76, 80))).toEqual([0, 1, 0, 0]);
+    expect(Array.from(packed.frameData.slice(76, 80))).toEqual([0, 1, 0, 1]);
     [0.2, 0.4, 0.8, 3].forEach((value, index) => expect(packed.frameData[84 + index]).toBeCloseTo(value));
+    expect(Array.from(packed.outputData)).toEqual([1, 0, 0.25, 0, 0, 0, 1, 1]);
     expect((queue.writeBuffer as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(3);
   });
 
@@ -42,5 +46,12 @@ describe("PBR camera projection", () => {
     for (const projection of [
       { verticalFovRadians: 0 }, { verticalFovRadians: Math.PI }, { near: 0 }, { near: 2, far: 1 }, { far: Infinity },
     ]) expect(() => resolvePbrCameraProjection({ ...base, ...projection })).toThrow("camera projection");
+  });
+
+  it("packs the studio grade into the extended output uniform without changing the neutral default", () => {
+    const queue = { writeBuffer: vi.fn() } as unknown as GPUQueue, packed = resources();
+    updatePbrFrameUniforms(queue, new CameraFrameHistory(), { ...base, colorGrading: "studio" },
+      800, 600, false, packed);
+    [0.08, 0.02, 1.08, 1.05].forEach((value, index) => expect(packed.outputData[4 + index]).toBeCloseTo(value));
   });
 });

@@ -5,6 +5,7 @@ import {
 import type {
   DeepShaderPackageV2, ShaderPackageDiagnostic, ShaderPackageModule, ShaderPackagePass,
 } from "../shaderPackage/index.js";
+import type { ResidencyDiagnosticsHooks } from "../residencyDiagnostics.js";
 import type { ShaderAbiAttachmentProfile } from "../shaderAbi/index.js";
 import {
   ShaderCacheAbortError, ShaderCacheError, ShaderDevicePipelineCachePool,
@@ -36,6 +37,10 @@ export interface PreparedShaderPackage {
 export interface ShaderPackageExecutorOptions {
   /** Global pass-entry bound for this GPU device. Defaults to 256. */
   readonly maxCachedPasses?: number;
+  /** Optional shared shader/pipeline/resource diagnostics sink and monotonic clock. */
+  readonly diagnostics?: ResidencyDiagnosticsHooks;
+  /** Stable identity shared with resource diagnostics on the same device. */
+  readonly deviceEpoch?: string;
 }
 
 export class ShaderPackageExecutorError extends Error {
@@ -110,8 +115,9 @@ export class ShaderPackageExecutor {
     executorEpoch += 1;
     this.cache = new ShaderDevicePipelineCachePool({
       namespace: "deep.browser.shader-executor",
-      deviceEpoch: `browser-device-${executorEpoch}`,
+      deviceEpoch: options.deviceEpoch ?? `browser-device-${executorEpoch}`,
       ...(options.maxCachedPasses === undefined ? {} : { maxEntries: options.maxCachedPasses }),
+      ...(options.diagnostics === undefined ? {} : { diagnostics: options.diagnostics }),
       // GPURenderPipeline, GPUShaderModule, and layouts have no destroy(); LRU eviction drops references.
     });
     const lost = (): void => {

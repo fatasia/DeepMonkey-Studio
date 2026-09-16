@@ -74,6 +74,15 @@ export class SceneAnimationMixer<TNodeId extends SpatialItemId = string> {
     return removed;
   }
 
+  /** Makes the graph's current TRS the base for the next layer set. */
+  rebaseFromCurrentGraphPose(): void {
+    if (this.layers.size !== 0) {
+      throw new AnimationError("invalid-layer", "Animation layers must be stopped before rebasing their graph pose.");
+    }
+    this.basePoses.clear();
+    this.stateGeneration += 1;
+  }
+
   seek(layerId: SpatialItemId, time: number): void {
     const layer = this.requireLayer(layerId);
     if (!Number.isFinite(time) || Math.abs(time) > 1e15) throw new AnimationError("invalid-time", "Animation seek time is invalid.");

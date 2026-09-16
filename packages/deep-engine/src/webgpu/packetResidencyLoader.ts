@@ -1,19 +1,18 @@
+import { snapshotPreparedLod } from "./snapshotPreparedLod.js";
 import type {
   GeometryResource,
   PreparedBatch,
   PreparedMaterialTextures,
   PreparedPacket,
 } from "../renderPacketTypes.js";
-import type {
-  GpuResidencyExecutorOptions,
-  ResidencyBudgets,
-} from "../streaming/index.js";
+import type { ResidencyBudgets } from "../streaming/index.js";
 import type { PreparedTexture } from "../textures/decodedTexture.js";
 import type { DeviceSession } from "./deviceSession.js";
 import {
   GpuRenderResidencyRuntime,
   type GpuRenderResidencyFrameResult,
   type GpuRenderResidencyRequest,
+  type GpuRenderResidencyRuntimeOptions,
 } from "./gpuRenderResidencyRuntime.js";
 import {
   createPacketResidencyCatalogFromSnapshot,
@@ -53,7 +52,7 @@ export interface PacketResidencyLoader {
   readonly requests: readonly GpuRenderResidencyRequest[];
   /** Creates a source-bound runtime whose lifetime remains owned by the caller. */
   createRuntime(session: DeviceSession, budgets: ResidencyBudgets,
-    options?: GpuResidencyExecutorOptions): GpuRenderResidencyRuntime;
+    options?: GpuRenderResidencyRuntimeOptions): GpuRenderResidencyRuntime;
   loadInto(runtime: GpuRenderResidencyRuntime, options: PacketResidencyLoadOptions):
   Promise<ResidentPacketProjection>;
 }
@@ -68,7 +67,7 @@ export function createPacketResidencyLoader(packet: PreparedPacket): PacketResid
   const runtimes = new WeakSet<GpuRenderResidencyRuntime>();
   return Object.freeze({ requests: catalog.requests,
     createRuntime(session: DeviceSession, budgets: ResidencyBudgets,
-      options?: GpuResidencyExecutorOptions): GpuRenderResidencyRuntime {
+      options?: GpuRenderResidencyRuntimeOptions): GpuRenderResidencyRuntime {
       const runtime = new GpuRenderResidencyRuntime(session, budgets, catalog.sourceFor, options);
       runtimes.add(runtime); return runtime;
     },
@@ -83,7 +82,8 @@ export function createPacketResidencyLoader(packet: PreparedPacket): PacketResid
       if (foreign) throw new PacketResidencyLoadError("unbound-runtime",
         `Packet residency request does not belong to this loader: ${foreign}.`);
       const result = await submitFrame(runtime, options.frame, requests, options.signal);
-      assertAppliedFrame(result, options.frame);
+      assertAppliedFrame(result, options.frame,
+        options.allowPartialLod === true ? requests : undefined);
       assertCompleteResidency(snapshot, catalog, runtime, options.allowPartialLod === true);
       return createResidentPacketProjection(snapshot, (kind, id) => runtime.acquire(kind, id),
         options.allowPartialLod === true ? { allowPartialLod: true } : undefined);
@@ -122,14 +122,20 @@ function isAbortSignal(value: unknown): value is AbortSignal {
     && typeof (value as AbortSignal).removeEventListener === "function";
 }
 
-function assertAppliedFrame(result: GpuRenderResidencyFrameResult, frame: number): void {
+function assertAppliedFrame(result: GpuRenderResidencyFrameResult, frame: number,
+  partialRequests?: readonly GpuRenderResidencyRequest[]): void {
   if (result.status !== "applied" || result.frame !== frame || !result.execution) {
     throw new PacketResidencyLoadError("frame-rejected",
       `Packet residency frame ${frame} was not applied.`,
       result.error === undefined ? undefined : { cause: result.error });
   }
   if (result.execution.commit.failedUploads.length || result.execution.uploadFailures.length) {
-    throw new PacketResidencyLoadError("partial-failure",
+    const required = new Set(partialRequests?.filter(request => request.required === true)
+      .map(request => `${request.kind}\u0000${request.id}`));
+    const requiredFailure = result.execution.commit.failedUploads.some(value =>
+      required.has(`${value.kind}\u0000${value.id}`)) || result.execution.uploadFailures.some(value =>
+      required.has(`${value.resource.kind}\u0000${value.resource.id}`));
+    if (!partialRequests || requiredFailure) throw new PacketResidencyLoadError("partial-failure",
       `Packet residency frame ${frame} contained failed uploads.`);
   }
 }
@@ -159,6 +165,7 @@ function snapshotGeometry(source: GeometryResource): GeometryResource {
     ...(source.uv0 ? { uv0: source.uv0.slice() } : {}),
     ...(source.uv1 ? { uv1: source.uv1.slice() } : {}),
     ...(source.tangents ? { tangents: source.tangents.slice() } : {}),
+    ...(source.colors ? { colors: source.colors.slice() } : {}),
   });
 }
 
@@ -173,9 +180,7 @@ function snapshotBatch(source: PreparedBatch): PreparedBatch {
     instanceIds: Object.freeze(source.instanceIds.slice()), data: source.data.slice(),
     ...(source.sortCenter ? { sortCenter: tuple3(source.sortCenter) } : {}),
     ...(source.textures ? { textures: snapshotMaterialTextures(source.textures) } : {}),
-    ...(source.lod ? { lod: Object.freeze({ ...source.lod,
-      levels: Object.freeze(source.lod.levels.map(level => Object.freeze({ ...level }))),
-    }) } : {}),
+    ...(source.lod ? { lod: snapshotPreparedLod(source.lod) } : {}),
   });
 }
 

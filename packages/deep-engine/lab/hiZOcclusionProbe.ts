@@ -8,14 +8,18 @@ export interface HiZOcclusionProbeResult {
   readonly visibleCount: number;
   readonly indirectCount: number;
   readonly expectedVisibleCount: number;
+  readonly peakResourceCount: number;
   readonly affine: HiZAffineOcclusionResult;
   readonly passed: boolean;
 }
 
 /** Standalone real-device composition probe; it never enters the renderer frame loop. */
-export async function runHiZOcclusionProbe(session: DeviceSession): Promise<HiZOcclusionProbeResult> {
+export async function runHiZOcclusionProbe(session: DeviceSession, inputCount = 128): Promise<HiZOcclusionProbeResult> {
   if (session.state !== "ready") throw new Error("Hi-Z occlusion probe requires a ready device session.");
-  const device = session.device, inputCount = 128, expectedVisibleCount = 64;
+  if (!Number.isSafeInteger(inputCount) || inputCount < 2 || inputCount > 524_288 || inputCount % 2 !== 0) {
+    throw new RangeError("Hi-Z occlusion probe input count must be an even integer in [2, 524288].");
+  }
+  const device = session.device, expectedVisibleCount = inputCount / 2;
   const owned: Array<GPUBuffer | GPUTexture> = [];
   const own = <T extends GPUBuffer | GPUTexture>(resource: T): T => { owned.push(session.own(resource)); return resource; };
   const source = own(device.createTexture({ label: "Deep Hi-Z occlusion probe depth", size: [64, 64, 1], format: "depth32float",
@@ -62,7 +66,8 @@ export async function runHiZOcclusionProbe(session: DeviceSession): Promise<HiZO
     const affine = await runHiZAffineOcclusionProbe(session);
     const passed = affine.passed && visibleCount === expectedVisibleCount && indirectCount === expectedVisibleCount
       && indices.every((value, index) => value === index);
-    return Object.freeze({ inputCount, visibleCount, indirectCount, expectedVisibleCount, affine, passed });
+    return Object.freeze({ inputCount, visibleCount, indirectCount, expectedVisibleCount,
+      peakResourceCount: session.resourceCount, affine, passed });
   } finally {
     culler.dispose(); pyramid.dispose();
     for (const resource of owned.reverse()) session.release(resource);

@@ -26,7 +26,7 @@ export function validateShaderCacheScope(scope: ShaderCacheScope): ShaderCacheSc
   if (scope.packageSchemaVersion !== 2) invalid("Shader cache requires package schema v2.");
   if (scope.targetProfile !== "webgpu-wgsl-pipeline-2") invalid("Shader cache target profile is unsupported.");
   if (typeof scope.compilerVersion !== "string" || !VERSION.test(scope.compilerVersion)) invalid("Shader cache compiler version is not canonical.");
-  if (scope.shaderAbiId !== "deep.pbr.mesh.v1" && scope.shaderAbiId !== "deep.pbr.mesh.v2") {
+  if (!["deep.pbr.mesh.v1", "deep.pbr.mesh.v2", "deep.pbr.mesh.v3"].includes(scope.shaderAbiId)) {
     invalid("Shader cache ABI ID is unsupported.");
   }
   if (typeof scope.shaderAbiHash !== "string" || !HASH.test(scope.shaderAbiHash)) invalid("Shader cache ABI hash is not canonical SHA-256.");

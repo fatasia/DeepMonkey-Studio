@@ -13,7 +13,7 @@ import {
   type GltfSkinImportOptions,
   type GltfSkinPrimitive,
 } from "./skinTypes.js";
-import { array, budget, invalid, list, noExtensions, object, reference, unsupported, validateJson, type JsonObject } from "./validation.js";
+import { abortSignal, array, budget, invalid, list, noExtensions, object, reference, unsupported, validateJson, type JsonObject } from "./validation.js";
 
 interface PendingBinding<TId extends SpatialItemId> {
   readonly sourceNodeIndex: number;
@@ -31,6 +31,7 @@ export function decodeSkinnedGlb<TNodeId extends SpatialItemId = number>(
   bytes: Uint8Array,
   options: GltfSkinImportOptions<TNodeId> = {},
 ): DecodedSkinnedGlb<TNodeId> {
+  object(options, "options"); abortSignal(options.signal, "options.signal")?.throwIfAborted();
   const parsed = parseGlb(bytes);
   validateJson(parsed.json);
   const document = validateAnimationDocument(parsed.json);
@@ -43,6 +44,7 @@ export function decodeSkinnedDocument<TNodeId extends SpatialItemId = number>(
   buffers: readonly Uint8Array[],
   options: GltfSkinImportOptions<TNodeId> = {},
   selectedNodes?: AnimationNodeSelection<TNodeId>,
+  handledMorphTargets = false,
 ): DecodedSkinnedGlb<TNodeId> {
   const configuration = resolveSkinOptions(options);
   const selection = selectedNodes ?? selectAnimationNodes(document, options, configuration.maxNodes);
@@ -50,7 +52,7 @@ export function decodeSkinnedDocument<TNodeId extends SpatialItemId = number>(
   const sourceSkins = list(document.skins, "skins", configuration.maxSkins);
   const sourceMeshes = list(document.meshes, "meshes", 16_384);
   const pending = collectBindings(selection, sourceNodes, sourceSkins, sourceMeshes, configuration);
-  const reader = new SkinAccessorReader(document, buffers, configuration);
+  const reader = new SkinAccessorReader(document, buffers, configuration, options.signal);
   const usedSkinIndices = [...new Set(pending.map((binding) => binding.sourceSkinIndex))].sort(numberOrder);
   const skins = usedSkinIndices.map((index) => decodeSkin(sourceSkins[index], index, sourceNodes, selection, reader, configuration));
   const skinsByIndex = new Map(skins.map((skin) => [skin.sourceSkinIndex, skin] as const));
@@ -58,7 +60,8 @@ export function decodeSkinnedDocument<TNodeId extends SpatialItemId = number>(
   let primitiveCount = 0;
   const primitivesByMesh = new Map<number, readonly DecodedPrimitive[]>();
   for (const meshIndex of usedMeshIndices) {
-    const decoded = decodeMesh(sourceMeshes[meshIndex], meshIndex, reader, configuration, primitiveCount);
+    options.signal?.throwIfAborted();
+    const decoded = decodeMesh(sourceMeshes[meshIndex], meshIndex, reader, configuration, primitiveCount, handledMorphTargets);
     primitiveCount += decoded.length;
     primitivesByMesh.set(meshIndex, decoded);
   }
@@ -129,10 +132,10 @@ function decodeSkin<TId extends SpatialItemId>(
 }
 
 function decodeMesh(value: unknown, meshIndex: number, reader: SkinAccessorReader,
-  limits: GltfSkinImportConfiguration, priorCount: number): readonly DecodedPrimitive[] {
+  limits: GltfSkinImportConfiguration, priorCount: number, handledMorphTargets: boolean): readonly DecodedPrimitive[] {
   const path = `meshes[${meshIndex}]`, mesh = object(value, path);
   noExtensions(mesh, path);
-  if (mesh.weights !== undefined) unsupported(`${path}.weights`, "morph weights");
+  if (mesh.weights !== undefined && !handledMorphTargets) unsupported(`${path}.weights`, "morph weights");
   const primitives = array(mesh.primitives, `${path}.primitives`, 4_096);
   budget(priorCount + primitives.length, limits.maxPrimitives, "skinPrimitives");
   if (primitives.length === 0) invalid(path, "A skinned mesh must contain at least one primitive.");
@@ -140,7 +143,7 @@ function decodeMesh(value: unknown, meshIndex: number, reader: SkinAccessorReade
     const location = `${path}.primitives[${primitiveIndex}]`, primitive = object(value, location);
     noExtensions(primitive, location);
     if (primitive.mode !== undefined && primitive.mode !== 4) unsupported(`${location}.mode`, "non-triangle skinned topology");
-    if (primitive.targets !== undefined) unsupported(`${location}.targets`, "morph targets");
+    if (primitive.targets !== undefined && !handledMorphTargets) unsupported(`${location}.targets`, "morph targets");
     const attributes = object(primitive.attributes, `${location}.attributes`);
     for (const name of Object.keys(attributes)) {
       if ((name.startsWith("JOINTS_") && name !== "JOINTS_0") || (name.startsWith("WEIGHTS_") && name !== "WEIGHTS_0")) {

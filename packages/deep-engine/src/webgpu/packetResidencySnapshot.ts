@@ -1,3 +1,5 @@
+import { snapshotPreparedLod } from "./snapshotPreparedLod.js";
+import { assertPacketDeformationSupported } from "../renderPacket.js";
 import type {
   GeometryResource,
   PreparedBatch,
@@ -17,12 +19,14 @@ export type PacketResidencySourceSnapshot = Readonly<
 /** Deep snapshots every upload payload so registered chunks never retain caller-owned bytes. */
 export function snapshotResidencyPacket(packet: PreparedPacket): PreparedPacket {
   if (!packet || typeof packet !== "object") throw new TypeError("Prepared packet is invalid.");
+  assertPacketDeformationSupported(packet);
   const geometries = new Map<string, GeometryResource>();
   for (const [key, source] of packet.geometries) geometries.set(key, Object.freeze({ ...source,
     vertices: source.vertices.slice(), indices: source.indices.slice(),
     ...(source.uv0 ? { uv0: source.uv0.slice() } : {}),
     ...(source.uv1 ? { uv1: source.uv1.slice() } : {}),
     ...(source.tangents ? { tangents: source.tangents.slice() } : {}),
+    ...(source.colors ? { colors: source.colors.slice() } : {}),
   }));
   return Object.freeze({ geometries,
     textures: Object.freeze(packet.textures.map(source => Object.freeze({ ...source,
@@ -76,10 +80,10 @@ function snapshotBatch(source: PreparedBatch): PreparedBatch {
   return Object.freeze({ key: source.key, geometry: source.geometry, mirrored: source.mirrored,
     doubleSided: source.doubleSided, alphaMode: source.alphaMode, count: source.count,
     instanceIds: Object.freeze(source.instanceIds.slice()), data: source.data.slice(),
+    ...(source.castShadow === undefined ? {} : { castShadow: source.castShadow }),
     ...(source.sortCenter ? { sortCenter: Object.freeze([...source.sortCenter]) as readonly [number, number, number] } : {}),
     ...(source.textures ? { textures: snapshotTextures(source.textures) } : {}),
-    ...(source.lod ? { lod: Object.freeze({ ...source.lod,
-      levels: Object.freeze(source.lod.levels.map(level => Object.freeze({ ...level }))) }) } : {}),
+    ...(source.lod ? { lod: snapshotPreparedLod(source.lod) } : {}),
   });
 }
 

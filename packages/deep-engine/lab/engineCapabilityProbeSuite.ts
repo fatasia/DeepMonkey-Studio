@@ -39,6 +39,12 @@ import { verifyPbrResidencyStream } from "./pbrResidencyStreamProbe.js";
 import { verifySceneChunkResidency } from "./sceneChunkResidencyProbe.js";
 import { verifyHdrEnvironment } from "./hdrEnvironmentProbe.js";
 import { verifyRealAssetPixelSemantics } from "./realAssetPixelProbe.js";
+import { runLocalSpotShadowProbe } from "./localSpotShadowProbe.js";
+import { runProbeClipmapCaptureProbe } from "./probeClipmapCaptureProbe.js";
+import { runProbeClipmapPbrProbe } from "./probeClipmapPbrProbe.js";
+import { runGpuParticleProbe } from "./gpuParticleProbe.js";
+import { runCombinedLoadWebGpuProbe } from "./combinedLoadWebGpuProbe.js";
+import { verifyGltfAnimationTransitions } from "./gltfAnimationTransitionProbe.js";
 
 export interface EngineCapabilityProbeSuiteResult {
   readonly records: readonly unknown[];
@@ -67,9 +73,17 @@ export async function runEngineCapabilityProbeSuite(
   const meshletCullingProbe = await probe("Meshlet 剔除", () => runMeshletCullingProbe(session));
   const meshletIndirectProbe = await probe("Meshlet 绘制", () => runMeshletIndirectProbe(session));
   const cascadedShadowProbe = await probe("级联阴影", () => runCascadedShadowProbe(session));
+  const localSpotShadowProbe = await probe("局部聚光阴影", () => runLocalSpotShadowProbe(session));
+  const probeClipmapCaptureProbe = await probe("GI Probe Clipmap", () => runProbeClipmapCaptureProbe(session));
+  const probeClipmapPbrProbe = await probe("GI Probe PBR 接线", () => runProbeClipmapPbrProbe(renderer, canvas, signal));
+  const gpuParticleProbe = await probe("GPU 粒子", () => runGpuParticleProbe(session));
   const forwardPlusProbe = await probe("光照分簇", () => verifyForwardPlusClusteredLighting(session));
   const forwardPlusPbrProbe = await probe("分簇 PBR", () => verifyForwardPlusPbrLighting(session));
   const animationProbe = await probe("动画", verifyAnimationRuntime);
+  const animationTransitionProbe = new URLSearchParams(location.search).get("animationTransitions") === "1"
+    ? await probe("动画嵌套过渡", verifyGltfAnimationTransitions)
+    : Object.freeze({ action: "gltf-animation-transition", success: true, skipped: true,
+      reason: "Run the dedicated browser gate with ?animationTransitions=1." });
   const gpuSkinningProbe = await probe("GPU 蒙皮", () => runGpuSkinningProbe(session));
   const gpuMorphProbe = await probe("GPU Morph", () => runGpuMorphDeformationProbe(session));
   const gpuMorphSkinningProbe = await probe("Morph 与蒙皮", () => runGpuMorphSkinningProbe(session));
@@ -96,6 +110,10 @@ export async function runEngineCapabilityProbeSuite(
     ? await probe("真实 glTF 像素语义", () => verifyRealAssetPixelSemantics(renderer, canvas, signal))
     : Object.freeze({ action: "real-gltf-pixel-semantics", success: true, skipped: true,
       reason: "Run the dedicated browser gate with ?realAssetPixels=1." });
+  const combinedLoadProbe = new URLSearchParams(location.search).get("combinedLoad") === "1"
+    ? await probe("组合大场景负载", () => runCombinedLoadWebGpuProbe(session, signal))
+    : Object.freeze({ action: "combined-large-scene-load", success: true, skipped: true,
+      reason: "Run the dedicated browser gate with ?combinedLoad=1." });
 
   const records = Object.freeze([
     packageProbe,
@@ -114,9 +132,14 @@ export async function runEngineCapabilityProbeSuite(
     { action: "meshlet-gpu-culling", success: meshletCullingProbe.passed, ...meshletCullingProbe },
     { action: "meshlet-indirect-draw", success: meshletIndirectProbe.passed, ...meshletIndirectProbe },
     cascadedShadowProbe,
+    localSpotShadowProbe,
+    probeClipmapCaptureProbe,
+    probeClipmapPbrProbe,
+    gpuParticleProbe,
     forwardPlusProbe,
     forwardPlusPbrProbe,
     animationProbe,
+    animationTransitionProbe,
     gpuSkinningProbe,
     gpuMorphProbe,
     gpuMorphSkinningProbe,
@@ -137,19 +160,23 @@ export async function runEngineCapabilityProbeSuite(
     residencyStreamProbe,
     sceneChunkResidencyProbe,
     realAssetPixelProbe,
+    combinedLoadProbe,
   ]);
   const passed = Boolean(packageProbe.success && shaderHotReloadProbe.success && deepSlPbrProbe.success && deepSlCsmProbe.success
     && materialModesProbe.success && baseColorTextureProbe.success
     && pbrTextureSlotsProbe.success && unlitProbe.success && cullingProbe.success && affineBoundsProbe.passed && compressedTextureProbe.success
     && hiZProbe.passed && hiZOcclusionProbe.passed && meshletCullingProbe.passed
-    && meshletIndirectProbe.passed && cascadedShadowProbe.success && forwardPlusProbe.success
-    && forwardPlusPbrProbe.success && animationProbe.success && gpuSkinningProbe.success && gpuMorphProbe.success
+    && meshletIndirectProbe.passed && cascadedShadowProbe.success && localSpotShadowProbe.success
+    && probeClipmapCaptureProbe.success && probeClipmapPbrProbe.success
+    && gpuParticleProbe.success && forwardPlusProbe.success
+    && forwardPlusPbrProbe.success && animationProbe.success && animationTransitionProbe.success
+    && gpuSkinningProbe.success && gpuMorphProbe.success
     && gpuMorphSkinningProbe.success
     && gpuLodSelectionProbe.passed && packetLodParallelProbe.passed && packetShadowLodProbe.passed
     && weightedOitProbe.success && ambientOcclusionProbe.success
     && temporalAaProbe.success && bloomEnergyProbe.success && groundAlbedoProbe.success && hdrEnvironmentProbe.success
     && gpuResidencyProbe.success && gpuMixedResidencyProbe.success && gpuTextureMipResidencyProbe.success
     && residentPacketFrameProbe.success && partialLodResidencyProbe.success && residencyStreamProbe.success
-    && sceneChunkResidencyProbe.success && realAssetPixelProbe.success);
+    && sceneChunkResidencyProbe.success && realAssetPixelProbe.success && combinedLoadProbe.success);
   return Object.freeze({ records, passed });
 }

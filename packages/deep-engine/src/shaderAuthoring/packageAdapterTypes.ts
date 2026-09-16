@@ -12,6 +12,10 @@ export const DEEP_SL_UNLIT_PACKAGE_ADAPTER_PROFILE = "deep.pbr.mesh.v1/deepsl-un
 export const DEEP_SL_UNLIT_PACKAGE_TEXTURE_ADAPTER_PROFILE = "deep.pbr.mesh.v1/deepsl-unlit-textures.v2" as const;
 export const DEEP_SL_UNLIT_PACKAGE_CSM_ADAPTER_PROFILE = "deep.pbr.mesh.v2/deepsl-unlit-plain.v2" as const;
 export const DEEP_SL_UNLIT_PACKAGE_CSM_TEXTURE_ADAPTER_PROFILE = "deep.pbr.mesh.v2/deepsl-unlit-textures.v2" as const;
+export const DEEP_SL_PACKAGE_AUXILIARY_ADAPTER_PROFILE = "deep.pbr.mesh.v3/deepsl-standard-plain.v2" as const;
+export const DEEP_SL_PACKAGE_AUXILIARY_TEXTURE_ADAPTER_PROFILE = "deep.pbr.mesh.v3/deepsl-standard-textures.v2" as const;
+export const DEEP_SL_UNLIT_PACKAGE_AUXILIARY_ADAPTER_PROFILE = "deep.pbr.mesh.v3/deepsl-unlit-plain.v2" as const;
+export const DEEP_SL_UNLIT_PACKAGE_AUXILIARY_TEXTURE_ADAPTER_PROFILE = "deep.pbr.mesh.v3/deepsl-unlit-textures.v2" as const;
 
 export interface DeepSlPackageAdapterInput {
   readonly targetAbi?: DeepPbrMeshShaderAbiId;
@@ -43,6 +47,12 @@ export interface DeepPbrMeshV1MaterialDefaults {
   readonly baseColorMetallic: readonly [number, number, number, number];
   readonly roughnessAlphaCutoffHandednessFlags: readonly [number, number, number, number];
   readonly emissiveAlpha: readonly [number, number, number, number];
+}
+
+export interface DeepSlClearcoatDefaults {
+  readonly factor: number;
+  readonly roughness: number;
+  readonly source: "compile-time-v3";
 }
 
 export type DeepPbrMeshV1TextureSemantic = "baseColor" | "metallicRoughness" | "normal" | "occlusion" | "emissive";
@@ -84,7 +94,7 @@ export interface DeepPbrMeshV1MaterialTextureDefaults {
 
 export interface DeepSlPackagePassCompatibility {
   readonly passId: string;
-  readonly kind: "forward" | "shadow";
+  readonly kind: "forward" | "depth" | "shadow" | "picking";
   readonly entryPoints: Readonly<{ vertex: string; fragment: string | null }>;
   readonly pipeline: ShaderPackagePipelineSelection;
 }
@@ -94,16 +104,19 @@ export interface DeepSlPackageCompatibilityReport {
   readonly schemaVersion: typeof DEEP_SL_PACKAGE_ADAPTER_SCHEMA_VERSION;
   readonly adapterProfile: typeof DEEP_SL_PACKAGE_ADAPTER_PROFILE | typeof DEEP_SL_PACKAGE_TEXTURE_ADAPTER_PROFILE
     | typeof DEEP_SL_PACKAGE_CSM_ADAPTER_PROFILE | typeof DEEP_SL_PACKAGE_CSM_TEXTURE_ADAPTER_PROFILE
+    | typeof DEEP_SL_PACKAGE_AUXILIARY_ADAPTER_PROFILE | typeof DEEP_SL_PACKAGE_AUXILIARY_TEXTURE_ADAPTER_PROFILE
     | typeof DEEP_SL_UNLIT_PACKAGE_ADAPTER_PROFILE | typeof DEEP_SL_UNLIT_PACKAGE_TEXTURE_ADAPTER_PROFILE
-    | typeof DEEP_SL_UNLIT_PACKAGE_CSM_ADAPTER_PROFILE | typeof DEEP_SL_UNLIT_PACKAGE_CSM_TEXTURE_ADAPTER_PROFILE;
+    | typeof DEEP_SL_UNLIT_PACKAGE_CSM_ADAPTER_PROFILE | typeof DEEP_SL_UNLIT_PACKAGE_CSM_TEXTURE_ADAPTER_PROFILE
+    | typeof DEEP_SL_UNLIT_PACKAGE_AUXILIARY_ADAPTER_PROFILE | typeof DEEP_SL_UNLIT_PACKAGE_AUXILIARY_TEXTURE_ADAPTER_PROFILE;
   readonly status: "direct-package-ready" | "rejected";
   readonly shaderAbi: DeepPbrMeshShaderAbiId;
   readonly materialSource: "instance-stream" | "instance-and-material-bind-group";
-  readonly bindGroupLayouts: readonly ("forward-frame" | "shadow-frame" | "material")[];
+  readonly bindGroupLayouts: readonly ("forward-frame" | "shadow-frame" | "view-frame" | "material")[];
   readonly vertexStreams: readonly ("geometry" | "instance" | "tangent")[];
   readonly passSelections: readonly DeepSlPackagePassCompatibility[];
   readonly materialDefaults?: DeepPbrMeshV1MaterialDefaults;
   readonly materialTextureDefaults?: DeepPbrMeshV1MaterialTextureDefaults;
+  readonly clearcoat?: DeepSlClearcoatDefaults;
   readonly issues: readonly DeepSlPackageCompatibilityIssue[];
 }
 

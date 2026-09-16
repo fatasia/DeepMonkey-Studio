@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "./deviceSession.js";
+import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import { WEIGHTED_OIT_COMPOSITE_WGSL, WEIGHTED_OIT_FRAGMENT_WGSL } from "./weightedOitWgsl.js";
 import {
   WEIGHTED_OIT_ACCUMULATION_FORMAT,
@@ -57,17 +58,11 @@ export class WeightedOitPass {
     validateSize(this.session.device, width, height);
     if (this.allocation?.width === width && this.allocation.height === height) return this.allocation;
     const previous = this.allocation;
-    let candidate: Allocation | undefined;
-    try {
-      candidate = this.allocate(width, height, this.generation + 1);
-      this.allocation = candidate;
-      this.generation = candidate.generation;
-      if (previous) this.release(previous);
-      return candidate;
-    } catch (error) {
-      if (candidate) this.release(candidate);
-      throw error;
-    }
+    const candidate = this.allocate(width, height, this.generation + 1);
+    this.allocation = candidate;
+    this.generation = candidate.generation;
+    if (previous) this.release(previous);
+    return candidate;
   }
 
   accumulationAttachments(loadOp: GPULoadOp = "clear"): readonly [GPURenderPassColorAttachment, GPURenderPassColorAttachment] {
@@ -94,15 +89,17 @@ export class WeightedOitPass {
     const pass = encoder.beginRenderPass({ label: "Deep weighted OIT composite", colorAttachments: [{
       view: destinationView, loadOp, storeOp: "store", clearValue: options.clearColor ?? { r: 0, g: 0, b: 0, a: 0 },
     }] });
-    pass.setPipeline(pipeline); pass.setBindGroup(0, binding); pass.draw(3); pass.end();
+    try { pass.setPipeline(pipeline); pass.setBindGroup(0, binding); pass.draw(3); }
+    finally { pass.end(); }
     return Object.freeze({ width: targets.width, height: targets.height, generation: targets.generation, outputFormat });
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.allocation) this.release(this.allocation);
+    const allocation = this.allocation;
     this.allocation = undefined; this.pipelines.clear();
+    if (allocation) this.release(allocation);
   }
 
   private allocate(width: number, height: number, generation: number): Allocation {
@@ -120,8 +117,7 @@ export class WeightedOitPass {
         accumulationView: accumulationTexture.createView({ label: "Deep weighted OIT accumulation view" }),
         revealageTexture, revealageView: revealageTexture.createView({ label: "Deep weighted OIT revealage view" }) });
     } catch (error) {
-      for (const value of created) this.session.release(value);
-      throw error;
+      failWithResourceCleanup(error, "Weighted OIT allocation failed.", created.map(value => () => this.session.release(value)));
     }
   }
 
@@ -149,14 +145,17 @@ export class WeightedOitPass {
   private assertReady(): void {
     if (this.disposed) throw new Error("Weighted OIT pass is disposed.");
     if (this.session.state !== "ready") {
-      if (this.allocation) this.release(this.allocation);
+      const allocation = this.allocation;
       this.allocation = undefined; this.pipelines.clear();
+      if (allocation) this.release(allocation);
       throw new Error("GPU session is not ready for weighted OIT.");
     }
   }
 
   private release(allocation: Allocation): void {
-    this.session.release(allocation.accumulationTexture); this.session.release(allocation.revealageTexture);
+    runResourceCleanup("Weighted OIT disposal failed.", [
+      () => this.session.release(allocation.accumulationTexture), () => this.session.release(allocation.revealageTexture),
+    ]);
   }
 }
 

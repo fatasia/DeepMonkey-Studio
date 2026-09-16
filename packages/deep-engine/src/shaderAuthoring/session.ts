@@ -18,6 +18,7 @@ import {
   type ShaderKnownGood,
 } from "./types.js";
 import { validateShaderAuthoringDocument, validateShaderAuthoringSnapshot } from "./validation.js";
+import { validateDeepShaderPackage } from "../shaderPackage/validation.js";
 
 const EMPTY_DIAGNOSTICS: readonly ShaderAuthoringDiagnostic[] = Object.freeze([]);
 
@@ -103,6 +104,12 @@ function normalizeCompilerResult(input: unknown): ShaderAuthoringCompilerResult 
         return invalidCompilerResult("Compiler returned an invalid WebGPU artifact.");
       }
       if (artifact.pass.module.code.length > SHADER_AUTHORING_BUDGETS.maxSourceLength) return invalidCompilerResult("Compiled WGSL exceeds the session budget.");
+      if ((artifact.runtimePackage === undefined) !== (artifact.runtimeCompatibility === undefined)) {
+        return invalidCompilerResult("Compiler returned incomplete runtime package semantics.");
+      }
+      if (artifact.runtimePackage && !validateDeepShaderPackage(artifact.runtimePackage).valid) {
+        return invalidCompilerResult("Compiler returned an invalid runtime shader package.");
+      }
       return deepFreeze({ success: true, diagnostics, artifact });
     }
     return deepFreeze({ success: false, diagnostics });

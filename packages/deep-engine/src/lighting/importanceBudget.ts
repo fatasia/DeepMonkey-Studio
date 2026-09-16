@@ -30,11 +30,14 @@ export function prioritizeLocalLights(lights: ClusteredLights, maxLocalLights: n
 function kindOrder(kind: "point" | "spot"): number { return kind === "point" ? 0 : 1; }
 
 function localLightScore(light: PointLight): number {
-  const color = light.color, luminance = Math.max(0, 0.2126 * color[0]! + 0.7152 * color[1]! + 0.0722 * color[2]!);
+  const color = light.color;
+  const luminance = Math.max(0, 0.2126 * finiteOrZero(color[0]) + 0.7152 * finiteOrZero(color[1]) + 0.0722 * finiteOrZero(color[2]));
   const intensity = Math.max(0, Number.isFinite(light.intensity) ? light.intensity : 0);
   const range = Math.max(0, Number.isFinite(light.range) ? light.range : 0);
-  const depth = Math.max(0.25, Math.hypot(light.positionView[0]!, light.positionView[1]!, light.positionView[2]!));
+  const depth = Math.max(0.25, Math.hypot(finiteOrZero(light.positionView[0]), finiteOrZero(light.positionView[1]), finiteOrZero(light.positionView[2])));
   const cone = "outerConeCos" in light && typeof (light as Partial<SpotLight>).outerConeCos === "number"
     ? Math.max(0.05, (1 + (light as SpotLight).outerConeCos) * 0.5) : 1;
   return luminance * intensity * range * range * cone / (depth * depth);
 }
+
+function finiteOrZero(value: number | undefined): number { return typeof value === "number" && Number.isFinite(value) ? value : 0; }

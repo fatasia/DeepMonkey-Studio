@@ -13,7 +13,7 @@ import {
   type GltfMorphImportOptions,
 } from "./morphTypes.js";
 import { parseGlb } from "./parseGlb.js";
-import { array, budget, invalid, list, noExtensions, object, reference, unsupported, validateJson, type JsonObject } from "./validation.js";
+import { abortSignal, array, budget, invalid, list, noExtensions, object, reference, unsupported, validateJson, type JsonObject } from "./validation.js";
 
 interface DecodedMorphMesh {
   readonly primitives: readonly MorphPrimitiveSource[];
@@ -27,6 +27,7 @@ export function decodeMorphGlb<TNodeId extends SpatialItemId = number>(
   bytes: Uint8Array,
   options: GltfMorphImportOptions<TNodeId> = {},
 ): DecodedMorphGlb<TNodeId> {
+  object(options, "options"); abortSignal(options.signal, "options.signal")?.throwIfAborted();
   const parsed = parseGlb(bytes);
   validateJson(parsed.json);
   const document = validateAnimationDocument(parsed.json);
@@ -50,9 +51,10 @@ export function decodeMorphDocument<TNodeId extends SpatialItemId = number>(
     if (node.weights !== undefined && node.mesh === undefined) invalid(`nodes[${selected.sourceNodeIndex}].weights`, "Morph weights require a mesh.");
     if (node.mesh !== undefined) selectedMeshIndices.add(reference(sourceMeshes, node.mesh, `nodes[${selected.sourceNodeIndex}].mesh`));
   }
-  const reader = new MorphAccessorReader(document, buffers, limits), meshes = new Map<number, DecodedMorphMesh>();
+  const reader = new MorphAccessorReader(document, buffers, limits, options.signal), meshes = new Map<number, DecodedMorphMesh>();
   let primitiveCount = 0;
   for (const meshIndex of [...selectedMeshIndices].sort(numberOrder)) {
+    options.signal?.throwIfAborted();
     const decoded = decodeMesh(sourceMeshes[meshIndex], meshIndex, reader, limits, primitiveCount);
     primitiveCount += decoded?.primitives.length ?? 0;
     if (decoded) meshes.set(meshIndex, decoded);
@@ -150,6 +152,7 @@ function decodeWeightAnimations<TId extends SpatialItemId>(document: JsonObject,
   const sourceNodes = list(document.nodes, "nodes", limits.maxNodes), animations = list(document.animations, "animations", limits.maxAnimations);
   const clips: MorphWeightClip<TId>[] = [];
   animations.forEach((value, animationIndex) => {
+    if ((animationIndex & 0x3ff) === 0) limits.signal?.throwIfAborted();
     const path = `animations[${animationIndex}]`, animation = object(value, path); noExtensions(animation, path);
     if (animation.name !== undefined && typeof animation.name !== "string") invalid(`${path}.name`, "Animation name must be a string.");
     const samplers = array(animation.samplers, `${path}.samplers`, limits.maxChannelsPerAnimation)
@@ -159,6 +162,7 @@ function decodeWeightAnimations<TId extends SpatialItemId>(document: JsonObject,
     const usedSamplers = new Set<number>();
     const tracks: MorphWeightTrack<TId>[] = []; let duration = 0;
     channels.forEach((value, channelIndex) => {
+      if ((channelIndex & 0x3ff) === 0) limits.signal?.throwIfAborted();
       const channelPath = `${path}.channels[${channelIndex}]`, channel = object(value, channelPath); noExtensions(channel, channelPath);
       const samplerIndex = reference(samplers, channel.sampler, `${channelPath}.sampler`), target = object(channel.target, `${channelPath}.target`);
       usedSamplers.add(samplerIndex);

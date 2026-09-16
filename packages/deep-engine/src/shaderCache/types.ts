@@ -1,5 +1,6 @@
 import type { DeepShaderPackageV2, ShaderPackagePass } from "../shaderPackage/index.js";
 import type { DeepPbrMeshShaderAbiId } from "../shaderAbi/index.js";
+import type { ResidencyDiagnosticsHooks } from "../residencyDiagnostics.js";
 
 export const DEEP_SHADER_CACHE_SCHEMA = "deep.shader-cache-record" as const;
 export const DEEP_SHADER_CACHE_SCHEMA_VERSION = 1 as const;
@@ -87,6 +88,8 @@ export interface ShaderDevicePipelineCachePoolOptions<T extends object> {
   readonly deviceEpoch: string;
   readonly maxEntries?: number;
   readonly dispose?: (value: T) => void;
+  /** Omit to keep diagnostics disabled with no clock reads or sample allocations. */
+  readonly diagnostics?: ResidencyDiagnosticsHooks;
 }
 
 export interface ShaderPipelineAtomicBatch<T extends object> {

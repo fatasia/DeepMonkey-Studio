@@ -1,6 +1,6 @@
 import type { SpatialItemId } from "../spatial/types.js";
 import type { GltfMorphImportConfiguration, GltfMorphImportOptions } from "./morphTypes.js";
-import { MAX_BYTES, invalid, object } from "./validation.js";
+import { MAX_BYTES, abortSignal, invalid, object } from "./validation.js";
 
 export const DEEP_GLTF_MORPH_LIMITS = Object.freeze({
   maxNodes: 250_000,
@@ -16,6 +16,7 @@ export const DEEP_GLTF_MORPH_LIMITS = Object.freeze({
 
 export function resolveMorphOptions<TId extends SpatialItemId>(options: GltfMorphImportOptions<TId>): GltfMorphImportConfiguration {
   object(options, "options");
+  const signal = abortSignal(options.signal, "options.signal"); signal?.throwIfAborted();
   if (options.mapNodeId !== undefined && typeof options.mapNodeId !== "function") invalid("options.mapNodeId", "Expected a function.");
   const resourcePrefix = prefix(options.resourcePrefix, "resourcePrefix", "gltf");
   const clipPrefix = prefix(options.clipPrefix, "clipPrefix", "gltf");
@@ -31,6 +32,7 @@ export function resolveMorphOptions<TId extends SpatialItemId>(options: GltfMorp
     maxChannelsPerAnimation: limit(options.maxChannelsPerAnimation, DEEP_GLTF_MORPH_LIMITS.maxChannelsPerAnimation, "maxChannelsPerAnimation"),
     maxKeysPerTrack: limit(options.maxKeysPerTrack, DEEP_GLTF_MORPH_LIMITS.maxKeysPerTrack, "maxKeysPerTrack"),
     maxDecodedBytes: limit(options.maxDecodedBytes, DEEP_GLTF_MORPH_LIMITS.maxDecodedBytes, "maxDecodedBytes"),
+    ...(signal ? { signal } : {}),
   });
 }
 

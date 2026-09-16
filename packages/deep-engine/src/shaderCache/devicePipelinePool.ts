@@ -1,5 +1,8 @@
 import { sha256Utf8, validateDeepShaderPackage } from "../shaderPackage/index.js";
 import type { DeepShaderPackageV2, ShaderPackagePass } from "../shaderPackage/index.js";
+import type {
+  ResidencyCacheActivity, ResidencyDiagnosticsHooks, ResidencyOperationOutcome,
+} from "../residencyDiagnostics.js";
 import { SharedOperations } from "./async.js";
 import {
   shaderCacheIdentity, shaderPipelineCacheKey, shaderPipelineIdentity,
@@ -34,6 +37,7 @@ export class ShaderDevicePipelineCachePool<T extends object> {
   private readonly operations = new SharedOperations<readonly BatchEntry<T>[]>();
   private readonly namespace: string;
   private readonly disposeValue;
+  private diagnostics: ResidencyDiagnosticsHooks | undefined;
   private epoch: string;
   private generation = 0;
 
@@ -56,6 +60,10 @@ export class ShaderDevicePipelineCachePool<T extends object> {
       throw new ShaderCacheError("Pipeline dispose callback must be a function.", "invalid-config");
     }
     this.disposeValue = options.dispose;
+    this.diagnostics = enabledDiagnostics(options.diagnostics);
+    this.safely(() => this.diagnostics!.recorder.beginGeneration({
+      generation: this.generation, deviceEpoch: this.epoch,
+    }));
   }
 
   get size(): number { return this.memory.size; }
@@ -69,12 +77,20 @@ export class ShaderDevicePipelineCachePool<T extends object> {
     if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new ShaderCacheAbortError();
     const { packageValue, passes } = this.resolve(batch);
     const resolved = passes.map((pass) => ({ key: this.keyFor(packageValue, pass), pass }));
+    if (this.diagnostics) {
+      let hits = 0;
+      for (const entry of resolved) if (this.memory.has(entry.key)) hits += 1;
+      if (hits) { this.activity("hit", hits); this.activity("reuse", hits); }
+      if (hits < resolved.length) this.activity("miss", resolved.length - hits);
+    }
     const first = this.readAll(resolved);
     if (first) return first;
     const operationKey = `deep-pipeline-batch/v1/${sha256Utf8(
       resolved.map((entry) => entry.key).slice().sort().join("\n"),
     )}`;
+    if (this.diagnostics && this.operations.has(operationKey)) this.activity("reuse", resolved.length);
     const generation = this.generation;
+    const deviceEpoch = this.epoch;
     const entries = await this.operations.run(operationKey, async (operationSignal) => {
       const existing = new Map<string, T>();
       for (const entry of resolved) {
@@ -84,17 +100,24 @@ export class ShaderDevicePipelineCachePool<T extends object> {
       const missing = resolved.filter((entry) => !existing.has(entry.key));
       if (missing.length === 0) return resolved.map((entry) => ({ key: entry.key, value: existing.get(entry.key)! }));
       let created: readonly T[];
-      try { created = await batch.create(packageValue, missing.map((entry) => entry.pass), operationSignal); }
-      catch (error) { throw error; }
-      if (!Array.isArray(created) || created.length !== missing.length
-        || created.some((value) => value === null || typeof value !== "object")) {
-        for (const value of created ?? []) if (value && typeof value === "object") this.disposeSafely(value);
-        throw new ShaderCacheError("Atomic pipeline factory returned an invalid candidate set.", "invalid-config");
+      const startedAt = this.readClock();
+      try {
+        created = await batch.create(packageValue, missing.map((entry) => entry.pass), operationSignal);
+        if (!Array.isArray(created) || created.length !== missing.length
+          || created.some((value) => value === null || typeof value !== "object")) {
+          for (const value of created ?? []) if (value && typeof value === "object") this.disposeSafely(value);
+          throw new ShaderCacheError("Atomic pipeline factory returned an invalid candidate set.", "invalid-config");
+        }
+      } catch (error) {
+        this.timing(operationSignal.aborted ? "aborted" : "failure", startedAt, generation, deviceEpoch);
+        throw error;
       }
       if (operationSignal.aborted || generation !== this.generation) {
+        this.timing("aborted", startedAt, generation, deviceEpoch);
         for (const value of created) this.disposeSafely(value);
         throw new ShaderCacheError("Atomic pipeline batch was invalidated before publication.", "invalidated");
       }
+      this.timing("success", startedAt, generation, deviceEpoch);
       const createdByKey = new Map(missing.map((entry, index) => [entry.key, created[index]!]));
       for (const entry of missing) {
         const concurrent = this.memory.get(entry.key);
@@ -108,6 +131,7 @@ export class ShaderDevicePipelineCachePool<T extends object> {
         missing.forEach((entry, index) => {
           if (this.memory.has(entry.key)) return;
           for (const evicted of this.memory.set(entry.key, createdByKey.get(entry.key) ?? created[index]!)) {
+            this.activity("evict", 1);
             this.disposeSafely(evicted.value);
           }
         });
@@ -131,7 +155,12 @@ export class ShaderDevicePipelineCachePool<T extends object> {
   clearDeviceLocal(): void {
     this.generation += 1;
     this.operations.abortAll(new ShaderCacheAbortError("Shader device pipeline pool was invalidated."));
-    for (const value of this.memory.clear()) this.disposeSafely(value);
+    const cleared = this.memory.clear();
+    this.safely(() => this.diagnostics!.recorder.beginGeneration({
+      generation: this.generation, deviceEpoch: this.epoch,
+    }));
+    if (cleared.length) this.activity("evict", cleared.length);
+    for (const value of cleared) this.disposeSafely(value);
   }
 
   private resolve(batch: ShaderPipelineAtomicBatch<T>): {
@@ -178,4 +207,42 @@ export class ShaderDevicePipelineCachePool<T extends object> {
   private disposeSafely(value: T): void {
     try { this.disposeValue?.(value); } catch { /* Disposal cannot poison cache state. */ }
   }
+
+  private activity(activity: ResidencyCacheActivity, count: number): void {
+    this.safely(() => this.diagnostics!.recorder.record({ kind: "activity", domain: "pipeline",
+      activity, count, generation: this.generation, deviceEpoch: this.epoch }));
+  }
+
+  private readClock(): number | undefined {
+    if (!this.diagnostics) return undefined;
+    try {
+      const value = this.diagnostics.clock.now();
+      if (!Number.isFinite(value) || value < 0) throw new Error("Invalid diagnostics clock.");
+      return value;
+    } catch { this.diagnostics = undefined; return undefined; }
+  }
+
+  private timing(outcome: ResidencyOperationOutcome, startedAt: number | undefined,
+    generation: number, deviceEpoch: string): void {
+    if (startedAt === undefined || !this.diagnostics) return;
+    const endedAt = this.readClock();
+    if (endedAt === undefined || endedAt < startedAt) { this.diagnostics = undefined; return; }
+    this.safely(() => this.diagnostics!.recorder.record({ kind: "timing", domain: "pipeline",
+      operation: "compile", outcome, durationMs: endedAt - startedAt, generation, deviceEpoch }));
+  }
+
+  private safely(operation: () => void): void {
+    if (!this.diagnostics) return;
+    try { operation(); } catch { this.diagnostics = undefined; }
+  }
+}
+
+function enabledDiagnostics(value: ResidencyDiagnosticsHooks | undefined): ResidencyDiagnosticsHooks | undefined {
+  if (!value) return undefined;
+  if (!value.recorder || typeof value.recorder.enabled !== "boolean"
+    || typeof value.recorder.beginGeneration !== "function" || typeof value.recorder.record !== "function"
+    || typeof value.clock?.now !== "function") {
+    throw new ShaderCacheError("Pipeline diagnostics hooks are invalid.", "invalid-config");
+  }
+  return value.recorder.enabled ? value : undefined;
 }

@@ -1,7 +1,11 @@
 import type { ClusteredLights, DirectionalLight, LightVector3, PointLight, SpotLight } from "./types.js";
+import type { AuthoredDirectionalShadow } from "../shadows/authoredDirectionalShadow.js";
 
 export interface WorldDirectionalLight extends Omit<DirectionalLight, "directionView"> {
   readonly directionWorld: LightVector3;
+  /** Primary directional shadow switch; omitted preserves the preview's enabled default. */
+  readonly castShadow?: boolean;
+  readonly shadow?: AuthoredDirectionalShadow;
 }
 
 export interface WorldPointLight extends Omit<PointLight, "positionView"> {
@@ -12,7 +16,21 @@ export interface WorldSpotLight extends WorldPointLight, Omit<SpotLight, "positi
   readonly directionWorld: LightVector3;
 }
 
+export interface WorldAmbientLight {
+  readonly color: LightVector3;
+  readonly intensity: number;
+}
+
+export interface WorldHemisphereLight {
+  readonly directionWorld: LightVector3;
+  readonly skyColor: LightVector3;
+  readonly groundColor: LightVector3;
+  readonly intensity: number;
+}
+
 export interface WorldClusteredLights {
+  readonly ambient?: readonly WorldAmbientLight[];
+  readonly hemisphere?: readonly WorldHemisphereLight[];
   readonly directional?: readonly WorldDirectionalLight[];
   readonly points?: readonly WorldPointLight[];
   readonly spots?: readonly WorldSpotLight[];
@@ -55,11 +73,13 @@ export function transformWorldLightsToView(lights: WorldClusteredLights, worldTo
   }));
   const points = (lights.points ?? []).map(light => Object.freeze({
     positionView: transform(worldToView, light.positionWorld, true), range: light.range, color: light.color, intensity: light.intensity,
+    ...(light.shadow ? { shadow: light.shadow } : {}),
   }));
   const spots = (lights.spots ?? []).map(light => Object.freeze({
     positionView: transform(worldToView, light.positionWorld, true), directionView: transform(worldToView, light.directionWorld, false),
     range: light.range, color: light.color, intensity: light.intensity,
     innerConeCos: light.innerConeCos, outerConeCos: light.outerConeCos,
+    ...(light.shadow ? { shadow: light.shadow } : {}),
   }));
   return Object.freeze({ directional: Object.freeze(directional), points: Object.freeze(points), spots: Object.freeze(spots) });
 }

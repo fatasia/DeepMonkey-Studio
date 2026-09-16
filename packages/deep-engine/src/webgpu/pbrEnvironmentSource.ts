@@ -2,6 +2,8 @@ import type { RadianceHdrImage } from "../textures/radianceHdr.js";
 import { createHdrEnvironment, type HdrEnvironmentOptions } from "./hdrEnvironment.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { createStudioEnvironment, type StudioEnvironment } from "./studioEnvironment.js";
+import { createPrefilteredEnvironment } from "./prefilteredEnvironment.js";
+import type { RuntimePrefilteredIbl } from "../runtimePackage/environmentTypes.js";
 
 function cancelled(reason: unknown): Error {
   if (reason instanceof Error) return reason;
@@ -10,9 +12,11 @@ function cancelled(reason: unknown): Error {
 
 export type PbrEnvironmentSource =
   | { readonly kind: "studio" }
+  | { readonly kind: "prefiltered-ibl"; readonly environment: RuntimePrefilteredIbl }
   | {
     readonly kind: "radiance-hdr";
     readonly image: RadianceHdrImage;
+    readonly backgroundImage?: RadianceHdrImage;
     readonly options?: HdrEnvironmentOptions;
   };
 
@@ -21,7 +25,7 @@ function assertSource(source: PbrEnvironmentSource | undefined): void {
   if (!source || typeof source !== "object" || Array.isArray(source)) {
     throw new TypeError("PBR environment source must be an object.");
   }
-  if (source.kind !== "studio" && source.kind !== "radiance-hdr") {
+  if (source.kind !== "studio" && source.kind !== "radiance-hdr" && source.kind !== "prefiltered-ibl") {
     throw new RangeError("Unknown PBR environment source.");
   }
 }
@@ -32,5 +36,6 @@ export async function createPbrEnvironment(session: DeviceSession, source: PbrEn
   assertSource(source);
   if (signal.aborted) throw cancelled(signal.reason);
   if (!source || source.kind === "studio") return await createStudioEnvironment(session, signal);
-  return await createHdrEnvironment(session, source.image, source.options, signal);
+  if (source.kind === "prefiltered-ibl") return await createPrefilteredEnvironment(session, source.environment, signal);
+  return await createHdrEnvironment(session, source.image, source.options, signal, source.backgroundImage);
 }

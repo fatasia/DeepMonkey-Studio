@@ -3,9 +3,9 @@ export type ShaderAbiDataStorage = "uniform" | "vertex";
 export type ShaderAbiDataFormat = "mat4x4<f32>" | "vec4<f32>";
 export type ShaderAbiVertexFormat = "float32x2" | "float32x3" | "float32x4";
 export type ShaderAbiDataLayoutId = "frame" | "material" | "instance" | "cascaded-shadow";
-export type ShaderAbiVertexStreamId = "geometry" | "instance" | "tangent";
-export type ShaderAbiBindGroupLayoutId = "forward-frame" | "shadow-frame" | "material";
-export type ShaderAbiAttachmentProfileId = "forward-opaque" | "forward-blend" | "shadow";
+export type ShaderAbiVertexStreamId = "geometry" | "instance" | "tangent" | "color";
+export type ShaderAbiBindGroupLayoutId = "forward-frame" | "shadow-frame" | "view-frame" | "material";
+export type ShaderAbiAttachmentProfileId = "forward-opaque" | "forward-blend" | "shadow" | "depth" | "picking";
 
 export interface ShaderAbiDataMember {
   readonly name: string;
@@ -95,7 +95,7 @@ export interface ShaderAbiDepthAttachment {
 
 export interface ShaderAbiAttachmentProfile {
   readonly id: ShaderAbiAttachmentProfileId;
-  readonly pass: "forward" | "shadow";
+  readonly pass: "forward" | "depth" | "shadow" | "picking";
   readonly sampleCount: 1 | 4;
   readonly resolve: "required" | "none";
   readonly colorAttachments: readonly ShaderAbiColorAttachment[];
@@ -123,14 +123,19 @@ export interface ShaderAbiMaterialMode {
 }
 
 export interface ShaderAbiEntryPoints {
-  readonly vertex: "vertexMain" | "vertexNormalMapped" | "shadowMain" | "shadowMaskMain";
-  readonly fragment: "fragmentMain" | "fragmentMaterial" | "shadowMaskPlain" | "shadowMaskTextured" | null;
+  readonly vertex: "vertexMain" | "vertexNormalMapped" | "shadowMain" | "shadowMaskMain"
+    | "depthMain" | "depthMaskMain" | "pickingMain" | "pickingMaskMain";
+  readonly fragment: "fragmentMain" | "fragmentMaterial" | "shadowMaskPlain" | "shadowMaskTextured"
+    | "depthMaskPlain" | "depthMaskTextured" | "pickingPlain" | "pickingMaskPlain"
+    | "pickingMaskTextured" | null;
 }
 
 export interface ShaderAbiPassVariant {
   readonly id: "forward-plain" | "forward-material" | "forward-normal"
-    | "shadow-solid" | "shadow-mask-plain" | "shadow-mask-material";
-  readonly pass: "forward" | "shadow";
+    | "shadow-solid" | "shadow-mask-plain" | "shadow-mask-material"
+    | "depth-solid" | "depth-mask-plain" | "depth-mask-material"
+    | "picking-solid" | "picking-mask-plain" | "picking-mask-material";
+  readonly pass: "forward" | "depth" | "shadow" | "picking";
   readonly entryPoints: ShaderAbiEntryPoints;
   readonly attachmentProfiles: readonly ShaderAbiAttachmentProfileId[];
   readonly bindGroupLayouts: readonly ShaderAbiBindGroupLayoutId[];
@@ -141,7 +146,7 @@ export interface ShaderAbiPassVariant {
   readonly rasterModes: readonly ("ccw" | "cw" | "double")[];
 }
 
-export type DeepPbrMeshShaderAbiId = "deep.pbr.mesh.v1" | "deep.pbr.mesh.v2";
+export type DeepPbrMeshShaderAbiId = "deep.pbr.mesh.v1" | "deep.pbr.mesh.v2" | "deep.pbr.mesh.v3" | "deep.pbr.mesh.v4";
 export interface DeepPbrMeshShaderAbi {
   readonly schema: "deep.shader-abi";
   readonly schemaVersion: 1;
@@ -157,3 +162,5 @@ export interface DeepPbrMeshShaderAbi {
 }
 export interface DeepPbrMeshShaderAbiV1 extends DeepPbrMeshShaderAbi { readonly id: "deep.pbr.mesh.v1" }
 export interface DeepPbrMeshShaderAbiV2 extends DeepPbrMeshShaderAbi { readonly id: "deep.pbr.mesh.v2" }
+export interface DeepPbrMeshShaderAbiV3 extends DeepPbrMeshShaderAbi { readonly id: "deep.pbr.mesh.v3" }
+export interface DeepPbrMeshShaderAbiV4 extends DeepPbrMeshShaderAbi { readonly id: "deep.pbr.mesh.v4" }

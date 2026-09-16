@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { createRuntimePackageLodInput } from "../../scripts/runtimePackageLodFixture.mjs";
 import { prepareRenderPacket, type RenderPacket } from "../renderPacket.js";
 import { buildDeepRuntimePackage, parseDeepRuntimePackage, runtimeContentSha256, runtimePackageSha256,
-  serializeDeepRuntimePackage, validateDeepRuntimePackage, type BuildDeepRuntimePackageInput } from "./index.js";
+  buildRuntimePackagePrewarmPlan, serializeDeepRuntimePackage, validateDeepRuntimePackage,
+  type BuildDeepRuntimePackageInput } from "./index.js";
 
 const goldenPath = new URL("../../../deep-engine-native/tests/fixtures/runtime-package-lod-v1.json", import.meta.url);
 const golden = () => JSON.parse(readFileSync(goldenPath, "utf8"));
@@ -63,6 +64,21 @@ describe("runtime package native LOD input", () => {
     const reordered = { ...source.renderPacket.value, instances: [...source.renderPacket.value.instances].reverse() };
     expect(buildDeepRuntimePackage({ ...source, renderPacket: { ...source.renderPacket, value: reordered } }).packageHash.value)
       .not.toBe(buildDeepRuntimePackage(source).packageHash.value);
+  });
+  it("carries baked LOD fallbacks and meshlet ranges into runtime prewarm identity", () => {
+    const source = input();
+    const plan = buildRuntimePackagePrewarmPlan(buildDeepRuntimePackage(source));
+    const render = plan.items.find(item => item.type === "resource" && item.resourceKind === "render-packet");
+    const batches = render?.bake?.residencyBatches;
+    expect(batches).toBeDefined();
+    expect(batches?.every(batch => batch.fallbackGeometry === "lod.low" && batch.levels.map(level => level.geometry)
+      .join(",") === "lod.high,lod.middle,lod.low" && batch.levels.map(level => level.meshletOffset).join(",") === "0,2,1"
+      && batch.levels.every(level => level.meshletCount === 1 && /^[a-f0-9]{16}$/.test(level.meshletHash)))).toBe(true);
+    const updated = input();
+    (updated.renderPacket.value.instances[0]!.lod!.levels as { resident?: boolean }[])[1]!.resident = true;
+    const changed = buildRuntimePackagePrewarmPlan(buildDeepRuntimePackage(updated));
+    const changedRender = changed.items.find(item => item.type === "resource" && item.resourceKind === "render-packet");
+    expect(changedRender?.bake?.cacheKey).not.toBe(render?.bake?.cacheKey);
   });
   it.each([
     ["null profile", p => { p.instances[0].lod = null; }],

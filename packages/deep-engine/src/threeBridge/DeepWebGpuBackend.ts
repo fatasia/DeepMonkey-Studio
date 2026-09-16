@@ -1,11 +1,12 @@
+import { snapshotEnvironment, snapshotRendererOptions } from "./deepWebGpuOptions.js";
 import { ThreeProjectionBridge } from "./ThreeProjectionBridge.js";
+import { AuthorChunkStream, type AuthorChunkStreamRuntime } from "./authorChunkStream.js";
 import type { ProjectionIssue, ProjectionResult, ThreeObjectSource } from "./types.js";
 import type { InstanceUpdate, RenderPacket } from "../renderPacket.js";
 import { PbrRenderer, type FrameMetrics, type PbrRendererOptions, type RenderView } from "../webgpu/pbrRenderer.js";
-import { resolvePbrRendererFeatures } from "../webgpu/pbrRendererFeatures.js";
 import type { PbrEnvironmentSource } from "../webgpu/pbrEnvironmentSource.js";
-import { CASCADED_SHADOW_QUALITY_PROFILES,
-  type CascadedShadowQualityTier } from "../shadows/shadowQuality.js";
+import { snapshotShadows, shadowSelection, type DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
+export type { DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
 
 type DeepWebGpuCanvas = Parameters<typeof PbrRenderer.create>[0];
 
@@ -16,12 +17,19 @@ export interface DeepWebGpuRenderRuntime {
   updateInstances(update: InstanceUpdate): void;
   render(view: RenderView): FrameMetrics | undefined;
   validateFrame(view: RenderView): Promise<FrameMetrics>;
+  stageEnvironment?(source: PbrEnvironmentSource, signal?: AbortSignal): Promise<"staged" | "superseded">;
+  stageShadowMapSize?(mapSize: number, signal?: AbortSignal): Promise<"staged" | "superseded">;
   dispose(): void;
 }
 
 export interface DeepWebGpuBackendOptions {
+  readonly authorChunks?: boolean;
+  readonly meshlets?: boolean;
+  readonly deformation?: boolean;
   /** Three 相机图层掩码；未传时使用默认图层 1。 */
   readonly cameraLayerMask?: number;
+  /** Allocation evidence expected when preparing an existing runtime. */
+  readonly expectedShadows?: NonNullable<PbrRendererOptions["shadows"]>;
 }
 
 export interface DeepWebGpuRuntimeFactory {
@@ -37,11 +45,6 @@ export interface DeepWebGpuBackendCreateRequest extends DeepWebGpuBackendOptions
   readonly view: RenderView;
   readonly renderer?: PbrRendererOptions;
   readonly signal?: AbortSignal;
-}
-
-export interface DeepWebGpuShadowSelection {
-  readonly selectedTier: CascadedShadowQualityTier;
-  readonly estimatedDepthTextureBytes: number;
 }
 
 export class DeepWebGpuProjectionError extends Error {
@@ -68,6 +71,8 @@ export class DeepWebGpuBackend {
   private disposed = false;
   private syncGeneration = 0;
   private shadowSelectionValue: DeepWebGpuShadowSelection | undefined;
+  private readonly expectedShadows: PbrRendererOptions["shadows"];
+  private chunks: AuthorChunkStream | undefined;
 
   constructor(
     readonly runtime: DeepWebGpuRenderRuntime,
@@ -75,6 +80,24 @@ export class DeepWebGpuBackend {
     private readonly options: DeepWebGpuBackendOptions = {},
   ) {
     if (runtime.id !== this.id) throw new Error(`Deep runtime id must be ${this.id}.`);
+    if (options.authorChunks !== undefined && typeof options.authorChunks !== "boolean") throw new TypeError("authorChunks must be boolean.");
+    if (options.meshlets !== undefined && typeof options.meshlets !== "boolean") throw new TypeError("meshlets must be boolean.");
+    this.expectedShadows = options.expectedShadows === undefined ? undefined : snapshotShadows(options.expectedShadows);
+  }
+
+  async stageEnvironment(source: PbrEnvironmentSource, signal?: AbortSignal): Promise<"staged" | "superseded"> {
+    if (this.disposed) throw new Error("Deep backend is disposed.");
+    if (!this.runtime.stageEnvironment) throw new Error("Deep runtime cannot stage environment changes.");
+    return this.runtime.stageEnvironment(snapshotEnvironment(source), signal);
+  }
+
+  async stageShadowMapSize(mapSize: number, signal?: AbortSignal): Promise<"staged" | "superseded"> {
+    if (this.disposed) throw new Error("Deep backend is disposed.");
+    if (!this.runtime.stageShadowMapSize) throw new Error("Deep runtime cannot stage shadow map changes.");
+    if (!Number.isSafeInteger(mapSize) || mapSize < 64 || mapSize > 16_384) {
+      throw new RangeError("Invalid exact shadow map size.");
+    }
+    return this.runtime.stageShadowMapSize(mapSize, signal);
   }
 
   /** Creates and validates an owned PBR runtime from an immutable settings snapshot. */
@@ -84,6 +107,7 @@ export class DeepWebGpuBackend {
     const signal = validated.signal ?? new AbortController().signal;
     if (signal.aborted) throw abortError("Deep backend creation cancelled.");
     const renderer = snapshotRendererOptions(validated.renderer ?? {});
+    const authorChunks = validated.authorChunks;
     const runtime = await factory.create(validated.canvas, validated.gpu, signal, renderer);
     if (signal.aborted) {
       runtime.dispose();
@@ -91,6 +115,9 @@ export class DeepWebGpuBackend {
     }
     return DeepWebGpuBackend.prepare(runtime, validated.projection, validated.root, validated.view, {
       ...(validated.cameraLayerMask === undefined ? {} : { cameraLayerMask: validated.cameraLayerMask }), signal,
+      ...(renderer.shadows === undefined ? {} : { expectedShadows: renderer.shadows }),
+      ...(authorChunks === undefined ? {} : { authorChunks }),
+      ...(renderer.meshlets === undefined ? {} : { meshlets: renderer.meshlets }),
     });
   }
 
@@ -120,18 +147,26 @@ export class DeepWebGpuBackend {
     cameraLayerMask = this.options.cameraLayerMask ?? 1,
     signal?: AbortSignal,
   ): Promise<FrameMetrics> {
-    const synced = await this.sync(root, cameraLayerMask, signal);
+    const synced = await this.sync(root, cameraLayerMask, signal, view);
     if (synced.status === "rejected") throw new DeepWebGpuProjectionError(synced.issues);
     if (synced.status !== "committed" || signal?.aborted) {
       throw abortError("Deep backend preparation cancelled or superseded.");
     }
     const frame = await this.runtime.validateFrame(view);
-    this.shadowSelectionValue = shadowSelection(frame);
+    this.shadowSelectionValue = shadowSelection(frame, this.expectedShadows);
     if (signal?.aborted) throw abortError("Deep backend preparation cancelled.");
     return frame;
   }
 
   get shadowSelection(): DeepWebGpuShadowSelection | undefined { return this.shadowSelectionValue; }
+  get chunkStreaming() { return this.chunks?.diagnostics; }
+  /** Stable host-facing snapshot for Studio diagnostics and support reports. */
+  get diagnostics(): { readonly backend: "deep-webgpu"; readonly chunkStreaming?: AuthorChunkStream["diagnostics"]; readonly shadowSelection?: DeepWebGpuShadowSelection; readonly meshlets: boolean; readonly deformation: boolean } {
+    return Object.freeze({ backend: "deep-webgpu" as const,
+      ...(this.chunks === undefined ? {} : { chunkStreaming: { ...this.chunks.diagnostics } }),
+      ...(this.shadowSelectionValue === undefined ? {} : { shadowSelection: this.shadowSelectionValue }),
+      meshlets: this.options.meshlets === true, deformation: this.options.deformation === true });
+  }
 
   project(root: ThreeObjectSource, cameraLayerMask = this.options.cameraLayerMask ?? 1): ProjectionResult {
     this.assertOpen();
@@ -142,14 +177,29 @@ export class DeepWebGpuBackend {
     root: ThreeObjectSource,
     cameraLayerMask = this.options.cameraLayerMask ?? 1,
     signal?: AbortSignal,
+    view?: RenderView,
   ): Promise<DeepWebGpuSyncResult> {
     this.assertOpen();
     const generation = ++this.syncGeneration;
     const projected = this.projection.project(root, { cameraLayerMask });
     if (!projected.ok) return { status: "rejected", issues: projected.issues };
     try {
-      if (projected.update === "full") await this.runtime.setPacketValidated(projected.packet, signal);
-      else this.runtime.updateInstances({ materials: projected.packet.materials, instances: projected.packet.instances });
+      const staticPacket = projected.packet.deformation === undefined && projected.packet.instances.every(instance => instance.pose === undefined);
+      if (this.options.authorChunks && view && staticPacket && !this.chunks) {
+        const target = this.runtime as unknown as AuthorChunkStreamRuntime;
+        if (!target.session || !target.stageResidentPacketValidated || !target.cancelResidentPacketStage) {
+          throw new Error("Deep runtime cannot stage author chunks.");
+        }
+        this.chunks = new AuthorChunkStream(target, this.options.meshlets);
+      }
+      const streamed = this.chunks && view ? await this.chunks.sync(projected.packet, projected.update === "full", view, signal) : false;
+      if (streamed) { /* The existing renderer publishes the single resident candidate at its frame boundary. */ }
+      else if (projected.update === "full" || this.chunks?.hasCatalog) {
+        await this.runtime.setPacketValidated(projected.packet, signal);
+        this.chunks?.fullPacketPublished(staticPacket ? "view-unavailable" : "deformation");
+      }
+      else this.runtime.updateInstances({ materials: projected.packet.materials, instances: projected.packet.instances,
+        ...(projected.packet.deformation ? { poses: projected.packet.deformation.poses } : {}) });
     } catch (error) {
       if (generation !== this.syncGeneration || this.disposed) {
         return { status: "superseded", update: projected.update, packet: projected.packet };
@@ -174,7 +224,7 @@ export class DeepWebGpuBackend {
     this.syncGeneration++;
     this.shadowSelectionValue = undefined;
     this.projection.clear();
-    this.runtime.dispose();
+    try { this.chunks?.dispose(); } finally { this.runtime.dispose(); }
   }
 
   private assertOpen(): void {
@@ -183,7 +233,6 @@ export class DeepWebGpuBackend {
 }
 
 export type DeepWebGpuBackendRuntime = PbrRenderer;
-
 function abortError(message: string): Error {
   const error = new Error(message);
   error.name = "AbortError";
@@ -194,72 +243,6 @@ function validateCreateRequest(request: DeepWebGpuBackendCreateRequest): DeepWeb
   if (!request || typeof request !== "object" || Array.isArray(request)) {
     throw new TypeError("Deep WebGPU backend create request must be an object.");
   }
+  if (request.authorChunks !== undefined && typeof request.authorChunks !== "boolean") throw new TypeError("authorChunks must be boolean.");
   return request;
-}
-
-function snapshotRendererOptions(options: PbrRendererOptions): PbrRendererOptions {
-  if (!options || typeof options !== "object" || Array.isArray(options)) {
-    throw new TypeError("Deep WebGPU renderer options must be an object.");
-  }
-  if (Object.keys(options).some(key => !["shadows", "features", "environment"].includes(key))) {
-    throw new TypeError("Unknown Deep WebGPU renderer option.");
-  }
-  return Object.freeze({
-    ...(options.shadows === undefined ? {} : { shadows: snapshotShadows(options.shadows) }),
-    ...(options.features === undefined ? {} : { features: resolvePbrRendererFeatures(options.features) }),
-    ...(options.environment === undefined ? {} : { environment: snapshotEnvironment(options.environment) }),
-  });
-}
-
-function snapshotShadows(shadows: NonNullable<PbrRendererOptions["shadows"]>) {
-  if (!shadows || typeof shadows !== "object" || Array.isArray(shadows)) {
-    throw new TypeError("Deep WebGPU shadow options must be an object.");
-  }
-  if (Object.keys(shadows).some(key => key !== "requestedTier" && key !== "maxDepthTextureBytes")) {
-    throw new TypeError("Unknown Deep WebGPU shadow option.");
-  }
-  if (shadows.requestedTier !== undefined
-    && !Object.hasOwn(CASCADED_SHADOW_QUALITY_PROFILES, shadows.requestedTier)) {
-    throw new RangeError(`Unknown cascaded shadow quality tier: ${String(shadows.requestedTier)}.`);
-  }
-  if (shadows.maxDepthTextureBytes !== undefined
-    && (!Number.isSafeInteger(shadows.maxDepthTextureBytes) || shadows.maxDepthTextureBytes < 1)) {
-    throw new RangeError("Invalid maximum shadow depth bytes.");
-  }
-  return Object.freeze({ ...shadows });
-}
-
-function snapshotEnvironment(source: PbrEnvironmentSource): PbrEnvironmentSource {
-  if (!source || typeof source !== "object" || Array.isArray(source)) {
-    throw new TypeError("Deep WebGPU environment source must be an object.");
-  }
-  if (source.kind === "studio") return Object.freeze({ kind: "studio" });
-  if (source.kind !== "radiance-hdr") throw new RangeError("Unknown Deep WebGPU environment source.");
-  const image = source.image;
-  if (!image || !Number.isSafeInteger(image.width) || !Number.isSafeInteger(image.height)
-    || image.width < 1 || image.height < 1 || !(image.data instanceof Float32Array)
-    || image.data.length !== image.width * image.height * 3) {
-    throw new TypeError("Deep WebGPU HDR environment image must be an owned RGB32F image.");
-  }
-  const options = source.options;
-  if (options !== undefined) {
-    const allowed = ["specularSize", "diffuseSize", "sampleCount", "maxUploadBytes", "maxRadiance"];
-    if (!options || typeof options !== "object" || Array.isArray(options)
-      || Object.keys(options).some(key => !allowed.includes(key))) {
-      throw new TypeError("Unknown Deep WebGPU HDR environment option.");
-    }
-  }
-  return Object.freeze({ kind: "radiance-hdr", image, ...(options === undefined ? {} : { options: Object.freeze({ ...options }) }) });
-}
-
-function shadowSelection(frame: FrameMetrics): DeepWebGpuShadowSelection {
-  if (!Object.hasOwn(CASCADED_SHADOW_QUALITY_PROFILES, frame.shadowTier)) {
-    throw new Error(`Deep runtime reported an unknown shadow tier: ${String(frame.shadowTier)}.`);
-  }
-  const selectedTier = frame.shadowTier as CascadedShadowQualityTier;
-  const expectedBytes = CASCADED_SHADOW_QUALITY_PROFILES[selectedTier].estimatedDepthTextureBytes;
-  if (frame.shadowDepthBytes !== expectedBytes) {
-    throw new Error(`Deep runtime reported ${frame.shadowDepthBytes} shadow bytes for ${selectedTier}; expected ${expectedBytes}.`);
-  }
-  return Object.freeze({ selectedTier, estimatedDepthTextureBytes: expectedBytes });
 }

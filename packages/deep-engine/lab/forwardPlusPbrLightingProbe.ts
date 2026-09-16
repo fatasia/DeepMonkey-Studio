@@ -19,7 +19,7 @@ struct ProbeSurface {
 }
 @fragment fn probeFragment(@builtin(position) fragment: vec4f) -> @location(0) vec4f {
   return vec4f(deepForwardPlusPbr(fragment.xy, probeSurface.positionView.xyz, probeSurface.normalMetallic.xyz,
-    probeSurface.baseRoughness.xyz, probeSurface.normalMetallic.w, probeSurface.baseRoughness.w), 1.0);
+    probeSurface.positionView.xyz, probeSurface.baseRoughness.xyz, probeSurface.normalMetallic.w, probeSurface.baseRoughness.w), 1.0);
 }`;
 
 export interface ForwardPlusPbrProbeResult {

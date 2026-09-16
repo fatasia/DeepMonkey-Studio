@@ -1,6 +1,7 @@
 import {
   DEEP_PBR_MESH_V1_CANONICAL_JSON, DEEP_PBR_MESH_V1_SHA256, canonicalShaderAbiJson,
   DEEP_PBR_MESH_V2_CANONICAL_JSON, DEEP_PBR_MESH_V2_SHA256,
+  DEEP_PBR_MESH_V3_CANONICAL_JSON, DEEP_PBR_MESH_V3_SHA256,
 } from "../shaderAbi/index.js";
 import {
   DEEP_SHADER_PACKAGE_BUDGETS, DEEP_SHADER_PACKAGE_SCHEMA,
@@ -50,12 +51,14 @@ function validateShaderAbi(
     return undefined;
   }
   exactFields(value, ["id", "contentHash", "contract"], path, diagnostics);
-  if (value.id !== "deep.pbr.mesh.v1" && value.id !== "deep.pbr.mesh.v2") {
+  if (!["deep.pbr.mesh.v1", "deep.pbr.mesh.v2", "deep.pbr.mesh.v3"].includes(String(value.id))) {
     issue(diagnostics, "invalid-value", `${path}.id`, "Unsupported shader ABI.");
   }
   validateHash(value.contentHash, `${path}.contentHash`, diagnostics);
-  const expectedHash = value.id === "deep.pbr.mesh.v2" ? DEEP_PBR_MESH_V2_SHA256 : DEEP_PBR_MESH_V1_SHA256;
-  const expectedContract = value.id === "deep.pbr.mesh.v2" ? DEEP_PBR_MESH_V2_CANONICAL_JSON : DEEP_PBR_MESH_V1_CANONICAL_JSON;
+  const expectedHash = value.id === "deep.pbr.mesh.v3" ? DEEP_PBR_MESH_V3_SHA256
+    : value.id === "deep.pbr.mesh.v2" ? DEEP_PBR_MESH_V2_SHA256 : DEEP_PBR_MESH_V1_SHA256;
+  const expectedContract = value.id === "deep.pbr.mesh.v3" ? DEEP_PBR_MESH_V3_CANONICAL_JSON
+    : value.id === "deep.pbr.mesh.v2" ? DEEP_PBR_MESH_V2_CANONICAL_JSON : DEEP_PBR_MESH_V1_CANONICAL_JSON;
   if (record(value.contentHash) && value.contentHash.value !== expectedHash) {
     issue(diagnostics, "hash-mismatch", `${path}.contentHash.value`, "Shader ABI fingerprint mismatch.");
   }
@@ -135,7 +138,9 @@ function validatePass(
   validString(item.techniqueId, `${path}.techniqueId`, diagnostics, SYMBOL_PATTERN);
   validString(item.passId, `${path}.passId`, diagnostics, SYMBOL_PATTERN);
   if (typeof item.techniqueId === "string" && typeof item.passId === "string" && item.id !== `${item.techniqueId}/${item.passId}`) issue(diagnostics, "invalid-value", `${path}.id`, "Pass ID must be techniqueId/passId.");
-  if (item.kind !== "forward" && item.kind !== "shadow") issue(diagnostics, "invalid-value", `${path}.kind`, "Only ABI render passes are supported.");
+  if (!["forward", "depth", "shadow", "picking"].includes(String(item.kind))) {
+    issue(diagnostics, "invalid-value", `${path}.kind`, "Only ABI render passes are supported.");
+  }
   validString(item.moduleId, `${path}.moduleId`, diagnostics, RECORD_ID_PATTERN);
   validString(item.cacheKey, `${path}.cacheKey`, diagnostics, HASH_PATTERN);
   const module = typeof item.moduleId === "string" ? modules.get(item.moduleId) : undefined;

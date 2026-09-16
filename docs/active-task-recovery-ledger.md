@@ -1717,3 +1717,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成(在工作树,已验证未提交):`pbrFramePlanResources.ts`(21 资源合同+尺寸推导)+`pbrFramePlanExecutor.ts`(编译计划→有序执行计划+unmapped 显式+计划↔实际对拍+移相器未映射不可用回执)+16 测试全过;renderGraph 加只读 declaredPasses();pbrFrameGraph 抽 builder 工厂并修正 apply-ambient-occlusion 漏 view-normal(对拍逼出真实漂移);pbrOutputBindings/pbrPostProcessChain/pbrTransparencyPass/pbrOpaquePass 加 describe* 实际执行描述。purity 门禁复跑通过。
 - **暂缓落地原因(如实)**:执行器传递闭包含并行会话未提交的 transparency/OIT 文件组(pbrOpaquePass/pbrTransparencyPass/postprocess 类型文件等 4-9 个),经验证编译+26 定向测试绿,但归属他 session 在途工作;按「不代提交他人未验证工作+HEAD 自洽」纪律,待其落地后本切片立即随行提交,或经协调后整组提交。
 - 边界(如实):真实 GPU 提交顺序未改(合同+对拍+回执层);像素级画面一致归真机门禁。
+
+### 2026-09-17 DE26/C02 顶点色+平面着色贯通(GLM 子代理实现,主线程整树复核提交)
+
+- 已完成:颜色流成为 packet 显式合同(`GeometryResource.colors` 线性 RGBA f32 + `GeometryFeatures.colors` 必填);新 ABI `deep.pbr.mesh.v4`(canonical JSON+SHA256 冻结,v1-v3 golden 不动);flat 派生=非索引几何+面法线纯函数(绕序定方向,负零归一,派生设置进资源身份);materials 一刀切拆解(flatShading/vertexColors 缺省=未请求,提供必须布尔;无颜色流/NaN/退化面 fail-closed);Native 接受 colors+上传 color_buffer,无颜色流旧序列逐字节不变;同族排查 9 处(residency/staging/bake hash/packetInstanceUpdate/runtimePackage 白名单)。
+- 自查修复 4 项:projected 作用域(修复并行会话遗留的 96 失败+11 类型错)、colors 改请求驱动、MeshBasicMaterial 缺省语义(修复 unlit 11 用例)、死代码 YAGNI 删除。
+- 主线程复核:typecheck 含 lab PASS;cargo lib 282/0/1;fmt clean;deep-engine 全量 2987/0/41(exit1 仅 source-size 7 项历史文件)。
+- **提交口径(如实)**:C02 同族修复与并行会话在途工作(transparency OIT/residency/author bloom/ThreeProjectionBridge 修复)已交织成验证绿的整体,按整树先例两笔提交(TS 树+Native 树),提交信息披露吸收范围;B03 暂缓文件组亦随 TS 树一并落地,其暂缓条件解除。
+- 边界(如实):glTF COLOR_0 解码未接;shader 未采样颜色,像素级正背面一致归颜色变体切片+真机门禁;flat+normalMap 显式过渡拒绝。

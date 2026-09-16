@@ -112,6 +112,12 @@ export class RenderGraphBuilder {
     return this;
   }
 
+  /** 只读快照:编译结果只含拓扑序与资源生命周期;执行计划还需每个 pass 的读写声明。
+   *  命名避开私有字段 `passes`(实例字段会遮蔽同名原型方法)。 */
+  declaredPasses(): readonly RenderPassDescriptor[] {
+    return Object.freeze([...this.passes.values()]);
+  }
+
   compile(): RenderGraphCompileResult {
     if (this.compiled) return this.compiled;
     const issues: RenderGraphIssue[] = [];

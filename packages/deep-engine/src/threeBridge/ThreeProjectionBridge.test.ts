@@ -237,7 +237,11 @@ describe("Three author projection", () => {
     reject(material => { material.normalMap = dataTexture([128, 128, 255, 255]); material.normalMapType = THREE.ObjectSpaceNormalMap; }, "material.normalMapType");
     reject(material => { material.normalMap = dataTexture([128, 128, 255, 255]); material.normalScale.set(1, 0.5); }, "material non-uniform normalScale");
     reject(material => { material.aoMap = dataTexture([128, 0, 0, 255]); material.aoMap.channel = 2; }, "material.aoMap UV channel or mapping");
-    reject(material => { material.transparent = true; material.alphaTest = 0.5; }, "material simultaneous alphaTest and transparent");
+    const cutoutBlend = mesh(); cutoutBlend.material.transparent = true; cutoutBlend.material.alphaTest = 0.5; cutoutBlend.material.depthWrite = false;
+    cutoutBlend.updateWorldMatrix(true, true);
+    const cutoutResult = bridge().project(cutoutBlend, { cameraLayerMask: 1 });
+    expect(cutoutResult.ok).toBe(true);
+    if (cutoutResult.ok) expect(cutoutResult.packet.materials[0]).toMatchObject({ alphaMode: "BLEND", alphaCutoff: 0.5 });
     reject(material => { material.transparent = true; }, "material transparent depthWrite");
     reject(material => { material.side = THREE.BackSide; }, "material.BackSide");
     reject(material => { material.transparent = true; material.depthWrite = false; material.side = THREE.DoubleSide; }, "material transparent DoubleSide two-pass rendering");

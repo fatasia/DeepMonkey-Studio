@@ -6,7 +6,10 @@ import type {
   GpuResidencyUploadResult,
 } from "../streaming/index.js";
 import type { DeviceSession } from "./deviceSession.js";
+import { bindGpuResidencyHandleDevice } from "./gpuResidencyDeviceAffinity.js";
 import { MeshBuffers } from "./meshBuffers.js";
+import { PACKET_MESHLET_STAGE_BYTES, type PacketMeshletBudget } from "./packetMeshletSource.js";
+import { failWithResourceCleanup } from "./resourceCleanup.js";
 
 export interface GpuGeometryResidencyHandle {
   readonly kind: "geometry";
@@ -21,8 +24,11 @@ export type GpuGeometryResidencySourceProvider =
 
 /** Uploads a complete draw-ready mesh while the residency executor owns publication and release. */
 export class GpuGeometryResidencyUploader implements GpuResidencyUploader<GpuGeometryResidencyHandle> {
+  private readonly meshletBudget: PacketMeshletBudget | undefined;
   constructor(private readonly session: DeviceSession,
-    private readonly sourceFor: GpuGeometryResidencySourceProvider) {}
+    private readonly sourceFor: GpuGeometryResidencySourceProvider, meshlets = false) {
+    this.meshletBudget = meshlets ? { remainingBytes: PACKET_MESHLET_STAGE_BYTES } : undefined;
+  }
 
   async upload(request: GpuResidencyUploadRequest): Promise<GpuResidencyUploadResult<GpuGeometryResidencyHandle>> {
     if (request.kind !== "geometry") throw new TypeError("GPU geometry residency uploader only accepts geometry resources.");
@@ -46,7 +52,7 @@ export class GpuGeometryResidencyUploader implements GpuResidencyUploader<GpuGeo
       for (const filter of ["validation", "out-of-memory", "internal"] as const) {
         device.pushErrorScope(filter); depth += 1;
       }
-      mesh = new MeshBuffers(this.session, source);
+      mesh = new MeshBuffers(this.session, source, this.meshletBudget);
       if (request.signal.aborted) throw cancellation(request.signal);
     } catch (error) { workError = error; }
     finally {
@@ -60,14 +66,15 @@ export class GpuGeometryResidencyUploader implements GpuResidencyUploader<GpuGeo
       if (workError !== undefined) throw workError;
       if (validationError) throw new Error(`GPU geometry residency upload failed: ${validationError.message}`);
       if (request.signal.aborted) throw cancellation(request.signal);
+      const handle = bindGpuResidencyHandleDevice(Object.freeze({ kind: "geometry" as const,
+        mesh: mesh!, sourceId: source.id, sourceRevision: source.revision,
+        level: request.level }), device);
       return Object.freeze({
-        handle: Object.freeze({ kind: "geometry", mesh: mesh!, sourceId: source.id,
-          sourceRevision: source.revision, level: request.level }),
+        handle,
         byteLength,
       });
     } catch (error) {
-      mesh?.dispose();
-      throw error;
+      failWithResourceCleanup(error, "GPU geometry residency upload failed.", [() => mesh?.dispose()]);
     }
   }
 

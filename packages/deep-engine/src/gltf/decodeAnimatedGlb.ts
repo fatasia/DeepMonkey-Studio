@@ -6,7 +6,7 @@ import { selectAnimationNodes } from "./animationNodes.js";
 import type { AnimationNodeSelection } from "./animationNodes.js";
 import type { DecodedAnimatedGlb, GltfAnimationImportOptions } from "./animationTypes.js";
 import { parseGlb } from "./parseGlb.js";
-import { array, invalid, list, noExtensions, object, reference, unsupported, validateJson, type JsonObject } from "./validation.js";
+import { abortSignal, array, invalid, list, noExtensions, object, reference, unsupported, validateJson, type JsonObject } from "./validation.js";
 
 interface SamplerDefinition {
   readonly input: unknown;
@@ -19,6 +19,7 @@ export function decodeAnimatedGlb<TNodeId extends SpatialItemId = number>(
   bytes: Uint8Array,
   options: GltfAnimationImportOptions<TNodeId> = {},
 ): DecodedAnimatedGlb<TNodeId> {
+  object(options, "options"); abortSignal(options.signal, "options.signal")?.throwIfAborted();
   const parsed = parseGlb(bytes);
   validateJson(parsed.json);
   const document = validateAnimationDocument(parsed.json);
@@ -35,7 +36,7 @@ export function decodeAnimatedDocument<TNodeId extends SpatialItemId = number>(
 ): DecodedAnimatedGlb<TNodeId> {
   const configuration = resolveAnimationOptions(options);
   const selection = selectedNodes ?? selectAnimationNodes(document, options, configuration.maxNodes);
-  const reader = new AnimationAccessorReader(document, buffers, configuration);
+  const reader = new AnimationAccessorReader(document, buffers, configuration, options.signal);
   const animations = list(document.animations, "animations", configuration.maxAnimations);
   const clips = animations.map((value, index) => decodeAnimation(value, index, document, selection, reader, configuration, handledMorphWeights));
   return Object.freeze({ sceneIndex: selection.sceneIndex, nodes: selection.nodes,
@@ -62,6 +63,7 @@ function decodeAnimation<TId extends SpatialItemId>(
   const usedSamplers = new Set<number>(), targets = new Set<string>(), tracks: AnimationTrackInput<TId>[] = [];
   let duration = 0;
   channels.forEach((entry, channelIndex) => {
+    if ((channelIndex & 0x3ff) === 0) limits.signal?.throwIfAborted();
     const channelPath = `${path}.channels[${channelIndex}]`, channel = object(entry, channelPath);
     noExtensions(channel, channelPath);
     const samplerIndex = reference(samplers, channel.sampler, `${channelPath}.sampler`);

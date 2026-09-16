@@ -7,9 +7,12 @@ import {
   DEEP_SL_PACKAGE_CSM_ADAPTER_PROFILE, DEEP_SL_PACKAGE_CSM_TEXTURE_ADAPTER_PROFILE,
   DEEP_SL_UNLIT_PACKAGE_ADAPTER_PROFILE, DEEP_SL_UNLIT_PACKAGE_TEXTURE_ADAPTER_PROFILE,
   DEEP_SL_UNLIT_PACKAGE_CSM_ADAPTER_PROFILE, DEEP_SL_UNLIT_PACKAGE_CSM_TEXTURE_ADAPTER_PROFILE,
+  DEEP_SL_PACKAGE_AUXILIARY_ADAPTER_PROFILE, DEEP_SL_PACKAGE_AUXILIARY_TEXTURE_ADAPTER_PROFILE,
+  DEEP_SL_UNLIT_PACKAGE_AUXILIARY_ADAPTER_PROFILE, DEEP_SL_UNLIT_PACKAGE_AUXILIARY_TEXTURE_ADAPTER_PROFILE,
 } from "./packageAdapterTypes.js";
 import type {
   DeepPbrMeshV1MaterialDefaults, DeepPbrMeshV1MaterialTextureDefaults,
+  DeepSlClearcoatDefaults,
   DeepSlPackageAdapterInput, DeepSlPackageAdapterResult,
   DeepSlPackageCompatibilityIssue, DeepSlPackageCompatibilityReport,
   DeepSlPackagePassCompatibility,
@@ -64,7 +67,8 @@ export function inspectPackageAdapterRequest(input: unknown): {
     }
   }
   const read = (key: string): unknown => descriptors[key]?.value;
-  if (read("targetAbi") !== undefined && read("targetAbi") !== "deep.pbr.mesh.v1" && read("targetAbi") !== "deep.pbr.mesh.v2") {
+  if (read("targetAbi") !== undefined
+    && !["deep.pbr.mesh.v1", "deep.pbr.mesh.v2", "deep.pbr.mesh.v3"].includes(String(read("targetAbi")))) {
     issues.push(packageAdapterIssue("invalid-request", "$.targetAbi", "Unsupported shader ABI."));
   }
   if (read("schemaVersion") !== DEEP_SL_PACKAGE_ADAPTER_SCHEMA_VERSION) {
@@ -121,19 +125,25 @@ export function packageAdapterReport(
   normalMapped = false,
   targetAbi: DeepPbrMeshShaderAbiId = "deep.pbr.mesh.v1",
   surface: "standard" | "unlit" = "standard",
+  clearcoat?: DeepSlClearcoatDefaults,
 ): DeepSlPackageCompatibilityReport {
-  const bindGroupLayouts: ("forward-frame" | "shadow-frame" | "material")[] = [];
+  const bindGroupLayouts: ("forward-frame" | "shadow-frame" | "view-frame" | "material")[] = [];
   if (passSelections.some((entry) => entry.kind === "forward")) bindGroupLayouts.push("forward-frame");
   if (textured && passSelections.length > 0) bindGroupLayouts.push("material");
   if (passSelections.some((entry) => entry.kind === "shadow")) bindGroupLayouts.push("shadow-frame");
+  if (passSelections.some((entry) => entry.kind === "depth" || entry.kind === "picking")) bindGroupLayouts.push("view-frame");
   return Object.freeze({
     schema: DEEP_SL_PACKAGE_ADAPTER_SCHEMA,
     schemaVersion: DEEP_SL_PACKAGE_ADAPTER_SCHEMA_VERSION,
     adapterProfile: surface === "unlit"
-      ? targetAbi === "deep.pbr.mesh.v2"
+      ? targetAbi === "deep.pbr.mesh.v3"
+        ? textured ? DEEP_SL_UNLIT_PACKAGE_AUXILIARY_TEXTURE_ADAPTER_PROFILE : DEEP_SL_UNLIT_PACKAGE_AUXILIARY_ADAPTER_PROFILE
+        : targetAbi === "deep.pbr.mesh.v2"
         ? textured ? DEEP_SL_UNLIT_PACKAGE_CSM_TEXTURE_ADAPTER_PROFILE : DEEP_SL_UNLIT_PACKAGE_CSM_ADAPTER_PROFILE
         : textured ? DEEP_SL_UNLIT_PACKAGE_TEXTURE_ADAPTER_PROFILE : DEEP_SL_UNLIT_PACKAGE_ADAPTER_PROFILE
-      : targetAbi === "deep.pbr.mesh.v2"
+      : targetAbi === "deep.pbr.mesh.v3"
+        ? textured ? DEEP_SL_PACKAGE_AUXILIARY_TEXTURE_ADAPTER_PROFILE : DEEP_SL_PACKAGE_AUXILIARY_ADAPTER_PROFILE
+        : targetAbi === "deep.pbr.mesh.v2"
         ? textured ? DEEP_SL_PACKAGE_CSM_TEXTURE_ADAPTER_PROFILE : DEEP_SL_PACKAGE_CSM_ADAPTER_PROFILE
         : textured ? DEEP_SL_PACKAGE_TEXTURE_ADAPTER_PROFILE : DEEP_SL_PACKAGE_ADAPTER_PROFILE,
     status,
@@ -146,6 +156,7 @@ export function packageAdapterReport(
     passSelections: Object.freeze(passSelections),
     ...(materialDefaults ? { materialDefaults } : {}),
     ...(materialTextureDefaults ? { materialTextureDefaults } : {}),
+    ...(clearcoat ? { clearcoat: Object.freeze({ ...clearcoat }) } : {}),
     issues: Object.freeze(issues),
   });
 }

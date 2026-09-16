@@ -18,6 +18,7 @@ import type {
 import { residentPacketProjectionBatches,
   residentPacketProjectionTextureSource } from "./residentPacketProjectionView.js";
 import type { TextureBinding } from "./textureResources.js";
+import { gpuResidencyHandleMatchesDevice } from "./gpuResidencyDeviceAffinity.js";
 
 export interface ResidentPacketBufferStagingContext {
   readonly session: DeviceSession;
@@ -56,6 +57,7 @@ export function stageResidentPacketBuffers(
 ): StagedResidentPacketBuffers {
   if (projection.released) throw new Error("Resident packet projection is already released.");
   if (context.session.state !== "ready") throw new Error("Packet resources are not ready.");
+  assertProjectionDevice(projection, context.session.device);
   const batches = new Map<string, CachedPacketBatch>();
   const createdBuffers: GPUBuffer[] = [];
   const acquiredMaterials: MaterialBinding[] = [];
@@ -82,6 +84,17 @@ export function stageResidentPacketBuffers(
       || !sameMapEntries(context.batches, batches)
       || (context.geometryBounds !== undefined && !sameBounds(context.geometryBounds, geometryBounds)),
   };
+}
+
+function assertProjectionDevice(projection: ResidentPacketProjection, device: GPUDevice): void {
+  for (const batch of residentPacketProjectionBatches(projection)) {
+    for (const handle of batch.geometries) if (!gpuResidencyHandleMatchesDevice(handle, device)) {
+      throw new Error(`Resident geometry belongs to a stale device epoch: ${handle.sourceId}.`);
+    }
+    for (const binding of batch.textures) if (!gpuResidencyHandleMatchesDevice(binding.texture, device)) {
+      throw new Error(`Resident texture belongs to a stale device epoch: ${binding.texture.id}.`);
+    }
+  }
 }
 
 /** Transfers candidate ownership to the caller without touching the current drawable cache. */

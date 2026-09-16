@@ -11,7 +11,7 @@ import type {
   GltfAnimatedSkinnedImportOptions,
   GltfSkinImportOptions,
 } from "./skinTypes.js";
-import { object, validateJson } from "./validation.js";
+import { abortSignal, object, validateJson } from "./validation.js";
 
 /** Parses once and returns matching scene-node, animation, skin-palette, and vertex-stream identities. */
 export function decodeAnimatedSkinnedGlb<TNodeId extends SpatialItemId = number>(
@@ -19,17 +19,20 @@ export function decodeAnimatedSkinnedGlb<TNodeId extends SpatialItemId = number>
   options: GltfAnimatedSkinnedImportOptions<TNodeId> = {},
 ): DecodedAnimatedSkinnedGlb<TNodeId> {
   object(options, "options");
+  abortSignal(options.signal, "options.signal")?.throwIfAborted();
   if (options.animation !== undefined) object(options.animation, "options.animation");
   if (options.skinning !== undefined) object(options.skinning, "options.skinning");
   const animationOptions: GltfAnimationImportOptions<TNodeId> = {
     ...options.animation,
     ...(options.sceneIndex === undefined ? {} : { sceneIndex: options.sceneIndex }),
     ...(options.mapNodeId === undefined ? {} : { mapNodeId: options.mapNodeId }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   };
   const skinningOptions: GltfSkinImportOptions<TNodeId> = {
     ...options.skinning,
     ...(options.sceneIndex === undefined ? {} : { sceneIndex: options.sceneIndex }),
     ...(options.mapNodeId === undefined ? {} : { mapNodeId: options.mapNodeId }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   };
   const parsed = parseGlb(bytes);
   validateJson(parsed.json);

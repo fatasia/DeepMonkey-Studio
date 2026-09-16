@@ -1,6 +1,6 @@
 # Deep Engine
 
-Deep Engine 是 Deep Monkey Studio 的实验性 WebGPU 引擎轨道。本包包含 headless 合同、调度基础与独立 WebGPU 材质验证管线，不接入正式应用，也不改变现有 Three.js 渲染器。
+Deep Engine 是 Deep Monkey Studio 的 WebGPU 引擎与跨端合同包。除 headless 合同、调度基础与独立 WebGPU 材质验证管线外，`./runtime-package` 与 Deep2d 显示列表合同已接入 Studio Web 端的发布编译链（`apps/web/src/delivery`），并与 Native 播放器共享同一套资源身份与校验；既有 Three.js 渲染器路径保持不变。
 
 `bakeRenderPacket` 提供可选的确定性资产预处理：生成 Meshlet 与一次性展开的间接索引，汇总材质变体和纹理清单，并返回内容缓存键。产物是不可变且可丢弃的，不会改变正式 Three.js 资源流；静态光照只声明 `probe-hybrid` 策略，动态灯光、编辑和剖切仍走实时路径。
 
@@ -15,7 +15,7 @@ Deep Engine 是 Deep Monkey Studio 的实验性 WebGPU 引擎轨道。本包包�
 - 默认 GPU 生成摄影棚 cubemap、GGX 预过滤 mip、漫反射辐照度和 DFG 查找表；每次设备初始化只预计算一次。静态阴影复用，相机/曝光变化不重绘阴影。
 - `./gltf` 是无 IO 的 glTF/GLB 解码入口，支持 POSITION/NORMAL/TEXCOORD_0、无索引或无符号索引、交错布局、材质 factor、`emissiveFactor`、`alphaMode` OPAQUE/MASK/BLEND、活动场景层级，以及嵌入 PNG/JPEG 的 baseColor、metallic-roughness、normal、occlusion、emissive 纹理、sampler 和 `KHR_texture_transform`。图片像素解码通过注入的 `GltfImageDecoder` 完成；法线贴图缺少 `TANGENT` 时从几何与 UV 生成切线。独立入口已覆盖节点动画、骨骼蒙皮、morph 及二者融合，并能投影到 GPU 运行时；KTX2/Basis 转码与 BC/ETC2/ASTC 上传位于 `./textures` 和 `./webgpu`。稀疏 accessor、glTF mesh 压缩扩展、外部动画 buffer 与外部 HDRI 仍会结构化拒绝。
 - WebGPU 材质真实采样 baseColor/emissive 的 sRGB 数据、metallic-roughness 的线性 B/G 通道、normal 的线性 RGB 和 occlusion 的线性 R 通道。AO `strength` 只衰减漫反射/镜面 IBL 等间接光；统一的有界材质布局用 uniform 启用位跳过未使用纹理采样，normal 有独立切线顶点变体。发光在线性 HDR 光照后、雾化与显示 tone mapping 前叠加。MASK 在颜色和阴影 pass 使用相同的 `baseColorFactor.a × baseColorTexture.a < alphaCutoff` 判定。BLEND 使用 straight-alpha source-over，进入独立透明 pass，关闭深度写入并按相机深度稳定地逐实例从后向前排序；当前透明材质不投射阴影。`doubleSided` 关闭颜色与阴影背面剔除，并在背面光照前翻转法线；镜像双面实例仍可合并批次。
-- 根入口提供版本化 `Deep2dDisplayList` 及严格校验，作为 ECharts/zrender、React 视图适配器与未来 native `wgpu` 2D painter 之间的批量 path/text/image/clip/hit-region 合同。它目前只完成 headless 协议，不代表已有 native 图表 renderer。
+- 根入口提供版本化 `Deep2dDisplayList` 及严格校验，作为 ECharts/zrender、React 视图适配器与未来 native `wgpu` 2D painter 之间的批量 path/text/image/clip/hit-region 合同。该合同已被 Native 侧 `Deep2dRuntimeContent`/ChartIR 呈现管线消费：原生窗口中的图表、图例、tooltip 与 hit-region 都由它驱动（见 `packages/deep-engine-native/src/chart/` 与真实窗口冒烟证据）。
 - 诊断采样可启用 timestamp-query，异步最多 3 组读回；忙时跳过计时，不阻塞渲染，并报告实际样本数。设备不支持时降级为仅 CPU/帧间隔数据。
 - 隔离 Lab 的 `/benchmark` 提供 Deep WebGPU 与 Three.js 0.185.1 WebGPU 的 1,024/10,000 实例成对交错基准。它冻结 960×540、DPR 1、相机、同一几何缓冲、实例矩阵、PBR 参数、主光和无纹理输入，双方均使用真实 WebGPU 与实例化路径；GPU 时间戳逐帧串行读取，Three 返回值已由其 r185 `WebGPUTimestampQueryPool` 换算为毫秒，不再二次换算。当前双方的 IBL、阴影、后处理、ACES 曲线和资源统计口径仍不完全等价，证据合同会标记 `degraded` 并强制 `outcome=withheld`；画面相似度未过门槛或出现 page/device/GPU 错误则标记 `invalid`，不得引用 CPU/GPU 数字宣称胜负。
 - 流式资源使用一个 geometry/texture 统一显存预算。`PacketResidencyDomain.loadSet()` 可在同一帧原子合并多个 packet；`createSceneChunkResidency` 让大场景按 visible/prefetch chunk 提交，跨 chunk 共享相同资源并卸载离开 desired set 的 chunk。请求规划器保留每个可见 LOD 批次的可绘制最粗层，只按可见性追加细节层和纹理 mip。`createPbrResidencyStream` 把 latest-wins 请求、GPU 校验和 `PbrRenderer.render()` 帧边界发布串成一条有所有权约束的路径。supersede/abort 会停止未开始的上传并销毁迟到候选；等价请求只有全部 waiter 取消才中止共享执行。结果中的 `cancellationBoundary` 区分取消发生在 resident 驱逐前还是之后：已提交的 GPU queue 命令仍会安全完成，驱逐后的取消只提交空成功集以保持 CPU/GPU 驻留状态一致。

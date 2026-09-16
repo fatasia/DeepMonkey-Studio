@@ -3,6 +3,7 @@ import {
   type RenderPacket,
   type RenderView,
 } from "@bim-studio/deep-engine/webgpu";
+import { loadModelPacket, type ModelName } from "./modelPacket.js";
 
 export const BENCHMARK_WIDTH = 960;
 export const BENCHMARK_HEIGHT = 540;
@@ -52,6 +53,28 @@ export function createBenchmarkScene(instanceCount: 1024 | 10000): BenchmarkScen
   });
   return Object.freeze({ id: `instanced-opaque-pbr-${instanceCount}`, instanceCount, extent,
     transforms, packet, view });
+}
+
+/**
+ * Builds the same benchmark contract from an unmodified GLB served by the Lab.
+ * This is intentionally separate from the procedural scene so reports can state
+ * whether measurements came from a real asset or a synthetic stress fixture.
+ */
+export async function createAssetBenchmarkScene(name: ModelName, instanceCount: 1024 | 10000,
+  signal?: AbortSignal): Promise<BenchmarkSceneFixture> {
+  const packet = await loadModelPacket(name, instanceCount, signal);
+  const transforms = Object.freeze(packet.instances.map(instance => Object.freeze(Array.from(instance.transform))));
+  const triangles = packet.geometries.reduce((sum, geometry) => sum + geometry.indices.length / 3, 0);
+  if (!packet.instances.length || !Number.isFinite(triangles) || triangles <= 0) throw new Error("GLB benchmark asset has no renderable triangles.");
+  const extent = Math.max(4, Math.sqrt(packet.instances.length) * 2.4);
+  const view: RenderView = Object.freeze({ width: BENCHMARK_WIDTH, height: BENCHMARK_HEIGHT,
+    pixelRatio: BENCHMARK_DPR, eye: [extent * 0.42, extent * 0.66, extent * 0.66] as const,
+    target: [0, 0, 0] as const, up: [0, 1, 0] as const, extent,
+    background: BENCHMARK_BACKGROUND, floor: BENCHMARK_FLOOR, exposure: 1, roughness: 1,
+    verticalFovRadians: Math.PI / 4, near: 0.1, far: extent * 20,
+    lights: { directional: [BENCHMARK_LIGHT] },
+  });
+  return Object.freeze({ id: `asset-${name}-${instanceCount}`, instanceCount, extent, transforms, packet, view });
 }
 
 export function frozenFixtureDescription(fixture: BenchmarkSceneFixture): Readonly<Record<string, unknown>> {

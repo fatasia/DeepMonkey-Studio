@@ -3,69 +3,42 @@ import {
   GpuResidentOwner,
   ResidencyStreamScheduler,
   ResourceResidencyController,
-  type GpuResidencyExecutionResult,
-  type GpuResidencyExecutorOptions,
   type GpuResidencyUploader,
   type GpuResidencyUploadRequest,
   type GpuResidentLease,
   type GpuResidentResource,
   type ResidentResourceState,
   type ResidencyBudgets,
-  type ResidencyCommitResult,
   type ResidencyRequest,
   type ResidencyStreamFrameResult,
   type StreamedResourceKind,
-  type StreamedResourceLevel,
-  type StreamedResourceProfile,
 } from "../streaming/index.js";
 import type { DeviceSession } from "./deviceSession.js";
+import {
+  GpuRenderResidencyDiagnostics,
+  nextGpuRenderResidencyEpoch,
+  type GpuRenderResidencyDiagnosticTrace,
+} from "./gpuRenderResidencyDiagnostics.js";
 import {
   GpuRenderResidencyUploader,
   type GpuRenderResidencyHandle,
   type GpuRenderResidencySourceProvider,
 } from "./gpuRenderResidencyUploader.js";
 import { identityKey, publicIdentity, sameIds, validSourceId } from "./gpuRenderResidencyIdentity.js";
+import type {
+  GpuRenderResidencyExecutionResult, GpuRenderResidencyFrameResult,
+  GpuRenderResidencyIdentity, GpuRenderResidencyProfile, GpuRenderResidencyRequest,
+  GpuRenderResidencyRuntimeOptions,
+} from "./gpuRenderResidencyRuntimeTypes.js";
 import { createGpuRenderResidencyAppliedFrameTelemetry, createGpuRenderResidencyTelemetrySnapshot,
   type GpuRenderResidencyAppliedFrameTelemetry,
   type GpuRenderResidencyTelemetrySnapshot } from "./gpuRenderResidencyTelemetry.js";
 
-export interface GpuRenderResidencyRequest extends ResidencyRequest {
-  readonly kind: StreamedResourceKind;
-}
-
-export interface GpuRenderResidencyLevel extends StreamedResourceLevel {
-  /** Physical payload identity for this LOD/mip variant; defaults to the profile id. */
-  readonly sourceId?: string;
-}
-
-export interface GpuRenderResidencyProfile extends Omit<StreamedResourceProfile, "levels"> {
-  readonly levels: readonly GpuRenderResidencyLevel[];
-}
-
-export interface GpuRenderResidencyIdentity {
-  readonly id: string;
-  readonly kind: StreamedResourceKind;
-}
-
-export interface GpuRenderResidencyCommitResult extends Omit<ResidencyCommitResult,
-  "appliedUploads" | "failedUploads" | "evicted"> {
-  readonly appliedUploads: readonly GpuRenderResidencyIdentity[];
-  readonly failedUploads: readonly GpuRenderResidencyIdentity[];
-  readonly evicted: readonly GpuRenderResidencyIdentity[];
-}
-
-export interface GpuRenderResidencyExecutionResult extends Omit<GpuResidencyExecutionResult,
-  "commit" | "uploadFailures" | "cancellationFailures"> {
-  readonly commit: GpuRenderResidencyCommitResult;
-  readonly uploadFailures: readonly Readonly<{ resource: GpuRenderResidencyIdentity; reason: unknown }>[];
-  readonly cancellationFailures: readonly Readonly<{
-    resource: GpuRenderResidencyIdentity; reason: unknown;
-  }>[];
-}
-
-export interface GpuRenderResidencyFrameResult extends Omit<ResidencyStreamFrameResult, "execution"> {
-  readonly execution?: GpuRenderResidencyExecutionResult;
-}
+export type {
+  GpuRenderResidencyCommitResult, GpuRenderResidencyExecutionResult,
+  GpuRenderResidencyFrameResult, GpuRenderResidencyIdentity, GpuRenderResidencyLevel,
+  GpuRenderResidencyProfile, GpuRenderResidencyRequest, GpuRenderResidencyRuntimeOptions,
+} from "./gpuRenderResidencyRuntimeTypes.js";
 
 type OwnedRenderHandle = GpuResidentOwner<GpuRenderResidencyHandle>;
 interface SourceProfile { readonly revision: number; readonly ids: readonly string[] }
@@ -76,6 +49,7 @@ export class GpuRenderResidencyRuntime {
   private readonly executor: GpuResidencyExecutor<OwnedRenderHandle>;
   private readonly scheduler: ResidencyStreamScheduler<OwnedRenderHandle>;
   private readonly ownership: RenderLeaseLedger;
+  private readonly diagnostics: GpuRenderResidencyDiagnostics;
   private readonly identities = new Map<string, GpuRenderResidencyIdentity>();
   private readonly keys = new Map<string, string>();
   private readonly sources = new Map<string, SourceProfile>();
@@ -83,14 +57,25 @@ export class GpuRenderResidencyRuntime {
   private keySequence = 0;
 
   constructor(session: DeviceSession, budgets: ResidencyBudgets,
-    sourceFor: GpuRenderResidencySourceProvider, options: GpuResidencyExecutorOptions = {}) {
+    sourceFor: GpuRenderResidencySourceProvider, options: GpuRenderResidencyRuntimeOptions = {}) {
     this.controller = new ResourceResidencyController(budgets);
+    this.diagnostics = new GpuRenderResidencyDiagnostics(
+      options.diagnostics, options.deviceEpoch ?? nextGpuRenderResidencyEpoch(),
+    );
     const uploader = new GpuRenderResidencyUploader(session, sourceFor,
-      request => this.sourceId(request));
+      request => this.sourceId(request), options.meshlets === true);
     this.ownership = new RenderLeaseLedger(uploader);
+    const deviceLost = options.deviceLost ?? session.device.lost;
+    if (this.diagnostics.enabled) {
+      const closeAfterDeviceLoss = (): void => {
+        const evictedCount = this.residentCount;
+        void Promise.resolve().then(() => this.closeDiagnostics(evictedCount));
+      };
+      void Promise.resolve(deviceLost).then(closeAfterDeviceLoss, closeAfterDeviceLoss).catch(() => undefined);
+    }
     this.executor = new GpuResidencyExecutor(this.controller, this.ownership.uploader, {
       ...(options.maxConcurrentUploads === undefined ? {} : { maxConcurrentUploads: options.maxConcurrentUploads }),
-      deviceLost: options.deviceLost ?? session.device.lost,
+      deviceLost,
     });
     this.scheduler = new ResidencyStreamScheduler(this.controller, this.executor);
   }
@@ -156,18 +141,39 @@ export class GpuRenderResidencyRuntime {
     if (this.ownership.retiredBytes > 0) {
       throw new Error("Retired GPU resources must be released before another residency frame.");
     }
-    const mappedRequests = requests.map(request => Object.freeze({
+    const mappedRequests: readonly GpuRenderResidencyRequest[] = requests.map(request => Object.freeze({
       ...request, id: this.registeredKey(request.kind, request.id),
     }));
-    const result = this.publicResult(await this.scheduler.submit(frame, mappedRequests, signal));
-    if (result.status === "applied" && result.execution
-      && (!this.lastAppliedFrame || result.frame >= this.lastAppliedFrame.frame)) {
-      this.captureAppliedFrame(result, mappedRequests);
+    const trace = this.diagnostics.enabled
+      ? this.diagnostics.begin(mappedRequests, request => this.isDiagnosticHit(request)) : undefined;
+    try {
+      const result = this.publicResult(await this.scheduler.submit(frame, mappedRequests, signal));
+      if (result.status === "applied" && result.execution
+        && (!this.lastAppliedFrame || result.frame >= this.lastAppliedFrame.frame)) {
+        this.captureAppliedFrame(result, mappedRequests);
+      }
+      if (trace) this.diagnostics.complete(trace, result, this.telemetrySnapshot());
+      return result;
+    } catch (error) {
+      this.diagnostics.fail(trace, signal?.aborted === true || isAbortError(error));
+      throw error;
     }
-    return result;
   }
 
-  dispose(): void { this.scheduler.dispose(); }
+  dispose(): void {
+    const evictedCount = this.residentCount;
+    this.scheduler.dispose();
+    this.closeDiagnostics(evictedCount);
+  }
+
+  private closeDiagnostics(evictedCount: number): void {
+    if (this.diagnostics.enabled) this.diagnostics.close(this.telemetrySnapshot(), evictedCount);
+  }
+
+  private isDiagnosticHit(request: GpuRenderResidencyRequest): boolean {
+    const current = this.executor.get(request.id), profile = this.controller.profile(request.id);
+    return !!current && current.revision === profile?.revision && current.level === request.desiredLevel;
+  }
 
   private publicResult(result: ResidencyStreamFrameResult): GpuRenderResidencyFrameResult {
     if (!result.execution) return Object.freeze({ generation: result.generation, frame: result.frame,
@@ -282,4 +288,8 @@ function publicResident(resource: GpuResidentResource<OwnedRenderHandle>,
   identity: GpuRenderResidencyIdentity): ResidentResourceState {
   return Object.freeze({ id: identity.id, kind: identity.kind, revision: resource.revision,
     level: resource.level, byteLength: resource.byteLength, lastUsedFrame: resource.lastUsedFrame });
+}
+
+function isAbortError(value: unknown): boolean {
+  return value instanceof Error && value.name === "AbortError";
 }

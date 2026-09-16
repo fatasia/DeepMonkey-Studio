@@ -4,6 +4,7 @@ import type {
   PreparedMaterialTextures,
   PreparedPacket,
 } from "../renderPacket.js";
+import { assertPacketDeformationSupported } from "../renderPacket.js";
 import type { GpuResidentLease } from "../streaming/gpuResidentLease.js";
 import type { PreparedTexture, TextureSemantic } from "../textures/decodedTexture.js";
 import type {
@@ -79,6 +80,7 @@ export function createResidentPacketProjection(
   acquire: ResidentPacketLeaseProvider,
   options: ResidentPacketProjectionOptions = {},
 ): ResidentPacketProjection {
+  assertPacketDeformationSupported(packet);
   const leases: GpuResidentLease<GpuRenderResidencyHandle>[] = [];
   const seenLeases = new Set<GpuResidentLease<GpuRenderResidencyHandle>>();
   const geometries = new Map<string, GpuGeometryResidencyHandle>();
@@ -145,6 +147,7 @@ export function createResidentPacketProjection(
       const handle = geometries.get(level.id)
         ?? acquireGeometry(level.id, source.revision, level.required);
       if (!handle) continue;
+      if (batch.lod?.strategy === "author-selected" && ids.has(handle.sourceId)) continue;
       if (ids.has(handle.sourceId) || handles.has(handle)) {
         throw new Error(`Duplicate resident geometry handle: ${handle.sourceId}.`);
       }
@@ -207,7 +210,10 @@ function geometryLevels(batch: PreparedBatch, partial: boolean): readonly Geomet
   if (!batch.lod.levels.length || batch.lod.levels[0]?.geometry !== batch.geometry) {
     throw new Error(`Invalid prepared LOD dependency order: ${batch.key}.`);
   }
-  if (!partial) return batch.lod.levels.map(level => ({
+  if (batch.lod.strategy === "author-selected" && batch.lod.levels.some(level => !level.resident)) {
+    throw new Error(`Author LOD requires all resident levels: ${batch.key}.`);
+  }
+  if (!partial || batch.lod.strategy === "author-selected") return batch.lod.levels.map(level => ({
     id: level.geometry, acquire: true, required: true,
   }));
   const coarsest = batch.lod.levels.at(-1)!;

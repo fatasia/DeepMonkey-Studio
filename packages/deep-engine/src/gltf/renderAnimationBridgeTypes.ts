@@ -9,6 +9,8 @@ import type { DecodedAnimatedGlb, GltfAnimatedNode } from "./animationTypes.js";
 import type { DecodedMorphGlb } from "./morphTypes.js";
 import type { DecodedSkinnedGlb } from "./skinTypes.js";
 
+export type GltfAnimationPlaybackMode = "loop" | "once";
+
 export interface GltfTransformAnimationSource<TNodeId extends SpatialItemId> {
   readonly sceneIndex: number;
   readonly nodes: readonly GltfAnimatedNode<TNodeId>[];
@@ -45,6 +47,8 @@ export interface GltfRenderAnimationSelection {
   /** Omit to select the first morph clip; null disables morph animation. */
   readonly morphClipId?: string | null;
   readonly wrapMode?: AnimationWrapMode;
+  /** Friendly playback alias. `once` clamps at the terminal key and reports finished. */
+  readonly playbackMode?: GltfAnimationPlaybackMode;
   readonly time?: number;
   readonly timeScale?: number;
   readonly paused?: boolean;
@@ -78,6 +82,7 @@ export interface GltfRenderAnimationFrame<TNodeId extends SpatialItemId> {
   readonly revision: number;
   readonly time: number;
   readonly paused: boolean;
+  readonly finished: boolean;
   readonly nodeWorldTransforms: readonly GltfRenderNodeFrame<TNodeId>[];
   readonly skinPalettes: readonly GltfSkinPaletteFrame<TNodeId>[];
   readonly morphWeights: readonly GltfMorphWeightsFrame<TNodeId>[];
@@ -88,7 +93,7 @@ export interface GltfRenderAnimationFrame<TNodeId extends SpatialItemId> {
 
 export type GltfRenderAnimationBridgeErrorCode =
   | "duplicate-binding" | "invalid-binding" | "invalid-input" | "invalid-time"
-  | "missing-clip" | "missing-node" | "node-mismatch" | "singular-transform";
+  | "missing-clip" | "missing-node" | "node-mismatch" | "singular-transform" | "transition-active";
 
 export class GltfRenderAnimationBridgeError extends Error {
   constructor(readonly code: GltfRenderAnimationBridgeErrorCode, message: string) {

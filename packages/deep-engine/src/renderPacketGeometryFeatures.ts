@@ -16,7 +16,7 @@ export function getGeometryFeatures(
   const value = typeof candidate.get === "function" ? candidate.get(id) : undefined;
   return typeof value === "object" && value !== null
     ? value
-    : { uv0: value === true, uv1: false, tangents: false };
+    : { uv0: value === true, uv1: false, tangents: false, colors: false };
 }
 
 export function validateGeometryFeatures(

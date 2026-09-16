@@ -4,7 +4,7 @@
   "repository": "https://github.com/KhronosGroup/glTF-Sample-Assets",
   "commit": "90d7ede14c7e280af263824604b427a1ca02cb66",
   "downloadMethod": "Official GitHub contents API at the fixed commit was used for path/blob identity; bytes came from the corresponding fixed-commit raw URL and were verified by exact size and SHA-256.",
-  "scope": "Independent loader fixtures. The box variants validate packed/interleaved geometry and one embedded PNG texture path. NormalTangentTest validates a real normal map without authored tangents together with metallic-roughness, R-channel occlusion and double-sided lighting. TextureEncodingTest validates color-space texture semantics and deterministic normal generation for primitives that omit NORMAL. AlphaBlendModeTest validates authored tangent ownership plus OPAQUE, MASK and BLEND material execution. The Lab material-modes option is a self-owned runtime projection fixture derived from decoded, unmodified BoxTextured bytes; it validates core emissive and alpha renderer contracts but is not an additional upstream asset. These fixtures are not arbitrary glTF, industrial-model, renderer-quality or performance acceptance evidence.",
+  "scope": "Independent loader fixtures. The box variants validate packed/interleaved geometry and one embedded PNG texture path. NormalTangentTest validates a real normal map without authored tangents together with metallic-roughness, R-channel occlusion and double-sided lighting. TextureEncodingTest validates color-space texture semantics and deterministic missing-normal generation. TextureTransformMultiTest validates metallic-roughness and other texture semantics through KHR_texture_transform on UV0 and UV1; optional clearcoat and unlit rows intentionally use their authored core fallback. AlphaBlendModeTest validates authored tangent ownership plus OPAQUE, MASK and BLEND material execution. The Lab material-modes option is a self-owned runtime projection fixture derived from decoded, unmodified BoxTextured bytes; it validates core emissive and alpha renderer contracts but is not an additional upstream asset. These fixtures are not arbitrary glTF, industrial-model, renderer-quality or performance acceptance evidence.",
   "samples": [
     {
       "name": "Box",
@@ -287,6 +287,45 @@
         "decodedTextureResources": 13,
         "primitivesWithoutAuthoredNormals": 2,
         "generatedNormalsUnitLengthVerified": true,
+        "animations": 0,
+        "skins": 0
+      }
+    },
+    {
+      "name": "TextureTransformMultiTest",
+      "file": "TextureTransformMultiTest.glb",
+      "sourceUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/TextureTransformMultiTest/glTF-Binary/TextureTransformMultiTest.glb",
+      "gitBlobSha1": "874c5775ed9e014abf14534442a52f765f409d97",
+      "sha256": "569aedb53822d5721e7e06af5983348683d4b2ffb1d469338ad4f02bf6a74911",
+      "bytes": 388264,
+      "license": {
+        "spdx": "CC-BY-4.0",
+        "artist": "Ed Mackey",
+        "owner": "Analytical Graphics, Inc.",
+        "year": "2020",
+        "url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+        "localNotice": "TextureTransformMultiTest.LICENSE.md",
+        "sourceNoticeUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/TextureTransformMultiTest/LICENSE.md",
+        "localUpstreamMetadata": "TextureTransformMultiTest.upstream-metadata.json",
+        "sourceMetadataUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/90d7ede14c7e280af263824604b427a1ca02cb66/Models/TextureTransformMultiTest/metadata.json"
+      },
+      "modified": false,
+      "inspection": {
+        "glbVersion": 2,
+        "purpose": "metallic-roughness and all core texture inputs through KHR_texture_transform on UV0 and UV1",
+        "geometries": 29,
+        "materials": 29,
+        "instances": 29,
+        "embeddedPngImages": 4,
+        "textureSlots": 19,
+        "metallicRoughnessTextureSlots": 3,
+        "transformedMetallicRoughnessSlots": 2,
+        "transformedUv1Slots": 6,
+        "uvSets": [0, 1],
+        "authoredTangents": true,
+        "extensionsUsed": ["KHR_materials_clearcoat", "KHR_materials_unlit", "KHR_texture_transform"],
+        "extensionsRequired": ["KHR_texture_transform"],
+        "optionalCoreFallbacks": ["KHR_materials_clearcoat", "KHR_materials_unlit"],
         "animations": 0,
         "skins": 0
       }

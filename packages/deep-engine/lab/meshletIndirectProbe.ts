@@ -8,13 +8,17 @@ export interface MeshletIndirectProbeResult {
   readonly validCommandCount: number;
   readonly sourceInstanceMapping: boolean;
   readonly renderedPixel: readonly [number, number, number, number];
+  readonly peakResourceCount: number;
   readonly passed: boolean;
 }
 
 /** Real-device compute-to-indirect-to-RenderBundle probe; intentionally not registered in lab/main.ts. */
-export async function runMeshletIndirectProbe(session: DeviceSession): Promise<MeshletIndirectProbeResult> {
+export async function runMeshletIndirectProbe(session: DeviceSession, meshletCount = 64): Promise<MeshletIndirectProbeResult> {
   if (session.state !== "ready") throw new Error("Meshlet indirect probe requires a ready device session.");
-  const device = session.device, geometry = probeGeometry();
+  if (!Number.isSafeInteger(meshletCount) || meshletCount < 1 || meshletCount > 65_536) {
+    throw new RangeError("Meshlet indirect probe count is invalid.");
+  }
+  const device = session.device, geometry = probeGeometry(meshletCount);
   const meshlets = buildMeshlets(geometry, { maxTriangles: 1 }), expanded = expandMeshletIndices(meshlets);
   const owned: Array<GPUBuffer | GPUTexture> = [];
   const own = <T extends GPUBuffer | GPUTexture>(resource: T): T => { owned.push(session.own(resource)); return resource; };
@@ -74,16 +78,18 @@ export async function runMeshletIndirectProbe(session: DeviceSession): Promise<M
     const passed = visibleCount === meshlets.meshletCount && validCommandCount === meshlets.meshletCount
       && sourceInstanceMapping && renderedPixel[0] > 200 && renderedPixel[1] < 20 && renderedPixel[2] < 20;
     return Object.freeze({ meshletCount: meshlets.meshletCount, visibleCount, validCommandCount,
-      sourceInstanceMapping, renderedPixel, passed });
+      sourceInstanceMapping, renderedPixel, peakResourceCount: session.resourceCount, passed });
   } finally {
     executor.dispose(); culler.dispose(); indexBuffer.dispose();
     for (const resource of owned.reverse()) session.release(resource);
   }
 }
 
-function probeGeometry() {
-  const positions = new Float32Array(64 * 9), indices = new Uint16Array(64 * 3);
-  for (let triangle = 0; triangle < 64; triangle += 1) {
+function probeGeometry(triangleCount: number) {
+  const positions = new Float32Array(triangleCount * 9);
+  const indices = triangleCount * 3 <= 65_536
+    ? new Uint16Array(triangleCount * 3) : new Uint32Array(triangleCount * 3);
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
     const vertex = triangle * 3;
     positions.set([-0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0, 0.5, 0.5], vertex * 3);
     indices.set([vertex, vertex + 1, vertex + 2], triangle * 3);

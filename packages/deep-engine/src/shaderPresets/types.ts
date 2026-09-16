@@ -15,6 +15,8 @@ export interface SurfaceShaderOptions {
   readonly baseColor?: readonly [number, number, number, number];
   readonly baseColorTexture?: ShaderPresetTextureToggle;
   readonly alphaMode?: SurfaceAlphaMode;
+  /** Linear alpha threshold used by the fixed MASK variant. */
+  readonly alphaCutoff?: number;
   /** Emits opaque and blend variants only when a shared shader asset really needs both. */
   readonly switchableAlpha?: boolean;
   readonly doubleSided?: boolean;

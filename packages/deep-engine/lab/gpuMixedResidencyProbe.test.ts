@@ -14,6 +14,8 @@ const passing = (): Omit<GpuMixedResidencyProbeResult, "action" | "success" | "f
   resourcesBefore: 2,
   resourcesHeldAfterDispose: 5,
   resourcesAfterRelease: 2,
+  peakResidentBytes: 136,
+  peakAllocatedBytes: 136,
 });
 
 describe("real GPU mixed residency probe evaluation", () => {

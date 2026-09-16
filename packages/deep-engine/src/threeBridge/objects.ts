@@ -1,23 +1,26 @@
 import { invalid, limit, record, unsupported, type ThreeObjectSource, type ThreeProjectionHooks } from "./types.js";
 
-export function inspectObject(object: ThreeObjectSource, hooks: ThreeProjectionHooks): "mesh" | "container" {
+export function inspectObject(object: ThreeObjectSource, hooks: ThreeProjectionHooks, allowDeformation = false, allowAuthorLod = false): "mesh" | "container" | "lod" {
   const o = object as unknown as Record<string, unknown>;
   if (o.renderOrder !== 0) unsupported("object render order");
+  if (o.isLOD && object.type === "LOD" && allowAuthorLod) return "lod";
   if (o.isScene) {
     for (const key of ["background", "environment", "fog", "overrideMaterial"]) if (o[key] != null) unsupported(`scene.${key}`);
   }
   if (o.isMesh) {
-    if (o.isSkinnedMesh || o.isBatchedMesh || o.type !== "Mesh" && o.type !== "InstancedMesh") unsupported("mesh type");
+    if (o.isSkinnedMesh && !allowDeformation || o.isBatchedMesh
+      || o.type !== "Mesh" && o.type !== "InstancedMesh" && !(allowDeformation && o.type === "SkinnedMesh")) unsupported("mesh type");
     if (o.onBeforeRender !== hooks.objectBeforeRender || o.onAfterRender !== hooks.objectAfterRender
       || o.onBeforeShadow !== hooks.objectBeforeShadow || o.onAfterShadow !== hooks.objectAfterShadow
       || o.customDepthMaterial || o.customDistanceMaterial) unsupported("object render hooks");
-    if (o.morphTargetInfluences) unsupported("morph targets");
-    // 当前 packet 没有逐物体阴影合同，不能把启用阴影的作者配置默默丢弃。
-    if (o.castShadow || o.receiveShadow) unsupported("object shadow flags");
+    if (o.morphTargetInfluences && !allowDeformation) unsupported("morph targets");
+    for (const key of ["castShadow", "receiveShadow"]) {
+      if (o[key] !== undefined && typeof o[key] !== "boolean") invalid(`object ${key}`);
+    }
     if (o.instanceColor || o.morphTexture) unsupported("instance colors or morphs");
     return "mesh";
   }
-  if (o.isCamera || ["Object3D", "Group", "Scene"].includes(object.type)) return "container";
+  if (o.isCamera || allowDeformation && o.isBone || ["Object3D", "Group", "Scene"].includes(object.type)) return "container";
   unsupported(`object type ${object.type}`);
 }
 export function objectTransforms(object: ThreeObjectSource): readonly Float64Array[] {

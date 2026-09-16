@@ -4,6 +4,7 @@ import type { DeviceSession } from "./deviceSession.js";
 import { GpuSkinner, cpuSkinVertices, prepareSkinningInput } from "./gpuSkinning.js";
 import type { SkinningPalette, SkinningSource } from "./gpuSkinningTypes.js";
 import { GPU_SKINNING_WGSL } from "./gpuSkinningWgsl.js";
+import { GpuDeformationHistory } from "./gpuDeformationHistory.js";
 
 const matrix = (translation = 0, scaleX = 1) => new Float32Array([
   scaleX, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, translation, 0, 0, 1,
@@ -17,6 +18,7 @@ interface FakeBuffer extends GPUBuffer { readonly destroy: ReturnType<typeof vi.
 function fixture() {
   const owned = new Set<FakeBuffer>(), buffers: FakeBuffer[] = [], writes: Array<{ target: GPUBuffer; data: ArrayBuffer | ArrayBufferView }> = [];
   const device = {
+    limits: { maxBufferSize: 1 << 28, maxStorageBufferBindingSize: 1 << 28, maxComputeWorkgroupsPerDimension: 65_535 },
     queue: { writeBuffer: vi.fn((target: GPUBuffer, _offset: number, data: ArrayBuffer | ArrayBufferView) => writes.push({ target, data })) },
     createShaderModule: vi.fn(() => ({})), createBindGroupLayout: vi.fn(() => ({})), createPipelineLayout: vi.fn(() => ({})),
     createComputePipeline: vi.fn(() => ({ label: "pipeline" })), createBindGroup: vi.fn(({ entries }) => ({ entries })),
@@ -37,6 +39,69 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("GPU skinning", () => {
+  it("preserves the 64-byte input prefix and appends optional tangents for 48-byte output", () => {
+    const f = fixture(), skinner = new GpuSkinner(f.session);
+    const tangentSource = { ...source(), tangents: new Float32Array([0, 1, 0, 1]) };
+    const prepared = prepareSkinningInput(tangentSource, palette());
+    expect(prepared.vertices.byteLength).toBe(64); expect(prepared.tangents).toEqual(tangentSource.tangents);
+    expect(prepared.tangents).not.toBe(tangentSource.tangents);
+    skinner.setSource(tangentSource, palette());
+    expect(f.buffers.find(buffer => buffer.label === "Deep skinning source")!.size).toBe(80);
+    expect(f.buffers.find(buffer => buffer.label === "Deep skinned vertices")!.size).toBe(48);
+    expect(f.device.queue.writeBuffer.mock.calls.some(call => call[1] === 64 && call[2] instanceof Float32Array && call[2].length === 4)).toBe(true);
+    const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups: vi.fn(), end: vi.fn() };
+    expect(skinner.encode({ beginComputePass: () => pass } as unknown as GPUCommandEncoder))
+      .toMatchObject({ outputStride: 48, hasTangents: true });
+    skinner.dispose(); expect(f.owned.size).toBe(0);
+  });
+
+  it("transforms tangent direction, orthogonalizes and flips handedness for reflected palettes", () => {
+    const input = prepareSkinningInput({ ...source(), joints: new Uint16Array(4), weights: new Float32Array([1, 0, 0, 0]),
+      normals: new Float32Array([0, 0, 1]), tangents: new Float32Array([1, 0, 0, 1]) },
+    { revision: 0, matrices: matrix(0, -2), normalMatrices: new Float32Array([-2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]) });
+    const output = cpuSkinVertices(input);
+    expect(output.length).toBe(12); expect([...output.slice(4, 7)]).toEqual([0, 0, 1]);
+    expect([...output.slice(8, 12)]).toEqual([-1, 0, 0, -1]);
+  });
+
+  it("passes tangent metadata directly into 48-byte history without stride conversion", () => {
+    const f = fixture(), skinner = new GpuSkinner(f.session), history = new GpuDeformationHistory(f.session);
+    skinner.setSource({ ...source(), tangents: new Float32Array([0, 1, 0, 1]) }, palette());
+    const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups: vi.fn(), end: vi.fn() };
+    const encoder = { beginComputePass: vi.fn(() => pass), copyBufferToBuffer: vi.fn() };
+    const result = skinner.encode(encoder as unknown as GPUCommandEncoder);
+    const stage = history.begin({ ...result, poseRevision: 0 });
+    history.encode(encoder as unknown as GPUCommandEncoder, stage);
+    expect(stage.result).toMatchObject({ outputStride: 48, hasTangents: true, historyValid: false });
+    expect(encoder.beginComputePass).toHaveBeenCalledTimes(1);
+    history.cancel(stage); history.dispose(); skinner.dispose(); expect(f.owned.size).toBe(0);
+  });
+
+  it("retains the old 32-byte source after optional tangent upload failure", () => {
+    const f = fixture(), skinner = new GpuSkinner(f.session);
+    skinner.setSource(source(), palette()); const retained = new Set(f.owned);
+    f.device.queue.writeBuffer.mockImplementation((_buffer, offset) => { if (offset === 64) throw new Error("tangent upload"); });
+    expect(() => skinner.setSource({ ...source(1), tangents: new Float32Array([0, 1, 0, 1]) }, palette())).toThrow("tangent upload");
+    expect(f.owned).toEqual(retained);
+    const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups: vi.fn(), end: vi.fn() };
+    expect(skinner.encode({ beginComputePass: () => pass } as unknown as GPUCommandEncoder))
+      .toMatchObject({ outputStride: 32, hasTangents: false, sourceRevision: 0 });
+    skinner.dispose();
+  });
+
+  it.each([[0, 0, 0, 1], [0, 1, 0, 0], [NaN, 1, 0, 1], [1, 0, 0, 1], [0, 1]])("rejects invalid tangent %j", values => {
+    expect(() => prepareSkinningInput({ ...source(), tangents: Float32Array.from(values) }, palette())).toThrow("tangent");
+  });
+
+  it("checks optional tangent bytes against device limits before allocation", () => {
+    const f = fixture(); Object.assign(f.device, { limits: { maxBufferSize: 224, maxStorageBufferBindingSize: 224, maxComputeWorkgroupsPerDimension: 1 } });
+    const skinner = new GpuSkinner(f.session);
+    const count = 3, values = { revision: 0, positions: new Float32Array(count * 3),
+      normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0]), tangents: new Float32Array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]),
+      joints: new Uint16Array(count * 4), weights: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]) };
+    expect(() => skinner.setSource(values, { revision: 0, matrices: matrix() })).toThrow("capacity");
+    expect(f.device.createBuffer).not.toHaveBeenCalled(); skinner.dispose();
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("passes Naga parsing and semantic validation", () => {
     const result = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,
       ["--stdin-file-path", "deep-gpu-skinning.wgsl", "--input-kind", "wgsl"], { input: GPU_SKINNING_WGSL, encoding: "utf8" });

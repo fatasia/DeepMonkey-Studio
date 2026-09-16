@@ -136,6 +136,7 @@ export type ShaderStageOutput =
   | Readonly<{ semantic: "position"; node: string }>
   | Readonly<{ semantic: "color"; node: string }>
   | Readonly<{ semantic: "varying"; node: string; name: string }>
+  | Readonly<{ semantic: "alpha-clip"; alpha: string; cutoff: string }>
   | Readonly<{
       semantic: "surface";
       model: "standard-pbr";

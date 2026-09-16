@@ -7,6 +7,7 @@ import type { CascadedShadowPlan, ShadowVec3 } from "../shadows/types.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import { PBR_FRAME_FLOAT_OFFSETS, PBR_FRAME_UNIFORM_FLOATS, type Pipelines } from "./pipelines.js";
+import { snapshotAuthoredShadow, planAuthoredShadow, packAuthoredShadow, type AuthoredDirectionalShadow } from "../shadows/authoredDirectionalShadow.js";
 
 export const PBR_CASCADE_COUNT = CASCADED_SHADOW_QUALITY_PROFILES.high.options.cascadeCount;
 export const PBR_CASCADE_MAP_SIZE = CASCADED_SHADOW_QUALITY_PROFILES.high.options.shadowMapSize;
@@ -37,6 +38,8 @@ export interface CascadedShadowFrameInput {
   readonly far: number;
   readonly extent: number;
   readonly lightDirection?: ShadowVec3;
+  readonly authored?: AuthoredDirectionalShadow;
+  readonly viewportHeight?: number;
 }
 
 export interface CascadedShadowFrame {
@@ -59,6 +62,7 @@ export class CascadedShadowResources {
   private pendingSignature: readonly number[] | undefined;
   private plan: CascadedShadowPlan | undefined;
   private disposed = false;
+  private renderingEnabled = true;
   private readonly depthBias: number;
   private readonly constantNormalBias: boolean;
 
@@ -111,21 +115,25 @@ export class CascadedShadowResources {
     }
   }
 
-  prepare(input: CascadedShadowFrameInput, force: boolean): CascadedShadowFrame {
+  prepare(input: CascadedShadowFrameInput, force: boolean, enabled = true): CascadedShadowFrame {
     if (this.disposed) throw new Error("Cascaded shadow resources are disposed.");
+    if (enabled && !this.renderingEnabled) this.invalidate();
+    this.renderingEnabled = enabled;
     const direction = input.lightDirection ?? PBR_SUN_RAY_DIRECTION;
+    const authored = input.authored === undefined ? undefined : snapshotAuthoredShadow(input.authored);
+    if (authored && (this.layerViews.length !== 1 || authored.mapSize !== this.selection.profile.options.shadowMapSize)) throw new Error("Authored shadow requires a matching one-layer shadow resource.");
     const maximum = Math.min(input.far, 1_000_000);
     const shadowFar = Math.min(maximum, Math.max(input.near + 1e-4, input.extent * 20));
-    const signature = [...input.eye, ...input.target, ...(input.up ?? [0, 1, 0]), input.verticalFovRadians,
-      input.aspect, input.near, shadowFar, ...direction];
+    const signature = authored ? [2, ...authored.viewProjection, ...direction, authored.mapSize, authored.bias, authored.normalBias, authored.intensity, authored.radius, input.viewportHeight ?? 0]
+      : [0, ...input.eye, ...input.target, ...(input.up ?? [0, 1, 0]), input.verticalFovRadians, input.aspect, input.near, shadowFar, ...direction];
     const changed = !this.lastSignature || !same(signature, this.lastSignature);
     if (changed) {
-      this.plan = planCascadedShadows({ eye: input.eye, target: input.target, ...(input.up ? { up: input.up } : {}),
+      this.plan = authored ? planAuthoredShadow(authored, direction) : planCascadedShadows({ eye: input.eye, target: input.target, ...(input.up ? { up: input.up } : {}),
         verticalFovRadians: input.verticalFovRadians, aspect: input.aspect, near: input.near, far: shadowFar },
       direction, { ...this.selection.profile.options,
         maxShadowDistance: shadowFar, depthPadding: Math.max(1, input.extent * 0.2) });
       this.session.device.queue.writeBuffer(this.uniform, 0,
-        packCascadedShadowUniform(this.plan, this.depthBias, this.constantNormalBias));
+        authored ? packAuthoredShadow(this.plan, authored, input.viewportHeight) : packCascadedShadowUniform(this.plan, this.depthBias, this.constantNormalBias));
       this.plan.cascades.forEach((cascade, index) => {
         const data = new Float32Array(PBR_FRAME_UNIFORM_FLOATS);
         data.set(cascade.viewProjection, PBR_FRAME_FLOAT_OFFSETS.lightViewProjection);
@@ -133,8 +141,11 @@ export class CascadedShadowResources {
       });
       this.pendingSignature = Object.freeze(signature);
     }
-    return Object.freeze({ plan: this.plan!, render: force || changed });
+    return Object.freeze({ plan: this.plan!, render: enabled && (force || changed) });
   }
+
+  get metrics() { return { shadowTier: this.selection.selectedTier, shadowDepthBytes: this.selection.profile.estimatedDepthTextureBytes,
+    shadowMapSize: this.selection.profile.options.shadowMapSize, shadowCascadeCount: this.selection.profile.options.cascadeCount }; }
 
   /** Publishes the prepared plan only after its command buffer was accepted by the queue. */
   commit(): void {

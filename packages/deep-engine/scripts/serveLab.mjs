@@ -12,7 +12,7 @@ const files = new Map([["/", ["index.html", "text/html"]], ["/switch", ["switch.
   ["/lab.css", ["lab.css", "text/css"]], ["/switch.css", ["switch.css", "text/css"]],
   ["/benchmark.css", ["benchmark.css", "text/css"]], ["/tokens.css", ["tokens.css", "text/css"]],
   ["/manifest.json", ["manifest.json", "application/json"]]]);
-for (const name of ["Box", "BoxInterleaved", "BoxTextured", "NormalTangentTest", "TextureEncodingTest", "AlphaBlendModeTest"]) {
+for (const name of ["Box", "BoxInterleaved", "BoxTextured", "NormalTangentTest", "TextureEncodingTest", "TextureTransformMultiTest", "AlphaBlendModeTest"]) {
   files.set(`/assets/${name}.glb`, [`assets/${name}.glb`, "model/gltf-binary"]);
   files.set(`/assets/${name}.LICENSE.md`, [`assets/${name}.LICENSE.md`, "text/plain"]);
 }
@@ -42,8 +42,9 @@ const server = createServer(async (request, response) => {
       response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ file })); return;
     }
     if (request.method !== "GET") { response.writeHead(405).end(); return; }
-    if (request.url === "/favicon.ico") { response.writeHead(204).end(); return; }
-    const file = files.get(request.url);
+    const pathname = new URL(request.url ?? "/", origin).pathname;
+    if (pathname === "/favicon.ico") { response.writeHead(204).end(); return; }
+    const file = files.get(pathname);
     if (!file) { response.writeHead(404).end(); return; }
     const content = await readFile(path.join(root, "dist/lab", file[0]));
     response.writeHead(200, { "Content-Type": `${file[1]}; charset=utf-8` }).end(content);

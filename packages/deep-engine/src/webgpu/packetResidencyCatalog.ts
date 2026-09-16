@@ -104,6 +104,7 @@ function snapshotGeometries(values: ReadonlyMap<string, GeometryResource>): Read
       ...(source.uv0 ? { uv0: source.uv0.slice() } : {}),
       ...(source.uv1 ? { uv1: source.uv1.slice() } : {}),
       ...(source.tangents ? { tangents: source.tangents.slice() } : {}),
+      ...(source.colors ? { colors: source.colors.slice() } : {}),
       indices: source.indices.slice(),
     }));
   }

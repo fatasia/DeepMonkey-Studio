@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { prepareRenderPacket, type GeometryResource, type RenderPacket } from "../renderPacket.js";
 import { createPacketResidencyRequestPlanner,
   planPacketResidencyRequests } from "./packetResidencyRequestPlanner.js";
+import { authorPacket } from "./authorLod.testUtils.js";
 
 const TRANSFORM = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
@@ -38,6 +39,17 @@ function packet(middleResident = true) {
 }
 
 describe("planPacketResidencyRequests", () => {
+  it.each(["author", "screen"])("rejects sparse and inherited %s levels at the public prepared-packet boundary", strategy => {
+    const prepared = strategy === "author" ? prepareRenderPacket(authorPacket([0])) : packet();
+    const batch = prepared.batches[0]!, profile = batch.lod!;
+    for (const inherited of [false, true]) {
+      const levels = [...profile.levels]; delete levels[1];
+      if (inherited) Object.setPrototypeOf(levels, Object.assign(Object.create(Array.prototype), { 1: profile.levels[1] }));
+      const malformed = { ...prepared, batches: [{ ...batch, lod: { ...profile, levels } }] } as typeof prepared;
+      expect(() => createPacketResidencyRequestPlanner(malformed)).toThrow(/LOD/);
+    }
+  });
+
   it("plans distinct visible object LODs, required fallback and texture mip deterministically", () => {
     const prepared = packet(), batch = prepared.batches[0]!;
     const demands = [

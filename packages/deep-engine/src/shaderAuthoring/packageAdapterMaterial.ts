@@ -1,4 +1,4 @@
-import type { DeepSlSurfaceModel, DeepSlTextureTransform } from "./deepSl.js";
+import type { DeepSlSurfaceModel, DeepSlTextureTransform } from "./deepSlTypes.js";
 import type {
   DeepPbrMeshV1MaterialDefaults,
   DeepPbrMeshV1MaterialTextureDefaults,

@@ -7,6 +7,7 @@ export interface StudioEnvironment {
   readonly diffuse: GPUTextureView;
   readonly brdf: GPUTextureView;
   readonly sampler: GPUSampler;
+  readonly panorama?: { readonly view: GPUTextureView; readonly sampler: GPUSampler };
   dispose(): void;
 }
 

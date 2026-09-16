@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "./deviceSession.js";
+import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import type { HiZResult } from "./hiZPyramid.js";
 import { MESHLET_CULL_WGSL, MESHLET_CULL_WORKGROUP_SIZE } from "./meshletCullingWgsl.js";
 import { nextMeshletCapacity, validateMeshletCull, type ValidatedMeshletCull } from "./meshletCullingValidation.js";
@@ -101,38 +102,44 @@ export class MeshletCuller {
     const previous = this.resources;
     const reusable = previous !== undefined && previous.capacity >= input.count && request.capacity * 4 >= previous.capacity;
     let candidate: MeshletCullResources | undefined;
+    let published = false;
     try {
       candidate = reusable ? previous : this.allocate(request.capacity, input, request.hiz);
       if (reusable && needsBinding(candidate, input, request.hiz)) candidate = this.rebind(candidate, input, request.hiz);
       this.writeUniform(candidate.uniform, input.count, request);
       const pass = encoder.beginComputePass({ label: "Deep stable meshlet culling" });
-      pass.setBindGroup(0, candidate.bindGroup);
-      pass.setPipeline(this.pipelines[0]!); pass.dispatchWorkgroups(request.workgroups);
-      pass.setPipeline(this.pipelines[1]!); pass.dispatchWorkgroups(request.workgroups);
-      pass.setPipeline(this.pipelines[2]!); pass.dispatchWorkgroups(1);
-      pass.setPipeline(this.pipelines[3]!); pass.dispatchWorkgroups(request.workgroups);
+      try {
+        pass.setBindGroup(0, candidate.bindGroup);
+        pass.setPipeline(this.pipelines[0]!); pass.dispatchWorkgroups(request.workgroups);
+        pass.setPipeline(this.pipelines[1]!); pass.dispatchWorkgroups(request.workgroups);
+        pass.setPipeline(this.pipelines[2]!); pass.dispatchWorkgroups(1);
+        pass.setPipeline(this.pipelines[3]!); pass.dispatchWorkgroups(request.workgroups);
+      } catch (error) { failWithResourceCleanup(error, "Meshlet culling encoding failed.", [() => pass.end()]); }
       pass.end();
       const result: MeshletCullingGpuResult = Object.freeze({ mode: "gpu", inputCount: input.count,
         capacity: candidate.capacity, visibleIndices: candidate.visibleIndices, visibleCount: candidate.visibleCount,
         visibleRecords: candidate.visibleRecords, recordStride: MESHLET_PLANNER_RECORD_STRIDE,
         hizTested: Boolean(request.hiz), normalConeTested: request.normalCone, updated: true });
       this.resources = candidate;
+      published = true;
       if (previous && previous.visibleIndices !== candidate.visibleIndices) this.release(previous);
       this.commitIdentities(input, request.hiz);
       this.last = { input: identity(input), request, result };
       return result;
     } catch (error) {
-      if (candidate && !reusable) this.release(candidate);
-      if (previous) this.release(previous);
-      this.resources = undefined; this.last = undefined;
-      throw error;
+      this.last = undefined;
+      if (published) throw error;
+      this.resources = undefined;
+      const retired = new Set([candidate, previous].filter((value): value is MeshletCullResources => Boolean(value)));
+      failWithResourceCleanup(error, "Meshlet culling preparation failed.", [...retired].map(value => () => this.release(value)));
     }
   }
 
   dispose(): void {
     if (this.disposed) return;
-    this.disposed = true; this.releaseOutputs(); this.releaseFallback();
+    this.disposed = true;
     this.last = undefined; this.inputIdentity = undefined; this.hizIdentity = undefined;
+    runResourceCleanup("Meshlet culler disposal failed.", [() => this.releaseOutputs(), () => this.releaseFallback()]);
   }
 
   private allocate(capacity: number, input: MeshletCullingInput, hiz: HiZResult | undefined): MeshletCullResources {
@@ -156,8 +163,7 @@ export class MeshletCuller {
       return { ...base, inputDescriptors: input.descriptors, inputBounds: input.bounds,
         hizTexture: hiz?.texture, hizMipLevelCount: hiz?.mipLevelCount ?? 1, ...binding };
     } catch (error) {
-      for (const resource of created) this.session.release(resource);
-      throw error;
+      failWithResourceCleanup(error, "Meshlet culling allocation failed.", created.map(resource => () => this.session.release(resource)));
     }
   }
 
@@ -211,15 +217,16 @@ export class MeshletCuller {
   private assertReady(): void {
     if (this.disposed) throw new Error("Meshlet culler is disposed.");
     if (this.session.state !== "ready") {
-      this.releaseOutputs(); this.releaseFallback(); this.last = undefined;
-      throw new Error("GPU session is not ready for meshlet culling.");
+      this.last = undefined;
+      failWithResourceCleanup(new Error("GPU session is not ready for meshlet culling."), "Lost meshlet cleanup failed.",
+        [() => this.releaseOutputs(), () => this.releaseFallback()]);
     }
   }
 
-  private releaseOutputs(): void { if (this.resources) this.release(this.resources); this.resources = undefined; }
+  private releaseOutputs(): void { const resources = this.resources; this.resources = undefined; if (resources) this.release(resources); }
   private release(resources: MeshletCullResources): void {
-    for (const resource of [resources.flags, resources.localPrefix, resources.blockOffsets, resources.visibleIndices,
-      resources.visibleRecords, resources.visibleCount, resources.uniform]) this.session.release(resource);
+    runResourceCleanup("Meshlet culling resource cleanup failed.", [resources.flags, resources.localPrefix, resources.blockOffsets, resources.visibleIndices,
+      resources.visibleRecords, resources.visibleCount, resources.uniform].map(resource => () => this.session.release(resource)));
   }
   private releaseFallback(): void {
     if (!this.fallbackAlive) return;

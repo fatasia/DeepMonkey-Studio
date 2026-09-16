@@ -16,6 +16,7 @@ interface PendingResidentPacket {
   readonly staged: StagedResidentPacketBuffers;
   readonly geometryBounds: ReadonlyMap<string, PacketGeometryBounds>;
   readonly textureLookup: PacketTextureLookup;
+  validationReady: boolean;
   rejectCancellation: ((reason: unknown) => void) | undefined;
 }
 
@@ -38,12 +39,12 @@ export class ResidentPacketBufferState {
   get pending(): boolean { return this.pendingValue !== undefined; }
 
   stage(context: ResidentPacketBufferStagingContext,
-    projection: ResidentPacketProjection, generation: number): boolean {
+    projection: ResidentPacketProjection, generation: number, validationReady = true): boolean {
     if (this.pendingValue) throw new Error("A resident packet stage is already pending.");
     const staged = stageResidentPacketBuffers({ ...context,
       ...(this.activeValue ? { geometryBounds: this.activeValue.geometryBounds } : {}) }, projection);
     try {
-      this.pendingValue = { generation, staged, rejectCancellation: undefined,
+      this.pendingValue = { generation, staged, validationReady, rejectCancellation: undefined,
         geometryBounds: staged.geometryBounds,
         textureLookup: createResidentPacketTextureLookup(projection) };
     } catch (error) {
@@ -59,7 +60,7 @@ export class ResidentPacketBufferState {
     signal?: AbortSignal): Promise<boolean> {
     if (signal?.aborted) throw cancelled();
     const staged = gpuValidatedStage(context.session.device,
-      () => this.stage(context, projection, generation), "GPU resident packet preparation failed");
+      () => this.stage(context, projection, generation, false), "GPU resident packet preparation failed");
     const pending = this.pendingValue!;
     const cancellation = new Promise<never>((_, reject) => { pending.rejectCancellation = reject; });
     const cancel = (): void => { try { this.cancel(context, generation); } catch { /* promise carries cleanup failure */ } };
@@ -68,6 +69,7 @@ export class ResidentPacketBufferState {
     try {
       await Promise.race([staged.checked, cancellation]);
       if (this.pendingValue !== pending) throw cancelled();
+      pending.validationReady = true;
       return staged.value;
     } catch (error) {
       if (this.pendingValue === pending) {
@@ -89,6 +91,8 @@ export class ResidentPacketBufferState {
       this.cancel(context);
       throw cancelled("Resident packet stage was superseded.");
     }
+    // Rendering the last good frame must not publish a candidate still awaiting GPU validation.
+    if (!pending.validationReady) return undefined;
     this.pendingValue = undefined;
     const publication = commitResidentPacketBufferStage(context, pending.staged);
     const current = Object.freeze({ ...publication,

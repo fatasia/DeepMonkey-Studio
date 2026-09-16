@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "./deviceSession.js";
+import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import { MESHLET_INDIRECT_WGSL } from "./meshletIndirectWgsl.js";
 import { validateMeshletIndirect } from "./meshletIndirectValidation.js";
 import { buildMeshletRenderBundle, sameBundleSnapshot, validateMeshletRenderBundleRequest,
@@ -63,6 +64,7 @@ export class MeshletIndirectExecutor {
     }
     const previous = this.resources, reusable = previous?.capacity === source.capacity;
     let candidate: IndirectResources | undefined;
+    let published = false;
     try {
       candidate = reusable ? previous : this.allocate(source);
       if (candidate.sourceRecords !== source.visibleRecords || candidate.sourceCount !== source.visibleCount) {
@@ -70,8 +72,13 @@ export class MeshletIndirectExecutor {
       }
       this.writeParameters(candidate.parameters, request);
       const pass = encoder.beginComputePass({ label: "Deep meshlet indirect command generation" });
-      pass.setPipeline(this.pipeline); pass.setBindGroup(0, candidate.bindGroup);
-      pass.dispatchWorkgroups(request.workgroups); pass.end();
+      try {
+        pass.setPipeline(this.pipeline); pass.setBindGroup(0, candidate.bindGroup);
+        pass.dispatchWorkgroups(request.workgroups);
+      } catch (error) {
+        failWithResourceCleanup(error, "Meshlet indirect encoding failed.", [() => pass.end()]);
+      }
+      pass.end();
       if (!reusable) {
         this.generation += 1; this.bundleCache = undefined;
       }
@@ -81,14 +88,19 @@ export class MeshletIndirectExecutor {
         instanceMapping: request.instanceMapping, commandStride: MESHLET_DRAW_INDEXED_INDIRECT_STRIDE,
         generation: this.generation, updated: true });
       this.resources = candidate;
+      published = true;
       if (previous && previous.commands !== candidate.commands) this.release(previous);
       this.last = { source, request, plan };
       return plan;
     } catch (error) {
-      if (candidate && !reusable) this.release(candidate);
-      if (previous) this.release(previous);
-      this.resources = undefined; this.last = undefined; this.bundleCache = undefined;
-      throw error;
+      this.last = undefined; this.bundleCache = undefined;
+      // 退休失败不销毁已发布替代资源；调用方可丢弃 encoder，重试必须重新编码。
+      if (published) throw error;
+      this.resources = undefined;
+      const retired = new Set([candidate, previous].filter((value): value is IndirectResources => Boolean(value)));
+      const buffers = new Set([...retired].flatMap(value => [value.commands, value.parameters]));
+      failWithResourceCleanup(error, "Meshlet indirect preparation failed.",
+        [...buffers].map(value => () => this.session.release(value)));
     }
   }
 
@@ -112,7 +124,7 @@ export class MeshletIndirectExecutor {
 
   dispose(): void {
     if (this.disposed) return;
-    this.disposed = true; this.releaseOutputs(); this.last = undefined; this.bundleCache = undefined;
+    this.disposed = true; this.last = undefined; this.bundleCache = undefined; this.releaseOutputs();
   }
 
   private allocate(source: ValidatedMeshletIndirect["source"]): IndirectResources {
@@ -129,8 +141,8 @@ export class MeshletIndirectExecutor {
       const bindGroup = this.createBinding(base, source);
       return { ...base, sourceRecords: source.visibleRecords, sourceCount: source.visibleCount, bindGroup };
     } catch (error) {
-      for (const value of created) this.session.release(value);
-      throw error;
+      failWithResourceCleanup(error, "Meshlet indirect allocation failed.",
+        created.map(value => () => this.session.release(value)));
     }
   }
 
@@ -165,14 +177,19 @@ export class MeshletIndirectExecutor {
   private assertReady(): void {
     if (this.disposed) throw new Error("Meshlet indirect executor is disposed.");
     if (this.session.state !== "ready") {
-      this.releaseOutputs(); this.last = undefined; this.bundleCache = undefined;
-      throw new Error("GPU session is not ready for meshlet indirect execution.");
+      this.last = undefined; this.bundleCache = undefined;
+      failWithResourceCleanup(new Error("GPU session is not ready for meshlet indirect execution."),
+        "Meshlet indirect device loss cleanup failed.", [() => this.releaseOutputs()]);
     }
   }
 
-  private releaseOutputs(): void { if (this.resources) this.release(this.resources); this.resources = undefined; }
+  private releaseOutputs(): void {
+    const previous = this.resources; this.resources = undefined;
+    if (previous) this.release(previous);
+  }
   private release(resources: IndirectResources): void {
-    this.session.release(resources.commands); this.session.release(resources.parameters);
+    runResourceCleanup("Meshlet indirect output cleanup failed.",
+      [() => this.session.release(resources.commands), () => this.session.release(resources.parameters)]);
   }
 }
 

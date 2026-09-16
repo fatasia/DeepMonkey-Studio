@@ -7,11 +7,19 @@ export interface DirectionalLight {
   readonly intensity: number;
 }
 
+export interface LocalLightShadow {
+  /** Stable identity used by the shared atlas planner. */
+  readonly key: string;
+  /** Optional allocation priority; intensity is used when omitted. */
+  readonly importance?: number;
+}
+
 export interface PointLight {
   readonly positionView: LightVector3;
   readonly range: number;
   readonly color: LightVector3;
   readonly intensity: number;
+  readonly shadow?: LocalLightShadow;
 }
 
 export interface SpotLight extends PointLight {

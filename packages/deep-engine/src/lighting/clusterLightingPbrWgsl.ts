@@ -1,9 +1,11 @@
 import { FORWARD_PLUS_CLUSTER_ABI_WGSL, FORWARD_PLUS_LIGHTING_BIND_GROUP } from "./clusterAbiWgsl.js";
 import { FORWARD_PLUS_LIGHT_ABI_WGSL } from "./lightAbiWgsl.js";
+import { LOCAL_SPOT_SHADOW_WGSL } from "../shadows/localSpotShadowShader.js";
 
 /** Group 3 is reserved for clustered lighting; group 2 remains available for cascaded shadows. */
 export const FORWARD_PLUS_PBR_WGSL = /* wgsl */ `${FORWARD_PLUS_LIGHT_ABI_WGSL}
 ${FORWARD_PLUS_CLUSTER_ABI_WGSL}
+${LOCAL_SPOT_SHADOW_WGSL}
 @group(${FORWARD_PLUS_LIGHTING_BIND_GROUP}) @binding(0) var<storage, read> deepClusterParams: ClusterParamsAbi;
 @group(${FORWARD_PLUS_LIGHTING_BIND_GROUP}) @binding(1) var<storage, read> deepDirectionalLights: array<DirectionalLightAbi>;
 @group(${FORWARD_PLUS_LIGHTING_BIND_GROUP}) @binding(2) var<storage, read> deepPointLights: array<PointLightAbi>;
@@ -17,16 +19,13 @@ fn deepClusterSafeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
   return select(fallback, value * inverseSqrt(max(lengthSquared, 0.00000001)), lengthSquared > 0.00000001);
 }
 fn deepClusterFresnelSchlick(cosine: f32, f0: vec3f) -> vec3f {
-  return f0 + (vec3f(1.0) - f0) * pow(1.0 - cosine, 5.0);
+  let factor = exp2((-5.55473 * cosine - 6.98316) * cosine);
+  return f0 * (1.0 - factor) + factor;
 }
 fn deepClusterDistributionGgx(nDotH: f32, roughness: f32) -> f32 {
   let alpha = roughness * roughness; let alpha2 = alpha * alpha;
   let denominator = nDotH * nDotH * (alpha2 - 1.0) + 1.0;
   return alpha2 / max(DEEP_CLUSTER_PI * denominator * denominator, 0.000001);
-}
-fn deepClusterGeometrySchlickGgx(nDotX: f32, roughness: f32) -> f32 {
-  let k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
-  return nDotX / max(nDotX * (1.0 - k) + k, 0.0001);
 }
 fn deepClusterBrdf(baseColor: vec3f, metallic: f32, roughness: f32, normal: vec3f,
   view: vec3f, surfaceToLight: vec3f, radiance: vec3f) -> vec3f {
@@ -39,16 +38,19 @@ fn deepClusterBrdf(baseColor: vec3f, metallic: f32, roughness: f32, normal: vec3
   let f0 = mix(vec3f(0.04), baseColor, metallic);
   let fresnel = deepClusterFresnelSchlick(vDotH, f0);
   let distribution = deepClusterDistributionGgx(nDotH, roughness);
-  let geometry = deepClusterGeometrySchlickGgx(nDotV, roughness) * deepClusterGeometrySchlickGgx(nDotL, roughness);
-  let specular = distribution * geometry * fresnel / max(4.0 * nDotV * nDotL, 0.0001);
-  let diffuse = (vec3f(1.0) - fresnel) * (1.0 - metallic) * baseColor / DEEP_CLUSTER_PI;
+  let alpha = roughness * roughness; let alpha2 = alpha * alpha;
+  let gv = nDotL * sqrt(alpha2 + (1.0 - alpha2) * nDotV * nDotV);
+  let gl = nDotV * sqrt(alpha2 + (1.0 - alpha2) * nDotL * nDotL);
+  let visibility = 0.5 / max(gv + gl, 0.000001);
+  let specular = distribution * visibility * fresnel;
+  let diffuse = (1.0 - metallic) * baseColor / DEEP_CLUSTER_PI;
   return (diffuse + specular) * radiance * nDotL;
 }
 fn deepClusterRangeAttenuation(distanceSquared: f32, range: f32) -> f32 {
   if (distanceSquared >= range * range) { return 0.0; }
   let ratioSquared = distanceSquared / max(range * range, 0.0001);
   let window = max(1.0 - ratioSquared * ratioSquared, 0.0);
-  return window * window / max(distanceSquared, 0.0001);
+  return window * window / max(distanceSquared, 0.01);
 }
 fn deepClusterIndex(fragmentCoordinate: vec2f, positionView: vec3f) -> u32 {
   let clusterCount = deepClusterParams.limits.y; let depth = -positionView.z;
@@ -71,18 +73,21 @@ fn deepClusterPointContribution(light: PointLightAbi, positionView: vec3f, baseC
   let surfaceToLight = deepClusterSafeNormalize(toLight, normal);
   return deepClusterBrdf(baseColor, metallic, roughness, normal, view, surfaceToLight, light.radianceReserved.rgb * attenuation);
 }
-fn deepClusterSpotContribution(light: SpotLightAbi, positionView: vec3f, baseColor: vec3f,
-  metallic: f32, roughness: f32, normal: vec3f, view: vec3f) -> vec3f {
+fn deepClusterSpotContribution(light: SpotLightAbi, spotIndex: u32, positionView: vec3f, worldPosition: vec3f, baseColor: vec3f,
+  metallic: f32, roughness: f32, normal: vec3f, view: vec3f, receiveShadow: bool) -> vec3f {
   let toLight = light.positionRange.xyz - positionView; let distanceSquared = dot(toLight, toLight);
   let rangeAttenuation = deepClusterRangeAttenuation(distanceSquared, light.positionRange.w);
   if (rangeAttenuation <= 0.0) { return vec3f(0.0); }
   let surfaceToLight = deepClusterSafeNormalize(toLight, normal);
   let attenuation = rangeAttenuation * deepSpotAttenuation(light, surfaceToLight);
-  return deepClusterBrdf(baseColor, metallic, roughness, normal, view, surfaceToLight, light.radianceConeScale.rgb * attenuation);
+  var visibility = 1.0;
+  if (receiveShadow) { visibility = deepLocalSpotShadow(spotIndex, worldPosition); }
+  return deepClusterBrdf(baseColor, metallic, roughness, normal, view, surfaceToLight,
+    light.radianceConeScale.rgb * attenuation * visibility);
 }
 
-fn deepForwardPlusPbr(fragmentCoordinate: vec2f, positionViewInput: vec3f, normalViewInput: vec3f,
-  baseInput: vec3f, metallicInput: f32, roughnessInput: f32) -> vec3f {
+fn deepForwardPlusPbrReceiving(fragmentCoordinate: vec2f, positionViewInput: vec3f, normalViewInput: vec3f,
+  worldPosition: vec3f, baseInput: vec3f, metallicInput: f32, roughnessInput: f32, receiveShadow: bool) -> vec3f {
   let baseColor = max(baseInput, vec3f(0.0)); let metallic = clamp(metallicInput, 0.0, 1.0);
   let roughness = clamp(roughnessInput, 0.045, 1.0);
   let normal = deepClusterSafeNormalize(normalViewInput, vec3f(0.0, 0.0, 1.0));
@@ -103,7 +108,9 @@ fn deepForwardPlusPbr(fragmentCoordinate: vec2f, positionViewInput: vec3f, norma
         if (localIndex < deepClusterParams.limits.w) {
           result += deepClusterPointContribution(deepPointLights[localIndex], positionViewInput, baseColor, metallic, roughness, normal, view);
         } else {
-          result += deepClusterSpotContribution(deepSpotLights[localIndex - deepClusterParams.limits.w], positionViewInput, baseColor, metallic, roughness, normal, view);
+          let spotIndex = localIndex - deepClusterParams.limits.w;
+          result += deepClusterSpotContribution(deepSpotLights[spotIndex], spotIndex, positionViewInput,
+            worldPosition, baseColor, metallic, roughness, normal, view, receiveShadow);
         }
       }
     }
@@ -111,11 +118,23 @@ fn deepForwardPlusPbr(fragmentCoordinate: vec2f, positionViewInput: vec3f, norma
   return max(result, vec3f(0.0));
 }
 
-fn deepForwardPlusPbrWorld(fragmentCoordinate: vec2f, worldPosition: vec3f, worldNormal: vec3f,
-  worldToView: mat4x4f, baseColor: vec3f, metallic: f32, roughness: f32) -> vec3f {
+fn deepForwardPlusPbr(fragmentCoordinate: vec2f, positionViewInput: vec3f, normalViewInput: vec3f,
+  worldPosition: vec3f, baseInput: vec3f, metallicInput: f32, roughnessInput: f32) -> vec3f {
+  return deepForwardPlusPbrReceiving(fragmentCoordinate, positionViewInput, normalViewInput,
+    worldPosition, baseInput, metallicInput, roughnessInput, true);
+}
+
+fn deepForwardPlusPbrWorldReceiving(fragmentCoordinate: vec2f, worldPosition: vec3f, worldNormal: vec3f,
+  worldToView: mat4x4f, baseColor: vec3f, metallic: f32, roughness: f32, receiveShadow: bool) -> vec3f {
   let positionView = (worldToView * vec4f(worldPosition, 1.0)).xyz;
   let normalView = (worldToView * vec4f(worldNormal, 0.0)).xyz;
-  return deepForwardPlusPbr(fragmentCoordinate, positionView, normalView, baseColor, metallic, roughness);
+  return deepForwardPlusPbrReceiving(fragmentCoordinate, positionView, normalView, worldPosition, baseColor, metallic, roughness, receiveShadow);
+}
+
+fn deepForwardPlusPbrWorld(fragmentCoordinate: vec2f, worldPosition: vec3f, worldNormal: vec3f,
+  worldToView: mat4x4f, baseColor: vec3f, metallic: f32, roughness: f32) -> vec3f {
+  return deepForwardPlusPbrWorldReceiving(fragmentCoordinate, worldPosition, worldNormal,
+    worldToView, baseColor, metallic, roughness, true);
 }
 `;
 

@@ -25,7 +25,7 @@ export function resolveBridgeSources<TId extends SpatialItemId>(sources: GltfRen
 }
 
 export function prepareMixer<TId extends SpatialItemId>(clips: readonly AnimationClipInput<TId>[], nodeCount: number): SceneAnimationMixer<TId> {
-  const mixer = new SceneAnimationMixer<TId>({ maxClips: Math.max(1, clips.length), maxAnimatedNodes: Math.max(1, nodeCount), maxLayers: 1,
+  const mixer = new SceneAnimationMixer<TId>({ maxClips: Math.max(1, clips.length), maxAnimatedNodes: Math.max(1, nodeCount), maxLayers: 2,
     maxTracksPerClip: Math.max(1, ...clips.map((clip) => clip.tracks.length)),
     maxKeysPerTrack: Math.max(1, ...clips.flatMap((clip) => clip.tracks.map((track) => track.times.length))) });
   for (const clip of clips) mixer.registerClip(clip);
@@ -77,15 +77,30 @@ export function resolvedSelection<TId extends SpatialItemId>(source: ResolvedGlt
   if (!input || typeof input !== "object" || Array.isArray(input)) fail("invalid-input", "Animation selection must be an object.");
   const transformClipId = selectClip(input.transformClipId, source.transformClips, "transform");
   const morphClipId = selectClip(input.morphClipId, source.morphClips, "morph");
-  const wrapMode = input.wrapMode ?? "loop", time = input.time ?? 0, timeScale = input.timeScale ?? 1;
+  const playbackWrap = input.playbackMode === "once" ? "clamp" : input.playbackMode;
+  if (input.playbackMode !== undefined && input.playbackMode !== "loop" && input.playbackMode !== "once") {
+    fail("invalid-time", "Animation playback mode must be loop or once.");
+  }
+  if (input.wrapMode !== undefined && playbackWrap !== undefined && input.wrapMode !== playbackWrap) {
+    fail("invalid-time", "Animation playback mode conflicts with wrap mode.");
+  }
+  const wrapMode = input.wrapMode ?? playbackWrap ?? "loop", time = input.time ?? 0, timeScale = input.timeScale ?? 1;
   if (wrapMode !== "loop" && wrapMode !== "clamp") fail("invalid-time", "Animation wrap mode must be loop or clamp.");
   validateTime(time, "Animation time"); validateTimeScale(timeScale);
   if (input.paused !== undefined && typeof input.paused !== "boolean") fail("invalid-time", "Animation paused state must be boolean.");
-  return { transformClipId, morphClipId, wrapMode, time, timeScale, paused: input.paused ?? false };
+  return { transformClipId, morphClipId, wrapMode, playbackMode: wrapMode === "loop" ? "loop" as const : "once" as const,
+    time, timeScale, paused: input.paused ?? false };
+}
+
+export function validateCrossFadeDuration(value: number): void {
+  if (!Number.isFinite(value) || value < 0 || value > 1_000_000) fail("invalid-time", "Animation cross-fade duration is invalid.");
 }
 
 export function validateTime(value: number, label = "Animation time"): void {
   if (!Number.isFinite(value) || Math.abs(value) > 1e15) fail("invalid-time", `${label} is invalid.`);
+}
+export function validateFrameDelta(value: number): void {
+  if (!Number.isFinite(value) || value < 0 || value > 1_000_000) fail("invalid-time", "Animation frame delta is invalid.");
 }
 export function validateTimeScale(value: number): void {
   if (!Number.isFinite(value) || Math.abs(value) > 1_000_000) fail("invalid-time", "Animation time scale is invalid.");

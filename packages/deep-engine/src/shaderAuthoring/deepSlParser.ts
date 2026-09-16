@@ -19,7 +19,7 @@ function createParseState(): DeepSlParseState {
       baseColorTextureTransform: identityTextureTransform(), metallicRoughnessTextureTransform: identityTextureTransform(),
       normalTextureTransform: identityTextureTransform(), occlusionTextureTransform: identityTextureTransform(),
       emissiveTextureTransform: identityTextureTransform(), normalScale: 1, occlusionStrength: 1,
-      emissiveFactor: [0, 0, 0], emissiveStrength: 1,
+      emissiveFactor: [0, 0, 0], emissiveStrength: 1, clearcoatFactor: 0, clearcoatRoughness: 0,
     },
     diagnostics: [], fields: new Map(), opened: false, closed: false,
   };

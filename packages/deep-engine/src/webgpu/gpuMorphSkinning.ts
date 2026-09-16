@@ -1,5 +1,7 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "./deviceSession.js";
+import type { DeformationStaticUpload } from "./deformationStaticSources.js";
+import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import { assertMorphWeightRange, packMorphWeights } from "./gpuMorphPacking.js";
 import { prepareMorphSkinningInput } from "./gpuMorphSkinningPacking.js";
 import type { GpuMorphSkinningResult, MorphSkinningDynamics, MorphSkinningSources,
@@ -25,7 +27,8 @@ export class GpuMorphSkinner {
   private resources: FusedResources | undefined;
   private disposed = false;
 
-  constructor(private readonly session: DeviceSession) {
+  constructor(private readonly session: DeviceSession, private readonly staticUpload?: DeformationStaticUpload) {
+    if (staticUpload && staticUpload.session !== session) throw new Error("Fused static lease belongs to another device epoch.");
     if (session.state !== "ready") throw new Error("GPU session is not ready for fused morph skinning.");
     const device = session.device, module = device.createShaderModule({ label: "Deep fused morph skinning WGSL", code: GPU_MORPH_SKINNING_WGSL });
     this.layout = device.createBindGroupLayout({ label: "Deep fused morph skinning layout", entries: [
@@ -46,6 +49,8 @@ export class GpuMorphSkinner {
 
   setSource(sources: MorphSkinningSources, dynamics: MorphSkinningDynamics): boolean {
     this.assertReady(); const current = this.resources;
+    if (current && this.staticUpload && (sources.morph.revision !== current.sources.morph.revision
+      || sources.skinning.revision !== current.sources.skinning.revision)) throw new Error("Shared fused source lease cannot change revision.");
     if (current) {
       compareStatic(sources.morph, current.sources.morph, "morph");
       compareStatic(sources.skinning, current.sources.skinning, "skinning");
@@ -57,10 +62,14 @@ export class GpuMorphSkinner {
     const allocate = (label: string, size: number, usage: GPUBufferUsageFlags): GPUBuffer => {
       const buffer = this.session.own(device.createBuffer({ label, size, usage })); created.push(buffer); return buffer;
     };
+    let candidate: FusedResources;
     try {
-      const vertices = allocate("Deep fused morph vertices", prepared.vertices.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-      const deltas = allocate("Deep fused morph targets", prepared.deltas.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-      const influences = allocate("Deep fused skin influences", prepared.influences.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+      const vertices = this.staticUpload?.upload("Deep fused morph vertices", prepared.vertices)
+        ?? allocate("Deep fused morph vertices", prepared.vertices.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+      const deltas = this.staticUpload?.upload("Deep fused morph targets", prepared.deltas)
+        ?? allocate("Deep fused morph targets", prepared.deltas.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+      const influences = this.staticUpload?.upload("Deep fused skin influences", prepared.influences)
+        ?? allocate("Deep fused skin influences", prepared.influences.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
       const output = allocate("Deep fused deformed vertices", prepared.vertexCount * GPU_MORPH_SKINNING_OUTPUT_STRIDE,
         GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_SRC);
       const morphWeights = pair((index) => allocate(`Deep fused morph weights ${index}`, prepared.morphWeights.byteLength,
@@ -68,19 +77,22 @@ export class GpuMorphSkinner {
       const palettes = pair((index) => allocate(`Deep fused joint palette ${index}`, prepared.joints.byteLength,
         GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST));
       const uniform = allocate("Deep fused deformation parameters", 16, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
-      device.queue.writeBuffer(vertices, 0, prepared.vertices); device.queue.writeBuffer(deltas, 0, prepared.deltas);
-      device.queue.writeBuffer(influences, 0, prepared.influences); device.queue.writeBuffer(morphWeights[0], 0, prepared.morphWeights);
+      if (!this.staticUpload) { device.queue.writeBuffer(vertices, 0, prepared.vertices); device.queue.writeBuffer(deltas, 0, prepared.deltas);
+        device.queue.writeBuffer(influences, 0, prepared.influences); }
+      device.queue.writeBuffer(morphWeights[0], 0, prepared.morphWeights);
       device.queue.writeBuffer(palettes[0], 0, prepared.joints);
       device.queue.writeBuffer(uniform, 0, new Uint32Array([prepared.vertexCount, prepared.targetCount, prepared.flags, prepared.jointCount]));
       const bindGroup = this.binding(vertices, deltas, morphWeights[0], influences, palettes[0], output, uniform);
-      this.resources = { vertices, deltas, influences, output, morphWeights, palettes, uniform, bindGroup,
+      candidate = { vertices, deltas, influences, output, morphWeights, palettes, uniform, bindGroup,
         activeMorphWeights: 0, activePalette: 0, vertexCount: prepared.vertexCount, targetCount: prepared.targetCount,
         jointCount: prepared.jointCount, flags: prepared.flags, maximumBaseMagnitude: prepared.maximumBaseMagnitude,
         maximumDeltaMagnitude: prepared.maximumDeltaMagnitude, sources, dynamics };
-      if (current) this.release(current); return true;
     } catch (error) {
-      for (const buffer of created) this.session.release(buffer); throw error;
+      failWithResourceCleanup(error, "Fused deformation preparation failed.", created.map(buffer => () => this.session.release(buffer)));
     }
+    this.resources = candidate;
+    if (current) this.release(current);
+    return true;
   }
 
   updateDynamics(dynamics: MorphSkinningDynamics): boolean {
@@ -106,15 +118,27 @@ export class GpuMorphSkinner {
   encode(encoder: GPUCommandEncoder): GpuMorphSkinningResult {
     this.assertReady(); const resources = this.resources;
     if (!resources) throw new Error("Fused morph skinning source is not prepared.");
-    const pass = encoder.beginComputePass({ label: "Deep fused morph skinning" }); pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, resources.bindGroup); pass.dispatchWorkgroups(Math.ceil(resources.vertexCount / GPU_MORPH_SKINNING_WORKGROUP_SIZE)); pass.end();
+    const pass = encoder.beginComputePass({ label: "Deep fused morph skinning" });
+    let failure: { error: unknown } | undefined;
+    try {
+      pass.setPipeline(this.pipeline); pass.setBindGroup(0, resources.bindGroup);
+      pass.dispatchWorkgroups(Math.ceil(resources.vertexCount / GPU_MORPH_SKINNING_WORKGROUP_SIZE));
+    } catch (error) { failure = { error }; }
+    finally {
+      if (failure) failWithResourceCleanup(failure.error, "Fused deformation encode failed.", [() => pass.end()]);
+      pass.end();
+    }
     return Object.freeze({ output: resources.output, vertexCount: resources.vertexCount, outputStride: GPU_MORPH_SKINNING_OUTPUT_STRIDE,
       hasNormals: (resources.flags & 1) !== 0, hasTangents: (resources.flags & 2) !== 0,
       morphSourceRevision: resources.sources.morph.revision, skinningSourceRevision: resources.sources.skinning.revision,
       morphWeightsRevision: resources.dynamics.morphWeights.revision, paletteRevision: resources.dynamics.palette.revision });
   }
 
-  dispose(): void { if (this.disposed) return; this.disposed = true; if (this.resources) this.release(this.resources); this.resources = undefined; }
+  dispose(): void {
+    if (this.disposed) return; this.disposed = true;
+    const resources = this.resources; this.resources = undefined;
+    if (resources) this.release(resources);
+  }
 
   private binding(vertices: GPUBuffer, deltas: GPUBuffer, weights: GPUBuffer, influences: GPUBuffer,
     palette: GPUBuffer, output: GPUBuffer, uniform: GPUBuffer): GPUBindGroup {
@@ -127,12 +151,15 @@ export class GpuMorphSkinner {
   }
   private assertReady(): void {
     if (this.disposed) throw new Error("GPU morph skinner is disposed.");
-    if (this.session.state !== "ready") { if (this.resources) this.release(this.resources); this.resources = undefined;
-      throw new Error("GPU session is not ready for fused morph skinning."); }
+    if (this.session.state !== "ready") {
+      const resources = this.resources; this.resources = undefined;
+      failWithResourceCleanup(new Error("GPU session is not ready for fused morph skinning."), "Fused deformation device cleanup failed.",
+        resources ? [() => this.release(resources)] : []);
+    }
   }
   private release(resources: FusedResources): void {
-    for (const buffer of [resources.vertices, resources.deltas, resources.influences, resources.output,
-      ...resources.morphWeights, ...resources.palettes, resources.uniform]) this.session.release(buffer);
+    runResourceCleanup("Fused deformation resource cleanup failed.", [...(this.staticUpload ? [] : [resources.vertices, resources.deltas, resources.influences]), resources.output,
+      ...resources.morphWeights, ...resources.palettes, resources.uniform].map(buffer => () => this.session.release(buffer)));
   }
 }
 

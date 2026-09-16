@@ -1,4 +1,5 @@
 import type { GeometryResource, PreparedBatch } from "../renderPacketTypes.js";
+import { snapshotPreparedLod } from "./snapshotPreparedLod.js";
 import type { PreparedTexture } from "../textures/decodedTexture.js";
 import type { ResidentPacketBatch, ResidentPacketProjection } from "./residentPacketProjection.js";
 
@@ -74,6 +75,7 @@ function snapshotGeometry(source: GeometryResource): GeometryResource {
     ...(source.uv0 ? { uv0: source.uv0.slice() } : {}),
     ...(source.uv1 ? { uv1: source.uv1.slice() } : {}),
     ...(source.tangents ? { tangents: source.tangents.slice() } : {}),
+    ...(source.colors ? { colors: source.colors.slice() } : {}),
   });
 }
 
@@ -91,9 +93,7 @@ function snapshotBatch(source: PreparedBatch): PreparedBatch {
     ...(source.sortCenter ? { sortCenter: Object.freeze([...source.sortCenter]) as
       readonly [number, number, number] } : {}),
     ...(source.textures ? { textures: snapshotMaterialTextures(source.textures) } : {}),
-    ...(source.lod ? { lod: Object.freeze({ ...source.lod,
-      levels: Object.freeze(source.lod.levels.map(level => Object.freeze({ ...level }))),
-    }) } : {}),
+    ...(source.lod ? { lod: snapshotPreparedLod(source.lod) } : {}),
   });
 }
 

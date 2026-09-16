@@ -23,7 +23,7 @@ const ABORT_MESSAGE = "HDR environment creation was aborted.";
 
 /** Uploads a linear HDR panorama and prefilters it into the renderer's split-sum IBL resources. */
 export async function createHdrEnvironment(session: DeviceSession, image: RadianceHdrImage,
-  options: HdrEnvironmentOptions = {}, signal?: AbortSignal): Promise<HdrEnvironment> {
+  options: HdrEnvironmentOptions = {}, signal?: AbortSignal, backgroundImage?: RadianceHdrImage): Promise<HdrEnvironment> {
   if (session.state !== "ready") throw new Error("GPU session is not ready for HDR environment creation.");
   if (signal?.aborted) throw gpuAbortReason(signal, ABORT_MESSAGE);
   if (!options || typeof options !== "object" || Array.isArray(options)) throw new Error("Invalid HDR environment options.");
@@ -35,6 +35,10 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
     ...(options.maxUploadBytes === undefined ? {} : { maxBytes: options.maxUploadBytes }),
     ...(options.maxRadiance === undefined ? {} : { maxRadiance: options.maxRadiance }),
   });
+  const backgroundUpload = backgroundImage && backgroundImage !== image ? prepareHdrEnvironmentUpload(backgroundImage, {
+    ...(options.maxUploadBytes === undefined ? {} : { maxBytes: options.maxUploadBytes }),
+    ...(options.maxRadiance === undefined ? {} : { maxRadiance: options.maxRadiance }),
+  }) : undefined;
   const device = session.device, owned: GPUTexture[] = [];
   let settings: GPUBuffer | undefined;
   let scopeOpen = false;
@@ -58,6 +62,14 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
       usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING });
     device.queue.writeTexture({ texture: source }, upload.data,
       { bytesPerRow: upload.bytesPerRow, rowsPerImage: upload.height }, [upload.width, upload.height]);
+    let panorama = source;
+    if (backgroundUpload) {
+      const background = backgroundUpload;
+      panorama = texture({ label: "Deep HDR background", size: [background.width, background.height], format: "rgba16float",
+        usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING });
+      device.queue.writeTexture({ texture: panorama }, background.data,
+        { bytesPerRow: background.bytesPerRow, rowsPerImage: background.height }, [background.width, background.height]);
+    }
     const specular = texture({ label: "Deep HDRI specular", size: [specularSize, specularSize, 6],
       mipLevelCount: levels, format: "rgba16float", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
     const diffuse = texture({ label: "Deep HDRI diffuse", size: [diffuseSize, diffuseSize, 6],
@@ -102,16 +114,18 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
     const gpuErrorPromise = device.popErrorScope(); scopeOpen = false;
     const gpuError = await abortableGpu(gpuErrorPromise, signal, ABORT_MESSAGE);
     if (gpuError) throw new Error(`HDR environment GPU validation failed: ${gpuError.message}`);
-    session.release(settings); settings = undefined; session.release(source); owned.splice(owned.indexOf(source), 1);
+    session.release(settings); settings = undefined;
+    if (panorama !== source) { session.release(source); owned.splice(owned.indexOf(source), 1); }
     let disposed = false;
     return Object.freeze({ specular: specular.createView({ dimension: "cube" }),
       diffuse: diffuse.createView({ dimension: "cube" }), brdf: brdf.createView(),
       sampler: device.createSampler({ minFilter: "linear", magFilter: "linear", mipmapFilter: "linear" }),
-      clampedChannels: upload.clampedChannels,
+      panorama: Object.freeze({ view: panorama.createView(), sampler }),
+      clampedChannels: upload.clampedChannels + (backgroundUpload?.clampedChannels ?? 0),
       dispose(): void {
         if (disposed) return;
         disposed = true;
-        for (const resource of [specular, diffuse, brdf]) session.release(resource);
+        for (const resource of owned) session.release(resource);
       } });
   } catch (error) {
     if (scopeOpen) try { await device.popErrorScope(); } catch { /* Preserve the original failure. */ }

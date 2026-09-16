@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { BackendPreferenceController, BackendSwitchCoordinator } from "../src/index.js";
 import { BackendCanvasDeck, bindBackendCanvas, DeepWebGpuBackend, ThreeProjectionBridge,
-  threeRenderView, type CanvasBoundBackend } from "../src/threeBridge/index.js";
+  projectThreeWorldLights, threeRenderView, type CanvasBoundBackend } from "../src/threeBridge/index.js";
 import type { RenderView } from "../src/webgpu/index.js";
 import { domCanvasHost, domCanvasSurface, type DomCanvasSurface } from "./domCanvasPort.js";
 import { ThreeSwitchBackend } from "./threeSwitchBackend.js";
@@ -18,6 +18,20 @@ interface AuthorState {
 
 type InnerBackend = ThreeSwitchBackend | DeepWebGpuBackend;
 type SwitchBackend = CanvasBoundBackend<InnerBackend>;
+interface PublishedFrameProof {
+  readonly backend: "three" | "deep-webgpu";
+  readonly gpuFenceCompleted: true;
+  readonly width: number;
+  readonly height: number;
+  readonly centerNonBlack?: boolean;
+  readonly resources?: number;
+  readonly lightCount?: number;
+}
+interface SwitchRecord {
+  readonly target: string; readonly result: string; readonly active: string;
+  readonly elapsedMs: number; readonly revision: number; readonly scriptTicks: number;
+  readonly surfaces: number; readonly proof: PublishedFrameProof;
+}
 
 const get = <T extends HTMLElement>(id: string) => {
   const value = document.getElementById(id);
@@ -27,12 +41,13 @@ const get = <T extends HTMLElement>(id: string) => {
 const status = get("switch-status"), select = get<HTMLSelectElement>("backend");
 const runTwenty = get<HTMLButtonElement>("roundtrip"), canvasHost = get("canvas-host");
 const initialCanvas = get<HTMLCanvasElement>("three-canvas");
-const records: unknown[] = [], failures: string[] = [];
+const records: SwitchRecord[] = [], failures: string[] = [];
 const state = createState();
 const deck = new BackendCanvasDeck(domCanvasHost(canvasHost), "three", domCanvasSurface(initialCanvas));
 let coordinator: BackendSwitchCoordinator<AuthorState, SwitchBackend>;
 let preference: BackendPreferenceController<AuthorState, SwitchBackend>;
 let busy = false, closed = false, raf = 0;
+let buildSha256 = "";
 
 function createState(): AuthorState {
   const root = new THREE.Group(); root.name = "shared-author-root";
@@ -40,8 +55,9 @@ function createState(): AuthorState {
   const mesh = new THREE.Mesh(new THREE.TorusKnotGeometry(0.82, 0.26, 96, 16), material);
   mesh.name = "shared-knot"; root.add(mesh); root.updateWorldMatrix(true, true);
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x101820); scene.add(root);
-  scene.add(new THREE.HemisphereLight(0xddeeff, 0x18202a, 1.7));
-  const key = new THREE.DirectionalLight(0xffffff, 3.1); key.position.set(3, 5, 4); scene.add(key);
+  const key = new THREE.DirectionalLight(0xffffff, 3.1); key.position.set(3, 5, 4);
+  const fill = new THREE.DirectionalLight(0x9fb8d6, 0.7); fill.position.set(-4, 2, -3);
+  scene.add(key, key.target, fill, fill.target);
   const camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.05, 100);
   camera.position.set(3.2, 2.2, 4.3); camera.lookAt(0, 0, 0); camera.updateMatrixWorld(true);
   return { revision: 1, root, scene, camera, selection: new Set([mesh.uuid]),
@@ -66,10 +82,14 @@ function nativeCanvas(backend: SwitchBackend): HTMLCanvasElement {
 
 function view(canvas: HTMLCanvasElement): RenderView {
   state.camera.updateMatrixWorld(true);
+  state.scene.updateWorldMatrix(true, true);
+  const projected = projectThreeWorldLights(state.scene, { cameraLayerMask: state.camera.layers.mask });
+  if (!projected.ok) throw new Error(`Three light projection failed: ${projected.issues.map(issue => issue.message).join("; ")}`);
   return threeRenderView({ camera: state.camera, target: [0, 0, 0],
     width: Math.max(1, canvas.clientWidth || canvas.width),
     height: Math.max(1, canvas.clientHeight || canvas.height), pixelRatio: 1, extent: 3,
-    background: [0.005, 0.009, 0.014], floor: [0.035, 0.045, 0.055], exposure: 1, roughness: 1 });
+    background: [0.005, 0.009, 0.014], floor: [0.035, 0.045, 0.055], exposure: 1, roughness: 1,
+    lights: projected.lights });
 }
 
 async function createBackend(id: string, _state: AuthorState, signal: AbortSignal): Promise<SwitchBackend> {
@@ -79,7 +99,10 @@ async function createBackend(id: string, _state: AuthorState, signal: AbortSigna
     const backend: InnerBackend = id === "three"
       ? await ThreeSwitchBackend.create(canvas, state.scene, state.camera, signal)
       : await DeepWebGpuBackend.create({ canvas, gpu: navigator.gpu,
-        projection: bridge(), root: state.root, view: view(canvas), signal });
+        projection: bridge(), root: state.root, view: view(canvas), signal,
+        renderer: { features: { environment: false, fog: false, groundGrid: false,
+          ambientOcclusion: false, temporalAa: false, occlusionCulling: false,
+          bloom: false, vignette: false, toneMapping: "three-aces-r185" } } });
     return bindBackendCanvas(backend, surface);
   } catch (error) {
     surface.dispose();
@@ -96,6 +119,20 @@ async function catchUp(candidate: SwitchBackend, revision: number, signal: Abort
   return revision;
 }
 
+async function validatePublishedFrame(backend: SwitchBackend): Promise<PublishedFrameProof> {
+  if (backend.backend instanceof DeepWebGpuBackend) {
+    const frame = await backend.backend.runtime.validateFrame(view(nativeCanvas(backend)));
+    return Object.freeze({ backend: "deep-webgpu", gpuFenceCompleted: true,
+      width: frame.width, height: frame.height, resources: frame.resources, lightCount: frame.lightCount });
+  }
+  const frame = await backend.backend.validateFrame();
+  const centerNonBlack = frame.centerRgba[3] === 255
+    && frame.centerRgba.slice(0, 3).some(channel => channel > 0);
+  if (!centerNonBlack) throw new Error("Published Three frame became blank after surface handoff.");
+  return Object.freeze({ backend: "three", gpuFenceCompleted: true,
+    width: frame.width, height: frame.height, centerNonBlack });
+}
+
 async function frameBoundary(publish: () => void, signal: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const onAbort = () => { cancelAnimationFrame(frame); reject(abortError()); };
@@ -108,6 +145,13 @@ async function frameBoundary(publish: () => void, signal: AbortSignal): Promise<
 }
 
 async function boot(): Promise<void> {
+  const response = await fetch("/manifest.json");
+  if (!response.ok) throw new Error(`Build manifest request failed: ${response.status}.`);
+  const manifest = await response.json() as { sha256?: unknown };
+  if (typeof manifest.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(manifest.sha256)) {
+    throw new Error("Build manifest identity is invalid.");
+  }
+  buildSha256 = manifest.sha256;
   const controller = new AbortController();
   const first = bindBackendCanvas(await ThreeSwitchBackend.create(initialCanvas,
     state.scene, state.camera, controller.signal), deck.initial);
@@ -135,15 +179,16 @@ async function choose(id: string): Promise<void> {
   if (state.root !== root || state.script !== script || state.selection !== selection) {
     throw new Error("Author state identity changed during renderer switch.");
   }
-  records.push({ target: id, result: result.status, active: coordinator.active.id,
-    elapsedMs: performance.now() - started, revision: state.revision, scriptTicks: state.script.ticks,
-    surfaces: deck.surfaceCount });
   if (result.status !== "applied" && result.status !== "unchanged") {
     throw new Error(result.snapshot.error ?? `Renderer switch ${result.status}.`);
   }
   if (deck.surfaceCount !== 1 || deck.active !== coordinator.active.surface) {
     throw new Error("Renderer surface ownership did not converge after publication.");
   }
+  const proof = await validatePublishedFrame(coordinator.active);
+  records.push(Object.freeze({ target: id, result: result.status, active: coordinator.active.id,
+    elapsedMs: performance.now() - started, revision: state.revision, scriptTicks: state.script.ticks,
+    surfaces: deck.surfaceCount, proof }));
   select.value = coordinator.active.id; updateMetrics();
 }
 
@@ -160,7 +205,7 @@ function updateMetrics(): void {
   get("surfaces").textContent = String(deck.surfaceCount);
   get("ticks").textContent = state.script.ticks.toLocaleString();
   get("switches").textContent = String(records.length);
-  get("switch-diagnostics").textContent = JSON.stringify({ records, failures }, null, 2);
+  get("switch-diagnostics").textContent = JSON.stringify({ buildSha256, records, failures }, null, 2);
 }
 
 function setStatus(message: string, error = false): void {
@@ -175,10 +220,18 @@ function abortError(): Error { const error = new Error("Frame publication cancel
 select.onchange = () => void action(() => choose(select.value));
 runTwenty.onclick = () => void action(async () => {
   const initialRoot = state.root, initialScript = state.script;
+  const start = records.length;
   for (let index = 0; index < 20; index++) {
     await choose(index % 2 === 0 ? "deep-webgpu" : "three");
   }
   if (state.root !== initialRoot || state.script !== initialScript) throw new Error("Round-trip replaced shared author state.");
+  const run = records.slice(start), deepResources = run.flatMap(record =>
+    record.proof.backend === "deep-webgpu" ? [record.proof.resources!] : []);
+  if (run.length !== 20 || run.some(record => !record.proof.gpuFenceCompleted || record.surfaces !== 1)
+    || run.some(record => record.proof.backend === "deep-webgpu" && (record.proof.lightCount ?? 0) < 1)
+    || new Set(deepResources).size !== 1) {
+    throw new Error("Round-trip GPU fence, mapped-light, surface, or resource stability proof failed.");
+  }
 });
 function tick(): void {
   if (closed) return;

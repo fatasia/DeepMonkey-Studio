@@ -1,4 +1,5 @@
 import type { CascadedShadowPlan } from "./types.js";
+import { AUTHORED_DIRECTIONAL_SHADOW_WGSL } from "./authoredDirectionalShadowWgsl.js";
 
 export const CASCADED_SHADOW_MAX_CASCADES = 8;
 export const CASCADED_SHADOW_UNIFORM_FLOATS = 156;
@@ -46,6 +47,7 @@ struct DeepCascadeShadowData {
 @group(2) @binding(0) var<uniform> deepCascade: DeepCascadeShadowData;
 @group(2) @binding(1) var deepShadowMap: texture_depth_2d_array;
 @group(2) @binding(2) var deepShadowSampler: sampler_comparison;
+${AUTHORED_DIRECTIONAL_SHADOW_WGSL}
 
 fn deepCascadeValue(first: vec4f, second: vec4f, index: u32) -> f32 {
   if (index < 4u) { return first[index]; }

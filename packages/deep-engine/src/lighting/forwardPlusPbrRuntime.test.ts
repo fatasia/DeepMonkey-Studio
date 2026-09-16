@@ -12,6 +12,8 @@ function fixture() {
       maxComputeWorkgroupsPerDimension: 65_535, maxBindGroups: 4, maxStorageBuffersPerShaderStage: 8 },
     queue: { writeBuffer: vi.fn() }, createShaderModule: vi.fn(() => ({})), createBindGroupLayout: vi.fn(({ label }) => ({ label })),
     createPipelineLayout: vi.fn(() => ({})), createComputePipeline: vi.fn(() => ({})),
+    createTexture: vi.fn(() => ({ createView: vi.fn(() => ({})), destroy: vi.fn() })),
+    createSampler: vi.fn(() => ({})),
     createBuffer: vi.fn(({ label, size, usage }: GPUBufferDescriptor) => {
       const buffer = { label: label ?? "", size, usage, destroy: vi.fn() } as unknown as FakeBuffer;
       buffers.push(buffer); return buffer;
@@ -41,7 +43,8 @@ const input = (viewportWidth = 64) => ({ viewportWidth, viewportHeight: 32, near
 
 beforeEach(() => {
   vi.stubGlobal("GPUShaderStage", { COMPUTE: 1, FRAGMENT: 2 });
-  vi.stubGlobal("GPUBufferUsage", { STORAGE: 1, COPY_DST: 2, COPY_SRC: 4 });
+  vi.stubGlobal("GPUBufferUsage", { STORAGE: 1, COPY_DST: 2, COPY_SRC: 4, UNIFORM: 8 });
+  vi.stubGlobal("GPUTextureUsage", { TEXTURE_BINDING: 1 });
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -73,7 +76,7 @@ describe("default PBR Forward+ frame runtime", () => {
     expect(f.buffers.every(buffer => buffer.destroy.mock.calls.length === 1)).toBe(true);
   });
 
-  it("uploads only changed persistent inputs while still resetting and encoding every frame", () => {
+  it("reuses stable cluster lists and rebuilds after a relevant light change or invalidation", () => {
     const f = fixture(), runtime = new ForwardPlusPbrRuntime(f.session);
     const first = runtime.prepareAndEncode(f.encoder, input());
     expect(first.resources.uploadedInputBufferCount).toBe(5);
@@ -81,16 +84,18 @@ describe("default PBR Forward+ frame runtime", () => {
 
     const stable = runtime.prepareAndEncode(f.encoder, input());
     expect(stable.resources.uploadedInputBufferCount).toBe(0);
-    expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(1);
-    expect((f.device.queue.writeBuffer.mock.calls[0]![0] as FakeBuffer).label).toContain("overflow");
+    expect(f.device.queue.writeBuffer).not.toHaveBeenCalled();
 
     const moved = input();
-    const changed = runtime.prepareAndEncode(f.encoder, { ...moved, lights: { ...moved.lights,
-      points: [{ ...moved.lights.points[0]!, positionView: [2, 0, -4] }] } });
+    const changedInput = { ...moved, lights: { ...moved.lights,
+      points: [{ ...moved.lights.points[0]!, positionView: [2, 0, -4] as const }] } };
+    const changed = runtime.prepareAndEncode(f.encoder, changedInput);
     expect(changed.resources.uploadedInputBufferCount).toBe(2);
-    expect(f.device.queue.writeBuffer.mock.calls.slice(1).map(call => (call[0] as FakeBuffer).label)).toEqual([
+    expect(f.device.queue.writeBuffer.mock.calls.map(call => (call[0] as FakeBuffer).label)).toEqual([
       "Deep Forward+ point lights", "Deep Forward+ local light bounds", "Deep Forward+ overflow counter",
     ]);
+    expect(f.passes).toHaveLength(2);
+    runtime.invalidateAssignment(); runtime.prepareAndEncode(f.encoder, changedInput);
     expect(f.passes).toHaveLength(3);
     runtime.dispose();
   });
@@ -104,6 +109,25 @@ describe("default PBR Forward+ frame runtime", () => {
     expect(grown.bindGroup).not.toBe(first.bindGroup);
     expect((first.resources.clusterHeaderBuffer as FakeBuffer).destroy).toHaveBeenCalledOnce();
     runtime.dispose(); expect(f.owned.size).toBe(0);
+  });
+
+  it("publishes and clears an external probe clipmap without taking its ownership", () => {
+    const f = fixture(), runtime = new ForwardPlusPbrRuntime(f.session);
+    const fallback = runtime.prepareAndEncode(f.encoder, input()).bindGroup;
+    const view = { label: "published-gi" } as unknown as GPUTextureView;
+    const sampler = { label: "published-gi" } as unknown as GPUSampler;
+    const metadata = { label: "published-gi", destroy: vi.fn() } as unknown as GPUBuffer;
+    runtime.setProbeClipmap({ view, sampler, levelMetadataBuffer: metadata });
+    expect(runtime.hasProbeClipmap).toBe(true);
+    const published = runtime.prepareAndEncode(f.encoder, input()).bindGroup as unknown as { entries: GPUBindGroupEntry[] };
+    expect(published).not.toBe(fallback);
+    expect(published.entries.slice(-3)).toEqual([{ binding: 9, resource: view }, { binding: 10, resource: sampler },
+      { binding: 11, resource: { buffer: metadata } }]);
+    runtime.setProbeClipmap({ view, sampler, levelMetadataBuffer: metadata });
+    expect(runtime.prepareAndEncode(f.encoder, input()).bindGroup).toBe(published);
+    runtime.setProbeClipmap(); expect(runtime.hasProbeClipmap).toBe(false);
+    expect(runtime.prepareAndEncode(f.encoder, input()).bindGroup).not.toBe(published);
+    runtime.dispose(); expect(metadata.destroy).not.toHaveBeenCalled();
   });
 
   it("fails early on insufficient limits, device loss, and use after disposal", () => {

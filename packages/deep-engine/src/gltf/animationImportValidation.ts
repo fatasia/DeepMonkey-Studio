@@ -1,6 +1,6 @@
 import type { SpatialItemId } from "../spatial/types.js";
 import type { GltfAnimationImportConfiguration, GltfAnimationImportOptions } from "./animationTypes.js";
-import { MAX_BYTES, invalid, list, noExtensions, object, unsupported, type JsonObject } from "./validation.js";
+import { MAX_BYTES, abortSignal, invalid, list, noExtensions, object, unsupported, type JsonObject } from "./validation.js";
 
 export const DEEP_GLTF_ANIMATION_LIMITS = Object.freeze({
   maxAnimations: 1_024,
@@ -24,6 +24,7 @@ export function validateAnimationDocument(json: unknown): JsonObject {
 
 export function resolveAnimationOptions<TId extends SpatialItemId>(options: GltfAnimationImportOptions<TId>): GltfAnimationImportConfiguration {
   object(options, "options");
+  const signal = abortSignal(options.signal, "options.signal"); signal?.throwIfAborted();
   if (options.mapNodeId !== undefined && typeof options.mapNodeId !== "function") invalid("options.mapNodeId", "Expected a function.");
   const clipPrefix = options.clipPrefix ?? "gltf";
   if (typeof clipPrefix !== "string" || clipPrefix.length < 1 || clipPrefix.length > 256) invalid("options.clipPrefix", "Expected a nonempty prefix of at most 256 characters.");
@@ -34,7 +35,7 @@ export function resolveAnimationOptions<TId extends SpatialItemId>(options: Gltf
     maxChannelsPerAnimation: optionLimit(options.maxChannelsPerAnimation, DEEP_GLTF_ANIMATION_LIMITS.maxChannelsPerAnimation, "maxChannelsPerAnimation"),
     maxKeysPerTrack: optionLimit(options.maxKeysPerTrack, DEEP_GLTF_ANIMATION_LIMITS.maxKeysPerTrack, "maxKeysPerTrack"),
     maxDecodedBytes: optionLimit(options.maxDecodedBytes, DEEP_GLTF_ANIMATION_LIMITS.maxDecodedBytes, "maxDecodedBytes"),
-    clipPrefix,
+    clipPrefix, ...(signal ? { signal } : {}),
   });
 }
 

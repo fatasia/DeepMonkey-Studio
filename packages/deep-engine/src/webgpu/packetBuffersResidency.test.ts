@@ -7,6 +7,7 @@ import type { MeshBuffers } from "./meshBuffers.js";
 import { PacketBuffers } from "./packetBuffers.js";
 import { mainPipelineKey, type Pipelines } from "./pipelines.js";
 import { createResidentPacketProjection } from "./residentPacketProjection.js";
+import { bindGpuResidencyHandleDevice } from "./gpuResidencyDeviceAffinity.js";
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
@@ -74,6 +75,7 @@ function fixture() {
 function resident(value: RenderPacket, options: {
   mesh?: MeshStub;
   texture?: GpuTextureResidencyHandle;
+  device?: GPUDevice;
   onRelease?: (key: string) => void;
 } = {}) {
   const prepared = prepareRenderPacket(value), geometryMesh = options.mesh ?? mesh();
@@ -93,6 +95,9 @@ function resident(value: RenderPacket, options: {
     level: 0, mesh: geometryMesh as unknown as MeshBuffers,
   });
   if (texture) resources.set(`texture:${texture.id}`, texture);
+  if (options.device) for (const handle of resources.values()) {
+    bindGpuResidencyHandleDevice(handle, options.device);
+  }
   const releases = new Map<string, ReturnType<typeof vi.fn>>();
   const projection = createResidentPacketProjection(prepared, (kind, id) => {
     const key = `${kind}:${id}`, resource = resources.get(key);
@@ -277,5 +282,18 @@ describe("PacketBuffers streamed residency integration", () => {
     expect(f.draw()).toEqual({ drawCalls: 1, triangles: 1 });
     f.cache.dispose();
     expect(active.projection.released).toBe(true);
+  });
+
+  it("rejects a stale device epoch before staging and preserves the active draw", () => {
+    const f = fixture(), active = resident(packet({ textured: false }));
+    f.cache.stageResidentProjection(active.projection); f.cache.publishResidentProjection();
+    const stale = resident(packet({ textured: false, translation: 2 }),
+      { device: {} as GPUDevice });
+
+    expect(() => f.cache.stageResidentProjection(stale.projection)).toThrow("stale device epoch");
+    expect(f.cache.publishResidentProjection()).toBe(false);
+    expect(f.draw()).toEqual({ drawCalls: 1, triangles: 1 });
+    expect(active.projection.released).toBe(false);
+    stale.projection.release(); f.cache.dispose();
   });
 });

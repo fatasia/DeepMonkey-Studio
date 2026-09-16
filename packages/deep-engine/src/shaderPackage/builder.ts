@@ -1,4 +1,7 @@
-import { DEEP_PBR_MESH_V1, DEEP_PBR_MESH_V1_SHA256, DEEP_PBR_MESH_V2, DEEP_PBR_MESH_V2_SHA256 } from "../shaderAbi/index.js";
+import {
+  DEEP_PBR_MESH_V1, DEEP_PBR_MESH_V1_SHA256, DEEP_PBR_MESH_V2, DEEP_PBR_MESH_V2_SHA256,
+  DEEP_PBR_MESH_V3, DEEP_PBR_MESH_V3_SHA256,
+} from "../shaderAbi/index.js";
 import {
   DEEP_SHADER_PACKAGE_BUDGETS, DEEP_SHADER_PACKAGE_SCHEMA,
   DEEP_SHADER_PACKAGE_SCHEMA_VERSION, DEEP_SHADER_TARGET_PROFILE,
@@ -27,7 +30,8 @@ function validateBuildShape(
     return false;
   }
   exactFields(input, ["packageId", "packageVersion", "compilerVersion", "targetProfile", "targetAbi", "dependencies", "passes"], "$", diagnostics);
-  if (input.targetAbi !== undefined && input.targetAbi !== "deep.pbr.mesh.v1" && input.targetAbi !== "deep.pbr.mesh.v2") {
+  if (input.targetAbi !== undefined
+    && !["deep.pbr.mesh.v1", "deep.pbr.mesh.v2", "deep.pbr.mesh.v3"].includes(String(input.targetAbi))) {
     issue(diagnostics, "invalid-value", "$.targetAbi", "Unsupported shader ABI.");
   }
   validString(input.packageId, "$.packageId", diagnostics, PACKAGE_ID_PATTERN);
@@ -84,7 +88,7 @@ function validatePassBuildShape(
   }
   validString(entry.techniqueId, `${path}.techniqueId`, diagnostics, SYMBOL_PATTERN);
   validString(entry.passId, `${path}.passId`, diagnostics, SYMBOL_PATTERN);
-  if (entry.kind !== "forward" && entry.kind !== "shadow") {
+  if (!["forward", "depth", "shadow", "picking"].includes(String(entry.kind))) {
     issue(diagnostics, "invalid-value", `${path}.kind`, "Only ABI render passes are supported.");
   }
   exactFields(entry, ["techniqueId", "passId", "kind", "module", "entryPoints", "sourceMap", "dependencyIds", "pipeline"], path, diagnostics);
@@ -160,10 +164,13 @@ function buildModules(inputs: readonly ShaderPackagePassBuildInput[]): ShaderPac
 }
 
 function shaderAbiReference(target: DeepShaderPackageBuildInput["targetAbi"]): ShaderPackageAbiReference {
-  const contract = target === "deep.pbr.mesh.v2" ? DEEP_PBR_MESH_V2 : DEEP_PBR_MESH_V1;
+  const contract = target === "deep.pbr.mesh.v3" ? DEEP_PBR_MESH_V3
+    : target === "deep.pbr.mesh.v2" ? DEEP_PBR_MESH_V2 : DEEP_PBR_MESH_V1;
+  const hash = target === "deep.pbr.mesh.v3" ? DEEP_PBR_MESH_V3_SHA256
+    : target === "deep.pbr.mesh.v2" ? DEEP_PBR_MESH_V2_SHA256 : DEEP_PBR_MESH_V1_SHA256;
   return {
     id: contract.id,
-    contentHash: { algorithm: "sha256", value: target === "deep.pbr.mesh.v2" ? DEEP_PBR_MESH_V2_SHA256 : DEEP_PBR_MESH_V1_SHA256 },
+    contentHash: { algorithm: "sha256", value: hash },
     contract: cloneCanonical(contract),
   };
 }

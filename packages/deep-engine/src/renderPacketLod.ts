@@ -1,4 +1,6 @@
 import { getGeometryFeatures, validateGeometryFeatures, type GeometryFeatureSource } from "./renderPacketGeometryFeatures.js";
+import { prepareAuthorSelectedLod } from "./renderPacketAuthorLod.js";
+import { assertDenseLodArray } from "./renderPacketLodArrays.js";
 import type {
   PbrMaterial,
   PreparedLodProfile,
@@ -16,10 +18,15 @@ export function prepareLodProfile(
 ): PreparedLodProfile | undefined {
   const source = instance.lod;
   if (source === undefined) return undefined;
+  if (!source || typeof source !== "object" || Array.isArray(source)) throw new Error("Invalid LOD profile.");
+  if (source.strategy === "author-selected") return prepareAuthorSelectedLod(source, instance.geometry, geometries, material, textures);
+  if (source.strategy !== undefined && source.strategy !== "screen-space") throw new Error("Unknown LOD strategy.");
+  if (Object.keys(source).some(key => !["strategy", "levels", "hysteresisRatio"].includes(key))) throw new Error("Unknown screen-space LOD field.");
   if (!source || typeof source !== "object" || !Array.isArray(source.levels)
     || source.levels.length < 2 || source.levels.length > 8) {
     throw new Error(`LOD profile for instance ${instance.id} must have 2-8 levels.`);
   }
+  assertDenseLodArray(source.levels);
   if (source.levels[0]?.geometry !== instance.geometry) {
     throw new Error(`LOD profile for instance ${instance.id} must start with its primary geometry.`);
   }
@@ -78,5 +85,5 @@ export function prepareLodProfile(
   if (!levels.at(-1)!.resident) {
     throw new Error(`The coarsest LOD geometry for instance ${instance.id} must be resident for fallback.`);
   }
-  return Object.freeze({ levels: Object.freeze(levels), hysteresisRatio });
+  return Object.freeze({ levels: Object.freeze(levels), hysteresisRatio, ...(source.strategy ? { strategy: source.strategy } : {}) });
 }

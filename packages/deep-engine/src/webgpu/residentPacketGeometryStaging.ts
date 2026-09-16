@@ -111,7 +111,7 @@ function stageHandle(current: ReadonlyMap<string, CachedPacketGeometry>, source:
 function sameGeometry(left: GeometryResource, right: GeometryResource): boolean {
   return equal(left.vertices, right.vertices) && equal(left.indices, right.indices)
     && optionalEqual(left.uv0, right.uv0) && optionalEqual(left.uv1, right.uv1)
-    && optionalEqual(left.tangents, right.tangents);
+    && optionalEqual(left.tangents, right.tangents) && optionalEqual(left.colors, right.colors);
 }
 
 const equal = (left: ArrayLike<number>, right: ArrayLike<number>): boolean =>

@@ -25,6 +25,8 @@ export function resolveShaderPackagePipeline(
   if (passVariant.pass === "forward"
     && alphaMode.forwardAttachmentProfile !== selection.attachmentProfileId) return undefined;
   if (passVariant.pass === "shadow" && selection.attachmentProfileId !== "shadow") return undefined;
+  if (passVariant.pass === "depth" && selection.attachmentProfileId !== "depth") return undefined;
+  if (passVariant.pass === "picking" && selection.attachmentProfileId !== "picking") return undefined;
 
   const bindGroupLayouts = passVariant.bindGroupLayouts
     .map((id) => byId(abi.bindGroupLayouts, id));

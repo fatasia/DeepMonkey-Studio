@@ -11,6 +11,7 @@ struct CompositeParams {
 @group(0) @binding(2) var sourceAo: texture_2d<f32>;
 @group(0) @binding(3) var<storage, read> compositeParams: CompositeParams;
 @group(0) @binding(4) var targetColor: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(5) var sourceNormal: texture_2d<f32>;
 
 fn representativeSourceCoordinate(halfCoordinate: vec2<u32>) -> vec2<u32> {
   return min(halfCoordinate * 2u + vec2<u32>(1u), compositeParams.sourceSize - vec2<u32>(1u));
@@ -48,6 +49,9 @@ fn compositeAmbientOcclusion(@builtin(global_invocation_id) id: vec3<u32>) {
   if (id.x >= compositeParams.sourceSize.x || id.y >= compositeParams.sourceSize.y) { return; }
   let coordinate = id.xy;
   let color = textureLoad(sourceColor, vec2<i32>(coordinate), 0);
+  if (compositeParams.tuning.z > 0.5 && textureLoad(sourceNormal, vec2<i32>(coordinate), 0).a > 0.5) {
+    textureStore(targetColor, vec2<i32>(coordinate), color); return;
+  }
   let centerDepth = textureLoad(sourceDepth, vec2<i32>(coordinate), 0).x;
   var visibility = 1.0;
   if (compositeParams.tuning.y > 0.0) {

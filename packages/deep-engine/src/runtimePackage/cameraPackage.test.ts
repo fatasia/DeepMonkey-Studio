@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createRuntimePackageLodInput } from "../../scripts/runtimePackageLodFixture.mjs";
-import { buildDeepRuntimePackage, parseDeepRuntimePackage, serializeDeepRuntimePackage,
+import { buildDeepRuntimePackage, buildRuntimePackagePrewarmPlan, parseDeepRuntimePackage, serializeDeepRuntimePackage,
   runtimeContentSha256, runtimePackageSha256, validateDeepRuntimePackage, type BuildDeepRuntimePackageInput } from "./index.js";
 
 const camera = () => JSON.parse(readFileSync(new URL("../../fixtures/runtime-camera-v1.json", import.meta.url), "utf8"));
@@ -21,6 +21,8 @@ describe("camera runtime package v3", () => {
     expect(value).toHaveProperty("entrypoints.camera", "scene.camera");
     expect(value).toHaveProperty("materialBindings", []);
     expect(parseDeepRuntimePackage(serializeDeepRuntimePackage(value))).toEqual({ valid: true, value, issues: [] });
+    const plan = buildRuntimePackagePrewarmPlan(value);
+    expect(plan.items).toContainEqual(expect.objectContaining({ resourceKind: "scene-camera", resourceId: "scene.camera" }));
   });
   it("keeps legacy versions and differentiates camera-only changes", () => {
     expect(buildDeepRuntimePackage(input()).schemaVersion).toBe(1);
@@ -29,6 +31,7 @@ describe("camera runtime package v3", () => {
     const next = buildDeepRuntimePackage({ ...input(), camera: changed });
     expect(next.packageHash).not.toEqual(first.packageHash);
     expect(next.resources.filter(e => e.kind !== "scene-camera")).toEqual(first.resources.filter(e => e.kind !== "scene-camera"));
+    expect(buildRuntimePackagePrewarmPlan(next).planHash).not.toBe(buildRuntimePackagePrewarmPlan(first).planHash);
   });
   it.each([
     (v: any) => { delete v.entrypoints.camera; },

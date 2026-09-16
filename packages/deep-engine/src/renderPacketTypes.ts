@@ -1,4 +1,5 @@
 import type { DecodedTexture, PreparedTexture } from "./textures/decodedTexture.js";
+import type { DeformationPose, DeformationSnapshot } from "./deformation/types.js";
 
 export interface TextureSlot {
   readonly texture: string;
@@ -25,10 +26,14 @@ export interface GeometryResource {
   readonly uv1?: Float32Array<ArrayBuffer>;
   /** 切线 xyz + 手性 w。xyz 为单位切向量，w 只能为 -1/+1；bitangent = cross(normal, tangent) * w。 */
   readonly tangents?: Float32Array<ArrayBuffer>;
+  /** 线性 RGBA 顶点色，与顶点一一对应；三维颜色源的 alpha 固定为 1。缺省流表示几何无顶点色。 */
+  readonly colors?: Float32Array<ArrayBuffer>;
   readonly indices: Uint32Array<ArrayBuffer>;
 }
 
 export interface PbrMaterial {
+  /** Omitted uses PBR; unlit renders base color without scene lighting or shadows. */
+  readonly shadingModel?: "unlit";
   readonly id: string;
   readonly baseColor: readonly [number, number, number];
   readonly metallic: number;
@@ -51,6 +56,8 @@ export interface PbrMaterial {
   readonly alphaCutoff?: number;
   /** true 时关闭背面剔除，并在背面光照前翻转法线。 */
   readonly doubleSided?: boolean;
+  /** Omitted enables scene fog; false sets existing instance material flag bit 32. */
+  readonly fog?: boolean;
 }
 
 /** Ordered from finest to coarsest; the final threshold must be zero. */
@@ -62,21 +69,42 @@ export interface RenderLodLevel {
   readonly resident?: boolean;
 }
 
-export interface RenderLodProfile {
+export interface RenderScreenSpaceLodProfile {
+  readonly strategy?: "screen-space";
   readonly levels: readonly RenderLodLevel[];
   readonly hysteresisRatio?: number;
 }
+export interface RenderAuthorLodLevel {
+  readonly geometry: string;
+  /** Author metadata only; the renderer consumes selectedLevels without reselecting. */
+  readonly distance: number;
+  readonly hysteresis: number;
+}
+export interface RenderAuthorSelectedLodProfile {
+  readonly strategy: "author-selected";
+  readonly revision: number;
+  readonly levels: readonly RenderAuthorLodLevel[];
+  readonly selectedLevels: readonly number[];
+}
+export type RenderLodProfile = RenderScreenSpaceLodProfile | RenderAuthorSelectedLodProfile;
 
 export interface RenderInstance {
+  /** Pose identity separates draw batches even when geometry/material are shared. */
+  readonly pose?: string;
   readonly id: string;
   readonly geometry: string;
   readonly material: string;
   readonly transform: ArrayLike<number>;
   readonly lod?: RenderLodProfile;
+  /** Omitted keeps the legacy all-casters policy. Native readers must explicitly support these fields. */
+  readonly castShadow?: boolean;
+  /** Omitted receives shadows; false is encoded in existing material flags bit 16. */
+  readonly receiveShadow?: boolean;
 }
 
 /** 作者状态的渲染投影，不持有脚本、对象行为或另一套可编辑场景。 */
 export interface RenderPacket {
+  readonly deformation?: DeformationSnapshot;
   readonly geometries: readonly GeometryResource[];
   readonly materials: readonly PbrMaterial[];
   readonly instances: readonly RenderInstance[];
@@ -84,7 +112,10 @@ export interface RenderPacket {
 }
 
 /** 仅引用当前驻留几何，用于动画/脚本更新；几何内容变化仍使用完整 RenderPacket。 */
-export type InstanceUpdate = Pick<RenderPacket, "materials" | "instances">;
+export type InstanceUpdate = Pick<RenderPacket, "materials" | "instances"> & {
+  /** Complete current pose list; required when any updated instance references a pose. */
+  readonly poses?: readonly DeformationPose[];
+};
 
 export interface PreparedTextureSlot {
   readonly texture: string;
@@ -109,14 +140,26 @@ export interface PreparedLodLevel {
   readonly geometricError: number;
   readonly triangles: number;
   readonly resident: boolean;
+  /** Offline bake range in the shared meshlet table; absent for author-only packets. */
+  readonly meshletOffset?: number;
+  readonly meshletCount?: number;
 }
 
-export interface PreparedLodProfile {
+export interface PreparedScreenSpaceLodProfile {
+  readonly strategy?: "screen-space";
   readonly levels: readonly PreparedLodLevel[];
   readonly hysteresisRatio: number;
 }
+export interface PreparedAuthorSelectedLodProfile {
+  readonly strategy: "author-selected";
+  readonly revision: number;
+  readonly levels: readonly (RenderAuthorLodLevel & { readonly triangles: number; readonly resident: true })[];
+  readonly selectedLevels: readonly number[];
+}
+export type PreparedLodProfile = PreparedScreenSpaceLodProfile | PreparedAuthorSelectedLodProfile;
 
 export interface PreparedBatch {
+  readonly pose?: string;
   readonly key: string;
   readonly geometry: string;
   /** 与 packed data 的实例行一一对应，用于跨更新保留对象级运动历史。 */
@@ -124,6 +167,9 @@ export interface PreparedBatch {
   readonly mirrored: boolean;
   readonly doubleSided: boolean;
   readonly alphaMode: AlphaMode;
+  /** Explicit BLEND cutout threshold, when authored; undefined means solid BLEND shadow. */
+  readonly alphaCutoff?: number;
+  readonly castShadow?: boolean;
   /** 旧透明排序桥接可选中心；默认 weighted OIT 会合并兼容批次且不生成该字段。 */
   readonly sortCenter?: readonly [number, number, number];
   readonly data: Float32Array<ArrayBuffer>;
@@ -133,6 +179,7 @@ export interface PreparedBatch {
 }
 
 export interface PreparedPacket {
+  readonly deformation?: DeformationSnapshot;
   readonly geometries: ReadonlyMap<string, GeometryResource>;
   readonly textures: readonly PreparedTexture[];
   readonly batches: readonly PreparedBatch[];
@@ -142,6 +189,8 @@ export interface GeometryFeatures {
   readonly uv0: boolean;
   readonly uv1: boolean;
   readonly tangents: boolean;
+  /** 顶点颜色流存在性；渲染管线用它选择颜色变体，与材质的顶点色请求一一对应。 */
+  readonly colors: boolean;
   /** Required when an instance declares a multi-geometry LOD profile. */
   readonly triangles?: number;
   readonly center?: readonly [number, number, number];

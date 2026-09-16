@@ -14,6 +14,8 @@ export interface GltfAnimationImportOptions<TNodeId extends SpatialItemId = numb
   readonly maxChannelsPerAnimation?: number;
   readonly maxKeysPerTrack?: number;
   readonly maxDecodedBytes?: number;
+  /** Cancels validation and owned accessor expansion before publication. */
+  readonly signal?: AbortSignal;
 }
 
 export interface GltfAnimatedNode<TNodeId extends SpatialItemId> {
@@ -39,4 +41,5 @@ export interface GltfAnimationImportConfiguration {
   readonly maxKeysPerTrack: number;
   readonly maxDecodedBytes: number;
   readonly clipPrefix: string;
+  readonly signal?: AbortSignal;
 }

@@ -1,9 +1,9 @@
 /// <reference types="@webgpu/types" />
 import { prepareRenderPacket } from "@bim-studio/deep-engine";
-import { createSceneChunkResidency, type GpuRenderResidencyTelemetrySnapshot,
+import { createSceneChunkResidency, stageSceneChunkFrame, type GpuRenderResidencyTelemetrySnapshot,
   type PbrRenderer, type ResidentPacketProjection,
   type ResidentSceneChunkFrame } from "@bim-studio/deep-engine/webgpu";
-import { dominantChunkPixel, readSceneChunkPixel, sceneChunkLegacyPacket,
+import { dominantChunkPixel, readSceneChunkPixels, sceneChunkLegacyPacket,
   sceneChunkProbePacket, sceneChunkProbeView, type ChunkProbeRgba } from "./sceneChunkResidencyProbeSupport.js";
 
 interface ChunkResourceEvidence { readonly baseline: number; readonly first: number;
@@ -17,6 +17,7 @@ export interface SceneChunkResidencyProbeResult {
   readonly sameFrameLatestWon: boolean;
   readonly mergedSharedUploadOnce: boolean;
   readonly visibleChunksDrew: boolean;
+  readonly sameFrameChunkCounts: readonly number[];
   readonly prefetchHadNoProjection: boolean;
   readonly prefetchPromotionReusedUploads: boolean;
   readonly exitedChunkLeaseRetired: boolean;
@@ -47,6 +48,7 @@ export function evaluateSceneChunkResidencyProbe(value: ProbeChecks): boolean {
     && value.exitedChunkLeaseRetired && value.resourcesReturnedToBaseline
     && value.projectionsReleased && value.gpuErrorScopesClean
     && value.deviceDiagnosticsClean && value.nonFallbackAdapter
+    && value.sameFrameChunkCounts.length === 2 && value.sameFrameChunkCounts[0] === 2 && value.sameFrameChunkCounts[1] === 3
     && value.submittedFrames.firstDelta === 1 && value.submittedFrames.final === 6;
 }
 
@@ -73,6 +75,7 @@ export async function verifySceneChunkResidency(renderer: PbrRenderer,
   let firstSubmissionDelta = -1, finalSubmissionCount = -1;
   let sharedHandle = false, prefetchAbsent = false, allReleased = false, restored = false;
   let failure: string | undefined;
+  const sameFrameChunkCounts: number[] = [];
   for (const filter of ["validation", "out-of-memory", "internal"] as const) session.device.pushErrorScope(filter);
   try {
     await renderer.setPacketValidated(legacy);
@@ -92,14 +95,19 @@ export async function verifySceneChunkResidency(renderer: PbrRenderer,
     prefetchAbsent = first.chunk("ahead") === undefined && first.chunks.length === 2;
     sharedHandle = first.chunk("west")?.texture("chunk-shared-white")?.texture
       === first.chunk("east")?.texture("chunk-shared-white")?.texture;
-    westPixel = await renderProjection(renderer, canvas, required(first, "west"));
-    eastPixel = await renderProjection(renderer, canvas, required(first, "east"));
+    await stageSceneChunkFrame(renderer, first);
+    requireFrame(renderer.render(sceneChunkProbeView(canvas))); sameFrameChunkCounts.push(first.chunks.length);
+    [westPixel, eastPixel] = await readSceneChunkPixels(session, canvas, [-1, 1]) as [ChunkProbeRgba, ChunkProbeRgba];
 
     const promoted = await scene.update({ frame: 31_002,
       chunks: [visible("west"), visible("east"), visible("ahead")] });
     frames.push(promoted); promotedTelemetry = scene.telemetrySnapshot();
     promotedResources = session.resourceCount;
-    aheadPixel = await renderProjection(renderer, canvas, required(promoted, "ahead"));
+    await stageSceneChunkFrame(renderer, promoted);
+    requireFrame(renderer.render(sceneChunkProbeView(canvas))); sameFrameChunkCounts.push(promoted.chunks.length);
+    const promotedPixels = await readSceneChunkPixels(session, canvas, [-1, 1, 0]);
+    aheadPixel = promotedPixels[2]!;
+    if (!dominantChunkPixel(promotedPixels[0]!, 0) || !dominantChunkPixel(promotedPixels[1]!, 1)) throw new Error("Promoted frame lost existing visible chunks.");
 
     const exited = await scene.update({ frame: 31_003, chunks: [visible("west")] });
     frames.push(exited); exitedTelemetry = scene.telemetrySnapshot(); exitedResources = session.resourceCount;
@@ -146,7 +154,7 @@ export async function verifySceneChunkResidency(renderer: PbrRenderer,
     && exitedTelemetry?.resources.map(value => value.id).sort().join(",")
       === "chunk-shared-white,chunk-west-geometry";
   const values: ProbeChecks = Object.freeze({ sameFrameLatestWon, mergedSharedUploadOnce,
-    visibleChunksDrew, prefetchHadNoProjection: prefetchAbsent, prefetchPromotionReusedUploads,
+    visibleChunksDrew, sameFrameChunkCounts: Object.freeze(sameFrameChunkCounts), prefetchHadNoProjection: prefetchAbsent, prefetchPromotionReusedUploads,
     exitedChunkLeaseRetired, resourcesReturnedToBaseline: restored && baseline >= 0
       && afterCleanup === baseline && finalTelemetry?.residentBytes === 0 && finalTelemetry.retiredBytes === 0
       && finalTelemetry.registeredResourceCount === 0 && retiredAfterCleanup === 0,
@@ -167,15 +175,6 @@ export async function verifySceneChunkResidency(renderer: PbrRenderer,
     ...(failure ? { failure } : {}) });
 }
 
-async function renderProjection(renderer: PbrRenderer, canvas: HTMLCanvasElement,
-  projection: ResidentPacketProjection): Promise<ChunkProbeRgba> {
-  await renderer.stageResidentPacketValidated(projection);
-  requireFrame(renderer.render(sceneChunkProbeView(canvas)));
-  return readSceneChunkPixel(renderer.session, canvas);
-}
-function required(frame: ResidentSceneChunkFrame, key: string): ResidentPacketProjection {
-  const value = frame.chunk(key); if (!value) throw new Error(`Missing visible chunk projection: ${key}.`); return value;
-}
 function visible(key: string) { return Object.freeze({ key, mode: "visible" as const, demands: Object.freeze([]) }); }
 function prefetch(key: string) { return Object.freeze({ key, mode: "prefetch" as const, demands: Object.freeze([]) }); }
 function errorCode(error: unknown): string { return typeof error === "object" && error !== null

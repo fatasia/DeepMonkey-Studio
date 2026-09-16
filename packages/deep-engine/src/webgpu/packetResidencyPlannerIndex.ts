@@ -5,7 +5,9 @@ export interface CompiledResidencyBatch {
   readonly order: number;
   readonly key: string;
   readonly geometry: string;
-  readonly fallbackGeometry: string;
+  readonly fallbackGeometry?: string;
+  /** Author LOD currently requires every real level; no fallback or rank override. */
+  readonly authorLevels?: readonly string[];
   readonly instances: ReadonlySet<string>;
   readonly textures: readonly string[];
   /** Resident geometry selected for each authored desired LOD index. */
@@ -68,14 +70,31 @@ function compileBatch(source: PreparedBatch, order: number,
   if (instances.size !== source.instanceIds.length) {
     throw new Error(`Duplicate packet instance in batch: ${source.key}.`);
   }
-  const lod = compileLod(source, geometries);
+  const author = source.lod?.strategy === "author-selected";
+  const lod = author ? undefined : compileLod(source, geometries);
+  const authorLevels = author ? compileAuthorLevels(source, geometries) : undefined;
   const textureIds = batchTextures(source);
   for (const id of textureIds) {
     if (!textures.has(id)) throw new Error(`Packet residency texture is unavailable: ${id}.`);
   }
   return Object.freeze({ order, key: source.key, geometry: source.geometry,
-    fallbackGeometry: lod?.at(-1) ?? source.geometry, instances,
+    ...(authorLevels ? { authorLevels } : { fallbackGeometry: lod?.at(-1) ?? source.geometry }), instances,
     textures: Object.freeze(textureIds), ...(lod ? { lod } : {}) });
+}
+
+function compileAuthorLevels(batch: PreparedBatch, geometries: ReadonlyMap<string, number>): readonly string[] {
+  const profile = batch.lod;
+  if (profile?.strategy !== "author-selected" || !Array.isArray(profile.levels)
+    || profile.levels.length < 1 || profile.levels.length > 8 || profile.levels[0]?.geometry !== batch.geometry) {
+    throw new Error(`Author-selected LOD requires all real geometry levels: ${batch.key}.`);
+  }
+  for (let index = 0; index < profile.levels.length; index++) {
+    const level = profile.levels[index];
+    if (!Object.hasOwn(profile.levels, index) || !level || level.resident !== true || !geometries.has(level.geometry)) {
+      throw new Error(`Author-selected LOD requires all real geometry levels: ${batch.key}.`);
+    }
+  }
+  return Object.freeze(profile.levels.map(level => level.geometry));
 }
 
 function compileLod(batch: PreparedBatch,
@@ -86,8 +105,9 @@ function compileLod(batch: PreparedBatch,
     || levels[0]?.geometry !== batch.geometry) {
     throw new Error(`Invalid packet residency LOD profile: ${batch.key}.`);
   }
-  for (const level of levels) {
-    if (!level || !geometries.has(level.geometry) || typeof level.resident !== "boolean") {
+  for (let index = 0; index < levels.length; index++) {
+    const level = levels[index];
+    if (!Object.hasOwn(levels, index) || !level || !geometries.has(level.geometry) || typeof level.resident !== "boolean") {
       throw new Error(`Invalid packet residency LOD geometry: ${batch.key}.`);
     }
   }

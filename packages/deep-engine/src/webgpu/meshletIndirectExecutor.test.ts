@@ -64,6 +64,38 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("meshlet indirect execution", () => {
+  it("closes the compute pass when dispatch fails", () => {
+    const f = fixture(), executor = new MeshletIndirectExecutor(f.session);
+    const end = vi.fn(), pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), end,
+      dispatchWorkgroups: vi.fn(() => { throw Error("dispatch rejected"); }) };
+    const encoder = { beginComputePass: () => pass } as unknown as GPUCommandEncoder;
+    expect(() => executor.encode(encoder, culling(), { expandedIndexCount: 192 })).toThrow("dispatch rejected");
+    expect(end).toHaveBeenCalledOnce(); expect(f.owned.size).toBe(0);
+  });
+
+  it("detaches and releases every output even when destruction throws", () => {
+    const f = fixture(), executor = new MeshletIndirectExecutor(f.session), encoder = encoderFixture();
+    executor.encode(encoder.encoder, culling(), { expandedIndexCount: 192 });
+    f.allocated[0]!.destroy.mockImplementation(() => { throw Error("destroy rejected"); });
+    expect(() => executor.dispose()).toThrow();
+    expect(f.owned.size).toBe(0); expect(f.allocated[1]!.destroy).toHaveBeenCalledOnce();
+    expect(() => executor.dispose()).not.toThrow();
+  });
+
+  it("keeps replacement buffers alive after retirement failure and re-encodes on retry", () => {
+    const f = fixture(), executor = new MeshletIndirectExecutor(f.session), encoder = encoderFixture();
+    executor.encode(encoder.encoder, culling(), { expandedIndexCount: 192 });
+    f.allocated[0]!.destroy.mockImplementation(() => { throw Error("retirement rejected"); });
+    const next = culling(128);
+    expect(() => executor.encode(encoder.encoder, next, { expandedIndexCount: 384 })).toThrow();
+    expect(f.owned.size).toBe(2);
+    expect(f.allocated[1]!.destroy).toHaveBeenCalledOnce();
+    expect(f.allocated.slice(2).every(value => value.destroy.mock.calls.length === 0)).toBe(true);
+    const count = f.allocated.length;
+    expect(executor.encode(encoder.encoder, next, { expandedIndexCount: 384 }).updated).toBe(true);
+    expect(f.allocated).toHaveLength(count); executor.dispose(); expect(f.owned.size).toBe(0);
+  });
+
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("passes Naga parsing and semantic validation", () => {
     const validation = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,
       ["--stdin-file-path", "deep-meshlet-indirect.wgsl", "--input-kind", "wgsl"], { input: MESHLET_INDIRECT_WGSL, encoding: "utf8" });

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createShaderAuthoringSession } from "../shaderAuthoring/session.js";
+import { compileDeepSlSurface } from "../shaderAuthoring/deepSlCompiler.js";
 import { TEST_CAPABILITIES } from "../shaderAuthoring/testFixture.js";
 import type { PreparedShaderPackage } from "./shaderPackageExecutor.js";
 import { ShaderPackageExecutor } from "./shaderPackageExecutor.js";
@@ -78,6 +79,46 @@ describe("shader hot reload runtime", () => {
     const fixedAbiChange = await runtime.compileNow();
     expect(fixedAbiChange).toMatchObject({ status: "ready", artifactHash: ready.artifactHash });
     expect(runtime.candidate?.packageHash).not.toBe(published.current?.packageHash);
+    runtime.dispose();
+  });
+
+  it("prewarms the same complete material WGSL emitted by authoring", async () => {
+    const source = OPAQUE.replace("baseColorTexture off", `baseColorTexture on;
+  metallicRoughnessTexture on;
+  normalTexture on;
+  occlusionTexture on;
+  emissiveTexture on;
+  normalScale -0.75;
+  occlusionStrength 0.35;
+  emissiveFactor [0.1, 0.2, 0.3];
+  emissiveStrength 8`);
+    const authoring = session(source), fake = fakeDevice();
+    const runtime = new ShaderHotReloadRuntime(authoring, new ShaderPackageExecutor(fake.device), options);
+    await expect(runtime.compileNow()).resolves.toMatchObject({ status: "ready" });
+    expect(runtime.candidate?.compatibility).toMatchObject({ materialTextureDefaults: {
+      normal: { normalScale: -0.75 }, occlusion: { strength: 0.35 }, emissive: { emissiveStrength: 8 },
+    } });
+    const authored = authoring.view().lastKnownGood?.artifact.runtimePackage?.modules[0]?.source;
+    const prepared = fake.mock.createShaderModule.mock.calls[0]?.[0].code;
+    expect(prepared).toBe(authored);
+    expect(prepared).toContain("deepMaterialTextures.mrRow0");
+    runtime.dispose();
+  });
+
+  it("fails closed when an injected authoring compiler drifts from the runtime adapter", async () => {
+    const current = OPAQUE.replace("baseColorTexture off", "baseColorTexture on");
+    const wrong = compileDeepSlSurface({ document: document(OPAQUE), revision: "a".repeat(64), candidateId: 1 },
+      { capabilities: TEST_CAPABILITIES });
+    expect(wrong.success && wrong.artifact).toBeTruthy();
+    const authoring = createShaderAuthoringSession(document(current), {
+      capabilities: TEST_CAPABILITIES,
+      textCompiler: () => ({ success: true, diagnostics: [], artifact: wrong.artifact! }),
+    }).session!;
+    const fake = fakeDevice(), runtime = new ShaderHotReloadRuntime(
+      authoring, new ShaderPackageExecutor(fake.device), options);
+    await expect(runtime.compileNow()).resolves.toMatchObject({ status: "failed",
+      diagnostics: [expect.objectContaining({ code: "runtime-semantic-drift" })] });
+    expect(fake.mock.createShaderModule).not.toHaveBeenCalled();
     runtime.dispose();
   });
 

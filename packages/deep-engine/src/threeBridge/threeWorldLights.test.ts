@@ -64,6 +64,20 @@ describe("Three world-light adapter", () => {
     expect(lights.spots?.[0]?.innerConeCos).toBeGreaterThan(lights.spots?.[0]?.outerConeCos ?? 1);
   });
 
+  it("maps a shadow-casting Three spot light to a stable Deep atlas identity", () => {
+    const scene = new THREE.Scene();
+    const spot = new THREE.SpotLight(0xffffff, 5, 20, 0.6, 0.2, 2);
+    spot.castShadow = true; scene.add(spot, spot.target); scene.updateWorldMatrix(true, true);
+
+    const lights = accepted(projectThreeWorldLights(scene, { cameraLayerMask: 1 }));
+    expect(lights.spots?.[0]?.shadow).toEqual({ key: `three:${spot.uuid}` });
+
+    Object.defineProperty(spot, "uuid", { value: "../unstable/key" });
+    const malformed = projectThreeWorldLights(scene, { cameraLayerMask: 1 });
+    expect(malformed).toMatchObject({ ok: false });
+    if (!malformed.ok) expect(malformed.issues[0]).toMatchObject({ code: "invalid", feature: "light shadow identity" });
+  });
+
   it("rejects unsupported visible light semantics with actionable diagnostics", () => {
     const scene = new THREE.Scene();
     const ambient = new THREE.AmbientLight(), hemisphere = new THREE.HemisphereLight();
@@ -98,7 +112,7 @@ describe("Three world-light adapter", () => {
     expect(updateWorldMatrix).not.toHaveBeenCalled();
   });
 
-  it("rejects a degenerate target, shadow loss and malformed fallback values", () => {
+  it("rejects a degenerate target, unsupported point shadow and malformed fallback values", () => {
     const scene = new THREE.Scene();
     const directional = new THREE.DirectionalLight();
     directional.position.set(1, 1, 1); directional.target.position.copy(directional.position);

@@ -1,5 +1,7 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "./deviceSession.js";
+import type { DeformationStaticUpload } from "./deformationStaticSources.js";
+import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import { assertMorphWeightRange, packMorphWeights, prepareMorphInput } from "./gpuMorphPacking.js";
 import type { GpuMorphResult, GpuMorphSource, GpuMorphWeights, PreparedMorphInput } from "./gpuMorphTypes.js";
 import { GPU_MORPH_VERTEX_STRIDE, GPU_MORPH_WGSL, GPU_MORPH_WORKGROUP_SIZE } from "./gpuMorphWgsl.js";
@@ -28,7 +30,8 @@ export class GpuMorphDeformer {
   private resources: MorphResources | undefined;
   private disposed = false;
 
-  constructor(private readonly session: DeviceSession) {
+  constructor(private readonly session: DeviceSession, private readonly staticUpload?: DeformationStaticUpload) {
+    if (staticUpload && staticUpload.session !== session) throw new Error("Morph static lease belongs to another device epoch.");
     if (session.state !== "ready") throw new Error("GPU session is not ready for morph deformation.");
     const device = session.device, module = device.createShaderModule({ label: "Deep GPU morph WGSL", code: GPU_MORPH_WGSL });
     this.layout = device.createBindGroupLayout({ label: "Deep GPU morph layout", entries: [
@@ -49,6 +52,7 @@ export class GpuMorphDeformer {
   setSource(source: GpuMorphSource, weights: GpuMorphWeights): boolean {
     this.assertReady();
     const current = this.resources;
+    if (current && this.staticUpload && source.revision !== current.source.revision) throw new Error("Shared morph source lease cannot change revision.");
     if (current && source.revision < current.source.revision) throw new Error("Stale morph source revision.");
     if (current && source.revision === current.source.revision) {
       if (source !== current.source) throw new Error("Morph source changed without a revision.");
@@ -60,28 +64,31 @@ export class GpuMorphDeformer {
     const allocate = (label: string, size: number, usage: GPUBufferUsageFlags): GPUBuffer => {
       const buffer = this.session.own(device.createBuffer({ label, size, usage })); created.push(buffer); return buffer;
     };
+    let candidate: MorphResources;
     try {
-      const sourceBuffer = allocate("Deep morph source", prepared.vertices.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-      const deltaBuffer = allocate("Deep morph targets", prepared.deltas.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+      const sourceBuffer = this.staticUpload?.upload("Deep morph source", prepared.vertices)
+        ?? allocate("Deep morph source", prepared.vertices.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+      const deltaBuffer = this.staticUpload?.upload("Deep morph targets", prepared.deltas)
+        ?? allocate("Deep morph targets", prepared.deltas.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
       const outputBuffer = allocate("Deep morphed vertices", prepared.vertexCount * GPU_MORPH_VERTEX_STRIDE,
         GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_SRC);
       const weightBuffers = [0, 1].map((index) => allocate(`Deep morph weights ${index}`, prepared.weights.byteLength,
         GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST)) as [GPUBuffer, GPUBuffer];
       const uniformBuffer = allocate("Deep morph parameters", 16, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
-      device.queue.writeBuffer(sourceBuffer, 0, prepared.vertices);
-      device.queue.writeBuffer(deltaBuffer, 0, prepared.deltas);
+      if (!this.staticUpload) { device.queue.writeBuffer(sourceBuffer, 0, prepared.vertices);
+        device.queue.writeBuffer(deltaBuffer, 0, prepared.deltas); }
       device.queue.writeBuffer(weightBuffers[0], 0, prepared.weights);
       device.queue.writeBuffer(uniformBuffer, 0, new Uint32Array([prepared.vertexCount, prepared.targetCount, prepared.flags, 0]));
       const bindGroup = this.binding(sourceBuffer, deltaBuffer, weightBuffers[0], outputBuffer, uniformBuffer);
-      this.resources = { sourceBuffer, deltaBuffer, outputBuffer, weightBuffers, uniformBuffer, bindGroup, activeWeights: 0,
+      candidate = { sourceBuffer, deltaBuffer, outputBuffer, weightBuffers, uniformBuffer, bindGroup, activeWeights: 0,
         vertexCount: prepared.vertexCount, targetCount: prepared.targetCount, flags: prepared.flags,
         maximumBaseMagnitude: prepared.maximumBaseMagnitude, maximumDeltaMagnitude: prepared.maximumDeltaMagnitude, source, weights };
-      if (current) this.release(current);
-      return true;
     } catch (error) {
-      for (const buffer of created) this.session.release(buffer);
-      throw error;
+      failWithResourceCleanup(error, "Morph preparation failed.", created.map(buffer => () => this.session.release(buffer)));
     }
+    this.resources = candidate;
+    if (current) this.release(current);
+    return true;
   }
 
   updateWeights(weights: GpuMorphWeights): boolean {
@@ -105,8 +112,15 @@ export class GpuMorphDeformer {
     this.assertReady(); const resources = this.resources;
     if (!resources) throw new Error("Morph source is not prepared.");
     const pass = encoder.beginComputePass({ label: "Deep GPU morph deformation" });
-    pass.setPipeline(this.pipeline); pass.setBindGroup(0, resources.bindGroup);
-    pass.dispatchWorkgroups(Math.ceil(resources.vertexCount / GPU_MORPH_WORKGROUP_SIZE)); pass.end();
+    let failure: { error: unknown } | undefined;
+    try {
+      pass.setPipeline(this.pipeline); pass.setBindGroup(0, resources.bindGroup);
+      pass.dispatchWorkgroups(Math.ceil(resources.vertexCount / GPU_MORPH_WORKGROUP_SIZE));
+    } catch (error) { failure = { error }; }
+    finally {
+      if (failure) failWithResourceCleanup(failure.error, "Morph encode failed.", [() => pass.end()]);
+      pass.end();
+    }
     return Object.freeze({ output: resources.outputBuffer, vertexCount: resources.vertexCount, outputStride: GPU_MORPH_VERTEX_STRIDE,
       hasNormals: (resources.flags & 1) !== 0, hasTangents: (resources.flags & 2) !== 0,
       sourceRevision: resources.source.revision, weightsRevision: resources.weights.revision });
@@ -114,7 +128,8 @@ export class GpuMorphDeformer {
 
   dispose(): void {
     if (this.disposed) return; this.disposed = true;
-    if (this.resources) this.release(this.resources); this.resources = undefined;
+    const resources = this.resources; this.resources = undefined;
+    if (resources) this.release(resources);
   }
 
   private binding(source: GPUBuffer, deltas: GPUBuffer, weights: GPUBuffer, output: GPUBuffer, uniform: GPUBuffer): GPUBindGroup {
@@ -127,13 +142,14 @@ export class GpuMorphDeformer {
   private assertReady(): void {
     if (this.disposed) throw new Error("GPU morph deformer is disposed.");
     if (this.session.state !== "ready") {
-      if (this.resources) this.release(this.resources); this.resources = undefined;
-      throw new Error("GPU session is not ready for morph deformation.");
+      const resources = this.resources; this.resources = undefined;
+      failWithResourceCleanup(new Error("GPU session is not ready for morph deformation."), "Morph device cleanup failed.",
+        resources ? [() => this.release(resources)] : []);
     }
   }
   private release(resources: MorphResources): void {
-    for (const buffer of [resources.sourceBuffer, resources.deltaBuffer, resources.outputBuffer,
-      ...resources.weightBuffers, resources.uniformBuffer]) this.session.release(buffer);
+    runResourceCleanup("Morph resource cleanup failed.", [...(this.staticUpload ? [] : [resources.sourceBuffer, resources.deltaBuffer]), resources.outputBuffer,
+      ...resources.weightBuffers, resources.uniformBuffer].map(buffer => () => this.session.release(buffer)));
   }
 }
 

@@ -7,7 +7,7 @@ import { decodeMorphDocument } from "./decodeMorphGlb.js";
 import { resolveMorphOptions } from "./morphImportValidation.js";
 import type { DecodedAnimatedMorphGlb, GltfAnimatedMorphImportOptions, GltfMorphImportOptions } from "./morphTypes.js";
 import { parseGlb } from "./parseGlb.js";
-import { object, validateJson } from "./validation.js";
+import { abortSignal, object, validateJson } from "./validation.js";
 
 /** Parses once and returns one stable node identity space for transform and morph animation. */
 export function decodeAnimatedMorphGlb<TNodeId extends SpatialItemId = number>(
@@ -15,17 +15,20 @@ export function decodeAnimatedMorphGlb<TNodeId extends SpatialItemId = number>(
   options: GltfAnimatedMorphImportOptions<TNodeId> = {},
 ): DecodedAnimatedMorphGlb<TNodeId> {
   object(options, "options");
+  abortSignal(options.signal, "options.signal")?.throwIfAborted();
   if (options.animation !== undefined) object(options.animation, "options.animation");
   if (options.morph !== undefined) object(options.morph, "options.morph");
   const animationOptions: GltfAnimationImportOptions<TNodeId> = {
     ...options.animation,
     ...(options.sceneIndex === undefined ? {} : { sceneIndex: options.sceneIndex }),
     ...(options.mapNodeId === undefined ? {} : { mapNodeId: options.mapNodeId }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   };
   const morphOptions: GltfMorphImportOptions<TNodeId> = {
     ...options.morph,
     ...(options.sceneIndex === undefined ? {} : { sceneIndex: options.sceneIndex }),
     ...(options.mapNodeId === undefined ? {} : { mapNodeId: options.mapNodeId }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   };
   const parsed = parseGlb(bytes);
   validateJson(parsed.json);

@@ -18,7 +18,7 @@ const rgbToYCoCg = (r: number, g: number, b: number): [number, number, number] =
 const yCoCgToRgb = (y: number, co: number, cg: number): [number, number, number] => [y + co - cg, y + cg, y - co - cg];
 const clamp = (v: number, low: number, high: number) => Math.max(low, Math.min(high, v));
 
-/** Scalar reference matching nearest history reprojection and YCoCg neighborhood clamp. */
+/** Scalar reference matching depth-aware bilinear history and YCoCg neighborhood clamp. */
 export function resolveTemporalAaCpu(input: TemporalAaCpuInput, options: TemporalAaOptions): Float32Array {
   validateTemporalAaOptions(options); validateTemporalAaJitter(input.currentJitter, "TAA currentJitter");
   validateTemporalAaJitter(input.previousJitter, "TAA previousJitter"); const pixels = input.width * input.height;
@@ -34,17 +34,36 @@ export function resolveTemporalAaCpu(input: TemporalAaCpuInput, options: Tempora
     const px = x + .5 + input.motion[pixel * 2]! * input.width + input.previousJitter[0] - input.currentJitter[0];
     const py = y + .5 + input.motion[pixel * 2 + 1]! * input.height + input.previousJitter[1] - input.currentJitter[1];
     if (px < 0 || py < 0 || px >= input.width || py >= input.height) continue;
-    const previousPixel = Math.floor(py) * input.width + Math.floor(px), previousDepth = input.previousDepth![previousPixel]!;
-    if (previousDepth <= 0 || Math.abs(previousDepth - depth) > Math.max(options.depthThreshold, depth * options.relativeDepthThreshold)) continue;
+    const historicalColor = sampleHistory(input, px, py, depth,
+      Math.max(options.depthThreshold, depth * options.relativeDepthThreshold));
+    if (!historicalColor) continue;
     const minimum = [1e20, 1e20, 1e20], maximum = [-1e20, -1e20, -1e20];
     for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
       const neighbor = clamp(y + oy, 0, input.height - 1) * input.width + clamp(x + ox, 0, input.width - 1), offset = neighbor * 4;
       const value = rgbToYCoCg(input.color[offset]!, input.color[offset + 1]!, input.color[offset + 2]!);
       for (let channel = 0; channel < 3; channel++) { minimum[channel] = Math.min(minimum[channel]!, value[channel]!); maximum[channel] = Math.max(maximum[channel]!, value[channel]!); }
     }
-    const historyOffset = previousPixel * 4, history = rgbToYCoCg(input.previousColor![historyOffset]!, input.previousColor![historyOffset + 1]!, input.previousColor![historyOffset + 2]!);
+    const history = rgbToYCoCg(...historicalColor);
     const clamped = yCoCgToRgb(...history.map((value, channel) => clamp(value, minimum[channel]!, maximum[channel]!)) as [number, number, number]);
     const offset = pixel * 4; for (let channel = 0; channel < 3; channel++) output[offset + channel] = Math.max(0, input.color[offset + channel]! * (1 - options.feedback) + clamped[channel]! * options.feedback);
   }
   return output;
+}
+
+function sampleHistory(input: TemporalAaCpuInput, px: number, py: number, depth: number,
+  threshold: number): [number, number, number] | undefined {
+  const sx = px - 0.5, sy = py - 0.5, x0 = Math.floor(sx), y0 = Math.floor(sy);
+  const fx = sx - x0, fy = sy - y0;
+  const color: [number, number, number] = [0, 0, 0];
+  let acceptedWeight = 0;
+  for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
+    const weight = (x === 0 ? 1 - fx : fx) * (y === 0 ? 1 - fy : fy);
+    const pixel = clamp(y0 + y, 0, input.height - 1) * input.width + clamp(x0 + x, 0, input.width - 1);
+    const historicalDepth = input.previousDepth![pixel]!;
+    if (weight <= 0 || historicalDepth <= 0 || Math.abs(historicalDepth - depth) > threshold) continue;
+    for (let channel = 0; channel < 3; channel++) color[channel] = color[channel]! + input.previousColor![pixel * 4 + channel]! * weight;
+    acceptedWeight += weight;
+  }
+  if (acceptedWeight <= 0) return undefined;
+  return color.map(value => value / acceptedWeight) as [number, number, number];
 }

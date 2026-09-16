@@ -1,4 +1,5 @@
 import {
+  assertPacketDeformationSupported,
   geometryCenter,
   type GeometryResource,
   type PreparedPacket,
@@ -15,8 +16,18 @@ import type { CachedPacketBatch, CachedPacketGeometry } from "./packetBufferType
 import { packPreviousTransforms } from "./packetInstanceHistory.js";
 import { TextureResources, type StagedTextureSet } from "./textureResources.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
+import { PacketDeformationResources } from "./packetDeformationResources.js";
+import type { DeformationStaticSources } from "./deformationStaticSources.js";
+import type { DeformationSnapshot } from "../deformation/types.js";
+import { assertSnapshotRevisions } from "./packetDeformationRevision.js";
+import { prepareDeformationBounds, type DeformationBoundsProfile } from "./deformationBounds.js";
+import { authorLodMetadataChanged } from "./authorLodMetadata.js";
+import { PACKET_MESHLET_STAGE_BYTES } from "./packetMeshletSource.js";
 
 export interface StagedPacketBuffers {
+  readonly deformation?: PacketDeformationResources;
+  readonly deformationSnapshot?: DeformationSnapshot;
+  readonly deformationBoundsProfiles?: ReadonlyMap<string, DeformationBoundsProfile>;
   readonly geometries: Map<string, CachedPacketGeometry>;
   readonly batches: Map<string, CachedPacketBatch>;
   readonly createdMeshes: MeshBuffers[];
@@ -28,6 +39,11 @@ export interface StagedPacketBuffers {
 }
 
 export interface PacketBufferStagingContext {
+  readonly meshletsEnabled?: boolean;
+  readonly deformationStaticSources?: DeformationStaticSources;
+  /** Only an executor that submits deformation before drawing may opt in. */
+  readonly deformationEnabled?: boolean;
+  readonly deformationSnapshot?: DeformationSnapshot;
   readonly session: DeviceSession;
   readonly materials: MaterialBindingPool;
   readonly textures: TextureResources;
@@ -39,23 +55,33 @@ export function stagePacketBuffers(
   context: PacketBufferStagingContext,
   prepared: PreparedPacket,
 ): StagedPacketBuffers {
+  assertPacketDeformationSupported(prepared, context?.deformationEnabled === true);
+  if (prepared.deformation) assertSnapshotRevisions(prepared.deformation, context.deformationSnapshot);
   const geometries = new Map<string, CachedPacketGeometry>();
   const batches = new Map<string, CachedPacketBatch>();
   const createdMeshes: MeshBuffers[] = [];
   const createdBuffers: GPUBuffer[] = [];
   const acquiredMaterials: MaterialBinding[] = [];
   const textures = context.textures.stagePrepared(prepared.textures);
+  let deformation: PacketDeformationResources | undefined;
+  const deformationBoundsProfiles = new Map<string, DeformationBoundsProfile>();
   try {
+    if (prepared.deformation) {
+      for (const source of prepared.deformation.sources) deformationBoundsProfiles.set(source.id, prepareDeformationBounds(source));
+      deformation = new PacketDeformationResources(context.session, context.deformationStaticSources);
+      deformation.prepare(prepared.deformation, new Map([...prepared.geometries].map(([id, geometry]) => [id, geometry.revision])));
+    }
     stageGeometries(context, prepared, geometries, createdMeshes);
     stageBatches(context, prepared, textures, batches, createdBuffers, acquiredMaterials);
   } catch (error) {
-    try { releaseStage(context, createdMeshes, createdBuffers, acquiredMaterials, textures); }
+    try { releaseStage(context, createdMeshes, createdBuffers, acquiredMaterials, textures, deformation); }
     catch (cleanupError) {
       throw new AggregateError([error, cleanupError], "Packet buffer staging failed.");
     }
     throw error;
   }
   return {
+    ...(deformation ? { deformation, deformationSnapshot: prepared.deformation!, deformationBoundsProfiles } : {}),
     geometries,
     batches,
     createdMeshes,
@@ -63,9 +89,9 @@ export function stagePacketBuffers(
     acquiredMaterials,
     textures,
     settled: false,
-    changed: textures.changed || createdMeshes.length > 0 || createdBuffers.length > 0
+    changed: deformation !== undefined || textures.changed || createdMeshes.length > 0 || createdBuffers.length > 0
       || acquiredMaterials.length > 0 || context.batches.size !== batches.size
-      || context.geometries.size !== geometries.size,
+      || context.geometries.size !== geometries.size || [...batches].some(([key, batch]) => batch !== context.batches.get(key)),
   };
 }
 
@@ -76,7 +102,7 @@ export function discardPacketBufferStage(
   if (staged.settled) return;
   staged.settled = true;
   releaseStage(context, staged.createdMeshes, staged.createdBuffers,
-    staged.acquiredMaterials, staged.textures);
+    staged.acquiredMaterials, staged.textures, staged.deformation);
 }
 
 function stageGeometries(
@@ -85,6 +111,12 @@ function stageGeometries(
   target: Map<string, CachedPacketGeometry>,
   created: MeshBuffers[],
 ): void {
+  const meshletBudget = { remainingBytes: PACKET_MESHLET_STAGE_BYTES };
+  for (const [id, source] of prepared.geometries) {
+    const prior = context.geometries.get(id);
+    if (prior?.source.revision === source.revision) meshletBudget.remainingBytes -= prior.mesh.meshletSource?.budgetBytes ?? 0;
+  }
+  const authorGeometries = new Set(prepared.batches.flatMap(batch => batch.lod?.strategy === "author-selected" ? batch.lod.levels.map(level => level.geometry) : []));
   for (const [id, source] of prepared.geometries) {
     const previous = context.geometries.get(id);
     if (previous && source.revision < previous.source.revision) {
@@ -98,7 +130,7 @@ function stageGeometries(
       continue;
     }
     validateGeometrySize(context.session, source);
-    const mesh = new MeshBuffers(context.session, source);
+    const mesh = new MeshBuffers(context.session, source, context.meshletsEnabled && authorGeometries.has(id) ? meshletBudget : undefined);
     created.push(mesh);
     target.set(id, { source, mesh, ...geometryBounds(source) });
   }
@@ -114,10 +146,11 @@ function stageBatches(
 ): void {
   for (const source of prepared.batches) {
     const previous = context.batches.get(source.key);
+    const metadataChanged = authorLodMetadataChanged(previous?.source, source);
     const lookup = (id: string) => context.textures.stagedBinding(textures, id);
     const sameMaterial = materialBindingMatches(previous?.material, source.textures, lookup);
     if (previous && equal(previous.source.data, source.data) && sameMaterial) {
-      target.set(source.key, previous);
+      target.set(source.key, metadataChanged ? { ...previous, source } : previous);
       continue;
     }
     const material = sameMaterial
@@ -155,6 +188,7 @@ function validateGeometrySize(session: DeviceSession, source: GeometryResource):
   const maxVertices = Math.floor(max / DEEP_PBR_MESH_V1_BYTE_SIZES.geometryVertex);
   if (source.vertices.length / 6 > maxVertices
     || (source.tangents?.byteLength ?? 0) > max
+    || (source.colors?.byteLength ?? 0) > max
     || source.indices.byteLength > max) {
     throw new Error("Geometry exceeds device buffer limit.");
   }
@@ -165,6 +199,7 @@ function sameGeometry(a: GeometryResource, b: GeometryResource): boolean {
     && equalOptional(a.uv0, b.uv0)
     && equalOptional(a.uv1, b.uv1)
     && equalOptional(a.tangents, b.tangents)
+    && equalOptional(a.colors, b.colors)
     && equal(a.indices, b.indices);
 }
 
@@ -191,8 +226,10 @@ function releaseStage(
   buffers: readonly GPUBuffer[],
   materials: readonly MaterialBinding[],
   textures: StagedTextureSet,
+  deformation?: PacketDeformationResources,
 ): void {
   runResourceCleanup("Packet buffer stage rollback failed.", [
+    () => deformation?.dispose(),
     ...meshes.map(mesh => () => mesh.dispose()),
     ...buffers.map(buffer => () => context.session.release(buffer)),
     ...materials.map(material => () => context.materials.release(material)),

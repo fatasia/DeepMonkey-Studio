@@ -8,12 +8,13 @@ import type {
   WorldPointLight,
   WorldSpotLight,
 } from "../lighting/worldLights.js";
-import type { LightVector3 } from "../lighting/types.js";
+import type { LightVector3, LocalLightShadow } from "../lighting/types.js";
 
 const MAX_TRAVERSED_OBJECTS = 32_768;
 const MAX_ISSUES = 32;
 
 export interface ThreeLightObjectSource {
+  readonly uuid?: string;
   readonly children: readonly ThreeLightObjectSource[];
   readonly visible: boolean;
   readonly layers: { readonly mask: number };
@@ -146,8 +147,17 @@ function spotCones(light: Record<string, unknown>): readonly [number, number] {
 }
 
 function common(light: Record<string, unknown>): { readonly color: LightVector3; readonly intensity: number } {
-  if (light.castShadow === true) fail("unsupported", "light shadows", "Three light shadows require the shadow bridge.");
   return Object.freeze({ color: lightColor(light), intensity: finiteNonnegative(light.intensity, "light.intensity") });
+}
+
+function localShadow(source: ThreeLightObjectSource, light: Record<string, unknown>, supported: boolean): LocalLightShadow | undefined {
+  if (light.castShadow !== true) return undefined;
+  if (!supported) fail("unsupported", "light shadows", "Only Three spot-light shadows map to the Deep local shadow atlas.");
+  const uuid = source.uuid;
+  if (typeof uuid !== "string" || !/^[0-9A-Za-z][0-9A-Za-z._:-]{0,121}$/.test(uuid)) {
+    fail("invalid", "light shadow identity", "Three shadow-casting spot lights require a bounded stable uuid.");
+  }
+  return Object.freeze({ key: `three:${uuid}` });
 }
 
 function localCommon(
@@ -155,12 +165,15 @@ function localCommon(
   light: Record<string, unknown>,
   path: string,
   fallback: ThreeFallbackLightRange | undefined,
+  shadowSupported = false,
 ): WorldPointLight {
   if (light.decay !== 2) fail("unsupported", "light decay", "Deep clustered lights currently require Three decay=2.");
+  const shadow = localShadow(source, light, shadowSupported);
   return Object.freeze({
     ...common(light),
     positionWorld: worldPosition(source, "light"),
     range: lightRange(source, light, path, fallback),
+    ...(shadow ? { shadow } : {}),
   });
 }
 
@@ -174,11 +187,12 @@ function appendLight(
 ): void {
   const light = source as unknown as Record<string, unknown>;
   if (light.isDirectionalLight === true) {
+    localShadow(source, light, false);
     const position = worldPosition(source, "light");
     directional.push(Object.freeze({ ...common(light), directionWorld: lightDirection(light, position) }));
   } else if (light.isSpotLight === true) {
     if (light.map != null) fail("unsupported", "spot map", "Three spot texture maps require a light-cookie bridge.");
-    const base = localCommon(source, light, path, fallback), [innerConeCos, outerConeCos] = spotCones(light);
+    const base = localCommon(source, light, path, fallback, true), [innerConeCos, outerConeCos] = spotCones(light);
     spots.push(Object.freeze({ ...base, directionWorld: lightDirection(light, base.positionWorld), innerConeCos, outerConeCos }));
   } else if (light.isPointLight === true) {
     points.push(localCommon(source, light, path, fallback));
