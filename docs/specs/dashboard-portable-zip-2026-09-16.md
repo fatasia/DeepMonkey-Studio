@@ -19,3 +19,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Start-Dashboard.ps1
 验证：独立工作树四项测试通过，包括 ZIP 实际解析/CRC/全文件 hash、DMDA/EXE 错误与取消、真实 PowerShell 拒绝路径，以及 PowerShell 启动临时编译的 Windows 测试 EXE 并检查实际参数（路径含空格）。启动测试曾复现包内身份误用作文件 hash，修正后通过。API 类型检查通过。
 
 测试 EXE 与结构夹具只验证打包和启动机制；当前不代表正式发布下载、真实 Dashboard Native 窗口、完整交互或离线恢复验收完成。EXE 由打包者显式选择，当前 PE 检查不证明该 EXE 的版本、来源或窗口能力；正式发布仍需绑定受验证的播放器身份与第三方分发清单。
+
+组合入口 `registerDashboardNativeCandidateRouteRuntime` 可接收部署固定的 `nativeExecutable`。配置后，同一个私有候选可通过 `/api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/portable-zip` 下载；省略该配置时仅注册既有 DMDA 路由。ZIP 下载复用候选权限、项目/应用范围与 TTL/撤销检查，压缩结束后再次复核，并拒绝查询参数。
+
+组合测试通过真实 HTTP 注入完成候选生成→同 candidateId 的 ZIP 与 DMDA 下载，调用真实 ZIP 构建器并解压核验 runtime bytes、EXE bytes、artifact hash 与发布身份，再撤销候选验证 404。编译、闭包和窗口验证器仍使用明确标注的测试夹具，因此该测试验证接线而非正式部署或 Native 窗口能力。

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertDashboardDocument, type PublishedApplicationRecord } from "@bim-studio/contracts";
 import { parseDeepRuntimePackage, serializeDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
@@ -9,6 +10,7 @@ import source from "../../../packages/deep-engine/fixtures/dashboard-layout-sour
 import { LocalObjectStore } from "./objects.js";
 import { registerDashboardNativeCandidateRouteRuntime } from "./dashboardNativeCandidateRouteRuntime.js";
 import { createApiServer } from "./serverOptions.js";
+import { parseDashboardOfflineArchive } from "./dashboardOfflineArchiveBytes.js";
 
 const authority = { projectId: "project-golden", applicationId: "dashboard-composition-golden",
   publicationId: "publication-1", applicationRevision: 1,
@@ -23,11 +25,12 @@ function published(): PublishedApplicationRecord {
   document.application.metadata.projectId = authority.projectId;
   document.application.metadata.revision = authority.applicationRevision;
   document.application.pages[0]!.id = authority.entryPageId;
+  document.application.publicationProfiles.forEach(profile => { profile.entryPageId = authority.entryPageId; });
   return { id: authority.publicationId, projectId: authority.projectId, applicationId: authority.applicationId,
     applicationRevision: authority.applicationRevision, document: document.application, publishedAt: "2026-09-16T12:00:00.000Z" };
 }
 
-async function fixture() {
+async function fixture(portable = false) {
   const directory = await mkdtemp(path.join(tmpdir(), "dashboard-route-runtime-")); cleanup.push(directory);
   const objectKey = "projects/project-golden/assets/font.woff2", font = Uint8Array.of(1, 2, 3);
   const objectPath = path.join(directory, objectKey);
@@ -49,14 +52,18 @@ async function fixture() {
   const compiler = { compilerId: "native-dashboard-v5", compilerVersion: "1.0.0", compilerSha256: "c".repeat(64),
     configuration: { runtimeSchema: 5 }, compile: vi.fn(async () => ({ artifact, objects: [{ nodeId: "widget-scene-main", contentCompiled: true, deferredFields: [] }] })) };
   const app = createApiServer();
+  const nativeExecutable = path.join(directory, "test-only-player.exe");
+  // PE 结构夹具，仅验证 HTTP 到打包器，不执行或声称真实窗口证据。
+  const pe = Buffer.alloc(128); pe.writeUInt16LE(0x5a4d); pe.writeUInt32LE(64, 60); pe.writeUInt32LE(0x00004550, 64);
+  if (portable) await writeFile(nativeExecutable, pe);
   app.addHook("preHandler", async request => { request.systemUser = { id: "editor", role: "editor", projectIds: [authority.projectId], enabled: true } as never; });
-  const registered = await registerDashboardNativeCandidateRouteRuntime(app, { runtime: { store, objects: new LocalObjectStore(directory), closure, compiler,
+  const registered = await registerDashboardNativeCandidateRouteRuntime(app, { nativeExecutable: portable ? nativeExecutable : undefined, runtime: { store, objects: new LocalObjectStore(directory), closure, compiler,
     expectedDeviceFingerprintSha256: "a".repeat(64), verifier: { verify: async input => ({ verifier: "native-dashboard-window-v1",
       authority, freezeManifestSha256: input.candidate.manifest.manifestSha256, sourceSemanticHash: input.sourceSemanticHash,
       compileGraphHash: input.compileGraphHash, targetArtifactHash: input.targetArtifactHash, fixtureSha256: "b".repeat(64),
       deviceFingerprintSha256: "a".repeat(64), fontSha256: [{ resourceId: "font", sha256: sha(font), faceIndex: 0 }],
       renderedNodeIds: ["widget-scene-main"] }) } } });
-  return { app, registered, compiler };
+  return { app, registered, compiler, pe, artifact };
 }
 
 describe("dashboard Native candidate route runtime", () => {
@@ -64,8 +71,36 @@ describe("dashboard Native candidate route runtime", () => {
     const f = await fixture();
     expect(f.app.printRoutes()).toContain("dashboard-candidates");
     expect(f.app.printRoutes()).toContain("offline-archive");
+    expect(f.app.printRoutes()).not.toContain("portable-zip");
     expect(f.registered.runtime.service.candidate).toBeUndefined();
     expect(f.compiler.compile).not.toHaveBeenCalled();
     await f.app.close();
+  });
+
+  it("prepares a candidate and downloads its same verified bytes through the real ZIP builder", async () => {
+    const f = await fixture(true);
+    const base = `/api/projects/${authority.projectId}/applications/${authority.applicationId}/dashboard-candidates`;
+    try {
+      const prepared = await f.app.inject({ method: "POST", url: base, payload: {
+        publicationId: authority.publicationId, applicationRevision: authority.applicationRevision, entryPageId: authority.entryPageId,
+      } });
+      expect(prepared.statusCode, prepared.body).toBe(201);
+      const candidate = prepared.json();
+      const download = await f.app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip` });
+      expect(download.statusCode, download.body).toBe(200);
+      expect(download.headers["content-type"]).toBe("application/zip");
+      const zip = await JSZip.loadAsync(download.rawPayload, { checkCRC32: true });
+      expect(await zip.file("runtime-package.json")!.async("uint8array")).toEqual(f.artifact);
+      expect(await zip.file("deep-native-player.exe")!.async("nodebuffer")).toEqual(f.pe);
+      const manifest = JSON.parse(await zip.file("manifest.json")!.async("text"));
+      expect(manifest.artifactSha256).toBe(candidate.artifactSha256);
+      expect(manifest.authority.publicationId).toBe(authority.publicationId);
+      const dmda = await f.app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/offline-archive` });
+      expect(dmda.statusCode).toBe(200);
+      const parsed = parseDashboardOfflineArchive(dmda.rawPayload);
+      expect(parsed.archive.artifact).toEqual(await zip.file("runtime-package.json")!.async("uint8array"));
+      f.registered.registry.remove(candidate.candidateId);
+      expect((await f.app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip` })).statusCode).toBe(404);
+    } finally { await f.app.close(); }
   });
 });
