@@ -4,6 +4,11 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Dashboard content and portable packaging
+
+- Compile frozen Dashboard resources and data through the existing Native text and image producers, preserving font faces and explicit fallback order.
+- Package validated Dashboard archives with a Windows player, licenses and a PowerShell launcher that checks file hashes before launch. Formal publication wiring and full window acceptance remain pending.
+
 ### Dashboard page input
 
 - Route updates without an explicit page ID to their captured source page. Ticks and chart data updates continue after switching away from the entry page; stale and cross-page events remain rejected.
