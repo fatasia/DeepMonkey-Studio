@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard content and portable packaging
 
+- Fix offline downloads rejecting compiled page identities. Validate the shared authored-to-runtime page mapping and retain unused fallback fonts in the archive without claiming they were rendered.
+
 - Enable Dashboard candidate and portable download routes through explicit server deployment configuration, including a frozen font catalog and real native window verification.
 
 - Resolve frozen Dashboard inputs from published applications, project image assets, saved datasets and pipelines. Reject source changes during compilation.

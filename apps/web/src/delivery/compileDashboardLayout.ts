@@ -1,6 +1,6 @@
 import { assertDashboardDocument, type DashboardDocument, type WidgetFrame } from "@bim-studio/contracts";
 import { layoutRetainedUi, validateRetainedUiTree, type RetainedUiNode, type RetainedUiStyle, type RetainedUiTree } from "@bim-studio/deep-engine";
-import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
+import { runtimeContentSha256, dashboardRuntimePageId } from "@bim-studio/deep-engine/runtime-package";
 
 const NODE_FIELDS = new Set(["id", "frame", "zIndex", "visible"]);
 const PAGE_FIELDS = new Set(["id", "width", "height", "nodes"]);
@@ -13,7 +13,7 @@ export function compileDashboardLayout(input: DashboardDocument, pageId = input.
   if (!page) throw new Error(`二维布局页面不存在：${pageId}`);
   const appId = document.application.metadata.id, revision = document.application.metadata.revision;
   const identity = (kind: string, sourceId: string) => `${kind}.${runtimeContentSha256(JSON.stringify([appId, pageId, sourceId]))}`;
-  const rootId = identity("page", page.id);
+  const rootId = dashboardRuntimePageId(appId, page.id);
   const nodes: RetainedUiNode[] = page.nodes.map(node => ({
     id: identity("node", node.id), revision, parentId: rootId, children: [],
     style: style(node.frame, node.zIndex, node.visible !== false),

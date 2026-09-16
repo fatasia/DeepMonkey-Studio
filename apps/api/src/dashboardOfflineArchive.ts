@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   parseDeepRuntimePackage,
   serializeDeepRuntimePackage,
+  dashboardRuntimePageId,
   type DeepRuntimePackageV5,
 } from "@bim-studio/deep-engine/runtime-package";
 import type { DashboardPublicationCapabilityReport } from "./dashboardPublicationCapability.js";
@@ -170,7 +171,8 @@ function assertCapability(capability: DashboardPublicationCapabilityReport, free
     .map(item => ({ resourceId: item.id, sha256: item.sha256, faceIndex: item.faceIndex }))
     .sort(fontOrder);
   const actualFonts = capability.evidence?.fontSha256?.map(font => ({ ...font })).sort(fontOrder);
-  if (!actualFonts || !equal(expectedFonts, actualFonts)) {
+  if (!actualFonts || new Set(actualFonts.map(font => font.resourceId)).size !== actualFonts.length
+    || actualFonts.some(font => !expectedFonts.some(expected => equal(font, expected)))) {
     throw new Error("Dashboard offline archive capability is missing frozen font resources");
   }
 }
@@ -180,7 +182,8 @@ function assertRuntimeDocumentBinding(runtimePackage: DeepRuntimePackageV5, free
   const dashboard = runtimePackage.payloads[dashboardId] as Record<string, unknown>;
   if (!dashboard || dashboard.documentId !== freezeManifest.authority.applicationId
     || dashboard.documentRevision !== freezeManifest.authority.applicationRevision
-    || dashboard.entryPageId !== freezeManifest.entryPageId) {
+    || (dashboard.entryPageId !== freezeManifest.entryPageId
+      && dashboard.entryPageId !== dashboardRuntimePageId(freezeManifest.authority.applicationId, freezeManifest.entryPageId))) {
     throw new Error("Dashboard offline runtime package targets a different frozen document");
   }
 }

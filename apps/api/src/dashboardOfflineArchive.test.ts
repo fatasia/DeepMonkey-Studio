@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { parseDeepRuntimePackage, serializeDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
+import { parseDeepRuntimePackage, serializeDeepRuntimePackage, dashboardRuntimePageId,
+  runtimeContentSha256, runtimePackageSha256 } from "@bim-studio/deep-engine/runtime-package";
 import {
   createDashboardOfflineArchive,
   dashboardArchiveCanonicalSha256,
@@ -17,16 +18,23 @@ const authority = {
 } as const;
 const sha = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
-async function validArchive() {
+async function validArchive(authorPageId?: string) {
   const fixture = new Uint8Array(await readFile(new URL("../../../packages/deep-engine/fixtures/dashboard-composition-v1.json", import.meta.url)));
   const parsed = parseDeepRuntimePackage(fixture);
   if (!parsed.valid) throw new Error("dashboard v5 fixture invalid");
+  if (authorPageId && parsed.value.schemaVersion === 5) {
+    const dashboard = parsed.value.payloads[parsed.value.entrypoints.dashboard] as any;
+    dashboard.entryPageId = dashboardRuntimePageId(authority.applicationId, authorPageId);
+    dashboard.pages[0].id = dashboard.entryPageId;
+    parsed.value.resources.find(resource => resource.id === dashboard.id)!.contentHash.value = runtimeContentSha256(dashboard);
+    parsed.value.packageHash.value = runtimePackageSha256(parsed.value);
+  }
   const artifact = new TextEncoder().encode(serializeDeepRuntimePackage(parsed.value));
   const resource = { id: "font-main", kind: "font" as const, objectKey: "projects/project-golden/fonts/main.woff2",
     mime: "font/woff2", nodeIds: ["node-main"], revision: 1, bytes: 3, sha256: sha(new Uint8Array([1, 2, 3])),
     faceIndex: 0, licenseEvidence: "OFL" };
   const freezeBody = { schema: "deep-engine.dashboard-publication-freeze" as const, schemaVersion: 1 as const, authority,
-    entryPageId: "page.378d4cac696fa43e72c270f690e15329771ecf6ff6ac0b2cff9e4a2eca2dac15",
+    entryPageId: authorPageId ?? "page.378d4cac696fa43e72c270f690e15329771ecf6ff6ac0b2cff9e4a2eca2dac15",
     documentSha256: "a".repeat(64), data: [], resources: [resource], totalBytes: 3 };
   const freezeManifest = { ...freezeBody, manifestSha256: dashboardArchiveCanonicalSha256(freezeBody) };
   const capability = { schema: "deep-engine.dashboard-publication-capability" as const, schemaVersion: 1 as const, authority,
@@ -51,6 +59,14 @@ function resealArchive(input: DashboardOfflineArchiveV1): DashboardOfflineArchiv
 }
 
 describe("dashboard offline archive contract", () => {
+  it("accepts the compiler's derived entry page and rejects a different authored page", async () => {
+    const archive = await validArchive("page-main");
+    expect(validateDashboardOfflineArchive(archive).archive.manifest.freezeManifest.entryPageId).toBe("page-main");
+    const altered = structuredClone(archive);
+    altered.manifest.freezeManifest.entryPageId = "other-page";
+    expect(() => validateDashboardOfflineArchive(resealArchive(altered))).toThrow(/different frozen document/);
+  });
+
   it("binds a canonical v5 package to C3 frozen closure and all three C4 hashes", async () => {
     const archive = await validArchive();
     const result = validateDashboardOfflineArchive(archive);
@@ -77,6 +93,17 @@ describe("dashboard offline archive contract", () => {
     missing.manifest.freezeManifest.resources = [];
     const resealed = resealArchive(missing);
     expect(() => validateDashboardOfflineArchive(resealed)).toThrow("missing frozen font resources");
+  });
+
+  it("preserves unused frozen fallback fonts without claiming they were drawn", async () => {
+    const archive = await validArchive();
+    const extended = structuredClone(archive);
+    const fonts = extended.manifest.freezeManifest.resources;
+    fonts.push({ ...fonts[0]!, id: "unused-fallback", sha256: "1".repeat(64) });
+    extended.manifest.freezeManifest.totalBytes += fonts[0]!.bytes;
+    const result = validateDashboardOfflineArchive(resealArchive(extended));
+    expect(result.archive.manifest.freezeManifest.resources).toHaveLength(2);
+    expect(result.archive.manifest.capability.evidence.fontSha256).toHaveLength(1);
   });
 
   it("rejects any target other than the native v5 dashboard player", async () => {
