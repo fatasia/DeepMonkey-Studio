@@ -10,7 +10,7 @@ use std::{
 pub struct Verification {
     report: PathBuf,
     required_frames: u32,
-    evidence: Evidence,
+    evidence: Box<Evidence>,
 }
 
 #[derive(Serialize)]
@@ -25,6 +25,9 @@ struct Evidence {
     presented_frames: u32,
     backend: String,
     gpu_errors_clean: bool,
+    device: Option<serde_json::Value>,
+    device_fingerprint_sha256: Option<String>,
+    layers: Vec<crate::deep2d_gpu::DrawEvidence>,
 }
 
 impl Verification {
@@ -46,7 +49,7 @@ impl Verification {
         Ok(Self {
             report,
             required_frames: frames,
-            evidence: Evidence {
+            evidence: Box::new(Evidence {
                 schema_version: 1,
                 scope: "native-window",
                 nonce,
@@ -56,13 +59,36 @@ impl Verification {
                 presented_frames: 0,
                 backend: String::new(),
                 gpu_errors_clean: false,
-            },
+                device: None,
+                device_fingerprint_sha256: None,
+                layers: Vec::new(),
+            }),
         })
     }
 
     pub fn bind_hash(mut self, hash: String) -> Self {
         self.evidence.package_hash = hash;
         self
+    }
+
+    pub fn observe_draws(
+        &mut self,
+        device: serde_json::Value,
+        layers: Vec<crate::deep2d_gpu::DrawEvidence>,
+    ) -> Result<(), String> {
+        let fingerprint = deep_engine_native::runtime_package::runtime_content_sha256(&device);
+        if self
+            .evidence
+            .device_fingerprint_sha256
+            .as_ref()
+            .is_some_and(|old| old != &fingerprint)
+        {
+            return Err("verification device changed between presents".into());
+        }
+        self.evidence.device = Some(device);
+        self.evidence.device_fingerprint_sha256 = Some(fingerprint);
+        self.evidence.layers = layers;
+        Ok(())
     }
 
     // Called only after render(true) reports Presented, never after queue.submit alone.

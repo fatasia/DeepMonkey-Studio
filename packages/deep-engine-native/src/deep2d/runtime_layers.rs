@@ -70,6 +70,7 @@ pub(super) fn build_chunks(
             chunk.vertex_count += candidate.vertex_count;
         } else {
             chunks.push(PreparedDeep2dChunk {
+                layer_index: None,
                 kind: candidate.kind,
                 first_vertex: candidate.first_vertex,
                 vertex_count: candidate.vertex_count,

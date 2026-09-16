@@ -26,6 +26,9 @@ pub struct PlayerDiagnostics {
 }
 
 impl PlayerDiagnostics {
+    pub fn verification_device(&self) -> serde_json::Value {
+        serde_json::to_value(&self.adapter).expect("adapter identity is serializable")
+    }
     pub fn backend(&self) -> &str {
         &self.adapter.backend
     }

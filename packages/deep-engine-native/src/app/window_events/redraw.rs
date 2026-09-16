@@ -1,6 +1,11 @@
 use super::*;
 
 pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
+    if app.state.verification.is_some()
+        && let Some(renderer) = &app.renderer
+    {
+        renderer.enable_verification_draws();
+    }
     let verify = app.state.verification.is_some()
         || app.smoke_frame
         || app.content.active().pending_lkg.is_some()
@@ -24,6 +29,15 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         && let Some(verification) = app.state.verification.as_mut()
     {
         let size = app.window.as_ref().expect("window exists").inner_size();
+        let renderer = app.renderer.as_ref().expect("renderer exists");
+        if let Err(error) = verification.observe_draws(
+            renderer.verification_device(),
+            renderer.verification_draws(),
+        ) {
+            app.state.failed(error);
+            event_loop.exit();
+            return;
+        }
         let backend = app
             .renderer
             .as_ref()

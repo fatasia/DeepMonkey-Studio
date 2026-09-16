@@ -16,6 +16,9 @@ const SHADER: &str = include_str!("../assets/shaders/native_deep2d_v1.wgsl");
 #[path = "deep2d_vertex_transfer.rs"]
 mod vertex_transfer;
 pub use vertex_transfer::VertexTransferStats;
+#[path = "deep2d_draw_evidence.rs"]
+mod draw_evidence;
+pub use draw_evidence::DrawEvidence;
 
 struct Deep2dPathGpuResources {
     pipeline: std::sync::Arc<wgpu::RenderPipeline>,
@@ -85,6 +88,7 @@ pub struct Deep2dGpuPainter {
     queue: Arc<wgpu::Queue>,
     frame_resources: std::sync::Arc<crate::deep2d_gpu_cache::FrameResources>,
     chunks: Vec<PreparedDeep2dChunk>,
+    draw_evidence: draw_evidence::DrawEvidenceTracker,
     logical_size: [f32; 2],
     /// Physical size last written into the frame uniform; equal sizes skip
     /// the re-upload (D06/D08).
@@ -175,6 +179,7 @@ impl Deep2dGpuPainter {
             path_cache,
             queue: Arc::new(queue.clone()),
             frame_resources: frame_bind_group,
+            draw_evidence: draw_evidence::DrawEvidenceTracker::new(content, &prepared.atlases),
             chunks: prepared.chunks,
             logical_size: [prepared.path.logical_width, prepared.path.logical_height],
             last_physical_size: std::cell::Cell::new(None),
@@ -261,6 +266,7 @@ impl Deep2dGpuPainter {
         target: &wgpu::TextureView,
         physical_size: (u32, u32),
     ) {
+        self.draw_evidence.clear();
         if self.chunks.is_empty() {
             return;
         }
@@ -316,7 +322,15 @@ impl Deep2dGpuPainter {
                 chunk.first_vertex..chunk.first_vertex + chunk.vertex_count,
                 0..1,
             );
+            self.draw_evidence.record(chunk);
         }
+    }
+
+    pub fn draw_evidence(&self) -> Vec<DrawEvidence> {
+        self.draw_evidence.snapshot()
+    }
+    pub fn enable_draw_evidence(&self) {
+        self.draw_evidence.enable();
     }
 }
 

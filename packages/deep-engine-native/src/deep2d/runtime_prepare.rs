@@ -29,6 +29,8 @@ pub enum PreparedDeep2dChunkKind {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PreparedDeep2dChunk {
+    /// Composite source retained through tessellation for actual draw evidence.
+    pub layer_index: Option<usize>,
     pub kind: PreparedDeep2dChunkKind,
     pub first_vertex: u32,
     pub vertex_count: u32,

@@ -1,6 +1,21 @@
 use super::*;
 
 impl Renderer {
+    pub fn enable_verification_draws(&self) {
+        if let Some(painter) = &self.deep2d {
+            painter.enable_draw_evidence();
+        }
+    }
+    pub fn verification_device(&self) -> serde_json::Value {
+        self.diagnostics.verification_device()
+    }
+
+    pub fn verification_draws(&self) -> Vec<crate::deep2d_gpu::DrawEvidence> {
+        self.deep2d
+            .as_ref()
+            .map(|painter| painter.draw_evidence())
+            .unwrap_or_default()
+    }
     pub fn verification_backend(&self) -> &str {
         self.diagnostics.backend()
     }

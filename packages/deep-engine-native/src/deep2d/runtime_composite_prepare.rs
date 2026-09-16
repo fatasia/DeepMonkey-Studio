@@ -13,7 +13,7 @@ pub(super) fn prepare(
         ..list.clone()
     };
     let mut output = prepare_runtime_content(&Deep2dRuntimeContent::DisplayList(empty))?;
-    for layer in value.layers() {
+    for (layer_index, layer) in value.layers().iter().enumerate() {
         let mut part = match cache.as_deref_mut() {
             Some(cache) => {
                 super::runtime_prepare::prepare_impl(&layer.content, Some(cache), false)?
@@ -36,6 +36,7 @@ pub(super) fn prepare(
             vertex[1] += layer.translation[1] as f32;
         }
         for mut chunk in part.chunks {
+            chunk.layer_index = Some(layer_index);
             chunk.clip_rect = match chunk.clip_rect {
                 Some(rect) => intersection(translate_rect(rect, layer.translation), layer.clip),
                 None => Some(layer.clip),
