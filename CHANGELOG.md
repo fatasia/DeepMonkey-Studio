@@ -4,6 +4,10 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Runtime package foundation
+
+- Add TypeScript camera v3 and single-chart v4 package producers and validators, compiled ChartIR reads, revision-checked data updates and fixed-step simulation. Preserve legacy package versions and static dashboard packaging.
+
 ### Shared scene script protocol
 
 - Move scene API identity and script compatibility checks into Contracts while preserving the SDK exports and constant values. Add an SDK adapter that copies persisted scripts into runtime modules, allowing publication checks to use Contracts without depending on the runtime SDK.

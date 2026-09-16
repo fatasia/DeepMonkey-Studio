@@ -5,3 +5,7 @@ export { createRuntimeDeepSlMaterial, type RuntimeShaderMaterial } from "./deepS
 export { validateDeepRuntimePackage, BUILTIN_RUNTIME_IBL_ID } from "./validation.js";
 export { serializeDeepRuntimePackage, parseDeepRuntimePackage } from "./serialization.js";
 export { runtimeContentSha256, runtimePackageSha256, RUNTIME_CANONICAL_DOMAIN } from "./hash.js";
+export { validateRuntimeSceneCamera, type RuntimeSceneCamera } from "./camera.js";
+export * from "./coordinates.js";
+export { buildDashboardRuntimePackage } from "./dashboard.js";
+export { buildChartRuntimePackage } from "./chart.js";

@@ -3,9 +3,9 @@ import { compareRuntimeStrings } from "./hash.js";
 import { array, fields, record, requireValue, resourceId, snapshotJson, string } from "./primitives.js";
 import type { RuntimeMaterialShaderBinding } from "./types.js";
 
-function readBindings(input: unknown): RuntimeMaterialShaderBinding[] {
+function readBindings(input: unknown, allowEmpty = false): RuntimeMaterialShaderBinding[] {
   const entries = array(input, "$.materialBindings", 16_384);
-  requireValue(entries.length > 0, "$.materialBindings", "Runtime package v2 requires material bindings.");
+  requireValue(allowEmpty || entries.length > 0, "$.materialBindings", "Runtime package v2 requires material bindings.");
   return entries.map((candidate, index) => {
     const path = `$.materialBindings[${index}]`, entry = record(candidate, path);
     fields(entry, ["materialId", "packageId", "techniqueId"], [], path);
@@ -18,13 +18,13 @@ function readBindings(input: unknown): RuntimeMaterialShaderBinding[] {
 }
 
 /** Owns author input and orders Unicode material ids identically to the native UTF-8 comparator. */
-export function normalizeRuntimeMaterialBindings(input: unknown): readonly RuntimeMaterialShaderBinding[] {
-  return readBindings(snapshotJson(input)).sort((a, b) => compareRuntimeStrings(a.materialId, b.materialId));
+export function normalizeRuntimeMaterialBindings(input: unknown, allowEmpty = false): readonly RuntimeMaterialShaderBinding[] {
+  return readBindings(snapshotJson(input), allowEmpty).sort((a, b) => compareRuntimeStrings(a.materialId, b.materialId));
 }
 
 export function validateRuntimeMaterialBindings(input: unknown, materials: readonly { readonly id: string }[],
-  shaders: ReadonlyMap<string, DeepShaderPackageV2>): void {
-  const bindings = readBindings(input), materialIds = new Set(materials.map(material => material.id)), used = new Set<string>();
+  shaders: ReadonlyMap<string, DeepShaderPackageV2>, allowEmpty = false): void {
+  const bindings = readBindings(input, allowEmpty), materialIds = new Set(materials.map(material => material.id)), used = new Set<string>();
   let previous: string | undefined;
   for (const [index, binding] of bindings.entries()) {
     const path = `$.materialBindings[${index}]`;
