@@ -1645,3 +1645,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:`src/replay.rs`(381)+`replay/{target,trace}.rs`(336)+模块测试 4 项+集成测试 `tests/unified_fixed_step_replay.rs` 7 项。ScriptEntry 封闭枚举驱动 sim tick/行为命令/输入事件/种子化 RNG(splitmix64)/延迟结算;轨迹+display hash 用既有 hash_canonical;过期命令 submit/settle 双侧 CAS 拒绝且旧 epoch/轨迹冻结;取消终态幂等;预算硬拒;同种子双跑逐字节一致(trace+wire_bytes)。复用 SimSource/CommandBus/ChartAction dispatch,零新依赖,时间全注入,网络副作用仅测试 fixture。
 - 主线程复核:lib.rs 仅 +1 行模块注册,fmt clean,集成测试 7/7 复跑通过(代理侧 lib 264/0/1、clippy 0 warning)。
 - 边界(如实):集成测试 428 行超 400 目标(低于硬红线,共享构造不强拆);防御性分支(同步单线程不可达路径)未被独立触发;display hash f64 跨平台稳定性未验证(范围外)。
+
+### 2026-09-17 DE26/A01 五引擎目标矩阵 v2 合同(GLM)
+
+- 已完成:`packages/deep-engine/src/benchmarkTargetMatrix.ts` + 6 项测试。五张矩阵独立判定;引擎身份未锁定(unlocked)永不判 passed;双赛道(common-baseline/best-quality)禁混口径;六类工业负载为必选下限;必选能力+case 构成固定分母,缺失证据按 unverified 留分母;禁止退化项命中即判负;排除项显式登记不进分母且越权评分拒绝;权重按域合计必须等于 v1 冻结值防篡改;非法矩阵零评分。v1 合同 8 项回归不动。
+- 验证:deep-engine typecheck 通过;A01 6 项+v1 8 项测试全绿。
+- 边界(如实):真实引擎版本/环境hash/配对观测由 A02/A04/A05–A07 提供后才产出真实 verdict;矩阵 JSON 实例落盘归 A04。[spec](specs/de26-a01-target-matrix-v2-2026-09-17.md)
