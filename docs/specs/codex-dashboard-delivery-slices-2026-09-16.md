@@ -17,7 +17,7 @@
 
 **状态：本轮待办。归属：P0-01/03/06 的共同前置。**
 
-2026-09-16 进展：[包合同与 Native 组合宿主](dashboard-composition-runtime-2026-09-16.md) 已提交并验证。[通用资源准备基础](dashboard-resource-prewarm-2026-09-16.md) 已分离三维 bake 依赖并提交。Web 组合候选、绘制消费与整页 present 仍待接通，C1 全项保持待办。
+2026-09-16 进展：[包合同与 Native 组合宿主](dashboard-composition-runtime-2026-09-16.md) 已提交并验证。[通用资源准备基础](dashboard-resource-prewarm-2026-09-16.md) 已分离三维 bake 依赖并提交。Web 已新增隐藏画布 WebGPU 准备、整页原子 publish、Deep2D path/atlas 绘制及真实包探针；真实 C2 包候选提交、tick、空诊断与控制台清洁均已浏览器验证。双动态图表的 Web 真实 GPU 页面和完整输入/换页矩阵仍待补齐，C1 全项保持待办。
 
 最小切片：定义静态二维内容与多个动态图表的版本化组合、页面逻辑尺寸、节点资源引用、局部坐标与命中归属。复用 ChartIR、Deep2D、已有包校验、prewarm 和 LKG；不放宽旧 v4 的互斥规则，不引入第二套 loader。
 
@@ -38,7 +38,7 @@
 
 **状态：本轮待办。归属：P0-01。**
 
-2026-09-16 进展：[冻结字体 producer](dashboard-frozen-text-producer-2026-09-16.md) 与[文字/图片编译子片](dashboard-frozen-raster-content-2026-09-16.md) 已通过相关独立闭包、真实 Native 与 GPU 验证。继续补冻结 KPI/表格、作者图表、筛选、页面外观及运行行为；本项保持待办。
+2026-09-16 进展：[冻结字体 producer](dashboard-frozen-text-producer-2026-09-16.md)、[文字/图片编译子片](dashboard-frozen-raster-content-2026-09-16.md) 与[冻结数据内容子片](dashboard-frozen-data-content-2026-09-16.md) 已通过独立闭包、真实 Native 与 GPU 验证；表格冻结首列有序绘制与六类图表 Web/Native 几何对照已提交。真实 C2 包的 7/9 双柱共享零基线并通过 Native 像素分析，WebGPU 页面也已目检。筛选、完整页面外观及运行行为仍待补齐，本项保持待办。
 
 按资源链顺序补文字/图片，再补冻结数据上的 KPI、表格、筛选与图表组合，最后核对组件阴影及页面外观。文字必须产出真实字形/atlas，图片必须带校验后的真实像素；数字来源必须是明确绑定或作者数据，不能猜值。
 
@@ -59,6 +59,8 @@
 ## C3：作者版本、绑定与资源冻结
 
 **状态：本轮待办。归属：P0-03。**
+
+2026-09-16 进展：已提交纯冻结合同，绑定 publication/application/revision、同 revision 文档指纹、canonical 数据 hash、字体/图片实际 bytes hash、资源 revision、消费者节点、私有对象 key、字体 face/license 与预算；候选准备前后和提交前均复核 authority/resource，33 项专项与 Application 回归通过。该模块采用注入式 reader，尚未接入正式存储、路由和发布下载链，C3 全项保持待办。
 
 把 DashboardDocument 绑定至权威 Application 发布版本，冻结作者组件、数据绑定结果和字体/图片闭包；候选生成及提交均校验作者 revision，草稿变化不得污染已发布版本。
 
