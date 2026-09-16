@@ -1,3 +1,10 @@
+### 2026-09-17 交接#2 作者端离线包入口(GLM;按用户指令提前收尾,浏览器闭环未过)
+
+- 已完成(停放,未验收):作者端候选准备/单 EXE 下载入口——`dashboardOfflinePackageState.ts` 纯状态机(loading→idle→preparing→ready/failed,prepare 显式携带 pointer,迟到响应 ticket 比对丢弃,Escape/关闭中止在途请求)+ `DashboardOfflinePackageEntry.tsx`(portal 对话框:发布版本读取、准备/取消/重新准备、blocked/degraded 对象汇总、EXE/ZIP/DMDA 下载与 content-disposition 文件名)+ api.ts 三个方法(readActivePublication/prepareDashboardCandidate/openDashboardCandidateDownload,409/410 机器码映射 typed error)。挂接 DashboardWorkspaceHeader。
+- 验证:状态机 8 项单测、web typecheck、web 全量 **3460/2 跳过** 全绿。
+- **未完成(如实)**:真实浏览器交互遍历与双宽度/双主题截图未做(服务未起,用户指令转 Deep2D/Deep Engine);api.ts 工作树含并行会话 `scenePublicationDependencyApi` 两行,本次选择性暂存未携带其入库(接手者提交该会话时注意同文件)。
+- 重开条件:起 `pnpm studio start` 后走登录→Dashboard 工作区→离线包对话框全状态遍历并两轮截图。
+
 ### 2026-09-16 交接#1 可信 Chromium 布局宿主 + C3 冻结布局 hash(GLM)
 
 - 已完成:`apps/api/src/dashboardMeasuredLayout.ts` 测量布局合同——宿主只回传测量值,`freezeManifestSha256/documentSha256/dataSha256/字体 sha256+faceIndex` 全部由服务端从冻结候选计算(宿主结构上无法伪造绑定);`layoutSha256` 用新增导出 `dashboardCanonicalJsonSha256`(冻结域唯一 canonical JSON,非有限数拒绝)覆盖 logicalSize+layout+table;`verifyDashboardMeasuredLayout` 供编译/能力/下载任意后续边界复核,分级报 stale(manifest 伞→数据 hash→字体逐 hash)。只接 value/table widget,隐藏/无字体绑定/frame 越界拒绝;捕获输出字体引用越界抛 `DashboardLayoutFontMissingError`。`dashboardDataRequestId` 从闭包导出双处共享。

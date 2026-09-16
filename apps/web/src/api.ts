@@ -46,6 +46,7 @@ import {
 } from "@bim-studio/server-sdk";
 import { runtimeHost } from "./adapters/runtimeHost.js";
 import { networkStatusMonitor } from "./appStatus/networkStatusMonitor";
+import type { DashboardCandidateDownloadFormat, DashboardCandidatePrepared, DashboardPublicationPointer } from "./components/dashboardOfflinePackageState";
 import { desktopLocalApiFetch, setDesktopLocalExternalModuleFetch } from "./adapters/desktopLocalApi.js";
 import { isLocalDesktopMode } from "./adapters/desktopRuntimeMode.js";
 import { createIndustrialApi } from "./apiClients/industrialApi.js";
@@ -153,6 +154,9 @@ export function openDirectBindingWebSocket(): WebSocket {
 
 const request = <T>(url: string, init?: RequestInit) =>
   serverClient.request<T>(url, init);
+
+const dashboardCandidateEndpoint = (format: DashboardCandidateDownloadFormat) =>
+  format === "exe" ? "standalone-executable" : format === "zip" ? "portable-zip" : "offline-archive";
 
 export interface UnityUploadProgress {
   phase: "uploading" | "processing";
@@ -361,6 +365,31 @@ export const api = {
     serverClient.publishApplication(projectId, applicationId),
   unpublishApplication: (projectId: string, applicationId: string) =>
     serverClient.unpublishApplication(projectId, applicationId),
+  readActivePublication: (applicationId: string) =>
+    request<DashboardPublicationPointer>(`/api/public/applications/${encodeURIComponent(applicationId)}`),
+  prepareDashboardCandidate: (
+    projectId: string,
+    applicationId: string,
+    authority: { publicationId: string; applicationRevision: number; entryPageId: string },
+    signal?: AbortSignal,
+  ) =>
+    request<DashboardCandidatePrepared>(
+      `/api/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/dashboard-candidates`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(authority),
+        ...(signal ? { signal } : {}) },
+    ),
+  openDashboardCandidateDownload: (
+    projectId: string,
+    applicationId: string,
+    candidateId: string,
+    format: DashboardCandidateDownloadFormat,
+    signal?: AbortSignal,
+  ) =>
+    serverClient.open(
+      `/api/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}`
+        + `/dashboard-candidates/${encodeURIComponent(candidateId)}/${dashboardCandidateEndpoint(format)}`,
+      { ...(signal ? { signal } : {}) },
+    ),
   installNpmScriptDependency: (projectId: string, packageName: string, version: string, specifier?: string) =>
     request<ApplicationScriptDependency>(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/npm`, {
       method: "POST",

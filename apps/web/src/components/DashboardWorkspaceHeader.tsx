@@ -3,6 +3,7 @@ import { translate as tr } from "../i18n";
 import { WorkspaceModeSwitch } from "./WorkspaceModeSwitch";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 import { DashboardAiDraftEntry } from "./DashboardAiDraftEntry";
+import { DashboardOfflinePackageEntry } from "./DashboardOfflinePackageEntry";
 
 export function DashboardWorkspaceHeader() {
   const {
@@ -65,6 +66,7 @@ export function DashboardWorkspaceHeader() {
       </button>
       <div className="dashboard-workspace-actions">
         <DashboardAiDraftEntry />
+        <DashboardOfflinePackageEntry />
         {onAutoSaveChange && (
           <label className="dashboard-auto-save" title={tr(locale, "修改后自动保存项目", "Automatically save project changes")}>
             <input type="checkbox" checked={autoSaveEnabled} onChange={(event) => onAutoSaveChange(event.target.checked)} />
