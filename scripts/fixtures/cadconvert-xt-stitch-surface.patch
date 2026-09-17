@@ -1,0 +1,89 @@
+diff --git a/native/crates/cad-tess/src/lib.rs b/native/crates/cad-tess/src/lib.rs
+index f1ee144..7423fb2 100644
+--- a/native/crates/cad-tess/src/lib.rs
++++ b/native/crates/cad-tess/src/lib.rs
+@@ -33,4 +33,5 @@
+ pub mod edge;
+ pub mod knots;
+ pub mod face;
++mod stitch_surface;
+ pub mod options;
+@@ -430,6 +436,7 @@ fn orient_shell(faces: &mut [(usize, FaceId, Result<face::Patch, String>)]) -> (
+ fn stitch_t_junctions(
+     faces: &mut [(usize, FaceId, Result<face::Patch, String>)],
+     sag: f64,
++    solid: &Solid,
+ ) -> usize {
+     if !(sag > 0.0) {
+         return 0;
+@@ -523,6 +530,10 @@ fn stitch_t_junctions(
+             if (off[0] * off[0] + off[1] * off[1] + off[2] * off[2]).sqrt() > sag {
+                 continue;
+             }
++            let surface = solid.surface(solid.face(faces[*face].1).surface);
++            if !stitch_surface::accepts(surface, solid.tolerance, *r) {
++                continue;
++            }
+             // One triangle can be reached from more than one of its own open
+             // edges, and each pass offers the same loose point again. Placing
+             // a point twice on one edge gives the fan a repeated corner, and
+@@ -758,7 +769,7 @@ pub fn tessellate_solid(
+             }
+         }
+     }
+-    let stitched = stitch_t_junctions(&mut faces, options.sag);
++    let stitched = stitch_t_junctions(&mut faces, options.sag, solid);
+     if watching {
+         println!(
+             "[fold] {name}: facets laid twice — {before_stitch} before stitching, {} after",
+diff --git a/native/crates/cad-tess/src/stitch_surface.rs b/native/crates/cad-tess/src/stitch_surface.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/cad-tess/src/stitch_surface.rs
+@@ -0,0 +1,46 @@
++use cad_ir::{brep::Surface, math::Vec3};
++
++/// Chord sag permits a mesh edge to leave a curved surface, not a point from
++/// another face to become part of that surface. Never move the candidate.
++pub(crate) fn accepts(surface: &Surface, tolerance: f64, point: [f64; 3]) -> bool {
++    let p = Vec3::new(point[0], point[1], point[2]);
++    if !p.is_finite() || !tolerance.is_finite() || tolerance < 0.0 {
++        return false;
++    }
++    let Some(uv) = surface.invert(p, None) else {
++        return false;
++    };
++    let projected = surface.point_at(uv);
++    let scale = point.iter().fold(0.0_f64, |m, x| m.max(x.abs()));
++    let budget = tolerance.max(scale * f32::EPSILON as f64 * 2.0);
++    projected.is_finite() && (projected - p).length() <= budget
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use cad_ir::math::Frame;
++
++    #[test]
++    fn chord_sag_does_not_authorize_a_point_off_the_cylinder() {
++        let surface = Surface::Cylinder {
++            frame: Frame::new(Vec3::ZERO, Vec3::Z, Vec3::X),
++            radius: 5.0,
++        };
++        assert!(accepts(&surface, 1e-5, [5.0, 0.0, 2.0]));
++        assert!(!accepts(&surface, 1e-5, [4.98, 0.0, 2.0]));
++        assert!(!accepts(&surface, 1e-5, [5.02, 0.0, 2.0]));
++        assert!(accepts(&surface, 1e-5, [5.0 + 1e-7, 0.0, 2.0]));
++    }
++
++    #[test]
++    fn model_tolerance_and_invalid_candidates_are_explicit() {
++        let surface = Surface::Plane {
++            frame: Frame::new(Vec3::ZERO, Vec3::Z, Vec3::X),
++        };
++        assert!(accepts(&surface, 1e-4, [1.0, 2.0, 5e-5]));
++        assert!(!accepts(&surface, 1e-4, [1.0, 2.0, 2e-4]));
++        assert!(!accepts(&surface, f64::NAN, [0.0; 3]));
++        assert!(!accepts(&surface, 1e-4, [f64::NAN, 0.0, 0.0]));
++    }
++}

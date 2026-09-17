@@ -1880,6 +1880,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 109 件/19,344 面实测：19,151 面见证匹配，12 面几何差异，181 面当前无可支持见证，206 面与同 BODY 其他面见证完全重复（与前述分类重叠）。真实 GLB 反例证明同 BODY 面标签互换虽可通过集合审计，但会被逐面几何拒绝。
 - 7 项反例测试通过，主线实际审计按设计返回 exit 2，报告 SHA-256 `37da7678b289bd349cea1935b05e63921c86cddd80d6ec5c56a6244beb5e0617`。差异、NURBS/圆锥/圆环/偏置曲面、裁剪域/孔洞/法线/世界变换仍待办；生产 profile 认证保持 0。[证据](specs/industrial-x-t-face-geometry-witness-2026-09-17.md)
 
+### 2026-09-17 X_T 逐面差异归因与拼接表面约束（Codex）
+
+- 12 个真实差异完成阶段归因：3 个由 `stitch_t_junctions` 只看边弦距离、未校验候选点属于目标面导致；4 个已在面重建阶段异常，5 个已在缓存边界折线偏离支撑面。最小补丁在拼接前做目标曲面反求/正求残差校验，不移动或投影候选点，不改变 0.01 mm 审计阈值。
+- 109 件/19,344 面复跑保持源 face key 和 witness hash 不变，精确消除 3 个拼接差异且无新增 mismatch；当前 19,154 matched、9 mismatch、181 unresolved，主审计仍按设计 exit 2，生产 profile 保持 0。
+- 主线程复核补丁 SHA-256 `2b3361de8ff491cf6b3bbaf418843b14e7356ebeaa7bc7cd5c3ac4acb3e99fbd`、reverse-check、cad-tess 36/36、JS 7/7 和诊断脚本语法通过。剩余重建/折线根因按报告入口继续，不用放宽误差或伪造通过。[证据](specs/industrial-x-t-geometry-causal-stitch-2026-09-17.md)
+
 ### 2026-09-17 Deep2D P2-01 Windows LPAC 零 capability 实验（Codex）
 
 - 在既有 X IPC 与 Job 资源治理之上新增可信宿主 LPAC 入口：唯一临时 profile/目录、精确 SID RX、零 capabilities、ALL_APPLICATION_PACKAGES opt-out、仅标准流句柄与原子 Job 列表。子进程挂起创建，核验 AppContainer/SID/capability/group 后才恢复；失败不降级普通进程。
