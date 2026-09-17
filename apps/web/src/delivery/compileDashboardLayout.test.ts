@@ -12,8 +12,7 @@ describe("DashboardDocument outer layout pass", () => {
     second.id = "page-second";
     second.nodes[0]!.id = "node-second";
     input.application.pages.push(second);
-    input.entryPageId = second.id;
-    const batch = compileDashboardLayouts(input);
+    const batch = compileDashboardLayouts({ ...input, entryPageId: second.id });
     expect(batch.pages.map(page => ({ tree: page.tree, layout: page.layout, bindings: page.nodeBindings })))
       .toEqual(input.application.pages.map(page => {
         const result = compileDashboardLayout(input, page.id);

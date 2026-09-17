@@ -43,8 +43,8 @@ describe("frozen dashboard raster orchestration", () => {
     const input = fixture("shape"), second = structuredClone(input.document.application.pages[0]!);
     second.id = "second-page"; second.nodes[0]!.id = "second-shape";
     input.document.application.pages.push(second);
-    input.document.entryPageId = second.id;
-    const result = await compileDashboardRasterContent(input, host().adapter);
+    const result = await compileDashboardRasterContent({ ...input,
+      document: { ...input.document, entryPageId: second.id } }, host().adapter);
     const dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
     expect(dashboard.pages).toHaveLength(2);
     expect(dashboard.entryPageId).toBe(dashboard.pages[1].id);
