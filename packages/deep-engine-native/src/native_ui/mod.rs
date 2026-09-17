@@ -10,6 +10,9 @@ pub mod events;
 pub mod layout;
 pub mod prototype;
 pub mod retained_ui;
+pub mod uia_bridge;
+#[cfg(windows)]
+pub mod uia_bridge_smoke;
 pub mod virtual_list;
 
 pub use accessibility::{
@@ -39,5 +42,11 @@ pub use retained_ui::{
     RetainedUiLayoutMode, RetainedUiNode, RetainedUiNodeKind, RetainedUiPointerEvents,
     RetainedUiRole, RetainedUiStyle, RetainedUiTree, RetainedUiValidation,
     validate_retained_ui_tree,
+};
+#[cfg(windows)]
+pub use uia_bridge::UiaBridge;
+pub use uia_bridge::{
+    UiaBridgeError, UiaControlType, UiaNavigateDirection, control_type_for, navigate_from,
+    validate_semantics,
 };
 pub use virtual_list::{VirtualWindow, compute_window};

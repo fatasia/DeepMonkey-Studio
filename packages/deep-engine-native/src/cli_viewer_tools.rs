@@ -11,6 +11,21 @@ pub fn execute(
     if let Some(result) = crate::asset_package_cli::execute(command, args) {
         return Some(result);
     }
+    #[cfg(windows)]
+    if command == Some("--smoke-uia") {
+        return Some((|| {
+            crate::player_cli::reject_extra(args)?;
+            let report = deep_engine_native::native_ui::uia_bridge_smoke::run_uia_smoke()?;
+            println!("{report}");
+            Ok(())
+        })());
+    }
+    #[cfg(not(windows))]
+    if command == Some("--smoke-uia") {
+        return Some(Err(
+            "--smoke-uia requires Windows (UI Automation is not available on this platform)".into(),
+        ));
+    }
     if command == Some("--smoke-package-selection") {
         return Some((|| {
             let path = crate::player_cli::required_path(args, "--smoke-package-selection")?;

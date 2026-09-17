@@ -46,7 +46,7 @@ pub fn execute() -> Result<(), String> {
             reject_extra(args)?;
             print_help();
             println!(
-                "\n  --verify-x-worker  Verify the packaged experimental worker through LPAC.\n  --licenses  Show licenses embedded in a standalone executable."
+                "\n  --verify-x-worker  Verify the packaged experimental worker through LPAC.\n  --licenses  Show licenses embedded in a standalone executable.\n  --smoke-uia  Attach the UIA screen-reader bridge to a real window and verify the exposed node tree from an in-process UIA client."
             );
             Ok(())
         }
