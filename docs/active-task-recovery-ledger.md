@@ -12,6 +12,14 @@
 
 ---
 
+### 2026-09-17 工业格式 X_T 真实语料扩充（Codex；本地评估，不分发）
+
+- 已完成：从 Asmith 制造商公开 3D 下载页取得铰链分类工件；外层实际为 RAR，22,182,888 字节，SHA-256 `cdf54f79edf0ad19c91213c2ca5fd1d51f8acd582d3fd0f024201b3a477cde90`。路径安全检查后展开 39 个子包，得到 109 份真实 X_T，共 33,986,456 字节，109 个内容 hash 均唯一。
+- 产品实测：用仓内 `probeXtStructure` 跑全量，109/109 `header-recognized`、0 invalid；覆盖 V9/V21/V30 四个 schema 标识。机器可读来源、使用边界和逐文件报告保存在 gitignored `data/external-assets/industrial-format-plan/samples/downloaded/x_t/`。
+- 边界：发布页没有明确再分发授权，原始 CAD 不提交、不随产品分发，只用于本地 parser/profile 回归。Mastervolt 与 Emerson 端点被 Cloudflare 拒绝后已切换来源成功，不构成阻塞。下一步直接用该矩阵推进 X_T parser 覆盖与失败分类，另补独立发布方和真实 X_B。
+
+---
+
 ### 2026-09-17 交接#5 工业格式 PLAN-02 Windows 离线试构建与体量记录(GLM;构建可行性记录,未集成)
 
 - 已完成(全部实测,无预计):[报告](specs/industrial-format-plan02-build-trial-2026-09-17.md)。工具链事实:**本机无 MSVC(VS2019 只剩 Installer)、无 cmake,唯一 C++ 链是 MinGW-w64 GCC 15.1.0**。逐库:① **laz-perf 3.4.0 成功零补丁**——静态库 0.67 MB(15 TU,3 s),上游 readlaz 读锁定样本 autzen_trim.laz 92 ms/峰值 RSS 6.9 MB、1.2-with-color.copc.laz 130 ms/14.6 MB(-static 自包含 exe);② **openNURBS v8.35 失败(192/199 TU,不可链接)**——2 处构建定义级修正(UNICODE/Win10 SDK 宏)+1 处构建副本补丁(lock.h atomic brace 初始化,GCC15 拒拷贝初始化)后打包出 13.5 MB 库,但链接报 **3,141 个 undefined reference**,根因=7 个文件平台分支只覆盖 MSVC/Linux(sprintf_l 家族/qsort_r/localtime_r/CoCreateGuid 分支/KNOWNFOLDERID/`L#c` 宏),头文件消费面(example_read.o)反而通过;③ libE57Format v3.4.0 **被硬依赖 XercesC 3.2 阻断**(PLAN-01 锁定遗漏,已记入下一步),公共头 6 个手工补生成头后全部编译通过;④ 3d-tiles-renderer v0.5.2 离线 `pnpm install` 失败(ERR_PNPM_NO_OFFLINE_META @babylonjs/loaders);⑤ rhino3dm 三个 submodule 全空按约束跳过;⑥ PDAL 源码包本就未下载;⑦ rvt-rs/parasolid-kit/cadmpeg 离线 cargo 全失败(Cargo.lock 在但本地缓存无 crate 源码)。

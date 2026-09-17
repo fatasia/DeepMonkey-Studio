@@ -10,7 +10,7 @@
 - 8 个已下载依赖工件和 6 个单独下载样本的 SHA-256 均与 manifest 一致；7 份解包样本校验表共 463 个文件，逐文件复算全部一致。
 - 本地证据树共 8,486 个文件（依赖 7,715、样本 763、根清单/校验表 8），约 561.7 MB；其中下载工件合计 208,690,811 字节，其余主要为解包核验副本。
 - 候选库均未试编译，也未写入产品依赖；这些证据只证明版本、来源、许可线索和样本可复算，不证明任何格式已经可转换或可发布。
-- 七方向的真实生产语料仍不完整。SolidWorks 没有真实 SLDPRT/SLDASM，X_T 只有一个真实小样本，RVT 学科覆盖不足，3D Tiles 样本许可未声明。
+- 七方向的真实生产语料仍不完整。2026-09-17 已补 109 份制造商公开下载的真实 X_T，原“只有一个”结论失效；这些样本来自同一发布方，只用于本地评估且不进入仓库。SolidWorks 仍没有真实 SLDPRT/SLDASM，RVT 学科覆盖不足，3D Tiles 样本许可未声明。
 
 ## 2. 依赖锁定
 
@@ -34,7 +34,7 @@ PDAL 源码包超过本批单文件 100 MB 下载上限，因此当前不是完�
 | 工作包 | 当前证据 | 可证明 | 不能证明 |
 | --- | --- | --- | --- |
 | WP-JT | 仓内 JT 9.5 与 10.3 两个真实样本 | 既有小端 TriStrip/TopoMesh 子集回归 | LOD、B-Rep、PMI、多文件引用和版本矩阵 |
-| WP-X_T | 一个真实小 X_T；`parasolid-kit` 10 个合成 X_T/X_B corpus 文件 | 已知 profile 的解析回归 | 多实体、复杂 NURBS/圆角、真实 X_B 和通用兼容 |
+| WP-X_T | MIT 小样本 1 份；Asmith 制造商公开下载真实 X_T 109 份；另有 1 份来源边界未清的本地工程样本；`parasolid-kit` 合成 corpus | 109 份制造商样本全部由产品 `xtStructureProbe` 识别，可建立 V9/V21/V30 多 schema 保留集 | 独立生产方覆盖、真实 X_B、完整曲面/拓扑解析和通用兼容 |
 | WP-RVT | 两个 MIT 授权真实 RVT；`rvt-rs` 三组合成 CFB fixture | 两个真实文件的容器输入与 reader 回归素材 | 建筑/结构/机电/链接齐全的多版本矩阵 |
 | WP-PC | E57 21 文件；LAS/LAZ/COPC 10 个单独样本；laz-perf 23 文件 | 正反例、颜色/CRS/扩展属性、压缩对照 | 大规模、多站、大坐标、完整配准和驻留预算 |
 | WP-TILE | 官方示例仓库 222 文件、9 个 tileset | implicit tiling、多内容、元数据等内部评估 | 可再分发许可与完整传统 b3dm/i3dm/pnts 覆盖 |
@@ -42,6 +42,15 @@ PDAL 源码包超过本批单文件 100 MB 下载上限，因此当前不是完�
 | WP-SW | cadmpeg 21 个小型合成 SLDPRT fixture | L1 容器/golden 回归 | 真实零件、SLDASM、配置、装配 occurrence 和几何完整性 |
 
 3D Tiles 示例仓库没有 LICENSE 文件，当前只能内部评估，不进入产品安装包、公开下载或第三方通知。openNURBS 许可文本需要法务复核；PDAL 测试数据需按上游“unless otherwise indicated”逐文件确认来源。
+
+### 3.1 2026-09-17 X_T 语料扩充实测
+
+- 来源：Asmith Manufacturing Company 的公开 [3D 下载页](https://www.asmith.com.tw/en/downloads/3D)，页面明确提供 Parasolid `.x_t`；铰链分类由其公开 Google Drive 链接分发。
+- 工件：外层实际为 RAR 容器，22,182,888 字节，SHA-256 `cdf54f79edf0ad19c91213c2ca5fd1d51f8acd582d3fd0f024201b3a477cde90`；含 39 个子压缩包。
+- 安全解包：先拒绝绝对路径和 `..` 路径，再逐层解包到 gitignored 语料区；得到 109 份 X_T，共 33,986,456 字节，109 个内容哈希均唯一。
+- 产品探测：109/109 `header-recognized`，0 invalid；schema 分布为 `SCH_901000_9008` 31、`SCH_2100263_20000_1300` 70、`SCH_2100275_20000_1300` 1、`SCH_3001278_30100_1300` 7。
+- 使用边界：发布方提供下载，但页面未给出明确再分发授权；原始 CAD 仅保留在 `data/` 本地评估，不提交、不随产品分发。机器可读来源与逐文件结果为 `samples/downloaded/x_t/asmith-hinges-source.json` 和 `asmith-hinges-inventory.json`。
+- 下载恢复：Mastervolt 与 Emerson 两个公开样本端点被 Cloudflare 拒绝后，没有将其报作阻塞，转用 Asmith 官方公开分发源完成本批。
 
 ## 4. 完整性复核
 
@@ -62,4 +71,4 @@ PDAL 源码包超过本批单文件 100 MB 下载上限，因此当前不是完�
 3. 每个开放 profile 有独立来源正例、损坏反例、保留集、确定性输出、source map 与错误报告；合成 fixture 不能替代真实语料。
 4. PLAN-03 合同接入真实 Worker 和质量审计后，才能进入 PLAN-04/06 的任务统一与原子发布。
 
-下一片建议先补 PLAN-02 的 Windows 离线试构建矩阵；样本扩充优先级为真实 SLDPRT/SLDASM、X_T/X_B、多学科 RVT、许可明确的 3D Tiles 和多站大坐标点云。
+下一片建议先补 PLAN-02 的 Windows 离线试构建矩阵；样本扩充优先级为真实 SLDPRT/SLDASM、独立来源 X_T 与真实 X_B、多学科 RVT、许可明确的 3D Tiles 和多站大坐标点云。
