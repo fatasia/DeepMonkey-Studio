@@ -43,16 +43,17 @@ function validateRings(rings: number[][][]) {
 function trimLoop(ir: any, loop: any, tolerance: number, overrides:Map<number,number[][]>) {
   check(loop && Array.isArray(loop.trims) && loop.trims.length>=1 && loop.trims.length<=2048, 'unsupported-trim-loop');
   const ring: number[][]=[];
-  const boundaries:{edge:number,trim:number,vertices:number[]}[]=[];
+  const boundaries:{edge:number,trim:number,vertices:number[],parameters?:number[]}[]=[];
   let previous: number[] | undefined;
   for(const index of loop.trims) {
     const trim=ir.trims[index], curve=ir.curves2d[trim?.curve2d];
-    const polyline=overrides.get(index)??trimPolyline(curve,trim.sourceSubdomain,Boolean(trim.curveReversed),tolerance).points;
+    const parsed=overrides.has(index)?null:trimPolyline(curve,trim.sourceSubdomain,Boolean(trim.curveReversed),tolerance);
+    const polyline=overrides.get(index)??parsed!.points;
     const ends=[polyline[0],polyline.at(-1)!];
     check(ends.flat().every(Number.isFinite), 'nonfinite-trim');
     if(previous) check(length(sub(previous,ends[0]))<=EPS, 'open-trim-loop');
     check(polyline.length>2 || length(sub(ends[0],ends[1]))>EPS, 'degenerate-trim-edge');
-    boundaries.push({edge:trim.edge,trim:index,vertices:polyline.map((_:number[],i:number)=>ring.length+i)});
+    boundaries.push({edge:trim.edge,trim:index,vertices:polyline.map((_:number[],i:number)=>ring.length+i),...(parsed?{parameters:parsed.parameters}:{})});
     ring.push(...polyline.slice(0,-1)); previous=ends[1];
   }
   check(length(sub(previous!,ring[0]))<=EPS, 'open-trim-loop');
@@ -98,7 +99,7 @@ export function tessellatePlanarFace(ir: any, faceIndex: number, overrides=new M
   }
   check(triangles.length>0 && Math.abs(triangleArea-targetArea)<=EPS*Math.max(1,targetArea), 'trim-area-mismatch');
   const normals=positions.map(()=>normal.map(x=>x/normalLength*(face.reversed?-1:1)));
-  return { face: faceIndex, geometrySource: 'cad-ir-affine-plane-trim', boundaryEdges, mesh: { positions, triangles, normals,
+  return { face: faceIndex, geometrySource: 'cad-ir-affine-plane-trim', boundaryEdges, parameterUv:uv, mesh: { positions, triangles, normals,
     sourceFaceCount: triangles.length, quadCount: 0, textureCoordinates: [] },
     audit: { uvArea: targetArea, triangleUvArea: triangleArea, affineError, trimChordTolerance, loopCount: rings.length,
       holeCount: rings.length-1, sourcePlaneArea: targetArea*normalLength/((surface.domain[0][1]-surface.domain[0][0])*(surface.domain[1][1]-surface.domain[1][0])) } };

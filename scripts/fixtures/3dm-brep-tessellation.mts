@@ -61,6 +61,7 @@ export function completeBrepParts(object: any,metersPerUnit?:number) {
   }
   const boundaryAudit=object.cadIr.edges&&object.cadIr.trims&&object.cadIr.loops?auditBrepBoundaries(object.cadIr,refined):null;
   for(const edge of [...(boundaryAudit?.shared??[]),...(boundaryAudit?.seams??[])])if(!edge.conforming)diagnostics.push({objectId:object.id,code:'nonconforming-brep-boundary',edge:edge.edge});
-  for(const edge of boundaryAudit?.unverified??[])diagnostics.push({objectId:object.id,code:'nonconforming-brep-boundary',edge:edge.edge,reason:edge.reason});
+  for(const edge of boundaryAudit?.unverified??[])if(edge.reason!=='source-edge-not-two-sided'||edge.faces.length>2)
+    diagnostics.push({objectId:object.id,code:'nonconforming-brep-boundary',edge:edge.edge,reason:edge.reason});
   return {parts:refined,diagnostics,boundaryAudit,refinements,welds,sourceEdgeSynchronizations};
 }
