@@ -429,9 +429,13 @@
     "packages/deep-engine/src/webgpu/renderTargets.test.ts",
     "packages/deep-engine/src/webgpu/pbrRenderer.ts",
     "packages/deep-engine/src/webgpu/pbrRendererTypes.ts",
+    "packages/deep-engine/src/webgpu/pbrTransparencyPass.ts",
+    "packages/deep-engine/src/webgpu/pbrTransparencyPass.test.ts",
+    "packages/deep-engine/src/webgpu/weightedOit.ts",
     "packages/deep-engine/lab/main.ts",
     "docs/specs/de26-b04-transient-texture-pool-2026-09-17.md",
-    "docs/specs/de26-b04-render-target-evidence-2026-09-17.json"
+    "docs/specs/de26-b04-render-target-evidence-2026-09-17.json",
+    "docs/specs/de26-b04-oit-evidence-2026-09-17.json"
    ],
    "completed": false,
    "document": "deep-engine-tasks-foundation-2026-09-16.md#b04",

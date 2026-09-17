@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSession } from "./deviceSession.js";
 import { PbrTransparencyPass } from "./pbrTransparencyPass.js";
+import { PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
 
 interface FakeTexture extends GPUTexture { destroy: ReturnType<typeof vi.fn>; createView: ReturnType<typeof vi.fn> }
 function texture(width = 64, height = 32, label = "external"): FakeTexture {
   const value = { width, height, label, format: "rgba16float", destroy: vi.fn(), createView: vi.fn(() => ({ texture: value })) };
   return value as unknown as FakeTexture;
 }
-function fixture() {
+function fixture(pooled = false) {
   const owned = new Set<GPUTexture>(), textures: FakeTexture[] = [];
   const device = { limits: { maxTextureDimension2D: 8192 },
     createShaderModule: vi.fn(() => ({})), createBindGroupLayout: vi.fn(() => ({})), createPipelineLayout: vi.fn(() => ({})),
@@ -23,7 +24,9 @@ function fixture() {
     const pass = { descriptor, end: vi.fn(), draw: vi.fn(), setPipeline: vi.fn(), setBindGroup: vi.fn() }; passes.push(pass); return pass;
   });
   const encoder = { beginRenderPass: begin } as unknown as GPUCommandEncoder;
-  const owner = new PbrTransparencyPass(raw as unknown as DeviceSession);
+  const session = raw as unknown as DeviceSession;
+  const pool = pooled ? new PbrTransientTexturePool(session) : undefined;
+  const owner = new PbrTransparencyPass(session, pool);
   const input = (same = true, width = 64, height = 32) => {
     const hdrColor = texture(width, height), opaqueColor = same ? hdrColor : texture(width, height, "AO output");
     const views = new Map<GPUTexture, GPUTextureView>();
@@ -31,7 +34,7 @@ function fixture() {
     return { encoder, hdrColor, opaqueColor, hdrView: viewOf(hdrColor), depthView: {} as GPUTextureView, viewOf,
       draw: vi.fn((_pass: GPURenderPassEncoder) => ({ drawCalls: 2, triangles: 7 })) };
   };
-  return { owner, input, device, raw, owned, textures, passes, begin };
+  return { owner, input, device, raw, owned, textures, passes, begin, pool };
 }
 beforeEach(() => {
   vi.stubGlobal("GPUShaderStage", { FRAGMENT: 2 });
@@ -41,6 +44,39 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("PBR transparency composition ownership", () => {
+  it("returns all three production OIT scratch targets only at the shared frame boundary", () => {
+    const f = fixture(true), pool = f.pool!;
+    pool.beginFrame(); const first = f.owner.encode(f.input()).color;
+    expect(pool.stats).toMatchObject({ inFlightCount: 0, pendingReturnCount: 3, misses: 3 });
+    pool.endFrame(true); expect(pool.stats).toMatchObject({ freeCount: 3, pendingReturnCount: 0 });
+    pool.beginFrame(); expect(f.owner.encode(f.input()).color).toBe(first);
+    expect(f.textures).toHaveLength(3); expect(pool.stats).toMatchObject({ hits: 3, misses: 3, pendingReturnCount: 3 });
+    pool.endFrame(true); pool.invalidateAll("surface-resize");
+    expect(f.owned.size).toBe(0); expect(pool.stats).toMatchObject({ epoch: 1, evictedCount: 3 });
+    f.owner.dispose();
+  });
+
+  it("reclaims pooled OIT targets after encode failure and device loss without reuse", () => {
+    const f = fixture(true), pool = f.pool!, failed = f.input();
+    failed.draw.mockImplementation(() => { throw Error("draw failed"); });
+    pool.beginFrame(); expect(() => f.owner.encode(failed)).toThrow("draw failed");
+    expect(pool.stats).toMatchObject({ pendingReturnCount: 3, inFlightCount: 0 });
+    pool.endFrame(false); expect(f.owned.size).toBe(0); expect(pool.stats).toMatchObject({ discardedCount: 3, freeCount: 0 });
+    const create = f.device.createTexture.getMockImplementation()!;
+    f.device.createTexture.mockImplementation(descriptor => {
+      if (descriptor.label === "Deep transient composited-hdr") throw Error("scratch failed");
+      return create(descriptor);
+    });
+    pool.beginFrame(); expect(() => f.owner.encode(f.input())).toThrow("scratch failed");
+    expect(pool.stats).toMatchObject({ pendingReturnCount: 2, inFlightCount: 0 });
+    pool.endFrame(false); expect(pool.stats).toMatchObject({ discardedCount: 5, freeCount: 0 });
+    f.device.createTexture.mockImplementation(create);
+    f.raw.state = "ready"; pool.beginFrame(); f.owner.encode(f.input()); pool.invalidateAll("device-lost");
+    expect(f.owned.size).toBe(0); expect(pool.stats).toMatchObject({ frameOpen: false, epoch: 1,
+      discardedCount: 8, lastInvalidation: ["device-lost", 1] });
+    f.raw.state = "lost"; expect(() => f.owner.encode(f.input())).toThrow("not ready"); f.owner.dispose();
+  });
+
   it("attempts scratch and both OIT releases even when destruction throws, then stays disposed", () => {
     const f = fixture(); f.owner.encode(f.input());
     for (const value of f.textures) value.destroy.mockImplementation(() => { throw Error("destroy failed"); });

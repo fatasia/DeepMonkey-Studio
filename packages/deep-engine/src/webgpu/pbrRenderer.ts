@@ -46,7 +46,7 @@ export class PbrRenderer {
   private readonly mainBindings: PbrMainBindings;
   private readonly environment: PbrEnvironmentState;
   private readonly shadowState: PbrShadowState; private get shadows() { return this.shadowState.current; }
-  private readonly targets: RenderTargets;
+  private readonly targets: RenderTargets; private readonly transientTextures: PbrTransientTexturePool;
   private readonly postProcess: PbrPostProcessChain;
   private readonly transparency: PbrTransparencyPass; private readonly lighting: ForwardPlusPbrRuntime;
   private readonly localShadows: LocalSpotShadowRuntime;
@@ -69,10 +69,10 @@ export class PbrRenderer {
     this.shadowState = new PbrShadowState(session, pipelines, options.shadows);
     this.environment = new PbrEnvironmentState(environment);
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
-    this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, new PbrTransientTexturePool(session));
+    this.transientTextures = new PbrTransientTexturePool(session); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
     this.features = features;
     this.postProcess = new PbrPostProcessChain(session, this.features);
-    this.transparency = new PbrTransparencyPass(session);
+    this.transparency = new PbrTransparencyPass(session, this.transientTextures);
     this.lighting = lighting; this.localShadows = localShadows;
   }
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {

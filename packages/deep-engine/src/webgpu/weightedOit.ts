@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "./deviceSession.js";
+import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import { WEIGHTED_OIT_COMPOSITE_WGSL, WEIGHTED_OIT_FRAGMENT_WGSL } from "./weightedOitWgsl.js";
 import {
@@ -10,7 +11,7 @@ import {
   type WeightedOitTargets,
 } from "./weightedOitTypes.js";
 
-interface Allocation extends WeightedOitTargets {}
+interface Allocation extends WeightedOitTargets { readonly pooled?: readonly [PbrTransientTextureHandle, PbrTransientTextureHandle] }
 
 /** Blend states for fragment shaders returning DeepWeightedOitOutput. */
 export function weightedOitColorTargets(): readonly GPUColorTargetState[] {
@@ -37,7 +38,7 @@ export class WeightedOitPass {
   private generation = 0;
   private disposed = false;
 
-  constructor(private readonly session: DeviceSession) {
+  constructor(private readonly session: DeviceSession, private readonly pool?: PbrTransientTexturePool) {
     this.assertSessionReady();
     const device = session.device;
     this.compositeModule = device.createShaderModule({ label: "Deep weighted OIT composite WGSL", code: WEIGHTED_OIT_COMPOSITE_WGSL });
@@ -102,7 +103,24 @@ export class WeightedOitPass {
     if (allocation) this.release(allocation);
   }
 
+  /** Returns production frame targets to the shared pool; encoded commands retain queue-ordered use. */
+  releaseFrame(): void {
+    if (!this.pool) return;
+    const allocation = this.allocation; this.allocation = undefined;
+    if (allocation) this.release(allocation);
+  }
+
   private allocate(width: number, height: number, generation: number): Allocation {
+    if (this.pool) {
+      const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC;
+      const accumulation = this.pool.acquire({ resourceId: "oit-accumulation", format: WEIGHTED_OIT_ACCUMULATION_FORMAT,
+        width, height, sampleCount: 1, usage });
+      const revealage = this.pool.acquire({ resourceId: "oit-revealage", format: WEIGHTED_OIT_REVEALAGE_FORMAT,
+        width, height, sampleCount: 1, usage });
+      return Object.freeze({ width, height, generation, accumulationTexture: accumulation.texture,
+        accumulationView: accumulation.view, revealageTexture: revealage.texture, revealageView: revealage.view,
+        pooled: Object.freeze([accumulation, revealage] as const) });
+    }
     const created: GPUTexture[] = [];
     const texture = (label: string, format: GPUTextureFormat): GPUTexture => {
       const value = this.session.own(this.session.device.createTexture({ label, size: { width, height, depthOrArrayLayers: 1 },
@@ -153,6 +171,10 @@ export class WeightedOitPass {
   }
 
   private release(allocation: Allocation): void {
+    if (allocation.pooled) {
+      if (this.pool?.frameOpen) for (const handle of allocation.pooled) this.pool.release(handle);
+      return;
+    }
     runResourceCleanup("Weighted OIT disposal failed.", [
       () => this.session.release(allocation.accumulationTexture), () => this.session.release(allocation.revealageTexture),
     ]);

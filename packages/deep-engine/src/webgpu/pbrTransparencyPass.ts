@@ -4,6 +4,7 @@ import { PBR_HDR_FORMAT } from "./renderTargets.js";
 import { WeightedOitPass } from "./weightedOit.js";
 import { WEIGHTED_OIT_ACCUMULATION_FORMAT, WEIGHTED_OIT_REVEALAGE_FORMAT } from "./weightedOitTypes.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
+import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
 
 interface DrawStats { readonly drawCalls: number; readonly triangles: number }
 interface TransparencyInput {
@@ -19,11 +20,13 @@ interface TransparencyInput {
 /** 管理透明合成目标；AO 关闭时不能读写同一张 HDR 纹理。 */
 export class PbrTransparencyPass {
   private readonly oit: WeightedOitPass;
-  private scratch: { texture: GPUTexture; view: GPUTextureView } | undefined;
+  private scratch: { texture: GPUTexture; view: GPUTextureView; pooled?: PbrTransientTextureHandle } | undefined;
   private disposed = false;
   private output: GPUTexture | undefined;
 
-  constructor(private readonly session: DeviceSession) { this.oit = new WeightedOitPass(session); }
+  constructor(private readonly session: DeviceSession, private readonly pool?: PbrTransientTexturePool) {
+    this.oit = new WeightedOitPass(session, pool);
+  }
 
   get currentColor(): GPUTexture | undefined {
     return !this.disposed && this.session.state === "ready" ? this.output : undefined;
@@ -37,16 +40,18 @@ export class PbrTransparencyPass {
     this.output = undefined;
     const { encoder, hdrColor, opaqueColor } = input;
     this.oit.resize(hdrColor.width, hdrColor.height);
-    const destination = opaqueColor === hdrColor ? this.scratchTarget(hdrColor.width, hdrColor.height)
-      : { texture: hdrColor, view: input.hdrView };
-    const pass = encoder.beginRenderPass({ label: "Deep weighted OIT accumulation",
-      colorAttachments: this.oit.accumulationAttachments(),
-      depthStencilAttachment: { view: input.depthView, depthLoadOp: "load", depthStoreOp: "discard" } });
-    let stats: DrawStats;
-    try { stats = input.draw(pass); } finally { pass.end(); }
-    this.oit.encodeComposite(encoder, input.viewOf(opaqueColor), destination.view, { outputFormat: PBR_HDR_FORMAT });
-    this.output = destination.texture;
-    return { color: destination.texture, drawCalls: stats.drawCalls + 1, triangles: stats.triangles + 1 };
+    try {
+      const destination = opaqueColor === hdrColor ? this.scratchTarget(hdrColor.width, hdrColor.height)
+        : { texture: hdrColor, view: input.hdrView };
+      const pass = encoder.beginRenderPass({ label: "Deep weighted OIT accumulation",
+        colorAttachments: this.oit.accumulationAttachments(),
+        depthStencilAttachment: { view: input.depthView, depthLoadOp: "load", depthStoreOp: "discard" } });
+      let stats: DrawStats;
+      try { stats = input.draw(pass); } finally { pass.end(); }
+      this.oit.encodeComposite(encoder, input.viewOf(opaqueColor), destination.view, { outputFormat: PBR_HDR_FORMAT });
+      this.output = destination.texture;
+      return { color: destination.texture, drawCalls: stats.drawCalls + 1, triangles: stats.triangles + 1 };
+    } finally { this.releaseTransientFrame(); }
   }
 
   /** 第一切片计划对拍声明(DE26/B03):OIT 累积与合成两个 render pass 的实际读写;纯静态,不触 GPU。 */
@@ -85,11 +90,16 @@ export class PbrTransparencyPass {
     const scratch = this.scratch;
     this.scratch = undefined;
     runResourceCleanup("PBR transparency disposal failed.", [
-      () => { if (scratch) this.session.release(scratch.texture); }, () => this.oit.dispose(),
+      () => { if (scratch && !scratch.pooled) this.session.release(scratch.texture); }, () => this.oit.dispose(),
     ]);
   }
 
   private scratchTarget(width: number, height: number): { texture: GPUTexture; view: GPUTextureView } {
+    if (this.pool) {
+      const pooled = this.pool.acquire({ resourceId: "composited-hdr", format: PBR_HDR_FORMAT, width, height, sampleCount: 1,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+      this.scratch = { texture: pooled.texture, view: pooled.view, pooled }; return this.scratch;
+    }
     if (this.scratch?.texture.width === width && this.scratch.texture.height === height) return this.scratch;
     const texture = this.session.own(this.session.device.createTexture({ label: "Deep OIT composite HDR",
       size: { width, height }, format: PBR_HDR_FORMAT,
@@ -100,5 +110,13 @@ export class PbrTransparencyPass {
     this.scratch = { texture, view };
     if (previous) this.session.release(previous.texture);
     return this.scratch;
+  }
+
+  private releaseTransientFrame(): void {
+    if (!this.pool) return;
+    const scratch = this.scratch; this.scratch = undefined;
+    runResourceCleanup("PBR transparency transient release failed.", [
+      () => { if (scratch?.pooled) this.pool!.release(scratch.pooled); }, () => this.oit.releaseFrame(),
+    ]);
   }
 }

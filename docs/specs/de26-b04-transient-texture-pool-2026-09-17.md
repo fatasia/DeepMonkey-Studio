@@ -77,7 +77,7 @@ lab 的 120 帧采样记录同一快照,计数来自真实 `device.createTexture
 ```
 PbrRenderer.render
   → RenderTargets.beginFrame(surface size)
-  → encode / encoder.finish
+  → encode / OIT acquire+release-to-pending / encoder.finish
   → device.queue.submit
   → RenderTargets.commitFrame()
   → pool.release × 5 / endFrame(true)
@@ -89,6 +89,11 @@ PbrRenderer.render
 `hardware-depth`;格式、sample count 与 usage 沿用既有 RenderTargets 合同。`previous-hiz`、`next-hiz`、
 `temporal-hdr` 仍由各自跨帧 owner 持有,从未 acquire,不会与主帧目标 alias。
 
+第三切片把同一个池实例传入 `PbrTransparencyPass`/`WeightedOitPass`:透明帧的 `oit-accumulation`、
+`oit-revealage`,以及 AO 关闭时才需要的 `composited-hdr` 均在 encode 后转成 pending-return,仍只会在
+`queue.submit` 后由 RenderTargets 的帧收口统一回池。draw/composite 抛错会先释放 handle,随后 renderer 的
+`failFrame` 销毁;不会让失败帧资源进入 free bucket。
+
 ## 7. 验证证据
 
 门禁(全部通过):
@@ -99,7 +104,7 @@ pnpm --filter @bim-studio/deep-engine exec vitest run src/webgpu/pbrTransientTex
 pnpm --filter @bim-studio/deep-engine exec vitest run src/webgpu/renderTargets.test.ts src/webgpu/pbrTransientTexturePool.test.ts
   → 15 passed (15)
 pnpm --filter @bim-studio/deep-engine exec vitest run src/webgpu
-  → 1123 passed / 22 skipped (143 files)
+  → 1125 passed / 22 skipped (143 files)
 pnpm --filter @bim-studio/deep-engine typecheck
 pnpm --filter @bim-studio/deep-engine lab:build
   → dist/assets/index-*.js 1,374,258 bytes (gzip 378,290)
@@ -121,6 +126,8 @@ node packages/deep-engine/scripts/runtimePurityGate.mjs
 
 生产 `RenderTargets` 另有 6 项测试:真实纹理对象跨提交帧复用、bind-group 发布失败全量回收、提交失败销毁、
 resize 与显式 epoch 重建、`device.lost` 清理开帧资源、5 帧 × 5 目标只分配 5 次且 20 次命中。
+`PbrTransparencyPass` 另验证三张 production scratch 仅在共享帧边界回池、第二帧三次全命中、encode
+失败后 `endFrame(false)` 全销毁、device loss 作废 pending 资源。聚焦四文件 37 passed/1 skipped。
 
 真机记录见 [de26-b04-render-target-evidence-2026-09-17.json](de26-b04-render-target-evidence-2026-09-17.json)。
 NVIDIA Lovelace 非 fallback adapter、1180×825、49 球、120 帧:
@@ -135,11 +142,19 @@ NVIDIA Lovelace 非 fallback adapter、1180×825、49 球、120 帧:
 lab 页面同时运行的其他可选能力探针仍有既有失败项,不计作 B04 通过;本段只引用主场景、resize、重建设备、
 120 帧采样和 transient 统计。
 
+透明生产路径记录见 [de26-b04-oit-evidence-2026-09-17.json](de26-b04-oit-evidence-2026-09-17.json):
+NVIDIA Lovelace、`MaterialModes` 透明合同场景、1180×825,连续 2475 帧 acquire 17,257 次,miss 7、hit 17,250
+(99.96%),只保留 7 张 free texture;累计复用 81,555,936,000 bytes,驻留峰值 33,099,000 bytes,
+`weightedOit=true`,GPU diagnostics 为空。两个独立 browser canvas 同时存活并各自通过透明首帧;其中一个再完成
+800 px resize 与 device rebuild。浏览器截图接口在本轮两个 tab 均返回 unavailable,因此本轮不追加新的截图
+打分结论;前一切片的两轮截图基线仍有效。
+
 ## 8. 边界与未验证项(如实声明)
 
-- 主 `RenderTargets` 已接入并完成真机像素/帧时回归;`PbrPostProcessChain` 与 `PbrTransparencyPass` 的私有
-  scratch 仍按原 owner 生命周期分配,尚未迁移到同一池,因此 B04 整卡不标完成。
-- 真机只覆盖单 renderer 候选;并行候选隔离由池实例归属测试覆盖,尚无双 canvas 真机采样。
+- 主 `RenderTargets` 与 OIT accumulation/revealage/composited HDR 已接入。AO evaluate/blur/output、AO composite、
+  Bloom/AuthorBloom pyramid 仍带跨调用 cache 与 bind-group 生命周期,尚未迁移,因此 B04 整卡不标完成。
+- TAA 色彩/深度 ping-pong 与 previous/next Hi-Z 是跨帧 history,确认继续排除,不属于待迁移 scratch。
+- 双 canvas 已验证独立首帧与无控制台 GPU error;本轮截图捕获不可用,未把 DOM 状态冒充像素截图。
 - source-size 门禁仍被 14 个既有超限文件阻断;本切片将 `pbrRenderer.ts` 保持在 300 行,未新增超限项。
 - 字节估算为格式查表静态估算,不含实现相关对齐/tiling 开销;`peakResidentBytes` 是估算口径的峰值。
 - 复用率换安全:帧内重叠同键不共享,首帧后稳态命中数 ≤ 每帧 distinct 键数;池无容量上限

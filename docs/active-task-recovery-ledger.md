@@ -1795,6 +1795,13 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 验证:池+RenderTargets 聚焦 15/15;全 WebGPU 1123 passed/22 skipped;typecheck、lab build、runtime purity 通过;浏览器按 Kimi-95 做初始/resize/rebuild/120 帧两轮以上视觉闭环,无新增视觉回归。证据见 [B04 spec](specs/de26-b04-transient-texture-pool-2026-09-17.md) 与 [真机摘要](specs/de26-b04-render-target-evidence-2026-09-17.json)。
 - 边界:后处理/OIT 私有 scratch 尚未迁移,双 canvas 并行候选未做真机采样;整卡保持`本轮待办`。
 
+### 2026-09-17 DE26/B04 第三切片:OIT transient 生产接线(Codex)
+
+- 已完成:同一 transient pool 接入 `PbrTransparencyPass`/`WeightedOitPass`;OIT accumulation/revealage 与 AO 关闭时的 composited HDR 在 encode 后只转 pending,仍由 renderer 在 `queue.submit` 后统一回池。draw/composite 失败、resize、device loss 均不复用失败帧资源;TAA/Hi-Z history 继续排除。
+- 实际收益:NVIDIA Lovelace 透明合同场景 1180×825 连续 2475 帧,acquire 17,257、hit 17,250、miss 7(99.96%),累计复用 81,555,936,000 bytes,驻留峰值 33,099,000 bytes,无 GPU diagnostics。两个独立 browser canvas 均通过透明首帧,一个再通过 800 px resize 与 device rebuild。
+- 验证:OIT/池/RenderTargets 聚焦 37 passed/1 skipped;全 WebGPU 1125 passed/22 skipped;typecheck、runtime purity、lab build 通过。浏览器截图接口本轮不可用,未把 DOM 状态冒充像素截图。[spec](specs/de26-b04-transient-texture-pool-2026-09-17.md) / [真机摘要](specs/de26-b04-oit-evidence-2026-09-17.json)。
+- 边界:AO evaluate/blur/output、AO composite 与 Bloom/AuthorBloom pyramid 尚未迁移;整卡保持`本轮待办`。
+
 ### 2026-09-17 冲刺收官:停止派发,交接就绪(GLM)
 
 - 用户指令:直接停止,写完善交接。执行:C03 子代理中途停止(37 分钟,21 文件在途 +206/-54,**门禁未跑,未验证**——spec 101 行已冻结支持矩阵,接手选择续写或回退,见其 spec);全部派发终止。
