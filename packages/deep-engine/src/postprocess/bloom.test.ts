@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import { PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { BloomPass } from "./bloom.js";
 import { bloomPyramidSizes, extractBloomColor } from "./bloomCpu.js";
 import { BLOOM_WGSL } from "./bloomWgsl.js";
@@ -63,6 +64,33 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("HDR bloom", () => {
+  it("reuses the pooled pyramid and warmed bind-group permutations across frames", () => {
+    const f = fixture(), encoder = encoderFixture(), pool = new PbrTransientTexturePool(f.session);
+    const pass = new BloomPass(f.session, pool), initial = source();
+    for (let revision = 0; revision < 3; revision += 1) {
+      pool.beginFrame(); pass.encode(encoder.encoder, source(revision, 32, 16, initial), options); pool.endFrame(true);
+    }
+    expect(pool.stats).toMatchObject({ acquireCount: 36, hits: 24, misses: 12, freeCount: 12 });
+    expect(f.outputs).toHaveLength(12); expect(f.device.createBuffer).toHaveBeenCalledTimes(1);
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(32);
+    const bindings = f.device.createBindGroup.mock.calls.length;
+    pool.beginFrame(); pass.encode(encoder.encoder, source(3, 32, 16, initial), options); pool.endFrame(true);
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(bindings);
+    pool.invalidateAll("surface-resize"); pool.beginFrame();
+    pass.encode(encoder.encoder, source(4, 64, 32), options); pool.endFrame(true);
+    expect(pool.stats).toMatchObject({ epoch: 1, misses: 24, evictedCount: 12 });
+    pass.dispose(); pool.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("discards the complete pooled pyramid when binding creation fails", () => {
+    const f = fixture(), encoder = encoderFixture(), pool = new PbrTransientTexturePool(f.session);
+    const pass = new BloomPass(f.session, pool); pool.beginFrame();
+    f.device.createBindGroup.mockImplementationOnce(() => { throw new Error("Bloom pooled bind failed"); });
+    expect(() => pass.encode(encoder.encoder, source(), options)).toThrow("Bloom pooled bind failed");
+    expect(pool.stats.pendingReturnCount).toBe(12); pool.endFrame(false);
+    expect(pool.stats).toMatchObject({ discardedCount: 12, freeCount: 0 });
+    expect(f.outputs.every(value => value.destroy.mock.calls.length === 1)).toBe(true);
+    pass.dispose(); pool.dispose(); expect(f.owned.size).toBe(0);
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("is Naga-valid", () => {
     const validation = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,
       ["--stdin-file-path", "deep-bloom.wgsl", "--input-kind", "wgsl"], { input: BLOOM_WGSL, encoding: "utf8" });

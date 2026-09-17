@@ -56,7 +56,7 @@ export class PbrPostProcessChain {
   private disposed = false;
   private readonly features: PbrRendererFeatures;
 
-  constructor(private readonly session: DeviceSession, options: PbrRendererFeatureOptions = {}, pool?: PbrTransientTexturePool) {
+  constructor(private readonly session: DeviceSession, options: PbrRendererFeatureOptions = {}, private readonly pool?: PbrTransientTexturePool) {
     this.features = resolvePbrRendererFeatures(options);
     let hiZ: HiZPyramid | undefined, ambientOcclusion: AmbientOcclusionPass | undefined;
     let ambientOcclusionComposite: AmbientOcclusionCompositePass | undefined;
@@ -68,7 +68,7 @@ export class PbrPostProcessChain {
         ambientOcclusionComposite = new AmbientOcclusionCompositePass(session, pool);
       }
       if (this.features.temporalAa) temporalAa = new TemporalAaPass(session);
-      if (this.features.bloom) bloom = new BloomPass(session);
+      if (this.features.bloom) bloom = new BloomPass(session, pool);
     } catch (error) {
       failWithResourceCleanup(error, "Post-process construction failed", [
         () => bloom?.dispose(), () => temporalAa?.dispose(), () => ambientOcclusionComposite?.dispose(),
@@ -119,7 +119,7 @@ export class PbrPostProcessChain {
     if (!active.bloom) return Object.freeze({ color: temporal.texture, passCount: this.features.temporalAa ? 1 : 0 });
     const source = { color: temporal.texture, revision, colorEncoding: "linear-hdr" as const };
     const bloom = active.authorBloom
-      ? (this.authorBloom ??= new AuthorBloomPass(this.session)).encode(encoder, source, active.authorBloom)
+      ? (this.authorBloom ??= new AuthorBloomPass(this.session, this.pool)).encode(encoder, source, active.authorBloom)
       : this.bloom!.encode(encoder, source, DEFAULT_PBR_BLOOM_OPTIONS);
     return Object.freeze({ color: bloom.texture, passCount: (this.features.temporalAa ? 1 : 0) + bloom.passCount });
   }

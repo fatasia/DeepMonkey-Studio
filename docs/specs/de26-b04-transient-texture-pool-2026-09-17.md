@@ -1,6 +1,6 @@
 # DE26/B04 · 接真实临时纹理复用(帧内 transient 纹理池)
 
-日期:2026-09-17 · 分支:dev-studio · 状态:主 RenderTargets、OIT 与 AO 生产接线完成;Bloom 金字塔尚未纳入,整卡保持待办。
+日期:2026-09-17 · 分支:dev-studio · 状态:已完成。
 
 ## 1. 任务定义(权威原文)
 
@@ -100,6 +100,13 @@ bilateral temporary、`ao-half` output 及全分辨率 `ao-hdr` 都在 encode �
 身份与 pool epoch 为键缓存:raw/temporary 因同键 LIFO 只需两个交替组合,稳定后不再每帧重建;resize/device loss
 推进 epoch 时清空旧绑定引用。TAA/Hi-Z history 继续由原 owner 持有,从未进入 AO acquire 路径。
 
+第五切片接入 `BloomPass` 与按需创建的 `AuthorBloomPass`:动态 level/temporary/combined/output 和固定 r185
+bright/horizontal/vertical/combined/output 金字塔全部 acquire 自同一个池。参数 buffer 保持 pass 所有,bind group 只在
+实际纹理排列或 source texture/epoch 改变时创建;同尺寸纹理的 LIFO 排列暖机后稳定命中,不会以每帧重建绑定换取
+纹理命中。异常时整座金字塔先 release-to-pending,renderer 再以 `endFrame(false)` 销毁。持续跨帧占用且每帧必用的
+SpatialAA present target 保持原 owner 与稳定 binding,没有 transient acquire/release 或额外分配收益;不冒充 history,
+也不进入本池。至此 B04 计划内 production transient 路径均已接入。
+
 ## 7. 验证证据
 
 门禁(全部通过):
@@ -162,13 +169,19 @@ CPU submit P95 0.60 ms、GPU P95 0.918 ms(120/120),GPU errors 为空。随后切
 新设备首帧 947×407、9 次 acquire 全为新 epoch 分配,页面 `overflow=false`,GPU diagnostics 为空。
 两轮浏览器截图确认 AO 阴影接触、PBR 材质与响应式控制区无新增黑帧、裁切或错位;本切片没有视觉设计改动。
 
+Bloom 生产路径与 AuthorBloom 像素读回见
+[de26-b04-bloom-evidence-2026-09-17.json](de26-b04-bloom-evidence-2026-09-17.json):标准 Bloom 的 120 帧
+生产场景 acquire 4,254 次、hit 4,228、miss 26(99.39%),相对无池路径累计复用 8,758,720,432 bytes,
+驻留峰值 59,389,832 bytes;GPU P95 0.852 ms(120/120),GPU errors 为空。800 px resize + device rebuild
+首帧 24 次 acquire 全部重新分配,无旧 epoch 复用。AuthorBloom 独立真机对 CPU r185 reference 的 6 组尺寸/
+阈值/强度读回全部零 mismatch,78 次 acquire 中 41 次命中,diagnostics 为空,dispose 后资源数为 0。
+
 ## 8. 边界与未验证项(如实声明)
 
-- 主 `RenderTargets`、OIT accumulation/revealage/composited HDR、AO evaluate/blur/output 与 AO composite 已接入。
-  Bloom/AuthorBloom pyramid 仍带跨调用 cache 与 bind-group 生命周期,尚未迁移,因此 B04 整卡不标完成。
+- `RenderTargets`、OIT、AO、Bloom/AuthorBloom 已接入且共享唯一提交边界;B04 整卡完成。
 - TAA 色彩/深度 ping-pong 与 previous/next Hi-Z 是跨帧 history,确认继续排除,不属于待迁移 scratch。
-- 双 canvas 已验证独立首帧与无控制台 GPU error;本轮截图捕获不可用,未把 DOM 状态冒充像素截图。
-- source-size 门禁仍被 14 个既有超限文件阻断;本切片将 `pbrRenderer.ts` 保持在 300 行,未新增超限项。
+- 双 canvas 已验证独立首帧与无控制台 GPU error;AO 切片截图接口曾不可用,Bloom 切片已补两轮真实截图。
+- source-size 门禁当前被 15 个既有/其他并发车道超限文件阻断;本切片未新增超限项。
 - 字节估算为格式查表静态估算,不含实现相关对齐/tiling 开销;`peakResidentBytes` 是估算口径的峰值。
 - 复用率换安全:帧内重叠同键不共享,首帧后稳态命中数 ≤ 每帧 distinct 键数;池无容量上限
   (纹理由 `DeviceSession` 持有,随 dispose 全量回收),容量预算归接入切片与真机数据一起定。

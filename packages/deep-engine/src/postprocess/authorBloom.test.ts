@@ -5,6 +5,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { AuthorBloomPass } from "./authorBloom.js";
 import { AUTHOR_BLOOM_WGSL } from "./authorBloomWgsl.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import { PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import type { BloomSource } from "./bloomTypes.js";
 import { authorBloomCoefficients, authorBloomSizes, extractAuthorBloomColor, validateAuthorBloomOptions } from "./authorBloomCpu.js";
 const options = { strength: 0.35, threshold: 0.9 };
@@ -46,6 +47,32 @@ function authorBloomFixture() {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("author bloom r185", () => {
+  it("reuses the pooled fixed pyramid without per-frame buffer or bind-group churn", () => {
+    const f = authorBloomFixture(), pool = new PbrTransientTexturePool(f.session);
+    const pass = new AuthorBloomPass(f.session, pool);
+    for (let revision = 0; revision < 3; revision += 1) {
+      pool.beginFrame(); pass.encode(f.encoder, { ...f.source, revision }, options); pool.endFrame(true);
+    }
+    expect(pool.stats).toMatchObject({ acquireCount: 39, hits: 26, misses: 13, freeCount: 13 });
+    expect(f.device.createTexture).toHaveBeenCalledTimes(13); expect(f.device.createBuffer).toHaveBeenCalledTimes(1);
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(26);
+    const bindings = f.device.createBindGroup.mock.calls.length;
+    pool.beginFrame(); pass.encode(f.encoder, { ...f.source, revision: 3 }, options); pool.endFrame(true);
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(bindings);
+    pool.invalidateAll("device-lost"); pool.beginFrame();
+    pass.encode(f.encoder, { ...f.source, color: f.texture(64, 32), revision: 4 }, options); pool.endFrame(true);
+    expect(pool.stats).toMatchObject({ epoch: 1, misses: 26, evictedCount: 13 });
+    pass.dispose(); pool.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("discards every pooled author bloom texture after an encode failure", () => {
+    const f = authorBloomFixture(), pool = new PbrTransientTexturePool(f.session);
+    const pass = new AuthorBloomPass(f.session, pool); pool.beginFrame();
+    f.rawEncoder.beginComputePass.mockImplementationOnce(() => { throw new Error("Author bloom pooled encode failed"); });
+    expect(() => pass.encode(f.encoder, f.source, options)).toThrow("Author bloom pooled encode failed");
+    expect(pool.stats.pendingReturnCount).toBe(13); pool.endFrame(false);
+    expect(pool.stats).toMatchObject({ discardedCount: 13, freeCount: 0 });
+    pass.dispose(); pool.dispose(); expect(f.owned.size).toBe(0);
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("validates all WGSL entrypoints with Naga", () => {
     const result = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!, ["--stdin-file-path", "author-bloom.wgsl", "--input-kind", "wgsl"],
       { input: AUTHOR_BLOOM_WGSL, encoding: "utf8" });

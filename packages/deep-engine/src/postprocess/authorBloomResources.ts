@@ -1,4 +1,5 @@
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { authorBloomSizes } from "./authorBloomCpu.js";
 import type { BloomLevelSize } from "./bloomTypes.js";
 import { failWithResourceCleanup, runResourceCleanup } from "../webgpu/resourceCleanup.js";
@@ -10,6 +11,10 @@ export interface AuthorBloomAllocation {
   readonly output: GPUTexture; readonly parameters: GPUBuffer;
   readonly fixedBindings: readonly GPUBindGroup[];
   readonly bright: GPUTexture; readonly combined: GPUTexture;
+}
+export interface PooledAuthorBloomAllocation {
+  readonly allocation: AuthorBloomAllocation;
+  readonly handles: readonly PbrTransientTextureHandle[];
 }
 
 export function bindAuthorBloom(device: GPUDevice, layout: GPUBindGroupLayout, parameters: GPUBuffer,
@@ -48,6 +53,35 @@ export function allocateAuthorBloom(session: DeviceSession, layout: GPUBindGroup
       ...(parameters ? [() => session.release(parameters!)] : []), ...textures.map(item => () => session.release(item)),
     ]);
   }
+}
+
+/** Acquire the fixed r185 pyramid and retain bind groups only for an exact texture-identity permutation. */
+export function acquirePooledAuthorBloom(session: DeviceSession, pool: PbrTransientTexturePool,
+  layout: GPUBindGroupLayout, parameters: GPUBuffer, width: number, height: number,
+  cached: readonly AuthorBloomAllocation[]): PooledAuthorBloomAllocation {
+  const handles: PbrTransientTextureHandle[] = [], textures: GPUTexture[] = [];
+  const acquire = (size: BloomLevelSize, resourceId: string) => {
+    const handle = pool.acquire({ resourceId, ...size, sampleCount: 1, format: "rgba16float",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
+    handles.push(handle); textures.push(handle.texture); return handle.texture;
+  };
+  try {
+    const levels = authorBloomSizes(width, height), bright = acquire(levels[0]!, "author-bloom-bright");
+    const horizontal = levels.map((size, index) => acquire(size, `author-bloom-horizontal-${index}`));
+    const vertical = levels.map((size, index) => acquire(size, `author-bloom-vertical-${index}`));
+    const combined = acquire(levels[0]!, "author-bloom-combined");
+    const output = acquire({ width, height }, "bloom-hdr");
+    const match = cached.find(item => item.textures.length === textures.length
+      && item.textures.every((texture, index) => texture === textures[index]));
+    if (match) return { allocation: match, handles };
+    const fixedBindings = levels.flatMap((_, index) => [
+      bindAuthorBloom(session.device, layout, parameters, index === 0 ? bright : vertical[index - 1]!, horizontal[index]!),
+      bindAuthorBloom(session.device, layout, parameters, horizontal[index]!, vertical[index]!),
+    ]);
+    fixedBindings.push(bindAuthorBloom(session.device, layout, parameters, bright, combined, vertical));
+    return { allocation: { width, height, levels, textures, output, parameters,
+      fixedBindings, bright, combined }, handles };
+  } catch (error) { for (const handle of handles) pool.release(handle); throw error; }
 }
 
 export function releaseAuthorBloom(session: DeviceSession, allocation: AuthorBloomAllocation): void {

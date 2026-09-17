@@ -1,8 +1,10 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import type { PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { bloomPyramidSizes, validateBloomOptions } from "./bloomCpu.js";
 import {
   allocateBloomResources,
+  acquirePooledBloomResources,
   createBloomSourceBindings,
   releaseBloomResources,
   type BloomAllocation,
@@ -30,9 +32,13 @@ export class BloomPass {
   private readonly layout: GPUBindGroupLayout;
   private readonly pipelines: Pipelines;
   private cache: Cache | undefined;
+  private pooledParameters: GPUBuffer | undefined;
+  private pooledEpoch = -1;
+  private pooledCaches: Cache[] = [];
+  private pooledSource: BloomSource | undefined;
   private disposed = false;
 
-  constructor(private readonly session: DeviceSession) {
+  constructor(private readonly session: DeviceSession, private readonly pool?: PbrTransientTexturePool) {
     this.assertReady();
     const device = session.device, module = device.createShaderModule({ label: "Deep HDR bloom WGSL", code: BLOOM_WGSL });
     this.layout = device.createBindGroupLayout({ label: "Deep HDR bloom layout", entries: [
@@ -56,14 +62,16 @@ export class BloomPass {
   }
 
   get current(): BloomResult | undefined {
-    if (this.disposed) return undefined;
+    if (this.disposed || this.pool) return undefined;
     if (this.session.state !== "ready") { this.clearCache(); return undefined; }
     return this.cache ? bloomResult(this.cache, false) : undefined;
   }
 
   encode(encoder: GPUCommandEncoder, source: BloomSource, options: BloomOptions): BloomResult {
     this.assertUsable();
-    const sizes = validateRequest(this.session.device, source, options), previous = this.cache;
+    const sizes = validateRequest(this.session.device, source, options);
+    if (this.pool) return this.encodePooled(encoder, source, options, sizes);
+    const previous = this.cache;
     if (previous && source.revision < previous.source.revision) throw new Error("Stale bloom source revision.");
     if (previous && source.revision === previous.source.revision && source.color !== previous.source.color) {
       throw new Error("Bloom source texture changed without a revision.");
@@ -92,6 +100,41 @@ export class BloomPass {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; this.clearCache();
+    if (this.pooledParameters) this.session.release(this.pooledParameters);
+    this.pooledParameters = undefined; this.pooledCaches = []; this.pooledSource = undefined;
+  }
+
+  private encodePooled(encoder: GPUCommandEncoder, source: BloomSource, options: BloomOptions,
+    sizes: readonly BloomLevelSizeLike[]): BloomResult {
+    if (!this.pool!.frameOpen) throw new Error("Bloom transient textures require an open frame scope.");
+    const previous = this.pooledSource;
+    if (previous && source.revision < previous.revision) throw new Error("Stale bloom source revision.");
+    if (previous && source.revision === previous.revision && source.color !== previous.color) {
+      throw new Error("Bloom source texture changed without a revision.");
+    }
+    if (this.pooledEpoch !== this.pool!.epoch) { this.pooledEpoch = this.pool!.epoch; this.pooledCaches = []; }
+    const acquired = acquirePooledBloomResources(this.session, this.pool!, this.layout, this.parameters(),
+      source.color.width, source.color.height, sizes, this.pooledCaches);
+    try {
+      let cache = this.pooledCaches.find(item => item.levels === acquired.allocation.levels
+        && item.output === acquired.allocation.output && item.source.color === source.color);
+      if (!cache) {
+        cache = { ...acquired.allocation, source, options: Object.freeze({ ...options }),
+          sourceBindings: createBloomSourceBindings(this.session.device, this.layout, acquired.allocation, source.color) };
+        this.pooledCaches.push(cache); if (this.pooledCaches.length > 8) this.pooledCaches.shift();
+      }
+      this.session.device.queue.writeBuffer(acquired.allocation.parameters, 0,
+        new Float32Array([options.threshold, options.softKnee, options.intensity, 0]));
+      encodeBloomCommands(encoder, acquired.allocation, cache.sourceBindings, this.pipelines);
+      const resultCache: Cache = { ...acquired.allocation, source, options: Object.freeze({ ...options }),
+        sourceBindings: cache.sourceBindings };
+      this.pooledSource = source; return bloomResult(resultCache, true);
+    } finally { for (const handle of acquired.handles) this.pool!.release(handle); }
+  }
+
+  private parameters(): GPUBuffer {
+    return this.pooledParameters ??= this.session.own(this.session.device.createBuffer({ label: "Deep bloom transient parameters",
+      size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }));
   }
 
   private clearCache(): void {

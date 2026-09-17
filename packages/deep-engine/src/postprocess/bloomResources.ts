@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import type { BloomLevelSize } from "./bloomTypes.js";
 import { BLOOM_COLOR_FORMAT } from "./bloomTypes.js";
 
@@ -28,6 +29,10 @@ export interface BloomAllocation {
   readonly outputView: GPUTextureView;
   readonly parameters: GPUBuffer;
   readonly internalBindings: BloomInternalBindings;
+}
+export interface PooledBloomAllocation {
+  readonly allocation: BloomAllocation;
+  readonly handles: readonly PbrTransientTextureHandle[];
 }
 
 function bind(
@@ -110,6 +115,41 @@ export function allocateBloomResources(
     for (const resource of resources) session.release(resource);
     throw error;
   }
+}
+
+/** Acquire a complete pyramid, reusing cached bind groups only when every pooled texture identity matches. */
+export function acquirePooledBloomResources(session: DeviceSession, pool: PbrTransientTexturePool,
+  layout: GPUBindGroupLayout, parameters: GPUBuffer, width: number, height: number,
+  sizes: readonly BloomLevelSize[], cached: readonly BloomAllocation[]): PooledBloomAllocation {
+  const handles: PbrTransientTextureHandle[] = [];
+  const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING;
+  const acquire = (resourceId: string, size: BloomLevelSize, extraUsage = 0) => {
+    const handle = pool.acquire({ resourceId, ...size, sampleCount: 1, format: BLOOM_COLOR_FORMAT, usage: usage | extraUsage });
+    handles.push(handle); return handle;
+  };
+  try {
+    const levels = sizes.map((size, index): BloomLevelResources => {
+      const texture = acquire(`bloom-level-${index}`, size), temporary = acquire(`bloom-temporary-${index}`, size);
+      if (index === sizes.length - 1) return { ...size, texture: texture.texture, view: texture.view,
+        temporary: temporary.texture, temporaryView: temporary.view };
+      const combined = acquire(`bloom-combined-${index}`, size);
+      return { ...size, texture: texture.texture, view: texture.view, temporary: temporary.texture,
+        temporaryView: temporary.view, combined: combined.texture, combinedView: combined.view };
+    });
+    const output = acquire("bloom-hdr", { width, height }, GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC);
+    const match = cached.find(item => item.output === output.texture && sameLevelTextures(item.levels, levels));
+    if (match) return { allocation: match, handles };
+    const internalBindings = createInternalBindings(session.device, layout, parameters, levels);
+    return { allocation: { width, height, levels: Object.freeze(levels), output: output.texture,
+      outputView: output.view, parameters, internalBindings }, handles };
+  } catch (error) { for (const handle of handles) pool.release(handle); throw error; }
+}
+
+function sameLevelTextures(left: readonly BloomLevelResources[], right: readonly BloomLevelResources[]): boolean {
+  return left.length === right.length && left.every((level, index) => {
+    const other = right[index]!;
+    return level.texture === other.texture && level.temporary === other.temporary && level.combined === other.combined;
+  });
 }
 
 export function createBloomSourceBindings(

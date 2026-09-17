@@ -422,7 +422,7 @@
     "packages/deep-engine/src/webgpu/renderTargets.ts",
     "packages/deep-engine/src/webgpu/pbrPostProcessChain.ts"
    ],
-   "status": "本轮待办",
+   "status": "已完成",
    "proposed": true,
    "evidence": [
     "packages/deep-engine/src/webgpu/renderTargets.ts",
@@ -436,19 +436,28 @@
     "packages/deep-engine/src/postprocess/ambientOcclusion.test.ts",
     "packages/deep-engine/src/postprocess/ambientOcclusionComposite.ts",
     "packages/deep-engine/src/postprocess/ambientOcclusionComposite.test.ts",
+    "packages/deep-engine/src/postprocess/bloom.ts",
+    "packages/deep-engine/src/postprocess/bloom.test.ts",
+    "packages/deep-engine/src/postprocess/bloomResources.ts",
+    "packages/deep-engine/src/postprocess/authorBloom.ts",
+    "packages/deep-engine/src/postprocess/authorBloom.test.ts",
+    "packages/deep-engine/src/postprocess/authorBloomResources.ts",
     "packages/deep-engine/src/webgpu/pbrPostProcessChain.ts",
+    "packages/deep-engine/lab/authorBloomGpuProbe.ts",
     "packages/deep-engine/lab/main.ts",
     "docs/specs/de26-b04-transient-texture-pool-2026-09-17.md",
     "docs/specs/de26-b04-render-target-evidence-2026-09-17.json",
     "docs/specs/de26-b04-oit-evidence-2026-09-17.json",
-    "docs/specs/de26-b04-ao-evidence-2026-09-17.json"
+    "docs/specs/de26-b04-ao-evidence-2026-09-17.json",
+    "docs/specs/de26-b04-bloom-evidence-2026-09-17.json"
    ],
-   "completed": false,
+   "completed": true,
    "document": "deep-engine-tasks-foundation-2026-09-16.md#b04",
    "qualifiedId": "DE26/B04",
    "qualifiedDependsOn": [
     "DE26/B03"
-   ]
+   ],
+   "note": "RenderTargets、OIT、AO、Bloom/AuthorBloom 的帧内纹理已共用 renderer 唯一池；queue.submit 后回池，失败提交销毁，resize/device epoch 清空，TAA/Hi-Z history 与持续占用的 SpatialAA present target 保持原 owner。真机分配计数/bytes、像素读回与帧时证据齐全。"
   },
   {
    "id": "B05",

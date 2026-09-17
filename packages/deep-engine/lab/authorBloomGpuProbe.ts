@@ -1,4 +1,5 @@
 import { DeviceSession } from "../src/webgpu/deviceSession.js";
+import { PbrTransientTexturePool } from "../src/webgpu/pbrTransientTexturePool.js";
 import { AuthorBloomPass } from "../src/postprocess/authorBloom.js";
 import { decodeFloat16Bits, encodeFloat16Bits } from "./temporalAaProbe.js";
 import { authorBloomReference } from "./authorBloomReference.js";
@@ -8,7 +9,7 @@ export async function runAuthorBloomGpuProbe() {
   const canvas = document.createElement("canvas"); canvas.width = 64; canvas.height = 64;
   document.body.append(canvas);
   const session = await DeviceSession.open(canvas, navigator.gpu, new AbortController().signal);
-  const pass = new AuthorBloomPass(session), device = session.device;
+  const pool = new PbrTransientTexturePool(session), pass = new AuthorBloomPass(session, pool), device = session.device;
   const cases = [
     { name: "strength-zero-odd", width: 17, height: 9, strength: 0, threshold: 0.9, pattern: "spot" },
     { name: "threshold-below", width: 16, height: 8, strength: 0.35, threshold: 0.9, pattern: "below" },
@@ -37,10 +38,11 @@ export async function runAuthorBloomGpuProbe() {
       device.pushErrorScope("validation");
       try {
         device.queue.writeTexture({ texture: color }, bytes, { bytesPerRow: rowBytes }, [width, height]);
+        pool.beginFrame();
         const encoder = device.createCommandEncoder(), result = pass.encode(encoder, { color, revision: revision++, colorEncoding: "linear-hdr" },
           { strength: item.strength, threshold: item.threshold });
         encoder.copyTextureToBuffer({ texture: result.texture }, { buffer: readback, bytesPerRow: rowBytes }, [width, height]);
-        device.queue.submit([encoder.finish()]); await device.queue.onSubmittedWorkDone();
+        device.queue.submit([encoder.finish()]); pool.endFrame(true); await device.queue.onSubmittedWorkDone();
         await readback.mapAsync(GPUMapMode.READ);
         const actual = new DataView(readback.getMappedRange()), expected = authorBloomReference({ width, height, pixels }, item.strength, item.threshold);
         let maxAbsoluteError = 0, maxRelativeError = 0, mismatches = 0;
@@ -53,13 +55,14 @@ export async function runAuthorBloomGpuProbe() {
         observations.push({ name: item.name, width, height, strength: item.strength, threshold: item.threshold,
           maxAbsoluteError, maxRelativeError, mismatches, passCount: result.passCount });
       } finally {
+        if (pool.frameOpen) pool.endFrame(false);
         if (readback.mapState === "mapped") readback.unmap(); readback.destroy(); color.destroy();
         const error = await device.popErrorScope(); if (error) throw new Error(error.message);
       }
     }
-    pass.dispose();
+    const transientTextures = pool.stats; pass.dispose(); pool.dispose();
     return { success: observations.every(item => item.mismatches === 0) && !session.hasErrors && session.resourceCount === 0,
       adapter: session.adapterInfo, tolerance: "abs <= 0.003 + abs(reference) * 0.004", observations,
-      diagnostics: session.diagnostics, resourcesAfterDispose: session.resourceCount };
-  } finally { pass.dispose(); session.dispose(); canvas.remove(); }
+      transientTextures, diagnostics: session.diagnostics, resourcesAfterDispose: session.resourceCount };
+  } finally { pass.dispose(); pool.dispose(); session.dispose(); canvas.remove(); }
 }
