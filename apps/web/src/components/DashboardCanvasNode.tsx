@@ -30,6 +30,7 @@ import { usePlaybackSession } from "../behavior/playbackContext";
 import { publicWidgetRestriction } from "../behavior/publicPlaybackPolicy";
 import { isSemanticSelectionWidget, semanticSelectionKey } from "./dashboardSemanticBinding";
 import { dashboardAuthoredTypography } from "./dashboardTemplateTypography";
+import { dashboardWidgetTextColor } from "./dashboardWidgetTextColor";
 import { DashboardRecordForm } from "./DashboardRecordForm";
 import "./DashboardTemplateTypography.css";
 
@@ -195,7 +196,7 @@ export function DashboardNode({
           ...style,
           ...widgetBackgroundStyle(node.widget),
           ...typography,
-          color: node.widget.textColor ?? "#eef2f4",
+          color: dashboardWidgetTextColor(node.widget),
           animationDuration: `${node.widget.animationDuration ?? 0.6}s`,
           animationDelay: `${node.widget.animationDelay ?? 0}s`,
           animationIterationCount: resolveDashboardAnimationLoop(node.widget) ? "infinite" : "1",

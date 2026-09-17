@@ -9,6 +9,9 @@ const [flag, output, ...rest] = process.argv.slice(2);
 if (flag !== undefined && (flag !== "--output" || !output || rest.length)) throw new Error("Expected --output <build directory>");
 const directory = output ? path.resolve(output) : path.join(root, "apps/api/dist/dashboard-content-compiler");
 await mkdir(directory, { recursive: true });
+await build({ absWorkingDir: root, entryPoints: ["apps/web/src/delivery/dashboardLayoutCaptureHost.tsx"],
+  outfile: path.join(directory, "layout-capture.js"), bundle: true, platform: "browser", format: "esm",
+  conditions: ["development"], define: { "process.env.NODE_ENV": '"production"' }, logLevel: "error" });
 await build({ absWorkingDir: root, entryPoints: ["scripts/dashboard-content-compiler.mjs"],
   outfile: path.join(directory, "compiler.mjs"), bundle: true, platform: "node", format: "esm",
   conditions: ["development"], external: ["sharp"], logLevel: "error" });

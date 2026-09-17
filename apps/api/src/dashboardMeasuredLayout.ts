@@ -3,7 +3,7 @@ import {
   dashboardCanonicalJsonSha256,
   type DashboardPublicationFreezeCandidate,
 } from "./dashboardPublicationFreeze.js";
-import { dashboardDataRequestId } from "./dashboardPublishedClosure.js";
+import { dashboardDataRequestId } from "./dashboardDataRequestId.js";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const MAX_FRAME = 16_777_216;
@@ -102,7 +102,7 @@ export async function captureDashboardMeasuredLayout(options: CaptureDashboardMe
     .flatMap(page => page.nodes).find(candidate => candidate.id === options.nodeId);
   if (!node || node.kind !== "data-widget") throw new Error(`Measured layout requires a data-widget node: ${options.nodeId}`);
   if (node.visible === false) throw new Error(`Hidden widget ${options.nodeId} has no measurable layout`);
-  if (node.widget.type !== "value" && node.widget.type !== "table") {
+  if (!["value", "table", "bar", "line", "scatter", "pie"].includes(node.widget.type)) {
     throw new Error(`Widget ${options.nodeId} type ${node.widget.type} has no measured layout contract`);
   }
   const frame = node.frame;

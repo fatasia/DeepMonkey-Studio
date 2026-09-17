@@ -61,10 +61,10 @@ export function DashboardDrillChart({
     if (widget.semanticBinding) onDataInteraction({ name: next.at(-1)?.value ?? "", semanticField: next.at(-1)?.field ?? fields[0] ?? "", semanticPath: next });
   }
   return (
-    <div className="dashboard-drill-chart">
+    <div className="dashboard-drill-chart" data-dashboard-capture="chart">
       {widget.fontSize && <header className="dashboard-chart-heading">
-        <strong title={widget.title}>{widget.title}</strong>
-        {widget.unit && <span>{widget.unit}</span>}
+        <strong title={widget.title} data-capture-role="title">{widget.title}</strong>
+        {widget.unit && <span data-capture-role="unit">{widget.unit}</span>}
       </header>}
       <DashboardChart
         widget={drillWidget}

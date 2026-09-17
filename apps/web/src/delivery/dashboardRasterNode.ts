@@ -102,6 +102,17 @@ export async function rasterNode(node: DashboardDataWidgetNode, id: string, revi
       if (!(error instanceof DashboardDataUnavailable)) throw error;
       contentCompiled = false; reasons.push(error.message);
     }
+  } else if (["bar", "line", "scatter", "pie"].includes(node.widget.type)) {
+    try {
+      const result = await rasterDataContent(node, content, input, host);
+      layers = result.layers; content = layers[0]!.content; evidence = result.evidence;
+      compiledFields.push("widget.title", "widget.unit");
+      reasons.push("Only the measured chart heading is rasterized; chart appearance remains deferred");
+    } catch (error) {
+      if (!(error instanceof DashboardDataUnavailable)) throw error;
+      reasons.push(error.message);
+    }
+    contentCompiled = false;
   } else {
     reasons.push(...chrome.reasons);
     if (node.widget.type !== "shape") contentCompiled = false;

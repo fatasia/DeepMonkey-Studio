@@ -52,6 +52,15 @@ const buttonStyles = { borderTopWidth: "1px", borderRightWidth: "1px", borderBot
 const styles = new Map<unknown, Partial<typeof base>>();
 const options = { logicalSize: [200, 100] as const, resolveFonts: () => ["font.frozen"] };
 
+it("captures chart heading roles without requiring KPI or table state", () => {
+  const { root } = widgetRoot();
+  root.dataset.dashboardCapture = "chart";
+  root.querySelectorAll<HTMLElement>("[data-capture-role]")[0]!.dataset.captureRole = "title";
+  expect(captureRenderedDashboardData(root, options).layout.textBoxes.map(box => box.role)).toEqual([{ kind: "title" }]);
+  root.querySelectorAll<HTMLElement>("[data-capture-role]")[0]!.dataset.captureRole = "value";
+  expect(() => captureRenderedDashboardData(root, options)).toThrow("only accepts title and unit");
+});
+
 function widgetRoot(...extras: TestElement[]) {
   const root = new TestElement("div");
   root.dataset.dashboardCapture = "value";

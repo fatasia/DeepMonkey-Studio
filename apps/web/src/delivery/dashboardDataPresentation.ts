@@ -22,6 +22,12 @@ export function dataPresentation(widget: DashboardDataWidgetConfig, data: Dashbo
     }
     return texts;
   }
+  if (["bar", "line", "scatter", "pie"].includes(widget.type)) {
+    if (widget.fontSize) {
+      put({ kind: "title" }, widget.title); put({ kind: "unit" }, widget.unit);
+    }
+    return texts;
+  }
   if (!data.table) throw new Error("Frozen table page/sort/scroll state is required");
   const report = buildDashboardReport(widget, metric), state = data.table;
   if (!Number.isSafeInteger(state.page) || state.page < 0 || !Number.isFinite(state.scrollLeft) || state.scrollLeft < 0

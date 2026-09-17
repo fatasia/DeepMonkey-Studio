@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { createDashboardDocument, type ProjectAssetRecord, type PublishedApplicationRecord } from "@bim-studio/contracts";
 import type { AppConfig } from "./config.js";
 import type { MetadataStore } from "./metadataStore.js";
@@ -7,13 +6,11 @@ import type { DashboardPublicationClosureReader } from "./dashboardNativeCandida
 import type { DashboardFrozenResourceRequest, DashboardResolvedDataRequest } from "./dashboardPublicationFreeze.js";
 import { dashboardSavedDataSource, readDashboardSavedData, type DashboardDataStore } from "./dashboardPublishedDataSource.js";
 import type { DashboardPublishedFontCatalog } from "./dashboardPublishedFontCatalog.js";
+import { dashboardDataRequestId } from "./dashboardDataRequestId.js";
+export { dashboardDataRequestId } from "./dashboardDataRequestId.js";
 
 type ClosureStore = DashboardDataStore & Pick<MetadataStore, "getProject" | "getPublishedApplication" | "listAssets">;
 
-/** Stable frozen-data request id for a widget node; shared by the closure and measurement binding. */
-export function dashboardDataRequestId(nodeId: string): string {
-  return `data.${createHash("sha256").update(nodeId).digest("hex")}`;
-}
 const dataId = dashboardDataRequestId;
 
 /** Production closure over server-owned publications, project assets and Data Hub sources. */

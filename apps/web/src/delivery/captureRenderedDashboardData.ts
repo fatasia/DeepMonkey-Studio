@@ -1,14 +1,17 @@
 import { captureDashboardDataLayout, type DashboardDataCaptureOptions, type DashboardTextCaptureBinding } from "./captureDashboardDataLayout";
 import type { DashboardDataPaint, DashboardDataTextRole, DashboardFrozenData } from "./dashboardDataRasterTypes";
 
-export type RenderedDashboardCaptureOptions = Pick<DashboardDataCaptureOptions, "logicalSize" | "resolveFonts">;
+export type RenderedDashboardCaptureOptions = Pick<DashboardDataCaptureOptions, "logicalSize" | "resolveFonts"> & {
+  /** Author node wrapper: retain its padding/border in node-local heading coordinates. */
+  readonly geometryRoot?: HTMLElement;
+};
 
 /** Read semantic bindings from the mounted production widget, including its current table state. */
 export function captureRenderedDashboardData(root: HTMLElement, options: RenderedDashboardCaptureOptions):
   Pick<DashboardFrozenData, "layout" | "table"> {
   const kind = root.dataset.dashboardCapture, view = root.ownerDocument.defaultView;
-  if (!view || !root.isConnected || !["value", "table"].includes(kind ?? ""))
-    throw new Error("Capture requires a mounted value or report-table widget root");
+  if (!view || !root.isConnected || !["value", "table", "chart"].includes(kind ?? ""))
+    throw new Error("Capture requires a mounted value, chart or report-table widget root");
   if (root.querySelector("[data-dashboard-capture]")) throw new Error("Nested widget capture is unsupported");
   const visible = (element: HTMLElement) => {
     for (let current: HTMLElement | null = element; current; current = current.parentElement) {
@@ -30,6 +33,13 @@ export function captureRenderedDashboardData(root: HTMLElement, options: Rendere
   const backgrounds = [root, ...root.querySelectorAll<HTMLElement>("[data-capture-background]")]
     .filter(element => element.hasAttribute("data-capture-background") && visible(element)
       && !["previous", "next", "tool"].includes(element.dataset.captureRole ?? ""));
+  if (kind === "chart") {
+    if (text.some(binding => !["title", "unit"].includes(binding.role.kind)))
+      throw new Error("Chart heading capture only accepts title and unit text");
+    const origin = options.geometryRoot ?? root;
+    if (!origin.contains(root)) throw new Error("Heading geometry root must contain the chart");
+    return { layout: captureDashboardDataLayout(origin, { ...options, text, backgrounds: [] }) };
+  }
   if (kind === "value") {
     if (!text.some(binding => binding.role.kind === "value")) throw new Error("Value capture is missing its numeric text");
     return { layout: captureDashboardDataLayout(root, { ...options, text, backgrounds }) };

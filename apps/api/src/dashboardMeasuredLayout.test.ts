@@ -81,6 +81,17 @@ function captureOf(layout: DashboardMeasuredLayout, table?: DashboardMeasuredLay
   return { protocol: "dashboard-measured-layout-v1" as const, layout, ...(table ? { table } : {}) };
 }
 
+it("binds supported chart headings to their frozen data and rejects table state on charts", async () => {
+  const node = valueWidget(); node.widget.type = "bar"; node.widget.fontSize = 18;
+  const frozen = await candidate(node), layout = measuredLayout();
+  const titleLayout = { ...layout, textBoxes: layout.textBoxes.map(box => ({ ...box, role: { kind: "title" } })) };
+  const record = await captureDashboardMeasuredLayout({ candidate: frozen, nodeId: node.id, locale: "en-US",
+    host: host({ capture: async () => captureOf(titleLayout) }) });
+  expect(verifyDashboardMeasuredLayout(record, frozen).layout).toEqual(titleLayout);
+  await expect(captureDashboardMeasuredLayout({ candidate: frozen, nodeId: node.id, locale: "en-US",
+    host: host({ capture: async () => captureOf(titleLayout, { page: 0, scrollLeft: 0 }) }) })).rejects.toThrow("Only table");
+});
+
 function host(overrides: Partial<DashboardLayoutCaptureHost> = {}): DashboardLayoutCaptureHost {
   return { id: "chromium-trusted-host", version: "1.0.0", executableSha256: "b".repeat(64),
     capture: vi.fn(async () => captureOf(measuredLayout())), ...overrides };

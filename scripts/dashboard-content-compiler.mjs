@@ -7,6 +7,8 @@ import { serializeDeepRuntimePackage } from "../packages/deep-engine/src/runtime
 import { createDashboardRasterHost } from "./lib/dashboardRasterHost.mjs";
 import { dashboardFrozenRasterInput } from "./lib/dashboardFrozenRasterInput.mjs";
 import { dashboardCompiledWindowEvidence } from "./lib/dashboardCompiledWindowEvidence.mjs";
+import { createDashboardChromiumLayoutHost } from "./lib/dashboardChromiumLayoutHost.mjs";
+import { measureFrozenDashboardCharts } from "./lib/dashboardChartLayout.mjs";
 
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 
@@ -15,12 +17,19 @@ export async function createDashboardContentCompiler({ nativeExecutable, configu
   const frozenConfiguration = structuredClone(configuration);
   const nativeSha256 = hash(await readFile(nativeExecutable));
   const compilerSha256 = hash(await readFile(new URL(import.meta.url)));
+  const layoutHost = frozenConfiguration.layoutCapture
+    ? await createDashboardChromiumLayoutHost(frozenConfiguration.layoutCapture, new URL("./", import.meta.url)) : undefined;
   return {
     compilerId: "dashboard-frozen-raster", compilerVersion: "1.0.0", compilerSha256,
-    get configuration() { return structuredClone({ ...frozenConfiguration, nativeSha256, imageProducer: sharp.versions }); },
+    get configuration() { return structuredClone({ ...frozenConfiguration, nativeSha256, imageProducer: sharp.versions,
+      ...(layoutHost ? { layoutProducer: layoutHost.identity } : {}) }); },
     async compile(source, signal) {
       signal?.throwIfAborted();
       const input = dashboardFrozenRasterInput(source, frozenConfiguration);
+      const frozenSource = { freezeManifest: structuredClone(source.freezeManifest), document: input.document,
+        resources: Object.fromEntries(Object.entries(input.assets).map(([id, asset]) => [id, asset.bytes])),
+        data: Object.fromEntries(source.freezeManifest.data.map(binding => [binding.id, input.data[binding.nodeId]])) };
+      await measureFrozenDashboardCharts(frozenSource, input, layoutHost, signal);
       if (hash(await readFile(nativeExecutable)) !== nativeSha256) throw new Error("Dashboard text producer changed after deployment");
       signal?.throwIfAborted();
       const result = await compileDashboardRasterContent(input, createDashboardRasterHost({ nativeExecutable, signal }));

@@ -27,5 +27,6 @@ export default {
     "packages/contracts/src/dashboardDocument*.test.ts",
     "scripts/lib/dashboardRasterEndToEnd.vitest.mjs",
     "scripts/lib/dashboardDataEndToEnd.vitest.mjs",
+    "scripts/lib/dashboardChartLayout.vitest.mjs",
   ] },
 };
