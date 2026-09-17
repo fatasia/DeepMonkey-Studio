@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 X_T 周期修剪与后处理预算进展（Codex）
+
+- 已完成切片：`a9c7007` 修复三个 TORUS 小圆沿 v 周期的修剪；109 件重转后独立审核为 19335 matched / 3 mismatch / 6 unresolved，无状态回退。固定 sag 0.005 mm、审核 0.01 mm，三处边界误差约 0.000851 mm。审核 SHA-256 `3380d74a913ec18c771e8f7f8956bfa0a5690f0cb64785fe13768e120e0cc2a4` 已复核；生产 profile 仍为 0。[报告](reports/industrial-x-t-v-periodic-strip-2026-09-17.md)
+- 已完成切片：`540d503` 将后处理资源入口接入分配前预算检查，测试覆盖 TAA/Bloom 拒绝后旧历史和输出保留、失败帧释放部分池化候选；专项测试与类型/构建/仓库门禁通过，新增真实 GPU 预算探针仍待。[报告](specs/de26-b05-postprocess-admission-2026-09-17.md)
+- 本轮待办：X_T 剩余两个圆柱边界、一个交线及六个未解析面；B05 真机预算证据与其他生产分配入口。上述几何计数替代下方历史 252/6 mismatch 快照，不代表生产验收。
+
 ### 2026-09-17 RuntimePackage 三维/Shader 呈现屏障（Codex）
 
 - 已完成切片：三维和 Shader-only 包增量复用呈现守卫，Presented 后提交 GPU/CPU/发布快照；Scene/Deep2d 重试类型独立，100 ms 最新候选重试。
