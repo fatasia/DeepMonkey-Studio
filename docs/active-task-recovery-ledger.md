@@ -2,6 +2,12 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 合拢回归：完整光栅24文件181项通过，Native字体未跳过；JT七文件27项独立复跑通过，两模型GLB哈希与报告一致。[主流程回归](specs/core-delivery-regression-2026-09-17.md)
+- `dfb38f0` 标题图表真实HTTP发布→三格式下载→离线实际打开证据已复核，ZIP/单EXE/运行包SHA逐项匹配；背景HTTP链另片在做，不混为已验。[标题交付](specs/dashboard-http-heading-delivery-2026-09-17.md)
+- `ddcadf0` 背景producer支持四fit、五定位、平铺，15项像素回归与四轮浏览器对照完成，奇数偏移平铺缺陷已修复；跨宿主像素等价仍deferred。[证据](specs/dashboard-page-background-producer-2026-09-17.md)
+- JT `04b8730`：CoffeeMaker旧51/64材质错配按源装配路径修复，45材质容器共享44源几何；缺失/歧义不冒充已知。真实viewer检查另发现透明度倍率覆盖源alpha，正在后续片修复。[来源证据](reports/industrial-jt-material-path-2026-09-17.md)
+- 3DM `9b4c31f`/`60b38de`：五条共边修复使59→54，41/41面和7自缝保持；主线核对两份证据SHA，独立复跑Bezier截取2项通过。本次未重跑在途修改中的整件测试；仍为部分预览。[圆柱](specs/industrial-3dm-cylinder-isocurve-2026-09-17.md)、[部分圆弧](specs/industrial-3dm-bezier-interval-2026-09-17.md)
+
 - 背景系统图集证据：冻结源/页面URL/像素摘要/实际draw身份贯通，漏画整层与替换拒绝；窗口27+API26、正式compiler集成7项全通过，含真实中文与背景Vulkan3帧。整页视觉及HTTP背景图待验。[证据](specs/dashboard-page-image-freeze-2026-09-17.md)
 
 - 背景原生包合成已接独立宿主端口：颜色→背景图→作者节点，页证据不冒充作者证据，解码前累计预算，配方v5；20项编排/资源回归通过。真实producer与系统窗口图集验证待接，未算视觉完成。[范围](specs/dashboard-page-image-freeze-2026-09-17.md)
