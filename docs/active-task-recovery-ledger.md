@@ -1861,3 +1861,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 复用 GeometryId 与离散器材质排序后的面区间，在既有 GLB 分块上输出 source-file-local BODY/FACE 元数据，不增加 draw call 或顶点属性。拒绝索引修改、区间缺口和材质遗漏。
 - Rust 149+39+15、Node 6 项测试通过；109/109 实际 GLB 通过几何、独立源计数和源面三角区间覆盖审核。补丁反向检查通过，原始样本与研究源码不入库。
 - 当前只证明区间覆盖和数量，不证明独立源身份或曲面误差。RAW BODY→FACE 身份、同体面标签与真实几何对应、单位/闭合性/产品接线继续本轮待办。[报告与哈希](specs/industrial-x-t-glb-source-map-2026-09-17.md)
+
+### 2026-09-17 X_T 原始 BODY/FACE 身份归属核验（Codex）
+
+- 独立从 RAW FACE→SHELL→REGION→BODY 提取身份，不调用 lowering 或 tessellator；109 件与最终 GLB 精确集合及归属一致。源文件前后 SHA-256、原始审核程序与报告绑定。
+- 可复跑入口核验逐件源/产物哈希、路径限制、唯一输入输出、几何证据三角数和源面覆盖。Rust 2、Node 身份 4 与入口 3 项测试通过，主线程重跑 109 件通过。
+- 同一 BODY 内合法面标签互换仍不能靠集合识别；逐面几何对应、精度、单位/闭合性及产品接线继续本轮待办。[证据](specs/industrial-xt-source-identity-2026-09-17.md)
