@@ -25,3 +25,9 @@ cargo clippy --locked --manifest-path packages/deep-engine-native/Cargo.toml --b
 ## 已分配候选的版本抢占
 
 补测第二版已有 GPU 候选且两次跳帧后第三版到达：retry 只保留第三版及其新 renderer 身份，发布代次仍为0、旧哈希不变；第三版遇到一次注入 Recover 后重建，最终实际呈现并仅发布第三版。设备代次断言区分复用、抢占和恢复三种分配行为。RTX 4060/Vulkan 三项 GPU 测试及 clippy 再次通过；资源物理释放时机由 Rust 所有权与驱动管理，本测试未测量驱动显存回收延迟。
+
+## 场景、相机和环境联合更新
+
+全包候选现在同时使用坐标系/相机变化与真实预滤波 IBL 夹具，不再只用 builtin 环境。第三版将 specular/diffuse cube 改成黑色辐照，重新签内容哈希与资源修订。跳帧断言活动 GPU 仍使用原环境，最终比较 CPU 完整环境载荷及 GPU 上传源内容身份、名称与修订，证明三种资源随同一代次提交。
+
+三项真实窗口呈现测试通过；另显式执行 `app::package_drop_probe_tests`，复用其环境像素测试：普通与 Shader 材质均有像素变化、亮度下降，回退后像素差为0。该像素证据来自同设备替换路径，不扩大成全包重建设备的逐像素对照。`cargo clippy --bin deep-engine-native --tests -- -D warnings` 通过。

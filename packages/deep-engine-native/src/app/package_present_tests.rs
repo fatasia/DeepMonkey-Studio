@@ -1,4 +1,6 @@
 use super::*;
+#[path = "package_environment_fixture.rs"]
+mod environment_fixture;
 #[path = "package_shader_fixture.rs"]
 mod shader_fixture;
 use crate::app::{NativeAppSetup, watch_thread::WatchThread};
@@ -122,6 +124,14 @@ impl ApplicationHandler<GpuEvent> for Probe {
         let old_hash = self.published.read().unwrap().package_hash.clone();
         let size = self.app.window.as_ref().unwrap().inner_size();
         let old_id = self.app.renderer.as_ref().unwrap().id();
+        let old_environment = self
+            .app
+            .renderer
+            .as_ref()
+            .unwrap()
+            .ibl_summary()
+            .0
+            .to_owned();
         let next_id = self.app.next_renderer_id;
         let before = self.app.renderer.as_ref().unwrap().scene_update_evidence();
         self.app
@@ -213,6 +223,10 @@ impl ApplicationHandler<GpuEvent> for Probe {
                 );
                 assert_eq!(self.published.read().unwrap().package_hash, old_hash);
                 assert_eq!(self.app.renderer.as_ref().unwrap().id(), old_id);
+                assert_eq!(
+                    self.app.renderer.as_ref().unwrap().ibl_summary().0,
+                    old_environment
+                );
             }
             // 第二版已持有 GPU 候选时第三版到达：旧候选不得再呈现或发布。
             let next = fixture(false, true, 3);
@@ -280,6 +294,12 @@ impl ApplicationHandler<GpuEvent> for Probe {
         assert_eq!(self.app.packet_coalescer.published(), final_generation);
         if self.full {
             assert_eq!(self.app.next_renderer_id, next_id + 3);
+            let expected = fixture(false, true, final_generation);
+            let renderer = self.app.renderer.as_ref().unwrap();
+            assert_eq!(renderer.ibl_summary().0, expected.environment.id);
+            assert_eq!(renderer.ibl_summary().1, expected.environment.revision);
+            renderer.verify_environment_source(&expected.environment);
+            assert_eq!(self.app.content.active().environment, expected.environment);
         }
         assert_eq!(
             self.app.renderer.as_ref().unwrap().id() == old_id,
@@ -354,6 +374,7 @@ fn fixture(shader: bool, full: bool, revision: u64) -> PlayerContent {
                     resource["contentHash"]["value"] = json!(camera_hash);
                 }
             }
+            environment_fixture::replace_environment(&mut value, revision);
             value["packageHash"]["value"] = json!(runtime_package_sha256(&value).unwrap());
         }
         return PlayerContent::from_package(

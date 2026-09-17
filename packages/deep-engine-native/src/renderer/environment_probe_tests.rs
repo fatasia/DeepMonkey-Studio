@@ -1,5 +1,6 @@
 use super::*;
 use crate::{events::RenderOutcome, hdr_readback::HdrReadbackPair};
+use deep_engine_native::ibl::PreparedIblEnvironment;
 use deep_engine_native::runtime_package::{
     parse_and_validate_runtime_package, runtime_content_sha256, runtime_package_sha256,
 };
@@ -80,6 +81,13 @@ fn package(dark: bool, shader: bool) -> PlayerContent {
 }
 
 impl Renderer {
+    pub(crate) fn verify_environment_source(&self, source: &PreparedIblEnvironment) {
+        assert_eq!(
+            self.ibl.identity,
+            GpuIblEnvironment::source_identity(source)
+        );
+    }
+
     pub(crate) fn verify_environment_transaction_pixels(&mut self, active: &PlayerContent) {
         self.verify_environment_pair(active, &package(true, false), false);
         let shader = package(false, true);
