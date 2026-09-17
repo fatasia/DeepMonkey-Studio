@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- Native 候选抢占补验：第二版已分配GPU并连续跳帧时第三版到达，retry身份切到第三版、旧发布哈希保持；恢复后只呈现/发布第三版。3项真机GPU回归及clippy通过，不等于测得驱动显存回收延迟。[证据](specs/native-full-retry-reuse-2026-09-17.md)
+
 - 标题栏/全屏已进入静态CRT Release：27项smoke/44项清单/纯度通过；正式发布样例到无参数EXE、双尺寸全屏恢复及3种损坏还原通过。首轮输入指纹变动及故障脚本EBUSY失败均保留记录，后续新目录复跑通过。[证据](specs/native-window-chrome-2026-09-17.md)
 
 - 独立客户端标题栏/全屏：深色系统窗口栏统一 EXE 应用名；F11 切换，Esc 先取消编辑/焦点再退出全屏。场景和 Dashboard 实窗双尺寸按键/边界恢复通过，bin124/43 ignored、clippy/build/gate通过；旧发布EXE需重打，活动窗口控件视觉仍待。[证据](specs/native-window-chrome-2026-09-17.md)

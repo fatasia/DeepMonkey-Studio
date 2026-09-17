@@ -214,13 +214,46 @@ impl ApplicationHandler<GpuEvent> for Probe {
                 assert_eq!(self.published.read().unwrap().package_hash, old_hash);
                 assert_eq!(self.app.renderer.as_ref().unwrap().id(), old_id);
             }
+            // 第二版已持有 GPU 候选时第三版到达：旧候选不得再呈现或发布。
+            let next = fixture(false, true, 3);
+            let snapshot = next.runtime_package().unwrap().clone();
+            let plan = plan_runtime_package_resource_diff(
+                &self.published.read().unwrap().resource_index,
+                &snapshot.resource_index,
+            )
+            .unwrap();
+            full::SKIP_PRESENTATIONS.with(|remaining| remaining.set(1));
+            self.mailbox.push(
+                3,
+                WatchedPackage {
+                    content: Box::new(next),
+                    snapshot,
+                    plan,
+                },
+            );
+            apply_latest(&mut self.app);
+            assert_eq!(self.app.next_renderer_id, next_id + 2);
+            let pending = self
+                .app
+                .package_live_transport
+                .as_ref()
+                .unwrap()
+                .retry
+                .as_ref()
+                .unwrap();
+            assert_eq!(pending.1, 3);
+            assert!(
+                matches!(&pending.3, RetryKind::Full(Some(renderer)) if renderer.id() == next_id + 1)
+            );
+            assert_eq!(self.app.packet_coalescer.published(), 0);
+            assert_eq!(self.published.read().unwrap().package_hash, old_hash);
             full::RECOVER_PRESENTATION.with(|recover| recover.set(true));
             assert!(retry(
                 &mut self.app,
                 event_loop,
                 Instant::now() + Duration::from_secs(1)
             ));
-            assert_eq!(self.app.next_renderer_id, next_id + 1);
+            assert_eq!(self.app.next_renderer_id, next_id + 2);
             assert_eq!(self.published.read().unwrap().package_hash, old_hash);
             assert!(matches!(
                 self.app
@@ -243,9 +276,10 @@ impl ApplicationHandler<GpuEvent> for Probe {
                 break;
             }
         }
-        assert_eq!(self.app.packet_coalescer.published(), 2);
+        let final_generation = if self.full { 3 } else { 2 };
+        assert_eq!(self.app.packet_coalescer.published(), final_generation);
         if self.full {
-            assert_eq!(self.app.next_renderer_id, next_id + 2);
+            assert_eq!(self.app.next_renderer_id, next_id + 3);
         }
         assert_eq!(
             self.app.renderer.as_ref().unwrap().id() == old_id,
@@ -253,7 +287,7 @@ impl ApplicationHandler<GpuEvent> for Probe {
         );
         assert_eq!(
             self.published.read().unwrap().package_hash,
-            fixture(self.shader, self.full, 2)
+            fixture(self.shader, self.full, final_generation)
                 .runtime_package()
                 .unwrap()
                 .package_hash
@@ -276,8 +310,8 @@ impl ApplicationHandler<GpuEvent> for Probe {
                 .is_none()
         );
         println!(
-            "runtime package present barrier: shader={} full={} skipped generations 1/2 retained snapshots; generation 2 presented",
-            self.shader, self.full
+            "runtime package present barrier: shader={} full={} skipped generations retained snapshots; generation {} presented",
+            self.shader, self.full, final_generation
         );
         self.verified = true;
         event_loop.exit();
