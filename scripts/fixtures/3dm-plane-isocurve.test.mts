@@ -6,23 +6,24 @@ import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {completeBrepParts} from './3dm-brep-tessellation.mts';
 import {synchronizeSourceEdges} from './3dm-synchronize-source-edges.mts';
-import {tessellatePlanarFace} from './3dm-planar-trim.mts';
+import {tessellatePlanarFace,insideRing} from './3dm-planar-trim.mts';
 import {tessellateRationalBezierFace} from './3dm-rational-bezier-face.mts';
 import {proveSourceBoundary} from './3dm-source-boundary-proof.mts';
 import {evaluateCurve,evaluateSurface} from './3dm-nurbs-parameters.mjs';
 import {export3dmGlb} from './3dm-glb-export.mts';
 import {auditGlbGeometry} from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/plane-isocurve-2026-09-17-v1');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/local-plane-2026-09-17-v1');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),hash='a1b0ef69925b5d9223a7d797033055bb766842768a96f7713e1ecaec2763bb31';
 assert.equal(sha(readFileSync(path)),hash);const run=spawnSync(resolve(root,'test-output/3dm-source-audit/3dm-source-audit.exe'),[path,'--parameter-evidence-all'],{encoding:'utf8',maxBuffer:128*1024*1024,timeout:60000});
 assert.equal(run.status,0,run.stderr);const source=JSON.parse(run.stdout),object=source.objects.find((o:any)=>o.cadIr),ir=object.cadIr;object.storedRenderMeshes=[];
 const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
-const fixed=[84,86,88,89,91];
+const fixed=[60,84,86,88,89,91];
 function raw(face:number):any{return ir.surfaces[ir.faces[face].surface].degree.every((x:number)=>x===1)?tessellatePlanarFace(ir,face):tessellateRationalBezierFace(ir,face,.001);}
-test('five plane/isocurve source identities produce common chains without moving old vertices',async()=>{
+test('six plane/isocurve source identities preserve old vertices through bounded local retriangulation',async()=>{
   const result=completeBrepParts(object,.001),records=result.sourceEdgeSynchronizations.filter(r=>fixed.includes(r.edge));
-  assert.deepEqual(records.map(r=>r.edge),fixed);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,60);
+  assert.deepEqual(records.map(r=>r.edge),fixed);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,59);
+  const patches=records.find(r=>r.edge===60).proofs.flatMap(p=>p.localRetriangulations??[]);assert(patches.length>0);assert(patches.every(p=>p.removed<=64&&p.passes<=5));
   assert.equal(result.boundaryAudit.unverified.length,0);assert(result.boundaryAudit.seams.every(e=>e.conforming));
   let references=0,maxReferenceError=0;
   for(const record of records){assert(record.proofs.every(p=>p.continuousBound<=1e-12&&p.physicalBoundMm<=.01));
@@ -31,17 +32,22 @@ test('five plane/isocurve source identities produce common chains without moving
     for(const p of record.proofs){const part=result.parts.find(x=>x.face===p.face),before=raw(p.face),proof=proveSourceBoundary(ir,part,record.edge);
       assert.deepEqual(part.mesh.positions.slice(0,before.mesh.positions.length),before.mesh.positions);
       for(const t of record.parameters){const d=ir.edges[record.edge].sourceSubdomain,uv=proof.toUv((t-d[0])/(d[1]-d[0]));assert(distance(evaluateSurface(proof.surface,uv),evaluateCurve(c,t))<1e-10);}
-      if(part.geometrySource==='cad-ir-affine-plane-trim')assert(Math.abs(part.audit.uvArea-part.audit.triangleUvArea)<1e-9);
+      if(part.geometrySource==='cad-ir-affine-plane-trim'){
+        assert(Math.abs(part.audit.uvArea-part.audit.triangleUvArea)<1e-9);
+        const loops=ir.faces[part.face].loops.map(i=>({type:ir.loops[i].type,ring:ir.loops[i].trims.flatMap(trim=>part.boundaryEdges.find(b=>b.trim===trim).vertices.slice(0,-1).map(id=>part.parameterUv[id]))}));
+        for(const triangle of part.mesh.triangles){const center=[0,1].map(axis=>triangle.reduce((sum,id)=>sum+part.parameterUv[id][axis],0)/3);
+          assert(loops.every(loop=>insideRing(center,loop.ring)===(loop.type===1)));}
+      }
     }
   }
-  assert(references>=190&&maxReferenceError<1e-10);
+  assert(references>=228&&maxReferenceError<1e-10);
   const glb=await export3dmGlb(source,hash);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');
   mkdirSync(out,{recursive:true});const glbPath=resolve(out,'MechPartA.glb');writeFileSync(glbPath,glb.bytes);
   const evidence={sourceSha256:hash,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',archiveVersion:source.archiveVersion,metersPerUnit:.001,
     useBoundary:'official sample; local verification only; not redistributed',records,references,maxReferenceError,boundaryAudit:result.boundaryAudit,glb:await auditGlbGeometry(glbPath),glbSha256:sha(glb.bytes),status:glb.sidecar.status};
   writeFileSync(resolve(out,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({references,maxReferenceError,glb:evidence.glb,hash:evidence.glbSha256}));
 });
-test('source and mesh mutations reject transactionally; difficult inner circle remains explicit',()=>{
+test('source and mesh mutations reject transactionally, including local cavity budget failure',()=>{
   for(const fault of ['source','weight','knot','mesh','parameters','budget']){const copy=structuredClone(ir),pair=[33,35].map(raw);
     if(fault==='source')copy.curves3d[copy.edges[86].curve3d].controlPoints[1][0]+=.00001;
     if(fault==='weight')copy.curves3d[copy.edges[86].curve3d].controlPoints[1][3]*=1.001;
@@ -51,5 +57,6 @@ test('source and mesh mutations reject transactionally; difficult inner circle r
     if(fault==='budget')pair[0].audit.physicalBoundMm=.02;
     const before=JSON.stringify(pair),result=synchronizeSourceEdges(copy,pair,.001);assert.equal(result.records.length,0,fault);assert.equal(JSON.stringify(pair),before);
   }
-  const result=synchronizeSourceEdges(ir,[raw(24),raw(39)],.001);assert.equal(result.records.length,0);assert(result.failures.some(f=>f.edge===60&&f.code==='inverted-isocurve-refinement'));
+  const pair=[raw(24),raw(39)];pair[0].audit.physicalBoundMm=.02;const before=JSON.stringify(pair);
+  const result=synchronizeSourceEdges(ir,pair,.001);assert.equal(result.records.length,0);assert(result.failures.some(f=>f.edge===60&&f.code==='isocurve-refinement-budget'));assert.equal(JSON.stringify(pair),before);
 });

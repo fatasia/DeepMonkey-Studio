@@ -5,13 +5,14 @@ import { rationalBezierBounds } from './3dm-rational-bezier-bounds.mts';
 import { auditBrepBoundaries } from './3dm-brep-boundary-audit.mts';
 import {polygonArea} from './3dm-planar-trim.mts';
 import {trimPolyline} from './3dm-trim-polyline.mts';
+import {refineLocalPlanePatch} from './3dm-local-plane-patch.mts';
 const sub=(a:number[],b:number[])=>a.map((x,i)=>x-b[i]);
 const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 const dot=(a:number[],b:number[])=>a.reduce((sum,x,i)=>sum+x*b[i],0);
 function check(v:unknown,m:string):asserts v {if(!v)throw new Error(m);}
 function splitBoundary(ir:any,part:any,edge:number,parameters:number[],metersPerUnit:number) {
   const proof=proveSourceBoundary(ir,part,edge),boundary=proof.boundary,old=[...boundary.vertices],mesh=part.mesh,uv=part.audit.uv??part.parameterUv;
-  const plane=part.geometrySource==='cad-ir-affine-plane-trim',bounds=plane?null:rationalBezierBounds(proof.surface),newBoundary:number[]=[],newParameters:number[]=[];let inserted=0;
+  const plane=part.geometrySource==='cad-ir-affine-plane-trim',bounds=plane?null:rationalBezierBounds(proof.surface),newBoundary:number[]=[],newParameters:number[]=[],localRetriangulations:any[]=[];let inserted=0;
   for(let j=1;j<old.length;j++){
     const a=old[j-1],b=old[j],lo=proof.toBoundaryParameter(j-1),hi=proof.toBoundaryParameter(j),direction=Math.sign(hi-lo);
     check(direction!==0,'non-monotonic-isocurve-boundary');
@@ -22,10 +23,14 @@ function splitBoundary(ir:any,part:any,edge:number,parameters:number[],metersPer
     ids.push(b);newBoundary.push(...ids.slice(0,-1));newParameters.push(...[lo,...additions].map(proof.sourceParameter));if(!additions.length)continue;
     const hits=mesh.triangles.flatMap((t:number[],index:number)=>t.flatMap((x,k)=>x===a&&t[(k+1)%3]===b||x===b&&t[(k+1)%3]===a?[{index,k}]:[]));
     check(hits.length===1,'isocurve-not-single-triangle-boundary');const {index,k}=hits[0],triangle=mesh.triangles[index],order=triangle[k]===a?ids:[...ids].reverse(),opposite=triangle[(k+2)%3];
-    const triangles=order.slice(1).map((id,i)=>[order[i],id,opposite]);
+    let triangles=order.slice(1).map((id,i)=>[order[i],id,opposite]);
+    const valid=(t:number[])=>{const [a,b,c]=t.map(i=>mesh.positions[i]),normal=cross(sub(b,a),sub(c,a));return Math.hypot(...normal)>1e-14&&t.every(i=>dot(normal,mesh.normals[i])>0);};
+    let removed=[index];
+    if(plane&&!triangles.every(valid)){const patch=refineLocalPlanePatch(part,uv,a,b,ids,index,boundary.trim,[...newBoundary,b,...old.slice(j+1)]);
+      triangles=patch.triangles;removed=patch.removed;localRetriangulations.push({segment:j-1,removed:removed.length,triangles:triangles.length,passes:patch.passes});}
     for(const t of triangles){const [a,b,c]=t.map(i=>mesh.positions[i]),normal=cross(sub(b,a),sub(c,a));
       check(Math.hypot(...normal)>1e-14&&t.every(i=>dot(normal,mesh.normals[i])>0),'inverted-isocurve-refinement');}
-    mesh.triangles.splice(index,1,...triangles);
+    for(const i of removed)mesh.triangles.splice(i,1);mesh.triangles.splice(Math.min(...removed),0,...triangles);
   }
   boundary.vertices=[...newBoundary,old.at(-1)];mesh.sourceFaceCount=mesh.triangles.length;
   if(plane)boundary.parameters=[...newParameters,proof.sourceParameter(proof.toBoundaryParameter(old.length-1))];
@@ -51,7 +56,7 @@ function splitBoundary(ir:any,part:any,edge:number,parameters:number[],metersPer
     check(area>0&&Math.abs(area-triangleArea)<1e-9*Math.max(1,area),'isocurve-plane-area-mismatch');
     part.audit.sourcePlaneArea*=area/part.audit.uvArea;part.audit.uvArea=area;part.audit.triangleUvArea=triangleArea;
   }
-  return {face:part.face,inserted,continuousBound:proof.continuousBound,physicalBoundMm};
+  return {face:part.face,inserted,continuousBound:proof.continuousBound,physicalBoundMm,...(localRetriangulations.length?{localRetriangulations}:{})};
 }
 /** Transactional, source-identified parameter union. Only subdivides the affected face boundary triangles. */
 export function synchronizeSourceEdges(ir:any,input:any[],metersPerUnit:number) {
