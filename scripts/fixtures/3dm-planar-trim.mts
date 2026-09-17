@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
-import { evaluateCurve, evaluateSurface } from './3dm-nurbs-parameters.mjs';
+import { evaluateSurface } from './3dm-nurbs-parameters.mjs';
+import { trimPolyline } from './3dm-trim-polyline.mts';
 const require = createRequire(new URL('../../apps/web/package.json', import.meta.url));
 const { ShapeUtils, Vector2 } = require('three');
 const EPS = 1e-9;
@@ -39,26 +40,23 @@ function validateRings(rings: number[][][]) {
     }
   }
 }
-function trimLoop(ir: any, loop: any) {
-  check(loop && Array.isArray(loop.trims) && loop.trims.length>=3 && loop.trims.length<=2048, 'unsupported-trim-loop');
+function trimLoop(ir: any, loop: any, tolerance: number) {
+  check(loop && Array.isArray(loop.trims) && loop.trims.length>=1 && loop.trims.length<=2048, 'unsupported-trim-loop');
   const ring: number[][]=[];
   let previous: number[] | undefined;
   for(const index of loop.trims) {
     const trim=ir.trims[index], curve=ir.curves2d[trim?.curve2d];
-    check(curve?.dimension===2 && curve.degree===1 && curve.controlPoints.length===2 && !curve.rational
-      && curve.parameterMap?.kind==='identity', 'unsupported-trim-curve');
-    check(trim.sourceSubdomain?.length===2 && trim.sourceSubdomain[0]<trim.sourceSubdomain[1], 'invalid-trim-subdomain');
-    const ends=trim.sourceSubdomain.map((t: number)=>evaluateCurve(curve,t));
-    if(trim.curveReversed) ends.reverse();
+    const polyline=trimPolyline(curve,trim.sourceSubdomain,Boolean(trim.curveReversed),tolerance).points;
+    const ends=[polyline[0],polyline.at(-1)!];
     check(ends.flat().every(Number.isFinite), 'nonfinite-trim');
     if(previous) check(length(sub(previous,ends[0]))<=EPS, 'open-trim-loop');
-    check(length(sub(ends[0],ends[1]))>EPS, 'degenerate-trim-edge');
-    ring.push(ends[0]); previous=ends[1];
+    check(polyline.length>2 || length(sub(ends[0],ends[1]))>EPS, 'degenerate-trim-edge');
+    ring.push(...polyline.slice(0,-1)); previous=ends[1];
   }
   check(length(sub(previous!,ring[0]))<=EPS, 'open-trim-loop');
   return ring;
 }
-/** Exact affine plane + straight trims only. Curved/ambiguous profiles remain diagnostic. */
+/** Affine planes with positive-weight NURBS trims, under an explicit source-unit chord budget. */
 export function tessellatePlanarFace(ir: any, faceIndex: number) {
   const face=ir.faces[faceIndex], surface=ir.surfaces[face?.surface];
   check(surface?.degree?.every((d: number)=>d===1) && surface.controlPointCount?.every((n: number)=>n===2)
@@ -74,7 +72,9 @@ export function tessellatePlanarFace(ir: any, faceIndex: number) {
   check(loops.filter((l: any)=>l?.type===1).length===1 && loops.every((l: any)=>[1,2].includes(l?.type)), 'unsupported-trim-loop-type');
   check(loops.reduce((count: number,l: any)=>count+(l.trims?.length??2049),0)<=2048, 'trim-vertex-budget');
   loops.sort((a: any,b: any)=>a.type-b.type);
-  const rings=loops.map((loop: any)=>trimLoop(ir,loop)); validateRings(rings);
+  const trimChordTolerance=0.001;
+  const uvToSourceBound=length(u)/(surface.domain[0][1]-surface.domain[0][0])+length(v)/(surface.domain[1][1]-surface.domain[1][0]);
+  const rings=loops.map((loop: any)=>trimLoop(ir,loop,trimChordTolerance/uvToSourceBound)); validateRings(rings);
   const uv: number[][]=rings.flat();
   const positions=uv.map(point=>evaluateSurface(surface,point));
   const triangles: number[][]=ShapeUtils.triangulateShape(rings[0].map((p: number[])=>new Vector2(...p)),
@@ -96,7 +96,7 @@ export function tessellatePlanarFace(ir: any, faceIndex: number) {
   const normals=positions.map(()=>normal.map(x=>x/normalLength*(face.reversed?-1:1)));
   return { face: faceIndex, geometrySource: 'cad-ir-affine-plane-trim', mesh: { positions, triangles, normals,
     sourceFaceCount: triangles.length, quadCount: 0, textureCoordinates: [] },
-    audit: { uvArea: targetArea, triangleUvArea: triangleArea, affineError, loopCount: rings.length,
+    audit: { uvArea: targetArea, triangleUvArea: triangleArea, affineError, trimChordTolerance, loopCount: rings.length,
       holeCount: rings.length-1, sourcePlaneArea: targetArea*normalLength/((surface.domain[0][1]-surface.domain[0][0])*(surface.domain[1][1]-surface.domain[1][0])) } };
 }
 export function completePlanarBrepParts(object: any) {

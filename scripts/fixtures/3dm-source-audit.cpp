@@ -6,6 +6,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <set>
+static bool allParameterEvidence=false;
 
 static std::string quoted(const char* s) {
   if(!s) return "\"\"";
@@ -86,7 +87,7 @@ static void nurbsCurve(std::ostream& o, const ON_Curve& source) {
     o << ']';
   }
   o << "],\"parameterMap\":"; curveParameterMap(o,source,accuracy);
-  if(accuracy==2) { o << ",\"parameterEvidence\":"; curveParameterEvidence(o,source); }
+  if(accuracy==2 || allParameterEvidence) { o << ",\"parameterEvidence\":"; curveParameterEvidence(o,source); }
   o << '}';
 }
 static void nurbsSurface(std::ostream& o, const ON_Surface& source) {
@@ -117,7 +118,7 @@ static void nurbsSurface(std::ostream& o, const ON_Surface& source) {
     o << ']';
   }
   o << "],\"parameterMap\":"; surfaceParameterMap(o,source,accuracy);
-  if(accuracy==2) { o << ",\"parameterEvidence\":"; surfaceParameterEvidence(o,source); }
+  if(accuracy==2 || allParameterEvidence) { o << ",\"parameterEvidence\":"; surfaceParameterEvidence(o,source); }
   o << '}';
 }
 static void cadIr(std::ostream& o, const ON_Brep& b) {
@@ -268,7 +269,11 @@ static void dump(const ONX_Model& model, std::ostream& o) {
   o << "]}\n";
 }
 int wmain(int argc,wchar_t** argv) {
-  if(argc!=2) return 2;
+  if(argc!=2 && argc!=3) return 2;
+  if(argc==3) {
+    if(std::wstring(argv[2])!=L"--parameter-evidence-all") return 2;
+    allParameterEvidence=true;
+  }
   ON::Begin(); int result=0;
   try {
     ONX_Model model; ON_TextLog errors(stderr);

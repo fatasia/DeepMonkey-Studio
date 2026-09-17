@@ -2045,3 +2045,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 受限离散器消费 CAD IR 的仿射平面、直线 outer/inner trim、proxy subdomain/方向与面方向，复用 Three ShapeUtils 三角化；相交/开环/未知曲面保持面级诊断，源缓存网格优先。
 - file3dm_stuff 的 12 个无缓存面生成 24 三角，完整输出 13 primitives / 52 vertices / 26 triangles。支撑面残差最大 `1.776e-15` 源单位；独立三维面积、方向、源面编号与 GLB 字节审核通过。真实文件无孔，孔洞仅合成边界验证，仍待独立真实语料。
 - 11/11 聚焦测试、5 件 GLB 审计、专项 tsc、repository gate 与本片 diff-check 通过。研究预览状态不提升为生产/视觉完成；复杂曲面、孔洞语料、闭合性、浏览器视觉和产品接线继续本轮待办。[证据](specs/industrial-3dm-planar-trim-2026-09-17.md)
+
+### 2026-09-17 3DM 真实孔洞与有理 trim（Codex）
+
+- 从本机已固定 McNeel 官方语料取得 V4 MechPartA，源 SHA/版本/单位/本地使用边界入证据；忽略源缓存网格的受控重建得到 10/41 平面、2450 三角，5 面/6 孔，其余 31 面保持明确诊断。
+- 自研正权重 NURBS→Bézier 插结点与控制凸包弦差细分，源空间预算 0.001 mm；原 openNURBS PointAt 对拍误差最大 `5.403e-15 mm`，trim 采样弦差 `<0.000335 mm`。圆环解析面积、真实几何的受控镜像/非均匀实例矩阵和共享网格通过。
+- 13/13 测试、确定性读取、GLB audit、专项 tsc、repository gate 通过。源作者镜像实例、一般曲面离散与产品视觉继续本轮待办；仍为 partial-geometry-preview。[证据](specs/industrial-3dm-real-trims-2026-09-17.md)
