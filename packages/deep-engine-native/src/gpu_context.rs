@@ -5,6 +5,8 @@ use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 use crate::{events::GpuEvent, gpu_submission::GpuFailures};
 
 pub(crate) struct GpuContext {
+    pub(crate) instance: wgpu::Instance,
+    pub(crate) window: Arc<Window>,
     pub(crate) surface: wgpu::Surface<'static>,
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
@@ -69,6 +71,8 @@ pub(crate) async fn create_gpu_context(
         adapter_info.name, adapter_info.backend, adapter_info.device_type, config.format
     );
     Ok(GpuContext {
+        instance,
+        window,
         surface,
         device,
         queue,

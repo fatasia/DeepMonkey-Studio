@@ -25,7 +25,12 @@ const PRESENT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_milli
 enum RetryKind {
     Deep2d,
     Scene,
+    Full,
 }
+
+#[path = "package_live_full.rs"]
+mod full;
+use full::apply_full;
 
 #[cfg(all(test, windows))]
 #[path = "package_present_tests.rs"]
@@ -231,6 +236,7 @@ pub(super) fn retry(
         match kind {
             RetryKind::Deep2d => apply_deep2d(app, generation, candidate),
             RetryKind::Scene => apply_incremental(app, generation, candidate),
+            RetryKind::Full => apply_full(app, generation, candidate),
         }
     }
     if let Some((wake, _, _, _)) = app
@@ -300,54 +306,6 @@ fn apply_incremental(app: &mut NativeApp, generation: u64, candidate: WatchedPac
     }
 }
 
-fn apply_full(app: &mut NativeApp, generation: u64, candidate: WatchedPackage) {
-    let Some(window) = app.window.as_ref().cloned() else {
-        app.packet_coalescer.failed(generation);
-        return;
-    };
-    let renderer_id = app.next_renderer_id;
-    app.next_renderer_id = app
-        .next_renderer_id
-        .checked_add(1)
-        .expect("renderer generation exhausted");
-    let staged = pollster::block_on(Renderer::new_candidate(
-        window,
-        app.proxy.clone(),
-        renderer_id,
-        &candidate.content,
-        candidate
-            .content
-            .view_after_reload(app.content.active(), app.state.view),
-        app.features,
-    ));
-    let renderer = match staged {
-        Ok(mut renderer) => {
-            if let Err(error) = renderer.verify_candidate_frame() {
-                app.packet_coalescer.failed(generation);
-                eprintln!(
-                    "runtime package candidate frame rejected, previous frame retained: {error}"
-                );
-                return;
-            }
-            renderer
-        }
-        Err(error) => {
-            app.packet_coalescer.failed(generation);
-            eprintln!("runtime package live update rejected, keeping last correct frame: {error}");
-            return;
-        }
-    };
-    let mailbox = app
-        .package_live_transport
-        .as_ref()
-        .expect("package live transport exists")
-        .mailbox
-        .clone();
-    mailbox.publish_if_latest(generation, || {
-        publish(app, generation, candidate, Some(renderer));
-    });
-}
-
 fn publish(
     app: &mut NativeApp,
     generation: u64,
@@ -363,7 +321,6 @@ fn publish(
     let package_version = candidate.snapshot.package_version.clone();
     if let Some(renderer) = renderer {
         drop(app.renderer.take());
-        renderer.activate_surface();
         app.state.view = candidate
             .content
             .view_after_reload(app.content.active(), app.state.view);

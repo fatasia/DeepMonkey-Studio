@@ -56,6 +56,8 @@ pub(super) async fn create_renderer(
     let prepared_pbr = prepare_pbr_resources(packet)?;
     let scene_bounds = prepare_scene_bounds(packet)?;
     let GpuContext {
+        instance,
+        window,
         surface,
         device,
         queue,
@@ -257,6 +259,8 @@ pub(super) async fn create_renderer(
     }
     Ok(Renderer {
         id: renderer_id,
+        instance,
+        window,
         surface,
         device,
         queue,

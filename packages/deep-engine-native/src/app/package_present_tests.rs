@@ -18,19 +18,27 @@ use winit::{
 #[test]
 #[ignore = "requires a real Windows GPU surface"]
 fn scene_package_publishes_after_present() {
-    run(false);
+    run(false, false);
 }
 
 #[test]
 #[ignore = "requires a real Windows GPU surface and shader pipelines"]
 fn shader_package_publishes_after_present() {
-    run(true);
+    run(true, false);
 }
 
-fn run(shader: bool) {
+#[test]
+#[ignore = "requires a real Windows GPU surface and full renderer replacement"]
+fn full_package_publishes_after_present() {
+    run(false, true);
+}
+
+fn run(shader: bool, full: bool) {
     const CHILD: &str = "DEEP_PACKAGE_PRESENT_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        let name = if shader {
+        let name = if full {
+            "full_package_publishes_after_present"
+        } else if shader {
             "shader_package_publishes_after_present"
         } else {
             "scene_package_publishes_after_present"
@@ -57,7 +65,7 @@ fn run(shader: bool) {
     let mut builder = EventLoop::<GpuEvent>::with_user_event();
     builder.with_any_thread(true);
     let event_loop = builder.build().unwrap();
-    let content = content(shader, 0);
+    let content = fixture(shader, full, 0);
     let published = Arc::new(RwLock::new(content.runtime_package().unwrap().clone()));
     let mailbox = LatestMailbox::default();
     let transport = PackageLiveTransport {
@@ -93,6 +101,7 @@ fn run(shader: bool) {
         mailbox,
         published,
         shader,
+        full,
         verified: false,
     };
     event_loop.run_app(&mut probe).unwrap();
@@ -104,6 +113,7 @@ struct Probe {
     mailbox: LatestMailbox<WatchedPackage>,
     published: Arc<RwLock<RuntimePackageSnapshot>>,
     shader: bool,
+    full: bool,
     verified: bool,
 }
 impl ApplicationHandler<GpuEvent> for Probe {
@@ -112,6 +122,7 @@ impl ApplicationHandler<GpuEvent> for Probe {
         let old_hash = self.published.read().unwrap().package_hash.clone();
         let size = self.app.window.as_ref().unwrap().inner_size();
         let old_id = self.app.renderer.as_ref().unwrap().id();
+        let next_id = self.app.next_renderer_id;
         let before = self.app.renderer.as_ref().unwrap().scene_update_evidence();
         self.app
             .renderer
@@ -120,22 +131,24 @@ impl ApplicationHandler<GpuEvent> for Probe {
             .resize(winit::dpi::PhysicalSize::new(0, 0))
             .unwrap();
         for generation in 1..=2 {
-            let next = content(self.shader, generation);
+            let next = fixture(self.shader, self.full, generation);
             let snapshot = next.runtime_package().unwrap().clone();
             let plan = plan_runtime_package_resource_diff(
                 &self.published.read().unwrap().resource_index,
                 &snapshot.resource_index,
             )
             .unwrap();
-            assert_eq!(plan.entries.len(), 1);
-            assert_eq!(
-                plan.entries[0].kind,
-                if self.shader {
-                    deep_engine_native::runtime_package::RuntimeResourceKind::ShaderPackage
-                } else {
-                    deep_engine_native::runtime_package::RuntimeResourceKind::RenderPacket
-                }
-            );
+            if !self.full {
+                assert_eq!(plan.entries.len(), 1);
+                assert_eq!(
+                    plan.entries[0].kind,
+                    if self.shader {
+                        deep_engine_native::runtime_package::RuntimeResourceKind::ShaderPackage
+                    } else {
+                        deep_engine_native::runtime_package::RuntimeResourceKind::RenderPacket
+                    }
+                );
+            }
             self.mailbox.push(
                 generation,
                 WatchedPackage {
@@ -145,6 +158,12 @@ impl ApplicationHandler<GpuEvent> for Probe {
                 },
             );
             apply_latest(&mut self.app);
+            if self.full {
+                assert_eq!(
+                    self.app.next_renderer_id, next_id,
+                    "zero-size retry allocated a renderer"
+                );
+            }
             assert_eq!(
                 self.app
                     .content
@@ -174,7 +193,7 @@ impl ApplicationHandler<GpuEvent> for Probe {
                     .as_ref()
                     .unwrap()
                     .3,
-                RetryKind::Scene
+                RetryKind::Scene | RetryKind::Full
             ));
         }
         assert!(retry(&mut self.app, event_loop, Instant::now()));
@@ -189,10 +208,13 @@ impl ApplicationHandler<GpuEvent> for Probe {
             }
         }
         assert_eq!(self.app.packet_coalescer.published(), 2);
-        assert_eq!(self.app.renderer.as_ref().unwrap().id(), old_id);
+        assert_eq!(
+            self.app.renderer.as_ref().unwrap().id() == old_id,
+            !self.full
+        );
         assert_eq!(
             self.published.read().unwrap().package_hash,
-            content(self.shader, 2)
+            fixture(self.shader, self.full, 2)
                 .runtime_package()
                 .unwrap()
                 .package_hash
@@ -215,8 +237,8 @@ impl ApplicationHandler<GpuEvent> for Probe {
                 .is_none()
         );
         println!(
-            "runtime package present barrier: shader={} skipped generations 1/2 retained snapshots; generation 2 presented with renderer reused",
-            self.shader
+            "runtime package present barrier: shader={} full={} skipped generations 1/2 retained snapshots; generation 2 presented",
+            self.shader, self.full
         );
         self.verified = true;
         event_loop.exit();
@@ -230,7 +252,42 @@ impl ApplicationHandler<GpuEvent> for Probe {
     }
 }
 
-fn content(shader: bool, revision: u64) -> PlayerContent {
+fn fixture(shader: bool, full: bool, revision: u64) -> PlayerContent {
+    if full {
+        let bytes: &[u8] = if revision == 0 {
+            include_bytes!("../../tests/fixtures/runtime-package-coordinate-origin-a.json")
+        } else {
+            include_bytes!("../../tests/fixtures/runtime-package-coordinate-origin-b.json")
+        };
+        let mut value: Value = serde_json::from_slice(bytes).unwrap();
+        if revision > 0 {
+            value["payloads"]["scene.camera"]["revision"] = json!(1 + revision);
+            let camera_hash = runtime_content_sha256(&value["payloads"]["scene.camera"]);
+            let old: Value = serde_json::from_slice(include_bytes!(
+                "../../tests/fixtures/runtime-package-coordinate-origin-a.json"
+            ))
+            .unwrap();
+            for resource in value["resources"].as_array_mut().unwrap() {
+                let previous = old["resources"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|item| item["id"] == resource["id"])
+                    .unwrap();
+                if previous["contentHash"] != resource["contentHash"] {
+                    resource["revision"] = json!(resource["revision"].as_u64().unwrap() + revision);
+                }
+                if resource["id"] == "scene.camera" {
+                    resource["contentHash"]["value"] = json!(camera_hash);
+                }
+            }
+            value["packageHash"]["value"] = json!(runtime_package_sha256(&value).unwrap());
+        }
+        return PlayerContent::from_package(
+            parse_and_validate_runtime_package(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        )
+        .unwrap();
+    }
     let bytes: &[u8] = if shader {
         include_bytes!("../../tests/fixtures/runtime-package-shader-v2.json")
     } else {

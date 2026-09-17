@@ -151,12 +151,31 @@ impl ApplicationHandler<GpuEvent> for Probe {
         ))
         .unwrap();
         candidate.verify_candidate_frame().unwrap();
-        // Same full-candidate order as package_live: verify offscreen before replacing the active renderer.
-        drop(active);
-        candidate.activate_surface();
-        present(&mut candidate);
+        assert!(matches!(
+            active.present_replacement(&mut candidate),
+            RenderOutcome::Presented
+        ));
         let after = capture(&candidate);
         assert_visible(&after);
+        assert!(matches!(
+            candidate.present_replacement(&mut active),
+            RenderOutcome::Presented
+        ));
+        assert_eq!(
+            before,
+            capture(&active),
+            "surface reactivation changed old frame"
+        );
+        assert!(matches!(
+            active.present_replacement(&mut candidate),
+            RenderOutcome::Presented
+        ));
+        assert_eq!(
+            after,
+            capture(&candidate),
+            "surface reactivation changed candidate frame"
+        );
+        drop(active);
         let (fraction, relative) = compare(&before, &after);
         assert!(
             fraction <= MAX_CHANGED_FRACTION,
@@ -177,6 +196,18 @@ impl ApplicationHandler<GpuEvent> for Probe {
         .unwrap();
         rejected.resize(PhysicalSize::new(0, 0)).unwrap();
         assert!(rejected.verify_candidate_frame().is_err());
+        assert!(matches!(
+            candidate.present_replacement(&mut rejected),
+            RenderOutcome::Skipped
+        ));
+        rejected.size = SIZE;
+        rejected
+            .failures
+            .record("replacement fault injection".into());
+        assert!(matches!(
+            candidate.present_replacement(&mut rejected),
+            RenderOutcome::Failed(_)
+        ));
         drop(rejected);
         present(&mut candidate);
         let rollback = capture(&candidate);

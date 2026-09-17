@@ -44,6 +44,7 @@ mod frame_probes;
 mod frame_target;
 mod init;
 mod init_report;
+mod replacement_present;
 pub(crate) mod scene_update;
 mod scene_update_stage;
 mod section_readback;
@@ -61,6 +62,8 @@ pub struct RendererFeatures {
 
 pub struct Renderer {
     id: u64,
+    instance: wgpu::Instance,
+    window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,

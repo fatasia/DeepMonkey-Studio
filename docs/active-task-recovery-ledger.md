@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 完整包呈现后发布（Codex）
+
+- 已完成切片：完整热更新保留旧设备资源，候选 surface 成功呈现后提交 CPU/快照；失败恢复旧 surface 并重绘。零尺寸在 GPU 分配前延迟，最新候选重试。
+- 三条包路径与坐标原点往返/故障恢复共四项真机 GPU 用例通过；bin 120/43 ignored、clippy tests、repository gate 通过。旧画面恢复的 HDR 读回逐字节一致，不是系统截图。
+- 本轮待办：拖放迁移、环境载荷专项、非零跳帧候选重用、实际设备丢失与完整跨端视觉。[证据](specs/native-full-package-present-2026-09-17.md)
+
 ### 2026-09-17 X_T 周期修剪与后处理预算进展（Codex）
 
 - 已完成切片：`a9c7007` 修复三个 TORUS 小圆沿 v 周期的修剪；109 件重转后独立审核为 19335 matched / 3 mismatch / 6 unresolved，无状态回退。固定 sag 0.005 mm、审核 0.01 mm，三处边界误差约 0.000851 mm。审核 SHA-256 `3380d74a913ec18c771e8f7f8956bfa0a5690f0cb64785fe13768e120e0cc2a4` 已复核；生产 profile 仍为 0。[报告](reports/industrial-x-t-v-periodic-strip-2026-09-17.md)
