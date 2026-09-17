@@ -42,6 +42,11 @@ export interface DashboardNativeCandidateRuntimeDependencies {
   readonly verifier: DashboardNativeWindowVerifier;
   /** Defaults to the in-process compiler bridge; process workers may replace it. */
   readonly worker?: DashboardNativeCandidateWorker;
+  /**
+   * G04:装配层提供的可信布局宿主(deployment 组装,见 dashboardLayoutCaptureDeployment)。
+   * 缺省时 service 行为与未接线部署一致。
+   */
+  readonly layoutCapture?: DashboardNativeCandidateServiceDependencies["layoutCapture"];
 }
 
 export interface DashboardNativeCandidateRuntime {
@@ -76,7 +81,8 @@ export function createDashboardNativeCandidateRuntime(
     sha256: dependencies.compiler.compilerSha256, configuration: structuredClone(dependencies.compiler.configuration) });
   const service = createDashboardNativeCandidateService({ authority, compiler: dependencies.compiler, compilerIdentity,
     expectedDeviceFingerprintSha256: dependencies.expectedDeviceFingerprintSha256,
-    verifyWindow: (input, signal) => dependencies.verifier.verify(input, signal), worker });
+    verifyWindow: (input, signal) => dependencies.verifier.verify(input, signal), worker,
+    ...(dependencies.layoutCapture ? { layoutCapture: dependencies.layoutCapture } : {}) });
   return Object.freeze({ authority, worker, service });
 }
 

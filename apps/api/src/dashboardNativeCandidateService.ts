@@ -21,6 +21,7 @@ import {
   type VerifiedDashboardRuntimeArtifact,
 } from "./dashboardRuntimeArtifactCompiler.js";
 import { assertDashboardCandidatePublicationGate } from "./dashboardNativeCandidateRegistry.js";
+import type { DashboardLayoutCaptureHost } from "./dashboardMeasuredLayout.js";
 
 /**
  * The only callable interface given to the isolated Native compiler worker.
@@ -44,6 +45,11 @@ export interface DashboardNativeCandidateServiceDependencies {
     readonly targetArtifactHash: string;
   }, signal?: AbortSignal) => Promise<DashboardWindowVerification>;
   readonly worker: DashboardNativeCandidateWorker;
+  /**
+   * G04:服务端自己的可信布局宿主。提供时,凡有测量契约的数据组件在编译输入里
+   * 绑定服务端测量布局;缺省时编译输入保持纯冻结数据(与未接线部署逐字节一致)。
+   */
+  readonly layoutCapture?: { readonly host: DashboardLayoutCaptureHost; readonly locale: string };
 }
 
 /**
@@ -123,7 +129,8 @@ export function createDashboardNativeCandidateService(
         });
         requireCurrent(activeGeneration, controller.signal);
         const compilerInput = await prepareDashboardRuntimeArtifactCompilerInput({ candidate: frozen,
-          capability, compiler: dependencies.compilerIdentity, revalidation, signal: controller.signal });
+          capability, compiler: dependencies.compilerIdentity, revalidation, signal: controller.signal,
+          ...(dependencies.layoutCapture ? { layoutCapture: dependencies.layoutCapture } : {}) });
         requireCurrent(activeGeneration, controller.signal);
         const output = await dependencies.worker.compile(compilerInput, controller.signal);
         requireCurrent(activeGeneration, controller.signal);

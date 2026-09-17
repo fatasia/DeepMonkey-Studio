@@ -1,11 +1,13 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "./config.js";
 import type { MetadataStore } from "./metadataStore.js";
 import type { ObjectStore } from "./objects.js";
 import type { AuthoritativeDashboardCompiler } from "./dashboardPublicationCapability.js";
 import type { DashboardNativeWindowVerifier } from "./dashboardNativeCandidateRuntime.js";
+import { createDashboardLayoutCaptureDeployment } from "./dashboardLayoutCaptureDeployment.js";
 import { createDashboardPublishedClosure } from "./dashboardPublishedClosure.js";
 import { createDashboardPublishedFontCatalog, type DashboardPublishedFontConfiguration } from "./dashboardPublishedFontCatalog.js";
 import { registerDashboardNativeCandidateRouteRuntime } from "./dashboardNativeCandidateRouteRuntime.js";
@@ -15,6 +17,11 @@ interface DashboardDeploymentConfig {
   readonly expectedDeviceFingerprintSha256: string;
   readonly configuration: Record<string, unknown> & { locale: string; packageVersion: string };
   readonly fontCatalog?: DashboardPublishedFontConfiguration;
+  /**
+   * G04:可选布局测量宿主配置。给出时编译输入为测量组件绑定服务端布局;
+   * 缺省时行为与未接线部署一致(编译输入保持纯冻结数据)。
+   */
+  readonly layoutCapture?: { readonly chromePath: string; readonly capturePageDirectory?: string };
 }
 
 /** Only the server startup environment selects this file; HTTP cannot select executable code. */
@@ -36,14 +43,28 @@ export async function registerConfiguredDashboardNative(app: FastifyInstance, de
   if (typeof nativeExecutableSha256 !== "string" || !/^[a-f0-9]{64}$/.test(nativeExecutableSha256)) {
     throw new Error("Dashboard compiler must bind the deployed Native executable SHA-256");
   }
-  return registerDashboardNativeCandidateRouteRuntime(app, {
-    runtime: { store: dependencies.store, objects: dependencies.objects,
-      closure: createDashboardPublishedClosure(dependencies.store, dependencies.config, fonts ? { fonts } : {}),
-      compiler: bindings.compiler, verifier: bindings.verifier,
-      expectedDeviceFingerprintSha256: deployment.expectedDeviceFingerprintSha256 },
-    nativeExecutable: deployment.nativeExecutable,
-    nativeExecutableSha256,
-  });
+  // 装配期快速失败:Chrome 可执行文件、捕获页产物与端口绑定在此校验,不拖到首次捕获。
+  const layoutCapture = deployment.layoutCapture ? await createDashboardLayoutCaptureDeployment({
+    chromePath: deployment.layoutCapture.chromePath,
+    capturePageDirectory: deployment.layoutCapture.capturePageDirectory
+      ?? fileURLToPath(new URL("../dist/dashboard-content-compiler/", import.meta.url)),
+  }) : undefined;
+  if (layoutCapture) app.addHook("onClose", async () => { await layoutCapture.close(); });
+  try {
+    return await registerDashboardNativeCandidateRouteRuntime(app, {
+      runtime: { store: dependencies.store, objects: dependencies.objects,
+        closure: createDashboardPublishedClosure(dependencies.store, dependencies.config, fonts ? { fonts } : {}),
+        compiler: bindings.compiler, verifier: bindings.verifier,
+        expectedDeviceFingerprintSha256: deployment.expectedDeviceFingerprintSha256,
+        ...(layoutCapture ? { layoutCapture: { host: layoutCapture.host, locale: layoutCapture.locale } } : {}) },
+      nativeExecutable: deployment.nativeExecutable,
+      nativeExecutableSha256,
+    });
+  } catch (error) {
+    // 路由注册失败时启动整体失败,托管的捕获页服务不能悬空到进程退出。
+    await layoutCapture?.close();
+    throw error;
+  }
 }
 
 export async function readDashboardDeploymentConfig(file: string): Promise<DashboardDeploymentConfig> {
@@ -57,8 +78,17 @@ export async function readDashboardDeploymentConfig(file: string): Promise<Dashb
     || !/^[a-f0-9]{64}$/.test(value.expectedDeviceFingerprintSha256)
     || !value.configuration || typeof value.configuration !== "object" || Array.isArray(value.configuration)
     || typeof value.configuration.locale !== "string" || !value.configuration.locale.trim()
-    || typeof value.configuration.packageVersion !== "string" || !value.configuration.packageVersion.trim()) {
+    || typeof value.configuration.packageVersion !== "string" || !value.configuration.packageVersion.trim()
+    || !isValidLayoutCaptureConfig(value.layoutCapture)) {
     throw new Error("Dashboard deployment requires a Windows player, device fingerprint, locale and package version");
   }
   return value;
+}
+
+function isValidLayoutCaptureConfig(value: DashboardDeploymentConfig["layoutCapture"]): boolean {
+  if (value === undefined) return true;
+  return typeof value === "object" && !Array.isArray(value)
+    && typeof value.chromePath === "string" && path.isAbsolute(value.chromePath)
+    && (value.capturePageDirectory === undefined
+      || typeof value.capturePageDirectory === "string" && path.isAbsolute(value.capturePageDirectory));
 }
