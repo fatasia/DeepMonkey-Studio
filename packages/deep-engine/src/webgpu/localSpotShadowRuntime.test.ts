@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSession } from "./deviceSession.js";
 import { LocalSpotShadowRuntime } from "./localSpotShadowRuntime.js";
+import { DeviceResourceBudgetError } from "./deviceResourceMemory.js";
 import type { Pipelines } from "./pipelines.js";
 import { authorFixture, authorPacket, authorView } from "./authorLod.testUtils.js";
 import { PBR_FRAME_UNIFORM_BYTES, PBR_FRAME_FLOAT_OFFSETS } from "./pipelines.js";
@@ -48,6 +49,17 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Browser local spot shadow runtime", () => {
+  it("propagates ownership budget refusal without silently allocating a fallback", async () => {
+    const f = fixture(), error = new DeviceResourceBudgetError("budget refused"), controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    f.session.assertResourceAdmission = vi.fn(() => { throw error; });
+    await expect(LocalSpotShadowRuntime.create(f.session, controller.signal)).rejects.toBe(error);
+    expect(f.device.createTexture).not.toHaveBeenCalled();
+    expect(f.device.createBuffer).not.toHaveBeenCalled();
+    expect(f.owned.size).toBe(0);
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
   it("uses isolated spot LOD outputs before the raster pass, never camera or CSM visibility", async () => {
     vi.stubGlobal("GPUShaderStage", { COMPUTE: 4 });
     vi.stubGlobal("GPUBufferUsage", { COPY_SRC: 4, COPY_DST: 8, INDEX: 16, VERTEX: 32, UNIFORM: 64, STORAGE: 128, INDIRECT: 256 });
@@ -187,7 +199,7 @@ describe("Browser local spot shadow runtime", () => {
   it("falls back to disabled bindings when atlas validation fails and honors cancellation", async () => {
     const failed = fixture({ message: "simulated atlas failure" }), runtime = await LocalSpotShadowRuntime.create(failed.session);
     expect(runtime.degraded).toBe(true); expect(failed.textures.map(value => value.descriptor.size)).toEqual([
-      { width: 1024, height: 1024, depthOrArrayLayers: 1 }, [1, 1],
+      { width: 1024, height: 1024, depthOrArrayLayers: 1 }, { width: 1, height: 1, depthOrArrayLayers: 1 },
     ]);
     expect(runtime.prepareAndEncode(failed.encoder, failed.packets as never, failed.pipelines, lights(), true).rendered).toBe(false);
     runtime.dispose(); expect(failed.owned.size).toBe(0);

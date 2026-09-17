@@ -1,3 +1,4 @@
+import { createAdmittedTexture } from "./resourceAdmission.js";
 import type { SharedShadowAtlasPlan } from "../shadows/sharedShadowAtlas.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
@@ -82,7 +83,7 @@ export class SharedShadowAtlasResources {
     let staged: ReturnType<typeof gpuValidatedStage<SharedShadowAtlasGpuResource>>;
     try {
       staged = gpuValidatedStage(this.session.device, () => {
-        texture = this.session.own(this.session.device.createTexture({
+        texture = createAdmittedTexture(this.session, {
           label: "Deep shared local-light shadow atlas",
           size: { width: plan.atlasSize, height: plan.atlasSize, depthOrArrayLayers: 1 },
           mipLevelCount: 1,
@@ -90,7 +91,7 @@ export class SharedShadowAtlasResources {
           dimension: "2d",
           format: FORMAT,
           usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-        }));
+        });
         const view = texture.createView({
           label: "Deep shared local-light shadow atlas depth view",
           format: FORMAT,
@@ -105,6 +106,7 @@ export class SharedShadowAtlasResources {
           this.session.device.limits.maxTextureDimension2D);
       }, "Shared shadow atlas GPU preparation failed");
     } catch (error) {
+      unlink();
       if (texture) failWithResourceCleanup(error, "Shared shadow atlas staging failed",
         [() => this.session.release(texture!)]);
       throw error;

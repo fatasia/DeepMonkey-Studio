@@ -1,3 +1,5 @@
+import { createAdmittedTexture } from "./resourceAdmission.js";
+import { DeviceResourceBudgetError } from "./deviceResourceMemory.js";
 import type { WorldClusteredLights } from "../lighting/worldLights.js";
 import { planSharedShadowAtlas, type SharedShadowAtlasPlan } from "../shadows/sharedShadowAtlas.js";
 import { LOCAL_SPOT_SHADOW_ENTRY_BYTES, LOCAL_SPOT_SHADOW_MAX_LIGHTS,
@@ -70,10 +72,12 @@ export class LocalSpotShadowRuntime {
       atlas = (await atlasOwner.setValidated(plan, epoch, signal)).resource;
       degraded = atlas.plan.downgraded;
     } catch (error) {
-      if (signal?.aborted || isAbortError(error)) { atlasOwner.dispose(); throw error; }
+      if (signal?.aborted || isAbortError(error) || error instanceof DeviceResourceBudgetError) {
+        atlasOwner.dispose(); throw error;
+      }
       degraded = true; atlasOwner.dispose();
-      fallback = session.own(session.device.createTexture({ label: "Deep disabled local shadow fallback",
-        size: [1, 1], format: "depth32float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT }));
+      fallback = createAdmittedTexture(session, { label: "Deep disabled local shadow fallback",
+        size: [1, 1], format: "depth32float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT });
     }
     let uniform: GPUBuffer | undefined;
     const shadowFrames: GPUBuffer[] = [];

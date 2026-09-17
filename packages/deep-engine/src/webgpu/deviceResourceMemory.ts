@@ -56,6 +56,10 @@ export function estimateDeviceResource(resource: object): Estimate {
   return Number.isSafeInteger(bytes) && bytes >= 0 ? { kind: "texture", bytes } : undefined;
 }
 
+export class DeviceResourceBudgetError extends Error {
+  override readonly name = "DeviceResourceBudgetError";
+}
+
 export class DeviceResourceMemory {
   private readonly entries = new Map<object, Estimate>();
   private bufferBytes = 0;
@@ -71,11 +75,11 @@ export class DeviceResourceMemory {
     const estimate = estimateDeviceResource(resource);
     if (!estimate || this.unknownResources > 0) {
       this.rejectedCount++;
-      throw new Error("GPU ownership budget requires known resource sizes; this allocation has no reliable estimate.");
+      throw new DeviceResourceBudgetError("GPU ownership budget requires known resource sizes; this allocation has no reliable estimate.");
     }
     if (estimate.bytes > this.budgetBytes - this.bufferBytes - this.textureBytes) {
       this.rejectedCount++;
-      throw new Error(`GPU ownership budget exceeded: ${this.bufferBytes + this.textureBytes} resident +`
+      throw new DeviceResourceBudgetError(`GPU ownership budget exceeded: ${this.bufferBytes + this.textureBytes} resident +`
         + ` ${estimate.bytes} candidate > ${this.budgetBytes} bytes. Release unused resources or lower requested quality.`);
     }
   }

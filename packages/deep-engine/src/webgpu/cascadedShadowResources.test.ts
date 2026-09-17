@@ -85,7 +85,7 @@ describe("default PBR cascaded shadow resources", () => {
     const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines);
     expect(shadows.selection).toMatchObject({ requestedTier: "high", selectedTier: "high", downgraded: false });
     expect(f.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({
-      size: [PBR_CASCADE_MAP_SIZE, PBR_CASCADE_MAP_SIZE, PBR_CASCADE_COUNT], format: "depth32float",
+      size: { width: PBR_CASCADE_MAP_SIZE, height: PBR_CASCADE_MAP_SIZE, depthOrArrayLayers: PBR_CASCADE_COUNT }, format: "depth32float",
     }));
     expect(f.views.slice(0, PBR_CASCADE_COUNT)).toEqual(Array.from({ length: PBR_CASCADE_COUNT }, (_, baseArrayLayer) =>
       ({ dimension: "2d", aspect: "depth-only", baseArrayLayer, arrayLayerCount: 1 })));
@@ -98,7 +98,7 @@ describe("default PBR cascaded shadow resources", () => {
     const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines, { requestedTier: "performance" });
     expect(shadows.selection).toMatchObject({ selectedTier: "performance", downgraded: false,
       profile: { estimatedDepthTextureBytes: 8 * 1024 * 1024 } });
-    expect(f.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ size: [1024, 1024, 2] }));
+    expect(f.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ size: { width: 1024, height: 1024, depthOrArrayLayers: 2 } }));
     expect(shadows.layerViews).toHaveLength(2); expect(shadows.frameBindings).toHaveLength(2);
     expect(shadows.prepare(input, false).plan).toMatchObject({ shadowMapSize: 1024, cascades: [{ index: 0 }, { index: 1 }] });
   });
@@ -109,7 +109,7 @@ describe("default PBR cascaded shadow resources", () => {
         receiverNormalBias: "constant-one-texel" } });
     expect(shadows.selection).toMatchObject({ selectedTier: "exact", downgraded: false,
       profile: { estimatedDepthTextureBytes: 16 * 1024 * 1024 } });
-    expect(f.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ size: [2048, 2048, 1] }));
+    expect(f.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ size: { width: 2048, height: 2048, depthOrArrayLayers: 1 } }));
     expect(shadows.prepare(input, false).plan.cascades).toHaveLength(1);
     const uniform = f.writes.at(-2) as Float32Array;
     expect(uniform[153]).toBeCloseTo(0.00075); expect(uniform[155]).toBe(1);
@@ -120,12 +120,12 @@ describe("default PBR cascaded shadow resources", () => {
     const balanced = new CascadedShadowResources(budget.session, budget.pipelines,
       { requestedTier: "high", maxDepthTextureBytes: 40 * 1024 * 1024 });
     expect(balanced.selection).toMatchObject({ selectedTier: "balanced", downgraded: true });
-    expect(budget.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ size: [1536, 1536, 3] }));
+    expect(budget.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ size: { width: 1536, height: 1536, depthOrArrayLayers: 3 } }));
 
     const limited = fixture({ maxTextureDimension2D: 1536, maxTextureArrayLayers: 2 });
     const performance = new CascadedShadowResources(limited.session, limited.pipelines, { requestedTier: "ultra" });
     expect(performance.selection.selectedTier).toBe("performance");
-    expect(limited.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ size: [1024, 1024, 2] }));
+    expect(limited.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ size: { width: 1024, height: 1024, depthOrArrayLayers: 2 } }));
   });
 
   it("fails closed without allocating when no tier fits or options are malformed", () => {

@@ -1,3 +1,4 @@
+import { createAdmittedTexture } from "./resourceAdmission.js";
 import { packCascadedShadowUniform, CASCADED_SHADOW_UNIFORM_BYTES } from "../shadows/cascadedShadowShader.js";
 import { planCascadedShadows } from "../shadows/cascadedShadowPlanner.js";
 import { CASCADED_SHADOW_QUALITY_PROFILES, resolveCascadedShadowQuality,
@@ -80,10 +81,10 @@ export class CascadedShadowResources {
     const { cascadeCount, shadowMapSize } = this.selection.profile.options;
     const created: Array<GPUTexture | GPUBuffer> = [];
     try {
-      const texture = session.own(device.createTexture({
+      const texture = createAdmittedTexture(session, {
         label: "Deep cascaded shadow map", size: [shadowMapSize, shadowMapSize, cascadeCount],
         format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-      }));
+      });
       created.push(texture);
       const layerViews = Object.freeze(Array.from({ length: cascadeCount }, (_, baseArrayLayer) =>
         texture.createView({ dimension: "2d", aspect: "depth-only", baseArrayLayer, arrayLayerCount: 1 })));

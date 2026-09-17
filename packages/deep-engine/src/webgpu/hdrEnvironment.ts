@@ -1,3 +1,4 @@
+import { createAdmittedTexture, createAdmittedBuffer } from "./resourceAdmission.js";
 import type { RadianceHdrImage } from "../textures/radianceHdr.js";
 import { prepareHdrEnvironmentUpload } from "../textures/hdrEnvironmentUpload.js";
 import type { DeviceSession } from "./deviceSession.js";
@@ -43,7 +44,7 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
   let settings: GPUBuffer | undefined;
   let scopeOpen = false;
   const texture = (descriptor: GPUTextureDescriptor): GPUTexture => {
-    const value = session.own(device.createTexture(descriptor)); owned.push(value); return value;
+    const value = createAdmittedTexture(session, descriptor); owned.push(value); return value;
   };
   try {
     device.pushErrorScope("validation"); scopeOpen = true;
@@ -84,8 +85,8 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
       floats[index + 1] = diffuseLevel ? diffuseSize : specularSize >> level;
       integers[index + 2] = diffuseLevel ? 1 : 0; integers[index + 3] = sampleCount;
     }
-    settings = session.own(device.createBuffer({ label: "Deep HDRI settings", size: data.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
+    settings = createAdmittedBuffer(session, { label: "Deep HDRI settings", size: data.byteLength,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(settings, 0, data);
     const sampler = device.createSampler({ addressModeU: "repeat", addressModeV: "clamp-to-edge",
       minFilter: "linear", magFilter: "linear" });

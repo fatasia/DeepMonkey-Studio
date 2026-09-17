@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 export { DeviceSession } from "./deviceSession.js";
+export { DeviceResourceBudgetError } from "./deviceResourceMemory.js";
 export type { DeviceState, DeviceEvent } from "./deviceSession.js";
 export { SharedShadowAtlasResources } from "./sharedShadowAtlasResources.js";
 export type { SharedShadowAtlasBudgetEvidence, SharedShadowAtlasGpuResource,

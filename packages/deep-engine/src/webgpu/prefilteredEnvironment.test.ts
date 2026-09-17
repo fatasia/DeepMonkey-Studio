@@ -3,6 +3,7 @@ import { createRuntimeIblFixture } from "../../scripts/runtimePackageIblFixture.
 import type { RuntimePrefilteredIbl } from "../runtimePackage/environmentTypes.js";
 import { createPbrEnvironment } from "./pbrEnvironmentSource.js";
 import type { DeviceSession } from "./deviceSession.js";
+import { DeviceResourceBudgetError } from "./deviceResourceMemory.js";
 
 function fixture() {
   const owned = new Set<any>(), allocated: any[] = [];
@@ -20,11 +21,21 @@ const input = () => ({ kind: "prefiltered-ibl" as const, environment: createRunt
 beforeEach(() => vi.stubGlobal("GPUTextureUsage", { TEXTURE_BINDING: 1, COPY_DST: 2 }));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("prefiltered IBL production source", () => {
+  it("refuses a candidate before allocation and rolls back earlier candidate textures", async () => {
+    const f = fixture(), error = new DeviceResourceBudgetError("budget refused");
+    f.session.assertResourceAdmission = vi.fn().mockImplementationOnce(() => {}).mockImplementation(() => { throw error; });
+    await expect(createPbrEnvironment(f.session, input(), new AbortController().signal)).rejects.toBe(error);
+    expect(f.device.createTexture).toHaveBeenCalledTimes(1);
+    expect(f.allocated[0].destroy).toHaveBeenCalledOnce();
+    expect(f.owned.size).toBe(0);
+    expect(f.device.queue.writeTexture).not.toHaveBeenCalled();
+  });
   it("uploads exact offline half bytes and all mips without compute generation", async () => {
     const f = fixture(), source = input();
     const environment = await createPbrEnvironment(f.session, source, new AbortController().signal);
     expect(f.allocated).toHaveLength(3); expect(f.device.queue.writeTexture).toHaveBeenCalledTimes(4);
-    expect(f.allocated[0].descriptor).toMatchObject({ format: "rgba16float", mipLevelCount: 2, size: [2, 2, 6] });
+    expect(f.allocated[0].descriptor).toMatchObject({ format: "rgba16float", mipLevelCount: 2,
+      size: { width: 2, height: 2, depthOrArrayLayers: 6 } });
     const first = f.device.queue.writeTexture.mock.calls[0]!;
     expect([...first[1]]).toEqual([...Buffer.from(source.environment.specular.mips[0]!.dataBase64, "base64")]);
     expect(first[2]).toEqual({ bytesPerRow: 16, rowsPerImage: 2 });

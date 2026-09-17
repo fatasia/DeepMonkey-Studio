@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { DeviceResourceMemory, estimateDeviceResource } from "./deviceResourceMemory.js";
+import { DeviceResourceBudgetError, DeviceResourceMemory, estimateDeviceResource } from "./deviceResourceMemory.js";
 
 const texture = (overrides: object = {}) => ({ width: 8, height: 8, depthOrArrayLayers: 1,
   mipLevelCount: 1, sampleCount: 1, dimension: "2d", format: "rgba8unorm", ...overrides });
 
 describe("device allocation estimates", () => {
+  it("distinguishes budget refusals from GPU failures without mutating residency", () => {
+    const memory = new DeviceResourceMemory(32), old = { size: 32 };
+    memory.add(old);
+    expect(() => memory.add({ size: 4 })).toThrow(DeviceResourceBudgetError);
+    expect(() => memory.add(texture({ format: "depth24plus" }))).toThrow(DeviceResourceBudgetError);
+    expect(memory.snapshot).toMatchObject({ estimatedBytes: 32, resourceCount: 1,
+      admission: { budgetBytes: 32, rejectedCount: 2 } });
+  });
   it("counts mips, MSAA, array layers and shrinking 3D depth separately", () => {
     expect(estimateDeviceResource(texture({ mipLevelCount: 4, depthOrArrayLayers: 6 })))
       .toEqual({ kind: "texture", bytes: (64 + 16 + 4 + 1) * 4 * 6 });

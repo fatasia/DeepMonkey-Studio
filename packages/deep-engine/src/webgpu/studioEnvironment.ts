@@ -1,3 +1,4 @@
+import { createAdmittedTexture, createAdmittedBuffer } from "./resourceAdmission.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { environmentShader } from "./environmentShader.js";
 import { abortableGpu, gpuAbortReason } from "./gpuAbort.js";
@@ -19,8 +20,8 @@ export async function createStudioEnvironment(session: DeviceSession,
   if (signal?.aborted) throw gpuAbortReason(signal, ABORT_MESSAGE);
   const device = session.device, owned: GPUTexture[] = [];
   const create = (label: string, size: GPUExtent3D, mipLevelCount = 1): GPUTexture => {
-    const texture = session.own(device.createTexture({ label, size, mipLevelCount, format: "rgba16float",
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING }));
+    const texture = createAdmittedTexture(session, { label, size, mipLevelCount, format: "rgba16float",
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
     owned.push(texture); return texture;
   };
   let settings: GPUBuffer | undefined;
@@ -51,8 +52,8 @@ export async function createStudioEnvironment(session: DeviceSession,
       integers[index + 2] = level === 8 ? 1 : 0;
       integers[index + 3] = 128;
     }
-    settings = session.own(device.createBuffer({ label: "Deep environment setup", size: data.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
+    settings = createAdmittedBuffer(session, { label: "Deep environment setup", size: data.byteLength,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(settings, 0, data);
     const encoder = device.createCommandEncoder({ label: "Deep initialize environment once" });
     for (let level = 0; level < 9; level++) {

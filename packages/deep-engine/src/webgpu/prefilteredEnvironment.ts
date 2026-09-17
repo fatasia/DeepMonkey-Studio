@@ -1,3 +1,4 @@
+import { createAdmittedTexture } from "./resourceAdmission.js";
 import type { RuntimePrefilteredIbl, RuntimeIblMip } from "../runtimePackage/environmentTypes.js";
 import { validateRuntimePrefilteredIbl } from "../runtimePackage/environment.js";
 import { snapshotJson } from "../runtimePackage/primitives.js";
@@ -22,8 +23,8 @@ export async function createPrefilteredEnvironment(session: DeviceSession, input
     if (size > device.limits.maxTextureDimension2D) throw Error("IBL exceeds device texture dimension limit.");
   }
   const create = (label: string, size: number, layers: number, mipLevelCount: number) => {
-    const texture = session.own(device.createTexture({ label, size: [size, size, layers], mipLevelCount,
-      format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }));
+    const texture = createAdmittedTexture(session, { label, size: [size, size, layers], mipLevelCount,
+      format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     owned.push(texture); return texture;
   };
   const upload = (texture: GPUTexture, mip: RuntimeIblMip, mipLevel: number, layers: number) => {
