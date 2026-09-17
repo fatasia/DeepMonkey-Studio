@@ -258,7 +258,7 @@ pub fn print_help() {
         "Experimental X viewer:\n  deep-engine-native --x-package <runtime-package-v6.json>\n  deep-engine-native --x-package-live <runtime-package-v6.json>\n  deep-engine-native --smoke-x-package <runtime-package-v6.json>"
     );
     println!(
-        "Frozen-font CPU compilation: --rasterize-text <request.json> --output <new-result.json>"
+        "Frozen-font CPU compilation: --rasterize-text <request.json> --output <new-result.json>\n  Glyph-run measurement (P1-18): --measure-glyph-run <request.json> --output <new-result.json>"
     );
     println!(
         "Deep Asset directory profile: --asset-package <manifest.json>; --headless-asset-package validates all chunks; --smoke-asset-package presents the entry scene."

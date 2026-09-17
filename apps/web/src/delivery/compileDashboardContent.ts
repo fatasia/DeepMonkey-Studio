@@ -4,6 +4,7 @@ import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
 import { compileDashboardLayout } from "./compileDashboardLayout";
 import { DASHBOARD_LINE_HEIGHT_FACTOR } from "./dashboardTextContent";
 import { lowerDashboardWidget } from "./dashboardWidgetContent";
+import type { FilterGlyphBundle } from "./dashboardFilterGlyphs";
 
 export interface DashboardContentObjectReport {
   readonly nodeId: string;
@@ -18,8 +19,14 @@ export interface DashboardContentObjectReport {
 /**
  * 内容 pass,不是发布批准:文字、图表组合、阴影与运行时行为仍是显式缺口,
  * 以对象级报告与 coverage 数字呈现,不用布尔 approved 概括。
+ *
+ * `optionGlyphs` 是 P1-18 筛选选项文字的唯一编译入口:只接受**实测**字形度量
+ * (冻结字体目录经 native `--measure-glyph-run` 产出,见 dashboardFilterGlyphs),
+ * 按 node id 注入。未注入或缺某组件度量的筛选保持 deferred fail-closed——
+ * 这正是无冻结字体的发布形态,不是降级事故。
  */
-export function compileDashboardContent(input: DashboardDocument, pageId = input.entryPageId) {
+export function compileDashboardContent(input: DashboardDocument, pageId = input.entryPageId,
+  optionGlyphs?: Readonly<Record<string, FilterGlyphBundle>>) {
   const layout = compileDashboardLayout(input, pageId);
   const page = layout.source.application.pages.find(page => page.id === pageId)!;
   const resources: Deep2dResource[] = [], commands: Deep2dCommand[] = [], objects: DashboardContentObjectReport[] = [];
@@ -33,7 +40,12 @@ export function compileDashboardContent(input: DashboardDocument, pageId = input
         reasons: ["场景视口需要独立三维编译"] });
       continue;
     }
-    const lowering = lowerDashboardWidget(node, `${binding.layoutId}.content`, layout.tree.revision);
+    // 度量束先登记字体资源(命令 fontId 要解析到它),再交给 widget 编译;
+    // 隐藏节点没有文字命令,不登记闲置字体资源。
+    const bundle = optionGlyphs?.[node.id];
+    if (bundle && node.visible !== false) resources.push(bundle.fontResource);
+    const lowering = lowerDashboardWidget(node, `${binding.layoutId}.content`, layout.tree.revision,
+      bundle?.metrics);
     resources.push(...lowering.resources);
     atlases.push(...lowering.atlases);
     commands.push(...lowering.commands);

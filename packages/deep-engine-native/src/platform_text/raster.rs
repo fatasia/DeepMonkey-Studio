@@ -3,13 +3,22 @@ use cosmic_text::{FontSystem, SwashCache};
 
 mod frozen_fonts;
 mod glyph_cache;
+mod measure;
+mod measure_atlas;
 mod shaping;
 mod styled;
 mod styled_types;
 pub use frozen_fonts::FrozenTextRasterizer;
+pub use measure::{
+    GLYPH_MEASURE_MAX_ATLAS_DIMENSION, GLYPH_MEASURE_MAX_CELLS, GLYPH_MEASURE_MAX_LINES,
+    GlyphMeasureLine, GlyphMeasureRequest, MeasuredGlyphLine, MeasuredGlyphPlacement,
+    MeasuredGlyphRun,
+};
 pub use styled_types::*;
 #[cfg(test)]
 mod frozen_tests;
+#[cfg(test)]
+mod measure_tests;
 
 pub use glyph_cache::{
     CachedTextRequest, GLYPH_CACHE_MAX_BYTES, GLYPH_CACHE_MAX_ENTRIES, GlyphCacheStats,

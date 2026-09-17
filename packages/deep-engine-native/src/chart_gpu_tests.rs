@@ -18,7 +18,7 @@ const HEIGHT: u32 = 64;
 #[path = "chart_axes_gpu_tests.rs"]
 mod axes_legend;
 #[path = "dashboard_composition_gpu_tests.rs"]
-mod dashboard_composition;
+pub(crate) mod dashboard_composition;
 #[path = "chart_heatmap_gpu_tests.rs"]
 mod heatmap;
 #[path = "chart_incremental_gpu_tests.rs"]

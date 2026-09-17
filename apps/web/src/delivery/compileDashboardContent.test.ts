@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { assertDashboardDocument, type DashboardDataWidgetNode, type DashboardDocument } from "@bim-studio/contracts";
+import { validateDeep2dDisplayList } from "@bim-studio/deep-engine";
 import { readFileSync } from "node:fs";
 import source from "../../../../packages/deep-engine/fixtures/dashboard-layout-source-v1.json";
 import { compileDashboardContent } from "./compileDashboardContent";
+import { filterGlyphBundle } from "./dashboardFilterGlyphs";
 
 function fixture() {
   const input: unknown = structuredClone(source);
@@ -166,5 +168,89 @@ describe("Dashboard text content lowering", () => {
     document.application.pages[0]!.nodes[0]!.frame.height = 20;
     const result = compileDashboardContent(document);
     expect(result.capabilityReport.objects[0]!.reasons.join()).toContain("内容框为空");
+  });
+});
+
+describe("Dashboard filter option glyph runs (P1-18)", () => {
+  const OPTIONS = ["华东", "华南", "华北"];
+
+  function filterFixture(patch: Partial<DashboardDataWidgetNode["widget"]> = {}) {
+    const document = fixture().document;
+    const node: DashboardDataWidgetNode = { id: "filter", kind: "data-widget", zIndex: 6, visible: true,
+      frame: { x: 20, y: 30, width: 234, height: 134 },
+      widget: { title: "区域筛选", key: "region", unit: "", type: "filter", options: [...OPTIONS],
+        filterMode: "select", textColor: "#eef2f4", fontSize: 14, ...patch } };
+    document.application.pages[0]!.nodes = [node];
+    return document;
+  }
+
+  const font = { kind: "font" as const, id: "font:filter-test:400:normal", revision: 1,
+    assetId: "filter-test", family: "Test Sans", weight: 400, style: "normal" as const };
+  /** 结构与 native measure 产物一致的合成实测:每簇 24px 前进、20×20 图集盒。 */
+  function measuredOptions(options: readonly string[]) {
+    const atlas = { width: 256, height: 64 };
+    return {
+      schema: "deep-engine.glyph-measure-result", schemaVersion: 1,
+      producer: "cosmic-text-0.19.0-frozen-v1", sourceSha256: "0".repeat(64),
+      atlas: { ...atlas, format: "r8unorm", dataBase64: "AAAA", coverageSha256: "0".repeat(64) },
+      lines: options.map(text => ({
+        text, layoutWidth: text.length * 24,
+        glyphs: Array.from(text).map((_char, index) => ({
+          cluster: index, source: [index * 24, 0, 20, 20] as const,
+          destination: [index * 24, 3, 20, 20] as const,
+        })),
+      })),
+    };
+  }
+  const bundle = (options: readonly string[] = OPTIONS) => filterGlyphBundle({
+    measure: measuredOptions(options), fontResource: font, fontSize: 14,
+    textColor: "#eef2f4", atlasId: "atlas:filter", atlasRevision: 3,
+  });
+
+  it("keeps option text deferred when no measured glyphs are injected", () => {
+    const result = compileDashboardContent(filterFixture());
+    expect(result.displayList.commands.filter(command => command.kind === "text")).toHaveLength(0);
+    expect(result.displayList.atlases ?? []).toHaveLength(0);
+    expect(result.capabilityReport.objects[0]!.compiledFields).not.toContain("widget.options.text");
+    expect(result.capabilityReport.objects[0]!.reasons.join()).toContain("等待字形图集通道(P1-18)");
+  });
+
+  it("compiles measured option rows into baked glyph runs end to end", () => {
+    const result = compileDashboardContent(filterFixture(), undefined, { filter: bundle() });
+    const textCommands = result.displayList.commands.filter(command => command.kind === "text");
+    expect(textCommands).toHaveLength(OPTIONS.length);
+    expect(textCommands[0]).toMatchObject({ text: "华东", atlasId: "atlas:filter",
+      fontId: font.id, fontSize: 14, baseline: "top",
+      bakedGlyphs: expect.arrayContaining([expect.objectContaining({ cluster: 0 })]) });
+    expect(result.displayList.atlases).toHaveLength(1);
+    expect(result.displayList.atlases?.[0]).toMatchObject({ id: "atlas:filter", kind: "glyph", format: "r8unorm" });
+    expect(result.displayList.resources.some(resource => resource.kind === "font" && resource.id === font.id)).toBe(true);
+    expect(result.capabilityReport.objects[0]!.compiledFields).toContain("widget.options.text");
+    expect(result.capabilityReport.objects[0]!.reasons.join()).toContain("实测字形运行");
+    // 编译函数内部已跑 validateDeep2dDisplayList;此处显式复核图集与命令互指。
+    const validation = validateDeep2dDisplayList(result.displayList);
+    expect(validation.valid).toBe(true);
+  });
+
+  it("defers only the rows that lack measured glyphs and reports them", () => {
+    const partial = measuredOptions(OPTIONS);
+    (partial.lines[1] as { glyphs: unknown[] }).glyphs = [];
+    const result = compileDashboardContent(filterFixture(), undefined,
+      { filter: filterGlyphBundle({ measure: partial, fontResource: font, fontSize: 14,
+        textColor: "#eef2f4", atlasId: "atlas:filter", atlasRevision: 3 }) });
+    const textCommands = result.displayList.commands.filter(command => command.kind === "text");
+    expect(textCommands.map(command => (command as { text: string }).text)).toEqual(["华东", "华北"]);
+    expect(result.capabilityReport.objects[0]!.reasons.join()).toContain("选项 1 缺实测字形度量");
+  });
+
+  it("rejects a metrics injection whose structure is not native-measured output", () => {
+    const broken = measuredOptions(OPTIONS) as Record<string, unknown>;
+    broken.schema = "deep-engine.text-raster-result";
+    expect(() => filterGlyphBundle({ measure: broken, fontResource: font, fontSize: 14,
+      textColor: "#eef2f4", atlasId: "atlas:filter", atlasRevision: 3 })).toThrow(/筛选字形度量被拒绝/);
+    const outOfAtlas = measuredOptions(OPTIONS);
+    outOfAtlas.lines[0]!.glyphs[0]!.source = [250, 0, 20, 20];
+    expect(() => filterGlyphBundle({ measure: outOfAtlas, fontResource: font, fontSize: 14,
+      textColor: "#eef2f4", atlasId: "atlas:filter", atlasRevision: 3 })).toThrow(/图集内正面积/);
   });
 });

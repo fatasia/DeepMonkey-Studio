@@ -10,7 +10,7 @@ pub mod layout;
 pub mod raster;
 mod raster_wire;
 pub use raster::{RasterizedText, TextRasterRequest, TextRasterizer};
-pub use raster_wire::{TEXT_RASTER_REQUEST_MAX_BYTES, rasterize_text_json};
+pub use raster_wire::{TEXT_RASTER_REQUEST_MAX_BYTES, measure_glyph_run_json, rasterize_text_json};
 pub mod ime_session;
 pub mod text_document;
 pub mod text_edit;

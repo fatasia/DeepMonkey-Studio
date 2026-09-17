@@ -25,6 +25,8 @@ mod deep2d_text_gpu_tests;
 #[cfg(test)]
 mod dpi_matrix_gpu_tests;
 mod events;
+#[cfg(test)]
+mod filter_glyph_gpu_tests;
 mod fog_cli;
 mod forward_targets;
 mod frame_bindings;
