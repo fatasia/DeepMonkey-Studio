@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Check frozen publication resource budgets before copying bytes, and reuse the content digest for catalog and manifest validation.
+
 - Resolve JT instance materials from their assembly paths, sharing geometry across material variants and retaining explicit missing or ambiguous provenance.
 
 - Verify presented Dashboard background atlases against frozen page ownership and pixel hashes without counting them as authored widgets or fonts.

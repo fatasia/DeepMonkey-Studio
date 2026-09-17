@@ -49,6 +49,41 @@ function options(overrides: Partial<PrepareDashboardPublicationFreezeOptions> = 
 }
 
 describe("dashboard publication freeze", () => {
+  it("rejects oversized, empty and non-byte resources before making a frozen copy", async () => {
+    for (const bytes of [new Uint8Array(64 * 1024 * 1024 + 1), new Uint8Array(), [1, 2, 3]]) {
+      const copy = vi.spyOn(Uint8Array, "from");
+      try {
+        const input = options({ data: [], resources: [image()],
+          readResource: async () => ({ revision: 2, bytes: bytes as Uint8Array }) });
+        await expect(prepareDashboardPublicationFreeze(input)).rejects.toThrow(/budget|invalid bytes/);
+        expect(copy).not.toHaveBeenCalled();
+        expect(input.readAuthority).toHaveBeenCalledTimes(1);
+      } finally { copy.mockRestore(); }
+    }
+  });
+
+  it("freezes only a byte view and checks the catalog digest of the isolated copy", async () => {
+    const backing = new Uint8Array(1024 * 1024), bytes = backing.subarray(100, 103);
+    bytes.set([7, 8, 9]);
+    const input = options({ data: [], resources: [image({ expectedSha256: hash(bytes) })],
+      readResource: async () => ({ revision: 2, bytes }) });
+    const candidate = await prepareDashboardPublicationFreeze(input);
+    expect(candidate.resources["image-main"]!.buffer.byteLength).toBe(3);
+    bytes[0] = 99;
+    expect(candidate.resources["image-main"]).toEqual(Uint8Array.of(7, 8, 9));
+    expect(candidate.manifest.resources[0]!.sha256).toBe(hash(Uint8Array.of(7, 8, 9)));
+    await expect(prepareDashboardPublicationFreeze(input)).rejects.toThrow(/deployed catalog/);
+  });
+
+  it("stops a cancelled resource read before copying its returned bytes", async () => {
+    const controller = new AbortController(), copy = vi.spyOn(Uint8Array, "from");
+    try {
+      const input = options({ data: [], resources: [image()], signal: controller.signal,
+        readResource: async () => { controller.abort(); return { revision: 2, bytes: new Uint8Array([1]) }; } });
+      await expect(prepareDashboardPublicationFreeze(input)).rejects.toMatchObject({ name: "AbortError" });
+      expect(copy).not.toHaveBeenCalled();
+    } finally { copy.mockRestore(); }
+  });
   it("freezes page-only images and retains page ownership during commit revalidation", async () => {
     const input = options({ resources: [image({ nodeIds: [], pageIds: ["page-main", "page-main"] })] });
     const candidate = await prepareDashboardPublicationFreeze(input);

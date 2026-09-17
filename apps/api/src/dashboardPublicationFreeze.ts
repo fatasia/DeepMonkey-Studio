@@ -131,15 +131,17 @@ export async function prepareDashboardPublicationFreeze(
     const resolved = await options.readResource(structuredClone(request), options.signal);
     options.signal?.throwIfAborted();
     if (resolved.revision !== request.revision) throw new DashboardPublicationStaleError(`Resource ${request.id} revision changed`);
+    if (!(resolved.bytes instanceof Uint8Array)) throw new Error(`Resource ${request.id} has invalid bytes`);
+    totalBytes = addBytes(totalBytes, resolved.bytes.byteLength, request.id);
     const bytes = Uint8Array.from(resolved.bytes);
-    if (request.expectedSha256 && sha256(bytes) !== request.expectedSha256)
+    const contentSha256 = sha256(bytes);
+    if (request.expectedSha256 && contentSha256 !== request.expectedSha256)
       throw new DashboardPublicationStaleError(`Resource ${request.id} differs from the deployed catalog`);
-    totalBytes = addBytes(totalBytes, bytes.byteLength, request.id);
     resources[request.id] = bytes;
     resourceManifest.push({ id: request.id, kind: request.kind, objectKey: request.objectKey, mime: request.mime,
       nodeIds: [...new Set(request.nodeIds)].sort(), revision: request.revision, bytes: bytes.byteLength,
       ...(request.pageIds?.length ? { pageIds: [...new Set(request.pageIds)].sort() } : {}),
-      sha256: sha256(bytes), ...(request.faceIndex === undefined ? {} : { faceIndex: request.faceIndex }),
+      sha256: contentSha256, ...(request.faceIndex === undefined ? {} : { faceIndex: request.faceIndex }),
       ...(request.license ? { licenseEvidence: request.license.evidence } : {}) });
   }
 

@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- C3资源预算前置：类型/单项/总量在冻结复制前校验，SHA复用一次；超额/空/错误类型/取消不复制，小视图隔离回归通过。4文件54项、API类型通过，不声称测得全链峰值内存。[证据](specs/dashboard-raster-copy-budget-2026-09-17.md)
+
 - 合拢回归：完整光栅24文件181项通过，Native字体未跳过；JT七文件27项独立复跑通过，两模型GLB哈希与报告一致。[主流程回归](specs/core-delivery-regression-2026-09-17.md)
 - `dfb38f0` 标题图表真实HTTP发布→三格式下载→离线实际打开证据已复核，ZIP/单EXE/运行包SHA逐项匹配；背景HTTP链另片在做，不混为已验。[标题交付](specs/dashboard-http-heading-delivery-2026-09-17.md)
 - `ddcadf0` 背景producer支持四fit、五定位、平铺，15项像素回归与四轮浏览器对照完成，奇数偏移平铺缺陷已修复；跨宿主像素等价仍deferred。[证据](specs/dashboard-page-background-producer-2026-09-17.md)
