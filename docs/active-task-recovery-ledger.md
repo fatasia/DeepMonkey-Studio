@@ -36,6 +36,8 @@
 
 - P0-01收官 `f0801cc`：筛选选项文字经字形运行进Native——新Rust子命令--measure-glyph-run复用FrozenTextRasterizer出确定性图集与placement度量（与渲染同引擎，两次重建SHA一致），compileDashboardContent按nodeId注入FilterGlyphBundle（deny-unknown桥），GPU读回消融对照RTX 4060实测四行51/58/51/69像素差；修复swash placement.top排版约定取负并加行框约束单测。native 328+126、web聚焦593全绿。P0-01全组件内容lowering均有真实编译与Native呈现证据。[报告](specs/deep2d-filter-glyph-run-2026-09-18.md)
 
+- P0-08矩阵第一版：6格（3fixture×dark/light）Native读回与Web宿主同fixture字节成对采集，全部SSIM≥0.9749/changed≤1.94%，无结构性缺失、letterbox全0；light格全为预期采样边缘，dark格95-97%为1px轮廓带+系统性色差定位到static图例卡底色337px（疑半透明混合色彩空间，bbox与crops已附待追）。阈值建议（SSIM≥0.970/changed≤3.01%/平坦区maxChannelError≤8）标"待V验收确认"；环境漂移（Native彩色像素129461 vs 132913疑驱动更新）已同日重采声明。未覆盖：headless与真实窗口DPI/ICC差异、输入/DPI/窄屏/page-1维度。脚本与matrix.json在scripts/与test-output/p08-matrix-20260918/。
+
 - 补漏 `9146d7f` 后的data_source.rs挂载单独fixup提交（泵切片add路径错误）。
 
 - 缺陷①根因修复 `2cb395d`：deep2d_scissor 的chunk_scissor用逐轴拉伸+零偏移，与shader/命中/相机的LetterboxMapping不一致——被node.clip收窄的chunk（标题+单位）在非等比窗口scissor错位整条被裁。修复改用同一映射并补字母箱错位测试钉；新增任意物理尺寸读回harness并修复bytes_per_row 256对齐缺口（1200宽曾静默全零）。修复前0/3220→后3220/3220，真实包标题3876px恢复，整帧diff仅2537px全落标题区；真实窗口截图「分区域出力/MW」可见；bin 126+GPU 45全过、clippy/fmt干净。缺陷③轴/图例确认为编译层缺口（present_chart不生成quad），归P0-01。[报告](specs/deep2d-title-letterbox-fix-2026-09-18.md)
