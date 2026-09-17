@@ -54,6 +54,8 @@
 
 - P3-01 delta合同：runtime_package/delta.rs+delta_manifest.rs——`deep-engine.runtime-package-delta` v1（base/target哈希+operations upsert/remove，复用diff.rs归并计划字节确定）；apply纯函数幂等短路→base错位→schema域→先删后插→入口依赖闭包点名→内容寻址终检→parse_and_validate兜底，产物=完整v2等价字节直进既有预热/present管道；十种结构化拒绝（迟到/丢包截断/条数不符/schema不兼容）保留旧版。16项测试含apply产物==全量v2解析（包哈希相等+残差diff空）。lib 341/bin 128/clippy/fmt绿。遗留：watch接线切片（热路径manifest嗅探+LKG基线取回）——apply_runtime_package_delta(lkg_bytes,manifest)一调即接。
 
+- P3-03：behavior_extension签名扩展——HMAC-SHA256对称发布方认证（RFC 4231四条官方向量+超块长密钥分支；非公钥签名已声明），注册管线单次原子判定（形状→台账前置→签名→ABI协商→能力门控→预算预留→入账，失败先于写台账无半状态），撤销终态黑名单（同id不可复活、在途命令settle得Cancelled），ExtensionHost<T>托管CommandBus门控submit（在册→授权→超时份额→容量→总线透传不重包），CompatibilityReport含缺失权限与逐维预算差额。零新增依赖（复用仓内手写SHA-256加finish_bytes/sha256_bytes）。21条测试全过；lib 362绿。遗留：公钥签名/跨信任域/独立分发打包、在册升级、TS对称面。
+
 - P1-03收尾 `72eefb0`：实证此前chunked_rows仅被自身测试引用（AppendWindow走手写整段Vec克隆）；接线后ChartRuntime持data_windows镜像（runtime态，ChartIR JSON合同不动），AppendWindow走Arc行块共享/整块回收/跨块边界仅首块make_mut写时复制，暂存至提交才落地（失败路径零污染），预算超限fail-closed带dataset id。单测8项（引用计数20 000行3块实证）+黑盒9项（与未分块参考逐值一致/evicted_rows证据）；lib 341、clippy/fmt全绿。性能对比归P1-04。
 
 - P1-23 TS侧消费：packages/deep-engine/src/adapterN1（9文件≤276行）——wire合同逐字段对齐adapter_n1/schema.rs，canonicalJson精确复刻serde_json+ryu-pretty（整数/浮点词法/kk布局/码点序键排序），SVG白名单MmLlHhVvZz禁曲线圆弧，四类适配（svg/富文本/图表扩展/动画ABI）；fail-closed三态与认证台账digest对拍——四类fixture digest黄金断言全中Native固化值（SVG 50b1cd80/富文本ad56df1c/图表5aab58a7/动画ffb61123），58/58测试+typecheck+runtimePurityGate绿。边界：渲染仍在Native，范围外元素blocked；TS计数上限收紧多拒方向安全；发现shaderPackage/hash.ts默认sort非字节序的潜在同族偏差（当前键全ASCII，建议另行排查）。
