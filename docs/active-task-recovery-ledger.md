@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 X/Deep2D 热同步呈现屏障（Codex）
+
+- 已完成切片：仅 X/Deep2D 更新复用真实呈现回滚守卫，Presented 后才发布 CPU 内容/资源快照/LKG；Skipped/Recover 单候选 100 ms 重试，新 generation 淘汰旧候选。
+- 实证：RTX 4060/Vulkan 零尺寸强制跳帧保留旧 display/hash，恢复尺寸重试后提交；合成与真实 ECharts 两种同窗路径通过，bin 119 passed/39 ignored、clippy/build/fmt/repository gate 通过。
+- 本轮待办：其他发布分支的呈现屏障、完整视觉和 P3 其余合同。[证据](specs/deep2d-p3-x-live-package-2026-09-17.md)
+
 ### 2026-09-17 中文提交轨迹 X/GPU 对照（Codex）
 
 - 已完成切片：冻结中文/combining/ZWJ 轨迹实际执行 N0 事务，三次 commit 经宿主 cosmic-text atlas→LPAC→GPU；RTX 4060/Vulkan 每帧 57,600 像素与 N0 直接绘制完全相同，三次旧 epoch 拒绝且旧帧不变。

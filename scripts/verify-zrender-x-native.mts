@@ -55,5 +55,6 @@ assert.equal(sameWindow.status, 0, `${sameWindow.error ?? ""}\n${sameWindow.stdo
 assert(sameWindow.stdout.includes("X same-window replacements=2 rejected=2 renderer=unchanged checkpoints=presented"));
 assert(sameWindow.stdout.includes("X live file replacements=2 checkpoints=presented invalid/ordinary=rejected"));
 assert(sameWindow.stdout.includes("X live faults: bad-json=retained ordinary=retained LKG=unchanged valid=recovered"));
+assert(sameWindow.stdout.includes("X live present barrier: skipped=old-content retry=presented checkpoint=committed"));
 await writeFile(path.join(output, "report.json"), JSON.stringify(reports, null, 2));
 console.log(JSON.stringify({ output, sameWindow: "two updates and two rejections verified", reports }, null, 2));

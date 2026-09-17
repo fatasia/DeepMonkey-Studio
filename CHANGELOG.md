@@ -10,6 +10,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Deep2D experimental compatibility
 
+- Publish display-only live updates after successful presentation; retain the old content on skipped frames and retry the latest candidate with bounded backoff.
+
 - Keep native file watchers alive while a source is missing and validate the first poll; verify X bad-file recovery without replacing the displayed frame or recovery checkpoint.
 
 - Watch explicit X package files with `--x-package-live`, reuse the active renderer for display-only changes, and evaluate candidates without holding the publication lock.

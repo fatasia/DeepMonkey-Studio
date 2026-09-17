@@ -205,7 +205,11 @@ impl ApplicationHandler<GpuEvent> for Probe {
         } else {
             matches!(event, GpuEvent::PackageOpened)
         };
-        self.app.user_event(event_loop, event);
+        if self.live && opened && self.stage == 0 {
+            live_fault::skip_and_retry(&mut self.app, event_loop, event);
+        } else {
+            self.app.user_event(event_loop, event);
+        }
         if !opened {
             return;
         }
@@ -217,7 +221,10 @@ impl ApplicationHandler<GpuEvent> for Probe {
         let current = self.app.content.active().deep2d.clone().unwrap();
         if self.stage < 2 {
             assert_ne!(current, self.before);
-            assert!(self.app.content.active().pending_x_lkg.is_some());
+            assert_eq!(
+                self.app.content.active().pending_x_lkg.is_some(),
+                !self.live
+            );
             self.present(event_loop);
             self.before = current;
         } else {

@@ -26,3 +26,11 @@
 同族排查修复 RuntimePackage/RenderPacket 首轮监听：不再将线程启动时的 metadata 当成已读取内容，防止初始加载与线程启动间的改写漏检；源暂时缺失也不再终止监听。首次轮询做内容校验，随后仍按 metadata 跳过未变文件。两项回归覆盖首次内容差异、缺失、恢复、相同内容与未变 metadata。
 
 补验结果：bin 119 passed / 39 ignored，clippy/build/fmt 通过；`verify-zrender-x-native.mts` 同时断言两个 GPU 同窗测试及坏写恢复见证，repository gate 通过。自动监听仍不保证检测到同时保持修改时间与大小不变的外部改写。完整浏览器/窗口视觉、任意 JS 适配器、远程同步与冲突处理未由本片证明。
+
+## 呈现后发布屏障
+
+修复显示层更新先切换活动内容、后等待 redraw 的时序：仅 X/Deep2D 资源变化现在复用既有 `present_deep2d_update` 回滚守卫，成功 Presented 后才推进内容、资源快照和恢复检查点。Skipped/Recover 保留一个待重试候选，100 ms 退避；新 generation 到达后丢弃旧重试候选，GPU 失败保留旧内容并记录拒绝。X 会话随已呈现模板切换。
+
+真实窗口测试在首个文件更新到达时把 renderer 设置为零尺寸，确认活动 display/packageHash 未变；恢复 960×540 后重试成功，检查点已提交。同一测试继续执行坏 JSON/普通包拒绝与有效包恢复。合成夹具与实际 ECharts 三包都通过，renderer ID 不变。bin 119 passed/39 ignored、两项显式 GPU、clippy/build/fmt 与 repository gate 通过。
+
+该屏障只覆盖仅 X/Deep2D 资源变化分支；RenderPacket/Shader 增量、全 renderer 换包与拖放仍保留各自原有发布协议，不由本段扩大保证。

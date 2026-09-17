@@ -20,10 +20,13 @@ use crate::{
     renderer::Renderer,
 };
 
+const PRESENT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
+
 pub(super) struct PackageLiveTransport {
     _watcher: super::watch_thread::WatchThread,
     mailbox: LatestMailbox<WatchedPackage>,
     published: Arc<RwLock<RuntimePackageSnapshot>>,
+    retry: Option<(std::time::Instant, u64, WatchedPackage)>,
 }
 
 pub(super) fn start(
@@ -45,6 +48,7 @@ pub(super) fn start(
         _watcher: watcher,
         mailbox,
         published,
+        retry: None,
     }
 }
 
@@ -65,6 +69,7 @@ pub(super) fn apply_latest(app: &mut NativeApp) {
     if app.packet_coalescer.submit(generation) == SubmitDecision::Discard {
         return;
     }
+    app.package_live_transport.as_mut().unwrap().retry = None;
     // 后台求值不持发布锁；候选可能基于旧快照，发布前按当前资源重新计划。
     if let Some(current) = app.content.active().runtime_package() {
         match deep_engine_native::runtime_package::plan_runtime_package_resource_diff(
@@ -158,25 +163,73 @@ fn apply_deep2d(app: &mut NativeApp, generation: u64, candidate: WatchedPackage)
         .expect("package live transport exists")
         .mailbox
         .clone();
-    let Some(stats) = mailbox.publish_if_latest(generation, || {
-        let stats = app
+    let Some(deferred) = mailbox.publish_if_latest(generation, || {
+        let outcome = app
             .renderer
             .as_mut()
             .expect("renderer stayed active while staging")
-            .publish_deep2d_update(staged);
-        publish(app, generation, candidate, None);
-        stats
+            .present_deep2d_update(staged);
+        if matches!(outcome, crate::events::RenderOutcome::Presented) {
+            publish(app, generation, candidate, None);
+            if let Some(notice) =
+                crate::runtime_package_startup::presented(app.content.active_mut())
+                && let Some(window) = &app.window
+            {
+                window.set_title(&format!("Deep Engine Native Viewer — {notice}"));
+            }
+            #[cfg(windows)]
+            super::x_runtime::presented(app);
+            None
+        } else {
+            Some((outcome, candidate))
+        }
     }) else {
         return;
     };
-    println!(
-        "Deep2D live cache: frame_layout_hits={} atlas_texture_hits={} vertex_buffer_hits={} atlas_evictions={} vertex_evictions={}",
-        stats.frame_layout_hits,
-        stats.atlas_texture_hits,
-        stats.vertex_buffer_hits,
-        stats.atlas_evictions,
-        stats.vertex_evictions
-    );
+    if let Some((outcome, candidate)) = deferred {
+        match super::dashboard::presented(app, outcome) {
+            Ok(false) => {
+                app.package_live_transport.as_mut().unwrap().retry = Some((
+                    std::time::Instant::now() + PRESENT_RETRY_DELAY,
+                    generation,
+                    candidate,
+                ))
+            }
+            Err(error) => {
+                app.packet_coalescer.failed(generation);
+                eprintln!("Deep2D live presentation rejected, previous content retained: {error}");
+            }
+            Ok(true) => unreachable!("presented candidates were committed above"),
+        }
+    }
+}
+
+pub(super) fn retry(
+    app: &mut NativeApp,
+    event_loop: &winit::event_loop::ActiveEventLoop,
+    now: std::time::Instant,
+) -> bool {
+    let Some(transport) = app.package_live_transport.as_mut() else {
+        return false;
+    };
+    if transport
+        .retry
+        .as_ref()
+        .is_some_and(|(wake, _, _)| *wake <= now)
+    {
+        let (_, generation, candidate) = transport.retry.take().unwrap();
+        apply_deep2d(app, generation, candidate);
+    }
+    if let Some((wake, _, _)) = app
+        .package_live_transport
+        .as_ref()
+        .and_then(|transport| transport.retry.as_ref())
+    {
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(*wake));
+        true
+    } else {
+        false
+    }
 }
 
 fn apply_incremental(app: &mut NativeApp, generation: u64, candidate: WatchedPackage) {

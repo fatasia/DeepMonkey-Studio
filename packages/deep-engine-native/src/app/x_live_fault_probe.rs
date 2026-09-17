@@ -4,6 +4,42 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static REJECTIONS: AtomicUsize = AtomicUsize::new(0);
 
+pub(super) fn skip_and_retry(app: &mut NativeApp, event_loop: &ActiveEventLoop, event: GpuEvent) {
+    let before = app.content.active().deep2d.clone();
+    let hash = app
+        .content
+        .active()
+        .runtime_package()
+        .unwrap()
+        .package_hash
+        .clone();
+    app.renderer
+        .as_mut()
+        .unwrap()
+        .resize(winit::dpi::PhysicalSize::new(0, 0))
+        .unwrap();
+    app.user_event(event_loop, event);
+    assert_eq!(app.content.active().deep2d, before);
+    assert_eq!(
+        app.content.active().runtime_package().unwrap().package_hash,
+        hash
+    );
+    assert!(app.content.active().pending_x_lkg.is_none());
+    let size = app.window.as_ref().unwrap().inner_size();
+    app.renderer.as_mut().unwrap().resize(size).unwrap();
+    assert!(!package_live::retry(
+        app,
+        event_loop,
+        Instant::now() + Duration::from_secs(1)
+    ));
+    assert_ne!(
+        app.content.active().runtime_package().unwrap().package_hash,
+        hash
+    );
+    assert!(app.content.active().pending_x_lkg.is_none());
+    println!("X live present barrier: skipped=old-content retry=presented checkpoint=committed");
+}
+
 pub(super) fn decode(
     bytes: &[u8],
     path: &std::path::Path,
