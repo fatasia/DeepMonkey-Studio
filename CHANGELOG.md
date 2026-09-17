@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Verify uploaded Dashboard backgrounds and chart headings through HTTP publication and actual ZIP, DMDA and standalone EXE playback, preserving page ownership and frozen package identity.
+
 - Check frozen publication resource budgets before copying bytes, and reuse the content digest for catalog and manifest validation.
 
 - Resolve JT instance materials from their assembly paths, sharing geometry across material variants and retaining explicit missing or ambiguous provenance.

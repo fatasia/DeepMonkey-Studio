@@ -30,6 +30,8 @@
 
 聚焦上传/HTTP/字体测试 6/6，专属严格 TypeScript 与 repository gate 通过。缺项目 404、非法图片扩展名 415、JSON/multipart 混用拒绝均覆盖。候选删除后三种下载均 404，客户端改写播放器路径请求 400。旧 `--chart-heading` 双图集真实下载/打开回归见 `test-output/dashboard-http-heading-regression-20260917-r1/`。
 
+主线独立复核：重新执行三份聚焦测试共6项及 `tsc -p scripts/tsconfig.dashboard-acceptance.json` 全部通过；直接读取磁盘 ZIP、独立 EXE、runtime-package.json 的 SHA-256，逐项匹配上表。复读 downloaded-open.json 确认 ZIP 的三帧 Vulkan 呈现及 DMDA 检查点证据；本次复核未重新启动整条 HTTP/播放器链。
+
 ## 范围
 
 本片不改视觉实现；背景双主题、多轮 CSS 对照与定位/平铺回归见[生成器验收](dashboard-page-background-producer-2026-09-17.md)。像素 SHA 是实际包内图集校验，不是 GPU framebuffer readback。系统登录、生产 PostgreSQL/MinIO、任意客户图、中文标题字体、跨宿主逐像素一致不在本次固定夹具证据内；作者图表仍为 degraded，交互与 `appearance.crossHost` 等原缺口未提升。
