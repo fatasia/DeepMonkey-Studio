@@ -38,6 +38,17 @@ export type {
   FrameStageTrace,
 } from "./frameScheduler.js";
 
+export { FrameLoop } from "./frameLoop.js";
+export type {
+  FrameLoopAdvanceResult,
+  FrameLoopAdvanceStatus,
+  FrameLoopDiagnostics,
+  FrameLoopMode,
+  FrameLoopStage,
+  FrameLoopStageContext,
+  FrameLoopStageTrace,
+} from "./frameLoop.js";
+
 export { BackendSwitchCoordinator } from "./backendSwitch.js";
 export type { BackendPreparation, BackendRevisionBarrier, BackendStateRevision,
   BackendSwitchResult, SwitchableBackend } from "./backendSwitch.js";
