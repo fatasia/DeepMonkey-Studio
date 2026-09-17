@@ -1,0 +1,12 @@
+.dashboard-static-root { min-height: 100dvh; color: var(--text); background: var(--bg-0); font-family: DashboardPackage, sans-serif; }
+.dashboard-static-root * { font-family: inherit; }
+.dashboard-static-root .dashboard-runtime-preview { z-index: auto; background: var(--bg-0); color: var(--text); }
+.dashboard-static-root .dashboard-runtime-back, .dashboard-static-root .playback-status, .dashboard-static-root .dashboard-runtime-controller { display: none; }
+.dashboard-static-tools { position: fixed; top: 16px; right: 16px; z-index: var(--layer-panel); display: flex; gap: 8px; }
+.dashboard-static-tools button, .dashboard-static-tools select { border: 1px solid var(--line); border-radius: 6px; padding: 8px 16px; background: var(--surface-1); color: var(--text); cursor: pointer; max-width: min(240px,55vw); }
+.dashboard-static-tools button:hover { background: var(--surface-2); }
+.dashboard-static-tools button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.dashboard-static-error { position: fixed; top: 64px; right: 16px; max-width: min(420px,calc(100vw - 32px)); padding: 12px; background: var(--surface-1); color: var(--danger); z-index: var(--layer-panel); }
+.dashboard-static-state { display: grid; place-content: center; min-height: 100dvh; padding: 24px; color: var(--text); background: var(--bg-0); }
+.dashboard-static-state p { max-width: 640px; overflow-wrap: anywhere; }
+@media print { .dashboard-static-tools, .dashboard-static-error { display: none; } }
