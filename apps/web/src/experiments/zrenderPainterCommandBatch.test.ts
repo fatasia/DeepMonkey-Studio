@@ -34,8 +34,8 @@ describe("ZRenderPainterCommandBatchExperiment", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.batch.epoch).toBe(1);
-    expect(result.batch.inputHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(result.batch.outputHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.batch.inputHash).toBe("ae87c2244ad8391a0ff60df6733b384492be36ae3d9864c8ad9ce6f03a17a9c0");
+    expect(result.batch.outputHash).toBe("bd879f1bb9133d78390306ed560df653b7af6dc4a7b7b46ed46d2ead76111011");
     expect(result.batch.retainedRectCount).toBe(3);
     expect(result.batch.commands.map(command => [command.op, command.id])).toEqual([
       ["upsert-rect", "bar.0"], ["upsert-rect", "bar.1"], ["upsert-rect", "bar.2"],

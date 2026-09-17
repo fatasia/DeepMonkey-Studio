@@ -83,7 +83,7 @@ P0 进入点：`apps/web/src/delivery/compileDashboardContent.ts`、`packages/de
 | ID | 剩余任务与完成条件 |
 | --- | --- |
 | P2-01 | **兼容开关和隔离边界**——**无脚本首切片已完成(2026-09-17，[spec](deep2d-p2-01-x-compat-isolation-2026-09-17.md))**：`compat_x` 明确 N0/X lane 与关闭开关；封闭调用树只读宿主注入的资源/时钟/种子化随机/事件，无 DOM/GPU/文件/网络对象；CPU work units、内存、调用深度、消息条数/字节、wall-clock 均硬拒绝；evaluate→publish 两阶段重查取消/迟到/旧 epoch。**剩余**：独立受限进程、进程崩溃/终止隔离与正式 IPC；本切片不运行真实 JS、不宣称 ZRender/ECharts 兼容。 |
-| P2-02 | **ZRender Painter 批量命令实验**：先验证真实依赖版本与现有工具，以动态bar为最小样例保留ECharts计算，输出每帧一批ChartCommandBatch；测数据、动画、tooltip、formatter、图片和错误恢复。 |
+| P2-02 | **ZRender Painter 批量命令实验——受限动态 bar 切片已完成(2026-09-17，[spec](deep2d-p2-02-zrender-painter-batch-experiment-2026-09-17.md))**：真实 ECharts/ZRender 6.1.0 无 DOM SVG SSR，同一实例输出 stable-id rect upsert/remove；输入与完整输出快照 SHA-256 已冻结并 10/10 双跑一致；预算/错误保持上一 epoch/hash。formatter、图片、tooltip、动画、非 rect displayable 继续明确 blocked，未认证完整 Painter/ECharts 生态；独立受限进程仍归 P2-01 剩余。 |
 | P2-03 | **中文富文本输入实验**：同一离线数据和事件轨迹覆盖文字布局、composition/commit、光标、formatter、动画及异常/超时，与N0/N1明确比较。 |
 | P2-04 | **认证与淘汰报告**：记录脚本/图表版本、输入/输出hash、预算、timeout和上一epoch保持。若依赖DOM仿真、每帧整图重建或批量输出不稳定，停止扩展回N0/N1；HTML rich text/ECharts-GL/扩展分别认证，未覆盖保持阻断。 |
 
