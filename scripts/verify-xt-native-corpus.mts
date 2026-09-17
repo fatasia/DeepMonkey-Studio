@@ -8,6 +8,9 @@ import { auditGlbGeometry } from '../apps/api/src/converterOutputAudit.js';
 // Research evidence only. No output from this runner is published as a ready model.
 const execute = promisify(execFile);
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+// Source metres are lowered to scene millimetres before tessellation. Keep
+// half of the fixed 0.01 mm witness budget for tessellation, not model-relative.
+const tessellation = { unit: 'mm', absoluteSag: 0.005, quality: 'plain' } as const;
 const [binaryArg, corpusArg, inventoryArg, outputArg] = process.argv.slice(2);
 if (!binaryArg || !corpusArg || !inventoryArg || !outputArg) {
   throw new Error('Usage: verify-xt-native-corpus <exe> <corpus> <inventory.json> <output-directory>');
@@ -38,7 +41,8 @@ for (const [index, item] of inventory.files.entries()) {
   const output = path.join(attemptDirectory, `${index}-${item.sha256.slice(0, 12)}.glb`);
   const started = performance.now();
   try {
-    const { stdout, stderr } = await execute(binary, [source, output, '--quality', 'plain'], {
+    const { stdout, stderr } = await execute(binary, [source, output, '--quality', tessellation.quality,
+      '--sag', String(tessellation.absoluteSag)], {
       timeout: 60_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
     });
     const geometry = await auditGlbGeometry(output);
@@ -76,6 +80,7 @@ if (sha256(await readFile(binary)) !== binarySha256) throw new Error('Converter 
 await writeFile(path.join(outputDirectory, 'evidence.json'), JSON.stringify({
   schemaVersion: 1, scope: 'local-native-conversion-experiment',
   binarySha256, inventorySha256: sha256(inventoryBytes),
+  tessellation,
   summary, results,
 }, null, 2) + '\n');
 console.log(JSON.stringify(summary));
