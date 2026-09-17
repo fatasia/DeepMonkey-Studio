@@ -1,6 +1,6 @@
 # Deep2D P2 兼容实验认证与淘汰报告
 
-日期：2026-09-17。状态：首版认证报告；只覆盖已实测切片，不代表完整脚本、ECharts 或富文本生态兼容。
+日期：2026-09-17（首版）；2026-09-18 v2 更新（见文末）。只覆盖已实测切片，不代表完整脚本、ECharts 或富文本生态兼容。
 
 ## 1. 判定
 
@@ -68,3 +68,14 @@ P2 当前证明的是三条可审计窄通道，不是兼容层。任一输入�
 - P2-02：formatter、图片、tooltip、动画、非 rect displayable。
 - P2-03：异常/超时宿主轨迹、X lane 对照、真实 Windows IME、bidi/fallback/换行像素。
 - 整体：P3 热同步与复用包 diff/watch/LKG 尚未开始；P2 报告完成不等于 Deep2D 收官。
+
+
+## v2 更新（2026-09-18）
+
+| 实验 | v2 结论 | 变化 |
+| --- | --- | --- |
+| X 兼容隔离 | **收口**：独立受限进程（单次 JSON IPC + XSF1 持续会话 + 零 capability LPAC + Job 限额 + portable 固定 worker）与崩溃/终止隔离（worker 自终止回收存活子孙树逐 PID 核验、TerminateProcess 后会话重建新 PID 旧 epoch 拒绝）均有实现与测试；正式 IPC 合同（envelope 版本/4MiB 界/未知字段与篡改拒绝/1025 次续期）在册。同时修正：此前记录的 compat_x_lpac 4 项 ACCESS_DENIED 为动态 CRT 覆盖静态探针的构建问题，按 spec 清单重编静态 CRT 后 4/4 通过——非环境限制。 | "独立受限进程与正式 IPC"从"可进入下一切片"转为已交付；剩余仅负向权限矩阵、产品接线、签名撤销 |
+| ZRender | **ChartIR rect 映射认证追加**：期望 bar rect 由 chart-web-geometry golden 同参照从 ChartIR 确定性推导，真实 ECharts 6.1.0 SSR 4 帧序列逐值对拍、双跑 hash 流一致；blocked 九项测试证据齐备；类目窗口语义差异由 lane 重投影承担，非对齐/越界 fail-closed。版本锁定 6.1.0 升级即重认证。 | 认证面从"输入输出快照冻结"扩展到"ChartIR→期望 rect 确定性映射" |
+| 中文富文本/IME | 离线轨迹既有；formatter/动画/异常超时宿主轨迹切片进行中（封闭枚举 formatter、动画 ABI 同源采样、异常注入保持上一有效状态）。真实系统 IME 与像素证据仍为人工/后续。 | — |
+
+v2 判定：三条窄通道的证据面较 v1 显著加深；P2 仍不是兼容层，profile 外输入一律拒绝或保持上一 epoch。
