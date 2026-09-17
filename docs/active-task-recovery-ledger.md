@@ -1,5 +1,23 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 3DM 非矩形圆柱裁剪（Codex）
+
+- 已完成切片：`ab86f96` 复用 trim 与源 NURBS 求值，按导数界切分裁剪三角；MechPartA 无缓存 10/41→14/41 面，源物理预算不变。
+- 331 个原 PointAt 对拍最大 0.002566736 mm，连续总界均 <0.008 mm；GLB 14 primitives/6118 vertices/8929 triangles，36 项测试、专项 tsc、repository gate 通过，独立 evidence/GLB 哈希已复核。
+- 本轮待办：MechPartA 27 个一般面、MechPartB 多段轴圆柱及一般面、跨面缝合、实例世界误差和产品视觉；保持部分预览。[证据](specs/industrial-3dm-nonrect-cylinder-2026-09-17.md)
+
+### 2026-09-17 Native 场景提交预检（Codex）
+
+- 已完成切片：资源修订与 GPU 缓存共享只读预检，检查预算/域数量/设备 epoch/身份冲突；拖放候选在预览绘制前检查，正式提交仍复核。
+- lib 310 passed/1 ignored、真机缓存 3 项及坐标切换 GPU 回归通过；预检不登记身份、不修改统计，1 byte/256 域/失效 epoch/修订冲突拒绝。clippy/fmt/repository gate 通过。
+- 本轮待办：三维 RenderPacket/Shader/完整 renderer 的 Presented 后发布与重试；本片仅补前置合同。[证据](specs/native-scene-commit-preflight-2026-09-17.md)
+
+### 2026-09-17 DE26/B04 Bloom 池接线复核（Codex）
+
+- 已完成切片：`0457ef6` 接入标准 Bloom 与 AuthorBloom 金字塔，提交后归还、失败销毁，history 独立；完整 B04 接线以该提交及其专项证据为准，覆盖前述 Bloom 待办。
+- 29 聚焦 passed/2 skipped，完整 3066 passed/41 skipped，typecheck/purity 通过；15 个 source-size 超限仍未解决。真机 120 帧 4228/4254 命中，峰值 59,389,832 bytes，GPU P95 0.851968 ms；AuthorBloom 6 个读回用例 0 mismatch。
+- 原始报告 SHA-256 `5dba61a3e14d7f6b5be84c526579f28d34f670810e7f844559f36de78112d850` 已复核；B05 总资源预算另行推进。[证据](specs/de26-b04-bloom-evidence-2026-09-17.json)
+
 ### 2026-09-17 X/Deep2D 热同步呈现屏障（Codex）
 
 - 已完成切片：仅 X/Deep2D 更新复用真实呈现回滚守卫，Presented 后才发布 CPU 内容/资源快照/LKG；Skipped/Recover 单候选 100 ms 重试，新 generation 淘汰旧候选。

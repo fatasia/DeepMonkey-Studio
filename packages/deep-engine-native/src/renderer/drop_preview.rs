@@ -29,6 +29,9 @@ impl Renderer {
                 environment.is_some(),
             )
             .await?;
+        if let StagedRenderPacketUpdate::Replace(candidate) = &scene {
+            self._scene_cache.validate_commit(&candidate.scene)?;
+        }
         // 换包重建已经按 (package_id, package_hash) 给出了 document_revision,
         // 直接把它作为资源代次:同包重复发布幂等,不同包整批失效。
         let context = content.deep2d.as_ref().map(|deep2d| {

@@ -58,6 +58,15 @@ fn nvidia_resident_budget_rejects_atomically_and_sweeps_dead_entries() {
         let scopes = push_scopes(&device);
         let candidate =
             crate::gpu_scene_cache_test_support::stage(&cache, &device, &queue, &layout, &source);
+        assert!(
+            cache
+                .validate_commit(&candidate)
+                .unwrap_err()
+                .contains("resident budget")
+        );
+        assert!(cache.domains.is_empty());
+        assert_eq!(cache.revisions.tracked_revisions(), 0);
+        assert_eq!(cache.live_resources(), Default::default());
         let error = match cache.commit(candidate) {
             Ok(_) => panic!("one-byte budget must reject every candidate"),
             Err(error) => error,
@@ -74,6 +83,34 @@ fn nvidia_resident_budget_rejects_atomically_and_sweeps_dead_entries() {
             crate::gpu_scene_cache_test_support::stage(&cache, &device, &queue, &layout, &source);
         let bytes = staged.new_resident_bytes;
         assert!(bytes > 0);
+        cache.validate_commit(&staged).unwrap();
+        cache.validate_commit(&staged).unwrap();
+        assert!(cache.domains.is_empty());
+        assert_eq!(cache.revisions.tracked_revisions(), 0);
+        assert_eq!(cache.live_bytes(), 0);
+        assert_eq!(cache.peak_live_bytes(), 0);
+        let saved_budget = cache.budget_bytes();
+        cache.budget_bytes = 1;
+        assert!(
+            cache
+                .validate_commit(&staged)
+                .unwrap_err()
+                .contains("resident budget")
+        );
+        cache.budget_bytes = saved_budget;
+        cache
+            .domains
+            .extend((0..256).map(|index| format!("occupied-{index}")));
+        assert!(
+            cache
+                .validate_commit(&staged)
+                .unwrap_err()
+                .contains("source-domain budget")
+        );
+        assert_eq!(cache.domains.len(), 256);
+        assert_eq!(cache.revisions.tracked_revisions(), 0);
+        cache.domains.clear();
+        cache.validate_commit(&staged).unwrap();
         let live = cache.commit(staged).unwrap();
         assert_eq!(cache.live_bytes(), bytes);
         assert!(cache.peak_live_bytes() >= bytes);
@@ -191,7 +228,9 @@ fn nvidia_packet_cache_reuses_replaces_rolls_back_and_releases() {
         assert_eq!(cache.live_resources(), Default::default());
 
         let stale = stage(&cache, &device, &queue, &layout, &source);
+        cache.validate_commit(&stale).unwrap();
         cache.reset(&device, 42);
+        assert!(cache.validate_commit(&stale).unwrap_err().contains("stale"));
         let error = match cache.commit(stale) {
             Ok(_) => panic!("stale cache candidate was accepted"),
             Err(error) => error,

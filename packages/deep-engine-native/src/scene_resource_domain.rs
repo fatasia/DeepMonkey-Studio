@@ -62,6 +62,13 @@ impl SceneResourceDomain {
     }
 
     pub fn commit(&mut self, ticket: SceneRevisionTicket) -> Result<(), String> {
+        self.validate_commit(&ticket)?;
+        self.revisions.extend(ticket.additions);
+        Ok(())
+    }
+
+    /// 只核验发布条件，不登记候选资源；允许宿主在呈现前预检。
+    pub fn validate_commit(&self, ticket: &SceneRevisionTicket) -> Result<(), String> {
         if ticket.epoch != self.epoch {
             return Err(format!(
                 "native scene candidate epoch {} is stale; current device epoch is {}",
@@ -81,7 +88,6 @@ impl SceneResourceDomain {
         if self.revisions.len().saturating_add(new) > 65_536 {
             return Err("native scene revision-identity budget exhausted; reopen Viewer".into());
         }
-        self.revisions.extend(ticket.additions);
         Ok(())
     }
 
@@ -140,13 +146,36 @@ mod tests {
         let mut domain = SceneResourceDomain::new(1);
         let a = domain.stage(&manifest("same", "a")).unwrap();
         let b = domain.stage(&manifest("same", "b")).unwrap();
+        domain.validate_commit(&a).unwrap();
+        domain.validate_commit(&b).unwrap();
+        assert_eq!(domain.tracked_revisions(), 0);
         domain.commit(a).unwrap();
+        assert!(domain.validate_commit(&b).unwrap_err().contains("changed"));
         assert!(domain.commit(b).is_err());
+        assert_eq!(domain.tracked_revisions(), 1);
         assert!(domain.stage(&manifest("same", "a")).is_ok());
+    }
+    #[test]
+    fn commit_preflight_does_not_reserve_revisions_or_survive_epoch_reset() {
+        let mut domain = SceneResourceDomain::new(1);
+        let candidate = domain.stage(&manifest("new", "a")).unwrap();
+        domain.validate_commit(&candidate).unwrap();
+        domain.validate_commit(&candidate).unwrap();
+        assert_eq!(domain.tracked_revisions(), 0);
+        domain.reset(2);
+        assert!(
+            domain
+                .validate_commit(&candidate)
+                .unwrap_err()
+                .contains("stale")
+        );
+        assert!(domain.commit(candidate).unwrap_err().contains("stale"));
+        assert_eq!(domain.tracked_revisions(), 0);
     }
     #[test]
     fn retained_revision_identity_budget_is_bounded_without_forgetting_old_content() {
         let mut domain = SceneResourceDomain::new(1);
+        let candidate = domain.stage(&manifest("new", "a")).unwrap();
         for i in 0..65_536 {
             domain.revisions.insert(
                 RevisionKey {
@@ -165,6 +194,13 @@ mod tests {
         );
         assert!(domain.stage(&manifest("0", "a")).is_ok());
         assert!(domain.stage(&manifest("0", "b")).is_err());
+        assert!(
+            domain
+                .validate_commit(&candidate)
+                .unwrap_err()
+                .contains("budget")
+        );
+        assert!(domain.commit(candidate).unwrap_err().contains("budget"));
         assert_eq!(domain.tracked_revisions(), 65_536);
     }
 }

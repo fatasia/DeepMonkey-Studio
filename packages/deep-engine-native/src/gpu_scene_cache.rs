@@ -178,28 +178,14 @@ impl GpuSceneCache {
     }
 
     pub fn commit(&mut self, candidate: GpuSceneCandidate) -> Result<GpuScene, String> {
-        if !self.domains.contains(&candidate.domain) && self.domains.len() >= 256 {
-            return Err("native scene source-domain budget exhausted; reopen Viewer".into());
-        }
-        if candidate.epoch != self.epoch {
-            return Err("native scene candidate belongs to a stale GPU device epoch".into());
-        }
-        // Garbage-collect dead entries first so the budget projection only
-        // counts bytes a renderer could still reach.
+        self.validate_commit(&candidate)?;
+        // 验证成功后才回收过期条目或修改资源身份。
         self.geometries
             .retain(|_, (weak, _)| weak.strong_count() > 0);
         self.textures.retain(|_, (weak, _)| weak.strong_count() > 0);
         self.materials.retain(|_, value| value.strong_count() > 0);
         self.instances
             .retain(|_, (weak, _)| weak.strong_count() > 0);
-        let retained_live = self.recompute_live_bytes();
-        let projected = retained_live.saturating_add(candidate.new_resident_bytes);
-        if projected > self.budget_bytes {
-            return Err(format!(
-                "native scene candidate exceeds the resident budget: needs {projected} bytes                  (live {retained_live} + candidate {}), budget {}",
-                candidate.new_resident_bytes, self.budget_bytes
-            ));
-        }
         self.revisions.commit(candidate.revisions)?;
         self.domains.insert(candidate.domain.clone());
         self.active_domain = candidate.domain;
@@ -231,6 +217,25 @@ impl GpuSceneCache {
         self.fallbacks = Arc::downgrade(&candidate.fallbacks);
         self.recompute_live_bytes();
         Ok(candidate.scene)
+    }
+
+    /// 不改缓存、资源修订或统计；提交仍复核，不能跨异步间隙当作授权票据。
+    pub fn validate_commit(&self, candidate: &GpuSceneCandidate) -> Result<(), String> {
+        if !self.domains.contains(&candidate.domain) && self.domains.len() >= 256 {
+            return Err("native scene source-domain budget exhausted; reopen Viewer".into());
+        }
+        if candidate.epoch != self.epoch {
+            return Err("native scene candidate belongs to a stale GPU device epoch".into());
+        }
+        let retained_live = self.current_live_bytes();
+        let projected = retained_live.saturating_add(candidate.new_resident_bytes);
+        if projected > self.budget_bytes {
+            return Err(format!(
+                "native scene candidate exceeds the resident budget: needs {projected} bytes                  (live {retained_live} + candidate {}), budget {}",
+                candidate.new_resident_bytes, self.budget_bytes
+            ));
+        }
+        self.revisions.validate_commit(&candidate.revisions)
     }
 
     pub fn live_resources(&self) -> GpuSceneCacheLive {
