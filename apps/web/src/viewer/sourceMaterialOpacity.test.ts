@@ -31,4 +31,25 @@ describe("source material opacity", () => {
     applySourceMaterialOpacity(first, NaN);
     expect(first.opacity).toBe(0.3);
   });
+  it("only invalidates the shader when the transparency mode changes", () => {
+    const material = new MeshStandardMaterial();
+    const version = material.version;
+    applySourceMaterialOpacity(material, 1);
+    expect(material.version).toBe(version);
+    applySourceMaterialOpacity(material, 0.5);
+    expect(material.version).toBe(version + 1);
+    for (let i = 0; i < 64; i++) applySourceMaterialOpacity(material, 0.25);
+    expect(material.version).toBe(version + 1);
+    applySourceMaterialOpacity(material, 1);
+    expect(material.version).toBe(version + 2);
+  });
+  it("never enables depth writes disabled by the imported material", () => {
+    const material = new MeshStandardMaterial({ depthWrite: false });
+    for (const factor of [0, 0.5, 1, Infinity, -Infinity]) {
+      applySourceMaterialOpacity(material, factor);
+      expect(material.depthWrite).toBe(false);
+    }
+    expect(material.opacity).toBe(1);
+    expect(material.transparent).toBe(false);
+  });
 });

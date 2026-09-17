@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Preserve imported material alpha and depth-write policy when restoring scene opacity; repeated shared-material updates do not compound opacity or repeatedly invalidate shaders.
+
 - Verify uploaded Dashboard backgrounds and chart headings through HTTP publication and actual ZIP, DMDA and standalone EXE playback, preserving page ownership and frozen package identity.
 
 - Check frozen publication resource budgets before copying bytes, and reuse the content digest for catalog and manifest validation.
