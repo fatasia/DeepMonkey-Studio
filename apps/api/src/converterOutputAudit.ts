@@ -50,11 +50,30 @@ export async function auditGlbGeometry(filePath: string): Promise<GlbGeometryEvi
         primitiveCount += 1;
         const positions = primitive.getAttribute("POSITION");
         if (!positions || positions.getCount() === 0) throw new Error("存在缺少 POSITION 顶点的图元");
+        if (positions.getType() !== "VEC3") throw new Error("POSITION 必须是三分量坐标");
+        const coordinates = positions.getArray();
+        if (!coordinates || coordinates.some((value) => !Number.isFinite(value))) {
+          throw new Error("POSITION 包含非有限坐标");
+        }
         vertexCount += positions.getCount();
-        const elementCount = primitive.getIndices()?.getCount() ?? positions.getCount();
+        const indices = primitive.getIndices();
+        if (indices) {
+          const values = indices.getArray();
+          if (indices.getType() !== "SCALAR" || indices.getNormalized() || !values
+            || !(values instanceof Uint8Array || values instanceof Uint16Array || values instanceof Uint32Array)) {
+            throw new Error("图元索引必须是未归一化的无符号整数标量");
+          }
+          if (values.some((value) => value >= positions.getCount())) throw new Error("图元索引超出 POSITION 顶点范围");
+        }
+        const elementCount = indices?.getCount() ?? positions.getCount();
         const mode = primitive.getMode();
-        if (mode === 4) triangleCount += Math.floor(elementCount / 3);
-        else if (mode === 5 || mode === 6) triangleCount += Math.max(0, elementCount - 2);
+        if (mode === 4) {
+          if (elementCount === 0 || elementCount % 3 !== 0) throw new Error("三角图元的元素数量必须为正的 3 倍数");
+          triangleCount += elementCount / 3;
+        } else if (mode === 5 || mode === 6) {
+          if (elementCount < 3) throw new Error("三角带或扇形图元至少需要 3 个元素");
+          triangleCount += elementCount - 2;
+        }
       }
     }
     if (meshes.length === 0 || primitiveCount === 0 || triangleCount === 0) {
