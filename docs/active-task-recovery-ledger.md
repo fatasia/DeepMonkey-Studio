@@ -1787,3 +1787,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成 Web/发布数据流：复用 `ApplicationPlaybackState` 与 `applyDashboardFilters`，不建第三套 store。发布页从冻结文档的可见 select 首项确定性初始化，修复“界面显示首项、数据却未过滤”；嵌套 `filterField` 生效，缺字段零匹配，隐藏筛选不消费；表格零行显示既有空态，图表保留空轴。
 - 验证：Web typecheck 通过；合并聚焦 5 文件 34 项通过；diff check 通过。未改 CSS、布局或设计令牌。
 - 边界：Native/组合宿主尚未消费命令，编译 runtime node 外层 hit 仍归 G01；未跑 GPU/浏览器双轮视觉闭环，G02 整卡继续`本轮待办`。alpha-zero path 命中依赖既有 Deep2D fill 几何+command opacity 合同，当前无独立 hit-only primitive。[spec](specs/de26-g02-filter-compile-plan-2026-09-17.md)
+
+### 2026-09-17 工业格式 X_T：真实语料与纯 Rust 解析路线复核（Codex）
+
+- 已完成资源自恢复：在官方样本端点受 Cloudflare 限制后转用制造商公开分发源，安全解包并逐文件哈希 109 个真实 X_T；产品结构探测 109/109 识别。
+- 已完成开源构建：`parasolid-core` release 构建成功，159 项测试通过；四类真实 schema 精确失败为 `schema.missing_base_schema`，不再把问题记成 SDK、许可或资源阻塞。
+- 已完成第二条纯 Rust 路线复测：Apache-2.0 研究解析器补单字节元数据读取并改为 fail-closed；真实 corpus 完整解析 49/109（V21 44、V30 5），其余 60 个按 V9/V21/V30 schema 缺口精确归档，禁止发布部分几何。
+- 下一片：冻结 49 个成功样本的原生 Worker/profile/QualityReport，再补 V21 差异流；全程本地离线、自研/开源，不引入外部商业 SDK、商业转换器或许可证服务。[报告](specs/industrial-format-plan01-02-lock-2026-09-16.md)
