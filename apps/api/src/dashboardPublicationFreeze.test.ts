@@ -49,6 +49,26 @@ function options(overrides: Partial<PrepareDashboardPublicationFreezeOptions> = 
 }
 
 describe("dashboard publication freeze", () => {
+  it("freezes page-only images and retains page ownership during commit revalidation", async () => {
+    const input = options({ resources: [image({ nodeIds: [], pageIds: ["page-main", "page-main"] })] });
+    const candidate = await prepareDashboardPublicationFreeze(input);
+    expect(candidate.manifest.resources[0]).toMatchObject({ nodeIds: [], pageIds: ["page-main"] });
+    await assertDashboardPublicationFreezeCommit(candidate, input);
+    expect(input.readResource).toHaveBeenLastCalledWith(expect.objectContaining({ nodeIds: [], pageIds: ["page-main"] }), undefined);
+    const changed = structuredClone(candidate);
+    (changed.manifest.resources[0]!.pageIds as string[])[0] = "other";
+    await expect(assertDashboardPublicationFreezeCommit(changed, input)).rejects.toThrow(/modified/);
+  });
+
+  it("rejects unknown page owners, ownerless images and page-owned fonts before reading bytes", async () => {
+    for (const resource of [image({ nodeIds: [], pageIds: ["other"] }), image({ nodeIds: [], pageIds: [] }),
+      font({ nodeIds: [], pageIds: ["page-main"] })]) {
+      const input = options({ resources: [resource] });
+      await expect(prepareDashboardPublicationFreeze(input)).rejects.toThrow(/consumer/);
+      expect(input.readResource).not.toHaveBeenCalled();
+    }
+  });
+
   it("binds the published application revision and hashes resolved data, font and image bytes", async () => {
     const input = options(), candidate = await prepareDashboardPublicationFreeze(input);
     expect(input.readAuthority).toHaveBeenCalledTimes(2);

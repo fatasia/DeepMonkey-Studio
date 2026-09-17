@@ -27,13 +27,22 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
     const document = published({ ...publication, publicationId: publication.id, entryPageId });
     const assets = store.listAssets(publication.projectId);
     const requests = new Map<string, DashboardFrozenResourceRequest>();
+    for (const page of document.application.pages) {
+      const url = page.appearance?.backgroundImageUrl;
+      if (!url) continue;
+      const asset = assets.find(asset => asset.url === url);
+      if (!asset) throw new Error(`Published page background has no project asset: ${page.id}`);
+      const value = imageRequest(asset, publication.projectId, []);
+      const existing = requests.get(value.id);
+      requests.set(value.id, { ...value, pageIds: [...existing?.pageIds ?? [], page.id] });
+    }
     for (const node of document.application.pages.flatMap(page => page.nodes)) {
       if (node.kind !== "data-widget" || node.widget.type !== "image") continue;
       const asset = node.widget.assetId ? assets.find(asset => asset.id === node.widget.assetId)
         : assets.find(asset => asset.url === node.widget.imageUrl);
       if (!asset) throw new Error(`Published image has no project asset: ${node.id}`);
       if (node.widget.imageUrl && node.widget.imageUrl !== asset.url) throw new Error("Published image ID and URL disagree");
-      const value = imageRequest(asset, publication.projectId, node.id);
+      const value = imageRequest(asset, publication.projectId, [node.id]);
       const existing = requests.get(value.id);
       requests.set(value.id, existing ? { ...existing, nodeIds: [...existing.nodeIds, node.id] } : value);
     }
@@ -73,6 +82,7 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
       }
       const current = imageRequests(publication, authority.entryPageId).find(item => item.id === request.id);
       if (!current || current.objectKey !== request.objectKey || current.kind !== request.kind || current.mime !== request.mime
+        || [...current.pageIds ?? []].sort().join("\0") !== [...request.pageIds ?? []].sort().join("\0")
         || [...current.nodeIds].sort().join("\0") !== [...request.nodeIds].sort().join("\0"))
         throw new Error("Dashboard resource no longer belongs to this publication");
       return current.revision;
@@ -80,7 +90,7 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
   };
 }
 
-function imageRequest(asset: ProjectAssetRecord, projectId: string, nodeId: string): DashboardFrozenResourceRequest {
+function imageRequest(asset: ProjectAssetRecord, projectId: string, nodeIds: readonly string[]): DashboardFrozenResourceRequest {
   const prefix = `/assets/projects/${projectId}/assets/${asset.id}/`;
   if (asset.projectId !== projectId || asset.kind !== "image" || !asset.mimeType.startsWith("image/")
     || !asset.url.startsWith(prefix)) throw new Error("Dashboard image is outside the published project");
@@ -89,5 +99,5 @@ function imageRequest(asset: ProjectAssetRecord, projectId: string, nodeId: stri
     throw new Error("Dashboard image object key is not canonical");
   const revision = Date.parse(asset.updatedAt);
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("Dashboard asset revision is invalid");
-  return { id: asset.id, kind: "image", objectKey: key, mime: asset.mimeType, nodeIds: [nodeId], revision };
+  return { id: asset.id, kind: "image", objectKey: key, mime: asset.mimeType, nodeIds, revision };
 }

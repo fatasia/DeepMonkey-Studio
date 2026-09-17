@@ -36,6 +36,33 @@ function fixture() {
 }
 
 describe("published Dashboard production closure", () => {
+  it("deduplicates page and widget image consumers and rechecks page binding", async () => {
+    const f = fixture();
+    const page = f.publication.document.pages[0]!;
+    page.appearance = { backgroundImageUrl: f.assets[0]!.url };
+    const requests = await f.closure.derive(f.publication, authority.entryPageId);
+    expect(requests.resources).toHaveLength(1);
+    expect(requests.resources[0]).toMatchObject({ nodeIds: ["image"], pageIds: [page.id] });
+    expect(await f.closure.resourceRevision(authority, requests.resources[0]!)).toBe(Date.parse(now));
+    delete page.appearance.backgroundImageUrl;
+    await expect(f.closure.resourceRevision(authority, requests.resources[0]!)).rejects.toThrow(/belongs/);
+  });
+
+  it("captures page-only backgrounds and rejects external or missing assets", async () => {
+    const f = fixture();
+    const page = f.publication.document.pages[0]!;
+    page.nodes = [];
+    page.appearance = { backgroundImageUrl: f.assets[0]!.url };
+    f.publication.document.pages.push({ ...structuredClone(page), id: "page-secondary" });
+    const result = await f.closure.derive(f.publication, authority.entryPageId);
+    expect(result.resources).toHaveLength(1);
+    expect(result.resources[0]).toMatchObject({ nodeIds: [], pageIds: [page.id, "page-secondary"] });
+    for (const url of ["https://example.test/background.png", "/assets/projects/other/assets/image/a.png"]) {
+      page.appearance.backgroundImageUrl = url;
+      await expect(f.closure.derive(f.publication, authority.entryPageId)).rejects.toThrow(/no project asset/);
+    }
+  });
+
   it("selects the saved image object and maps its timestamp revision", async () => {
     const f = fixture(), result = await f.closure.derive(f.publication, authority.entryPageId);
     expect(result.resources).toEqual([{ id: "image-asset", kind: "image", nodeIds: ["image"],

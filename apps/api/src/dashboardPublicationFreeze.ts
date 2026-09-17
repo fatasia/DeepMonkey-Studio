@@ -38,6 +38,8 @@ export interface DashboardFrozenResourceRequest {
   readonly objectKey: string;
   readonly mime: string;
   readonly nodeIds: readonly string[];
+  /** Page-owned images; omitted for existing node-only resources. */
+  readonly pageIds?: readonly string[];
   readonly revision: number;
   /** Optional deployment/catalog identity, checked against the bytes actually frozen. */
   readonly expectedSha256?: string;
@@ -58,6 +60,7 @@ export interface DashboardPublicationFreezeManifest {
   readonly resources: readonly {
     readonly id: string; readonly kind: "font" | "image"; readonly objectKey: string;
     readonly mime: string; readonly nodeIds: readonly string[]; readonly revision: number;
+    readonly pageIds?: readonly string[];
     readonly bytes: number; readonly sha256: string; readonly faceIndex?: number;
     readonly licenseEvidence?: string;
   }[];
@@ -101,6 +104,7 @@ export async function prepareDashboardPublicationFreeze(
   assertAuthority(state, options.expected);
   const document = createDashboardDocument(state.publication.document, options.entryPageId);
   const nodeIds = new Set(document.application.pages.flatMap((page) => page.nodes.map((node) => node.id)));
+  const pageIds = new Set(document.application.pages.map(page => page.id));
   const dataRequests = sortedUnique(options.data, "data binding");
   const resourceRequests = sortedUnique(options.resources, "resource");
   const data: Record<string, unknown> = {}, resources: Record<string, Uint8Array> = {};
@@ -123,7 +127,7 @@ export async function prepareDashboardPublicationFreeze(
 
   for (const request of resourceRequests) {
     options.signal?.throwIfAborted();
-    assertResourceRequest(request, options.expected.projectId, nodeIds);
+    assertResourceRequest(request, options.expected.projectId, nodeIds, pageIds);
     const resolved = await options.readResource(structuredClone(request), options.signal);
     options.signal?.throwIfAborted();
     if (resolved.revision !== request.revision) throw new DashboardPublicationStaleError(`Resource ${request.id} revision changed`);
@@ -134,6 +138,7 @@ export async function prepareDashboardPublicationFreeze(
     resources[request.id] = bytes;
     resourceManifest.push({ id: request.id, kind: request.kind, objectKey: request.objectKey, mime: request.mime,
       nodeIds: [...new Set(request.nodeIds)].sort(), revision: request.revision, bytes: bytes.byteLength,
+      ...(request.pageIds?.length ? { pageIds: [...new Set(request.pageIds)].sort() } : {}),
       sha256: sha256(bytes), ...(request.faceIndex === undefined ? {} : { faceIndex: request.faceIndex }),
       ...(request.license ? { licenseEvidence: request.license.evidence } : {}) });
   }
@@ -174,6 +179,7 @@ export async function assertDashboardPublicationFreezeCommit(candidate: Dashboar
     options.signal?.throwIfAborted();
     const request: DashboardFrozenResourceRequest = { id: item.id, kind: item.kind, objectKey: item.objectKey,
       mime: item.mime, nodeIds: item.nodeIds, revision: item.revision,
+      ...(item.pageIds ? { pageIds: item.pageIds } : {}),
       ...(item.faceIndex === undefined ? {} : { faceIndex: item.faceIndex }),
       ...(item.licenseEvidence === undefined ? {} : { license: { redistributable: true, evidence: item.licenseEvidence } }) };
     const resolved = await options.readResource(request, options.signal);
@@ -213,12 +219,13 @@ function assertPublishedDocument(state: DashboardPublicationAuthorityState, expe
   }
 }
 
-function assertResourceRequest(request: DashboardFrozenResourceRequest, projectId: string, nodeIds: ReadonlySet<string>): void {
+function assertResourceRequest(request: DashboardFrozenResourceRequest, projectId: string, nodeIds: ReadonlySet<string>, pageIds: ReadonlySet<string>): void {
   if (request.expectedSha256 !== undefined && !HASH.test(request.expectedSha256)) throw new Error(`Resource ${request.id} has an invalid expected hash`);
   if (!validId(request.id) || !request.objectKey.startsWith(`projects/${projectId}/`) || /[?#]/.test(request.objectKey)
     || request.objectKey.split("/").some((part) => !validObjectSegment(part))) throw new Error(`Resource ${request.id} has an invalid private object key`);
-  if (!Number.isSafeInteger(request.revision) || request.revision < 1 || !request.nodeIds.length
-    || request.nodeIds.some((id) => !nodeIds.has(id))) throw new Error(`Resource ${request.id} has an invalid revision or consumer`);
+  if (!Number.isSafeInteger(request.revision) || request.revision < 1 || !(request.nodeIds.length || request.pageIds?.length)
+    || request.nodeIds.some((id) => !nodeIds.has(id)) || request.pageIds?.some(id => !pageIds.has(id))
+    || (request.kind !== "image" && request.pageIds?.length)) throw new Error(`Resource ${request.id} has an invalid revision or consumer`);
   if ((request.kind === "font" && !/^font\//.test(request.mime)) || (request.kind === "image" && !/^image\//.test(request.mime)))
     throw new Error(`Resource ${request.id} MIME does not match its kind`);
   if (request.kind === "font" && (!request.license?.redistributable || !request.license.evidence

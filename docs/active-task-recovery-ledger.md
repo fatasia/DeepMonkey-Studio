@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 页面背景图C3资源绑定：可选pageIds参与冻结摘要和提交复查，多页/组件共图去重，拒绝外部URL与跨项目资源；51项回归与API类型通过。仅资源链路，原生背景图绘制仍deferred。[证据与下一步](specs/dashboard-page-image-freeze-2026-09-17.md)
+
 - 下载取消前置：冻结清单返回后立即检查取消，避免断连后继续创建/序列化归档；DMDA/ZIP/EXE真实HTTP断连3项加原下载回归共35项通过，API类型检查通过。[证据](specs/dashboard-download-cancellation-2026-09-17.md)
 
 - 3DM `9270d5f` 独立复核：平面局部重三角化修复edge60，共边60→59；41/41面、7自缝和旧顶点保持。主线复跑4项含真实整件/失败回退全部通过，重生成GLB与证据SHA逐字匹配，228源PointAt最大3.978e-15mm，仍为部分预览。[证据](specs/industrial-3dm-local-plane-patch-2026-09-17.md)
