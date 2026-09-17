@@ -13,11 +13,13 @@
     "../apps/api/src/**/*.d.ts",
     "../apps/api/src/system.ts",
     "verify-dashboard-published-portable.mts",
+    "verify-dashboard-multicomponent-portable.mts",
     "lib/dashboardAcceptanceHttp.mts",
     "lib/dashboardAcceptanceHttp.test.mts",
     "lib/dashboardBackgroundUpload.test.mts",
     "lib/dashboardPublishedHeadingFixture.mts",
     "lib/dashboardPublishedHeadingFixture.test.mts",
+    "lib/dashboardMulticomponentFixture.mts",
     "lib/dashboardDownloadedOpen.mts"
   ],
   "exclude": []

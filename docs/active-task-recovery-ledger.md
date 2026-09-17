@@ -16,6 +16,12 @@
 
 - P0-08 Native读回第一格：producer_package_renders_real_pixels 真机GPU读回组合包双页（960×540 Rgba8UnormSrgb，page0=132,913彩色像素），RGBA原始字节+sharp同尺寸转PNG人工复核双仪表盘/图例卡/柱条渲染正确；fixture与身份golden同源。跨端浏览器对比格待C1 Web宿主组装，不用author截图冒充。[报告](specs/dashboard-pixel-matrix-native-readback-2026-09-17.md)
 
+- P1-13受控HTTP Transport `0ab976e`：std::net零新依赖实现HTTP/1.1请求-响应（Transport合同不变，响应体经take_response由宿主泵入）；chunked/无长度/重定向/非2xx/头体预算/超时全fail-closed，TLS与订阅明示后续。8项真实回环socket测试，lib全量318通过、clippy/fmt干净。[报告](specs/deep2d-http-transport-2026-09-18.md)
+
+- G04切片B `618b6d3`：createDashboardChromiumLayoutHost（apps/api/src/dashboardLayoutCaptureHost.ts，347行）——playwright隔离页/请求注入/身份剥离/预中止与在途中止真实关页/超时崩溃fail-closed/字体探针拒绝降级；真实Chrome 11/11（含本会话复核）、stub 9项、api类型与聚焦30项通过。部署装配（路由接线）为下一片。
+
+- P0-06多组件中文交付验收：5组件中文页（text横幅/KPI/filter/bar/table+Noto CJK OFL字体）真实HTTP发布→三格式下载→无PATH环境EXE打开→三载体窗口截图全通过（9轮收敛，53项SHA清单）；发现4缺陷如实登记——①标题图集成立但窗口不可见（合成z序专项，dfb38f0系证据仅日志计数首次被窗口像素戳穿）②采集宿主缺value/table捕获根③轴标签/图例未呈现④EXE内输入未驱动。[报告](specs/dashboard-http-multicomponent-2026-09-18.md)
+
 - S0样本库补强（data/不入库）：3DM×2(mcneel/openNURBS@eb92af3b)、LAS×1(PDAL@58af674b)、3D Tiles×6(CesiumGS/3d-tiles-tools@4ca692eb,Apache-2.0)、RVT×1(本地BIMFACE,仅inspect)；manifest 12条逐条重算SHA-256一致,许可文件随目录。jt coffee-maker 9.5文件在库但manifest未登记属既有遗留。
 
 ### 2026-09-17 主流程与 DE26 范围同步
