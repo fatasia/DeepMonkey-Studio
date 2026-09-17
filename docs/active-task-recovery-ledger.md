@@ -24,6 +24,8 @@
 
 - 缺陷②分层修复 `2e1d15a`：捕获页按widget类型分派chart/value/table捕获根（原硬编码chart），宿主等待条件解耦类型，错误消息带实测rect；KPI数值CSS字重600→700收敛到冻结字体目录档位（浏览器合成字重Native无法复现）。1325项web回归通过。剩余根因：value/table组件DOM为内容驱动尺寸（实测196×96≠作者框230×130），与测量合同uniform-scale校验冲突——需设计决策（量内容框或组件满框），归G01/P1-18合流处理。
 
+- 缺陷①根因修复 `2cb395d`：deep2d_scissor 的chunk_scissor用逐轴拉伸+零偏移，与shader/命中/相机的LetterboxMapping不一致——被node.clip收窄的chunk（标题+单位）在非等比窗口scissor错位整条被裁。修复改用同一映射并补字母箱错位测试钉；新增任意物理尺寸读回harness并修复bytes_per_row 256对齐缺口（1200宽曾静默全零）。修复前0/3220→后3220/3220，真实包标题3876px恢复，整帧diff仅2537px全落标题区；真实窗口截图「分区域出力/MW」可见；bin 126+GPU 45全过、clippy/fmt干净。缺陷③轴/图例确认为编译层缺口（present_chart不生成quad），归P0-01。[报告](specs/deep2d-title-letterbox-fix-2026-09-18.md)
+
 - S0样本库补强（data/不入库）：3DM×2(mcneel/openNURBS@eb92af3b)、LAS×1(PDAL@58af674b)、3D Tiles×6(CesiumGS/3d-tiles-tools@4ca692eb,Apache-2.0)、RVT×1(本地BIMFACE,仅inspect)；manifest 12条逐条重算SHA-256一致,许可文件随目录。jt coffee-maker 9.5文件在库但manifest未登记属既有遗留。
 
 ### 2026-09-17 主流程与 DE26 范围同步
