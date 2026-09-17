@@ -375,6 +375,7 @@ export function DashboardWidgetView({
         })}
       </div>
     );
+  if (widget.type === "table" && metric?.rows?.length === 0) return <DashboardDesignState locale={locale} state="empty" />;
   if (widget.type === "table") return <DashboardReportTable locale={locale} widget={widget} metric={metric} compact={compact} onDataInteraction={onDataInteraction} />;
   if (widget.type === "scroll-table")
     return (

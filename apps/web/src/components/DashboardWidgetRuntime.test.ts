@@ -39,8 +39,15 @@ describe("dashboard parameters", () => {
   it("filters dataset rows by shared parameter and configured field", () => {
     const rows = [{ region: "华东", value: 10 }, { region: "华北", value: 20 }, { value: 30 }];
     const widgets = [{ title: "地区", key: "area", type: "filter" as const, unit: "", filterField: "region", options: ["全部", "华东", "华北"] }];
-    expect(applyDashboardFilters(rows, { area: "华东" }, widgets)).toEqual([rows[0], rows[2]]);
+    expect(applyDashboardFilters(rows, { area: "华东" }, widgets)).toEqual([rows[0]]);
     expect(applyDashboardFilters(rows, { area: "全部" }, widgets)).toEqual(rows);
+  });
+
+  it("fails honestly for missing bindings and keeps exact and contains distinct", () => {
+    const rows = [{ site: { name: "上海一厂" } }, { site: { name: "上海二厂" } }, { region: "上海" }];
+    const filter = { title: "工厂", key: "factory", type: "filter" as const, unit: "", filterField: "site.name", filterMode: "text" as const };
+    expect(applyDashboardFilters(rows, { factory: "一厂" }, [filter])).toEqual([rows[0]]);
+    expect(applyDashboardFilters(rows, { factory: "上海" }, [{ ...filter, filterMatch: "exact" as const }])).toEqual([]);
   });
 
   it("does not apply a stale child filter while its parent is cleared", () => {
@@ -54,6 +61,7 @@ describe("dashboard parameters", () => {
     ];
 
     expect(applyDashboardFilters(rows, { city: "上海" }, widgets)).toEqual(rows);
+    expect(applyDashboardFilters(rows, { area: [], city: "上海" }, widgets)).toEqual(rows);
     expect(applyDashboardFilters(rows, { area: "华东", city: "上海" }, widgets)).toEqual([rows[0]]);
   });
 
@@ -218,5 +226,19 @@ describe("industrial dashboard widgets", () => {
     expect(html).toContain("行总计 · cost");
     expect(html).toContain("30");
     expect(html).toContain("12");
+  });
+
+  it("renders an explicit table empty state after filters remove every row", () => {
+    const html = renderToStaticMarkup(
+      createElement(DashboardWidgetView, {
+        locale: "zh-CN",
+        widget: { title: "区域经营", key: "sales", type: "table", unit: "" },
+        metric: { value: undefined, samples: [], rows: [] },
+        compact: false,
+        ...handlers,
+      }),
+    );
+    expect(html).toContain("dashboard-design-state empty");
+    expect(html).toContain("暂无数据");
   });
 });

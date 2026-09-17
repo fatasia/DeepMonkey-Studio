@@ -1762,3 +1762,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 诚实不可用：authoring bridge、独立 scene update/upload、compositor present、input latency 尚无可信宿主边界，固定输出空样本、0 count 与非空原因；GPU feature/readback 失败原因原样保留，绝不用 0 冒充观测。即时失败报告仍保持严格正窗口。
 - 验证：Native telemetry 5/5、telemetry GPU 2/2、全 lib 288/0/1 ignored、fmt/clippy 通过；TS schema 4/4；diff check 通过。
 - 边界：A03 整卡仍为`本轮待办`，还需 Studio/Web 消费接线以及真实输入事件→呈现帧、平台 compositor feedback；A04 只能消费 measured 样本。[spec](specs/de26-a03-native-sampling-2026-09-17.md)
+
+### 2026-09-17 DE26/G02 切片 2/3：筛选命中与数据流（Codex）
+
+- 已完成命中纯合同：首 16 个选项生成与编译 binding 无关的 `node.id:option:index`；pointer、Enter、Space 只能映射为白名单 `setFilter`。外来 node/key、非法/越界/截断项、隐藏节点、非 select、父参数未就绪均 fail-closed。父值 null/空串/空数组/全部/All 不激活子筛选，0/false 保持合法。
+- 已完成 Web/发布数据流：复用 `ApplicationPlaybackState` 与 `applyDashboardFilters`，不建第三套 store。发布页从冻结文档的可见 select 首项确定性初始化，修复“界面显示首项、数据却未过滤”；嵌套 `filterField` 生效，缺字段零匹配，隐藏筛选不消费；表格零行显示既有空态，图表保留空轴。
+- 验证：Web typecheck 通过；合并聚焦 5 文件 34 项通过；diff check 通过。未改 CSS、布局或设计令牌。
+- 边界：Native/组合宿主尚未消费命令，编译 runtime node 外层 hit 仍归 G01；未跑 GPU/浏览器双轮视觉闭环，G02 整卡继续`本轮待办`。alpha-zero path 命中依赖既有 Deep2D fill 几何+command opacity 合同，当前无独立 hit-only primitive。[spec](specs/de26-g02-filter-compile-plan-2026-09-17.md)

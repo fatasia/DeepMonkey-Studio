@@ -98,7 +98,7 @@ export function DashboardRuntimePreview({
   const parameterWidgets = useMemo(
     () =>
       page.nodes.flatMap((node) =>
-        node.kind === "data-widget" && node.widget.type === "filter"
+        node.kind === "data-widget" && node.visible !== false && node.widget.type === "filter"
           ? [node.widget]
           : [],
       ),

@@ -1,4 +1,4 @@
-import type { ApplicationDocument, SceneInteractionActionState } from "@bim-studio/contracts";
+import type { ApplicationDocument, JsonValue, SceneInteractionActionState } from "@bim-studio/contracts";
 
 export function publishedApplicationId(pathname: string): string | undefined {
   const match = /^\/apps\/([^/]+)\/?$/.exec(pathname);
@@ -12,6 +12,34 @@ export function publishedApplicationId(pathname: string): string | undefined {
 export function publishedEntryPage(application: ApplicationDocument) {
   const profile = application.publicationProfiles.find(profile => profile.target === "browser-preview");
   return application.pages.find(page => page.id === profile?.entryPageId) ?? application.pages[0];
+}
+
+/** Published playback starts only from values encoded in the immutable document. */
+export function publishedInitialDashboardFilters(application: ApplicationDocument): Record<string, JsonValue> {
+  const filters: Record<string, JsonValue> = {};
+  const widgets = application.pages.flatMap((page) => page.nodes.flatMap((node) =>
+    node.kind === "data-widget" && node.visible !== false && node.widget.type === "filter" ? [node.widget] : [],
+  ));
+  const byKey = new Map<string, (typeof widgets)[number]>();
+  for (const widget of widgets) if (!byKey.has(widget.key)) byKey.set(widget.key, widget);
+  const unique = [...byKey.values()];
+  for (let pass = 0; pass < unique.length; pass += 1) {
+    let changed = false;
+    for (const widget of unique) {
+      if ((widget.filterMode ?? "select") !== "select" || Object.hasOwn(filters, widget.key)) continue;
+      if (widget.parentFilterKey && !activeFilterValue(filters[widget.parentFilterKey])) continue;
+      const initial = widget.options?.[0];
+      if (!activeFilterValue(initial)) continue;
+      filters[widget.key] = initial!;
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  return filters;
+}
+
+function activeFilterValue(value: JsonValue | undefined): boolean {
+  return value !== undefined && value !== null && value !== "" && !/^(全部|all)$/i.test(String(value));
 }
 
 export function publicApplicationAction(application: ApplicationDocument, action: SceneInteractionActionState, origin: string): { pageId: string } | { url: string } | { message: string } | undefined {

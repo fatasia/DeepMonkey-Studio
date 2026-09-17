@@ -58,7 +58,7 @@ export function DashboardPlayback(props: Props) {
 export function PlaybackView({ session, ...props }: Props & { session: ApplicationPlaybackSession }) {
   const { document: application, variables, filters } = session.state;
   const page = application.pages.find((page) => page.id === props.page.id) ?? application.pages[0]!;
-  const widgets = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" ? [node.widget] : []), [page.nodes]);
+  const widgets = useMemo(() => page.nodes.flatMap((node) => node.kind === "data-widget" && node.visible !== false ? [node.widget] : []), [page.nodes]);
   const runtimeWidgets = useMemo(() => props.readOnly ? widgets.filter(widget => widget.sampleData || widget.type === "filter" && !widget.datasetId && !widget.pipelineId && !widget.directBinding && !widget.semanticBinding) : widgets, [props.readOnly, widgets]);
   const live = useDashboardMetrics(application.metadata.projectId, runtimeWidgets, undefined, filters, !props.readOnly, props.project.semanticModels);
   useEffect(() => {

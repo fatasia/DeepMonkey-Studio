@@ -290,20 +290,27 @@ export function applyDashboardFilters(
       const value = filters[widget.key];
       if (widget.parentFilterKey) {
         const parentValue = filters[widget.parentFilterKey];
-        if (parentValue === undefined || parentValue === null || parentValue === "" || /^(全部|all)$/i.test(String(parentValue))) return [];
+        if (!activeDashboardFilterValue(parentValue)) return [];
       }
-      if (value === undefined || value === null || value === "" || /^(全部|all)$/i.test(String(value))) return [];
+      if (!activeDashboardFilterValue(value)) return [];
       return [{ field: widget.filterField?.trim() || widget.key, value, match: widget.filterMatch ?? (widget.filterMode === "text" ? "contains" : "exact") }];
     });
   if (active.length === 0) return rows;
   return rows.filter((row) =>
     active.every(({ field, value, match }) => {
-      if (!(field in row)) return true;
-      const candidate = String(row[field] ?? "");
+      const resolved = readDashboardPath(row, field);
+      if (resolved === undefined) return false;
+      const candidate = String(resolved ?? "");
       if (Array.isArray(value)) return value.some((item) => candidate === String(item));
       return match === "contains" ? candidate.toLocaleLowerCase().includes(String(value).toLocaleLowerCase()) : candidate === String(value);
     }),
   );
+}
+
+function activeDashboardFilterValue(value: JsonValue | undefined): boolean {
+  if (value === undefined || value === null || value === "") return false;
+  if (Array.isArray(value)) return value.some((item) => activeDashboardFilterValue(item));
+  return !/^(全部|all)$/i.test(String(value));
 }
 
 export function dashboardLinkageValue(payload: JsonValue): JsonValue | undefined {

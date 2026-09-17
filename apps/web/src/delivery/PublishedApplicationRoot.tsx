@@ -6,7 +6,7 @@ import { DashboardPlayback } from "../components/DashboardPlayback";
 import { subscribeApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 import type { AppLocale } from "../i18n";
 import { getSceneModelAssetId, type SystemBrandingSettings } from "@bim-studio/contracts";
-import { publicApplicationAction, publishedApplicationId, publishedEntryPage } from "./publishedApplicationModel";
+import { publicApplicationAction, publishedApplicationId, publishedEntryPage, publishedInitialDashboardFilters } from "./publishedApplicationModel";
 import "./published-application.css";
 import { PublishedModelCredits } from "./PublishedModelCredits";
 
@@ -72,7 +72,7 @@ export function PublishedApplicationRoot() {
   const page = application.pages.find(page => page.id === pageId) ?? publishedEntryPage(application)!;
   return <div className="app-shell published-application">
     <DashboardPlayback key={`${publication.id}:${attempt}`} readOnly locale={locale} application={application} project={project} page={page} rendererBackend="webgl"
-      metrics={{}} variables={{}} filters={{}} connected={false}
+      metrics={{}} variables={{}} filters={publishedInitialDashboardFilters(application)} connected={false}
       readDependency={(_projectId, dependencyId) => publishedApplicationApi.dependency(application.metadata.id, publication.id, dependencyId)}
       onSelectPage={setPageId} onClose={() => undefined} onPublish={() => undefined} onFilterChange={() => undefined} onVariableChange={() => undefined}
       onSelectionChange={() => undefined} onObjectInteraction={() => undefined} onNodeInteraction={() => undefined} />

@@ -1648,13 +1648,19 @@
    ],
    "status": "本轮待办",
    "proposed": true,
-   "evidence": [],
+   "evidence": [
+    "docs/specs/de26-g02-filter-compile-plan-2026-09-17.md",
+    "apps/web/src/delivery/dashboardFilterHitCommand.ts",
+    "apps/web/src/delivery/dashboardFilterHitCommand.test.ts",
+    "apps/web/src/components/DashboardWidgetRuntime.test.ts"
+   ],
    "completed": false,
    "document": "deep-engine-tasks-product-2026-09-16.md#g02",
    "qualifiedId": "DE26/G02",
    "qualifiedDependsOn": [
     "DE26/G01"
-   ]
+   ],
+   "note": "切片1–3已实现：筛选chrome、稳定option hit、白名单setFilter命令、冻结发布初值、filterField数据流与表格/图表空结果；Native/组合宿主命令消费及GPU/Web双轮视觉仍依赖G01，整卡保持待办"
   },
   {
    "id": "G03",

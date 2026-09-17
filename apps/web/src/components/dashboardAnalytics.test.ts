@@ -19,6 +19,12 @@ describe("dashboard analytics", () => {
     expect(result.series[0]?.values).toEqual([18, 3]);
   });
 
+  it("keeps a filtered chart as empty axes instead of inventing a zero series", () => {
+    const result = analyzeDashboardMetric(widget({ analysis: { dimensionField: "region", measureField: "sales", aggregation: "sum" } }), { value: undefined, samples: [], rows: [] });
+    expect(result).toMatchObject({ rows: [], categories: [], series: [] });
+    expect(result.value).toBeUndefined();
+  });
+
   it("builds a crosstab and csv grand totals", () => {
     const report = buildDashboardReport(widget({ type: "table", report: { mode: "crosstab", rowField: "region", columnField: "month", valueField: "sales", aggregation: "sum", showGrandTotal: true } }), { value: 20, samples: [], rows });
     expect(report.columns).toEqual(["region", "1月", "2月"]);

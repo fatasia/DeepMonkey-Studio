@@ -1,6 +1,6 @@
 # DE26/G02 · 筛选器与页面外观编译(方案先行,实现前冻结)
 
-日期:2026-09-17。状态:**方案冻结,待实现**。依赖:G01(组合宿主矩阵)。
+日期:2026-09-17。状态:**切片 1–3 已实现；Native/组合宿主消费与视觉闭环待 G01**。依赖:G01(组合宿主矩阵)。
 
 ## 现状(源码实测)
 
@@ -19,8 +19,26 @@
 - 选项行 hit 区域 → `pointer/key → hitId → command`(白名单动作:setFilter);hitId = `node.id:option:<index>`;
 - 切换选中 → 参数发布 → 同页表格/图表按 `filterField` 过滤(运行时消费归 G01 宿主,本切片提供 command 形状)。
 
+实现:`dashboardWidgetContent.ts` 为首 16 项生成稳定 option hit；`dashboardFilterHitCommand.ts` 只允许
+pointer/Enter/Space 生成 `setFilter`，并拒绝外来 node/key、越界、隐藏、父参数未就绪和非 select。
+未选中行使用 alpha-zero filled path；这是既有 Deep2D path hit 合同（命中按 fill 几何与 command opacity），
+当前没有独立 hit-only primitive。
+
 ### 切片 3:筛选数据流贯通
 - `dataset → transform → widget property` 链上 filterField 生效;空结果态(表格显示空态,图表显示空轴);发布回放 readOnly 下 filters 从冻结快照初始。
+
+实现:复用 `ApplicationPlaybackState.setFilter` 与 `applyDashboardFilters`，不新增状态容器。公开发布页从冻结
+文档的可见 select 控件首项确定性建立运行初值；`全部/All`、隐藏与非 select 不注入。`filterField` 支持
+嵌套路径，缺字段零匹配；父值 null/空串/空数组/全部均不激活子筛选；表格零行复用现有空态，图表保持
+空分类/空系列。发布合同尚无作者 transient filters 字段，因此不伪造未冻结的作者态。
+
+## 本轮验证
+
+- Web typecheck 通过；合并聚焦 5 文件 34 项通过。
+- 边界覆盖:稳定 hit identity、16 项截断、pointer/键盘白名单、外来/越界/隐藏/父门禁、嵌套字段、
+  缺字段、contains/exact、父筛选清空、发布初值逆序父子、隐藏控件、表格空态与图表空轴。
+- 未改 CSS/令牌/布局；未启动浏览器双轮截图，Native/组合宿主尚未消费 `setFilter` 命令，故 G02 整卡
+  保持`本轮待办`，不得把纯合同与 Web 数据流测试冒充 T+N+W+GPU+WEB 全验收。
 
 ## 明确排除(不许混入)
 
