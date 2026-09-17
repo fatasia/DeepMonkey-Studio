@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync,writeFileSync } from 'node:fs';
+import { readFileSync,writeFileSync,mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -9,6 +9,7 @@ import { tessellateCylinderFace } from './3dm-cylinder-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
 const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/3dm-source-audit');
+const evidenceOut=resolve(root,'test-output/industrial-3dm/multispan-cylinder-2026-09-17-v1/natural');mkdirSync(evidenceOut,{recursive:true});
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url));
 const {Triangle,Vector3}=require('three');
 const relative='example_files/V4/v4_MechPartB.3dm',sourceSha256='848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978';
@@ -55,11 +56,11 @@ test('actual McNeel cylinder surfaces reconstruct with source point, topology an
   const b=Buffer.from(result.bytes),json=JSON.parse(b.subarray(20,20+b.readUInt32LE(12)).toString());
   const cylinderPrimitives=json.meshes.flatMap((m:any)=>m.primitives).filter((p:any)=>p.extras.geometrySource==='cad-ir-natural-cylinder');
   assert.deepEqual(cylinderPrimitives.map((p:any)=>p.extras.brepFaceIndex),results.map(r=>r.face));
-  const glbPath=resolve(out,'v4_MechPartB.cylinders.glb');writeFileSync(glbPath,result.bytes);const audit=await auditGlbGeometry(glbPath);
+  const glbPath=resolve(evidenceOut,'v4_MechPartB.cylinders.glb');writeFileSync(glbPath,result.bytes);const audit=await auditGlbGeometry(glbPath);
   const evidence={schemaVersion:1,sourceSha256,sourceUrl:`https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/${relative}`,
     useBoundary:'official sample; local verification only; not redistributed',archiveVersion:source.archiveVersion,metersPerUnit:source.metersPerUnit,
     results,rejected,audit,status:result.sidecar.status,glbSha256:sha(result.bytes)};
-  writeFileSync(resolve(out,'cylinder-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({faces:results.map(r=>r.face),rejected,maxError:Math.max(...results.map(r=>r.maxSourceToMeshDistance)),audit}));
+  writeFileSync(resolve(evidenceOut,'cylinder-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({faces:results.map(r=>r.face),rejected,maxError:Math.max(...results.map(r=>r.maxSourceToMeshDistance)),audit}));
 });
 test('cylinder refusal preserves unsupported trim, support and budget boundaries',()=>{
   assert(supportedIr);

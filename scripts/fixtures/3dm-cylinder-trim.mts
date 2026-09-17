@@ -1,5 +1,6 @@
 import { evaluateSurface } from './3dm-nurbs-parameters.mjs';
 import { tessellatePlanarFace } from './3dm-planar-trim.mts';
+import { proveCylinderAxis } from './3dm-cylinder-axis-proof.mts';
 const sub=(a:number[],b:number[])=>a.map((x,i)=>x-b[i]);
 const dot=(a:number[],b:number[])=>a.reduce((s,x,i)=>s+x*b[i],0);
 const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
@@ -9,8 +10,9 @@ function stripParameters(s:any,curved:number,tolerance:number) {
   const linear=1-curved,n=s.controlPointCount[curved],width=s.controlPointCount[0];
   const cv=(row:number,i:number)=>s.controlPoints[linear===1?row*width+i:i*width+row];
   const decode=(p:number[])=>p.slice(0,3).map(x=>x/(s.rational?p[3]:1));
-  const origin=decode(cv(0,0)),translation=sub(decode(cv(1,0)),origin);
-  for(let i=0;i<n;i++)check(Math.hypot(...sub(sub(decode(cv(1,i)),decode(cv(0,i))),translation))<1e-9
+  const axisProof=s.controlPointCount[linear]>2?proveCylinderAxis(s,linear):null;
+  const origin=decode(cv(0,0)),translation=axisProof?.translation??sub(decode(cv(1,0)),origin);
+  if(!axisProof)for(let i=0;i<n;i++)check(Math.hypot(...sub(sub(decode(cv(1,i)),decode(cv(0,i))),translation))<1e-9
     &&(!s.rational||Math.abs(cv(0,i)[3]-cv(1,i)[3])<1e-12),'non-translated-cylinder-control-net');
   const knots:number[]=s.knots[curved],unique=[...new Set(knots)];
   check(n===2*(unique.length-1)+1&&unique.slice(1,-1).every(k=>knots.filter(t=>t===k).length===2),
@@ -33,7 +35,7 @@ function stripParameters(s:any,curved:number,tolerance:number) {
     maxFirstDerivative=Math.max(maxFirstDerivative,first/(unique[span+1]-unique[span]));
     maxInterpolationBound=Math.max(maxInterpolationBound,second/(8*count*count));
   }
-  return {parameters,translation,maxFirstDerivative,maxInterpolationBound};
+  return {parameters,translation,maxFirstDerivative,maxInterpolationBound,axisProof};
 }
 function clip(polygon:number[][],axis:number,bound:number,above:boolean) {
   const result:number[][]=[];
@@ -57,7 +59,7 @@ export function tessellateTrimmedCylinderFace(ir:any,faceIndex:number,metersPerU
     &&[support.axis,support.center].every(a=>a?.length===3&&a.every(Number.isFinite))
     &&Math.abs(Math.hypot(...support.axis)-1)<1e-10,'unsupported-cylinder-support');
   check(s.parameterMap?.kind==='identity','unsupported-cylinder-parameter-map');
-  const linear=s.degree.findIndex((d:number,i:number)=>d===1&&s.controlPointCount[i]===2),curved=1-linear;
+  const linear=s.degree.findIndex((d:number,i:number)=>d===1&&s.controlPointCount[i]>=2),curved=1-linear;
   check(linear>=0&&s.degree[curved]===2,'unsupported-cylinder-nurbs');
   const budget=0.00001/metersPerUnit,trimBudget=budget*.1,meshBudget=budget*.7;
   const strips=stripParameters(s,curved,meshBudget),height=s.domain[linear][1]-s.domain[linear][0];
@@ -112,7 +114,8 @@ export function tessellateTrimmedCylinderFace(ir:any,faceIndex:number,metersPerU
     quantization=Math.max(quantization,Math.hypot(...p.map(x=>Math.fround(x)-x)));return r.map(x=>orientation*x/length);});
   check(maxSupportResidual<1e-8,'cylinder-support-mismatch');
   const parameterMergeBound=mergeEpsilon*lipschitz;
-  const physicalBound=(trimBudget+strips.maxInterpolationBound+quantization+parameterMergeBound)*metersPerUnit*1000;
+  const axisEquivalenceBudget=4*(strips.axisProof?.equivalenceBound??0);
+  const physicalBound=(trimBudget+strips.maxInterpolationBound+quantization+parameterMergeBound+axisEquivalenceBudget)*metersPerUnit*1000;
   check(physicalBound<=.01,'cylinder-trim-physical-budget');
   for(const t of triangles)if(dot(cross(sub(positions[t[1]],positions[t[0]]),sub(positions[t[2]],positions[t[0]])),normals[t[0]])<0)[t[1],t[2]]=[t[2],t[1]];
   const boundaryEdges=uvPart.boundaryEdges.map(edge=>({...edge,vertices:edge.vertices.slice(0,-1).flatMap((id,i)=>{
@@ -126,5 +129,6 @@ export function tessellateTrimmedCylinderFace(ir:any,faceIndex:number,metersPerU
     mesh:{positions,triangles,normals,textureCoordinates:[],sourceFaceCount:triangles.length,quadCount:0},
     audit:{physicalBudgetMm:.01,physicalBoundMm:physicalBound,trimBound:trimBudget,interpolationBound:strips.maxInterpolationBound,
       quantization,parameterMergeBound,maxSupportResidual,curvedAxis:curved,uv,stripCount:strips.parameters.length-1,holeCount:uvPart.audit.holeCount,
+      ...(strips.axisProof?{axisProof:strips.axisProof,axisEquivalenceBudget}:{}),
       domain:s.domain,precisionSpace:'source-local-physical-before-instance-transform'}};
 }

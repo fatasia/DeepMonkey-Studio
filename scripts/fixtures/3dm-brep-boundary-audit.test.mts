@@ -12,7 +12,7 @@ import { auditBrepBoundaries } from './3dm-brep-boundary-audit.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
 const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/3dm-source-audit');
-const evidenceOut=resolve(root,'test-output/industrial-3dm/cross-face-boundaries-2026-09-17-cae20e7');mkdirSync(evidenceOut,{recursive:true});
+const evidenceOut=resolve(root,'test-output/industrial-3dm/multispan-cylinder-2026-09-17-v1/boundaries');mkdirSync(evidenceOut,{recursive:true});
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const sha=(bytes:any)=>createHash('sha256').update(bytes).digest('hex');
 function load(relative:string,hash:string){

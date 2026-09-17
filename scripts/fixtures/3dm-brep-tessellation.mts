@@ -21,7 +21,7 @@ export function completeBrepParts(object: any,metersPerUnit?:number) {
       const tessellate=support?.kind==='sphere'?tessellateSphereFace:support?.kind==='cylinder'?tessellateCylinderFace:support?.kind==='cone'?tessellateConeFace:tessellatePlanarFace;
       try {parts.push(tessellate(object.cadIr,face));}
       catch(error) {
-        if(support?.kind!=='cylinder'||!(error instanceof Error)||!['unsupported-natural-trim','non-isoparametric-trim'].includes(error.message))throw error;
+        if(support?.kind!=='cylinder'||!(error instanceof Error)||!['unsupported-natural-trim','non-isoparametric-trim','unsupported-cylinder-nurbs'].includes(error.message))throw error;
         parts.push(tessellateTrimmedCylinderFace(object.cadIr,face,metersPerUnit!));
       }
     } catch(error) {
