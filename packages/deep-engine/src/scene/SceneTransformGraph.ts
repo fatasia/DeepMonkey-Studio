@@ -145,7 +145,12 @@ export class SceneTransformGraph<TId extends SceneTransformNodeId = string> {
       node.localBounds = nextBounds;
       node.boundsDirty = true;
     }
-    if (hiddenChanged) node.hidden = patch.hidden as boolean;
+    if (hiddenChanged) {
+      node.hidden = patch.hidden as boolean;
+      // Visibility is authoritative state too. Surface it through the same flush/revision
+      // channel so CAS advances and renderer projections can re-read this node.
+      node.worldDirty = true;
+    }
     node.lastChangedRevision = this.stateRevision;
     this.didMutate();
   }
