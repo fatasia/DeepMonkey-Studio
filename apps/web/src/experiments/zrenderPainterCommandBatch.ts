@@ -58,6 +58,8 @@ export type ChartCommand = ChartRectCommand | ChartRemoveCommand;
 
 export interface ChartCommandBatch {
   readonly schemaVersion: 1;
+  readonly logicalWidth: number;
+  readonly logicalHeight: number;
   readonly chartId: string;
   readonly epoch: number;
   readonly inputHash: string;
@@ -301,6 +303,8 @@ export class ZRenderPainterCommandBatchExperiment {
       this.#epoch += 1;
       return { ok: true, batch: {
         schemaVersion: 1,
+        logicalWidth: checked.value.logicalWidth,
+        logicalHeight: checked.value.logicalHeight,
         chartId: checked.value.chartId,
         epoch: this.#epoch,
         inputHash: checked.inputHash,

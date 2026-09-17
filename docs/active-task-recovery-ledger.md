@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 ZRender delta→X 显示包（Codex）
+
+- 已完成：真实 rect delta 重建完整快照并核验 hash，再复用 Deep2D/X v6 作者编译；保留负柱高和稳定图元身份，坏批次不推进状态。
+- 实证：Web 21/21、typecheck；同一 ECharts 实例初帧/单柱更新/删柱三包经真实 LPAC 回执逐项相等，Native 三角数 6/6/4，各独立 GPU 窗口成功呈现。
+- 本轮待办：同一窗口动态替换、LPAC 内动态适配器及完整 Painter/视觉；当前作者端 ECharts 不冒充受限进程内执行。[证据](specs/deep2d-p2-02-zrender-x-display-2026-09-17.md)
+
 ### 2026-09-17 X 窗口会话续期（Codex）
 
 - 已完成：1024 次成功请求后后台回收旧 LPAC 会话再创建新会话，窗口 epoch/输入/已呈现内容保留；错误会话仍终止，不自动重试，原 CPU/内存/IPC 预算不变。
