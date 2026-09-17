@@ -42,6 +42,11 @@ function Invoke-PortableSmokeCore {
   )
   $checks = @(
     [ordered]@{
+      name = 'deep2d-x-worker-lpac'
+      arguments = @('--verify-x-worker')
+      expected = 'Deep2D X compatibility worker OK: schema=1 messages=2'
+    },
+    [ordered]@{
       name = 'viewer-section-pixels'
       arguments = @('--smoke-section', (Join-Path $PackageRoot 'fixtures/render_packet_v1.json'))
       expected = @('native section GPU probe OK:', 'restored=true color=0 shadow=0')

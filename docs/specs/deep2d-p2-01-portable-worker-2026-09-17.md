@@ -17,9 +17,10 @@ manifest v3 增加 `compatibilityWorker`：固定 `experimental-x`、X schema v1
 & packages/deep-engine-native/scripts/verify-windows-portable.ps1 -PackageRoot <package-directory> -ArchivePath <zip>
 ```
 
-- 实际包：44 个 ZIP entry，5,804,561 bytes；ZIP SHA-256 `2195d7074d2899643ade8cfa4d88aec954689de0d644bf61be92ac53fdbae2f3`。
+- 实际包：44 个 ZIP entry，5,884,968 bytes；ZIP SHA-256 `4af79a947e28a059fe541ab232cad7c0483b9bad4fc1913be3d2b1215b3f3e7e`。
 - worker SHA-256：`b014ed385145a0ac2c5fa81bb86c52ddfd8ef4ca8877e45e9d55bf6c8426336d`；PE、静态 CRT、零浏览器依赖标记检查通过。
-- portable verifier 回归通过；26 项实际 GPU/恢复 smoke 在 RTX 4060 Laptop GPU/Vulkan 上通过。同步修正已有选择/测量 smoke 的脆弱连续子串断言，将两个真实状态分别核对；没有降低语义要求。
-- 二次独立 verifier 对目录、ZIP、checksum、payload、worker、shader、26 项 smoke 全部通过。
+- portable verifier 回归通过；27 项实际 LPAC/GPU/恢复 smoke 在 Windows 11、RTX 4060 Laptop GPU/Vulkan 上通过。同步修正已有选择/测量 smoke 的脆弱连续子串断言，将两个真实状态分别核对；没有降低语义要求。
+- 主播放器的显式 `--verify-x-worker` 诊断只解析固定同目录 worker，实际通过 LPAC 调度封闭 X 请求并核对回执。固定 request/output hash 分别为 `74b14cc2f45d36d6956291973c252cc58db750474903795f6afc729cd5caa40c`、`5925b7a665e0c952d0c15d2f86817434838c940ce99c5f73c25da3952e1c5dc3`。
+- 二次独立 verifier 对目录、ZIP、checksum、payload、worker、shader、27 项 smoke 全部通过。
 
-本片完成正式候选包工件与验证接线，不等于产品已允许动态内容进入 X lane。真实播放器调度、用户级开关/诊断、签名扩展、更新撤销和完整 Windows 权限/网络矩阵继续待办。
+本片完成正式候选包工件及显式播放器诊断接线，不等于产品已允许动态内容进入 X lane。真实内容调度、用户级开关/诊断呈现、签名扩展、更新撤销和完整 Windows 权限/网络矩阵继续待办。

@@ -1877,8 +1877,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 ### 2026-09-17 Deep2D P2-01 portable worker 工件接线（Codex）
 
 - Windows portable 与播放器同锁文件/目标/release 静态 CRT 构建封闭 X worker；manifest 固定 lane/schema/包内路径/SHA-256/LPAC sandbox/default-disabled，Viewer 启动器不执行它。通用 verifier 拒绝路径逃逸、缺失、非 PE、动态 CRT/浏览器依赖、错误信任合同和哈希变化。
-- 实际候选包 44 entries/5,804,561 bytes，ZIP SHA-256 `2195d7074d2899643ade8cfa4d88aec954689de0d644bf61be92ac53fdbae2f3`；worker SHA-256 `b014ed385145a0ac2c5fa81bb86c52ddfd8ef4ca8877e45e9d55bf6c8426336d`。26 项 GPU/恢复 smoke 与二次完整 verifier 通过。
-- 产品调度/开关/诊断、签名与撤销、完整 Windows 权限/网络矩阵仍待办；随包不代表启用或兼容任意脚本。[证据](specs/deep2d-p2-01-portable-worker-2026-09-17.md)
+- 实际候选包 44 entries/5,884,968 bytes，ZIP SHA-256 `4af79a947e28a059fe541ab232cad7c0483b9bad4fc1913be3d2b1215b3f3e7e`；worker SHA-256 `b014ed385145a0ac2c5fa81bb86c52ddfd8ef4ca8877e45e9d55bf6c8426336d`。27 项 LPAC/GPU/恢复 smoke 与二次完整 verifier 通过。
+- 主播放器显式 `--verify-x-worker` 诊断已从包内固定路径真实执行 LPAC/X ABI 往返；动态内容调度、用户级开关/诊断呈现、签名与撤销、完整 Windows 权限/网络矩阵仍待办。随包不代表启用或兼容任意脚本。[证据](specs/deep2d-p2-01-portable-worker-2026-09-17.md)
 
 ### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
 

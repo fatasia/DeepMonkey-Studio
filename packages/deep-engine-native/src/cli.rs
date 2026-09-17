@@ -45,7 +45,9 @@ pub fn execute() -> Result<(), String> {
         Some("--help" | "-h") => {
             reject_extra(args)?;
             print_help();
-            println!("\n  --licenses  Show licenses embedded in a standalone executable.");
+            println!(
+                "\n  --verify-x-worker  Verify the packaged experimental worker through LPAC.\n  --licenses  Show licenses embedded in a standalone executable."
+            );
             Ok(())
         }
         Some("--headless-contract") => {
@@ -121,6 +123,10 @@ pub fn execute() -> Result<(), String> {
             Ok(())
         }
         Some("--verify-package") => crate::publication_verification::execute(args),
+        Some("--verify-x-worker") => {
+            reject_extra(args)?;
+            crate::x_worker_cli::run()
+        }
         Some(option @ ("--package" | "--smoke-package" | "--headless-package")) => {
             let path = required_path(&mut args, option)?;
             reject_extra(args)?;

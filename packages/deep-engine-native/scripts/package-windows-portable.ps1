@@ -135,6 +135,7 @@ Deep Engine Native Player $version ($Target)
 TEST CANDIDATE: not a signed or release-qualified distribution.
 Packaging checks do not certify signing, installer/update, or the full hardware matrix.
 The packaged Deep2D X compatibility worker is experimental and disabled by default. The viewer launchers never invoke it.
+Use bin\deep-engine-native.exe --verify-x-worker only for the explicit LPAC/ABI diagnostic.
 Author-selected LOD: bin\deep-engine-native.exe --package fixtures\runtime-package-author-lod-v1.json
 Asset directory: bin\deep-engine-native.exe --asset-package fixtures\asset-directory-v1\manifest.json
 Prefiltered IBL: bin\deep-engine-native.exe --package fixtures\runtime-package-prefiltered-ibl-v1.json

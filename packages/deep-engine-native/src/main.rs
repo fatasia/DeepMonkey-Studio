@@ -89,6 +89,7 @@ mod shadow_update_classify;
 mod telemetry;
 mod telemetry_gpu;
 mod text_raster_cli;
+mod x_worker_cli;
 
 fn main() {
     if let Err(error) = cli::execute() {
