@@ -58,6 +58,8 @@
 
 - P3-02缩窄切片（Web+Native先行）：同一作者revision三变体（A committed→B committed→BAD rejected→A逐位不变→B' committed）——Web 46项检查（真实WebGPU，w1换包/release+dispose恰1、w2陈旧B在prepare闸门被取消A逐位保持、w3坏包拒绝先于GPU分配）+Native读回轨迹（BAD "runtime package hash mismatch"捕获目录空、A重跑逐位一致）。选择联动=合同不支持（candidate identity无选择字段，跨包pageStates.clear()）如实留待G01。Three通道与编辑器UI会话明示不在本片。证据test-output/p03-02-preview-20260918/。
 
+- P3-04单机切片：10格矩阵全过——Vulkan/DX12双后端producer读回逐像素diff=0（518400px位级一致）；三档尺寸letterbox正确无裁剪（colored面积比与理论精确一致）；字体维度实证冻结路径缺字形硬失败vs系统路径静默回退（fail-closed语义差异如实记录）；设备destroy→重建35ms/120ms后重绘逐字节等于销毁前；环境指纹RTX 4060 driver 595.79/DPI 125%/Win11。不可枚举6条如实声明（多设备/集成显卡/RDP/TDR运行中丢失/浏览器渲染格）。证据test-output/p03-04-device-matrix-20260918/。
+
 - P1-03收尾 `72eefb0`：实证此前chunked_rows仅被自身测试引用（AppendWindow走手写整段Vec克隆）；接线后ChartRuntime持data_windows镜像（runtime态，ChartIR JSON合同不动），AppendWindow走Arc行块共享/整块回收/跨块边界仅首块make_mut写时复制，暂存至提交才落地（失败路径零污染），预算超限fail-closed带dataset id。单测8项（引用计数20 000行3块实证）+黑盒9项（与未分块参考逐值一致/evicted_rows证据）；lib 341、clippy/fmt全绿。性能对比归P1-04。
 
 - P1-23 TS侧消费：packages/deep-engine/src/adapterN1（9文件≤276行）——wire合同逐字段对齐adapter_n1/schema.rs，canonicalJson精确复刻serde_json+ryu-pretty（整数/浮点词法/kk布局/码点序键排序），SVG白名单MmLlHhVvZz禁曲线圆弧，四类适配（svg/富文本/图表扩展/动画ABI）；fail-closed三态与认证台账digest对拍——四类fixture digest黄金断言全中Native固化值（SVG 50b1cd80/富文本ad56df1c/图表5aab58a7/动画ffb61123），58/58测试+typecheck+runtimePurityGate绿。边界：渲染仍在Native，范围外元素blocked；TS计数上限收紧多拒方向安全；发现shaderPackage/hash.ts默认sort非字节序的潜在同族偏差（当前键全ASCII，建议另行排查）。
