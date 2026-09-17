@@ -10,6 +10,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Deep2D experimental compatibility
 
+- Renew successful X window worker sessions after 1024 requests without resetting host epochs; keep errors terminal and reclaim each old process before replacement.
+
 - Route X window pointer and supported keys through a bounded input queue, coalesce consecutive pointer moves, and preserve the host Escape action.
 
 - Evaluate bounded X window ticks off the UI thread, reuse unchanged presented layers, and cancel/reclaim the isolated worker on exit or package replacement.

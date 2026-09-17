@@ -14,7 +14,6 @@ use std::{
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 
 const TICK_INTERVAL: Duration = Duration::from_millis(16);
-const MAX_TICKS: u64 = 1024;
 
 pub(super) struct Runtime {
     template: Arc<XDynamicContent>,
@@ -178,11 +177,6 @@ fn advance(app: &mut NativeApp, runtime: &mut Runtime) -> Result<(), String> {
     }
     if runtime.transport.busy() || runtime.pending.is_some() || Instant::now() < runtime.wake {
         return Ok(());
-    }
-    if runtime.accepted >= MAX_TICKS {
-        return Err(
-            "X window session reached its 1024-tick budget; reopen the package to continue".into(),
-        );
     }
     let request = &runtime.template.request;
     let sequence = runtime.accepted + 1;

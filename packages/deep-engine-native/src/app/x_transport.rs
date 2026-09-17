@@ -12,6 +12,9 @@ use std::sync::{
 use std::thread::JoinHandle;
 use winit::event_loop::EventLoopProxy;
 
+const SESSION_TICKS: usize = 1024;
+
+#[derive(Debug)]
 pub(super) struct Receipt {
     pub output: XPublishedOutput,
     pub process_id: Option<u32>,
@@ -30,6 +33,15 @@ impl Transport {
         template: Arc<XDynamicContent>,
         proxy: EventLoopProxy<crate::events::GpuEvent>,
     ) -> Result<Self, String> {
+        Self::start_notified(template, move || {
+            let _ = proxy.send_event(crate::events::GpuEvent::XReady);
+        })
+    }
+
+    fn start_notified(
+        template: Arc<XDynamicContent>,
+        notify: impl Fn() + Send + 'static,
+    ) -> Result<Self, String> {
         let (sender, requests) = mpsc::sync_channel::<XTickBinding>(1);
         let (results, receiver) = mpsc::sync_channel(1);
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -41,6 +53,7 @@ impl Transport {
                     enabled: true,
                     ..Default::default()
                 });
+                let mut completed = 0;
                 while let Ok(binding) = requests.recv() {
                     if stop.load(Ordering::Acquire) {
                         break;
@@ -49,20 +62,32 @@ impl Transport {
                     let started_at_ms = binding.started_at_ms;
                     let started = std::time::Instant::now();
                     let result = match scheduler.as_mut() {
-                        Ok(scheduler) => scheduler
-                            .dispatch_tick(&template, binding, || XExecutionContext {
-                                current_epoch: epoch,
-                                now_ms: started_at_ms.saturating_add(
-                                    started.elapsed().as_millis().min(u64::MAX as u128) as u64,
-                                ),
-                                cancelled: stop.load(Ordering::Acquire),
-                            })
-                            .cloned()
-                            .map(|output| Receipt {
+                        Ok(scheduler) => (|| {
+                            // 只有完整成功的会话可续期；失败从不重启或补发。
+                            if completed == SESSION_TICKS {
+                                scheduler.close_session()?;
+                                completed = 0;
+                            }
+                            let output = scheduler
+                                .dispatch_tick(&template, binding, || XExecutionContext {
+                                    current_epoch: epoch,
+                                    now_ms: started_at_ms.saturating_add(
+                                        started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+                                    ),
+                                    cancelled: stop.load(Ordering::Acquire),
+                                })
+                                .cloned()?;
+                            completed += 1;
+                            Ok(Receipt {
                                 output,
                                 process_id: scheduler.worker_process_id(),
                             })
-                            .map_err(|error| format!("X tick rejected: {error:?}")),
+                        })()
+                        .map_err(
+                            |error: deep_engine_native::compat_x::process::XProcessError| {
+                                format!("X tick rejected: {error:?}")
+                            },
+                        ),
                         Err(error) => Err(format!("X scheduler unavailable: {error:?}")),
                     };
                     let failed = result.is_err();
@@ -70,7 +95,7 @@ impl Transport {
                     if stop.load(Ordering::Acquire) || results.try_send(result).is_err() {
                         break;
                     }
-                    let _ = proxy.send_event(crate::events::GpuEvent::XReady);
+                    notify();
                     if failed {
                         break;
                     }
@@ -134,6 +159,10 @@ impl Transport {
         self.in_flight = false;
     }
 }
+
+#[cfg(test)]
+#[path = "x_transport_tests.rs"]
+mod tests;
 
 impl Drop for Transport {
     fn drop(&mut self) {
