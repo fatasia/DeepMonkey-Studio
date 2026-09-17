@@ -4,20 +4,30 @@ import type { DashboardRasterCompileInput, DashboardRasterResult, FrozenRasterAs
 const HASH = /^[a-f0-9]{64}$/;
 export const RASTER_BYTES_LIMIT = 64 * 1024 * 1024;
 export function snapshotRasterInput(input: DashboardRasterCompileInput): DashboardRasterCompileInput {
-  const copy = structuredClone(input);
   let bytes = 0;
-  for (const asset of Object.values(copy.assets)) {
-    if (!(asset.bytes instanceof Uint8Array) || !asset.bytes.length || !HASH.test(asset.sha256)
-      || sha256Bytes(asset.bytes) !== asset.sha256) throw new Error("Frozen resource byte identity mismatch");
+  for (const asset of Object.values(input.assets)) {
+    if (!(asset.bytes instanceof Uint8Array) || !asset.bytes.length)
+      throw new Error("Frozen resource byte identity mismatch");
     bytes += asset.bytes.byteLength;
     if (bytes > RASTER_BYTES_LIMIT) throw new Error("Frozen resource byte budget exceeded");
+  }
+  // structuredClone(view) 会复制整个 backing buffer；只冻结实际引用的字节范围。
+  const copy = structuredClone({ ...input, assets: {} }) as DashboardRasterCompileInput;
+  const assets: Record<string, FrozenRasterAsset> = {};
+  for (const [id, asset] of Object.entries(input.assets)) {
+    assets[id] = { ...structuredClone({ ...asset, bytes: undefined }), bytes: new Uint8Array(asset.bytes) };
+  }
+  const snapshot = { ...copy, assets };
+  for (const asset of Object.values(snapshot.assets)) {
+    if (!(asset.bytes instanceof Uint8Array) || !asset.bytes.length || !HASH.test(asset.sha256)
+      || sha256Bytes(asset.bytes) !== asset.sha256) throw new Error("Frozen resource byte identity mismatch");
     if (!asset.identity.id || !Number.isSafeInteger(asset.identity.revision) || asset.identity.revision < 0
       || !asset.mime) throw new Error("Invalid frozen resource identity");
     if (asset.faceIndex !== undefined && (!Number.isSafeInteger(asset.faceIndex) || asset.faceIndex < 0))
       throw new Error("Invalid frozen font face index");
   }
   if (!copy.locale) throw new Error("Frozen locale is required");
-  return copy;
+  return snapshot;
 }
 export function assetIdentity(asset: FrozenRasterAsset) {
   return { sha256: asset.sha256, bytes: asset.bytes.byteLength, mime: asset.mime,
@@ -29,7 +39,11 @@ export function rasterExtent(width: number, height: number): void {
 }
 export function verifyRaster(result: DashboardRasterResult, requestHash: string, width: number, height: number,
   fonts?: readonly FrozenRasterAsset[]): DashboardRasterResult {
-  const copy = structuredClone(result);
+  rasterExtent(width, height);
+  if (result.width !== width || result.height !== height || !(result.rgba instanceof Uint8Array)
+    || result.rgba.byteLength !== width * height * 4)
+    throw new Error("Raster result dimensions, request or pixel identity mismatch");
+  const copy = { ...structuredClone({ ...result, rgba: undefined }), rgba: new Uint8Array(result.rgba) };
   rasterExtent(copy.width, copy.height);
   if (copy.width !== width || copy.height !== height || copy.requestHash !== requestHash
     || !(copy.rgba instanceof Uint8Array) || copy.rgba.byteLength !== width * height * 4
