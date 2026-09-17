@@ -1,0 +1,28 @@
+[package]
+name = "p03-04-device-matrix"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "P3-04 Windows device/driver capability matrix (single-machine executable slice). Mirrors the bin-side deep2d GPU painter via absolute #[path] so production sources stay untouched."
+
+# Detach from the bim-studio cargo workspace: this harness is an evidence tool,
+# not a workspace member. All versions are pinned to the exact versions locked
+# in packages/deep-engine-native/Cargo.toml so no dependency is duplicated.
+[workspace]
+
+[dependencies]
+deep-engine-native = { path = "D:/Documents/bim/bim-studio/packages/deep-engine-native" }
+bytemuck = "=1.25.2"
+pollster = "=1.0.1"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
+wgpu = { version = "=30.0.1", default-features = false, features = [
+    "std",
+    "parking_lot",
+    "dx12",
+    "vulkan",
+    "wgsl",
+] }
+
+[profile.dev]
+opt-level = 1
