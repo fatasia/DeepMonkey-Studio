@@ -8,13 +8,13 @@ import { createProductServer } from "./onlineFlowProductServer.mjs";
 import { captureProcessOutput, reservePort, waitForHealth } from "./onlineFlowAuditSupport.mjs";
 
 /** 独立端口、独立数据目录和登录上下文；不访问正常开发 API 的业务数据。 */
-export async function createIsolatedStudioGate(name) {
+export async function createIsolatedStudioGate(name, options = {}) {
   const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
   const parent = resolve(root, "test-output/codex-2026-09-05");
   await mkdir(parent, { recursive: true });
   const output = await mkdtemp(resolve(parent, `${name}-`));
   const apiOrigin = `http://127.0.0.1:${await reservePort()}`;
-  const server = createProductServer(resolve(root, "apps/web/dist"), apiOrigin);
+  const server = createProductServer(options.webRoot ? resolve(options.webRoot) : resolve(root, "apps/web/dist"), apiOrigin);
   await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const logs = [];

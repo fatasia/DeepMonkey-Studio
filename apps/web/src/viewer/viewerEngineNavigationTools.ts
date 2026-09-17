@@ -25,6 +25,7 @@ import { type NativeBimPropertiesFile } from "./bimMetadata";
 import { setTreeVisibility } from "./fragmentTree";
 import { explosionTargets, objectTransform, toValue, visibleObjectBox } from "./sceneObjectUtils";
 import { detachSharedPrimitiveMaterials } from "./primitiveMaterial";
+import { applySourceMaterialOpacity } from "./sourceMaterialOpacity";
 import { type MeasureMode, type NavigationCollisionDiagnostics, type NavigationMode, type SelectionScope, type StandardView, type TransformMode } from "./viewerTypes";
 import { DEFAULT_CAMERA_CONSTRAINTS, finiteCameraNumber } from "./viewerEngineTypes";
 import { ViewerEngineMeasurements } from "./viewerEngineMeasurements";
@@ -94,10 +95,7 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
       const mesh = child as THREE.Mesh;
       const materials = this.materialsForMesh(mesh);
       for (const material of materials) {
-        material.transparent = opacity < 0.999;
-        material.opacity = opacity;
-        material.depthWrite = opacity >= 0.999;
-        material.needsUpdate = true;
+        applySourceMaterialOpacity(material, opacity);
       }
     });
     this.onModelChange?.(model);

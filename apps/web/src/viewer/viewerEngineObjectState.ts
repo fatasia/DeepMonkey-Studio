@@ -3,6 +3,7 @@ import type { SceneLayerState, SceneMaterialScreenState, SceneMaterialShaderEffe
 import { buildComponentRecords, type ComponentRecord } from "./analysis";
 import { fragmentPropertyValue } from "./fragmentTree";
 import { detachSharedPrimitiveMaterials } from "./primitiveMaterial";
+import { applySourceMaterialOpacity } from "./sourceMaterialOpacity";
 import type { MaterialTextureMetadataKey, MaterialTextureSlot } from "./viewerEngineTypes";
 import {
   applyMaterialTextureTransform,
@@ -89,10 +90,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
     detachSharedPrimitiveMaterials(object, this.collisionOriginalMaterials);
     object.traverse((child) => {
       for (const material of this.materialsForMesh(child as THREE.Mesh)) {
-        material.transparent = opacity < 0.999;
-        material.opacity = opacity;
-        material.depthWrite = opacity >= 0.999;
-        material.needsUpdate = true;
+        applySourceMaterialOpacity(material, opacity);
       }
     });
   }
