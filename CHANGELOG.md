@@ -12,6 +12,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### GPU transient resources
 
+- Report deduplicated device-owned buffer and texture memory, candidate overlap peaks, and unknown allocations in frame metrics.
+
 - Bound pooled frame textures to a configurable byte budget, evict only submitted idle targets, and report budget refusals without destroying in-flight textures.
 
 ### Viewer scheduling
