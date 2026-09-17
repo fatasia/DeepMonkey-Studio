@@ -4,7 +4,7 @@ import { triangulateTrimGrid } from './3dm-trim-grid.mts';
 import { refineSurfaceWinding } from './3dm-refine-surface-winding.mts';
 const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 function check(v:unknown,m:string):asserts v {if(!v)throw new Error(m);}
-/** Positive-weight cubic/quadratic Bezier chains, split at every source knot. */
+/** Positive-weight cubic/quadratic and polynomial bicubic Bezier chains, split at every source knot. */
 export function tessellateRationalBezierFace(ir:any,faceIndex:number,metersPerUnit:number) {
   check(Number.isFinite(metersPerUnit)&&metersPerUnit>0,'invalid-rational-face-unit');
   const face=ir.faces[faceIndex],s=ir.surfaces[face?.surface],bounds=rationalBezierBounds(s),{first,second}=bounds;
@@ -22,7 +22,7 @@ export function tessellateRationalBezierFace(ir:any,faceIndex:number,metersPerUn
   const quantization=Math.max(...positions.map(p=>Math.hypot(...p.map(x=>Math.fround(x)-x))));
   const physicalBoundMm=(trimBound+interpolationBound+parameterMergeBound+quantization)*metersPerUnit*1000;
   check(physicalBoundMm<=.01,'rational-face-physical-budget');
-  return {face:faceIndex,geometrySource:'cad-ir-rational-bezier-chain',boundaryEdges,
+  return {face:faceIndex,geometrySource:s.rational?'cad-ir-rational-bezier-chain':'cad-ir-polynomial-bezier-chain',boundaryEdges,
     mesh:{positions,triangles,normals,textureCoordinates:[],sourceFaceCount:triangles.length,quadCount:0},
     audit:{physicalBudgetMm:.01,physicalBoundMm,trimBound,interpolationBound,parameterMergeBound,quantization,
       derivativeBounds:{first,second},patches:bounds.patches,divisions,holeCount,uv,domain:s.domain,

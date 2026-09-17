@@ -3,8 +3,8 @@ import { evaluateSurface } from './3dm-nurbs-parameters.mjs';
 function check(v:unknown,m:string):asserts v {if(!v)throw new Error(m);}
 /** Exact source Bezier spans, positive weight quotient bounds, no sampled curvature estimate. */
 export function rationalBezierBounds(s:any) {
-  check(s?.dimension===3&&s.rational&&s.parameterMap?.kind==='identity'&&s.degree?.length===2
-    &&s.degree[0]===3&&s.degree[1]===2&&s.controlPointCount?.length===2,'unsupported-rational-cubic-quadratic');
+  check(s?.dimension===3&&s.parameterMap?.kind==='identity'&&s.degree?.length===2
+    &&s.degree[0]===3&&(s.rational?s.degree[1]===2:s.degree[1]===3)&&s.controlPointCount?.length===2,'unsupported-rational-cubic-quadratic');
   const breaks=s.degree.map((degree:number,axis:number)=>{
     const count=s.controlPointCount[axis],knots=s.knots?.[axis],domain=s.domain?.[axis];
     check(Number.isInteger(count)&&count>=degree+1&&count<=256&&domain?.length===2&&domain.every(Number.isFinite)&&domain[0]<domain[1]
@@ -13,14 +13,15 @@ export function rationalBezierBounds(s:any) {
     check(values[0]===domain[0]&&values.at(-1)===domain[1]&&values.every((x,i)=>knots.filter((k:number)=>k===x).length===(i===0||i===values.length-1?degree+1:degree)),
       'unsupported-rational-bezier-knot-multiplicity');return values;
   });
-  check(s.controlPoints?.length===s.controlPointCount[0]*s.controlPointCount[1]&&s.controlPoints.every((p:number[])=>p.length===4&&p.every(Number.isFinite)&&p[3]>0),
+  check(s.controlPoints?.length===s.controlPointCount[0]*s.controlPointCount[1]&&s.controlPoints.every((p:number[])=>p.length===(s.rational?4:3)&&p.every(Number.isFinite)&&(!s.rational||p[3]>0)),
     'invalid-rational-bezier-weights');
   const patches:any[]=[],first=[0,0],second=[0,0,0];
   for(let v=0;v<breaks[1].length-1;v++)for(let u=0;u<breaks[0].length-1;u++) {
-    const points=Array.from({length:3},(_,j)=>Array.from({length:4},(_,i)=>s.controlPoints[(v*2+j)*s.controlPointCount[0]+u*3+i])).flat();
+    const points=Array.from({length:s.degree[1]+1},(_,j)=>Array.from({length:s.degree[0]+1},(_,i)=>{
+      const p=s.controlPoints[(v*s.degree[1]+j)*s.controlPointCount[0]+u*s.degree[0]+i];return s.rational?p:[...p,1];})).flat();
     const origin=points[0].slice(0,3).map((x:number)=>x/points[0][3]),minWeight=Math.min(...points.map((p:number[])=>p[3]));
     const domain=[[breaks[0][u],breaks[0][u+1]],[breaks[1][v],breaks[1][v+1]]];
-    const h={dimension:4,rational:false,degree:[3,2],controlPointCount:[4,3],domain,
+    const h={dimension:4,rational:false,degree:[...s.degree],controlPointCount:s.degree.map((d:number)=>d+1),domain,
       knots:domain.map((d,i)=>[...Array(s.degree[i]+1).fill(d[0]),...Array(s.degree[i]+1).fill(d[1])]),
       controlPoints:points.map((p:number[])=>[...p.slice(0,3).map((x,i)=>(x-origin[i]*p[3])/minWeight),p[3]/minWeight])};
     const du=polynomialDerivative(h,0),dv=polynomialDerivative(h,1),nets=[du,dv,polynomialDerivative(du,0),polynomialDerivative(du,1),polynomialDerivative(dv,1)];

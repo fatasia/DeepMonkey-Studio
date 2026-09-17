@@ -11,21 +11,22 @@ import { evaluateSurface } from './3dm-nurbs-parameters.mjs';
 import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/polynomial-bezier-2026-09-17-v1/rational');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/polynomial-bezier-2026-09-17-v1');
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),sourceSha256='a1b0ef69925b5d9223a7d797033055bb766842768a96f7713e1ecaec2763bb31';
 assert.equal(sha(readFileSync(path)),sourceSha256);
 const run=spawnSync(resolve(root,'test-output/3dm-source-audit/3dm-source-audit.exe'),[path,'--parameter-evidence-all'],{encoding:'utf8',maxBuffer:128*1024*1024,timeout:60000});
 assert.equal(run.status,0,run.stderr);const source=JSON.parse(run.stdout),object=source.objects.find((o:any)=>o.cadIr),ir=object.cadIr;
-const faces=[12,14,16,17,18,20,22,23,27,28,31,32];
+const faces=[5,6,7,8];
 const orient=(a:number[],b:number[],c:number[])=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
 const contains=(part:any,p:number[])=>part.mesh.triangles.some((t:number[])=>{const [a,b,c]=t.map(i=>part.audit.uv[i]),signs=[orient(a,b,p),orient(b,c,p),orient(c,a,p)];
   return signs.every(x=>x>=-1e-12)||signs.every(x=>x<=1e-12);});
-test('twelve real rational faces preserve original PointAt, source knots, boundary topology and whole-model preview',async()=>{
+test('four real polynomial faces preserve original PointAt, source knots, boundary topology and whole-model preview',async()=>{
   const before=JSON.stringify(ir),records:any[]=[];
   for(const face of faces){
     const part=tessellateRationalBezierFace(ir,face,.001),mesh=part.mesh,s=ir.surfaces[ir.faces[face].surface];
+    assert.equal(part.audit.patches.length,8);assert(part.audit.patches.every(p=>p.minWeight===1));
     const triangles=mesh.triangles.map(t=>new Triangle(...t.map(i=>new Vector3(...mesh.positions[i]))));let count=0,error=0;
     for(const sample of s.parameterEvidence){if(!contains(part,sample.source))continue;count++;
       const p=new Vector3(...sample.point),near=new Vector3();let distance=Infinity;
@@ -45,32 +46,31 @@ test('twelve real rational faces preserve original PointAt, source knots, bounda
   const glb=await export3dmGlb(noCache,sourceSha256);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');
   mkdirSync(out,{recursive:true});const glbPath=resolve(out,'MechPartA.glb');writeFileSync(glbPath,glb.bytes);
   const bytes=Buffer.from(glb.bytes),json=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)).toString());
-  assert.deepEqual(json.meshes.flatMap((m:any)=>m.primitives).filter((p:any)=>p.extras.geometrySource==='cad-ir-rational-bezier-chain').map((p:any)=>p.extras.brepFaceIndex),faces);
+  assert.deepEqual(json.meshes.flatMap((m:any)=>m.primitives).filter((p:any)=>p.extras.geometrySource==='cad-ir-polynomial-bezier-chain').map((p:any)=>p.extras.brepFaceIndex),faces);
   const evidence={sourceSha256,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',
     archiveVersion:source.archiveVersion,metersPerUnit:.001,useBoundary:'official sample; local verification only; not redistributed',records,
     audit:await auditGlbGeometry(glbPath),glbSha256:sha(glb.bytes),status:glb.sidecar.status};
   writeFileSync(resolve(out,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({records:records.map(({patches,...r})=>r),audit:evidence.audit}));
 });
-test('quotient-rule tangents match finite differences on every source span and weight scaling is invariant',()=>{
-  for(const face of [12,16,27]){const s=ir.surfaces[ir.faces[face].surface],b=rationalBezierBounds(s);
+test('unit-weight tangents match finite differences on every source span',()=>{
+  for(const face of [5,6,7]){const s=ir.surfaces[ir.faces[face].surface],b=rationalBezierBounds(s);
     for(const patch of b.patches){const uv=patch.domain.map(d=>(d[0]+d[1])/2),tangents=b.tangent(uv);
       for(let axis=0;axis<2;axis++){const h=(patch.domain[axis][1]-patch.domain[axis][0])*1e-5,a=[...uv],c=[...uv];a[axis]-=h;c[axis]+=h;
         const p=evaluateSurface(s,a),q=evaluateSurface(s,c);assert(Math.hypot(...p.map((x:number,i:number)=>(q[i]-x)/(2*h)-tangents[axis][i]))<1e-6);}}
-    const scaled=structuredClone(s);scaled.controlPoints=scaled.controlPoints.map((p:number[])=>p.map(x=>x*7));const other=rationalBezierBounds(scaled);
-    assert(b.first.every((x,i)=>Math.abs(x-other.first[i])<1e-9));assert(b.second.every((x,i)=>Math.abs(x-other.second[i])<1e-8));}
+  }
 });
 test('holes, reversal and refusal cases preserve source geometry and physical limits',()=>{
-  const before=tessellateRationalBezierFace(ir,16,.001),copy=structuredClone(ir);copy.faces[16].reversed=!copy.faces[16].reversed;
-  const reversed=tessellateRationalBezierFace(copy,16,.001);assert.equal(reversed.mesh.positions.length,before.mesh.positions.length);
+  const before=tessellateRationalBezierFace(ir,5,.001),copy=structuredClone(ir);copy.faces[5].reversed=!copy.faces[5].reversed;
+  const reversed=tessellateRationalBezierFace(copy,5,.001);assert.equal(reversed.mesh.positions.length,before.mesh.positions.length);
   for(let i=0;i<reversed.mesh.positions.length;i++){const p=reversed.mesh.positions[i],j=before.mesh.positions.findIndex(q=>Math.hypot(...p.map((x,k)=>x-q[k]))<1e-10);
     assert(j>=0);assert(reversed.mesh.normals[i].every((x,k)=>Math.abs(x+before.mesh.normals[j][k])<1e-10));}
-  const hole=structuredClone(ir),face=hole.faces[16],s=hole.surfaces[face.surface],center=s.domain.map((d:number[])=>(d[0]+d[1])/2),r=.01;
+  const hole=structuredClone(ir),face=hole.faces[5],s=hole.surfaces[face.surface],center=s.domain.map((d:number[])=>(d[0]+d[1])/2),r=.01;
   const corners=[[-r,-r],[r,-r],[r,r],[-r,r]].map(p=>p.map((x,i)=>x+center[i])),loop=hole.loops.length,trims:number[]=[];
   for(let i=0;i<4;i++){const curve=hole.curves2d.length;hole.curves2d.push({dimension:2,degree:1,rational:false,parameterMap:{kind:'identity'},knots:[0,0,1,1],controlPoints:[corners[i],corners[(i+1)%4]]});
     trims.push(hole.trims.length);hole.trims.push({curve2d:curve,edge:-1,loop,sourceSubdomain:[0,1],curveReversed:false});}
-  hole.loops.push({face:16,type:2,trims});face.loops.push(loop);const part=tessellateRationalBezierFace(hole,16,.001);
+  hole.loops.push({face:5,type:2,trims});face.loops.push(loop);const part=tessellateRationalBezierFace(hole,5,.001);
   assert.equal(part.audit.holeCount,1);assert.equal(contains(part,center),false);
-  assert.throws(()=>tessellateRationalBezierFace(ir,16,0),/unit/);assert.throws(()=>tessellateRationalBezierFace(ir,16,10000),/budget/);
+  assert.throws(()=>tessellateRationalBezierFace(ir,5,0),/unit/);assert.throws(()=>tessellateRationalBezierFace(ir,5,10000),/budget/);
   for(const change of [(s:any)=>s.controlPoints[0][3]=0,(s:any)=>s.controlPoints[0][0]=NaN,(s:any)=>s.knots[0][4]+=.001,(s:any)=>s.parameterMap.kind='unknown']){
-    const bad=structuredClone(ir);change(bad.surfaces[bad.faces[12].surface]);assert.throws(()=>tessellateRationalBezierFace(bad,12,.001));}
+    const bad=structuredClone(ir);change(bad.surfaces[bad.faces[5].surface]);assert.throws(()=>tessellateRationalBezierFace(bad,5,.001));}
 });

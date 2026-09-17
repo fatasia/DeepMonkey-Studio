@@ -29,7 +29,8 @@ export function completeBrepParts(object: any,metersPerUnit?:number) {
           parts.push(tessellateBicubicFace(object.cadIr,face,metersPerUnit!));continue;
         }
         if(!support&&!surface?.rational&&surface?.degree?.every((d:number)=>d===3)) {
-          parts.push(tessellateMultispanBicubicFace(object.cadIr,face,metersPerUnit!));continue;
+          const repeated=surface.knots.some((k:number[])=>new Set(k).size<k.length-6);
+          parts.push(repeated?tessellateRationalBezierFace(object.cadIr,face,metersPerUnit!):tessellateMultispanBicubicFace(object.cadIr,face,metersPerUnit!));continue;
         }
         if(!support&&surface?.rational&&surface.degree?.[0]===3&&surface.degree?.[1]===2) {
           parts.push(tessellateRationalBezierFace(object.cadIr,face,metersPerUnit!));continue;
