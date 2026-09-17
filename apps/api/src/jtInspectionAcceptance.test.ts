@@ -66,7 +66,7 @@ describe("JT upload inspection closure", () => {
 
     const meshNode = glb.getRoot().listNodes().find((node) => node.getExtras().NodeType === "Element");
     const elementId = meshNode?.getExtras().ElementId;
-    expect(elementId).toMatch(/^jt-instance:.*:lod-0:instance-0$/);
+    expect(elementId).toMatch(/^jt-instance:.*:lod-0:path-0\//);
     const [propertiesResponse, hierarchyResponse] = await Promise.all([
       app.inject({ method: "GET", url: model.manifest!.propertiesUrl! }),
       app.inject({ method: "GET", url: model.manifest!.hierarchyUrl! }),

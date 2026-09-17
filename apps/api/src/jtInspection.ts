@@ -9,6 +9,8 @@ import {
   type JtPropertyValue,
   type JtSceneNode,
 } from "@bim-studio/jt-reader";
+import { buildJtOccurrences, jtInstanceElementId, type JtOccurrence } from "./jtOccurrenceIdentity.js";
+export { jtInstanceElementId } from "./jtOccurrenceIdentity.js";
 
 export interface JtMaterialEvidence {
   objectId: number;
@@ -113,9 +115,11 @@ export async function writeJtInspectionArtifacts(
 ): Promise<JtInspectionArtifacts> {
   const document = await readJtFile(sourcePath);
   const inspection = inspectJtDocument(document);
+  const lod0Ids = new Set(document.meshes.filter((mesh) => mesh.lod === 0).map((mesh) => mesh.id));
+  const occurrences = buildJtOccurrences(document.sceneGraph, document.meshInstances.filter((instance) => lod0Ids.has(instance.meshId)));
   await mkdir(outputDir, { recursive: true });
-  const hierarchy = buildHierarchy(inspection, path.basename(sourcePath), document.meshes, document.meshInstances);
-  const properties = buildProperties(inspection, path.basename(sourcePath), document.meshes, document.meshInstances);
+  const hierarchy = buildHierarchy(path.basename(sourcePath), occurrences);
+  const properties = buildProperties(inspection, path.basename(sourcePath), document.meshes, document.meshInstances, occurrences.all);
   await Promise.all([
     writeFile(path.join(outputDir, "inspection.json"), JSON.stringify(inspection, null, 2), "utf8"),
     writeFile(path.join(outputDir, "hierarchy.json"), JSON.stringify(hierarchy, null, 2), "utf8"),
@@ -131,38 +135,22 @@ export async function writeJtInspectionArtifacts(
 }
 
 function buildHierarchy(
-  inspection: JtInspectionResult,
   sourceName: string,
-  meshes: readonly JtMesh[],
-  instances: readonly JtMeshInstance[],
+  occurrences: ReturnType<typeof buildJtOccurrences>,
 ) {
-  const byId = new Map(inspection.assembly.nodes.map((node) => [node.objectId, node]));
-  const lod0MeshIds = new Set(meshes.filter((mesh) => mesh.lod === 0).map((mesh) => mesh.id));
-  const lod0Instances = instances.filter((instance) => lod0MeshIds.has(instance.meshId));
-  const build = (objectId: number, ancestors: ReadonlySet<number>, pathIds: number[]): Record<string, unknown> => {
-    const node = byId.get(objectId);
-    if (!node) return { id: `jt-missing:${objectId}`, name: `缺失节点 ${objectId}`, type: "缺失引用", meshIds: [], children: [] };
-    if (ancestors.has(objectId)) return { id: `jt-node:${objectId}`, name: node.label, type: "循环引用", meshIds: [], children: [] };
-    const next = new Set(ancestors).add(objectId);
-    const currentPath = [...pathIds, objectId];
-    return {
-      id: `jt-node:${objectId}`,
-      name: node.label,
-      type: node.kind,
-      meshIds: lod0Instances
-        .filter((instance) => samePath(instance.pathObjectIds, currentPath))
-        .map(jtInstanceElementId),
-      children: node.childObjectIds.map((childId) => build(childId, next, currentPath)),
-    };
-  };
+  const build = (item: JtOccurrence): Record<string, unknown> => ({
+    id: item.id, name: item.source.label, type: item.source.kind,
+    prototypeId: item.prototypeId, sourceObjectId: item.source.objectId,
+    assemblyPath: item.pathObjectIds, meshIds: item.meshIds, children: item.children.map(build),
+  });
   return {
     schemaVersion: 1,
     root: {
       id: "jt-model:1",
       name: sourceName,
       type: "JT 结构模型",
-      meshIds: lod0Instances.map(jtInstanceElementId),
-      children: inspection.assembly.rootObjectIds.map((objectId) => build(objectId, new Set(), [])),
+      meshIds: occurrences.all.flatMap((item) => item.meshIds),
+      children: occurrences.roots.map(build),
     },
   };
 }
@@ -172,6 +160,7 @@ function buildProperties(
   sourceName: string,
   meshes: readonly JtMesh[],
   instances: readonly JtMeshInstance[],
+  occurrences: readonly JtOccurrence[],
 ) {
   const lod0Meshes = meshes.filter((mesh) => mesh.lod === 0);
   const meshById = new Map(lod0Meshes.map((mesh) => [mesh.id, mesh]));
@@ -189,6 +178,15 @@ function buildProperties(
       },
     },
   ] as const);
+  const occurrenceEntries = occurrences.map((item) => [item.id, {
+    elementId: item.id, prototypeElementId: item.prototypeId,
+    sourceObjectId: item.source.objectId, assemblyPath: item.pathObjectIds,
+    parentOccurrenceId: item.parentId,
+    displayProperties: {
+      ...stringProperties(item.source.properties), 名称: item.source.label, 类型: item.source.kind,
+      源原型: item.prototypeId, 装配路径: item.pathObjectIds.join(" / "),
+    },
+  }] as const);
   const instanceEntries = lod0Instances.map((instance, index) => {
     const mesh = meshById.get(instance.meshId)!;
     return [
@@ -227,7 +225,7 @@ function buildProperties(
       triangleCount: inspection.geometry.triangleCount,
     },
     materials: inspection.materials,
-    elements: Object.fromEntries([...nodeEntries, ...instanceEntries]),
+    elements: Object.fromEntries([...nodeEntries, ...occurrenceEntries, ...instanceEntries]),
   };
 }
 
@@ -237,14 +235,6 @@ async function readJtFile(filePath: string): Promise<JtDocument> {
     throw new Error(`JT 文件大小必须在 1 到 ${DEFAULT_JT_READ_LIMITS.maxFileBytes} 字节之间`);
   }
   return readJt(await readFile(filePath));
-}
-
-export function jtInstanceElementId(instance: Pick<JtMeshInstance, "id">): string {
-  return `jt-instance:${instance.id}`;
-}
-
-function samePath(left: readonly number[], right: readonly number[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function materialEvidence(node: JtSceneNode): JtMaterialEvidence[] {

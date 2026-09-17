@@ -57,9 +57,9 @@ describe("JT API inspection adapter", () => {
     };
 
     expect(hierarchy.root.children).toHaveLength(1);
-    expect(hierarchy.root.meshIds).toEqual([expect.stringMatching(/^jt-instance:.*:lod-0:instance-0$/)]);
+    expect(hierarchy.root.meshIds).toEqual([expect.stringMatching(/^jt-instance:.*:lod-0:path-0\//)]);
     expect(properties.model).toMatchObject({ geometryStatus: "decoded", materialCount: 3, meshCount: 1, triangleCount: 12 });
-    expect(Object.keys(properties.elements)).toHaveLength(12);
+    expect(Object.keys(properties.elements)).toHaveLength(23);
     expect(properties.elements[hierarchy.root.meshIds[0]!]).toBeDefined();
     await expect(access(path.join(outputDir, "geometry.glb"))).rejects.toThrow();
   });
