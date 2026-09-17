@@ -16,6 +16,8 @@ export interface P08CellMeta {
   page0NodeFrames: [number, number, number, number][];
   glyphDests: [number, number, number, number][];
   imageDests: [number, number, number, number][];
+  /** page-0 static deep2d 填充 path 的逻辑包围盒（显示列表 path 动词求包围，供边界环带归因）。 */
+  staticPathFrames: [number, number, number, number][];
   note: string;
 }
 
@@ -79,6 +81,16 @@ export function buildP08Fixtures(baseFixturePath: string): { id: string; json: s
       const id = `composition-${entry.content}-${theme}`;
       const root = value.payloads[value.entrypoints.dashboard];
       const static0 = value.payloads["dashboard.static.a"];
+      const staticPathFrames = (static0.displayList.resources ?? [])
+        .filter((resource: any) => resource.kind === "path")
+        .map((resource: any) => {
+          const points: readonly (readonly [number, number])[] = (resource.verbs ?? [])
+            .filter((verb: any) => typeof verb.x === "number" && typeof verb.y === "number")
+            .map((verb: any): readonly [number, number] => [verb.x as number, verb.y as number]);
+          const xs = points.map(point => point[0]), ys = points.map(point => point[1]);
+          const x = Math.min(...xs), y = Math.min(...ys);
+          return [x, y, Math.max(...xs) - x, Math.max(...ys) - y] as [number, number, number, number];
+        });
       cells.push({
         id,
         json: JSON.stringify(value),
@@ -90,6 +102,7 @@ export function buildP08Fixtures(baseFixturePath: string): { id: string; json: s
           page0NodeFrames: root.pages[0].nodes.filter((node: any) => node.chart).map((node: any) => node.frame),
           glyphDests: (static0.quads ?? []).filter((q: any) => String(q.atlasId ?? "").startsWith("atlas:glyph")).map((q: any) => q.destination),
           imageDests: (static0.quads ?? []).filter((q: any) => String(q.atlasId ?? "").startsWith("atlas:image")).map((q: any) => q.destination),
+          staticPathFrames,
           note: `${entry.note}；主题=${theme === "dark" ? "作者原配色" : "light（背景/图集色改，几何不动）"}`,
         },
       });

@@ -55,13 +55,23 @@ class P08Surface implements BackendCanvasSurface {
   remove(): void { this.native.remove(); }
 }
 
-/** publish 后同步读回当前活动 canvas：2d drawImage + getImageData，统计彩色像素并转 PNG data URL。 */
+/**
+ * publish 后同步读回当前活动 canvas：2d drawImage + getImageData，统计彩色像素并转 PNG data URL。
+ *
+ * 必须先合成到不透明黑底再 getImageData：WebGPU canvas（alphaMode "premultiplied"）按
+ * CSS Compositing 1 的 premultiplied source-over 语义合成到页面背景展示，而 getImageData
+ * 按 HTML 规范返回非预乘值——透明底直读会得到 RGB/A 反编码值（图例卡 A=0.94 时整体 ÷0.94），
+ * 不是任何观察者能看到的像素，也与 Native 侧不透明合成读回不可比（P0-08 systematic_color 根因）。
+ * 先铺黑底再 drawImage 即按合成语义取"展示帧"，与 Native producer 的不透明黑底读回同口径。
+ */
 function readback(deck: BackendCanvasDeck): { pngDataUrl: string; coloredPixels: number; totalPixels: number } {
   const source = deck.active!.canvas.native as HTMLCanvasElement;
   const capture = document.createElement("canvas");
   capture.width = source.width; capture.height = source.height;
   const context2d = capture.getContext("2d", { willReadFrequently: true });
   if (!context2d) throw new Error("2d readback context is unavailable.");
+  context2d.fillStyle = "#000";
+  context2d.fillRect(0, 0, capture.width, capture.height);
   context2d.drawImage(source, 0, 0);
   const image = context2d.getImageData(0, 0, capture.width, capture.height);
   let colored = 0;

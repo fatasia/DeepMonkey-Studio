@@ -201,12 +201,15 @@ for (const meta of metas) {
     rect,
     areaPx: area(rect) - boundaryOf(rect).areaPx,
   }));
+  // static deep2d 填充 path（图例卡面板）边界环带：与 chartBoundary 同口径。环带是面板自身的
+  // 形状边缘（双端 AA 覆盖量化差异所在），面板内部仍归平坦区——均匀色偏检测必须只盯内部。
+  const staticBoundaries = meta.staticPathFrames.map(toPhysical).map(boundaryOf);
   const flatAreaPx = PHYSICAL.width * PHYSICAL.height
     - area(letterboxRect) - area(letterboxRect2)
     - glyphRects.concat(imageRects).reduce((sum, rect) => sum + area(rect), 0)
     - chartRects.reduce((sum, rect) => sum + area(rect), 0);
 
-  const counts = { letterbox: 0, atlasGlyph: 0, atlasImage: 0, chartBoundary: 0, chartShapeEdge: 0, flatInterior: 0, flatOutside: 0 };
+  const counts = { letterbox: 0, atlasGlyph: 0, atlasImage: 0, staticBoundary: 0, chartBoundary: 0, chartShapeEdge: 0, flatInterior: 0, flatOutside: 0 };
   const grid = new Float64Array(16 * 16);
   let changedTotal = 0;
   let interiorErrorSamples: number[] = [];
@@ -225,6 +228,7 @@ for (const meta of metas) {
       if (inRect(letterboxRect, x, y) || inRect(letterboxRect2, x, y)) { counts.letterbox += 1; continue; }
       if (glyphRects.some(rect => inRect(rect, x, y))) { counts.atlasGlyph += 1; continue; }
       if (imageRects.some(rect => inRect(rect, x, y))) { counts.atlasImage += 1; continue; }
+      if (staticBoundaries.some(entry => inBand(entry, x, y))) { counts.staticBoundary += 1; continue; }
       if (chartBoundaries.some(entry => inBand(entry, x, y))) { counts.chartBoundary += 1; continue; }
       const interiorIndex = chartInteriors.findIndex(({ rect }) => inRect(rect, x, y));
       if (interiorIndex >= 0) {
@@ -269,7 +273,8 @@ for (const meta of metas) {
   });
   const missingFrame = framePresence.findIndex(presence => presence.ratio < 0.7);
 
-  const edgeClass = counts.atlasGlyph + counts.atlasImage + counts.chartBoundary + counts.chartShapeEdge + counts.flatInterior;
+  const edgeClass = counts.atlasGlyph + counts.atlasImage + counts.staticBoundary + counts.chartBoundary
+    + counts.chartShapeEdge + counts.flatInterior;
   const pct = (value: number): string => (value / Math.max(1, changedTotal) * 100).toFixed(1);
   const sorted = (samples: number[]): number[] => [...samples].sort((a, b) => a - b);
   const pick = (samples: number[], ratio: number): number =>
@@ -280,7 +285,7 @@ for (const meta of metas) {
     ? outsidePoints.reduce(([x0, y0, x1, y1], [x, y]) => [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)], [960, 540, 0, 0])
     : null;
   let level = "expected_sampling_edge";
-  let levelDetail = `changed 像素 ${changedTotal} 中边缘/位移带类 ${edgeClass}（${pct(edgeClass)}%，图集 ${counts.atlasGlyph + counts.atlasImage}、边界环带 ${counts.chartBoundary}、图形边缘及 1px 位移带 ${counts.chartShapeEdge + counts.flatInterior}）；letterbox ${counts.letterbox}`;
+  let levelDetail = `changed 像素 ${changedTotal} 中边缘/位移带类 ${edgeClass}（${pct(edgeClass)}%，图集 ${counts.atlasGlyph + counts.atlasImage}、static 面板边界环带 ${counts.staticBoundary}、chart 边界环带 ${counts.chartBoundary}、图形边缘及 1px 位移带 ${counts.chartShapeEdge + counts.flatInterior}）；letterbox ${counts.letterbox}`;
   if (missingFrame >= 0 || comparison.changedPixelRatio > 0.25) {
     level = "structural_missing";
     levelDetail = missingFrame >= 0
@@ -291,7 +296,7 @@ for (const meta of metas) {
     levelDetail += `；letterbox 区出现 ${counts.letterbox} 个 changed 像素（呈现/色彩管路差异，需追）`;
   } else if (counts.flatOutside > 50 && pick(outsideSorted, 0.5) >= 12) {
     level = "systematic_color";
-    levelDetail += `；frame 外平坦区 ${counts.flatOutside} 个 changed（中位误差 ${pick(outsideSorted, 0.5)}、p999 ${pick(outsideSorted, 0.999)}），聚集于物理 ${outsideBBox?.join(",")}（static 图例卡/面板底色均匀色偏，疑似半透明面板或渐变混合色彩空间差异，需追）`;
+    levelDetail += `；frame 外平坦区（面板内部等底色区，不含边界环带）${counts.flatOutside} 个 changed（中位误差 ${pick(outsideSorted, 0.5)}、p999 ${pick(outsideSorted, 0.999)}），聚集于物理 ${outsideBBox?.join(",")}（平坦底色非边缘差异，需查颜色管路）`;
   } else if (counts.flatOutside > 0) {
     levelDetail += `；frame 外平坦区 ${counts.flatOutside} 个 changed（中位误差 ${pick(outsideSorted, 0.5)}，低于色差判定线 12，暂归边缘级残余观察）`;
   }
@@ -320,6 +325,7 @@ for (const meta of metas) {
         letterbox: area(letterboxRect) + area(letterboxRect2),
         atlasGlyph: glyphRects.reduce((sum, rect) => sum + area(rect), 0),
         atlasImage: imageRects.reduce((sum, rect) => sum + area(rect), 0),
+        staticBoundary: staticBoundaries.reduce((sum, entry) => sum + entry.areaPx, 0),
         chartBoundary: chartBoundaries.reduce((sum, entry) => sum + entry.areaPx, 0),
         chartInterior: chartInteriors.reduce((sum, entry) => sum + entry.areaPx, 0),
         flat: flatAreaPx,
@@ -342,9 +348,10 @@ const changedMax = Math.max(...cells.map(cell => cell.comparison.changedPixelRat
 const maeMax = Math.max(...cells.map(cell => cell.comparison.meanAbsoluteError));
 const textEdgeRatio = cells.map(cell => {
   const region = cell.regions.regionPixelCounts;
-  const textEdgePixels = region.atlasGlyph + region.atlasImage + region.chartBoundary;
-  const textEdgeChanged = cell.regions.changedPixelsByRegion.atlasGlyph + cell.regions.changedPixelsByRegion.atlasImage
-    + cell.regions.changedPixelsByRegion.chartBoundary + cell.regions.changedPixelsByRegion.chartShapeEdge;
+  const textEdgePixels = region.atlasGlyph + region.atlasImage + region.staticBoundary + region.chartBoundary;
+  const changed = cell.regions.changedPixelsByRegion;
+  const textEdgeChanged = changed.atlasGlyph + changed.atlasImage + changed.staticBoundary + changed.chartBoundary
+    + changed.chartShapeEdge;
   return textEdgeChanged / Math.max(1, textEdgePixels);
 });
 const textEdgeRatioMax = Math.max(...textEdgeRatio);
@@ -356,9 +363,9 @@ const thresholds = {
     fullFrameChangedPixelRatioMax: { value: Number((changedMax * 1.5 + 0.001).toFixed(4)), unit: "ratio(maxChannelError>8)", rationale: "实测最大 ×1.5 + 0.1% 余量" },
     fullFrameMeanAbsoluteErrorMax: { value: Number((maeMax * 1.5).toFixed(5)), unit: "MAE(0-1)", rationale: "实测最大 ×1.5" },
     textEdgeChangedRatioMax: { value: Number((textEdgeRatioMax * 1.5 + 0.001).toFixed(4)), unit: "ratio", rationale: "图集文字+几何边界环带区 changed 占该区像素比例实测最大 ×1.5" },
-    interiorResidualNote: "chart 内平坦区 p999 通道误差实测 231（1px 几何位移带的黑/色对撞列，属采样与边缘预期级），不设独立上限，由全图 changedPixelRatioMax 与 textEdgeChangedRatioMax 覆盖",
-    outsideFlatChannelErrorMax: { value: 8, unit: "channel(0-255)", rationale: "非文字平坦区（static 图例卡/面板底色）建议 maxChannelError ≤8：light 主题格实测 p999=11 已接近，dark 主题格实测 p999=39（已列系统性色差需追）；修复后此线作为建议上限，待 V 验收确认" },
-    outsideFlatChangedPixelsMax: { value: 50, unit: "px", rationale: "frame 外平坦区 changed 绝对数上限（本片 dark 格 337 超线，light 格 337 但误差低于判定线）；超线判系统性色差" },
+    interiorResidualNote: "chart 内平坦区残余为 1px 几何位移带的黑/色对撞列（实测值见各格 interiorResidualChannelErrorP999），属采样与边缘预期级，不设独立上限，由全图 changedPixelRatioMax 与 textEdgeChangedRatioMax 覆盖",
+    outsideFlatChannelErrorMax: { value: 8, unit: "channel(0-255)", rationale: "非文字平坦区（static 图例卡/面板底色内部）建议 maxChannelError ≤8：2026-09-18 读回预乘修复后面板内部双端逐像素一致，此线保留为平坦底色系统性色差的守卫线，待 V 验收确认" },
+    outsideFlatChangedPixelsMax: { value: 50, unit: "px", rationale: "frame 外平坦区（面板内部，不含 staticBoundary 边界环带）changed 绝对数上限；超线判系统性色差" },
     letterboxChangedPixels: { value: 0, unit: "px", rationale: "letterbox 黑边双端都必须为 0，出现即阻断级" },
   },
 };
@@ -378,6 +385,8 @@ const matrix = {
   notes: [
     `Native 彩色像素与本仓 20260917 基线（132,913）存在漂移（本次 base-dark 实测 ${nativeResults["composition-base-dark"]!.coloredPixels}），系不同日期驱动/环境重采；本矩阵全部 6 格 Native 与 Web 同日成对采集，格内对比自洽。`,
     "C1 残余差异结论沿用：弧采样 1px 边缘差与 bar 边界差，归采样与边缘（预期）级。",
+    "2026-09-18 systematic_color 追因闭环：图例卡底色均匀色偏根因是 Web 读回路径——premultiplied WebGPU canvas 经透明底 drawImage+getImageData 按 HTML 规范反预乘（RGB÷A，A=0.94/0.97），读回值非展示像素；修复为黑底合成后读回（CSS Compositing 1 展示语义，与 Native 不透明读回同口径），面板内部双端逐像素一致（见 test-output/legend-color-fix-20260918）。",
+    "遗留（边缘级）：static 面板/图集 quad 边界环带存在 AA 覆盖量化差，机制为 Web deep2d 管线 4× MSAA 而 Native 1×；修复前该差异被读回反预乘部分抵消，修复后如实呈现。后续若追平需给 Native deep2d 增加 4× MSAA+resolve 或 Web 降采样口径，属渲染管线变更，另立任务。",
   ],
   knownGaps: [
     "headless Chrome WebGPU 与真实窗口的 DPI 缩放/系统色彩管理（ICC/HDR）管路差异未覆盖",

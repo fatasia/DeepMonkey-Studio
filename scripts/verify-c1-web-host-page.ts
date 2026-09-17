@@ -8,25 +8,14 @@ import { DashboardCandidateController } from "../packages/deep-engine/src/runtim
 import { chartFrame } from "../apps/web/src/delivery/dashboardChartFrame.js";
 
 const SURFACE_WIDTH = 960, SURFACE_HEIGHT = 540, DEVICE_EPOCH = 1;
-const bypassedChartFrames: string[] = [];
-const skippedChartSeries: string[] = [];
 
 /**
- * fixture 必须原样进 controller（packageHash 有内容校验），适配只作用于克隆的 ChartIR：
- * 产品静态 chartFrame 拒绝初始 dataZoom/actions（Native 渲染交互初态应用后的几何）。
- * pie/gauge 系列不再剥离：fillRings 半开区间扫描线（2026-09-18）已支持扇形弧环，
- * crossings 差异若复现按错误如实上抛，归 P0-08 像素矩阵追因。
+ * fixture 原样进 controller（packageHash 有内容校验），ChartIR 不做任何克隆改写：
+ * 自 2026-09-18（C1 缺口②）起产品静态 chartFrame 已按 Native `InteractionState::from_ir`
+ * 同语义应用初始 dataZoom/actions（轴域窗口进几何；highlight/select 为运行期轮廓，
+ * 两侧静态帧同样不产出像素），验证宿主不再需要剥离初始交互态。
+ * 若此处仍观察到初始态拒绝错误，应作为缺陷如实上抛，不得恢复剥离适配。
  */
-const adaptedChartFrame: typeof chartFrame = async (candidate, signal) => {
-  try { return await chartFrame(candidate, signal); } catch (error) {
-    const text = String(error);
-    if (!candidate.chart || !text.includes("initial dataZoom or actions")) throw error;
-    bypassedChartFrames.push(candidate.node.id);
-    const ir = structuredClone(candidate.chart.ir);
-    ir.actions = []; ir.dataZoom = [];
-    return chartFrame({ ...candidate, chart: { ...candidate.chart, ir } }, signal);
-  }
-}
 
 interface C1Success {
   ok: true;
@@ -97,7 +86,7 @@ async function run(): Promise<C1Result> {
       stage = "composition-host";
       const { host, loader } = createDashboardCompositionGpuHost({
         deck, session, width: SURFACE_WIDTH, height: SURFACE_HEIGHT,
-        deviceEpoch: () => DEVICE_EPOCH, chartFrame: adaptedChartFrame,
+        deviceEpoch: () => DEVICE_EPOCH, chartFrame,
       });
       const controller = new DashboardCandidateController(loader, host);
       stage = "publish";
@@ -108,11 +97,16 @@ async function run(): Promise<C1Result> {
       }
       stage = "readback";
       // WebGPU canvas 的已提交帧内容只在当前任务内可拷贝，必须在 publish 后同步读出。
+      // 先合成到不透明黑底再 getImageData：premultiplied canvas 直读会按 HTML 规范反预乘
+      // （RGB/A），该值非展示像素且与 Native 基线（不透明合成读回）不可比——同 P0-08
+      // systematic_color 根因，依据 CSS Compositing 1 的 premultiplied source-over 展示语义。
       const source = deck.active!.canvas.native as HTMLCanvasElement;
       const capture = document.createElement("canvas");
       capture.width = source.width; capture.height = source.height;
       const context2d = capture.getContext("2d", { willReadFrequently: true });
       if (!context2d) throw new Error("2d readback context is unavailable.");
+      context2d.fillStyle = "#000";
+      context2d.fillRect(0, 0, capture.width, capture.height);
       context2d.drawImage(source, 0, 0);
       const image = context2d.getImageData(0, 0, capture.width, capture.height);
       let colored = 0;
@@ -126,8 +120,8 @@ async function run(): Promise<C1Result> {
         renderTargetFormat: session.format === "rgba8unorm" ? "rgba8unorm-srgb" : "bgra8unorm-srgb",
         width: capture.width, height: capture.height, pageColoredPixels: colored,
         totalPixels: capture.width * capture.height, identity: published.identity,
-        releaseFailures: [...published.releaseFailures], bypassedChartFrames: [...bypassedChartFrames],
-        skippedChartSeries: [...skippedChartSeries], pngDataUrl };
+        releaseFailures: [...published.releaseFailures], bypassedChartFrames: [],
+        skippedChartSeries: [], pngDataUrl };
     } finally { session.dispose(); }
   } catch (error) {
     return { ok: false, stage, message: error instanceof Error ? error.message : String(error),

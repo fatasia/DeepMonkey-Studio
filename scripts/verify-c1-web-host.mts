@@ -104,7 +104,7 @@ try {
 const summary = {
   fixture: "packages/deep-engine/fixtures/dashboard-composition-v1.json",
   fixtureAdaptation: { bypassedChartFrames: result.bypassedChartFrames, skippedChartSeries: result.skippedChartSeries,
-    note: "适配只作用于克隆 ChartIR：剥初始 dataZoom/actions（Native 渲染交互初态应用后几何）+ 剔除 Web 三角化不支持的 pie/gauge 扇形系列（生产缺口）。差异归 P0-08 追因，本片不做阈值判定" },
+    note: "无适配（均为空记录）：fixture 原样进 controller。2026-09-18 C1 缺口②起产品静态 chartFrame 已按 Native InteractionState::from_ir 同语义应用初始 dataZoom/actions（轴域窗口进几何；highlight/select 属运行期轮廓，两侧静态帧同样不产出像素，deferred 登记）。初始态拒绝若复现按缺陷上抛，禁止恢复剥离" },
   adapter: result.adapter, canvasFormat: result.canvasFormat, renderTargetFormat: result.renderTargetFormat,
   candidateIdentity: result.identity, releaseFailures: result.releaseFailures,
   web: { png: "web-page-0.png", ...dimensions, coloredPixels: webColored, pageReadbackColoredPixels: result.pageColoredPixels },
