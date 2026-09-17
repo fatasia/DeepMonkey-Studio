@@ -29,7 +29,7 @@ export function chartPlot(ir: ChartIR, width: number, height: number): Rect {
   if (plot[2] <= 0 || plot[3] <= 0) throw new Error("Chart canvas is too small for legend and padding");
   return plot;
 }
-function domain(axis: ChartAxis | undefined, values: number[]): Point | undefined {
+export function domain(axis: ChartAxis | undefined, values: number[]): Point | undefined {
   let lo = Infinity, hi = -Infinity;
   for (const value of values) if (Number.isFinite(value) && (axis?.scale !== "log" || value > 0)) {
     lo = Math.min(lo, value); hi = Math.max(hi, value);
@@ -48,7 +48,7 @@ function mapper(axis: ChartAxis | undefined, [lo, hi]: Point, [start, end]: Poin
 }
 export function numeric(value: unknown): number | undefined { return typeof value === "number" && Number.isFinite(value) ? value : undefined; }
 // Domain membership follows compiled series, independently of rendering order.
-function axisValues(ir: ChartIR, channel: "x" | "y", axisId: string) {
+export function axisValues(ir: ChartIR, channel: "x" | "y", axisId: string) {
   const values: number[] = []; let hasBar = false;
   for (const peer of ir.series) {
     if (!["bar", "line", "scatter"].includes(peer.type) || !("x" in peer) || !("y" in peer)) continue;
