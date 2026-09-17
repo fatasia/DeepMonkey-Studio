@@ -53,6 +53,7 @@ pub(super) fn envelope(
             super::DEEP_RUNTIME_PACKAGE_CAMERA_VERSION,
             super::DEEP_RUNTIME_PACKAGE_CHART_VERSION,
             super::DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION,
+            super::DEEP_RUNTIME_PACKAGE_EXPERIMENTAL_X_VERSION,
         ]
         .contains(&package.schema_version)
     {

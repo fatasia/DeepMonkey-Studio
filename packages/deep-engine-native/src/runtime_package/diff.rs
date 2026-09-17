@@ -148,6 +148,7 @@ fn kind_order(kind: RuntimeResourceKind) -> u8 {
         RuntimeResourceKind::ChartRuntime => 5,
         RuntimeResourceKind::ChartSimRuntime => 6,
         RuntimeResourceKind::DashboardRuntime => 7,
+        RuntimeResourceKind::ExperimentalX => 8,
     }
 }
 

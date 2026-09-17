@@ -4,6 +4,7 @@ mod dashboard_types;
 mod dashboard_validation;
 mod diff;
 mod entrypoints;
+mod experimental_x;
 mod file_read;
 mod hash;
 mod material_bindings;
@@ -13,6 +14,9 @@ mod render_packet;
 mod types;
 mod unique_json;
 mod validate;
+pub use experimental_x::{
+    LoadedXRuntimePackage, freeze_x_resource, parse_and_validate_x_runtime_package,
+};
 
 use std::{fmt, path::Path};
 
@@ -42,6 +46,7 @@ pub const DEEP_RUNTIME_PACKAGE_CAMERA_VERSION: u32 = 3;
 /// v4 起 chart/chartSim 入口参与包合同;chart 展示列表与静态 deep2d 互斥。
 pub const DEEP_RUNTIME_PACKAGE_CHART_VERSION: u32 = 4;
 pub const DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION: u32 = 5;
+pub const DEEP_RUNTIME_PACKAGE_EXPERIMENTAL_X_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimePackageError(String);
@@ -75,6 +80,16 @@ pub fn read_runtime_package_bytes(path: impl AsRef<Path>) -> Result<Vec<u8>, Run
 pub fn parse_and_validate_runtime_package(
     bytes: &[u8],
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
+    let package = validated_envelope(bytes)?;
+    if package.schema_version == DEEP_RUNTIME_PACKAGE_EXPERIMENTAL_X_VERSION {
+        return fail(
+            "runtime package v6 requires the explicit experimental X loader; X is disabled by default",
+        );
+    }
+    payloads::decode(package)
+}
+
+fn validated_envelope(bytes: &[u8]) -> Result<RuntimePackageEnvelope, RuntimePackageError> {
     validate::input_size(bytes)?;
     let value: Value = unique_json::parse(bytes).map_err(|error| {
         RuntimePackageError(format!("invalid Deep Runtime Package JSON: {error}"))
@@ -84,5 +99,5 @@ pub fn parse_and_validate_runtime_package(
         RuntimePackageError(format!("invalid Deep Runtime Package schema: {error}"))
     })?;
     validate::envelope(&package, &value)?;
-    payloads::decode(package)
+    Ok(package)
 }

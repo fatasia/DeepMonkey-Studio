@@ -37,6 +37,7 @@ pub enum RuntimeResourceKind {
     ChartRuntime,
     ChartSimRuntime,
     DashboardRuntime,
+    ExperimentalX,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -51,6 +52,8 @@ pub struct RuntimeResourceIndexEntry {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct RuntimeEntrypoints {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub experimental_x: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub camera: Option<String>,
     pub render_packet: String,

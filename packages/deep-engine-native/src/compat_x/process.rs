@@ -209,7 +209,7 @@ pub fn evaluate_with_config(
     Ok(candidate)
 }
 
-pub(super) fn encode_bounded_request(
+pub(crate) fn encode_bounded_request(
     request: &XRequest,
     budget: XBudget,
 ) -> Result<Vec<u8>, XProcessError> {

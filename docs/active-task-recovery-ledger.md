@@ -1892,6 +1892,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 启动前校验 lane/schema/epoch/取消/深度/节点/4 MiB 编码上限与 canonical request hash；LPAC 返回候选后再做宿主 publish 校验，只有最终成功才原子替换 `last_known_good`。失败和终态 epoch 竞态均保留旧结果。
 - 主线复跑 compat_x 15、真实 CLI 1、IPC 7、LPAC 4、Job 4 项通过，clippy/fmt 通过。当前产品纵向只接 `--verify-x-worker`；runtime manifest 内容类型、作者编译、索引与绘制消费、跨重启保留继续本轮待办。[证据](specs/deep2d-p2-01-x-content-scheduler-2026-09-17.md)
 
+### 2026-09-17 Deep2D P2-01 X runtime package v6（Codex）
+
+- v6 只在既有静态 v2 形状上增加一个 `experimentalX` 入口；X 资源、冻结请求与整包分别受索引 hash、请求 hash 和 package hash 约束。默认 loader 拒绝 v6，调用方必须显式选择 X loader，加载本身不启用执行。
+- v1–v5 禁止 X 字段/资源；v6 明确禁止 camera/chart/chartSim/dashboard 字段（包括 null）及对应未引用资源。作者冻结只接受封闭 X IR 和固定预算，不接收源码、路径、开关或自定预算。
+- X 6 项（另 1 个 child-only LPAC fixture）、旧包 52 项、compat_x 15 项及 clippy/fmt 通过。Web 作者编译、普通 player/UI/绘制消费仍待办，不把独立 loader 误报为完整动态 Dashboard 发布能力。[证据](specs/deep2d-p2-01-x-runtime-package-v6-2026-09-17.md)
+
 ### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
 
 - 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。

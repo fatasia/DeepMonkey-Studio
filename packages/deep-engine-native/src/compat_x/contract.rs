@@ -2,6 +2,15 @@ use serde::{Deserialize, Serialize};
 
 pub const X_COMPATIBILITY_SCHEMA_VERSION: u32 = 1;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct XDynamicContent {
+    pub schema_version: u32,
+    pub lane: CompatibilityLane,
+    pub request: XRequest,
+    pub content_hash: crate::runtime_package::RuntimeContentHash,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CompatibilityLane {

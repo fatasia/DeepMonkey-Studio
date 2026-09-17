@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime_package::RuntimeContentHash;
 
 fn context() -> XExecutionContext {
     XExecutionContext {

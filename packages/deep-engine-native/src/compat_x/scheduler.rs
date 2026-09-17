@@ -1,19 +1,10 @@
 //! 可信宿主的X内容调度边界；配置与固定worker位置不属于内容合同。
+pub use super::XDynamicContent;
 use super::{
     process::{self, XProcessConfig, XProcessError},
     *,
 };
-use crate::runtime_package::{RuntimeContentHash, runtime_content_sha256};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct XDynamicContent {
-    pub schema_version: u32,
-    pub lane: CompatibilityLane,
-    pub request: XRequest,
-    pub content_hash: RuntimeContentHash,
-}
+use crate::runtime_package::runtime_content_sha256;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct XPublishedOutput {

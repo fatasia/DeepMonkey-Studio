@@ -10,6 +10,39 @@ pub(super) fn version(
     package: &RuntimePackageEnvelope,
     value: &Value,
 ) -> Result<(), RuntimePackageError> {
+    let experimental = package.schema_version == super::DEEP_RUNTIME_PACKAGE_EXPERIMENTAL_X_VERSION;
+    let has_x = value["entrypoints"].get("experimentalX").is_some();
+    if experimental && package.entrypoints.experimental_x.is_none() {
+        return fail("runtime package v6 requires experimentalX entrypoint");
+    }
+    // v6是静态v2形状加单个X入口，不继承v3-v5的camera/chart/dashboard组合。
+    if experimental
+        && (["camera", "chart", "chartSim", "dashboard"]
+            .iter()
+            .any(|key| value["entrypoints"].get(key).is_some())
+            || package.resources.iter().any(|resource| {
+                matches!(
+                    resource.kind,
+                    RuntimeResourceKind::SceneCamera
+                        | RuntimeResourceKind::ChartRuntime
+                        | RuntimeResourceKind::ChartSimRuntime
+                        | RuntimeResourceKind::DashboardRuntime
+                )
+            }))
+    {
+        return fail(
+            "runtime package v6 forbids camera, chart, chartSim, and dashboard entrypoints and resources",
+        );
+    }
+    if !experimental
+        && (has_x
+            || package
+                .resources
+                .iter()
+                .any(|r| r.kind == RuntimeResourceKind::ExperimentalX))
+    {
+        return fail("experimental X is forbidden before runtime package v6");
+    }
     let dashboard = package.schema_version == super::DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION;
     let has_dashboard = value["entrypoints"].get("dashboard").is_some();
     if dashboard {
@@ -99,6 +132,10 @@ pub(super) fn validate_entrypoints(
         require_kind(index, id, RuntimeResourceKind::ShaderPackage)?;
     }
     let mut referenced = HashSet::from([entry.render_packet.as_str(), entry.environment.as_str()]);
+    if let Some(id) = &entry.experimental_x {
+        require_kind(index, id, RuntimeResourceKind::ExperimentalX)?;
+        referenced.insert(id);
+    }
     if let Some(id) = &entry.deep2d {
         referenced.insert(id);
     }
