@@ -1909,3 +1909,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - openNURBS 研究读取器直接保留 `ON_Mesh.m_N` / `m_T`，非空属性必须与顶点数相等；缺失时不补默认值。mesh.3dm 的 420 法线/UV 与 meshWithTexture.3dm 的 92 法线/UV 已写入 GLB NORMAL/TEXCOORD_0，按真实 byteStride/accessor offset 逐元素对拍通过。
 - 材质/纹理 UUID、mapping channel、UVW、wrap 和源路径仅作 extras/sidecar 身份；WCS box 通道和作者 macOS 路径未冒充可采样贴图，不生成 image/texture/PBR 外观，不读取源路径。
 - 主线重建读取器，真实源审计、7 项研究测试、两份 GLB 产品审计和 10 项审计回归通过。完整 WCS/PBR/纹理字节、真实带网格实例和 Deep Engine 视觉验收仍待办。[证据](specs/industrial-3dm-vertex-attributes-2026-09-17.md)
+
+### 2026-09-17 3DM 纹理资源可用性与分发审计（Codex）
+
+- 新增只读资源合同：仅允许明确根目录内的审批记录，绑定资源/许可 SHA-256、HTTPS 来源、分发状态与字节预算；拒绝绝对/UNC/盘符/遍历/ADS/设备名/编码歧义路径及 junction 逃逸，不猜 basename、不自动下载、不执行资源。
+- `D:/Download` 与现有缓存未找到 bump_grit.png；真实 meshWithTexture 仅有作者 macOS 绝对路径和 WCS box 通道，读取合同正确拒绝。另下载并实读固定 McNeel 开发样本，其 6 材质为 0 源 texture，查看器图片是外部覆盖，不能充当 3DM 源外观证据。
+- 4 项路径/哈希/许可/预算测试与真实负向审计通过。当前保持 identity-only；只有源引用、图片字节、分发依据与 WCS 映射同时可证明时才能嵌入 GLB。[证据](specs/industrial-3dm-texture-availability-2026-09-17.md)
