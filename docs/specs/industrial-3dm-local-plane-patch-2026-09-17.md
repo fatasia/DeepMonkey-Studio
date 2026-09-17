@@ -21,3 +21,5 @@ MechPartA 的共边 60 已修复，跨面不一致从 60 降到 59。41/41 面�
 - 独立目录：`test-output/industrial-3dm/local-plane-2026-09-17-v1/`。主证据 SHA-256：`93fb5a6051ea7bd471796391ad22313b855a75b6fea27ad6b154b52f9828a19b`。
 
 真实平面逐三角形检查中心在外环内、孔洞外。测试覆盖跨对角线凹插点、禁止穿越源边、自交/重复/超额顶点拒绝、源身份破坏、缺参数、网格错位、预算失败事务回退，以及旧共边/自缝、孔洞与 GLB 回归。18 项定向回归通过，真实整件 2 项通过，TypeScript 与仓库治理门禁通过；未重跑高成本 Wheel。
+
+主线独立复跑 `pnpm exec tsx --test scripts/fixtures/3dm-local-plane-patch.test.mts scripts/fixtures/3dm-plane-isocurve.test.mts`：4项通过、无跳过，约34秒；重生成模型与主证据的SHA-256分别与上列值一致。此复核覆盖局部算法和MechPartA，不扩大至其他模型。

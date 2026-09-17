@@ -2,6 +2,9 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 3DM `9270d5f` 独立复核：平面局部重三角化修复edge60，共边60→59；41/41面、7自缝和旧顶点保持。主线复跑4项含真实整件/失败回退全部通过，重生成GLB与证据SHA逐字匹配，228源PointAt最大3.978e-15mm，仍为部分预览。[证据](specs/industrial-3dm-local-plane-patch-2026-09-17.md)
+- X_T `2e6d06b` 收拢最后交线的源引用/控制网排查；没有算法修复，最后0.044160mm差异保留，不放宽0.01mm预算。生产profile不因此升级；工业并行转向JT实例材质继承。[排查事实](reports/industrial-x-t-intersection-support-domain-2026-09-17.md)
+
 - Dashboard 候选内存回收：新候选登记时删除无人读取的过期记录，保留有效包、权限和字节隔离；13项聚焦测试与API类型检查通过。闲置期不启动定时器，不代表活跃候选总内存已有硬上限。[证据](specs/dashboard-candidate-expiry-2026-09-17.md)
 - 图表标题 `330a021` 已接入正式可信测量与Native图集链路；本地报告记录两张图集、三帧Vulkan呈现和取消/字体失败恢复。完整外观、中文字体与HTTP发布下载仍待验。[范围与验证](specs/dashboard-chart-heading-capture-2026-09-17.md)
 
