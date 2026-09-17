@@ -5,9 +5,10 @@ function check(v:unknown,m:string):asserts v {if(!v)throw new Error(m);}
 /** Match the full boundary control net to C3 under an affine parameter map, never closest-point fitting. */
 export function proveSourceIsocurve(ir:any,part:any,edgeIndex:number) {
   const edge=ir.edges[edgeIndex],curve=ir.curves3d[edge.curve3d],s=ir.surfaces[ir.faces[part.face].surface];
-  check(part.geometrySource==='cad-ir-rational-bezier-chain'&&s.parameterMap?.kind==='identity'&&curve.parameterMap?.kind==='identity'
+  check(['cad-ir-rational-bezier-chain','cad-ir-trimmed-cylinder','cad-ir-proven-cylinder'].includes(part.geometrySource)&&s.parameterMap?.kind==='identity'&&curve.parameterMap?.kind==='identity'
     &&curve.rational,'unsupported-source-isocurve');
   const boundary=part.boundaryEdges.find((b:any)=>b.edge===edgeIndex),trim=ir.trims[boundary?.trim],c2=ir.curves2d[trim?.curve2d];
+  check(Array.isArray(part.audit?.uv),'missing-source-isocurve-uv');
   check(c2?.degree===1&&!c2.rational&&c2.controlPoints.length===2&&c2.parameterMap?.kind==='identity','unsupported-source-isocurve-trim');
   check(c2.knots.length===4&&c2.knots.every((x:number,i:number)=>x===trim.sourceSubdomain[i<2?0:1]),'partial-source-isocurve-trim');
   const [a,b]=c2.controlPoints,fixed=[0,1].find(axis=>a[axis]===b[axis]&&a[axis]>=s.domain[axis][0]&&a[axis]<=s.domain[axis][1]

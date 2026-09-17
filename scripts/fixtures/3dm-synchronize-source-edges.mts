@@ -62,10 +62,10 @@ function splitBoundary(ir:any,part:any,edge:number,parameters:number[],metersPer
 export function synchronizeSourceEdges(ir:any,input:any[],metersPerUnit:number) {
   check(Number.isFinite(metersPerUnit)&&metersPerUnit>0,'invalid-isocurve-unit');
   let parts=[...input];const records:any[]=[],failures:any[]=[];
-  const initial=auditBrepBoundaries(ir,parts);
+  const initial=auditBrepBoundaries(ir,parts);let currentAudit=initial;
   for(const candidate of initial.shared.filter(e=>!e.conforming)){
     const pair=candidate.faces.map((face:number)=>parts.find(p=>p.face===face));
-    if(pair.some((p:any)=>!['cad-ir-rational-bezier-chain','cad-ir-affine-plane-trim'].includes(p.geometrySource)))continue;
+    if(pair.some((p:any)=>!['cad-ir-rational-bezier-chain','cad-ir-trimmed-cylinder','cad-ir-proven-cylinder','cad-ir-affine-plane-trim'].includes(p.geometrySource)))continue;
     try{
       const chain=sourceEdgeChain(ir,candidate.edge,metersPerUnit),domain=ir.edges[candidate.edge].sourceSubdomain;
       const parameters=chain.parameters.map(t=>(t-domain[0])/(domain[1]-domain[0]));
@@ -74,13 +74,13 @@ export function synchronizeSourceEdges(ir:any,input:any[],metersPerUnit:number) 
       check(union.length<=4096&&union.every(t=>Number.isFinite(t)&&t>=-1e-12&&t<=1+1e-12)
         &&Math.abs(union[0])<1e-10&&Math.abs(union.at(-1)!-1)<1e-10,'invalid-isocurve-parameter-union');
       const replacements=pair.map((p:any)=>structuredClone(p)),proofs=replacements.map((p:any)=>splitBoundary(ir,p,candidate.edge,union,metersPerUnit));
-      const trial=parts.map(p=>replacements.find((r:any)=>r.face===p.face)??p),audit=auditBrepBoundaries(ir,trial),previous=auditBrepBoundaries(ir,parts);
+      const trial=parts.map(p=>replacements.find((r:any)=>r.face===p.face)??p),audit=auditBrepBoundaries(ir,trial),previous=currentAudit;
       check(audit.shared.find(e=>e.edge===candidate.edge)?.conforming,'isocurve-refinement-not-conforming');
       check(previous.shared.filter(e=>e.conforming).every(e=>audit.shared.find(a=>a.edge===e.edge)?.conforming),'isocurve-topology-regression');
       check(previous.seams.filter(e=>e.conforming).every(e=>audit.seams.find(a=>a.edge===e.edge)?.conforming),'isocurve-self-seam-regression');
       const record={edge:candidate.edge,parameters:union.map(t=>domain[0]+t*(domain[1]-domain[0])),proofs};
       for(const p of replacements)p.audit.sourceIsocurveRefinements=[...(p.audit.sourceIsocurveRefinements??[]),record];
-      parts=trial;records.push(record);
+      parts=trial;currentAudit=audit;records.push(record);
     }catch(error){failures.push({edge:candidate.edge,code:error instanceof Error?error.message:'source-isocurve-failed'});}
   }
   return {parts,records,failures};

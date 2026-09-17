@@ -8,7 +8,7 @@ import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { auditBrepBoundaries } from './3dm-brep-boundary-audit.mts';
 import { evaluateCurve,evaluateSurface } from './3dm-nurbs-parameters.mjs';
 import { export3dmGlb } from './3dm-glb-export.mts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/local-plane-2026-09-17-v1/self-seam');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/cylinder-isocurve-2026-09-17-v1/self-seam');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),sourceSha256='a1b0ef69925b5d9223a7d797033055bb766842768a96f7713e1ecaec2763bb31';
 assert.equal(sha(readFileSync(path)),sourceSha256);
@@ -19,7 +19,7 @@ const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
 test('seven real periodic seams have independent source identities and matching oriented mesh sides',async()=>{
   const before=JSON.stringify(complete.parts),audit=auditBrepBoundaries(ir,complete.parts);
   assert.deepEqual(audit.seams.map(e=>e.edge),seamEdges);assert(audit.seams.every(e=>e.conforming));assert.equal(audit.unverified.length,0);
-  assert.equal(audit.shared.filter(e=>!e.conforming).length,59);assert.equal(audit.allFacesPresent,true);
+  assert.equal(audit.shared.filter(e=>!e.conforming).length,56);assert.equal(audit.allFacesPresent,true);
   let curveReferences=0,trimReferences=0,maxCurveError=0,maxTrimError=0;
   for(const seam of audit.seams){const edge=ir.edges[seam.edge],curve=ir.curves3d[edge.curve3d];
     for(const sample of curve.parameterEvidence){curveReferences++;maxCurveError=Math.max(maxCurveError,distance(evaluateCurve(curve,sample.source),sample.point));}
@@ -30,11 +30,11 @@ test('seven real periodic seams have independent source identities and matching 
   }
   assert(curveReferences>=266&&trimReferences>=532);assert(maxCurveError<1e-10&&maxTrimError<1e-10);assert.equal(JSON.stringify(complete.parts),before);
   const glb=await export3dmGlb(source,sourceSha256);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');
-  assert.equal(sha(glb.bytes),'538e42b0597f3cae38603522964a0b6a8a88a7fb0a98773d7b05b8edaf56ecc4');
+  assert.equal(sha(glb.bytes),'43bff7fbb5a81946b5ed3924d4860b36ddd7a88bfd549a8f95af1ca67859a207');
   mkdirSync(out,{recursive:true});writeFileSync(resolve(out,'MechPartA.glb'),glb.bytes);
   const evidence={sourceSha256,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',archiveVersion:source.archiveVersion,
     metersPerUnit:.001,useBoundary:'official sample; local verification only; not redistributed',curveReferences,trimReferences,maxCurveError,maxTrimError,
-    seams:audit.seams,unverified:audit.unverified,nonconformingShared:59,glbSha256:sha(glb.bytes),status:glb.sidecar.status};
+    seams:audit.seams,unverified:audit.unverified,nonconformingShared:56,glbSha256:sha(glb.bytes),status:glb.sidecar.status};
   writeFileSync(resolve(out,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({curveReferences,trimReferences,maxCurveError,maxTrimError}));
 });
 test('metadata alone cannot certify a seam and mesh defects remain explicit',()=>{
