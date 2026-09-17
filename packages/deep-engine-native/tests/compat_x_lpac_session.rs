@@ -149,6 +149,51 @@ fn crashed_worker_cannot_be_reused() {
 }
 
 #[test]
+fn crashed_session_is_rebuilt_with_new_pid_and_old_epoch_stays_rejected() {
+    let _lock = LOCK.lock().unwrap();
+    let host = XCompatibilityHost::new(true, config().budget).unwrap();
+    let mut first = Session::start(&worker(), config()).unwrap();
+    let first_pid = first.process_id();
+    let first_process = handle(first_pid);
+    let old = first.evaluate(&request(1), || context(1)).unwrap();
+    let published = host
+        .publish(CompatibilityLane::ExperimentalX, old.clone(), context(1))
+        .unwrap();
+
+    // 强制终止 worker：宿主收到错误且整棵进程树与临时 profile 已回收，会话禁止复用。
+    assert_ne!(
+        unsafe { TerminateProcess(first_process.as_raw_handle(), 3) },
+        0
+    );
+    assert!(first.evaluate(&request(2), || context(2)).is_err());
+    reclaimed(&first_process);
+
+    // 宿主显式重建：新 PID 消费同一封闭请求，输出与本地求值逐字一致；旧 epoch 候选在发布时被拒。
+    let mut second = Session::start(&worker(), config()).unwrap();
+    let second_process = handle(second.process_id());
+    assert_ne!(second.process_id(), first_pid);
+    let rebuilt = second.evaluate(&request(2), || context(2)).unwrap();
+    assert_eq!(
+        rebuilt,
+        host.evaluate(CompatibilityLane::ExperimentalX, &request(2), context(2))
+            .unwrap()
+    );
+    let messages = host
+        .publish(CompatibilityLane::ExperimentalX, rebuilt, context(2))
+        .unwrap();
+    assert_eq!(messages.len(), published.len());
+    assert_eq!(
+        host.publish(CompatibilityLane::ExperimentalX, old, context(2)),
+        Err(XRejection::StaleEpoch {
+            expected: 1,
+            current: 2
+        })
+    );
+    second.close().unwrap();
+    reclaimed(&second_process);
+}
+
+#[test]
 fn bad_receipt_and_oversized_header_reclaim_a_still_running_worker() {
     let _lock = LOCK.lock().unwrap();
     let fault_worker = worker().with_file_name("x_session_fault_worker.exe");

@@ -2395,3 +2395,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 复用参数映射、自然矩形 trim 和 Bézier 凸包界；同顶点位似控制行的锥台无需沿高度加密。支持 identity/separable 角参数及转置，锥顶/非矩形 trim 明确拒绝。
 - 官方 Wheel_PG 9 个真实旋转面、Gear 25 个窄裁剪带通过；2268/84 个原 PointAt 点到实际三角网格最大误差分别 0.004660191/0.004851636 mm，均低于 0.01 mm 源空间预算。Wheel_PG 忽略缓存全文件得到 14 支持面、17416 三角，仍为 partial-geometry-preview。
 - 圆锥 5/5、既有回归 21/21、5 件源/GLB audit、专项 tsc、repository gate 通过；镜像/非均匀实例使用真实网格加受控变换。任意曲面裁剪、跨面缝合与生产视觉仍待办。[证据](specs/industrial-3dm-cone-tessellation-2026-09-17.md)
+
+### 2026-09-17 P2-01 收口：受限进程三要素闭环（ZCode）
+
+- 盘点全部 18 份 P2-01 spec 与 `compat_x` 实现/测试后确认：独立受限进程（单次 JSON IPC、XSF1 持续会话、零 capability LPAC、Job 限额、portable 固定 worker）与崩溃/终止隔离（崩溃保持 LKG、TerminateProcess 会话中毒、三层树取消回收、CPU/wall-clock/内存/进程数限额）已有实现与测试；收口条件仅余两处测试级缺口。
+- 补 `worker_self_termination_reaps_live_descendant_tree`（compat_x_windows_job：worker 非零码自终止、子/孙持继承管道存活→宿主收 Crashed、逐 PID 核验整树回收，4 秒内有界）与 `crashed_session_is_rebuilt_with_new_pid_and_old_epoch_stays_rejected`（compat_x_lpac_session：TerminateProcess 后会话中毒回收，重建新 PID 会话输出与本地求值逐字一致、旧 epoch 发布被拒、双会话 profile 各自清理）。
+- 门禁：lib 362/bin 128（all-features）全过；compat_x_process 7、windows_job 5、lpac_session 6、lpac 4、scheduler_cli 1、1025 次续期 1 全过；clippy `-D warnings --all-targets --all-features` 与 fmt 通过。**修正**：先前台账记录的 compat_x_lpac 4 项 ACCESS_DENIED 非环境限制——普通 examples 构建以动态 CRT 覆盖静态探针致 `0xc0000022`（DLL ACL），重编 `x_lpac_probe`/`x_compat_worker`/`x_session_fault_worker` 静态 CRT 后 4/4 通过。
+- 边界：不运行真实 JS，不宣称 ZRender/ECharts 兼容；LPAC 文件/网络负向权限矩阵、产品发布/编辑器接线、签名与更新撤销继续待办。未 git commit。

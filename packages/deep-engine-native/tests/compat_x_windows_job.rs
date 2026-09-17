@@ -80,6 +80,73 @@ fn cancellation_kills_descendants_after_worker_exits_with_inherited_pipes() {
 }
 
 #[test]
+fn worker_self_termination_reaps_live_descendant_tree() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory =
+        std::env::temp_dir().join(format!("deep-x-job-crash-{}-{nonce}", std::process::id()));
+    fs::create_dir(&directory).unwrap();
+    let started = Instant::now();
+    let mut command = fixture("job_fixture_crash_root");
+    command.current_dir(&directory);
+    let result = evaluate_with_config(
+        command,
+        XProcessConfig {
+            enabled: true,
+            budget: XBudget {
+                max_wall_clock_ms: 10_000,
+                ..XBudget::default()
+            },
+            ..Default::default()
+        },
+        &request(),
+        || XExecutionContext {
+            current_epoch: 7,
+            now_ms: 0,
+            cancelled: false,
+        },
+    );
+    assert_eq!(result, Err(XProcessError::Crashed));
+    assert!(started.elapsed() < Duration::from_secs(4));
+    for name in ["root.pid", "child.pid", "grandchild.pid"] {
+        let path = directory.join(name);
+        let pid = fs::read_to_string(&path).unwrap().parse().unwrap();
+        assert_exited(pid);
+        fs::remove_file(path).unwrap();
+    }
+    fs::remove_dir(directory).unwrap();
+}
+
+#[test]
+#[ignore = "job tree crash root launched only by parent test"]
+fn job_fixture_crash_root() {
+    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
+    assert!(
+        fixture("job_fixture_grandchild")
+            .creation_flags(CREATE_BREAKAWAY_FROM_JOB)
+            .spawn()
+            .is_err()
+    );
+    fs::write("root.pid", std::process::id().to_string()).unwrap();
+    let child = fixture("job_fixture_child")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    fs::write("child.pid", child.id().to_string()).unwrap();
+    // 等整棵树登记完 PID 再以非零码自终止：宿主看到崩溃时子孙仍持有继承管道运行。
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !Path::new("grandchild.pid").exists() {
+        assert!(Instant::now() < deadline, "descendant tree did not start");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    std::process::exit(7);
+}
+
+#[test]
 #[ignore = "job tree root launched only by parent test"]
 fn job_fixture_root() {
     use std::os::windows::process::CommandExt;
