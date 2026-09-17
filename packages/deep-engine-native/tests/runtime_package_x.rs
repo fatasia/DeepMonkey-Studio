@@ -183,7 +183,10 @@ fn v6_explicitly_rejects_v3_to_v5_roles_even_null_or_unreferenced() {
 #[ignore = "child-only packaged scheduler fixture"]
 fn x_package_worker_fixture() {
     use deep_engine_native::compat_x::{process::*, scheduler::*};
-    let loaded = load(&fixture()).unwrap();
+    let loaded = parse_and_validate_x_runtime_package(include_bytes!(
+        "../../deep-engine/fixtures/experimental-x-runtime-v6.json"
+    ))
+    .unwrap();
     let context = || XExecutionContext {
         current_epoch: 7,
         now_ms: 100,
@@ -207,6 +210,20 @@ fn x_package_worker_fixture() {
     stale.request.expected_epoch = 8;
     assert!(scheduler.dispatch(&stale, context).is_err());
     assert_eq!(scheduler.last_known_good(), Some(&old));
+}
+
+#[test]
+fn consumes_actual_typescript_author_output_with_identical_frozen_hash() {
+    let loaded = parse_and_validate_x_runtime_package(include_bytes!(
+        "../../deep-engine/fixtures/experimental-x-runtime-v6.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        loaded.content.content_hash.value,
+        "5c15e6f3d0475b2bdb9952ae31d7d9d9d41f148cd5e6d26656842cb996d3cf3b"
+    );
+    assert_eq!(loaded.base.package_id, "x.author");
+    assert_eq!(loaded.base.resource_index.len(), 3);
 }
 
 #[cfg(windows)]

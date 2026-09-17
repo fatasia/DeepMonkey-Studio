@@ -1,4 +1,7 @@
 export * from "./types.js";
+export * from "./experimentalXTypes.js";
+export { freezeExperimentalXResource } from "./experimentalXFreeze.js";
+export { buildExperimentalXRuntimePackage } from "./experimentalXBuilder.js";
 export { validateRuntimeSceneCamera, type RuntimeSceneCamera } from "./camera.js";
 export * from "./coordinates.js";
 export * from "./environmentTypes.js";

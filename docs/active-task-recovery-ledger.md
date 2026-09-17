@@ -1922,6 +1922,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - v1–v5 禁止 X 字段/资源；v6 明确禁止 camera/chart/chartSim/dashboard 字段（包括 null）及对应未引用资源。作者冻结只接受封闭 X IR 和固定预算，不接收源码、路径、开关或自定预算。
 - X 6 项（另 1 个 child-only LPAC fixture）、旧包 52 项、compat_x 15 项及 clippy/fmt 通过。Web 作者编译、普通 player/UI/绘制消费仍待办，不把独立 loader 误报为完整动态 Dashboard 发布能力。[证据](specs/deep2d-p2-01-x-runtime-package-v6-2026-09-17.md)
 
+### 2026-09-17 Deep2D P2-01 TypeScript 作者冻结→Native v6→LPAC（Codex）
+
+- TypeScript 新增独立 `freezeExperimentalXResource` / `buildExperimentalXRuntimePackage`，复用既有静态 builder、JSON 快照、canonical hash、资源索引排序与序列化；Web 只提供显式无 UI 编译入口，激活状态固定 `disabled-by-default`，普通 parser/player/场景编译不接受或启用 v6。
+- 作者输入只含封闭 X IR；拒绝 camera/chart/chartSim/dashboard、脚本/路径/开关/自定预算、accessor/hidden/symbol/cycle、错误引用与超限。资源身份和 CPU/内存/深度/消息/IPC 预算与 Native 默认合同一致，不在 TS 新建求值运行时。
+- TS 实际 golden 由 Rust v6 loader 读取，并由真实 LPAC child 发布 `Number(42)`；TS runtimePackage 312、Web 1、Rust 7（另 1 child-only 实际调起）、engine build/typecheck、Web tsc、Native clippy/fmt 通过。编辑器操作映射、正式发布路由、绘制消费和持续 tick 仍待办。[证据](specs/deep2d-p2-01-typescript-x-author-2026-09-17.md)
+
 ### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
 
 - 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。
