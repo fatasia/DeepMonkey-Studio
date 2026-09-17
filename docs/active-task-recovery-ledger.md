@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 Native 文件监听回收（Codex）
+
+- 已完成：RenderPacket/RuntimePackage 共用可取消并 join 的监听线程，transport 关闭唤醒轮询，读中取消丢弃候选；不强行中断同步文件读取。
+- 实证：app 聚焦 32 passed/5 ignored，build/clippy/fmt 与 repository gate 通过；RTX 4060/Vulkan 两种 live smoke 正常发布、退出，坏包保留旧帧。[证据](specs/deep2d-live-watch-lifetime-2026-09-17.md)
+- 本轮待办：X 自动热同步接线与完整视觉验收。
+
 ### 2026-09-17 X 同窗拖放替换（Codex）
 
 - 已完成：显式 X 窗口复用 PackageOpen 队列/GPU 候选事务接受 X 包拖放，普通加载器继续拒绝；首帧呈现后才存恢复检查点。

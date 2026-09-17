@@ -113,15 +113,14 @@ fn load_and_validate_bytes(bytes: &[u8]) -> Result<RenderPacket, String> {
     Ok(packet)
 }
 
-/// Long-lived watcher thread. Exits when the process exits; pending updates that
-/// never reach the event loop are dropped, which keeps the last correct frame.
+/// Watcher lifetime follows its transport; cancelled reads never enqueue a candidate.
 pub(super) fn spawn(
     path: PathBuf,
     mailbox: LatestMailbox<WatchedPacket>,
     published_key: Arc<AtomicU64>,
     proxy: EventLoopProxy<GpuEvent>,
-) {
-    std::thread::spawn(move || {
+) -> super::watch_thread::WatchThread {
+    super::watch_thread::WatchThread::spawn(move |stop| {
         let mut observed = match file_identity(&path) {
             Ok(value) => value,
             Err(reason) => {
@@ -131,9 +130,12 @@ pub(super) fn spawn(
         };
         let mut generation = 0_u64;
         let mut last_rejected_identity: Option<Option<PacketIdentity>> = None;
-        loop {
-            std::thread::sleep(POLL_INTERVAL);
-            match load_update(&path, &observed, published_key.load(Ordering::Acquire)) {
+        while stop.wait(POLL_INTERVAL) {
+            let update = load_update(&path, &observed, published_key.load(Ordering::Acquire));
+            if stop.cancelled() {
+                return;
+            }
+            match update {
                 PacketUpdate::Unchanged => {}
                 PacketUpdate::Equivalent { identity } => {
                     observed = identity;
@@ -166,7 +168,7 @@ pub(super) fn spawn(
                 }
             }
         }
-    });
+    })
 }
 
 #[cfg(test)]

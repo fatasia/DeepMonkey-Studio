@@ -123,8 +123,8 @@ pub(super) fn spawn(
     mailbox: LatestMailbox<WatchedPackage>,
     published: Arc<RwLock<RuntimePackageSnapshot>>,
     proxy: EventLoopProxy<GpuEvent>,
-) {
-    std::thread::spawn(move || {
+) -> super::watch_thread::WatchThread {
+    super::watch_thread::WatchThread::spawn(move |stop| {
         let mut observed = match file_identity(&path) {
             Ok(value) => value,
             Err(reason) => {
@@ -134,12 +134,14 @@ pub(super) fn spawn(
         };
         let mut generation = 0_u64;
         let mut rejected_identity: Option<Option<PackageIdentity>> = None;
-        loop {
-            std::thread::sleep(POLL_INTERVAL);
+        while stop.wait(POLL_INTERVAL) {
             let update = {
                 let published = published.read().unwrap_or_else(|error| error.into_inner());
                 load_update(&path, &observed, &published)
             };
+            if stop.cancelled() {
+                return;
+            }
             match update {
                 PackageUpdate::Unchanged => {}
                 PackageUpdate::Equivalent { identity } => {
@@ -169,7 +171,7 @@ pub(super) fn spawn(
                 }
             }
         }
-    });
+    })
 }
 
 #[cfg(test)]

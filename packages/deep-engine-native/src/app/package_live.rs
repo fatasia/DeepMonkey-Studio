@@ -21,6 +21,7 @@ use crate::{
 };
 
 pub(super) struct PackageLiveTransport {
+    _watcher: super::watch_thread::WatchThread,
     mailbox: LatestMailbox<WatchedPackage>,
     published: Arc<RwLock<RuntimePackageSnapshot>>,
 }
@@ -32,8 +33,12 @@ pub(super) fn start(
 ) -> PackageLiveTransport {
     let mailbox = LatestMailbox::default();
     let published = Arc::new(RwLock::new(published));
-    package_watch::spawn(path, mailbox.clone(), Arc::clone(&published), proxy);
-    PackageLiveTransport { mailbox, published }
+    let watcher = package_watch::spawn(path, mailbox.clone(), Arc::clone(&published), proxy);
+    PackageLiveTransport {
+        _watcher: watcher,
+        mailbox,
+        published,
+    }
 }
 
 /// Applies render/shader-only diffs through the GPU scene transaction. Changes to

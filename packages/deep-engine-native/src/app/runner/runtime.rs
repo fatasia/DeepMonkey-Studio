@@ -72,6 +72,8 @@ pub(super) fn run_internal(
         .map_err(|error| format!("native event loop failed: {error}"))?;
     #[cfg(windows)]
     app.x_runtime.take();
+    app.packet_live_transport.take();
+    app.package_live_transport.take();
     if let Some(error) = app.state.failure {
         return Err(error);
     }

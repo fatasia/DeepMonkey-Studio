@@ -10,6 +10,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Deep2D experimental compatibility
 
+- Cancel and join native package and RenderPacket file watchers when their window transport closes.
+
 - Replace X packages by dropping them into an explicitly opened X window; reuse the existing background loader and GPU candidate transaction while keeping ordinary viewers isolated.
 
 - Compile verified ECharts/ZRender rect deltas into explicit X display packages, preserving bar geometry and rejecting incomplete or stale snapshots.

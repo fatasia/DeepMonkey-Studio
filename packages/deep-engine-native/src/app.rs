@@ -44,6 +44,7 @@ mod section_probe;
 mod selection;
 mod selection_probe;
 mod shadow_update_probe;
+mod watch_thread;
 mod window_events;
 #[cfg(all(test, windows))]
 mod x_drop_tests;

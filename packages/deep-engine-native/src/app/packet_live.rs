@@ -21,6 +21,7 @@ use crate::{
 };
 
 pub(super) struct PacketLiveTransport {
+    _watcher: super::watch_thread::WatchThread,
     mailbox: LatestMailbox<WatchedPacket>,
     published_key: Arc<AtomicU64>,
 }
@@ -34,8 +35,9 @@ pub(super) fn start(
 ) -> PacketLiveTransport {
     let mailbox = LatestMailbox::default();
     let published_key = Arc::new(AtomicU64::new(live_key));
-    packet_watch::spawn(path, mailbox.clone(), Arc::clone(&published_key), proxy);
+    let watcher = packet_watch::spawn(path, mailbox.clone(), Arc::clone(&published_key), proxy);
     PacketLiveTransport {
+        _watcher: watcher,
         mailbox,
         published_key,
     }
