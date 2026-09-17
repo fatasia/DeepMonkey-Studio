@@ -34,6 +34,8 @@
 
 - C1缺口②关闭：dashboardChartFrame新增initialChartState（Native from_ir同序同语义派生窗口，数值/log/类目/band全按Native同式，fail-closed同边界——未知action/系列/轴/越界窗口两侧同样拒绝，运行期action两侧都不出静态像素并登记deferred）；C1复跑fixture原样进controller（fixtureAdaptation空），SSIM 0.9544→0.9610、web彩色像素129077 vs Native 132913，证据test-output/chartframe-initial-state-20260918/。聚焦82全绿，golden 36例不受影响。两个C1已知缺口全部关闭。
 
+- P0-01收官 `f0801cc`：筛选选项文字经字形运行进Native——新Rust子命令--measure-glyph-run复用FrozenTextRasterizer出确定性图集与placement度量（与渲染同引擎，两次重建SHA一致），compileDashboardContent按nodeId注入FilterGlyphBundle（deny-unknown桥），GPU读回消融对照RTX 4060实测四行51/58/51/69像素差；修复swash placement.top排版约定取负并加行框约束单测。native 328+126、web聚焦593全绿。P0-01全组件内容lowering均有真实编译与Native呈现证据。[报告](specs/deep2d-filter-glyph-run-2026-09-18.md)
+
 - 补漏 `9146d7f` 后的data_source.rs挂载单独fixup提交（泵切片add路径错误）。
 
 - 缺陷①根因修复 `2cb395d`：deep2d_scissor 的chunk_scissor用逐轴拉伸+零偏移，与shader/命中/相机的LetterboxMapping不一致——被node.clip收窄的chunk（标题+单位）在非等比窗口scissor错位整条被裁。修复改用同一映射并补字母箱错位测试钉；新增任意物理尺寸读回harness并修复bytes_per_row 256对齐缺口（1200宽曾静默全零）。修复前0/3220→后3220/3220，真实包标题3876px恢复，整帧diff仅2537px全落标题区；真实窗口截图「分区域出力/MW」可见；bin 126+GPU 45全过、clippy/fmt干净。缺陷③轴/图例确认为编译层缺口（present_chart不生成quad），归P0-01。[报告](specs/deep2d-title-letterbox-fix-2026-09-18.md)
