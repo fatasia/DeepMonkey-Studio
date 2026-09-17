@@ -88,6 +88,13 @@ fn audit(path: &Path) {
                 xt::PLANE => Some(serde_json::json!({"kind":"plane","origin":origin,"axis":vector(e,r,8)?})),
                 xt::CYLINDER => Some(serde_json::json!({"kind":"cylinder","origin":origin,"axis":vector(e,r,8)?,"radius":number(e,r,9)?*1000.0})),
                 xt::SPHERE => Some(serde_json::json!({"kind":"sphere","origin":origin,"radius":number(e,r,8)?*1000.0})),
+                xt::TORUS => {
+                    let major=number(e,r,9)?*1000.0;
+                    let minor=number(e,r,10)?*1000.0;
+                    // Only ring tori: horn/spindle surfaces need a separate branch contract.
+                    if !(minor>0.0 && major>minor) { return None; }
+                    Some(serde_json::json!({"kind":"torus","origin":origin,"axis":vector(e,r,8)?,"majorRadius":major,"radius":minor}))
+                },
                 _ => None,
             }
         });

@@ -82,6 +82,10 @@ function residual(surface, point) {
   const axial = q.reduce((sum, x, i) => sum + x * n[i], 0);
   if (surface.kind === 'plane') return Math.abs(axial);
   if (surface.kind === 'cylinder') return Math.abs(Math.hypot(...q.map((x, i) => x - axial * n[i])) - surface.radius);
+  if (surface.kind === 'torus') {
+    const radial = Math.hypot(...q.map((x, i) => x - axial * n[i]));
+    return Math.abs(Math.hypot(radial - surface.majorRadius, axial) - surface.radius);
+  }
   throw new Error('Unsupported surface witness');
 }
 
@@ -94,6 +98,10 @@ export function compareFaceWitness(source, points, triangles = []) {
     || (source.surface.kind !== 'sphere' && !validPoint(source.surface.axis))
     || (source.surface.kind !== 'plane' && !(Number.isFinite(source.surface.radius) && source.surface.radius > 0)))) {
     throw new Error('Invalid source surface');
+  }
+  if (source.surface?.kind === 'torus'
+    && !(Number.isFinite(source.surface.majorRadius) && source.surface.majorRadius > source.surface.radius)) {
+    throw new Error('Unsupported torus radii');
   }
   let magnitude = 0;
   for (const p of [...points, ...source.points]) for (const x of p) magnitude = Math.max(magnitude, Math.abs(x));

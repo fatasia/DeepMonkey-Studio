@@ -26,6 +26,22 @@ test('absent witnesses remain unresolved, invalid geometry fails, f32 noise tole
   assert.throws(() => compareFaceWitness(face, []));
   assert.equal(compareFaceWitness(face, triangle.map(p => p.map(x => x + 0.001))).status, 'witness-match');
 });
+test('vertex-free ring torus uses both source radii and rejects a filled hole', () => {
+  const source = { points: [], surface: { kind: 'torus', origin: [10, 20, 30], axis: [0, 0, -2], majorRadius: 5, radius: 1 } };
+  const points = [[16, 20, 30], [14, 20, 30], [15, 20, 31], [10, 15, 29]];
+  assert.equal(compareFaceWitness(source, points).status, 'witness-match');
+  assert.equal(compareFaceWitness(source, [...points, [10, 20, 30]]).status, 'mismatch');
+  assert.equal(compareFaceWitness(source, [[16.011, 20, 30]]).status, 'mismatch');
+  assert.equal(compareFaceWitness(source, [[16.009, 20, 30]]).status, 'witness-match');
+  assert.equal(compareFaceWitness({ ...source, surface: { ...source.surface, majorRadius: 6 } }, points).status, 'mismatch');
+});
+test('torus rejects degenerate axes, invalid radii and unsupported horn/spindle forms', () => {
+  const surface = { kind: 'torus', origin: [0, 0, 0], axis: [1, 0, 0], majorRadius: 5, radius: 1 };
+  assert.equal(compareFaceWitness({ points: [], surface }, [[0, 6, 0], [1, 5, 0]]).status, 'witness-match');
+  for (const fields of [{ axis: [0, 0, 0] }, { radius: 0 }, { majorRadius: Infinity }, { majorRadius: 1 }, { majorRadius: 0.5 }]) {
+    assert.throws(() => compareFaceWitness({ points: [], surface: { ...surface, ...fields } }, [[0, 6, 0]]));
+  }
+});
 test('coincident geometry is an explicit blind spot: witness match is not unique identity', () => {
   assert.equal(compareFaceWitness({ ...face, face: '999' }, triangle).status, 'witness-match');
 });
