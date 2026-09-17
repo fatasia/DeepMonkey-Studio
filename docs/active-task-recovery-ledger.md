@@ -10,6 +10,15 @@
 - 资源推进硬门槛(2026-09-17 用户重申):缺样本、源码、依赖、工具或规范不得直接报外部阻塞；先查 `D:/Download`、仓内/本机缓存、官方/开放来源和等价开源实现，能安全下载则直接下载并固定版本/hash。只有真实检索、下载、构建或验证失败后，才能记录精确阻塞与下一动作。
 - 本日已完成提交:b912d5a、5b75182、b4b3466、fed27b3、b3c3839、2eec131、ad1b076、cabb1a5、e0b2568、43d327d、ad3e432、43af23e、2d86950。
 
+### 2026-09-17 DE26 G02 编译命中宿主桥补证（Codex）
+
+- 在既有切片 2/3 上补 `dispatchDashboardFilterHit`：真实编译 hit 先经 node/key/index/可见性/父参数/按键白名单，
+  通过后只调用现有 playback `setFilter`；不新增筛选状态容器，不绕过级联清理。
+- 端到端聚焦测试串起 lowering hitId → pointer/Enter → setFilter → 嵌套 filterField → 单行/零行结果，
+  并锁定拒绝命中不触发 onChange。纯合同/数据路径，无 CSS、布局或视觉变化。
+- 边界：Native/G01 组合宿主尚未把设备命中适配成 activation；G02 整卡继续保持本轮待办，不能据此声称
+  T+N+W+GPU+WEB 全验收。
+
 ---
 
 ### 2026-09-17 Deep2D P2-01 版本/hash 收口 + P2-04 首版认证报告（Codex）

@@ -40,6 +40,15 @@ pointer/Enter/Space 生成 `setFilter`，并拒绝外来 node/key、越界、隐
 - 未改 CSS/令牌/布局；未启动浏览器双轮截图，Native/组合宿主尚未消费 `setFilter` 命令，故 G02 整卡
   保持`本轮待办`，不得把纯合同与 Web 数据流测试冒充 T+N+W+GPU+WEB 全验收。
 
+### 2026-09-17 独立宿主桥补证
+
+- 新增 `dashboardFilterHitRuntime.ts`，把白名单命令直接派发到既有 `ApplicationPlaybackState.setFilter` 形状；
+  不持有第二份 filters，也不复制级联后代清理规则。G01 组合宿主后续只需提供命中激活与既有 playback store。
+- 端到端合同从 `lowerDashboardWidget` 的真实稳定 `hitId` 出发，覆盖 pointer/Enter → 白名单
+  `setFilter` → playback filters → 嵌套 `filterField` 行过滤 → 零行空结果，以及拒绝命中零状态副作用。
+- 本片仍不声称 Native 命中已经接入：Native/组合宿主产生 activation 的输入适配归 G01。没有 CSS、布局或像素变化，
+  因而不启动 Kimi-95 截图闭环。
+
 ## 明确排除(不许混入)
 
 - date/multi-select 模式首切片只编译外观,行为归切片 3 后续;
