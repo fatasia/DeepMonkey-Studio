@@ -76,10 +76,28 @@ pub(super) fn shadow_options(compact: bool) -> CascadedShadowOptions {
 /// 判据比 `compact_shadow` 更窄——额外要求**没有差分探针**。探针要读前向目标像素,
 /// 裁掉前向目标会让探针失去证据面,所以探针在场时一律不裁。
 pub(super) fn planeless(content: &PlayerContent, features: RendererFeatures) -> bool {
-    content.deep2d.is_some()
-        && content.packet().instances.is_empty()
-        && !features.shadow_probe
-        && !features.ibl_probe
+    plain_2d_content(content) && !features.shadow_probe && !features.ibl_probe
+}
+
+/// 内容侧纯二维事实(不含探针/特效特征):deep2d 就位且无三维实例。
+///
+/// 供生产入口选择默认效果档位:纯二维组合包不再代用户启用 Bloom——dashboard
+/// 暗色背景低于 Bloom 阈值,全尺寸 Bloom 链输出恒为零,却要求全尺寸前向目标。
+pub(crate) fn plain_2d_content(content: &PlayerContent) -> bool {
+    content.deep2d.is_some() && content.packet().instances.is_empty()
+}
+
+/// 生产入口的默认 Bloom 档位:纯二维内容关闭 Bloom,其余保持历史默认。
+///
+/// 关闭后 `BloomPass` 零分配且前向目标按 `compact_forward` 紧凑为 1×1,
+/// 输出逐像素不变(见 `tests/p09_forward_trim_gpu.rs` 的 GPU 读回对照);
+/// 显式关闭仍走 `--no-bloom`,三维/雾内容保持默认档位。
+pub(crate) fn entry_bloom(content: &PlayerContent) -> deep_engine_native::bloom::BloomSettings {
+    if plain_2d_content(content) {
+        deep_engine_native::bloom::BloomSettings::DISABLED
+    } else {
+        deep_engine_native::bloom::BloomSettings::default()
+    }
 }
 
 /// 纯二维场景的分配档位:在渲染器构造期求值一次,作为启动报告里的事实,
@@ -222,6 +240,42 @@ mod tests {
         }
         plain.fog = deep_engine_native::fog::FogSettings::exponential(0.1, [0.5; 3]).unwrap();
         assert!(!compact_forward(&content, plain));
+    }
+
+    /// 生产入口的默认 Bloom 档位:纯二维内容不代用户启用 Bloom(Bloom 链零
+    /// 分配、前向目标随之紧凑为 1×1),含三维实例的内容保持历史默认档位。
+    #[test]
+    fn entry_bloom_follows_the_plain_2d_profile() {
+        let list = deep_engine_native::deep2d::decode_display_list(include_bytes!(
+            "../../fixtures/deep2d_tessellated_v1.json"
+        ))
+        .unwrap();
+        let plain = PlayerContent::from_packet(
+            empty_packet(),
+            Some(deep_engine_native::deep2d::Deep2dRuntimeContent::DisplayList(list)),
+        );
+        assert_eq!(
+            entry_bloom(&plain),
+            deep_engine_native::bloom::BloomSettings::DISABLED
+        );
+        let mut packet = empty_packet();
+        packet
+            .instances
+            .push(deep_engine_native::contract::RenderInstance {
+                id: "instance.entry-bloom".into(),
+                geometry: String::new(),
+                material: String::new(),
+                transform: [
+                    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                ],
+                cast_shadow: None,
+                receive_shadow: None,
+                lod: None,
+            });
+        assert_eq!(
+            entry_bloom(&PlayerContent::from_packet(packet, None)),
+            deep_engine_native::bloom::BloomSettings::default()
+        );
     }
 
     /// 与ForwardTargets中的三个纹理描述符对应，深度也使用多重采样。

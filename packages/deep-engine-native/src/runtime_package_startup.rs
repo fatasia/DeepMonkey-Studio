@@ -5,7 +5,7 @@ use deep_engine_native::runtime_package::{
 };
 use serde::Serialize;
 
-use crate::{app, player_cli::PackageMode, player_content::PlayerContent};
+use crate::{app, player_cli::PackageMode, player_content::PlayerContent, renderer};
 
 pub struct PreparedRuntimePackage {
     content: PlayerContent,
@@ -197,7 +197,8 @@ pub fn verify(
 ) -> Result<(), String> {
     // Exact candidate verification never recovers a different LKG package.
     let package = load(path)?;
-    app::run_verification(package.content, verification.bind_hash(package.hash))
+    let bloom = renderer::entry_bloom(&package.content);
+    app::run_verification(package.content, verification.bind_hash(package.hash), bloom)
 }
 
 pub fn run(package: PreparedRuntimePackage, mode: PackageMode) -> Result<(), String> {
@@ -224,12 +225,13 @@ pub fn run(package: PreparedRuntimePackage, mode: PackageMode) -> Result<(), Str
     if matches!(mode, PackageMode::Headless) {
         return Ok(());
     }
+    let bloom = renderer::entry_bloom(&content);
     app::run(
         content,
         matches!(mode, PackageMode::Smoke),
         false,
         false,
-        deep_engine_native::bloom::BloomSettings::default(),
+        bloom,
     )
 }
 

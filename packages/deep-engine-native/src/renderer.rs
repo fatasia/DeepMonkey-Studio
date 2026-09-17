@@ -32,6 +32,7 @@ use crate::{
 mod content_profile;
 mod diagnostics;
 pub(crate) use content_profile::ContentProfileReport;
+pub(crate) use content_profile::entry_bloom;
 #[cfg(all(test, target_os = "windows"))]
 mod content_profile_gpu_tests;
 #[cfg(all(test, target_os = "windows"))]

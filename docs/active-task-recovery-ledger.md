@@ -60,6 +60,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- P1-09收尾：生产入口Bloom按需分配。`entry_bloom`（复用`plain_2d_content`）统一`--package`/verify/`--package-live`三入口，纯二维dashboard组合包不再代用户启用Bloom——Bloom链零分配、前向目标紧凑1×1（56B），三维/雾保持默认档位；预算口径保持修正后56 B/px逻辑估算。GPU读回修复前后16个文件SHA全等（暗背景两档位逐像素一致、HDR背景可区分），draw_in_format组合包/producer/author-css-colors/compact_forward/bloom_gpu抽跑全绿；bin 127+lib 341通过、clippy -D warnings、fmt干净。HDR亮背景纯二维组合包与live热更跨档不自动恢复Bloom属已声明边界。[证据](specs/native-bloom-on-demand-entry-2026-09-18.md)
+
 - Native纯二维紧凑前向目标已接构造/resize：无Bloom/Fog/探针/三维实例时分配1×1并保留ACES背景，其他档位不变。125项常规测试、实际窗口呈现/零尺寸恢复/2D↔3D切换通过；GPU两格式40组41,032像素等价、非均匀2,382像素正常采样通过。默认Bloom仍完整分配，不声称整个进程显存或FPS提升；完整视觉待验。[证据](specs/native-compact-forward-2026-09-17.md)
 
 - Deep2D P1-09源码复核：修正前向目标预算漏算深度4×MSAA，逻辑估算44→56 B/px；输出pass实际读取HDR并做ACES/编码，撤销旧“零像素依赖”判断。5项CPU档位测试通过；未减少GPU分配、未声称物理显存测量或视觉等价。[依据与后续](specs/native-forward-budget-correction-2026-09-17.md)

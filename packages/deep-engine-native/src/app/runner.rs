@@ -39,12 +39,13 @@ enum ReportMode {
 pub fn run_verification(
     content: PlayerContent,
     verification: crate::publication_verification::Verification,
+    bloom: BloomSettings,
 ) -> Result<(), String> {
     run_internal(
         content,
         false,
         RendererFeatures {
-            bloom: BloomSettings::default(),
+            bloom,
             fog: FogSettings::DISABLED,
             shadow_probe: false,
             ibl_probe: false,
@@ -216,11 +217,14 @@ pub fn run_packet_live(content: PlayerContent, spec: PacketLiveSpec) -> Result<(
 }
 
 pub fn run_package_live(content: PlayerContent, spec: PackageLiveSpec) -> Result<(), String> {
+    // 与 `runtime_package_startup` 的生产入口同一档位函数:纯二维
+    // 组合包不代用户启用 Bloom,热更观察路径不得与冷启动路径分叉。
+    let bloom = crate::renderer::entry_bloom(&content);
     run_internal(
         content,
         spec.smoke_rewrite.is_some(),
         RendererFeatures {
-            bloom: BloomSettings::default(),
+            bloom,
             fog: FogSettings::DISABLED,
             shadow_probe: false,
             ibl_probe: false,
