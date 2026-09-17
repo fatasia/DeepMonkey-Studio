@@ -26,6 +26,10 @@
 
 - 缺陷①根因修复 `2cb395d`：deep2d_scissor 的chunk_scissor用逐轴拉伸+零偏移，与shader/命中/相机的LetterboxMapping不一致——被node.clip收窄的chunk（标题+单位）在非等比窗口scissor错位整条被裁。修复改用同一映射并补字母箱错位测试钉；新增任意物理尺寸读回harness并修复bytes_per_row 256对齐缺口（1200宽曾静默全零）。修复前0/3220→后3220/3220，真实包标题3876px恢复，整帧diff仅2537px全落标题区；真实窗口截图「分区域出力/MW」可见；bin 126+GPU 45全过、clippy/fmt干净。缺陷③轴/图例确认为编译层缺口（present_chart不生成quad），归P0-01。[报告](specs/deep2d-title-letterbox-fix-2026-09-18.md)
 
+- P1-18 TS字形合同 `5732f23`：text命令新增atlasId/bakedGlyphs（逐字段镜像Native command_types.rs/validate_text.rs），顶层可选atlases配对，向后兼容旧显示列表；dashboardGlyphRun.buildTextGlyphRunCommands实测度量表必填、逐行守卫镜像Native校验；lowerDashboardWidget可选度量参数——有度量产出字形运行、无度量保持deferred不冒充。deep-engine 3108+web聚焦33全绿。筛选文字Native端GPU证据与能力报告口径均未动。[报告](specs/deep2d-glyph-run-contract-2026-09-18.md)
+
+- P1-13宿主泵 `9146d7f`：poll_http_once按节拍驱动——自动重连/send失败消化为退避/take_response组装payload经on_receive_at泵入；4项真回环全链测试（交付/跨重连版本治理/断线退避恢复/closed拒绝）。lib 322全过。
+
 - S0样本库补强（data/不入库）：3DM×2(mcneel/openNURBS@eb92af3b)、LAS×1(PDAL@58af674b)、3D Tiles×6(CesiumGS/3d-tiles-tools@4ca692eb,Apache-2.0)、RVT×1(本地BIMFACE,仅inspect)；manifest 12条逐条重算SHA-256一致,许可文件随目录。jt coffee-maker 9.5文件在库但manifest未登记属既有遗留。
 
 ### 2026-09-17 主流程与 DE26 范围同步
