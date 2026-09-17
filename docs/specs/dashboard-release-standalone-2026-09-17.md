@@ -23,3 +23,11 @@ runtime 字节 SHA-256：`c22a39124c67416a454d05029966be35ae11c01cf7f3cf5dbe4dd5
 脚本恢复原 EXE 后再次实际呈现；检查点包哈希及完整包字节与嵌入的原载荷一致。整个过程 PATH 仅 System32，播放器目录只有 EXE；不修改输入 EXE。当前通过证据位于 `test-output/dashboard-standalone-recovery-20260917-r2/evidence.json`，repository gate 通过。
 
 本检查证明损坏拒绝与手动还原后的恢复，不证明安装器自动回滚、版本升级或断电事务。
+
+## 同路径版本切换
+
+`build-dashboard-upgrade-fixture.mts` 从已发布的真实图表 EXE 派生明确标记的测试版本：1.0.0 的 A=37/B=91 改为 1.0.1 的 A=91/B=37，递增图表资源修订并重新计算内容/包/嵌入载荷哈希。新包经公共 RuntimePackage 解析器验证，不作为第二次实际作者发布证据。
+
+向恢复脚本传入可选参数 `<upgrade.exe>`，在同一播放器路径、同一恢复目录依次执行原版呈现→新版呈现→损坏新版拒绝→还原旧版呈现。新旧检查点分别匹配对应包哈希与完整载荷；损坏新版后全部恢复文件保持原样。`test-output/dashboard-version-rollback-20260917-r1/evidence.json` 已通过，新版包哈希 `db58d47615067750a346da99be97ce3e60933c0a34918babb0692b85ba66d5a5`。
+
+这补充了播放器内容版本切换与回退证据；替换由测试脚本执行，自动安装更新、原子切换与断电恢复仍待验收。

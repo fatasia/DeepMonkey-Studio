@@ -4,8 +4,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const [source, destination, ...extra] = process.argv.slice(2);
-if (!source || !destination || extra.length) throw new Error("Usage: node scripts/verify-dashboard-standalone-recovery.mjs <standalone.exe> <new-output-directory>");
+const [source, destination, upgradeSource, ...extra] = process.argv.slice(2);
+if (!source || !destination || extra.length) throw new Error("Usage: node scripts/verify-dashboard-standalone-recovery.mjs <standalone.exe> <new-output-directory> [upgrade.exe]");
 const output = path.resolve(destination), hash = bytes => createHash("sha256").update(bytes).digest("hex");
 await mkdir(output);
 const playerDirectory = path.join(output, "player"); await mkdir(playerDirectory);
@@ -73,7 +73,34 @@ assert.equal(restoredActive.hash, expectedPackageHash);
 assert.equal(before[`${expectedPackageHash}.json`], hash(original.subarray(payloadStart, -48)));
 assert.equal(after[`${expectedPackageHash}.json`], before[`${expectedPackageHash}.json`]);
 assert.deepEqual(await readdir(playerDirectory), ["Dashboard.exe"]);
+let upgrade;
+if (upgradeSource) {
+  const upgraded = await readFile(upgradeSource);
+  assert.equal(upgraded.subarray(-48, -40).toString("ascii"), "DMDASH01");
+  const size = Number(upgraded.readBigUInt64LE(upgraded.length - 40));
+  assert(Number.isSafeInteger(size) && size > 0 && size <= upgraded.length - 48);
+  const payload = upgraded.subarray(upgraded.length - 48 - size, -48);
+  const packageHash = JSON.parse(payload).packageHash.value;
+  assert.notEqual(packageHash, expectedPackageHash);
+  const root = path.join(env.LOCALAPPDATA, "DeepEngineNative", "package-recovery");
+  const directory = path.join(root, (await readdir(root))[0]);
+  await writeFile(executable, upgraded);
+  await writeFile(path.join(output, "upgraded.log"), await launch(true));
+  assert.equal(JSON.parse(await readFile(path.join(directory, "active.json"))).hash, packageHash);
+  assert.equal((await checkpoint())[`${packageHash}.json`], hash(payload));
+  const upgradedCheckpoint = await checkpoint();
+  const corrupt = Buffer.from(upgraded); corrupt[upgraded.length - 48 - size] ^= 1;
+  await writeFile(executable, corrupt);
+  const rejection = await launch(false); assert(rejection.includes("overlay/payload-hash"));
+  assert.deepEqual(await checkpoint(), upgradedCheckpoint);
+  await writeFile(path.join(output, "upgrade-corrupt.log"), rejection);
+  await writeFile(executable, original);
+  await writeFile(path.join(output, "rollback.log"), await launch(true));
+  assert.equal(JSON.parse(await readFile(path.join(directory, "active.json"))).hash, expectedPackageHash);
+  assert.equal((await checkpoint())[`${expectedPackageHash}.json`], hash(original.subarray(payloadStart, -48)));
+  upgrade = { packageHash, presented: true, corruptUpgradePreservedCheckpoint: true, rollbackPresented: true };
+}
 const evidence = { scope: "standalone-corruption-and-restoration", executableSha256: hash(original),
-  cases, restoredPresented: true, restoredPayloadUnchanged: true, sidecars: false, nodeOnPath: false };
+  cases, restoredPresented: true, restoredPayloadUnchanged: true, sidecars: false, nodeOnPath: false, upgrade };
 await writeFile(path.join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
 console.log(JSON.stringify(evidence));
