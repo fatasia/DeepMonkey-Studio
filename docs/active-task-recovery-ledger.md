@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 下载取消前置：冻结清单返回后立即检查取消，避免断连后继续创建/序列化归档；DMDA/ZIP/EXE真实HTTP断连3项加原下载回归共35项通过，API类型检查通过。[证据](specs/dashboard-download-cancellation-2026-09-17.md)
+
 - 3DM `9270d5f` 独立复核：平面局部重三角化修复edge60，共边60→59；41/41面、7自缝和旧顶点保持。主线复跑4项含真实整件/失败回退全部通过，重生成GLB与证据SHA逐字匹配，228源PointAt最大3.978e-15mm，仍为部分预览。[证据](specs/industrial-3dm-local-plane-patch-2026-09-17.md)
 - X_T `2e6d06b` 收拢最后交线的源引用/控制网排查；没有算法修复，最后0.044160mm差异保留，不放宽0.01mm预算。生产profile不因此升级；工业并行转向JT实例材质继承。[排查事实](reports/industrial-x-t-intersection-support-domain-2026-09-17.md)
 

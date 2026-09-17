@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Stop cancelled Dashboard downloads after manifest lookup, before allocating and serializing offline archives.
+
 - Repair proven planar 3DM source edges with bounded local retriangulation, preserving existing vertices and the 0.01 mm error budget; the verified sample remains a partial preview.
 
 - Reclaim expired Dashboard candidate packages when registering new candidates, preserving live downloads and scoped access.

@@ -89,6 +89,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
           record,
           signal: request.signal,
         });
+        request.signal.throwIfAborted();
         if (!freezeManifest) return reply.code(409).send({ code: "candidate_invalid", message: "Dashboard 候选离线包已失效，请刷新后重试" });
         const archive = (dependencies.createArchive ?? createDashboardOfflineArchive)({
           freezeManifest,
