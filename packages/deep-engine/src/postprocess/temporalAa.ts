@@ -1,4 +1,5 @@
 /// <reference types="@webgpu/types" />
+import { createAdmittedTexture, createAdmittedBuffer } from "../webgpu/resourceAdmission.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import { temporalAaJitter, validateTemporalAaJitter, validateTemporalAaOptions } from "./temporalAaCpu.js";
 import { TEMPORAL_AA_COLOR_FORMAT, TEMPORAL_AA_DEPTH_FORMAT, TEMPORAL_AA_MOTION_FORMAT,
@@ -54,10 +55,10 @@ export class TemporalAaPass {
   reset(): void { this.lastRevision = undefined; }
   dispose(): void { if (this.disposed) return; this.disposed = true; if (this.allocation) this.release(this.allocation); this.allocation = undefined; this.lastRevision = undefined; }
   private allocate(width: number, height: number): Allocation {
-    const owned: Array<GPUTexture | GPUBuffer> = [], device = this.session.device;
-    const texture = (format: GPUTextureFormat, label: string) => { const value = this.session.own(device.createTexture({ label, size: [width, height], format,
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC })); owned.push(value); return value; };
-    const buffer = (label: string) => { const value = this.session.own(device.createBuffer({ label, size: PARAMETER_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })); owned.push(value); return value; };
+    const owned: Array<GPUTexture | GPUBuffer> = [];
+    const texture = (format: GPUTextureFormat, label: string) => { const value = createAdmittedTexture(this.session, { label, size: [width, height], format,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC }); owned.push(value); return value; };
+    const buffer = (label: string) => { const value = createAdmittedBuffer(this.session, { label, size: PARAMETER_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }); owned.push(value); return value; };
     try { return { width, height, colors: [texture(TEMPORAL_AA_COLOR_FORMAT, "Deep TAA history color A"), texture(TEMPORAL_AA_COLOR_FORMAT, "Deep TAA history color B")],
       depths: [texture(TEMPORAL_AA_DEPTH_FORMAT, "Deep TAA history depth A"), texture(TEMPORAL_AA_DEPTH_FORMAT, "Deep TAA history depth B")], parameters: [buffer("Deep TAA parameters A"), buffer("Deep TAA parameters B")] }; }
     catch (error) { for (const resource of owned) this.session.release(resource); throw error; }

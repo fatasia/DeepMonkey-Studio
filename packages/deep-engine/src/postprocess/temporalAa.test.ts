@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import { DeviceResourceBudgetError, DeviceResourceMemory } from "../webgpu/deviceResourceMemory.js";
 import { TemporalAaPass } from "./temporalAa.js";
 import { resolveTemporalAaCpu, temporalAaJitter } from "./temporalAaCpu.js";
 import { TEMPORAL_AA_WGSL } from "./temporalAaWgsl.js";
@@ -8,17 +9,34 @@ import { TEMPORAL_AA_WGSL } from "./temporalAaWgsl.js";
 const options = { feedback: 0.9, depthThreshold: 0.1, relativeDepthThreshold: 0.02 } as const;
 function cpu(historyValid = false, depth = [4, 4]) { return { width: 2, height: 1, color: [1,0,0,1, .25,0,0,1], depth, motion: [0,0,-.5,0],
   previousColor: [1,0,0,1, 0,0,0,1], previousDepth: [4,4], currentJitter: [0,0] as const, previousJitter: [0,0] as const, historyValid }; }
-function texture(width: number, height: number, format: GPUTextureFormat) { const value = { width,height,format,dimension:"2d",depthOrArrayLayers:1,sampleCount:1,usage:GPUTextureUsage.TEXTURE_BINDING,
+function texture(width: number, height: number, format: GPUTextureFormat) { const value = { width,height,format,dimension:"2d",depthOrArrayLayers:1,mipLevelCount:1,sampleCount:1,usage:GPUTextureUsage.TEXTURE_BINDING,
   createView:vi.fn(()=>({})),destroy:vi.fn() }; return value as unknown as GPUTexture & {destroy:ReturnType<typeof vi.fn>}; }
 function fixture() { const owned=new Set<GPUTexture|GPUBuffer>(), outputs:Array<GPUTexture&{destroy:ReturnType<typeof vi.fn>}>=[];
   const device={limits:{maxTextureDimension2D:16384,maxComputeWorkgroupsPerDimension:65535},queue:{writeBuffer:vi.fn()},createShaderModule:vi.fn(()=>({})),createBindGroupLayout:vi.fn(()=>({})),createPipelineLayout:vi.fn(()=>({})),createComputePipeline:vi.fn(()=>({})),createBindGroup:vi.fn(()=>({})),
-    createTexture:vi.fn((d:GPUTextureDescriptor)=>{const s=d.size as GPUExtent3DDict,v=texture(s.width as number,s.height as number,d.format); outputs.push(v);return v;}),createBuffer:vi.fn(()=>({destroy:vi.fn()}))};
+    createTexture:vi.fn((d:GPUTextureDescriptor)=>{const s=d.size as GPUExtent3DDict,v=texture(s.width as number,s.height as number,d.format); outputs.push(v);return v;}),createBuffer:vi.fn((d:GPUBufferDescriptor)=>({size:d.size,destroy:vi.fn()}))};
   const session={state:"ready",device,own<T extends GPUTexture|GPUBuffer>(r:T){owned.add(r);return r;},release(r:GPUTexture|GPUBuffer){if(owned.delete(r))r.destroy();}};
   return {device,session:session as unknown as DeviceSession,raw:session,owned,outputs}; }
 function source(revision:number,cameraCut=false,width=2,jitter?:{currentJitter:readonly[number,number];previousJitter:readonly[number,number]}){return {color:texture(width,1,"rgba16float"),depth:texture(width,1,"r32float"),motion:texture(width,1,"rg16float"),revision,cameraCut,colorEncoding:"linear-hdr" as const,depthEncoding:"linear-view-depth-positive" as const,motionEncoding:"current-to-previous-uv" as const,...jitter};}
 beforeEach(()=>{vi.stubGlobal("GPUShaderStage",{COMPUTE:1});vi.stubGlobal("GPUTextureUsage",{TEXTURE_BINDING:1,STORAGE_BINDING:2,COPY_SRC:4});vi.stubGlobal("GPUBufferUsage",{STORAGE:1,COPY_DST:2});}); afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 describe("temporal AA",()=>{
+  it("keeps encoded history when a partial resize candidate exceeds the device budget", () => {
+    const f = fixture(), memory = new DeviceResourceMemory(180), own = f.session.own.bind(f.session), release = f.session.release.bind(f.session);
+    f.session.assertResourceAdmission = resource => memory.assertCanAdd(resource);
+    f.session.own = resource => { memory.add(resource); return own(resource); };
+    f.session.release = resource => { memory.remove(resource); release(resource); };
+    const pass = new TemporalAaPass(f.session), encoder = { beginComputePass: vi.fn(() => ({ setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, end() {} })) };
+    const first = pass.encode(encoder as unknown as GPUCommandEncoder, source(0), options);
+    expect(memory.snapshot.estimatedBytes).toBe(144);
+    expect(() => pass.encode(encoder as unknown as GPUCommandEncoder, source(1, false, 4), options)).toThrow(DeviceResourceBudgetError);
+    expect(f.device.createTexture).toHaveBeenCalledTimes(5);
+    expect(f.outputs[4]!.destroy).toHaveBeenCalledOnce();
+    expect(first.texture.destroy).not.toHaveBeenCalled();
+    expect(encoder.beginComputePass).toHaveBeenCalledOnce();
+    expect(memory.snapshot).toMatchObject({ estimatedBytes: 144, peakEstimatedBytes: 176, resourceCount: 6 });
+    expect(pass.encode(encoder as unknown as GPUCommandEncoder, source(1), options).historyUsed).toBe(true);
+    pass.dispose(); expect(memory.snapshot.estimatedBytes).toBe(0);
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("is Naga-valid",()=>{const r=spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,["--stdin-file-path","deep-taa.wgsl","--input-kind","wgsl"],{input:TEMPORAL_AA_WGSL,encoding:"utf8"});expect(r.status,r.stderr).toBe(0);});
   it("provides Halton 2/3 jitter and CPU first-frame/motion/depth rejection",()=>{
     expect(temporalAaJitter(0)[0]).toBe(0); expect(temporalAaJitter(0)[1]).toBeCloseTo(-1/6, 15); expect(temporalAaJitter(1)[0]).toBe(-.25);

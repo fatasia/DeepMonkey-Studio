@@ -1,3 +1,4 @@
+import { createAdmittedTexture, createAdmittedBuffer } from "../webgpu/resourceAdmission.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { authorBloomSizes } from "./authorBloomCpu.js";
@@ -31,8 +32,8 @@ export function allocateAuthorBloom(session: DeviceSession, layout: GPUBindGroup
   width: number, height: number): AuthorBloomAllocation {
   const textures: GPUTexture[] = []; let parameters: GPUBuffer | undefined;
   const texture = (size: BloomLevelSize, label: string) => {
-    const result = session.own(session.device.createTexture({ label, size, format: "rgba16float",
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC }));
+    const result = createAdmittedTexture(session, { label, size, format: "rgba16float",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
     textures.push(result); return result;
   };
   try {
@@ -40,8 +41,8 @@ export function allocateAuthorBloom(session: DeviceSession, layout: GPUBindGroup
     const horizontal = levels.map((size, index) => texture(size, `Deep author bloom horizontal ${index}`));
     const vertical = levels.map((size, index) => texture(size, `Deep author bloom vertical ${index}`));
     const combined = texture(levels[0]!, "Deep author bloom combined"), output = texture({ width, height }, "Deep author bloom output");
-    parameters = session.own(session.device.createBuffer({ label: "Deep author bloom parameters", size: 16,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }));
+    parameters = createAdmittedBuffer(session, { label: "Deep author bloom parameters", size: 16,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     const fixedBindings = levels.flatMap((_, index) => [
       bindAuthorBloom(session.device, layout, parameters!, index === 0 ? bright : vertical[index - 1]!, horizontal[index]!),
       bindAuthorBloom(session.device, layout, parameters!, horizontal[index]!, vertical[index]!),

@@ -1,4 +1,5 @@
 /// <reference types="@webgpu/types" />
+import { createAdmittedTexture, createAdmittedBuffer } from "../webgpu/resourceAdmission.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import type { BloomLevelSize } from "./bloomTypes.js";
@@ -57,8 +58,8 @@ function createTexture(
   label: string,
   usage: GPUTextureUsageFlags,
 ): readonly [GPUTexture, GPUTextureView] {
-  const texture = session.own(session.device.createTexture({ label, size: { ...size, depthOrArrayLayers: 1 },
-    dimension: "2d", format: BLOOM_COLOR_FORMAT, usage }));
+  const texture = createAdmittedTexture(session, { label, size: { ...size, depthOrArrayLayers: 1 },
+    dimension: "2d", format: BLOOM_COLOR_FORMAT, usage });
   resources.push(texture);
   return [texture, texture.createView()];
 }
@@ -106,8 +107,8 @@ export function allocateBloomResources(
     });
     const [output, outputView] = createTexture(session, resources, { width, height }, "Deep bloom HDR output",
       sampledStorage | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC);
-    const parameters = session.own(session.device.createBuffer({ label: "Deep bloom parameters", size: 16,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }));
+    const parameters = createAdmittedBuffer(session, { label: "Deep bloom parameters", size: 16,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     resources.push(parameters);
     const internalBindings = createInternalBindings(session.device, layout, parameters, levels);
     return { width, height, levels: Object.freeze(levels), output, outputView, parameters, internalBindings };

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import { DeviceResourceBudgetError, DeviceResourceMemory } from "../webgpu/deviceResourceMemory.js";
 import { PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { BloomPass } from "./bloom.js";
 import { bloomPyramidSizes, extractBloomColor } from "./bloomCpu.js";
@@ -23,7 +24,8 @@ function source(revision = 0, width = 32, height = 16, existing?: ReturnType<typ
   return { color: existing?.color ?? texture(width, height), revision, colorEncoding: "linear-hdr" as const };
 }
 
-function fixture() {
+function fixture(budgetBytes?: number) {
+  const memory = new DeviceResourceMemory(budgetBytes);
   const owned = new Set<GPUTexture | GPUBuffer>(), outputs: FakeTexture[] = [];
   const device = {
     limits: { maxTextureDimension2D: 16_384, maxComputeWorkgroupsPerDimension: 65_535 }, queue: { writeBuffer: vi.fn() },
@@ -40,9 +42,10 @@ function fixture() {
     createBindGroup: vi.fn(({ label }: { label: string }) => ({ label })),
   };
   const session = { state: "ready", device,
-    own<T extends GPUTexture | GPUBuffer>(resource: T): T { owned.add(resource); return resource; },
-    release(resource: GPUTexture | GPUBuffer): void { if (owned.delete(resource)) resource.destroy(); } };
-  return { device, session: session as unknown as DeviceSession, rawSession: session, owned, outputs };
+    assertResourceAdmission(resource: object): void { memory.assertCanAdd(resource); },
+    own<T extends GPUTexture | GPUBuffer>(resource: T): T { memory.add(resource); owned.add(resource); return resource; },
+    release(resource: GPUTexture | GPUBuffer): void { if (owned.delete(resource)) { memory.remove(resource); resource.destroy(); } } };
+  return { device, session: session as unknown as DeviceSession, rawSession: session, owned, outputs, memory };
 }
 
 function encoderFixture() {
@@ -64,6 +67,31 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("HDR bloom", () => {
+  it("retains the encoded output when a resized pyramid exceeds the shared device budget", () => {
+    const f = fixture(900), encoder = encoderFixture(), pass = new BloomPass(f.session), initial = source(0, 8, 4);
+    const first = pass.encode(encoder.encoder, initial, options), allocated = f.outputs.length, encoded = encoder.passes.length;
+    expect(f.memory.snapshot.estimatedBytes).toBe(528);
+    expect(() => pass.encode(encoder.encoder, source(1, 16, 8), options)).toThrow(DeviceResourceBudgetError);
+    expect(f.outputs).toHaveLength(allocated + 1);
+    expect(f.outputs.at(-1)!.destroy).toHaveBeenCalledOnce();
+    expect(first.texture.destroy).not.toHaveBeenCalled();
+    expect(encoder.passes).toHaveLength(encoded);
+    expect(f.memory.snapshot).toMatchObject({ estimatedBytes: 528, peakEstimatedBytes: 784 });
+    expect(pass.encode(encoder.encoder, initial, options)).toMatchObject({ texture: first.texture, updated: false });
+    pass.dispose(); expect(f.memory.snapshot.estimatedBytes).toBe(0);
+  });
+
+  it("returns partial pooled candidates on rejection and discards them with the aborted frame", () => {
+    const f = fixture(100), encoder = encoderFixture(), pool = new PbrTransientTexturePool(f.session), pass = new BloomPass(f.session, pool);
+    pool.beginFrame();
+    expect(() => pass.encode(encoder.encoder, source(0, 8, 4), options)).toThrow(DeviceResourceBudgetError);
+    expect(f.outputs).toHaveLength(1); expect(encoder.passes).toHaveLength(0);
+    expect(pool.stats.pendingReturnCount).toBe(1);
+    pool.endFrame(false);
+    expect(f.outputs[0]!.destroy).toHaveBeenCalledOnce();
+    expect(f.memory.snapshot.estimatedBytes).toBe(16);
+    pass.dispose(); pool.dispose(); expect(f.memory.snapshot.estimatedBytes).toBe(0);
+  });
   it("reuses the pooled pyramid and warmed bind-group permutations across frames", () => {
     const f = fixture(), encoder = encoderFixture(), pool = new PbrTransientTexturePool(f.session);
     const pass = new BloomPass(f.session, pool), initial = source();

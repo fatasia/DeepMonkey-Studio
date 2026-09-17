@@ -1,4 +1,5 @@
 /// <reference types="@webgpu/types" />
+import { createAdmittedBuffer, createAdmittedTexture } from "../webgpu/resourceAdmission.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { validateAmbientOcclusionCompositeOptions } from "./ambientOcclusionCompositeCpu.js";
@@ -151,29 +152,29 @@ export class AmbientOcclusionCompositePass {
   }
 
   private parameters(): GPUBuffer {
-    return this.pooledParameters ??= this.session.own(this.session.device.createBuffer({
+    return this.pooledParameters ??= createAdmittedBuffer(this.session, {
       label: "Deep ambient occlusion composite transient parameters", size: PARAMETER_BYTES,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    }));
+    });
   }
 
   private allocate(width: number, height: number): Allocation {
     let output: GPUTexture | undefined, parameters: GPUBuffer | undefined;
     try {
-      output = this.session.own(this.session.device.createTexture({
+      output = createAdmittedTexture(this.session, {
         label: "Deep full-resolution AO composite HDR",
         size: { width, height, depthOrArrayLayers: 1 },
         dimension: "2d",
         format: AMBIENT_OCCLUSION_COMPOSITE_COLOR_FORMAT,
         usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
           | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-      }));
+      });
       const outputView = output.createView();
-      parameters = this.session.own(this.session.device.createBuffer({
+      parameters = createAdmittedBuffer(this.session, {
         label: "Deep ambient occlusion composite parameters",
         size: PARAMETER_BYTES,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      }));
+      });
       return { width, height, output, outputView, parameters };
     } catch (error) {
       if (parameters) this.session.release(parameters);

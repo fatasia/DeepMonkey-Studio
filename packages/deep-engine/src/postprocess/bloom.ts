@@ -1,4 +1,5 @@
 /// <reference types="@webgpu/types" />
+import { createAdmittedBuffer } from "../webgpu/resourceAdmission.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import type { PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { bloomPyramidSizes, validateBloomOptions } from "./bloomCpu.js";
@@ -133,8 +134,8 @@ export class BloomPass {
   }
 
   private parameters(): GPUBuffer {
-    return this.pooledParameters ??= this.session.own(this.session.device.createBuffer({ label: "Deep bloom transient parameters",
-      size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }));
+    return this.pooledParameters ??= createAdmittedBuffer(this.session, { label: "Deep bloom transient parameters",
+      size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   }
 
   private clearCache(): void {

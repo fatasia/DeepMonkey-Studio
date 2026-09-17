@@ -1,3 +1,4 @@
+import { createAdmittedBuffer } from "../webgpu/resourceAdmission.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import type { PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import type { BloomResult, BloomSource } from "./bloomTypes.js";
@@ -121,8 +122,8 @@ export class AuthorBloomPass {
     } finally { for (const handle of acquired.handles) this.pool!.release(handle); }
   }
   private parameters(): GPUBuffer {
-    return this.pooledParameters ??= this.session.own(this.session.device.createBuffer({ label: "Deep author bloom transient parameters",
-      size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }));
+    return this.pooledParameters ??= createAdmittedBuffer(this.session, { label: "Deep author bloom transient parameters",
+      size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   }
   private clear(): void { const previous = this.cache; this.cache = undefined; if (previous) releaseAuthorBloom(this.session, previous.allocation); }
   private assertReady(): void {

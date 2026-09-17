@@ -1,4 +1,5 @@
 /// <reference types="@webgpu/types" />
+import { createAdmittedBuffer, createAdmittedTexture } from "../webgpu/resourceAdmission.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { validateAmbientOcclusionOptions } from "./ambientOcclusionCpu.js";
@@ -137,23 +138,23 @@ export class AmbientOcclusionPass {
   }
 
   private parameters(): GPUBuffer {
-    return this.pooledParameters ??= this.session.own(this.session.device.createBuffer({ label: "Deep ambient occlusion transient parameters",
-      size: PARAMETER_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }));
+    return this.pooledParameters ??= createAdmittedBuffer(this.session, { label: "Deep ambient occlusion transient parameters",
+      size: PARAMETER_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   }
 
   private allocate(width: number, height: number): Allocation {
-    const textures: GPUTexture[] = [], device = this.session.device;
+    const textures: GPUTexture[] = [];
     const texture = (label: string, usage: GPUTextureUsageFlags): GPUTexture => {
-      const value = this.session.own(device.createTexture({ label, size: { width, height, depthOrArrayLayers: 1 }, dimension: "2d",
-        format: AMBIENT_OCCLUSION_OUTPUT_FORMAT, usage })); textures.push(value); return value;
+      const value = createAdmittedTexture(this.session, { label, size: { width, height, depthOrArrayLayers: 1 }, dimension: "2d",
+        format: AMBIENT_OCCLUSION_OUTPUT_FORMAT, usage }); textures.push(value); return value;
     };
     let parameters: GPUBuffer | undefined;
     try {
       const raw = texture("Deep half-resolution raw ambient occlusion", GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING);
       const temporary = texture("Deep ambient occlusion bilateral temporary", GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING);
       const output = texture("Deep ambient occlusion output", GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC);
-      parameters = this.session.own(device.createBuffer({ label: "Deep ambient occlusion parameters", size: PARAMETER_BYTES,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }));
+      parameters = createAdmittedBuffer(this.session, { label: "Deep ambient occlusion parameters", size: PARAMETER_BYTES,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       return { width, height, raw, temporary, output, rawView: raw.createView(), temporaryView: temporary.createView(), outputView: output.createView(), parameters };
     } catch (error) {
       if (parameters) this.session.release(parameters); for (const value of textures) this.session.release(value); throw error;
