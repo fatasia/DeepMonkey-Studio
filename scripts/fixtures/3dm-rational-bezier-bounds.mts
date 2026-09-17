@@ -4,7 +4,8 @@ function check(v:unknown,m:string):asserts v {if(!v)throw new Error(m);}
 /** Exact source Bezier spans, positive weight quotient bounds, no sampled curvature estimate. */
 export function rationalBezierBounds(s:any) {
   check(s?.dimension===3&&s.parameterMap?.kind==='identity'&&s.degree?.length===2
-    &&s.degree[0]===3&&(s.rational?s.degree[1]===2:s.degree[1]===3)&&s.controlPointCount?.length===2,'unsupported-rational-cubic-quadratic');
+    &&(s.rational?s.degree[0]===3&&s.degree[1]===2||s.degree[0]===2&&s.degree[1]===1:s.degree.every((d:number)=>d===3))
+    &&s.controlPointCount?.length===2,'unsupported-rational-cubic-quadratic');
   const breaks=s.degree.map((degree:number,axis:number)=>{
     const count=s.controlPointCount[axis],knots=s.knots?.[axis],domain=s.domain?.[axis];
     check(Number.isInteger(count)&&count>=degree+1&&count<=256&&domain?.length===2&&domain.every(Number.isFinite)&&domain[0]<domain[1]
@@ -24,7 +25,8 @@ export function rationalBezierBounds(s:any) {
     const h={dimension:4,rational:false,degree:[...s.degree],controlPointCount:s.degree.map((d:number)=>d+1),domain,
       knots:domain.map((d,i)=>[...Array(s.degree[i]+1).fill(d[0]),...Array(s.degree[i]+1).fill(d[1])]),
       controlPoints:points.map((p:number[])=>[...p.slice(0,3).map((x,i)=>(x-origin[i]*p[3])/minWeight),p[3]/minWeight])};
-    const du=polynomialDerivative(h,0),dv=polynomialDerivative(h,1),nets=[du,dv,polynomialDerivative(du,0),polynomialDerivative(du,1),polynomialDerivative(dv,1)];
+    const derivative=(net:any,axis:number)=>net.degree[axis]===0?{...net,controlPoints:net.controlPoints.map((p:number[])=>p.map(()=>0))}:polynomialDerivative(net,axis);
+    const du=derivative(h,0),dv=derivative(h,1),nets=[du,dv,derivative(du,0),derivative(du,1),derivative(dv,1)];
     const A=nets.map(n=>Math.max(...n.controlPoints.map(p=>Math.hypot(...p.slice(0,3))))),W=nets.map(n=>Math.max(...n.controlPoints.map(p=>Math.abs(p[3]))));
     const radius=Math.max(...h.controlPoints.map(p=>Math.hypot(...p.slice(0,3).map(x=>x/p[3]))));
     // Normalized w >= 1. R_i=(A_i-R*w_i)/w; differentiate once more, including mixed terms.

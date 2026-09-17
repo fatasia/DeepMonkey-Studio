@@ -4,7 +4,7 @@ import { triangulateTrimGrid } from './3dm-trim-grid.mts';
 import { refineSurfaceWinding } from './3dm-refine-surface-winding.mts';
 const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 function check(v:unknown,m:string):asserts v {if(!v)throw new Error(m);}
-/** Positive-weight cubic/quadratic and polynomial bicubic Bezier chains, split at every source knot. */
+/** Bounded positive-weight or polynomial Bezier chains, split at every source knot. */
 export function tessellateRationalBezierFace(ir:any,faceIndex:number,metersPerUnit:number) {
   check(Number.isFinite(metersPerUnit)&&metersPerUnit>0,'invalid-rational-face-unit');
   const face=ir.faces[faceIndex],s=ir.surfaces[face?.surface],bounds=rationalBezierBounds(s),{first,second}=bounds;

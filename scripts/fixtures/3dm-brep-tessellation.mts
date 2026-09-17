@@ -32,7 +32,8 @@ export function completeBrepParts(object: any,metersPerUnit?:number) {
           const repeated=surface.knots.some((k:number[])=>new Set(k).size<k.length-6);
           parts.push(repeated?tessellateRationalBezierFace(object.cadIr,face,metersPerUnit!):tessellateMultispanBicubicFace(object.cadIr,face,metersPerUnit!));continue;
         }
-        if(!support&&surface?.rational&&surface.degree?.[0]===3&&surface.degree?.[1]===2) {
+        if(!support&&surface?.rational&&(surface.degree?.[0]===3&&surface.degree?.[1]===2
+          ||surface.degree?.[0]===2&&surface.degree?.[1]===1&&surface.controlPointCount?.[0]>3)) {
           parts.push(tessellateRationalBezierFace(object.cadIr,face,metersPerUnit!));continue;
         }
         if(!support&&surface?.rational&&surface.degree?.includes(1)&&surface.degree?.includes(2)) {

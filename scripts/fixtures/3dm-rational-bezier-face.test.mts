@@ -11,7 +11,7 @@ import { evaluateSurface } from './3dm-nurbs-parameters.mjs';
 import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/polynomial-bezier-2026-09-17-v1/rational');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/quadratic-linear-2026-09-17-v1/rational');
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),sourceSha256='a1b0ef69925b5d9223a7d797033055bb766842768a96f7713e1ecaec2763bb31';
@@ -41,11 +41,11 @@ test('twelve real rational faces preserve original PointAt, source knots, bounda
       patches:part.audit.patches,divisions:part.audit.divisions,windingRefinement:part.audit.windingRefinement});
   }
   assert.equal(JSON.stringify(ir),before);const noCache=structuredClone(source);for(const o of noCache.objects)if(o.kind==='brep')o.storedRenderMeshes=[];
-  const parts=completeBrepParts(noCache.objects.find((o:any)=>o.cadIr),.001);assert.equal(parts.parts.length,33);
+  const parts=completeBrepParts(noCache.objects.find((o:any)=>o.cadIr),.001);assert.equal(parts.parts.length,41);
   const glb=await export3dmGlb(noCache,sourceSha256);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');
   mkdirSync(out,{recursive:true});const glbPath=resolve(out,'MechPartA.glb');writeFileSync(glbPath,glb.bytes);
   const bytes=Buffer.from(glb.bytes),json=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)).toString());
-  assert.deepEqual(json.meshes.flatMap((m:any)=>m.primitives).filter((p:any)=>p.extras.geometrySource==='cad-ir-rational-bezier-chain').map((p:any)=>p.extras.brepFaceIndex),faces);
+  assert.deepEqual(json.meshes.flatMap((m:any)=>m.primitives).filter((p:any)=>p.extras.geometrySource==='cad-ir-rational-bezier-chain'&&faces.includes(p.extras.brepFaceIndex)).map((p:any)=>p.extras.brepFaceIndex),faces);
   const evidence={sourceSha256,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',
     archiveVersion:source.archiveVersion,metersPerUnit:.001,useBoundary:'official sample; local verification only; not redistributed',records,
     audit:await auditGlbGeometry(glbPath),glbSha256:sha(glb.bytes),status:glb.sidecar.status};
