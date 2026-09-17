@@ -14,8 +14,14 @@ import {
   type DashboardResolvedResourceValue,
 } from "./dashboardPublicationFreeze.js";
 import type { DashboardPublicationCapabilityReport } from "./dashboardPublicationCapability.js";
+import { dashboardDataRequestId } from "./dashboardDataRequestId.js";
+import { captureDashboardMeasuredLayout, verifyDashboardMeasuredLayout,
+  type DashboardLayoutCaptureHost } from "./dashboardMeasuredLayout.js";
 
 const SHA256 = /^[a-f0-9]{64}$/;
+
+/** 与 `captureDashboardMeasuredLayout` 内部的类型清单保持一致;两侧同步演进。 */
+const MEASURED_LAYOUT_WIDGET_TYPES = new Set(["value", "table", "bar", "line", "scatter", "pie"]);
 
 /** The worker receives only frozen bytes and the authority that selected them. */
 export interface DashboardRuntimeArtifactCompilerInput {
@@ -46,6 +52,12 @@ export interface PrepareDashboardRuntimeArtifactCompilerOptions {
   readonly capability: DashboardPublicationCapabilityReport;
   readonly compiler: DashboardRuntimeArtifactCompilerInput["compiler"];
   readonly revalidation: DashboardFreezeRevalidation;
+  /**
+   * G04:服务端自己的可信布局宿主。提供时,凡有测量契约的数据组件在编译输入里
+   * 绑定服务端测量布局(宿主只回测量值,身份由冻结候选计算);缺省时输入保持
+   * 纯冻结数据,布局通道按既有 deferred 语义编译。
+   */
+  readonly layoutCapture?: { readonly host: DashboardLayoutCaptureHost; readonly locale: string };
   readonly signal?: AbortSignal;
 }
 
@@ -78,6 +90,9 @@ export async function prepareDashboardRuntimeArtifactCompilerInput(
     ...(options.signal ? { signal: options.signal } : {}) });
   options.signal?.throwIfAborted();
   assertCapability(options.candidate, options.capability, options.compiler);
+  const data = options.layoutCapture
+    ? await bindMeasuredLayouts(options.candidate, options.layoutCapture, options.signal)
+    : snapshot(options.candidate.data);
   return Object.freeze({
     protocol: "dashboard-runtime-compiler-v1",
     authority: snapshot(options.candidate.authority),
@@ -87,9 +102,42 @@ export async function prepareDashboardRuntimeArtifactCompilerInput(
     compileGraphHash: options.capability.compileGraphHash,
     compiler: freezeCompiler(options.compiler),
     document: snapshot(options.candidate.document),
-    data: snapshot(options.candidate.data),
+    data,
     resources: freezeResources(options.candidate.resources),
   });
+}
+
+/**
+ * G04 wiring: for every visible data widget with a measured-layout contract and
+ * frozen data, capture the layout in the trusted host, re-verify the binding at
+ * this boundary, and merge layout (and table state) into the frozen data value.
+ * A widget without frozen data stays untouched — the raster compiler degrades it
+ * through its own unavailable-data path. Failures (missing fonts, stale binds,
+ * aborts) fail the whole preparation instead of silently emitting unmeasured input.
+ */
+async function bindMeasuredLayouts(candidate: DashboardPublicationFreezeCandidate,
+  layoutCapture: NonNullable<PrepareDashboardRuntimeArtifactCompilerOptions["layoutCapture"]>,
+  signal?: AbortSignal): Promise<Record<string, unknown>> {
+  const data: Record<string, unknown> = { ...candidate.data };
+  const nodes = candidate.document.application.pages.flatMap(page => page.nodes);
+  for (const node of nodes) {
+    signal?.throwIfAborted();
+    if (node.kind !== "data-widget" || node.visible === false) continue;
+    if (!MEASURED_LAYOUT_WIDGET_TYPES.has(node.widget.type)) continue;
+    const dataId = dashboardDataRequestId(node.id);
+    const value = candidate.data[dataId];
+    if (!isPlainRecord(value)) continue;
+    if ("layout" in value) throw new Error(`Frozen data ${dataId} already carries a layout; the measured binding would be overwritten`);
+    const record = await captureDashboardMeasuredLayout({ candidate, nodeId: node.id, host: layoutCapture.host,
+      locale: layoutCapture.locale, ...(signal ? { signal } : {}) });
+    const verified = verifyDashboardMeasuredLayout(record, candidate);
+    data[dataId] = { ...snapshot(value), layout: verified.layout, ...(verified.table ? { table: verified.table } : {}) };
+  }
+  return data;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

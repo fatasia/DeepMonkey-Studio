@@ -4,6 +4,10 @@
 
 - Web静态包loader修复与浏览器闭环 `b3b6bc3`：EOF与取消同时到达时以取消为准（done分支先throwIfAborted），包根解析URL二次校验origin/前缀、根地址必须以/结尾；6项聚焦测试与Web类型通过。r5静态包两轮真实浏览器15/15通过：根/子目录冷启动~1.6s、深浅主题、980窄屏、全屏按钮、篡改字体/缺资源均fail-closed错误态、pagehide取消恢复重开正常。[证据](specs/web-static-package-browser-verification-2026-09-17.md)
 
+- G04切片A `dashboardRuntimeArtifactCompiler` 可选注入可信布局宿主：可见/有冻结数据/测量合同内的组件在编译输入边界capture→verify→合并layout与table进冻结数据值；缺省输入与既有行为一致，自带layout拒绝覆盖、字体背叛/过期/取消fail-closed。6项聚焦+API全量1178通过、类型通过。部署侧正式Chromium宿主（切片B）未建设，不冒充完成。[报告](specs/dashboard-measured-layout-compiler-input-2026-09-17.md)
+
+- S0样本库补强（data/不入库）：3DM×2(mcneel/openNURBS@eb92af3b)、LAS×1(PDAL@58af674b)、3D Tiles×6(CesiumGS/3d-tiles-tools@4ca692eb,Apache-2.0)、RVT×1(本地BIMFACE,仅inspect)；manifest 12条逐条重算SHA-256一致,许可文件随目录。jt coffee-maker 9.5文件在库但manifest未登记属既有遗留。
+
 ### 2026-09-17 主流程与 DE26 范围同步
 
 - Native纯二维紧凑前向目标已接构造/resize：无Bloom/Fog/探针/三维实例时分配1×1并保留ACES背景，其他档位不变。125项常规测试、实际窗口呈现/零尺寸恢复/2D↔3D切换通过；GPU两格式40组41,032像素等价、非均匀2,382像素正常采样通过。默认Bloom仍完整分配，不声称整个进程显存或FPS提升；完整视觉待验。[证据](specs/native-compact-forward-2026-09-17.md)

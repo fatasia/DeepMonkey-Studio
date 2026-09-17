@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
-import { assertDashboardDocument, type PublishedApplicationRecord } from "@bim-studio/contracts";
+import { describe, expect, it, vi } from "vitest";
+import { assertDashboardDocument, type DashboardDataWidgetNode, type DashboardDocument,
+  type PublishedApplicationRecord } from "@bim-studio/contracts";
 import { parseDeepRuntimePackage, serializeDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import source from "../../../packages/deep-engine/fixtures/dashboard-layout-source-v1.json";
 import { buildDashboardPublicationCapabilityReport } from "./dashboardPublicationCapability.js";
-import { prepareDashboardPublicationFreeze, type DashboardFrozenResourceRequest } from "./dashboardPublicationFreeze.js";
+import { prepareDashboardPublicationFreeze, type DashboardFrozenResourceRequest,
+  type DashboardPublicationAuthorityState } from "./dashboardPublicationFreeze.js";
+import { dashboardDataRequestId } from "./dashboardDataRequestId.js";
+import type { DashboardLayoutCaptureHost } from "./dashboardMeasuredLayout.js";
 import {
   acceptDashboardRuntimeArtifactCompilerOutput,
   prepareDashboardRuntimeArtifactCompilerInput,
@@ -83,5 +87,95 @@ describe("dashboard v5 runtime compiler contract", () => {
     expect(() => acceptDashboardRuntimeArtifactCompilerOutput(input, { ...output(), artifact: Uint8Array.from([...bytes, 10]) }, report)).toThrow();
     const v4 = new Uint8Array(await readFile(new URL("../../../packages/deep-engine/fixtures/dashboard-runtime-v1.json", import.meta.url)));
     expect(() => acceptDashboardRuntimeArtifactCompilerOutput(input, { ...output(), artifact: v4 }, report)).toThrow();
+  });
+});
+
+describe("G04 measured layout binding into compiler input", () => {
+  const fontBytes = new Uint8Array([1, 2, 3]);
+  const valueWidget = (id = "widget-value"): DashboardDataWidgetNode => ({ id, kind: "data-widget", zIndex: 3,
+    frame: { x: 20, y: 30, width: 234, height: 134 }, widget: { type: "value", title: "有功功率", key: "temperature", unit: "MW" } });
+  const documentWith = (nodes: unknown[]): DashboardDocument => {
+    const input: unknown = structuredClone(source);
+    assertDashboardDocument(input);
+    input.application.pages[0]!.nodes = nodes;
+    return input;
+  };
+  const frozenValue = { source: { kind: "sample", id: "sample:widget-value", revision: 1, contentSha256: "a".repeat(64) },
+    metric: { value: 42, samples: [{ time: 1, value: 42 }] } };
+  const widgetState = (widgets: DashboardDataWidgetNode[]): DashboardPublicationAuthorityState => ({
+    activePublicationId: authority.publicationId, currentApplicationRevision: authority.applicationRevision,
+    publication: { id: authority.publicationId, projectId: authority.projectId, applicationId: authority.applicationId,
+      applicationRevision: authority.applicationRevision, document: documentWith(widgets).application, publishedAt: "2026-09-17T00:00:00.000Z" } });
+  const measuredRevalidation = (widgets: DashboardDataWidgetNode[], value: unknown = frozenValue): DashboardFreezeRevalidation => ({
+    readAuthority: vi.fn(async () => widgetState(widgets)),
+    resolveData: vi.fn(async () => ({ sourceRevision: "sample:1", value: structuredClone(value) })),
+    readResource: vi.fn(async () => ({ revision: 3, bytes: fontBytes })) });
+  async function frozenWidgets(widgets: DashboardDataWidgetNode[], withData: boolean, value: unknown = structuredClone(frozenValue)) {
+    return prepareDashboardPublicationFreeze({ expected: authority, entryPageId: "page-main",
+      data: withData ? widgets.map(widget => ({ id: dashboardDataRequestId(widget.id), nodeId: widget.id, sourceRevision: "sample:1" })) : [],
+      resources: [{ id: "font-main", kind: "font", objectKey: "projects/project-golden/assets/font-main.woff2",
+        mime: "font/woff2", nodeIds: widgets.map(widget => widget.id), revision: 3, faceIndex: 0,
+        license: { redistributable: true, evidence: "OFL-1.1:font-main" } }],
+      readAuthority: vi.fn(async () => widgetState(widgets)),
+      resolveData: vi.fn(async () => ({ sourceRevision: "sample:1", value: structuredClone(value) })),
+      readResource: vi.fn(async () => ({ revision: 3, bytes: fontBytes })) });
+  }
+  async function measuredCapability(candidate: Awaited<ReturnType<typeof frozenWidgets>>, bytes: Uint8Array,
+    nodeId: string, widgets: DashboardDataWidgetNode[], value: unknown = frozenValue) {
+    return buildDashboardPublicationCapabilityReport({ candidate, expectedDeviceFingerprintSha256: "a".repeat(64),
+      revalidation: measuredRevalidation(widgets, value),
+      compiler: { compilerId: compiler.id, compilerVersion: compiler.version, compilerSha256: compiler.sha256, configuration: compiler.configuration,
+        compile: async () => ({ artifact: bytes, objects: [{ nodeId, contentCompiled: true, deferredFields: [] }] }) },
+      verifyWindow: async request => ({ verifier: "native-dashboard-window-v1", authority, freezeManifestSha256: candidate.manifest.manifestSha256,
+        sourceSemanticHash: request.sourceSemanticHash, compileGraphHash: request.compileGraphHash, targetArtifactHash: request.targetArtifactHash,
+        fixtureSha256: "b".repeat(64), deviceFingerprintSha256: "a".repeat(64),
+        fontSha256: [{ resourceId: "font-main", sha256: sha(fontBytes), faceIndex: 0 }], renderedNodeIds: [nodeId] }) });
+  }
+  function trustedHost(layout: Record<string, unknown> = measuredLayoutShape()) {
+    return { id: "chromium-trusted-host", version: "1.0.0", executableSha256: "b".repeat(64),
+      capture: vi.fn(async () => ({ protocol: "dashboard-measured-layout-v1" as const, layout })) };
+  }
+  function measuredLayoutShape() {
+    return { textBoxes: [{ role: { kind: "value" }, rect: [12, 40, 96, 32], clip: null, fonts: ["font-main"],
+        wrap: "none", whiteSpace: "nowrap", verticalAlign: "center",
+        style: { fontSize: 32, lineHeight: 40, fontWeight: 600, fontStyle: "normal", align: "left", color: [231, 236, 244, 255] } }],
+      paint: [{ kind: "background", index: 0 }, { kind: "text", index: 0 }],
+      backgrounds: [{ rect: [0, 0, 234, 134], color: [0.01, 0.02, 0.03, 0.86] }] };
+  }
+
+  it("binds server-measured layout into the frozen data consumed by the compiler input", async () => {
+    const widget = valueWidget(), candidate = await frozenWidgets([widget], true), host = trustedHost();
+    const input = await prepareDashboardRuntimeArtifactCompilerInput({ candidate, capability: await measuredCapability(candidate, await artifact(), widget.id, [widget]),
+      compiler, revalidation: measuredRevalidation([widget]), layoutCapture: { host, locale: "zh-CN" } });
+    const bound = input.data[dashboardDataRequestId(widget.id)] as { layout?: { textBoxes: unknown[] } };
+    expect(bound.layout?.textBoxes).toEqual(measuredLayoutShape().textBoxes);
+    expect(host.capture).toHaveBeenCalledOnce();
+  });
+
+  it("keeps widgets without frozen data or visibility untouched, and rejects host font betrayal", async () => {
+    const hidden: DashboardDataWidgetNode = { ...valueWidget("widget-hidden"), visible: false };
+    const orphan = valueWidget("widget-orphan");
+    const candidate = await frozenWidgets([orphan], false), host = trustedHost();
+    const input = await prepareDashboardRuntimeArtifactCompilerInput({ candidate, capability: await measuredCapability(candidate, await artifact(), orphan.id, [orphan]),
+      compiler, revalidation: measuredRevalidation([orphan]), layoutCapture: { host, locale: "zh-CN" } });
+    expect(host.capture).not.toHaveBeenCalled();
+    expect(input.data).toEqual({});
+    const traitor = trustedHost({ textBoxes: [{ role: { kind: "value" }, rect: [0, 0, 8, 8], clip: null, fonts: ["font-other"],
+        wrap: "none", whiteSpace: "nowrap", verticalAlign: "center",
+        style: { fontSize: 8, lineHeight: 10, fontWeight: 400, fontStyle: "normal", align: "left", color: [0, 0, 0, 255] } }],
+      paint: [], backgrounds: [] });
+    const withData = await frozenWidgets([orphan, hidden], true);
+    await expect(prepareDashboardRuntimeArtifactCompilerInput({ candidate: withData, capability: await measuredCapability(withData, await artifact(), orphan.id, [orphan, hidden]),
+      compiler, revalidation: measuredRevalidation([orphan, hidden]), layoutCapture: { host: traitor, locale: "zh-CN" } }))
+      .rejects.toThrow("outside its frozen binding");
+  });
+
+  it("refuses to overwrite a layout that arrived through the frozen data itself", async () => {
+    const widget = valueWidget();
+    const valueWithLayout = { ...structuredClone(frozenValue), layout: { textBoxes: [], backgrounds: [] } };
+    const candidate = await frozenWidgets([widget], true, valueWithLayout);
+    await expect(prepareDashboardRuntimeArtifactCompilerInput({ candidate, capability: await measuredCapability(candidate, await artifact(), widget.id, [widget], valueWithLayout),
+      compiler, revalidation: measuredRevalidation([widget], valueWithLayout),
+      layoutCapture: { host: trustedHost(), locale: "zh-CN" } })).rejects.toThrow("already carries a layout");
   });
 });
