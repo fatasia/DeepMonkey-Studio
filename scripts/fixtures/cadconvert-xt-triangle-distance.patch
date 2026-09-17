@@ -1,0 +1,236 @@
+diff --git a/native/crates/cad-tess/src/face.rs b/native/crates/cad-tess/src/face.rs
+index 457c1cf..edbbad0 100644
+--- a/native/crates/cad-tess/src/face.rs
++++ b/native/crates/cad-tess/src/face.rs
+@@ -157,7 +157,7 @@ pub fn tessellate(
+     // covers, and every edge they share reads as used four times — a
+     // non-manifold edge in the finished body, and no surface at all.
+     if let Ok(patch) = &mut chosen {
+-        lay_each_facet_once(patch);
++        lay_each_facet_once(patch)?;
+     }
+     // What the finished face actually costs in shape: how far the midpoint of
+     // each triangle edge falls from the surface the edge stands for. This is
+@@ -3483,7 +3483,7 @@ fn triangulate_region(
+ /// Keeps the first, so the facet is still drawn; the copy carries no surface
+ /// the first does not and costs the mesh its manifoldness — every edge the two
+ /// share reads as used four times.
+-pub(crate) fn lay_each_facet_once(patch: &mut Patch) {
++pub(crate) fn lay_each_facet_once(patch: &mut Patch) -> Result<(), String> {
+     // Two vertices standing at one point have to be recognised as one before
+     // their triangles can be compared, and rounding alone will not do it:
+     // the two are computed by separate routes and agree to far better than a
+@@ -3491,6 +3491,15 @@ pub(crate) fn lay_each_facet_once(patch: &mut Patch) {
+     // position takes the identity of the first one found in its own bin or
+     // any bin touching it.
+     let bin = |v: f32| (v as f64 * 1e6).round() as i64;
++    // Saturating float casts would merge unrelated vertices at the integer
++    // limits; neighbouring-bin arithmetic would then overflow. Reject the
++    // face before changing it when this index cannot represent its positions.
++    if patch.positions.iter().flatten().any(|v| {
++        let cell = (*v as f64 * 1e6).round();
++        !cell.is_finite() || cell <= i64::MIN as f64 || cell >= i64::MAX as f64
++    }) {
++        return Err("face coordinates exceed finite facet-index range".into());
++    }
+     let mut ids: rustc_hash::FxHashMap<[i64; 3], u32> = Default::default();
+     let mut id_of: Vec<u32> = Vec::with_capacity(patch.positions.len());
+     for (i, p) in patch.positions.iter().enumerate() {
+@@ -3525,6 +3534,28 @@ pub(crate) fn lay_each_facet_once(patch: &mut Patch) {
+         }
+     }
+     patch.indices = kept;
++    Ok(())
++}
++
++#[cfg(test)]
++mod facet_range_tests {
++    use super::*;
++
++    #[test]
++    fn invalid_facet_coordinates_are_rejected_without_mutation() {
++        for coordinate in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, f32::MAX, -f32::MAX] {
++            let mut patch = Patch { positions: vec![[coordinate, 0.0, 0.0]], indices: vec![0, 0, 0], ..Patch::default() };
++            assert!(lay_each_facet_once(&mut patch).unwrap_err().contains("facet-index range"));
++            assert_eq!(patch.indices, vec![0, 0, 0]);
++        }
++    }
++
++    #[test]
++    fn representable_duplicate_facets_are_removed() {
++        let mut patch = Patch { positions: vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], indices: vec![0, 1, 2, 2, 1, 0], ..Patch::default() };
++        lay_each_facet_once(&mut patch).unwrap();
++        assert_eq!(patch.indices, vec![0, 1, 2]);
++    }
+ }
+ 
+ pub(crate) fn repeated_facets(patch: &Patch) -> usize {
+diff --git a/native/crates/cad-xt/src/lib.rs b/native/crates/cad-xt/src/lib.rs
+index 7b323aa..4452347 100644
+--- a/native/crates/cad-xt/src/lib.rs
++++ b/native/crates/cad-xt/src/lib.rs
+@@ -12,6 +12,7 @@
+ 
+ pub mod geom;
+ pub mod topo;
++mod triangle_distance;
+ 
+ use cad_ir::material_resolve::{ColourEvidence, MaterialResolver};
+ use cad_ir::math::Transform;
+diff --git a/native/crates/cad-xt/src/topo.rs b/native/crates/cad-xt/src/topo.rs
+index 2dc8751..7d9de97 100644
+--- a/native/crates/cad-xt/src/topo.rs
++++ b/native/crates/cad-xt/src/topo.rs
+@@ -3479,23 +3479,7 @@ fn point_to_grid(grid: &[Vec<Vec3>], p: Vec3) -> f64 {
+     best.sqrt()
+ }
+ 
+-/// Squared distance from a point to a triangle, by projecting and clamping.
+-fn distance_to_triangle(p: Vec3, t: [Vec3; 3]) -> f64 {
+-    let (e0, e1, d) = (t[1] - t[0], t[2] - t[0], t[0] - p);
+-    let (a, b, c) = (e0.dot(e0), e0.dot(e1), e1.dot(e1));
+-    let (dd, e) = (e0.dot(d), e1.dot(d));
+-    let det = (a * c - b * b).max(1e-300);
+-    let mut u = (b * e - c * dd) / det;
+-    let mut v = (b * dd - a * e) / det;
+-    if u + v > 1.0 {
+-        let over = (u + v - 1.0) * 0.5;
+-        u -= over;
+-        v -= over;
+-    }
+-    u = u.clamp(0.0, 1.0);
+-    v = v.clamp(0.0, 1.0 - u);
+-    (t[0] + e0 * u + e1 * v - p).length_squared()
+-}
++use crate::triangle_distance::distance_to_triangle;
+ 
+ /// Say where a refused grid missed the face, by the patch's own four sides.
+ ///
+diff --git a/native/crates/cad-xt/src/triangle_distance.rs b/native/crates/cad-xt/src/triangle_distance.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/cad-xt/src/triangle_distance.rs
+@@ -0,0 +1,123 @@
++use cad_ir::math::Vec3;
++
++/// Squared point/triangle distance. Degenerate triangles retain their edges;
++/// non-finite inputs cannot certify that a boundary lies on a surface.
++pub(crate) fn distance_to_triangle(p: Vec3, t: [Vec3; 3]) -> f64 {
++    if !p.is_finite() || t.iter().any(|v| !v.is_finite()) {
++        return f64::INFINITY;
++    }
++    let (e0, e1, q) = (t[1] - t[0], t[2] - t[0], p - t[0]);
++    let scale = e0
++        .to_array()
++        .into_iter()
++        .chain(e1.to_array())
++        .map(f64::abs)
++        .fold(0.0, f64::max);
++    if !scale.is_finite() || !q.is_finite() {
++        return f64::INFINITY;
++    }
++    if scale == 0.0 {
++        return q.length_squared();
++    }
++    let divide = |v: Vec3, by: f64| Vec3::new(v.x / by, v.y / by, v.z / by);
++    let (a, b, q) = (divide(e0, scale), divide(e1, scale), divide(q, scale));
++    if !q.is_finite() {
++        return f64::INFINITY;
++    }
++    // Cross products preserve a skinny triangle's normal where the Gram
++    // determinant a*c-b*b cancels to zero. Never replace it with an epsilon.
++    let cross = a.cross(b);
++    let normal_scale = cross
++        .to_array()
++        .into_iter()
++        .map(f64::abs)
++        .fold(0.0, f64::max);
++    if normal_scale > 0.0 {
++        let normal = divide(cross, normal_scale);
++        let denominator = cross.dot(normal);
++        let u = q.cross(b).dot(normal) / denominator;
++        let v = a.cross(q).dot(normal) / denominator;
++        if u >= 0.0 && v >= 0.0 && u + v <= 1.0 {
++            let distance = q.dot(normal).abs() / normal.length() * scale;
++            return distance * distance;
++        }
++    }
++    // Outside the triangle (or collinear): the closest point is on an edge.
++    let edge_distance = |start: Vec3, end: Vec3| {
++        let edge = end - start;
++        let len2 = edge.length_squared();
++        let parameter = if len2 == 0.0 {
++            0.0
++        } else {
++            ((q - start).dot(edge) / len2).clamp(0.0, 1.0)
++        };
++        (q - (start + edge * parameter)).length_squared()
++    };
++    let squared = edge_distance(Vec3::ZERO, a)
++        .min(edge_distance(Vec3::ZERO, b))
++        .min(edge_distance(a, b));
++    let distance = squared.sqrt() * scale;
++    distance * distance
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn triangle_projection_and_all_boundary_regions() {
++        let tri = [Vec3::ZERO, Vec3::new(2.0, 0.0, 0.0), Vec3::Y];
++        for (p, expected) in [
++            (Vec3::new(0.5, 0.25, 2.0), 4.0),
++            (Vec3::new(1.0, -1.0, 0.0), 1.0),
++            (Vec3::new(-1.0, 0.5, 0.0), 1.0),
++            (Vec3::new(1.0, 1.0, 0.0), 0.2),
++            (Vec3::new(-1.0, -1.0, 0.0), 2.0),
++            (Vec3::new(3.0, 0.0, 0.0), 1.0),
++            (Vec3::new(0.0, 2.0, 0.0), 1.0),
++        ] {
++            assert!((distance_to_triangle(p, tri) - expected).abs() < 1e-12);
++            assert!((distance_to_triangle(p, [tri[2], tri[1], tri[0]]) - expected).abs() < 1e-12);
++        }
++    }
++
++    #[test]
++    fn degenerate_and_invalid_triangles() {
++        assert_eq!(distance_to_triangle(Vec3::Y, [Vec3::ZERO; 3]), 1.0);
++        assert_eq!(
++            distance_to_triangle(Vec3::Y, [Vec3::ZERO, Vec3::X, Vec3::X * 2.0]),
++            1.0
++        );
++        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
++            let invalid = Vec3::new(value, 0.0, 0.0);
++            assert_eq!(
++                distance_to_triangle(invalid, [Vec3::ZERO; 3]),
++                f64::INFINITY
++            );
++            assert_eq!(
++                distance_to_triangle(Vec3::ZERO, [invalid, Vec3::X, Vec3::Y]),
++                f64::INFINITY
++            );
++        }
++    }
++
++    #[test]
++    fn skinny_triangle_does_not_cancel_its_normal() {
++        // Finite synthetic geometry reproduces the AS-2940 determinant failure.
++        let tri = [
++            Vec3::ZERO,
++            Vec3::new(1e-3, 0.0, 1e10),
++            Vec3::new(0.0, 1e-3, 2e10),
++        ];
++        let p = tri[1] * 0.25 + tri[2] * 0.25;
++        let result = distance_to_triangle(p, tri);
++        assert!(result.is_finite() && result < 1e-20, "{result}");
++        for scale in [1e-100, 1.0, 1e100] {
++            let d = distance_to_triangle(
++                Vec3::Z * scale,
++                [Vec3::ZERO, Vec3::X * scale, Vec3::Y * scale],
++            );
++            assert!((d / (scale * scale) - 1.0).abs() < 1e-12);
++        }
++    }
++}

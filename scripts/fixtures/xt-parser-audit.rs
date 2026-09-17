@@ -101,8 +101,11 @@ fn audit(path: &Path) -> Result<BTreeMap<String, usize>, String> {
     }
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     // A reversible byte view permits inspection; it does not certify text encoding.
+    #[cfg(not(audit_parser_v3))]
     let text = String::from_utf8(bytes)
         .unwrap_or_else(|error| error.into_bytes().into_iter().map(char::from).collect());
+    #[cfg(audit_parser_v3)]
+    let text = xt_parser::decode(bytes);
     let (_, body_text) = xt_parser::header::split_header(&text).map_err(|e| e.to_string())?;
     #[cfg(not(audit_parser_v3))]
     let (_, _, stream) = schema::parse_tline(body_text).map_err(|e| e.to_string())?;

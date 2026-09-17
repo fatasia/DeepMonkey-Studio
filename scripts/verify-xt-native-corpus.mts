@@ -36,6 +36,7 @@ for (const [index, item] of inventory.files.entries()) {
   }
   if (sha256(await readFile(source)) !== item.sha256) throw new Error(`Source changed: ${item.path}`);
   const output = path.join(attemptDirectory, `${index}-${item.sha256.slice(0, 12)}.glb`);
+  const started = performance.now();
   try {
     const { stdout, stderr } = await execute(binary, [source, output, '--quality', 'plain'], {
       timeout: 60_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
@@ -48,13 +49,16 @@ for (const [index, item] of inventory.files.entries()) {
     } : undefined;
     const countsAgree = reported !== undefined && reported.faces > 0
       && reported.meshedFaces === reported.faces && reported.triangles === geometry.triangleCount;
+    const outputBytes = await readFile(output);
     results.push({ source: item.path, sourceSha256: item.sha256, status: 'preview-evidence',
+      conversionAndAuditMs: performance.now() - started, outputBytes: outputBytes.byteLength,
       geometry, reported, countsAgree, diagnostics: stderr.trim(),
-      output: path.relative(outputDirectory, output), outputSha256: sha256(await readFile(output)),
+      output: path.relative(outputDirectory, output), outputSha256: sha256(outputBytes),
     });
   } catch (error) {
     const failure = error as Error & { code?: unknown; stdout?: string; stderr?: string; killed?: boolean };
     results.push({ source: item.path, sourceSha256: item.sha256, status: 'failed',
+      conversionAndAuditMs: performance.now() - started,
       error: failure.message, code: failure.code, killed: failure.killed ?? false,
       diagnostics: failure.stderr ?? '',
     });

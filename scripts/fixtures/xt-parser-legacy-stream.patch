@@ -1,0 +1,240 @@
+diff --git a/native/crates/xt-parser/src/build.rs b/native/crates/xt-parser/src/build.rs
+index a006497..6236cab 100644
+--- a/native/crates/xt-parser/src/build.rs
++++ b/native/crates/xt-parser/src/build.rs
+@@ -64,6 +64,9 @@ fn build_one_body(
+         if f.len() >= 30 {
+             // PS30+ annotated layout (34 fields)
+             (9, 10, 14, 18, 19, 20, 21, 24)
++        } else if f.len() == 22 {
++            // SCH_9008 predates nom_geom_state; following pointers shift left.
++            (7, 8, 14, 15, 3, 4, 5, 19)
+         } else {
+             // Base schema layout (23 fields)
+             (7, 8, 14, 16, 3, 4, 5, 20)
+diff --git a/native/crates/xt-parser/src/entity.rs b/native/crates/xt-parser/src/entity.rs
+index 6a5e14e..04c450d 100644
+--- a/native/crates/xt-parser/src/entity.rs
++++ b/native/crates/xt-parser/src/entity.rs
+@@ -462,6 +462,11 @@ pub fn parse_entities_keeping(
+     loop {
+         token::ws(input).map_err(|_| XtError::UnexpectedEof)?;
+         if input.is_empty() {
++            truncated = Some(Truncation {
++                type_id: 0,
++                entities_read: read,
++                detail: "missing stream terminator".into(),
++            });
+             break;
+         }
+ 
+@@ -469,10 +474,11 @@ pub fn parse_entities_keeping(
+         let type_id = match read_uint16(input) {
+             Ok(t) => t,
+             Err(e) => {
+-                eprintln!(
+-                    "[xt-parser] type_id read failed after {} entities: {} (next: {:?})",
+-                    entities.len(), e, &input[..30.min(input.len())]
+-                );
++                truncated = Some(Truncation {
++                    type_id: 0,
++                    entities_read: read,
++                    detail: format!("invalid entity type: {e}"),
++                });
+                 break;
+             }
+         };
+@@ -480,6 +486,13 @@ pub fn parse_entities_keeping(
+         // type_id == 1 is the stream terminator.
+         if type_id == 1 {
+             let _partition_idx = read_int32(input)?;
++            if !input.trim().is_empty() {
++                truncated = Some(Truncation {
++                    type_id,
++                    entities_read: read,
++                    detail: "trailing data after stream terminator".into(),
++                });
++            }
+             break;
+         }
+ 
+diff --git a/native/crates/xt-parser/src/lib.rs b/native/crates/xt-parser/src/lib.rs
+index 60af2a1..152364b 100644
+--- a/native/crates/xt-parser/src/lib.rs
++++ b/native/crates/xt-parser/src/lib.rs
+@@ -36,18 +36,15 @@ use std::path::Path;
+ 
+ /// Parse an XT file from a file path.
+ ///
+-/// The header is not UTF-8. Its `DATE=` and `USER=` fields carry whatever the
+-/// writing machine's code page produced — a Solid Edge export from a Turkish
+-/// Windows holds CP1254 bytes for `Çar, Ağu` — so the file is read as bytes and
+-/// decoded lossily. The entity stream itself is pure ASCII, so replacing an
+-/// undecodable byte can only ever affect a header string, never geometry.
++/// Locale bytes can occur in both the header and length-prefixed attributes.
++/// Preserve their byte count through `decode` before reading entity boundaries.
+ pub fn parse_xt_file<P: AsRef<Path>>(path: P) -> Result<XtFile> {
+     let path = path.as_ref();
+     let bytes = std::fs::read(path).map_err(|e| XtError::Io {
+         path: path.to_path_buf(),
+         source: e,
+     })?;
+-    parse_xt(&String::from_utf8_lossy(&bytes))
++    parse_xt(&decode(bytes))
+ }
+ 
+ /// A parsed file at the raw-entity level, before any typed IR is built.
+@@ -63,34 +60,17 @@ pub struct RawFile {
+     pub truncated: Option<entity::Truncation>,
+ }
+ 
+-/// A file's bytes as text, in one allocation where the bytes allow it.
+-///
+-/// `String::from_utf8_lossy(&bytes).into_owned()` is the obvious spelling and
+-/// it costs twice: the original bytes stay live, and the string it builds
+-/// grows by doubling. Measured on the pilot — a 35 MB file — that step alone
+-/// moved the process 72 MB, because a 35 MB string that doubles its way there
+-/// has touched 64 MB of pages by the time it arrives.
+-///
+-/// Here the bytes are handed over instead. A transmit file's entity stream is
+-/// pure ASCII; only the header carries machine-locale bytes, and most files
+-/// are clean throughout — those move into the string without a copy at all.
+-/// A file that is not gets a conversion sized in advance from the length in
+-/// hand, which is exact for every replacement-free stretch and never doubles.
++/// Map each source byte to one scalar for the byte-counted text grammar.
++/// ASCII moves without a copy. Non-ASCII values preserve bytes, not a display
++/// encoding; decode attribute labels separately when the source code page is known.
+ pub fn decode(bytes: Vec<u8>) -> String {
+-    match String::from_utf8(bytes) {
+-        Ok(text) => text,
+-        Err(e) => {
+-            let bytes = e.into_bytes();
+-            let mut text = String::with_capacity(bytes.len());
+-            for chunk in bytes.utf8_chunks() {
+-                text.push_str(chunk.valid());
+-                if !chunk.invalid().is_empty() {
+-                    text.push(char::REPLACEMENT_CHARACTER);
+-                }
+-            }
+-            text
+-        }
++    if bytes.is_ascii() {
++        return String::from_utf8(bytes).expect("ASCII is valid UTF-8");
+     }
++    // Length-prefixed attribute strings count source bytes, including locale
++    // bytes. Keep one scalar per byte; lossy UTF-8 can merge multiple bytes
++    // and consume the following entity header as part of the string.
++    bytes.into_iter().map(char::from).collect()
+ }
+ 
+ /// Parse an XT file to raw entities.
+diff --git a/native/crates/xt-parser/src/schema.rs b/native/crates/xt-parser/src/schema.rs
+index b926856..a7751a5 100644
+--- a/native/crates/xt-parser/src/schema.rs
++++ b/native/crates/xt-parser/src/schema.rs
+@@ -1190,6 +1190,13 @@ pub fn base_version0_schema(type_id: u16) -> Option<EntitySchema> {
+ pub fn standard_schema(type_id: u16, key_major: u32) -> Option<EntitySchema> {
+     if key_major < 20 {
+         return match type_id {
++            // SCH_9008 transmits BODY without the later nom_geom_state byte.
++            // Its shell pointer therefore occupies slot 15, not slot 16.
++            BODY if key_major == 9 => {
++                let mut schema = base_schema(BODY)?;
++                schema.fields.remove(15);
++                Some(schema)
++            }
+             // FIN carries no attributes_features pointer before V20 — the
+             // leading `p` of the sch_13006 layout is simply absent, everything
+             // else lines up. Compare the same entity indices in 500.079UB.x_t
+
+diff --git a/native/crates/xt-parser/tests/legacy_stream.rs b/native/crates/xt-parser/tests/legacy_stream.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/xt-parser/tests/legacy_stream.rs
+@@ -0,0 +1,44 @@
++use xt_parser::{decode, entity::parse_entities_opt, schema};
++
++#[test]
++fn legacy_body_does_not_consume_next_entity() {
++    let mut input = "12 3 56 6 7 0 0 0 0 1e3 1e-8 2 8 0 1 0 1 9 10 11 0 12 13 0 1 0";
++    let (entities, truncated) = parse_entities_opt(&mut input, 0, false, 9).unwrap();
++    assert!(truncated.is_none(), "{truncated:?}");
++    assert!(input.trim().is_empty());
++    assert_eq!(entities.len(), 1);
++    assert_eq!(entities.fields(&entities[0]).len(), 22);
++    assert_eq!(schema::standard_schema(schema::BODY, 13).unwrap().fields.len(), 23);
++}
++
++#[test]
++fn locale_attribute_count_is_bytes_not_unicode_characters() {
++    // Includes valid UTF-8 and invalid multibyte prefixes. Both are opaque bytes.
++    let mut bytes = b"84 6 2 ".to_vec();
++    bytes.extend_from_slice(&[0xe4, 0xb8, 0xad, 0xe1, 0x80, 0xff]);
++    bytes.extend_from_slice(b"1 0");
++    let text = decode(bytes);
++    let mut input = text.as_str();
++    let (entities, truncated) = parse_entities_opt(&mut input, 0, false, 9).unwrap();
++    assert!(truncated.is_none(), "{truncated:?}");
++    assert!(input.trim().is_empty());
++    assert_eq!(entities.var_char(&entities[0]).len(), 6);
++}
++
++#[test]
++fn incomplete_or_trailing_stream_is_diagnostic() {
++    for text in ["", "3 1 0 5", "invalid", "1 0 3 1 0 5"] {
++        let mut input = text;
++        let (_, truncated) = parse_entities_opt(&mut input, 0, false, 9).unwrap();
++        assert!(truncated.is_some(), "accepted incomplete stream {text:?}");
++    }
++}
++
++#[test]
++fn truncated_entity_and_terminator_fail_closed() {
++    let mut input = "12 3 56";
++    let (_, truncated) = parse_entities_opt(&mut input, 0, false, 9).unwrap();
++    assert!(truncated.is_some());
++    let mut input = "1";
++    assert!(parse_entities_opt(&mut input, 0, false, 9).is_err());
++}
+
+diff --git a/native/crates/xt-parser/examples/legacy_corpus.rs b/native/crates/xt-parser/examples/legacy_corpus.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/xt-parser/examples/legacy_corpus.rs
+@@ -0,0 +1,36 @@
++use std::path::Path;
++use xt_parser::{decode, entity, header, schema};
++
++fn audit(path: &Path, counts: &mut [usize; 3]) {
++    if path.is_dir() {
++        for entry in std::fs::read_dir(path).unwrap() {
++            audit(&entry.unwrap().path(), counts);
++        }
++        return;
++    }
++    if !path.extension().is_some_and(|x| x.eq_ignore_ascii_case("x_t")) {
++        return;
++    }
++    counts[0] += 1;
++    let text = decode(std::fs::read(path).unwrap());
++    let (_, body) = header::split_header(&text).unwrap();
++    let line = schema::parse_tline(body).unwrap();
++    let mut input = line.body.as_str();
++    let partitions = if line.has_base_schema {
++        schema::parse_schema_preamble(&mut input).unwrap().partition_count
++    } else { 0 };
++    let (entities, truncated) = entity::parse_entities_opt(
++        &mut input, partitions, line.has_base_schema, line.key_major,
++    ).unwrap();
++    let complete = truncated.is_none() && input.trim().is_empty();
++    counts[if complete { 1 } else { 2 }] += 1;
++    println!("{}\t{}\t{}\t{}\t{:?}", path.display(), complete,
++        entities.len(), input.trim().len(), truncated);
++}
++
++fn main() {
++    let root = std::env::args().nth(1).expect("legacy_corpus <directory>");
++    let mut counts = [0; 3];
++    audit(Path::new(&root), &mut counts);
++    println!("total={} complete-stream={} incomplete={}", counts[0], counts[1], counts[2]);
++}

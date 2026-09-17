@@ -107,3 +107,15 @@ pnpm exec tsx scripts/verify-xt-native-corpus.mts data/external-assets/format-re
 4. PLAN-03 合同接入真实 Worker 和质量审计后，才能进入 PLAN-04/06 的任务统一与原子发布。
 
 下一片建议先补 PLAN-02 的 Windows 离线试构建矩阵；样本扩充优先级为真实 SLDPRT/SLDASM、独立来源 X_T 与真实 X_B、多学科 RVT、许可明确的 3D Tiles 和多站大坐标点云。
+
+## 6. 2026-09-17 修复后全语料复跑
+
+实体流补丁与数值补丁合并后，109 个样本全部生成通过产品几何审计的 GLB；109 个 CLI 面数/三角数核对一致，stderr 均为空。生产认证仍为 0，未接入产品转换 provider。
+
+- 二进制 SHA-256：`61d85df70defe292c0049d5ed70a10d2ea5a6a76c8e7ef827f699216757fef83`。
+- 本地 `test-output/xt-native-corpus-fixed/evidence.json` SHA-256：`f134cee25f101c7e65cc008d2735b6463b9fdeeb1cbcbab89b103da0e058c3dc`。复跑命令同前文 native runner，仅输出目录改为该目录。
+- AS-2940 为 75/75 面、7844 三角形；AS(T)-AD5008 为 38/38 面、4684 三角形。独立实体流检查分别有 75/38 个唯一 FACE，均读到显式终止记录。旧 24/25 面分母不能当作源真值；分母变化的完整因果尚待对照，不能仅归因于字符解码修复。
+- 单次顺序运行，转换加 GLB 审计累计 42.49 秒，P50 60.05 ms、P95 1109.78 ms、最大 11261.25 ms；输出共 64,489,700 字节。这不是冷启动/峰值 RSS 或独立保留集性能认证。
+- 独立 typed IR 审计复跑为 109 个 `incomplete`、0 个解析错误：保留 exterior shell 计数差异与 missing-fin-edge 诊断。CLI 使用另一条 cad-xt lowering，计数一致不能替代拓扑语义、源映射、单位和几何精度验证。
+
+补丁、来源和聚焦测试见 [实体流修复](industrial-xt-legacy-stream-2026-09-17.md) 与 [数值修复](industrial-x-t-distance-panic-2026-09-17.md)。原始样本和研究源码不提交；许可逐文件归档、独立来源保留集、质量报告和正式 Worker 接线仍待完成。
