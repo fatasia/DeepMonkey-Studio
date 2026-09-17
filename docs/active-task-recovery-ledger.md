@@ -1868,6 +1868,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 可复跑入口核验逐件源/产物哈希、路径限制、唯一输入输出、几何证据三角数和源面覆盖。Rust 2、Node 身份 4 与入口 3 项测试通过，主线程重跑 109 件通过。
 - 同一 BODY 内合法面标签互换仍不能靠集合识别；逐面几何对应、精度、单位/闭合性及产品接线继续本轮待办。[证据](specs/industrial-xt-source-identity-2026-09-17.md)
 
+### 2026-09-17 X_T 逐面几何见证审计（Codex）
+
+- 独立 oracle 只链接 `xt-parser`，从原始 FACE→LOOP→FIN→VERTEX→POINT 读边界见证，并直接读平面/圆柱/球方程；不调用 cad-xt、lowering 或 tessellator 自报真值。GLB 端按 faceRange 读真实三角，检查源点到三角集合距离与输出顶点解析曲面残差。
+- 109 件/19,344 面实测：19,151 面见证匹配，12 面几何差异，181 面当前无可支持见证，206 面与同 BODY 其他面见证完全重复（与前述分类重叠）。真实 GLB 反例证明同 BODY 面标签互换虽可通过集合审计，但会被逐面几何拒绝。
+- 7 项反例测试通过，主线实际审计按设计返回 exit 2，报告 SHA-256 `37da7678b289bd349cea1935b05e63921c86cddd80d6ec5c56a6244beb5e0617`。差异、NURBS/圆锥/圆环/偏置曲面、裁剪域/孔洞/法线/世界变换仍待办；生产 profile 认证保持 0。[证据](specs/industrial-x-t-face-geometry-witness-2026-09-17.md)
+
 ### 2026-09-17 Deep2D P2-01 Windows LPAC 零 capability 实验（Codex）
 
 - 在既有 X IPC 与 Job 资源治理之上新增可信宿主 LPAC 入口：唯一临时 profile/目录、精确 SID RX、零 capabilities、ALL_APPLICATION_PACKAGES opt-out、仅标准流句柄与原子 Job 列表。子进程挂起创建，核验 AppContainer/SID/capability/group 后才恢复；失败不降级普通进程。
