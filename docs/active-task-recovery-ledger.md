@@ -8,6 +8,8 @@
 
 - Web静态包生成端收拢 `a3fd714`：scripts/build-dashboard-web-package.mts（冻结清单校验→资源/字体许可闭包→Vite构建→manifest三种hash→zip）与 dashboardWebPackage 合同、DashboardStaticRoot 全屏入口、vite.dashboard-static 配置整组入库。r6端到端重跑（发布revision 2，zip SHA ff11cdbb…）后修复版loader两轮浏览器15/15再次通过（含篡改/缺资源fail-closed与取消恢复）。API web下载格式注册仍待接；生产构建在生成器内已验。
 
+- P0-04 能力报告放行消费方 `7e8c60c`：assertDashboardCandidatePublicationGate 校验报告与候选冻结身份逐项一致、objects非空、blocked必带原因、supported必零deferred；发布放行（prepare冻结前）与三格式下载复核（409 candidate_invalid，不触碰打包字节）双边界接线。路由/取消夹具升级为真实capability合同；新增4个409用例，聚焦49项、API全量1182通过、类型/治理通过。webview-only保持未建模明示。[报告](specs/dashboard-capability-publication-gate-2026-09-17.md)
+
 - S0样本库补强（data/不入库）：3DM×2(mcneel/openNURBS@eb92af3b)、LAS×1(PDAL@58af674b)、3D Tiles×6(CesiumGS/3d-tiles-tools@4ca692eb,Apache-2.0)、RVT×1(本地BIMFACE,仅inspect)；manifest 12条逐条重算SHA-256一致,许可文件随目录。jt coffee-maker 9.5文件在库但manifest未登记属既有遗留。
 
 ### 2026-09-17 主流程与 DE26 范围同步
