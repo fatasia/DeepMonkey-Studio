@@ -54,7 +54,9 @@ try {
     const kind = type === "table" ? "table" : type === "value" ? "value" : "chart";
     const root = document.querySelector<HTMLElement>(`[data-dashboard-capture="${kind}"]`);
     if (!root) throw new Error(`Frozen ${kind} widget has not mounted`);
-    const measured = root.getBoundingClientRect();
+    // 测量原点是节点框(heading-node);widget 根只充满其 padding 内容区,
+    // 等比检查必须针对实际交给 captureDashboardDataLayout 的那一层。
+    const measured = document.getElementById("heading-node")!.getBoundingClientRect();
     if (Math.abs(measured.width / request.width - measured.height / request.height) > 0.0001)
       throw new Error(`Measured capture root ${measured.width}x${measured.height} does not scale uniformly to ${request.width}x${request.height}`);
     for (const element of root.querySelectorAll<HTMLElement>("[data-capture-role]")) {

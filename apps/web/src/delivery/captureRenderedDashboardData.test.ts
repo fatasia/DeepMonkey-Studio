@@ -32,7 +32,9 @@ const document = {
       selectNodeContents(node: TestNode) { this.container = node; this.collapsed = false; },
       collapse() { this.collapsed = true; },
       get startContainer() { return this.container; }, get endContainer() { return this.container; },
-      getClientRects: () => [new DOMRect()], getBoundingClientRect: () => new DOMRect(),
+      getClientRects: () => [new DOMRect()],
+      // A whole-text range spans its node, so it measures like the owning element.
+      getBoundingClientRect: () => range.container?.parentElement?.getBoundingClientRect() ?? new DOMRect(),
       toString() { return this.container?.textContent ?? ""; } };
     return range as unknown as Range;
   },
@@ -122,5 +124,22 @@ describe("rendered dashboard capture roles", () => {
     styles.set(csv, buttonStyles);
     csv.append(new TestNode("!"));
     expect(() => captureRenderedDashboardData(root, options)).toThrow("exactly one direct text run");
+  });
+  it("measures every widget kind against the author node frame given a geometry root", () => {
+    const { root, value } = widgetRoot();
+    const frame = new TestElement("section");
+    frame.getBoundingClientRect = () => new DOMRect(0, 0, 200, 100);
+    // Widget root fills the padded content box, offset by border and padding inside the frame.
+    root.getBoundingClientRect = () => new DOMRect(17, 17, 166, 66);
+    value.getBoundingClientRect = () => new DOMRect(17, 17, 40, 20);
+    body.append(frame);
+    frame.append(root as unknown as TestElement);
+    const result = captureRenderedDashboardData(root, { ...options, geometryRoot: frame as unknown as HTMLElement });
+    expect(result.layout.textBoxes[0]?.rect).toEqual([17, 17, 40, 20]);
+  });
+  it("rejects a geometry root that does not contain the widget root", () => {
+    const { root } = widgetRoot();
+    expect(() => captureRenderedDashboardData(root, { ...options, geometryRoot: new TestElement("section") as unknown as HTMLElement }))
+      .toThrow("must contain the widget");
   });
 });

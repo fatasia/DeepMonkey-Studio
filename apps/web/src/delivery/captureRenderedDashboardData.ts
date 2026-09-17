@@ -2,7 +2,7 @@ import { captureDashboardDataLayout, type DashboardDataCaptureOptions, type Dash
 import type { DashboardDataPaint, DashboardDataTextRole, DashboardFrozenData } from "./dashboardDataRasterTypes";
 
 export type RenderedDashboardCaptureOptions = Pick<DashboardDataCaptureOptions, "logicalSize" | "resolveFonts"> & {
-  /** Author node wrapper: retain its padding/border in node-local heading coordinates. */
+  /** Author node wrapper: measure every widget kind against the node frame, padding and border included. */
   readonly geometryRoot?: HTMLElement;
 };
 
@@ -13,6 +13,10 @@ export function captureRenderedDashboardData(root: HTMLElement, options: Rendere
   if (!view || !root.isConnected || !["value", "table", "chart"].includes(kind ?? ""))
     throw new Error("Capture requires a mounted value, chart or report-table widget root");
   if (root.querySelector("[data-dashboard-capture]")) throw new Error("Nested widget capture is unsupported");
+  // The logical frame is the author node border-box, while the widget root fills its padded
+  // content box; measuring from the frame keeps one coordinate origin for every widget kind.
+  const origin = options.geometryRoot ?? root;
+  if (!origin.contains(root)) throw new Error("Heading geometry root must contain the widget");
   const visible = (element: HTMLElement) => {
     for (let current: HTMLElement | null = element; current; current = current.parentElement) {
       const style = view.getComputedStyle(current);
@@ -36,13 +40,11 @@ export function captureRenderedDashboardData(root: HTMLElement, options: Rendere
   if (kind === "chart") {
     if (text.some(binding => !["title", "unit"].includes(binding.role.kind)))
       throw new Error("Chart heading capture only accepts title and unit text");
-    const origin = options.geometryRoot ?? root;
-    if (!origin.contains(root)) throw new Error("Heading geometry root must contain the chart");
     return { layout: captureDashboardDataLayout(origin, { ...options, text, backgrounds: [] }) };
   }
   if (kind === "value") {
     if (!text.some(binding => binding.role.kind === "value")) throw new Error("Value capture is missing its numeric text");
-    return { layout: captureDashboardDataLayout(root, { ...options, text, backgrounds }) };
+    return { layout: captureDashboardDataLayout(origin, { ...options, text, backgrounds }) };
   }
   const scroll = root.querySelector<HTMLElement>("[data-capture-scroll]");
   const page = Number(root.dataset.capturePage), column = root.dataset.captureSortColumn;
@@ -51,7 +53,7 @@ export function captureRenderedDashboardData(root: HTMLElement, options: Rendere
     || Boolean(column) !== Boolean(direction) || direction && direction !== "asc" && direction !== "desc")
     throw new Error("Invalid rendered table page, sort or scroll state");
   const tablePaint = paintOrder(root, text, backgrounds);
-  return { layout: captureDashboardDataLayout(root, { ...options, text, backgrounds, tablePaint }),
+  return { layout: captureDashboardDataLayout(origin, { ...options, text, backgrounds, tablePaint }),
     table: { page, scrollLeft: scroll.scrollLeft, ...(column && (direction === "asc" || direction === "desc") ? { sort: { column, direction } } : {}) } };
 }
 
