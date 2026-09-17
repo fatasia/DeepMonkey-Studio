@@ -2027,3 +2027,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - CAD IR 保留原参数域与 trim UV，新增 identity / arc-angle / separable / unsupported 合同；圆弧与旋转曲面参数用半角正弦比映射到 NURBS，不依赖采样插值或商业组件。
 - blocks/sphereDecals 各 290 个参数点与原 openNURBS 映射及 PointAt 对拍，独立 NURBS 求值最大点误差分别为 `7.589e-15` / `5.664e-14` 源单位；直接套原 UV 的负对照分别偏差 0.162 / 1.180。5/5 参数测试覆盖部分圆弧、非零域、转置、端点与拒绝路径。
 - MSVC 重建、5/5 真实源读取、8/8 GLB 回归、repository gate 通过。当前仍是参数求值合同，trimmed surface 离散、一般参数化 2、误差门禁和生产接线继续本轮待办。[证据](specs/industrial-3dm-parameter-mapping-2026-09-17.md)
+
+### 2026-09-17 3DM 无缓存平面 trim→GLB（Codex）
+
+- 受限离散器消费 CAD IR 的仿射平面、直线 outer/inner trim、proxy subdomain/方向与面方向，复用 Three ShapeUtils 三角化；相交/开环/未知曲面保持面级诊断，源缓存网格优先。
+- file3dm_stuff 的 12 个无缓存面生成 24 三角，完整输出 13 primitives / 52 vertices / 26 triangles。支撑面残差最大 `1.776e-15` 源单位；独立三维面积、方向、源面编号与 GLB 字节审核通过。真实文件无孔，孔洞仅合成边界验证，仍待独立真实语料。
+- 11/11 聚焦测试、5 件 GLB 审计、专项 tsc、repository gate 与本片 diff-check 通过。研究预览状态不提升为生产/视觉完成；复杂曲面、孔洞语料、闭合性、浏览器视觉和产品接线继续本轮待办。[证据](specs/industrial-3dm-planar-trim-2026-09-17.md)

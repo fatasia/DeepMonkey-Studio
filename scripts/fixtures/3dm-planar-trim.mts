@@ -1,0 +1,113 @@
+import { createRequire } from 'node:module';
+import { evaluateCurve, evaluateSurface } from './3dm-nurbs-parameters.mjs';
+const require = createRequire(new URL('../../apps/web/package.json', import.meta.url));
+const { ShapeUtils, Vector2 } = require('three');
+const EPS = 1e-9;
+const sub = (a: number[], b: number[]) => a.map((x, i) => x - b[i]);
+const length = (a: number[]) => Math.hypot(...a);
+const cross = (a: number[], b: number[]) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const orient = (a: number[], b: number[], c: number[]) => (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+function check(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
+export const polygonArea = (ring: number[][]) => ring.reduce((sum, p, i) => {
+  const q = ring[(i+1)%ring.length]; return sum+p[0]*q[1]-q[0]*p[1];
+}, 0)/2;
+export function insideRing(point: number[], ring: number[][]) {
+  let inside = false;
+  for (let i=0,j=ring.length-1;i<ring.length;j=i++) {
+    const a=ring[j],b=ring[i];
+    if ((a[1]>point[1]) !== (b[1]>point[1]) && point[0] < (b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0]) inside=!inside;
+  }
+  return inside;
+}
+function touches(a: number[], b: number[], c: number[], d: number[]) {
+  const o=[orient(a,b,c),orient(a,b,d),orient(c,d,a),orient(c,d,b)];
+  return Math.min(a[0],b[0])<=Math.max(c[0],d[0])+EPS && Math.min(c[0],d[0])<=Math.max(a[0],b[0])+EPS
+    && Math.min(a[1],b[1])<=Math.max(c[1],d[1])+EPS && Math.min(c[1],d[1])<=Math.max(a[1],b[1])+EPS
+    && o[0]*o[1]<=EPS*EPS && o[2]*o[3]<=EPS*EPS;
+}
+function validateRings(rings: number[][][]) {
+  check(rings.flat().length<=2048, 'trim-vertex-budget');
+  for(let r=0;r<rings.length;r++) {
+    const ring=rings[r]; check(ring.length>=3 && Math.abs(polygonArea(ring))>EPS, 'degenerate-trim-loop');
+    for(let i=0;i<ring.length;i++) for(let s=r;s<rings.length;s++) for(let j=0;j<rings[s].length;j++) {
+      if(r===s && (j<=i || j===i+1 || (i===0 && j===ring.length-1))) continue;
+      check(!touches(ring[i],ring[(i+1)%ring.length],rings[s][j],rings[s][(j+1)%rings[s].length]), 'intersecting-trim-loops');
+    }
+    if(r) {
+      check(insideRing(ring[0],rings[0]), 'hole-outside-outer-loop');
+      for(let s=1;s<r;s++) check(!insideRing(ring[0],rings[s]) && !insideRing(rings[s][0],ring), 'nested-trim-holes');
+    }
+  }
+}
+function trimLoop(ir: any, loop: any) {
+  check(loop && Array.isArray(loop.trims) && loop.trims.length>=3 && loop.trims.length<=2048, 'unsupported-trim-loop');
+  const ring: number[][]=[];
+  let previous: number[] | undefined;
+  for(const index of loop.trims) {
+    const trim=ir.trims[index], curve=ir.curves2d[trim?.curve2d];
+    check(curve?.dimension===2 && curve.degree===1 && curve.controlPoints.length===2 && !curve.rational
+      && curve.parameterMap?.kind==='identity', 'unsupported-trim-curve');
+    check(trim.sourceSubdomain?.length===2 && trim.sourceSubdomain[0]<trim.sourceSubdomain[1], 'invalid-trim-subdomain');
+    const ends=trim.sourceSubdomain.map((t: number)=>evaluateCurve(curve,t));
+    if(trim.curveReversed) ends.reverse();
+    check(ends.flat().every(Number.isFinite), 'nonfinite-trim');
+    if(previous) check(length(sub(previous,ends[0]))<=EPS, 'open-trim-loop');
+    check(length(sub(ends[0],ends[1]))>EPS, 'degenerate-trim-edge');
+    ring.push(ends[0]); previous=ends[1];
+  }
+  check(length(sub(previous!,ring[0]))<=EPS, 'open-trim-loop');
+  return ring;
+}
+/** Exact affine plane + straight trims only. Curved/ambiguous profiles remain diagnostic. */
+export function tessellatePlanarFace(ir: any, faceIndex: number) {
+  const face=ir.faces[faceIndex], surface=ir.surfaces[face?.surface];
+  check(surface?.degree?.every((d: number)=>d===1) && surface.controlPointCount?.every((n: number)=>n===2)
+    && !surface.rational && surface.parameterMap?.kind==='identity', 'unsupported-trimmed-surface');
+  const cp=surface.controlPoints;
+  check(cp.length===4 && cp.every((p: any)=>p.length===3 && p.every(Number.isFinite)), 'invalid-plane-control-points');
+  const u=sub(cp[1],cp[0]),v=sub(cp[2],cp[0]),normal=cross(u,v),normalLength=length(normal);
+  check(normalLength>EPS, 'singular-plane');
+  const affineError=length(cp[3].map((x: number,i: number)=>x-cp[1][i]-cp[2][i]+cp[0][i]));
+  check(affineError<=EPS, 'non-affine-bilinear-surface');
+  check(face.loops.length>0 && face.loops.length<=128, 'trim-loop-budget');
+  const loops=face.loops.map((i: number)=>ir.loops[i]);
+  check(loops.filter((l: any)=>l?.type===1).length===1 && loops.every((l: any)=>[1,2].includes(l?.type)), 'unsupported-trim-loop-type');
+  check(loops.reduce((count: number,l: any)=>count+(l.trims?.length??2049),0)<=2048, 'trim-vertex-budget');
+  loops.sort((a: any,b: any)=>a.type-b.type);
+  const rings=loops.map((loop: any)=>trimLoop(ir,loop)); validateRings(rings);
+  const uv: number[][]=rings.flat();
+  const positions=uv.map(point=>evaluateSurface(surface,point));
+  const triangles: number[][]=ShapeUtils.triangulateShape(rings[0].map((p: number[])=>new Vector2(...p)),
+    rings.slice(1).map((ring: number[][])=>ring.map(p=>new Vector2(...p))));
+  const targetArea=Math.abs(polygonArea(rings[0]))-rings.slice(1).reduce((sum: number,r: number[][])=>sum+Math.abs(polygonArea(r)),0);
+  let triangleArea=0;
+  for(const triangle of triangles) {
+    const [a,b,c]=triangle.map(i=>uv[i]),area=orient(a,b,c)/2;
+    check(Math.abs(area)>EPS, 'degenerate-triangulation'); triangleArea+=Math.abs(area);
+    const center=[(a[0]+b[0]+c[0])/3,(a[1]+b[1]+c[1])/3];
+    check(insideRing(center,rings[0]) && !rings.slice(1).some((r: number[][])=>insideRing(center,r)), 'triangle-outside-trim');
+    for(const [p,q] of [[a,b],[b,c],[c,a]]) for(const ring of rings) for(let i=0;i<ring.length;i++) {
+      const r=ring[i],s=ring[(i+1)%ring.length];
+      check(!(orient(p,q,r)*orient(p,q,s)<-EPS*EPS && orient(r,s,p)*orient(r,s,q)<-EPS*EPS), 'triangle-crosses-trim');
+    }
+    if((area<0)!==Boolean(face.reversed)) [triangle[1],triangle[2]]=[triangle[2],triangle[1]];
+  }
+  check(triangles.length>0 && Math.abs(triangleArea-targetArea)<=EPS*Math.max(1,targetArea), 'trim-area-mismatch');
+  const normals=positions.map(()=>normal.map(x=>x/normalLength*(face.reversed?-1:1)));
+  return { face: faceIndex, geometrySource: 'cad-ir-affine-plane-trim', mesh: { positions, triangles, normals,
+    sourceFaceCount: triangles.length, quadCount: 0, textureCoordinates: [] },
+    audit: { uvArea: targetArea, triangleUvArea: triangleArea, affineError, loopCount: rings.length,
+      holeCount: rings.length-1, sourcePlaneArea: targetArea*normalLength/((surface.domain[0][1]-surface.domain[0][0])*(surface.domain[1][1]-surface.domain[1][0])) } };
+}
+export function completePlanarBrepParts(object: any) {
+  const parts=[...(object.storedRenderMeshes??[])], diagnostics: any[]=[];
+  if(object.kind!=='brep' || !object.cadIr) return { parts, diagnostics };
+  check(Number.isInteger(object.faceCount) && object.faceCount>=0 && object.faceCount<=100000
+    && object.cadIr.faces?.length===object.faceCount, 'invalid-brep-face-budget');
+  for(let face=0;face<object.faceCount;face++) {
+    if(parts.some(p=>p.face===face)) continue;
+    try { parts.push(tessellatePlanarFace(object.cadIr,face)); }
+    catch(error) { diagnostics.push({ objectId: object.id, face, code: error instanceof Error ? error.message : 'trim-tessellation-failed' }); }
+  }
+  return { parts, diagnostics };
+}

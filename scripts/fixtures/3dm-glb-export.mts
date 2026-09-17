@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { createIndexedTrianglePrimitive } from '../../apps/api/src/indexedTriangleMesh.ts';
+import { completePlanarBrepParts } from './3dm-planar-trim.mts';
 const require = createRequire(new URL('../../apps/api/package.json', import.meta.url));
 const { Document, NodeIO } = require('@gltf-transform/core');
 
@@ -36,7 +37,9 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
     materialSource: object.materialSource });
   for (const object of objects.values()) {
     check(source.layers.some((layer: any) => layer.index === object.layerIndex), 'missing layer');
-    const parts = object.kind === 'mesh' ? [{ face: null, mesh: object.mesh }] : object.storedRenderMeshes ?? [];
+    const completed = completePlanarBrepParts(object);
+    const parts = object.kind === 'mesh' ? [{ face: null, mesh: object.mesh }] : completed.parts;
+    diagnostics.push(...completed.diagnostics);
     if (object.kind === 'brep' && parts.length < object.faceCount) diagnostics.push({ objectId: object.id, code: 'missing-brep-render-mesh', count: object.faceCount - parts.length });
     if (object.kind === 'unsupported') diagnostics.push({ objectId: object.id, code: 'unsupported-object', objectType: object.objectType });
     if (!parts.length) continue;
@@ -55,6 +58,7 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
       const primitive = createIndexedTrianglePrimitive(document, buffer, null as any, {
         positions: m.positions.flat(), indices: m.triangles.flat(), normals: normals.flat(),
       }).setExtras({ ...sourceMap(object), brepFaceIndex: part.face,
+        geometrySource: part.geometrySource ?? 'source-stored-mesh', tessellationAudit: part.audit ?? null,
         textureCoordinateSource: uv.length ? m.textureCoordinateSource : null });
       if (uv.length) primitive.setAttribute('TEXCOORD_0', document.createAccessor().setType('VEC2')
         .setArray(new Float32Array(uv.flat())).setBuffer(buffer));
