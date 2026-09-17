@@ -1780,6 +1780,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - RTX 4060 Laptop GPU / Vulkan / 595.79 连续两轮通过；两份 256×256 PPM 均 196,623 bytes、SHA-256 `5c045ebc6766cfab3c95ff051a4119f808b4cb0d9b3d0f236875af1a1bc36e57`。已转换并实际查看诊断图，不将单材质探针冒充产品视觉验收。
 - 测试文件回归 21/0/3 ignored，新增真实 GPU 用例两轮 1/1，clippy/fmt 通过。浏览器 WebGPU 重叠/交叉/镜像玻璃像素与双轮截图仍待办，故 C03 整卡继续`本轮待办`。[spec](specs/de26-c03-transparency-twosided-2026-09-17.md)
 
+### 2026-09-17 DE26/C03 第三切片：浏览器生产 Weighted OIT 像素（Codex）
+
+- Chrome 153 / NVIDIA Lovelace / `isFallbackAdapter=false` 直接复用生产 `DeviceSession`、`WeightedOitPass`、targets 与 composite；两轮 18 个全 128² RGBA 帧证明 straight/premultiplied、zero alpha、交叉层逆序和 mirror front/double 六组最大差均为 0，独立中心参考 delta 0，非空变化 97/交叉变化 120。
+- 1280 dark 与 980 light 两轮截图已实际目检，无横向溢出/裁切；GPU validation、session diagnostics、console/page errors 与残留 owned resources 均为 0。evidence SHA-256 `7ef9ee331b60c725c7d635625d36a3f46170cf54e5e2a56a51f426bac232e3bc`，lab typecheck 与聚焦 25/0/1 skipped 通过。
+- 本片未改产品视觉或渲染代码；夹具自备顶点并直接调用 OIT 函数，尚未覆盖完整 renderPacket→PBR bit128、镜像实例批次和作者发布链，故 C03 整卡继续`本轮待办`。[证据](specs/de26-c03-browser-oit-pixels-2026-09-17.md)
+
 ### 2026-09-17 DE26/A03 第二切片：Native 同源采样窗口（Codex）
 
 - 已完成：Native telemetry 输出与 TS `deep-engine.benchmark-sample-window` v1 同形的固定 8 通道窗口。窗口共用 reset 后的 `host-monotonic` 边界；`cpu-submit`、GPU frame timestamp、相邻成功呈现帧间隔输出原始样本，GPU 通道保留 `gpu-timestamp` 时钟身份。reset 同时切断窗口原点、帧间隔与 CPU/GPU 环，旧样本不能串入新窗口。

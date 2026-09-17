@@ -1,7 +1,7 @@
 # DE26/C03 第一切片 · 透明与双面状态保真（合同冻结 + Three/Web/Native 对拍）
 
-> 2026-09-17 第二切片更新：Native 生产管线真实 GPU 像素读回已完成；浏览器 WebGPU
-> 像素对拍仍未完成，因此 C03 整卡保持进行中。
+> 2026-09-17 后续更新：Native 生产管线和浏览器生产 Weighted OIT 的真实 GPU 像素读回均已完成；
+> 浏览器完整 renderPacket→PBR flags/镜像批次与作者发布链仍未覆盖，因此 C03 整卡保持进行中。
 
 日期：2026-09-17。卡：DE26/C03（P1）。范围：透明语义三字段显式化、materials.ts 解除一刀切拒绝、
 weighted OIT premultiplied 语义修正、Native premultiplied blend 变体、旧包/旧上传序列不变。
@@ -93,9 +93,9 @@ weighted OIT 累积满足交换律，three.js 的「先背面后正面 two-pass�
 
 ## 边界（如实）
 
-- **浏览器 GPU 像素证据仍缺失**：Native 已完成真实 Vulkan 读回；Web 端「重叠/交叉/镜像玻璃
-  符合 weighted OIT 声明」目前仍以合同级测试（位图/混合因子/累积数学/排序确定性）和 pass
-  结构对拍覆盖。浏览器 WebGPU 真实像素与双轮截图仍是 C03 的剩余验收项。
+- **浏览器完整 PBR/packet 纵向像素仍缺失**：浏览器生产 Weighted OIT 已完成真实硬件两轮和
+  全帧像素对拍，但夹具直接调用生产 OIT WGSL/targets/composite，仅自备矩形顶点与函数入口。
+  renderPacket→PBR shader bit128、镜像实例批次和作者发布链仍是 C03 的剩余验收项。
 - **`side=back` 仍矩阵外**：桥显式拒绝；解除需在批/管线键引入第三 raster 态（ccw/cw 折叠），
   留待下一子切片。
 - **`BLEND + depthWrite=true` 仍全端拒绝**：weighted OIT 合同不写深度；如需「写深度的透明」
