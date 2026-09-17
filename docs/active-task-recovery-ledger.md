@@ -10,6 +10,10 @@
 
 - P0-04 能力报告放行消费方 `7e8c60c`：assertDashboardCandidatePublicationGate 校验报告与候选冻结身份逐项一致、objects非空、blocked必带原因、supported必零deferred；发布放行（prepare冻结前）与三格式下载复核（409 candidate_invalid，不触碰打包字节）双边界接线。路由/取消夹具升级为真实capability合同；新增4个409用例，聚焦49项、API全量1182通过、类型/治理通过。webview-only保持未建模明示。[报告](specs/dashboard-capability-publication-gate-2026-09-17.md)
 
+- P0-07切片A 跨语言身份golden：dashboard组合v5包解析视图（package三身份/entrypoints/9 payload类型化视图/9 resources）入库为唯一仲裁，TS共享导出identityGolden.ts+Rust同规则实现双侧比对，篡改任一payload身份必须破坏视图；TS 3项+Rust 2项通过、clippy/fmt干净。undefined键省略语义两侧对齐。交互轨迹与像素归后续切片。[报告](specs/dashboard-identity-golden-2026-09-17.md)
+
+- S0体积/RSS补齐（test-output/industrial-s0-rss-20260917/，不入库）：JT 22.0MB(含Node运行时口径)/3DM 5.0MB+4.4MB/X_T 5.1MB/RVT 7.4MB(unsupported-version预期拒绝)/点云4.3MB暖态实测；3D Tiles与SolidWorks因离线阻断如实记缺并写解锁路径。S0矩阵其余缺口见[盘点](specs/industrial-s0-evidence-inventory-2026-09-17.md)。
+
 - S0样本库补强（data/不入库）：3DM×2(mcneel/openNURBS@eb92af3b)、LAS×1(PDAL@58af674b)、3D Tiles×6(CesiumGS/3d-tiles-tools@4ca692eb,Apache-2.0)、RVT×1(本地BIMFACE,仅inspect)；manifest 12条逐条重算SHA-256一致,许可文件随目录。jt coffee-maker 9.5文件在库但manifest未登记属既有遗留。
 
 ### 2026-09-17 主流程与 DE26 范围同步

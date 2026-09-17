@@ -1,0 +1,158 @@
+{
+  "schema": "deep-engine.dashboard-identity-golden",
+  "schemaVersion": 1,
+  "fixture": "dashboard-composition-v1.json",
+  "package": {
+    "packageId": "dashboard.composition",
+    "packageVersion": "1.0.0",
+    "schemaVersion": 5,
+    "packageHash": {
+      "algorithm": "sha256",
+      "value": "1eecc76ae40d03db68ee3b5b3a0ee2b001913bc8761e4c3fe713c81e072051a1"
+    }
+  },
+  "entrypoints": {
+    "chart": null,
+    "chartSim": null,
+    "dashboard": "dashboard.root",
+    "deep2d": null,
+    "environment": "deep.builtin.studio-ibl.v1",
+    "renderPacket": "dashboard.scene.92102fa1f107b63698d3620f4ad05f5862b89c73adb573d5671627fbfa93bed3",
+    "shaderPackages": []
+  },
+  "payloads": {
+    "dashboard.chart.a": {
+      "kind": "chart-runtime",
+      "revision": 1,
+      "schema": "deep-engine.chart-runtime",
+      "schemaVersion": 1,
+      "chartId": null
+    },
+    "dashboard.chart.b": {
+      "kind": "chart-runtime",
+      "revision": 1,
+      "schema": "deep-engine.chart-runtime",
+      "schemaVersion": 1,
+      "chartId": null
+    },
+    "dashboard.root": {
+      "kind": "dashboard-runtime",
+      "revision": 1,
+      "schema": "deep-engine.dashboard-runtime",
+      "schemaVersion": 1,
+      "documentId": "dashboard-composition-golden",
+      "entryPageId": "page.378d4cac696fa43e72c270f690e15329771ecf6ff6ac0b2cff9e4a2eca2dac15",
+      "pages": 2
+    },
+    "dashboard.scene.92102fa1f107b63698d3620f4ad05f5862b89c73adb573d5671627fbfa93bed3": {
+      "kind": "render-packet",
+      "schema": "deep-engine.render-packet",
+      "version": 1,
+      "geometries": 0,
+      "instances": 0,
+      "materials": 0,
+      "textures": 0
+    },
+    "dashboard.sim.a": {
+      "kind": "chart-sim-runtime",
+      "revision": 1,
+      "schema": "deep-engine.chart-sim-runtime",
+      "schemaVersion": 1,
+      "fixtureId": "dashboard-sim-a"
+    },
+    "dashboard.sim.b": {
+      "kind": "chart-sim-runtime",
+      "revision": 1,
+      "schema": "deep-engine.chart-sim-runtime",
+      "schemaVersion": 1,
+      "fixtureId": "dashboard-sim-b"
+    },
+    "dashboard.static.a": {
+      "kind": "deep2d-runtime",
+      "revision": 1,
+      "schema": "deep-engine.deep2d-runtime",
+      "schemaVersion": 1,
+      "atlases": 2,
+      "quads": 3,
+      "atlasIds": [
+        "atlas:glyph:ui",
+        "atlas:image:ui"
+      ],
+      "quadIds": [
+        "glyph:status:0",
+        "glyph:status:1",
+        "image:status"
+      ]
+    },
+    "dashboard.static.b": {
+      "kind": "deep2d-runtime",
+      "revision": 1,
+      "schema": "deep-engine.deep2d-runtime",
+      "schemaVersion": 1,
+      "atlases": 2,
+      "quads": 3,
+      "atlasIds": [
+        "atlas:glyph:ui",
+        "atlas:image:ui"
+      ],
+      "quadIds": [
+        "glyph:status:0",
+        "glyph:status:1",
+        "image:status"
+      ]
+    },
+    "deep.builtin.studio-ibl.v1": {
+      "kind": "environment",
+      "revision": 1,
+      "schema": "deep-engine.ibl-reference",
+      "schemaVersion": 1
+    }
+  },
+  "resources": [
+    {
+      "id": "dashboard.chart.a",
+      "kind": "chart-runtime",
+      "revision": 1
+    },
+    {
+      "id": "dashboard.chart.b",
+      "kind": "chart-runtime",
+      "revision": 1
+    },
+    {
+      "id": "dashboard.root",
+      "kind": "dashboard-runtime",
+      "revision": 1
+    },
+    {
+      "id": "dashboard.scene.92102fa1f107b63698d3620f4ad05f5862b89c73adb573d5671627fbfa93bed3",
+      "kind": "render-packet",
+      "revision": 1
+    },
+    {
+      "id": "dashboard.sim.a",
+      "kind": "chart-sim-runtime",
+      "revision": 1
+    },
+    {
+      "id": "dashboard.sim.b",
+      "kind": "chart-sim-runtime",
+      "revision": 1
+    },
+    {
+      "id": "dashboard.static.a",
+      "kind": "deep2d-runtime",
+      "revision": 1
+    },
+    {
+      "id": "dashboard.static.b",
+      "kind": "deep2d-runtime",
+      "revision": 1
+    },
+    {
+      "id": "deep.builtin.studio-ibl.v1",
+      "kind": "ibl-environment",
+      "revision": 1
+    }
+  ]
+}
