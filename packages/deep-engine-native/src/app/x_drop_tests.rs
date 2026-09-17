@@ -6,6 +6,9 @@ use std::{
 };
 use winit::platform::windows::EventLoopBuilderExtWindows;
 
+#[path = "x_live_fault_probe.rs"]
+mod live_fault;
+
 const TEST: &str = "app::x_drop_tests::explicit_x_window_replaces_packages_without_reopening";
 
 #[test]
@@ -94,7 +97,7 @@ fn run_probe(live: bool) {
             root.join("frame-1.json"),
             content.runtime_package().unwrap().clone(),
             event_loop.create_proxy(),
-            package_watch::x_decoder,
+            live_fault::decode,
         )
     });
     let app = NativeApp::new(
@@ -120,6 +123,7 @@ fn run_probe(live: bool) {
         },
     );
     let mut probe = Probe {
+        faults: Default::default(),
         live,
         app,
         root,
@@ -137,6 +141,7 @@ fn run_probe(live: bool) {
 }
 
 struct Probe {
+    faults: live_fault::Faults,
     live: bool,
     app: NativeApp,
     root: PathBuf,
@@ -223,24 +228,13 @@ impl ApplicationHandler<GpuEvent> for Probe {
         }
         self.stage += 1;
         if self.live && self.stage == 2 {
-            let snapshot = self.app.content.active().runtime_package().unwrap();
-            assert!(
-                package_watch::x_decoder(b"broken", &self.root.join("frame-1.json"), snapshot)
-                    .is_err()
-            );
-            assert!(
-                package_watch::x_decoder(
-                    include_bytes!("../../tests/fixtures/runtime-package-v1.json"),
-                    &self.root.join("frame-1.json"),
-                    snapshot
-                )
-                .is_err()
-            );
+            self.faults.finish();
             println!("X live file replacements=2 checkpoints=presented invalid/ordinary=rejected");
             event_loop.exit();
             return;
         }
         match self.stage {
+            1 if self.live => self.request(event_loop, "bad.json"),
             1 => self.request(event_loop, "frame-3.json"),
             2 => self.request(event_loop, "bad.json"),
             3 => self.request(event_loop, "ordinary.json"),
@@ -258,6 +252,14 @@ impl ApplicationHandler<GpuEvent> for Probe {
             "X drop probe timeout"
         );
         self.app.about_to_wait(event_loop);
+        if self.live && self.stage == 1 {
+            assert_eq!(
+                self.app.content.active().deep2d.as_ref(),
+                Some(&self.before)
+            );
+            assert_eq!(self.app.renderer.as_ref().unwrap().id(), self.renderer_id);
+            self.faults.advance(&self.app, &self.root);
+        }
         event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
             Instant::now() + Duration::from_millis(20),
         ));

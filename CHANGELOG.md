@@ -10,6 +10,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Deep2D experimental compatibility
 
+- Keep native file watchers alive while a source is missing and validate the first poll; verify X bad-file recovery without replacing the displayed frame or recovery checkpoint.
+
 - Watch explicit X package files with `--x-package-live`, reuse the active renderer for display-only changes, and evaluate candidates without holding the publication lock.
 
 - Cancel and join native package and RenderPacket file watchers when their window transport closes.

@@ -127,7 +127,7 @@ fn decode_candidate(
 
 fn load_update(
     path: &Path,
-    observed: &PackageIdentity,
+    observed: Option<&PackageIdentity>,
     published: &RuntimePackageSnapshot,
     decoder: Decoder,
 ) -> PackageUpdate {
@@ -140,7 +140,7 @@ fn load_update(
             };
         }
     };
-    if identity == *observed {
+    if observed == Some(&identity) {
         return PackageUpdate::Unchanged;
     }
     let rejected = |reason| PackageUpdate::Rejected {
@@ -166,13 +166,8 @@ pub(super) fn spawn(
     decoder: Decoder,
 ) -> super::watch_thread::WatchThread {
     super::watch_thread::WatchThread::spawn(move |stop| {
-        let mut observed = match file_identity(&path) {
-            Ok(value) => value,
-            Err(reason) => {
-                eprintln!("runtime package watcher disabled: {reason}");
-                return;
-            }
-        };
+        // 初次轮询必须核验内容；初始加载后可能改写，也可能从 LKG 启动且源尚缺失。
+        let mut observed = None;
         let mut generation = 0_u64;
         let mut rejected_identity: Option<Option<PackageIdentity>> = None;
         while stop.wait(POLL_INTERVAL) {
@@ -180,14 +175,14 @@ pub(super) fn spawn(
                 .read()
                 .unwrap_or_else(|error| error.into_inner())
                 .clone();
-            let update = load_update(&path, &observed, &snapshot, decoder);
+            let update = load_update(&path, observed.as_ref(), &snapshot, decoder);
             if stop.cancelled() {
                 return;
             }
             match update {
                 PackageUpdate::Unchanged => {}
                 PackageUpdate::Equivalent { identity } => {
-                    observed = identity;
+                    observed = Some(identity);
                     rejected_identity = None;
                 }
                 PackageUpdate::Rejected { reason, identity } => {
@@ -195,15 +190,13 @@ pub(super) fn spawn(
                         eprintln!("runtime package live update rejected: {reason}");
                         rejected_identity = Some(identity);
                     }
-                    if let Some(identity) = identity {
-                        observed = identity;
-                    }
+                    observed = identity;
                 }
                 PackageUpdate::Ready { package, identity } => {
                     generation = generation
                         .checked_add(1)
                         .expect("runtime package watcher generation exhausted");
-                    observed = identity;
+                    observed = Some(identity);
                     rejected_identity = None;
                     if mailbox.push(generation, package)
                         && proxy.send_event(GpuEvent::PackageArrived).is_err()

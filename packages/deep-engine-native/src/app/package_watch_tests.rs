@@ -73,6 +73,40 @@ fn identical_package_is_an_explicit_noop() {
 }
 
 #[test]
+fn first_poll_checks_content_and_a_missing_source_can_return() {
+    let path = std::env::temp_dir().join(format!("package-first-poll-{}.json", std::process::id()));
+    let snapshot = published_snapshot();
+    assert!(matches!(
+        load_update(&path, None, &snapshot, ordinary_decoder),
+        PackageUpdate::Rejected { identity: None, .. }
+    ));
+    let mut value: Value = serde_json::from_slice(&fixture()).unwrap();
+    value["payloads"]["scene.main"]["instances"][0]["transform"][12] = json!(-0.25);
+    reseal(&mut value, "scene.main", true);
+    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let PackageUpdate::Ready { identity, package } =
+        load_update(&path, None, &snapshot, ordinary_decoder)
+    else {
+        panic!("first poll must detect a source changed since initial load");
+    };
+    assert!(matches!(
+        load_update(&path, Some(&identity), &package.snapshot, ordinary_decoder),
+        PackageUpdate::Unchanged
+    ));
+    std::fs::remove_file(&path).unwrap();
+    assert!(matches!(
+        load_update(&path, Some(&identity), &package.snapshot, ordinary_decoder),
+        PackageUpdate::Rejected { identity: None, .. }
+    ));
+    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    assert!(matches!(
+        load_update(&path, None, &package.snapshot, ordinary_decoder),
+        PackageUpdate::Equivalent { .. }
+    ));
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 #[cfg(windows)]
 fn x_candidate_identity_and_noop_are_checked_before_worker_execution() {
     let bytes =
@@ -107,9 +141,12 @@ fn oversized_watched_package_fails_before_an_unbounded_read() {
         modified: None,
         len: 0,
     };
-    let PackageUpdate::Rejected { reason, .. } =
-        load_update(&path, &unseen, &published_snapshot(), ordinary_decoder)
-    else {
+    let PackageUpdate::Rejected { reason, .. } = load_update(
+        &path,
+        Some(&unseen),
+        &published_snapshot(),
+        ordinary_decoder,
+    ) else {
         panic!("oversized package must be rejected");
     };
     assert!(reason.contains("256 MiB input limit"), "{reason}");

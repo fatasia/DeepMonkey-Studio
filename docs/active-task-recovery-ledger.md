@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 X 热同步坏写恢复与首次监听（Codex）
+
+- 已完成：同文件有效→坏 JSON→普通包→有效 X 包真实故障注入；实际 decoder 拒绝回执后校验显示/renderer/LKG 哈希不变，后续有效包呈现成功。
+- 同族修复：RuntimePackage/RenderPacket 首轮必须读内容，源缺失不退出，修复初始加载与监听启动间改写漏检。bin 119 passed/39 ignored，clippy/build/fmt、真实 ECharts GPU 两路径与 repository gate 通过。
+- 本轮待办：完整视觉、动态适配器及 P3 其余项。[证据](specs/deep2d-p3-x-live-package-2026-09-17.md)
+
 ### 2026-09-17 X 文件自动热同步（Codex）
 
 - 已完成：`--x-package-live` 复用监听/候选发布；固定源身份，坏候选不取 LKG 冒充更新，仅 X/Deep2D 更新复用 renderer。后台求值无发布锁，应用前按当前资源重算 diff。

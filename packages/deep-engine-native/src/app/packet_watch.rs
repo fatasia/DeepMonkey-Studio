@@ -66,7 +66,11 @@ fn file_identity(path: &Path) -> Result<PacketIdentity, String> {
 /// Loads and validates the watched file, or explains why it must be rejected.
 /// `observed` is the identity already accounted for; `live_key` is the content key
 /// of the packet the renderer currently shows.
-pub(super) fn load_update(path: &Path, observed: &PacketIdentity, live_key: u64) -> PacketUpdate {
+pub(super) fn load_update(
+    path: &Path,
+    observed: Option<&PacketIdentity>,
+    live_key: u64,
+) -> PacketUpdate {
     let identity = match file_identity(path) {
         Ok(value) => value,
         Err(reason) => {
@@ -76,7 +80,7 @@ pub(super) fn load_update(path: &Path, observed: &PacketIdentity, live_key: u64)
             };
         }
     };
-    if identity == *observed {
+    if observed == Some(&identity) {
         return PacketUpdate::Unchanged;
     }
     let rejected = |reason: String| PacketUpdate::Rejected {
@@ -121,24 +125,22 @@ pub(super) fn spawn(
     proxy: EventLoopProxy<GpuEvent>,
 ) -> super::watch_thread::WatchThread {
     super::watch_thread::WatchThread::spawn(move |stop| {
-        let mut observed = match file_identity(&path) {
-            Ok(value) => value,
-            Err(reason) => {
-                eprintln!("packet live watcher disabled: {reason}");
-                return;
-            }
-        };
+        let mut observed = None;
         let mut generation = 0_u64;
         let mut last_rejected_identity: Option<Option<PacketIdentity>> = None;
         while stop.wait(POLL_INTERVAL) {
-            let update = load_update(&path, &observed, published_key.load(Ordering::Acquire));
+            let update = load_update(
+                &path,
+                observed.as_ref(),
+                published_key.load(Ordering::Acquire),
+            );
             if stop.cancelled() {
                 return;
             }
             match update {
                 PacketUpdate::Unchanged => {}
                 PacketUpdate::Equivalent { identity } => {
-                    observed = identity;
+                    observed = Some(identity);
                     last_rejected_identity = None;
                 }
                 PacketUpdate::Rejected { reason, identity } => {
@@ -147,9 +149,7 @@ pub(super) fn spawn(
                         eprintln!("packet live update rejected: {reason}");
                         last_rejected_identity = Some(identity);
                     }
-                    if let Some(identity) = identity {
-                        observed = identity;
-                    }
+                    observed = identity;
                 }
                 PacketUpdate::Ready {
                     content,
@@ -159,7 +159,7 @@ pub(super) fn spawn(
                     generation = generation
                         .checked_add(1)
                         .expect("packet watcher generation exhausted");
-                    observed = identity;
+                    observed = Some(identity);
                     last_rejected_identity = None;
                     let needs_wake = mailbox.push(generation, WatchedPacket { content, key });
                     if needs_wake && proxy.send_event(GpuEvent::PacketArrived).is_err() {
@@ -203,7 +203,7 @@ mod tests {
             modified: None,
             len: 0,
         };
-        let PacketUpdate::Ready { key, identity, .. } = load_update(&path, &unseen, u64::MAX)
+        let PacketUpdate::Ready { key, identity, .. } = load_update(&path, Some(&unseen), u64::MAX)
         else {
             panic!("first observation must load the initial packet");
         };
@@ -211,14 +211,14 @@ mod tests {
 
         // Identity unchanged -> no disk decode, no update.
         assert!(matches!(
-            load_update(&path, &identity, key),
+            load_update(&path, Some(&identity), key),
             PacketUpdate::Unchanged
         ));
 
         // A changed file that fails the contract is rejected with a readable reason.
         wait_distinct_mtime();
         fs::write(&path, b"{\"schema\": \"deep-engine.render-packet\"}").unwrap();
-        let PacketUpdate::Rejected { reason, .. } = load_update(&path, &identity, key) else {
+        let PacketUpdate::Rejected { reason, .. } = load_update(&path, Some(&identity), key) else {
             panic!("invalid packet must be rejected");
         };
         assert!(
@@ -231,7 +231,7 @@ mod tests {
         wait_distinct_mtime();
         fs::write(&path, fixture_bytes()).unwrap();
         assert!(matches!(
-            load_update(&path, &identity, key),
+            load_update(&path, Some(&identity), key),
             PacketUpdate::Equivalent { .. }
         ));
 
@@ -242,7 +242,7 @@ mod tests {
             content,
             key: moved,
             ..
-        } = load_update(&path, &identity, key)
+        } = load_update(&path, Some(&identity), key)
         else {
             panic!("content-different rewrite must load");
         };
