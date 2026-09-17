@@ -128,6 +128,7 @@ export { parseChartIR, validateChartIR } from "./chartIrReader.js";
 export * from "./echartsOptionCompat.js";
 export * from "./retainedUi.js";
 export * from "./hostCapabilities.js";
+export * from "./adapterN1/index.js";
 export * from "./benchmarkContract.js";
 export * from "./competitiveBenchmark.js";
 export * from "./assetCompatibility.js";
