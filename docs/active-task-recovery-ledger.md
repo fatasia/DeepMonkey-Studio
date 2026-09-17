@@ -1879,3 +1879,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - Windows portable 与播放器同锁文件/目标/release 静态 CRT 构建封闭 X worker；manifest 固定 lane/schema/包内路径/SHA-256/LPAC sandbox/default-disabled，Viewer 启动器不执行它。通用 verifier 拒绝路径逃逸、缺失、非 PE、动态 CRT/浏览器依赖、错误信任合同和哈希变化。
 - 实际候选包 44 entries/5,804,561 bytes，ZIP SHA-256 `2195d7074d2899643ade8cfa4d88aec954689de0d644bf61be92ac53fdbae2f3`；worker SHA-256 `b014ed385145a0ac2c5fa81bb86c52ddfd8ef4ca8877e45e9d55bf6c8426336d`。26 项 GPU/恢复 smoke 与二次完整 verifier 通过。
 - 产品调度/开关/诊断、签名与撤销、完整 Windows 权限/网络矩阵仍待办；随包不代表启用或兼容任意脚本。[证据](specs/deep2d-p2-01-portable-worker-2026-09-17.md)
+
+### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
+
+- 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。
+- 三件 rhino3dm v8.32 官方样本源前后哈希一致且重复提取逐字一致。mesh 为 420 顶点/276 三角，meshWithTexture 的 100 源面含 80 quad 并验证拆成 180 三角；blocks 保留 1 定义/2 引用及矩阵，其 Brep 无缓存网格明确报告 1 个缺面，不合成代理几何。
+- UUID/图层/单位/材质身份、定义成员/环路、有限坐标、索引和截断/缺失拒绝通过。当前仅 `inspect` 研究证据：法线/UV/纹理/PBR、Brep 离散、GLB 接线、更多版本/来源及逐文件分发审计继续本轮待办。[证据与哈希](specs/industrial-3dm-source-audit-2026-09-17.md)
