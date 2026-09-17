@@ -2,6 +2,9 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- Deep2D 正式窗口验收修复：系统背景层按确定性页面身份、资源、尺寸和层级校验，不计入作者节点/字体证据；拒绝资源、尺寸、atlas、chart 替换。16 项窗口证据测试通过；重建正式 compiler/deployment 后，6 项集成测试全部通过，含本机微软雅黑中文光栅、RTX 4060/Vulkan 连续 3 帧实际呈现。完整截图视觉验收仍待。
+- JT `80c7f7e`：CoffeeMaker 树/GLB/属性按 occurrence 路径统一身份，337/337 唯一，44 共享网格、64 实例、47962 三角形保持；双跑产物一致。API 23 项、reader 4 项、类型和仓库门禁通过；旧模型不迁移。[证据](reports/industrial-jt-occurrence-identity-2026-09-17.md)
+
 - DE26 后置：`823a40e` 将权威清单裁剪到 51 张建设卡与 5 张明确排除卡；只保留 Three.js、Babylon.js、Unity。H 保留 H02–H04/H07，I 保留 I04/I05/I07（含双骨 IK）。[范围](specs/de26-high-value-scope-2026-09-17.md)
 - Deep2D：`ead8701` 离线入口绑定已发布快照，隔离草稿和迟到错误；`95b1f81` 编译页面背景色，25 项测试与 Web 类型检查通过。编译配方升级 v4，防止沿用背景层加入前的编译身份；背景图和跨端视觉仍待验。
 - 工业模型：`d5d4edb` MechPartA 提升到 29/41 面，新增 12 面源 PointAt 最大误差 0.001572830 mm、连续总界 <0.007658 mm，35 项回归通过。仍为部分预览；余下 12 面与完整工程验收继续推进。[证据](specs/industrial-3dm-rational-bezier-chain-2026-09-17.md)

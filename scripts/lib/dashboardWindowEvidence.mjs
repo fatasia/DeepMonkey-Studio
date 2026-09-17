@@ -29,6 +29,7 @@ export function bindDashboardWindowEvidence(input, runtime, receipt, runtimeCont
     bindings.set(binding.runtimeNodeId, binding);
   }
   const drawn = new Map(), rendered = new Set();
+  const backgroundId = `node.${runtimeContentSha256([entry.id, "background"])}`;
   for (const layer of report.layers) {
     check(typeof layer.id === "string" && !drawn.has(layer.id) && Number.isSafeInteger(layer.drawCalls)
       && layer.drawCalls > 0 && Number.isSafeInteger(layer.vertices) && layer.vertices > 0
@@ -37,6 +38,17 @@ export function bindDashboardWindowEvidence(input, runtime, receipt, runtimeCont
     check(suffix, "unknown draw layer kind");
     const id = layer.id.slice(0, -suffix.length), binding = bindings.get(id);
     const node = entry.nodes.find(node => node.id === id);
+    // 系统背景没有作者节点，不应计入作者内容的呈现证据。
+    if (!binding && id === backgroundId) {
+      check(suffix === ":static" && node?.visible && node.zOrder === 0 && node.clip === null
+        && node.chart === null && node.chartSim === null && node.hitId === null
+        && JSON.stringify(node.frame) === JSON.stringify([0, 0, entry.width, entry.height])
+        && node.deep2d === `${entry.id}.background`
+        && runtime.payloads[node.deep2d]?.schema === "deep-engine.deep2d-runtime"
+        && layer.atlasIds.length === 0, "invalid system background layer");
+      drawn.set(layer.id, layer);
+      continue;
+    }
     check(binding && binding.pageId === entry.id && node?.visible
       && (suffix === ":static" ? node.deep2d : node.chart), "draw layer is not on the verified entry page");
     drawn.set(layer.id, layer);

@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard offline packages
 
+- Accept verified system background draws during Native window validation without counting them as rendered author nodes or fonts.
+
 - Resolve offline entry pages from the published snapshot and ignore late failures from superseded downloads.
 - Compile page background colors beneath authored content; version the compilation recipe so earlier evidence cannot identify the changed compiler output. Background images and cross-host visual parity remain unverified.
 

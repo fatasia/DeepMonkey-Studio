@@ -40,6 +40,31 @@ test("an unused font remains unattested even when it is in the frozen manifest",
   const f = fixture(); f.receipt.report.layers[0].atlasIds = [];
   assert.deepEqual(f.bind().fontSha256, []);
 });
+function withBackground() {
+  const f = fixture(), page = f.runtime.payloads.dashboard.pages[0];
+  page.width = 100; page.height = 80;
+  const id = `node.${hash([page.id, "background"])}`;
+  page.nodes.unshift({ id, visible: true, zOrder: 0, clip: null, chart: null, chartSim: null, hitId: null,
+    frame: [0, 0, 100, 80], deep2d: `${page.id}.background` });
+  f.runtime.payloads[`${page.id}.background`] = { schema: "deep-engine.deep2d-runtime", atlases: [] };
+  f.receipt.report.layers.unshift({ id: `${id}:static`, drawCalls: 1, vertices: 6, atlasIds: [] });
+  return f;
+}
+test("system background draws do not attest an author node or unused font", () => {
+  const f = withBackground();
+  assert.deepEqual(f.bind().renderedNodeIds, ["author1"]);
+  f.receipt.report.layers.pop();
+  assert.deepEqual(f.bind().renderedNodeIds, []);
+  assert.deepEqual(f.bind().fontSha256, []);
+});
+for (const [name, mutate] of [
+  ["resource", f => { f.runtime.payloads.dashboard.pages[0].nodes[0].deep2d = "static1"; }],
+  ["frame", f => { f.runtime.payloads.dashboard.pages[0].nodes[0].frame[2] = 99; }],
+  ["atlas", f => { f.receipt.report.layers[0].atlasIds = ["text-raster"]; }],
+  ["chart", f => { f.receipt.report.layers[0].id = f.receipt.report.layers[0].id.replace(":static", ":chart"); }],
+]) test(`rejects substituted background ${name}`, () => {
+  const f = withBackground(); mutate(f); assert.throws(f.bind, /invalid system background/);
+});
 for (const [name, mutate, reason] of [
   ["artifact replacement", f => { f.input.artifact = Buffer.from("changed"); }, /artifact bytes/],
   ["device spoof", f => { f.receipt.report.device.name = "Other GPU"; }, /device identity/],
