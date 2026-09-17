@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- Deep2D 下载/光栅补验：8 文件 65 项 API 下载/打包/取消测试，21 文件 167 项完整光栅门禁全部通过；真实 Native 中文与组合符、图片、KPI/表格/图表用例未跳过。同步修正 fractional clip 测试的系统背景层索引，Web 类型与治理通过。[证据与边界](specs/core-delivery-regression-2026-09-17.md)
+
 - 主流程回归：Native 122 passed/43 ignored，其中 5 项真实 GPU 用例另行显式通过；正式 API 与两种 compiler bundle 构建、三种离线下载路由注册/401 检查通过。[边界与复跑命令](specs/core-delivery-regression-2026-09-17.md)
 - 3DM `69f5a8d`：复用齐次控制网内核补齐 4 个非有理双三次链面，MechPartA 33/41；1008 源 PointAt 最大误差 0.001004582 mm，连续总界 <0.007988410 mm。38 项回归及类型/治理检查通过，evidence 与 GLB SHA-256 已复核；剩余 8 面继续推进，保持部分预览。[证据](specs/industrial-3dm-polynomial-bezier-chain-2026-09-17.md)
 

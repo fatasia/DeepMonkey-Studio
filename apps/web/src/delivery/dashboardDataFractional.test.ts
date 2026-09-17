@@ -2,7 +2,9 @@ import { expect, it } from "vitest";
 import { compileDashboardRasterContent } from "./compileDashboardRasterContent";
 import { fixture, content } from "./dashboardDataRaster.testUtils";
 function nodes(result: Awaited<ReturnType<typeof compileDashboardRasterContent>>) {
-  return (result.package.payloads[result.package.entrypoints.dashboard] as any).pages[0].nodes as any[];
+  const authored = new Set(result.nodeBindings.flatMap(binding => binding.runtimeNodeIds));
+  return ((result.package.payloads[result.package.entrypoints.dashboard] as any).pages[0].nodes as any[])
+    .filter(node => authored.has(node.id));
 }
 it("clips fractional measured boxes without squeezing rasterized glyph pixels", async () => {
   const value = fixture();
@@ -19,7 +21,7 @@ it("keeps integer viewports batched but splits intervening fractional clips in o
   value.textBoxes[1] = { ...value.textBoxes[1]!, rect: [37, 17, 20.2, 10.2] };
   const result = await compileDashboardRasterContent(value.input, value.host);
   expect(nodes(result).map(node => node.clip)).toEqual([null, null, [37, 17, 20.2, 10.2], null]);
-  expect(nodes(result).map(node => node.zOrder)).toEqual([0, 1, 2, 3]);
+  expect(nodes(result).map(node => node.zOrder)).toEqual([1, 2, 3, 4]);
 });
 it("retains the composition node budget when fractional boxes create more layers", async () => {
   const value = fixture(), original = value.input.document.application.pages[0]!.nodes[0]!;

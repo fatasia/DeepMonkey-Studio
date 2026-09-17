@@ -16,3 +16,10 @@ GPU 用例使用 NVIDIA GeForce RTX 4060 Laptop GPU / Vulkan / Windows surface�
 生产构建检查的设备指纹使用 64 个零的测试配置；该检查只验证启动接线与鉴权，不执行设备认证、下载成功或 Native 窗口。真实窗口证明来自上面的显式 GPU 用例，二者不混用。
 
 剩余：跨端截图、真实设备丢失、多设备/驱动矩阵、完整发布下载及离线升级回滚验收。以上回归不能据此判定 Deep2D 或 Engine 全部完成。
+
+## 下载与真实光栅补验
+
+- API 候选服务、运行时、路由、EXE/ZIP、DMDA 字节和 Native 启动计划共 8 文件 65 项通过。包含实际 HTTP 异步下载与客户端断开取消；打包夹具中的 PE 只用于格式验证，不作为实际安装验收。
+- `pnpm exec vitest run --config scripts/dashboard-raster.vitest.config.mjs`：21 文件 167 项全部通过。设置 `C2_NATIVE_EXECUTABLE` 为本机 debug 播放器，主字体 `msyh.ttc`，fallback `arial.ttf`，真实 Native 文本生产器参与两项端到端用例，未跳过。
+- 覆盖中文与组合符、透明图片、KPI、表格、ChartIR、fractional clip 和 producer receipt；修复背景层加入后 3 个旧测试的索引假设，仍逐项断言裁剪、像素尺寸、作者层序和节点预算。
+- Web 类型检查、repository gate 通过。上述使用固定数据/布局夹具，不替代真实作者页面与 Native 窗口的截图对比。
