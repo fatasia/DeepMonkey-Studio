@@ -1,0 +1,44 @@
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import assert from 'node:assert/strict';
+import { export3dmGlb } from './3dm-glb-export.mts';
+import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
+const root = resolve(import.meta.dirname, '../..');
+const out = resolve(root, 'test-output/3dm-source-audit');
+const hash = (b: any) => createHash('sha256').update(b).digest('hex');
+const evidence = JSON.parse(readFileSync(resolve(out, 'evidence.json'), 'utf8'));
+const results = [];
+for (const row of evidence.results) {
+  const input = readFileSync(resolve(out, `${row.name}.json`));
+  assert.equal(hash(input), row.outputSha256);
+  assert.equal(hash(readFileSync(row.source)), row.sourceSha256);
+  const source = JSON.parse(input.toString());
+  const result = await export3dmGlb(source, row.sourceSha256);
+  const sidecar = JSON.stringify(result.sidecar, null, 2), sidecarSha256 = hash(sidecar);
+  writeFileSync(resolve(out, `${row.name}.sidecar.json`), sidecar);
+  if (!result.bytes) { assert.equal(row.triangles, 0); assert(!existsSync(resolve(out, `${row.name}.glb`)), 'stale GLB exists'); results.push({ name: row.name, status: result.sidecar.status, sidecarSha256, diagnostics: result.sidecar.diagnostics }); continue; }
+  const path = resolve(out, `${row.name}.glb`); writeFileSync(path, result.bytes);
+  const audit = await auditGlbGeometry(path);
+  assert.equal(audit.triangleCount, row.triangles); assert.equal(audit.vertexCount, row.vertices);
+  // Independently compare serialized binary arrays, not just counts/extras.
+  const b = Buffer.from(result.bytes), length = b.readUInt32LE(12);
+  const j = JSON.parse(b.subarray(20, 20 + length).toString());
+  const bin = b.subarray(28 + length);
+  for (const mesh of j.meshes) {
+    const object = source.objects.find((o: any) => o.id === mesh.extras.objectId); assert(object);
+    for (const primitive of mesh.primitives) {
+      const original = object.kind === 'mesh' ? object.mesh : object.storedRenderMeshes.find((m: any) => m.face === primitive.extras.brepFaceIndex).mesh;
+      for (const [accessorIndex, expected, position] of [[primitive.attributes.POSITION, original.positions.flat(), true], [primitive.indices, original.triangles.flat(), false]]) {
+        const accessor = j.accessors[accessorIndex], view = j.bufferViews[accessor.bufferView];
+        const offset = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+        assert.equal(accessor.componentType, position ? 5126 : 5125);
+        expected.forEach((v: number, i: number) => assert.equal(position ? bin.readFloatLE(offset + 4 * i) : bin.readUInt32LE(offset + 4 * i), position ? Math.fround(v) : v));
+      }
+    }
+  }
+  assert.equal(hash(readFileSync(row.source)), row.sourceSha256);
+  results.push({ name: row.name, status: result.sidecar.status, sidecarSha256, glbSha256: hash(result.bytes), bytes: result.bytes.length, audit });
+}
+writeFileSync(resolve(out, 'glb-evidence.json'), JSON.stringify({ schemaVersion: 1, sourceEvidenceSha256: hash(readFileSync(resolve(out, 'evidence.json'))), results }, null, 2));
+console.log(JSON.stringify(results, null, 2));

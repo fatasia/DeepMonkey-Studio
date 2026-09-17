@@ -1885,3 +1885,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。
 - 三件 rhino3dm v8.32 官方样本源前后哈希一致且重复提取逐字一致。mesh 为 420 顶点/276 三角，meshWithTexture 的 100 源面含 80 quad 并验证拆成 180 三角；blocks 保留 1 定义/2 引用及矩阵，其 Brep 无缓存网格明确报告 1 个缺面，不合成代理几何。
 - UUID/图层/单位/材质身份、定义成员/环路、有限坐标、索引和截断/缺失拒绝通过。当前仅 `inspect` 研究证据：法线/UV/纹理/PBR、Brep 离散、GLB 接线、更多版本/来源及逐文件分发审计继续本轮待办。[证据与哈希](specs/industrial-3dm-source-audit-2026-09-17.md)
+
+### 2026-09-17 3DM 源网格→GLB 研究预览（Codex）
+
+- 固定实际 3DM 提取结果已写入标准 GLB，复用现有 glTF-Transform 与产品索引三角形路径；源对象网格只建一次，实例节点共享 mesh，根节点统一完成 Z-up→Y-up 和米制换算。
+- mesh.3dm 为 10,220 bytes/420 顶点/276 三角，meshWithTexture.3dm 为 5,120 bytes/92 顶点/180 三角；产品 GLB 几何审计及 BIN 中 Float32 顶点/UInt32 索引逐项对拍通过。blocks.3dm 无源网格，只输出诊断 sidecar，不伪造 GLB。
+- 5 项聚焦测试与真实审计通过。法线/UV/纹理/PBR、真实带网格实例、Brep 离散、资源预算、视觉及 Deep Engine 运行验收继续本轮待办，不声称生产支持。[证据](specs/industrial-3dm-glb-preview-2026-09-17.md)
