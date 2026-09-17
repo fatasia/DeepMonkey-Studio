@@ -43,7 +43,7 @@ for (const [name, expectedSha] of Object.entries(samples)) {
   assert.equal(objects.size, data.objects.length);
   assert.equal(defs.size, data.definitions.length);
   assert.equal(layers.size, data.layers.length);
-  let vertices = 0, triangles = 0, quads = 0, instances = 0, missingBrepFaces = 0;
+  let vertices = 0, triangles = 0, quads = 0, instances = 0, missingBrepFaces = 0, normals = 0, uv = 0;
   for (const o of objects.values()) {
     const meshes = o.kind === 'mesh' ? [o.mesh] : (o.storedRenderMeshes ?? []).map(m => m.mesh);
     if (o.kind === 'brep') missingBrepFaces += o.faceCount - o.storedRenderMeshes.length;
@@ -52,6 +52,11 @@ for (const [name, expectedSha] of Object.entries(samples)) {
       assert(m.positions.every(p => p.length === 3 && p.every(Number.isFinite)));
       assert(m.triangles.every(t => t.length === 3 && t.every(i => Number.isInteger(i) && i >= 0 && i < m.positions.length)));
       assert(m.triangles.every(t => new Set(t).size === 3), 'repeated triangle corner');
+      for (const [values, width] of [[m.normals, 3], [m.textureCoordinates, 2]]) {
+        assert.equal(values.length === 0 || values.length === m.positions.length, true);
+        assert(values.every(v => v.length === width && v.every(Number.isFinite)));
+      }
+      normals += m.normals.length; uv += m.textureCoordinates.length;
       vertices += m.positions.length; triangles += m.triangles.length; quads += m.quadCount;
     }
     assert(layers.has(o.layerIndex));
@@ -74,7 +79,12 @@ for (const [name, expectedSha] of Object.entries(samples)) {
   for (const id of defs.keys()) visit(id);
   if (name === 'mesh.3dm') { assert.equal(vertices, 420); assert.equal(triangles, 276); }
   if (name === 'blocks.3dm') { assert.equal(defs.size, 1); assert.equal(instances, 2); assert.equal(missingBrepFaces, 1); }
-  if (name === 'meshWithTexture.3dm') { assert.equal(quads, 80); assert.equal(triangles, 180); }
+  if (name === 'meshWithTexture.3dm') {
+    assert.equal(quads, 80); assert.equal(triangles, 180); assert.equal(normals, 92); assert.equal(uv, 92);
+    assert.equal(data.materials[0].textures[0].id, '0af451f3-18cf-4b6b-a7a8-27368ad7ba45');
+    assert.equal(data.materials[0].textures[0].relativePath, '');
+    assert.equal(data.materials[0].textures[0].mappingChannelId, 0xfffffff3);
+  }
   writeFileSync(resolve(out, `${name}.json`), run.stdout);
   const truncated = resolve(out, `${name}.truncated`);
   writeFileSync(truncated, bytes.subarray(0, Math.floor(bytes.length / 2)));
@@ -83,7 +93,7 @@ for (const [name, expectedSha] of Object.entries(samples)) {
   assert.equal(bad.stdout, '');
   results.push({ name, source: path, sourceUrl: `https://github.com/mcneel/rhino3dm/blob/v8.32.0/tests/models/${name}`, sourceSha256: expectedSha,
     outputSha256: sha(run.stdout), archiveVersion: data.archiveVersion, objects: objects.size,
-    definitions: defs.size, instances, vertices, triangles, quads, missingBrepFaces, stderr: run.stderr });
+    definitions: defs.size, instances, vertices, triangles, quads, missingBrepFaces, normals, uv, stderr: run.stderr });
 }
 const absent = spawnSync(exe, [resolve(out, 'does-not-exist.3dm')], { encoding: 'utf8' });
 assert.notEqual(absent.status, 0);

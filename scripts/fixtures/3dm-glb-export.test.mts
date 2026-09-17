@@ -51,3 +51,31 @@ test('missing definitions, member identity, cycles and shear fail', async () => 
   const d = instances(); d.objects[1].matrixRowMajor[1] = 0.5;
   await assert.rejects(export3dmGlb(d, hash), /sheared/);
 });
+test('source normals and UV become attributes; textures stay identity-only extras', async () => {
+  const s = source(), mesh = s.objects[0].mesh;
+  mesh.normals = [[0,0,1],[0,0,1],[0,0,1]];
+  mesh.textureCoordinates = [[0,0],[1,0],[0,1]]; mesh.textureCoordinateSource = 'ON_Mesh.m_T';
+  s.materials = [{ id: id(9), textures: [{ id: id(10), fullPath: '/not-a-runtime-dependency.png', mappingChannelId: 0xfffffff3 }] }];
+  const result = await export3dmGlb(s, hash); const j = json(result.bytes!);
+  const attributes = j.meshes[0].primitives[0].attributes;
+  assert.equal(j.accessors[attributes.NORMAL].count, 3);
+  assert.equal(j.accessors[attributes.TEXCOORD_0].type, 'VEC2');
+  assert.deepEqual(j.nodes[j.scenes[0].nodes[0]].extras.sourceMaterials, s.materials);
+  assert.equal(j.images, undefined); assert.equal(j.textures, undefined); assert.equal(j.materials, undefined);
+});
+test('malformed or unproven normals/UV fail instead of being fabricated or dropped', async () => {
+  for (const normals of [[[0,0,1]], [[0,0,0],[0,0,1],[0,0,1]], [[NaN,0,1],[0,0,1],[0,0,1]]]) {
+    const s = source(); s.objects[0].mesh.normals = normals;
+    await assert.rejects(export3dmGlb(s, hash), /normals/);
+  }
+  for (const uv of [[[0,0]], [[0,0],[Infinity,0],[0,1]]]) {
+    const s = source(); s.objects[0].mesh.textureCoordinates = uv; s.objects[0].mesh.textureCoordinateSource = 'ON_Mesh.m_T';
+    await assert.rejects(export3dmGlb(s, hash), /UV/);
+  }
+  const s = source(); s.objects[0].mesh.textureCoordinates = [[0,0],[1,0],[0,1]];
+  s.objects[0].mesh.textureCoordinateSource = 'surface-parameters';
+  await assert.rejects(export3dmGlb(s, hash), /UV/);
+  const absent = json((await export3dmGlb(source(), hash)).bytes!);
+  assert.equal(absent.meshes[0].primitives[0].attributes.NORMAL, undefined);
+  assert.equal(absent.meshes[0].primitives[0].attributes.TEXCOORD_0, undefined);
+});

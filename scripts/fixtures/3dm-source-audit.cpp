@@ -8,6 +8,7 @@
 #include <set>
 
 static std::string quoted(const char* s) {
+  if(!s) return "\"\"";
   std::ostringstream o; o << '"';
   for (const unsigned char* p=(const unsigned char*)s; *p; ++p) {
     if (*p=='"' || *p=='\\') o << '\\' << *p;
@@ -20,6 +21,22 @@ static std::string id(ON_UUID u) { char b[40]; ON_UuidToString(u,b); return quot
 static void number(std::ostream& o, double x) {
   if (!std::isfinite(x)) throw std::runtime_error("nonfinite-coordinate");
   o << std::setprecision(17) << x;
+}
+static void meshAttributes(std::ostream& o, const ON_Mesh& m) {
+  if(m.m_N.Count() && m.m_N.Count()!=m.VertexCount()) throw std::runtime_error("normal-count-mismatch");
+  if(m.m_T.Count() && m.m_T.Count()!=m.VertexCount()) throw std::runtime_error("uv-count-mismatch");
+  o << ",\"normals\":[";
+  for(int i=0;i<m.m_N.Count();++i) {
+    if(i) o << ','; auto n=m.m_N[i]; o << '[';
+    number(o,n.x); o << ','; number(o,n.y); o << ','; number(o,n.z); o << ']';
+  }
+  o << "],\"textureCoordinates\":[";
+  // m_T 是已保存的每顶点纹理坐标；m_S 也可能是曲面参数，不能直接冒充 UV。
+  for(int i=0;i<m.m_T.Count();++i) {
+    if(i) o << ','; auto uv=m.m_T[i]; o << '[';
+    number(o,uv.x); o << ','; number(o,uv.y); o << ']';
+  }
+  o << "],\"textureCoordinateSource\":\"ON_Mesh.m_T\",\"surfaceParameterCount\":" << m.m_S.Count();
 }
 static void mesh(std::ostream& o, const ON_Mesh& m) {
   if (!m.IsValid()) throw std::runtime_error("invalid-mesh");
@@ -36,7 +53,24 @@ static void mesh(std::ostream& o, const ON_Mesh& m) {
     o << '[' << f.vi[0] << ',' << f.vi[1] << ',' << f.vi[2] << ']';
     if(f.IsQuad()) o << ",[" << f.vi[0] << ',' << f.vi[2] << ',' << f.vi[3] << ']';
   }
-  o << "],\"sourceFaceCount\":" << m.m_F.Count() << ",\"quadCount\":" << m.QuadCount() << '}';
+  o << "],\"sourceFaceCount\":" << m.m_F.Count() << ",\"quadCount\":" << m.QuadCount();
+  meshAttributes(o,m); o << '}';
+}
+static void material(std::ostream& o, const ON_Material& m) {
+  ON_String name(m.Name());
+  o << "{\"id\":" << id(m.Id()) << ",\"index\":" << m.Index() << ",\"name\":" << quoted(name.Array())
+    << ",\"legacyDiffuseRgb\":[" << m.m_diffuse.Red() << ',' << m.m_diffuse.Green() << ',' << m.m_diffuse.Blue() << "],\"textures\":[";
+  for(int i=0;i<m.m_textures.Count();++i) {
+    if(i) o << ','; const auto& t=m.m_textures[i];
+    ON_String full(t.m_image_file_reference.FullPath()), relative(t.m_image_file_reference.RelativePath());
+    o << "{\"id\":" << id(t.m_texture_id) << ",\"type\":" << (unsigned)t.m_type
+      << ",\"enabled\":" << (t.m_bOn?"true":"false") << ",\"mappingChannelId\":" << t.m_mapping_channel_id
+      << ",\"fullPath\":" << quoted(full.Array()) << ",\"relativePath\":" << quoted(relative.Array())
+      << ",\"wrapU\":" << (unsigned)t.m_wrapu << ",\"wrapV\":" << (unsigned)t.m_wrapv << ",\"uvwRowMajor\":[";
+    for(int r=0;r<4;++r) for(int c=0;c<4;++c) { if(r||c) o << ','; number(o,t.m_uvw[r][c]); }
+    o << "]}";
+  }
+  o << "]}";
 }
 static void geometry(std::ostream& o, const ON_ModelGeometryComponent& c) {
   auto a=c.Attributes(nullptr); auto g=c.Geometry(nullptr);
@@ -101,8 +135,7 @@ static void dump(const ONX_Model& model, std::ostream& o) {
   ONX_ModelComponentIterator mi(model,ON_ModelComponent::Type::RenderMaterial); first=true;
   for(auto c=mi.FirstComponent();c;c=mi.NextComponent()) {
     auto m=ON_Material::Cast(c); if(!m) throw std::runtime_error("invalid-material");
-    if(!first) o << ','; first=false; ON_String name(m->Name());
-    o << "{\"id\":" << id(m->Id()) << ",\"index\":" << m->Index() << ",\"name\":" << quoted(name.Array()) << '}';
+    if(!first) o << ','; first=false; material(o,*m);
   }
   o << "]}\n";
 }

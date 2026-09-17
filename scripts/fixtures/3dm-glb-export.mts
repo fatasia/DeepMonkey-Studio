@@ -46,10 +46,18 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
       check(m.positions.length > 0 && m.positions.every((p: any) => Array.isArray(p) && p.length === 3 && p.every((n: number) => Number.isFinite(n) && Number.isFinite(Math.fround(n)))), 'invalid positions');
       check(m.triangles.length > 0 && m.triangles.length === m.sourceFaceCount + m.quadCount, 'invalid triangle count');
       check(m.triangles.every((t: any) => Array.isArray(t) && t.length === 3 && new Set(t).size === 3 && t.every((i: number) => Number.isInteger(i) && i >= 0 && i < m.positions.length)), 'invalid indices');
+      const normals = m.normals ?? [], uv = m.textureCoordinates ?? [];
+      const vectors = (values: any, width: number) => Array.isArray(values) && (!values.length || values.length === m.positions.length)
+        && values.every((v: any) => Array.isArray(v) && v.length === width && v.every((n: number) => Number.isFinite(n) && Number.isFinite(Math.fround(n))));
+      check(vectors(normals, 3) && normals.every((n: number[]) => Math.abs(Math.hypot(...n) - 1) < 1e-4), 'invalid source normals');
+      check(vectors(uv, 2) && (!uv.length || m.textureCoordinateSource === 'ON_Mesh.m_T'), 'invalid source UV');
       // No material appearance is inferred from identity-only source metadata.
       const primitive = createIndexedTrianglePrimitive(document, buffer, null as any, {
-        positions: m.positions.flat(), indices: m.triangles.flat(),
-      }).setExtras({ ...sourceMap(object), brepFaceIndex: part.face });
+        positions: m.positions.flat(), indices: m.triangles.flat(), normals: normals.flat(),
+      }).setExtras({ ...sourceMap(object), brepFaceIndex: part.face,
+        textureCoordinateSource: uv.length ? m.textureCoordinateSource : null });
+      if (uv.length) primitive.setAttribute('TEXCOORD_0', document.createAccessor().setType('VEC2')
+        .setArray(new Float32Array(uv.flat())).setBuffer(buffer));
       mesh.addPrimitive(primitive);
     }
     meshes.set(object.id, mesh);
@@ -93,6 +101,7 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
     definitions: source.definitions, layers: source.layers, materials: source.materials, diagnostics,
     status: rendered.length ? 'geometry-preview' : 'inspect-no-geometry' };
   if (!rendered.length) return { bytes: null, sidecar };
-  root.setExtras({ sourceSha256, sourceFormat: '3DM', diagnostics });
+  // Texture paths are source metadata only, never external GLB image URIs.
+  root.setExtras({ sourceSha256, sourceFormat: '3DM', diagnostics, sourceMaterials: source.materials });
   return { bytes: await new NodeIO().writeBinary(document), sidecar };
 }

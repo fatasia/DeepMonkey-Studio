@@ -1891,3 +1891,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 固定实际 3DM 提取结果已写入标准 GLB，复用现有 glTF-Transform 与产品索引三角形路径；源对象网格只建一次，实例节点共享 mesh，根节点统一完成 Z-up→Y-up 和米制换算。
 - mesh.3dm 为 10,220 bytes/420 顶点/276 三角，meshWithTexture.3dm 为 5,120 bytes/92 顶点/180 三角；产品 GLB 几何审计及 BIN 中 Float32 顶点/UInt32 索引逐项对拍通过。blocks.3dm 无源网格，只输出诊断 sidecar，不伪造 GLB。
 - 5 项聚焦测试与真实审计通过。法线/UV/纹理/PBR、真实带网格实例、Brep 离散、资源预算、视觉及 Deep Engine 运行验收继续本轮待办，不声称生产支持。[证据](specs/industrial-3dm-glb-preview-2026-09-17.md)
+
+### 2026-09-17 3DM 源法线、UV 与纹理身份（Codex）
+
+- openNURBS 研究读取器直接保留 `ON_Mesh.m_N` / `m_T`，非空属性必须与顶点数相等；缺失时不补默认值。mesh.3dm 的 420 法线/UV 与 meshWithTexture.3dm 的 92 法线/UV 已写入 GLB NORMAL/TEXCOORD_0，按真实 byteStride/accessor offset 逐元素对拍通过。
+- 材质/纹理 UUID、mapping channel、UVW、wrap 和源路径仅作 extras/sidecar 身份；WCS box 通道和作者 macOS 路径未冒充可采样贴图，不生成 image/texture/PBR 外观，不读取源路径。
+- 主线重建读取器，真实源审计、7 项研究测试、两份 GLB 产品审计和 10 项审计回归通过。完整 WCS/PBR/纹理字节、真实带网格实例和 Deep Engine 视觉验收仍待办。[证据](specs/industrial-3dm-vertex-attributes-2026-09-17.md)
