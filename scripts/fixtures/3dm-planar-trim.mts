@@ -99,15 +99,3 @@ export function tessellatePlanarFace(ir: any, faceIndex: number) {
     audit: { uvArea: targetArea, triangleUvArea: triangleArea, affineError, trimChordTolerance, loopCount: rings.length,
       holeCount: rings.length-1, sourcePlaneArea: targetArea*normalLength/((surface.domain[0][1]-surface.domain[0][0])*(surface.domain[1][1]-surface.domain[1][0])) } };
 }
-export function completePlanarBrepParts(object: any) {
-  const parts=[...(object.storedRenderMeshes??[])], diagnostics: any[]=[];
-  if(object.kind!=='brep' || !object.cadIr) return { parts, diagnostics };
-  check(Number.isInteger(object.faceCount) && object.faceCount>=0 && object.faceCount<=100000
-    && object.cadIr.faces?.length===object.faceCount, 'invalid-brep-face-budget');
-  for(let face=0;face<object.faceCount;face++) {
-    if(parts.some(p=>p.face===face)) continue;
-    try { parts.push(tessellatePlanarFace(object.cadIr,face)); }
-    catch(error) { diagnostics.push({ objectId: object.id, face, code: error instanceof Error ? error.message : 'trim-tessellation-failed' }); }
-  }
-  return { parts, diagnostics };
-}

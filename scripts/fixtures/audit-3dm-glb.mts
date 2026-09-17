@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { export3dmGlb } from './3dm-glb-export.mts';
-import { completePlanarBrepParts } from './3dm-planar-trim.mts';
+import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
 const root = resolve(import.meta.dirname, '../..');
 const out = resolve(root, 'test-output/3dm-source-audit');
@@ -15,7 +15,7 @@ for (const row of evidence.results) {
   assert.equal(hash(input), row.outputSha256);
   assert.equal(hash(readFileSync(row.source)), row.sourceSha256);
   const source = JSON.parse(input.toString());
-  const partsById = new Map<string, any[]>(source.objects.map((object: any) => [object.id, completePlanarBrepParts(object).parts]));
+  const partsById = new Map<string, any[]>(source.objects.map((object: any) => [object.id, completeBrepParts(object).parts]));
   const generated = [...partsById.values()].flat().filter((part: any) => part.geometrySource);
   const generatedTriangles = generated.reduce((sum: number, part: any) => sum + part.mesh.triangles.length, 0);
   const generatedVertices = generated.reduce((sum: number, part: any) => sum + part.mesh.positions.length, 0);

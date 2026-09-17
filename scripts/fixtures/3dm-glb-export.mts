@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { createIndexedTrianglePrimitive } from '../../apps/api/src/indexedTriangleMesh.ts';
-import { completePlanarBrepParts } from './3dm-planar-trim.mts';
+import { completeBrepParts } from './3dm-brep-tessellation.mts';
 const require = createRequire(new URL('../../apps/api/package.json', import.meta.url));
 const { Document, NodeIO } = require('@gltf-transform/core');
 
@@ -37,7 +37,7 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
     materialSource: object.materialSource });
   for (const object of objects.values()) {
     check(source.layers.some((layer: any) => layer.index === object.layerIndex), 'missing layer');
-    const completed = completePlanarBrepParts(object);
+    const completed = completeBrepParts(object);
     const parts = object.kind === 'mesh' ? [{ face: null, mesh: object.mesh }] : completed.parts;
     diagnostics.push(...completed.diagnostics);
     if (object.kind === 'brep' && parts.length < object.faceCount) diagnostics.push({ objectId: object.id, code: 'missing-brep-render-mesh', count: object.faceCount - parts.length });

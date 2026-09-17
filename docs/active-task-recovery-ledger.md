@@ -2057,3 +2057,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 从本机已固定 McNeel 官方语料取得 V4 MechPartA，源 SHA/版本/单位/本地使用边界入证据；忽略源缓存网格的受控重建得到 10/41 平面、2450 三角，5 面/6 孔，其余 31 面保持明确诊断。
 - 自研正权重 NURBS→Bézier 插结点与控制凸包弦差细分，源空间预算 0.001 mm；原 openNURBS PointAt 对拍误差最大 `5.403e-15 mm`，trim 采样弦差 `<0.000335 mm`。圆环解析面积、真实几何的受控镜像/非均匀实例矩阵和共享网格通过。
 - 13/13 测试、确定性读取、GLB audit、专项 tsc、repository gate 通过。源作者镜像实例、一般曲面离散与产品视觉继续本轮待办；仍为 partial-geometry-preview。[证据](specs/industrial-3dm-real-trims-2026-09-17.md)
+
+### 2026-09-17 3DM 完整球面→GLB（Codex）
+
+- 原 openNURBS 球面身份、已验证角参数映射和完整自然 trim 共同限定支持范围；顶点实际消费源 NURBS，接缝/极点焊接，面反向与转置方向保留，保存网格仍优先。
+- blocks 无缓存球面生成 7262 顶点/14520 三角并由两个真实块引用共享；sphereDecals 直接重建对照为 53303/106602。原 PointAt→三角插值误差最大 0.005105 mm，小于 0.01 mm 预算；全部边二面相邻、Euler=2 与法线通过。
+- 球面 4、既有平面/trim/GLB 13、参数 5 项通过，5 件真实源/GLB audit、专项 tsc、repository gate 通过。圆柱/一般 NURBS、任意曲面 trim、跨面缝合、视觉与生产接线仍待办。[证据](specs/industrial-3dm-sphere-tessellation-2026-09-17.md)

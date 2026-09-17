@@ -118,6 +118,7 @@ static void nurbsSurface(std::ostream& o, const ON_Surface& source) {
     o << ']';
   }
   o << "],\"parameterMap\":"; surfaceParameterMap(o,source,accuracy);
+  o << ",\"analyticSupport\":"; analyticSurfaceSupport(o,source);
   if(accuracy==2 || allParameterEvidence) { o << ",\"parameterEvidence\":"; surfaceParameterEvidence(o,source); }
   o << '}';
 }

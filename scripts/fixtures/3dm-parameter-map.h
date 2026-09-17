@@ -36,6 +36,13 @@ static void surfaceParameterMap(std::ostream& o, const ON_Surface& source, int a
 static void parameterPoint(std::ostream& o, const ON_3dPoint& p) {
   o << '['; number(o,p.x); o << ','; number(o,p.y); o << ','; number(o,p.z); o << ']';
 }
+static void analyticSurfaceSupport(std::ostream& o, const ON_Surface& source) {
+  ON_Sphere sphere;
+  if(source.IsSphere(&sphere,1e-10)) {
+    o << "{\"kind\":\"sphere\",\"radius\":"; number(o,sphere.radius);
+    o << ",\"center\":"; parameterPoint(o,sphere.Center()); o << '}';
+  } else o << "null";
+}
 static void curveParameterEvidence(std::ostream& o, const ON_Curve& source) {
   o << '[';
   for(int i=0;i<=37;++i) {

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { tessellatePlanarFace, completePlanarBrepParts, insideRing } from './3dm-planar-trim.mts';
+import { tessellatePlanarFace, insideRing } from './3dm-planar-trim.mts';
+import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 
 const out=new URL('../../test-output/3dm-source-audit/',import.meta.url);
@@ -27,7 +28,7 @@ const outer=[[0,0],[10,0],[10,10],[0,10]], hole=[[3,3],[3,7],[7,7],[7,3]];
 test('real uncached affine faces become source-indexed triangles with support-plane and area checks',async()=>{
   const source=model(); let added=0,triangles=0,maxResidual=0; const faces=[];
   for(const object of source.objects.filter((o: any)=>o.cadIr)) {
-    const completed=completePlanarBrepParts(object); assert.deepEqual(completed.diagnostics,[]);
+    const completed=completeBrepParts(object); assert.deepEqual(completed.diagnostics,[]);
     for(const part of completed.parts.filter((p: any)=>p.geometrySource)) {
       added++; triangles+=part.mesh.triangles.length;
       const surface=object.cadIr.surfaces[object.cadIr.faces[part.face].surface];
@@ -72,7 +73,7 @@ test('invalid trims and unsupported surfaces stay explicit diagnostics without p
   const open=fixture([outer]); open.curves2d[0].controlPoints[1]=[9,0]; cases.push(open);
   const unsupported=fixture([outer]); unsupported.curves2d[0].degree=2; cases.push(unsupported);
   for(const ir of cases) {
-    const result=completePlanarBrepParts({id:'test',kind:'brep',faceCount:1,cadIr:ir,storedRenderMeshes:[]});
+    const result=completeBrepParts({id:'test',kind:'brep',faceCount:1,cadIr:ir,storedRenderMeshes:[]});
     assert.equal(result.parts.length,0); assert.equal(result.diagnostics.length,1); assert.equal(result.diagnostics[0].face,0);
   }
 });
