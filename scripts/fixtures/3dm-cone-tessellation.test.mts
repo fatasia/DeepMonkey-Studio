@@ -10,7 +10,7 @@ import { evaluateSurface,mapSurfaceParameter } from './3dm-nurbs-parameters.mjs'
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
 const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/3dm-source-audit');
-const evidenceOut=resolve(root,'test-output/industrial-3dm/single-bicubic-2026-09-17-v1/cone');mkdirSync(evidenceOut,{recursive:true});
+const evidenceOut=resolve(root,'test-output/industrial-3dm/multispan-bicubic-2026-09-17-v1/cone');mkdirSync(evidenceOut,{recursive:true});
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const relative='example_files/V4/v4_Wheel_PG.3dm',sourceSha256='c116ce1873e6388acbaeb3ccbe08841ed08966db079cd91d492fe621ec127ff9';
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001',relative);

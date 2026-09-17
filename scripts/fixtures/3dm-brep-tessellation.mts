@@ -7,7 +7,7 @@ import { auditBrepBoundaries } from './3dm-brep-boundary-audit.mts';
 import { weldSourceEdges } from './3dm-source-edge-weld.mts';
 import { tessellateTrimmedCylinderFace } from './3dm-cylinder-trim.mts';
 import { tessellateProvenCylinderFace } from './3dm-proven-cylinder.mts';
-import { tessellateBicubicFace } from './3dm-bicubic-face.mts';
+import { tessellateBicubicFace,tessellateMultispanBicubicFace } from './3dm-bicubic-face.mts';
 
 /** Preserve saved meshes, reconstruct only supported missing faces, retain per-face diagnostics. */
 export function completeBrepParts(object: any,metersPerUnit?:number) {
@@ -26,6 +26,9 @@ export function completeBrepParts(object: any,metersPerUnit?:number) {
         const surface=object.cadIr.surfaces[object.cadIr.faces[face].surface];
         if(!support&&!surface?.rational&&surface?.degree?.every((d:number)=>d===3)&&surface.controlPointCount?.every((n:number)=>n===4)) {
           parts.push(tessellateBicubicFace(object.cadIr,face,metersPerUnit!));continue;
+        }
+        if(!support&&!surface?.rational&&surface?.degree?.every((d:number)=>d===3)) {
+          parts.push(tessellateMultispanBicubicFace(object.cadIr,face,metersPerUnit!));continue;
         }
         if(!support&&surface?.rational&&surface.degree?.includes(1)&&surface.degree?.includes(2)) {
           parts.push(tessellateProvenCylinderFace(object.cadIr,face,metersPerUnit!));continue;
