@@ -5,11 +5,15 @@ import { fixture } from "./dashboardDataRaster.testUtils";
 function nodes(result: Awaited<ReturnType<typeof compileDashboardRasterContent>>) {
   return (result.package.payloads[result.package.entrypoints.dashboard] as any).pages[0].nodes as any[];
 }
+function authoredNodes(result: Awaited<ReturnType<typeof compileDashboardRasterContent>>) {
+  const ids = new Set(result.nodeBindings.flatMap(binding => binding.runtimeNodeIds));
+  return nodes(result).filter(node => ids.has(node.id));
+}
 it("keeps interleaved clips in separate consecutive layers", async () => {
   const value = fixture();
   value.textBoxes.forEach((box, index) => { value.textBoxes[index] = { ...box, clip: index === 1 ? [0,0,100.5,40] : [0,0,120.2,40] }; });
   const result = await compileDashboardRasterContent(value.input, value.host);
-  expect(nodes(result).map(node => node.clip)).toEqual([null,[0,0,120.2,40],[0,0,100.5,40],[0,0,120.2,40]]);
+  expect(authoredNodes(result).map(node => node.clip)).toEqual([null,[0,0,120.2,40],[0,0,100.5,40],[0,0,120.2,40]]);
   expect(result.nodeBindings[0]!.runtimeNodeIds).toHaveLength(4);
   expect(result.nodeBindings[0]!.runtimeNodeIds[0]).toBe(result.nodeBindings[0]!.runtimeNodeId);
 });
@@ -22,8 +26,8 @@ it("keeps each author group contiguous for equal and negative authored z", async
   const result = await compileDashboardRasterContent(input, value.host);
   const bindings = result.nodeBindings;
   expect(bindings.map(binding => binding.runtimeNodeId)).toEqual(bindings.map(binding => binding.runtimeNodeId).sort());
-  expect(nodes(result).map(node => node.id)).toEqual(bindings.flatMap(binding => binding.runtimeNodeIds));
-  expect(nodes(result).map(node => node.zOrder)).toEqual([0,1,2,3]);
+  expect(authoredNodes(result).map(node => node.id)).toEqual(bindings.flatMap(binding => binding.runtimeNodeIds));
+  expect(authoredNodes(result).map(node => node.zOrder)).toEqual([1,2,3,4]);
 });
 it("retains the existing 128 total runtime node budget after layering", async () => {
   const value = fixture(), node = value.input.document.application.pages[0]!.nodes[0]!;
@@ -40,7 +44,7 @@ it("connects a frozen chart metric to the C1 chart envelope without claiming app
   const metric = { samples: [{ time: 0, value: 7 }, { time: 1, value: 9 }] };
   const data = { source: { ...value.data.source, contentSha256: runtimeContentSha256(metric) }, metric };
   const result = await compileDashboardRasterContent({ ...value.input, data: { kpi: data } }, value.host);
-  const chartId = nodes(result)[0].chart;
+  const chartId = authoredNodes(result)[0].chart;
   expect(result.package.payloads[chartId]).toMatchObject({ schema: "deep-engine.chart-runtime", schemaVersion: 1 });
   expect(result.capabilityReport.contentCompiled).toBe(1);
   expect(result.capabilityReport.objects[0]).toMatchObject({ contentCompiled: true, status: "degraded" });

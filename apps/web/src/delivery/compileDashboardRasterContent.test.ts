@@ -39,6 +39,34 @@ function payload(result: Awaited<ReturnType<typeof compileDashboardRasterContent
   return Object.values(result.package.payloads).find((value: any) => value.schema === "deep-engine.deep2d-runtime") as any;
 }
 describe("frozen dashboard raster orchestration", () => {
+  it("compiles the Web page background color beneath every authored node", async () => {
+    const input = fixture();
+    input.document.application.pages[0]!.appearance = {
+      backgroundColor: "#80808080", backgroundImageUrl: "/frozen/background.png", backgroundImageFit: "cover",
+    };
+    const result = await compileDashboardRasterContent(input, host().adapter);
+    const dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
+    const page = dashboard.pages[0];
+    expect(page.nodes[0]).toMatchObject({ zOrder: 0, frame: [0, 0, page.width, page.height], chart: null });
+    expect(page.nodes[1].zOrder).toBe(1);
+    const background = result.package.payloads[page.nodes[0].deep2d] as any;
+    expect(background.displayList.commands[0]).toMatchObject({
+      kind: "path", fill: [0.21586050011389926, 0.21586050011389926, 0.21586050011389926, 128 / 255],
+    });
+    expect(result.deferredPageFields[0]!.fields).not.toContain("appearance.backgroundColor");
+    expect(result.deferredPageFields[0]!.fields).toContain("appearance.backgroundImageUrl");
+    expect(validateDeepRuntimePackage(result.package).valid).toBe(true);
+  });
+
+  it("keeps non-hex page color explicit instead of inventing Native pixels", async () => {
+    const input = fixture();
+    input.document.application.pages[0]!.appearance = { backgroundColor: "var(--surface-1)" };
+    const result = await compileDashboardRasterContent(input, host().adapter);
+    const dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
+    expect(dashboard.pages[0].nodes).toHaveLength(1);
+    expect(result.deferredPageFields[0]!.fields).toContain("appearance.backgroundColor");
+  });
+
   it("uses actual title fallback, local pixels, stable layout and a valid C1 package", async () => {
     const input = fixture(), runtime = host();
     const result = await compileDashboardRasterContent(input, runtime.adapter);
@@ -82,7 +110,8 @@ describe("frozen dashboard raster orchestration", () => {
     };
     const result = await compileDashboardRasterContent(input, runtime.adapter);
     const doc = result.package.payloads[result.package.entrypoints.dashboard!] as any;
-    expect(doc.pages[0].nodes[0].frame[0]).toBe(50);
+    const authored = doc.pages[0].nodes.find((node: any) => node.id === result.nodeBindings[0]!.runtimeNodeId);
+    expect(authored.frame[0]).toBe(50);
   });
   it("keeps unresolved inherited style and empty text explicit", async () => {
     const input = fixture(), runtime = host();

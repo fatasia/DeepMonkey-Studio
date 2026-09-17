@@ -1,7 +1,9 @@
-import { buildDashboardCompositionRuntimePackage, runtimeContentSha256,
+import { buildDashboardCompositionRuntimePackage, dashboardRuntimePageId, runtimeContentSha256,
   type DashboardRuntimePageV1, type Deep2dRuntimePackage, type ChartIrRuntimeValue } from "@bim-studio/deep-engine/runtime-package";
 import { lowerDashboardChart } from "./lowerDashboardChart";
 import { compileDashboardLayout } from "./compileDashboardLayout";
+import { cssSrgbToLinearColor } from "./dashboardColor";
+import { parseHexColor } from "./dashboardShapeContent";
 import { rasterNode } from "./dashboardRasterNode";
 import { assetIdentity, snapshotRasterInput, RASTER_BYTES_LIMIT } from "./dashboardRasterValidation";
 import type { DashboardRasterCompileInput, DashboardRasterEvidence, DashboardRasterHost } from "./dashboardRasterTypes";
@@ -61,9 +63,15 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
         const runtimeId = layerIndex === 0 ? id : `node.${runtimeContentSha256([id, "content-layer", layerIndex])}`;
         mapping.runtimeNodeIds.push(runtimeId); deep2d.push(layer.content);
         nodes.push({ id: runtimeId, revision, frame: [node.frame.x, node.frame.y, node.frame.width, node.frame.height],
-          clip: layer.clip, zOrder: nodes.length, visible: node.visible !== false, hitId: null,
+          clip: layer.clip, zOrder: nodes.length + 1, visible: node.visible !== false, hitId: null,
           deep2d: layer.content.id, chart: layerIndex === 0 ? chart : null, chartSim: null });
       }
+    }
+    const background = pageBackground(page, layout.tree.id, revision);
+    if (background) {
+      deep2d.push(background.content);
+      nodes.unshift({ id: background.nodeId, revision, frame: [0, 0, page.width, page.height], clip: null,
+        zOrder: 0, visible: true, hitId: null, deep2d: background.content.id, chart: null, chartSim: null });
     }
     pages.push({ id: layout.tree.id, width: page.width, height: page.height, nodes });
   }
@@ -78,5 +86,31 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
     producerEvidence, nodeBindings, capabilityReport: { objects, contentCompiled: objects.filter(o => o.contentCompiled).length,
       degraded: objects.filter(o => o.status === "degraded").length, blocked: objects.filter(o => o.status === "blocked").length },
     deferredPageFields: document.application.pages.map(page => ({ pageId: page.id,
-      fields: compileDashboardLayout(document, page.id).deferredPageFields })) };
+      fields: deferredPageFields(page, Boolean(pageBackground(page, dashboardRuntimePageId(document.application.metadata.id, page.id), revision))) })) };
+}
+
+const PAGE_BACKGROUND_DEFAULT = "#12191d";
+
+function pageBackground(page: DashboardRasterCompileInput["document"]["application"]["pages"][number], pageId: string, revision: number) {
+  const color = page.appearance?.backgroundColor ?? PAGE_BACKGROUND_DEFAULT;
+  if (!/^#(?:[a-f\d]{3}|[a-f\d]{4}|[a-f\d]{6}|[a-f\d]{8})$/i.test(color)) return null;
+  let fill;
+  try { fill = cssSrgbToLinearColor(parseHexColor(color)); } catch { return null; }
+  const id = `${pageId}.background`, pathId = `${id}.path`;
+  const content: Deep2dRuntimePackage = { schema: "deep-engine.deep2d-runtime", schemaVersion: 2, id, revision,
+    composition: "z-ordered", displayList: { schemaVersion: 1, id: `${id}.display-list`, revision,
+      logicalWidth: page.width, logicalHeight: page.height, scaleFactor: 1,
+      resources: [{ kind: "path", id: pathId, revision, verbs: [
+        { op: "move", x: 0, y: 0 }, { op: "line", x: page.width, y: 0 },
+        { op: "line", x: page.width, y: page.height }, { op: "line", x: 0, y: page.height }, { op: "close" },
+      ] }], commands: [{ kind: "path", id: `${pathId}.draw`, pathId, zOrder: 0,
+        transform: [1, 0, 0, 1, 0, 0], fill }] }, atlases: [], quads: [] };
+  return { nodeId: `node.${runtimeContentSha256([pageId, "background"])}`, content };
+}
+
+function deferredPageFields(page: DashboardRasterCompileInput["document"]["application"]["pages"][number], backgroundCompiled: boolean) {
+  const fields = Object.keys(page).filter(field => !["id", "width", "height", "nodes", "appearance"].includes(field));
+  if (page.appearance) fields.push(...Object.keys(page.appearance)
+    .filter(field => !(field === "backgroundColor" && backgroundCompiled)).map(field => `appearance.${field}`));
+  return fields;
 }

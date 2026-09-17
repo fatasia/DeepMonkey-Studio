@@ -22,7 +22,8 @@ it("preserves fractional clipping through C1 node layers without rounding", asyn
   const first = fixture(); first.textBoxes[0] = { ...first.textBoxes[0]!, clip: [17.5,17.2,10.1,9.8] };
   const result = await compileDashboardRasterContent(first.input, first.host);
   const dashboard = result.package.payloads[result.package.entrypoints.dashboard] as any;
-  expect(dashboard.pages[0].nodes[1].clip).toEqual([17.5,17.2,10.1,9.8]);
+  const clippedLayerId = result.nodeBindings[0]!.runtimeNodeIds[1];
+  expect(dashboard.pages[0].nodes.find((node: any) => node.id === clippedLayerId).clip).toEqual([17.5,17.2,10.1,9.8]);
   expect(content(result).quads[0]).toMatchObject({ source: [0,0,20,10], destination: [17,17,20,10] });
   expect(result.capabilityReport.contentCompiled).toBe(1);
 });
