@@ -7,6 +7,8 @@ use xt_parser::{
 };
 #[path = "xt-circle-witness.rs"]
 mod circle_witness;
+#[path = "xt-closed-spline-witness.rs"]
+mod closed_spline_witness;
 
 fn ptr(e: &Entities, r: &RawEntity, slot: usize) -> usize {
     match e.fields(r).get(slot) {
@@ -83,6 +85,13 @@ fn audit(path: &Path) {
                     // Do not sample a full circle for a trimmed/multi-edge arc.
                     let edge = index[&ptr(e, fin, 6 - shift)];
                     assert_eq!(edge.type_id, xt::EDGE);
+                    if let Some(curve) = index.get(&ptr(e, edge, 6)) {
+                        if let Some(samples) =
+                            closed_spline_witness::source_points(e, curve, &index)
+                        {
+                            points.extend(samples);
+                        }
+                    }
                     if let Some(circle) = index
                         .get(&ptr(e, edge, 6))
                         .filter(|r| r.type_id == xt::CIRCLE)

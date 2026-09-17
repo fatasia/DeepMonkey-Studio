@@ -64,7 +64,7 @@ for (const row of evidence.results) {
 }
 if (sha(await readFile(oracle)) !== oracleHash) throw new Error('Oracle changed during audit');
 await writeFile(outputArg, JSON.stringify({ schemaVersion: 1,
-  scope: 'source-local-boundary-vertex-circle-and-analytic-surface-witnesses',
+  scope: 'source-local-boundary-vertex-circle-spline-and-analytic-surface-witnesses',
   tolerance: 'max(0.01 mm, max absolute coordinate * 2^-21)',
   oracleSha256: oracleHash, rawWitnessSha256: sha(stdout), evidenceSha256: sha(evidenceBytes),
   allFacesWitnessMatched: counts.mismatch === 0 && counts.unresolved === 0,

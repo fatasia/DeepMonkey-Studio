@@ -44,6 +44,8 @@ fn main() {
             serde_json::json!({"handle":id,"type":e.type_id,
             "fields":fields.iter().map(|x|format!("{x:?}")).collect::<Vec<_>>(),
             "extra":format!("{:?}",entities.extra(e)),
+            "floatValues":entities.var_f64(e),
+            "shortValues":entities.var_i16(e),
             "chartValues":if e.type_id==xt::CHART {entities.var_f64(e).to_vec()}else{vec![]}})
         );
     }
