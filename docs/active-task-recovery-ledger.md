@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 单 EXE 故障补验：新脚本在独立副本上执行载荷篡改、长度越界、尾部截断；三次均在 GPU 前退出1、恢复目录全文件hash不变。还原原EXE后重新呈现，检查点与原嵌入载荷逐字节一致；不代表安装器自动回滚。[证据与复跑](specs/dashboard-release-standalone-2026-09-17.md)
+
 - 单文件实际交付：当前静态 CRT Release 重建通过 27 项 smoke/依赖纯度/44 项清单；隔离磁盘发布→冻结→Native验证→ZIP/DMDA/EXE下载→无Node PATH、无sidecar的EXE无参数呈现通过。作者数据37/91与嵌入包/检查点一致；对象仍degraded，未计完整外观、断网干净机和升级回滚。[证据](specs/dashboard-release-standalone-2026-09-17.md)
 
 - 3DM `c7c3ed2`：MechPartA 41/41 面已重建，新增 8 面按二次×一次正权 Bézier 链处理（含直线跨度，不误判圆柱）。1090 源 PointAt 最大误差 0.001333427 mm、连续界 <0.007959087 mm；41 项回归通过。独立 evidence/GLB SHA 已复核。仍有 69 条跨面不一致、7 条未验证边，保持部分预览，继续源共边修复。[证据](specs/industrial-3dm-quadratic-linear-chain-2026-09-17.md)

@@ -15,3 +15,11 @@ runtime 字节 SHA-256：`c22a39124c67416a454d05029966be35ae11c01cf7f3cf5dbe4dd5
 复跑：先运行 `packages/deep-engine-native/scripts/package-windows-portable.ps1 -OutputRoot <新目录>`，再运行 `pnpm exec tsx --conditions=development scripts/verify-dashboard-published-portable.mts <静态播放器.exe> <实际设备指纹> <新目录> --sample-chart`。
 
 验证主机为 RTX 4060 Laptop / Vulkan。使用路由注入的测试身份，未验证登录 UI；没有关闭操作系统网络适配器，不等于干净断网机验收。图表仍为 `degraded`，标题、交互和跨端外观等差异保留；本片不关闭视觉一致性、跨版本升级回滚或多设备矩阵。
+
+## 单文件故障与还原
+
+`node scripts/verify-dashboard-standalone-recovery.mjs <单文件.exe> <新证据目录>` 在独立目录复制播放器，首次无参数启动至实际呈现，随后分别损坏载荷字节、长度字段和尾部。三次均返回退出码 1，分别出现 `overlay/payload-hash`、`overlay/payload-length`、`overlay/truncated-footer`；没有进入 GPU 初始化，恢复目录所有文件哈希不变。
+
+脚本恢复原 EXE 后再次实际呈现；检查点包哈希及完整包字节与嵌入的原载荷一致。整个过程 PATH 仅 System32，播放器目录只有 EXE；不修改输入 EXE。当前通过证据位于 `test-output/dashboard-standalone-recovery-20260917-r2/evidence.json`，repository gate 通过。
+
+本检查证明损坏拒绝与手动还原后的恢复，不证明安装器自动回滚、版本升级或断电事务。
