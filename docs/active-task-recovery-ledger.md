@@ -38,6 +38,8 @@
 
 - P0-08矩阵第一版：6格（3fixture×dark/light）Native读回与Web宿主同fixture字节成对采集，全部SSIM≥0.9749/changed≤1.94%，无结构性缺失、letterbox全0；light格全为预期采样边缘，dark格95-97%为1px轮廓带+系统性色差定位到static图例卡底色337px（疑半透明混合色彩空间，bbox与crops已附待追）。阈值建议（SSIM≥0.970/changed≤3.01%/平坦区maxChannelError≤8）标"待V验收确认"；环境漂移（Native彩色像素129461 vs 132913疑驱动更新）已同日重采声明。未覆盖：headless与真实窗口DPI/ICC差异、输入/DPI/窄屏/page-1维度。脚本与matrix.json在scripts/与test-output/p08-matrix-20260918/。
 
+- P0-08色差追因关闭：数值实证dark格图例卡色偏根因是Web读回路径alpha反预乘（premultiplied canvas经getImageData按HTML规范出RGB÷A——非展示像素），GPU管线两端本就一致（linear直写sRGB目标）；7通道跨2主题精确命中÷A。修复读回侧先铺不透明黑底再drawImage（CSS Compositing展示语义），GPU零改动。矩阵重跑flatOutside 337→0、SSIM全升（base-dark 0.9899）、全格expected_sampling_edge——跨端一致性实际优于矩阵初版。遗留：4×MSAA vs 1×的AA覆盖量化差（Native MSAA+resolve另立管线任务）。
+
 - P0-05 Web真实GPU矩阵：6轮60断言全PASS（真实Chrome WebGPU/nvidia）——连续换包（hash独立、旧帧release+GPU dispose+deck回收）、迟到候选（abort/superseded下基线帧像素diff=0保持可见）、取消（load窗口0分配、prepare窗口release+dispose）、5个session teardown全部lost(destroyed)+零uncaptured错误+releaseFailures恒空。未发现生产缺陷（3次失败均为脚本自身问题）；设备丢失注入与"无孤立纹理"直接枚举如实声明未覆盖/间接口径。C1复跑committed且SSIM逐位一致。脚本scripts/verify-p05-web-matrix*。
 
 - G04收官 `d91913d`：dashboardLayoutCaptureDeployment生产组合件（dist捕获页进程内托管+协议桥并轨API宿主合同+装配快速失败+close幂等）→ service dependencies可选layoutCapture（未配置零改动、宿主捕获失败fail-closed不保留候选）→ dashboardNativeStartup配置layoutCapture.chromePath/capturePageDirectory挂onClose优雅关闭。真实Chrome用例prepare→捕获→worker输入带layout 2.4s通过；API全量1199+4skip。遗留：dist捕获页生产分发不属本片；协议桥错误信息为selector超时（后续直出API协议捕获页可并轨）。
