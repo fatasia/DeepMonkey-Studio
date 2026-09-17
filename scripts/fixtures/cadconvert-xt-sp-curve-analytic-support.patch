@@ -1,0 +1,81 @@
+diff --git a/native/crates/cad-xt/src/geom.rs b/native/crates/cad-xt/src/geom.rs
+--- a/native/crates/cad-xt/src/geom.rs
++++ b/native/crates/cad-xt/src/geom.rs
+@@ -1145,7 +1145,10 @@ fn sp_curve_polyline_over(
+     // have no curve of their own and stand on this sampler, 1,685 of them at
+     // the floor of 24 steps — which on a 15 mm circle is a 15° chord 1.6 mm
+     // off the arc, and one such ring put a torus 12 mm off its surface.
+-    const CHORD_TOLERANCE: f64 = 1e-5 * 20.0;
++    // Keep the polyline's own departure below half of the fixed 0.01 mm
++    // geometry witness tolerance. A looser chord can have exact vertices on
++    // an analytic support yet still leave that support between vertices.
++    const CHORD_TOLERANCE: f64 = 1e-5 * 0.5;
+     const MOST: usize = 1024;
+     let mut ts: Vec<f64> = (0..=samples).map(|k| lo + (hi - lo) * k as f64 / samples as f64).collect();
+     let mut pts: Vec<Vec3> = ts.iter().map(|t| at(*t)).collect();
+diff --git a/native/crates/cad-xt/src/topo.rs b/native/crates/cad-xt/src/topo.rs
+--- a/native/crates/cad-xt/src/topo.rs
++++ b/native/crates/cad-xt/src/topo.rs
+@@ -2456,9 +2456,35 @@ impl<'a> Lowering<'a> {
+             }
+             fin = ptr(self.entities, fe, 5 - a);
+         }
++        // Every fin pcurve is a source-authored description of the same
++        // tolerant edge. Prefer a pcurve on an analytic support when one is
++        // present: it can be evaluated directly, while a spline support has
++        // first been lowered through a second approximation. Keep source
++        // order within each class so equal supports retain the fin's choice.
++        out.sort_by_key(|pcurve| self.pcurve_rank(*pcurve));
+         out
+     }
+ 
++    fn pcurve_rank(&self, pcurve: usize) -> u8 {
++        let Some(mut entity) = self.index.get(&pcurve) else {
++            return 1;
++        };
++        if entity.type_id == xt::TRIMMED_CURVE {
++            let Some(basis) = self.index.get(&ptr(self.entities, entity, 7)) else {
++                return 1;
++            };
++            entity = basis;
++        }
++        if entity.type_id != xt::SP_CURVE {
++            return 1;
++        }
++        let surface_type = self
++            .index
++            .get(&ptr(self.entities, entity, 7))
++            .map(|surface| surface.type_id);
++        pcurve_support_rank(surface_type)
++    }
++
+     /// A surface to compute a curve on, built once per entity.
+     fn curve_surface(&self, e: &RawEntity) -> Option<cad_ir::brep::Surface> {
+         if let Some(hit) = self.blend_surfaces.borrow().get(&e.index) {
+@@ -3071,6 +3099,13 @@ fn distance_to_polyline(p: Vec3, points: &[Vec3]) -> f64 {
+     best
+ }
+ 
++fn pcurve_support_rank(surface_type: Option<u16>) -> u8 {
++    match surface_type {
++        Some(xt::PLANE | xt::CYLINDER | xt::CONE | xt::SPHERE | xt::TORUS) => 0,
++        _ => 1,
++    }
++}
++
+ /// Does walking `range` on `curve` start and finish at the edge's own ends?
+ ///
+ /// The only claim a parameter range makes that can be checked against
+@@ -3332,6 +3367,12 @@ mod tests {
+     use cad_ir::brep::{Curve, Surface};
+     use cad_ir::math::Frame;
+ 
++    #[test]
++    fn an_analytic_fin_pcurve_outranks_a_spline_stand_in() {
++        assert!(pcurve_support_rank(Some(xt::CYLINDER)) < pcurve_support_rank(Some(xt::B_SURFACE)));
++        assert_eq!(pcurve_support_rank(Some(xt::B_SURFACE)), pcurve_support_rank(None));
++    }
++
+     /// A cylinder cut by a plane meets it in a circle. Walking that
+     /// intersection has to produce the circle — not the chord between its
+     /// ends, which is what the file's own chart would give across a span this
