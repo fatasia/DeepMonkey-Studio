@@ -1842,3 +1842,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - REGION/SHELL 双链有界遍历，校验循环、引用类型、body/region 归属与 S/V 语义；补回三个真实样本遗漏的 15 面，不重复 void 边界。
 - 13 项 cad-xt 测试通过；主线程重跑 109 件全转换与产品 GLB 审计，独立源 BODY/FACE 对拍 109/109。三个缺陷样本另验证原始 FACE 身份集合与内部 FaceId/壳归属。
 - 仍未开放生产 profile：孤立极点环的 lowering Skip、完整 GLB source-map、几何精度和闭合性继续本轮待办。CLI 无 stderr 不代表无内部 Skip。[证据](specs/industrial-x-t-shell-chain-2026-09-17.md)
+
+### 2026-09-17 Deep2D P2-01 Windows Job 资源治理（Codex）
+
+- worker 挂起创建→绑定匿名 Job→恢复线程；限制进程树 committed memory、活动进程数、累计用户 CPU，退出/取消/错误回收子孙进程和继承管道。OS 限额独立于 X ABI 逻辑预算；清理等待有界并显式报告失败。
+- 修复全系统 ToolHelp 快照的启动开销，改目标进程 PSS；CPU 同时用内核累计账务轮询，避免仅依赖 Windows 周期终止。固定复用已有 windows-sys 0.61.2，第三方说明同步且保留其他会话改动。
+- 主线程复跑 IPC 7/7、Windows Job 4/4；库聚焦 10/10、clippy/fmt 通过。真实测试覆盖三层树、继承管道、禁止 breakaway、内存分配拒绝、进程数拒绝与 CPU 忙循环终止。ignored 仅为父测试实际调用的故障注入入口。
+- restricted token/文件与网络权限、正式安装包与播放器/Painter 接线继续本轮待办，不开放任意脚本。[验证报告](specs/deep2d-p2-01-windows-job-2026-09-17.md)

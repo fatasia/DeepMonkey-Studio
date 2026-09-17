@@ -1,5 +1,7 @@
 # Third-party notices
 
+Native Windows process isolation uses `windows-sys` 0.61.2 (MIT OR Apache-2.0), copyright Microsoft Corporation, from https://github.com/microsoft/windows-rs. The existing transitive crate is also pinned directly for Job Object APIs. Retain the packaged license notices when distributing the native worker.
+
 This project uses open-source software. The lockfile is the authoritative inventory of exact versions. Run the following command before each release to audit production dependencies, including version-pinned manual evidence for packages with incomplete metadata:
 
 ```powershell

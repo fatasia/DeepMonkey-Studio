@@ -19,6 +19,9 @@ unicode-segmentation = "=1.13.3"
 wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl"] }
 winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ProcessSnapshotting", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel"] }
+
 [profile.release]
 codegen-units = 1
 lto = "thin"

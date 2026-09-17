@@ -10,6 +10,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Deep2D experimental compatibility
 
+- Bound Windows workers to a Job before execution; limit process-tree memory, CPU time and process count, and reclaim descendants and inherited pipes on cancellation or failure. File/network permissions and packaged runtime integration remain pending.
+
 - Run the closed X ABI in a separate worker with bounded IPC, receipt hashes, cancellation and timeout checks. Keep publication behind the existing epoch check; OS-level sandboxing and packaged runtime integration remain pending.
 
 ### Industrial conversion validation
