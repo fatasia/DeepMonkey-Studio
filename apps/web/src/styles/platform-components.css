@@ -376,7 +376,8 @@
 }
 .dashboard-value { display: grid; height: 100%; align-content: space-between; font-variant-numeric: tabular-nums; }
 .dashboard-value > span { color: #7f8c92; font-size: 10px; }
-.dashboard-value > strong { color: #f2f4f5; font-size: 27px; font-weight: 600; }
+/* 700 与发布冻结字体目录(400/700)对齐:浏览器对 600 的合成字重 Native 端无法复现。 */
+.dashboard-value > strong { color: #f2f4f5; font-size: 27px; font-weight: 700; }
 .dashboard-value strong small { margin-left: 4px; color: #8a969c; font-size: 10px; font-weight: 400; }
 .dashboard-chart { width: 100%; height: 100%; min-height: 65px; }
 .dashboard-drill-chart { position:relative;width:100%;height:100%;min-height:65px; }.dashboard-drill-chart>nav { position:absolute;z-index:2; /* z-index-audit: keep(页面内容带:钻取图表内工具条局部) */top:5px;left:7px;display:flex;max-width:calc(100% - 14px);align-items:center;gap:3px;padding:3px;border:1px solid #344147;border-radius:5px;background:#10181ccc;backdrop-filter:blur(5px); }.dashboard-drill-chart>nav button { max-width:92px;height:20px;padding:0 6px;overflow:hidden;color:#819096;border:0;border-radius:3px;background:transparent;font-size:8px;text-overflow:ellipsis;white-space:nowrap;cursor:pointer; }.dashboard-drill-chart>nav button.active { color:#f0cf7f;background:#2b281d; }.dashboard-drill-chart>nav button:disabled { opacity:.35;cursor:default; }.dashboard-drill-chart>nav small { margin-left:3px;color:#65757b;font-size:7px;white-space:nowrap; }
@@ -399,6 +400,7 @@
 .dashboard-status > i { width: 10px; height: 10px; border-radius: 50%; background: #7a858a; box-shadow: 0 0 0 4px rgba(122,133,138,.12); }
 .dashboard-status.ok > i { background: #62d493; box-shadow: 0 0 0 4px rgba(98,212,147,.12); }
 .dashboard-status span { display: grid; gap: 4px; min-width: 0; }
+.dashboard-native-widget .dashboard-status span { font-size: max(10px, 1em); }
 .dashboard-status small { color: #7d8a91; font-size: 9px; }
 .dashboard-status strong { overflow: hidden; color: #e2e7e9; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .primitive-tool { position: relative; display: inline-flex; }

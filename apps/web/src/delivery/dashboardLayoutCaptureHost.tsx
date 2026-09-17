@@ -48,8 +48,15 @@ try {
         compact={false} onDataInteraction={none} onAnimationStart={none} onAnimationEnd={none} />
     </section>);
   globalThis.captureDashboardHeading = () => {
-    const root = document.querySelector<HTMLElement>('[data-dashboard-capture="chart"]');
-    if (!root) throw new Error("Frozen chart has not mounted");
+    // P0-06 缺陷 2 修复:测量合同覆盖 chart/value/table 三类捕获根,
+    // 按 widget 类型分派;根缺失仍 fail-closed,不回退到其他类型。
+    const type = String((request.widget as { type?: string }).type ?? "");
+    const kind = type === "table" ? "table" : type === "value" ? "value" : "chart";
+    const root = document.querySelector<HTMLElement>(`[data-dashboard-capture="${kind}"]`);
+    if (!root) throw new Error(`Frozen ${kind} widget has not mounted`);
+    const measured = root.getBoundingClientRect();
+    if (Math.abs(measured.width / request.width - measured.height / request.height) > 0.0001)
+      throw new Error(`Measured capture root ${measured.width}x${measured.height} does not scale uniformly to ${request.width}x${request.height}`);
     for (const element of root.querySelectorAll<HTMLElement>("[data-capture-role]")) {
       const style = getComputedStyle(element);
       const matches = families.filter(font => font.weight === Number(style.fontWeight) && font.style === style.fontStyle);

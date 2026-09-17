@@ -64,7 +64,7 @@ export async function createDashboardChromiumLayoutHost(configuration, directory
         });
         await page.goto(url, { timeout: TIMEOUT_MS });
         await page.waitForFunction(() => globalThis.__DASHBOARD_LAYOUT_ERROR__ || (
-          globalThis.captureDashboardHeading && document.querySelector('[data-dashboard-capture="chart"]')), null, { timeout: TIMEOUT_MS });
+          globalThis.captureDashboardHeading && document.querySelector("[data-dashboard-capture]")), null, { timeout: TIMEOUT_MS });
         const result = await page.evaluate(() => {
           if (globalThis.__DASHBOARD_LAYOUT_ERROR__) throw new Error(globalThis.__DASHBOARD_LAYOUT_ERROR__);
           return globalThis.captureDashboardHeading();
