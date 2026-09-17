@@ -1996,3 +1996,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - openNURBS B-Rep 已映射为版本化自研 CAD IR：顶点、3D edge curve、2D trim curve、surface、edge、trim、loop、face 及方向/引用均保留；曲线曲面统一为带完整 knot vector、控制点与权重编码的 NURBS form。
 - 三件真实 B-Rep 样本覆盖 7 个 B-Rep / 15 个 face；`file3dm_stuff` 的 13 个 face 为 32 vertices / 42 edges / 52 trims / 13 loops / 13 surfaces。独立门禁复核 NURBS 数组、domain、有限值、knot 单调性、引用闭包、重复确定性及截断/缺失拒绝。
 - 参数化 `2` 明确保留：球面样本存在 2 个仅点集/domain 一致的 NURBS form，尚不能直接消费原 trim 参数。无缓存面仍不生成网格、不提升 preview 状态；参数映射、trimmed surface 离散、误差与生产接线继续本轮待办。[证据](specs/industrial-3dm-cad-ir-2026-09-17.md)
+
+### 2026-09-17 X_T 单顶点边界候选门禁（Codex）
+
+- A-1811/face 1199 与 A-1821/face 226 已确认正确读取单顶点 bound，但候选评分只核验边段，允许丢失 apex 的重建面胜出。最小修复把文件声明的单顶点纳入原有 boundary gap 门禁，不改 0.01 mm 阈值、不按样本特判。
+- cad-tess 37/37、release 构建、109/109 真实转换通过；逐面几何审计由 19,154 matched / 9 mismatch / 181 unresolved 改善为 19,156 / 7 / 181，两面残差降至 `3.75e-7 mm` 与 `2.30e-7 mm`，无新增 mismatch。
+- 剩余 7 个差异仍是两类重建曲面偏差、三类交线 chart/stand-in 偏差；生产 profile 继续为 0。[证据](reports/industrial-x-t-apex-boundary-2026-09-17.md)

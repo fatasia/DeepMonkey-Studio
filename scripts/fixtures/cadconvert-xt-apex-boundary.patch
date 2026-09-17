@@ -1,0 +1,66 @@
+diff --git a/native/crates/cad-tess/src/face.rs b/native/crates/cad-tess/src/face.rs
+--- a/native/crates/cad-tess/src/face.rs
++++ b/native/crates/cad-tess/src/face.rs
+@@ -741,7 +741,12 @@ fn tessellate_reading(
+     // merged region is the tessellator's own reconstruction, and scoring a
+     // patch against it lets a bad reconstruction validate itself — the patch
+     // draws the merged ring perfectly and the file's segments stay open.
+-    let file_rings: Vec<Vec<Vec3>> = loops.iter().map(|l| l.xyz.clone()).collect();
++    let mut file_rings: Vec<Vec<Vec3>> = loops.iter().map(|l| l.xyz.clone()).collect();
++    // A single-vertex bound is boundary too. It has no segment for the usual
++    // gap check to measure, but a candidate that drops the point no longer
++    // describes the face the file declared. Keep it as a singleton ring so
++    // every later candidate comparison has to retain the vertex.
++    file_rings.extend(apexes.iter().map(|point| vec![*point]));
+ 
+     if std::env::var_os("CAD_TESS_BOUNDS").is_some() {
+         // What the file says this face's boundary is made of: the curve behind
+@@ -5435,6 +5471,17 @@ fn boundary_gaps(patch: &Patch, rings: &[&[Vec3]]) -> usize {
+     }
+     let mut gaps = 0usize;
+     for ring in rings {
++        if let [point] = *ring {
++            let id = key([
++                (point.x as f32).to_bits(),
++                (point.y as f32).to_bits(),
++                (point.z as f32).to_bits(),
++            ]);
++            if !welded.contains(&id) {
++                gaps += 1;
++            }
++            continue;
++        }
+         for w in 0..ring.len() {
+             let p = ring[w];
+             let q = ring[(w + 1) % ring.len()];
+@@ -5459,6 +5506,30 @@ fn boundary_gaps(patch: &Patch, rings: &[&[Vec3]]) -> usize {
+     gaps
+ }
+ 
++#[cfg(test)]
++mod boundary_gap_tests {
++    use super::*;
++
++    #[test]
++    fn a_declared_point_bound_must_survive_candidate_selection() {
++        let apex = Vec3::new(0.0, 0.0, 2.0);
++        let ring = [apex];
++        let without_apex = Patch {
++            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
++            indices: vec![0, 1, 2],
++            ..Patch::default()
++        };
++        assert_eq!(boundary_gaps(&without_apex, &[&ring]), 1);
++
++        let with_apex = Patch {
++            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 2.0]],
++            indices: vec![0, 1, 3, 1, 2, 3, 2, 0, 3],
++            ..Patch::default()
++        };
++        assert_eq!(boundary_gaps(&with_apex, &[&ring]), 0);
++    }
++}
++
+ /// The four indices of a closed polyline that read as a quad's corners.
+ ///
+ /// A blend band is a quadrilateral however many edges the file split its sides
