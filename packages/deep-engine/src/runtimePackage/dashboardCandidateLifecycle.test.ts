@@ -90,3 +90,48 @@ it("holds the full resource barrier and snapshots events before an asynchronous 
   resume.resolve(); expect((await pending).status).toBe("committed");
   expect(f.controller.activePage!.nodes[1]!.chart!.ir.datasets[0]!.rows[0]![0]).toBe("accepted-event");
 });
+
+it("keeps exactly one visible frame while successive packages replace it", async () => {
+  const f = fixture();
+  const first = await f.controller.publish(build(), { deviceEpoch: 1 });
+  expect(first).toMatchObject({ status: "committed" });
+  const pageA = f.controller.activePage!;
+  // 数据更新产生不同 packageHash:换包必须清掉同包页状态缓存并替换可见帧。
+  const mutation = update(pageA, 0, "successive");
+  expect((await f.controller.publish(build(), { deviceEpoch: 1,
+    expectedSource: pageA.identity, updates: [mutation] })).status).toBe("committed");
+  const pageB = f.controller.activePage!;
+  expect(pageB).not.toBe(pageA); expect(f.visible()).toBe(pageB);
+  expect(f.releasedFrames).toEqual([pageA]);
+  // 同 hash 重发布(后台刷新轨迹):页状态缓存保留,可见帧仍被新帧替换。
+  expect((await f.controller.publish(build(), { deviceEpoch: 1 })).status).toBe("committed");
+  const pageC = f.controller.activePage!;
+  expect(pageC).not.toBe(pageB); expect(f.visible()).toBe(pageC);
+  expect(f.releasedFrames).toEqual([pageA, pageB]);
+  expect(f.controller.activePage!.identity.packageHash).toBe(pageB.identity.packageHash);
+  f.controller.dispose();
+  expect(f.releasedFrames).toHaveLength(3); expect(new Set(f.released).size).toBe(27);
+});
+
+it("fails closed on bad resources both without and with an active candidate", async () => {
+  const load = fixture();
+  load.loader.load = async () => { throw new Error("corrupt resource bytes"); };
+  expect(await load.controller.publish(build(), { deviceEpoch: 1 }))
+    .toMatchObject({ status: "failed", failure: "corrupt resource bytes", releaseFailures: [] });
+  expect(load.loaded).toEqual([]); expect(load.released).toEqual([]);
+  expect(load.frames).toHaveLength(0); expect(load.controller.activePage).toBeUndefined();
+
+  const f = fixture(), source = build(); await f.controller.publish(source, { deviceEpoch: 1 });
+  const stable = f.controller.activePage, prepare = f.loader.prepare;
+  f.loader.prepare = async (item, value, signal) => {
+    if (item.resourceId === "dashboard.chart.b") throw new Error("bad chart payload");
+    return prepare(item, value, signal);
+  };
+  const result = await f.controller.publish(source, { deviceEpoch: 1 });
+  expect(result).toMatchObject({ status: "failed", failure: "bad chart payload" });
+  expect(f.controller.activePage).toBe(stable); expect(f.visible()).toBe(stable);
+  expect(f.frames).toHaveLength(1); expect(f.releasedFrames).toHaveLength(0);
+  // 释放计数 17 = 稳定候选 9 + 失败候选 8:prepare 抛错的 chart.b 从未完成预备,按既有
+  // executor 语义不进入 release 清单(与 loader.load 的对象归属一致),不是泄漏。
+  f.controller.dispose(); expect(new Set(f.released).size).toBe(17);
+});
