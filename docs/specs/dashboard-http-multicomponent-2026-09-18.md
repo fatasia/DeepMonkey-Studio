@@ -21,6 +21,13 @@
 
 `pnpm --filter @bim-studio/api typecheck` 通过；严格 tsc（dashboard-acceptance tsconfig，含新 include 4 行）通过；邻居 4 项脚本测试全过；仓库治理门禁通过。
 
+## 缺陷后续状态（2026-09-18 更新）
+
+- 缺陷 1：已根因修复——scissor 与 shader 的 letterbox 映射不一致（2cb395d），真实窗口标题可见，证据 [deep2d-title-letterbox-fix](deep2d-title-letterbox-fix-2026-09-18.md)。
+- 缺陷 2：已分层修复——捕获根按类型分派（2e1d15a）+ geometryRoot 测量原点推广为三类共用（72b52f5，产品 DOM 零改动、像素级一致），value/table/chart 全部可测。
+- 缺陷 3：轴/图例编译进行中（Native 渲染器切片）。
+- 缺陷 4：EXE 内真实输入仍归 G01 宿主。
+
 ## 下一步
 
 1. 标题合成 z 序专项（缺陷 1，渲染器层）。
