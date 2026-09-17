@@ -1755,3 +1755,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 对抗式复核修复：OIT 测试原先未真实累计 revealage，现改为 RGB+A 全通道对拍；旧 Native 回归与 README 仍写“拒绝 premultiplied / 12 管线”，已同步为当前能力；同族检索未再发现旧口径。
 - 验证：Deep Engine typecheck；聚焦 50/2 skipped；全 src 2910/41 skipped；runtime purity 通过。Native fmt/check/clippy 通过，lib 288/0/1 ignored，`alpha_pipeline` 7/7。source-size 仍只有既有 7 项历史违规，本切片无新增超限。
 - 边界：未跑 GPU 像素探针，故 C03 整卡仍为`本轮待办`；`side=back` 与 BLEND 写深度继续在冻结矩阵外。当前完成的是合同、桥、包、管线与确定性排序切片，不把结构测试冒充视觉验收。[spec](specs/de26-c03-transparency-twosided-2026-09-17.md)
+
+### 2026-09-17 DE26/A03 第二切片：Native 同源采样窗口（Codex）
+
+- 已完成：Native telemetry 输出与 TS `deep-engine.benchmark-sample-window` v1 同形的固定 8 通道窗口。窗口共用 reset 后的 `host-monotonic` 边界；`cpu-submit`、GPU frame timestamp、相邻成功呈现帧间隔输出原始样本，GPU 通道保留 `gpu-timestamp` 时钟身份。reset 同时切断窗口原点、帧间隔与 CPU/GPU 环，旧样本不能串入新窗口。
+- 诚实不可用：authoring bridge、独立 scene update/upload、compositor present、input latency 尚无可信宿主边界，固定输出空样本、0 count 与非空原因；GPU feature/readback 失败原因原样保留，绝不用 0 冒充观测。即时失败报告仍保持严格正窗口。
+- 验证：Native telemetry 5/5、telemetry GPU 2/2、全 lib 288/0/1 ignored、fmt/clippy 通过；TS schema 4/4；diff check 通过。
+- 边界：A03 整卡仍为`本轮待办`，还需 Studio/Web 消费接线以及真实输入事件→呈现帧、平台 compositor feedback；A04 只能消费 measured 样本。[spec](specs/de26-a03-native-sampling-2026-09-17.md)

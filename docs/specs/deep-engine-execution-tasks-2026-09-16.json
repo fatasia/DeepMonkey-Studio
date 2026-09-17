@@ -123,7 +123,9 @@
    "status": "本轮待办",
    "proposed": true,
    "evidence": [
-    "packages/deep-engine/src/benchmarkSampleSchema.ts"
+    "packages/deep-engine/src/benchmarkSampleSchema.ts",
+    "packages/deep-engine-native/src/telemetry_sample_window.rs",
+    "docs/specs/de26-a03-native-sampling-2026-09-17.md"
    ],
    "completed": false,
    "document": "deep-engine-tasks-foundation-2026-09-16.md#a03",
@@ -131,7 +133,7 @@
    "qualifiedDependsOn": [
     "DE26/A01"
    ],
-   "note": "TS 合同 v1(8通道/unavailable禁伪零);native telemetry_gpu 与 StudioDeepPerformance 接线待下一批"
+   "note": "TS 合同 v1 与 Native 同源窗口已接：固定8通道，CPU submit/GPU timestamp/frame interval 输出真实原始样本，其余显式 unavailable 且无伪零；Studio/Web 消费、input-latency 与 compositor present 真信号仍待接线"
   },
   {
    "id": "A04",

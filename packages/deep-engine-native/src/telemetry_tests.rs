@@ -31,6 +31,9 @@ fn reset_barrier_rejects_old_epoch_sample() {
         rings,
         frames: FrameCounts::default(),
         late_samples: 0,
+        window_started_at: Instant::now(),
+        last_presented_at: None,
+        frame_intervals: SegmentRing::new(),
         gpu_unavailable_reason: Some("test"),
         gpu: None,
     };

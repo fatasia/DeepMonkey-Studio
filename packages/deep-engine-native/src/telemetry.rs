@@ -6,6 +6,9 @@ use serde::Serialize;
 
 use crate::telemetry_gpu::{GpuFrameTiming, GpuReadback};
 
+#[path = "telemetry_sample_window.rs"]
+mod sample_window;
+
 pub const RING_CAPACITY: usize = 512;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +125,9 @@ pub struct FrameTelemetry {
     rings: [SegmentRing; 8],
     frames: FrameCounts,
     late_samples: u64,
+    window_started_at: Instant,
+    last_presented_at: Option<Instant>,
+    frame_intervals: SegmentRing,
     gpu_unavailable_reason: Option<&'static str>,
     gpu: Option<GpuFrameTiming>,
 }
@@ -137,6 +143,9 @@ impl FrameTelemetry {
             rings: std::array::from_fn(|_| SegmentRing::new()),
             frames: FrameCounts::default(),
             late_samples: 0,
+            window_started_at: Instant::now(),
+            last_presented_at: None,
+            frame_intervals: SegmentRing::new(),
             gpu_unavailable_reason: (!supported).then_some("timestamp_query_unsupported"),
             gpu: supported.then(|| GpuFrameTiming::new(device, queue, device_epoch)),
         }
@@ -163,7 +172,13 @@ impl FrameTelemetry {
             return;
         }
         match result {
-            FrameResult::Presented => self.frames.presented += 1,
+            FrameResult::Presented => {
+                self.frames.presented += 1;
+                let now = Instant::now();
+                if let Some(previous) = self.last_presented_at.replace(now) {
+                    self.frame_intervals.record(duration_ns(previous, now));
+                }
+            }
             FrameResult::Skipped => self.frames.skipped += 1,
             FrameResult::Recover => self.frames.recoveries += 1,
             FrameResult::Failed => self.frames.failed += 1,
@@ -207,6 +222,9 @@ impl FrameTelemetry {
         self.reset_generation = self.reset_generation.wrapping_add(1);
         self.frames = FrameCounts::default();
         self.late_samples = 0;
+        self.window_started_at = Instant::now();
+        self.last_presented_at = None;
+        self.frame_intervals.clear();
         for ring in &mut self.rings {
             ring.clear();
         }
@@ -237,11 +255,25 @@ impl FrameTelemetry {
             },
             |timing| timing.readback(device, queue, self.token()),
         );
+        let benchmark_sample_window = sample_window::build(
+            format!(
+                "native.device-{}.reset-{}",
+                self.device_epoch, self.reset_generation
+            ),
+            self.window_started_at.elapsed().as_secs_f64() * 1_000.0,
+            self.rings[CpuSegment::SubmitPresent.index()]
+                .samples
+                .iter()
+                .copied(),
+            self.frame_intervals.samples.iter().copied(),
+            &gpu,
+        );
         serde_json::json!({
             "schema": "deep-engine.native-telemetry", "version": 1,
             "device_epoch": self.device_epoch, "reset_generation": self.reset_generation,
             "window_capacity": RING_CAPACITY, "frames": self.frames,
             "late_cpu_samples": self.late_samples, "cpu": cpu, "gpu": gpu,
+            "benchmark_sample_window": benchmark_sample_window,
         })
     }
 
@@ -251,6 +283,10 @@ impl FrameTelemetry {
             reset_generation: self.reset_generation,
         }
     }
+}
+
+fn duration_ns(start: Instant, end: Instant) -> u64 {
+    u64::try_from(end.duration_since(start).as_nanos()).unwrap_or(u64::MAX)
 }
 
 pub(crate) fn stats_from(

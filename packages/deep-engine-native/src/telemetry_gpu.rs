@@ -70,6 +70,8 @@ pub struct GpuReadback {
     pub dropped: u64,
     pub late: u64,
     pub segments: BTreeMap<&'static str, SegmentStats>,
+    #[serde(skip)]
+    frame_samples_ms: Vec<f64>,
 }
 
 impl GpuReadback {
@@ -81,6 +83,33 @@ impl GpuReadback {
             dropped: 0,
             late: 0,
             segments: BTreeMap::new(),
+            frame_samples_ms: Vec::new(),
+        }
+    }
+
+    pub(crate) fn frame_samples_ms(&self) -> &[f64] {
+        &self.frame_samples_ms
+    }
+
+    pub(crate) fn sample_window_reason(&self) -> String {
+        if !self.frame_samples_ms.is_empty() {
+            return "measured".to_owned();
+        }
+        self.reason
+            .clone()
+            .unwrap_or_else(|| "no_gpu_timestamp_samples_in_window".to_owned())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn supported_for_test(frame_samples_ms: Vec<f64>) -> Self {
+        Self {
+            status: "supported",
+            reason: None,
+            samples: frame_samples_ms.len(),
+            dropped: 0,
+            late: 0,
+            segments: BTreeMap::new(),
+            frame_samples_ms,
         }
     }
 }
@@ -266,6 +295,10 @@ impl GpuFrameTiming {
             dropped: self.dropped,
             late,
             segments,
+            frame_samples_ms: values[GpuSegment::Frame.index()]
+                .iter()
+                .map(|ns| *ns as f64 / 1_000_000.0)
+                .collect(),
         }
     }
 
@@ -277,6 +310,7 @@ impl GpuFrameTiming {
             dropped: self.dropped,
             late: 0,
             segments: BTreeMap::new(),
+            frame_samples_ms: Vec::new(),
         }
     }
 }
