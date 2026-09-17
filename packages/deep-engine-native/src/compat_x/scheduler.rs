@@ -85,7 +85,7 @@ impl XContentScheduler {
         binding: XTickBinding,
         mut context: impl FnMut() -> XExecutionContext,
     ) -> Result<&XPublishedOutput, XProcessError> {
-        let content = bind_tick(template, binding)?;
+        let content = bind_tick(template, binding, self.config.budget)?;
         self.dispatch(&content, &mut context)
     }
 
@@ -149,9 +149,11 @@ impl XContentScheduler {
 pub fn bind_tick(
     template: &XDynamicContent,
     binding: XTickBinding,
+    budget: XBudget,
 ) -> Result<XDynamicContent, XProcessError> {
     const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
-    let original = serde_json::to_value(&template.request).map_err(io_error)?;
+    let bytes = process::encode_bounded_request(&template.request, budget)?;
+    let original = serde_json::from_slice(&bytes).map_err(io_error)?;
     if template.content_hash.algorithm != "sha256"
         || template.content_hash.value != runtime_content_sha256(&original)
     {
@@ -170,7 +172,8 @@ pub fn bind_tick(
     content.request.started_at_ms = binding.started_at_ms;
     content.request.random_seed = binding.random_seed;
     content.request.events = binding.events;
-    let value = serde_json::to_value(&content.request).map_err(io_error)?;
+    let bytes = process::encode_bounded_request(&content.request, budget)?;
+    let value = serde_json::from_slice(&bytes).map_err(io_error)?;
     content.content_hash = crate::runtime_package::RuntimeContentHash {
         algorithm: "sha256".into(),
         value: runtime_content_sha256(&value),

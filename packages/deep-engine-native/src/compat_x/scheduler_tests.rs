@@ -195,6 +195,7 @@ fn tick_rebinding_changes_only_host_inputs_and_failed_tick_keeps_lkg() {
             random_seed: 11,
             events: vec![XEvent::Key { code: XKey::Escape }],
         },
+        XBudget::default(),
     )
     .unwrap();
     assert_eq!(first.request.calls, calls);
@@ -228,6 +229,7 @@ fn tick_rebinding_changes_only_host_inputs_and_failed_tick_keeps_lkg() {
                 code: XKey::ArrowRight,
             }],
         },
+        XBudget::default(),
     )
     .unwrap();
     let mut stale_context = || XExecutionContext {
@@ -250,7 +252,8 @@ fn tick_rebinding_changes_only_host_inputs_and_failed_tick_keeps_lkg() {
                 started_at_ms: 232,
                 random_seed: 13,
                 events: vec![],
-            }
+            },
+            XBudget::default(),
         ),
         Err(XProcessError::InvalidReceipt)
     ));
@@ -262,8 +265,35 @@ fn tick_rebinding_changes_only_host_inputs_and_failed_tick_keeps_lkg() {
                 started_at_ms: 0,
                 random_seed: 0,
                 events: vec![],
-            }
+            },
+            XBudget::default(),
         )
         .is_err()
     );
+}
+
+#[test]
+fn tick_rebinding_bounds_template_depth_and_new_events_before_hashing() {
+    let binding = XTickBinding {
+        epoch: 1,
+        started_at_ms: 0,
+        random_seed: 0,
+        events: vec![],
+    };
+    let mut deep = content();
+    let mut call = XCall::ReadClock;
+    for _ in 0..17 {
+        call = XCall::Sequence(vec![call]);
+    }
+    deep.request.calls = vec![call];
+    assert!(matches!(
+        bind_tick(&deep, binding.clone(), XBudget::default()),
+        Err(XProcessError::Rejected(XRejection::CallDepthExceeded))
+    ));
+    let mut oversized = binding;
+    oversized.events = vec![XEvent::Key { code: XKey::Enter }; process::MAX_IPC_BYTES / 16];
+    assert!(matches!(
+        bind_tick(&content(), oversized, XBudget::default()),
+        Err(XProcessError::IpcBudgetExceeded)
+    ));
 }

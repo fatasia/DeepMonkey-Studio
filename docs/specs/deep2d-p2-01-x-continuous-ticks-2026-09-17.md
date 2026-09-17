@@ -10,7 +10,7 @@
 
 ## 验证
 
-- scheduler 6 项：时钟/事件消费、calls/resources 不变、损坏模板拒绝、安全整数边界、过期结果不覆盖 LKG，以及既有取消/预算/哈希门禁。
+- scheduler 7 项：时钟/事件消费、calls/resources 不变、损坏模板拒绝、安全整数边界、过期结果不覆盖 LKG，以及既有取消/预算/哈希门禁。重绑定前后的编码均复用宿主预算检查，超深模板和超大事件在 JSON 哈希分配前拒绝。
 - 产品 CLI：TypeScript display golden 连续执行 3 次，epoch 9→11，请求哈希变化，静态输出哈希相同，末次 Painter 为 1 个 fill triangle；次数 0 拒绝。
 - Native clippy 与 fmt 检查通过。
 
