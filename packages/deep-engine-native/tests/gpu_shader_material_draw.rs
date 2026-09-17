@@ -44,6 +44,8 @@ mod pipeline;
 mod player_content;
 #[path = "../src/player_shader_plan.rs"]
 mod player_shader_plan;
+#[path = "support/production_transparency_draw.rs"]
+mod production_transparency_draw;
 #[path = "../src/runtime_lkg.rs"]
 mod runtime_lkg;
 #[path = "support/shader_material_assertions.rs"]
@@ -59,6 +61,7 @@ mod shadow_pass;
 
 use deep_engine_native::runtime_package::parse_and_validate_runtime_package;
 use player_content::PlayerContent;
+use production_transparency_draw::verify_production_transparency_pixels;
 use shader_material_assertions::*;
 use shader_material_renderer::{render, render_reported};
 use std::sync::{Arc, Mutex};
@@ -203,6 +206,28 @@ fn nvidia_broken_package_is_isolated_and_dependents_fall_back_to_builtin() {
             "ShaderPackage isolation OK: isolated={:?} fallback={} custom={} changed_pixels={changed}",
             report.isolated, report.fallback_materials, report.custom_materials
         );
+    });
+}
+
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn production_transparency_pixels_match_frozen_blend_and_raster_semantics() {
+    pollster::block_on(async {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                ..Default::default()
+            })
+            .await
+            .expect("real GPU adapter");
+        println!("C03 transparency pixel adapter: {:?}", adapter.get_info());
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default())
+            .await
+            .unwrap();
+        verify_production_transparency_pixels(&device, &queue).await;
     });
 }
 

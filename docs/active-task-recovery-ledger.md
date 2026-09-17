@@ -1774,6 +1774,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 验证：Deep Engine typecheck；聚焦 50/2 skipped；全 src 2910/41 skipped；runtime purity 通过。Native fmt/check/clippy 通过，lib 288/0/1 ignored，`alpha_pipeline` 7/7。source-size 仍只有既有 7 项历史违规，本切片无新增超限。
 - 边界：未跑 GPU 像素探针，故 C03 整卡仍为`本轮待办`；`side=back` 与 BLEND 写深度继续在冻结矩阵外。当前完成的是合同、桥、包、管线与确定性排序切片，不把结构测试冒充视觉验收。[spec](specs/de26-c03-transparency-twosided-2026-09-17.md)
 
+### 2026-09-17 DE26/C03 第二切片：Native 生产 GPU 像素读回（Codex）
+
+- 直接复用生产 shader/material/mesh pipeline 做 RGBA16F 读回：straight 与等价 premultiplied framebuffer 逐字节一致（11,236 覆盖像素），straight 零 alpha 与 clear 一致；单面正反绕序仅一侧可见，双面两侧可见且像素一致。
+- RTX 4060 Laptop GPU / Vulkan / 595.79 连续两轮通过；两份 256×256 PPM 均 196,623 bytes、SHA-256 `5c045ebc6766cfab3c95ff051a4119f808b4cb0d9b3d0f236875af1a1bc36e57`。已转换并实际查看诊断图，不将单材质探针冒充产品视觉验收。
+- 测试文件回归 21/0/3 ignored，新增真实 GPU 用例两轮 1/1，clippy/fmt 通过。浏览器 WebGPU 重叠/交叉/镜像玻璃像素与双轮截图仍待办，故 C03 整卡继续`本轮待办`。[spec](specs/de26-c03-transparency-twosided-2026-09-17.md)
+
 ### 2026-09-17 DE26/A03 第二切片：Native 同源采样窗口（Codex）
 
 - 已完成：Native telemetry 输出与 TS `deep-engine.benchmark-sample-window` v1 同形的固定 8 通道窗口。窗口共用 reset 后的 `host-monotonic` 边界；`cpu-submit`、GPU frame timestamp、相邻成功呈现帧间隔输出原始样本，GPU 通道保留 `gpu-timestamp` 时钟身份。reset 同时切断窗口原点、帧间隔与 CPU/GPU 环，旧样本不能串入新窗口。

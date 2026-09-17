@@ -1,5 +1,8 @@
 # DE26/C03 第一切片 · 透明与双面状态保真（合同冻结 + Three/Web/Native 对拍）
 
+> 2026-09-17 第二切片更新：Native 生产管线真实 GPU 像素读回已完成；浏览器 WebGPU
+> 像素对拍仍未完成，因此 C03 整卡保持进行中。
+
 日期：2026-09-17。卡：DE26/C03（P1）。范围：透明语义三字段显式化、materials.ts 解除一刀切拒绝、
 weighted OIT premultiplied 语义修正、Native premultiplied blend 变体、旧包/旧上传序列不变。
 跟随 DE26/C02 的拆解模式（缺省=未请求，提供必须校验；矩阵内接受并投影，矩阵外 fail-closed）。
@@ -90,9 +93,9 @@ weighted OIT 累积满足交换律，three.js 的「先背面后正面 two-pass�
 
 ## 边界（如实）
 
-- **GPU 像素证据缺失**：两端「重叠/交叉/镜像玻璃符合各自声明」以合同级测试（位图/混合因子/
-  累积数学/排序确定性）+既有 pass 结构对拍覆盖，未跑 GPU 用例（车禁）；像素级上屏留待
-  B 系 GPU 探针切片。
+- **浏览器 GPU 像素证据仍缺失**：Native 已完成真实 Vulkan 读回；Web 端「重叠/交叉/镜像玻璃
+  符合 weighted OIT 声明」目前仍以合同级测试（位图/混合因子/累积数学/排序确定性）和 pass
+  结构对拍覆盖。浏览器 WebGPU 真实像素与双轮截图仍是 C03 的剩余验收项。
 - **`side=back` 仍矩阵外**：桥显式拒绝；解除需在批/管线键引入第三 raster 态（ccw/cw 折叠），
   留待下一子切片。
 - **`BLEND + depthWrite=true` 仍全端拒绝**：weighted OIT 合同不写深度；如需「写深度的透明」
@@ -102,3 +105,23 @@ weighted OIT 累积满足交换律，three.js 的「先背面后正面 two-pass�
   允许的未定义域）。
 - Native `alpha_summary`/遥测未新增 premultiplied 计数（避免触碰序列化面）；管线变体数已同步
   全部消费点（app 探针、content profile）。
+
+## 第二切片：Native 生产管线 GPU 像素证据
+
+测试直接调用生产 `gpu_scene_draw`、材质 shader 与 mesh pipeline，不另写测试混合器：
+
+- straight `[0.8, 0.4, 0.2] × 0.5` 与 premultiplied `[0.4, 0.2, 0.1] × 0.5`
+  的完整 256×256 RGBA16F framebuffer 逐字节相同；实际覆盖 11,236 像素。
+- straight 零 alpha 与透明清屏逐字节相同，防止 RGB 泄漏。
+- 单面正/反绕序只有一侧可见，覆盖计数 `[11236, 0]`；双面正/反绕序都可见且 framebuffer
+  逐字节相同，证明真实 raster cull 状态而非只检查管线描述。
+- NVIDIA GeForce RTX 4060 Laptop GPU、Vulkan、驱动 595.79 连续执行两轮均通过；两份
+  PPM 均为 196,623 bytes，SHA-256 都是
+  `5c045ebc6766cfab3c95ff051a4119f808b4cb0d9b3d0f236875af1a1bc36e57`。
+- 主线程将 PPM 转为 PNG 并实际查看：深灰清屏上的单一半透明暖色方片，边界完整、无遮罩泄漏。
+  这是语义诊断图，不是产品界面视觉稿；本片未新增颜色、样式或设计令牌，也不据此宣称
+  Kimi-95 产品视觉闭环完成。
+
+聚焦回归：本测试文件 21 passed / 3 个显式 real-GPU ignored；新增用例单独 `--ignored --exact`
+连续两轮 1/1；test clippy `-D warnings` 与 crate fmt 通过。证据图片位于 gitignored 的
+`test-output/de26-c03/`，代码只在设置 `DEEP_C03_EVIDENCE_PPM` 时写出，不污染正常测试。
