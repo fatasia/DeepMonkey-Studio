@@ -12,6 +12,7 @@ import {
   DashboardNativeCandidateAuthorityError,
   DashboardNativeCandidateExpiredError,
   DashboardNativeCandidateNotFoundError,
+  assertDashboardCandidatePublicationGate,
   type DashboardNativeCandidateRecord,
   type DashboardNativeCandidateRegistry,
 } from "./dashboardNativeCandidateRegistry.js";
@@ -82,6 +83,12 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
         });
       } catch (reason) {
         return sendLookupFailure(reply, reason);
+      }
+      // P0-04 下载复核:候选登记后能力报告被篡改或不再自洽时,旧记录同样不可下载。
+      try {
+        assertDashboardCandidatePublicationGate(record.candidate);
+      } catch {
+        return reply.code(409).send({ code: "candidate_invalid", message: "Dashboard 候选离线包已失效，请刷新后重试" });
       }
 
       try {

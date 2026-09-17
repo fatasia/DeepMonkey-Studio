@@ -20,6 +20,7 @@ import {
   type DashboardRuntimeArtifactCompilerOutput,
   type VerifiedDashboardRuntimeArtifact,
 } from "./dashboardRuntimeArtifactCompiler.js";
+import { assertDashboardCandidatePublicationGate } from "./dashboardNativeCandidateRegistry.js";
 
 /**
  * The only callable interface given to the isolated Native compiler worker.
@@ -141,6 +142,7 @@ export function createDashboardNativeCandidateService(
           capability,
           artifact,
         });
+        assertDashboardCandidatePublicationGate(result);
         requireCurrent(activeGeneration, controller.signal);
         current = result;
         return freezeCandidate(result);

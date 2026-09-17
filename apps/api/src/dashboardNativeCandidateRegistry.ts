@@ -2,6 +2,46 @@ import { randomUUID } from "node:crypto";
 import type { DashboardNativeCandidate } from "./dashboardNativeCandidateService.js";
 
 const DEFAULT_TTL_MS = 15 * 60 * 1_000;
+const CAPABILITY_STATUS = new Set(["supported", "degraded", "blocked"]);
+
+/**
+ * P0-04 publication gate: a candidate becomes observable and downloadable only
+ * when its capability report is bound to the exact frozen identity and every
+ * object's status is self-consistent with its deferred reasons. `supported`
+ * must not defer any field; `blocked` must state why; a report that covers no
+ * object proves nothing and stops publication. Checked when the candidate
+ * service freezes a result and again on every offline download.
+ */
+export function assertDashboardCandidatePublicationGate(candidate: DashboardNativeCandidate): void {
+  const report = candidate.capability;
+  if (report?.schema !== "deep-engine.dashboard-publication-capability" || report.schemaVersion !== 1) {
+    throw new Error("Dashboard candidate has no publication capability report");
+  }
+  const authority = candidate.authority;
+  if (report.authority.projectId !== authority.projectId || report.authority.applicationId !== authority.applicationId
+    || report.authority.publicationId !== authority.publicationId
+    || report.authority.applicationRevision !== authority.applicationRevision
+    || report.freezeManifestSha256 !== candidate.freezeManifestSha256
+    || report.sourceSemanticHash !== candidate.sourceSemanticHash
+    || report.compileGraphHash !== candidate.compileGraphHash
+    || report.targetArtifactHash !== candidate.targetArtifactHash
+    || candidate.targetArtifactHash !== candidate.artifact.artifactSha256) {
+    throw new Error("Dashboard capability report is not bound to this candidate's frozen identity");
+  }
+  if (!report.objects.length) throw new Error("Dashboard capability report covers no objects; publication has no evidence");
+  const seen = new Set<string>();
+  for (const object of report.objects) {
+    if (!object.nodeId || seen.has(object.nodeId)) throw new Error(`Dashboard capability object identity is invalid: ${object.nodeId}`);
+    seen.add(object.nodeId);
+    if (!CAPABILITY_STATUS.has(object.status)) throw new Error(`Dashboard capability object ${object.nodeId} has an unknown status`);
+    if (object.status === "blocked" && !object.deferredFields.length) {
+      throw new Error(`Dashboard capability object ${object.nodeId} is blocked without deferred reasons`);
+    }
+    if (object.status === "supported" && object.deferredFields.length) {
+      throw new Error(`Dashboard capability object ${object.nodeId} claims supported while deferring fields`);
+    }
+  }
+}
 
 /** The only fields a route may return after candidate registration. */
 export interface DashboardNativeCandidateSummary {

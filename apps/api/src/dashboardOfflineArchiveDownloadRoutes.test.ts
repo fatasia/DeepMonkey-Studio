@@ -12,13 +12,17 @@ import {
 
 const authority = { projectId: "project-1", applicationId: "application-1", publicationId: "publication-1", applicationRevision: 3, entryPageId: "page-main" } as const;
 const path = `/api/projects/${authority.projectId}/applications/${authority.applicationId}/dashboard-candidates/candidate-1/offline-archive`;
+const hashes = { freezeManifestSha256: "a".repeat(64), sourceSemanticHash: "b".repeat(64), compileGraphHash: "c".repeat(64), targetArtifactHash: "d".repeat(64), artifactSha256: "d".repeat(64) };
+const capability = { schema: "deep-engine.dashboard-publication-capability", schemaVersion: 1, authority,
+  ...hashes, compiler: { id: "native-dashboard-v5", version: "1.0.0", sha256: "e".repeat(64), configurationSha256: "f".repeat(64) },
+  evidence: { verifier: "native-dashboard-window-v1", fixtureSha256: "1".repeat(64), deviceFingerprintSha256: "2".repeat(64), fontSha256: [] },
+  objects: [{ nodeId: "widget-1", status: "degraded", deferredFields: ["widget.options"] }] } as never;
 
-function record(): DashboardNativeCandidateRecord {
+function record(overrides: { capability?: unknown } = {}): DashboardNativeCandidateRecord {
   return {
-    summary: { candidateId: "candidate-1", createdAt: "2026-09-16T12:00:00.000Z", expiresAt: "2026-09-16T12:15:00.000Z", authority,
-      freezeManifestSha256: "a".repeat(64), sourceSemanticHash: "b".repeat(64), compileGraphHash: "c".repeat(64), targetArtifactHash: "d".repeat(64), artifactSha256: "d".repeat(64) },
-    candidate: { authority, freezeManifestSha256: "a".repeat(64), sourceSemanticHash: "b".repeat(64), compileGraphHash: "c".repeat(64), targetArtifactHash: "d".repeat(64), artifactSha256: "d".repeat(64),
-      capability: {} as never, artifact: { artifact: Uint8Array.of(1, 2, 3) } as never } as never,
+    summary: { candidateId: "candidate-1", createdAt: "2026-09-16T12:00:00.000Z", expiresAt: "2026-09-16T12:15:00.000Z", authority, ...hashes },
+    candidate: { authority, ...hashes,
+      capability: (overrides.capability ?? capability) as never, artifact: { artifact: Uint8Array.of(1, 2, 3), artifactSha256: hashes.artifactSha256 } as never } as never,
   };
 }
 
@@ -80,6 +84,21 @@ describe("dashboard offline archive download routes", () => {
       await started; controller.abort(); await download;
       await vi.waitFor(() => expect(signal?.aborted).toBe(true), { timeout: 1000 });
     } finally { release(); await f.app.close(); }
+  });
+
+  it.each([
+    ["missing report", {}],
+    ["unbound report", { ...capability, targetArtifactHash: "9".repeat(64) }],
+    ["blocked without reasons", { ...capability, objects: [{ nodeId: "widget-1", status: "blocked", deferredFields: [] }] }],
+    ["no covered objects", { ...capability, objects: [] }],
+  ])("returns 409 instead of packaging a candidate whose capability gate fails: %s", async (_name, broken) => {
+    const f = await fixture({ user: editor, read: () => record({ capability: broken }) });
+    try {
+      const response = await f.app.inject({ method: "GET", url: path });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ code: "candidate_invalid" });
+      expect(f.readFreezeManifest).not.toHaveBeenCalled();
+    } finally { await f.app.close(); }
   });
 
   it("serves a single EXE using the deployment executable and verified DMDA bytes", async () => {
