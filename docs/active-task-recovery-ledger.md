@@ -2,6 +2,8 @@
 
 - 新交接入口：[主流程交接：Deep2D、Deep Engine、工业格式](codex-mainline-handoff-2026-09-17.md)。按本文阶段 0→5 执行；不使用历史百分比替代验收，Web 静态包、Deep2D P0/P1/P2/P3、Deep Engine、工业 S0→S6 分别按证据推进，DE26 后置待用户决定。
 
+- Web静态包loader修复与浏览器闭环 `b3b6bc3`：EOF与取消同时到达时以取消为准（done分支先throwIfAborted），包根解析URL二次校验origin/前缀、根地址必须以/结尾；6项聚焦测试与Web类型通过。r5静态包两轮真实浏览器15/15通过：根/子目录冷启动~1.6s、深浅主题、980窄屏、全屏按钮、篡改字体/缺资源均fail-closed错误态、pagehide取消恢复重开正常。[证据](specs/web-static-package-browser-verification-2026-09-17.md)
+
 ### 2026-09-17 主流程与 DE26 范围同步
 
 - Native纯二维紧凑前向目标已接构造/resize：无Bloom/Fog/探针/三维实例时分配1×1并保留ACES背景，其他档位不变。125项常规测试、实际窗口呈现/零尺寸恢复/2D↔3D切换通过；GPU两格式40组41,032像素等价、非均匀2,382像素正常采样通过。默认Bloom仍完整分配，不声称整个进程显存或FPS提升；完整视觉待验。[证据](specs/native-compact-forward-2026-09-17.md)
