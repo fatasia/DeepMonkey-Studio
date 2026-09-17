@@ -1,0 +1,193 @@
+diff --git a/native/crates/cad-tess/src/face.rs b/native/crates/cad-tess/src/face.rs
+--- a/native/crates/cad-tess/src/face.rs
++++ b/native/crates/cad-tess/src/face.rs
+@@ -87,6 +87,10 @@
+ #[path = "v_periodic_strip.rs"]
+ mod v_periodic_strip;
+ 
++#[path = "periodic_ring.rs"]
++mod periodic_ring;
++use periodic_ring::begin_ring_at;
++
+ /// Triangulate one face.
+ pub fn tessellate(
+     solid: &Solid,
+@@ -1726,12 +1750,7 @@ fn reseam(rings: &mut [UvLoop], holes: &mut [UvLoop], period: f64) {
+         if k == 0 || r.xyz.len() != n {
+             continue;
+         }
+-        r.uv.rotate_left(k);
+-        r.xyz.rotate_left(k);
+-        for p in &mut r.uv[n - k..] {
+-            p.u += period;
+-        }
+-        r.area = signed_area(&r.uv);
++        begin_ring_at(r, k, period);
+     }
+     onto(holes, cut);
+ }
+@@ -1932,27 +1951,6 @@ fn wrapped_region(
+                 .any(|w| (w[1].u - w[0].u).abs() < 1e-9 && at_seam(w[0].u))
+         })
+     };
+-    // Begin a wrapping ring at its own point `k` instead of its first. The
+-    // points that come round to the back belong a period on, and the ring's
+-    // repeated closing point is rebuilt from the new start.
+-    fn begin_ring_at(r: &mut UvLoop, k: usize, period: f64) {
+-        let open = r.uv.len().saturating_sub(1);
+-        if k == 0 || open < 3 {
+-            return;
+-        }
+-        let k = k % open;
+-        r.uv.truncate(open);
+-        r.xyz.truncate(open);
+-        r.uv.rotate_left(k);
+-        r.xyz.rotate_left(k);
+-        for q in r.uv.iter_mut().skip(open - k) {
+-            q.u += period;
+-        }
+-        let closing = Vec2::new(r.uv[0].u + period, r.uv[0].v);
+-        r.uv.push(closing);
+-        r.xyz.push(r.xyz[0]);
+-        r.area = signed_area(&r.uv);
+-    }
+     {
+         let tries = rings.first().map(|r| r.uv.len().saturating_sub(1)).unwrap_or(0);
+         let mut taken: Option<(usize, Vec<UvLoop>)> = None;
+diff --git a/native/crates/cad-tess/src/periodic_ring.rs b/native/crates/cad-tess/src/periodic_ring.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/cad-tess/src/periodic_ring.rs
+@@ -0,0 +1,132 @@
++//! Rotate unique ring points, then rebuild the repeated periodic endpoint.
++use super::{UvLoop, Vec2, signed_area};
++
++pub(super) fn begin_ring_at(r: &mut UvLoop, k: usize, period: f64) {
++    if k == 0 || r.uv.len() < 3 || r.uv.len() != r.xyz.len() || period <= 0.0 {
++        return;
++    }
++    let last = r.uv.last().unwrap();
++    let closed =
++        (last.u - r.uv[0].u - period).abs() < period * 1e-9 && (last.v - r.uv[0].v).abs() < 1e-9;
++    let open = r.uv.len() - usize::from(closed);
++    let k = k % open;
++    r.uv.truncate(open);
++    r.xyz.truncate(open);
++    r.uv.rotate_left(k);
++    r.xyz.rotate_left(k);
++    for q in r.uv.iter_mut().skip(open - k) {
++        q.u += period;
++    }
++    if closed {
++        r.uv.push(Vec2::new(r.uv[0].u + period, r.uv[0].v));
++        r.xyz.push(r.xyz[0]);
++    }
++    r.area = signed_area(&r.uv);
++}
++
++#[cfg(test)]
++mod tests {
++    use super::super::{Vec3, align_cuts, reseam};
++    use super::*;
++    const TAU: f64 = std::f64::consts::TAU;
++    fn ring(phase: f64, z: f64) -> UvLoop {
++        let uv: Vec<_> = (0..=55)
++            .map(|k| Vec2::new(phase + TAU * k as f64 / 55.0, z))
++            .collect();
++        let mut xyz: Vec<_> = uv
++            .iter()
++            .map(|p| Vec3::new(3.0 * p.u.cos(), 3.0 * p.u.sin(), z))
++            .collect();
++        xyz[55] = xyz[0];
++        UvLoop {
++            uv,
++            xyz,
++            area: 0.0,
++            wrap: 1,
++            travel: 1,
++        }
++    }
++    fn hole() -> UvLoop {
++        let uv = vec![
++            Vec2::new(-0.3, -5.0),
++            Vec2::new(0.3, -5.0),
++            Vec2::new(0.3, -7.0),
++            Vec2::new(-0.3, -7.0),
++        ];
++        let xyz = uv
++            .iter()
++            .map(|p| Vec3::new(3.0 * p.u.cos(), 3.0 * p.u.sin(), p.v))
++            .collect();
++        UvLoop {
++            uv,
++            xyz,
++            area: 1.2,
++            wrap: 0,
++            travel: 0,
++        }
++    }
++    fn assert_preserved(before: &UvLoop, after: &UvLoop) {
++        assert_eq!(before.xyz.len(), after.xyz.len());
++        assert_eq!(after.xyz.first(), after.xyz.last());
++        assert!((after.uv.last().unwrap().u - after.uv[0].u - TAU).abs() < 1e-12);
++        assert!(after.uv.windows(2).all(|w| w[1].u > w[0].u));
++        for p in &before.xyz {
++            assert!(after.xyz.contains(p), "lost source edge point {p:?}");
++        }
++    }
++    #[test]
++    fn reseaming_a_hole_preserves_closure_and_all_points_after_alignment() {
++        let original = vec![ring(0.0, -2.0), ring(0.025, -34.7)];
++        let mut rings = original.clone();
++        reseam(&mut rings, &mut [hole()], TAU);
++        assert_ne!(rings[0].uv[0].u, original[0].uv[0].u);
++        for (a, b) in original.iter().zip(&rings) {
++            assert_preserved(a, b);
++        }
++        align_cuts(&mut rings, TAU);
++        for (a, b) in original.iter().zip(&rings) {
++            assert_preserved(a, b);
++        }
++    }
++    #[test]
++    fn repeated_rotations_keep_the_same_unique_boundary() {
++        let original = ring(0.0, -2.0);
++        let mut moved = original.clone();
++        for k in [1, 54, 55, 73, 0, 27] {
++            begin_ring_at(&mut moved, k, TAU);
++            assert_preserved(&original, &moved);
++        }
++    }
++    #[test]
++    fn an_open_sample_ring_keeps_its_last_real_point() {
++        let mut original = ring(0.0, -2.0);
++        original.uv.pop();
++        original.xyz.pop();
++        let mut moved = original.clone();
++        begin_ring_at(&mut moved, 27, TAU);
++        assert_eq!(moved.xyz.len(), original.xyz.len());
++        for p in &original.xyz {
++            assert!(moved.xyz.contains(p));
++        }
++        assert!(moved.uv.windows(2).all(|w| w[1].u > w[0].u));
++    }
++    #[test]
++    fn no_holes_and_a_clear_cut_leave_rings_unchanged() {
++        let mut rings = vec![ring(0.0, -2.0), ring(0.0, -34.7)];
++        let original = rings.clone();
++        reseam(&mut rings, &mut [], TAU);
++        for (a, b) in original.iter().zip(&rings) {
++            assert_eq!(a.uv, b.uv);
++            assert_eq!(a.xyz, b.xyz);
++        }
++        let mut h = hole();
++        for p in &mut h.uv {
++            p.u += 2.0;
++        }
++        reseam(&mut rings, &mut [h], TAU);
++        for (a, b) in original.iter().zip(&rings) {
++            assert_eq!(a.uv, b.uv);
++            assert_eq!(a.xyz, b.xyz);
++        }
++    }
++}

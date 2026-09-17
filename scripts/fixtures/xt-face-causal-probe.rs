@@ -6,7 +6,14 @@ fn main() {
     let requested: Vec<usize> = args[1..].iter().map(|x| x.parse().unwrap()).collect();
     let (scene, report) = cad_xt::scene_from_file(&args[0], &Default::default()).unwrap();
     assert!(report.truncated.is_none());
-    let options = cad_tess::Options::default().resolve(scene.vertex_bounds().diagonal());
+    // Match the corpus runner's absolute millimetre contract, not its former
+    // model-relative preset. This probe localizes a failure; it does not certify it.
+    let options = cad_tess::Options {
+        relative: false,
+        linear_deflection: 0.005,
+        ..Default::default()
+    }
+    .resolve(scene.vertex_bounds().diagonal());
     for (g, geometry) in scene.geometry.iter().enumerate() {
         let map = &scene.source_faces[&GeometryId(g as u32)];
         let solid = geometry.brep.as_ref().unwrap();
