@@ -5,6 +5,8 @@ use xt_parser::{
     entity::{Entities, FieldVal, RawEntity},
     schema as xt,
 };
+#[path = "xt-circle-witness.rs"]
+mod circle_witness;
 
 fn ptr(e: &Entities, r: &RawEntity, slot: usize) -> usize {
     match e.fields(r).get(slot) {
@@ -76,6 +78,26 @@ fn audit(path: &Path) {
                             .expect("finite point")
                             .map(|x| x * 1000.0),
                     );
+                } else if ptr(e, fin, 2 - shift) == fin_id && ptr(e, fin, 3 - shift) == fin_id {
+                    // A vertex-free single-fin loop bounds a complete closed curve.
+                    // Do not sample a full circle for a trimmed/multi-edge arc.
+                    let edge = index[&ptr(e, fin, 6 - shift)];
+                    assert_eq!(edge.type_id, xt::EDGE);
+                    if let Some(circle) = index
+                        .get(&ptr(e, edge, 6))
+                        .filter(|r| r.type_id == xt::CIRCLE)
+                    {
+                        if let Some(samples) = vector(e, circle, 7)
+                            .zip(vector(e, circle, 8))
+                            .zip(vector(e, circle, 9))
+                            .zip(number(e, circle, 10))
+                            .and_then(|(((origin, axis), reference), radius)| {
+                                circle_witness::circle_points(origin, axis, reference, radius)
+                            })
+                        {
+                            points.extend(samples);
+                        }
+                    }
                 }
                 fin_id = ptr(e, fin, 2 - shift);
             }
