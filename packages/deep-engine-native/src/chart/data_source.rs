@@ -10,11 +10,15 @@ use std::collections::VecDeque;
 mod chart_adapter;
 mod connection;
 mod contract;
+mod http_transport;
+#[cfg(test)]
+mod http_transport_tests;
 mod idle;
 mod receive;
 
 pub use chart_adapter::payload_to_chart_message;
 pub use contract::*;
+pub use http_transport::{HttpMethod, HttpTransport, HttpTransportConfig};
 
 pub struct DataSourceMachine<T: Transport> {
     config: DataSourceConfig,
