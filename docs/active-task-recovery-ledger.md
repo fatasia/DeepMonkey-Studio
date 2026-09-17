@@ -1867,3 +1867,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 独立从 RAW FACE→SHELL→REGION→BODY 提取身份，不调用 lowering 或 tessellator；109 件与最终 GLB 精确集合及归属一致。源文件前后 SHA-256、原始审核程序与报告绑定。
 - 可复跑入口核验逐件源/产物哈希、路径限制、唯一输入输出、几何证据三角数和源面覆盖。Rust 2、Node 身份 4 与入口 3 项测试通过，主线程重跑 109 件通过。
 - 同一 BODY 内合法面标签互换仍不能靠集合识别；逐面几何对应、精度、单位/闭合性及产品接线继续本轮待办。[证据](specs/industrial-xt-source-identity-2026-09-17.md)
+
+### 2026-09-17 Deep2D P2-01 Windows LPAC 零 capability 实验（Codex）
+
+- 在既有 X IPC 与 Job 资源治理之上新增可信宿主 LPAC 入口：唯一临时 profile/目录、精确 SID RX、零 capabilities、ALL_APPLICATION_PACKAGES opt-out、仅标准流句柄与原子 Job 列表。子进程挂起创建，核验 AppContainer/SID/capability/group 后才恢复；失败不降级普通进程。
+- 主线程以静态 CRT 重建两个实验 worker，复跑 LPAC 4/4、IPC 7/7、Job 4/4、compat_x 10/10、all-target check、fmt 和 clippy 通过。真实对照覆盖双向 X 回执、宿主私有文件读写拒绝、缺失/非 PE、取消、超时与有界清理。
+- 本机网络探针在 LPAC 内 WSAStartup 返回 10107，未进入 connect；只计网络初始化负向证据。完整 TCP/UDP、IPv4/IPv6、DNS、注册表/命名对象、profile orphan 与正式静态 worker/产品接线继续本轮待办。[实验报告](specs/deep2d-p2-01-lpac-experiment-2026-09-17.md)

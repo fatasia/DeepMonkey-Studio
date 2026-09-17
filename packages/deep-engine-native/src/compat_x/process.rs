@@ -21,6 +21,10 @@ mod windows_job;
 #[cfg(windows)]
 pub use windows_job::XProcessLimits;
 
+#[cfg(windows)]
+#[path = "lpac.rs"]
+pub mod lpac;
+
 #[derive(Debug, Clone, Copy)]
 pub struct XProcessConfig {
     pub enabled: bool,

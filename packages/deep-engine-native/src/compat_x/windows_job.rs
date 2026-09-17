@@ -49,6 +49,9 @@ impl XProcessLimits {
 
 pub(super) struct ProcessJob(OwnedHandle, i64);
 impl ProcessJob {
+    pub(super) fn raw_handle(&self) -> windows_sys::Win32::Foundation::HANDLE {
+        self.0.as_raw_handle()
+    }
     pub(super) fn cpu_budget_exceeded(&self) -> io::Result<bool> {
         let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
         if unsafe {
