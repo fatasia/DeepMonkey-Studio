@@ -4,7 +4,7 @@
 
 项目使用 Three.js 0.185.1 官方 `USDLoader` 作为 USD、USDA、USDC、USDZ 的原生查看主路径。上传后保留原文件并直接生成 `viewerKind: "usd"` 的 manifest；查看器按需下载 USDLoader，不依赖外部 Provider，也不会进入 `waiting_converter`。
 
-这条路径解决的是开放场景资产的浏览、交互与发布，不把 OpenUSD 误当成 RVT、JT、XT 等工业 CAD 的通用转换器。后者仍由各自格式链路负责。
+这条路径解决的是开放场景资产的浏览、交互与发布，不把 OpenUSD 误当成 RVT、JT、X_T 等工业 CAD 的通用转换器。后者仍由各自格式链路负责。
 
 ```text
 USD / USDA / USDC / USDZ 原文件
@@ -53,4 +53,4 @@ pnpm --filter @bim-studio/api test -- src/industrialFormatWaitingAcceptance.test
 - USDLoader 是面向实时渲染的解释器，不是完整 OpenUSD stage/composition 实现。复杂 sublayer、payload、reference、variant、resolver、MaterialX、物理 schema、灯光语义和自定义 schema 需要按客户样本逐项验证。
 - 原始属性不会自动变成完整的 `properties.json`/PMI sidecar；当前可选择层级来自 Three.js 对象树，不等价于完整 USD 元数据浏览器。
 - USDZ 包必须符合官方加载器接受的根层组织方式；异常包会明确加载失败，不会回退到假几何或外部转换等待状态。
-- “支持 OpenUSD”不等于可以无损打开任意 DCC/Omniverse 场景，也不等于原生解析 RVT、JT、XT。
+- “支持 OpenUSD”不等于可以无损打开任意 DCC/Omniverse 场景，也不等于原生解析 RVT、JT、X_T。

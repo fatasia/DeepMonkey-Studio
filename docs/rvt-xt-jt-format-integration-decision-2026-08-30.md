@@ -1,4 +1,6 @@
-# RVT、Parasolid XT 与 JT 工业格式接入决策（2026-08-30）
+# RVT、Parasolid X_T 与 JT 工业格式接入决策（2026-08-30）
+
+> 后续设计：用户于 2026-09-16 要求规划三类格式的内置离线高保真支持，见 [JT、X_T、RVT 接入方案](./specs/jt-xt-rvt-offline-integration-plan-2026-09-16.md)。新文档是实施方案；本页保留历史决策与已实现能力，不表示新解析器已接入。
 
 ## 结论
 
@@ -16,7 +18,7 @@ Unity 的工业格式能力来自 Pixyz/Asset Transformer，而不是 Unity 运�
 
 ## 证据矩阵
 
-| 路径 | RVT | XT | JT | 装配/属性/PMI | 许可与部署判断 |
+| 路径 | RVT | X_T | JT | 装配/属性/PMI | 许可与部署判断 |
 | --- | --- | --- | --- | --- | --- |
 | 自研 Revit Worker | 是 | 否 | 否 | RVT 层级与属性；可输出 GLB/IFC | 代码自研，运行时需要合法 Revit；当前首选 |
 | Autodesk APS Design Automation | 是 | 否 | 否 | 由 Revit Add-in 决定 | 云服务依赖；适合无本地 Revit 的按需任务 |
@@ -39,12 +41,12 @@ Unity 的工业格式能力来自 Pixyz/Asset Transformer，而不是 Unity 运�
 ## 已落地的产品边界
 
 - 上传入口接受 `.rvt/.x_t/.x_b/.jt`。JT 会读取版本、TOC、LSG 层级、属性、材质和可安全译码的 TriStrip/TopoMesh；只有存在完整 LOD0 且生成的 GLB 通过三角几何审计时才进入 `ready`，否则停在 `waiting_converter` 且没有几何 URL。RVT/X_B 缺失 Provider 时等待；X_T 只有命中真实样本签署的 V24.1 子集才生成 GLB，其他有效文本结构保留检查证据并等待。
-- 等待状态按格式明确显示 Revit、Parasolid 或 JT 转换器，不再把 JT/XT 误导为“等待 Revit 转换机”。
+- 等待状态按格式明确显示 Revit、Parasolid 或 JT 转换器，不再把 JT/X_T 误导为“等待 Revit 转换机”。
 - `/api/converters` 返回版本、输入、结构化产物、资源上限、部署位置、检测状态和修复动作。
 - 转换任务支持提交、查询、取消、AbortSignal、输出路径约束、大小上限和 SHA-256 产物指纹。
 - Capability 与 MCP 共用 `model.conversion.catalog/submit/status/cancel`；AI 开发者不能获得任意 shell 或对象存储权限。
 - Server SDK 提供类型化的转换器目录、任务提交、列表、状态和取消方法。
-- JT/XT 正式适配器至少必须生成 `geometry.glb` 与 `hierarchy.json`；属性和 PMI 存在时分别保存在 `properties.json`、`pmi.json`。质量默认 `high`，不通过自动降质换取导入速度。
+- JT/X_T 正式适配器至少必须生成 `geometry.glb` 与 `hierarchy.json`；属性和 PMI 存在时分别保存在 `properties.json`、`pmi.json`。质量默认 `high`，不通过自动降质换取导入速度。
 
 ## 供应商验收门槛
 
