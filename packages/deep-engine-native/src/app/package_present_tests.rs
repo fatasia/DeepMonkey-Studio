@@ -193,11 +193,47 @@ impl ApplicationHandler<GpuEvent> for Probe {
                     .as_ref()
                     .unwrap()
                     .3,
-                RetryKind::Scene | RetryKind::Full
+                RetryKind::Scene | RetryKind::Full(_)
             ));
         }
         assert!(retry(&mut self.app, event_loop, Instant::now()));
         self.app.renderer.as_mut().unwrap().resize(size).unwrap();
+        if self.full {
+            full::SKIP_PRESENTATIONS.with(|remaining| remaining.set(2));
+            for _ in 0..2 {
+                assert!(retry(
+                    &mut self.app,
+                    event_loop,
+                    Instant::now() + Duration::from_secs(1)
+                ));
+                assert_eq!(
+                    self.app.next_renderer_id,
+                    next_id + 1,
+                    "skipped presentation rebuilt candidate device"
+                );
+                assert_eq!(self.published.read().unwrap().package_hash, old_hash);
+                assert_eq!(self.app.renderer.as_ref().unwrap().id(), old_id);
+            }
+            full::RECOVER_PRESENTATION.with(|recover| recover.set(true));
+            assert!(retry(
+                &mut self.app,
+                event_loop,
+                Instant::now() + Duration::from_secs(1)
+            ));
+            assert_eq!(self.app.next_renderer_id, next_id + 1);
+            assert_eq!(self.published.read().unwrap().package_hash, old_hash);
+            assert!(matches!(
+                self.app
+                    .package_live_transport
+                    .as_ref()
+                    .unwrap()
+                    .retry
+                    .as_ref()
+                    .unwrap()
+                    .3,
+                RetryKind::Full(None)
+            ));
+        }
         for _ in 0..30 {
             if !retry(
                 &mut self.app,
@@ -208,6 +244,9 @@ impl ApplicationHandler<GpuEvent> for Probe {
             }
         }
         assert_eq!(self.app.packet_coalescer.published(), 2);
+        if self.full {
+            assert_eq!(self.app.next_renderer_id, next_id + 2);
+        }
         assert_eq!(
             self.app.renderer.as_ref().unwrap().id() == old_id,
             !self.full

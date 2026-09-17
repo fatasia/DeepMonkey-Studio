@@ -25,7 +25,7 @@ const PRESENT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_milli
 enum RetryKind {
     Deep2d,
     Scene,
-    Full,
+    Full(Option<Box<Renderer>>),
 }
 
 #[path = "package_live_full.rs"]
@@ -236,7 +236,7 @@ pub(super) fn retry(
         match kind {
             RetryKind::Deep2d => apply_deep2d(app, generation, candidate),
             RetryKind::Scene => apply_incremental(app, generation, candidate),
-            RetryKind::Full => apply_full(app, generation, candidate),
+            RetryKind::Full(renderer) => full::resume(app, generation, candidate, renderer),
         }
     }
     if let Some((wake, _, _, _)) = app

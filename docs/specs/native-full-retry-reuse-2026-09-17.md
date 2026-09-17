@@ -1,0 +1,23 @@
+# Native 全包候选重试复用
+
+全包热更新在非零窗口跳帧时保留一个候选 renderer，100 ms 重试不再反复创建设备、管线和场景资源。只有实际 Presented 才发布内容与检查点。
+
+- `RetryKind::Full` 持有可选候选；新包替换 retry 时释放旧候选，邮箱最终发布守卫继续生效。
+- 零尺寸不新建设备；已有候选保留。窗口尺寸变化时丢弃候选并按新尺寸重建，不在旧 swapchain 活动时配置候选窗口。
+- 重试同步当前用户视角；`Recover` 丢弃可能失效的候选设备，下轮重建；`Failed` 不发布。
+
+## 验证
+
+Windows / RTX 4060 Laptop / Vulkan：三项 RuntimePackage GPU 测试通过。全包用例覆盖零尺寸下连续两个版本、非零窗口连续两次注入 Skipped、一次注入 Recover，以及随后真实 GPU 呈现。两次 Skipped 的 renderer 代次只增长一次；Recover 后重新增长一次。未呈现时旧 renderer、发布哈希保持不变。
+
+注入验证重试状态机，不等于实机驱动丢失。真实设备丢失、窗口尺寸变化期间的像素对拍和完整视觉验收仍待；本片不改变材质、令牌或画质设置，不宣称视觉完成。
+
+复跑：
+
+```powershell
+cargo test --locked --manifest-path packages/deep-engine-native/Cargo.toml --bin deep-engine-native app::package_live::present_tests -- --ignored
+cargo test --locked --manifest-path packages/deep-engine-native/Cargo.toml --bin deep-engine-native
+cargo clippy --locked --manifest-path packages/deep-engine-native/Cargo.toml --bin deep-engine-native -- -D warnings
+```
+
+结果：GPU 3 passed；bin 122 passed / 43 ignored；clippy 通过。上述三项 GPU 是对默认忽略项的显式执行，不将其余忽略项计为通过。

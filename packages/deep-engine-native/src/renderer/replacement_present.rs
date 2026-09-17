@@ -2,6 +2,10 @@ use super::Renderer;
 use crate::events::RenderOutcome;
 
 impl Renderer {
+    pub(crate) fn matches_surface_extent(&self, size: winit::dpi::PhysicalSize<u32>) -> bool {
+        self.size == size
+    }
+
     pub(crate) fn has_surface_extent(&self) -> bool {
         self.size.width != 0 && self.size.height != 0
     }
