@@ -12,6 +12,7 @@ fn context(epoch: u64, now_ms: u64) -> XExecutionContext {
 }
 fn request(calls: Vec<XCall>) -> XRequest {
     XRequest {
+        schema_version: X_COMPATIBILITY_SCHEMA_VERSION,
         expected_epoch: 7,
         started_at_ms: 100,
         random_seed: 42,
@@ -38,6 +39,47 @@ fn n0_lane_and_disabled_switch_never_enter_x() {
     assert_eq!(
         disabled.evaluate(CompatibilityLane::ExperimentalX, &call, context(7, 100)),
         Err(XRejection::Disabled)
+    );
+}
+
+#[test]
+fn schema_and_candidate_hashes_are_explicit_and_deterministic() {
+    let calls = vec![XCall::Sequence(vec![XCall::ReadClock, XCall::DrawRandom])];
+    let host = host(XBudget::default());
+    let first = host
+        .evaluate(
+            CompatibilityLane::ExperimentalX,
+            &request(calls.clone()),
+            context(7, 125),
+        )
+        .unwrap();
+    let second = host
+        .evaluate(
+            CompatibilityLane::ExperimentalX,
+            &request(calls),
+            context(7, 125),
+        )
+        .unwrap();
+    assert_eq!(first.request_hash(), second.request_hash());
+    assert_eq!(first.output_hash(), second.output_hash());
+    assert_eq!(
+        first.request_hash(),
+        "3949234e2c2c9f208af935a277dff1bd2f0dd4de504c147d5368ba1b0d480853"
+    );
+    assert_eq!(
+        first.output_hash(),
+        "05dde4e6e1f84655ff6662dde75e43b04059cebea550d00aa95d16c06db31437"
+    );
+
+    let mut unsupported = request(Vec::new());
+    unsupported.schema_version = X_COMPATIBILITY_SCHEMA_VERSION + 1;
+    assert_eq!(
+        host.evaluate(
+            CompatibilityLane::ExperimentalX,
+            &unsupported,
+            context(7, 100)
+        ),
+        Err(XRejection::UnsupportedSchemaVersion { received: 2 })
     );
 }
 
