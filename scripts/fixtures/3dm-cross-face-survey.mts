@@ -27,7 +27,7 @@ const records=auditBrepBoundaries(ir,baseline).shared.filter((e:any)=>!e.conform
   let sourceAudit:any;try{sourceAudit=auditSourceEdgeChain(ir,e.edge,.001);}catch(error){sourceAudit={status:'unverified',reason:String(error)};}
   return {...e,tolerance:edge.tolerance,c3:{degree:c3.degree,count:c3.controlPoints.length,rational:c3.rational},uses,sourceAudit};
 });
-const out=resolve(root,'test-output/industrial-3dm/bezier-interval-2026-09-17-v1/survey');mkdirSync(out,{recursive:true});
+const out=resolve(root,'test-output/industrial-3dm/common-knot-2026-09-17-v1/survey');mkdirSync(out,{recursive:true});
 writeFileSync(resolve(out,'survey.json'),JSON.stringify({sourceSha256,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',archiveVersion:4,metersPerUnit:.001,useBoundary:'official sample; local verification only; not redistributed',records},null,2));
 writeFileSync(resolve(out,'synchronization.json'),JSON.stringify({records:complete.sourceEdgeSynchronizations,failures:synchronizeSourceEdges(ir,complete.parts,.001).failures},null,2));
 console.log(JSON.stringify({edges:records.length,sourceBudgetConflicts:records.filter(r=>r.sourceAudit.status==='source-budget-conflict').length,

@@ -1,16 +1,19 @@
 import {evaluateSurface} from './3dm-nurbs-parameters.mjs';
+import {commonKnotBasis} from './3dm-common-knot-basis.mts';
 function check(v:unknown,m:string):asserts v {if(!v)throw Error(m);}
 const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
 /** Common rational basis gives a convex control bound; C0 knot drift adds an explicit derivative bound. */
 export function matchSourceCurve(a:any,b:any,limit:number){
-  check(a.degree===b.degree&&a.controlPoints.length===b.controlPoints.length&&a.knots.length===b.knots.length,'source-curve-basis-mismatch');
+  check(a.degree===b.degree,'source-curve-basis-mismatch');
   const normalize=(c:any)=>{const p=c.degree,d=[c.knots[p],c.knots[c.controlPoints.length]];
     check(Number.isInteger(p)&&p>0&&c.knots.length===c.controlPoints.length+p+1&&c.knots.every((x:number,i:number)=>Number.isFinite(x)&&(!i||x>=c.knots[i-1]))
       &&d[1]>d[0]&&c.knots.slice(0,p+1).every((x:number)=>x===d[0])&&c.knots.slice(-p-1).every((x:number)=>x===d[1]),'unclamped-source-curve');
     const points=c.controlPoints.map((v:number[])=>c.rational?v:[...v,1]);check(points.every((v:number[])=>v.length===4&&v.every(Number.isFinite)&&v[3]>0),'invalid-source-curve-weights');
     return {knots:c.knots.map((x:number)=>(x-d[0])/(d[1]-d[0])),points};};
-  const aa=normalize(a),bb=normalize(b);let best:any;
-  for(const reverse of [false,true]){const points=reverse?[...bb.points].reverse():bb.points,knots=reverse?[...bb.knots].reverse().map(x=>1-x):bb.knots;
+  const original=normalize(a),bb=normalize(b);let best:any;
+  for(const reverse of [false,true]){let aa=original,points=reverse?[...bb.points].reverse():bb.points,knots=reverse?[...bb.knots].reverse().map(x=>1-x):bb.knots;
+    const inserted=aa.points.length!==points.length;
+    if(inserted){const [left,right]=commonKnotBasis(a.degree,aa,{points,knots});aa=left;points=right.points;knots=right.knots;}
     const delta=Math.max(...aa.knots.map((x:number,i:number)=>Math.abs(x-knots[i])));
     let knotBound=0;
     if(delta){
@@ -24,9 +27,15 @@ export function matchSourceCurve(a:any,b:any,limit:number){
       const radius=Math.max(...points.map((p:number[])=>distance(p.slice(0,3).map(x=>x/p[3]),origin))),weights=points.map((p:number[])=>p[3]);
       knotBound=3*a.degree*radius*Math.max(...weights)/Math.min(...weights)*2*delta/minSpan;
     }
-    // Exact proportional weights only: no sampled or approximate rational identity.
-    if(!aa.points.every((p:number[],i:number)=>p[3]/aa.points[0][3]===points[i][3]/points[0][3]))continue;
-    const bound=knotBound+Math.max(...aa.points.map((p:number[],i:number)=>distance(p.slice(0,3).map(x=>x/p[3]),points[i].slice(0,3).map((x:number)=>x/points[i][3]))));
+    const aw=aa.points.map((p:number[])=>p[3]/aa.points[0][3]),bw=points.map((p:number[])=>p[3]/points[0][3]);
+    const weightDelta=Math.max(...aw.map((w,i)=>Math.abs(w-bw[i])));
+    if(weightDelta&&!inserted)continue;
+    const origin=points[0].slice(0,3).map((x:number)=>x/points[0][3]);
+    const radius=Math.max(...points.map((p:number[])=>distance(p.slice(0,3).map(x=>x/p[3]),origin)));
+    // Compare weighted control means after translating their origin: denominator
+    // variation contributes at most 2 R ||wa-wb||inf / min(wa).
+    const weightBound=2*radius*weightDelta/Math.min(...aw);
+    const bound=knotBound+weightBound+Math.max(...aa.points.map((p:number[],i:number)=>distance(p.slice(0,3).map(x=>x/p[3]),points[i].slice(0,3).map((x:number)=>x/points[i][3]))));
     if(!best||bound<best.bound)best={reverse,bound};
   }
   check(best&&best.bound<=limit,'source-curve-control-mismatch');return best as {reverse:boolean,bound:number};
