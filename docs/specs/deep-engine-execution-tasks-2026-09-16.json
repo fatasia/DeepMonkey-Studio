@@ -1,20 +1,18 @@
 {
  "schemaVersion": 1,
- "title": "Deep Engine 五平台超越执行任务",
+ "title": "Deep Engine 三引擎高价值执行任务",
  "createdAt": "2026-09-16",
  "baseline": {
   "headAtStart": "f677b78ea9a86d2f92656ddb7ae660e6824f0f0c",
   "reviewedThrough": "678d2715fab6df21087ac112441a0ffb73ba847b",
   "workingTreeDirty": true,
-  "scope": "本轮只分析与计划；当前源码快照包含并行改动",
+  "scope": "2026-09-17 高价值最小化修订；DE26 后置，待核心主流程完成后由用户决定是否执行",
   "implementationComplete": false
  },
  "targets": [
   "Three.js",
   "Babylon.js",
-  "Unity",
-  "Unreal Engine",
-  "Godot"
+  "Unity"
  ],
  "statuses": [
   "已完成",
@@ -30,18 +28,17 @@
   "E": "渲染与画质",
   "F": "动画、物理与媒体",
   "G": "二维、数据与发布",
-  "H": "工具、SDK与交付",
-  "I": "通用创作与复杂场景",
-  "V": "项目级后验收",
+  "H": "高价值工具、诊断与交付",
+  "I": "高价值复杂场景",
   "X": "综合超越的范围差距"
  },
  "tasks": [
   {
    "id": "A01",
-   "title": "冻结五引擎目标矩阵",
-   "baseline": "已有benchmarkContract与旧90%合同；没有五平台领先结论",
-   "work": "新增v2矩阵：版本/渲染器/平台/任务/必选能力/禁止退化项；分别保留公共子集和最佳质量赛道",
-   "acceptance": "五张矩阵可独立判定；未实现/未验证有固定分母；排除项不被计成通过",
+   "title": "冻结三引擎目标矩阵",
+   "baseline": "已有benchmarkContract与旧90%合同；保留Three.js、Babylon.js、Unity三引擎判定",
+   "work": "冻结版本/渲染器/平台/任务/必选能力/禁止退化项；分别保留公共子集和最佳质量赛道",
+   "acceptance": "三张矩阵可独立判定；未实现/未验证有固定分母；排除项不被计成通过",
    "negative": "删分母、改权重、缺证据均使结果无效",
    "dependsOn": [],
    "owner": "架构/性能QA",
@@ -64,7 +61,7 @@
    "document": "deep-engine-tasks-foundation-2026-09-16.md#a01",
    "qualifiedId": "DE26/A01",
    "qualifiedDependsOn": [],
-   "note": "判定合同 v2 冻结:五矩阵独立判定/固定分母/排除项不计数/权重防篡改/unlocked 永不通过;真实 verdict 待 A04/A05-07 提供版本与观测"
+   "note": "原五平台矩阵已覆盖本轮保留的三引擎；Unreal Engine与Godot不再进入DE26分母，真实verdict待A04提供观测"
   },
   {
    "id": "A02",
@@ -170,101 +167,11 @@
    ]
   },
   {
-   "id": "A05",
-   "title": "升级Unity原生基准",
-   "baseline": "UnityBenchmarkController已采立方体和帧间隔；不是完整竞品证据",
-   "work": "复用Unity bridge导入同资产；增加release player、URP档位、GPU/资源采样和固定轨迹",
-   "acceptance": "Unity版本/管线/优化设置可复现；至少一真实项目与Deep Native成对跑通",
-   "negative": "-nographics、Editor代替Player、默认未优化对手不能出胜负",
-   "dependsOn": [
-    "A02",
-    "A03"
-   ],
-   "owner": "Unity/QA",
-   "effortDays": "4–7",
-   "legacy": "tools/unity/bridge-smoke",
-   "priority": "P1",
-   "checks": "N+GPU",
-   "existingPaths": [
-    "tools/unity/bridge-smoke/Assets/UnityBenchmarkController.cs"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-foundation-2026-09-16.md#a05",
-   "qualifiedId": "DE26/A05",
-   "qualifiedDependsOn": [
-    "DE26/A02",
-    "DE26/A03"
-   ]
-  },
-  {
-   "id": "A06",
-   "title": "建立Godot原生基准",
-   "baseline": "本轮未见完整Godot成对runner",
-   "work": "新增tools下独立Godot项目，锁版本和Forward+/Compatibility档位；导入同项目、导出release并输出公共schema",
-   "acceptance": "一真实项目静态/动态/加载三case可与Native复跑",
-   "negative": "导入丢材质/单位、VSync限制、脚本计时代替GPU标无效",
-   "dependsOn": [
-    "A02",
-    "A03"
-   ],
-   "owner": "Godot/QA",
-   "effortDays": "4–7",
-   "legacy": "D25新adapter",
-   "priority": "P1",
-   "checks": "N+GPU",
-   "existingPaths": [
-    "tools"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-foundation-2026-09-16.md#a06",
-   "qualifiedId": "DE26/A06",
-   "qualifiedDependsOn": [
-    "DE26/A02",
-    "DE26/A03"
-   ]
-  },
-  {
-   "id": "A07",
-   "title": "建立UE原生基准",
-   "baseline": "本轮未见完整UE成对runner",
-   "work": "新增独立UE benchmark工程；固定Lumen/Nanite/VSM设置，区分公共子集和UE最佳质量，使用打包产物",
-   "acceptance": "一真实项目含相机轨迹和完整质量声明；捕获加载、帧尾延迟、显存",
-   "negative": "关Lumen得到的速度不能记入Lumen质量赛道；无可运行安装记录前置阻塞",
-   "dependsOn": [
-    "A02",
-    "A03"
-   ],
-   "owner": "UE/QA",
-   "effortDays": "5–8",
-   "legacy": "D25新adapter",
-   "priority": "P1",
-   "checks": "N+GPU",
-   "existingPaths": [
-    "tools"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-foundation-2026-09-16.md#a07",
-   "qualifiedId": "DE26/A07",
-   "qualifiedDependsOn": [
-    "DE26/A02",
-    "DE26/A03"
-   ]
-  },
-  {
    "id": "A08",
    "title": "自动生成证据与差距报告",
    "baseline": "旧报告与README存在状态漂移",
    "work": "从矩阵/原始结果/源码构建身份生成报告；记录运行日期、commit+dirty文件hash、设备、置信区间和旧证据失效原因",
-   "acceptance": "同输入同结论；五对手独立结论；缺项显式未验证，链接可复跑",
+   "acceptance": "同输入同结论；三对手独立结论；缺项显式未验证，链接可复跑",
    "negative": "旧EXE/新包混用、局部基准冒充整帧、调分母都被校验拒绝",
    "dependsOn": [
     "A01",
@@ -885,71 +792,6 @@
    ]
   },
   {
-   "id": "D02",
-   "title": "Native网格BVH精确拾取",
-   "baseline": "player_picking逐三角，Web已有three-mesh-bvh经验",
-   "work": "网格按内容hash缓存BVH；D01粗选后局部射线查询，再转换f64世界点",
-   "acceptance": "命中ID/点/近远裁剪与旧参考一致；冻结大模型P95与内存基准",
-   "negative": "退化三角、镜像、透明mask、LOD选择、取消构建和非法索引覆盖",
-   "dependsOn": [
-    "D01",
-    "C01"
-   ],
-   "owner": "空间/Native",
-   "effortDays": "4–7",
-   "legacy": "D11；旧CPU pick作参考",
-   "priority": "P0",
-   "checks": "N+BENCH+GPU",
-   "existingPaths": [
-    "packages/deep-engine-native/src/player_picking.rs",
-    "apps/web/src/viewer/ordinaryPickingRaycast.ts"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-foundation-2026-09-16.md#d02",
-   "qualifiedId": "DE26/D02",
-   "qualifiedDependsOn": [
-    "DE26/D01",
-    "DE26/C01"
-   ]
-  },
-  {
-   "id": "D03",
-   "title": "统一剖切渲染和拾取",
-   "baseline": "Native有单平面工具，Three材质clipping被拒绝",
-   "work": "冻结世界剖切平面/盒合同；接Three桥、Web pass、Native pass与拾取过滤；先一平面后盒",
-   "acceptance": "切掉部分不再可选；阴影按声明一致，保存重载/跨原点不漂移",
-   "negative": "平面反转、盒退化、边界epsilon、透明与蒙皮交叉覆盖",
-   "dependsOn": [
-    "D02",
-    "B01",
-    "C03"
-   ],
-   "owner": "交互/图形",
-   "effortDays": "5–8",
-   "legacy": "D12；clipping",
-   "priority": "P0",
-   "checks": "T+N+W+GPU",
-   "existingPaths": [
-    "packages/deep-engine/src/threeBridge/materials.ts",
-    "packages/deep-engine-native/src/player_state.rs",
-    "packages/deep-engine-native/src/shadow_map"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-foundation-2026-09-16.md#d03",
-   "qualifiedId": "DE26/D03",
-   "qualifiedDependsOn": [
-    "DE26/D02",
-    "DE26/B01",
-    "DE26/C03"
-   ]
-  },
-  {
    "id": "D04",
    "title": "连续重基点与持久标注",
    "baseline": "已有十亿偏移与离散重载证据；连续运动/世界标注仍待",
@@ -957,8 +799,6 @@
    "acceptance": "同进程连续越界轨迹通过既有误差预算；保存恢复同世界位置",
    "negative": "跨原点时旋转、编辑、失败候选、单位转换与局部顶点原始精度覆盖",
    "dependsOn": [
-    "D02",
-    "D03",
     "B06"
    ],
    "owner": "空间/运行时",
@@ -978,8 +818,6 @@
    "document": "deep-engine-tasks-foundation-2026-09-16.md#d04",
    "qualifiedId": "DE26/D04",
    "qualifiedDependsOn": [
-    "DE26/D02",
-    "DE26/D03",
     "DE26/B06"
    ]
   },
@@ -1025,9 +863,7 @@
    "negative": "Hi-Z旧历史、快速相机、变形bounds、间接缓冲扩容不漏画",
    "dependsOn": [
     "D05",
-    "C02",
-    "D03",
-    "F02"
+    "C02"
    ],
    "owner": "GPU几何",
    "effortDays": "5–8",
@@ -1047,77 +883,7 @@
    "qualifiedId": "DE26/D06",
    "qualifiedDependsOn": [
     "DE26/D05",
-    "DE26/C02",
-    "DE26/D03",
-    "DE26/F02"
-   ]
-  },
-  {
-   "id": "D07",
-   "title": "独立选择与变换任务流",
-   "baseline": "Studio工具复用Three，Native有基础选择；不等同独立编辑器",
-   "work": "抽取选择命令/多选/隐藏隔离/定位和变换撤销为宿主中立服务；接Web/Native最小面板",
-   "acceptance": "相同命令回放两端对象状态一致；重载/切后端不丢选择或未保存变更",
-   "negative": "隐藏对象、框选边界、锁定对象、空点、拖拽取消/焦点切换覆盖",
-   "dependsOn": [
-    "B01",
-    "D02",
-    "D03"
-   ],
-   "owner": "编辑器/Native",
-   "effortDays": "5–8",
-   "legacy": "D11/D12",
-   "priority": "P1",
-   "checks": "T+N+W+WEB",
-   "existingPaths": [
-    "apps/web/src/viewer/viewerEngineInteraction.ts",
-    "packages/deep-engine-native/src/events.rs",
-    "packages/deep-engine-native/src/player_state.rs"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-foundation-2026-09-16.md#d07",
-   "qualifiedId": "DE26/D07",
-   "qualifiedDependsOn": [
-    "DE26/B01",
-    "DE26/D02",
-    "DE26/D03"
-   ]
-  },
-  {
-   "id": "D08",
-   "title": "工程测量与精确语义",
-   "baseline": "已有点距和f64世界点；渲染LOD不应决定工程尺寸",
-   "work": "先交付角度/面积和面边吸附；标明网格/精确几何来源，接单位/公差与持久化",
-   "acceptance": "已知尺寸样本误差小于预冻结预算；LOD变化不改变权威测量",
-   "negative": "非共面面积、退化边、源精度不足、尺度/单位错误不能给假精确值",
-   "dependsOn": [
-    "D04",
-    "D07",
-    "C08"
-   ],
-   "owner": "工业几何/交互",
-   "effortDays": "5–8",
-   "legacy": "D12；格式精度报告",
-   "priority": "P2",
-   "checks": "T+N+W+WEB",
-   "existingPaths": [
-    "packages/deep-engine-native/src/player_measurement.rs",
-    "apps/web/src/viewer/viewerEngineMeasurements.ts",
-    "packages/parametric-modeling-plugin"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-foundation-2026-09-16.md#d08",
-   "qualifiedId": "DE26/D08",
-   "qualifiedDependsOn": [
-    "DE26/D04",
-    "DE26/D07",
-    "DE26/C08"
+    "DE26/C02"
    ]
   },
   {
@@ -1257,8 +1023,7 @@
    "negative": "薄面/尺度跨度、镜像、级联边界、缓存脏漏和剖切覆盖",
    "dependsOn": [
     "E01",
-    "B05",
-    "D03"
+    "B05"
    ],
    "owner": "图形",
    "effortDays": "5–8",
@@ -1278,8 +1043,7 @@
    "qualifiedId": "DE26/E05",
    "qualifiedDependsOn": [
     "DE26/E01",
-    "DE26/B05",
-    "DE26/D03"
+    "DE26/B05"
    ]
   },
   {
@@ -1290,8 +1054,7 @@
    "acceptance": "固定运动视频拖影/闪烁满足阈值；AA切换不影响选择与细节识别",
    "negative": "遮挡显露、暂停恢复、resize、曝光突变、低帧率覆盖",
    "dependsOn": [
-    "E01",
-    "F02"
+    "E01"
    ],
    "owner": "图形/QA",
    "effortDays": "4–7",
@@ -1309,8 +1072,7 @@
    "document": "deep-engine-tasks-product-2026-09-16.md#e06",
    "qualifiedId": "DE26/E06",
    "qualifiedDependsOn": [
-    "DE26/E01",
-    "DE26/F02"
+    "DE26/E01"
    ]
   },
   {
@@ -1414,69 +1176,6 @@
    ]
   },
   {
-   "id": "F02",
-   "title": "蒙皮Morph与变形边界",
-   "baseline": "GPU skin/morph/deformation已存在且Studio有动画桥测试",
-   "work": "接同源动画包到两端变形，维护前帧姿态、bounds和shadow变形；冻结组合能力",
-   "acceptance": "三组skin/morph/组合样本同时间pose相符；剔除与motion不漏变形",
-   "negative": "权重异常、骨骼丢失、负缩放、重载跳时、buffer扩容覆盖",
-   "dependsOn": [
-    "F01",
-    "C02"
-   ],
-   "owner": "动画/GPU",
-   "effortDays": "6–10",
-   "legacy": "D13；已有GPU deformation",
-   "priority": "P1",
-   "checks": "T+N+GPU",
-   "existingPaths": [
-    "packages/deep-engine/src/webgpu/gpuSkinning.ts",
-    "packages/deep-engine/src/webgpu/gpuMorphDeformation.ts",
-    "packages/deep-engine-native/src/renderer"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#f02",
-   "qualifiedId": "DE26/F02",
-   "qualifiedDependsOn": [
-    "DE26/F01",
-    "DE26/C02"
-   ]
-  },
-  {
-   "id": "F03",
-   "title": "动画状态机最小可用切片",
-   "baseline": "mixer支持层/混合，未验证完整状态机编辑产品",
-   "work": "增加显式状态/条件/过渡资源，先idle/run/fault机械案例，接轻量编辑和运行诊断",
-   "acceptance": "转移确定、blend可查、导出重载一致；状态机不持有Three对象",
-   "negative": "循环过渡、缺clip、相同tick多条件、取消过渡恢复覆盖",
-   "dependsOn": [
-    "F01",
-    "H01"
-   ],
-   "owner": "动画/工具",
-   "effortDays": "5–8",
-   "legacy": "AnimationMixer复用",
-   "priority": "P2",
-   "checks": "T+N+W+WEB",
-   "existingPaths": [
-    "packages/deep-engine/src/animation",
-    "apps/web/src/components"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#f03",
-   "qualifiedId": "DE26/F03",
-   "qualifiedDependsOn": [
-    "DE26/F01",
-    "DE26/H01"
-   ]
-  },
-  {
    "id": "F04",
    "title": "PhysicsWorld宿主中立接线",
    "baseline": "Web已Rapier固定步进、cuboid刚体",
@@ -1511,12 +1210,11 @@
    "id": "F05",
    "title": "机械约束与碰撞工具",
    "baseline": "Web示例主要cuboid；工业仿真另有模块",
-   "work": "在F04上增加一个铰链机械单元的运动学/关节/凸体与碰撞调试视图；复用现有workcell数据",
+   "work": "在F04上增加一个铰链机械单元的运动学、关节、凸体与碰撞诊断；复用现有workcell数据和既有选择工具",
    "acceptance": "范围/限位/碰撞结果可追溯，参数编辑可保存；与渲染视觉同步",
    "negative": "关节闭链非法、CCD高速、穿透初态、缩放不支持明确报错",
    "dependsOn": [
-    "F04",
-    "D07"
+    "F04"
    ],
    "owner": "物理/工业",
    "effortDays": "6–10",
@@ -1535,103 +1233,7 @@
    "document": "deep-engine-tasks-product-2026-09-16.md#f05",
    "qualifiedId": "DE26/F05",
    "qualifiedDependsOn": [
-    "DE26/F04",
-    "DE26/D07"
-   ]
-  },
-  {
-   "id": "F06",
-   "title": "导航与碰撞漫游跨端",
-   "baseline": "Studio有navigation工具，Deep独立与Native覆盖待证",
-   "work": "抽取轨道/漫游输入动作，接碰撞胶囊与可达路径；首片单层厂房路线",
-   "acceptance": "相同路径任务两端可走，焦点/速度/碰撞反馈明确",
-   "negative": "卡墙、楼梯/坡度、加载区缺几何、失焦、传送覆盖",
-   "dependsOn": [
-    "D01",
-    "D07",
-    "F04"
-   ],
-   "owner": "交互/空间",
-   "effortDays": "5–8",
-   "legacy": "D11；navigation",
-   "priority": "P2",
-   "checks": "T+N+W+WEB",
-   "existingPaths": [
-    "apps/web/src/viewer/viewerEngineNavigationTools.ts",
-    "packages/deep-engine-native/src/player_state.rs"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#f06",
-   "qualifiedId": "DE26/F06",
-   "qualifiedDependsOn": [
-    "DE26/D01",
-    "DE26/D07",
     "DE26/F04"
-   ]
-  },
-  {
-   "id": "F07",
-   "title": "粒子预设编辑与数据驱动",
-   "baseline": "已有GPU粒子和告警/扩散/流线基础",
-   "work": "把一个告警/流向发射器做成版本资源，参数编辑→数据绑定→Web/Native能力消费",
-   "acceptance": "同seed行为可回放；包声明和实际支持匹配，实例预算可见",
-   "negative": "过量粒子、绑定坏值、切场景、暂停/恢复和设备丢失释放覆盖",
-   "dependsOn": [
-    "B05",
-    "G06"
-   ],
-   "owner": "VFX/产品",
-   "effortDays": "5–8",
-   "legacy": "gpuParticleRuntime；Deep2D行为",
-   "priority": "P2",
-   "checks": "T+N+W+GPU",
-   "existingPaths": [
-    "packages/deep-engine/src/webgpu/gpuParticleRuntime.ts",
-    "apps/web/src/components"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#f07",
-   "qualifiedId": "DE26/F07",
-   "qualifiedDependsOn": [
-    "DE26/B05",
-    "DE26/G06"
-   ]
-  },
-  {
-   "id": "F08",
-   "title": "媒体与XR能力首个验证",
-   "baseline": "Web已有spatialAudio/xrSession，不等于Deep/Native完整支持",
-   "work": "先核对并接一个空间音源与视频纹理到Deep；XR单独验证WebGPU支持的设备路径，未支持准确降级",
-   "acceptance": "媒体生命周期与离线资源可追踪；XR报告真实设备、后端、输入路径，缺设备保持未验证",
-   "negative": "权限拒绝、解码失败、音频焦点、XR session退出/设备丢失覆盖",
-   "dependsOn": [
-    "E08",
-    "H06"
-   ],
-   "owner": "媒体/XR",
-   "effortDays": "5–8",
-   "legacy": "viewerEngineSpatialAudio/xrSession",
-   "priority": "P2",
-   "checks": "W+GPU+WEB",
-   "existingPaths": [
-    "apps/web/src/viewer/viewerEngineSpatialAudio.ts",
-    "apps/web/src/viewer/xrSession.test.ts"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#f08",
-   "qualifiedId": "DE26/F08",
-   "qualifiedDependsOn": [
-    "DE26/E08",
-    "DE26/H06"
    ]
   },
   {
@@ -1771,8 +1373,7 @@
    "acceptance": "浏览器落盘hash=验证/启动hash；数据/字体完整离线，多页动态图表可运行",
    "negative": "取消下载、坏包、历史重试、撤回后访问、断网重启与字体缺失覆盖",
    "dependsOn": [
-    "G04",
-    "H06"
+    "G04"
    ],
    "owner": "发布/Web/QA",
    "effortDays": "4–7",
@@ -1791,8 +1392,7 @@
    "document": "deep-engine-tasks-product-2026-09-16.md#g05",
    "qualifiedId": "DE26/G05",
    "qualifiedDependsOn": [
-    "DE26/G04",
-    "DE26/H06"
+    "DE26/G04"
    ]
   },
   {
@@ -1896,38 +1496,6 @@
    ]
   },
   {
-   "id": "H01",
-   "title": "独立SDK最小消费体验",
-   "baseline": "private引擎包和scene-sdk已有，独立消费者覆盖不足",
-   "work": "新增SDK consumer示例完成加载/相机/选择/更新/释放/恢复；清晰公开入口与版本策略",
-   "acceptance": "Studio外空项目可构建运行；只引所需模块，API错误可定位",
-   "negative": "多实例、dispose两次、热重载、SSR误导入、取消加载覆盖",
-   "dependsOn": [
-    "B01",
-    "C01"
-   ],
-   "owner": "SDK/工具",
-   "effortDays": "4–6",
-   "legacy": "gate:sdk-consumer复用",
-   "priority": "P1",
-   "checks": "T+W+SDK",
-   "existingPaths": [
-    "packages/scene-sdk",
-    "packages/deep-engine/package.json",
-    "scripts/gate-sdk-consumer.mjs"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#h01",
-   "qualifiedId": "DE26/H01",
-   "qualifiedDependsOn": [
-    "DE26/B01",
-    "DE26/C01"
-   ]
-  },
-  {
    "id": "H02",
    "title": "对象到GPU的诊断Inspector",
    "baseline": "Studio诊断/FrameMetrics已有",
@@ -1936,8 +1504,7 @@
    "negative": "已删除对象、设备重建、共享资源、无GPU统计不能展示假值",
    "dependsOn": [
     "B02",
-    "A03",
-    "D07"
+    "A03"
    ],
    "owner": "工具/Web",
    "effortDays": "4–7",
@@ -1956,8 +1523,7 @@
    "qualifiedId": "DE26/H02",
    "qualifiedDependsOn": [
     "DE26/B02",
-    "DE26/A03",
-    "DE26/D07"
+    "DE26/A03"
    ]
   },
   {
@@ -2026,78 +1592,13 @@
    ]
   },
   {
-   "id": "H05",
-   "title": "行为命令与插件生命周期",
-   "baseline": "shared-scene-script-protocol/scene-sdk与Native行为总线已存在",
-   "work": "冻结一个高频插件能力接口，接选择→告警定位命令和撤销；权限/预算/版本检查复用现有合同",
-   "acceptance": "Web/Native支持集合可枚举；插件卸载取消全部在途命令，事件回放一致",
-   "negative": "ID耗尽/复用、迟到settle、权限缺失、插件崩溃、预算溢出覆盖",
-   "dependsOn": [
-    "B01",
-    "G06",
-    "H01"
-   ],
-   "owner": "SDK/运行时",
-   "effortDays": "5–8",
-   "legacy": "P1-21/22；共享脚本协议",
-   "priority": "P1",
-   "checks": "T+N+SDK+INTEGRATION",
-   "existingPaths": [
-    "packages/contracts/src",
-    "packages/scene-sdk",
-    "packages/deep-engine-native/src/behavior_ir"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#h05",
-   "qualifiedId": "DE26/H05",
-   "qualifiedDependsOn": [
-    "DE26/B01",
-    "DE26/G06",
-    "DE26/H01"
-   ]
-  },
-  {
-   "id": "H06",
-   "title": "Windows可分发运行包",
-   "baseline": "已有portable脚本/ZIP launcher/哈希与窗口验证",
-   "work": "绑定EXE/运行包/字体/解码器版本，补干净Windows离线启动与文件关联/启动诊断；签名环境明确外部前置",
-   "acceptance": "无开发工具机器可解压启动；非ASCII路径/DPI/缺资源报错可操作",
-   "negative": "EXE/包错配、临时目录失败、杀进程、运行依赖缺失覆盖",
-   "dependsOn": [
-    "G01"
-   ],
-   "owner": "发布/Native/QA",
-   "effortDays": "4–7",
-   "legacy": "D20/D21",
-   "priority": "P1",
-   "checks": "N+INTEGRATION+WEB",
-   "existingPaths": [
-    "packages/deep-engine-native/scripts",
-    "scripts/run-scene-client-native.mjs",
-    "packages/deep-engine-native/src/player_cli.rs"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#h06",
-   "qualifiedId": "DE26/H06",
-   "qualifiedDependsOn": [
-    "DE26/G01"
-   ]
-  },
-  {
    "id": "H07",
    "title": "增量更新与原子回滚",
-   "baseline": "内容hash/包校验/LKG可复用，完整安装更新缺证据",
-   "work": "首片Windows单用户更新：下载/校验/候选启动/原子切换/失败回退；复用现有资源缓存",
-   "acceptance": "升级前后用户数据保留；失败回到旧EXE+旧包匹配版本，可离线再次启动",
+   "baseline": "内容hash、包校验、LKG与现有桌面分发边界可复用",
+   "work": "只补高价值稳定链：下载、校验、候选启动、原子切换、失败回退；不重做安装器和已有发布功能",
+   "acceptance": "升级前后用户数据保留；失败回到旧EXE与旧包匹配版本，可离线再次启动",
    "negative": "断电/磁盘满/坏签名/并发启动/版本降级/清理失败覆盖",
    "dependsOn": [
-    "H06",
     "G05",
     "C07"
    ],
@@ -2118,140 +1619,8 @@
    "document": "deep-engine-tasks-product-2026-09-16.md#h07",
    "qualifiedId": "DE26/H07",
    "qualifiedDependsOn": [
-    "DE26/H06",
     "DE26/G05",
     "DE26/C07"
-   ]
-  },
-  {
-   "id": "H08",
-   "title": "AI可撤销创作与诊断首片",
-   "baseline": "平台已有AI/工业编排，不代表引擎特性领先",
-   "work": "让一个自然语言任务生成受约束场景命令diff，预检→应用→撤销；首片批量告警着色/定位",
-   "acceptance": "固定任务集记录成功率、人工修正和耗时；模型不在帧循环执行",
-   "negative": "对象幻觉、越权操作、过期revision、错误材质与超时拒绝变更",
-   "dependsOn": [
-    "H05",
-    "H02"
-   ],
-   "owner": "AI/产品/QA",
-   "effortDays": "4–7",
-   "legacy": "复用现有AI/industrial-agent-orchestrator",
-   "priority": "P2",
-   "checks": "T+A+W+WEB",
-   "existingPaths": [
-    "packages/industrial-agent-orchestrator",
-    "apps/web/src/ai",
-    "apps/api/src/ai"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#h08",
-   "qualifiedId": "DE26/H08",
-   "qualifiedDependsOn": [
-    "DE26/H05",
-    "DE26/H02"
-   ]
-  },
-  {
-   "id": "I01",
-   "title": "Prefab实例与覆盖编辑",
-   "baseline": "平台prefab模块已有；未核实Deep跨端完整实例覆盖语义",
-   "work": "复用现有prefab定义，冻结实例override/源更新/重置合同；首片设备模板更换后保留实例数据绑定",
-   "acceptance": "模板→百实例→源更新→单实例覆盖→撤销→发布两端一致",
-   "negative": "源删除、循环嵌套、冲突override、稳定ID变化和共享材质覆盖",
-   "dependsOn": [
-    "B01",
-    "D07",
-    "H01"
-   ],
-   "owner": "编辑器/运行时",
-   "effortDays": "5–8",
-   "legacy": "复用apps/web/src/prefabs",
-   "priority": "P2",
-   "checks": "T+N+W+WEB",
-   "existingPaths": [
-    "apps/web/src/prefabs",
-    "packages/studio-core/src",
-    "packages/deep-engine/src/scene"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#i01",
-   "qualifiedId": "DE26/I01",
-   "qualifiedDependsOn": [
-    "DE26/B01",
-    "DE26/D07",
-    "DE26/H01"
-   ]
-  },
-  {
-   "id": "I02",
-   "title": "多人编辑版本冲突与恢复",
-   "baseline": "已有保存revision与发布CAS；未核实引擎中立协作产品",
-   "work": "首片两个会话同时改同一设备，复用服务版本机制，提供冲突diff/重试/撤销；先不新建CRDT全套",
-   "acceptance": "无静默覆盖；离线变更重连可恢复；作者命令与发布快照可追溯",
-   "negative": "重复消息、乱序、重连、权限撤销、删除与编辑竞争覆盖",
-   "dependsOn": [
-    "B01",
-    "H05",
-    "G03"
-   ],
-   "owner": "编辑器/API",
-   "effortDays": "5–8",
-   "legacy": "现有协作/保存路径先盘点",
-   "priority": "P2",
-   "checks": "T+A+W+INTEGRATION",
-   "existingPaths": [
-    "apps/api/src",
-    "packages/contracts/src",
-    "apps/web/src/controllers"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#i02",
-   "qualifiedId": "DE26/I02",
-   "qualifiedDependsOn": [
-    "DE26/B01",
-    "DE26/H05",
-    "DE26/G03"
-   ]
-  },
-  {
-   "id": "I03",
-   "title": "程序几何到工业可编辑资产",
-   "baseline": "已有parametric-modeling与工程格式模块",
-   "work": "首片参数化管道/孔洞几何生成，复用现有几何内核，接修改/属性/剖切/发布；只声明经验证拓扑范围",
-   "acceptance": "参数变化保持构件身份与材质；尺寸和网格质量可复算",
-   "negative": "退化参数、自交、单位不符、几何失败回退和取消覆盖",
-   "dependsOn": [
-    "C08",
-    "D08"
-   ],
-   "owner": "工业几何/产品",
-   "effortDays": "6–10",
-   "legacy": "parametric-modeling-plugin；格式计划",
-   "priority": "P2",
-   "checks": "T+N+W+GPU",
-   "existingPaths": [
-    "packages/parametric-modeling-plugin",
-    "apps/web/src/optimizer"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#i03",
-   "qualifiedId": "DE26/I03",
-   "qualifiedDependsOn": [
-    "DE26/C08",
-    "DE26/D08"
    ]
   },
   {
@@ -2289,14 +1658,13 @@
   },
   {
    "id": "I05",
-   "title": "骨骼重定向与双骨IK",
-   "baseline": "已有mixer/skinning，未核实完整重定向/IK工作流",
-   "work": "首片双骨IK与两骨架映射，显示约束诊断并打包映射；与F03状态机独立插拔",
+   "title": "双骨IK与骨骼映射最小切片",
+   "baseline": "已有mixer/skinning，缺可复用的双骨IK与最小骨架映射证据",
+   "work": "只实现双骨IK与两骨架映射，保留关节限位、约束诊断和可打包映射；不引入完整动画状态机",
    "acceptance": "端点误差在预冻结容差内，保持关节限位；两端同姿态",
    "negative": "骨长0、不可达目标、镜像骨架、缺骨和过渡中切换覆盖",
    "dependsOn": [
-    "F02",
-    "F03"
+    "F01"
    ],
    "owner": "动画/工具",
    "effortDays": "6–10",
@@ -2314,41 +1682,7 @@
    "document": "deep-engine-tasks-product-2026-09-16.md#i05",
    "qualifiedId": "DE26/I05",
    "qualifiedDependsOn": [
-    "DE26/F02",
-    "DE26/F03"
-   ]
-  },
-  {
-   "id": "I06",
-   "title": "时间轴与媒体事件轨",
-   "baseline": "Studio timeline/空间音频已有，跨端完整电影/演示工作流未证",
-   "work": "复用timeline，首片相机+TRS+告警+音频轨同步，支持scrub/暂停/循环并发布",
-   "acceptance": "固定时刻状态可回放；跳转不重复外部副作用，媒体不同步可诊断",
-   "negative": "反向跳转、loop边界、缺媒体、帧率抖动/失焦覆盖",
-   "dependsOn": [
-    "F01",
-    "F08",
-    "H05"
-   ],
-   "owner": "动画/媒体/工具",
-   "effortDays": "5–8",
-   "legacy": "viewerEngineTimelineRuntime",
-   "priority": "P2",
-   "checks": "T+N+W+WEB",
-   "existingPaths": [
-    "apps/web/src/viewer/viewerEngineTimelineRuntime.ts",
-    "packages/deep-engine/src/animation"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#i06",
-   "qualifiedId": "DE26/I06",
-   "qualifiedDependsOn": [
-    "DE26/F01",
-    "DE26/F08",
-    "DE26/H05"
+    "DE26/F01"
    ]
   },
   {
@@ -2382,262 +1716,6 @@
     "DE26/H02",
     "DE26/H03",
     "DE26/B06"
-   ]
-  },
-  {
-   "id": "I08",
-   "title": "误差受控的层级几何生成",
-   "baseline": "meshlet/LOD运行已有，不等于Nanite连续层级系统",
-   "work": "复用bake，首片离线生成误差有界的cluster层级并保留边界/构件映射；接D06选择器",
-   "acceptance": "相邻块不裂缝，误差随屏幕像素预算受控；构建时间/缓存大小/运行收益有证据",
-   "negative": "薄壁/小孔/非流形/材质边界/跨块边界不被过度简化",
-   "dependsOn": [
-    "C07",
-    "D06"
-   ],
-   "owner": "几何/GPU",
-   "effortDays": "8–12",
-   "legacy": "Nanite Lite深度；不冒充完整Nanite",
-   "priority": "P2",
-   "checks": "T+N+GPU+BENCH",
-   "existingPaths": [
-    "packages/deep-engine/src/geometry",
-    "packages/deep-engine/src/assetBakePlan.ts"
-   ],
-   "status": "本轮待办",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-product-2026-09-16.md#i08",
-   "qualifiedId": "DE26/I08",
-   "qualifiedDependsOn": [
-    "DE26/C07",
-    "DE26/D06"
-   ]
-  },
-  {
-   "id": "V01",
-   "title": "Web引擎逐对手胜出验收",
-   "baseline": "A04提供runner，当前没有综合胜出结论",
-   "work": "冻结所有关键case并复跑Deep对Three、Babylon，检查质量与置信区间，保留失败项",
-   "acceptance": "各对手分别至少两类主要负载P95改善≥20%；所有关键case回退≤5%，必选质量与正确性全过",
-   "negative": "统计不足/无timestamp不能拿缺失项算赢；禁止只挑最好case",
-   "dependsOn": [
-    "A04",
-    "A08",
-    "B04",
-    "B08",
-    "D06",
-    "E06"
-   ],
-   "owner": "独立性能QA",
-   "effortDays": "4–7",
-   "legacy": "D24/D25",
-   "priority": "P0",
-   "checks": "BENCH+GPU",
-   "existingPaths": [
-    ".github/workflows/deep-engine.yml",
-    "scripts",
-    "docs/specs",
-    "packages/deep-engine/lab"
-   ],
-   "status": "项目级后验收",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-validation-2026-09-16.md#v01",
-   "qualifiedId": "DE26/V01",
-   "qualifiedDependsOn": [
-    "DE26/A04",
-    "DE26/A08",
-    "DE26/B04",
-    "DE26/B08",
-    "DE26/D06",
-    "DE26/E06"
-   ]
-  },
-  {
-   "id": "V02",
-   "title": "Native逐对手与画质验收",
-   "baseline": "Unity/Godot/UE需分别测试",
-   "work": "用A05–A07跑Native成对比赛，覆盖等质量与最佳质量；动画/透明/数据联动保持同功能",
-   "acceptance": "三份独立结果；质量稳定性视频/资源/输入/帧时均有结论；落后项公开",
-   "negative": "跨硬件、编辑器对发布版、省特效、忽略加载尾延迟均无效",
-   "dependsOn": [
-    "A05",
-    "A06",
-    "A07",
-    "A08",
-    "E08",
-    "F02",
-    "I08"
-   ],
-   "owner": "独立性能/视觉QA",
-   "effortDays": "6–10",
-   "legacy": "D24/D25",
-   "priority": "P1",
-   "checks": "N+GPU+BENCH",
-   "existingPaths": [
-    ".github/workflows/deep-engine.yml",
-    "scripts",
-    "docs/specs",
-    "packages/deep-engine/lab"
-   ],
-   "status": "项目级后验收",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-validation-2026-09-16.md#v02",
-   "qualifiedId": "DE26/V02",
-   "qualifiedDependsOn": [
-    "DE26/A05",
-    "DE26/A06",
-    "DE26/A07",
-    "DE26/A08",
-    "DE26/E08",
-    "DE26/F02",
-    "DE26/I08"
-   ]
-  },
-  {
-   "id": "V03",
-   "title": "故障与正式交付矩阵",
-   "baseline": "已有局部恢复/包校验证据",
-   "work": "覆盖真实PG/MinIO发布、落盘、干净Windows离线、更新回滚、设备丢失、20次重建和短时压力",
-   "acceptance": "0数据错版/不可恢复坏包；资源回落无持续增长；失败路径都有可操作反馈",
-   "negative": "401/5xx/超时/取消/磁盘满/网络断开/坏hash/旧版本逐项验证",
-   "dependsOn": [
-    "G05",
-    "G06",
-    "H07",
-    "I07"
-   ],
-   "owner": "发布/QA",
-   "effortDays": "5–8",
-   "legacy": "D26/D27；V-01/V-05",
-   "priority": "P0",
-   "checks": "N+A+W+INTEGRATION+GPU",
-   "existingPaths": [
-    ".github/workflows/deep-engine.yml",
-    "scripts",
-    "docs/specs",
-    "packages/deep-engine/lab"
-   ],
-   "status": "项目级后验收",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-validation-2026-09-16.md#v03",
-   "qualifiedId": "DE26/V03",
-   "qualifiedDependsOn": [
-    "DE26/G05",
-    "DE26/G06",
-    "DE26/H07",
-    "DE26/I07"
-   ]
-  },
-  {
-   "id": "V04",
-   "title": "统一产品视觉与开发者任务",
-   "baseline": "未完成完整双轮视觉与外部独立SDK任务证据",
-   "work": "真实操作浏览器/Native双主题1920/1280/980等相关档、两轮截图；独立人员做导入编辑脚本发布五任务",
-   "acceptance": "design-taste-digitaltwin十维逐项≥9且有截图；输入/可达/空错态全过；任务耗时可与对手比较",
-   "negative": "截图不能代替真实点击/IME；小窗口/字体缺字/无权限不能省略",
-   "dependsOn": [
-    "G07",
-    "H01",
-    "H04",
-    "D07",
-    "I01"
-   ],
-   "owner": "产品/视觉QA",
-   "effortDays": "5–8",
-   "legacy": "D28；Deep2D V-02/03/04",
-   "priority": "P0",
-   "checks": "WEB+N+SDK",
-   "existingPaths": [
-    ".github/workflows/deep-engine.yml",
-    "scripts",
-    "docs/specs",
-    "packages/deep-engine/lab"
-   ],
-   "status": "项目级后验收",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-validation-2026-09-16.md#v04",
-   "qualifiedId": "DE26/V04",
-   "qualifiedDependsOn": [
-    "DE26/G07",
-    "DE26/H01",
-    "DE26/H04",
-    "DE26/D07",
-    "DE26/I01"
-   ]
-  },
-  {
-   "id": "V05",
-   "title": "综合领先审查与发布结论",
-   "baseline": "旧90%覆盖不等于本次超越",
-   "work": "汇总全部域状态与五对手矩阵；关键能力全通过、主要指标领先、非领先项显式呈现；独立复跑",
-   "acceptance": "分别发布局部/领域/综合结论；X域未解除或未过验收时不得称全平台全能力超过",
-   "negative": "删分母/权重掩盖短板/生态与平台缺项隐去均拒绝综合领先",
-   "dependsOn": [
-    "V01",
-    "V02",
-    "V03",
-    "V04",
-    "I02",
-    "I03",
-    "I04",
-    "I05",
-    "I06",
-    "B07",
-    "C05",
-    "E03",
-    "E07",
-    "F05",
-    "F06",
-    "F07",
-    "G08",
-    "H08"
-   ],
-   "owner": "架构/独立评审",
-   "effortDays": "2–4",
-   "legacy": "旧benchmark v1升级",
-   "priority": "P0",
-   "checks": "REPORT",
-   "existingPaths": [
-    ".github/workflows/deep-engine.yml",
-    "scripts",
-    "docs/specs",
-    "packages/deep-engine/lab"
-   ],
-   "status": "项目级后验收",
-   "proposed": true,
-   "evidence": [],
-   "completed": false,
-   "document": "deep-engine-tasks-validation-2026-09-16.md#v05",
-   "qualifiedId": "DE26/V05",
-   "qualifiedDependsOn": [
-    "DE26/V01",
-    "DE26/V02",
-    "DE26/V03",
-    "DE26/V04",
-    "DE26/I02",
-    "DE26/I03",
-    "DE26/I04",
-    "DE26/I05",
-    "DE26/I06",
-    "DE26/B07",
-    "DE26/C05",
-    "DE26/E03",
-    "DE26/E07",
-    "DE26/F05",
-    "DE26/F06",
-    "DE26/F07",
-    "DE26/G08",
-    "DE26/H08"
    ]
   },
   {
@@ -2679,13 +1757,10 @@
    "id": "X02",
    "title": "完整虚拟几何与高级阴影专项",
    "baseline": "Nanite Lite保留；UE全套虚拟几何属现范围明确排除",
-   "work": "比较I08与目标Nanite/VSM在层级压缩/流式/变形/阴影上的残差，形成可复用研究切片与成本",
+  "work": "只记录现有层级几何、流式、变形与阴影的能力残差和成本；不进入本轮建设或对标分母",
    "acceptance": "真实数据证明何种负载仍落后；独立RFC决定扩展，不用meshlet名称替代系统能力",
    "negative": "不以LOD截图或总面数证明Nanite等价",
-   "dependsOn": [
-    "I08",
-    "V02"
-   ],
+   "dependsOn": [],
    "owner": "几何研究",
    "effortDays": "3–5",
    "legacy": "明确排除：UE全套虚拟几何",
@@ -2703,10 +1778,7 @@
    "completed": false,
    "document": "deep-engine-tasks-validation-2026-09-16.md#x02",
    "qualifiedId": "DE26/X02",
-   "qualifiedDependsOn": [
-    "DE26/I08",
-    "DE26/V02"
-   ]
+   "qualifiedDependsOn": []
   },
   {
    "id": "X03",
@@ -2716,9 +1788,7 @@
    "acceptance": "可用性实验与维护成本支持立项；需求拆为真实用户任务，非仅节点数量",
    "negative": "只会连线不能编译/保存/发布的原型不得算完成",
    "dependsOn": [
-    "H04",
-    "F07",
-    "V04"
+    "H04"
    ],
    "owner": "工具/产品研究",
    "effortDays": "3–5",
@@ -2738,9 +1808,7 @@
    "document": "deep-engine-tasks-validation-2026-09-16.md#x03",
    "qualifiedId": "DE26/X03",
    "qualifiedDependsOn": [
-    "DE26/H04",
-    "DE26/F07",
-    "DE26/V04"
+    "DE26/H04"
    ]
   },
   {
@@ -2750,10 +1818,7 @@
    "work": "按Linux/macOS/移动/Web低端设备逐一盘点接口、字体、打包、GPU限制和成本；形成平台独立试验计划",
    "acceptance": "平台矩阵保留未支持项；每平台有最小可跑样本、负责人需求和退出标准",
    "negative": "不能因wgpu支持后端或CI编译通过就宣称正式平台支持",
-   "dependsOn": [
-    "H06",
-    "V03"
-   ],
+   "dependsOn": [],
    "owner": "平台/QA研究",
    "effortDays": "3–5",
    "legacy": "明确排除：非Windows实现",
@@ -2771,10 +1836,7 @@
    "completed": false,
    "document": "deep-engine-tasks-validation-2026-09-16.md#x04",
    "qualifiedId": "DE26/X04",
-   "qualifiedDependsOn": [
-    "DE26/H06",
-    "DE26/V03"
-   ]
+   "qualifiedDependsOn": []
   },
   {
    "id": "X05",
@@ -2783,11 +1845,7 @@
    "work": "调查高频插件/API/素材与游戏通用工作流，优先适配公开协议；记录联网/多人运行/地形/布料流体等未验证域",
    "acceptance": "给出有频次证据的Top兼容列表和通用域差距；未来实现有独立用户任务与验收",
    "negative": "不承诺任意插件/脚本/素材自动可运行；现项目source-available称谓与许可证不变",
-   "dependsOn": [
-    "H01",
-    "H05",
-    "V04"
-   ],
+   "dependsOn": [],
    "owner": "生态/产品研究",
    "effortDays": "3–5",
    "legacy": "明确排除：全Three插件矩阵",
@@ -2805,11 +1863,7 @@
    "completed": false,
    "document": "deep-engine-tasks-validation-2026-09-16.md#x05",
    "qualifiedId": "DE26/X05",
-   "qualifiedDependsOn": [
-    "DE26/H01",
-    "DE26/H05",
-    "DE26/V04"
-   ]
+   "qualifiedDependsOn": []
   }
  ],
  "planId": "DE26"
