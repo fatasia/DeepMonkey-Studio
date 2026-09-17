@@ -5,7 +5,7 @@
 - 已完成切片：3DM `7e96dd0` 以齐次控制网证明多段一次轴等价，MechPartB 10/14→11/14 面；207 原 PointAt 对拍最大 0.001278479 mm，总界 0.007316896 mm。3 新测试+36 回归、tsc/gate 通过；独立 evidence 哈希已复核。[证据](specs/industrial-3dm-multispan-cylinder-2026-09-17.md)
 - 已完成切片：B05 `76fe34a` 在唯一 DeviceSession 所有权边界去重统计 buffer/texture/unknown 与候选并存峰值，接入 FrameMetrics；16 聚焦、WebGPU 1135/22 skip、typecheck/build/purity/gate 通过。真机 74 个对象/unknown 0，估算总量 173,098,224 bytes、峰值 173,357,496 bytes，raw SHA 已复核。[证据](specs/de26-b05-device-memory-2026-09-17.md)
 - 已完成切片：X_T `4420a30` 增加独立 TORUS 方程见证，历史不可变 GLB 审计的 181 unresolved 降至 140；仅验证覆盖增强，不提升转换或生产状态。[证据](reports/industrial-x-t-torus-witness-2026-09-17.md)
-- 本轮待办：更强闭圆边界审核已在后续在途工作暴露额外差异；旧 1 mismatch 仅是历史审核结果，当前不可据其宣称误差达标。正在固定绝对 sag 重转与重审。3DM 一般曲面、B05 总预算强制与完整视觉仍待办。
+- 本轮待办：强化闭圆边界审核 `b6e2947` 当前为 19086 matched / 252 mismatch / 6 unresolved，旧 1 mismatch 仅是历史审核结果；正在固定绝对 sag=0.005 mm 重转与重审。3DM 一般曲面、B05 总预算强制与完整视觉仍待办。[强化审核](reports/industrial-x-t-closed-circle-witness-2026-09-17.md)
 
 ### 2026-09-17 Native RenderPacket 呈现屏障（Codex）
 
