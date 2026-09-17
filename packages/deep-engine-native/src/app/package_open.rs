@@ -28,8 +28,11 @@ impl Drop for PackageOpen {
 }
 
 impl PackageOpen {
-    fn new(proxy: EventLoopProxy<GpuEvent>) -> Result<Self, String> {
-        Self::with_loader(super::package_source::load, move || {
+    fn new(
+        proxy: EventLoopProxy<GpuEvent>,
+        loader: fn(PathBuf) -> Result<PlayerContent, String>,
+    ) -> Result<Self, String> {
+        Self::with_loader(loader, move || {
             proxy.send_event(GpuEvent::PackageOpened).is_ok()
         })
     }
@@ -104,7 +107,15 @@ pub(super) fn request(app: &mut NativeApp, path: PathBuf) {
         return;
     }
     if app.package_open.is_none() {
-        match PackageOpen::new(app.proxy.clone()) {
+        let loader: fn(PathBuf) -> Result<PlayerContent, String> = super::package_source::load;
+        #[cfg(windows)]
+        let loader = if app.content.active().x_template.is_some() {
+            // 只在显式 X 窗口中复用 X 加载器；普通窗口仍拒绝 v6。
+            |path: PathBuf| crate::x_package_window::prepare(&path)
+        } else {
+            loader
+        };
+        match PackageOpen::new(app.proxy.clone(), loader) {
             Ok(transport) => app.package_open = Some(transport),
             Err(error) => {
                 reject(app, &error);

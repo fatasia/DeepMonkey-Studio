@@ -1,5 +1,16 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 X 同窗拖放替换（Codex）
+
+- 已完成：显式 X 窗口复用 PackageOpen 队列/GPU 候选事务接受 X 包拖放，普通加载器继续拒绝；首帧呈现后才存恢复检查点。
+- 实证：960×540 RTX 4060/Vulkan 同窗两次替换、两次拒绝，窗口/renderer 保持；真实 ECharts 初帧/单柱更新/删柱三包复测通过。bin 113/38 ignored，同窗 GPU 另行显式通过。
+- 本轮待办：自动热同步、隔离动态适配器、物理输入与完整视觉。[证据](specs/deep2d-p2-02-x-same-window-2026-09-17.md)
+
+### 2026-09-17 X_T blend chart 精化（Codex，03b0c83）
+
+- 已完成：AA-0222B 的稀疏交线按端点配对定向，仅投影到已知 mating surface，并按 tolerance×0.5 细分、保持 chart 分支。两面残差均降至 0.0045937840 mm。
+- cad-xt 17/17、cad-tess 37/37、109/109 转换；逐面 19,160 matched / 3 mismatch / 181 unresolved，生产 profile 仍为 0。[证据](reports/industrial-x-t-blend-chart-projection-2026-09-17.md)
+
 ### 2026-09-17 ZRender delta→X 显示包（Codex）
 
 - 已完成：真实 rect delta 重建完整快照并核验 hash，再复用 Deep2D/X v6 作者编译；保留负柱高和稳定图元身份，坏批次不推进状态。

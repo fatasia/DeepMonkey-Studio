@@ -45,5 +45,13 @@ try {
       fillTriangles: receipt.deep2d.fillTriangles, gpu: "presented" });
   }
 } finally { experiment.dispose(); }
+const sameWindow = spawnSync("cargo", ["test", "--manifest-path", "packages/deep-engine-native/Cargo.toml",
+  "--offline", "--bin", "deep-engine-native", "app::x_drop_tests::explicit_x_window_replaces_packages_without_reopening",
+  "--", "--exact", "--ignored", "--nocapture"], {
+  cwd: root, encoding: "utf8", timeout: 60_000, windowsHide: true,
+  env: { ...process.env, DEEP_X_DROP_FIXTURES: output },
+});
+assert.equal(sameWindow.status, 0, `${sameWindow.error ?? ""}\n${sameWindow.stdout}\n${sameWindow.stderr}`);
+assert(sameWindow.stdout.includes("X same-window replacements=2 rejected=2 renderer=unchanged checkpoints=presented"));
 await writeFile(path.join(output, "report.json"), JSON.stringify(reports, null, 2));
-console.log(JSON.stringify({ output, reports }, null, 2));
+console.log(JSON.stringify({ output, sameWindow: "two updates and two rejections verified", reports }, null, 2));

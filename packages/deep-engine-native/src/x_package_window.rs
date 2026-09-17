@@ -1,7 +1,7 @@
 use std::path::Path;
 
 #[cfg(windows)]
-fn prepare(path: &Path) -> Result<crate::player_content::PlayerContent, String> {
+pub(crate) fn prepare(path: &Path) -> Result<crate::player_content::PlayerContent, String> {
     use deep_engine_native::{
         compat_x::{process::XProcessConfig, scheduler::XContentScheduler, *},
         deep2d::Deep2dRuntimeContent,
