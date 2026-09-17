@@ -19,10 +19,14 @@ export function bindDashboardWindowEvidence(input, runtime, receipt, runtimeCont
   check(Array.isArray(report.layers), "missing actual draw evidence");
   const dashboard = runtime.payloads[runtime.entrypoints.dashboard];
   const entry = dashboard.pages.find(page => page.id === dashboard.entryPageId);
-  const authors = new Set(candidate.document.application.pages.flatMap(page => page.nodes.map(node => node.id)));
+  const authorPages = new Map(candidate.document.application.pages.flatMap(page => {
+    const runtimePageId = `page.${runtimeContentSha256(JSON.stringify([
+      candidate.document.application.metadata.id, page.id, page.id]))}`;
+    return page.nodes.map(node => [node.id, runtimePageId]);
+  }));
   const bindings = new Map();
   for (const binding of windowEvidence.nodeBindings) {
-    check(authors.has(binding.nodeId) && !bindings.has(binding.runtimeNodeId), "invalid node binding");
+    check(authorPages.get(binding.nodeId) === binding.pageId && !bindings.has(binding.runtimeNodeId), "invalid node binding");
     const page = dashboard.pages.find(page => page.id === binding.pageId);
     const node = page?.nodes.find(node => node.id === binding.runtimeNodeId);
     check(node && (binding.staticResourceId ?? null) === node.deep2d, "node resource binding mismatch");

@@ -7,19 +7,20 @@ import { createDashboardNativeWindowVerifier } from "./dashboardNativeWindowVeri
 
 const hash = value => createHash("sha256").update(typeof value === "string" ? value : JSON.stringify(value)).digest("hex");
 function fixture() {
+  const pageId = `page.${hash(JSON.stringify(["application", "page-main", "page-main"]))}`;
   const runtime = { schemaVersion: 5, packageHash: { value: "package-hash" }, entrypoints: { dashboard: "dashboard" },
-    payloads: { dashboard: { entryPageId: "p1", pages: [{ id: "p1", nodes: [
+    payloads: { dashboard: { entryPageId: pageId, pages: [{ id: pageId, nodes: [
       { id: "n1", visible: true, deep2d: "static1", chart: null },
       { id: "n2", visible: true, deep2d: "static2", chart: null },
     ] }] }, static1: { atlases: [{ id: "text-raster", kind: "image" }] }, static2: { atlases: [] } } };
   const artifact = Buffer.from(JSON.stringify(runtime)), digest = createHash("sha256").update(artifact).digest("hex");
   const input = { artifact, candidate: { authority: { publicationId: "publication" },
-    document: { application: { pages: [{ nodes: [{ id: "author1" }, { id: "author2" }] }] } },
+    document: { application: { metadata: { id: "application" }, pages: [{ id: "page-main", nodes: [{ id: "author1" }, { id: "author2" }] }] } },
     manifest: { manifestSha256: "manifest", resources: [{ id: "font", kind: "font", sha256: "font-hash", faceIndex: 0, nodeIds: ["author1"] }] } },
     sourceSemanticHash: "source", compileGraphHash: "compile", targetArtifactHash: digest,
     windowEvidence: { nodeBindings: [
-      { nodeId: "author1", runtimeNodeId: "n1", pageId: "p1", staticResourceId: "static1" },
-      { nodeId: "author2", runtimeNodeId: "n2", pageId: "p1", staticResourceId: "static2" },
+      { nodeId: "author1", runtimeNodeId: "n1", pageId, staticResourceId: "static1" },
+      { nodeId: "author2", runtimeNodeId: "n2", pageId, staticResourceId: "static2" },
     ], fontBindings: [{ resourceId: "font", sha256: "font-hash", faceIndex: 0, runtimeNodeId: "n1", atlasId: "text-raster" }] } };
   const device = { name: "GPU", backend: "Vulkan", vendor_id: 4318, device_id: 10400 };
   const receipt = { sourceSha256: digest, nonce: "nonce", requestedFrames: 3, report: {
@@ -39,6 +40,12 @@ test("only attests the node and font atlas actually drawn, not every declared no
 test("an unused font remains unattested even when it is in the frozen manifest", () => {
   const f = fixture(); f.receipt.report.layers[0].atlasIds = [];
   assert.deepEqual(f.bind().fontSha256, []);
+});
+test("rejects evidence assigning a drawn layer to an author on another page", () => {
+  const f = fixture();
+  f.input.candidate.document.application.pages.push({ id: "page-other", nodes: [{ id: "foreign-author" }] });
+  f.input.windowEvidence.nodeBindings[0].nodeId = "foreign-author";
+  assert.throws(f.bind, /invalid node binding/);
 });
 function withBackground() {
   const f = fixture(), page = f.runtime.payloads.dashboard.pages[0];
