@@ -378,13 +378,18 @@
    ],
    "status": "本轮待办",
    "proposed": true,
-   "evidence": [],
+   "evidence": [
+    "packages/deep-engine/src/webgpu/pbrFramePlanExecutor.ts",
+    "packages/deep-engine/src/webgpu/pbrFramePlanResources.ts",
+    "packages/deep-engine/src/webgpu/pbrFrameGraph.ts"
+   ],
    "completed": false,
    "document": "deep-engine-tasks-foundation-2026-09-16.md#b03",
    "qualifiedId": "DE26/B03",
    "qualifiedDependsOn": [
     "DE26/A03"
-   ]
+   ],
+   "note": "第一切片已落地(746ce63 TS 树):计划↔实际对拍 16 测试+unmapped 显式+回执;真实 GPU 提交顺序切换与像素回归归真机门禁"
   },
   {
    "id": "B04",
@@ -595,14 +600,19 @@
    ],
    "status": "本轮待办",
    "proposed": true,
-   "evidence": [],
+   "evidence": [
+    "packages/deep-engine/src/threeBridge/flatGeometry.ts",
+    "packages/deep-engine/src/shaderAbi/contractV4.ts",
+    "docs/specs/de26-c02-vertex-colors-flat-shading-2026-09-17.md"
+   ],
    "completed": false,
    "document": "deep-engine-tasks-foundation-2026-09-16.md#c02",
    "qualifiedId": "DE26/C02",
    "qualifiedDependsOn": [
     "DE26/C01",
     "DE26/B01"
-   ]
+   ],
+   "note": "第一切片已落地(746ce63/784f4af):颜色流 ABI v4+flat 派生+Native color_buffer;glTF COLOR_0 解码与 shader 采样(像素级验收)归下一子步"
   },
   {
    "id": "C03",

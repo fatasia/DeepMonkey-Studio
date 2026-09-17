@@ -29,7 +29,7 @@
 - 说明:第一切片:确定性索引(双跑同哈希实测)+证据缺失标红;源码身份绑定与置信区间归后续切片
 - 证据:
   - [x] `scripts/generate-de26-evidence-index.mts` sha256=636ca18f2290981bee4fad6823cd97e17dce08fd831cd66bb594c9cd52316931
-  - [x] `docs/specs/de26-evidence-index.md` sha256=22f8ef027168bc6601bf8ef45f47cfff36a07d8c35f1ed521d8d8f99644fb586
+  - [x] `docs/specs/de26-evidence-index.md` sha256=8f578f30c582ce489f38a2a7ac7918daad72fa00970f9ea5fa1b7dd9fd10fe87
 
 ## B01 · 统一场景变化所有权
 - 状态:本轮待办
@@ -37,5 +37,21 @@
 - 证据:
   - [x] `packages/deep-engine/src/scene/SceneChangeset.ts` sha256=6cfaafde7fbe920cb8054e1a2fe987f372c4255a9c7b4712a7634465ccb3137c
 
+## B03 · 把RenderGraph接到实际执行
+- 状态:本轮待办
+- 说明:第一切片已落地(746ce63 TS 树):计划↔实际对拍 16 测试+unmapped 显式+回执;真实 GPU 提交顺序切换与像素回归归真机门禁
+- 证据:
+  - [x] `packages/deep-engine/src/webgpu/pbrFramePlanExecutor.ts` sha256=8c90eb91e6fc5aafe0d4f14b8f792e6c768d69a448e51dfa1e60ea22a8328bd7
+  - [x] `packages/deep-engine/src/webgpu/pbrFramePlanResources.ts` sha256=2ddeec8f4424074b7ee7e0a4eb2de6062d90cc500c771f1638b2081f7eea704c
+  - [x] `packages/deep-engine/src/webgpu/pbrFrameGraph.ts` sha256=24a60fe17e4356c6111737c46b342a07c6811d843151e79b9a0b973d8c890bfd
+
+## C02 · 打通顶点色和平面着色
+- 状态:本轮待办
+- 说明:第一切片已落地(746ce63/784f4af):颜色流 ABI v4+flat 派生+Native color_buffer;glTF COLOR_0 解码与 shader 采样(像素级验收)归下一子步
+- 证据:
+  - [x] `packages/deep-engine/src/threeBridge/flatGeometry.ts` sha256=b7a09e2604a17366f43ee680bf683e4d5cbff03aa9914a37929c5e1aedd9bd24
+  - [x] `packages/deep-engine/src/shaderAbi/contractV4.ts` sha256=5b54f2a1a1e96ddbaf949242016f838919a80f4032cde90277e00a03ad6b34cd
+  - [x] `docs/specs/de26-c02-vertex-colors-flat-shading-2026-09-17.md` sha256=e1021f0d2572ee9baf2033494b3b0b3f4faeb1566d45ab7057200c190bac7771
+
 ---
-覆盖 5 卡;证据缺失 0 项。
+覆盖 7 卡;证据缺失 0 项。
