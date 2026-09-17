@@ -2,6 +2,9 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 主流程回归：Native 122 passed/43 ignored，其中 5 项真实 GPU 用例另行显式通过；正式 API 与两种 compiler bundle 构建、三种离线下载路由注册/401 检查通过。[边界与复跑命令](specs/core-delivery-regression-2026-09-17.md)
+- 3DM `69f5a8d`：复用齐次控制网内核补齐 4 个非有理双三次链面，MechPartA 33/41；1008 源 PointAt 最大误差 0.001004582 mm，连续总界 <0.007988410 mm。38 项回归及类型/治理检查通过，evidence 与 GLB SHA-256 已复核；剩余 8 面继续推进，保持部分预览。[证据](specs/industrial-3dm-polynomial-bezier-chain-2026-09-17.md)
+
 - Native 热更新读取恢复：RuntimePackage/RenderPacket 在读取失败后不缓存文件身份，下次轮询重试。两个 Windows `share_mode(0)` 真文件锁测试证明读取失败、解锁且 metadata 不变后恢复；14 项监听回归通过、1 项 GPU 测试未在本轮执行。解析失败仍按文件身份去重，旧画面发布机制保持。
 
 - Deep2D 跨页呈现证据：作者节点必须归属于绑定的 runtime 页面，修复只检查应用内存在导致跨页证据可错配的问题。17 项专项测试、正式 bundle 重建、6 项集成（含 RTX 4060/Vulkan 中文字体与背景真实呈现 3 帧）和 repository gate 通过。
