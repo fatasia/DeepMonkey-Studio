@@ -40,6 +40,8 @@
 
 - P0-05 Web真实GPU矩阵：6轮60断言全PASS（真实Chrome WebGPU/nvidia）——连续换包（hash独立、旧帧release+GPU dispose+deck回收）、迟到候选（abort/superseded下基线帧像素diff=0保持可见）、取消（load窗口0分配、prepare窗口release+dispose）、5个session teardown全部lost(destroyed)+零uncaptured错误+releaseFailures恒空。未发现生产缺陷（3次失败均为脚本自身问题）；设备丢失注入与"无孤立纹理"直接枚举如实声明未覆盖/间接口径。C1复跑committed且SSIM逐位一致。脚本scripts/verify-p05-web-matrix*。
 
+- G04收官 `d91913d`：dashboardLayoutCaptureDeployment生产组合件（dist捕获页进程内托管+协议桥并轨API宿主合同+装配快速失败+close幂等）→ service dependencies可选layoutCapture（未配置零改动、宿主捕获失败fail-closed不保留候选）→ dashboardNativeStartup配置layoutCapture.chromePath/capturePageDirectory挂onClose优雅关闭。真实Chrome用例prepare→捕获→worker输入带layout 2.4s通过；API全量1199+4skip。遗留：dist捕获页生产分发不属本片；协议桥错误信息为selector超时（后续直出API协议捕获页可并轨）。
+
 - 补漏 `9146d7f` 后的data_source.rs挂载单独fixup提交（泵切片add路径错误）。
 
 - 缺陷①根因修复 `2cb395d`：deep2d_scissor 的chunk_scissor用逐轴拉伸+零偏移，与shader/命中/相机的LetterboxMapping不一致——被node.clip收窄的chunk（标题+单位）在非等比窗口scissor错位整条被裁。修复改用同一映射并补字母箱错位测试钉；新增任意物理尺寸读回harness并修复bytes_per_row 256对齐缺口（1200宽曾静默全零）。修复前0/3220→后3220/3220，真实包标题3876px恢复，整帧diff仅2537px全落标题区；真实窗口截图「分区域出力/MW」可见；bin 126+GPU 45全过、clippy/fmt干净。缺陷③轴/图例确认为编译层缺口（present_chart不生成quad），归P0-01。[报告](specs/deep2d-title-letterbox-fix-2026-09-18.md)
