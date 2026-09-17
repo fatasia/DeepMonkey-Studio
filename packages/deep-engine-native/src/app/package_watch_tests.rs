@@ -73,6 +73,42 @@ fn identical_package_is_an_explicit_noop() {
 }
 
 #[test]
+#[cfg(windows)]
+fn temporarily_locked_package_retries_without_a_metadata_change() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let path = std::env::temp_dir().join(format!("locked-package-{}.json", std::process::id()));
+    std::fs::write(&path, fixture()).unwrap();
+    let before = super::file_identity(&path).unwrap();
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&path)
+        .unwrap();
+    let PackageUpdate::Rejected { identity, reason } =
+        load_update(&path, None, &published_snapshot(), ordinary_decoder)
+    else {
+        panic!("locked file must be rejected");
+    };
+    assert!(identity.is_none());
+    assert!(
+        reason.contains("cannot read watched runtime package"),
+        "{reason}"
+    );
+    drop(lock);
+    assert_eq!(super::file_identity(&path).unwrap(), before);
+    assert!(matches!(
+        load_update(
+            &path,
+            identity.as_ref(),
+            &published_snapshot(),
+            ordinary_decoder
+        ),
+        PackageUpdate::Equivalent { .. }
+    ));
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn first_poll_checks_content_and_a_missing_source_can_return() {
     let path = std::env::temp_dir().join(format!("package-first-poll-{}.json", std::process::id()));
     let snapshot = published_snapshot();

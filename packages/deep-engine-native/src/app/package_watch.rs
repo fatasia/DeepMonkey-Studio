@@ -149,7 +149,13 @@ fn load_update(
     };
     let bytes = match read_runtime_package_bytes(path) {
         Ok(value) => value,
-        Err(error) => return rejected(format!("cannot read watched runtime package: {error}")),
+        Err(error) => {
+            // 临时共享锁或读取失败不能把未读取的内容登记为已观察。
+            return PackageUpdate::Rejected {
+                reason: format!("cannot read watched runtime package: {error}"),
+                identity: None,
+            };
+        }
     };
     match decoder(&bytes, path, published) {
         Ok(Some(package)) => PackageUpdate::Ready { package, identity },

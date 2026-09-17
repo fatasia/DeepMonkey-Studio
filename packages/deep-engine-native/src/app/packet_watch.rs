@@ -89,7 +89,13 @@ pub(super) fn load_update(
     };
     let bytes = match read_render_packet_bytes(path) {
         Ok(bytes) => bytes,
-        Err(error) => return rejected(format!("cannot read watched packet: {error}")),
+        Err(error) => {
+            // 临时共享锁或读取失败不能把未读取的内容登记为已观察。
+            return PacketUpdate::Rejected {
+                reason: format!("cannot read watched packet: {error}"),
+                identity: None,
+            };
+        }
     };
     let packet: RenderPacket = match load_and_validate_bytes(&bytes) {
         Ok(packet) => packet,
