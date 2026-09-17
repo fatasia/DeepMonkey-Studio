@@ -21,6 +21,48 @@ use crate::{
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
+pub(super) type Decoder =
+    fn(&[u8], &Path, &RuntimePackageSnapshot) -> Result<Option<WatchedPackage>, String>;
+
+pub(super) fn ordinary_decoder(
+    bytes: &[u8],
+    path: &Path,
+    published: &RuntimePackageSnapshot,
+) -> Result<Option<WatchedPackage>, String> {
+    let mut candidate = decode_candidate(bytes, published)?;
+    if let Some(package) = &mut candidate {
+        package.content.bind_resource_source(path, "runtime-file")?;
+    }
+    Ok(candidate)
+}
+
+#[cfg(windows)]
+pub(super) fn x_decoder(
+    bytes: &[u8],
+    path: &Path,
+    published: &RuntimePackageSnapshot,
+) -> Result<Option<WatchedPackage>, String> {
+    // 校验身份后再启动隔离求值；热同步不恢复磁盘 LKG 替代坏候选。
+    let loaded = deep_engine_native::runtime_package::parse_and_validate_x_runtime_package(bytes)
+        .map_err(|error| error.to_string())?;
+    if loaded.base.package_id != published.package_id {
+        return Err("X live package identity changed".into());
+    }
+    if loaded.base.package_hash == published.package_hash {
+        return Ok(None);
+    }
+    let plan =
+        plan_runtime_package_resource_diff(&published.resource_index, &loaded.base.resource_index)
+            .map_err(|error| error.to_string())?;
+    let snapshot = RuntimePackageSnapshot::from_loaded(&loaded.base);
+    let content = crate::x_package_window::prepare_primary(path, bytes)?;
+    Ok(Some(WatchedPackage {
+        content: Box::new(content),
+        snapshot,
+        plan,
+    }))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PackageIdentity {
     modified: Option<SystemTime>,
@@ -87,6 +129,7 @@ fn load_update(
     path: &Path,
     observed: &PackageIdentity,
     published: &RuntimePackageSnapshot,
+    decoder: Decoder,
 ) -> PackageUpdate {
     let identity = match file_identity(path) {
         Ok(value) => value,
@@ -108,11 +151,8 @@ fn load_update(
         Ok(value) => value,
         Err(error) => return rejected(format!("cannot read watched runtime package: {error}")),
     };
-    match decode_candidate(&bytes, published) {
-        Ok(Some(mut package)) => match package.content.bind_resource_source(path, "runtime-file") {
-            Ok(()) => PackageUpdate::Ready { package, identity },
-            Err(error) => rejected(error),
-        },
+    match decoder(&bytes, path, published) {
+        Ok(Some(package)) => PackageUpdate::Ready { package, identity },
         Ok(None) => PackageUpdate::Equivalent { identity },
         Err(reason) => rejected(reason),
     }
@@ -123,6 +163,7 @@ pub(super) fn spawn(
     mailbox: LatestMailbox<WatchedPackage>,
     published: Arc<RwLock<RuntimePackageSnapshot>>,
     proxy: EventLoopProxy<GpuEvent>,
+    decoder: Decoder,
 ) -> super::watch_thread::WatchThread {
     super::watch_thread::WatchThread::spawn(move |stop| {
         let mut observed = match file_identity(&path) {
@@ -135,10 +176,11 @@ pub(super) fn spawn(
         let mut generation = 0_u64;
         let mut rejected_identity: Option<Option<PackageIdentity>> = None;
         while stop.wait(POLL_INTERVAL) {
-            let update = {
-                let published = published.read().unwrap_or_else(|error| error.into_inner());
-                load_update(&path, &observed, &published)
-            };
+            let snapshot = published
+                .read()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone();
+            let update = load_update(&path, &observed, &snapshot, decoder);
             if stop.cancelled() {
                 return;
             }

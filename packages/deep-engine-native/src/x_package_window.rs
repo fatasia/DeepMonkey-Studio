@@ -2,20 +2,53 @@ use std::path::Path;
 
 #[cfg(windows)]
 pub(crate) fn prepare(path: &Path) -> Result<crate::player_content::PlayerContent, String> {
-    use deep_engine_native::{
-        compat_x::{process::XProcessConfig, scheduler::XContentScheduler, *},
-        deep2d::Deep2dRuntimeContent,
-    };
-    // 呈现过的快照与 headless 求值快照分开，诊断成功不能提升窗口恢复记录。
-    let store = std::env::var_os("LOCALAPPDATA")
+    let store = recovery_store(path);
+    let source = crate::x_package_source::load(path, &store)?;
+    prepare_source(path, source, store)
+}
+
+#[cfg(windows)]
+pub(crate) fn prepare_primary(
+    path: &Path,
+    bytes: &[u8],
+) -> Result<crate::player_content::PlayerContent, String> {
+    let loaded = deep_engine_native::runtime_package::parse_and_validate_x_runtime_package(bytes)
+        .map_err(|error| error.to_string())?;
+    prepare_source(
+        path,
+        crate::x_package_source::Source {
+            loaded,
+            bytes: bytes.to_vec(),
+            active: "primary",
+            primary_rejection: None,
+        },
+        recovery_store(path),
+    )
+}
+
+#[cfg(windows)]
+fn recovery_store(path: &Path) -> Result<crate::runtime_lkg::Store, String> {
+    std::env::var_os("LOCALAPPDATA")
         .ok_or_else(|| "lkg/local-app-data-unavailable".to_owned())
         .and_then(|root| {
             crate::runtime_lkg::Store::new(
                 std::path::PathBuf::from(root).join("DeepEngineNative/x-window-recovery"),
                 path,
             )
-        });
-    let source = crate::x_package_source::load(path, &store)?;
+        })
+}
+
+#[cfg(windows)]
+fn prepare_source(
+    path: &Path,
+    source: crate::x_package_source::Source,
+    store: Result<crate::runtime_lkg::Store, String>,
+) -> Result<crate::player_content::PlayerContent, String> {
+    use deep_engine_native::{
+        compat_x::{process::XProcessConfig, scheduler::XContentScheduler, *},
+        deep2d::Deep2dRuntimeContent,
+    };
+    // 呈现过的快照与 headless 求值快照分开，诊断成功不能提升窗口恢复记录。
     let mut scheduler = XContentScheduler::new(XProcessConfig {
         enabled: true,
         ..Default::default()
@@ -80,4 +113,20 @@ pub fn run(path: &Path, smoke: bool) -> Result<(), String> {
 #[cfg(not(windows))]
 pub fn run(_path: &Path, _smoke: bool) -> Result<(), String> {
     Err("X runtime package execution is Windows-only".into())
+}
+
+pub fn run_live(path: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        crate::app::run_package_live(
+            prepare(path)?,
+            crate::app::PackageLiveSpec {
+                watch_path: path.to_owned(),
+                smoke_rewrite: None,
+                smoke_rejected_rewrite: None,
+            },
+        )
+    }
+    #[cfg(not(windows))]
+    run(path, false)
 }

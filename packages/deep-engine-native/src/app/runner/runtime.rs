@@ -40,10 +40,18 @@ pub(super) fn run_internal(
             .runtime_package()
             .cloned()
             .ok_or("package live mode requires runtime package metadata")?;
+        let decoder = super::super::package_watch::ordinary_decoder;
+        #[cfg(windows)]
+        let decoder: super::super::package_watch::Decoder = if content.x_template.is_some() {
+            super::super::package_watch::x_decoder
+        } else {
+            decoder
+        };
         Some(package_live::start(
             spec.watch_path.clone(),
             published,
             proxy.clone(),
+            decoder,
         ))
     } else {
         None

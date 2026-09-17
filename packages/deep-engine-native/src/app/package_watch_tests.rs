@@ -4,7 +4,7 @@ use deep_engine_native::runtime_package::{
 };
 use serde_json::{Value, json};
 
-use super::{PackageIdentity, PackageUpdate, decode_candidate, load_update};
+use super::{PackageIdentity, PackageUpdate, decode_candidate, load_update, ordinary_decoder};
 use crate::player_content::RuntimePackageSnapshot;
 
 fn fixture() -> Vec<u8> {
@@ -73,6 +73,27 @@ fn identical_package_is_an_explicit_noop() {
 }
 
 #[test]
+#[cfg(windows)]
+fn x_candidate_identity_and_noop_are_checked_before_worker_execution() {
+    let bytes =
+        include_bytes!("../../../deep-engine/fixtures/experimental-x-display-runtime-v6.json");
+    let loaded =
+        deep_engine_native::runtime_package::parse_and_validate_x_runtime_package(bytes).unwrap();
+    let mut snapshot = RuntimePackageSnapshot::from_loaded(&loaded.base);
+    let path = std::path::Path::new("missing-x-package.json");
+    assert!(super::x_decoder(bytes, path, &snapshot).unwrap().is_none());
+    snapshot.package_id = "different-id".into();
+    assert!(
+        super::x_decoder(bytes, path, &snapshot)
+            .err()
+            .unwrap()
+            .contains("identity changed")
+    );
+    assert!(super::x_decoder(&fixture(), path, &snapshot).is_err());
+    assert!(ordinary_decoder(bytes, path, &snapshot).is_err());
+}
+
+#[test]
 fn oversized_watched_package_fails_before_an_unbounded_read() {
     let path = std::env::temp_dir().join(format!(
         "deep-engine-native-oversized-package-{}.json",
@@ -86,7 +107,8 @@ fn oversized_watched_package_fails_before_an_unbounded_read() {
         modified: None,
         len: 0,
     };
-    let PackageUpdate::Rejected { reason, .. } = load_update(&path, &unseen, &published_snapshot())
+    let PackageUpdate::Rejected { reason, .. } =
+        load_update(&path, &unseen, &published_snapshot(), ordinary_decoder)
     else {
         panic!("oversized package must be rejected");
     };

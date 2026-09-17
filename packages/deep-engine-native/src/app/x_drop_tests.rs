@@ -11,6 +11,21 @@ const TEST: &str = "app::x_drop_tests::explicit_x_window_replaces_packages_witho
 #[test]
 #[ignore = "requires Windows GPU surface and packaged static CRT X worker"]
 fn explicit_x_window_replaces_packages_without_reopening() {
+    run_probe(false);
+}
+
+#[test]
+#[ignore = "requires Windows GPU surface and packaged static CRT X worker"]
+fn explicit_x_window_watches_primary_packages() {
+    run_probe(true);
+}
+
+fn run_probe(live: bool) {
+    let test = if live {
+        "app::x_drop_tests::explicit_x_window_watches_primary_packages"
+    } else {
+        TEST
+    };
     const CHILD: &str = "DEEP_X_DROP_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let executable = std::env::current_exe().unwrap();
@@ -49,7 +64,7 @@ fn explicit_x_window_replaces_packages_without_reopening() {
         )
         .unwrap();
         let output = std::process::Command::new(temp.join("test.exe"))
-            .args(["--exact", TEST, "--ignored", "--nocapture"])
+            .args(["--exact", test, "--ignored", "--nocapture"])
             .env(CHILD, &temp)
             .env("LOCALAPPDATA", temp.join("local"))
             .output()
@@ -74,6 +89,14 @@ fn explicit_x_window_replaces_packages_without_reopening() {
     let mut builder = winit::event_loop::EventLoop::<GpuEvent>::with_user_event();
     builder.with_any_thread(true);
     let event_loop = builder.build().unwrap();
+    let transport = live.then(|| {
+        package_live::start(
+            root.join("frame-1.json"),
+            content.runtime_package().unwrap().clone(),
+            event_loop.create_proxy(),
+            package_watch::x_decoder,
+        )
+    });
     let app = NativeApp::new(
         content,
         event_loop.create_proxy(),
@@ -89,7 +112,7 @@ fn explicit_x_window_replaces_packages_without_reopening() {
             shadow_update_probe: None,
             packet_live_probe: None,
             packet_live_transport: None,
-            package_live_transport: None,
+            package_live_transport: transport,
             telemetry_report: false,
             selection_probe: false,
             section_probe: false,
@@ -97,6 +120,7 @@ fn explicit_x_window_replaces_packages_without_reopening() {
         },
     );
     let mut probe = Probe {
+        live,
         app,
         root,
         stage: 0,
@@ -108,10 +132,12 @@ fn explicit_x_window_replaces_packages_without_reopening() {
     event_loop.run_app(&mut probe).unwrap();
     probe.app.x_runtime.take();
     probe.app.package_open.take();
-    assert_eq!(probe.stage, 4);
+    probe.app.package_live_transport.take();
+    assert_eq!(probe.stage, if live { 2 } else { 4 });
 }
 
 struct Probe {
+    live: bool,
     app: NativeApp,
     root: PathBuf,
     stage: u8,
@@ -137,6 +163,14 @@ impl Probe {
         assert!(self.app.state.failure.is_none());
     }
     fn request(&mut self, event_loop: &ActiveEventLoop, name: &str) {
+        if self.live {
+            fs::write(
+                self.root.join("frame-1.json"),
+                fs::read(self.root.join(name)).unwrap(),
+            )
+            .unwrap();
+            return;
+        }
         self.app.window_event(
             event_loop,
             self.window_id.unwrap(),
@@ -161,7 +195,11 @@ impl ApplicationHandler<GpuEvent> for Probe {
         self.request(event_loop, "frame-2.json");
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: GpuEvent) {
-        let opened = matches!(event, GpuEvent::PackageOpened);
+        let opened = if self.live {
+            matches!(event, GpuEvent::PackageArrived)
+        } else {
+            matches!(event, GpuEvent::PackageOpened)
+        };
         self.app.user_event(event_loop, event);
         if !opened {
             return;
@@ -184,6 +222,24 @@ impl ApplicationHandler<GpuEvent> for Probe {
             );
         }
         self.stage += 1;
+        if self.live && self.stage == 2 {
+            let snapshot = self.app.content.active().runtime_package().unwrap();
+            assert!(
+                package_watch::x_decoder(b"broken", &self.root.join("frame-1.json"), snapshot)
+                    .is_err()
+            );
+            assert!(
+                package_watch::x_decoder(
+                    include_bytes!("../../tests/fixtures/runtime-package-v1.json"),
+                    &self.root.join("frame-1.json"),
+                    snapshot
+                )
+                .is_err()
+            );
+            println!("X live file replacements=2 checkpoints=presented invalid/ordinary=rejected");
+            event_loop.exit();
+            return;
+        }
         match self.stage {
             1 => self.request(event_loop, "frame-3.json"),
             2 => self.request(event_loop, "bad.json"),

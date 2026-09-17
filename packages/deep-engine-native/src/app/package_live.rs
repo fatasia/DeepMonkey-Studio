@@ -30,10 +30,17 @@ pub(super) fn start(
     path: PathBuf,
     published: RuntimePackageSnapshot,
     proxy: EventLoopProxy<GpuEvent>,
+    decoder: package_watch::Decoder,
 ) -> PackageLiveTransport {
     let mailbox = LatestMailbox::default();
     let published = Arc::new(RwLock::new(published));
-    let watcher = package_watch::spawn(path, mailbox.clone(), Arc::clone(&published), proxy);
+    let watcher = package_watch::spawn(
+        path,
+        mailbox.clone(),
+        Arc::clone(&published),
+        proxy,
+        decoder,
+    );
     PackageLiveTransport {
         _watcher: watcher,
         mailbox,
@@ -44,7 +51,7 @@ pub(super) fn start(
 /// Applies render/shader-only diffs through the GPU scene transaction. Changes to
 /// Deep2D or IBL stage a complete renderer while the active renderer remains drawable.
 pub(super) fn apply_latest(app: &mut NativeApp) {
-    let Some(candidate) = app
+    let Some(mut candidate) = app
         .package_live_transport
         .as_ref()
         .and_then(|transport| transport.mailbox.take_latest())
@@ -57,6 +64,20 @@ pub(super) fn apply_latest(app: &mut NativeApp) {
     }
     if app.packet_coalescer.submit(generation) == SubmitDecision::Discard {
         return;
+    }
+    // 后台求值不持发布锁；候选可能基于旧快照，发布前按当前资源重新计划。
+    if let Some(current) = app.content.active().runtime_package() {
+        match deep_engine_native::runtime_package::plan_runtime_package_resource_diff(
+            &current.resource_index,
+            &candidate.value.snapshot.resource_index,
+        ) {
+            Ok(plan) => candidate.value.plan = plan,
+            Err(error) => {
+                app.packet_coalescer.failed(generation);
+                eprintln!("runtime package live replan rejected: {error}");
+                return;
+            }
+        }
     }
     if app
         .renderer
@@ -77,7 +98,11 @@ pub(super) fn apply_latest(app: &mut NativeApp) {
         return;
     }
     if candidate.value.plan.entries.iter().all(|entry| {
-        entry.kind == deep_engine_native::runtime_package::RuntimeResourceKind::Deep2dRuntime
+        matches!(
+            entry.kind,
+            deep_engine_native::runtime_package::RuntimeResourceKind::Deep2dRuntime
+                | deep_engine_native::runtime_package::RuntimeResourceKind::ExperimentalX
+        )
     }) {
         apply_deep2d(app, generation, candidate.value);
         return;

@@ -255,7 +255,7 @@ pub fn reject_extra(mut args: impl Iterator<Item = std::ffi::OsString>) -> Resul
 
 pub fn print_help() {
     println!(
-        "Experimental X snapshot viewer:\n  deep-engine-native --x-package <runtime-package-v6.json>\n  deep-engine-native --smoke-x-package <runtime-package-v6.json>"
+        "Experimental X viewer:\n  deep-engine-native --x-package <runtime-package-v6.json>\n  deep-engine-native --x-package-live <runtime-package-v6.json>\n  deep-engine-native --smoke-x-package <runtime-package-v6.json>"
     );
     println!(
         "Frozen-font CPU compilation: --rasterize-text <request.json> --output <new-result.json>"

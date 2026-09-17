@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 X 文件自动热同步（Codex）
+
+- 已完成：`--x-package-live` 复用监听/候选发布；固定源身份，坏候选不取 LKG 冒充更新，仅 X/Deep2D 更新复用 renderer。后台求值无发布锁，应用前按当前资源重算 diff。
+- 实证：bin 117 passed/39 ignored，clippy/build/fmt 通过；960×540 RTX 4060/Vulkan 同窗两次文件更新且 renderer 不变，真实 ECharts 三包经拖放/文件监听均通过。repository gate 通过。
+- 本轮待办：X 文件坏写后恢复定时故障注入、完整视觉、动态适配器及 P3 其余项。[证据](specs/deep2d-p3-x-live-package-2026-09-17.md)
+
 ### 2026-09-17 Native 文件监听回收（Codex）
 
 - 已完成：RenderPacket/RuntimePackage 共用可取消并 join 的监听线程，transport 关闭唤醒轮询，读中取消丢弃候选；不强行中断同步文件读取。
