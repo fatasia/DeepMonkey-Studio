@@ -38,8 +38,8 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
     materialSource: object.materialSource });
   for (const object of objects.values()) {
     check(source.layers.some((layer: any) => layer.index === object.layerIndex), 'missing layer');
-    const completed = completeBrepParts(object);
-    if(completed.boundaryAudit)boundaryAudits.push({objectId:object.id,...completed.boundaryAudit,refinements:completed.refinements});
+    const completed = completeBrepParts(object,source.metersPerUnit);
+    if(completed.boundaryAudit)boundaryAudits.push({objectId:object.id,...completed.boundaryAudit,refinements:completed.refinements,welds:completed.welds});
     const parts = object.kind === 'mesh' ? [{ face: null, mesh: object.mesh }] : completed.parts;
     diagnostics.push(...completed.diagnostics);
     if (object.kind === 'brep' && parts.length < object.faceCount) diagnostics.push({ objectId: object.id, code: 'missing-brep-render-mesh', count: object.faceCount - parts.length });
@@ -101,7 +101,7 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
   const rendered = document.getRoot().listNodes().filter((node: any) => node.getMesh());
   const usedMeshes = new Set(rendered.map((node: any) => node.getMesh()));
   for (const mesh of meshes.values()) if (!usedMeshes.has(mesh)) mesh.dispose();
-  const missingBrepGeometry = diagnostics.some(row => row.code === 'missing-brep-render-mesh'||row.code==='nonconforming-brep-boundary');
+  const missingBrepGeometry = diagnostics.some(row => row.code === 'missing-brep-render-mesh'||row.code==='nonconforming-brep-boundary'||row.code.startsWith('source-edge-')||row.code==='continuous-source-edge-tolerance-exceeded');
   const sidecar = { schemaVersion: 1, scope: 'source-file-local', format: '3DM', sourceSha256,
     unitSystem: source.unitSystem, metersPerUnit: source.metersPerUnit, coordinates: 'source-Z-up; GLB-root-Y-up-meters',
     objects: source.objects.map(({ mesh, storedRenderMeshes, ...metadata }: any) => metadata),

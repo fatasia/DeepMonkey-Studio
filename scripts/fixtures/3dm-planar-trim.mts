@@ -40,14 +40,14 @@ function validateRings(rings: number[][][]) {
     }
   }
 }
-function trimLoop(ir: any, loop: any, tolerance: number) {
+function trimLoop(ir: any, loop: any, tolerance: number, overrides:Map<number,number[][]>) {
   check(loop && Array.isArray(loop.trims) && loop.trims.length>=1 && loop.trims.length<=2048, 'unsupported-trim-loop');
   const ring: number[][]=[];
   const boundaries:{edge:number,trim:number,vertices:number[]}[]=[];
   let previous: number[] | undefined;
   for(const index of loop.trims) {
     const trim=ir.trims[index], curve=ir.curves2d[trim?.curve2d];
-    const polyline=trimPolyline(curve,trim.sourceSubdomain,Boolean(trim.curveReversed),tolerance).points;
+    const polyline=overrides.get(index)??trimPolyline(curve,trim.sourceSubdomain,Boolean(trim.curveReversed),tolerance).points;
     const ends=[polyline[0],polyline.at(-1)!];
     check(ends.flat().every(Number.isFinite), 'nonfinite-trim');
     if(previous) check(length(sub(previous,ends[0]))<=EPS, 'open-trim-loop');
@@ -60,7 +60,7 @@ function trimLoop(ir: any, loop: any, tolerance: number) {
   return {ring,boundaries};
 }
 /** Affine planes with positive-weight NURBS trims, under an explicit source-unit chord budget. */
-export function tessellatePlanarFace(ir: any, faceIndex: number) {
+export function tessellatePlanarFace(ir: any, faceIndex: number, overrides=new Map<number,number[][]>()) {
   const face=ir.faces[faceIndex], surface=ir.surfaces[face?.surface];
   check(surface?.degree?.every((d: number)=>d===1) && surface.controlPointCount?.every((n: number)=>n===2)
     && !surface.rational && surface.parameterMap?.kind==='identity', 'unsupported-trimmed-surface');
@@ -77,7 +77,7 @@ export function tessellatePlanarFace(ir: any, faceIndex: number) {
   loops.sort((a: any,b: any)=>a.type-b.type);
   const trimChordTolerance=0.001;
   const uvToSourceBound=length(u)/(surface.domain[0][1]-surface.domain[0][0])+length(v)/(surface.domain[1][1]-surface.domain[1][0]);
-  const parsed=loops.map((loop: any)=>trimLoop(ir,loop,trimChordTolerance/uvToSourceBound)),rings=parsed.map(p=>p.ring); validateRings(rings);
+  const parsed=loops.map((loop: any)=>trimLoop(ir,loop,trimChordTolerance/uvToSourceBound,overrides)),rings=parsed.map(p=>p.ring); validateRings(rings);
   let offset=0;const boundaryEdges=parsed.flatMap(p=>{const edges=p.boundaries.map(b=>({...b,vertices:b.vertices.map(i=>i+offset)}));offset+=p.ring.length;return edges;});
   const uv: number[][]=rings.flat();
   const positions=uv.map(point=>evaluateSurface(surface,point));
