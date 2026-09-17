@@ -42,6 +42,8 @@
 
 - P0-05 Web真实GPU矩阵：6轮60断言全PASS（真实Chrome WebGPU/nvidia）——连续换包（hash独立、旧帧release+GPU dispose+deck回收）、迟到候选（abort/superseded下基线帧像素diff=0保持可见）、取消（load窗口0分配、prepare窗口release+dispose）、5个session teardown全部lost(destroyed)+零uncaptured错误+releaseFailures恒空。未发现生产缺陷（3次失败均为脚本自身问题）；设备丢失注入与"无孤立纹理"直接枚举如实声明未覆盖/间接口径。C1复跑committed且SSIM逐位一致。脚本scripts/verify-p05-web-matrix*。
 
+- P1-16收官 `467a8f4`：UIA屏幕阅读器桥——#[implement]单provider实现Simple/Fragment/FragmentRoot，UiaReturnRawElementProvider挂HWND（WNDPROC截WM_GETOBJECT），ServerSideProvider+catch_unwind收敛COM回血+100ms节流StructureChanged；依赖用lock内已有windows 0.62.2加feature零新包。--smoke-uia真实窗口CUIAutomation枚举6节点全中（Pane/Group/ListItem/Text含中文）。lib 341/bin 126/clippy/fmt全绿。遗留：Narrator真人验证、Control Pattern与bounds（fail-closed NULL/E_NOTIMPL）、winit挂点已明确未接线、717行超预警线。[报告](specs/deep2d-uia-bridge-2026-09-18.md)
+
 - G04收官 `d91913d`：dashboardLayoutCaptureDeployment生产组合件（dist捕获页进程内托管+协议桥并轨API宿主合同+装配快速失败+close幂等）→ service dependencies可选layoutCapture（未配置零改动、宿主捕获失败fail-closed不保留候选）→ dashboardNativeStartup配置layoutCapture.chromePath/capturePageDirectory挂onClose优雅关闭。真实Chrome用例prepare→捕获→worker输入带layout 2.4s通过；API全量1199+4skip。遗留：dist捕获页生产分发不属本片；协议桥错误信息为selector超时（后续直出API协议捕获页可并轨）。
 
 - 补漏 `9146d7f` 后的data_source.rs挂载单独fixup提交（泵切片add路径错误）。
