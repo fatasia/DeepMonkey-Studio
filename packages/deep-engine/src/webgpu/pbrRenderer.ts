@@ -268,6 +268,7 @@ export class PbrRenderer {
     this.diagnostics.recordFrame(frameNumber, begin, encoded, submitted, present!.acquireMs);
     return { frame: ++this.frame, cpuSubmitMs: performance.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
       width: size.width, height: size.height, resources: this.session.resourceCount, shadowUpdated, transientTextures: this.targets.transientStats,
+      deviceResourceMemory: this.session.resourceMemory,
       cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 : 0) + (!directClear && this.features.spatialAa ? 1 : 0),
       weightedOit: hasTransparent,
       hiZMipLevels: opaqueEffects.hiZ?.mipLevelCount ?? 0,

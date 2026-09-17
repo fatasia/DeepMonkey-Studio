@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import { surfaceSize, type SurfaceSize } from "./surfaceSize.js";
+import { DeviceResourceMemory } from "./deviceResourceMemory.js";
 
 export type DeviceState = "ready" | "lost" | "disposed";
 export interface DeviceEvent { readonly kind: "lost" | "error"; readonly message: string }
@@ -32,6 +33,7 @@ async function abortable<T>(promise: Promise<T>, signal: AbortSignal, release?: 
 /** 每个实例独占 device、canvas context 和资源；没有全局渲染循环或共享 GPU cache。 */
 export class DeviceSession {
   private readonly resources = new Set<Destroyable>();
+  private readonly memory = new DeviceResourceMemory();
   private readonly events: DeviceEvent[] = [];
   private currentState: DeviceState = "ready";
   private size: SurfaceSize | undefined;
@@ -91,15 +93,17 @@ export class DeviceSession {
   get diagnostics(): readonly DeviceEvent[] { return this.events.slice(); }
   get hasErrors(): boolean { return this.events.some((event) => event.kind === "error"); }
   get resourceCount(): number { return this.resources.size; }
+  get resourceMemory() { return this.memory.snapshot; }
 
   own<T extends Destroyable>(resource: T): T {
     if (this.currentState !== "ready") { resource.destroy(); throw new Error("GPU session is not ready."); }
     this.resources.add(resource);
+    this.memory.add(resource);
     return resource;
   }
 
   release(resource: Destroyable): void {
-    if (this.resources.delete(resource)) resource.destroy();
+    if (this.resources.delete(resource)) { this.memory.remove(resource); resource.destroy(); }
   }
 
   resize(width: number, height: number, ratio: number): SurfaceSize | undefined {
@@ -128,6 +132,7 @@ export class DeviceSession {
       }
     } finally {
       this.resources.clear();
+      this.memory.clear();
       try { this.context.unconfigure(); } finally { this.device.destroy(); }
     }
   }

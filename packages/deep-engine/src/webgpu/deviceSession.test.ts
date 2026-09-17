@@ -25,6 +25,16 @@ function fixture() {
 }
 
 describe("DeviceSession ownership and initialization failures", () => {
+  it("reports simultaneous candidate bytes at the ownership boundary and clears on dispose", async () => {
+    const f = fixture(), session = await f.open();
+    const old = { size: 32, destroy: vi.fn() }, candidate = { size: 64, destroy: vi.fn() };
+    session.own(old); session.own(old); session.own(candidate);
+    expect(session.resourceMemory).toMatchObject({ estimatedBytes: 96, peakEstimatedBytes: 96, resourceCount: 2 });
+    session.release(candidate); expect(session.resourceMemory.estimatedBytes).toBe(32);
+    session.dispose();
+    expect(session.resourceMemory).toMatchObject({ estimatedBytes: 0, peakEstimatedBytes: 96, resourceCount: 0 });
+    expect(old.destroy).toHaveBeenCalledOnce(); expect(candidate.destroy).toHaveBeenCalledOnce();
+  });
   it("falls back to core rendering if optional timestamp device creation is rejected", async () => {
     const f = fixture(); f.adapter.features.add("timestamp-query");
     f.adapter.requestDevice.mockRejectedValueOnce(new Error("optional feature rejected"));

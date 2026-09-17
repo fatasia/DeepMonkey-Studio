@@ -7,6 +7,7 @@ import type { PbrEnvironmentSource } from "./pbrEnvironmentSource.js";
 import type { EditorOverlaySnapshot } from "./editorOverlayTypes.js";
 import type { AuthorGridView } from "./authorGridTypes.js";
 import type { PbrTransientTexturePoolStats } from "./pbrTransientTexturePool.js";
+import type { DeviceResourceMemorySnapshot } from "./deviceResourceMemory.js";
 
 export interface RenderView extends PbrFrameUniformView {
   readonly authorGrid?: AuthorGridView | undefined;
@@ -35,6 +36,8 @@ export interface FrameMetrics {
   readonly width: number; readonly height: number; readonly resources: number;
   /** Real RenderTargets allocation/reuse counters after this frame's queue submission. */
   readonly transientTextures?: PbrTransientTexturePoolStats;
+  /** 同一 device 的已托管分配；已包含 transient，二者不能相加。 */
+  readonly deviceResourceMemory?: DeviceResourceMemorySnapshot;
   readonly shadowUpdated: boolean; readonly cameraCut: boolean;
   readonly postProcessPasses: number; readonly weightedOit: boolean;
   readonly hiZMipLevels: number; readonly occlusionCulling: boolean;
