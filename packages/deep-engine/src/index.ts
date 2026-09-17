@@ -49,6 +49,15 @@ export type {
   FrameLoopStageTrace,
 } from "./frameLoop.js";
 
+export { PriorityEventQueue } from "./priorityEventQueue.js";
+export type {
+  EngineEvent,
+  EngineEventEnqueueResult,
+  EngineEventPriority,
+  PriorityEventQueueDiagnostics,
+  QueuedEngineEvent,
+} from "./priorityEventQueue.js";
+
 export { BackendSwitchCoordinator } from "./backendSwitch.js";
 export type { BackendPreparation, BackendRevisionBarrier, BackendStateRevision,
   BackendSwitchResult, SwitchableBackend } from "./backendSwitch.js";
