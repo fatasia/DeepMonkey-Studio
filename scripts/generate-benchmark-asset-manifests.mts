@@ -14,8 +14,18 @@ async function sha256File(filePath: string): Promise<string> {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
-/** 三份真实项目;路径为本机实测,资产字节不入 git。 */
+/** 真实项目语料(用户 2026-09-17 指定:用 Download 目录,不用[已脱敏]目录)。
+ *  路径为本机实测,资产字节不入 git。 */
 const candidates = [
+  // "(1)" 与原文件字节级相同(同 sha256),去重保留一份。
+  { id: "asset.bim.bimface-demo-1", name: "BIMFACE 示例模型", domain: "bim" as const,
+    primaryLoadClass: "heterogeneous-bim" as const,
+    relative: "D:/Download/BIMFACE示例模型.rvt",
+    origin: "BIMFACE public demo model (local download)",
+    units: "millimeters", formatVersion: "unknown",
+    license: { redistributable: false, evidence: "BIMFACE public demo; local benchmark use only, not redistributable" },
+    tasks: [{ kind: "appearance" as const, fixtureId: "fixture.appearance.orbit-360" },
+      { kind: "dashboard" as const, fixtureId: "fixture.dashboard.component-count" }] },
   { id: "asset.bim.snowdon-towers-arch", name: "Snowdon Towers Sample Architectural", domain: "bim" as const,
     primaryLoadClass: "heterogeneous-bim" as const,
     relative: "test-model/Snowdon Towers Sample Architectural.rvt",
@@ -23,20 +33,6 @@ const candidates = [
     units: "feet", formatVersion: "unknown",
     license: { redistributable: false, evidence: "Autodesk sample content; local benchmark use only, not redistributable" },
     tasks: [{ kind: "appearance" as const, fixtureId: "fixture.appearance.orbit-360" }] },
-  { id: "asset.bim.golden-nugget-arch", name: "BIM Projekt Golden Nugget - Architektur und Ingenieurbau", domain: "bim" as const,
-    primaryLoadClass: "heterogeneous-bim" as const,
-    relative: "D:/Soft/Revit/RVT2019/Revit 2019/Samples/BIM_Projekt_Golden_Nugget-Architektur_und_Ingenieurbau.rvt",
-    origin: "Autodesk Revit 2019 sample content (local install)",
-    units: "millimeters", formatVersion: "2019",
-    license: { redistributable: false, evidence: "Autodesk sample content; local benchmark use only, not redistributable" },
-    tasks: [{ kind: "appearance" as const, fixtureId: "fixture.appearance.facade-sweep" }, { kind: "dashboard" as const, fixtureId: "fixture.dashboard.component-count" }] },
-  { id: "asset.bim.rme-advanced-mep", name: "rme_advanced_sample_project (MEP)", domain: "bim" as const,
-    primaryLoadClass: "heterogeneous-bim" as const,
-    relative: "D:/Soft/Revit/RVT2019/Revit 2019/Samples/rme_advanced_sample_project.rvt",
-    origin: "Autodesk Revit 2019 sample content (local install)",
-    units: "feet", formatVersion: "2019",
-    license: { redistributable: false, evidence: "Autodesk sample content; local benchmark use only, not redistributable" },
-    tasks: [{ kind: "appearance" as const, fixtureId: "fixture.appearance.mep-isolation" }, { kind: "animation" as const, fixtureId: "fixture.animation.system-flow" }] },
 ];
 
 const manifests: BenchmarkAssetManifest[] = [];

@@ -188,6 +188,8 @@ g++ -static readlaz.o -L. -llazperf_s -o readlaz.exe
 `cargo vendor` 或 `cargo fetch`(联网)把锁定的依赖树落盘,之后才能离线复现构建;
 这属于下一批依赖锁定的动作,不在本批"不下载新依赖"约束内。
 
+## 用户决议(2026-09-17):[已脱敏]目录 RVT 不作为基准语料(用户指令);RVT 语料改用 D:/Download(BIMFACE 公开示例)与仓库 test-model。§6.3 清单保留作档案参考。
+
 ## 6. D 盘 RVT 盘点(只盘点文件与容器魔数,不解析内容)
 
 两轮扫描,脚本与输出在 `build-trial/`:`inventory-rvt.ps1`(浅扫)、

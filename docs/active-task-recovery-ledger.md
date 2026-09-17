@@ -1725,3 +1725,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 主线程复核:typecheck 含 lab PASS;cargo lib 282/0/1;fmt clean;deep-engine 全量 2987/0/41(exit1 仅 source-size 7 项历史文件)。
 - **提交口径(如实)**:C02 同族修复与并行会话在途工作(transparency OIT/residency/author bloom/ThreeProjectionBridge 修复)已交织成验证绿的整体,按整树先例两笔提交(TS 树+Native 树),提交信息披露吸收范围;B03 暂缓文件组亦随 TS 树一并落地,其暂缓条件解除。
 - 边界(如实):glTF COLOR_0 解码未接;shader 未采样颜色,像素级正背面一致归颜色变体切片+真机门禁;flat+normalMap 显式过渡拒绝。
+
+### 2026-09-17 A02 语料来源改判 + 精简(GLM,用户指令)
+
+- 用户指令:[已脱敏]目录 RVT 不作基准语料;RVT 用 D:/Download。执行:A02 清单重生成=BIMFACE 示例模型(6.2MB,实测 sha256 8087a360…)+Snowdon Towers(94.7MB);BIMFACE "(1)" 文件与原件字节级相同已去重,不造假分母;PLAN-02 报告补用户决议注记。语料=2 个唯一真实项目。
+- 测试纪律(用户指令):测试环节不拖长——聚焦测试优先,全量只在切片合拢时跑。
