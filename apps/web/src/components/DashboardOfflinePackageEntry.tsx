@@ -5,7 +5,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { api } from "../api";
 import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
-import { dashboardCandidateFilename, downloadFailureGuidance, initialDashboardOfflinePackageState, mapDashboardCandidateError,
+import { dashboardCandidateAuthority, dashboardCandidateFilename, downloadFailureGuidance, initialDashboardOfflinePackageState, mapDashboardCandidateError,
   reduceDashboardOfflinePackage, summarizeCandidateObjects, type DashboardCandidateDownloadFormat,
   type DashboardCandidateObjectReport, type DashboardOfflinePackageEvent, type DashboardPublicationPointer } from "./dashboardOfflinePackageState";
 import "./DashboardOfflinePackageDialog.css";
@@ -22,16 +22,16 @@ export function DashboardOfflinePackageEntry() {
       {tr(locale, "离线包", "Offline")}
     </button>
     {open && createPortal(<DashboardOfflinePackageDialog
+      key={`${application.metadata.projectId}:${application.metadata.id}`}
       locale={locale}
       projectId={application.metadata.projectId}
       applicationId={application.metadata.id}
-      entryPageId={application.publicationProfiles?.[0]?.entryPageId ?? application.pages[0]?.id ?? undefined}
       onClose={() => setOpen(false)} />, document.body)}
   </>;
 }
 
-function DashboardOfflinePackageDialog({ locale, projectId, applicationId, entryPageId, onClose }: {
-  locale: AppLocale; projectId: string; applicationId: string; entryPageId: string | undefined; onClose(): void;
+function DashboardOfflinePackageDialog({ locale, projectId, applicationId, onClose }: {
+  locale: AppLocale; projectId: string; applicationId: string; onClose(): void;
 }) {
   const escape = useDialogEscape(onClose);
   const [state, dispatch] = useReducer(reduceDashboardOfflinePackage, undefined, initialDashboardOfflinePackageState);
@@ -47,20 +47,21 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, entry
   }, []);
 
   const prepare = useCallback((pointer: DashboardPublicationPointer) => {
-    if (!entryPageId) return;
+    const authority = dashboardCandidateAuthority(pointer);
+    if (!authority) return;
     abortInFlight();
     const sequence = ++ticket.current;
     const active = new AbortController();
     controller.current = active;
     run({ type: "prepare" });
     api.prepareDashboardCandidate(projectId, applicationId,
-      { publicationId: pointer.id, applicationRevision: pointer.applicationRevision, entryPageId }, active.signal)
+      authority, active.signal)
       .then(candidate => { if (sequence === ticket.current) run({ type: "prepared", candidate }); })
       .catch(reason => {
         if (active.signal.aborted || sequence !== ticket.current) return;
         run({ type: "failed", error: mapDashboardCandidateError(reason) });
       });
-  }, [abortInFlight, applicationId, entryPageId, projectId, run]);
+  }, [abortInFlight, applicationId, projectId, run]);
 
   // 打开时读取当前发布版本;没有发布版本时给可操作指引而不是报错。
   useEffect(() => {
@@ -94,6 +95,7 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, entry
             const body = await response.json() as { code?: string; message?: string };
             code = body.code; message = body.message ?? "";
           } catch { /* 非 JSON 错误体时走通用失败提示 */ }
+          if (active.signal.aborted || sequence !== ticket.current) return;
           run({ type: "failed", error: mapDashboardCandidateError({ status: response.status, body: { code, message } }) });
           return;
         }
@@ -129,6 +131,9 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, entry
         {state.phase === "unpublished" && <p className="dashboard-offline-hint">
           {tr(locale, "应用尚未发布。请先在顶部“发布”，再回到这里准备离线包。", "Not published yet. Publish from the toolbar first, then come back for the package.")}
         </p>}
+        {pointer && !dashboardCandidateAuthority(pointer) && <p className="dashboard-offline-error" role="alert">
+          {tr(locale, "发布版本缺少有效入口页。请修正并重新发布。", "The published version has no valid entry page. Correct it and publish again.")}
+        </p>}
         {state.phase === "failed" && <p className="dashboard-offline-error" role="alert">
           {state.error.code === "candidate_rejected" && state.error.status === 0
             ? tr(locale, "网络中断或服务不可用，请稍后重试", "Network interrupted or service unavailable; retry later")
@@ -155,12 +160,12 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, entry
           </div>
         </>}
         <div className="dashboard-offline-footer">
-          {(state.phase === "ready" || state.phase === "failed") && pointer && entryPageId &&
+          {(state.phase === "ready" || state.phase === "failed") && pointer && dashboardCandidateAuthority(pointer) &&
             <button type="button" onClick={() => prepare(pointer)}
               title={tr(locale, "作废当前候选并重新冻结编译", "Discard the current candidate and re-freeze")}>
               {tr(locale, "重新准备", "Prepare again")}
             </button>}
-          {state.phase === "idle" && pointer && entryPageId &&
+          {state.phase === "idle" && pointer && dashboardCandidateAuthority(pointer) &&
             <button type="button" className="primary" onClick={() => prepare(pointer)}>
               {tr(locale, "开始准备", "Prepare")}
             </button>}

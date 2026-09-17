@@ -1,4 +1,5 @@
 /** Dashboard 离线运行包对话框的纯状态机与错误映射;视图只消费事件与渲染。 */
+import type { ApplicationDocument } from "@bim-studio/contracts";
 
 export type DashboardCandidateDownloadFormat = "exe" | "zip" | "dmda";
 export type DashboardCandidateErrorCode = "candidate_stale" | "candidate_timeout" | "candidate_concurrent"
@@ -52,6 +53,15 @@ export interface DashboardPublicationPointer {
   readonly applicationId: string;
   readonly applicationRevision: number;
   readonly publishedAt: string;
+  /** Public application responses include the immutable published document, never the editor draft. */
+  readonly document?: Pick<ApplicationDocument, "pages" | "publicationProfiles">;
+}
+
+export function dashboardCandidateAuthority(pointer: DashboardPublicationPointer) {
+  const document = pointer.document;
+  const entryPageId = document?.publicationProfiles[0]?.entryPageId ?? document?.pages[0]?.id;
+  if (!entryPageId || !document?.pages.some(page => page.id === entryPageId)) return undefined;
+  return { publicationId: pointer.id, applicationRevision: pointer.applicationRevision, entryPageId };
 }
 
 export type DashboardOfflinePackageEvent =
