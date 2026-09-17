@@ -10,6 +10,9 @@ use std::collections::VecDeque;
 mod chart_adapter;
 mod connection;
 mod contract;
+mod http_pump;
+#[cfg(test)]
+mod http_pump_tests;
 mod http_transport;
 #[cfg(test)]
 mod http_transport_tests;
@@ -18,6 +21,7 @@ mod receive;
 
 pub use chart_adapter::payload_to_chart_message;
 pub use contract::*;
+pub use http_pump::{HttpPollOutcome, new_http_machine, poll_http_once};
 pub use http_transport::{HttpMethod, HttpTransport, HttpTransportConfig};
 
 pub struct DataSourceMachine<T: Transport> {
@@ -54,6 +58,9 @@ impl<T: Transport> DataSourceMachine<T> {
 
     pub fn state(&self) -> &DataSourceState {
         &self.state
+    }
+    pub fn source_id(&self) -> &str {
+        &self.config.source_id
     }
     pub fn committed_source_version(&self) -> Option<u64> {
         self.committed_version
