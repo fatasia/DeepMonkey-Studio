@@ -4,10 +4,12 @@ import { Document, NodeIO, type Material, type Mesh } from "@gltf-transform/core
 import type { JtDocument, JtMesh, JtMeshInstance } from "@bim-studio/jt-reader";
 import { calculateVertexNormals, createIndexedTrianglePrimitive } from "./indexedTriangleMesh.js";
 import { jtInstanceElementId, type JtMaterialEvidence } from "./jtInspection.js";
+import { createJtMaterialResolver } from "./jtMaterialResolution.js";
 
 type GltfMatrix = Parameters<ReturnType<Document["createNode"]>["setMatrix"]>[0];
 
 export interface JtGlbConversionResult {
+  /** 源 LOD0 几何计数；材质变体只共享 accessor，不重复计入。 */
   meshCount: number;
   instanceCount: number;
   primitiveCount: number;
@@ -37,13 +39,16 @@ export async function convertJtLod0ToGlb(
   const scene = gltf.createScene(sourceName);
   const sceneNodes = new Map(document.sceneGraph.nodes.map((node) => [node.objectId, node]));
   const gltfMeshes = new Map<string, Mesh>();
+  const resolveMaterial = createJtMaterialResolver(materials);
+  const variants = new Map<string, Mesh>();
+  const gltfMaterials = new Map<string, Material>();
+  const assignedMeshes = new Set<string>();
+  const placeholder = createMaterial(gltf, undefined, 0);
   let primitiveCount = 0;
   meshes.forEach((mesh, index) => {
     const gltfMesh = gltf.createMesh(`JT 网格 ${index + 1}`);
-    const materialEvidence = materials.find((item) => mesh.sceneNodeObjectIds.includes(item.objectId));
-    const material = createMaterial(gltf, materialEvidence ?? materials[index] ?? materials[0], index);
     for (const [groupId, indices] of triangleGroups(mesh)) {
-      const primitive = createIndexedTrianglePrimitive(gltf, buffer, material, {
+      const primitive = createIndexedTrianglePrimitive(gltf, buffer, placeholder, {
         positions: mesh.positions,
         indices,
         normals: calculateVertexNormals(mesh.positions, indices),
@@ -56,8 +61,28 @@ export async function convertJtLod0ToGlb(
   instances.forEach((instance, index) => {
     const mesh = meshById.get(instance.meshId)!;
     const sourceNode = sceneNodes.get(instance.sceneNodeObjectId);
+    const resolved = resolveMaterial(instance);
+    const variantKey = JSON.stringify([mesh.id, resolved.key]);
+    let variant = variants.get(variantKey);
+    if (!variant) {
+      let material = gltfMaterials.get(resolved.key);
+      if (!material) {
+        material = resolved.evidence ? createMaterial(gltf, resolved.evidence, gltfMaterials.size) : placeholder;
+        gltfMaterials.set(resolved.key, material);
+      }
+      const base = gltfMeshes.get(mesh.id)!;
+      variant = base;
+      if (assignedMeshes.has(mesh.id)) {
+        // 材质属于 primitive：只复制其引用容器，顶点/法线/索引 accessor 仍共享。
+        variant = gltf.createMesh(`${base.getName()} 材质变体`);
+        for (const primitive of base.listPrimitives()) variant.addPrimitive(primitive.clone());
+      }
+      for (const primitive of variant.listPrimitives()) primitive.setMaterial(material);
+      variants.set(variantKey, variant);
+      assignedMeshes.add(mesh.id);
+    }
     scene.addChild(gltf.createNode(sourceNode?.label || `JT LOD0 实例 ${index + 1}`)
-      .setMesh(gltfMeshes.get(instance.meshId)!)
+      .setMesh(variant)
       .setMatrix(instance.worldTransform as GltfMatrix)
       .setExtras({
         ElementId: jtInstanceElementId(instance),
@@ -67,8 +92,11 @@ export async function convertJtLod0ToGlb(
         Lod: mesh.lod,
         SceneNodeObjectId: instance.sceneNodeObjectId,
         AssemblyPath: instance.pathObjectIds.join("/"),
+        MaterialStatus: resolved.status,
+        MaterialSourceObjectIds: resolved.sourceObjectIds,
       }));
   });
+  if (!gltfMaterials.has("unassigned")) placeholder.dispose();
 
   const binary = await new NodeIO().writeBinary(gltf);
   await mkdir(outputDir, { recursive: true });

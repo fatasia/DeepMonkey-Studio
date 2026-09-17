@@ -10,6 +10,7 @@ import {
   type JtSceneNode,
 } from "@bim-studio/jt-reader";
 import { buildJtOccurrences, jtInstanceElementId, type JtOccurrence } from "./jtOccurrenceIdentity.js";
+import { createJtMaterialResolver } from "./jtMaterialResolution.js";
 export { jtInstanceElementId } from "./jtOccurrenceIdentity.js";
 
 export interface JtMaterialEvidence {
@@ -187,12 +188,15 @@ function buildProperties(
       源原型: item.prototypeId, 装配路径: item.pathObjectIds.join(" / "),
     },
   }] as const);
+  const resolveMaterial = createJtMaterialResolver(inspection.materials);
   const instanceEntries = lod0Instances.map((instance, index) => {
     const mesh = meshById.get(instance.meshId)!;
+    const material = resolveMaterial(instance);
     return [
       jtInstanceElementId(instance),
       {
         elementId: jtInstanceElementId(instance),
+        material: { status: material.status, sourceObjectIds: material.sourceObjectIds },
         displayProperties: {
           名称: `JT LOD0 实例 ${index + 1}`,
           类型: "JT 网格实例",

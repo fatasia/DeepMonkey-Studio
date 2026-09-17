@@ -43,12 +43,33 @@ describe("JT multi-mesh GLB adapter", () => {
     expect(result?.bounds.min.every(Number.isFinite)).toBe(true);
     expect(result?.bounds.max.every(Number.isFinite)).toBe(true);
     expect(await auditConverterOutput(outputDir, true)).toMatchObject({
-      geometry: { meshCount: 44, triangleCount: 47_962 },
+      geometry: { meshCount: 45, triangleCount: 50_194 },
     });
     const glb = await new NodeIO().read(path.join(outputDir, "geometry.glb"));
     const meshNodes = glb.getRoot().listNodes().filter((node) => node.getMesh());
     expect(meshNodes).toHaveLength(64);
-    expect(new Set(meshNodes.map((node) => node.getMesh())).size).toBe(44);
+    expect(new Set(meshNodes.map((node) => node.getMesh())).size).toBe(45);
+    const evidenceById = new Map(artifacts.inspection.materials.map((m) => [m.objectId, m]));
+    for (const node of meshNodes) {
+      const extras = node.getExtras();
+      const owners = (String(extras.AssemblyPath).split("/").map(Number)).filter((id) => evidenceById.has(id));
+      expect(owners).toHaveLength(1);
+      expect(extras).toMatchObject({ MaterialStatus: "source-path", MaterialSourceObjectIds: owners });
+      const source = evidenceById.get(owners[0]!)!;
+      for (const primitive of node.getMesh()!.listPrimitives()) {
+        expect(primitive.getMaterial()!.getBaseColorFactor()).toEqual([...source.diffuse, source.opacity]);
+      }
+    }
+    const silver = meshNodes.find((n) => String(n.getExtras().AssemblyPath).includes("/18/184/"))!.getMesh()!;
+    const gray = meshNodes.find((n) => String(n.getExtras().AssemblyPath).includes("/43/184/"))!.getMesh()!;
+    expect(silver).not.toBe(gray);
+    expect(silver.listPrimitives()).toHaveLength(gray.listPrimitives().length);
+    silver.listPrimitives().forEach((primitive, index) => {
+      const other = gray.listPrimitives()[index]!;
+      expect(primitive.getAttribute("POSITION")).toBe(other.getAttribute("POSITION"));
+      expect(primitive.getAttribute("NORMAL")).toBe(other.getAttribute("NORMAL"));
+      expect(primitive.getIndices()).toBe(other.getIndices());
+    });
     expect(meshNodes.some((node) => node.getMatrix().some((value, index) => value !== IDENTITY[index]))).toBe(true);
     const hierarchy = JSON.parse(await readFile(path.join(outputDir, "hierarchy.json"), "utf8")) as {
       root: { meshIds: string[] };

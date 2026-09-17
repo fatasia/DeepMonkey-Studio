@@ -162,7 +162,7 @@ describe("JT upload inspection closure", () => {
     const geometryResponse = await app.inject({ method: "GET", url: model.manifest!.geometryUrl! });
     const glb = await new NodeIO().readBinary(new Uint8Array(geometryResponse.rawPayload));
     const nodes = glb.getRoot().listNodes().filter((node) => node.getMesh());
-    expect(glb.getRoot().listMeshes()).toHaveLength(44);
+    expect(glb.getRoot().listMeshes()).toHaveLength(45);
     expect(nodes).toHaveLength(64);
     const transformed = nodes.find((node) => node.getMatrix().some((value, index) => value !== IDENTITY[index]));
     expect(transformed).toBeDefined();

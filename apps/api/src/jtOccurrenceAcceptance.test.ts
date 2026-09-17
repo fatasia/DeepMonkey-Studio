@@ -26,7 +26,7 @@ describe("real JT occurrence artifact closure", () => {
       const { document, inspection } = await writeJtInspectionArtifacts(fixture, dir);
       const result = await convertJtLod0ToGlb(document, dir, "CoffeeMaker.jt", inspection.materials);
       expect(result).toMatchObject({ meshCount: 44, instanceCount: 64, triangleCount: 47_962 });
-      expect(await auditConverterOutput(dir, true)).toMatchObject({ geometry: { meshCount: 44, triangleCount: 47_962 } });
+      expect(await auditConverterOutput(dir, true)).toMatchObject({ geometry: { meshCount: 45, triangleCount: 50_194 } });
       const hierarchy = JSON.parse(await readFile(path.join(dir, "hierarchy.json"), "utf8")) as { root: TreeNode };
       const properties = JSON.parse(await readFile(path.join(dir, "properties.json"), "utf8"));
       const rows = flatten(hierarchy.root), occurrences = rows.slice(1);
@@ -45,7 +45,7 @@ describe("real JT occurrence artifact closure", () => {
       const glb = await new NodeIO().read(path.join(dir, "geometry.glb"));
       const meshNodes = glb.getRoot().listNodes().filter((node) => node.getMesh());
       expect(meshNodes).toHaveLength(64);
-      expect(new Set(meshNodes.map((node) => node.getMesh())).size).toBe(44);
+      expect(new Set(meshNodes.map((node) => node.getMesh())).size).toBe(45);
       const glbIds = meshNodes.map((node) => String(node.getExtras().ElementId));
       expect(new Set(glbIds).size).toBe(64);
       expect([...hierarchy.root.meshIds].sort()).toEqual([...glbIds].sort());
@@ -56,10 +56,13 @@ describe("real JT occurrence artifact closure", () => {
         expect(owner).toHaveLength(1);
         expect(owner[0]!.assemblyPath!.join("/")).toBe(meshNode.getExtras().AssemblyPath);
         expect(properties.elements[id].elementId).toBe(id);
+        expect(properties.elements[id].material).toEqual({ status: meshNode.getExtras().MaterialStatus, sourceObjectIds: meshNode.getExtras().MaterialSourceObjectIds });
       }
     }
     for (const file of ["hierarchy.json", "properties.json", "geometry.glb"]) {
-      expect(await readFile(path.join(attempts[0]!, file))).toEqual(await readFile(path.join(attempts[1]!, file)));
+      const left = await readFile(path.join(attempts[0]!, file));
+      const right = await readFile(path.join(attempts[1]!, file));
+      expect(left.equals(right), `${file} must be byte-identical`).toBe(true);
     }
   });
 });
