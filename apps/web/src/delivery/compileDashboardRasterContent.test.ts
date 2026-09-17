@@ -39,6 +39,18 @@ function payload(result: Awaited<ReturnType<typeof compileDashboardRasterContent
   return Object.values(result.package.payloads).find((value: any) => value.schema === "deep-engine.deep2d-runtime") as any;
 }
 describe("frozen dashboard raster orchestration", () => {
+  it("keeps a non-first published entry page when compiling all pages", async () => {
+    const input = fixture("shape"), second = structuredClone(input.document.application.pages[0]!);
+    second.id = "second-page"; second.nodes[0]!.id = "second-shape";
+    input.document.application.pages.push(second);
+    input.document.entryPageId = second.id;
+    const result = await compileDashboardRasterContent(input, host().adapter);
+    const dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
+    expect(dashboard.pages).toHaveLength(2);
+    expect(dashboard.entryPageId).toBe(dashboard.pages[1].id);
+    expect(result.nodeBindings.map(binding => binding.pageId)).toEqual([input.document.application.pages[0]!.id, second.id]);
+    expect(validateDeepRuntimePackage(result.package).valid).toBe(true);
+  });
   it("compiles the Web page background color beneath every authored node", async () => {
     const input = fixture();
     input.document.application.pages[0]!.appearance = {

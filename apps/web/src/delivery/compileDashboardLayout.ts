@@ -9,6 +9,17 @@ const PAGE_FIELDS = new Set(["id", "width", "height", "nodes"]);
 export function compileDashboardLayout(input: DashboardDocument, pageId = input.entryPageId) {
   const document = structuredClone(input);
   assertDashboardDocument(document);
+  return compilePageLayout(document, pageId);
+}
+
+/** 多页发布共享一次文档快照与校验，避免每页复制整个应用。 */
+export function compileDashboardLayouts(input: DashboardDocument) {
+  const document = structuredClone(input);
+  assertDashboardDocument(document);
+  return { source: document, pages: document.application.pages.map(page => compilePageLayout(document, page.id)) };
+}
+
+function compilePageLayout(document: DashboardDocument, pageId: string) {
   const page = document.application.pages.find(page => page.id === pageId);
   if (!page) throw new Error(`二维布局页面不存在：${pageId}`);
   const appId = document.application.metadata.id, revision = document.application.metadata.revision;

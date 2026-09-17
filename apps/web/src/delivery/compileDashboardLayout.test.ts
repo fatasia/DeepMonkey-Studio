@@ -1,12 +1,29 @@
 import { describe, expect, it } from "vitest";
 import source from "../../../../packages/contracts/fixtures/application-v2-worker-behavior.json";
 import { assertApplicationDocument, createDashboardDocument } from "@bim-studio/contracts";
-import { compileDashboardLayout } from "./compileDashboardLayout";
+import { compileDashboardLayout, compileDashboardLayouts } from "./compileDashboardLayout";
 import { readFileSync } from "node:fs";
 
 function fixture() { const app = structuredClone(source); assertApplicationDocument(app); return createDashboardDocument(app, "page-main"); }
 
 describe("DashboardDocument outer layout pass", () => {
+  it("batch compilation matches single-page layouts and isolates the source snapshot", () => {
+    const input = fixture(), second = structuredClone(input.application.pages[0]!);
+    second.id = "page-second";
+    second.nodes[0]!.id = "node-second";
+    input.application.pages.push(second);
+    input.entryPageId = second.id;
+    const batch = compileDashboardLayouts(input);
+    expect(batch.pages.map(page => ({ tree: page.tree, layout: page.layout, bindings: page.nodeBindings })))
+      .toEqual(input.application.pages.map(page => {
+        const result = compileDashboardLayout(input, page.id);
+        return { tree: result.tree, layout: result.layout, bindings: result.nodeBindings };
+      }));
+    expect(batch.pages.every(page => page.source === batch.source)).toBe(true);
+    const originalX = second.nodes[0]!.frame.x;
+    input.application.pages[1]!.nodes[0]!.frame.x += 100;
+    expect(batch.source.application.pages[1]!.nodes[0]!.frame.x).toBe(originalX);
+  });
   it("recompiles the shared Native outer-layout golden", () => {
     const read = (name: string) => JSON.parse(readFileSync(new URL(`../../../../packages/deep-engine/fixtures/${name}.json`, import.meta.url), "utf8"));
     const result = compileDashboardLayout(read("dashboard-layout-source-v1"));

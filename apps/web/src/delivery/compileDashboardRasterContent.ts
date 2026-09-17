@@ -1,7 +1,7 @@
 import { buildDashboardCompositionRuntimePackage, runtimeContentSha256,
   type DashboardRuntimePageV1, type Deep2dRuntimePackage, type ChartIrRuntimeValue } from "@bim-studio/deep-engine/runtime-package";
 import { lowerDashboardChart } from "./lowerDashboardChart";
-import { compileDashboardLayout } from "./compileDashboardLayout";
+import { compileDashboardLayouts } from "./compileDashboardLayout";
 import { cssSrgbToLinearColor } from "./dashboardColor";
 import { parseHexColor } from "./dashboardShapeContent";
 import { rasterNode } from "./dashboardRasterNode";
@@ -11,8 +11,9 @@ import type { DashboardRasterCompileInput, DashboardRasterEvidence, DashboardRas
 /** A frozen pixel compilation pass; publication authorization remains a separate operation. */
 export async function compileDashboardRasterContent(source: DashboardRasterCompileInput, host: DashboardRasterHost) {
   const input = snapshotRasterInput(source);
-  const first = compileDashboardLayout(input.document);
-  const document = first.source, revision = document.application.metadata.revision;
+  const layouts = compileDashboardLayouts(input.document);
+  const document = layouts.source, revision = document.application.metadata.revision;
+  const first = layouts.pages.find(page => page.pageId === document.entryPageId)!;
   const pages: DashboardRuntimePageV1[] = [], deep2d: Deep2dRuntimePackage[] = [], charts: ChartIrRuntimeValue[] = [];
   const objects: Array<Awaited<ReturnType<typeof rasterNode>>["report"]> = [];
   const producerEvidence: DashboardRasterEvidence[] = [];
@@ -22,8 +23,8 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
     ...(input.data ? { data: input.data } : {}),
     assets: Object.fromEntries(Object.entries(input.assets).map(([id, asset]) => [id, assetIdentity(asset)])) });
   let atlasBytes = 0;
-  for (const page of document.application.pages) {
-    const layout = compileDashboardLayout(document, page.id);
+  for (const [pageIndex, page] of document.application.pages.entries()) {
+    const layout = layouts.pages[pageIndex]!;
     const nodes: DashboardRuntimePageV1["nodes"][number][] = [];
     const ordered = page.nodes.map((node, index) => ({ node, id: layout.nodeBindings[index]!.layoutId }))
       .sort((a, b) => a.node.zIndex - b.node.zIndex || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

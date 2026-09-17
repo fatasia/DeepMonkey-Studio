@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard offline packages
 
+- Compile multi-page layouts from one validated document snapshot, preserving the published entry page and avoiding repeated whole-document copies.
+
 - Accept verified system background draws during Native window validation without counting them as rendered author nodes or fonts.
 
 - Resolve offline entry pages from the published snapshot and ignore late failures from superseded downloads.
