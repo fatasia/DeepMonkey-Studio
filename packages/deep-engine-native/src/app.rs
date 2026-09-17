@@ -45,6 +45,10 @@ mod selection;
 mod selection_probe;
 mod shadow_update_probe;
 mod window_events;
+#[cfg(windows)]
+mod x_runtime;
+#[cfg(windows)]
+mod x_transport;
 use package_live::PackageLiveTransport;
 use packet_coalescer::{PublishedState, UpdateCoalescer};
 use packet_live::PacketLiveTransport;
@@ -83,6 +87,8 @@ struct NativeApp {
     chart_legend_page: usize,
     chart_sim_scheduled: bool,
     dashboard_wake_at: Option<std::time::Instant>,
+    #[cfg(windows)]
+    x_runtime: Option<x_runtime::Runtime>,
 }
 
 struct NativeAppSetup {
@@ -113,6 +119,8 @@ impl NativeApp {
             chart_legend_page: 0,
             chart_sim_scheduled: false,
             dashboard_wake_at: None,
+            #[cfg(windows)]
+            x_runtime: None,
             content: PublishedState::new(content),
             proxy,
             window: None,

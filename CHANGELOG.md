@@ -10,6 +10,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Deep2D experimental compatibility
 
+- Evaluate bounded X window ticks off the UI thread, reuse unchanged presented layers, and cancel/reclaim the isolated worker on exit or package replacement.
+
 - Open explicit X package snapshots in the native viewer and checkpoint them only after GPU presentation; keep window recovery separate from headless evaluation snapshots.
 
 - Reuse one LPAC worker across X ticks with bounded framed IPC, cumulative process limits, explicit cleanup, and a 4 MiB aggregate diagnostic receipt budget.

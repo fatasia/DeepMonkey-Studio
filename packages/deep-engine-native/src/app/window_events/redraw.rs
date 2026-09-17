@@ -56,6 +56,13 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         return;
     }
     if app.smoke_frame && matches!(outcome, Some(RenderOutcome::Presented)) {
+        #[cfg(windows)]
+        {
+            super::super::x_runtime::presented(app);
+            if super::super::x_runtime::smoke_pending(app) {
+                return;
+            }
+        }
         if app.chart_key_probe.is_some() {
             match super::chart_keyboard_smoke::advance_smoke(app) {
                 Ok(false) => {
@@ -149,6 +156,10 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
     }
     if verify && matches!(outcome, Some(RenderOutcome::Skipped)) {
         app.request_redraw();
+    }
+    #[cfg(windows)]
+    if matches!(outcome, Some(RenderOutcome::Presented)) {
+        super::super::x_runtime::presented(app);
     }
     if matches!(outcome, Some(RenderOutcome::Recover)) {
         if app.smoke_frame || app.state.verification.is_some() {

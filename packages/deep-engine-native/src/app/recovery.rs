@@ -11,6 +11,8 @@ use super::{NativeApp, Renderer};
 /// consumed and the caller must not treat it as a live-packet update.
 pub(super) fn handle(app: &mut NativeApp, event_loop: &ActiveEventLoop, event: &GpuEvent) -> bool {
     match event {
+        #[cfg(windows)]
+        GpuEvent::XReady => false,
         GpuEvent::DeviceLost {
             renderer_id,
             reason,

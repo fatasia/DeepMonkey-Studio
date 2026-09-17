@@ -70,6 +70,8 @@ pub(super) fn run_internal(
     event_loop
         .run_app(&mut app)
         .map_err(|error| format!("native event loop failed: {error}"))?;
+    #[cfg(windows)]
+    app.x_runtime.take();
     if let Some(error) = app.state.failure {
         return Err(error);
     }

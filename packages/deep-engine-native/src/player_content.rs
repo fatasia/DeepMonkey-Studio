@@ -29,6 +29,8 @@ pub struct PlayerContent {
     resource_domain: String,
     pub pending_lkg: Option<crate::runtime_lkg::Pending>,
     pub pending_x_lkg: Option<crate::runtime_lkg::Pending>,
+    #[cfg(windows)]
+    pub x_template: Option<std::sync::Arc<deep_engine_native::compat_x::XDynamicContent>>,
     pub pending_asset_lkg: Option<deep_engine_native::asset_package::recovery::Pending>,
     pub startup_notice: Option<String>,
     packet: RenderPacket,
@@ -104,6 +106,8 @@ impl PlayerContent {
             packet,
             pending_lkg: None,
             pending_x_lkg: None,
+            #[cfg(windows)]
+            x_template: None,
             pending_asset_lkg: None,
             startup_notice: None,
             scene_content_key,
@@ -159,6 +163,8 @@ impl PlayerContent {
             resource_domain: resource_domain::memory(&package_id),
             pending_lkg: None,
             pending_x_lkg: None,
+            #[cfg(windows)]
+            x_template: None,
             pending_asset_lkg: None,
             startup_notice: None,
             packet: render_packet,

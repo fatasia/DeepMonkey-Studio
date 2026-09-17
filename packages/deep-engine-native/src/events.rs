@@ -17,6 +17,8 @@ pub enum GpuEvent {
     PackageArrived,
     PackageOpened,
     LiveProbeCheckpoint,
+    #[cfg(windows)]
+    XReady,
 }
 
 pub fn targets_active_renderer(active_renderer_id: Option<u64>, renderer_id: u64) -> bool {

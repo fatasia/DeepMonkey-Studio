@@ -45,6 +45,7 @@ fn prepare(path: &Path) -> Result<crate::player_content::PlayerContent, String> 
     let hash = source.loaded.base.package_hash.clone();
     let mut content = crate::player_content::PlayerContent::from_package(source.loaded.base)?;
     content.deep2d = Some(Deep2dRuntimeContent::DisplayList(display));
+    content.x_template = Some(std::sync::Arc::new(source.loaded.content));
     content.bind_resource_source(path, "x-runtime-file")?;
     if source.active == "primary" {
         match store {

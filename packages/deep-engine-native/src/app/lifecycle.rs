@@ -3,6 +3,10 @@ use super::*;
 impl ApplicationHandler<GpuEvent> for NativeApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         package_open::flush_drop(self);
+        #[cfg(windows)]
+        if x_runtime::tick(self, event_loop) {
+            return;
+        }
         if self.content.active().dashboard.is_some() {
             dashboard::tick(self, event_loop);
         } else {
@@ -42,6 +46,10 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
             return;
         }
         match event {
+            #[cfg(windows)]
+            GpuEvent::XReady => {
+                x_runtime::tick(self, event_loop);
+            }
             GpuEvent::PacketArrived => packet_live::apply_latest(self),
             GpuEvent::PackageArrived => package_live::apply_latest(self),
             GpuEvent::PackageOpened => package_open::apply_latest(self),
