@@ -39,6 +39,10 @@ export { PBR_FRAME_RESOURCE_CONTRACTS, resolvePbrFrameResourceSizes, resolvePbrF
   pbrFrameResourceContract, FRAME_PLAN_USAGES } from "./pbrFramePlanResources.js";
 export type { PbrFrameResourceContract, PbrFrameResourceSizeRole, FramePlanUsage,
   PbrPassResourceClaim, PbrUnplannedAttachment, PbrActualPassDescription } from "./pbrFramePlanResources.js";
+export { PbrTransientTexturePool, PBR_HISTORY_TRANSIENT_EXCLUDED, isPbrTransientPoolEligible,
+  framePlanUsageFlags, transientTextureBytes, pbrTransientTextureKeyValue } from "./pbrTransientTexturePool.js";
+export type { PbrTransientTextureKey, PbrTransientRequest, PbrTransientTextureHandle,
+  PbrTransientPoolInvalidationReason, PbrTransientTexturePoolStats } from "./pbrTransientTexturePool.js";
 export { MAX_EMISSIVE_STRENGTH } from "../renderPacket.js";
 export type { RenderPacket, GeometryResource, PbrMaterial, RenderInstance, RenderLodLevel, RenderLodProfile,
   PreparedBatch, PreparedLodLevel, PreparedLodProfile, PreparedPacket,

@@ -1736,3 +1736,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:dashboardWidgetContent 新增 filter 分支——选中高亮条为矢量可编译(首选项高亮 rect);选项文字走字形延迟通道如实登记(P1-18);compiledFields 声明 options/filterMode/title;边界:空选项=仅 chrome 无高亮、>16 项截断登记、parentFilterKey 禁用态原因。方案文档 [de26-g02-filter-compile-plan](specs/de26-g02-filter-compile-plan-2026-09-17.md)(dd4e63e)。
 - 验证:聚焦测试 3 项通过;typecheck 0 错误;compileDashboardContent 回归通过。
 - 边界(如实):切片 2(命中路由→setFilter 命令)与切片 3(数据流贯通)未做;多选/日期模式外观已含行为后置。
+
+### 2026-09-17 DE26/B04 第一切片:帧内 transient 纹理池(GLM 子代理实现,主线程复核)
+
+- 已完成:`pbrTransientTexturePool.ts`(294 行)——池键与 renderGraph aliasKey 同口径(format|尺寸|sample|usage);queue 生命周期(release 挂起,仅 endFrame(committed) 回池=复用必跨帧);history 资源双重排除(显式列表+historyRole 兜底);resize/epoch/失败提交/并行候选全 fail-closed(失败提交的在途纹理销毁不回池;池按 DeviceSession 归属);可观测对齐 EnginePerformanceTelemetrySnapshot(misses/allocatedBytes/reusedBytes/含 staging 的峰值)。9 测试(含 5 帧 15 acquire/3 miss/字节<基线 5 倍下降断言)。
+- 主线程复核:index.ts 仅 4 行加法;聚焦 9/9 复跑通过;与 C03 在跑文件组零交集。
+- 边界(如实):未接入真实 renderTargets/pbrTransparencyPass scratch 路径(归真机门禁切片);字节估算为静态查表口径;池暂无容量上限(随 DeviceSession dispose 回收)。
