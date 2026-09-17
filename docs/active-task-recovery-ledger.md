@@ -2003,6 +2003,13 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 三件真实 B-Rep 样本覆盖 7 个 B-Rep / 15 个 face；`file3dm_stuff` 的 13 个 face 为 32 vertices / 42 edges / 52 trims / 13 loops / 13 surfaces。独立门禁复核 NURBS 数组、domain、有限值、knot 单调性、引用闭包、重复确定性及截断/缺失拒绝。
 - 参数化 `2` 明确保留：球面样本存在 2 个仅点集/domain 一致的 NURBS form，尚不能直接消费原 trim 参数。无缓存面仍不生成网格、不提升 preview 状态；参数映射、trimmed surface 离散、误差与生产接线继续本轮待办。[证据](specs/industrial-3dm-cad-ir-2026-09-17.md)
 
+### 2026-09-17 DE26/A03 Web 原始窗口与反馈采样（Codex）
+
+- 新增 Web A03 recorder，复用既有 `benchmarkSampleSchema` 固定八通道合同；保存真实 CPU submit、GPU timestamp 原始值、submit→browser presentation callback、相邻 callback interval 与输入事件→下一 callback，不从聚合分位数反推样本。
+- 无 timestamp、无输入、失焦/暂停、空窗口均显式 unavailable、空样本与非空原因；callback feedback 不冒充 OS compositor scan-out。Native compositor completion 继续 unavailable。
+- Deep Engine 全量 3042/41 skip 与 purity 通过，最终只被 14 个既有 source-size 文件阻断；Web focused 11、Deep focused 9、双包 typecheck 与 diff check 通过。纯数据合同，无 UI/3D 视觉变更。
+- StudioDeepPerformance 消费接线已在共享树验证，但相关宿主文件仍是另一在途未跟踪文件组，本片不吸收其整文件；待归属提交合入精确接线后再将 A03 改为已完成。[证据](specs/de26-a03-native-sampling-2026-09-17.md)
+
 ### 2026-09-17 X_T 单顶点边界候选门禁（Codex）
 
 - A-1811/face 1199 与 A-1821/face 226 已确认正确读取单顶点 bound，但候选评分只核验边段，允许丢失 apex 的重建面胜出。最小修复把文件声明的单顶点纳入原有 boundary gap 门禁，不改 0.01 mm 阈值、不按样本特判。
