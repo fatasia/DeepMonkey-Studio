@@ -41,6 +41,7 @@ impl XPublishedOutput {
 pub struct XContentScheduler {
     config: XProcessConfig,
     last_known_good: Option<XPublishedOutput>,
+    session: Option<process::lpac::Session>,
 }
 
 impl XContentScheduler {
@@ -50,6 +51,7 @@ impl XContentScheduler {
         Ok(Self {
             config,
             last_known_good: None,
+            session: None,
         })
     }
 
@@ -63,18 +65,7 @@ impl XContentScheduler {
         mut context: impl FnMut() -> XExecutionContext,
     ) -> Result<&XPublishedOutput, XProcessError> {
         self.dispatch_with(content, &mut context, |config, request, context| {
-            let player = std::env::current_exe().map_err(io_error)?;
-            let worker = player
-                .parent()
-                .ok_or_else(|| io_error("player directory unavailable"))?
-                .join("deep2d-x-worker.exe");
-            let metadata = std::fs::symlink_metadata(&worker).map_err(io_error)?;
-            use std::os::windows::fs::MetadataExt;
-            // 固定包内普通文件，拒绝reparse point；不接受内容注入可执行路径。
-            if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
-                return Err(io_error("packaged X worker is not a regular file"));
-            }
-            process::lpac::evaluate(&worker, config, request, context)
+            process::lpac::evaluate(&packaged_worker()?, config, request, context)
         })
     }
 
@@ -86,7 +77,38 @@ impl XContentScheduler {
         mut context: impl FnMut() -> XExecutionContext,
     ) -> Result<&XPublishedOutput, XProcessError> {
         let content = bind_tick(template, binding, self.config.budget)?;
-        self.dispatch(&content, &mut context)
+        let mut session = self.session.take();
+        let result = self
+            .dispatch_with(&content, &mut context, |config, request, context| {
+                if session.is_none() {
+                    session = Some(process::lpac::Session::start(&packaged_worker()?, config)?);
+                }
+                session.as_mut().unwrap().evaluate(request, context)
+            })
+            .map(|_| ());
+        if result.is_err()
+            && let Some(mut failed) = session.take()
+        {
+            failed.close()?;
+        }
+        self.session = session;
+        result?;
+        Ok(self
+            .last_known_good
+            .as_ref()
+            .expect("successful tick was published"))
+    }
+
+    pub fn worker_process_id(&self) -> Option<u32> {
+        self.session
+            .as_ref()
+            .map(process::lpac::Session::process_id)
+    }
+
+    pub fn close_session(&mut self) -> Result<(), XProcessError> {
+        self.session
+            .take()
+            .map_or(Ok(()), |mut session| session.close())
     }
 
     fn dispatch_with(
@@ -183,6 +205,20 @@ pub fn bind_tick(
 
 fn io_error(error: impl std::fmt::Display) -> XProcessError {
     XProcessError::Io(error.to_string())
+}
+
+fn packaged_worker() -> Result<std::path::PathBuf, XProcessError> {
+    use std::os::windows::fs::MetadataExt;
+    let player = std::env::current_exe().map_err(io_error)?;
+    let worker = player
+        .parent()
+        .ok_or_else(|| io_error("player directory unavailable"))?
+        .join("deep2d-x-worker.exe");
+    let metadata = std::fs::symlink_metadata(&worker).map_err(io_error)?;
+    if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
+        return Err(io_error("packaged X worker is not a regular file"));
+    }
+    Ok(worker)
 }
 
 #[cfg(test)]

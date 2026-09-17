@@ -197,6 +197,11 @@ fn product_scheduler_requires_fixed_worker_and_runs_only_lpac() {
         ticks["ticks"][2]["outputHash"]
     );
     assert_eq!(ticks["ticks"][2]["deep2d"]["fillTriangles"], 1);
+    assert!(ticks["ticks"][0]["workerProcessId"].as_u64().unwrap() > 0);
+    assert_eq!(
+        ticks["ticks"][0]["workerProcessId"],
+        ticks["ticks"][2]["workerProcessId"]
+    );
 
     let bad_count = Command::new(&player)
         .args([

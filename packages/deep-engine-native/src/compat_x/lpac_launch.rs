@@ -85,6 +85,9 @@ pub(super) struct NativeChild {
     thread: OwnedHandle,
 }
 impl NativeChild {
+    pub fn process_id(&self) -> u32 {
+        unsafe { GetProcessId(self.process.as_raw_handle()) }
+    }
     pub fn exited(&self) -> io::Result<Option<bool>> {
         let status = unsafe { WaitForSingleObject(self.process.as_raw_handle(), 0) };
         if status == WAIT_OBJECT_0 {

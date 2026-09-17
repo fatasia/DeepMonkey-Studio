@@ -5,6 +5,9 @@ use std::{io::Write, path::Path};
 mod launch;
 #[path = "lpac_profile.rs"]
 mod profile;
+#[path = "lpac_session.rs"]
+mod session;
+pub use session::Session;
 
 pub fn evaluate(
     worker: &Path,

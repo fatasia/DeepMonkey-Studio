@@ -11,6 +11,9 @@ use std::{
 #[path = "process_ipc.rs"]
 mod ipc;
 pub use ipc::serve;
+#[path = "process_frames.rs"]
+mod frames;
+pub use frames::serve_worker;
 use ipc::{Envelope, encode, io_error, read_bounded, validate_receipt};
 
 pub const MAX_IPC_BYTES: usize = 4 * 1024 * 1024;
