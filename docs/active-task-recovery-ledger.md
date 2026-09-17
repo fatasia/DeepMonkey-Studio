@@ -1830,3 +1830,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 修复 `ViewerRenderDemand.didRender` 无条件清 dirty 导致帧内新请求丢失；准入记录 revision，仅消费本帧前请求。复用实际 Core→Runtime 调用链，无第二套场景/状态/RAF。
 - Web typecheck、3 文件 22 项测试通过；覆盖帧内连续停止终态、settle 过期、XR/隐藏恢复与 cadence 跳帧。未改视觉样式，未进行浏览器像素或省电验收。
 - 完整 RAF sleep/wake 与框架无关 FrameLoop 接线继续本轮待办；程序动画、物理、脚本入口仍依赖当前轻量 RAF 发现活动，不能直接停循环。[实现和唤醒清单](specs/deep-engine-host-frame-invalidation-2026-09-17.md)
+
+### 2026-09-17 X_T 引用图因果与 isolated fin 分类（Codex）
+
+- 隔离基线四组合对照确证：逐字节 decode 恢复属性后方的 LOOP/FIN/REGION/曲面，已有 FACE 才能正确构建。两件 V30 样本不受 V9 schema 修复影响；AS-2940 基线 panic→decode-only 75 面，AD5008 25→38。
+- 原始 FIN 严格自环、edge/other/curve=0、有效 vertex、LOOP/FACE 回指并与 typed 单-fin loop 对应时分类 `isolatedFins`，不再误报缺边。109 件共有 26 个；非零缺引用、缺原始证据和重复消费证据仍失败。新旧审计 4+6 项测试通过；shell 计数差异仍保留。
+- 3 件源面差额进一步定位为 solid REGION 的 SHELL.next 未遍历，属于真实遗漏，修复在途。完整对照与实体索引见 [因果报告](specs/industrial-xt-decode-topology-causality-2026-09-17.md)。
