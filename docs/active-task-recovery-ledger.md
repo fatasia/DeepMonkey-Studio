@@ -1795,3 +1795,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成第二条纯 Rust 路线初测：49/109 返回 `Ok`，60 个报错；**后续完整性审计证明 49 个全部仍有剩余输入或拓扑缺失，撤销“完整解析”结论**。停止吞掉显式解析错误尚不足以保证全文件完整性。
 - 已完成独立审计与复跑入口：`scripts/audit-xt-research-parser.ps1` + `scripts/fixtures/xt-parser-audit.rs`；离线构建、2 项回归通过，109 样本审计为 `incomplete=49`、`parse-error=60`，源码/锁文件/库/审计程序/报告 hash 绑定在 `test-output/xt-research-audit/evidence.json`。
 - 下一片：先定位过早终止/读取错位与 body/shell 归属，再补 schema 差异和 Worker；当前没有新增生产 profile。全程本地离线、自研/开源。[报告](specs/industrial-format-plan01-02-lock-2026-09-16.md)
+
+### 2026-09-17 X_T 原生读取到 GLB 全语料实验（Codex）
+
+- 复用较新版本地 Apache-2.0 `cadconvert/native`，离线构建 `cad-cli`；原始实体读取 78/109 无截断和剩余输入，31 个旧 schema 失败。typed IR 结构缺口仍独立报告。
+- 新增可复跑 native corpus runner，逐件 SHA-256、路径验证、独立产物目录、子进程 60 秒超时与产品 GLB 审计。109 件实测 77 个有网格、32 个失败；76 个报告面数和 GLB 三角数核对通过，另 1 个只离散 24/25 面。生产认证数保持 0。
+- 具体研发项：AS-2940 的 NaN clamp 崩溃（退出 101）、AS(T)-AD5008 的 face 7 边界缺失、31 个旧 schema；仍需独立验证源面分母、单位、装配和误差。证据与命令见 [报告](specs/industrial-format-plan01-02-lock-2026-09-16.md)。审计回归 4+2、runner 类型检查、Rust fmt 通过。

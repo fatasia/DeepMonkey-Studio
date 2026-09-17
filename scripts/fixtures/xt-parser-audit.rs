@@ -104,11 +104,39 @@ fn audit(path: &Path) -> Result<BTreeMap<String, usize>, String> {
     let text = String::from_utf8(bytes)
         .unwrap_or_else(|error| error.into_bytes().into_iter().map(char::from).collect());
     let (_, body_text) = xt_parser::header::split_header(&text).map_err(|e| e.to_string())?;
+    #[cfg(not(audit_parser_v3))]
     let (_, _, stream) = schema::parse_tline(body_text).map_err(|e| e.to_string())?;
+    #[cfg(audit_parser_v3)]
+    let tline = schema::parse_tline(body_text).map_err(|e| e.to_string())?;
+    #[cfg(audit_parser_v3)]
+    let stream = tline.body;
     let mut remaining = stream.as_str();
+    #[cfg(not(audit_parser_v3))]
     let preamble = schema::parse_schema_preamble(&mut remaining).map_err(|e| e.to_string())?;
+    #[cfg(not(audit_parser_v3))]
     let entities = xt_parser::entity::parse_entities(&mut remaining, preamble.partition_count)
         .map_err(|e| e.to_string())?;
+    #[cfg(audit_parser_v3)]
+    let entities = {
+        let partitions = if tline.has_base_schema {
+            schema::parse_schema_preamble(&mut remaining)
+                .map_err(|e| e.to_string())?
+                .partition_count
+        } else {
+            0
+        };
+        let (entities, truncated) = xt_parser::entity::parse_entities_opt(
+            &mut remaining,
+            partitions,
+            tline.has_base_schema,
+            tline.key_major,
+        )
+        .map_err(|e| e.to_string())?;
+        if let Some(reason) = truncated {
+            return Err(reason.to_string());
+        }
+        entities
+    };
     let bodies = xt_parser::build::build_bodies(&entities).map_err(|e| e.to_string())?;
     let mut findings = graph_findings(&entities, &bodies);
     if !remaining.trim().is_empty() {
@@ -158,6 +186,52 @@ fn main() {
 }
 
 #[cfg(test)]
+mod shared_tests {
+    use super::*;
+
+    fn empty_solid() -> XtBody {
+        XtBody {
+            node_id: 1,
+            body_type: XtBodyType::Solid,
+            res_size: 1000.0,
+            res_linear: 1e-6,
+            regions: vec![],
+            shells: vec![],
+            surfaces: Default::default(),
+            curves: Default::default(),
+            points: Default::default(),
+            vertices: Default::default(),
+            edges: Default::default(),
+        }
+    }
+
+    #[test]
+    fn solid_without_shell_is_visible_in_both_parser_variants() {
+        assert_eq!(
+            graph_findings(&[], &[empty_solid()]).get("solid-without-shell"),
+            Some(&1)
+        );
+    }
+
+    #[test]
+    fn dangling_vertex_point_is_a_distinct_finding() {
+        let mut body = empty_solid();
+        body.vertices.insert(
+            9,
+            xt_parser::XtVertex {
+                node_id: 9,
+                point_key: 42,
+                tolerance: 0.0,
+            },
+        );
+        assert_eq!(
+            graph_findings(&[], &[body]).get("missing-vertex-point"),
+            Some(&1)
+        );
+    }
+}
+
+#[cfg(all(test, not(audit_parser_v3)))]
 mod tests {
     use super::*;
 

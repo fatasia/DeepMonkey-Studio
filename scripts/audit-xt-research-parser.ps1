@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory)][string]$ParserRoot,
     [Parameter(Mandatory)][string]$CorpusRoot,
+    [ValidateSet('legacy', 'cadconvert')][string]$ParserVariant = 'legacy',
     [string]$OutputDirectory = 'test-output/xt-research-audit'
 )
 $ErrorActionPreference = 'Stop'
@@ -11,7 +12,7 @@ $outputPath = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
 
 # Use the inspected local source and lockfile; runtime evaluation makes no network requests.
-cargo build --offline --locked --release --lib --manifest-path (Join-Path $parserPath 'Cargo.toml')
+cargo build --offline --locked --release --lib -p xt-parser --manifest-path (Join-Path $parserPath 'Cargo.toml')
 if ($LASTEXITCODE -ne 0) { throw 'Local parser build failed' }
 $metadataText = cargo metadata --offline --locked --no-deps --format-version 1 --manifest-path (Join-Path $parserPath 'Cargo.toml')
 if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve parser build artifacts' }
@@ -21,9 +22,11 @@ $libraryPath = Join-Path $releasePath 'libxt_parser.rlib'
 $depsPath = Join-Path $releasePath 'deps'
 $executablePath = Join-Path $outputPath 'xt-parser-audit.exe'
 $testPath = Join-Path $outputPath 'xt-parser-audit-tests.exe'
-rustc --edition=2024 $sourcePath --extern "xt_parser=$libraryPath" -L "dependency=$depsPath" -o $executablePath
+$variantArgs = @()
+if ($ParserVariant -eq 'cadconvert') { $variantArgs = @('--cfg', 'audit_parser_v3', '-C', 'lto=thin') }
+rustc --edition=2024 @variantArgs $sourcePath --extern "xt_parser=$libraryPath" -L "dependency=$depsPath" -o $executablePath
 if ($LASTEXITCODE -ne 0) { throw 'Audit compilation failed' }
-rustc --edition=2024 --test $sourcePath --extern "xt_parser=$libraryPath" -L "dependency=$depsPath" -o $testPath
+rustc --edition=2024 @variantArgs --test $sourcePath --extern "xt_parser=$libraryPath" -L "dependency=$depsPath" -o $testPath
 if ($LASTEXITCODE -ne 0) { throw 'Audit test compilation failed' }
 & $testPath
 if ($LASTEXITCODE -ne 0) { throw 'Audit regression failed' }
@@ -32,7 +35,8 @@ $reportPath = Join-Path $outputPath 'report.tsv'
 & $executablePath $corpusPath | Tee-Object -FilePath $reportPath
 if ($LASTEXITCODE -ne 0) { throw 'Corpus enumeration or audit failed' }
 $hashPaths = @($sourcePath, $libraryPath, $executablePath, $reportPath,
-    (Join-Path $parserPath 'Cargo.toml'), (Join-Path $parserPath 'Cargo.lock'))
+    (Join-Path $parserPath 'Cargo.toml'), (Join-Path $metadata.workspace_root 'Cargo.toml'),
+    (Join-Path $metadata.workspace_root 'Cargo.lock')) | Select-Object -Unique
 $hashPaths += Get-ChildItem -LiteralPath (Join-Path $parserPath 'src') -Recurse -File -Filter '*.rs' |
     Sort-Object FullName | Select-Object -ExpandProperty FullName
 $hashes = foreach ($hashPath in $hashPaths) {
@@ -44,6 +48,7 @@ $hashes = foreach ($hashPath in $hashPaths) {
     scope = 'research-parser-structural-audit-only'
     rustc = (rustc --version)
     parserRoot = $parserPath
+    parserVariant = $ParserVariant
     corpusRoot = $corpusPath
     files = @($hashes)
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $outputPath 'evidence.json') -Encoding utf8

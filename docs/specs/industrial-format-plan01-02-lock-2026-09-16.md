@@ -73,6 +73,22 @@ PDAL 源码包超过本批单文件 100 MB 下载上限，因此当前不是完�
 
 ## 4. 完整性复核
 
+### 2026-09-17 较新版原生转换链复测
+
+复用本地 `cadconvert/native` 的 Apache-2.0 Rust 候选（仓库 HEAD `73b37836a55f905ea0f392cf676dff160c745287`），离线锁文件构建 `cad-cli`。没有改产品依赖或发布入口。
+
+- 相同结构审计支持 `-ParserVariant cadconvert`：78/109 无剩余输入、无空 solid，31 个返回解析失败。78 个仍有 typed IR 的 shell 数量差异，其中 13 个还有半边引用问题；shell 检查包含外部空域结构，不能仅凭数量差异推断可见面丢失。
+- 走实际原生读取→拓扑降低→离散→GLB：77/109 生成可被项目 `auditGlbGeometry` 读取的三角网格，32 个失败；76 个满足 CLI 报告的已离散面数等于报告总面数、三角数等于 GLB 审计值。这不证明报告分母等于全部源面，也不证明精度、装配和单位正确。
+- 失败拆解：31 个旧传输 schema 解析失败；`AS-2940.x_t` 在几何离散时因 `clamp(0, NaN)` panic，子进程退出 101；`AS(T)-AD5008.x_t` 可输出网格但只转换 24/25 面，明确诊断 face 7 的一条边界边无法构建。所有结果仅为研究/preview 证据，认证生产 profile 数为 0。
+- 代表件 A-1230-60-22：3 body、215/215 报告面、17,438 三角形，GLB 约 0.74 MB。相较旧 typed IR 的 99 面，实际 lowering 层已处理更多源数据；后续以源身份/拓扑/误差合同验证。
+- 新增 `scripts/verify-xt-native-corpus.mts`：逐输入哈希复核、路径防逃逸、每次独立产物目录、60 秒子进程超时、逐件失败记录、二进制执行前后哈希一致性、复用产品 GLB 审计。证据在 `test-output/xt-native-corpus/evidence.json`，SHA-256 `c34f92e4429a40bc4fa711291822e64dd4d3b4baba8fd6b262050c10a103e08c`；本次 EXE SHA-256 `aeaf8a3b13f799d0c2d9ac3f500dcc62db2a12cce9728d47635fb317e8067b9a`。
+- 验证：旧/新审计模式各 4/2 项回归、Rust 格式检查、runner TypeScript 检查通过；109 件真实 CLI 实验执行两轮。下一片优先修 NaN 离散崩溃和缺失边界，再补旧 schema；并继续源面分母、装配和单位复核。
+
+```powershell
+cargo build --release --locked --offline -p cad-cli --manifest-path data/external-assets/format-research/cadconvert/native/Cargo.toml
+pnpm exec tsx scripts/verify-xt-native-corpus.mts data/external-assets/format-research/cadconvert/native/target/release/cadconvert.exe data/external-assets/industrial-format-plan/samples/downloaded/x_t/asmith-hinges data/external-assets/industrial-format-plan/samples/downloaded/x_t/asmith-hinges-inventory.json test-output/xt-native-corpus
+```
+
 本批执行的本地复核结果：
 
 - manifest 中 8 个已下载依赖 tarball：文件存在，SHA-256 全部匹配。
