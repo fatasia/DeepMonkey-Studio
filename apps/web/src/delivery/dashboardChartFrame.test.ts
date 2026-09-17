@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compileChartSpec, validateChartIR, type ChartIR } from "@bim-studio/deep-engine";
 import { cartesian } from "./dashboardChartFrameGeometry";
-import { renderChartFrame, chartFrame } from "./dashboardChartFrame";
+import { renderChartFrame, chartFrame, initialChartState } from "./dashboardChartFrame";
 import referenceJson from "../../../../packages/deep-engine/fixtures/chart-web-geometry-reference-v1.json";
 const reference = referenceJson as unknown as { cases: Array<{ name: string; ir: ChartIR; width: number; height: number; displayList: unknown }> };
 // A four-edge identity-transformed rectangle clip path has the same intersection
@@ -107,17 +107,73 @@ it("shares numeric domains by axis identity across series and preserves separate
   expect(cartesian(reordered,ir.series[0]!,ir.datasets[0]!,[0,0,100,100])).toEqual(first);
 });
 
-it("rejects valid initial zoom and action state at the candidate adapter", async () => {
-  const original=reference.cases[0]!.ir;
-  const states: ChartIR[] = [
-    {...original,dataZoom:[{id:"zoom",axisId:"axis.x",start:.25,end:.75,mode:"inside"}]},
-    {...original,actions:[{type:"highlight",seriesId:"series.a",dataIndex:0}]},
+/** 与 Native from_ir 对拍的最小 IR：类目 x + 显式 [0,10] 线性 y，两行数据。 */
+function zoomedIr(zooms: ChartIR["dataZoom"], actions: ChartIR["actions"], scale: "linear" | "log" = "linear", rows: ChartIR["datasets"][number]["rows"] = [["A",1],["B",2]]) {
+  const compiled = compileChartSpec({schemaVersion:1,id:"zoomed",datasets:[{id:"data",dimensions:["x","y"],rows}],
+    axes:[{id:"x",channel:"x",scale:"category"},{id:"y",channel:"y",scale, ...(scale==="linear"?{min:0,max:10}:{})}],
+    dataZoom:zooms,actions,
+    series:[{id:"s",label:"S",type:"line",datasetId:"data",x:"x",y:"y",xAxisId:"x",yAxisId:"y"}]});
+  if (!compiled.ok || !compiled.ir) throw new Error(JSON.stringify(compiled.diagnostics));
+  return compiled.ir;
+}
+it("applies the initial dataZoom window like Native InteractionState::from_ir (deterministic parity)", () => {
+  expect(validateChartIR(zoomedIr([{id:"zoom",axisId:"x",start:10,end:90,mode:"slider"}],[{type:"dataZoom",axisId:"x",start:20,end:80}])).ok).toBe(true);
+  // Native 顺序：先 $.dataZoom 后 $.actions，同轴 latest-wins → 最终窗口 (0.2,0.8)，
+  // 类目行带 first=0.4/span=1.2：x = px+(row+0.5-first)/span*pw（Native x_projector 同式）。
+  const latestWins = zoomedIr([{id:"zoom",axisId:"x",start:10,end:90,mode:"slider"}],[{type:"dataZoom",axisId:"x",start:20,end:80}]);
+  const banded = cartesian(latestWins,latestWins.series[0]!,latestWins.datasets[0]!,[0,0,100,100],initialChartState(latestWins).zoomWindows)!;
+  expect(banded.points[0]![0]).toBeCloseTo(100/12,9);
+  expect(banded.points[1]![0]).toBeCloseTo(100*11/12,9);
+  expect(banded.points.map(point=>point[1])).toEqual([90,80]); // y 无窗口：域 [0,10] 不变
+  expect(banded.band).toBeCloseTo(100/2/0.6,9); // Native band: pw/count/(end-start)
+  // 纯 dataZoom 条目 (0.1,0.9)：first=0.2/span=1.6 → x = 18.75 / 81.25。
+  const entryOnly = zoomedIr([{id:"zoom",axisId:"x",start:10,end:90,mode:"slider"}],[]);
+  const entry = cartesian(entryOnly,entryOnly.series[0]!,entryOnly.datasets[0]!,[0,0,100,100],initialChartState(entryOnly).zoomWindows)!;
+  expect(entry.points[0]![0]).toBeCloseTo(18.75,9);
+  expect(entry.points[1]![0]).toBeCloseTo(81.25,9);
+  // 数值轴窗口走 Native zoom_domain 插值 lo*(1-t)+hi*t：y 域 [0,10]×(0.25,0.75) → [2.5,7.5]。
+  const numeric = zoomedIr([],[{type:"dataZoom",axisId:"y",start:25,end:75}]);
+  const yZoomed = cartesian(numeric,numeric.series[0]!,numeric.datasets[0]!,[0,0,100,100],initialChartState(numeric).zoomWindows)!;
+  expect(yZoomed.points[0]![1]).toBeCloseTo(130,9);
+  expect(yZoomed.points[1]![1]).toBeCloseTo(110,9);
+  // 对数轴在 log10 空间插值：域 [1,100]×(0.25,0.75) → [10^0.5,10^1.5]，中值 10 映射到正程中点。
+  const log = zoomedIr([],[{type:"dataZoom",axisId:"y",start:25,end:75}],"log",[["A",1],["B",10],["C",100]]);
+  const logZoomed = cartesian(log,log.series[0]!,log.datasets[0]!,[0,0,100,100],initialChartState(log).zoomWindows)!;
+  expect(logZoomed.points[1]![1]).toBeCloseTo(50,9);
+});
+it("keeps runtime-only initial actions out of static pixels and registers them as deferred", async () => {
+  const base = zoomedIr([{id:"zoom",axisId:"x",start:10,end:90,mode:"slider"}],[]);
+  const actions = [
+    {type:"highlight",seriesId:"s",dataIndex:null},
+    {type:"downplay",seriesId:"s",dataIndex:1},
+    {type:"select",seriesId:"s",dataIndex:0},
+    {type:"unselect",seriesId:"s",dataIndex:0}] as ChartIR["actions"];
+  const stated = {...base,actions};
+  const state = initialChartState(stated);
+  expect(state.zoomWindows).toEqual([["x",.1,.9]]);
+  expect(state.deferredActions).toEqual(actions.map((action,index)=>({path:`$.actions[${index}]`,type:action.type,
+    reason:"runtime-only emphasis/selection outline; static frame pixels match Native render_chart_with_windows"})));
+  // 静态像素与无 actions 完全一致（Native render_chart_with_windows 同样不消费强调/选中）。
+  expect(renderChartFrame(stated,480,320)).toEqual(renderChartFrame(base,480,320));
+  const candidate={node:{id:"state",revision:0,frame:[0,0,480,320],clip:null,zOrder:0,visible:true,hitId:null,deep2d:null,chart:"chart",chartSim:null},
+    chart:{ir:stated,dataRevision:0},deep2d:null,effectiveClip:[0,0,480,320]} as const;
+  const content = await chartFrame(candidate,new AbortController().signal);
+  expect(content.displayList.commands).toEqual(renderChartFrame(stated,480,320,undefined,state.zoomWindows).commands);
+});
+it("fails closed on unsupported or out-of-range initial actions before any pixels", async () => {
+  const base = zoomedIr([],[]);
+  const candidateFor=(ir:ChartIR)=>({node:{id:"state",revision:0,frame:[0,0,480,320],clip:null,zOrder:0,visible:true,hitId:null,deep2d:null,chart:"chart",chartSim:null},
+    chart:{ir,dataRevision:0},deep2d:null,effectiveClip:[0,0,480,320]} as const);
+  const cases: Array<[ChartIR,RegExp]> = [
+    [{...base,actions:[{type:"setCursor"} as unknown as ChartIR["actions"][number]]},/unsupported action type/],
+    [{...base,actions:[{type:"select",seriesId:"ghost",dataIndex:null}]},/unknown series/],
+    [{...base,actions:[{type:"highlight",seriesId:"s",dataIndex:5}]},/data index out of range/],
+    [{...base,actions:[{type:"dataZoom",axisId:"ghost",start:10,end:90}]},/unknown zoom axis/],
+    [{...base,dataZoom:[{id:"zoom",axisId:"x",start:80,end:20,mode:"inside"}]},/0 <= start < end <= 100/],
+    [{...base,dataZoom:[{id:"zoom",axisId:"x",start:0,end:110,mode:"inside"}]},/0 <= start < end <= 100/],
   ];
-  for (const ir of states) {
-    expect(validateChartIR(ir).ok).toBe(true);
-    const candidate={node:{id:"state",revision:0,frame:[0,0,480,320],clip:null,zOrder:0,visible:true,hitId:null,deep2d:null,chart:"chart",chartSim:null},
-      chart:{ir,dataRevision:0},deep2d:null,effectiveClip:[0,0,480,320]} as const;
-    await expect(chartFrame(candidate,new AbortController().signal)).rejects.toThrow(/initial dataZoom or actions/);
-    expect(()=>renderChartFrame(ir,480,320)).not.toThrow();
+  for (const [ir,pattern] of cases) {
+    expect(()=>initialChartState(ir)).toThrow(pattern);
+    await expect(chartFrame(candidateFor(ir),new AbortController().signal)).rejects.toThrow(pattern);
   }
 });

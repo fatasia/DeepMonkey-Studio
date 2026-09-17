@@ -1,7 +1,22 @@
 import type { ChartIR, ChartAxis, ChartSeries, ChartDataset } from "@bim-studio/deep-engine";
 export type Point = [number, number];
 export type Rect = [number, number, number, number];
+/** Native `render_chart_with_windows` 的窗口线形式：[axisId, start, end]，start/end 归一到 [0,1]。 */
+export type ChartZoomWindow = readonly [axisId: string, start: number, end: number];
 export const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value));
+/**
+ * Native `render_domain::zoom_domain` 同式：窗口在域上做 `lo*(1-t)+hi*t` 插值
+ * （对数轴先 log10 再 10^x 回去）；窗口退化（非有限或 hi<lo）时几何失败，不静默回退全域。
+ */
+export function zoomDomain(axis: ChartAxis | undefined, domain: Point, windows: readonly ChartZoomWindow[]): Point | undefined {
+  const window = windows.find(([id]) => id === axis?.id);
+  if (!window) return domain;
+  const log = axis?.scale === "log";
+  const a = log ? Math.log10(domain[0]) : domain[0], b = log ? Math.log10(domain[1]) : domain[1];
+  const interpolate = (t: number) => log ? 10 ** (a * (1 - t) + b * t) : a * (1 - t) + b * t;
+  const lo = interpolate(window[1]), hi = interpolate(window[2]);
+  return Number.isFinite(lo) && Number.isFinite(hi) && lo <= hi ? [lo, hi] : undefined;
+}
 export function chartPlot(ir: ChartIR, width: number, height: number): Rect {
   if (![width, height].every(value => Number.isFinite(value) && value > 0 && value <= 16_777_216)) throw new Error("Invalid chart canvas");
   const plot: Rect = [8, 8, width - 16, height - 16];
@@ -50,11 +65,14 @@ function axisValues(ir: ChartIR, channel: "x" | "y", axisId: string) {
   }
   return { values, hasBar };
 }
-export function cartesian(ir: ChartIR, series: ChartSeries, dataset: ChartDataset, plot: Rect) {
+// Native map_cartesian 同构：窗口先落在解析后的共享域（含 bar 归零与显式界）上，
+// 类目轴不走连续域而是行带窗口（first=start*count, span=(end-start)*count）。
+export function cartesian(ir: ChartIR, series: ChartSeries, dataset: ChartDataset, plot: Rect, windows: readonly ChartZoomWindow[] = []) {
   if (!("x" in series) || !("y" in series)) throw new Error("Expected cartesian series");
   const xi = dataset.dimensions.indexOf(series.x ?? ""), yi = dataset.dimensions.indexOf(series.y ?? "");
   if (xi < 0 || yi < 0) return undefined;
   const xa = ir.axes.find(axis => axis.id === series.xAxisId), ya = ir.axes.find(axis => axis.id === series.yAxisId);
+  const xw = windows.find(([id]) => id === xa?.id);
   const numericX = xa?.scale !== "category" && dataset.rows.every(row => numeric(row[yi]) === undefined
     || numeric(row[xi]) !== undefined && (xa?.scale !== "log" || (row[xi] as number) > 0));
   const kept = dataset.rows.flatMap((row, index) => {
@@ -69,14 +87,19 @@ export function cartesian(ir: ChartIR, series: ChartSeries, dataset: ChartDatase
     if (ya?.min == null) yd[0] = Math.min(yd[0], 0);
     if (ya?.max == null) yd[1] = Math.max(yd[1], 0);
   }
-  const [px, py, pw, ph] = plot, ym = mapper(ya, yd, [py + ph, py]);
+  const yz = zoomDomain(ya, yd, windows); if (!yz) return undefined;
+  const [px, py, pw, ph] = plot, ym = mapper(ya, yz, [py + ph, py]);
   let xm: (row: typeof kept[number]) => number;
   if (numericX) {
     const xd = domain(xa, axisValues(ir, "x", series.xAxisId).values); if (!xd) return undefined;
-    const project = mapper(xa, xd, [px, px + pw]); xm = row => project(row.x ?? NaN);
+    const xz = zoomDomain(xa, xd, windows); if (!xz) return undefined;
+    const project = mapper(xa, xz, [px, px + pw]); xm = row => project(row.x ?? NaN);
+  } else if (xw) {
+    const count = Math.max(1, dataset.rows.length), first = xw[1] * count, span = (xw[2] - xw[1]) * count;
+    xm = row => px + (row.index + .5 - first) / span * pw;
   } else xm = row => px + pw / Math.max(1, dataset.rows.length) * (row.index + .5);
   return { points: kept.map(row => [xm(row), ym(row.y)] as Point), indices: kept.map(row => row.index),
-    band: pw / Math.max(1, dataset.rows.length), baseline: clamp(ym(0), py, py + ph) };
+    band: pw / Math.max(1, dataset.rows.length) / (xw ? xw[2] - xw[1] : 1), baseline: clamp(ym(0), py, py + ph) };
 }
 export function arc(center: Point, radius: number, start: number, sweep: number, segments: number): Point[] {
   return Array.from({ length: segments + 1 }, (_, step) => {

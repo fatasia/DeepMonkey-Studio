@@ -1,7 +1,7 @@
 import type { ChartIR, ChartSeries, ChartDataset, ChartAxis, ChartValue } from "@bim-studio/deep-engine";
-import { arc, numeric, clamp, type Rect, type Point } from "./dashboardChartFrameGeometry";
+import { arc, numeric, clamp, type Rect, type Point, type ChartZoomWindow } from "./dashboardChartFrameGeometry";
 import { ChartPaths } from "./dashboardChartFramePaths";
-function bands(keys: ChartValue[], axis: ChartAxis | undefined, range: Point): Point[] | undefined {
+function bands(keys: ChartValue[], axis: ChartAxis | undefined, range: Point, windows: readonly ChartZoomWindow[] = []): Point[] | undefined {
   if (!keys.length) return undefined;
   let centers: number[], step: number, lo: number, hi: number;
   if (!axis || axis.scale === "category") { centers=keys.map((_,i)=>i+.5); step=1; lo=0; hi=keys.length; }
@@ -16,11 +16,14 @@ function bands(keys: ChartValue[], axis: ChartAxis | undefined, range: Point): P
     const max=axis.max===null ? ordered[ordered.length-1]!+step*.5 : transform(axis.max);
     if(min===undefined||max===undefined) return undefined; lo=min;hi=max;
   }
+  // Native render_heatmap::bands 同式：窗口对基域做 lo*(1-start)+hi*start 插值后失效即失败。
+  const window = windows.find(([id]) => id === axis?.id);
+  if (window) { const nl=lo*(1-window[1])+hi*window[1], nh=lo*(1-window[2])+hi*window[2]; lo=nl; hi=nh; }
   if(!Number.isFinite(lo)||!Number.isFinite(hi)||hi<=lo) return undefined;
   const map=(value:number)=>range[0]+(value-lo)/(hi-lo)*(range[1]-range[0]);
   return centers.map(center=>{const a=map(center-step*.5),b=map(center+step*.5);return [Math.min(a,b),Math.abs(b-a)];});
 }
-export function heatmap(paths:ChartPaths,ir:ChartIR,series:Extract<ChartSeries,{type:"heatmap"}>,dataset:ChartDataset,plot:Rect) {
+export function heatmap(paths:ChartPaths,ir:ChartIR,series:Extract<ChartSeries,{type:"heatmap"}>,dataset:ChartDataset,plot:Rect,windows:readonly ChartZoomWindow[]=[]){
   const xi=dataset.dimensions.indexOf(series.x),yi=dataset.dimensions.indexOf(series.y),vi=dataset.dimensions.indexOf(series.value);
   if(xi<0||yi<0||vi<0) return;
   const xs:ChartValue[]=[],ys:ChartValue[]=[],cells:{x:number;y:number;value:number;index:number}[]=[];
@@ -30,7 +33,7 @@ export function heatmap(paths:ChartPaths,ir:ChartIR,series:Extract<ChartSeries,{
   if(!cells.length)return;
   let min=Infinity,max=-Infinity;for(const cell of cells){min=Math.min(min,cell.value);max=Math.max(max,cell.value);}
   const [x,y,w,h]=plot,xa=ir.axes.find(axis=>axis.id===series.xAxisId),ya=ir.axes.find(axis=>axis.id===series.yAxisId);
-  const xb=bands(xs,xa,[x,x+w]),yb=bands(ys,ya,ya&&ya.scale!=="category"?[y+h,y]:[y,y+h]);if(!xb||!yb)return;
+  const xb=bands(xs,xa,[x,x+w],windows),yb=bands(ys,ya,ya&&ya.scale!=="category"?[y+h,y]:[y,y+h],windows);if(!xb||!yb)return;
   for(const cell of cells){paths.dataIndex=cell.index;const t=max>min?(cell.value-min)/(max-min):.5;
     const [left,width]=xb[cell.x]!,[top,height]=yb[cell.y]!;
     paths.fill([[left,top],[left+width,top],[left+width,top+height],[left,top+height]],

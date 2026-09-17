@@ -1,14 +1,14 @@
 import type { ChartIR, ChartSeries, ChartDataset, Deep2dColor } from "@bim-studio/deep-engine";
-import { arc, circle, envelope, cartesian, numeric, type Rect, type Point } from "./dashboardChartFrameGeometry";
+import { arc, circle, envelope, cartesian, numeric, type Rect, type Point, type ChartZoomWindow } from "./dashboardChartFrameGeometry";
 import { heatmap, gauge } from "./dashboardChartFrameExtended";
 import { ChartPaths } from "./dashboardChartFramePaths";
 // Native renderer colors are linear RGB, not CSS sRGB colors.
 const PIE: Deep2dColor[] = [[.33,.44,.78,1],[.57,.8,.46,1],[.98,.78,.35,1],[.93,.4,.4,1],[.45,.75,.87,1],[.23,.64,.45,1]];
-export function renderSeries(paths: ChartPaths, ir: ChartIR, series: ChartSeries, dataset: ChartDataset, plot: Rect) {
-  if (series.type === "heatmap") { heatmap(paths,ir,series,dataset,plot); return; }
+export function renderSeries(paths: ChartPaths, ir: ChartIR, series: ChartSeries, dataset: ChartDataset, plot: Rect, windows: readonly ChartZoomWindow[] = []) {
+  if (series.type === "heatmap") { heatmap(paths,ir,series,dataset,plot,windows); return; }
   if (series.type === "gauge") { gauge(paths,series,dataset,plot); return; }
   if (series.type === "pie") { pie(paths, series, dataset, plot); return; }
-  const mapped = cartesian(ir, series, dataset, plot); if (!mapped) return;
+  const mapped = cartesian(ir, series, dataset, plot, windows); if (!mapped) return;
   const { points, indices, band, baseline } = mapped;
   if (series.type === "line") {
     if (points.length <= 480) paths.stroke(points, [.2,.6,1,1]);
