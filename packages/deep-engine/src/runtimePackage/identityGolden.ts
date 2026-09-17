@@ -17,7 +17,7 @@ export function dashboardIdentityGoldenView(pkg: DeepRuntimePackageV5): {
   readonly schema: string;
   readonly schemaVersion: number;
   readonly fixture: string;
-  readonly package: { readonly packageId: string; readonly packageVersion: number; readonly schemaVersion: number; readonly packageHash: unknown };
+  readonly package: { readonly packageId: string; readonly packageVersion: string; readonly schemaVersion: number; readonly packageHash: unknown };
   readonly entrypoints: DeepRuntimePackageV5["entrypoints"];
   readonly payloads: Readonly<Record<string, PayloadView>>;
   readonly resources: readonly { readonly id: string; readonly kind: string; readonly revision: number }[];

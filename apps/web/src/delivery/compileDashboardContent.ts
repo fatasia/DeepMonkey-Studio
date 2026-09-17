@@ -1,5 +1,5 @@
 import type { DashboardDocument } from "@bim-studio/contracts";
-import { validateDeep2dDisplayList, type Deep2dCommand, type Deep2dDisplayList, type Deep2dResource } from "@bim-studio/deep-engine";
+import { validateDeep2dDisplayList, type Deep2dCommand, type Deep2dDisplayList, type Deep2dDisplayListAtlas, type Deep2dResource } from "@bim-studio/deep-engine";
 import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
 import { compileDashboardLayout } from "./compileDashboardLayout";
 import { DASHBOARD_LINE_HEIGHT_FACTOR } from "./dashboardTextContent";
@@ -23,6 +23,7 @@ export function compileDashboardContent(input: DashboardDocument, pageId = input
   const layout = compileDashboardLayout(input, pageId);
   const page = layout.source.application.pages.find(page => page.id === pageId)!;
   const resources: Deep2dResource[] = [], commands: Deep2dCommand[] = [], objects: DashboardContentObjectReport[] = [];
+  const atlases: Deep2dDisplayListAtlas[] = [];
   for (const [index, node] of page.nodes.entries()) {
     const binding = layout.nodeBindings[index]!;
     if (node.kind !== "data-widget") {
@@ -34,14 +35,17 @@ export function compileDashboardContent(input: DashboardDocument, pageId = input
     }
     const lowering = lowerDashboardWidget(node, `${binding.layoutId}.content`, layout.tree.revision);
     resources.push(...lowering.resources);
+    atlases.push(...lowering.atlases);
     commands.push(...lowering.commands);
     objects.push({ nodeId: node.id, status: lowering.commands.length ? "degraded" : "blocked",
       contentCompiled: lowering.contentCompiled, compiledFields: lowering.compiledFields,
       deferredFields: deferred(node, lowering.compiledFields), reasons: lowering.reasons });
   }
+  // 图集仅在存在时写入:legacy 显示列表(无 atlases 字段)保持逐字节不变,内容哈希不漂移。
   const displayList: Deep2dDisplayList = { schemaVersion: 1, id: `${layout.tree.id}.content`,
     revision: layout.tree.revision, logicalWidth: page.width, logicalHeight: page.height,
-    scaleFactor: 1, resources, commands };
+    scaleFactor: 1, resources, commands,
+    ...(atlases.length > 0 ? { atlases } : {}) };
   const validation = validateDeep2dDisplayList(displayList);
   if (!validation.valid) throw new Error(`二维内容不符合显示合同：${validation.issues[0]?.message}`);
   const sourceSemanticHash = runtimeContentSha256(layout.source);

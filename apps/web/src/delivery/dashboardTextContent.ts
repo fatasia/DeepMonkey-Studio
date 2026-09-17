@@ -9,16 +9,16 @@ import { DASHBOARD_CONTENT_INSET } from "./dashboardShapeContent";
  * - 字号/字重默认取 `dashboardWorkspaceModel` 建组件的真实出厂值(text 28/600,digital-flip 38/700);
  * - `vertical-align` 语义取运行时 `align-items:center` + `white-space:pre-wrap`。
  *
- * **本模块只解算样式与排版事实,不产出显示列表命令。** 原因是跨语言合同的真实形状:
- * native `deep2d::validate_text` 要求文字命令携带 `atlasId + bakedGlyphs`,非空 `text`
- * 但没有 baked glyphs 会被判 `InvalidStructure` 并在渲染前拒绝;图表文字走的是
- * 「光栅化 → 图片图集」通道,同样不是裸 text 命令。TS 侧的 `Deep2dCommand` 目前只声明了
- * `fontId`(未成形文字),因此任何 TS 生产者直接下发 text 命令,都会得到一份
- * 「TS 校验通过、native 拒收」的伪支持产物。
+ * **本模块只解算样式与排版事实,不产出显示列表命令。** 跨语言合同:native `deep2d::validate_text`
+ * 要求文字命令携带 `atlasId + bakedGlyphs`,非空 `text` 但没有 baked glyphs 会被判
+ * `InvalidStructure` 并在渲染前拒绝;图表文字走「光栅化 → 图片图集」通道,同样不是裸 text 命令。
+ * P1-18 起 TS 侧 `Deep2dCommand` 已具备同一字形运行合同(`atlasId`/`bakedGlyphs` +
+ * 顶层 `atlases`),构造入口是 `dashboardGlyphRun.buildTextGlyphRunCommands`——但它要求
+ * **实测**字形度量(P1-17 measure 产物或冻结字体目录),编译期仍无处可取。
  *
- * 结论:文字像素的产出必须等 P1-18 的字形运行(glyph run)+ 字形图集就绪。
- * 在那之前,本模块提供样式/排版解算与逐字段 deferred 原因,`compiledFields` 保持为空,
- * 能力报告因此不会把文字算成已支持。
+ * 结论:在实测度量与冻结字形图集接线完成前,本模块保持样式/排版解算与逐字段 deferred 原因,
+ * `compiledFields` 保持为空,能力报告不会把文字算成已支持;筛选选项文字已可经
+ * `lowerDashboardWidget` 的注入参数产出字形运行命令,其余文字组件维持 deferred。
  */
 
 export const DASHBOARD_BASE_FONT_STACK =

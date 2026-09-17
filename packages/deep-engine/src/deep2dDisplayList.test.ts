@@ -132,3 +132,113 @@ describe("validateDeep2dDisplayList", () => {
     expect(result.issues.map((entry) => entry.code)).toEqual(["invalid-color", "invalid-transform", "invalid-structure"]);
   });
 });
+
+describe("validateDeep2dDisplayList: baked glyph runs (P1-18)", () => {
+  const glyphAtlas = {
+    id: "atlas:ui-glyphs", revision: 1, kind: "glyph" as const, format: "r8unorm" as const,
+    width: 256, height: 64, sampling: "nearest" as const, dataBase64: "AAAA",
+  };
+  const imageAtlas = { ...glyphAtlas, id: "atlas:photo", kind: "image" as const, format: "rgba8unorm-srgb" as const };
+  const glyph = (cluster: number) => ({ cluster, source: [cluster * 16, 0, 16, 16] as const, destination: [cluster * 8, 0, 8, 14] as const });
+  const glyphCommand = {
+    kind: "text", id: "draw:baked", zOrder: 3, transform: identity, text: "ab", x: 16, y: 24,
+    fontId: "font:ui", fontSize: 14, color: [1, 1, 1, 1], atlasId: glyphAtlas.id, bakedGlyphs: [glyph(0), glyph(1)],
+  } as const;
+  const glyphList = { ...list, atlases: [glyphAtlas], commands: [...list.commands, glyphCommand] };
+
+  it("accepts a complete glyph run with a glyph atlas and keeps it JSON-round-trippable", () => {
+    expect(validateDeep2dDisplayList(JSON.parse(JSON.stringify(glyphList)))).toEqual({ valid: true, issues: [] });
+  });
+
+  it("keeps the legacy unshaped-text shape valid without atlases", () => {
+    expect(validateDeep2dDisplayList(list)).toEqual({ valid: true, issues: [] });
+  });
+
+  it("allows empty text with an empty glyph run, mirroring the native rule", () => {
+    const empty: Deep2dDisplayList = { ...glyphList, commands: [...list.commands, { ...glyphCommand, text: "", bakedGlyphs: [] }] };
+    expect(validateDeep2dDisplayList(empty)).toEqual({ valid: true, issues: [] });
+  });
+
+  it("rejects atlasId without bakedGlyphs and bakedGlyphs without atlasId", () => {
+    const half = (patch: Record<string, unknown>): Deep2dDisplayList => ({
+      ...glyphList, commands: [...list.commands, { ...glyphCommand, ...patch } as unknown as Deep2dCommand],
+    });
+    const withoutGlyphs = validateDeep2dDisplayList(half({ bakedGlyphs: undefined }));
+    const withoutAtlas = validateDeep2dDisplayList(half({ atlasId: undefined }));
+    for (const result of [withoutGlyphs, withoutAtlas]) {
+      expect(result.issues.map((entry) => [entry.code, entry.path])).toContainEqual([
+        "invalid-structure", "commands[3]",
+      ]);
+      expect(result.issues.find((entry) => entry.code === "invalid-structure")?.message).toBe("Baked text requires both atlasId and bakedGlyphs.");
+    }
+  });
+
+  it("rejects an empty glyph run for non-empty text", () => {
+    const result = validateDeep2dDisplayList({ ...glyphList, commands: [...list.commands, { ...glyphCommand, bakedGlyphs: [] }] });
+    expect(result.issues.map((entry) => [entry.code, entry.path])).toEqual([["invalid-structure", "commands[3].bakedGlyphs"]]);
+  });
+
+  it("resolves atlasId against declared atlases and demands the glyph kind", () => {
+    const missing = validateDeep2dDisplayList({ ...glyphList, atlases: [] });
+    expect(missing.issues.map((entry) => [entry.code, entry.path])).toEqual([["missing-resource", "commands[3].atlasId"]]);
+    const imageKind = validateDeep2dDisplayList({ ...glyphList, atlases: [glyphAtlas, imageAtlas], commands: [...list.commands, { ...glyphCommand, atlasId: imageAtlas.id }] });
+    expect(imageKind.issues.map((entry) => [entry.code, entry.path])).toEqual([["resource-kind-mismatch", "commands[3].atlasId"]]);
+  });
+
+  it("demands ordered in-range UTF-16 clusters", () => {
+    const result = validateDeep2dDisplayList({
+      ...glyphList,
+      commands: [...list.commands, { ...glyphCommand, bakedGlyphs: [glyph(1), glyph(0)] }, { ...glyphCommand, id: "draw:baked-2", bakedGlyphs: [glyph(5)] }],
+    });
+    expect(result.issues.map((entry) => [entry.code, entry.path])).toEqual([
+      ["invalid-structure", "commands[3].bakedGlyphs[1].cluster"],
+      ["invalid-structure", "commands[4].bakedGlyphs[0].cluster"],
+    ]);
+  });
+
+  it("bounds glyph sources inside the atlas and destinations to positive extents", () => {
+    const zero = { cluster: 0, source: [0, 0, 0, 16] as const, destination: [0, 0, 8, 14] as const };
+    const escaped = { cluster: 0, source: [250, 0, 16, 16] as const, destination: [0, 0, 8, 14] as const };
+    const collapsed = { cluster: 0, source: [0, 0, 16, 16] as const, destination: [0, 0, 0, 14] as const };
+    const result = validateDeep2dDisplayList({
+      ...glyphList,
+      commands: [...list.commands, { ...glyphCommand, bakedGlyphs: [zero] },
+        { ...glyphCommand, id: "draw:baked-2", bakedGlyphs: [escaped] },
+        { ...glyphCommand, id: "draw:baked-3", bakedGlyphs: [collapsed] }],
+    });
+    expect(result.issues.map((entry) => [entry.code, entry.path])).toEqual([
+      ["invalid-number", "commands[3].bakedGlyphs[0].source"],
+      ["invalid-number", "commands[4].bakedGlyphs[0].source"],
+      ["invalid-number", "commands[5].bakedGlyphs[0].destination[2]"],
+    ]);
+  });
+
+  it("rejects glyph fields the native contract does not know", () => {
+    const invented = { ...glyph(0), advance: 8 };
+    const result = validateDeep2dDisplayList({
+      ...glyphList,
+      commands: [...list.commands, { ...glyphCommand, bakedGlyphs: [invented] }],
+    });
+    expect(result.issues.map((entry) => [entry.code, entry.path])).toEqual([["invalid-structure", "commands[3].bakedGlyphs[0].advance"]]);
+  });
+
+  it("enforces the native baked-glyph and atlas budgets plus id uniqueness", () => {
+    const overGlyphs = validateDeep2dDisplayList({
+      ...glyphList,
+      commands: [...list.commands, { ...glyphCommand, bakedGlyphs: Array(DEEP_2D_DISPLAY_LIST_BUDGETS.commands + 1).fill(glyph(0)) }],
+    });
+    expect(overGlyphs.issues.map((entry) => [entry.code, entry.path])).toContainEqual(["budget-exceeded", "commands[3].bakedGlyphs"]);
+    const overAtlases = validateDeep2dDisplayList({ ...glyphList, atlases: Array(DEEP_2D_DISPLAY_LIST_BUDGETS.resources + 1).fill(glyphAtlas) });
+    expect(overAtlases.issues.map((entry) => entry.code)).toContain("budget-exceeded");
+    expect(overAtlases.issues.map((entry) => entry.code)).toContain("duplicate-id");
+    const collision = validateDeep2dDisplayList({ ...glyphList, atlases: [{ ...glyphAtlas, id: "font:ui" }] });
+    expect(collision.issues.map((entry) => [entry.code, entry.path])).toEqual([
+      ["duplicate-id", "atlases[0].id"], ["missing-resource", "commands[3].atlasId"],
+    ]);
+    const malformedAtlas = validateDeep2dDisplayList({ ...glyphList, atlases: [{ ...glyphAtlas, kind: "image", format: "r8unorm", dataBase64: "" }] });
+    expect(malformedAtlas.issues.map((entry) => [entry.code, entry.path])).toEqual([
+      ["invalid-structure", "atlases[0].format"], ["invalid-structure", "atlases[0].dataBase64"],
+      ["resource-kind-mismatch", "commands[3].atlasId"],
+    ]);
+  });
+});

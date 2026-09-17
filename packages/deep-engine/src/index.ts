@@ -106,9 +106,12 @@ export type { RayTracingCapabilities, RayTracingDecision, RayTracingFallback, Ra
 
 export { DEEP_2D_DISPLAY_LIST_BUDGETS, DEEP_2D_DISPLAY_LIST_SCHEMA_VERSION, validateDeep2dDisplayList } from "./deep2dDisplayList.js";
 export type {
+  Deep2dAtlasIdentity,
+  Deep2dBakedGlyph,
   Deep2dColor,
   Deep2dCommand,
   Deep2dDisplayList,
+  Deep2dDisplayListAtlas,
   Deep2dDisplayListIssue,
   Deep2dDisplayListIssueCode,
   Deep2dDisplayListValidationResult,

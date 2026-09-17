@@ -1,15 +1,23 @@
 export const DEEP_2D_DISPLAY_LIST_SCHEMA_VERSION = 1 as const;
 
-export const DEEP_2D_DISPLAY_LIST_BUDGETS = Object.freeze({
-  resources: 65_536,
-  commands: 262_144,
-  pathVerbsPerResource: 1_000_000,
-  pathVerbsTotal: 2_000_000,
-  clipsPerCommand: 64,
-  dashEntries: 64,
-  textCodeUnitsPerCommand: 1_000_000,
-  textCodeUnitsTotal: 4_000_000,
-} as const);
+export {
+  DEEP_2D_DISPLAY_LIST_BUDGETS,
+  type Deep2dDisplayListIssue,
+  type Deep2dDisplayListIssueCode,
+  type Deep2dDisplayListValidationResult,
+} from "./deep2dValidationPrimitives.js";
+export type { Deep2dAtlasIdentity, Deep2dBakedGlyph, Deep2dDisplayListAtlas } from "./deep2dDisplayListText.js";
+
+import {
+  DEEP_2D_DISPLAY_LIST_BUDGETS, MAX_DRAW_VALUE, MAX_IMAGE_DIMENSION,
+  add, allowedKeys, denseArray, finite, record, validColor, validDrawNumber, validEnum,
+  validId, validMatrix, validPositive, validRevision, wellFormedUnicode,
+  type Deep2dDisplayListIssue, type Deep2dDisplayListValidationResult,
+} from "./deep2dValidationPrimitives.js";
+import {
+  validateDisplayListAtlases, validateTextCommand,
+  type Deep2dBakedGlyph, type Deep2dDisplayListAtlas, type Deep2dTextValidationContext,
+} from "./deep2dDisplayListText.js";
 
 export type Deep2dColor = readonly [number, number, number, number];
 export type Deep2dMatrix = readonly [number, number, number, number, number, number];
@@ -45,6 +53,9 @@ export type Deep2dCommand =
       readonly kind: "text"; readonly text: string; readonly x: number; readonly y: number; readonly fontId: string;
       readonly fontSize: number; readonly color: Deep2dColor; readonly maxWidth?: number; readonly align?: "start" | "center" | "end";
       readonly baseline?: "top" | "middle" | "alphabetic" | "bottom"; readonly direction?: "ltr" | "rtl";
+      /** Optional baked glyph run (P1-18): requires `bakedGlyphs`; resolves against `atlases`.
+       *  Field shapes mirror native `command_types.rs` TextCommand exactly. */
+      readonly atlasId?: string; readonly bakedGlyphs?: readonly Deep2dBakedGlyph[];
     })
   | (Deep2dCommandBase & {
       readonly kind: "image"; readonly imageId: string; readonly x: number; readonly y: number; readonly width: number; readonly height: number;
@@ -59,91 +70,11 @@ export interface Deep2dDisplayList {
   readonly logicalHeight: number;
   readonly scaleFactor: number;
   readonly resources: readonly Deep2dResource[];
+  /** Optional glyph/image atlases; absent on legacy display lists (native `types.rs:29-32`).
+   *  Text `atlasId` references resolve here, sharing the resource id namespace. */
+  readonly atlases?: readonly Deep2dDisplayListAtlas[];
   /** Equal zOrder values retain their commands-array order. */
   readonly commands: readonly Deep2dCommand[];
-}
-
-export type Deep2dDisplayListIssueCode =
-  | "invalid-structure" | "invalid-schema-version" | "invalid-id" | "duplicate-id"
-  | "invalid-revision" | "invalid-number" | "invalid-color" | "invalid-transform"
-  | "invalid-path" | "missing-resource" | "resource-kind-mismatch" | "empty-paint" | "budget-exceeded";
-
-export interface Deep2dDisplayListIssue { readonly code: Deep2dDisplayListIssueCode; readonly path: string; readonly message: string }
-export interface Deep2dDisplayListValidationResult { readonly valid: boolean; readonly issues: readonly Deep2dDisplayListIssue[] }
-
-type RecordValue = Record<string, unknown>;
-
-const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
-const MAX_DRAW_VALUE = 16_777_216;
-const MAX_IMAGE_DIMENSION = 65_536;
-const MAX_ISSUES = 256;
-const record = (value: unknown): value is RecordValue => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-};
-const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
-
-function denseArray(value: unknown, length?: number): value is unknown[] {
-  if (!Array.isArray(value) || (length !== undefined && value.length !== length)) return false;
-  for (let index = 0; index < value.length; index += 1) if (!Object.hasOwn(value, index)) return false;
-  return true;
-}
-
-function add(issues: Deep2dDisplayListIssue[], code: Deep2dDisplayListIssueCode, path: string, message: string): void {
-  if (issues.length < MAX_ISSUES) issues.push({ code, path, message });
-}
-
-function allowedKeys(value: RecordValue, allowed: readonly string[], path: string, issues: Deep2dDisplayListIssue[]): void {
-  const allowedSet = new Set(allowed);
-  const unexpected = Object.keys(value).find((key) => !allowedSet.has(key));
-  if (unexpected !== undefined) add(issues, "invalid-structure", `${path}.${unexpected}`, "Unexpected field for this schema version.");
-}
-
-function wellFormedUnicode(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const unit = value.charCodeAt(index);
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) return false;
-      index += 1;
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) return false;
-  }
-  return true;
-}
-
-function validId(value: unknown, path: string, issues: Deep2dDisplayListIssue[]): value is string {
-  if (typeof value === "string" && ID.test(value) && !["__proto__", "prototype", "constructor"].includes(value)) return true;
-  add(issues, "invalid-id", path, "Expected a stable 1..256 character ASCII identifier.");
-  return false;
-}
-
-function validRevision(value: unknown, path: string, issues: Deep2dDisplayListIssue[]): void {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) add(issues, "invalid-revision", path, "Expected a non-negative JSON-safe integer revision.");
-}
-
-function validDrawNumber(value: unknown, path: string, issues: Deep2dDisplayListIssue[]): void {
-  if (!finite(value) || Math.abs(value) > MAX_DRAW_VALUE) add(issues, "invalid-number", path, `Expected a finite value with absolute magnitude at most ${MAX_DRAW_VALUE}.`);
-}
-
-function validPositive(value: unknown, path: string, issues: Deep2dDisplayListIssue[], limit = MAX_DRAW_VALUE): void {
-  if (!finite(value) || value <= 0 || value > limit) add(issues, "invalid-number", path, `Expected a finite value in (0, ${limit}].`);
-}
-
-function validColor(value: unknown, path: string, issues: Deep2dDisplayListIssue[]): void {
-  if (!denseArray(value, 4) || value.some((item) => !finite(item) || item < 0 || item > 1)) {
-    add(issues, "invalid-color", path, "Expected four finite RGBA channels in [0, 1].");
-  }
-}
-
-function validMatrix(value: unknown, path: string, issues: Deep2dDisplayListIssue[]): void {
-  if (!denseArray(value, 6) || value.some((item) => !finite(item) || Math.abs(item) > MAX_DRAW_VALUE)) {
-    add(issues, "invalid-transform", path, "Expected six bounded finite affine-matrix values.");
-  }
-}
-
-function validEnum(value: unknown, values: readonly string[], path: string, issues: Deep2dDisplayListIssue[]): void {
-  if (typeof value !== "string" || !values.includes(value)) add(issues, "invalid-structure", path, "Unsupported enum value.");
 }
 
 function validatePathVerbs(value: unknown, path: string, issues: Deep2dDisplayListIssue[]): number {
@@ -195,7 +126,7 @@ function validateResource(value: unknown, path: string, issues: Deep2dDisplayLis
 export function validateDeep2dDisplayList(input: unknown): Deep2dDisplayListValidationResult {
   const issues: Deep2dDisplayListIssue[] = [];
   if (!record(input)) return { valid: false, issues: [{ code: "invalid-structure", path: "displayList", message: "Expected a display-list object." }] };
-  allowedKeys(input, ["schemaVersion", "id", "revision", "logicalWidth", "logicalHeight", "scaleFactor", "resources", "commands"], "displayList", issues);
+  allowedKeys(input, ["schemaVersion", "id", "revision", "logicalWidth", "logicalHeight", "scaleFactor", "resources", "atlases", "commands"], "displayList", issues);
   if (input.schemaVersion !== DEEP_2D_DISPLAY_LIST_SCHEMA_VERSION) add(issues, "invalid-schema-version", "schemaVersion", `Expected schema version ${DEEP_2D_DISPLAY_LIST_SCHEMA_VERSION}.`);
   validId(input.id, "id", issues); validRevision(input.revision, "revision", issues);
   validPositive(input.logicalWidth, "logicalWidth", issues); validPositive(input.logicalHeight, "logicalHeight", issues); validPositive(input.scaleFactor, "scaleFactor", issues, 16);
@@ -220,8 +151,22 @@ export function validateDeep2dDisplayList(input: unknown): Deep2dDisplayListVali
   }
   if (totalPathVerbs > DEEP_2D_DISPLAY_LIST_BUDGETS.pathVerbsTotal) add(issues, "budget-exceeded", "resources", `Display list exceeds ${DEEP_2D_DISPLAY_LIST_BUDGETS.pathVerbsTotal} total path verbs.`);
 
+  // Atlases share the resource id namespace (native registers them after path/font/image).
+  const kindIndex = new Map<string, string>();
+  for (const resource of resources.values()) kindIndex.set(resource.id, resource.kind);
+  const atlasIdentities = validateDisplayListAtlases(input.atlases, kindIndex, issues);
+  const textContext: Deep2dTextValidationContext = {
+    atlases: atlasIdentities,
+    requireResource: (id, kind, path) => {
+      const actual = typeof id === "string" ? kindIndex.get(id) : undefined;
+      if (actual === undefined) add(issues, "missing-resource", path, `Missing ${kind} resource: ${String(id)}.`);
+      else if (actual !== kind) add(issues, "resource-kind-mismatch", path, `Expected ${kind} resource: ${id}.`);
+    },
+  };
+
   const commandIds = new Set<string>();
   let totalTextCodeUnits = 0;
+  let totalBakedGlyphs = 0;
   const requireResource = (id: unknown, kind: Deep2dResource["kind"], path: string): void => {
     if (typeof id !== "string" || !resources.has(id)) add(issues, "missing-resource", path, `Missing ${kind} resource: ${String(id)}.`);
     else if (resources.get(id)?.kind !== kind) add(issues, "resource-kind-mismatch", path, `Expected ${kind} resource: ${id}.`);
@@ -260,15 +205,10 @@ export function validateDeep2dDisplayList(input: unknown): Deep2dDisplayListVali
       }
       if (candidate.dashOffset !== undefined) validDrawNumber(candidate.dashOffset, `${path}.dashOffset`, issues);
     } else if (candidate.kind === "text") {
-      allowedKeys(candidate, [...baseKeys, "text", "x", "y", "fontId", "fontSize", "color", "maxWidth", "align", "baseline", "direction"], path, issues);
-      requireResource(candidate.fontId, "font", `${path}.fontId`); validColor(candidate.color, `${path}.color`, issues);
-      if (typeof candidate.text !== "string" || candidate.text.length > DEEP_2D_DISPLAY_LIST_BUDGETS.textCodeUnitsPerCommand || !wellFormedUnicode(candidate.text)) add(issues, "invalid-structure", `${path}.text`, "Expected bounded well-formed Unicode text.");
-      else totalTextCodeUnits += candidate.text.length;
-      validDrawNumber(candidate.x, `${path}.x`, issues); validDrawNumber(candidate.y, `${path}.y`, issues); validPositive(candidate.fontSize, `${path}.fontSize`, issues, 65_536);
-      if (candidate.maxWidth !== undefined) validPositive(candidate.maxWidth, `${path}.maxWidth`, issues);
-      if (candidate.align !== undefined) validEnum(candidate.align, ["start", "center", "end"], `${path}.align`, issues);
-      if (candidate.baseline !== undefined) validEnum(candidate.baseline, ["top", "middle", "alphabetic", "bottom"], `${path}.baseline`, issues);
-      if (candidate.direction !== undefined) validEnum(candidate.direction, ["ltr", "rtl"], `${path}.direction`, issues);
+      allowedKeys(candidate, [...baseKeys, "text", "x", "y", "fontId", "fontSize", "color", "maxWidth", "align", "baseline", "direction", "atlasId", "bakedGlyphs"], path, issues);
+      const counted = validateTextCommand(candidate, path, textContext, issues);
+      totalTextCodeUnits += counted.textCodeUnits;
+      totalBakedGlyphs += counted.bakedGlyphs;
     } else {
       allowedKeys(candidate, [...baseKeys, "imageId", "x", "y", "width", "height", "sampling"], path, issues);
       requireResource(candidate.imageId, "image", `${path}.imageId`);
@@ -278,5 +218,6 @@ export function validateDeep2dDisplayList(input: unknown): Deep2dDisplayListVali
     }
   }
   if (totalTextCodeUnits > DEEP_2D_DISPLAY_LIST_BUDGETS.textCodeUnitsTotal) add(issues, "budget-exceeded", "commands", `Display list exceeds ${DEEP_2D_DISPLAY_LIST_BUDGETS.textCodeUnitsTotal} total text code units.`);
+  if (totalBakedGlyphs > DEEP_2D_DISPLAY_LIST_BUDGETS.commands) add(issues, "budget-exceeded", "commands", `Display list exceeds ${DEEP_2D_DISPLAY_LIST_BUDGETS.commands} baked glyphs.`);
   return { valid: issues.length === 0, issues };
 }
