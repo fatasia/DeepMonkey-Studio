@@ -6,6 +6,8 @@
 
 - G04切片A `dashboardRuntimeArtifactCompiler` 可选注入可信布局宿主：可见/有冻结数据/测量合同内的组件在编译输入边界capture→verify→合并layout与table进冻结数据值；缺省输入与既有行为一致，自带layout拒绝覆盖、字体背叛/过期/取消fail-closed。6项聚焦+API全量1178通过、类型通过。部署侧正式Chromium宿主（切片B）未建设，不冒充完成。[报告](specs/dashboard-measured-layout-compiler-input-2026-09-17.md)
 
+- Web静态包生成端收拢 `a3fd714`：scripts/build-dashboard-web-package.mts（冻结清单校验→资源/字体许可闭包→Vite构建→manifest三种hash→zip）与 dashboardWebPackage 合同、DashboardStaticRoot 全屏入口、vite.dashboard-static 配置整组入库。r6端到端重跑（发布revision 2，zip SHA ff11cdbb…）后修复版loader两轮浏览器15/15再次通过（含篡改/缺资源fail-closed与取消恢复）。API web下载格式注册仍待接；生产构建在生成器内已验。
+
 - S0样本库补强（data/不入库）：3DM×2(mcneel/openNURBS@eb92af3b)、LAS×1(PDAL@58af674b)、3D Tiles×6(CesiumGS/3d-tiles-tools@4ca692eb,Apache-2.0)、RVT×1(本地BIMFACE,仅inspect)；manifest 12条逐条重算SHA-256一致,许可文件随目录。jt coffee-maker 9.5文件在库但manifest未登记属既有遗留。
 
 ### 2026-09-17 主流程与 DE26 范围同步
