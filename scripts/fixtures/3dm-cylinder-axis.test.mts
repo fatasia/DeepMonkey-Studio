@@ -11,7 +11,7 @@ import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
 import { evaluateSurface } from './3dm-nurbs-parameters.mjs';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/multispan-cylinder-2026-09-17-v1');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/proven-cylinder-2026-09-17-v1/axis');
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartB.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex');
@@ -38,7 +38,7 @@ test('actual three-segment axis preserves PointAt, source boundaries and GLB fac
   for(const b of part.boundaryEdges)for(let i=1;i<b.vertices.length;i++){const k=key(b.vertices[i-1],b.vertices[i]);boundary.add(k);assert.equal(edges.get(k),1);}
   assert([...edges].every(([k,n])=>n===2||n===1&&boundary.has(k)));assert(triangles.every(t=>t.getArea()>1e-14));
   const noCache=structuredClone(source);for(const o of noCache.objects)if(o.kind==='brep')o.storedRenderMeshes=[];
-  assert.equal(completeBrepParts(noCache.objects.find((o:any)=>o.cadIr),.001).parts.length,11);
+  assert.equal(completeBrepParts(noCache.objects.find((o:any)=>o.cadIr),.001).parts.length,12);
   const result=await export3dmGlb(noCache,sha(readFileSync(path)));assert(result.bytes);mkdirSync(out,{recursive:true});
   const glb=resolve(out,'MechPartB.glb');writeFileSync(glb,result.bytes);const audit=await auditGlbGeometry(glb);
   const bytes=Buffer.from(result.bytes),json=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)).toString());
