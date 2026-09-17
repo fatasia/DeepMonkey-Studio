@@ -39,7 +39,7 @@ fn draw_in_format(
 
 /// Readback at an arbitrary physical size; the shader letterboxes the logical
 /// canvas when the aspect ratios differ, exactly like the native window.
-fn draw_in_format_at(
+pub(crate) fn draw_in_format_at(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     content: &Deep2dRuntimeContent,
@@ -123,7 +123,11 @@ fn draw_in_format_at(
 
 /// Letterbox-mapped physical pixel region of a logical rect (shader semantics:
 /// uniform min-axis scale plus centering offset), floor/ceil expanded.
-fn letterbox_region(rect: [f64; 4], page: [f64; 2], physical: (u32, u32)) -> (u32, u32, u32, u32) {
+pub(crate) fn letterbox_region(
+    rect: [f64; 4],
+    page: [f64; 2],
+    physical: (u32, u32),
+) -> (u32, u32, u32, u32) {
     let scale = (f64::from(physical.0) / page[0]).min(f64::from(physical.1) / page[1]);
     let ox = (f64::from(physical.0) - page[0] * scale) / 2.;
     let oy = (f64::from(physical.1) - page[1] * scale) / 2.;
@@ -139,7 +143,11 @@ fn letterbox_region(rect: [f64; 4], page: [f64; 2], physical: (u32, u32)) -> (u3
 }
 
 /// Count of non-background (colored) pixels inside a physical region.
-fn colored_in_region(pixels: &[u8], physical: (u32, u32), region: (u32, u32, u32, u32)) -> usize {
+pub(crate) fn colored_in_region(
+    pixels: &[u8],
+    physical: (u32, u32),
+    region: (u32, u32, u32, u32),
+) -> usize {
     let (x0, y0, x1, y1) = region;
     (y0..y1)
         .flat_map(|y| (x0..x1).map(move |x| ((y * physical.0 + x) * 4) as usize))

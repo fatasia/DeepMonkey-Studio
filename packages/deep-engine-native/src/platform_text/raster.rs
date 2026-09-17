@@ -67,6 +67,12 @@ impl TextRasterizer {
     pub fn family_exists(&mut self, family: &str) -> bool {
         super::font_capability::family_exists(&mut self.fonts, family)
     }
+
+    /// P1-19 探针复用:这段文字按当前系统整体字体能力成形时是否零 `.notdef`。
+    /// 图表轴/图例在光栅化前用它拦截缺字,按 fail-closed 语义报错而不是画方框。
+    pub fn shapes_without_missing_glyphs(&mut self, family: &str, text: &str) -> bool {
+        super::font_capability::text_shapes_without_missing_glyphs(&mut self.fonts, family, text)
+    }
 }
 
 #[cfg(all(test, target_os = "windows"))]

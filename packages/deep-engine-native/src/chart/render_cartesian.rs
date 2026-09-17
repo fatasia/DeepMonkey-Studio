@@ -1,8 +1,8 @@
 //! Cartesian source rows to pixel coordinates and bar dimensions.
 use super::domain::{numeric_mapper, resolve_domain, zoom_domain};
 use super::{
-    ChartAxis, ChartDataset, ChartIR, ChartScale, ChartSeries, ChartSeriesType, axis_of, dim,
-    finite_value,
+    ChartAxis, ChartDataset, ChartIR, ChartScale, ChartSeries, ChartSeriesType, axis_of, dataset,
+    dim, finite_value,
 };
 use crate::chart::scales::category_scale;
 /// Resolves a cartesian series into pixel points plus bar layout facts
@@ -181,7 +181,11 @@ pub(in crate::chart) fn map_cartesian(
 }
 
 /// Series bound to the same numeric axis share one data domain.
-fn shared_axis_values(ir: &ChartIR, current: &ChartSeries, horizontal: bool) -> Vec<f64> {
+pub(in crate::chart) fn shared_axis_values(
+    ir: &ChartIR,
+    current: &ChartSeries,
+    horizontal: bool,
+) -> Vec<f64> {
     let mut values = Vec::new();
     for peer in &ir.series {
         if !matches!(
@@ -279,4 +283,102 @@ fn x_projector(
         None => XInverter(XInvertKind::RowBanded { count, px, pw }),
     };
     Some((mapper, invert_x))
+}
+
+/// Axis presentation facts shared with the presenter-layer axis renderer
+/// (`axis_render.rs`). Derived from the exact same inputs as
+/// `map_cartesian` — same `shared_axis_values`, same `resolve_domain`,
+/// same zoom windows — so ticks can never disagree with drawn geometry.
+pub(in crate::chart) struct AxisView {
+    /// Zoomed numeric domain; `None` for category presentation.
+    pub(in crate::chart) numeric: Option<(f64, f64)>,
+    pub(in crate::chart) log: bool,
+    pub(in crate::chart) row_bands: Option<RowBands>,
+}
+
+pub(in crate::chart) struct RowBands {
+    pub(in crate::chart) count: usize,
+    /// Zoom window in row units: (first row, row span).
+    pub(in crate::chart) window: Option<(f64, f64)>,
+}
+
+/// Resolves how one axis presents ticks, anchored to the first cartesian
+/// series bound to it (its dataset decides numeric vs row-banded, matching
+/// that series' `map_cartesian` branch). `None` when nothing binds the axis
+/// or the numeric domain is unusable (empty/non-finite data, Y category).
+pub(in crate::chart) fn axis_presentation(
+    ir: &ChartIR,
+    axis: &ChartAxis,
+    hidden_series: &[String],
+    windows: &[(String, f64, f64)],
+) -> Option<AxisView> {
+    let series = ir.series.iter().find(|series| {
+        !hidden_series.contains(&series.id)
+            && matches!(
+                series.series_type,
+                ChartSeriesType::Line | ChartSeriesType::Bar | ChartSeriesType::Scatter
+            )
+            && (series.x_axis_id.as_ref() == Some(&axis.id)
+                || series.y_axis_id.as_ref() == Some(&axis.id))
+    })?;
+    let dataset = dataset(ir, &series.dataset_id)?;
+    let horizontal = series.y_axis_id.as_ref() != Some(&axis.id);
+    let window = windows
+        .iter()
+        .find(|(id, _, _)| *id == axis.id)
+        .map(|&(_, start, end)| (start, end));
+    let log = axis.scale == ChartScale::Log;
+    if !horizontal {
+        // Y axes are numeric-only (map_cartesian maps finite y values).
+        let shared = shared_axis_values(ir, series, false);
+        let has_bar = ir.series.iter().any(|peer| {
+            peer.y_axis_id == series.y_axis_id && peer.series_type == ChartSeriesType::Bar
+        });
+        let zero = (has_bar && !log && !shared.is_empty()).then_some(0.0);
+        let domain = resolve_domain(Some(axis), shared.into_iter().chain(zero))?;
+        return Some(AxisView {
+            numeric: Some(zoom_domain(Some(axis), domain, windows)?),
+            log,
+            row_bands: None,
+        });
+    }
+    let category = axis.scale == ChartScale::Category;
+    let (x_col, y_col) = (dim(dataset, &series.x)?, dim(dataset, &series.y)?);
+    // Numeric-column test mirrors `map_cartesian::numeric_ok`: every row with
+    // a finite y must carry a finite x (positive on log axes).
+    let numeric_ok = !category && dataset.rows.iter().all(|values| {
+        match finite_value(values, y_col) {
+            None => true,
+            Some(_) => {
+                matches!(finite_value(values, x_col), Some(x) if x.is_finite() && (!log || x > 0.0))
+            }
+        }
+    });
+    if numeric_ok {
+        let domain = resolve_domain(Some(axis), shared_axis_values(ir, series, true).into_iter())?;
+        Some(AxisView {
+            numeric: Some(zoom_domain(Some(axis), domain, windows)?),
+            log,
+            row_bands: None,
+        })
+    } else {
+        let count = dataset.rows.len();
+        let window =
+            window.map(|(start, end)| (start * count as f64, (end - start) * count as f64));
+        Some(AxisView {
+            numeric: None,
+            log,
+            row_bands: Some(RowBands { count, window }),
+        })
+    }
+}
+
+/// Domain-mapping forwarder for the axis renderer: same `numeric_mapper`
+/// the geometry pass uses, re-exported past the render module boundary.
+pub(in crate::chart) fn numeric_mapper_for(
+    axis: &ChartAxis,
+    domain: Option<(f64, f64)>,
+    range: (f64, f64),
+) -> Option<Box<dyn Fn(f64) -> f64>> {
+    numeric_mapper(Some(axis), domain?, range)
 }

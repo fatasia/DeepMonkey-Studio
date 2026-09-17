@@ -15,6 +15,8 @@ use crate::deep2d_gpu_cache::Deep2dGpuAssetCache;
 const WIDTH: u32 = 128;
 const HEIGHT: u32 = 64;
 
+#[path = "chart_axes_gpu_tests.rs"]
+mod axes_legend;
 #[path = "dashboard_composition_gpu_tests.rs"]
 mod dashboard_composition;
 #[path = "chart_heatmap_gpu_tests.rs"]

@@ -2,9 +2,10 @@
 use super::{
     ChartRuntime,
     legend::{LegendAction, LegendFrame},
+    render::series_swatch_color,
 };
 use crate::{
-    deep2d::{Deep2dDisplayList, validate_display_list},
+    deep2d::{Deep2dDisplayList, FillRule, PathResource, validate_display_list},
     native_ui::design_tokens::DesignTokenTheme,
     platform_text::{TextRasterRequest, TextRasterizer},
 };
@@ -19,7 +20,21 @@ pub fn append_legend(
 ) -> Result<LegendFrame, String> {
     let frame = LegendFrame::prepare(chart, page)?;
     let mut layers = Vec::new();
-    for item in frame.items.iter() {
+    let mut swatches: Vec<(crate::deep2d::Deep2dResource, crate::deep2d::Deep2dCommand)> =
+        Vec::new();
+    for (item_index, item) in frame.items.iter().enumerate() {
+        if let LegendAction::Toggle(series_id) = &item.action
+            && let Some(series) = chart.source().series.iter().find(|s| &s.id == series_id)
+        {
+            swatches.push(swatch(
+                item_index,
+                item.rect,
+                chart.revision(),
+                page,
+                series_swatch_color(series, 0),
+                item.hidden,
+            ));
+        }
         let color = if item.hidden {
             theme.colors.text_muted
         } else {
@@ -35,7 +50,9 @@ pub fn append_legend(
         let font_size = theme.typography.font_size_base;
         let line_height = font_size * theme.typography.line_height;
         let padding = theme.spacing.space_1;
-        let width = (item.rect[2] - padding * 2.0).floor();
+        // The series swatch precedes the label: [6px inset][10px chip][6px gap].
+        const SWATCH_SPAN: f64 = 22.0;
+        let width = (item.rect[2] - padding * 2.0 - SWATCH_SPAN).floor();
         let height = item.rect[3].floor();
         if !padding.is_finite()
             || padding < 0.0
@@ -104,12 +121,16 @@ pub fn append_legend(
             &key,
             chart.revision(),
             [list.logical_width, list.logical_height],
-            [item.rect[0] + padding, item.rect[1]],
+            [item.rect[0] + padding + SWATCH_SPAN, item.rect[1]],
             i32::MAX - 2,
         )?);
     }
     // Build a candidate so failed font/contract preparation never partly appends.
     let mut candidate = list.clone();
+    for (resource, command) in swatches {
+        candidate.resources.push(resource);
+        candidate.commands.push(command);
+    }
     for mut layer in layers {
         candidate.resources.append(&mut layer.resources);
         candidate.commands.append(&mut layer.commands);
@@ -124,6 +145,70 @@ pub fn append_legend(
     }
     *list = candidate;
     Ok(frame)
+}
+
+const SWATCH_SIZE: f64 = 10.0;
+
+/// Series color chip at the left edge of a legend item; hidden series keep
+/// the chip at quarter strength so the toggle state stays readable.
+fn swatch(
+    item_index: usize,
+    rect: [f64; 4],
+    revision: u64,
+    page: usize,
+    color: crate::deep2d::Deep2dColor,
+    hidden: bool,
+) -> (crate::deep2d::Deep2dResource, crate::deep2d::Deep2dCommand) {
+    use crate::deep2d::{Deep2dCommand, Deep2dPathVerb, Deep2dResource};
+    let id = format!("legend.swatch.p{page}.{item_index}");
+    let [x, y, _, height] = rect;
+    let left = x + 6.0;
+    let top = y + ((height - SWATCH_SIZE) * 0.5).max(0.0);
+    let mut fill = color;
+    if hidden {
+        fill[3] *= 0.25;
+    }
+    (
+        Deep2dResource::Path(PathResource {
+            id: id.clone(),
+            revision,
+            verbs: vec![
+                Deep2dPathVerb::Move { x: left, y: top },
+                Deep2dPathVerb::Line {
+                    x: left + SWATCH_SIZE,
+                    y: top,
+                },
+                Deep2dPathVerb::Line {
+                    x: left + SWATCH_SIZE,
+                    y: top + SWATCH_SIZE,
+                },
+                Deep2dPathVerb::Line {
+                    x: left,
+                    y: top + SWATCH_SIZE,
+                },
+                Deep2dPathVerb::Close,
+            ],
+        }),
+        Deep2dCommand::Path(crate::deep2d::PathCommand {
+            id: format!("{id}.cmd"),
+            z_order: i32::MAX - 2,
+            transform: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            opacity: None,
+            clip_path_ids: None,
+            clip_rect: None,
+            hit_id: None,
+            path_id: id,
+            fill: Some(fill),
+            fill_rule: Some(FillRule::Nonzero),
+            stroke: None,
+            stroke_width: None,
+            line_cap: None,
+            line_join: None,
+            miter_limit: None,
+            dash: None,
+            dash_offset: None,
+        }),
+    )
 }
 
 /// 键盘焦点环:围绕图例项的外扩描边(native_ui 控件环是内缩方向,小尺寸文本行

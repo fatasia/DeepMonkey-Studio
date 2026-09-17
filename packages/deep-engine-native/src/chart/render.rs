@@ -1,7 +1,9 @@
 //! Chart renderer (C03): validated ChartIR → Deep2d display list, pure CPU.
 //!
 //! Contract decisions:
-//! - Path-only output; text (axis labels, legends) waits for the font pipeline.
+//! - Path-only series geometry; text (axis labels, legends, tooltips) is a
+//!   presenter-layer pass over the runtime display list (`axis_render.rs`,
+//!   `legend_render.rs`, `tooltip_render.rs`), not part of this output.
 //! - Arcs/circles are polyline approximations; subpaths always start with Move,
 //!   closed fill subpaths keep ≥3 distinct points and stay simple polygons, so
 //!   the painter's degenerate-edge and self-intersection guards never fire.
@@ -24,8 +26,8 @@ use crate::deep2d::{
 };
 #[path = "render_cartesian.rs"]
 mod cartesian;
-pub(in crate::chart) use cartesian::XInverter;
 pub(super) use cartesian::{CartesianPoints, map_cartesian};
+pub(in crate::chart) use cartesian::{RowBands, XInverter, axis_presentation, numeric_mapper_for};
 
 const LINE_COLOR: Deep2dColor = [0.2, 0.6, 1.0, 1.0];
 const BAR_COLOR: Deep2dColor = [0.2, 0.8, 0.4, 1.0];
@@ -112,6 +114,19 @@ fn extent(values: impl Iterator<Item = f64>) -> Option<(f64, f64)> {
         (lo.min(v), hi.max(v))
     });
     (min.is_finite() && max.is_finite()).then_some((min, max))
+}
+
+/// Legend swatch color: the same fixed palette the geometry pass paints with,
+/// so a legend chip never advertises a color the series cannot show.
+pub(in crate::chart) fn series_swatch_color(series: &ChartSeries, wedge: usize) -> Deep2dColor {
+    match series.series_type {
+        ChartSeriesType::Line => LINE_COLOR,
+        ChartSeriesType::Bar => BAR_COLOR,
+        ChartSeriesType::Scatter => SCATTER_COLOR,
+        ChartSeriesType::Pie => PIE_PALETTE[wedge % PIE_PALETTE.len()],
+        ChartSeriesType::Gauge => GAUGE_COLOR,
+        ChartSeriesType::Heatmap => heat_color(0.5),
+    }
 }
 
 /// Deep2d ids must be stable ASCII identifiers; the ChartIR id is not

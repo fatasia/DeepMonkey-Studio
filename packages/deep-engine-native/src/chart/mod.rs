@@ -28,6 +28,8 @@ pub mod data_source;
 pub mod simulation;
 mod value_equal;
 pub use data_message::{CHART_DATA_MESSAGE_MAX_BYTES, ChartDataMessage, parse_chart_data_update};
+pub mod axis_render;
+pub mod axis_ticks;
 pub mod legend;
 pub mod legend_render;
 mod point_marker_render;
