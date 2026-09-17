@@ -1969,3 +1969,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 新增两份 rhino3dm 官方真实样本：完整保存网格的 `sphereDecals.3dm` 输出 9,895 顶点/18,752 三角；`file3dm_stuff.3dm` 只输出 13 个 B-Rep face 中唯一有保存网格的 1 面（4 顶点/2 三角），另外 12 面保持明确诊断。
 - sidecar 新增 `partial-geometry-preview`，防止“有一个面可画”被误报为完整预览；无缓存网格继续不造代理几何。GLB BIN 的位置/索引/法线/UV 与真实源逐项对拍，材质和绝对纹理路径仍只作身份，不生成外观。
 - 5/5 实际源审计、8/8 adapter 测试及 5 份产品 GLB 几何审核通过。当前只证明文件内保存网格；无缓存 B-Rep 仍须映射 openNURBS curve/surface/trim 到自研 CAD IR 后离散，不允许商业 SDK/转换器。[证据](specs/industrial-3dm-brep-render-mesh-2026-09-17.md)
+
+### 2026-09-17 3DM trimmed NURBS CAD IR（Codex）
+
+- openNURBS B-Rep 已映射为版本化自研 CAD IR：顶点、3D edge curve、2D trim curve、surface、edge、trim、loop、face 及方向/引用均保留；曲线曲面统一为带完整 knot vector、控制点与权重编码的 NURBS form。
+- 三件真实 B-Rep 样本覆盖 7 个 B-Rep / 15 个 face；`file3dm_stuff` 的 13 个 face 为 32 vertices / 42 edges / 52 trims / 13 loops / 13 surfaces。独立门禁复核 NURBS 数组、domain、有限值、knot 单调性、引用闭包、重复确定性及截断/缺失拒绝。
+- 参数化 `2` 明确保留：球面样本存在 2 个仅点集/domain 一致的 NURBS form，尚不能直接消费原 trim 参数。无缓存面仍不生成网格、不提升 preview 状态；参数映射、trimmed surface 离散、误差与生产接线继续本轮待办。[证据](specs/industrial-3dm-cad-ir-2026-09-17.md)
