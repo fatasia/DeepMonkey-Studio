@@ -28,7 +28,9 @@ fn linear_to_srgb(linear: vec3f) -> vec3f {
 }
 
 fn resolved_hdr(position: vec4f) -> vec4f {
-  return textureLoad(hdr_color, vec2i(position.xy), 0);
+  // 纯二维档位用单个HDR像素保留同一背景与ACES路径。
+  let pixel = min(vec2i(position.xy), vec2i(textureDimensions(hdr_color)) - vec2i(1));
+  return textureLoad(hdr_color, pixel, 0);
 }
 
 @fragment fn fragment_srgb_target(input: OutputVertex) -> @location(0) vec4f {

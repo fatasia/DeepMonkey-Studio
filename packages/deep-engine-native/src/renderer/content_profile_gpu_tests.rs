@@ -57,7 +57,7 @@ impl ApplicationHandler<GpuEvent> for Probe {
             "../../tests/fixtures/runtime-package-v1.json"
         ));
         let features = RendererFeatures {
-            bloom: Default::default(),
+            bloom: deep_engine_native::bloom::BloomSettings::DISABLED,
             fog: deep_engine_native::fog::FogSettings::DISABLED,
             shadow_probe: false,
             ibl_probe: false,
@@ -73,6 +73,30 @@ impl ApplicationHandler<GpuEvent> for Probe {
         ))
         .unwrap();
         renderer.verify_candidate_frame().unwrap();
+        assert!(renderer.content_profile.compact_forward_targets);
+        assert_eq!(renderer.forward_targets.resolved_texture().size().width, 1);
+        assert_eq!(renderer.forward_targets.resolved_texture().size().height, 1);
+        renderer.resize(PhysicalSize::new(980, 617)).unwrap();
+        renderer.verify_candidate_frame().unwrap();
+        assert_eq!(renderer.forward_targets.resolved_texture().size().width, 1);
+        assert_eq!(renderer.config.width, 980);
+        assert_eq!(renderer.config.height, 617);
+        renderer.activate_surface();
+        assert!(matches!(
+            renderer.render(true),
+            crate::events::RenderOutcome::Presented
+        ));
+        renderer.resize(PhysicalSize::new(0, 0)).unwrap();
+        assert!(matches!(
+            renderer.render(true),
+            crate::events::RenderOutcome::Skipped
+        ));
+        renderer.resize(PhysicalSize::new(1280, 720)).unwrap();
+        assert!(matches!(
+            renderer.render(true),
+            crate::events::RenderOutcome::Presented
+        ));
+        assert_eq!(renderer.forward_targets.resolved_texture().size().width, 1);
         let compact = renderer.shadow_summary();
         assert_eq!(compact.depth_texture_bytes, 65536);
         assert_eq!(renderer.pipeline_counts(), (0, 0));
@@ -94,6 +118,11 @@ impl ApplicationHandler<GpuEvent> for Probe {
         ))
         .unwrap();
         full.verify_candidate_frame().unwrap();
+        assert!(!full.content_profile.compact_forward_targets);
+        assert_eq!(
+            full.forward_targets.resolved_texture().size().width,
+            full.size.width
+        );
         assert_eq!(full.shadow_summary().depth_texture_bytes, 67108864);
         assert_eq!(full.pipeline_counts(), (18, 9));
         assert!(!full.requires_content_rebuild(&three));
@@ -110,6 +139,15 @@ impl ApplicationHandler<GpuEvent> for Probe {
         ))
         .unwrap();
         compact_again.verify_candidate_frame().unwrap();
+        assert!(compact_again.content_profile.compact_forward_targets);
+        assert_eq!(
+            compact_again
+                .forward_targets
+                .resolved_texture()
+                .size()
+                .width,
+            1
+        );
         assert_eq!(compact_again.shadow_summary().depth_texture_bytes, 65536);
         assert_eq!(compact_again.pipeline_counts(), (0, 0));
         println!(

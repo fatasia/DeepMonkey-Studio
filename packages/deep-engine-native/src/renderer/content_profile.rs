@@ -10,6 +10,8 @@ pub(crate) struct ContentProfileReport {
     /// 前向目标在当前判据下是否可跳过。与 `planeless` 同源,分开列是为了
     /// 让后续接帧路径时「判据」与「已实施」能各自演进。
     pub forward_targets_skippable: bool,
+    /// 已实施的1×1背景目标，不代表完全删除前向目标。
+    pub compact_forward_targets: bool,
     /// 前向目标每像素字节(与分辨率相乘即估算占用)。
     pub forward_target_bytes_per_pixel: u64,
 }
@@ -19,15 +21,34 @@ impl ContentProfileReport {
         Self {
             planeless: planeless(content, features),
             forward_targets_skippable: skip_forward_targets(content, features),
+            compact_forward_targets: compact_forward(content, features),
             forward_target_bytes_per_pixel: forward_target_bytes_per_pixel(),
         }
     }
     /// 启动报告用的一行。
     pub(crate) fn summary(&self) -> String {
         format!(
-            "planeless={} forward_targets_skippable={} forward_bytes_per_pixel={}",
-            self.planeless, self.forward_targets_skippable, self.forward_target_bytes_per_pixel
+            "planeless={} forward_targets_skippable={} compact_forward_targets={} forward_bytes_per_pixel={}",
+            self.planeless,
+            self.forward_targets_skippable,
+            self.compact_forward_targets,
+            self.forward_target_bytes_per_pixel
         )
+    }
+}
+
+pub(super) fn compact_forward(content: &PlayerContent, features: RendererFeatures) -> bool {
+    planeless(content, features) && !features.bloom.is_active() && features.fog.density() == 0.0
+}
+
+pub(super) fn forward_size(
+    compact: bool,
+    size: winit::dpi::PhysicalSize<u32>,
+) -> winit::dpi::PhysicalSize<u32> {
+    if compact {
+        winit::dpi::PhysicalSize::new(1, 1)
+    } else {
+        size
     }
 }
 
@@ -164,6 +185,43 @@ mod tests {
         );
         assert!(!skip_forward_targets(&content, features(true, false)));
         assert!(!skip_forward_targets(&content, features(false, true)));
+    }
+
+    #[test]
+    fn compact_forward_requires_plain_output_and_keeps_window_extent_separate() {
+        let list = deep_engine_native::deep2d::decode_display_list(include_bytes!(
+            "../../fixtures/deep2d_tessellated_v1.json"
+        ))
+        .unwrap();
+        let content = PlayerContent::from_packet(
+            empty_packet(),
+            Some(deep_engine_native::deep2d::Deep2dRuntimeContent::DisplayList(list)),
+        );
+        let mut plain = features(false, false);
+        assert!(
+            !compact_forward(&content, plain),
+            "default Bloom stays full size"
+        );
+        plain.bloom = deep_engine_native::bloom::BloomSettings::DISABLED;
+        assert!(compact_forward(&content, plain));
+        let size = winit::dpi::PhysicalSize::new(1280, 720);
+        assert_eq!(
+            forward_size(true, size),
+            winit::dpi::PhysicalSize::new(1, 1)
+        );
+        assert_eq!(forward_size(false, size), size);
+        for (shadow_probe, ibl_probe) in [(true, false), (false, true)] {
+            assert!(!compact_forward(
+                &content,
+                RendererFeatures {
+                    shadow_probe,
+                    ibl_probe,
+                    ..plain
+                }
+            ));
+        }
+        plain.fog = deep_engine_native::fog::FogSettings::exponential(0.1, [0.5; 3]).unwrap();
+        assert!(!compact_forward(&content, plain));
     }
 
     /// 与ForwardTargets中的三个纹理描述符对应，深度也使用多重采样。

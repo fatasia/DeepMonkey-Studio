@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Use 1×1 forward targets for plain pure-2D Native output, preserving HDR background and ACES; Bloom, fog, probes and 3D retain full-size targets.
+
 - Correct Native forward-target memory estimates to include multisampled depth; document the HDR background dependency before trimming the pure-2D render path.
 
 - Preserve imported material alpha and depth-write policy when restoring scene opacity; repeated shared-material updates do not compound opacity or repeatedly invalidate shaders.

@@ -100,8 +100,7 @@ pub struct Renderer {
     view: PlayerView,
     telemetry: Option<crate::telemetry::FrameTelemetry>,
     diagnostics: crate::player_diagnostics::PlayerDiagnostics,
-    /// 构造期求值的分配档位事实(P1-09):纯二维场景是否可跳过前向目标。
-    /// 只读诊断用;帧路径的跳过改造属独立切片。
+    /// 构造期固定分配档位；resize沿用同一档位，内容跨档由完整重建处理。
     content_profile: crate::renderer::ContentProfileReport,
 }
 
@@ -146,7 +145,10 @@ impl Renderer {
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
-        let next_forward = ForwardTargets::new(&self.device, size);
+        let next_forward = ForwardTargets::new(
+            &self.device,
+            content_profile::forward_size(self.content_profile.compact_forward_targets, size),
+        );
         let next_bloom: Option<BloomTargets> = self
             .bloom
             .as_ref()

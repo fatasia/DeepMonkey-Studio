@@ -120,7 +120,13 @@ pub(super) async fn create_renderer(
             "Deep Engine native frame bindings",
             true,
         );
-        let forward_targets = ForwardTargets::new(&device, size);
+        let forward_targets = ForwardTargets::new(
+            &device,
+            super::content_profile::forward_size(
+                super::content_profile::compact_forward(content, features),
+                size,
+            ),
+        );
         let shadow_probe = features.shadow_probe.then(|| {
             ShadowProbe::new(
                 &device,
