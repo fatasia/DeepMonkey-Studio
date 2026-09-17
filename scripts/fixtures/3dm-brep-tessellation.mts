@@ -8,6 +8,7 @@ import { weldSourceEdges } from './3dm-source-edge-weld.mts';
 import { tessellateTrimmedCylinderFace } from './3dm-cylinder-trim.mts';
 import { tessellateProvenCylinderFace } from './3dm-proven-cylinder.mts';
 import { tessellateBicubicFace,tessellateMultispanBicubicFace } from './3dm-bicubic-face.mts';
+import { tessellateRationalBezierFace } from './3dm-rational-bezier-face.mts';
 
 /** Preserve saved meshes, reconstruct only supported missing faces, retain per-face diagnostics. */
 export function completeBrepParts(object: any,metersPerUnit?:number) {
@@ -29,6 +30,9 @@ export function completeBrepParts(object: any,metersPerUnit?:number) {
         }
         if(!support&&!surface?.rational&&surface?.degree?.every((d:number)=>d===3)) {
           parts.push(tessellateMultispanBicubicFace(object.cadIr,face,metersPerUnit!));continue;
+        }
+        if(!support&&surface?.rational&&surface.degree?.[0]===3&&surface.degree?.[1]===2) {
+          parts.push(tessellateRationalBezierFace(object.cadIr,face,metersPerUnit!));continue;
         }
         if(!support&&surface?.rational&&surface.degree?.includes(1)&&surface.degree?.includes(2)) {
           parts.push(tessellateProvenCylinderFace(object.cadIr,face,metersPerUnit!));continue;

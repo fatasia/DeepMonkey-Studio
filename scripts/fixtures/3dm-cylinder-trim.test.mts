@@ -9,7 +9,7 @@ import { tessellateTrimmedCylinderFace } from './3dm-cylinder-trim.mts';
 import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/multispan-bicubic-2026-09-17-v1/nonrect');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/rational-bezier-2026-09-17-v1/nonrect');
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex');
@@ -49,7 +49,7 @@ test('four actual nonrectangular cylinder trims preserve source PointAt and GLB 
       physicalBoundMm:part.audit.physicalBoundMm,strips:part.audit.stripCount});
   }
   const noCache=structuredClone(source);for(const o of noCache.objects)if(o.kind==='brep')o.storedRenderMeshes=[];
-  const completed=completeBrepParts(noCache.objects.find((o:any)=>o.cadIr),source.metersPerUnit);assert.equal(completed.parts.length,17);
+  const completed=completeBrepParts(noCache.objects.find((o:any)=>o.cadIr),source.metersPerUnit);assert.equal(completed.parts.length,29);
   const result=await export3dmGlb(noCache,sha(readFileSync(path)));assert(result.bytes);
   mkdirSync(out,{recursive:true});const glb=resolve(out,'MechPartA.glb');writeFileSync(glb,result.bytes);
   const audit=await auditGlbGeometry(glb),bytes=Buffer.from(result.bytes),json=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)).toString());
