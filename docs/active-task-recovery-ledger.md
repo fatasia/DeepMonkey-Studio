@@ -1836,3 +1836,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 隔离基线四组合对照确证：逐字节 decode 恢复属性后方的 LOOP/FIN/REGION/曲面，已有 FACE 才能正确构建。两件 V30 样本不受 V9 schema 修复影响；AS-2940 基线 panic→decode-only 75 面，AD5008 25→38。
 - 原始 FIN 严格自环、edge/other/curve=0、有效 vertex、LOOP/FACE 回指并与 typed 单-fin loop 对应时分类 `isolatedFins`，不再误报缺边。109 件共有 26 个；非零缺引用、缺原始证据和重复消费证据仍失败。新旧审计 4+6 项测试通过；shell 计数差异仍保留。
 - 3 件源面差额进一步定位为 solid REGION 的 SHELL.next 未遍历，属于真实遗漏，修复在途。完整对照与实体索引见 [因果报告](specs/industrial-xt-decode-topology-causality-2026-09-17.md)。
+
+### 2026-09-17 X_T 多壳遍历修复（Codex）
+
+- REGION/SHELL 双链有界遍历，校验循环、引用类型、body/region 归属与 S/V 语义；补回三个真实样本遗漏的 15 面，不重复 void 边界。
+- 13 项 cad-xt 测试通过；主线程重跑 109 件全转换与产品 GLB 审计，独立源 BODY/FACE 对拍 109/109。三个缺陷样本另验证原始 FACE 身份集合与内部 FaceId/壳归属。
+- 仍未开放生产 profile：孤立极点环的 lowering Skip、完整 GLB source-map、几何精度和闭合性继续本轮待办。CLI 无 stderr 不代表无内部 Skip。[证据](specs/industrial-x-t-shell-chain-2026-09-17.md)

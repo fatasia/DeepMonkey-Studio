@@ -1,0 +1,279 @@
+diff --git a/native/crates/cad-xt/src/topo.rs b/native/crates/cad-xt/src/topo.rs
+index 2dc8751..9301deb 100644
+--- a/native/crates/cad-xt/src/topo.rs
++++ b/native/crates/cad-xt/src/topo.rs
+@@ -100,40 +100,19 @@ fn lower_body(entities: &Entities, body: &RawEntity, index: &Index, default_tol:
+     // The body's shell and region pointers, found by probing: any pointer
+     // field whose target is a SHELL / REGION. Probing instead of fixed indices
+     // is what makes the 23-, 27-, 34- and 36-field BODY layouts all work.
+-    let mut shells: Vec<usize> = Vec::new();
++    let shells = match crate::shell_chains::body_shells(entities, body, index) {
++        Ok(shells) => shells,
++        Err(reason) => {
++            b.skip(body.index, reason);
++            Vec::new()
++        }
++    };
+     let mut body_type_candidates: Vec<u8> = Vec::new();
+     for f in entities.fields(body) {
+-        let p = f.as_ptr();
+-        if p != 0 {
+-            if let Some(t) = index.get(&p) {
+-                match t.type_id {
+-                    xt::SHELL => shells.push(p),
+-                    xt::REGION => {
+-                        // Follow the region chain; each region may own a shell.
+-                        let mut r = p;
+-                        let mut seen = rustc_hash::FxHashSet::default();
+-                        while r != 0 && seen.insert(r) {
+-                            let Some(re) = index.get(&r) else { break };
+-                            if re.type_id != xt::REGION {
+-                                break;
+-                            }
+-                            let s = ptr(entities, re, 5);
+-                            if s != 0 && index.get(&s).is_some_and(|e| e.type_id == xt::SHELL) {
+-                                shells.push(s);
+-                            }
+-                            r = ptr(entities, re, 3);
+-                        }
+-                    }
+-                    _ => {}
+-                }
+-            }
+-        }
+         if let xt_parser::entity::FieldVal::Byte(v) = f {
+             body_type_candidates.push(*v);
+         }
+     }
+-    shells.sort_unstable();
+-    shells.dedup();
+ 
+     // Body type: the byte field holding a known code — 1 solid, 2 wire,
+     // 3 sheet, 6 general. This one was right about 3 by observation before the
+diff --git a/native/crates/cad-xt/src/lib.rs b/native/crates/cad-xt/src/lib.rs
+--- a/native/crates/cad-xt/src/lib.rs
++++ b/native/crates/cad-xt/src/lib.rs
+@@ -13,5 +13,6 @@
+ pub mod geom;
+ pub mod topo;
+ mod triangle_distance;
++mod shell_chains;
+ 
+ use cad_ir::material_resolve::{ColourEvidence, MaterialResolver};
+diff --git a/native/crates/cad-xt/src/shell_chains.rs b/native/crates/cad-xt/src/shell_chains.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/cad-xt/src/shell_chains.rs
+@@ -0,0 +1,212 @@
++use crate::geom::Index;
++use rustc_hash::FxHashSet;
++use xt_parser::entity::{Entities, FieldVal, RawEntity};
++use xt_parser::schema as xt;
++
++fn walk_chain(
++    head: usize,
++    limit: usize,
++    mut next: impl FnMut(usize) -> Result<usize, String>,
++) -> Result<Vec<usize>, String> {
++    let mut chain = Vec::new();
++    let mut seen = FxHashSet::default();
++    let mut current = head;
++    while current != 0 {
++        if !seen.insert(current) {
++            return Err(format!("topology chain cycle at entity {current}"));
++        }
++        if chain.len() >= limit {
++            return Err(format!("topology chain exceeds entity budget {limit}"));
++        }
++        chain.push(current);
++        current = next(current)?;
++    }
++    Ok(chain)
++}
++
++fn field_pointer(entities: &Entities, entity: &RawEntity, field: usize) -> Result<usize, String> {
++    match entities.fields(entity).get(field) {
++        Some(FieldVal::Ptr(pointer)) => Ok(*pointer),
++        _ => Err(format!(
++            "entity {} field {field} is not a topology pointer",
++            entity.index
++        )),
++    }
++}
++
++fn typed<'a>(index: &'a Index<'a>, handle: usize, kind: u16) -> Result<&'a RawEntity, String> {
++    let entity = index
++        .get(&handle)
++        .ok_or_else(|| format!("missing topology entity {handle}"))?;
++    if entity.type_id != kind {
++        return Err(format!(
++            "topology entity {handle} has type {}, expected {kind}",
++            entity.type_id
++        ));
++    }
++    Ok(entity)
++}
++
++fn region_is_solid(entities: &Entities, region: &RawEntity) -> Result<bool, String> {
++    match entities.fields(region).get(6) {
++        Some(FieldVal::Char('S')) => Ok(true),
++        Some(FieldVal::Char('V')) => Ok(false),
++        _ => Err(format!(
++            "region {} has unknown solid/void type",
++            region.index
++        )),
++    }
++}
++
++/// REGION.next and SHELL.next are separate chains. A void region's front-face
++/// references are the opposite side of the solid boundary, not extra faces.
++pub(crate) fn body_shells(
++    entities: &Entities,
++    body: &RawEntity,
++    index: &Index,
++) -> Result<Vec<usize>, String> {
++    let mut heads = Vec::new();
++    let mut regions = FxHashSet::default();
++    for field in entities.fields(body) {
++        let FieldVal::Ptr(handle) = field else {
++            continue;
++        };
++        let Some(entity) = index.get(handle) else {
++            continue;
++        };
++        if entity.type_id == xt::SHELL {
++            heads.push(*handle);
++        } else if entity.type_id == xt::REGION {
++            for region in walk_chain(*handle, index.len(), |id| {
++                field_pointer(entities, typed(index, id, xt::REGION)?, 3)
++            })? {
++                if regions.insert(region) {
++                    let region = typed(index, region, xt::REGION)?;
++                    if field_pointer(entities, region, 2)? != body.index {
++                        return Err(format!("region {} belongs to another body", region.index));
++                    }
++                    if region_is_solid(entities, region)? {
++                        heads.push(field_pointer(entities, region, 5)?);
++                    }
++                }
++            }
++        }
++    }
++    let mut shells = FxHashSet::default();
++    for head in heads {
++        if head == 0 {
++            continue;
++        }
++        let owner_region = field_pointer(entities, typed(index, head, xt::SHELL)?, 7)?;
++        for shell in walk_chain(head, index.len(), |id| {
++            field_pointer(entities, typed(index, id, xt::SHELL)?, 3)
++        })? {
++            let entity = typed(index, shell, xt::SHELL)?;
++            let region = field_pointer(entities, entity, 7)?;
++            if field_pointer(entities, entity, 2)? != body.index || region != owner_region {
++                return Err(format!("shell {shell} crosses body or region ownership"));
++            }
++            if region == 0 || region_is_solid(entities, typed(index, region, xt::REGION)?)? {
++                shells.insert(shell);
++            }
++        }
++    }
++    let mut result: Vec<_> = shells.into_iter().collect();
++    result.sort_unstable();
++    Ok(result)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn fixture(next_shell: usize, region_type: char) -> Entities {
++        // V9 BODY has 22 fields. Both the direct shell and solid region point
++        // at shell 10; the void side's shell 12 must not be lowered twice.
++        let mut body = vec!["0"; 22];
++        body[14] = "1";
++        body[15] = "10";
++        body[19] = "20";
++        let text = format!(
++            "12 1 {} 13 10 0 0 1 {next_shell} 0 0 0 20 0 \
++             13 11 0 0 1 0 0 0 0 20 0 \
++             13 12 0 0 1 0 0 0 0 21 0 \
++             19 20 0 0 1 21 0 10 {region_type} \
++             19 21 0 0 1 0 20 12 V 1 0",
++            body.join(" ")
++        );
++        let (entities, truncated) =
++            xt_parser::entity::parse_entities_opt(&mut text.as_str(), 0, false, 9).unwrap();
++        assert!(truncated.is_none(), "{truncated:?}");
++        entities
++    }
++
++    #[test]
++    fn parsed_solid_and_void_regions_share_no_lowered_shells() {
++        let entities = fixture(11, 'S');
++        let index: Index = entities
++            .iter()
++            .map(|entity| (entity.index, entity))
++            .collect();
++        assert_eq!(
++            body_shells(&entities, index[&1], &index).unwrap(),
++            vec![10, 11]
++        );
++    }
++
++    #[test]
++    fn parsed_invalid_topology_returns_diagnostics() {
++        for (next, kind, message) in [
++            (10, 'S', "cycle"),
++            (99, 'S', "missing"),
++            (20, 'S', "expected"),
++            (11, 'Q', "unknown"),
++        ] {
++            let entities = fixture(next, kind);
++            let index: Index = entities
++                .iter()
++                .map(|entity| (entity.index, entity))
++                .collect();
++            assert!(
++                body_shells(&entities, index[&1], &index)
++                    .unwrap_err()
++                    .contains(message)
++            );
++        }
++    }
++
++    #[test]
++    fn complete_shell_and_region_chains_are_not_just_their_heads() {
++        let links = [(13, 7811), (7811, 0), (35, 44), (44, 0), (36, 46), (46, 0)];
++        for (head, expected) in [(13, vec![13, 7811]), (35, vec![35, 44]), (36, vec![36, 46])] {
++            assert_eq!(
++                walk_chain(head, links.len(), |id| Ok(links
++                    .iter()
++                    .find(|p| p.0 == id)
++                    .unwrap()
++                    .1))
++                .unwrap(),
++                expected
++            );
++        }
++        assert!(walk_chain(0, 0, |_| unreachable!()).unwrap().is_empty());
++    }
++
++    #[test]
++    fn cycles_missing_links_and_budget_exhaustion_are_errors() {
++        assert!(
++            walk_chain(1, 3, |id| Ok(if id == 1 { 2 } else { 1 }))
++                .unwrap_err()
++                .contains("cycle")
++        );
++        assert!(walk_chain(1, 1, |_| Ok(2)).unwrap_err().contains("budget"));
++        assert_eq!(
++            walk_chain(1, 3, |_| Err("wrong entity type".into())).unwrap_err(),
++            "wrong entity type"
++        );
++        assert_eq!(
++            walk_chain(1, 3, |_| Err("missing entity".into())).unwrap_err(),
++            "missing entity"
++        );
++    }
++}

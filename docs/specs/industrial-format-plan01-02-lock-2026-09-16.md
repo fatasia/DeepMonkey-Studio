@@ -138,3 +138,11 @@ node scripts/audit-xt-source-counts.mjs test-output/xt-research-source-counts/re
 ```
 
 比较产物 SHA-256 `8dd5642edbeda8bcd549ce5ffc070595c6e30a6387d248de9d66ac01613e8dfd`，绑定两份输入报告 hash。聚焦 3 项通过，Rust 审计新旧 parser 两套 2+4 项通过；旧 parser 仍为 49 incomplete/60 parse-error。计数不是面积、孔洞、坐标或装配参考验证。
+
+### 6.2 多壳遗漏修复后的全量结果
+
+三件差额确认为 solid REGION 的 SHELL.next 未遍历，现已补回全部 15 面。109 件全量转换与产品 GLB 审计通过，独立原始 BODY/FACE 分母对拍由 106/109 提升为 109/109。修复、13 项回归、源 FaceId 归属审核见 [多壳报告](industrial-x-t-shell-chain-2026-09-17.md)。
+
+本地 `test-output/xt-native-shell-fixed/evidence.json` SHA-256 `1d0d38b91dcd1166642861cc89f62bc12ad63087444b94a6a72f4ae18cb9835e`；`test-output/xt-shell-source-count-comparison.json` SHA-256 `7fb50efd6b5ebfb50fd69a57cd6c7c7e7bb1e1cb64975fd34809a9f6235f83a6`。二进制 SHA-256 `44b687407c71a54ac1ac82a8e359278f49118f0ba02fd1725745b91f3fbef88d`。
+
+转换 CLI 的空 stderr 未覆盖全部 lowering Skip；已有孤立极点环诊断仍须解决，GLB 尚未完整携带源面映射。面计数一致不关闭几何精度、闭合性、独立保留集和发布质量认证。
