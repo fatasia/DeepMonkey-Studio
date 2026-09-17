@@ -1,5 +1,7 @@
 use super::{ChartRuntime, clear_hover};
-use crate::chart::{CHART_BUDGETS, ChartGeometryFrame, ChartValue, validate_chart_ir};
+use crate::chart::{
+    CHART_BUDGETS, ChartGeometryFrame, ChartValue, chunked_rows::ChunkedRows, validate_chart_ir,
+};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -60,6 +62,10 @@ impl ChartRuntime {
         let mut changes = Vec::new();
         let mut mappings = HashMap::new();
         let mut evicted_rows = 0;
+        // 窗口镜像只在整条命令提交成功时落地:get-clone 在局部推进、暂存待落,
+        // 任何提前 return(校验/几何失败)都保持镜像与 source 逐行一致。
+        let mut window_changes: Vec<(String, ChunkedRows)> = Vec::new();
+        let mut windows_to_drop: Vec<String> = Vec::new();
         for update in update.datasets {
             let (id, incoming, limit) = match update {
                 DatasetRowsUpdate::Replace { dataset_id, rows } => (dataset_id, rows, None),
@@ -87,19 +93,20 @@ impl ChartRuntime {
                 if incoming.is_empty() && old.rows.len() <= limit {
                     continue;
                 }
-                let total = old
-                    .rows
-                    .len()
-                    .checked_add(incoming.len())
-                    .ok_or("chart row count overflow")?;
-                let dropped = total.saturating_sub(limit);
-                let mut rows = Vec::with_capacity(total.min(limit));
-                rows.extend(old.rows.iter().skip(dropped).cloned());
-                rows.extend(
-                    incoming
-                        .into_iter()
-                        .skip(dropped.saturating_sub(old.rows.len())),
-                );
+                // P1-03 接线:窗口计算走分块存储层——追加是行块 Arc 入列,淘汰整块
+                // 回收,窗口边界落在首块中间时仅该首块写时复制;驻留上限与淘汰结果
+                // 由 `ChunkedRows` 唯一裁决,与手写 skip/extend 逐值等价。
+                let mut windowed = match self.data_windows.get(&id) {
+                    Some(existing) => existing.clone(),
+                    None => ChunkedRows::from_rows(old.rows.to_vec()).map_err(|error| {
+                        format!("chart window mirror rejected for {id}: {error:?}")
+                    })?,
+                };
+                let dropped = windowed
+                    .append_window(incoming, limit)
+                    .map_err(|error| format!("chart window append rejected for {id}: {error:?}"))?;
+                let rows: Vec<Vec<ChartValue>> = windowed.iter().cloned().collect();
+                window_changes.push((id.clone(), windowed));
                 (
                     rows,
                     RowMapping::Shift {
@@ -109,6 +116,8 @@ impl ChartRuntime {
                     dropped.min(old.rows.len()),
                 )
             } else {
+                // Replace 切断窗口连续性:新 rows 不继承旧窗口,镜像随提交移除。
+                windows_to_drop.push(id.clone());
                 (incoming, RowMapping::Replace, old.rows.len())
             };
             // Identical replacement has no semantic row change; append/eviction still changes identity.
@@ -197,6 +206,13 @@ impl ChartRuntime {
             if let Some(frame) = frame {
                 self.frame = frame;
             }
+        }
+        // 此处之后无失败路径:镜像变更与 source/state/frame 同批生效。
+        for (id, windowed) in window_changes {
+            self.data_windows.insert(id, windowed);
+        }
+        for id in windows_to_drop {
+            self.data_windows.remove(&id);
         }
         self.data_revision = update.data_revision;
         self.revision = revision;

@@ -1,8 +1,11 @@
 //! Per-chart commit boundary for source, interaction and paint/hit geometry.
 use super::{ChartAction, ChartGeometryFrame, ChartIR, InteractionState};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 #[path = "runtime_data.rs"]
 mod data;
+#[cfg(test)]
+#[path = "runtime_data_tests.rs"]
+mod data_tests;
 pub use data::{ChartDataUpdate, ChartDataUpdateEvidence, DatasetRowsUpdate};
 
 #[derive(Clone)]
@@ -14,6 +17,10 @@ pub struct ChartRuntime {
     height: f64,
     revision: u64,
     data_revision: u64,
+    /// P1-03 接线:AppendWindow 数据集的分块窗口镜像(chunked_rows 存储层)。
+    /// 仅在 AppendWindow 提交时惰性建立,与 `source` 对应数据集的 rows 恒等;
+    /// 运行时态,不参与 ChartIR JSON 合同。克隆经行块 Arc 共享,写入按块写时复制。
+    data_windows: HashMap<String, super::chunked_rows::ChunkedRows>,
 }
 
 impl ChartRuntime {
@@ -29,6 +36,7 @@ impl ChartRuntime {
             height,
             revision: 0,
             data_revision: 0,
+            data_windows: HashMap::new(),
         })
     }
     pub fn source(&self) -> &ChartIR {
@@ -119,6 +127,8 @@ impl ChartRuntime {
             .map_err(|error| format!("chart initialization: {error:?}"))?;
         let mut frame = ChartGeometryFrame::prepare(&source, &state, self.width, self.height)?;
         frame.set_revision(revision);
+        // 全量替换作废全部窗口镜像:新 rows 与旧窗口无连续性,后续 AppendWindow 重建。
+        self.data_windows.clear();
         self.source = Arc::new(source);
         self.state = state;
         self.frame = Arc::new(frame);

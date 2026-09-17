@@ -250,3 +250,141 @@ fn malformed_incoming_rows_are_rejected_even_when_the_window_would_discard_them(
     assert!(std::ptr::eq(current.source(), old.source()));
     assert_eq!(current.data_revision(), old.data_revision());
 }
+
+/// 未分块参考实现:整段拼接后保留最后 `limit` 行(P1-03 接线前的窗口语义)。
+fn unchunked_window(
+    old: &[Vec<serde_json::Value>],
+    incoming: Vec<Vec<serde_json::Value>>,
+    limit: usize,
+) -> (Vec<Vec<serde_json::Value>>, usize) {
+    let dropped = (old.len() + incoming.len()).saturating_sub(limit);
+    let mut rows: Vec<_> = old.iter().skip(dropped).cloned().collect();
+    rows.extend(incoming.into_iter().skip(dropped.saturating_sub(old.len())));
+    (rows, dropped)
+}
+
+fn numbered_rows(count: usize, seed: f64) -> Vec<Vec<serde_json::Value>> {
+    (0..count)
+        .map(|index| vec![json!(seed + index as f64)])
+        .collect()
+}
+
+fn committed_rows(r: &ChartRuntime, id: &str) -> Vec<Vec<serde_json::Value>> {
+    r.source()
+        .datasets
+        .iter()
+        .find(|dataset| dataset.id == id)
+        .unwrap()
+        .rows
+        .to_vec()
+}
+
+#[test]
+fn chunked_window_channel_matches_unchunked_reference_value_by_value() {
+    let mut current = runtime();
+    // fixture 里 unused 初始自带 1 行,参考实现从真实初始状态起步。
+    let mut resident: Vec<Vec<serde_json::Value>> = committed_rows(&current, "unused");
+    // 序列覆盖:建镜像(跨块)、首块中间收缩、双整块淘汰+边界收缩、空批次缩窗、
+    // Replace 切断窗口、Replace 后重建、同批混合多数据集。
+    let rounds: Vec<(Vec<Vec<serde_json::Value>>, usize)> = vec![
+        (numbered_rows(9_000, 0.0), 9_000),
+        (numbered_rows(3_500, 100_000.0), 10_000),
+        (vec![], 3_000),
+        (numbered_rows(4, 200_000.0), 3),
+    ];
+    for (incoming, limit) in rounds {
+        let (expected, dropped_total) = unchunked_window(&resident, incoming.clone(), limit);
+        let evidence = current
+            .update_data(command(
+                &current,
+                vec![DatasetRowsUpdate::AppendWindow {
+                    dataset_id: "unused".into(),
+                    rows: incoming,
+                    max_rows: limit,
+                }],
+            ))
+            .unwrap();
+        assert_eq!(evidence.evicted_rows, dropped_total.min(resident.len()));
+        assert_eq!(committed_rows(&current, "unused"), expected);
+        resident = expected;
+    }
+    current
+        .update_data(command(
+            &current,
+            vec![replace("unused", numbered_rows(2, 300_000.0))],
+        ))
+        .unwrap();
+    assert_eq!(
+        committed_rows(&current, "unused"),
+        numbered_rows(2, 300_000.0)
+    );
+    resident = numbered_rows(2, 300_000.0);
+    let (expected, dropped_total) = unchunked_window(&resident, numbered_rows(4, 400_000.0), 3);
+    let evidence = current
+        .update_data(command(
+            &current,
+            vec![DatasetRowsUpdate::AppendWindow {
+                dataset_id: "unused".into(),
+                rows: numbered_rows(4, 400_000.0),
+                max_rows: 3,
+            }],
+        ))
+        .unwrap();
+    assert_eq!(evidence.evicted_rows, dropped_total.min(resident.len()));
+    assert_eq!(committed_rows(&current, "unused"), expected);
+    // 同批混合:带系列的 main 与无系列的 unused 各自走分块窗口,互不串扰。
+    let main_before = committed_rows(&current, "main");
+    let (main_expected, _) = unchunked_window(&main_before, rows(), 2);
+    let evidence = current
+        .update_data(command(
+            &current,
+            vec![
+                DatasetRowsUpdate::AppendWindow {
+                    dataset_id: "main".into(),
+                    rows: rows(),
+                    max_rows: 2,
+                },
+                DatasetRowsUpdate::AppendWindow {
+                    dataset_id: "unused".into(),
+                    rows: numbered_rows(2, 500_000.0),
+                    max_rows: 4,
+                },
+            ],
+        ))
+        .unwrap();
+    assert!(evidence.affected_series.contains(&"line".into()));
+    assert_eq!(committed_rows(&current, "main"), main_expected);
+    // main 淘汰 1 行(3→2),unused 淘汰 1 行(5→4),证据按批累计。
+    assert_eq!(evidence.evicted_rows, 2);
+}
+
+#[test]
+fn window_channel_keeps_cloned_runtime_snapshot_unchanged() {
+    let mut current = runtime();
+    current
+        .update_data(command(
+            &current,
+            vec![DatasetRowsUpdate::AppendWindow {
+                dataset_id: "unused".into(),
+                rows: numbered_rows(20_000, 0.0),
+                max_rows: 20_000,
+            }],
+        ))
+        .unwrap();
+    let snapshot = current.clone();
+    current
+        .update_data(command(
+            &current,
+            vec![DatasetRowsUpdate::AppendWindow {
+                dataset_id: "unused".into(),
+                rows: numbered_rows(1_000, 900_000.0),
+                max_rows: 20_000,
+            }],
+        ))
+        .unwrap();
+    // 旧克隆体是更新前的完整快照:20_000 行原样保留且可继续正常工作。
+    assert_eq!(committed_rows(&snapshot, "unused").len(), 20_000);
+    assert_eq!(committed_rows(&snapshot, "unused")[0], vec![json!(0.0)]);
+    assert_eq!(committed_rows(&current, "unused").len(), 20_000);
+    assert_eq!(committed_rows(&current, "unused")[0], vec![json!(1000.0)]);
+}
