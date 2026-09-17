@@ -1,0 +1,22 @@
+{
+  "extends": "../apps/api/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "typeRoots": ["../apps/api/node_modules/@types", "../apps/api/node_modules"],
+    "types": ["node", "@webgpu/types", "@fastify/multipart"]
+  },
+  "include": [
+    "../apps/api/src/**/*.d.ts",
+    "../apps/api/src/system.ts",
+    "verify-dashboard-published-portable.mts",
+    "lib/dashboardAcceptanceHttp.mts",
+    "lib/dashboardAcceptanceHttp.test.mts",
+    "lib/dashboardPublishedHeadingFixture.mts",
+    "lib/dashboardPublishedHeadingFixture.test.mts",
+    "lib/dashboardDownloadedOpen.mts"
+  ],
+  "exclude": []
+}
