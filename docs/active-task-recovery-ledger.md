@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 中文提交轨迹 X/GPU 对照（Codex）
+
+- 已完成切片：冻结中文/combining/ZWJ 轨迹实际执行 N0 事务，三次 commit 经宿主 cosmic-text atlas→LPAC→GPU；RTX 4060/Vulkan 每帧 57,600 像素与 N0 直接绘制完全相同，三次旧 epoch 拒绝且旧帧不变。
+- 两项显式 GPU、原 IME 轨迹 1 项、N1 adapter 12 项通过；专项 clippy/fmt/repository gate 通过。字体为本机安装及 fallback，不主张跨机器或字体形状独立真值。
+- 本轮待办：真实 Windows IME/候选窗、bidi/DPI/换行视觉、formatter/动画与超时轨迹，P2-03 不标整卡完成。[证据](specs/deep2d-p2-03-ime-x-gpu-trace-2026-09-17.md)
+
 ### 2026-09-17 并行切片证据同步（Codex）
 
 - 已完成切片：DE26/B04 AO `21b7a2d`，raw/blur/half/HDR 接入唯一 transient pool，bind-group 按纹理身份/epoch 复用，history 排除；聚焦 18 passed/2 skipped，完整 3062 passed/41 skipped，真机 120 帧 GPU P95 0.918 ms、1588/1599 命中、无 GPU error。原始报告 SHA 已复核。Bloom/AuthorBloom 及 14 个既有 source-size 超限仍待。[证据](specs/de26-b04-transient-texture-pool-2026-09-17.md)

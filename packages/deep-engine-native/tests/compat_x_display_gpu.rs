@@ -13,6 +13,8 @@ mod deep2d_scissor;
 mod fixture;
 #[path = "support/deep2d_mixed_content_gpu_readback.rs"]
 mod readback;
+#[path = "support/compat_x_text_trace.rs"]
+mod text_trace;
 
 use deep_engine_native::{
     compat_x::{
