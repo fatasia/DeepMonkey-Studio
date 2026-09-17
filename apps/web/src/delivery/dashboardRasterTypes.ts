@@ -30,6 +30,7 @@ export interface DashboardRasterCompileInput {
   readonly data?: Readonly<Record<string, DashboardFrozenData | Pick<DashboardFrozenData, "source" | "metric">>>;
   readonly assets: Readonly<Record<string, FrozenRasterAsset>>;
   readonly nodeAssets: Readonly<Record<string, DashboardRasterNodeAssets>>;
+  readonly pageAssets?: Readonly<Record<string, { readonly image: string }>>;
 }
 export interface DashboardTextRasterRequest extends DashboardRasterTextStyle {
   readonly requestHash: string;

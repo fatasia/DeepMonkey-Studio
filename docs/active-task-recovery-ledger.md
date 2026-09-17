@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 页面背景编译输入已接C3 pageIds，URL/页面/图片类型与唯一归属检查，pageAssets参与编译哈希；3项脚本+19项光栅回归通过，Web类型通过。仅输入接线，绘制与系统层证据下一片继续。[证据](specs/dashboard-page-image-freeze-2026-09-17.md)
+
 - 页面背景图C3资源绑定：可选pageIds参与冻结摘要和提交复查，多页/组件共图去重，拒绝外部URL与跨项目资源；51项回归与API类型通过。仅资源链路，原生背景图绘制仍deferred。[证据与下一步](specs/dashboard-page-image-freeze-2026-09-17.md)
 
 - 下载取消前置：冻结清单返回后立即检查取消，避免断连后继续创建/序列化归档；DMDA/ZIP/EXE真实HTTP断连3项加原下载回归共35项通过，API类型检查通过。[证据](specs/dashboard-download-cancellation-2026-09-17.md)

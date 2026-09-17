@@ -39,6 +39,21 @@ function payload(result: Awaited<ReturnType<typeof compileDashboardRasterContent
   return Object.values(result.package.payloads).find((value: any) => value.schema === "deep-engine.deep2d-runtime") as any;
 }
 describe("frozen dashboard raster orchestration", () => {
+  it("binds page image ownership into compilation identity and rejects invalid references", async () => {
+    const input = fixture("shape"), pageId = input.document.application.pages[0]!.id;
+    const { bytes, sha256, identity } = input.assets.font!;
+    const asset = { bytes, sha256, identity, mime: "image/png" };
+    const base = { ...input, assets: { image: asset }, nodeAssets: {} };
+    const original = await compileDashboardRasterContent(base, host().adapter);
+    const bound = await compileDashboardRasterContent({ ...base, pageAssets: { [pageId]: { image: "image" } } }, host().adapter);
+    expect(bound.sourceSemanticHash).not.toBe(original.sourceSemanticHash);
+    expect(bound.compileGraphHash).not.toBe(original.compileGraphHash);
+    for (const pageAssets of [{ missing: { image: "image" } }, { [pageId]: { image: "missing" } }]) {
+      await expect(compileDashboardRasterContent({ ...base, pageAssets }, host().adapter)).rejects.toThrow("page image binding");
+    }
+    await expect(compileDashboardRasterContent({ ...input, pageAssets: { [pageId]: { image: "font" } } }, host().adapter))
+      .rejects.toThrow("page image binding");
+  });
   it("keeps a non-first published entry page when compiling all pages", async () => {
     const input = fixture("shape"), second = structuredClone(input.document.application.pages[0]!);
     second.id = "second-page"; second.nodes[0]!.id = "second-shape";

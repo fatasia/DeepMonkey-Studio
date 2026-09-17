@@ -27,6 +27,12 @@ export function snapshotRasterInput(input: DashboardRasterCompileInput): Dashboa
       throw new Error("Invalid frozen font face index");
   }
   if (!copy.locale) throw new Error("Frozen locale is required");
+  const pageIds = new Set(copy.document.application.pages.map(page => page.id));
+  for (const [pageId, binding] of Object.entries(copy.pageAssets ?? {})) {
+    const image = snapshot.assets[binding.image];
+    if (!pageIds.has(pageId) || !image || !image.mime.startsWith("image/") || image.faceIndex !== undefined)
+      throw new Error("Invalid frozen page image binding");
+  }
   return snapshot;
 }
 export function assetIdentity(asset: FrozenRasterAsset) {

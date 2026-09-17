@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Bind frozen page images to compiler input and compilation hashes; reject mismatched page URLs, duplicate owners and non-image bindings.
+
 - Freeze project-owned Dashboard page background images with page ownership and shared-resource deduplication; Native background rendering is still pending.
 
 - Stop cancelled Dashboard downloads after manifest lookup, before allocating and serializing offline archives.

@@ -20,6 +20,7 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
   const pageDeferred: Array<{ pageId: string; fields: string[] }> = [];
   const nodeBindings: Array<{ nodeId: string; runtimeNodeId: string; runtimeNodeIds: string[]; pageId: string; runtimePageId: string }> = [];
   const sourceSemanticHash = runtimeContentSha256({ document, locale: input.locale, nodeAssets: input.nodeAssets,
+    ...(input.pageAssets ? { pageAssets: input.pageAssets } : {}),
     ...(input.data ? { data: input.data } : {}),
     assets: Object.fromEntries(Object.entries(input.assets).map(([id, asset]) => [id, assetIdentity(asset)])) });
   let atlasBytes = 0;
