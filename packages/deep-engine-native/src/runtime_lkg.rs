@@ -56,13 +56,19 @@ impl Store {
     }
 
     pub fn restore(&self) -> Result<Vec<u8>, String> {
+        self.restore_with(PackageKind::Standard)
+    }
+
+    pub fn restore_x(&self) -> Result<Vec<u8>, String> {
+        self.restore_with(PackageKind::ExperimentalX)
+    }
+
+    fn restore_with(&self, kind: PackageKind) -> Result<Vec<u8>, String> {
         let hash = self.active_hash()?;
         let path = self.directory().join(format!("{hash}.json"));
         check_components(&path)?;
         let bytes = read_runtime_package_bytes(path).map_err(|_| "lkg/snapshot-read")?;
-        let package =
-            parse_and_validate_runtime_package(&bytes).map_err(|_| "lkg/snapshot-invalid")?;
-        if package.package_hash != hash {
+        if validate_snapshot(&bytes, kind)? != hash {
             return Err("lkg/snapshot-identity".into());
         }
         Ok(bytes)
@@ -92,12 +98,18 @@ impl Store {
     }
 
     pub fn commit(&self, bytes: &[u8], hash: &str) -> Result<(), String> {
+        self.commit_with(bytes, hash, PackageKind::Standard)
+    }
+
+    pub fn commit_x(&self, bytes: &[u8], hash: &str) -> Result<(), String> {
+        self.commit_with(bytes, hash, PackageKind::ExperimentalX)
+    }
+
+    fn commit_with(&self, bytes: &[u8], hash: &str, kind: PackageKind) -> Result<(), String> {
         if !valid_hash(hash) {
             return Err("lkg/hash-invalid".into());
         }
-        let package =
-            parse_and_validate_runtime_package(bytes).map_err(|_| "lkg/snapshot-invalid")?;
-        if package.package_hash != hash {
+        if validate_snapshot(bytes, kind)? != hash {
             return Err("lkg/snapshot-identity".into());
         }
         let directory = self.directory();
@@ -140,6 +152,25 @@ impl Store {
         // The lock remains held; publication failure never reaches retirement.
         retirement::retire(self, hash, previous.as_deref());
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PackageKind {
+    Standard,
+    ExperimentalX,
+}
+
+fn validate_snapshot(bytes: &[u8], kind: PackageKind) -> Result<String, String> {
+    match kind {
+        PackageKind::Standard => parse_and_validate_runtime_package(bytes)
+            .map(|package| package.package_hash)
+            .map_err(|_| "lkg/snapshot-invalid".into()),
+        PackageKind::ExperimentalX => {
+            deep_engine_native::runtime_package::parse_and_validate_x_runtime_package(bytes)
+                .map(|package| package.base.package_hash)
+                .map_err(|_| "lkg/snapshot-invalid".into())
+        }
     }
 }
 

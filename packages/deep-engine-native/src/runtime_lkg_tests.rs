@@ -4,6 +4,13 @@ fn fixture() -> Vec<u8> {
     fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime-package-v1.json"))
         .unwrap()
 }
+fn x_fixture() -> Vec<u8> {
+    fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../deep-engine/fixtures/experimental-x-runtime-v6.json"),
+    )
+    .unwrap()
+}
 fn root() -> PathBuf {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -49,6 +56,32 @@ fn fresh_store_reopens_valid_snapshot_and_rejects_corrupt_or_foreign_index() {
     store.commit(&bytes, &hash).unwrap();
     fs::write(store.directory().join(format!("{hash}.json")), b"broken").unwrap();
     assert!(store.restore().is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn standard_and_experimental_x_snapshots_never_cross_restore() {
+    let root = root();
+    let x_store = Store::new(root.join("cache"), &root.join("x.json")).unwrap();
+    let x_bytes = x_fixture();
+    let x_hash =
+        deep_engine_native::runtime_package::parse_and_validate_x_runtime_package(&x_bytes)
+            .unwrap()
+            .base
+            .package_hash;
+    x_store.commit_x(&x_bytes, &x_hash).unwrap();
+    assert_eq!(x_store.restore_x().unwrap(), x_bytes);
+    assert!(x_store.restore().is_err());
+    assert!(x_store.commit(&x_bytes, &x_hash).is_err());
+
+    let standard = Store::new(root.join("cache"), &root.join("standard.json")).unwrap();
+    let bytes = fixture();
+    let hash = parse_and_validate_runtime_package(&bytes)
+        .unwrap()
+        .package_hash;
+    standard.commit(&bytes, &hash).unwrap();
+    assert!(standard.restore_x().is_err());
+    assert!(standard.commit_x(&bytes, &hash).is_err());
     fs::remove_dir_all(root).unwrap();
 }
 

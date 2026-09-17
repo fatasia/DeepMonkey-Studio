@@ -1934,6 +1934,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 普通 `--package` / `--headless-package` 仍拒绝 v6；缺 worker、伪 PE、额外 worker 路径和默认路线均 fail-closed，无普通进程降级。TypeScript golden 经真实产品 CLI 返回 `Number(42)`，同包走普通 loader 失败。
 - v6 包 7 项（另 1 child-only 实际调起）、产品 CLI 纵向 1 项、clippy/fmt 通过。该入口为一次性 headless 产品链；正式发布服务路由、绘制消费、持续 tick 与跨重启 LKG 仍待办。[证据](specs/deep2d-p2-01-native-x-package-cli-2026-09-17.md)
 
+### 2026-09-17 Deep2D P2-01 X 包跨重启 LKG（Codex）
+
+- 复用现有 source-scoped LKG 的锁、原子写、容量预算和退休机制，增加普通包/X v6 两个显式校验档位；两类快照不能交叉提交或恢复。X 只有完成 loader→固定 worker LPAC→scheduler 发布后才提升检查点。
+- 隔离 `LOCALAPPDATA` 的真实产品链首次从 TypeScript golden 发布 `Number(42)`；破坏源文件后新进程恢复相同 typed messages，回执明确 `active=last-known-good` 与 primary rejection。恢复快照会重新验证整包/index/payload/request hash 并重新走 LPAC。
+- LKG 单元 6、X 产品纵向 1、普通 LKG CLI 1 项通过（真实 GPU surface 1 项保持 ignore），clippy/fmt 通过。正式发布服务路由、持续 tick 与 typed message→Deep2D 绘制消费仍待办。[证据](specs/deep2d-p2-01-x-package-lkg-2026-09-17.md)
+
 ### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
 
 - 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。

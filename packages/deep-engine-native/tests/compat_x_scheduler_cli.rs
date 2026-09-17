@@ -23,6 +23,7 @@ fn product_scheduler_requires_fixed_worker_and_runs_only_lpac() {
     let execute = || {
         Command::new(&player)
             .arg("--verify-x-worker")
+            .env("LOCALAPPDATA", package.0.join("local"))
             .output()
             .unwrap()
     };
@@ -59,6 +60,7 @@ fn product_scheduler_requires_fixed_worker_and_runs_only_lpac() {
     );
     let extra = Command::new(&player)
         .args(["--verify-x-worker", "arbitrary.exe"])
+        .env("LOCALAPPDATA", package.0.join("local"))
         .output()
         .unwrap();
     assert!(
@@ -66,10 +68,16 @@ fn product_scheduler_requires_fixed_worker_and_runs_only_lpac() {
         "CLI cannot accept worker path override"
     );
 
-    let package_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../deep-engine/fixtures/experimental-x-runtime-v6.json");
+    let package_path = package.0.join("runtime-v6.json");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../deep-engine/fixtures/experimental-x-runtime-v6.json"),
+        &package_path,
+    )
+    .unwrap();
     let executed = Command::new(&player)
         .args(["--headless-x-package", package_path.to_str().unwrap()])
+        .env("LOCALAPPDATA", package.0.join("local"))
         .output()
         .unwrap();
     assert!(
@@ -87,6 +95,7 @@ fn product_scheduler_requires_fixed_worker_and_runs_only_lpac() {
     )
     .unwrap();
     assert_eq!(receipt["packageId"], "x.author");
+    assert_eq!(receipt["active"], "primary");
     assert_eq!(receipt["resourceId"], "x:status");
     assert_eq!(
         receipt["messages"],
@@ -95,10 +104,33 @@ fn product_scheduler_requires_fixed_worker_and_runs_only_lpac() {
 
     let default_loader = Command::new(&player)
         .args(["--headless-package", package_path.to_str().unwrap()])
+        .env("LOCALAPPDATA", package.0.join("local"))
         .output()
         .unwrap();
     assert!(
         !default_loader.status.success(),
         "v6 must stay out of the ordinary player route"
     );
+
+    std::fs::write(&package_path, b"broken").unwrap();
+    let recovered = Command::new(&player)
+        .args(["--headless-x-package", package_path.to_str().unwrap()])
+        .env("LOCALAPPDATA", package.0.join("local"))
+        .output()
+        .unwrap();
+    assert!(
+        recovered.status.success(),
+        "{}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    let recovered_stdout = String::from_utf8_lossy(&recovered.stdout);
+    let recovered_receipt: serde_json::Value = serde_json::from_str(
+        recovered_stdout
+            .strip_prefix("Deep2D X runtime package OK: ")
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(recovered_receipt["active"], "last-known-good");
+    assert_eq!(recovered_receipt["messages"], receipt["messages"]);
 }
