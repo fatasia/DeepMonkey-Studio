@@ -95,11 +95,12 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
   const rendered = document.getRoot().listNodes().filter((node: any) => node.getMesh());
   const usedMeshes = new Set(rendered.map((node: any) => node.getMesh()));
   for (const mesh of meshes.values()) if (!usedMeshes.has(mesh)) mesh.dispose();
+  const missingBrepGeometry = diagnostics.some(row => row.code === 'missing-brep-render-mesh');
   const sidecar = { schemaVersion: 1, scope: 'source-file-local', format: '3DM', sourceSha256,
     unitSystem: source.unitSystem, metersPerUnit: source.metersPerUnit, coordinates: 'source-Z-up; GLB-root-Y-up-meters',
     objects: source.objects.map(({ mesh, storedRenderMeshes, ...metadata }: any) => metadata),
     definitions: source.definitions, layers: source.layers, materials: source.materials, diagnostics,
-    status: rendered.length ? 'geometry-preview' : 'inspect-no-geometry' };
+    status: rendered.length ? (missingBrepGeometry ? 'partial-geometry-preview' : 'geometry-preview') : 'inspect-no-geometry' };
   if (!rendered.length) return { bytes: null, sidecar };
   // Texture paths are source metadata only, never external GLB image URIs.
   root.setExtras({ sourceSha256, sourceFormat: '3DM', diagnostics, sourceMaterials: source.materials });

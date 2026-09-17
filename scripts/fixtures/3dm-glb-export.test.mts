@@ -37,6 +37,17 @@ test('source-only missing Brep returns diagnostic and no GLB', async () => {
   const result = await export3dmGlb(s, hash);
   assert.equal(result.bytes, null); assert.equal(result.sidecar.diagnostics[0].count, 2);
 });
+test('partially cached Brep stays visibly partial instead of claiming a complete preview', async () => {
+  const s = source(), mesh = s.objects[0].mesh;
+  s.objects[0] = { ...s.objects[0], kind: 'brep', faceCount: 2, storedRenderMeshes: [{ face: 0, mesh }] };
+  const partial = await export3dmGlb(s, hash);
+  assert(partial.bytes); assert.equal(partial.sidecar.status, 'partial-geometry-preview');
+  assert.deepEqual(partial.sidecar.diagnostics, [{ objectId: id(1), code: 'missing-brep-render-mesh', count: 1 }]);
+  s.objects[0].faceCount = 1;
+  const complete = await export3dmGlb(s, hash);
+  assert(complete.bytes); assert.equal(complete.sidecar.status, 'geometry-preview');
+  assert.deepEqual(complete.sidecar.diagnostics, []);
+});
 test('invalid coordinates and indices fail before serialization', async () => {
   const s = source(); s.objects[0].mesh.positions[0][0] = Infinity;
   await assert.rejects(export3dmGlb(s, hash), /positions/);

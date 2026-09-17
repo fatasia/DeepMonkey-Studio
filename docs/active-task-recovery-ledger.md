@@ -1933,3 +1933,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 新增只读资源合同：仅允许明确根目录内的审批记录，绑定资源/许可 SHA-256、HTTPS 来源、分发状态与字节预算；拒绝绝对/UNC/盘符/遍历/ADS/设备名/编码歧义路径及 junction 逃逸，不猜 basename、不自动下载、不执行资源。
 - `D:/Download` 与现有缓存未找到 bump_grit.png；真实 meshWithTexture 仅有作者 macOS 绝对路径和 WCS box 通道，读取合同正确拒绝。另下载并实读固定 McNeel 开发样本，其 6 材质为 0 源 texture，查看器图片是外部覆盖，不能充当 3DM 源外观证据。
 - 4 项路径/哈希/许可/预算测试与真实负向审计通过。当前保持 identity-only；只有源引用、图片字节、分发依据与 WCS 映射同时可证明时才能嵌入 GLB。[证据](specs/industrial-3dm-texture-availability-2026-09-17.md)
+
+### 2026-09-17 3DM B-Rep 保存网格与部分预览状态（Codex）
+
+- 新增两份 rhino3dm 官方真实样本：完整保存网格的 `sphereDecals.3dm` 输出 9,895 顶点/18,752 三角；`file3dm_stuff.3dm` 只输出 13 个 B-Rep face 中唯一有保存网格的 1 面（4 顶点/2 三角），另外 12 面保持明确诊断。
+- sidecar 新增 `partial-geometry-preview`，防止“有一个面可画”被误报为完整预览；无缓存网格继续不造代理几何。GLB BIN 的位置/索引/法线/UV 与真实源逐项对拍，材质和绝对纹理路径仍只作身份，不生成外观。
+- 5/5 实际源审计、8/8 adapter 测试及 5 份产品 GLB 几何审核通过。当前只证明文件内保存网格；无缓存 B-Rep 仍须映射 openNURBS curve/surface/trim 到自研 CAD IR 后离散，不允许商业 SDK/转换器。[证据](specs/industrial-3dm-brep-render-mesh-2026-09-17.md)

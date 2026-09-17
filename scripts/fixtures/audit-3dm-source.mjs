@@ -14,6 +14,8 @@ const samples = {
   'mesh.3dm': '59e78629c5c19a5e04a195d746cd6b3981c504fcdcd76423ba507ec9e58e69b7',
   'blocks.3dm': '1e428317489c7c22ee68fb93e119079c718a0ba44efa7c89efb10cf0d8491cb8',
   'meshWithTexture.3dm': '6d0f789c626990784171758d29e6e616ba7a7e36e0018f9f45bc22bd011a9cb1',
+  'sphereDecals.3dm': '2f4f218e2b5952da1ba280ae4db4ec5a08947c9f5b012d4194be9171eebccc93',
+  'file3dm_stuff.3dm': 'e78ca005c86130953a5b4c0c44d068ae1d00665f4c0f6028edd3911a01d4ff88',
 };
 mkdirSync(out, { recursive: true });
 const results = [];
@@ -84,6 +86,15 @@ for (const [name, expectedSha] of Object.entries(samples)) {
     assert.equal(data.materials[0].textures[0].id, '0af451f3-18cf-4b6b-a7a8-27368ad7ba45');
     assert.equal(data.materials[0].textures[0].relativePath, '');
     assert.equal(data.materials[0].textures[0].mappingChannelId, 0xfffffff3);
+  }
+  if (name === 'sphereDecals.3dm') {
+    assert.equal(objects.size, 1); assert.equal(vertices, 9895); assert.equal(triangles, 18752);
+    assert.equal(missingBrepFaces, 0); assert.equal(normals, 9895); assert.equal(uv, 9895);
+  }
+  if (name === 'file3dm_stuff.3dm') {
+    assert.equal(defs.size, 1); assert.equal(instances, 2); assert.equal(vertices, 4); assert.equal(triangles, 2);
+    assert.equal(missingBrepFaces, 12); assert.equal(normals, 4); assert.equal(uv, 4);
+    assert.equal(data.materials[1].textures[0].relativePath, '');
   }
   writeFileSync(resolve(out, `${name}.json`), run.stdout);
   const truncated = resolve(out, `${name}.truncated`);
