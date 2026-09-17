@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 RuntimePackage 三维/Shader 呈现屏障（Codex）
+
+- 已完成切片：三维和 Shader-only 包增量复用呈现守卫，Presented 后提交 GPU/CPU/发布快照；Scene/Deep2d 重试类型独立，100 ms 最新候选重试。
+- RTX 4060/Vulkan 两个新用例覆盖零尺寸跳帧、连续版本与实际 WGSL 变化；两个 X GPU 回归、两种文件 smoke 坏写恢复通过。bin 120 passed/42 ignored，4 项 GPU 显式通过，clippy/build/fmt/repository 通过。
+- 本轮待办：完整 renderer/环境/相机替换、独立像素对照、跨端矩阵与完整视觉。[证据](specs/native-package-present-barrier-2026-09-17.md)
+
 ### 2026-09-17 并行几何与设备内存证据（Codex）
 
 - 已完成切片：3DM `7e96dd0` 以齐次控制网证明多段一次轴等价，MechPartB 10/14→11/14 面；207 原 PointAt 对拍最大 0.001278479 mm，总界 0.007316896 mm。3 新测试+36 回归、tsc/gate 通过；独立 evidence 哈希已复核。[证据](specs/industrial-3dm-multispan-cylinder-2026-09-17.md)

@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Native scene updates
 
+- Apply the same presentation barrier to live RuntimePackage scene and shader updates, with separate retry routes for 3D and Deep2D content.
+
 - Publish live RenderPacket content only after a successful surface presentation; keep the previous scene through skipped frames and retry only the latest candidate after recovery.
 
 - Preflight scene resource budgets and revisions without mutating cache state; reject inadmissible dropped packages before preview rendering and recheck at commit.

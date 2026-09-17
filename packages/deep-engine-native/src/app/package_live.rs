@@ -22,11 +22,20 @@ use crate::{
 
 const PRESENT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
 
+enum RetryKind {
+    Deep2d,
+    Scene,
+}
+
+#[cfg(all(test, windows))]
+#[path = "package_present_tests.rs"]
+mod present_tests;
+
 pub(super) struct PackageLiveTransport {
     _watcher: super::watch_thread::WatchThread,
     mailbox: LatestMailbox<WatchedPackage>,
     published: Arc<RwLock<RuntimePackageSnapshot>>,
-    retry: Option<(std::time::Instant, u64, WatchedPackage)>,
+    retry: Option<(std::time::Instant, u64, WatchedPackage, RetryKind)>,
 }
 
 pub(super) fn start(
@@ -193,6 +202,7 @@ fn apply_deep2d(app: &mut NativeApp, generation: u64, candidate: WatchedPackage)
                     std::time::Instant::now() + PRESENT_RETRY_DELAY,
                     generation,
                     candidate,
+                    RetryKind::Deep2d,
                 ))
             }
             Err(error) => {
@@ -215,12 +225,15 @@ pub(super) fn retry(
     if transport
         .retry
         .as_ref()
-        .is_some_and(|(wake, _, _)| *wake <= now)
+        .is_some_and(|(wake, _, _, _)| *wake <= now)
     {
-        let (_, generation, candidate) = transport.retry.take().unwrap();
-        apply_deep2d(app, generation, candidate);
+        let (_, generation, candidate, kind) = transport.retry.take().unwrap();
+        match kind {
+            RetryKind::Deep2d => apply_deep2d(app, generation, candidate),
+            RetryKind::Scene => apply_incremental(app, generation, candidate),
+        }
     }
-    if let Some((wake, _, _)) = app
+    if let Some((wake, _, _, _)) = app
         .package_live_transport
         .as_ref()
         .and_then(|transport| transport.retry.as_ref())
@@ -258,11 +271,22 @@ fn apply_incremental(app: &mut NativeApp, generation: u64, candidate: WatchedPac
         .mailbox
         .clone();
     let publication = mailbox.publish_if_latest(generation, || {
-        app.renderer
+        let (outcome, _) = app
+            .renderer
             .as_mut()
             .expect("renderer stayed active while staging")
-            .publish_render_packet_update(staged)?;
+            .present_render_packet_update(staged)?;
+        if !super::dashboard::presented(app, outcome)? {
+            app.package_live_transport.as_mut().unwrap().retry = Some((
+                std::time::Instant::now() + PRESENT_RETRY_DELAY,
+                generation,
+                candidate,
+                RetryKind::Scene,
+            ));
+            return Ok(());
+        }
         publish(app, generation, candidate, None);
+        crate::runtime_package_startup::presented(app.content.active_mut());
         Ok::<_, String>(())
     });
     match publication {
