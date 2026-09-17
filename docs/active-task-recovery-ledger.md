@@ -2402,3 +2402,6 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 补 `worker_self_termination_reaps_live_descendant_tree`（compat_x_windows_job：worker 非零码自终止、子/孙持继承管道存活→宿主收 Crashed、逐 PID 核验整树回收，4 秒内有界）与 `crashed_session_is_rebuilt_with_new_pid_and_old_epoch_stays_rejected`（compat_x_lpac_session：TerminateProcess 后会话中毒回收，重建新 PID 会话输出与本地求值逐字一致、旧 epoch 发布被拒、双会话 profile 各自清理）。
 - 门禁：lib 362/bin 128（all-features）全过；compat_x_process 7、windows_job 5、lpac_session 6、lpac 4、scheduler_cli 1、1025 次续期 1 全过；clippy `-D warnings --all-targets --all-features` 与 fmt 通过。**修正**：先前台账记录的 compat_x_lpac 4 项 ACCESS_DENIED 非环境限制——普通 examples 构建以动态 CRT 覆盖静态探针致 `0xc0000022`（DLL ACL），重编 `x_lpac_probe`/`x_compat_worker`/`x_session_fault_worker` 静态 CRT 后 4/4 通过。
 - 边界：不运行真实 JS，不宣称 ZRender/ECharts 兼容；LPAC 文件/网络负向权限矩阵、产品发布/编辑器接线、签名与更新撤销继续待办。未 git commit。
+
+
+- P3-05升级回滚链：17步全链通过（脚本verify-dashboard-upgrade-rollback-chain.mts，证据test-output/p03-05-upgrade-rollback-20260918/ 93MB含11张真实窗口截图+全量SHA清单）——v1基线(reused multicomponent产物核对无漂移)、真实HTTP发布v2/v3'、下载取消无部分文件、DMDA截断预取消拒绝、EXE链v1→v2→坏hash/schema GPU前拒（检查点逐字节不变）→真实重下回退v2像素一致→v3'像素断言三互异、双重资源缺失fail-closed、离线旧版（PATH仅System32）凭检查点启动。**缺陷P3-05-D1（high，未修停下报告）**：--package主包被拒走last-known-good恢复启动时GPU/Deep2d初始化完成并实际绘制恢复内容，但smoke submission与checkpoint committed信号>75s永不出现（正常20-40s），依赖客户端无限等待；恢复后检查点不重提交。复现两处+日志摘录在evidence.json defects字段。未覆盖：EXE内输入（G01）、断电事务、热替换路径。
