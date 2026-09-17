@@ -2,6 +2,8 @@ mod content_payloads;
 mod dashboard;
 mod dashboard_types;
 mod dashboard_validation;
+mod delta;
+mod delta_manifest;
 mod diff;
 mod entrypoints;
 mod experimental_x;
@@ -14,6 +16,12 @@ mod render_packet;
 mod types;
 mod unique_json;
 mod validate;
+pub use delta::{
+    AppliedRuntimePackageDelta, DEEP_RUNTIME_PACKAGE_DELTA_SCHEMA,
+    DEEP_RUNTIME_PACKAGE_DELTA_SCHEMA_VERSION, RuntimePackageDeltaOutcome,
+    RuntimePackageDeltaRejection, RuntimePackageDeltaRejectionReason, apply_runtime_package_delta,
+    build_runtime_package_delta,
+};
 pub use experimental_x::{
     LoadedXRuntimePackage, freeze_x_resource, parse_and_validate_x_runtime_package,
 };
