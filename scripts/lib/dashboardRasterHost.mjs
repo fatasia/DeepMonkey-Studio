@@ -4,10 +4,27 @@ import { rasterizeNativeText } from "./nativeTextRasterizer.mjs";
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const MAX_BYTES = 64 * 1024 * 1024;
 function frozenBytes(asset) {
+  if (!(asset.bytes instanceof Uint8Array) || !asset.bytes.length || asset.bytes.byteLength > MAX_BYTES)
+    throw new Error("Frozen raster resource hash or byte budget mismatch");
   const bytes = Buffer.from(asset.bytes);
   if (!bytes.length || bytes.length > MAX_BYTES || sha256(bytes) !== asset.sha256)
     throw new Error("Frozen raster resource hash or byte budget mismatch");
   return bytes;
+}
+function snapshot(input, signal, text) {
+  signal?.throwIfAborted(); extent(input);
+  const assets = text ? input.fonts : [input.asset];
+  if (!Array.isArray(assets) || !assets.length) throw new Error("Frozen primary font is required");
+  let total = 0;
+  for (const asset of assets) {
+    if (!(asset?.bytes instanceof Uint8Array) || !asset.bytes.length)
+      throw new Error("Frozen raster resource hash or byte budget mismatch");
+    total += asset.bytes.byteLength;
+    if (total > MAX_BYTES) throw new Error("Frozen raster resource hash or byte budget mismatch");
+  }
+  const copy = structuredClone({ ...input, fonts: undefined, asset: undefined });
+  const frozen = assets.map(asset => ({ ...structuredClone({ ...asset, bytes: undefined }), bytes: frozenBytes(asset) }));
+  return text ? { ...copy, fonts: frozen } : { ...copy, asset: frozen[0] };
 }
 function extent(request) {
   if (![request.width, request.height].every(v => Number.isSafeInteger(v) && v > 0 && v <= 8192)
@@ -17,10 +34,10 @@ function extent(request) {
 export function createDashboardRasterHost({ nativeExecutable, signal }) {
   return {
     async rasterizeText(input) {
-      const request = structuredClone(input); extent(request);
+      const request = snapshot(input, signal, true);
       if (!request.fonts.length) throw new Error("Frozen primary font is required");
       const fonts = request.fonts.map(font => ({ sha256: font.sha256, faceIndex: font.faceIndex,
-        dataBase64: frozenBytes(font).toString("base64") }));
+        dataBase64: font.bytes.toString("base64") }));
       const primary = fonts[0];
       const wire = { schema: "deep-engine.text-raster-request", schemaVersion: 1, locale: request.locale, fonts,
         request: { text: request.text, font: { sha256: primary.sha256, faceIndex: primary.faceIndex },
@@ -40,10 +57,10 @@ export function createDashboardRasterHost({ nativeExecutable, signal }) {
   };
 }
 export async function rasterizeFrozenImage(input, signal) {
-  const request = structuredClone(input); extent(request);
+  const request = snapshot(input, signal, false);
   signal?.throwIfAborted();
   if (!["cover", "contain", "fill"].includes(request.fit)) throw new Error("Unsupported image fit");
-  const bytes = frozenBytes(request.asset);
+  const bytes = request.asset.bytes;
   const metadata = await sharp(bytes, { limitInputPixels: MAX_BYTES / 4, failOn: "warning" }).metadata();
   if ((metadata.pages ?? 1) !== 1) throw new Error("Animated/multipage images require a separate producer");
   signal?.throwIfAborted();

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
-import { rasterizeFrozenImage } from "./dashboardRasterHost.mjs";
+import { createDashboardRasterHost, rasterizeFrozenImage } from "./dashboardRasterHost.mjs";
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 async function request(fit, options = {}) {
   const bytes = await sharp({ create: { width: 4, height: 2, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0.5 } } })
@@ -46,4 +46,30 @@ test("rejects byte substitution and aborted work", async () => {
   const input = await request("fill"); input.asset.bytes[0] ^= 1;
   await assert.rejects(rasterizeFrozenImage(input), /hash/);
   await assert.rejects(rasterizeFrozenImage(await request("fill"), AbortSignal.abort()), /abort/i);
+});
+test("cancelled and invalid requests are rejected before structured cloning", async () => {
+  const invalid = { width: 1, height: 1, cannotClone() {} };
+  const signal = AbortSignal.abort(new Error("cancel before clone"));
+  await assert.rejects(rasterizeFrozenImage(invalid, signal), /cancel before clone/);
+  await assert.rejects(createDashboardRasterHost({ nativeExecutable: "missing", signal }).rasterizeText(invalid), /cancel before clone/);
+  await assert.rejects(rasterizeFrozenImage({ ...invalid, width: 9000 }), /Invalid raster extent/);
+});
+test("aggregate font budget is checked before launching a producer or cloning", async () => {
+  const bytes = new Uint8Array(32 * 1024 * 1024 + 1);
+  const host = createDashboardRasterHost({ nativeExecutable: "missing" });
+  await assert.rejects(host.rasterizeText({ width: 1, height: 1, fonts: [{ bytes }, { bytes }], cannotClone() {} }), /byte budget/);
+});
+test("image view never sends its backing buffer through structuredClone", async t => {
+  const input = await request("fill");
+  const backing = new Uint8Array(1024 * 1024);
+  backing.set(input.asset.bytes, 64);
+  input.asset.bytes = backing.subarray(64, 64 + input.asset.bytes.length);
+  const clone = globalThis.structuredClone;
+  t.mock.method(globalThis, "structuredClone", value => {
+    assert.equal(value.asset, undefined);
+    assert.equal(value.bytes, undefined);
+    return clone(value);
+  });
+  const result = await rasterizeFrozenImage(input);
+  assert.equal(result.rgba.length, 64);
 });

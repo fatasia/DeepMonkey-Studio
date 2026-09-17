@@ -2,6 +2,9 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 3DM `d60003a` 独立复核：共边65→60，41/41面与7自缝保持；190源PointAt最大3.978e-15mm。主线复跑3项真实源/事务回退测试通过，GLB与evidence哈希一致；edge60局部翻面继续处理，仍为部分预览。[证据](specs/industrial-3dm-plane-isocurve-2026-09-17.md)
+- 光栅host同族修复：图片/字体入口复制前检查取消、尺寸和总预算，仅冻结实际字节视图；31项host/真实子进程回归通过。[证据](specs/dashboard-raster-copy-budget-2026-09-17.md)
+
 - Native 文本producer读文件改为初始大小固定容量，去掉chunks+concat双份数据；分块取消、中途截断/增长/修改拒绝。7项真实文件与子进程/图片回归共35项通过，内容SHA上层校验保留。[证据](specs/dashboard-raster-copy-budget-2026-09-17.md)
 
 - Deep2D 光栅内存：资源预算前置到复制之前，TypedArray只复制实际视图字节，像素同样先验尺寸再复制；哈希与冻结隔离不变。5项新增、完整光栅23文件176项、Web类型/治理通过，Native字体producer未跳过。[证据](specs/dashboard-raster-copy-budget-2026-09-17.md)
