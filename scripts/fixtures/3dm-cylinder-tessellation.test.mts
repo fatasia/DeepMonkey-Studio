@@ -9,7 +9,7 @@ import { tessellateCylinderFace } from './3dm-cylinder-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
 const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/3dm-source-audit');
-const evidenceOut=resolve(root,'test-output/industrial-3dm/proven-cylinder-2026-09-17-v1/natural');mkdirSync(evidenceOut,{recursive:true});
+const evidenceOut=resolve(root,'test-output/industrial-3dm/single-bicubic-2026-09-17-v1/natural');mkdirSync(evidenceOut,{recursive:true});
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url));
 const {Triangle,Vector3}=require('three');
 const relative='example_files/V4/v4_MechPartB.3dm',sourceSha256='848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978';

@@ -9,7 +9,7 @@ import { proveCylinderSupport,tessellateProvenCylinderFace } from './3dm-proven-
 import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/proven-cylinder-2026-09-17-v1');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/single-bicubic-2026-09-17-v1/proven');
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex');
 const orient=(a:number[],b:number[],c:number[])=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
@@ -17,7 +17,7 @@ let realSurface:any;
 test('four uncached source faces prove circle identity and preserve PointAt, boundaries and GLB',async()=>{
   mkdirSync(out,{recursive:true});const records=[];
   for(const [name,faces,expected,hash] of [['A',[1,2,3],17,'a1b0ef69925b5d9223a7d797033055bb766842768a96f7713e1ecaec2763bb31'],
-    ['B',[2],12,'848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978']] as const) {
+    ['B',[2],13,'848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978']] as const) {
     const path=resolve(root,`data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPart${name}.3dm`);
     assert.equal(sha(readFileSync(path)),hash);
     const run=spawnSync(resolve(root,'test-output/3dm-source-audit/3dm-source-audit.exe'),[path,'--parameter-evidence-all'],{encoding:'utf8',maxBuffer:128*1024*1024,timeout:60000});

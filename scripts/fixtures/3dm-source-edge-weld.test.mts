@@ -11,7 +11,7 @@ import { auditBrepBoundaries } from './3dm-brep-boundary-audit.mts';
 import { evaluateCurve,evaluateSurface } from './3dm-nurbs-parameters.mjs';
 import { export3dmGlb } from './3dm-glb-export.mts';
 const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/3dm-source-audit');
-const evidenceOut=resolve(root,'test-output/industrial-3dm/proven-cylinder-2026-09-17-v1/source-edge');mkdirSync(evidenceOut,{recursive:true});
+const evidenceOut=resolve(root,'test-output/industrial-3dm/single-bicubic-2026-09-17-v1/source-edge');mkdirSync(evidenceOut,{recursive:true});
 const hash='848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978';
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartB.3dm');
 const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));

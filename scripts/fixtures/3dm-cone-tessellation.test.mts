@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync,writeFileSync } from 'node:fs';
+import { readFileSync,writeFileSync,mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -10,6 +10,7 @@ import { evaluateSurface,mapSurfaceParameter } from './3dm-nurbs-parameters.mjs'
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
 const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/3dm-source-audit');
+const evidenceOut=resolve(root,'test-output/industrial-3dm/single-bicubic-2026-09-17-v1/cone');mkdirSync(evidenceOut,{recursive:true});
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const relative='example_files/V4/v4_Wheel_PG.3dm',sourceSha256='c116ce1873e6388acbaeb3ccbe08841ed08966db079cd91d492fe621ec127ff9';
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001',relative);
@@ -53,11 +54,11 @@ test('real wheel cone faces preserve original PointAt, rectangular trim, topolog
   const primitives=json.meshes.flatMap((m:any)=>m.primitives).filter((p:any)=>p.extras.geometrySource==='cad-ir-natural-cone');
   assert.deepEqual(primitives.map((p:any)=>p.extras.brepFaceIndex),results.map(r=>r.face));
   for(const p of primitives){assert.equal(p.extras.sourceSha256,sourceSha256);assert.equal(p.extras.objectId,results[0].objectId);}
-  const glbPath=resolve(out,'v4_Wheel_PG.cones.glb');writeFileSync(glbPath,result.bytes);const audit=await auditGlbGeometry(glbPath);
+  const glbPath=resolve(evidenceOut,'v4_Wheel_PG.cones.glb');writeFileSync(glbPath,result.bytes);const audit=await auditGlbGeometry(glbPath);
   const evidence={schemaVersion:1,sourceSha256,sourceUrl:`https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/${relative}`,
     useBoundary:'official sample; local verification only; not redistributed',archiveVersion:source.archiveVersion,metersPerUnit:source.metersPerUnit,
     results,rejected,audit,status:result.sidecar.status,glbSha256:sha(result.bytes)};
-  writeFileSync(resolve(out,'cone-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({faces:results.map(r=>r.face),rejected,maxError:Math.max(...results.map(r=>r.maxSourceToMeshDistance)),maxMappingError:Math.max(...results.map(r=>r.maxMappingError)),audit}));
+  writeFileSync(resolve(evidenceOut,'cone-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({faces:results.map(r=>r.face),rejected,maxError:Math.max(...results.map(r=>r.maxSourceToMeshDistance)),maxMappingError:Math.max(...results.map(r=>r.maxMappingError)),audit}));
 });
 test('cone reversal and transposed parameter axes retain normals and source geometry',()=>{
   const ir=structuredClone(supportedIr),face=ir.faces[supportedFace],s=ir.surfaces[face.surface],before=tessellateConeFace(ir,supportedFace);
@@ -111,5 +112,5 @@ test('real gear identity-parameter cones preserve small open rectangular trim ba
   assert.equal(count,25);assert(referenceCount>0);
   const evidence={sourceSha256:sha(readFileSync(gearPath)),sourceUrl:`https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/${relative.replace('v4_Wheel_PG','v4_Gear')}`,
     useBoundary:'official sample; local verification only; not redistributed',gearFaces:count,referenceCount,maxError};
-  writeFileSync(resolve(out,'cone-gear-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence));
+  writeFileSync(resolve(evidenceOut,'cone-gear-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence));
 });
