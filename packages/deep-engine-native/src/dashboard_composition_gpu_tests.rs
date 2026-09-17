@@ -34,10 +34,23 @@ fn draw_in_format(
     cache: &Arc<Deep2dGpuAssetCache>,
     format: wgpu::TextureFormat,
 ) -> Vec<u8> {
+    draw_in_format_at(device, queue, content, cache, format, (WIDTH, HEIGHT))
+}
+
+/// Readback at an arbitrary physical size; the shader letterboxes the logical
+/// canvas when the aspect ratios differ, exactly like the native window.
+fn draw_in_format_at(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    content: &Deep2dRuntimeContent,
+    cache: &Arc<Deep2dGpuAssetCache>,
+    format: wgpu::TextureFormat,
+    physical: (u32, u32),
+) -> Vec<u8> {
     let painter = Deep2dGpuPainter::new(device, queue, format, content, cache).unwrap();
     let size = wgpu::Extent3d {
-        width: WIDTH,
-        height: HEIGHT,
+        width: physical.0,
+        height: physical.1,
         depth_or_array_layers: 1,
     };
     let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -67,10 +80,16 @@ fn draw_in_format(
             ..Default::default()
         });
     }
-    painter.draw(&mut encoder, &view, (WIDTH, HEIGHT));
+    painter.draw(&mut encoder, &view, physical);
+    // Copy rows on the 256-byte alignment wgpu requires; the harness error
+    // scope would otherwise swallow the validation error and hand back an
+    // all-zero buffer for widths (like 1200) whose stride breaks alignment.
+    let bytes_per_row = physical.0 * 4;
+    let padded_bytes_per_row = bytes_per_row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+        * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("dashboard rgba readback"),
-        size: u64::from(WIDTH * HEIGHT * 4),
+        size: u64::from(padded_bytes_per_row) * u64::from(physical.1),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -80,8 +99,8 @@ fn draw_in_format(
             buffer: &readback,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(WIDTH * 4),
-                rows_per_image: Some(HEIGHT),
+                bytes_per_row: Some(padded_bytes_per_row),
+                rows_per_image: Some(physical.1),
             },
         },
         size,
@@ -92,10 +111,40 @@ fn draw_in_format(
     });
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
     let mapped = readback.get_mapped_range(..).unwrap();
-    let pixels = mapped.to_vec();
+    let mut pixels = Vec::with_capacity(bytes_per_row as usize * physical.1 as usize);
+    for row in 0..physical.1 {
+        let start = row as usize * padded_bytes_per_row as usize;
+        pixels.extend_from_slice(&mapped[start..start + bytes_per_row as usize]);
+    }
     drop(mapped);
     readback.unmap();
     pixels
+}
+
+/// Letterbox-mapped physical pixel region of a logical rect (shader semantics:
+/// uniform min-axis scale plus centering offset), floor/ceil expanded.
+fn letterbox_region(rect: [f64; 4], page: [f64; 2], physical: (u32, u32)) -> (u32, u32, u32, u32) {
+    let scale = (f64::from(physical.0) / page[0]).min(f64::from(physical.1) / page[1]);
+    let ox = (f64::from(physical.0) - page[0] * scale) / 2.;
+    let oy = (f64::from(physical.1) - page[1] * scale) / 2.;
+    let x0 = (ox + rect[0] * scale).floor().max(0.) as u32;
+    let y0 = (oy + rect[1] * scale).floor().max(0.) as u32;
+    let x1 = (ox + (rect[0] + rect[2]) * scale)
+        .ceil()
+        .min(f64::from(physical.0)) as u32;
+    let y1 = (oy + (rect[1] + rect[3]) * scale)
+        .ceil()
+        .min(f64::from(physical.1)) as u32;
+    (x0, y0, x1, y1)
+}
+
+/// Count of non-background (colored) pixels inside a physical region.
+fn colored_in_region(pixels: &[u8], physical: (u32, u32), region: (u32, u32, u32, u32)) -> usize {
+    let (x0, y0, x1, y1) = region;
+    (y0..y1)
+        .flat_map(|y| (x0..x1).map(move |x| ((y * physical.0 + x) * 4) as usize))
+        .filter(|i| pixels[*i] != 0 || pixels[*i + 1] != 0 || pixels[*i + 2] != 0)
+        .count()
 }
 
 fn capture(name: &str, pixels: &[u8]) {
@@ -276,6 +325,149 @@ fn composite_preserves_package_atlas_tint_through_disjoint_clips() {
             after
                 .chunks_exact(4)
                 .any(|p| p[0] != 0 || p[1] != 0 || p[2] != 0)
+        );
+    });
+}
+
+/// Dashboard heading nodes carry a precise page-space clip (90x26 on the real
+/// 960x540 multicomponent page). The scissor must follow the same letterbox
+/// mapping as the shader, or a mismatched-aspect window culls the heading
+/// chunk entirely while unclipped layers still render (P0-06 defect 1).
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn clipped_layer_survives_letterbox_window() {
+    use deep_engine_native::deep2d::{
+        Deep2dComposite, Deep2dLayer, Deep2dRect, decode_runtime_content,
+    };
+    pollster::block_on(async {
+        let (device, queue, adapter) = gpu_context().await;
+        assert_ne!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let source =
+            decode_runtime_content(include_bytes!("../fixtures/deep2d_runtime_atlas_v1.json"))
+                .unwrap();
+        // The first quad destination (44,48,34,52) stands in for the heading
+        // image quad; the layer clip narrows to exactly that box like the
+        // compiled heading node clip.
+        let clip = Deep2dRect {
+            x: 44.,
+            y: 48.,
+            width: 34.,
+            height: 52.,
+        };
+        let composite = Deep2dRuntimeContent::Composite(
+            Deep2dComposite::new(
+                "letterbox-heading".into(),
+                1,
+                [960., 540.],
+                vec![Deep2dLayer {
+                    id: "node.heading".into(),
+                    content: Arc::new(source),
+                    translation: [0., 0.],
+                    clip,
+                }],
+            )
+            .unwrap(),
+        );
+        let cache = Arc::new(Deep2dGpuAssetCache::new());
+        // 1280x960 physical vs 960x540 logical: shader scale = 4/3 with a
+        // (0,120) centering offset, while the per-axis stretch would be
+        // (4/3, 16/9) with no offset — the old scissor missed the quad by
+        // more than its own height.
+        let physical = (1280u32, 960u32);
+        let pixels = draw_in_format_at(
+            &device,
+            &queue,
+            &composite,
+            &cache,
+            wgpu::TextureFormat::Rgba8Unorm,
+            physical,
+        );
+        let region = letterbox_region([44., 48., 34., 52.], [960., 540.], physical);
+        let colored = colored_in_region(&pixels, physical, region);
+        let total = (region.2 - region.0) as usize * (region.3 - region.1) as usize;
+        println!("letterbox heading region {region:?}: {colored}/{total} colored pixels");
+        assert!(
+            colored * 2 >= total,
+            "clipped heading layer must survive the letterbox window: \
+             {colored}/{total} colored pixels in {region:?}"
+        );
+        assert!(
+            scope.pop().await.is_none(),
+            "production painter emitted a GPU validation error"
+        );
+    });
+}
+
+/// End-to-end on the real producer package: every clipped static layer (the
+/// chart heading and its unit quad on the multicomponent page) must land
+/// pixels in a 1200x800 letterboxed window, matching the real player EXE.
+#[test]
+#[ignore = "requires a real GPU and DEEP_DASHBOARD_PACKAGE_PATH pointing at a producer runtime package"]
+fn producer_package_clipped_layers_survive_letterbox_window() {
+    let bytes = std::fs::read(std::env::var_os("DEEP_DASHBOARD_PACKAGE_PATH").expect(
+        "set DEEP_DASHBOARD_PACKAGE_PATH to a producer runtime package \
+             (e.g. test-output/dashboard-http-multicomponent-*/extracted/runtime-package.json)",
+    ))
+    .expect("read producer package");
+    let package = parse_and_validate_runtime_package(&bytes).expect("validate producer package");
+    let mut runtime = DashboardRuntime::new(package.dashboard.expect("dashboard entrypoint"))
+        .expect("prepare producer dashboard");
+    pollster::block_on(async {
+        let (device, queue, adapter) = gpu_context().await;
+        assert_ne!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let cache = Arc::new(Deep2dGpuAssetCache::new());
+        let page = runtime.document().pages[0].clone();
+        runtime.switch_page(&page.id).unwrap();
+        let physical = (1200u32, 800u32);
+        let pixels = draw_in_format_at(
+            &device,
+            &queue,
+            runtime.content(),
+            &cache,
+            wgpu::TextureFormat::Rgba8Unorm,
+            physical,
+        );
+        let page_size = [page.width, page.height];
+        let mut checked = 0usize;
+        for node in &page.nodes {
+            let Some(clip) = node.clip else {
+                continue;
+            };
+            // A clipped static layer narrows the draw to a precise page-space
+            // box; the compositor intersects page rect + frame translation,
+            // mirrored here for the assertion window.
+            let clipped = letterbox_region(
+                [
+                    clip[0] + node.frame[0],
+                    clip[1] + node.frame[1],
+                    clip[2],
+                    clip[3],
+                ],
+                page_size,
+                physical,
+            );
+            let colored = colored_in_region(&pixels, physical, clipped);
+            println!(
+                "clipped layer {} clip {clip:?} -> {clipped:?}: {colored} colored pixels",
+                node.id
+            );
+            assert!(
+                colored > 0,
+                "clipped layer {} must land pixels in a letterboxed window \
+                 (region {clipped:?})",
+                node.id
+            );
+            checked += 1;
+        }
+        assert_eq!(
+            checked, 2,
+            "fixture must exercise the clipped heading layers"
+        );
+        assert!(
+            scope.pop().await.is_none(),
+            "production painter emitted a GPU validation error"
         );
     });
 }
