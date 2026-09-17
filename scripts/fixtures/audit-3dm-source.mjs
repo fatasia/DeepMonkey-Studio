@@ -17,6 +17,9 @@ function auditNurbs(nurbs, dimensions) {
   assert.equal(nurbs.knotConvention, 'full-openNURBS-end-duplicated');
   assert.equal(nurbs.controlPointEncoding, nurbs.rational ? 'homogeneous' : 'euclidean');
   assert([1, 2].includes(nurbs.parameterization), 'unclassified NURBS parameterization');
+  assert(['identity', 'arc-angle', 'separable', 'unsupported'].includes(nurbs.parameterMap?.kind));
+  if (nurbs.parameterization === 1) assert.equal(nurbs.parameterMap.kind, 'identity');
+  else assert.notEqual(nurbs.parameterMap.kind, 'identity', 'parameterization 2 cannot silently become identity');
   assert.equal(degree.length, dimensions); assert.equal(counts.length, dimensions);
   const knots = dimensions === 1 ? [nurbs.knots] : nurbs.knots;
   const domains = dimensions === 1 ? [nurbs.domain] : nurbs.domain;

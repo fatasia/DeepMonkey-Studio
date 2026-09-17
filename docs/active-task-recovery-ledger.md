@@ -2015,3 +2015,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - A-1811/face 1199 与 A-1821/face 226 已确认正确读取单顶点 bound，但候选评分只核验边段，允许丢失 apex 的重建面胜出。最小修复把文件声明的单顶点纳入原有 boundary gap 门禁，不改 0.01 mm 阈值、不按样本特判。
 - cad-tess 37/37、release 构建、109/109 真实转换通过；逐面几何审计由 19,154 matched / 9 mismatch / 181 unresolved 改善为 19,156 / 7 / 181，两面残差降至 `3.75e-7 mm` 与 `2.30e-7 mm`，无新增 mismatch。
 - 剩余 7 个差异仍是两类重建曲面偏差、三类交线 chart/stand-in 偏差；生产 profile 继续为 0。[证据](reports/industrial-x-t-apex-boundary-2026-09-17.md)
+
+### 2026-09-17 3DM 参数化 2 映射（Codex）
+
+- CAD IR 保留原参数域与 trim UV，新增 identity / arc-angle / separable / unsupported 合同；圆弧与旋转曲面参数用半角正弦比映射到 NURBS，不依赖采样插值或商业组件。
+- blocks/sphereDecals 各 290 个参数点与原 openNURBS 映射及 PointAt 对拍，独立 NURBS 求值最大点误差分别为 `7.589e-15` / `5.664e-14` 源单位；直接套原 UV 的负对照分别偏差 0.162 / 1.180。5/5 参数测试覆盖部分圆弧、非零域、转置、端点与拒绝路径。
+- MSVC 重建、5/5 真实源读取、8/8 GLB 回归、repository gate 通过。当前仍是参数求值合同，trimmed surface 离散、一般参数化 2、误差门禁和生产接线继续本轮待办。[证据](specs/industrial-3dm-parameter-mapping-2026-09-17.md)

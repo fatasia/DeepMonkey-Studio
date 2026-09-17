@@ -63,6 +63,7 @@ static void interval(std::ostream& o, const ON_Interval& d) {
 static void tolerance(std::ostream& o, double value) {
   if(std::isfinite(value) && value>=0.0) number(o,value); else o << "null";
 }
+#include "3dm-parameter-map.h"
 static void nurbsCurve(std::ostream& o, const ON_Curve& source) {
   ON_NurbsCurve n;
   const int accuracy=source.GetNurbForm(n);
@@ -84,7 +85,9 @@ static void nurbsCurve(std::ostream& o, const ON_Curve& source) {
     for(int j=0;j<n.CVSize();++j) { if(j) o << ','; number(o,cv[j]); }
     o << ']';
   }
-  o << "]}";
+  o << "],\"parameterMap\":"; curveParameterMap(o,source,accuracy);
+  if(accuracy==2) { o << ",\"parameterEvidence\":"; curveParameterEvidence(o,source); }
+  o << '}';
 }
 static void nurbsSurface(std::ostream& o, const ON_Surface& source) {
   ON_NurbsSurface n;
@@ -113,7 +116,9 @@ static void nurbsSurface(std::ostream& o, const ON_Surface& source) {
     for(int j=0;j<n.CVSize();++j) { if(j) o << ','; number(o,cv[j]); }
     o << ']';
   }
-  o << "]}";
+  o << "],\"parameterMap\":"; surfaceParameterMap(o,source,accuracy);
+  if(accuracy==2) { o << ",\"parameterEvidence\":"; surfaceParameterEvidence(o,source); }
+  o << '}';
 }
 static void cadIr(std::ostream& o, const ON_Brep& b) {
   if(!b.IsValid()) throw std::runtime_error("invalid-brep");
