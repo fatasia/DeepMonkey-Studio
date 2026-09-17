@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { XT_MAX_SAMPLE_BYTES, probeXtStructure } from "./xtStructureProbe.js";
 
-describe("Parasolid XT structure probe", () => {
+describe("Parasolid X_T structure probe", () => {
   it("识别 X_T 固定头、文本标志、modeller 和 schema，但不解析几何", () => {
     const result = probeXtStructure({ fileSize: 4096, expectedFormat: "x_t", sampleBytes: textFixture() });
 

@@ -79,31 +79,31 @@ export interface XtStructureProbeInput {
 }
 
 /**
- * Parasolid XT 的安全头部探测。根据公开 XT Format Reference (2008) 只读取传输头、
+ * Parasolid X_T 的安全头部探测。根据公开 X_T Format Reference (2008) 只读取传输头、
  * 标志和 modeller/schema 标识；不引入外部 schema，也不读取 B-Rep、NURBS 或 trim。
  */
 export function probeXtStructure(input: XtStructureProbeInput): XtStructureProbeResult {
   const base = baseResult(input.sampleBytes.byteLength);
-  if (!Number.isSafeInteger(input.fileSize) || input.fileSize <= 0) return invalid(base, "invalid-file-size", "XT 文件大小必须是正的安全整数");
-  if (input.sampleBytes.byteLength > XT_MAX_SAMPLE_BYTES) return invalid(base, "sample-too-large", `XT 样本不能超过 ${XT_MAX_SAMPLE_BYTES} 字节`);
+  if (!Number.isSafeInteger(input.fileSize) || input.fileSize <= 0) return invalid(base, "invalid-file-size", "X_T 文件大小必须是正的安全整数");
+  if (input.sampleBytes.byteLength > XT_MAX_SAMPLE_BYTES) return invalid(base, "sample-too-large", `X_T 样本不能超过 ${XT_MAX_SAMPLE_BYTES} 字节`);
 
   const text = new TextDecoder("latin1").decode(input.sampleBytes);
   const headerEnd = text.indexOf("**END_OF_HEADER");
   const hasFixedHeader = text.startsWith(TEXT_HEADER_PREFIX) && PART_MARKERS.every((marker) => text.includes(marker));
-  if (!hasFixedHeader || headerEnd < 0) return invalid(base, "header-not-recognized", "未识别到 Parasolid XT 固定文本头标记");
-  if (headerEnd > XT_MAX_HEADER_BYTES) return invalid(base, "header-too-large", `XT 头部标记必须位于前 ${XT_MAX_HEADER_BYTES} 字节内`);
+  if (!hasFixedHeader || headerEnd < 0) return invalid(base, "header-not-recognized", "未识别到 Parasolid X_T 固定文本头标记");
+  if (headerEnd > XT_MAX_HEADER_BYTES) return invalid(base, "header-too-large", `X_T 头部标记必须位于前 ${XT_MAX_HEADER_BYTES} 字节内`);
 
   const payloadOffset = skipHeaderPadding(text, headerEnd + "**END_OF_HEADER".length);
   const header = parseHeaderFields(text.slice(0, payloadOffset));
   const evidence = { ...base.evidence, headerMarkers: PART_MARKERS, payloadOffset };
-  if (payloadOffset >= input.sampleBytes.byteLength) return invalid({ ...base, evidence, header }, "missing-payload-marker", "XT 头部后缺少格式标志");
+  if (payloadOffset >= input.sampleBytes.byteLength) return invalid({ ...base, evidence, header }, "missing-payload-marker", "X_T 头部后缺少格式标志");
 
   const marker = input.sampleBytes[payloadOffset];
   const result = marker === 0x54
     ? parseText(input, text, payloadOffset, header, evidence)
     : marker === 0x42 || (marker === 0x50 && input.sampleBytes[payloadOffset + 1] === 0x53)
       ? parseBinary(input, payloadOffset, header, evidence)
-      : invalid({ ...base, evidence, header }, "missing-payload-marker", "XT 头部后的格式标志不是 T、B 或 PS");
+      : invalid({ ...base, evidence, header }, "missing-payload-marker", "X_T 头部后的格式标志不是 T、B 或 PS");
 
   if (result.recognizedFormat !== "unknown" && input.expectedFormat && result.recognizedFormat !== toRecognizedFormat(input.expectedFormat)) {
     return { ...result, issues: [...result.issues, issue("extension-encoding-mismatch", `文件内容为 ${result.encoding}，与上传扩展名 ${input.expectedFormat} 不一致`)] };
@@ -120,7 +120,7 @@ function parseText(
 ): XtStructureProbeResult {
   const base = recognized("parasolid-x_t", "text", input.sampleBytes.byteLength, header, evidence);
   const identification = parseTextIdentification(text, payloadOffset + 1, header.userFieldSize);
-  if (!identification) return { ...base, issues: [issue("invalid-text-identification", "XT 文本标志后的 modeller/schema 长度字段无效或超出样本")] };
+  if (!identification) return { ...base, issues: [issue("invalid-text-identification", "X_T 文本标志后的 modeller/schema 长度字段无效或超出样本")] };
   return {
     ...base,
     version: schemaVersion(identification.schema, identification.modeller),
@@ -138,11 +138,11 @@ function parseBinary(
   if (bytes[payloadOffset] === 0x42) {
     return { ...recognized("parasolid-x_b", "bare-binary", bytes.byteLength, header, evidence), issues: [issue("bare-binary-machine-layout-unknown", "Bare binary 依赖写入端机器布局；本探测不会猜测字节序或标识长度")] };
   }
-  if (payloadOffset + 4 > bytes.byteLength) return invalid({ ...baseResult(bytes.byteLength), evidence, header }, "binary-header-too-short", "XT PS 二进制标志不完整");
+  if (payloadOffset + 4 > bytes.byteLength) return invalid({ ...baseResult(bytes.byteLength), evidence, header }, "binary-header-too-short", "X_T PS 二进制标志不完整");
 
   const typed = bytes[payloadOffset + 3] === 1;
   const neutral = bytes[payloadOffset + 3] === 0;
-  if (!typed && !neutral) return invalid({ ...baseResult(bytes.byteLength), evidence, header }, "binary-header-too-short", "XT PS 二进制标志类型未知");
+  if (!typed && !neutral) return invalid({ ...baseResult(bytes.byteLength), evidence, header }, "binary-header-too-short", "X_T PS 二进制标志类型未知");
   const machineOffset = payloadOffset + 4;
   if (typed && machineOffset + 3 > bytes.byteLength) return invalid({ ...baseResult(bytes.byteLength), evidence, header }, "binary-header-too-short", "Typed binary 缺少机器描述");
   const byteOrder = typed ? bytes[machineOffset] : 0;
@@ -192,19 +192,19 @@ function parseBinaryIdentification(bytes: Uint8Array, start: number, littleEndia
   | { modeller: string; schema: string; userFieldSize: number }
   | { issue: XtStructureProbeIssue } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (start + 2 > bytes.byteLength) return { issue: issue("binary-header-too-short", "XT 二进制 modeller length 字段不完整") };
+  if (start + 2 > bytes.byteLength) return { issue: issue("binary-header-too-short", "X_T 二进制 modeller length 字段不完整") };
   const modellerLength = view.getUint16(start, littleEndian);
-  if (modellerLength > XT_MAX_IDENTIFIER_BYTES) return { issue: issue("binary-identifier-too-large", "XT 二进制 modeller 标识超过安全上限") };
+  if (modellerLength > XT_MAX_IDENTIFIER_BYTES) return { issue: issue("binary-identifier-too-large", "X_T 二进制 modeller 标识超过安全上限") };
   let offset = start + 2;
-  if (offset + modellerLength + 4 > bytes.byteLength) return { issue: issue("binary-identifier-out-of-bounds", "XT 二进制 modeller/schema 标识超出已读样本") };
+  if (offset + modellerLength + 4 > bytes.byteLength) return { issue: issue("binary-identifier-out-of-bounds", "X_T 二进制 modeller/schema 标识超出已读样本") };
   const modeller = decodeAscii(bytes.subarray(offset, offset + modellerLength));
   offset += modellerLength;
   const schemaLength = view.getUint32(offset, littleEndian);
   offset += 4;
-  if (schemaLength > XT_MAX_IDENTIFIER_BYTES) return { issue: issue("binary-identifier-too-large", "XT 二进制 schema 标识超过安全上限") };
-  if (offset + schemaLength + 4 > bytes.byteLength) return { issue: issue("binary-identifier-out-of-bounds", "XT 二进制 schema 标识或 user field 字段超出已读样本") };
+  if (schemaLength > XT_MAX_IDENTIFIER_BYTES) return { issue: issue("binary-identifier-too-large", "X_T 二进制 schema 标识超过安全上限") };
+  if (offset + schemaLength + 4 > bytes.byteLength) return { issue: issue("binary-identifier-out-of-bounds", "X_T 二进制 schema 标识或 user field 字段超出已读样本") };
   const schema = decodeAscii(bytes.subarray(offset, offset + schemaLength));
-  if (!/^SCH_\d+_\d+$/.test(schema)) return { issue: issue("binary-identifier-out-of-bounds", "XT 二进制 schema 标识格式无效") };
+  if (!/^SCH_\d+_\d+$/.test(schema)) return { issue: issue("binary-identifier-out-of-bounds", "X_T 二进制 schema 标识格式无效") };
   offset += schemaLength;
   return { modeller, schema, userFieldSize: view.getUint32(offset, littleEndian) };
 }
