@@ -71,11 +71,12 @@ pub(super) fn skip_forward_targets(content: &PlayerContent, features: RendererFe
     planeless(content, features)
 }
 
-/// 前向目标每像素字节:HDR(RGBA16F 8B)+ 4x MSAA(32B)+ Depth24(4B)。
+/// 逻辑分配估算:单采样HDR + 多采样HDR与深度；不含驱动对齐/压缩。
+/// Depth24Plus按每采样4B估算，实际物理驻留由驱动决定。
 pub(super) fn forward_target_bytes_per_pixel() -> u64 {
     const HDR: u64 = 8;
     const DEPTH: u64 = 4;
-    HDR + HDR * deep_engine_native::mesh_abi::FORWARD_SAMPLE_COUNT as u64 + DEPTH
+    HDR + (HDR + DEPTH) * deep_engine_native::mesh_abi::FORWARD_SAMPLE_COUNT as u64
 }
 
 impl Renderer {
@@ -165,16 +166,17 @@ mod tests {
         assert!(!skip_forward_targets(&content, features(false, true)));
     }
 
-    /// 前向目标占用必须随分辨率线性增长且量级正确——这条把 P1-09 的测量
-    /// 变成可重跑断言:44 字节/像素(HDR 8 + MSAA×4 32 + Depth24 4)。
+    /// 与ForwardTargets中的三个纹理描述符对应，深度也使用多重采样。
     #[test]
-    fn forward_target_bytes_per_pixel_matches_the_measured_budget() {
+    fn forward_target_bytes_per_pixel_includes_multisampled_depth() {
         const HDR: u64 = 8; // Rgba16Float
         const MSAA: u64 = HDR * deep_engine_native::mesh_abi::FORWARD_SAMPLE_COUNT as u64;
         const DEPTH: u64 = 4; // Depth24Plus
-        let per_pixel = HDR + MSAA + DEPTH;
-        assert_eq!(per_pixel, 44);
-        assert_eq!(1280 * 720 * per_pixel, 40_550_400, "1280x720 约 40 MB");
+        let per_pixel =
+            HDR + MSAA + DEPTH * deep_engine_native::mesh_abi::FORWARD_SAMPLE_COUNT as u64;
+        assert_eq!(forward_target_bytes_per_pixel(), per_pixel);
+        assert_eq!(per_pixel, 56);
+        assert_eq!(1280 * 720 * per_pixel, 51_609_600);
         // IBL(约 27 KB)与紧凑阴影(64 KB)相对前向目标可忽略,不应作为裁剪目标。
         assert!(3454 * 8 < 1280 * 720 * per_pixel / 1000);
     }

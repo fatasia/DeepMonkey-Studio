@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Correct Native forward-target memory estimates to include multisampled depth; document the HDR background dependency before trimming the pure-2D render path.
+
 - Preserve imported material alpha and depth-write policy when restoring scene opacity; repeated shared-material updates do not compound opacity or repeatedly invalidate shaders.
 
 - Verify uploaded Dashboard backgrounds and chart headings through HTTP publication and actual ZIP, DMDA and standalone EXE playback, preserving page ownership and frozen package identity.

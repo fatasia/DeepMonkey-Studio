@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- Deep2D P1-09源码复核：修正前向目标预算漏算深度4×MSAA，逻辑估算44→56 B/px；输出pass实际读取HDR并做ACES/编码，撤销旧“零像素依赖”判断。5项CPU档位测试通过；未减少GPU分配、未声称物理显存测量或视觉等价。[依据与后续](specs/native-forward-budget-correction-2026-09-17.md)
+
 - JT 源透明度 `7b5138d` 已复核：场景透明度改为源alpha倍率，模型/对象两入口共用WeakMap基线，共享材质不累乘。主线新增模式切换才重编译、禁写深度恢复两项回归，3文件32项及Web类型通过；查看深色完整模型、浅色灰银对照截图确认外壳可透视、双实例可见。完整JT与未测视觉维度继续待验。[证据](reports/industrial-jt-material-visual-2026-09-17.md)
 
 - 背景图完整交付 `3ba4c98`：真实 multipart 上传→资源登记→发布/公开读取→磁盘重开→候选→ZIP/DMDA/无参数 EXE 实际打开通过。主线独立复跑6项、严格类型检查通过，ZIP/EXE/运行包SHA与报告逐项一致；背景归属和包内像素校验不扩大为GPU像素读回或跨端外观完成。[证据](specs/dashboard-http-background-delivery-2026-09-17.md)

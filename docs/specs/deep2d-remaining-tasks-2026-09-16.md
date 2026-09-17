@@ -54,6 +54,8 @@ P0 进入点：`apps/web/src/delivery/compileDashboardContent.ts`、`packages/de
 
 性能接手入口：`chart/rows.rs`、`runtime_data.rs`、`chart_ir.rs`、`semantic_validation.rs`、`geometry_frame.rs`、`deep2d/painter_cache.rs`、`deep2d_vertex_transfer.rs`、`deep2d_gpu.rs`。所有路径都先测量再决定改造。
 
+**P1-09 最新修正（2026-09-17）**：上表44 B/px与“零像素依赖”是旧结论，已由源码复核推翻。实际描述符的逻辑估算为56 B/px（深度也是4×采样），1280×720为51,609,600 B；输出shader读取HDR底色，半透明内容和留白仍依赖它。下一片须保留ACES/编码后的背景、Bloom/Fog语义并做像素等价验证，不可直接删除输出pass。当前仍未实施目标裁剪，见[修正证据](native-forward-budget-correction-2026-09-17.md)。
+
 ### 数据连接与图表交互
 
 | ID | 剩余任务、已有部分与完成条件 |
