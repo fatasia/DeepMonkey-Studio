@@ -35,6 +35,16 @@ export type ProjectionResult = {
   acknowledge(): boolean;
 } | { readonly ok: false; readonly issues: readonly ProjectionIssue[] };
 
+export interface IncrementalProjectionMetrics {
+  readonly mode: "incremental" | "full-fallback";
+  readonly sourceObjectCount: number;
+  readonly rebuiltObjectCount: number;
+  readonly reusedObjectCount: number;
+  readonly allocatedInstanceCount: number;
+}
+
+export type IncrementalProjectionResult = ProjectionResult & { readonly metrics: IncrementalProjectionMetrics };
+
 export class ProjectionFailure extends Error {
   constructor(readonly code: ProjectionIssue["code"], readonly feature: string, message: string) { super(message); }
 }

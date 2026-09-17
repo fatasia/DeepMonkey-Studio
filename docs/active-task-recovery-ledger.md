@@ -2025,7 +2025,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 显式 nodeId→Three object 一对一绑定；applied flush 映射节点脏域，父 transform/hidden 包含完整后代，缺绑定/删除请求 full fallback，迟到计划不可 acknowledge。
 - 100 叶节点夹具单叶变化只产出 1/101 脏对象；不扫描未变 sibling 的几何/材质，父子重叠脏域会去重。聚焦 28 项与 Deep core/lab typecheck 通过。
-- 本片只完成 B01→B02 前置脏域合同；ThreeProjectionBridge 缓存对象消费、full packet 对拍、内存/耗时基准与真实 GPU 仍待，B02 整卡保持本轮待办。纯合同无像素变化，视觉闭环不适用。[证据](specs/de26-b02-changeset-dirty-domain-2026-09-17.md)
+- `ThreeProjectionBridge.projectDirty` 已实际消费脏域并复用 accepted 对象/资源缓存；transform、父隐藏、重叠域、共享材质、独立纹理、删除与缺绑定均和 full packet 逐项相同。threeBridge 21 文件/218 项与 core/lab typecheck 通过。
+- 100 叶单叶更新只重建 1/101 对象、分配 1/100 instance；Node 31 样本 p50 1.996 ms 对 full 2.809 ms，p95 4.329 ms 对 7.567 ms。Studio/Web 宿主消费、真实 GPU/内存与浏览器视觉仍待，B02 保持本轮待办。[证据](specs/de26-b02-changeset-dirty-domain-2026-09-17.md)
 
 ### 2026-09-17 X_T 单顶点边界候选门禁（Codex）
 

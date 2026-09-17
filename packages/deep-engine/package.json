@@ -187,6 +187,7 @@
     "gate:source-size": "node scripts/sourceSizeGate.mjs",
     "gate:runtime-purity": "node scripts/runtimePurityGate.mjs",
     "benchmark:residency-planner": "node scripts/benchmarkPacketResidencyPlanner.mjs",
+    "benchmark:three-incremental": "tsx scripts/benchmarkThreeProjectionIncremental.ts",
     "inventory:three": "node scripts/collectThreeInventory.mjs",
     "inventory:shader": "node scripts/collectShaderInventory.mjs docs/specs/deep-engine-shader-source-inventory-2026-09-12.json",
     "inventory:native-ui": "node scripts/collectNativeUiInventory.mjs"

@@ -354,6 +354,9 @@
    "evidence": [
     "packages/deep-engine/src/threeBridge/SceneChangesetProjection.ts",
     "packages/deep-engine/src/threeBridge/SceneChangesetProjection.test.ts",
+    "packages/deep-engine/src/threeBridge/ThreeProjectionBridge.ts",
+    "packages/deep-engine/src/threeBridge/ThreeProjectionBridge.incremental.test.ts",
+    "packages/deep-engine/scripts/benchmarkThreeProjectionIncremental.ts",
     "docs/specs/de26-b02-changeset-dirty-domain-2026-09-17.md"
    ],
    "completed": false,
@@ -363,7 +366,7 @@
     "DE26/B01",
     "DE26/A03"
    ],
-   "note": "第一切片已把 applied SceneChangeset 映射为节点级 Three 脏域，父变化含后代，缺绑定/删除 full fallback，迟到计划不可确认并输出 dirty ratio；ThreeProjectionBridge 对象缓存消费、full packet 对拍与真实 GPU 仍待完成。"
+   "note": "applied SceneChangeset 已驱动 ThreeProjectionBridge accepted 对象/资源缓存增量；transform、父隐藏、重叠域、共享材质、纹理、删除/缺绑定与 full packet 对拍通过，100 叶单叶只重建 1 对象/分配 1 instance。Studio/Web 宿主、真实 GPU/内存与浏览器视觉仍待完成。"
   },
   {
    "id": "B03",

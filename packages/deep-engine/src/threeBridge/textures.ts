@@ -57,6 +57,16 @@ export class ThreeTextureProjector {
     for (const id of this.cache.keys()) if (!this.acceptedIds.has(id)) this.cache.delete(id);
   }
 
+  /** Incremental projection completes its partial visit with the complete active texture set. */
+  completeProjection(resources: readonly DecodedTexture[]): void {
+    const ids = new Set<string>(); let bytes = 0;
+    for (const resource of resources) {
+      ids.add(resource.id); bytes += resource.data.byteLength;
+    }
+    if (ids.size > 4096 || bytes > 128 * 1024 * 1024) limit("texture packet budget");
+    this.projectedIds = ids; this.projectedBytes = bytes;
+  }
+
   projectBaseColor(value: unknown): ProjectedTexture {
     return this.projectSingle(value, "material.map", "baseColor", convertSrgbSample);
   }

@@ -1,7 +1,8 @@
 export { ThreeProjectionBridge } from "./ThreeProjectionBridge.js";
 export { SceneChangesetProjection } from "./SceneChangesetProjection.js";
 export type { ThreeProjectionDirtyMetrics, ThreeProjectionDirtyPlan, ThreeSceneNodeBinding } from "./SceneChangesetProjection.js";
-export type { ThreeObjectSource, ThreeProjectionHooks, ProjectionIssue, ProjectionResult } from "./types.js";
+export type { ThreeObjectSource, ThreeProjectionHooks, ProjectionIssue, ProjectionResult,
+  IncrementalProjectionMetrics, IncrementalProjectionResult } from "./types.js";
 export { DeepWebGpuBackend, DeepWebGpuProjectionError } from "./DeepWebGpuBackend.js";
 export type { DeepWebGpuBackendCreateRequest, DeepWebGpuBackendOptions, DeepWebGpuBackendRuntime,
   DeepWebGpuRenderRuntime, DeepWebGpuRuntimeFactory, DeepWebGpuShadowSelection,
