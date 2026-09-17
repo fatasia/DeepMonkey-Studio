@@ -46,6 +46,8 @@ mod selection_probe;
 mod shadow_update_probe;
 mod window_events;
 #[cfg(windows)]
+mod x_input;
+#[cfg(windows)]
 mod x_runtime;
 #[cfg(windows)]
 mod x_transport;

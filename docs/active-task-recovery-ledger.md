@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 X 窗口输入接线（Codex）
+
+- 已完成：winit pointer/Enter/左右键→64 项队列→下一 tick；连续 pointer 合并、按键顺序保留、letterbox 留白拒绝、活动包身份检查，Esc 仍由窗口处理。
+- 输入聚焦 4/4 含真实 LPAC pointer/key 回执；窗口 GPU 回归 3/3。当前 ReadEvent 仍是位置读取，越界拒绝；无新输入沿用包内 defaults。
+- 本轮待办：真实硬件端到端交互、会话续期、动态显示适配器与 Kimi-95 视觉。输入接线不等于图形动态求值。[证据](specs/deep2d-p2-01-x-window-input-2026-09-17.md)
+
 ### 2026-09-17 X 窗口后台 tick（Codex）
 
 - 已完成：首帧成功后后台单在途 LPAC 求值；相同显示层复用，变化候选沿用 GPU 事务呈现；活动包身份隔离旧回执，停止/退出回收 worker。
@@ -2052,6 +2058,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - A-1811/face 1199 与 A-1821/face 226 已确认正确读取单顶点 bound，但候选评分只核验边段，允许丢失 apex 的重建面胜出。最小修复把文件声明的单顶点纳入原有 boundary gap 门禁，不改 0.01 mm 阈值、不按样本特判。
 - cad-tess 37/37、release 构建、109/109 真实转换通过；逐面几何审计由 19,154 matched / 9 mismatch / 181 unresolved 改善为 19,156 / 7 / 181，两面残差降至 `3.75e-7 mm` 与 `2.30e-7 mm`，无新增 mismatch。
 - 剩余 7 个差异仍是两类重建曲面偏差、三类交线 chart/stand-in 偏差；生产 profile 继续为 0。[证据](reports/industrial-x-t-apex-boundary-2026-09-17.md)
+
+### 2026-09-17 X_T 交线 chart 投影细分（Codex）
+
+- AA-0220LB 两个圆柱面的共同根因是共享 INTERSECTION edge 42：稀疏 chart 的弦偏离解析曲面，而端到端 walk 会跳到另一交线分支；零裂缝 rebuild 还可离开解析曲面 1.371/2.841 mm 后胜出。
+- chart 分支回退改为受局部分辨率约束的双曲面投影与 sag 自适应细分；解析面 rebuild（含 planar fallback）统一受 sag 门禁。固定 0.01 mm，不按样本特判。
+- cad-xt 16/16、cad-tess 37/37、release build、109/109 真实转换通过；逐面审计由 19,156/7/181 改善到 19,158/5/181，目标面残差为 0.002928/0.003044 mm，无新增 mismatch。[证据](reports/industrial-x-t-projected-intersection-2026-09-17.md)
 
 ### 2026-09-17 3DM 参数化 2 映射（Codex）
 

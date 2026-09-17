@@ -60,6 +60,8 @@ pub(super) fn handle(
         WindowEvent::HoveredFileCancelled => app.drop_batch.cancel(),
         WindowEvent::CursorMoved { position, .. } => {
             app.state.cursor = Some([position.x, position.y]);
+            #[cfg(windows)]
+            super::x_input::pointer(app);
             super::chart::pointer(app, false);
         }
         WindowEvent::CursorLeft { .. } => {
@@ -94,6 +96,12 @@ pub(super) fn handle(
         WindowEvent::KeyboardInput { event, .. }
             if event.state == ElementState::Pressed && !event.repeat =>
         {
+            #[cfg(windows)]
+            if let PhysicalKey::Code(key) = event.physical_key
+                && super::x_input::key(app, key)
+            {
+                return;
+            }
             if let PhysicalKey::Code(key) = event.physical_key
                 && super::dashboard::key(app, key)
             {

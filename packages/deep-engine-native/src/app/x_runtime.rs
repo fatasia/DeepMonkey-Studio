@@ -24,6 +24,7 @@ pub(super) struct Runtime {
     accepted: u64,
     pending: Option<Receipt>,
     stopped: bool,
+    inputs: super::x_input::InputQueue,
 }
 
 pub(super) fn presented(app: &mut NativeApp) {
@@ -49,6 +50,7 @@ pub(super) fn presented(app: &mut NativeApp) {
                 accepted: 0,
                 pending: None,
                 stopped: false,
+                inputs: Default::default(),
             });
         }
         Err(error) => fail(app, &error),
@@ -61,6 +63,24 @@ pub(super) fn smoke_pending(app: &NativeApp) -> bool {
             .x_runtime
             .as_ref()
             .is_none_or(|runtime| runtime.accepted < 3 && !runtime.stopped)
+}
+
+pub(super) fn input(app: &mut NativeApp, event: deep_engine_native::compat_x::XEvent) {
+    let source = app.content.active().x_template.clone();
+    let result = app
+        .x_runtime
+        .as_mut()
+        .filter(|runtime| {
+            !runtime.stopped
+                && source
+                    .as_ref()
+                    .is_some_and(|source| Arc::ptr_eq(source, &runtime.template))
+        })
+        .ok_or("X input unavailable before first presentation or after session stop")
+        .and_then(|runtime| runtime.inputs.push(event));
+    if let Err(error) = result {
+        fail(app, error);
+    }
 }
 
 pub(super) fn tick(app: &mut NativeApp, event_loop: &ActiveEventLoop) -> bool {
@@ -179,7 +199,7 @@ fn advance(app: &mut NativeApp, runtime: &mut Runtime) -> Result<(), String> {
             .random_seed
             .checked_add(sequence)
             .ok_or("X seed overflow")?,
-        events: request.events.clone(),
+        events: runtime.inputs.take_or_defaults(&request.events),
     })
 }
 
