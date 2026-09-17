@@ -32,6 +32,8 @@
 
 - C1缺口①修复：fill.ts扫描线active边判定改半开区间[lo,hi)——弧环对称采样点2 ulp浮点差产生幽灵band，旧严格开区间在mid舍入压线时排错边致奇数crossings；7种环全顶点采样暴力验证奇偶守恒。C1全量复跑（不剥离pie/gauge）：彩色像素52288→126734、SSIM 0.175→0.954，pie 72°/288°与gauge 270°环+指针全部呈现；deep-engine 147文件1150项全绿。像素级对照仍归P0-08正式矩阵。
 
+- C1缺口②关闭：dashboardChartFrame新增initialChartState（Native from_ir同序同语义派生窗口，数值/log/类目/band全按Native同式，fail-closed同边界——未知action/系列/轴/越界窗口两侧同样拒绝，运行期action两侧都不出静态像素并登记deferred）；C1复跑fixture原样进controller（fixtureAdaptation空），SSIM 0.9544→0.9610、web彩色像素129077 vs Native 132913，证据test-output/chartframe-initial-state-20260918/。聚焦82全绿，golden 36例不受影响。两个C1已知缺口全部关闭。
+
 - 补漏 `9146d7f` 后的data_source.rs挂载单独fixup提交（泵切片add路径错误）。
 
 - 缺陷①根因修复 `2cb395d`：deep2d_scissor 的chunk_scissor用逐轴拉伸+零偏移，与shader/命中/相机的LetterboxMapping不一致——被node.clip收窄的chunk（标题+单位）在非等比窗口scissor错位整条被裁。修复改用同一映射并补字母箱错位测试钉；新增任意物理尺寸读回harness并修复bytes_per_row 256对齐缺口（1200宽曾静默全零）。修复前0/3220→后3220/3220，真实包标题3876px恢复，整帧diff仅2537px全落标题区；真实窗口截图「分区域出力/MW」可见；bin 126+GPU 45全过、clippy/fmt干净。缺陷③轴/图例确认为编译层缺口（present_chart不生成quad），归P0-01。[报告](specs/deep2d-title-letterbox-fix-2026-09-18.md)
