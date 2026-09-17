@@ -1928,6 +1928,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 作者输入只含封闭 X IR；拒绝 camera/chart/chartSim/dashboard、脚本/路径/开关/自定预算、accessor/hidden/symbol/cycle、错误引用与超限。资源身份和 CPU/内存/深度/消息/IPC 预算与 Native 默认合同一致，不在 TS 新建求值运行时。
 - TS 实际 golden 由 Rust v6 loader 读取，并由真实 LPAC child 发布 `Number(42)`；TS runtimePackage 312、Web 1、Rust 7（另 1 child-only 实际调起）、engine build/typecheck、Web tsc、Native clippy/fmt 通过。编辑器操作映射、正式发布路由、绘制消费和持续 tick 仍待办。[证据](specs/deep2d-p2-01-typescript-x-author-2026-09-17.md)
 
+### 2026-09-17 Deep2D P2-01 Native 显式 X 包执行入口（Codex）
+
+- 正式播放器新增显式 `--headless-x-package`：完整校验作者 v6 包后，只走同目录固定 worker、零 capability LPAC、Windows Job、封闭 IPC 与既有 scheduler；输出 package/resource/revision/epoch/request/output hash 和 typed messages 的单行 JSON 回执。
+- 普通 `--package` / `--headless-package` 仍拒绝 v6；缺 worker、伪 PE、额外 worker 路径和默认路线均 fail-closed，无普通进程降级。TypeScript golden 经真实产品 CLI 返回 `Number(42)`，同包走普通 loader 失败。
+- v6 包 7 项（另 1 child-only 实际调起）、产品 CLI 纵向 1 项、clippy/fmt 通过。该入口为一次性 headless 产品链；正式发布服务路由、绘制消费、持续 tick 与跨重启 LKG 仍待办。[证据](specs/deep2d-p2-01-native-x-package-cli-2026-09-17.md)
+
 ### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
 
 - 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。

@@ -65,4 +65,40 @@ fn product_scheduler_requires_fixed_worker_and_runs_only_lpac() {
         !extra.status.success(),
         "CLI cannot accept worker path override"
     );
+
+    let package_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../deep-engine/fixtures/experimental-x-runtime-v6.json");
+    let executed = Command::new(&player)
+        .args(["--headless-x-package", package_path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        executed.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&executed.stdout),
+        String::from_utf8_lossy(&executed.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&executed.stdout);
+    let receipt: serde_json::Value = serde_json::from_str(
+        stdout
+            .strip_prefix("Deep2D X runtime package OK: ")
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(receipt["packageId"], "x.author");
+    assert_eq!(receipt["resourceId"], "x:status");
+    assert_eq!(
+        receipt["messages"],
+        serde_json::json!([{"type":"number","data":42.0}])
+    );
+
+    let default_loader = Command::new(&player)
+        .args(["--headless-package", package_path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        !default_loader.status.success(),
+        "v6 must stay out of the ordinary player route"
+    );
 }

@@ -127,6 +127,11 @@ pub fn execute() -> Result<(), String> {
             reject_extra(args)?;
             crate::x_worker_cli::run()
         }
+        Some("--headless-x-package") => {
+            let path = required_path(&mut args, "--headless-x-package")?;
+            reject_extra(args)?;
+            crate::x_worker_cli::run_package(&path)
+        }
         Some(option @ ("--package" | "--smoke-package" | "--headless-package")) => {
             let path = required_path(&mut args, option)?;
             reject_extra(args)?;
