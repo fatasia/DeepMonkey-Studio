@@ -1730,3 +1730,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 用户指令:[已脱敏]目录 RVT 不作基准语料;RVT 用 D:/Download。执行:A02 清单重生成=BIMFACE 示例模型(6.2MB,实测 sha256 8087a360…)+Snowdon Towers(94.7MB);BIMFACE "(1)" 文件与原件字节级相同已去重,不造假分母;PLAN-02 报告补用户决议注记。语料=2 个唯一真实项目。
 - 测试纪律(用户指令):测试环节不拖长——聚焦测试优先,全量只在切片合拢时跑。
+
+### 2026-09-17 DE26/G02 切片 1:筛选器 chrome 编译(GLM)
+
+- 已完成:dashboardWidgetContent 新增 filter 分支——选中高亮条为矢量可编译(首选项高亮 rect);选项文字走字形延迟通道如实登记(P1-18);compiledFields 声明 options/filterMode/title;边界:空选项=仅 chrome 无高亮、>16 项截断登记、parentFilterKey 禁用态原因。方案文档 [de26-g02-filter-compile-plan](specs/de26-g02-filter-compile-plan-2026-09-17.md)(dd4e63e)。
+- 验证:聚焦测试 3 项通过;typecheck 0 错误;compileDashboardContent 回归通过。
+- 边界(如实):切片 2(命中路由→setFilter 命令)与切片 3(数据流贯通)未做;多选/日期模式外观已含行为后置。

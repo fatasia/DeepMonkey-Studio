@@ -80,6 +80,28 @@ function lowerWidgetContent(
   }
   const box = contentBox(node.frame);
   if (!box) { reasons.push("组件内容框为空"); return false; }
+  if (widget.type === "filter") {
+    // G02 切片 1:筛选 chrome(选中高亮条为矢量可编译);选项文字走字形延迟通道(P1-18),原因如实登记。
+    const options = (widget.options ?? []).slice(0, 16);
+    if ((widget.options ?? []).length > 16) reasons.push("选项超过 16 项,首切片截断渲染");
+    const inset = DASHBOARD_CONTENT_INSET;
+    const rowHeight = Math.max(18, Math.floor((node.frame.height - inset * 2) / Math.max(options.length, 1)));
+    options.forEach((option, index) => {
+      if (index === 0) {
+        const id = `${bindingId}.option-selected`;
+        draw({ kind: "path", id: `${id}.draw`, pathId: id, zOrder: node.zIndex,
+          transform: [1, 0, 0, 1, node.frame.x + inset, node.frame.y + inset + index * rowHeight],
+          fill: [0.84, 0.67, 0.30, 0.28] },
+        { kind: "path", id, revision, verbs: rectangle(node.frame.width - inset * 2, rowHeight) });
+      }
+      compiledFields.push("widget.options");
+    });
+    if (widget.filterMode) compiledFields.push("widget.filterMode");
+    if (widget.title) compiledFields.push("widget.title");
+    if (widget.parentFilterKey) reasons.push("父参数未编译:父参数就绪前该控件为禁用态,交互语义归 G01 宿主");
+    reasons.push("选项文字等待字形图集通道(P1-18);筛选行为(setFilter 命令路由)归 G02 切片 2");
+    return options.length > 0;
+  }
   if (CHART_WIDGET_TYPES.has(widget.type)) {
     reasons.push("图表内容经 ChartIR 动态通道编译,Dashboard 组合尚未接线");
     return false;
