@@ -6,8 +6,9 @@ mod raster;
 mod shadow;
 
 use deep_engine_native::{contract::AlphaMode, shadow_cache::ShadowCasterMode};
+use mesh::BlendSemantic;
 
-pub const MESH_PIPELINE_VARIANTS: usize = 12;
+pub const MESH_PIPELINE_VARIANTS: usize = 18;
 pub const SHADOW_PIPELINE_VARIANTS: usize = 9;
 
 pub struct MeshPipelines {
@@ -17,6 +18,7 @@ pub struct MeshPipelines {
 struct ActiveMeshPipelines {
     solid: MaterialPipelines,
     blend: MaterialPipelines,
+    blend_premultiplied: MaterialPipelines,
     shadow: ShadowPipelines,
 }
 
@@ -65,6 +67,7 @@ impl MeshPipelines {
     pub fn select(
         &self,
         alpha_mode: AlphaMode,
+        premultiplied: bool,
         mirrored: bool,
         double_sided: bool,
         normal_mapped: bool,
@@ -73,8 +76,13 @@ impl MeshPipelines {
             .active
             .as_ref()
             .expect("scene draws require material pipelines");
+        // DE26/C03:premultiplied 是独立管线变体(RGB blend 因子 one),不与 solid/straight 混用。
         let set = if alpha_mode == AlphaMode::Blend {
-            &active.blend
+            if premultiplied {
+                &active.blend_premultiplied
+            } else {
+                &active.blend
+            }
         } else {
             &active.solid
         };
@@ -123,14 +131,21 @@ pub fn create_mesh_pipelines(
                 frame_layout,
                 material_layout,
                 shader,
-                false,
+                BlendSemantic::Solid,
             ),
             blend: mesh::create_material_pipelines(
                 device,
                 frame_layout,
                 material_layout,
                 shader,
-                true,
+                BlendSemantic::Straight,
+            ),
+            blend_premultiplied: mesh::create_material_pipelines(
+                device,
+                frame_layout,
+                material_layout,
+                shader,
+                BlendSemantic::Premultiplied,
             ),
             shadow: shadow::create_shadow_pipelines(
                 device,

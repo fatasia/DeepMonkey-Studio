@@ -194,7 +194,7 @@ impl ApplicationHandler<GpuEvent> for Probe {
             }
             9 => {
                 let renderer = self.app.renderer.as_ref().unwrap();
-                assert_eq!(renderer.pipeline_counts(), (12, 9));
+                assert_eq!(renderer.pipeline_counts(), (18, 9));
                 assert_eq!(renderer.shadow_summary().depth_texture_bytes, 67108864);
                 assert!(!self.app.content.active().packet().instances.is_empty());
                 self.present(event_loop);

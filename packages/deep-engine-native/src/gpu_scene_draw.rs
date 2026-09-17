@@ -209,6 +209,7 @@ impl GpuScene {
         } else {
             pass.set_pipeline(pipelines.select(
                 batch.alpha_mode,
+                batch.premultiplied,
                 batch.mirrored,
                 batch.double_sided,
                 material.normal_mapped,

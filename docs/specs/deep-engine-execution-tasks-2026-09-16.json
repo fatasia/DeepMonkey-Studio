@@ -636,13 +636,19 @@
    ],
    "status": "本轮待办",
    "proposed": true,
-   "evidence": [],
+   "evidence": [
+    "docs/specs/de26-c03-transparency-twosided-2026-09-17.md",
+    "packages/deep-engine/src/threeBridge/ThreeProjectionBridge.transparency.test.ts",
+    "packages/deep-engine/src/webgpu/weightedOitBlendSemantics.test.ts",
+    "packages/deep-engine-native/src/contract/contract_transparency_tests.rs"
+   ],
    "completed": false,
    "document": "deep-engine-tasks-foundation-2026-09-16.md#c03",
    "qualifiedId": "DE26/C03",
    "qualifiedDependsOn": [
     "DE26/C01"
-   ]
+   ],
+   "note": "第一切片完成：straight/premultiplied 与 front/double 支持矩阵冻结，Web weighted OIT、Native 18 管线变体、bit128、发布往返、确定排序与阴影排除贯通；GPU 像素探针、side=back 与透明写深度仍待后续，故整卡保持本轮待办"
   },
   {
    "id": "C04",

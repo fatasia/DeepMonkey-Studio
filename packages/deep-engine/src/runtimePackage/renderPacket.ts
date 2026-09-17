@@ -5,7 +5,8 @@ export { assertNativePacketDeformationSupported } from "./renderPacketDeformatio
 
 const GEOMETRY_OPTIONAL = ["uv0", "uv1", "tangents", "colors"];
 const MATERIAL_OPTIONAL = ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture",
-  "emissiveFactor", "emissiveStrength", "emissiveTexture", "baseColorAlpha", "alphaMode", "alphaCutoff", "doubleSided", "fog", "shadingModel"];
+  "emissiveFactor", "emissiveStrength", "emissiveTexture", "baseColorAlpha", "alphaMode", "alphaCutoff", "doubleSided",
+  "premultipliedAlpha", "fog", "shadingModel"];
 const SLOT_FIELDS = ["texCoord", "offset", "scale", "rotation"];
 const SAMPLER_FIELDS = ["addressModeU", "addressModeV", "magFilter", "minFilter", "mipmapFilter", "maxAnisotropy"];
 function id(value: unknown, path: string): void {

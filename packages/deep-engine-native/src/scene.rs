@@ -23,6 +23,8 @@ pub struct DrawBatch {
     pub mirrored: bool,
     pub double_sided: bool,
     pub alpha_mode: AlphaMode,
+    /// DE26/C03:仅 Blend 材质可为 true;选择 premultiplied blend 管线变体。
+    pub premultiplied: bool,
     pub sort_center: Option<[f32; 3]>,
     pub stable_order: usize,
     pub instance_start: u32,
@@ -55,6 +57,7 @@ struct BatchKey {
     mirrored: bool,
     double_sided: bool,
     alpha_mode: AlphaMode,
+    premultiplied: bool,
     blend_instance: Option<usize>,
 }
 
@@ -111,6 +114,8 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
         let material = &packet.materials[material_index];
         let double_sided = material.double_sided.unwrap_or(false);
         let alpha_mode = material.alpha_mode.unwrap_or(AlphaMode::Opaque);
+        let premultiplied =
+            alpha_mode == AlphaMode::Blend && material.premultiplied_alpha.unwrap_or(false);
         let mirrored = determinant.is_sign_negative();
         let sort_center = (alpha_mode == AlphaMode::Blend)
             .then(|| transform_center(&instance.transform, geometry_centers[geometry_index]))
@@ -152,6 +157,7 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
             mirrored: !double_sided && mirrored,
             double_sided,
             alpha_mode,
+            premultiplied,
             blend_instance: (alpha_mode == AlphaMode::Blend).then_some(instance_order),
         };
         let batch_index = match batch_map.get(&key) {
@@ -176,6 +182,7 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
                 if mirrored { -1.0 } else { 1.0 },
                 surface_flags(
                     alpha_mode,
+                    premultiplied,
                     double_sided,
                     instance.receive_shadow,
                     material.shading_model,
@@ -202,6 +209,7 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
             mirrored: batch.key.mirrored,
             double_sided: batch.key.double_sided,
             alpha_mode: batch.key.alpha_mode,
+            premultiplied: batch.key.premultiplied,
             sort_center: batch.sort_center,
             stable_order,
             instance_start,

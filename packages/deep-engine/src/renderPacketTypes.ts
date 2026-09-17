@@ -49,13 +49,19 @@ export interface PbrMaterial {
   /** KHR_materials_emissive_strength 线性增益；默认 1，范围 0..256。 */
   readonly emissiveStrength?: number;
   readonly emissiveTexture?: TextureSlot;
-  /** baseColor alpha factor，OPAQUE 会忽略覆盖率，MASK/BLEND 使用它。 */
+  /** baseColor alpha factor，OPAQUE 会忽略覆盖率，MASK/BLEND 使用它；BLEND 下 0 表示完全不可见但合法。 */
   readonly baseColorAlpha?: number;
   readonly alphaMode?: AlphaMode;
-  /** MASK 默认 0.5；BLEND/OPAQUE 中保留但不参与覆盖率。 */
+  /** MASK 默认 0.5；BLEND/OPAQUE 中保留但不参与覆盖率（仅阴影 mask）。与 MASK/BLEND 互斥由单值 alphaMode 保证。 */
   readonly alphaCutoff?: number;
   /** true 时关闭背面剔除，并在背面光照前翻转法线。 */
   readonly doubleSided?: boolean;
+  /**
+   * DE26/C03 透明语义：true 表示 baseColor 与 baseColorTexture 的 RGB 已按 alpha 预乘。
+   * 仅 alphaMode=BLEND 合法；缺省 false 即 straight。Web 端由 weighted OIT premultiplied
+   * 累积分支承接，Native 端切换 premultiplied blend 因子（RGB one）。
+   */
+  readonly premultipliedAlpha?: boolean;
   /** Omitted enables scene fog; false sets existing instance material flag bit 32. */
   readonly fog?: boolean;
 }
@@ -169,6 +175,8 @@ export interface PreparedBatch {
   readonly alphaMode: AlphaMode;
   /** Explicit BLEND cutout threshold, when authored; undefined means solid BLEND shadow. */
   readonly alphaCutoff?: number;
+  /** BLEND 材质声明 premultipliedAlpha 时的批次显式标记；缺省为 straight。 */
+  readonly premultipliedAlpha?: boolean;
   readonly castShadow?: boolean;
   /** 旧透明排序桥接可选中心；默认 weighted OIT 会合并兼容批次且不生成该字段。 */
   readonly sortCenter?: readonly [number, number, number];

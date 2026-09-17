@@ -92,6 +92,8 @@ function bakeGeometry(geometry: GeometryResource, target: Readonly<{ maxVertices
 
 function materialVariantKey(material: PbrMaterial): string {
   return [material.id, material.alphaMode ?? "OPAQUE", material.doubleSided ? "double" : "single",
+    // 仅在 BLEND + premultiplied 时出现该段：旧包(字段缺省)的 variant key 字节不变。
+    ...(material.alphaMode === "BLEND" && material.premultipliedAlpha === true ? ["premultiplied"] : []),
     material.baseColorTexture ? "base" : "no-base", material.metallicRoughnessTexture ? "mr" : "no-mr",
     material.normalTexture ? "normal" : "no-normal", material.occlusionTexture ? "ao" : "no-ao",
     material.emissiveTexture ? "emissive" : "no-emissive"].join("|");

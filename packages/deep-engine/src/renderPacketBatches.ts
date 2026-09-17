@@ -17,6 +17,7 @@ interface MutableBatch {
   readonly mirrored: boolean;
   readonly doubleSided: boolean;
   readonly alphaMode: AlphaMode;
+  readonly premultiplied: boolean;
   readonly alphaCutoff?: number;
   readonly castShadow: boolean;
   readonly offsets: number[];
@@ -61,9 +62,10 @@ export function packInstanceBatches(
     if (instance.receiveShadow === false) staging[offset + 31]! += 16;
     const alphaMode = material.alphaMode ?? "OPAQUE";
     const doubleSided = material.doubleSided === true;
+    const premultiplied = alphaMode === "BLEND" && material.premultipliedAlpha === true;
     const batchMirrored = doubleSided ? false : mirrored;
     const castShadow = instance.castShadow !== false;
-    const key = batchKey(instance.geometry, batchMirrored, doubleSided, alphaMode, textures, lod)
+    const key = batchKey(instance.geometry, batchMirrored, doubleSided, alphaMode, premultiplied, textures, lod)
       + (lod?.strategy === "author-selected" ? `/author-lod:${JSON.stringify(instance.id)}` : "")
       + (castShadow ? "" : "/no-shadow") + (instance.pose === undefined ? "" : `/pose:${JSON.stringify(instance.pose)}`);
     let batch = grouped.get(key);
@@ -75,6 +77,7 @@ export function packInstanceBatches(
         mirrored: batchMirrored,
         doubleSided,
         alphaMode,
+        premultiplied,
         ...(material.alphaCutoff === undefined ? {} : { alphaCutoff: material.alphaCutoff }),
         castShadow,
         offsets: [],
@@ -107,8 +110,11 @@ function packMaterialRecord(
   target[offset + 30] = mirrored ? -1 : 1;
   const alphaMode = material.alphaMode ?? "OPAQUE";
   const doubleSided = material.doubleSided === true;
+  // 位图与 Native surface_flags 逐位对拍：1 double、2 mask、4 blend、(+2) blend cutoff、
+  // 16 不接收阴影、32 fog off、64 unlit、128 premultiplied（仅 BLEND，validate 保证）。
+  const premultiplied = alphaMode === "BLEND" && material.premultipliedAlpha === true;
   target[offset + 31] = (doubleSided ? 1 : 0) + (alphaMode === "MASK" ? 2 : alphaMode === "BLEND" ? 4 + (material.alphaCutoff !== undefined ? 2 : 0) : 0)
-    + (material.fog === false ? 32 : 0) + (material.shadingModel === "unlit" ? 64 : 0);
+    + (material.fog === false ? 32 : 0) + (material.shadingModel === "unlit" ? 64 : 0) + (premultiplied ? 128 : 0);
   const emissiveFactor = material.emissiveFactor ?? [0, 0, 0];
   // v1 plain ABI 没有空闲标量，故无材质组时预乘 strength；材质组路径在 WGSL 显式乘 emissiveRow1.w。
   const emissiveScale = textures ? 1 : material.emissiveStrength ?? 1;
@@ -139,6 +145,7 @@ function finalizeBatches(
       mirrored: group.mirrored,
       doubleSided: group.doubleSided,
       alphaMode: group.alphaMode,
+      ...(group.premultiplied ? { premultipliedAlpha: true } : {}),
       ...(group.alphaCutoff === undefined ? {} : { alphaCutoff: group.alphaCutoff }),
       ...(group.castShadow ? {} : { castShadow: false }),
       data,
@@ -155,11 +162,14 @@ function batchKey(
   mirrored: boolean,
   doubleSided: boolean,
   alphaMode: AlphaMode,
+  premultiplied: boolean,
   textures: PreparedMaterialTextures | undefined,
   lod: PreparedLodProfile | undefined,
 ): string {
   // Keep the retired per-instance transparency discriminator slot stable so existing
   // packet caches do not churn when moving to batched weighted OIT.
+  // premultiplied 以条件后缀区分混合公式；缺省 straight 的旧包 key 字节不变。
   const topology = lod?.strategy === "author-selected" ? { strategy: lod.strategy, levels: lod.levels } : lod;
-  return JSON.stringify([geometry, mirrored, doubleSided, alphaMode, textures ?? null, topology ?? null]);
+  return JSON.stringify([geometry, mirrored, doubleSided, alphaMode, textures ?? null, topology ?? null])
+    + (premultiplied ? "/premultiplied" : "");
 }

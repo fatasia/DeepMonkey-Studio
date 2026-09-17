@@ -95,7 +95,7 @@ impl ApplicationHandler<GpuEvent> for Probe {
         .unwrap();
         full.verify_candidate_frame().unwrap();
         assert_eq!(full.shadow_summary().depth_texture_bytes, 67108864);
-        assert_eq!(full.pipeline_counts(), (12, 9));
+        assert_eq!(full.pipeline_counts(), (18, 9));
         assert!(!full.requires_content_rebuild(&three));
         assert!(full.requires_content_rebuild(&two));
         // A same-profile edit remains incremental; failed validation keeps the previous allocation.

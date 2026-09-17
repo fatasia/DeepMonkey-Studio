@@ -143,7 +143,7 @@ fn material_alpha_factor_is_separate_from_texture_alpha_and_cutoff() {
 }
 
 #[test]
-fn unknown_or_premultiplied_blending_is_rejected_during_deserialization() {
+fn unknown_or_custom_blending_is_rejected_during_deserialization() {
     let mut value = fixture_value();
     value["materials"][0]["alphaMode"] = "ADD".into();
     assert!(serde_json::from_value::<RenderPacket>(value).is_err());
@@ -191,10 +191,14 @@ fn wgsl_and_pipeline_sources_freeze_mask_blend_and_two_sided_rules() {
     ]
     .map(|path| fs::read_to_string(root.join(path)).expect("pipeline source"))
     .join("\n");
-    assert!(pipeline.contains("MESH_PIPELINE_VARIANTS: usize = 12"));
+    assert!(pipeline.contains("MESH_PIPELINE_VARIANTS: usize = 18"));
+    assert!(pipeline.contains("BlendSemantic::Premultiplied"));
     assert!(pipeline.contains("BlendFactor::SrcAlpha"));
+    assert!(pipeline.contains("src_factor: wgpu::BlendFactor::One"));
     assert!(pipeline.contains("BlendFactor::OneMinusSrcAlpha"));
-    assert!(pipeline.contains("depth_write_enabled: Some(!transparent)"));
+    assert!(
+        pipeline.contains("depth_write_enabled: Some(matches!(semantic, BlendSemantic::Solid))")
+    );
     assert!(pipeline.contains("double_sided"));
     let abi = fs::read_to_string(root.join("src/mesh_abi.rs")).expect("mesh ABI source");
     assert!(abi.contains("0 => Float32x3, 1 => Float32x3, 10 => Float32x2, 13 => Float32x2"));

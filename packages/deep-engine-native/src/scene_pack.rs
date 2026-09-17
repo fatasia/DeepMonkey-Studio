@@ -49,6 +49,7 @@ pub(super) fn pack_instance(
 
 pub(super) fn surface_flags(
     alpha_mode: AlphaMode,
+    premultiplied: bool,
     double_sided: bool,
     receive_shadow: Option<bool>,
     shading_model: Option<ShadingModel>,
@@ -58,9 +59,10 @@ pub(super) fn surface_flags(
         AlphaMode::Mask => 2,
         AlphaMode::Blend => 4,
     };
-    // 与 Browser 实例 ABI 一致：16 禁用接收阴影，64 为 unlit。
+    // 与 Browser 实例 ABI 逐位对拍:1 double、16 禁用接收阴影、64 unlit、128 premultiplied(仅 BLEND)。
     (alpha
         + usize::from(double_sided)
+        + 128 * usize::from(premultiplied)
         + 16 * usize::from(receive_shadow == Some(false))
         + 64 * usize::from(shading_model == Some(ShadingModel::Unlit))) as f32
 }

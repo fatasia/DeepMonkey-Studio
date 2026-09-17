@@ -39,8 +39,9 @@ weighted OIT 累积满足交换律，three.js 的「先背面后正面 two-pass�
 
 ## 拒绝语义（threeBridge/materials.ts）
 
-- `m.premultipliedAlpha`：缺省=未请求；非布尔 → invalid；`true`+非 BLEND → unsupported
-  `material.premultipliedAlpha`（沿用旧文案，旧测试不变）；`true`+BLEND → 接受并投影。
+- `m.premultipliedAlpha`：缺省=未请求；非布尔 → invalid；桥只投影 `true`，`true`+非 BLEND → unsupported
+  `material.premultipliedAlpha`（Three 默认 `false` 不写入 packet）；packet 合同中 OPAQUE/MASK 显式声明
+  `false` 或 `true` 均 fail-closed，BLEND 显式 `false` 等价 straight。
 - `m.side=BackSide`：保持 unsupported `material.BackSide`（矩阵外）。
 - `BLEND + m.depthWrite !== false`：保持 unsupported `material transparent depthWrite`
   （作者请求写深度时 fail-closed，不静默丢设置；挖孔用 MASK）。
@@ -73,7 +74,7 @@ weighted OIT 累积满足交换律，three.js 的「先背面后正面 two-pass�
 - TS：`ThreeProjectionBridge.transparency.test.ts` 10 项（双面玻璃接受与 two-pass 折叠/
   重叠+交叉玻璃单批 OIT/镜像玻璃背面可见不翻转批/premultiplied 批身份隔离/材质仅变换更新
   与发布 JSON 往返保真/实例 flags 位图/MASK-BLEND 单值互斥/零 alpha 往返/矩阵外 fail-closed
-  四连/阴影参与声明）；`weightedOitBlendSemantics.test.ts` 5 项（次序交换律到 1e-12、零 alpha
+  四连/阴影参与声明）；`weightedOitBlendSemantics.test.ts` 6 项（次序交换律到 1e-12、零 alpha
   完全不可见、premultiplied≡straight 累积逐位、WGSL 入口与矩阵对拍、混合公式批隔离）；
   `pbrShader.test.ts` 透明入口断言随新合同更新（两入口 × select 分发 + alpha 提取行）；
   `ThreeProjectionBridge.test.ts` 删除被解除的 two-pass 拒绝断言（行为由新文件覆盖）。
@@ -81,9 +82,11 @@ weighted OIT 累积满足交换律，three.js 的「先背面后正面 two-pass�
   往返+batch+flags 128/非 BLEND fail-closed/显式 false=缺省 straight/straight 与 premultiplied
   不并批且逐 BLEND 实例独立批/排序同帧确定 + back-to-front）。`cargo test --locked --lib`
   **288 passed / 0 failed**（基线 282 + 新增 6）。
-- 门禁：`cargo fmt --check` 通过；`cargo clippy --locked --all-targets --all-features -D warnings`
-  通过；deep-engine typecheck 通过；deep-engine vitest 全量仅既有 sourceSizeGate 7 项历史违规
-  失败（非本切片文件），本切片新文件最大 179 行（≤400 红线）。
+- 门禁：`cargo fmt --check` 通过；`cargo check --locked --all-targets --all-features` 通过；
+  `cargo clippy --locked --all-targets --all-features -D warnings` 通过；Native lib 288/0/1 ignored，
+  `alpha_pipeline` 7/7；deep-engine typecheck 通过，聚焦 50/2 skipped，全 src 2910/41 skipped；
+  runtime purity 通过。deep-engine 全量链仅既有 sourceSizeGate 7 项历史违规失败（非本切片文件），
+  本切片新文件最大 295 行（≤400 红线）。
 
 ## 边界（如实）
 

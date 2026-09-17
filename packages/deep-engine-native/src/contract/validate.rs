@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{
-    CONTRACT_SCHEMA, CONTRACT_VERSION, RenderPacket,
+    AlphaMode, CONTRACT_SCHEMA, CONTRACT_VERSION, RenderPacket,
     lod::validate_lod,
     uv_sets::MaterialFeatures,
     validate_geometry::{norm, validate_geometries, validate_material_geometry},
@@ -57,6 +57,13 @@ pub fn validate_packet(packet: &RenderPacket) -> Result<ContractSummary, String>
                 .is_some_and(|value| !value.is_finite() || value < 0.0)
         {
             return Err(format!("material {} has invalid PBR factors", material.id));
+        }
+        // DE26/C03:premultiplied 只描述 BLEND 的混合公式;其他 alphaMode 声明它属于无效组合。
+        if material.premultiplied_alpha.is_some() && material.alpha_mode != Some(AlphaMode::Blend) {
+            return Err(format!(
+                "material {} declares premultipliedAlpha outside BLEND",
+                material.id
+            ));
         }
         material_features.insert(
             material.id.as_str(),

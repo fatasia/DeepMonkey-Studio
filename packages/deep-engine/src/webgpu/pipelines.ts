@@ -235,12 +235,35 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
     ...(deformation ? { deformationPlainLayout: emptyMaterialLayout } : {}) };
 }
 
+/**
+ * DE26/C03 透明语义支持矩阵（Web/Native 两端对拍的声明源，Native blend_state 逐项对拍）：
+ * - straight（缺省）RGB 直通；premultiplied 的作者 RGB 已按 alpha 预乘，blend RGB 因子为 one。
+ * - depthWriteEnabled: false——BLEND 两端恒不写深度（Web weighted OIT 累积 pass、Native 全局排序 blend 同）；
+ *   作者请求 true 时桥 fail-closed，不静默丢设置。
+ * - side: front/double 支持；double 是单 pass cull-none——weighted OIT 累积可交换，
+ *   three.js 的 two-pass DoubleSide 声明折叠为数学等价；back 在矩阵外。
+ * - shadow: none——BLEND 不进 shadow pass（Native draw_shadow_indirect 同规则排除）；
+ *   MASK 以 alphaCutoff 参与 mask 阴影，OPAQUE 走 solid。
+ * - 零 alpha 合法：OIT 权重下限保底但贡献为 0，等价完全不可见；不剔除不拒绝。
+ */
+export const transparencySupportMatrix = {
+  straight: { color: ["src-alpha", "one-minus-src-alpha"], alpha: ["one", "one-minus-src-alpha"] },
+  premultiplied: { color: ["one", "one-minus-src-alpha"], alpha: ["one", "one-minus-src-alpha"] },
+  depthWriteEnabled: false,
+  shadow: "none",
+  supportedSides: ["front", "double"],
+  zeroAlpha: "fully-invisible",
+} as const satisfies {
+  readonly straight: { readonly color: readonly GPUBlendFactor[]; readonly alpha: readonly GPUBlendFactor[] };
+  readonly premultiplied: { readonly color: readonly GPUBlendFactor[]; readonly alpha: readonly GPUBlendFactor[] };
+  readonly depthWriteEnabled: false;
+  readonly shadow: "none";
+  readonly supportedSides: readonly ("front" | "double")[];
+  readonly zeroAlpha: "fully-invisible";
+};
+
 /** glTF BLEND 使用 straight-alpha RGB：src-alpha / one-minus-src-alpha；alpha 通道使用 source-over。 */
-export const alphaBlendSemantics = {
-  color: ["src-alpha", "one-minus-src-alpha"], alpha: ["one", "one-minus-src-alpha"],
-  depthWriteEnabled: false, shadow: "none",
-} as const satisfies { readonly color: readonly GPUBlendFactor[]; readonly alpha: readonly GPUBlendFactor[];
-  readonly depthWriteEnabled: false; readonly shadow: "none" };
+export const alphaBlendSemantics = transparencySupportMatrix.straight;
 
 export function materialMode(textured: boolean, normalMapped: boolean): MainMaterialMode {
   return normalMapped ? "normal" : textured ? "material" : "plain";

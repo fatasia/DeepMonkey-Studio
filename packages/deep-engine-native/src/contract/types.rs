@@ -74,6 +74,9 @@ pub struct PbrMaterial {
     pub alpha_cutoff: Option<f32>,
     #[serde(default, deserialize_with = "present")]
     pub double_sided: Option<bool>,
+    /// DE26/C03 透明语义:作者 RGB 已按 alpha 预乘。仅 alpha_mode=Blend 合法(validate 把关)。
+    #[serde(default, deserialize_with = "present")]
+    pub premultiplied_alpha: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

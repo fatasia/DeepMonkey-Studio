@@ -244,7 +244,8 @@ describe("Three author projection", () => {
     if (cutoutResult.ok) expect(cutoutResult.packet.materials[0]).toMatchObject({ alphaMode: "BLEND", alphaCutoff: 0.5 });
     reject(material => { material.transparent = true; }, "material transparent depthWrite");
     reject(material => { material.side = THREE.BackSide; }, "material.BackSide");
-    reject(material => { material.transparent = true; material.depthWrite = false; material.side = THREE.DoubleSide; }, "material transparent DoubleSide two-pass rendering");
+    // DE26/C03:BLEND+DoubleSide 解除 two-pass 拒绝(OIT 次序无关,单 pass 数学等价);
+    // 接受路径与组合矩阵由 ThreeProjectionBridge.transparency.test.ts 覆盖。
 
     const physical = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshPhysicalMaterial({ clearcoat: 0.1 }));
     physical.updateWorldMatrix(true, true);

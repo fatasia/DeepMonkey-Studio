@@ -62,6 +62,15 @@ function validateMaterial(material: PbrMaterial): number {
   if (alphaMode !== "OPAQUE" && alphaMode !== "MASK" && alphaMode !== "BLEND") {
     throw new Error("Invalid PBR material alphaMode.");
   }
+  // DE26/C03：premultiplied 只描述 BLEND 的混合公式；OPAQUE/MASK 声明它是无效组合而非可忽略细节。
+  if (material.premultipliedAlpha !== undefined) {
+    if (typeof material.premultipliedAlpha !== "boolean") {
+      throw new Error("PBR material premultipliedAlpha must be boolean.");
+    }
+    if (alphaMode !== "BLEND") {
+      throw new Error("PBR material premultipliedAlpha is only valid with alphaMode BLEND.");
+    }
+  }
   if (material.baseColorAlpha !== undefined && !unitFloat(material.baseColorAlpha)) {
     throw new Error("PBR material alpha must be in 0..1.");
   }

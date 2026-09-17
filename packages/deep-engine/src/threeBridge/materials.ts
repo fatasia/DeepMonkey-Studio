@@ -18,6 +18,10 @@ export interface ProjectedMaterial {
   readonly vertexColors: boolean;
   /** 作者请求的平面着色；不改 shader，由投影桥按派生合同展开非索引面法线几何。 */
   readonly flatShading: boolean;
+  /** 作者声明的面朝向；back 在 DE26/C03 支持矩阵外，桥内 fail-closed。 */
+  readonly side: "front" | "back" | "double";
+  /** 深度写开关；OPAQUE/MASK 恒 true，BLEND 恒 false（weighted OIT 与 Native sorted blend 均不写深度）。 */
+  readonly depthWrite: boolean;
 }
 
 export function projectMaterial(value: unknown, id: string, hooks: ThreeProjectionHooks,
@@ -33,7 +37,8 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   if (physical) validateNeutralPhysical(m);
   for (const key of unsupportedTextureFields) if (m[key] != null) unsupported(`material.${key}`);
   if (m.alphaHash || m.alphaToCoverage) unsupported("material stochastic alpha");
-  if (m.premultipliedAlpha) unsupported("material.premultipliedAlpha");
+  // DE26/C03：premultipliedAlpha 缺省=未请求(straight)；true 仅在 BLEND 支持矩阵内，否则 fail-closed。
+  if (m.premultipliedAlpha !== undefined && typeof m.premultipliedAlpha !== "boolean") invalid("material.premultipliedAlpha");
   if (m.blending !== THREE.normalBlending) unsupported("material.blending");
 
   const opacity = unit(m.opacity, "material.opacity"), alphaTest = nonnegative(m.alphaTest, "material.alphaTest");
@@ -41,20 +46,23 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   if (typeof m.fog !== "boolean") invalid("material.fog");
   const alphaMode: AlphaMode = m.transparent ? "BLEND" : alphaTest > 0 ? "MASK" : "OPAQUE";
   if (alphaMode === "OPAQUE" && opacity !== 1) unsupported("material opacity without alpha mode");
+  // 透明语义矩阵(DE26/C03)：alphaMode 单值——transparent 压过 alphaTest，投影为 BLEND+alphaCutoff，
+  // 不存在 MASK 与 BLEND 同时声明的表达；premultiplied 只描述 BLEND 的混合公式。
+  if (alphaMode !== "BLEND" && m.premultipliedAlpha === true) unsupported("material.premultipliedAlpha");
 
   const side = m.side;
   if (side !== THREE.frontSide && side !== THREE.backSide && side !== THREE.doubleSide) invalid("material.side");
   if (side === THREE.backSide) unsupported("material.BackSide");
-  if (alphaMode === "BLEND" && side === THREE.doubleSide && m.forceSinglePass !== true) {
-    unsupported("material transparent DoubleSide two-pass rendering");
-  }
+  // BLEND+DoubleSide 解除 two-pass 拒绝：weighted OIT 累积可交换，Three 的 two-pass 声明折叠为
+  // 单 pass cull-none 数学等价；forceSinglePass 只要求布尔（缺省视为已声明单 pass 语义）。
   if (typeof m.forceSinglePass !== "boolean") invalid("material.forceSinglePass");
   if (m.wireframe) unsupported("material wireframe");
   // DE26/C02：vertexColors 要求几何颜色流（桥内交叉校验）；flatShading 走非索引面法线派生。
   // 两字段缺省（MeshBasicMaterial 无 flatShading）等价于未请求；提供时必须是布尔。
   if (m.flatShading !== undefined && typeof m.flatShading !== "boolean") invalid("material.flatShading");
   if (m.vertexColors !== undefined && typeof m.vertexColors !== "boolean") invalid("material.vertexColors");
-  // Deep BLEND 固定关闭 depth write；Three 的默认 true 无法无损表达，调用侧需显式采用透明材质惯例。
+  // BLEND 深度写固定 false：weighted OIT 与 Native sorted blend 都不写深度（见 alphaBlendSemantics）。
+  // 作者请求 true 时 fail-closed，而不是静默丢设置；带截止的挖孔用 MASK。
   if (alphaMode === "BLEND" && m.depthWrite !== false) unsupported("material transparent depthWrite");
   if (m.depthTest !== true || alphaMode !== "BLEND" && m.depthWrite !== true
     || m.depthFunc !== 3 || m.colorWrite !== true || m.stencilWrite || m.polygonOffset || m.toneMapped !== true || m.dithering) {
@@ -86,10 +94,12 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
     ...(emissiveMap ? { emissiveTexture: emissiveMap.slot } : {}),
     ...(alphaMode === "OPAQUE" ? {} : { alphaMode, baseColorAlpha: opacity }),
     ...(alphaTest > 0 ? { alphaCutoff: alphaTest } : {}),
+    ...(m.premultipliedAlpha === true ? { premultipliedAlpha: true } : {}),
     ...(side === THREE.doubleSide ? { doubleSided: true } : {}) };
   return { material, textures: [base, metallicRoughness, normal?.texture, occlusion?.texture, emissiveMap]
     .filter((texture): texture is ProjectedTexture => texture !== undefined).map(texture => texture.resource),
-    vertexColors: m.vertexColors === true, flatShading: m.flatShading === true };
+    vertexColors: m.vertexColors === true, flatShading: m.flatShading === true,
+    side: side === THREE.doubleSide ? "double" : "front", depthWrite: alphaMode !== "BLEND" };
 }
 
 function projectNormal(m: Record<string, unknown>, textures: ThreeTextureProjector): { texture: ProjectedTexture; scale: number } | undefined {

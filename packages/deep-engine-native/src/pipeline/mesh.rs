@@ -6,12 +6,20 @@ use deep_engine_native::mesh_abi::{
 
 use super::{MaterialPipelines, RasterPipelines, raster::RasterState};
 
+/// DE26/C03 透明语义:Solid 不混合;Straight=glTF core(src-alpha);Premultiplied=RGB one。
+#[derive(Clone, Copy)]
+pub(super) enum BlendSemantic {
+    Solid,
+    Straight,
+    Premultiplied,
+}
+
 pub(super) fn create_material_pipelines(
     device: &wgpu::Device,
     frame_layout: &wgpu::BindGroupLayout,
     material_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
-    transparent: bool,
+    semantic: BlendSemantic,
 ) -> MaterialPipelines {
     MaterialPipelines {
         standard: create_raster_pipelines(
@@ -19,7 +27,7 @@ pub(super) fn create_material_pipelines(
             frame_layout,
             material_layout,
             shader,
-            transparent,
+            semantic,
             false,
         ),
         normal_mapped: create_raster_pipelines(
@@ -27,7 +35,7 @@ pub(super) fn create_material_pipelines(
             frame_layout,
             material_layout,
             shader,
-            transparent,
+            semantic,
             true,
         ),
     }
@@ -38,7 +46,7 @@ fn create_raster_pipelines(
     frame_layout: &wgpu::BindGroupLayout,
     material_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
-    transparent: bool,
+    semantic: BlendSemantic,
     normal_mapped: bool,
 ) -> RasterPipelines {
     RasterPipelines {
@@ -48,7 +56,7 @@ fn create_raster_pipelines(
             material_layout,
             shader,
             RasterState::REGULAR,
-            transparent,
+            semantic,
             normal_mapped,
         ),
         mirrored: create_mesh_pipeline(
@@ -57,7 +65,7 @@ fn create_raster_pipelines(
             material_layout,
             shader,
             RasterState::MIRRORED,
-            transparent,
+            semantic,
             normal_mapped,
         ),
         double_sided: create_mesh_pipeline(
@@ -66,7 +74,7 @@ fn create_raster_pipelines(
             material_layout,
             shader,
             RasterState::DOUBLE_SIDED,
-            transparent,
+            semantic,
             normal_mapped,
         ),
     }
@@ -78,7 +86,7 @@ fn create_mesh_pipeline(
     material_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
     raster: RasterState,
-    transparent: bool,
+    semantic: BlendSemantic,
     normal_mapped: bool,
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -89,12 +97,16 @@ fn create_mesh_pipeline(
     let vertex_buffers = vertex_buffers(normal_mapped);
     let targets = [Some(wgpu::ColorTargetState {
         format: FORWARD_COLOR_FORMAT,
-        blend: blend_state(transparent),
+        blend: blend_state(semantic),
         write_mask: wgpu::ColorWrites::ALL,
     })];
     let label = format!(
         "Deep Engine native {} {} mesh pipeline",
-        if transparent { "blend" } else { "depth" },
+        match semantic {
+            BlendSemantic::Solid => "depth",
+            BlendSemantic::Straight => "blend",
+            BlendSemantic::Premultiplied => "blend-premultiplied",
+        },
         raster.label
     );
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -116,9 +128,10 @@ fn create_mesh_pipeline(
             cull_mode: raster.cull_mode,
             ..Default::default()
         },
+        // 深度写只属于 solid;两种透明语义(straight/premultiplied)都不写深度,与 Web weighted OIT 一致。
         depth_stencil: Some(wgpu::DepthStencilState {
             format: FORWARD_DEPTH_FORMAT,
-            depth_write_enabled: Some(!transparent),
+            depth_write_enabled: Some(matches!(semantic, BlendSemantic::Solid)),
             depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: Default::default(),
             bias: Default::default(),
@@ -158,17 +171,34 @@ fn vertex_buffers(normal_mapped: bool) -> [Option<wgpu::VertexBufferLayout<'stat
     ]
 }
 
-fn blend_state(transparent: bool) -> Option<wgpu::BlendState> {
-    transparent.then_some(wgpu::BlendState {
-        color: wgpu::BlendComponent {
-            src_factor: wgpu::BlendFactor::SrcAlpha,
-            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-            operation: wgpu::BlendOperation::Add,
-        },
-        alpha: wgpu::BlendComponent {
-            src_factor: wgpu::BlendFactor::One,
-            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-            operation: wgpu::BlendOperation::Add,
-        },
-    })
+fn blend_state(semantic: BlendSemantic) -> Option<wgpu::BlendState> {
+    match semantic {
+        BlendSemantic::Solid => None,
+        // Straight:glTF core —— out.rgb = rgb·a + dst·(1-a),alpha source-over。
+        BlendSemantic::Straight => Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        }),
+        // Premultiplied:作者 RGB 已含 alpha —— out.rgb = rgb + dst·(1-a)。
+        BlendSemantic::Premultiplied => Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        }),
+    }
 }
