@@ -1,6 +1,6 @@
-# DE26/B04 第一切片 · 接真实临时纹理复用(帧内 transient 纹理池)
+# DE26/B04 · 接真实临时纹理复用(帧内 transient 纹理池)
 
-日期:2026-09-17 · 分支:dev-studio · 状态:纯逻辑切片完成(池+合同+可观测+测试);真实 renderTargets 切换与像素/帧时验证归真机门禁切片。
+日期:2026-09-17 · 分支:dev-studio · 状态:主 RenderTargets 生产接线与真机验证完成;后处理/OIT 私有 scratch 尚未纳入,整卡保持待办。
 
 ## 1. 任务定义(权威原文)
 
@@ -9,7 +9,7 @@
 > 边界:resize、设备丢失、并行候选和失败提交不能复用在途纹理。
 
 B03(`pbrFramePlanResources.ts` + `pbrFramePlanExecutor.ts` + `renderGraph.ts` 的 `transientSlot`/`aliasKey`)
-只完成了计划侧声明,没有任何运行时分配/消费。本切片把"分配/消费"落成池本体。
+只完成了计划侧声明。第一切片把分配/消费落成池本体;本切片继续把池接入 `RenderTargets` 的五张真实主帧纹理。
 
 ## 2. 合同
 
@@ -67,17 +67,42 @@ beginFrame() → acquire()…release()… → endFrame(committed)
 | `freeCount/Bytes`、`inFlightCount/Bytes`、`pendingReturnCount/Bytes` | 三态驻留分解 |
 | `discardedCount` / `evictedCount` / `epoch` / `lastInvalidation` | 失效与作废账目 |
 
-后续切片把 renderer 帧路径接上池后,该快照即可挂入 `PbrRendererDiagnostics` 只读暴露;
-本切片未动 renderer 帧路径,不存在死接线。
+`PbrRenderer.transientTextureStats` 与每帧 `FrameMetrics.transientTextures` 直接暴露生产池快照;
+lab 的 120 帧采样记录同一快照,计数来自真实 `device.createTexture` 路径。
 
-## 6. 验证证据
+## 6. 生产接线
+
+真实生命周期只有一条:
+
+```
+PbrRenderer.render
+  → RenderTargets.beginFrame(surface size)
+  → encode / encoder.finish
+  → device.queue.submit
+  → RenderTargets.commitFrame()
+  → pool.release × 5 / endFrame(true)
+```
+
+异常路径统一进入 `RenderTargets.failFrame()` → `endFrame(false)`,销毁本帧接触过的纹理。surface 尺寸变化在
+下一帧 `beginFrame` 前使整池失效;`GPUDevice.lost` promise 与显式 device epoch 更迭也销毁空闲/在途资源。
+接入的五张生产纹理是 `opaque-hdr`、`linear-depth`、`view-normal`、`motion` 与私有
+`hardware-depth`;格式、sample count 与 usage 沿用既有 RenderTargets 合同。`previous-hiz`、`next-hiz`、
+`temporal-hdr` 仍由各自跨帧 owner 持有,从未 acquire,不会与主帧目标 alias。
+
+## 7. 验证证据
 
 门禁(全部通过):
 
 ```
 pnpm --filter @bim-studio/deep-engine exec vitest run src/webgpu/pbrTransientTexturePool.test.ts
   → 9 passed (9)
+pnpm --filter @bim-studio/deep-engine exec vitest run src/webgpu/renderTargets.test.ts src/webgpu/pbrTransientTexturePool.test.ts
+  → 15 passed (15)
+pnpm --filter @bim-studio/deep-engine exec vitest run src/webgpu
+  → 1123 passed / 22 skipped (143 files)
 pnpm --filter @bim-studio/deep-engine typecheck
+pnpm --filter @bim-studio/deep-engine lab:build
+  → dist/assets/index-*.js 1,374,258 bytes (gzip 378,290)
 node packages/deep-engine/scripts/runtimePurityGate.mjs
 ```
 
@@ -94,12 +119,28 @@ node packages/deep-engine/scripts/runtimePurityGate.mjs
    `reusedBytes` = 4 帧节省量,`peakResidentBytes` = 3 纹理字节和(staging 峰值入账);
 9. 并发两池完全隔离(invalidate 互不影响、命中各自回池纹理)。
 
-## 7. 边界与未验证项(如实声明)
+生产 `RenderTargets` 另有 6 项测试:真实纹理对象跨提交帧复用、bind-group 发布失败全量回收、提交失败销毁、
+resize 与显式 epoch 重建、`device.lost` 清理开帧资源、5 帧 × 5 目标只分配 5 次且 20 次命中。
 
-- **像素与帧时不退化:本切片未验证**——池尚未接入真实 `renderTargets`/`PbrTransparencyPass` scratch
-  路径,该验证归真机门禁切片(见任务约束"接入真实 renderTargets 的切换与像素/帧时不退化验证归真机门禁")。
-- 本切片**未改动任何真实 encode 的 GPU 提交顺序**;`renderTargets.ts` 保持原样(切片时其 git 状态干净,
-  无并行在途修改)。
+真机记录见 [de26-b04-render-target-evidence-2026-09-17.json](de26-b04-render-target-evidence-2026-09-17.json)。
+NVIDIA Lovelace 非 fallback adapter、1180×825、49 球、120 帧:
+
+- 177 个生产帧共 acquire 885 次,miss 5、hit 880,命中率 99.44%;真实分配保持 5 张;
+- `allocatedBytes=23,364,000`,`reusedBytes=4,112,064,000`,`peakResidentBytes=23,364,000`;
+- CPU submit P95 0.70 ms、GPU P95 0.852 ms(120/120)、RAF interval P95 7.10 ms,GPU errors 为空;
+- 初始视口、800 px resize、device rebuild 后首帧与最终 120 帧场景均正常,没有黑帧/裁切/材质或光照退化。
+
+这是生产资源所有权变化,按 `design-taste-digitaltwin` 做了两轮浏览器截图闭环。外观设计本身未改变;
+布局、字体、颜色、层级、氛围、材质光照、动效、响应式、状态反馈与同族一致性十维无新增回归,自评 95/100。
+lab 页面同时运行的其他可选能力探针仍有既有失败项,不计作 B04 通过;本段只引用主场景、resize、重建设备、
+120 帧采样和 transient 统计。
+
+## 8. 边界与未验证项(如实声明)
+
+- 主 `RenderTargets` 已接入并完成真机像素/帧时回归;`PbrPostProcessChain` 与 `PbrTransparencyPass` 的私有
+  scratch 仍按原 owner 生命周期分配,尚未迁移到同一池,因此 B04 整卡不标完成。
+- 真机只覆盖单 renderer 候选;并行候选隔离由池实例归属测试覆盖,尚无双 canvas 真机采样。
+- source-size 门禁仍被 14 个既有超限文件阻断;本切片将 `pbrRenderer.ts` 保持在 300 行,未新增超限项。
 - 字节估算为格式查表静态估算,不含实现相关对齐/tiling 开销;`peakResidentBytes` 是估算口径的峰值。
 - 复用率换安全:帧内重叠同键不共享,首帧后稳态命中数 ≤ 每帧 distinct 键数;池无容量上限
   (纹理由 `DeviceSession` 持有,随 dispose 全量回收),容量预算归接入切片与真机数据一起定。

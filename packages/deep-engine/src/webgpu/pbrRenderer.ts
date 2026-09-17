@@ -35,13 +35,13 @@ import { beginPbrOpaquePass } from "./pbrOpaquePass.js";
 import { LocalSpotShadowRuntime } from "./localSpotShadowRuntime.js";
 import { pbrDirectDisplayClear } from "./pbrDirectDisplay.js";
 import { createPbrGround, drawPbrGround, type PbrGroundResources } from "./pbrGroundPass.js";
+import { PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 export class PbrRenderer {
   readonly id = "deep-webgpu";
   private readonly diagnostics: PbrRendererDiagnostics; get gpuTimer() { return this.diagnostics.gpuTimer; }
-  get performanceTelemetry() { return this.diagnostics.performance; }
-  private readonly packets: PacketBuffers;
-  private readonly ground: PbrGroundResources;
+  get performanceTelemetry() { return this.diagnostics.performance; } get transientTextureStats() { return this.targets.transientStats; }
+  private readonly packets: PacketBuffers; private readonly ground: PbrGroundResources;
   private readonly frameBuffer: GPUBuffer;
   private readonly mainBindings: PbrMainBindings;
   private readonly environment: PbrEnvironmentState;
@@ -69,7 +69,7 @@ export class PbrRenderer {
     this.shadowState = new PbrShadowState(session, pipelines, options.shadows);
     this.environment = new PbrEnvironmentState(environment);
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
-    this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer);
+    this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, new PbrTransientTexturePool(session));
     this.features = features;
     this.postProcess = new PbrPostProcessChain(session, this.features);
     this.transparency = new PbrTransparencyPass(session);
@@ -144,7 +144,6 @@ export class PbrRenderer {
     const size = this.session.resize(view.width, view.height, view.pixelRatio);
     if (!size) return undefined;
     if (this.shadowState.publish(sceneLighting.primary.shadow?.mapSize, candidate => this.mainBindings.setShadows(candidate, this.environment.current))) this.sceneChanged();
-    this.targets.resize(size);
     const drawProfile = this.packets.drawProfile();
     const directClear = drawProfile.hasDeformation || view.authorGrid ? undefined : pbrDirectDisplayClear(view, this.features, drawProfile.hasTransparent);
     const directionalDisplay = directClear !== undefined && !this.lighting.hasProbeClipmap && !hasClusteredLights(sceneLighting.clustered)
@@ -163,7 +162,7 @@ export class PbrRenderer {
     const device = this.session.device;
     let submitAttempted = false;
     try {
-    const encoder = device.createCommandEncoder({ label: "Deep frame" });
+      this.targets.beginFrame(size); const encoder = device.createCommandEncoder({ label: "Deep frame" });
     this.packets.encodeDeformation(encoder);
     const visibility = pbrVisibilityInput(view, frameState.projection, size.width, size.height, history.cameraCut);
     const mainFrustum = visibility.frustum, lodStats = this.packets.encodeLod(encoder, visibility.lod);
@@ -255,7 +254,7 @@ export class PbrRenderer {
     timing?.resolve(encoder);
     const commands = encoder.finish();
     const encoded = this.performanceTelemetry.enabled ? performance.now() : 0, frameNumber = this.frame + 1;
-    submitAttempted = true; device.queue.submit([commands]);
+    submitAttempted = true; device.queue.submit([commands]); this.targets.commitFrame();
     const submitted = this.performanceTelemetry.enabled ? performance.now() : 0;
     this.packets.commitLodFrame();
     this.shadows.commit(); this.localShadows.commit();
@@ -268,7 +267,7 @@ export class PbrRenderer {
     this.shadowDirty = false; this.historyDirty = false;
     this.diagnostics.recordFrame(frameNumber, begin, encoded, submitted, present!.acquireMs);
     return { frame: ++this.frame, cpuSubmitMs: performance.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
-      width: size.width, height: size.height, resources: this.session.resourceCount, shadowUpdated,
+      width: size.width, height: size.height, resources: this.session.resourceCount, shadowUpdated, transientTextures: this.targets.transientStats,
       cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 : 0) + (!directClear && this.features.spatialAa ? 1 : 0),
       weightedOit: hasTransparent,
       hiZMipLevels: opaqueEffects.hiZ?.mipLevelCount ?? 0,
@@ -277,6 +276,7 @@ export class PbrRenderer {
       lightCount: lighting?.lightCount ?? 0, lightClusters: lighting?.grid.clusterCount ?? 0,
       ...this.shadows.metrics };
     } catch (error) {
+      this.targets.failFrame();
       this.packets.cancelDeformationFrame();
       if (submitAttempted) this.packets.failLodFrame(); else this.packets.cancelLodFrame();
       this.lighting.invalidateAssignment(); this.localShadows.failFrame(); this.cameraHistory.cancelPendingFrame();

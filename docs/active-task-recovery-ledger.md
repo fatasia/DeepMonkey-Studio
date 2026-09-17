@@ -1770,6 +1770,13 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 主线程复核:index.ts 仅 4 行加法;聚焦 9/9 复跑通过;与 C03 在跑文件组零交集。
 - 边界(如实):未接入真实 renderTargets/pbrTransparencyPass scratch 路径(归真机门禁切片);字节估算为静态查表口径;池暂无容量上限(随 DeviceSession dispose 回收)。
 
+### 2026-09-17 DE26/B04 第二切片:主 RenderTargets 生产接线(Codex)
+
+- 已完成:`PbrRenderer.render` 的五张主帧纹理全部由既有 transient pool 获取;仅在 `queue.submit` 后回池,encode/发布失败销毁,resize/device epoch/device lost 全量失效。跨帧 `previous-hiz`/`next-hiz`/`temporal-hdr` 未进入池。
+- 实际收益:NVIDIA Lovelace 真机 1180×825、177 帧 acquire 885 次,只有首帧 5 次分配,后续命中 880 次(99.44%);估算累计复用 4,112,064,000 bytes,驻留峰值 23,364,000 bytes。120 帧 CPU submit P95 0.70 ms、GPU P95 0.852 ms(120/120),GPU errors 为空;resize 与 device rebuild 后场景正常。
+- 验证:池+RenderTargets 聚焦 15/15;全 WebGPU 1123 passed/22 skipped;typecheck、lab build、runtime purity 通过;浏览器按 Kimi-95 做初始/resize/rebuild/120 帧两轮以上视觉闭环,无新增视觉回归。证据见 [B04 spec](specs/de26-b04-transient-texture-pool-2026-09-17.md) 与 [真机摘要](specs/de26-b04-render-target-evidence-2026-09-17.json)。
+- 边界:后处理/OIT 私有 scratch 尚未迁移,双 canvas 并行候选未做真机采样;整卡保持`本轮待办`。
+
 ### 2026-09-17 冲刺收官:停止派发,交接就绪(GLM)
 
 - 用户指令:直接停止,写完善交接。执行:C03 子代理中途停止(37 分钟,21 文件在途 +206/-54,**门禁未跑,未验证**——spec 101 行已冻结支持矩阵,接手选择续写或回退,见其 spec);全部派发终止。

@@ -196,6 +196,7 @@ async function finishSample(sample: Sampling, owner: PbrRenderer, frame: FrameMe
     rafIntervalP50Ms: percentile(sample.intervals, 0.5), rafIntervalP95Ms: percentile(sample.intervals, 0.95),
     gpuP50Ms: gpuMs.length ? percentile(gpuMs, 0.5) : null, gpuP95Ms: gpuMs.length ? percentile(gpuMs, 0.95) : null,
     gpuSampleCount: gpuMs.length, gpuErrors: owner.gpuTimer.diagnostics, drawCalls: frame.drawCalls, shadowUpdates: sample.shadowUpdates,
+    transientTextures: owner.transientTextureStats,
     exposure: state.exposure, roughness: state.roughness, motion: state.motion, instanceMotion, errors: owner.session.diagnostics };
   records.push(result);
   const gpuText = result.gpuP95Ms === null ? "设备未提供 GPU 计时" : `GPU P95 ${result.gpuP95Ms.toFixed(2)} ms（${gpuMs.length}/120 帧）`;

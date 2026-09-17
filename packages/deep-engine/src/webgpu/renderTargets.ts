@@ -1,4 +1,6 @@
 import type { DeviceSession } from "./deviceSession.js";
+import type { PbrTransientTextureHandle, PbrTransientTexturePool,
+  PbrTransientTexturePoolStats } from "./pbrTransientTexturePool.js";
 import type { SurfaceSize } from "./surfaceSize.js";
 
 export const PBR_MAIN_SAMPLE_COUNT = 1;
@@ -15,8 +17,10 @@ export const PBR_OPAQUE_ATTACHMENT_FORMATS = Object.freeze([
 
 /** Single-sample, shader-readable main-frame attachments for AO and temporal reconstruction. */
 export class RenderTargets {
-  private textures: GPUTexture[] = [];
+  private handles: PbrTransientTextureHandle[] = [];
   private dimensions: SurfaceSize | undefined;
+  private disposed = false;
+  private readonly sampler: GPUSampler;
   hdrTexture!: GPUTexture; linearDepthTexture!: GPUTexture; normalTexture!: GPUTexture; motionTexture!: GPUTexture; depthTexture!: GPUTexture;
   hdr!: GPUTextureView; linearDepth!: GPUTextureView; normal!: GPUTextureView; motion!: GPUTextureView;
   /** Compatibility alias during the renderer migration; direct rendering uses hdr without resolveTarget. */
@@ -24,43 +28,70 @@ export class RenderTargets {
   depth!: GPUTextureView;
   outputBindGroup!: GPUBindGroup;
 
-  constructor(private readonly session: DeviceSession, private readonly layout: GPUBindGroupLayout, private readonly settings: GPUBuffer) {}
+  constructor(private readonly session: DeviceSession, private readonly layout: GPUBindGroupLayout,
+    private readonly settings: GPUBuffer, private readonly pool: PbrTransientTexturePool) {
+    this.sampler = session.device.createSampler({ minFilter: "linear", magFilter: "linear" });
+    void session.device.lost.then(() => this.invalidateDeviceLoss(), () => this.invalidateDeviceLoss());
+  }
 
-  resize(size: SurfaceSize): void {
-    if (size.width === this.dimensions?.width && size.height === this.dimensions.height) return;
-    const device = this.session.device, created: GPUTexture[] = [];
-    const texture = (label: string, format: GPUTextureFormat, usage: GPUTextureUsageFlags): GPUTexture => {
-      const value = this.session.own(device.createTexture({ label, size, format, sampleCount: PBR_MAIN_SAMPLE_COUNT, usage }));
-      created.push(value); return value;
-    };
+  get transientStats(): PbrTransientTexturePoolStats { return this.pool.stats; }
+
+  /** Opens the real frame allocation scope. Resources return to the pool only after commitFrame(queue.submit). */
+  beginFrame(size: SurfaceSize): void {
+    if (this.disposed) throw new Error("PBR render targets are disposed.");
+    if (this.handles.length || this.pool.frameOpen) throw new Error("PBR render target frame is already open.");
+    const resized = this.dimensions !== undefined
+      && (size.width !== this.dimensions.width || size.height !== this.dimensions.height);
+    if (resized) this.pool.invalidateAll("surface-resize");
+    this.pool.beginFrame();
+    const device = this.session.device;
+    const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
     try {
-      const readable = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
-      const hdrTexture = texture("Deep HDR color", PBR_HDR_FORMAT, readable);
-      const linearDepthTexture = texture("Deep linear view depth", PBR_LINEAR_DEPTH_FORMAT, readable);
-      const normalTexture = texture("Deep view normal", PBR_VIEW_NORMAL_FORMAT, readable);
-      const motionTexture = texture("Deep current-to-previous motion", PBR_MOTION_FORMAT, readable);
-      const depthTexture = texture("Deep hardware depth", PBR_DEPTH_FORMAT,
-        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING);
-      const hdr = hdrTexture.createView(), linearDepth = linearDepthTexture.createView();
-      const normal = normalTexture.createView(), motion = motionTexture.createView(), depth = depthTexture.createView();
+      const acquire = (resourceId: string, format: GPUTextureFormat) => this.pool.acquire({
+        resourceId, format, width: size.width, height: size.height, sampleCount: PBR_MAIN_SAMPLE_COUNT, usage,
+      });
+      const handles = [acquire("opaque-hdr", PBR_HDR_FORMAT), acquire("linear-depth", PBR_LINEAR_DEPTH_FORMAT),
+        acquire("view-normal", PBR_VIEW_NORMAL_FORMAT), acquire("motion", PBR_MOTION_FORMAT),
+        acquire("hardware-depth", PBR_DEPTH_FORMAT)];
+      const [hdrHandle, linearDepthHandle, normalHandle, motionHandle, depthHandle] = handles;
       const outputBindGroup = device.createBindGroup({ layout: this.layout, entries: [
-        { binding: 0, resource: hdr }, { binding: 1, resource: device.createSampler({ minFilter: "linear", magFilter: "linear" }) },
+        { binding: 0, resource: hdrHandle!.view }, { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: this.settings } },
       ] });
-      const previous = this.textures; this.textures = created;
-      this.hdrTexture = hdrTexture; this.linearDepthTexture = linearDepthTexture;
-      this.normalTexture = normalTexture; this.motionTexture = motionTexture;
-      this.depthTexture = depthTexture;
-      this.hdr = hdr; this.color = hdr; this.linearDepth = linearDepth; this.normal = normal; this.motion = motion; this.depth = depth;
+      this.handles = handles;
+      this.hdrTexture = hdrHandle!.texture; this.linearDepthTexture = linearDepthHandle!.texture;
+      this.normalTexture = normalHandle!.texture; this.motionTexture = motionHandle!.texture;
+      this.depthTexture = depthHandle!.texture;
+      this.hdr = hdrHandle!.view; this.color = this.hdr; this.linearDepth = linearDepthHandle!.view;
+      this.normal = normalHandle!.view; this.motion = motionHandle!.view; this.depth = depthHandle!.view;
       this.outputBindGroup = outputBindGroup; this.dimensions = Object.freeze({ width: size.width, height: size.height });
-      for (const value of previous) this.session.release(value);
     } catch (error) {
-      for (const value of created) this.session.release(value); throw error;
+      this.pool.endFrame(false); throw error;
     }
   }
 
+  commitFrame(): void {
+    if (!this.handles.length) throw new Error("PBR render target commit requires an open frame.");
+    for (const handle of this.handles) this.pool.release(handle);
+    this.handles = []; this.pool.endFrame(true);
+  }
+
+  failFrame(): void {
+    if (!this.pool.frameOpen) return;
+    this.handles = []; this.pool.endFrame(false);
+  }
+
+  invalidateDeviceEpoch(): void {
+    this.handles = []; this.dimensions = undefined; this.pool.invalidateAll("epoch-advance");
+  }
+
   dispose(): void {
-    for (const texture of this.textures) this.session.release(texture);
-    this.textures = []; this.dimensions = undefined;
+    if (this.disposed) return;
+    this.disposed = true; this.failFrame(); this.pool.dispose(); this.handles = []; this.dimensions = undefined;
+  }
+
+  private invalidateDeviceLoss(): void {
+    if (this.disposed) return;
+    this.handles = []; this.dimensions = undefined; this.pool.invalidateAll("device-lost");
   }
 }
