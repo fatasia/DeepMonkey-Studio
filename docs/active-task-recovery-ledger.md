@@ -2,6 +2,10 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 单文件实际交付：当前静态 CRT Release 重建通过 27 项 smoke/依赖纯度/44 项清单；隔离磁盘发布→冻结→Native验证→ZIP/DMDA/EXE下载→无Node PATH、无sidecar的EXE无参数呈现通过。作者数据37/91与嵌入包/检查点一致；对象仍degraded，未计完整外观、断网干净机和升级回滚。[证据](specs/dashboard-release-standalone-2026-09-17.md)
+
+- 3DM `c7c3ed2`：MechPartA 41/41 面已重建，新增 8 面按二次×一次正权 Bézier 链处理（含直线跨度，不误判圆柱）。1090 源 PointAt 最大误差 0.001333427 mm、连续界 <0.007959087 mm；41 项回归通过。独立 evidence/GLB SHA 已复核。仍有 69 条跨面不一致、7 条未验证边，保持部分预览，继续源共边修复。[证据](specs/industrial-3dm-quadratic-linear-chain-2026-09-17.md)
+
 - Deep2D 下载/光栅补验：8 文件 65 项 API 下载/打包/取消测试，21 文件 167 项完整光栅门禁全部通过；真实 Native 中文与组合符、图片、KPI/表格/图表用例未跳过。同步修正 fractional clip 测试的系统背景层索引，Web 类型与治理通过。[证据与边界](specs/core-delivery-regression-2026-09-17.md)
 
 - 主流程回归：Native 122 passed/43 ignored，其中 5 项真实 GPU 用例另行显式通过；正式 API 与两种 compiler bundle 构建、三种离线下载路由注册/401 检查通过。[边界与复跑命令](specs/core-delivery-regression-2026-09-17.md)
