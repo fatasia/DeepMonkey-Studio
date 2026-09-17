@@ -1,0 +1,233 @@
+warning: in the working copy of 'native/crates/cad-tess/src/face.rs', LF will be replaced by CRLF the next time Git touches it
+diff --git a/native/crates/cad-tess/src/face.rs b/native/crates/cad-tess/src/face.rs
+index 457c1cf..96d2383 100644
+--- a/native/crates/cad-tess/src/face.rs
++++ b/native/crates/cad-tess/src/face.rs
+@@ -84,6 +84,9 @@ struct UvLoop {
+     area: f64,
+ }
+ 
++#[path = "v_periodic_strip.rs"]
++mod v_periodic_strip;
++
+ /// Triangulate one face.
+ pub fn tessellate(
+     solid: &Solid,
+@@ -944,7 +952,19 @@ fn tessellate_reading(
+         (full_domain_loop(surface, &domain, options)?, Vec::new())
+     } else {
+         let (outer, mut holes) = if wrapping.is_empty() {
+-            closed_region(&mut loops)?
++            let complete_circles = face.bounds.len() == 2 && face.bounds.iter().all(|b| {
++                b.halves.len() == 1 && {
++                    let edge = solid.edge(b.halves[0].edge);
++                    matches!(solid.curve(edge.curve), cad_ir::brep::Curve::Circle { .. })
++                        && (edge.range.span().abs() - std::f64::consts::TAU).abs() < 1e-9
++                }
++            });
++            match complete_circles.then(|| v_periodic_strip::region(
++                &loops, surface, &domain, options, face.same_sense,
++            )).flatten() {
++                Some(outer) => (outer, Vec::new()),
++                None => closed_region(&mut loops)?,
++            }
+         } else {
+             wrapped_region(
+                 &mut loops,
+diff --git a/native/crates/cad-tess/src/v_periodic_strip.rs b/native/crates/cad-tess/src/v_periodic_strip.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/cad-tess/src/v_periodic_strip.rs
+@@ -0,0 +1,192 @@
++//! A torus tube bounded by two minor circles wraps in v, not u.
++use super::*;
++
++pub(super) fn region(
++    loops: &[UvLoop],
++    surface: &Surface,
++    domain: &Domain,
++    options: &Resolved,
++    same_sense: bool,
++) -> Option<UvLoop> {
++    if !matches!(surface, Surface::Torus { major_radius, minor_radius, .. }
++        if *major_radius > *minor_radius && *minor_radius > 0.0)
++        || loops.len() != 2
++    {
++        return None;
++    }
++    let period = domain.v_period?;
++    let up = domain.u_period?;
++    let sense = if same_sense { 1.0 } else { -1.0 };
++    let mut sides = Vec::new();
++    for ring in loops {
++        if ring.uv.len() < 4 || ring.uv.len() != ring.xyz.len() {
++            return None;
++        }
++        let (lo, hi) = span(ring.uv.iter().map(|p| p.u));
++        let travel = ring.uv.last()?.v - ring.uv[0].v;
++        // Only constant-u complete circles. General v-periodic trim curves
++        // need their own domain construction, not a rectangle approximation.
++        if hi - lo > 1e-9 || !(0.85..=1.000000001).contains(&(travel.abs() / period)) {
++            return None;
++        }
++        sides.push((ring, (lo + hi) * 0.5, travel.signum() * sense));
++    }
++    if sides[0].2 == sides[1].2 {
++        return None;
++    }
++    if sides[0].2 > 0.0 {
++        sides.swap(0, 1);
++    }
++    let (left, u0, _) = sides[0];
++    let (right, raw_u1, _) = sides[1];
++    let u1 = u0 + (raw_u1 - u0).rem_euclid(up);
++    if u1 - u0 < 1e-9 || up - (u1 - u0) < 1e-9 {
++        return None;
++    }
++    let cut = left.uv[0].v;
++    let side = |ring: &UvLoop, u: f64| {
++        let mut points: Vec<_> = ring
++            .uv
++            .iter()
++            .zip(&ring.xyz)
++            .map(|(p, xyz)| {
++                let offset = (p.v - cut).rem_euclid(period);
++                let v = if period - offset < 1e-9 {
++                    cut
++                } else {
++                    cut + offset
++                };
++                (Vec2::new(u, v), *xyz)
++            })
++            .collect();
++        points.sort_by(|a, b| a.0.v.total_cmp(&b.0.v));
++        points.dedup_by(|a, b| (a.0.v - b.0.v).abs() < 1e-9);
++        if points[0].0.v - cut > 1e-9 {
++            points.insert(0, (Vec2::new(u, cut), surface.point_at(Vec2::new(u, cut))));
++        }
++        points.push((Vec2::new(u, cut + period), points[0].1));
++        points
++    };
++    let left = side(left, u0);
++    let right = side(right, u1);
++    let steps = direction_steps(surface, domain, Axis::U, u0, u1, cut, options).max(1);
++    let mut uv = Vec::new();
++    let mut xyz = Vec::new();
++    let mut push = |p: Vec2, q: Vec3| {
++        uv.push(p);
++        xyz.push(q);
++    };
++    push(left[0].0, left[0].1);
++    for k in 1..steps {
++        let p = Vec2::new(u0 + (u1 - u0) * k as f64 / steps as f64, cut);
++        push(p, surface.point_at(p));
++    }
++    for (p, q) in right {
++        push(p, q);
++    }
++    for k in (1..steps).rev() {
++        let p = Vec2::new(u0 + (u1 - u0) * k as f64 / steps as f64, cut);
++        push(Vec2::new(p.u, cut + period), surface.point_at(p));
++    }
++    for (p, q) in left.into_iter().skip(1).rev() {
++        push(p, q);
++    }
++    Some(UvLoop {
++        area: signed_area(&uv),
++        uv,
++        xyz,
++        wrap: 0,
++        travel: 0,
++    })
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn surface() -> Surface {
++        Surface::Torus {
++            frame: cad_ir::math::Frame::IDENTITY,
++            major_radius: 1.0,
++            minor_radius: 0.35,
++        }
++    }
++    fn ring(surface: &Surface, u: f64, phase: f64, sign: f64) -> UvLoop {
++        let uv: Vec<_> = (0..45)
++            .map(|k| Vec2::new(u, phase + sign * k as f64 * std::f64::consts::TAU / 45.0))
++            .collect();
++        let xyz = uv.iter().map(|p| surface.point_at(*p)).collect();
++        UvLoop {
++            uv,
++            xyz,
++            wrap: 0,
++            travel: 0,
++            area: 0.0,
++        }
++    }
++    fn build(loops: &[UvLoop], same_sense: bool) -> Option<UvLoop> {
++        let s = surface();
++        region(
++            loops,
++            &s,
++            &s.domain(),
++            &crate::Options {
++                relative: false,
++                linear_deflection: 0.005,
++                ..Default::default()
++            }
++            .resolve(10.0),
++            same_sense,
++        )
++    }
++    #[test]
++    fn minor_circles_retain_every_boundary_point_and_close_both_seams() {
++        let s = surface();
++        let rings = [ring(&s, 1.2, 0.016, -1.0), ring(&s, 2.0, 0.04, 1.0)];
++        let strip = build(&rings, true).unwrap();
++        assert!((strip.area - 0.8 * std::f64::consts::TAU).abs() < 1e-10);
++        for q in rings.iter().flat_map(|r| &r.xyz) {
++            assert!(strip.xyz.contains(q));
++        }
++        for (p, q) in strip.uv.iter().zip(&strip.xyz) {
++            assert!((s.point_at(*p) - *q).length() < 1e-12);
++        }
++        assert_eq!(
++            strip.xyz.iter().filter(|q| **q == rings[0].xyz[0]).count(),
++            2
++        );
++    }
++    #[test]
++    fn face_orientation_selects_material_band_across_u_seam() {
++        let s = surface();
++        let rings = [ring(&s, 6.0, 0.0, -1.0), ring(&s, 0.3, 0.0, 1.0)];
++        let a = build(&rings, true).unwrap();
++        let b = build(&rings, false).unwrap();
++        let tau = std::f64::consts::TAU;
++        assert!((a.area - (tau - 5.7) * tau).abs() < 1e-10);
++        assert!((b.area - 5.7 * tau).abs() < 1e-10);
++        let reversed: Vec<_> = rings
++            .iter()
++            .map(|r| {
++                let mut r = r.clone();
++                r.uv.reverse();
++                r.xyz.reverse();
++                r
++            })
++            .collect();
++        assert!((build(&reversed, false).unwrap().area - a.area).abs() < 1e-10);
++    }
++    #[test]
++    fn non_minor_curves_missing_rings_and_same_direction_are_not_repaired() {
++        let s = surface();
++        let mut rings = vec![ring(&s, 1.0, 0.0, -1.0), ring(&s, 2.0, 0.0, 1.0)];
++        assert!(build(&rings[..1], true).is_none());
++        rings[1].uv[2].u += 0.001;
++        assert!(build(&rings, true).is_none());
++        rings[1] = ring(&s, 2.0, 0.0, -1.0);
++        assert!(build(&rings, true).is_none());
++        rings[1] = ring(&s, 2.0, 0.0, 1.0);
++        rings[1].uv.truncate(20);
++        rings[1].xyz.truncate(20);
++        assert!(build(&rings, true).is_none());
++    }
++}
