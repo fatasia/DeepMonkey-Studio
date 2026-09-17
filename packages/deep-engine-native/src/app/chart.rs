@@ -220,5 +220,5 @@ fn report(app: &NativeApp, error: Option<&str>) {
             )
         }
     });
-    window.set_title(&format!("Deep Engine Chart — {status}"));
+    crate::window_chrome::set_title(window, &format!("Deep Engine Chart — {status}"));
 }

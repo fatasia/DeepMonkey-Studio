@@ -50,12 +50,7 @@ impl NativeApp {
                     }
                 }
                 self.renderer = Some(renderer);
-                let title = if self.content.active().deep2d.is_some() {
-                    "Deep Engine Native Viewer — native wgpu 3D + Deep2d"
-                } else {
-                    "Deep Engine Native Viewer — native wgpu renderer"
-                };
-                window.set_title(title);
+                crate::window_chrome::set_title(window, "");
                 window.request_redraw();
             }
             Err(error) => {
@@ -64,12 +59,14 @@ impl NativeApp {
                     self.state.failed(error);
                 }
                 if replacing_live_renderer {
-                    window.set_title(
+                    crate::window_chrome::set_title(
+                        window,
                         "Deep Engine Native Viewer — rebuild rejected, previous frame retained",
                     );
                     window.request_redraw();
                 } else {
-                    window.set_title(
+                    crate::window_chrome::set_title(
+                        window,
                         "Deep Engine Native Viewer — GPU initialization failed (press R)",
                     );
                 }

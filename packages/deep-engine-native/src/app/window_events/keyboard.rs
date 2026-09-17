@@ -184,6 +184,6 @@ fn click_legend_page(app: &mut NativeApp, page: usize) {
 /// screen-reader bridge lives in `native_ui::chart_a11y::legend_semantics_tree`.
 fn announce(app: &NativeApp, message: &str) {
     if let Some(window) = &app.window {
-        window.set_title(&format!("Deep Engine Chart — {message}"));
+        crate::window_chrome::set_title(window, &format!("Deep Engine Chart — {message}"));
     }
 }

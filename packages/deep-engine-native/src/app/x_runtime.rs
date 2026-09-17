@@ -200,7 +200,7 @@ fn advance(app: &mut NativeApp, runtime: &mut Runtime) -> Result<(), String> {
 fn fail(app: &mut NativeApp, error: &str) {
     eprintln!("{error}");
     if let Some(window) = &app.window {
-        window.set_title(&format!("Deep Engine X — {error}"));
+        crate::window_chrome::set_title(window, &format!("Deep Engine X — {error}"));
     }
     if app.smoke_frame {
         app.state.failed(error.to_owned());

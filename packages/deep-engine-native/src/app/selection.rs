@@ -27,7 +27,7 @@ pub(super) fn click(app: &mut NativeApp) {
             } else {
                 "Deep Engine Native Viewer — measurement: select second point".into()
             };
-            window.set_title(&title);
+            crate::window_chrome::set_title(window, &title);
             return;
         }
         let hit = hit.local;
@@ -35,14 +35,17 @@ pub(super) fn click(app: &mut NativeApp) {
         if let Some(renderer) = app.renderer.as_mut() {
             renderer.set_view(app.state.view);
         }
-        window.set_title(&format!("Deep Engine Native Viewer — selected: {}", hit.id));
+        crate::window_chrome::set_title(
+            window,
+            &format!("Deep Engine Native Viewer — selected: {}", hit.id),
+        );
         println!(
             "native selection: id={} point={:?} target={:?}",
             hit.id, hit.point, app.state.view.target
         );
     } else {
         app.state.measurement.clear();
-        window.set_title("Deep Engine Native Viewer — no selection");
+        crate::window_chrome::set_title(window, "Deep Engine Native Viewer — no selection");
     }
     app.request_redraw();
 }
@@ -50,7 +53,10 @@ pub(super) fn click(app: &mut NativeApp) {
 pub(super) fn clear(app: &mut NativeApp) {
     clear_state(&mut app.state);
     if let Some(window) = &app.window {
-        window.set_title("Deep Engine Native Viewer — select an object to focus");
+        crate::window_chrome::set_title(
+            window,
+            "Deep Engine Native Viewer — select an object to focus",
+        );
     }
 }
 
@@ -81,11 +87,14 @@ pub(super) fn reset_view(app: &mut NativeApp) {
 pub(super) fn toggle_measurement(app: &mut NativeApp) {
     app.state.measurement.toggle();
     if let Some(window) = &app.window {
-        window.set_title(if app.state.measurement.enabled {
-            "Deep Engine Native Viewer — measurement: select first point (M to exit)"
-        } else {
-            "Deep Engine Native Viewer — select an object to focus"
-        });
+        crate::window_chrome::set_title(
+            window,
+            if app.state.measurement.enabled {
+                "Deep Engine Native Viewer — measurement: select first point (M to exit)"
+            } else {
+                "Deep Engine Native Viewer — select an object to focus"
+            },
+        );
     }
 }
 

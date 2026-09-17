@@ -191,7 +191,7 @@ fn preview(app: &NativeApp) {
 }
 fn status(app: &NativeApp, text: &str) {
     if let Some(window) = &app.window {
-        window.set_title(&format!("Deep Engine Native Viewer — {text}"));
+        crate::window_chrome::set_title(window, &format!("Deep Engine Native Viewer — {text}"));
     }
 }
 fn report(app: &NativeApp, result: Result<(), String>, success: &str) {

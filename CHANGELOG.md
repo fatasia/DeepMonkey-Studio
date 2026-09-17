@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Give standalone Native clients a dark system title bar with stable application names, F11 fullscreen, and Escape restoration after active editing actions.
+
 - Reuse a staged Native renderer when full-package presentation skips a frame; rebuild after a recovery signal and publish only after presentation succeeds.
 
 ### Dashboard offline packages

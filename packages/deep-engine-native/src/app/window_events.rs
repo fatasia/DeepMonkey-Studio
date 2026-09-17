@@ -96,6 +96,12 @@ pub(super) fn handle(
         WindowEvent::KeyboardInput { event, .. }
             if event.state == ElementState::Pressed && !event.repeat =>
         {
+            if event.physical_key == PhysicalKey::Code(KeyCode::F11)
+                && let Some(window) = &app.window
+            {
+                crate::window_chrome::fullscreen_key(window, KeyCode::F11);
+                return;
+            }
             #[cfg(windows)]
             if let PhysicalKey::Code(key) = event.physical_key
                 && super::x_input::key(app, key)
@@ -123,6 +129,10 @@ pub(super) fn handle(
                 return;
             }
             match event.physical_key {
+                PhysicalKey::Code(KeyCode::Escape)
+                    if app.window.as_ref().is_some_and(|window| {
+                        crate::window_chrome::fullscreen_key(window, KeyCode::Escape)
+                    }) => {}
                 PhysicalKey::Code(KeyCode::Escape) => close(app, event_loop),
                 PhysicalKey::Code(KeyCode::ArrowLeft) => app.rotate(-0.18),
                 PhysicalKey::Code(KeyCode::ArrowRight) => app.rotate(0.18),

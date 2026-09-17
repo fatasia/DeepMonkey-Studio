@@ -189,7 +189,10 @@ fn apply_deep2d(app: &mut NativeApp, generation: u64, candidate: WatchedPackage)
                 crate::runtime_package_startup::presented(app.content.active_mut())
                 && let Some(window) = &app.window
             {
-                window.set_title(&format!("Deep Engine Native Viewer — {notice}"));
+                crate::window_chrome::set_title(
+                    window,
+                    &format!("Deep Engine Native Viewer — {notice}"),
+                );
             }
             #[cfg(windows)]
             super::x_runtime::presented(app);

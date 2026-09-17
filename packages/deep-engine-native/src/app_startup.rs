@@ -4,7 +4,8 @@ use crate::renderer::Renderer;
 
 pub fn window_attributes(smoke_frame: bool) -> WindowAttributes {
     let attributes = winit::window::Window::default_attributes()
-        .with_title("Deep Engine Native Viewer — starting GPU")
+        .with_title(crate::window_chrome::title("正在打开"))
+        .with_theme(Some(winit::window::Theme::Dark))
         .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
         .with_min_inner_size(winit::dpi::LogicalSize::new(480, 320));
     if !smoke_frame {

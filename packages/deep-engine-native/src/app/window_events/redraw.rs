@@ -24,7 +24,7 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         && let Some(notice) = crate::runtime_package_startup::presented(app.content.active_mut())
         && let Some(window) = &app.window
     {
-        window.set_title(&format!("Deep Engine Native Viewer — {notice}"));
+        crate::window_chrome::set_title(window, &format!("Deep Engine Native Viewer — {notice}"));
     }
     if matches!(outcome, Some(RenderOutcome::Presented))
         && let Some(verification) = app.state.verification.as_mut()

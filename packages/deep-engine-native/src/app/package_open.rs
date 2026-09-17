@@ -131,7 +131,10 @@ pub(super) fn request(app: &mut NativeApp, path: PathBuf) {
     {
         Ok(()) => {
             if let Some(window) = &app.window {
-                window.set_title("Deep Engine Native Viewer — opening package");
+                crate::window_chrome::set_title(
+                    window,
+                    "Deep Engine Native Viewer — opening package",
+                );
             }
         }
         Err(error) => reject(app, &error),
@@ -195,7 +198,7 @@ pub(super) fn apply_latest(app: &mut NativeApp) {
             super::selection::clear(app);
             super::annotations::clear(app);
             app.state.renderer_ready();
-            window.set_title("Deep Engine Native Viewer — package opened");
+            crate::window_chrome::set_title(&window, "Deep Engine Native Viewer — package opened");
             app.request_redraw();
         }
         Err(error) => {
@@ -212,6 +215,9 @@ mod tests;
 fn reject(app: &NativeApp, error: &str) {
     eprintln!("package open rejected, previous scene retained: {error}");
     if let Some(window) = &app.window {
-        window.set_title("Deep Engine Native Viewer — package rejected, previous scene retained");
+        crate::window_chrome::set_title(
+            window,
+            "Deep Engine Native Viewer — package rejected, previous scene retained",
+        );
     }
 }

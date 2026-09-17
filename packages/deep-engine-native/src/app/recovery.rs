@@ -50,7 +50,10 @@ pub(super) fn handle(app: &mut NativeApp, event_loop: &ActiveEventLoop, event: &
             app.state.failed(format!("uncaptured GPU error: {message}"));
             eprintln!("uncaptured GPU error: {message}");
             if let Some(window) = app.window.as_ref() {
-                window.set_title("Deep Engine Native Viewer — GPU error (press R to rebuild)");
+                crate::window_chrome::set_title(
+                    window,
+                    "Deep Engine Native Viewer — GPU error (press R to rebuild)",
+                );
             }
             true
         }

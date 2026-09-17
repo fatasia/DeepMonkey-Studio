@@ -7,7 +7,10 @@ pub(super) fn key(app: &mut NativeApp, key: KeyCode) -> bool {
     };
     if !app.content.active().material_bindings.is_empty() {
         if let Some(window) = &app.window {
-            window.set_title("Deep Engine Native Viewer — section unavailable for authored ShaderPackage materials");
+            crate::window_chrome::set_title(
+                window,
+                "Deep Engine Native Viewer — section unavailable for authored ShaderPackage materials",
+            );
         }
         return true;
     }
@@ -19,12 +22,15 @@ pub(super) fn key(app: &mut NativeApp, key: KeyCode) -> bool {
     }
     if let Some(window) = &app.window {
         if plane == [0.0; 4] {
-            window.set_title("Deep Engine Native Viewer — section off");
+            crate::window_chrome::set_title(window, "Deep Engine Native Viewer — section off");
         } else {
-            window.set_title(&format!(
-            "Deep Engine Native Viewer — section [{:.2}, {:.2}, {:.2}] offset {:.2} (C toggles)",
-            plane[0], plane[1], plane[2], plane[3]
-        ));
+            crate::window_chrome::set_title(
+                window,
+                &format!(
+                    "Deep Engine Native Viewer — section [{:.2}, {:.2}, {:.2}] offset {:.2} (C toggles)",
+                    plane[0], plane[1], plane[2], plane[3]
+                ),
+            );
         }
     }
     app.request_redraw();

@@ -253,7 +253,7 @@ fn report(app: &NativeApp, error: Option<&str>) {
         + 1;
     let label = format!("页面 {page} / {}", runtime.document().pages.len());
     let status = error.unwrap_or(&label);
-    window.set_title(&format!("Deep Engine Dashboard — {status}"));
+    crate::window_chrome::set_title(window, &format!("Deep Engine Dashboard — {status}"));
 }
 
 #[cfg(test)]

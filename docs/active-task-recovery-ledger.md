@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 独立客户端标题栏/全屏：深色系统窗口栏统一 EXE 应用名；F11 切换，Esc 先取消编辑/焦点再退出全屏。场景和 Dashboard 实窗双尺寸按键/边界恢复通过，bin124/43 ignored、clippy/build/gate通过；旧发布EXE需重打，活动窗口控件视觉仍待。[证据](specs/native-window-chrome-2026-09-17.md)
+
 - 用户更新：体积优化后置，当前继续 Deep2D、Deep Engine、工业模型主流程；轻量化、极致性能、优秀视觉共同验收，不以删功能或降画质代替。DE26 仍留最后待决定。
 - Native 全包重试保留单候选 renderer，非零窗口跳帧不再重复建设设备；Recover 丢弃候选后重建。真实 GPU 3 项、bin 122/43 ignored、clippy 通过；跳帧/恢复为结果注入，最终呈现为真机。[证据与边界](specs/native-full-retry-reuse-2026-09-17.md)
 - 3DM `de58251`：7 条周期自缝源证明与网格审核补齐，未验证7→0，GLB不变；仍有65条跨面不一致，保持部分预览。[证据](specs/industrial-3dm-self-seam-audit-2026-09-17.md)
