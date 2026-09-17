@@ -12,7 +12,7 @@ import {proveSourceBoundary} from './3dm-source-boundary-proof.mts';
 import {evaluateCurve,evaluateSurface} from './3dm-nurbs-parameters.mjs';
 import {export3dmGlb} from './3dm-glb-export.mts';
 import {auditGlbGeometry} from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/cylinder-isocurve-2026-09-17-v1/plane');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/bezier-interval-2026-09-17-v1/plane');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),hash='a1b0ef69925b5d9223a7d797033055bb766842768a96f7713e1ecaec2763bb31';
 assert.equal(sha(readFileSync(path)),hash);const run=spawnSync(resolve(root,'test-output/3dm-source-audit/3dm-source-audit.exe'),[path,'--parameter-evidence-all'],{encoding:'utf8',maxBuffer:128*1024*1024,timeout:60000});
@@ -22,7 +22,7 @@ const fixed=[60,84,86,88,89,91];
 function raw(face:number):any{return ir.surfaces[ir.faces[face].surface].degree.every((x:number)=>x===1)?tessellatePlanarFace(ir,face):tessellateRationalBezierFace(ir,face,.001);}
 test('six plane/isocurve source identities preserve old vertices through bounded local retriangulation',async()=>{
   const result=completeBrepParts(object,.001),records=result.sourceEdgeSynchronizations.filter(r=>fixed.includes(r.edge));
-  assert.deepEqual(records.map(r=>r.edge),fixed);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,56);
+  assert.deepEqual(records.map(r=>r.edge),fixed);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,54);
   const patches=records.find(r=>r.edge===60).proofs.flatMap(p=>p.localRetriangulations??[]);assert(patches.length>0);assert(patches.every(p=>p.removed<=64&&p.passes<=5));
   assert.equal(result.boundaryAudit.unverified.length,0);assert(result.boundaryAudit.seams.every(e=>e.conforming));
   let references=0,maxReferenceError=0;
