@@ -14,6 +14,14 @@ pub struct XPublishedOutput {
     pub messages: Vec<XMessage>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct XTickBinding {
+    pub epoch: u64,
+    pub started_at_ms: u64,
+    pub random_seed: u64,
+    pub events: Vec<XEvent>,
+}
+
 impl XPublishedOutput {
     /// X can publish one isolated Deep2D layer per epoch; non-display messages remain diagnostics.
     pub fn display_list(&self) -> Result<Option<&crate::deep2d::Deep2dDisplayList>, &'static str> {
@@ -68,6 +76,17 @@ impl XContentScheduler {
             }
             process::lpac::evaluate(&worker, config, request, context)
         })
+    }
+
+    /// Rebinds only host-owned tick inputs; frozen calls/resources remain byte-for-byte unchanged.
+    pub fn dispatch_tick(
+        &mut self,
+        template: &XDynamicContent,
+        binding: XTickBinding,
+        mut context: impl FnMut() -> XExecutionContext,
+    ) -> Result<&XPublishedOutput, XProcessError> {
+        let content = bind_tick(template, binding)?;
+        self.dispatch(&content, &mut context)
     }
 
     fn dispatch_with(
@@ -125,6 +144,38 @@ impl XContentScheduler {
             .as_ref()
             .expect("successful publication assigned"))
     }
+}
+
+pub fn bind_tick(
+    template: &XDynamicContent,
+    binding: XTickBinding,
+) -> Result<XDynamicContent, XProcessError> {
+    const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+    let original = serde_json::to_value(&template.request).map_err(io_error)?;
+    if template.content_hash.algorithm != "sha256"
+        || template.content_hash.value != runtime_content_sha256(&original)
+    {
+        return Err(XProcessError::InvalidReceipt);
+    }
+    if [binding.epoch, binding.started_at_ms, binding.random_seed]
+        .into_iter()
+        .any(|value| value > MAX_SAFE_JSON_INTEGER)
+    {
+        return Err(XProcessError::Rejected(XRejection::InvalidInput(
+            "tick integers must be JSON-safe",
+        )));
+    }
+    let mut content = template.clone();
+    content.request.expected_epoch = binding.epoch;
+    content.request.started_at_ms = binding.started_at_ms;
+    content.request.random_seed = binding.random_seed;
+    content.request.events = binding.events;
+    let value = serde_json::to_value(&content.request).map_err(io_error)?;
+    content.content_hash = crate::runtime_package::RuntimeContentHash {
+        algorithm: "sha256".into(),
+        value: runtime_content_sha256(&value),
+    };
+    Ok(content)
 }
 
 fn io_error(error: impl std::fmt::Display) -> XProcessError {

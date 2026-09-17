@@ -162,4 +162,50 @@ fn product_scheduler_requires_fixed_worker_and_runs_only_lpac() {
     assert_eq!(display_receipt["messages"][0]["type"], "display-list");
     assert_eq!(display_receipt["deep2d"]["commands"], 1);
     assert_eq!(display_receipt["deep2d"]["fillTriangles"], 1);
+
+    let tick_output = Command::new(&player)
+        .args([
+            "--headless-x-package-ticks",
+            display_path.to_str().unwrap(),
+            "3",
+        ])
+        .env("LOCALAPPDATA", package.0.join("local"))
+        .output()
+        .unwrap();
+    assert!(
+        tick_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&tick_output.stderr)
+    );
+    let tick_stdout = String::from_utf8_lossy(&tick_output.stdout);
+    let ticks: serde_json::Value = serde_json::from_str(
+        tick_stdout
+            .strip_prefix("Deep2D X runtime package OK: ")
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(ticks["tickCount"], 3);
+    assert_eq!(ticks["ticks"][0]["epoch"], 9);
+    assert_eq!(ticks["ticks"][2]["epoch"], 11);
+    assert_ne!(
+        ticks["ticks"][0]["requestHash"],
+        ticks["ticks"][1]["requestHash"]
+    );
+    assert_eq!(
+        ticks["ticks"][0]["outputHash"],
+        ticks["ticks"][2]["outputHash"]
+    );
+    assert_eq!(ticks["ticks"][2]["deep2d"]["fillTriangles"], 1);
+
+    let bad_count = Command::new(&player)
+        .args([
+            "--headless-x-package-ticks",
+            display_path.to_str().unwrap(),
+            "0",
+        ])
+        .env("LOCALAPPDATA", package.0.join("local"))
+        .output()
+        .unwrap();
+    assert!(!bad_count.status.success());
 }

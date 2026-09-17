@@ -10,6 +10,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Deep2D experimental compatibility
 
+- Execute bounded multi-tick X packages through the isolated native worker and Painter; verify the frozen template before rebinding host inputs and retain the last successful output on failure.
+
 - Bound Windows workers to a Job before execution; limit process-tree memory, CPU time and process count, and reclaim descendants and inherited pipes on cancellation or failure. File/network permissions and packaged runtime integration remain pending.
 
 - Run the closed X ABI in a separate worker with bounded IPC, receipt hashes, cancellation and timeout checks. Keep publication behind the existing epoch check; OS-level sandboxing and packaged runtime integration remain pending.

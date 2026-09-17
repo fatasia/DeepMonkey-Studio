@@ -132,6 +132,18 @@ pub fn execute() -> Result<(), String> {
             reject_extra(args)?;
             crate::x_worker_cli::run_package(&path)
         }
+        Some("--headless-x-package-ticks") => {
+            let path = required_path(&mut args, "--headless-x-package-ticks")?;
+            let count = args
+                .next()
+                .ok_or("--headless-x-package-ticks requires a tick count")?
+                .to_str()
+                .ok_or("X tick count must be valid Unicode")?
+                .parse::<usize>()
+                .map_err(|_| "X tick count must be an integer from 1 through 1024")?;
+            reject_extra(args)?;
+            crate::x_worker_cli::run_package_ticks(&path, count)
+        }
         Some(option @ ("--package" | "--smoke-package" | "--headless-package")) => {
             let path = required_path(&mut args, option)?;
             reject_extra(args)?;

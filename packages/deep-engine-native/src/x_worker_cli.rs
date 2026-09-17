@@ -54,9 +54,15 @@ pub fn run() -> Result<(), String> {
 
 #[cfg(windows)]
 pub fn run_package(path: &std::path::Path) -> Result<(), String> {
+    run_package_ticks(path, 1)
+}
+
+#[cfg(windows)]
+pub fn run_package_ticks(path: &std::path::Path, tick_count: usize) -> Result<(), String> {
     use deep_engine_native::compat_x::{
-        CompatibilityLane, XBudget, XExecutionContext, process::XProcessConfig,
-        scheduler::XContentScheduler,
+        CompatibilityLane, XBudget, XExecutionContext,
+        process::XProcessConfig,
+        scheduler::{XContentScheduler, XTickBinding},
     };
     use deep_engine_native::runtime_package::{
         parse_and_validate_x_runtime_package, read_runtime_package_bytes,
@@ -83,8 +89,9 @@ pub fn run_package(path: &std::path::Path) -> Result<(), String> {
             (loaded, bytes, "last-known-good", Some(primary_error))
         }
     };
-    let epoch = loaded.content.request.expected_epoch;
-    let now_ms = loaded.content.request.started_at_ms;
+    if !(1..=1_024).contains(&tick_count) {
+        return Err("X tick count must be an integer from 1 through 1024".into());
+    }
     let mut scheduler = XContentScheduler::new(XProcessConfig {
         enabled: true,
         lane: CompatibilityLane::ExperimentalX,
@@ -92,41 +99,71 @@ pub fn run_package(path: &std::path::Path) -> Result<(), String> {
         ..Default::default()
     })
     .map_err(|error| format!("X worker/config: {error:?}"))?;
-    let published = scheduler
-        .dispatch(&loaded.content, || XExecutionContext {
-            current_epoch: epoch,
-            now_ms,
-            cancelled: false,
+    let template = loaded.content.clone();
+    let mut ticks = Vec::with_capacity(tick_count);
+    for index in 0..tick_count {
+        let offset = u64::try_from(index).map_err(|_| "X tick index overflow")?;
+        let epoch = template
+            .request
+            .expected_epoch
+            .checked_add(offset)
+            .ok_or("X tick epoch overflow")?;
+        let now_ms = template
+            .request
+            .started_at_ms
+            .checked_add(offset.checked_mul(16).ok_or("X tick time overflow")?)
+            .ok_or("X tick time overflow")?;
+        let random_seed = template
+            .request
+            .random_seed
+            .checked_add(offset)
+            .ok_or("X tick random seed overflow")?;
+        let published = scheduler
+            .dispatch_tick(
+                &template,
+                XTickBinding {
+                    epoch,
+                    started_at_ms: now_ms,
+                    random_seed,
+                    events: template.request.events.clone(),
+                },
+                || XExecutionContext {
+                    current_epoch: epoch,
+                    now_ms,
+                    cancelled: false,
+                },
+            )
+            .map_err(|error| format!("X runtime package tick {index} failed: {error:?}"))?;
+        ticks.push(published_receipt(published)?);
+    }
+    let receipt = if tick_count == 1 {
+        let mut receipt = ticks.pop().expect("one tick was published");
+        let object = receipt.as_object_mut().expect("tick receipt is an object");
+        object.insert("schemaVersion".into(), serde_json::json!(1));
+        object.insert("active".into(), serde_json::json!(active));
+        object.insert(
+            "packageId".into(),
+            serde_json::json!(loaded.base.package_id),
+        );
+        object.insert("resourceId".into(), serde_json::json!(loaded.resource_id));
+        object.insert("revision".into(), serde_json::json!(loaded.revision));
+        object.insert(
+            "primaryRejection".into(),
+            serde_json::json!(primary_rejection),
+        );
+        receipt
+    } else {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "active": active,
+            "packageId": loaded.base.package_id,
+            "resourceId": loaded.resource_id,
+            "revision": loaded.revision,
+            "tickCount": tick_count,
+            "ticks": ticks,
+            "primaryRejection": primary_rejection,
         })
-        .map_err(|error| format!("X runtime package dispatch failed: {error:?}"))?;
-    let deep2d = published
-        .display_list()
-        .map_err(|error| format!("X display publication rejected: {error}"))?
-        .map(|display_list| {
-            let prepared = deep_engine_native::deep2d::prepare_display_list(display_list)
-                .map_err(|error| format!("X Deep2D painter preparation failed: {error:?}"))?;
-            Ok::<_, String>(serde_json::json!({
-                "commands": prepared.summary.commands,
-                "pathSegments": prepared.summary.path_segments,
-                "fillTriangles": prepared.summary.fill_triangles,
-                "strokeTriangles": prepared.summary.stroke_triangles,
-                "vertices": prepared.summary.vertices,
-            }))
-        })
-        .transpose()?;
-    let receipt = serde_json::json!({
-        "schemaVersion": 1,
-        "active": active,
-        "packageId": loaded.base.package_id,
-        "resourceId": loaded.resource_id,
-        "revision": loaded.revision,
-        "epoch": published.epoch,
-        "requestHash": published.request_hash,
-        "outputHash": published.output_hash,
-        "messages": published.messages,
-        "deep2d": deep2d,
-        "primaryRejection": primary_rejection,
-    });
+    };
     match store {
         Ok(store) => {
             if let Err(error) = store.commit_x(&bytes, &loaded.base.package_hash) {
@@ -146,6 +183,34 @@ pub fn run_package(path: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn published_receipt(
+    published: &deep_engine_native::compat_x::scheduler::XPublishedOutput,
+) -> Result<serde_json::Value, String> {
+    let deep2d = published
+        .display_list()
+        .map_err(|error| format!("X display publication rejected: {error}"))?
+        .map(|display_list| {
+            let prepared = deep_engine_native::deep2d::prepare_display_list(display_list)
+                .map_err(|error| format!("X Deep2D painter preparation failed: {error:?}"))?;
+            Ok::<_, String>(serde_json::json!({
+                "commands": prepared.summary.commands,
+                "pathSegments": prepared.summary.path_segments,
+                "fillTriangles": prepared.summary.fill_triangles,
+                "strokeTriangles": prepared.summary.stroke_triangles,
+                "vertices": prepared.summary.vertices,
+            }))
+        })
+        .transpose()?;
+    Ok(serde_json::json!({
+        "epoch": published.epoch,
+        "requestHash": published.request_hash,
+        "outputHash": published.output_hash,
+        "messages": published.messages,
+        "deep2d": deep2d,
+    }))
+}
+
 #[cfg(not(windows))]
 pub fn run() -> Result<(), String> {
     Err("X worker/LPAC verification is Windows-only".into())
@@ -153,5 +218,10 @@ pub fn run() -> Result<(), String> {
 
 #[cfg(not(windows))]
 pub fn run_package(_path: &std::path::Path) -> Result<(), String> {
+    Err("X runtime package execution is Windows-only".into())
+}
+
+#[cfg(not(windows))]
+pub fn run_package_ticks(_path: &std::path::Path, _tick_count: usize) -> Result<(), String> {
     Err("X runtime package execution is Windows-only".into())
 }

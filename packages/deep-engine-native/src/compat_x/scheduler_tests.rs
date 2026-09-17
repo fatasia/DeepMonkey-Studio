@@ -173,3 +173,97 @@ fn oversized_and_deep_inputs_never_launch_worker() {
         Err(XProcessError::Rejected(XRejection::CallDepthExceeded))
     );
 }
+
+#[test]
+fn tick_rebinding_changes_only_host_inputs_and_failed_tick_keeps_lkg() {
+    let mut template = content();
+    template.request.calls = vec![
+        XCall::ReadClock,
+        XCall::DrawRandom,
+        XCall::ReadEvent { index: 0 },
+    ];
+    template.request.events = vec![XEvent::Key { code: XKey::Enter }];
+    template.content_hash.value =
+        runtime_content_sha256(&serde_json::to_value(&template.request).unwrap());
+    let calls = template.request.calls.clone();
+    let resources = template.request.resources.clone();
+    let first = bind_tick(
+        &template,
+        XTickBinding {
+            epoch: 8,
+            started_at_ms: 200,
+            random_seed: 11,
+            events: vec![XEvent::Key { code: XKey::Escape }],
+        },
+    )
+    .unwrap();
+    assert_eq!(first.request.calls, calls);
+    assert_eq!(first.request.resources, resources);
+    assert_ne!(first.content_hash.value, template.content_hash.value);
+
+    let mut scheduler = enabled();
+    let mut first_context = || XExecutionContext {
+        current_epoch: 8,
+        now_ms: 200,
+        cancelled: false,
+    };
+    let published = scheduler
+        .dispatch_with(&first, &mut first_context, worker)
+        .unwrap()
+        .clone();
+    assert_eq!(published.epoch, 8);
+    assert_eq!(published.messages[0], XMessage::Clock(200));
+    assert_eq!(
+        published.messages[2],
+        XMessage::Event(XEvent::Key { code: XKey::Escape })
+    );
+
+    let second = bind_tick(
+        &template,
+        XTickBinding {
+            epoch: 9,
+            started_at_ms: 216,
+            random_seed: 12,
+            events: vec![XEvent::Key {
+                code: XKey::ArrowRight,
+            }],
+        },
+    )
+    .unwrap();
+    let mut stale_context = || XExecutionContext {
+        current_epoch: 8,
+        now_ms: 216,
+        cancelled: false,
+    };
+    assert!(matches!(
+        scheduler.dispatch_with(&second, &mut stale_context, worker),
+        Err(XProcessError::Rejected(XRejection::StaleEpoch { .. }))
+    ));
+    assert_eq!(scheduler.last_known_good(), Some(&published));
+    let mut corrupted = template.clone();
+    corrupted.request.calls.clear();
+    assert!(matches!(
+        bind_tick(
+            &corrupted,
+            XTickBinding {
+                epoch: 10,
+                started_at_ms: 232,
+                random_seed: 13,
+                events: vec![],
+            }
+        ),
+        Err(XProcessError::InvalidReceipt)
+    ));
+    assert!(
+        bind_tick(
+            &template,
+            XTickBinding {
+                epoch: 9_007_199_254_740_992,
+                started_at_ms: 0,
+                random_seed: 0,
+                events: vec![],
+            }
+        )
+        .is_err()
+    );
+}

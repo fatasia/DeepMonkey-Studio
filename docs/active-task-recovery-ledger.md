@@ -1961,6 +1961,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 新增 TS 逐字节 display golden：正式播放器经固定 worker→LPAC→IPC→scheduler 后把 typed message 送入生产 `prepare_display_list`，实际得到 1 command / 1 fill triangle；回执报告 painter commands/segments/triangles/vertices，不是只打印 JSON。
 - TypeScript runtime package 314、Native compat_x 16、v6 package 7（另 1 child-only 实际调起）、产品 CLI 纵向 1 项通过，typecheck/clippy/fmt 通过。真实 GPU layer 合成、持续 tick、编辑器操作映射和正式发布服务路由仍待办。[证据](specs/deep2d-p2-01-x-display-batch-2026-09-17.md)
 
+### 2026-09-17 Deep2D P2-01 X 包多 tick 执行（Codex）
+
+- 宿主可逐 tick 重绑定 epoch/时间/种子/事件，原模板先验 SHA-256，calls/resources 不变；坏模板、非 JSON 安全整数与过期结果拒绝，失败保留 scheduler LKG。
+- 显式 headless CLI 支持 1～1024 次真实 LPAC→IPC→Painter，所有 tick 成功后才更新包级 LKG。3 次实跑 epoch 9→11、请求 hash 变化、静态输出 hash 相同、末次 1 fill triangle；scheduler 6 项与产品 CLI 纵向通过，clippy/fmt 通过。
+- 诊断逻辑时间步长为 16 ms，重复冻结事件；每 tick 重启 worker，不计作实时帧率或窗口呈现验收。持续 worker、GPU layer 合成、编辑器映射和正式发布仍待办。[证据](specs/deep2d-p2-01-x-continuous-ticks-2026-09-17.md)
+
 ### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
 
 - 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。
