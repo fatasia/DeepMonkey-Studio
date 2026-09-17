@@ -1973,6 +1973,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 真实会话 5 项、库 19 项、原 LPAC 4/IPC 7/Job 4/v6 7/产品 CLI 1 与回执预算 1 项通过；取消/超时/崩溃/坏回执/超大帧头均检查真实句柄退出与 profile 清理，1025 次拒绝。clippy/fmt/repository gate 通过。
 - 本机 16 次等价请求，逐次启动 2308.7599 ms→持续会话含启动清理 129.5648 ms；热 tick 1.3834～1.7524 ms。只计进程执行链，GPU layer/输入呈现/编辑器映射/正式发布仍待办。[证据](specs/deep2d-p2-01-x-persistent-worker-2026-09-17.md)
 
+### 2026-09-17 Deep2D P2-01 X 输出真实 GPU 读回（Codex）
+
+- 已冻结 TS v6 作者包→真实 LPAC 持续 worker→publish→生产 Deep2dGpuPainter，在 RTX 4060/Vulkan 两轮读回通过；每轮 epoch 9/10 各 1914 个独立内部像素符合解析三角形真值，外部精确保持背景，颜色误差 ≤1/255。
+- 初始创建/增量 stage 完整图像一致；取消后重新绘制旧 painter，逐像素不变。clippy 通过。本片是离屏证据，普通窗口状态机、真实呈现及浏览器双主题双尺寸视觉闭环仍待办，不计作 Kimi-95 验收。[证据](specs/deep2d-p2-01-x-gpu-readback-2026-09-17.md)
+
 ### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
 
 - 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。
