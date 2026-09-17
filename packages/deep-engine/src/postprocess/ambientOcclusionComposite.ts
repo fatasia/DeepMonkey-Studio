@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { validateAmbientOcclusionCompositeOptions } from "./ambientOcclusionCompositeCpu.js";
 import {
   AMBIENT_OCCLUSION_COMPOSITE_COLOR_FORMAT,
@@ -30,15 +31,23 @@ interface Cache extends Allocation {
   readonly options: AmbientOcclusionCompositeOptions;
   readonly binding: GPUBindGroup;
 }
+interface PooledBinding {
+  readonly output: GPUTexture; readonly color: GPUTexture; readonly depth: GPUTexture;
+  readonly ao: GPUTexture; readonly normal: GPUTexture | undefined; readonly binding: GPUBindGroup;
+}
 
 /** Full-resolution depth-aware AO upsample and linear HDR modulation. */
 export class AmbientOcclusionCompositePass {
   private readonly layout: GPUBindGroupLayout;
   private readonly pipeline: GPUComputePipeline;
   private cache: Cache | undefined;
+  private pooledParameters: GPUBuffer | undefined;
+  private pooledEpoch = -1;
+  private pooledBindings: PooledBinding[] = [];
+  private pooledSource: AmbientOcclusionCompositeSource | undefined;
   private disposed = false;
 
-  constructor(private readonly session: DeviceSession) {
+  constructor(private readonly session: DeviceSession, private readonly pool?: PbrTransientTexturePool) {
     this.assertReady();
     const device = session.device;
     const module = device.createShaderModule({ label: "Deep ambient occlusion composite WGSL", code: AMBIENT_OCCLUSION_COMPOSITE_WGSL });
@@ -59,7 +68,7 @@ export class AmbientOcclusionCompositePass {
   }
 
   get current(): AmbientOcclusionCompositeResult | undefined {
-    if (this.disposed) return undefined;
+    if (this.disposed || this.pool) return undefined;
     if (this.session.state !== "ready") { this.clearCache(); return undefined; }
     return this.cache ? this.result(this.cache, false) : undefined;
   }
@@ -70,6 +79,7 @@ export class AmbientOcclusionCompositePass {
     options: AmbientOcclusionCompositeOptions,
   ): AmbientOcclusionCompositeResult {
     this.assertUsable(); validateRequest(this.session.device, source, options);
+    if (this.pool) return this.encodePooled(encoder, source, options);
     const previous = this.cache;
     if (previous && source.revision < previous.source.revision) throw new Error("Stale AO composite source revision.");
     if (previous && source.revision === previous.source.revision && !sameSource(previous.source, source)) {
@@ -102,6 +112,49 @@ export class AmbientOcclusionCompositePass {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; this.clearCache();
+    if (this.pooledParameters) this.session.release(this.pooledParameters);
+    this.pooledParameters = undefined; this.pooledBindings = []; this.pooledSource = undefined;
+  }
+
+  private encodePooled(encoder: GPUCommandEncoder, source: AmbientOcclusionCompositeSource,
+    options: AmbientOcclusionCompositeOptions): AmbientOcclusionCompositeResult {
+    if (!this.pool!.frameOpen) throw new Error("AO composite transient texture requires an open frame scope.");
+    const previous = this.pooledSource;
+    if (previous && source.revision < previous.revision) throw new Error("Stale AO composite source revision.");
+    if (previous && source.revision === previous.revision && !sameSource(previous, source)) {
+      throw new Error("AO composite source textures changed without a revision.");
+    }
+    if (this.pooledEpoch !== this.pool!.epoch) { this.pooledEpoch = this.pool!.epoch; this.pooledBindings = []; }
+    let handle: PbrTransientTextureHandle | undefined;
+    try {
+      handle = this.pool!.acquire({ resourceId: "ao-hdr", width: source.color.width, height: source.color.height, sampleCount: 1,
+        format: AMBIENT_OCCLUSION_COMPOSITE_COLOR_FORMAT, usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
+          | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+      const allocation: Allocation = { width: source.color.width, height: source.color.height,
+        output: handle.texture, outputView: handle.view, parameters: this.parameters() };
+      let cached = this.pooledBindings.find(item => item.output === handle!.texture && item.color === source.color
+        && item.depth === source.depth && item.ao === source.ambientOcclusion.texture && item.normal === source.normal);
+      if (!cached) {
+        cached = { output: handle.texture, color: source.color, depth: source.depth, ao: source.ambientOcclusion.texture,
+          normal: source.normal, binding: this.bind(allocation, source) };
+        this.pooledBindings.push(cached); if (this.pooledBindings.length > 4) this.pooledBindings.shift();
+      }
+      this.session.device.queue.writeBuffer(allocation.parameters, 0, packParameters(source, options));
+      const pass = encoder.beginComputePass({ label: "Deep ambient occlusion HDR composite" });
+      pass.setPipeline(this.pipeline); pass.setBindGroup(0, cached.binding);
+      pass.dispatchWorkgroups(Math.ceil(allocation.width / AMBIENT_OCCLUSION_COMPOSITE_WORKGROUP_SIZE),
+        Math.ceil(allocation.height / AMBIENT_OCCLUSION_COMPOSITE_WORKGROUP_SIZE)); pass.end();
+      this.pooledSource = source;
+      return Object.freeze({ texture: handle.texture, format: AMBIENT_OCCLUSION_COMPOSITE_COLOR_FORMAT,
+        width: allocation.width, height: allocation.height, revision: source.revision, updated: true, colorEncoding: "linear-hdr" });
+    } finally { if (handle) this.pool!.release(handle); }
+  }
+
+  private parameters(): GPUBuffer {
+    return this.pooledParameters ??= this.session.own(this.session.device.createBuffer({
+      label: "Deep ambient occlusion composite transient parameters", size: PARAMETER_BYTES,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    }));
   }
 
   private allocate(width: number, height: number): Allocation {

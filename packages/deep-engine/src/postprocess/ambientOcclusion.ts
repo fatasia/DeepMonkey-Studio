@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { validateAmbientOcclusionOptions } from "./ambientOcclusionCpu.js";
 import { AMBIENT_OCCLUSION_DEPTH_FORMAT, AMBIENT_OCCLUSION_NORMAL_FORMAT, AMBIENT_OCCLUSION_OUTPUT_FORMAT,
   type AmbientOcclusionOptions, type AmbientOcclusionResult, type AmbientOcclusionSource } from "./ambientOcclusionTypes.js";
@@ -18,6 +19,11 @@ interface Cache extends Allocation {
   readonly evaluateBinding: GPUBindGroup; readonly horizontalBinding: GPUBindGroup; readonly verticalBinding: GPUBindGroup;
 }
 interface Request { readonly sourceWidth: number; readonly sourceHeight: number; readonly width: number; readonly height: number }
+interface PooledBindings {
+  readonly raw: GPUTexture; readonly temporary: GPUTexture; readonly output: GPUTexture;
+  readonly depth: GPUTexture; readonly normal: GPUTexture;
+  readonly evaluate: GPUBindGroup; readonly horizontal: GPUBindGroup; readonly vertical: GPUBindGroup;
+}
 
 export function ambientOcclusionHalfSize(width: number, height: number): readonly [number, number] {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) throw new Error("AO source dimensions must be positive safe integers.");
@@ -29,8 +35,10 @@ export class AmbientOcclusionPass {
   private readonly evaluateLayout: GPUBindGroupLayout; private readonly blurLayout: GPUBindGroupLayout;
   private readonly evaluatePipeline: GPUComputePipeline; private readonly horizontalPipeline: GPUComputePipeline; private readonly verticalPipeline: GPUComputePipeline;
   private cache: Cache | undefined; private disposed = false;
+  private pooledParameters: GPUBuffer | undefined; private pooledEpoch = -1; private pooledBindings: PooledBindings[] = [];
+  private pooledSource: AmbientOcclusionSource | undefined;
 
-  constructor(private readonly session: DeviceSession) {
+  constructor(private readonly session: DeviceSession, private readonly pool?: PbrTransientTexturePool) {
     this.assertReady(); const device = session.device;
     const evaluateModule = device.createShaderModule({ label: "Deep ambient occlusion WGSL", code: AMBIENT_OCCLUSION_EVALUATE_WGSL });
     const blurModule = device.createShaderModule({ label: "Deep ambient occlusion bilateral blur WGSL", code: AMBIENT_OCCLUSION_BLUR_WGSL });
@@ -58,11 +66,13 @@ export class AmbientOcclusionPass {
   }
 
   get current(): AmbientOcclusionResult | undefined {
-    return !this.disposed && this.session.state === "ready" && this.cache ? this.result(this.cache, false) : undefined;
+    return !this.pool && !this.disposed && this.session.state === "ready" && this.cache ? this.result(this.cache, false) : undefined;
   }
 
   encode(encoder: GPUCommandEncoder, source: AmbientOcclusionSource, options: AmbientOcclusionOptions): AmbientOcclusionResult {
-    this.assertUsable(); const request = validateRequest(this.session.device, source, options), previous = this.cache;
+    this.assertUsable(); const request = validateRequest(this.session.device, source, options);
+    if (this.pool) return this.encodePooled(encoder, source, options, request);
+    const previous = this.cache;
     if (previous && source.revision < previous.source.revision) throw new Error("Stale ambient occlusion source revision.");
     if (previous && source.revision === previous.source.revision
       && (source.depth !== previous.source.depth || source.normal !== previous.source.normal)) throw new Error("Ambient occlusion source textures changed without a revision.");
@@ -83,7 +93,53 @@ export class AmbientOcclusionPass {
     } catch (error) { if (candidate && candidate !== previous) this.release(candidate); throw error; }
   }
 
-  dispose(): void { if (this.disposed) return; this.disposed = true; if (this.cache) this.release(this.cache); this.cache = undefined; }
+  dispose(): void {
+    if (this.disposed) return; this.disposed = true;
+    if (this.cache) this.release(this.cache); this.cache = undefined;
+    if (this.pooledParameters) this.session.release(this.pooledParameters); this.pooledParameters = undefined;
+    this.pooledBindings = []; this.pooledSource = undefined;
+  }
+
+  private encodePooled(encoder: GPUCommandEncoder, source: AmbientOcclusionSource,
+    options: AmbientOcclusionOptions, request: Request): AmbientOcclusionResult {
+    if (!this.pool!.frameOpen) throw new Error("Ambient occlusion transient textures require an open frame scope.");
+    const previous = this.pooledSource;
+    if (previous && source.revision < previous.revision) throw new Error("Stale ambient occlusion source revision.");
+    if (previous && source.revision === previous.revision
+      && (source.depth !== previous.depth || source.normal !== previous.normal)) throw new Error("Ambient occlusion source textures changed without a revision.");
+    if (this.pooledEpoch !== this.pool!.epoch) { this.pooledEpoch = this.pool!.epoch; this.pooledBindings = []; }
+    const handles: PbrTransientTextureHandle[] = [];
+    const acquire = (resourceId: string, usage: GPUTextureUsageFlags) => {
+      const handle = this.pool!.acquire({ resourceId, width: request.width, height: request.height, sampleCount: 1,
+        format: AMBIENT_OCCLUSION_OUTPUT_FORMAT, usage }); handles.push(handle); return handle;
+    };
+    try {
+      const baseUsage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+      const raw = acquire("ao-evaluate-raw", baseUsage), temporary = acquire("ao-blur-temporary", baseUsage);
+      const output = acquire("ao-half", baseUsage | GPUTextureUsage.COPY_SRC);
+      const allocation: Allocation = { width: request.width, height: request.height, raw: raw.texture, temporary: temporary.texture,
+        output: output.texture, rawView: raw.view, temporaryView: temporary.view, outputView: output.view,
+        parameters: this.parameters() };
+      let bindings = this.pooledBindings.find(item => item.raw === raw.texture && item.temporary === temporary.texture
+        && item.output === output.texture && item.depth === source.depth && item.normal === source.normal);
+      if (!bindings) {
+        const created = this.bind(allocation, source);
+        bindings = { raw: raw.texture, temporary: temporary.texture, output: output.texture,
+          depth: source.depth, normal: source.normal, ...created };
+        this.pooledBindings.push(bindings); if (this.pooledBindings.length > 4) this.pooledBindings.shift();
+      }
+      this.session.device.queue.writeBuffer(allocation.parameters, 0, packParameters(request, options));
+      this.encodePass(encoder, allocation, bindings); this.pooledSource = source;
+      return Object.freeze({ texture: output.texture, format: AMBIENT_OCCLUSION_OUTPUT_FORMAT, width: request.width, height: request.height,
+        sourceWidth: request.sourceWidth, sourceHeight: request.sourceHeight, revision: source.revision, updated: true,
+        depthEncoding: "linear-view-depth-positive", sampleCount: AMBIENT_OCCLUSION_SAMPLE_COUNT });
+    } finally { for (const handle of handles) this.pool!.release(handle); }
+  }
+
+  private parameters(): GPUBuffer {
+    return this.pooledParameters ??= this.session.own(this.session.device.createBuffer({ label: "Deep ambient occlusion transient parameters",
+      size: PARAMETER_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }));
+  }
 
   private allocate(width: number, height: number): Allocation {
     const textures: GPUTexture[] = [], device = this.session.device;

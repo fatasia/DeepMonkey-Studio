@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "task": "DE26/B04",
+  "date": "2026-09-17",
+  "build": {
+    "sha256": "b7b474133c5838f6791cc4ca2cc0435a8a7486ee648068a274a131f86039bbce",
+    "javascriptBytes": 1379916,
+    "gzipBytes": 379285
+  },
+  "sourceReport": {
+    "path": "test-output/deep-engine/webgpu-1789630086114.json",
+    "sha256": "2c5f82379dde0cf09939fe15e9a82fd1e70734a1d565c7552f312c74041d487e"
+  },
+  "adapter": {
+    "vendor": "nvidia",
+    "architecture": "lovelace",
+    "isFallbackAdapter": false
+  },
+  "sample": {
+    "frames": 120,
+    "scene": "spheres-49",
+    "viewport": [1180, 825],
+    "cpuSubmitP95Ms": 0.6000000005587935,
+    "gpuP95Ms": 0.917504,
+    "gpuSampleCount": 120,
+    "gpuErrors": []
+  },
+  "transientTextures": {
+    "acquireCount": 1599,
+    "hits": 1588,
+    "misses": 11,
+    "hitRate": 0.9931207004377736,
+    "allocatedBytes": 43811040,
+    "reusedBytes": 6016853040,
+    "peakResidentBytes": 43811040,
+    "freeCount": 11,
+    "discardedCount": 0,
+    "evictedCount": 0
+  },
+  "resizeAndDeviceRebuild": {
+    "requestedShellWidth": 800,
+    "shellWidth": 800,
+    "canvasClientSize": [758, 326],
+    "firstFrameTextureSize": [947, 407],
+    "overflow": false,
+    "firstFrameAcquireCount": 9,
+    "firstFrameMisses": 9,
+    "gpuDiagnostics": []
+  },
+  "visualVerification": {
+    "browserRounds": 2,
+    "aoContactShadowsPresent": true,
+    "blackFrameOrClipping": false,
+    "designChanged": false
+  }
+}

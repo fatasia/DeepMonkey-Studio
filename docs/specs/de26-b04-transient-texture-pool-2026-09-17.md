@@ -1,6 +1,6 @@
 # DE26/B04 · 接真实临时纹理复用(帧内 transient 纹理池)
 
-日期:2026-09-17 · 分支:dev-studio · 状态:主 RenderTargets 生产接线与真机验证完成;后处理/OIT 私有 scratch 尚未纳入,整卡保持待办。
+日期:2026-09-17 · 分支:dev-studio · 状态:主 RenderTargets、OIT 与 AO 生产接线完成;Bloom 金字塔尚未纳入,整卡保持待办。
 
 ## 1. 任务定义(权威原文)
 
@@ -94,6 +94,12 @@ PbrRenderer.render
 `queue.submit` 后由 RenderTargets 的帧收口统一回池。draw/composite 抛错会先释放 handle,随后 renderer 的
 `failFrame` 销毁;不会让失败帧资源进入 free bucket。
 
+第四切片继续把同一个池传入 `AmbientOcclusionPass` 与 `AmbientOcclusionCompositePass`:半分辨率 evaluate raw、
+bilateral temporary、`ao-half` output 及全分辨率 `ao-hdr` 都在 encode 后转成 pending-return,由 renderer 的唯一
+提交边界收口。参数 storage buffer 仍由 pass 跨帧持有,不随 transient 纹理重建。bind group 以实际输入/输出纹理
+身份与 pool epoch 为键缓存:raw/temporary 因同键 LIFO 只需两个交替组合,稳定后不再每帧重建;resize/device loss
+推进 epoch 时清空旧绑定引用。TAA/Hi-Z history 继续由原 owner 持有,从未进入 AO acquire 路径。
+
 ## 7. 验证证据
 
 门禁(全部通过):
@@ -149,9 +155,16 @@ NVIDIA Lovelace、`MaterialModes` 透明合同场景、1180×825,连续 2475 帧
 800 px resize 与 device rebuild。浏览器截图接口在本轮两个 tab 均返回 unavailable,因此本轮不追加新的截图
 打分结论;前一切片的两轮截图基线仍有效。
 
+AO 生产路径记录见 [de26-b04-ao-evidence-2026-09-17.json](de26-b04-ao-evidence-2026-09-17.json):
+NVIDIA Lovelace 非 fallback adapter、49 球、1180×825 的 120 帧采样共 acquire 1,599 次,miss 11、hit 1,588
+(99.31%),`allocatedBytes=43,811,040`,`reusedBytes=6,016,853,040`,`peakResidentBytes=43,811,040`;
+CPU submit P95 0.60 ms、GPU P95 0.918 ms(120/120),GPU errors 为空。随后切到 800 px 容器并重建设备,
+新设备首帧 947×407、9 次 acquire 全为新 epoch 分配,页面 `overflow=false`,GPU diagnostics 为空。
+两轮浏览器截图确认 AO 阴影接触、PBR 材质与响应式控制区无新增黑帧、裁切或错位;本切片没有视觉设计改动。
+
 ## 8. 边界与未验证项(如实声明)
 
-- 主 `RenderTargets` 与 OIT accumulation/revealage/composited HDR 已接入。AO evaluate/blur/output、AO composite、
+- 主 `RenderTargets`、OIT accumulation/revealage/composited HDR、AO evaluate/blur/output 与 AO composite 已接入。
   Bloom/AuthorBloom pyramid 仍带跨调用 cache 与 bind-group 生命周期,尚未迁移,因此 B04 整卡不标完成。
 - TAA 色彩/深度 ping-pong 与 previous/next Hi-Z 是跨帧 history,确认继续排除,不属于待迁移 scratch。
 - 双 canvas 已验证独立首帧与无控制台 GPU error;本轮截图捕获不可用,未把 DOM 状态冒充像素截图。

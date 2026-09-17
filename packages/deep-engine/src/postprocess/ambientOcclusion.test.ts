@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import { PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { AmbientOcclusionPass, ambientOcclusionHalfSize } from "./ambientOcclusion.js";
 import { AMBIENT_OCCLUSION_BLUR_WGSL, AMBIENT_OCCLUSION_EVALUATE_WGSL } from "./ambientOcclusionWgsl.js";
 
@@ -39,6 +40,33 @@ beforeEach(() => { vi.stubGlobal("GPUShaderStage", { COMPUTE: 1 }); vi.stubGloba
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("WebGPU half-resolution ambient occlusion", () => {
+  it("reuses pooled textures and alternating bind groups without per-frame buffer allocation", () => {
+    const f = fixture(), encoder = encoderFixture(), pool = new PbrTransientTexturePool(f.session);
+    const pass = new AmbientOcclusionPass(f.session, pool), input = source();
+    for (let revision = 0; revision < 3; revision += 1) {
+      pool.beginFrame(); pass.encode(encoder.encoder, { ...input, revision }, options); pool.endFrame(true);
+    }
+    expect(pool.stats).toMatchObject({ acquireCount: 9, hits: 6, misses: 3, freeCount: 3 });
+    expect(f.outputs).toHaveLength(3); expect(f.buffers).toHaveLength(1);
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(6);
+    const bindingCount = f.device.createBindGroup.mock.calls.length;
+    pool.beginFrame(); pass.encode(encoder.encoder, { ...input, revision: 3 }, options); pool.endFrame(true);
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(bindingCount);
+    pool.invalidateAll("surface-resize"); pool.beginFrame();
+    pass.encode(encoder.encoder, source(17, 9, 4), options); pool.endFrame(true);
+    expect(pool.stats).toMatchObject({ epoch: 1, misses: 6, evictedCount: 3 });
+    pass.dispose(); pool.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("discards every pooled AO texture when binding construction fails", () => {
+    const f = fixture(), encoder = encoderFixture(), pool = new PbrTransientTexturePool(f.session);
+    const pass = new AmbientOcclusionPass(f.session, pool); pool.beginFrame();
+    f.device.createBindGroup.mockImplementationOnce(() => { throw new Error("AO pooled bind failed"); });
+    expect(() => pass.encode(encoder.encoder, source(), options)).toThrow("AO pooled bind failed");
+    expect(pool.stats.pendingReturnCount).toBe(3); pool.endFrame(false);
+    expect(pool.stats).toMatchObject({ discardedCount: 3, freeCount: 0 });
+    expect(f.outputs.every(value => value.destroy.mock.calls.length === 1)).toBe(true);
+    pass.dispose(); pool.dispose(); expect(f.owned.size).toBe(0);
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("passes Naga validation for AO and bilateral blur", () => {
     for (const [name, code] of [["evaluate", AMBIENT_OCCLUSION_EVALUATE_WGSL], ["blur", AMBIENT_OCCLUSION_BLUR_WGSL]] as const) {
       const validation = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!, ["--stdin-file-path", `deep-ao-${name}.wgsl`, "--input-kind", "wgsl"], { input: code, encoding: "utf8" });

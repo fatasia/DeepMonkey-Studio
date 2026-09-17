@@ -17,6 +17,7 @@ import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.j
 import { resolvePbrPostProcessOverrides, type PbrPostProcessOverrides } from "./pbrPostProcessOverrides.js";
 import { resolvePbrRendererFeatures, type PbrRendererFeatures,
   type PbrRendererFeatureOptions } from "./pbrRendererFeatures.js";
+import type { PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
 
 /** Soft-knee starts at linear radiance 1: SDR surfaces and backgrounds do not glow. */
 export const DEFAULT_PBR_BLOOM_OPTIONS = Object.freeze({ threshold: 1.25, softKnee: 0.2, intensity: 0.55, maxLevels: 5 });
@@ -55,7 +56,7 @@ export class PbrPostProcessChain {
   private disposed = false;
   private readonly features: PbrRendererFeatures;
 
-  constructor(private readonly session: DeviceSession, options: PbrRendererFeatureOptions = {}) {
+  constructor(private readonly session: DeviceSession, options: PbrRendererFeatureOptions = {}, pool?: PbrTransientTexturePool) {
     this.features = resolvePbrRendererFeatures(options);
     let hiZ: HiZPyramid | undefined, ambientOcclusion: AmbientOcclusionPass | undefined;
     let ambientOcclusionComposite: AmbientOcclusionCompositePass | undefined;
@@ -63,8 +64,8 @@ export class PbrPostProcessChain {
     try {
       if (this.features.occlusionCulling) hiZ = new HiZPyramid(session);
       if (this.features.ambientOcclusion) {
-        ambientOcclusion = new AmbientOcclusionPass(session);
-        ambientOcclusionComposite = new AmbientOcclusionCompositePass(session);
+        ambientOcclusion = new AmbientOcclusionPass(session, pool);
+        ambientOcclusionComposite = new AmbientOcclusionCompositePass(session, pool);
       }
       if (this.features.temporalAa) temporalAa = new TemporalAaPass(session);
       if (this.features.bloom) bloom = new BloomPass(session);

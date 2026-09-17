@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import { PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { AmbientOcclusionCompositePass } from "./ambientOcclusionComposite.js";
 import { compositeAmbientOcclusionCpu } from "./ambientOcclusionCompositeCpu.js";
 import type { AmbientOcclusionResult } from "./ambientOcclusionTypes.js";
@@ -73,6 +74,31 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("ambient occlusion HDR composite", () => {
+  it("reuses pooled AO HDR output and its bind group across submitted frames", () => {
+    const f = fixture(), encoder = encoderFixture(), pool = new PbrTransientTexturePool(f.session);
+    const pass = new AmbientOcclusionCompositePass(f.session, pool), initial = source();
+    for (let revision = 0; revision < 3; revision += 1) {
+      const input = source(revision, 13, 7, initial); pool.beginFrame(); pass.encode(encoder.encoder, input, options); pool.endFrame(true);
+    }
+    expect(pool.stats).toMatchObject({ acquireCount: 3, hits: 2, misses: 1, freeCount: 1 });
+    expect(f.outputs).toHaveLength(1); expect(f.device.createBuffer).toHaveBeenCalledTimes(1);
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(1);
+    pool.invalidateAll("device-lost"); pool.beginFrame();
+    pass.encode(encoder.encoder, source(3, 13, 7, initial), options); pool.endFrame(true);
+    expect(pool.stats).toMatchObject({ epoch: 1, misses: 2, evictedCount: 1 });
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(2);
+    pass.dispose(); pool.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("discards pooled AO HDR output when command encoding fails", () => {
+    const f = fixture(), encoder = encoderFixture(), pool = new PbrTransientTexturePool(f.session);
+    const pass = new AmbientOcclusionCompositePass(f.session, pool); pool.beginFrame();
+    encoder.encoder.beginComputePass = vi.fn(() => { throw new Error("AO composite encode failed"); });
+    expect(() => pass.encode(encoder.encoder, source(), options)).toThrow("AO composite encode failed");
+    expect(pool.stats.pendingReturnCount).toBe(1); pool.endFrame(false);
+    expect(pool.stats).toMatchObject({ discardedCount: 1, freeCount: 0 });
+    expect(f.outputs[0]?.destroy).toHaveBeenCalledTimes(1);
+    pass.dispose(); pool.dispose(); expect(f.owned.size).toBe(0);
+  });
   it("preserves unlit HDR RGB and opacity while lit neighbors retain AO", () => {
     const input = { width: 2, height: 1, color: [2, 0.5, 0.25, 0.5, 2, 0.5, 0.25, 0.75],
       depth: [10, 10], ambientOcclusionWidth: 1, ambientOcclusionHeight: 1, ambientOcclusion: [0.25], unlitMask: [1, 0] };
