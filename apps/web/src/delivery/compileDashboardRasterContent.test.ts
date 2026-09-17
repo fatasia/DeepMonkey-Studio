@@ -39,6 +39,39 @@ function payload(result: Awaited<ReturnType<typeof compileDashboardRasterContent
   return Object.values(result.package.payloads).find((value: any) => value.schema === "deep-engine.deep2d-runtime") as any;
 }
 describe("frozen dashboard raster orchestration", () => {
+  it("composes frozen page images above the system color and below author nodes", async () => {
+    const input = fixture("shape"), page = input.document.application.pages[0]!;
+    page.width = 320; page.height = 320;
+    page.appearance = { backgroundImageUrl: "/assets/background.png", backgroundImageFit: "original",
+      backgroundImagePosition: "right", backgroundImageRepeat: true };
+    const { bytes, sha256, identity } = input.assets.font!;
+    const bound = { ...input, assets: { image: { bytes, sha256, identity, mime: "image/png" } }, nodeAssets: {},
+      pageAssets: { [page.id]: { image: "image" } } };
+    const runtime = host();
+    const decoder = vi.fn(runtime.adapter.decodeImage);
+    const result = await compileDashboardRasterContent(bound, { ...runtime.adapter, decodePageBackground: decoder });
+    expect(decoder).toHaveBeenCalledWith(expect.objectContaining({ width: 320, height: 320,
+      background: { fit: "original", position: "right", repeat: true } }));
+    const dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
+    const background = result.package.payloads[dashboard.pages[0].nodes[0].deep2d] as any;
+    expect(background.quads[0]).toMatchObject({ zOrder: 1, destination: [0, 0, 320, 320] });
+    expect(background.displayList.commands[0].zOrder).toBe(0);
+    expect(dashboard.pages[0].nodes[1].zOrder).toBe(1);
+    expect(result.pageImageEvidence[0]).toMatchObject({ pageId: page.id, resourceId: "image" });
+    expect(result.nodeBindings).toHaveLength(1);
+    expect(result.producerEvidence).toHaveLength(0);
+    expect(result.deferredPageFields[0]!.fields).not.toContain("appearance.backgroundImageUrl");
+    expect(validateDeepRuntimePackage(result.package).valid).toBe(true);
+    const unsupported = await compileDashboardRasterContent(bound, runtime.adapter);
+    expect(unsupported.deferredPageFields[0]!.fields).toContain("appearance.backgroundImageUrl");
+    expect(unsupported.pageImageEvidence).toHaveLength(0);
+    page.width = 8192; page.height = 8192; decoder.mockClear();
+    await expect(compileDashboardRasterContent(bound, { ...runtime.adapter, decodePageBackground: decoder })).rejects.toThrow(/budget/);
+    expect(decoder).not.toHaveBeenCalled();
+    page.width = 320; page.height = 320;
+    await expect(compileDashboardRasterContent(bound, { ...runtime.adapter, decodePageBackground: async () => { throw new Error("decode cancelled"); } }))
+      .rejects.toThrow("decode cancelled");
+  });
   it("binds page image ownership into compilation identity and rejects invalid references", async () => {
     const input = fixture("shape"), pageId = input.document.application.pages[0]!.id;
     const { bytes, sha256, identity } = input.assets.font!;

@@ -22,3 +22,13 @@
 3项脚本测试与2文件19项光栅/资源验证测试通过，Web类型检查通过。命令：`node --test scripts/lib/dashboardFrozenPageAssets.test.mjs`；`pnpm exec vitest run --config scripts/dashboard-raster.vitest.config.mjs apps/web/src/delivery/compileDashboardRasterContent.test.ts apps/web/src/delivery/dashboardDataRasterValidation.test.ts`。
 
 工程十维自评均9，依据窄合同扩展、无新增依赖、内容去重、失败路径与原链路回归。本片未改视觉输出，无视觉完成声明。
+
+## 原生包背景合成
+
+新增独立 `decodePageBackground` 宿主端口，避免旧图片宿主忽略位置/平铺规则后默默输出居中cover。未提供该端口、未冻结图片或背景色不可解析时仍保持deferred。
+
+编译器将背景RGBA放在既有系统背景的颜色路径上方、全部作者节点下方；页面证据单列，不计为作者组件或字体。解码前检查整页与累计图集预算，生产器失败拒绝整个候选。编译配方升为v5，页面图片证据进入编译哈希。
+
+编排测试覆盖层级、规则传递、有效RuntimePackage、独立页面证据、旧宿主deferred、解码前预算拒绝与生产器异常；2文件20项通过。首轮夹具尺寸小于应用合同最小320而失败，修正为合法尺寸后通过。
+
+本片图片生产器仍由测试桩提供，真实像素、系统窗口图集身份与视觉两轮尚未验证；不计背景图正式交付完成。设计沿用FVS画布背景规则与作者端 `dashboardCanvasStyle.ts`，未新增视觉令牌；视觉十维暂不评分。

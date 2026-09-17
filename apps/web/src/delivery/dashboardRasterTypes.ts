@@ -49,6 +49,13 @@ export interface DashboardImageRasterRequest {
   readonly fit: "cover" | "contain" | "fill";
   readonly asset: FrozenRasterAsset;
 }
+export interface DashboardPageImageRasterRequest extends DashboardImageRasterRequest {
+  readonly background: {
+    readonly fit: "cover" | "contain" | "stretch" | "original";
+    readonly position: "center" | "top" | "bottom" | "left" | "right";
+    readonly repeat: boolean;
+  };
+}
 export interface DashboardRasterUsedFace {
   readonly sha256: string;
   readonly faceIndex: number;
@@ -78,6 +85,7 @@ export interface DashboardRasterResult {
 export interface DashboardRasterHost {
   rasterizeText(request: DashboardTextRasterRequest): Promise<DashboardRasterResult>;
   decodeImage(request: DashboardImageRasterRequest): Promise<DashboardRasterResult>;
+  decodePageBackground?(request: DashboardPageImageRasterRequest): Promise<DashboardRasterResult>;
 }
 export interface DashboardRasterEvidence {
   readonly composition?: { readonly id: "dashboard-button-group-v1"; readonly sourcePixelSha256: string;

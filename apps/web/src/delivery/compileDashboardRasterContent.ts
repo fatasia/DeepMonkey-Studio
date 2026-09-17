@@ -5,6 +5,7 @@ import { compileDashboardLayouts } from "./compileDashboardLayout";
 import { cssSrgbToLinearColor } from "./dashboardColor";
 import { parseHexColor } from "./dashboardShapeContent";
 import { rasterNode } from "./dashboardRasterNode";
+import { compileDashboardPageImage } from "./dashboardPageImage";
 import { assetIdentity, snapshotRasterInput, RASTER_BYTES_LIMIT } from "./dashboardRasterValidation";
 import type { DashboardRasterCompileInput, DashboardRasterEvidence, DashboardRasterHost } from "./dashboardRasterTypes";
 
@@ -17,6 +18,7 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
   const pages: DashboardRuntimePageV1[] = [], deep2d: Deep2dRuntimePackage[] = [], charts: ChartIrRuntimeValue[] = [];
   const objects: Array<Awaited<ReturnType<typeof rasterNode>>["report"]> = [];
   const producerEvidence: DashboardRasterEvidence[] = [];
+  const pageImageEvidence: NonNullable<Awaited<ReturnType<typeof compileDashboardPageImage>>>["evidence"][] = [];
   const pageDeferred: Array<{ pageId: string; fields: string[] }> = [];
   const nodeBindings: Array<{ nodeId: string; runtimeNodeId: string; runtimeNodeIds: string[]; pageId: string; runtimePageId: string }> = [];
   const sourceSemanticHash = runtimeContentSha256({ document, locale: input.locale, nodeAssets: input.nodeAssets,
@@ -71,7 +73,9 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
       }
     }
     const background = pageBackground(page, layout.tree.id, revision);
-    pageDeferred.push({ pageId: page.id, fields: deferredPageFields(page, Boolean(background)) });
+    const image = background ? await compileDashboardPageImage(page, background.content, input, host, atlasBytes) : null;
+    if (image) { background!.content = image.content; atlasBytes += image.bytes; pageImageEvidence.push(image.evidence); }
+    pageDeferred.push({ pageId: page.id, fields: deferredPageFields(page, Boolean(background), Boolean(image)) });
     if (background) {
       deep2d.push(background.content);
       nodes.unshift({ id: background.nodeId, revision, frame: [0, 0, page.width, page.height], clip: null,
@@ -84,10 +88,10 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
     documentId: document.application.metadata.id, documentRevision: revision, entryPageId: first.tree.id, pages };
   const packageValue = buildDashboardCompositionRuntimePackage({ packageId: input.packageId,
     packageVersion: input.packageVersion, dashboard, deep2d, charts, chartSims: [] });
-  const compileGraphHash = runtimeContentSha256({ sourceSemanticHash, pass: "dashboard-frozen-raster-v4", producerEvidence });
+  const compileGraphHash = runtimeContentSha256({ sourceSemanticHash, pass: "dashboard-frozen-raster-v5", producerEvidence, pageImageEvidence });
   return { schemaVersion: 1 as const, scope: "dashboard-frozen-raster" as const, publicationReady: false as const,
     sourceSemanticHash, compileGraphHash, targetArtifactHash: runtimeContentSha256(packageValue), package: packageValue,
-    producerEvidence, nodeBindings, capabilityReport: { objects, contentCompiled: objects.filter(o => o.contentCompiled).length,
+    producerEvidence, pageImageEvidence, nodeBindings, capabilityReport: { objects, contentCompiled: objects.filter(o => o.contentCompiled).length,
       degraded: objects.filter(o => o.status === "degraded").length, blocked: objects.filter(o => o.status === "blocked").length },
     deferredPageFields: pageDeferred };
 }
@@ -111,9 +115,11 @@ function pageBackground(page: DashboardRasterCompileInput["document"]["applicati
   return { nodeId: `node.${runtimeContentSha256([pageId, "background"])}`, content };
 }
 
-function deferredPageFields(page: DashboardRasterCompileInput["document"]["application"]["pages"][number], backgroundCompiled: boolean) {
+function deferredPageFields(page: DashboardRasterCompileInput["document"]["application"]["pages"][number], backgroundCompiled: boolean, imageCompiled: boolean) {
   const fields = Object.keys(page).filter(field => !["id", "width", "height", "nodes", "appearance"].includes(field));
   if (page.appearance) fields.push(...Object.keys(page.appearance)
-    .filter(field => !(field === "backgroundColor" && backgroundCompiled)).map(field => `appearance.${field}`));
+    .filter(field => !(field === "backgroundColor" && backgroundCompiled)
+      && !(imageCompiled && ["backgroundImageUrl", "backgroundImageFit", "backgroundImagePosition", "backgroundImageRepeat"].includes(field)))
+    .map(field => `appearance.${field}`));
   return fields;
 }

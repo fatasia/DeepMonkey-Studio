@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 背景原生包合成已接独立宿主端口：颜色→背景图→作者节点，页证据不冒充作者证据，解码前累计预算，配方v5；20项编排/资源回归通过。真实producer与系统窗口图集验证待接，未算视觉完成。[范围](specs/dashboard-page-image-freeze-2026-09-17.md)
+
 - 页面背景编译输入已接C3 pageIds，URL/页面/图片类型与唯一归属检查，pageAssets参与编译哈希；3项脚本+19项光栅回归通过，Web类型通过。仅输入接线，绘制与系统层证据下一片继续。[证据](specs/dashboard-page-image-freeze-2026-09-17.md)
 
 - 页面背景图C3资源绑定：可选pageIds参与冻结摘要和提交复查，多页/组件共图去重，拒绝外部URL与跨项目资源；51项回归与API类型通过。仅资源链路，原生背景图绘制仍deferred。[证据与下一步](specs/dashboard-page-image-freeze-2026-09-17.md)
