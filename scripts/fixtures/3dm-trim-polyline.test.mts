@@ -18,6 +18,9 @@ test('rational knot insertion, partial spans and reverse preserve curve under co
     assert(actual.maxBound<=.001);
     for(let i=0;i<=2000;i++) assert(nearest(evaluateCurve(curve,domain[0]+(domain[1]-domain[0])*i/2000),actual.points)<=.001+1e-12);
     assert.deepEqual(trimPolyline(curve,domain,true,.001).points,actual.points.toReversed());
+    const spatial={...curve,dimension:3,controlPoints:curve.controlPoints.map(([x,y,w])=>[x,y,2*x-y,w])};
+    const three=trimPolyline(spatial,domain,false,.001);
+    three.parameters.forEach((parameter,i)=>assert(Math.hypot(...evaluateCurve(spatial,parameter).map((x:number,j:number)=>x-three.points[i][j]))<1e-10));
   }
 });
 test('invalid weights, discontinuities, domains and exhausted budgets are rejected',()=>{

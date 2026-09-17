@@ -38,9 +38,14 @@ static void parameterPoint(std::ostream& o, const ON_3dPoint& p) {
 }
 static void analyticSurfaceSupport(std::ostream& o, const ON_Surface& source) {
   ON_Sphere sphere;
+  ON_Cylinder cylinder;
   if(source.IsSphere(&sphere,1e-10)) {
     o << "{\"kind\":\"sphere\",\"radius\":"; number(o,sphere.radius);
     o << ",\"center\":"; parameterPoint(o,sphere.Center()); o << '}';
+  } else if(source.IsCylinder(&cylinder,1e-10)) {
+    o << "{\"kind\":\"cylinder\",\"radius\":"; number(o,cylinder.circle.radius);
+    o << ",\"center\":"; parameterPoint(o,cylinder.Center());
+    o << ",\"axis\":"; parameterPoint(o,ON_3dPoint(cylinder.Axis())); o << '}';
   } else o << "null";
 }
 static void curveParameterEvidence(std::ostream& o, const ON_Curve& source) {

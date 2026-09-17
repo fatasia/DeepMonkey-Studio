@@ -2076,3 +2076,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 原 openNURBS 球面身份、已验证角参数映射和完整自然 trim 共同限定支持范围；顶点实际消费源 NURBS，接缝/极点焊接，面反向与转置方向保留，保存网格仍优先。
 - blocks 无缓存球面生成 7262 顶点/14520 三角并由两个真实块引用共享；sphereDecals 直接重建对照为 53303/106602。原 PointAt→三角插值误差最大 0.005105 mm，小于 0.01 mm 预算；全部边二面相邻、Euler=2 与法线通过。
 - 球面 4、既有平面/trim/GLB 13、参数 5 项通过，5 件真实源/GLB audit、专项 tsc、repository gate 通过。圆柱/一般 NURBS、任意曲面 trim、跨面缝合、视觉与生产接线仍待办。[证据](specs/industrial-3dm-sphere-tessellation-2026-09-17.md)
+
+### 2026-09-17 3DM 圆柱源曲面→GLB（Codex）
+
+- 复用 NURBS/Bézier 正权重凸包细分，保留 3D 离散点的源参数；圆柱支撑、平移控制网格与矩形 trim 子域联合核验，沿高度轴无需加密，缓存优先与源面编号保留。
+- 固定官方 MechPartB V4 的 face 4/5，各 18 顶点/16 三角；420 个原 PointAt 点到实际网格最大距离 0.00253146 mm，小于 0.01 mm 预算。整体忽略缓存重建 10/14 面、196 三角，仍为 partial-geometry-preview。
+- 圆柱 4/4、既有回归 17/17、5 件源/GLB audit、专项 tsc、repository gate 通过。完整周期接缝另以真实源曲面加受控自然 trim 验证，非作者 trim 证据；任意曲面裁剪、跨面缝合与产品视觉仍待办。[证据](specs/industrial-3dm-cylinder-tessellation-2026-09-17.md)

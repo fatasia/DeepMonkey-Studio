@@ -1,25 +1,9 @@
-import { evaluateCurve, evaluateSurface, mapSurfaceParameter } from './3dm-nurbs-parameters.mjs';
+import { evaluateSurface, mapSurfaceParameter } from './3dm-nurbs-parameters.mjs';
+import { requireNaturalBoundary } from './3dm-natural-boundary.mts';
 function check(value:unknown,message:string):asserts value { if(!value) throw new Error(message); }
 const sub=(a:number[],b:number[])=>a.map((x,i)=>x-b[i]);
 const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 const dot=(a:number[],b:number[])=>a.reduce((sum,x,i)=>sum+x*b[i],0);
-function requireNaturalBoundary(ir:any,face:any,surface:any) {
-  check(face.loops.length===1,'unsupported-sphere-trim');
-  const loop=ir.loops[face.loops[0]]; check(loop?.type===1&&loop.trims.length===4,'unsupported-sphere-trim');
-  const corners=surface.domain.flatMap((_:any,i:number)=>i?[]:surface.domain[0].flatMap((u:number)=>surface.domain[1].map((v:number)=>[u,v])));
-  const ring:number[][]=[];
-  for(const ti of loop.trims) {
-    const trim=ir.trims[ti],curve=ir.curves2d[trim?.curve2d];
-    check(curve?.degree===1&&curve.controlPoints.length===2&&!curve.rational&&curve.parameterMap?.kind==='identity','unsupported-sphere-trim');
-    const ends=trim.sourceSubdomain.map((t:number)=>evaluateCurve(curve,t)); if(trim.curveReversed) ends.reverse();
-    check(ends.every((p:number[])=>corners.some((q:number[])=>Math.hypot(...sub(p,q))<1e-9)),'unsupported-sphere-trim');
-    check(Math.abs(ends[0][0]-ends[1][0])<1e-9||Math.abs(ends[0][1]-ends[1][1])<1e-9,'non-isoparametric-sphere-trim');
-    if(ring.length) check(Math.hypot(...sub(ring.at(-1)!,ends[0]))<1e-9,'open-sphere-trim');
-    ring.push(...ends);
-  }
-  check(Math.hypot(...sub(ring[0],ring.at(-1)!))<1e-9,'open-sphere-trim');
-  check(corners.every((q:number[])=>ring.some(p=>Math.hypot(...sub(p,q))<1e-9)),'incomplete-sphere-domain');
-}
 /** Full natural-boundary spheres only; positions always evaluate the source NURBS form. */
 export function tessellateSphereFace(ir:any,faceIndex:number,chordTolerance=0.01) {
   const face=ir.faces[faceIndex],surface=ir.surfaces[face?.surface],support=surface?.analyticSupport;
