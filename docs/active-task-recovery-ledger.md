@@ -44,6 +44,8 @@
 
 - P1-16收官 `467a8f4`：UIA屏幕阅读器桥——#[implement]单provider实现Simple/Fragment/FragmentRoot，UiaReturnRawElementProvider挂HWND（WNDPROC截WM_GETOBJECT），ServerSideProvider+catch_unwind收敛COM回血+100ms节流StructureChanged；依赖用lock内已有windows 0.62.2加feature零新包。--smoke-uia真实窗口CUIAutomation枚举6节点全中（Pane/Group/ListItem/Text含中文）。lib 341/bin 126/clippy/fmt全绿。遗留：Narrator真人验证、Control Pattern与bounds（fail-closed NULL/E_NOTIMPL）、winit挂点已明确未接线、717行超预警线。[报告](specs/deep2d-uia-bridge-2026-09-18.md)
 
+- P1-03收尾 `72eefb0`：实证此前chunked_rows仅被自身测试引用（AppendWindow走手写整段Vec克隆）；接线后ChartRuntime持data_windows镜像（runtime态，ChartIR JSON合同不动），AppendWindow走Arc行块共享/整块回收/跨块边界仅首块make_mut写时复制，暂存至提交才落地（失败路径零污染），预算超限fail-closed带dataset id。单测8项（引用计数20 000行3块实证）+黑盒9项（与未分块参考逐值一致/evicted_rows证据）；lib 341、clippy/fmt全绿。性能对比归P1-04。
+
 - G04收官 `d91913d`：dashboardLayoutCaptureDeployment生产组合件（dist捕获页进程内托管+协议桥并轨API宿主合同+装配快速失败+close幂等）→ service dependencies可选layoutCapture（未配置零改动、宿主捕获失败fail-closed不保留候选）→ dashboardNativeStartup配置layoutCapture.chromePath/capturePageDirectory挂onClose优雅关闭。真实Chrome用例prepare→捕获→worker输入带layout 2.4s通过；API全量1199+4skip。遗留：dist捕获页生产分发不属本片；协议桥错误信息为selector超时（后续直出API协议捕获页可并轨）。
 
 - 补漏 `9146d7f` 后的data_source.rs挂载单独fixup提交（泵切片add路径错误）。
