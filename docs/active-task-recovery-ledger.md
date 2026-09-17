@@ -48,6 +48,10 @@
 
 - P1-12交叉判定关闭 `47c1c84`：P0-05 Web真实GPU矩阵即其剩余点"真实换包端到端GPU注入"（包切换通路已随C1宿主+候选控制机就绪），Native侧换包通路另有候选抢占/热更新恢复既有证据；任务表已标已完成。P1真正剩余收敛为：P1-01 resize小切片、P1-07 Arc化（跨禁区立项）、P1-19再分发权（用户决策）、P1-20 bidi（依赖shaping库决策）、P1-18合流（尺寸决策）。
 
+- P1-01收尾 `da71239`：NativeApp::resize新增last_resize去重（同尺寸ScaleFactor回环不bump），真实变化时content.active_mut().epoch.bump_layout()，溢出fail-closed走failed；产品resize路径两处全经该入口。resize_epoch_tests单测锁定单调/去重/非resize不bump（Windows winit EventLoop进程内不可重建故单函数合并断言）。全量723 passed。GPU resize失败注入沿用诚实口径未覆盖。
+
+- P2-02完成 `f4e8ebb`：冻结ZRender 6.1.0动态bar rect子集认证——4帧序列（initial/data-replace/x-window/y-window）逐值对拍（容差同golden 1e-9），跨实例双跑outputHash流一致；blocked九项（formatter/image/tooltip/animation/非rect/legend/类目增删/dataZoom组件/值越界clip）全部测试证据不静默；ECharts类目窗口(count-1)取整与Native行带公式差异由lane重投影确定性基元承担，非对齐窗口与值越界fail-closed拒绝。16/16+邻居experiments 81+delivery 593绿；版本锁定6.1.0升级即全量重认证。[spec](specs/deep2d-p2-02-zrender-chartir-rect-certification-2026-09-18.md)
+
 - P1-03收尾 `72eefb0`：实证此前chunked_rows仅被自身测试引用（AppendWindow走手写整段Vec克隆）；接线后ChartRuntime持data_windows镜像（runtime态，ChartIR JSON合同不动），AppendWindow走Arc行块共享/整块回收/跨块边界仅首块make_mut写时复制，暂存至提交才落地（失败路径零污染），预算超限fail-closed带dataset id。单测8项（引用计数20 000行3块实证）+黑盒9项（与未分块参考逐值一致/evicted_rows证据）；lib 341、clippy/fmt全绿。性能对比归P1-04。
 
 - P1-23 TS侧消费：packages/deep-engine/src/adapterN1（9文件≤276行）——wire合同逐字段对齐adapter_n1/schema.rs，canonicalJson精确复刻serde_json+ryu-pretty（整数/浮点词法/kk布局/码点序键排序），SVG白名单MmLlHhVvZz禁曲线圆弧，四类适配（svg/富文本/图表扩展/动画ABI）；fail-closed三态与认证台账digest对拍——四类fixture digest黄金断言全中Native固化值（SVG 50b1cd80/富文本ad56df1c/图表5aab58a7/动画ffb61123），58/58测试+typecheck+runtimePurityGate绿。边界：渲染仍在Native，范围外元素blocked；TS计数上限收紧多拒方向安全；发现shaderPackage/hash.ts默认sort非字节序的潜在同族偏差（当前键全ASCII，建议另行排查）。
