@@ -2,6 +2,49 @@ import { describe, expect, it } from "vitest";
 import { isCloudCaptureSearch, ViewerRenderDemand } from "./viewerRenderDemand";
 
 describe("ViewerRenderDemand", () => {
+  it("preserves invalidation raised during rendering beyond its settle deadline", () => {
+    const demand = new ViewerRenderDemand();
+    expect(demand.shouldRender(0, false, true, false)).toBe(true);
+    demand.invalidate(1, 0);
+    demand.invalidate(2, 0);
+    demand.didRender();
+    expect(demand.shouldRender(500, false, true, false)).toBe(true);
+    demand.didRender();
+    expect(demand.shouldRender(501, false, true, false)).toBe(false);
+  });
+
+  it("retains the final pose when a continuous source ends inside its frame", () => {
+    const demand = new ViewerRenderDemand();
+    demand.setContinuous("animation", true, 0);
+    expect(demand.shouldRender(200, false, true, false)).toBe(true);
+    demand.setContinuous("animation", false, 201);
+    demand.didRender();
+    expect(demand.shouldRender(1000, false, true, false)).toBe(true);
+    demand.didRender();
+    expect(demand.shouldRender(1001, false, true, false)).toBe(false);
+  });
+
+  it("retains in-frame changes across hidden skips and XR exit", () => {
+    const demand = new ViewerRenderDemand();
+    expect(demand.shouldRender(0, false, false, true)).toBe(true);
+    demand.invalidate(1, 0);
+    demand.didRender();
+    expect(demand.shouldRender(500, false, false, false)).toBe(false);
+    expect(demand.shouldRender(501, false, true, false)).toBe(true);
+    demand.didRender();
+    expect(demand.shouldRender(502, false, true, false)).toBe(false);
+  });
+
+  it("consumes coalesced edits admitted after a cadence-skipped frame", () => {
+    const demand = new ViewerRenderDemand();
+    expect(demand.shouldRender(0, false, true, false)).toBe(true);
+    // 宿主 cadence 可能在准入后早退，不调用 didRender。
+    demand.invalidate(1, 0);
+    expect(demand.shouldRender(16, false, true, false)).toBe(true);
+    demand.didRender();
+    expect(demand.shouldRender(32, false, true, false)).toBe(false);
+  });
+
   it("renders once, coalesces edits and allows controls to settle before sleeping", () => {
     const demand = new ViewerRenderDemand();
     expect(demand.shouldRender(0, false, true, false)).toBe(true);

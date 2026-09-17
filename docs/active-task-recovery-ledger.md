@@ -1824,3 +1824,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 原始实体审计新增 BODY/FACE/唯一 FACE 计数；独立对拍工具严格一一匹配源名、拒绝缺项/重复/解析失败，不用 CLI 自报分母替代源真值。
 - 实测 106/109 与源计数一致；A-1230-60-22 为 217→215，AS-2520 为 37→34，AA-0220RB 为 70→60。差额需逐面解释，未直接判定合法排除或丢面，生产认证保持 0。
 - 聚焦 3 项、新旧 Rust 审计 2+4 项通过；输入/输出报告 hash 与命令已记入 [报告 §6.1](specs/industrial-format-plan01-02-lock-2026-09-16.md#61-独立源计数对拍)。
+
+### 2026-09-17 Web 实际宿主：帧内失效保留（Codex）
+
+- 修复 `ViewerRenderDemand.didRender` 无条件清 dirty 导致帧内新请求丢失；准入记录 revision，仅消费本帧前请求。复用实际 Core→Runtime 调用链，无第二套场景/状态/RAF。
+- Web typecheck、3 文件 22 项测试通过；覆盖帧内连续停止终态、settle 过期、XR/隐藏恢复与 cadence 跳帧。未改视觉样式，未进行浏览器像素或省电验收。
+- 完整 RAF sleep/wake 与框架无关 FrameLoop 接线继续本轮待办；程序动画、物理、脚本入口仍依赖当前轻量 RAF 发现活动，不能直接停循环。[实现和唤醒清单](specs/deep-engine-host-frame-invalidation-2026-09-17.md)

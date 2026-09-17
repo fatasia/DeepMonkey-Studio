@@ -4,6 +4,10 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Viewer scheduling
+
+- Preserve redraw requests raised during rendering, including the final pose when continuous animation stops inside a frame.
+
 ### Deep2D experimental compatibility
 
 - Run the closed X ABI in a separate worker with bounded IPC, receipt hashes, cancellation and timeout checks. Keep publication behind the existing epoch check; OS-level sandboxing and packaged runtime integration remain pending.
