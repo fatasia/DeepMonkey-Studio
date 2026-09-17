@@ -4,8 +4,9 @@ use super::ChartRuntime;
 use crate::deep2d::Deep2dRuntimeContent;
 use std::hash::{Hash, Hasher};
 
-/// document_revision 换包/换源即变;layout_revision 仅由 resize 显式推进(本切片只开入口);
-/// resource_set 随呈现资源集(legend 页)提交;published 仅在呈现提交成功后为真。
+/// document_revision 换包/换源即变;layout_revision 仅由窗口物理尺寸变化推进
+/// (App::resize 去重后 bump);resource_set 随呈现资源集(legend 页)提交;
+/// published 仅在呈现提交成功后为真。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChartEpoch {
     pub document_revision: u64,

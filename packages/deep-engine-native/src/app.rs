@@ -38,6 +38,8 @@ mod packet_mailbox;
 mod packet_watch;
 mod recovery;
 mod renderer_lifecycle;
+#[cfg(all(test, windows))]
+mod resize_epoch_tests;
 mod runner;
 mod section;
 mod section_probe;
@@ -90,6 +92,9 @@ struct NativeApp {
     chart_key_probe: Option<u8>,
     chart_text: Option<deep_engine_native::platform_text::TextRasterizer>,
     chart_legend_page: usize,
+    /// 上次已应用布局的窗口物理尺寸;None=窗口尚未 resize 过。layout_revision 的
+    /// 去重依据:同尺寸重复事件(ScaleFactorChanged 回环、平台重发)不得推进版本。
+    last_resize: Option<winit::dpi::PhysicalSize<u32>>,
     chart_sim_scheduled: bool,
     dashboard_wake_at: Option<std::time::Instant>,
     #[cfg(windows)]
@@ -122,6 +127,7 @@ impl NativeApp {
             chart_key_probe: (setup.chart_key_probe && content.chart.is_some()).then_some(0),
             chart_text: None,
             chart_legend_page: 0,
+            last_resize: None,
             chart_sim_scheduled: false,
             dashboard_wake_at: None,
             #[cfg(windows)]
@@ -176,6 +182,16 @@ impl NativeApp {
     }
 
     fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+        // P1-01 布局版本入口:仅物理尺寸真实变化时推进 layout_revision,依赖布局版本
+        // 的消费方(GPU 目标重建/letterbox 映射/命中索引)以 revision 推进判定布局变化。
+        // revision 先于渲染落地;GPU 同步语义由 published 承担,两者不混用。
+        // 溢出为不可恢复终态:revision 耗尽即无法再表达布局变化,按失败收口。
+        if self.last_resize != Some(size) {
+            self.last_resize = Some(size);
+            if let Err(error) = self.content.active_mut().epoch.bump_layout() {
+                self.state.failed(error);
+            }
+        }
         if let Some(error) = self
             .renderer
             .as_mut()
