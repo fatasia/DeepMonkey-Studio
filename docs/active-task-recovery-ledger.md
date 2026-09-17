@@ -1742,3 +1742,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已完成:`pbrTransientTexturePool.ts`(294 行)——池键与 renderGraph aliasKey 同口径(format|尺寸|sample|usage);queue 生命周期(release 挂起,仅 endFrame(committed) 回池=复用必跨帧);history 资源双重排除(显式列表+historyRole 兜底);resize/epoch/失败提交/并行候选全 fail-closed(失败提交的在途纹理销毁不回池;池按 DeviceSession 归属);可观测对齐 EnginePerformanceTelemetrySnapshot(misses/allocatedBytes/reusedBytes/含 staging 的峰值)。9 测试(含 5 帧 15 acquire/3 miss/字节<基线 5 倍下降断言)。
 - 主线程复核:index.ts 仅 4 行加法;聚焦 9/9 复跑通过;与 C03 在跑文件组零交集。
 - 边界(如实):未接入真实 renderTargets/pbrTransparencyPass scratch 路径(归真机门禁切片);字节估算为静态查表口径;池暂无容量上限(随 DeviceSession dispose 回收)。
+
+### 2026-09-17 冲刺收官:停止派发,交接就绪(GLM)
+
+- 用户指令:直接停止,写完善交接。执行:C03 子代理中途停止(37 分钟,21 文件在途 +206/-54,**门禁未跑,未验证**——spec 101 行已冻结支持矩阵,接手选择续写或回退,见其 spec);全部派发终止。
+- 交接文档:[GLM-接手会话交接-2026-09-17.md](GLM-接手会话交接-2026-09-17.md) —— 基线/已完成证据/在途/待办顺序/命令/边界/踩坑,下一会话第一入口。
+- 今日终态:26 个提交;交接下一批 4/4;Deep2D +2(P1-22/P1-23);工业格式 PLAN-02;DE26 九卡切片(A01/A02/A03/B01/B03/B04/C01/C02/G01 另计 A08);purity 门禁修复;语料改判([已脱敏]排除)。测试纪律与语料决议已入长期记忆。
