@@ -43,6 +43,7 @@ function validateRings(rings: number[][][]) {
 function trimLoop(ir: any, loop: any, tolerance: number) {
   check(loop && Array.isArray(loop.trims) && loop.trims.length>=1 && loop.trims.length<=2048, 'unsupported-trim-loop');
   const ring: number[][]=[];
+  const boundaries:{edge:number,trim:number,vertices:number[]}[]=[];
   let previous: number[] | undefined;
   for(const index of loop.trims) {
     const trim=ir.trims[index], curve=ir.curves2d[trim?.curve2d];
@@ -51,10 +52,12 @@ function trimLoop(ir: any, loop: any, tolerance: number) {
     check(ends.flat().every(Number.isFinite), 'nonfinite-trim');
     if(previous) check(length(sub(previous,ends[0]))<=EPS, 'open-trim-loop');
     check(polyline.length>2 || length(sub(ends[0],ends[1]))>EPS, 'degenerate-trim-edge');
+    boundaries.push({edge:trim.edge,trim:index,vertices:polyline.map((_:number[],i:number)=>ring.length+i)});
     ring.push(...polyline.slice(0,-1)); previous=ends[1];
   }
   check(length(sub(previous!,ring[0]))<=EPS, 'open-trim-loop');
-  return ring;
+  for(const boundary of boundaries) boundary.vertices=boundary.vertices.map(i=>i%ring.length);
+  return {ring,boundaries};
 }
 /** Affine planes with positive-weight NURBS trims, under an explicit source-unit chord budget. */
 export function tessellatePlanarFace(ir: any, faceIndex: number) {
@@ -74,7 +77,8 @@ export function tessellatePlanarFace(ir: any, faceIndex: number) {
   loops.sort((a: any,b: any)=>a.type-b.type);
   const trimChordTolerance=0.001;
   const uvToSourceBound=length(u)/(surface.domain[0][1]-surface.domain[0][0])+length(v)/(surface.domain[1][1]-surface.domain[1][0]);
-  const rings=loops.map((loop: any)=>trimLoop(ir,loop,trimChordTolerance/uvToSourceBound)); validateRings(rings);
+  const parsed=loops.map((loop: any)=>trimLoop(ir,loop,trimChordTolerance/uvToSourceBound)),rings=parsed.map(p=>p.ring); validateRings(rings);
+  let offset=0;const boundaryEdges=parsed.flatMap(p=>{const edges=p.boundaries.map(b=>({...b,vertices:b.vertices.map(i=>i+offset)}));offset+=p.ring.length;return edges;});
   const uv: number[][]=rings.flat();
   const positions=uv.map(point=>evaluateSurface(surface,point));
   const triangles: number[][]=ShapeUtils.triangulateShape(rings[0].map((p: number[])=>new Vector2(...p)),
@@ -94,7 +98,7 @@ export function tessellatePlanarFace(ir: any, faceIndex: number) {
   }
   check(triangles.length>0 && Math.abs(triangleArea-targetArea)<=EPS*Math.max(1,targetArea), 'trim-area-mismatch');
   const normals=positions.map(()=>normal.map(x=>x/normalLength*(face.reversed?-1:1)));
-  return { face: faceIndex, geometrySource: 'cad-ir-affine-plane-trim', mesh: { positions, triangles, normals,
+  return { face: faceIndex, geometrySource: 'cad-ir-affine-plane-trim', boundaryEdges, mesh: { positions, triangles, normals,
     sourceFaceCount: triangles.length, quadCount: 0, textureCoordinates: [] },
     audit: { uvArea: targetArea, triangleUvArea: triangleArea, affineError, trimChordTolerance, loopCount: rings.length,
       holeCount: rings.length-1, sourcePlaneArea: targetArea*normalLength/((surface.domain[0][1]-surface.domain[0][0])*(surface.domain[1][1]-surface.domain[1][0])) } };

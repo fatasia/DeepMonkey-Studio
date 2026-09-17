@@ -1,6 +1,7 @@
 import { evaluateSurface, mapCurveParameter, mapSurfaceParameter } from './3dm-nurbs-parameters.mjs';
 import { trimPolyline } from './3dm-trim-polyline.mts';
 import { requireNaturalBoundary } from './3dm-natural-boundary.mts';
+import { naturalBoundaryEdges } from './3dm-natural-boundary-edges.mts';
 const sub=(a:number[],b:number[])=>a.map((x,i)=>x-b[i]);
 const dot=(a:number[],b:number[])=>a.reduce((s,x,i)=>s+x*b[i],0);
 const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
@@ -67,6 +68,6 @@ export function tessellateConeFace(ir:any,faceIndex:number,chordTolerance=0.01) 
       triangles.push(triangle);
     }
   }
-  return {face:faceIndex,geometrySource:'cad-ir-natural-cone',mesh:{positions,triangles,normals,textureCoordinates:[],sourceFaceCount:triangles.length,quadCount:0},
+  return {face:faceIndex,geometrySource:'cad-ir-natural-cone',boundaryEdges:naturalBoundaryEdges(ir,face,domain,curved,parameters,closed),mesh:{positions,triangles,normals,textureCoordinates:[],sourceFaceCount:triangles.length,quadCount:0},
     audit:{chordTolerance,controlHullBound:polyline.maxBound,maxSupportResidual,closedSeam:closed,sourceOrientation,curvedAxis:curved,parameters,domain,heights}};
 }

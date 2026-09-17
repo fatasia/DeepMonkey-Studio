@@ -31,6 +31,7 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
     .setRotation([-Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
   scene.addChild(root);
   const diagnostics: any[] = [];
+  const boundaryAudits:any[]=[];
   const meshes = new Map<string, any>();
   const sourceMap = (object: any) => ({ scope: 'source-file-local', format: '3DM', sourceSha256,
     objectId: object.id, layerIndex: object.layerIndex, materialIndex: object.materialIndex,
@@ -38,6 +39,7 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
   for (const object of objects.values()) {
     check(source.layers.some((layer: any) => layer.index === object.layerIndex), 'missing layer');
     const completed = completeBrepParts(object);
+    if(completed.boundaryAudit)boundaryAudits.push({objectId:object.id,...completed.boundaryAudit,refinements:completed.refinements});
     const parts = object.kind === 'mesh' ? [{ face: null, mesh: object.mesh }] : completed.parts;
     diagnostics.push(...completed.diagnostics);
     if (object.kind === 'brep' && parts.length < object.faceCount) diagnostics.push({ objectId: object.id, code: 'missing-brep-render-mesh', count: object.faceCount - parts.length });
@@ -99,11 +101,11 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
   const rendered = document.getRoot().listNodes().filter((node: any) => node.getMesh());
   const usedMeshes = new Set(rendered.map((node: any) => node.getMesh()));
   for (const mesh of meshes.values()) if (!usedMeshes.has(mesh)) mesh.dispose();
-  const missingBrepGeometry = diagnostics.some(row => row.code === 'missing-brep-render-mesh');
+  const missingBrepGeometry = diagnostics.some(row => row.code === 'missing-brep-render-mesh'||row.code==='nonconforming-brep-boundary');
   const sidecar = { schemaVersion: 1, scope: 'source-file-local', format: '3DM', sourceSha256,
     unitSystem: source.unitSystem, metersPerUnit: source.metersPerUnit, coordinates: 'source-Z-up; GLB-root-Y-up-meters',
     objects: source.objects.map(({ mesh, storedRenderMeshes, ...metadata }: any) => metadata),
-    definitions: source.definitions, layers: source.layers, materials: source.materials, diagnostics,
+    definitions: source.definitions, layers: source.layers, materials: source.materials, diagnostics, boundaryAudits,
     status: rendered.length ? (missingBrepGeometry ? 'partial-geometry-preview' : 'geometry-preview') : 'inspect-no-geometry' };
   if (!rendered.length) return { bytes: null, sidecar };
   // Texture paths are source metadata only, never external GLB image URIs.

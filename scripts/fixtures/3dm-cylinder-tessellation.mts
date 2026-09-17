@@ -1,12 +1,13 @@
 import { evaluateSurface } from './3dm-nurbs-parameters.mjs';
 import { trimPolyline } from './3dm-trim-polyline.mts';
 import { requireNaturalBoundary } from './3dm-natural-boundary.mts';
+import { naturalBoundaryEdges } from './3dm-natural-boundary-edges.mts';
 const sub=(a:number[],b:number[])=>a.map((x,i)=>x-b[i]);
 const dot=(a:number[],b:number[])=>a.reduce((sum,x,i)=>sum+x*b[i],0);
 const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 function check(value:unknown,message:string):asserts value { if(!value) throw new Error(message); }
 /** Natural rectangular strips of exact translated, positive-weight NURBS cylinders. */
-export function tessellateCylinderFace(ir:any,faceIndex:number,chordTolerance=0.01) {
+export function tessellateCylinderFace(ir:any,faceIndex:number,chordTolerance=0.01,additionalParameters:number[]=[]) {
   const face=ir.faces[faceIndex],surface=ir.surfaces[face?.surface],support=surface?.analyticSupport;
   check(support?.kind==='cylinder'&&Number.isFinite(support.radius)&&support.radius>0
     &&[support.center,support.axis].every(a=>a?.length===3&&a.every(Number.isFinite))
@@ -30,7 +31,10 @@ export function tessellateCylinderFace(ir:any,faceIndex:number,chordTolerance=0.
     controlPoints:Array.from({length:count},(_,i)=>cv(0,i)),parameterMap:{kind:'identity'}};
   const polyline=trimPolyline(curve,domain[curved],false,chordTolerance);
   const closed=Boolean(surface.closed[curved])&&domain[curved].every((x:number,i:number)=>x===surface.domain[curved][i]);
-  const parameters=closed?polyline.parameters.slice(0,-1):polyline.parameters;
+  check(additionalParameters.length<=2048&&additionalParameters.every(t=>Number.isFinite(t)&&t>=domain[curved][0]&&t<=domain[curved][1]),'invalid-cylinder-boundary-parameters');
+  const merged=[...polyline.parameters,...additionalParameters].sort((a,b)=>a-b).filter((t,i,a)=>!i||t-a[i-1]>1e-12);
+  check(merged.length<=2048,'cylinder-boundary-budget');
+  const parameters=closed?merged.slice(0,-1):merged;
   if(closed) check(Math.hypot(...sub(polyline.points[0],polyline.points.at(-1)!))<1e-9,'open-cylinder-seam');
   check(parameters.length>=3,'insufficient-cylinder-segments');
   const at=(t:number,row:number)=>domain.map((d:number[],axis:number)=>axis===curved?t:d[row]);
@@ -56,7 +60,7 @@ export function tessellateCylinderFace(ir:any,faceIndex:number,chordTolerance=0.
       triangles.push(triangle);
     }
   }
-  return {face:faceIndex,geometrySource:'cad-ir-natural-cylinder',mesh:{positions,triangles,normals,textureCoordinates:[],sourceFaceCount:triangles.length,quadCount:0},
+  return {face:faceIndex,geometrySource:'cad-ir-natural-cylinder',boundaryEdges:naturalBoundaryEdges(ir,face,domain,curved,parameters,closed),mesh:{positions,triangles,normals,textureCoordinates:[],sourceFaceCount:triangles.length,quadCount:0},
     audit:{chordTolerance,controlHullBound:polyline.maxBound,maxSupportResidual,closedSeam:closed,sourceOrientation,
       curvedAxis:curved,parameters,domain,translation,height:Math.hypot(...translation)*(domain[linear][1]-domain[linear][0])/(surface.domain[linear][1]-surface.domain[linear][0])}};
 }
