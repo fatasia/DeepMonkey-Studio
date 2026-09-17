@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { rasterizeNativeText } from "./nativeTextRasterizer.mjs";
+import { decodePageBackgroundPixels } from "./dashboardPageBackgroundRaster.mjs";
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const MAX_BYTES = 64 * 1024 * 1024;
 function frozenBytes(asset) {
@@ -54,7 +55,19 @@ export function createDashboardRasterHost({ nativeExecutable, signal }) {
         clipped: result.clipped };
     },
     decodeImage: request => rasterizeFrozenImage(request, signal),
+    decodePageBackground: request => rasterizeFrozenPageBackground(request, signal),
   };
+}
+export async function rasterizeFrozenPageBackground(input, signal) {
+  const request = snapshot(input, signal, false);
+  const data = await decodePageBackgroundPixels(request, signal);
+  signal?.throwIfAborted();
+  const sourceSha256 = sha256(Buffer.from(JSON.stringify({ source: request.asset.sha256,
+    width: request.width, height: request.height, background: request.background,
+    orientation: "exif", colorspace: "srgb", alphaMode: "straight" })));
+  return { width: request.width, height: request.height, rgba: new Uint8Array(data), sha256: sha256(data),
+    requestHash: request.requestHash, sourceSha256, producer: { id: "sharp-page-background", version: sharp.versions.sharp },
+    format: "rgba8unorm-srgb", alphaMode: "straight" };
 }
 export async function rasterizeFrozenImage(input, signal) {
   const request = snapshot(input, signal, false);

@@ -9,6 +9,7 @@
     "types": ["node", "@webgpu/types", "@fastify/multipart"]
   },
   "include": [
+    "verify-dashboard-page-background.mts",
     "../apps/api/src/**/*.d.ts",
     "../apps/api/src/system.ts",
     "verify-dashboard-published-portable.mts",
