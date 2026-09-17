@@ -1978,6 +1978,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已冻结 TS v6 作者包→真实 LPAC 持续 worker→publish→生产 Deep2dGpuPainter，在 RTX 4060/Vulkan 两轮读回通过；每轮 epoch 9/10 各 1914 个独立内部像素符合解析三角形真值，外部精确保持背景，颜色误差 ≤1/255。
 - 初始创建/增量 stage 完整图像一致；取消后重新绘制旧 painter，逐像素不变。clippy 通过。本片是离屏证据，普通窗口状态机、真实呈现及浏览器双主题双尺寸视觉闭环仍待办，不计作 Kimi-95 验收。[证据](specs/deep2d-p2-01-x-gpu-readback-2026-09-17.md)
 
+### 2026-09-17 Deep2D P2-01 X 快照窗口与呈现后 LKG（Codex）
+
+- 显式 `--x-package` / `--smoke-x-package` 将真实 LPAC 输出交给既有 PlayerContent/Renderer；无 display layer 拒绝。复用统一 X source loader，窗口使用独立恢复目录，headless 成功不能提升窗口检查点。
+- 初次窗口只登记 pending_x_lkg，GPU scopes/提交检查通过且 Presented 后才原子 commit_x；真实 surface 首次呈现、损坏源后新进程恢复、坏索引拒绝通过。无 layer/仅 headless 检查点两条反例通过；bin 110/35 ignored、headless CLI/普通 LKG 回归、clippy/fmt/repository gate 通过。
+- 本片是一次求值快照，实际 smoke 为 64×64；持续 tick/真实输入、普通尺寸窗口与浏览器视觉仍待办。[证据](specs/deep2d-p2-01-x-window-snapshot-2026-09-17.md)
+
 ### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
 
 - 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。

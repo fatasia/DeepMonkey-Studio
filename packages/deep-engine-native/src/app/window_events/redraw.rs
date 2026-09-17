@@ -9,6 +9,7 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
     let verify = app.state.verification.is_some()
         || app.smoke_frame
         || app.content.active().pending_lkg.is_some()
+        || app.content.active().pending_x_lkg.is_some()
         || app.content.active().pending_asset_lkg.is_some();
     let outcome = app
         .renderer

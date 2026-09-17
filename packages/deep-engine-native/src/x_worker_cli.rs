@@ -64,31 +64,13 @@ pub fn run_package_ticks(path: &std::path::Path, tick_count: usize) -> Result<()
         process::XProcessConfig,
         scheduler::{XContentScheduler, XTickBinding},
     };
-    use deep_engine_native::runtime_package::{
-        parse_and_validate_x_runtime_package, read_runtime_package_bytes,
-    };
-
     let store = crate::runtime_lkg::Store::local(path);
-    let primary = read_runtime_package_bytes(path)
-        .map_err(|error| error.to_string())
-        .and_then(|bytes| {
-            let loaded = parse_and_validate_x_runtime_package(&bytes)
-                .map_err(|error| format!("X runtime package preflight failed: {error}"))?;
-            Ok((loaded, bytes))
-        });
-    let (loaded, bytes, active, primary_rejection) = match primary {
-        Ok((loaded, bytes)) => (loaded, bytes, "primary", None),
-        Err(primary_error) => {
-            let bytes = store
-                .as_ref()
-                .map_err(|reason| format!("primary rejected: {primary_error}; {reason}"))?
-                .restore_x()
-                .map_err(|reason| format!("primary rejected: {primary_error}; {reason}"))?;
-            let loaded = parse_and_validate_x_runtime_package(&bytes)
-                .map_err(|error| format!("X LKG package invalid: {error}"))?;
-            (loaded, bytes, "last-known-good", Some(primary_error))
-        }
-    };
+    let crate::x_package_source::Source {
+        loaded,
+        bytes,
+        active,
+        primary_rejection,
+    } = crate::x_package_source::load(path, &store)?;
     if !(1..=1_024).contains(&tick_count) {
         return Err("X tick count must be an integer from 1 through 1024".into());
     }

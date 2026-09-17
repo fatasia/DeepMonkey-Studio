@@ -89,6 +89,9 @@ mod shadow_update_classify;
 mod telemetry;
 mod telemetry_gpu;
 mod text_raster_cli;
+#[cfg(windows)]
+mod x_package_source;
+mod x_package_window;
 mod x_worker_cli;
 
 fn main() {

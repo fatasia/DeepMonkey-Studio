@@ -120,6 +120,17 @@ pub fn load_auto(path: &Path) -> Result<PreparedRuntimePackage, String> {
 }
 
 pub fn presented(content: &mut PlayerContent) -> Option<String> {
+    if let Some(pending) = content.pending_x_lkg.take() {
+        match pending.store.commit_x(&pending.bytes, &pending.hash) {
+            Ok(()) => println!("native X package recovery checkpoint committed after present"),
+            Err(error) => {
+                eprintln!(
+                    "native X package recovery checkpoint failed; current scene retained: {error}"
+                );
+                content.startup_notice = Some(format!("scene ready; X recovery failed: {error}"));
+            }
+        }
+    }
     if let Some(pending) = content.pending_asset_lkg.take() {
         match pending.commit() {
             Ok(()) => println!("native asset recovery checkpoint committed after present"),
