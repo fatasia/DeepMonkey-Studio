@@ -24,6 +24,8 @@
 
 - 缺陷②分层修复 `2e1d15a`：捕获页按widget类型分派chart/value/table捕获根（原硬编码chart），宿主等待条件解耦类型，错误消息带实测rect；KPI数值CSS字重600→700收敛到冻结字体目录档位（浏览器合成字重Native无法复现）。1325项web回归通过。剩余根因：value/table组件DOM为内容驱动尺寸（实测196×96≠作者框230×130），与测量合同uniform-scale校验冲突——需设计决策（量内容框或组件满框），归G01/P1-18合流处理。
 
+- 缺陷②收尾 `72b52f5`：实证根因比预判更深——capture外框section带border+padding，content box=frame−34，value/table/**chart**三个根全是内容驱动（196×96等）；chart此前靠geometryRoot(heading-node)以节点框为测量原点才过合同，2e1d15a加的宿主预检查量的是组件根故chart同族被误伤。修复把geometryRoot先例推广为三类共用（origin提升公共段，缺省回退root不变），预检查改量heading-node；产品DOM/CSS零改动，before/after像素级一致（diffBytes=0）。探针value 3框/1底、table 5/3、chart同族恢复；web 33+api 15全绿。filter无捕获标记且被白名单挡在链外fail-closed。
+
 - 缺陷①根因修复 `2cb395d`：deep2d_scissor 的chunk_scissor用逐轴拉伸+零偏移，与shader/命中/相机的LetterboxMapping不一致——被node.clip收窄的chunk（标题+单位）在非等比窗口scissor错位整条被裁。修复改用同一映射并补字母箱错位测试钉；新增任意物理尺寸读回harness并修复bytes_per_row 256对齐缺口（1200宽曾静默全零）。修复前0/3220→后3220/3220，真实包标题3876px恢复，整帧diff仅2537px全落标题区；真实窗口截图「分区域出力/MW」可见；bin 126+GPU 45全过、clippy/fmt干净。缺陷③轴/图例确认为编译层缺口（present_chart不生成quad），归P0-01。[报告](specs/deep2d-title-letterbox-fix-2026-09-18.md)
 
 - P1-18 TS字形合同 `5732f23`：text命令新增atlasId/bakedGlyphs（逐字段镜像Native command_types.rs/validate_text.rs），顶层可选atlases配对，向后兼容旧显示列表；dashboardGlyphRun.buildTextGlyphRunCommands实测度量表必填、逐行守卫镜像Native校验；lowerDashboardWidget可选度量参数——有度量产出字形运行、无度量保持deferred不冒充。deep-engine 3108+web聚焦33全绿。筛选文字Native端GPU证据与能力报告口径均未动。[报告](specs/deep2d-glyph-run-contract-2026-09-18.md)
