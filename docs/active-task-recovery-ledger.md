@@ -1849,3 +1849,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 修复全系统 ToolHelp 快照的启动开销，改目标进程 PSS；CPU 同时用内核累计账务轮询，避免仅依赖 Windows 周期终止。固定复用已有 windows-sys 0.61.2，第三方说明同步且保留其他会话改动。
 - 主线程复跑 IPC 7/7、Windows Job 4/4；库聚焦 10/10、clippy/fmt 通过。真实测试覆盖三层树、继承管道、禁止 breakaway、内存分配拒绝、进程数拒绝与 CPU 忙循环终止。ignored 仅为父测试实际调用的故障注入入口。
 - restricted token/文件与网络权限、正式安装包与播放器/Painter 接线继续本轮待办，不开放任意脚本。[验证报告](specs/deep2d-p2-01-windows-job-2026-09-17.md)
+
+### 2026-09-17 X_T 孤立极点环保留（Codex）
+
+- 复用现有 `Bound.vertex`，严格识别 FIN 自环与有限源坐标；不造退化边，不填默认几何。26 个源点状环与 IR 的源面身份、坐标 bits 多重集一致，109 件 lowering skipped 归零。
+- 主线程复跑 cad-xt 15 项、独立 109 件点状环审核与全语料 GLB 几何审核通过；最小补丁反向检查通过。三角数变化不等于曲面精度认证。
+- 完整 source map、曲面误差、单位、闭合性、授权归档和产品接线继续本轮待办；不新增生产 profile。[证据](specs/industrial-x-t-isolated-loop-2026-09-17.md)

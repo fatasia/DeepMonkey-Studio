@@ -1,0 +1,158 @@
+diff --git a/native/crates/cad-xt/src/topo.rs b/native/crates/cad-xt/src/topo.rs
+index 2dc8751..6038cd5 100644
+--- a/native/crates/cad-xt/src/topo.rs
++++ b/native/crates/cad-xt/src/topo.rs
+@@ -1951,6 +1930,13 @@ impl<'a> Lowering<'a> {
+             return Ok(None);
+         }
+ 
++        if let Some((handle, position)) =
++            crate::isolated_loop::isolated_vertex(self.entities, self.index, le.index, &cycle)?
++        {
++            let vertex = self.intern_vertex(handle, position);
++            return Ok(Some(Bound { outer: false, halves: Vec::new(), vertex: Some(vertex) }));
++        }
++
+         // The vertex each fin starts at, in cycle order.
+         let starts: Vec<usize> = cycle
+             .iter()
+diff --git a/native/crates/cad-xt/src/lib.rs b/native/crates/cad-xt/src/lib.rs
+--- a/native/crates/cad-xt/src/lib.rs
++++ b/native/crates/cad-xt/src/lib.rs
+@@ -14,5 +14,6 @@
+ pub mod topo;
+ mod triangle_distance;
+ mod shell_chains;
++mod isolated_loop;
+ 
+ use cad_ir::material_resolve::{ColourEvidence, MaterialResolver};
+diff --git a/native/crates/cad-xt/src/isolated_loop.rs b/native/crates/cad-xt/src/isolated_loop.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/cad-xt/src/isolated_loop.rs
+@@ -0,0 +1,125 @@
++use crate::geom::Index;
++use cad_ir::math::Vec3;
++use xt_parser::entity::{Entities, FieldVal, RawEntity};
++use xt_parser::schema as xt;
++
++/// X_T reference 5.3.8.1: an isolated loop encodes its single vertex through
++/// one self-linked fin, with no edge, opposite fin or parameter curve.
++pub(crate) fn isolated_vertex(
++    entities: &Entities,
++    index: &Index,
++    loop_id: usize,
++    fins: &[&RawEntity],
++) -> Result<Option<(usize, Vec3)>, String> {
++    let mut isolated = None;
++    for fin in fins {
++        let fields = entities.fields(fin);
++        let shift = match fields.len() {
++            9 => 1,
++            10 => 0,
++            _ => return Err(format!("fin {} has unsupported field layout", fin.index)),
++        };
++        let pointer = |slot: usize| match fields.get(slot - shift) {
++            Some(FieldVal::Ptr(value)) => Ok(*value),
++            _ => Err(format!("fin {} field {slot} is not a pointer", fin.index)),
++        };
++        if pointer(6)? != 0 {
++            continue;
++        }
++        if fins.len() != 1
++            || pointer(1)? != loop_id
++            || pointer(2)? != fin.index
++            || pointer(3)? != fin.index
++            || pointer(5)? != 0
++            || pointer(7)? != 0
++        {
++            return Err(format!(
++                "null-edge fin {} is not an isolated vertex loop",
++                fin.index
++            ));
++        }
++        let vertex_id = pointer(4)?;
++        let vertex = index
++            .get(&vertex_id)
++            .filter(|e| e.type_id == xt::VERTEX)
++            .ok_or_else(|| {
++                format!(
++                    "isolated fin {} references invalid vertex {vertex_id}",
++                    fin.index
++                )
++            })?;
++        let point_id = match entities.fields(vertex).get(5) {
++            Some(FieldVal::Ptr(value)) => *value,
++            _ => return Err(format!("isolated vertex {vertex_id} has no point pointer")),
++        };
++        let point = index
++            .get(&point_id)
++            .filter(|e| e.type_id == xt::POINT)
++            .ok_or_else(|| {
++                format!("isolated vertex {vertex_id} references invalid point {point_id}")
++            })?;
++        let position = match entities.fields(point).get(5) {
++            Some(FieldVal::Vec3(value)) => Vec3::new(value[0], value[1], value[2]),
++            _ => return Err(format!("isolated point {point_id} has no position")),
++        };
++        if !position.is_finite() {
++            return Err(format!("isolated point {point_id} has non-finite position"));
++        }
++        isolated = Some((vertex_id, position));
++    }
++    Ok(isolated)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn fixture(major: u32, back: usize, edge: usize, vertex: usize, point: usize) -> Entities {
++        let attributes = if major < 20 { "" } else { "0 " };
++        let text = format!(
++            "15 5 0 0 10 0 0 \
++            17 10 {attributes}5 10 {back} {vertex} 0 {edge} 0 0 + \
++            18 20 0 0 10 0 0 {point} 0 0 \
++            29 30 0 0 20 0 0 0.1 -0.2 0.3 1 0"
++        );
++        let (entities, truncated) =
++            xt_parser::entity::parse_entities_opt(&mut text.as_str(), 0, false, major).unwrap();
++        assert!(truncated.is_none(), "{truncated:?}");
++        entities
++    }
++
++    #[test]
++    fn both_fin_layouts_preserve_the_source_point() {
++        for major in [9, 21] {
++            let entities = fixture(major, 10, 0, 20, 30);
++            let index: Index = entities.iter().map(|e| (e.index, e)).collect();
++            assert_eq!(
++                isolated_vertex(&entities, &index, 5, &[index[&10]]).unwrap(),
++                Some((20, Vec3::new(0.1, -0.2, 0.3)))
++            );
++            assert!(isolated_vertex(&entities, &index, 6, &[index[&10]]).is_err());
++            assert!(isolated_vertex(&entities, &index, 5, &[index[&10], index[&10]]).is_err());
++        }
++    }
++
++    #[test]
++    fn invalid_null_edge_loops_are_not_repaired() {
++        for (back, vertex, point) in [
++            (0, 20, 30),
++            (10, 0, 30),
++            (10, 30, 30),
++            (10, 20, 0),
++            (10, 20, 20),
++        ] {
++            let entities = fixture(9, back, 0, vertex, point);
++            let index: Index = entities.iter().map(|e| (e.index, e)).collect();
++            assert!(isolated_vertex(&entities, &index, 5, &[index[&10]]).is_err());
++        }
++        let entities = fixture(9, 10, 99, 20, 30);
++        let index: Index = entities.iter().map(|e| (e.index, e)).collect();
++        assert_eq!(
++            isolated_vertex(&entities, &index, 5, &[index[&10]]).unwrap(),
++            None
++        );
++    }
++}
