@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync,writeFileSync } from 'node:fs';
+import { readFileSync,writeFileSync,mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { tessellatePlanarFace } from './3dm-planar-trim.mts';
@@ -11,6 +11,7 @@ import { auditBrepBoundaries } from './3dm-brep-boundary-audit.mts';
 import { evaluateCurve,evaluateSurface } from './3dm-nurbs-parameters.mjs';
 import { export3dmGlb } from './3dm-glb-export.mts';
 const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/3dm-source-audit');
+const evidenceOut=resolve(root,'test-output/industrial-3dm/source-edge-tolerance-2026-09-17-cae20e7');mkdirSync(evidenceOut,{recursive:true});
 const hash='848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978';
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartB.3dm');
 const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
@@ -50,7 +51,7 @@ test('actual source C3 controls edge 13 while underestimated declared tolerance 
   assert.equal(primitive.extras.sourceSha256,hash);assert.equal(primitive.extras.tessellationAudit.sourceEdgeWelds[0].edge,13);
   const evidence={sourceSha256:hash,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartB.3dm',
     useBoundary:'official sample; local verification only; not redistributed',records:result.records,failures:result.failures,observed,maxNativeTrimCylinderResidual,
-    glbSha256:createHash('sha256').update(glb.bytes).digest('hex')};writeFileSync(resolve(out,'source-edge-weld-evidence.json'),JSON.stringify(evidence,null,2));
+    glbSha256:createHash('sha256').update(glb.bytes).digest('hex')};writeFileSync(resolve(evidenceOut,'source-edge-weld-evidence.json'),JSON.stringify(evidence,null,2));
   console.log(JSON.stringify({records:result.records.map(({sourceEdgeParameters,...r})=>r),failures:result.failures,observed}));
 });
 test('controlled larger declaration repairs real trim geometry without consuming geometry budget twice',()=>{
@@ -60,7 +61,7 @@ test('controlled larger declaration repairs real trim geometry without consuming
   const record=result.records.find(r=>r.edge===16)!;assert(record.maxBoundaryCorrection>.00013&&record.maxBoundaryCorrection<.0002);
   assert(record.maxPlaneResidual<1e-8&&record.maxCylinderResidual<1e-8);assert(record.planeErrorBound>.00113&&record.planeErrorBound<.01);
   // This altered tolerance is a controlled test, not an acceptance claim for the original file.
-  writeFileSync(resolve(out,'source-edge-weld-control.json'),JSON.stringify({scope:'controlled edge tolerance on real source geometry; not source-authored declaration',records:result.records},null,2));
+  writeFileSync(resolve(evidenceOut,'source-edge-weld-control.json'),JSON.stringify({scope:'controlled edge tolerance on real source geometry; not source-authored declaration',records:result.records},null,2));
 });
 test('units, total budget, monotonic topology and endpoint identity gate every proposed repair',()=>{
   assert.throws(()=>weldSourceEdges(ir,raw,.001,.02),/budget/);assert.throws(()=>weldSourceEdges(ir,raw,0),/budget/);

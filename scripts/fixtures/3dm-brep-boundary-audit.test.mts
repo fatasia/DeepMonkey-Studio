@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync,writeFileSync } from 'node:fs';
+import { readFileSync,writeFileSync,mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -12,6 +12,7 @@ import { auditBrepBoundaries } from './3dm-brep-boundary-audit.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
 const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/3dm-source-audit');
+const evidenceOut=resolve(root,'test-output/industrial-3dm/cross-face-boundaries-2026-09-17-cae20e7');mkdirSync(evidenceOut,{recursive:true});
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const sha=(bytes:any)=>createHash('sha256').update(bytes).digest('hex');
 function load(relative:string,hash:string){
@@ -45,11 +46,11 @@ test('real MechPartB diagnoses independent boundary sampling and refines only so
   assert(maxOriginalPointAtDistance<refined.audit.controlHullBound);assert.equal(refined.mesh.positions.length,66);
   const glb=await export3dmGlb(source,hash);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');
   assert(glb.sidecar.boundaryAudits.some((a:any)=>a.objectId===object.id&&a.shared.some((e:any)=>e.edge===16&&!e.conforming)));
-  const path=resolve(out,'v4_MechPartB.boundaries.glb');writeFileSync(path,glb.bytes);const glbAudit=await auditGlbGeometry(path);
+  const path=resolve(evidenceOut,'v4_MechPartB.boundaries.glb');writeFileSync(path,glb.bytes);const glbAudit=await auditGlbGeometry(path);
   const evidence={sourceSha256:hash,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartB.3dm',
     useBoundary:'official sample; local verification only; not redistributed',before,after,refinements:completed.refinements,
     sourceEdge16Tolerance:ir.edges[16].tolerance,diagnostics:completed.diagnostics,maxOriginalPointAtDistance,glbAudit,glbSha256:sha(glb.bytes)};
-  writeFileSync(resolve(out,'boundary-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({refinements:completed.refinements,maxOriginalPointAtDistance,glbAudit}));
+  writeFileSync(resolve(evidenceOut,'boundary-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({refinements:completed.refinements,maxOriginalPointAtDistance,glbAudit}));
 });
 let boxIr:any,boxParts:any[],boxSource:any;
 test('actual V4 six-face box has shared source edges and independently welded closed-shell topology',async()=>{
@@ -72,7 +73,7 @@ test('actual V4 six-face box has shared source edges and independently welded cl
   const evidence={sourceSha256:hash,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_example_file.3dm',
     useBoundary:'official sample; local verification only; not redistributed',objectId:object.id,boundaryAudit:result.boundaryAudit,
     weldedVertices:points.length,edges:edges.size,triangles:faceCount,euler:2,signedVolume:volume,glbSha256:sha(glb.bytes)};
-  writeFileSync(resolve(out,'closed-box-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({objectId:object.id,volume}));
+  writeFileSync(resolve(evidenceOut,'closed-box-evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({objectId:object.id,volume}));
 });
 test('missing faces, altered winding and omitted triangle boundaries cannot pass seam evidence',()=>{
   assert.equal(auditBrepBoundaries(boxIr,boxParts.slice(1)).allFacesPresent,false);

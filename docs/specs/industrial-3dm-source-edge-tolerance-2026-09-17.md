@@ -64,7 +64,7 @@ SHA-256 `848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978`；
 不把部分 MechPartB 或单个圆柱当作完整闭壳。负例覆盖单位变化、紧预算、非法放大预算、
 非单调对应、端点漂移、声明不足和连续证明不足。
 
-本地证据 `test-output/3dm-source-audit/`：
+本地证据 `test-output/industrial-3dm/source-edge-tolerance-2026-09-17-cae20e7/`：
 
 - `source-edge-weld-evidence.json` SHA-256 `71f21b537263558ebdb7da8580df7a6fcacc30de0ba1e806b3481bc2080f0008`
 - `source-edge-weld-control.json` SHA-256 `970a7c526610a2f60a5fe6870b71ef213dc358c021ef4e2aff3e8d47c9560b3d`
@@ -72,3 +72,13 @@ SHA-256 `848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978`；
 已检查 UntrimmedSurfaces、disk_brake、T-Joint 等固定官方样本；闭合多段 C3、其它面组合
 仍明确不在本片范围。下一步是闭合/多段 C3 统一采样、真实非零声明容差正例、实例后误差
 预算和完整混合曲面闭壳；V1 UUID 稳定性另片处理，生产 profile 与视觉验收不变。
+
+## 证据路径纠正
+
+早期测试共用 `test-output/3dm-source-audit/`，新切片回归覆盖了同名跨面证据。
+`c4cc419` 规格中的 `360a9d82…` 是当时产物哈希，当前共享路径不能再用于校验该历史产物；
+历史验证结论不改写。当前版本跨面复跑输出已隔离到
+`test-output/industrial-3dm/cross-face-boundaries-2026-09-17-cae20e7/`，源边证据使用上列独立目录。
+该版本 `boundary-evidence.json` SHA-256 为 `7fbde132ed8b29714b8e43d2a804c936ecbab649e6e43568d9c118cf76958460`。
+复跑命令为 `pnpm exec tsx --test scripts/fixtures/3dm-source-edge-weld.test.mts scripts/fixtures/3dm-brep-boundary-audit.test.mts`。
+历史源代码仍由 `c4cc419` 保留；今后每个改变产物的切片使用新目录，不覆盖已报告切片目录。
