@@ -22,6 +22,8 @@ use super::Renderer;
 mod dashboard_update;
 #[path = "drop_preview.rs"]
 mod drop_preview;
+#[path = "packet_present.rs"]
+mod packet_present;
 
 pub(crate) struct StagedDeep2dUpdate {
     candidate: Option<Deep2dGpuPainter>,

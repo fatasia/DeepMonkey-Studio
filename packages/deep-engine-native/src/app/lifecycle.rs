@@ -3,6 +3,9 @@ use super::*;
 impl ApplicationHandler<GpuEvent> for NativeApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         package_open::flush_drop(self);
+        if packet_live::retry(self, event_loop, std::time::Instant::now()) {
+            return;
+        }
         if package_live::retry(self, event_loop, std::time::Instant::now()) {
             return;
         }

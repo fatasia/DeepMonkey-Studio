@@ -1,5 +1,11 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 Native RenderPacket 呈现屏障（Codex）
+
+- 已完成切片：`--packet-live` 临时候选真实呈现后才提交 GPU 缓存/CPU/published key，Skipped 恢复旧场景，Recover 从旧内容重建；单候选 100 ms 重试且 newer generation 淘汰旧候选。
+- RTX 4060/Vulkan 验证连续跳帧、latest-wins、恢复结果注入后实际设备重建与旧修订冲突拒绝；真实文件 smoke 上传 144 bytes/复制 432 bytes，几何材质复用。bin 119 passed/40 ignored，新 GPU 项显式通过，clippy/build/fmt/repository 通过。
+- 本轮待办：RuntimePackage 三维增量/Shader、完整 renderer 的呈现屏障与视觉验收。[证据](specs/native-packet-present-barrier-2026-09-17.md)
+
 ### 2026-09-17 DE26/B05 transient 预算（Codex）
 
 - 已完成切片：`dee98ef` 给唯一纹理池加可配默认 512 MiB 预算；只淘汰此前已提交的空闲目标，保护在途纹理，忙碌超额在分配前拒绝。
