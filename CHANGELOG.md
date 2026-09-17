@@ -4,6 +4,11 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Dashboard offline packages
+
+- Resolve offline entry pages from the published snapshot and ignore late failures from superseded downloads.
+- Compile page background colors beneath authored content; version the compilation recipe so earlier evidence cannot identify the changed compiler output. Background images and cross-host visual parity remain unverified.
+
 ### Native scene updates
 
 - Keep previous GPU scene resources until full live or dropped packages present successfully; restore the old surface on candidate failure and defer minimized-window rebuilds.

@@ -27,7 +27,7 @@ export async function createDashboardContentCompiler({ nativeExecutable, configu
       signal?.throwIfAborted();
       if (result.producerEvidence.some(item => item.producerEvidence && item.producerEvidence.executableSha256 !== nativeSha256))
         throw new Error("Rasterized text used a different deployed producer");
-      // Page appearance and runtime interactions remain unimplemented even when every pixel producer succeeds.
+      // 页面背景色已编译，其余外观与交互仍按实际缺口报告。
       const pageDeferred = result.deferredPageFields.flatMap(page => page.fields.map(field => `page.${field}`));
       return { artifact: new TextEncoder().encode(serializeDeepRuntimePackage(result.package)),
         windowEvidence: dashboardCompiledWindowEvidence(result, input, verifyDashboardButtonComposition),

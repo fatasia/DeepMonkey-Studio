@@ -1,4 +1,4 @@
-import { buildDashboardCompositionRuntimePackage, dashboardRuntimePageId, runtimeContentSha256,
+import { buildDashboardCompositionRuntimePackage, runtimeContentSha256,
   type DashboardRuntimePageV1, type Deep2dRuntimePackage, type ChartIrRuntimeValue } from "@bim-studio/deep-engine/runtime-package";
 import { lowerDashboardChart } from "./lowerDashboardChart";
 import { compileDashboardLayout } from "./compileDashboardLayout";
@@ -16,6 +16,7 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
   const pages: DashboardRuntimePageV1[] = [], deep2d: Deep2dRuntimePackage[] = [], charts: ChartIrRuntimeValue[] = [];
   const objects: Array<Awaited<ReturnType<typeof rasterNode>>["report"]> = [];
   const producerEvidence: DashboardRasterEvidence[] = [];
+  const pageDeferred: Array<{ pageId: string; fields: string[] }> = [];
   const nodeBindings: Array<{ nodeId: string; runtimeNodeId: string; runtimeNodeIds: string[]; pageId: string; runtimePageId: string }> = [];
   const sourceSemanticHash = runtimeContentSha256({ document, locale: input.locale, nodeAssets: input.nodeAssets,
     ...(input.data ? { data: input.data } : {}),
@@ -68,6 +69,7 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
       }
     }
     const background = pageBackground(page, layout.tree.id, revision);
+    pageDeferred.push({ pageId: page.id, fields: deferredPageFields(page, Boolean(background)) });
     if (background) {
       deep2d.push(background.content);
       nodes.unshift({ id: background.nodeId, revision, frame: [0, 0, page.width, page.height], clip: null,
@@ -80,13 +82,12 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
     documentId: document.application.metadata.id, documentRevision: revision, entryPageId: first.tree.id, pages };
   const packageValue = buildDashboardCompositionRuntimePackage({ packageId: input.packageId,
     packageVersion: input.packageVersion, dashboard, deep2d, charts, chartSims: [] });
-  const compileGraphHash = runtimeContentSha256({ sourceSemanticHash, pass: "dashboard-frozen-raster-v3", producerEvidence });
+  const compileGraphHash = runtimeContentSha256({ sourceSemanticHash, pass: "dashboard-frozen-raster-v4", producerEvidence });
   return { schemaVersion: 1 as const, scope: "dashboard-frozen-raster" as const, publicationReady: false as const,
     sourceSemanticHash, compileGraphHash, targetArtifactHash: runtimeContentSha256(packageValue), package: packageValue,
     producerEvidence, nodeBindings, capabilityReport: { objects, contentCompiled: objects.filter(o => o.contentCompiled).length,
       degraded: objects.filter(o => o.status === "degraded").length, blocked: objects.filter(o => o.status === "blocked").length },
-    deferredPageFields: document.application.pages.map(page => ({ pageId: page.id,
-      fields: deferredPageFields(page, Boolean(pageBackground(page, dashboardRuntimePageId(document.application.metadata.id, page.id), revision))) })) };
+    deferredPageFields: pageDeferred };
 }
 
 const PAGE_BACKGROUND_DEFAULT = "#12191d";

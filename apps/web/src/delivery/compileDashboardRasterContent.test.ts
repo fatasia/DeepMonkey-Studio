@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { assertDashboardDocument, type DashboardDocument, type DashboardDataWidgetNode } from "@bim-studio/contracts";
 import { sha256Bytes } from "@bim-studio/deep-engine/shader-package";
-import { validateDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
+import { runtimeContentSha256, validateDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import source from "../../../../packages/deep-engine/fixtures/dashboard-layout-source-v1.json";
 import { compileDashboardRasterContent } from "./compileDashboardRasterContent";
 import type { DashboardRasterCompileInput, DashboardRasterHost, DashboardTextRasterRequest, DashboardRasterResult } from "./dashboardRasterTypes";
@@ -55,6 +55,8 @@ describe("frozen dashboard raster orchestration", () => {
     });
     expect(result.deferredPageFields[0]!.fields).not.toContain("appearance.backgroundColor");
     expect(result.deferredPageFields[0]!.fields).toContain("appearance.backgroundImageUrl");
+    expect(result.compileGraphHash).not.toBe(runtimeContentSha256({ sourceSemanticHash: result.sourceSemanticHash,
+      pass: "dashboard-frozen-raster-v3", producerEvidence: result.producerEvidence }));
     expect(validateDeepRuntimePackage(result.package).valid).toBe(true);
   });
 
