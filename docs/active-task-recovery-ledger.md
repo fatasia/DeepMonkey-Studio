@@ -44,6 +44,8 @@
 
 - P1-16收官 `467a8f4`：UIA屏幕阅读器桥——#[implement]单provider实现Simple/Fragment/FragmentRoot，UiaReturnRawElementProvider挂HWND（WNDPROC截WM_GETOBJECT），ServerSideProvider+catch_unwind收敛COM回血+100ms节流StructureChanged；依赖用lock内已有windows 0.62.2加feature零新包。--smoke-uia真实窗口CUIAutomation枚举6节点全中（Pane/Group/ListItem/Text含中文）。lib 341/bin 126/clippy/fmt全绿。遗留：Narrator真人验证、Control Pattern与bounds（fail-closed NULL/E_NOTIMPL）、winit挂点已明确未接线、717行超预警线。[报告](specs/deep2d-uia-bridge-2026-09-18.md)
 
+- P1全量盘点（Explore只读核查）：23项中17完成、6部分完成、无未动项；任务表滞后行（P1-13/22/23/09）已同步（4a734cf）。真正剩余：P1-12真实换包端到端GPU注入（待P0包切换通路收口）、P1-07 Arc化/shadow捕获（跨禁区文件需立项）、P1-19字体内嵌/子集化（卡再分发权用户决策）、P1-20 bidi/RTL+产品事件循环（依赖已批准shaping库）、P1-01 resize接线layout_revision（小切片）、P1-18合流（value/table尺寸决策）。P1-09目标裁剪已随2f15181落地（盘点快照早于收拢，已更正）。
+
 - P1-03收尾 `72eefb0`：实证此前chunked_rows仅被自身测试引用（AppendWindow走手写整段Vec克隆）；接线后ChartRuntime持data_windows镜像（runtime态，ChartIR JSON合同不动），AppendWindow走Arc行块共享/整块回收/跨块边界仅首块make_mut写时复制，暂存至提交才落地（失败路径零污染），预算超限fail-closed带dataset id。单测8项（引用计数20 000行3块实证）+黑盒9项（与未分块参考逐值一致/evicted_rows证据）；lib 341、clippy/fmt全绿。性能对比归P1-04。
 
 - P1-23 TS侧消费：packages/deep-engine/src/adapterN1（9文件≤276行）——wire合同逐字段对齐adapter_n1/schema.rs，canonicalJson精确复刻serde_json+ryu-pretty（整数/浮点词法/kk布局/码点序键排序），SVG白名单MmLlHhVvZz禁曲线圆弧，四类适配（svg/富文本/图表扩展/动画ABI）；fail-closed三态与认证台账digest对拍——四类fixture digest黄金断言全中Native固化值（SVG 50b1cd80/富文本ad56df1c/图表5aab58a7/动画ffb61123），58/58测试+typecheck+runtimePurityGate绿。边界：渲染仍在Native，范围外元素blocked；TS计数上限收紧多拒方向安全；发现shaderPackage/hash.ts默认sort非字节序的潜在同族偏差（当前键全ASCII，建议另行排查）。
