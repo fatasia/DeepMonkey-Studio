@@ -8,6 +8,8 @@
 mod contract;
 mod host;
 pub mod process;
+#[cfg(windows)]
+pub mod scheduler;
 
 pub use contract::*;
 pub use host::XCompatibilityHost;

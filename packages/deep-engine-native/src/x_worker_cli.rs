@@ -3,20 +3,10 @@ pub fn run() -> Result<(), String> {
     use deep_engine_native::compat_x::{
         CompatibilityLane, X_COMPATIBILITY_SCHEMA_VERSION, XBudget, XCall, XExecutionContext,
         XRequest,
-        process::{XProcessConfig, lpac},
+        process::XProcessConfig,
+        scheduler::{XContentScheduler, XDynamicContent},
     };
-    let player =
-        std::env::current_exe().map_err(|error| format!("X worker/current-exe: {error}"))?;
-    let worker = player
-        .parent()
-        .ok_or("X worker/player has no parent directory")?
-        .join("deep2d-x-worker.exe");
-    if !worker.is_file() {
-        return Err(format!(
-            "X worker/missing packaged worker: {}",
-            worker.display()
-        ));
-    }
+    use deep_engine_native::runtime_package::{RuntimeContentHash, runtime_content_sha256};
     let request = XRequest {
         schema_version: X_COMPATIBILITY_SCHEMA_VERSION,
         expected_epoch: 1,
@@ -31,24 +21,33 @@ pub fn run() -> Result<(), String> {
         now_ms: 100,
         cancelled: false,
     };
-    let candidate = lpac::evaluate(
-        &worker,
-        XProcessConfig {
-            enabled: true,
-            lane: CompatibilityLane::ExperimentalX,
-            budget: XBudget::default(),
-            ..Default::default()
+    let content = XDynamicContent {
+        schema_version: X_COMPATIBILITY_SCHEMA_VERSION,
+        lane: CompatibilityLane::ExperimentalX,
+        content_hash: RuntimeContentHash {
+            algorithm: "sha256".into(),
+            value: runtime_content_sha256(
+                &serde_json::to_value(&request).map_err(|error| error.to_string())?,
+            ),
         },
-        &request,
-        context,
-    )
-    .map_err(|error| format!("X worker/LPAC verification failed: {error:?}"))?;
+        request,
+    };
+    let mut scheduler = XContentScheduler::new(XProcessConfig {
+        enabled: true,
+        lane: CompatibilityLane::ExperimentalX,
+        budget: XBudget::default(),
+        ..Default::default()
+    })
+    .map_err(|error| format!("X worker/config: {error:?}"))?;
+    let candidate = scheduler
+        .dispatch(&content, context)
+        .map_err(|error| format!("X worker/LPAC verification failed: {error:?}"))?;
     println!(
         "Deep2D X compatibility worker OK: schema={} messages={} request_hash={} output_hash={}",
         X_COMPATIBILITY_SCHEMA_VERSION,
-        candidate.messages().len(),
-        candidate.request_hash(),
-        candidate.output_hash()
+        candidate.messages.len(),
+        candidate.request_hash,
+        candidate.output_hash
     );
     Ok(())
 }

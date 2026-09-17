@@ -33,14 +33,19 @@ impl Default for XBudget {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct XResource {
     pub id: String,
     pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data", rename_all = "kebab-case")]
+#[serde(
+    deny_unknown_fields,
+    tag = "type",
+    content = "data",
+    rename_all = "kebab-case"
+)]
 pub enum XEvent {
     Pointer { x: f64, y: f64 },
     Key { code: XKey },
@@ -57,7 +62,12 @@ pub enum XKey {
 
 /// 封闭适配调用，不含源码、表达式、回调或自定义 JSON。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "op", content = "args", rename_all = "kebab-case")]
+#[serde(
+    deny_unknown_fields,
+    tag = "op",
+    content = "args",
+    rename_all = "kebab-case"
+)]
 pub enum XCall {
     Sequence(Vec<XCall>),
     ReadClock,
@@ -82,7 +92,7 @@ pub enum XMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct XRequest {
     pub schema_version: u32,
     pub expected_epoch: u64,

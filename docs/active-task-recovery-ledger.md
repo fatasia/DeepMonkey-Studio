@@ -1880,6 +1880,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 实际候选包 44 entries/5,884,968 bytes，ZIP SHA-256 `4af79a947e28a059fe541ab232cad7c0483b9bad4fc1913be3d2b1215b3f3e7e`；worker SHA-256 `b014ed385145a0ac2c5fa81bb86c52ddfd8ef4ca8877e45e9d55bf6c8426336d`。27 项 LPAC/GPU/恢复 smoke 与二次完整 verifier 通过。
 - 主播放器显式 `--verify-x-worker` 诊断已从包内固定路径真实执行 LPAC/X ABI 往返；动态内容调度、用户级开关/诊断呈现、签名与撤销、完整 Windows 权限/网络矩阵仍待办。随包不代表启用或兼容任意脚本。[证据](specs/deep2d-p2-01-portable-worker-2026-09-17.md)
 
+### 2026-09-17 Deep2D P2-01 X 内容调度门禁（Codex）
+
+- 新增默认关闭的 `XContentScheduler`：内容只能携带封闭 XCall/request 与 SHA-256，不能提供执行路径、脚本、开关或预算；仅解析当前 EXE 同目录普通 worker 文件，拒绝 reparse point，只走 LPAC，无普通进程降级。
+- 启动前校验 lane/schema/epoch/取消/深度/节点/4 MiB 编码上限与 canonical request hash；LPAC 返回候选后再做宿主 publish 校验，只有最终成功才原子替换 `last_known_good`。失败和终态 epoch 竞态均保留旧结果。
+- 主线复跑 compat_x 15、真实 CLI 1、IPC 7、LPAC 4、Job 4 项通过，clippy/fmt 通过。当前产品纵向只接 `--verify-x-worker`；runtime manifest 内容类型、作者编译、索引与绘制消费、跨重启保留继续本轮待办。[证据](specs/deep2d-p2-01-x-content-scheduler-2026-09-17.md)
+
 ### 2026-09-17 3DM openNURBS 真实源读取纵向实验（Codex）
 
 - 纠正旧盘点：本机现有 VS2022/MSVC v143。官方 openNURBS v8.35 以原版解决方案、零源码补丁构建；研究脚本通过官方 vswhere 定位工具链并以 `/Brepro` 生成确定性审核程序，不引入商业 CAD/SDK/授权服务。

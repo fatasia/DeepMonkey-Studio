@@ -209,6 +209,14 @@ pub fn evaluate_with_config(
     Ok(candidate)
 }
 
+pub(super) fn encode_bounded_request(
+    request: &XRequest,
+    budget: XBudget,
+) -> Result<Vec<u8>, XProcessError> {
+    check_depth(request, budget)?;
+    encode(request)
+}
+
 fn check_depth(request: &XRequest, budget: XBudget) -> Result<(), XProcessError> {
     // 在递归 JSON 编码/hash 之前检查深度与节点数。
     let mut pending: Vec<_> = request.calls.iter().map(|call| (call, 1)).collect();
