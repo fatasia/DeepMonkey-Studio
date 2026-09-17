@@ -30,6 +30,8 @@
 
 - C1 Web验证宿主 `9c829d8`：真实Chrome WebGPU（NVIDIA适配器,bgra8unorm-srgb）经DashboardCandidateController+compositionHost渲染组合包page-0并commit一帧，与Native GPU读回同fixture同规格对照落盘（test-output/c1-web-host-20260918/，identity与packageHash校验通过）。对照统计SSIM 0.175/彩色像素Web 52288 vs Native 132913——差异原因定位：①Web fill.ts扫描线三角化对pie/gauge扇形弧环抛crossings（Native可渲染）②chartFrame静态帧拒绝初始dataZoom/actions而Native应用初态——两项归P0-08追因，阈值判定不做。验证宿主非产品入口；产品C1装配（路由/事务deck swap）仍未做。失败路径404/缺WebGPU实测exit 1不降级。
 
+- C1缺口①修复：fill.ts扫描线active边判定改半开区间[lo,hi)——弧环对称采样点2 ulp浮点差产生幽灵band，旧严格开区间在mid舍入压线时排错边致奇数crossings；7种环全顶点采样暴力验证奇偶守恒。C1全量复跑（不剥离pie/gauge）：彩色像素52288→126734、SSIM 0.175→0.954，pie 72°/288°与gauge 270°环+指针全部呈现；deep-engine 147文件1150项全绿。像素级对照仍归P0-08正式矩阵。
+
 - 补漏 `9146d7f` 后的data_source.rs挂载单独fixup提交（泵切片add路径错误）。
 
 - 缺陷①根因修复 `2cb395d`：deep2d_scissor 的chunk_scissor用逐轴拉伸+零偏移，与shader/命中/相机的LetterboxMapping不一致——被node.clip收窄的chunk（标题+单位）在非等比窗口scissor错位整条被裁。修复改用同一映射并补字母箱错位测试钉；新增任意物理尺寸读回harness并修复bytes_per_row 256对齐缺口（1200宽曾静默全零）。修复前0/3220→后3220/3220，真实包标题3876px恢复，整帧diff仅2537px全落标题区；真实窗口截图「分区域出力/MW」可见；bin 126+GPU 45全过、clippy/fmt干净。缺陷③轴/图例确认为编译层缺口（present_chart不生成quad），归P0-01。[报告](specs/deep2d-title-letterbox-fix-2026-09-18.md)
