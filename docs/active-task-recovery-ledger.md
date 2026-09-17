@@ -1,5 +1,12 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 并行切片证据同步（Codex）
+
+- 已完成切片：DE26/B04 AO `21b7a2d`，raw/blur/half/HDR 接入唯一 transient pool，bind-group 按纹理身份/epoch 复用，history 排除；聚焦 18 passed/2 skipped，完整 3062 passed/41 skipped，真机 120 帧 GPU P95 0.918 ms、1588/1599 命中、无 GPU error。原始报告 SHA 已复核。Bloom/AuthorBloom 及 14 个既有 source-size 超限仍待。[证据](specs/de26-b04-transient-texture-pool-2026-09-17.md)
+- 已完成切片：X_T `6452aae` 优选同边源解析支撑 FIN pcurve，并把 SP_CURVE 弦差从 0.2 mm 收紧到 0.005 mm；两个面残差 0.0043758473 mm。109/109 转换、逐面 19162 matched / 1 mismatch / 181 unresolved，审计 SHA 已复核；生产 profile 仍 0，最后 INTERSECTION 超差继续修复。[证据](reports/industrial-x-t-sp-curve-analytic-support-2026-09-17.md)
+- 已完成切片：3DM `c4cc419` 源共边合同/圆柱加密，`cae20e7` 源 C3 容差缝合。0.01 mm 源局部物理预算分别计离散/修正/弦差/量化，源声明另设更严上限；真实 edge 13 通过，edge 16 源残差超声明仍拒绝。33 项测试及六面闭壳回归通过，MechPartB 仍 10/14 面部分预览。[证据](specs/industrial-3dm-source-edge-tolerance-2026-09-17.md)
+- 本轮待办：3DM 非矩形 trim、实例后世界误差与生产视觉；旧共享 boundary-evidence 已被后续复跑覆盖，后续证据改用切片独立目录，历史 hash 不改写。
+
 ### 2026-09-17 X 热同步坏写恢复与首次监听（Codex）
 
 - 已完成：同文件有效→坏 JSON→普通包→有效 X 包真实故障注入；实际 decoder 拒绝回执后校验显示/renderer/LKG 哈希不变，后续有效包呈现成功。
