@@ -7,6 +7,7 @@
 
 mod contract;
 mod host;
+pub mod process;
 
 pub use contract::*;
 pub use host::XCompatibilityHost;

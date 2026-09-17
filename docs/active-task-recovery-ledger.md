@@ -1806,3 +1806,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 修复已有产物验收只数三角形的问题：拒绝 NaN/Infinity 坐标、非 VEC3 POSITION、非法/归一化/越界索引、TRIANGLES 元素数非正 3 倍数、少于 3 元素的 strip/fan；复杂度为坐标与索引总量的线性扫描。
 - 验证：API 类型检查通过，转换审计/JT/X_T/优化器/等待验收 5 文件 28 测试通过；77 个真实 X_T 派生 GLB 全部通过补强后的审计。该门禁证明输出网格基本有效，完整源拓扑/单位/质量档与发布语义仍按 PLAN-06 后续切片验收。
+
+### 2026-09-17 Deep2D P2-01：真实子进程 IPC 切片（Codex）
+
+- 已完成封闭 X ABI 的单次 worker、4 MiB 双向 IPC、版本/hash/epoch 复核与发布 CAS；真实崩溃、损坏回执、取消、超时不替换上次成功结果。复用现有求值器，没有新增 JS/DOM 执行入口或依赖。
+- 主线程复核修复继承管道导致超时后卡住的问题；集成 7 通过，5 个 ignored 为测试中实际启动的故障注入入口；库聚焦 8 通过，clippy/fmt 通过。冻结 request/output hash 不变。
+- P2-01 整体仍为本轮待办：Windows restricted token/Job Object、进程树与阻塞 I/O 线程回收、OS 资源限制及产品/安装包接线未完成。本片只证明可信封闭 worker 的故障隔离。[证据](specs/deep2d-p2-01-process-ipc-2026-09-17.md)

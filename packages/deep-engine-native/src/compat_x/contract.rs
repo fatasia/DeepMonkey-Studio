@@ -1,15 +1,15 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub const X_COMPATIBILITY_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CompatibilityLane {
     NativeN0,
     ExperimentalX,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct XBudget {
     pub max_cpu_units: u64,
     pub max_memory_bytes: usize,
@@ -32,21 +32,21 @@ impl Default for XBudget {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct XResource {
     pub id: String,
     pub bytes: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "kebab-case")]
 pub enum XEvent {
     Pointer { x: f64, y: f64 },
     Key { code: XKey },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum XKey {
     Enter,
@@ -56,7 +56,7 @@ pub enum XKey {
 }
 
 /// 封闭适配调用，不含源码、表达式、回调或自定义 JSON。
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", content = "args", rename_all = "kebab-case")]
 pub enum XCall {
     Sequence(Vec<XCall>),
@@ -67,7 +67,7 @@ pub enum XCall {
     EmitNumber(f64),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "kebab-case")]
 pub enum XMessage {
     Clock(u64),
@@ -81,7 +81,7 @@ pub enum XMessage {
     Number(f64),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct XRequest {
     pub schema_version: u32,
@@ -93,7 +93,7 @@ pub struct XRequest {
     pub calls: Vec<XCall>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct XExecutionContext {
     pub current_epoch: u64,
     pub now_ms: u64,

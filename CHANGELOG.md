@@ -4,6 +4,10 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Deep2D experimental compatibility
+
+- Run the closed X ABI in a separate worker with bounded IPC, receipt hashes, cancellation and timeout checks. Keep publication behind the existing epoch check; OS-level sandboxing and packaged runtime integration remain pending.
+
 ### Industrial conversion validation
 
 - Reject GLB outputs with non-finite positions, invalid or out-of-range indices, and incomplete triangle primitives before publication.

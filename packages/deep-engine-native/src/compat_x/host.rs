@@ -71,7 +71,7 @@ impl XCompatibilityHost {
         Ok(candidate.messages)
     }
 
-    fn guard(
+    pub(super) fn guard(
         &self,
         lane: CompatibilityLane,
         expected_epoch: u64,
@@ -152,7 +152,7 @@ fn call_hash_value(call: &XCall) -> Value {
     }
 }
 
-fn request_hash_value(request: &XRequest) -> Value {
+pub(super) fn request_hash_value(request: &XRequest) -> Value {
     json!({
         "schemaVersion": request.schema_version,
         "expectedEpoch": request.expected_epoch,
@@ -167,7 +167,7 @@ fn request_hash_value(request: &XRequest) -> Value {
     })
 }
 
-fn message_hash_value(message: &XMessage) -> Value {
+pub(super) fn message_hash_value(message: &XMessage) -> Value {
     match message {
         XMessage::Clock(value) => json!({ "type": "clock", "value": value }),
         XMessage::Random(value) => json!({ "type": "random", "value": value }),
@@ -346,7 +346,7 @@ impl<'a> EvaluationState<'a> {
     }
 }
 
-fn message_bytes(message: &XMessage) -> usize {
+pub(super) fn message_bytes(message: &XMessage) -> usize {
     match message {
         XMessage::Clock(_) | XMessage::Random(_) | XMessage::Number(_) => 8,
         XMessage::ResourceByte { resource_id, .. } => 17 + resource_id.len(),
