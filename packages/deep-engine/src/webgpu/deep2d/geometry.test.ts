@@ -20,6 +20,25 @@ it("fills concave rings and Native single-level holes without overdraw", () => {
   ], rule))).toBe(64);
   expect(() => fillRings([outer, [[20, 20], [22, 20], [20, 22]]], true)).toThrow(/inside/);
 });
+it("fills pie/gauge arc rings whose symmetric vertices differ only in float ulps", () => {
+  // Same arc sampling formula as the apps/web chart series assembly, at the C1 960x540 host frame.
+  const arc = (center: readonly [number, number], radius: number, start: number, sweep: number, segments: number) =>
+    Array.from({ length: segments + 1 }, (_, step) => {
+      const angle = (start + sweep * step / segments) * (Math.PI / 180);
+      return [center[0] + radius * Math.cos(angle), center[1] + radius * Math.sin(angle)] as const;
+    });
+  const center: readonly [number, number] = [540, 282];
+  const sector = (sweep: number) => fillPath([{
+    points: [center, ...arc(center, 246, -90, sweep, Math.max(1, Math.ceil(sweep / 360 * 24)))], closed: true,
+  }]);
+  for (const [sweep, share] of [[72, .2], [288, .8]] as const) {
+    const ratio = area(sector(sweep)) / (Math.PI * 246 ** 2);
+    expect(ratio).toBeGreaterThan(share * .95); expect(ratio).toBeLessThanOrEqual(share);
+  }
+  const gauge = [...arc(center, 242, 135, 270, 18), ...arc(center, 242 * .72, 405, -270, 18)];
+  const ratio = area(fillPath([{ points: gauge, closed: true }])) / (Math.PI * (242 ** 2 - (242 * .72) ** 2));
+  expect(ratio).toBeGreaterThan(.75 * .95); expect(ratio).toBeLessThanOrEqual(.75);
+});
 it("flattens quadratic/cubic curves at transformed physical tolerance", () => {
   const verbs = [{ op: "move", x: 0, y: 0 }, { op: "quadratic", cx: 50, cy: 100, x: 100, y: 0 },
     { op: "cubic", c1x: 100, c1y: -100, c2x: 0, c2y: -100, x: 0, y: 0 }, { op: "close" }] as const;

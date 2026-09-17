@@ -10,28 +10,21 @@ import { chartFrame } from "../apps/web/src/delivery/dashboardChartFrame.js";
 const SURFACE_WIDTH = 960, SURFACE_HEIGHT = 540, DEVICE_EPOCH = 1;
 const bypassedChartFrames: string[] = [];
 const skippedChartSeries: string[] = [];
-/** Web deep2d 扫描线三角化（fillRings）对扇形/圆弧环存在奇数 crossing 缺口，pie/gauge 暂不可渲染。 */
-const GPU_SUPPORTED_SERIES = new Set(["line", "bar", "scatter", "heatmap"]);
 
 /**
  * fixture 必须原样进 controller（packageHash 有内容校验），适配只作用于克隆的 ChartIR：
- * 1) 产品静态 chartFrame 拒绝初始 dataZoom/actions（Native 渲染交互初态应用后的几何）；
- * 2) pie/gauge 扇形几何触发 Web 三角化 "Invalid Deep2D polygon crossings"（生产缺口，见汇报）。
- * 两类差异如实上报，归 P0-08 像素矩阵追因，本片不做阈值判定。
+ * 产品静态 chartFrame 拒绝初始 dataZoom/actions（Native 渲染交互初态应用后的几何）。
+ * pie/gauge 系列不再剥离：fillRings 半开区间扫描线（2026-09-18）已支持扇形弧环，
+ * crossings 差异若复现按错误如实上抛，归 P0-08 像素矩阵追因。
  */
 const adaptedChartFrame: typeof chartFrame = async (candidate, signal) => {
   try { return await chartFrame(candidate, signal); } catch (error) {
     const text = String(error);
-    if (!candidate.chart || !(text.includes("initial dataZoom or actions") || text.includes("polygon crossings"))) throw error;
+    if (!candidate.chart || !text.includes("initial dataZoom or actions")) throw error;
     bypassedChartFrames.push(candidate.node.id);
     const ir = structuredClone(candidate.chart.ir);
     ir.actions = []; ir.dataZoom = [];
-    const series = ir.series.filter(item => {
-      if (GPU_SUPPORTED_SERIES.has(item.type)) return true;
-      skippedChartSeries.push(`${candidate.node.id}/${item.id}:${item.type}`);
-      return false;
-    });
-    return chartFrame({ ...candidate, chart: { ...candidate.chart, ir: { ...ir, series } } }, signal);
+    return chartFrame({ ...candidate, chart: { ...candidate.chart, ir } }, signal);
   }
 }
 

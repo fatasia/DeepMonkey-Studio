@@ -18,7 +18,13 @@ export function fillRings(rings: readonly (readonly Point[])[], holes = false): 
   const triangles: Triangle[] = [];
   for (let i = 1; i < ys.length; i++) {
     const y0 = ys[i - 1]!, y1 = ys[i]!, mid = (y0 + y1) / 2;
-    const active = edges.filter(([a, b]) => mid > Math.min(a[1], b[1]) && mid < Math.max(a[1], b[1])).sort((a, b) => x(a, mid) - x(b, mid));
+    // Half-open [lo, hi) keeps the vertex crossing count even even when mid rounds
+    // onto a vertex y (arc rings have symmetric points differing only in float ulps);
+    // a strict open interval drops the touching edges there and breaks parity.
+    const active = edges.filter(([a, b]) => {
+      const lo = Math.min(a[1], b[1]), hi = Math.max(a[1], b[1]);
+      return lo <= mid && mid < hi;
+    }).sort((a, b) => x(a, mid) - x(b, mid));
     if (active.length % 2) throw new Error("Invalid Deep2D polygon crossings.");
     for (let j = 0; j < active.length; j += 2) {
       const a: Point = [x(active[j]!, y0), y0], b: Point = [x(active[j + 1]!, y0), y0];
