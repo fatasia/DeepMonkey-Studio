@@ -2100,3 +2100,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 复用 NURBS/Bézier 正权重凸包细分，保留 3D 离散点的源参数；圆柱支撑、平移控制网格与矩形 trim 子域联合核验，沿高度轴无需加密，缓存优先与源面编号保留。
 - 固定官方 MechPartB V4 的 face 4/5，各 18 顶点/16 三角；420 个原 PointAt 点到实际网格最大距离 0.00253146 mm，小于 0.01 mm 预算。整体忽略缓存重建 10/14 面、196 三角，仍为 partial-geometry-preview。
 - 圆柱 4/4、既有回归 17/17、5 件源/GLB audit、专项 tsc、repository gate 通过。完整周期接缝另以真实源曲面加受控自然 trim 验证，非作者 trim 证据；任意曲面裁剪、跨面缝合与产品视觉仍待办。[证据](specs/industrial-3dm-cylinder-tessellation-2026-09-17.md)
+
+### 2026-09-17 3DM 圆锥台源曲面→GLB（Codex）
+
+- 复用参数映射、自然矩形 trim 和 Bézier 凸包界；同顶点位似控制行的锥台无需沿高度加密。支持 identity/separable 角参数及转置，锥顶/非矩形 trim 明确拒绝。
+- 官方 Wheel_PG 9 个真实旋转面、Gear 25 个窄裁剪带通过；2268/84 个原 PointAt 点到实际三角网格最大误差分别 0.004660191/0.004851636 mm，均低于 0.01 mm 源空间预算。Wheel_PG 忽略缓存全文件得到 14 支持面、17416 三角，仍为 partial-geometry-preview。
+- 圆锥 5/5、既有回归 21/21、5 件源/GLB audit、专项 tsc、repository gate 通过；镜像/非均匀实例使用真实网格加受控变换。任意曲面裁剪、跨面缝合与生产视觉仍待办。[证据](specs/industrial-3dm-cone-tessellation-2026-09-17.md)
