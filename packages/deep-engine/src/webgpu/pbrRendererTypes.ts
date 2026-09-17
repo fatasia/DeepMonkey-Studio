@@ -16,6 +16,8 @@ export interface RenderView extends PbrFrameUniformView {
 }
 
 export interface PbrRendererOptions {
+  /** 帧内目标的估算字节上限；不包含 history、阴影或流式几何。默认 512 MiB。 */
+  readonly transientTextureBudgetBytes?: number;
   readonly meshlets?: boolean;
   /** Explicitly allocates GPU pose-stream pipelines; author support is negotiated separately. */
   readonly deformation?: boolean;

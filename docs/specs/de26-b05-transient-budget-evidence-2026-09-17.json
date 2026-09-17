@@ -1,0 +1,170 @@
+{
+  "report": "webgpu-1789634018896.json",
+  "sha256": "3FB302E7CE3A42AC0A54FA92BF49BCF8417E7DB873382AEE3F2CDB1EEFA60C64",
+  "buildSha256": "d0c64199120a23d5b25ab004c244cd8929fd1410fb968dccdb278deb1dec39d2",
+  "adapter": {
+    "vendor": "nvidia",
+    "architecture": "lovelace",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false
+  },
+  "budget": {
+    "action": "transient-budget",
+    "success": true,
+    "observations": [
+      {
+        "width": 4,
+        "pixel": [
+          51,
+          102,
+          153,
+          255
+        ],
+        "rejected": true
+      },
+      {
+        "width": 8,
+        "pixel": [
+          51,
+          102,
+          153,
+          255
+        ],
+        "rejected": true
+      },
+      {
+        "width": 12,
+        "pixel": [
+          51,
+          102,
+          153,
+          255
+        ],
+        "rejected": true
+      },
+      {
+        "width": 16,
+        "pixel": [
+          51,
+          102,
+          153,
+          255
+        ],
+        "rejected": true
+      }
+    ],
+    "pressureStats": {
+      "budgetBytes": 64,
+      "residentBytes": 64,
+      "budgetRejectedCount": 4,
+      "budgetEvictedBytes": 96,
+      "epoch": 0,
+      "frameOpen": false,
+      "acquireCount": 8,
+      "hits": 0,
+      "misses": 4,
+      "allocatedBytes": 160,
+      "reusedBytes": 0,
+      "freeCount": 1,
+      "freeBytes": 64,
+      "inFlightCount": 0,
+      "inFlightBytes": 0,
+      "pendingReturnCount": 0,
+      "pendingReturnBytes": 0,
+      "peakResidentBytes": 64,
+      "discardedCount": 0,
+      "evictedCount": 3
+    },
+    "afterResize": 0,
+    "rebuiltStats": {
+      "budgetBytes": 64,
+      "residentBytes": 64,
+      "budgetRejectedCount": 4,
+      "budgetEvictedBytes": 96,
+      "epoch": 1,
+      "frameOpen": false,
+      "lastInvalidation": [
+        "surface-resize",
+        1
+      ],
+      "acquireCount": 9,
+      "hits": 0,
+      "misses": 5,
+      "allocatedBytes": 224,
+      "reusedBytes": 0,
+      "freeCount": 1,
+      "freeBytes": 64,
+      "inFlightCount": 0,
+      "inFlightBytes": 0,
+      "pendingReturnCount": 0,
+      "pendingReturnBytes": 0,
+      "peakResidentBytes": 64,
+      "discardedCount": 0,
+      "evictedCount": 4
+    },
+    "validationError": null,
+    "resourceDeltaAfterDispose": 0
+  },
+  "firstFrame": {
+    "action": "first-frame",
+    "readyMs": 2031.2000000011176,
+    "instances": 49,
+    "geometryMode": "spheres",
+    "frame": {
+      "frame": 1,
+      "cpuSubmitMs": 7.100000001490116,
+      "drawCalls": 8,
+      "triangles": 450804,
+      "authorFrustumPasses": 0,
+      "authorFrustumDispatches": 0,
+      "meshletPasses": 0,
+      "meshletDispatches": 0,
+      "meshletFallbackReasons": [],
+      "width": 1180,
+      "height": 825,
+      "resources": 72,
+      "shadowUpdated": true,
+      "transientTextures": {
+        "budgetBytes": 536870912,
+        "residentBytes": 49654832,
+        "budgetRejectedCount": 0,
+        "budgetEvictedBytes": 0,
+        "epoch": 0,
+        "frameOpen": false,
+        "acquireCount": 24,
+        "hits": 0,
+        "misses": 24,
+        "allocatedBytes": 49654832,
+        "reusedBytes": 0,
+        "freeCount": 24,
+        "freeBytes": 49654832,
+        "inFlightCount": 0,
+        "inFlightBytes": 0,
+        "pendingReturnCount": 0,
+        "pendingReturnBytes": 0,
+        "peakResidentBytes": 49654832,
+        "discardedCount": 0,
+        "evictedCount": 0
+      },
+      "cameraCut": true,
+      "postProcessPasses": 37,
+      "weightedOit": false,
+      "hiZMipLevels": 11,
+      "occlusionCulling": false,
+      "frustumCulledBatches": 0,
+      "hiZOccludedBatches": 0,
+      "lodSelectionBatches": 0,
+      "lodIndirectDraws": 0,
+      "lightCount": 1,
+      "lightClusters": 23088,
+      "shadowTier": "high",
+      "shadowDepthBytes": 67108864,
+      "shadowMapSize": 2048,
+      "shadowCascadeCount": 4
+    },
+    "timestampSupported": true,
+    "errors": []
+  },
+  "errors": []
+}

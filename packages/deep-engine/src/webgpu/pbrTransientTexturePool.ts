@@ -2,6 +2,8 @@
 import type { DeviceSession } from "./deviceSession.js";
 import { pbrFrameResourceContract, type FramePlanUsage } from "./pbrFramePlanResources.js";
 import { failWithResourceCleanup } from "./resourceCleanup.js";
+import type { PbrTransientTextureKey, PbrTransientRequest, PbrTransientTextureHandle, PbrTransientPoolInvalidationReason, PbrTransientTexturePoolStats } from "./pbrTransientTextureTypes.js";
+export type { PbrTransientTextureKey, PbrTransientRequest, PbrTransientTextureHandle, PbrTransientPoolInvalidationReason, PbrTransientTexturePoolStats } from "./pbrTransientTextureTypes.js";
 
 /**
  * DE26/B04 第一切片 · 帧内 transient 纹理池。
@@ -18,6 +20,7 @@ import { failWithResourceCleanup } from "./resourceCleanup.js";
 
 /** 跨帧 history 合同条目:任务权威边界,显式列举 + historyRole 运行时兜底双重排除。 */
 export const PBR_HISTORY_TRANSIENT_EXCLUDED = Object.freeze(["previous-hiz", "next-hiz", "temporal-hdr"] as const);
+export const DEFAULT_TRANSIENT_TEXTURE_BUDGET_BYTES = 512 * 1024 * 1024;
 
 /** B03 计划层 usage 字符串 → 运行时 GPUTextureUsage 位;未知字符串或空集 fail-closed 抛错。 */
 export function framePlanUsageFlags(usages: readonly FramePlanUsage[]): GPUTextureUsageFlags {
@@ -45,61 +48,13 @@ const BYTES_PER_PIXEL: Readonly<Record<string, number>> = Object.freeze({
 export function transientTextureBytes(format: string, width: number, height: number, sampleCount: number): number {
   const bytesPerPixel = BYTES_PER_PIXEL[format];
   if (bytesPerPixel === undefined) throw new Error(`Transient texture byte estimation has no entry for format: ${format}.`);
-  return bytesPerPixel * width * height * sampleCount;
-}
-
-/** 完整兼容键;唯一复用判据,序列化口径与 renderGraph aliasKey 一致。 */
-export interface PbrTransientTextureKey {
-  readonly format: GPUTextureFormat;
-  readonly width: number;
-  readonly height: number;
-  readonly sampleCount: number;
-  readonly usage: GPUTextureUsageFlags;
+  const bytes = bytesPerPixel * width * height * sampleCount;
+  if (!Number.isSafeInteger(bytes) || bytes < 1) throw new Error("Transient texture byte estimate exceeds safe integer range.");
+  return bytes;
 }
 
 export function pbrTransientTextureKeyValue(key: PbrTransientTextureKey): string {
   return `${key.format}|${key.width}x${key.height}|s${key.sampleCount}|u${key.usage}`;
-}
-
-/** 池的获取请求:resourceId 用于 history 排除与诊断,兼容键字段必须逐项给出。 */
-export interface PbrTransientRequest extends PbrTransientTextureKey {
-  readonly resourceId: string;
-}
-
-export interface PbrTransientTextureHandle {
-  readonly texture: GPUTexture;
-  readonly view: GPUTextureView;
-  readonly key: PbrTransientTextureKey;
-  readonly resourceId: string;
-}
-
-export type PbrTransientPoolInvalidationReason = "surface-resize" | "device-lost" | "epoch-advance";
-
-/** 冻结快照,形态对齐 EnginePerformanceTelemetrySnapshot;分配计数/字节均以真实 GPU 分配为口径。 */
-export interface PbrTransientTexturePoolStats {
-  readonly epoch: number;
-  readonly frameOpen: boolean;
-  readonly lastInvalidation: readonly [PbrTransientPoolInvalidationReason, number] | undefined;
-  readonly acquireCount: number;
-  readonly hits: number;
-  /** 真实 GPU 新分配次数(无池基线对比的下降判据)。 */
-  readonly misses: number;
-  /** 真实新分配的累计字节估算。 */
-  readonly allocatedBytes: number;
-  /** 命中复用的字节估算(相对无池基线的节省量)。 */
-  readonly reusedBytes: number;
-  readonly freeCount: number;
-  readonly freeBytes: number;
-  readonly inFlightCount: number;
-  readonly inFlightBytes: number;
-  readonly pendingReturnCount: number;
-  readonly pendingReturnBytes: number;
-  /** 含 staging 的驻留峰值 = 空闲 + 挂起回池 + 在途字节和的历史最大值。 */
-  readonly peakResidentBytes: number;
-  /** 失败提交销毁的本帧纹理数。 */
-  readonly discardedCount: number;
-  /** resize / 设备丢失 / epoch 更迭整体作废销毁的纹理数。 */
-  readonly evictedCount: number;
 }
 
 interface PoolTexture {
@@ -124,13 +79,16 @@ export class PbrTransientTexturePool {
   private currentEpoch = 0;
   private currentFrame = 0;
   private frameIsOpen = false;
+  private residentBytes = 0;
   private lastInvalidation: readonly [PbrTransientPoolInvalidationReason, number] | undefined;
   private readonly counters = {
     acquireCount: 0, hits: 0, misses: 0, allocatedBytes: 0, reusedBytes: 0,
-    discardedCount: 0, evictedCount: 0, peakResidentBytes: 0,
+    discardedCount: 0, evictedCount: 0, peakResidentBytes: 0, budgetRejectedCount: 0, budgetEvictedBytes: 0,
   };
 
-  constructor(readonly session: DeviceSession) {}
+  constructor(readonly session: DeviceSession, readonly budgetBytes = DEFAULT_TRANSIENT_TEXTURE_BUDGET_BYTES) {
+    if (!Number.isSafeInteger(budgetBytes) || budgetBytes < 1) throw new Error("Transient texture budget must be a positive safe integer.");
+  }
 
   get epoch(): number { return this.currentEpoch; }
   get frameOpen(): boolean { return this.frameIsOpen; }
@@ -145,6 +103,8 @@ export class PbrTransientTexturePool {
       else { pendingCount += 1; pendingBytes += entry.bytes; }
     }
     return Object.freeze({
+      budgetBytes: this.budgetBytes, residentBytes: this.residentBytes,
+      budgetRejectedCount: this.counters.budgetRejectedCount, budgetEvictedBytes: this.counters.budgetEvictedBytes,
       epoch: this.currentEpoch, frameOpen: this.frameIsOpen, lastInvalidation: this.lastInvalidation,
       acquireCount: this.counters.acquireCount, hits: this.counters.hits, misses: this.counters.misses,
       allocatedBytes: this.counters.allocatedBytes, reusedBytes: this.counters.reusedBytes,
@@ -179,13 +139,15 @@ export class PbrTransientTexturePool {
       throw new Error(`Transient texture request for ${request.resourceId} has invalid dimensions:`
         + ` ${key.width}x${key.height} s${key.sampleCount}.`);
     }
-    const pooled = this.free.get(pbrTransientTextureKeyValue(key))?.pop();
+    const keyValue = pbrTransientTextureKeyValue(key);
+    const bucket = this.free.get(keyValue);
+    const pooled = bucket?.pop();
+    if (bucket?.length === 0) this.free.delete(keyValue);
     if (pooled) {
       this.counters.hits += 1;
       this.counters.reusedBytes += pooled.bytes;
       return this.track(makePoolEntry(pooled.handle, pooled.bytes, this.currentFrame));
     }
-    this.counters.misses += 1;
     return this.create(key, request.resourceId);
   }
 
@@ -224,7 +186,7 @@ export class PbrTransientTexturePool {
     this.discardLive();
     let evicted = 0;
     for (const entries of this.free.values()) {
-      for (const entry of entries) { this.session.release(entry.handle.texture); evicted += 1; }
+      for (const entry of entries) { this.destroy(entry); evicted += 1; }
     }
     this.free.clear();
     this.currentEpoch += 1;
@@ -238,7 +200,7 @@ export class PbrTransientTexturePool {
 
   private create(key: PbrTransientTextureKey, resourceId: string): PbrTransientTextureHandle {
     const bytes = transientTextureBytes(key.format, key.width, key.height, key.sampleCount);
-    this.counters.allocatedBytes += bytes;
+    this.makeRoom(bytes, resourceId);
     let texture: GPUTexture;
     try {
       texture = this.session.own(this.session.device.createTexture({
@@ -246,7 +208,38 @@ export class PbrTransientTexturePool {
         format: key.format, sampleCount: key.sampleCount, usage: key.usage,
       }));
     } catch (error) { failWithResourceCleanup(error, `Transient texture allocation failed for ${resourceId}`, []); }
-    return this.track(makePoolEntry(handleOf(this.session, texture, key, resourceId), bytes, this.currentFrame));
+    const handle = handleOf(this.session, texture, key, resourceId);
+    this.residentBytes += bytes;
+    this.counters.allocatedBytes += bytes;
+    this.counters.misses += 1;
+    return this.track(makePoolEntry(handle, bytes, this.currentFrame));
+  }
+
+  /** 仅压力路径扫描空闲池；本帧已释放但未 submit 的目标仍不可驱逐。 */
+  private makeRoom(bytes: number, resourceId: string): void {
+    if (this.residentBytes + bytes <= this.budgetBytes) return;
+    let liveBytes = 0;
+    for (const entry of this.live) liveBytes += entry.bytes;
+    if (liveBytes + bytes > this.budgetBytes) {
+      this.counters.budgetRejectedCount += 1;
+      throw new Error(`Transient texture budget exceeded for ${resourceId}: ${liveBytes} busy + ${bytes} requested >`
+        + ` ${this.budgetBytes} bytes. Reduce render resolution or post-processing quality.`);
+    }
+    const candidates = [...this.free.values()].flat().sort((a, b) => a.frame - b.frame);
+    for (const entry of candidates) {
+      if (this.residentBytes + bytes <= this.budgetBytes) break;
+      const key = pbrTransientTextureKeyValue(entry.handle.key), bucket = this.free.get(key)!;
+      bucket.splice(bucket.indexOf(entry), 1);
+      if (!bucket.length) this.free.delete(key);
+      this.destroy(entry);
+      this.counters.evictedCount += 1;
+      this.counters.budgetEvictedBytes += entry.bytes;
+    }
+  }
+
+  private destroy(entry: PoolTexture): void {
+    this.session.release(entry.handle.texture);
+    this.residentBytes -= entry.bytes;
   }
 
   private track(entry: PoolTexture): PbrTransientTextureHandle {
@@ -269,16 +262,13 @@ export class PbrTransientTexturePool {
   /** 失败提交 / 整体作废共用的在途清理:全部销毁,绝不进空闲列表。 */
   private discardLive(): void {
     let discarded = 0;
-    for (const entry of this.live) { this.session.release(entry.handle.texture); discarded += 1; }
+    for (const entry of this.live) { this.destroy(entry); discarded += 1; }
     this.live.clear();
     this.counters.discardedCount += discarded;
   }
 
   private trackPeak(): void {
-    let resident = 0;
-    for (const entries of this.free.values()) for (const entry of entries) resident += entry.bytes;
-    for (const entry of this.live) resident += entry.bytes;
-    if (resident > this.counters.peakResidentBytes) this.counters.peakResidentBytes = resident;
+    this.counters.peakResidentBytes = Math.max(this.residentBytes, this.counters.peakResidentBytes);
   }
 }
 

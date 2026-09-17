@@ -69,7 +69,7 @@ export class PbrRenderer {
     this.shadowState = new PbrShadowState(session, pipelines, options.shadows);
     this.environment = new PbrEnvironmentState(environment);
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
-    this.transientTextures = new PbrTransientTexturePool(session); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
+    this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
     this.features = features;
     this.postProcess = new PbrPostProcessChain(session, this.features, this.transientTextures);
     this.transparency = new PbrTransparencyPass(session, this.transientTextures);

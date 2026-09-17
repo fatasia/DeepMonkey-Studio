@@ -14,6 +14,7 @@ import { verifyForwardPlusClusteredLighting } from "./forwardPlusClusteredLighti
 import { verifyForwardPlusPbrLighting } from "./forwardPlusPbrLightingProbe.js";
 import { verifyGpuFrustumCulling } from "./gpuFrustumCullingProbe.js";
 import { verifyGpuResidencyTransactions } from "./gpuResidencyProbe.js";
+import { verifyTransientBudget } from "./transientBudgetProbe.js";
 import { verifyGpuMixedResidency } from "./gpuMixedResidencyProbe.js";
 import { verifyGpuTextureMipResidency } from "./gpuTextureMipResidencyProbe.js";
 import { runGpuLodSelectionProbe } from "./gpuLodSelectionProbe.js";
@@ -97,6 +98,7 @@ export async function runEngineCapabilityProbeSuite(
   const groundAlbedoProbe = await probe("地面反照率", () => verifyGroundAlbedo(session));
   const hdrEnvironmentProbe = await probe("真实 HDRI 环境", () => verifyHdrEnvironment(session));
   const gpuResidencyProbe = await probe("GPU 驻留事务", () => verifyGpuResidencyTransactions(session));
+  const transientBudgetProbe = await probe("临时纹理预算", () => verifyTransientBudget(session));
   const gpuMixedResidencyProbe = await probe("GPU 混合驻留", () => verifyGpuMixedResidency(session));
   const gpuTextureMipResidencyProbe = await probe("纹理 Mip 驻留", () => verifyGpuTextureMipResidency(session));
   const residentPacketFrameProbe = await probe("PBR 驻留包帧边界", () =>
@@ -153,6 +155,7 @@ export async function runEngineCapabilityProbeSuite(
     groundAlbedoProbe,
     hdrEnvironmentProbe,
     gpuResidencyProbe,
+    transientBudgetProbe,
     gpuMixedResidencyProbe,
     gpuTextureMipResidencyProbe,
     residentPacketFrameProbe,
@@ -175,7 +178,7 @@ export async function runEngineCapabilityProbeSuite(
     && gpuLodSelectionProbe.passed && packetLodParallelProbe.passed && packetShadowLodProbe.passed
     && weightedOitProbe.success && ambientOcclusionProbe.success
     && temporalAaProbe.success && bloomEnergyProbe.success && groundAlbedoProbe.success && hdrEnvironmentProbe.success
-    && gpuResidencyProbe.success && gpuMixedResidencyProbe.success && gpuTextureMipResidencyProbe.success
+    && gpuResidencyProbe.success && transientBudgetProbe.success && gpuMixedResidencyProbe.success && gpuTextureMipResidencyProbe.success
     && residentPacketFrameProbe.success && partialLodResidencyProbe.success && residencyStreamProbe.success
     && sceneChunkResidencyProbe.success && realAssetPixelProbe.success && combinedLoadProbe.success);
   return Object.freeze({ records, passed });
