@@ -87,7 +87,16 @@ impl Sha256 {
         }
     }
 
-    pub(crate) fn finish(mut self) -> String {
+    pub(crate) fn finish(self) -> String {
+        self.finish_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    /// 原始 32 字节摘要;`finish` 的 hex 串由此派生。HMAC 等需要以摘要
+    /// 字节继续参与下一轮压缩的原语消费这里,不走 hex 往返。
+    pub(crate) fn finish_bytes(mut self) -> [u8; 32] {
         let bit_len = self
             .bytes
             .checked_mul(8)
@@ -103,10 +112,11 @@ impl Sha256 {
         }
         self.block[56..].copy_from_slice(&bit_len.to_be_bytes());
         compress(&mut self.state, &self.block);
-        self.state
-            .iter()
-            .map(|word| format!("{word:08x}"))
-            .collect()
+        let mut digest = [0_u8; 32];
+        for (slot, word) in digest.chunks_exact_mut(4).zip(self.state) {
+            slot.copy_from_slice(&word.to_be_bytes());
+        }
+        digest
     }
 }
 
@@ -117,9 +127,16 @@ impl Default for Sha256 {
 }
 
 pub(crate) fn sha256(input: &[u8]) -> String {
+    sha256_bytes(input)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+pub(crate) fn sha256_bytes(input: &[u8]) -> [u8; 32] {
     let mut hash = Sha256::new();
     hash.update(input);
-    hash.finish()
+    hash.finish_bytes()
 }
 
 fn compress(state: &mut [u32; 8], chunk: &[u8; 64]) {
