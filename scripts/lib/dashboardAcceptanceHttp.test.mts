@@ -17,6 +17,7 @@ test("uses actual local HTTP with binary responses and rejects external destinat
     assert.equal((await request({ method: "GET", url: "/api/missing" })).statusCode, 404);
     await assert.rejects(request({ method: "GET", url: "http://example.invalid/api/data" }), /local API/);
     await assert.rejects(request({ method: "GET", url: "//example.invalid/api/data" }), /local API/);
+    await assert.rejects(request({method:"POST",url:"/api/binary",payload:{},form:new FormData()}),/mix/);
   } finally { await app.close(); }
 });
 

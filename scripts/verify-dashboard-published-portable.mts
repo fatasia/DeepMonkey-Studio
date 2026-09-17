@@ -15,19 +15,23 @@ import { assertDashboardDocument } from "../packages/contracts/src/index.ts";
 import { dashboardAcceptanceHttp, publishDashboardAcceptanceFixture } from "./lib/dashboardAcceptanceHttp.mts";
 import { dashboardPublishedHeadingFixture } from "./lib/dashboardPublishedHeadingFixture.mts";
 import { verifyDashboardDownloadedOpen } from "./lib/dashboardDownloadedOpen.mts";
+import { uploadDashboardBackground } from "./lib/dashboardBackgroundUpload.mts";
+import { verifyDashboardBackgroundDelivery } from "./lib/dashboardBackgroundDeliveryEvidence.mts";
 
 const require = createRequire(new URL("../apps/api/package.json", import.meta.url));
 const JSZip = require("jszip");
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-const usage = "pnpm exec tsx --conditions=development scripts/verify-dashboard-published-portable.mts <native.exe> <device-sha256> <new-output-directory> [--sample-chart|--chart-heading]";
+const usage = "pnpm exec tsx --conditions=development scripts/verify-dashboard-published-portable.mts <native.exe> <device-sha256> <new-output-directory> [--sample-chart|--chart-heading|--background-heading]";
 
 async function main() {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === "--help") { console.log(usage); return; }
   const [executable, deviceFingerprint, output, variant] = args;
-  if ((args.length !== 3 && !(args.length === 4 && ["--sample-chart", "--chart-heading"].includes(variant!)))
+  if ((args.length !== 3 && !(args.length === 4 && ["--sample-chart", "--chart-heading", "--background-heading"].includes(variant!)))
     || !executable || !deviceFingerprint || !output || !/^[a-f0-9]{64}$/.test(deviceFingerprint)) throw new Error(usage);
-  const headingChart = variant === "--chart-heading";
+  const backgroundHeading = variant === "--background-heading";
+  const headingChart = variant === "--chart-heading" || backgroundHeading;
+  const expectedAtlasCount = backgroundHeading ? 3 : 2;
   const sampleChart = variant === "--sample-chart" || headingChart;
   const directory = path.resolve(output);
   await mkdir(directory); // Existing evidence is never overwritten.
@@ -38,6 +42,8 @@ async function main() {
   const metadataDirectory = path.join(directory, "isolated-metadata");
   const initialStore = new JsonStore(metadataDirectory); await initialStore.init();
   const project = await initialStore.createProject("Dashboard portable acceptance fixture", "Isolated test data, not a user project");
+  const objects = new LocalObjectStore(path.join(directory, "isolated-objects"));
+  const backgroundUpload = backgroundHeading ? await uploadDashboardBackground(directory,initialStore,objects,project.id) : undefined;
   const document: unknown = JSON.parse(await readFile(new URL("../packages/deep-engine/fixtures/dashboard-layout-source-v1.json", import.meta.url), "utf8"));
   assertDashboardDocument(document);
   document.application.metadata.id = randomUUID();
@@ -62,6 +68,8 @@ async function main() {
         sampleData: { sourceId: "acceptance-author-samples", rows: [{ region: "A", value: 37 }, { region: "B", value: 91 }] } } }];
   }
   assertDashboardDocument(document);
+  if(backgroundUpload) page.appearance = {...page.appearance,backgroundImageUrl:backgroundUpload.asset.url,
+    backgroundImageFit:"original",backgroundImagePosition:"right",backgroundImageRepeat:true};
   const published = await publishDashboardAcceptanceFixture(initialStore, project.id, document.application);
   const publicationId = published.id;
   // 重开文件存储，从落盘的 publication/pointer 读取，不依赖内存草稿。
@@ -69,11 +77,11 @@ async function main() {
   const persisted = store.getPublishedApplication(publicationId); assert(persisted);
   assert.deepEqual(persisted, published);
   const heading = headingChart ? await dashboardPublishedHeadingFixture(directory, persisted) : undefined;
+  const configuration = { locale: "zh-CN", packageVersion: "1.0.0", ...(heading ? { layoutCapture: heading.layoutCapture } : {}) };
   await writeFile(deploymentFile, JSON.stringify({ nativeExecutable, expectedDeviceFingerprintSha256: deviceFingerprint,
-    configuration: { locale: "zh-CN", packageVersion: "1.0.0", ...(heading ? { layoutCapture: heading.layoutCapture } : {}) },
+    configuration,
     ...(heading ? { fontCatalog: heading.fontCatalog } : {}) }, null, 2));
   await writeFile(path.join(directory, "published-test-fixture.json"), JSON.stringify(persisted, null, 2));
-  const objects = new LocalObjectStore(path.join(directory, "isolated-objects"));
   const app = createApiServer();
   // Fixture identity exercises route project authority; authentication login is outside this gate.
   app.addHook("preHandler", async request => { request.systemUser = {
@@ -91,6 +99,9 @@ async function main() {
     assert.equal(response.statusCode, 201, response.body);
     const candidate = response.json();
     const record = registered.registry.read({ candidateId: candidate.candidateId, projectId: project.id, applicationId: persisted.applicationId });
+    const backgroundEvidence = backgroundUpload && heading ? await verifyDashboardBackgroundDelivery(
+      registered.runtime.authority,record.candidate.freezeManifest,record.candidate.artifact.artifact,
+      backgroundUpload,nativeExecutable,configuration,heading.fontCatalog,objects) : undefined;
     if (sampleChart) {
       assert.equal(record.candidate.freezeManifest.data.length, 1);
       assert.equal(record.candidate.freezeManifest.data[0]!.nodeId, "portable-author-bar");
@@ -106,7 +117,7 @@ async function main() {
         assert(!record.candidate.capability.objects[0]!.deferredFields.includes("widget.title"));
         assert(!record.candidate.capability.objects[0]!.deferredFields.includes("widget.unit"));
         const atlases = Object.values(runtime.payloads).flatMap((value: any) => value.atlases ?? []) as any[];
-        assert.equal(atlases.length, 2);
+        assert.equal(atlases.length, expectedAtlasCount);
         assert(atlases.every(atlas => Buffer.from(atlas.dataBase64, "base64").some((value, index) => index % 4 === 3 && value > 0)));
       }
     }
@@ -136,7 +147,7 @@ async function main() {
       execFileSync(process.execPath, [fileURLToPath(new URL("./verify-dashboard-standalone.mjs", import.meta.url)),
         path.join(standaloneDirectory, "Dashboard.exe"), path.join(directory, "runtime-package.json"),
         path.join(directory, "standalone-validation")], { windowsHide: true, stdio: "inherit", timeout: 30_000 });
-      if (headingChart) assert((await readFile(path.join(directory, "standalone-validation/player.log"), "utf8")).includes("atlases=2"));
+      if (headingChart) assert((await readFile(path.join(directory, "standalone-validation/player.log"), "utf8")).includes(`atlases=${expectedAtlasCount}`));
     }
     const zip = await JSZip.loadAsync(zipResponse.rawPayload, { checkCRC32: true });
     const manifest = JSON.parse(await zip.file("manifest.json").async("text"));
@@ -151,16 +162,16 @@ async function main() {
     assert.equal(manifest.artifactSha256, candidate.targetArtifactHash);
     assert.equal(sha(await zip.file("deep-native-player.exe").async("uint8array")), sha(await readFile(nativeExecutable)));
     assert(Object.keys(manifest.files).every(name => !/\.(?:js|mjs|cjs|html)$/i.test(name)), "Offline ZIP must not carry a browser/Node app");
-    const downloadedOpen = headingChart ? await verifyDashboardDownloadedOpen(directory, archiveResponse.rawPayload, verified.archive.artifact) : undefined;
+    const downloadedOpen = headingChart ? await verifyDashboardDownloadedOpen(directory, archiveResponse.rawPayload, verified.archive.artifact, expectedAtlasCount) : undefined;
     assert.equal((await request({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip?nativeExecutable=other.exe` })).statusCode, 400);
     registered.registry.remove(candidate.candidateId);
     assert.equal((await request({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip` })).statusCode, 404);
     assert.equal((await request({ method: "GET", url: `${base}/${candidate.candidateId}/standalone-executable` })).statusCode, 404);
     assert.equal((await request({ method: "GET", url: `${base}/${candidate.candidateId}/offline-archive` })).statusCode, 404);
     const evidence = { scope: "isolated-published-application-to-portable-zip", verifiedAt: new Date().toISOString(),
-      content: headingChart ? "published-heading-bar-37-91" : sampleChart ? "published-author-sample-bar-37-91" : "shapes",
+      content: backgroundHeading ? "published-background-heading-bar-37-91" : headingChart ? "published-heading-bar-37-91" : sampleChart ? "published-author-sample-bar-37-91" : "shapes",
       transport: "loopback-http", publishedViaHttp: true, headingFontCatalog: heading?.fontCatalog,
-      downloadedOpen,
+      downloadedOpen, backgroundEvidence,
       standaloneNoArgumentVerified: sampleChart,
       testDataOnly: true, loginAuthenticationTested: false, nativeExecutableSha256: sha(await readFile(nativeExecutable)),
       candidate, capability: record.candidate.capability, windowVerification: record.candidate.windowVerification,

@@ -9,7 +9,8 @@ import { parseDeepRuntimePackage } from "../../packages/deep-engine/src/runtimeP
 import { createNativeWindowVerifier } from "./nativeWindowVerifier.mjs";
 
 /** Real player processes; instrumentation only observes stdout and stops after presentation. */
-export async function verifyDashboardDownloadedOpen(directory: string, archive: Uint8Array, expectedArtifact: Uint8Array) {
+export async function verifyDashboardDownloadedOpen(directory: string, archive: Uint8Array, expectedArtifact: Uint8Array,
+  expectedAtlasCount = 2) {
   const executable = path.join(directory, "extracted/deep-native-player.exe");
   const packagePath = path.join(directory, "extracted/runtime-package.json");
   const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -39,7 +40,7 @@ export async function verifyDashboardDownloadedOpen(directory: string, archive: 
   try {
     await assert.rejects(runDashboardOfflineNative(archive, executable, { signal: controller.signal, spawnProcess: observeSpawn }),
       reason => reason === finished);
-    assert(presented); assert(log.includes("native GPU:")); assert(log.includes("atlases=2"));
+    assert(presented); assert(log.includes("native GPU:")); assert(log.includes(`atlases=${expectedAtlasCount}`));
     await writeFile(path.join(output, "player.log"), log);
     const evidence = { scope: "downloaded-zip-and-dmda-native-open", zipWindow, dmda: {
       artifactSha256: launchedHash, presentedCheckpoint: true, nodeRuntimeOnPlayerPath: false,

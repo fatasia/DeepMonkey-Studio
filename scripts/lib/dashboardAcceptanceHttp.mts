@@ -7,9 +7,11 @@ import type { JsonStore } from "../../apps/api/src/jsonStore.js";
 /** Real loopback HTTP, using only the acceptance server's ephemeral address. */
 export async function dashboardAcceptanceHttp(app: ReturnType<typeof createApiServer>) {
   const origin = await app.listen({ host: "127.0.0.1", port: 0 });
-  return async ({ method, url, payload }: { method: string; url: string; payload?: unknown }) => {
+  return async ({ method, url, payload, form }: { method: string; url: string; payload?: unknown; form?: FormData }) => {
     if (!url.startsWith("/api/") || url.startsWith("//")) throw new Error("Acceptance request must stay on its local API");
+    if (form && payload !== undefined) throw new Error("Acceptance request cannot mix JSON and multipart bodies");
     const response = await fetch(`${origin}${url}`, { method,
+      ...(form ? { body: form } : {}),
       ...(payload === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
       signal: AbortSignal.timeout(90_000), redirect: "error" });
     const rawPayload = Buffer.from(await response.arrayBuffer());

@@ -28,6 +28,6 @@ export async function dashboardPublishedHeadingFixture(directory: string, public
     fontCatalog: { projectId: publication.projectId, applicationId: publication.applicationId,
       applicationRevision: publication.applicationRevision, fonts: fontEntries,
       nodes: [{ nodeId: "portable-author-bar", fonts: fontEntries.map(font => font.id), textStyle: {
-        fontSize: 18, fontWeight: 400, fontStyle: "normal", lineHeight: 27, color: [238, 242, 244, 255], align: "left" } }] },
+        fontSize: 18, fontWeight: 400, fontStyle: "normal", lineHeight: 27, color: [238, 242, 244, 255], align: "left" } as const }] },
   };
 }
