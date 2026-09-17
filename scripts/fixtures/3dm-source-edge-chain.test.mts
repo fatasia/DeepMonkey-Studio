@@ -9,7 +9,7 @@ import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditBrepBoundaries } from './3dm-brep-boundary-audit.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/source-edge-chain-2026-09-17-v1');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/self-seam-2026-09-17-v1/source-edge-chain');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartB.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),sourceSha256='848271e98cf83a72c6d0fa134dc7a430d2f4d938a4c38765dcc6da0bff8d8978';
 assert.equal(sha(readFileSync(path)),sourceSha256);
