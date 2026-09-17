@@ -1886,6 +1886,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 109 件/19,344 面复跑保持源 face key 和 witness hash 不变，精确消除 3 个拼接差异且无新增 mismatch；当前 19,154 matched、9 mismatch、181 unresolved，主审计仍按设计 exit 2，生产 profile 保持 0。
 - 主线程复核补丁 SHA-256 `2b3361de8ff491cf6b3bbaf418843b14e7356ebeaa7bc7cd5c3ac4acb3e99fbd`、reverse-check、cad-tess 36/36、JS 7/7 和诊断脚本语法通过。剩余重建/折线根因按报告入口继续，不用放宽误差或伪造通过。[证据](specs/industrial-x-t-geometry-causal-stitch-2026-09-17.md)
 
+### 2026-09-17 X_T 五个缓存折线差异的可执行因果门禁（Codex）
+
+- 只链接 xt-parser 的源码探针把五面拆成三条真实来源：AA 两面是 BLEND_BOUND/INTERSECTION chart 的 6 点提前保留；L/R 两面是无 EDGE curve 后由 SP_CURVE/type124 支撑面生成的 25 点 stand-in；R/360 是 TRIMMED→INTERSECTION→CHART 三点线且 guard 只看段长、不看两曲面残差。
+- 新门禁绑定原始模型和三个探针 hash，在固定 0.01 mm 下五面全部真实失败并 exit 2；主线程复跑得到相同报告 SHA-256 `70de9cc9874080fb201e689d5e29a68445b6132704b28e76d3c865b8f35262a3`。语料发现有 realpath 包含、16 层和 100,000 条目预算。
+- 本片没有用统一投影/粗暴加密混淆三种语义，也没有改转换结果；仍为 19,154 matched / 9 mismatch / 181 unresolved。下一步按共同交线约束、SP_CURVE 求值误差和双曲面 residual guard 分别修复，再跑 109 件全量。[证据](specs/industrial-x-t-polyline-causal-2026-09-17.md)
+
 ### 2026-09-17 Deep2D P2-01 Windows LPAC 零 capability 实验（Codex）
 
 - 在既有 X IPC 与 Job 资源治理之上新增可信宿主 LPAC 入口：唯一临时 profile/目录、精确 SID RX、零 capabilities、ALL_APPLICATION_PACKAGES opt-out、仅标准流句柄与原子 Job 列表。子进程挂起创建，核验 AppContainer/SID/capability/group 后才恢复；失败不降级普通进程。
