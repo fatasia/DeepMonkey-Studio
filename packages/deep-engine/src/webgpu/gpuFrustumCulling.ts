@@ -14,6 +14,8 @@ import {
   type IndirectDrawArgs,
 } from "./gpuFrustumPacking.js";
 import { failWithResourceCleanup } from "./resourceCleanup.js";
+import type { DeviceSession } from "./deviceSession.js";
+import { createAdmittedBuffer } from "./resourceAdmission.js";
 
 export { cpuFrustumCull, GPU_CULL_INDIRECT_STRIDE, GPU_CULL_INSTANCE_STRIDE,
   GPU_CULL_PREVIOUS_TRANSFORM_STRIDE, packCullingInstances } from "./gpuFrustumPacking.js";
@@ -90,13 +92,16 @@ export interface GpuCullingResources extends GpuCullingPhaseResources {
 
 interface GpuCullingKernel {
   readonly device: GPUDevice;
+  readonly allocate: (descriptor: GPUBufferDescriptor) => GPUBuffer;
+  readonly release: (buffer: GPUBuffer) => void;
   readonly layout: GPUBindGroupLayout;
   readonly cullPipeline: GPUComputePipeline;
   readonly indirectPipeline: GPUComputePipeline;
 }
 
 /** Creates immutable compute state reusable by every culling batch on one device. */
-export function createGpuCullingPipelineContext(device: GPUDevice): GpuCullingPipelineContext {
+export function createGpuCullingPipelineContext(device: GPUDevice, session?: DeviceSession): GpuCullingPipelineContext {
+  if (session && session.device !== device) throw new Error("Culling owner must belong to the same GPU device.");
   const module = device.createShaderModule({ label: "Deep frustum culling WGSL", code: GPU_FRUSTUM_CULL_WGSL });
   const layout = device.createBindGroupLayout({ label: "Deep frustum culling layout", entries: [
     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } }, { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
@@ -111,6 +116,8 @@ export function createGpuCullingPipelineContext(device: GPUDevice): GpuCullingPi
   const pipelineLayout = device.createPipelineLayout({ label: "Deep frustum culling pipeline layout", bindGroupLayouts: [layout] });
   const kernel: GpuCullingKernel = {
     device, layout,
+    allocate: descriptor => session ? createAdmittedBuffer(session, descriptor) : device.createBuffer(descriptor),
+    release: buffer => { if (session) session.release(buffer); else buffer.destroy(); },
     cullPipeline: device.createComputePipeline({ label: "Deep frustum cull pipeline", layout: pipelineLayout, compute: { module, entryPoint: "cull" } }),
     indirectPipeline: device.createComputePipeline({ label: "Deep frustum indirect pipeline", layout: pipelineLayout, compute: { module, entryPoint: "writeIndirect" } }),
   };
@@ -142,8 +149,8 @@ export function createGpuCullingSharedInputs(device: GPUDevice, capacity: number
 
 function createSharedInputs(kernel: GpuCullingKernel, capacity: number, onDispose: () => void): GpuCullingSharedInputs {
   if (!Number.isInteger(capacity) || capacity < 1 || capacity > 1_048_576) throw new Error("capacity must be an integer in 1..1048576");
-  const { device, layout, cullPipeline, indirectPipeline } = kernel;
-  const storage = (size: number, usage: GPUBufferUsageFlags, label: string): GPUBuffer => device.createBuffer({ label, size: Math.max(4, size), usage });
+  const { device, layout, cullPipeline, indirectPipeline, release } = kernel;
+  const storage = (size: number, usage: GPUBufferUsageFlags, label: string): GPUBuffer => kernel.allocate({ label, size: Math.max(4, size), usage });
   const owned: GPUBuffer[] = [];
   const allocate = (size: number, usage: GPUBufferUsageFlags, label: string): GPUBuffer => {
     const buffer = storage(size, usage, label); owned.push(buffer); return buffer;
@@ -206,13 +213,13 @@ function createSharedInputs(kernel: GpuCullingKernel, capacity: number, onDispos
           dispose(): void {
             if (phaseDisposed) return;
             phaseDisposed = true; phases.delete(phase);
-            for (const buffer of phaseOwned) buffer.destroy();
+            for (const buffer of phaseOwned) release(buffer);
           },
         };
         phases.add(phase);
         return phase;
       } catch (error) {
-        for (const buffer of phaseOwned) buffer.destroy();
+        for (const buffer of phaseOwned) release(buffer);
         throw error;
       }
     };
@@ -221,9 +228,9 @@ function createSharedInputs(kernel: GpuCullingKernel, capacity: number, onDispos
       get inputCount() { return inputCount; },
       writeInstances,
       createPhase,
-      dispose(): void { if (disposed) return; disposed = true; for (const phase of [...phases]) phase.dispose(); for (const buffer of owned) buffer.destroy(); onDispose(); },
+      dispose(): void { if (disposed) return; disposed = true; for (const phase of [...phases]) phase.dispose(); for (const buffer of owned) release(buffer); onDispose(); },
     };
-  } catch (error) { for (const buffer of owned) buffer.destroy(); throw error; }
+  } catch (error) { for (const buffer of owned) release(buffer); throw error; }
 }
 
 /** Compatibility facade for standalone callers that need one input set and one phase. */

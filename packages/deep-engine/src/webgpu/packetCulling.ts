@@ -1,5 +1,6 @@
 import type { PreparedBatch } from "../renderPacket.js";
 import type { DeviceSession } from "./deviceSession.js";
+import { DeviceResourceBudgetError } from "./deviceResourceMemory.js";
 import {
   createGpuCullingPipelineContext,
   type Frustum,
@@ -206,7 +207,7 @@ export class PacketCullingResources {
     if (!reusable) {
       let shared: GpuCullingSharedInputs | undefined;
       try {
-        this.context ??= createGpuCullingPipelineContext(this.session.device);
+        this.context ??= createGpuCullingPipelineContext(this.session.device, this.session);
         shared = this.context.createSharedInputs(
           Math.max(1, 2 ** Math.ceil(Math.log2(Math.max(1, batch.source.count)))),
         );
@@ -223,8 +224,10 @@ export class PacketCullingResources {
         };
       } catch (error) {
         shared?.dispose();
-        if (previous) releaseEntry(previous);
-        this.batches.delete(key);
+        if (!(error instanceof DeviceResourceBudgetError)) {
+          if (previous) releaseEntry(previous);
+          this.batches.delete(key);
+        }
         throw error;
       }
       this.batches.set(key, entry);
@@ -250,11 +253,9 @@ export class PacketCullingResources {
     const currentPhase = entry.phases.get(phase);
     if (currentPhase?.indexCount === geometry.mesh.indexCount) return currentPhase;
     let nextPhase: GpuCullingPhaseResources;
-    try {
-      nextPhase = entry.shared.createPhase(geometry.mesh.indexCount);
-    } catch (error) {
-      currentPhase?.dispose();
-      entry.phases.delete(phase);
+    try { nextPhase = entry.shared.createPhase(geometry.mesh.indexCount); }
+    catch (error) {
+      if (!(error instanceof DeviceResourceBudgetError)) { currentPhase?.dispose(); entry.phases.delete(phase); }
       throw error;
     }
     entry.phases.set(phase, nextPhase);

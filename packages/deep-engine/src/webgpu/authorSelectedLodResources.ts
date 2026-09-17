@@ -41,8 +41,8 @@ export class AuthorSelectedLodResources {
           if (next.has(key)) continue;
           let input = this.current.get(key);
           if (!input?.matches(batch, geometry)) {
-            this.context ??= createGpuCullingPipelineContext(this.session.device);
-            input = this.session.own(new AuthorLodCullingInputs(this.session, this.context, batch, geometry));
+            this.context ??= createGpuCullingPipelineContext(this.session.device, this.session);
+            input = new AuthorLodCullingInputs(this.session, this.context, batch, geometry);
             created.push(input);
           }
           next.set(key, input);
@@ -64,7 +64,7 @@ export class AuthorSelectedLodResources {
         });
         outputs.set(batch.source.key, Object.freeze(draws));
       }
-    } catch (error) { failWithResourceCleanup(error, "Author LOD preparation failed.", [() => this.meshlets.dispose(), ...created.map(input => () => this.session.release(input))]); }
+    } catch (error) { failWithResourceCleanup(error, "Author LOD preparation failed.", [() => this.meshlets.dispose(), ...created.map(input => () => input.destroy())]); }
     this.pending = next; this.outputs = outputs;
     return { inputObjects: batches.reduce((count, batch) => count + batch.source.count, 0), selectionBatches: batches.length,
       indirectDraws: [...outputs.values()].reduce((count, draws) => count + draws.length, 0), historyReset: false,
@@ -88,10 +88,10 @@ export class AuthorSelectedLodResources {
     if (this.disposed) return; this.disposed = true;
     const inputs = new Set([...this.current.values(), ...(this.pending?.values() ?? [])]);
     this.current.clear(); this.pending = undefined; this.outputs.clear();
-    runResourceCleanup("Author LOD disposal failed.", [...inputs].map(input => () => this.session.release(input)).concat([() => this.context?.dispose(), () => this.meshlets.dispose()]));
+    runResourceCleanup("Author LOD disposal failed.", [...inputs].map(input => () => input.destroy()).concat([() => this.context?.dispose(), () => this.meshlets.dispose()]));
   }
   private releaseDifference(old: Map<string, AuthorLodCullingInputs>, next: Map<string, AuthorLodCullingInputs>): void {
     const retained = new Set(next.values());
-    runResourceCleanup("Author LOD retirement failed.", [...old.values()].filter(input => !retained.has(input)).map(input => () => this.session.release(input)));
+    runResourceCleanup("Author LOD retirement failed.", [...old.values()].filter(input => !retained.has(input)).map(input => () => input.destroy()));
   }
 }
