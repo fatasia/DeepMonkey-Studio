@@ -9,3 +9,9 @@
 这是字节分配范围的确定性验证，不是全流程峰值内存或帧率测量。不改视觉、资源合同、能力报告或64 MiB限额。
 
 完整复验：`pnpm exec vitest run --config scripts/dashboard-raster.vitest.config.mjs` 23文件176项全部通过；设置 C2_NATIVE_EXECUTABLE、C2_FONT_PATH=微软雅黑、C2_FALLBACK_FONT_PATH=Arial，真实 Native producer 未跳过。Web typecheck、repository gate通过。首次类型检查发现并行标题测试的readonly赋值，修正后复跑通过；不将首次检查计作通过。
+
+## Native producer 文件读取
+
+`nativeTextRasterProcess.mjs` 的输入/输出读取改为按同一文件句柄的初始大小一次分配，64 KiB 分段读取，不再保留chunks并额外concat。中途截断、增长、mtime变化拒绝；分块前后继续检查取消，finally关闭句柄。内容SHA校验仍由上层执行，metadata不是内容真实性证明。
+
+7项真实文件测试覆盖零字节/小文件/跨块、超额/目录、读取中截断/增长/改写/取消和预取消；与真实子进程取消/超时/篡改及图片producer一起35项通过。首轮ctime附加检查导致一次误拒；最终只检查内容相关大小/mtime，非内容metadata变动不作为拒绝依据。未测整个编译任务的峰值RSS。

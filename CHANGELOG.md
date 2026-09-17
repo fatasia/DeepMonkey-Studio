@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Bound Native text producer file reads to their initial size, avoiding a second concatenation buffer and rejecting mid-read changes.
+
 - Check Dashboard raster budgets before copying resources and pixels; copy typed-array views without duplicating unused backing-buffer bytes.
 
 - Give standalone Native clients a dark system title bar with stable application names, F11 fullscreen, and Escape restoration after active editing actions.

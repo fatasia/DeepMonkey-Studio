@@ -3,22 +3,27 @@ import { constants } from "node:fs";
 
 export async function boundedRead(file, limit, signal) {
   signal?.throwIfAborted();
+  if (!Number.isSafeInteger(limit) || limit < 0) throw new Error("Invalid text producer byte budget");
   if (!(await lstat(file)).isFile()) throw new Error("Text producer input/output must be a regular file");
   const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const metadata = await handle.stat();
-    if (!metadata.isFile() || metadata.size > limit) throw new Error("Text producer file exceeds byte budget");
-    const chunks = []; let length = 0;
-    while (true) {
+    if (!metadata.isFile() || !Number.isSafeInteger(metadata.size) || metadata.size > limit)
+      throw new Error("Text producer file exceeds byte budget");
+    const bytes = Buffer.alloc(metadata.size); let length = 0;
+    while (length < bytes.length) {
       signal?.throwIfAborted();
-      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, limit + 1 - length));
-      const { bytesRead } = await handle.read(buffer);
-      if (!bytesRead) break;
+      const { bytesRead } = await handle.read(bytes, length, Math.min(64 * 1024, bytes.length - length), length);
+      if (!bytesRead) throw new Error("Text producer file changed during read");
       length += bytesRead;
-      if (length > limit) throw new Error("Text producer file exceeds byte budget");
-      chunks.push(buffer.subarray(0, bytesRead));
     }
-    return Buffer.concat(chunks, length);
+    signal?.throwIfAborted();
+    const extra = await handle.read(Buffer.alloc(1), 0, 1, length);
+    const after = await handle.stat();
+    if (extra.bytesRead || after.size !== metadata.size || after.mtimeMs !== metadata.mtimeMs)
+      throw new Error("Text producer file changed during read");
+    signal?.throwIfAborted();
+    return bytes;
   } finally { await handle.close(); }
 }
 
