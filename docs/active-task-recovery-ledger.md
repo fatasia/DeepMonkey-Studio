@@ -1792,5 +1792,6 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 已完成资源自恢复：在官方样本端点受 Cloudflare 限制后转用制造商公开分发源，安全解包并逐文件哈希 109 个真实 X_T；产品结构探测 109/109 识别。
 - 已完成开源构建：`parasolid-core` release 构建成功，159 项测试通过；四类真实 schema 精确失败为 `schema.missing_base_schema`，不再把问题记成 SDK、许可或资源阻塞。
-- 已完成第二条纯 Rust 路线复测：Apache-2.0 研究解析器补单字节元数据读取并改为 fail-closed；真实 corpus 完整解析 49/109（V21 44、V30 5），其余 60 个按 V9/V21/V30 schema 缺口精确归档，禁止发布部分几何。
-- 下一片：冻结 49 个成功样本的原生 Worker/profile/QualityReport，再补 V21 差异流；全程本地离线、自研/开源，不引入外部商业 SDK、商业转换器或许可证服务。[报告](specs/industrial-format-plan01-02-lock-2026-09-16.md)
+- 已完成第二条纯 Rust 路线初测：49/109 返回 `Ok`，60 个报错；**后续完整性审计证明 49 个全部仍有剩余输入或拓扑缺失，撤销“完整解析”结论**。停止吞掉显式解析错误尚不足以保证全文件完整性。
+- 已完成独立审计与复跑入口：`scripts/audit-xt-research-parser.ps1` + `scripts/fixtures/xt-parser-audit.rs`；离线构建、2 项回归通过，109 样本审计为 `incomplete=49`、`parse-error=60`，源码/锁文件/库/审计程序/报告 hash 绑定在 `test-output/xt-research-audit/evidence.json`。
+- 下一片：先定位过早终止/读取错位与 body/shell 归属，再补 schema 差异和 Worker；当前没有新增生产 profile。全程本地离线、自研/开源。[报告](specs/industrial-format-plan01-02-lock-2026-09-16.md)

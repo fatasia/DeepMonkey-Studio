@@ -56,9 +56,20 @@ PDAL 源码包超过本批单文件 100 MB 下载上限，因此当前不是完�
 
 - `parasolid-kit` 对四类代表样本均按设计拒绝，精确原因是 `schema.missing_base_schema`；这不是商业 SDK 或许可证阻塞，而是当前开源 profile 未携带这些历史 schema。
 - 随后复用本地 Apache-2.0 Rust 研究解析器 `data/external-assets/format-research/xt-parser`。修复旧 CAD 元数据的单字节编码读取，并把“解析中断后返回部分几何”改成 fail-closed，防止半截拓扑被误报为成功。
-- 对 109 份真实样本全量复测：完整解析 49，拒绝 60。成功项中 `SCH_2100263_20000` 为 44/70，`SCH_3001278_30100` 为 5/7；失败项为 `SCH_1901254_19008` 31/31、`SCH_2100263_20000` 26/70、`SCH_2100275_20000` 1/1、`SCH_3001278_30100` 2/7。
-- 49 个成功文件产出 140 body、50 shell、2,900 face、3,245 loop、15,588 fin、2,364 surface、7,237 curve、7,794 edge 和 4,966 vertex/point。该统计用于冻结实验 profile，不代表其余 60 个文件可降级为部分几何。
-- 下一实现顺序：先将这 49 个已完整解析样本接入版本化原生 Worker/质量报告；再按收益补 V21 差异流，之后处理 V9 基础模式。整个路径保持本地离线，不引入商业 SDK、商业转换器或许可证服务。
+- 对 109 份真实样本初测：49 个返回 `Ok`，60 个返回错误。`Ok` 中 `SCH_2100263_20000` 为 44/70，`SCH_3001278_30100` 为 5/7；错误项为 `SCH_1901254_19008` 31/31、`SCH_2100263_20000` 26/70、`SCH_2100275_20000` 1/1、`SCH_3001278_30100` 2/7。此处 schema 取文件头，前节记录的是传输标识；两者不得混用推断源软件版本。
+- **完整性复核撤销“完整解析 49”结论**：新增独立审计程序检查剩余输入、重复实体身份、七类拓扑实体数量守恒、solid 的 shell 和面/半边/顶点引用。结果为 `incomplete=49`、`parse-error=60`、`audit-clear-unverified=0`；此前 49 个 `Ok` 全部存在未处理输入或拓扑缺失。
+- 49 个 `Ok` 的 140 body、50 shell、2,900 face 等数字仅是部分输出计数。例：A-1230-60-22 尚有 220,659 个输入视图字节未消费，原始实体表的 2 个 shell 只构建了 1 个，并出现 2 个无 shell 的 solid。不能据此冻结生产 profile 或声明全文件转换。
+- 下一实现顺序：先定位过早终止是读取错位还是未处理后续数据，修复 body/shell 归属，再补 schema 差异和原生 Worker；整个路径保持本地离线、自研/开源。
+
+复跑命令（从仓库根目录执行，输出保存在 `test-output/xt-research-audit/`）：
+
+```powershell
+./scripts/audit-xt-research-parser.ps1 -ParserRoot data/external-assets/format-research/xt-parser -CorpusRoot data/external-assets/industrial-format-plan/samples/downloaded/x_t/asmith-hinges
+```
+
+脚本离线构建当前研究源码，执行审计回归并记录 Rust 版本、逐源码/锁文件/库/审计程序/报告 SHA-256。研究源码仍在忽略目录，证据绑定的是本地补丁后内容，不能仅凭上游 commit 复现。审计无发现也只表示这些必要检查通过，不证明曲面精度、单位、孔洞、装配和完整产品支持。
+
+此次实测：49 个文件均有剩余输入，其中 48 个还存在无 shell 的 solid；报告 SHA-256 为 `cbeb82eb1593d61fb80cf9d18187f92d5d94feaf65a0e7c43df63056334f8401`。审计程序 2 项回归、缺失语料目录错误退出、Rust 格式检查和仓库治理通过；全工作树 diff 检查仍有无关 Unity ProjectSettings 的既有行尾空白，本片不修改。
 
 ## 4. 完整性复核
 
