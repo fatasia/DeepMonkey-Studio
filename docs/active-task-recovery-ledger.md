@@ -46,6 +46,8 @@
 
 - P1-03收尾 `72eefb0`：实证此前chunked_rows仅被自身测试引用（AppendWindow走手写整段Vec克隆）；接线后ChartRuntime持data_windows镜像（runtime态，ChartIR JSON合同不动），AppendWindow走Arc行块共享/整块回收/跨块边界仅首块make_mut写时复制，暂存至提交才落地（失败路径零污染），预算超限fail-closed带dataset id。单测8项（引用计数20 000行3块实证）+黑盒9项（与未分块参考逐值一致/evicted_rows证据）；lib 341、clippy/fmt全绿。性能对比归P1-04。
 
+- P1-23 TS侧消费：packages/deep-engine/src/adapterN1（9文件≤276行）——wire合同逐字段对齐adapter_n1/schema.rs，canonicalJson精确复刻serde_json+ryu-pretty（整数/浮点词法/kk布局/码点序键排序），SVG白名单MmLlHhVvZz禁曲线圆弧，四类适配（svg/富文本/图表扩展/动画ABI）；fail-closed三态与认证台账digest对拍——四类fixture digest黄金断言全中Native固化值（SVG 50b1cd80/富文本ad56df1c/图表5aab58a7/动画ffb61123），58/58测试+typecheck+runtimePurityGate绿。边界：渲染仍在Native，范围外元素blocked；TS计数上限收紧多拒方向安全；发现shaderPackage/hash.ts默认sort非字节序的潜在同族偏差（当前键全ASCII，建议另行排查）。
+
 - G04收官 `d91913d`：dashboardLayoutCaptureDeployment生产组合件（dist捕获页进程内托管+协议桥并轨API宿主合同+装配快速失败+close幂等）→ service dependencies可选layoutCapture（未配置零改动、宿主捕获失败fail-closed不保留候选）→ dashboardNativeStartup配置layoutCapture.chromePath/capturePageDirectory挂onClose优雅关闭。真实Chrome用例prepare→捕获→worker输入带layout 2.4s通过；API全量1199+4skip。遗留：dist捕获页生产分发不属本片；协议桥错误信息为selector超时（后续直出API协议捕获页可并轨）。
 
 - 补漏 `9146d7f` 后的data_source.rs挂载单独fixup提交（泵切片add路径错误）。
