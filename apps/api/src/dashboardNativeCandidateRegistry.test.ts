@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DashboardNativeCandidate } from "./dashboardNativeCandidateService.js";
 import {
   createDashboardNativeCandidateRegistry,
+  createInMemoryDashboardNativeCandidateRecordStore,
   DashboardNativeCandidateAuthorityError,
   DashboardNativeCandidateExpiredError,
   DashboardNativeCandidateNotFoundError,
@@ -27,6 +28,42 @@ function candidate(): DashboardNativeCandidate {
 }
 
 describe("dashboard Native candidate registry", () => {
+  it("reclaims unread expired records on registration without evicting live packages", () => {
+    let time = 100;
+    let id = 0;
+    const store = createInMemoryDashboardNativeCandidateRecordStore(() => time);
+    const registry = createDashboardNativeCandidateRegistry({ store, now: () => time, ttlMs: 10,
+      createId: () => `candidate-${++id}` });
+    const expired = registry.register(candidate());
+    time = 105;
+    const active = registry.register(candidate());
+    time = 109;
+    registry.register(candidate());
+    expect(store.load(expired.candidateId)).toBeDefined();
+    time = 110;
+    registry.register(candidate());
+    expect(store.load(expired.candidateId)).toBeUndefined();
+    const lookup = { candidateId: active.candidateId, projectId: authority.projectId, applicationId: authority.applicationId };
+    const record = registry.read(lookup);
+    record.candidate.artifact.artifact[0] = 99;
+    expect(registry.read(lookup).candidate.artifact.artifact).toEqual(new Uint8Array([1, 2, 3]));
+    expect(() => registry.read({ ...lookup, projectId: "other-project" })).toThrow(DashboardNativeCandidateAuthorityError);
+  });
+
+  it("rejects an invalid store clock before deleting or inserting records", () => {
+    let time = 100;
+    const store = createInMemoryDashboardNativeCandidateRecordStore(() => time);
+    const registry = createDashboardNativeCandidateRegistry({ store, now: () => 100, ttlMs: 10, createId: () => "existing" });
+    registry.register(candidate());
+    const record = store.load("existing")!;
+    for (const invalid of [NaN, Infinity, 1.5]) {
+      time = invalid;
+      expect(() => store.save({ ...record, summary: { ...record.summary, candidateId: "new" } })).toThrow("clock is invalid");
+      expect(store.load("existing")).toEqual(record);
+      expect(store.load("new")).toBeUndefined();
+    }
+  });
+
   it("returns only safe metadata at registration and retains private bytes for a scoped server read", () => {
     const registry = createDashboardNativeCandidateRegistry({ now: () => Date.parse("2026-09-16T12:00:00.000Z"), createId: () => "candidate-1" });
     const summary = registry.register(candidate());

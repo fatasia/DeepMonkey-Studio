@@ -4,6 +4,9 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Reclaim expired Dashboard candidate packages when registering new candidates, preserving live downloads and scoped access.
+- Compile frozen chart headings through the configured trusted layout host into Native text atlases; offline clients need no browser for these headings.
+
 - Bound Native text producer file reads to their initial size, avoiding a second concatenation buffer and rejecting mid-read changes.
 
 - Check Dashboard raster budgets before copying resources and pixels; copy typed-array views without duplicating unused backing-buffer bytes.

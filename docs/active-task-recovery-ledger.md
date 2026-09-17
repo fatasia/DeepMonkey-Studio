@@ -2,6 +2,9 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- Dashboard 候选内存回收：新候选登记时删除无人读取的过期记录，保留有效包、权限和字节隔离；13项聚焦测试与API类型检查通过。闲置期不启动定时器，不代表活跃候选总内存已有硬上限。[证据](specs/dashboard-candidate-expiry-2026-09-17.md)
+- 图表标题 `330a021` 已接入正式可信测量与Native图集链路；本地报告记录两张图集、三帧Vulkan呈现和取消/字体失败恢复。完整外观、中文字体与HTTP发布下载仍待验。[范围与验证](specs/dashboard-chart-heading-capture-2026-09-17.md)
+
 - 3DM `d60003a` 独立复核：共边65→60，41/41面与7自缝保持；190源PointAt最大3.978e-15mm。主线复跑3项真实源/事务回退测试通过，GLB与evidence哈希一致；edge60局部翻面继续处理，仍为部分预览。[证据](specs/industrial-3dm-plane-isocurve-2026-09-17.md)
 - 光栅host同族修复：图片/字体入口复制前检查取消、尺寸和总预算，仅冻结实际字节视图；31项host/真实子进程回归通过。[证据](specs/dashboard-raster-copy-budget-2026-09-17.md)
 

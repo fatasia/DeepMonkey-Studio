@@ -60,12 +60,12 @@ export interface DashboardNativeCandidateRegistry {
 export function createDashboardNativeCandidateRegistry(
   options: DashboardNativeCandidateRegistryOptions = {},
 ): DashboardNativeCandidateRegistry {
-  const store = options.store ?? createInMemoryDashboardNativeCandidateRecordStore();
+  const now = options.now ?? Date.now;
+  const store = options.store ?? createInMemoryDashboardNativeCandidateRecordStore(now);
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   if (!Number.isSafeInteger(ttlMs) || ttlMs < 1 || ttlMs > 24 * 60 * 60 * 1_000) {
     throw new Error("Dashboard candidate TTL must be between 1 ms and 24 hours");
   }
-  const now = options.now ?? Date.now;
   const createId = options.createId ?? randomUUID;
 
   return Object.freeze({
@@ -107,10 +107,18 @@ export function createDashboardNativeCandidateRegistry(
   });
 }
 
-export function createInMemoryDashboardNativeCandidateRecordStore(): DashboardNativeCandidateRecordStore {
+export function createInMemoryDashboardNativeCandidateRecordStore(now: () => number = Date.now): DashboardNativeCandidateRecordStore {
   const records = new Map<string, DashboardNativeCandidateRecord>();
   return Object.freeze({
-    save(record: DashboardNativeCandidateRecord): void { records.set(record.summary.candidateId, clone(record)); },
+    save(record: DashboardNativeCandidateRecord): void {
+      const timestamp = now();
+      if (!Number.isSafeInteger(timestamp)) throw new Error("Dashboard candidate clock is invalid");
+      // 新候选到达时回收无人再次读取的过期包；不淘汰仍可下载的有效记录。
+      for (const [id, entry] of records) {
+        if (Date.parse(entry.summary.expiresAt) <= timestamp) records.delete(id);
+      }
+      records.set(record.summary.candidateId, clone(record));
+    },
     load(candidateId: string): DashboardNativeCandidateRecord | undefined {
       const record = records.get(candidateId);
       return record ? clone(record) : undefined;
