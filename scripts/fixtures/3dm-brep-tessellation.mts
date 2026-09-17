@@ -9,6 +9,7 @@ import { tessellateTrimmedCylinderFace } from './3dm-cylinder-trim.mts';
 import { tessellateProvenCylinderFace } from './3dm-proven-cylinder.mts';
 import { tessellateBicubicFace,tessellateMultispanBicubicFace } from './3dm-bicubic-face.mts';
 import { tessellateRationalBezierFace } from './3dm-rational-bezier-face.mts';
+import { synchronizeSourceEdges } from './3dm-synchronize-source-edges.mts';
 
 /** Preserve saved meshes, reconstruct only supported missing faces, retain per-face diagnostics. */
 export function completeBrepParts(object: any,metersPerUnit?:number) {
@@ -54,7 +55,11 @@ export function completeBrepParts(object: any,metersPerUnit?:number) {
   try {const result=refineCylinderBoundaries(object.cadIr,refined);refined=result.parts;refinements=result.records;
     diagnostics.push(...result.failures.map(failure=>({objectId:object.id,...failure})));}
   catch(error){diagnostics.push({objectId:object.id,code:error instanceof Error?error.message:'boundary-refinement-failed',detail:error instanceof Error?error.cause:undefined});}
+  let sourceEdgeSynchronizations:any[]=[];
+  if(metersPerUnit!==undefined&&object.cadIr.edges&&object.cadIr.trims&&object.cadIr.loops){
+    const result=synchronizeSourceEdges(object.cadIr,refined,metersPerUnit);refined=result.parts;sourceEdgeSynchronizations=result.records;
+  }
   const boundaryAudit=object.cadIr.edges&&object.cadIr.trims&&object.cadIr.loops?auditBrepBoundaries(object.cadIr,refined):null;
   for(const edge of boundaryAudit?.shared??[])if(!edge.conforming)diagnostics.push({objectId:object.id,code:'nonconforming-brep-boundary',edge:edge.edge});
-  return {parts:refined,diagnostics,boundaryAudit,refinements,welds};
+  return {parts:refined,diagnostics,boundaryAudit,refinements,welds,sourceEdgeSynchronizations};
 }

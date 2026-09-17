@@ -9,7 +9,7 @@ import { proveCylinderSupport,tessellateProvenCylinderFace } from './3dm-proven-
 import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/quadratic-linear-2026-09-17-v1/proven');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/isocurve-sync-2026-09-17-v1/proven');
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex');
 const orient=(a:number[],b:number[],c:number[])=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
