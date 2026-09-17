@@ -20,6 +20,9 @@ $purity = Test-PortablePurity -PackageRoot $PackageRoot -Executable $executable
 if (-not $purity.passed) {
   throw "Portable purity check failed: $($purity | ConvertTo-Json -Depth 6 -Compress)"
 }
+$compatibilityWorker = if ($manifest.PSObject.Properties.Name -contains 'compatibilityWorker') {
+  Test-CompatibilityWorker -PackageRoot $PackageRoot -Worker $manifest.compatibilityWorker
+} else { $null }
 $embeddedShaders = Test-EmbeddedShaders -PackageRoot $PackageRoot -Executable $executable
 $smoke = @(Invoke-PortableSmoke -Executable $executable -PackageRoot $PackageRoot -IncludeRuntimeDetails)
 
@@ -46,6 +49,7 @@ if ((Get-Content -LiteralPath $hashPath -Raw).Trim() -cne $expectedLine) {
   payloadFiles = @($manifest.files).Count + 1
   zipEntries = $zip.entries
   purity = $purity
+  compatibilityWorker = $compatibilityWorker
   embeddedShaders = $embeddedShaders
   smoke = $smoke
 } | ConvertTo-Json -Depth 10

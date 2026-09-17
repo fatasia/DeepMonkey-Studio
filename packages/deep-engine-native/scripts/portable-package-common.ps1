@@ -108,6 +108,31 @@ function Test-PortablePurity {
   }
 }
 
+function Test-CompatibilityWorker {
+  param(
+    [Parameter(Mandatory)][string]$PackageRoot,
+    [Parameter(Mandatory)]$Worker
+  )
+  if ($Worker.lane -cne 'experimental-x' -or $Worker.schemaVersion -ne 1 -or
+      $Worker.defaultEnabled -ne $false -or $Worker.sandbox -cne 'windows-lpac-zero-capability') {
+    throw 'Packaged compatibility worker has an invalid trust contract.'
+  }
+  $path = Join-Path $PackageRoot ([string]$Worker.path).Replace('/', [IO.Path]::DirectorySeparatorChar)
+  Assert-ChildPath -Root $PackageRoot -Path $path
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    throw "Packaged compatibility worker is missing: $path"
+  }
+  $purity = Test-PortablePurity -PackageRoot $PackageRoot -Executable $path
+  if (-not $purity.passed -or -not $purity.staticCrtVerified) {
+    throw 'Packaged compatibility worker is not a static, browser-free Windows PE image.'
+  }
+  $hash = Get-FileSha256 -Path $path
+  if ($hash -cne [string]$Worker.sha256) {
+    throw 'Packaged compatibility worker hash differs from its trust contract.'
+  }
+  return [ordered]@{ passed = $true; path = $Worker.path; sha256 = $hash; purity = $purity }
+}
+
 function Test-EmbeddedShaders {
   param(
     [Parameter(Mandatory)][string]$PackageRoot,
@@ -158,6 +183,9 @@ function Test-ManifestPayload {
   if ($manifest.schema -ne 'deep-engine.native-portable' -or $manifest.schemaVersion -ne 3 -or
       $manifest.channel -notin @('beta', 'candidate') -or $manifest.runtime.browserShell -ne $false) {
     throw 'Portable manifest does not describe a native beta/candidate schema v3 package.'
+  }
+  if ($manifest.PSObject.Properties.Name -contains 'compatibilityWorker') {
+    [void](Test-CompatibilityWorker -PackageRoot $PackageRoot -Worker $manifest.compatibilityWorker)
   }
   $records = @($manifest.files)
   $paths = @($records | ForEach-Object path)

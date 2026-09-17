@@ -99,6 +99,24 @@ try {
     Test-EmbeddedShaders -PackageRoot $testRoot -Executable $executable
   } 'Packaged shader source differs from the executable'
 
+  $workerPath = Join-Path $testRoot 'deep2d-x-worker.exe'
+  Write-Utf8File -Path $workerPath -Content 'MZ closed compatibility worker'
+  $worker = [ordered]@{
+    lane = 'experimental-x'; schemaVersion = 1; path = 'deep2d-x-worker.exe'
+    sha256 = Get-FileSha256 -Path $workerPath
+    sandbox = 'windows-lpac-zero-capability'; defaultEnabled = $false
+  }
+  $workerResult = Test-CompatibilityWorker -PackageRoot $testRoot -Worker $worker
+  if (-not $workerResult.passed -or -not $workerResult.purity.staticCrtVerified) {
+    throw 'Valid compatibility worker was rejected'
+  }
+  $wrongHash = $worker | ConvertTo-Json | ConvertFrom-Json
+  $wrongHash.sha256 = [string]::new([char]'0', 64)
+  Assert-Rejected { Test-CompatibilityWorker -PackageRoot $testRoot -Worker $wrongHash } 'hash differs'
+  $enabled = $worker | ConvertTo-Json | ConvertFrom-Json
+  $enabled.defaultEnabled = $true
+  Assert-Rejected { Test-CompatibilityWorker -PackageRoot $testRoot -Worker $enabled } 'invalid trust contract'
+
   $nestedManifest = Join-Path $shaderRoot 'manifest.json'
   Write-Utf8File -Path $nestedManifest -Content '{}'
   if ('assets/shaders/manifest.json' -notin @((Get-PayloadInventory -PackageRoot $testRoot).path)) {

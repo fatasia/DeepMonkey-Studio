@@ -60,15 +60,20 @@ try {
       '-C target-feature=+crt-static',
       'Process'
     )
-    & cargo build --locked --release --manifest-path $cargoManifest --target $Target --target-dir $targetDirectory
+    & cargo build --locked --release --manifest-path $cargoManifest --target $Target `
+      --target-dir $targetDirectory --bin deep-engine-native --example x_compat_worker
     if ($LASTEXITCODE -ne 0) { throw 'cargo release build failed.' }
   } finally {
     [Environment]::SetEnvironmentVariable($rustFlagsName, $previousRustFlags, 'Process')
   }
 
   $builtExecutable = Join-Path $targetDirectory "$Target/release/deep-engine-native.exe"
+  $builtCompatibilityWorker = Join-Path $targetDirectory "$Target/release/examples/x_compat_worker.exe"
   if (-not (Test-Path -LiteralPath $builtExecutable -PathType Leaf)) {
     throw "Release executable is missing: $builtExecutable"
+  }
+  if (-not (Test-Path -LiteralPath $builtCompatibilityWorker -PathType Leaf)) {
+    throw "Release compatibility worker is missing: $builtCompatibilityWorker"
   }
   $binDirectory = Join-Path $stagedPackage 'bin'
   $fixtureDirectory = Join-Path $stagedPackage 'fixtures'
@@ -78,6 +83,8 @@ try {
     [void](New-Item -ItemType Directory -Force -Path $directory)
   }
   Copy-Item -LiteralPath $builtExecutable -Destination (Join-Path $binDirectory 'deep-engine-native.exe')
+  $packagedCompatibilityWorker = Join-Path $binDirectory 'deep2d-x-worker.exe'
+  Copy-Item -LiteralPath $builtCompatibilityWorker -Destination $packagedCompatibilityWorker
   Get-ChildItem -LiteralPath (Join-Path $packageRoot 'fixtures') -File -Filter '*.json' |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $fixtureDirectory }
   Copy-Item -LiteralPath (Join-Path $packageRoot 'tests/fixtures/runtime-package-v1.json') -Destination $fixtureDirectory
@@ -127,6 +134,7 @@ Deep Engine Native Player $version ($Target)
 
 TEST CANDIDATE: not a signed or release-qualified distribution.
 Packaging checks do not certify signing, installer/update, or the full hardware matrix.
+The packaged Deep2D X compatibility worker is experimental and disabled by default. The viewer launchers never invoke it.
 Author-selected LOD: bin\deep-engine-native.exe --package fixtures\runtime-package-author-lod-v1.json
 Asset directory: bin\deep-engine-native.exe --asset-package fixtures\asset-directory-v1\manifest.json
 Prefiltered IBL: bin\deep-engine-native.exe --package fixtures\runtime-package-prefiltered-ibl-v1.json
@@ -165,6 +173,15 @@ Headless checks:
   if (-not $purity.passed) {
     throw "Portable purity check failed: $($purity | ConvertTo-Json -Depth 6 -Compress)"
   }
+  $compatibilityWorker = [ordered]@{
+    lane = 'experimental-x'
+    schemaVersion = 1
+    path = 'bin/deep2d-x-worker.exe'
+    sha256 = Get-FileSha256 -Path $packagedCompatibilityWorker
+    sandbox = 'windows-lpac-zero-capability'
+    defaultEnabled = $false
+  }
+  [void](Test-CompatibilityWorker -PackageRoot $stagedPackage -Worker $compatibilityWorker)
   $embeddedShaders = Test-EmbeddedShaders -PackageRoot $stagedPackage -Executable $packagedExecutable
   $smokeChecks = @(Invoke-PortableSmoke -Executable $packagedExecutable -PackageRoot $stagedPackage)
   $payload = @(Get-PayloadInventory -PackageRoot $stagedPackage)
@@ -184,6 +201,7 @@ Headless checks:
       windowing = 'winit'
       browserShell = $false
     }
+    compatibilityWorker = $compatibilityWorker
     toolchain = [ordered]@{
       rustc = (& rustc --version)
       cargo = (& cargo --version)

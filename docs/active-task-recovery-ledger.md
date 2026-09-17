@@ -1873,3 +1873,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 在既有 X IPC 与 Job 资源治理之上新增可信宿主 LPAC 入口：唯一临时 profile/目录、精确 SID RX、零 capabilities、ALL_APPLICATION_PACKAGES opt-out、仅标准流句柄与原子 Job 列表。子进程挂起创建，核验 AppContainer/SID/capability/group 后才恢复；失败不降级普通进程。
 - 主线程以静态 CRT 重建两个实验 worker，复跑 LPAC 4/4、IPC 7/7、Job 4/4、compat_x 10/10、all-target check、fmt 和 clippy 通过。真实对照覆盖双向 X 回执、宿主私有文件读写拒绝、缺失/非 PE、取消、超时与有界清理。
 - 本机网络探针在 LPAC 内 WSAStartup 返回 10107，未进入 connect；只计网络初始化负向证据。完整 TCP/UDP、IPv4/IPv6、DNS、注册表/命名对象、profile orphan 与正式静态 worker/产品接线继续本轮待办。[实验报告](specs/deep2d-p2-01-lpac-experiment-2026-09-17.md)
+
+### 2026-09-17 Deep2D P2-01 portable worker 工件接线（Codex）
+
+- Windows portable 与播放器同锁文件/目标/release 静态 CRT 构建封闭 X worker；manifest 固定 lane/schema/包内路径/SHA-256/LPAC sandbox/default-disabled，Viewer 启动器不执行它。通用 verifier 拒绝路径逃逸、缺失、非 PE、动态 CRT/浏览器依赖、错误信任合同和哈希变化。
+- 实际候选包 44 entries/5,804,561 bytes，ZIP SHA-256 `2195d7074d2899643ade8cfa4d88aec954689de0d644bf61be92ac53fdbae2f3`；worker SHA-256 `b014ed385145a0ac2c5fa81bb86c52ddfd8ef4ca8877e45e9d55bf6c8426336d`。26 项 GPU/恢复 smoke 与二次完整 verifier 通过。
+- 产品调度/开关/诊断、签名与撤销、完整 Windows 权限/网络矩阵仍待办；随包不代表启用或兼容任意脚本。[证据](specs/deep2d-p2-01-portable-worker-2026-09-17.md)

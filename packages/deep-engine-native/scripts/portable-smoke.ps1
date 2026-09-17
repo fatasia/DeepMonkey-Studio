@@ -54,7 +54,7 @@ function Invoke-PortableSmokeCore {
     [ordered]@{
       name = 'viewer-selection-measurement'
       arguments = @('--smoke-selection', (Join-Path $PackageRoot 'fixtures/render_packet_v1.json'))
-      expected = @('native selection GPU probe OK:', 'measurement=two-world-points annotations=persisted',
+      expected = @('native selection GPU probe OK:', 'measurement=two-world-points', 'annotations=persisted',
         'native smoke GPU submission complete: scopes=clean callbacks=clean')
     },
     [ordered]@{
