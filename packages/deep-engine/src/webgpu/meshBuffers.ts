@@ -1,4 +1,5 @@
 import type { DeviceSession } from "./deviceSession.js";
+import { createAdmittedBuffer } from "./resourceAdmission.js";
 import type { MeshData } from "./primitives.js";
 import type { GeometryResource } from "../renderPacket.js";
 import { PacketMeshletSource, type PacketMeshletBudget } from "./packetMeshletSource.js";
@@ -6,7 +7,7 @@ import type { PacketLodDraw } from "./packetLodTypes.js";
 import { failWithResourceCleanup } from "./resourceCleanup.js";
 
 export function uploadBuffer(session: DeviceSession, label: string, data: Float32Array<ArrayBuffer> | Uint32Array<ArrayBuffer>, usage: GPUBufferUsageFlags): GPUBuffer {
-  const buffer = session.own(session.device.createBuffer({ label, size: Math.max(4, data.byteLength), usage: usage | GPUBufferUsage.COPY_DST }));
+  const buffer = createAdmittedBuffer(session, { label, size: Math.max(4, data.byteLength), usage: usage | GPUBufferUsage.COPY_DST });
   try { session.device.queue.writeBuffer(buffer, 0, data); }
   catch (error) { session.release(buffer); throw error; }
   return buffer;

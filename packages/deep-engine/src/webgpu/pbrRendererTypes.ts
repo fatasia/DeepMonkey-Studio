@@ -17,6 +17,8 @@ export interface RenderView extends PbrFrameUniformView {
 }
 
 export interface PbrRendererOptions {
+  /** 显式的同设备托管资源估算上限；未知布局拒绝，非驱动物理 VRAM 上限。 */
+  readonly deviceMemoryBudgetBytes?: number;
   /** 帧内目标的估算字节上限；不包含 history、阴影或流式几何。默认 512 MiB。 */
   readonly transientTextureBudgetBytes?: number;
   readonly meshlets?: boolean;

@@ -1,6 +1,6 @@
 /// <reference types="@webgpu/types" />
 import { surfaceSize, type SurfaceSize } from "./surfaceSize.js";
-import { DeviceResourceMemory } from "./deviceResourceMemory.js";
+import { DeviceResourceMemory, validateDeviceMemoryBudget } from "./deviceResourceMemory.js";
 
 export type DeviceState = "ready" | "lost" | "disposed";
 export interface DeviceEvent { readonly kind: "lost" | "error"; readonly message: string }
@@ -33,7 +33,7 @@ async function abortable<T>(promise: Promise<T>, signal: AbortSignal, release?: 
 /** 每个实例独占 device、canvas context 和资源；没有全局渲染循环或共享 GPU cache。 */
 export class DeviceSession {
   private readonly resources = new Set<Destroyable>();
-  private readonly memory = new DeviceResourceMemory();
+  private readonly memory: DeviceResourceMemory;
   private readonly events: DeviceEvent[] = [];
   private currentState: DeviceState = "ready";
   private size: SurfaceSize | undefined;
@@ -48,7 +48,9 @@ export class DeviceSession {
     readonly format: GPUTextureFormat,
     private readonly canvas: HTMLCanvasElement,
     readonly adapterInfo: Readonly<{ vendor: string; architecture: string; device: string; description: string; isFallbackAdapter: boolean }> | undefined,
+    memoryBudgetBytes?: number,
   ) {
+    this.memory = new DeviceResourceMemory(memoryBudgetBytes);
     device.addEventListener("uncapturederror", this.errorListener);
     void device.lost.then((info) => {
       if (this.currentState !== "ready") return;
@@ -57,7 +59,8 @@ export class DeviceSession {
     });
   }
 
-  static async open(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal): Promise<DeviceSession> {
+  static async open(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, memoryBudgetBytes?: number): Promise<DeviceSession> {
+    validateDeviceMemoryBudget(memoryBudgetBytes);
     if (signal.aborted) throw aborted();
     if (!gpu) throw new Error("WebGPU is unavailable in this browser.");
     const adapter = await abortable(gpu.requestAdapter({ powerPreference: "high-performance" }), signal);
@@ -80,7 +83,7 @@ export class DeviceSession {
       const info = adapter.info;
       session = new DeviceSession(device, context, gpu.getPreferredCanvasFormat(), canvas, info ? Object.freeze({
         vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description, isFallbackAdapter: info.isFallbackAdapter,
-      }) : undefined);
+      }) : undefined, memoryBudgetBytes);
       session.resize(canvas.clientWidth, canvas.clientHeight, 1);
       return session;
     } catch (error) {
@@ -94,11 +97,16 @@ export class DeviceSession {
   get hasErrors(): boolean { return this.events.some((event) => event.kind === "error"); }
   get resourceCount(): number { return this.resources.size; }
   get resourceMemory() { return this.memory.snapshot; }
+  assertResourceAdmission(descriptor: object): void {
+    if (this.currentState !== "ready") throw new Error("GPU session is not ready.");
+    this.memory.assertCanAdd(descriptor);
+  }
 
   own<T extends Destroyable>(resource: T): T {
     if (this.currentState !== "ready") { resource.destroy(); throw new Error("GPU session is not ready."); }
+    try { this.memory.add(resource); }
+    catch (error) { resource.destroy(); throw error; }
     this.resources.add(resource);
-    this.memory.add(resource);
     return resource;
   }
 

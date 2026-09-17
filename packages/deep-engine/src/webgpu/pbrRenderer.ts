@@ -76,7 +76,7 @@ export class PbrRenderer {
     this.lighting = lighting; this.localShadows = localShadows;
   }
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
-    const session = await DeviceSession.open(canvas, gpu, signal);
+    const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes);
     const cancel = (): void => session.dispose();
     let scopeOpen = false;
     signal.addEventListener("abort", cancel, { once: true });

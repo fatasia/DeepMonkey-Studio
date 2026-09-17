@@ -6,6 +6,7 @@ import {
   type TextureCompressionFeature, type TextureSemantic,
 } from "../textures/decodedTexture.js";
 import type { DeviceSession } from "./deviceSession.js";
+import { createAdmittedTexture } from "./resourceAdmission.js";
 import { bindGpuResidencyHandleDevice } from "./gpuResidencyDeviceAffinity.js";
 
 export type GpuTextureResidencyTexture = PreparedTexture | DecodedTexture;
@@ -76,12 +77,12 @@ export class GpuTextureResidencyUploader implements GpuResidencyUploader<GpuText
       for (const filter of ["validation", "out-of-memory", "internal"] as const) {
         device.pushErrorScope(filter); depth += 1;
       }
-      texture = this.session.own(device.createTexture({
+      texture = createAdmittedTexture(this.session, {
         label: `Deep streamed texture ${request.id} LOD ${request.level}`,
         size: { width: source.levels[0]!.width, height: source.levels[0]!.height, depthOrArrayLayers: 1 },
         format: source.format, mipLevelCount: source.levels.length, dimension: "2d",
         usage: this.usage | GPUTextureUsage.COPY_DST,
-      }));
+      });
       for (let index = 0; index < source.levels.length; index += 1) {
         const mip = source.levels[index]!;
         this.session.device.queue.writeTexture({ texture, mipLevel: index }, mip.data,

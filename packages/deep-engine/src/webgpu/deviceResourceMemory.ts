@@ -6,6 +6,7 @@ export interface DeviceResourceMemorySnapshot {
   readonly peakEstimatedBytes: number;
   readonly unknownResources: number;
   readonly resourceCount: number;
+  readonly admission?: Readonly<{ budgetBytes: number; rejectedCount: number }>;
 }
 
 const PIXEL_BYTES: Readonly<Record<string, number>> = Object.freeze({
@@ -61,9 +62,27 @@ export class DeviceResourceMemory {
   private textureBytes = 0;
   private unknownResources = 0;
   private peakEstimatedBytes = 0;
+  private rejectedCount = 0;
+
+  constructor(private readonly budgetBytes?: number) { validateDeviceMemoryBudget(budgetBytes); }
+
+  assertCanAdd(resource: object): void {
+    if (this.budgetBytes === undefined || this.entries.has(resource)) return;
+    const estimate = estimateDeviceResource(resource);
+    if (!estimate || this.unknownResources > 0) {
+      this.rejectedCount++;
+      throw new Error("GPU ownership budget requires known resource sizes; this allocation has no reliable estimate.");
+    }
+    if (estimate.bytes > this.budgetBytes - this.bufferBytes - this.textureBytes) {
+      this.rejectedCount++;
+      throw new Error(`GPU ownership budget exceeded: ${this.bufferBytes + this.textureBytes} resident +`
+        + ` ${estimate.bytes} candidate > ${this.budgetBytes} bytes. Release unused resources or lower requested quality.`);
+    }
+  }
 
   add(resource: object): void {
     if (this.entries.has(resource)) return;
+    this.assertCanAdd(resource);
     const estimate = estimateDeviceResource(resource);
     this.entries.set(resource, estimate);
     if (!estimate) this.unknownResources++;
@@ -85,6 +104,13 @@ export class DeviceResourceMemory {
   get snapshot(): DeviceResourceMemorySnapshot {
     return Object.freeze({ bufferBytes: this.bufferBytes, textureBytes: this.textureBytes,
       estimatedBytes: this.bufferBytes + this.textureBytes, peakEstimatedBytes: this.peakEstimatedBytes,
-      unknownResources: this.unknownResources, resourceCount: this.entries.size });
+      unknownResources: this.unknownResources, resourceCount: this.entries.size,
+      ...(this.budgetBytes === undefined ? {} : { admission: Object.freeze({ budgetBytes: this.budgetBytes, rejectedCount: this.rejectedCount }) }) });
+  }
+}
+
+export function validateDeviceMemoryBudget(bytes: number | undefined): void {
+  if (bytes !== undefined && (!Number.isSafeInteger(bytes) || bytes < 1)) {
+    throw new Error("GPU ownership budget must be a positive safe integer.");
   }
 }

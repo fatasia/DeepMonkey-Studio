@@ -20,11 +20,30 @@ function fixture() {
   const adapter = { features: new Set<string>(), requestDevice: vi.fn(async () => device as unknown as GPUDevice) };
   const gpu = { requestAdapter: vi.fn(async () => adapter as unknown as GPUAdapter), getPreferredCanvasFormat: () => "bgra8unorm" };
   const controller = new AbortController();
-  const open = () => DeviceSession.open(canvas as unknown as HTMLCanvasElement, gpu as unknown as GPU, controller.signal);
+  const open = (budget?: number) => DeviceSession.open(canvas as unknown as HTMLCanvasElement, gpu as unknown as GPU, controller.signal, budget);
   return { lost, events, device, context, canvas, adapter, gpu, controller, open };
 }
 
 describe("DeviceSession ownership and initialization failures", () => {
+  it("rejects inadmissible ownership without destroying the active resource", async () => {
+    const f = fixture(), session = await f.open(64);
+    const active = { size: 48, destroy: vi.fn() }, candidate = { size: 32, destroy: vi.fn() };
+    session.own(active); session.own(active);
+    expect(() => session.own(candidate)).toThrow(/ownership budget exceeded/);
+    expect(candidate.destroy).toHaveBeenCalledOnce(); expect(active.destroy).not.toHaveBeenCalled();
+    expect(session.resourceMemory).toMatchObject({ estimatedBytes: 48, peakEstimatedBytes: 48,
+      admission: { budgetBytes: 64, rejectedCount: 1 } });
+    const unknown = { destroy: vi.fn() };
+    expect(() => session.own(unknown)).toThrow(/known resource sizes/);
+    expect(unknown.destroy).toHaveBeenCalledOnce();
+    session.release(active); session.own({ size: 64, destroy: vi.fn() });
+    session.dispose(); expect(session.resourceMemory.estimatedBytes).toBe(0);
+  });
+  it("rejects malformed budgets before requesting a GPU adapter", async () => {
+    const f = fixture();
+    await expect(f.open(Infinity)).rejects.toThrow(/positive safe integer/);
+    expect(f.gpu.requestAdapter).not.toHaveBeenCalled();
+  });
   it("reports simultaneous candidate bytes at the ownership boundary and clears on dispose", async () => {
     const f = fixture(), session = await f.open();
     const old = { size: 32, destroy: vi.fn() }, candidate = { size: 64, destroy: vi.fn() };

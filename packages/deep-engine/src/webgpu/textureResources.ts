@@ -1,5 +1,6 @@
 import { prepareTextures, sameTextureContent, type DecodedTexture, type PreparedTexture, type PreparedTextureFormat } from "../textures/decodedTexture.js";
 import type { DeviceSession } from "./deviceSession.js";
+import { createAdmittedTexture } from "./resourceAdmission.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
 
 /** 借用句柄，生命周期归 TextureResources；调用者不能自行 destroy。 */
@@ -147,9 +148,9 @@ export class TextureResources {
         samplers.set(source.samplerKey, sampler);
         if (previous && source.revision === previous.source.revision) { entries.set(source.id, previous); continue; }
         const level = source.levels[0]!;
-        const texture = this.session.own(this.session.device.createTexture({ label: `Deep texture ${source.id}`,
+        const texture = createAdmittedTexture(this.session, { label: `Deep texture ${source.id}`,
           size: { width: level.width, height: level.height, depthOrArrayLayers: 1 }, format: source.format,
-          mipLevelCount: source.levels.length, dimension: "2d", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }));
+          mipLevelCount: source.levels.length, dimension: "2d", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
         created.push(texture);
         for (let index = 0; index < source.levels.length; index++) {
           const mip = source.levels[index]!;

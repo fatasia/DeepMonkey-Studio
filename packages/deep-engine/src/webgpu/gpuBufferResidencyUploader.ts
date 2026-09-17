@@ -1,6 +1,7 @@
 import type { GpuResidencyUploader, GpuResidencyUploadRequest,
   GpuResidencyUploadResult } from "../streaming/index.js";
 import type { DeviceSession } from "./deviceSession.js";
+import { createAdmittedBuffer } from "./resourceAdmission.js";
 
 export interface GpuBufferResidencySource {
   readonly id: string;
@@ -50,11 +51,11 @@ export class GpuBufferResidencyUploader implements GpuResidencyUploader<GPUBuffe
       for (const filter of ["validation", "out-of-memory", "internal"] as const) {
         device.pushErrorScope(filter); depth += 1;
       }
-      buffer = this.session.own(device.createBuffer({
+      buffer = createAdmittedBuffer(this.session, {
         label: source.label ?? `Deep streamed ${request.id} LOD ${request.level}`,
         size: allocatedByteLength,
         usage: (source.usage ?? this.defaultUsage) | GPUBufferUsage.COPY_DST,
-      }));
+      });
       device.queue.writeBuffer(buffer, 0, alignedUploadBytes(bytes, allocatedByteLength));
       if (request.signal.aborted) throw cancellation(request.signal);
     } catch (error) { workError = error; }

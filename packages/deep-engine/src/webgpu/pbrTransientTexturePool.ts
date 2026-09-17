@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "./deviceSession.js";
+import { createAdmittedTexture } from "./resourceAdmission.js";
 import { pbrFrameResourceContract, type FramePlanUsage } from "./pbrFramePlanResources.js";
 import { failWithResourceCleanup } from "./resourceCleanup.js";
 import type { PbrTransientTextureKey, PbrTransientRequest, PbrTransientTextureHandle, PbrTransientPoolInvalidationReason, PbrTransientTexturePoolStats } from "./pbrTransientTextureTypes.js";
@@ -203,10 +204,10 @@ export class PbrTransientTexturePool {
     this.makeRoom(bytes, resourceId);
     let texture: GPUTexture;
     try {
-      texture = this.session.own(this.session.device.createTexture({
+      texture = createAdmittedTexture(this.session, {
         label: `Deep transient ${resourceId}`, size: { width: key.width, height: key.height },
         format: key.format, sampleCount: key.sampleCount, usage: key.usage,
-      }));
+      });
     } catch (error) { failWithResourceCleanup(error, `Transient texture allocation failed for ${resourceId}`, []); }
     const handle = handleOf(this.session, texture, key, resourceId);
     this.residentBytes += bytes;
