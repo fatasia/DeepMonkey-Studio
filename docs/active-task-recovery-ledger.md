@@ -1855,3 +1855,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 复用现有 `Bound.vertex`，严格识别 FIN 自环与有限源坐标；不造退化边，不填默认几何。26 个源点状环与 IR 的源面身份、坐标 bits 多重集一致，109 件 lowering skipped 归零。
 - 主线程复跑 cad-xt 15 项、独立 109 件点状环审核与全语料 GLB 几何审核通过；最小补丁反向检查通过。三角数变化不等于曲面精度认证。
 - 完整 source map、曲面误差、单位、闭合性、授权归档和产品接线继续本轮待办；不新增生产 profile。[证据](specs/industrial-x-t-isolated-loop-2026-09-17.md)
+
+### 2026-09-17 X_T GLB 源面区间映射（Codex）
+
+- 复用 GeometryId 与离散器材质排序后的面区间，在既有 GLB 分块上输出 source-file-local BODY/FACE 元数据，不增加 draw call 或顶点属性。拒绝索引修改、区间缺口和材质遗漏。
+- Rust 149+39+15、Node 6 项测试通过；109/109 实际 GLB 通过几何、独立源计数和源面三角区间覆盖审核。补丁反向检查通过，原始样本与研究源码不入库。
+- 当前只证明区间覆盖和数量，不证明独立源身份或曲面误差。RAW BODY→FACE 身份、同体面标签与真实几何对应、单位/闭合性/产品接线继续本轮待办。[报告与哈希](specs/industrial-x-t-glb-source-map-2026-09-17.md)

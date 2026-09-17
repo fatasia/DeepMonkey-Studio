@@ -1,0 +1,411 @@
+diff --git a/native/crates/cad-export/src/glb.rs b/native/crates/cad-export/src/glb.rs
+index 792d55e..934afaa 100644
+--- a/native/crates/cad-export/src/glb.rs
++++ b/native/crates/cad-export/src/glb.rs
+@@ -21,6 +21,10 @@ use serde_json::{json, Map, Value};
+ use std::io::Write;
+ use std::path::Path;
+ 
++#[cfg(test)]
++#[path = "glb_source_map_tests.rs"]
++mod source_map_tests;
++
+ /// glTF component types.
+ const BYTE: u32 = 5120;
+ const UNSIGNED_SHORT: u32 = 5123;
+@@ -261,6 +265,10 @@ impl<'a> Builder<'a> {
+         // is not a compromise — the triangles, the vertices and their values
+         // are exactly what they were, only handed over in more than one piece.
+         let mut primitives = Vec::with_capacity(mesh.parts.len().max(1));
++        let source_map = self.scene.source_faces.get(&cad_ir::scene::GeometryId(index as u32));
++        if let Some(source) = source_map {
++            source.validate(mesh).map_err(ExportError::BadMesh)?;
++        }
+         let parts: Vec<_> = if mesh.parts.is_empty() {
+             vec![cad_ir::mesh::MeshPart {
+                 material: 0,
+@@ -277,6 +285,7 @@ impl<'a> Builder<'a> {
+             if part.count == 0 {
+                 continue;
+             }
++            let mut chunk_start = part.start as usize;
+             for chunk in chunk_run(
+                 mesh,
+                 part.start as usize,
+@@ -307,12 +316,22 @@ impl<'a> Builder<'a> {
+                 if let Some(uv) = uv_accessor {
+                     attributes.insert("TEXCOORD_0".into(), json!(uv));
+                 }
+-                primitives.push(json!({
++                let mut primitive = json!({
+                     "attributes": attributes,
+                     "indices": indices,
+                     "material": (part.material as usize).min(self.materials.len() - 1),
+                     "mode": 4,
+-                }));
++                });
++                if let Some(source) = source_map {
++                    let ranges: Vec<_> = source.clip(chunk_start, chunk.indices.len()).iter()
++                        .map(|(start, count, face)| json!([start, count, face.to_string()])).collect();
++                    primitive["extras"] = json!({"bimSourceMap": {
++                        "schemaVersion": 1, "scope": "source-file-local",
++                        "format": source.format, "body": source.body.to_string(), "faceRanges": ranges
++                    }});
++                }
++                chunk_start += chunk.indices.len();
++                primitives.push(primitive);
+             }
+         }
+         if primitives.is_empty() {
+diff --git a/native/crates/cad-ir/src/lib.rs b/native/crates/cad-ir/src/lib.rs
+index e14a8a8..274bdc7 100644
+--- a/native/crates/cad-ir/src/lib.rs
++++ b/native/crates/cad-ir/src/lib.rs
+@@ -26,6 +26,7 @@ pub mod math;
+ pub mod mesh;
+ pub mod p2m;
+ pub mod scene;
++pub mod source_map;
+ pub mod sldmat;
+ pub mod uv;
+ 
+diff --git a/native/crates/cad-ir/src/scene.rs b/native/crates/cad-ir/src/scene.rs
+index 1154219..4ba4fcd 100644
+--- a/native/crates/cad-ir/src/scene.rs
++++ b/native/crates/cad-ir/src/scene.rs
+@@ -44,6 +44,7 @@ impl MaterialId {
+ /// A converted model.
+ #[derive(Debug, Clone, Default)]
+ pub struct Scene {
++    pub source_faces: std::collections::BTreeMap<GeometryId, crate::source_map::GeometrySourceMap>,
+     pub nodes: Vec<Node>,
+     /// Nodes with no parent.
+     pub roots: Vec<NodeId>,
+diff --git a/native/crates/cad-tess/src/lib.rs b/native/crates/cad-tess/src/lib.rs
+index f1ee144..db0e242 100644
+--- a/native/crates/cad-tess/src/lib.rs
++++ b/native/crates/cad-tess/src/lib.rs
+@@ -46,6 +46,8 @@ use rayon::prelude::*;
+ /// What tessellation produced, beyond the meshes themselves.
+ #[derive(Debug, Default, Clone)]
+ pub struct Report {
++    // Only populated by tessellate_solid; scene aggregation binds these to geometry.
++    pub face_ranges: Vec<cad_ir::source_map::FaceRange>,
+     /// Faces that produced no triangles, with why.
+     pub failed: Vec<FaceFailure>,
+     pub triangles: usize,
+@@ -155,7 +157,7 @@ pub fn tessellate_scene_with(
+         report.cancelled = true;
+         return report;
+     }
+-    for g in scene.geometry.iter_mut() {
++    for (geometry_index, g) in scene.geometry.iter_mut().enumerate() {
+         if !wanted(g) {
+             continue;
+         }
+@@ -171,13 +173,16 @@ pub fn tessellate_scene_with(
+         let Some(solid) = taken.as_ref().or(g.brep.as_ref()) else {
+             continue;
+         };
+-        let (mesh, r) = tessellate_solid(
++        let (mesh, mut r) = tessellate_solid(
+             &g.name,
+             solid,
+             g.material,
+             &g.face_materials,
+             &resolved,
+         );
++        if let Some(source) = scene.source_faces.get_mut(&cad_ir::scene::GeometryId(geometry_index as u32)) {
++            source.bind(std::mem::take(&mut r.face_ranges), &mesh);
++        }
+         report.merge(r);
+         // Before the mesh is stored, so the two are never both charged to this
+         // body at once.
+@@ -1050,6 +1055,9 @@ pub fn tessellate_solid(
+         })
+         .collect();
+     let face_ranges = ranges;
++    report.face_ranges = face_ranges.iter().map(|(face, start, end)| cad_ir::source_map::FaceRange {
++        face: face.0 as usize, start: *start, end: *end,
++    }).collect();
+     report.vertices += mesh.positions.len();
+ 
+     // Per-face crack attribution: weld the finished mesh by exact bit pattern
+diff --git a/native/crates/cad-xt/src/lib.rs b/native/crates/cad-xt/src/lib.rs
+index 7b323aa..7205ada 100644
+--- a/native/crates/cad-xt/src/lib.rs
++++ b/native/crates/cad-xt/src/lib.rs
+@@ -197,6 +200,10 @@ fn to_scene_from(
+             material,
+             face_materials,
+         });
++        scene.source_faces.insert(gid, cad_ir::source_map::GeometrySourceMap {
++            format: "X_T".into(), body: body_handle, faces: face_sources,
++            ..Default::default()
++        });
+         geometry_of_body.insert(body_handle, (gid, name));
+     }
+ 
+diff --git a/native/crates/cad-ir/src/source_map.rs b/native/crates/cad-ir/src/source_map.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/cad-ir/src/source_map.rs
+@@ -0,0 +1,147 @@
++//! Source-file-local face identity, retained without splitting material draws.
++use crate::mesh::Mesh;
++
++#[derive(Debug, Clone)]
++pub struct FaceRange {
++    pub face: usize,
++    pub start: usize,
++    pub end: usize,
++}
++
++#[derive(Debug, Clone, Default)]
++pub struct GeometrySourceMap {
++    pub format: String,
++    pub body: usize,
++    pub faces: Vec<usize>,
++    pub ranges: Vec<FaceRange>,
++    pub index_hash: u64,
++}
++
++pub fn index_hash(indices: &[u32]) -> u64 {
++    indices
++        .iter()
++        .flat_map(|value| value.to_le_bytes())
++        .fold(0xcbf29ce484222325, |hash, byte| {
++            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
++        })
++}
++
++impl GeometrySourceMap {
++    pub fn bind(&mut self, mut ranges: Vec<FaceRange>, mesh: &Mesh) {
++        ranges.sort_by_key(|range| range.start);
++        self.ranges = ranges;
++        self.index_hash = index_hash(&mesh.indices);
++    }
++
++    pub fn validate(&self, mesh: &Mesh) -> Result<(), String> {
++        let mut next = 0;
++        if self.body == 0
++            || self.format.is_empty()
++            || self.faces.iter().any(|face| *face == 0)
++            || self
++                .faces
++                .iter()
++                .collect::<std::collections::BTreeSet<_>>()
++                .len()
++                != self.faces.len()
++            || self.index_hash != index_hash(&mesh.indices)
++        {
++            return Err("source face identity or mesh index fingerprint is invalid".into());
++        }
++        for range in &self.ranges {
++            if range.start != next
++                || range.end <= range.start
++                || range.end > mesh.indices.len()
++                || range.start % 3 != 0
++                || range.end % 3 != 0
++                || range.face >= self.faces.len()
++            {
++                return Err("source face ranges do not partition the triangle buffer".into());
++            }
++            next = range.end;
++        }
++        if next != mesh.indices.len() || next == 0 {
++            return Err("source face map has unmapped triangles".into());
++        }
++        if !mesh.parts.is_empty() {
++            let mut covered = 0usize;
++            for part in &mesh.parts {
++                if part.start as usize != covered || part.count % 3 != 0 {
++                    return Err("material parts do not partition source triangles".into());
++                }
++                covered += part.count as usize;
++            }
++            if covered != next {
++                return Err("material parts omit source triangles".into());
++            }
++        }
++        Ok(())
++    }
++
++    /// (primitive-local triangle start, triangle count, source FACE handle).
++    pub fn clip(&self, start: usize, count: usize) -> Vec<(usize, usize, usize)> {
++        let end = start + count;
++        let first = self.ranges.partition_point(|range| range.end <= start);
++        self.ranges[first..]
++            .iter()
++            .take_while(|range| range.start < end)
++            .map(|range| {
++                let lo = start.max(range.start);
++                let hi = end.min(range.end);
++                ((lo - start) / 3, (hi - lo) / 3, self.faces[range.face])
++            })
++            .collect()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn fixture() -> (GeometrySourceMap, Mesh) {
++        let mesh = Mesh {
++            indices: vec![0, 1, 2, 0, 2, 3, 0, 3, 4],
++            ..Default::default()
++        };
++        let mut map = GeometrySourceMap {
++            format: "X_T".into(),
++            body: 7,
++            faces: vec![42, 99],
++            ..Default::default()
++        };
++        map.bind(
++            vec![
++                FaceRange {
++                    face: 1,
++                    start: 6,
++                    end: 9,
++                },
++                FaceRange {
++                    face: 0,
++                    start: 0,
++                    end: 6,
++                },
++            ],
++            &mesh,
++        );
++        (map, mesh)
++    }
++    #[test]
++    fn material_order_and_chunk_boundary_keep_source_identity() {
++        let (map, mesh) = fixture();
++        map.validate(&mesh).unwrap();
++        assert_eq!(map.clip(0, 3), vec![(0, 1, 42)]);
++        assert_eq!(map.clip(3, 6), vec![(0, 1, 42), (1, 1, 99)]);
++    }
++    #[test]
++    fn stale_reordering_and_invalid_coverage_are_rejected() {
++        let (map, mut mesh) = fixture();
++        mesh.indices.swap(0, 1);
++        assert!(map.validate(&mesh).is_err());
++        let (mut map, mesh) = fixture();
++        map.ranges[1].start = 3;
++        assert!(map.validate(&mesh).is_err());
++        map.ranges[1].start = 6;
++        map.ranges[1].face = 2;
++        assert!(map.validate(&mesh).is_err());
++    }
++}
+diff --git a/native/crates/cad-export/src/glb_source_map_tests.rs b/native/crates/cad-export/src/glb_source_map_tests.rs
+new file mode 100644
+--- /dev/null
++++ b/native/crates/cad-export/src/glb_source_map_tests.rs
+@@ -0,0 +1,106 @@
++use super::*;
++use cad_ir::scene::{Geometry, GeometryId, Node};
++use cad_ir::source_map::{FaceRange, GeometrySourceMap};
++
++fn fixture() -> Scene {
++    let mut scene = Scene::default();
++    // Enough unique vertices to force a 16-bit index split inside source face 42.
++    let mesh = Mesh {
++        positions: (0..65_541)
++            .map(|i| [i as f32, (i % 3) as f32, 0.0])
++            .collect(),
++        indices: (0..65_541).collect(),
++        ..Default::default()
++    };
++    let mut source = GeometrySourceMap {
++        format: "X_T".into(),
++        body: 7,
++        faces: vec![42, 99],
++        ..Default::default()
++    };
++    source.bind(
++        vec![
++            FaceRange {
++                face: 0,
++                start: 0,
++                end: 65_538,
++            },
++            FaceRange {
++                face: 1,
++                start: 65_538,
++                end: 65_541,
++            },
++        ],
++        &mesh,
++    );
++    let geometry = scene.add_geometry(Geometry {
++        name: "mapped".into(),
++        mesh: Some(mesh),
++        brep: None,
++        material: None,
++        face_materials: vec![],
++    });
++    scene.source_faces.insert(geometry, source);
++    let node = scene.add_node(Node {
++        geometry: Some(geometry),
++        ..Default::default()
++    });
++    scene.roots.push(node);
++    scene
++}
++
++fn json_of(bytes: &[u8]) -> Value {
++    let length = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
++    serde_json::from_slice(&bytes[20..20 + length]).unwrap()
++}
++
++#[test]
++fn face_identity_survives_index_chunks_and_all_compression_modes() {
++    for options in [Options::default(), Options::lean(), Options::compact()] {
++        let bytes = write_bytes(&fixture(), &options).unwrap();
++        // This Rust reader does not implement KHR_mesh_quantization; validate
++        // plain output with it, inspect identity metadata for all modes.
++        if options.compression == Compression::None {
++            gltf::Gltf::from_slice(&bytes).unwrap();
++        }
++        let json = json_of(&bytes);
++        let primitives = json["meshes"][0]["primitives"].as_array().unwrap();
++        assert_eq!(primitives.len(), 2);
++        assert_eq!(
++            primitives[0]["extras"]["bimSourceMap"]["faceRanges"],
++            json!([[0, 21845, "42"]])
++        );
++        assert_eq!(
++            primitives[1]["extras"]["bimSourceMap"]["faceRanges"],
++            json!([[0, 1, "42"], [1, 1, "99"]])
++        );
++        assert_eq!(primitives[1]["extras"]["bimSourceMap"]["body"], "7");
++        assert_eq!(write_bytes(&fixture(), &options).unwrap(), bytes);
++    }
++}
++
++#[test]
++fn changed_index_order_and_partial_material_ranges_fail_export() {
++    let mut scene = fixture();
++    scene.geometry[0].mesh.as_mut().unwrap().indices.swap(0, 1);
++    assert!(matches!(
++        write_bytes(&scene, &Options::default()),
++        Err(ExportError::BadMesh(_))
++    ));
++    let mut scene = fixture();
++    scene.geometry[0]
++        .mesh
++        .as_mut()
++        .unwrap()
++        .parts
++        .push(cad_ir::mesh::MeshPart {
++            material: 0,
++            start: 3,
++            count: 3,
++        });
++    assert!(matches!(
++        write_bytes(&scene, &Options::default()),
++        Err(ExportError::BadMesh(_))
++    ));
++    assert!(scene.source_faces.contains_key(&GeometryId(0)));
++}
