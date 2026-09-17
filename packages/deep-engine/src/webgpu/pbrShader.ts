@@ -225,7 +225,8 @@ ${PBR_DIRECT_DISPLAY_WGSL}
   let color = shade(v.clip.xy, v.world, normal, ground, v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w);
   let depth = clamp(v.clip.z, 0.0, 1.0);
   let alpha = coverage(v.emissiveAlpha.w, v.material);
-  return select(deepWeightedOit(color, alpha, depth), deepWeightedOitPremultiplied(color, alpha, depth), flag(v.material.w, 128u));
+  if (flag(v.material.w, 128u)) { return deepWeightedOitPremultiplied(color, alpha, depth); }
+  return deepWeightedOit(color, alpha, depth);
 }
 struct SurfaceSample { base: vec3f, metal: f32, rough: f32, alpha: f32, occlusion: f32, emissive: vec3f };
 fn sampleSurface(v: Vertex) -> SurfaceSample {
@@ -285,7 +286,8 @@ fn mappedNormal(v: Vertex, frontFacing: bool) -> vec3f {
   let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w);
   let depth = clamp(v.clip.z, 0.0, 1.0);
   let alpha = coverage(surface.alpha, v.material);
-  return select(deepWeightedOit(color, alpha, depth), deepWeightedOitPremultiplied(color, alpha, depth), flag(v.material.w, 128u));
+  if (flag(v.material.w, 128u)) { return deepWeightedOitPremultiplied(color, alpha, depth); }
+  return deepWeightedOit(color, alpha, depth);
 }
 `;
 

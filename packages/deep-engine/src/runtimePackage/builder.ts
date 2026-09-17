@@ -10,7 +10,12 @@ import { DEEP_RUNTIME_PACKAGE_SCHEMA, DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION, DEEP_
 
 export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): DeepRuntimePackage {
   assertNativePacketDeformationSupported(input.renderPacket.value);
-  const packet = record(snapshotJson(input.renderPacket.value, true), "$.renderPacket");
+  // Three keeps world matrices in Float64 until packet validation. Runtime JSON has no typed-array
+  // identity, so normalize only that authoring representation before taking the immutable snapshot.
+  const packetSource = { ...input.renderPacket.value, instances: input.renderPacket.value.instances.map(instance => ({
+    ...instance, transform: instance.transform instanceof Float64Array ? Array.from(instance.transform) : instance.transform,
+  })) };
+  const packet = record(snapshotJson(packetSource, true), "$.renderPacket");
   validateRuntimeRenderPacket(packet, "$.renderPacket");
   prepareRenderPacket(input.renderPacket.value);
   normalizeRuntimeRenderPacket(packet);

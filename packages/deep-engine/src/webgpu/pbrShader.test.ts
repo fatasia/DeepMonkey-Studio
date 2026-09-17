@@ -37,8 +37,9 @@ describe("normal-map WGSL contract", () => {
   it("writes weighted OIT accumulation and revealage for transparent materials", () => {
     expect(sceneShader).toContain("struct DeepWeightedOitOutput");
     // DE26/C03:两个透明入口按材质 flags bit128 在 straight 与 premultiplied 累积之间选择。
-    const dispatch = "return select(deepWeightedOit(color, alpha, depth), deepWeightedOitPremultiplied(color, alpha, depth), flag(v.material.w, 128u))";
+    const dispatch = "if (flag(v.material.w, 128u)) { return deepWeightedOitPremultiplied(color, alpha, depth); }";
     expect(sceneShader.match(new RegExp(dispatch.replace(/[()]/g, "\\$&"), "g"))).toHaveLength(2);
+    expect(sceneShader).not.toContain("select(deepWeightedOit(");
     expect(sceneShader).toContain("let alpha = coverage(v.emissiveAlpha.w, v.material)");
     expect(sceneShader).toContain("let alpha = coverage(surface.alpha, v.material)");
     expect(sceneShader).toContain("let depth = clamp(v.clip.z, 0.0, 1.0)");

@@ -1786,6 +1786,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 1280 dark 与 980 light 两轮截图已实际目检，无横向溢出/裁切；GPU validation、session diagnostics、console/page errors 与残留 owned resources 均为 0。evidence SHA-256 `7ef9ee331b60c725c7d635625d36a3f46170cf54e5e2a56a51f426bac232e3bc`，lab typecheck 与聚焦 25/0/1 skipped 通过。
 - 本片未改产品视觉或渲染代码；夹具自备顶点并直接调用 OIT 函数，尚未覆盖完整 renderPacket→PBR bit128、镜像实例批次和作者发布链，故 C03 整卡继续`本轮待办`。[证据](specs/de26-c03-browser-oit-pixels-2026-09-17.md)
 
+### 2026-09-17 DE26/C03 第四切片：作者发布→生产 PBR 像素闭环（Codex）
+
+- 已完成 Three 作者对象→RenderPacket→Runtime Package 序列化/解析→生产 `PbrRenderer` 的真 WebGPU 纵向链。修复两个真实阻断：Runtime builder 无法接受 Three 桥的 Float64 world matrix；PBR WGSL 对 OIT 结构体使用非法 `select`。
+- Chrome 153 / NVIDIA Lovelace 两轮通过：FrontSide/DoubleSide 普通与镜像全帧最大差 1/255；premultiplied+double+mirror 发布 flags=149，真画面 3,213 非背景像素；五组均 3 draw calls/14 triangles/`weightedOit=true`，GPU/session/console/page errors=0。
+- 1280 dark / 980 light 截图已实际目检，真 GPU 读回回显、无溢出或裁切；evidence SHA-256 `f8879334aad76eaf8c789b8de8c008d0de40eefd1151961f8c9b74dd6417c9bf`。typecheck 与聚焦测试通过。C03 在冻结支持矩阵内改为`已完成`；`side=back` 与 `BLEND+depthWrite=true` 继续为矩阵外能力。[证据](specs/de26-c03-publication-pbr-pixels-2026-09-17.md)
+
 ### 2026-09-17 DE26/A03 第二切片：Native 同源采样窗口（Codex）
 
 - 已完成：Native telemetry 输出与 TS `deep-engine.benchmark-sample-window` v1 同形的固定 8 通道窗口。窗口共用 reset 后的 `host-monotonic` 边界；`cpu-submit`、GPU frame timestamp、相邻成功呈现帧间隔输出原始样本，GPU 通道保留 `gpu-timestamp` 时钟身份。reset 同时切断窗口原点、帧间隔与 CPU/GPU 环，旧样本不能串入新窗口。
