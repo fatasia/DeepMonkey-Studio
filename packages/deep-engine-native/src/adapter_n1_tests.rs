@@ -272,3 +272,37 @@ fn budget_exceeded_blocks_instead_of_truncating() {
     };
     assert!(reason.contains("byte budget"), "got: {reason}");
 }
+
+#[test]
+fn rich_text_budget_counts_utf16_code_units() {
+    let fixture = json!({
+        "kind": "rich-text-inline",
+        "schemaVersion": 1,
+        "input": {
+            "id": "n1.rt.utf16",
+            "text": "😀",
+            "styles": [],
+            "paragraphs": [],
+            "inlineObjects": []
+        }
+    })
+    .to_string();
+    let digest = fixture_digest(fixture.as_bytes()).expect("valid json");
+    let adapter = N1Adapter::new(
+        N1Certifications::new([certification(N1InputKind::RichTextInline, &digest)]),
+        N1Budget {
+            max_text_code_units: 1,
+            ..N1Budget::default()
+        },
+        host_assets(),
+    )
+    .expect("host assets are valid");
+
+    let N1Outcome::Blocked { reason } = adapter.adapt(Some(fixture.as_bytes()), PLATFORM, 0) else {
+        panic!("one astral character must consume two UTF-16 code units");
+    };
+    assert!(
+        reason.contains("rich text code-unit budget exceeded: 2 > max 1"),
+        "got: {reason}"
+    );
+}

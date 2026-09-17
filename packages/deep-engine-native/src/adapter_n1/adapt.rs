@@ -193,7 +193,11 @@ pub(super) fn adapt_rich_text(
     let mut code_units = 0usize;
     for (index, paragraph) in document.paragraphs().iter().enumerate() {
         let text = paragraph_text(&document, paragraph)?;
-        code_units += text.chars().count();
+        // The wire budget is defined in UTF-16 code units so that native and
+        // TypeScript hosts reject the same payloads. `chars().count()` counts
+        // Unicode scalar values and would under-count astral characters such
+        // as emoji.
+        code_units += text.encode_utf16().count();
         if code_units > budget.max_text_code_units {
             return Err(format!(
                 "rich text code-unit budget exceeded: {code_units} > max {}",
