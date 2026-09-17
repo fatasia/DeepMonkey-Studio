@@ -98,6 +98,33 @@ test("window evidence rejects atlas bytes that differ from the producer receipt"
   assert.deepEqual(dashboardCompiledWindowEvidence(result, { nodeAssets: {}, assets: {} }).fontBindings, []);
 });
 
+test("page background reaches the real Native window without author or font credit", {
+  skip: !process.env.C2_NATIVE_EXECUTABLE,
+}, async () => {
+  const pixels = await sharp({ create: { width: 2, height: 2, channels: 4,
+    background: { r: 10, g: 80, b: 150, alpha: 1 } } }).png().toBuffer();
+  const image = { ...resource("background", "image", "unused", new Uint8Array(pixels)), nodeIds: [], pageIds: ["page-main"] };
+  const input = await frozen([], [image]);
+  const page = input.document.application.pages[0];
+  page.width = 320; page.height = 320;
+  page.appearance = { backgroundImageUrl: `/assets/${image.objectKey}`, backgroundImageFit: "original", backgroundImageRepeat: true };
+  input.freezeManifest.documentSha256 = hash(canonical(input.document));
+  const { manifestSha256, ...body } = input.freezeManifest;
+  input.freezeManifest.manifestSha256 = hash(canonical(body));
+  const { createDashboardNativeDeployment } = await import("../apps/api/dist/dashboard-content-compiler/deployment.mjs");
+  const deployment = await createDashboardNativeDeployment({ nativeExecutable: process.env.C2_NATIVE_EXECUTABLE, configuration });
+  const result = await deployment.compiler.compile(input);
+  assert.equal(result.windowEvidence.backgroundBindings.length, 1);
+  assert.deepEqual(result.windowEvidence.fontBindings, []);
+  const pkg = JSON.parse(new TextDecoder().decode(result.artifact));
+  const atlas = Object.values(pkg.payloads).flatMap(value => value.atlases ?? [])[0];
+  assert.deepEqual([...Buffer.from(atlas.dataBase64, "base64").subarray(0, 4)], [10, 80, 150, 255]);
+  const receipt = await deployment.verifier.verify({ artifact: result.artifact, windowEvidence: result.windowEvidence,
+    candidate: { document: input.document, manifest: input.freezeManifest, authority: input.freezeManifest.authority },
+    sourceSemanticHash: "a".repeat(64), compileGraphHash: "b".repeat(64), targetArtifactHash: hash(result.artifact) });
+  assert.deepEqual(receipt.renderedNodeIds, []); assert.deepEqual(receipt.fontSha256, []);
+});
+
 test("rejects corrupted frozen bytes, extra resources and manifest changes", async () => {
   const input = await frozen([node("image")], [resource("img", "image", "image", new Uint8Array([1, 2]))]);
   const corrupt = structuredClone(input); corrupt.resources.img[0] = 9;

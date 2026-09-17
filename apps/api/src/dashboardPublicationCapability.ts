@@ -12,6 +12,8 @@ import {
 const SHA256 = /^[a-f0-9]{64}$/;
 
 export interface DashboardCompiledWindowEvidence {
+  readonly backgroundBindings?: readonly { readonly authorPageId: string; readonly pageId: string;
+    readonly resourceId: string; readonly sourceSha256: string; readonly atlasId: string; readonly pixelSha256: string }[];
   readonly nodeBindings: readonly { readonly nodeId: string; readonly runtimeNodeId: string;
     readonly pageId: string; readonly staticResourceId: string }[];
   readonly fontBindings: readonly { readonly resourceId: string; readonly sha256: string;

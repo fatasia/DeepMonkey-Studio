@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { verifyBackgroundAtlases } from "./dashboardBackgroundEvidence.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const check = (value, reason) => { if (!value) throw new Error(`Dashboard window evidence: ${reason}`); };
@@ -49,7 +50,8 @@ export function bindDashboardWindowEvidence(input, runtime, receipt, runtimeCont
         && JSON.stringify(node.frame) === JSON.stringify([0, 0, entry.width, entry.height])
         && node.deep2d === `${entry.id}.background`
         && runtime.payloads[node.deep2d]?.schema === "deep-engine.deep2d-runtime"
-        && layer.atlasIds.length === 0, "invalid system background layer");
+        && verifyBackgroundAtlases(candidate, windowEvidence, entry, runtime.payloads[node.deep2d], layer, runtimeContentSha256),
+      "invalid system background layer");
       drawn.set(layer.id, layer);
       continue;
     }
@@ -57,6 +59,9 @@ export function bindDashboardWindowEvidence(input, runtime, receipt, runtimeCont
       && (suffix === ":static" ? node.deep2d : node.chart), "draw layer is not on the verified entry page");
     drawn.set(layer.id, layer);
     rendered.add(binding.nodeId);
+  }
+  if (windowEvidence.backgroundBindings?.some(binding => binding.pageId === entry.id)) {
+    check(drawn.has(`${backgroundId}:static`), "missing presented system background layer");
   }
   const fonts = new Map();
   for (const font of windowEvidence.fontBindings) {

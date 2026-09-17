@@ -2,6 +2,8 @@
 
 ### 2026-09-17 主流程与 DE26 范围同步
 
+- 背景系统图集证据：冻结源/页面URL/像素摘要/实际draw身份贯通，漏画整层与替换拒绝；窗口27+API26、正式compiler集成7项全通过，含真实中文与背景Vulkan3帧。整页视觉及HTTP背景图待验。[证据](specs/dashboard-page-image-freeze-2026-09-17.md)
+
 - 背景原生包合成已接独立宿主端口：颜色→背景图→作者节点，页证据不冒充作者证据，解码前累计预算，配方v5；20项编排/资源回归通过。真实producer与系统窗口图集验证待接，未算视觉完成。[范围](specs/dashboard-page-image-freeze-2026-09-17.md)
 
 - 页面背景编译输入已接C3 pageIds，URL/页面/图片类型与唯一归属检查，pageAssets参与编译哈希；3项脚本+19项光栅回归通过，Web类型通过。仅输入接线，绘制与系统层证据下一片继续。[证据](specs/dashboard-page-image-freeze-2026-09-17.md)

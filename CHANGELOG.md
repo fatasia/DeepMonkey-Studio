@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Verify presented Dashboard background atlases against frozen page ownership and pixel hashes without counting them as authored widgets or fonts.
+
 - Compose page background atlases through an explicit background producer, preserving system-layer order and checking memory budgets before decoding. Unconfigured hosts keep backgrounds deferred.
 
 - Bind frozen page images to compiler input and compilation hashes; reject mismatched page URLs, duplicate owners and non-image bindings.

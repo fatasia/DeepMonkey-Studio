@@ -32,3 +32,16 @@
 编排测试覆盖层级、规则传递、有效RuntimePackage、独立页面证据、旧宿主deferred、解码前预算拒绝与生产器异常；2文件20项通过。首轮夹具尺寸小于应用合同最小320而失败，修正为合法尺寸后通过。
 
 本片图片生产器仍由测试桩提供，真实像素、系统窗口图集身份与视觉两轮尚未验证；不计背景图正式交付完成。设计沿用FVS画布背景规则与作者端 `dashboardCanvasStyle.ts`，未新增视觉令牌；视觉十维暂不评分。
+
+## 系统图集呈现证据补验
+
+后续验证已使用真实sharp背景生产器及正式compiler/deployment构建，不再只依赖上节编排桩。页面证据绑定冻结图片SHA、原页面URL、页面归属、编译RGBA摘要和Native命名空间图集身份；缺失整个背景draw、缺图集、重复证据、改像素/来源/页面均拒绝。系统层不增加作者节点或字体完成数。
+
+- 窗口证据27项、API能力/候选26项通过，API typecheck通过；移除编译图集并同时清空draw图集的替换也被拒绝。
+- 正式compiler集成7项全部通过、无跳过，包括真实中文字体与背景窗口。背景为320×320、original+repeat；1张图集409600bytes、1个image quad，RTX4060 Laptop/Vulkan连续3帧，GPU scopes/callbacks clean。
+- Native沿用静态CRT r2 Release，SHA `a729bdee2f8f9782af5302098a17301f691c72844b2284450eef5b0d13032e45`。复跑先构建compiler，再设置 `C2_NATIVE_EXECUTABLE`、`C2_FONT_PATH=C:/Windows/Fonts/msyh.ttc`、`C2_VERIFY_WINDOW=1`，执行 `node --test scripts/dashboard-content-compiler.test.mjs`。
+- 首轮新增证据夹具误把Buffer的JSON摘要当作像素字节摘要而拒绝；改为实际字节SHA后通过，验证规则未放宽。
+
+此验证证明真实图片生产与Native提交，不证明全部定位/平铺的跨端视觉一致性；视觉对照由背景producer切片另行验收，HTTP发布背景图也仍待补验。
+
+上述7项集成在producer提交 `ddcadf0` 后重新构建并复跑通过。该producer的缩放/定位/奇数平铺像素与浏览器对照详见[独立报告](dashboard-page-background-producer-2026-09-17.md)，不替代完整页面的跨宿主验收。

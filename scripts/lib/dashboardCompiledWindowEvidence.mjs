@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { compiledBackgroundBindings } from "./dashboardBackgroundEvidence.mjs";
 
 /** Bind producer receipts to the exact atlas bytes emitted by this compilation. */
 export function dashboardCompiledWindowEvidence(result, input, verifyComposition) {
@@ -35,5 +36,6 @@ export function dashboardCompiledWindowEvidence(result, input, verifyComposition
       }
     }
   }
-  return { nodeBindings, fontBindings };
+  const backgroundBindings = compiledBackgroundBindings(result, input, dashboard);
+  return { nodeBindings, fontBindings, ...(backgroundBindings.length ? { backgroundBindings } : {}) };
 }

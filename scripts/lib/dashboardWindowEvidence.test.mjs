@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile, access } from "node:fs/promises";
 import { bindDashboardWindowEvidence } from "./dashboardWindowEvidence.mjs";
 import { createDashboardNativeWindowVerifier } from "./dashboardNativeWindowVerifier.mjs";
+import { compiledBackgroundBindings } from "./dashboardBackgroundEvidence.mjs";
 
 const hash = value => createHash("sha256").update(typeof value === "string" ? value : JSON.stringify(value)).digest("hex");
 function fixture() {
@@ -57,6 +58,47 @@ function withBackground() {
   f.receipt.report.layers.unshift({ id: `${id}:static`, drawCalls: 1, vertices: 6, atlasIds: [] });
   return f;
 }
+function withBackgroundImage() {
+  const f = withBackground(), page = f.runtime.payloads.dashboard.pages[0];
+  const content = f.runtime.payloads[`${page.id}.background`];
+  content.id = `${page.id}.background`;
+  const pixels = Buffer.from([10, 20, 30, 255]);
+  content.atlases = [{ id: `${content.id}.image`, dataBase64: pixels.toString("base64") }];
+  const resource = { id: "image", kind: "image", pageIds: ["page-main"], sha256: hash("source"), objectKey: "projects/p/image.png" };
+  f.input.candidate.manifest.resources.push(resource);
+  f.input.candidate.document.application.pages[0].appearance = { backgroundImageUrl: `/assets/${resource.objectKey}` };
+  f.input.windowEvidence.backgroundBindings = compiledBackgroundBindings({ package: f.runtime,
+    pageImageEvidence: [{ pageId: "page-main", resourceId: "image", atlasId: content.atlases[0].id,
+      pixelSha256: createHash("sha256").update(pixels).digest("hex") }] },
+    { document: f.input.candidate.document, assets: { image: { sha256: resource.sha256 } }, pageAssets: { "page-main": { image: "image" } } },
+    f.runtime.payloads.dashboard);
+  const layer = f.receipt.report.layers[0];
+  layer.atlasIds = [`dashboard.${hash([layer.id, content.atlases[0].id])}`];
+  return f;
+}
+test("matches a presented page image to frozen ownership and exact pixel bytes without author credit", () => {
+  const f = withBackgroundImage();
+  assert.deepEqual(f.bind().renderedNodeIds, ["author1"]);
+  f.receipt.report.layers.pop();
+  assert.deepEqual(f.bind().renderedNodeIds, []);
+  assert.deepEqual(f.bind().fontSha256, []);
+});
+test("rejects an omitted system background draw rather than silently accepting its receipt", () => {
+  const f = withBackgroundImage(); f.receipt.report.layers.shift();
+  assert.throws(f.bind, /missing presented system background/);
+});
+for (const [name, mutate] of [
+  ["missing receipt", f => { delete f.input.windowEvidence.backgroundBindings; }],
+  ["duplicate receipt", f => { f.input.windowEvidence.backgroundBindings.push(f.input.windowEvidence.backgroundBindings[0]); }],
+  ["pixel tamper", f => { const id = f.runtime.payloads.dashboard.pages[0].nodes[0].deep2d; f.runtime.payloads[id].atlases[0].dataBase64 = "AQ=="; }],
+  ["removed compiled atlas", f => { const id = f.runtime.payloads.dashboard.pages[0].nodes[0].deep2d; f.runtime.payloads[id].atlases = []; f.receipt.report.layers[0].atlasIds = []; }],
+  ["resource owner", f => { f.input.candidate.manifest.resources.at(-1).pageIds = ["another-page"]; }],
+  ["source hash", f => { f.input.windowEvidence.backgroundBindings[0].sourceSha256 = "changed"; }],
+  ["unpresented atlas", f => { f.receipt.report.layers[0].atlasIds = []; }],
+  ["page URL", f => { f.input.candidate.document.application.pages[0].appearance.backgroundImageUrl = "remote"; }],
+]) test(`rejects background image ${name}`, () => {
+  const f = withBackgroundImage(); mutate(f); assert.throws(f.bind, /invalid system background/);
+});
 test("system background draws do not attest an author node or unused font", () => {
   const f = withBackground();
   assert.deepEqual(f.bind().renderedNodeIds, ["author1"]);
