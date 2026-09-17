@@ -99,6 +99,21 @@ pub fn run_package(path: &std::path::Path) -> Result<(), String> {
             cancelled: false,
         })
         .map_err(|error| format!("X runtime package dispatch failed: {error:?}"))?;
+    let deep2d = published
+        .display_list()
+        .map_err(|error| format!("X display publication rejected: {error}"))?
+        .map(|display_list| {
+            let prepared = deep_engine_native::deep2d::prepare_display_list(display_list)
+                .map_err(|error| format!("X Deep2D painter preparation failed: {error:?}"))?;
+            Ok::<_, String>(serde_json::json!({
+                "commands": prepared.summary.commands,
+                "pathSegments": prepared.summary.path_segments,
+                "fillTriangles": prepared.summary.fill_triangles,
+                "strokeTriangles": prepared.summary.stroke_triangles,
+                "vertices": prepared.summary.vertices,
+            }))
+        })
+        .transpose()?;
     let receipt = serde_json::json!({
         "schemaVersion": 1,
         "active": active,
@@ -109,6 +124,7 @@ pub fn run_package(path: &std::path::Path) -> Result<(), String> {
         "requestHash": published.request_hash,
         "outputHash": published.output_hash,
         "messages": published.messages,
+        "deep2d": deep2d,
         "primaryRejection": primary_rejection,
     });
     match store {

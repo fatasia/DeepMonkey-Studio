@@ -1,3 +1,4 @@
+use crate::deep2d::Deep2dDisplayList;
 use serde::{Deserialize, Serialize};
 
 pub const X_COMPATIBILITY_SCHEMA_VERSION: u32 = 1;
@@ -84,6 +85,7 @@ pub enum XCall {
     ReadResourceByte { resource_id: String, offset: usize },
     ReadEvent { index: usize },
     EmitNumber(f64),
+    EmitDisplayList(Box<Deep2dDisplayList>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -98,6 +100,7 @@ pub enum XMessage {
     },
     Event(XEvent),
     Number(f64),
+    DisplayList(Box<Deep2dDisplayList>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

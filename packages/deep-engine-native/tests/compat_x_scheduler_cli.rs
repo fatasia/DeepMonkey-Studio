@@ -133,4 +133,33 @@ fn product_scheduler_requires_fixed_worker_and_runs_only_lpac() {
     .unwrap();
     assert_eq!(recovered_receipt["active"], "last-known-good");
     assert_eq!(recovered_receipt["messages"], receipt["messages"]);
+
+    let display_path = package.0.join("display-runtime-v6.json");
+    std::fs::copy(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../deep-engine/fixtures/experimental-x-display-runtime-v6.json"),
+        &display_path,
+    )
+    .unwrap();
+    let display_output = Command::new(&player)
+        .args(["--headless-x-package", display_path.to_str().unwrap()])
+        .env("LOCALAPPDATA", package.0.join("local"))
+        .output()
+        .unwrap();
+    assert!(
+        display_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&display_output.stderr)
+    );
+    let display_stdout = String::from_utf8_lossy(&display_output.stdout);
+    let display_receipt: serde_json::Value = serde_json::from_str(
+        display_stdout
+            .strip_prefix("Deep2D X runtime package OK: ")
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(display_receipt["messages"][0]["type"], "display-list");
+    assert_eq!(display_receipt["deep2d"]["commands"], 1);
+    assert_eq!(display_receipt["deep2d"]["fillTriangles"], 1);
 }

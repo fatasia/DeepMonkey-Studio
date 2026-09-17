@@ -1,4 +1,5 @@
 import type { BuildDeepRuntimePackageInput, DeepRuntimePackageV2, RuntimeContentHash, RuntimeResourceIndexEntry } from "./types.js";
+import type { Deep2dDisplayList } from "../deep2dDisplayList.js";
 
 export type XEvent = { readonly type: "pointer"; readonly data: { readonly x: number; readonly y: number } }
   | { readonly type: "key"; readonly data: { readonly code: "enter" | "escape" | "arrow-left" | "arrow-right" } };
@@ -6,7 +7,8 @@ export type XCall = { readonly op: "sequence"; readonly args: readonly XCall[] }
   | { readonly op: "read-clock" | "draw-random" }
   | { readonly op: "read-resource-byte"; readonly args: { readonly resource_id: string; readonly offset: number } }
   | { readonly op: "read-event"; readonly args: { readonly index: number } }
-  | { readonly op: "emit-number"; readonly args: number };
+  | { readonly op: "emit-number"; readonly args: number }
+  | { readonly op: "emit-display-list"; readonly args: Deep2dDisplayList };
 export interface XRequest {
   readonly schemaVersion: 1;
   readonly expectedEpoch: number;

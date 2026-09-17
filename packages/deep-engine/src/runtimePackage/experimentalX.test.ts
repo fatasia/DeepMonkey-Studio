@@ -40,6 +40,27 @@ describe("experimental X author compilation", () => {
       expect(() => freezeExperimentalXResource("x:status", 1, { ...valid, calls } as never)).toThrow();
     }
   });
+  it("freezes a validated Deep2D batch and rejects malformed draw content", () => {
+    const displayList = { schemaVersion: 1 as const, id: "x.layer", revision: 1,
+      logicalWidth: 320, logicalHeight: 180, scaleFactor: 1,
+      resources: [{ kind: "path" as const, id: "shape", revision: 1,
+        verbs: [{ op: "move" as const, x: 10, y: 10 }, { op: "line" as const, x: 80, y: 10 },
+          { op: "line" as const, x: 45, y: 70 }, { op: "close" as const }] }],
+      commands: [{ kind: "path" as const, id: "shape.paint", zOrder: 0, transform: [1, 0, 0, 1, 0, 0] as const,
+        pathId: "shape", fill: [0.1, 0.7, 0.9, 1] as const }] };
+    const frozen = freezeExperimentalXResource("x:display", 1, { ...request(), calls: [{ op: "emit-display-list", args: displayList }] });
+    expect(frozen.payload.content.request.calls).toEqual([{ op: "emit-display-list", args: displayList }]);
+    const compiled = buildExperimentalXRuntimePackage({ ...input(), packageId: "x.display",
+      experimentalX: { id: "x:display", revision: 1, request: { ...request(), expectedEpoch: 9, startedAtMs: 200,
+        randomSeed: 7, calls: [{ op: "emit-display-list", args: displayList }] } } });
+    expect(compiled.packageJson).toBe(readFileSync(new URL("../../fixtures/experimental-x-display-runtime-v6.json", import.meta.url), "utf8").trim());
+    expect(() => freezeExperimentalXResource("x:display", 1, { ...request(), calls: [
+      { op: "emit-display-list", args: { ...displayList, commands: [{ ...displayList.commands[0]!, pathId: "missing" }] } },
+    ] })).toThrow("missing");
+    expect(() => freezeExperimentalXResource("x:display", 1, { ...request(), calls: [
+      { op: "sequence", args: [{ op: "emit-display-list", args: displayList }, { op: "emit-display-list", args: displayList }] },
+    ] })).toThrow("only one");
+  });
   it("rejects unsafe integers, cycles, depth and message excess", () => {
     expect(() => freezeExperimentalXResource("x", 1, { ...request(), randomSeed: Number.MAX_SAFE_INTEGER + 1 })).toThrow();
     expect(() => freezeExperimentalXResource("x", 1, { ...request(), calls: Array.from({ length: 1025 }, () => ({ op: "read-clock" as const })) })).toThrow();

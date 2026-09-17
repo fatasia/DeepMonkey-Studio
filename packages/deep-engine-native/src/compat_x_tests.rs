@@ -298,3 +298,61 @@ fn invalid_resources_events_and_numbers_never_produce_partial_messages() {
         Err(XRejection::InvalidInput(_))
     ));
 }
+
+#[test]
+fn display_batch_is_validated_budgeted_and_consumed_by_the_real_painter() {
+    let bytes = std::fs::read(crate::deep2d::default_display_list_fixture_path()).unwrap();
+    let display = crate::deep2d::decode_display_list(&bytes).unwrap();
+    let candidate = host(XBudget::default())
+        .evaluate(
+            CompatibilityLane::ExperimentalX,
+            &request(vec![XCall::EmitDisplayList(Box::new(display.clone()))]),
+            context(7, 100),
+        )
+        .unwrap();
+    let XMessage::DisplayList(published) = &candidate.messages()[0] else {
+        panic!("expected a typed display-list message");
+    };
+    assert_eq!(published.as_ref(), &display);
+    let prepared = crate::deep2d::prepare_display_list(published).unwrap();
+    assert!(prepared.summary.commands > 0 && prepared.summary.fill_triangles > 0);
+
+    let mut invalid = display.clone();
+    if let crate::deep2d::Deep2dCommand::Path(command) = &mut invalid.commands[0] {
+        command.path_id = "missing".into();
+    }
+    assert!(matches!(
+        host(XBudget::default()).evaluate(
+            CompatibilityLane::ExperimentalX,
+            &request(vec![XCall::EmitDisplayList(Box::new(invalid))]),
+            context(7, 100),
+        ),
+        Err(XRejection::InvalidInput("display list is invalid"))
+    ));
+    assert_eq!(
+        host(XBudget {
+            max_message_bytes: 8,
+            ..XBudget::default()
+        })
+        .evaluate(
+            CompatibilityLane::ExperimentalX,
+            &request(vec![XCall::EmitDisplayList(Box::new(display))]),
+            context(7, 100),
+        ),
+        Err(XRejection::MessageBudgetExceeded)
+    );
+    let display = crate::deep2d::decode_display_list(&bytes).unwrap();
+    assert!(matches!(
+        host(XBudget::default()).evaluate(
+            CompatibilityLane::ExperimentalX,
+            &request(vec![XCall::Sequence(vec![
+                XCall::EmitDisplayList(Box::new(display.clone())),
+                XCall::EmitDisplayList(Box::new(display)),
+            ])]),
+            context(7, 100),
+        ),
+        Err(XRejection::InvalidInput(
+            "only one display list may be published per epoch"
+        ))
+    ));
+}

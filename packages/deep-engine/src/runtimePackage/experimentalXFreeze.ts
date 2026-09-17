@@ -1,6 +1,7 @@
 import { array, fields, integer, record, requireValue, resourceId, revision, snapshotJson } from "./primitives.js";
 import { runtimeContentSha256 } from "./hash.js";
 import type { XRequest, XResourceIndex, XResourcePayload } from "./experimentalXTypes.js";
+import { validateDeep2dDisplayList } from "../deep2dDisplayList.js";
 
 const MAX_MEMORY = 8 * 1024 * 1024, MAX_IPC = 4 * 1024 * 1024;
 const safe = (value: unknown, path: string): number => integer(value, 0, Number.MAX_SAFE_INTEGER, path);
@@ -18,7 +19,7 @@ export function freezeExperimentalXResource(id: string, resourceRevision: number
   requireValue(request.schemaVersion === 1, "$.request.schemaVersion", "Unsupported X schema.");
   for (const key of ["expectedEpoch", "startedAtMs", "randomSeed"]) safe(request[key], `$.request.${key}`);
   const resources = new Map<string, number>();
-  let resident = 0, messageBytes = 0, messages = 0, cpu = 0;
+  let resident = 0, messageBytes = 0, messages = 0, cpu = 0, displayLists = 0;
   for (const item of array(request.resources, "$.request.resources")) {
     const value = record(item, "$.resource"); fields(value, ["id", "bytes"], [], "$.resource");
     const key = injectedResourceId(value.id);
@@ -61,6 +62,14 @@ export function freezeExperimentalXResource(id: string, resourceRevision: number
       const args = record(value.args, "$.call.args"); fields(args, ["index"], [], "$.call.args");
       const index = safe(args.index, "$.call.index"); requireValue(index < eventSizes.length, "$.call", "Invalid event index."); size = eventSizes[index]!;
     } else if (op === "emit-number") finite(value.args, "$.call.args");
+    else if (op === "emit-display-list") {
+      displayLists++;
+      requireValue(displayLists <= 1, "$.call.args", "X output may contain only one Deep2D display list.");
+      const validation = validateDeep2dDisplayList(value.args);
+      requireValue(validation.valid, "$.call.args", validation.issues[0]?.message ?? "Invalid Deep2D display list.");
+      size = new TextEncoder().encode(JSON.stringify(value.args)).length;
+      resident += size;
+    }
     else requireValue(op === "read-clock" || op === "draw-random", "$.call.op", "Unknown X operation.");
     messages++; messageBytes += size; checkBudget();
   }

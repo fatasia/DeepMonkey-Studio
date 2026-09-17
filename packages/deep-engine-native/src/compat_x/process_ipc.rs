@@ -112,6 +112,7 @@ pub(super) fn validate_receipt(
         return Err(XProcessError::InvalidReceipt);
     }
     let candidate = receipt.result.map_err(XProcessError::WorkerRejected)?;
+    host::validate_messages(&candidate.messages).map_err(|_| XProcessError::InvalidReceipt)?;
     let request_hash =
         crate::shader_package::hash::hash_canonical(&host::request_hash_value(request));
     let messages = serde_json::Value::Array(

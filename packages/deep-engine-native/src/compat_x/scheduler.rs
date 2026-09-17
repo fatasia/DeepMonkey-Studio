@@ -14,6 +14,21 @@ pub struct XPublishedOutput {
     pub messages: Vec<XMessage>,
 }
 
+impl XPublishedOutput {
+    /// X can publish one isolated Deep2D layer per epoch; non-display messages remain diagnostics.
+    pub fn display_list(&self) -> Result<Option<&crate::deep2d::Deep2dDisplayList>, &'static str> {
+        let mut display = None;
+        for message in &self.messages {
+            if let XMessage::DisplayList(candidate) = message
+                && display.replace(candidate.as_ref()).is_some()
+            {
+                return Err("X output contains more than one display list");
+            }
+        }
+        Ok(display)
+    }
+}
+
 #[derive(Default)]
 pub struct XContentScheduler {
     config: XProcessConfig,
@@ -98,6 +113,7 @@ impl XContentScheduler {
         let messages = host
             .publish(content.lane, candidate, context())
             .map_err(XProcessError::Rejected)?;
+        super::host::validate_messages(&messages).map_err(|_| XProcessError::InvalidReceipt)?;
         self.last_known_good = Some(XPublishedOutput {
             epoch: request.expected_epoch,
             request_hash,

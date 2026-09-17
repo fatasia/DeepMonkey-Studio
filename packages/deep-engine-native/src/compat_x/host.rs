@@ -44,6 +44,7 @@ impl XCompatibilityHost {
         for call in &request.calls {
             state.evaluate(call, 1)?;
         }
+        validate_messages(&state.messages)?;
         let request_value = request_hash_value(request);
         let output_value = Value::Array(state.messages.iter().map(message_hash_value).collect());
         Ok(XCandidate {
@@ -104,6 +105,24 @@ impl XCompatibilityHost {
     }
 }
 
+pub(super) fn validate_messages(messages: &[XMessage]) -> Result<(), XRejection> {
+    let mut display_lists = 0usize;
+    for message in messages {
+        if let XMessage::DisplayList(display_list) = message {
+            display_lists += 1;
+            if display_lists > 1 {
+                return Err(XRejection::InvalidInput(
+                    "only one display list may be published per epoch",
+                ));
+            }
+            if !crate::deep2d::validate_display_list(display_list).valid {
+                return Err(XRejection::InvalidInput("display list is invalid"));
+            }
+        }
+    }
+    Ok(())
+}
+
 // Floats are part of the contract as IEEE-754 bit strings. This avoids runtime-
 // specific decimal formatting and preserves signed zero without admitting NaN.
 fn float_bits(value: f64) -> String {
@@ -149,6 +168,9 @@ fn call_hash_value(call: &XCall) -> Value {
         XCall::EmitNumber(value) => {
             json!({ "op": "emit-number", "valueBits": float_bits(*value) })
         }
+        XCall::EmitDisplayList(display_list) => {
+            json!({ "op": "emit-display-list", "displayList": display_list })
+        }
     }
 }
 
@@ -184,6 +206,9 @@ pub(super) fn message_hash_value(message: &XMessage) -> Value {
         XMessage::Event(event) => json!({ "type": "event", "event": event_hash_value(event) }),
         XMessage::Number(value) => {
             json!({ "type": "number", "valueBits": float_bits(*value) })
+        }
+        XMessage::DisplayList(display_list) => {
+            json!({ "type": "display-list", "displayList": display_list })
         }
     }
 }
@@ -318,6 +343,13 @@ impl<'a> EvaluationState<'a> {
                 }
                 self.emit(XMessage::Number(*value))?;
             }
+            XCall::EmitDisplayList(display_list) => {
+                let validation = crate::deep2d::validate_display_list(display_list);
+                if !validation.valid {
+                    return Err(XRejection::InvalidInput("display list is invalid"));
+                }
+                self.emit(XMessage::DisplayList(display_list.clone()))?;
+            }
         }
         Ok(())
     }
@@ -352,6 +384,9 @@ pub(super) fn message_bytes(message: &XMessage) -> usize {
         XMessage::ResourceByte { resource_id, .. } => 17 + resource_id.len(),
         XMessage::Event(XEvent::Pointer { .. }) => 17,
         XMessage::Event(XEvent::Key { .. }) => 2,
+        XMessage::DisplayList(display_list) => serde_json::to_vec(display_list)
+            .map(|bytes| bytes.len())
+            .unwrap_or(usize::MAX),
     }
 }
 
@@ -363,5 +398,8 @@ fn call_bytes(call: &XCall) -> usize {
         | XCall::DrawRandom
         | XCall::ReadEvent { .. }
         | XCall::EmitNumber(_) => 0,
+        XCall::EmitDisplayList(display_list) => serde_json::to_vec(display_list)
+            .map(|bytes| bytes.len())
+            .unwrap_or(usize::MAX),
     }
 }
