@@ -1,0 +1,186 @@
+diff --git a/native/crates/cad-xt/src/geom.rs b/native/crates/cad-xt/src/geom.rs
+--- a/native/crates/cad-xt/src/geom.rs
++++ b/native/crates/cad-xt/src/geom.rs
+@@ -466,4 +466,57 @@ pub fn projected_intersection_polyline(
+     (points.len() > 2).then(|| Curve::Polyline { points })
+ }
+ 
++/// Refine a chart onto one known surface while retaining the chart's branch.
++///
++/// This is the inexpensive form for a blend boundary: the exact blend surface
++/// is costly to reconstruct, but the same edge is also defined on its analytic
++/// mating surface. The chart selects the curve; projection removes its chordal
++/// departure from that known surface.
++pub fn projected_surface_polyline(
++    surface: &Surface,
++    guide: &[Vec3],
++    tolerance: f64,
++    guide_slack: f64,
++) -> Option<Curve> {
++    let project = |seed: Vec3| {
++        let point = surface.point_at(surface.invert(seed, None)?);
++        ((point - seed).length() <= guide_slack).then_some(point)
++    };
++    fn refine(
++        surface: &Surface,
++        seed0: Vec3,
++        point0: Vec3,
++        seed1: Vec3,
++        point1: Vec3,
++        tolerance: f64,
++        slack: f64,
++        depth: u8,
++        out: &mut Vec<Vec3>,
++    ) -> Option<()> {
++        let seed_mid = seed0.lerp(seed1, 0.5);
++        let point_mid = surface.point_at(surface.invert(seed_mid, None)?);
++        if (point_mid - seed_mid).length() > slack {
++            return None;
++        }
++        let sag = (point_mid - point0.lerp(point1, 0.5)).length();
++        if sag > tolerance * 0.5 && depth < 12 {
++            refine(surface, seed0, point0, seed_mid, point_mid, tolerance, slack, depth + 1, out)?;
++            refine(surface, seed_mid, point_mid, seed1, point1, tolerance, slack, depth + 1, out)?;
++        } else {
++            out.push(point1);
++        }
++        Some(())
++    }
++
++    let first = *guide.first()?;
++    let mut point0 = project(first)?;
++    let mut points = vec![point0];
++    for seeds in guide.windows(2) {
++        let point1 = project(seeds[1])?;
++        refine(surface, seeds[0], point0, seeds[1], point1, tolerance, guide_slack, 0, &mut points)?;
++        point0 = point1;
++    }
++    (points.len() > 2).then(|| Curve::Polyline { points })
++}
++
+ /// Lower a surface for the purpose of computing a curve on it.
+diff --git a/native/crates/cad-xt/src/topo.rs b/native/crates/cad-xt/src/topo.rs
+--- a/native/crates/cad-xt/src/topo.rs
++++ b/native/crates/cad-xt/src/topo.rs
+@@ -2525,6 +2525,56 @@ impl<'a> Lowering<'a> {
+         let needs_blend = [first, second]
+             .iter()
+             .any(|e| e.type_id == xt::BLENDED_EDGE || e.type_id == xt::BLEND_BOUND);
++
++        const PROBES: usize = 16;
++        let mut widest = 0.0f64;
++        let mut previous = curve.point_at(range.lo);
++        for i in 1..=PROBES {
++            let q = curve.point_at(range.at(i as f64 / PROBES as f64));
++            widest = widest.max((q - previous).length());
++            previous = q;
++        }
++        if widest <= tolerance * 20.0 {
++            { if std::env::var_os("XT_WALK_TRACE").is_some() { eprintln!("[walk] body#{} curve {curve_ptr} refused at guard 2", BODY_NO.with(|b| b.get())); } return None; }
++        }
++        let slack = {
++            let chart = self.index.get(&ptr(self.entities, ie, 8)).filter(|c| c.type_id == xt::CHART);
++            let stated = chart.map(|c| f64_at(self.entities, c, 3).abs()).unwrap_or(0.0);
++            stated.max(widest).max(self.solid.tolerance) + tolerance
++        };
++        let chart_points: Vec<Vec3> = (0..=PROBES)
++            .map(|i| curve.point_at(range.at(i as f64 / PROBES as f64)))
++            .collect();
++        let chart_guide = || {
++            let mut guide = chart_points.clone();
++            let direct = (guide[0] - p0).length() + (guide[guide.len() - 1] - p1).length();
++            let reverse = (guide[0] - p1).length() + (guide[guide.len() - 1] - p0).length();
++            if reverse < direct {
++                guide.reverse();
++            }
++            guide[0] = p0;
++            let last = guide.len() - 1;
++            guide[last] = p1;
++            guide
++        };
+         if needs_blend && reaches_ends(curve, range, p0, p1, tolerance) {
++            let known = [first, second]
++                .into_iter()
++                .find(|e| e.type_id != xt::BLENDED_EDGE && e.type_id != xt::BLEND_BOUND)
++                .and_then(|e| self.curve_surface(e));
++            let guide = chart_guide();
++            if let Some(candidate) = known.as_ref().and_then(|surface| {
++                geom::projected_surface_polyline(surface, &guide, tolerance, slack)
++            }) {
++                let stays_near = match &candidate {
++                    Curve::Polyline { points } => points
++                        .iter()
++                        .all(|q| distance_to_polyline(*q, &chart_points) <= slack),
++                    _ => false,
++                };
++                if stays_near {
++                    return Some(candidate);
++                }
++            }
+             give_up!("the chart already reaches this edge's ends")
+         }
+@@ -2554,14 +2606,3 @@ impl<'a> Lowering<'a> {
+-        const PROBES: usize = 16;
+-        let mut widest = 0.0f64;
+-        let mut previous = curve.point_at(range.lo);
+-        for i in 1..=PROBES {
+-            let q = curve.point_at(range.at(i as f64 / PROBES as f64));
+-            widest = widest.max((q - previous).length());
+-            previous = q;
+-        }
+-        if widest <= tolerance * 20.0 {
+-            { if std::env::var_os("XT_WALK_TRACE").is_some() { eprintln!("[walk] body#{} curve {curve_ptr} refused at guard 2", BODY_NO.with(|b| b.get())); } return None; }
+-        }
+         let Some(walked) = geom::intersection_polyline(&a, &b, p0, p1, tolerance) else {
+             give_up!("the walk did not arrive")
+         };
+@@ -2575,22 +2609,11 @@ impl<'a> Lowering<'a> {
+-        let slack = {
+-            let chart = self.index.get(&ptr(self.entities, ie, 8)).filter(|c| c.type_id == xt::CHART);
+-            let stated = chart.map(|c| f64_at(self.entities, c, 3).abs()).unwrap_or(0.0);
+-            stated.max(widest).max(self.solid.tolerance) + tolerance
+-        };
+-        let chart_points: Vec<Vec3> = (0..=PROBES)
+-            .map(|i| curve.point_at(range.at(i as f64 / PROBES as f64)))
+-            .collect();
+         let Curve::Polyline { points } = &walked else {
+             { if std::env::var_os("XT_WALK_TRACE").is_some() { eprintln!("[walk] refused at guard 4"); } return None; }
+         };
+         let on_branch = points.iter().all(|q| distance_to_polyline(*q, &chart_points) <= slack);
+         if on_branch {
+             return Some(walked);
+         }
+-        let mut guide = chart_points.clone();
+-        guide[0] = p0;
+-        let last = guide.len() - 1;
+-        guide[last] = p1;
++        let guide = chart_guide();
+         if let Some(candidate) = geom::projected_intersection_polyline(&a, &b, &guide, tolerance, slack) {
+             let stays_near = match &candidate {
+                 Curve::Polyline { points } => points
+@@ -3385,4 +3415,25 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn a_blend_chart_can_be_refined_on_its_known_mating_surface() {
++        let cylinder = Surface::Cylinder {
++            frame: Frame::new(Vec3::ZERO, Vec3::Z, Vec3::X),
++            radius: 10.0,
++        };
++        let guide = [
++            Vec3::new(10.0, 0.0, 0.0),
++            Vec3::new(7.07, 7.07, 0.0),
++            Vec3::new(0.0, 10.0, 0.0),
++        ];
++        let refined = geom::projected_surface_polyline(&cylinder, &guide, 1e-4, 1.0)
++            .expect("the chart projects onto its analytic mating surface");
++        let Curve::Polyline { points } = refined else { panic!("expected a polyline") };
++        assert!(points.len() > guide.len());
++        for q in points {
++            assert!(q.x >= -1e-9 && q.y >= -1e-9, "projection left the chart quadrant: {q:?}");
++            assert!((q.x.hypot(q.y) - 10.0).abs() < 1e-9);
++        }
++    }
++
+     /// A quarter-round fillet of radius 2 in the crease between the plane
