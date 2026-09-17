@@ -12,6 +12,14 @@
 
 ---
 
+### 2026-09-17 Deep2D P2-01 版本/hash 收口 + P2-04 首版认证报告（Codex）
+
+- 已完成：`compat_x` 拆分模块纳入自洽提交 `9050ce9`；X schema v1、未知版本拒绝、浮点 IEEE-754 bit hash 视图、固定 request/output SHA-256 已冻结。聚焦 6/6、Native fmt、clippy `-D warnings` 通过。
+- 已完成：[P2 首版认证与淘汰报告](specs/deep2d-p2-certification-report-2026-09-17.md)，逐条记录 X 隔离、ZRender 6.1.0 动态 bar、富文本/IME 的准入、淘汰、hash、预算和上一 epoch 保持；HTML rich text、ECharts-GL、任意扩展保持 blocked。
+- 未关闭：X 独立进程/IPC/崩溃隔离，完整 Painter formatter/图片/tooltip/动画，真实 Windows IME 与 bidi/fallback/换行像素证据；P2-04 报告不冒充 P2 全部完成。
+
+---
+
 ### 2026-09-17 工业格式 X_T 真实语料扩充（Codex；本地评估，不分发）
 
 - 已完成：从 Asmith 制造商公开 3D 下载页取得铰链分类工件；外层实际为 RAR，22,182,888 字节，SHA-256 `cdf54f79edf0ad19c91213c2ca5fd1d51f8acd582d3fd0f024201b3a477cde90`。路径安全检查后展开 39 个子包，得到 109 份真实 X_T，共 33,986,456 字节，109 个内容 hash 均唯一。
