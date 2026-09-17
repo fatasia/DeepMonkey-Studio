@@ -4,6 +4,14 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+### Native scene updates
+
+- Preflight scene resource budgets and revisions without mutating cache state; reject inadmissible dropped packages before preview rendering and recheck at commit.
+
+### GPU transient resources
+
+- Bound pooled frame textures to a configurable byte budget, evict only submitted idle targets, and report budget refusals without destroying in-flight textures.
+
 ### Viewer scheduling
 
 - Preserve redraw requests raised during rendering, including the final pose when continuous animation stops inside a frame.

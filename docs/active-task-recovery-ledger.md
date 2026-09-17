@@ -1,5 +1,16 @@
 ## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
 
+### 2026-09-17 DE26/B05 transient 预算（Codex）
+
+- 已完成切片：`dee98ef` 给唯一纹理池加可配默认 512 MiB 预算；只淘汰此前已提交的空闲目标，保护在途纹理，忙碌超额在分配前拒绝。
+- 14 聚焦、WebGPU 1130 passed/22 skipped、typecheck/build/purity/repository 通过；真机 64 bytes 预算 4 次拒绝、3 次淘汰、4 次像素读回匹配，resize/dispose 归零，设备恢复分配全新资源。原始报告哈希已复核。
+- 本轮待办：B05 跨域总预算、上传节流和自动质量策略；截图 unavailable，视觉未验收。全局 source-size 17 项超限和另一个 local-spot-shadow 读回失败不计通过。[证据](specs/de26-b05-transient-budget-2026-09-17.md)
+
+### 2026-09-17 X_T 最后超差支撑域诊断（Codex）
+
+- 已完成诊断切片：`56b4b87` 新增可复跑源支撑域检查及负对照；当前有限 NURBS 域与引用的交线点不相容，未放宽 0.01 mm，最后 mismatch 仍保留。
+- 本轮待办：继续查遗漏映射/替代支撑及 181 unresolved；不能据当前 Reader 的域不相容判定整个源文件损坏。[证据](reports/industrial-x-t-intersection-support-domain-2026-09-17.md)
+
 ### 2026-09-17 3DM 非矩形圆柱裁剪（Codex）
 
 - 已完成切片：`ab86f96` 复用 trim 与源 NURBS 求值，按导数界切分裁剪三角；MechPartA 无缓存 10/41→14/41 面，源物理预算不变。
