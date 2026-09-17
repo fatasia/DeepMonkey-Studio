@@ -21,6 +21,11 @@ export type {
 } from "./sceneState.js";
 export type { TransformPatch, TransformState, Vector3State } from "./sceneTransform.js";
 
+export { BENCHMARK_SAMPLE_SCHEMA_VERSION, channelMedianMs, createSampleWindow,
+  validateSampleWindow } from "./benchmarkSampleSchema.js";
+export type { ChannelSample, SampleChannel, SampleClockId, SampleValidationIssue,
+  SampleWindow } from "./benchmarkSampleSchema.js";
+
 export { RenderGraphBuilder } from "./renderGraph.js";
 export type {
   RenderGraphCompileResult,

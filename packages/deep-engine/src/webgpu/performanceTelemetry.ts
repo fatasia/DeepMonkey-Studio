@@ -98,6 +98,15 @@ export class EnginePerformanceTelemetry {
     });
   }
 
+  /** Returns retained raw values in frame order for benchmark-window consumers. */
+  samples(stage: EngineTimingStage): readonly number[] {
+    const frameIds = [...this.frames.keys()].sort((left, right) => left - right);
+    return frameIds.flatMap(frame => {
+      const value = this.frames.get(frame)?.get(stage);
+      return value === undefined ? [] : [value];
+    });
+  }
+
   /** Clears retained values while keeping a barrier against late samples from the old window. */
   reset(): void {
     for (const frame of this.frames.keys()) this.evictedThrough = Math.max(this.evictedThrough, frame);

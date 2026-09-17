@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { EnginePerformanceTelemetry } from "./performanceTelemetry.js";
 
 describe("EnginePerformanceTelemetry", () => {
+  it("exposes retained raw samples in frame order without synthesizing missing stages", () => {
+    const telemetry = new EnginePerformanceTelemetry(16, true);
+    telemetry.record({ frame: 8, timings: { "gpu-frame": 4 } });
+    telemetry.record({ frame: 3, timings: { "gpu-frame": 2, "queue-submit": 1 } });
+    telemetry.record({ frame: 5, timings: { "queue-submit": 1.5 } });
+    expect(telemetry.samples("gpu-frame")).toEqual([2, 4]);
+    expect(telemetry.samples("queue-submit")).toEqual([1, 1.5]);
+    telemetry.reset();
+    expect(telemetry.samples("gpu-frame")).toEqual([]);
+  });
+
   it("merges late GPU samples and reports nearest-rank quantiles with coverage", () => {
     const telemetry = new EnginePerformanceTelemetry(16, true);
     for (let frame = 1; frame <= 20; frame++) {
