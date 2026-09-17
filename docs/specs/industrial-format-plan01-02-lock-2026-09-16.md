@@ -119,3 +119,22 @@ pnpm exec tsx scripts/verify-xt-native-corpus.mts data/external-assets/format-re
 - 独立 typed IR 审计复跑为 109 个 `incomplete`、0 个解析错误：保留 exterior shell 计数差异与 missing-fin-edge 诊断。CLI 使用另一条 cad-xt lowering，计数一致不能替代拓扑语义、源映射、单位和几何精度验证。
 
 补丁、来源和聚焦测试见 [实体流修复](industrial-xt-legacy-stream-2026-09-17.md) 与 [数值修复](industrial-x-t-distance-panic-2026-09-17.md)。原始样本和研究源码不提交；许可逐文件归档、独立来源保留集、质量报告和正式 Worker 接线仍待完成。
+
+### 6.1 独立源计数对拍
+
+审计工具现在额外输出原始 BODY、FACE 和唯一 FACE 数，不采用转换器自身分母。`audit-xt-source-counts.mjs` 对两份结果逐源一一匹配，拒绝缺项、重复项、错误计数及旧版无计数报告；失败解析/重复 FACE 不计通过。
+
+109 个样本中 106 个与源计数一致，以下 3 个仍需逐面语义核查。此结果不将差额直接定义为几何丢失，也不将 CLI 的 109 个自报一致视为源完整性认证。
+
+| 样本 | 原始唯一 FACE | CLI 面分母 |
+| --- | ---: | ---: |
+| A-1230-60-22 | 217 | 215 |
+| AS-2520 | 37 | 34 |
+| AA-0220RB | 70 | 60 |
+
+```text
+node --test scripts/lib/xtSourceCountAudit.test.mjs
+node scripts/audit-xt-source-counts.mjs test-output/xt-research-source-counts/report.tsv test-output/xt-native-corpus-fixed/evidence.json test-output/xt-source-count-comparison.json
+```
+
+比较产物 SHA-256 `8dd5642edbeda8bcd549ce5ffc070595c6e30a6387d248de9d66ac01613e8dfd`，绑定两份输入报告 hash。聚焦 3 项通过，Rust 审计新旧 parser 两套 2+4 项通过；旧 parser 仍为 49 incomplete/60 parse-error。计数不是面积、孔洞、坐标或装配参考验证。

@@ -95,7 +95,33 @@ fn graph_findings(entities: &[RawEntity], bodies: &[XtBody]) -> BTreeMap<String,
     findings
 }
 
-fn audit(path: &Path) -> Result<BTreeMap<String, usize>, String> {
+#[derive(Debug, Default)]
+struct SourceCounts {
+    bodies: usize,
+    faces: usize,
+    unique_faces: usize,
+}
+
+fn source_counts(entities: &[RawEntity]) -> SourceCounts {
+    SourceCounts {
+        bodies: entities
+            .iter()
+            .filter(|entity| entity.type_id == schema::BODY)
+            .count(),
+        faces: entities
+            .iter()
+            .filter(|entity| entity.type_id == schema::FACE)
+            .count(),
+        unique_faces: entities
+            .iter()
+            .filter(|entity| entity.type_id == schema::FACE)
+            .map(|entity| entity.index)
+            .collect::<BTreeSet<_>>()
+            .len(),
+    }
+}
+
+fn audit(path: &Path) -> Result<(BTreeMap<String, usize>, SourceCounts), String> {
     if std::fs::metadata(path).map_err(|e| e.to_string())?.len() > MAX_BYTES {
         return Err("file byte budget exceeded".into());
     }
@@ -148,7 +174,7 @@ fn audit(path: &Path) -> Result<BTreeMap<String, usize>, String> {
     if bodies.is_empty() {
         findings.insert("no-bodies".into(), 1);
     }
-    Ok(findings)
+    Ok((findings, source_counts(&entities)))
 }
 
 fn run() -> Result<(), String> {
@@ -165,15 +191,31 @@ fn run() -> Result<(), String> {
     }
     let mut totals = BTreeMap::<&str, usize>::new();
     for path in files {
-        let (status, detail) = match std::panic::catch_unwind(|| audit(&path)) {
-            Ok(Ok(findings)) if findings.is_empty() => ("audit-clear-unverified", String::new()),
-            Ok(Ok(findings)) => ("incomplete", format!("{findings:?}")),
-            Ok(Err(error)) => ("parse-error", error),
-            Err(_) => ("panic", "parser panic".into()),
+        let (status, detail, counts) = match std::panic::catch_unwind(|| audit(&path)) {
+            Ok(Ok((findings, counts))) => (
+                if findings.is_empty() {
+                    "audit-clear-unverified"
+                } else {
+                    "incomplete"
+                },
+                format!("{findings:?}"),
+                Some(counts),
+            ),
+            Ok(Err(error)) => ("parse-error", error, None),
+            Err(_) => ("panic", "parser panic".into(), None),
         };
         *totals.entry(status).or_default() += 1;
+        let counts = counts.map_or_else(
+            || "null".into(),
+            |counts| {
+                format!(
+                    "{{\"bodies\":{},\"faces\":{},\"uniqueFaces\":{}}}",
+                    counts.bodies, counts.faces, counts.unique_faces,
+                )
+            },
+        );
         println!(
-            "{status}\t{:?}\t{detail:?}",
+            "{status}\t{:?}\t{detail:?}\t{counts}",
             path.strip_prefix(&root).unwrap_or(&path)
         );
     }
@@ -262,5 +304,14 @@ mod tests {
         let result = graph_findings(&[entity(schema::FACE, 7), entity(schema::FACE, 7)], &[]);
         assert_eq!(result.get("duplicate-type-index"), Some(&1));
         assert!(result.contains_key("entity-count-14-2-to-0"));
+        let counts = source_counts(&[
+            entity(schema::FACE, 7),
+            entity(schema::FACE, 7),
+            entity(schema::BODY, 1),
+        ]);
+        assert_eq!(
+            (counts.bodies, counts.faces, counts.unique_faces),
+            (1, 2, 1)
+        );
     }
 }
