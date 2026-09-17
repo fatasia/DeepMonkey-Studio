@@ -6,6 +6,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Dashboard offline packages
 
+- Bound deployed EXE reads to the initial file size, reject concurrent changes, and check cancellation between chunks when building offline packages.
+
 - Reject Native presentation evidence that maps a drawn layer to an author node on a different page.
 
 - Compile multi-page layouts from one validated document snapshot, preserving the published entry page and avoiding repeated whole-document copies.
