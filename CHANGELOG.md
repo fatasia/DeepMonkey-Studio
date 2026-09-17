@@ -6,7 +6,7 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ### Native scene updates
 
-- Keep previous GPU scene resources until a full live package presents successfully; restore its surface on candidate failure and defer minimized-window rebuilds.
+- Keep previous GPU scene resources until full live or dropped packages present successfully; restore the old surface on candidate failure and defer minimized-window rebuilds.
 
 - Apply the same presentation barrier to live RuntimePackage scene and shader updates, with separate retry routes for 3D and Deep2D content.
 

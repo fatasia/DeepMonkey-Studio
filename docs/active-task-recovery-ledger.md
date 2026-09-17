@@ -11,7 +11,7 @@
 
 - 已完成切片：完整热更新保留旧设备资源，候选 surface 成功呈现后提交 CPU/快照；失败恢复旧 surface 并重绘。零尺寸在 GPU 分配前延迟，最新候选重试。
 - 三条包路径与坐标原点往返/故障恢复共四项真机 GPU 用例通过；bin 120/43 ignored、clippy tests、repository gate 通过。旧画面恢复的 HDR 读回逐字节一致，不是系统截图。
-- 本轮待办：拖放迁移、环境载荷专项、非零跳帧候选重用、实际设备丢失与完整跨端视觉。[证据](specs/native-full-package-present-2026-09-17.md)
+- 后续补齐：文件拖放已复用同一呈现屏障，目录包/manifest/普通包/预滤波 IBL/相机包真机连续替换通过。仍待环境载荷专项、非零跳帧候选重用、实际设备丢失与完整跨端视觉。[证据](specs/native-full-package-present-2026-09-17.md)
 
 ### 2026-09-17 X_T 周期修剪与后处理预算进展（Codex）
 

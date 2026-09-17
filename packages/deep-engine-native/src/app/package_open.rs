@@ -168,12 +168,17 @@ pub(super) fn apply_latest(app: &mut NativeApp) {
         return;
     };
     let outcome = match super::package_camera::stage_open_camera(app, &content) {
-        Ok(Some(renderer)) => {
-            drop(app.renderer.take());
-            renderer.activate_surface();
-            app.renderer = Some(renderer);
-            Ok(())
-        }
+        Ok(Some(mut renderer)) => match app.renderer.as_mut() {
+            Some(active) => match active.present_replacement(&mut renderer) {
+                crate::events::RenderOutcome::Presented => {
+                    app.renderer = Some(renderer);
+                    Ok(())
+                }
+                crate::events::RenderOutcome::Failed(error) => Err(error),
+                _ => Err("package frame unavailable; previous scene retained, retry opening when the window is visible".into()),
+            },
+            None => Err("renderer unavailable".into()),
+        },
         Ok(None) => match app.renderer.as_mut() {
             Some(renderer) => {
                 pollster::block_on(renderer.replace_dropped_package(app.content.active(), &content))
