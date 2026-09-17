@@ -14,6 +14,8 @@
 
 - S0体积/RSS补齐（test-output/industrial-s0-rss-20260917/，不入库）：JT 22.0MB(含Node运行时口径)/3DM 5.0MB+4.4MB/X_T 5.1MB/RVT 7.4MB(unsupported-version预期拒绝)/点云4.3MB暖态实测；3D Tiles与SolidWorks因离线阻断如实记缺并写解锁路径。S0矩阵其余缺口见[盘点](specs/industrial-s0-evidence-inventory-2026-09-17.md)。
 
+- P0-08 Native读回第一格：producer_package_renders_real_pixels 真机GPU读回组合包双页（960×540 Rgba8UnormSrgb，page0=132,913彩色像素），RGBA原始字节+sharp同尺寸转PNG人工复核双仪表盘/图例卡/柱条渲染正确；fixture与身份golden同源。跨端浏览器对比格待C1 Web宿主组装，不用author截图冒充。[报告](specs/dashboard-pixel-matrix-native-readback-2026-09-17.md)
+
 - S0样本库补强（data/不入库）：3DM×2(mcneel/openNURBS@eb92af3b)、LAS×1(PDAL@58af674b)、3D Tiles×6(CesiumGS/3d-tiles-tools@4ca692eb,Apache-2.0)、RVT×1(本地BIMFACE,仅inspect)；manifest 12条逐条重算SHA-256一致,许可文件随目录。jt coffee-maker 9.5文件在库但manifest未登记属既有遗留。
 
 ### 2026-09-17 主流程与 DE26 范围同步
