@@ -5,6 +5,7 @@ import { tessellateConeFace } from './3dm-cone-tessellation.mts';
 import { refineCylinderBoundaries } from './3dm-refine-cylinder-boundaries.mts';
 import { auditBrepBoundaries } from './3dm-brep-boundary-audit.mts';
 import { weldSourceEdges } from './3dm-source-edge-weld.mts';
+import { tessellateTrimmedCylinderFace } from './3dm-cylinder-trim.mts';
 
 /** Preserve saved meshes, reconstruct only supported missing faces, retain per-face diagnostics. */
 export function completeBrepParts(object: any,metersPerUnit?:number) {
@@ -18,7 +19,11 @@ export function completeBrepParts(object: any,metersPerUnit?:number) {
     try {
       const support=object.cadIr.surfaces[object.cadIr.faces[face].surface]?.analyticSupport;
       const tessellate=support?.kind==='sphere'?tessellateSphereFace:support?.kind==='cylinder'?tessellateCylinderFace:support?.kind==='cone'?tessellateConeFace:tessellatePlanarFace;
-      parts.push(tessellate(object.cadIr,face));
+      try {parts.push(tessellate(object.cadIr,face));}
+      catch(error) {
+        if(support?.kind!=='cylinder'||!(error instanceof Error)||!['unsupported-natural-trim','non-isoparametric-trim'].includes(error.message))throw error;
+        parts.push(tessellateTrimmedCylinderFace(object.cadIr,face,metersPerUnit!));
+      }
     } catch(error) {
       diagnostics.push({objectId:object.id,face,code:error instanceof Error?error.message:'trim-tessellation-failed'});
     }

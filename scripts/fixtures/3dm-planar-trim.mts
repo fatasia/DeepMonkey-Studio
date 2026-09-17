@@ -60,7 +60,8 @@ function trimLoop(ir: any, loop: any, tolerance: number, overrides:Map<number,nu
   return {ring,boundaries};
 }
 /** Affine planes with positive-weight NURBS trims, under an explicit source-unit chord budget. */
-export function tessellatePlanarFace(ir: any, faceIndex: number, overrides=new Map<number,number[][]>()) {
+export function tessellatePlanarFace(ir: any, faceIndex: number, overrides=new Map<number,number[][]>(), trimChordTolerance=0.001) {
+  check(Number.isFinite(trimChordTolerance)&&trimChordTolerance>0,'invalid-trim-tolerance');
   const face=ir.faces[faceIndex], surface=ir.surfaces[face?.surface];
   check(surface?.degree?.every((d: number)=>d===1) && surface.controlPointCount?.every((n: number)=>n===2)
     && !surface.rational && surface.parameterMap?.kind==='identity', 'unsupported-trimmed-surface');
@@ -75,7 +76,6 @@ export function tessellatePlanarFace(ir: any, faceIndex: number, overrides=new M
   check(loops.filter((l: any)=>l?.type===1).length===1 && loops.every((l: any)=>[1,2].includes(l?.type)), 'unsupported-trim-loop-type');
   check(loops.reduce((count: number,l: any)=>count+(l.trims?.length??2049),0)<=2048, 'trim-vertex-budget');
   loops.sort((a: any,b: any)=>a.type-b.type);
-  const trimChordTolerance=0.001;
   const uvToSourceBound=length(u)/(surface.domain[0][1]-surface.domain[0][0])+length(v)/(surface.domain[1][1]-surface.domain[1][0]);
   const parsed=loops.map((loop: any)=>trimLoop(ir,loop,trimChordTolerance/uvToSourceBound,overrides)),rings=parsed.map(p=>p.ring); validateRings(rings);
   let offset=0;const boundaryEdges=parsed.flatMap(p=>{const edges=p.boundaries.map(b=>({...b,vertices:b.vertices.map(i=>i+offset)}));offset+=p.ring.length;return edges;});
