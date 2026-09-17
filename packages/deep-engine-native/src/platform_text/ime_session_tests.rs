@@ -20,3 +20,5 @@ fn advance_one(_cluster: &str) -> f64 {
 mod ime_composition_tests;
 #[path = "ime_history_tests.rs"]
 mod ime_history_tests;
+#[path = "ime_trace_tests.rs"]
+mod ime_trace_tests;

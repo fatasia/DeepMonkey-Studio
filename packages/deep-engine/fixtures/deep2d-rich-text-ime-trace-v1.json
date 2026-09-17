@@ -1,0 +1,33 @@
+{
+  "schema": "deep-engine.deep2d-rich-text-ime-trace",
+  "schemaVersion": 1,
+  "initial": {
+    "text": "泵e",
+    "caretCluster": 1
+  },
+  "events": [
+    { "op": "focus", "expected": { "documentText": "泵e", "revision": 1, "clusterCount": 2, "caretCluster": 1, "caretX": 14, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "泵e", "revision": 1, "clusterCount": 2, "caretCluster": 1, "caretX": 14, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "yun xing", "expected": { "documentText": "泵e", "revision": 1, "clusterCount": 2, "caretCluster": 1, "caretX": 14, "focused": true, "composing": true, "pending": "yun xing" } },
+    { "op": "preedit", "text": "运行", "expected": { "documentText": "泵e", "revision": 1, "clusterCount": 2, "caretCluster": 1, "caretX": 14, "focused": true, "composing": true, "pending": "运行" } },
+    { "op": "commit", "publishN1": true, "expected": { "documentText": "泵运行e", "revision": 2, "clusterCount": 4, "caretCluster": 3, "caretX": 42, "focused": true, "composing": false, "pending": "" } },
+    { "op": "set-caret", "cluster": 4, "expected": { "documentText": "泵运行e", "revision": 2, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "泵运行e", "revision": 2, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "́", "expected": { "documentText": "泵运行e", "revision": 2, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": true, "pending": "́" } },
+    { "op": "commit", "publishN1": true, "expected": { "documentText": "泵运行é", "revision": 3, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "泵运行é", "revision": 3, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "👩", "expected": { "documentText": "泵运行é", "revision": 3, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": true, "pending": "👩" } },
+    { "op": "preedit", "text": "👩‍🔧", "expected": { "documentText": "泵运行é", "revision": 3, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": true, "pending": "👩‍🔧" } },
+    { "op": "commit", "publishN1": true, "expected": { "documentText": "泵运行é👩‍🔧", "revision": 4, "clusterCount": 5, "caretCluster": 5, "caretX": 66, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "泵运行é👩‍🔧", "revision": 4, "clusterCount": 5, "caretCluster": 5, "caretX": 66, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "取消", "expected": { "documentText": "泵运行é👩‍🔧", "revision": 4, "clusterCount": 5, "caretCluster": 5, "caretX": 66, "focused": true, "composing": true, "pending": "取消" } },
+    { "op": "cancel", "expected": { "documentText": "泵运行é👩‍🔧", "revision": 4, "clusterCount": 5, "caretCluster": 5, "caretX": 66, "focused": true, "composing": false, "pending": "" } },
+    { "op": "set-caret", "cluster": 99, "expectedError": "invalid-composition-anchor:99", "expected": { "documentText": "泵运行é👩‍🔧", "revision": 4, "clusterCount": 5, "caretCluster": 5, "caretX": 66, "focused": true, "composing": false, "pending": "" } },
+    { "op": "blur", "expected": { "documentText": "泵运行é👩‍🔧", "revision": 4, "clusterCount": 5, "caretCluster": 5, "caretX": 66, "focused": false, "composing": false, "pending": "" } }
+  ],
+  "expectedN1Snapshots": [
+    "泵运行e",
+    "泵运行é",
+    "泵运行é👩‍🔧"
+  ]
+}
