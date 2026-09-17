@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Executable, [Parameter(Mandatory)][string]$Package, [Parameter(Mandatory)][string]$Output)
+param([Parameter(Mandatory)][string]$Executable, [string]$Package, [Parameter(Mandatory)][string]$Output)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
@@ -18,8 +18,13 @@ $previousDpi = [ChromeProbe]::SetThreadDpiAwarenessContext([IntPtr](-4))
 if (Test-Path -LiteralPath $Output) { throw 'Use a new evidence directory.' }
 [void](New-Item -ItemType Directory -Path $Output)
 $exe = (Resolve-Path -LiteralPath $Executable).Path
-$pkg = (Resolve-Path -LiteralPath $Package).Path
-$process = Start-Process -FilePath $exe -ArgumentList @('--package', ('"' + $pkg + '"')) -WindowStyle Hidden -PassThru
+$launch = @{ FilePath = $exe; WindowStyle = 'Hidden'; PassThru = $true }
+if ($Package) {
+  $pkg = (Resolve-Path -LiteralPath $Package).Path
+  $launch.ArgumentList = @('--package', ('"' + $pkg + '"'))
+}
+$process = Start-Process @launch
+$records = @()
 function Bounds {
   $rect = [ChromeProbe+Rect]::new()
   if (-not [ChromeProbe]::GetWindowRect($process.MainWindowHandle, [ref]$rect)) { throw 'Window not found.' }
@@ -67,7 +72,13 @@ try {
     $after = Bounds
     if ($before.Left -ne $after.Left -or $before.Top -ne $after.Top -or $before.Right -ne $after.Right -or $before.Bottom -ne $after.Bottom) { throw 'Escape did not restore the original window bounds.' }
     Capture "restored-$width"
+    $records += [ordered]@{ width = $width; before = $before; fullscreen = $full; restored = $after; title = $process.MainWindowTitle }
   }
+  [ordered]@{
+    executableSha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+    standalone = -not [bool]$Package
+    windows = $records
+  } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $Output 'evidence.json') -Encoding utf8
   Write-Output 'PASS: two window sizes, F11 fullscreen, Escape restore, client remains running.'
 } finally {
   if (-not $process.HasExited) { Stop-Process -Id $process.Id }
