@@ -8,6 +8,40 @@ using UnityEngine;
 
 public static class BridgeSmokeBuilder
 {
+    public static void CreateBenchmarkScene()
+    {
+        var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        var camera = new GameObject("Main Camera");
+        camera.tag = "MainCamera";
+        camera.AddComponent<Camera>();
+        var controller = camera.AddComponent<UnityBenchmarkController>();
+        controller.objectCount = 1000;
+        controller.warmupFrames = 30;
+        controller.measuredFrames = 120;
+        RenderSettings.ambientLight = new Color(0.18f, 0.18f, 0.18f);
+        EditorSceneManager.SaveScene(scene, "Assets/UnityBenchmark.unity");
+        Debug.Log("Unity benchmark scene created: Assets/UnityBenchmark.unity");
+    }
+
+    public static void BuildBenchmark()
+    {
+        CreateBenchmarkScene();
+        var output = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Build", "Unity6-Native-Benchmark", "DeepUnityBenchmark.exe"));
+        if (Directory.Exists(output)) Directory.Delete(output, true);
+        if (File.Exists(output)) File.Delete(output);
+        Directory.CreateDirectory(Path.GetDirectoryName(output));
+        var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+        {
+            scenes = new[] { "Assets/UnityBenchmark.unity" },
+            locationPathName = output,
+            target = BuildTarget.StandaloneWindows64,
+            options = BuildOptions.None
+        });
+        if (report.summary.result != BuildResult.Succeeded)
+            throw new BuildFailedException("Unity benchmark build failed: " + report.summary.result);
+        Debug.Log("Unity benchmark build succeeded: " + report.summary.totalSize + " bytes");
+    }
+
     public static void Validate()
     {
         CreateScene();

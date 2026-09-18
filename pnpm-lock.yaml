@@ -23,6 +23,9 @@ importers:
       vitest:
         specifier: ^4.1.0
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1))
+      yauzl:
+        specifier: 3.4.0
+        version: 3.4.0
 
   apps/api:
     dependencies:
@@ -186,12 +189,12 @@ importers:
       '@types/mssql':
         specifier: ^12.3.0
         version: 12.3.0(supports-color@8.1.1)
-      '@webgpu/types':
-        specifier: 0.1.72
-        version: 0.1.72
       '@types/node':
         specifier: ^24.10.0
         version: 24.13.3
+      '@webgpu/types':
+        specifier: 0.1.72
+        version: 0.1.72
       '@types/nodemailer':
         specifier: ^8.0.1
         version: 8.0.1
@@ -253,6 +256,9 @@ importers:
       '@bim-studio/data-runtime':
         specifier: workspace:*
         version: link:../../packages/data-runtime
+      '@bim-studio/deep-engine':
+        specifier: workspace:*
+        version: link:../../packages/deep-engine
       '@bim-studio/docs-runtime':
         specifier: workspace:*
         version: link:../../packages/docs-runtime

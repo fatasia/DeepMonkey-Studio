@@ -28,6 +28,14 @@
     "typecheck": "pnpm -r typecheck && pnpm quality:source-size",
     "quality:source-size": "node scripts/check-source-size.mjs",
     "gate:repository": "node --test scripts/check-repository-governance.test.mjs && node scripts/check-repository-governance.mjs",
+    "verify:scene-client": "node scripts/verify-scene-client-package.mjs",
+    "run:scene-native": "node scripts/run-scene-client-native.mjs",
+    "test:scene-client": "node --test scripts/lib/sceneClientArchive*.test.mjs scripts/verify-scene-client-package.test.mjs",
+    "gate:deep-p0:browser": "pnpm --filter @bim-studio/deep-engine typecheck && pnpm --filter @bim-studio/deep-engine test && pnpm --filter @bim-studio/deep-engine build && pnpm --filter @bim-studio/deep-engine lab:build && pnpm --filter @bim-studio/deep-engine lab:isolation",
+    "gate:deep-p0:native": "cargo test --manifest-path packages/deep-engine-native/Cargo.toml --locked && cargo fmt --manifest-path packages/deep-engine-native/Cargo.toml --all -- --check && cargo clippy --manifest-path packages/deep-engine-native/Cargo.toml --locked --all-targets --all-features -- -D warnings",
+    "gate:deep-p0:studio": "pnpm --filter @bim-studio/web typecheck && pnpm --filter @bim-studio/web test && pnpm --filter @bim-studio/web build",
+    "gate:deep-p0": "pnpm gate:deep-p0:browser && pnpm gate:deep-p0:native && pnpm gate:deep-p0:studio && pnpm quality:source-size",
+    "gate:deep-engine-editor": "pnpm --filter @bim-studio/deep-engine typecheck && pnpm --filter @bim-studio/deep-engine test && pnpm --filter @bim-studio/deep-engine build && pnpm --filter @bim-studio/web typecheck && pnpm --filter @bim-studio/web test src/viewer/measurement.test.ts src/viewer/cameraFraming.test.ts src/viewer/cameraFramingIntegration.test.ts src/viewer/StudioDeepWebGpuBridge.test.ts src/viewer/StudioDeepWebGpuBridge.environment.test.ts src/viewer/StudioDeepWebGpuBridge.lights.test.ts src/viewer/StudioDeepShadowSession.test.ts src/viewer/StudioDeepPerformance.test.ts src/viewer/viewerEngineDeepOverlayRoots.test.ts src/components/DocsCenter.test.tsx src/docs/docsCatalog.test.ts --run && pnpm test:unity-bridge",
     "audit:licenses": "node --test scripts/audit-third-party-licenses.test.mjs && node scripts/audit-third-party-licenses.mjs",
     "quality:public-brand": "node --test scripts/check-public-brand-isolation.test.mjs && node scripts/check-public-brand-isolation.mjs && node scripts/check-product-brand.mjs",
     "test:unity-bridge": "node --test tools/unity/unity-bridge.test.mjs tools/unity/unity-package-archive.test.mjs",
@@ -44,7 +52,7 @@
     "gate:production-artifact": "pnpm --filter @bim-studio/web gate:production-artifact",
     "verify:release": "pnpm gate:repository && pnpm audit:licenses && pnpm typecheck && pnpm test && pnpm build && pnpm test:unity-bridge && pnpm quality:public-brand && pnpm gate:production-artifact && pnpm gate:asset-material-flow && pnpm gate:data-center-flow && pnpm gate:product-browser && pnpm gate:online-flow",
     "verify:gpu-release": "pnpm gate:repository && pnpm audit:licenses && pnpm typecheck && pnpm test && pnpm build && pnpm test:unity-bridge && pnpm quality:public-brand && pnpm gate:production-artifact && pnpm gate:webgpu && pnpm gate:online-flow && pnpm --filter @bim-studio/web benchmark:render-engines",
-    "test": "node --test scripts/start-local.test.mjs scripts/studio.test.mjs scripts/lib/studioCliArguments.test.mjs scripts/lib/studioDeployment.test.mjs scripts/lib/studioOperationLock.test.mjs && pnpm -r test",
+    "test": "node --test scripts/start-local.test.mjs scripts/studio.test.mjs scripts/lib/studioCliArguments.test.mjs scripts/lib/studioDeployment.test.mjs scripts/lib/studioOperationLock.test.mjs scripts/lib/sceneClientArchive*.test.mjs scripts/verify-scene-client-package.test.mjs && pnpm -r test",
     "dwg:install": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./tools/install-libredwg.ps1",
     "revit:install": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./tools/revit-worker/install.ps1 -Version all",
     "desktop:bundle": "pnpm --filter @bim-studio/desktop bundle",
@@ -60,6 +68,7 @@
     "concurrently": "^9.2.1",
     "sharp": "^0.35.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "yauzl": "3.4.0"
   }
 }

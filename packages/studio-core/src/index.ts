@@ -10,3 +10,8 @@ export * from "./topologyOperations.js";
 export * from "./visionEventLocalization.js";
 export * from "./whatIfOperatingEnvelope.js";
 export * from "./whatIfStudy.js";
+export * from "./sceneClientApplications.js";
+export * from "./sceneClientResources.js";
+export * from "./sceneClientRuntimeDependencies.js";
+export * from "./transferSanitization.js";
+export * from "./sceneClientDependencyInputs.js";
