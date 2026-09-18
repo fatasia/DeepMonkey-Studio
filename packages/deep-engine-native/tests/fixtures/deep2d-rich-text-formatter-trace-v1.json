@@ -1,0 +1,53 @@
+{
+  "schema": "deep-engine.deep2d-rich-text-ime-trace",
+  "schemaVersion": 1,
+  "formatters": [
+    { "id": "thousands", "detail": "input must match [0-9]+(.[0-9]+)?; integer part grouped with ',' every 3 digits; fraction kept verbatim" },
+    { "id": "percent", "detail": "input must match [0-9]+(.[0-9]+)?; value scaled by 100 with exactly two decimals, then '%'" },
+    { "id": "fixed2", "detail": "input must match [0-9]+(.[0-9]+)?; exactly two decimals by right-padding or truncation, never rounding" }
+  ],
+  "initial": { "text": "合计 ", "caretCluster": 3 },
+  "events": [
+    { "op": "focus", "expected": { "documentText": "合计 ", "revision": 1, "clusterCount": 3, "caretCluster": 3, "caretX": 36, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "合计 ", "revision": 1, "clusterCount": 3, "caretCluster": 3, "caretX": 36, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "1234567", "expected": { "documentText": "合计 ", "revision": 1, "clusterCount": 3, "caretCluster": 3, "caretX": 36, "focused": true, "composing": true, "pending": "1234567" } },
+    { "op": "commit", "formatter": "thousands", "publishN1": true, "expected": { "documentText": "合计 1,234,567", "revision": 2, "clusterCount": 12, "caretCluster": 12, "caretX": 108, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "合计 1,234,567", "revision": 2, "clusterCount": 12, "caretCluster": 12, "caretX": 108, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": " ", "expected": { "documentText": "合计 1,234,567", "revision": 2, "clusterCount": 12, "caretCluster": 12, "caretX": 108, "focused": true, "composing": true, "pending": " " } },
+    { "op": "commit", "publishN1": true, "expected": { "documentText": "合计 1,234,567 ", "revision": 3, "clusterCount": 13, "caretCluster": 13, "caretX": 116, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "合计 1,234,567 ", "revision": 3, "clusterCount": 13, "caretCluster": 13, "caretX": 116, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "0.25", "expected": { "documentText": "合计 1,234,567 ", "revision": 3, "clusterCount": 13, "caretCluster": 13, "caretX": 116, "focused": true, "composing": true, "pending": "0.25" } },
+    { "op": "commit", "formatter": "percent", "publishN1": true, "expected": { "documentText": "合计 1,234,567 25.00%", "revision": 4, "clusterCount": 19, "caretCluster": 19, "caretX": 164, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "合计 1,234,567 25.00%", "revision": 4, "clusterCount": 19, "caretCluster": 19, "caretX": 164, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": " ", "expected": { "documentText": "合计 1,234,567 25.00%", "revision": 4, "clusterCount": 19, "caretCluster": 19, "caretX": 164, "focused": true, "composing": true, "pending": " " } },
+    { "op": "commit", "publishN1": true, "expected": { "documentText": "合计 1,234,567 25.00% ", "revision": 5, "clusterCount": 20, "caretCluster": 20, "caretX": 172, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "合计 1,234,567 25.00% ", "revision": 5, "clusterCount": 20, "caretCluster": 20, "caretX": 172, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "3.14159", "expected": { "documentText": "合计 1,234,567 25.00% ", "revision": 5, "clusterCount": 20, "caretCluster": 20, "caretX": 172, "focused": true, "composing": true, "pending": "3.14159" } },
+    { "op": "commit", "formatter": "fixed2", "publishN1": true, "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "42", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": true, "pending": "42" } },
+    { "op": "commit", "formatter": "significant-figures", "expectedError": "unknown-formatter:significant-figures", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": true, "pending": "42" } },
+    { "op": "cancel", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "1,23", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": true, "pending": "1,23" } },
+    { "op": "commit", "formatter": "thousands", "expectedError": "formatter-input-rejected:thousands:1,23", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": true, "pending": "1,23" } },
+    { "op": "cancel", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "2.5", "expected": { "documentText": "合计 1,234,567 25.00% 3.14", "revision": 6, "clusterCount": 24, "caretCluster": 24, "caretX": 204, "focused": true, "composing": true, "pending": "2.5" } },
+    { "op": "commit", "formatter": "fixed2", "publishN1": true, "expected": { "documentText": "合计 1,234,567 25.00% 3.142.50", "revision": 7, "clusterCount": 28, "caretCluster": 28, "caretX": 236, "focused": true, "composing": false, "pending": "" } },
+    { "op": "set-caret", "cluster": 0, "expected": { "documentText": "合计 1,234,567 25.00% 3.142.50", "revision": 7, "clusterCount": 28, "caretCluster": 0, "caretX": 0, "focused": true, "composing": false, "pending": "" } },
+    { "op": "blur", "expected": { "documentText": "合计 1,234,567 25.00% 3.142.50", "revision": 7, "clusterCount": 28, "caretCluster": 0, "caretX": 0, "focused": false, "composing": false, "pending": "" } }
+  ],
+  "expectedDiagnostics": [
+    "formatter-rejected unknown-formatter:significant-figures",
+    "formatter-rejected formatter-input-rejected:thousands:1,23"
+  ],
+  "expectedN1Snapshots": [
+    "合计 1,234,567",
+    "合计 1,234,567 ",
+    "合计 1,234,567 25.00%",
+    "合计 1,234,567 25.00% ",
+    "合计 1,234,567 25.00% 3.14",
+    "合计 1,234,567 25.00% 3.142.50"
+  ]
+}

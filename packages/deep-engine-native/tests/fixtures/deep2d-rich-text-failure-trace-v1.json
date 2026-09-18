@@ -1,0 +1,36 @@
+{
+  "schema": "deep-engine.deep2d-rich-text-ime-trace",
+  "schemaVersion": 1,
+  "initial": { "text": "P2", "caretCluster": 2 },
+  "failure": {
+    "compositionTimeoutMs": 10000,
+    "n1MaxTextCodeUnits": 8
+  },
+  "events": [
+    { "op": "focus", "atMs": 0, "expected": { "documentText": "P2", "revision": 1, "clusterCount": 2, "caretCluster": 2, "caretX": 16, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "atMs": 1000, "expected": { "documentText": "P2", "revision": 1, "clusterCount": 2, "caretCluster": 2, "caretX": 16, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "atMs": 2000, "text": "正常", "expected": { "documentText": "P2", "revision": 1, "clusterCount": 2, "caretCluster": 2, "caretX": 16, "focused": true, "composing": true, "pending": "正常" } },
+    { "op": "commit", "atMs": 2500, "publishN1": true, "expected": { "documentText": "P2正常", "revision": 2, "clusterCount": 4, "caretCluster": 4, "caretX": 44, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "atMs": 3000, "expected": { "documentText": "P2正常", "revision": 2, "clusterCount": 4, "caretCluster": 4, "caretX": 44, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "atMs": 3200, "repeat": "A", "count": 5000, "expectedError": "style span 0 invalid: preedit exceeds 4096 bytes", "expected": { "documentText": "P2正常", "revision": 2, "clusterCount": 4, "caretCluster": 4, "caretX": 44, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "atMs": 3400, "text": "超出预算的九个字符", "expected": { "documentText": "P2正常", "revision": 2, "clusterCount": 4, "caretCluster": 4, "caretX": 44, "focused": true, "composing": true, "pending": "超出预算的九个字符" } },
+    { "op": "commit", "atMs": 3600, "publishN1": true, "expectedN1Block": "rich text code-unit budget exceeded: 13 > max 8", "expected": { "documentText": "P2正常超出预算的九个字符", "revision": 3, "clusterCount": 13, "caretCluster": 13, "caretX": 170, "focused": true, "composing": false, "pending": "" } },
+    { "op": "undo", "atMs": 4000, "expected": { "documentText": "P2正常", "revision": 4, "clusterCount": 4, "caretCluster": 4, "caretX": 44, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "atMs": 4500, "expected": { "documentText": "P2正常", "revision": 4, "clusterCount": 4, "caretCluster": 4, "caretX": 44, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "atMs": 4600, "text": "恢复", "expected": { "documentText": "P2正常", "revision": 4, "clusterCount": 4, "caretCluster": 4, "caretX": 44, "focused": true, "composing": true, "pending": "恢复" } },
+    { "op": "commit", "atMs": 4700, "publishN1": true, "expected": { "documentText": "P2正常恢复", "revision": 5, "clusterCount": 6, "caretCluster": 6, "caretX": 72, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "atMs": 5000, "expected": { "documentText": "P2正常恢复", "revision": 5, "clusterCount": 6, "caretCluster": 6, "caretX": 72, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "atMs": 5200, "text": "僵死", "expected": { "documentText": "P2正常恢复", "revision": 5, "clusterCount": 6, "caretCluster": 6, "caretX": 72, "focused": true, "composing": true, "pending": "僵死" } },
+    { "op": "deadline-check", "atMs": 16000, "expected": { "documentText": "P2正常恢复", "revision": 5, "clusterCount": 6, "caretCluster": 6, "caretX": 72, "focused": true, "composing": false, "pending": "" } },
+    { "op": "commit", "atMs": 16100, "expectedError": "no composition is active", "expected": { "documentText": "P2正常恢复", "revision": 5, "clusterCount": 6, "caretCluster": 6, "caretX": 72, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "atMs": 16200, "expected": { "documentText": "P2正常恢复", "revision": 5, "clusterCount": 6, "caretCluster": 6, "caretX": 72, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "atMs": 16300, "text": "复活", "expected": { "documentText": "P2正常恢复", "revision": 5, "clusterCount": 6, "caretCluster": 6, "caretX": 72, "focused": true, "composing": true, "pending": "复活" } },
+    { "op": "commit", "atMs": 16400, "publishN1": true, "expected": { "documentText": "P2正常恢复复活", "revision": 6, "clusterCount": 8, "caretCluster": 8, "caretX": 100, "focused": true, "composing": false, "pending": "" } },
+    { "op": "blur", "atMs": 17000, "expected": { "documentText": "P2正常恢复复活", "revision": 6, "clusterCount": 8, "caretCluster": 8, "caretX": 100, "focused": false, "composing": false, "pending": "" } }
+  ],
+  "expectedDiagnostics": [
+    "n1-publish-blocked rich text code-unit budget exceeded: 13 > max 8",
+    "composition-deadline-expired opened=5000 at=16000 pending=僵死"
+  ],
+  "expectedN1Snapshots": ["P2正常", "P2正常恢复", "P2正常恢复复活"]
+}

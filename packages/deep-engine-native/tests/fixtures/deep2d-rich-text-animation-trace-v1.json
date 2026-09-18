@@ -1,0 +1,43 @@
+{
+  "schema": "deep-engine.deep2d-rich-text-ime-trace",
+  "schemaVersion": 1,
+  "initial": { "text": "泵运行 ", "caretCluster": 4 },
+  "events": [
+    { "op": "focus", "expected": { "documentText": "泵运行 ", "revision": 1, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": false, "pending": "" } },
+    { "op": "begin", "expected": { "documentText": "泵运行 ", "revision": 1, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": true, "pending": "" } },
+    { "op": "preedit", "text": "满载", "expected": { "documentText": "泵运行 ", "revision": 1, "clusterCount": 4, "caretCluster": 4, "caretX": 50, "focused": true, "composing": true, "pending": "满载" } },
+    { "op": "commit", "publishN1": true, "expected": { "documentText": "泵运行 满载", "revision": 2, "clusterCount": 6, "caretCluster": 6, "caretX": 78, "focused": true, "composing": false, "pending": "" } }
+  ],
+  "animation": {
+    "textContent": "泵运行 满载",
+    "tracks": [
+      {
+        "nodeId": "panel.status.text",
+        "property": "opacity",
+        "keyframes": [
+          { "atMs": 0, "value": { "number": 0 } },
+          { "atMs": 250, "value": { "number": 0.25 } },
+          { "atMs": 600, "value": { "number": 1 } }
+        ]
+      },
+      {
+        "nodeId": "panel.status.badge",
+        "property": "opacity",
+        "keyframes": [
+          { "atMs": 0, "value": { "number": 0 } },
+          { "atMs": 600, "value": { "number": 1 } }
+        ]
+      }
+    ]
+  },
+  "samples": [0, 100, 250, 500, 600, 1200],
+  "expectedSamples": [
+    [0, 0],
+    [0, 0],
+    [0.25, 0],
+    [0.25, 0],
+    [1, 1],
+    [1, 1]
+  ],
+  "expectedN1Snapshots": ["泵运行 满载"]
+}
