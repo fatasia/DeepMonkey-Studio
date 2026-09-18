@@ -30,12 +30,21 @@ import type {
   SaveApplicationWorkspaceResult,
   DeleteApplicationDraftResult,
   PublishApplicationResult,
+  PublishSceneSnapshotInput,
+  PublishSceneSnapshotResult,
+  RestoreScenePublicationInput,
+  RestoreScenePublicationResult,
+  DiscardSceneInput,
+  DiscardSceneResult,
   UnpublishApplicationResult,
   AiDataBindingRunQuery,
 } from "./metadataStore.js";
 import { MAX_AI_DATA_BINDING_RUNS_PER_PROJECT, newestAiDataBindingRuns, retainRecentAiDataBindingRuns } from "./aiDataBindingRunStore.js";
 import { applicationIdReservation, changed, requireProject, unchanged, upsert } from "./storeUtils.js";
 import { JsonStoreFoundation } from "./jsonStoreFoundation.js";
+import { appendScenePublication, prepareScenePublicationMutation, restoreScenePublicationMutation } from "./scenePublicationStore.js";
+import { discardSceneMutation, removeSceneDocuments, removeScenePublication } from "./sceneDiscardStore.js";
+import { readScenePublicationDependencies } from "./scenePublicationDependencyStore.js";
 import { withCurrentScenePublication } from "./scenePublicationHistory.js";
 import { assertSceneAssetReferences, removeUnreferencedModel } from "./modelAssetReferences.js";
 
@@ -88,6 +97,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
       candidate.scenes = candidate.scenes.filter((scene) => scene.projectId !== projectId);
       candidate.publishedScenes = (candidate.publishedScenes ?? []).filter((scene) => scene.projectId !== projectId);
       candidate.scenePublicationHistory = (candidate.scenePublicationHistory ?? []).filter((scene) => scene.projectId !== projectId);
+      candidate.scenePublicationDependencies = (candidate.scenePublicationDependencies ?? []).filter(item => item.projectId !== projectId);
       candidate.applications = (candidate.applications ?? []).filter((application) => application.metadata.projectId !== projectId);
       candidate.applicationPublicationPointers = (candidate.applicationPublicationPointers ?? []).filter((pointer) => pointer.projectId !== projectId);
       for (const endpointId of endpointIds) delete candidate.dataEndpointSecrets?.[endpointId];
@@ -546,12 +556,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
 
   async removeScene(projectId: string, sceneId: string): Promise<boolean> {
     return this.runDocumentMutation((candidate) => {
-      const originalLength = candidate.scenes.length;
-      candidate.scenes = candidate.scenes.filter((item) => item.projectId !== projectId || item.id !== sceneId);
-      if (candidate.scenes.length === originalLength) return unchanged(false);
-      candidate.publishedScenes = (candidate.publishedScenes ?? []).filter((item) => item.sceneId !== sceneId);
-      candidate.scenePublicationHistory = (candidate.scenePublicationHistory ?? []).filter((item) => item.sceneId !== sceneId);
-      return changed(true);
+      return removeSceneDocuments(candidate, projectId, sceneId) ? changed(true) : unchanged(false);
     });
   }
 
@@ -561,25 +566,25 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
   }
 
   async savePublication(publication: PublishedSceneRecord): Promise<PublishedSceneRecord> {
-    return this.runDocumentMutation((candidate) => {
-      assertSceneAssetReferences(candidate, publication.projectId, [publication.snapshot]);
-      candidate.publishedScenes ??= [];
-      const current = candidate.publishedScenes.find(item => item.sceneId === publication.sceneId);
-      candidate.scenePublicationHistory = withCurrentScenePublication(candidate.scenePublicationHistory ?? [], current);
-      const history = candidate.scenePublicationHistory.filter(item => item.sceneId === publication.sceneId);
-      const version = Math.max(history.length, ...history.map(item => item.version ?? 0)) + 1;
-      const versioned: PublishedSceneRecord = { ...structuredClone(publication), version };
-      const index = candidate.publishedScenes.findIndex((item) => item.sceneId === publication.sceneId);
-      if (index >= 0) candidate.publishedScenes[index] = versioned;
-      else candidate.publishedScenes.push(versioned);
-      candidate.scenePublicationHistory.push(structuredClone(versioned));
-      const recent = candidate.scenePublicationHistory
-        .filter((item) => item.sceneId === publication.sceneId)
-        .sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt))
-        .slice(0, 50);
-      candidate.scenePublicationHistory = candidate.scenePublicationHistory.filter((item) => item.sceneId !== publication.sceneId).concat(recent);
-      return changed(structuredClone(versioned));
-    });
+    return this.runDocumentMutation((candidate) => changed(appendScenePublication(candidate, publication)));
+  }
+
+  getScenePublicationDependencies(projectId: string, sceneId: string, version: number) {
+    return readScenePublicationDependencies(this.document, projectId, sceneId, version);
+  }
+
+  async publishSceneSnapshot(input: PublishSceneSnapshotInput, options?: { signal?: AbortSignal }): Promise<PublishSceneSnapshotResult> {
+    return this.runDocumentMutation(prepareScenePublicationMutation(input, options?.signal));
+  }
+
+  async restoreScenePublication(input: RestoreScenePublicationInput): Promise<RestoreScenePublicationResult> {
+    const expected = structuredClone(input);
+    return this.runDocumentMutation((candidate) => restoreScenePublicationMutation(candidate, expected));
+  }
+
+  async discardScene(input: DiscardSceneInput): Promise<DiscardSceneResult> {
+    const expected = structuredClone(input);
+    return this.runDocumentMutation(candidate => discardSceneMutation(candidate, expected));
   }
 
   listScenePublications(sceneId: string): PublishedSceneRecord[] {
@@ -591,14 +596,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
 
   async removePublication(sceneId: string): Promise<boolean> {
     return this.runDocumentMutation((candidate) => {
-      const publications = candidate.publishedScenes ?? [];
-      const originalLength = publications.length;
-      candidate.publishedScenes = publications.filter((item) => item.sceneId !== sceneId);
-      if (candidate.publishedScenes.length === originalLength) return unchanged(false);
-      candidate.scenePublicationHistory = withCurrentScenePublication(candidate.scenePublicationHistory ?? [], publications.find(item => item.sceneId === sceneId));
-      const scene = candidate.scenes.find((item) => item.id === sceneId);
-      if (scene) delete scene.publishedAt;
-      return changed(true);
+      return removeScenePublication(candidate, sceneId) ? changed(true) : unchanged(false);
     });
   }
 

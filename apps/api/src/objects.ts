@@ -93,12 +93,27 @@ export class MinioObjectStore implements ObjectStore {
       shell: false,
       env: { ...process.env, ...this.processEnvironment }
     });
-    let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => stderr += chunk.toString());
+    let stderr = "", exited = false, cancelled = false;
+    child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-16_384); });
     const completed = new Promise<void>((resolve, reject) => {
-      child.on("error", reject);
-      child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(stderr.trim() || `MinIO 读取失败：${String(code)}`)));
+      child.once("error", reject);
+      child.once("exit", () => { exited = true; });
+      // close 在子进程退出且 stdio 关闭后触发；exit 本身不保证输出已读完。
+      child.once("close", (code) => {
+        if (cancelled) reject(Object.assign(new Error("MinIO 读取已取消"), { name: "AbortError" }));
+        else if (code === 0) resolve();
+        else reject(new Error(stderr.trim() || `MinIO 读取失败：${String(code)}`));
+      });
+      child.stdout.once("close", () => {
+        // 正常 EOF 随进程退出关闭管道；消费者提前 destroy 必须停止 mc。
+        if (!child.stdout.readableEnded && !exited) {
+          cancelled = true;
+          child.kill();
+        }
+      });
     });
+    // 调用方可能先处理 stream 异常再等待 completed；原 Promise 仍保留拒绝语义。
+    void completed.catch(() => undefined);
     return { stream: child.stdout, completed };
   }
 

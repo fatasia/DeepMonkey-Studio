@@ -17,6 +17,8 @@ import type {
   PublishedApplicationRecord,
   PublishedSceneRecord,
   SceneSnapshot,
+  SceneClientDependencyInputs,
+  ScenePublicationDependencies,
   SemanticModelRecord,
   StoredSystemUserRecord,
   SystemBrandingSettings,
@@ -54,6 +56,45 @@ export type DeleteApplicationDraftResult = {
 };
 
 export type PublishApplicationResult = { status: "published"; publication: PublishedApplicationRecord } | { status: "project-not-found" } | { status: "application-not-found" };
+
+export interface CapturedScenePublicationDependencies {
+  inputs: SceneClientDependencyInputs;
+  resources: ScenePublicationDependencies["resources"];
+  nativeCompiled?: NonNullable<ScenePublicationDependencies["nativeCompiled"]>;
+}
+
+export interface PublishSceneSnapshotInput {
+  dependencyCapture?: CapturedScenePublicationDependencies;
+  projectId: string;
+  sceneId: string;
+  expectedSnapshot: SceneSnapshot;
+  expectedPublication: PublishedSceneRecord | undefined;
+  publishedAt: string;
+}
+
+export type PublishSceneSnapshotResult =
+  | { status: "published"; publication: PublishedSceneRecord }
+  | { status: "scene-not-found" | "snapshot-conflict" | "publication-conflict" | "dependency-conflict" };
+
+export interface RestoreScenePublicationInput extends PublishSceneSnapshotInput {
+  historicalPublication: PublishedSceneRecord;
+}
+
+export type RestoreScenePublicationResult =
+  | { status: "restored"; publication: PublishedSceneRecord }
+  | { status: "scene-not-found" | "snapshot-conflict" | "publication-conflict" | "history-conflict" };
+
+export interface DiscardSceneInput {
+  projectId: string;
+  sceneId: string;
+  expectedSnapshot: SceneSnapshot;
+  expectedPublication: PublishedSceneRecord | undefined;
+  action: "unpublish" | "delete";
+}
+
+export type DiscardSceneResult = {
+  status: "discarded" | "scene-not-found" | "not-published" | "snapshot-conflict" | "publication-conflict";
+};
 
 export type UnpublishApplicationResult = {
   status: "unpublished" | "project-not-found" | "application-not-found" | "not-published";
@@ -128,6 +169,10 @@ export interface MetadataStore {
   getPublication(sceneId: string): PublishedSceneRecord | undefined;
   listScenePublications(sceneId: string): PublishedSceneRecord[];
   savePublication(publication: PublishedSceneRecord): Promise<PublishedSceneRecord>;
+  getScenePublicationDependencies(projectId: string, sceneId: string, version: number): ScenePublicationDependencies | undefined;
+  publishSceneSnapshot(input: PublishSceneSnapshotInput, options?: { signal?: AbortSignal }): Promise<PublishSceneSnapshotResult>;
+  restoreScenePublication(input: RestoreScenePublicationInput): Promise<RestoreScenePublicationResult>;
+  discardScene(input: DiscardSceneInput): Promise<DiscardSceneResult>;
   removePublication(sceneId: string): Promise<boolean>;
   listApplications(projectId: string): ApplicationDocument[];
   getApplication(projectId: string, applicationId: string): ApplicationDocument | undefined;

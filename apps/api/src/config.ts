@@ -30,6 +30,8 @@ export interface AppConfig {
   host: string;
   webOrigin: string;
   dataDir: string;
+  /** 仅服务启动配置；请求不能提供可执行程序路径。 */
+  nativeSceneVerifierExecutable?: string;
   /** 可离线部署的统一素材目录，不会打进 Web 静态包。 */
   assetLibraryDir: string;
   metadata: {
@@ -95,6 +97,8 @@ export function loadConfig(): AppConfig {
     host: process.env.API_HOST ?? "0.0.0.0",
     webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:5173",
     dataDir,
+    ...(process.env.NATIVE_SCENE_VERIFIER_EXECUTABLE?.trim()
+      ? { nativeSceneVerifierExecutable: path.resolve(process.env.NATIVE_SCENE_VERIFIER_EXECUTABLE.trim()) } : {}),
     assetLibraryDir,
     metadata: {
       provider: process.env.METADATA_STORE === "postgres" ? "postgres" : "json",

@@ -339,7 +339,7 @@ export async function registerIndustrialCapabilityRoutes(
           })
           .finally(scope.dispose);
         const withProfile = result.output && typeof result.output === "object" && !Array.isArray(result.output)
-          ? { ...result, output: { ...result.output, dataProfile: batteryDataProfile(records) } }
+          ? { ...result, output: { ...result.output, dataProfile: batteryDataProfile(records, { ...(chemistry ? { chemistry } : {}) }) } }
           : result;
         return result.status === "failed" || result.status === "blocked"
           ? reply.code(422).send(withProfile)
@@ -409,7 +409,7 @@ export async function registerIndustrialCapabilityRoutes(
         },
       });
       const withEvidence = result.output && typeof result.output === "object" && !Array.isArray(result.output)
-        ? { ...result, output: { ...result.output, sourceEvidence: snapshot.evidence, dataProfile: batteryDataProfile(prepared.records) } }
+        ? { ...result, output: { ...result.output, sourceEvidence: snapshot.evidence, dataProfile: batteryDataProfile(prepared.records, { ...(textParameter(parameters.chemistry) ?? request.body.chemistry ? { chemistry: textParameter(parameters.chemistry) ?? request.body.chemistry } : {}) }) } }
         : result;
       if (bindingRun && binding) {
         if (result.status === "failed" || result.status === "blocked") {

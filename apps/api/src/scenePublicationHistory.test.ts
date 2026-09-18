@@ -14,6 +14,10 @@ const legacy: PublishedSceneRecord = {
 };
 class LegacyStore extends JsonStore {
   seedLegacy() { this.document.publishedScenes = [structuredClone(legacy)]; this.document.scenePublicationHistory = []; }
+  seedTimestampCollision() {
+    this.document.publishedScenes = [{ ...structuredClone(legacy), version: 2 }];
+    this.document.scenePublicationHistory = [{ ...structuredClone(legacy), version: 1 }];
+  }
 }
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))); });
@@ -55,5 +59,31 @@ describe("legacy scene publication history", () => {
     expect(withCurrentScenePublication([recorded], legacy)).toEqual([recorded]);
     expect(withCurrentScenePublication([], undefined)).toEqual([]);
     expect(withCurrentScenePublication([{ ...recorded, sceneId: "other" }], legacy)).toHaveLength(2);
+  });
+  it("compares reordered JSON keys and omitted undefined fields without changing the inputs", () => {
+    const recorded = { ...structuredClone(legacy), version: 7 };
+    const reordered = Object.fromEntries(Object.entries(structuredClone(legacy)).reverse()) as unknown as PublishedSceneRecord;
+    reordered.snapshot = Object.fromEntries(Object.entries(reordered.snapshot).reverse()) as unknown as PublishedSceneRecord["snapshot"];
+    Object.assign(reordered.snapshot, { thumbnail: undefined });
+    const before = structuredClone(reordered), history = [recorded], beforeHistory = structuredClone(history);
+    expect(withCurrentScenePublication(history, reordered)).toEqual([recorded]);
+    expect(reordered).toEqual(before); expect(history).toEqual(beforeHistory);
+    expect(withCurrentScenePublication([legacy], recorded)).toEqual([legacy]);
+  });
+  it("retains equal-timestamp records with different explicit versions or different snapshot content", () => {
+    const recorded = { ...structuredClone(legacy), version: 1 };
+    const current = { ...structuredClone(legacy), version: 2 };
+    expect(withCurrentScenePublication([recorded], current)).toEqual([recorded, current]);
+    const changed = { ...structuredClone(legacy), snapshot: { ...legacy.snapshot, name: "不同快照" } };
+    expect(withCurrentScenePublication([recorded], changed)).toEqual([recorded, changed]);
+    const renamed = { ...structuredClone(legacy), name: "不同发布名" };
+    expect(withCurrentScenePublication([recorded], renamed)).toEqual([recorded, renamed]);
+  });
+  it("keeps both colliding versions and increments beyond the current version on append", async () => {
+    const { store } = await setup(); store.seedTimestampCollision();
+    expect(store.listScenePublications(legacy.sceneId).map(value => value.version)).toEqual([1, 2]);
+    const saved = await store.savePublication({ ...legacy, publishedAt: "2026-09-15T00:00:00Z" });
+    expect(saved.version).toBe(3);
+    expect(store.listScenePublications(legacy.sceneId).map(value => value.version)).toEqual([3, 1, 2]);
   });
 });

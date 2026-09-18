@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { cloudRenderPublicationIdentity } from "./cloudRenderPublicationIdentity.js";
 import { preferredPublicationRenderer, type PublishedSceneRecord } from "@bim-studio/contracts";
 import {
   CLOUD_RENDER_WORKER_CONTRACT_VERSION,
@@ -20,6 +21,7 @@ import {
 interface PersistedCloudRenderSession {
   sceneId: string;
   snapshot: RemoteRenderSessionSnapshot;
+  publicationIdentity?: string;
 }
 
 interface CloudRenderRegistryDocument {
@@ -60,7 +62,13 @@ export class CloudRenderControlPlane {
   private readonly now: () => Date;
   private policies = new Map<string, CloudRenderScenePolicy>();
   private sessions = new Map<string, RemoteRenderSession>();
+  private readonly publicationIdentities = new WeakMap<RemoteRenderSession, string>();
   private initialized = false;
+  private readonly startingScenes = new Set<string>();
+  private readonly allocatingSessions = new Map<RemoteRenderSession, Promise<void>>();
+  private readonly stoppingScenes = new Map<string, { session: RemoteRenderSession; operation: Promise<RemoteRenderSessionSnapshot> }>();
+  private readonly policyVersions = new Map<string, number>();
+  private persistence: Promise<void> = Promise.resolve();
 
   constructor(private readonly registry: CloudRenderRegistry, options: CloudRenderControlOptions) {
     this.worker = options.worker;
@@ -74,7 +82,14 @@ export class CloudRenderControlPlane {
     const document = await this.registry.load();
     if (document.version !== 1) throw new Error("云渲染控制面数据版本不兼容");
     this.policies = new Map(document.policies.map((policy) => [policy.sceneId, structuredClone(policy)]));
-    this.sessions = new Map(document.sessions.map((record) => [record.sceneId, RemoteRenderSession.restore(record.snapshot)]));
+    this.sessions = new Map(document.sessions.map((record) => {
+      const session = RemoteRenderSession.restore(record.snapshot);
+      if (record.publicationIdentity !== undefined) {
+        if (!/^[a-f0-9]{64}$/.test(record.publicationIdentity)) throw new Error("云渲染发布身份损坏");
+        this.publicationIdentities.set(session, record.publicationIdentity);
+      }
+      return [record.sceneId, session];
+    }));
     this.initialized = true;
   }
 
@@ -111,7 +126,7 @@ export class CloudRenderControlPlane {
             publishedAt: publication.publishedAt,
             enabled: policy?.enabled === true,
             resolution: policy?.resolution ?? 1080,
-            publicationChanged: Boolean(session && session.publicationId !== publication.publishedAt),
+            publicationChanged: Boolean(session && this.publicationIdentities.get(this.sessions.get(publication.sceneId)!) !== cloudRenderPublicationIdentity(publication)),
             ...(session ? { session } : {})
           };
         })
@@ -141,7 +156,14 @@ export class CloudRenderControlPlane {
 
   async setEnabled(publication: PublishedSceneRecord, enabled: boolean, resolution?: CloudRenderResolution): Promise<CloudRenderScenePolicy> {
     this.requireInitialized();
-    if (!enabled) await this.stopSession(publication.sceneId);
+    publication = structuredClone(publication);
+    this.assertSessionPublication(publication);
+    const version = (this.policyVersions.get(publication.sceneId) ?? 0) + 1;
+    this.policyVersions.set(publication.sceneId, version);
+    if (!enabled) await this.stopSession(publication.sceneId, publication);
+    if (this.policyVersions.get(publication.sceneId) !== version) {
+      throw new CloudRenderControlError("云渲染设置已变化，请刷新后重试", 409, "policy_changed");
+    }
     const policy: CloudRenderScenePolicy = {
       sceneId: publication.sceneId,
       projectId: publication.projectId,
@@ -156,6 +178,16 @@ export class CloudRenderControlPlane {
 
   async startSession(publication: PublishedSceneRecord, userId: string): Promise<RemoteRenderSessionSnapshot> {
     this.requireInitialized();
+    publication = structuredClone(publication);
+    cloudRenderPublicationIdentity(publication);
+    this.assertSessionPublication(publication);
+    if (this.startingScenes.has(publication.sceneId)) throw new CloudRenderControlError("云渲染会话正在启动", 409, "session_exists");
+    this.startingScenes.add(publication.sceneId);
+    try { return await this.allocateSession(publication, userId); }
+    finally { this.startingScenes.delete(publication.sceneId); }
+  }
+
+  private async allocateSession(publication: PublishedSceneRecord, userId: string): Promise<RemoteRenderSessionSnapshot> {
     if (!this.policies.get(publication.sceneId)?.enabled) {
       throw new CloudRenderControlError("请先启用该发布场景的云渲染", 409, "scene_disabled");
     }
@@ -163,7 +195,11 @@ export class CloudRenderControlPlane {
     if (current && current.state !== "closed") {
       throw new CloudRenderControlError("该场景仍有云渲染会话，请先停止或处理失败会话", 409, "session_exists");
     }
+    const policyVersion = this.policyVersions.get(publication.sceneId) ?? 0;
     const health = await this.requireHealthyWorker(true);
+    if (!this.policies.get(publication.sceneId)?.enabled || (this.policyVersions.get(publication.sceneId) ?? 0) !== policyVersion) {
+      throw new CloudRenderControlError("启动期间云渲染设置已变化，请重新启动", 409, "policy_changed");
+    }
     if (health.capacity.activeSessions >= health.capacity.maxSessions) {
       throw new CloudRenderControlError("GPU Worker 容量已满", 503, "gpu_capacity");
     }
@@ -178,7 +214,22 @@ export class CloudRenderControlPlane {
     }, "local-webgpu");
     session.dispatch({ type: "allocate" });
     this.sessions.set(publication.sceneId, session);
+    this.publicationIdentities.set(session, cloudRenderPublicationIdentity(publication));
 
+    // 停止请求必须等创建阶段交付 Worker 身份，不能把 allocating 当成身份丢失。
+    const allocation = Promise.resolve().then(() => this.initializeWorkerSession(publication, session, health));
+    this.allocatingSessions.set(session, allocation);
+    try { await allocation; }
+    finally { this.allocatingSessions.delete(session); }
+    const stopping = this.stoppingScenes.get(publication.sceneId);
+    if (stopping?.session === session) {
+      await stopping.operation;
+      throw new CloudRenderControlError("启动期间会话已被停止", 409, "session_cancelled");
+    }
+    return session.snapshot();
+  }
+
+  private async initializeWorkerSession(publication: PublishedSceneRecord, session: RemoteRenderSession, health: CloudRenderWorkerHealth): Promise<void> {
     try {
       const response = await this.requireWorker().createSession({
         contractVersion: CLOUD_RENDER_WORKER_CONTRACT_VERSION,
@@ -192,9 +243,8 @@ export class CloudRenderControlPlane {
       });
       this.assertWorkerScope(publication, response);
       session.dispatch({ type: "allocated", workerSessionId: response.workerSessionId, ...(response.viewerUrl ? { viewerUrl: response.viewerUrl } : {}) });
-      this.applyWorkerState(session, response);
+      if (this.stoppingScenes.get(publication.sceneId)?.session !== session) this.applyWorkerState(session, response);
       await this.persist();
-      return session.snapshot();
     } catch (reason) {
       if (session.snapshot().state !== "failed") session.dispatch({ type: "fail", code: failureCode(reason, "worker_create_failed") });
       await this.persist();
@@ -206,32 +256,50 @@ export class CloudRenderControlPlane {
     this.requireInitialized();
     const session = this.sessions.get(publication.sceneId);
     if (!session) return undefined;
+    publication = structuredClone(publication);
+    this.assertSessionIdentity(session, publication);
     const snapshot = session.snapshot();
     if (snapshot.publicationId !== publication.publishedAt) {
-      if (snapshot.state !== "failed" && snapshot.state !== "closed") session.dispatch({ type: "fail", code: "publication_changed" });
-      await this.persist();
       throw new CloudRenderControlError("场景已重新发布，旧云渲染会话必须停止后重建", 409, "publication_changed");
     }
-    if (!snapshot.workerSessionId || snapshot.state === "closed") return snapshot;
+    if (snapshot.projectId !== publication.projectId) throw new CloudRenderControlError("云渲染会话项目不匹配", 409, "publication_changed");
+    if (!snapshot.workerSessionId || snapshot.state === "closed" || snapshot.state === "closing") return snapshot;
     try {
       const response = await this.requireWorker().getSession(snapshot.workerSessionId);
+      if (this.sessions.get(publication.sceneId) !== session || ["closed", "closing"].includes(session.snapshot().state)) return this.sessions.get(publication.sceneId)?.snapshot();
       this.assertWorkerScope(publication, response);
       this.applyWorkerState(session, response);
       await this.persist();
       return session.snapshot();
     } catch (reason) {
+      if (this.sessions.get(publication.sceneId) !== session || ["closed", "closing"].includes(session.snapshot().state)) return this.sessions.get(publication.sceneId)?.snapshot();
       if (session.snapshot().state !== "failed") session.dispatch({ type: "fail", code: failureCode(reason, "worker_status_failed") });
       await this.persist();
       throw controlError(reason, "无法验证云渲染媒体状态", 502, "worker_status_failed");
     }
   }
 
-  async stopSession(sceneId: string): Promise<RemoteRenderSessionSnapshot | undefined> {
+  async stopSession(sceneId: string, expected?: PublishedSceneRecord): Promise<RemoteRenderSessionSnapshot | undefined> {
     this.requireInitialized();
     const session = this.sessions.get(sceneId);
     if (!session) return undefined;
     const before = session.snapshot();
     if (before.state === "closed") return before;
+    if (expected) this.assertSessionIdentity(session, expected);
+    if (expected && (before.projectId !== expected.projectId || before.publicationId !== expected.publishedAt)) {
+      throw new CloudRenderControlError("云渲染会话已变化，请刷新后重试", 409, "publication_changed");
+    }
+    const pending = this.stoppingScenes.get(sceneId);
+    if (pending?.session === session) return pending.operation;
+    const operation = this.closeSession(session);
+    this.stoppingScenes.set(sceneId, { session, operation });
+    try { return await operation; }
+    finally { if (this.stoppingScenes.get(sceneId)?.operation === operation) this.stoppingScenes.delete(sceneId); }
+  }
+
+  private async closeSession(session: RemoteRenderSession): Promise<RemoteRenderSessionSnapshot> {
+    await this.allocatingSessions.get(session);
+    const before = session.snapshot();
     if (!before.workerSessionId) {
       if (before.state !== "failed") session.dispatch({ type: "fail", code: "worker_session_missing" });
       await this.persist();
@@ -272,6 +340,21 @@ export class CloudRenderControlPlane {
     });
     if (response.roundTripLatencyMs !== undefined) {
       session.dispatch({ type: "latency", roundTripLatencyMs: response.roundTripLatencyMs, degradedAboveMs: 180 });
+    }
+  }
+
+  private assertSessionPublication(publication: PublishedSceneRecord): void {
+    const session = this.sessions.get(publication.sceneId);
+    if (session && session.snapshot().state !== "closed") this.assertSessionIdentity(session, publication);
+  }
+
+  private assertSessionIdentity(session: RemoteRenderSession, publication: PublishedSceneRecord): void {
+    const identity = this.publicationIdentities.get(session);
+    if (!identity) throw new CloudRenderControlError("旧云渲染会话缺少完整发布身份；请由管理员停止旧会话后重新启动", 409, "publication_identity_missing");
+    const snapshot = session.snapshot();
+    if (snapshot.projectId !== publication.projectId || snapshot.publicationId !== publication.publishedAt
+      || identity !== cloudRenderPublicationIdentity(publication)) {
+      throw new CloudRenderControlError("云渲染会话与发布版本不匹配，请刷新后处理", 409, "publication_changed");
     }
   }
 
@@ -327,11 +410,19 @@ export class CloudRenderControlPlane {
   }
 
   private async persist(): Promise<void> {
-    await this.registry.save({
+    const document: CloudRenderRegistryDocument = {
       version: 1,
       policies: [...this.policies.values()].map((policy) => structuredClone(policy)),
-      sessions: [...this.sessions.entries()].map(([sceneId, session]) => ({ sceneId, snapshot: session.snapshot() }))
-    });
+      sessions: [...this.sessions.entries()].map(([sceneId, session]) => {
+        const publicationIdentity = this.publicationIdentities.get(session);
+        return { sceneId, snapshot: session.snapshot(), ...(publicationIdentity === undefined ? {} : { publicationIdentity }) };
+      })
+    };
+    // 多场景写入共享一个注册表文件，按捕获顺序落盘，避免临时文件碰撞或旧状态覆盖。
+    const save = () => this.registry.save(document);
+    const operation = this.persistence.then(save, save);
+    this.persistence = operation.then(() => undefined, () => undefined);
+    await operation;
   }
 
   private requireInitialized(): void {

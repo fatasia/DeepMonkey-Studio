@@ -36,9 +36,12 @@ import { getRevitRuntimeInfo } from "./revit.js";
 import { assetContentEncoding, contentType } from "./routeFileTypes.js";
 import { registerModelAssetRoutes } from "./modelAssetRoutes.js";
 import { registerSceneRoutes } from "./sceneRoutes.js";
+import { isPublicAssetKey } from "./publicAssetKey.js";
 import { registerAssetLibraryRoutes } from "./assetLibraryRoutes.js";
 import { registerSemanticModelRoutes } from "./semanticModelRoutes.js";
 import { registerDataWritebackRoutes } from "./dataWritebackRoutes.js";
+import { createNativeSceneCandidateService } from "./nativeSceneCandidateService.js";
+import { createNativeSceneWindowVerifier } from "./nativeSceneWindowVerifier.js";
 
 interface RouteDependencies {
   store: MetadataStore;
@@ -99,7 +102,7 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
 
   app.get<{ Params: { "*": string } }>("/assets/*", async (request, reply) => {
     const key = decodeURIComponent(request.params["*"]);
-    if (!key || key.split(/[\\/]/).includes("..") || !(await objects.stat(key))) {
+    if (!isPublicAssetKey(key) || !(await objects.stat(key))) {
       return reply.code(404).send({ message: "文件不存在" });
     }
     const acceptsGzip = request.headers["accept-encoding"]?.includes("gzip") ?? false;
@@ -438,6 +441,9 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   await registerAssetLibraryRoutes(app, { store, queue, objects, dataDir, libraryDir: config.assetLibraryDir });
   await registerSceneRoutes(app, {
     store,
+    deliveryStorage: { objects, dataDir },
+    ...(config.nativeSceneVerifierExecutable ? { nativeCandidates: createNativeSceneCandidateService({ store, objects, dataDir,
+      verifyWindow: createNativeSceneWindowVerifier({ nativeExecutable: config.nativeSceneVerifierExecutable }) }) } : {}),
     ...(beforeDiscardPublication ? { beforeDiscardPublication } : {}),
     ...(afterPublish ? { afterPublish } : {}),
   });
