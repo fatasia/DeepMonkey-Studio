@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import path from "node:path";
+import type { PublishedApplicationRecord } from "@bim-studio/contracts";
+import { createDashboardWebStaticPackage } from "./dashboardWebStaticPackage.js";
 import { createDashboardPortableZip } from "./dashboardPortableZip.js";
 import { createDashboardStandaloneExecutable } from "./dashboardStandaloneExecutable.js";
 import {
@@ -40,6 +42,21 @@ export interface DashboardOfflineArchiveDownloadDependencies {
     readonly createZip?: typeof createDashboardPortableZip;
     readonly createExecutable?: typeof createDashboardStandaloneExecutable;
   };
+  /** Web 静态包下载的部署侧供给；未配置时不注册 web-package 路由。 */
+  readonly webStatic?: DashboardWebStaticDownloadDependencies;
+}
+
+export interface DashboardWebStaticDownloadDependencies {
+  /** 从应用存储读取候选对应的原始发布记录；缺失时下载按候选失效处理。 */
+  readonly readPublication: (input: {
+    readonly record: DashboardNativeCandidateRecord;
+    readonly signal?: AbortSignal;
+  }) => Promise<PublishedApplicationRecord | undefined>;
+  /** 对象目录读取 port；实现必须把读取限制在部署的对象根内。 */
+  readonly readResourceObject: (objectKey: string, signal?: AbortSignal) => Promise<Uint8Array>;
+  readonly licensedFonts: readonly { readonly path: string; readonly licensePath: string }[];
+  /** 预构建 dashboard-static 产物目录的绝对路径。 */
+  readonly webStaticRoot: string;
 }
 
 /**
@@ -60,8 +77,14 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
   }
   const createZip = portable?.createZip ?? createDashboardPortableZip;
   const createExecutable = portable?.createExecutable ?? createDashboardStandaloneExecutable;
-  for (const format of portable ? ["dmda", "zip", "exe"] : ["dmda"]) {
-  const endpoint = format === "exe" ? "standalone-executable" : format === "zip" ? "portable-zip" : "offline-archive";
+  const webStatic = dependencies.webStatic;
+  if (webStatic && (!path.isAbsolute(webStatic.webStaticRoot) || typeof webStatic.readPublication !== "function"
+    || typeof webStatic.readResourceObject !== "function")) {
+    throw new Error("Dashboard web package download requires an absolute static root and object reader");
+  }
+  const formats = ["dmda", ...(portable ? ["zip", "exe"] : []), ...(webStatic ? ["web"] : [])] as const;
+  for (const format of formats) {
+  const endpoint = format === "exe" ? "standalone-executable" : format === "zip" ? "portable-zip" : format === "web" ? "web-package" : "offline-archive";
   app.get<{ Params: RouteParams }>(
     `/api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/${endpoint}`,
     async (request, reply) => {
@@ -98,17 +121,28 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
         });
         request.signal.throwIfAborted();
         if (!freezeManifest) return reply.code(409).send({ code: "candidate_invalid", message: "Dashboard 候选离线包已失效，请刷新后重试" });
-        const archive = (dependencies.createArchive ?? createDashboardOfflineArchive)({
-          freezeManifest,
-          capability: record.candidate.capability,
-          artifact: record.candidate.artifact.artifact,
-        });
-        const archiveBytes = (dependencies.serializeArchive ?? serializeDashboardOfflineArchive)(archive);
-        request.signal.throwIfAborted();
-        const packagingOptions = { signal: request.signal, ...(expectedSha256 === undefined ? {} : { expectedSha256 }) };
-        const bytes = format === "zip"
-          ? await createZip(archiveBytes, executable!, packagingOptions)
-          : format === "exe" ? await createExecutable(archiveBytes, executable!, packagingOptions) : archiveBytes;
+        let bytes: Uint8Array;
+        if (format === "web") {
+          // Web 静态包不经过 DMDA 归档：直接从发布记录 + 冻结清单 + 对象 port 编译。
+          const publication = await webStatic!.readPublication({ record, signal: request.signal });
+          request.signal.throwIfAborted();
+          if (!publication) return reply.code(409).send({ code: "candidate_invalid", message: "Dashboard 候选离线包已失效，请刷新后重试" });
+          bytes = await createDashboardWebStaticPackage({ publication, freezeManifest,
+            readResourceObject: objectKey => webStatic!.readResourceObject(objectKey, request.signal),
+            licensedFonts: webStatic!.licensedFonts, webStaticRoot: webStatic!.webStaticRoot, signal: request.signal });
+        } else {
+          const archive = (dependencies.createArchive ?? createDashboardOfflineArchive)({
+            freezeManifest,
+            capability: record.candidate.capability,
+            artifact: record.candidate.artifact.artifact,
+          });
+          const archiveBytes = (dependencies.serializeArchive ?? serializeDashboardOfflineArchive)(archive);
+          request.signal.throwIfAborted();
+          const packagingOptions = { signal: request.signal, ...(expectedSha256 === undefined ? {} : { expectedSha256 }) };
+          bytes = format === "zip"
+            ? await createZip(archiveBytes, executable!, packagingOptions)
+            : format === "exe" ? await createExecutable(archiveBytes, executable!, packagingOptions) : archiveBytes;
+        }
         request.signal.throwIfAborted();
         // 清单读取及 ZIP 压缩均可能等待；发送前重查 TTL 和候选撤销状态。
         try {
@@ -117,10 +151,11 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
         } catch (reason) { return sendLookupFailure(reply, reason); }
         return reply
           .header("cache-control", "private, no-store")
-          .header("content-disposition", `attachment; filename="dashboard-candidate-${safeFileId(record.summary.candidateId)}.${format}"`)
+          .header("content-disposition", `attachment; filename="dashboard-candidate-${safeFileId(record.summary.candidateId)}.${format === "web" ? "web.zip" : format}"`)
           .header("content-length", String(bytes.byteLength))
           .header("x-content-type-options", "nosniff")
-          .type(format === "exe" ? "application/vnd.microsoft.portable-executable" : format === "zip" ? "application/zip" : "application/octet-stream")
+          .type(format === "exe" ? "application/vnd.microsoft.portable-executable"
+            : format === "zip" || format === "web" ? "application/zip" : "application/octet-stream")
           .send(Buffer.from(bytes));
       } catch {
         return reply.code(409).send({ code: "candidate_invalid", message: "Dashboard 候选离线包已失效，请刷新后重试" });

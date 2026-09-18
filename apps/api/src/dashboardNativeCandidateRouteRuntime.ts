@@ -9,7 +9,8 @@ import {
   type DashboardNativeCandidateRuntime,
   type DashboardNativeCandidateRuntimeDependencies,
 } from "./dashboardNativeCandidateRuntime.js";
-import { registerDashboardOfflineArchiveDownloadRoutes } from "./dashboardOfflineArchiveDownloadRoutes.js";
+import { registerDashboardOfflineArchiveDownloadRoutes,
+  type DashboardWebStaticDownloadDependencies } from "./dashboardOfflineArchiveDownloadRoutes.js";
 import { registerDashboardPublicationCandidateRoutes } from "./dashboardPublicationCandidateRoutes.js";
 
 export interface DashboardNativeCandidateRouteRuntimeDependencies {
@@ -24,6 +25,8 @@ export interface DashboardNativeCandidateRouteRuntimeDependencies {
   /** 部署固定的 Windows 播放器路径；省略时仅提供 DMDA 下载。 */
   readonly nativeExecutable?: string;
   readonly nativeExecutableSha256?: string;
+  /** Web 静态包下载的部署侧供给；省略时不注册 web-package 下载。 */
+  readonly webStatic?: DashboardWebStaticDownloadDependencies;
 }
 
 export interface DashboardNativeCandidateRouteRuntime {
@@ -47,6 +50,7 @@ export async function registerDashboardNativeCandidateRouteRuntime(
     registry,
     ...(dependencies.nativeExecutable === undefined ? {} : { portable: { nativeExecutable: dependencies.nativeExecutable,
       ...(dependencies.nativeExecutableSha256 === undefined ? {} : { expectedSha256: dependencies.nativeExecutableSha256 }) } }),
+    ...(dependencies.webStatic === undefined ? {} : { webStatic: dependencies.webStatic }),
     readFreezeManifest: async ({ record, signal }) => {
       signal?.throwIfAborted();
       const manifest = record.candidate.freezeManifest;

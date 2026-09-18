@@ -217,6 +217,7 @@ export interface DatabaseDocument {
   scenes: SceneSnapshot[];
   publishedScenes?: PublishedSceneRecord[];
   scenePublicationHistory?: PublishedSceneRecord[];
+  scenePublicationDependencies?: import("./scenePublicationDependencies.js").ScenePublicationDependencies[];
   applications?: ApplicationDocument[];
   publishedApplications?: PublishedApplicationRecord[];
   applicationPublicationPointers?: ApplicationPublicationPointer[];
@@ -229,6 +230,7 @@ export interface DatabaseDocument {
 }
 
 export * from "./application.js";
+export * from "./scenePublicationDependencies.js";
 export * from "./battery.js";
 export * from "./batteryDataContract.js";
 export * from "./applicationMigration.js";
@@ -242,6 +244,8 @@ export * from "./aiSamples.js";
 export * from "./plantTransportNetwork.js";
 export * from "./deviceSignal.js";
 export * from "./modelProcessing.js";
-
-export * from "./sceneScriptProtocol.js";
+export * from "./scenePublicationCompatibility.js";
 export * from "./dashboardDocument.js";
+export * from "./dashboardWebPackage.js";
+export * from "./formatImportContracts.js";
+export * from "./sceneScriptProtocol.js";
