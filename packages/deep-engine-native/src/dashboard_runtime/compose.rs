@@ -1,5 +1,5 @@
 use super::*;
-use crate::deep2d::{Deep2dComposite, Deep2dLayer, Deep2dRect, prepare_runtime_content};
+use crate::deep2d::{Deep2dComposite, Deep2dLayer, Deep2dRect, prepare_runtime_content_cached};
 
 impl DashboardRuntime {
     pub(super) fn rebuild(&mut self) -> Result<(), String> {
@@ -22,7 +22,42 @@ impl DashboardRuntime {
             .lock()
             .map_err(|_| "dashboard text cache poisoned")?;
         for node in &page.nodes {
-            if !node.visible {
+            let adapted;
+            let node = match self.table_layer(&node.id) {
+                None => node,
+                Some(None) => continue,
+                Some(Some(layer)) => {
+                    let origin = layer.origin.unwrap_or([0.0, 0.0]);
+                    adapted = crate::runtime_package::DashboardNode {
+                        deep2d: Some(layer.deep2d.clone()),
+                        clip: layer.clip,
+                        frame: [
+                            node.frame[0] + origin[0],
+                            node.frame[1] + origin[1],
+                            node.frame[2],
+                            node.frame[3],
+                        ],
+                        ..node.clone()
+                    };
+                    &adapted
+                }
+            };
+            let visible = self
+                .document()
+                .filter
+                .as_ref()
+                .and_then(|filter| {
+                    self.selected_filter
+                        .and_then(|index| filter.options.get(index))
+                })
+                .and_then(|option| {
+                    option
+                        .visibility
+                        .iter()
+                        .find(|entry| entry.node_id == node.id)
+                })
+                .map_or(node.visible, |entry| entry.visible);
+            if !visible {
                 continue;
             }
             if node
@@ -69,21 +104,25 @@ impl DashboardRuntime {
             if let Some(id) = &node.deep2d {
                 append(
                     "static",
-                    self.loaded
-                        .deep2d
-                        .get(id)
-                        .ok_or("dashboard static resource missing")?
-                        .clone(),
+                    self.filter_content(
+                        &node.id,
+                        self.loaded
+                            .deep2d
+                            .get(id)
+                            .ok_or("dashboard static resource missing")?
+                            .clone(),
+                    ),
                     false,
                 )?;
             }
             if let Some(chart) = self.charts.get(&node.id) {
-                let list = crate::chart::presentation::present_chart(
+                let list = crate::chart::presentation::present_chart_scaled(
                     chart,
                     &mut text,
                     self.legend_pages.get(&node.id).copied().unwrap_or(0),
                     self.anchors.get(&node.id).copied().unwrap_or([0.0, 0.0]),
                     None,
+                    self.text_scale,
                 )?;
                 append("chart", Deep2dRuntimeContent::DisplayList(list), true)?;
             }
@@ -96,7 +135,11 @@ impl DashboardRuntime {
         )?;
         let content = Deep2dRuntimeContent::Composite(composite);
         // Final combined limits/tessellation are checked before any CPU snapshot commits.
-        prepare_runtime_content(&content)?;
+        let mut prepared = self
+            .prepare_cache
+            .lock()
+            .map_err(|_| "dashboard prepare cache poisoned")?;
+        prepare_runtime_content_cached(&content, &mut prepared)?;
         drop(text);
         self.content = Arc::new(content);
         self.hits = hits;

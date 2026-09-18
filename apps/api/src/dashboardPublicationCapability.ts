@@ -15,7 +15,7 @@ export interface DashboardCompiledWindowEvidence {
   readonly backgroundBindings?: readonly { readonly authorPageId: string; readonly pageId: string;
     readonly resourceId: string; readonly sourceSha256: string; readonly atlasId: string; readonly pixelSha256: string }[];
   readonly nodeBindings: readonly { readonly nodeId: string; readonly runtimeNodeId: string;
-    readonly pageId: string; readonly staticResourceId: string }[];
+    readonly pageId: string; readonly staticResourceId: string | null }[];
   readonly fontBindings: readonly { readonly resourceId: string; readonly sha256: string;
     readonly faceIndex: number; readonly runtimeNodeId: string; readonly atlasId: string }[];
 }
@@ -84,6 +84,8 @@ export interface BuildDashboardPublicationCapabilityOptions {
     readonly compileGraphHash: string;
     readonly targetArtifactHash: string;
   }, signal?: AbortSignal) => Promise<DashboardWindowVerification>;
+  /** C4 必须与 C5 worker 编译同一份语义输入:调用方绑定一次后把同一份测量数据传给两侧。 */
+  readonly boundData?: Readonly<Record<string, unknown>>;
   readonly signal?: AbortSignal;
 }
 
@@ -106,8 +108,13 @@ export async function buildDashboardPublicationCapabilityReport(options: BuildDa
     configurationSha256: hashCanonical(options.compiler.configuration) };
   if (!compiler.id || !compiler.version || !SHA256.test(compiler.sha256)) throw new Error("Authoritative dashboard compiler identity is required");
   const compileGraphHash = hashCanonical({ kind: "dashboard-compile-v1", sourceSemanticHash, compiler });
-  const compiled = await options.compiler.compile({ document: candidate.document, data: candidate.data,
+  const compiled = await options.compiler.compile({ document: candidate.document,
+    data: options.boundData ?? candidate.data,
     resources: candidate.resources, freezeManifest: structuredClone(candidate.manifest) }, signal);
+  if (process.env.DEEP_ARTIFACT_DUMP) {
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(`${process.env.DEEP_ARTIFACT_DUMP}.capability`, compiled.artifact);
+  }
   signal?.throwIfAborted();
   if (!(compiled.artifact instanceof Uint8Array) || compiled.artifact.byteLength < 1) throw new Error("Dashboard compiler returned no artifact bytes");
   const windowEvidence = compiled.windowEvidence ? structuredClone(compiled.windowEvidence) : undefined;
@@ -174,7 +181,8 @@ function missingVerifiedFonts(verification: DashboardWindowVerification, candida
   const bindings = new Map<string, DashboardCompiledWindowEvidence["nodeBindings"][number]>();
   const boundAuthors = new Set<string>();
   for (const binding of evidence.nodeBindings) {
-    if (!authored.has(binding.nodeId) || !binding.runtimeNodeId || !binding.pageId || !binding.staticResourceId
+    if (!authored.has(binding.nodeId) || !binding.runtimeNodeId || !binding.pageId
+      || (binding.staticResourceId !== null && (typeof binding.staticResourceId !== "string" || !binding.staticResourceId))
       || bindings.has(binding.runtimeNodeId)) throw new Error("Invalid compiler font node binding");
     bindings.set(binding.runtimeNodeId, binding); boundAuthors.add(binding.nodeId);
   }
@@ -187,7 +195,7 @@ function missingVerifiedFonts(verification: DashboardWindowVerification, candida
     normalizedFonts([font]);
     const binding = bindings.get(font.runtimeNodeId);
     const frozen = candidate.manifest.resources.find(resource => resource.id === font.resourceId && resource.kind === "font");
-    if (!binding || !font.atlasId || !frozen || frozen.sha256 !== font.sha256 || frozen.faceIndex !== font.faceIndex
+    if (!binding?.staticResourceId || !font.atlasId || !frozen || frozen.sha256 !== font.sha256 || frozen.faceIndex !== font.faceIndex
       || !frozen.nodeIds.includes(binding.nodeId)) throw new Error("Compiler font evidence is outside the frozen font closure");
     const fonts = required.get(binding.nodeId) ?? new Set<string>();
     fonts.add(key(font)); required.set(binding.nodeId, fonts);

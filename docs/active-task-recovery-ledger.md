@@ -1,4 +1,63 @@
-## ★ ACTIVE GOAL(2026-09-17 用户正式设定,所有会话必须遵守)
+## 当前检查点（2026-09-18，覆盖下方历史调度口径）
+
+- Deep2D 表格交互切片收口:4 行 linked-table 正式候选链 201 通过(R10g,8 过滤窗全过),资源经位置无关压缩 146→90(预算 132 未放宽,R9c 严格绘制流证明),真实排序后 CSV/XLSX **逐字节导出**×2 轮+取消窗通过(r19)。根因链:bundle 测量缓存漏 filterData(丢过滤变体层/visibility)+ 布局双捕获微差→单次绑定共享;保存对话框自动化按截图实证改 GetGUIThreadInfo 焦点 EDIT WM_SETTEXT+IDOK。证据与 R1–R10f 全记录见 [表格 spec](specs/deep2d-table-interaction-2026-09-18.md)。遗留:浅色/空态图标视觉验收。
+- 14:54 启动的 Web 全量已结束：622 文件、3710 项通过，3 文件/3 项既有跳过，93.10 秒。这是该启动时工作树的回归快照，不覆盖后续表格资源压缩或 Fog 接线。
+- GI 固定方向相关色块已修复：保持 64 样本，按世界位置旋转方位；新 GLB 两轮确定性烘焙及同 EXE/同照明四次 Native 实窗通过，大三角色块明显消除，仍有细噪声。PNG/Native texels 与 UV1 精确一致；复杂几何与跨端同照明终验待补。[GI 证据](specs/lightmap-single-bounce-2026-09-18.md)
+- 14:53 修复 JT 宿主白名单回归后，API 全量在 `--maxWorkers=4`、原测试时限下 211 文件、1378 项通过，4 项既有跳过，57.67 秒。新增真实 Job 全量预算对象回归保持 Rust 严格字段拒绝；此前 JT 4 项失败现已关闭。
+- RVT 新增 42 个真实非矩形开洞 Floor/Pad，5208 三角，11 项同族/边界测试与两轮实图通过；孔洞保留、闭合、Float32 无退化，最大三维误差 0.001917 mm。本样本独立 Floor/Pad 共 68/100 已验证，不代表整楼或工业总进度。[报告](reports/industrial-rvt-holed-solids-2026-09-18.md)
+- 最新 API 全量第一次 11 项失败；限制测试并发但不改时限后，剩 JT 上传 4 项失败。根因已定位为共享 Job 请求展开了完整 ConversionLimits 的额外字段，被 Rust 严格协议拒绝；正在修显式白名单，未通过复验前不沿用旧全量绿灯。
+- SolidWorks 已接真实受限 Worker 与父进程产物审计：5 件实样、取消、身份/质量/哈希篡改、旧输出保留共 8 测试通过；格式包分发和上传入口仍待。[报告](specs/industrial-solidworks-display-geometry-2026-09-18.md)
+- E57 已补扫描姿态、世界 double 坐标、原始颜色/强度/无效标记和有界点块，并接共用 Job；6 项真实隔离执行测试通过。尚无正式点云渲染/上传入口，保持 inspect。[报告](specs/industrial-e57-attributes-job-2026-09-18.md)
+- 用户将本轮收尾检查点提前至 15:00（Asia/Shanghai），覆盖此前约 15:07。优先在途验收与必要回归，完成范围仍以证据为准，不以截止时间替代 S0–S6 全部验收。
+- 用户 14:37 要求接下来半小时收尾三条主线，目标检查点约 15:07（Asia/Shanghai）。暂停新增增强，Deep2D 优先表格正式候选与实窗，Engine 固定当前 HDR/材质证据，工业优先 RVT 已识别带孔同族和 E57 隔离接线；原 S0–S6 范围与质量门槛不变，未验收项不能按时间到点关闭。
+- 工业 Windows Job 调用层已从 JT 提取为共享 `industrialJobExecutor.ts`，JT 复用；真实进程退出/取消/后代回收/回执字节预算及 JT 回归 16 项、API 类型通过。E57 适配在途，不另建隔离机制。
+- SolidWorks 显示网格桥已收归 API，研究工具复用同一模块；4 项输入/身份测试及类型通过，5 实样重新解码得到与之前完全相同的 GLB 哈希。Worker 分发和上传预览入口尚未完成，不算产品接线关闭。[证据](specs/industrial-solidworks-display-geometry-2026-09-18.md)
+- 14:25 跨实例取消合并后 API 全量 209 文件、1361 测试通过，4 项既有跳过；仓库治理门禁通过。后续新增改动需另做针对性验证。
+- HDR 作者环境已通过真实预滤（峰值 524 保留）、8 组 GPU 材质/阴影消费、正式发布与断 API 六窗一致；不包括 EXR、全景背景或实时 GI。[HDR 报告](specs/scene-authored-hdr-environment-2026-09-18.md)
+- S1 跨实例取消已接数据库持久意图、续租/提交前检查和成功写入防护；跨项目拒绝、取消与完成竞态、真实 PG 到期接管等相关 23 项通过。API 类型通过，完整多实例故障矩阵待补。[租约与取消](specs/industrial-s1-execution-lease-2026-09-18.md)
+- RVT 当前样本的 26 个独立 Floor/Pad 已生成真实闭合实体、312 三角，最大 Float32 坐标误差 0.001378 mm；5 项测试和 6 张实图有证据。容器 placement 继续解析，不能扩大为整楼完成。[同族报告](reports/industrial-rvt-planar-family-2026-09-18.md)
+- GI 单跳已修复源材质、反弹到灯遮挡、间接能量保留和 HDR 自发光导出；新增显式 64 采样档。真实浏览器 GLB 重载两轮哈希一致，窄窗裁切修复，复杂场景和 Native 一致性仍待验。[烘焙报告](specs/lightmap-single-bounce-2026-09-18.md)
+- S1 执行租约合并后 API 全量 209 文件、1357 测试通过，4 项既有跳过；证据 `test-output/api-lease-regression-20260918-r2.log`。不代表跨实例取消转发已完成。
+- S1 租约现已接入执行服务：提交前 claim、排队/执行 heartbeat、丢租 abort、终态 fencing、活跃任务重启保留和过期新 epoch 失败恢复；10 个真实隔离 PG 场景、4 个生命周期测试及类型通过。跨实例取消转发和完整多实例验收仍待补。[执行租约](specs/industrial-s1-execution-lease-2026-09-18.md)
+- Native 点光 v10 已完成六面真实深度读回、1 点+4 聚光 14 层组合、正式 HTTP 发布和断 API 六窗逐像素一致；GI/HDR、复杂面缝与完整材质矩阵继续推进。[点光报告](specs/scene-authored-point-shadow-2026-09-18.md)
+- 13:36 合并后 Web 全量 614 文件、3,684 测试通过，3 项既有跳过；先前 3 个失败已核查并修正旧夹具/断言，未回退生产行为。该快照不包含其后尚在途的点光最终交付与 Native 缓存优化。
+- S1 租约新增真实隔离 PG 竞争验证：并发仅一个持有者、过期 epoch 接管、旧 owner 续租/释放无效、无凭据/旧凭据发布不覆盖旧 ready。CAS/租约相关共 15 项通过；执行服务和并发提交锁定仍待完成，不开放多实例执行。
+- Native 聚光投影 v9 已通过 GPU 投影/接收/移动/缓存/回滚、正式发布和断 API 默认/品牌六实窗像素一致；点光六面及 GI/HDR 继续实施。[聚光报告](specs/scene-authored-spot-shadow-2026-09-18.md)
+- SolidWorks 固定 cadmpeg 0.6.0 已实际解码 5 个 SLDPRT 并导出确定性 GLB，共 40,992 个源显示三角形；并非仅容器检查。未知网格归属和楼梯配置参数引用错误保留，仍属研究 preview，未接产品入口。[几何报告](specs/industrial-solidworks-display-geometry-2026-09-18.md)
+- 3DM face9/10 的 Float32 内部塌缩三角已从 16 降至 0，41 面、53,451 顶点、95,380 三角和 5 条已修共边保留；44 条非共形边仍待补。[量化修复](specs/industrial-3dm-float32-interior-2026-09-18.md)
+- X_T 实际相邻支撑恢复已通过 109 件全回归：19,344 源面全部 witness-match，mismatch 1→0、unresolved 0，原 oracle/源身份未变。79 个既有 Float32 零面积三角形及 12 个重复 witness 未在本片解决，仍为 preview。[修复报告](reports/industrial-x-t-adjacent-support-2026-09-18.md)
+- S1 租约 SQL/存储接口已写入在途代码，但执行服务 claim/heartbeat/接管尚未接线；CAS 相关 13 项与 API 类型复测通过，不能据此开放多实例执行。此前 1349 项 API 全量快照早于这批租约接口。
+
+- 13:08 CAS 合并后 API 全量 208 文件、1349 测试通过，4 项既有跳过，39.72 秒；真实 PG 组全部运行。该快照不包含后续在途的字形批处理和局部阴影改动。
+
+- S1 PostgreSQL 已补真实数据库 CAS：旧表版本迁移、双实例竞争、旧转换发布、约束失败、空表竞争初始化通过；6 个真实隔离 PG 场景 + 7 协议 + 13 持久化测试、API 类型通过。未动正常库；租约/接管/跨实例查询仍未完成，不开放混用旧二进制的多写部署。[CAS 报告](specs/industrial-s1-postgres-cas-2026-09-18.md)
+- Native 多灯 v8 已完成方向光、点光、聚光及距离/锥角/浮动原点消费，真实发布和断开 API 的默认/品牌六窗像素一致；聚光投影阴影继续接线，GI/HDR 未完成。[多灯报告](specs/scene-authored-multi-light-2026-09-18.md)
+- 3DM 默认真实 GLB 又修复 69/71/79/81 四条共边，剩余非共形边 48→44，41 面/7 自缝保留；最终误差 ≤0.007868 mm，Float32 双侧边检查通过。旧 face9/10 各8个量化塌缩三角未新增、继续修复；保持 preview。[几何报告](specs/industrial-3dm-paired-curve-group-2026-09-18.md)
+
+- 工业 S1 修复终态同状态重复写入可替换已发布地址的问题：相同重放无写入，不同终态记录/产物更新拒绝，旧任务确认不抢回新 attempt 指针；真实转换与重开存储回归 40 项、API 类型通过。跨实例 PostgreSQL CAS/租约仍未补齐。[S1 证据](specs/industrial-s1-attempt-closure-2026-09-18.md)
+
+- E57 从头文件检查推进到真实静态 Reader：8 正例、5 损坏例各两轮通过，30,571 点兔子和 7,680 点立方体实读；EXE 约 2.73 MiB，仅依赖系统 DLL。尚未接产品导入、颜色/pose/世界坐标和全进程 RSS。[资格报告](specs/industrial-e57-native-reader-2026-09-18.md)
+- Native 作者单方向光已完成 v7 编译/冻结、GPU 与真实 HTTP 发布 EXE 验证；修复材质 bit flags 插值造成的阴影接收错误。停 API 后默认/自定义六窗内容完全一致；多灯/局部灯阴影/GI 仍在推进。[方向光报告](specs/scene-authored-directional-light-2026-09-18.md)
+
+- 发布客户端 canvas 裁切修复后，新构建 24 格 DPR/连续缩窗矩阵通过；重新构建 EXE 的 980×700 与 1200×800 两轮实窗已复核。主体、标签和工具栏不再被 canvas 溢出裁切；作者机位/阴影质量不变。[修复证据](specs/scene-viewer-canvas-resize-2026-09-18.md)
+
+- Three WebView 发布品牌已补齐：默认/自定义各两轮真实 EXE，NSIS 构建、图标/窗口产品信息通过；同时修复重复创建窗口崩溃和误挂编辑器双标题栏。随后发现的 canvas 缩窗裁切已按上条完成新产物验证。[品牌报告](specs/three-webview-branding-2026-09-18.md)
+
+- 用户最新要求：以新 3 小时窗口极速并行推进，优先补影响满意度和可靠性的丢件、错位、孔洞/裂缝、材质丢失与失败覆盖旧版本；原任务目标和质量门槛不变。Tiles 本轮新增严格预检（15 项边界、5 实样、6 损坏样本）及 GLB 1→2/RTC 标准节点转换实读，尚未完成产品运行时接线；[实际范围](specs/industrial-tiles-source-qualification-2026-09-18.md)。
+
+- 客户端品牌：二维 EXE/ZIP 已支持发布级名称、LOGO/图标覆盖，未指定字段使用产品默认值。默认/自定义各两轮实窗、图标资源和运行包 hash 验证通过；UI 双轮 12 格及错误恢复 4 格通过。Scene 独立 EXE 也已完成实际 HTTP 下载、停止 API 后默认/自定义各两轮无参数启动；Box 夹具四图内容区原始像素相同。新路由失败边界与合并构建继续验证。[品牌报告](specs/client-package-branding-2026-09-18.md)
+- 本轮品牌 UI 合并后 Web 全量：607 文件通过、3 跳过，3632 测试通过、3 跳过；API 全量 206 文件通过，1331 测试通过、4 跳过。Web 与 API 生产构建、仓库治理门禁通过；API 构建包含静态客户端和工业 Windows Job host。后续筛选与 Scene 环境接线属于该次全量之后的在途改动，需各自补验证。
+- 最新调度：用户明确要求优先收口 Deep Engine 原主线、Deep2D、工业 S0–S6，DE26 新增增强项后置。下方 V1–V13 的已批准范围保留，但不抢占主线；已做的修复保留，不撤回代码。三条主线继续并行，先核对 GLM 交接、实际代码、测试与产物，仅补真实缺口，不重建已有模块。
+- 进度统计：DE26 任务卡的整卡关闭数不代表 Engine 原主线进度；旧 Deep2D 待办表和工业阶段未整段验收也不代表既有实现为零。继承 GLM 已完成的发布、渲染、交互与格式证据，分别报告已验收能力和剩余缺口，不混用历史与新增任务分母。
+- Deep2D、Deep Engine、工业格式继续并行；本轮按实际验收项收尾，不沿用历史完成百分比。DE26 已获用户批准：V1–V7 做扎实，V8 小而强，V9/V10/V11/V13 按真实场景补齐，V12 不做。复用既有任务卡与实现，新增任务只有有独立边界的 H09。[范围与定位](specs/de26-reality-compiler-priorities-2026-09-18.md)
+- 效果优先光照、材质与稳定性；Three/Babylon 对照工程实现，Unity/UE 对照系统设计与视觉目标。多灯、GI、材质受光、投影/接收阴影及灯光分层纳入明确验收，尚未宣称实现对齐。[Unity 能力目标](specs/de26-unity-lighting-parity-2026-09-18.md)
+- V11 是道路、地面、围栏、绿化的拖放搭景；复用 C07 素材库和场景插入链，不另建编辑器。既有开放素材继续复用，本轮补下载 Kenney Nature Kit，入库几何和许可核验待完成。[素材任务](specs/de26-v11-scene-building-assets-2026-09-18.md)
+- Deep2D：delta 已进入生产 watcher/present/LKG；UIA/IME 已接真实窗口事件。短时稳定性发现相比旧版的 CPU 性能回退，正在查重复轴扫描与文字处理；性能项未关闭。[delta](specs/deep2d-delta-watch-closure-2026-09-18.md)、[UIA/IME](specs/deep2d-product-uia-ime-2026-09-18.md)、[稳定性](specs/deep2d-v04-short-stability-2026-09-18.md)
+- Deep Engine：真实模型双引擎同机对照已留证；公开统计使用五轮 P95 的中位数，图像指标为 perceptualSimilarity，不是 SSIM。完整离线升级/回滚 17 步通过。KPI/表格内容与文字密度已补齐，16 窗口矩阵通过；filter 生产交互仍在接线。[对照报告](specs/de26-a04-a08-paired-runtime-2026-09-18.md)
+- 工业 S1：统一任务状态、独立 attempt 与资源发布约束已补齐；七格式几何能力仍分别验收。S0 新获 5 个真实 SolidWorks 样本，3D Tiles 完成源码构建与 5 瓦片解析，并发现 3 类损坏头未被上游拒绝。[S1](specs/industrial-s1-attempt-closure-2026-09-18.md)、[Tiles 资格检查](specs/industrial-tiles-source-qualification-2026-09-18.md)
+- 磁盘约束已解除：用户先释放 D 盘空间；本会话再逐文件删除 `target/debug/deps` 中 768 份历史哈希 PDB，按同名构建保留最新一份，共释放 100.36 GiB，源码/EXE/证据保留。随后 D 盘约 187 GiB 可用。`debug/incremental` 整目录删除被环境策略拒绝，未删除；不能将其记作已清。编译已恢复，后续需控制符号文件历史积累。
+
+## ★ ACTIVE GOAL(2026-09-17 用户正式设定,以下为历史检查点)
 
 - 新交接入口：[主流程交接：Deep2D、Deep Engine、工业格式](codex-mainline-handoff-2026-09-17.md)。按本文阶段 0→5 执行；不使用历史百分比替代验收，Web 静态包、Deep2D P0/P1/P2/P3、Deep Engine、工业 S0→S6 分别按证据推进，DE26 后置待用户决定。
 

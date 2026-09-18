@@ -15,6 +15,7 @@ import {
 } from "./dashboardPublicationCapability.js";
 import {
   acceptDashboardRuntimeArtifactCompilerOutput,
+  bindMeasuredLayouts,
   prepareDashboardRuntimeArtifactCompilerInput,
   type DashboardRuntimeArtifactCompilerInput,
   type DashboardRuntimeArtifactCompilerOutput,
@@ -116,10 +117,16 @@ export function createDashboardNativeCandidateService(
         const revalidation = dependencies.authority.revalidation(request);
         requireCurrent(activeGeneration, controller.signal);
         let receipt: DashboardWindowVerification | undefined;
+        // C4 与 C5 必须编译同一份语义输入:测量布局只捕获一次,重复捕获的差异会被逐字节校验放大成发布拒绝。
+        const boundData = dependencies.layoutCapture
+          ? await bindMeasuredLayouts(frozen, dependencies.layoutCapture, controller.signal)
+          : undefined;
+        requireCurrent(activeGeneration, controller.signal);
         const capability = await buildDashboardPublicationCapabilityReport({ candidate: frozen,
           compiler: dependencies.compiler,
           expectedDeviceFingerprintSha256: dependencies.expectedDeviceFingerprintSha256,
           revalidation,
+          ...(boundData ? { boundData } : {}),
           verifyWindow: async (input, signal) => {
             const verified = await dependencies.verifyWindow(input, signal);
             receipt = clone(verified);
@@ -130,9 +137,15 @@ export function createDashboardNativeCandidateService(
         requireCurrent(activeGeneration, controller.signal);
         const compilerInput = await prepareDashboardRuntimeArtifactCompilerInput({ candidate: frozen,
           capability, compiler: dependencies.compilerIdentity, revalidation, signal: controller.signal,
-          ...(dependencies.layoutCapture ? { layoutCapture: dependencies.layoutCapture } : {}) });
+          ...(boundData ? { boundData } : dependencies.layoutCapture
+            ? { layoutCapture: dependencies.layoutCapture }
+            : {}) });
         requireCurrent(activeGeneration, controller.signal);
         const output = await dependencies.worker.compile(compilerInput, controller.signal);
+        if (process.env.DEEP_ARTIFACT_DUMP) {
+          const { writeFile } = await import("node:fs/promises");
+          await writeFile(`${process.env.DEEP_ARTIFACT_DUMP}.worker`, output.artifact);
+        }
         requireCurrent(activeGeneration, controller.signal);
         const artifact = acceptDashboardRuntimeArtifactCompilerOutput(compilerInput, output, capability);
         await assertDashboardPublicationFreezeCommit(frozen, { ...revalidation, signal: controller.signal });

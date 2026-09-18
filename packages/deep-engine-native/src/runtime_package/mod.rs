@@ -1,6 +1,9 @@
 mod content_payloads;
 mod dashboard;
+mod dashboard_table_types;
+mod dashboard_table_validation;
 mod dashboard_types;
+pub use dashboard_table_types::*;
 mod dashboard_validation;
 mod delta;
 mod delta_manifest;
@@ -30,7 +33,9 @@ use std::{fmt, path::Path};
 
 use serde_json::Value;
 
-pub use dashboard_types::{DashboardNode, DashboardPage, DashboardRuntimeV1, LoadedDashboard};
+pub use dashboard_types::{
+    DashboardFilterUpdate, DashboardNode, DashboardPage, DashboardRuntimeV1, LoadedDashboard,
+};
 pub use diff::{
     RuntimeResourceDiffPlan, RuntimeResourcePlanAction, RuntimeResourcePlanEntry,
     plan_runtime_package_diff, plan_runtime_package_resource_diff,

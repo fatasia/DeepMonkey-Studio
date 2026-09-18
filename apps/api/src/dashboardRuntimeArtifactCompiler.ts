@@ -58,6 +58,8 @@ export interface PrepareDashboardRuntimeArtifactCompilerOptions {
    * 纯冻结数据,布局通道按既有 deferred 语义编译。
    */
   readonly layoutCapture?: { readonly host: DashboardLayoutCaptureHost; readonly locale: string };
+  /** 服务端已绑定测量布局的同一份数据(C4 能力报告与 C5 worker 必须共用);提供时跳过重复捕获。 */
+  readonly boundData?: Readonly<Record<string, unknown>>;
   readonly signal?: AbortSignal;
 }
 
@@ -90,9 +92,10 @@ export async function prepareDashboardRuntimeArtifactCompilerInput(
     ...(options.signal ? { signal: options.signal } : {}) });
   options.signal?.throwIfAborted();
   assertCapability(options.candidate, options.capability, options.compiler);
-  const data = options.layoutCapture
-    ? await bindMeasuredLayouts(options.candidate, options.layoutCapture, options.signal)
-    : snapshot(options.candidate.data);
+  const data = options.boundData ? snapshot(options.boundData)
+    : options.layoutCapture
+      ? await bindMeasuredLayouts(options.candidate, options.layoutCapture, options.signal)
+      : snapshot(options.candidate.data);
   return Object.freeze({
     protocol: "dashboard-runtime-compiler-v1",
     authority: snapshot(options.candidate.authority),
@@ -115,7 +118,7 @@ export async function prepareDashboardRuntimeArtifactCompilerInput(
  * through its own unavailable-data path. Failures (missing fonts, stale binds,
  * aborts) fail the whole preparation instead of silently emitting unmeasured input.
  */
-async function bindMeasuredLayouts(candidate: DashboardPublicationFreezeCandidate,
+export async function bindMeasuredLayouts(candidate: DashboardPublicationFreezeCandidate,
   layoutCapture: NonNullable<PrepareDashboardRuntimeArtifactCompilerOptions["layoutCapture"]>,
   signal?: AbortSignal): Promise<Record<string, unknown>> {
   const data: Record<string, unknown> = { ...candidate.data };
