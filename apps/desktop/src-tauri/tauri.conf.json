@@ -24,7 +24,9 @@
         "minHeight": 700,
         "create": false,
         "center": true,
-        "resizable": true
+        "resizable": true,
+        "decorations": false,
+        "shadow": false
       }
     ]
   },

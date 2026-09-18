@@ -421,7 +421,12 @@ async function collectMetrics(page, primarySelectors) {
       return bounds.width > 0 && bounds.height > 0 && style.display !== "none" && style.visibility !== "hidden";
     };
     const smallUiText = uiElements.filter((element) => isVisibleUi(element) && element.textContent?.trim() && Number.parseFloat(getComputedStyle(element).fontSize) < 9.5)
-      .slice(0, 8).map((element) => `${element.tagName.toLowerCase()}.${String(element.className || "").split(" ")[0]}=${getComputedStyle(element).fontSize}[${element.textContent?.trim().slice(0, 18)}]`);
+      .slice(0, 8).map((element) => {
+        const parent = element.parentElement;
+        const identity = `${element.tagName.toLowerCase()}.${String(element.className || "").split(" ")[0]}`;
+        const owner = parent ? `${parent.tagName.toLowerCase()}.${String(parent.className || "").split(" ")[0]}` : "none";
+        return `${identity}@${owner}=${getComputedStyle(element).fontSize}[${element.textContent?.trim().slice(0, 18)}]`;
+      });
     const smallUiTargets = uiElements.filter((element) => {
       if (!isVisibleUi(element) || !["BUTTON", "INPUT", "SELECT", "SUMMARY"].includes(element.tagName)) return false;
       if (element instanceof HTMLInputElement && ["checkbox", "radio", "color", "range"].includes(element.type)) return false;

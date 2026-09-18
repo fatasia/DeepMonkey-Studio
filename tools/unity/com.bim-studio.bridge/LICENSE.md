@@ -51,27 +51,23 @@ and healthy working environment.
 "Covered Misconduct" means that an Organization does one or more of the
 following:
 
-  a. regularly fails to give full-time workers at least two days free from
-     required work in each seven-day period, except under a voluntary lawful
-     schedule providing equivalent rest or during a genuine emergency;
-
-  b. fails to pay wages, bonuses, performance compensation, overtime, employer
+  a. fails to pay wages, bonuses, performance compensation, overtime, employer
      social-insurance contributions, or mandatory benefits fully and on time as
      required by law, contract, or an announced compensation policy;
 
-  c. uses forced labor, coercion, threats, document confiscation, retaliation,
+  b. uses forced labor, coercion, threats, document confiscation, retaliation,
      unlawful discrimination or harassment, child labor, or unsafe working
      conditions, or violates the ILO Fundamental Rights;
 
-  d. unlawfully collects workers' or users' personal information, or violates
+  c. unlawfully collects workers' or users' personal information, or violates
      employment, workplace-safety, privacy, data-protection, or
      consumer-protection law;
 
-  e. exploits users through deception, coercion, hidden or unauthorized charges,
+  d. exploits users through deception, coercion, hidden or unauthorized charges,
      knowingly unsafe products or services, misuse of personal data, or denial
      of remedies required by law; or
 
-  f. 视用户为韭菜，视员工为家奴
+  e. 视用户为韭菜，视员工为家奴
 
 "Licensor" means each copyright holder that licenses a contribution to the
 Software under this License.

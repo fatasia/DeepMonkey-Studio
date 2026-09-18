@@ -12,7 +12,7 @@ This guide is explanatory. The English [LICENSE](LICENSE) controls. The [Chinese
 | An organization engaging in Covered Misconduct | Prohibited for every purpose, including internal use, evaluation, testing, and research | No exception |
 | A supplier, contractor, Affiliate, or intermediary using the project for a restricted organization | Prohibited Restricted Use | No exception |
 
-Covered Misconduct covers denial of two rest days per seven days, underpayment of compensation or social insurance, unlawful collection of personal information, violation of worker or user protection law, and the other conduct listed in the License. The rule applies to every type of organization.
+Covered Misconduct covers underpayment of compensation or social insurance, unlawful collection of personal information, violation of worker or user protection law, and the other conduct listed in the License. The rule applies to every type of organization.
 
 DMCSL-1.0 provides no paid, source-publication, internal-use, or buyout exception for a restricted organization.
 
