@@ -2405,3 +2405,6 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 
 - P3-05升级回滚链：17步全链通过（脚本verify-dashboard-upgrade-rollback-chain.mts，证据test-output/p03-05-upgrade-rollback-20260918/ 93MB含11张真实窗口截图+全量SHA清单）——v1基线(reused multicomponent产物核对无漂移)、真实HTTP发布v2/v3'、下载取消无部分文件、DMDA截断预取消拒绝、EXE链v1→v2→坏hash/schema GPU前拒（检查点逐字节不变）→真实重下回退v2像素一致→v3'像素断言三互异、双重资源缺失fail-closed、离线旧版（PATH仅System32）凭检查点启动。**缺陷P3-05-D1（high，未修停下报告）**：--package主包被拒走last-known-good恢复启动时GPU/Deep2d初始化完成并实际绘制恢复内容，但smoke submission与checkpoint committed信号>75s永不出现（正常20-40s），依赖客户端无限等待；恢复后检查点不重提交。复现两处+日志摘录在evidence.json defects字段。未覆盖：EXE内输入（G01）、断电事务、热替换路径。
+
+
+- P2-03宿主轨迹：三组离线确定性轨迹同一fixture schema（canonical digest冻结断言）——formatter（封闭枚举thousands/percent/fixed2，29事件簇光标逐值golden，未声明类型fail-closed）、动画（P1-23动画ABI同源250/600ms采样，SetProperty逐值golden双跑一致）、异常/超时（畸形preedit拒绝/预算超限undo恢复/deadline强制取消，20事件结构化诊断全清单）；N0→N1语义保持（仅commit发布快照）。RUSTFLAGS静态CRT全量1226 passed。剩余：真实系统IME与像素证据（人工/后续）。
