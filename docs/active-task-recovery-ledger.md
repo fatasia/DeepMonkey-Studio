@@ -2411,3 +2411,6 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 
 - P1-19用户决策落地+关闭：字体再分发权拍板为OFL允许内嵌（官方FAQ允许完整/子集嵌入与商用，条件=许可文本随分发+尊重RFN；行业先例Godot/Blender）。核验现状：①dashboardPublishedFontCatalog 构建即拒绝非redistributable字体（fail-closed阻断消费方已闭环）②许可文件随包已实现（web包licenses/font-*.txt，原生包THIRD_PARTY_NOTICES）③子集化为后续优化切片（需子集化工具链立项）。shaping发现：cosmic-text依赖树已有unicode-bidi 0.3.18+swash（OpenType shaping）——P1-20从选库决策改为零新依赖接线切片（N0 TextDocument bidi/RTL路径接既有能力），按用户授权直接推进。
+
+
+- API web静态包下载注册 `9da690e`：合同按层下沉contracts（类型/dashboardWebPath/assertDashboardWebSource/结构校验/dashboardFrozenFontStyle单一实现，零新依赖），web侧re-export对外API不变（摘要断言留web）；api生成器模块186行（冻结清单canonical复核/逐资源预算与hash/字体许可闭包/运行时文件遍历排除生成物/JSZip固定时间戳）；路由第四格式web-package（application/zip，.web.zip文件名，gate与409/registry复查全生效）。门禁：contracts 293+web 10+api 14聚焦与api全量1218全绿。**阶段1至此100%**（部署层webStatic真实接线=部署配置工作，属后续）。
