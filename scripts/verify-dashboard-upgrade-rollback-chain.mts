@@ -49,6 +49,7 @@ const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("he
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const PRESENTED = "native package recovery checkpoint committed after present";
+const SMOKE_SUBMITTED = "native smoke GPU submission complete";
 const usage = `DASHBOARD_HEADING_FONT_MANIFEST=<abs> pnpm exec tsx --conditions=development scripts/verify-dashboard-upgrade-rollback-chain.mts <native.exe> <device-sha256> <new-output-directory> [prior-v1-run-directory]`;
 
 // ── 版本化多组件页面内容:三个版本在标题文本、数据、页面背景三重可区分 ──────────────
@@ -271,20 +272,22 @@ async function launchPlayer(options: {
 
 /**
  * 恢复启动(自动回退/离线检查点启动)专用:等待 last-known-good 恢复诊断,
- * 然后等待呈现检查点;超时未呈现则抓取真实窗口像素作为视觉证据后受控终止。
+ * 然后等待呈现合同双信号(GPU 提交自检 + 呈现检查点提交);超时未呈现则抓取真实窗口像素
+ * 作为视觉证据后受控终止,由调用方断言合同达成。
  */
 async function launchRestoredPlayer(options: {
   label: string; executable: string; args: readonly string[]; localAppData: string;
   screenshotsDirectory: string; timeoutMs?: number;
-}): Promise<{ log: string; presented: boolean; png?: string; exited: boolean; exitCode: number | null }> {
+}): Promise<{ log: string; presented: boolean; smokeSubmitted: boolean; png?: string; exited: boolean; exitCode: number | null }> {
   const { label, executable, args, localAppData } = options;
   const timeoutMs = options.timeoutMs ?? 75_000;
-  let log = "", presented = false, spawnError: unknown;
+  let log = "", presented = false, smokeSubmitted = false, spawnError: unknown;
   const child = spawn(executable, [...args], { cwd: path.dirname(executable), windowsHide: false,
     stdio: ["ignore", "pipe", "pipe"], env: playerEnv(localAppData) });
   const receive = (bytes: Buffer) => {
     log += bytes.toString();
     if (!presented && log.includes(PRESENTED)) presented = true;
+    if (!smokeSubmitted && log.includes(SMOKE_SUBMITTED)) smokeSubmitted = true;
   };
   child.stdout.on("data", receive); child.stderr.on("data", receive);
   child.once("error", reason => { spawnError = reason; });
@@ -312,7 +315,7 @@ async function launchRestoredPlayer(options: {
         capture.once("close", value => { clearTimeout(timer); resolve(value ?? -1); });
       });
       assert.equal(code, 0, `[${label}] capture failed: ${captureOutput}`);
-      return { log, presented, png, exited: false, exitCode: null };
+      return { log, presented, smokeSubmitted, png, exited: false, exitCode: null };
     }
     if (!presented) {
       // 呈现检查点超时:先抓取真实窗口像素作为视觉证据,再受控终止。
@@ -337,9 +340,9 @@ async function launchRestoredPlayer(options: {
         await writeFile(`${png}.capture-error.txt`, String(captureError));
       }
       child.kill();
-      return { log, presented: false, png, exited: false, exitCode: null };
+      return { log, presented: false, smokeSubmitted, png, exited: false, exitCode: null };
     }
-    return { log, presented: true, exited: true, exitCode: child.exitCode };
+    return { log, presented: true, smokeSubmitted, exited: true, exitCode: child.exitCode };
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill();
   }
@@ -717,8 +720,8 @@ async function main() {
   record("portable-v2-verified", { version: V2.packageVersion, screenshot: portableV2Run.png, pixels: portableV2Pixels });
 
   // 坏 v3(runtime package 字节被篡改)→ 播放器自动回退 v2 检查点。
-  // 已知缺陷形态:恢复启动会实际绘制 v2 内容,但启动 GPU 自检与呈现检查点可能永不完成;
-  // 因此本步按"恢复合同 + 窗口像素视觉证据"双轨取证,呈现检查点若达成则追加严格像素一致性断言。
+  // 呈现合同:恢复内容也是一次正式呈现,必须在时限内完成 GPU 提交自检 + 呈现检查点重提交,
+  // 且重提交幂等(active.json 与载荷字节不变,仅巩固恢复状态);像素必须与 v2 逐区域一致。
   const badPackage = Buffer.from(v3.runtimePackage);
   const corruptAt = badPackage.indexOf('"packageId":"');
   assert(corruptAt > 0, "packageId marker not found");
@@ -729,25 +732,20 @@ async function main() {
   assert(autoRollbackRun.log.includes(`"packageHash":"${v2.packageHash}"`), autoRollbackRun.log.slice(-700));
   assert(autoRollbackRun.log.includes(`hash=${v2.packageHash}`), autoRollbackRun.log.slice(-700));
   assert(autoRollbackRun.log.includes("native GPU:"), autoRollbackRun.log.slice(-700));
+  assert(autoRollbackRun.smokeSubmitted, `[auto-rollback] GPU submission signal not seen: ${autoRollbackRun.log.slice(-700)}`);
+  assert(autoRollbackRun.presented, `[auto-rollback] presented checkpoint signal not seen: ${autoRollbackRun.log.slice(-700)}`);
   const autoRollbackCheckpoint = await checkpointState(localAppData, packagePath);
   assertActiveCheckpoint(autoRollbackCheckpoint, v2.packageHash, sha(v2.runtimePackage), "auto-rollback");
   assert.equal(autoRollbackCheckpoint.files["active.json"], portableV2Checkpoint.files["active.json"],
-    "auto-rollback must not alter active.json");
-  const autoRollbackPixels = autoRollbackRun.png
-    ? await pixelDigest(autoRollbackRun.png, path.join(pixelWork, "portable-v2-rollback")).catch(() => null) : null;
-  if (autoRollbackRun.presented && autoRollbackPixels) {
-    assertRegionsIdentical(portableV2Pixels, autoRollbackPixels, "auto-rollback must present exactly v2 pixels");
-  }
+    "auto-rollback re-commit must keep active.json bytes identical (idempotent consolidation)");
+  const autoRollbackPixels = await pixelDigest(autoRollbackRun.png!, path.join(pixelWork, "portable-v2-rollback")).catch(() => null);
+  assert(autoRollbackPixels, "auto-rollback window capture must exist once the presented contract is fulfilled");
+  assertRegionsIdentical(portableV2Pixels, autoRollbackPixels, "auto-rollback must present exactly v2 pixels");
   record("portable-v3-bad-auto-rollback", { tamperedRuntimePackageBytes: true, primaryRejected: true,
     recovered: "last-known-good", presentedVersion: V2.packageVersion,
     checkpointActiveMatchesV2: true, checkpointUnchangedByRecovery: true,
-    presentedContractFulfilled: autoRollbackRun.presented,
-    visualRestoreEvidence: autoRollbackRun.png ?? null, pixels: autoRollbackPixels,
-    defect: autoRollbackRun.presented ? null : {
-      code: "lkg-restore-present-marker-never-fires",
-      symptom: "恢复启动实际绘制恢复内容(截图为证),但 native smoke GPU 自检提交与 'checkpoint committed after present' 在 75s 内不出现",
-      logTail: autoRollbackRun.log.slice(-900),
-    } });
+    smokeSubmitted: autoRollbackRun.smokeSubmitted, presentedContractFulfilled: true,
+    screenshot: autoRollbackRun.png ?? null, pixels: autoRollbackPixels });
 
   // v3'(合法)→ 呈现,检查点推进到 v3'。
   const v3Zip = await JSZip.loadAsync(v3.zip, { checkCRC32: true });
@@ -828,24 +826,20 @@ async function main() {
   assert(offlineRun.log.includes(`"packageHash":"${v2.packageHash}"`), offlineRun.log.slice(-700));
   assert(offlineRun.log.includes(`hash=${v2.packageHash}`), offlineRun.log.slice(-700));
   assert(offlineRun.log.includes("native GPU:"), offlineRun.log.slice(-700));
+  assert(offlineRun.smokeSubmitted, `[offline boot] GPU submission signal not seen: ${offlineRun.log.slice(-700)}`);
+  assert(offlineRun.presented, `[offline boot] presented checkpoint signal not seen: ${offlineRun.log.slice(-700)}`);
   const offlineCheckpoint = await checkpointState(localAppData, offlinePackagePath);
   assertActiveCheckpoint(offlineCheckpoint, v2.packageHash, sha(v2.runtimePackage), "offline boot");
-  const offlinePixels = offlineRun.png
-    ? await pixelDigest(offlineRun.png, path.join(pixelWork, "offline-v2")).catch(() => null) : null;
-  if (offlineRun.presented && offlinePixels) {
-    assertRegionsIdentical(portableV2Pixels, offlinePixels, "offline checkpoint boot must present exactly v2 pixels");
-  }
+  const offlinePixels = await pixelDigest(offlineRun.png!, path.join(pixelWork, "offline-v2")).catch(() => null);
+  assert(offlinePixels, "offline boot window capture must exist once the presented contract is fulfilled");
+  assertRegionsIdentical(portableV2Pixels, offlinePixels, "offline checkpoint boot must present exactly v2 pixels");
   record("offline-v2-checkpoint-boot", { serversClosed: true, nodeOnPath: false, packageFileDeleted: true,
     recovered: "last-known-good", presentedVersion: V2.packageVersion, checkpointActiveV2: true,
-    presentedContractFulfilled: offlineRun.presented,
-    visualOfflineBootEvidence: offlineRun.png ?? null, pixels: offlinePixels,
-    defect: offlineRun.presented ? null : {
-      code: "lkg-restore-present-marker-never-fires",
-      symptom: "离线检查点启动实际绘制 v2 内容(截图为证),但呈现检查点在 75s 内不出现",
-      logTail: offlineRun.log.slice(-900),
-    } });
+    smokeSubmitted: offlineRun.smokeSubmitted, presentedContractFulfilled: true,
+    visualOfflineBootEvidence: offlineRun.png ?? null, pixels: offlinePixels });
 
   // ── F. 证据汇总 ────────────────────────────────────────────────────────────────
+  // 呈现合同已在上面逐步断言;此清单是回归哨兵——一旦任一恢复启动未达成合同,缺陷将在此留档。
   const defectSummary = [autoRollbackRun, offlineRun].filter(run => !run.presented).map((run, index) => ({
     id: `P3-05-D1-lkg-restore-present-contract-${index === 0 ? "auto-rollback" : "offline-boot"}`,
     code: "lkg-restore-present-marker-never-fires",
@@ -882,7 +876,7 @@ async function main() {
     steps, defects: defectSummary, pixelAssertions: {
       sameVersionIdentical: [
         "exe-v2 vs exe-v2-rollback",
-        "portable-v2 vs auto-rollback/offline-boot(仅在呈现检查点达成时做严格像素一致断言;否则以恢复窗口截图为视觉证据)",
+        "portable-v2 vs auto-rollback/offline-boot(呈现合同达成后无条件做严格像素一致断言)",
       ],
       crossVersionDistinct: {
         v1BannerSha: v1Pixels?.regions.banner.sha256 ?? null, v2BannerSha: v2Pixels.regions.banner.sha256,
