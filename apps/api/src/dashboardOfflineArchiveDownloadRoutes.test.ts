@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import { rm } from "node:fs/promises";
+import JSZip from "jszip";
 import { createApiServer } from "./serverOptions.js";
 import { registerDashboardOfflineArchiveDownloadRoutes } from "./dashboardOfflineArchiveDownloadRoutes.js";
 import type { DashboardOfflineArchiveDownloadDependencies } from "./dashboardOfflineArchiveDownloadRoutes.js";
+import { createWebStaticDownloadFixture } from "./dashboardWebStaticPackage.testUtils.js";
 import nodePath from "node:path";
 import {
   DashboardNativeCandidateAuthorityError,
@@ -33,6 +36,7 @@ async function fixture(options: {
   readonly createArchive?: ReturnType<typeof vi.fn>;
   readonly serializeArchive?: ReturnType<typeof vi.fn>;
   readonly portable?: DashboardOfflineArchiveDownloadDependencies["portable"];
+  readonly webStatic?: DashboardOfflineArchiveDownloadDependencies["webStatic"];
 } = {}) {
   const app = createApiServer();
   if (options.user) app.addHook("preHandler", async request => { request.systemUser = options.user as never; });
@@ -41,16 +45,20 @@ async function fixture(options: {
   const createArchive = options.createArchive ?? vi.fn(() => ({ archive: "private" }));
   const serializeArchive = options.serializeArchive ?? vi.fn(() => Uint8Array.of(0x44, 0x4d, 0x44, 0x41));
   await registerDashboardOfflineArchiveDownloadRoutes(app, { registry, readFreezeManifest: readFreezeManifest as never,
-    createArchive: createArchive as never, serializeArchive: serializeArchive as never, portable: options.portable });
+    createArchive: createArchive as never, serializeArchive: serializeArchive as never, portable: options.portable,
+    ...(options.webStatic === undefined ? {} : { webStatic: options.webStatic }) });
   return { app, registry, readFreezeManifest, createArchive, serializeArchive };
 }
 
 const editor = { id: "editor-1", role: "editor", projectIds: [authority.projectId], enabled: true } as const;
+const webStaticDirectories: string[] = [];
+afterEach(async () => { await Promise.all(webStaticDirectories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))); });
 
 describe("dashboard offline archive download routes", () => {
   const zipPath = path.replace("offline-archive", "portable-zip");
   const executable = nodePath.resolve("server-only-player.exe");
   const exePath = path.replace("offline-archive", "standalone-executable");
+  const webPath = path.replace("offline-archive", "web-package");
 
   it("finishes a real HTTP download after asynchronous packaging", async () => {
     const f = await fixture({ user: editor, portable: { nativeExecutable: executable,
@@ -303,5 +311,80 @@ describe("dashboard offline archive download routes", () => {
     expect(response.body).not.toContain("private validation detail");
     expect(invalid.serializeArchive).not.toHaveBeenCalled();
     await invalid.app.close();
+  });
+
+  it("registers the web-package download only when deployment supplies webStatic", async () => {
+    const unavailable = await fixture({ user: editor });
+    expect((await unavailable.app.inject({ method: "GET", url: webPath })).statusCode).toBe(404);
+    await unavailable.app.close();
+    const configured = createApiServer();
+    await expect(registerDashboardOfflineArchiveDownloadRoutes(configured, {
+      registry: { read: record }, readFreezeManifest: async () => undefined,
+      webStatic: { readPublication: async () => undefined, readResourceObject: async () => new Uint8Array(),
+        licensedFonts: [], webStaticRoot: "relative/dist" },
+    })).rejects.toThrow("absolute static root");
+    await configured.close();
+  });
+
+  it("serves a verified web.zip compiled from the published record, not the DMDA archive", async () => {
+    const wf = await createWebStaticDownloadFixture();
+    webStaticDirectories.push(wf.fixture.directory);
+    const f = await fixture({ user: editor, readFreezeManifest: async () => structuredClone(wf.fixture.freezeManifest),
+      webStatic: wf.dependencies });
+    try {
+      const response = await f.app.inject({ method: "GET", url: webPath });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.headers["content-type"]).toBe("application/zip");
+      expect(response.headers["content-disposition"]).toBe('attachment; filename="dashboard-candidate-candidate-1.web.zip"');
+      expect(response.headers["cache-control"]).toBe("private, no-store");
+      expect(response.headers["x-content-type-options"]).toBe("nosniff");
+      const zip = await JSZip.loadAsync(response.rawPayload, { checkCRC32: true });
+      expect(zip.file("index.html")).not.toBeNull();
+      expect(zip.file("dashboard.web.json")).not.toBeNull();
+      expect(f.createArchive).not.toHaveBeenCalled();
+      expect(f.serializeArchive).not.toHaveBeenCalled();
+      expect(wf.readPublication).toHaveBeenCalledWith({ record: expect.objectContaining({ summary: expect.objectContaining({ candidateId: "candidate-1" }) }), signal: expect.any(AbortSignal) });
+      expect(f.registry.read).toHaveBeenCalledTimes(2);
+      expect((await f.app.inject({ method: "GET", url: webPath + "?format=web" })).statusCode).toBe(400);
+      expect(wf.readPublication).toHaveBeenCalledTimes(1);
+    } finally { await f.app.close(); }
+  });
+
+  it("returns 409 without packaging when the web publication is missing or the gate fails", async () => {
+    const missing = await createWebStaticDownloadFixture();
+    webStaticDirectories.push(missing.fixture.directory);
+    missing.readPublication.mockResolvedValue(undefined);
+    const f = await fixture({ user: editor, readFreezeManifest: async () => structuredClone(missing.fixture.freezeManifest),
+      webStatic: missing.dependencies });
+    try {
+      const response = await f.app.inject({ method: "GET", url: webPath });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ code: "candidate_invalid" });
+      expect(response.headers["content-disposition"]).toBeUndefined();
+    } finally { await f.app.close(); }
+
+    const gated = await createWebStaticDownloadFixture();
+    webStaticDirectories.push(gated.fixture.directory);
+    const gatedRoute = await fixture({ user: editor, read: () => record({ capability: { ...capability, objects: [] } }),
+      webStatic: gated.dependencies });
+    try {
+      const response = await gatedRoute.app.inject({ method: "GET", url: webPath });
+      expect(response.statusCode).toBe(409);
+      expect(gated.readPublication).not.toHaveBeenCalled();
+    } finally { await gatedRoute.app.close(); }
+  });
+
+  it("does not expose web packaging failures or attach partial bytes", async () => {
+    const wf = await createWebStaticDownloadFixture();
+    webStaticDirectories.push(wf.fixture.directory);
+    wf.dependencies.readResourceObject.mockRejectedValue(new Error("private object store detail"));
+    const f = await fixture({ user: editor, readFreezeManifest: async () => structuredClone(wf.fixture.freezeManifest),
+      webStatic: wf.dependencies });
+    try {
+      const response = await f.app.inject({ method: "GET", url: webPath });
+      expect(response.statusCode).toBe(409);
+      expect(response.headers["content-disposition"]).toBeUndefined();
+      expect(response.body).not.toContain("private object store detail");
+    } finally { await f.app.close(); }
   });
 });

@@ -9,6 +9,7 @@ import { parseDeepRuntimePackage, serializeDeepRuntimePackage } from "@bim-studi
 import source from "../../../packages/deep-engine/fixtures/dashboard-layout-source-v1.json";
 import { LocalObjectStore } from "./objects.js";
 import { registerDashboardNativeCandidateRouteRuntime } from "./dashboardNativeCandidateRouteRuntime.js";
+import type { DashboardWebStaticDownloadDependencies } from "./dashboardOfflineArchiveDownloadRoutes.js";
 import { createApiServer } from "./serverOptions.js";
 import { parseDashboardOfflineArchive } from "./dashboardOfflineArchiveBytes.js";
 
@@ -30,7 +31,7 @@ function published(): PublishedApplicationRecord {
     applicationRevision: authority.applicationRevision, document: document.application, publishedAt: "2026-09-16T12:00:00.000Z" };
 }
 
-async function fixture(portable = false) {
+async function fixture(portable = false, webStatic?: DashboardWebStaticDownloadDependencies) {
   const directory = await mkdtemp(path.join(tmpdir(), "dashboard-route-runtime-")); cleanup.push(directory);
   const objectKey = "projects/project-golden/assets/font.woff2", font = Uint8Array.of(1, 2, 3);
   const objectPath = path.join(directory, objectKey);
@@ -58,7 +59,7 @@ async function fixture(portable = false) {
   if (portable) await writeFile(nativeExecutable, pe);
   app.addHook("preHandler", async request => { request.systemUser = { id: "editor", role: "editor", projectIds: [authority.projectId], enabled: true } as never; });
   const registered = await registerDashboardNativeCandidateRouteRuntime(app, { nativeExecutable: portable ? nativeExecutable : undefined,
-    ...(portable ? { nativeExecutableSha256: sha(pe) } : {}), runtime: { store, objects: new LocalObjectStore(directory), closure, compiler,
+    ...(portable ? { nativeExecutableSha256: sha(pe) } : {}), ...(webStatic === undefined ? {} : { webStatic }), runtime: { store, objects: new LocalObjectStore(directory), closure, compiler,
     expectedDeviceFingerprintSha256: "a".repeat(64), verifier: { verify: async input => ({ verifier: "native-dashboard-window-v1",
       authority, freezeManifestSha256: input.candidate.manifest.manifestSha256, sourceSemanticHash: input.sourceSemanticHash,
       compileGraphHash: input.compileGraphHash, targetArtifactHash: input.targetArtifactHash, fixtureSha256: "b".repeat(64),
@@ -111,5 +112,18 @@ describe("dashboard Native candidate route runtime", () => {
       f.registered.registry.remove(candidate.candidateId);
       expect((await f.app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip` })).statusCode).toBe(404);
     } finally { await f.app.close(); }
+  });
+
+  it("forwards the deployment webStatic supply so the web-package route exists only with it", async () => {
+    const bare = await fixture();
+    expect(bare.app.printRoutes()).toContain("offline-archive");
+    expect(bare.app.printRoutes()).not.toContain("web-package");
+    await bare.app.close();
+    const webStatic = { readPublication: async () => undefined, readResourceObject: async () => new Uint8Array(),
+      licensedFonts: [], webStaticRoot: path.join(tmpdir(), "dashboard-web-static-route") } as const;
+    const configured = await fixture(false, webStatic);
+    try {
+      expect(configured.app.printRoutes()).toContain("web-package");
+    } finally { await configured.app.close(); }
   });
 });
