@@ -9,7 +9,7 @@ import { tessellateTrimmedCylinderFace } from './3dm-cylinder-trim.mts';
 import { completeBrepParts } from './3dm-brep-tessellation.mts';
 import { export3dmGlb } from './3dm-glb-export.mts';
 import { auditGlbGeometry } from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/common-knot-2026-09-17-v1/nonrect');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/plane-reconstruction-2026-09-17-v1/nonrect');
 const require=createRequire(new URL('../../apps/web/package.json',import.meta.url)),{Triangle,Vector3}=require('three');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex');

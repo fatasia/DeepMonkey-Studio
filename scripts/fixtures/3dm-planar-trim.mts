@@ -26,7 +26,7 @@ function touches(a: number[], b: number[], c: number[], d: number[]) {
     && Math.min(a[1],b[1])<=Math.max(c[1],d[1])+EPS && Math.min(c[1],d[1])<=Math.max(a[1],b[1])+EPS
     && o[0]*o[1]<=EPS*EPS && o[2]*o[3]<=EPS*EPS;
 }
-function validateRings(rings: number[][][]) {
+export function validatePlanarRings(rings: number[][][]) {
   check(rings.flat().length<=2048, 'trim-vertex-budget');
   for(let r=0;r<rings.length;r++) {
     const ring=rings[r]; check(ring.length>=3 && Math.abs(polygonArea(ring))>EPS, 'degenerate-trim-loop');
@@ -78,7 +78,7 @@ export function tessellatePlanarFace(ir: any, faceIndex: number, overrides=new M
   check(loops.reduce((count: number,l: any)=>count+(l.trims?.length??2049),0)<=2048, 'trim-vertex-budget');
   loops.sort((a: any,b: any)=>a.type-b.type);
   const uvToSourceBound=length(u)/(surface.domain[0][1]-surface.domain[0][0])+length(v)/(surface.domain[1][1]-surface.domain[1][0]);
-  const parsed=loops.map((loop: any)=>trimLoop(ir,loop,trimChordTolerance/uvToSourceBound,overrides)),rings=parsed.map(p=>p.ring); validateRings(rings);
+  const parsed=loops.map((loop: any)=>trimLoop(ir,loop,trimChordTolerance/uvToSourceBound,overrides)),rings=parsed.map(p=>p.ring); validatePlanarRings(rings);
   let offset=0;const boundaryEdges=parsed.flatMap(p=>{const edges=p.boundaries.map(b=>({...b,vertices:b.vertices.map(i=>i+offset)}));offset+=p.ring.length;return edges;});
   const uv: number[][]=rings.flat();
   const positions=uv.map(point=>evaluateSurface(surface,point));

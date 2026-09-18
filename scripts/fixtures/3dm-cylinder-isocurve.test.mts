@@ -12,7 +12,7 @@ import {proveSourceBoundary} from './3dm-source-boundary-proof.mts';
 import {evaluateCurve,evaluateSurface} from './3dm-nurbs-parameters.mjs';
 import {export3dmGlb} from './3dm-glb-export.mts';
 import {auditGlbGeometry} from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/common-knot-2026-09-17-v1');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/plane-reconstruction-2026-09-17-v1');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),hash='a1b0ef69925b5d9223a7d797033055bb766842768a96f7713e1ecaec2763bb31';
 assert.equal(sha(readFileSync(path)),hash);const run=spawnSync(resolve(root,'test-output/3dm-source-audit/3dm-source-audit.exe'),[path,'--parameter-evidence-all'],{encoding:'utf8',maxBuffer:128*1024*1024,timeout:60000});
@@ -22,7 +22,7 @@ const sub=(a:number[],b:number[])=>a.map((x,i)=>x-b[i]),cross=(a:number[],b:numb
 function raw(face:number):any{return [0,9,10].includes(face)?tessellateTrimmedCylinderFace(ir,face,.001):tessellatePlanarFace(ir,face);}
 test('five actual full and partial cylinder-plane curves share source chains without changing old points or normals',async()=>{
   const before=JSON.stringify(ir),result=completeBrepParts(object,.001),records=result.sourceEdgeSynchronizations.filter(r=>[1,34,37,39,42].includes(r.edge));
-  assert.deepEqual(records.map(r=>r.edge),[1,34,37,39,42]);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,53);
+  assert.deepEqual(records.map(r=>r.edge),[1,34,37,39,42]);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,49);
   assert.equal(result.boundaryAudit.unverified.length,0);assert(result.boundaryAudit.seams.every(e=>e.conforming));
   let references=0,maxReferenceError=0,trimReferences=0,maxTrimReferenceError=0;
   for(const record of records){assert(record.proofs.every(p=>p.continuousBound<1e-12&&p.physicalBoundMm<=.01));const edge=ir.edges[record.edge],curve=ir.curves3d[edge.curve3d];

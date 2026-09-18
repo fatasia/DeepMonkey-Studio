@@ -45,11 +45,13 @@ export function auditBrepBoundaries(ir:any,parts:any[],tolerance=1e-8){
       if(!segment.direction)invalidBoundarySegments++;
       for(const p of [segment.a,segment.b,segment.a.map((x:number,i:number)=>(x+segment.b[i])/2)])
         maxSampledDeviation=Math.max(maxSampledDeviation,Math.min(...other.map((s:any)=>segmentDistance(p,s.a,s.b))));
-      const match=other.find((s:any)=>distance(segment.a,s.a)<=tolerance&&distance(segment.b,s.b)<=tolerance
-        ||distance(segment.a,s.b)<=tolerance&&distance(segment.b,s.a)<=tolerance);
+      let best:any;
+      for(const s of other){const same=Math.max(distance(segment.a,s.a),distance(segment.b,s.b)),opposite=Math.max(distance(segment.a,s.b),distance(segment.b,s.a)),error=Math.min(same,opposite);
+        if(error<=tolerance&&(!best||error<best.error))best={s,same,opposite,error};}
+      const match=best?.s;
       if(!match)unmatchedSegments++;
       else if(segment.direction&&match.direction){
-        const same=distance(segment.a,match.a)<=tolerance;
+        const same=best.same<=best.opposite;
         if(segment.direction===(same?match.direction:-match.direction))orientationErrors++;
       }
     }

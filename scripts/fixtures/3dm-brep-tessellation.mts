@@ -10,9 +10,10 @@ import { tessellateProvenCylinderFace } from './3dm-proven-cylinder.mts';
 import { tessellateBicubicFace,tessellateMultispanBicubicFace } from './3dm-bicubic-face.mts';
 import { tessellateRationalBezierFace } from './3dm-rational-bezier-face.mts';
 import { synchronizeSourceEdges } from './3dm-synchronize-source-edges.mts';
+import { reconstructPlaneSourceEdges } from './3dm-reconstruct-plane-source.mts';
 
 /** Preserve saved meshes, reconstruct only supported missing faces, retain per-face diagnostics. */
-export function completeBrepParts(object: any,metersPerUnit?:number) {
+export function completeBrepParts(object: any,metersPerUnit?:number,options:{reconstructPlaneBoundaries?:boolean}={}) {
   const parts=[...(object.storedRenderMeshes??[])], diagnostics: any[]=[];
   if(object.kind!=='brep' || !object.cadIr) return { parts, diagnostics };
   if(!Number.isInteger(object.faceCount) || object.faceCount<0 || object.faceCount>100000
@@ -59,9 +60,13 @@ export function completeBrepParts(object: any,metersPerUnit?:number) {
   if(metersPerUnit!==undefined&&object.cadIr.edges&&object.cadIr.trims&&object.cadIr.loops){
     const result=synchronizeSourceEdges(object.cadIr,refined,metersPerUnit);refined=result.parts;sourceEdgeSynchronizations=result.records;
   }
+  let planeSourceReconstructions:any[]=[];
+  if(options.reconstructPlaneBoundaries!==false&&metersPerUnit!==undefined&&object.cadIr.edges&&object.cadIr.trims&&object.cadIr.loops){
+    const result=reconstructPlaneSourceEdges(object.cadIr,refined,metersPerUnit);refined=result.parts;planeSourceReconstructions=result.records;
+  }
   const boundaryAudit=object.cadIr.edges&&object.cadIr.trims&&object.cadIr.loops?auditBrepBoundaries(object.cadIr,refined):null;
   for(const edge of [...(boundaryAudit?.shared??[]),...(boundaryAudit?.seams??[])])if(!edge.conforming)diagnostics.push({objectId:object.id,code:'nonconforming-brep-boundary',edge:edge.edge});
   for(const edge of boundaryAudit?.unverified??[])if(edge.reason!=='source-edge-not-two-sided'||edge.faces.length>2)
     diagnostics.push({objectId:object.id,code:'nonconforming-brep-boundary',edge:edge.edge,reason:edge.reason});
-  return {parts:refined,diagnostics,boundaryAudit,refinements,welds,sourceEdgeSynchronizations};
+  return {parts:refined,diagnostics,boundaryAudit,refinements,welds,sourceEdgeSynchronizations,planeSourceReconstructions};
 }

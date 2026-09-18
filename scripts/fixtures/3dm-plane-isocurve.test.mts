@@ -12,7 +12,7 @@ import {proveSourceBoundary} from './3dm-source-boundary-proof.mts';
 import {evaluateCurve,evaluateSurface} from './3dm-nurbs-parameters.mjs';
 import {export3dmGlb} from './3dm-glb-export.mts';
 import {auditGlbGeometry} from '../../apps/api/src/converterOutputAudit.ts';
-const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/common-knot-2026-09-17-v1/plane');
+const root=resolve(import.meta.dirname,'../..'),out=resolve(root,'test-output/industrial-3dm/plane-reconstruction-2026-09-17-v1/plane');
 const path=resolve(root,'data/external-assets/industrial-format-plan/dependencies/extracted/opennurbs-v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm');
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),hash='a1b0ef69925b5d9223a7d797033055bb766842768a96f7713e1ecaec2763bb31';
 assert.equal(sha(readFileSync(path)),hash);const run=spawnSync(resolve(root,'test-output/3dm-source-audit/3dm-source-audit.exe'),[path,'--parameter-evidence-all'],{encoding:'utf8',maxBuffer:128*1024*1024,timeout:60000});
@@ -22,7 +22,7 @@ const fixed=[60,83,84,86,88,89,91];
 function raw(face:number):any{return ir.surfaces[ir.faces[face].surface].degree.every((x:number)=>x===1)?tessellatePlanarFace(ir,face):tessellateRationalBezierFace(ir,face,.001);}
 test('seven plane/isocurve identities preserve source geometry including different inserted-knot bases',async()=>{
   const result=completeBrepParts(object,.001),records=result.sourceEdgeSynchronizations.filter(r=>fixed.includes(r.edge));
-  assert.deepEqual(records.map(r=>r.edge),fixed);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,53);
+  assert.deepEqual(records.map(r=>r.edge),fixed);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,49);
   const patches=records.find(r=>r.edge===60).proofs.flatMap(p=>p.localRetriangulations??[]);assert(patches.length>0);assert(patches.every(p=>p.removed<=64&&p.passes<=5));
   assert.equal(result.boundaryAudit.unverified.length,0);assert(result.boundaryAudit.seams.every(e=>e.conforming));
   let references=0,maxReferenceError=0,trimReferences=0,maxTrimReferenceError=0;
@@ -30,7 +30,8 @@ test('seven plane/isocurve identities preserve source geometry including differe
     const c=ir.curves3d[ir.edges[record.edge].curve3d];
     for(const sample of c.parameterEvidence){references++;maxReferenceError=Math.max(maxReferenceError,distance(evaluateCurve(c,sample.source),sample.point));}
     for(const p of record.proofs){const part=result.parts.find(x=>x.face===p.face),before=raw(p.face),proof=proveSourceBoundary(ir,part,record.edge);
-      assert.deepEqual(part.mesh.positions.slice(0,before.mesh.positions.length),before.mesh.positions);
+      const reconstructed=new Map((part.audit.sourceC3Reconstructions??[]).flatMap((r:any)=>r.source.map((v:any)=>[v.vertex,v.position])));
+      for(let i=0;i<before.mesh.positions.length;i++)assert.deepEqual(reconstructed.get(i)??part.mesh.positions[i],before.mesh.positions[i]);
       assert.deepEqual(part.mesh.normals.slice(0,before.mesh.normals.length),before.mesh.normals);
       if(record.edge===83){assert.equal(ir.edges[83].tolerance,0);const tr=ir.trims[proof.boundary.trim],c2=ir.curves2d[tr.curve2d],domain=ir.edges[83].sourceSubdomain;
         for(const sample of c2.parameterEvidence){trimReferences++;let t;
