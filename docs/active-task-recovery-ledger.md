@@ -2408,3 +2408,6 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 
 - P2-03宿主轨迹：三组离线确定性轨迹同一fixture schema（canonical digest冻结断言）——formatter（封闭枚举thousands/percent/fixed2，29事件簇光标逐值golden，未声明类型fail-closed）、动画（P1-23动画ABI同源250/600ms采样，SetProperty逐值golden双跑一致）、异常/超时（畸形preedit拒绝/预算超限undo恢复/deadline强制取消，20事件结构化诊断全清单）；N0→N1语义保持（仅commit发布快照）。RUSTFLAGS静态CRT全量1226 passed。剩余：真实系统IME与像素证据（人工/后续）。
+
+
+- P1-19用户决策落地+关闭：字体再分发权拍板为OFL允许内嵌（官方FAQ允许完整/子集嵌入与商用，条件=许可文本随分发+尊重RFN；行业先例Godot/Blender）。核验现状：①dashboardPublishedFontCatalog 构建即拒绝非redistributable字体（fail-closed阻断消费方已闭环）②许可文件随包已实现（web包licenses/font-*.txt，原生包THIRD_PARTY_NOTICES）③子集化为后续优化切片（需子集化工具链立项）。shaping发现：cosmic-text依赖树已有unicode-bidi 0.3.18+swash（OpenType shaping）——P1-20从选库决策改为零新依赖接线切片（N0 TextDocument bidi/RTL路径接既有能力），按用户授权直接推进。
