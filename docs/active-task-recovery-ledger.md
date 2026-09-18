@@ -2414,3 +2414,6 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 
 - API web静态包下载注册 `9da690e`：合同按层下沉contracts（类型/dashboardWebPath/assertDashboardWebSource/结构校验/dashboardFrozenFontStyle单一实现，零新依赖），web侧re-export对外API不变（摘要断言留web）；api生成器模块186行（冻结清单canonical复核/逐资源预算与hash/字体许可闭包/运行时文件遍历排除生成物/JSZip固定时间戳）；路由第四格式web-package（application/zip，.web.zip文件名，gate与409/registry复查全生效）。门禁：contracts 293+web 10+api 14聚焦与api全量1218全绿。**阶段1至此100%**（部署层webStatic真实接线=部署配置工作，属后续）。
+
+
+- 会话收尾：接管并行会话三条lane全部收拢入库（api scene链2c03003/81d3db7、web scene链dae7ad2、packages/scripts 9aa965c、docs f1943fa、3dm fixtures 8438de7、benchmark A02/A03 1fe776a、D1修复7b8d84b、配置aa34e71）；GPT交接文档docs/codex-glm-handoff-2026-09-18.md已写（一页现状/按域交付清单/下一批优先级/环境红线/报告索引）。工作树仅剩test-output与tmp产物（按惯例不入库）。
