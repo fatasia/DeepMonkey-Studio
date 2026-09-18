@@ -2,12 +2,14 @@
 pub struct FogSettings {
     color: [f32; 3],
     density: f32,
+    exp2: bool,
 }
 
 impl FogSettings {
     pub const DISABLED: Self = Self {
         color: [0.0; 3],
         density: 0.0,
+        exp2: false,
     };
     pub const MAX_DENSITY: f32 = 8.0;
     pub const MAX_HDR_CHANNEL: f32 = 64.0;
@@ -28,7 +30,30 @@ impl FogSettings {
                 Self::MAX_HDR_CHANNEL
             ));
         }
-        Ok(Self { color, density })
+        Ok(Self {
+            color,
+            density,
+            exp2: false,
+        })
+    }
+
+    /// 作者雾在片元 HDR 域合成，透明混合之前处理，背景不受影响。
+    pub fn authored_exp2(density: f32, color: [f32; 3]) -> Result<Self, String> {
+        let mut fog = Self::exponential(density, color)?;
+        fog.exp2 = true;
+        Ok(fog)
+    }
+
+    pub fn is_authored(self) -> bool {
+        self.exp2
+    }
+
+    pub fn requires_output_pass(self) -> bool {
+        !self.exp2 && self.density > 0.0
+    }
+
+    pub fn frame_projection(self, near: f32, far: f32) -> [f32; 4] {
+        [near, far, if self.exp2 { 2.0 } else { 0.0 }, 0.0]
     }
 
     pub fn color(self) -> [f32; 3] {
@@ -43,7 +68,15 @@ impl FogSettings {
         if !world_distance.is_finite() || world_distance < 0.0 {
             return Err("fog world distance must be finite and non-negative".into());
         }
-        Ok((1.0 - (-self.density * world_distance).exp()).clamp(0.0, 1.0))
+        let optical_depth = self.density * world_distance;
+        Ok((1.0
+            - (-if self.exp2 {
+                optical_depth * optical_depth
+            } else {
+                optical_depth
+            })
+            .exp())
+        .clamp(0.0, 1.0))
     }
 
     pub fn mix_hdr(self, color: [f32; 3], world_distance: f32) -> Result<[f32; 3], String> {
@@ -96,5 +129,57 @@ mod tests {
         }
         assert!(FogSettings::DISABLED.amount(f32::NAN).is_err());
         assert!(FogSettings::DISABLED.amount(-1.0).is_err());
+        for density in [f32::NAN, f32::INFINITY, -0.1, 8.1] {
+            assert!(FogSettings::authored_exp2(density, [0.0; 3]).is_err());
+        }
+        assert!(FogSettings::authored_exp2(0.1, [f32::NAN, 0.0, 0.0]).is_err());
+    }
+
+    /// Three FogExp2 GLSL: fogFactor = 1 - exp(-density² * depth²)；
+    /// 参考值来自 f64 直接计算，f32 容差 1e-6。
+    #[test]
+    fn authored_exp2_matches_three_fog_exp2_reference_values() {
+        let fog = FogSettings::authored_exp2(0.25, [0.2, 0.4, 0.8]).unwrap();
+        assert!(fog.is_authored());
+        let expected: [(f32, f64); 4] = [
+            (0.0, 0.0),
+            (2.0, 1.0 - (-0.25_f64).exp()),
+            (6.0, 1.0 - (-2.25_f64).exp()),
+            (40.0, 1.0),
+        ];
+        for (distance, reference) in expected {
+            let amount = fog.amount(distance).unwrap();
+            assert!(
+                (f64::from(amount) - reference).abs() < 1e-6,
+                "exp2 amount at {distance}: {amount} != {reference}"
+            );
+        }
+        // 同参数下 exp1 与 exp2 可区分，且两者都单调收敛到 1。
+        let legacy = FogSettings::exponential(0.25, [0.2, 0.4, 0.8]).unwrap();
+        let legacy_reference = 1.0 - (-0.5_f64).exp();
+        assert!((f64::from(legacy.amount(2.0).unwrap()) - legacy_reference).abs() < 1e-6);
+        assert!((legacy.amount(2.0).unwrap() - fog.amount(2.0).unwrap()).abs() > 0.1);
+        assert!(fog.amount(1.0).unwrap() < fog.amount(2.0).unwrap());
+    }
+
+    #[test]
+    fn authored_exp2_projection_flags_and_output_pass_policy_match_cpu_formula() {
+        let fog = FogSettings::authored_exp2(0.15, [0.5, 0.25, 0.125]).unwrap();
+        assert_eq!(fog.frame_projection(0.3, 250.0), [0.3, 250.0, 2.0, 0.0]);
+        let legacy = FogSettings::exponential(0.15, [0.5, 0.25, 0.125]).unwrap();
+        assert_eq!(legacy.frame_projection(0.1, 100.0), [0.1, 100.0, 0.0, 0.0]);
+        // 作者雾在片元合成：不需要输出雾 pass；legacy 密度雾需要；禁用态两者皆否。
+        assert!(!fog.requires_output_pass());
+        assert!(legacy.requires_output_pass());
+        assert!(!FogSettings::DISABLED.requires_output_pass());
+        assert_eq!(fog.frame_tuning(), [0.5, 0.25, 0.125, 0.15]);
+        let mixed = fog.mix_hdr([1.0, 0.0, 0.5], 2.0).unwrap();
+        let amount = fog.amount(2.0).unwrap();
+        let reference: Vec<f32> = (0..3)
+            .map(|axis| [1.0, 0.0, 0.5][axis] * (1.0 - amount) + [0.5, 0.25, 0.125][axis] * amount)
+            .collect();
+        for axis in 0..3 {
+            assert!((mixed[axis] - reference[axis]).abs() < 1e-6);
+        }
     }
 }

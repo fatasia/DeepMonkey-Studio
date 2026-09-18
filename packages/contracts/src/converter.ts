@@ -83,6 +83,12 @@ export interface ConversionArtifact {
 export interface ConversionTaskRecord {
   id: string;
   projectId: string;
+  idempotencyKey?: string;
+  /** 上传模型与 REST / SDK / MCP 使用同一个转换任务身份。 */
+  modelId?: string;
+  /** 由执行器对实际源字节计算并核验，不从提交参数直接信任。 */
+  sourceBundle?: import("./formatImportContracts.js").SourceBundleRecord;
+  quality?: import("./conversionQuality.js").ConversionQualityReport;
   pluginId: string;
   pluginVersion: string;
   input: ConversionTaskInput;
@@ -99,6 +105,8 @@ export interface ConversionTaskRecord {
 
 export interface SubmitConversionTaskRequest {
   projectId: string;
+  idempotencyKey?: string;
+  modelId?: string;
   pluginId: string;
   input: ConversionTaskInput;
   configuration?: Record<string, unknown>;

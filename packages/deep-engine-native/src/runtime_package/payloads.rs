@@ -1,5 +1,7 @@
 use super::content_payloads::{decode_chart, decode_chart_sim, decode_deep2d};
 use serde_json::Value;
+#[path = "solid_environment.rs"]
+mod solid_environment;
 
 use super::{
     IblEnvironmentReferenceV1, IblReferenceKind, LoadedRuntimePackage, RuntimePackageEnvelope,
@@ -38,6 +40,14 @@ pub(super) fn decode(
         .map(|id| decode_chart_sim(&package, id, chart.as_ref()))
         .transpose()?;
     let environment = decode_environment(&package, &package.entrypoints.environment)?;
+    let solid_environment = decode_background(&package, &package.entrypoints.environment)?;
+    let background = solid_environment.as_ref().map(|decoded| decoded.background);
+    let fog = solid_environment.and_then(|decoded| decoded.fog);
+    let lighting = if background.is_some() {
+        solid_environment::lighting(payload(&package, &package.entrypoints.environment)?)
+    } else {
+        None
+    };
     let shader_packages = package
         .entrypoints
         .shader_packages
@@ -73,6 +83,9 @@ pub(super) fn decode(
         chart,
         chart_sim,
         environment,
+        background,
+        lighting,
+        fog,
         shader_packages,
         material_bindings: package.material_bindings,
     })
@@ -98,6 +111,14 @@ fn decode_environment(
     id: &str,
 ) -> Result<crate::ibl::PreparedIblEnvironment, RuntimePackageError> {
     let descriptor = descriptor(package, id, RuntimeResourceKind::IblEnvironment)?;
+    if decode_background(package, id)?.is_some() {
+        if let Some(ibl) = payload(package, id)?.get("ibl") {
+            return super::prefiltered_ibl::decode(ibl, descriptor).map_err(RuntimePackageError);
+        }
+        let mut environment = crate::ibl::disabled_probe_environment();
+        environment.id = id.into();
+        return Ok(environment);
+    }
     if payload(package, id)?.get("schema").and_then(Value::as_str)
         == Some("deep-engine.ibl-prefiltered")
     {
@@ -127,6 +148,18 @@ fn decode_environment(
     validate_ibl_environment(&environment)
         .map_err(|error| RuntimePackageError(format!("resource {id}: {error}")))?;
     Ok(environment)
+}
+
+fn decode_background(
+    package: &RuntimePackageEnvelope,
+    id: &str,
+) -> Result<Option<solid_environment::DecodedSolidEnvironment>, RuntimePackageError> {
+    let value = payload(package, id)?;
+    if value.get("schema").and_then(Value::as_str) != Some("deep-engine.solid-environment") {
+        return Ok(None);
+    }
+    let entry = descriptor(package, id, RuntimeResourceKind::IblEnvironment)?;
+    solid_environment::decode(value, id, entry.revision).map(Some)
 }
 
 fn decode_shader_package(

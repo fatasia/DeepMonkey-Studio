@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { GlobalLightingState, SceneEnvironmentState, SceneFloorState, SceneIKConstraintState, SceneMaterialState, SceneModelEffectsState, ScenePostProcessingState, SceneRigState, Vector3Value, WeatherMode } from "@bim-studio/contracts";
+import { sceneWeatherFog } from "@bim-studio/contracts";
 import { readXRThumbstick } from "./xrInput";
 import { componentFacets } from "./analysis";
 import { toValue } from "./sceneObjectUtils";
@@ -129,22 +130,16 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
   setWeather(mode: WeatherMode): void {
       this.weatherMode = mode;
       this.disposeWeatherEffect();
-      if (mode === "sunny") {
-        this.scene.fog = new THREE.FogExp2(0x9fc2d4, 0.0018);
-      } else if (mode === "cloudy") {
-        this.scene.fog = new THREE.FogExp2(0x87939a, 0.0042);
-      } else if (mode === "rain") {
-        this.scene.fog = new THREE.FogExp2(0x64717a, 0.008);
+      // 雾参数取自版本化天气雾合同（值与历史字面量逐位一致），Native 交付消费同一合同。
+      const weatherFog = sceneWeatherFog(mode);
+      this.scene.fog = new THREE.FogExp2(parseInt(weatherFog.colorSrgbHex.slice(1), 16), weatherFog.density);
+      if (mode === "rain") {
         this.weatherEffect = this.createRainEffect();
         this.scene.add(this.weatherEffect);
       } else if (mode === "snow") {
-        this.scene.fog = new THREE.FogExp2(0xc5cdd1, 0.006);
         this.weatherEffect = this.createSnowEffect();
         this.scene.add(this.weatherEffect);
-      } else if (mode === "fog") {
-        this.scene.fog = new THREE.FogExp2(0xaab4b7, 0.018);
-      } else {
-        this.scene.fog = new THREE.FogExp2(0x38454f, 0.012);
+      } else if (mode === "storm") {
         this.weatherEffect = this.createRainEffect();
         this.scene.add(this.weatherEffect);
       }

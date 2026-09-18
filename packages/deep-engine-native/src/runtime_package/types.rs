@@ -123,6 +123,10 @@ pub struct LoadedRuntimePackage {
     pub chart: Option<ChartIR>,
     pub chart_sim: Option<crate::chart::simulation::ChartSimFixture>,
     pub environment: PreparedIblEnvironment,
+    pub background: Option<[f64; 3]>,
+    pub lighting: Option<crate::scene_lighting::DirectionalLighting>,
+    /// v7 作者雾（exp2）；仅在纯色环境声明时存在。
+    pub fog: Option<crate::fog::FogSettings>,
     pub shader_packages: Vec<DeepShaderPackageV2>,
     pub material_bindings: Vec<RuntimeMaterialShaderBinding>,
 }

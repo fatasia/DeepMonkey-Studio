@@ -2,9 +2,17 @@
 @group(0) @binding(0) var hdr_color: texture_2d<f32>;
 @group(0) @binding(4) var forward_depth: texture_depth_multisampled_2d;
 
+// Bounded world-space slots share the Web/Three local attenuation and cone policy.
+struct LocalLight {
+  positionRange: vec4f, directionKind: vec4f, radianceOuter: vec4f, coneDecay: vec4f,
+};
 struct Frame {
   view: mat4x4f, light: mat4x4f, eye: vec4f, background: vec4f,
   floor: vec4f, lightDirection: vec4f, tuning: vec4f,
+  sunColor: vec4f, lightingOptions: vec4f,
+  localLights: array<LocalLight, 16>,
+  localShadowMatrices: array<mat4x4f, 10>,
+  fogProjection: vec4f,
 };
 @group(0) @binding(5) var<uniform> frame: Frame;
 
@@ -32,9 +40,13 @@ fn fogged_hdr(position: vec4f) -> vec4f {
   let color = textureLoad(hdr_color, pixel, 0);
   let depth = min(min(textureLoad(forward_depth, pixel, 0), textureLoad(forward_depth, pixel, 1)),
     min(textureLoad(forward_depth, pixel, 2), textureLoad(forward_depth, pixel, 3)));
-  let near = 0.1; let far = 100.0;
+  // 雾投影行动态读 near/far（与 fog.rs::frame_projection 同源），不再固定 0.1/100。
+  let near = frame.fogProjection.x;
+  let far = frame.fogProjection.y;
   let distance = near * far / max(far - depth * (far - near), 0.0001);
-  let amount = clamp(1.0 - exp(-frame.tuning.w * distance), 0.0, 1.0);
+  let optical_depth = frame.tuning.w * distance;
+  let metric = select(optical_depth, optical_depth * optical_depth, frame.fogProjection.z == 2.0);
+  let amount = clamp(1.0 - exp(-metric), 0.0, 1.0);
   return vec4f(mix(color.rgb, frame.tuning.rgb, amount), color.a);
 }
 

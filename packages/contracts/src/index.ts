@@ -24,6 +24,7 @@ export * from "./project.js";
 export * from "./ergonomics.js";
 export * from "./robot.js";
 export * from "./scene.js";
+export * from "./sceneWeatherFog.js";
 export * from "./sceneModelAsset.js";
 export * from "./industrialPrefab.js";
 export * from "./publicationRendererPolicy.js";
@@ -213,6 +214,7 @@ export const DEFAULT_PRODUCT_BRANDING: Readonly<SystemBrandingSettings> = {
 };
 
 export interface DatabaseDocument {
+  conversionTasks?: import("./converter.js").ConversionTaskRecord[];
   projects: ProjectRecord[];
   scenes: SceneSnapshot[];
   publishedScenes?: PublishedSceneRecord[];
@@ -236,6 +238,7 @@ export * from "./batteryDataContract.js";
 export * from "./applicationMigration.js";
 export * from "./resourceId.js";
 export * from "./converter.js";
+export * from "./conversionQuality.js";
 export * from "./unityReadiness.js";
 export * from "./semantic.js";
 export * from "./simulationEntities.js";

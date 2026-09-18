@@ -251,5 +251,6 @@ export function assertQualityReport(value: unknown): asserts value is QualityRep
 }
 
 function isRelativePath(value: string): boolean {
-  return !value.startsWith("/") && !value.includes("..") && !/^[a-zA-Z]:/.test(value) && value !== ".";
+  return !/[\\:\u0000-\u001f\u007f]/.test(value)
+    && value.split("/").every(segment => segment !== "" && segment !== "." && segment !== "..");
 }

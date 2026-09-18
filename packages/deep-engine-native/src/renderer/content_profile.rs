@@ -93,10 +93,30 @@ pub(crate) fn plain_2d_content(content: &PlayerContent) -> bool {
 /// 输出逐像素不变(见 `tests/p09_forward_trim_gpu.rs` 的 GPU 读回对照);
 /// 显式关闭仍走 `--no-bloom`,三维/雾内容保持默认档位。
 pub(crate) fn entry_bloom(content: &PlayerContent) -> deep_engine_native::bloom::BloomSettings {
-    if plain_2d_content(content) {
+    if plain_2d_content(content) || content.background.is_some() {
         deep_engine_native::bloom::BloomSettings::DISABLED
     } else {
         deep_engine_native::bloom::BloomSettings::default()
+    }
+}
+
+impl RendererFeatures {
+    /// 冻结的作者输出档优先于宿主缺省特效；不修改宿主设置，离开该档可恢复。
+    ///
+    /// 作者 exp2 雾（`requires_output_pass()==false`）替代宿主雾档在片元 HDR 域
+    /// 合成，与纯色背景共存；无作者雾的纯色背景仍强制关闭雾。
+    pub(crate) fn for_content(self, content: &PlayerContent) -> Self {
+        if content.background.is_some() {
+            Self {
+                bloom: deep_engine_native::bloom::BloomSettings::DISABLED,
+                fog: content
+                    .fog
+                    .unwrap_or(deep_engine_native::fog::FogSettings::DISABLED),
+                ..self
+            }
+        } else {
+            self
+        }
     }
 }
 
@@ -129,6 +149,13 @@ impl Renderer {
             && self.shadow_probe.is_none()
             && self.ibl_probe.is_none();
         (self.shadow_map.metrics().map_size == COMPACT_SHADOW_SIZE) != next_compact
+            || self.forward_targets.background.is_some() != content.background.is_some()
+            || self.lighting != content.lighting
+            || (content.background.is_some()
+                && self.fog
+                    != content
+                        .fog
+                        .unwrap_or(deep_engine_native::fog::FogSettings::DISABLED))
     }
 }
 

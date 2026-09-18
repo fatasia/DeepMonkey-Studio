@@ -20,7 +20,28 @@ impl Renderer {
         previous: &PlayerContent,
         content: &PlayerContent,
     ) -> Result<(), String> {
-        let mut environment = self.stage_environment(&content.environment).await?;
+        if self.lighting != content.lighting {
+            return Err("authored lighting change requires a full renderer transaction".into());
+        }
+        // 预览路径不重写 frame uniform，作者雾变更（含宿主雾与作者雾互换）必须整重建。
+        if content.background.is_some()
+            && self.fog
+                != content
+                    .fog
+                    .unwrap_or(deep_engine_native::fog::FogSettings::DISABLED)
+        {
+            return Err("authored fog change requires a full renderer transaction".into());
+        }
+        if content.background.is_some() && (self.bloom.is_some() || self.fog.requires_output_pass())
+        {
+            return Err(
+                "authored solid background requires the native-aces-v1 output without Bloom/Fog"
+                    .into(),
+            );
+        }
+        let mut environment = self
+            .stage_environment(&content.environment, content.background)
+            .await?;
         let mut scene = self
             .stage_packet_with_environment(
                 previous.packet(),

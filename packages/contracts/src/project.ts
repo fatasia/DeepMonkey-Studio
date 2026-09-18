@@ -85,6 +85,7 @@ export interface ModelLodResource {
 export interface ModelRecord {
   id: string;
   projectId: string;
+  conversionTaskId?: string;
   name: string;
   format: ModelFormat;
   rvtConversionMode?: RvtConversionMode;
