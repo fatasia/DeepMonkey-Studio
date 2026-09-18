@@ -1,0 +1,27 @@
+name: Documentation
+description: Report an unclear, missing or incorrect guide
+title: "[Docs]: "
+labels: ["documentation", "triage"]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page and version
+      description: Document URL or title, section, and application version or commit.
+    validations:
+      required: true
+  - type: textarea
+    id: task
+    attributes:
+      label: What were you trying to do?
+      description: Describe the step, what the guide says, and where it became unclear or failed.
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: Suggested correction
+      description: Include a proposed explanation or verified command if you have one.
+  - type: markdown
+    attributes:
+      value: Remove credentials and customer data. Report vulnerabilities privately using SECURITY.md.

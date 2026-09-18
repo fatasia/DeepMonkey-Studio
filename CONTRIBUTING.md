@@ -1,17 +1,19 @@
 # Contributing to Deep Monkey Studio
 
-Thank you for improving Deep Monkey Studio. This repository accepts focused, reviewable changes with evidence that the behavior works.
+Thanks for helping improve Deep Monkey Studio. A few things to know before you start.
 
-## Before starting
+## Before you write code
 
-1. Search existing? existing Issues, Pull Requests, [specifications](docs/specs), and the [active task ledger](docs/active-task-recovery-ledger.md) before duplicating work.
-2. Open an Issue for a major feature, public contract change, migration, new dependency, or behavior that affects stored data. A small bug fix or documentation correction may go directly to a Pull Request.
-3. Read [GOVERNANCE.md](GOVERNANCE.md), [SECURITY.md](SECURITY.md), and [LICENSING.md](LICENSING.md). Report vulnerabilities privately rather than opening a public Issue.
-4. Keep one Pull Request focused on one coherent outcome. Preserve unrelated work already present in the branch.
+- Search existing Issues, Pull Requests, and [docs/specs](docs/specs) to avoid duplicating work.
+- Open an Issue first for anything big: new features, public contract changes, migrations, new dependencies, or changes to stored data. Small bug fixes and doc corrections can go straight to a Pull Request.
+- One Pull Request, one coherent change. Leave unrelated edits in the branch alone.
+- Security problems go through the private process in [SECURITY.md](SECURITY.md), not a public Issue.
 
-## Development setup
+## Setup
 
-The repository requires Node.js 24 and pnpm 11.18.0.
+See the [developer guide](docs/development.md) for the repository map and a first contribution walkthrough. Product documentation follows the [documentation guide](docs/documentation.md).
+
+Node.js 24 and pnpm 11.18.0:
 
 ```bash
 corepack enable
@@ -20,21 +22,19 @@ pnpm install --frozen-lockfile
 pnpm studio start web
 ```
 
-Use `pnpm studio start client` for the Windows desktop development client. See [README.md](README.md) for deployment and service details.
+## What a good Pull Request looks like
 
-## Change requirements
-
-- Match the architecture, naming, error handling, and test style in the surrounding module.
-- Update tests when behavior, contracts, error handling, persistence, or security boundaries change.
-- Update user and operator documentation in the same Pull Request as the implementation.
-- Add a concise entry under `Unreleased` in [CHANGELOG.md](CHANGELOG.md) for user-visible behavior, public contracts, deployment changes, deprecations, and governance changes.
-- Record every new or changed dependency, model, font, icon, or external asset in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) when its license or attribution requires it.
-- Never commit credentials, private keys, certificates, production data, customer assets, logs, database dumps, or login screenshots.
-- Use short Conventional Commit style titles for Pull Requests, for example `fix(viewer): release stale GPU resources` or `docs: clarify deployment prerequisites`.
+- Matches the architecture, naming, error handling, and test style of the surrounding module.
+- Tests updated when behavior, contracts, error handling, persistence, or security boundaries change.
+- Docs updated in the same Pull Request as the code they describe.
+- A short entry under `Unreleased` in [CHANGELOG.md](CHANGELOG.md) for anything user-visible: behavior, public contracts, deployment, deprecations.
+- New dependencies, models, fonts, icons, or external assets recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) when their license requires attribution.
+- No credentials, private keys, customer data, logs, or database dumps. Ever.
+- A Conventional Commit style title, e.g. `fix(viewer): release stale GPU resources`.
 
 ## Verification
 
-Run the smallest relevant checks while developing, then run the complete checks required by the affected area before requesting review.
+Run the smallest relevant checks while developing, then the full set before requesting review:
 
 ```bash
 pnpm gate:repository
@@ -43,21 +43,15 @@ pnpm test
 pnpm build
 ```
 
-Browser, GPU, asset, data, or release changes also require the applicable `gate:*` command from the root or workspace `package.json`. Include the commands and outcomes in the Pull Request. Do not mark an unrun check as passed.
+Browser, GPU, asset, data, and release changes have additional `gate:*` scripts — check the root `package.json` for the ones that apply. List the commands you ran and their outcomes in the Pull Request, and don't mark an unrun check as passed.
 
-## Pull Request review
+Maintainers may ask for a smaller change, stronger evidence, or a design note under `docs/specs/` when the decision affects future contributors.
 
-A Pull Request is ready to merge when:
+## Review and follow-up
 
-- the problem and resulting behavior are clear;
-- the diff contains no unrelated refactor or generated noise;
-- required tests and repository gates pass;
-- documentation and the changelog are current;
-- security, privacy, migration, rollback, dependency, and license effects are disclosed;
-- review comments are resolved; and
-- a maintainer approves the final diff.
+Open a draft Pull Request if you need early feedback. Before requesting review, complete the template and link the original Issue when there is one. Keep review discussions tied to the current diff and rerun affected checks after changes.
 
-Maintainers may ask for a smaller change, stronger evidence, or a design note under `docs/specs/` when the decision will affect future contributors.
+The [maintainers](MAINTAINERS.md) decide whether a change is ready under [GOVERNANCE.md](GOVERNANCE.md). After merge, the [changelog](CHANGELOG.md) and release notes track delivery; merge alone does not mean an installable release is available. For questions, use [SUPPORT.md](SUPPORT.md).
 
 ## Contribution certification
 

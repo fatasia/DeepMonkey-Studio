@@ -21,8 +21,8 @@
 | 基础渲染管线 | 自有 WGSL、GGX PBR、HDR、ACES、轻量 Bloom/暗角、环境预计算、阴影和 4x MSAA | 已完成基础批次 |
 | 通用静态网格 | RenderPacket、共享几何、实例更新、GLB Box/BoxInterleaved、上传失败回滚 | 已完成基础批次 |
 | 作者对象投影 | 同一 Three Object3D 投影、稳定 identity、实例增量；真实 AnimationMixer、GLTFLoader、three-mesh-bvh、SkeletonUtils 语料已跑 | 已完成基础批次，兼容面仍有限 |
-| 纹理 | RGBA8/sRGB/线性语义、采样器、mip、UV0、baseColor/MR、KHR_texture_transform 和 GPU 资源事务已实现；BoxTextured 已在真实浏览器显示并通过失败回滚与设备重建 | WEB-01 基础闭环完成，更多语料继续扩充 |
-| 原生客户端 | Rust `winit 0.30.13 + wgpu 30.0.1` 已实跑纹理 PBR、MASK、独立稳定排序 BLEND、双面、rgba16float/4×MSAA/ACES、四级 CSM、IBL、半分辨率 HDR Bloom 及 Deep2D 同帧 pass；尚无雾、文字/图像/完整矢量或安装包 | NATIVE-00 与 NATIVE-01 当前纵向切片通过；NATIVE-02 基础 path 批次完成 |
+| 纹理 | RGBA8/sRGB/线性语义、采样器、mip、UV0、baseColor/MR、KHR_texture_transform、GLB bufferView 与 glTF base64 data URI 已进入同一严格解码和 GPU 资源事务；BoxTextured 已在真实浏览器显示并通过失败回滚与设备重建 | WEB-01 基础闭环完成，代表资产语料继续扩充 |
+| 原生客户端 | Rust `winit 0.30.13 + wgpu 30.0.1` 已实跑纹理 PBR、MASK、BLEND、双面、HDR/4×MSAA/ACES、四级 CSM、动态 bounds、IBL、Bloom、跨帧资源复用和 Deep2D path/atlas/矩形 clip 同帧 pass；尚无雾、直接 Text/Image 命令、完整矢量或安装包 | NATIVE-00/01 当前纵向切片通过；NATIVE-02 已到 path/预烘焙 atlas/矩形 clip |
 | 正式产品 | 默认 Three.js 未改变；Deep 尚未接入设置页或正式项目 | 明确保持隔离 |
 
 这套基线已经是可运行的图形内核实验，不是完整引擎发行版。固定球体或 Box 的成功不能替代真实项目、发布和竞品矩阵。
@@ -33,16 +33,16 @@
 
 | 编号 | 剩余任务 | 完成门禁 |
 |---|---|---|
-| WEB-01 | 扩充嵌入 PNG/JPEG 的 glTF/GLB 纹理语料 | 基础 UV0、baseColor sRGB、metallic-roughness 线性采样、KHR_texture_transform、取消与 GPU 回滚已通过；补 MR/transform 实际模型及更多解码器边界 |
-| WEB-02 | 扩充通用材质与特效材质 | 法线/TBN、alpha mask/blend、双面、emissive、occlusion、排序、阴影和颜色空间的基础纵向切片已实机通过；继续补 clearcoat/anisotropy/transmission/SSS 与代表资产矩阵 |
+| WEB-01 | 扩充嵌入 PNG/JPEG 的 glTF/GLB 纹理语料 | bufferView 与严格 base64 data URI、MIME/signature/预算/取消、UV0/UV1、baseColor sRGB、metallic-roughness 线性采样和 KHR_texture_transform 已通过；继续补 MR/transform/UV1 官方实际模型 |
+| WEB-02 | 扩充通用材质与特效材质 | 基础材质纵向切片已实机通过；direct BRDF 已对齐 separate diffuse、优化 Schlick 与 correlated Smith，冻结基准 SSIM 0.949514 通过；继续补 clearcoat/anisotropy/transmission/SSS 与代表资产矩阵 |
 | WEB-03 | 补齐场景光照与环境 | 方向光、四级 CSM 和内建 IBL 已实机通过；继续补点光、聚光、真实 HDRI、反射探针和动态 shadow fitting，并在代表场景冻结画质基线 |
 | WEB-04 | 扩充后处理 | GTAO、TAA、HDR Bloom、曝光、ACES 和一次显示编码已有 GPU 探针；继续补接触阴影、分层 Bloom 品质、色阶/调色、运动稳定性，并验证 UI 颜色不被 HDR 链污染 |
-| WEB-05 | 动画与特效 | 节点动画、骨骼、morph 及融合 GPU 路径已通过；继续补动画混合的运行集成、粒子、告警呼吸/扩散环、飞线，以及切换时动画时间连续 |
+| WEB-05 | 动画与特效 | 节点、骨骼、morph、融合 GPU 路径和 glTF 运行协调器已通过；支持多 clip、loop/once、TRS+morph cross-fade、失败重试和 revision 去重；继续补嵌套过渡策略、粒子、告警呼吸/扩散环、飞线与切换时间连续 |
 | WEB-06 | 大场景管线 | loose octree/working set、GPU LOD、Hi-Z、实例与 Meshlet 剔除、间接绘制、KTX2/Basis 压缩纹理和分块 visible/prefetch 驻留已有独立实现及 NVIDIA 证据；下一门禁是开放/遮挡/动态三类真实大负载的组合策略、帧时、峰值和回落 |
-| WEB-07 | 诊断与缓存 | 冷启动/解析/提取/encode/GPU/present 分段 P50/P95/P99，shader/pipeline/资源缓存，显存预算与驱逐 |
+| WEB-07 | 诊断与缓存 | 已有默认关闭、固定窗口的 frame encode/queue submit/GPU/present-acquire P50/P95/P99 与迟到 GPU 样本合并；继续接冷启动/解析/提取、shader/pipeline/资源命中、显存预算与驱逐，并冻结真实场景基线 |
 | WEB-08 | 开发客户端交付 | 可复现构建、版本/资产 hash、错误面板、设备能力页、离线静态资源、至少两轮实际浏览器视觉验收 |
 | WEB-09 | Nanite Lite 几何路径 | 离线 meshlet 分块、层级屏幕误差、GPU frustum/Hi-Z cull、indirect draw 与驻留预算；开放/遮挡/动态三类负载均无明显 popping，失败回退现有 LOD |
-| WEB-10 | Deep Lights 直接光 | **已落第一段**：Forward+ 支持稳定的点/聚光重要性预算（可选 `maxLocalLights`，自动按亮度、范围、距离和锥角排序）；下一段补共享 shadow atlas、固定采样预算和时域去噪，大量动态光源继续自动降级且不依赖硬件 RT |
+| WEB-10 | Deep Lights 直接光 | Forward+ 点/聚光重要性预算与共享 depth32float shadow-atlas 计划/原子 GPU 生命周期已落地；下一段接 renderer/shader 的局部光阴影采样、固定采样预算和时域稳定，大量动态光源继续自动降级且不依赖硬件 RT |
 | WEB-11 | Deep GI Lite | irradiance probe clipmap、probe occlusion、屏幕空间补偿和分帧更新；相机运动/动态物体/设备降级有稳定时序与资源上限 |
 | WEB-13 | 轻量离线烘焙 | **现在做资产预处理**：meshlet/层级误差/包围体、LOD、顶点量化、KTX2 压缩、材质变体、shader/pipeline 预热清单和资产 hash；静态间接光只先做 probe/可见性混合烘焙，动态灯光与可编辑场景保留运行时路径 |
 
@@ -68,8 +68,8 @@
 | 编号 | 剩余任务 | 完成门禁 |
 |---|---|---|
 | NATIVE-00 | 已成立的最小窗口与静态 packet GPU executor | Windows 已实跑 `winit + wgpu` surface present、adapter/device、全几何/材质/实例、稳定合批、非均匀缩放逆转置法线、镜像双绕序、空场景、resize/redraw、关闭、device lost 重建与 RenderPacket v1 golden |
-| NATIVE-01 | 与浏览器管线对齐 | 五类纹理、基础 PBR、MASK/BLEND/double-sided、Frame/顶点/材质 ABI、HDR/4×MSAA/ACES、四级 CSM、IBL、Shader Package 与半分辨率 Bloom 已实跑；继续补雾、动态 packet 跨帧资源缓存和跨实现画面/数值容差 |
-| NATIVE-02 | Deep2D GPU painter | 基础凸 path fill/两点 stroke 已与 3D 共用 device/surface/encoder 真实 present；继续补曲线、凹面、完整 stroke、image、clip、glyph atlas、阴影、命中、批次、DPI 和回滚 |
+| NATIVE-01 | 与浏览器管线对齐 | 五类纹理、基础 PBR、MASK/BLEND/double-sided、HDR/4×MSAA/ACES、四级动态 bounds CSM、IBL、Shader Package、Bloom 和动态 packet 资源复用/回滚/device epoch 已实跑；继续补公开更新入口、雾、native BRDF 新公式与跨实现像素容差 |
+| NATIVE-02 | Deep2D GPU painter | 曲线/凹 path、开放 stroke、预烘焙 glyph/image atlas、z-order 交错与矩形 scissor clip 已与 3D 共用 device/surface/encoder 真实 present/readback；继续补直接命令编译、路径 clip、完整 stroke、命中、跨帧复用、DPI 和回滚 |
 | NATIVE-03 | Deep retained UI 与输入 | flex/grid/dock/virtual list、焦点、键鼠、触控、中文 IME、剪贴板、多窗口和无障碍；UI 全由 wgpu 绘制 |
 | NATIVE-04 | DeepChart | ChartIR、坐标系/layout/action、折柱散饼热力仪表、百万点增量和 ECharts option 兼容报告；不加载 ECharts/zrender |
 | NATIVE-05 | 文件与资源 | 文件选择、拖放、异步 IO、资产流式、压缩纹理、字体、磁盘/GPU 缓存、断点和离线资源包 |
@@ -77,7 +77,7 @@
 | NATIVE-07 | Viewer 产品闭环 | 项目打开、导航、选择、剖切、测量、标注、告警和大场景连续运行；短时稳定与资源回落通过 |
 | NATIVE-08 | 现有 Studio 接入 | 复用现有编辑器的项目状态、属性、2D/3D/数据/脚本、撤销保存恢复、插件和发布工作流；接入 Deep 引擎与原生 Viewer 产物，不另建原生编辑器 |
 
-`NATIVE-00` 已证明原生静态 packet 渲染通道成立。本机 RTX 4060 Laptop/Vulkan 已实际提交五纹理 PBR、MASK、两个独立稳定排序 BLEND、双面材质、HDR/4×MSAA/ACES、四级 CSM、Deep2D、rgba16float IBL 和 HDR Bloom；runtime purity 解析 194 个 Windows packages，零 WebView/Chromium/browser/GL fallback。IBL 探针读回 `changed_pixels=915`、on luminance `255.374535` > off `184.904717`；Bloom 探针记录 124 个扩散像素、亮区能量 `55.965663`、隔离暗区能量 `0`，GPU errors `0`。启用和 `--no-bloom` 路径都已实际 present，关闭路径不创建 Bloom pipeline 或纹理。它仍没有像素级竞品对照、雾、动态 packet 跨帧 GPU 资源复用、自动场景 bounds shadow fitting；透明仍是对象级 AABB 中心排序和单 pass 双面；Deep2D 尚未支持 text/image/clip。缺少后续 `NATIVE-01..08` 时仍不是可交付客户端。
+`NATIVE-00` 已证明原生静态 packet 渲染通道成立。本机 RTX 4060 Laptop/Vulkan 已实际提交五纹理 PBR、MASK、两个独立稳定排序 BLEND、双面材质、HDR/4×MSAA/ACES、四级动态 bounds CSM、Deep2D、rgba16float IBL 和 HDR Bloom；动态 packet 的 geometry/texture/sampler/material/instance 复用、revision 级联、失败回滚、device epoch 与无僵尸复用均有真实 GPU 断言。runtime purity 解析 194 个 Windows packages，零 WebView/Chromium/browser/GL fallback。Deep2D 矩形 clip 已真实 readback；预烘焙 glyph/image atlas 已按 z-order 与 path 交错。它仍没有跨实现像素级竞品对照、雾、公开 reload 入口、直接 Text/Image 命令编译、路径 clip 或安装包；透明仍是对象级 AABB 中心排序和单 pass 双面。缺少后续 `NATIVE-01..08` 时仍不是可交付客户端。
 
 ## 5. 零 WebView 客户端、全 GPU GUI 与网络边界
 

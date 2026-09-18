@@ -1,6 +1,6 @@
 # Deep Engine → GLM 5.3 Flash 交接（2026-09-13 23:00）
 
-状态：Codex 本轮收尾；源码、样本、验证报告均留在当前工作树，未提交、未 push。
+状态：**继续执行，不得因已有 `deep-engine-glm-to-codex-handoff-2026-09-14.md` 而停止。** 该文档只是首批八项的中间检查点；GLM 每轮先读取本文 §7.3 的扩展队列，持续取下一项，直到调度窗口结束或所有可独立项完成。源码、样本、验证报告均留在共享工作树，由 Codex 统一门禁、提交和 push。
 
 ## 1. 接手目标与硬边界
 
@@ -171,6 +171,57 @@ GLM 负责一条约九小时、允许实际开发的 Windows native 队列。文
 每个 2 小时任务仍要拆成一个个独立断言；现有代码已经满足的断言直接记录证据，不重写。允许为明确职责拆分 native 包内文件并补完整实现，不允许只写审计报告代替能安全完成的代码。若提前完成某段，继续下一段；若全部提前完成，优先做上述一个 Deep2D 纵向切片。
 
 GLM 不编辑本交接文档、总账、共享 ABI、Browser 包或正式 apps。发现需要跨模块合同、跨包资源所有权重构或新依赖时，停止该项编码，只记录证据和建议，交回 Codex。除表中可选的单个 Deep2D 窄切片外，不扩展到 GUI 框架、图表、网络宿主、安装器或任何非 Windows 平台。
+
+### 7.3 GLM 提前完成后的追加队列
+
+当前协作门禁提示（2026-09-14 00:03）：`packages/deep-engine-native/src/deep2d/validate_commands.rs` 按仓库脚本计为 304 行，已阻塞 `gate:source-size`。这是正在进行的 clip 改动，GLM 在进入下一项前须按职责拆分到不超过 300 行；不得删验证分支或放宽门禁。
+
+若 §7.2 提前完成，继续留在 `packages/deep-engine-native/**`，按下表从上到下执行。**本表固定为 40 个原子任务**；每项先审计现有实现，已经具备且证据充分时只回填依据并进入下一项，不得为了消耗时间重写现有模块。每轮在进度文档记录当前序号、完成证据和下一序号，不能再次以“首批八项完成”为由提前收口。
+
+| 顺序 | 追加任务 | 验收 |
+|---:|---|---|
+| 1 | 动态 RenderPacket 公开更新入口 | 把现有 `Renderer::replace_render_packet` 接到 native 包内最窄公开入口；相同内容零工作，较新 revision 原子生效，非法/取消/迟到结果保留最后正确帧；不自创网络协议 |
+| 2 | native 分段性能遥测 | 按需启用 CPU prepare/encode/queue-submit 与 GPU pass/frame P50/P95/P99；固定有界样本与读回槽，忙时跳样不阻塞普通帧；默认关闭时不增加每帧分配和 GPU 同步 |
+| 3 | 动态场景 bounds 阴影 fitting | 复用现有四级 CSM，RenderPacket/bounds 变化后重算，静止场景稳定复用；覆盖极薄、极大、空场景和相机抖动，禁止每帧无条件刷新 shadow |
+| 4 | Deep2D 两个基础缺口 | 先矩形 clip，再 image quad；沿用现有 display-list、同 device/surface/encoder、事务与回滚，不另建 UI 框架；每完成一个都运行真实 present/readback smoke |
+| 5 | Runtime Package 发布预热 | 复用现有 Shader Package/磁盘 CAS，消费包内 allowlist/预热清单；命中不重建 pipeline，损坏/不兼容条目隔离并回到可编译路径，device epoch 后旧对象不复用 |
+| 6 | Windows native 恢复矩阵 | 在已有 smoke 上组合 resize、最小化/恢复、device loss、动态 packet 与缓存；逐项验证最后正确帧、资源回落和退出，不新增长稳或非 Windows 矩阵 |
+| 7 | Deep2D 跨帧资源复用 | 在 clip/image 已通过后，为现有 `Deep2dGpuPainter` 增加 revision/content-key 驱动的窄缓存：相同 display-list/atlas 不重建 pipeline、vertex buffer、texture 或 bind group；只变 path 顶点时不重传 atlas，只变一个 atlas 时不重建其他 atlas；候选失败保留旧 UI 帧 |
+| 8 | GPU 场景显存预算与证据 | 在现有 `GpuSceneCache` 的 Weak 生命周期上补精确的 geometry/texture/instance resident bytes 和峰值；预算不足先清理失效 Weak 项，仍超限则原子拒绝候选，绝不驱逐 active scene；默认预算来自 adapter limits/显式配置并有保守上限 |
+| 9 | 动态 packet 与 LOD/剔除一致性 | 复用 `replace_render_packet` 已有全候选事务，补真实 GPU 断言：实例/bounds/revision 更新同时刷新 LOD、GPU culling 和 shadow evidence；noop 不清历史，失败不发布半套状态，设备 epoch 后确定性重建 |
+| 10 | 可复现 native 性能门禁 | 基于第 2 项遥测实现独立 CLI/测试入口：固定 warmup、固定采样窗、JSON 报告含 adapter/backend/build hash、CPU/GPU P50/P95/P99、资源峰值和跳样率；禁止在普通 Player 路径默认采样，先产基线不拍脑袋放宽阈值 |
+| 11 | Deep2D 有界批次与 DPI 门禁 | 复用现有 z-order/chunk/scissor：只合并相邻且 pipeline、atlas、clip 完全相同的 draw；覆盖 1×/1.25×/1.5×/2× DPI 的向外取整、空裁剪、越界裁剪和 path-image-glyph 顺序；以 draw/chunk 数和真实像素双重验收 |
+| 12 | 原生能力与失败报告 | 把 adapter/features/limits、降级选择、runtime/shader package hash、cache/telemetry 状态和最近恢复原因输出成稳定 JSON；错误码可机器读取且不包含用户路径或资源正文，为后续 Viewer 设置页和崩溃诊断直接复用 |
+| 13 | 更新队列 latest-wins 协调器 | 为公开 packet 更新入口补纯状态机：burst revision、解析中取消、迟到候选和失败重试只允许最高已接受 generation 发布；旧 scene 在候选完成前持续可绘制，不引入线程池或网络协议 |
+| 14 | IBL 环境原子热替换 | 当前环境 id/revision 变化会被拒绝；改为候选式创建 IBL、frame bind group 与相关 shader binding，全部成功后一次发布；同环境零创建，坏环境精确回滚，真实 HDR readback 证明变化 |
+| 15 | Renderer 级 Shader Package executor 复用 | 将当前调用点临时 executor 提升到 renderer/device epoch 所有；相同 package 跨 packet 更新不重建 pipeline，失败候选不污染 active cache，设备重建清空旧 epoch，禁止改 Shader Package ABI |
+| 16 | 设备预算自动质量档 | 基于现有 CSM/Bloom 配置和第 8 项显存证据产生确定性档位；只按顺序降低阴影尺寸/级数与 Bloom，绝不静默降 PBR 材质；高端设备保持当前默认，报告选择理由和估算字节 |
+| 17 | LOD residency 动态更新 | 同 topology 下只更新 resident bits，不重建 pipeline/history；目标层缺失回退到更粗 resident，全部缺失不 draw，恢复后回到期望层且 hysteresis 不被污染；真 GPU readback 验收 |
+| 18 | transform-only culling/LOD 快路径 | geometry/material/LOD profile 未变时复用 compute pipeline、静态 bounds/levels/history，只更新实例源和必要 binding；创建计数证明无重编，结果与全重建 readback 等价，拓扑变化自动回全路径 |
+| 19 | 分级联 shadow dirty | 复用四级 CSM，为各 cascade 生成 caster signature；远级变化只重画受影响层，相机/灯光/MASK 变化正确失效，结果与全量重画 readback 等价，不改公共 RenderPacket ABI |
+| 20 | 无效 shadow 更新消除 | 对 packet 变化分类：emissive-only、非 caster/receiver 数据不 bump shadow；transform、bounds、MASK alpha 必须失效；用更新计数和两帧 smoke 同时验证 |
+| 21 | Native PBR BRDF 数值对齐 | 把 native `direct_brdf` 与已冻结 Browser separate diffuse、优化 Schlick、correlated Smith 对齐；不改 208/160/144B ABI；覆盖 dielectric/metal/roughness/grazing golden 和 offscreen pixel 容差 |
+| 22 | 完整相机透明排序 | 透明批次使用实际 eye/forward 或 view，而非只依赖 yaw；覆盖平移、旋转、等深稳定 tie、镜像与非均匀缩放后的 world-bounds center；保持对象级有界排序和 BLEND ABI |
+| 23 | HDR/Bloom resize 资源事务 | 复用现有 prepare/publish resize，将相同尺寸设为零工作；尺寸变化只替换尺寸相关 attachment，失败保留旧 HDR/Bloom/output 链，连续 resize 只发布最新 generation |
+| 24 | Hi-Z 历史精确失效 | 分别覆盖 resize、相机突变、packet bounds/revision、device epoch：只在必需时清历史，静止帧继续复用；首帧保守可见，禁止旧 depth 导致误剔除，真实遮挡/开放场景 readback |
+| 25 | indirect capacity 溢出回退 | 当 culling/LOD 输出超过 indirect 或 visible capacity 时，不越界、不截成错误画面；自动走现有保守 draw/fallback，记录降级原因，下一稳定帧可恢复 GPU 路径 |
+| 26 | 提交后资源退役证据 | 对 scene、IBL、Deep2D、HDR、shadow 候选替换建立 submission 完成后的有界退役证据；active 引用永不提前释放，连续替换后 live bytes 回落，禁止逐帧 `device.poll(Wait)` |
+| 27 | adapter 能力与降级合同 | 冻结 DX12/Vulkan 所需 feature/limit 检查、可选 timestamp/压缩格式与缺失时降级；错误码机器可读，高端能力不改变画质，禁止把软件适配器当正式通过 |
+| 28 | surface 调度与空闲零忙循环 | 保持 `ControlFlow::Wait`，0×0、Occluded、Timeout 不连续 request-redraw；交互/恢复只触发必要帧，AutoVsync/最大帧延迟有证据；用状态机测试证明无忙循环 |
+| 29 | Runtime Package 有界安全读取 | 复用 shader cache 的 owned-file 思路；拒绝 symlink/非普通文件，读取过程中严格停在 256MiB 前并检测 size/mtime/file identity 变化；覆盖 Unicode 与 Windows 长路径，不加载正文两份 |
+| 30 | Runtime Package 增量差异计划 | 比较旧/新 resource index 的 id/kind/revision/hash，确定性输出 reuse/add/replace/remove；同 revision 不同 hash 失败关闭，全等为空计划，禁止新增包 ABI 字段 |
+| 31 | Runtime Package CPU 候选事务 | load→完整性校验→typed decode→shader plan→Deep2D prepare 全部成功才形成 immutable candidate；任一阶段失败不改 active，取消/过期 generation 不发布 |
+| 32 | Runtime Package 增量 GPU 发布 | 消费第 30/31 项，只为变化资源建候选；全部 error scope 成功后一次切换，只改 Deep2D 不重建 3D/IBL/shader，device epoch 与 generation 双重防迟到 |
+| 33 | Deep2D 多子路径 | 让现有 `Move` 表达多个互不相交子路径；fill/stroke golden 覆盖，空子路径、重复 close、自交和预算超限失败关闭；不得另写 tessellator |
+| 34 | Deep2D 填充孔洞 | 消费已有 `fillRule`，实现 evenodd/nonzero 的单层孔洞；同向/反向轮廓 golden，越界/自交继续明确拒绝，复用现有耳切与曲线 flatten |
+| 35 | Deep2D dash/dashOffset | 将已有 dash 合同编译为有界折线段后进入现有 stroke tessellation；覆盖正负 offset、闭合路径、零长度段、DPI 与段数预算，禁止 shader 里无限循环 |
+| 36 | Deep2D round cap | 实现已有 `LineCap::Round`，弧段数由 0.25 physical-pixel 误差与预算共同限制；水平、斜线、超短线 golden 和超预算失败 |
+| 37 | Deep2D round join | 实现已有 `LineJoin::Round`；覆盖锐角、钝角、180°退化、DPI 和段数预算，保持 miter/bevel/square 现有回归全绿 |
+| 38 | Deep2D 凸路径裁剪 | 只接一个简单凸 `clipPathId` 的最小 CPU 裁剪切片；覆盖完全内/外/相交与变换，非凸/多重 clip 明确拒绝，失败不能产半成品；矩形 scissor 不重做 |
+| 39 | Deep2D CPU 命中测试 | 把已有 `hitId` 保留到 prepared item，按逆变换、fill/stroke 与 z-order 返回最上层命中；覆盖重叠、缩放、DPI、空 hitId，只提供引擎 API，不创建 UI 状态系统 |
+| 40 | Deep2D DPI 原子重建 | `ScaleFactorChanged` 时按 effective DPI 重建曲线/stroke/clip 候选；覆盖 1.0→1.25→1.5→2.0，失败保留旧 UI 帧，曲线误差仍不超过 0.25 physical pixel，窗口尺寸与逻辑坐标不漂移 |
+
+追加队列不是并行乱改：一次只完成一项，门禁全绿再进入下一项。`1–12` 是第一优先波次，`13–28` 是 native 渲染/性能波次，`29–40` 是包与 Deep2D 波次。后续项不能抢占动态更新、遥测、阴影、Deep2D image、预热和恢复主链。遇到需要修改 Browser/shared ABI、正式 app、依赖清单或发布拓扑的设计决策，只在进度文档记录建议并跳到下一个可独立完成的 native 项。
 
 ## 8. 续跑命令
 

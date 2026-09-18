@@ -41,10 +41,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
-      - name: Enable pnpm
-        run: corepack enable
+      - name: Install the repository pnpm version
+        run: npm install --global pnpm@11.18.0
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
       - name: Audit production dependency licenses
         run: pnpm audit:licenses
+      - name: Build the offline documentation runtime
+        run: pnpm --filter @bim-studio/docs-runtime build
+      - name: Validate offline documentation
+        run: |
+          pnpm --filter @bim-studio/docs-runtime test
+          pnpm --filter @bim-studio/web exec vitest run src/docs/docsCatalog.test.ts src/components/DocsCenter.test.tsx

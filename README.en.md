@@ -2,69 +2,45 @@
 
 [简体中文](README.md) · [English](README.en.md)
 
-Deep Monkey Studio is an industrial digital-twin, simulation, and visualization platform. It combines BIM/CAD ingestion, scene authoring, industrial data connections, dashboards, automation, and native deployment tooling in a pnpm monorepo.
+A self-hosted industrial digital-twin platform: import BIM/CAD models, connect equipment data, build 3D scenes and dashboards in the browser, and publish them as applications. Local resources and services support private networks; external AI, video and data sources need their configured connections.
 
-The project is under active development. The production Studio still uses its proven Three.js renderer. The self-developed **Deep Engine** is built and verified in isolated packages, a browser WebGPU lab, and a native Rust `wgpu` executable until its quality, performance, compatibility, lifecycle, and seamless-switching gates pass.
+[Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](ROADMAP.md) · [Support](SUPPORT.md)
 
-## Deep Engine
+![Deep Monkey Studio platform architecture](apps/web/public/docs-assets/generated/platform-architecture-gold.png)
 
-Deep Engine is a WebGPU-first rendering and native-client architecture with no WebGL fallback in its new runtime. Its current verified foundations include:
+The Chinese [README.md](README.md) is the canonical product guide; this file is a shorter English summary. The project is source-available, not OSI-approved open source — see the license section below.
 
-- versioned render packets, geometry, materials, textures, and instance updates;
-- GGX PBR, HDR output, ACES mapping, IBL, PCF shadows, and MSAA;
-- GPU frustum culling, atomic instance compaction, and indexed indirect draws;
-- typed shader IR, DeepSL authoring, deterministic shader packages, and bounded caches;
-- strict glTF/GLB parsing with explicit unsupported-feature diagnostics;
-- a native Rust `winit + wgpu` renderer and an early GPU vector-painter path;
-- explicit Three.js compatibility boundaries and backend-switch contracts.
+## Features
 
-These are working foundations, not a claim of engine completeness or parity with Unity, Unreal Engine, Godot, Three.js, or Babylon.js. Benchmark and capability claims require frozen, reproducible test sets.
-
-## Repository map
-
-| Path | Purpose |
-| --- | --- |
-| `apps/web` | React Studio and published viewer |
-| `apps/api` | API, storage, conversion, and integration services |
-| `packages/deep-engine` | Deep Engine TypeScript/WebGPU runtime, contracts, and lab |
-| `packages/deep-engine-native` | Native Rust `wgpu` renderer and Deep2D executor |
-| `packages/contracts` | Shared application and scene contracts |
-| `tools` | Native conversion and Unity/Revit integration tools |
-| `docs` | Architecture, verification evidence, and delivery plans |
+- **Model import** — RVT, IFC, STEP, DWG, DXF, glTF/GLB, FBX via browser loaders and server-side converters (Revit Worker, LibreDWG, occt-import-js).
+- **Scene authoring** — measurement, sectioning, exploded views, walkthroughs, camera animation, lighting, weather, post-processing; scenes publish as stable snapshots.
+- **Data & dashboards** — MQTT, Kafka, OPC UA, Modbus, S7, BACnet and common databases; ECharts dashboards, live video, and event scripts with direct scene access.
+- **Vision AI** — bring your own ONNX models (YOLOv5–v11 included) for image inspection and live-video detection, with alerts linked back into the 3D scene.
+- **AI assistant** — metadata-grounded BIM Q&A, read-only SQL, and natural-language dashboard generation.
 
 ## Quick start
 
-Requirements: Node.js 24 and pnpm 11.18.0.
+Requires Node.js 24; the pnpm version is pinned by the root `packageManager` field.
 
 ```bash
+git clone https://github.com/fatasia/bim-studio.git
+cd bim-studio
 corepack enable
 corepack prepare pnpm@11.18.0 --activate
 pnpm install --frozen-lockfile
 pnpm studio start web
 ```
 
-To work only on Deep Engine:
+Open http://localhost:5173 (API on :4100), and `/docs` for the offline guides. The current development credentials are `admin` / `admin`. Preserve existing environment settings. Production deployment, PostgreSQL/MinIO, and troubleshooting are covered in [docs/native-deployment.md](docs/native-deployment.md); contributors can start with the [developer guide](docs/development.md).
 
-```bash
-pnpm --filter @bim-studio/deep-engine typecheck
-pnpm --filter @bim-studio/deep-engine test
-pnpm --filter @bim-studio/deep-engine build
-pnpm --filter @bim-studio/deep-engine lab:build
-pnpm --filter @bim-studio/deep-engine lab:serve
-```
+## Deep Engine
 
-For the native executor, install Rust 1.93.0 and run:
+Deep Engine combines a TypeScript WebGPU runtime and a Rust `wgpu` native executor. Studio retains Three.js WebGL as its authoring baseline and integrates Deep WebGPU as a selectable backend. Native is a separate delivery target with per-scene capability checks. See the [execution plan](docs/specs/deep-engine-execution-plan-2026-09-15.md).
 
-```bash
-cd packages/deep-engine-native
-cargo test --locked
-cargo run --locked -- --headless-contract
-```
+## Contributing
 
-The Chinese [README.md](README.md) is maintained first and is the canonical product guide. This English README summarizes the current architecture and onboarding path. See the [Deep Engine execution plan](docs/specs/deep-engine-execution-plan-2026-09-12.md) for current boundaries and [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+Issues and pull requests are welcome — read [CONTRIBUTING.md](CONTRIBUTING.md) first. Every merge must pass `pnpm gate:repository` and the tests matching its scope. Report vulnerabilities privately through [SECURITY.md](SECURITY.md).
 
 ## License
 
-The repository uses the custom [Deep Monkey Community Source License 1.0](LICENSE) and is source-available. Unrestricted organizations and individuals receive MIT-style permissions. Any organization engaging in Covered Misconduct is prohibited from using the project in any way, directly or through another person. Publishing source or paying a fee creates no exception.
-
-The Chinese explanation is in [LICENSE.zh-CN.md](LICENSE.zh-CN.md) and the usage matrix is in [LICENSING.md](LICENSING.md). Third-party code, models, and sample assets retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and attribution files next to individual assets.
+Source-available under the custom [Deep Monkey Community Source License 1.0](LICENSE), not an OSI-approved license. Unrestricted organizations and individuals receive MIT-style permissions; any organization engaging in Covered Misconduct may not use the project at all, directly or through third parties. Publishing source or paying a fee creates no exception. See [LICENSE.zh-CN.md](LICENSE.zh-CN.md) and [LICENSING.md](LICENSING.md) for details, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for third-party components.

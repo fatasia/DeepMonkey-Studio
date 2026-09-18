@@ -1,31 +1,18 @@
 # 文档索引
 
-本目录只保留当前权威计划、稳定合同/指南和最近一轮仍需复核的验收材料。阶段性交接、一次性诊断、旧批次截图清单统一由 [`active-task-recovery-ledger.md`](active-task-recovery-ledger.md) 汇总，不再单独保留。
+从安装、制作场景到发布交付，按当前任务选择入口。应用内 `/docs` 提供离线图文指南。
 
-## 当前权威入口
+## 使用产品
 
-- [任务恢复总账](active-task-recovery-ledger.md)
-- [平台超越开发计划](platform-surpass-development-plan-2026-09-04.md)
-- [夜间极致优化计划](nightly-extreme-optimization-plan-2026-09-04.md)
-- [产品深度、体验、稳定性与 AI/MCP 升级计划](product-depth-experience-stability-ai-mcp-upgrade-plan-2026-08-27.md)
-- [Deep Engine 执行计划](specs/deep-engine-execution-plan-2026-09-12.md)
-- [Deep Engine 交付清单](specs/deep-engine-delivery-backlog-2026-09-12.md)
+| 任务 | 阅读入口 |
+| --- | --- |
+| 安装并启动 | [首次启动](../apps/web/src/docs/getting-started.md)、[完整部署指南](native-deployment.md) |
+| 理解平台 | [总体架构](platform-architecture.md)、[项目与版本](../apps/web/src/docs/core-concepts.md)、[功能清单](capabilities.md) |
+| 创建应用 | [首个场景](../apps/web/src/docs/dashboard-scene.md)、[模型导入](../apps/web/src/docs/model-import.md) |
+| 连接数据与 AI | [数据中心](../apps/web/src/docs/data-pipeline.md)、[视觉 AI](vision-quickstart.md) |
+| 发布与恢复 | [发布指南](../apps/web/src/docs/server-publish.md)、[故障恢复](../apps/web/src/docs/troubleshooting.md)、[常见问题](../apps/web/src/docs/faq.md) |
 
-## 当前验收与问题
+## 三维格式接入设计
 
-- [2026-09-12 交付报告](delivery-report-2026-09-12.md)
-- [性能验证](performance-verification-2026-09-12.md)
-- [UI 主要问题](ui-major-issues-2026-09-12.md)
-- [UI 全面巡检问题](ui-sweep-major-issues-2026-09-12.md)
-- [资源数量波次规格](asset-quantity-wave-spec-2026-09-12.md)
-
-## 稳定参考
-
-- 架构决策：[`adr/`](adr/)
-- 功能规格与验证合同：[`specs/`](specs/)
-- 部署：[原生部署](native-deployment.md)、[云渲染 Worker 合同](cloud-render-worker-contract.md)
-- 场景与格式：[场景格式](scene-format.md)、[转换插件与格式支持](converter-plugin-and-format-support.md)、[OpenUSD 资产管线](openusd-asset-pipeline.md)
-- SDK/运行时：[Studio API 覆盖](studio-api-coverage.md)、[插件运行时基础](plugin-runtime-foundation.md)、[SCADA 拓扑运行时](scada-topology-runtime.md)
-- 第三方研究素材：[`assets/`](assets/)
-
-根目录的 README、许可证、治理、安全与贡献文件属于发布门禁文件，不能作为普通过程文档清理。
+[七方向三维格式工作计划](specs/industrial-3d-format-work-plan-2026-09-16.md)是统一执行入口，先看依赖边界、阶段和验收门槛；
+[七方向内置接入总方案](specs/jt-xt-rvt-offline-integration-plan-2026-09-16.md)涵盖 JT、X_T、RVT 与四类扩展；[点云、3D Tiles、3DM、SolidWorks 接入细案](specs/additional-four-formats-integration-plan-2026-09-16.md)列出追加任务与验收，[格式价值排序](specs/high-value-3d-formats-2026-09-16.md)说明后续投资建议。以上为设计文档，实际已支持能力仍以[格式支持说明](converter-plugin-and-format-support.md)为准。

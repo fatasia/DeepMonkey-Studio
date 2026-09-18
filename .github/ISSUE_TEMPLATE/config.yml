@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Setup and usage help
+    url: https://github.com/fatasia/bim-studio/blob/HEAD/SUPPORT.md
+    about: Find documentation and the right place for usage questions.
   - name: Security report
     url: https://github.com/fatasia/bim-studio/security/advisories/new
     about: Report vulnerabilities privately.

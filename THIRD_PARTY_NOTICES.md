@@ -12,6 +12,8 @@ The reviewed overrides live in `config/third-party-license-overrides.json`. A ne
 
 Key runtime dependencies:
 
+The repository-only scene-client archive verifier also uses `yauzl` 3.4.0 (MIT, copyright 2014 Josh Wolfe), pinned as a development dependency. Source: https://github.com/thejoshwolfe/yauzl. Its packaged `LICENSE` is retained by the package manager; it is not added to the browser runtime.
+
 | Package | Version | License | Source |
 | --- | ---: | --- | --- |
 | `unicode-segmentation` (Native text boundaries; already present through cosmic-text, now also direct) | 1.13.3 | MIT OR Apache-2.0; packaged LICENSE-MIT, LICENSE-APACHE and COPYRIGHT retained | https://github.com/unicode-rs/unicode-segmentation |
@@ -23,7 +25,7 @@ Key runtime dependencies:
 | `web-ifc` | 0.0.77 | MPL-2.0 | https://github.com/ThatOpen/engine_web-ifc |
 | `three` | 0.185.1 | MIT | https://github.com/mrdoob/three.js |
 | OpenUSD official validation samples | dev snapshots recorded in tests | Tomorrow Open Source Technology License 1.0 | https://github.com/PixarAnimationStudios/OpenUSD |
-| Khronos glTF Sample Assets: Box, BoxInterleaved, BoxTextured, AlphaBlendModeTest, NormalTangentTest, TextureEncodingTest | fixed commit `90d7ede14c7e280af263824604b427a1ca02cb66`; exact hashes in `packages/deep-engine/lab/assets/sources.json` | CC-BY-4.0 or CC0-1.0 per asset; local notices vendored | https://github.com/KhronosGroup/glTF-Sample-Assets |
+| Khronos glTF Sample Assets: Box, BoxInterleaved, BoxTextured, AlphaBlendModeTest, NormalTangentTest, TextureEncodingTest, TextureTransformMultiTest | fixed commit `90d7ede14c7e280af263824604b427a1ca02cb66`; exact hashes in `packages/deep-engine/lab/assets/sources.json` | CC-BY-4.0 or CC0-1.0 per asset; local notices vendored | https://github.com/KhronosGroup/glTF-Sample-Assets |
 | `three-mesh-bvh` | 0.9.14 | MIT | https://github.com/gkjohnson/three-mesh-bvh |
 | `@gltf-transform/core/extensions/functions` | 4.4.2 | MIT | https://github.com/donmccurdy/glTF-Transform |
 | `draco3dgltf` | 1.5.7 | Apache-2.0 | https://github.com/google/draco |
@@ -88,3 +90,11 @@ GNU LibreDWG is an optional GPL-3.0-or-later executable invoked as a separate pr
 ## Proprietary conversion tools
 
 RVT conversion through an installed Autodesk Revit instance is separate from the browser viewer. The deployment organization is responsible for valid Autodesk/Revit licenses on conversion workers. Unity Asset Transformer Toolkit (formerly Pixyz Plugin) is not a dependency of this project.
+
+### Native font shaping and rasterization
+
+Native uses `cosmic-text` 0.19.0 (MIT OR Apache-2.0), with only `std` and `swash` features. Upstream: https://github.com/pop-os/cosmic-text. Packaged LICENSE-MIT identifies Copyright (c) 2022 System76. Exact transitive versions/checksums are in `packages/deep-engine-native/Cargo.lock`.
+
+The added font stack includes `fontdb` 0.23.0 and `harfrust` 0.5.2 (MIT), `swash` 0.2.10, `skrifa` 0.40.0/0.44.0, `read-fonts` 0.37.0/0.41.0 and `font-types` 0.11.3/0.12.5 (MIT OR Apache-2.0). `self_cell` 1.3.0 offers Apache-2.0 OR GPL-2.0-only; this project selects Apache-2.0. `slotmap` 1.1.1 uses Zlib, `unicode-linebreak` 0.1.5 uses Apache-2.0. Other newly resolved support crates offer MIT, Apache-2.0 or Zlib options, verified from Cargo package metadata on 2026-09-15.
+
+Font files are loaded from the host installation; no system font binaries are bundled or redistributed. Font appearance and fallback depend on the installed font set. Reproducible delivery still requires licensed font packaging and identity/version evidence.

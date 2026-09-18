@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Skip the default Bloom chain for pure-2D runtime packages at the production entrypoints (run, verify, package-live); Bloom targets are no longer allocated and forward targets stay 1×1 with pixel-identical output.
+
 - Use 1×1 forward targets for plain pure-2D Native output, preserving HDR background and ACES; Bloom, fog, probes and 3D retain full-size targets.
 
 - Correct Native forward-target memory estimates to include multisampled depth; document the HDR background dependency before trimming the pure-2D render path.
