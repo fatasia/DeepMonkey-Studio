@@ -76,7 +76,8 @@ export function createThreeWebglRuntime(canvas: HTMLCanvasElement, objectCount: 
         firstFrameMs,
         lastRebuildMs,
         frames: sampler.snapshot(),
-        gpuFrames: gpuTimer?.snapshot(),
+        // exactOptionalPropertyTypes:GPU timer 缺席时整个属性缺席,而不是显式 undefined
+        ...(gpuTimer ? { gpuFrames: gpuTimer.snapshot() } : {}),
         drawCalls: renderer.info.render.calls,
         triangles: logicalTriangleCount(deviceRoot, ground),
         geometries: renderer.info.memory.geometries,

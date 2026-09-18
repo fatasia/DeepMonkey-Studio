@@ -29,8 +29,8 @@ export interface BenchmarkAssetLicense {
 }
 
 export interface BenchmarkAssetTaskFixture {
-  readonly kind: "appearance" | "animation" | "dashboard";
-  /** 夹具脚本/相机的稳定标识;轨迹字节在 A03 采样冻结时落盘。 */
+  readonly kind: "appearance" | "animation" | "dashboard" | "interaction";
+  /** 夹具脚本/相机的稳定标识;appearance/interaction 的 fixtureId 必须能对上已冻结轨迹。 */
   readonly fixtureId: string;
 }
 
@@ -45,11 +45,16 @@ export interface BenchmarkAssetManifest {
   /** 源格式单位,如 "mm" / "feet";禁止改写数值迁就目标单位。 */
   readonly units: string;
   readonly license: BenchmarkAssetLicense;
-  /** 转换前未知维度如实缺省;转换后由 C01/C07 回填,不允许估算冒充实测。 */
+  /** 转换前未知维度如实缺省;数值只允许实测回填,不允许估算冒充。 */
   readonly stats?: {
     readonly triangles?: number;
     readonly materials?: number;
     readonly instances?: number;
+    /** GLB 等容器可直接精确统计;缺省=未测,不是零。 */
+    readonly textures?: number;
+    readonly meshes?: number;
+    /** 源单位下的轴对齐包围盒(POSITION accessor min/max 实测);轨迹按包围球归一化回放。 */
+    readonly bounds?: { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] };
     readonly measuredBy?: string;
   };
   readonly tasks: readonly BenchmarkAssetTaskFixture[];
@@ -66,7 +71,11 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const FORMATS = new Set(["rvt", "rfa", "glb", "gltf", "ifc", "obj"]);
 const LOAD_CLASSES = new Set<BenchmarkLoadClass>(["factory-instances", "heterogeneous-bim", "far-origin-campus", "dynamic-workcell", "mixed-dashboard", "appearance-showcase"]);
-const TASK_KINDS = new Set(["appearance", "animation", "dashboard"]);
+const TASK_KINDS = new Set(["appearance", "animation", "dashboard", "interaction"]);
+
+function isVector3(value: unknown): value is readonly [number, number, number] {
+  return Array.isArray(value) && value.length === 3 && value.every(component => typeof component === "number" && Number.isFinite(component));
+}
 
 export function validateBenchmarkAssetManifest(manifest: BenchmarkAssetManifest): readonly ManifestValidationIssue[] {
   const issues: ManifestValidationIssue[] = [];
@@ -103,6 +112,14 @@ export function validateBenchmarkAssetManifest(manifest: BenchmarkAssetManifest)
   }
   if (manifest.stats?.triangles !== undefined && (!Number.isSafeInteger(manifest.stats.triangles) || manifest.stats.triangles < 0)) {
     fail("stats.triangles", "triangles must be a non-negative integer when present");
+  }
+  for (const field of ["textures", "meshes"] as const) {
+    const value = manifest.stats?.[field];
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) fail(`stats.${field}`, `${field} must be a non-negative integer when present`);
+  }
+  const bounds = manifest.stats?.bounds;
+  if (bounds && (!isVector3(bounds.min) || !isVector3(bounds.max))) {
+    fail("stats.bounds", "bounds min/max must be finite [x, y, z] triples when present");
   }
   return issues;
 }

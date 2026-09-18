@@ -26,6 +26,16 @@ export { BENCHMARK_SAMPLE_SCHEMA_VERSION, channelMedianMs, createSampleWindow,
 export type { ChannelSample, SampleChannel, SampleClockId, SampleValidationIssue,
   SampleWindow } from "./benchmarkSampleSchema.js";
 
+export { BENCHMARK_TRAJECTORY_SCHEMA_VERSION, createBenchmarkTrajectory, sampleTrajectoryPose,
+  trajectoryActionsInWindow, validateBenchmarkTrajectory } from "./benchmarkAssetTrajectory.js";
+export type { BenchmarkTrajectory, TrajectoryAction, TrajectoryCameraKey, TrajectoryCameraPose,
+  TrajectoryEasing, TrajectoryValidationIssue } from "./benchmarkAssetTrajectory.js";
+
+export { BENCHMARK_ASSET_MANIFEST_SCHEMA_VERSION, createBenchmarkAssetManifest,
+  validateBenchmarkAssetManifest } from "./benchmarkAssetManifest.js";
+export type { BenchmarkAssetLicense, BenchmarkAssetManifest, BenchmarkAssetSource,
+  BenchmarkAssetTaskFixture, BenchmarkLoadClass, ManifestValidationIssue } from "./benchmarkAssetManifest.js";
+
 export { RenderGraphBuilder } from "./renderGraph.js";
 export type {
   RenderGraphCompileResult,

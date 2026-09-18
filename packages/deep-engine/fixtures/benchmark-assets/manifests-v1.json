@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-17T00:23:36.405Z",
+  "generatedAt": "2026-09-18T01:11:25.639Z",
   "manifests": [
     {
       "schema": "deep-engine.benchmark-asset-manifest",
@@ -58,6 +58,161 @@
         {
           "kind": "appearance",
           "fixtureId": "fixture.appearance.orbit-360"
+        }
+      ],
+      "cacheConditions": [
+        "cold",
+        "warm"
+      ]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.bim.baked-scene",
+      "name": "BIM 烘焙测试场景(glTF 导出)",
+      "domain": "bim",
+      "primaryLoadClass": "heterogeneous-bim",
+      "source": {
+        "path": "D:\\Download\\bim烘培测试源文件.glb",
+        "bytes": 11353480,
+        "sha256": "b7eaaaf876a51636fb863dbaa58c8dbc5ee68b25e5ef0dbe184727d87d0d3c95",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters (glTF nominal)",
+      "license": {
+        "redistributable": false,
+        "evidence": "User-collected download; local benchmark use only, provenance undocumented, not redistributable"
+      },
+      "stats": {
+        "triangles": 176301,
+        "meshes": 651,
+        "materials": 21,
+        "textures": 0,
+        "bounds": {
+          "min": [
+            -19.702795028686523,
+            -0.44999998807907104,
+            -14.065014839172363
+          ],
+          "max": [
+            18.80731773376465,
+            13.369939804077148,
+            17.358551025390625
+          ]
+        },
+        "measuredBy": "glb-json-chunk-parse (scripts/generate-benchmark-asset-manifests.mts)"
+      },
+      "tasks": [
+        {
+          "kind": "appearance",
+          "fixtureId": "fixture.appearance.orbit-360"
+        },
+        {
+          "kind": "dashboard",
+          "fixtureId": "fixture.dashboard.component-count"
+        }
+      ],
+      "cacheConditions": [
+        "cold",
+        "warm"
+      ]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.preheater-far-origin",
+      "name": "预热机(远原点工业设备)",
+      "domain": "factory",
+      "primaryLoadClass": "far-origin-campus",
+      "source": {
+        "path": "D:\\Download\\预热机.glb-optimized.glb",
+        "bytes": 4165528,
+        "sha256": "3ae7527b6d171355cb7237072959397ab7da3f271d5c764269949caed0092073",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters (glTF nominal)",
+      "license": {
+        "redistributable": false,
+        "evidence": "User-collected download; local benchmark use only, provenance undocumented, not redistributable"
+      },
+      "stats": {
+        "triangles": 33137,
+        "meshes": 204,
+        "materials": 5,
+        "textures": 5,
+        "bounds": {
+          "min": [
+            -202.9210662841797,
+            -1371.703125,
+            -877.06494140625
+          ],
+          "max": [
+            9254.890625,
+            583.2742919921875,
+            100.65827941894531
+          ]
+        },
+        "measuredBy": "glb-json-chunk-parse (scripts/generate-benchmark-asset-manifests.mts)"
+      },
+      "tasks": [
+        {
+          "kind": "appearance",
+          "fixtureId": "fixture.appearance.orbit-360"
+        }
+      ],
+      "cacheConditions": [
+        "cold",
+        "warm"
+      ]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.battery-stack-exploded",
+      "name": "叠片电池爆炸装配(带动画)",
+      "domain": "factory",
+      "primaryLoadClass": "dynamic-workcell",
+      "source": {
+        "path": "D:\\Download\\叠片-电池爆炸.optimized.glb",
+        "bytes": 924640,
+        "sha256": "78ae4e76289680a5f59b4c1b85b9d56d17af50e0be32ecdf3bd9d8aa316bf55a",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters (glTF nominal)",
+      "license": {
+        "redistributable": false,
+        "evidence": "User-collected download; local benchmark use only, provenance undocumented, not redistributable"
+      },
+      "stats": {
+        "triangles": 9546,
+        "meshes": 8,
+        "materials": 2,
+        "textures": 2,
+        "bounds": {
+          "min": [
+            -5.807199478149414,
+            -1.7397018671035767,
+            -0.5000038146972656
+          ],
+          "max": [
+            0.5766504406929016,
+            10.390983581542969,
+            28.757108688354492
+          ]
+        },
+        "measuredBy": "glb-json-chunk-parse (scripts/generate-benchmark-asset-manifests.mts)"
+      },
+      "tasks": [
+        {
+          "kind": "appearance",
+          "fixtureId": "fixture.appearance.orbit-360"
+        },
+        {
+          "kind": "interaction",
+          "fixtureId": "fixture.factory.select-clip"
         }
       ],
       "cacheConditions": [
