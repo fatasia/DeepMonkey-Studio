@@ -30,24 +30,33 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
       this.setWeather("sunny");
     }
   protected async applyEnvironment(): Promise<void> {
-      const preset = this.environmentState.skybox;
+      if (this.rendererDisposalStarted) return;
+      const revision = ++this.environmentLoadRevision;
+      const state = { ...this.environmentState };
+      const preset = state.skybox;
       let environment: THREE.Texture | undefined;
-      if (this.environmentState.environmentMapUrl) {
+      if (state.environmentMapUrl) {
         try {
-          environment = await this.loadEnvironmentTexture(this.environmentState.environmentMapUrl);
-          if (this.externalEnvironmentTexture && this.externalEnvironmentTexture !== environment) this.externalEnvironmentTexture.dispose();
-          this.externalEnvironmentTexture = environment;
+          environment = await this.loadEnvironmentTexture(state.environmentMapUrl);
         } catch {
           environment = undefined;
         }
       }
+      if (this.rendererDisposalStarted || revision !== this.environmentLoadRevision) {
+        environment?.dispose();
+        return;
+      }
+      const previousEnvironment = this.externalEnvironmentTexture;
+      this.externalEnvironmentTexture = environment;
       const sky = preset === "none" ? undefined : this.getSkyboxTexture(preset);
       this.scene.environment = this.lightingState.reflectionsEnabled === false ? null : environment ?? sky ?? null;
-      this.scene.environmentIntensity = this.environmentState.environmentIntensity ?? 1;
-      this.scene.background = this.environmentState.environmentAsBackground && environment
+      this.scene.environmentIntensity = state.environmentIntensity ?? 1;
+      this.scene.background = state.environmentAsBackground && environment
         ? environment
-        : sky ?? new THREE.Color(this.environmentState.backgroundColor);
+        : sky ?? new THREE.Color(state.backgroundColor);
+      if (previousEnvironment && previousEnvironment !== environment) previousEnvironment.dispose();
       this.scheduleRendererPipelineWarmup();
+      this.requestRender();
     }
   protected async loadEnvironmentTexture(url: string): Promise<THREE.Texture> {
       const path = url.split(/[?#]/)[0]?.toLowerCase() ?? "";
@@ -234,8 +243,8 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
       const position = new THREE.Group();
       position.name = `helper:scene-light-proxy:${state.id}:position`;
       const color = new THREE.Color(state.color);
-      const bodyMaterial = new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity: state.enabled ? 0.95 : 0.42 });
-      const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffcf66, wireframe: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.78 });
+      const bodyMaterial = new THREE.MeshBasicMaterial({ color, toneMapped: false, depthTest: false, depthWrite: false, transparent: true, opacity: state.enabled ? 0.95 : 0.42 });
+      const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffcf66, toneMapped: false, wireframe: true, depthTest: false, depthWrite: false, transparent: true, opacity: 0.78 });
       const body = state.type === "rectArea"
         ? new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.72, 0.08), bodyMaterial)
         : state.type === "spot"
@@ -257,7 +266,7 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
       if (["directional", "spot", "rectArea"].includes(state.type)) {
         target = new THREE.Group();
         target.name = `helper:scene-light-proxy:${state.id}:target`;
-        const targetMaterial = new THREE.MeshBasicMaterial({ color: 0x4d9fff, depthTest: false, depthWrite: false, transparent: true, opacity: 0.92 });
+        const targetMaterial = new THREE.MeshBasicMaterial({ color: 0x4d9fff, toneMapped: false, depthTest: false, depthWrite: false, transparent: true, opacity: 0.92 });
         const targetRing = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.035, 6, 24), targetMaterial);
         targetRing.renderOrder = 1001;
         target.add(targetRing);
@@ -267,7 +276,7 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
             new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 0.5, 0),
             new THREE.Vector3(0, 0, -0.5), new THREE.Vector3(0, 0, 0.5)
           ]),
-          new THREE.LineBasicMaterial({ color: 0x4d9fff, depthTest: false, depthWrite: false, transparent: true, opacity: 0.92 })
+          new THREE.LineBasicMaterial({ color: 0x4d9fff, toneMapped: false, depthTest: false, depthWrite: false, transparent: true, opacity: 0.92 })
         );
         cross.renderOrder = 1001;
         target.add(cross);
@@ -278,7 +287,7 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
         this.scene.add(target);
         line = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-          new THREE.LineDashedMaterial({ color: 0x76afff, dashSize: 0.35, gapSize: 0.22, depthTest: false, depthWrite: false, transparent: true, opacity: 0.55 })
+          new THREE.LineDashedMaterial({ color: 0x76afff, toneMapped: false, dashSize: 0.35, gapSize: 0.22, depthTest: false, depthWrite: false, transparent: true, opacity: 0.55 })
         );
         line.name = `helper:scene-light-direction:${state.id}`;
         line.renderOrder = 1000;

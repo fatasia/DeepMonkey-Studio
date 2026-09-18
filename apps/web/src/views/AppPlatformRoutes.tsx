@@ -730,6 +730,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           onCopy={copyScene}
           onRename={renameScene}
           onPublish={publishScene}
+          publicationArtifacts={bindings.publicationArtifacts}
           onUnpublish={unpublishScene}
           onRestorePublication={restoreScenePublication}
           onBrowse={(scene) => openBrowseRoute("view", scene.id)}

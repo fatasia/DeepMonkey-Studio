@@ -89,21 +89,26 @@ function ProjectDialog({ bindings }: { bindings: AppViewBindings }) {
 
 function PublicationDialog({ bindings }: { bindings: AppViewBindings }) {
   const { state, scenePersistence } = bindings;
-  const { activeScene, busy, locale, studioCloudConfigured, studioCloudHint, studioPublishMode, studioPublishPerformance } = state;
+  const { activeScene, busy, locale, studioCloudConfigured, studioCloudHint, studioPublishMode, studioPublishPerformance, studioPublishClientTarget } = state;
   if (!state.studioPublishOpen || !activeScene) return null;
 
   return <ScenePublicationDialog
+    artifacts={bindings.publicationArtifacts}
+    projectId={activeScene.projectId}
+    sceneId={activeScene.id}
     locale={locale}
     sceneName={activeScene.name}
     mode={studioPublishMode}
     performance={studioPublishPerformance}
+    clientTarget={studioPublishClientTarget}
     defaultToolbarVisible={activeScene.publicationToolbarVisible !== false}
     cloudConfigured={studioCloudConfigured}
     cloudHint={studioCloudHint}
     busy={busy}
     onModeChange={state.setStudioPublishMode}
     onPerformanceChange={state.setStudioPublishPerformance}
+    onClientTargetChange={state.setStudioPublishClientTarget}
     onCancel={() => state.setStudioPublishOpen(false)}
-    onPublish={(toolbarVisible) => void scenePersistence.publishActiveScene(studioPublishMode, studioPublishPerformance, toolbarVisible)}
+    onPublish={(toolbarVisible, clientTarget) => scenePersistence.publishActiveScene(studioPublishMode, studioPublishPerformance, toolbarVisible, clientTarget)}
   />;
 }

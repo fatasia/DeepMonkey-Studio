@@ -11,6 +11,9 @@ import { useDismissableDetails } from "../hooks/useDismissableDetails";
 interface Props {
   locale: AppLocale;
   rendererBackend: RendererBackend;
+  rendererDesiredBackend: RendererBackend;
+  rendererSwitchPhase: "idle" | "preparing" | "recovering" | "failed";
+  rendererSwitchMessage: string | undefined;
   rendererSwitching: boolean;
   rendererDiagnosticsOpen: boolean;
   setRendererDiagnosticsOpen: (open: boolean) => void;
@@ -87,7 +90,7 @@ export function SceneWorkspaceMoreMenu(props: Props) {
           {props.onDrillGuide && <button type="button" onClick={(event) => { const menu = event.currentTarget.closest("details"); if (menu) menu.open = false; props.onDrillGuide?.(); }}><WandSparkles size={15} />{tr(props.locale, "钻取向导", "Drill-down guide")}</button>}
         </div>
         <div className="scene-workspace-more-section">
-          <span className="scene-workspace-more-heading">{tr(props.locale, "渲染与诊断", "Rendering & diagnostics")}</span>
+          <span className="scene-workspace-more-heading">{tr(props.locale, "渲染引擎", "Rendering engine")}</span>
           <button
             type="button"
             className={props.rendererDiagnosticsOpen ? "active" : ""}
@@ -98,7 +101,7 @@ export function SceneWorkspaceMoreMenu(props: Props) {
             }}
           >
             <Cpu size={15} />
-            {props.rendererSwitching ? tr(props.locale, "正在切换…", "Switching…") : tr(props.locale, "渲染能力诊断", "Renderer diagnostics")}
+            {props.rendererSwitching ? tr(props.locale, "正在切换引擎…", "Switching engine…") : tr(props.locale, "渲染引擎设置", "Rendering engine settings")}
           </button>
         </div>
       </div>
@@ -107,6 +110,9 @@ export function SceneWorkspaceMoreMenu(props: Props) {
         <RendererDiagnosticsDialog
           locale={props.locale}
           current={props.rendererBackend}
+          desired={props.rendererDesiredBackend}
+          switchPhase={props.rendererSwitchPhase}
+          switchMessage={props.rendererSwitchMessage}
           switching={props.rendererSwitching}
           checking={props.rendererDiagnostics.checking}
           probe={props.rendererDiagnostics.probe}

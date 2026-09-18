@@ -1,200 +1,65 @@
 # AI 3D 生成 API 参考
 
-本页覆盖 Tripo3D 与腾讯混元 3D 的完整接入流程：平台内部 API、供应商协议、异步任务轮询、GLB 下载和错误处理。配置入口在"系统 → AI 与模型 → 3D 生成模型"。
+Tripo3D 与腾讯混元 3D 通过平台服务端创建和查询生成任务。先配置供应商，再提交描述；模型生成完成后检查结果并导入场景。
 
-![3D 生成调用链：参数化页面 → Studio API → 供应商 → GLB 返回](/docs-assets/api-call-flow.svg)
+## 配置与使用
 
-## 使用入口
+在“系统 → AI 与模型 → 3D 生成模型”配置服务。Tripo3D 使用 API Key；腾讯混元 3D 使用 Secret ID、Secret Key、地域和模型版本。供应商凭据由服务端使用。
 
-配置好 API Key 后，进入**参数化生成**页面，左侧栏底部可见 **"AI 3D 生成"** 面板：
+进入参数化生成页面，选择供应商，输入至少 3 个字符的模型描述，点击“开始生成”。完成后预览或下载模型，再决定是否导入场景。首次使用先生成一个简单零件，检查尺寸、朝向与材质。
 
-1. 下拉框选择 Tripo3D 或腾讯混元 3D
-2. 输入模型描述（至少 3 个字符）
-3. 点击"开始生成"
-4. 等待进度条完成
-5. 完成后可预览 / 下载 GLB / 导入场景
+## 提交生成任务
 
-## 平台内部 API
+客户端通过当前登录会话调用平台接口：
 
-平台通过以下接口代理所有供应商调用，前端不直接请求厂商地址。
-
-### 提交生成任务
-
-```
+```http
 POST /api/ai/modeling3d/generate
 Content-Type: application/json
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `prompt` | string | 是 | 模型描述，至少 3 个字符 |
-| `provider` | string | 否 | `"tripo3d"`（默认）或 `"tencentHunyuan"` |
-
-成功响应：
-
 ```json
 {
-  "taskId": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "running",
+  "prompt": "带四个安装孔的机械支架",
   "provider": "tripo3d"
 }
 ```
 
-失败响应（HTTP 400）：
+`prompt` 为必填字符串，去除首尾空格后至少 3 个字符。`provider` 使用 `tripo3d` 或 `tencentHunyuan`；省略时选择 Tripo3D。
 
-```json
-{
-  "message": "请在设置页配置 Tripo3D 的 API Key"
-}
-```
+提交响应包含 `taskId`、`status` 和 `provider`。供应商提交失败时，响应也可能携带 `status: "failed"` 和 `error`；调用方必须检查任务状态，不能仅按 HTTP 成功码判断生成成功。
 
-### 轮询任务状态
+## 查询任务状态
 
-```
+```http
 GET /api/ai/modeling3d/:taskId
 ```
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `status` | string | `"pending"` / `"running"` / `"success"` / `"failed"` |
-| `progress` | number\|null | 0–100，仅 running 时有值 |
-| `modelUrl` | string\|null | GLB 下载地址，仅 success 时有值 |
-| `error` | string\|null | 失败原因 |
-| `provider` | string | 使用的供应商 ID |
+将 `:taskId` 替换为提交接口返回的平台任务 ID。响应字段含义：
 
-### 错误码汇总
+- `status`：`pending`、`running`、`success` 或 `failed`。
+- `progress`：供应商提供的进度；可能省略，不能把缺失值当成 0 或完成。
+- `modelUrl`：成功结果的下载地址；下载后仍需检查文件格式和完整性。
+- `error`：失败原因；可能省略。
+- `provider`：处理任务的供应商。
 
-| HTTP 状态码 | 含义 | 处理方式 |
-|------------|------|---------|
-| 400 | prompt 过短 / API Key 未配置 | 在设置页配置密钥或补全输入 |
-| 401 | 未登录 | 先登录 Deep Monkey Studio |
-| 404 | 任务不存在或已过期 | 重新提交 |
-| 503 | 3D 生成尚未配置 | 检查设置页 3D 生成卡片 |
+任务终止后停止轮询。暂时的查询异常可能保留上次状态；长时间停留在 `running` 时，应检查服务端与供应商任务记录，避免直接重复提交产生额外任务。
 
-## Tripo3D 供应商协议
+当前平台任务记录保存在 API 进程内存中，重启后原平台任务 ID 可能返回 404。重启不代表供应商任务已取消，应先核对供应商侧结果。
 
-平台将请求转发为 Tripo3D V2/V3 OpenAPI 调用。
+## 供应商适配方式
 
-### 创建任务
+当前 Tripo3D 适配器向已配置 Base URL 的 `/v2/openapi/task` 提交 `text_to_model` 请求，并查询同一路径下的任务 ID。成功结果优先读取 `pbr_model`，其次读取 `model`。服务地址与协议版本应和所部署适配器一致。
 
-```
-POST https://api.tripo3d.ai/v2/openapi/task
-Authorization: Bearer <API_KEY>
-Content-Type: application/json
-```
+腾讯混元适配器使用 TC3-HMAC-SHA256 签名，以 `SubmitHunyuanTo3DProJob` 创建任务，以 `QueryHunyuanTo3DProJob` 查询结果。当前实现使用 `ai3d` 服务和 `2025-05-13` API 版本；返回文件优先选择 GLB。Secret Key 用于签名，不能当成 Bearer Token 调用。
 
-```json
-{
-  "type": "text_to_model",
-  "prompt": "a robotic arm base with bolt holes"
-}
-```
+接口描述对应当前仓库实现。部署升级时同时核对适配器代码与供应商配置，调用方只使用平台任务 ID。
 
-响应：
+## 排查错误
 
-```json
-{
-  "data": {
-    "task_id": "abc123"
-  }
-}
-```
+- 400：模型描述过短，或供应商凭据不完整；补齐输入与设置。
+- 401：登录失效；重新登录后再查询任务。
+- 404：平台任务不存在或进程已重启；先核对原供应商任务。
+- 503：未配置 3D 生成服务；由管理员完成配置。
+- `failed`：检查响应中的 `error`，区分供应商拒绝、额度、参数与网络问题。
 
-### 查询任务
-
-```
-GET https://api.tripo3d.ai/v2/openapi/task/{task_id}
-Authorization: Bearer <API_KEY>
-```
-
-响应字段：
-
-| 字段 | 说明 |
-|------|------|
-| `data.status` | `queued` / `running` / `success` / `failed` |
-| `data.progress` | 0–100 百分比 |
-| `data.output.pbr_model` | PBR GLB 下载 URL（优先） |
-| `data.output.model` | 普通模型下载 URL（备用） |
-
-> **注意**：Tripo 官方已公告 V2 将于 2026 年 10 月 1 日退休。平台默认使用 `https://openapi.tripo3d.ai`，历史 V2 地址请按厂商迁移通知更新。
-
-## 腾讯混元 3D 供应商协议
-
-腾讯混元 3D 使用 TC3-HMAC-SHA256 签名，平台以简化协议透传。
-
-### 创建任务
-
-```
-POST https://hunyuan.tencentcloudapi.com/v1/3d/generate
-Authorization: Bearer <API_KEY>
-Content-Type: application/json
-```
-
-```json
-{
-  "prompt": "a mechanical bracket"
-}
-```
-
-### 查询任务
-
-```
-GET https://hunyuan.tencentcloudapi.com/v1/3d/task/{task_id}
-Authorization: Bearer <API_KEY>
-```
-
-响应字段：
-
-| 字段 | 说明 |
-|------|------|
-| `status` | `running` / `success` / `failed` |
-| `progress` | 0–100 |
-| `model_url` | GLB 下载地址 |
-
-## 配置指南
-
-### Tripo3D
-
-1. 访问 [Tripo Developer Portal](https://developers.tripo3d.ai/) 注册并获取 API Key
-2. 进入设置页 → AI 与模型 → 3D 生成模型
-3. 选择 Tripo3D 标签，粘贴 API Key
-4. Base URL 保持默认 `https://openapi.tripo3d.ai`
-5. 点击保存
-
-### 腾讯混元 3D
-
-1. 登录 [腾讯云控制台](https://console.cloud.tencent.com/hunyuan)
-2. 开通混元 3D 服务并创建 API Key（[密钥管理](https://cloud.tencent.com/document/product/1729/111008)）
-3. 进入设置页 → AI 与模型 → 3D 生成模型
-4. 选择腾讯混元 3D 标签，粘贴 API Key
-5. Base URL 保持默认 `https://hunyuan.tencentcloudapi.com`
-6. 点击保存
-
-## 异步任务流程图
-
-```
-┌──────────┐     ┌───────────┐     ┌──────────┐     ┌─────────┐
-│ 前端提交  │────▶│ Studio API │────▶│ 供应商    │────▶│ 返回     │
-│ prompt   │     │ 鉴权+转发  │     │ Tripo/腾讯│     │ taskId  │
-└──────────┘     └───────────┘     └──────────┘     └────┬────┘
-                                                          │
-              ┌────────────────────────────────────────────┘
-              ▼
-┌──────────┐     ┌───────────┐     ┌──────────┐
-│ 前端轮询  │────▶│ Studio API │────▶│ 供应商    │
-│ 3s 间隔  │◀────│ 代理查询   │◀────│ 状态+URL │
-└────┬─────┘     └───────────┘     └──────────┘
-     │ status === "success"
-     ▼
-┌──────────────────────────────────┐
-│ 前端展示 modelUrl → 预览 / 下载 GLB │
-└──────────────────────────────────┘
-```
-
-## 官方参考
-
-- [Tripo3D API 文档](https://developers.tripo3d.ai/)：任务创建、查询和模型格式说明
-- [腾讯混元 API 概览](https://cloud.tencent.com/document/product/1729/101848)：Action 列表和签名方式
-- [腾讯混元密钥管理](https://cloud.tencent.com/document/product/1729/111008)：开通和 Key 生命周期
-
-密钥只保存在服务端元数据存储中，不会出现在浏览器代码、日志或审计记录中。
+模型能下载但无法显示时，按[模型导入与格式选择](/docs/model-import)检查几何、贴图和格式；平台请求的其他排障方法见[API 参考](/docs/api-reference)。

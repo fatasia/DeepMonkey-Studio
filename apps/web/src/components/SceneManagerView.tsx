@@ -123,6 +123,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
     setSceneStatusFilter,
     setPublishMode,
     setPublishPerformance,
+    setPublishClientTarget,
     setPublishTarget,
     setVersionTarget,
     showcaseBusy,
@@ -426,6 +427,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                             onClick={() => {
                               setPublishMode(scene.publicationMode ?? "webgl");
                               setPublishPerformance(scene.publicationPerformance ?? "standard");
+                              setPublishClientTarget("none");
                               setPublishTarget(scene);
                             }}
                           ><Rocket size={14} /></button>

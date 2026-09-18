@@ -12,6 +12,8 @@ export interface BatteryExample {
   tasks: readonly BatteryExampleTask[];
   defaultTask: BatteryExampleTask;
   headers: readonly string[];
+  /** 公开隔离测试样例的真实 EOL 圈数；仅验证样例携带，用于参考寿命核验。 */
+  referenceCycleLife?: number;
   url?: string;
   generated?: true;
 }
@@ -54,12 +56,14 @@ export const BATTERY_EXAMPLES: readonly BatteryExample[] = [
     detail: "SNL · 3.2 Ah · 隔离测试 · 参考 EOL 378 圈",
     fileName: "multiscale-battery-assessment-demo.csv", url: "/samples/multiscale-battery-assessment-demo.csv",
     chemistry: "ncm", nominalCapacityAh: 3.2, tasks: ALL_TASKS, defaultTask: "rul", headers: MULTISCALE_HEADERS,
+    referenceCycleLife: 378,
   },
   {
     id: "lfp-validation", name: "LFP 公开验证", group: "validation",
     detail: "SNL · 1.1 Ah · 隔离测试 · 参考 EOL 3139 圈",
     fileName: "multiscale-battery-assessment-lfp-demo.csv", url: "/samples/multiscale-battery-assessment-lfp-demo.csv",
     chemistry: "lfp", nominalCapacityAh: 1.1, tasks: ALL_TASKS, defaultTask: "rul", headers: MULTISCALE_HEADERS,
+    referenceCycleLife: 3139,
   },
   {
     id: "ncm-engineering", name: "NMC 大容量工程", group: "engineering",

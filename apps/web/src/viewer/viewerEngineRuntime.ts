@@ -10,6 +10,9 @@ import { nextFrameCadence } from "./viewerFrameCadence";
 import { resolveOrbitCameraRange } from "./cameraFraming";
 import { sceneGridCloseupOpacity } from "./sceneGrid";
 import { updateViewerDeviceSignals } from "./viewerDeviceSignals";
+import { presentViewerFrame } from "./viewerFramePresentation";
+import { updateAuthorLodSelection } from "./authorLodSelection";
+import { getPresentationPerformance } from "./viewerPresentationPerformance";
 
 const READ_ONLY_TARGET_FPS = 60;
 
@@ -39,7 +42,8 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     this.lastFrameTime = now;
     if (this.adaptiveQualityEnabled && now - this.lastAdaptiveRenderSampleAt >= 500) {
       this.lastAdaptiveRenderSampleAt = now;
-      const performanceSnapshot = this.framePerformanceMonitor.snapshot(this.readRendererLoad(), undefined, this.longTaskMonitor.snapshot(now));
+      const performanceSnapshot = getPresentationPerformance(this)?.snapshot()
+        ?? this.framePerformanceMonitor.snapshot(this.readRendererLoad(), undefined, this.longTaskMonitor.snapshot(now));
       const nextPixelRatio = this.adaptiveRenderScaleController.sample({
         sampleCount: performanceSnapshot.sampleCount,
         p95FrameMs: performanceSnapshot.frameTimeMs.p95,
@@ -48,7 +52,7 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
       if (nextPixelRatio !== undefined) {
         this.applyRendererPixelRatio(nextPixelRatio);
         // 比例变化后重新采样，避免旧窗口连续触发降档或延迟恢复。
-        this.framePerformanceMonitor.reset();
+        this.resetPerformanceSamples();
       }
     }
     this.mixers.forEach((mixer) => mixer.update(delta));
@@ -103,11 +107,22 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     // 拖动时表现为 3D 视口持续闪烁。尺寸未变化时 resize 内部直接早退，每帧开销可忽略。
     this.resize();
     this.renderer.info.reset();
+    const offscreenFrame = !this.xrActive && this.offscreen.wantsFrame();
+    presentViewerFrame({ authorBackend: this.rendererBackend, presentationBackend: this.presentationRendererBackend,
+      xrActive: this.xrActive, offscreenFrame, listeners: this.presentationFrameListeners,
+      updateAuthorMatrices: () => { this.scene.updateMatrixWorld(); this.camera.updateMatrixWorld(); },
+      updateAuthorLods: () => updateAuthorLodSelection(this.scene, this.camera),
+      drawAuthor: () => this.drawAuthorScene(delta, offscreenFrame),
+    });
+    this.renderDemand.didRender(performance.now() - now);
+  };
+
+  private drawAuthorScene(delta: number, offscreenFrame: boolean): void {
     this.conservativeOcclusion.update(this.modelRoot, this.camera,
       this.clippingState.enabled || this.hasContinuousRenderActivity(), this.getSelected()?.object);
     try {
       this.repeatedAssetBatcher.begin(this.models.values(), this.conservativeOcclusion.culled);
-      if (!this.xrActive && this.offscreen.wantsFrame()) {
+      if (offscreenFrame) {
         // 后台线程渲染：主线程只发增量帧，绘制由 Worker 完成并通过位图回传覆盖画布。
         this.offscreen.postFrame({
           width: Math.max(this.container.clientWidth, 1),
@@ -122,8 +137,7 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
       this.repeatedAssetBatcher.end();
     }
     this.gpuFrameTimeMonitor.onFrameRendered();
-    this.renderDemand.didRender(performance.now() - now);
-  };
+  }
 
   /** 与 syncPostProcessing 的描边对象口径一致：模型轮廓效果 + 检查中的对象轮廓。 */
   private offscreenOutlinedUuids(): string[] {

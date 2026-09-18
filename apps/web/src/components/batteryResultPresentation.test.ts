@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { batteryTrendPoints } from "./batteryResultPresentation";
+import { batteryReferencePoints, batteryTrendPoints } from "./batteryResultPresentation";
 
 describe("batteryTrendPoints", () => {
   it("extracts SOC points without fabricating invalid samples", () => {
@@ -20,5 +20,16 @@ describe("batteryTrendPoints", () => {
 
   it("does not create a trend for a scalar SOH result", () => {
     expect(batteryTrendPoints("soh", { currentSoh: 96 })).toEqual([]);
+  });
+
+  it("extracts reference SOC only where the model kept it", () => {
+    expect(batteryReferencePoints("soc", {
+      points: [
+        { time: 0, estimatedSoc: 80, referenceSoc: 79.5 },
+        { time: 5, estimatedSoc: 78 },
+        { time: 10, estimatedSoc: 76, referenceSoc: 75.8 },
+      ],
+    })).toEqual([{ x: 0, y: 79.5 }, { x: 10, y: 75.8 }]);
+    expect(batteryReferencePoints("rul", { sohCurve: [{ cycle: 1, soh: 99 }] })).toEqual([]);
   });
 });

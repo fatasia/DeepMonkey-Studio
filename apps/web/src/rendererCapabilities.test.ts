@@ -47,13 +47,13 @@ describe("renderer readiness", () => {
     expect(result[1]?.details).toContain("需要 HTTPS 或 localhost 安全上下文");
   });
 
-  it("reports implemented TSL effects while retaining the unsigned publication guard", () => {
+  it("reports the Deep projection boundary while retaining the publication guard", () => {
     const result = rendererReadiness(
       { secureContext: true, webgl2: true, webgpuApi: true, webgpuAdapter: true, timestampQuery: true, shaderF16: true },
       { postProcessingEnabled: true },
     );
     expect(result[1]).toMatchObject({ backend: "webgpu", ready: true, level: "limited" });
-    expect(result[1]?.details).toContain("WebGPU TSL 已覆盖核心后处理与对象轮廓；画质等价仍按发布场景签署，自动发布暂保留 WebGL");
+    expect(result[1]?.details).toContain("Studio 使用 Deep WebGPU 投影画布；材质、环境与作者辅助层仍需逐场景验收");
   });
 
   it("separates scene publication readiness from full product parity", () => {
@@ -61,8 +61,8 @@ describe("renderer readiness", () => {
       { secureContext: true, webgl2: true, webgpuApi: true, webgpuAdapter: true, timestampQuery: true, shaderF16: true },
       { postProcessingEnabled: false },
     );
-    expect(result[1]).toMatchObject({ backend: "webgpu", ready: true, level: "limited", summary: "场景可发布，产品能力仍在验收" });
-    expect(result[1]?.details).toContain("当前场景满足显式 WebGPU 优先发布条件；自动默认仍保留 WebGL");
+    expect(result[1]).toMatchObject({ backend: "webgpu", ready: true, level: "limited", summary: "可试用，需逐场景验收" });
+    expect(result[1]?.details).toContain("仅在显式选择时使用；自动默认仍保留 WebGL");
     expect(result[1]?.details).toContain("产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL");
   });
 });

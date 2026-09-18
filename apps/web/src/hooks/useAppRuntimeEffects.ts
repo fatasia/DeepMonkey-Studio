@@ -11,30 +11,29 @@ import type {
   SceneAnnotationState,
   JsonValue,
   SceneDataBindingState,
-  SceneInteractionActionState,
   SceneInteractionScriptState,
   SceneInteractionTrigger,
   SceneSnapshot,
   SystemUserRecord,
 } from "@bim-studio/contracts";
 import { api } from "../api";
-import { RENDERER_BACKEND_STORAGE_KEY } from "../appDefaults";
 import type { SceneDataBindingRuntimeState } from "../components/SceneDataBindingEditor";
 import { dataBindingProduct, directSceneDataBindingMessage, sceneDataBindingMessage } from "../sceneDataBindings";
 import { DirectBindingRuntime } from "../directBindingRuntime";
-import { DEFAULT_DASHBOARD_VIEW } from "../studio/workspaceRoute";
 import { writeLastWorkspace } from "../studio/lastWorkspacePreference";
-import { publishApplicationInteractionEffects, subscribeApplicationInteractionEffects } from "../studio/applicationInteractionHost";
+import { publishApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "../sceneDataBridge";
-import { readRoute, routePath, type AppRoute } from "../appRoute";
+import { readRoute, type AppRoute } from "../appRoute";
 import { translate as tr, type AppLocale } from "../i18n";
 import { ApplicationSession } from "../studio/applicationSession";
 import { SceneBehaviorManager, type SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
 import type { BimSpaceRecord, LoadedSceneModel, NavigationCollisionDiagnostics, PointerInfo, RendererBackend, ViewerEngine } from "../viewer/ViewerEngine";
 import type { RendererRecoveryState } from "../viewer/rendererRecoveryState";
-import { runSceneNavigationTransition } from "../sceneTransitionOverlay";
 import { isSceneViewerDeliveryRuntime } from "../delivery/sceneViewerDelivery";
 import { synchronizeSelectionFromViewport } from "../controllers/sceneSelectionSynchronization";
+import { commitRendererPreference, type PendingRendererPreference } from "../viewer/rendererBackendPreference";
+import { StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
+import { useAppInteractionEffects } from "./useAppInteractionEffects";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 interface XrCapabilities {
@@ -51,6 +50,7 @@ interface AppRuntimeEffectsContext {
   viewerRouteActive: boolean;
   viewportRef: RefObject<HTMLDivElement | null>;
   rendererBackend: RendererBackend;
+  rendererActiveBackend: RendererBackend;
   rendererGeneration: number;
   engine: ViewerEngine | undefined;
   route: AppRoute;
@@ -70,6 +70,7 @@ interface AppRuntimeEffectsContext {
   sceneInteractions: SceneInteractionScriptState[];
   activeSceneIdRef: MutableRefObject<string | undefined>;
   rendererSnapshotRef: MutableRefObject<RendererRecoveryState | undefined>;
+  rendererPreferenceCommitRef: PendingRendererPreference;
   webGpuSceneReplacementCountRef: MutableRefObject<number>;
   visionEventCursorRef: MutableRefObject<{ scope: string; id: string }>;
   behaviorManagerRef: MutableRefObject<SceneBehaviorManager | undefined>;
@@ -112,6 +113,9 @@ interface AppRuntimeEffectsContext {
   setMessage: Setter<string>;
   setRoute: Setter<AppRoute>;
   setRendererBackend: Setter<RendererBackend>;
+  setRendererActiveBackend: Setter<RendererBackend>;
+  setRendererSwitchPhase: Setter<"idle" | "preparing" | "recovering" | "failed">;
+  setRendererSwitchMessage: Setter<string | undefined>;
 }
 
 /** 集中管理渲染器、实时数据、WebXR 与交互总线的生命周期副作用。 */
@@ -122,6 +126,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     viewerRouteActive,
     viewportRef,
     rendererBackend,
+    rendererActiveBackend,
     rendererGeneration,
     engine,
     route,
@@ -141,6 +146,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     sceneInteractions,
     activeSceneIdRef,
     rendererSnapshotRef,
+    rendererPreferenceCommitRef,
     webGpuSceneReplacementCountRef,
     visionEventCursorRef,
     behaviorManagerRef,
@@ -183,8 +189,12 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     setMessage,
     setRoute,
     setRendererBackend,
+    setRendererActiveBackend,
+    setRendererSwitchPhase,
+    setRendererSwitchMessage,
   } = context;
   const [viewportMountRetry, setViewportMountRetry] = useState(0);
+  const deepBridgeRef = useRef<StudioDeepWebGpuBridge | undefined>(undefined);
   const rendererRecoveryContextRef = useRef({
     activeScene,
     readOnly: route.view !== "studio",
@@ -218,7 +228,8 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     };
     setRendererSwitching(true);
     void import("../viewer/ViewerEngine")
-      .then(({ ViewerEngine }) => ViewerEngine.create(viewportRef.current!, rendererBackend))
+      // Studio 作者 Viewer 固定为 WebGL；Deep 是同一作者状态的独立输出表面。
+      .then(({ ViewerEngine }) => ViewerEngine.create(viewportRef.current!, "webgl"))
       .then((created) => {
         if (cancelled) {
           created.dispose();
@@ -272,7 +283,9 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
               recoveryMessage: `WebGPU 设备丢失（${info.reason ?? "unknown"}），已无损恢复到 WebGL`,
             };
           }
-          window.localStorage.setItem(RENDERER_BACKEND_STORAGE_KEY, "webgl");
+          rendererPreferenceCommitRef.current = "webgl";
+          setRendererSwitchPhase("recovering");
+          setRendererSwitchMessage(`WebGPU 设备丢失（${info.reason ?? "unknown"}），正在恢复 WebGL 2`);
           setRendererSwitching(true);
           setMessage("检测到 GPU 设备丢失，正在保留现场并恢复 WebGL");
           setRendererBackend("webgl");
@@ -334,20 +347,27 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         };
         const restoringSnapshot = Boolean(rendererSnapshotRef.current);
         setEngine(viewer);
+        setRendererActiveBackend("webgl");
         if (!restoringSnapshot) {
           setRendererSwitching(false);
-          setMessage(`${viewer.getRendererBackend() === "webgpu" ? "WebGPU（实验）" : "WebGL"} 已启用`);
+          setRendererSwitchPhase("idle");
+          setRendererSwitchMessage(undefined);
+          if (rendererBackend === "webgl") {
+            try {
+              commitRendererPreference(rendererPreferenceCommitRef, "webgl");
+            } catch (reason) {
+              showError(new Error(`渲染后端已启用，但偏好保存失败：${reason instanceof Error ? reason.message : String(reason)}`));
+            }
+            setMessage("WebGL 已启用");
+          }
         }
       })
       .catch((reason) => {
         if (cancelled) return;
-        if (rendererBackend === "webgpu") {
-          if (!rendererSnapshotRef.current?.temporaryBackend) window.localStorage.setItem(RENDERER_BACKEND_STORAGE_KEY, "webgl");
-          setRendererBackend("webgl");
-          setMessage("WebGPU 不可用，正在恢复 WebGL");
-        } else {
-          setRendererSwitching(false);
-        }
+        rendererPreferenceCommitRef.current = undefined;
+        setRendererSwitching(false);
+        setRendererSwitchPhase("failed");
+        setRendererSwitchMessage(`WebGL 2 作者视口初始化失败：${reason instanceof Error ? reason.message : String(reason)}`);
         showError(reason);
       });
     return () => {
@@ -356,7 +376,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
       viewer?.dispose();
       setEngine((current) => (current === viewer ? undefined : current));
     };
-  }, [authReady, currentUser?.id, rendererBackend, rendererGeneration, viewerRouteActive, viewportMountRetry, showError]);
+  }, [authReady, currentUser?.id, rendererGeneration, viewerRouteActive, viewportMountRetry, showError]);
 
   useEffect(() => {
     const pending = rendererSnapshotRef.current;
@@ -364,10 +384,84 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     rendererSnapshotRef.current = undefined;
     void applyScene(pending.scene, false, project, pending.readOnly, pending.fastRuntime)
       .then(() => {
-        setMessage(pending.recoveryMessage ?? `已切换到 ${engine.getRendererBackend() === "webgpu" ? "WebGPU（实验）" : "WebGL"}，场景状态已恢复`);
+        try {
+          commitRendererPreference(rendererPreferenceCommitRef, engine.getRendererBackend());
+        } catch (reason) {
+          showError(new Error(`渲染后端已启用，但偏好保存失败：${reason instanceof Error ? reason.message : String(reason)}`));
+        }
+        setMessage(pending.recoveryMessage ?? `已切换到 ${engine.getRendererBackend() === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}，场景状态已恢复`);
+      })
+      .then(() => {
+        setRendererActiveBackend(engine.getRendererBackend());
+        setRendererSwitchPhase("idle");
+        setRendererSwitchMessage(undefined);
+      })
+      .catch((reason) => {
+        setRendererSwitchPhase("failed");
+        setRendererSwitchMessage(`场景恢复失败：${reason instanceof Error ? reason.message : String(reason)}`);
+        showError(reason);
       })
       .finally(() => setRendererSwitching(false));
   }, [engine]);
+
+  useEffect(() => {
+    if (!engine || !viewportRef.current) return;
+    const bridge = new StudioDeepWebGpuBridge(engine, viewportRef.current, {
+      onRuntimeFailure: (reason) => {
+        rendererPreferenceCommitRef.current = "webgl";
+        try { commitRendererPreference(rendererPreferenceCommitRef, "webgl"); }
+        catch (error) { showError(error); }
+        setRendererBackend("webgl");
+        setRendererActiveBackend("webgl");
+        setRendererSwitching(false);
+        setRendererSwitchPhase("failed");
+        setRendererSwitchMessage(`Deep WebGPU 运行失败，已保留作者状态并回到 WebGL 2：${reason.message}`);
+        setMessage("Deep WebGPU 运行失败，已回到 WebGL");
+      },
+    });
+    deepBridgeRef.current = bridge;
+    return () => {
+      if (deepBridgeRef.current === bridge) deepBridgeRef.current = undefined;
+      bridge.dispose();
+    };
+  }, [engine, showError]);
+
+  useEffect(() => {
+    const bridge = deepBridgeRef.current;
+    if (!engine || !bridge || rendererBackend === rendererActiveBackend) return;
+    let cancelled = false;
+    setRendererSwitching(true);
+    setRendererSwitchPhase("preparing");
+    setRendererSwitchMessage(`正在准备 ${rendererBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2"}；当前画布仍可用`);
+    void bridge.switchTo(rendererBackend).then((result) => {
+      if (cancelled) return;
+      if (result.status === "switched" || result.status === "unchanged") {
+        setRendererActiveBackend(result.activeBackend);
+        try { commitRendererPreference(rendererPreferenceCommitRef, result.activeBackend); }
+        catch (reason) { showError(reason); }
+        setRendererSwitchPhase("idle");
+        setRendererSwitchMessage(undefined);
+        setMessage(`${result.activeBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL"} 已启用`);
+      } else if (result.status === "failed") {
+        const persistFallback = rendererPreferenceCommitRef.current === "webgpu";
+        rendererPreferenceCommitRef.current = persistFallback ? "webgl" : undefined;
+        if (persistFallback) {
+          try { commitRendererPreference(rendererPreferenceCommitRef, "webgl"); }
+          catch (reason) { showError(reason); }
+        }
+        setRendererBackend("webgl");
+        setRendererActiveBackend("webgl");
+        setRendererSwitchPhase("failed");
+        setRendererSwitchMessage(`Deep WebGPU 准备失败，WebGL 2 未中断：${result.error ?? "未知错误"}`);
+        setMessage("Deep WebGPU 准备失败，已保留 WebGL 画布");
+      }
+    }).catch((reason) => {
+      if (!cancelled) showError(reason);
+    }).finally(() => {
+      if (!cancelled) setRendererSwitching(false);
+    });
+    return () => { cancelled = true; bridge.cancelPendingSwitch(); };
+  }, [engine, rendererBackend, rendererActiveBackend, showError]);
 
   useEffect(() => {
     if (!engine) return;
@@ -665,68 +759,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     };
   }, [engine, project?.id, route.sceneId, route.view]);
 
-  useEffect(() => {
-    const handleInteractionAction = (action: SceneInteractionActionState, source?: ApplicationObjectRef) => {
-      if (!action) return;
-      if (action.type === "unityAction") {
-        const widgetId = source?.kind === "widget" ? source.id : undefined;
-        if (!widgetId || !action.unityAction?.trim()) return showError(new Error("Unity 动作缺少目标 Unity 组件或动作名"));
-        window.dispatchEvent(
-          new CustomEvent("bim-studio:unity-action", {
-            detail: {
-              widgetId,
-              action: action.unityAction.trim(),
-              ...(action.unityObjectId?.trim() ? { objectId: action.unityObjectId.trim() } : {}),
-              ...(action.value !== undefined ? { value: action.value } : {}),
-            },
-          }),
-        );
-      } else if (action.type === "dashboard" && action.dashboardPageId && activeApplication) {
-        const page = activeApplication.pages.find((candidate) => candidate.id === action.dashboardPageId);
-        if (!page) return showError(new Error("目标二维页面不存在"));
-        navigate({
-          view: "dashboard",
-          projectId: activeApplication.metadata.projectId,
-          applicationId: activeApplication.metadata.id,
-          pageId: page.id,
-          dashboardView: DEFAULT_DASHBOARD_VIEW,
-        });
-      } else if (action.type === "navigateScene" && action.sceneId) {
-        const targetScene = activeApplication?.scenes.find((candidate) => candidate.id === action.sceneId);
-        if (activeApplication && !targetScene) return showError(new Error("目标三维场景不存在，已阻止跳转"));
-        if (!activeApplication && !scenes.some((candidate) => candidate.id === action.sceneId)) return showError(new Error("目标三维场景不存在，已阻止跳转"));
-        const view = route.view === "studio" ? "studio" : "view";
-        const destination: AppRoute = view === "studio" ? { ...route, view, sceneId: action.sceneId } : { view, sceneId: action.sceneId };
-        if (action.newTab) window.open(routePath(destination), "_blank", "noopener,noreferrer");
-        else void runSceneNavigationTransition(action.transition, () => navigate(destination)).catch(showError);
-      } else if (action.type === "cameraView" && action.cameraViewId) {
-        const cameraView = cameraViews.find((item) => item.id === action.cameraViewId);
-        if (cameraView) engine?.applyCamera(cameraView.camera);
-      } else if (action.type === "message") {
-        setMessage(action.message?.trim() || "事件已触发");
-      } else if (action.type === "setData") {
-        publishLocalSceneData({
-          source: "interaction",
-          key: action.dataKey?.trim() || "value",
-          value: action.value,
-          timestamp: new Date().toISOString(),
-          ...(route.sceneId ? { sceneId: route.sceneId } : {}),
-        });
-      } else if (action.type === "openUrl") {
-        const url = action.url?.trim();
-        if (!url || !/^(https?:\/\/|\/)/i.test(url)) return showError(new Error("网页地址必须以 http://、https:// 或 / 开头"));
-        if (action.newTab !== false) window.open(url, "_blank", "noopener,noreferrer");
-        else window.location.assign(url);
-      }
-    };
-    const handleLegacyInteractionAction = (event: Event) => handleInteractionAction((event as CustomEvent<SceneInteractionActionState>).detail);
-    const unsubscribe = subscribeApplicationInteractionEffects((effect) => handleInteractionAction(effect.action, effect.source));
-    window.addEventListener("bim-studio:interaction-action", handleLegacyInteractionAction);
-    return () => {
-      unsubscribe();
-      window.removeEventListener("bim-studio:interaction-action", handleLegacyInteractionAction);
-    };
-  }, [activeApplication, activeScene?.id, cameraViews, engine, route.sceneId, route.view, scenes, showError]);
+  useAppInteractionEffects({ activeApplication, cameraViews, engine, route, scenes, navigate, showError, setMessage });
 
   useEffect(() => {
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();

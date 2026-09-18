@@ -39,6 +39,33 @@ export function BatteryAnalysisReport({ result }: { result: Record<string, unkno
         <ReportValue label="最弱电芯" value={`${String(pack.weakestCellId ?? "—")}${pack.weakestModuleId ? ` · ${String(pack.weakestModuleId)}` : ""}`} />
       </div>}
 
+      {pack && hasPackDiagnostics(pack) && <ReportDetails title="Pack 一致性诊断">
+        <div className="battery-report-physics battery-report-packdetail">
+          <ReportValue label="风险等级" value={packRiskLabel(pack.riskLevel)} />
+          <ReportValue label="拓扑" value={String(pack.topologyLabel ?? "—")} />
+          <ReportValue label="内阻极差" value={unit(pack.resistanceSpreadPct, "%", 1)} />
+          <ReportValue label="末端压差" value={unit(pack.voltageSpreadMv, " mV", 0)} />
+          <ReportValue label="温差" value={unit(pack.temperatureSpreadC, " °C", 1)} />
+          <ReportValue label="容量离散 CV" value={unit(pack.capacityCvPct, "%", 2)} />
+          <ReportValue label="Pack 可用容量" value={unit(pack.packCapacityAh, " Ah", 1)} />
+          <ReportValue label="能量损耗" value={unit(pack.energyLossPct, "%", 1)} />
+        </div>
+        {weakestCells(pack).length > 0 && <div className="battery-report-weakest">
+          <span><b>最弱电芯排序</b>{String(pack.finding ?? "")}</span>
+          <ul>
+            {weakestCells(pack).map(cell => (
+              <li key={cell.cellId}>
+                {cell.cellId}{cell.moduleId ? ` · ${cell.moduleId}` : ""} · SOH {format(cell.sohPct, 1)}%
+                {cell.capacityDeviationPct === undefined ? "" : ` · 容量偏差 ${format(cell.capacityDeviationPct, 1)}%`}
+              </li>
+            ))}
+          </ul>
+        </div>}
+        {strings(pack.riskReasons).length > 0 && <p>风险来源：{strings(pack.riskReasons).join("、")}</p>}
+        {typeof pack.conclusion === "string" && <p>{pack.conclusion}</p>}
+        {strings(pack.recommendations).length > 0 && <ol>{strings(pack.recommendations).map(item => <li key={item}>{item}</li>)}</ol>}
+      </ReportDetails>}
+
       {profile && <ReportDetails title="数据覆盖">
         <div className="battery-report-model">
           <span><b>样本规模</b>{integer(profile.rowCount)} 行 · {integer(profile.cycleCount)} 圈 · {integer(profile.cellCount)} 电芯</span>
@@ -99,6 +126,37 @@ function ReportDetails({ title, children }: { title: string; children: React.Rea
 
 function ReportValue({ label, value }: { label: string; value: string }) {
   return <span><small>{label}</small><strong>{value}</strong></span>;
+}
+
+function hasPackDiagnostics(pack: Record<string, unknown>): boolean {
+  return pack.riskLevel !== undefined
+    || pack.resistanceSpreadPct !== undefined
+    || pack.voltageSpreadMv !== undefined
+    || weakestCells(pack).length > 0
+    || pack.packEnergyKwh !== undefined;
+}
+
+function packRiskLabel(value: unknown): string {
+  if (value === "high") return "高风险";
+  if (value === "review" || value === "medium") return "需关注";
+  if (value === "stable" || value === "low") return "一致性稳定";
+  return "—";
+}
+
+function weakestCells(pack: Record<string, unknown>): Array<{ cellId: string; moduleId: string | undefined; sohPct: number; capacityDeviationPct: number | undefined }> {
+  if (!Array.isArray(pack.weakestCells)) return [];
+  return pack.weakestCells.flatMap(item => {
+    const cell = record(item);
+    const sohPct = number(cell?.sohPct);
+    return typeof cell?.cellId === "string" && sohPct !== undefined
+      ? [{
+        cellId: cell.cellId,
+        moduleId: typeof cell.moduleId === "string" && cell.moduleId ? cell.moduleId : undefined,
+        sohPct,
+        capacityDeviationPct: number(cell.capacityDeviationPct),
+      }]
+      : [];
+  });
 }
 
 function observationLabel(observation: Record<string, unknown> | undefined): string {

@@ -36,6 +36,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
     publicationVersions,
     publishMode,
     publishPerformance,
+    publishClientTarget,
     publishTarget,
     refreshLibraryModels,
     restoreVersion,
@@ -48,6 +49,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
     setParametricWorkbenchOpen,
     setPublishMode,
     setPublishPerformance,
+    setPublishClientTarget,
     setPublishTarget,
     setVersionTarget,
     sortedScenes,
@@ -163,18 +165,23 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
 
       {publishTarget && (
         <ScenePublicationDialog
+          artifacts={controller.publicationArtifacts}
+          projectId={publishTarget.projectId}
+          sceneId={publishTarget.id}
           locale={locale}
           sceneName={publishTarget.name}
           mode={publishMode}
           performance={publishPerformance}
+          clientTarget={publishClientTarget}
           defaultToolbarVisible={publishTarget.publicationToolbarVisible !== false}
           cloudConfigured={cloudConfigured}
           cloudHint={cloudHint}
           busy={busy}
           onModeChange={setPublishMode}
           onPerformanceChange={setPublishPerformance}
+          onClientTargetChange={setPublishClientTarget}
           onCancel={() => setPublishTarget(undefined)}
-          onPublish={(toolbarVisible) => void submitPublish(toolbarVisible)}
+          onPublish={(toolbarVisible, clientTarget) => submitPublish(toolbarVisible, clientTarget)}
         />
       )}
 

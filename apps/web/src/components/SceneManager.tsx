@@ -8,10 +8,12 @@ import { analyzeProjectResourceGovernance } from "./projectResourceGovernance";
 import { filterAndSortScenes, type SceneSortKey, type SceneStatusFilter } from "./sceneManagerPresentation";
 import { useScenePublicationHistory } from "../hooks/useScenePublicationHistory";
 import { projectModelMatchesSearch } from "./projectModelSearch";
+import type { SceneClientPackageTarget } from "../delivery/sceneClientPackage";
 
 type ProjectAssetTab = "all" | "model" | "image" | "video" | "environment" | "pbr-material";
 
 function useSceneManagerController({
+  publicationArtifacts,
   directory,
   locale,
   managerTab: requestedManagerTab,
@@ -104,6 +106,7 @@ function useSceneManagerController({
   const [publishTarget, setPublishTarget] = useState<SceneSnapshot>();
   const [publishMode, setPublishMode] = useState<NonNullable<SceneSnapshot["publicationMode"]>>("webgl");
   const [publishPerformance, setPublishPerformance] = useState<NonNullable<SceneSnapshot["publicationPerformance"]>>("standard");
+  const [publishClientTarget, setPublishClientTarget] = useState<SceneClientPackageTarget>("none");
   const { versionTarget, setVersionTarget, publicationVersions, versionBusy, versionError, openVersions, restoreVersion }
     = useScenePublicationHistory(project?.id, locale, onRestorePublication);
   const [parametricWorkbenchOpen, setParametricWorkbenchOpen] = useState(false);
@@ -200,13 +203,13 @@ function useSceneManagerController({
     }
   }
 
-  async function submitPublish(toolbarVisible: boolean) {
+  async function submitPublish(toolbarVisible: boolean, clientTarget: SceneClientPackageTarget = publishClientTarget) {
     if (!publishTarget || publicationPendingRef.current) return;
     publicationPendingRef.current = true;
     setBusy(true);
     const target = publishTarget;
     try {
-      const published = await onPublish(target, publishMode, publishPerformance, toolbarVisible);
+      const published = await onPublish(target, publishMode, publishPerformance, toolbarVisible, clientTarget);
       if (published) setPublishTarget(undefined);
     } finally {
       publicationPendingRef.current = false;
@@ -422,6 +425,7 @@ function useSceneManagerController({
     managerTab,
     modelLibraryBusy,
     modelUploadRef,
+    publicationArtifacts,
     name,
     normalizedSearch,
     navigationNotice,
@@ -473,6 +477,7 @@ function useSceneManagerController({
     resourceGovernance,
     publishMode,
     publishPerformance,
+    publishClientTarget,
     publishTarget,
     refreshLibraryModels,
     renameLibraryItem,
@@ -497,6 +502,7 @@ function useSceneManagerController({
     setParametricWorkbenchOpen,
     setPublishMode,
     setPublishPerformance,
+    setPublishClientTarget,
     setPublishTarget,
     setVersionTarget,
     showcaseBusy,

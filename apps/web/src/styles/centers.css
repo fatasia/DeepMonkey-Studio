@@ -602,7 +602,7 @@
   display:grid;
   align-items:start;
   gap:12px;
-  grid-template-columns:minmax(0,1.55fr) minmax(300px,.85fr);
+  grid-template-columns:minmax(0,1fr);
 }
 .battery-technology-rail {
   position:relative;

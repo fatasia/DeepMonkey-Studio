@@ -1,4 +1,4 @@
-export type BenchmarkEngine = "three-webgl" | "three-webgpu";
+export type BenchmarkEngine = "three-webgl" | "three-webgpu" | "babylon-webgpu";
 export type BenchmarkWorkload = "static" | "dynamic";
 
 export interface FrameMetrics {
@@ -25,6 +25,29 @@ export interface RenderBenchmarkSnapshot {
   textures?: number;
 }
 
+/** Stable, JSON-safe envelope shared by browser runners and offline gates. */
+export interface RenderBenchmarkResult {
+  schemaVersion: 1;
+  capturedAt: string;
+  snapshot: RenderBenchmarkSnapshot;
+  adapter?: { available: boolean; reason?: string; package?: string };
+}
+
+export function exportBenchmarkResult(snapshot: RenderBenchmarkSnapshot, capturedAt = new Date().toISOString()): RenderBenchmarkResult {
+  return {
+    schemaVersion: 1,
+    capturedAt,
+    snapshot: JSON.parse(JSON.stringify(snapshot)) as RenderBenchmarkSnapshot,
+  };
+}
+
+export interface BenchmarkEngineAdapter {
+  readonly engine: BenchmarkEngine;
+  readonly available: boolean;
+  readonly reason?: string;
+  create(canvas: HTMLCanvasElement, objectCount: number, startedAt: number, workload: BenchmarkWorkload): Promise<RenderBenchmarkRuntime>;
+}
+
 export interface RenderBenchmarkRuntime {
   rebuild(cycle: number): Promise<void>;
   snapshot(): RenderBenchmarkSnapshot;
@@ -35,6 +58,7 @@ export interface RenderBenchmarkControl {
   ready: boolean;
   error?: string;
   snapshot?: RenderBenchmarkSnapshot;
+  result?: RenderBenchmarkResult;
   rebuild(cycle: number): Promise<RenderBenchmarkSnapshot>;
 }
 

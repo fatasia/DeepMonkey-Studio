@@ -9,9 +9,12 @@ import type {
 import type { AppLocale } from "../i18n";
 import type { ManagerWorkspaceTab } from "../appRoute";
 import type { ManagerDirectoryController } from "../hooks/useManagerDirectoryController";
+import type { SceneClientPackageTarget } from "../delivery/sceneClientPackage";
+import type { useScenePublicationArtifacts } from "../hooks/useScenePublicationArtifacts";
 
 /** 场景管理器的外部业务契约，页面内部状态不应泄漏到此接口。 */
 export interface SceneManagerProps {
+  publicationArtifacts?: ReturnType<typeof useScenePublicationArtifacts> | undefined;
   directory?: ManagerDirectoryController | undefined;
   locale: AppLocale;
   managerTab?: ManagerWorkspaceTab;
@@ -48,6 +51,7 @@ export interface SceneManagerProps {
     mode: NonNullable<SceneSnapshot["publicationMode"]>,
     performance: NonNullable<SceneSnapshot["publicationPerformance"]>,
     toolbarVisible: boolean,
+    clientTarget?: SceneClientPackageTarget,
   ) => Promise<boolean>;
   onUnpublish: (scene: SceneSnapshot) => Promise<void>;
   onRestorePublication: (sceneId: string, publishedAt: string) => Promise<void>;

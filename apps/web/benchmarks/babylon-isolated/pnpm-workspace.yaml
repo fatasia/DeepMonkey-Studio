@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - '@babylonjs/core@9.26.1'

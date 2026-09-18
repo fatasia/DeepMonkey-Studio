@@ -32,10 +32,24 @@ export class AdaptiveRenderScaleController {
   private recoveryWindows = 0;
   private reason: string | undefined;
 
-  constructor(private readonly basePixelRatio: number) {
+  constructor(private basePixelRatio: number) {
     if (!Number.isFinite(basePixelRatio) || basePixelRatio <= 0)
       throw new TypeError("设备像素比必须是大于 0 的有限数值");
     this.pixelRatio = basePixelRatio;
+  }
+
+  setBasePixelRatio(basePixelRatio: number): number | undefined {
+    if (!Number.isFinite(basePixelRatio) || basePixelRatio <= 0)
+      throw new TypeError("设备像素比必须是大于 0 的有限数值");
+    if (basePixelRatio === this.basePixelRatio) return undefined;
+    const scale = this.pixelRatio / this.basePixelRatio;
+    this.basePixelRatio = basePixelRatio;
+    this.pressureWindows = 0;
+    this.recoveryWindows = 0;
+    const floor = Math.min(basePixelRatio, Math.max(1, basePixelRatio * 0.9));
+    const next = Math.min(basePixelRatio, Math.max(floor, basePixelRatio * scale));
+    if (next === basePixelRatio) this.reason = undefined;
+    return this.setPixelRatio(next);
   }
 
   setEnabled(enabled: boolean): number | undefined {
@@ -55,7 +69,7 @@ export class AdaptiveRenderScaleController {
       this.recoveryWindows = 0;
       if (this.pressureWindows < PRESSURE_WINDOW_COUNT) return undefined;
       this.pressureWindows = 0;
-      const floor = Math.max(1, this.basePixelRatio * 0.9);
+      const floor = Math.min(this.basePixelRatio, Math.max(1, this.basePixelRatio * 0.9));
       const next = Math.max(floor, this.pixelRatio - this.basePixelRatio * 0.05);
       this.reason = `持续帧压力：P95 ${sample.p95FrameMs.toFixed(1)} ms`;
       return this.setPixelRatio(next);
@@ -85,7 +99,9 @@ export class AdaptiveRenderScaleController {
   }
 
   private setPixelRatio(value: number): number | undefined {
-    const rounded = Math.round(value * 100) / 100;
+    const rounded = value === this.basePixelRatio
+      ? value
+      : Math.min(this.basePixelRatio, Math.round(value * 100) / 100);
     if (Math.abs(rounded - this.pixelRatio) < 0.001) return undefined;
     this.pixelRatio = rounded;
     return rounded;

@@ -79,7 +79,7 @@
 .scene-publication-links { display:flex; gap:5px; margin-top:7px; }
 .scene-publication-links button { display:inline-flex; align-items:center; gap:4px; padding:4px 6px; color:#92a4aa; border:1px solid #303e43; border-radius:4px; background:#131c20; font-size:8px; }
 .scene-publication-links button:hover { color:#d9e2e5; border-color:#526268; }
-.publication-dialog { display:flex; width:min(540px,calc(100vw - 32px)); max-height:calc(100vh - 32px); flex-direction:column; overflow:hidden; padding:18px 20px; }
+.dialog.publication-dialog { display:flex; width:min(540px,calc(100vw - 32px)); max-height:calc(100vh - 32px); flex-direction:column; overflow:hidden; padding:18px 20px; }
 .publication-dialog-scroll { min-height:0; overflow:auto; padding:0 2px 2px 0; scrollbar-color:var(--line-strong) transparent; }
 .publication-dialog > .dialog-actions { flex:0 0 auto; margin:16px -2px -10px; padding:10px 2px 0; border-top:1px solid var(--line); background:var(--surface-1); }
 .publication-dialog-header { display:flex; align-items:center; gap:12px; padding-bottom:14px; border-bottom:1px solid var(--line); }
@@ -250,3 +250,4 @@
   .manager-scene-search { min-width: 180px; flex: 1; }
   .manager-toolbar-spacer { display: none; }
 }
+.publication-dialog .publication-submit-error { color:var(--danger); overflow-wrap:anywhere; white-space:pre-wrap; }

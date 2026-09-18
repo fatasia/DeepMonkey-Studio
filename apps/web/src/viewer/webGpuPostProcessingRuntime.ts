@@ -202,13 +202,12 @@ export class WebGpuPostProcessingRuntime implements ViewerPostProcessingRuntime 
 
     if (plan.antialias !== "none") {
       this.#pipeline.outputColorTransform = false;
-      result = renderOutput(result);
       if (plan.antialias === "smaa") {
         const smaaNode = smaa(result);
         resources.push(smaaNode);
-        result = asColorNode(smaaNode);
+        result = renderOutput(asColorNode(smaaNode));
       } else {
-        const fxaaNode = fxaa(result);
+        const fxaaNode = fxaa(renderOutput(result));
         resources.push(fxaaNode);
         result = asColorNode(fxaaNode);
       }

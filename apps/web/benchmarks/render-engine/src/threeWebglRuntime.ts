@@ -28,7 +28,8 @@ export function createThreeWebglRuntime(canvas: HTMLCanvasElement, objectCount: 
   addLights(scene);
 
   const sampler = new FrameSampler();
-  const gpuTimer = new WebGlGpuTimer(renderer.getContext());
+  const context = renderer.getContext();
+  const gpuTimer = context instanceof WebGL2RenderingContext ? new WebGlGpuTimer(context) : undefined;
   let lastRebuildMs = 0;
   let firstFrameMs = 0;
   rebuild(0);
@@ -36,9 +37,9 @@ export function createThreeWebglRuntime(canvas: HTMLCanvasElement, objectCount: 
   renderer.setAnimationLoop((time) => {
     sampler.record(time);
     updateDynamicObjects(deviceRoot, time, workload);
-    gpuTimer.begin();
+    gpuTimer?.begin();
     renderer.render(scene, camera);
-    gpuTimer.end();
+    gpuTimer?.end();
     if (firstFrameMs === 0) firstFrameMs = performance.now() - startedAt;
   });
 
@@ -75,7 +76,7 @@ export function createThreeWebglRuntime(canvas: HTMLCanvasElement, objectCount: 
         firstFrameMs,
         lastRebuildMs,
         frames: sampler.snapshot(),
-        gpuFrames: gpuTimer.snapshot(),
+        gpuFrames: gpuTimer?.snapshot(),
         drawCalls: renderer.info.render.calls,
         triangles: logicalTriangleCount(deviceRoot, ground),
         geometries: renderer.info.memory.geometries,
@@ -89,7 +90,7 @@ export function createThreeWebglRuntime(canvas: HTMLCanvasElement, objectCount: 
       materials.forEach((material) => material.dispose());
       ground.geometry.dispose();
       ground.material.dispose();
-      gpuTimer.dispose();
+      gpuTimer?.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
     },

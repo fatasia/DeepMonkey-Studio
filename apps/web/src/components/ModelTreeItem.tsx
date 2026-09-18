@@ -4,6 +4,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { statusText } from "../appPresentation";
 import { LayerTree } from "./LayerTree";
 import { SceneRowMenu } from "./SceneRowMenu";
+import { focusSceneObjectRow, selectSceneObjectRow } from "./sceneObjectRowEvents";
 import type { LayerTreeNode, LoadedSceneModel, ViewerEngine } from "../viewer/ViewerEngine";
 
 /** 单个模型的目录行，集中承载可见性、锁定、碰撞、动画和图层操作。 */
@@ -76,11 +77,10 @@ export function ModelTreeItem({
           title={loaded ? tr(locale, "单击选择，再次单击取消；Ctrl/⌘ 单击多选；Shift 单击连续选择；双击聚焦", "Click to select, click again to clear; Ctrl/⌘-click for multi-select; Shift-click for a range; double-click to focus") : tr(locale, "载入模型", "Load model")}
           onClick={(event) => {
             if (!loaded) return onLoadModel();
-            if (onSelectObject) onSelectObject(model.id, { additive: event.ctrlKey || event.metaKey, range: event.shiftKey });
-            else engine?.select(model.id);
+            selectSceneObjectRow(event, model.id, engine, onSelectObject);
           }}
           onDoubleClick={() => {
-            if (loaded) engine?.focusModel(model.id);
+            if (loaded) focusSceneObjectRow(model.id, engine);
           }}
         >
           <span className={`format-badge format-${model.format}`}>{model.format.toUpperCase()}</span>

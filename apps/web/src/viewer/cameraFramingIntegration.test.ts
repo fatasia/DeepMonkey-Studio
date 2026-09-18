@@ -13,7 +13,7 @@ function fixture() {
     camera.lookAt(orbit.target); camera.updateMatrixWorld();
   }) };
   const object = new THREE.Mesh(new THREE.BoxGeometry(0.001, 0.002, 0.001), new THREE.MeshBasicMaterial());
-  const models = new Map([["small", { object, visible: true }]]);
+  const models = new Map<string, { object: THREE.Object3D; visible: boolean; kind?: "model" | "primitive" }>([["small", { object, visible: true }]]);
   Object.assign(engine, { camera, orbit, models, navigationMode: "orbit", navigationViewStates: new Map(),
     cameraConstraints: structuredClone(DEFAULT_CAMERA_CONSTRAINTS), pointer: { isLocked: false },
     updateTransformAccess: vi.fn(), resetCameraCollisionAnchor: vi.fn(), requestRender: vi.fn(), emitCameraChange: vi.fn(), setAvatarVisible: vi.fn(),
@@ -22,6 +22,21 @@ function fixture() {
 }
 
 describe("camera framing engine integration", () => {
+  it("focuses translated primitives through the same registered-object path without changing author transforms", () => {
+    const { engine, camera, orbit, object, models } = fixture();
+    object.position.set(9.93, 1, -0.423);
+    object.updateMatrixWorld(true);
+    models.set("primitive", { object, visible: true, kind: "primitive" });
+    const before = object.matrixWorld.toArray();
+    expect(engine.focusModel("primitive")).toBe(true);
+    expect(orbit.target.toArray()).toEqual(object.position.toArray());
+    expect(camera.position.distanceTo(orbit.target)).toBeLessThan(0.01);
+    expect(object.matrixWorld.toArray()).toEqual(before);
+    const focused = camera.position.toArray();
+    expect(engine.focusModel("missing")).toBe(false);
+    expect(camera.position.toArray()).toEqual(focused);
+  });
+
   it("focuses millimeter assets before OrbitControls applies distance and clip limits", () => {
     const { engine, camera, orbit, object } = fixture();
     engine.focusModel("small");

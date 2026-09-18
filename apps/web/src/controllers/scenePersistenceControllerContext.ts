@@ -1,4 +1,8 @@
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from "react";
+import type { PublishedSceneRecord } from "@bim-studio/contracts";
+import type { SceneArtifactOptions } from "./scenePublicationArtifactRecord";
+import type { SceneArtifactRunResult } from "./scenePublicationArtifactRunner";
+import type { PreparedSceneClientPackage } from "../delivery/sceneClientPackage";
 import type {
   ApplicationDocument,
   CameraConstraintsState,
@@ -41,6 +45,8 @@ export interface ScenePersistenceControllerContext {
   activeScene: SceneSnapshot | undefined;
   activeApplication: ApplicationDocument | undefined;
   route: AppRoute;
+  getRoute: () => AppRoute;
+  getScenes: () => SceneSnapshot[];
   locale: AppLocale;
   sceneName: string;
   revision: number;
@@ -80,6 +86,7 @@ export interface ScenePersistenceControllerContext {
   recordSceneEdit: (label: string) => void;
   setActiveScene: Setter<SceneSnapshot | undefined>;
   getActiveScene: () => SceneSnapshot | undefined;
+  buildPublicationArtifact: (publication: PublishedSceneRecord, options: SceneArtifactOptions, prepared?: PreparedSceneClientPackage) => Promise<SceneArtifactRunResult>;
   onFirstSceneSave?: (saved: SceneSnapshot) => void;
   setAutoSaveEnabled: Setter<boolean>;
   setAnimationPlaying: Setter<boolean>;

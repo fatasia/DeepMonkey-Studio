@@ -9,6 +9,7 @@ import type { ApplicationRuntimeController } from "../controllers/applicationRun
 import type { WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import type { ManagerDirectoryController } from "../hooks/useManagerDirectoryController";
 import type { useApplicationRecovery } from "../hooks/useApplicationRecovery";
+import type { useScenePublicationArtifacts } from "../hooks/useScenePublicationArtifacts";
 
 export interface AppViewActions {
   navigate: (route: AppRoute, replace?: boolean) => void;
@@ -25,6 +26,7 @@ export interface AppViewActions {
 }
 
 export interface AppViewBindings {
+  publicationArtifacts: ReturnType<typeof useScenePublicationArtifacts>;
   applicationRecovery?: ReturnType<typeof useApplicationRecovery>;
   managerDirectory?: ManagerDirectoryController;
   state: AppState;

@@ -8,6 +8,7 @@ import type {
   RevitRuntimeInfo,
   RvtConversionMode,
   SceneSnapshot,
+  SceneClientDependencyExpectation,
 } from "@bim-studio/contracts";
 
 type ApiRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
@@ -139,11 +140,14 @@ export function createModelSceneApi(request: ApiRequest) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name }),
       }),
-    publishScene: (projectId: string, sceneId: string) =>
+    publishScene: (projectId: string, sceneId: string, expectedSnapshot: SceneSnapshot,
+      delivery?: { clientTarget: "three-webview" | "deep-native"; dependencyExpectation?: SceneClientDependencyExpectation; nativeCandidateId?: string }) =>
       request<PublishedSceneRecord>(
         `/api/projects/${projectId}/scenes/${sceneId}/publish`,
         {
           method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ expectedSnapshot, ...delivery }),
         },
       ),
     listScenePublications: (projectId: string, sceneId: string) =>

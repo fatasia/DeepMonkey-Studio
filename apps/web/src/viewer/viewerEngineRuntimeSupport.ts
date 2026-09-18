@@ -2,18 +2,27 @@ import type { RendererLoadSnapshot } from "./framePerformanceMonitor";
 import { canChangeRendererPixelRatio, shouldResizeRendererDrawingBuffer } from "./rendererResizePolicy";
 import { normalizedRendererDrawCalls, type RendererInfoLike } from "./viewerEngineTypes";
 import { ViewerEngineTimelineRuntime } from "./viewerEngineTimelineRuntime";
+import { getPresentationPerformance } from "./viewerPresentationPerformance";
 
 /** 渲染负载采样、分辨率和脚本常用视图操作。 */
 export abstract class ViewerEngineRuntimeSupport extends ViewerEngineTimelineRuntime {
   /** 清空性能采样窗口；基准测试用它隔离显式 GC、初始化和稳定渲染阶段。 */
   resetPerformanceSamples(): void {
     this.framePerformanceMonitor.reset();
+    getPresentationPerformance(this)?.reset();
   }
 
   protected resize(force = false): void {
     const width = Math.max(this.container.clientWidth, 1);
     const height = Math.max(this.container.clientHeight, 1);
-    if (!force && width === this.lastViewportWidth && height === this.lastViewportHeight) return;
+    const basePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    if (basePixelRatio !== this.adaptiveRenderScaleController.state().basePixelRatio) {
+      this.adaptiveRenderScaleController.setBasePixelRatio(basePixelRatio);
+      this.resetPerformanceSamples();
+    }
+    const pixelRatio = this.adaptiveRenderScaleController.state().pixelRatio;
+    const pixelRatioChanged = Math.abs(this.renderer.getPixelRatio() - pixelRatio) >= 0.001;
+    if (!force && !pixelRatioChanged && width === this.lastViewportWidth && height === this.lastViewportHeight) return;
     this.lastViewportWidth = width;
     this.lastViewportHeight = height;
     this.camera.aspect = width / height;
@@ -23,6 +32,10 @@ export abstract class ViewerEngineRuntimeSupport extends ViewerEngineTimelineRun
       drawingBufferInitialized: this.drawingBufferInitialized,
       shadowsEnabled: Boolean(this.lightingState?.enabled && this.lightingState.shadowsEnabled),
     };
+    if (pixelRatioChanged && canChangeRendererPixelRatio(policy)) {
+      this.renderer.setPixelRatio(pixelRatio);
+      this.postProcessing?.setPixelRatio(pixelRatio);
+    }
     if (force || shouldResizeRendererDrawingBuffer(policy)) {
       this.renderer.setSize(width, height, false);
       this.postProcessing?.setSize(width, height);
@@ -62,6 +75,8 @@ export abstract class ViewerEngineRuntimeSupport extends ViewerEngineTimelineRun
   }
 
   protected readRendererLoad(): RendererLoadSnapshot {
+    const presentation = getPresentationPerformance(this);
+    if (presentation && this.presentationRendererBackend !== this.rendererBackend) return presentation.snapshot().renderer;
     const info = (this.renderer as unknown as { info?: RendererInfoLike }).info;
     const pipelineWarmup = this.pipelineWarmupScheduler.snapshot();
     const activeFeatures = [

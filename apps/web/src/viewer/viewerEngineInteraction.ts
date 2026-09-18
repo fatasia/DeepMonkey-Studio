@@ -26,19 +26,38 @@ import { mergeModelEffectsPatch, type ModelEffectsPatch } from "./modelEffectSta
 import { normalizeMaterialDataPatch } from "./materialDataPatch";
 import { applyViewerDeviceSignal } from "./viewerDeviceSignals";
 import { annotationLocalAnchor, annotationWorldAnchor } from "./annotationAnchor";
+import { bindPresentationPerformance, getPresentationPerformance, enablePresentationGpuTiming,
+  type PresentationPerformanceSource } from "./viewerPresentationPerformance";
 import { clearIndustrialPrefabProxy, ensureIndustrialPrefabProxy } from "./industrialPrefabProxy";
 import { detachSharedGltfResources } from "./sharedGltfAssets";
 
 /** Interaction 职责层。 */
 export abstract class ViewerEngineInteraction extends ViewerEngineCore {
   getRendererBackend(): RendererBackend {
+    return this.presentationRendererBackend;
+  }
+  getAuthorRendererBackend(): RendererBackend {
     return this.rendererBackend;
+  }
+  subscribePresentationFrames(listener: () => void): () => void {
+    this.presentationFrameListeners.add(listener);
+    this.requestRender();
+    return () => { this.presentationFrameListeners.delete(listener); };
+  }
+  setPresentationRendererBackend(backend: RendererBackend): void {
+    if (this.presentationRendererBackend !== backend) this.framePerformanceMonitor.reset();
+    this.presentationRendererBackend = backend;
+    this.requestRender();
+  }
+  setPresentationPerformanceSource(source: PresentationPerformanceSource | undefined): void {
+    bindPresentationPerformance(this, source);
   }
   /** 保留旧 API 名称兼容已发布数据，实际语义为自动质量守卫。 */
   setFastRuntime(enabled: boolean): void {
     this.adaptiveQualityEnabled = enabled;
     const restoredPixelRatio = this.adaptiveRenderScaleController.setEnabled(enabled);
     this.framePerformanceMonitor.reset();
+    getPresentationPerformance(this)?.reset();
     if (restoredPixelRatio !== undefined) this.applyRendererPixelRatio(restoredPixelRatio);
   }
   listModels(): LoadedSceneModel[] {
@@ -60,6 +79,25 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
   getRawRenderer(): RendererInstance {
     return this.renderer;
   }
+  getDeepProjectionRoot(): Readonly<THREE.Object3D> {
+    return this.modelRoot;
+  }
+  getDeepEditorOverlayRoots(): readonly THREE.Object3D[] {
+    // Deep owns a separate presentation canvas, so transient editor visuals
+    // must be projected explicitly. Keep modelRoot out of this list: it is
+    // uploaded through the RenderPacket path and would otherwise be drawn twice.
+    const roots = [this.transform.getHelper(), ...(this.selectionHelper ? [this.selectionHelper] : []),
+      ...(this.clippingHelper ? [this.clippingHelper] : []),
+      ...(this.measurementPreview ? [this.measurementPreview] : []),
+      ...[...this.scene.children].filter((child) => child.name.startsWith("measurement:")
+        || child.name.startsWith("annotation:")
+        || child.name.startsWith("helper:space:")
+        || child.name === "helper:bim-placement-preview"),
+      ...Array.from(this.sceneLightProxies.values()).flatMap(proxy =>
+        [proxy.position, ...(proxy.target ? [proxy.target] : []), ...(proxy.line ? [proxy.line] : [])])];
+    return [...new Set(roots)];
+  }
+  getDeepGrid(): THREE.Object3D | undefined { return this.gridHelper; }
   setInteractionScripts(scripts: SceneInteractionScriptState[]): void {
     this.interactionScripts = scripts.map((script) => ({
       ...script,
@@ -507,12 +545,19 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
     return this.getPerformanceSnapshot().fps;
   }
   getPerformanceSnapshot(): FramePerformanceSnapshot {
+    const presentation = getPresentationPerformance(this);
+    if (presentation && this.presentationRendererBackend !== this.rendererBackend) {
+      const snapshot = presentation.snapshot(readHeapSnapshot(), this.longTaskMonitor.snapshot());
+      return { ...snapshot, renderer: { ...snapshot.renderer, adaptiveRenderScale: this.adaptiveRenderScaleController.state() } };
+    }
     const snapshot = this.framePerformanceMonitor.snapshot(this.readRendererLoad(), readHeapSnapshot(), this.longTaskMonitor.snapshot());
     const gpuFrameTime = this.gpuFrameTimeMonitor.snapshot();
     return gpuFrameTime.supported ? { ...snapshot, gpuFrameTime } : snapshot;
   }
   setGpuTimingEnabled(enabled: boolean): void {
+    enablePresentationGpuTiming(this, enabled);
     this.gpuFrameTimeMonitor.setEnabled(enabled);
+    if (enabled) this.requestRender();
   }
   applySceneDataMessage(message: DataMessage): boolean {
     const target = message.target;

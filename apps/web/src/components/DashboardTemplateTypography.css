@@ -1,5 +1,5 @@
 /* 仅作品中配置了字号的节点；壳层和客户旧节点不受这些设计尺寸影响。 */
-.dashboard-native-widget.authored-typography { font-size: var(--dashboard-authored-font); }
+.dashboard-native-widget.authored-typography { font-size: max(10px, var(--dashboard-authored-font)); }
 .dashboard-native-widget.authored-typography .dashboard-value > span,
 .dashboard-native-widget.authored-typography .dashboard-value strong small,
 .dashboard-native-widget.authored-typography .dashboard-filter-widget > span,
@@ -20,7 +20,7 @@
 .dashboard-native-widget.authored-typography .dashboard-drill-chart { display: flex; flex-direction: column; min-height: 0; }
 .dashboard-native-widget.authored-typography .dashboard-chart { flex: 1; min-height: 0; }
 /* FVS 式图表标题条:左侧圆头色条 + 标题 + 单位右置(space-between)。 */
-.dashboard-chart-heading { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 4px 8px 12px 14px; font-size: var(--dashboard-authored-font); }
+.dashboard-chart-heading { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 4px 8px 12px 14px; font-size: max(10px, var(--dashboard-authored-font, 10px)); }
 .dashboard-chart-heading::before { content: ""; position: absolute; left: 2px; top: .32em; width: 4px; height: 1.1em; border-radius: 2px; background: var(--accent); }
 .dashboard-chart-heading > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: inherit; }
 .dashboard-chart-heading > span { flex-shrink: 0; font-size: .9em; }

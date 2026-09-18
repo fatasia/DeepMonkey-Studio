@@ -46,6 +46,7 @@ import {
 } from "@bim-studio/server-sdk";
 import { runtimeHost } from "./adapters/runtimeHost.js";
 import { networkStatusMonitor } from "./appStatus/networkStatusMonitor";
+import { createScenePublicationDependencyApi } from "./apiClients/scenePublicationDependencyApi.js";
 import type { DashboardCandidateDownloadFormat, DashboardCandidatePrepared, DashboardPublicationPointer } from "./components/dashboardOfflinePackageState";
 import { desktopLocalApiFetch, setDesktopLocalExternalModuleFetch } from "./adapters/desktopLocalApi.js";
 import { isLocalDesktopMode } from "./adapters/desktopRuntimeMode.js";
@@ -365,6 +366,7 @@ export const api = {
     serverClient.publishApplication(projectId, applicationId),
   unpublishApplication: (projectId: string, applicationId: string) =>
     serverClient.unpublishApplication(projectId, applicationId),
+  ...createScenePublicationDependencyApi(request, (url, init) => serverClient.open(url, init)),
   readActivePublication: (applicationId: string) =>
     request<DashboardPublicationPointer>(`/api/public/applications/${encodeURIComponent(applicationId)}`),
   prepareDashboardCandidate: (

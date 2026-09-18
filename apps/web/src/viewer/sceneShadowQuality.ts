@@ -8,6 +8,7 @@ export function configureDirectionalShadow(light: THREE.DirectionalLight): void 
   light.shadow.mapSize.set(1_024, 1_024);
   light.shadow.camera.near = 0.1;
   light.shadow.camera.far = 300;
+  light.shadow.camera.updateProjectionMatrix();
   light.shadow.intensity = 0.38;
   light.shadow.radius = 3;
   light.shadow.blurSamples = 8;

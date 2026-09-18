@@ -77,6 +77,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       this.selectionHelper.renderOrder = 999;
       const material = this.selectionHelper.material as THREE.LineBasicMaterial;
       material.depthTest = false;
+      material.toneMapped = false;
       material.transparent = true;
       material.opacity = 0.95;
       this.scene.add(this.selectionHelper);
@@ -133,6 +134,9 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
   protected needsPostProcessing(): boolean {
       return this.postProcessingState.enabled || [...this.modelEffects.values()].some((effects) => effects.outline);
     }
+  usesAuthorPostProcessing(): boolean {
+    return !this.xrActive && !this.offscreen.wantsFrame() && this.needsPostProcessing() && Boolean(this.postProcessing);
+  }
     protected async createPostProcessingRuntime(): Promise<ViewerPostProcessingRuntime | undefined> {
       if (this.postProcessing) return this.postProcessing;
       if (!this.postProcessingInit) {
@@ -476,6 +480,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       this.selectionHelper.renderOrder = 999;
       const material = this.selectionHelper.material as THREE.LineBasicMaterial;
       material.depthTest = false;
+      material.toneMapped = false;
       material.transparent = true;
       material.opacity = 0.95;
       this.scene.add(this.selectionHelper);

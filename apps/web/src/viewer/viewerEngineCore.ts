@@ -46,6 +46,7 @@ import { objectTransform, toValue } from "./sceneObjectUtils";
 import type { ViewerPostProcessingRuntime } from "./viewerPostProcessingRuntime";
 import { FramePerformanceMonitor } from "./framePerformanceMonitor";
 import { AdaptiveRenderScaleController } from "./adaptiveRenderScale";
+import { observeViewerPixelRatio } from "./viewerPixelRatioObserver";
 import { createBrowserPipelineWarmupScheduler } from "./rendererPipelineWarmup";
 import { rendererPipelineSignature } from "./rendererPipelineSignature";
 import type { SpaceVisualRuntime } from "./spaceVisualSync";
@@ -210,6 +211,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     depthWrite: false,
   });
   protected resizeObserver!: ResizeObserver;
+  protected disposePixelRatioObserver?: () => void;
   protected animationFrame = 0;
   protected resizeAnimationFrame = 0;
   protected readOnlyFrameCadenceAnchor: number | undefined;
@@ -281,7 +283,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected gridHelper: THREE.Mesh | undefined;
   protected groundHelper: THREE.Mesh | undefined;
   protected readonly skyboxTextures = new Map<Exclude<SkyboxPreset, "none">, THREE.CanvasTexture>();
-  protected externalEnvironmentTexture?: THREE.Texture;
+  protected externalEnvironmentTexture: THREE.Texture | undefined;
+  protected environmentLoadRevision = 0;
   protected postProcessing: ViewerPostProcessingRuntime | undefined;
   protected postProcessingInit: Promise<ViewerPostProcessingRuntime | undefined> | undefined;
   protected postProcessingRevision = 0;
@@ -333,6 +336,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected hoverInteractionTargets: SceneInteractionTarget[] = [];
   protected pointerMoveSequence = 0;
   protected lastInteractionHoverCheck = 0;
+  protected presentationRendererBackend: RendererBackend;
+  protected readonly presentationFrameListeners = new Set<() => void>();
   protected constructor(
     protected readonly container: HTMLElement,
     renderer: RendererInstance,
@@ -340,6 +345,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     modelRoot: THREE.Group | ClippingGroup,
   ) {
     super();
+    this.presentationRendererBackend = rendererBackend;
     this.scene.background = new THREE.Color(0x171a1d);
     this.camera.position.set(12, 8, 12);
     this.renderer = renderer;
@@ -498,11 +504,13 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   }
 
   protected scheduleResize(): void {
+    if (this.rendererDisposalStarted) return;
     this.requestRender();
-    if (this.resizeAnimationFrame !== 0 || this.rendererDisposalStarted) return;
+    if (this.resizeAnimationFrame !== 0) return;
     this.resizeAnimationFrame = requestAnimationFrame(() => {
       this.resizeAnimationFrame = 0;
       this.resize();
+      this.requestRender();
     });
   }
 
@@ -521,6 +529,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     // ResizeObserver 可能在 WebGPU 正在提交命令时连续触发。合并到下一帧，避免画布目标被同步反复销毁。
     this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
     this.resizeObserver.observe(this.container);
+    this.disposePixelRatioObserver = observeViewerPixelRatio(() => this.scheduleResize());
     this.resize();
     this.animate();
   }

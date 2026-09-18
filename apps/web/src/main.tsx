@@ -7,11 +7,16 @@ import {
   isSceneViewerDeliveryRuntime,
 } from "./delivery/sceneViewerDelivery";
 import { loadSceneViewerDeliveryManifest } from "./api";
+import { DesktopWindowFrame } from "./components/DesktopWindowFrame";
 
 const sceneViewerBuild = import.meta.env.VITE_SCENE_VIEWER_BUILD === "true";
 const root = createRoot(document.getElementById("root")!);
 function renderRoot(children: ReactNode) {
-  root.render(<StrictMode><ApplicationErrorBoundary>{children}</ApplicationErrorBoundary></StrictMode>);
+  root.render(
+    <StrictMode>
+      <ApplicationErrorBoundary><DesktopWindowFrame>{children}</DesktopWindowFrame></ApplicationErrorBoundary>
+    </StrictMode>
+  );
 }
 
 async function bootstrap(): Promise<void> {

@@ -1,8 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SceneSelectionBar } from "./SceneSelectionBar";
+import { readFileSync } from "node:fs";
 
 describe("SceneSelectionBar", () => {
+  it("reserves the same toolbar layout while empty and removes its actions from interaction", () => {
+    const noop = () => undefined;
+    const html = renderToStaticMarkup(<SceneSelectionBar locale="zh-CN" selectedObjects={[]}
+      onGroup={noop} onShow={noop} onLock={noop} onClear={noop} />);
+    expect(html).toContain('aria-hidden="true"'); expect(html).toContain('inert=""');
+    const css = readFileSync(new URL("../styles/scene-workspace-hierarchy.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.scene-tree-selection-bar:not\(\.visible\)\{display:flex;visibility:hidden;pointer-events:none\}/);
+  });
   it("keeps selection-only actions visible and secondary batch actions in overflow", () => {
     const noop = () => undefined;
     const html = renderToStaticMarkup(

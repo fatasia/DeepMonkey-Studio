@@ -200,7 +200,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     setBusy(true);
     if (updateRoute) navigate(route.applicationId ? { ...route, view: "studio", sceneId: scene.id } : { view: "studio", sceneId: scene.id });
     try {
-      if (engine.getRendererBackend() === "webgpu") {
+      if (engine.getAuthorRendererBackend() === "webgpu") {
         const replacementCount = webGpuSceneReplacementCountRef.current + 1;
         const replacementThreshold = webGpuSceneReplacementThreshold(engine.getSceneStatistics().componentCount);
         if (shouldRecycleWebGpuRenderer("webgpu", replacementCount, replacementThreshold)) {

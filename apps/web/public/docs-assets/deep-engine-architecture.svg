@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 720" role="img" aria-labelledby="title desc">
+  <title id="title">Deep Engine 架构</title>
+  <desc id="desc">编辑器作者状态通过桥接层进入 Deep WebGPU，并通过运行包进入 Windows 原生引擎，两条路径由统一质量和性能门验收。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b1114"/><stop offset="1" stop-color="#172126"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#65aee8"/></marker>
+    <style>
+      .box{fill:#11191d;stroke:#33464e;stroke-width:2}.core{fill:#142a2b;stroke:#3ec6c1}.gate{fill:#1d251c;stroke:#59c58d}.title{fill:#e6ecef;font:600 26px 'Microsoft YaHei',sans-serif}.text{fill:#a7b2b8;font:18px 'Microsoft YaHei',sans-serif}.label{fill:#65aee8;font:600 17px 'Microsoft YaHei',sans-serif}.line{fill:none;stroke:#65aee8;stroke-width:3;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1440" height="720" rx="28" fill="url(#bg)"/>
+  <text x="72" y="72" class="title">Deep Engine · 一份作者状态，两条执行路径</text>
+  <rect x="70" y="130" width="290" height="190" rx="18" class="box"/>
+  <text x="100" y="180" class="title">Studio 作者层</text><text x="100" y="225" class="text">场景 · 相机 · BIM 交互</text><text x="100" y="260" class="text">材质 · 环境 · 灯光 · 剖切</text><text x="100" y="295" class="text">Three.js WebGL 稳定基线</text>
+  <rect x="470" y="130" width="350" height="190" rx="18" class="core" filter="url(#glow)"/>
+  <text x="500" y="180" class="title">Deep WebGPU</text><text x="500" y="225" class="text">RenderPacket · PBR · CSM</text><text x="500" y="260" class="text">LOD · Meshlet · Hi-Z · OIT</text><text x="500" y="295" class="text">首帧验证 · 状态保留 · 回退</text>
+  <rect x="930" y="130" width="420" height="190" rx="18" class="core"/>
+  <text x="960" y="180" class="title">Windows Native wgpu</text><text x="960" y="225" class="text">原生 Viewer · Deep2D · Chart</text><text x="960" y="260" class="text">GPU LOD · Indirect · Recovery</text><text x="960" y="295" class="text">便携包与独立运行入口</text>
+  <path d="M360 225H470" class="line"/><text x="375" y="208" class="label">投影桥</text><path d="M820 225H930" class="line"/><text x="835" y="208" class="label">运行包</text>
+  <rect x="210" y="430" width="1020" height="190" rx="18" class="gate"/>
+  <text x="250" y="482" class="title">统一发布门</text><text x="250" y="530" class="text">类型与构建　·　功能回归　·　Golden Pixel　·　GPU Timestamp</text><text x="250" y="570" class="text">固定 BIM 资产　·　固定相机轨迹　·　资源恢复　·　Unity 6 对照</text>
+  <path d="M645 320V430" class="line"/><path d="M1140 320V430" class="line"/>
+  <text x="72" y="676" class="text">失败不发布：保留最后正确帧、记录设备证据、明确回退原因。</text>
+</svg>

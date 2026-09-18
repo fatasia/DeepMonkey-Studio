@@ -35,7 +35,17 @@ export interface PublicationAuditReport {
  * AI只负责后续解释和生成修复草案，不能覆盖这些硬门禁。
  */
 export function assessProjectPublication(project: ProjectRecord, scenes: SceneSnapshot[]): PublicationAuditReport {
-  const issues = scenes.flatMap((scene) => assessScene(project, scenes, scene));
+  return assessPublication(project, scenes, scenes);
+}
+
+/** 只检查待发布快照，其他场景仅用于解析跳转引用，不把无关草稿的问题带入本次发布。 */
+export function assessScenePublication(project: ProjectRecord, scene: SceneSnapshot, referenceScenes: SceneSnapshot[]): PublicationAuditReport {
+  const references = [...referenceScenes.filter((candidate) => candidate.id !== scene.id), scene];
+  return assessPublication(project, [scene], references);
+}
+
+function assessPublication(project: ProjectRecord, scenes: SceneSnapshot[], references: SceneSnapshot[]): PublicationAuditReport {
+  const issues = scenes.flatMap((scene) => assessScene(project, references, scene));
   if (scenes.length === 0) {
     issues.push(issue("scene:none", "blocker", "runtime", "没有可发布场景", "项目尚未创建任何场景。", "先创建并保存一个场景。"));
   }
@@ -61,7 +71,11 @@ export function assessProjectPublication(project: ProjectRecord, scenes: SceneSn
 
 function assessScene(project: ProjectRecord, scenes: SceneSnapshot[], scene: SceneSnapshot): PublicationAuditIssue[] {
   const issues: PublicationAuditIssue[] = [];
-  const sceneModels = new Map(scene.models.map((model) => [model.modelId, model]));
+  // 模型与基本体共享运行时对象 ID；资源检查仍只应用于导入模型。
+  const objects = [...scene.models, ...scene.primitives];
+  assessDuplicateIds(scene, objects.map((object) => object.modelId), "object", issues);
+  assessDuplicateIds(scene, (scene.dashboard?.widgets ?? []).map((widget) => widget.id), "widget", issues);
+  const sceneModels = new Map(objects.map((model) => [model.modelId, model]));
   const widgets = new Map((scene.dashboard?.widgets ?? []).map((widget) => [widget.id, widget]));
   const datasets = new Map((project.datasets ?? []).map((dataset) => [dataset.id, dataset]));
   const pipelines = new Set((project.dataPipelines ?? []).map((pipeline) => pipeline.id));
@@ -102,6 +116,19 @@ function assessScene(project: ProjectRecord, scenes: SceneSnapshot[], scene: Sce
     }
   }
   return issues;
+}
+
+function assessDuplicateIds(scene: SceneSnapshot, ids: string[], kind: "object" | "widget", issues: PublicationAuditIssue[]): void {
+  const seen = new Set<string>();
+  const reported = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id) && !reported.has(id)) {
+      issues.push(sceneIssue(scene, `${kind}:${id}:duplicate`, "blocker", kind === "object" ? "asset" : "interaction",
+        kind === "object" ? "三维对象 ID 重复" : "组件 ID 重复", `多个对象使用了标识“${id}”，运行时无法确定引用目标。`, "为重复对象分配不同标识并重新保存。", id));
+      reported.add(id);
+    }
+    seen.add(id);
+  }
 }
 
 function assessAssetBindings(

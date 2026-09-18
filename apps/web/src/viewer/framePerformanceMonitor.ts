@@ -5,10 +5,10 @@ export interface RendererLoadSnapshot {
   triangles: number;
   points: number;
   lines: number;
-  geometries: number;
+  geometries?: number;
   /** 基础体缓存中的唯一几何数量，用于区分业务几何与查看器辅助几何。 */
-  sharedPrimitiveGeometries: number;
-  textures: number;
+  sharedPrimitiveGeometries?: number;
+  textures?: number;
   programs?: number;
   viewportPixels: number;
   pixelRatio: number;
@@ -49,6 +49,9 @@ export interface FramePerformanceSnapshot {
   heap?: HeapSnapshot;
   mainThread?: import("./mainThreadLongTaskMonitor").MainThreadLongTaskSnapshot;
   gpuFrameTime?: import("./gpuFrameTimeMonitor").GpuFrameTimeSnapshot;
+  /** Deep's own submitted-frame evidence, not the hidden author renderer's counters. */
+  deep?: { readonly frame: import("@bim-studio/deep-engine/webgpu").FrameMetrics;
+    readonly timings?: import("@bim-studio/deep-engine/webgpu").EnginePerformanceTelemetrySnapshot };
   pressureSignals: PerformancePressureSignal[];
 }
 
@@ -146,14 +149,14 @@ function derivePressureSignals(snapshot: FramePerformanceSnapshot): PerformanceP
       evidence: `${renderer.drawCalls.toLocaleString("zh-CN")} draw calls`,
     });
   }
-  if (renderer.triangles > 5_000_000 || renderer.geometries > 5_000) {
+  if (renderer.triangles > 5_000_000 || (renderer.geometries ?? 0) > 5_000) {
     signals.push({
       code: "geometry-load",
       level: renderer.triangles > 10_000_000 ? "critical" : "warning",
-      evidence: `${renderer.triangles.toLocaleString("zh-CN")} triangles · ${renderer.geometries.toLocaleString("zh-CN")} geometries`,
+      evidence: `${renderer.triangles.toLocaleString("zh-CN")} triangles${renderer.geometries === undefined ? "" : ` · ${renderer.geometries.toLocaleString("zh-CN")} geometries`}`,
     });
   }
-  if (renderer.textures > 800) {
+  if (renderer.textures !== undefined && renderer.textures > 800) {
     signals.push({
       code: "texture-load",
       level: renderer.textures > 1_500 ? "critical" : "warning",

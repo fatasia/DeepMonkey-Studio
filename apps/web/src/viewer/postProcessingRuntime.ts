@@ -16,6 +16,7 @@ import { VignetteShader } from "three/examples/jsm/shaders/VignetteShader.js";
 import { HueSaturationShader } from "three/examples/jsm/shaders/HueSaturationShader.js";
 import type { ScenePostProcessingState } from "@bim-studio/contracts";
 import type { ViewerPostProcessingRuntime } from "./viewerPostProcessingRuntime";
+import { configurePostProcessingAntialias } from "./postProcessingAntialias";
 
 /**
  * 高成本渲染效果按需加载：普通浏览不创建 Composer，也不为禁用的 pass 分配帧缓冲。
@@ -38,6 +39,7 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
     this.#composer = new EffectComposer(renderer);
+    configurePostProcessingAntialias(renderer, [this.#composer.renderTarget1, this.#composer.renderTarget2]);
     this.#composer.addPass(new RenderPass(scene, camera));
     this.#ssaoPass = this.add(new SSAOPass(scene, camera, 1, 1));
     this.#gtaoPass = this.add(new GTAOPass(scene, camera, 1, 1));
@@ -53,8 +55,8 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
     this.#hueSaturationPass = this.add(new ShaderPass(HueSaturationShader));
     this.#brightnessContrastPass = this.add(new ShaderPass(BRIGHTNESS_CONTRAST_SHADER));
     this.#smaaPass = this.add(new SMAAPass());
-    this.#fxaaPass = this.add(new FXAAPass());
     this.#composer.addPass(new OutputPass());
+    this.#fxaaPass = this.add(new FXAAPass());
   }
 
   apply(state: ScenePostProcessingState, outlinedObjects: THREE.Object3D[]): void {

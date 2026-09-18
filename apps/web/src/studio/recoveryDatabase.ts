@@ -5,6 +5,10 @@ const STORE_NAME = "workspace-drafts";
 export async function readRecoveryRecord(key: string): Promise<unknown> {
   return run("readonly", store => store.get(key));
 }
+/** 按命名空间读取记录，避免任务恢复读取不相关的场景草稿。 */
+export async function readRecoveryRecords(prefix: string): Promise<unknown[]> {
+  return run("readonly", store => store.getAll(IDBKeyRange.bound(prefix, `${prefix}\uffff`)));
+}
 export async function writeRecoveryRecord(value: { key: string }): Promise<void> {
   await run("readwrite", store => store.put(value));
 }

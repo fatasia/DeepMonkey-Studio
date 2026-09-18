@@ -1,0 +1,10 @@
+.publication-failure { margin-top:12px; padding:10px 12px; border:1px solid color-mix(in srgb,var(--danger) 35%,var(--line)); border-radius:8px; background:color-mix(in srgb,var(--danger) 5%,var(--surface-1)); }
+.publication-failure>p { margin:0; font-size:12px; line-height:1.6; color:var(--text); }
+.publication-failure>p:first-child { color:var(--danger); font-weight:600; }
+.publication-failure summary { margin-top:8px; cursor:pointer; color:var(--text-strong); font-size:12px; }
+.publication-failure summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:2px; }
+.publication-failure ol { display:grid; gap:12px; margin:12px 0 2px; padding-left:20px; }
+.publication-failure li { padding-left:2px; font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.publication-failure li strong { color:var(--text-strong); }
+.publication-failure li p { margin:3px 0; color:var(--text); }
+.publication-failure li small { color:var(--text-muted); font-size:11px; }

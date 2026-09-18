@@ -1,4 +1,4 @@
-export type BatteryAnalysisTask = "soc" | "soh" | "rul";
+export type BatteryAnalysisTask = "soc" | "soh" | "rul" | "combined";
 
 export interface BatteryTrendPoint {
   x: number;
@@ -23,6 +23,20 @@ export function batteryTrendPoints(
     return [{ x: finiteNumber(point?.cycle) ?? index + 1, y }];
   });
   return [];
+}
+
+/** SOC 序列中模型逐点保留的参考 SOC；只提取真实存在的参考值，用于叠加对比。 */
+export function batteryReferencePoints(
+  task: BatteryAnalysisTask,
+  result: Record<string, unknown>,
+): BatteryTrendPoint[] {
+  if (task !== "soc") return [];
+  return arrayValue(result.points).flatMap((item, index) => {
+    const point = objectValue(item);
+    const y = finiteNumber(point?.referenceSoc);
+    if (y === undefined) return [];
+    return [{ x: finiteNumber(point?.time) ?? index, y }];
+  });
 }
 
 function arrayValue(value: unknown): unknown[] {

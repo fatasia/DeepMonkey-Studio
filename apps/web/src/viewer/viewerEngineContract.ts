@@ -138,6 +138,13 @@ import type { RendererInstance } from "./viewerRendererTypes";
 /** 跨职责层使用的完整方法契约；受保护成员不会暴露到最终公共 API。 */
 export abstract class ViewerEngineContract {
   abstract getRendererBackend(): RendererBackend;
+  /** 作者 renderer 的实际后端；资源回收策略不能使用展示后端。 */
+  abstract getAuthorRendererBackend(): RendererBackend;
+  /** 跟随唯一作者调度；订阅方不创建第二条动画时间轴。 */
+  abstract subscribePresentationFrames(listener: () => void): () => void;
+  /** 仅由画布桥在候选首帧发布后更新，不改变作者 WebGL 资源所有权。 */
+  abstract setPresentationRendererBackend(backend: RendererBackend): void;
+  abstract setPresentationPerformanceSource(source: import("./viewerPresentationPerformance").PresentationPerformanceSource | undefined): void;
   /** 发布运行时的自动质量守卫；保留完整模型和作者效果，仅处理持续填充率压力。 */
   abstract setFastRuntime(enabled: boolean): void;
   abstract listModels(): LoadedSceneModel[];
@@ -146,6 +153,10 @@ export abstract class ViewerEngineContract {
   abstract getRawScene(): THREE.Scene;
   abstract getRawCamera(): THREE.PerspectiveCamera;
   abstract getRawRenderer(): RendererInstance;
+  /** Deep 只读投影入口；不触发共享资源脱离，也不暴露 Viewer 内部集合。 */
+  abstract getDeepProjectionRoot(): Readonly<THREE.Object3D>;
+  abstract getDeepGrid(): THREE.Object3D | undefined;
+  abstract getDeepEditorOverlayRoots(): readonly THREE.Object3D[];
   abstract setInteractionScripts(scripts: SceneInteractionScriptState[]): void;
   abstract getInteractionScripts(): SceneInteractionScriptState[];
   abstract dispatchInteraction(trigger: SceneInteractionTrigger, target: SceneInteractionTarget, detail?: InteractionEventDetail): void;

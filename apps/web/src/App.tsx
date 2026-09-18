@@ -1,8 +1,10 @@
-import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
+import type { SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "./api";
+import { isModelLoadSuperseded, waitForModelReady } from "./appModelLoading";
 import { createApplicationRuntimeController } from "./controllers/applicationRuntimeController";
 import { createSceneEditorController } from "./controllers/sceneEditorController";
 import { createScenePersistenceController } from "./controllers/scenePersistenceController";
+import { useScenePublicationArtifacts } from "./hooks/useScenePublicationArtifacts";
 import { useAppDerivedState } from "./hooks/useAppDerivedState";
 import { useGlobalDialogEscape } from "./hooks/useGlobalDialogEscape";
 import { useAppLifecycleEffects } from "./hooks/useAppLifecycleEffects";
@@ -21,22 +23,6 @@ import { NetworkStatusBanner } from "./appStatus/NetworkStatusBanner";
 function sortScenesByTime(items: SceneSnapshot[]): SceneSnapshot[] {
   return [...items].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
 }
-function isModelLoadSuperseded(reason: unknown): boolean {
-  return reason instanceof Error && reason.name === "ModelLoadSupersededError";
-}
-async function waitForModelReady(projectId: string, modelId: string): Promise<ProjectRecord> {
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    const current = await api.getProject(projectId);
-    const model = current.models.find((item) => item.id === modelId);
-    if (!model) throw new Error("导入的模型资源不存在");
-    if (model.status === "ready") return current;
-    if (model.status === "failed" || model.status === "waiting_converter") throw new Error(model.message);
-    await new Promise((resolve) => window.setTimeout(resolve, 250));
-  }
-  throw new Error("模型资源处理超时，请稍后在项目资源中查看");
-}
-
 export function App() {
   const appState = useAppState();
   useGlobalDialogEscape();
@@ -53,6 +39,7 @@ export function App() {
     sceneApplyVersionRef,
     sceneWorkspaceLoadRef,
     rendererSnapshotRef,
+    rendererPreferenceCommitRef,
     webGpuSceneReplacementCountRef,
     applicationSessionRef,
     activeSceneIdRef,
@@ -70,6 +57,12 @@ export function App() {
     setAuthReady,
     rendererBackend,
     setRendererBackend,
+    rendererActiveBackend,
+    setRendererActiveBackend,
+    rendererSwitchPhase,
+    setRendererSwitchPhase,
+    rendererSwitchMessage,
+    setRendererSwitchMessage,
     rendererSwitching,
     setRendererSwitching,
     rendererGeneration,
@@ -546,8 +539,10 @@ export function App() {
     returnFromSceneEditor,
   } = applicationRuntimeController;
 
+  const publicationArtifacts = useScenePublicationArtifacts(currentUser?.id);
   const scenePersistenceController = createScenePersistenceController({
-    getActiveScene: appState.getActiveScene,
+    buildPublicationArtifact: publicationArtifacts.begin,
+    getActiveScene: appState.getActiveScene, getRoute: appState.getRoute, getScenes: appState.getScenes,
     onFirstSceneSave: sceneHistoryState.adoptFirstSavedScene,
     recordSceneEdit: (label) => sceneHistoryRecordRef.current(label),
     engine,
@@ -689,6 +684,7 @@ export function App() {
     viewerRouteActive,
     viewportRef,
     rendererBackend,
+    rendererActiveBackend,
     rendererGeneration,
     engine,
     route,
@@ -708,6 +704,7 @@ export function App() {
     sceneInteractions,
     activeSceneIdRef,
     rendererSnapshotRef,
+    rendererPreferenceCommitRef,
     webGpuSceneReplacementCountRef,
     visionEventCursorRef,
     behaviorManagerRef,
@@ -750,6 +747,9 @@ export function App() {
     setMessage,
     setRoute,
     setRendererBackend,
+    setRendererActiveBackend,
+    setRendererSwitchPhase,
+    setRendererSwitchMessage,
   });
 
   const viewBindings: AppViewBindings = {
@@ -758,6 +758,7 @@ export function App() {
     derived: derivedState,
     sceneEditor: sceneEditorController,
     scenePersistence: scenePersistenceController,
+    publicationArtifacts,
     applicationRuntime: applicationRuntimeController,
     actions: {
       navigate,

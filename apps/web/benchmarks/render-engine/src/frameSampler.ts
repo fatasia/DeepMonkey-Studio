@@ -54,6 +54,11 @@ export class ValueSampler {
       maximumMs: sorted.at(-1) ?? 0
     };
   }
+
+  /** 原始样本只读视图;A03 SampleWindow 合同要求原始样本,禁止从分位数反推。 */
+  raw(): readonly number[] {
+    return [...this.samples];
+  }
 }
 
 export async function waitForFrames(count: number): Promise<void> {

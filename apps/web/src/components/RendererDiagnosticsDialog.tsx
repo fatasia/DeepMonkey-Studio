@@ -16,7 +16,7 @@ export function RendererDiagnosticsDialog(props: ComponentProps<typeof RendererD
     };
   }, []);
   return createPortal(
-    <dialog ref={ref} className="renderer-diagnostics-dialog" aria-label={tr(props.locale, "渲染与诊断", "Rendering & diagnostics")}
+    <dialog ref={ref} className="renderer-diagnostics-dialog" aria-label={tr(props.locale, "渲染引擎设置", "Rendering engine settings")}
       onCancel={event => { event.preventDefault(); props.onClose(); }}
       onClick={event => { if (event.target === event.currentTarget) props.onClose(); }}>
       <RendererDiagnosticsPanel {...props} />

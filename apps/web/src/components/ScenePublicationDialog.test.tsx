@@ -11,7 +11,8 @@ describe("ScenePublicationDialog", () => {
       onCancel={() => undefined} onPublish={() => undefined}
     />);
     const buttons = html.match(/<button\b[^>]*>/g) ?? [];
-    expect(buttons).toHaveLength(9);
+    expect(html).toMatch(/<section[^>]*tabindex="-1"/);
+    expect(buttons).toHaveLength(12);
     expect(buttons.every(button => button.includes('disabled=""'))).toBe(true);
   });
 
@@ -40,6 +41,8 @@ describe("ScenePublicationDialog", () => {
     expect(html).toContain("高画质");
     expect(html).toContain("极速模式");
     expect(html).toContain("发布不会覆盖草稿");
+    expect(html).toContain("Three WebView");
+    expect(html).toContain("Deep Native");
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('aria-pressed="false"');
   });

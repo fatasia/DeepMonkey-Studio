@@ -48,6 +48,7 @@ export function useAppState() {
   const sceneApplyVersionRef = useRef(0);
   const sceneWorkspaceLoadRef = useRef<string | undefined>(undefined);
   const rendererSnapshotRef = useRef<RendererRecoveryState | undefined>(undefined);
+  const rendererPreferenceCommitRef = useRef<RendererBackend | undefined>(undefined);
   const webGpuSceneReplacementCountRef = useRef(0);
   const applicationSessionRef = useRef<ApplicationSession>(null!);
   applicationSessionRef.current ??= new ApplicationSession();
@@ -78,18 +79,29 @@ export function useAppState() {
     new URLSearchParams(window.location.search).get("renderer"),
     window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY)
   ));
+  // rendererBackend 是用户请求的目标；实际画布只在 Viewer 初始化并恢复场景后才切换。
+  const [rendererActiveBackend, setRendererActiveBackend] = useState<RendererBackend>(() => initialRendererBackend(
+    new URLSearchParams(window.location.search).get("renderer"),
+    window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY)
+  ));
+  const [rendererSwitchPhase, setRendererSwitchPhase] = useState<"idle" | "preparing" | "recovering" | "failed">("idle");
+  const [rendererSwitchMessage, setRendererSwitchMessage] = useState<string>();
   const [rendererSwitching, setRendererSwitching] = useState(false);
   const [rendererGeneration, setRendererGeneration] = useState(0);
   const [rendererDiagnosticsOpen, setRendererDiagnosticsOpen] = useState(false);
   const [systemInitialTab, setSystemInitialTab] = useState<"users" | "cloud-render">("users");
   const [studioPublishMode, setStudioPublishMode] = useState<NonNullable<SceneSnapshot["publicationMode"]>>("webgl");
   const [studioPublishPerformance, setStudioPublishPerformance] = useState<NonNullable<SceneSnapshot["publicationPerformance"]>>("standard");
+  const [studioPublishClientTarget, setStudioPublishClientTarget] = useState<"none" | "three-webview" | "deep-native">("none");
   const [studioPublishOpen, setStudioPublishOpen] = useState(false);
   const [studioCloudConfigured, setStudioCloudConfigured] = useState<boolean>();
   const [studioCloudHint, setStudioCloudHint] = useState<string>();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [project, setProject] = useState<ProjectRecord>();
   const [scenes, setScenes] = useState<SceneSnapshot[]>([]);
+  const scenesSnapshotRef = useRef(scenes);
+  scenesSnapshotRef.current = scenes;
+  const getScenes = useCallback(() => scenesSnapshotRef.current, []);
   const [managerApplications, setManagerApplications] = useState<ApplicationDocument[]>([]);
   const [activeScene, setActiveScene] = useState<SceneSnapshot>();
   const activeSceneSnapshotRef = useRef(activeScene);
@@ -129,6 +141,9 @@ export function useAppState() {
   });
   const [measureMode, setMeasureMode] = useState<MeasureMode>("distance");
   const [route, setRoute] = useState<AppRoute>(() => readRoute());
+  const routeSnapshotRef = useRef(route);
+  routeSnapshotRef.current = route;
+  const getRoute = useCallback(() => routeSnapshotRef.current, []);
   const dataReturnRouteRef = useRef<AppRoute | undefined>(undefined);
   const viewerRouteActive = route.view === "studio" || route.view === "view" || route.view === "published";
   // ApplicationSession 是 React 外部 Store；使用一致快照订阅，避免工作区切换时读取到上一帧的选中对象。
@@ -242,19 +257,20 @@ export function useAppState() {
   return {
     initialPathRef, defaultEntryAppliedRef, viewportRef, uploadRef,
     importRef, environmentMapRef, materialTextureRef, materialTextureKindRef,
-    sceneNameCommitRef, sceneApplyVersionRef, sceneWorkspaceLoadRef, rendererSnapshotRef,
+    sceneNameCommitRef, sceneApplyVersionRef, sceneWorkspaceLoadRef, rendererSnapshotRef, rendererPreferenceCommitRef,
     webGpuSceneReplacementCountRef,
     applicationSessionRef, activeSceneIdRef, pendingSceneFocusRef, visionEventCursorRef,
     behaviorManagerRef, behaviorCommandQueueRef, pendingBehaviorDraftRef, engine, setEngine,
     currentUser, setCurrentUser, branding, setBranding,
-    authReady, setAuthReady, rendererBackend, setRendererBackend,
+    authReady, setAuthReady, rendererBackend, setRendererBackend, rendererActiveBackend, setRendererActiveBackend,
+    rendererSwitchPhase, setRendererSwitchPhase, rendererSwitchMessage, setRendererSwitchMessage,
     rendererSwitching, setRendererSwitching, rendererGeneration, setRendererGeneration,
     rendererDiagnosticsOpen, setRendererDiagnosticsOpen,
     systemInitialTab, setSystemInitialTab, studioPublishMode, setStudioPublishMode,
-    studioPublishPerformance, setStudioPublishPerformance, studioPublishOpen, setStudioPublishOpen,
+    studioPublishPerformance, setStudioPublishPerformance, studioPublishClientTarget, setStudioPublishClientTarget, studioPublishOpen, setStudioPublishOpen,
     studioCloudConfigured, setStudioCloudConfigured, studioCloudHint, setStudioCloudHint, projects, setProjects,
     project, setProject, scenes, setScenes,
-    managerApplications, setManagerApplications, activeScene, setActiveScene, getActiveScene,
+    managerApplications, setManagerApplications, activeScene, setActiveScene, getActiveScene, getScenes,
     applicationRevision, setApplicationRevision, sceneName, setSceneName,
     selected, setSelected, measurements, setMeasurements,
     revision, setRevision, uploading, setUploading,
@@ -267,7 +283,7 @@ export function useAppState() {
     setSelectedAnnotationId, selectedSpace, setSelectedSpace, transformMode,
     setTransformMode, selectionScope, setSelectionScope, navigationMode,
     setNavigationMode, navigationDiagnostics, setNavigationDiagnostics, measureMode,
-    setMeasureMode, route, setRoute, dataReturnRouteRef,
+    setMeasureMode, route, setRoute, getRoute, dataReturnRouteRef,
     viewerRouteActive, applicationState, activeApplication, activeDashboardPage,
     activeTopology, topologyDataProducts, setTopologyDataProducts, topologyRuntimeStates,
     setTopologyRuntimeStates, avatarVisible, setAvatarVisible, cameraInfo,

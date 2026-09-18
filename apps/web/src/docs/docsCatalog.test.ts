@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { searchDocs } from "@bim-studio/docs-runtime";
 import { docsCategories, docsDocuments, docsLinkIssues, DOCS_VERSION } from "./docsCatalog.js";
@@ -5,9 +7,13 @@ import { docsCategories, docsDocuments, docsLinkIssues, DOCS_VERSION } from "./d
 describe("local documentation catalog", () => {
   it("ships the current end-to-end product guides offline", () => {
     expect(docsDocuments.map((document) => document.id)).toEqual([
+      "getting-started",
+      "core-concepts",
       "dashboard-scene",
       "runtime-and-extensions",
+      "deep-engine",
       "resource-workflow",
+      "model-import",
       "media-widgets",
       "topology-resources",
       "data-pipeline",
@@ -22,10 +28,13 @@ describe("local documentation catalog", () => {
       "simulation-commissioning",
       "server-publish",
       "deployment-operations",
-      "troubleshooting"
+      "troubleshooting",
+      "faq",
+      "contributing",
+      "community"
     ]);
     expect(docsDocuments.every((document) => document.version === DOCS_VERSION)).toBe(true);
-    expect(docsCategories).toHaveLength(5);
+    expect(docsCategories).toHaveLength(6);
   });
 
   it("documents the full supported delivery path and industrial tasks", () => {
@@ -49,7 +58,7 @@ describe("local documentation catalog", () => {
       "恢复未保存修改",
       "发布体检",
       "部署与系统运维",
-      "使用开源基础能力",
+      "使用基础能力",
       "接入商业扩展",
     ]) expect(text).toContain(expected);
   });
@@ -70,5 +79,32 @@ describe("local documentation catalog", () => {
 
   it("has no broken local Markdown links", () => {
     expect(docsLinkIssues).toEqual([]);
+  });
+
+  it("registers every offline article and resolves its local images", () => {
+    const directory = fileURLToPath(new URL(".", import.meta.url));
+    const files = readdirSync(directory).filter(name => name.endsWith(".md")).map(name => name.slice(0, -3));
+    expect(docsDocuments.map(document => document.id).sort()).toEqual(files.sort());
+    for (const document of docsDocuments) {
+      for (const match of document.markdown.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) {
+        const path = match[1]!.replace(/^\//, "");
+        expect(path.startsWith("docs-assets/"), document.id).toBe(true);
+        expect(existsSync(new URL(`../../public/${path}`, import.meta.url)), `${document.id}: ${path}`).toBe(true);
+      }
+    }
+  });
+
+  it("keeps articles compatible with the offline renderer", () => {
+    for (const document of docsDocuments) {
+      const prose = document.markdown.replace(/```[\s\S]*?```/g, "");
+      expect(prose, document.id).not.toMatch(/^\|.*\|\s*$/m);
+      expect(document.blocks.filter(block => block.type === "heading" && block.level === 1), document.id).toHaveLength(1);
+    }
+  });
+
+  it("finds onboarding, contribution and model-import instructions", () => {
+    for (const [query, id] of [["安装与首次启动", "getting-started"], ["开发与贡献", "contributing"], ["模型导入与格式选择", "model-import"]]) {
+      expect(searchDocs(docsDocuments, query!)[0]?.document.id).toBe(id);
+    }
   });
 });

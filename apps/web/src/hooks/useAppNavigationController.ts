@@ -4,7 +4,7 @@ import { api } from "../api";
 import { createUpsertScriptModuleCommand } from "@bim-studio/studio-core";
 import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
 import { docsPath } from "../docs/docsRoute";
-import { RENDERER_BACKEND_STORAGE_KEY, REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
+import { REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
 import { readRoute, routeHistoryState, routePath, type AppRoute } from "../appRoute";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 import type { DashboardViewState } from "../studio/workspaceRoute";
@@ -12,6 +12,7 @@ import type { AppState } from "./useAppState";
 import { sceneViewerDeliveryRoute } from "../delivery/sceneViewerDelivery";
 import { useManagerDirectoryController } from "./useManagerDirectoryController";
 import { carriesProjectContext, rememberProjectContext } from "../projectNavigationContext";
+import { stageRendererPreference } from "../viewer/rendererBackendPreference";
 
 interface AppNavigationControllerOptions {
   state: AppState;
@@ -34,6 +35,8 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     projectDialogMode,
     projects,
     rendererBackend,
+    rendererActiveBackend,
+    rendererPreferenceCommitRef,
     rendererSnapshotRef,
     rendererSwitching,
     route,
@@ -52,6 +55,8 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     setProjectDialogMode,
     setProjects,
     setRendererBackend,
+    setRendererSwitchMessage,
+    setRendererSwitchPhase,
     setRendererSwitching,
     setRevision,
     setRoute,
@@ -147,19 +152,12 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
       showError(new Error("当前浏览器、显卡或访问地址不支持 WebGPU，请使用新版 Chrome/Edge 和 HTTPS"));
       return;
     }
-    const snapshot = sceneSnapshotFactoryRef.current?.();
-    if (snapshot)
-      rendererSnapshotRef.current = {
-        scene: snapshot,
-        readOnly: route.view !== "studio",
-        fastRuntime: route.view === "published" && activeScene?.publicationPerformance === "fast",
-        ...(options.message ? { recoveryMessage: options.message } : {}),
-        ...(options.persistPreference === false ? { temporaryBackend: true } : {}),
-      };
-    if (options.persistPreference !== false) window.localStorage.setItem(RENDERER_BACKEND_STORAGE_KEY, next);
+    stageRendererPreference(rendererPreferenceCommitRef, next, options.persistPreference !== false);
+    setRendererSwitchPhase("preparing");
+    setRendererSwitchMessage(`正在准备 ${next === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2"}；当前画布仍在使用 ${rendererActiveBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2"}`);
     setRendererBackend(next);
     setRendererSwitching(true);
-    setMessage(options.message ?? `正在切换到 ${next === "webgpu" ? "WebGPU（实验）" : "WebGL"}`);
+    setMessage(options.message ?? `正在切换到 ${next === "webgpu" ? "Deep WebGPU（Beta）" : "WebGL"}`);
   }
 
   useEffect(() => {

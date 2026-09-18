@@ -238,7 +238,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           <LoaderCircle className="spin" size={18} />{" "}
           <span>
             {" "}
-            {tr(locale, "正在初始化", "Initializing")} {rendererBackend === "webgpu" ? "WebGPU" : "WebGL"}{" "}
+            {tr(locale, "正在初始化", "Initializing")} {rendererBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}{" "}
           </span>{" "}
         </div>
       )}
@@ -251,7 +251,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onStandardView={(view) => engine.setStandardView(view)}
           onFitAll={() => engine.fitAll()}
           onFitSelected={() => {
-            if (selected?.kind === "model") engine.focusModel(selected.id);
+            if (selected) engine.focusModel(selected.id);
           }}
           onOptimizeView={() => engine.fitAll()}
         />
@@ -269,9 +269,9 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           objectPanelOpen={viewerObjectPanelOpen}
           onOpenChange={setViewerToolsOpen}
           onFitAll={() => engine?.fitAll()}
-          fitSelectedEnabled={selected?.kind === "model"}
+          fitSelectedEnabled={Boolean(selected)}
           onFitSelected={() => {
-            if (selected?.kind === "model") engine?.focusModel(selected.id);
+            if (selected) engine?.focusModel(selected.id);
           }}
           onNavigationChange={changeNavigation}
           onMeasurementToggle={toggleMeasurement}

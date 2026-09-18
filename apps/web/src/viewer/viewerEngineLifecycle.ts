@@ -11,6 +11,7 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
   dispose(): void {
     if (this.rendererDisposalStarted) return;
     this.rendererDisposalStarted = true;
+    this.presentationFrameListeners.clear();
     disposeViewerPerformanceBinding(this);
     disposeOrdinaryPicking(this);
     this.offscreen.dispose();
@@ -32,6 +33,7 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
     this.longTaskMonitor.dispose();
     this.gpuFrameTimeMonitor.dispose();
     this.resizeObserver.disconnect();
+    this.disposePixelRatioObserver?.();
     window.removeEventListener("keydown", this.handleKeyDown);
     window.removeEventListener("keyup", this.handleKeyUp);
     this.renderer.domElement.removeEventListener("pointerdown", this.handlePointerDown);

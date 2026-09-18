@@ -1,0 +1,22 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@babylonjs/core':
+        specifier: 9.26.1
+        version: 9.26.1
+
+packages:
+
+  '@babylonjs/core@9.26.1':
+    resolution: {integrity: sha512-gaLZVEXih7DZ2VUxFK/BMJbX5o63mbjbqk68UtDtmJQXc0hwDmmdxrreYTK6Yy+FzGyY5niYkmuXXX9jZ9bxAw==}
+
+snapshots:
+
+  '@babylonjs/core@9.26.1': {}

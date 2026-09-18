@@ -1,8 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { ViewerEngine } from "./ViewerEngine";
+import { AdaptiveRenderScaleController } from "./adaptiveRenderScale";
 
 describe("XR session lifecycle", () => {
+  beforeEach(() => { vi.stubGlobal("window", { devicePixelRatio: 1 }); });
+  afterEach(() => { vi.unstubAllGlobals(); });
   it("clears the XR state when end resolves even if the browser end event is missed", async () => {
     const session = { end: vi.fn(async () => undefined) } as unknown as XRSession;
     const renderer = Object.create(THREE.WebGLRenderer.prototype) as THREE.WebGLRenderer;
@@ -12,12 +15,14 @@ describe("XR session lifecycle", () => {
     });
     renderer.setAnimationLoop = vi.fn();
     renderer.setSize = vi.fn();
+    renderer.getPixelRatio = vi.fn(() => 1);
 
     const camera = new THREE.PerspectiveCamera();
 
     const engine = Object.create(ViewerEngine.prototype) as ViewerEngine & Record<string, unknown>;
     Object.assign(engine, {
       renderer,
+      adaptiveRenderScaleController: new AdaptiveRenderScaleController(1),
       camera,
       container: { clientWidth: 1200, clientHeight: 600 },
       xrSession: session,
@@ -47,6 +52,8 @@ describe("XR session lifecycle", () => {
     });
     renderer.setAnimationLoop = vi.fn();
     renderer.setSize = vi.fn();
+    renderer.getPixelRatio = vi.fn(() => 1);
+    renderer.setPixelRatio = vi.fn();
 
     const camera = new THREE.PerspectiveCamera(94, 0.5, 0.25, 800);
     camera.zoom = 1;
@@ -63,11 +70,16 @@ describe("XR session lifecycle", () => {
     const savedScale = new THREE.Vector3(1, 1, 1);
     const savedUp = new THREE.Vector3(0, 1, 0);
     const savedTarget = new THREE.Vector3(1, 2, 3);
-    const postProcessing = { setSize: vi.fn() };
+    const postProcessing = { setSize: vi.fn(), setPixelRatio: vi.fn() };
+    // XR 期间窗口移到不同 DPI 显示器，退出时恢复当前显示器像素比。
+    vi.stubGlobal("window", { devicePixelRatio: 1.5 });
 
     const engine = Object.create(ViewerEngine.prototype) as ViewerEngine & Record<string, unknown>;
     Object.assign(engine, {
       renderer,
+      rendererBackend: "webgl",
+      adaptiveRenderScaleController: new AdaptiveRenderScaleController(1),
+      framePerformanceMonitor: { reset: vi.fn() },
       postProcessing,
       container: { clientWidth: 1200, clientHeight: 600 },
       camera,
@@ -105,5 +117,7 @@ describe("XR session lifecycle", () => {
     expect(camera.aspect).toBe(2);
     expect(renderer.setSize).toHaveBeenCalledWith(1200, 600, false);
     expect(postProcessing.setSize).toHaveBeenCalledWith(1200, 600);
+    expect(renderer.setPixelRatio).toHaveBeenCalledWith(1.5);
+    expect(postProcessing.setPixelRatio).toHaveBeenCalledWith(1.5);
   });
 });

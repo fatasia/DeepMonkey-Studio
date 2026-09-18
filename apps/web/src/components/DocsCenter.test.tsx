@@ -32,4 +32,12 @@ describe("DocsCenter", () => {
     expect(html).toContain("Tripo3D");
     expect(html).toContain("腾讯混元");
   });
+
+  it("renders the Deep Engine integration and packaging guide", () => {
+    const html = renderToStaticMarkup(<DocsCenter systemName="Deep Monkey Studio" documentId="deep-engine" onNavigate={() => undefined} onClose={() => undefined} />);
+    expect(html).toContain("Deep Engine");
+    expect(html).toContain('src="/docs-assets/deep-engine-architecture.svg"');
+    expect(html).toContain("pnpm gate:deep-engine-editor");
+    expect(html).toContain("bundle:scene-viewer");
+  });
 });

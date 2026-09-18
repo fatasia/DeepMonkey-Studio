@@ -9,6 +9,9 @@ import { downloadRendererDiagnosticEvidence } from "../viewer/rendererDiagnostic
 interface Props {
   locale: AppLocale;
   current: RendererBackend;
+  desired: RendererBackend;
+  switchPhase: "idle" | "preparing" | "recovering" | "failed";
+  switchMessage: string | undefined;
   switching: boolean;
   checking: boolean;
   probe: RendererCapabilityProbe | undefined;
@@ -21,10 +24,10 @@ interface Props {
 
 export function RendererDiagnosticsPanel(props: Props) {
   return (
-    <section className="renderer-diagnostics-panel" aria-label={tr(props.locale, "渲染能力诊断", "Renderer diagnostics")}>
+    <section className="renderer-diagnostics-panel" aria-label={tr(props.locale, "渲染引擎设置", "Rendering engine settings")}>
       <header>
         <span>
-          <strong>{tr(props.locale, "渲染能力诊断", "Renderer diagnostics")}</strong>
+          <strong>{tr(props.locale, "渲染引擎设置", "Rendering engine settings")}</strong>
           <small>{tr(props.locale, "切换前预检，失败自动恢复场景", "Preflight before switching; restore the scene on failure")}</small>
         </span>
         <div>
@@ -81,6 +84,7 @@ export function RendererDiagnosticsPanel(props: Props) {
               </div>
             )}
           </div>
+          <SwitchStatus locale={props.locale} current={props.current} desired={props.desired} phase={props.switchPhase} message={props.switchMessage} />
           <PerformanceSummary locale={props.locale} snapshot={props.performance} />
           <div className="renderer-option-list">
             {props.readiness.map((item) => (
@@ -88,9 +92,10 @@ export function RendererDiagnosticsPanel(props: Props) {
                 <div className="renderer-option-title">
                   <span>
                     {item.level === "ready" ? <Check size={14} /> : item.level === "limited" ? <TriangleAlert size={14} /> : <X size={14} />}
-                    <strong>{item.backend === "webgl" ? "WebGL 2" : "WebGPU"}</strong>
+                    <strong>{item.backend === "webgl" ? "WebGL 2" : "Deep WebGPU Beta"}</strong>
                   </span>
                   {props.current === item.backend && <small>{tr(props.locale, "当前", "Current")}</small>}
+                  {props.current !== item.backend && props.desired === item.backend && <small>{tr(props.locale, "目标", "Target")}</small>}
                 </div>
                 <p>{trReadiness(props.locale, item)}</p>
                 <ul>
@@ -104,7 +109,7 @@ export function RendererDiagnosticsPanel(props: Props) {
                     : !item.ready
                       ? tr(props.locale, "不可用", "Unavailable")
                       : item.backend === "webgpu"
-                        ? tr(props.locale, "切换并保留场景", "Switch and preserve scene")
+                        ? tr(props.locale, "启用 Deep WebGPU Beta", "Enable Deep WebGPU Beta")
                         : tr(props.locale, "切换到兼容模式", "Switch to compatibility")}
                 </button>
               </article>
@@ -115,8 +120,8 @@ export function RendererDiagnosticsPanel(props: Props) {
             <span>
               {tr(
                 props.locale,
-                "WebGPU 仍为实验模式；切换会先保存内存快照，初始化失败时自动回到 WebGL 2。",
-                "WebGPU remains experimental. Switching keeps an in-memory snapshot and falls back to WebGL 2 if initialization fails.",
+                "Deep WebGPU Beta 保留同一作者状态，成功激活后才保存偏好；画质与功能仍需逐场景验收。",
+                "Deep WebGPU Beta retains the same author state and saves preferences only after activation. Visual quality and features still require per-scene validation.",
               )}
             </span>
           </footer>
@@ -124,6 +129,27 @@ export function RendererDiagnosticsPanel(props: Props) {
       )}
     </section>
   );
+}
+
+function SwitchStatus({ locale, current, desired, phase, message }: {
+  locale: AppLocale;
+  current: RendererBackend;
+  desired: RendererBackend;
+  phase: Props["switchPhase"];
+  message: string | undefined;
+}) {
+  const currentName = current === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2";
+  const desiredName = desired === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2";
+  if (phase === "idle" && current === desired) {
+    return <div className="renderer-switch-status idle"><Check size={14} /><span><strong>{tr(locale, "当前渲染后端", "Active renderer")}</strong><small>{currentName}</small></span></div>;
+  }
+  const icon = phase === "failed" ? <TriangleAlert size={14} /> : <LoaderCircle className="spin" size={14} />;
+  const title = phase === "recovering"
+    ? tr(locale, "正在恢复", "Recovering")
+    : phase === "failed"
+      ? tr(locale, "切换未完成", "Switch incomplete")
+      : tr(locale, "正在准备", "Preparing");
+  return <div className={`renderer-switch-status ${phase}`}>{icon}<span><strong>{title} · {currentName} → {desiredName}</strong><small>{message ?? tr(locale, "作者数据保持在同一工作区中。", "Author data remains in the same workspace.")}</small></span></div>;
 }
 
 function PerformanceSummary({ locale, snapshot }: { locale: AppLocale; snapshot: FramePerformanceSnapshot | undefined }) {
@@ -155,7 +181,7 @@ function PerformanceSummary({ locale, snapshot }: { locale: AppLocale; snapshot:
         <Metric label={tr(locale, ">33ms 帧", ">33ms frames")} value={`${(snapshot.over33msRate * 100).toFixed(1)}%`} warning={snapshot.over33msRate > 0.05} />
         <Metric label="Draw calls" value={renderer.drawCalls.toLocaleString(locale)} warning={renderer.drawCalls > 1_000} />
         <Metric label={tr(locale, "三角面", "Triangles")} value={compactNumber(renderer.triangles)} warning={renderer.triangles > 5_000_000} />
-        <Metric label={tr(locale, "纹理", "Textures")} value={renderer.textures.toLocaleString(locale)} warning={renderer.textures > 800} />
+        <Metric label={tr(locale, "纹理", "Textures")} value={renderer.textures?.toLocaleString(locale) ?? "—"} warning={(renderer.textures ?? 0) > 800} />
         {snapshot.heap && (
           <Metric
             label="JS heap"
@@ -271,7 +297,7 @@ function trReadiness(locale: AppLocale, item: RendererReadiness): string {
     "当前环境无法创建 WebGL 2 上下文": "This environment cannot create a WebGL 2 context",
     当前设备不可用: "Unavailable on this device",
     "可试用，存在场景限制": "Available for trial with scene limitations",
-    "场景可发布，产品能力仍在验收": "Scene is publishable; product parity is still under validation",
+    "可试用，需逐场景验收": "Available for trial; validate per scene",
   };
   return locale === "zh-CN" ? item.summary : (translations[item.summary] ?? item.summary);
 }
@@ -286,10 +312,12 @@ function trDetail(locale: AppLocale, detail: string): string {
     "浏览器未暴露 WebGPU API": "The browser does not expose WebGPU",
     "未找到可用的高性能 GPU 适配器": "No high-performance GPU adapter is available",
     "GPU 适配器可用": "GPU adapter available",
-    "WebGPU TSL 已覆盖核心后处理与对象轮廓；画质等价仍按发布场景签署，自动发布暂保留 WebGL":
-      "WebGPU TSL covers core post-processing and object outlines. Visual parity is signed off per published scene, while automatic publication remains on WebGL",
-    "当前场景满足显式 WebGPU 优先发布条件；自动默认仍保留 WebGL":
-      "The scene meets explicit WebGPU-preferred publication conditions; automatic default still remains on WebGL",
+    "Studio 使用 Deep WebGPU 投影画布；材质、环境与作者辅助层仍需逐场景验收":
+      "Studio uses the Deep WebGPU projection canvas; materials, environment and author overlays still require per-scene validation",
+    "作者后处理或对象轮廓需要逐场景验证；自动发布保留 WebGL":
+      "Authored post-processing or object outlines require per-scene validation; automatic publication remains on WebGL",
+    "仅在显式选择时使用；自动默认仍保留 WebGL":
+      "Used only when explicitly selected; automatic default remains on WebGL",
     "产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL": "The product WebGPU path has not passed WebXR device validation; XR sessions continue to use WebGL",
   };
   return locale === "zh-CN" ? detail : (translations[detail] ?? detail);

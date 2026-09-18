@@ -31,7 +31,7 @@ export function initialRendererBackend(queryValue: string | null, storedValue: s
   return storedValue === "webgpu" ? "webgpu" : "webgl";
 }
 
-/** 从持久化场景中提取仍需 WebGL 发布守卫的作者效果；不代表 WebGPU 运行时未实现这些能力。 */
+/** 从持久化场景中提取仍需 WebGL 发布守卫的作者效果。 */
 export function rendererRequirementsForScene(
   scene: Pick<SceneSnapshot, "models" | "postProcessing" | "primitives">
 ): RendererProjectRequirements {
@@ -94,8 +94,7 @@ export async function probeRendererCapabilities(): Promise<RendererCapabilityPro
 }
 
 /**
- * 发布页自动选择只采用已完成画质与稳定签署的 WebGPU。TSL 已覆盖核心后处理，
- * 但签署完成前仍不能静默改变作者画面；用户显式切换可继续用于验收。
+ * 发布选择只判断设备与作者效果守卫，不代表 Deep 产品画质与功能已验收。
  */
 export function selectPublishedRenderer(
   publicationMode: "webgl" | "webgpu-preferred" | "cloud" | undefined,
@@ -131,9 +130,10 @@ export function rendererReadiness(probe: RendererCapabilityProbe, project: Rende
   const webgpuDetails = [
     !probe.secureContext ? "需要 HTTPS 或 localhost 安全上下文" : "安全上下文可用",
     !probe.webgpuApi ? "浏览器未暴露 WebGPU API" : !probe.webgpuAdapter ? "未找到可用的高性能 GPU 适配器" : "GPU 适配器可用",
+    "Studio 使用 Deep WebGPU 投影画布；材质、环境与作者辅助层仍需逐场景验收",
     project.postProcessingEnabled
-      ? "WebGPU TSL 已覆盖核心后处理与对象轮廓；画质等价仍按发布场景签署，自动发布暂保留 WebGL"
-      : "当前场景满足显式 WebGPU 优先发布条件；自动默认仍保留 WebGL",
+      ? "作者后处理或对象轮廓需要逐场景验证；自动发布保留 WebGL"
+      : "仅在显式选择时使用；自动默认仍保留 WebGL",
     "产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL"
   ];
   const webgpuAvailable = probe.secureContext && probe.webgpuApi && probe.webgpuAdapter;
@@ -146,9 +146,9 @@ export function rendererReadiness(probe: RendererCapabilityProbe, project: Rende
   }, {
     backend: "webgpu",
     ready: webgpuAvailable,
-    // “核心效果已接入”不等于“产品全能力已签署”：画质与 WebXR 验收完成前保持 limited。
+    // 设备可创建不等于 Deep 产品验收，持续保持 limited。
     level: !webgpuAvailable ? "unavailable" : "limited",
-    summary: !webgpuAvailable ? "当前设备不可用" : project.postProcessingEnabled ? "可试用，存在场景限制" : "场景可发布，产品能力仍在验收",
+    summary: !webgpuAvailable ? "当前设备不可用" : project.postProcessingEnabled ? "可试用，存在场景限制" : "可试用，需逐场景验收",
     details: webgpuDetails
   }];
 }

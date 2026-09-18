@@ -1,16 +1,18 @@
 /* M1 application workspace: 2D is the default authoring surface; 3D is a focused mode. */
 .dashboard-workspace { display: grid; width: 100%; height: 100%; min-width: 0; min-height: 0; color: #e7ecef; background: #0e1214; grid-template: 54px minmax(0,1fr) 34px / 218px minmax(0,1fr) 250px; grid-template-areas: "top top top" "pages canvas inspector" "pages status inspector"; }
+/* 编辑器 chrome 保持可读下限；画布作品使用作者自己的排版，不受此规则影响。 */
+.dashboard-workspace :is(button,input,select,summary,label,small,span,strong):not(.dashboard-artboard *) { font-size: max(10px, 1em); }
 .dashboard-workspace-topbar { grid-area: top; display: flex; min-width: 0; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid #2b3439; background: rgba(21,27,30,.98); }
-.dashboard-back,.dashboard-data-entry,.dashboard-workspace-actions button,.workspace-mode-switch button,.dashboard-canvas-toolbar button { display: inline-flex; height: 30px; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; color: #98a4aa; border: 1px solid #303a3f; border-radius: 5px; background: #171d20; font-size: 9px; cursor: pointer; white-space: nowrap; }
+.dashboard-back,.dashboard-data-entry,.dashboard-workspace-actions button,.workspace-mode-switch button,.dashboard-canvas-toolbar button { display: inline-flex; height: 30px; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; color: #98a4aa; border: 1px solid #303a3f; border-radius: 5px; background: #171d20; font-size: 10px; cursor: pointer; white-space: nowrap; }
 .dashboard-back,.dashboard-data-entry { flex: 0 0 auto; }
 .dashboard-back:hover,.dashboard-data-entry:hover,.dashboard-workspace-actions button:hover:not(:disabled),.workspace-mode-switch button:hover:not(:disabled),.dashboard-canvas-toolbar button:hover { color: #ead18f; border-color: #6f592b; }
 .dashboard-data-entry { font-size: 10px; }
 .dashboard-workspace-title { display: flex; min-width: 150px; align-items: center; gap: 8px; color: #d8b45e; }
 .dashboard-workspace-title > div { display: grid; min-width: 0; gap: 2px; }
 .dashboard-workspace-title strong { overflow: hidden; color: #eef2f4; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.dashboard-workspace-title span { color: #77848a; font-size: 7px; }
+.dashboard-workspace-title span { color: #77848a; font-size: 10px; }
 .workspace-mode-switch { display: flex; flex: 0 1 auto; min-width: 0; align-self: stretch; align-items: center; gap: 2px; margin-left: 8px; }
-.workspace-mode-switch .workspace-context { display:inline-flex; flex:1 1 140px; min-width:72px; align-items:center; gap:6px; max-width:240px; height:28px; padding:0 10px; overflow:hidden; color:#d8dee1; border:1px solid #303a3f; border-radius:5px; background:#151b1f; font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+.workspace-mode-switch .workspace-context { display:inline-flex; flex:1 1 140px; min-width:72px; align-items:center; gap:6px; max-width:240px; height:28px; padding:0 10px; overflow:hidden; color:#d8dee1; border:1px solid #303a3f; border-radius:5px; background:#151b1f; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
 .workspace-mode-switch button { flex:0 0 auto; min-width:48px; height:34px; border-color:transparent; background:transparent; white-space:nowrap; }
 .workspace-mode-switch button.active { color: #e5bd61; border-color: rgba(214,170,77,.3); background: rgba(214,170,77,.09); }
 .workspace-mode-switch button:disabled { opacity: .42; cursor: not-allowed; }
@@ -35,7 +37,7 @@
 .dashboard-pages-panel > section { padding: 10px 8px; border-bottom: 1px solid #283136; }
 .dashboard-panel-label { display: flex; align-items: center; justify-content: space-between; padding: 0 5px 7px; color: #6f7c83; font-size: 8px; }
 .dashboard-panel-label > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
-.dashboard-panel-label small { color: #4f5c62; font-size: 7px; }
+.dashboard-panel-label small { color: #4f5c62; font-size: 10px; }
 .dashboard-page-actions { display: flex; gap: 3px; }
 .dashboard-page-actions button { display: grid; width: 23px; height: 21px; padding: 0; place-items: center; color: #748188; border: 1px solid #303a3f; border-radius: 4px; background: #171d20; cursor: pointer; }
 .dashboard-page-actions button:hover { color: #e1b85c; border-color: #6f592b; }
@@ -62,7 +64,7 @@
 .dashboard-layer-row.drop-target { background: rgba(213,170,79,.12); box-shadow: inset 0 1px #d5aa4f; }
 .dashboard-layer-select { display: grid; min-width: 0; height: 28px; align-items: center; gap: 6px; padding: 0 6px; color: #849198; border: 0; background: transparent; grid-template-columns: 14px minmax(0,1fr); text-align: left; cursor: pointer; }
 .dashboard-layer-select:disabled { opacity:.58; cursor:not-allowed; }
-.dashboard-layer-select span { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-layer-select span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-layer-select small { color: #68757b; font-size: 7px; }
 .dashboard-group-list { display: grid; gap: 2px; margin: 0 0 4px; padding: 4px 0; border-top: 1px solid rgba(45, 55, 60, .7); border-bottom: 1px solid rgba(45, 55, 60, .7); }
 .dashboard-group-row { display: grid; grid-template-columns: minmax(0,1fr) 22px 22px 22px; align-items: center; min-width: 0; border-radius: 5px; background: rgba(215, 173, 81, .06); }
@@ -176,10 +178,10 @@
 .dashboard-canvas-scroll.panning { cursor:grabbing; user-select:none; }
 .dashboard-artboard-stage { position: relative; margin: 0; }
 .dashboard-artboard { position: absolute; top: 0; left: 0; overflow: hidden; background: #12191d; box-shadow:0 20px 58px rgba(0,0,0,.5); transform-origin: top left; }
-.dashboard-ruler-corner { position:sticky;z-index:13; /* z-index-audit: keep(页面内容带:标尺原点,与标尺 11/13 成对精调) */top:0;left:0;display:block;width:14px;height:14px!important;padding:0!important;border:0!important;border-radius:0!important;background:var(--surface-2)!important;box-shadow:inset -1px -1px var(--line); }
+.dashboard-ruler-corner { position:sticky;z-index:13; /* z-index-audit: keep(页面内容带:标尺原点,与标尺 11/13 成对精调) */top:0;left:0;display:block;width:24px;height:24px!important;padding:0!important;border:0!important;border-radius:0!important;background:var(--surface-2)!important;box-shadow:inset -1px -1px var(--line); }
 .dashboard-ruler { position:sticky;z-index:11; /* z-index-audit: keep(页面内容带:粘性标尺,与原点 13 成对) */display:block;overflow:hidden;color:var(--text-muted);background:var(--surface-2);user-select:none;cursor:crosshair; }
-.dashboard-ruler.horizontal { top:0;left:0;height:14px;margin-top:-14px;border-bottom:1px solid #344047; }
-.dashboard-ruler.vertical { top:0;left:0;width:14px;margin-top:-14px;border-right:1px solid #344047; }
+.dashboard-ruler.horizontal { top:0;left:0;height:24px;margin-top:-24px;border-bottom:1px solid #344047; }
+.dashboard-ruler.vertical { top:0;left:0;width:24px;margin-top:-24px;border-right:1px solid #344047; }
 .dashboard-ruler span { position:absolute;color:var(--text-muted);font:10px/1 Consolas,monospace;pointer-events:none; }
 .dashboard-ruler.horizontal span { top:2px;height:12px;border-left:1px solid #617078;padding-left:2px; }
 .dashboard-ruler.vertical span { left:2px;width:12px;border-top:1px solid #617078;padding-top:2px;writing-mode:vertical-rl; }
@@ -220,6 +222,7 @@
 .dashboard-scene-summary button { width: max-content; height: 28px; grid-column: 2; margin-top: 7px; padding: 0 10px; pointer-events: auto; color: #17130b; border: 0; border-radius: 5px; background: #d5aa4e; font-size: 9px; font-weight: 700; cursor: pointer; }
 .dashboard-node-badge { position: absolute; top: 14px; right: 14px; padding: 6px 8px; color: #87959b; border: 1px solid #344148; border-radius: 5px; background: rgba(15,21,24,.78); font-size: 10px; }
 .dashboard-native-widget { padding: 16px; border-width: 1px; border-radius: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.25); }
+.dashboard-native-widget .dashboard-chart-heading > :is(strong, span),.dashboard-native-widget .dashboard-node-badge { font-size: max(10px, 1em); }
 .dashboard-native-widget > .dashboard-node-badge { top: 7px; right: 7px; padding: 3px 5px; opacity: 0; font-size: 7px; transition: opacity .14s ease; }
 .dashboard-native-widget:hover > .dashboard-node-badge,.dashboard-native-widget.selected > .dashboard-node-badge { opacity: 1; }
 .dashboard-native-widget .dashboard-chart { min-height: 0; }

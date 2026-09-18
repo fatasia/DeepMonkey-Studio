@@ -42,7 +42,7 @@ export function SceneSelectionBar({
   const ids = selectedObjects.map((item) => item.id);
   const hasSelection = ids.length > 0;
   return (
-    <div className={`scene-tree-selection-bar ${hasSelection ? "visible" : ""}`}>
+    <div className={`scene-tree-selection-bar ${hasSelection ? "visible" : ""}`} aria-hidden={!hasSelection} inert={!hasSelection}>
       <span className="scene-selection-count">
         {tr(locale, "已选", "Selected")} <strong>{ids.length}</strong><small>{tr(locale, "批量", "Batch")}</small>
       </span>

@@ -21,9 +21,12 @@ describe("BatteryIntelligencePanel", () => {
     expect(html).toContain("CLF-CBF 影子投影");
     expect(html).toContain("Rust · ONNX Runtime");
     expect(html).toContain("内置样例");
+    expect(html).toContain("综合评估");
+    expect(html).toContain("SOC · SOH · RUL 联合核验");
     expect(html).toContain("LFP 大容量工程");
     expect(html).toContain("LFP 280 Ah 老化");
     expect(html).toContain("96 电芯 Pack");
+    expect(html).not.toContain("本次运行证据");
     expect(html).not.toContain("运行示例");
     expect(html).toMatch(/class="button primary"[^>]*>.*评估 SOH/s);
     expect(html).not.toContain("按原物理风险、动态稀疏路由和域外回退逻辑正式运行");

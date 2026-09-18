@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DataConnectionRecord, DataDatasetRecord, ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
-import { assessProjectPublication, hasPublicationDataProduct } from "./publicationReadiness";
+import { assessProjectPublication, assessScenePublication, hasPublicationDataProduct } from "./publicationReadiness";
 
 describe("publication data readiness", () => {
   it("accepts Kafka as a native runnable publication source", () => {
@@ -129,6 +129,61 @@ describe("publication data readiness", () => {
     const report = assessProjectPublication(project, [unsafe]);
     expect(report).toMatchObject({ status: "blocked", blockers: 1 });
     expect(report.issues[0]?.title).toBe("空间音频资源无效");
+  });
+});
+
+describe("selected scene publication audit", () => {
+  it("resolves scene navigation without auditing unrelated broken drafts", () => {
+    const scene = publicationScene();
+    const other = { ...publicationScene(), id: "scene-2", models: [{ ...scene.models[0]!, modelId: "missing" }] };
+    scene.interactions = [{ id: "jump", name: "跳转", enabled: true, trigger: "click", target: { kind: "object", modelId: "model-1" }, code: "",
+      actions: [{ id: "go", type: "navigateScene", enabled: true, sceneId: other.id }] }];
+    expect(assessScenePublication(publicationProject(), scene, [other]).blockers).toBe(0);
+    expect(assessProjectPublication(publicationProject(), [scene, other]).blockers).toBe(1);
+    const missing = assessScenePublication(publicationProject(), scene, []);
+    expect(missing.issues).toEqual([expect.objectContaining({ title: "跳转场景不存在", sceneId: scene.id, targetId: "jump" })]);
+  });
+
+  it("uses the selected saved snapshot and resolves self navigation", () => {
+    const scene = publicationScene();
+    scene.interactions = [{ id: "jump", name: "重开", enabled: true, trigger: "click", target: { kind: "object", modelId: "model-1" }, code: "",
+      actions: [{ id: "go", type: "navigateScene", enabled: true, sceneId: scene.id }] }];
+    const stale = { ...scene, models: [{ ...scene.models[0]!, modelId: "missing" }] };
+    expect(assessScenePublication(publicationProject(), scene, [stale])).toMatchObject({ status: "ready", blockers: 0 });
+  });
+
+  it.each(["models", "primitives", "cross-kind"] as const)("blocks duplicate IDs in %s", (kind) => {
+    const scene = publicationScene();
+    const model = scene.models[0]!;
+    const primitive = { ...model, kind: "box" as const, color: "#ffffff" };
+    if (kind === "models") scene.models.push({ ...model }, { ...model });
+    else if (kind === "primitives") { scene.models = []; scene.primitives = [primitive, { ...primitive }]; }
+    else scene.primitives = [primitive];
+    const report = assessScenePublication(publicationProject(), scene, []);
+    expect(report.blockers).toBe(1);
+    expect(report.issues).toEqual([expect.objectContaining({ title: "三维对象 ID 重复", targetId: model.modelId })]);
+  });
+
+  it("blocks duplicate widgets instead of silently accepting the last one", () => {
+    const scene = publicationScene();
+    const widget = { id: "kpi", title: "数值", key: "", type: "text" as const, unit: "", x: 0, y: 0, w: 100, h: 100 };
+    scene.dashboard = { side: "right", width: 400, widgets: [widget, { ...widget }] };
+    expect(assessScenePublication(publicationProject(), scene, []).issues).toEqual([
+      expect.objectContaining({ title: "组件 ID 重复", targetId: "kpi" }),
+    ]);
+  });
+
+  it("accepts primitive interaction targets without requiring an imported asset", () => {
+    const scene = publicationScene();
+    scene.primitives = [{ ...scene.models[0]!, modelId: "primitive-1", kind: "box", color: "#ffffff" }];
+    scene.interactions = [{ id: "pick", name: "选择", enabled: true, trigger: "click", target: { kind: "object", modelId: "primitive-1" }, code: "console.log('pick')" }];
+    expect(assessScenePublication(publicationProject(), scene, [])).toMatchObject({ status: "ready", blockers: 0 });
+  });
+
+  it("distinguishes an empty saved scene from a project with no scenes", () => {
+    const scene = { ...publicationScene(), models: [] };
+    expect(assessScenePublication(publicationProject(), scene, [])).toMatchObject({ status: "ready", blockers: 0 });
+    expect(assessProjectPublication(publicationProject(), [])).toMatchObject({ status: "blocked", blockers: 1 });
   });
 });
 

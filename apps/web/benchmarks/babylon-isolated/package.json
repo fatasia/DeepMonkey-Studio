@@ -1,0 +1,2 @@
+{"private":true,"type":"module","scripts":{"serve":"node server.mjs","check":"node --check runner.js"},"dependencies":{"@babylonjs/core":"9.26.1"}}
+

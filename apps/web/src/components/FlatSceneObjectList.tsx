@@ -43,6 +43,7 @@ import type {
 import { FlatSpaceList } from "./FlatSpaceList";
 import { WindowedSceneRows, type SceneRow } from "./WindowedSceneRows";
 import { SceneRowMenu } from "./SceneRowMenu";
+import { focusSceneObjectRow, selectSceneObjectRow } from "./sceneObjectRowEvents";
 import type { SceneOrganizationObject } from "./SceneOrganizationPanel";
 import { SceneLayerInteractions, SceneLayerRootDrop, type SceneGroupingActions } from "./SceneLayerInteractions";
 
@@ -267,11 +268,8 @@ function PrimitiveRow(
       <button
         className="asset-main"
         title={tr(locale, "单击选择，再次单击取消；Ctrl/⌘ 单击多选；Shift 单击连续选择；双击聚焦", "Click to select, click again to clear; Ctrl/⌘-click for multi-select; Shift-click for a range; double-click to focus")}
-        onClick={(event) => {
-          if (props.onObjectSelect) props.onObjectSelect(primitive.id, { additive: event.ctrlKey || event.metaKey, range: event.shiftKey });
-          else engine?.select(primitive.id);
-        }}
-        onDoubleClick={() => engine?.focusModel(primitive.id)}
+        onClick={(event) => selectSceneObjectRow(event, primitive.id, engine, props.onObjectSelect)}
+        onDoubleClick={() => focusSceneObjectRow(primitive.id, engine)}
       >
         <span className="scene-object-badge">
           <Box size={15} />

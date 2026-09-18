@@ -38,6 +38,12 @@ export class WebGlGpuTimer {
     return this.samples.snapshot();
   }
 
+  /** 窗口内已回读的原始 GPU 毫秒样本;A03 统一采样窗口消费原始值而不是聚合。 */
+  rawSamplesMs(): readonly number[] {
+    this.poll();
+    return this.samples.raw();
+  }
+
   dispose(): void {
     if (this.active && this.extension) this.gl.endQuery(this.extension.TIME_ELAPSED_EXT);
     this.pending.forEach((query) => this.gl.deleteQuery(query));

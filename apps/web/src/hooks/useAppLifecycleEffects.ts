@@ -19,6 +19,7 @@ import {
   sceneViewerDeliveryUser,
 } from "../delivery/sceneViewerDelivery";
 import { applyDocumentBranding } from "../branding/documentBranding";
+import { canAutomaticallyChangeRenderer } from "../viewer/rendererBackendPreference";
 
 type ApplicationController = ReturnType<typeof createApplicationRuntimeController>;
 type PersistenceController = ReturnType<typeof createScenePersistenceController>;
@@ -48,6 +49,7 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
     locale,
     rendererBackend,
     rendererSwitching,
+    rendererSwitchPhase,
     revision,
     route,
     rvtRevitVersion,
@@ -133,7 +135,11 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
   useEffect(() => {
     let cancelled = false;
     let retryTimer: number | undefined;
+    let restoreAttempts = 0;
     const requireLogin = () => {
+      // 会话失效也终止本次启动恢复，避免旧请求或重试重新写回已失效用户。
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       setAuthToken();
       setCurrentUser(undefined);
       setAuthReady(true);
@@ -149,6 +155,7 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
     } else if (!getAuthToken()) setAuthReady(true);
     else {
       const restoreSession = () => {
+        if (cancelled) return;
         void api.me().then((user) => {
           if (cancelled) return;
           setCurrentUser(user);
@@ -157,6 +164,11 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
           if (cancelled) return;
           // 401 交给统一二次复核；断网和 5xx 保持凭据并等待服务恢复，不跳回登录页。
           if (!getAuthToken()) {
+            setAuthReady(true);
+            return;
+          }
+          if (++restoreAttempts >= 3) {
+            // 服务不可达时不能把整个工作台卡在“验证本地会话”；保留凭据供下一次登录重试。
             setAuthReady(true);
             return;
           }
@@ -175,7 +187,8 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
   useEffect(() => storeLocale(locale), [locale]);
 
   useEffect(() => {
-    if (route.view !== "published" || !activeScene || !engine || rendererSwitching) return;
+    if (route.view !== "published" || !activeScene || !engine
+      || !canAutomaticallyChangeRenderer(rendererSwitchPhase, rendererSwitching)) return;
     let cancelled = false;
     // 不能只检查 navigator.gpu：部分设备会暴露 API，但无法取得适配器。
     // 真实预检可避免发布页在 WebGPU 初始化失败与 WebGL 回退之间反复切换。
@@ -196,13 +209,14 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
     return () => {
       cancelled = true;
     };
-  }, [activeScene, engine, rendererBackend, rendererSwitching, route.view]);
+  }, [activeScene, engine, rendererBackend, rendererSwitching, rendererSwitchPhase, route.view]);
 
   useEffect(() => {
-    if (!engine || rendererSwitching || route.view === "published") return;
+    if (!engine || route.view === "published"
+      || !canAutomaticallyChangeRenderer(rendererSwitchPhase, rendererSwitching)) return;
     const stored = window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY) === "webgpu" ? "webgpu" : "webgl";
     if (stored !== rendererBackend) {
-      void changeRendererBackend(stored, { persistPreference: false, message: `已恢复用户渲染偏好：${stored === "webgpu" ? "WebGPU（实验）" : "WebGL"}` });
+      void changeRendererBackend(stored, { persistPreference: false, message: `已恢复用户渲染偏好：${stored === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}` });
     }
-  }, [engine, rendererBackend, rendererSwitching, route.view]);
+  }, [engine, rendererBackend, rendererSwitching, rendererSwitchPhase, route.view]);
 }

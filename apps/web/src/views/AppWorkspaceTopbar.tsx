@@ -37,6 +37,9 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
     setRendererDiagnosticsOpen,
     rendererSwitching,
     rendererBackend,
+    rendererActiveBackend,
+    rendererSwitchPhase,
+    rendererSwitchMessage,
     aiAssistantOpen,
     setAiAssistantOpen,
     importRef,
@@ -207,7 +210,10 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
             <SceneWorkspaceMoreMenu
               onDrillGuide={() => setDrillGuideOpen(true)}
               locale={locale}
-              rendererBackend={rendererBackend}
+              rendererBackend={rendererActiveBackend}
+              rendererDesiredBackend={rendererBackend}
+              rendererSwitchPhase={rendererSwitchPhase}
+              rendererSwitchMessage={rendererSwitchMessage}
               rendererSwitching={rendererSwitching}
               rendererDiagnosticsOpen={rendererDiagnosticsOpen}
               setRendererDiagnosticsOpen={(open) => setRendererDiagnosticsOpen(open)}

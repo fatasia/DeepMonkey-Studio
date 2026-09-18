@@ -1,5 +1,6 @@
 import "./benchmark.css";
-import type { BenchmarkEngine, BenchmarkWorkload, RenderBenchmarkControl, RenderBenchmarkRuntime } from "./contracts";
+import { exportBenchmarkResult, type BenchmarkEngine, type BenchmarkWorkload, type RenderBenchmarkControl, type RenderBenchmarkRuntime } from "./contracts";
+import { babylonWebGpuAdapter } from "./babylonAdapter";
 import { waitForFrames } from "./frameSampler";
 
 const params = new URLSearchParams(location.search);
@@ -15,10 +16,14 @@ void createRuntime(requestedEngine, workload, canvas, objectCount, startedAt).th
   const control: RenderBenchmarkControl = {
     ready: true,
     snapshot: runtime.snapshot(),
+    result: exportBenchmarkResult(runtime.snapshot()),
     async rebuild(cycle) {
       await runtime.rebuild(cycle);
       await waitForFrames(6);
-      return runtime.snapshot();
+      const snapshot = runtime.snapshot();
+      control.result = exportBenchmarkResult(snapshot);
+      control.snapshot = snapshot;
+      return snapshot;
     },
   };
   window.__renderEngineBenchmark = control;
@@ -32,5 +37,6 @@ void createRuntime(requestedEngine, workload, canvas, objectCount, startedAt).th
 
 async function createRuntime(engine: BenchmarkEngine, workload: BenchmarkWorkload, target: HTMLCanvasElement, count: number, initializedAt: number): Promise<RenderBenchmarkRuntime> {
   if (engine === "three-webgl") return (await import("./threeWebglRuntime")).createThreeWebglRuntime(target, count, initializedAt, workload);
+  if (engine === "babylon-webgpu") return babylonWebGpuAdapter.create(target, count, initializedAt, workload);
   return (await import("./threeWebgpuRuntime")).createThreeWebgpuRuntime(target, count, initializedAt, workload);
 }
