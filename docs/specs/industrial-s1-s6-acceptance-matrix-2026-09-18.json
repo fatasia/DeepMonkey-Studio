@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "authority": "docs/specs/industrial-3d-format-work-plan-2026-09-16.md",
+  "generatedAt": "2026-09-18",
+  "scope": "industrial-format-s1-s6-closure",
+  "terminology": {
+    "parasolidDisplayName": "X_T",
+    "parasolidExtension": ".x_t",
+    "productionRoute": "builtin-open-source-local-offline",
+    "commercialFallback": false
+  },
+  "stages": [
+    {
+      "id": "S1",
+      "status": "partial",
+      "summary": "统一任务、SourceBundle/QualityReport、幂等、attempt、原子发布、PostgreSQL CAS、租约和 Windows Job 共享宿主已可复验。",
+      "evidence": [
+        "docs/specs/industrial-s1-attempt-closure-2026-09-18.md",
+        "docs/specs/industrial-s1-postgres-cas-2026-09-18.md",
+        "docs/specs/industrial-s1-execution-lease-2026-09-18.md",
+        "docs/specs/industrial-jt-windows-job-2026-09-18.md"
+      ],
+      "openGates": [
+        "部署仍需停旧写入实例后迁移，禁止新旧二进制混跑",
+        "除已接线格式外的 Worker 仍需逐一接入共享宿主、重试和缓存清理矩阵",
+        "完整多实例故障注入、安装包权限沙箱和对象存储恢复矩阵仍是项目级后验收"
+      ]
+    },
+    {
+      "id": "S2",
+      "status": "partial",
+      "summary": "JT 实用子集和 3DM 保存网格/受限曲面预览有真实语料证据；未达到七方向完整几何与两端产品接线门槛。",
+      "evidence": [
+        "docs/reports/industrial-jt-occurrence-identity-2026-09-17.md",
+        "docs/reports/industrial-jt-material-path-2026-09-17.md",
+        "docs/specs/industrial-3dm-source-audit-2026-09-17.md",
+        "docs/specs/industrial-3dm-float32-interior-2026-09-18.md",
+        "docs/specs/industrial-3dm-paired-curve-group-2026-09-18.md"
+      ],
+      "openGates": [
+        "JT 版本/LOD/外部引用的独立保留集和双端测量绑定尚未全验收",
+        "3DM 仍有 44 条非共形边；贴图缺依赖、复杂 trim 和产品质量档接线未关闭"
+      ]
+    },
+    {
+      "id": "S3",
+      "status": "partial",
+      "summary": "E57 已完成静态 Reader、属性/姿态抽取和隔离 Job 证据但保持 inspect；3D Tiles 已完成本地预检及 GLB 1/RTC 研究预览但未接空间运行时。",
+      "evidence": [
+        "docs/specs/industrial-e57-native-reader-2026-09-18.md",
+        "docs/specs/industrial-e57-attributes-job-2026-09-18.md",
+        "docs/specs/industrial-tiles-source-qualification-2026-09-18.md",
+        "docs/specs/industrial-tiles-glb2-rtc-2026-09-18.md"
+      ],
+      "openGates": [
+        "E57/LAS/LAZ/COPC 尚无正式上传、点云 primitive、分块驻留和配准恢复入口",
+        "Tiles 仍缺严格依赖闭包、坐标/LOD/feature 元数据和 Web/Native 空间运行时"
+      ]
+    },
+    {
+      "id": "S4",
+      "status": "partial",
+      "summary": "X_T 109 件真实语料已完成结构读取和研究 GLB/源面见证复验；能力仍限于声明 profile，生产 profile 认证数为 0。",
+      "evidence": [
+        "docs/specs/industrial-format-plan01-02-lock-2026-09-16.md",
+        "docs/reports/industrial-x-t-adjacent-support-2026-09-18.md",
+        "docs/reports/industrial-x-t-projected-intersection-2026-09-17.md",
+        "docs/specs/industrial-x-t-face-geometry-witness-2026-09-17.md"
+      ],
+      "openGates": [
+        "研究链仍需独立保留集、单位/闭合性/误差报告和原生几何桥",
+        "未知 schema、未解析实体、Float32 零面积三角和重复 witness 不得升级为 ready"
+      ]
+    },
+    {
+      "id": "S5",
+      "status": "partial",
+      "summary": "RVT 平面实体、非矩形开洞和组 placement 已有真实 preview；SolidWorks 仅有五件同来源零件的受限 display preview。",
+      "evidence": [
+        "docs/reports/industrial-rvt-planar-family-2026-09-18.md",
+        "docs/reports/industrial-rvt-holed-solids-2026-09-18.md",
+        "docs/reports/industrial-rvt-group-placement-2026-09-18.md",
+        "docs/specs/industrial-solidworks-s0-2026-09-18.md",
+        "docs/specs/industrial-solidworks-display-geometry-2026-09-18.md"
+      ],
+      "openGates": [
+        "RVT 尚无两栋独立建筑的结构/机电/链接完整关系证据",
+        "SolidWorks 尚无三来源 20 零件/8 装配、配置/抑制/外部引用和装配几何证据"
+      ]
+    },
+    {
+      "id": "S6",
+      "status": "project_post_acceptance",
+      "summary": "通用产物审计、失败隔离、旧版本保留和回滚基础存在；七方向混合场景、断网安装、升级回滚及视觉终验尚未形成完成证据。",
+      "evidence": [
+        "docs/specs/industrial-stage-delta-2026-09-18.md",
+        "docs/specs/industrial-s0-install-size-coldstart-2026-09-18.md",
+        "docs/specs/industrial-s0-license-closure-2026-09-18.md",
+        "docs/specs/industrial-s1-attempt-closure-2026-09-18.md",
+        "docs/specs/industrial-s1-s6-evidence-binding-2026-09-19.md"
+      ],
+      "openGates": [
+        "干净 Windows OS 级断网安装、首交互、临时磁盘和权限矩阵",
+        "独立版本保留集上的 Web/Native 混合场景选择、测量、绑定、发布和回滚",
+        "所有开放 profile 的双主题、双分辨率、视觉和性能终验"
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "id": "bim.jt-builtin",
+      "displayName": "JT",
+      "quality": "preview",
+      "productionReady": false,
+      "reason": "已验证 9.5/10.x 子集，完整版本/编码/引用矩阵未关闭"
+    },
+    {
+      "id": "bim.xt-builtin",
+      "displayName": "X_T",
+      "quality": "preview",
+      "productionReady": false,
+      "reason": "X_T 109 件语料按 SHA-256 去重后为 10 件唯一(2026-09-19 保留集审计发现,原因字段已修正);研究解析与见证审计;生产 profile 认证数为 0",
+      "corpusUniqueBySha": 10,
+      "corpusFiles": 109
+    },
+    {
+      "id": "bim.rvt-builtin",
+      "displayName": "RVT",
+      "quality": "preview",
+      "productionReady": false,
+      "reason": "平面/开洞/组 placement 受限子集，整楼关系未关闭"
+    },
+    {
+      "id": "bim.pointcloud-builtin",
+      "displayName": "E57/LAS/LAZ/COPC",
+      "quality": "inspect",
+      "productionReady": false,
+      "reason": "Reader/属性证据，无正式点云导入和渲染入口"
+    },
+    {
+      "id": "bim.3dtiles-builtin",
+      "displayName": "3D Tiles",
+      "quality": "preview",
+      "productionReady": false,
+      "reason": "本地预检和 GLB 1/RTC 研究转换，未接空间运行时"
+    },
+    {
+      "id": "bim.3dm-builtin",
+      "displayName": "Rhino 3DM",
+      "quality": "preview",
+      "productionReady": false,
+      "reason": "保存网格和受限曲面预览，复杂 trim/缝合未关闭"
+    },
+    {
+      "id": "bim.solidworks-builtin",
+      "displayName": "SolidWorks SLDPRT/SLDASM",
+      "quality": "preview",
+      "productionReady": false,
+      "reason": "五件同来源零件 display preview，装配资格未满足"
+    }
+  ],
+  "verification": {
+    "apiBuild": {
+      "command": "pnpm --filter @bim-studio/api build",
+      "result": "pass",
+      "scope": "TypeScript/API production build plus industrial-worker-host.exe"
+    },
+    "apiFull": {
+      "command": "pnpm --filter @bim-studio/api exec vitest run --maxWorkers=4",
+      "result": "pass",
+      "testFiles": 212,
+      "testsPassed": 1387,
+      "testsSkipped": 4,
+      "scope": "API full regression after shared external-worker resource-exit fencing"
+    },
+    "sharedWorkerBoundary": {
+      "command": "pnpm --filter @bim-studio/api exec vitest run --maxWorkers=4 src/externalConverterCatalog.test.ts src/conversionTasks.failure.test.ts src/industrialJobHost.test.ts src/builtinJtWorkerExecutor.test.ts src/conversionTasks.lease.test.ts src/postgresStore.concurrency.test.ts",
+      "result": "pass",
+      "testFiles": 6,
+      "testsPassed": 52,
+      "scope": "external converter resource exit, JT/Windows Job lifetime, lease fencing and real PostgreSQL multi-instance concurrency"
+    },
+    "apiIndustrialFocused": {
+      "command": "pnpm --filter @bim-studio/api exec vitest run src/industrialJobHost.test.ts src/builtinJtWorkerExecutor.test.ts src/builtinE57Inspection.test.ts src/builtinE57NegativeCorpus.test.ts src/solidworksPreviewExecutor.test.ts src/conversionAttemptObjects.test.ts src/conversionQualityPublication.test.ts src/conversionSourceCache.test.ts src/conversionTaskIdempotency.test.ts src/conversionTasks.failure.test.ts src/conversionTasks.lease.test.ts src/modelConversionDurability.test.ts src/postgresStateRevision.test.ts src/postgresStore.concurrency.test.ts",
+      "result": "pass",
+      "testFiles": 14,
+      "tests": 114
+    },
+    "industrialPureAudits": {
+      "command": "node --test scripts/lib/industrialB3dmPreflight.test.mjs scripts/lib/industrialTilesProperties.test.mjs scripts/lib/industrialTilesRtc.test.mjs scripts/audit-xt-face-geometry.test.mjs scripts/audit-xt-glb-source-identities.test.mjs scripts/lib/xtGlbSourceMap.test.mjs scripts/lib/xtSourceCountAudit.test.mjs scripts/lib/xtSourceIdentityAudit.test.mjs",
+      "result": "pass",
+      "tests": 45
+    },
+    "evidenceBinding": {
+      "command": "node scripts/fixtures/bind-industrial-stage-evidence.mjs",
+      "result": "pass",
+      "referencedEvidenceCount": 25,
+      "artifact": "test-output/industrial-s1-s6-evidence-binding-20260919/evidence.json",
+      "scope": "SHA-256 binding of every current S1–S6 matrix evidence report; does not upgrade stage or profile quality"
+    },
+    "rvtRealCorpus": {
+      "commands": [
+        "node --test scripts/rvt-source-profiles.test.mjs",
+        "node --test scripts/rvt-planar-family.test.mjs",
+        "node --test scripts/rvt-group-geometry.test.mjs",
+        "node --test scripts/rvt-holed-prism.test.mjs"
+      ],
+      "result": "pass",
+      "tests": 12,
+      "realGeometry": {
+        "planarSolids": 26,
+        "groupInstances": 11,
+        "holedSolids": 42,
+        "holedTriangles": 5208
+      }
+    }
+  }
+}
