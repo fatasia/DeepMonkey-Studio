@@ -15,3 +15,4 @@ export * from "./sceneClientResources.js";
 export * from "./sceneClientRuntimeDependencies.js";
 export * from "./transferSanitization.js";
 export * from "./sceneClientDependencyInputs.js";
+export * from "./alertEngine.js";

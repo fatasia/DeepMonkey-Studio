@@ -13,6 +13,8 @@ import { ensureDemoMetrics } from "./dataIntegration.js";
 import { registerDataEventRoutes } from "./dataEvents.js";
 import { MqttIngestSupervisor } from "./mqttIngest.js";
 import { registerMqttIngestRoutes } from "./mqttIngestRoutes.js";
+import { AlertRuleFileStore, AlertRuleRuntime, registerAlertRuleRoutes } from "./alertRules.js";
+import { registerDataReplayRoutes } from "./dataReplay.js";
 import { registerDataEndpointRuntime } from "./dataEndpointRuntime.js";
 import { loadOrCreateServerInstanceId, registerServerMetaRoute } from "./serverMeta.js";
 import { registerSystemRoutes } from "./system.js";
@@ -171,6 +173,11 @@ export async function buildApp() {
     return connectAsync(url, options as never) as never;
   });
   await registerMqttIngestRoutes(app, store, mqttIngest);
+  // P3 告警评估桥：数据事件 → AlertEngine → alarm 事件回灌 bus；规则持久化于 projects/<id>/alert-rules.json。
+  const alertRules = new AlertRuleRuntime({ bus: dataEventBus, ruleStore: new AlertRuleFileStore(config.dataDir) });
+  await registerAlertRuleRoutes(app, store, alertRules);
+  // P4 回放数据桥：数据集最近行 / bus retained latest → { revision, entries } 回放时间轴。
+  await registerDataReplayRoutes(app, { store, bus: dataEventBus, config });
   await registerNotificationRoutes(app, notifications);
   await registerRoutes(app, {
     store,
@@ -241,6 +248,7 @@ export async function buildApp() {
   batteryScheduler.start();
   app.addHook("onClose", async () => {
     await mqttIngest.stopAll();
+    alertRules.dispose();
     batteryScheduler.stop();
     maintenanceScheduler.stop();
     vision.stop();
