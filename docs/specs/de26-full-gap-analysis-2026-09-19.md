@@ -359,3 +359,47 @@
 6. **产出**:`docs/reports/final-benchmark-vs-platforms-<date>.md`——按五轴定档逐轴"数字→超越线判定→对标线判定→证据链接",未测项如实标 unverified。
 
 前置依赖:#18(已完)→C3→R6-1/A 组对拍 harness(A01-X)→各效果卡收口。执行建议:性能与视觉全量可两 lane 并行,修复轮由主线程兜底。
+
+
+## 十三、高价值缺口补足与后续全量对比任务（2026-09-19 用户追加）
+
+用户指示：将高价值不足之处补足，并将后续与 Orillusion/Three.js/Babylon.js/Unity/UE 的性能、效果、质量对比加入后续任务。以下任务进入后续执行账本；每项必须有实现、测试、真实证据，未测不写超越。
+
+### Wave A：先补最影响性能/效果的缺口
+
+| 优先 | 任务 | 补足内容 | 验收证据 |
+|---|---|---|---|
+| A1 | **C3 增量扩展** | 材质/纹理/LOD/阴影标志/单几何变更的增量路径；20000 实例压力档；Deep2D 文本独立夹具 | 各变更类型 scene_update/upload/encode/submit 中位数；与全量路径逐字段一致；无变更不重建 |
+| A2 | **R4 GPU-driven 完整管线** | DCIR v1 buffer I/O、GPU frustum+HiZ 遮挡、indirect draw、meshlet 可见性缓冲、编译期 HLOD/LOD | CPU prepare、draw/indirect 数、GPU P50/P95/P99、显存与内容质量；低模自动回落常规管线 |
+| A3 | **R1 DDGI/Surface Cache 对位** | probe clipmap→DDGI 探针体、动态物体间接光、滚动网格、mesh SDF、漏光与室内外更新 | Unity 7 Surface Cache GI 同场景同镜头；GI-off/on 消融、动态更新延迟、漏光边界、SSIM/MAE/edge F1 |
+| A4 | **G7 体积介质** | 光线步进参与介质、体积散射、体积阴影、灯光耦合、God rays | Babylon/Three 同场景效果对比；Unity/UE 体积光对标；运动轨迹截图与 GPU 成本 |
+| A5 | **E05 深层阴影/光照** | PCSS、接触阴影、面积光软阴影、点光全向质量、阴影缓存失效 | 每灯/每对象投接影矩阵；32/128/256/1024 灯梯度；闪烁/拖影/边缘质量与 GPU 成本 |
+| A6 | **C04/C05 工业材质高频补足** | 车漆、湿表面、水面、玻璃、金属涂层；不做无边界通用材质节点编辑器 | Unity/UE 同镜头材质逐格截图；材质参数单位/降级报告；跨 Web/Native 一致 |
+| A7 | **R12 帧调试器 + H03 时间轴** | 单帧 pass 捕获、颜色/深度/绑定查看、CPU 四段+GPU 段并排时间轴、source map→源构件 | 以 Spector/WebGPU Inspector 为基准；点像素→源构件→pass 链路；导出可复现故障包 |
+| A8 | **R10/R11 物理与工业动画** | Rapier Web/native 同源 fixed timestep、机械约束、动画状态机、路径/约束驱动；retargeting 明确不做 | Web/Native 状态 digest 一致；碰撞/约束/动画回放；CPU/GPU 成本与异常恢复 |
+
+### Wave B：全量平台对比执行包（A01-X）
+
+| 任务 | 内容 | 必须输出 |
+|---|---|---|
+| B1 | **六类负载冻结** | factory-instances、heterogeneous-bim、far-origin-campus、dynamic-workcell、mixed-dashboard、appearance-showcase；每类固定资产 SHA、镜头轨迹、数据修订、质量档 |
+| B2 | **七端/五端适配** | Deep-WebGPU、Deep-Native、Three.js、Babylon.js、Orillusion、Unity 6000.x、UE 5.8/未来 UE6 可用时加入；缺少端时标 unverified，不缩分母 |
+| B3 | **统一性能协议** | CPU 四段、GPU timestamp、P50/P95/P99、draw/indirect 数、显存/内存、上传、首帧可交互、包体；同硬件/同分辨率/同质量档 |
+| B4 | **统一效果协议** | GI、体积、IES/灯光、阴影、材质、透明、细线、动画各格；双主题截图、运动轨迹、SSIM/MAE/edge F1、人工语义检查 |
+| B5 | **统一质量协议** | 逐位确定性、重复运行、长稳、设备丢失、断网、坏包、回滚、可访问性、发布/恢复；失败直接修复后重跑，不标 known-issue 豁免 |
+| B6 | **统一报告与判定** | 每行输出“实测数字→Babylon/Three/Orillusion 超越判定→Unity 对标判定→UE 参考判定→证据链接”；性能、效果、质量三轴分别判定，不允许强项抵扣弱项 |
+
+### Wave C：轻量化约束
+
+A1–A8 与 B1–B6 每次新增能力都必须同时更新 R8 账本：web 首屏、WASM、Native EXE、运行包、显存/内存、冷启动、增量传输、依赖数量。**能力增长但体积/内存超预算时，必须改为编译期产物、按需加载或缩小范围，不允许无条件堆运行时依赖。**
+
+### 终局完成标准
+
+只有满足以下条件，才可在最终报告中写“全面超越/对标”：
+
+1. Wave A 高价值缺口按各自卡片完成并有真实证据；
+2. Wave B 全量对比至少完成 Deep-WebGPU、Deep-Native、Three.js、Babylon.js、Orillusion、Unity 六端；UE5/UE6 单列参考，不因缺数据降分母；
+3. 性能、效果、质量三轴分别通过，不能用确定性/编译链优势抵扣帧时间或画质劣势；
+4. FINAL-GATE 两轮全绿；
+5. R8 轻量化预算无未解释超限；
+6. 任何未测、未覆盖、无法运行的端或能力都明确标记 `unverified`。
