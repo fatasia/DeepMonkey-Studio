@@ -1,8 +1,13 @@
 import { type Document, type Mesh, type Primitive } from "@gltf-transform/core";
+import { KHRMaterialsEmissiveStrength } from "@gltf-transform/extensions";
 import * as THREE from "three";
 import { MeshBVH } from "three-mesh-bvh";
 import type { BakeLightState } from "./modelOptimizer";
 import { denoiseTexture, dilateTexture, encodeLightmapPng } from "./lightmapTexture";
+import { createBounceScratch, diffuseBounce, type BounceSurface } from "./lightmapIndirect";
+import { createLightmapMaterialSamplers, type SurfaceSample } from "./lightmapMaterial";
+import { packLightmapRadiance } from "./lightmapRadiance";
+import { separateLightmapInstances } from "./lightmapInstances";
 
 export interface WebLightmapOptions {
   resolution: 256 | 512 | 1024;
@@ -14,7 +19,7 @@ export interface WebLightmapOptions {
   aoSamples: 4 | 8;
   shadows: boolean;
   shadowSamples: 1 | 4 | 8;
-  indirectSamples: 0 | 2 | 4;
+  indirectSamples: 0 | 2 | 4 | 64;
   denoise: boolean;
 }
 
@@ -28,9 +33,10 @@ export interface WebLightmapResult {
   shadowSamples: number;
   indirectSamples: number;
   denoised: boolean;
+  emissiveStrength: number;
 }
 
-interface PrimitiveBakeTarget {
+export interface PrimitiveBakeTarget {
   primitive: Primitive;
   mesh: Mesh;
   matrix: THREE.Matrix4;
@@ -41,11 +47,12 @@ interface PrimitiveBakeTarget {
   indices?: NonNullable<ReturnType<Primitive["getIndices"]>> | undefined;
 }
 
-interface SceneAcceleration {
+export interface SceneAcceleration {
   bvh?: MeshBVH;
   geometry?: THREE.BufferGeometry;
   radius: number;
   epsilon: number;
+  surfaces?: BounceSurface[];
 }
 
 interface LightingScratch {
@@ -56,9 +63,8 @@ interface LightingScratch {
   bitangent: THREE.Vector3;
   local: THREE.Vector3;
   ray: THREE.Ray;
-  bounceRay: THREE.Ray;
-  bounceNormal: THREE.Vector3;
-  bounceLighting: THREE.Vector3;
+  bounce: ReturnType<typeof createBounceScratch>;
+  indirect: THREE.Vector3;
   colors: Map<string, THREE.Color>;
   ambientColor: THREE.Color;
   lighting: THREE.Vector3;
@@ -78,18 +84,20 @@ export async function bakeWebLightmap(
   onProgress?: (message: string) => void,
   encodeTexture: (pixels: Uint8ClampedArray, resolution: number) => Promise<Uint8Array> = encodeLightmapPng,
 ): Promise<WebLightmapResult> {
+  const separatedInstances = separateLightmapInstances(document);
   const targets = collectTargets(document);
   if (targets.length === 0) throw new Error("模型没有可用于光照贴图的三角面和法线");
+  const samplers = await createLightmapMaterialSamplers(targets.map(target => target.primitive), undefined, options.indirectSamples > 0);
   const resolution = options.resolution;
   const occlusionPixels = new Uint8ClampedArray(resolution * resolution * 4);
-  const lightingPixels = new Uint8ClampedArray(resolution * resolution * 4);
+  const linearLighting = new Float32Array(resolution * resolution * 4);
   const covered = new Uint8Array(resolution * resolution);
   occlusionPixels.fill(255);
-  for (let index = 3; index < lightingPixels.length; index += 4) lightingPixels[index] = 255;
 
   onProgress?.("正在构建场景遮挡加速结构");
-  const acceleration = options.shadows || options.ambientOcclusion ? buildSceneAcceleration(targets) : { radius: 1, epsilon: 0.0001 };
-  const hasUnwrappedAtlas = targets.every((target) => target.lightmapUv?.getCount() === target.position.getCount());
+  const acceleration = options.shadows || options.ambientOcclusion || options.indirectSamples > 0 ? buildSceneAcceleration(targets, samplers) : { radius: 1, epsilon: 0.0001 };
+  try {
+  const hasUnwrappedAtlas = !separatedInstances && targets.every((target) => target.lightmapUv?.getCount() === target.position.getCount());
   const gridSize = Math.ceil(Math.sqrt(targets.length));
   const cellSize = resolution / gridSize;
   let generatedUvs = 0;
@@ -108,13 +116,14 @@ export async function bakeWebLightmap(
         .setArray(atlasUvs)
         .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("Deep Monkey Studio lightmap")),
     );
-    coveredTexels += await rasterizePrimitive(target, atlasUvs, occlusionPixels, lightingPixels, covered, resolution, options, acceleration);
+    coveredTexels += await rasterizePrimitive(target, atlasUvs, occlusionPixels, linearLighting, covered, resolution, options, acceleration, samplers.get(target.primitive)!);
     if (targetIndex % 12 === 0) {
       onProgress?.(`正在烘焙光照贴图 ${targetIndex + 1}/${targets.length}`);
       await yieldToBrowser();
     }
   }
 
+  const { pixels: lightingPixels, strength: emissiveStrength } = packLightmapRadiance(linearLighting);
   if (options.denoise) {
     onProgress?.("正在对光照贴图降噪");
     denoiseTexture(occlusionPixels, covered, resolution, options.indirectSamples >= 4 ? 2 : 1);
@@ -127,10 +136,12 @@ export async function bakeWebLightmap(
   const occlusionTexture = document.createTexture("Deep Monkey Studio Occlusion Lightmap").setMimeType("image/png").setImage(occlusionPng);
   const lightingTexture = document.createTexture("Deep Monkey Studio Colored Lightmap").setMimeType("image/png").setImage(lightingPng);
   const materials = new Set(targets.map((target) => target.primitive.getMaterial()).filter((material) => material !== null));
+  const emissionExtension = document.createExtension(KHRMaterialsEmissiveStrength);
   for (const material of materials) {
     material!.setOcclusionTexture(occlusionTexture).setOcclusionStrength(1);
     material!.getOcclusionTextureInfo()!.setTexCoord(1);
     material!.setEmissiveTexture(lightingTexture).setEmissiveFactor([1, 1, 1]);
+    material!.setExtension("KHR_materials_emissive_strength", emissionExtension.createEmissiveStrength().setEmissiveStrength(emissiveStrength));
     material!.getEmissiveTextureInfo()!.setTexCoord(1);
     material!.setExtras({
       ...material!.getExtras(),
@@ -141,6 +152,7 @@ export async function bakeWebLightmap(
         shadows: options.shadows,
         softShadowSamples: options.shadowSamples,
         indirectSamples: options.indirectSamples,
+        indirectMethod: "single-bounce-diffuse",
         ambientOcclusion: options.ambientOcclusion,
         denoise: options.denoise,
         colored: true,
@@ -149,7 +161,6 @@ export async function bakeWebLightmap(
       },
     });
   }
-  acceleration.geometry?.dispose();
   return {
     resolution,
     primitives: targets.length,
@@ -160,10 +171,12 @@ export async function bakeWebLightmap(
     shadowSamples: options.shadowSamples,
     indirectSamples: options.indirectSamples,
     denoised: options.denoise,
+    emissiveStrength,
   };
+  } finally { acceleration.geometry?.dispose(); }
 }
 
-function collectTargets(document: Document): PrimitiveBakeTarget[] {
+export function collectTargets(document: Document): PrimitiveBakeTarget[] {
   const firstMatrixByMesh = new Map<Mesh, THREE.Matrix4>();
   let fallbackMaterial = document
     .getRoot()
@@ -200,12 +213,26 @@ function collectTargets(document: Document): PrimitiveBakeTarget[] {
   return targets;
 }
 
-function buildSceneAcceleration(targets: PrimitiveBakeTarget[]): SceneAcceleration {
+export function buildSceneAcceleration(targets: PrimitiveBakeTarget[], samplers: Map<Primitive, SurfaceSample>): SceneAcceleration {
   const positions: number[] = [];
+  const surfaces: BounceSurface[] = [];
   const point = new THREE.Vector3();
   const bounds = new THREE.Box3();
   for (const target of targets) {
     const indices = triangleIndices(target);
+    const material = target.primitive.getMaterial()!;
+    const base = material.getBaseColorFactor();
+    const surface = { diffuse: new THREE.Vector3(base[0], base[1], base[2]).multiplyScalar(1 - material.getMetallicFactor()),
+      emission: new THREE.Vector3().fromArray(material.getEmissiveFactor()), doubleSided: material.getDoubleSided() };
+    for (let offset = 0; offset + 2 < indices.length; offset += 3) {
+      const corners = indices.slice(offset, offset + 3), pointValues: number[] = [];
+      const vertices = corners.map(index => { target.position.getElement(index, pointValues);return new THREE.Vector3().fromArray(pointValues).applyMatrix4(target.matrix); });
+      const barycentric = new THREE.Vector3(), weights = [0, 0, 0];
+      surfaces.push({ ...surface, sample: (point, diffuse, emission) => {
+        THREE.Triangle.getBarycoord(point, vertices[0]!, vertices[1]!, vertices[2]!, barycentric);
+        barycentric.toArray(weights);return samplers.get(target.primitive)!(corners, weights, diffuse, emission);
+      } });
+    }
     const value: number[] = [];
     for (const index of indices) {
       target.position.getElement(index, value);
@@ -219,7 +246,7 @@ function buildSceneAcceleration(targets: PrimitiveBakeTarget[]): SceneAccelerati
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   const bvh = new MeshBVH(geometry, { targetLeafSize: 20 });
   const radius = Math.max(bounds.getSize(new THREE.Vector3()).length() * 0.5, 0.001);
-  return { bvh, geometry, radius, epsilon: Math.max(radius * 0.00002, 0.00001) };
+  return { bvh, geometry, surfaces, radius, epsilon: Math.max(radius * 0.00002, 0.00001) };
 }
 
 function readUvs(accessor: NonNullable<PrimitiveBakeTarget["lightmapUv"]>): Float32Array<ArrayBuffer> {
@@ -278,11 +305,12 @@ async function rasterizePrimitive(
   target: PrimitiveBakeTarget,
   uvs: Float32Array,
   occlusionPixels: Uint8ClampedArray,
-  lightingPixels: Uint8ClampedArray,
+  lightingPixels: Float32Array,
   covered: Uint8Array,
   resolution: number,
   options: WebLightmapOptions,
   acceleration: SceneAcceleration,
+  sampleMaterial: SurfaceSample,
 ): Promise<number> {
   const indices = triangleIndices(target);
   const positions = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
@@ -297,14 +325,14 @@ async function rasterizePrimitive(
     bitangent: new THREE.Vector3(),
     local: new THREE.Vector3(),
     ray: new THREE.Ray(),
-    bounceRay: new THREE.Ray(),
-    bounceNormal: new THREE.Vector3(),
-    bounceLighting: new THREE.Vector3(),
+    bounce: createBounceScratch(),
+    indirect: new THREE.Vector3(),
     lighting: new THREE.Vector3(),
     ambientColor: new THREE.Color(options.ambientColor),
     colors: new Map(options.lights.map((light) => [light.id, new THREE.Color(light.color)])),
   };
   const value: number[] = [];
+  const receiverDiffuse = new THREE.Vector3(), receiverEmission = new THREE.Vector3(), weights = [0, 0, 0];
   let added = 0;
   let lastYield = nowMilliseconds();
   for (let offset = 0; offset + 2 < indices.length; offset += 3) {
@@ -334,6 +362,8 @@ async function rasterizePrimitive(
         worldPosition.copy(positions[0]!).multiplyScalar(w0).addScaledVector(positions[1]!, w1).addScaledVector(positions[2]!, w2);
         worldNormal.copy(normals[0]!).multiplyScalar(w0).addScaledVector(normals[1]!, w1).addScaledVector(normals[2]!, w2).normalize();
         evaluateLighting(worldPosition, worldNormal, options, acceleration, scratch);
+        weights[0] = w0;weights[1] = w1;weights[2] = w2;
+        sampleMaterial(vertexIndices, weights, receiverDiffuse, receiverEmission);
         const lightLevel = THREE.MathUtils.clamp(scratch.lighting.x * 0.2126 + scratch.lighting.y * 0.7152 + scratch.lighting.z * 0.0722, 0, 1);
         const finalOcclusion = THREE.MathUtils.clamp(1 - options.strength * (1 - lightLevel), 0, 1);
         const occlusionByte = Math.round(finalOcclusion * 255);
@@ -342,9 +372,9 @@ async function rasterizePrimitive(
         occlusionPixels[channel] = occlusionPixels[channel + 1] = occlusionPixels[channel + 2] = occlusionByte;
         occlusionPixels[channel + 3] = 255;
         const neutralLight = Math.min(scratch.lighting.x, scratch.lighting.y, scratch.lighting.z);
-        lightingPixels[channel] = encodeChromaEmission(scratch.lighting.x, neutralLight, options.strength);
-        lightingPixels[channel + 1] = encodeChromaEmission(scratch.lighting.y, neutralLight, options.strength);
-        lightingPixels[channel + 2] = encodeChromaEmission(scratch.lighting.z, neutralLight, options.strength);
+        lightingPixels[channel] = lightmapRadiance(scratch.lighting.x, neutralLight, options.strength, scratch.indirect.x * receiverDiffuse.x, receiverEmission.x);
+        lightingPixels[channel + 1] = lightmapRadiance(scratch.lighting.y, neutralLight, options.strength, scratch.indirect.y * receiverDiffuse.y, receiverEmission.y);
+        lightingPixels[channel + 2] = lightmapRadiance(scratch.lighting.z, neutralLight, options.strength, scratch.indirect.z * receiverDiffuse.z, receiverEmission.z);
         lightingPixels[channel + 3] = 255;
         if (!covered[pixelIndex]) {
           covered[pixelIndex] = 1;
@@ -406,47 +436,11 @@ function evaluateLighting(position: THREE.Vector3, normal: THREE.Vector3, option
       scratch.lighting.z += color.b * contribution;
     }
   }
-  if (options.indirectSamples > 0 && acceleration.bvh) {
-    scratch.bounceLighting.set(0, 0, 0);
-    let bounceHits = 0;
-    for (let index = 0; index < options.indirectSamples; index += 1) {
-      const direction = hemisphereDirection(normal, index, options.indirectSamples, scratch);
-      scratch.origin.copy(position).addScaledVector(normal, acceleration.epsilon).addScaledVector(direction, acceleration.epsilon);
-      scratch.bounceRay.set(scratch.origin, direction);
-      const hit = acceleration.bvh.raycastFirst(scratch.bounceRay, THREE.DoubleSide, acceleration.epsilon, acceleration.radius * 0.65);
-      if (!hit?.face) continue;
-      bounceHits += 1;
-      const bounceNormal = scratch.bounceNormal.copy(hit.face.normal).normalize();
-      if (bounceNormal.dot(direction) > 0) bounceNormal.negate();
-      addDirectLightingAt(hit.point, bounceNormal, options, scratch.bounceLighting, scratch);
-    }
-    if (bounceHits > 0) scratch.lighting.addScaledVector(scratch.bounceLighting, 0.22 / options.indirectSamples);
-  }
+  diffuseBounce(position, normal, options.indirectSamples, acceleration, options.lights, scratch.indirect, scratch.bounce);
   return THREE.MathUtils.clamp(occlusion, 0, 1);
 }
 
-function addDirectLightingAt(position: THREE.Vector3, normal: THREE.Vector3, options: WebLightmapOptions, output: THREE.Vector3, scratch: LightingScratch) {
-  output.x += scratch.ambientColor.r * options.ambient;
-  output.y += scratch.ambientColor.g * options.ambient;
-  output.z += scratch.ambientColor.b * options.ambient;
-  for (const light of options.lights) {
-    if (!light.enabled || light.intensity <= 0) continue;
-    const direction = scratch.direction.fromArray(light.type === "point" ? light.position : light.direction);
-    if (light.type === "point") direction.sub(position);
-    const distance = direction.length();
-    direction.normalize();
-    const attenuation = light.type === "point" ? Math.pow(Math.max(0, 1 - distance / Math.max(light.range, 0.001)), 2) : 1;
-    const diffuse = Math.max(0, normal.dot(direction));
-    const color = scratch.colors.get(light.id);
-    if (!color || diffuse <= 0 || attenuation <= 0) continue;
-    const contribution = diffuse * light.intensity * attenuation;
-    output.x += color.r * contribution;
-    output.y += color.g * contribution;
-    output.z += color.b * contribution;
-  }
-}
-
-function isOccluded(position: THREE.Vector3, normal: THREE.Vector3, direction: THREE.Vector3, far: number, acceleration: SceneAcceleration, scratch: LightingScratch): boolean {
+export function isOccluded(position: THREE.Vector3, normal: THREE.Vector3, direction: THREE.Vector3, far: number, acceleration: SceneAcceleration, scratch: Pick<LightingScratch, "origin" | "ray">): boolean {
   if (!acceleration.bvh) return false;
   scratch.origin.copy(position).addScaledVector(normal, acceleration.epsilon).addScaledVector(direction, acceleration.epsilon);
   scratch.ray.set(scratch.origin, direction);
@@ -501,13 +495,8 @@ function edge(a: THREE.Vector2, b: THREE.Vector2, point: THREE.Vector2): number 
   return (point.x - a.x) * (b.y - a.y) - (point.y - a.y) * (b.x - a.x);
 }
 
-function linearToSrgb(value: number): number {
-  return value <= 0.0031308 ? value * 12.92 : 1.055 * Math.pow(value, 1 / 2.4) - 0.055;
-}
-
-function encodeChromaEmission(channel: number, neutralLight: number, strength: number): number {
-  const chroma = THREE.MathUtils.clamp((channel - neutralLight) * strength * 0.65, 0, 1);
-  return Math.round(linearToSrgb(chroma) * 255);
+function lightmapRadiance(channel: number, neutralLight: number, strength: number, indirect = 0, emission = 0): number {
+  return Math.max(0, ((channel - neutralLight) * 0.65 + indirect) * strength + emission);
 }
 
 function clampInt(value: number, min: number, max: number): number {
