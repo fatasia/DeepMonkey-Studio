@@ -1,0 +1,53 @@
+{
+  "schema": "deep-engine.physics-scene",
+  "schemaVersion": 1,
+  "id": "r10-drop-scene-v1",
+  "timestep": {
+    "mode": "fixed",
+    "dt": 0.016666666666666666,
+    "steps": 240,
+    "note": "dt 为 f64 JSON 数;两端以 IEEE 最近偶舍入转 f32(1/60),逐位一致。由宿主循环精确调用 step() 共 steps 次,timestep-mode=Fixed,不用引擎的 Variable 步进。"
+  },
+  "gravity": [0.0, -9.81, 0.0],
+  "ground": {
+    "kind": "cuboid",
+    "halfExtents": [25.0, 0.5, 25.0],
+    "translation": [0.0, -0.5, 0.0],
+    "friction": 0.05,
+    "restitution": 0.5,
+    "bodyType": "fixed",
+    "canSleep": false
+  },
+  "bodies": [
+    {
+      "id": "sphere-a",
+      "shape": { "kind": "ball", "radius": 0.5 },
+      "translation": [-1.5, 2.0, 0.0],
+      "linvel": [0.0, 0.0, 0.0],
+      "bodyType": "dynamic",
+      "canSleep": false
+    },
+    {
+      "id": "sphere-b",
+      "shape": { "kind": "ball", "radius": 0.75 },
+      "translation": [0.0, 3.5, 0.0],
+      "linvel": [0.5, 0.0, 0.0],
+      "bodyType": "dynamic",
+      "canSleep": false
+    },
+    {
+      "id": "sphere-c",
+      "shape": { "kind": "ball", "radius": 1.0 },
+      "translation": [1.5, 5.0, 0.0],
+      "linvel": [-0.25, 1.0, 0.0],
+      "bodyType": "dynamic",
+      "canSleep": false
+    }
+  ],
+  "contract": {
+    "frameFormat": "physics-frame-v1",
+    "disciplineSource": "dynamic-frame-v1 (packages/deep-engine-native/src/runtime_package/dynamic_scene.rs)",
+    "componentOrder": ["tx", "ty", "tz", "qx", "qy", "qz", "qw"],
+    "bitHashOrder": "step 升序 → body 按 id 字典序 → 分量按 componentOrder;每分量 f32 to_le_bytes(小端)"
+  }
+}

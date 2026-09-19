@@ -1,0 +1,90 @@
+# R10 物理选型验证:Rapier 同源内核跨端确定性(2026-09-20 r1)
+
+依据 `docs/specs/de26-full-gap-analysis-2026-09-19.md` 6.3 节(Rapier/Avian 路线)。
+本目录是**独立验证 crate**,不接入主 crate `deep-engine-native` 的构建;选型通过后再决定晋升。
+
+## 结论(一句话)
+
+Rapier 0.35.3(Rust native)与 `@dimforge/rapier3d-compat@0.20.0`(wasm)在**同一场景 spec、
+fixed timestep(1/60)× 240 步**下,241 帧变换序列**逐位一致**(f32 位序哈希相等),
+wasm 端内双跑逐位一致,native 端内三跑逐位一致。选型的核心风险(跨端确定性)实测消除。
+
+- native poseBitsSha256 = wasm poseBitsSha256 =
+  `5b932a57c8ce48c9e9854f22e97ad7c21c09a674c779c63f3691c11be6630309`
+- frameSequenceSha256(native = wasm)=
+  `841cb2f279d3dfdc30c16eb71f1e930dd54794667da8cb2ff363ec0a67f04ae4`
+
+## 同源内核配对证据(为何"跨端对照"成立)
+
+1. crates.io `cargo add rapier3d` 锁定 `=0.35.3`,Cargo.lock 解析出 **parry3d 0.30.2**。
+2. `npm pack @dimforge/rapier3d-compat@0.20.0` 解包,内嵌 base64 wasm 解码后(2,021,200 字节,
+   `\0asm` 头)strings 检索到 **83 处 `parry3d-0.30.2`** panic 路径符号。
+3. 两侧 parry 三角化版本一致 ⇒ 同一物理内核源码树;差异只在编译目标(x86-64 native vs wasm32)。
+4. rust `rapier3d::VERSION` 与 npm 包版本无直接映射表,以上符号检索是本仓库可复现的配对核对方式。
+
+## 复现步骤
+
+```bash
+# 1) Rust 侧:测试(native 双跑逐位一致、初速发散、金标等 9 项)
+cd packages/deep-engine-native/physics-validate
+cargo test
+
+# 2) Rust 侧:产 native 证据
+./target/debug/physics-validate.exe scene-spec-v1.json \
+  ../../../test-output/r10-rapier-validation-20260920-r1
+
+# 3) wasm 侧:装依赖(独立 npm 项目,不进 pnpm workspace)
+cd node-wasm && npm install --no-audit --no-fund
+
+# 4) wasm 侧:跑同场景 + 跨端对照 + 写 evidence.json
+node run-and-compare.mjs --spec ../scene-spec-v1.json \
+  --native ../../../test-output/r10-rapier-validation-20260920-r1/native-result.json \
+  --native-frames ../../../test-output/r10-rapier-validation-20260920-r1/frames-native.jsonl \
+  --out ../../../test-output/r10-rapier-validation-20260920-r1 \
+  --tests-json ../../../test-output/r10-rapier-validation-20260920-r1/tests-summary.json
+```
+
+## 场景与合同要点
+
+- **场景 spec 单一来源**:`scene-spec-v1.json`(3 球不同半径/高度/初速 + 地面盒,
+  恢复系数 0.5 弹跳、摩擦 0.05 滚动,休眠禁用)。两端各自读同一文件,不允许手抄参数。
+- **固定步长纪律**:dt 以 f64 存 JSON,两端显式转 f32(`as f32` / `Math.fround`,
+  IEEE 最近偶舍入),位型 `0x3c888889` 两侧一致;由宿主精确调 `step()` 240 次,
+  不用引擎 Variable 步进。无 sleep/线程/随机/真实时间进步进。
+- **physics-frame-v1 合同**(复用 dynamic-frame-v1 纪律,源头
+  `src/runtime_package/dynamic_scene.rs`):body 按 id 字典序、分量定点 6 位
+  (Rust `{:.6}` / TS `toFixed(6)`)、精确 ±0 归一、`-0` 守卫;每帧一行。
+- **双哈希**:规范帧串 SHA-256(接 R3 合同形态)+ f32 小端位序 SHA-256(严格逐位门禁,
+  不经十进制格式化)。两端**各自独立**从自己的世界状态产出规范串再哈希,杜绝"一侧抄另一侧"。
+- **已知格式语义**:极小负数(如 -1e-9)定点格式化为 `-0.000000`,这是 dynamic-frame-v1
+  同款语义;Rust/TS 对该形态输出逐字节一致,已在本证据的 241 帧串中实测核验。
+
+## 文件清单
+
+| 文件 | 作用 |
+|---|---|
+| `Cargo.toml` | 独立 crate;`rapier3d =0.35.3` + `enhanced-determinism`;serde 锁定与主 crate 同版 |
+| `scene-spec-v1.json` | 场景/步长/合同参数单一来源 |
+| `src/hash.rs` | SHA-256(与主 crate `shader_package/hash.rs` 同实现,含标准向量测试) |
+| `src/contract.rs` | physics-frame-v1 规范串、双哈希摘要、首分歧定位器 |
+| `src/runner.rs` | Rapier 世界构建 + 固定步长步进 + 逐帧记录 |
+| `src/main.rs` | CLI:写 `native-result.json`(含 framesRaw 原始 f32)与 `frames-native.jsonl` |
+| `tests/determinism.rs` | 9 项测试(见 evidence.json tests 轴) |
+| `node-wasm/` | 独立 npm 项目;`run-and-compare.mjs` 跑 wasm 场景、跨端比对、写 evidence.json |
+
+## 证据目录
+
+`test-output/r10-rapier-validation-20260920-r1/`:`evidence.json`(主证据)、
+`tests-summary.json`、`native-result.json`、`frames-native.jsonl`(241 行)、
+`wasm-result.json`、`frames-wasm.jsonl`(241 行)、`physics-validate.exe`(本机复现用)。
+
+## 与 F04/F05 的接线方案(剩余缺口)
+
+- F04(PhysicsWorld 宿主接线):以本 runner 为内核骨架,宿主 tick 固定步长驱动,
+  变更集(新增/移除刚体)走 revision 化命令,复用 R3 状态合同的 revision 语义。
+- F05(机械约束/关节):Rapier ImpulseJoint/MultibodyJoint 走同一 physics-frame-v1 合同,
+  但**关节路径的跨端逐位尚未验证**(本场景不含关节)——接入时必须先补关节场景的双端哈希门禁。
+- Web 接线:`@dimforge/rapier3d-compat` 免打包加载,与现有 delivery 管线的 wasm 加载方式合并;
+  WASM 二进制随包分发(离线纪律),不走 CDN。
+- 晋升决策:若采纳,把 `rapier3d =0.35.3` 提升进主 crate `Cargo.toml`(Cargo.lock 变更
+  需与 R4 车道协调),本 crate 保留为确定性门禁测试源。

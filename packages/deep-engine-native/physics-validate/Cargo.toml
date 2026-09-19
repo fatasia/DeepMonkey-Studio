@@ -1,0 +1,24 @@
+# R10 物理选型验证 crate(独立于主 crate deep-engine-native)。
+# 单独成包是为了不扰动主 crate 的 Cargo.lock 与构建(R4 车道在途、480min soak 运行中);
+# 选型通过后再决定是否晋升为主 crate 依赖。
+[workspace]
+
+[package]
+name = "physics-validate"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+description = "R10 selection validation: Rapier deterministic physics stepping (fixed timestep) with cross-end bitwise checks"
+publish = false
+
+[dependencies]
+# 锁定精确版本(与 @dimforge/rapier3d-compat@0.20.0 的 wasm 内核做同源对照,
+# 内核配对证据见 README.md)。enhanced-determinism 用 libm 替换平台相关数学,
+# 是 Rapier 官方跨平台确定性开关。
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
+
+[dependencies.rapier3d]
+version = "=0.35.3"
+features = ["enhanced-determinism"]
+default-features = true
