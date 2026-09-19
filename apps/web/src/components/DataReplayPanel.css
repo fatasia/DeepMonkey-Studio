@@ -1,0 +1,57 @@
+/* P4 回放面板:控件行 + 信号值表,视觉令牌走全局变量。 */
+.data-replay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+
+.data-replay-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.data-replay-panel__header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.data-replay-panel__revision {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  color: var(--text-secondary, inherit);
+}
+
+.data-replay-panel__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.data-replay-panel__clock {
+  font-family: var(--font-mono, monospace);
+}
+
+.data-replay-panel__values {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-2, 8px);
+}
+
+.data-replay-panel__values li {
+  display: flex;
+  flex-direction: column;
+}
+
+.data-replay-panel__error {
+  color: var(--danger, #c0392b);
+  margin: 0;
+}
+
+.data-replay-panel__empty {
+  color: var(--text-secondary, inherit);
+  margin: 0;
+}
