@@ -131,3 +131,37 @@
 3. **AI 轴成为下一版本周期的基本盘**:R5 从远期提前,且我们的形态(可校验、可回滚、可审计的 AI 事务)恰好是工业客户在 AI 时代唯一敢买的形态——这是把差距翻成对位优势的最大机会。
 
 行动清单增量(并入第 10 号清单):**11. R4/A2 标注截止窗口 2027Q1(Babylon 10 前拿数字);12. R5 提前至 Wave 2 并行;13. R1 对标线直接锚定 Unity 7 Surface Cache GI(2027Q1 重冻结时一次对拍);14. G6 政策按"Unity 7 平滑升级"修正迁移对拍条目。**
+
+
+## 六、2026-09-19 用户指示:可追项升级(物理/动画/Nanite/Lumen + 调试器核实)
+
+用户四条指示:效果与性能缺口纳入后续任务;Nanite/Lumen 能追则追且求超越方案;物理/动画可追(有成熟方案);核实帧调试/性能分析器在 Three/Babylon 生态的现状。核实结果与立卡如下。
+
+### 6.1 Nanite:从不追改为"开源肩膀上的追"(升级)
+
+- **新情报**:Bevy 0.14 已有开源 Nanite 级虚拟几何(jms55:visibility buffer + 软件光栅化小三角形 + GPU-driven LOD/剔除,代码上游);2026 年 CuRast 论文(CUDA 软件光栅化十亿三角形,宣称 2–5× 于硬件管线,Nanite 自家软 raster ≈3×);NVIDIA 2025 开源了连续 LOD cluster 层级工作。
+- **对位方案(超越路径)**:以 Bevy virtual geometry 的可见性缓冲架构为参考(合法借鉴架构,自研实现),把"软件光栅化小三角形"作为 DCIR v1 的第一个重量级 compute 负载——我们独有的**三端逐位确定性**恰好解决软 raster 的跨 GPU 数值分歧问题(这是 Bevy/NVIDIA 都没有的验证基建)。编译期侧与 G3(HLOD/meshlet 预分区)合流。
+- **立卡 R9(虚拟几何)**:阶段一 visibility buffer + meshlet 预分区(依赖 G3);阶段二 DCIR v1 软件光栅化 kernel + 逐位验证;阶段三 GPU-driven LOD 层级流送。量级:大(季度级),但每一阶段独立可用。
+
+### 6.2 Lumen:追,方案 = DDGI 探针体 + 编译期(升级)
+
+- **新情报**:Lumen 的核心思想 = 软件光追 + 表面缓存 + 距离场;开源对位 = **DDGI**(Dynamic Diffuse GI,Majercik 2019,探针体+无限滚动网格,Godot/Bevy/Falcor 均有实现先例)。
+- **对位方案**:R1 的表面缓存阶段直接采用 **DDGI 架构**(探针体已有——我们的 probeClipmap 就是探针网格,补:射线追击(距离场+软件光追)、探针无限滚动、无限更新+验证启发式)。超越路径同样走确定性:探针更新 kernel 进 DCIR,**跨端逐位一致的实时 GI 全行业没有第二家**。Lumen 的距离场依赖编译期 mesh SDF——这又是编译链优势(编译器产 SDF,运行时零成本)。
+- **归属**:R1 阶段二(表面缓存)改写为 DDGI 架构;编译期 mesh SDF 产线归 G3/编译链。
+
+### 6.3 物理:Rapier/Avian 路线确认
+
+- **新情报**:Rapier(dimforge,纯 Rust 2D/3D,成熟稳定)与 Avian(bevy_xpbd 后继,ECS 架构,当前 Bevy 生态最活跃)是两条现成路线;Rapier 有 WASM 版 → **Web 与 Native 同一物理内核可行**。
+- **立卡 R10(物理)**:F04/F05(宿主接线/机械约束)继续;物理内核选型 Rapier(双端 WASM+native 同源,确定性可验证——fixed timestep 下 Rapier 是确定性的,正好接我们的逐位门禁)。超越点:**跨端确定性物理重放**又是独家形态。量级:中。
+
+### 6.4 动画:不引引擎,按工业范围自补
+
+- **新情报**:成熟组合 = 引擎内建动画 + Bevy Animation Graph(动画图/状态机);retargeting 在开源世界也是短板(Bevy 0.17 仅基础支持)。工业场景以机械动画(TRS/路径/约束驱动)为主,角色动画非重点。
+- **立卡 R11(动画)**:F01 正式动画包基础上补:动画状态机(有限状态+过渡条件,进 R3 确定性合同)、路径/约束驱动动画(工业机械臂正路)、关键帧曲线编辑(编辑器已有基础)。retargeting 不做(如实)。量级:中小。
+
+### 6.5 帧调试器/性能分析器:生态核实结果与我方定位
+
+- **Three/Babylon 生态现状(2026 已核实)**:**Spector.js**(Babylon 团队出品,WebGL 帧捕获,但社区明确"调试渲染正确性,不给计时");**WebGPU Inspector**(Brendan Duncan,WebGPU 帧捕获/pass 输出/shader 热编辑);**Needle Inspector**(2026 新,three.js 专用帧捕获+MCP 集成);性能计时靠 Chrome DevTools + 原生 profiler(RGP/PIX/RenderDoc),**Web 端没有"时间细分的统一 Profiler"产品**。
+- **我方现状**:H02(对象到 GPU 诊断,RendererDiagnosticsPanel/Dialog 已有)、H03(统一 Profiler,Native 遥测 8 CPU 段+GPU timestamp 段已通——今晚 R6-2 基线就是它产的)、H04(材质调试)。
+- **差距真话**:工具"存在性"上我们不低于 Three/Babylon 生态(Spector 都没计时);**差距在打磨度**(他们帧捕获可逐 draw 检查输出纹理,我们的 H02 尚无帧捕获逐 pass 检视)。
+- **立卡 R12(帧捕获)**:H02 升级为"帧捕获模式"——单帧全 pass 截获(颜色/深度/绑定额),按 pass 树检视,结合 source map 定位到源对象;H03 补 CPU 四段细分(正在 R6-2 埋点)+ GPU 段并排时间轴。超越点:**帧捕获 + source map = "点任何一个像素,告诉你它来自哪个源构件、经过哪些 pass"——四平台的调试器都没有编译链语义**。量级:中。
