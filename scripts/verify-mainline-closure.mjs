@@ -348,10 +348,10 @@ async function checkIndustrial() {
 }
 
 async function checkAssetReadiness() {
-  const readinessRelative = "test-output/de26-local-assets-readiness-20260918/readiness.json";
-  const evidenceRelative = "test-output/de26-local-assets-readiness-20260918/readiness-evidence.json";
-  const sourceAuditRelative = "test-output/de26-rvt-source-audit-20260919-r4/evidence.json";
-  const reportRelative = "docs/reports/de26-asset-readiness-2026-09-18.md";
+  const readinessRelative = "test-output/de26-local-assets-readiness-20260919-r5/readiness.json";
+  const evidenceRelative = "test-output/de26-local-assets-readiness-20260919-r5/readiness-evidence.json";
+  const sourceAuditRelative = "test-output/de26-rvt-source-audit-20260919-r5/evidence.json";
+  const reportRelative = "docs/reports/de26-asset-readiness-2026-09-19-r5.md";
   const { value: readiness, file: readinessFile } = await readJson(readinessRelative);
   const { value: evidence, file: evidenceFile } = await readJson(evidenceRelative, false);
   const { value: sourceAudit, file: sourceAuditFile } = await readJson(sourceAuditRelative, false);
@@ -362,6 +362,14 @@ async function checkAssetReadiness() {
   const measuredSources = (readiness.assets ?? []).every((asset) => asset.source?.status === "measured");
   const status = readiness.status === "measured" && blockedChecks.length === 0 && unverifiedAssets.length === 0
     ? "passed" : "partial";
+  const statisticsResults = evidence?.sourceRvtStatistics?.results ?? null;
+  const statsByAsset = new Map((statisticsResults ?? []).flatMap((result) => (result.assetIds ?? []).map((id) => [id, result])));
+  const sourceStatistics = {
+    scope: evidence?.sourceRvtStatistics?.scope ?? null,
+    resultCount: Array.isArray(statisticsResults) ? statisticsResults.length : 0,
+    assetsWithSourceStatistics: [...statsByAsset.keys()],
+    unsupportedVersions: (statisticsResults ?? []).filter((item) => item.status === "unsupported-version").length,
+  };
   add("08-de26-asset-readiness", status, [
     { path: readinessRelative, ...(await fingerprint(readinessFile)) },
     ...(evidence ? [{ path: evidenceRelative, ...(await fingerprint(evidenceFile)) }] : []),
@@ -379,15 +387,21 @@ async function checkAssetReadiness() {
       taskKindRatio: evidence.coverage?.taskKinds?.ratio ?? null,
       gapCount: Array.isArray(evidence.gaps) ? evidence.gaps.length : null,
       derivedStatisticsAuthoritative: evidence.derivedStatistics?.authoritative ?? null,
-      sourceRvtAudit: sourceAudit ? {
-        scope: sourceAudit.scope ?? null,
-        resultCount: Array.isArray(sourceAudit.results) ? sourceAudit.results.length : 0,
-        unsupportedVersions: Array.isArray(sourceAudit.results) ? sourceAudit.results.filter((item) => item.status === "unsupported-version").length : 0,
-      } : null,
+      sourceRvtStatistics: sourceStatistics,
     } : null,
   }, status === "passed" ? [] : [
     ...(blockedChecks.length ? ["DE26 readiness still has blocked checks"] : []),
-    ...(unverifiedAssets.length ? ["DE26 readiness still lacks exact source-level geometry/material statistics for some assets"] : []),
+    ...(unverifiedAssets.length ? [
+      `DE26 readiness still lacks exact source-level geometry/material statistics: ${unverifiedAssets.map((asset) => {
+        const stats = statsByAsset.get(asset.id);
+        if (!stats) return `${asset.id}: no source-level statistics evidence`;
+        const st = stats.statistics ?? {};
+        if (stats.status === "unsupported-version") {
+          return `${asset.id} (RVT ${stats.revitVersion}: builtin reader fails closed at unproven release layout; container-level only: declared ids ${st.declaredElementIds ?? "n/a"}, strict material names ${st.strictMaterialNameCount ?? "n/a"}, level names ${st.levelDistinctNames ?? "n/a"})`;
+        }
+        return `${asset.id} (RVT ${stats.revitVersion}: measured declared ids ${st.declaredElementIds ?? "n/a"}, strict material names ${st.strictMaterialNameCount ?? "n/a"}, level names ${st.levelDistinctNames ?? "n/a"}, join-limited instance counts ${JSON.stringify(st.exportedInstanceIds ?? {})}; still unproven from source: ${(st.unmeasured ?? []).join(", ")})`;
+      }).join(" | ")}`,
+    ] : []),
   ]);
 }
 
