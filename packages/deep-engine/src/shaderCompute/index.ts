@@ -13,3 +13,12 @@ export {
   hiZFirstStageTargetSize, referenceHiZFirstStage,
 } from "./hiZReduce.js";
 export type { HiZInputOptions } from "./hiZReduce.js";
+export {
+  HI_Z_VARIABLE_REDUCE_NAME, buildHiZVariableReduceKernel, hiZChainLevelCount, hiZChainLevelSize,
+  referenceHiZChain, referenceHiZVariableReduce, usesAnchoredReduce,
+} from "./hiZReduceVariable.js";
+export {
+  PROBE_FILTER_TAP_ORDER, PROBE_IRRADIANCE_FILTER_NAME, buildProbeIrradianceFilterKernel,
+  probeClipmapLayerIndex,
+} from "./probeUpdateKernel.js";
+export type { ProbeIrradianceFilterContract } from "./probeUpdateKernel.js";

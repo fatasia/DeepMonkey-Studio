@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "./deviceSession.js";
+import { createHiZReduceKernels, type HiZKernelDescriptor, type HiZReduceKernelRig } from "./hiZPyramidReduceKernels.js";
 
 export const HI_Z_WORKGROUP_SIZE = 8;
 export const HI_Z_OUTPUT_FORMAT = "r32float" as const satisfies GPUTextureFormat;
@@ -43,10 +44,14 @@ export interface HiZResult {
   readonly updated: boolean;
 }
 
+export type { HiZKernelDescriptor } from "./hiZPyramidReduceKernels.js";
+
 interface PyramidAllocation {
   readonly texture: GPUTexture;
   readonly levels: readonly HiZLevel[];
   readonly reduceBindings: readonly GPUBindGroup[];
+  /** Per reduce target level (index = level - 1): packed [sourceW, sourceH, targetW, targetH] u32s. */
+  readonly reduceUniforms: readonly GPUBuffer[];
   readonly width: number;
   readonly height: number;
   readonly mipLevelCount: number;
@@ -72,36 +77,15 @@ fn copyDepth(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 `;
 
-export const HI_Z_REDUCE_WGSL = /* wgsl */ `
-override REDUCE_MAX: bool = true;
-@group(0) @binding(0) var sourceMip: texture_2d<f32>;
-@group(0) @binding(1) var targetMip: texture_storage_2d<r32float, write>;
-
-@compute @workgroup_size(8, 8)
-fn reduceDepth(@builtin(global_invocation_id) id: vec3<u32>) {
-  let targetSize = textureDimensions(targetMip);
-  if (id.x >= targetSize.x || id.y >= targetSize.y) { return; }
-  let sourceSize = textureDimensions(sourceMip);
-  let begin = id.xy * sourceSize / targetSize;
-  let end = ((id.xy + vec2<u32>(1u)) * sourceSize + targetSize - vec2<u32>(1u)) / targetSize;
-  var value = textureLoad(sourceMip, vec2<i32>(begin), 0).x;
-  for (var y = begin.y; y < end.y; y++) {
-    for (var x = begin.x; x < end.x; x++) {
-      let sampleDepth = textureLoad(sourceMip, vec2<i32>(i32(x), i32(y)), 0).x;
-      value = select(min(value, sampleDepth), max(value, sampleDepth), REDUCE_MAX);
-    }
-  }
-  textureStore(targetMip, id.xy, vec4<f32>(value, 0.0, 0.0, 0.0));
-}
-`;
+// Reduce 手写 WGSL 已删除：深度缩减由 DCIR 单源生成（shaderCompute/hiZReduce*.ts → emitKernelWgsl），
+// 数值对拍证据见 test-output/r4-hiz-wiring-20260919-r1/。copy 内核保留手写：其输入是
+// texture_depth_2d（depth32float 的 depth aspect），超出 DCIR v0 r32float texel-load 合同。
 
 /** Reusable compute encoder for a single depth attachment and its monotonic revisions. */
 export class HiZPyramid {
   private readonly copyLayout: GPUBindGroupLayout;
-  private readonly reduceLayout: GPUBindGroupLayout;
   private readonly copyPipeline: GPUComputePipeline;
-  private readonly minPipeline: GPUComputePipeline;
-  private readonly maxPipeline: GPUComputePipeline;
+  private readonly reduce: HiZReduceKernelRig;
   private cache: CachedPyramid | undefined;
   private disposed = false;
 
@@ -109,24 +93,21 @@ export class HiZPyramid {
     this.assertSessionReady();
     const device = session.device;
     const copyModule = device.createShaderModule({ label: "Deep Hi-Z depth copy WGSL", code: HI_Z_COPY_WGSL });
-    const reduceModule = device.createShaderModule({ label: "Deep Hi-Z reduction WGSL", code: HI_Z_REDUCE_WGSL });
+    // DCIR 单源双模式双内核（装配见 hiZPyramidReduceKernels.ts）：偶×偶源走 2×2 锚定块快路径
+    // （窗口恰 2×2），其余源走变窗内核（GPU mip floor 链下窗口 ≤3，9-tap masked 定序展开）。
+    const reduce = createHiZReduceKernels(session);
+    this.reduce = reduce;
     this.copyLayout = device.createBindGroupLayout({ label: "Deep Hi-Z depth copy layout", entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "depth", viewDimension: "2d", multisampled: false } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: HI_Z_OUTPUT_FORMAT, viewDimension: "2d" } },
     ] });
-    this.reduceLayout = device.createBindGroupLayout({ label: "Deep Hi-Z reduction layout", entries: [
-      { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float", viewDimension: "2d", multisampled: false } },
-      { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: HI_Z_OUTPUT_FORMAT, viewDimension: "2d" } },
-    ] });
     const copyPipelineLayout = device.createPipelineLayout({ label: "Deep Hi-Z depth copy pipeline layout", bindGroupLayouts: [this.copyLayout] });
-    const reducePipelineLayout = device.createPipelineLayout({ label: "Deep Hi-Z reduction pipeline layout", bindGroupLayouts: [this.reduceLayout] });
     this.copyPipeline = device.createComputePipeline({ label: "Deep Hi-Z depth copy pipeline", layout: copyPipelineLayout,
       compute: { module: copyModule, entryPoint: "copyDepth" } });
-    this.minPipeline = device.createComputePipeline({ label: "Deep Hi-Z min pipeline", layout: reducePipelineLayout,
-      compute: { module: reduceModule, entryPoint: "reduceDepth", constants: { REDUCE_MAX: 0 } } });
-    this.maxPipeline = device.createComputePipeline({ label: "Deep Hi-Z max pipeline", layout: reducePipelineLayout,
-      compute: { module: reduceModule, entryPoint: "reduceDepth", constants: { REDUCE_MAX: 1 } } });
   }
+
+  /** DCIR 内核遥测描述（kernel 名 + IR 哈希 + 后端标签），供 performanceTelemetry 接线。 */
+  get reduceKernels(): readonly HiZKernelDescriptor[] { return this.reduce.descriptors; }
 
   get current(): HiZResult | undefined {
     if (this.disposed || this.session.state !== "ready" || !this.cache) return undefined;
@@ -165,10 +146,16 @@ export class HiZPyramid {
       const next: CachedPyramid = { ...candidate, sourceTexture: source.texture, sourceRevision: source.revision,
         copyBinding, reversedZ: descriptor.reversedZ, reduction: descriptor.reduction };
       this.cache = next;
-      if (previous && previous.texture !== next.texture) this.session.release(previous.texture);
+      if (previous && previous.texture !== next.texture) {
+        this.session.release(previous.texture);
+        for (const uniform of previous.reduceUniforms) this.session.release(uniform);
+      }
       return this.result(next, true);
     } catch (error) {
-      if (candidate && candidate !== previous) this.session.release(candidate.texture);
+      if (candidate && candidate !== previous) {
+        this.session.release(candidate.texture);
+        for (const uniform of candidate.reduceUniforms) this.session.release(uniform);
+      }
       throw error;
     }
   }
@@ -176,7 +163,10 @@ export class HiZPyramid {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.cache) this.session.release(this.cache.texture);
+    if (this.cache) {
+      this.session.release(this.cache.texture);
+      for (const uniform of this.cache.reduceUniforms) this.session.release(uniform);
+    }
     this.cache = undefined;
   }
 
@@ -184,19 +174,36 @@ export class HiZPyramid {
     const texture = this.session.own(this.session.device.createTexture({ label: "Deep Hi-Z pyramid",
       size: { width, height, depthOrArrayLayers: 1 }, dimension: "2d", format: HI_Z_OUTPUT_FORMAT, mipLevelCount,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC }));
+    const uniformBuffers: GPUBuffer[] = [];
     try {
       const levels = Array.from({ length: mipLevelCount }, (_, level): HiZLevel => ({
         level, width: mipDimension(width, level), height: mipDimension(height, level),
         view: texture.createView({ label: `Deep Hi-Z mip ${level}`, format: HI_Z_OUTPUT_FORMAT, dimension: "2d",
           baseMipLevel: level, mipLevelCount: 1, baseArrayLayer: 0, arrayLayerCount: 1 }),
       }));
+      const reduceUniforms = levels.slice(1).map((target, index) => {
+        const source = levels[index]!;
+        const buffer = this.session.own(this.session.device.createBuffer({
+          label: `Deep Hi-Z reduce uniforms ${target.level}`, size: 16,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        }));
+        uniformBuffers.push(buffer);
+        this.session.device.queue.writeBuffer(buffer, 0, new Uint32Array([source.width, source.height, target.width, target.height]));
+        return buffer;
+      });
       const reduceBindings = levels.slice(1).map((target, index) => this.session.device.createBindGroup({
-        label: `Deep Hi-Z reduction bindings ${target.level}`, layout: this.reduceLayout, entries: [
+        label: `Deep Hi-Z reduction bindings ${target.level}`, layout: this.reduce.layout, entries: [
           { binding: 0, resource: levels[index]!.view }, { binding: 1, resource: target.view },
+          { binding: 2, resource: reduceUniforms[index]! },
         ],
       }));
-      return { texture, levels: Object.freeze(levels), reduceBindings: Object.freeze(reduceBindings), width, height, mipLevelCount };
-    } catch (error) { this.session.release(texture); throw error; }
+      return { texture, levels: Object.freeze(levels), reduceBindings: Object.freeze(reduceBindings),
+        reduceUniforms: Object.freeze(reduceUniforms), width, height, mipLevelCount };
+    } catch (error) {
+      for (const buffer of uniformBuffers) this.session.release(buffer);
+      this.session.release(texture);
+      throw error;
+    }
   }
 
   private encodePasses(encoder: GPUCommandEncoder, pyramid: PyramidAllocation, copyBinding: GPUBindGroup,
@@ -204,11 +211,12 @@ export class HiZPyramid {
     const copy = encoder.beginComputePass({ label: "Deep Hi-Z copy depth" });
     copy.setPipeline(this.copyPipeline); copy.setBindGroup(0, copyBinding);
     copy.dispatchWorkgroups(dispatchCount(pyramid.width), dispatchCount(pyramid.height)); copy.end();
-    const pipeline = reduction === "max" ? this.maxPipeline : this.minPipeline;
     for (let level = 1; level < pyramid.mipLevelCount; level++) {
-      const target = pyramid.levels[level]!;
+      const target = pyramid.levels[level]!, source = pyramid.levels[level - 1]!;
+      // 源尺寸偶×偶 ⇒ 变窗恰为 2×2 ⇒ 走已认证锚定块快路径；否则走变窗内核（见 hiZReduceVariable.ts）。
+      const pipelines = source.width % 2 === 0 && source.height % 2 === 0 ? this.reduce.anchored : this.reduce.variable;
       const pass = encoder.beginComputePass({ label: `Deep Hi-Z reduce mip ${level}` });
-      pass.setPipeline(pipeline); pass.setBindGroup(0, pyramid.reduceBindings[level - 1]!);
+      pass.setPipeline(pipelines[reduction]); pass.setBindGroup(0, pyramid.reduceBindings[level - 1]!);
       pass.dispatchWorkgroups(dispatchCount(target.width), dispatchCount(target.height)); pass.end();
     }
   }
@@ -226,7 +234,10 @@ export class HiZPyramid {
   private assertReady(): void {
     if (this.disposed) throw new Error("Hi-Z pyramid is disposed.");
     if (this.session.state !== "ready") {
-      if (this.cache) this.session.release(this.cache.texture);
+      if (this.cache) {
+        this.session.release(this.cache.texture);
+        for (const uniform of this.cache.reduceUniforms) this.session.release(uniform);
+      }
       this.cache = undefined;
       throw new Error("GPU session is not ready for Hi-Z.");
     }

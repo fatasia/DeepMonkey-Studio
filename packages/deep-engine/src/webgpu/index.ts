@@ -120,8 +120,8 @@ export { GPU_CULL_INSTANCE_STRIDE, GPU_CULL_PREVIOUS_TRANSFORM_STRIDE, GPU_CULL_
   GPU_FRUSTUM_CULL_WGSL, packCullingInstances, cpuFrustumCull, createGpuCullingPipelineContext,
   createGpuCullingSharedInputs, createGpuFrustumCulling } from "./gpuFrustumCulling.js";
 export type { CullingInstance, Frustum, GpuCullingPhaseResources, GpuCullingPipelineContext, GpuCullingResources, GpuCullingSharedInputs } from "./gpuFrustumCulling.js";
-export { HiZPyramid, HI_Z_COPY_WGSL, HI_Z_OUTPUT_FORMAT, HI_Z_REDUCE_WGSL, HI_Z_WORKGROUP_SIZE, hiZMipLevelCount } from "./hiZPyramid.js";
-export type { HiZLevel, HiZOptions, HiZReduction, HiZResolvedReduction, HiZResult, HiZSource } from "./hiZPyramid.js";
+export { HiZPyramid, HI_Z_COPY_WGSL, HI_Z_OUTPUT_FORMAT, HI_Z_WORKGROUP_SIZE, hiZMipLevelCount } from "./hiZPyramid.js";
+export type { HiZKernelDescriptor, HiZLevel, HiZOptions, HiZReduction, HiZResolvedReduction, HiZResult, HiZSource } from "./hiZPyramid.js";
 export { HiZOcclusionCuller, HI_Z_OCCLUSION_MAX_INSTANCES, HI_Z_OCCLUSION_MIN_INSTANCES, HI_Z_OCCLUSION_WGSL,
   HI_Z_OCCLUSION_WORKGROUP_SIZE, hiZOcclusionMip, hiZOcclusionVisible, projectHiZOcclusionAabb } from "./hiZOcclusionCulling.js";
 export type { HiZOcclusionDirectResult, HiZOcclusionIndirectResult, HiZOcclusionInput, HiZOcclusionOptions,
