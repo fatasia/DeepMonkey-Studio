@@ -11,6 +11,8 @@ import { createObjectStore, migrateLocalObjects } from "./objects.js";
 import { createMetadataStore } from "./store.js";
 import { ensureDemoMetrics } from "./dataIntegration.js";
 import { registerDataEventRoutes } from "./dataEvents.js";
+import { MqttIngestSupervisor } from "./mqttIngest.js";
+import { registerMqttIngestRoutes } from "./mqttIngestRoutes.js";
 import { registerDataEndpointRuntime } from "./dataEndpointRuntime.js";
 import { loadOrCreateServerInstanceId, registerServerMetaRoute } from "./serverMeta.js";
 import { registerSystemRoutes } from "./system.js";
@@ -73,7 +75,8 @@ export async function buildApp() {
   await objects.init();
   const migratedObjects = await migrateLocalObjects(objects, config.dataDir);
   if (migratedObjects > 0) app.log.info({ migratedObjects }, "local model files migrated to object storage");
-  const conversionTasks = new ConversionTaskService(createExternalConverterRegistrations(config, objects));
+  const conversionTasks = new ConversionTaskService(createExternalConverterRegistrations(config, objects), undefined, undefined, store);
+  await conversionTasks.initialize();
   const dataQuerySource = createDataQuerySource(store, config);
   const aiAudit = createMetadataAiAuditSink(store);
   const maintenanceScheduler = new MaintenanceInferenceScheduler({
@@ -134,7 +137,7 @@ export async function buildApp() {
     dataQuerySource,
     onError: (error, bindingId) => app.log.warn({ err: error, bindingId }, "battery inference failed"),
   });
-  const queue = new ConversionQueue(store, config, objects);
+  const queue = new ConversionQueue(store, config, objects, conversionTasks);
   const cloudWorker = config.cloudRender.workerUrl && config.cloudRender.workerToken
     ? new HttpCloudRenderWorkerClient({
       baseUrl: config.cloudRender.workerUrl,
@@ -162,7 +165,12 @@ export async function buildApp() {
       audit: aiAudit,
     }),
   });
-  await registerDataEventRoutes(app, store);
+  const dataEventBus = await registerDataEventRoutes(app, store);
+  const mqttIngest = new MqttIngestSupervisor(dataEventBus, async (url, options) => {
+    const { connectAsync } = await import("mqtt");
+    return connectAsync(url, options as never) as never;
+  });
+  await registerMqttIngestRoutes(app, store, mqttIngest);
   await registerNotificationRoutes(app, notifications);
   await registerRoutes(app, {
     store,
@@ -232,6 +240,7 @@ export async function buildApp() {
   maintenanceScheduler.start();
   batteryScheduler.start();
   app.addHook("onClose", async () => {
+    await mqttIngest.stopAll();
     batteryScheduler.stop();
     maintenanceScheduler.stop();
     vision.stop();
