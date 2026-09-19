@@ -201,3 +201,17 @@ DE26 只有在相应任务卡的实现、测试、真实证据和报告都齐全
 | P8 | **IFC 工程化深水区**：现有 IFC/Fragments 运行时是浏览级；按工业线同口径（身份/几何质量/材质/版本矩阵）建立 `bim.ifc-builtin` profile，纳入 S 矩阵 | IFC 是公开标准且是政企招投标硬词；与 RVT/X_T 同账本管理 | 工业 S1–S6 全套纪律与工具链 | 中高 |
 
 取舍说明：多人协同（用户已排除）、XR（留待）、扫描对照/Splat（V12 决议不建设）不再重复评估。P1–P8 均不计入当前完成率；拍板后按依赖并入波次（P2→P3→P4 是一条"数据→告警→回放"产品线，P1/P5/P7 可与任何波次并行，P6 建议在 R2 compute 基座后）。
+
+> **2026-09-19 用户拍板记录（P 系）**：提案轻量纳入任务，只保留高价值的，不允许大破坏。据此：**P1–P5、P7 批准轻量纳入**（每项先做最小可交付切片，全部复用现有系统——告警不另建总线、网关接 data-runtime、diff 复用 C08 source map）；**P6（FMU）、P8（IFC 深水区）后排待拍板**。轻量原则：新功能一律挂在既有任务卡上推进，禁止新建平行系统。
+
+## 10. 渲染深水区能力缺口分析（2026-09-19 用户指定五轴：Compute / 硬件光追 / 深入光照 / 烘焙 / 实时 GI）
+
+| 轴 | 四平台水位 | 我们现状 | 缺口（如实） | 轻量动作（不大破坏，全挂现有卡） |
+|---|---|---|---|---|
+| **Compute** | Babylon 9 已生产（Clustered Lighting 用 compute）；Three TSL compute 可用；UE/Unity 内核级 | **R2 切片进行中**（跨后端 IR + 确定性 kernel），生产消费点为零 | GI 探针更新、HiZ、虚拟灯采样三个消费点未接；跨后端确定性是我们的独占机会 | R2 收口后立即接首批消费点（=R4 前置）；这是唯一能以"形态"取胜的轴（一套着色源×三后端×确定性） |
+| **硬件光追** | UE Lumen HW/HW RT 阴影生产；Unity HDRP RT；Babylon WebGPU RT in-progress；Three 无 | **完全空白**（无 RT 路径） | 全缺 | 三档走，不追硬件光追分母：a) 近期——CPU BVH（three-mesh-bvh 已在库）做离线烘焙采样/反射探针可见性；b) 中期——compute 模拟 RT（SSR/软件 GI 补充，依赖 R2）；c) 远期观察——WebGPU ray-query 硬件路径，Babylon 发布后评估，仅高端设备可选增强 |
+| **深入光照** | HDRP 面积光/IES/Rendering Layers/接触阴影；UE PCSS/VSM/体积散射 | cluster/CSM/局部阴影/灯阵矩阵在 E02/E05 验收中（32/128/256 已列入） | IES 光域网文件、PCSS 类可变软阴影、接触阴影、面积光真实软化、体积光散射 | 全部落在 E02/E05 逐格验收 + G7 体积介质，不新起灯光系统（unity-lighting-parity 方案已列参照） |
+| **烘焙** | Unity Progressive Lightmapper（GPU）、UE Lightmass 全套 | native baked GI 有真实证据（烘焙消费稳定、changedChannels>1000），无完整 lightmap 管线 | UV2/图集烘焙、烘焙质量档、增量重烘（局部重烘）、烘焙探针 | 轻量起步：先做"探针烘焙 + 增量重烘"（复用 C07 增量构建 + native bake 证据链）；全量 UV2 lightmap 列为远期大项，避免大破坏 |
+| **实时 GI** | Unity 7 Surface Cache GI（2026-12）、UE Lumen/Lumen Lite；Babylon/Three 无 | **离得最近的一轴**：探针 clipmap 已有，r14 on/off 双格跨端阈值通过（⑤ passed） | 表面缓存级动态更新、室内外过渡/漏光边界、动态物体间接光采样、复杂几何扩展（⑤ 记录的增强项） | = R1，与 E03 P0 同线：先探针卡距，后表面缓存对位 Unity 7；三端同语义是 Unity/UE 给不了的形态 |
+
+**五轴结论**：实时 GI 离得最近（⑤ 已过阈值，补动态更新与复杂几何）；Compute 是唯一"以形态取胜"的轴（R2→R4 顺序执行）；烘焙轻量起步（探针+增量，不碰全量 UV2）；光追三档走（近期 CPU BVH 烘焙采样、中期 compute 模拟、远期观察 ray-query）；深入光照按 E05 逐格补 IES/PCSS/接触阴影。**所有动作都挂在现有卡（E03/E05/G7/R1/R2/R4）上，不新建平行系统**——与"轻量、不大破坏"的拍板一致。
