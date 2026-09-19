@@ -25,7 +25,7 @@ class FakeBackend implements BenchmarkBackend {
   async measureGpuFrame(): Promise<number | null> { return this.timestampSupported ? 0.5 : null; }
   async capture(): Promise<BenchmarkImage> {
     const rgba = new Uint8ClampedArray(8 * 8 * 4);
-    for (let pixel = 0; pixel < 64; pixel++) rgba.set(pixel < 32
+    for (let pixel = 0; pixel < 64; pixel++) rgba.set(pixel % 8 < 2 || pixel % 8 > 5 || Math.floor(pixel / 8) < 2 || Math.floor(pixel / 8) > 5
       ? [12, 16, 22, 255] : [this.color, this.color - 10, this.color - 20, 255], pixel * 4);
     return summarizeBenchmarkImage(8, 8, rgba);
   }
@@ -58,6 +58,10 @@ describe("competitive benchmark runner", () => {
       benchmark: { valid: true } });
     expect(report.rounds.every(round => round.visualSimilarity === 1)).toBe(true);
     expect(report.cpuBreakdown[0]?.candidate.renderCallMs.p95).toBe(0.25);
+    expect(report.sampleWindows).toHaveLength(5);
+    expect(report.sampleWindows[0]?.candidate.channels.find(channel => channel.channel === "cpu-submit")?.samplesMs).toHaveLength(30);
+    expect(report.sampleWindows[0]?.candidate.channels.find(channel => channel.channel === "input-latency"))
+      .toMatchObject({ availability: "unavailable", sampleCount: 0 });
   });
 
   it("propagates page faults into an invalid machine-readable result", async () => {
@@ -74,6 +78,8 @@ describe("competitive benchmark runner", () => {
       new FakeBackend("deep-webgpu", 128, true), new FakeBackend("three-webgpu", 128, true),
       { pairRounds: 5, warmupFrames: 10, cpuSampleFrames: 30, gpuSampleFrames: 1 });
     expect(report.timing.instrumentationEnabled).toBe(true);
+    expect(report.sampleWindows[0]?.reference.channels.find(channel => channel.channel === "gpu-timestamp"))
+      .toMatchObject({ samplesMs: [0.5], sampleCount: 1, availability: "measured" });
     expect(report.rounds.every(round => round.candidate.gpuInstrumentationEnabled
       && round.reference.gpuInstrumentationEnabled && round.candidate.gpuSampleCount === 1)).toBe(true);
   });

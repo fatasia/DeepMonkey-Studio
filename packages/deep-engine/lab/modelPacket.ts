@@ -2,8 +2,13 @@ import { decodeGlb, decodeTexturedGlb } from "@bim-studio/deep-engine/gltf";
 import type { RenderPacket } from "@bim-studio/deep-engine/webgpu";
 import { browserImageDecoder } from "./browserImageDecoder.js";
 
-export type ModelName = "Box" | "BoxInterleaved" | "BoxTextured" | "NormalTangentTest" | "TextureEncodingTest" | "TextureTransformMultiTest" | "AlphaBlendModeTest" | "MaterialModes" | "UvSets";
+export type ModelName = "Box" | "BoxInterleaved" | "BoxTextured" | "NormalTangentTest" | "TextureEncodingTest" | "TextureTransformMultiTest" | "AlphaBlendModeTest" | "MaterialModes" | "UvSets" | "LocalBim" | "LocalPreheater";
 const decoded = new Map<ModelName, RenderPacket>();
+const identities = new Map<ModelName, { sha256: string; sourceSha256: string }>();
+export interface BenchmarkCameraFrame { center: readonly [number, number, number]; radius: number; focus: string; contentPolicy: string }
+const cameraFrames = new Map<ModelName, BenchmarkCameraFrame>();
+export function modelSourceIdentity(name: ModelName) { return identities.get(name); }
+export function modelCameraFrame(name: ModelName) { return cameraFrames.get(name); }
 
 export async function loadModelPacket(name: ModelName, count: number, signal?: AbortSignal): Promise<RenderPacket> {
   let source = decoded.get(name);
@@ -12,10 +17,24 @@ export async function loadModelPacket(name: ModelName, count: number, signal?: A
     const response = await fetch(`/assets/${asset}.glb`, signal ? { signal } : {});
     if (!response.ok) throw new Error(`模型加载失败 (${response.status})`);
     const bytes = new Uint8Array(await response.arrayBuffer());
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    const sha256 = Array.from(new Uint8Array(digest), item => item.toString(16).padStart(2, "0")).join("");
+    const expectedHash = response.headers.get("X-Deep-Asset-Sha256");
+    if (expectedHash && expectedHash !== sha256) throw new Error("Benchmark asset bytes do not match the frozen derivative.");
+    const sourceSha256 = response.headers.get("X-Deep-Source-Sha256") ?? sha256;
+    if (!/^[a-f0-9]{64}$/.test(sourceSha256)) throw new Error("Benchmark source identity is invalid.");
+    identities.set(name, { sha256, sourceSha256 });
+    const frameHeader = response.headers.get("X-Deep-Camera-Frame");
+    if (frameHeader) {
+      const frame = JSON.parse(frameHeader) as BenchmarkCameraFrame;
+      if (!Array.isArray(frame.center) || frame.center.length !== 3 || !frame.center.every(Number.isFinite)
+        || !Number.isFinite(frame.radius) || frame.radius <= 0 || typeof frame.focus !== "string") throw new Error("Invalid frozen camera frame.");
+      cameraFrames.set(name, frame);
+    }
     const optionalMaterialFallbacks = asset === "TextureTransformMultiTest"
       ? ["KHR_materials_clearcoat", "KHR_materials_unlit"] as const
       : undefined;
-    source = asset === "BoxTextured" || asset === "NormalTangentTest" || asset === "TextureEncodingTest" || asset === "TextureTransformMultiTest" || asset === "AlphaBlendModeTest"
+    source = asset === "BoxTextured" || asset === "NormalTangentTest" || asset === "TextureEncodingTest" || asset === "TextureTransformMultiTest" || asset === "AlphaBlendModeTest" || asset.startsWith("Local")
       ? await decodeTexturedGlb(bytes, browserImageDecoder, {
         resourcePrefix: name,
         ...(optionalMaterialFallbacks ? { optionalMaterialFallbacks } : {}),
@@ -27,6 +46,10 @@ export async function loadModelPacket(name: ModelName, count: number, signal?: A
     decoded.set(name, source);
   }
   if (signal?.aborted) throw new DOMException("Model load cancelled", "AbortError");
+  if (name.startsWith("Local")) {
+    if (count !== 1) throw new Error("Local industrial benchmarks use one source scene with original world transforms.");
+    return source;
+  }
   return placeModelCopies(source, count);
 }
 

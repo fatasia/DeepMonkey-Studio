@@ -34,7 +34,9 @@ describe("benchmark image equivalence", () => {
     expect(perceptualSimilarity(blank, bright)).toBe(0);
     expect(perceptualSimilarity(bright, dark)).toBeLessThan(0.65);
     expect(() => assertBenchmarkImage(blank, "three-webgpu")).toThrow("blank benchmark capture");
-    expect(() => assertBenchmarkImage(bright, "three-webgpu")).not.toThrow();
+    expect(() => assertBenchmarkImage(bright, "three-webgpu")).toThrow("horizon-only");
+    const framed = await summarizeBenchmarkImage(32, 32, square(4));
+    expect(() => assertBenchmarkImage(framed, "three-webgpu")).not.toThrow();
   });
 
   it("rejects a smooth background, wrong camera and exposure drift without treating gradients as geometry", async () => {
@@ -50,6 +52,17 @@ describe("benchmark image equivalence", () => {
     expect(() => assertBenchmarkImage(gradient, "deep-webgpu")).toThrow("blank benchmark capture");
     expect(perceptualSimilarity(framed, shifted)).toBeLessThan(0.92);
     expect(perceptualSimilarity(framed, exposed)).toBeLessThan(0.92);
+  });
+
+  it("rejects a subpixel-sized subject on a valid lit horizon", async () => {
+    const bytes = new Uint8ClampedArray(96 * 54 * 4);
+    for (let y = 0; y < 54; y++) for (let x = 0; x < 96; x++) {
+      const value = x === 48 && y === 24 ? 240 : y < 30 ? 20 : 90;
+      bytes.set([value, value, value, 255], (y * 96 + x) * 4);
+    }
+    const tiny = await summarizeBenchmarkImage(96, 54, bytes);
+    expect(tiny.geometryDetailFraction).toBeGreaterThan(0.002);
+    expect(() => assertBenchmarkImage(tiny, "deep-webgpu")).toThrow("insufficiently framed");
   });
 
   it("acquires one present texture before awaiting an explicit BGRA readback", async () => {

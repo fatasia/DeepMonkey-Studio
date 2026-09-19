@@ -3,12 +3,14 @@ import {
   type RenderPacket,
   type RenderView,
 } from "@bim-studio/deep-engine/webgpu";
-import { loadModelPacket, type ModelName } from "./modelPacket.js";
+import { loadModelPacket, modelSourceIdentity, modelCameraFrame, type BenchmarkCameraFrame, type ModelName } from "./modelPacket.js";
+import { benchmarkPacketSphere } from "./benchmarkPacketBounds.js";
 
 export const BENCHMARK_WIDTH = 960;
 export const BENCHMARK_HEIGHT = 540;
 export const BENCHMARK_DPR = 1;
-export const BENCHMARK_COUNTS = Object.freeze([1_024, 10_000] as const);
+export const BENCHMARK_COUNTS = Object.freeze([1, 1_024, 10_000] as const);
+export type BenchmarkInstanceCount = typeof BENCHMARK_COUNTS[number];
 export const BENCHMARK_MATERIAL = Object.freeze({ baseColor: [0.42, 0.48, 0.55] as const,
   metallic: 0.65, roughness: 0.42 });
 export const BENCHMARK_BACKGROUND = Object.freeze([0.018, 0.024, 0.034] as const);
@@ -18,14 +20,16 @@ export const BENCHMARK_LIGHT = Object.freeze({ directionWorld: [-1.6, -2.8, -1.2
 
 export interface BenchmarkSceneFixture {
   readonly id: string;
-  readonly instanceCount: 1024 | 10000;
+  readonly instanceCount: BenchmarkInstanceCount;
   readonly extent: number;
   readonly transforms: readonly (readonly number[])[];
   readonly packet: RenderPacket;
   readonly view: RenderView;
+  readonly assetIdentity?: { readonly sha256: string; readonly sourceSha256: string };
+  readonly cameraFrame?: BenchmarkCameraFrame;
 }
 
-export function createBenchmarkScene(instanceCount: 1024 | 10000): BenchmarkSceneFixture {
+export function createBenchmarkScene(instanceCount: BenchmarkInstanceCount): BenchmarkSceneFixture {
   if (!BENCHMARK_COUNTS.includes(instanceCount)) throw new RangeError("Benchmark instance count is not frozen.");
   const side = Math.ceil(Math.sqrt(instanceCount)), spacing = 2.1, scale = 0.74;
   const extent = Math.max(4, side * 1.55);
@@ -60,32 +64,34 @@ export function createBenchmarkScene(instanceCount: 1024 | 10000): BenchmarkScen
  * This is intentionally separate from the procedural scene so reports can state
  * whether measurements came from a real asset or a synthetic stress fixture.
  */
-export async function createAssetBenchmarkScene(name: ModelName, instanceCount: 1024 | 10000,
+export async function createAssetBenchmarkScene(name: ModelName, instanceCount: BenchmarkInstanceCount,
   signal?: AbortSignal): Promise<BenchmarkSceneFixture> {
   const packet = await loadModelPacket(name, instanceCount, signal);
   const transforms = Object.freeze(packet.instances.map(instance => Object.freeze(Array.from(instance.transform))));
   const triangles = packet.geometries.reduce((sum, geometry) => sum + geometry.indices.length / 3, 0);
   if (!packet.instances.length || !Number.isFinite(triangles) || triangles <= 0) throw new Error("GLB benchmark asset has no renderable triangles.");
-  const extent = Math.max(4, Math.sqrt(packet.instances.length) * 2.4);
+  const sphere = benchmarkPacketSphere(packet), cameraFrame = modelCameraFrame(name);
+  const extent = Math.max(0.1, cameraFrame?.radius ?? sphere.radius);
+  const center = cameraFrame?.center ?? sphere.center.toArray() as [number, number, number];
   const view: RenderView = Object.freeze({ width: BENCHMARK_WIDTH, height: BENCHMARK_HEIGHT,
-    pixelRatio: BENCHMARK_DPR, eye: [extent * 0.42, extent * 0.66, extent * 0.66] as const,
-    target: [0, 0, 0] as const, up: [0, 1, 0] as const, extent,
+    pixelRatio: BENCHMARK_DPR, eye: [center[0] + extent * 1.4, center[1] + extent * 1.5, center[2] + extent * 1.8] as const,
+    target: center, up: [0, 1, 0] as const, extent,
     background: BENCHMARK_BACKGROUND, floor: BENCHMARK_FLOOR, exposure: 1, roughness: 1,
     verticalFovRadians: Math.PI / 4, near: 0.1, far: extent * 20,
     lights: { directional: [BENCHMARK_LIGHT] },
   });
-  return Object.freeze({ id: `asset-${name}-${instanceCount}`, instanceCount, extent, transforms, packet, view });
+  const assetIdentity = modelSourceIdentity(name);
+  return Object.freeze({ id: `asset-${name}-${instanceCount}`, instanceCount, extent, transforms, packet, view,
+    ...(assetIdentity ? { assetIdentity } : {}), ...(cameraFrame ? { cameraFrame } : {}) });
 }
 
 export function frozenFixtureDescription(fixture: BenchmarkSceneFixture): Readonly<Record<string, unknown>> {
-  const geometry = fixture.packet.geometries[0]!;
   return Object.freeze({ id: fixture.id, canvas: [BENCHMARK_WIDTH, BENCHMARK_HEIGHT], dpr: BENCHMARK_DPR,
+    ...(fixture.assetIdentity ? { assetIdentity: fixture.assetIdentity } : {}),
+    ...(fixture.cameraFrame ? { cameraFrame: fixture.cameraFrame } : {}),
     camera: { eye: fixture.view.eye, target: fixture.view.target, up: fixture.view.up,
       verticalFovRadians: fixture.view.verticalFovRadians, near: fixture.view.near, far: fixture.view.far },
-    geometry: { id: geometry.id, vertexCount: geometry.vertices.length / 6,
-      indexCount: geometry.indices.length, triangleCount: geometry.indices.length / 3,
-      vertices: geometry.vertices, indices: geometry.indices },
-    material: BENCHMARK_MATERIAL, instanceCount: fixture.instanceCount, transforms: fixture.transforms,
+    packet: fixture.packet, instanceCount: fixture.packet.instances.length,
     light: BENCHMARK_LIGHT, background: BENCHMARK_BACKGROUND, floor: BENCHMARK_FLOOR,
-    textureSlots: 0, alphaMode: "OPAQUE" });
+    textureSlots: fixture.packet.textures?.length ?? 0 });
 }

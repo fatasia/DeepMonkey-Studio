@@ -56,6 +56,7 @@ export function validateSampleWindow(window: SampleWindow): readonly SampleValid
     return issues;
   }
   if (!CLOCKS.has(window.clockId)) fail(-1, "*", `unknown window clock ${String(window.clockId)}`);
+  if (!window.runId.trim()) fail(-1, "*", "run id must not be empty");
   if (!Number.isFinite(window.windowStartMs) || !Number.isFinite(window.windowEndMs) || window.windowEndMs <= window.windowStartMs) {
     fail(-1, "*", "window bounds must be finite with end after start");
   }
@@ -65,6 +66,16 @@ export function validateSampleWindow(window: SampleWindow): readonly SampleValid
     if (seen.has(channel.channel)) fail(index, channel.channel, "duplicate channel in one window");
     seen.add(channel.channel);
     if (!CLOCKS.has(channel.clockId)) { fail(index, channel.channel, `unknown channel clock ${String(channel.clockId)}`); continue; }
+    if (channel.availability !== "measured" && channel.availability !== "unavailable") {
+      fail(index, channel.channel, "unknown availability"); continue;
+    }
+    if (!Number.isFinite(channel.windowStartMs) || !Number.isFinite(channel.windowEndMs)
+      || channel.windowEndMs <= channel.windowStartMs) {
+      fail(index, channel.channel, "channel bounds must be finite with end after start");
+    }
+    if (channel.windowStartMs < window.windowStartMs || channel.windowEndMs > window.windowEndMs) {
+      fail(index, channel.channel, "channel window exceeds the run window");
+    }
     if (channel.availability === "unavailable") {
       // 不可用通道禁止携带伪数据:样本必须为空,且必须给出原因。
       if (channel.unavailableReason === undefined || !channel.unavailableReason.trim()) {
@@ -84,9 +95,6 @@ export function validateSampleWindow(window: SampleWindow): readonly SampleValid
     }
     for (const value of channel.samplesMs) {
       if (!Number.isFinite(value) || value < 0) { fail(index, channel.channel, "samples must be finite and non-negative"); break; }
-    }
-    if (channel.windowStartMs < window.windowStartMs || channel.windowEndMs > window.windowEndMs) {
-      fail(index, channel.channel, "channel window exceeds the run window");
     }
   }
   return issues;

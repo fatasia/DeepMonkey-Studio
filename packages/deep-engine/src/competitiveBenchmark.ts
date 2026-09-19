@@ -19,7 +19,7 @@ export interface BenchmarkFidelityCheck {
 }
 
 export interface CompetitiveEngineSummary {
-  readonly engine: "deep-webgpu" | "three-webgpu";
+  readonly engine: "deep-webgpu" | "three-webgpu" | "babylon-webgpu";
   readonly warmupFrames: number;
   readonly cpuSampleCount: number;
   readonly gpuSampleCount: number;

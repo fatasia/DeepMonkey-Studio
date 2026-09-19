@@ -94,6 +94,19 @@ export function assertBenchmarkImage(image: BenchmarkImage, engine: string): voi
   if (image.meanLuminance < 0.002 || image.geometryDetailFraction < 0.002) {
     throw new Error(`${engine} produced a blank benchmark capture.`);
   }
+  const luma = luminancePlane(image.rgba), bounds = roiBounds(image.width, image.height);
+  let horizontalDetails = 0, verticalDetails = 0;
+  for (let y = Math.max(1, bounds.top); y < Math.min(image.height - 1, bounds.bottom); y++) {
+    for (let x = Math.max(1, bounds.left); x < Math.min(image.width - 1, bounds.right); x++) {
+      const index = y * image.width + x;
+      if (Math.abs(luma[index + 1]! - luma[index - 1]!) > EDGE_THRESHOLD) horizontalDetails++;
+      if (Math.abs(luma[index + image.width]! - luma[index - image.width]!) > EDGE_THRESHOLD) verticalDetails++;
+    }
+  }
+  const minimumDetails = Math.max(4, (bounds.right - bounds.left) * (bounds.bottom - bounds.top) * 0.002);
+  if (horizontalDetails < minimumDetails || verticalDetails < minimumDetails) {
+    throw new Error(`${engine} produced a horizon-only or insufficiently framed benchmark capture.`);
+  }
 }
 
 function hex(buffer: ArrayBuffer): string {

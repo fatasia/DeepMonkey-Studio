@@ -1,4 +1,6 @@
 import { PbrRenderer } from "@bim-studio/deep-engine/webgpu";
+import type { RenderView } from "@bim-studio/deep-engine/webgpu";
+import type { TrajectoryCameraPose } from "@bim-studio/deep-engine";
 import { captureWebGpuBenchmarkImage } from "./benchmarkImage.js";
 import type { BenchmarkBackend, BenchmarkFrameStats } from "./benchmarkBackend.js";
 import type { BenchmarkSceneFixture } from "./benchmarkScene.js";
@@ -8,10 +10,15 @@ import { createBenchmarkFidelitySnapshot, type BenchmarkFidelitySnapshot,
 export class DeepBenchmarkBackend implements BenchmarkBackend {
   readonly id = "deep-webgpu";
   readonly version = "0.1.0";
+  private currentView: RenderView;
 
   private constructor(private readonly canvas: HTMLCanvasElement,
     private readonly renderer: PbrRenderer, private readonly fixture: BenchmarkSceneFixture,
-    readonly profile: BenchmarkProfile, readonly fidelity: BenchmarkFidelitySnapshot) {}
+    readonly profile: BenchmarkProfile, readonly fidelity: BenchmarkFidelitySnapshot) { this.currentView = fixture.view; }
+
+  setCamera(pose: TrajectoryCameraPose): void {
+    this.currentView = { ...this.fixture.view, eye: pose.position, target: pose.target, verticalFovRadians: pose.fovDeg * Math.PI / 180 };
+  }
 
   static async create(canvas: HTMLCanvasElement, fixture: BenchmarkSceneFixture,
     signal: AbortSignal, profile: BenchmarkProfile): Promise<DeepBenchmarkBackend> {
@@ -42,7 +49,7 @@ export class DeepBenchmarkBackend implements BenchmarkBackend {
 
   render(): BenchmarkFrameStats {
     const started = performance.now();
-    const frame = this.renderer.render(this.fixture.view);
+    const frame = this.renderer.render(this.currentView);
     if (!frame) throw new Error("Deep benchmark frame was not submitted.");
     const rendered = performance.now();
     const result = Object.freeze({ drawCalls: frame.drawCalls, triangles: frame.triangles,
@@ -58,7 +65,7 @@ export class DeepBenchmarkBackend implements BenchmarkBackend {
   async measureGpuFrame(): Promise<number | null> {
     if (!this.timestampSupported) return null;
     if (!this.renderer.gpuTimer.enabled) throw new Error("Deep GPU timing was not enabled before warmup.");
-    const frame = this.renderer.render(this.fixture.view);
+    const frame = this.renderer.render(this.currentView);
     if (!frame) throw new Error("Deep GPU timing frame was not submitted.");
     const values = await this.renderer.gpuTimer.collect(frame.frame, frame.frame);
     const value = values.find(entry => entry.frame === frame.frame)?.milliseconds;

@@ -1,4 +1,5 @@
 import type { BenchmarkImage } from "./benchmarkImage.js";
+import type { TrajectoryCameraPose } from "@bim-studio/deep-engine";
 import type { BenchmarkFidelitySnapshot, BenchmarkProfile } from "./benchmarkProfile.js";
 
 export interface BenchmarkCpuStages {
@@ -14,13 +15,14 @@ export interface BenchmarkFrameStats {
 }
 
 export interface BenchmarkBackend {
-  readonly id: "deep-webgpu" | "three-webgpu";
+  readonly id: "deep-webgpu" | "three-webgpu" | "babylon-webgpu";
   readonly version: string;
   readonly profile: BenchmarkProfile;
   readonly fidelity: BenchmarkFidelitySnapshot;
   readonly timestampSupported: boolean;
   readonly adapter: Readonly<Record<string, unknown>> | null;
   render(): BenchmarkFrameStats;
+  setCamera?(pose: TrajectoryCameraPose): void;
   setGpuInstrumentation(enabled: boolean): void;
   settle(): Promise<void>;
   measureGpuFrame(): Promise<number | null>;

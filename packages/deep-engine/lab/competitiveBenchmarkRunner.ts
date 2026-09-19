@@ -1,23 +1,34 @@
 import {
   evaluateCompetitiveBenchmark,
+  compareBenchmarkWindows,
+  type BenchmarkChannelGap,
   type BenchmarkCase,
   type BenchmarkCriterion,
   type BenchmarkFidelityCheck,
   type CompetitiveEngineSummary,
   type CompetitiveRoundEvidence,
+  type SampleWindow,
+  type BenchmarkTrajectory,
+  type TrajectoryCameraPose,
 } from "@bim-studio/deep-engine";
 import type { BenchmarkBackend, BenchmarkFrameStats } from "./benchmarkBackend.js";
 import { assertBenchmarkImage, BENCHMARK_VISUAL_METHOD, perceptualSimilarity,
   type BenchmarkImage } from "./benchmarkImage.js";
 import { evaluateBenchmarkFidelity } from "./benchmarkFidelity.js";
 import { benchmarkRenderSettings } from "./benchmarkProfile.js";
-import { frozenFixtureDescription, type BenchmarkSceneFixture } from "./benchmarkScene.js";
+import type { BenchmarkSceneFixture } from "./benchmarkScene.js";
+import { benchmarkFixtureIdentity } from "./benchmarkFixtureIdentity.js";
+import { benchmarkRawWindow } from "./benchmarkRawWindow.js";
+import { createBenchmarkTrajectoryReplay } from "./benchmarkTrajectoryReplay.js";
 
 export interface CompetitiveBenchmarkOptions {
   readonly pairRounds: number;
   readonly warmupFrames: number;
   readonly cpuSampleFrames: number;
   readonly gpuSampleFrames: number;
+  readonly trajectory?: BenchmarkTrajectory;
+  /** Declared provenance of each GPU timestamp channel; the Deep/Three defaults keep the A04 wording. */
+  readonly timingSources?: { readonly candidateSource: string; readonly referenceSource: string };
 }
 
 export interface CompetitiveBenchmarkProgress {
@@ -37,6 +48,8 @@ export interface CompetitiveBenchmarkReport {
   readonly visual: typeof BENCHMARK_VISUAL_METHOD;
   readonly fidelity: readonly BenchmarkFidelityCheck[];
   readonly rounds: readonly CompetitiveRoundEvidence[];
+  readonly sampleWindows: readonly Readonly<{ round: number; candidate: SampleWindow; reference: SampleWindow }>[];
+  readonly channelGaps: readonly BenchmarkChannelGap[];
   readonly cpuBreakdown: readonly Readonly<{ round: number; candidate: CpuStageSummary;
     reference: CpuStageSummary }>[];
   readonly images: readonly Readonly<{ round: number; candidate: ImageSummary; reference: ImageSummary }>[];
@@ -47,7 +60,7 @@ interface ImageSummary { readonly sha256: string; readonly meanLuminance: number
 interface Quantiles { readonly p50: number; readonly p95: number; readonly p99: number }
 export interface CpuStageSummary { readonly renderCallMs: Quantiles; readonly statisticsReadMs: Quantiles }
 interface Measured { readonly summary: CompetitiveEngineSummary; readonly image: BenchmarkImage;
-  readonly cpuStages: CpuStageSummary }
+  readonly cpuStages: CpuStageSummary; readonly window: SampleWindow }
 
 export const DEFAULT_COMPETITIVE_BENCHMARK_OPTIONS = Object.freeze({
   pairRounds: 5, warmupFrames: 20, cpuSampleFrames: 90, gpuSampleFrames: 15,
@@ -59,10 +72,13 @@ export async function runCompetitiveBenchmark(fixture: BenchmarkSceneFixture,
   signal?: AbortSignal, progress?: (value: CompetitiveBenchmarkProgress) => void,
   pageErrors: readonly string[] = []): Promise<CompetitiveBenchmarkReport> {
   validateOptions(options); signal?.throwIfAborted();
+  if (candidate.id === reference.id) throw new Error("Paired benchmark requires distinct candidate and reference backends.");
   if (candidate.profile !== reference.profile) throw new Error("Benchmark profiles differ between engines.");
   const profile = candidate.profile;
+  if (options.trajectory && (!candidate.setCamera || !reference.setCamera)) throw new Error("Both benchmark adapters must support camera replay.");
+  const replay = options.trajectory ? createBenchmarkTrajectoryReplay(fixture, options.trajectory) : undefined;
   const fidelity = evaluateBenchmarkFidelity(profile, candidate.fidelity, reference.fidelity);
-  const fixtureDescription = frozenFixtureDescription(fixture);
+  const fixtureDescription = await benchmarkFixtureIdentity(fixture);
   const pairedTimestampSupport = candidate.timestampSupported && reference.timestampSupported;
   const bothGpu = pairedTimestampSupport && options.gpuSampleFrames > 0;
   candidate.setGpuInstrumentation(pairedTimestampSupport);
@@ -84,14 +100,16 @@ export async function runCompetitiveBenchmark(fixture: BenchmarkSceneFixture,
     environmentHash, fixtureHash, settingsHash, criteria: Object.freeze(criteria) });
   const rounds: CompetitiveRoundEvidence[] = [], images: CompetitiveBenchmarkReport["images"][number][] = [];
   const cpuBreakdown: CompetitiveBenchmarkReport["cpuBreakdown"][number][] = [];
+  const sampleWindows: CompetitiveBenchmarkReport["sampleWindows"][number][] = [];
   for (let index = 0; index < options.pairRounds; index++) {
     signal?.throwIfAborted(); const round = index + 1;
     const order = index % 2 === 0 ? [candidate, reference] as const : [reference, candidate] as const;
     const measured = new Map<BenchmarkBackend["id"], Measured>();
     for (const backend of order) measured.set(backend.id,
-      await measureBackend(backend, options, bothGpu, pairedTimestampSupport, round, signal, progress));
+      await measureBackend(backend, options, bothGpu, pairedTimestampSupport, round, signal, progress, replay));
     const candidateRun = measured.get(candidate.id)!, referenceRun = measured.get(reference.id)!;
     const visualSimilarity = perceptualSimilarity(candidateRun.image, referenceRun.image);
+    sampleWindows.push({ round, candidate: candidateRun.window, reference: referenceRun.window });
     rounds.push(Object.freeze({ round, order: index % 2 === 0
       ? ["candidate", "reference"] as const : ["reference", "candidate"] as const,
     environmentHash, fixtureHash, settingsHash, candidate: candidateRun.summary,
@@ -106,28 +124,35 @@ export async function runCompetitiveBenchmark(fixture: BenchmarkSceneFixture,
     timing: Object.freeze({ unit: "milliseconds",
       mode: "CPU submit plus serialized per-frame GPU timestamps",
       instrumentationEnabled: pairedTimestampSupport,
-      candidateSource: "Deep GpuTimer: Number(timestampEnd - timestampStart) / 1e6",
-      referenceSource: "three@0.185.1 WebGPUTimestampQueryPool: Number(endTime - startTime) / 1e6" }),
+      candidateSource: options.timingSources?.candidateSource
+        ?? "Deep GpuTimer: Number(timestampEnd - timestampStart) / 1e6",
+      referenceSource: options.timingSources?.referenceSource
+        ?? "three@0.185.1 WebGPUTimestampQueryPool: Number(endTime - startTime) / 1e6" }),
     visual: BENCHMARK_VISUAL_METHOD, fidelity, rounds: Object.freeze(rounds),
+    sampleWindows: Object.freeze(sampleWindows),
+    channelGaps: compareBenchmarkWindows(sampleWindows),
     cpuBreakdown: Object.freeze(cpuBreakdown),
     images: Object.freeze(images), evaluation });
 }
 
 async function measureBackend(backend: BenchmarkBackend, options: CompetitiveBenchmarkOptions,
   bothGpu: boolean, instrumentationEnabled: boolean, round: number, signal?: AbortSignal,
-  progress?: (value: CompetitiveBenchmarkProgress) => void): Promise<Measured> {
+  progress?: (value: CompetitiveBenchmarkProgress) => void,
+  replay?: (frame: number, count: number) => TrajectoryCameraPose): Promise<Measured> {
   progress?.({ round, engine: backend.id, phase: "warmup" });
   let stats: BenchmarkFrameStats = { drawCalls: 0, triangles: 0, resources: 0,
     cpuStages: { renderCallMs: 0, statisticsReadMs: 0 } };
   for (let index = 0; index < options.warmupFrames; index++) {
-    signal?.throwIfAborted(); stats = backend.render();
+    signal?.throwIfAborted(); if (replay) backend.setCamera!(replay(index, options.warmupFrames)); stats = backend.render();
     if (index % 30 === 29) await yieldTask();
   }
   await backend.settle();
   progress?.({ round, engine: backend.id, phase: "cpu" });
+  const windowStartMs = performance.now();
   const cpu: number[] = [], renderCall: number[] = [], statisticsRead: number[] = [];
   for (let index = 0; index < options.cpuSampleFrames; index++) {
-    signal?.throwIfAborted(); const started = performance.now(); stats = backend.render();
+    signal?.throwIfAborted(); if (replay) backend.setCamera!(replay(index, options.cpuSampleFrames));
+    const started = performance.now(); stats = backend.render();
     cpu.push(performance.now() - started); recordCpuStages(stats, renderCall, statisticsRead);
     if (index % 30 === 29) await yieldTask();
   }
@@ -135,7 +160,8 @@ async function measureBackend(backend: BenchmarkBackend, options: CompetitiveBen
   if (bothGpu) {
     progress?.({ round, engine: backend.id, phase: "gpu" });
     for (let index = 0; index < options.gpuSampleFrames; index++) {
-      signal?.throwIfAborted(); const value = await backend.measureGpuFrame();
+      signal?.throwIfAborted(); if (replay) backend.setCamera!(replay(index, options.gpuSampleFrames));
+      const value = await backend.measureGpuFrame();
       if (value === null) throw new Error(`${backend.id} lost timestamp support during a paired run.`);
       gpu.push(value);
     }
@@ -144,7 +170,8 @@ async function measureBackend(backend: BenchmarkBackend, options: CompetitiveBen
   const image = await backend.capture(); assertBenchmarkImage(image, backend.id);
   const gpuValues = gpu.length ? summarize(gpu) : null;
   const cpuValues = summarize(cpu);
-  return Object.freeze({ image, cpuStages: Object.freeze({ renderCallMs: summarize(renderCall),
+  const window = benchmarkRawWindow(`${backend.id}/round-${round}`, windowStartMs, performance.now(), cpu, gpu);
+  return Object.freeze({ image, window, cpuStages: Object.freeze({ renderCallMs: summarize(renderCall),
     statisticsReadMs: summarize(statisticsRead) }), summary: Object.freeze({ engine: backend.id,
     warmupFrames: options.warmupFrames, cpuSampleCount: cpu.length, gpuSampleCount: gpu.length,
     cpuFrameP50Ms: cpuValues.p50, cpuFrameP95Ms: cpuValues.p95, cpuFrameP99Ms: cpuValues.p99,
@@ -181,11 +208,14 @@ function imageSummary(image: BenchmarkImage): ImageSummary {
     geometryDetailFraction: image.geometryDetailFraction });
 }
 function compactFixture(fixture: BenchmarkSceneFixture, hash: string): Readonly<Record<string, unknown>> {
-  const geometry = fixture.packet.geometries[0]!;
-  return Object.freeze({ id: fixture.id, sha256: hash, instanceCount: fixture.instanceCount,
+  return Object.freeze({ id: fixture.id, sha256: hash, instanceCount: fixture.packet.instances.length,
+    ...(fixture.assetIdentity ? { assetIdentity: fixture.assetIdentity } : {}),
+    ...(fixture.cameraFrame ? { cameraFrame: fixture.cameraFrame } : {}),
     canvas: [fixture.view.width, fixture.view.height], dpr: fixture.view.pixelRatio,
-    vertexCount: geometry.vertices.length / 6, triangleCount: geometry.indices.length / 3,
-    transformGenerator: "grid-v1/spacing2.1/scale0.74/golden-angle" });
+    geometryCount: fixture.packet.geometries.length, materialCount: fixture.packet.materials.length,
+    textureCount: fixture.packet.textures?.length ?? 0,
+    vertexCount: fixture.packet.geometries.reduce((sum, geometry) => sum + geometry.vertices.length / 6, 0),
+    triangleCount: fixture.packet.geometries.reduce((sum, geometry) => sum + geometry.indices.length / 3, 0) });
 }
 function validateOptions(options: CompetitiveBenchmarkOptions): void {
   if (!Number.isSafeInteger(options.pairRounds) || options.pairRounds < 5

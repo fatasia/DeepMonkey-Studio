@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { planCascadedShadows } from "@bim-studio/deep-engine";
+import type { TrajectoryCameraPose } from "@bim-studio/deep-engine";
 import { captureWebGpuBenchmarkImage } from "./benchmarkImage.js";
 import type { BenchmarkBackend, BenchmarkFrameStats } from "./benchmarkBackend.js";
 import {
@@ -8,7 +9,6 @@ import {
   BENCHMARK_FLOOR,
   BENCHMARK_HEIGHT,
   BENCHMARK_LIGHT,
-  BENCHMARK_MATERIAL,
   BENCHMARK_DPR,
   BENCHMARK_WIDTH,
   type BenchmarkSceneFixture,
@@ -16,6 +16,7 @@ import {
 import { createBenchmarkFidelitySnapshot, type BenchmarkFidelitySnapshot,
   type BenchmarkProfile } from "./benchmarkProfile.js";
 import { deepBaselineShadowFilter } from "./threeBaselineShadowFilter.js";
+import { createThreeBenchmarkPacket } from "./threeBenchmarkPacket.js";
 
 interface WebGpuBackendAccess {
   readonly isWebGPUBackend?: boolean;
@@ -34,7 +35,8 @@ export class ThreeWebGpuBenchmarkBackend implements BenchmarkBackend {
     private readonly scene: THREE.Scene, private readonly camera: THREE.PerspectiveCamera,
     private readonly device: GPUDevice, private readonly context: GPUCanvasContext, adapter: GPUAdapterInfo,
     private readonly resources: readonly { dispose(): void }[], private readonly timestampEnabled: boolean,
-    readonly profile: BenchmarkProfile, readonly fidelity: BenchmarkFidelitySnapshot) {
+    readonly profile: BenchmarkProfile, readonly fidelity: BenchmarkFidelitySnapshot,
+    private readonly fixture: BenchmarkSceneFixture) {
     this.adapter = Object.freeze({ vendor: adapter.vendor, architecture: adapter.architecture,
       device: adapter.device, description: adapter.description, isFallbackAdapter: adapter.isFallbackAdapter });
     renderer.onDeviceLost = info => this.failures.push(`lost: ${info.message}`);
@@ -67,7 +69,7 @@ export class ThreeWebGpuBenchmarkBackend implements BenchmarkBackend {
       const prepared = prepareScene(renderer, fixture, profile); resources.push(...prepared.resources);
       const fidelity = createBenchmarkFidelitySnapshot("three-webgpu", profile, fixture, canvas);
       const result = new ThreeWebGpuBenchmarkBackend(canvas, renderer, prepared.scene, prepared.camera,
-        device, backend.context, adapter.info, resources, features.length > 0, profile, fidelity);
+        device, backend.context, adapter.info, resources, features.length > 0, profile, fidelity, fixture);
       await renderer.compileAsync(prepared.scene, prepared.camera);
       result.render(); await result.settle(); signal.throwIfAborted();
       return result;
@@ -78,6 +80,14 @@ export class ThreeWebGpuBenchmarkBackend implements BenchmarkBackend {
   }
 
   get timestampSupported(): boolean { return this.timestampEnabled; }
+
+  setCamera(pose: TrajectoryCameraPose): void {
+    this.camera.position.fromArray(pose.position); this.camera.lookAt(new THREE.Vector3(...pose.target));
+    this.camera.fov = pose.fovDeg; this.camera.updateProjectionMatrix(); this.camera.updateMatrixWorld(true);
+    const sun = this.scene.children.find(child => child instanceof THREE.DirectionalLight) as THREE.DirectionalLight;
+    configureBenchmarkShadow(sun, { ...this.fixture, view: { ...this.fixture.view,
+      eye: pose.position, target: pose.target, verticalFovRadians: pose.fovDeg * Math.PI / 180 } }, this.profile);
+  }
 
   setGpuInstrumentation(enabled: boolean): void {
     if (enabled !== this.timestampEnabled) throw new Error("Three timestamp instrumentation was not frozen at initialization.");
@@ -126,21 +136,7 @@ export class ThreeWebGpuBenchmarkBackend implements BenchmarkBackend {
 
 function prepareScene(renderer: THREE.WebGPURenderer, fixture: BenchmarkSceneFixture, profile: BenchmarkProfile) {
   const scene = new THREE.Scene(); scene.background = new THREE.Color().setRGB(...BENCHMARK_BACKGROUND);
-  const source = fixture.packet.geometries[0]!, positions = new Float32Array(source.vertices.length / 2);
-  const normals = new Float32Array(source.vertices.length / 2);
-  for (let sourceOffset = 0, target = 0; sourceOffset < source.vertices.length; sourceOffset += 6, target += 3) {
-    positions.set(source.vertices.subarray(sourceOffset, sourceOffset + 3), target);
-    normals.set(source.vertices.subarray(sourceOffset + 3, sourceOffset + 6), target);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
-  geometry.setIndex(new THREE.BufferAttribute(source.indices, 1)); geometry.computeBoundingSphere();
-  const material = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...BENCHMARK_MATERIAL.baseColor),
-    metalness: BENCHMARK_MATERIAL.metallic, roughness: BENCHMARK_MATERIAL.roughness });
-  const mesh = new THREE.InstancedMesh(geometry, material, fixture.instanceCount); mesh.castShadow = true;
-  const matrix = new THREE.Matrix4(); fixture.transforms.forEach((transform, index) => mesh.setMatrixAt(index, matrix.fromArray(transform)));
-  mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); scene.add(mesh);
+  const packet = createThreeBenchmarkPacket(fixture.packet); scene.add(packet.root);
   const floorGeometry = new THREE.PlaneGeometry(fixture.extent * 16, fixture.extent * 16);
   const floorMaterial = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...BENCHMARK_FLOOR),
     metalness: 0, roughness: 0.9 });
@@ -153,7 +149,7 @@ function prepareScene(renderer: THREE.WebGPURenderer, fixture: BenchmarkSceneFix
     fixture.view.near, fixture.view.far);
   camera.position.fromArray(fixture.view.eye); camera.up.fromArray(fixture.view.up!);
   camera.lookAt(new THREE.Vector3().fromArray(fixture.view.target)); camera.updateMatrixWorld(true);
-  const resources: { dispose(): void }[] = [floorGeometry, floorMaterial, geometry, material];
+  const resources: { dispose(): void }[] = [floorGeometry, floorMaterial, ...packet.resources];
   if (profile === "high-native") {
     const room = new RoomEnvironment(), pmrem = new THREE.PMREMGenerator(renderer as never);
     const environment = pmrem.fromScene(room); scene.environment = environment.texture;

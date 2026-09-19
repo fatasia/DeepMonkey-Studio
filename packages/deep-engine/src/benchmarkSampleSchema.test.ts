@@ -20,6 +20,13 @@ function window(): SampleWindow {
 }
 
 describe("benchmark sample window contract", () => {
+  it("rejects NaN, reversed and unavailable out-of-window bounds", () => {
+    for (const windowEndMs of [NaN, 999, 9000]) {
+      const source = window();
+      const input = { ...source, channels: [{ ...source.channels[1]!, windowEndMs }] };
+      expect(validateSampleWindow(input).length).toBeGreaterThan(0);
+    }
+  });
   it("accepts a window where CPU is measured and GPU timestamps are honestly unavailable", () => {
     expect(validateSampleWindow(window())).toEqual([]);
     expect(() => createSampleWindow(window())).not.toThrow();
