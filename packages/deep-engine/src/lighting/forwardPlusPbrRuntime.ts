@@ -69,8 +69,8 @@ export class ForwardPlusPbrRuntime {
   private disposed = false;
 
   constructor(private readonly session: LightingSession, localShadow?: LocalSpotShadowBindings) {
-    if (session.device.limits.maxBindGroups < 4 || session.device.limits.maxStorageBuffersPerShaderStage < 6) {
-      throw new Error("Forward+ PBR requires four bind groups and six fragment storage buffers.");
+    if (session.device.limits.maxBindGroups < 4 || session.device.limits.maxStorageBuffersPerShaderStage < 7) {
+      throw new Error("Forward+ PBR requires four bind groups and seven fragment storage buffers.");
     }
     this.assigner = new ForwardPlusClusterAssigner(session);
     this.bindings = new ForwardPlusPbrLightingBindings(session, localShadow);

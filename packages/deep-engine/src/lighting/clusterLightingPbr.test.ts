@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import { sceneShader } from "../webgpu/pbrShader.js";
@@ -7,6 +8,10 @@ import { ForwardPlusClusterAssigner } from "./clusterCompute.js";
 import { composeForwardPlusPbrShader, FORWARD_PLUS_PBR_WGSL } from "./clusterLightingPbrWgsl.js";
 import { ForwardPlusPbrLightingBindings } from "./pbrLightingBindings.js";
 import { evaluateForwardPlusPbrCpu, type ForwardPlusPbrSurface } from "./pbrLightingCpu.js";
+import { evaluateIesShadingFactor, packIesShading } from "./iesShading.js";
+import { packClusteredLights } from "./clusterPacking.js";
+import { parseIesProfile } from "./iesProfile.js";
+import { quantizeIesLightProfile } from "../runtimePackage/lightProfiles.js";
 
 const grid = { viewportWidth: 2, viewportHeight: 1, tileSizeX: 1, tileSizeY: 1,
   zSlices: 4, near: 1, far: 16, verticalFovRadians: Math.PI / 2, maxLightsPerCluster: 8 } as const;
@@ -66,6 +71,34 @@ describe("Forward+ clustered PBR lighting", () => {
     expect(FORWARD_PLUS_PBR_WGSL).toContain("array<vec2f, 4>(");
     expect(FORWARD_PLUS_PBR_WGSL).toContain("atlasUv + offsets[sampleIndex] * texel");
     expect(FORWARD_PLUS_PBR_WGSL).toContain("attenuation * visibility");
+  });
+
+  it("injects the IES factor into the spot attenuation path with an identity sentinel", () => {
+    expect(FORWARD_PLUS_PBR_WGSL).toContain("@group(3) @binding(12) var<storage, read> deepIesShading: array<vec4<f32>>");
+    expect(FORWARD_PLUS_PBR_WGSL).toContain("attenuation = attenuation * deepSpotIesFactor(spotIndex, surfaceToLight, light.directionOuterCos.xyz)");
+    expect(FORWARD_PLUS_PBR_WGSL).toContain("if (params.x < 0.0) { return 1.0; }");
+  });
+
+  it("modulates IES spot radiance by the packed factor and keeps non-IES radiance untouched", () => {
+    const quad = quantizeIesLightProfile("syn.quad-0-90",
+      parseIesProfile(readFileSync(new URL("../../fixtures/ies/e02-quad-0-90.ies", import.meta.url), "utf8")));
+    const spotLight = { positionView: [0, 0, -2] as const, range: 5, color: [1, 0.5, 0.25] as const, intensity: 2,
+      directionView: [0, 0, -1] as const, innerConeCos: Math.cos(0.9), outerConeCos: Math.cos(1.2) };
+    const positionView = [1, 1, -4] as const;
+    const probe: ForwardPlusPbrSurface = { ...surface(positionView), normalView: [0, 0, 1] };
+    const plain = { spots: [spotLight] };
+    const plainColor = evaluateForwardPlusPbrCpu(assignLightsToClusters(grid, plain), plain, probe).color;
+    const withIes = { spots: [{ ...spotLight, ies: { profileId: "syn.quad-0-90" } }], lightProfiles: [quad] };
+    const iesColor = evaluateForwardPlusPbrCpu(assignLightsToClusters(grid, withIes), withIes, probe).color;
+    const packed = packClusteredLights(withIes);
+    const packing = packIesShading(withIes.spots, withIes.lightProfiles);
+    const dx = 0 - positionView[0], dy = 0 - positionView[1], dz = 0 - positionView[2];
+    const length = Math.hypot(dx, dy, dz);
+    const factor = evaluateIesShadingFactor(packing, 0,
+      [packed.spots[4]!, packed.spots[5]!, packed.spots[6]!], [dx / length, dy / length, dz / length]);
+    expect(factor).toBeGreaterThan(0);
+    expect(factor).toBeLessThan(1);
+    iesColor.forEach((value, index) => expect(value).toBeCloseTo(plainColor[index]! * factor, 12));
   });
 
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("validates the composable group-3 library with Naga", () => {
@@ -138,15 +171,18 @@ describe("Forward+ clustered PBR lighting", () => {
       { binding: 9, visibility: 2, texture: { sampleType: "float", viewDimension: "2d-array" } },
       { binding: 10, visibility: 2, sampler: { type: "filtering" } },
       { binding: 11, visibility: 2, buffer: { type: "uniform", minBindingSize: 256 } },
+      { binding: 12, visibility: 2, buffer: { type: "read-only-storage" } },
     ]);
     const resources = assigner.prepare(grid, { points: [point()] }), result = bindings.bind(resources);
     const entries = (result.bindGroup as unknown as { entries: GPUBindGroupEntry[] }).entries;
-    expect(entries.slice(6, 9)).toEqual([{ binding: 6, resource: { buffer: local.uniform } },
+    // binding 12 前移到簇缓冲映射尾部（0-5 之后）；6-8 仍是局部阴影三件套。
+    expect(entries[6]).toEqual({ binding: 12, resource: { buffer: resources.iesShadingBuffer } });
+    expect(entries.slice(7, 10)).toEqual([{ binding: 6, resource: { buffer: local.uniform } },
       { binding: 7, resource: local.atlasView }, { binding: 8, resource: local.sampler }]);
     const probe = { view: {} as GPUTextureView, sampler: {} as GPUSampler, levelMetadataBuffer: {} as GPUBuffer };
     bindings.setProbeClipmap(probe); expect(bindings.hasProbeClipmap).toBe(true);
     const withProbe = bindings.bind(resources).bindGroup as unknown as { entries: GPUBindGroupEntry[] };
-    expect(withProbe.entries.slice(9)).toEqual([{ binding: 9, resource: probe.view },
+    expect(withProbe.entries.slice(10)).toEqual([{ binding: 9, resource: probe.view },
       { binding: 10, resource: probe.sampler }, { binding: 11, resource: { buffer: probe.levelMetadataBuffer } }]);
     bindings.dispose(); assigner.dispose(); expect(f.owned.size).toBe(0);
   });
