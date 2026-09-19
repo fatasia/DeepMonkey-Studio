@@ -15,6 +15,20 @@ fn package() -> deep_engine_native::deep2d::Deep2dRuntimePackage {
 }
 
 #[test]
+fn prepared_atlas_pixel_identity_ignores_namespace_but_detects_byte_changes() {
+    let content = Deep2dRuntimeContent::Package(package());
+    let prepared = prepare_runtime_content(&content).unwrap();
+    let atlas = &prepared.atlases[0];
+    let expected = atlas.content_sha256();
+    assert_eq!(expected.len(), 64);
+    let mut renamed = atlas.clone();
+    renamed.id = "dashboard.namespaced".into();
+    assert_eq!(renamed.content_sha256(), expected);
+    renamed.data[0] ^= 1;
+    assert_ne!(renamed.content_sha256(), expected);
+}
+
+#[test]
 fn v2_interleaves_path_image_path_and_glyph_by_editor_z_order() {
     let content = decode_runtime_content(include_bytes!(
         "../fixtures/deep2d_runtime_interleaved_v2.json"
