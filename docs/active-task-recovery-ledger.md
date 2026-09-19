@@ -1,5 +1,48 @@
 ## 当前检查点（2026-09-18，覆盖下方历史调度口径）
 
+### 交接入口（2026-09-19）
+
+> 当前收尾状态以 `docs/codex-mainline-handoff-2026-09-19-closeout.md` 和最新 `test-output/mainline-closure-20260918/closure.json` 为准；下方早期条目保留历史上下文。最新机器汇总为 passed=4、partial=4、blocked=0。
+
+- 2026-09-19 续跑：V11 真实浏览器门禁已通过 Nature 目录导入、项目资产插入、真实 `dragTo` 投放、保存/刷新重开和 1024px 响应式检查；产物报告为 `test-output/asset-material-flow/report.json`，`inProductDragDrop=verified`。场景资源面板现已接入资产专用 MIME、模型卡 `draggable`、原生 capture drop 兜底和引擎就绪排队；门禁会先关闭资源浮窗再检查场景树，避免隐藏 DOM 误判。DE26 本次下载目录两份 BIMFACE RVT 为同一 SHA，审计只产生一份 2017/unsupported-version 结果，不覆盖 Snowdon、不增加几何统计完成度。`verify-de26-readiness-evidence.mjs` 已校验源审计报告哈希、版本/状态/源身份并标注匹配 manifest；篡改、损坏与显式缺失文件均拒绝，定向测试通过。证据：`test-output/de26-rvt-source-audit-20260919-r4/evidence.json`。
+- 2026-09-19 GI 续跑：r14 当前 debug Native 播放器双格矩阵已过固定门槛；on normalized SSIM 0.999376 / MAE 0.005833 / edge F1 1.000，off normalized SSIM 0.986417 / MAE 0.007929 / edge F1 0.999169，raw SSIM on/off=0.994162/0.997363。Web 点光校准至 Native 同合同 2.35，GI 跨端状态可收口为 passed；复杂几何扩展不阻塞本项目。
+- 2026-09-19 动态运行包续验：Native 动态解析/采样 4 项通过，PlayerContent v7 dynamic-runtime carry 测试通过；新增 Web `dynamicRuntimePlayback.ts`，从编译产物 entrypoint 校验、采样 TRS 并应用帧，编译器“编译→Web 消费”测试通过。状态仍 partial，仅缺 WebGPU 帧播放、Native 真窗口动态时钟和确定性重放证据。
+- 2026-09-19 R2 跨后端着色 IR 第一波：新增 `packages/deep-engine/src/shaderCompute/`（DCIR v0 类型化节点 DAG：依赖序校验/IR 哈希/WGSL+GLSL ES3.0 双发射器/HiZ 第一档 kernel/CPU 参考实现/输入生成，9 文件各 ≤240 行）+ `lab/r2ShaderIrProbe.ts`（双后端浏览器探针）+ `scripts/r2ShaderIrGpuTest.mjs`（`test:r2-shader-ir-gpu` 真机 runner）。设计 `docs/specs/r2-shader-ir-design-2026-09-19.md` 含现状地图（6 类着色源、Web/Native 手写 WGSL 双份分叉等 4 个重复/分叉点）。真机结论（headless Chrome 153，WebGPU=Dawn/RTX 4060 Laptop vs WebGL2=ANGLE/D3D11）：HiZ 第一档 min/max 四案例（64×64、37×23、13×7、1×1，含 ±0/相等并列/+inf 注入）**WebGPU/WebGL2/CPU 参考三方输出哈希逐字节相同**，每案例双跑稳定；denormal 案例双 GPU 彼此一致、与 CPU 差异=flush-to-zero 如实记录（阈值档）。真机抓到并修复三件事：ANGLE/D3D11 对『2×uvec2+1×uint』uniform 打包 quirk（uint 恒读 0，证据 uniformShaderEcho）→ 模式改 IR 级特化；ANGLE 把 `x+0.0` 代数化简 → canonicalize 发射为 select 形式；FBO 附件残留采样单元反馈环 → 探针内建防御。门禁：deep-engine typecheck 双配置 0 错、shaderCompute 7/7 单测过、runtimePurity 过；全量 vitest 395/396 文件通过（唯一失败 `lab/benchmarkTrajectoryReplay.test.ts` 为并行车道在途未跟踪文件，与本车道无关）。证据 `test-output/r2-shader-ir-20260919-r1/`（evidence.json + min/max WGSL/GLSL 工件 + 输入/输出 .bin）。未做（如实）：Native wgpu 第三端未接（`src/shaderCompute/nativeHarness.ts` 留合同桩）、生产 HiZ/探针内核未迁移、storage-buffer I/O 与阈值档超越函数 op 未实现。未触碰 R3 车道（delivery/runtimePackage）与任何共享文件。
+
+本轮交接文档：`docs/codex-mainline-handoff-2026-09-19.md`。它只保留八项目标的当前状态和下一证据缺口；本总账及各专项报告仍是历史证据与恢复依据。已通过的剖切 E2E 已从交接待办移出，其余条目按证据状态继续推进。
+
+- 进度快照：`docs/codex-mainline-progress-2026-09-19.md`。按验收门槛覆盖率保守估计约 59%；不是代码行数或完成承诺。①剖切 E2E 已完成，其余七项仍有真实产品链/跨端/OS/项目级缺口。
+
+- 用户新增八项目标已建立：剖切 E2E、动态场景运行包、V11 Nature Kit、发布链 OS 级证据、GI 跨端一致性、D24–D28 后验收、工业 S1–S6、DE26 资产/readiness。剖切 E2E 于本轮以真实 Native 双变体双轮复验通过：`test-output/scene-clipping-e2e-20260918-r3/evidence.json`，changedBytes=299000（7.79%）；其余七项按证据矩阵继续收口。
+
+- GI 跨端矩阵 r7：统一证据夹具与正式 `compileSceneCamera` 的 50° vertical FOV，并校准 Web 背景到 Native 固定 ACES 输出后，GI-on raw/normalized SSIM=0.983678/0.999477、edge F1=1.000000；GI-off raw/normalized SSIM=0.954817/0.957171，但 edge F1=0.601129，仍有无 GI 几何/基线照明结构差异，保持 partial，不能宣称跨端完全一致。证据：`test-output/gi-crossend-matrix-20260919-r7/matrix.json`；夹具说明见 [GI 规格](specs/lightmap-single-bounce-2026-09-18.md)。
+
+- 主线收口索引已扩展为八项目标，`scripts/verify-mainline-closure.mjs` 新增 `08-de26-asset-readiness`；当前索引汇总为 passed=1、passed-with-boundary=1、partial=5、bounded-deferred=0、blocked=1，合同有效但不代表八项完成。
+
+- 动态运行包推进：新增 `deep-engine.dynamic-runtime` v1 的 TS ABI 校验与 Native 离线解码，并接入 Runtime Package v7 `dynamic-runtime` resource/entrypoint；覆盖动画 7 元 TRS 关键帧、单调离线 replay revision、声明式 interaction 目标形状和未知字段拒绝。TS typecheck、Native runtime-package 21 项测试通过；播放消费者和实窗证据仍缺，状态前进为 partial。
+
+- V11 grounded 派生件新增独立复核：`verify-v11-grounded-derived.mjs` 读取 glTF-transform 输出，核对派生 SHA 与 sidecar、POSITION 数组和 `rawMinY=0`；主线收口器现记录 `groundedDerivedGate=true`。48 个 GLB、192 个缩略图和 `catalog.json` 已接入素材中心本地目录；这只关闭 geometry-only gate，产品拖放/保存/重开仍 blocked。
+
+- DE26 派生资产统计补证：`inspect-de26-local-benchmarks.mts` 现在写入 `test-output/de26-local-assets-readiness-20260918/prepared-statistics.json`，记录 LocalBim/LocalPreheater 解码后的 triangles、materials、textures、geometries、instances 和 packet sphere；8 个场景角色已覆盖 6/6 load classes 与 4/4 task kinds。该证据只描述本地 glTF 派生件，不冒充两个 RVT 源文件的精确几何统计；readiness 保持 unverified。
+
+- 工业 S1–S6 矩阵门禁加固：阶段为 `partial`/`blocked`/`project_post_acceptance` 时必须存在非空 `openGates`，`complete` 不得残留门槛；新增 1 个失败路径测试，防止状态字段脱离缺口清单升级。当前六阶段状态和七 profile 状态不变。
+
+- D24–D28 项目后验收门禁加固：新增 V01–V05 完整性/独立证据校验及 2 项失败路径测试；当前五张卡仍为 partial/unverified，A04/A08 配对证据不能升级为项目通过。
+
+- 主线工业汇总正则修复：原来把历史 `S0` 行也纳入 `S1–S6` 完整性计数，现只识别精确 `S1` 至 `S6`，并要求六个阶段各出现一次；新增 2 项回归测试。工业状态仍按矩阵保持 partial/project_post_acceptance。
+
+- 工业证据绑定补强：主线 `07-industrial-s1-s6` 现在同时指纹 `industrial-stage-delta` 叙述报告和 `industrial-s1-s6-acceptance-matrix` 机器 JSON，并记录六阶段/profile 状态；矩阵形状不完整时不会进入 partial。
+
+- 动态 ABI 跨端边界修复：Native `Option<String>` 原会把缺失 `targetId` 当成显式 null；现要求交互 payload 明确提供该字段，与 TS 校验一致。Native 3 项、TS 4 项定向测试继续通过；正式播放消费者仍未接线。
+
+- 发布链新增只读 OS 预检：`scripts/verify-publish-os-preflight.mjs` 记录 `netsh advfirewall` 三配置均 ON、策略 `BlockInbound/AllowOutbound`，两条命令 exit=0。它只证明当前主机状态，不替代 clean-machine 断网启动；原 firewall helper exit=1 仍保留，发布项继续 `passed-with-boundary`。
+
+- GI 汇总器 schema v2 读取修复：此前从 `metrics` 误取归一化值，现读取 `exposureNormalized` 并要求 on/off 各一格、edge F1 ≥ 0.90 和有限有效指标；固定 SSIM ≥ 0.97、MAE ≤ 0.03，不从产物放宽门槛。新增 `scripts/lib/giClosureEvidence.mjs` 及 7 项失败路径回归，全通过；Web 类型、Native offline check、八项索引复验通过，GI 保持 partial。
+
+- DE26/V11 开放素材同步续跑：核实 `city-kit-industrial` 历史直链 HTTP 404，资产页仍提供 `kenney_city-kit-industrial_2.0.zip`；`scripts/sync-open-asset-packs.mjs` 已增加资产页回退与单包失败继续策略。17 包缓存复跑完成、目录 87.7 MiB；V11 仍保持 `review-required`，产品内拖放/保存刷新验收未完成。
+
+- 工业 S1–S6 已建立机器可读收口矩阵 `docs/specs/industrial-s1-s6-acceptance-matrix-2026-09-18.json` 及校验器 `scripts/fixtures/industrial-stage-matrix.mjs`；当前 S1–S5=`partial`、S6=`project_post_acceptance`，七个 profile 均未声明 `productionReady`。API 构建后工业聚焦 14 文件/114 测试、Tiles/X_T 纯审计 45 测试、RVT 真实语料 12 测试全绿；报告见 `docs/reports/industrial-s1-s6-closure-2026-09-18.md`。inspect/preview 边界和剩余 OS 级断网、混合场景、版本矩阵门槛保持不变。
+
 - Deep2D 表格交互切片收口:4 行 linked-table 正式候选链 201 通过(R10g,8 过滤窗全过),资源经位置无关压缩 146→90(预算 132 未放宽,R9c 严格绘制流证明),真实排序后 CSV/XLSX **逐字节导出**×2 轮+取消窗通过(r19)。根因链:bundle 测量缓存漏 filterData(丢过滤变体层/visibility)+ 布局双捕获微差→单次绑定共享;保存对话框自动化按截图实证改 GetGUIThreadInfo 焦点 EDIT WM_SETTEXT+IDOK。证据与 R1–R10f 全记录见 [表格 spec](specs/deep2d-table-interaction-2026-09-18.md)。遗留:浅色/空态图标视觉验收。
 - 14:54 启动的 Web 全量已结束：622 文件、3710 项通过，3 文件/3 项既有跳过，93.10 秒。这是该启动时工作树的回归快照，不覆盖后续表格资源压缩或 Fog 接线。
 - GI 固定方向相关色块已修复：保持 64 样本，按世界位置旋转方位；新 GLB 两轮确定性烘焙及同 EXE/同照明四次 Native 实窗通过，大三角色块明显消除，仍有细噪声。PNG/Native texels 与 UV1 精确一致；复杂几何与跨端同照明终验待补。[GI 证据](specs/lightmap-single-bounce-2026-09-18.md)
