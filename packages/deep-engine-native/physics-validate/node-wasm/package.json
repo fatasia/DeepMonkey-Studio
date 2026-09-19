@@ -1,0 +1,13 @@
+{
+  "name": "@deep-engine/r10-wasm-physics-harness",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "R10 selection validation: run the same deterministic physics scene on the Rapier wasm kernel (@dimforge/rapier3d-compat) and compare bitwise against the Rust native run",
+  "scripts": {
+    "run": "node run-and-compare.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "=0.20.0"
+  }
+}
