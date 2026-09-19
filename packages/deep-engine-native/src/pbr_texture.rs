@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::contract::{
-    RenderPacket, TextureResource, TextureSampler, TextureSemantic, TextureSlot, validate_packet,
-};
+use crate::contract::{PbrMaterial, RenderPacket, TextureResource, TextureSampler, TextureSemantic, TextureSlot, validate_packet};
 
 pub use crate::mesh_abi::MATERIAL_UNIFORM_FLOATS;
 pub use crate::pbr_reference::{decode_tangent_normal, occlusion_factor, srgb_channel_to_linear};
@@ -115,29 +113,12 @@ pub fn prepare_pbr_resources(packet: &RenderPacket) -> Result<PreparedPbrResourc
         .materials
         .iter()
         .map(|material| {
-            let mut uniform = [0.0; MATERIAL_UNIFORM_FLOATS];
+            let uniform = prepare_material_uniform(material)?;
             let base = material.base_color_texture.as_ref();
             let mr = material.metallic_roughness_texture.as_ref();
             let normal = material.normal_texture.as_ref();
             let ao = material.occlusion_texture.as_ref();
             let emissive = material.emissive_texture.as_ref();
-            write_transform(&mut uniform, 0, base, base.is_some())?;
-            write_transform(&mut uniform, 8, mr, mr.is_some())?;
-            write_transform_parts(
-                &mut uniform,
-                16,
-                ao.map(|slot| (slot.tex_coord, slot.offset, slot.scale, slot.rotation)),
-                ao.is_some(),
-            )?;
-            uniform[23] = ao.and_then(|slot| slot.strength).unwrap_or(1.0);
-            write_transform_parts(
-                &mut uniform,
-                24,
-                normal.map(|slot| (slot.tex_coord, slot.offset, slot.scale, slot.rotation)),
-                normal.is_some(),
-            )?;
-            uniform[31] = normal.and_then(|slot| slot.normal_scale).unwrap_or(1.0);
-            write_transform(&mut uniform, 32, emissive, emissive.is_some())?;
             Ok(PreparedMaterial {
                 id: material.id.clone(),
                 normal_mapped: normal.is_some(),
@@ -156,6 +137,35 @@ pub fn prepare_pbr_resources(packet: &RenderPacket) -> Result<PreparedPbrResourc
         textures,
         materials,
     })
+}
+
+/// Prepare only the numeric material uniform; no texture decoding/upload occurs.
+/// C3 uses this for uniform-only incremental updates.
+pub fn prepare_material_uniform(material: &PbrMaterial) -> Result<[f32; MATERIAL_UNIFORM_FLOATS], String> {
+    let mut uniform = [0.0; MATERIAL_UNIFORM_FLOATS];
+    let base = material.base_color_texture.as_ref();
+    let mr = material.metallic_roughness_texture.as_ref();
+    let normal = material.normal_texture.as_ref();
+    let ao = material.occlusion_texture.as_ref();
+    let emissive = material.emissive_texture.as_ref();
+    write_transform(&mut uniform, 0, base, base.is_some())?;
+    write_transform(&mut uniform, 8, mr, mr.is_some())?;
+    write_transform_parts(
+        &mut uniform,
+        16,
+        ao.map(|slot| (slot.tex_coord, slot.offset, slot.scale, slot.rotation)),
+        ao.is_some(),
+    )?;
+    uniform[23] = ao.and_then(|slot| slot.strength).unwrap_or(1.0);
+    write_transform_parts(
+        &mut uniform,
+        24,
+        normal.map(|slot| (slot.tex_coord, slot.offset, slot.scale, slot.rotation)),
+        normal.is_some(),
+    )?;
+    uniform[31] = normal.and_then(|slot| slot.normal_scale).unwrap_or(1.0);
+    write_transform(&mut uniform, 32, emissive, emissive.is_some())?;
+    Ok(uniform)
 }
 
 fn prepare_texture(texture: &TextureResource) -> Result<PreparedTexture, String> {

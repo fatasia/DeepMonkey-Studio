@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bytemuck::cast_slice;
 use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_BYTES;
-use deep_engine_native::pbr_texture::{PreparedMaterial, PreparedPbrResources, PreparedPbrSummary};
+use deep_engine_native::pbr_texture::{PreparedMaterial, PreparedPbrResources, PreparedPbrSummary, prepare_material_uniform};
 use wgpu::util::DeviceExt;
 
 use crate::gpu_texture_upload::{GpuTexture, create_fallbacks, upload_texture};
@@ -106,6 +106,26 @@ impl GpuPbrResources {
     pub fn resident_texture_count(&self) -> usize {
         self._textures.len() + self._fallbacks.len()
     }
+
+    /// Update only numeric material uniforms. Texture slots and bind groups stay unchanged;
+    /// caller must have classified the change as UniformOnly first.
+    pub(crate) fn write_material_uniforms(
+        &mut self,
+        queue: &wgpu::Queue,
+        materials: &[deep_engine_native::contract::PbrMaterial],
+        changed_indices: &[usize],
+    ) -> Result<(), String> {
+        if materials.len() != self.materials.len() {
+            return Err("uniform-only material update changed material count".into());
+        }
+        for &index in changed_indices {
+            let material = materials.get(index).ok_or("material update index out of range")?;
+            let uniform = prepare_material_uniform(material)?;
+            queue.write_buffer(&self.materials[index]._uniform, 0, cast_slice(&uniform));
+        }
+        Ok(())
+    }
+
 
     #[allow(dead_code)] // Direct builder remains the independent GPU-test entrypoint.
     pub fn new(

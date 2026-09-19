@@ -3,7 +3,7 @@
 //! Uniform-only material changes can update the existing bind-group buffer;
 //! texture-slot or shader-feature changes must fall back to resource staging.
 
-use deep_engine_native::{contract::PbrMaterial, pbr_texture::PreparedMaterial};
+use deep_engine_native::{contract::PbrMaterial, pbr_texture::{prepare_material_uniform, PreparedMaterial}};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MaterialResourceDiff {
@@ -40,19 +40,19 @@ pub fn classify_material_resources(
 pub fn material_contract_is_uniform_only(before: &PbrMaterial, after: &PbrMaterial) -> bool {
     before.id == after.id
         && before.shading_model == after.shading_model
-        && before.base_color_texture.as_ref().map(|s| format!("{s:?}"))
-            == after.base_color_texture.as_ref().map(|s| format!("{s:?}"))
-        && before.metallic_roughness_texture.as_ref().map(|s| format!("{s:?}"))
-            == after.metallic_roughness_texture.as_ref().map(|s| format!("{s:?}"))
-        && before.normal_texture.as_ref().map(|s| format!("{s:?}"))
-            == after.normal_texture.as_ref().map(|s| format!("{s:?}"))
-        && before.occlusion_texture.as_ref().map(|s| format!("{s:?}"))
-            == after.occlusion_texture.as_ref().map(|s| format!("{s:?}"))
-        && before.emissive_texture.as_ref().map(|s| format!("{s:?}"))
-            == after.emissive_texture.as_ref().map(|s| format!("{s:?}"))
+        && format!("{:?}", before.base_color_texture) == format!("{:?}", after.base_color_texture)
+        && format!("{:?}", before.metallic_roughness_texture) == format!("{:?}", after.metallic_roughness_texture)
+        && format!("{:?}", before.normal_texture) == format!("{:?}", after.normal_texture)
+        && format!("{:?}", before.occlusion_texture) == format!("{:?}", after.occlusion_texture)
+        && format!("{:?}", before.emissive_texture) == format!("{:?}", after.emissive_texture)
         && before.alpha_mode == after.alpha_mode
         && before.double_sided == after.double_sided
         && before.premultiplied_alpha == after.premultiplied_alpha
+}
+
+/// Build the uniform payload only after the structural contract passes.
+pub fn uniform_payload(material: &PbrMaterial) -> Result<[f32; deep_engine_native::mesh_abi::MATERIAL_UNIFORM_FLOATS], String> {
+    prepare_material_uniform(material)
 }
 
 #[cfg(test)]
