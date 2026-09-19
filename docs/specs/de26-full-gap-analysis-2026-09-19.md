@@ -165,3 +165,49 @@
 - **我方现状**:H02(对象到 GPU 诊断,RendererDiagnosticsPanel/Dialog 已有)、H03(统一 Profiler,Native 遥测 8 CPU 段+GPU timestamp 段已通——今晚 R6-2 基线就是它产的)、H04(材质调试)。
 - **差距真话**:工具"存在性"上我们不低于 Three/Babylon 生态(Spector 都没计时);**差距在打磨度**(他们帧捕获可逐 draw 检查输出纹理,我们的 H02 尚无帧捕获逐 pass 检视)。
 - **立卡 R12(帧捕获)**:H02 升级为"帧捕获模式"——单帧全 pass 截获(颜色/深度/绑定额),按 pass 树检视,结合 source map 定位到源对象;H03 补 CPU 四段细分(正在 R6-2 埋点)+ GPU 段并排时间轴。超越点:**帧捕获 + source map = "点任何一个像素,告诉你它来自哪个源构件、经过哪些 pass"——四平台的调试器都没有编译链语义**。量级:中。
+
+
+## 七、与 Bevy 的性能对比 + Godot/Falcor 可借鉴点(2026-09-19 深夜,深度核实)
+
+### 7.1 我们 vs Bevy:性能对比(诚实版)
+
+**关键事实:Bevy 的渲染后端就是 wgpu**——"Bevy vs 我们"不是 API 之争,是"通用引擎调度开销 vs 专用编译链"之争。逐层对比:
+
+| 层 | Bevy | 我们 | 判定 |
+|---|---|---|---|
+| GPU 抽象 | wgpu(同款) | wgpu(同款) | 平手 |
+| 渲染提交 | 通用 ECS 抽取→渲染世界(每帧全量同步);调度器并行有官方承认的开销 | 编译期产 RenderPacket(静态部分零运行时决策);运行时按变更集增量 | **我们占优**(内容已知形态) |
+| Draw 数 | 虚拟几何后=少数 indirect draw(0.15 起 per-cluster 实例化) | 当前 5000 实例逐 draw;虚拟几何未建 | **Bevy 占优**(这是 R9 要追的) |
+| ECS/CPU 场景管理 | world 类内建,通用调度,官方承认调度开销高于预期 | 无通用 ECS;编译链直出场景,B02 脏域增量 | 场景已知时我们占优;动态任意场景 Bevy 占优 |
+| 阴影/GI/后处理 | Bevy 逐步建设(实验性);无实时 GI 生产 | cluster/CSM/探针 clipmap/烘焙 GI 均有真实证据 | **我们占优**(工业渲染纵深) |
+| 确定性 | 无 | 三端逐位门禁 | **我们独占** |
+| 生态/迭代速度 | Rust 社区活跃,月度发版 | 专用产品团队 | Bevy 占优 |
+
+**结论**:纯渲染管线(虚拟几何)Bevy 今天领先(R9 追);场景已知、重光照/诊断/交付语义的工业负载**我们结构性强于 Bevy**——因为 Bevy 必须为"任意游戏"设计通用性,我们只为"编译过的工业世界"设计。这不是自夸:Bevy 的 ECS 通用性买不来编译链,我们的编译链也买不来 Bevy 的任意场景能力——**赛道不同,但在我们的赛道(Bevy 也想进的 digital twin/工业可视化)我们有结构性优势**。
+
+### 7.2 Bevy 可借鉴(具体到模块)
+
+1. **jms55 virtual geometry 的 visibility buffer 架构**(R9 蓝本):cluster 化→GPU 剔除→indirect draw;0.15 的 per-cluster 实例化减少 overdraw 的手法直接抄作业;
+2. **meshlet 简化离线管线**(meshoptimizer 集成):编译期产 cluster 层级,G3 直接复用;
+3. **调度器的依赖自动并行模型**(系统级冲突检测):C2 并行 encoder 农场的 job 划分可参考其 conflict-detection 思想(但我们按 widget/pass 切,粒度更粗更稳);
+4. **教训同样值钱**:官方承认"调度并行开销高于预期"、"meshlet 简化是瓶颈"、"低模用虚拟几何反而亏"——我们 R9 必须带场景门槛判定(低模走常规管线)。
+
+### 7.3 Godot 4 可借鉴(RD 层设计)
+
+1. **RenderingDevice 薄抽象形态**:Vulkan 心智的单层显式抽象+多后端——与 wgpu-hal 逃生舱同构,佐证"hal 直下"路线的工程合理性;
+2. **不可变全状态 Pipeline(管线卫兵)**:RenderPipeline 封装全部绘制状态,校验友好——我们的 pipelineWarmup/缓存可对齐此纪律;
+3. **scene server 与 renderer 解耦**(可插拔渲染器实现):我们的 PlayerContent/编译产物形态天然如此,Godot 的 instance server 分级剔除(culling mask/instance 细分)值得 D05 参考;
+4. **4.6 的 SSR 重写与管线优化经验**:E4 后处理栈的工程顺序参考。
+
+### 7.4 Falcor 可借鉴(研究框架,不是引擎)
+
+1. **RenderGraph 组合式 pass 框架**:研究代码与后端样板隔离——我们 B03 RenderGraph 的"计划↔执行"对拍语义可参考其图编译/自动 barrier 处理;
+2. **RT/MPDI(直接分发)模式**:R6-1 的 compute 模拟 RT、R9 软 raster 的 dispatch 组织方式可抄其模式;
+3. **Material 系统的分层定义**(标准材质+扩展节点):C04/C05 的"高频字段+显式降级"路线有现成参照;
+4. **定位纪律**:Falcor 是研究原型框架不背生产包袱——**我们学它的图/材质/RT 组织,不学它的非生产定位**;它验证过的研究(如 ReSTIR 采样、RTDI)是 R6-1/A 组未来的算法库。
+
+### 7.5 落地动作(并入行动清单)
+
+- **15. R9 蓝本研究任务**(1-2 天):精读 jms55 两篇博客+bevy meshlet 源码,产出"可见性缓冲架构在 DCIR/编译链下的适配设计"——R9 阶段一的开题报告;
+- **16. Rapier 选型验证**(1 天):R10 开题,Web(wasm)+Native 同源确定性跑通最小 demo(fixed timestep 双端 digest 一致);
+- **17. H03 并排时间轴**:CPU 四段(R6-2 埋点)+GPU 段统一时间轴 UI,对位 Chrome Performance 面板 but 带编译链语义(R12 第一刀)。
