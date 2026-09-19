@@ -11,10 +11,10 @@ export interface ReplayPanelSignal {
   label: string;
 }
 
-export function DataReplayPanel({ projectId, apiOrigin, authHeaders, signals, locale, initialWindowMs = 3600_000 }: {
+export function DataReplayPanel({ projectId, request, signals, locale, initialWindowMs = 3600_000 }: {
   projectId: string;
-  apiOrigin: string;
-  authHeaders: Record<string, string>;
+  /** 注入的传输通道(raw fetch 只允许在 api.ts)。 */
+  request: <T>(url: string, init?: RequestInit) => Promise<T>;
   /** 展示哪些信号(key 与标签);空数组 = 展示回放里的全部 key。 */
   signals: ReplayPanelSignal[];
   locale: AppLocale;
@@ -30,16 +30,11 @@ export function DataReplayPanel({ projectId, apiOrigin, authHeaders, signals, lo
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${apiOrigin}/api/projects/${projectId}/data/replay?windowMs=${initialWindowMs}`, { headers: authHeaders });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as { message?: string };
-        throw new Error(body.message ?? `回放数据加载失败(${response.status})`);
-      }
-      const body = (await response.json()) as { revision: string; entries: Array<{ at: number; values: Record<string, number> }> };
-      const instance = new TimelineReplay({ revision: body.revision, entries: body.entries });
+      const series = await request<{ revision: string; entries: Array<{ at: number; values: Record<string, number> }> }>(`/api/projects/${projectId}/data/replay?windowMs=${initialWindowMs}`);
+      const instance = new TimelineReplay({ revision: series.revision, entries: series.entries });
       instance.play(1);
-      setRevision(body.revision);
-      setEntries(body.entries);
+      setRevision(series.revision);
+      setEntries(series.entries);
       setReplay(instance);
       setError(undefined);
     } catch (reason) {
@@ -47,7 +42,7 @@ export function DataReplayPanel({ projectId, apiOrigin, authHeaders, signals, lo
     } finally {
       setLoading(false);
     }
-  }, [apiOrigin, projectId, authHeaders, initialWindowMs]);
+  }, [projectId, request, initialWindowMs]);
 
   useEffect(() => { void load(); }, [load]);
 

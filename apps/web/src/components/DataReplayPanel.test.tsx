@@ -12,7 +12,7 @@ const entries = [
 describe("DataReplayPanel (P4 UI slice)", () => {
   it("renders revision, controls and signal values for a loaded series", () => {
     const markup = renderToStaticMarkup(
-      <DataReplayPanel projectId="p1" apiOrigin="http://api.test" authHeaders={{}}
+      <DataReplayPanel projectId="p1" request={async () => ({}) as never}
         signals={[{ key: "temp", label: "轴承温度" }, { key: "press", label: "油压" }]} locale="zh-CN" />,
     );
     // 初始未加载(replay 状态在 effect 后才可用),但控件与空态可见。

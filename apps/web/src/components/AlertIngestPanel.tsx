@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { DataEvent, NotificationSeverity } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
@@ -48,11 +48,11 @@ function toSignalSnapshot(snapshot: AlertStateSnapshot) {
   } as const;
 }
 
-export function AlertIngestPanel({ projectId, apiOrigin, locale, authHeaders }: {
+export function AlertIngestPanel({ projectId, request, locale }: {
   projectId: string;
-  apiOrigin: string;
+  /** 注入的传输通道(raw fetch 只允许在 api.ts;面板只持有此函数)。 */
+  request: <T>(url: string, init?: RequestInit) => Promise<T>;
   locale: AppLocale;
-  authHeaders: Record<string, string>;
 }) {
   const [rules, setRules] = useState<AlertRuleSummary[]>([]);
   const [states, setStates] = useState<AlertStateSnapshot[]>([]);
@@ -61,40 +61,43 @@ export function AlertIngestPanel({ projectId, apiOrigin, locale, authHeaders }: 
 
   const refresh = useCallback(async () => {
     try {
-      const [rules, states] = await fetchAlertState(apiOrigin, projectId, authHeaders);
+      const [rules, states] = await Promise.all([
+        request<AlertRuleSummary[]>(`/api/projects/${projectId}/alert-rules`),
+        request<AlertStateSnapshot[]>(`/api/projects/${projectId}/alert-state`),
+      ]);
       setRules(rules);
       setStates(states);
       setError(undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
-  }, [apiOrigin, projectId, authHeaders]);
+  }, [projectId, request]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const acknowledge = useCallback(async (ruleId: string) => {
     setPending(ruleId);
     try {
-      await acknowledgeRule(apiOrigin, projectId, ruleId, authHeaders);
+      await request(`/api/projects/${projectId}/alert-rules/${ruleId}/acknowledge`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       await refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setPending(null);
     }
-  }, [apiOrigin, projectId, authHeaders, refresh]);
+  }, [projectId, request, refresh]);
 
   const removeRule = useCallback(async (ruleId: string) => {
     setPending(ruleId);
     try {
-      await deleteAlertRule(apiOrigin, projectId, ruleId, authHeaders);
+      await request(`/api/projects/${projectId}/alert-rules/${ruleId}`, { method: "DELETE" });
       await refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setPending(null);
     }
-  }, [apiOrigin, projectId, authHeaders, refresh]);
+  }, [projectId, request, refresh]);
 
   const statesByRule = useMemo(() => new Map(states.map((state) => [state.ruleId, state])), [states]);
   const activeCount = states.filter((state) => state.status === "active").length;
@@ -149,25 +152,3 @@ export function alertEventToSnapshot(event: DataEvent): AlertStateSnapshot {
 }
 
 
-export async function fetchAlertState(apiOrigin: string, projectId: string, headers: Record<string, string>): Promise<[AlertRuleSummary[], AlertStateSnapshot[]]> {
-  const [rulesResponse, stateResponse] = await Promise.all([
-    fetch(`${apiOrigin}/api/projects/${projectId}/alert-rules`, { headers }),
-    fetch(`${apiOrigin}/api/projects/${projectId}/alert-state`, { headers }),
-  ]);
-  if (!rulesResponse.ok || !stateResponse.ok) {
-    throw new Error(`告警状态加载失败(${rulesResponse.status}/${stateResponse.status})`);
-  }
-  return [await rulesResponse.json(), await stateResponse.json()];
-}
-
-export async function acknowledgeRule(apiOrigin: string, projectId: string, ruleId: string, headers: Record<string, string>): Promise<void> {
-  const response = await fetch(`${apiOrigin}/api/projects/${projectId}/alert-rules/${ruleId}/acknowledge`, {
-    method: "POST", headers: { "content-type": "application/json", ...headers }, body: "{}",
-  });
-  if (!response.ok) throw new Error(`确认告警失败(${response.status})`);
-}
-
-export async function deleteAlertRule(apiOrigin: string, projectId: string, ruleId: string, headers: Record<string, string>): Promise<void> {
-  const response = await fetch(`${apiOrigin}/api/projects/${projectId}/alert-rules/${ruleId}`, { method: "DELETE", headers });
-  if (!response.ok) throw new Error(`删除告警规则失败(${response.status})`);
-}
