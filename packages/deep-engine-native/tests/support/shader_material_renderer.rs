@@ -215,7 +215,7 @@ pub async fn render_reported(
         &culling,
         lod.as_ref(),
         &pipelines,
-        u8::MAX,
+        u16::MAX,
     );
     encode_mesh_passes(
         &mut encoder,

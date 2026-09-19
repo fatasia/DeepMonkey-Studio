@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use bytemuck::cast_slice;
 use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_BYTES;
-use deep_engine_native::pbr_texture::{PreparedMaterial, PreparedPbrResources, PreparedPbrSummary, prepare_material_uniform};
+use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_FLOATS;
+use deep_engine_native::pbr_texture::{PreparedMaterial, PreparedPbrResources, PreparedPbrSummary};
 use wgpu::util::DeviceExt;
 
 use crate::gpu_texture_upload::{GpuTexture, create_fallbacks, upload_texture};
@@ -108,20 +109,21 @@ impl GpuPbrResources {
     }
 
     /// Update only numeric material uniforms. Texture slots and bind groups stay unchanged;
-    /// caller must have classified the change as UniformOnly first.
+    /// caller must have classified the change as UniformOnly first (C3 stage guard), and the
+    /// `rows` payloads must be the `prepare_material_uniform` outputs of the incoming packet
+    /// (generated at stage time; publish only writes buffers). Index-range checked per row;
+    /// the material count contract is enforced by the stage-side classification.
     pub(crate) fn write_material_uniforms(
         &mut self,
         queue: &wgpu::Queue,
-        materials: &[deep_engine_native::contract::PbrMaterial],
-        changed_indices: &[usize],
+        rows: &[(usize, [f32; MATERIAL_UNIFORM_FLOATS])],
     ) -> Result<(), String> {
-        if materials.len() != self.materials.len() {
-            return Err("uniform-only material update changed material count".into());
-        }
-        for &index in changed_indices {
-            let material = materials.get(index).ok_or("material update index out of range")?;
-            let uniform = prepare_material_uniform(material)?;
-            queue.write_buffer(&self.materials[index]._uniform, 0, cast_slice(&uniform));
+        for (index, uniform) in rows {
+            let material = self
+                .materials
+                .get(*index)
+                .ok_or("material uniform update row out of range")?;
+            queue.write_buffer(&material._uniform, 0, cast_slice(std::slice::from_ref(uniform)));
         }
         Ok(())
     }
@@ -203,7 +205,9 @@ impl GpuMaterial {
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Deep Engine native PBR material uniform v1"),
             contents: cast_slice(&material.uniform),
-            usage: wgpu::BufferUsages::UNIFORM,
+            // COPY_SRC:C3 write_material_uniforms 的 GPU 读回验证需要把
+            // uniform 拷贝到 MAP_READ staging 缓冲(wgpu 禁止直接 map)。
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_SRC,
         });
         let entries = [
             view_entry(0, slots[0]),
@@ -248,5 +252,93 @@ fn sampler_entry(binding: u32, texture: &GpuTexture) -> wgpu::BindGroupEntry<'_>
     wgpu::BindGroupEntry {
         binding,
         resource: wgpu::BindingResource::Sampler(&texture.sampler),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_FLOATS;
+    use deep_engine_native::pbr_texture::PreparedPbrResources;
+
+    fn prepared(id: &str, value: f32) -> PreparedMaterial {
+        PreparedMaterial {
+            id: id.into(),
+            normal_mapped: false,
+            texture_indices: [None; 5],
+            uniform: [value; MATERIAL_UNIFORM_FLOATS],
+        }
+    }
+
+    /// C3 write_material_uniforms 的真实 GPU 端到端验证:写入后从设备内存
+    /// 读回,逐字节断言 payload 落在点名槽位、未点名槽保持初始 uniform。
+    /// (uniform 缓冲禁止直接 map,经 COPY_SRC staging 中转读回。)
+    #[test]
+    #[ignore = "requires a real GPU adapter"]
+    fn written_material_uniforms_read_back_from_device_memory() {
+        pollster::block_on(async {
+            let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+            descriptor.backends = wgpu::Backends::VULKAN;
+            let instance = wgpu::Instance::new(descriptor);
+            let adapter = instance
+                .request_adapter(&wgpu::RequestAdapterOptions::default())
+                .await
+                .expect("real GPU adapter");
+            let (device, queue) = adapter
+                .request_device(&wgpu::DeviceDescriptor::default())
+                .await
+                .unwrap();
+            let layout = create_material_layout(&device);
+            let prepared = PreparedPbrResources {
+                textures: Vec::new(),
+                materials: vec![prepared("a", 0.25), prepared("b", 0.5)],
+            };
+            let initial_b = prepared.materials[1].uniform;
+            let mut pbr = GpuPbrResources::new(&device, &queue, &layout, &prepared).unwrap();
+
+            let mut updated_b = initial_b;
+            updated_b[7] = 42.0;
+            // 空行集必须是无害 no-op。
+            pbr.write_material_uniforms(&queue, &[]).unwrap();
+            pbr.write_material_uniforms(&queue, &[(1, updated_b)]).unwrap();
+            // 越界行必须在写入前被守卫拒绝。
+            assert!(pbr.write_material_uniforms(&queue, &[(9, updated_b)]).is_err());
+
+            let size = MATERIAL_UNIFORM_BYTES;
+            let staging = |label| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(label),
+                    size,
+                    usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            };
+            let stage0 = staging("readback-material-uniform-0");
+            let stage1 = staging("readback-material-uniform-1");
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("material uniform readback"),
+            });
+            encoder.copy_buffer_to_buffer(&pbr.materials[0]._uniform, 0, &stage0, 0, size);
+            encoder.copy_buffer_to_buffer(&pbr.materials[1]._uniform, 0, &stage1, 0, size);
+            queue.submit([encoder.finish()]);
+            let readback = |buffer: &wgpu::Buffer| -> Vec<u8> {
+                buffer
+                    .map_async(wgpu::MapMode::Read, .., |result| {
+                        result.expect("material uniform readback map")
+                    });
+                device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+                let mapped = buffer.get_mapped_range(..).unwrap();
+                let bytes = mapped.to_vec();
+                drop(mapped);
+                buffer.unmap();
+                bytes
+            };
+            let bytes0 = readback(&stage0);
+            let bytes1 = readback(&stage1);
+            let expected0: Vec<u8> = cast_slice(&prepared.materials[0].uniform[..]).to_vec();
+            let expected1: Vec<u8> = cast_slice(&updated_b[..]).to_vec();
+            assert_eq!(bytes0, expected0);
+            assert_eq!(bytes1, expected1);
+        });
     }
 }

@@ -1,8 +1,13 @@
 use deep_engine_native::{
     culling_contract::prepare_gpu_culling, lod_contract::prepare_gpu_lod,
-    pbr_texture::prepare_pbr_resources, scene::prepare_scene, scene_bounds::prepare_scene_bounds,
+    mesh_abi::MATERIAL_UNIFORM_FLOATS, pbr_texture::prepare_pbr_resources,
+    pbr_texture::prepare_material_uniform_rows, scene::prepare_scene,
+    scene_bounds::prepare_scene_bounds,
 };
 
+use crate::renderer::material_resource_diff::{
+    MaterialResourceDiff, classify_material_resources, instance_material_words_unchanged,
+};
 use crate::renderer::scene_instance_diff::{SceneInstanceDiff, diff_scene_instances};
 use crate::{
     deep2d_gpu::{Deep2dFrameContext, Deep2dGpuPainter},
@@ -38,10 +43,19 @@ pub(crate) enum StagedRenderPacketUpdate {
     Replace(Box<StagedRenderPacketPayload>),
     /// C3 transform-only 快路径:实例身份/几何/材质/纹理全同,仅 transform 子集变化。
     TransformRefresh(Box<StagedTransformRefresh>),
+    /// C3 uniform-only 材质快路径:实例/几何/纹理全同且材质 id/数量不变,
+    /// 仅材质数值 uniform 变化。rows 为 stage 侧 prepare_material_uniform
+    /// 的输出,publish 按行原位写缓冲。
+    MaterialUniformRefresh(Box<StagedMaterialUniformRefresh>),
 }
 
 pub(crate) struct StagedTransformRefresh {
     pub(crate) rows: Vec<(usize, [f32; 16])>,
+    pub(crate) scene_content_key: u64,
+}
+
+pub(crate) struct StagedMaterialUniformRefresh {
+    pub(crate) rows: Vec<(usize, [f32; MATERIAL_UNIFORM_FLOATS])>,
     pub(crate) scene_content_key: u64,
 }
 
@@ -187,37 +201,71 @@ impl Renderer {
         // 两段都随 payload 走,由 publish(唯一提交点)记入遥测。
         let prepare_started = std::time::Instant::now();
         let packet = content.packet();
-        // C3 transform-only 快路径:仅 transform 子集变化时跳过全量 prepare 与
-        // GPU 重停放。守卫三关:实例身份 diff(materials 未 derive PartialEq,
-        // 用 Debug 串比较)、几何 id/revision 列表、纹理 id/revision 列表;
-        // 任一不同回落全量路径。
-        if let SceneInstanceDiff::TransformOnly { changed_indices } =
-            diff_scene_instances(&previous_packet.instances, &packet.instances)
-        {
-            let materials_equal = format!("{:?}", previous_packet.materials)
-                == format!("{:?}", packet.materials);
-            let geometries_equal = previous_packet
-                .geometries
-                .iter()
-                .map(|geometry| (&geometry.id, geometry.revision))
-                .eq(packet.geometries.iter().map(|geometry| (&geometry.id, geometry.revision)));
-            let textures_equal = previous_packet
-                .textures
-                .iter()
-                .map(|texture| (&texture.id, texture.revision))
-                .eq(packet.textures.iter().map(|texture| (&texture.id, texture.revision)));
-            if materials_equal && geometries_equal && textures_equal {
-                let rows: Vec<(usize, [f32; 16])> = changed_indices
-                    .iter()
-                    .map(|index| (*index as usize, packet.instances[*index as usize].transform))
-                    .collect();
-                return Ok(StagedRenderPacketUpdate::TransformRefresh(Box::new(
-                    StagedTransformRefresh {
-                        rows,
-                        scene_content_key: content.scene_content_key(),
-                    },
-                )));
+        // C3 快路径判别:实例 diff + 几何/纹理 id+revision 守卫先行,任一不过
+        // 回落全量路径。transform-only 与 uniform-only 材质是两条互斥快路径:
+        // 实例有变化时材质分支不参与(diff 非 Identical);材质有变化时
+        // transform 分支不参与(materials 全等守卫不过)。
+        let geometries_equal = previous_packet
+            .geometries
+            .iter()
+            .map(|geometry| (&geometry.id, geometry.revision))
+            .eq(packet.geometries.iter().map(|geometry| (&geometry.id, geometry.revision)));
+        let textures_equal = previous_packet
+            .textures
+            .iter()
+            .map(|texture| (&texture.id, texture.revision))
+            .eq(packet.textures.iter().map(|texture| (&texture.id, texture.revision)));
+        match diff_scene_instances(&previous_packet.instances, &packet.instances) {
+            SceneInstanceDiff::TransformOnly { changed_indices } => {
+                let materials_equal = format!("{:?}", previous_packet.materials)
+                    == format!("{:?}", packet.materials);
+                if materials_equal && geometries_equal && textures_equal {
+                    let rows: Vec<(usize, [f32; 16])> = changed_indices
+                        .iter()
+                        .map(|index| (*index as usize, packet.instances[*index as usize].transform))
+                        .collect();
+                    return Ok(StagedRenderPacketUpdate::TransformRefresh(Box::new(
+                        StagedTransformRefresh {
+                            rows,
+                            scene_content_key: content.scene_content_key(),
+                        },
+                    )));
+                }
             }
+            SceneInstanceDiff::Identical => {
+                // C3 uniform-only 材质快路径:守卫五关(实例 Identical → 实例
+                // 引用的材质名与 transform 全不变;几何/纹理 id+revision 全同;
+                // 材质数量与 id 由 classify 守卫;实例词字段 base_color/metallic
+                // 等由 instance_material_words_unchanged 守卫——它们走实例缓冲
+                // 而非材质 uniform,同帧变化必须回落全量路径)。材质行构造只
+                // 解析纹理索引与 uniform 数值,不解码纹理;行构造失败(合同
+                // 之外)回落全量路径,由全量校验给出错误呈现。
+                if geometries_equal
+                    && textures_equal
+                    && instance_material_words_unchanged(
+                        &previous_packet.materials,
+                        &packet.materials,
+                    )
+                    && let (Ok(previous_rows), Ok(next_rows)) = (
+                        prepare_material_uniform_rows(previous_packet),
+                        prepare_material_uniform_rows(packet),
+                    )
+                    && let MaterialResourceDiff::UniformOnly { changed_indices } =
+                        classify_material_resources(&previous_rows, &next_rows)
+                {
+                    let rows: Vec<(usize, [f32; MATERIAL_UNIFORM_FLOATS])> = changed_indices
+                        .iter()
+                        .map(|&index| (index, next_rows[index].uniform))
+                        .collect();
+                    return Ok(StagedRenderPacketUpdate::MaterialUniformRefresh(Box::new(
+                        StagedMaterialUniformRefresh {
+                            rows,
+                            scene_content_key: content.scene_content_key(),
+                        },
+                    )));
+                }
+            }
+            SceneInstanceDiff::Structural => {}
         }
         let shadow_relevance = classify_shadow_relevance(previous_packet, packet);
         let prepared = prepare_scene(packet)?;
@@ -312,6 +360,23 @@ impl Renderer {
         &mut self,
         staged: StagedRenderPacketUpdate,
     ) -> Result<GpuSceneCacheMetrics, String> {
+        if let StagedRenderPacketUpdate::MaterialUniformRefresh(staged) = &staged {
+            let upload_started = std::time::Instant::now();
+            self.scene
+                .pbr
+                .write_material_uniforms(&self.queue, &staged.rows)?;
+            let resource_upload_ns =
+                u64::try_from(upload_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            self.scene.set_scene_content_key(staged.scene_content_key);
+            // 材质数值变化影响表面在光照/阴影下的呈现,保守失效阴影缓存
+            // (与 TransformRefresh 同级;不做逐材质阴影相关性分析)。
+            self.shadow_version.bump_scene();
+            // R6-2/C3 遥测:快路径无全量场景准备,scene_update 记 0,honest。
+            if let Some(telemetry) = self.telemetry.as_mut() {
+                telemetry.record_packet_prepare(0, resource_upload_ns);
+            }
+            return Ok(GpuSceneCacheMetrics::default());
+        }
         if let StagedRenderPacketUpdate::TransformRefresh(staged) = &staged {
             let upload_started = std::time::Instant::now();
             self.scene
