@@ -6,6 +6,16 @@
 
 export const DCIR_SCHEMA_VERSION = 1 as const;
 
+/** v1:只读 storage buffer(WebGPU/Native 专用;WebGL2 无 SSBO,发射期 fail-closed)。 */
+export type DcirBufferElementType = "u32" | "f32";
+
+export interface DcirStorageBuffer {
+  readonly name: string;
+  readonly elementType: DcirBufferElementType;
+  /** 只读合同:v1 不提供 buffer-store(写路径仍走 r32float 目标纹理)。 */
+  readonly access: "read";
+}
+
 export type DcirValueType = "u32" | "f32" | "vec2u" | "bool";
 export type DcirUniformType = "u32" | "vec2u";
 
@@ -34,7 +44,14 @@ export type DcirNode =
   | (DcirNodeBase & Readonly<{ op: "fmin" | "fmax"; type: "f32"; inputs: readonly [string, string] }>)
   | (DcirNodeBase & Readonly<{ op: "canonicalize-f32"; type: "f32"; input: string }>)
   | (DcirNodeBase & Readonly<{ op: "select"; inputs: readonly [string, string, string] }>)
-  | (DcirNodeBase & Readonly<{ op: "texel-load"; type: "f32"; coords: string }>);
+  | (DcirNodeBase & Readonly<{ op: "texel-load"; type: "f32"; coords: string }>)
+  | (DcirNodeBase & Readonly<{
+      op: "buffer-load";
+      type: DcirBufferElementType;
+      buffer: string;
+      /** u32 索引节点(元素下标,非字节偏移)。 */
+      index: string;
+    }>);
 
 export interface DcirKernelOutput {
   /** vec2u 节点：目标写入坐标。 */
@@ -48,6 +65,8 @@ export interface DcirKernel {
   /** v0 固定 (8, 8)；片段降级下 dispatch 尺寸即 viewport。 */
   readonly workgroupSize: readonly [number, number];
   readonly uniforms: readonly DcirUniform[];
+  /** v1 只读 storage buffer;声明了 buffer 的内核不可发射 GLSL(WebGL2 无 SSBO)。 */
+  readonly buffers?: readonly DcirStorageBuffer[];
   /** 依赖序节点表（引用只允许指向更早的节点，同时保证无环与确定性展开顺序）。 */
   readonly nodes: readonly DcirNode[];
   /** bool 节点：为假时该次调用提前退出（片段侧 discard，不写目标）。 */

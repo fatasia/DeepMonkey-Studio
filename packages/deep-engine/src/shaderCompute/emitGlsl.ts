@@ -79,6 +79,14 @@ export interface EmittedKernelGlsl {
 }
 
 export function emitKernelGlsl(kernel: DcirKernel): EmittedKernelGlsl {
+  if (kernel.buffers?.length) {
+    // WebGL2 无 SSBO：buffer 内核只面向 WebGPU/Native（合同 §2.3），发射期 fail-closed,
+    // 禁止静默降级成纹理路径（会改变数值语义,违反确定性合同）。
+    throw new Error(
+      `DCIR kernel "${kernel.name}" declares storage buffers (${kernel.buffers.map((buffer) => buffer.name).join(", ")}); ` +
+      "buffer kernels are WebGPU/Native only and cannot be emitted to WebGL2 GLSL.",
+    );
+  }
   const diagnostics = validateKernel(kernel);
   if (diagnostics.length > 0) {
     throw new Error(`Invalid DCIR kernel "${kernel.name}": ${diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join("; ")}`);

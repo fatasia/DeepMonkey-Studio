@@ -53,6 +53,11 @@ function expression(node: DcirNode): string {
       return `select(${varName(falseValue)}, ${varName(trueValue)}, ${varName(condition)})`;
     }
     case "texel-load": return `textureLoad(deepSource, vec2i(${varName(node.coords)}), 0).x`;
+    case "buffer-load": {
+      const value = `${varName(node.index)} >= arrayLength(&deep_${node.buffer}) ? 0${node.type === "u32" ? "u" : ".0"} : deep_${node.buffer}[${varName(node.index)}]`;
+      // 越界回零：WebGPU 规范越界读返回 0，此处显式表达同一合同（WGSL 与 Native wgpu 同语义）。
+      return value;
+    }
   }
   node satisfies never; // op 集合扩展时编译失败，强制补全两个后端
 }
@@ -69,6 +74,11 @@ export function emitKernelWgsl(kernel: DcirKernel): EmittedKernelWgsl {
   if (diagnostics.length > 0) {
     throw new Error(`Invalid DCIR kernel "${kernel.name}": ${diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join("; ")}`);
   }
+  const buffers = kernel.buffers ?? [];
+  const bufferLines = buffers.map((buffer, index) => {
+    const elementType = buffer.elementType === "u32" ? "u32" : "f32";
+    return `@group(0) @binding(${3 + index}) var<storage, read> deep_${buffer.name}: array<${elementType}>;`;
+  });
   const lines: string[] = [
     `// Deep Compute IR v0 (schema 1); generated deterministically. Kernel: ${kernel.name}`,
     `// IR sha256: ${kernelIrSha256(kernel)}`,
@@ -79,6 +89,7 @@ export function emitKernelWgsl(kernel: DcirKernel): EmittedKernelWgsl {
     "@group(0) @binding(0) var deepSource: texture_2d<f32>;",
     "@group(0) @binding(1) var deepTarget: texture_storage_2d<r32float, write>;",
     "@group(0) @binding(2) var<uniform> deepUniforms: DeepKernelUniforms;",
+    ...bufferLines,
     "",
     `@compute @workgroup_size(${kernel.workgroupSize[0]}, ${kernel.workgroupSize[1]}, 1)`,
     `fn ${kernel.name}(@builtin(global_invocation_id) deepGlobalId: vec3u) {`,

@@ -76,6 +76,9 @@ function validateNode(node: DcirNode, known: Map<string, DcirValueType>, diagnos
     }
     // 坐标必须为界内 vec2u（越界由 IR 内 clamp/select 前置屏蔽）。
     case "texel-load": expect(node.coords, "vec2u", "coords"); return;
+    case "buffer-load":
+      expect(node.index, "u32", "index");
+      return; // buffer 声明存在性与 access 合法性由 bufferIssues 校验。
   }
   node satisfies never; // op 集合扩展时编译失败，强制补全校验
 }
@@ -101,6 +104,25 @@ function uniformIssues(kernel: DcirKernel, diagnostics: DcirIssue[]): Map<string
   return types;
 }
 
+function bufferIssues(kernel: DcirKernel, diagnostics: DcirIssue[]): Map<string, DcirBufferElementType> {
+  const declared = new Map<string, DcirBufferElementType>();
+  for (const buffer of kernel.buffers ?? []) {
+    if (!UNIFORM_NAME_PATTERN.test(buffer.name)) {
+      issue(diagnostics, "invalid-buffer", buffer.name, "Buffer names must be identifiers.");
+      continue;
+    }
+    if (declared.has(buffer.name)) issue(diagnostics, "duplicate-buffer", buffer.name, "Buffer names must be unique.");
+    declared.set(buffer.name, buffer.elementType);
+  }
+  for (const node of kernel.nodes) {
+    if (node.op !== "buffer-load") continue;
+    const elementType = declared.get(node.buffer);
+    if (elementType === undefined) issue(diagnostics, "unknown-buffer", node.id, `Buffer "${node.buffer}" is not declared.`);
+    else if (elementType !== node.type) issue(diagnostics, "type-mismatch", node.id, `Buffer "${node.buffer}" carries ${elementType}.`);
+  }
+  return declared;
+}
+
 /** 校验内核合同：依赖序、类型正确、guard/output 指向存在且类型正确的节点。 */
 export function validateKernel(kernel: DcirKernel): readonly DcirIssue[] {
   const diagnostics: DcirIssue[] = [];
@@ -109,6 +131,7 @@ export function validateKernel(kernel: DcirKernel): readonly DcirIssue[] {
     issue(diagnostics, "invalid-workgroup", "kernel", "workgroupSize must be two positive integers.");
   }
   uniformIssues(kernel, diagnostics);
+  bufferIssues(kernel, diagnostics);
   const known = new Map<string, DcirValueType>();
   for (const node of kernel.nodes) {
     if (!NODE_ID_PATTERN.test(node.id)) { issue(diagnostics, "invalid-id", "kernel", `Bad node id "${node.id}".`); continue; }
