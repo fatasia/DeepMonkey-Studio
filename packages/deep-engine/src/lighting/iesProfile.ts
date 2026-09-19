@@ -38,7 +38,7 @@ export function parseIesProfile(text: string): IesProfile {
   let sawVersion = false;
 
   while (index < lines.length) {
-    const line = lines[index].trim();
+    const line = lines[index]!.trim();
     index += 1;
     if (line.length === 0) continue;
     if (line.startsWith("IESNA:")) {
@@ -53,7 +53,7 @@ export function parseIesProfile(text: string): IesProfile {
     }
     const bracket = /^\[([^\]]+)\]\s*(.*)$/.exec(line);
     if (bracket) {
-      metadata[bracket[1].trim().toUpperCase()] = bracket[2].trim();
+      metadata[bracket[1]!.trim().toUpperCase()] = bracket[2]!.trim();
       continue;
     }
     if (line.toUpperCase().startsWith("TILT")) {
@@ -74,7 +74,7 @@ export function parseIesProfile(text: string): IesProfile {
   let headerFields: number[] = [];
   let sawHeader = false;
   for (; index < lines.length; index += 1) {
-    const line = lines[index].trim();
+    const line = lines[index]!.trim();
     if (line.length === 0) continue;
     if (line.startsWith("[")) continue; // TILT=NONE 之后不应再有元数据，但宽容跳过并继续读数
     for (const token of line.split(/[\s,]+/)) {
@@ -90,7 +90,21 @@ export function parseIesProfile(text: string): IesProfile {
   }
   if (!sawHeader) throw new IesParseError("缺少光度参数头（至少 10 个数值）");
 
-  const [lampCount, lumensPerLamp, multiplier, verticalCount, horizontalCount, photometricType, unitsType, width, length, height] = headerFields;
+  const header = (i: number): number => {
+    const value = headerFields[i];
+    if (value === undefined) throw new IesParseError("光度参数头不足 10 个数值");
+    return value;
+  };
+  const lampCount = header(0);
+  const lumensPerLamp = header(1);
+  const multiplier = header(2);
+  const verticalCount = header(3);
+  const horizontalCount = header(4);
+  const photometricType = header(5);
+  const unitsType = header(6);
+  const width = header(7);
+  const length = header(8);
+  const height = header(9);
   if (lampCount < 1) throw new IesParseError(`灯数必须 ≥1，实际 ${lampCount}`);
   if (verticalCount < 1 || horizontalCount < 1) throw new IesParseError(`垂直/水平角数量必须 ≥1，实际 ${verticalCount}/${horizontalCount}`);
   if (!Number.isInteger(verticalCount) || !Number.isInteger(horizontalCount)) throw new IesParseError("角度数量必须为整数");
@@ -102,8 +116,8 @@ export function parseIesProfile(text: string): IesProfile {
   let ballastFactor = 1;
   let inputWatts = 0;
   if (numbers.length >= requiredAfterTrio + 3) {
-    ballastFactor = numbers[0];
-    inputWatts = numbers[2];
+    ballastFactor = numbers[0]!;
+    inputWatts = numbers[2]!;
     numbers.splice(0, 3);
   } else if (numbers.length !== requiredAfterTrio) {
     throw new IesParseError(`数值总数不符：扣除参数头后 ${numbers.length} 个，期望 ${requiredAfterTrio}（无三元组）或 ${requiredAfterTrio + 3}（含三元组）`);
@@ -144,9 +158,10 @@ export function parseIesProfile(text: string): IesProfile {
 
 function assertAscending(label: string, angles: number[]): void {
   for (let i = 0; i < angles.length; i += 1) {
-    if (angles[i] < 0) throw new IesParseError(`${label}出现负值 ${angles[i]}`);
-    if (i > 0 && angles[i] < angles[i - 1]) {
-      throw new IesParseError(`${label}必须非降序：${angles[i - 1]} → ${angles[i]}`);
+    const current = angles[i]!;
+    if (current < 0) throw new IesParseError(`${label}出现负值 ${current}`);
+    if (i > 0 && current < angles[i - 1]!) {
+      throw new IesParseError(`${label}必须非降序：${angles[i - 1]} → ${current}`);
     }
   }
 }
@@ -175,7 +190,7 @@ export function summarizeIesProfile(profile: IesProfile): IesSummary {
 export function iesTotalLuminousFlux(profile: IesProfile): number {
   const vertical = profile.verticalAngles;
   const horizontal = profile.horizontalAngles;
-  const horizontalSpanRadians = ((horizontal[horizontal.length - 1] ?? 0) - horizontal[0]) * Math.PI / 180;
+  const horizontalSpanRadians = ((horizontal[horizontal.length - 1] ?? 0) - (horizontal[0] ?? 0)) * Math.PI / 180;
   // 水平对称计数：1 个水平角=全周（宽度 2π、计数 1）；0–90 扫描=×4；0–180=×2；
   // 其余按实测区间计数 1（合同如实：非对称分布不外推）。
   let zoneWidth: number;
@@ -191,23 +206,23 @@ export function iesTotalLuminousFlux(profile: IesProfile): number {
   let flux = 0;
   if (profile.candela.length === 1) {
     // 单水平角：整周旋转对称，该行即全部区域。
-    const row = profile.candela[0];
+    const row = profile.candela[0]!;
     for (let v = 0; v < row.length - 1; v += 1) {
-      const top = vertical[v] * Math.PI / 180;
-      const bottom = vertical[v + 1] * Math.PI / 180;
-      const meanCandela = (row[v] + row[v + 1]) / 2;
+      const top = (vertical[v] ?? 0) * Math.PI / 180;
+      const bottom = (vertical[v + 1] ?? 0) * Math.PI / 180;
+      const meanCandela = ((row[v] ?? 0) + (row[v + 1] ?? 0)) / 2;
       flux += meanCandela * zoneWidth * (Math.cos(top) - Math.cos(bottom));
     }
     return flux * profile.multiplier * (profile.ballastFactor || 1);
   }
   // 水平区域取相邻两条扫描行的均值坎德拉（区域数 = 行数 − 1），与垂直梯形一致。
   for (let h = 0; h < profile.candela.length - 1; h += 1) {
-    const rowA = profile.candela[h];
-    const rowB = profile.candela[h + 1];
+    const rowA = profile.candela[h]!;
+    const rowB = profile.candela[h + 1]!;
     for (let v = 0; v < rowA.length - 1; v += 1) {
-      const top = vertical[v] * Math.PI / 180;
-      const bottom = vertical[v + 1] * Math.PI / 180;
-      const meanCandela = (rowA[v] + rowA[v + 1] + rowB[v] + rowB[v + 1]) / 4;
+      const top = (vertical[v] ?? 0) * Math.PI / 180;
+      const bottom = (vertical[v + 1] ?? 0) * Math.PI / 180;
+      const meanCandela = ((rowA[v] ?? 0) + (rowA[v + 1] ?? 0) + (rowB[v] ?? 0) + (rowB[v + 1] ?? 0)) / 4;
       flux += meanCandela * zoneWidth * (Math.cos(top) - Math.cos(bottom));
     }
   }
@@ -219,9 +234,9 @@ function beamAngle(verticalAngles: number[], row: number[], threshold: number, m
   let first: number | null = null;
   let last: number | null = null;
   for (let v = 0; v < row.length; v += 1) {
-    if (row[v] * multiplier < threshold) continue;
-    if (first === null) first = verticalAngles[v];
-    last = verticalAngles[v];
+    if ((row[v] ?? 0) * multiplier < threshold) continue;
+    if (first === null) first = verticalAngles[v] ?? null;
+    last = verticalAngles[v] ?? null;
   }
   if (first === null || last === null) return null;
   return Number((last - first).toFixed(2));
