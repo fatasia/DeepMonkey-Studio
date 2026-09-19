@@ -21,3 +21,5 @@
 ## 边界
 
 本保留集只证明版本覆盖缺口与容器级事实,不构成 RVT profile 生产化认证;上游证据(`evidence.json`)含 rvt-rs 离线构建、5 项单测、双跑确定性。生成脚本:`scripts/fixtures/write-rvt-holdout-report.mjs`(幂等,可重跑)。
+
+**2026 分区记录观察结果(r1)**:在 racbasic 2026 样本(1 个 Partitions 流、107,689,125 字节 inflate)上，用已证明 2024 的 `decode_at` 逐偏移只读观察：ElemTable 声明 8,401 个 ID，裸流中可疑 ID join 候选 6,188(73.66%)，但 2024 记录形态完整解码数为 **0**，类别计数为 0。结论档位 = **c) 记录形态未证/存在重写或边界差异，保持 fail-closed**；不能把 73.66% 候选当实例支持。已保留观察证据:`test-output/rvt2026-record-observe-20260919-r1/`。下一步不是放宽门，而是针对 2026 的 marker/字段偏移和跨压缩 chunk 边界做专门逆向；这项大于今晚的轻量切片,继续列为 S5 深水任务。

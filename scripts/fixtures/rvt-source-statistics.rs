@@ -298,6 +298,55 @@ fn scan_stream_windowed(
     total
 }
 
+/// 只读观察 2024 分区记录形态在其他版本上的可解码程度。
+/// 结果不进入正式类别统计、不改变 supports_revit_version 门;用于逆向证据。
+fn observe_partition_record_shape(
+    rf: &mut RevitFile,
+    declared: &BTreeSet<u32>,
+) -> Value {
+    let mut streams = 0u64;
+    let mut decoded_ids = BTreeSet::new();
+    let mut join_candidates = BTreeSet::new();
+    let mut categories: BTreeMap<i64, u64> = BTreeMap::new();
+    let mut failures = 0u64;
+    let mut byte_len = 0u64;
+    for path in rf.stream_names().into_iter().filter(|name| name.starts_with("Partitions/")) {
+        streams += 1;
+        let Ok(raw) = rf.read_stream(&path) else { failures += 1; continue; };
+        let chunks = compression::inflate_all_chunks_for_stream(&path, &raw);
+        for chunk in chunks {
+            byte_len += chunk.len() as u64;
+            for offset in (0..chunk.len().saturating_sub(8)).step_by(8) {
+                let bytes = &chunk[offset..offset + 8];
+                let id64 = u64::from_le_bytes(bytes.try_into().unwrap());
+                if id64 > 0 && id64 <= u64::from(u32::MAX) && declared.contains(&(id64 as u32)) {
+                    join_candidates.insert(id64 as u32);
+                }
+            }
+            for offset in 0..chunk.len() {
+                if let Some(record) = records::decode_at(&path, &chunk, offset, declared) {
+                    if decoded_ids.insert(record.element_id) {
+                        *categories.entry(record.builtin_category).or_default() += 1;
+                    }
+                }
+            }
+        }
+    }
+    json!({
+        "status": "observed",
+        "streams": streams,
+        "inflatedBytes": byte_len,
+        "elemTableDeclaredIds": declared.len(),
+        "idJoinCandidates": join_candidates.len(),
+        "decodedRecords": decoded_ids.len(),
+        "decodedJoinRatio": if declared.is_empty() { 0.0 } else { decoded_ids.len() as f64 / declared.len() as f64 },
+        "candidateJoinRatio": if declared.is_empty() { 0.0 } else { join_candidates.len() as f64 / declared.len() as f64 },
+        "categoryCounts": categories,
+        "readFailures": failures,
+        "recordShape": "2024 decode_at observation only; not production support",
+    })
+}
+
 /// 逐分区流式扫描类别记录;窗口化解码,单分区超出预算时精确记录。
 fn scan_partitions(
     rf: &mut RevitFile,
@@ -717,6 +766,11 @@ fn inspect(bytes: Vec<u8>) -> Check<Value> {
     let mut partition_reports: Vec<Value> = Vec::new();
     let mut partition_stage = json!({"status": "skipped", "supportedRevitVersions": records::PARTITION_ELEMENT_RECORD_SUPPORTED_REVIT_VERSIONS});
     if !records::supports_revit_version(version) {
+        partition_stage = json!({
+            "status": "unsupported-version",
+            "supportedRevitVersions": records::PARTITION_ELEMENT_RECORD_SUPPORTED_REVIT_VERSIONS,
+            "observation": observe_partition_record_shape(&mut rf, &declared),
+        });
         failures.push(json!({
             "stage": "partition-element-records",
             "error": format!("record shape proven on {:?} only; release {} left fail-closed",
