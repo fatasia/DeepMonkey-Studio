@@ -216,4 +216,15 @@ DE26 只有在相应任务卡的实现、测试、真实证据和报告都齐全
 | **烘焙** | 两家都无内置 lightmapper → 探针烘焙+增量重烘落地即超越 | Progressive Lightmapper 口径：质量档/增量重烘/烘焙预览 | native baked GI 有证据（消费稳定），无完整管线 | UV2/图集、质量档、增量重烘、烘焙探针 | 分期补上：一期探针烘焙+增量重烘（复用 C07）；二期 UV2 lightmap 贴图烘焙（必做，排 R2/R4 后） |
 | **实时 GI** | 两家无实时 GI（SSAO/SSR 不算）→ r14 阈值通过即已超越，但动态更新仍要补 | Unity 7 Surface Cache GI 口径（表面缓存+脏域更新） | 探针 clipmap 已有，r14 on/off 双格阈值通过（⑤ passed） | 表面缓存级动态更新、室内外过渡/漏光、动态物体间接光、复杂几何扩展 | = R1 与 E03 P0 同线：先补动态更新与复杂几何（超越线全绿），再表面缓存对位 Unity 7（对标线） |
 
-**五轴结论**：实时 GI 离得最近（⑤ 已过阈值，补动态更新与复杂几何）；Compute 是唯一"以形态取胜"的轴（R2→R4 顺序执行）；烘焙轻量起步（探针+增量，不碰全量 UV2）；光追三档走（近期 CPU BVH 烘焙采样、中期 compute 模拟、远期观察 ray-query）；深入光照按 E05 逐格补 IES/PCSS/接触阴影。**所有动作都挂在现有卡（E03/E05/G7/R1/R2/R4）上，不新建平行系统**——与"轻量、不大破坏"的拍板一致。
+**五轴结论**（见下方表格前说明与按轴动作）。
+
+### 对标执行：A01-X 对拍执行包（2026-09-19 立卡，任务做完后的对标通路）
+
+已就位：Deep vs Three WebGPU 配对真实跑通（A04/A08：五轮 P95 中位数、GPU 时间戳、感知相似度、冻结门禁、drawCalls/triangles 口径纪律）；六类负载分母（factory-instances / heterogeneous-bim / far-origin-campus / dynamic-workcell / mixed-dashboard / appearance-showcase）在 A01 合同冻结；本机 Unity 6000.0.52 LTS / 6000.3.11 编辑器可用（重冻结记录）；G5 定 WebGPU 为主通道。
+
+缺口（=A01-X 卡内容，估 2-3 个子代理日）：
+1. **Babylon 配对**：把 A04 的 Three adapter 同口径扩展到 Babylon 9（资产接入/相机轨迹/度量采集）；
+2. **Unity 编辑器侧 harness**：同六类负载场景 + 帧采集脚本（Editor/Player 帧时间与内存导出），URP 档位冻结记录；跨 API 口径差异（D3D12 vs WebGPU）写入报告方法节，不隐藏；
+3. **全矩阵执行**：六类负载 × {Deep-WebGPU, Deep-Native, Three, Babylon, Unity} 全对拍 + 逐轴判定（第 10 节超越线/对标线）填入结论模板；
+4. **判定模板**：每轴输出"数字 → 超越线判定 → 对标线判定 → 证据链接"，未测项如实标 unverified。
+：实时 GI 离得最近（⑤ 已过阈值，补动态更新与复杂几何）；Compute 是唯一"以形态取胜"的轴（R2→R4 顺序执行）；烘焙轻量起步（探针+增量，不碰全量 UV2）；光追三档走（近期 CPU BVH 烘焙采样、中期 compute 模拟、远期观察 ray-query）；深入光照按 E05 逐格补 IES/PCSS/接触阴影。**所有动作都挂在现有卡（E03/E05/G7/R1/R2/R4）上，不新建平行系统**——与"轻量、不大破坏"的拍板一致。
