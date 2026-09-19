@@ -45,8 +45,12 @@ pub(super) async fn create_renderer(
     if features.shadow_probe && features.ibl_probe {
         return Err("shadow and IBL differential probes cannot run in the same frame".into());
     }
-    if content.background.is_some() && (features.bloom.is_active() || features.fog.requires_output_pass()) {
-        return Err("authored solid background requires the native-aces-v1 output without Bloom/Fog".into());
+    if content.background.is_some()
+        && (features.bloom.is_active() || features.fog.requires_output_pass())
+    {
+        return Err(
+            "authored solid background requires the native-aces-v1 output without Bloom/Fog".into(),
+        );
     }
     let packet = content.packet();
     if view.clipping != [0.0; 4] && !content.material_bindings.is_empty() {
@@ -81,10 +85,15 @@ pub(super) async fn create_renderer(
 
     let yaw = view.yaw;
     if content.lighting.is_some() && !content.material_bindings.is_empty() {
-        return Err("authored directional light is not supported by legacy ShaderPackage material bindings".into());
+        return Err(
+            "authored directional light is not supported by legacy ShaderPackage material bindings"
+                .into(),
+        );
     }
     let mut frame = frame_data_with_camera(size, view, features.fog);
-    if let Some(lighting) = &content.lighting { lighting.apply(&mut frame); }
+    if let Some(lighting) = &content.lighting {
+        lighting.apply(&mut frame);
+    }
     let validation_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let memory_scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
     let internal_scope = device.push_error_scope(wgpu::ErrorFilter::Internal);
@@ -166,7 +175,10 @@ pub(super) async fn create_renderer(
             bloom
                 .as_ref()
                 .map(|bloom| (bloom.output_view(), bloom.settings().intensity)),
-            features.fog.requires_output_pass().then_some((&forward_targets.depth_view, &frame_buffer)),
+            features
+                .fog
+                .requires_output_pass()
+                .then_some((&forward_targets.depth_view, &frame_buffer)),
         );
         scene_cache
             .stage_scoped(
@@ -187,7 +199,7 @@ pub(super) async fn create_renderer(
                     &shadow_map,
                     &ibl,
                 )?;
-                let culling = GpuCulling::new(
+                let mut culling = GpuCulling::new(
                     &device,
                     &scene.scene().instance_buffer,
                     &prepared_culling,
@@ -204,12 +216,39 @@ pub(super) async fn create_renderer(
                     &shadow_map,
                     view.near,
                 )?;
+                // R4 生产接线:显式开关(默认关)挂载 MSAA 深度 → HiZ 金字塔
+                // + 遮挡判定 + 消费链(view 0)。挂载失败整体报错,不半挂载。
+                let hi_z = if super::hi_z_pyramid::occlusion_hiz_enabled() {
+                    let pyramid = super::hi_z_pyramid::HiZPyramid::new(
+                        &device,
+                        &queue,
+                        &forward_targets.depth_view,
+                        forward_targets.width(),
+                        forward_targets.height(),
+                    )?;
+                    culling.attach_occlusion(
+                        &device,
+                        &scene.scene().instance_buffer,
+                        pyramid.occlusion_source(),
+                        &frame,
+                        true,
+                    )?;
+                    culling.attach_occlusion_consume(
+                        &device,
+                        &scene.scene().instance_buffer,
+                        false,
+                    )?;
+                    Some(pyramid)
+                } else {
+                    None
+                };
                 let shadow_keys = shadow_casters.keys(&shadow_map, shadow_shader_key)?;
                 resources::deep2d(&device, &queue, config.format, display_list).map(|deep2d| {
                     (
                         scene,
                         culling,
                         lod,
+                        hi_z,
                         deep2d,
                         frame_buffer,
                         frame_layout,
@@ -245,6 +284,7 @@ pub(super) async fn create_renderer(
         scene_candidate,
         culling,
         lod,
+        hi_z,
         deep2d,
         frame_buffer,
         frame_layout,
@@ -303,6 +343,7 @@ pub(super) async fn create_renderer(
         last_shadow_probe: None,
         ibl_probe,
         forward_targets,
+        hi_z,
         bloom,
         output_pass,
         frame,

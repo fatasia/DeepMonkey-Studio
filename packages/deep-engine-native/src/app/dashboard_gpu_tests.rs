@@ -36,6 +36,7 @@ fn dashboard_updates_present_atomically_in_the_window_host() {
         content,
         event_loop.create_proxy(),
         NativeAppSetup {
+            occlusion_probe: false,
             dynamic_playback: None,
             state_ops: None,
             smoke_frame: false,

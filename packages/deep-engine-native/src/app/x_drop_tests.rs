@@ -104,6 +104,7 @@ fn run_probe(live: bool) {
         content,
         event_loop.create_proxy(),
         NativeAppSetup {
+            occlusion_probe: false,
             dynamic_playback: None,
             state_ops: None,
             smoke_frame: false,

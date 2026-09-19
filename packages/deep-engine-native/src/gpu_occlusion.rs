@@ -8,10 +8,10 @@
 //! 纪律:全步定序、无原子、无 workgroup 共享内存;阈值带 1e-6 裕量;
 //! 判定只少剔不误剔(半径/矩形全部取保守上界)。
 //!
-//! 边界(如实):深度金字塔纹理由调用方提供;native 渲染器侧的
-//! 「MSAA 深度 resolve + reduce 进金字塔」生产接线不在本切片,本切片
-//! 以受控合成金字塔验证判定内核;两阶段完整管线(可见性缓冲 + indirect)
-//! 属下一切片。
+//! 边界(如实):深度金字塔纹理由调用方提供;生产金字塔已由
+//! `renderer/hi_z_pyramid.rs`(MSAA 深度 resolve → r32float min 链)在
+//! 显式开关下挂载,判定内核本身未改;两阶段完整管线(可见性缓冲 +
+//! indirect)仍属下一切片。
 
 use bytemuck::cast_slice;
 use deep_engine_native::culling_contract::GPU_CULLING_WORKGROUP_SIZE;

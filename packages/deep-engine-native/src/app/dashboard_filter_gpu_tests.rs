@@ -33,6 +33,7 @@ fn production_filter_preserves_selection_and_rows_until_presented() {
         content,
         event_loop.create_proxy(),
         NativeAppSetup {
+            occlusion_probe: false,
             dynamic_playback: None,
             state_ops: None,
             smoke_frame: false,

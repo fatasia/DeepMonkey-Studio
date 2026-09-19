@@ -10,7 +10,8 @@ use crate::{events::GpuEvent, player_content::PlayerContent, renderer::RendererF
 
 use super::{
     NativeApp, NativeAppSetup, ShadowUpdateProbe, dynamic_playback::DynamicPlaybackSpec,
-    package_live, packet_live, packet_live_probe::PacketLiveProbe, state_ops_playback::StateOpsSpec,
+    package_live, packet_live, packet_live_probe::PacketLiveProbe,
+    state_ops_playback::StateOpsSpec,
 };
 
 pub struct PacketLiveSpec {
@@ -39,6 +40,9 @@ enum ReportMode {
     Section,
     /// P1-16 第三批:真实窗口键盘 smoke(需要图例可聚焦)。
     ChartKeyboard,
+    /// R4 生产接线:遮挡链真实窗口 smoke(逐帧小幅旋转,驱动遮挡
+    /// dispatch 消费上一帧金字塔;配合显式开关输出幸存计数)。
+    Occlusion,
 }
 
 pub fn run_verification(
@@ -164,10 +168,7 @@ pub fn run_dynamic_playback(
 /// the real player state and is read back through the f32 pipeline before the
 /// next present. Exits 0 with a JSON receipt listing per-step contract and
 /// applied frames.
-pub fn run_state_ops_playback(
-    content: PlayerContent,
-    spec: StateOpsSpec,
-) -> Result<(), String> {
+pub fn run_state_ops_playback(content: PlayerContent, spec: StateOpsSpec) -> Result<(), String> {
     run_internal(
         content,
         false,
@@ -292,6 +293,29 @@ pub fn run_shadow_update_probe(
         None,
         None,
         ReportMode::None,
+        None,
+        None,
+    )
+}
+
+/// R4 生产接线:`--smoke-occlusion` 真实窗口遮挡链冒烟:第 1 帧金字塔
+/// 为远平面(不误剔),随后逐帧小幅旋转驱动 culling 重编码,遮挡
+/// dispatch 消费上一帧金字塔(剔除生效)。幸存计数由 frame 尾部如实打印。
+pub fn run_occlusion_smoke(content: PlayerContent) -> Result<(), String> {
+    run_internal(
+        content,
+        true,
+        RendererFeatures {
+            bloom: BloomSettings::default(),
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: false,
+        },
+        None,
+        None,
+        None,
+        ReportMode::Occlusion,
         None,
         None,
     )

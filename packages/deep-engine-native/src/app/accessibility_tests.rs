@@ -42,6 +42,7 @@ fn product_window_publishes_and_updates_chart_semantics() {
         crate::player_content::PlayerContent::from_chart(ir).unwrap(),
         event_loop.create_proxy(),
         NativeAppSetup {
+            occlusion_probe: false,
             dynamic_playback: None,
             state_ops: None,
             smoke_frame: true,

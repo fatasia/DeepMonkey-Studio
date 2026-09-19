@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::telemetry::{SampleToken, SegmentStats, stats_from};
 
 const GPU_SLOTS: usize = 64;
-const QUERY_COUNT: u32 = 12;
+const QUERY_COUNT: u32 = 16;
 const SLOT_STRIDE: u64 = wgpu::QUERY_RESOLVE_BUFFER_ALIGNMENT;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,16 +18,19 @@ pub enum GpuSegment {
     Transparent,
     Deep2d,
     Postprocess,
+    /// R4 生产接线:MSAA 深度 resolve → HiZ 金字塔(提取 + DCIR 缩减链)。
+    HiZ,
 }
 
 impl GpuSegment {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Frame,
         Self::Shadow,
         Self::Opaque,
         Self::Transparent,
         Self::Deep2d,
         Self::Postprocess,
+        Self::HiZ,
     ];
 
     fn index(self) -> usize {
@@ -42,6 +45,7 @@ impl GpuSegment {
             Self::Transparent => "transparent",
             Self::Deep2d => "deep2d",
             Self::Postprocess => "postprocess",
+            Self::HiZ => "hi_z",
         }
     }
 
@@ -249,7 +253,7 @@ impl GpuFrameTiming {
     }
 
     fn decode(&self, bytes: &[u8], token: SampleToken) -> GpuReadback {
-        let mut values: [Vec<u64>; 6] = std::array::from_fn(|_| Vec::new());
+        let mut values: [Vec<u64>; GpuSegment::ALL.len()] = std::array::from_fn(|_| Vec::new());
         let mut late = 0;
         for (index, slot) in self.slots.iter().enumerate() {
             let Some(slot_token) = slot.token else {

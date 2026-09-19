@@ -22,6 +22,7 @@ fn resize_wiring_advances_layout_revision_and_excludes_non_resize_paths() {
         crate::player_content::PlayerContent::from_chart(ir).unwrap(),
         event_loop.create_proxy(),
         NativeAppSetup {
+            occlusion_probe: false,
             dynamic_playback: None,
             state_ops: None,
             smoke_frame: false,

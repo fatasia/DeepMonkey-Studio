@@ -11,10 +11,9 @@ use deep_engine_native::{
 
 use crate::player_cli::{
     PackageMode, default_shadow_fixture_path, load_deep2d, print_help, reject_extra, required_path,
-    run_dynamic_playback_package, run_package, run_package_live, run_packet_live,
-    run_shadow_update_probe, run_state_ops_package, run_telemetry_smoke,
-    run_telemetry_smoke_prepare, run_telemetry_smoke_prepare_material, run_viewer,
-    run_viewer_mode,
+    run_dynamic_playback_package, run_occlusion_smoke, run_package, run_package_live,
+    run_packet_live, run_shadow_update_probe, run_state_ops_package, run_telemetry_smoke,
+    run_telemetry_smoke_prepare, run_telemetry_smoke_prepare_material, run_viewer, run_viewer_mode,
     run_viewer_without_bloom,
 };
 use crate::runtime_package_startup;
@@ -225,6 +224,14 @@ pub fn execute() -> Result<(), String> {
                 .unwrap_or_else(|| default_fixture_path().to_owned());
             reject_extra(args)?;
             run_viewer(path, None, true)
+        }
+        Some("--smoke-occlusion") => {
+            let path = args
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| default_fixture_path().to_owned());
+            reject_extra(args)?;
+            run_occlusion_smoke(path)
         }
         Some("--smoke-textured") => {
             reject_extra(args)?;

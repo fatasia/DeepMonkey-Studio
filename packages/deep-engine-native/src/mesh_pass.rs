@@ -22,6 +22,7 @@ pub fn encode_mesh_passes(
         culling,
         lod,
         pipelines,
+        false,
     );
     encode_transparent_pass(
         encoder,
@@ -44,6 +45,8 @@ pub fn encode_opaque_pass(
     culling: &GpuCulling,
     lod: Option<&GpuLod>,
     pipelines: &MeshPipelines,
+    // HiZ 生产接线:opaque 深度是金字塔的源,pass 后要按纹理读,必须 Store。
+    retain_depth: bool,
 ) {
     let has_transparent = scene.has_transparent();
     {
@@ -67,7 +70,7 @@ pub fn encode_opaque_pass(
                 view: &targets.depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    store: if has_transparent {
+                    store: if has_transparent || retain_depth {
                         wgpu::StoreOp::Store
                     } else {
                         wgpu::StoreOp::Discard

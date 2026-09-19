@@ -48,6 +48,7 @@ fn skipped_packet_updates_retain_state_and_only_retry_latest() {
         content,
         event_loop.create_proxy(),
         NativeAppSetup {
+            occlusion_probe: false,
             dynamic_playback: None,
             state_ops: None,
             smoke_frame: false,

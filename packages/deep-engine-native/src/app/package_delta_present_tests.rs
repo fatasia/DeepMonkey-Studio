@@ -77,6 +77,7 @@ fn run(name: &str, fixture: fn(u64) -> Vec<u8>) {
         content,
         event_loop.create_proxy(),
         NativeAppSetup {
+            occlusion_probe: false,
             dynamic_playback: None,
             state_ops: None,
             smoke_frame: true,

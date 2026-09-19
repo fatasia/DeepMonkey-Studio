@@ -99,9 +99,23 @@ impl Renderer {
             &self.culling,
             self.lod.as_ref(),
             &self.pipelines,
+            self.hi_z.is_some(),
         );
         record(&mut self.telemetry, token, CpuSegment::Opaque, opaque);
         gpu_end(&mut self.telemetry, GpuSegment::Opaque, true, &mut encoder);
+
+        // R4 生产接线:HiZ 金字塔在 opaque 后立即生成(深度已完整;
+        // transparent 深度不写入,不参与遮挡源)。遮挡判定 dispatch 在下一帧
+        // SceneResources 段消费本帧金字塔——「消费上一帧」语义,与 TS
+        // previousHiZVisibility 一致;首帧金字塔为远平面,保守不剔。
+        let has_hiz = self.hi_z.is_some();
+        gpu_begin(&self.telemetry, GpuSegment::HiZ, &mut encoder);
+        let hi_z = timer(token).filter(|_| has_hiz);
+        if let Some(pyramid) = &self.hi_z {
+            pyramid.encode(&mut encoder);
+        }
+        record(&mut self.telemetry, token, CpuSegment::HiZ, hi_z);
+        gpu_end(&mut self.telemetry, GpuSegment::HiZ, has_hiz, &mut encoder);
 
         let has_transparent = self.scene.has_transparent();
         gpu_begin(&self.telemetry, GpuSegment::Transparent, &mut encoder);
@@ -201,6 +215,19 @@ impl Renderer {
         }
         match self.culling.take_metrics(&self.device) {
             Ok(Some(metrics)) => metrics.report(),
+            Ok(None) => {}
+            Err(error) => {
+                finish(&mut self.telemetry, token, FrameResult::Failed);
+                return RenderOutcome::Failed(error);
+            }
+        }
+        // R4 生产接线:HiZ 遮挡链幸存计数(挂载时启用 readback 的如实观测;
+        // 含每帧一次 map+poll 的诊断成本,属 opt-in 开关路径)。
+        match self.culling.take_occlusion_visible(&self.device) {
+            Ok(Some(visible)) => println!(
+                "native occlusion hiz: visible_instances={visible} frustum_candidates={}",
+                self.culling.summary().candidate_instances
+            ),
             Ok(None) => {}
             Err(error) => {
                 finish(&mut self.telemetry, token, FrameResult::Failed);

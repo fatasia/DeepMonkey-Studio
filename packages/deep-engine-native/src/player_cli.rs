@@ -233,6 +233,16 @@ fn moved_package_bytes(source: &[u8]) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("smoke runtime package encode failed: {error}"))
 }
 
+/// `--smoke-occlusion`: R4 遮挡链真实窗口冒烟(见 runner::run_occlusion_smoke)。
+pub fn run_occlusion_smoke(path: PathBuf) -> Result<(), String> {
+    let (packet, summary) = load_and_validate(&path)?;
+    println!(
+        "occlusion smoke contract v1 loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_occlusion_smoke(PlayerContent::from_packet(packet, None))
+}
+
 /// `--smoke-telemetry`: smoke frame with segmented telemetry report at exit.
 pub fn run_telemetry_smoke(path: PathBuf) -> Result<(), String> {
     let (packet, summary) = load_and_validate(&path)?;

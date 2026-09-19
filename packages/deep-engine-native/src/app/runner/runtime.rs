@@ -86,6 +86,7 @@ pub(super) fn run_internal(
                 _ => None,
             },
             selection_probe: matches!(report, ReportMode::Selection),
+            occlusion_probe: matches!(report, ReportMode::Occlusion),
             section_probe: matches!(report, ReportMode::Section),
             chart_key_probe: matches!(report, ReportMode::ChartKeyboard),
         },

@@ -70,6 +70,16 @@ impl ForwardTargets {
         &self.hdr
     }
 
+    /// 前向目标实际宽度(HiZ 金字塔取数基准;compact 档可为 1)。
+    pub fn width(&self) -> u32 {
+        self.hdr.width()
+    }
+
+    /// 前向目标实际高度。
+    pub fn height(&self) -> u32 {
+        self.hdr.height()
+    }
+
     pub fn clear_color(&self) -> wgpu::Color {
         let [r, g, b] = self.background.unwrap_or([0.012, 0.020, 0.035]);
         wgpu::Color { r, g, b, a: 1.0 }

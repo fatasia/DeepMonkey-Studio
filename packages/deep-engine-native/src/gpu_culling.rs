@@ -173,9 +173,8 @@ impl GpuCulling {
 
     /// 挂载主视锥 HiZ 遮挡判定(只挂 view 0;HiZ 是主相机金字塔,
     /// 阴影视锥不适用)。挂载后 encode 依次派发 frustum 与遮挡。
-    /// 生产接线(渲染器构造处)随可见性缓冲切片落地;本切片由 GPU
-    /// 测试作为独立入口驱动。
-    #[allow(dead_code)] // Direct builder remains the independent GPU-test entrypoint.
+    /// 生产入口:renderer init(`renderer/hi_z_pyramid.rs` 显式开关,默认关);
+    /// 重复挂载按新源整体替换(resize 重建路径)。
     pub fn attach_occlusion(
         &mut self,
         device: &wgpu::Device,
@@ -204,9 +203,7 @@ impl GpuCulling {
 
     /// 挂载遮挡标志消费链(需先 attach_occlusion):scan+compact 产出主视锥
     /// 紧凑 draw 输出,挂载后 view 0 的 draw 经访问器切换到紧凑缓冲对。
-    /// 生产接线(渲染器构造处)随可见性缓冲切片落地;本切片由 GPU 测试
-    /// 作为独立入口驱动。
-    #[allow(dead_code)] // Direct builder remains the independent GPU-test entrypoint.
+    /// 生产入口:renderer init(显式开关,默认关);重复挂载整体替换。
     pub fn attach_occlusion_consume(
         &mut self,
         device: &wgpu::Device,
@@ -340,11 +337,7 @@ impl GpuCulling {
     }
 
     /// 取回主视锥遮挡判定后的幸存实例数(需挂载时启用 readback)。
-    #[allow(dead_code)] // Reported alongside attach_occlusion until renderer wiring.
-    pub fn take_occlusion_visible(
-        &mut self,
-        device: &wgpu::Device,
-    ) -> Result<Option<u32>, String> {
+    pub fn take_occlusion_visible(&mut self, device: &wgpu::Device) -> Result<Option<u32>, String> {
         match &mut self.occlusion {
             Some(occlusion) => occlusion.take_visible_count(device),
             None => Ok(None),

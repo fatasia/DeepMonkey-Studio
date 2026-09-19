@@ -112,6 +112,26 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
                 return;
             }
         }
+        if let Some(frame) = app.occlusion_probe {
+            // R4 遮挡链冒烟:第 1 帧金字塔 = 远平面(初始化填充,不误剔);
+            // 每帧小幅旋转令 update_views 提升 revision → culling 重编码 →
+            // 遮挡 dispatch 消费上一帧真实深度(剔除生效)。幸存计数由
+            // frame 尾部「native occlusion hiz:」行逐帧如实打印。
+            if frame < 3 {
+                app.rotate(0.02);
+            }
+            app.occlusion_probe = Some(frame + 1);
+            if frame + 1 >= 4 {
+                println!(
+                    "native occlusion hiz smoke OK: frames={} rotation=0.06rad",
+                    frame + 1
+                );
+                event_loop.exit();
+            } else {
+                app.request_redraw();
+            }
+            return;
+        }
         if app.chart_key_probe.is_some() {
             match super::chart_keyboard_smoke::advance_smoke(app) {
                 Ok(false) => {
@@ -206,7 +226,12 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
     if app.dynamic_playback.is_some() {
         match outcome {
             Some(RenderOutcome::Presented) => {
-                match app.dynamic_playback.as_mut().expect("probe remains alive").after_present() {
+                match app
+                    .dynamic_playback
+                    .as_mut()
+                    .expect("probe remains alive")
+                    .after_present()
+                {
                     AfterPresent::Continue => app.request_redraw(),
                     AfterPresent::Complete(receipt) => {
                         println!("native dynamic playback receipt: {receipt}");
@@ -227,7 +252,12 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
     if app.state_ops.is_some() {
         match outcome {
             Some(RenderOutcome::Presented) => {
-                match app.state_ops.as_mut().expect("probe remains alive").after_present() {
+                match app
+                    .state_ops
+                    .as_mut()
+                    .expect("probe remains alive")
+                    .after_present()
+                {
                     state_ops_playback::AfterPresent::Continue => app.request_redraw(),
                     state_ops_playback::AfterPresent::Complete(receipt) => {
                         println!("native state ops receipt: {receipt}");

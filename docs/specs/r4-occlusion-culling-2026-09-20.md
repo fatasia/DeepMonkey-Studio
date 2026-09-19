@@ -1,6 +1,6 @@
 # R4 遮挡剔除(GPU-driven)——判定与消费链设计
 
-> 状态:第二切片(消费链)完成;生产 draw 接线 = 下一切片。
+> 状态:第三切片(HiZ 生产接线)完成;逐实例 mip 定档与精度-召回联测 = 下一切片。
 > 权威计划:`docs/specs/industrial-3d-format-work-plan-2026-09-16.md` 不涉及本主题;
 > 路线锚点:`docs/specs/de26-master-execution-roadmap-2026-09-19.md` 第 7 节 #2。
 > 证据:`test-output/r4-occlusion-consume-20260920-r1/evidence.json`(本文所有实测
@@ -15,8 +15,11 @@
   `native_gpu_occlusion_compact_v1.wgsl`(5 entry point 定序链)+
   `gpu_occlusion_consume.rs`(OcclusionConsumeStage)+ `gpu_culling.rs::attach_occlusion_consume`
   + 主视锥 draw 访问器切换。
-- **下一切片**:生产 renderer 挂载(init/scene_update)、MSAA 深度 resolve+reduce 进
-  HiZ、可见性缓冲两阶段管线。
+- **第三切片(本切片,2026-09-20)**:生产接线落地——`renderer/hi_z_pyramid.rs`
+  (MSAA 深度 resolve → r32float min 金字塔)+ init/resize/scene_update 三处挂载
+  (显式开关默认关)+ 主视锥 draw 真正消费紧凑输出,详见 §6。
+- **下一切片**:逐实例 mip 定档(TS `hiZOcclusionMip`)与精度-召回联测、
+  可见性缓冲两阶段管线、空批次 draw 跳过(§7.3)。
 
 ## 2. 架构
 
@@ -134,12 +137,71 @@ cargo test --bin deep-engine-native consume_ -- --ignored --nocapture   # 消费
 cargo test --bin deep-engine-native gpu_occlusion_tests:: -- --ignored  # 首切片回归
 ```
 
-## 6. 剩余缺口(下一切片)
+## 6. 第三切片:HiZ 生产接线(2026-09-20,原 §6.1/6.2 落地)
 
-1. 生产接线:renderer init/scene_update 挂载遮挡判定 + 消费链;主视锥 draw 真正切换
-   缓冲对(访问器已就绪)。
-2. HiZ 生产:MSAA 深度 resolve + reduce 进金字塔(当前为受控合成输入,与 TS 侧
-   `webgpu/hiZPyramid.ts` 语义对齐)。
+> 证据:`test-output/native-hiz-20260920-r1/evidence.json`(本文数字均出自该文件与
+> 实跑日志;RTX 4060 Laptop / Vulkan / wgpu 30.0.1)。
+
+### 6.1 转换方案(审计结论)
+
+`copy_texture` 双重不可行(multisampled 禁 `COPY_SRC` + 格式须一致);
+render pass `resolve_target` 不支持深度。**采用**:第 0 层 = 一次全屏 render pass,
+`texture_depth_multisampled_2d` 4 样本**定序 min**,颜色写入金字塔 mip 0
+(r32float);第 1 级起 `include_str!` 逐字复用已认证 DCIR 工件(min 变体),
+anchored/variable 选择与 TS `encodePasses` 一致。提取内核
+`native_hi_z_extract_v1.wgsl` 手写(MSAA 深度超出 DCIR v0 合同,与 TS copy 内核
+同一理由);免中间 depth32float 与 `frag_depth`。mip 层数公式
+`floor(log2(max(w,h)))+1`、±0 规范化均与 TS 对拍。
+
+### 6.2 帧序与挂载契约
+
+```
+SceneResources(culling.encode:frustum → 遮挡 → 消费 dispatch,消费上一帧金字塔)
+  → Shadow → Opaque(深度 Store)→ HiZ(提取 + 缩减)→ Transparent → …
+```
+
+- 挂载三处同一契约:`init`(创建)、`resize`(金字塔重建 + 重挂)、
+  `scene_update` Replace(packet 重建 + 重挂;不重挂会静默丢链)。
+- 显式开关 `DEEP_ENGINE_NATIVE_OCCLUSION_HIZ=1`,**默认关**。
+- `encode_opaque_pass` 新增 `retain_depth`:HiZ 挂载时 opaque 深度必须
+  Store(否则 Discard → 提取读未定义深度)。
+- 遮挡判定按首切片合同采样**顶层**(1×1);OcclusionSource 必须给**全 mip 链
+  视图**——内核 `textureLoad(hiz, coord, dims.w)` 按视图内绝对层号读,单层视图
+  越界读 0 → 全剔(GPU 对照测试暴露并修复)。
+- 金字塔创建/重建时全链填充远平面:首帧 dispatch 读 wgpu 零初始化(0.0 = 最近)
+  会整体误剔(真实窗口冒烟实测 visible=1/3,修复后 3/3)。
+
+### 6.3 实测
+
+| 项 | 结果 |
+|---|---|
+| GPU 对照(合成深度) | 提取+anchored 链与量化期望逐位一致;variable 链与 CPU 变窗参考逐位一致;真实金字塔喂判定:全屏遮挡体 64→0,远平面 64→64 |
+| 真实窗口冒烟(遮挡 fixture) | 帧 1:3/3(不误剔)→ 帧 2-4:2/3(墙后立方体被剔);submission scopes=clean |
+| 真实窗口冒烟(默认 fixture) | 帧 1:4/4 → 帧 2-4:1/4:顶层采样对屏幕重叠实例过度剔除(精度极限的定量证据,见 §6.4) |
+| 性能 1080p 墙钟 | 提取+10 级缩减全链:三跑中位 819/776/753 µs(含提交,如实标注) |
+| 生产帧 GPU timestamp | telemetry smoke `gpu.hi_z` 段 p50=34.8µs(64×64 窗口);`cpu.hi_z` p50=16.4µs;1080p GPU timestamp 待真实分辨率窗口 |
+| 回归 | lib 430 passed;bin 165 passed + 70 ignored;gpu_culling 7/7、gpu_lod_draw_readback 31/31、gpu_shader_material_draw 28/28、surface_flags 5/5;gpu_occlusion+consume GPU 用例全过 |
+
+### 6.4 纪律与剩余缺口(下一切片)
+
+- 文件体量:hi_z_pyramid.rs 572 / hi_z_pyramid_tests.rs 353 / extract wgsl 45
+  (全 ≤800);遥测 QUERY_COUNT 12→16,decode 数组长度改用 `GpuSegment::ALL.len()`
+  (原硬编码 6,挂载后越界 panic,已修复)。
+- **顶层采样精度极限(定量)**:屏幕重叠场景(默认 fixture)帧 2 起 4→1——
+  1×1 texel 的 min 是全屏 min,非全屏遮挡体也会压低 scene_min。恢复精度必须
+  逐实例 mip 定档(TS `hiZOcclusionMip` 等价物)+ 精度-召回联测;**定档前开关
+  保持默认关**。
+- 上一帧深度滞尾:相机大幅前推存在滞后误剔窗口(与 TS `previousHiZVisibility`
+  同边界),1e-6 裕量不覆盖运动补偿。
+- 空批次 draw 跳过(原 §6.3)仍开放;Replace 重挂路径经编译接线 + 同一挂载契约
+  (C3 快路径不触发 Replace),未单独 GPU 冒烟。
+
+## 7. 剩余缺口(下一切片)
+
+1. 逐实例 mip 定档(TS `hiZOcclusionMip` 等价物,内核按 dims.w 单层采样需扩展)
+   与精度-召回联测定档;定档前 `DEEP_ENGINE_NATIVE_OCCLUSION_HIZ` 保持默认关(§6.4)。
+2. 可见性缓冲两阶段管线。
 3. 空批次 draw 调用跳过(引 GPU 侧批次数或 CPU readback 门控)。
 4. 大预算层次化扫描(block_offsets 单线程扫在 1M 预算为常数量级,若未来放宽预算需
    升级为层次扫描;确定性纪律不变)。
+5. 相机大幅前推的上一帧深度滞尾运动补偿(§6.4)。

@@ -1,8 +1,7 @@
 use deep_engine_native::{
     culling_contract::prepare_gpu_culling, lod_contract::prepare_gpu_lod,
-    mesh_abi::MATERIAL_UNIFORM_FLOATS, pbr_texture::prepare_pbr_resources,
-    pbr_texture::prepare_material_uniform_rows, scene::prepare_scene,
-    scene_bounds::prepare_scene_bounds,
+    mesh_abi::MATERIAL_UNIFORM_FLOATS, pbr_texture::prepare_material_uniform_rows,
+    pbr_texture::prepare_pbr_resources, scene::prepare_scene, scene_bounds::prepare_scene_bounds,
 };
 
 use crate::renderer::material_resource_diff::{
@@ -162,7 +161,8 @@ impl Renderer {
         content: &PlayerContent,
     ) -> Result<StagedRenderPacketUpdate, String> {
         if crate::gpu_ibl::GpuIblEnvironment::source_identity(&content.environment)
-            != self.ibl.identity || content.background != self.forward_targets.background
+            != self.ibl.identity
+            || content.background != self.forward_targets.background
         {
             return Err(
                 "native RenderPacket update changed IBL identity; rebuild the renderer epoch"
@@ -209,16 +209,22 @@ impl Renderer {
             .geometries
             .iter()
             .map(|geometry| (&geometry.id, geometry.revision))
-            .eq(packet.geometries.iter().map(|geometry| (&geometry.id, geometry.revision)));
+            .eq(packet
+                .geometries
+                .iter()
+                .map(|geometry| (&geometry.id, geometry.revision)));
         let textures_equal = previous_packet
             .textures
             .iter()
             .map(|texture| (&texture.id, texture.revision))
-            .eq(packet.textures.iter().map(|texture| (&texture.id, texture.revision)));
+            .eq(packet
+                .textures
+                .iter()
+                .map(|texture| (&texture.id, texture.revision)));
         match diff_scene_instances(&previous_packet.instances, &packet.instances) {
             SceneInstanceDiff::TransformOnly { changed_indices } => {
-                let materials_equal = format!("{:?}", previous_packet.materials)
-                    == format!("{:?}", packet.materials);
+                let materials_equal =
+                    format!("{:?}", previous_packet.materials) == format!("{:?}", packet.materials);
                 if materials_equal && geometries_equal && textures_equal {
                     let rows: Vec<(usize, [f32; 16])> = changed_indices
                         .iter()
@@ -306,7 +312,7 @@ impl Renderer {
                     &self.shadow_map,
                     ibl,
                 )?;
-                let next_culling = GpuCulling::new(
+                let mut next_culling = GpuCulling::new(
                     &self.device,
                     &scene.scene().instance_buffer,
                     &culling,
@@ -314,6 +320,22 @@ impl Renderer {
                     &shadow_update,
                     self.shadow_probe.is_some(),
                 )?;
+                // R4 生产接线:packet 更新会整体重建 GpuCulling,不重挂会把
+                // 遮挡链静默丢掉(与 init/resize 同一挂载契约,开关关闭时跳过)。
+                if let Some(pyramid) = &self.hi_z {
+                    next_culling.attach_occlusion(
+                        &self.device,
+                        &scene.scene().instance_buffer,
+                        pyramid.occlusion_source(),
+                        &self.frame,
+                        true,
+                    )?;
+                    next_culling.attach_occlusion_consume(
+                        &self.device,
+                        &scene.scene().instance_buffer,
+                        false,
+                    )?;
+                }
                 let next_lod = GpuLod::new(
                     &self.device,
                     &scene.scene().instance_buffer,

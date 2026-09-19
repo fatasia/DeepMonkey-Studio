@@ -33,10 +33,13 @@ pub enum CpuSegment {
     /// R6-2 细分:Deep2D(文字/二维管线)staging 准备。A1(文字驱逐)
     /// 证据通道;无 Deep2D 的场景保持零样本,属如实降级。
     Deep2dPrepare,
+    /// R4 生产接线:MSAA 深度 resolve → HiZ 金字塔(提取 render pass +
+    /// DCIR 缩减链)。开关关闭时保持零样本。
+    HiZ,
 }
 
 impl CpuSegment {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::Acquire,
         Self::SceneResources,
         Self::Shadow,
@@ -48,6 +51,7 @@ impl CpuSegment {
         Self::SceneUpdate,
         Self::ResourcePrepare,
         Self::Deep2dPrepare,
+        Self::HiZ,
     ];
 
     fn name(self) -> &'static str {
@@ -63,6 +67,7 @@ impl CpuSegment {
             Self::SceneUpdate => "packet_scene_update",
             Self::ResourcePrepare => "packet_resource_upload",
             Self::Deep2dPrepare => "packet_deep2d_prepare",
+            Self::HiZ => "hi_z",
         }
     }
 

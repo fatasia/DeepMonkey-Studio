@@ -25,9 +25,9 @@ mod chart_sim;
 mod chart_smoke;
 mod dashboard;
 #[cfg(all(test, target_os = "windows"))]
-mod dashboard_gpu_tests;
-#[cfg(all(test, target_os = "windows"))]
 mod dashboard_filter_gpu_tests;
+#[cfg(all(test, target_os = "windows"))]
+mod dashboard_gpu_tests;
 mod deep2d_context;
 mod dynamic_playback;
 mod lifecycle;
@@ -65,18 +65,19 @@ mod x_input;
 mod x_runtime;
 #[cfg(windows)]
 mod x_transport;
+pub use dynamic_playback::{DYNAMIC_PLAYBACK_STEP_MS, DynamicPlaybackSpec};
 use package_live::PackageLiveTransport;
 use packet_coalescer::{PublishedState, UpdateCoalescer};
 use packet_live::PacketLiveTransport;
 use packet_live_probe::PacketLiveProbe;
-pub use dynamic_playback::{DYNAMIC_PLAYBACK_STEP_MS, DynamicPlaybackSpec};pub use runner::{
-    PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_dynamic_playback,
-    run_fog, run_package_live, run_packet_live, run_section_smoke, run_selection_smoke,
+pub use runner::{
+    PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_dynamic_playback, run_fog,
+    run_occlusion_smoke, run_package_live, run_packet_live, run_section_smoke, run_selection_smoke,
     run_shadow_update_probe, run_state_ops_playback, run_telemetry_smoke,
     run_telemetry_smoke_prepare, run_telemetry_smoke_prepare_material, run_verification,
 };
-pub use state_ops_playback::StateOpsSpec;
 use shadow_update_probe::ShadowUpdateProbe;
+pub use state_ops_playback::StateOpsSpec;
 
 struct NativeApp {
     content: PublishedState<PlayerContent>,
@@ -100,6 +101,7 @@ struct NativeApp {
     /// R6-2 细分采样:遥测采样窗内每帧一次真实 packet 更新。
     telemetry_prepare_replay: Option<TelemetryPrepareReplay>,
     state: PlayerState,
+    occlusion_probe: Option<u8>,
     selection_probe: Option<u8>,
     section_probe: Option<section_probe::SectionProbe>,
     chart_probe: Option<u8>,
@@ -133,6 +135,8 @@ struct NativeAppSetup {
     telemetry_prepare_replay: Option<TelemetryPreparePerturbation>,
     selection_probe: bool,
     section_probe: bool,
+    /// R4 生产接线:遮挡链真实窗口冒烟(逐帧小幅旋转)。
+    occlusion_probe: bool,
     /// P1-16 第三批:键盘 smoke。与 chart_probe 互斥(见 `NativeApp::new`)。
     chart_key_probe: bool,
 }
@@ -226,7 +230,9 @@ impl NativeApp {
             smoke_frame: setup.smoke_frame,
             features: setup.features,
             shadow_update_probe: setup.shadow_update_probe,
-            dynamic_playback: setup.dynamic_playback.map(dynamic_playback::DynamicPlaybackProbe::new),
+            dynamic_playback: setup
+                .dynamic_playback
+                .map(dynamic_playback::DynamicPlaybackProbe::new),
             state_ops: setup.state_ops.map(state_ops_playback::StateOpsProbe::new),
             packet_live_probe: setup.packet_live_probe,
             packet_live_transport: setup.packet_live_transport,
@@ -249,6 +255,7 @@ impl NativeApp {
                 view,
                 ..Default::default()
             },
+            occlusion_probe: setup.occlusion_probe.then_some(0),
             selection_probe: setup.selection_probe.then_some(0),
             section_probe: setup
                 .section_probe

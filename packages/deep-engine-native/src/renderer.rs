@@ -40,21 +40,24 @@ mod coordinate_frame_gpu_tests;
 #[cfg(test)]
 mod environment_probe_tests;
 mod environment_update;
-#[cfg(all(test, target_os = "windows"))]
-mod solid_environment_tests;
 mod frame;
 mod frame_probes;
 mod frame_target;
+mod hi_z_pyramid;
+#[cfg(test)]
+mod hi_z_pyramid_tests;
 mod init;
 mod init_report;
-mod replacement_present;
-pub(crate) mod scene_update;
 mod material_resource_diff;
 #[cfg(all(test, target_os = "windows"))]
 mod material_uniform_fastpath_gpu_tests;
+mod replacement_present;
 mod scene_instance_diff;
+pub(crate) mod scene_update;
 mod scene_update_stage;
 mod section_readback;
+#[cfg(all(test, target_os = "windows"))]
+mod solid_environment_tests;
 pub(crate) use section_readback::SectionReadback;
 
 #[derive(Clone, Copy)]
@@ -100,6 +103,8 @@ pub struct Renderer {
     last_shadow_probe: Option<crate::shadow_probe::ShadowProbeMetrics>,
     ibl_probe: Option<IblProbe>,
     forward_targets: ForwardTargets,
+    /// R4 生产接线:主视锥 HiZ 金字塔(显式开关,默认关)。
+    hi_z: Option<hi_z_pyramid::HiZPyramid>,
     bloom: Option<BloomPass>,
     output_pass: OutputPass,
     frame: FrameUniform,
@@ -167,7 +172,8 @@ impl Renderer {
                 &self.device,
                 &next_forward.hdr_view,
                 next_bloom.as_ref().map(BloomTargets::output_view),
-                self.fog.requires_output_pass()
+                self.fog
+                    .requires_output_pass()
                     .then_some((&next_forward.depth_view, &self.frame_buffer)),
             )
             .expect("renderer bloom mode remains stable during resize");
@@ -187,12 +193,17 @@ impl Renderer {
         self.surface.configure(&self.device, &self.config);
         next_forward.background = self.forward_targets.background;
         self.forward_targets = next_forward;
+        // HiZ 金字塔跟随前向目标尺寸重建;遮挡判定/消费链按新源重挂
+        // (OcclusionSource 的尺寸与 mip 视图随金字塔实例固定)。
+        self.hi_z = self.rebuild_hi_z()?;
         if let (Some(bloom), Some(targets)) = (&mut self.bloom, next_bloom) {
             bloom.publish_resize(targets);
         }
         self.output_pass.publish_rebind(next_output);
         self.frame = crate::gpu_resources::frame_data_with_camera(size, self.view, self.fog);
-        if let Some(lighting) = &self.lighting { lighting.apply(&mut self.frame); }
+        if let Some(lighting) = &self.lighting {
+            lighting.apply(&mut self.frame);
+        }
         update_shadow_map(
             &mut self.shadow_map,
             &self.queue,
@@ -242,13 +253,39 @@ impl Renderer {
             .shadow_casters
             .keys(&self.shadow_map, self.shadow_shader_key)?;
         // resize 保留阴影纹理；方向级联保持旧刷新策略，世界固定聚光视图可继续复用。
-        self.shadow_cache.invalidate_directional(self.shadow_map.cascade_count() as usize);
+        self.shadow_cache
+            .invalidate_directional(self.shadow_map.cascade_count() as usize);
         self.queue
             .write_buffer(&self.frame_buffer, 0, cast_slice(&self.frame));
         if let Some(telemetry) = self.telemetry.as_mut() {
             telemetry.reset_barrier();
         }
         Ok(())
+    }
+
+    /// 按当前前向目标尺寸重建 HiZ 金字塔并把遮挡判定/消费链重挂到新源
+    /// (resize 路径;开关关闭时返回 None)。事务失败整体报错,不留半挂载。
+    fn rebuild_hi_z(&mut self) -> Result<Option<hi_z_pyramid::HiZPyramid>, String> {
+        if !hi_z_pyramid::occlusion_hiz_enabled() {
+            return Ok(None);
+        }
+        let pyramid = hi_z_pyramid::HiZPyramid::new(
+            &self.device,
+            &self.queue,
+            &self.forward_targets.depth_view,
+            self.forward_targets.width(),
+            self.forward_targets.height(),
+        )?;
+        self.culling.attach_occlusion(
+            &self.device,
+            &self.scene.instance_buffer,
+            pyramid.occlusion_source(),
+            &self.frame,
+            true,
+        )?;
+        self.culling
+            .attach_occlusion_consume(&self.device, &self.scene.instance_buffer, false)?;
+        Ok(Some(pyramid))
     }
 
     pub fn set_view(&mut self, view: PlayerView) {
@@ -267,7 +304,9 @@ impl Renderer {
         self.view = view;
         self.shadow_version.bump_light();
         self.frame = crate::gpu_resources::frame_data_with_camera(self.size, self.view, self.fog);
-        if let Some(lighting) = &self.lighting { lighting.apply(&mut self.frame); }
+        if let Some(lighting) = &self.lighting {
+            lighting.apply(&mut self.frame);
+        }
         update_shadow_map(
             &mut self.shadow_map,
             &self.queue,
