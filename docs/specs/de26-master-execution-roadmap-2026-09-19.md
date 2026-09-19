@@ -214,7 +214,7 @@ V04视觉门→V05综合签核→⑥ D24–D28剩余卡→480min soak→FINAL-GA
 | # | 优化项 | 依据/收益 | 归属卡 | 状态 |
 |---|---|---|---|---|
 | 1 | C3 增量全覆盖：材质 uniform(接线中)/纹理/LOD/阴影标志/单几何/Deep2D 文字/20000 档 | scene_update 88.6% 只解决 transform-only；其余变更类型仍全量 | A1/B01/B02 | 材质接线子代理进行中 |
-| 2 | R4 GPU-driven 完整管线：GPU 遮挡剔除→可见性缓冲→indirect draw | 5000 实例仍逐 batch CPU 提交；UE Nanite 级差距；**截止 2027Q1** | A2/B03/D06 | HiZ 内核✅，管线待 |
+| 2 | R4 GPU-driven 完整管线：GPU 遮挡剔除→可见性缓冲→indirect draw | 5000 实例仍逐 batch CPU 提交；UE Nanite 级差距；**截止 2027Q1** | A2/B03/D06 | **进度更新(2026-09-20)**:判定内核✅+消费链(scan/compact)✅+draw 访问器路由✅(view0 自动走紧凑缓冲);剩余=renderer 挂载 attach_occlusion_consume+MSAA 深度 resolve 进 HiZ+空批次跳过 |
 | 3 | C2 并行 encoder farm：DAG 静态划分（#18 已产出）+ 逐位验证 | encode 占稳态帧 24%；submit 串行受上游限 | R6-3/B03 | parallelGroups✅，farm 待 |
 | 4 | DCIR v1 buffer I/O | A2/A3/C1 compute 化的前置；GI 探针/HiZ/万灯三消费点 | R2 | v0✅ |
 | 5 | B05 上传节流 + staging ring 三缓冲 | 全量路径 upload 19.7ms 仍有优化空间；增量已证 0.02ms | B05+D组 | 待 |
