@@ -547,10 +547,12 @@ fn inspect_elem_table(
             let mut id_max = 0u32;
             let mut framing_verified = true;
             for row in &table {
-                if version == 2024
-                    && (row.raw.len() != 40
-                        || u32::from_le_bytes(row.raw[16..20].try_into().unwrap()) != row.id_primary
-                        || u32::from_le_bytes(row.raw[36..40].try_into().unwrap()) != row.id_secondary)
+                // framing 不变量对任何版本都做逐行字节验证(2026-09-19 升级:
+                // 之前按版本号拒绝,但观察证明 2026 的 ElemTable framing 与
+                // 已证明 2024 形态逐字节同构——验证的是字节,不是版本号)。
+                if row.raw.len() != 40
+                    || u32::from_le_bytes(row.raw[16..20].try_into().unwrap()) != row.id_primary
+                    || u32::from_le_bytes(row.raw[36..40].try_into().unwrap()) != row.id_secondary
                 {
                     framing_verified = false;
                     break;
@@ -559,7 +561,7 @@ fn inspect_elem_table(
                 id_min = id_min.min(row.id_primary);
                 id_max = id_max.max(row.id_primary);
             }
-            if version == 2024 && !framing_verified {
+            if !framing_verified {
                 failures.push(json!({
                     "stage": "elem-table",
                     "error": "row failed the proven 40-byte framing check; counts withheld"
@@ -569,8 +571,12 @@ fn inspect_elem_table(
                 let framing = if version == 2024 {
                     json!({"stride": 40, "verifiedPerRow": true, "source": "library detect_layout"})
                 } else {
-                    json!({"stride": null, "verifiedPerRow": false,
-                           "note": "layout not proven for this release; counts are declared-id inventories only"})
+                    // 非 2024 但逐行通过 40 字节不变量:如实标注证据来源为
+                    // 本文件实际字节的逐行验证(非版本号假设)。下游
+                    // partition-element-records 形态门不受影响,仍独立按
+                    // supports_revit_version 把关。
+                    json!({"stride": 40, "verifiedPerRow": true,
+                           "source": "per-row byte invariants identical to proven 2024 framing (verified on this file)"})
                 };
                 let status = if declared.is_empty() { "empty-declared-index" } else { "measured" };
                 let declared_count = declared.len();
@@ -624,15 +630,69 @@ fn inspect_elem_table(
             match rederived {
                 Some(value) => (declared, value),
                 None => {
+                    // 布局观察(失败路径,不声明任何布局):对 inflate 后的
+                    // GLOBAL_ELEM_TABLE 裸字节区做步长拟合观察——
+                    // 1) 头部 record_count(若可读)与流长的隐含步长;
+                    // 2) 候选步长 {40,44,48,56} 下,把每 k*stride 处的 u32 当作
+                    //    候选 id,统计"非零、非 0xFFFFFFFF、首值后单调不减"的行占比。
+                    // 已证明 2024 形态的预期:40 步长得分≈100%,其余≈低分——
+                    // 观察器先用 2024 自校验,再观察 2026 哪个步长显形。
+                    let observation = (|| -> Option<Value> {
+                        let raw = rf.read_stream(rvt::streams::GLOBAL_ELEM_TABLE).ok()?;
+                        let d = compression::inflate_stream_at(rvt::streams::GLOBAL_ELEM_TABLE, &raw, 8)
+                            .or_else(|_| compression::inflate_stream_at(rvt::streams::GLOBAL_ELEM_TABLE, &raw, 0))
+                            .ok()?;
+                        let header = elem_table::parse_header(rf).ok();
+                        let record_count = header.as_ref().map(|h| h.record_count as u64);
+                        let implied_stride = match (d.len() as u64, record_count) {
+                            (len, Some(count)) if count > 0 => Some(len / count),
+                            _ => None,
+                        };
+                        let plausible = |word: u32| word != 0 && word != u32::MAX && word < 100_000_000;
+                        let mut stride_scores: Vec<Value> = Vec::new();
+                        for stride in [40u64, 44, 48, 56] {
+                            if (d.len() as u64) < stride { continue; }
+                            let rows = (d.len() as u64) / stride;
+                            let mut plausible_rows: u64 = 0;
+                            let mut monotonic_rows: u64 = 0;
+                            let mut prev: Option<u32> = None;
+                            for k in 0..rows {
+                                let off = (k * stride) as usize;
+                                let word = u32::from_le_bytes(d[off..off + 4].try_into().ok()?);
+                                if plausible(word) {
+                                    plausible_rows += 1;
+                                    if prev.map_or(true, |p| word >= p) { monotonic_rows += 1; }
+                                    prev = Some(word);
+                                }
+                            }
+                            stride_scores.push(json!({
+                                "stride": stride,
+                                "rowsConsidered": rows,
+                                "plausibleIdRows": plausible_rows,
+                                "monotonicAfterFirstPlausible": monotonic_rows,
+                            }));
+                        }
+                        Some(json!({
+                            "inflatedLength": d.len(),
+                            "recordCountFromHeader": record_count,
+                            "impliedStride": implied_stride,
+                            "strideScores": stride_scores,
+                        }))
+                    })();
                     let error = match library_outcome {
                         Err(error) => error.to_string(),
                         Ok(_) => "declared ids degenerate (all 0/0xFFFFFFFF) and deterministic re-derivation failed".into(),
                     };
+                    let failed_value = json!({
+                        "status": "failed", "error": error,
+                        "observation": observation,
+                    });
                     failures.push(json!({
                         "stage": "elem-table", "error": error,
+                        "observation": observation,
                         "note": "record layouts proven on 2023/2024 corpora only; release left fail-closed"
                     }));
-                    (BTreeSet::new(), json!({"status": "failed", "error": error}))
+                    (BTreeSet::new(), failed_value)
                 }
             }
         }
