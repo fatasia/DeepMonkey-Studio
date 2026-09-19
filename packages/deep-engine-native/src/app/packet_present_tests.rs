@@ -62,7 +62,7 @@ fn skipped_packet_updates_retain_state_and_only_retry_latest() {
             packet_live_probe: None,
             packet_live_transport: Some(transport),
             package_live_transport: None,
-            telemetry_prepare_replay: false,
+            telemetry_prepare_replay: None,
             telemetry_report: false,
             selection_probe: false,
             section_probe: false,

@@ -118,7 +118,7 @@ fn run_probe(live: bool) {
             packet_live_probe: None,
             packet_live_transport: None,
             package_live_transport: transport,
-            telemetry_prepare_replay: false,
+            telemetry_prepare_replay: None,
             telemetry_report: false,
             selection_probe: false,
             section_probe: false,

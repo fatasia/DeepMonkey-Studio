@@ -72,9 +72,19 @@ pub(super) fn run_internal(
             package_live_transport,
             telemetry_report: matches!(
                 report,
-                ReportMode::Telemetry | ReportMode::TelemetryPrepare
+                ReportMode::Telemetry
+                    | ReportMode::TelemetryPrepare
+                    | ReportMode::TelemetryPrepareMaterial
             ),
-            telemetry_prepare_replay: matches!(report, ReportMode::TelemetryPrepare),
+            telemetry_prepare_replay: match report {
+                ReportMode::TelemetryPrepare => {
+                    Some(super::super::TelemetryPreparePerturbation::Transform)
+                }
+                ReportMode::TelemetryPrepareMaterial => {
+                    Some(super::super::TelemetryPreparePerturbation::MaterialUniform)
+                }
+                _ => None,
+            },
             selection_probe: matches!(report, ReportMode::Selection),
             section_probe: matches!(report, ReportMode::Section),
             chart_key_probe: matches!(report, ReportMode::ChartKeyboard),

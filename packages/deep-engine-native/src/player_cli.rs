@@ -254,6 +254,17 @@ pub fn run_telemetry_smoke_prepare(path: PathBuf) -> Result<(), String> {
     app::run_telemetry_smoke_prepare(PlayerContent::from_packet(packet, None))
 }
 
+/// `--smoke-telemetry-prepare-material`:telemetry prepare smoke 的材质摄动
+/// 变体(首材质 metallic 数值翻转),采集 uniform-only 材质更新的准备样本。
+pub fn run_telemetry_smoke_prepare_material(path: PathBuf) -> Result<(), String> {
+    let (packet, summary) = load_and_validate(&path)?;
+    println!(
+        "telemetry prepare(material) smoke contract v1 loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_telemetry_smoke_prepare_material(PlayerContent::from_packet(packet, None))
+}
+
 pub fn default_shadow_fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/render_packet_shadow_v1.json")
 }
