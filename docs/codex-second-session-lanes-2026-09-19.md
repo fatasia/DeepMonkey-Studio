@@ -37,3 +37,9 @@
 - 本会话保留车道:R2(着色 IR)、P1(集成)、主线门禁、soak 窗口、统一提交。
 - 第二会话的车道完成后把报告贴回本会话即可,我来审阅并统一提交(避免 git index 冲突,第二会话不要自己 commit)。
 - 若第二会话也能跑自己的子代理(配额按会话计),把 β1/β2 分给它的子代理,主线程做第三车道 β3(P7 QTO 导出/评审 UI)。
+
+## 车道 β3:R6-0/R6-1 wgpu 开销实测与零成本档(已排定今晚 01:30 自动执行;若你手动开新会话想提前做,先删 test-output/r6-0-wgpu-overhead-20260919/ 判重标记)
+
+```
+你在 D:\Documentsimim-studio 工作。执行 R6-0/R6-1 车道(DeepSeek 式 wgpu 白盒优化,见 de26-high-value-scope-analysis 第 10 节 R6-1 卡)。阶段一测量先行:审计 packages/deep-engine-native 的 wgpu 版本/特性/提交通路;release(校验关)vs debug(校验开)帧时间与 CPU encode+submit 细分,样本≥5 取中位数;证据 test-output/r6-0-wgpu-overhead-20260919/evidence.json,含 CPU 提交占比判定(30%/10% 阈值)。阶段二零成本档:Cargo.toml features 与 profile.release 审查,实施零语义风险项并记录前后对比。纪律:不 commit;不碰 delivery/optimizer/webgpu/lighting/runtimePackage/shaderCompute 在途车道文件;禁止 reset --hard/清理 test-output;测量先行不许凭感觉。
+```
