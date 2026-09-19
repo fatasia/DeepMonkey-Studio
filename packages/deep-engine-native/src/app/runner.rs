@@ -32,6 +32,9 @@ enum ReportMode {
     Telemetry,
     /// R6-2 细分采样:Telemetry 全部行为 + 采样窗内每帧一次真实 packet 更新。
     TelemetryPrepare,
+    /// C3 材质细分采样:同 TelemetryPrepare,摄动改为首材质 metallic 数值
+    /// (uniform-only 材质更新的被测对象)。
+    TelemetryPrepareMaterial,
     Selection,
     Section,
     /// P1-16 第三批:真实窗口键盘 smoke(需要图例可聚焦)。
@@ -221,6 +224,28 @@ pub fn run_telemetry_smoke_prepare(content: PlayerContent) -> Result<(), String>
         None,
         None,
         ReportMode::TelemetryPrepare,
+        None,
+        None,
+    )
+}
+
+/// `--smoke-telemetry-prepare-material`:同 telemetry prepare smoke,摄动改为
+/// 首材质 metallic 数值(uniform-only 材质更新的全量/快路径对照)。
+pub fn run_telemetry_smoke_prepare_material(content: PlayerContent) -> Result<(), String> {
+    run_internal(
+        content,
+        true,
+        RendererFeatures {
+            bloom: BloomSettings::default(),
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: true,
+        },
+        None,
+        None,
+        None,
+        ReportMode::TelemetryPrepareMaterial,
         None,
         None,
     )

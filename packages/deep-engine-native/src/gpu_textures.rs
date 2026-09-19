@@ -205,9 +205,13 @@ impl GpuMaterial {
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Deep Engine native PBR material uniform v1"),
             contents: cast_slice(&material.uniform),
-            // COPY_SRC:C3 write_material_uniforms 的 GPU 读回验证需要把
-            // uniform 拷贝到 MAP_READ staging 缓冲(wgpu 禁止直接 map)。
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_SRC,
+            // COPY_DST:Queue::write_buffer 原位写入的必需 usage(接生产快
+            // 路径时暴露——旧 UNIFORM-only 缓冲根本不可由 write_buffer 更新);
+            // COPY_SRC:C3 GPU 读回验证需要拷贝到 MAP_READ staging(wgpu
+            // 禁止直接 map uniform)。
+            usage: wgpu::BufferUsages::UNIFORM
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         });
         let entries = [
             view_entry(0, slots[0]),
