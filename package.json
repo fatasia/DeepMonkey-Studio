@@ -29,6 +29,7 @@
     "quality:source-size": "node scripts/check-source-size.mjs",
     "gate:repository": "node --test scripts/check-repository-governance.test.mjs && node scripts/check-repository-governance.mjs",
     "verify:scene-client": "node scripts/verify-scene-client-package.mjs",
+    "verify:mainline-closure": "node scripts/verify-mainline-closure.mjs",
     "run:scene-native": "node scripts/run-scene-client-native.mjs",
     "test:scene-client": "node --test scripts/lib/sceneClientArchive*.test.mjs scripts/verify-scene-client-package.test.mjs",
     "gate:deep-p0:browser": "pnpm --filter @bim-studio/deep-engine typecheck && pnpm --filter @bim-studio/deep-engine test && pnpm --filter @bim-studio/deep-engine build && pnpm --filter @bim-studio/deep-engine lab:build && pnpm --filter @bim-studio/deep-engine lab:isolation",
@@ -62,7 +63,8 @@
     "assets:audit:external-models": "node scripts/audit-external-industrial-models.mjs",
     "assets:audit:test": "node --test scripts/lib/glbAudit.test.mjs scripts/lib/assetThumbnailAudit.test.mjs scripts/lib/assetQualityAudit.test.mjs scripts/lib/environmentAssetPublication.test.mjs scripts/lib/atomicAssetDownload.test.mjs scripts/lib/sourceBModelPolicy.test.mjs scripts/lib/sourceBModelSync.test.mjs",
     "assets:sync:open-packs": "node scripts/sync-open-asset-packs.mjs",
-    "assets:sync:environment-materials": "node scripts/sync-environment-material-library.mjs"
+    "assets:sync:environment-materials": "node scripts/sync-environment-material-library.mjs",
+    "quality:size-ledger": "node scripts/fixtures/run-size-ledger.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
