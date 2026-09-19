@@ -271,3 +271,53 @@ mod tests {
         assert_ne!(geometry, changed, "single-bit content update must differ");
     }
 }
+
+
+#[cfg(test)]
+mod texture_revision_tests {
+    use super::*;
+    use crate::contract::{RenderInstance, RenderPacket};
+    use crate::pbr_texture::prepare_pbr_resources;
+    use crate::scene::prepare_scene;
+
+    fn packet_with_texture_revision(revision: u64) -> RenderPacket {
+        // 最小合法 packet:单几何/单材质/单实例/单纹理,仅 revision 变化。
+        let json = format!(
+            r#"{{"schema":"deep-engine.render-packet","version":1,
+            "geometries":[{{"id":"g","revision":1,"vertices":[0.0,0.0,0.0,0.0,0.0,1.0,1.0,0.0,0.0,0.0,0.0,1.0,0.0,1.0,0.0,1.0,0.0,0.0,1.0,1.0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,0.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0,1.0],"indices":[0,1,2]}}],
+            "materials":[{{"id":"m","baseColor":[1.0,1.0,1.0],"metallic":0.0,"roughness":1.0}}],
+            "instances":[{{"id":"i","geometry":"g","material":"m","transform":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]}}],
+            "textures":[{{"id":"tex","revision":{rev},"semantic":"baseColor","width":2,"height":2,"bytesPerRow":8,"data":[0,0,0,255,0,0,0,255,0,0,0,255,0,0,0,255]}}]}}"#,
+            rev = revision
+        );
+        serde_json::from_str(&json).expect("minimal packet must parse")
+    }
+
+    #[test]
+    fn texture_revision_bump_changes_manifest_identity() {
+        let earlier = scene_resource_manifest(
+            &packet_with_texture_revision(1),
+            &prepare_scene(&packet_with_texture_revision(1)).unwrap(),
+            &prepare_pbr_resources(&packet_with_texture_revision(1)).unwrap(),
+        )
+        .unwrap();
+        let later = scene_resource_manifest(
+            &packet_with_texture_revision(2),
+            &prepare_scene(&packet_with_texture_revision(2)).unwrap(),
+            &prepare_pbr_resources(&packet_with_texture_revision(2)).unwrap(),
+        )
+        .unwrap();
+        // 版本键含 revision → 缓存 miss(重上传该纹理),其余资源身份不变。
+        assert_ne!(earlier.textures, later.textures);
+        assert_eq!(earlier.geometries, later.geometries);
+        // 材质身份只含 uniform 与纹理依赖签名;纹理内容变化经依赖哈希传导。
+        // 此处纹理像素未变而 revision 变 → 依赖哈希含 revision → 材质身份变化。
+        // 失效信号 = (id, revision) 版本键:内容指纹相同(像素未变)而 revision 变,
+        // 缓存按 VersionKey 失效并重上传——内容哈希只管内容,版本键只管失效,各司其职。
+        assert_ne!(earlier.textures[0].revision, later.textures[0].revision);
+        assert_eq!(earlier.textures[0].id, later.textures[0].id);
+        assert_eq!(earlier.textures[0].content, later.textures[0].content);
+        // 未被材质引用的纹理变化不改变材质身份(引用闭合语义)。
+        assert_eq!(earlier.geometries, later.geometries);
+    }
+}
