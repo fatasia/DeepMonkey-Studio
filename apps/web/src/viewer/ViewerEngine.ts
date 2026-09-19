@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { ClippingGroup } from "three/webgpu";
 import { type RendererBackend } from "./viewerTypes";
-import { ViewerEnginePointer } from "./viewerEnginePointer";
+import { ViewerEngineModelDiff } from "./viewerEngineModelDiff";
 import { bindViewerPerformancePreferences } from "./viewerPerformanceBinding";
 import { normalizeRendererDeviceLoss, runtimeGpuDevice, type RendererInstance, type WebGpuRendererWithLossHandler } from "./viewerRendererTypes";
 
@@ -28,7 +28,7 @@ export {
 export { normalizedSpaceBox } from "./sceneObjectUtils";
 
 /** 面向工作区的稳定查看器 API；内部能力按职责拆分，避免单体引擎继续膨胀。 */
-export class ViewerEngine extends ViewerEnginePointer {
+export class ViewerEngine extends ViewerEngineModelDiff {
   private constructor(container: HTMLElement, renderer: RendererInstance, backend: RendererBackend, modelRoot: THREE.Group | ClippingGroup) {
     super(container, renderer, backend, modelRoot);
     bindViewerPerformancePreferences(this);

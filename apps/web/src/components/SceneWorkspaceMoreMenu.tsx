@@ -1,4 +1,4 @@
-import { Boxes, Cpu, Eye, FileCog, Import, Link2, MoreHorizontal, WandSparkles } from "lucide-react";
+import { Boxes, Cpu, Eye, FileCog, GitCompareArrows, Import, Link2, MoreHorizontal, WandSparkles } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { RendererCapabilityProbe, RendererReadiness } from "../rendererCapabilities";
@@ -36,6 +36,7 @@ interface Props {
   onImportModel?: (() => void) | undefined;
   onDeviceLayout?: (() => void) | undefined;
   onSmartBinding?: (() => void) | undefined;
+  onModelDiff?: (() => void) | undefined;
   onRvtImportSettings?: (() => void) | undefined;
 }
 
@@ -65,6 +66,11 @@ export function SceneWorkspaceMoreMenu(props: Props) {
           {props.onSmartBinding && (
             <button type="button" onClick={(event) => { const menu = event.currentTarget.closest("details"); if (menu) menu.open = false; props.onSmartBinding?.(); }}>
               <Link2 size={15} /> {tr(props.locale, "设备与测点智能绑定", "Smart asset binding")}
+            </button>
+          )}
+          {props.onModelDiff && (
+            <button type="button" onClick={(event) => { const menu = event.currentTarget.closest("details"); if (menu) menu.open = false; props.onModelDiff?.(); }}>
+              <GitCompareArrows size={15} /> {tr(props.locale, "模型版本对比评审", "Model version diff review")}
             </button>
           )}
           {props.onRvtImportSettings && (

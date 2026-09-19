@@ -12,6 +12,7 @@ export interface AppWorkspaceTopbarTools {
   onImportModel?: () => void;
   onDeviceLayout?: () => void;
   onSmartBinding?: () => void;
+  onModelDiff?: () => void;
   onRvtImportSettings?: () => void;
 }
 
@@ -224,6 +225,7 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
               onImportModel={tools?.onImportModel}
               onDeviceLayout={tools?.onDeviceLayout}
               onSmartBinding={tools?.onSmartBinding}
+              onModelDiff={tools?.onModelDiff}
               onRvtImportSettings={tools?.onRvtImportSettings}
               onImport={() => importRef.current?.click()}
               onExportLoose={() => exportSceneConfig()}

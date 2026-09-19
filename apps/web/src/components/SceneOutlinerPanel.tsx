@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   Boxes,
@@ -23,6 +23,7 @@ import type { ComponentRecord } from "../viewer/ViewerEngine";
 import type { ConfirmedSmartAssetMapping } from "./smartAssetBindingWorkbenchModel";
 import { INDUSTRIAL_PREFAB_CATALOG } from "../prefabs/industrialPrefabCatalog";
 import { IndustrialPrefabThumbnail } from "./IndustrialPrefabThumbnail";
+import { readSceneAssetDrag, SCENE_ASSET_MIME } from "./sceneAssetDrag";
 import { useAssetLibraryCatalog } from "./useAssetLibraryCatalog";
 import { RvtImportSettings } from "./RvtImportSettings";
 
@@ -33,7 +34,7 @@ interface SceneOutlinerPanelProps {
   locale: AppLocale;
   uploading: boolean;
   importOpen: boolean;
-  activeWorkflow?: "device-layout" | "smart-binding" | null;
+  activeWorkflow?: "device-layout" | "smart-binding" | "model-diff" | null;
   rvtConversionMode: RvtConversionMode;
   revitVersion: string;
   revitRuntime: RevitRuntimeInfo;
@@ -205,6 +206,13 @@ export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "local
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"platform" | "prefab" | "project">(() => props.projectId ? "platform" : (props.projectModels?.length || props.projectAssets?.length) ? "project" : "prefab");
   const [showAll, setShowAll] = useState(false);
+  const browserRef = useRef<HTMLElement | null>(null);
+  const draggingAsset = useRef<{ source: "library" | "model"; id: string } | null>(null);
+  const dragDropHandled = useRef(false);
+  const insertProjectModelRef = useRef(props.onInsertProjectModel);
+  const projectModelsRef = useRef(props.projectModels ?? []);
+  insertProjectModelRef.current = props.onInsertProjectModel;
+  projectModelsRef.current = props.projectModels ?? [];
   const catalog = useAssetLibraryCatalog(props.projectId, props.onLibraryImported ?? (async () => {}), { dimension: "3d", featuredOnly: false });
   const assets = (props.projectAssets ?? []).map((asset) => ({ source: "asset" as const, id: asset.id, name: asset.name, fileName: asset.fileName, kind: asset.kind, thumbnailUrl: asset.thumbnailUrl, asset }));
   const models = (props.projectModels ?? []).map((model) => ({ source: "model" as const, id: model.id, name: model.name, fileName: model.format.toUpperCase(), kind: "model", thumbnailUrl: model.thumbnailUrl ?? (model.libraryOrigin?.itemId ? `/api/public/asset-library/items/${model.libraryOrigin.itemId}/thumbnail` : undefined), model }));
@@ -216,12 +224,105 @@ export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "local
   const platformItems = catalog.result.items.filter((item) => item.dimension === "3d");
   const resultCount = scope === "platform" ? catalog.result.total : resources.length;
   async function insertLibraryItem(itemId: string) {
+    const item = platformItems.find(item => item.id === itemId);
+    if (!props.projectId || catalog.importingId || item?.publicationStatus !== "published") return;
     const existing = (props.projectModels ?? []).find((model) => model.libraryOrigin?.itemId === itemId);
     if (existing) return props.onInsertProjectModel(existing);
     const imported = await catalog.importItem(itemId);
     if (imported?.kind === "model") props.onInsertProjectModel(imported.model);
   }
-  return <section className="scene-resource-browser" aria-label={tr(props.locale, "场景资源", "Scene resources")}>
+  function beginAssetDrag(event: DragEvent, source: "library" | "model", id: string) {
+    draggingAsset.current = { source, id };
+    dragDropHandled.current = false;
+    event.dataTransfer.effectAllowed = "copy";
+    const payload = JSON.stringify({ source, id });
+    event.dataTransfer.setData(SCENE_ASSET_MIME, payload);
+    // Keep a standards-compatible fallback for browser automation and native
+    // drag sources that strip custom MIME types during a cross-node drop.
+    event.dataTransfer.setData("text/plain", payload);
+  }
+  function captureAssetDrag(dataTransfer: DataTransfer) {
+    const payload = readSceneAssetDrag(dataTransfer.getData(SCENE_ASSET_MIME) || dataTransfer.getData("text/plain"));
+    if (payload) {
+      draggingAsset.current = payload;
+      dragDropHandled.current = false;
+    }
+    return payload;
+  }
+  useEffect(() => {
+    const root = browserRef.current;
+    if (!root) return;
+    const readEventPayload = (event: Event) => {
+      const transfer = (event as unknown as DragEvent).dataTransfer;
+      if (!transfer) return undefined;
+      try { return readSceneAssetDrag(transfer.getData(SCENE_ASSET_MIME) || transfer.getData("text/plain")); } catch { return undefined; }
+    };
+    const handleDragStart = (event: Event) => {
+      const payload = readEventPayload(event);
+      if (payload) {
+        draggingAsset.current = payload;
+        dragDropHandled.current = false;
+      }
+    };
+    const insertFromGesture = (event: Event) => {
+      if (dragDropHandled.current) return;
+      const payload = readEventPayload(event) ?? draggingAsset.current;
+      if (!payload || payload.source !== "model") return;
+      const model = projectModelsRef.current.find((item) => item.id === payload.id);
+      if (model?.status !== "ready") return;
+      event.preventDefault();
+      dragDropHandled.current = true;
+      insertProjectModelRef.current(model);
+    };
+    root.addEventListener("dragstart", handleDragStart, true);
+    root.addEventListener("drop", insertFromGesture, true);
+    root.addEventListener("dragend", insertFromGesture, true);
+    return () => {
+      root.removeEventListener("dragstart", handleDragStart, true);
+      root.removeEventListener("drop", insertFromGesture, true);
+      root.removeEventListener("dragend", insertFromGesture, true);
+    };
+  }, []);
+  async function dropAsset(event: DragEvent) {
+    if (dragDropHandled.current) return;
+    const hasAssetPayload = event.dataTransfer.types.includes(SCENE_ASSET_MIME) || event.dataTransfer.types.includes("text/plain") || Boolean(draggingAsset.current);
+    if (!hasAssetPayload) return;
+    event.preventDefault();
+    event.stopPropagation();
+    // Some native/WebDriver implementations expose the drag type but strip
+    // the payload on the drop event. Keep the source captured at dragstart as
+    // the authoritative fallback, and only mark the gesture handled after a
+    // real insertion was dispatched.
+    const payload = readSceneAssetDrag(event.dataTransfer.getData(SCENE_ASSET_MIME) || event.dataTransfer.getData("text/plain")) ?? draggingAsset.current;
+    if (!payload || catalog.importingId) return;
+    if (payload.source === "library") {
+      dragDropHandled.current = true;
+      await insertLibraryItem(payload.id);
+      return;
+    }
+    const model = (props.projectModels ?? []).find(item => item.id === payload.id);
+    if (model?.status !== "ready") return;
+    dragDropHandled.current = true;
+    props.onInsertProjectModel(model);
+  }
+  function endAssetDrag() {
+    // Native/WebDriver drag paths may deliver dragend without preserving the
+    // custom DataTransfer payload at drop. Keep the same product action for
+    // that gesture instead of silently discarding the load.
+    const payload = draggingAsset.current;
+    draggingAsset.current = null;
+    if (!payload || dragDropHandled.current) return;
+    if (payload.source === "library") {
+      dragDropHandled.current = true;
+      void insertLibraryItem(payload.id);
+    } else {
+      const model = (props.projectModels ?? []).find(item => item.id === payload.id);
+      if (model?.status !== "ready") return;
+      dragDropHandled.current = true;
+      props.onInsertProjectModel(model);
+    }
+  }
+  return <section ref={browserRef} className="scene-resource-browser" aria-label={tr(props.locale, "场景资源", "Scene resources")} onDragEnd={endAssetDrag}>
     <div className="scene-resource-search-row">
       <label className="component-search-input"><Search size={14} /><input value={query} onChange={(event) => { const value = event.target.value; setQuery(value); if (scope === "platform") catalog.updateSearch(value); }} placeholder={tr(props.locale, "搜索模型", "Search models")} /></label>
       <button type="button" className="scene-resource-upload" onClick={props.onImportModel} title={tr(props.locale, "本地导入", "Import local model")}><Upload size={14} /></button>
@@ -232,15 +333,18 @@ export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "local
       <button className={scope === "prefab" ? "active" : ""} onClick={() => setScope("prefab")}>{tr(props.locale, "工业预制体", "Prefabs")}</button>
     </nav>
     <div className="scene-resource-count">{resultCount.toLocaleString()} {tr(props.locale, "项", "items")}</div>
+    <div className="scene-resource-drop-target" onDragOver={event => { const payload = captureAssetDrag(event.dataTransfer); if (payload || event.dataTransfer.types.includes(SCENE_ASSET_MIME) || event.dataTransfer.types.includes("text/plain") || draggingAsset.current) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={event => void dropAsset(event)}>
+      <Plus size={13} />{tr(props.locale, "将模型拖到这里载入当前场景", "Drag a model here to load it into the current scene")}
+    </div>
     {scope === "platform" ? catalog.loading ? <div className="scene-resource-loading"><LoaderCircle className="spin" size={18} /></div> : platformItems.length > 0 ? <>
-      <div className="scene-resource-grid">{platformItems.map((item) => <article className="scene-resource-card" key={item.id}>
+      <div className="scene-resource-grid">{platformItems.map((item) => <article className="scene-resource-card" key={item.id} draggable={Boolean(props.projectId && !catalog.importingId && item.publicationStatus === "published")} onDragStart={event => beginAssetDrag(event, "library", item.id)} onDragEnd={endAssetDrag} onMouseUp={endAssetDrag}>
         <img src={item.thumbnailUrl} alt="" />
         <div><strong title={item.name}>{item.name}</strong><small>{item.category} · {(item.triangleCount / 1000).toFixed(0)}k</small></div>
-        <button type="button" disabled={!props.projectId || Boolean(catalog.importingId)} onClick={() => void insertLibraryItem(item.id)}>{catalog.importingId === item.id ? <LoaderCircle className="spin" size={12} /> : <Plus size={12} />}</button>
+        <button type="button" title={tr(props.locale, `载入 ${item.name}`, `Load ${item.name}`)} disabled={!props.projectId || Boolean(catalog.importingId) || item.publicationStatus !== "published"} onClick={() => void insertLibraryItem(item.id)}>{catalog.importingId === item.id ? <LoaderCircle className="spin" size={12} /> : <Plus size={12} />}</button>
       </article>)}</div>
       {catalog.result.totalPages > 1 && <div className="scene-resource-pager"><button disabled={catalog.result.page <= 1} onClick={() => catalog.setPage(catalog.result.page - 1)}>‹</button><span>{catalog.result.page}/{catalog.result.totalPages}</span><button disabled={catalog.result.page >= catalog.result.totalPages} onClick={() => catalog.setPage(catalog.result.page + 1)}>›</button></div>}
     </> : <div className="scene-resource-empty"><Boxes size={22} /><strong>{catalog.catalogError ?? tr(props.locale, "暂无匹配模型", "No matching models")}</strong></div> : visibleResources.length > 0 ? <>
-      <div className="scene-resource-list">{visibleResources.map((resource) => <article className="scene-resource-row" key={`${resource.source}:${resource.id}`}>
+      <div className="scene-resource-list">{visibleResources.map((resource) => <article className="scene-resource-row" data-model-id={resource.source === "model" ? resource.id : undefined} data-model-status={resource.source === "model" ? resource.model.status : undefined} data-resource-source={resource.source} key={`${resource.source}:${resource.id}`} draggable={resource.source === "model" && resource.model.status === "ready"} onMouseDown={resource.source === "model" ? event => { if (!(event.target as HTMLElement).closest("button")) { draggingAsset.current = { source: "model", id: resource.id }; dragDropHandled.current = false; } } : undefined} onDragStart={resource.source === "model" ? event => beginAssetDrag(event, "model", resource.id) : undefined} onDragEnd={resource.source === "model" ? endAssetDrag : undefined} onMouseUp={resource.source === "model" ? endAssetDrag : undefined}>
         {resource.thumbnailUrl
           ? <img src={resource.thumbnailUrl} alt="" />
           : resource.source === "prefab"

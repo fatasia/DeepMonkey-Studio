@@ -22,6 +22,7 @@
     "gate:production-artifact": "node scripts/check-production-artifact.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "verify:model-diff-review": "node scripts/verify-model-diff-review.mjs",
     "gate:performance-evidence": "node scripts/gate-performance-evidence.mjs"
   },
   "dependencies": {

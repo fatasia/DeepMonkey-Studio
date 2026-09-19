@@ -14,7 +14,7 @@ const root = createRoot(document.getElementById("root")!);
 function renderRoot(children: ReactNode) {
   root.render(
     <StrictMode>
-      <ApplicationErrorBoundary><DesktopWindowFrame>{children}</DesktopWindowFrame></ApplicationErrorBoundary>
+      <ApplicationErrorBoundary>{sceneViewerBuild ? children : <DesktopWindowFrame>{children}</DesktopWindowFrame>}</ApplicationErrorBoundary>
     </StrictMode>
   );
 }
@@ -52,8 +52,9 @@ async function renderStudioApplication(): Promise<void> {
   const SceneDrillVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/SceneDrillVisualQa")) : undefined;
   const ObjectTreeVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/ObjectTreeVisualQa")) : undefined;
   const WorkspaceChromeVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/WorkspaceChromeVisualQa")) : undefined;
+  const ModelDiffVisualQa = visualQaEnabled ? lazy(() => import("./visualQa/ModelDiffVisualQa")) : undefined;
   const visualQaMode = visualQaEnabled ? new URLSearchParams(window.location.search).get("__visualQa") : undefined;
-  if (visualQaMode && DashboardVisualQa && ViewerVisualQa && CommissioningVisualQa && OperationsPlanningVisualQa && SceneSimulationVisualQa) {
+  if (visualQaMode && DashboardVisualQa && ViewerVisualQa && CommissioningVisualQa && OperationsPlanningVisualQa && SceneSimulationVisualQa && ModelDiffVisualQa) {
     const VisualQaPage = visualQaMode === "device-signal" ? DeviceSignalVisualQa : visualQaMode === "dashboard"
       ? DashboardVisualQa
       : visualQaMode === "viewer"
@@ -76,6 +77,8 @@ async function renderStudioApplication(): Promise<void> {
             ? ObjectTreeVisualQa
           : visualQaMode === "workspace-chrome"
             ? WorkspaceChromeVisualQa
+          : visualQaMode === "model-diff"
+            ? ModelDiffVisualQa
           : undefined;
     if (VisualQaPage) {
       // 仅视觉验收入口允许 URL 指定主题；不改用户偏好或平台品牌设置。

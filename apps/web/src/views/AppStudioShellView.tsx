@@ -10,6 +10,7 @@ import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
 import { useSceneAssetNavigation } from "../optimizer/useSceneAssetNavigation";
 import { modelAssetOptimizerRoute } from "../optimizer/modelAssetNavigation";
 import { ModelTreeItem } from "../components/ModelTreeItem";
+import { ModelDiffReviewPanel } from "../components/ModelDiffReviewPanel";
 import { SceneModelInstanceDialog } from "../components/SceneModelInstanceDialog";
 import { useSceneModelInstances } from "../hooks/useSceneModelInstances";
 import { sceneModelRows } from "../controllers/sceneModelRows";
@@ -32,8 +33,12 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
   // 三维视口是核心工作区，资源树和属性检查器按需收起，避免遮挡模型。
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => readBooleanPreference(STUDIO_LEFT_PANEL_STORAGE_KEY, true));
   const [rightPanelOpen, setRightPanelOpen] = useState(() => readBooleanPreference(STUDIO_INSPECTOR_STORAGE_KEY, true));
-  const [sceneWorkflow, setSceneWorkflow] = useState<"device-layout" | "smart-binding" | null>(null);
+  const [sceneWorkflow, setSceneWorkflow] = useState<"device-layout" | "smart-binding" | "model-diff" | null>(null);
   const [uploadedImportModels, setUploadedImportModels] = useState<ModelRecord[] | null>(null);
+  // Resource-panel gestures can arrive in the short window between canvas
+  // mount and ViewerEngine creation. Keep the user action instead of silently
+  // dropping it when the controller is not ready yet.
+  const pendingProjectModelInsertsRef = useRef<ModelRecord[]>([]);
   // SIM-1a：场景树「仿真」域的选中实体与断链集合（引用模型被删时黄牌提示）。
   const [selectedSimulationEntityId, setSelectedSimulationEntityId] = useState<string | undefined>(undefined);
   const panelsBeforeBehaviorSplitRef = useRef<{ left: boolean; right: boolean } | undefined>(undefined);
@@ -280,6 +285,25 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
       await loadModel(model, false, instanceId);
     }
   };
+  const insertProjectModel = (model: ModelRecord) => {
+    if (!engine) {
+      if (!pendingProjectModelInsertsRef.current.some((item) => item.id === model.id)) {
+        pendingProjectModelInsertsRef.current.push(model);
+      }
+      return;
+    }
+    void loadModel(model, false, loadedModels.some((item) => (item.assetModelId ?? item.id) === model.id) ? crypto.randomUUID() : model.id);
+  };
+  useEffect(() => {
+    if (!engine || pendingProjectModelInsertsRef.current.length === 0) return;
+    const pending = pendingProjectModelInsertsRef.current.splice(0);
+    const occupiedAssetIds = new Set(loadedModels.map((item) => item.assetModelId ?? item.id));
+    for (const model of pending) {
+      const instanceId = occupiedAssetIds.has(model.id) ? crypto.randomUUID() : model.id;
+      occupiedAssetIds.add(model.id);
+      void loadModel(model, false, instanceId);
+    }
+  }, [engine, loadModel, loadedModels]);
   const optimizeUploadedModels = () => {
     const firstModel = uploadedImportModels?.[0];
     if (!firstModel) return;
@@ -382,6 +406,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
             onImportModel: openImportModelPicker,
             onDeviceLayout: () => setSceneWorkflow("device-layout"),
             onSmartBinding: () => setSceneWorkflow("smart-binding"),
+            onModelDiff: () => setSceneWorkflow("model-diff"),
             onRvtImportSettings: openRvtImportSettings,
           }}
         />
@@ -444,7 +469,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
           onWorkflowClose={() => setSceneWorkflow(null)}
           onRvtConversionModeChange={setRvtConversionMode}
           onRevitVersionChange={setRvtRevitVersion}
-          onInsertProjectModel={(model) => void loadModel(model, false, loadedModels.some(item => (item.assetModelId ?? item.id) === model.id) ? crypto.randomUUID() : model.id)}
+          onInsertProjectModel={insertProjectModel}
           onInsertPrefab={insertIndustrialPrefab}
           onCreateDeviceLayout={createDeviceLayout}
           onConfirmSmartBindings={(mappings) => {
@@ -593,6 +618,15 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
         assets={project?.models ?? []} busy={instances.working} locked={engine?.isModelLocked(instances.selectedId) ?? false} error={instances.error}
         onDuplicate={() => void instances.duplicate(instances.selectedId!)} onReplace={asset => void instances.replace(instances.selectedId!, asset)} onClose={instances.close}
       />}
+      {sceneWorkflow === "model-diff" && (
+        <ModelDiffReviewPanel
+          locale={locale}
+          engine={engine}
+          models={loadedModels}
+          onLocate={focusComponent}
+          onClose={() => setSceneWorkflow(null)}
+        />
+      )}
       <ModelImportInput
         inputRef={uploadRef}
         locale={locale}
