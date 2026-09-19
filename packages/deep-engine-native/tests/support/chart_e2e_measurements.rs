@@ -92,6 +92,27 @@ pub(super) fn scenario_row(
     gpu_ms: Option<Vec<f64>>,
     ts_supported: bool,
 ) -> Value {
+    if let Some(gpu) = &gpu_ms {
+        assert_eq!(
+            gpu.len(),
+            samples.len(),
+            "GPU and CPU must exclude identical warmup frames"
+        );
+    }
+    let raw: Vec<Value> = samples
+        .iter()
+        .enumerate()
+        .map(|(index, sample)| {
+            json!({
+                "cpu_prepare_ms": sample.cpu_prepare_ms,
+                "present_delay_ms": sample.present_delay_ms,
+                "gpu_frame_ms": gpu_ms.as_ref().map(|values| values[index]),
+                "uploaded_bytes": sample.uploaded_bytes,
+                "staged": sample.staged,
+                "est_vram_bytes": sample.est_vram_bytes,
+            })
+        })
+        .collect();
     let mut cpu: Vec<f64> = samples.iter().map(|s| s.cpu_prepare_ms).collect();
     cpu.sort_by(f64::total_cmp);
     let mut present: Vec<f64> = samples.iter().filter_map(|s| s.present_delay_ms).collect();
@@ -104,6 +125,8 @@ pub(super) fn scenario_row(
     let (p, g) = (percentile, gpu.as_deref());
     let uploads: usize = staged.iter().map(|s| s.uploaded_bytes).sum();
     json!({
+        "measurement_schema": 2,
+        "raw_samples": raw,
         "scenario": name, "colors": 8, "samples": samples.len(), "warmup": WARMUP, "unit": "ms",
         "cpu_prepare_p50_ms": p(&cpu, 50), "cpu_prepare_p95_ms": p(&cpu, 95), "cpu_prepare_p99_ms": p(&cpu, 99),
         "present_delay_p50_ms": p(&present, 50), "present_delay_p95_ms": p(&present, 95), "present_delay_p99_ms": p(&present, 99),
@@ -113,4 +136,49 @@ pub(super) fn scenario_row(
         "gpu_timestamps": if ts_supported { "available" } else {
             "degraded: timestamp-query unsupported; gpu_frame 省略, present_delay 为 CPU+present 口径" },
     })
+}
+
+#[test]
+fn raw_samples_preserve_order_while_percentiles_sort_copies() {
+    let samples = [3.0, 1.0, 2.0]
+        .map(|ms| Sample {
+            cpu_prepare_ms: ms,
+            present_delay_ms: Some(ms),
+            uploaded_bytes: 0,
+            staged: false,
+            est_vram_bytes: 16,
+        })
+        .into_iter()
+        .collect();
+    let row = scenario_row("unit", samples, Some(vec![6.0, 2.0, 4.0]), true);
+    assert_eq!(row["cpu_prepare_p50_ms"], 2.0);
+    assert_eq!(row["gpu_frame_p50_ms"], 4.0);
+    assert_eq!(row["raw_samples"][0]["cpu_prepare_ms"], 3.0);
+    assert_eq!(row["raw_samples"][0]["gpu_frame_ms"], 6.0);
+}
+
+#[test]
+fn unavailable_gpu_timestamps_remain_null_not_zero() {
+    let sample = Sample {
+        cpu_prepare_ms: 1.0,
+        present_delay_ms: None,
+        uploaded_bytes: 0,
+        staged: false,
+        est_vram_bytes: 16,
+    };
+    let row = scenario_row("degraded", vec![sample], None, false);
+    assert!(row["gpu_frame_p50_ms"].is_null());
+    assert!(row["raw_samples"][0]["gpu_frame_ms"].is_null());
+    assert!(
+        row["gpu_timestamps"]
+            .as_str()
+            .unwrap()
+            .starts_with("degraded:")
+    );
+}
+
+#[test]
+#[should_panic(expected = "GPU and CPU must exclude identical warmup frames")]
+fn mismatched_gpu_warmup_range_is_rejected() {
+    scenario_row("bad-range", vec![], Some(vec![1.0]), true);
 }

@@ -91,10 +91,7 @@ fn scene_update_and_upload_are_measured_only_with_real_samples() {
     let channels = value["channels"].as_array().unwrap();
     let scene_update = channel(channels, "scene-update");
     assert_eq!(scene_update["availability"], "measured");
-    assert_eq!(
-        scene_update["samplesMs"],
-        serde_json::json!([120.0, 140.5])
-    );
+    assert_eq!(scene_update["samplesMs"], serde_json::json!([120.0, 140.5]));
     assert!(scene_update.get("unavailableReason").is_none());
     let upload = channel(channels, "upload");
     assert_eq!(upload["availability"], "measured");

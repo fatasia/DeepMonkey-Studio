@@ -25,7 +25,7 @@ windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Netw
 # provider/client COM interfaces, so provider objects use the `windows` crate.
 # 0.62.2 is already locked as a transitive dependency (wgpu/dx12), so this adds
 # feature flags to a locked version — no new package, Cargo.lock unchanged.
-windows = { version = "=0.62.2", features = ["Win32_System_Com", "Win32_System_LibraryLoader", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "=0.62.2", features = ["Win32_System_Com", "Win32_System_LibraryLoader", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging", "Win32_UI_Controls_Dialogs"] }
 # `windows::core::implement` expands to `::windows_core::` paths, which needs
 # windows-core as a direct dependency (already locked at 0.62.2).
 windows-core = { version = "=0.62.2" }

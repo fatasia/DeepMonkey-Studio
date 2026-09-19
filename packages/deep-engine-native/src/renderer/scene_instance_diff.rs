@@ -95,7 +95,10 @@ mod tests {
     #[test]
     fn identical_lists_report_identical() {
         let instances = vec![instance("a", 0.0), instance("b", 1.0)];
-        assert_eq!(diff_scene_instances(&instances, &instances), SceneInstanceDiff::Identical);
+        assert_eq!(
+            diff_scene_instances(&instances, &instances),
+            SceneInstanceDiff::Identical
+        );
     }
 
     #[test]
@@ -106,7 +109,9 @@ mod tests {
         next[0].transform[12] = -1.0;
         assert_eq!(
             diff_scene_instances(&previous, &next),
-            SceneInstanceDiff::TransformOnly { changed_indices: vec![0, 2] }
+            SceneInstanceDiff::TransformOnly {
+                changed_indices: vec![0, 2]
+            }
         );
     }
 
@@ -114,22 +119,30 @@ mod tests {
     fn structural_on_count_change() {
         let previous = vec![instance("a", 0.0)];
         let next = vec![instance("a", 0.0), instance("b", 1.0)];
-        assert_eq!(diff_scene_instances(&previous, &next), SceneInstanceDiff::Structural);
+        assert_eq!(
+            diff_scene_instances(&previous, &next),
+            SceneInstanceDiff::Structural
+        );
     }
 
     #[test]
     fn structural_on_material_change_even_with_same_transform() {
         let mut next = vec![instance("a", 0.0)];
         next[0].material = "mat/glass".into();
-        assert_eq!(diff_scene_instances(&previous_of(&next), &next), SceneInstanceDiff::Structural);
+        assert_eq!(
+            diff_scene_instances(&previous_of(&next), &next),
+            SceneInstanceDiff::Structural
+        );
     }
 
     fn previous_of(next: &[RenderInstance]) -> Vec<RenderInstance> {
-        next.iter().map(|instance| {
-            let mut copy = instance.clone();
-            copy.material = "mat/steel".into();
-            copy
-        }).collect()
+        next.iter()
+            .map(|instance| {
+                let mut copy = instance.clone();
+                copy.material = "mat/steel".into();
+                copy
+            })
+            .collect()
     }
 
     #[test]
@@ -137,7 +150,10 @@ mod tests {
         let previous = vec![instance("a", 0.0)];
         let mut next = vec![instance("a", 0.0)];
         next[0].transform[12] = f32::NAN;
-        assert_ne!(diff_scene_instances(&previous, &next), SceneInstanceDiff::Identical);
+        assert_ne!(
+            diff_scene_instances(&previous, &next),
+            SceneInstanceDiff::Identical
+        );
     }
 
     #[test]
@@ -154,9 +170,15 @@ mod tests {
             author: None,
         });
         let next = previous.clone();
-        assert_eq!(diff_scene_instances(&previous, &next), SceneInstanceDiff::Identical);
+        assert_eq!(
+            diff_scene_instances(&previous, &next),
+            SceneInstanceDiff::Identical
+        );
         let mut changed = previous.clone();
         changed[0].lod.as_mut().unwrap().levels[0].geometric_error = 1.0;
-        assert_eq!(diff_scene_instances(&previous, &changed), SceneInstanceDiff::Structural);
+        assert_eq!(
+            diff_scene_instances(&previous, &changed),
+            SceneInstanceDiff::Structural
+        );
     }
 }

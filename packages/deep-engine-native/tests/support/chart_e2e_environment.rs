@@ -145,7 +145,6 @@ impl Env {
         let now = Instant::now();
         let present_delay_ms = self
             .prev_present
-            .replace(now)
             .map(|p| now.duration_since(p).as_secs_f64() * 1000.0);
         let t0 = Instant::now();
         let (w, h) = (self.config.width, self.config.height);
@@ -205,6 +204,7 @@ impl Env {
         }
         self.queue.submit([encoder.finish()]);
         self.queue.present(frame); // wgpu 30: 呈现由 queue 收口
+        self.prev_present = Some(Instant::now());
         let est_vram_bytes = painter.vertex_transfer_stats().shadow_bytes
             + painter.path_cache_stats().payload_bytes
             + (w * h * 4) as usize;

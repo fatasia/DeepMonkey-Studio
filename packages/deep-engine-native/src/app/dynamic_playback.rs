@@ -73,7 +73,8 @@ impl DynamicPlaybackProbe {
             if step_time > elapsed_ms {
                 break;
             }
-            self.steps.push(content.apply_dynamic_playback_step(step_time)?);
+            self.steps
+                .push(content.apply_dynamic_playback_step(step_time)?);
             self.next_step += 1;
             applied += 1;
         }
@@ -88,7 +89,10 @@ impl DynamicPlaybackProbe {
     }
 
     pub(super) fn after_present(&mut self) -> AfterPresent {
-        let elapsed_ms = self.started.map(|started| started.elapsed().as_millis() as u64).unwrap_or(0);
+        let elapsed_ms = self
+            .started
+            .map(|started| started.elapsed().as_millis() as u64)
+            .unwrap_or(0);
         self.presentations.push(DynamicPresentation {
             frame: self.presentations.len() + 1,
             elapsed_ms,

@@ -81,8 +81,13 @@ fn native_forward_attachment_profile_matches_the_browser_golden() {
 }
 
 #[test]
-fn native_frame_abi1_matches_the_208_byte_browser_golden() {
-    assert_eq!((FRAME_UNIFORM_FLOATS, FRAME_UNIFORM_BYTES), (52, 208));
+fn native_frame_v6_retains_the_v1_through_v5_prefixes() {
+    assert_eq!(
+        deep_engine_native::mesh_abi::FRAME_ABI_ID,
+        "deep.native.frame.v6"
+    );
+    assert_eq!(deep_engine_native::mesh_abi::FRAME_V1_BYTES, 208);
+    assert_eq!((FRAME_UNIFORM_FLOATS, FRAME_UNIFORM_BYTES), (480, 1920));
     assert_eq!(FRAME_MEMBER_BYTE_OFFSETS, [0, 64, 128, 144, 160, 176, 192]);
 
     let frame = frame_uniform(2.0, 0.0);
@@ -97,6 +102,10 @@ fn native_frame_abi1_matches_the_208_byte_browser_golden() {
     assert_slice_close(&flat[40..44], &[0.0, 0.0, 0.0, 1.0]);
     assert_slice_close(&flat[44..48], &[0.55, 0.8, 0.35, 0.0]);
     assert_slice_close(&flat[48..52], &[0.0; 4]);
+    assert_slice_close(&flat[52..56], &[0.0; 4]);
+    assert_slice_close(&flat[56..60], &[1.0, 1.0, 0.0, 0.0]);
+    assert!(flat[60..476].iter().all(|value| *value == 0.0));
+    assert_slice_close(&flat[476..], &[0.1,100.0,0.0,0.0]);
     assert!(flat.iter().all(|value| value.is_finite()));
 
     let fog = FogSettings::exponential(0.125, [0.2, 0.3, 0.4]).unwrap();
@@ -109,6 +118,10 @@ fn wgsl_consumes_compact_rows_uv_sets_and_instance_emissive_alpha() {
     let shader = include_str!("../assets/shaders/native_mesh_v1.wgsl");
     assert!(!shader.contains("model_3"));
     assert!(!shader.contains("emissive_factor"));
+    assert!(
+        shader.contains("@location(6) @interpolate(flat) material: vec4f"),
+        "packed flags must never interpolate before integer bit tests"
+    );
     for declaration in [
         "@location(10) uv0: vec2f",
         "@location(11) tangent: vec4f",

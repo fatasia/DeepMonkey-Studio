@@ -54,8 +54,35 @@ fn chart_e2e_perf_baseline() {
             "declare": "单机单卡固定夹具; 不含跨设备对比与 FPS 结论; est_vram 为估计口径(顶点驻留+细分缓存+后台缓冲, 不含图集纹理与管线); present_delay=上一帧present到本帧acquire完成(含Fifo排队)",
         })
     );
+    let rounds = std::env::var("DEEP_CHART_PERF_ROUNDS")
+        .map(|value| {
+            value
+                .parse::<usize>()
+                .expect("DEEP_CHART_PERF_ROUNDS must be an integer")
+        })
+        .unwrap_or(1);
+    assert!((1..=20).contains(&rounds), "rounds must be in 1..=20");
+    for round in 0..rounds {
+        if std::env::var_os("DEEP_CHART_PERF_PROFILE").is_some() {
+            env.rasterizer.start_profile();
+        }
+        if let Some(ts) = &mut env.ts {
+            ts.frame = 0;
+        }
+        run_round(&mut env, &pool, &local_rows, ts_supported, round);
+    }
+}
+
+fn run_round(
+    env: &mut Env,
+    pool: &[ChartIR],
+    local_rows: &[Vec<Vec<serde_json::Value>>],
+    ts_supported: bool,
+    round: usize,
+) {
     let scenarios = scenarios::scenarios();
     let mut results = Vec::new();
+    let mut all_cpu_ms = 0.0;
     for (name, run) in scenarios {
         env.runtime = None;
         env.painter = None;
@@ -65,7 +92,8 @@ fn chart_e2e_perf_baseline() {
         let mut samples = Vec::new();
         let ts_from = env.ts.as_ref().map_or(0, |ts| ts.frame);
         for i in 0..WARMUP + SAMPLES {
-            run(&mut env, i, &pool, &local_rows);
+            run(env, i, pool, local_rows);
+            all_cpu_ms += env.last_sample.as_ref().unwrap().cpu_prepare_ms;
             if i >= WARMUP {
                 samples.push(env.last_sample.take().expect("每帧产生一个采样"));
             }
@@ -74,13 +102,24 @@ fn chart_e2e_perf_baseline() {
         let gpu_ms = env
             .ts
             .as_ref()
-            .map(|ts| ts.collect(&env.device, &env.queue, period, ts_from, ts.frame));
-        let row = scenario_row(name, samples, gpu_ms, ts_supported);
+            .map(|ts| ts.collect(&env.device, &env.queue, period, ts_from + WARMUP, ts.frame));
+        let mut row = scenario_row(name, samples, gpu_ms, ts_supported);
+        row["round"] = json!(round);
+        if name == "static_repeat" {
+            assert_eq!(row["staged_frames"], 0, "unchanged charts must not restage");
+            assert_eq!(row["uploaded_bytes_avg_per_stage"], 0);
+        }
         println!("{row}");
         results.push(row);
     }
     println!("--- 汇总(机器可读,一行一个 JSON) ---");
     for row in &results {
         println!("{row}");
+    }
+    if let Some(profile) = env.rasterizer.profile() {
+        println!(
+            "{}",
+            json!({"scenario":"__meta__", "round":round, "text_profile":profile, "cpu_prepare_total_including_warmup_ms":all_cpu_ms})
+        );
     }
 }

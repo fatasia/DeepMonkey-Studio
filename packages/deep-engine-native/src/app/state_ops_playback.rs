@@ -11,7 +11,7 @@ use crate::player_content::PlayerContent;
 use crate::player_state::PlayerState;
 use crate::renderer::Renderer;
 use deep_engine_native::runtime_package::{
-    axis_clip_field_from_plane, axis_clip_plane, canonical_r3_state_frame, ClipState, R3StateOps,
+    ClipState, R3StateOps, axis_clip_field_from_plane, axis_clip_plane, canonical_r3_state_frame,
 };
 
 pub(super) enum AfterPresent {
@@ -71,7 +71,13 @@ impl StateOpsProbe {
         content
             .dynamic_runtime
             .as_ref()
-            .map(|runtime| runtime.replay_events_at(at_ms).iter().map(|event| event.revision).collect())
+            .map(|runtime| {
+                runtime
+                    .replay_events_at(at_ms)
+                    .iter()
+                    .map(|event| event.revision)
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -86,8 +92,9 @@ impl StateOpsProbe {
         let index = self.next_step;
         let at_ms = self.ops.steps[index].at_ms;
         let revisions = Self::replay_revisions(content, at_ms);
-        let (_, canonical, clip, selection) = canonical_r3_state_frame(&self.ops, index, &revisions)
-            .map_err(|error| format!("step {index}: {error}"))?;
+        let (_, canonical, clip, selection) =
+            canonical_r3_state_frame(&self.ops, index, &revisions)
+                .map_err(|error| format!("step {index}: {error}"))?;
         match self.ops.steps[index].op.kind.as_str() {
             "clip-enable" | "clip-move" | "box-enable" | "clip-disable" => {
                 // Box clipping has no native consumer: the canonical frame is
@@ -119,19 +126,30 @@ impl StateOpsProbe {
             }
             other => return Err(format!("step {index}: unknown op kind {other}")),
         }
-        let applied_clip = axis_clip_field_from_plane(state.view.clipping)
-            .map_err(|error| format!("step {index}: applied clipping is not contract-representable: {error}"))?;
+        let applied_clip = axis_clip_field_from_plane(state.view.clipping).map_err(|error| {
+            format!("step {index}: applied clipping is not contract-representable: {error}")
+        })?;
         let applied = format!(
             "r3-state-frame-v1|i={index}|t={at_ms}|clip={applied_clip}|sel={}|events={}",
             deep_engine_native::runtime_package::selection_field(state.selected.as_deref()),
-            revisions.iter().map(u64::to_string).collect::<Vec<_>>().join(","),
+            revisions
+                .iter()
+                .map(u64::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
         );
         if applied != canonical {
             return Err(format!(
                 "step {index}: applied state diverged from the contract\n  contract: {canonical}\n  applied:  {applied}"
             ));
         }
-        self.steps.push(StepRecord { index, at_ms, canonical, applied: Some(applied), applied_note: None });
+        self.steps.push(StepRecord {
+            index,
+            at_ms,
+            canonical,
+            applied: Some(applied),
+            applied_note: None,
+        });
         Ok(())
     }
 
@@ -155,7 +173,10 @@ impl StateOpsProbe {
     }
 
     pub(super) fn after_present(&mut self) -> AfterPresent {
-        let elapsed_ms = self.started.map(|started| started.elapsed().as_millis() as u64).unwrap_or(0);
+        let elapsed_ms = self
+            .started
+            .map(|started| started.elapsed().as_millis() as u64)
+            .unwrap_or(0);
         self.presentations.push(StatePresentation {
             frame: self.presentations.len() + 1,
             elapsed_ms,

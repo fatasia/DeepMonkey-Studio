@@ -2,7 +2,8 @@ use deep_engine_native::{
     contract::{default_alpha_fixture_path, load_and_validate},
     culling_contract::{
         GPU_CULLING_INDIRECT_BYTES, GPU_CULLING_INSTANCE_BYTES, MAIN_SOLID_MASK,
-        SHADOW_CASTER_MASK, frustum_planes, prepare_gpu_culling, sphere_visible,
+        SHADOW_CASTER_MASK, batch_ranges_from_metadata, frustum_planes, prepare_gpu_culling,
+        sphere_visible,
     },
     scene::{PackedInstance, prepare_scene},
 };
@@ -117,6 +118,25 @@ fn mirrored_nonuniform_scale_uses_the_extent_along_each_plane() {
     assert!(!sphere_visible(&planes, &instance, [0.0, 0.0, 0.0, 1.0]));
     instance[7] = -0.25;
     assert!(sphere_visible(&planes, &instance, [0.0, 0.0, 0.0, 1.0]));
+}
+
+#[test]
+fn batch_ranges_from_metadata_closes_each_batch_at_its_last_row() {
+    // 批次 0:[0,3) 批次 1:[3,3+0)=空不可达,批次 2:[3,6);平铺数组闭合于最后一行。
+    let metadata: Vec<[u32; 4]> = vec![
+        [0, 1, 0, 0],
+        [0, 1, 0, 0],
+        [0, 1, 0, 0],
+        [2, 1, 3, 0],
+        [2, 1, 3, 0],
+        [2, 1, 3, 0],
+    ];
+    assert_eq!(
+        batch_ranges_from_metadata(&metadata, 3),
+        vec![[0, 3, 0, 0], [0, 0, 0, 0], [3, 6, 0, 0]]
+    );
+    assert_eq!(batch_ranges_from_metadata(&[[0, 1, 0, 0]], 1), vec![[0, 1, 0, 0]]);
+    assert!(batch_ranges_from_metadata(&[], 0).is_empty());
 }
 
 #[test]

@@ -1,4 +1,8 @@
 // Deep Engine native mesh shader contract v1.
+// Bounded world-space slots share the Web/Three local attenuation and cone policy.
+struct LocalLight {
+  positionRange: vec4f, directionKind: vec4f, radianceOuter: vec4f, coneDecay: vec4f,
+};
 struct Frame {
   view: mat4x4f,
   light: mat4x4f,
@@ -7,6 +11,11 @@ struct Frame {
   floor: vec4f,
   lightDirection: vec4f,
   tuning: vec4f,
+  sunColor: vec4f,
+  lightingOptions: vec4f,
+  localLights: array<LocalLight, 16>,
+  localShadowMatrices: array<mat4x4f, 10>,
+  fogProjection: vec4f,
 };
 struct MaterialTextures {
   base_row_0: vec4f, base_row_1: vec4f,
@@ -44,7 +53,7 @@ struct VertexOutput {
   @location(3) uv0: vec2f,
   @location(4) uv1: vec2f,
   @location(5) base_color: vec4f,
-  @location(6) material: vec4f,
+  @location(6) @interpolate(flat) material: vec4f,
   @location(7) emissive_alpha: vec4f,
 };
 
@@ -160,6 +169,44 @@ fn transformed_uv(uv0: vec2f, uv1: vec2f, row_0: vec4f, row_1: vec4f) -> vec2f {
   if (section_rejected(input.world)) { discard; }
 }
 
+fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, metal: f32, rough: f32, receiveShadow: bool) -> vec3f {
+  var color = vec3f(0.0);
+  for (var index = 0u; index < min(u32(frame.lightingOptions.z), 16u); index++) {
+    let source = frame.localLights[index];
+    var direction = source.directionKind.xyz;
+    var attenuation = 1.0;
+    if (source.directionKind.w >= 2.0) {
+      let toLight = source.positionRange.xyz - world;
+      let distanceSquared = dot(toLight, toLight);
+      let distance = sqrt(distanceSquared);
+      direction = safe_normalize(toLight, normal);
+      // Three lights_pars_begin: inverse-power falloff and smooth finite cutoff.
+      attenuation = 1.0 / max(pow(max(distance, 0.00000001), source.coneDecay.y), 0.01);
+      if (source.positionRange.w > 0.0) {
+        let ratio = distance / source.positionRange.w;
+        let window = max(1.0 - ratio * ratio * ratio * ratio, 0.0);
+        attenuation *= window * window;
+      }
+      if (source.directionKind.w == 3.0) {
+        let cosine = dot(-direction, source.directionKind.xyz);
+        let outer = source.radianceOuter.w;
+        let inner = source.coneDecay.x;
+        var coneWeight = select(0.0, 1.0, cosine >= outer);
+        if (inner > outer) { coneWeight = clamp((cosine - outer) / (inner - outer), 0.0, 1.0); }
+        attenuation *= coneWeight * coneWeight * (3.0 - 2.0 * coneWeight);
+      }
+    }
+    var visibility = 1.0;
+    if (receiveShadow && source.coneDecay.z > 0.0) {
+      var shadowIndex = u32(source.coneDecay.z)-1u;
+      if (source.directionKind.w == 2.0) { shadowIndex += point_shadow_face(world-source.positionRange.xyz); }
+      visibility = local_spot_visibility(shadowIndex, source.coneDecay.w, world, max(dot(normal,direction),0.0));
+    }
+    color += direct_brdf(normal, view, direction, base, metal, rough) * source.radianceOuter.rgb * attenuation * visibility;
+  }
+  return color;
+}
+
 fn flag(value: f32, bit: u32) -> bool {
   return (u32(value) & bit) != 0u;
 }
@@ -245,10 +292,15 @@ fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32
   if (material_textures.normal_row_0.w > 0.5) { normal = mapped_normal(input, front_facing); }
   let view = safe_normalize(frame.eye.xyz - input.world, vec3f(0.0, 0.0, 1.0));
   let light = safe_normalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
+  let authored_light = frame.sunColor.w >= 2.0;
   let visibility = select(shadow_visibility(input.world, normal, max(dot(normal, light), 0.0)),
-    1.0, flag(input.material.w, 16u));
+    1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
+  let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
   var color = direct_brdf(normal, view, light, base, metal, rough)
-    * vec3f(3.2, 3.0, 2.8) * visibility;
+    * sun * visibility;
+  if (frame.sunColor.w == 3.0) {
+    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u));
+  }
   let nv = clamp(dot(normal, view), 0.001, 1.0);
   let f0 = mix(vec3f(0.04), base, metal);
   let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
@@ -266,6 +318,15 @@ fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32
     + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
   color += radiance * (f0 * dfg.x + dfg.y) * energy_compensation * ambient_occlusion;
   color += input.emissive_alpha.rgb * emission;
-  return vec4f(select(color, base, flag(input.material.w, 64u)),
+  let exposure = select(1.0, frame.lightingOptions.x, authored_light);
+  var surface_color = select(color, base, flag(input.material.w, 64u));
+  if (frame.fogProjection.z == 2.0) {
+    // clip W is signed camera-space depth; no radial-distance or fixed near/far approximation.
+    let camera_depth = max((frame.view * vec4f(input.world, 1.0)).w, 0.0);
+    let optical_depth = frame.tuning.w * camera_depth;
+    let amount = clamp(1.0 - exp(-optical_depth * optical_depth), 0.0, 1.0);
+    surface_color = mix(surface_color, frame.tuning.rgb, amount);
+  }
+  return vec4f(surface_color * exposure,
     select(1.0, alpha, flag(input.material.w, 4u)));
 }

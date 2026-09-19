@@ -38,7 +38,9 @@ pub fn classify_material_resources(
     if changed.is_empty() {
         MaterialResourceDiff::Identical
     } else {
-        MaterialResourceDiff::UniformOnly { changed_indices: changed }
+        MaterialResourceDiff::UniformOnly {
+            changed_indices: changed,
+        }
     }
 }
 
@@ -49,10 +51,7 @@ pub fn classify_material_resources(
 /// 这些字段与 uv 变换同帧变化,只写 uniform 会静默丢掉实例词更新。
 /// 因此进入 MaterialUniformRefresh 前,必须确认这些字段全同;任一不同
 /// 回落全量路径(实例缓冲重建)。
-pub fn instance_material_words_unchanged(
-    before: &[PbrMaterial],
-    after: &[PbrMaterial],
-) -> bool {
+pub fn instance_material_words_unchanged(before: &[PbrMaterial], after: &[PbrMaterial]) -> bool {
     if before.len() != after.len() {
         return false;
     }
@@ -87,15 +86,26 @@ mod tests {
 
     #[test]
     fn classifies_uniform_only_changes() {
-        assert_eq!(classify_material_resources(&[prepared(0.0)], &[prepared(1.0)]), MaterialResourceDiff::UniformOnly { changed_indices: vec![0] });
+        assert_eq!(
+            classify_material_resources(&[prepared(0.0)], &[prepared(1.0)]),
+            MaterialResourceDiff::UniformOnly {
+                changed_indices: vec![0]
+            }
+        );
     }
 
     #[test]
     fn classifies_identical_and_structural() {
-        assert_eq!(classify_material_resources(&[prepared(0.0)], &[prepared(0.0)]), MaterialResourceDiff::Identical);
+        assert_eq!(
+            classify_material_resources(&[prepared(0.0)], &[prepared(0.0)]),
+            MaterialResourceDiff::Identical
+        );
         let mut changed = prepared(0.0);
         changed.texture_indices[0] = Some(2);
-        assert_eq!(classify_material_resources(&[prepared(0.0)], &[changed]), MaterialResourceDiff::Structural);
+        assert_eq!(
+            classify_material_resources(&[prepared(0.0)], &[changed]),
+            MaterialResourceDiff::Structural
+        );
     }
 
     #[test]
@@ -149,7 +159,10 @@ mod tests {
         let base = contract_material(0.4, Some([0.0, 0.0]));
         let uv_moved = contract_material(0.4, Some([0.25, 0.0]));
         let metallic_moved = contract_material(0.9, Some([0.0, 0.0]));
-        assert!(instance_material_words_unchanged(&[base.clone()], &[uv_moved]));
+        assert!(instance_material_words_unchanged(
+            &[base.clone()],
+            &[uv_moved]
+        ));
         assert!(!instance_material_words_unchanged(
             &[base.clone()],
             &[metallic_moved]

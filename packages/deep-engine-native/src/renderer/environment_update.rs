@@ -12,7 +12,10 @@ pub(super) struct StagedEnvironment {
 }
 impl StagedEnvironment {
     pub fn swap(&mut self, renderer: &mut Renderer) {
-        std::mem::swap(&mut self.background, &mut renderer.forward_targets.background);
+        std::mem::swap(
+            &mut self.background,
+            &mut renderer.forward_targets.background,
+        );
         std::mem::swap(&mut self.ibl, &mut renderer.ibl);
         std::mem::swap(&mut self.frame_bind_group, &mut renderer.frame_bind_group);
     }
@@ -34,7 +37,8 @@ impl Renderer {
             return Err("native IBL candidate exceeds resident transition budget".into());
         }
         if GpuIblEnvironment::source_identity(source) == self.ibl.identity
-            && background == self.forward_targets.background {
+            && background == self.forward_targets.background
+        {
             return Ok(None);
         }
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);

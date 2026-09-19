@@ -52,3 +52,33 @@ fn shadow_visibility(world: vec3f, normal: vec3f, n_dot_l: f32) -> f32 {
   return mix(current, sample_cascade(index + 1u, world, normal, n_dot_l),
     smoothstep(blend_start, split, view_depth));
 }
+
+fn local_spot_visibility(index: u32, depthFactor: f32, world: vec3f, n_dot_l: f32) -> f32 {
+  if (index >= min(u32(frame.lightingOptions.w),10u)) { return 1.0; }
+  let clip = frame.localShadowMatrices[index] * vec4f(world,1.0);
+  if (clip.w <= 0.0) { return 1.0; }
+  let projected = clip.xyz / clip.w;
+  let uv = projected.xy * vec2f(0.5,-0.5)+0.5;
+  if (any(uv < vec2f(0.0)) || any(uv > vec2f(1.0)) || projected.z < 0.0 || projected.z > 1.0) { return 1.0; }
+  // 用透视深度导数把半个 shadow texel 的世界偏移映射到 depth，避免远处漏影。
+  let matrix = frame.localShadowMatrices[index];
+  let focal = length(vec3f(matrix[0].y,matrix[1].y,matrix[2].y));
+  let bias = max(0.0000002, depthFactor*cascaded_shadow.params.z/(clip.w*focal)
+    * (1.0+2.0*(1.0-clamp(n_dot_l,0.0,1.0))));
+  var visibility=0.0;
+  for (var y=-1; y<=1; y++) {
+    for (var x=-1; x<=1; x++) {
+      visibility += textureSampleCompareLevel(shadow_map,shadow_sampler,
+        uv+vec2f(f32(x),f32(y))*cascaded_shadow.params.z,
+        i32(cascaded_shadow.params.x)+i32(index),projected.z-bias);
+    }
+  }
+  return visibility/9.0;
+}
+
+fn point_shadow_face(direction: vec3f) -> u32 {
+  let major = abs(direction);
+  if (major.x >= major.y && major.x >= major.z) { return select(1u,0u,direction.x >= 0.0); }
+  if (major.y >= major.z) { return select(3u,2u,direction.y >= 0.0); }
+  return select(5u,4u,direction.z >= 0.0);
+}

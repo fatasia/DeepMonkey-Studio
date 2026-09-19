@@ -87,10 +87,9 @@ impl ApplicationHandler<GpuEvent> for Probe {
         // 1) uv 数值变化必须被分类为 MaterialUniformRefresh,rows 与
         //    prepare_material_uniform 的输出逐位一致。
         let shadow_before = renderer.scene_update_evidence().shadow_version;
-        let staged = pollster::block_on(
-            renderer.stage_render_packet_update(&previous, &variant_content),
-        )
-        .unwrap();
+        let staged =
+            pollster::block_on(renderer.stage_render_packet_update(&previous, &variant_content))
+                .unwrap();
         let refresh = match &staged {
             StagedRenderPacketUpdate::MaterialUniformRefresh(refresh) => refresh,
             StagedRenderPacketUpdate::Noop => {
@@ -110,7 +109,10 @@ impl ApplicationHandler<GpuEvent> for Probe {
             deep_engine_native::pbr_texture::prepare_material_uniform(&variant.materials[0])
                 .unwrap()
         );
-        assert_eq!(refresh.scene_content_key, variant_content.scene_content_key());
+        assert_eq!(
+            refresh.scene_content_key,
+            variant_content.scene_content_key()
+        );
 
         // 2) publish 成功且阴影场景版本失效。
         renderer.publish_render_packet_update(staged).unwrap();
@@ -118,18 +120,16 @@ impl ApplicationHandler<GpuEvent> for Probe {
         assert_ne!(shadow_after.scene, shadow_before.scene);
 
         // 3) 内容键已推进:同一对 packet 再次 stage 必须是 Noop。
-        let restaged = pollster::block_on(
-            renderer.stage_render_packet_update(&previous, &variant_content),
-        )
-        .unwrap();
+        let restaged =
+            pollster::block_on(renderer.stage_render_packet_update(&previous, &variant_content))
+                .unwrap();
         assert!(matches!(restaged, StagedRenderPacketUpdate::Noop));
 
         // 4) 反向(变体→原始)再次走快路径。
         let back_content = PlayerContent::from_packet(previous.clone(), None);
-        let staged_back = pollster::block_on(
-            renderer.stage_render_packet_update(&variant, &back_content),
-        )
-        .unwrap();
+        let staged_back =
+            pollster::block_on(renderer.stage_render_packet_update(&variant, &back_content))
+                .unwrap();
         assert!(matches!(
             staged_back,
             StagedRenderPacketUpdate::MaterialUniformRefresh(_)
@@ -142,10 +142,9 @@ impl ApplicationHandler<GpuEvent> for Probe {
         let mut words_moved = variant.clone();
         words_moved.materials[0].metallic = 1.0 - words_moved.materials[0].metallic;
         let words_content = PlayerContent::from_packet(words_moved, None);
-        let staged_words = pollster::block_on(
-            renderer.stage_render_packet_update(&previous, &words_content),
-        )
-        .unwrap();
+        let staged_words =
+            pollster::block_on(renderer.stage_render_packet_update(&previous, &words_content))
+                .unwrap();
         assert!(matches!(staged_words, StagedRenderPacketUpdate::Replace(_)));
         renderer.publish_render_packet_update(staged_words).unwrap();
 
@@ -155,10 +154,9 @@ impl ApplicationHandler<GpuEvent> for Probe {
         both.instances[0].transform[12] += 0.1;
         both = with_base_color_offset(&both, 0.25);
         let both_content = PlayerContent::from_packet(both, None);
-        let staged_both = pollster::block_on(
-            renderer.stage_render_packet_update(&previous, &both_content),
-        )
-        .unwrap();
+        let staged_both =
+            pollster::block_on(renderer.stage_render_packet_update(&previous, &both_content))
+                .unwrap();
         assert!(matches!(staged_both, StagedRenderPacketUpdate::Replace(_)));
         renderer.publish_render_packet_update(staged_both).unwrap();
 
@@ -169,29 +167,27 @@ impl ApplicationHandler<GpuEvent> for Probe {
             instance.material = swapped.materials[0].id.clone();
         }
         let swapped_content = PlayerContent::from_packet(swapped, None);
-        let staged_swap = pollster::block_on(
-            renderer.stage_render_packet_update(&previous, &swapped_content),
-        )
-        .unwrap();
+        let staged_swap =
+            pollster::block_on(renderer.stage_render_packet_update(&previous, &swapped_content))
+                .unwrap();
         assert!(matches!(staged_swap, StagedRenderPacketUpdate::Replace(_)));
         renderer.publish_render_packet_update(staged_swap).unwrap();
 
         // 8) 纹理引用解析失败(合同之外)必须回落全量路径并由全量校验呈现
         //    错误,而不是快路径静默通过。
         let mut broken = previous.clone();
-        broken.materials[0].base_color_texture =
-            Some(deep_engine_native::contract::TextureSlot {
-                texture: "texture/does-not-exist".into(),
-                tex_coord: None,
-                offset: None,
-                scale: None,
-                rotation: None,
-            });
+        broken.materials[0].base_color_texture = Some(deep_engine_native::contract::TextureSlot {
+            texture: "texture/does-not-exist".into(),
+            tex_coord: None,
+            offset: None,
+            scale: None,
+            rotation: None,
+        });
         let broken_content = PlayerContent::from_packet(broken, None);
-        assert!(pollster::block_on(
-            renderer.stage_render_packet_update(&previous, &broken_content),
-        )
-        .is_err());
+        assert!(
+            pollster::block_on(renderer.stage_render_packet_update(&previous, &broken_content),)
+                .is_err()
+        );
 
         println!(
             "C3 material fastpath verified: refresh→publish→Noop→reverse refresh→words-guard/transform/instance fallbacks→missing-texture error"
@@ -209,7 +205,10 @@ impl ApplicationHandler<GpuEvent> for Probe {
 }
 
 /// 把第一个材质的 baseColor uv offset x 分量设为 `x`(无 offset 视为 0)。
-fn with_base_color_offset(packet: &deep_engine_native::contract::RenderPacket, x: f32) -> deep_engine_native::contract::RenderPacket {
+fn with_base_color_offset(
+    packet: &deep_engine_native::contract::RenderPacket,
+    x: f32,
+) -> deep_engine_native::contract::RenderPacket {
     let mut next = packet.clone();
     let slot = next.materials[0].base_color_texture.as_mut().unwrap();
     let y = slot.offset.unwrap_or([0.0, 0.0])[1];

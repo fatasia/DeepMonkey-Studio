@@ -3,8 +3,11 @@ use super::*;
 #[test]
 fn query_layout_has_non_overlapping_pairs() {
     let pairs = GpuSegment::ALL.map(GpuSegment::pair);
-    assert_eq!(pairs, [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9), (10, 11)]);
-    assert_eq!(u64::from(QUERY_COUNT) * 8, 96);
+    assert_eq!(
+        pairs,
+        [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9), (10, 11), (12, 13)]
+    );
+    assert_eq!(u64::from(QUERY_COUNT) * 8, 128);
     assert_eq!(SLOT_STRIDE, 256);
 }
 

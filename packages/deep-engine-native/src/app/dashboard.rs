@@ -13,7 +13,15 @@ pub(super) fn pointer(app: &mut NativeApp, select: bool) -> bool {
         return false;
     }
     let point = logical_cursor(app);
-    if select && let Some(action) = point.and_then(|point| app.content.active().dashboard.as_ref()?.table_action_at(point)) {
+    if select
+        && let Some(action) = point.and_then(|point| {
+            app.content
+                .active()
+                .dashboard
+                .as_ref()?
+                .table_action_at(point)
+        })
+    {
         if matches!(action.action.as_str(), "csv" | "xlsx") {
             export_table(app, &action);
         } else {
@@ -126,22 +134,50 @@ fn logical_cursor(app: &NativeApp) -> Option<[f64; 2]> {
 fn export_table(app: &NativeApp, action: &deep_engine_native::dashboard_runtime::TableAction) {
     #[cfg(windows)]
     let result = (|| -> Result<String, String> {
-        let (filename, bytes) = app.content.active().dashboard.as_ref().ok_or("dashboard missing")?.table_export(action)?;
+        let (filename, bytes) = app
+            .content
+            .active()
+            .dashboard
+            .as_ref()
+            .ok_or("dashboard missing")?
+            .table_export(action)?;
         report(app, Some("请选择报表保存位置"));
         use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-        let owner = match app.window.as_ref().ok_or("window missing")?.window_handle().map_err(|error| error.to_string())?.as_raw() {
-            RawWindowHandle::Win32(handle) => handle.hwnd.get(), _ => return Err("Windows 窗口不可用".into()),
+        let owner = match app
+            .window
+            .as_ref()
+            .ok_or("window missing")?
+            .window_handle()
+            .map_err(|error| error.to_string())?
+            .as_raw()
+        {
+            RawWindowHandle::Win32(handle) => handle.hwnd.get(),
+            _ => return Err("Windows 窗口不可用".into()),
         };
-        let Some(path) = deep_engine_native::dashboard_runtime::report_save::choose_report_path(&filename, &action.action, owner)? else {
+        let Some(path) = deep_engine_native::dashboard_runtime::report_save::choose_report_path(
+            &filename,
+            &action.action,
+            owner,
+        )?
+        else {
             return Ok("已取消导出".into());
         };
         deep_engine_native::dashboard_runtime::report_save::save_report_bytes(&path, &bytes)?;
-        println!("dashboard table exported: table={} format={} bytes={} path={}", action.table_id, action.action, bytes.len(), path.display());
+        println!(
+            "dashboard table exported: table={} format={} bytes={} path={}",
+            action.table_id,
+            action.action,
+            bytes.len(),
+            path.display()
+        );
         Ok(format!("已导出：{}", path.display()))
     })();
     #[cfg(not(windows))]
     let result: Result<String, String> = Err("当前平台不支持报表保存窗口".into());
-    match result { Ok(message) => report(app, Some(&message)), Err(error) => report(app, Some(&format!("导出失败：{error}"))) }
+    match result {
+        Ok(message) => report(app, Some(&message)),
+        Err(error) => report(app, Some(&format!("导出失败：{error}"))),
+    }
 }
 
 pub(super) fn update(
