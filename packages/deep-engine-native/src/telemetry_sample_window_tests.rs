@@ -8,6 +8,8 @@ fn adapter_emits_ts_v1_shape_without_fake_zeroes() {
         25.0,
         [2_000_000, 4_000_000].into_iter(),
         std::iter::empty(),
+        std::iter::empty(),
+        std::iter::empty(),
         &gpu,
     ))
     .unwrap();
@@ -48,6 +50,58 @@ fn adapter_emits_ts_v1_shape_without_fake_zeroes() {
 }
 
 #[test]
+fn scene_update_and_upload_are_measured_only_with_real_samples() {
+    let gpu = GpuReadback::degraded("timestamp_query_unsupported");
+    // 无 packet 更新的窗口:两通道如实降级为"无样本",不再报"未隔离"。
+    let value = serde_json::to_value(build(
+        "native.device-1.reset-0".into(),
+        25.0,
+        std::iter::empty(),
+        std::iter::empty(),
+        std::iter::empty(),
+        std::iter::empty(),
+        &gpu,
+    ))
+    .unwrap();
+    let channels = value["channels"].as_array().unwrap();
+    let scene_update = channel(channels, "scene-update");
+    assert_eq!(scene_update["availability"], "unavailable");
+    assert_eq!(
+        scene_update["unavailableReason"],
+        "no_packet_scene_update_samples_in_window"
+    );
+    let upload = channel(channels, "upload");
+    assert_eq!(upload["availability"], "unavailable");
+    assert_eq!(
+        upload["unavailableReason"],
+        "no_packet_resource_upload_samples_in_window"
+    );
+
+    // 有真实 packet 更新的窗口:两通道 measured,毫秒换算正确。
+    let value = serde_json::to_value(build(
+        "native.device-1.reset-0".into(),
+        25.0,
+        std::iter::empty(),
+        std::iter::empty(),
+        [120_000_000_u64, 140_500_000].into_iter(),
+        [40_000_000_u64].into_iter(),
+        &gpu,
+    ))
+    .unwrap();
+    let channels = value["channels"].as_array().unwrap();
+    let scene_update = channel(channels, "scene-update");
+    assert_eq!(scene_update["availability"], "measured");
+    assert_eq!(
+        scene_update["samplesMs"],
+        serde_json::json!([120.0, 140.5])
+    );
+    assert!(scene_update.get("unavailableReason").is_none());
+    let upload = channel(channels, "upload");
+    assert_eq!(upload["availability"], "measured");
+    assert_eq!(upload["samplesMs"], serde_json::json!([40.0]));
+}
+
+#[test]
 fn gpu_and_frame_interval_are_measured_only_with_real_samples() {
     let gpu = GpuReadback::supported_for_test(vec![1.25, 1.5]);
     let value = serde_json::to_value(build(
@@ -55,6 +109,8 @@ fn gpu_and_frame_interval_are_measured_only_with_real_samples() {
         40.0,
         std::iter::empty(),
         [16_000_000, 17_000_000].into_iter(),
+        std::iter::empty(),
+        std::iter::empty(),
         &gpu,
     ))
     .unwrap();
@@ -78,6 +134,8 @@ fn immediate_failure_report_still_has_a_valid_positive_window() {
     let value = serde_json::to_value(build(
         "native.device-1.reset-0".into(),
         0.0,
+        std::iter::empty(),
+        std::iter::empty(),
         std::iter::empty(),
         std::iter::empty(),
         &gpu,

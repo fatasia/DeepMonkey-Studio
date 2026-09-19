@@ -28,6 +28,8 @@ mod packet_present;
 pub(crate) struct StagedDeep2dUpdate {
     candidate: Option<Deep2dGpuPainter>,
     stats: Deep2dCacheStats,
+    /// R6-2 细分:Deep2D staging 准备耗时(CPU 侧,含错误域 pop)。
+    prepare_ns: u64,
 }
 
 pub(crate) enum StagedRenderPacketUpdate {
@@ -44,6 +46,10 @@ pub(crate) struct StagedRenderPacketPayload {
     shadow_keys: Vec<ShadowCascadeKey>,
     shadow_shader_key: u64,
     invalidate_shadow: bool,
+    /// R6-2 细分:staging 的纯 CPU 场景准备耗时(校验/遍历/派生数据)。
+    scene_update_ns: u64,
+    /// R6-2 细分:GPU 资源准备与上传暂存耗时(stage_scoped + 错误域)。
+    resource_upload_ns: u64,
 }
 
 impl Renderer {
@@ -59,8 +65,10 @@ impl Renderer {
             return Ok(StagedDeep2dUpdate {
                 candidate: None,
                 stats: Deep2dCacheStats::default(),
+                prepare_ns: 0,
             });
         };
+        let prepare_started = std::time::Instant::now();
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
@@ -111,10 +119,17 @@ impl Renderer {
         Ok(StagedDeep2dUpdate {
             stats: candidate.cache_stats(),
             candidate: Some(candidate),
+            prepare_ns: u64::try_from(prepare_started.elapsed().as_nanos()).unwrap_or(u64::MAX),
         })
     }
 
     pub(crate) fn publish_deep2d_update(&mut self, staged: StagedDeep2dUpdate) -> Deep2dCacheStats {
+        // Noop(无候选)不产生样本:保持"样本=一次真实 staging 提交"的合同。
+        if staged.candidate.is_some()
+            && let Some(telemetry) = self.telemetry.as_mut()
+        {
+            telemetry.record_deep2d_prepare(staged.prepare_ns);
+        }
         self.deep2d = staged.candidate;
         staged.stats
     }
@@ -158,6 +173,11 @@ impl Renderer {
         {
             return Ok(StagedRenderPacketUpdate::Noop);
         }
+        // R6-2 细分计时:scene_update = 纯 CPU 场景准备(分类/校验/遍历/
+        // 批处理/派生数据/阴影 stage),resource_upload = GPU 资源创建与上传
+        // 暂存(stage_scoped 闭包 + 错误域 pop,含内嵌校验等待的墙钟时间)。
+        // 两段都随 payload 走,由 publish(唯一提交点)记入遥测。
+        let prepare_started = std::time::Instant::now();
         let packet = content.packet();
         let shadow_relevance = classify_shadow_relevance(previous_packet, packet);
         let prepared = prepare_scene(packet)?;
@@ -172,6 +192,9 @@ impl Renderer {
             shadow_ray_direction(&self.frame),
             bounds,
         )?;
+        let scene_update_ns =
+            u64::try_from(prepare_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let staging_started = std::time::Instant::now();
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
@@ -227,6 +250,8 @@ impl Renderer {
             ));
         }
         let (scene, culling, lod, shadow_keys) = candidate?;
+        let resource_upload_ns =
+            u64::try_from(staging_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         Ok(StagedRenderPacketUpdate::Replace(Box::new(
             StagedRenderPacketPayload {
                 scene,
@@ -237,6 +262,8 @@ impl Renderer {
                 shadow_keys,
                 shadow_shader_key,
                 invalidate_shadow: shadow_relevance.must_invalidate,
+                scene_update_ns,
+                resource_upload_ns,
             },
         )))
     }
@@ -260,6 +287,12 @@ impl Renderer {
         self.shadow_shader_key = staged.shadow_shader_key;
         if staged.invalidate_shadow {
             self.shadow_version.bump_scene();
+        }
+        // R6-2 细分:commit 成功后记入 packet 级准备样本(唯一提交点,
+        // 覆盖 replace_render_packet / present_render_packet_update /
+        // drop_preview 三条汇入路径)。
+        if let Some(telemetry) = self.telemetry.as_mut() {
+            telemetry.record_packet_prepare(staged.scene_update_ns, staged.resource_upload_ns);
         }
         Ok(metrics)
     }

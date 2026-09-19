@@ -81,6 +81,8 @@ pub(crate) fn build(
     window_end_ms: f64,
     cpu_submit_ns: impl Iterator<Item = u64>,
     frame_interval_ns: impl Iterator<Item = u64>,
+    scene_update_ns: impl Iterator<Item = u64>,
+    resource_upload_ns: impl Iterator<Item = u64>,
     gpu: &GpuReadback,
 ) -> SampleWindow {
     let start = 0.0;
@@ -89,6 +91,8 @@ pub(crate) fn build(
     let window_end_ms = window_end_ms.max(f64::EPSILON);
     let cpu_submit = cpu_submit_ns.map(ns_to_ms).collect();
     let frame_interval = frame_interval_ns.map(ns_to_ms).collect();
+    let scene_update = scene_update_ns.map(ns_to_ms).collect();
+    let resource_upload = resource_upload_ns.map(ns_to_ms).collect();
     let gpu_samples = gpu.frame_samples_ms().to_vec();
     let gpu_reason = gpu.sample_window_reason();
     SampleWindow {
@@ -105,17 +109,23 @@ pub(crate) fn build(
                 window_end_ms,
                 "native_runtime_has_no_authoring_bridge_boundary",
             ),
-            ChannelSample::unavailable(
+            // R6-2 细分埋点:packet 更新的两段准备已在 stage/publish 真实计时,
+            // 窗口内无更新时如实降级为"无样本",不再报"未隔离"。
+            ChannelSample::measured_or_unavailable(
                 "scene-update",
+                "host-monotonic",
+                scene_update,
                 start,
                 window_end_ms,
-                "native_scene_update_is_not_isolated_from_resource_preparation",
+                "no_packet_scene_update_samples_in_window",
             ),
-            ChannelSample::unavailable(
+            ChannelSample::measured_or_unavailable(
                 "upload",
+                "host-monotonic",
+                resource_upload,
                 start,
                 window_end_ms,
-                "native_upload_is_not_timed_as_an_independent_boundary",
+                "no_packet_resource_upload_samples_in_window",
             ),
             ChannelSample::measured_or_unavailable(
                 "cpu-submit",

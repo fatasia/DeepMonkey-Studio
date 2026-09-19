@@ -30,6 +30,8 @@ fn reset_barrier_rejects_old_epoch_sample() {
         reset_generation: 1,
         rings,
         frames: FrameCounts::default(),
+        packet_updates: 0,
+        deep2d_updates: 0,
         late_samples: 0,
         window_started_at: Instant::now(),
         last_presented_at: None,
@@ -55,4 +57,49 @@ fn reset_barrier_rejects_old_epoch_sample() {
         Some(Instant::now()),
     );
     assert_eq!(telemetry.late_samples, 2);
+}
+
+#[test]
+fn packet_prepare_samples_are_counted_and_reset_with_the_window() {
+    let mut telemetry = FrameTelemetry {
+        device_epoch: 1,
+        reset_generation: 0,
+        rings: std::array::from_fn(|_| SegmentRing::new()),
+        frames: FrameCounts::default(),
+        packet_updates: 0,
+        deep2d_updates: 0,
+        late_samples: 0,
+        window_started_at: Instant::now(),
+        last_presented_at: None,
+        frame_intervals: SegmentRing::new(),
+        gpu_unavailable_reason: Some("test"),
+        gpu: None,
+    };
+    telemetry.record_packet_prepare(120_000_000, 40_000_000);
+    telemetry.record_packet_prepare(140_000_000, 60_000_000);
+    telemetry.record_deep2d_prepare(8_000_000);
+    assert_eq!((telemetry.packet_updates, telemetry.deep2d_updates), (2, 1));
+    assert_eq!(
+        telemetry.rings[CpuSegment::SceneUpdate.index()]
+            .samples
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![120_000_000, 140_000_000]
+    );
+    assert_eq!(
+        telemetry.rings[CpuSegment::ResourcePrepare.index()]
+            .samples
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![40_000_000, 60_000_000]
+    );
+    telemetry.reset_barrier();
+    assert_eq!((telemetry.packet_updates, telemetry.deep2d_updates), (0, 0));
+    assert!(
+        telemetry.rings[CpuSegment::SceneUpdate.index()]
+            .samples
+            .is_empty()
+    );
 }

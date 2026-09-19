@@ -72,7 +72,8 @@ use packet_live_probe::PacketLiveProbe;
 pub use dynamic_playback::{DYNAMIC_PLAYBACK_STEP_MS, DynamicPlaybackSpec};pub use runner::{
     PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_dynamic_playback,
     run_fog, run_package_live, run_packet_live, run_section_smoke, run_selection_smoke,
-    run_shadow_update_probe, run_state_ops_playback, run_telemetry_smoke, run_verification,
+    run_shadow_update_probe, run_state_ops_playback, run_telemetry_smoke,
+    run_telemetry_smoke_prepare, run_verification,
 };
 pub use state_ops_playback::StateOpsSpec;
 use shadow_update_probe::ShadowUpdateProbe;
@@ -96,6 +97,8 @@ struct NativeApp {
     packet_coalescer: UpdateCoalescer,
     telemetry_warmup_frames_remaining: u8,
     telemetry_sample_frames_remaining: u8,
+    /// R6-2 细分采样:遥测采样窗内每帧一次真实 packet 更新。
+    telemetry_prepare_replay: Option<TelemetryPrepareReplay>,
     state: PlayerState,
     selection_probe: Option<u8>,
     section_probe: Option<section_probe::SectionProbe>,
@@ -126,10 +129,39 @@ struct NativeAppSetup {
     packet_live_transport: Option<PacketLiveTransport>,
     package_live_transport: Option<PackageLiveTransport>,
     telemetry_report: bool,
+    /// R6-2 细分采样(`--smoke-telemetry-prepare`):隐含 telemetry_report。
+    telemetry_prepare_replay: bool,
     selection_probe: bool,
     section_probe: bool,
     /// P1-16 第三批:键盘 smoke。与 chart_probe 互斥(见 `NativeApp::new`)。
     chart_key_probe: bool,
+}
+
+/// R6-2 细分采样的交替内容对。变体只翻转首个实例的平移 X(与
+/// `moved_packet_bytes` 同一摄动),保证每次 replace 的 scene_content_key
+/// 都变化,不会退化成 Noop;起始即 alternate,首帧更新就是真实 Replace。
+struct TelemetryPrepareReplay {
+    original: PlayerContent,
+    alternate: PlayerContent,
+    use_alternate: bool,
+}
+
+impl TelemetryPrepareReplay {
+    fn build(content: &PlayerContent) -> Option<Self> {
+        let packet = content.packet();
+        let next_x = if packet.instances.first()?.transform[12] == -0.75 {
+            -0.7
+        } else {
+            -0.75
+        };
+        let mut moved = packet.clone();
+        moved.instances[0].transform[12] = next_x;
+        Some(Self {
+            original: PlayerContent::from_packet(packet.clone(), content.deep2d.clone()),
+            alternate: PlayerContent::from_packet(moved, content.deep2d.clone()),
+            use_alternate: true,
+        })
+    }
 }
 
 impl NativeApp {
@@ -139,6 +171,11 @@ impl NativeApp {
         // 键盘模式下 chart_probe 保持 None,由 chart_key_probe 独占推进权。
         let chart_probe =
             (setup.smoke_frame && content.chart.is_some() && !setup.chart_key_probe).then_some(0);
+        // 无实例的包无法构造交替变体,replay 静默降级(不伪造样本)。
+        let telemetry_prepare_replay = setup
+            .telemetry_prepare_replay
+            .then(|| TelemetryPrepareReplay::build(&content))
+            .flatten();
         Self {
             chart_probe,
             chart_key_probe: (setup.chart_key_probe && content.chart.is_some()).then_some(0),
@@ -178,6 +215,7 @@ impl NativeApp {
             } else {
                 0
             },
+            telemetry_prepare_replay,
             state: PlayerState {
                 view,
                 ..Default::default()

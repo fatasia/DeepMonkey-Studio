@@ -47,6 +47,7 @@ fn production_filter_preserves_selection_and_rows_until_presented() {
             packet_live_probe: None,
             packet_live_transport: None,
             package_live_transport: None,
+            telemetry_prepare_replay: false,
             telemetry_report: false,
             selection_probe: false,
             section_probe: false,

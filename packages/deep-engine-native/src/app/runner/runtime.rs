@@ -70,7 +70,11 @@ pub(super) fn run_internal(
             packet_live_probe,
             packet_live_transport,
             package_live_transport,
-            telemetry_report: matches!(report, ReportMode::Telemetry),
+            telemetry_report: matches!(
+                report,
+                ReportMode::Telemetry | ReportMode::TelemetryPrepare
+            ),
+            telemetry_prepare_replay: matches!(report, ReportMode::TelemetryPrepare),
             selection_probe: matches!(report, ReportMode::Selection),
             section_probe: matches!(report, ReportMode::Section),
             chart_key_probe: matches!(report, ReportMode::ChartKeyboard),

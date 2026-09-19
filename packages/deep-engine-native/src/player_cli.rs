@@ -243,6 +243,17 @@ pub fn run_telemetry_smoke(path: PathBuf) -> Result<(), String> {
     app::run_telemetry_smoke(PlayerContent::from_packet(packet, None))
 }
 
+/// `--smoke-telemetry-prepare`:telemetry smoke + 采样窗内每帧一次真实
+/// packet 更新(R6-2 准备细分采样)。
+pub fn run_telemetry_smoke_prepare(path: PathBuf) -> Result<(), String> {
+    let (packet, summary) = load_and_validate(&path)?;
+    println!(
+        "telemetry prepare smoke contract v1 loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_telemetry_smoke_prepare(PlayerContent::from_packet(packet, None))
+}
+
 pub fn default_shadow_fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/render_packet_shadow_v1.json")
 }

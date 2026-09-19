@@ -7,14 +7,27 @@ impl Renderer {
         &mut self,
         mut staged: StagedDeep2dUpdate,
     ) -> RenderOutcome {
+        // R6-2 细分:这条直换提交路径不经过 publish_deep2d_update,按同族
+        // 排查在此补记;Noop(无候选)与未提交(恢复旧帧)不产生样本。
+        let prepare_ns = staged.prepare_ns;
+        let has_candidate = staged.candidate.is_some();
         std::mem::swap(&mut self.deep2d, &mut staged.candidate);
-        let mut preview = DashboardFrameGuard {
-            renderer: self,
-            previous: &mut staged,
-            committed: false,
+        let outcome = {
+            let mut preview = DashboardFrameGuard {
+                renderer: self,
+                previous: &mut staged,
+                committed: false,
+            };
+            let outcome = preview.renderer.render_internal(true, true);
+            preview.committed = matches!(outcome, RenderOutcome::Presented);
+            outcome
         };
-        let outcome = preview.renderer.render_internal(true, true);
-        preview.committed = matches!(outcome, RenderOutcome::Presented);
+        if has_candidate
+            && matches!(outcome, RenderOutcome::Presented)
+            && let Some(telemetry) = self.telemetry.as_mut()
+        {
+            telemetry.record_deep2d_prepare(prepare_ns);
+        }
         outcome
     }
 }

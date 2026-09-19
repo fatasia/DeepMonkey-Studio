@@ -30,6 +30,8 @@ enum ReportMode {
     None,
     Verification(crate::publication_verification::Verification),
     Telemetry,
+    /// R6-2 细分采样:Telemetry 全部行为 + 采样窗内每帧一次真实 packet 更新。
+    TelemetryPrepare,
     Selection,
     Section,
     /// P1-16 第三批:真实窗口键盘 smoke(需要图例可聚焦)。
@@ -197,6 +199,28 @@ pub fn run_fog(content: PlayerContent, smoke_frame: bool, fog: FogSettings) -> R
         None,
         None,
         ReportMode::None,
+        None,
+        None,
+    )
+}
+
+/// `--smoke-telemetry-prepare`:同 telemetry smoke,且采样窗内每帧提交一次
+/// 真实 packet 更新(原始↔变体交替),为 packet 级准备细分采集样本。
+pub fn run_telemetry_smoke_prepare(content: PlayerContent) -> Result<(), String> {
+    run_internal(
+        content,
+        true,
+        RendererFeatures {
+            bloom: BloomSettings::default(),
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: true,
+        },
+        None,
+        None,
+        None,
+        ReportMode::TelemetryPrepare,
         None,
         None,
     )

@@ -36,6 +36,7 @@ fn resize_wiring_advances_layout_revision_and_excludes_non_resize_paths() {
             packet_live_probe: None,
             packet_live_transport: None,
             package_live_transport: None,
+            telemetry_prepare_replay: false,
             telemetry_report: false,
             selection_probe: false,
             section_probe: false,

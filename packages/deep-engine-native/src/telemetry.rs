@@ -21,10 +21,22 @@ pub enum CpuSegment {
     Deep2d,
     Postprocess,
     SubmitPresent,
+    /// R6-2 细分:一次 packet 更新在 staging 阶段的纯 CPU 场景准备
+    /// (校验/遍历/批处理/派生数据/阴影相关分类)。与 `ResourcePrepare`
+    /// 的分界线是 GPU 资源创建开始之处。样本按"已提交的 packet 更新"
+    /// 计,不按帧计。
+    SceneUpdate,
+    /// R6-2 细分:同一 packet 更新的 GPU 资源准备(缓冲区创建/上传暂存/
+    /// 材质绑定重建/culling+lod 资源),即 `stage_scoped` 闭包与错误域
+    /// pop 的整体。与 `SceneUpdate` 同批记录。
+    ResourcePrepare,
+    /// R6-2 细分:Deep2D(文字/二维管线)staging 准备。A1(文字驱逐)
+    /// 证据通道;无 Deep2D 的场景保持零样本,属如实降级。
+    Deep2dPrepare,
 }
 
 impl CpuSegment {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 11] = [
         Self::Acquire,
         Self::SceneResources,
         Self::Shadow,
@@ -33,6 +45,9 @@ impl CpuSegment {
         Self::Deep2d,
         Self::Postprocess,
         Self::SubmitPresent,
+        Self::SceneUpdate,
+        Self::ResourcePrepare,
+        Self::Deep2dPrepare,
     ];
 
     fn name(self) -> &'static str {
@@ -45,6 +60,9 @@ impl CpuSegment {
             Self::Deep2d => "deep2d",
             Self::Postprocess => "postprocess",
             Self::SubmitPresent => "queue_submit_present",
+            Self::SceneUpdate => "packet_scene_update",
+            Self::ResourcePrepare => "packet_resource_upload",
+            Self::Deep2dPrepare => "packet_deep2d_prepare",
         }
     }
 
@@ -122,8 +140,13 @@ impl SegmentRing {
 pub struct FrameTelemetry {
     device_epoch: u64,
     reset_generation: u64,
-    rings: [SegmentRing; 8],
+    rings: [SegmentRing; CpuSegment::ALL.len()],
     frames: FrameCounts,
+    /// 已提交(commit)的 packet 更新数;`SceneUpdate`/`ResourcePrepare`
+    /// 环的 coverage 分母。
+    packet_updates: u64,
+    /// 已提交的 Deep2D staging 数;`Deep2dPrepare` 环的 coverage 分母。
+    deep2d_updates: u64,
     late_samples: u64,
     window_started_at: Instant,
     last_presented_at: Option<Instant>,
@@ -142,6 +165,8 @@ impl FrameTelemetry {
             reset_generation: 0,
             rings: std::array::from_fn(|_| SegmentRing::new()),
             frames: FrameCounts::default(),
+            packet_updates: 0,
+            deep2d_updates: 0,
             late_samples: 0,
             window_started_at: Instant::now(),
             last_presented_at: None,
@@ -164,6 +189,21 @@ impl FrameTelemetry {
         }
         let ns = u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.rings[segment.index()].record(ns);
+    }
+
+    /// 记录一次已提交的 packet 更新的两段准备耗时。publish 只发生在渲染
+    /// 线程当前 epoch(与帧路径同一 `&mut self` 借用点),无需帧 token
+    /// 校验;失败被拒的 staging 不产生样本。
+    pub fn record_packet_prepare(&mut self, scene_update_ns: u64, resource_upload_ns: u64) {
+        self.packet_updates += 1;
+        self.rings[CpuSegment::SceneUpdate.index()].record(scene_update_ns);
+        self.rings[CpuSegment::ResourcePrepare.index()].record(resource_upload_ns);
+    }
+
+    /// 记录一次已提交的 Deep2D staging 准备耗时(文字/二维管线)。
+    pub fn record_deep2d_prepare(&mut self, prepare_ns: u64) {
+        self.deep2d_updates += 1;
+        self.rings[CpuSegment::Deep2dPrepare.index()].record(prepare_ns);
     }
 
     pub fn finish_frame(&mut self, token: SampleToken, result: FrameResult) {
@@ -221,6 +261,8 @@ impl FrameTelemetry {
     pub fn reset_barrier(&mut self) {
         self.reset_generation = self.reset_generation.wrapping_add(1);
         self.frames = FrameCounts::default();
+        self.packet_updates = 0;
+        self.deep2d_updates = 0;
         self.late_samples = 0;
         self.window_started_at = Instant::now();
         self.last_presented_at = None;
@@ -239,6 +281,9 @@ impl FrameTelemetry {
         for segment in CpuSegment::ALL {
             let expected = match segment {
                 CpuSegment::Acquire => self.frames.attempted,
+                // Packet 级细分按"已提交更新数"计 coverage,不与帧混淆。
+                CpuSegment::SceneUpdate | CpuSegment::ResourcePrepare => self.packet_updates,
+                CpuSegment::Deep2dPrepare => self.deep2d_updates,
                 _ => self.frames.presented,
             };
             cpu.insert(
@@ -266,12 +311,21 @@ impl FrameTelemetry {
                 .iter()
                 .copied(),
             self.frame_intervals.samples.iter().copied(),
+            self.rings[CpuSegment::SceneUpdate.index()]
+                .samples
+                .iter()
+                .copied(),
+            self.rings[CpuSegment::ResourcePrepare.index()]
+                .samples
+                .iter()
+                .copied(),
             &gpu,
         );
         serde_json::json!({
             "schema": "deep-engine.native-telemetry", "version": 1,
             "device_epoch": self.device_epoch, "reset_generation": self.reset_generation,
             "window_capacity": RING_CAPACITY, "frames": self.frames,
+            "packet_updates": self.packet_updates, "deep2d_updates": self.deep2d_updates,
             "late_cpu_samples": self.late_samples, "cpu": cpu, "gpu": gpu,
             "benchmark_sample_window": benchmark_sample_window,
         })

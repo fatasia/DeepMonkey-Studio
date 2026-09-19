@@ -14,6 +14,7 @@ mod entrypoints;
 mod experimental_x;
 mod file_read;
 mod hash;
+mod light_profiles;
 mod material_bindings;
 mod payloads;
 mod prefiltered_ibl;
@@ -54,6 +55,7 @@ pub use r3_state::{
     parse_and_validate_r3_state_ops, selection_field, ClipState, R3StateBox, R3StateOp, R3StateOps,
     R3_STATE_FRAME_CONTRACT, R3_STATE_OPS_SCHEMA,
 };
+pub use light_profiles::{ies_max_candela, IesSamplingTable, LightIes, LightProfile};
 pub use validate::{runtime_content_sha256, runtime_package_sha256};
 
 pub const DEEP_RUNTIME_PACKAGE_SCHEMA: &str = "deep-engine.runtime-package";

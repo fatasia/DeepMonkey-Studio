@@ -32,6 +32,28 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         event_loop.exit();
         return;
     }
+    // R6-2 细分采样:遥测采样窗内(预热结束后)每帧先对真实渲染器提交一次
+    // packet 更新(原始↔变体交替),为 packet_scene_update / packet_resource_upload
+    // 采集真实样本;随后的帧在同一窗口内呈现更新后的场景。更新失败视为 smoke
+    // 失败,不让窗口带着错误状态继续。
+    if let Some(replay) = app.telemetry_prepare_replay.as_mut()
+        && app.telemetry_warmup_frames_remaining == 0
+        && app.telemetry_sample_frames_remaining > 0
+        && let Some(renderer) = app.renderer.as_mut()
+    {
+        let previous = app.content.active().packet().clone();
+        let next = if replay.use_alternate {
+            &replay.alternate
+        } else {
+            &replay.original
+        };
+        if let Err(error) = pollster::block_on(renderer.replace_render_packet(&previous, next)) {
+            app.state.failed(error);
+            event_loop.exit();
+            return;
+        }
+        replay.use_alternate = !replay.use_alternate;
+    }
     let outcome = app
         .renderer
         .as_mut()
