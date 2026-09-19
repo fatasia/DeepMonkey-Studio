@@ -123,3 +123,72 @@ describe("RenderGraphBuilder", () => {
     expect(result.issues.some((issue) => issue.code === "cycle")).toBe(true);
   });
 });
+describe("RenderGraphBuilder culling/parallel/hash (#18)", () => {
+  function deadChain() {
+    return new RenderGraphBuilder()
+      .addResource({ id: "raw", descriptor: "rgba16float" })
+      .addResource({ id: "mid", descriptor: "rgba16float" })
+      .addResource({ id: "dead-end", descriptor: "rgba16float" })
+      .addResource({ id: "output", descriptor: "swapchain", external: true })
+      .addPass({ id: "scene", kind: "render", outputs: ["raw", "output"] })
+      .addPass({ id: "mid", kind: "post", inputs: ["raw"], outputs: ["mid"] })
+      .addPass({ id: "tail", kind: "post", inputs: ["mid"], outputs: ["dead-end"] });
+  }
+
+  it("culls transitively dead passes only under the explicit option", () => {
+    // 缺省:未读资源仍是合同失败(向后兼容)。
+    expect(deadChain().compile().valid).toBe(false);
+    // 开启剔除:tail 与 mid 传递性死亡,scene 保留。
+    const culled = deadChain().compile({ cullUnusedPasses: true });
+    expect(culled.valid).toBe(true);
+    expect(culled.culledPasses).toEqual(["mid", "tail"]);
+    expect(culled.order).toEqual(["scene"]);
+    expect(culled.resources.map((r) => r.id)).toEqual(["raw", "output"]);
+  });
+
+  it("keeps dependency-only passes alive when culling", () => {
+    const result = new RenderGraphBuilder()
+      .addResource({ id: "upload", descriptor: "upload-buffer" })
+      .addResource({ id: "output", descriptor: "swapchain", external: true })
+      .addPass({ id: "upload", kind: "upload", outputs: ["upload"] })
+      .addPass({ id: "scene", kind: "render", dependencies: ["upload"], outputs: ["output"] })
+      .compile({ cullUnusedPasses: true });
+    expect(result.valid).toBe(true);
+    expect(result.culledPasses).toEqual([]);
+    expect(result.order).toEqual(["upload", "scene"]);
+  });
+
+  it("derives deterministic parallel groups from longest-path levels", () => {
+    const result = new RenderGraphBuilder()
+      .addResource({ id: "gbuffer", descriptor: "rgba16float" })
+      .addResource({ id: "shadow-a", descriptor: "rgba16float", external: true })
+      .addResource({ id: "shadow-b", descriptor: "rgba16float", external: true })
+      .addResource({ id: "shaded", descriptor: "rgba16float", external: true })
+      .addResource({ id: "output", descriptor: "swapchain", external: true })
+      .addPass({ id: "gbuffer", kind: "render", outputs: ["gbuffer", "output"] })
+      .addPass({ id: "shadow-a", kind: "render", outputs: ["shadow-a"] })
+      .addPass({ id: "shadow-b", kind: "render", outputs: ["shadow-b"] })
+      .addPass({ id: "shading", kind: "render", inputs: ["gbuffer", "shadow-a", "shadow-b"], outputs: ["shaded"] })
+      .compile();
+    expect(result.valid).toBe(true);
+    // 三个无前驱 pass 同深度 ⇒ 可并发 encode;shading 依赖三者 ⇒ 下一层;组序按深度,组内按拓扑序。
+    expect(result.parallelGroups).toEqual([["gbuffer", "shadow-a", "shadow-b"], ["shading"]]);
+  });
+
+  it("produces a stable planHash that changes with the plan", () => {
+    const build = () =>
+      graph()
+        .addPass({ id: "scene", kind: "forward", outputs: ["scene-color"] })
+        .addPass({ id: "bloom", kind: "post", inputs: ["scene-color"], outputs: ["bloom"] })
+        .addPass({ id: "present", kind: "present", inputs: ["bloom"], outputs: ["output"] });
+    const first = build().compile();
+    const second = build().compile();
+    expect(first.planHash).toBeDefined();
+    expect(first.planHash).toBe(second.planHash);
+    const extended = build()
+      .addResource({ id: "extra", descriptor: "rgba16float" })
+      .addPass({ id: "extra", kind: "post", inputs: ["bloom"], outputs: ["extra"] })
+      .compile();
+    expect(extended.planHash).not.toBe(first.planHash);
+  });
+});

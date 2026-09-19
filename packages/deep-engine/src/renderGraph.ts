@@ -36,6 +36,20 @@ export interface RenderGraphCompileResult {
   /** Stable transient-allocation plan. External resources never receive a transient slot. */
   readonly resources: readonly RenderResourceLifetime[];
   readonly issues: readonly RenderGraphIssue[];
+  /** Passes removed by dead-pass culling (`compile({ cullUnusedPasses: true })`); sorted deterministically. */
+  readonly culledPasses?: readonly string[];
+  /** Independent pass groups (same longest-path depth ⇒ no ordering path either way); each group is deterministically sorted. Passes inside one group may encode concurrently. */
+  readonly parallelGroups?: readonly (readonly string[])[];
+  /** Deterministic hash of the compiled plan (order + resources + culling + groups) for plan memoization. */
+  readonly planHash?: string;
+}
+
+export interface RenderGraphCompileOptions {
+  /**
+   * Cull passes whose outputs are never read by a live pass (transitively).
+   * Without this option a never-read non-external resource keeps failing with `unread-resource`.
+   */
+  readonly cullUnusedPasses?: boolean;
 }
 
 export interface RenderResourceLifetime {
@@ -118,11 +132,12 @@ export class RenderGraphBuilder {
     return Object.freeze([...this.passes.values()]);
   }
 
-  compile(): RenderGraphCompileResult {
+  compile(options: RenderGraphCompileOptions = {}): RenderGraphCompileResult {
     if (this.compiled) return this.compiled;
     const issues: RenderGraphIssue[] = [];
     const writtenBy = new Map<string, string>();
     const readResources = new Set<string>();
+    const readers = new Map<string, Set<string>>();
 
     for (const pass of this.passes.values()) {
       const passPath = `passes.${pass.id}`;
@@ -134,6 +149,9 @@ export class RenderGraphBuilder {
           continue;
         }
         readResources.add(input);
+        const readersOfResource = readers.get(input) ?? new Set<string>();
+        readersOfResource.add(pass.id);
+        readers.set(input, readersOfResource);
       }
       const outputs = pass.outputs ?? [];
       if (outputs.length === 0) {
@@ -168,19 +186,54 @@ export class RenderGraphBuilder {
       }
     }
 
-    for (const [resourceId, producer] of writtenBy) {
-      if (!readResources.has(resourceId) && !this.resources.get(resourceId)?.external) {
-        issues.push(
-          graphIssue(
-            "unread-resource",
-            `resources.${resourceId}`,
-            `Resource written by ${producer} is never read.`,
-          ),
-        );
+    // 死 pass 剔除(culling):活跃集 = 有 external 产出的 pass,沿"被活跃 pass 读取的
+    // 产出者"与"显式依赖"闭包传播。被剔除 pass 的未读产出不再报 unread-resource。
+    let livePasses: Set<string> | undefined;
+    let culledPasses: string[] | undefined;
+    if (options.cullUnusedPasses === true) {
+      livePasses = new Set<string>();
+      const stack: string[] = [];
+      for (const pass of this.passes.values()) {
+        if ((pass.outputs ?? []).some((id) => this.resources.get(id)?.external === true)) {
+          livePasses.add(pass.id);
+          stack.push(pass.id);
+        }
+      }
+      while (stack.length > 0) {
+        const id = stack.pop()!;
+        const pass = this.passes.get(id);
+        if (!pass) continue;
+        for (const input of pass.inputs ?? []) {
+          const producer = writtenBy.get(input);
+          if (producer !== undefined && !livePasses.has(producer)) {
+            livePasses.add(producer);
+            stack.push(producer);
+          }
+        }
+        for (const dependency of pass.dependencies ?? []) {
+          if (this.passes.has(dependency) && !livePasses.has(dependency)) {
+            livePasses.add(dependency);
+            stack.push(dependency);
+          }
+        }
+      }
+      culledPasses = [...this.passes.keys()].filter((id) => !livePasses?.has(id));
+    } else {
+      for (const [resourceId, producer] of writtenBy) {
+        if (!readResources.has(resourceId) && !this.resources.get(resourceId)?.external) {
+          issues.push(
+            graphIssue(
+              "unread-resource",
+              `resources.${resourceId}`,
+              `Resource written by ${producer} is never read.`,
+            ),
+          );
+        }
       }
     }
 
     for (const pass of this.passes.values()) {
+      if (livePasses && !livePasses.has(pass.id)) continue; // 被剔除 pass 不参与合同检查。
       for (const input of pass.inputs ?? []) {
         const resource = this.resources.get(input);
         if (!resource) continue;
@@ -194,26 +247,69 @@ export class RenderGraphBuilder {
       }
     }
 
-    const { order, hasCycle } = this.topologicalOrder(writtenBy);
+    const { order, hasCycle } = this.topologicalOrder(writtenBy, livePasses);
     if (hasCycle) {
       issues.push(graphIssue("cycle", "graph", "Render graph contains a cycle."));
     }
-    const resourcePlan = issues.length > 0 ? [] : this.resourceLifetimes(order);
+    const resourcePlan = issues.length > 0 ? [] : this.resourceLifetimes(order, livePasses);
+    // 并行子树分析:同最长路径深度的 pass 两两无序(任一方向都无路径),
+    // 可并发 encode;组内按拓扑序索引稳定排序(确定性)。
+    const parallelGroups: string[][] = [];
+    if (issues.length === 0 && order.length > 0) {
+      const depth = new Map<string, number>();
+      const producersOf = (pass: RenderPassDescriptor): string[] => {
+        const preds: string[] = [];
+        for (const input of pass.inputs ?? []) {
+          const producer = writtenBy.get(input);
+          if (producer !== undefined && producer !== pass.id) preds.push(producer);
+        }
+        for (const dependency of pass.dependencies ?? []) {
+          if (this.passes.has(dependency)) preds.push(dependency);
+        }
+        return preds;
+      };
+      const passIndex = new Map(order.map((id, index) => [id, index]));
+      for (const id of order) {
+        const pass = this.passes.get(id);
+        if (!pass) continue;
+        let level = 0;
+        for (const pred of producersOf(pass)) level = Math.max(level, (depth.get(pred) ?? 0) + 1);
+        depth.set(id, level);
+      }
+      const byLevel = new Map<number, { id: string; index: number }[]>();
+      for (const id of order) {
+        const level = depth.get(id)!;
+        const bucket = byLevel.get(level) ?? [];
+        bucket.push({ id, index: passIndex.get(id)! });
+        byLevel.set(level, bucket);
+      }
+      for (const level of [...byLevel.keys()].sort((a, b) => a - b)) {
+        const bucket = byLevel.get(level)!.sort((a, b) => a.index - b.index);
+        parallelGroups.push(bucket.map((entry) => entry.id));
+      }
+    }
+    const planHashValue = issues.length === 0
+      ? planHashOf({ order, resources: resourcePlan, culledPasses, parallelGroups })
+      : undefined;
     this.compiled = Object.freeze({
       valid: issues.length === 0,
       order: Object.freeze(issues.length > 0 ? [] : order),
       resources: Object.freeze(resourcePlan),
       issues: Object.freeze(issues.map((issue) => Object.freeze(issue))),
+      ...(culledPasses === undefined ? {} : { culledPasses: Object.freeze(culledPasses) }),
+      ...(parallelGroups.length === 0 ? {} : { parallelGroups: Object.freeze(parallelGroups.map((group) => Object.freeze(group))) }),
+      ...(planHashValue === undefined ? {} : { planHash: planHashValue }),
     });
     return this.compiled;
   }
 
-  private resourceLifetimes(order: readonly string[]): readonly RenderResourceLifetime[] {
+  private resourceLifetimes(order: readonly string[], livePasses?: ReadonlySet<string>): readonly RenderResourceLifetime[] {
     const passIndex = new Map(order.map((id, index) => [id, index]));
     const uses = new Map<string, { first: number; last: number }>();
     for (const pass of this.passes.values()) {
       const index = passIndex.get(pass.id);
       if (index === undefined) continue;
+      if (livePasses && !livePasses.has(pass.id)) continue;
       for (const id of new Set([...(pass.inputs ?? []), ...(pass.outputs ?? [])])) {
         const current = uses.get(id);
         if (current) current.last = Math.max(current.last, index);
@@ -239,7 +335,12 @@ export class RenderGraphBuilder {
       }
       transientSlots.set(resource.id, transientSlot);
     });
-    return declared.map((resource) => {
+    return declared
+      .filter((resource) => {
+        if (!livePasses) return true; // 非剔除模式:声明即入计划(既有合同)。
+        return resource.external === true || uses.has(resource.id); // 剔除模式:死产出不入计划。
+      })
+      .map((resource) => {
       const use = uses.get(resource.id);
       const transientSlot = transientSlots.get(resource.id);
       return Object.freeze({
@@ -254,9 +355,10 @@ export class RenderGraphBuilder {
     });
   }
 
-  private topologicalOrder(producers: ReadonlyMap<string, string>): { order: string[]; hasCycle: boolean } {
+  private topologicalOrder(producers: ReadonlyMap<string, string>, livePasses?: ReadonlySet<string>): { order: string[]; hasCycle: boolean } {
     const dependencies = new Map<string, Set<string>>();
     for (const pass of this.passes.values()) {
+      if (livePasses && !livePasses.has(pass.id)) continue;
       const edges = new Set<string>();
       for (const dependency of pass.dependencies ?? []) {
         if (this.passes.has(dependency)) edges.add(dependency);
@@ -284,11 +386,23 @@ export class RenderGraphBuilder {
       state.set(id, "done");
       order.push(id);
     };
-    for (const id of this.passes.keys()) {
+    for (const id of livePasses ? livePasses : this.passes.keys()) {
       visit(id);
       if (hasCycle) break;
     }
     return { order, hasCycle };
   }
 
+}
+
+
+/** 计划指纹:FNV-1a 32 位对规范化 JSON;仅作变更检测键,不作安全摘要。 */
+function planHashOf(payload: unknown): string {
+  const text = JSON.stringify(payload);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
 }
