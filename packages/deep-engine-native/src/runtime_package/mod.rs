@@ -9,6 +9,7 @@ mod delta;
 mod delta_manifest;
 mod diff;
 mod dynamic_scene;
+mod r3_state;
 mod entrypoints;
 mod experimental_x;
 mod file_read;
@@ -48,6 +49,11 @@ pub use types::{
     RuntimeResourceIndexEntry, RuntimeResourceKind,
 };
 pub use dynamic_scene::{canonical_dynamic_frame, parse_and_validate_dynamic_scene_runtime, DynamicAnimationKeyframe, DynamicAnimationRuntime, DynamicAnimationSample, DynamicAnimationTrack, DynamicDataReplayEvent, DynamicDataReplayRuntime, DynamicInteractionRuntime, DynamicSceneRuntime};
+pub use r3_state::{
+    axis_clip_field_from_plane, axis_clip_plane, canonical_r3_state_frame, clip_field,
+    parse_and_validate_r3_state_ops, selection_field, ClipState, R3StateBox, R3StateOp, R3StateOps,
+    R3_STATE_FRAME_CONTRACT, R3_STATE_OPS_SCHEMA,
+};
 pub use validate::{runtime_content_sha256, runtime_package_sha256};
 
 pub const DEEP_RUNTIME_PACKAGE_SCHEMA: &str = "deep-engine.runtime-package";

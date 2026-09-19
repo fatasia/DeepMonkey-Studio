@@ -21,7 +21,7 @@ use crate::{app_startup::report_presented, events::RenderOutcome, renderer::Rend
 
 use super::NativeApp;
 
-use super::{chart, chart_keyboard_smoke, chart_smoke, dynamic_playback::AfterPresent, section_probe, selection_probe};
+use super::{chart, chart_keyboard_smoke, chart_smoke, dynamic_playback::AfterPresent, section_probe, selection_probe, state_ops_playback};
 mod keyboard;
 mod redraw;
 

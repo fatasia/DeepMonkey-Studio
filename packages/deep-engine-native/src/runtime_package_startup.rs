@@ -1,7 +1,9 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use deep_engine_native::runtime_package::{
     LoadedRuntimePackage, RuntimePackageSummary, load_and_validate_runtime_package,
+    parse_and_validate_r3_state_ops,
 };
 use serde::Serialize;
 
@@ -283,6 +285,40 @@ pub fn run_dynamic_playback(package: PreparedRuntimePackage) -> Result<(), Strin
         package_hash,
     };
     app::run_dynamic_playback(content, spec)
+}
+
+/// `--smoke-state-ops <ops.json> <runtime-package.json>`: real-window playback
+/// of the frozen R3 state-op sequence. Requires the ops to be frozen against
+/// exactly this package hash — a mismatched pair fails instead of replaying.
+pub fn run_state_ops(ops_path: &Path, package: PreparedRuntimePackage) -> Result<(), String> {
+    let PreparedRuntimePackage {
+        content,
+        summary,
+        id,
+        version,
+        hash,
+    } = package;
+    let raw = fs::read_to_string(ops_path)
+        .map_err(|error| format!("state ops file cannot be read: {error}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|error| format!("state ops JSON is invalid: {error}"))?;
+    let ops = parse_and_validate_r3_state_ops(value)?;
+    if ops.package_hash != hash {
+        return Err(format!(
+            "state ops were frozen against package hash {} but the loaded package is {hash}",
+            ops.package_hash
+        ));
+    }
+    println!(
+        "Deep Runtime Package State Ops Player preflight OK: id={id} version={version} hash={hash} resources={} geometries={} instances={} triangles={} deep2d={} steps={}",
+        summary.resources,
+        summary.geometries,
+        summary.instances,
+        summary.triangles,
+        summary.has_deep2d,
+        ops.steps.len(),
+    );
+    app::run_state_ops_playback(content, app::StateOpsSpec { ops, package_hash: hash })
 }
 
 fn prepare(package: LoadedRuntimePackage) -> Result<PreparedRuntimePackage, String> {

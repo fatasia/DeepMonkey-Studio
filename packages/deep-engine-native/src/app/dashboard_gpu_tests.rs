@@ -37,6 +37,7 @@ fn dashboard_updates_present_atomically_in_the_window_host() {
         event_loop.create_proxy(),
         NativeAppSetup {
             dynamic_playback: None,
+            state_ops: None,
             smoke_frame: false,
             features: RendererFeatures {
                 bloom: Default::default(),

@@ -22,6 +22,16 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         event_loop.exit();
         return;
     }
+    // State-op playback applies contracted clipping/selection steps to the real
+    // player state on the same fixed clock discipline before the frame renders.
+    if let Some(probe) = app.state_ops.as_mut()
+        && let Some(renderer) = app.renderer.as_mut()
+        && let Err(error) = probe.before_render(renderer, app.content.active(), &mut app.state)
+    {
+        app.state.failed(error);
+        event_loop.exit();
+        return;
+    }
     let outcome = app
         .renderer
         .as_mut()
@@ -172,6 +182,27 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
                     AfterPresent::Continue => app.request_redraw(),
                     AfterPresent::Complete(receipt) => {
                         println!("native dynamic playback receipt: {receipt}");
+                        event_loop.exit();
+                    }
+                }
+                return;
+            }
+            Some(RenderOutcome::Skipped) => {
+                // A skipped frame must not advance the receipt: retry.
+                app.request_redraw();
+                return;
+            }
+            // Recover falls through to the standard surface-recreation path.
+            _ => {}
+        }
+    }
+    if app.state_ops.is_some() {
+        match outcome {
+            Some(RenderOutcome::Presented) => {
+                match app.state_ops.as_mut().expect("probe remains alive").after_present() {
+                    state_ops_playback::AfterPresent::Continue => app.request_redraw(),
+                    state_ops_playback::AfterPresent::Complete(receipt) => {
+                        println!("native state ops receipt: {receipt}");
                         event_loop.exit();
                     }
                 }

@@ -81,6 +81,7 @@ fn run(shader: bool, full: bool) {
         event_loop.create_proxy(),
         NativeAppSetup {
             dynamic_playback: None,
+            state_ops: None,
             smoke_frame: false,
             features: RendererFeatures {
                 bloom: Default::default(),

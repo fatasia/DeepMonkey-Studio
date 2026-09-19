@@ -10,7 +10,7 @@ use crate::{events::GpuEvent, player_content::PlayerContent, renderer::RendererF
 
 use super::{
     NativeApp, NativeAppSetup, ShadowUpdateProbe, dynamic_playback::DynamicPlaybackSpec,
-    package_live, packet_live, packet_live_probe::PacketLiveProbe,
+    package_live, packet_live, packet_live_probe::PacketLiveProbe, state_ops_playback::StateOpsSpec,
 };
 
 pub struct PacketLiveSpec {
@@ -56,6 +56,7 @@ pub fn run_verification(
         None,
         ReportMode::Verification(verification),
         None,
+        None,
     )
 }
 
@@ -75,6 +76,7 @@ pub fn run_section_smoke(content: PlayerContent) -> Result<(), String> {
         None,
         ReportMode::Section,
         None,
+        None,
     )
 }
 
@@ -93,6 +95,7 @@ pub fn run_selection_smoke(content: PlayerContent) -> Result<(), String> {
         None,
         None,
         ReportMode::Selection,
+        None,
         None,
     )
 }
@@ -118,6 +121,7 @@ pub fn run(
         None,
         None,
         ReportMode::None,
+        None,
         None,
     )
 }
@@ -146,6 +150,35 @@ pub fn run_dynamic_playback(
         None,
         ReportMode::None,
         Some(spec),
+        None,
+    )
+}
+
+/// `--smoke-state-ops`: real-window playback of the frozen R3 state-op
+/// sequence. The wall clock drives the step grid; every applied step mutates
+/// the real player state and is read back through the f32 pipeline before the
+/// next present. Exits 0 with a JSON receipt listing per-step contract and
+/// applied frames.
+pub fn run_state_ops_playback(
+    content: PlayerContent,
+    spec: StateOpsSpec,
+) -> Result<(), String> {
+    run_internal(
+        content,
+        false,
+        RendererFeatures {
+            bloom: BloomSettings::default(),
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: false,
+        },
+        None,
+        None,
+        None,
+        ReportMode::None,
+        None,
+        Some(spec),
     )
 }
 
@@ -164,6 +197,7 @@ pub fn run_fog(content: PlayerContent, smoke_frame: bool, fog: FogSettings) -> R
         None,
         None,
         ReportMode::None,
+        None,
         None,
     )
 }
@@ -184,6 +218,7 @@ pub fn run_telemetry_smoke(content: PlayerContent) -> Result<(), String> {
         None,
         None,
         ReportMode::Telemetry,
+        None,
         None,
     )
 }
@@ -209,6 +244,7 @@ pub fn run_shadow_update_probe(
         None,
         ReportMode::None,
         None,
+        None,
     )
 }
 
@@ -230,6 +266,7 @@ pub fn run_chart_keyboard_smoke(content: PlayerContent) -> Result<(), String> {
         None,
         ReportMode::ChartKeyboard,
         None,
+        None,
     )
 }
 
@@ -248,6 +285,7 @@ pub fn run_packet_live(content: PlayerContent, spec: PacketLiveSpec) -> Result<(
         Some(spec),
         None,
         ReportMode::None,
+        None,
         None,
     )
 }
@@ -270,6 +308,7 @@ pub fn run_package_live(content: PlayerContent, spec: PackageLiveSpec) -> Result
         None,
         Some(spec),
         ReportMode::None,
+        None,
         None,
     )
 }

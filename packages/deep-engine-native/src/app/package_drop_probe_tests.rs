@@ -38,6 +38,7 @@ fn asset_directory_drop_events_publish_only_validated_frames() {
         event_loop.create_proxy(),
         NativeAppSetup {
             dynamic_playback: None,
+            state_ops: None,
             smoke_frame: false,
             features: RendererFeatures {
                 bloom: Default::default(),

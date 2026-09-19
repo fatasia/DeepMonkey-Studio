@@ -34,6 +34,7 @@ fn production_filter_preserves_selection_and_rows_until_presented() {
         event_loop.create_proxy(),
         NativeAppSetup {
             dynamic_playback: None,
+            state_ops: None,
             smoke_frame: false,
             features: RendererFeatures {
                 bloom: Default::default(),

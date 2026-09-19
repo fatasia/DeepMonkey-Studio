@@ -10,6 +10,7 @@ pub(super) fn run_internal(
     package_live: Option<PackageLiveSpec>,
     report: ReportMode,
     dynamic_playback: Option<DynamicPlaybackSpec>,
+    state_ops: Option<super::StateOpsSpec>,
 ) -> Result<(), String> {
     let event_loop = EventLoop::<GpuEvent>::with_user_event()
         .build()
@@ -65,6 +66,7 @@ pub(super) fn run_internal(
             features,
             shadow_update_probe,
             dynamic_playback,
+            state_ops,
             packet_live_probe,
             packet_live_transport,
             package_live_transport,

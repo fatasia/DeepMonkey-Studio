@@ -43,6 +43,7 @@ fn product_window_publishes_and_updates_chart_semantics() {
         event_loop.create_proxy(),
         NativeAppSetup {
             dynamic_playback: None,
+            state_ops: None,
             smoke_frame: true,
             features: crate::renderer::RendererFeatures {
                 bloom: Default::default(),

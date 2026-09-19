@@ -23,6 +23,7 @@ fn resize_wiring_advances_layout_revision_and_excludes_non_resize_paths() {
         event_loop.create_proxy(),
         NativeAppSetup {
             dynamic_playback: None,
+            state_ops: None,
             smoke_frame: false,
             features: RendererFeatures {
                 bloom: Default::default(),

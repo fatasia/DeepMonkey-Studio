@@ -53,6 +53,7 @@ mod section_probe;
 mod selection;
 mod selection_probe;
 mod shadow_update_probe;
+mod state_ops_playback;
 mod text_scale;
 mod watch_thread;
 mod window_events;
@@ -71,8 +72,9 @@ use packet_live_probe::PacketLiveProbe;
 pub use dynamic_playback::{DYNAMIC_PLAYBACK_STEP_MS, DynamicPlaybackSpec};pub use runner::{
     PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_dynamic_playback,
     run_fog, run_package_live, run_packet_live, run_section_smoke, run_selection_smoke,
-    run_shadow_update_probe, run_telemetry_smoke, run_verification,
+    run_shadow_update_probe, run_state_ops_playback, run_telemetry_smoke, run_verification,
 };
+pub use state_ops_playback::StateOpsSpec;
 use shadow_update_probe::ShadowUpdateProbe;
 
 struct NativeApp {
@@ -85,6 +87,7 @@ struct NativeApp {
     features: RendererFeatures,
     shadow_update_probe: Option<ShadowUpdateProbe>,
     dynamic_playback: Option<dynamic_playback::DynamicPlaybackProbe>,
+    state_ops: Option<state_ops_playback::StateOpsProbe>,
     packet_live_probe: Option<PacketLiveProbe>,
     packet_live_transport: Option<PacketLiveTransport>,
     package_live_transport: Option<PackageLiveTransport>,
@@ -118,6 +121,7 @@ struct NativeAppSetup {
     features: RendererFeatures,
     shadow_update_probe: Option<ShadowUpdateProbe>,
     dynamic_playback: Option<DynamicPlaybackSpec>,
+    state_ops: Option<state_ops_playback::StateOpsSpec>,
     packet_live_probe: Option<PacketLiveProbe>,
     packet_live_transport: Option<PacketLiveTransport>,
     package_live_transport: Option<PackageLiveTransport>,
@@ -157,6 +161,7 @@ impl NativeApp {
             features: setup.features,
             shadow_update_probe: setup.shadow_update_probe,
             dynamic_playback: setup.dynamic_playback.map(dynamic_playback::DynamicPlaybackProbe::new),
+            state_ops: setup.state_ops.map(state_ops_playback::StateOpsProbe::new),
             packet_live_probe: setup.packet_live_probe,
             packet_live_transport: setup.packet_live_transport,
             package_live_transport: setup.package_live_transport,
