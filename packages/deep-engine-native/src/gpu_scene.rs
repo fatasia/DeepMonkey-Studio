@@ -41,6 +41,8 @@ pub struct GpuScene {
     shader_scene_key: u64,
     device: wgpu::Device,
     _instance_resource: Arc<GpuInstanceResource>,
+    /// CPU 侧打包行镜像:C3 transform-only 快路径的原位改写目标。
+    packed_instances: Vec<deep_engine_native::scene::PackedInstance>,
 }
 
 impl GpuScene {
@@ -96,8 +98,48 @@ impl GpuScene {
             shader_revision: 0,
             shader_scene_key: scene_content_key,
             device: device.clone(),
+            packed_instances: instances.packed.clone(),
             _instance_resource: instances,
         }
+    }
+
+    /// C3 transform-only 快路径:内容键推进(shader 替换守卫依赖它判断"场景未变")。
+    pub(crate) fn set_scene_content_key(&mut self, scene_content_key: u64) {
+        self.shader_scene_key = scene_content_key;
+    }
+
+    /// C3 transform-only 快路径:对受影响行重算词 0..24(模型列主序 + 逆转置法线)
+    /// 与镜像符号词 30,材质词(24..36 除 30)保持不变;随后按升序连续段合并
+    /// partial-write 整行(144B)进 GPU 实例缓冲。奇异性合同与 prepare_scene 一致。
+    pub(crate) fn write_instance_transforms(
+        &mut self,
+        queue: &wgpu::Queue,
+        rows: &[(usize, [f32; 16])],
+    ) -> Result<(), String> {
+        let packed = &mut self.packed_instances;
+        let mut runs: Vec<(usize, usize)> = Vec::new();
+        for (index, model) in rows {
+            let row = packed
+                .get_mut(*index)
+                .ok_or("instance transform row out of range")?;
+            let (words, mirrored_sign) =
+                deep_engine_native::scene::recompute_transform_update(model, *index)?;
+            row[..24].copy_from_slice(&words);
+            row[30] = mirrored_sign;
+            match runs.last_mut() {
+                Some((_, end)) if *end == *index => *end = *index + 1,
+                _ => runs.push((*index, *index + 1)),
+            }
+        }
+        for (start, end) in &runs {
+            let bytes = cast_slice(&packed[*start..*end]);
+            queue.write_buffer(
+                &self.instance_buffer,
+                (*start as wgpu::BufferAddress) * deep_engine_native::scene::PACKED_INSTANCE_BYTES,
+                bytes,
+            );
+        }
+        Ok(())
     }
 
     pub fn replace_shader_materials(

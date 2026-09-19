@@ -225,3 +225,88 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
         batches,
     })
 }
+
+
+/// C3 transform-only 快路径的纯重算核:奇异性合同与 prepare_scene 一致,
+/// 返回(词 0..24 = 模型列主序 12 + 逆转置法线 12,镜像符号 ±1)。
+/// gpu_scene 的 partial-write 由此保证与 pack_instance 逐位一致。
+pub fn recompute_transform_update(
+    model: &[f32; 16],
+    index: usize,
+) -> Result<([f32; 24], f32), String> {
+    let determinant = determinant3(model);
+    let scale = column_norm(model, 0) * column_norm(model, 4) * column_norm(model, 8);
+    if !determinant.is_finite() || scale == 0.0 || determinant.abs() < scale * 1e-8 {
+        return Err(format!("instance transform is singular (row {index})"));
+    }
+    let mut words = [0.0_f32; 24];
+    words[..12].copy_from_slice(&[
+        model[0], model[4], model[8], model[12], model[1], model[5], model[9], model[13],
+        model[2], model[6], model[10], model[14],
+    ]);
+    words[12..24].copy_from_slice(&inverse_transpose3(model, determinant));
+    Ok((words, if determinant.is_sign_negative() { -1.0 } else { 1.0 }))
+}
+
+#[cfg(test)]
+mod transform_update_tests {
+    use super::*;
+
+    fn model(x: f32, mirrored: bool) -> [f32; 16] {
+        let sign = if mirrored { -1.0 } else { 1.0 };
+        [
+            2.0 * sign, 0.0, 0.0, 0.0,
+            0.0, 1.5, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            x, 2.0, 3.0, 1.0,
+        ]
+    }
+
+    #[test]
+    fn recompute_matches_pack_instance_words() {
+        let material = test_material();
+        for mirrored in [false, true] {
+            for x in [0.0, -3.5] {
+                let model = model(x, mirrored);
+                let determinant = determinant3(&model);
+                let full = pack_instance(
+                    &model,
+                    inverse_transpose3(&model, determinant),
+                    &material,
+                    if mirrored { -1.0 } else { 1.0 },
+                    0.0,
+                );
+                let (words, sign) = recompute_transform_update(&model, 0).unwrap();
+                assert_eq!(words, full[..24]);
+                assert_eq!(sign, full[30]);
+            }
+        }
+    }
+
+    fn test_material() -> crate::contract::PbrMaterial {
+        crate::contract::PbrMaterial {
+            id: "mat/steel".into(),
+            shading_model: None,
+            base_color: [0.2, 0.4, 0.8],
+            metallic: 0.7,
+            roughness: 0.3,
+            base_color_texture: None,
+            metallic_roughness_texture: None,
+            normal_texture: None,
+            occlusion_texture: None,
+            emissive_factor: None,
+            emissive_texture: None,
+            base_color_alpha: None,
+            alpha_mode: None,
+            alpha_cutoff: None,
+            double_sided: None,
+            premultiplied_alpha: None,
+        }
+    }
+
+    #[test]
+    fn singular_transform_is_rejected() {
+        let zero = [0.0_f32; 16];
+        assert!(recompute_transform_update(&zero, 3).is_err());
+    }
+}

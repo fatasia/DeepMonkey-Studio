@@ -43,3 +43,16 @@
 **裁决(限定本场景:无文字管线/无透明/shadow 稳态干净)**:A1/A2 两分法判据都不命中——编码非主导(24%)、资源准备非主导(11.6%),主导项是第三类**全量场景准备**(88.4%),证据指向 C3 摊销重建/B02 脏域增量优先;本场景不给 A1 任何证据(Deep2dPrepare 0 样本),文字管线场景必须另测。GPU-bound 对照(shadow 夹具):GPU shadow 占 GPU 帧 69%、CPU shadow 段同步激活、packet 更新坍缩到 0.58ms——分段正确跟随瓶颈构成。回归:cargo test --lib 422/422;bin 148/148;telemetry 域 9/9(含新段测试)。
 
 证据:`test-output/r6-2-cpu-prepare-20260919-r2/`(evidence.json 裁决文档 + 3×BIM 运行原始报告 + shadow 夹具报告 + build-evidence.mjs)。
+
+
+## C3 快路径实测(2026-09-19 深夜,r3)
+
+切片一(实例级 diff)+ 切片二(transform-only 快路径)落地后,同一 5000 实例 BIM 场景、同一冒烟驱动(首实例 X 交替,previous 修正为"渲染器当前已应用侧"):
+
+| 通道 | 全量路径(改前) | 快路径(改后) | 收益 |
+|---|---|---|---|
+| packet_scene_update | 149.8ms | **0ms**(6/6) | 全量 prepare 完全跳过 |
+| packet_resource_upload | 19.7ms | **0.019–0.029ms** | ~700×(仅 partial write 受影响行) |
+| frame-interval | 187ms | **15–19ms** | 更新帧 >10× |
+
+实现:diff TransformOnly(身份/几何/材质/纹理四重守卫)→ 每受影响行重算词 0..24(模型列主序+逆转置法线)+ 镜像符号词 30,材质词不动;按升序连续段合并 `queue.write_buffer` 整行 144B;奇异性合同与 prepare_scene 一致;阴影保守 `bump_scene()`;发布臂记遥测(scene_update=0,honest)。冒烟驱动的 previous 修正为"渲染器当前已应用侧"(original→original 伪更新会污染测量——教训)。

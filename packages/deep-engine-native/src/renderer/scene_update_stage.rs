@@ -3,6 +3,7 @@ use deep_engine_native::{
     pbr_texture::prepare_pbr_resources, scene::prepare_scene, scene_bounds::prepare_scene_bounds,
 };
 
+use crate::renderer::scene_instance_diff::{SceneInstanceDiff, diff_scene_instances};
 use crate::{
     deep2d_gpu::{Deep2dFrameContext, Deep2dGpuPainter},
     deep2d_gpu_cache::{Deep2dCacheStats, Deep2dGpuAssetCache},
@@ -35,6 +36,13 @@ pub(crate) struct StagedDeep2dUpdate {
 pub(crate) enum StagedRenderPacketUpdate {
     Noop,
     Replace(Box<StagedRenderPacketPayload>),
+    /// C3 transform-only 快路径:实例身份/几何/材质/纹理全同,仅 transform 子集变化。
+    TransformRefresh(Box<StagedTransformRefresh>),
+}
+
+pub(crate) struct StagedTransformRefresh {
+    pub(crate) rows: Vec<(usize, [f32; 16])>,
+    pub(crate) scene_content_key: u64,
 }
 
 pub(crate) struct StagedRenderPacketPayload {
@@ -179,6 +187,38 @@ impl Renderer {
         // 两段都随 payload 走,由 publish(唯一提交点)记入遥测。
         let prepare_started = std::time::Instant::now();
         let packet = content.packet();
+        // C3 transform-only 快路径:仅 transform 子集变化时跳过全量 prepare 与
+        // GPU 重停放。守卫三关:实例身份 diff(materials 未 derive PartialEq,
+        // 用 Debug 串比较)、几何 id/revision 列表、纹理 id/revision 列表;
+        // 任一不同回落全量路径。
+        if let SceneInstanceDiff::TransformOnly { changed_indices } =
+            diff_scene_instances(&previous_packet.instances, &packet.instances)
+        {
+            let materials_equal = format!("{:?}", previous_packet.materials)
+                == format!("{:?}", packet.materials);
+            let geometries_equal = previous_packet
+                .geometries
+                .iter()
+                .map(|geometry| (&geometry.id, geometry.revision))
+                .eq(packet.geometries.iter().map(|geometry| (&geometry.id, geometry.revision)));
+            let textures_equal = previous_packet
+                .textures
+                .iter()
+                .map(|texture| (&texture.id, texture.revision))
+                .eq(packet.textures.iter().map(|texture| (&texture.id, texture.revision)));
+            if materials_equal && geometries_equal && textures_equal {
+                let rows: Vec<(usize, [f32; 16])> = changed_indices
+                    .iter()
+                    .map(|index| (*index as usize, packet.instances[*index as usize].transform))
+                    .collect();
+                return Ok(StagedRenderPacketUpdate::TransformRefresh(Box::new(
+                    StagedTransformRefresh {
+                        rows,
+                        scene_content_key: content.scene_content_key(),
+                    },
+                )));
+            }
+        }
         let shadow_relevance = classify_shadow_relevance(previous_packet, packet);
         let prepared = prepare_scene(packet)?;
         let culling = prepare_gpu_culling(packet, &prepared)?;
@@ -272,6 +312,21 @@ impl Renderer {
         &mut self,
         staged: StagedRenderPacketUpdate,
     ) -> Result<GpuSceneCacheMetrics, String> {
+        if let StagedRenderPacketUpdate::TransformRefresh(staged) = &staged {
+            let upload_started = std::time::Instant::now();
+            self.scene
+                .write_instance_transforms(&self.queue, &staged.rows)?;
+            let resource_upload_ns =
+                u64::try_from(upload_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            self.scene.set_scene_content_key(staged.scene_content_key);
+            // 变换变化 = 阴影投影变化,保守失效阴影缓存(与 Replace 的 must_invalidate 同级)。
+            self.shadow_version.bump_scene();
+            // R6-2 遥测:快路径无全量场景准备,scene_update 记 0,honest。
+            if let Some(telemetry) = self.telemetry.as_mut() {
+                telemetry.record_packet_prepare(0, resource_upload_ns);
+            }
+            return Ok(GpuSceneCacheMetrics::default());
+        }
         let StagedRenderPacketUpdate::Replace(staged) = staged else {
             return Ok(GpuSceneCacheMetrics::default());
         };

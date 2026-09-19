@@ -41,7 +41,13 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         && app.telemetry_sample_frames_remaining > 0
         && let Some(renderer) = app.renderer.as_mut()
     {
-        let previous = app.content.active().packet().clone();
+        // previous 必须是渲染器当前已应用的包(即 next 的另一侧),
+        // 否则会出现 original→original 的伪更新回落全量路径,污染测量。
+        let previous = if replay.use_alternate {
+            app.content.active().packet().clone()
+        } else {
+            replay.alternate.packet().clone()
+        };
         let next = if replay.use_alternate {
             &replay.alternate
         } else {
