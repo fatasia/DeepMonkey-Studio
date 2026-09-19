@@ -56,3 +56,8 @@
 | frame-interval | 187ms | **15–19ms** | 更新帧 >10× |
 
 实现:diff TransformOnly(身份/几何/材质/纹理四重守卫)→ 每受影响行重算词 0..24(模型列主序+逆转置法线)+ 镜像符号词 30,材质词不动;按升序连续段合并 `queue.write_buffer` 整行 144B;奇异性合同与 prepare_scene 一致;阴影保守 `bump_scene()`;发布臂记遥测(scene_update=0,honest)。冒烟驱动的 previous 修正为"渲染器当前已应用侧"(original→original 伪更新会污染测量——教训)。
+
+## Deep2D/A1 夹具补充(2026-09-19)
+
+复用已有 `deep2d_runtime_atlas_v1.json` 增加 `tests/deep2d_prepare_baseline.rs`:
+6 次 prepare,热态中位 **0.0348ms**,3 chunks/32 atlas bytes,测试通过。该 fixture 只验证 runtime atlas prepare,不含生产 CJK shaping/rasterization 或图表文字，因此 **A1 MSDF 文字驱逐尚未裁决**；真实 Deep2D/chart fixture 是后续必需,禁止拿 0.0348ms 推翻约 8ms 文字管线地板。证据:`test-output/r6-2-deep2d-prepare-20260919/evidence.json`。
