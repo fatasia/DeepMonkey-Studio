@@ -2519,3 +2519,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 
 - 会话收尾：接管并行会话三条lane全部收拢入库（api scene链2c03003/81d3db7、web scene链dae7ad2、packages/scripts 9aa965c、docs f1943fa、3dm fixtures 8438de7、benchmark A02/A03 1fe776a、D1修复7b8d84b、配置aa34e71）；GPT交接文档docs/codex-glm-handoff-2026-09-18.md已写（一页现状/按域交付清单/下一批优先级/环境红线/报告索引）。工作树仅剩test-output与tmp产物（按惯例不入库）。
+
+
+## 2026-09-20 凌晨状态(主会话)
+
+- **apps/web tsc 现状**:42 个错误全部位于并行会话在途 WIP(dashboardFilterStaticVariants、dashboardTablePrimitives、compileDashboardTables、dashboardFrozenFilter、compactDashboardTables、AppDialogOverlays、dashboardPublicationApi 等),**非今晚任何已提交切片引入**(今晚文件:AlertIngestPanel/DataReplayPanel/spatialValidation/modelDiff/qtoTakeoff/alerting 全部 0 错误)。并行会话收尾后自然消除。
+- **lab/ 未跟踪文件**:benchmarkFixtureIdentity、benchmarkPacketBounds、benchmarkRawWindow、benchmarkTrajectoryReplay(+test)、threeBenchmarkPacket(+test)为并行车道在途,已从 deep-engine vitest sweep 排除(vitest.config.ts),完成者认领后移除排除项。
+- **480min soak**:后台进程运行中(启动于 2026-09-19 深夜),预计 2026-09-20 上午完成;完成后按 R6-2 文档流程绑定 ⑥ V03。
