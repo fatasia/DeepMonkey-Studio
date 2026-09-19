@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { buildQtoReport, estimateObjectQuantity, type QtoObjectInput } from "./qtoTakeoff";
+import { buildQtoReport, estimateObjectQuantity, qtoReportToCsv, type QtoObjectInput } from "./qtoTakeoff";
 
 function meshObject(id: string, category: string, level: string, geometry: THREE.BufferGeometry, position: [number, number, number] = [0, 0, 0], scale: [number, number, number] = [1, 1, 1]): QtoObjectInput {
   const mesh = new THREE.Mesh(geometry);
@@ -53,5 +53,22 @@ describe("QTO takeoff (P7 slice)", () => {
     expect(report.skipped).toEqual([{ id: "empty-group", reason: "无可见网格" }]);
     expect(report.totals.volumeCubicMetres).toBeCloseTo(4, 5);
     expect(report.totals.surfaceAreaSquareMetres).toBeCloseTo(6 + 6 + 10, 5);
+  });
+
+
+
+
+
+  it("exports the report as CSV with skipped-row evidence", () => {
+    const objects: QtoObjectInput[] = [
+      { id: "wall-a", root: new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)), category: "墙", level: "一层" },
+      { id: "empty", root: new THREE.Group(), category: "空", level: "一层" },
+    ];
+    const report = buildQtoReport(objects);
+    const csv = qtoReportToCsv(report);
+    const lines = csv.split("\n");
+    expect(lines).toHaveLength(1 + report.lines.length + report.skipped.length);
+    expect(csv).toContain("墙,一层,1");
+    expect(csv).toContain("skipped,empty");
   });
 });

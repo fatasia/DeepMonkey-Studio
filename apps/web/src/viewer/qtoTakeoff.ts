@@ -139,3 +139,20 @@ export function buildQtoReport(objects: QtoObjectInput[]): QtoReport {
     evidenceBoundary: "体积仅对封闭实体网格精确（带符号四面体法），开放网格行已用 openMeshSuspected 标记；面积总是有效；单位为世界坐标单位的三次/二次方",
   };
 }
+
+
+/** CSV 导出:findings 平面表(与 spatialValidation 的 CSV 合同同风格,RFC 引号安全)。 */
+export function qtoReportToCsv(report: QtoReport): string {
+  const escape = (value: string | number | undefined): string => {
+    const text = String(value ?? "");
+    return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  };
+  const header = ["category", "level", "count", "totalVolumeCubicMetres", "totalSurfaceAreaSquareMetres", "openMeshSuspectedCount"];
+  const rows = report.lines.map((line) => [
+    line.category, line.level, String(line.count),
+    String(line.totalVolumeCubicMetres), String(line.totalSurfaceAreaSquareMetres),
+    String(line.openMeshSuspectedCount),
+  ].map(escape).join(","));
+  const skipped = report.skipped.map((item) => `skipped,${item.id},${escape(item.reason)}`);
+  return [header.join(","), ...rows, ...skipped].join("\n");
+}
