@@ -49,6 +49,7 @@ mod init;
 mod init_report;
 mod replacement_present;
 pub(crate) mod scene_update;
+mod material_resource_diff;
 mod scene_instance_diff;
 mod scene_update_stage;
 mod section_readback;
