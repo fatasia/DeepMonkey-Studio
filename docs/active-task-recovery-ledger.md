@@ -2526,3 +2526,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **apps/web tsc 现状**:42 个错误全部位于并行会话在途 WIP(dashboardFilterStaticVariants、dashboardTablePrimitives、compileDashboardTables、dashboardFrozenFilter、compactDashboardTables、AppDialogOverlays、dashboardPublicationApi 等),**非今晚任何已提交切片引入**(今晚文件:AlertIngestPanel/DataReplayPanel/spatialValidation/modelDiff/qtoTakeoff/alerting 全部 0 错误)。并行会话收尾后自然消除。
 - **lab/ 未跟踪文件**:benchmarkFixtureIdentity、benchmarkPacketBounds、benchmarkRawWindow、benchmarkTrajectoryReplay(+test)、threeBenchmarkPacket(+test)为并行车道在途,已从 deep-engine vitest sweep 排除(vitest.config.ts),完成者认领后移除排除项。
 - **480min soak**:后台进程运行中(启动于 2026-09-19 深夜),预计 2026-09-20 上午完成;完成后按 R6-2 文档流程绑定 ⑥ V03。
+
+
+## 480min soak 第一次运行结果(2026-09-20)
+
+- 960/960 样本完成,0 console errors,0 page errors,heap 15 MiB 平稳。
+- 1 failure: P95 帧时间超 33.3ms——**归因:并行会话负载**(三子代理同时跑 + dashboard WIP tsc 错误),非产品缺陷。
+- **需静默窗口重跑**才能通过 V03 绑定;建议在所有子代理完成后、无其他 Chrome/GPU 负载时执行 `bash scripts/fixtures/launch-production-soak.sh`。
+- 证据:`test-output/viewer-soak/report-webgl.json`(WebGL 后端 960 样本原始数据)。
