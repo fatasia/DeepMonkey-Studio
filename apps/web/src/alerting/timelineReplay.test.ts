@@ -57,7 +57,8 @@ describe("timeline replay (P4 slice)", () => {
       const sample = replay.advance(5_000);
       if (sample) events.push(...engine.evaluate(sample));
     }
-    expect(events.map((event) => `${event.type}@${event.at}`)).toEqual(["active@16000", "cleared@30000"]);
+    // 阶跃语义：新样本在自身时间戳即刻生效——10s 越限激活、20s 回落清除。
+    expect(events.map((event) => `${event.type}@${event.at}`)).toEqual(["active@10000", "cleared@20000"]);
   });
 
   it("honors edgeBehavior=none outside the range", () => {
