@@ -3,6 +3,8 @@ import * as THREE from "three";
 import { closestPointsBetweenObjects, preciseIntersection } from "./analysis";
 import {
   broadPhaseCandidatePairs,
+  reportToCsv,
+  reportToJson,
   runSpatialValidation,
   worldBoundingSphere,
   type SpatialRule,
@@ -293,5 +295,37 @@ describe("broad-phase pruning", () => {
     }
     expect(overlapPairs).toBeGreaterThan(0);
     expect(candidates.size).toBeLessThan(35 * 35);
+  });
+});
+
+describe("clearance-height rule and report export (P5 slice 3)", () => {
+  function boxAt(id: string, group: string, height: number): SpatialValidationObject {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    mesh.name = id;
+    mesh.userData.layerNodeId = id;
+    mesh.position.y = height;
+    return { id, group, root: mesh };
+  }
+
+  it("fails clearance-height when the tallest object exceeds the limit", () => {
+    const objects = [boxAt("low", "storage", 1), boxAt("high", "storage", 4.2)];
+    const report = runSpatialValidation(objects, [
+      { kind: "clearance-height", id: "H1", label: "消防通道限高 4m", targets: "storage", maxHeightMetres: 4 },
+    ]);
+    expect(report.passed).toBe(false);
+    const finding = report.findings[0]!;
+    expect(finding.status).toBe("fail");
+    expect(finding.marginMetres).toBeCloseTo(-0.7, 5);
+    expect(report.summary.clearanceHeightViolations).toBe(1);
+  });
+
+  it("passes clearance-height within the limit and skips empty groups", () => {
+    const report = runSpatialValidation([boxAt("low", "storage", 1)], [
+      { kind: "clearance-height", id: "H1", label: "限高 4m", targets: "storage", maxHeightMetres: 4 },
+      { kind: "clearance-height", id: "H2", label: "空组", targets: "ghost", maxHeightMetres: 4 },
+    ]);
+    expect(report.findings[0]?.status).toBe("pass");
+    expect(report.findings[1]?.status).toBe("skipped");
+    expect(report.passed).toBe(true);
   });
 });

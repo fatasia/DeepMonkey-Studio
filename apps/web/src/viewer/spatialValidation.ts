@@ -9,7 +9,7 @@ import { closestPointsBetweenObjects, preciseIntersection } from "./analysis";
 // 早退与最差对追踪和暴力遍历逐字段一致；包围球由三角不等式保证保守（相交对
 // 必为候选），并以 1e-6 裕量抵御浮点边界。不引入新依赖、不新建平行系统。
 
-export type SpatialRuleKind = "hard-collision" | "clearance" | "region-exclusion";
+export type SpatialRuleKind = "hard-collision" | "clearance" | "region-exclusion" | "clearance-height";
 
 export interface SpatialValidationObject {
   id: string;
@@ -47,7 +47,16 @@ export interface RegionExclusionRule {
   targets: string;
 }
 
-export type SpatialRule = HardCollisionRule | ClearanceRule | RegionExclusionRule;
+/** 限高规则:targets 组内任一对象的世界最高点超过 maxHeightMetres 即违规(如消防通道限高)。 */
+export interface ClearanceHeightRule {
+  kind: "clearance-height";
+  id: string;
+  label: string;
+  targets: string;
+  maxHeightMetres: number;
+}
+
+export type SpatialRule = HardCollisionRule | ClearanceRule | RegionExclusionRule | ClearanceHeightRule;
 
 export interface SpatialValidationFinding {
   ruleId: string;
@@ -79,6 +88,7 @@ export interface SpatialValidationReport {
     hardCollisionViolations: number;
     clearanceViolations: number;
     regionExclusionViolations: number;
+    clearanceHeightViolations: number;
     skippedRules: number;
   };
   meta: { broadPhase: SpatialValidationBroadPhaseMeta };
@@ -94,6 +104,8 @@ export function runSpatialValidation(objects: SpatialValidationObject[], rules: 
       findings.push(checkHardCollision(objects, rule, broadPhase));
     } else if (rule.kind === "clearance") {
       findings.push(checkClearance(objects, rule, broadPhase));
+    } else if (rule.kind === "clearance-height") {
+      findings.push(checkClearanceHeight(objects, rule));
     } else {
       findings.push(checkRegionExclusion(objects, rule));
     }
@@ -103,6 +115,7 @@ export function runSpatialValidation(objects: SpatialValidationObject[], rules: 
     hardCollisionViolations: count("hard-collision"),
     clearanceViolations: count("clearance"),
     regionExclusionViolations: count("region-exclusion"),
+    clearanceHeightViolations: count("clearance-height"),
     skippedRules: findings.filter((finding) => finding.status === "skipped").length,
   };
   return {
@@ -118,7 +131,7 @@ export function runSpatialValidation(objects: SpatialValidationObject[], rules: 
         candidatePairRatio: broadPhase.totalPairs > 0 ? broadPhase.candidatePairs / broadPhase.totalPairs : 0
       }
     },
-    passed: summary.hardCollisionViolations + summary.clearanceViolations + summary.regionExclusionViolations === 0,
+    passed: summary.hardCollisionViolations + summary.clearanceViolations + summary.regionExclusionViolations + summary.clearanceHeightViolations === 0,
     evidenceBoundary:
       "几何规则校验结果；不替代施工规范审查。区域禁入为包围盒语义：目标取世界包围盒，区域支持绕 Y 轴旋转（OBB），相交按精确分离轴判定；成对规则经包围球宽相预筛，结果与全量遍历一致"
   };
@@ -192,6 +205,37 @@ function checkClearance(objects: SpatialValidationObject[], rule: ClearanceRule,
     detail: margin < 0
       ? `最小间距 ${worst.distance.toFixed(3)}m 低于要求 ${rule.minimumMetres}m（缺口 ${Math.abs(margin).toFixed(3)}m）`
       : `最小间距 ${worst.distance.toFixed(3)}m 满足要求 ${rule.minimumMetres}m`,
+  };
+}
+
+/** 限高检查:targets 组内任一对象的世界最高点超过限高即违规;输出超出量。 */
+function checkClearanceHeight(objects: SpatialValidationObject[], rule: ClearanceHeightRule): SpatialValidationFinding {
+  const targets = objects.filter((object) => object.group === rule.targets);
+  if (targets.length === 0) {
+    return { ruleId: rule.id, ruleLabel: rule.label, kind: rule.kind, status: "skipped", detail: `目标对象组缺失：${rule.targets}` };
+  }
+  let worst: { id: string; top: number } | undefined;
+  for (const object of targets) {
+    object.root.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(object.root);
+    if (box.isEmpty()) continue;
+    const top = box.max.y;
+    if (!worst || top > worst.top) worst = { id: object.id, top };
+  }
+  if (!worst) {
+    return { ruleId: rule.id, ruleLabel: rule.label, kind: rule.kind, status: "skipped", detail: "目标组无有效几何" };
+  }
+  const margin = Number((rule.maxHeightMetres - worst.top).toFixed(6));
+  return {
+    ruleId: rule.id,
+    ruleLabel: rule.label,
+    kind: rule.kind,
+    status: margin < 0 ? "fail" : "pass",
+    objectIdA: worst.id,
+    marginMetres: margin,
+    detail: margin < 0
+      ? `${worst.id} 最高点 ${worst.top.toFixed(3)}m 超出限高 ${rule.maxHeightMetres}m(超出 ${Math.abs(margin).toFixed(3)}m)`
+      : `最高点 ${worst.top.toFixed(3)}m 满足限高 ${rule.maxHeightMetres}m`,
   };
 }
 
@@ -402,4 +446,26 @@ function closestRegionPointToBoxCenter(targetBox: THREE.Box3, regionCenter: THRE
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+
+/** 机器可读报告导出:JSON 全量;CSV 仅 findings 平面表(供表格工具直接打开)。 */
+export function reportToJson(report: SpatialValidationReport): string {
+  return JSON.stringify(report, null, 2);
+}
+
+export function reportToCsv(report: SpatialValidationReport): string {
+  const escape = (value: string | number | undefined): string => {
+    const text = String(value ?? "");
+    return /[",\n]/.test(text) ? `"${text.replaceAll('"', '\"\"')}"` : text;
+  };
+  const header = ["ruleId", "ruleLabel", "kind", "status", "objectIdA", "objectIdB", "distanceMetres", "marginMetres", "detail"];
+  const rows = report.findings.map((finding) => [
+    finding.ruleId, finding.ruleLabel, finding.kind, finding.status,
+    finding.objectIdA ?? "", finding.objectIdB ?? "",
+    finding.distanceMetres !== undefined ? String(finding.distanceMetres) : "",
+    finding.marginMetres !== undefined ? String(finding.marginMetres) : "",
+    finding.detail,
+  ].map(escape).join(","));
+  return [header.join(","), ...rows].join("\n");
 }
