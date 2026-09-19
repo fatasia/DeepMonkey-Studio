@@ -206,12 +206,14 @@ DE26 只有在相应任务卡的实现、测试、真实证据和报告都齐全
 
 ## 10. 渲染深水区能力缺口分析（2026-09-19 用户指定五轴：Compute / 硬件光追 / 深入光照 / 烘焙 / 实时 GI）
 
-| 轴 | 四平台水位 | 我们现状 | 缺口（如实） | 轻量动作（不大破坏，全挂现有卡） |
-|---|---|---|---|---|
-| **Compute** | Babylon 9 已生产（Clustered Lighting 用 compute）；Three TSL compute 可用；UE/Unity 内核级 | **R2 切片进行中**（跨后端 IR + 确定性 kernel），生产消费点为零 | GI 探针更新、HiZ、虚拟灯采样三个消费点未接；跨后端确定性是我们的独占机会 | R2 收口后立即接首批消费点（=R4 前置）；这是唯一能以"形态"取胜的轴（一套着色源×三后端×确定性） |
-| **硬件光追** | UE Lumen HW/HW RT 阴影生产；Unity HDRP RT；Babylon WebGPU RT in-progress；Three 无 | **完全空白**（无 RT 路径） | 全缺 | 三档走，不追硬件光追分母：a) 近期——CPU BVH（three-mesh-bvh 已在库）做离线烘焙采样/反射探针可见性；b) 中期——compute 模拟 RT（SSR/软件 GI 补充，依赖 R2）；c) 远期观察——WebGPU ray-query 硬件路径，Babylon 发布后评估，仅高端设备可选增强 |
-| **深入光照** | HDRP 面积光/IES/Rendering Layers/接触阴影；UE PCSS/VSM/体积散射 | cluster/CSM/局部阴影/灯阵矩阵在 E02/E05 验收中（32/128/256 已列入） | IES 光域网文件、PCSS 类可变软阴影、接触阴影、面积光真实软化、体积光散射 | 全部落在 E02/E05 逐格验收 + G7 体积介质，不新起灯光系统（unity-lighting-parity 方案已列参照） |
-| **烘焙** | Unity Progressive Lightmapper（GPU）、UE Lightmass 全套 | native baked GI 有真实证据（烘焙消费稳定、changedChannels>1000），无完整 lightmap 管线 | UV2/图集烘焙、烘焙质量档、增量重烘（局部重烘）、烘焙探针 | 轻量起步：先做"探针烘焙 + 增量重烘"（复用 C07 增量构建 + native bake 证据链）；全量 UV2 lightmap 列为远期大项，避免大破坏 |
-| **实时 GI** | Unity 7 Surface Cache GI（2026-12）、UE Lumen/Lumen Lite；Babylon/Three 无 | **离得最近的一轴**：探针 clipmap 已有，r14 on/off 双格跨端阈值通过（⑤ passed） | 表面缓存级动态更新、室内外过渡/漏光边界、动态物体间接光采样、复杂几何扩展（⑤ 记录的增强项） | = R1，与 E03 P0 同线：先探针卡距，后表面缓存对位 Unity 7；三端同语义是 Unity/UE 给不了的形态 |
+> **五轴验收基准（2026-09-19 用户定档）**：每轴 **超越 Babylon.js 与 Three.js、对标 Unity**，缺口必须补上——"观察项/远期"不是豁免口径：Babylon/Three 没有的能力，我们做了即超越；Unity 有的能力，逐格对拍补平。判定走 G6 季度重测，以实测数字记账。
+
+| 轴 | 超越线（Babylon/Three） | 对标线（Unity） | 我们现状 | 缺口 | 补齐动作（挂现有卡，不新建系统） |
+|---|---|---|---|---|---|
+| **Compute** | 两家都无跨后端确定性；Babylon compute 光照已生产 | 内核级消费密度（GI/剔除/灯采样全 compute 化） | R2 切片进行中，生产消费点为零 | 三个消费点未接；跨后端确定性未证 | R2 收口→GI 探针/HiZ/万灯三消费点（=R4 前置）——"一套源×三后端×确定性"即超越线达成 |
+| **硬件光追** | Babylon 光追 in-progress、Three 无 → 拿出等效视觉效果即超越（形态自选） | HDRP RT 的反射/阴影/GI 三类效果作为视觉参照口径 | 无 RT 路径，全缺 | 同左，且 compute RT 从"中期可选"升为**必做** | a) 近期：CPU BVH（three-mesh-bvh）做烘焙采样/探针可见性；b) **必做**：compute 模拟 RT（反射/接触阴影/软件 GI，依赖 R2 基座）；c) ray-query 硬件路径降级为可选增强，不承担验收 |
+| **深入光照** | Babylon/Three 无灯层/IES/接触阴影体系 → 建成即超越 | Rendering Layers / APV / HDRP 灯型口径（E02/E05 已列 Unity 对拍） | cluster/CSM/局部阴影/灯阵矩阵验收中 | IES 光域网、PCSS 软阴影、接触阴影、面积光软化、体积散射 | 全部进 E02/E05 **验收分母**（不是加分项）+ G7；Unity 对拍逐格 |
+| **烘焙** | 两家都无内置 lightmapper → 探针烘焙+增量重烘落地即超越 | Progressive Lightmapper 口径：质量档/增量重烘/烘焙预览 | native baked GI 有证据（消费稳定），无完整管线 | UV2/图集、质量档、增量重烘、烘焙探针 | 分期补上：一期探针烘焙+增量重烘（复用 C07）；二期 UV2 lightmap 贴图烘焙（必做，排 R2/R4 后） |
+| **实时 GI** | 两家无实时 GI（SSAO/SSR 不算）→ r14 阈值通过即已超越，但动态更新仍要补 | Unity 7 Surface Cache GI 口径（表面缓存+脏域更新） | 探针 clipmap 已有，r14 on/off 双格阈值通过（⑤ passed） | 表面缓存级动态更新、室内外过渡/漏光、动态物体间接光、复杂几何扩展 | = R1 与 E03 P0 同线：先补动态更新与复杂几何（超越线全绿），再表面缓存对位 Unity 7（对标线） |
 
 **五轴结论**：实时 GI 离得最近（⑤ 已过阈值，补动态更新与复杂几何）；Compute 是唯一"以形态取胜"的轴（R2→R4 顺序执行）；烘焙轻量起步（探针+增量，不碰全量 UV2）；光追三档走（近期 CPU BVH 烘焙采样、中期 compute 模拟、远期观察 ray-query）；深入光照按 E05 逐格补 IES/PCSS/接触阴影。**所有动作都挂在现有卡（E03/E05/G7/R1/R2/R4）上，不新建平行系统**——与"轻量、不大破坏"的拍板一致。
