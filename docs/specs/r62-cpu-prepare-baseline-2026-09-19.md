@@ -61,3 +61,22 @@
 
 复用已有 `deep2d_runtime_atlas_v1.json` 增加 `tests/deep2d_prepare_baseline.rs`:
 6 次 prepare,热态中位 **0.0348ms**,3 chunks/32 atlas bytes,测试通过。该 fixture 只验证 runtime atlas prepare,不含生产 CJK shaping/rasterization 或图表文字，因此 **A1 MSDF 文字驱逐尚未裁决**；真实 Deep2D/chart fixture 是后续必需,禁止拿 0.0348ms 推翻约 8ms 文字管线地板。证据:`test-output/r6-2-deep2d-prepare-20260919/evidence.json`。
+
+## Deep2D 真实文字 fixture 与 A1 裁决(2026-09-19 深夜,r4)
+
+真实文字工作负载 fixture 已落地:`fixtures/deep2d_runtime_chart_text_v1.json`(638KB 单行 JSON,sha256 `9a4c3784…`,同机重生成字节一致),由生产链路生成:8 系列 × 8192 行 chart(perf 同构)→ Hover 武装真实 tooltip → `present_chart`(cosmic-text shaping + swash 栅格化 → 整段 RGBA atlas base64)→ overlay 文字切片(tooltip+轴标签+图例+状态描边,不含 8192 点折线重几何)。**32 个文字 run / 275,400 解码 atlas 字节 / CJK+ASCII+数字三面齐备**(360 常用汉字池作类目名,y 轴数字刻度入像素;单帧可见 CJK ~16 字是 stride 抽稀的正确行为)。生成可复现:`examples/gen_deep2d_text_fixture.rs` + `scripts/run-deep2d-text-fixture-bench.ps1`。
+
+**实测(release、单线程、纯 CPU,不含 GPU 上传/present;预实验一轮因首次执行 OS 分页污染被丢弃,认定轮四处独立测量互差 ≤9%)**:
+
+| 通道 | 中位 | 判读 |
+|---|---|---|
+| 文字 fixture prepare(热) | **1.203ms**(冷 1.32) | 主体 = 275KB atlas base64 解码 + validate + quad 化 |
+| 文字 fixture prepare + path cache | 1.131ms | 缓存无收益(路径只占 24 条,非瓶颈) |
+| atlas-only 对照(同协议) | 0.008ms | 文字工作负载 ≈ 150× atlas-only;0.0348ms 旧值量级一致 |
+| 活体 8×8192 文字变更帧:present(宿主 compose) | **5.30ms**(tooltip 1.74/axes 2.34/state 0.61/legend 1.01) | 其中 shaping 0.78ms(96 调用/帧)+ swash raster 0.97ms,余为装箱/ControlCanvas 路径/encode |
+| 活体:Deep2D prepare 文字切片 | 1.23ms | 与 fixture prepare 1.20ms 互证 |
+| 活体:全帧 prepare(含 8×8191 段折线细分) | 14.95ms | 全帧口径下几何细分主导,文字切片仅 8% |
+
+**A1 裁决(判据灰区,按实测分段落款)**:真实文字 CPU prepare = **1.20ms**,落在「≥2ms 确认 / <1ms 修正」两阈值之间——**prepare 不是 8ms 的主体,原「MSDF 可把 8ms 直接归零」的量级推断不成立**。8ms 分解:宿主 compose ≈5.30 + Deep2D prepare ≈1.23 + perf 环境 stage/编码边界外 ≈1.4(机器差异内)。A1 MSDF 直接消除 swash 逐帧栅格化(~0.97ms)与整段 RGBA atlas 字节链(encode/decode/上传),估计收益 **~2-3ms/帧(25-35%)**;shaping/measure(0.78ms)与面板/轴/图例路径装箱(~3.5ms)不被 A1 消除——「文字 8ms→0.05ms GPU」应修正为「文字链 CPU ≈8ms → ≈5ms(A1 单独)」,逼近 0 需叠加 shaping 缓存与 compose 增量化(R2/R3/C3 类)。另:文字变更帧 vs 静态帧 present 中位差 <0.35ms——当前管线每帧无条件 re-measure/re-raster,文字内容变化本身不构成主要增量,过度失效的大头不在文字。
+
+回归:deep2d×25 + chart 文字/图例/tooltip/轴 ×6 套件 release 全绿(33 二进制 147 用例),`cargo test --lib` 429/429;常规件 `deep2d_text_fixture_prepares_with_real_text_volume` debug/release 双过(断言真实栅格像素非零、image quads≥24)。证据:`test-output/r6-2-deep2d-text-fixture-20260919-r1/`(evidence.json + bench-output.txt 原始 JSON 行 + fixture-generation.json + sha256)。

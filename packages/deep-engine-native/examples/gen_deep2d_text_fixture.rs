@@ -245,7 +245,8 @@ fn main() {
         },
         std::path::PathBuf::from,
     );
-    let pretty = serde_json::to_string_pretty(&sliced).unwrap();
+    // 紧凑单行序列化:atlas base64 占绝对体积,pretty 缩进只会虚增行数(≤800 行纪律)。
+    let pretty = serde_json::to_string(&sliced).unwrap();
     std::fs::write(&out_path, pretty.as_bytes()).unwrap();
 
     // 字符集证据:渲染字符串中可精确重建的部分(tooltip/图例/类目池),
