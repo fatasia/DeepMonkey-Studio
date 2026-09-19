@@ -12,6 +12,7 @@ use wgpu::util::DeviceExt;
 use crate::{
     gpu_culling_readback::{CullingReadback, GpuCullingFrameMetrics},
     gpu_culling_resources::{create_bind_group, create_layout, storage_init, validate_device},
+    gpu_occlusion::{GpuOcclusionStage, OcclusionSource},
     shadow_map::ShadowViewSource,
 };
 
@@ -42,6 +43,9 @@ pub struct GpuCulling {
     submitted_revision: u64,
     summary: GpuCullingSummary,
     readback: Option<CullingReadback>,
+    /// R4 首切片:主视锥 HiZ 遮挡判定,可选挂载;encode 时串联在
+    /// frustum dispatch 之后(frustum 先、遮挡后)。阴影视锥不挂。
+    occlusion: Option<GpuOcclusionStage>,
 }
 
 impl GpuCulling {
@@ -154,7 +158,44 @@ impl GpuCulling {
                 allocated_bytes: capacity * 32 + per_view * u64::from(view_count),
             },
             readback,
+            occlusion: None,
         })
+    }
+
+    /// 挂载主视锥 HiZ 遮挡判定(只挂 view 0;HiZ 是主相机金字塔,
+    /// 阴影视锥不适用)。挂载后 encode 依次派发 frustum 与遮挡。
+    /// 生产接线(渲染器构造处)随可见性缓冲切片落地;本切片由 GPU
+    /// 测试作为独立入口驱动。
+    #[allow(dead_code)] // Direct builder remains the independent GPU-test entrypoint.
+    pub fn attach_occlusion(
+        &mut self,
+        device: &wgpu::Device,
+        source_instances: &wgpu::Buffer,
+        source: OcclusionSource,
+        frame: &FrameUniform,
+        enable_readback: bool,
+    ) -> Result<(), String> {
+        if self.views.is_empty() {
+            return Err("native GPU occlusion requires at least one culling view".into());
+        }
+        let stage = GpuOcclusionStage::new(
+            device,
+            source_instances,
+            &self._bounds,
+            &self._metadata,
+            &self.views[0].frustum,
+            self.candidate_count,
+            source,
+            frame,
+            enable_readback,
+        )?;
+        self.occlusion = Some(stage);
+        Ok(())
+    }
+
+    #[allow(dead_code)] // Reported alongside attach_occlusion until renderer wiring.
+    pub fn occlusion_summary(&self) -> Option<(u32, u32, u32)> {
+        self.occlusion.as_ref().map(|stage| stage.summary())
     }
 
     pub fn summary(&self) -> GpuCullingSummary {
@@ -189,6 +230,9 @@ impl GpuCulling {
         for (view, bytes) in self.views.iter().zip(&packed) {
             queue.write_buffer(&view.frustum, 0, bytes);
         }
+        if let Some(occlusion) = &self.occlusion {
+            occlusion.update_params(queue, frame)?;
+        }
         self.revision = self.revision.wrapping_add(1);
         Ok(())
     }
@@ -216,10 +260,18 @@ impl GpuCulling {
                 );
             }
         }
+        // 串联第二档:frustum 先、遮挡后(独立 compute pass,隐式屏障,
+        // 遮挡 pass 不读 frustum 输出,判定自带逐位一致的视锥重放)。
+        if let Some(occlusion) = &self.occlusion {
+            occlusion.encode(queue, encoder);
+        }
         if let Some(readback) = &self.readback {
             for (index, view) in self.views.iter().enumerate() {
                 readback.encode_copy(encoder, index, &view.indirect);
             }
+        }
+        if let Some(occlusion) = &self.occlusion {
+            occlusion.encode_readback(encoder);
         }
     }
 
@@ -227,6 +279,21 @@ impl GpuCulling {
         self.submitted_revision = self.revision;
         if let Some(readback) = &mut self.readback {
             readback.commit();
+        }
+        if let Some(occlusion) = &mut self.occlusion {
+            occlusion.commit_submission();
+        }
+    }
+
+    /// 取回主视锥遮挡判定后的幸存实例数(需挂载时启用 readback)。
+    #[allow(dead_code)] // Reported alongside attach_occlusion until renderer wiring.
+    pub fn take_occlusion_visible(
+        &mut self,
+        device: &wgpu::Device,
+    ) -> Result<Option<u32>, String> {
+        match &mut self.occlusion {
+            Some(occlusion) => occlusion.take_visible_count(device),
+            None => Ok(None),
         }
     }
 

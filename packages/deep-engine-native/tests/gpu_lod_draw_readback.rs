@@ -26,6 +26,8 @@ mod gpu_lod;
 mod gpu_lod_resources;
 #[path = "../src/gpu_lod_views.rs"]
 mod gpu_lod_views;
+#[path = "../src/gpu_occlusion.rs"]
+mod gpu_occlusion;
 #[path = "../src/gpu_resources.rs"]
 mod gpu_resources;
 #[path = "../src/gpu_scene.rs"]
