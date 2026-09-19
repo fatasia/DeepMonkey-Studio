@@ -1,0 +1,145 @@
+# R4 遮挡剔除(GPU-driven)——判定与消费链设计
+
+> 状态:第二切片(消费链)完成;生产 draw 接线 = 下一切片。
+> 权威计划:`docs/specs/industrial-3d-format-work-plan-2026-09-16.md` 不涉及本主题;
+> 路线锚点:`docs/specs/de26-master-execution-roadmap-2026-09-19.md` 第 7 节 #2。
+> 证据:`test-output/r4-occlusion-consume-20260920-r1/evidence.json`(本文所有实测
+> 数字均来自该文件与 `cargo test --ignored` 实跑输出,可复现命令见 §5)。
+
+## 1. 背景与切片划分
+
+- **首切片(5f13372,已合入)**:`native_gpu_occlusion_v1.wgsl` 输出 per-instance
+  u32 可见标志(视锥∧遮挡,全步定序、无原子);`gpu_occlusion.rs`
+  (OcclusionSource/GpuOcclusionStage/OcclusionReadback);`gpu_culling.rs::attach_occlusion`。
+- **本切片(第二刀)**:消费该标志,打通「遮挡判定 → 紧凑化 → indirect draw」闭环:
+  `native_gpu_occlusion_compact_v1.wgsl`(5 entry point 定序链)+
+  `gpu_occlusion_consume.rs`(OcclusionConsumeStage)+ `gpu_culling.rs::attach_occlusion_consume`
+  + 主视锥 draw 访问器切换。
+- **下一切片**:生产 renderer 挂载(init/scene_update)、MSAA 深度 resolve+reduce 进
+  HiZ、可见性缓冲两阶段管线。
+
+## 2. 架构
+
+### 2.1 三档串联(GpuCulling::encode 内顺序)
+
+```
+frustum pass(逐视锥,atomicAdd 追加紧凑)
+  → occlusion pass(主视锥 HiZ 判定,flags = 视锥∧遮挡)
+  → consume 链(5 kernel,消费 flags,产出主视锥紧凑 draw 输出)
+```
+
+### 2.2 消费链五个 kernel(全定序、无原子、无共享内存)
+
+| kernel | 输入 → 输出 | 说明 |
+|---|---|---|
+| `scan_blocks` | flags → block_sums | 每 invocation 固定负责一个 64 实例块,升序累加 |
+| `scan_block_offsets` | block_sums → block_offsets | 单 invocation 升序独占前缀扫描 |
+| `scan_instance_prefix` | flags+block_offsets → prefix[N+1] | 每实例 = 块偏移 + 块内升序前缀;末实例补写总数 |
+| `compact_instances` | flags+prefix+source+metadata → compact_visible | 槽位 = `instance_start + (prefix[id] − prefix[批次首])` |
+| `write_indirect` | prefix+batch_ranges → compact_indirect | `instance_count = prefix[批末] − prefix[批首]` |
+
+- 复杂度(如实):块内前缀 O(64)/实例;`block_offsets` 为单线程 O(block_count)
+  顺序扫(预算 1,048,576 实例时 block_count=16384,常数量级),换取零原子。
+- 确定性:所有归约按下标升序固定方向;输出是输入的位级确定函数(测试:
+  两次完整 encode→readback 紧凑行逐字节一致)。
+
+### 2.3 选型:为什么不是「并入 frustum pass 的 visible 判定」
+
+1. frustum pass 是 per-view(主视锥 + N 级联),HiZ 金字塔仅属主相机;并入需 per-view
+   分支,破坏首切片「frustum 先、遮挡后、逐位一致重放」契约。
+2. frustum 紧凑用 `atomicAdd`(追加序不定);并入则消费链继承原子,违反本切片
+   「全定序、无共享内存原子」门禁。
+3. 独立链让 frustum 输出保留给阴影视锥(view ≥ 1)与下一切片可见性缓冲复用;
+   遮挡判定(首切片)与紧凑消费(本切片)可独立演进。
+
+### 2.4 消费点:draw 侧零改动
+
+draw 仅经两个访问器消费紧凑输出(`gpu_scene_draw.rs::draw_indirect`):
+
+```rust
+culling.visible_instances(view)   // vertex buffer slot 1,按 instance_start×144 切
+culling.indirect(view)            // draw_indexed_indirect,20B/批次
+```
+
+`GpuCulling` 访问器规则:**view 0 且挂载消费链 → compact_visible/compact_indirect;
+view ≥ 1(阴影级联)→ 恒 frustum 输出**。compact 行槽与 frustum 输出逐槽兼容
+(144B 行、批次区域基址),draw 代码与行布局零改动。
+
+### 2.5 与 LOD / Blend 的边界
+
+`prepare_gpu_culling` 中 LOD 批次与 Blend 批次 mask=0 → flags 恒 0 → 其批次
+`instance_count=0`;LOD 走 `GpuLod` 自身缓冲、Blend 走排序 direct 路径,均不消费
+紧凑输出,互不影响。
+
+## 3. 实测(4096 实例,RTX 4060 Laptop / Vulkan / wgpu 30.0.1)
+
+### 3.1 计数一致性(遮挡判定 → 紧凑输出)
+
+| 场景 | 实例 | frustum | 遮挡 flags | 紧凑 | per-batch | draws |
+|---|---|---|---|---|---|---|
+| A 全在视锥 | 64 | 64 | 64 | 64 | [64] | 1 |
+| B 全遮挡 | 64 | 64 | 0 | 0 | [0] | 0 |
+| C 混合深度 | 128 | 128 | 64 | 64 | [64] | 1 |
+| D 双批次内容对照 | 128 | 128 | 64 | [64, 0] | [64, 0] | 1 |
+| 4096 混合深度 | 4096 | 4096 | 2048 | 2048 | [2048, 0] | 1 |
+
+- D 场景内容级验证:批次 0 幸存行与 CPU 参考行(instance 0..64 按 id 升序)
+  **逐字节一致**;批次 1 区域槽位保持零(不被触碰)。
+- 失败路径:未挂遮挡判定时 `attach_occlusion_consume` 返回 Err(不静默空转)。
+
+### 3.2 时间对照(21 轮交替采样,丢 5 预热,16 样本中位;CPU 墙钟 = encode+submit+poll)
+
+| 配置 | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| 全量(空编码器提交下限) | 203.3 µs | 162.1 µs | 150.7 µs |
+| frustum-only | 276.3 µs | 284.2 µs | 219.3 µs |
+| +遮挡判定(首切片链) | 382.5 µs | 314.4 µs | 277.4 µs |
+| +遮挡+消费链(本切片) | 541.6 µs | 524.2 µs | 443.0 µs |
+
+- 口径(如实):CPU 墙钟,非 GPU timestamp;小负载下提交路径主导,数字含与开发
+  会话并行的负载噪声(全样本保留在 evidence.json);「全量」无剔除路径的 draw 侧
+  开销在 compute harness 中不可测,以提交下限 + 幸存实例数换算呈现。
+- 工作量削减:主视锥幸存实例 4096 → 2048(**50%**),每实例 36 索引(12 三角形)
+  的顶点/光栅化工作量等比减半;病态放大守卫(consume < frustum×5 + 5ms)通过。
+- 局限(如实):`instance_count=0` 的批次现仍发起 `draw_indexed_indirect`(空栅格化
+  但有驱动开销);真正的 draw 调用数减少需渲染接线后的批次跳过(下一切片)。
+
+### 3.3 回归
+
+- lib 429 passed(基线不变);bin 162 passed + 66 ignored(基线 161 + 新契约冻结测试);
+  gpu_culling 7/7(含新增 batch_ranges 单测)、gpu_lod_draw_readback 31/31、
+  gpu_shader_material_draw 28/28、surface_flags 5/5。
+- GPU(`--ignored`):消费链 4 用例 + 首切片 5 用例全过。
+- 外部失败(bloom_contract、cascaded_shadow、compat_x_*、runtime_package_x)不在本
+  切片改动闭包内;归因并行会话推进 HEAD(fbc6d6e)与其工作树修改——基线 worktree
+  复验时 HEAD 本身无法编译(并行未完成重构),详见 evidence.json `regression`。
+
+## 4. 纪律与预算
+
+- 文件体量:wgsl 105 行 / consume 383 行 / consume 测试 405 行 / gpu_culling 421 行
+  (全 ≤800);WGSL sha256 见 evidence。
+- 确定性门禁:契约冻结测试机械断言 WGSL 无 `atomic`、无 `var<workgroup>`、
+  5×`@workgroup_size(64)`。
+- wgpu 限制处置:`max_storage_buffers_per_shader_stage` 默认 8 → 按 entry point 拆分
+  bind group;read/write 资格按 WGSL 声明匹配(非实际用法)。
+
+## 5. 复现
+
+```bash
+cd packages/deep-engine-native
+cargo test --lib                                    # 429 passed
+cargo test --bin deep-engine-native                 # 162 passed
+cargo test --no-fail-fast --test gpu_culling        # 7 passed
+cargo test --bin deep-engine-native consume_ -- --ignored --nocapture   # 消费链 GPU 用例
+cargo test --bin deep-engine-native gpu_occlusion_tests:: -- --ignored  # 首切片回归
+```
+
+## 6. 剩余缺口(下一切片)
+
+1. 生产接线:renderer init/scene_update 挂载遮挡判定 + 消费链;主视锥 draw 真正切换
+   缓冲对(访问器已就绪)。
+2. HiZ 生产:MSAA 深度 resolve + reduce 进金字塔(当前为受控合成输入,与 TS 侧
+   `webgpu/hiZPyramid.ts` 语义对齐)。
+3. 空批次 draw 调用跳过(引 GPU 侧批次数或 CPU readback 门控)。
+4. 大预算层次化扫描(block_offsets 单线程扫在 1M 预算为常数量级,若未来放宽预算需
+   升级为层次扫描;确定性纪律不变)。

@@ -323,6 +323,11 @@ impl GpuOcclusionStage {
         )
     }
 
+    /// 可见标志缓冲,供消费链(scan+compact)绑定读取。
+    pub fn flags(&self) -> &wgpu::Buffer {
+        &self.view.flags
+    }
+
     /// 每帧更新投影项与视锥矩阵(frustum uniform 由 GpuCulling::update_views 负责)。
     pub fn update_params(&self, queue: &wgpu::Queue, frame: &FrameUniform) -> Result<(), String> {
         let terms = projection_terms(frame)?;

@@ -73,6 +73,21 @@ pub fn prepare_gpu_culling(
     })
 }
 
+/// R4 遮挡消费链的静态批次区间表:[start, end) 按 batch 索引排列。
+/// metadata 行为 [batch_index, mask, instance_start, 0],批次区间由
+/// 「同名批次的最后一行 index+1」闭合(prepare 保证批次精确平铺实例数组)。
+pub fn batch_ranges_from_metadata(metadata: &[[u32; 4]], batch_count: usize) -> Vec<[u32; 4]> {
+    let mut ranges = vec![[0, 0, 0, 0]; batch_count];
+    for (index, row) in metadata.iter().enumerate() {
+        let batch = row[0] as usize;
+        if batch >= batch_count {
+            continue;
+        }
+        ranges[batch] = [row[2], (index + 1) as u32, 0, 0];
+    }
+    ranges
+}
+
 pub fn frustum_planes(matrix: Matrix4) -> Result<FrustumPlanes, String> {
     let row = |index: usize| {
         [

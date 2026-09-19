@@ -39,6 +39,9 @@ mod gpu_lod;
 mod gpu_lod_resources;
 mod gpu_lod_views;
 mod gpu_occlusion;
+mod gpu_occlusion_consume;
+#[cfg(test)]
+mod gpu_occlusion_consume_tests;
 #[cfg(test)]
 mod gpu_occlusion_tests;
 mod gpu_resources;

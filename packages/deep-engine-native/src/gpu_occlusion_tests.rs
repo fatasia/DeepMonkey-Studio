@@ -21,10 +21,10 @@ use crate::gpu_occlusion::{projection_terms, OcclusionSource, OCCLUSION_MARGIN};
 use crate::gpu_resources::frame_data_with_view;
 use crate::shadow_map::ShadowViewSource;
 
-const SIZE: PhysicalSize<u32> = PhysicalSize::new(1280, 720);
-const LOCAL_RADIUS: f32 = 0.25;
+pub(crate) const SIZE: PhysicalSize<u32> = PhysicalSize::new(1280, 720);
+pub(crate) const LOCAL_RADIUS: f32 = 0.25;
 
-struct Shadows;
+pub(crate) struct Shadows;
 impl ShadowViewSource for Shadows {
     fn cascade_count(&self) -> u32 {
         0
@@ -37,7 +37,7 @@ impl ShadowViewSource for Shadows {
     }
 }
 
-fn packed_instance(position: [f32; 3]) -> PackedInstance {
+pub(crate) fn packed_instance(position: [f32; 3]) -> PackedInstance {
     let mut row = [0.0_f32; GPU_CULLING_INSTANCE_BYTES as usize / 4];
     row[0] = 1.0;
     row[5] = 1.0;
@@ -48,7 +48,7 @@ fn packed_instance(position: [f32; 3]) -> PackedInstance {
     row
 }
 
-fn prepared(count: usize) -> PreparedGpuCulling {
+pub(crate) fn prepared(count: usize) -> PreparedGpuCulling {
     PreparedGpuCulling {
         bounds: vec![[0.0, 0.0, 0.0, LOCAL_RADIUS]; count],
         metadata: vec![[0, MAIN_SOLID_MASK, 0, 0]; count],
@@ -57,14 +57,14 @@ fn prepared(count: usize) -> PreparedGpuCulling {
 }
 
 /// 标准 Z 深度映射(与 WGSL 一致):depth(w) = far/(far-near) * (w - near) / w。
-fn standard_depth(view_depth: f32) -> f32 {
+pub(crate) fn standard_depth(view_depth: f32) -> f32 {
     let depth_scale = CAMERA_FAR / (CAMERA_FAR - CAMERA_NEAR);
     depth_scale * (view_depth - CAMERA_NEAR) / view_depth
 }
 
 /// 相机 eye 在 target − distance*forward;t 直定义为「距 eye 的视深」,
 /// 世界点 = target + forward*(t − distance)(lateral/vertical 沿右/上轴)。
-fn world_point(view: PlayerView, t: f32, lateral: f32, vertical: f32) -> [f32; 3] {
+pub(crate) fn world_point(view: PlayerView, t: f32, lateral: f32, vertical: f32) -> [f32; 3] {
     let [right, up, forward] = view.basis();
     let depth_offset = t - view.distance;
     std::array::from_fn(|axis| {
@@ -75,7 +75,7 @@ fn world_point(view: PlayerView, t: f32, lateral: f32, vertical: f32) -> [f32; 3
     })
 }
 
-fn scenario_view(distance: f32) -> PlayerView {
+pub(crate) fn scenario_view(distance: f32) -> PlayerView {
     PlayerView {
         yaw: 0.55,
         pitch: 0.0,
@@ -85,12 +85,12 @@ fn scenario_view(distance: f32) -> PlayerView {
     }
 }
 
-fn frame_for(view: PlayerView) -> FrameUniform {
+pub(crate) fn frame_for(view: PlayerView) -> FrameUniform {
     frame_data_with_view(SIZE, view.yaw, view.target, view.distance, Default::default())
 }
 
 /// 网格实例:t 相同,横向 8 × 纵向 8,覆盖视锥中部。
-fn grid_instances(view: PlayerView, t: f32) -> Vec<PackedInstance> {
+pub(crate) fn grid_instances(view: PlayerView, t: f32) -> Vec<PackedInstance> {
     let mut instances = Vec::with_capacity(64);
     for row in 0..8 {
         for column in 0..8 {
@@ -103,7 +103,7 @@ fn grid_instances(view: PlayerView, t: f32) -> Vec<PackedInstance> {
 }
 
 /// 合成 HiZ 金字塔:r32float,levels[0] 为全分辨率,levels[i] 尺寸减半。
-fn hiz_pyramid(
+pub(crate) fn hiz_pyramid(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     levels: &[&[f32]],
@@ -149,12 +149,12 @@ fn hiz_pyramid(
     (texture, view)
 }
 
-struct Bench {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+pub(crate) struct Bench {
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
 }
 
-async fn bench_device() -> Bench {
+pub(crate) async fn bench_device() -> Bench {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::VULKAN;
     let instance = wgpu::Instance::new(descriptor);
@@ -175,9 +175,9 @@ async fn bench_device() -> Bench {
     Bench { device, queue }
 }
 
-struct Scene {
-    instances: Vec<PackedInstance>,
-    frame: FrameUniform,
+pub(crate) struct Scene {
+    pub(crate) instances: Vec<PackedInstance>,
+    pub(crate) frame: FrameUniform,
 }
 
 fn build_culling(

@@ -3,7 +3,7 @@ use deep_engine_native::{
     culling_contract::{
         FrustumPlanes, GPU_CULLING_FRUSTUM_BYTES, GPU_CULLING_INDIRECT_BYTES,
         GPU_CULLING_INSTANCE_BYTES, GPU_CULLING_WORKGROUP_SIZE, MAIN_SOLID_MASK,
-        PreparedGpuCulling, SHADOW_CASTER_MASK, frustum_planes,
+        PreparedGpuCulling, SHADOW_CASTER_MASK, batch_ranges_from_metadata, frustum_planes,
     },
     mesh_abi::FrameUniform,
 };
@@ -13,6 +13,7 @@ use crate::{
     gpu_culling_readback::{CullingReadback, GpuCullingFrameMetrics},
     gpu_culling_resources::{create_bind_group, create_layout, storage_init, validate_device},
     gpu_occlusion::{GpuOcclusionStage, OcclusionSource},
+    gpu_occlusion_consume::{ConsumeCompacted, OcclusionConsumeStage},
     shadow_map::ShadowViewSource,
 };
 
@@ -46,6 +47,11 @@ pub struct GpuCulling {
     /// R4 首切片:主视锥 HiZ 遮挡判定,可选挂载;encode 时串联在
     /// frustum dispatch 之后(frustum 先、遮挡后)。阴影视锥不挂。
     occlusion: Option<GpuOcclusionStage>,
+    /// R4 第二切片:遮挡标志的 scan+compact 消费链,可选挂载(需先挂
+    /// 遮挡判定);挂载后主视锥(view 0)draw 经访问器切换到紧凑输出。
+    consume: Option<OcclusionConsumeStage>,
+    /// 批次区间表(场景静态,prepare 保证批次平铺实例数组),消费链构造输入。
+    batch_ranges: Vec<[u32; 4]>,
 }
 
 impl GpuCulling {
@@ -135,6 +141,7 @@ impl GpuCulling {
             });
         }
         let view_count = views.len() as u32;
+        let batch_ranges = batch_ranges_from_metadata(&prepared.metadata, batch_count as usize);
         let readback = enable_readback
             .then(|| CullingReadback::new(device, views.len(), batch_count as usize));
         let per_view = GPU_CULLING_FRUSTUM_BYTES
@@ -159,6 +166,8 @@ impl GpuCulling {
             },
             readback,
             occlusion: None,
+            consume: None,
+            batch_ranges,
         })
     }
 
@@ -193,9 +202,43 @@ impl GpuCulling {
         Ok(())
     }
 
+    /// 挂载遮挡标志消费链(需先 attach_occlusion):scan+compact 产出主视锥
+    /// 紧凑 draw 输出,挂载后 view 0 的 draw 经访问器切换到紧凑缓冲对。
+    /// 生产接线(渲染器构造处)随可见性缓冲切片落地;本切片由 GPU 测试
+    /// 作为独立入口驱动。
+    #[allow(dead_code)] // Direct builder remains the independent GPU-test entrypoint.
+    pub fn attach_occlusion_consume(
+        &mut self,
+        device: &wgpu::Device,
+        source_instances: &wgpu::Buffer,
+        enable_readback: bool,
+    ) -> Result<(), String> {
+        let Some(occlusion) = &self.occlusion else {
+            return Err("native GPU occlusion consume requires the occlusion stage".into());
+        };
+        let stage = OcclusionConsumeStage::new(
+            device,
+            source_instances,
+            &self._metadata,
+            occlusion.flags(),
+            &self.batch_ranges,
+            self.candidate_count,
+            self.batch_ranges.len() as u32,
+            &self.indirect_template,
+            enable_readback,
+        )?;
+        self.consume = Some(stage);
+        Ok(())
+    }
+
     #[allow(dead_code)] // Reported alongside attach_occlusion until renderer wiring.
     pub fn occlusion_summary(&self) -> Option<(u32, u32, u32)> {
         self.occlusion.as_ref().map(|stage| stage.summary())
+    }
+
+    #[allow(dead_code)] // Reported alongside attach_occlusion_consume until renderer wiring.
+    pub fn consume_summary(&self) -> Option<(u32, u32, u32)> {
+        self.consume.as_ref().map(|stage| stage.summary())
     }
 
     pub fn summary(&self) -> GpuCullingSummary {
@@ -265,6 +308,11 @@ impl GpuCulling {
         if let Some(occlusion) = &self.occlusion {
             occlusion.encode(queue, encoder);
         }
+        // 串联第三档:遮挡标志 → scan+compact 紧凑输出(消费遮挡 pass 的
+        // flags,产出主视锥紧凑 draw 缓冲对)。
+        if let Some(consume) = &self.consume {
+            consume.encode(queue, encoder);
+        }
         if let Some(readback) = &self.readback {
             for (index, view) in self.views.iter().enumerate() {
                 readback.encode_copy(encoder, index, &view.indirect);
@@ -272,6 +320,9 @@ impl GpuCulling {
         }
         if let Some(occlusion) = &self.occlusion {
             occlusion.encode_readback(encoder);
+        }
+        if let Some(consume) = &self.consume {
+            consume.encode_readback(encoder);
         }
     }
 
@@ -282,6 +333,9 @@ impl GpuCulling {
         }
         if let Some(occlusion) = &mut self.occlusion {
             occlusion.commit_submission();
+        }
+        if let Some(consume) = &mut self.consume {
+            consume.commit_submission();
         }
     }
 
@@ -297,6 +351,18 @@ impl GpuCulling {
         }
     }
 
+    /// 取回消费链紧凑输出(每批次 instance_count + 幸存行内容;需启用 readback)。
+    #[allow(dead_code)] // Reported alongside attach_occlusion_consume until renderer wiring.
+    pub fn take_occlusion_compacted(
+        &mut self,
+        device: &wgpu::Device,
+    ) -> Result<Option<ConsumeCompacted>, String> {
+        match &mut self.consume {
+            Some(consume) => consume.take_compacted(device),
+            None => Ok(None),
+        }
+    }
+
     pub fn take_metrics(
         &mut self,
         device: &wgpu::Device,
@@ -306,12 +372,20 @@ impl GpuCulling {
             .map_or(Ok(None), |readback| readback.take(device))
     }
 
+    /// draw 消费点(view 0 = 主视锥):挂载消费链后切换到遮挡紧凑输出,
+    /// 阴影视锥(view ≥ 1)始终走 frustum 输出。
     pub fn visible_instances(&self, view_index: usize) -> &wgpu::Buffer {
-        &self.views[view_index].visible_instances
+        match self.consume.as_ref().filter(|_| view_index == 0) {
+            Some(consume) => &consume.compact_visible,
+            None => &self.views[view_index].visible_instances,
+        }
     }
 
     pub fn indirect(&self, view_index: usize) -> &wgpu::Buffer {
-        &self.views[view_index].indirect
+        match self.consume.as_ref().filter(|_| view_index == 0) {
+            Some(consume) => &consume.compact_indirect,
+            None => &self.views[view_index].indirect,
+        }
     }
 }
 
