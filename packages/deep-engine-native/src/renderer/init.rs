@@ -84,7 +84,7 @@ pub(super) async fn create_renderer(
         return Err("authored directional light is not supported by legacy ShaderPackage material bindings".into());
     }
     let mut frame = frame_data_with_camera(size, view, features.fog);
-    if let Some(lighting) = content.lighting { lighting.apply(&mut frame); }
+    if let Some(lighting) = &content.lighting { lighting.apply(&mut frame); }
     let validation_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let memory_scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
     let internal_scope = device.push_error_scope(wgpu::ErrorFilter::Internal);
@@ -307,7 +307,7 @@ pub(super) async fn create_renderer(
         output_pass,
         frame,
         fog: features.fog,
-        lighting: content.lighting,
+        lighting: content.lighting.clone(),
         yaw,
         view,
         telemetry,

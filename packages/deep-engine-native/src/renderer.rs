@@ -188,7 +188,7 @@ impl Renderer {
         }
         self.output_pass.publish_rebind(next_output);
         self.frame = crate::gpu_resources::frame_data_with_camera(size, self.view, self.fog);
-        if let Some(lighting) = self.lighting { lighting.apply(&mut self.frame); }
+        if let Some(lighting) = &self.lighting { lighting.apply(&mut self.frame); }
         update_shadow_map(
             &mut self.shadow_map,
             &self.queue,
@@ -263,7 +263,7 @@ impl Renderer {
         self.view = view;
         self.shadow_version.bump_light();
         self.frame = crate::gpu_resources::frame_data_with_camera(self.size, self.view, self.fog);
-        if let Some(lighting) = self.lighting { lighting.apply(&mut self.frame); }
+        if let Some(lighting) = &self.lighting { lighting.apply(&mut self.frame); }
         update_shadow_map(
             &mut self.shadow_map,
             &self.queue,
