@@ -25,6 +25,8 @@ export { BENCHMARK_SAMPLE_SCHEMA_VERSION, channelMedianMs, createSampleWindow,
   validateSampleWindow } from "./benchmarkSampleSchema.js";
 export type { ChannelSample, SampleChannel, SampleClockId, SampleValidationIssue,
   SampleWindow } from "./benchmarkSampleSchema.js";
+export { compareBenchmarkWindows } from "./benchmarkWindowComparison.js";
+export type { BenchmarkWindowPair, BenchmarkChannelGap } from "./benchmarkWindowComparison.js";
 
 export { BENCHMARK_TRAJECTORY_SCHEMA_VERSION, createBenchmarkTrajectory, sampleTrajectoryPose,
   trajectoryActionsInWindow, validateBenchmarkTrajectory } from "./benchmarkAssetTrajectory.js";
@@ -163,3 +165,4 @@ export * from "./postprocess/index.js";
 export * from "./streaming/index.js";
 export * from "./shadows/index.js";
 export * from "./runtimePackage/index.js";
+export * from "./fog/index.js";
