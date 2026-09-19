@@ -1,5 +1,5 @@
 import { sha256Hex } from "../shader/canonical.js";
-import type { DcirKernel, DcirNode, DcirUniformType, DcirValueType } from "./types.js";
+import type { DcirBufferElementType, DcirKernel, DcirNode, DcirUniformType, DcirValueType } from "./types.js";
 
 const NODE_ID_PATTERN = /^[A-Za-z0-9_]+$/u;
 const UNIFORM_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/u;

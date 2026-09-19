@@ -19,7 +19,7 @@ function literal(node: Extract<DcirNode, { op: "literal" }>): string {
   return text.includes(".") || text.includes("e") ? text : `${text}.0`;
 }
 
-function expression(node: DcirNode): string {
+function expression(kernel: DcirKernel, node: DcirNode): string {
   switch (node.op) {
     case "literal": return literal(node);
     case "global-invocation-id": return "uvec2(gl_FragCoord.xy)";
@@ -57,6 +57,9 @@ function expression(node: DcirNode): string {
       return `(${varName(condition)} ? ${varName(trueValue)} : ${varName(falseValue)})`;
     }
     case "texel-load": return `texelFetch(deepSource, ivec2(${varName(node.coords)}), 0).r`;
+    case "buffer-load":
+      // 入口 emitKernelGlsl 已对声明 buffer 的内核整体 fail-closed;此处不可达。
+      throw new Error(`buffer-load cannot be emitted to GLSL (kernel "${kernel.name}").`);
   }
   node satisfies never; // op 集合扩展时编译失败，强制补全两个后端
 }
@@ -104,7 +107,7 @@ export function emitKernelGlsl(kernel: DcirKernel): EmittedKernelGlsl {
     "void main() {",
   ];
   for (const node of kernel.nodes) {
-    lines.push(`  ${glslType[node.type]} ${varName(node.id)} = ${expression(node)};`);
+    lines.push(`  ${glslType[node.type]} ${varName(node.id)} = ${expression(kernel, node)};`);
   }
   lines.push(
     `  if (!(${varName(kernel.guard)})) { discard; }`,
